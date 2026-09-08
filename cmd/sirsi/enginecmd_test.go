@@ -51,6 +51,7 @@ func TestParseEnginePromptOptionsRejectsInvalidInput(t *testing.T) {
 		"missing prompt":      {"--max-tokens", "8"},
 		"empty prompt":        {"--prompt", "   "},
 		"invalid engine":      {"--prompt", "hello", "--engine", "cuda"},
+		"invalid variant":     {"--prompt", "hello", "--variant", "cuda"},
 		"zero max tokens":     {"--prompt", "hello", "--max-tokens", "0"},
 		"negative max tokens": {"--prompt", "hello", "--max-tokens", "-1"},
 		"positional argument": {"--prompt", "hello", "unexpected"},
@@ -74,9 +75,19 @@ func TestParseEnginePromptOptionsDefaultsToPositiveLimit(t *testing.T) {
 	}
 }
 
+func TestParseEnginePromptOptionsAcceptsVariant(t *testing.T) {
+	opts, err := parseEnginePromptOptions([]string{"--engine", "mlx", "--variant", "mlx-patched", "--prompt", "hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts.Variant != "mlx-patched" {
+		t.Fatalf("variant = %q", opts.Variant)
+	}
+}
+
 func TestExecuteEnginePromptProjectsCompletionAndRouteReceipt(t *testing.T) {
 	controller := testEngineController(t)
-	opts := enginePromptOptions{Engine: "mlx", Prompt: "hello", MaxTokens: 8}
+	opts := enginePromptOptions{Engine: "mlx", Variant: "mlx-raw", Prompt: "hello", MaxTokens: 8}
 	var out bytes.Buffer
 	err := executeEnginePrompt(context.Background(), opts, &out,
 		func() (*engine.SelectionController, error) { return controller, nil },
@@ -85,7 +96,7 @@ func TestExecuteEnginePromptProjectsCompletionAndRouteReceipt(t *testing.T) {
 				ABIVersion: engine.ABIVersion, SessionID: "session-1", Identity: testEngineIdentity(),
 				IdentityDigest: "identity-digest", RequestSHA256: strings.Repeat("c", 64), CompletionSHA256: strings.Repeat("d", 64),
 				StartedAt: "2026-09-08T12:00:00Z", FinishedAt: "2026-09-08T12:00:01Z",
-				Route: &engine.RouteDecision{Requested: engine.KindMLX, Selected: engine.KindMLX, Rationale: "test route"},
+				Route: &engine.RouteDecision{Requested: engine.KindMLX, RequestedVariant: engine.VariantMLXRaw, Selected: engine.KindMLX, SelectedVariant: engine.VariantMLXRaw, Rationale: "test route"},
 			}, nil
 		},
 	)
@@ -96,7 +107,7 @@ func TestExecuteEnginePromptProjectsCompletionAndRouteReceipt(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Completion.Text != "answer" || got.Receipt.Route == nil || got.Receipt.Route.Selected != engine.KindMLX {
+	if got.Completion.Text != "answer" || got.Receipt.Route == nil || got.Receipt.Route.Selected != engine.KindMLX || got.Receipt.Route.SelectedVariant != engine.VariantMLXRaw {
 		t.Fatalf("unexpected prompt output: %+v", got)
 	}
 }

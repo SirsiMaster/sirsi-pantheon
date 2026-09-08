@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -10,6 +11,65 @@ const testSHA = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde
 
 func testIdentity() Identity {
 	return Identity{Engine: KindSNE, EngineVersion: "native-1", ModelID: "model-a", ModelSHA256: testSHA, TokenizerID: "tok-a", TokenizerSHA256: testSHA, Precision: "int4", CacheNamespace: "cache-a"}
+}
+
+func TestBackendVariantsAreClosedAndEngineCompatible(t *testing.T) {
+	cases := []struct {
+		variant BackendVariant
+		engine  Kind
+	}{
+		{VariantMLXRaw, KindMLX}, {VariantMLXPatched, KindMLX},
+		{VariantOMLXPublic, KindOMLX}, {VariantSNEPlain, KindSNE}, {VariantSNEMTP, KindSNE},
+	}
+	for _, tc := range cases {
+		if err := tc.variant.Validate(); err != nil {
+			t.Errorf("variant %q rejected: %v", tc.variant, err)
+		}
+		if err := tc.variant.ValidateForEngine(tc.engine); err != nil {
+			t.Errorf("variant %q rejected for %q: %v", tc.variant, tc.engine, err)
+		}
+	}
+	for _, tc := range []struct {
+		variant BackendVariant
+		engine  Kind
+	}{{VariantMLXRaw, KindOMLX}, {VariantOMLXPublic, KindSNE}, {VariantSNEMTP, KindMLX}} {
+		if err := tc.variant.ValidateForEngine(tc.engine); err == nil {
+			t.Errorf("incompatible variant %q accepted for %q", tc.variant, tc.engine)
+		}
+	}
+	if _, err := ParseVariant("not-a-variant"); err == nil {
+		t.Fatal("unknown backend variant accepted")
+	}
+}
+
+func TestIdentityVariantDefaultsAreExplicitAndDigestBound(t *testing.T) {
+	legacy := testIdentity()
+	if legacy.Variant != "" || legacy.EffectiveVariant() != VariantSNEPlain {
+		t.Fatalf("legacy identity variant = %q/%q", legacy.Variant, legacy.EffectiveVariant())
+	}
+	explicit := legacy
+	explicit.Variant = VariantSNEMTP
+	legacyDigest, err := legacy.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	explicitDigest, err := explicit.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacyDigest == explicitDigest {
+		t.Fatal("variant change did not change identity digest")
+	}
+	if !legacy.Equal(legacy.canonical()) {
+		t.Fatal("legacy identity did not compare equal to its effective identity")
+	}
+	encoded, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"variant":"sne-plain"`) {
+		t.Fatalf("legacy identity did not emit its effective variant: %s", encoded)
+	}
 }
 
 func testSession() Session {
@@ -136,6 +196,7 @@ func TestEventSequenceAndReceiptIdentityAreFailClosed(t *testing.T) {
 	if err := r.Validate(s); err == nil || !strings.Contains(err.Error(), "digest") {
 		t.Fatal("receipt with mismatched identity digest accepted")
 	}
+	r.IdentityDigest = digest
 	route := RouteDecision{Requested: KindMLX, Selected: KindSNE, Fallback: true, Rationale: "preferred mlx unavailable; explicit fallback selected sne"}
 	r.Route = &route
 	if err := r.Validate(s); err != nil {

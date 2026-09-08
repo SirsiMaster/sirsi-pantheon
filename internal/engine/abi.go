@@ -32,6 +32,66 @@ const (
 	KindSNE  Kind = "sne"
 )
 
+// BackendVariant is the closed backend implementation identity. A variant is
+// part of the admitted engine identity; it is never inferred from provider
+// behavior or silently substituted at execution time.
+type BackendVariant string
+
+// Variant is retained as a concise compatibility name for callers that use
+// the ABI's variant terminology.
+type Variant = BackendVariant
+
+const (
+	VariantMLXRaw     BackendVariant = "mlx-raw"
+	VariantMLXPatched BackendVariant = "mlx-patched"
+	VariantOMLXPublic BackendVariant = "omlx-public"
+	VariantSNEPlain   BackendVariant = "sne-plain"
+	VariantSNEMTP     BackendVariant = "sne-mtp"
+)
+
+func (v BackendVariant) Validate() error {
+	switch v {
+	case VariantMLXRaw, VariantMLXPatched, VariantOMLXPublic, VariantSNEPlain, VariantSNEMTP:
+		return nil
+	default:
+		return fmt.Errorf("engine variant: unsupported variant %q", v)
+	}
+}
+
+func (v BackendVariant) ValidateForEngine(kind Kind) error {
+	if err := v.Validate(); err != nil {
+		return err
+	}
+	compatible := (kind == KindMLX && (v == VariantMLXRaw || v == VariantMLXPatched)) ||
+		(kind == KindOMLX && v == VariantOMLXPublic) ||
+		(kind == KindSNE && (v == VariantSNEPlain || v == VariantSNEMTP))
+	if !compatible {
+		return fmt.Errorf("engine variant %q is incompatible with engine %q", v, kind)
+	}
+	return nil
+}
+
+func DefaultVariant(kind Kind) BackendVariant {
+	switch kind {
+	case KindMLX:
+		return VariantMLXRaw
+	case KindOMLX:
+		return VariantOMLXPublic
+	case KindSNE:
+		return VariantSNEPlain
+	default:
+		return ""
+	}
+}
+
+func ParseVariant(value string) (BackendVariant, error) {
+	variant := BackendVariant(strings.ToLower(strings.TrimSpace(value)))
+	if err := variant.Validate(); err != nil {
+		return "", err
+	}
+	return variant, nil
+}
+
 type Capability string
 
 const (
@@ -102,14 +162,15 @@ func (c Capabilities) Has(want Capability) bool {
 }
 
 type Identity struct {
-	Engine          Kind   `json:"engine"`
-	EngineVersion   string `json:"engine_version"`
-	ModelID         string `json:"model_id"`
-	ModelSHA256     string `json:"model_sha256"`
-	TokenizerID     string `json:"tokenizer_id"`
-	TokenizerSHA256 string `json:"tokenizer_sha256"`
-	Precision       string `json:"precision"`
-	CacheNamespace  string `json:"cache_namespace"`
+	Engine          Kind           `json:"engine"`
+	Variant         BackendVariant `json:"variant"`
+	EngineVersion   string         `json:"engine_version"`
+	ModelID         string         `json:"model_id"`
+	ModelSHA256     string         `json:"model_sha256"`
+	TokenizerID     string         `json:"tokenizer_id"`
+	TokenizerSHA256 string         `json:"tokenizer_sha256"`
+	Precision       string         `json:"precision"`
+	CacheNamespace  string         `json:"cache_namespace"`
 }
 
 var sha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -117,6 +178,10 @@ var sha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 func (i Identity) Validate() error {
 	if i.Engine != KindMLX && i.Engine != KindOMLX && i.Engine != KindSNE {
 		return fmt.Errorf("engine identity: unsupported engine %q", i.Engine)
+	}
+	variant := i.EffectiveVariant()
+	if err := variant.ValidateForEngine(i.Engine); err != nil {
+		return fmt.Errorf("engine identity: %w", err)
 	}
 	for name, value := range map[string]string{
 		"engine_version":  i.EngineVersion,
@@ -137,7 +202,26 @@ func (i Identity) Validate() error {
 	return nil
 }
 
-func (i Identity) Equal(other Identity) bool { return i == other }
+func (i Identity) EffectiveVariant() BackendVariant {
+	if i.Variant != "" {
+		return i.Variant
+	}
+	return DefaultVariant(i.Engine)
+}
+
+func (i Identity) canonical() Identity {
+	i.Variant = i.EffectiveVariant()
+	return i
+}
+
+func (i Identity) Equal(other Identity) bool { return i.canonical() == other.canonical() }
+
+// MarshalJSON makes legacy empty-variant literals emit the explicit canonical
+// variant required by session and receipt identities.
+func (i Identity) MarshalJSON() ([]byte, error) {
+	type identityJSON Identity
+	return json.Marshal(identityJSON(i.canonical()))
+}
 
 // Digest is the stable identity key used by sessions and receipts. JSON field
 // order is fixed by the struct declaration, so equivalent identities hash
@@ -146,7 +230,7 @@ func (i Identity) Digest() (string, error) {
 	if err := i.Validate(); err != nil {
 		return "", err
 	}
-	b, err := json.Marshal(i)
+	b, err := json.Marshal(i.canonical())
 	if err != nil {
 		return "", fmt.Errorf("engine identity: marshal: %w", err)
 	}
@@ -326,6 +410,7 @@ type Completion struct {
 // no process, URL, shell, or backend-specific configuration.
 type Connector interface {
 	Kind() Kind
+	Variant() BackendVariant
 	Capabilities() Capabilities
 	OpenSession(context.Context, string) (Session, error)
 	Complete(context.Context, Session, GenerateRequest) (Completion, Receipt, error)
@@ -344,6 +429,8 @@ type ProviderConnector struct {
 }
 
 func (c ProviderConnector) Kind() Kind { return c.Engine }
+
+func (c ProviderConnector) Variant() BackendVariant { return c.Model.EffectiveVariant() }
 
 func (c ProviderConnector) Capabilities() Capabilities { return c.Caps }
 
@@ -396,7 +483,8 @@ func (c ProviderConnector) OpenSession(ctx context.Context, id string) (Session,
 	if c.Now != nil {
 		now = c.Now
 	}
-	return Session{ID: id, Identity: c.Model, CreatedAt: now().UTC().Format(time.RFC3339Nano)}, nil
+	identity := c.Model.canonical()
+	return Session{ID: id, Identity: identity, CreatedAt: now().UTC().Format(time.RFC3339Nano)}, nil
 }
 
 func (c ProviderConnector) Complete(ctx context.Context, session Session, req GenerateRequest) (Completion, Receipt, error) {
@@ -622,7 +710,7 @@ func (r Receipt) Validate(session Session) error {
 		return err
 	}
 	if r.Route != nil {
-		if err := r.Route.validate(session.Identity.Engine); err != nil {
+		if err := r.Route.validate(session.Identity.Engine, session.Identity.EffectiveVariant()); err != nil {
 			return err
 		}
 	}

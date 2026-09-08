@@ -10,6 +10,7 @@ import (
 
 type routerFixtureConnector struct {
 	kind         Kind
+	variant      BackendVariant
 	identity     Identity
 	caps         Capabilities
 	available    bool
@@ -19,7 +20,13 @@ type routerFixtureConnector struct {
 	streamEvents <-chan Event
 }
 
-func (f routerFixtureConnector) Kind() Kind                 { return f.kind }
+func (f routerFixtureConnector) Kind() Kind { return f.kind }
+func (f routerFixtureConnector) Variant() BackendVariant {
+	if f.variant != "" {
+		return f.variant
+	}
+	return DefaultVariant(f.kind)
+}
 func (f routerFixtureConnector) Capabilities() Capabilities { return f.caps }
 func (f routerFixtureConnector) OpenSession(_ context.Context, id string) (Session, error) {
 	if f.onOpen != nil {
@@ -80,6 +87,52 @@ func TestRouterRejectsCapabilityGapBeforeConnectorAdmission(t *testing.T) {
 	_, _, err = r.OpenSession(context.Background(), "cap-gap", RoutePolicy{Preferred: KindSNE, RequiredCapabilities: []Capability{CapabilityKVState}})
 	if err == nil || !errors.Is(err, ErrUnsupportedCapability) {
 		t.Fatalf("capability gap = %v", err)
+	}
+}
+
+func TestRouterRejectsVariantMismatchBeforeConnectorAdmission(t *testing.T) {
+	opened := 0
+	connector := routerFixtureConnector{
+		kind: KindMLX, identity: identityFor(KindMLX), caps: Capabilities{Sessions: true}, available: true,
+		onOpen: func() { opened++ },
+	}
+	r, err := NewRouter(connector)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = r.OpenSession(context.Background(), "variant-mismatch", RoutePolicy{Preferred: KindMLX, PreferredVariant: VariantMLXPatched})
+	if err == nil || !strings.Contains(err.Error(), "variant") {
+		t.Fatalf("variant mismatch was accepted: %v", err)
+	}
+	if opened != 0 {
+		t.Fatalf("connector was opened before variant admission failed: %d", opened)
+	}
+}
+
+func TestRouterRejectsReturnedVariantDrift(t *testing.T) {
+	identity := identityFor(KindMLX)
+	identity.Variant = VariantMLXPatched
+	r, err := NewRouter(routerFixtureConnector{kind: KindMLX, identity: identity, caps: Capabilities{Sessions: true}, available: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = r.OpenSession(context.Background(), "returned-variant-drift", RoutePolicy{Preferred: KindMLX})
+	if err == nil || !strings.Contains(err.Error(), "returned variant") {
+		t.Fatalf("returned variant drift was accepted: %v", err)
+	}
+}
+
+func TestRouterDecisionCarriesSelectedVariant(t *testing.T) {
+	r, err := NewRouter(routerFixtureConnector{kind: KindMLX, identity: identityFor(KindMLX), caps: Capabilities{Sessions: true}, available: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, decision, err := r.OpenSession(context.Background(), "variant-route", RoutePolicy{Preferred: KindMLX, PreferredVariant: VariantMLXRaw})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decision.RequestedVariant != VariantMLXRaw || decision.SelectedVariant != VariantMLXRaw {
+		t.Fatalf("variant route decision = %+v", decision)
 	}
 }
 

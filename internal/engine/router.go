@@ -10,19 +10,22 @@ import (
 // implicit: a caller must opt in, and the returned decision records whether it
 // happened so a surface cannot hide an engine change from the user.
 type RoutePolicy struct {
-	Preferred            Kind         `json:"preferred"`
-	AllowFallback        bool         `json:"allow_fallback"`
-	RequiredCapabilities []Capability `json:"required_capabilities,omitempty"`
+	Preferred            Kind           `json:"preferred"`
+	PreferredVariant     BackendVariant `json:"preferred_variant,omitempty"`
+	AllowFallback        bool           `json:"allow_fallback"`
+	RequiredCapabilities []Capability   `json:"required_capabilities,omitempty"`
 }
 
 type RouteDecision struct {
-	Requested Kind   `json:"requested"`
-	Selected  Kind   `json:"selected"`
-	Fallback  bool   `json:"fallback"`
-	Rationale string `json:"rationale"`
+	Requested        Kind           `json:"requested"`
+	RequestedVariant BackendVariant `json:"requested_variant,omitempty"`
+	Selected         Kind           `json:"selected"`
+	SelectedVariant  BackendVariant `json:"selected_variant,omitempty"`
+	Fallback         bool           `json:"fallback"`
+	Rationale        string         `json:"rationale"`
 }
 
-func (d RouteDecision) validate(selected Kind) error {
+func (d RouteDecision) validate(selected Kind, selectedVariant BackendVariant) error {
 	if d.Requested != KindMLX && d.Requested != KindOMLX && d.Requested != KindSNE {
 		return fmt.Errorf("engine route: requested engine %q is invalid", d.Requested)
 	}
@@ -37,6 +40,22 @@ func (d RouteDecision) validate(selected Kind) error {
 	}
 	if strings.TrimSpace(d.Rationale) == "" {
 		return fmt.Errorf("engine route: rationale is required")
+	}
+	if d.RequestedVariant != "" {
+		if err := d.RequestedVariant.ValidateForEngine(d.Requested); err != nil {
+			return fmt.Errorf("engine route: requested variant: %w", err)
+		}
+	}
+	if d.SelectedVariant != "" {
+		if err := d.SelectedVariant.ValidateForEngine(d.Selected); err != nil {
+			return fmt.Errorf("engine route: selected variant: %w", err)
+		}
+		if d.SelectedVariant != selectedVariant {
+			return fmt.Errorf("engine route: selected variant %q does not match connector %q", d.SelectedVariant, selectedVariant)
+		}
+	}
+	if d.RequestedVariant != "" && d.RequestedVariant != selectedVariant {
+		return fmt.Errorf("engine route: selected variant %q does not match requested variant %q", selectedVariant, d.RequestedVariant)
 	}
 	return nil
 }
@@ -61,6 +80,9 @@ func NewRouter(connectors ...Connector) (*Router, error) {
 		if kind != KindMLX && kind != KindOMLX && kind != KindSNE {
 			return nil, fmt.Errorf("engine router: unsupported connector kind %q", kind)
 		}
+		if err := connector.Variant().ValidateForEngine(kind); err != nil {
+			return nil, fmt.Errorf("engine router: %s connector has invalid variant: %w", kind, err)
+		}
 		if _, exists := byKind[kind]; exists {
 			return nil, fmt.Errorf("engine router: duplicate connector kind %q", kind)
 		}
@@ -79,6 +101,11 @@ func (r *Router) OpenSession(ctx context.Context, sessionID string, policy Route
 	if policy.Preferred != KindMLX && policy.Preferred != KindOMLX && policy.Preferred != KindSNE {
 		return Session{}, RouteDecision{}, fmt.Errorf("engine router: preferred engine %q is required", policy.Preferred)
 	}
+	if policy.PreferredVariant != "" {
+		if err := policy.PreferredVariant.ValidateForEngine(policy.Preferred); err != nil {
+			return Session{}, RouteDecision{}, fmt.Errorf("engine router: preferred variant: %w", err)
+		}
+	}
 	order := r.candidateOrder(policy.Preferred)
 	reasons := make([]string, 0, len(order))
 	capabilityFailures := 0
@@ -96,6 +123,14 @@ func (r *Router) OpenSession(ctx context.Context, sessionID string, policy Route
 			reasons = append(reasons, fmt.Sprintf("%s: %v", kind, err))
 			continue
 		}
+		variant := connector.Variant()
+		if err := variant.ValidateForEngine(kind); err != nil {
+			return Session{}, RouteDecision{}, fmt.Errorf("engine router: %s connector has invalid variant: %w", kind, err)
+		}
+		if policy.PreferredVariant != "" && variant != policy.PreferredVariant {
+			reasons = append(reasons, fmt.Sprintf("%s: variant %q does not match requested variant %q", kind, variant, policy.PreferredVariant))
+			continue
+		}
 		session, err := connector.OpenSession(ctx, sessionID)
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return Session{}, RouteDecision{}, fmt.Errorf("engine router: session admission cancelled after %s connector: %w", kind, ctxErr)
@@ -107,13 +142,17 @@ func (r *Router) OpenSession(ctx context.Context, sessionID string, policy Route
 		if session.ID != sessionID {
 			return Session{}, RouteDecision{}, fmt.Errorf("engine router: %s connector returned session %q for requested session %q", kind, session.ID, sessionID)
 		}
+		session.Identity.Variant = session.Identity.EffectiveVariant()
 		if err := session.Validate(); err != nil {
 			return Session{}, RouteDecision{}, fmt.Errorf("engine router: %s connector returned invalid session: %w", kind, err)
 		}
 		if session.Identity.Engine != kind {
 			return Session{}, RouteDecision{}, fmt.Errorf("engine router: %s connector returned identity for %s", kind, session.Identity.Engine)
 		}
-		decision := RouteDecision{Requested: policy.Preferred, Selected: kind, Fallback: index > 0}
+		if session.Identity.EffectiveVariant() != variant {
+			return Session{}, RouteDecision{}, fmt.Errorf("engine router: %s connector returned variant %q, want %q", kind, session.Identity.EffectiveVariant(), variant)
+		}
+		decision := RouteDecision{Requested: policy.Preferred, RequestedVariant: policy.PreferredVariant, Selected: kind, SelectedVariant: variant, Fallback: index > 0}
 		if index == 0 {
 			decision.Rationale = fmt.Sprintf("preferred %s connector admitted", kind)
 		} else {
@@ -207,15 +246,15 @@ func (r *Router) connectorForDecision(session Session, decision RouteDecision) (
 	if r == nil {
 		return nil, fmt.Errorf("engine router: nil router")
 	}
-	if err := decision.validate(session.Identity.Engine); err != nil {
-		return nil, fmt.Errorf("engine router: invalid route decision: %w", err)
-	}
 	if decision.Selected != session.Identity.Engine {
 		return nil, fmt.Errorf("engine router: decision %q does not match session engine %q", decision.Selected, session.Identity.Engine)
 	}
 	connector, ok := r.connectors[decision.Selected]
 	if !ok {
 		return nil, fmt.Errorf("engine router: selected connector %q is not configured", decision.Selected)
+	}
+	if err := decision.validate(session.Identity.Engine, connector.Variant()); err != nil {
+		return nil, fmt.Errorf("engine router: invalid route decision: %w", err)
 	}
 	return connector, nil
 }

@@ -48,7 +48,26 @@ func buildDashboardEngineSelection() (*engine.SelectionController, error) {
 	if err != nil && strings.TrimSpace(os.Getenv("SIRSI_ENGINE_ALLOW_FALLBACK")) != "" {
 		return nil, fmt.Errorf("SIRSI_ENGINE_ALLOW_FALLBACK must be boolean: %w", err)
 	}
-	return engine.NewSelectionController(router, engine.RoutePolicy{Preferred: preferred, AllowFallback: allowFallback})
+	preferredVariant, err := dashboardPreferredVariant(preferred)
+	if err != nil {
+		return nil, err
+	}
+	return engine.NewSelectionController(router, engine.RoutePolicy{Preferred: preferred, PreferredVariant: preferredVariant, AllowFallback: allowFallback})
+}
+
+func dashboardPreferredVariant(preferred engine.Kind) (engine.BackendVariant, error) {
+	raw := strings.TrimSpace(os.Getenv("SIRSI_ENGINE_PREFERRED_VARIANT"))
+	if raw == "" {
+		return "", nil
+	}
+	variant, err := engine.ParseVariant(raw)
+	if err != nil {
+		return "", fmt.Errorf("SIRSI_ENGINE_PREFERRED_VARIANT: %w", err)
+	}
+	if err := variant.ValidateForEngine(preferred); err != nil {
+		return "", fmt.Errorf("SIRSI_ENGINE_PREFERRED_VARIANT: %w", err)
+	}
+	return variant, nil
 }
 
 func buildDashboardConnector(kind engine.Kind, prefix string) (engine.Connector, bool, error) {
@@ -101,6 +120,10 @@ func buildDashboardConnector(kind engine.Kind, prefix string) (engine.Connector,
 }
 
 func dashboardEngineIdentity(kind engine.Kind, prefix string) (engine.Identity, string, error) {
+	variant, err := dashboardConfiguredVariant(kind, prefix)
+	if err != nil {
+		return engine.Identity{}, "", err
+	}
 	values := map[string]string{
 		"model":            strings.TrimSpace(os.Getenv(prefix + "_MODEL")),
 		"engine_version":   strings.TrimSpace(os.Getenv(prefix + "_ENGINE_VERSION")),
@@ -117,6 +140,7 @@ func dashboardEngineIdentity(kind engine.Kind, prefix string) (engine.Identity, 
 	}
 	identity := engine.Identity{
 		Engine:          kind,
+		Variant:         variant,
 		EngineVersion:   values["engine_version"],
 		ModelID:         values["model"],
 		ModelSHA256:     values["model_sha256"],
@@ -129,4 +153,19 @@ func dashboardEngineIdentity(kind engine.Kind, prefix string) (engine.Identity, 
 		return engine.Identity{}, "", fmt.Errorf("%s identity: %w", prefix, err)
 	}
 	return identity, values["model"], nil
+}
+
+func dashboardConfiguredVariant(kind engine.Kind, prefix string) (engine.BackendVariant, error) {
+	raw := strings.TrimSpace(os.Getenv(prefix + "_VARIANT"))
+	if raw == "" {
+		return engine.DefaultVariant(kind), nil
+	}
+	variant, err := engine.ParseVariant(raw)
+	if err != nil {
+		return "", fmt.Errorf("%s variant: %w", prefix, err)
+	}
+	if err := variant.ValidateForEngine(kind); err != nil {
+		return "", fmt.Errorf("%s variant: %w", prefix, err)
+	}
+	return variant, nil
 }

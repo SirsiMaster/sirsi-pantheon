@@ -17,6 +17,7 @@ const defaultEnginePromptMaxTokens = 256
 
 var (
 	enginePromptEngine        string
+	enginePromptVariant       string
 	enginePromptAllowFallback bool
 	enginePromptModel         string
 	enginePromptSystem        string
@@ -52,6 +53,7 @@ var enginePromptCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		opts := enginePromptOptions{
 			Engine:        enginePromptEngine,
+			Variant:       enginePromptVariant,
 			AllowFallback: enginePromptAllowFallback,
 			Model:         enginePromptModel,
 			System:        enginePromptSystem,
@@ -67,6 +69,7 @@ var enginePromptCmd = &cobra.Command{
 
 type enginePromptOptions struct {
 	Engine        string
+	Variant       string
 	AllowFallback bool
 	Model         string
 	System        string
@@ -94,6 +97,11 @@ func (o enginePromptOptions) validate() error {
 			return err
 		}
 	}
+	if o.Variant != "" {
+		if _, err := engine.ParseVariant(o.Variant); err != nil {
+			return fmt.Errorf("engine prompt: --variant: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -102,6 +110,7 @@ func parseEnginePromptOptions(args []string) (enginePromptOptions, error) {
 	fs := flag.NewFlagSet("sirsi engine prompt", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	fs.StringVar(&opts.Engine, "engine", "", "Engine: mlx|omlx|sne")
+	fs.StringVar(&opts.Variant, "variant", "", "Backend variant: mlx-raw|mlx-patched|omlx-public|sne-plain|sne-mtp")
 	fs.BoolVar(&opts.AllowFallback, "allow-fallback", false, "Allow explicit fallback if the preferred engine is unavailable")
 	fs.StringVar(&opts.Model, "model", "", "Expected admitted model")
 	fs.StringVar(&opts.System, "system", "", "System prompt")
@@ -155,6 +164,12 @@ func executeEnginePrompt(ctx context.Context, opts enginePromptOptions, stdout i
 	} else {
 		policy.Preferred = controller.Snapshot().Preferred
 	}
+	if opts.Variant != "" {
+		policy.PreferredVariant, err = engine.ParseVariant(opts.Variant)
+		if err != nil {
+			return err
+		}
+	}
 	// Fallback is deliberately false unless this invocation supplies the flag.
 	// The environment may configure the dashboard, but it cannot silently widen
 	// this one-shot CLI request.
@@ -177,6 +192,7 @@ func completeEnginePrompt(ctx context.Context, controller *engine.SelectionContr
 
 func init() {
 	enginePromptCmd.Flags().StringVar(&enginePromptEngine, "engine", "", "Engine: mlx|omlx|sne")
+	enginePromptCmd.Flags().StringVar(&enginePromptVariant, "variant", "", "Backend variant: mlx-raw|mlx-patched|omlx-public|sne-plain|sne-mtp")
 	enginePromptCmd.Flags().BoolVar(&enginePromptAllowFallback, "allow-fallback", false, "Allow explicit fallback if the preferred engine is unavailable")
 	enginePromptCmd.Flags().StringVar(&enginePromptModel, "model", "", "Expected admitted model")
 	enginePromptCmd.Flags().StringVar(&enginePromptSystem, "system", "", "System prompt")

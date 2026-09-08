@@ -49,11 +49,21 @@ func TestSelectionControllerPublishesConfiguredEnginePolicy(t *testing.T) {
 	if snapshot.Schema != SelectionSchema || snapshot.Preferred != KindMLX || len(snapshot.Connectors) != 2 {
 		t.Fatalf("unexpected snapshot: %+v", snapshot)
 	}
+	if snapshot.Connectors[0].Kind != KindMLX || snapshot.Connectors[1].Kind != KindSNE || snapshot.Connectors[0].Variant != VariantMLXRaw || snapshot.Connectors[1].Variant != VariantSNEPlain {
+		t.Fatalf("connectors are not deterministic: %+v", snapshot.Connectors)
+	}
 	if _, err := controller.Select(RoutePolicy{Preferred: KindSNE, AllowFallback: false, RequiredCapabilities: []Capability{CapabilitySessions}}); err != nil {
 		t.Fatal(err)
 	}
 	if got := controller.Policy().Preferred; got != KindSNE {
 		t.Fatalf("preferred engine = %q, want sne", got)
+	}
+	selected, err := controller.Select(RoutePolicy{Preferred: KindMLX, PreferredVariant: VariantMLXRaw, RequiredCapabilities: []Capability{CapabilitySessions}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected.PreferredVariant != VariantMLXRaw {
+		t.Fatalf("preferred variant = %q", selected.PreferredVariant)
 	}
 }
 
@@ -108,7 +118,8 @@ type recordingSelectionConnector struct {
 	requests []GenerateRequest
 }
 
-func (c *recordingSelectionConnector) Kind() Kind { return c.identity.Engine }
+func (c *recordingSelectionConnector) Kind() Kind              { return c.identity.Engine }
+func (c *recordingSelectionConnector) Variant() BackendVariant { return c.identity.EffectiveVariant() }
 func (c *recordingSelectionConnector) Capabilities() Capabilities {
 	return Capabilities{Sessions: true, Receipts: true}
 }

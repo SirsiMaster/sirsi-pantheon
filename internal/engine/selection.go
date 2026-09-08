@@ -10,8 +10,9 @@ import (
 const SelectionSchema = "pantheon.engine-selection/v1"
 
 type ConnectorSummary struct {
-	Kind         Kind         `json:"kind"`
-	Capabilities Capabilities `json:"capabilities"`
+	Kind         Kind           `json:"kind"`
+	Variant      BackendVariant `json:"variant"`
+	Capabilities Capabilities   `json:"capabilities"`
 }
 
 // SelectionSnapshot is safe to render in a UI: it describes configured
@@ -20,6 +21,7 @@ type ConnectorSummary struct {
 type SelectionSnapshot struct {
 	Schema               string             `json:"schema"`
 	Preferred            Kind               `json:"preferred"`
+	PreferredVariant     BackendVariant     `json:"preferred_variant,omitempty"`
 	AllowFallback        bool               `json:"allow_fallback"`
 	RequiredCapabilities []Capability       `json:"required_capabilities,omitempty"`
 	Connectors           []ConnectorSummary `json:"connectors"`
@@ -120,24 +122,35 @@ func (c *SelectionController) Snapshot() SelectionSnapshot {
 	connectors := make([]ConnectorSummary, 0, len(c.router.connectors))
 	for _, kind := range []Kind{KindMLX, KindOMLX, KindSNE} {
 		if connector, ok := c.router.connectors[kind]; ok {
-			connectors = append(connectors, ConnectorSummary{Kind: kind, Capabilities: connector.Capabilities()})
+			connectors = append(connectors, ConnectorSummary{Kind: kind, Variant: connector.Variant(), Capabilities: connector.Capabilities()})
 		}
 	}
-	return SelectionSnapshot{Schema: SelectionSchema, Preferred: policy.Preferred, AllowFallback: policy.AllowFallback, RequiredCapabilities: append([]Capability(nil), policy.RequiredCapabilities...), Connectors: connectors}
+	return SelectionSnapshot{Schema: SelectionSchema, Preferred: policy.Preferred, PreferredVariant: policy.PreferredVariant, AllowFallback: policy.AllowFallback, RequiredCapabilities: append([]Capability(nil), policy.RequiredCapabilities...), Connectors: connectors}
 }
 
 func validateSelectionPolicy(router *Router, policy RoutePolicy) error {
 	if policy.Preferred != KindMLX && policy.Preferred != KindOMLX && policy.Preferred != KindSNE {
 		return fmt.Errorf("engine selection: preferred engine %q is required", policy.Preferred)
 	}
+	if policy.PreferredVariant != "" {
+		if err := policy.PreferredVariant.ValidateForEngine(policy.Preferred); err != nil {
+			return fmt.Errorf("engine selection: preferred variant: %w", err)
+		}
+	}
 	preferred, ok := router.connectors[policy.Preferred]
 	if !ok {
 		return fmt.Errorf("engine selection: preferred connector %q is not configured", policy.Preferred)
 	}
 	if !policy.AllowFallback {
+		if policy.PreferredVariant != "" && preferred.Variant() != policy.PreferredVariant {
+			return fmt.Errorf("engine selection: preferred connector variant %q does not match requested variant %q", preferred.Variant(), policy.PreferredVariant)
+		}
 		return requireCapabilities(preferred.Capabilities(), policy.RequiredCapabilities)
 	}
 	for kind, connector := range router.connectors {
+		if policy.PreferredVariant != "" && connector.Variant() != policy.PreferredVariant {
+			continue
+		}
 		if requireCapabilities(connector.Capabilities(), policy.RequiredCapabilities) == nil {
 			return nil
 		}

@@ -48,3 +48,35 @@ func TestBuildDashboardEngineSelectionBindsConfiguredConnectors(t *testing.T) {
 		t.Fatalf("connectors are not deterministic: %+v", snapshot.Connectors)
 	}
 }
+
+func TestDashboardEngineVariantSelectionAndDefaults(t *testing.T) {
+	setDashboardEngineIdentity(t, "SIRSI_MLX", "mlx")
+	setDashboardEngineIdentity(t, "SIRSI_SNE", "sne")
+	t.Setenv("SIRSI_MLX_VARIANT", "mlx-patched")
+	t.Setenv("SIRSI_SNE_VARIANT", "sne-mtp")
+	t.Setenv("SIRSI_ENGINE_PREFERRED", "sne")
+	t.Setenv("SIRSI_ENGINE_PREFERRED_VARIANT", "sne-mtp")
+	controller, err := buildDashboardEngineSelection()
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := controller.Snapshot()
+	if snapshot.PreferredVariant != engine.VariantSNEMTP || snapshot.Connectors[0].Variant != engine.VariantMLXPatched || snapshot.Connectors[1].Variant != engine.VariantSNEMTP {
+		t.Fatalf("dashboard variants = %+v", snapshot)
+	}
+
+	t.Setenv("SIRSI_MLX_VARIANT", "")
+	t.Setenv("SIRSI_SNE_VARIANT", "")
+	t.Setenv("SIRSI_ENGINE_PREFERRED_VARIANT", "bad")
+	if _, err := buildDashboardEngineSelection(); err == nil {
+		t.Fatal("malformed preferred dashboard variant accepted")
+	}
+}
+
+func TestDashboardRejectsIncompatibleConfiguredVariant(t *testing.T) {
+	setDashboardEngineIdentity(t, "SIRSI_MLX", "mlx")
+	t.Setenv("SIRSI_MLX_VARIANT", "sne-plain")
+	if _, err := buildDashboardEngineSelection(); err == nil {
+		t.Fatal("incompatible dashboard variant accepted")
+	}
+}
