@@ -53,7 +53,7 @@ type sneRequest struct {
 	Model       string       `json:"model"`
 	Messages    []sneMessage `json:"messages"`
 	MaxTokens   int          `json:"max_tokens,omitempty"`
-	Temperature float64      `json:"temperature,omitempty"`
+	Temperature float64      `json:"temperature"`
 }
 
 type sneMessage struct {
@@ -116,6 +116,10 @@ func (r *SNERunner) Generate(ctx context.Context, prompt string, maxTokens int, 
 }
 
 func (r *SNERunner) Health(ctx context.Context) error {
-	_, err := r.Generate(ctx, "ping", 1, 0.01)
+	temperature := 0.01
+	if r.backend == "sne" {
+		temperature = 0
+	}
+	_, err := r.Generate(ctx, "ping", 1, temperature)
 	return err
 }
