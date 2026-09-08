@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -44,6 +45,9 @@ func controlURL(raw, path string) (string, error) {
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return "", fmt.Errorf("control endpoint scheme %q is unsupported", parsed.Scheme)
 	}
+	if parsed.Scheme == "http" && !isLoopbackControlHost(parsed.Hostname()) {
+		return "", fmt.Errorf("plain HTTP control endpoints are restricted to loopback hosts; use HTTPS for %q", parsed.Hostname())
+	}
 	if parsed.Path != "" && parsed.Path != "/" && parsed.Path != "/api/control" {
 		return "", fmt.Errorf("control endpoint path must be empty, /, or /api/control, got %q", parsed.Path)
 	}
@@ -52,6 +56,20 @@ func controlURL(raw, path string) (string, error) {
 	}
 	parsed.Path = path
 	return parsed.String(), nil
+}
+
+func isLoopbackControlHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	if ip4 := ip.To4(); ip4 != nil {
+		return ip4[0] == 127
+	}
+	return ip.Equal(net.ParseIP("::1"))
 }
 
 func fetchRemoteControl(ctx context.Context, rawEndpoint, token string) ([]byte, error) {

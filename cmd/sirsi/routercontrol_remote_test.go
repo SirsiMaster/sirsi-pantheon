@@ -33,6 +33,30 @@ func TestControlEndpointURLCanonicalizesHostOnlyEndpoint(t *testing.T) {
 	}
 }
 
+func TestControlEndpointURLRestrictsPlainHTTPToLoopback(t *testing.T) {
+	for _, raw := range []string{
+		"http://localhost:8734",
+		"http://127.0.0.1:8734",
+		"http://127.255.255.254:8734/",
+		"http://[::1]:8734",
+	} {
+		if got, err := controlEndpointURL(raw); err != nil {
+			t.Errorf("loopback endpoint %q rejected: %v", raw, err)
+		} else if !strings.HasSuffix(got, "/api/control") {
+			t.Errorf("loopback endpoint %q = %q, missing canonical path", raw, got)
+		}
+	}
+	for _, raw := range []string{
+		"http://m5.example.test:8734",
+		"http://100.92.193.26:8734",
+		"http://[2001:db8::1]:8734",
+	} {
+		if _, err := controlEndpointURL(raw); err == nil || !strings.Contains(err.Error(), "use HTTPS") {
+			t.Errorf("remote HTTP endpoint %q was accepted or had the wrong error: %v", raw, err)
+		}
+	}
+}
+
 func TestControlActionRequestAndRemoteSubmissionUseClosedEndpoint(t *testing.T) {
 	requestBody := []byte(`{"verb":"delegate","agent":"codex","task_id":"t-1","subject":"ship"}`)
 	requestFile := t.TempDir() + "/request.json"
