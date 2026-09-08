@@ -72,7 +72,8 @@ func (c *SelectionController) CompletePrompt(ctx context.Context, request Prompt
 		SessionID: session.ID, Identity: session.Identity, System: request.System,
 		Prompt: request.Prompt, MaxTokens: request.MaxTokens,
 		Temperature: request.Temperature, TopP: request.TopP, Seed: request.Seed,
-		CacheNamespace: session.Identity.CacheNamespace,
+		CacheNamespace:       session.Identity.CacheNamespace,
+		RequiredCapabilities: append([]Capability(nil), policy.RequiredCapabilities...),
 	}
 	return c.router.Complete(ctx, session, generation, decision)
 }
