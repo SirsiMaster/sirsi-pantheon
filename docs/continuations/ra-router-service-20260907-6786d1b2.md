@@ -26,7 +26,9 @@ Thread registration for `ra` must also be on the M5 store (reuse the id, never m
 | D rs-15 provision | **DONE 2026-09-07T23:5xZ** (see below; ledger closed with evidence). Earlier: scaffolding MERGED — **PR #704 → 68568e9d** (SSA ACCEPT at head 556bf92e, item 20260907-153958; sirsi-bind App review 2026-09-07T17:03Z; binding-hold run 33808373927 green). Ledger row stays `in-progress`: provision.sh has not run. | `scripts/router-service/{provision,deploy,grant-provisioner}.sh`, Dockerfile |
 | D rs-16 first deploy | **DONE 2026-09-08T00:2xZ** — revision `sirsi-router-00003-nq4`, ledger closed | see below |
 | D rs-17 rehearsals | **DONE 2026-09-08T00:5xZ** — rollback 5.5 s / forward 5.2 s warm, 39 s cold; revocation → 401 | see below |
-| D rs-18..20, E rs-21..25 | pending | rs-18 needs the M5 store at v18 first (owner card) |
+| D rs-18 migrate | **import PROVEN 2026-09-08T00:5xZ** — cloud == M5 snapshot, hash-equal, re-import wrote={}; row stays in-progress until the read-only switch at cut-over | migrate-job.sh, executions 29jsc + f5kh4 |
+| D rs-19 cut-over | **OWNER CARD SENT** item 20260908-005700 (1a/1b/1c when, 2a/2b scope) | |
+| D rs-20, E rs-21..25 | pending | behind rs-19 |
 
 ### rs-15 — the one thing Ra cannot do itself
 Owner runs `scripts/router-service/grant-provisioner.sh` as sirsimaster@gmail.com (grants the provisioning roles to `claude-agent@sirsi-nexus-live`). On the M1: gcloud installed via `brew install --cask google-cloud-sdk`; SA key at `~/.config/gcloud/sirsi-nexus-live-claude-agent.json` (mode 600). After the grant:
@@ -73,3 +75,13 @@ change on the machine the owner wants quiet, so it goes to the owner as a card (
 and migrate from there with the M5 quiesced / defer). Old plan text: rollback (`gcloud run services update-traffic sirsi-router --to-revisions=sirsi-router-00002-qpc=100`, timed, then
 back) and revocation (`sirsi router token revoke` for a host token → next call 401). Then rs-18 migrate the M5 ledger (`router migrate-store`
 against the service — needs the M5's `sirsi` rebuilt to v18 first, see [[project-ra-moved-to-m1]] D8 notes).
+
+## rs-18 (2026-09-08T00:2xZ – 00:5xZ): the M5 ledger is in the cloud
+Recipe `scripts/router-service/migrate-job.sh`: `sqlite3 ~/.sirsi/router.db ".backup f"` on the M5 (read-only) → copy to the M1 → open once
+with the v18 binary + `SIRSI_ALLOW_SCHEMA_MIGRATE=1` (upgrades the COPY 16→18) → throwaway alpine image (static /sirsi + snapshot, `cp` to
+/tmp first: an image-layer file copies up on first write and SQLite reports 1544 readonly) → Cloud Run job on the VPC with the DSN from the
+secret env. Results: dry run ggnfp (14,567 rows would_write, source untouched); real #1 8b98l wrote all rows but FAILED the gate — (a)
+Cloud SQL `en_US.UTF8` collation orders text PKs unlike SQLite, fixed by sorting canonical lines in Go (416c3ab); (b) my rehearsal rows in
+sessions/host_tokens/threads — cut-over rule: empty the identity tables right before the final import, mint tokens after. Real #2 29jsc:
+hash-equal 232bfcd9…, wrote={threads:2}; real #3 f5kh4: hash-equal, wrote={}. From the M1 over HTTPS `sirsi router status ra` = 735 open /
+5687 closed = the M5. Ad-hoc SQL on the VPC: job `sirsi-router-psql`. Owed: delete `sirsi-router-migrate:*` images (need repoAdmin).

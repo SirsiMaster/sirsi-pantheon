@@ -280,6 +280,8 @@ var routerMigrateStoreCmd = &cobra.Command{
 		}
 
 		rep, err := routerstore.MigrateStore(src, dst, routerstore.MigrateOptions{DryRun: migrateStoreDryRun, ScrubNUL: migrateStoreScrub})
+		// A run that wrote nothing against a populated destination is the idempotence receipt (rs-12 claim).
+		rep.Idempotent = err == nil && !migrateStoreDryRun && len(rep.Wrote) == 0
 		if migrateStoreJSON {
 			enc := json.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")
