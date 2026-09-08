@@ -124,7 +124,7 @@ func stripGemmaTokens(s string) string {
 type disabledRunner struct{ reason string }
 
 func (d *disabledRunner) Generate(_ context.Context, _ string, _ int, _ float64) (string, error) {
-	return "", fmt.Errorf("local MLX-Gemma not configured: %s — see ~/Development/sirsi-pantheon/docs/setup/MLX_GEMMA_LOCAL.md", d.reason)
+	return "", fmt.Errorf("selected local inference engine is unavailable: %s — see ~/Development/sirsi-pantheon/docs/user-guides/PANTHEON-ENGINE-SELECTION.md", d.reason)
 }
 
 func (d *disabledRunner) Health(_ context.Context) error {
