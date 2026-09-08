@@ -47,6 +47,6 @@ EXEC=$($G run jobs executions list --job="$JOB" --region="$REGION" --limit=1 --f
 echo "== 4. Report (execution $EXEC; Cloud Logging lags ~30 s)"
 sleep 30
 $G logging read "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"$JOB\" AND labels.\"run.googleapis.com/execution_name\"=\"$EXEC\"" \
-  --limit 50 --order=asc --format='value(textPayload)' | grep -vE '^\s*$'
+  --limit 1000 --order=asc --format='value(textPayload)' | grep -vE '^\s*$'
 echo "Image $TAG holds a ledger copy — delete it once the report is filed:"
 echo "  gcloud artifacts docker images delete $TAG --quiet"
