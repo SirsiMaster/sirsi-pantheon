@@ -19,6 +19,7 @@ package routerstore
 // SQLite→SQLite, SQLite→Postgres and Postgres→Postgres all use one path.
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -119,7 +120,11 @@ func dumpTable(s *SQLiteStore, t migratedTable, scrubNUL bool) (TableDump, error
 	for i, idx := range order {
 		sortedCols[i] = cols[idx]
 	}
-	h := sha256.New()
+	// Row order must not come from the engine either: ORDER BY on a text key follows the
+	// database collation (Cloud SQL's en_US.UTF8 sorts unlike SQLite's byte order — the first
+	// real import, 2026-09-08, hashed items and tasks differently with identical rows). Hash the
+	// canonical lines in byte order, decided here.
+	var lines [][]byte
 	td := TableDump{Table: t.name, Columns: sortedCols}
 	for rows.Next() {
 		raw := make([]any, len(cols))
@@ -145,13 +150,18 @@ func dumpTable(s *SQLiteStore, t migratedTable, scrubNUL bool) (TableDump, error
 		if err != nil {
 			return TableDump{}, err
 		}
-		h.Write(line)
-		h.Write([]byte{'\n'})
+		lines = append(lines, line)
 		td.rows = append(td.rows, raw) // engine column order, for re-insert
 		td.Rows++
 	}
 	if err := rows.Err(); err != nil {
 		return TableDump{}, err
+	}
+	sort.Slice(lines, func(a, b int) bool { return bytes.Compare(lines[a], lines[b]) < 0 })
+	h := sha256.New()
+	for _, line := range lines {
+		h.Write(line)
+		h.Write([]byte{'\n'})
 	}
 	td.SHA256 = hex.EncodeToString(h.Sum(nil))
 	td.rows = append([][]any{{cols}}, td.rows...) // row 0 carries the column names
