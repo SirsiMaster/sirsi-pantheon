@@ -25,7 +25,8 @@ Thread registration for `ra` must also be on the M5 store (reuse the id, never m
 | D rs-14 | done | owner "1a 2a 3a" 2026-09-03 |
 | D rs-15 provision | **DONE 2026-09-07T23:5xZ** (see below; ledger closed with evidence). Earlier: scaffolding MERGED — **PR #704 → 68568e9d** (SSA ACCEPT at head 556bf92e, item 20260907-153958; sirsi-bind App review 2026-09-07T17:03Z; binding-hold run 33808373927 green). Ledger row stays `in-progress`: provision.sh has not run. | `scripts/router-service/{provision,deploy,grant-provisioner}.sh`, Dockerfile |
 | D rs-16 first deploy | **DONE 2026-09-08T00:2xZ** — revision `sirsi-router-00003-nq4`, ledger closed | see below |
-| D rs-17..20, E rs-21..25 | pending | rs-17 rehearsals next |
+| D rs-17 rehearsals | **DONE 2026-09-08T00:5xZ** — rollback 5.5 s / forward 5.2 s warm, 39 s cold; revocation → 401 | see below |
+| D rs-18..20, E rs-21..25 | pending | rs-18 needs the M5 store at v18 first (owner card) |
 
 ### rs-15 — the one thing Ra cannot do itself
 Owner runs `scripts/router-service/grant-provisioner.sh` as sirsimaster@gmail.com (grants the provisioning roles to `claude-agent@sirsi-nexus-live`). On the M1: gcloud installed via `brew install --cask google-cloud-sdk`; SA key at `~/.config/gcloud/sirsi-nexus-live-claude-agent.json` (mode 600). After the grant:
@@ -60,6 +61,15 @@ Proof: `/v1/healthz` 200 · no bearer 401 · from a repo cwd with `SIRSI_ROUTER_
 does not expand `$(VAR)` for secret-backed env vars · health route `/v1/healthz` because run.app swallows `/healthz`.
 SSA has the whole-PR bind request (item 20260907-235249; the earlier one-question item 203151 is superseded).
 
-**Next = rs-17 rehearsals:** rollback (`gcloud run services update-traffic sirsi-router --to-revisions=sirsi-router-00002-qpc=100`, timed, then
+**rs-17 done (2026-09-08T00:5xZ).** Rollback: `run services update-traffic --to-revisions=sirsi-router-00002-qpc=100` 5.5 s, witness
+`/v1/healthz` 404 on 00002 while the ledger call still served; `--to-latest` 5.2 s warm, 39.3 s cold. Revocation: token verbs run as Cloud
+Run job `sirsi-router-token` on the service image (`token --store` now defaults to `$SIRSI_ROUTER_STORE`, 6c4c2ec); host tokens are bound
+to the client's `os.Hostname()` (`MacBookPro`) — wrong host → 403; minted a4c532bb98d0f06f → call OK → revoke → HTTP 401; bootstrap
+unaffected; earlier wrong-host token efe0f60f7adc7149 revoked → 401. Service now revision `sirsi-router-00004-f29`.
+
+**Next = rs-18 migrate the M5 ledger.** Blocker is not the cloud: the M5 live store is schema v16 and `router migrate-store` ships in the
+v18 binary, which refuses a v16 store without `SIRSI_ALLOW_SCHEMA_MIGRATE=1` — rebuilding `sirsi` on the M5 and migrating its store is a
+change on the machine the owner wants quiet, so it goes to the owner as a card (options: do it in a quiet window / copy the store to the M1
+and migrate from there with the M5 quiesced / defer). Old plan text: rollback (`gcloud run services update-traffic sirsi-router --to-revisions=sirsi-router-00002-qpc=100`, timed, then
 back) and revocation (`sirsi router token revoke` for a host token → next call 401). Then rs-18 migrate the M5 ledger (`router migrate-store`
 against the service — needs the M5's `sirsi` rebuilt to v18 first, see [[project-ra-moved-to-m1]] D8 notes).
