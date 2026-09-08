@@ -43,6 +43,13 @@ func (f ControlActionFailure) VerifyControlActionFailure(requestBody []byte) err
 	if f.Schema != ControlFailureSchema || f.Authority != "canonical-routerstore" {
 		return fmt.Errorf("control action failure identity is not canonical")
 	}
+	// An empty verb is reserved for failures raised before the request could be
+	// decoded. Once a verb is present, it must be one of the closed router
+	// capabilities; otherwise this receipt cannot be attributed to a valid
+	// control operation.
+	if f.Verb != "" && !isControlCapabilityVerb(f.Verb) {
+		return fmt.Errorf("control action failure verb is not recognized")
+	}
 	if f.Error == "" || f.RequestSHA256 == "" || f.ReceiptSHA256 == "" {
 		return fmt.Errorf("control action failure receipt is incomplete")
 	}
@@ -88,6 +95,9 @@ func (r *ControlActionResponse) SealControlActionResponse(requestBody []byte) er
 // response digest. The receipt field is removed only in the local copy used to
 // recompute the digest; the caller's decoded response is not mutated.
 func (r ControlActionResponse) VerifyControlActionResponse(requestBody []byte) error {
+	if r.Schema != ControlSchema || r.Authority != "canonical-routerstore" || r.Verb == "" || !isControlCapabilityVerb(r.Verb) {
+		return fmt.Errorf("control action identity is not canonical")
+	}
 	if r.RequestSHA256 == "" || r.ReceiptSHA256 == "" {
 		return fmt.Errorf("control action receipt is incomplete")
 	}
@@ -108,4 +118,13 @@ func (r ControlActionResponse) VerifyControlActionResponse(requestBody []byte) e
 		return fmt.Errorf("control action receipt digest mismatch")
 	}
 	return nil
+}
+
+func isControlCapabilityVerb(verb string) bool {
+	for _, capability := range controlCapabilities {
+		if capability.Verb == verb {
+			return true
+		}
+	}
+	return false
 }

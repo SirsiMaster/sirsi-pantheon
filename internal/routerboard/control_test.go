@@ -350,6 +350,60 @@ func TestControlActionReceiptBindsExactRequestAndResponse(t *testing.T) {
 	}
 }
 
+func TestControlActionReceiptRejectsNonCanonicalIdentity(t *testing.T) {
+	request := []byte(`{"verb":"message","from":"m1","to":"m5","title":"inspect"}`)
+	valid := ControlActionResponse{
+		Schema: ControlSchema, Authority: "canonical-routerstore", Verb: "message", ItemID: "item-1",
+	}
+	if err := valid.SealControlActionResponse(request); err != nil {
+		t.Fatal(err)
+	}
+	for name, mutated := range map[string]ControlActionResponse{
+		"wrong schema":      func() ControlActionResponse { v := valid; v.Schema = "other/v1"; return v }(),
+		"wrong authority":   func() ControlActionResponse { v := valid; v.Authority = "other"; return v }(),
+		"unknown verb":      func() ControlActionResponse { v := valid; v.Verb = "unknown"; return v }(),
+		"noncanonical verb": func() ControlActionResponse { v := valid; v.Verb = " message "; return v }(),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := mutated.VerifyControlActionResponse(request); err == nil {
+				t.Fatal("non-canonical response identity was accepted")
+			}
+		})
+	}
+
+	failure := ControlActionFailure{
+		Schema: ControlFailureSchema, Authority: "canonical-routerstore", Verb: "message", Error: "rejected",
+	}
+	if err := failure.SealControlActionFailure(request); err != nil {
+		t.Fatal(err)
+	}
+	if err := failure.VerifyControlActionFailure(request); err != nil {
+		t.Fatalf("valid failure receipt rejected: %v", err)
+	}
+	for name, mutated := range map[string]ControlActionFailure{
+		"wrong schema":      func() ControlActionFailure { v := failure; v.Schema = "other/v1"; return v }(),
+		"wrong authority":   func() ControlActionFailure { v := failure; v.Authority = "other"; return v }(),
+		"unknown verb":      func() ControlActionFailure { v := failure; v.Verb = "unknown"; return v }(),
+		"noncanonical verb": func() ControlActionFailure { v := failure; v.Verb = " message "; return v }(),
+	} {
+		t.Run("failure "+name, func(t *testing.T) {
+			if err := mutated.VerifyControlActionFailure(request); err == nil {
+				t.Fatal("non-canonical failure identity was accepted")
+			}
+		})
+	}
+
+	preDecodeFailure := failure
+	preDecodeFailure.Verb = ""
+	preDecodeFailure.ReceiptSHA256 = ""
+	if err := preDecodeFailure.SealControlActionFailure(request); err != nil {
+		t.Fatal(err)
+	}
+	if err := preDecodeFailure.VerifyControlActionFailure(request); err != nil {
+		t.Fatalf("empty pre-decode failure verb rejected: %v", err)
+	}
+}
+
 func TestProtectedControlInspectionRequiresBearerToken(t *testing.T) {
 	store, err := routerstore.Open(t.TempDir() + "/router.db")
 	if err != nil {
