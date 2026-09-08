@@ -26,7 +26,7 @@ func selectionIdentity(kind Kind) Identity {
 }
 
 func TestSelectionControllerPublishesConfiguredEnginePolicy(t *testing.T) {
-	mlx, err := NewMLXConnector(selectionProvider{name: "mlx", ready: true}, selectionIdentity(KindMLX), Capabilities{Sessions: true, Streaming: true})
+	mlx, err := NewMLXConnector(selectionProvider{name: "mlx", ready: true, caps: provider.Caps{Streaming: true}}, selectionIdentity(KindMLX), Capabilities{Sessions: true, Streaming: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,5 +72,30 @@ func TestSelectionControllerRejectsUnsupportedPolicy(t *testing.T) {
 	}
 	if _, err := NewSelectionController(router, RoutePolicy{Preferred: KindMLX, AllowFallback: true, RequiredCapabilities: []Capability{CapabilityStreaming}}); err == nil {
 		t.Fatal("expected no-capable-connector rejection")
+	}
+}
+
+func TestSelectionControllerCompletesPromptThroughSelectedEngine(t *testing.T) {
+	sne, err := NewSNEConnector(selectionProvider{name: "model", ready: true}, selectionIdentity(KindSNE), Capabilities{Sessions: true, Receipts: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	router, err := NewRouter(sne)
+	if err != nil {
+		t.Fatal(err)
+	}
+	controller, err := NewSelectionController(router, RoutePolicy{Preferred: KindSNE, RequiredCapabilities: []Capability{CapabilitySessions}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	completion, receipt, err := controller.CompletePrompt(context.Background(), PromptRequest{Prompt: "hello", MaxTokens: 8})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completion.Model != "model" {
+		t.Fatalf("completion model = %q, want model", completion.Model)
+	}
+	if receipt.Route == nil || receipt.Route.Selected != KindSNE || receipt.Route.Requested != KindSNE {
+		t.Fatalf("prompt route = %+v, want selected SNE route", receipt.Route)
 	}
 }

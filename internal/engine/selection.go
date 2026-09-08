@@ -1,8 +1,10 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"sync"
+	"time"
 )
 
 const SelectionSchema = "pantheon.engine-selection/v1"
@@ -30,6 +32,49 @@ type SelectionController struct {
 	mu     sync.RWMutex
 	router *Router
 	policy RoutePolicy
+}
+
+// PromptRequest is the engine-neutral prompt surface used by Pantheon UI
+// integrations. It deliberately contains no endpoint, process, or backend
+// configuration; the controller supplies the selected connector and binds the
+// resulting receipt to the admitted session identity.
+type PromptRequest struct {
+	Model       string
+	System      string
+	Prompt      string
+	MaxTokens   int
+	Temperature *float64
+	TopP        *float64
+	Seed        *int64
+}
+
+// CompletePrompt opens one session under the current explicit route policy
+// and completes the request through the same Router used by all other engine
+// surfaces. An empty Model means "use the selected connector's admitted
+// model"; a non-empty value is checked before provider execution.
+func (c *SelectionController) CompletePrompt(ctx context.Context, request PromptRequest) (Completion, Receipt, error) {
+	if c == nil || c.router == nil {
+		return Completion{}, Receipt{}, fmt.Errorf("engine selection: controller is required")
+	}
+	if ctx == nil {
+		return Completion{}, Receipt{}, fmt.Errorf("engine selection: context is required")
+	}
+	policy := c.Policy()
+	sessionID := fmt.Sprintf("pantheon-prompt-%d", time.Now().UTC().UnixNano())
+	session, decision, err := c.router.OpenSession(ctx, sessionID, policy)
+	if err != nil {
+		return Completion{}, Receipt{}, err
+	}
+	if request.Model != "" && request.Model != session.Identity.ModelID {
+		return Completion{}, Receipt{}, fmt.Errorf("engine selection: requested model %q does not match admitted model %q", request.Model, session.Identity.ModelID)
+	}
+	generation := GenerateRequest{
+		SessionID: session.ID, Identity: session.Identity, System: request.System,
+		Prompt: request.Prompt, MaxTokens: request.MaxTokens,
+		Temperature: request.Temperature, TopP: request.TopP, Seed: request.Seed,
+		CacheNamespace: session.Identity.CacheNamespace,
+	}
+	return c.router.Complete(ctx, session, generation, decision)
 }
 
 func NewSelectionController(router *Router, policy RoutePolicy) (*SelectionController, error) {

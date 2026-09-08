@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -15,6 +16,14 @@ import (
 type EngineSelection interface {
 	Snapshot() engine.SelectionSnapshot
 	Select(engine.RoutePolicy) (engine.SelectionSnapshot, error)
+}
+
+// EnginePromptExecutor is implemented by the canonical Pantheon selection
+// controller. It is separate from EngineSelection so read-only dashboard test
+// doubles and older deployments can still expose selection without claiming a
+// prompt execution path.
+type EnginePromptExecutor interface {
+	CompletePrompt(context.Context, engine.PromptRequest) (engine.Completion, engine.Receipt, error)
 }
 
 func (s *Server) apiEngine(w http.ResponseWriter, r *http.Request) {

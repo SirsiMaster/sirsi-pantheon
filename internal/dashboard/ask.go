@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/engine"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 )
 
@@ -178,7 +179,13 @@ func (s *Server) apiAsk(w http.ResponseWriter, r *http.Request) {
 	}
 
 	grounding := groundingFromDoctor(report)
-	sel, model, err := askLocalEngine(r.Context(), req.Question, grounding)
+	var sel modelSelection
+	var model string
+	if executor, ok := s.cfg.EngineSelection.(EnginePromptExecutor); ok {
+		sel, model, err = askSelectedEngine(r.Context(), executor, req.Question, grounding)
+	} else {
+		sel, model, err = askLocalEngine(r.Context(), req.Question, grounding)
+	}
 	if err != nil {
 		// Fail loud. A degraded answer here would be indistinguishable from a
 		// real one, which is the failure mode this whole surface exists to avoid.
@@ -220,6 +227,34 @@ func (s *Server) apiAsk(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, resp)
+}
+
+// askSelectedEngine keeps the existing grounded-diagnostics contract while
+// making the dashboard's selected engine authoritative. The model still only
+// selects finding indices; Pantheon renders the findings from Doctor data.
+func askSelectedEngine(ctx context.Context, executor EnginePromptExecutor, question, grounding string) (modelSelection, string, error) {
+	ctx, cancel := context.WithTimeout(ctx, askTimeout)
+	defer cancel()
+	completion, _, err := executor.CompletePrompt(ctx, engine.PromptRequest{
+		System:    askSystemPrompt + "\n\n--- LIVE DIAGNOSTIC REPORT ---\n" + grounding,
+		Prompt:    question,
+		MaxTokens: 400,
+	})
+	if err != nil {
+		return modelSelection{}, "", fmt.Errorf("selected engine unavailable: %w", err)
+	}
+	raw, err := cleanCompletion(completion.Text)
+	if err != nil {
+		return modelSelection{}, "", err
+	}
+	if raw == "" {
+		return modelSelection{}, "", fmt.Errorf("selected engine returned an empty answer")
+	}
+	sel, err := parseSelection(raw)
+	if err != nil {
+		return modelSelection{}, "", err
+	}
+	return sel, completion.Model, nil
 }
 
 // askLocalEngine sends one grounded completion to the loopback SNE server.
