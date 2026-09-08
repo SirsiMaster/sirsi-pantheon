@@ -77,6 +77,60 @@ func TestFinalNamespaceRescanRejectsLateAllowedEntry(t *testing.T) {
 	_ = expected
 }
 
+func TestFinalNamespaceRescanRejectsSameContentDifferentInode(t *testing.T) {
+	app, expected := makeBundle(t)
+	rootFD, err := unix.Open(app, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(rootFD)
+	snapshot := &scanSnapshot{entries: make(map[string]Entry), bytes: make(map[string][]byte)}
+	if err := scanDir(rootFD, "", snapshot); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(app, "Contents", "PkgInfo")
+	original, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backup := filepath.Join(t.TempDir(), "PkgInfo.old")
+	if err := os.Rename(path, backup); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, original, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := finalNamespaceRescan(rootFD, snapshot); err == nil || !strings.Contains(err.Error(), "entry identity changed") {
+		t.Fatalf("same-content replacement was accepted: %v", err)
+	}
+	_ = os.Remove(backup)
+	_ = expected
+}
+
+func TestFinalNamespaceRescanRejectsAllowedFileDirectorySubstitution(t *testing.T) {
+	app, expected := makeBundle(t)
+	rootFD, err := unix.Open(app, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(rootFD)
+	snapshot := &scanSnapshot{entries: make(map[string]Entry), bytes: make(map[string][]byte)}
+	if err := scanDir(rootFD, "", snapshot); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(app, "Contents", "PkgInfo")
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := finalNamespaceRescan(rootFD, snapshot); err == nil || !strings.Contains(err.Error(), "rescan type mismatch") {
+		t.Fatalf("file-to-directory substitution was accepted: %v", err)
+	}
+	_ = expected
+}
+
 func makeBundle(t *testing.T) (string, Expectations) {
 	t.Helper()
 	app := filepath.Join(t.TempDir(), "Pantheon.app")
