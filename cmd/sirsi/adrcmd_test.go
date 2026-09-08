@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -39,18 +41,19 @@ func TestScanADRDocsTreatsLetteredSubPartsAsLegitimate(t *testing.T) {
 	}
 }
 
-// The real shape on origin/main: two unrelated documents both numbered 054.
+// Two base documents sharing a number are a collision unless the number is an
+// explicitly ratified companion set. The real ADR-054 pair is covered below.
 func TestScanADRDocsDetectsGenuineCollision(t *testing.T) {
 	dir := writeADRs(t,
-		"ADR-054-CONTRACTS-IDENTITY-AND-LEDGER-V7.md",
-		"ADR-054-ONE-HORUS-UNIFIED-AGENT-FABRIC.md",
+		"ADR-999-CONTRACTS.md",
+		"ADR-999-ONE-HORUS.md",
 	)
 	base, _, err := scanADRDocs(dir)
 	if err != nil {
 		t.Fatalf("scan: %v", err)
 	}
-	if len(base[54]) != 2 {
-		t.Fatalf("a genuine collision must be reported, got %v", base[54])
+	if len(base[999]) != 2 {
+		t.Fatalf("a genuine collision must be reported, got %v", base[999])
 	}
 }
 
@@ -69,8 +72,8 @@ func TestScanADRDocsIgnoresNonADRFiles(t *testing.T) {
 // is decoration.
 func TestADRAuditExitsNonZeroOnCollision(t *testing.T) {
 	dir := writeADRs(t,
-		"ADR-054-CONTRACTS.md",
-		"ADR-054-ONE-HORUS.md",
+		"ADR-999-CONTRACTS.md",
+		"ADR-999-ONE-HORUS.md",
 	)
 	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(t.TempDir(), "router.db"))
 
@@ -79,6 +82,42 @@ func TestADRAuditExitsNonZeroOnCollision(t *testing.T) {
 	cmd.SetOut(os.Stderr)
 	if err := cmd.Execute(); err == nil {
 		t.Fatal("audit must return an error when two documents claim one number")
+	}
+}
+
+func TestADRAuditRecognizesRatifiedADR054Companions(t *testing.T) {
+	dir := writeADRs(t,
+		"ADR-054-CONTRACTS-IDENTITY-AND-LEDGER-V7.md",
+		"ADR-054-ONE-HORUS-UNIFIED-AGENT-FABRIC.md",
+	)
+	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(t.TempDir(), "router.db"))
+
+	cmd := newADRAuditCmd()
+	cmd.SetArgs([]string{"--docs", dir})
+	var output bytes.Buffer
+	cmd.SetOut(&output)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("ratified ADR-054 companions must pass: %v", err)
+	}
+	if !strings.Contains(output.String(), "KNOWN COLLISION (grandfathered") || !strings.Contains(output.String(), "ADR-054") {
+		t.Fatalf("audit must truthfully report the grandfathered ADR-054 debt, got:\n%s", output.String())
+	}
+}
+
+func TestADRAuditFailsNewCollisionBesideRatifiedADR054(t *testing.T) {
+	dir := writeADRs(t,
+		"ADR-054-CONTRACTS-IDENTITY-AND-LEDGER-V7.md",
+		"ADR-054-ONE-HORUS-UNIFIED-AGENT-FABRIC.md",
+		"ADR-999-NEW-A.md",
+		"ADR-999-NEW-B.md",
+	)
+	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(t.TempDir(), "router.db"))
+
+	cmd := newADRAuditCmd()
+	cmd.SetArgs([]string{"--docs", dir})
+	cmd.SetOut(os.Stderr)
+	if err := cmd.Execute(); err == nil {
+		t.Fatal("a new collision must fail even when ADR-054 companions are ratified")
 	}
 }
 

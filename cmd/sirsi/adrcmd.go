@@ -36,6 +36,11 @@ import (
 // that would have made the gate cry wolf on 4 of its 5 findings.
 var adrFilePattern = regexp.MustCompile(`^ADR-(\d{3,})(-[A-Z])?-(.+)\.md$`)
 
+// ratifiedGrandfatheredADRNumbers mirrors scripts/check-adr-numbers.sh and
+// docs/ADR-INDEX.md. ADR-054 has an intentional companion pair: the unified
+// fabric decision and its identity/ledger contracts share one number.
+var ratifiedGrandfatheredADRNumbers = []int{54}
+
 func newADRCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "adr",
@@ -160,6 +165,9 @@ func newADRAuditCmd() *cobra.Command {
 			// NEW collision does. The allow-list is the debt made visible, and
 			// it is only ever allowed to shrink.
 			allowed := map[int]bool{}
+			for _, n := range ratifiedGrandfatheredADRNumbers {
+				allowed[n] = true
+			}
 			for _, n := range grandfathered {
 				allowed[n] = true
 			}
