@@ -979,6 +979,10 @@ function ask(q){
    if(d.dropped)out('  ('+d.dropped+')','t-dim');
    if(!d.summary&&!(d.findings||[]).length)out('  Nothing in the current diagnostics answers that. Try "doctor".','t-dim');
    out('  — findings quoted verbatim from this machine; selection by '+d.model,'t-dim');
+   if(d.receipt){
+    const route=d.receipt.route||{};
+    out('  — route '+(route.selected||'unknown')+' · receipt '+(d.receipt.request_sha256||'unavailable'),'t-dim');
+   }
   })
   .catch(function(e){
    out('✗ '+e.message,'t-err');

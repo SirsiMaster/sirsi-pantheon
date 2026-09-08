@@ -77,7 +77,8 @@ type askResponse struct {
 	Model    string   `json:"model"`
 	// Dropped reports that a summary was withheld and why, so the surface can
 	// say so instead of silently showing less.
-	Dropped string `json:"dropped,omitempty"`
+	Dropped string          `json:"dropped,omitempty"`
+	Receipt *engine.Receipt `json:"receipt,omitempty"`
 }
 
 // modelSelection is the only thing the model returns.
@@ -181,8 +182,9 @@ func (s *Server) apiAsk(w http.ResponseWriter, r *http.Request) {
 	grounding := groundingFromDoctor(report)
 	var sel modelSelection
 	var model string
+	var receipt *engine.Receipt
 	if executor, ok := s.cfg.EngineSelection.(EnginePromptExecutor); ok {
-		sel, model, err = askSelectedEngine(r.Context(), executor, req.Question, grounding)
+		sel, model, receipt, err = askSelectedEngine(r.Context(), executor, req.Question, grounding)
 	} else {
 		sel, model, err = askLocalEngine(r.Context(), req.Question, grounding)
 	}
@@ -193,7 +195,7 @@ func (s *Server) apiAsk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := askResponse{Model: model}
+	resp := askResponse{Model: model, Receipt: receipt}
 
 	// Findings are rendered from the report, never from model text. An index
 	// out of range is dropped rather than guessed at.
@@ -232,29 +234,29 @@ func (s *Server) apiAsk(w http.ResponseWriter, r *http.Request) {
 // askSelectedEngine keeps the existing grounded-diagnostics contract while
 // making the dashboard's selected engine authoritative. The model still only
 // selects finding indices; Pantheon renders the findings from Doctor data.
-func askSelectedEngine(ctx context.Context, executor EnginePromptExecutor, question, grounding string) (modelSelection, string, error) {
+func askSelectedEngine(ctx context.Context, executor EnginePromptExecutor, question, grounding string) (modelSelection, string, *engine.Receipt, error) {
 	ctx, cancel := context.WithTimeout(ctx, askTimeout)
 	defer cancel()
-	completion, _, err := executor.CompletePrompt(ctx, engine.PromptRequest{
+	completion, receipt, err := executor.CompletePrompt(ctx, engine.PromptRequest{
 		System:    askSystemPrompt + "\n\n--- LIVE DIAGNOSTIC REPORT ---\n" + grounding,
 		Prompt:    question,
 		MaxTokens: 400,
 	})
 	if err != nil {
-		return modelSelection{}, "", fmt.Errorf("selected engine unavailable: %w", err)
+		return modelSelection{}, "", nil, fmt.Errorf("selected engine unavailable: %w", err)
 	}
 	raw, err := cleanCompletion(completion.Text)
 	if err != nil {
-		return modelSelection{}, "", err
+		return modelSelection{}, "", nil, err
 	}
 	if raw == "" {
-		return modelSelection{}, "", fmt.Errorf("selected engine returned an empty answer")
+		return modelSelection{}, "", nil, fmt.Errorf("selected engine returned an empty answer")
 	}
 	sel, err := parseSelection(raw)
 	if err != nil {
-		return modelSelection{}, "", err
+		return modelSelection{}, "", nil, err
 	}
-	return sel, completion.Model, nil
+	return sel, completion.Model, &receipt, nil
 }
 
 // askLocalEngine sends one grounded completion to the loopback SNE server.
