@@ -316,7 +316,7 @@ var routerMigrateStoreCmd = &cobra.Command{
 
 func init() {
 	routerMigrateStoreCmd.Flags().StringVar(&migrateStoreFrom, "from", "", "source SQLite ledger path")
-	routerMigrateStoreCmd.Flags().StringVar(&migrateStoreTo, "to", "", "destination: postgres:// DSN or SQLite path")
+	routerMigrateStoreCmd.Flags().StringVar(&migrateStoreTo, "to", os.Getenv("SIRSI_ROUTER_STORE"), "destination: postgres:// DSN or SQLite path (default $SIRSI_ROUTER_STORE so a Cloud Run job on the VPC can run it)")
 	routerMigrateStoreCmd.Flags().BoolVar(&migrateStoreDryRun, "dry-run", false, "report what would be written; write nothing")
 	routerMigrateStoreCmd.Flags().BoolVar(&migrateStoreJSON, "json", false, "machine-readable report")
 	routerMigrateStoreCmd.Flags().BoolVar(&migrateStoreScrub, "scrub-nul", false, "strip 0x00 bytes from text cells (Postgres cannot store them); the report lists every cell touched")
