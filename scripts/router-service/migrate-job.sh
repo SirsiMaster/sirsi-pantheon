@@ -25,7 +25,10 @@ echo "== 2. Throwaway image: base + snapshot (never pushed anywhere but this pro
 TAG="$REGION-docker.pkg.dev/$PROJECT/cloud-run-source-deploy/sirsi-router-migrate:$(date -u +%Y%m%dT%H%M%SZ)"
 ctx=$(mktemp -d); trap 'rm -rf "$ctx"' EXIT
 cp "$SNAP" "$ctx/src.db"
-printf 'FROM %s\nCOPY src.db /data/src.db\n' "$BASE" >"$ctx/Dockerfile"
+# alpine, not the distroless service image: the tool pins the source with a write, and a file in an image layer
+# copies up to the overlay on first write (new inode → SQLite "readonly database (1544)"). A shell copies the
+# snapshot to /tmp first. The static /sirsi binary runs unchanged.
+printf 'FROM alpine:3\nCOPY --from=%s /sirsi /sirsi\nCOPY src.db /data/src.db\n' "$BASE" >"$ctx/Dockerfile"
 # --async + poll: the provisioner SA cannot read the build log bucket, and a streaming submit exits 1 on a build that succeeds.
 BUILD=$($G builds submit "$ctx" --tag "$TAG" --async --format='value(id)')
 while :; do st=$($G builds describe "$BUILD" --format='value(status)'); case $st in QUEUED|WORKING|PENDING) sleep 10;; *) break;; esac; done
@@ -33,12 +36,12 @@ while :; do st=$($G builds describe "$BUILD" --format='value(status)'); case $st
 echo "   $TAG"
 
 echo "== 3. Job $JOB (${DRY_RUN:+DRY RUN}${DRY_RUN:-REAL IMPORT})"
-args="router,migrate-store,--from,/data/src.db,--scrub-nul,--json"
-[ "${DRY_RUN:-0}" = 1 ] && args="$args,--dry-run"
+cmd="cp /data/src.db /tmp/src.db && exec /sirsi router migrate-store --from /tmp/src.db --scrub-nul --json"
+[ "${DRY_RUN:-0}" = 1 ] && cmd="$cmd --dry-run"
 $G run jobs deploy "$JOB" --region="$REGION" --image="$TAG" --service-account="$JOB_SA" \
   --set-cloudsql-instances="$CONN" --network=default --subnet=default --vpc-egress=private-ranges-only \
   --set-secrets="SIRSI_ROUTER_STORE=sirsi-router-service-dsn:latest" \
-  --args="$args" --max-retries=0 --task-timeout=30m --memory=1Gi --labels=adr=062,workstream=router-service >/dev/null
+  --command=sh "--args=^@^-c@$cmd" --max-retries=0 --task-timeout=30m --memory=1Gi --labels=adr=062,workstream=router-service >/dev/null
 $G run jobs execute "$JOB" --region="$REGION" --wait
 EXEC=$($G run jobs executions list --job="$JOB" --region="$REGION" --limit=1 --format='value(name)')
 echo "== 4. Report (execution $EXEC; Cloud Logging lags ~30 s)"
