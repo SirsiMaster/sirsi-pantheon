@@ -90,7 +90,7 @@ func selectRunner(cfg Config, skipHealth bool, logger *log.Logger) Runner {
 	}
 	if skipHealth {
 		logger.Println("health: skipped via --skip-health")
-		return r
+		return &configuredReceiptRunner{Runner: r, engine: engine, model: configuredModel(cfg, engine)}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -99,7 +99,18 @@ func selectRunner(cfg Config, skipHealth bool, logger *log.Logger) Runner {
 		return &disabledRunner{reason: err.Error()}
 	}
 	logger.Printf("health: %s engine alive", engine)
-	return r
+	return &configuredReceiptRunner{Runner: r, engine: engine, model: configuredModel(cfg, engine)}
+}
+
+func configuredModel(cfg Config, engine string) string {
+	switch engine {
+	case "sne":
+		return cfg.SNEModel
+	case "omlx":
+		return cfg.OMLXModel
+	default:
+		return cfg.ModelID
+	}
 }
 
 func registerGemmaTools(srv *mcp.Server, runner Runner) {
@@ -159,11 +170,11 @@ func makeChatHandler(runner Runner) mcp.ToolHandler {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
-		out, err := runner.Generate(ctx, prompt, maxTok, temp)
+		out, receipt, hasReceipt, err := generateWithReceipt(ctx, runner, prompt, maxTok, temp)
 		if err != nil {
 			return errResult(err.Error()), nil
 		}
-		return textResult(out), nil
+		return generationResult(out, receipt, hasReceipt), nil
 	}
 }
 
@@ -177,12 +188,33 @@ func makeCompleteHandler(runner Runner) mcp.ToolHandler {
 		temp := floatArg(args, "temperature")
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
-		out, err := runner.Generate(ctx, prompt, maxTok, temp)
+		out, receipt, hasReceipt, err := generateWithReceipt(ctx, runner, prompt, maxTok, temp)
 		if err != nil {
 			return errResult(err.Error()), nil
 		}
-		return textResult(out), nil
+		return generationResult(out, receipt, hasReceipt), nil
 	}
+}
+
+func generateWithReceipt(ctx context.Context, runner Runner, prompt string, maxTokens int, temperature float64) (string, GenerationReceipt, bool, error) {
+	if receiptRunner, ok := runner.(ReceiptRunner); ok {
+		out, receipt, err := receiptRunner.GenerateWithReceipt(ctx, prompt, maxTokens, temperature)
+		return out, receipt, true, err
+	}
+	out, err := runner.Generate(ctx, prompt, maxTokens, temperature)
+	return out, GenerationReceipt{}, false, err
+}
+
+func generationResult(text string, receipt GenerationReceipt, hasReceipt bool) *mcp.ToolResult {
+	result := textResult(text)
+	if hasReceipt {
+		result.Content = append(result.Content, mcp.ContentBlock{
+			Type:     "text",
+			Text:     marshalGenerationReceipt(receipt),
+			MimeType: "application/json",
+		})
+	}
+	return result
 }
 
 func textResult(text string) *mcp.ToolResult {

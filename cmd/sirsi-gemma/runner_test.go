@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log"
@@ -151,6 +152,43 @@ func TestCompleteHandler_DispatchesToRunner(t *testing.T) {
 	}
 	if res.IsError || res.Content[0].Text != "echo:ping" {
 		t.Fatalf("unexpected result: %+v", res)
+	}
+}
+
+func TestCompleteHandler_PreservesTextAndAddsConfiguredReceipt(t *testing.T) {
+	runner := &configuredReceiptRunner{
+		Runner: &fakeRunner{genFunc: func(_ context.Context, prompt string, _ int, _ float64) (string, error) {
+			return "echo:" + prompt, nil
+		}},
+		engine: "sne",
+		model:  "gemma-test",
+	}
+	res, err := makeCompleteHandler(runner)(map[string]any{
+		"prompt":      "ping",
+		"max_tokens":  float64(12),
+		"temperature": float64(0.25),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError || len(res.Content) != 2 {
+		t.Fatalf("unexpected result: %+v", res)
+	}
+	if res.Content[0].Text != "echo:ping" {
+		t.Fatalf("text contract changed: %q", res.Content[0].Text)
+	}
+	if res.Content[1].MimeType != "application/json" {
+		t.Fatalf("receipt MIME type = %q", res.Content[1].MimeType)
+	}
+	var receipt GenerationReceipt
+	if err := json.Unmarshal([]byte(res.Content[1].Text), &receipt); err != nil {
+		t.Fatal(err)
+	}
+	if receipt.Engine != "sne" || receipt.Model != "gemma-test" || receipt.Route != "explicit-selection" {
+		t.Fatalf("unexpected receipt identity: %+v", receipt)
+	}
+	if receipt.RuntimeVerified || receipt.RequestSHA256 == "" || receipt.CompletionSHA256 == "" {
+		t.Fatalf("receipt overclaims or lacks digests: %+v", receipt)
 	}
 }
 
