@@ -120,7 +120,8 @@ func TestSnapshotControlRejectsMalformedObservationTimestamp(t *testing.T) {
 	}
 }
 
-func TestControlEndpointIsReadOnlyAndReturnsTheEnvelope(t *testing.T) {
+func TestDefaultControlEndpointWithoutTokenFailsClosed(t *testing.T) {
+	t.Setenv("SIRSI_CONTROL_TOKEN", "")
 	b := New("/bin/false", "", "test-build")
 	b.mu.Lock()
 	b.version = 1
@@ -132,15 +133,8 @@ func TestControlEndpointIsReadOnlyAndReturnsTheEnvelope(t *testing.T) {
 
 	get := httptest.NewRecorder()
 	mux.ServeHTTP(get, httptest.NewRequest(http.MethodGet, "/api/control", nil))
-	if get.Code != http.StatusOK {
-		t.Fatalf("GET status = %d, want 200: %s", get.Code, get.Body.String())
-	}
-	var envelope ControlEnvelope
-	if err := json.Unmarshal(get.Body.Bytes(), &envelope); err != nil {
-		t.Fatalf("GET body is not control JSON: %v", err)
-	}
-	if envelope.Schema != ControlSchema || envelope.Authority != "canonical-routerstore" {
-		t.Fatalf("GET identity = %q/%q", envelope.Schema, envelope.Authority)
+	if get.Code != http.StatusServiceUnavailable {
+		t.Fatalf("GET status = %d, want 503 without SIRSI_CONTROL_TOKEN: %s", get.Code, get.Body.String())
 	}
 
 	post := httptest.NewRecorder()
@@ -153,6 +147,47 @@ func TestControlEndpointIsReadOnlyAndReturnsTheEnvelope(t *testing.T) {
 	}
 }
 
+func TestDefaultControlEndpointRequiresExactBearerWhenConfigured(t *testing.T) {
+	t.Setenv("SIRSI_CONTROL_TOKEN", "test-token")
+	b := New("/bin/false", "", "test-build")
+	b.mu.Lock()
+	b.version = 1
+	b.payload = []byte(`{"generated_at":"2026-09-07T12:00:00Z","evidence":[],"fleet":[],"activity":[],"data_errors":[],"threads":[],"registration_gaps":[],"tasks":[],"board":{},"ledger":{},"counters":{}}`)
+	b.mu.Unlock()
+	h := NewHandler(b, t.TempDir())
+	mux := http.NewServeMux()
+	h.Register(mux)
+
+	missing := httptest.NewRecorder()
+	mux.ServeHTTP(missing, httptest.NewRequest(http.MethodGet, "/api/control", nil))
+	if missing.Code != http.StatusUnauthorized {
+		t.Fatalf("missing bearer status = %d, want 401", missing.Code)
+	}
+
+	wrong := httptest.NewRequest(http.MethodGet, "/api/control", nil)
+	wrong.Header.Set("Authorization", "Bearer test-token-extra")
+	wrongResponse := httptest.NewRecorder()
+	mux.ServeHTTP(wrongResponse, wrong)
+	if wrongResponse.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong bearer status = %d, want 401", wrongResponse.Code)
+	}
+
+	exact := httptest.NewRequest(http.MethodGet, "/api/control", nil)
+	exact.Header.Set("Authorization", "Bearer test-token")
+	exactResponse := httptest.NewRecorder()
+	mux.ServeHTTP(exactResponse, exact)
+	if exactResponse.Code != http.StatusOK {
+		t.Fatalf("exact bearer status = %d, want 200: %s", exactResponse.Code, exactResponse.Body.String())
+	}
+	var envelope ControlEnvelope
+	if err := json.Unmarshal(exactResponse.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("exact bearer body is not control JSON: %v", err)
+	}
+	if envelope.Schema != ControlSchema || envelope.Authority != "canonical-routerstore" {
+		t.Fatalf("exact bearer identity = %q/%q", envelope.Schema, envelope.Authority)
+	}
+}
+
 func TestAuthenticatedControlActionsUseCanonicalStoreAndLeaseFence(t *testing.T) {
 	store, err := routerstore.Open(t.TempDir() + "/router.db")
 	if err != nil {
@@ -160,7 +195,7 @@ func TestAuthenticatedControlActionsUseCanonicalStoreAndLeaseFence(t *testing.T)
 	}
 	defer store.Close()
 	b := New("/bin/false", "", "test-build")
-	h := NewHandlerWithControlStore(b, t.TempDir(), store, "test-token")
+	h := NewHandlerWithInjectedControlStore(b, t.TempDir(), store, "test-token")
 	mux := http.NewServeMux()
 	h.Register(mux)
 
@@ -219,7 +254,7 @@ func TestInjectedControlStoreRequiresConfiguredTokenForReadSnapshot(t *testing.T
 	b.version = 1
 	b.payload = []byte(`{"generated_at":"2026-09-07T12:00:00Z","evidence":[],"fleet":[],"activity":[],"data_errors":[],"threads":[],"registration_gaps":[],"tasks":[],"board":{},"ledger":{},"counters":{}}`)
 	b.mu.Unlock()
-	h := NewHandlerWithControlStore(b, t.TempDir(), store, "test-token")
+	h := NewHandlerWithInjectedControlStore(b, t.TempDir(), store, "test-token")
 	mux := http.NewServeMux()
 	h.Register(mux)
 
@@ -244,7 +279,7 @@ func TestControlActionRejectsUnknownFieldsAndMissingAuthorization(t *testing.T) 
 		t.Fatal(err)
 	}
 	defer store.Close()
-	h := NewHandlerWithControlStore(New("/bin/false", "", "test-build"), t.TempDir(), store, "test-token")
+	h := NewHandlerWithInjectedControlStore(New("/bin/false", "", "test-build"), t.TempDir(), store, "test-token")
 	mux := http.NewServeMux()
 	h.Register(mux)
 
@@ -275,7 +310,7 @@ func TestControlActionRejectsUnknownFieldsAndMissingAuthorization(t *testing.T) 
 		t.Fatalf("cross-verb field response = %d %s", response.Code, response.Body.String())
 	}
 
-	noToken := NewHandlerWithControlStore(New("/bin/false", "", "test-build"), t.TempDir(), store, "")
+	noToken := NewHandlerWithInjectedControlStore(New("/bin/false", "", "test-build"), t.TempDir(), store, "")
 	noTokenMux := http.NewServeMux()
 	noToken.Register(noTokenMux)
 	response = postControlAction(t, noTokenMux, "", ControlActionRequest{Verb: "delegate", Agent: "a", TaskID: "t", Subject: "s"})
@@ -290,7 +325,7 @@ func TestControlActionRequiresJSONContentType(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	h := NewHandlerWithControlStore(New("/bin/false", "", "test-build"), t.TempDir(), store, "test-token")
+	h := NewHandlerWithInjectedControlStore(New("/bin/false", "", "test-build"), t.TempDir(), store, "test-token")
 	mux := http.NewServeMux()
 	h.Register(mux)
 	request := httptest.NewRequest(http.MethodPost, "/api/control/action", bytes.NewBufferString(`{"verb":"delegate","agent":"a","task_id":"t","subject":"s"}`))

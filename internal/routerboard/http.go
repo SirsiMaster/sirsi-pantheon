@@ -32,13 +32,17 @@ type Handler struct {
 
 func NewHandler(b *Board, dir string) *Handler {
 	token := os.Getenv("SIRSI_CONTROL_TOKEN")
-	return NewHandlerWithControlAuth(b, dir, token, strings.TrimSpace(token) != "")
+	// The default constructor is the production-facing board path.  An absent
+	// token must fail closed for read-only control inspection just as control
+	// actions already do; callers that intentionally inject a store use the
+	// explicitly named test/embedded constructor below.
+	return NewHandlerWithControlAuth(b, dir, token, true)
 }
 
 // NewHandlerWithControlAuth configures whether read-only control snapshots
-// require bearer authentication. Protected deployments use this when the
-// surrounding listener is already bound to an authenticated private network;
-// the default handler remains loopback-compatible.
+// require bearer authentication. Production callers must pass true; NewHandler
+// does so unconditionally. The boolean remains for an explicitly controlled
+// embedded/test boundary where the surrounding listener owns authentication.
 func NewHandlerWithControlAuth(b *Board, dir, token string, requireAuth bool) *Handler {
 	return &Handler{
 		board: b, dir: dir, controlToken: token, requireControlAuth: requireAuth,
@@ -58,9 +62,9 @@ func NewHandlerWithControlAuth(b *Board, dir, token string, requireAuth bool) *H
 	}
 }
 
-// NewHandlerWithControlStore injects the canonical store for tests and
-// embedded hosts. The handler does not close an injected store.
-func NewHandlerWithControlStore(b *Board, dir string, store *routerstore.Store, token string) *Handler {
+// NewHandlerWithInjectedControlStore is an explicit test/embedded seam. It is
+// not production board wiring; the handler does not close an injected store.
+func NewHandlerWithInjectedControlStore(b *Board, dir string, store *routerstore.Store, token string) *Handler {
 	return &Handler{board: b, dir: dir, controlToken: token, requireControlAuth: strings.TrimSpace(token) != "", openControlStore: func() (*routerstore.Store, bool, error) {
 		return store, false, nil
 	}}
