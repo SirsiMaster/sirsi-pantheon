@@ -161,19 +161,42 @@ func validateInfoPlist(data []byte, version, build string) error {
 }
 
 func parseRootDictionary(decoder *xml.Decoder) (map[string]string, error) {
-	for {
-		token, err := decoder.Token()
-		if err == io.EOF {
-			return nil, errors.New("Info.plist dictionary is missing")
-		}
-		if err != nil {
-			return nil, errors.New("Info.plist is not valid XML")
-		}
-		start, ok := token.(xml.StartElement)
-		if ok && start.Name.Local == "dict" {
-			return parseDictionary(decoder, start)
-		}
+	rootToken, err := nextSignificantToken(decoder)
+	if err != nil {
+		return nil, errors.New("Info.plist root is missing")
 	}
+	root, ok := rootToken.(xml.StartElement)
+	if !ok || root.Name.Local != "plist" {
+		return nil, errors.New("Info.plist root must be plist")
+	}
+	dictToken, err := nextSignificantToken(decoder)
+	if err != nil {
+		return nil, errors.New("Info.plist dictionary is missing")
+	}
+	dict, ok := dictToken.(xml.StartElement)
+	if !ok || dict.Name.Local != "dict" {
+		return nil, errors.New("Info.plist root must contain one dict")
+	}
+	values, err := parseDictionary(decoder, dict)
+	if err != nil {
+		return nil, err
+	}
+	endRoot, err := nextSignificantToken(decoder)
+	if err != nil {
+		return nil, errors.New("Info.plist root is incomplete")
+	}
+	end, ok := endRoot.(xml.EndElement)
+	if !ok || end.Name.Local != "plist" {
+		return nil, errors.New("Info.plist must close its plist root")
+	}
+	if trailing, err := nextSignificantToken(decoder); err != io.EOF {
+		if err != nil {
+			return nil, errors.New("Info.plist trailing XML is invalid")
+		}
+		_ = trailing
+		return nil, errors.New("Info.plist contains trailing XML")
+	}
+	return values, nil
 }
 
 func parseDictionary(decoder *xml.Decoder, start xml.StartElement) (map[string]string, error) {
@@ -232,6 +255,12 @@ func nextSignificantToken(decoder *xml.Decoder) (xml.Token, error) {
 			continue
 		}
 		if _, ok := token.(xml.Comment); ok {
+			continue
+		}
+		if _, ok := token.(xml.ProcInst); ok {
+			continue
+		}
+		if _, ok := token.(xml.Directive); ok {
 			continue
 		}
 		return token, nil

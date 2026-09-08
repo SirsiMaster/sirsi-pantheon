@@ -37,6 +37,21 @@ func TestReadCanonicalFileRejectsSymlinkedAncestor(t *testing.T) {
 	}
 }
 
+func TestValidateInfoPlistRejectsWrapperAndTrailingContent(t *testing.T) {
+	valid := `<plist><dict><key>CFBundleIdentifier</key><string>ai.sirsi.pantheon</string><key>CFBundleShortVersionString</key><string>0.23.9-beta</string><key>CFBundleVersion</key><string>20260908</string></dict></plist>`
+	for name, value := range map[string]string{
+		"missing plist wrapper": `<dict><key>CFBundleIdentifier</key><string>ai.sirsi.pantheon</string></dict>`,
+		"trailing XML":          valid + `<extra/>`,
+		"trailing text":         valid + `unexpected`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := validateInfoPlist([]byte(value), "0.23.9-beta", "20260908"); err == nil {
+				t.Fatal("malformed plist wrapper was accepted")
+			}
+		})
+	}
+}
+
 func makeCommandBundle(t *testing.T) (string, string, string, string) {
 	t.Helper()
 	root, err := filepath.EvalSymlinks(t.TempDir())
