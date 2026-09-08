@@ -10,13 +10,17 @@ import (
 )
 
 func TestRunEmitsNonExecutingInventory(t *testing.T) {
-	app := filepath.Join(t.TempDir(), "Pantheon.app")
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := filepath.Join(root, "Pantheon.app")
 	for _, dir := range []string{"Contents/MacOS", "Contents/Resources"} {
 		if err := os.MkdirAll(filepath.Join(app, dir), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
-	info := []byte("CFBundleShortVersionString=0.23.9-beta\nCFBundleVersion=20260908\n")
+	info := []byte(`<?xml version="1.0"?><plist><dict><key>CFBundleIdentifier</key><string>ai.sirsi.pantheon</string><key>CFBundleShortVersionString</key><string>0.23.9-beta</string><key>CFBundleVersion</key><string>20260908</string></dict></plist>`)
 	pkgInfo := []byte("APPL????")
 	launchAgent := []byte("Label=ai.sirsi.pantheon\n")
 	files := map[string][]byte{
