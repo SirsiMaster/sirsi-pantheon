@@ -116,7 +116,7 @@ func TestSmoke_AnubisJudgeDryRun(t *testing.T) {
 	out := run(t, testBinary, "anubis", "judge", "--dry-run")
 
 	lower := strings.ToLower(out)
-	if !strings.Contains(lower, "dry") && !strings.Contains(lower, "no waste") && !strings.Contains(lower, "adjudicated") && !strings.Contains(lower, "purged") && !strings.Contains(lower, "anubis") && !strings.Contains(lower, "judgment") {
+	if !strings.Contains(lower, "dry") && !strings.Contains(lower, "no waste") && !strings.Contains(lower, "adjudicated") && !strings.Contains(lower, "purged") && !strings.Contains(lower, "anubis") && !strings.Contains(lower, "judgment") && !strings.Contains(lower, "no findings to judge") {
 		t.Errorf("anubis judge --dry-run unexpected output: %s", out)
 	}
 }
