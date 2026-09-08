@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -116,10 +117,14 @@ func runRouterBoard(_ *cobra.Command, _ []string) error {
 		fmt.Println(string(body))
 		return nil
 	}
+	controlToken, err := requiredBoardServeControlToken()
+	if err != nil {
+		return err
+	}
 	go b.Run(ctx, boardServePoll)
 
 	mux := http.NewServeMux()
-	routerboard.NewHandler(b, dir).Register(mux)
+	routerboard.NewHandlerWithControlAuth(b, dir, controlToken, true).Register(mux)
 	srv := &http.Server{
 		Addr:        fmt.Sprintf("127.0.0.1:%d", boardServePort),
 		Handler:     mux,
@@ -146,6 +151,14 @@ func runRouterBoard(_ *cobra.Command, _ []string) error {
 	shutdown, done := context.WithTimeout(context.Background(), 5*time.Second)
 	defer done()
 	return srv.Shutdown(shutdown)
+}
+
+func requiredBoardServeControlToken() (string, error) {
+	token := strings.TrimSpace(os.Getenv("SIRSI_CONTROL_TOKEN"))
+	if token == "" {
+		return "", fmt.Errorf("board-serve: SIRSI_CONTROL_TOKEN is required for the long-running server")
+	}
+	return token, nil
 }
 
 // findRepoRootForBoard resolves the repo whose .agents/idea-router/agents.json
