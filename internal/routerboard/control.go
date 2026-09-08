@@ -39,7 +39,7 @@ type ControlEnvelope struct {
 }
 
 var controlCapabilities = []ControlCapability{
-	{Verb: "inspect", Command: "sirsi router control --json", Description: "Read the canonical live worker, task, event, and evidence projection."},
+	{Verb: "inspect", Command: "sirsi router control", Description: "Read the canonical live worker, task, event, and evidence projection."},
 	{Verb: "message", Command: "sirsi router send <agent>", Mutates: true, Description: "Send a durable message through the canonical router store."},
 	{Verb: "review_request", Command: "sirsi router send <agent> --type review", Mutates: true, Description: "Create a review request as a durable router item."},
 	{Verb: "delegate", Command: "sirsi router task add <agent> <task-id>", Mutates: true, Description: "Register durable work in the canonical task ledger."},

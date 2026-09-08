@@ -57,6 +57,9 @@ func controlURL(raw, path string) (string, error) {
 }
 
 func fetchRemoteControl(ctx context.Context, rawEndpoint, token string) ([]byte, error) {
+	if strings.TrimSpace(token) == "" {
+		return nil, fmt.Errorf("fetch control snapshot: bearer token is required for remote control")
+	}
 	endpoint, err := controlEndpointURL(rawEndpoint)
 	if err != nil {
 		return nil, err
@@ -168,6 +171,9 @@ func readControlActionRequest(source string) ([]byte, error) {
 }
 
 func sendRemoteControlAction(ctx context.Context, rawEndpoint, token string, body []byte) ([]byte, error) {
+	if strings.TrimSpace(token) == "" {
+		return nil, fmt.Errorf("send control action: bearer token is required for remote control")
+	}
 	endpoint, err := controlActionEndpointURL(rawEndpoint)
 	if err != nil {
 		return nil, err

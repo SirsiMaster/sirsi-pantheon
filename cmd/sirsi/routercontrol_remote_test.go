@@ -115,6 +115,28 @@ func TestControlActionRequestAndRemoteSubmissionUseClosedEndpoint(t *testing.T) 
 	}
 }
 
+func TestRemoteControlRequiresBearerToken(t *testing.T) {
+	if _, err := fetchRemoteControl(context.Background(), "https://m5.example.test:8734", ""); err == nil || !strings.Contains(err.Error(), "bearer token is required") {
+		t.Fatalf("empty snapshot token was accepted: %v", err)
+	}
+	if _, err := sendRemoteControlAction(context.Background(), "https://m5.example.test:8734", "", []byte(`{"verb":"inspect"}`)); err == nil || !strings.Contains(err.Error(), "bearer token is required") {
+		t.Fatalf("empty action token was accepted: %v", err)
+	}
+}
+
+func TestControlClientOnlyEnvironmentIsClosed(t *testing.T) {
+	for _, value := range []string{"1", "true", "YES", "on"} {
+		if !controlClientOnlyEnv(value) {
+			t.Errorf("%q was not recognized as client-only", value)
+		}
+	}
+	for _, value := range []string{"", "0", "false", "off", "operator"} {
+		if controlClientOnlyEnv(value) {
+			t.Errorf("%q was incorrectly recognized as client-only", value)
+		}
+	}
+}
+
 func TestFetchRemoteControlUsesBearerAndRejectsInvalidResponse(t *testing.T) {
 	state := routerboard.Payload{GeneratedAt: "2026-09-07T12:00:00Z", Evidence: []routerboard.EvidenceRef{}, Fleet: []routerboard.Lane{}, Activity: []routerboard.Event{}, DataErrors: []string{}, Threads: []routerboard.Thread{}, RegistrationGaps: []string{}, Tasks: []routerboard.TaskDetail{}}
 	stateBytes, err := json.Marshal(state)
@@ -158,7 +180,7 @@ func TestFetchRemoteControlUsesBearerAndRejectsInvalidResponse(t *testing.T) {
 		_, _ = w.Write(payload)
 	}))
 	defer digestMismatch.Close()
-	if _, err := fetchRemoteControl(context.Background(), digestMismatch.URL, ""); err == nil || !strings.Contains(err.Error(), "digest mismatch") {
+	if _, err := fetchRemoteControl(context.Background(), digestMismatch.URL, "test-token"); err == nil || !strings.Contains(err.Error(), "digest mismatch") {
 		t.Fatalf("accepted digest-mismatched snapshot: %v", err)
 	}
 
@@ -167,7 +189,7 @@ func TestFetchRemoteControlUsesBearerAndRejectsInvalidResponse(t *testing.T) {
 		_, _ = w.Write([]byte("not-json"))
 	}))
 	defer bad.Close()
-	if _, err := fetchRemoteControl(context.Background(), bad.URL, ""); err == nil {
+	if _, err := fetchRemoteControl(context.Background(), bad.URL, "test-token"); err == nil {
 		t.Fatal("accepted invalid remote control JSON")
 	}
 }

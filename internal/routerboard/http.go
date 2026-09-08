@@ -31,7 +31,8 @@ type Handler struct {
 }
 
 func NewHandler(b *Board, dir string) *Handler {
-	return NewHandlerWithControlAuth(b, dir, os.Getenv("SIRSI_CONTROL_TOKEN"), false)
+	token := os.Getenv("SIRSI_CONTROL_TOKEN")
+	return NewHandlerWithControlAuth(b, dir, token, strings.TrimSpace(token) != "")
 }
 
 // NewHandlerWithControlAuth configures whether read-only control snapshots

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerboard"
@@ -12,6 +13,8 @@ import (
 )
 
 var routerControlEndpoint string
+
+var routerControlClientOnly bool
 
 var routerControlActionRequestFile string
 
@@ -26,6 +29,9 @@ var routerControlCmd = &cobra.Command{
 				return err
 			}
 			return printControlJSON(body)
+		}
+		if routerControlClientOnly || controlClientOnlyEnv(os.Getenv("SIRSI_CONTROL_CLIENT_ONLY")) {
+			return fmt.Errorf("M1 control client requires an authenticated M5 endpoint via --endpoint or SIRSI_CONTROL_ENDPOINT")
 		}
 		repoRoot, err := router.FindRepoRoot()
 		if err != nil {
@@ -51,10 +57,20 @@ var routerControlCmd = &cobra.Command{
 
 func init() {
 	routerControlCmd.Flags().StringVar(&routerControlEndpoint, "endpoint", "", "Authenticated M5 control endpoint (or SIRSI_CONTROL_ENDPOINT)")
+	routerControlCmd.Flags().BoolVar(&routerControlClientOnly, "client-only", false, "Refuse local router state; require the authenticated M5 control plane")
 	routerCmd.AddCommand(routerControlCmd)
 	routerControlActionCmd.Flags().StringVar(&routerControlEndpoint, "endpoint", "", "Authenticated M5 control endpoint (or SIRSI_CONTROL_ENDPOINT)")
 	routerControlActionCmd.Flags().StringVar(&routerControlActionRequestFile, "request-file", "-", "JSON action request file, or - for stdin")
 	routerCmd.AddCommand(routerControlActionCmd)
+}
+
+func controlClientOnlyEnv(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 var routerControlActionCmd = &cobra.Command{
