@@ -32,6 +32,8 @@ type Expectations struct {
 type Entry struct {
 	Path   string `json:"path"`
 	Type   string `json:"type"`
+	Dev    uint64 `json:"dev"`
+	Ino    uint64 `json:"ino"`
 	Mode   uint32 `json:"mode"`
 	Nlink  uint64 `json:"nlink"`
 	Size   int64  `json:"size"`
@@ -152,7 +154,7 @@ func scanDirOwned(fd int, parent string, snapshot *scanSnapshot, closeFD bool) e
 			return fmt.Errorf("package inventory: substitution detected before visit %q", rel)
 		}
 
-		entry := Entry{Path: rel, Type: wantType, Mode: uint32(opened.Mode), Nlink: uint64(opened.Nlink), Size: opened.Size}
+		entry := Entry{Path: rel, Type: wantType, Dev: uint64(opened.Dev), Ino: uint64(opened.Ino), Mode: uint32(opened.Mode), Nlink: uint64(opened.Nlink), Size: opened.Size}
 		if wantType == "directory" {
 			snapshot.entries[rel] = entry
 			if err := scanDirOwned(childFD, rel, snapshot, true); err != nil {
@@ -180,25 +182,32 @@ func scanDirOwned(fd int, parent string, snapshot *scanSnapshot, closeFD bool) e
 }
 
 func finalNamespaceRescan(rootFD int, snapshot *scanSnapshot) error {
-	seen := make(map[string]struct{}, len(snapshot.entries))
-	if err := collectNames(rootFD, "", seen); err != nil {
+	current := &scanSnapshot{entries: make(map[string]Entry), bytes: make(map[string][]byte)}
+	if err := rescanDir(rootFD, "", current); err != nil {
 		return err
 	}
-	if len(seen) != len(snapshot.entries) {
+	if len(current.entries) != len(snapshot.entries) {
 		return fmt.Errorf("package inventory: namespace changed after file read")
 	}
-	for rel := range snapshot.entries {
-		if _, ok := seen[rel]; !ok {
+	for rel, expected := range snapshot.entries {
+		actual, ok := current.entries[rel]
+		if !ok {
 			return fmt.Errorf("package inventory: namespace changed after file read at %q", rel)
+		}
+		if !sameEntryIdentity(expected, actual) {
+			return fmt.Errorf("package inventory: entry identity changed after file read at %q", rel)
+		}
+		if expected.Type == "regular" && expected.SHA256 != actual.SHA256 {
+			return fmt.Errorf("package inventory: content changed after file read at %q", rel)
 		}
 	}
 	return nil
 }
 
-func collectNames(fd int, parent string, seen map[string]struct{}) error {
+func rescanDir(fd int, parent string, snapshot *scanSnapshot) error {
 	names, err := directoryNames(fd, parent)
 	if err != nil {
-		return fmt.Errorf("package inventory: rescan %q: %w", parent, err)
+		return fmt.Errorf("package inventory: rescan directory %q: %w", parent, err)
 	}
 	sort.Strings(names)
 	for _, name := range names {
@@ -216,23 +225,57 @@ func collectNames(fd int, parent string, seen map[string]struct{}) error {
 		if st.Mode&unix.S_IFMT == unix.S_IFLNK {
 			return fmt.Errorf("package inventory: late symlink at %q", rel)
 		}
-		seen[rel] = struct{}{}
-		if statType(st.Mode) == "directory" {
-			childFD, err := unix.Openat(fd, name, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
-			if err != nil {
-				return fmt.Errorf("package inventory: rescan open %q: %w", rel, err)
-			}
-			defer unix.Close(childFD)
-			var opened unix.Stat_t
-			if err := unix.Fstat(childFD, &opened); err != nil || !sameIdentity(st, opened) {
-				return fmt.Errorf("package inventory: rescan substitution at %q", rel)
-			}
-			if err := collectNames(childFD, rel, seen); err != nil {
+		wantType := statType(st.Mode)
+		if wantType != allowed[rel] {
+			return fmt.Errorf("package inventory: rescan type mismatch at %q", rel)
+		}
+		flags := unix.O_RDONLY | unix.O_NOFOLLOW | unix.O_CLOEXEC
+		if wantType == "directory" {
+			flags |= unix.O_DIRECTORY
+		}
+		childFD, err := unix.Openat(fd, name, flags, 0)
+		if err != nil {
+			return fmt.Errorf("package inventory: rescan open %q: %w", rel, err)
+		}
+		var opened unix.Stat_t
+		if err := unix.Fstat(childFD, &opened); err != nil {
+			unix.Close(childFD)
+			return fmt.Errorf("package inventory: rescan fstat %q: %w", rel, err)
+		}
+		if !sameIdentity(st, opened) {
+			unix.Close(childFD)
+			return fmt.Errorf("package inventory: rescan substitution at %q", rel)
+		}
+		entry := Entry{Path: rel, Type: wantType, Dev: uint64(opened.Dev), Ino: uint64(opened.Ino), Mode: uint32(opened.Mode), Nlink: uint64(opened.Nlink), Size: opened.Size}
+		if wantType == "directory" {
+			if err := rescanDir(childFD, rel, snapshot); err != nil {
+				unix.Close(childFD)
 				return err
 			}
+			unix.Close(childFD)
+		} else {
+			content, digest, err := readStable(childFD, opened, rel)
+			unix.Close(childFD)
+			if err != nil {
+				return err
+			}
+			entry.SHA256 = digest
+			snapshot.bytes[rel] = content
+		}
+		snapshot.entries[rel] = entry
+		var after unix.Stat_t
+		if err := unix.Fstatat(fd, name, &after, unix.AT_SYMLINK_NOFOLLOW); err != nil || !sameIdentity(opened, after) {
+			if err != nil {
+				return fmt.Errorf("package inventory: rescan parent continuity failed at %q: %w", rel, err)
+			}
+			return fmt.Errorf("package inventory: rescan parent continuity failed at %q", rel)
 		}
 	}
 	return nil
+}
+
+func sameEntryIdentity(a, b Entry) bool {
+	return a.Path == b.Path && a.Type == b.Type && a.Dev == b.Dev && a.Ino == b.Ino && a.Mode == b.Mode && a.Nlink == b.Nlink && a.Size == b.Size
 }
 
 func directoryNames(fd int, parent string) ([]string, error) {
