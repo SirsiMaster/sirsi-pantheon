@@ -147,6 +147,7 @@ func TestFetchRemoteControlUsesBearerAndRejectsInvalidResponse(t *testing.T) {
 	envelope := routerboard.ControlEnvelope{
 		Schema: routerboard.ControlSchema, Authority: "canonical-routerstore", Revision: 7,
 		GeneratedAt: state.GeneratedAt, StateSHA256: hex.EncodeToString(stateSum[:]), State: state,
+		Capabilities: routerboard.ControlCapabilities(),
 	}
 	validBody, err := json.Marshal(envelope)
 	if err != nil {
@@ -219,6 +220,7 @@ func TestRemoteControlSnapshotBindsEnvelopeTimestampToState(t *testing.T) {
 	envelope := routerboard.ControlEnvelope{
 		Schema: routerboard.ControlSchema, Authority: "canonical-routerstore", Revision: 1,
 		GeneratedAt: "2026-09-07T12:00:01Z", StateSHA256: hex.EncodeToString(stateSum[:]), State: state,
+		Capabilities: routerboard.ControlCapabilities(),
 	}
 	body, err := json.Marshal(envelope)
 	if err != nil {
@@ -239,6 +241,7 @@ func TestRemoteControlSnapshotRejectsMalformedObservationTimestamp(t *testing.T)
 	body, err := json.Marshal(routerboard.ControlEnvelope{
 		Schema: routerboard.ControlSchema, Authority: "canonical-routerstore", Revision: 1,
 		GeneratedAt: state.GeneratedAt, StateSHA256: hex.EncodeToString(stateSum[:]), State: state,
+		Capabilities: routerboard.ControlCapabilities(),
 	})
 	if err != nil {
 		t.Fatal(err)

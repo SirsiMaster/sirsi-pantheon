@@ -48,6 +48,9 @@ func TestControlEnvelopeUsesCanonicalBoardStateAndCapabilities(t *testing.T) {
 	if got.StateSHA256 != hex.EncodeToString(stateSum[:]) {
 		t.Fatalf("state digest = %q, want canonical state digest", got.StateSHA256)
 	}
+	if err := got.Validate(); err != nil {
+		t.Fatalf("valid envelope rejected: %v", err)
+	}
 	if len(got.Capabilities) != 7 {
 		t.Fatalf("capability count = %d, want 7", len(got.Capabilities))
 	}
@@ -57,6 +60,41 @@ func TestControlEnvelopeUsesCanonicalBoardStateAndCapabilities(t *testing.T) {
 			t.Fatalf("invalid or duplicate capability: %+v", capability)
 		}
 		seen[capability.Verb] = true
+	}
+}
+
+func TestControlEnvelopeRejectsRegistryAndStateDrift(t *testing.T) {
+	state := Payload{GeneratedAt: "2026-09-07T12:00:00Z"}
+	stateBytes, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stateSum := sha256.Sum256(stateBytes)
+	valid := ControlEnvelope{
+		Schema: ControlSchema, Authority: "canonical-routerstore", Revision: 1,
+		GeneratedAt: state.GeneratedAt, StateSHA256: hex.EncodeToString(stateSum[:]), State: state,
+		Capabilities: ControlCapabilities(),
+	}
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("valid envelope rejected: %v", err)
+	}
+	cases := map[string]func(*ControlEnvelope){
+		"missing capability":   func(e *ControlEnvelope) { e.Capabilities = e.Capabilities[:len(e.Capabilities)-1] },
+		"duplicate capability": func(e *ControlEnvelope) { e.Capabilities = append(e.Capabilities, e.Capabilities[0]) },
+		"unknown capability":   func(e *ControlEnvelope) { e.Capabilities[0].Verb = "unknown" },
+		"mutated capability":   func(e *ControlEnvelope) { e.Capabilities[0].Command = "sirsi forged" },
+		"state drift":          func(e *ControlEnvelope) { e.State.Build = "drift" },
+		"identity drift":       func(e *ControlEnvelope) { e.Authority = "untrusted" },
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			candidate := valid
+			candidate.Capabilities = append([]ControlCapability(nil), valid.Capabilities...)
+			mutate(&candidate)
+			if err := candidate.Validate(); err == nil {
+				t.Fatal("drifted control envelope was accepted")
+			}
+		})
 	}
 }
 

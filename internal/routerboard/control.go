@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -52,6 +53,70 @@ func cloneCapabilities() []ControlCapability {
 	return append([]ControlCapability(nil), controlCapabilities...)
 }
 
+// ControlCapabilities returns the canonical closed capability registry for
+// clients that construct or inspect a control envelope in another package.
+// The returned slice is a copy and cannot mutate the router's registry.
+func ControlCapabilities() []ControlCapability { return cloneCapabilities() }
+
+// Validate verifies the complete control envelope before it is published or
+// consumed. The capability list is part of the authority contract: a client
+// must not accept an envelope that advertises a different command surface.
+func (e ControlEnvelope) Validate() error {
+	if e.Schema != ControlSchema {
+		return fmt.Errorf("control envelope schema %q is unsupported", e.Schema)
+	}
+	if e.Authority != "canonical-routerstore" {
+		return fmt.Errorf("control envelope authority %q is not canonical-routerstore", e.Authority)
+	}
+	if e.Revision == 0 {
+		return errors.New("control envelope revision is zero")
+	}
+	if strings.TrimSpace(e.GeneratedAt) == "" || e.GeneratedAt != e.State.GeneratedAt {
+		return errors.New("control envelope generated_at does not match canonical state")
+	}
+	if _, err := time.Parse(time.RFC3339Nano, e.GeneratedAt); err != nil {
+		return fmt.Errorf("control envelope generated_at is not RFC3339: %w", err)
+	}
+	canonicalState, err := json.Marshal(e.State)
+	if err != nil {
+		return fmt.Errorf("control envelope state: %w", err)
+	}
+	stateSum := sha256.Sum256(canonicalState)
+	if e.StateSHA256 != hex.EncodeToString(stateSum[:]) {
+		return errors.New("control envelope state digest mismatch")
+	}
+	if len(e.Capabilities) != len(controlCapabilities) {
+		return fmt.Errorf("control envelope capability count %d does not match canonical count %d", len(e.Capabilities), len(controlCapabilities))
+	}
+	expected := make(map[string]ControlCapability, len(controlCapabilities))
+	for _, capability := range controlCapabilities {
+		expected[capability.Verb] = capability
+	}
+	seen := make(map[string]struct{}, len(e.Capabilities))
+	for _, capability := range e.Capabilities {
+		if capability.Verb == "" {
+			return errors.New("control envelope contains an empty capability verb")
+		}
+		if _, duplicate := seen[capability.Verb]; duplicate {
+			return fmt.Errorf("control envelope contains duplicate capability %q", capability.Verb)
+		}
+		seen[capability.Verb] = struct{}{}
+		canonical, ok := expected[capability.Verb]
+		if !ok {
+			return fmt.Errorf("control envelope contains unknown capability %q", capability.Verb)
+		}
+		if capability != canonical {
+			return fmt.Errorf("control envelope capability %q differs from canonical registry", capability.Verb)
+		}
+	}
+	for _, capability := range controlCapabilities {
+		if _, ok := seen[capability.Verb]; !ok {
+			return fmt.Errorf("control envelope is missing capability %q", capability.Verb)
+		}
+	}
+	return nil
+}
+
 // SnapshotControl wraps the latest successful board poll. A zero version is
 // deliberately an error: a missing poll is not an empty fleet.
 func (b *Board) SnapshotControl() ([]byte, uint64, error) {
@@ -82,6 +147,9 @@ func (b *Board) SnapshotControl() ([]byte, uint64, error) {
 		StateSHA256:  hex.EncodeToString(stateSum[:]),
 		Capabilities: cloneCapabilities(),
 		State:        state,
+	}
+	if err := envelope.Validate(); err != nil {
+		return nil, version, err
 	}
 	out, err := json.Marshal(envelope)
 	if err != nil {

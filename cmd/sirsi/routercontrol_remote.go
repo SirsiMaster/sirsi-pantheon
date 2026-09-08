@@ -3,8 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -110,29 +108,8 @@ func validateRemoteControlSnapshot(body []byte) error {
 		}
 		return fmt.Errorf("control snapshot contains trailing JSON: %w", err)
 	}
-	if envelope.Schema != routerboard.ControlSchema {
-		return fmt.Errorf("control snapshot schema %q is unsupported", envelope.Schema)
-	}
-	if envelope.Authority != "canonical-routerstore" {
-		return fmt.Errorf("control snapshot authority %q is not canonical-routerstore", envelope.Authority)
-	}
-	if envelope.Revision == 0 {
-		return fmt.Errorf("control snapshot revision is zero")
-	}
-	if strings.TrimSpace(envelope.GeneratedAt) == "" || envelope.GeneratedAt != envelope.State.GeneratedAt {
-		return fmt.Errorf("control snapshot generated_at does not match canonical state")
-	}
-	if _, err := time.Parse(time.RFC3339Nano, envelope.GeneratedAt); err != nil {
-		return fmt.Errorf("control snapshot generated_at is not RFC3339: %w", err)
-	}
-	canonicalState, err := json.Marshal(envelope.State)
-	if err != nil {
-		return fmt.Errorf("control snapshot state: %w", err)
-	}
-	stateSum := sha256.Sum256(canonicalState)
-	want := hex.EncodeToString(stateSum[:])
-	if envelope.StateSHA256 != want {
-		return fmt.Errorf("control snapshot state digest mismatch")
+	if err := envelope.Validate(); err != nil {
+		return fmt.Errorf("control snapshot envelope: %w", err)
 	}
 	return nil
 }
