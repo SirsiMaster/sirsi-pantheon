@@ -170,6 +170,36 @@ func TestAuthenticatedControlActionsUseCanonicalStoreAndLeaseFence(t *testing.T)
 	}
 }
 
+func TestInjectedControlStoreRequiresConfiguredTokenForReadSnapshot(t *testing.T) {
+	store, err := routerstore.Open(t.TempDir() + "/router.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	b := New("/bin/false", "", "test-build")
+	b.mu.Lock()
+	b.version = 1
+	b.payload = []byte(`{"generated_at":"2026-09-07T12:00:00Z","evidence":[],"fleet":[],"activity":[],"data_errors":[],"threads":[],"registration_gaps":[],"tasks":[],"board":{},"ledger":{},"counters":{}}`)
+	b.mu.Unlock()
+	h := NewHandlerWithControlStore(b, t.TempDir(), store, "test-token")
+	mux := http.NewServeMux()
+	h.Register(mux)
+
+	unauthorized := httptest.NewRecorder()
+	mux.ServeHTTP(unauthorized, httptest.NewRequest(http.MethodGet, "/api/control", nil))
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized snapshot status = %d, want 401", unauthorized.Code)
+	}
+
+	authorizedRequest := httptest.NewRequest(http.MethodGet, "/api/control", nil)
+	authorizedRequest.Header.Set("Authorization", "Bearer test-token")
+	authorized := httptest.NewRecorder()
+	mux.ServeHTTP(authorized, authorizedRequest)
+	if authorized.Code != http.StatusOK {
+		t.Fatalf("authorized snapshot status = %d: %s", authorized.Code, authorized.Body.String())
+	}
+}
+
 func TestControlActionRejectsUnknownFieldsAndMissingAuthorization(t *testing.T) {
 	store, err := routerstore.Open(t.TempDir() + "/router.db")
 	if err != nil {

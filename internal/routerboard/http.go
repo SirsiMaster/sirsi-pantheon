@@ -61,7 +61,7 @@ func NewHandlerWithControlAuth(b *Board, dir, token string, requireAuth bool) *H
 // NewHandlerWithControlStore injects the canonical store for tests and
 // embedded hosts. The handler does not close an injected store.
 func NewHandlerWithControlStore(b *Board, dir string, store *routerstore.Store, token string) *Handler {
-	return &Handler{board: b, dir: dir, controlToken: token, openControlStore: func() (*routerstore.Store, bool, error) {
+	return &Handler{board: b, dir: dir, controlToken: token, requireControlAuth: strings.TrimSpace(token) != "", openControlStore: func() (*routerstore.Store, bool, error) {
 		return store, false, nil
 	}}
 }
