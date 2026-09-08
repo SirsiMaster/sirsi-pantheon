@@ -5,17 +5,14 @@
 package main
 
 import (
-	"errors"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 
-	"github.com/SirsiMaster/sirsi-pantheon/internal/packageinventory"
-	"golang.org/x/sys/unix"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/packageinventorycmd"
 )
-
-const maxCanonicalInput = 32 << 20
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -44,26 +41,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "sirsi-package-inventory: --app, --version, --build, --info-plist, --pkg-info, and --launch-agent are required")
 		return 2
 	}
-	info, err := readCanonicalFile(infoPath)
-	if err != nil {
-		return fail(stderr, "info-plist", err)
-	}
-	pkgInfo, err := readCanonicalFile(pkgInfoPath)
-	if err != nil {
-		return fail(stderr, "pkg-info", err)
-	}
-	launchAgent, err := readCanonicalFile(launchAgentPath)
-	if err != nil {
-		return fail(stderr, "launch-agent", err)
-	}
-	report, err := packageinventory.Verify(app, packageinventory.Expectations{
-		Version: version, Build: build, InfoPlist: info, PkgInfo: pkgInfo,
-		LaunchAgent: launchAgent, RequireCodeSignature: requireCodeSignature,
+	report, err := packageinventorycmd.Verify(packageinventorycmd.Inputs{
+		App: app, Version: version, Build: build, InfoPlist: infoPath,
+		PkgInfo: pkgInfoPath, LaunchAgent: launchAgentPath,
+		RequireCodeSignature: requireCodeSignature,
 	})
 	if err != nil {
 		return fail(stderr, "app", err)
 	}
-	encoder := jsonEncoder(stdout)
+	encoder := json.NewEncoder(stdout)
+	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(report); err != nil {
 		fmt.Fprintf(stderr, "sirsi-package-inventory: write report: %v\n", err)
 		return 1
@@ -71,57 +58,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-type reportEncoder interface {
-	Encode(any) error
-}
-
-func jsonEncoder(w io.Writer) reportEncoder {
-	return newJSONEncoder(w)
-}
-
 func fail(stderr io.Writer, field string, err error) int {
 	fmt.Fprintf(stderr, "sirsi-package-inventory: %s: %v\n", field, err)
 	return 1
-}
-
-func readCanonicalFile(path string) ([]byte, error) {
-	if path == "" {
-		return nil, errors.New("path is required")
-	}
-	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
-	if err != nil {
-		return nil, err
-	}
-	file := os.NewFile(uintptr(fd), path)
-	if file == nil {
-		unix.Close(fd)
-		return nil, errors.New("cannot retain descriptor")
-	}
-	defer file.Close()
-	var before unix.Stat_t
-	if err := unix.Fstat(fd, &before); err != nil {
-		return nil, err
-	}
-	if before.Mode&unix.S_IFMT != unix.S_IFREG || before.Nlink != 1 || before.Size < 0 || before.Size > maxCanonicalInput {
-		return nil, errors.New("expected a regular nlink=1 file within the size limit")
-	}
-	data, err := io.ReadAll(io.LimitReader(file, maxCanonicalInput+1))
-	if err != nil {
-		return nil, err
-	}
-	if int64(len(data)) != before.Size {
-		return nil, errors.New("file changed size during read")
-	}
-	var after unix.Stat_t
-	if err := unix.Fstat(fd, &after); err != nil {
-		return nil, err
-	}
-	if !sameSourceIdentity(before, after) {
-		return nil, errors.New("file identity changed during read")
-	}
-	return data, nil
-}
-
-func sameSourceIdentity(a, b unix.Stat_t) bool {
-	return a.Dev == b.Dev && a.Ino == b.Ino && a.Mode == b.Mode && a.Nlink == b.Nlink && a.Size == b.Size
 }
