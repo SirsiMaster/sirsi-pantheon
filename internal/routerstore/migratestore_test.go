@@ -262,15 +262,15 @@ func TestMigrateStoreRollsBackAndNamesConflicts(t *testing.T) {
 	t.Cleanup(func() { _ = src.Close() })
 	seedLedger(t, src)
 	dst := newDst(t)
-	if _, err := MigrateStore(src, dst, MigrateOptions{}); err != nil {
-		t.Fatal(err)
+	if _, merr := MigrateStore(src, dst, MigrateOptions{}); merr != nil {
+		t.Fatal(merr)
 	}
 	id := src.mustFirstItemID(t)
-	if _, err := dst.db.Exec(`UPDATE items SET title='diverged' WHERE id=?`, id); err != nil {
-		t.Fatal(err)
+	if _, uerr := dst.db.Exec(`UPDATE items SET title='diverged' WHERE id=?`, id); uerr != nil {
+		t.Fatal(uerr)
 	}
-	if _, err := dst.db.Exec(`DELETE FROM tasks`); err != nil { // a row the import WOULD add back
-		t.Fatal(err)
+	if _, derr := dst.db.Exec(`DELETE FROM tasks`); derr != nil { // a row the import WOULD add back
+		t.Fatal(derr)
 	}
 	before, _ := CanonicalDump(dst)
 
