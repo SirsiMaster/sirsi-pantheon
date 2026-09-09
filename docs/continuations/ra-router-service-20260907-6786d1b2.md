@@ -121,3 +121,6 @@ transaction; commit only on hash-equal; `Conflicts`/`ConflictCount` name the pre
 destination byte-identical. (5) quiescence not ownership-bound → an existing marker is accepted only if it reads
 `migrate-store <RFC3339>` younger than 1 h, else refused with the unquarantine hint; tested. Note: the schema job's new SA has NOT
 been re-run against the live instance yet (the schema is already applied); it runs at the next apply, or on demand as evidence.
+Re-bind request = router item 20260909-172731 (ra → sirsi-software-admin). Correction on record: Ra first ran `scripts/bind/sirsi-bind.sh`
+thinking it sent the request; it recorded an APPROVED review as sirsi-bind[bot] on c8e4271 (review 5157708582), dismissed one minute
+later with the reason. The SSA reject stands until SSA re-reviews; nobody but the named binder runs sirsi-bind.sh.
