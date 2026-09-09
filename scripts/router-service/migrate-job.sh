@@ -36,7 +36,7 @@ while :; do st=$($G builds describe "$BUILD" --format='value(status)'); case $st
 echo "   $TAG"
 
 echo "== 3. Job $JOB (${DRY_RUN:+DRY RUN}${DRY_RUN:-REAL IMPORT})"
-cmd="cp /data/src.db /tmp/src.db && exec /sirsi router migrate-store --from /tmp/src.db --scrub-nul --json"
+cmd="cp /data/src.db /tmp/src.db && exec /sirsi router migrate-store --from /tmp/src.db --scrub-nul${JSON:+ --json}"  # text report: one greppable line per hash; JSON=1 for the full report
 [ "${DRY_RUN:-0}" = 1 ] && cmd="$cmd --dry-run"
 $G run jobs deploy "$JOB" --region="$REGION" --image="$TAG" --service-account="$JOB_SA" \
   --set-cloudsql-instances="$CONN" --network=default --subnet=default --vpc-egress=private-ranges-only \
