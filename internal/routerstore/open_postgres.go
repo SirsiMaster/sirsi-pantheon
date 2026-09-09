@@ -57,7 +57,7 @@ func OpenPostgres(dsn string) (*SQLiteStore, error) {
 	var version int
 	if err := db.QueryRowContext(ctx, `SELECT version FROM router.schema_version`).Scan(&version); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("routerstore: postgres ledger has no router.schema_version (apply pg/schema.sql as router_migrator first): %w", err)
+		return nil, fmt.Errorf("routerstore: postgres SELECT router.schema_version: %w (no such table → apply pg/schema.sql as router_migrator first)", err)
 	}
 	if version != postgresSchemaVersion {
 		_ = db.Close()

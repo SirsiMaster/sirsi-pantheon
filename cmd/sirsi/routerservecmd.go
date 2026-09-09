@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -71,12 +72,37 @@ func openServeStore(spec string) (routerstore.Store, error) {
 	}
 }
 
+// Boot-time store open is retried: on Cloud Run the first connect to the private-IP
+// Cloud SQL instance from a cold sandbox can exceed the 5 s query budget, and a
+// process that exits on that one miss costs the first request a 503 while a second
+// instance starts (observed 2026-09-09T17:14:49Z, revision 00006). Six tries over
+// ~30 s stay well inside the startup probe; a wrong DSN or schema still fails loudly.
+const (
+	serveOpenAttempts = 6
+	serveOpenWait     = 5 * time.Second
+)
+
+func openWithRetry(w io.Writer, attempts int, wait time.Duration, open func() (routerstore.Store, error)) (routerstore.Store, error) {
+	var err error
+	for i := 1; ; i++ {
+		var s routerstore.Store
+		if s, err = open(); err == nil {
+			return s, nil
+		}
+		if i >= attempts {
+			return nil, err
+		}
+		fmt.Fprintf(w, "router serve: open store attempt %d/%d: %v — retrying in %s\n", i, attempts, err, wait)
+		time.Sleep(wait)
+	}
+}
+
 func runRouterServe(cmd *cobra.Command, _ []string) error {
 	token := strings.TrimSpace(os.Getenv(routerServeTokenEnv))
 	if token == "" {
 		return fmt.Errorf("router serve: %s is empty; refusing to serve an unauthenticated ledger (ADR-062 §3)", routerServeTokenEnv)
 	}
-	store, err := openServeStore(routerServeStore)
+	store, err := openWithRetry(cmd.ErrOrStderr(), serveOpenAttempts, serveOpenWait, func() (routerstore.Store, error) { return openServeStore(routerServeStore) })
 	if err != nil {
 		return fmt.Errorf("router serve: open store: %w", err)
 	}
