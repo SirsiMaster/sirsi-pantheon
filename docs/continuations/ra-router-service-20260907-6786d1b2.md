@@ -85,3 +85,24 @@ Cloud SQL `en_US.UTF8` collation orders text PKs unlike SQLite, fixed by sorting
 sessions/host_tokens/threads — cut-over rule: empty the identity tables right before the final import, mint tokens after. Real #2 29jsc:
 hash-equal 232bfcd9…, wrote={threads:2}; real #3 f5kh4: hash-equal, wrote={}. From the M1 over HTTPS `sirsi router status ra` = 735 open /
 5687 closed = the M5. Ad-hoc SQL on the VPC: job `sirsi-router-psql`. Owed: delete `sirsi-router-migrate:*` images (need repoAdmin).
+
+## rs-19/rs-20 prep (2026-09-09T17:1xZ, session 84ab1eaa on the M1): runbook written, cut-over waits on #711
+`scripts/router-service/cutover-m5.sh` (commit c745844) runs from the M1, seven resumable steps (`FROM=n`) + `rollback`. M5 facts that
+shaped it: (1) the M5 `~/.local/bin/sirsi` is the Aug 22 build with NO service client (`strings` finds no SIRSI_ROUTER_URL) — step 1
+refuses and prints the rebuild recipe (rm then cp; cp over a live binary SIGKILLs it); (2) there are no `router.wake.*` plists on the M5 —
+the only launchd lanes are `ai.sirsi.horus.agent-router` (runs `/bin/zsh -l -c`, so it reads `~/.zshenv`), `ai.sirsi.pantheon` (menubar,
+reads only) and `ai.sirsi.host-readiness-watch` (zsh script, never calls `sirsi router`); horus currently exits 127 because its plist
+points at a `/private/tmp/pantheon-sne-product-integration-20260830/...` binary that no longer exists — REPORT, do not touch (owner
+board 2026-08-09); (3) ssh relays and interactive shells are zsh and read `~/.zshenv` too — so ONE file, `~/.sirsi/router-service.env`
+(0600) sourced from `~/.zshenv`, reaches every writer; no plist edits, no wake.go change; (4) the live router.db is WAL + user_version 16,
+so freeze = `wal_checkpoint(TRUNCATE)` + `journal_mode=DELETE` + `chmod a-w` (readers of a read-only WAL db need a writable -shm).
+Gate = the text report's `IMPORT  source <sha>` / `destination <sha>` lines (migrate-job.sh is text by default now, `JSON=1` opt-in: the
+indented JSON is interleaved across Cloud Logging entries). Env writer unit-tested in a throwaway HOME (0600, no duplicate zshenv line,
+zsh sees both vars); preflight run live = refused on the old M5 binary, as designed.
+**Cold-start defect found and fixed (4fe6aa7):** healthz returned 503 once at 17:14:40Z — the cold instance missed its first private-IP
+Cloud SQL connect inside the 5 s budget, exited(1), and Cloud Run started a second instance. Server now retries the open 6×5 s at boot;
+the error no longer blames a missing schema for a connect failure. No client retries the 503 (`ErrServiceUnavailable` has no consumer).
+Needs a deploy (deploy.sh) after #711 merges — do it BEFORE the cut-over so lanes never see that 503.
+Order once #711 is merged: deploy.sh (rev 00007 with the retry) → rebuild M5 sirsi from main → pick a quiet window (M5 `uptime` load,
+`pgrep -fl claude` count, no `sirsi router` mid-flight) → `bash scripts/router-service/cutover-m5.sh` → close rs-18/19/20 with the
+verify output as evidence → Bind #4 → report to the owner.
