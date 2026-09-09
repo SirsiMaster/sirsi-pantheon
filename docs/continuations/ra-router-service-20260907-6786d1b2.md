@@ -106,3 +106,18 @@ Needs a deploy (deploy.sh) after #711 merges — do it BEFORE the cut-over so la
 Order once #711 is merged: deploy.sh (rev 00007 with the retry) → rebuild M5 sirsi from main → pick a quiet window (M5 `uptime` load,
 `pgrep -fl claude` count, no `sirsi router` mid-flight) → `bash scripts/router-service/cutover-m5.sh` → close rs-18/19/20 with the
 verify output as evidence → Bind #4 → report to the owner.
+
+## SSA whole-PR review of #711 — REJECT (2026-09-08T21:01Z, item 20260908-210131) — answered 2026-09-09T17:5xZ
+Five blocking findings, all addressed on the branch (see the bind request for the mapping): (1) `migrate-job.sh` DRY_RUN mutated GCP →
+`DRY_RUN=1` is print-only via `run()`, the rehearsal is `MODE=report` (job with `--dry-run`), the real import `MODE=import`; the job
+prints the snapshot's sha256 from inside the container and the script asserts it equals the local file (source identity bound); a
+cleanup receipt tries the image delete and prints exactly what the owner still owes when the SA lacks repoAdmin. (2) `provision.sh`
+dry run read Secret Manager → `secret_get` never reads under DRY_RUN; passwords go to `gcloud sql users …` via `--prompt-for-password`
+on stdin so no argv/log/ps carries them. (3) DML-only unproven → `apply-schema-job.sh` runs as its own SA `sirsi-router-schema@`
+(cloudsql.client + secretAccessor on its three secrets), checks the migrator's authority to revoke BEFORE the bundle, and closes the
+audit: memberships=[], super/createrole/createdb/bypassrls all f, no CREATE on schema or db, no non-DML default ACL, owns nothing —
+then the probe. (4) no atomic rollback → `MigrateStore` runs the import, trigger cleanup and the destination dump inside ONE
+transaction; commit only on hash-equal; `Conflicts`/`ConflictCount` name the pre-existing keys; test proves a diverged row leaves the
+destination byte-identical. (5) quiescence not ownership-bound → an existing marker is accepted only if it reads
+`migrate-store <RFC3339>` younger than 1 h, else refused with the unquarantine hint; tested. Note: the schema job's new SA has NOT
+been re-run against the live instance yet (the schema is already applied); it runs at the next apply, or on demand as evidence.

@@ -21,6 +21,7 @@ package routerstore
 import (
 	"bytes"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -84,11 +85,24 @@ type Dump struct {
 // CanonicalDump reads every table in PK order and hashes it.
 func CanonicalDump(s *SQLiteStore) (Dump, error) { return canonicalDump(s, false) }
 
+// runner is the slice of a store handle the migration needs; *dbHandle and
+// *txHandle both satisfy it, so the import and its proof can run inside ONE
+// transaction and the destination dump sees the uncommitted rows.
+type runner interface {
+	Exec(q string, args ...any) (sql.Result, error)
+	Query(q string, args ...any) (*sql.Rows, error)
+	QueryRow(q string, args ...any) *sql.Row
+}
+
 func canonicalDump(s *SQLiteStore, scrubNUL bool) (Dump, error) {
+	return canonicalDumpVia(s.db, scrubNUL)
+}
+
+func canonicalDumpVia(r runner, scrubNUL bool) (Dump, error) {
 	var d Dump
 	overall := sha256.New()
 	for _, t := range migratedTables {
-		td, err := dumpTable(s, t, scrubNUL)
+		td, err := dumpTable(r, t, scrubNUL)
 		if err != nil {
 			return Dump{}, err
 		}
@@ -99,8 +113,8 @@ func canonicalDump(s *SQLiteStore, scrubNUL bool) (Dump, error) {
 	return d, nil
 }
 
-func dumpTable(s *SQLiteStore, t migratedTable, scrubNUL bool) (TableDump, error) {
-	rows, err := s.db.Query("SELECT * FROM " + t.name + " ORDER BY " + strings.Join(t.pk, ", "))
+func dumpTable(r runner, t migratedTable, scrubNUL bool) (TableDump, error) {
+	rows, err := r.Query("SELECT * FROM " + t.name + " ORDER BY " + strings.Join(t.pk, ", "))
 	if err != nil {
 		return TableDump{}, fmt.Errorf("dump %s: %w", t.name, err)
 	}
@@ -193,8 +207,14 @@ type MigrateReport struct {
 	Destination Dump           `json:"destination,omitempty"`
 	Wrote       map[string]int `json:"wrote"` // rows inserted per table (0 on dry run)
 	WouldWrite  map[string]int `json:"would_write"`
-	Idempotent  bool           `json:"idempotent"` // set by the caller's second pass
-	Notes       []string       `json:"notes,omitempty"`
+	// Conflicts lists, per table, the primary keys of source rows the destination
+	// already held (INSERT … ON CONFLICT DO NOTHING affected 0 rows) — the
+	// repairable set when the hash gate then fails. Capped at conflictKeysCap
+	// keys per table; ConflictCount carries the full count.
+	Conflicts     map[string][]string `json:"conflicts,omitempty"`
+	ConflictCount map[string]int      `json:"conflict_count,omitempty"`
+	Idempotent    bool                `json:"idempotent"` // set by the caller's second pass
+	Notes         []string            `json:"notes,omitempty"`
 	// NULCells lists (table key column) cells holding a 0x00 byte in the source.
 	NULCells []string `json:"nul_cells,omitempty"`
 	// TriggerExtrasRemoved counts destination wake_events minted by the
@@ -206,15 +226,19 @@ type MigrateReport struct {
 // ErrSourceHasNUL is returned when a text cell contains 0x00 and ScrubNUL is off.
 var ErrSourceHasNUL = errors.New("routerstore: source contains NUL bytes in text cells (Postgres cannot store them); re-run with ScrubNUL/--scrub-nul to strip them, or clean the rows listed")
 
-var ErrSourceMoved = errors.New("routerstore: source ledger changed during migration; not quiesced — aborting, destination may be partial")
+var ErrSourceMoved = errors.New("routerstore: source ledger changed during migration; not quiesced — aborting, destination rolled back")
 
-// MigrateStore copies src into dst. On a real run the destination dump must
-// hash-equal the source dump or an error is returned (the rows are already
-// written; the caller decides whether to keep them — they are a strict
-// subset of the source, never divergent, because every insert is DO NOTHING).
+const conflictKeysCap = 20
+
+// MigrateStore copies src into dst inside ONE destination transaction. On a
+// real run the destination dump (read through that transaction) must
+// hash-equal the source dump; the transaction commits only then, and any
+// failure — source moved, gate mismatch, insert error — rolls the destination
+// back to exactly what it was. Rows the destination already held are reported
+// as Conflicts so a failed gate names what to repair.
 func MigrateStore(src, dst *SQLiteStore, opts MigrateOptions) (MigrateReport, error) {
 	dryRun := opts.DryRun
-	rep := MigrateReport{DryRun: dryRun, Wrote: map[string]int{}, WouldWrite: map[string]int{}}
+	rep := MigrateReport{DryRun: dryRun, Wrote: map[string]int{}, WouldWrite: map[string]int{}, Conflicts: map[string][]string{}, ConflictCount: map[string]int{}}
 	// Pre-flight: NUL bytes. Listed always; fatal unless scrubbing.
 	unscrubbed, err := canonicalDump(src, false)
 	if err != nil {
@@ -268,6 +292,17 @@ func MigrateStore(src, dst *SQLiteStore, opts MigrateOptions) (MigrateReport, er
 			ordered = append(ordered, td)
 		}
 	}
+	var w runner = dst.db
+	var tx *txHandle
+	if !dryRun {
+		var terr error
+		if tx, terr = dst.db.Begin(); terr != nil {
+			return rep, fmt.Errorf("begin destination transaction: %w", terr)
+		}
+		w = tx
+		// Rollback after a successful Commit is a harmless ErrTxDone.
+		defer func() { _ = tx.Rollback() }()
+	}
 	for _, td := range ordered {
 		if len(td.rows) == 0 {
 			continue
@@ -278,6 +313,7 @@ func MigrateStore(src, dst *SQLiteStore, opts MigrateOptions) (MigrateReport, er
 		if dryRun {
 			continue
 		}
+		pkIdx := pkIndexes(td.Table, cols)
 		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(cols)), ",")
 		// INSERT OR IGNORE is rewritten to ON CONFLICT DO NOTHING on Postgres.
 		q := "INSERT OR IGNORE INTO " + td.Table + "(" + strings.Join(cols, ",") + ") VALUES(" + placeholders + ")"
@@ -303,16 +339,16 @@ func MigrateStore(src, dst *SQLiteStore, opts MigrateOptions) (MigrateReport, er
 					}
 				}
 				var cur string
-				qerr := dst.db.QueryRow(`SELECT value FROM state WHERE key=?`, r[ki]).Scan(&cur)
+				qerr := w.QueryRow(`SELECT value FROM state WHERE key=?`, r[ki]).Scan(&cur)
 				switch {
 				case qerr == nil && cur == fmt.Sprint(r[vi]):
 					continue
 				case qerr == nil:
-					if _, uerr := dst.db.Exec(`UPDATE state SET value=? WHERE key=?`, r[vi], r[ki]); uerr != nil {
+					if _, uerr := w.Exec(`UPDATE state SET value=? WHERE key=?`, r[vi], r[ki]); uerr != nil {
 						return rep, fmt.Errorf("update state %v: %w", r[ki], uerr)
 					}
 				default:
-					if _, ierr := dst.db.Exec(`INSERT INTO state(key,value) VALUES(?,?)`, r[ki], r[vi]); ierr != nil {
+					if _, ierr := w.Exec(`INSERT INTO state(key,value) VALUES(?,?)`, r[ki], r[vi]); ierr != nil {
 						return rep, fmt.Errorf("insert state %v: %w", r[ki], ierr)
 					}
 				}
@@ -328,12 +364,21 @@ func MigrateStore(src, dst *SQLiteStore, opts MigrateOptions) (MigrateReport, er
 					}
 				}
 			}
-			res, xerr := dst.db.Exec(q, r...)
+			res, xerr := w.Exec(q, r...)
 			if xerr != nil {
 				return rep, fmt.Errorf("insert into %s: %w", td.Table, xerr)
 			}
 			if n, _ := res.RowsAffected(); n > 0 {
 				rep.Wrote[td.Table] += int(n)
+				continue
+			}
+			rep.ConflictCount[td.Table]++
+			if len(rep.Conflicts[td.Table]) < conflictKeysCap {
+				key := make([]string, 0, len(pkIdx))
+				for _, pi := range pkIdx {
+					key = append(key, fmt.Sprint(r[pi]))
+				}
+				rep.Conflicts[td.Table] = append(rep.Conflicts[td.Table], strings.Join(key, "/"))
 			}
 		}
 	}
@@ -343,7 +388,7 @@ func MigrateStore(src, dst *SQLiteStore, opts MigrateOptions) (MigrateReport, er
 	// predate the v10 triggers). Those extras make dst ≠ src; remove them so
 	// the destination is exactly the source, nothing more.
 	if !dryRun {
-		removed, rerr := removeTriggerExtras(dst, before)
+		removed, rerr := removeTriggerExtras(w, before)
 		if rerr != nil {
 			return rep, rerr
 		}
@@ -363,8 +408,8 @@ func MigrateStore(src, dst *SQLiteStore, opts MigrateOptions) (MigrateReport, er
 	if dryRun {
 		return rep, nil
 	}
-	// (e) full diff by canonical hash.
-	dd, err := canonicalDump(dst, opts.ScrubNUL)
+	// (e) full diff by canonical hash, read through the open transaction.
+	dd, err := canonicalDumpVia(w, opts.ScrubNUL)
 	if err != nil {
 		return rep, fmt.Errorf("destination dump: %w", err)
 	}
@@ -372,10 +417,17 @@ func MigrateStore(src, dst *SQLiteStore, opts MigrateOptions) (MigrateReport, er
 	if dd.SHA256 != before.SHA256 {
 		for i := range before.Tables {
 			if i < len(dd.Tables) && before.Tables[i].SHA256 != dd.Tables[i].SHA256 {
-				rep.Notes = append(rep.Notes, fmt.Sprintf("table %s differs: src %d rows, dst %d rows", before.Tables[i].Table, before.Tables[i].Rows, dd.Tables[i].Rows))
+				n := fmt.Sprintf("table %s differs: src %d rows, dst %d rows", before.Tables[i].Table, before.Tables[i].Rows, dd.Tables[i].Rows)
+				if c := rep.ConflictCount[before.Tables[i].Table]; c > 0 {
+					n += fmt.Sprintf(", %d pre-existing key(s) e.g. %s", c, rep.Conflicts[before.Tables[i].Table][0])
+				}
+				rep.Notes = append(rep.Notes, n)
 			}
 		}
-		return rep, fmt.Errorf("routerstore: destination dump %s != source dump %s (%s)", dd.SHA256[:12], before.SHA256[:12], strings.Join(rep.Notes, "; "))
+		return rep, fmt.Errorf("routerstore: destination dump %s != source dump %s — rolled back (%s)", dd.SHA256[:12], before.SHA256[:12], strings.Join(rep.Notes, "; "))
+	}
+	if err := tx.Commit(); err != nil {
+		return rep, fmt.Errorf("commit destination: %w", err)
 	}
 	return rep, nil
 }
@@ -400,7 +452,7 @@ func pkIndexes(table string, cols []string) []int {
 
 // removeTriggerExtras deletes destination wake_events whose event_key the
 // source never had. Returns the number removed.
-func removeTriggerExtras(dst *SQLiteStore, src Dump) (int, error) {
+func removeTriggerExtras(dst runner, src Dump) (int, error) {
 	var srcKeys map[string]bool
 	for _, td := range src.Tables {
 		if td.Table != "wake_events" || len(td.rows) == 0 {
@@ -421,7 +473,7 @@ func removeTriggerExtras(dst *SQLiteStore, src Dump) (int, error) {
 			srcKeys[fmt.Sprint(r[ki])] = true
 		}
 	}
-	rows, err := dst.db.Query(`SELECT event_key FROM wake_events`)
+	rows, err := dst.Query(`SELECT event_key FROM wake_events`)
 	if err != nil {
 		return 0, err
 	}
@@ -438,7 +490,7 @@ func removeTriggerExtras(dst *SQLiteStore, src Dump) (int, error) {
 	}
 	_ = rows.Close()
 	for _, k := range extras {
-		if _, err := dst.db.Exec(`DELETE FROM wake_events WHERE event_key=?`, k); err != nil {
+		if _, err := dst.Exec(`DELETE FROM wake_events WHERE event_key=?`, k); err != nil {
 			return 0, fmt.Errorf("remove trigger-minted wake event %s: %w", k, err)
 		}
 	}

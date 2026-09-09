@@ -260,6 +260,29 @@ var (
 	migrateStoreScrub  bool
 )
 
+// migrateMarkerMaxAge bounds how long a marker left by a previous migrate-store
+// run still counts as a live quiesce; beyond it the run that set it is gone.
+const migrateMarkerMaxAge = time.Hour
+
+// migrateMarkerAllowed accepts only a marker written by migrate-store within
+// migrateMarkerMaxAge of now; anything else (an operator quarantine, a stale
+// run, a hand-written file) is refused so the migration never rides an
+// unrelated marker.
+func migrateMarkerAllowed(content string, now time.Time) error {
+	ts, ok := strings.CutPrefix(strings.TrimSpace(content), "migrate-store ")
+	if !ok {
+		return fmt.Errorf("fabric quarantine marker is not a migrate-store quiesce (content %q)", strings.TrimSpace(content))
+	}
+	set, err := time.Parse(time.RFC3339, ts)
+	if err != nil {
+		return fmt.Errorf("fabric quarantine marker has no parseable migrate-store timestamp (%q)", ts)
+	}
+	if age := now.Sub(set); age > migrateMarkerMaxAge || age < 0 {
+		return fmt.Errorf("migrate-store marker is stale (set %s, %s ago)", ts, age.Round(time.Second))
+	}
+	return nil
+}
+
 var routerMigrateStoreCmd = &cobra.Command{
 	Use:   "migrate-store",
 	Short: "Copy a SQLite ledger into the service backend with hash proof (ADR-062 rs-12; run on the service host)",
@@ -280,7 +303,17 @@ var routerMigrateStoreCmd = &cobra.Command{
 			created = true
 			fmt.Fprintf(cmd.ErrOrStderr(), "quiesce: fabric quarantine marker set (%s)\n", marker)
 		} else {
-			fmt.Fprintf(cmd.ErrOrStderr(), "quiesce: fabric quarantine marker already present (%s); left in place\n", marker)
+			// An existing marker is only a quiesce if THIS command set it recently
+			// (SSA finding 5, 2026-09-08): an operator quarantine or a stale marker
+			// from a crashed run says nothing about whether writers are stopped.
+			b, rerr := os.ReadFile(marker)
+			if rerr != nil {
+				return fmt.Errorf("read fabric quarantine marker: %w", rerr)
+			}
+			if merr := migrateMarkerAllowed(string(b), time.Now().UTC()); merr != nil {
+				return fmt.Errorf("quiesce: %w (%s) — clear it with `sirsi router unquarantine` once you have confirmed no writer is running", merr, marker)
+			}
+			fmt.Fprintf(cmd.ErrOrStderr(), "quiesce: fabric quarantine marker already held by migrate-store (%s); left in place\n", marker)
 		}
 		// Released ONLY here, success or failure, and only if we set it.
 		defer func() {

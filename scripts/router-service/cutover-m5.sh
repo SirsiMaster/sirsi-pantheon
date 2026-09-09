@@ -95,7 +95,7 @@ fi
 
 if [ "$FROM" -le 5 ]; then
   step 5 "import (real) + hash gate"
-  SNAP="$WORK/snap-$TS.db" bash "$ROOT/scripts/router-service/migrate-job.sh" | tee "$WORK/import-$TS.log"
+  MODE=import SNAP="$WORK/snap-$TS.db" bash "$ROOT/scripts/router-service/migrate-job.sh" | tee "$WORK/import-$TS.log"
   src=$(sed -n 's/^IMPORT  source \([0-9a-f]*\).*/\1/p' "$WORK/import-$TS.log" | tail -1)
   dst=$(sed -n 's/^destination \([0-9a-f]*\).*/\1/p' "$WORK/import-$TS.log" | tail -1)
   [ -n "$src" ] && [ "$src" = "$dst" ] || { echo "GATE FAILED source=$src destination=$dst — M5 stays frozen; fix and rerun FROM=4" >&2; exit 1; }

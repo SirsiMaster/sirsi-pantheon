@@ -3,6 +3,7 @@ package routerstore
 import (
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -248,4 +249,52 @@ func TestMigrateStoreSourceWinsOnPreseededState(t *testing.T) {
 	if err != nil || rep2.Wrote["state"] != 0 {
 		t.Fatalf("re-import: err=%v wrote state=%d", err, rep2.Wrote["state"])
 	}
+}
+
+// A destination row that already exists with different content is skipped by
+// ON CONFLICT DO NOTHING, the gate fails, and the whole import rolls back: the
+// destination is byte-for-byte what it was, and the report names the key.
+func TestMigrateStoreRollsBackAndNamesConflicts(t *testing.T) {
+	src, err := OpenPath(filepath.Join(t.TempDir(), "src.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = src.Close() })
+	seedLedger(t, src)
+	dst := newDst(t)
+	if _, err := MigrateStore(src, dst, MigrateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	id := src.mustFirstItemID(t)
+	if _, err := dst.db.Exec(`UPDATE items SET title='diverged' WHERE id=?`, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dst.db.Exec(`DELETE FROM tasks`); err != nil { // a row the import WOULD add back
+		t.Fatal(err)
+	}
+	before, _ := CanonicalDump(dst)
+
+	rep, err := MigrateStore(src, dst, MigrateOptions{})
+	if err == nil {
+		t.Fatal("gate must fail on a diverged row")
+	}
+	if !strings.Contains(err.Error(), "rolled back") || !strings.Contains(err.Error(), "pre-existing key") {
+		t.Fatalf("error must say it rolled back and name the conflict: %v", err)
+	}
+	if got := rep.Conflicts["items"]; len(got) != 2 || (got[0] != id && got[1] != id) {
+		t.Fatalf("conflict set must list both pre-existing items incl. %s: %v", id, rep.Conflicts)
+	}
+	after, _ := CanonicalDump(dst)
+	if after.SHA256 != before.SHA256 {
+		t.Fatal("failed import must leave the destination untouched (tasks row must NOT have been re-added)")
+	}
+}
+
+func (s *SQLiteStore) mustFirstItemID(t *testing.T) string {
+	t.Helper()
+	var id string
+	if err := s.db.QueryRow(`SELECT id FROM items ORDER BY id LIMIT 1`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	return id
 }

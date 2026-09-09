@@ -12,10 +12,10 @@ SA=sirsi-router-svc
 SA_EMAIL="$SA@$PROJECT.iam.gserviceaccount.com"
 NETWORK=${NETWORK:-default}
 G="gcloud --project=$PROJECT --quiet"
-run() { if [ "${DRY_RUN:-0}" = 1 ]; then echo "+ $*"; else echo "+ $*" >&2; "$@"; fi; }
+run() { echo "+ $*" >&2; [ "${DRY_RUN:-0}" = 1 ] || "$@"; }
 exists() { "$@" >/dev/null 2>&1; }
-secret_get() { # name -> latest value; under DRY_RUN a secret that was only echoed into existence reads as a placeholder
-  if [ "${DRY_RUN:-0}" = 1 ] && ! exists $G secrets describe "$1"; then echo "<dry-run:$1>"; else $G secrets versions access latest --secret="$1"; fi
+secret_get() { # name -> latest value. A dry run NEVER reads Secret Manager (SSA finding 2): placeholder always.
+  if [ "${DRY_RUN:-0}" = 1 ]; then echo "<dry-run:$1>"; else $G secrets versions access latest --secret="$1"; fi
 }
 secret_put() { # name, value-from-stdin
   if exists $G secrets describe "$1"; then run $G secrets versions add "$1" --data-file=-; else run $G secrets create "$1" --replication-policy=automatic --data-file=-; fi
@@ -49,9 +49,10 @@ for role in router_migrator router_service; do
   fi
   pw=$(secret_get "$secret")
   if exists $G sql users describe $role --instance=$INSTANCE; then
-    run $G sql users set-password $role --instance=$INSTANCE --password="$pw"
+    # --prompt-for-password reads stdin: the password never appears in argv, `run`'s echo, or a process listing.
+    printf '%s\n' "$pw" | run $G sql users set-password $role --instance=$INSTANCE --prompt-for-password
   else
-    run $G sql users create $role --instance=$INSTANCE --password="$pw"
+    printf '%s\n' "$pw" | run $G sql users create $role --instance=$INSTANCE --prompt-for-password
   fi
 done
 
