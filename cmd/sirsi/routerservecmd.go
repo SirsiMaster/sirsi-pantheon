@@ -108,7 +108,11 @@ func runRouterServe(cmd *cobra.Command, _ []string) error {
 	}
 	defer func() { _ = store.Close() }()
 
-	opts := routerstore.ServerOptions{Token: token, MaxWait: routerServeMaxWait}
+	opts := routerstore.ServerOptions{Token: token, MaxWait: routerServeMaxWait, RuleOfRa: strings.TrimSpace(os.Getenv("SIRSI_ROUTER_RULE_OF_RA"))}
+	if opts.RuleOfRa == "" {
+		opts.RuleOfRa = "log" // the Rule of Ra ships observing; SIRSI_ROUTER_RULE_OF_RA=enforce flips it
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(), "router serve: rule of ra = %s\n", opts.RuleOfRa)
 	if d, derr := time.ParseDuration(strings.TrimSpace(os.Getenv("SIRSI_ROUTER_SERVE_TEST_DELAY"))); derr == nil && d > 0 {
 		opts.TestDelay = d
 		fmt.Fprintf(cmd.ErrOrStderr(), "router serve: TEST DELAY %s injected on every call (SIRSI_ROUTER_SERVE_TEST_DELAY) — evidence runs only\n", d)

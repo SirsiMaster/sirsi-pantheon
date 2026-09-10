@@ -44,8 +44,9 @@ CREATE TABLE IF NOT EXISTS schema_version (
     version    INTEGER NOT NULL,
     applied_at TEXT    NOT NULL
 );
-INSERT INTO schema_version(version, applied_at) VALUES (18, router.now_rfc3339())
-  ON CONFLICT (singleton) DO NOTHING;
+INSERT INTO schema_version(version, applied_at) VALUES (19, router.now_rfc3339())
+  ON CONFLICT (singleton) DO UPDATE SET version = 19, applied_at = router.now_rfc3339()
+  WHERE schema_version.version < 19;
 
 -- ── v1 ─────────────────────────────────────────────────────────────────────
 
@@ -252,6 +253,8 @@ CREATE TABLE sessions (
     revoked      TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX idx_sessions_host_agent ON sessions(host, agent);
+-- v19 — the Rule of Ra (ADR-062 20b.1): the registered thread a session was minted for.
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS thread_id TEXT NOT NULL DEFAULT '';
 
 -- Which session holds each lease. A side table, not columns on items/tasks:
 -- items mirror work.Item field-for-field and identity never round-trips

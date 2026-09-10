@@ -673,6 +673,31 @@ CREATE TABLE IF NOT EXISTS host_tokens (
 );
 CREATE INDEX IF NOT EXISTS idx_host_tokens_host ON host_tokens(host, revoked);
 `},
+	// v19 — the Rule of Ra (ADR-062 step 20b.1, owner 2026-09-10): a session
+	// carries the registered thread it was minted for, so the service can
+	// refuse mutations from a session that is not bound to its own active
+	// thread (agent + host + fresh heartbeat).
+	// Rebuild-by-copy rather than ALTER: SQLite has no ADD COLUMN IF NOT
+	// EXISTS, and the migration must be re-runnable on a table that already
+	// carries the column (the ceiling test rewinds user_version).
+	{19, `
+CREATE TABLE sessions_v19 (
+    session_id   TEXT PRIMARY KEY,
+    secret       TEXT NOT NULL,
+    host         TEXT NOT NULL,
+    agent        TEXT NOT NULL,
+    runtime_hash TEXT NOT NULL,
+    thread_id    TEXT NOT NULL DEFAULT '',
+    created      TEXT NOT NULL,
+    last_seen    TEXT NOT NULL,
+    revoked      TEXT NOT NULL DEFAULT ''
+);
+INSERT INTO sessions_v19(session_id,secret,host,agent,runtime_hash,created,last_seen,revoked)
+    SELECT session_id,secret,host,agent,runtime_hash,created,last_seen,revoked FROM sessions;
+DROP TABLE sessions;
+ALTER TABLE sessions_v19 RENAME TO sessions;
+CREATE INDEX IF NOT EXISTS idx_sessions_host_agent ON sessions(host, agent);
+`},
 }
 
 // migrate applies any pending numbered migrations, tracked via the SQLite

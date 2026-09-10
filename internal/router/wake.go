@@ -925,6 +925,9 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 	} else if rc, why := ResolveConsumer(*cfg, routerRoot); rc == nil {
 		log.Printf("wake-loop %s: WATCH-ONLY — this lane has NO consumer: %s", agentID, why)
 	} else {
+		// The consumer inherits this loop's registered thread (Rule of Ra):
+		// the service binds its session to that thread at mint.
+		rc.Env = setEnv(rc.Env, "SIRSI_THREAD_ID", thr.ThreadID)
 		consumer = rc
 	}
 

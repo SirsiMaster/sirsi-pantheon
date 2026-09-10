@@ -31,6 +31,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -79,8 +80,73 @@ type ServerOptions struct {
 	// (ADR-062 rs-13: "service delayed to 2× p99"); off unless the operator
 	// sets SIRSI_ROUTER_SERVE_TEST_DELAY, and logged at startup when on.
 	TestDelay time.Duration
+	// RuleOfRa is the registration gate mode (ADR-062 20b.1, owner
+	// 2026-09-10): "off", "log" (default: violations are logged and allowed)
+	// or "enforce" (violations are refused with 401). A mutating call passes
+	// only when its session is bound to its OWN active registered thread —
+	// same agent, same host, heartbeat inside RuleOfRaStale.
+	RuleOfRa string
+	// RuleOfRaStale is the heartbeat window; zero means ruleOfRaDefaultStale.
+	RuleOfRaStale time.Duration
+	// Log receives the gate's log lines (nil → stderr).
+	Log func(format string, args ...any)
 	// now is injectable for the freshness tests (Rule A16).
 	now func() time.Time
+}
+
+const ruleOfRaDefaultStale = 10 * time.Minute
+
+// ruleOfRaExempt lists the methods every session may call regardless of
+// registration: bootstrap (minting, registering, heartbeating), read-only
+// views, waiting/notification, and the owner surface.
+var ruleOfRaExempt = map[string]bool{
+	"MintSession": true, "MintSessionForThread": true, "ThreadBinding": true,
+	"UpsertThreads": true, "UpsertThreadCAS": true, "ResumeThreadCAS": true, "DeleteThreadCAS": true, "ImportThreadsIfEmpty": true,
+	"Heartbeat": true, "RegisterAgent": true, "ListThreads": true,
+	"Get": true, "Inbox": true, "ListAll": true, "ListTasks": true, "GetTask": true, "GetAgent": true, "ListAgents": true,
+	"GetState": true, "Counters": true, "Breakers": true, "Render": true, "ListWakeEvents": true, "ListIdentifiers": true,
+	"ListRequirements": true, "UnmetRequirements": true, "RunnableFor": true, "ClassifyLane": true, "OperationalAgents": true,
+	"Wait": true, "ListenNotify": true, "NotifyAgent": true, "NotifyPath": true, "ExportItem": true, "ExportMarkdown": true,
+	"ForceOwner": true,
+}
+
+// ErrUnregistered is the Rule of Ra refusal: the session is not bound to an
+// active registered thread of its own agent on its own host.
+var ErrUnregistered = errors.New("routerstore: no audience — this session is not bound to an active registered thread of its own agent on its own host; run `sirsi thread register --agent <id>` and start the process with SIRSI_THREAD_ID=<thread id>")
+
+// ruleOfRa returns nil when the session may mutate, or the refusal.
+func (s *server) ruleOfRa(sess Session, method string) error {
+	if ruleOfRaExempt[method] {
+		return nil
+	}
+	if sess.ThreadID == "" {
+		return fmt.Errorf("%w (session %s of %s@%s carries no thread id; method %s)", ErrUnregistered, sess.ID[:8], sess.Agent, sess.Host, method)
+	}
+	b, err := s.store.ThreadBinding(sess.ThreadID)
+	if errors.Is(err, ErrThreadUnknown) {
+		return fmt.Errorf("%w (thread %s is not registered; method %s)", ErrUnregistered, sess.ThreadID, method)
+	}
+	if err != nil {
+		return fmt.Errorf("rule of ra: thread lookup: %w", err)
+	}
+	if b.Agent != sess.Agent || (b.Host != "" && b.Host != sess.Host) {
+		return fmt.Errorf("%w (thread %s belongs to %s@%s, session is %s@%s; method %s)", ErrUnregistered, sess.ThreadID, b.Agent, b.Host, sess.Agent, sess.Host, method)
+	}
+	if b.Status != "active" {
+		return fmt.Errorf("%w (thread %s is %s; method %s)", ErrUnregistered, sess.ThreadID, b.Status, method)
+	}
+	stale := s.opts.RuleOfRaStale
+	if stale <= 0 {
+		stale = ruleOfRaDefaultStale
+	}
+	seen, perr := time.Parse(time.RFC3339Nano, b.LastSeenAt)
+	if perr != nil {
+		seen, perr = time.Parse(time.RFC3339, b.LastSeenAt)
+	}
+	if perr != nil || s.opts.now().Sub(seen) > stale {
+		return fmt.Errorf("%w (thread %s last heartbeat %s, window %s; method %s)", ErrUnregistered, sess.ThreadID, b.LastSeenAt, stale, method)
+	}
+	return nil
 }
 
 type server struct {
@@ -154,7 +220,8 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 
 	// 2–5. session, freshness, signature, runtime — everything but MintSession.
 	var sess Session
-	if name != "MintSession" {
+	isMint := name == "MintSession" || name == "MintSessionForThread"
+	if !isMint {
 		var code int
 		sess, code, err = s.authenticate(r, name, body)
 		if err != nil {
@@ -169,6 +236,16 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusForbidden, "", ErrHostMismatch.Error()+": token is for "+tokenHost)
 			return
 		}
+		// 6. the Rule of Ra — every thread registers or receives no audience.
+		if mode := s.opts.RuleOfRa; mode == "log" || mode == "enforce" {
+			if rerr := s.ruleOfRa(sess, name); rerr != nil {
+				if mode == "enforce" {
+					writeErr(w, http.StatusUnauthorized, "ErrUnregistered", rerr.Error())
+					return
+				}
+				s.logf("rule-of-ra: WOULD REFUSE %s from %s@%s (session %s thread %q): %v", name, sess.Agent, sess.Host, sess.ID[:8], sess.ThreadID, rerr)
+			}
+		}
 	}
 
 	var req wireRequest
@@ -180,7 +257,7 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 	}
 	// A per-host token may only mint sessions for its own host: a node cannot
 	// claim to be another machine. The bootstrap token is unconstrained.
-	if name == "MintSession" && tokenHost != bootstrapHost && len(req.Args) > 0 {
+	if isMint && tokenHost != bootstrapHost && len(req.Args) > 0 {
 		var claimed string
 		if json.Unmarshal(req.Args[0], &claimed) == nil && claimed != tokenHost {
 			writeErr(w, http.StatusForbidden, "", ErrHostMismatch.Error()+": token is for "+tokenHost)
@@ -421,6 +498,14 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+func (s *server) logf(format string, args ...any) {
+	if s.opts.Log != nil {
+		s.opts.Log(format, args...)
+		return
+	}
+	fmt.Fprintf(os.Stderr, format+"\n", args...)
 }
 
 func writeErr(w http.ResponseWriter, code int, name, msg string) {

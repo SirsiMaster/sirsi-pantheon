@@ -26,6 +26,7 @@ type Session struct {
 	Host        string `json:"host"`
 	Agent       string `json:"agent"`
 	RuntimeHash string `json:"runtime_hash"`
+	ThreadID    string `json:"thread_id,omitempty"` // the registered thread this session is bound to (Rule of Ra)
 	Created     string `json:"created"`
 	LastSeen    string `json:"last_seen"`
 	Revoked     string `json:"revoked,omitempty"`
@@ -48,6 +49,13 @@ func randomHex(n int) (string, error) {
 // MintSession creates a session bound to (host, agent, runtimeHash). The
 // secret is returned exactly once.
 func (s *SQLiteStore) MintSession(host, agent, runtimeHash string) (Session, error) {
+	return s.MintSessionForThread(host, agent, runtimeHash, "")
+}
+
+// MintSessionForThread mints a session bound to a registered thread (the Rule
+// of Ra, ADR-062 20b.1). threadID may be empty for legacy callers; the service
+// then treats every mutation from that session as unregistered.
+func (s *SQLiteStore) MintSessionForThread(host, agent, runtimeHash, threadID string) (Session, error) {
 	if host == "" || agent == "" || runtimeHash == "" {
 		return Session{}, errors.New("routerstore: MintSession: host, agent and runtime hash are all required")
 	}
@@ -60,11 +68,11 @@ func (s *SQLiteStore) MintSession(host, agent, runtimeHash string) (Session, err
 		return Session{}, err
 	}
 	now := s.clock().Format(time.RFC3339)
-	if _, err := s.exec(`INSERT INTO sessions(session_id,secret,host,agent,runtime_hash,created,last_seen,revoked)
-		VALUES(?,?,?,?,?,?,?,'')`, id, secret, host, agent, runtimeHash, now, now); err != nil {
+	if _, err := s.exec(`INSERT INTO sessions(session_id,secret,host,agent,runtime_hash,thread_id,created,last_seen,revoked)
+		VALUES(?,?,?,?,?,?,?,?,'')`, id, secret, host, agent, runtimeHash, threadID, now, now); err != nil {
 		return Session{}, fmt.Errorf("routerstore: MintSession: %w", err)
 	}
-	return Session{ID: id, Secret: secret, Host: host, Agent: agent, RuntimeHash: runtimeHash, Created: now, LastSeen: now}, nil
+	return Session{ID: id, Secret: secret, Host: host, Agent: agent, RuntimeHash: runtimeHash, ThreadID: threadID, Created: now, LastSeen: now}, nil
 }
 
 // GetSession returns the session including its secret (server-side use only:
@@ -72,8 +80,8 @@ func (s *SQLiteStore) MintSession(host, agent, runtimeHash string) (Session, err
 // ErrSessionRevoked otherwise.
 func (s *SQLiteStore) GetSession(id string) (Session, error) {
 	var sess Session
-	err := s.db.QueryRow(`SELECT session_id,secret,host,agent,runtime_hash,created,last_seen,revoked FROM sessions WHERE session_id=?`, id).
-		Scan(&sess.ID, &sess.Secret, &sess.Host, &sess.Agent, &sess.RuntimeHash, &sess.Created, &sess.LastSeen, &sess.Revoked)
+	err := s.db.QueryRow(`SELECT session_id,secret,host,agent,runtime_hash,thread_id,created,last_seen,revoked FROM sessions WHERE session_id=?`, id).
+		Scan(&sess.ID, &sess.Secret, &sess.Host, &sess.Agent, &sess.RuntimeHash, &sess.ThreadID, &sess.Created, &sess.LastSeen, &sess.Revoked)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Session{}, ErrSessionUnknown
 	}

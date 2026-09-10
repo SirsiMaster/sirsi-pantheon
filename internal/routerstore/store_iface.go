@@ -62,6 +62,8 @@ type Store interface {
 	MarkRequirementAudit(agent, evidenceRef string) error
 	MintHostToken(host, label string) (string, HostToken, error)
 	MintSession(host, agent, runtimeHash string) (Session, error)
+	MintSessionForThread(host, agent, runtimeHash, threadID string) (Session, error)
+	ThreadBinding(threadID string) (ThreadBinding, error)
 	NotifyAgent(agent string)
 	NotifyPath(agent string) string
 	OperationalAgents() ([]string, error)
