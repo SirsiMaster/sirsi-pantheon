@@ -118,9 +118,28 @@ var _ Store = (*RemoteStore)(nil)
 // id comes from SIRSI_AGENT_ID (falls back to the hostname); the runtime hash
 // is this executable's SHA-256. Like OpenPath/OpenPostgres it is for Resolve()
 // and tests only.
+// IdentityHook, when set, supplies the (agent, threadID) for a new store whenever
+// SIRSI_AGENT_ID / SIRSI_THREAD_ID are absent from the environment. The CLI
+// installs one that reads this session's markers so an interactive call carries
+// its registered thread (the Rule of Ra, ADR-062 20b.2). It is nil in library
+// and test use (env-only), and it must NEVER call os.Setenv — process-wide
+// identity leaks into spawned children (PR #730). Each field falls back
+// independently: the hook fills only what the environment left empty.
+var IdentityHook func() (agent, threadID string)
+
 func NewRemoteStore(base, token string) *RemoteStore {
 	host, _ := os.Hostname()
 	agent := strings.TrimSpace(os.Getenv("SIRSI_AGENT_ID"))
+	threadID := strings.TrimSpace(os.Getenv("SIRSI_THREAD_ID"))
+	if (agent == "" || threadID == "") && IdentityHook != nil {
+		hookAgent, hookThread := IdentityHook()
+		if agent == "" {
+			agent = strings.TrimSpace(hookAgent)
+		}
+		if threadID == "" {
+			threadID = strings.TrimSpace(hookThread)
+		}
+	}
 	if agent == "" {
 		agent = host
 	}
@@ -143,7 +162,7 @@ func NewRemoteStore(base, token string) *RemoteStore {
 		perCall:    5 * time.Second,
 		host:       host,
 		agent:      agent,
-		threadID:   strings.TrimSpace(os.Getenv("SIRSI_THREAD_ID")),
+		threadID:   threadID,
 		runtime:    RuntimeHash(),
 		sessionDir: dir,
 		now:        func() time.Time { return time.Now().UTC() },

@@ -103,6 +103,20 @@ left for the operator to disambiguate in agents.json.
 			registered++
 			actions[i].Reason = "registered " + out.ThreadID
 
+			// Rule of Ra (ADR-062 20b.2): on the SessionStart self-registration,
+			// the single registered thread IS this session — record its markers
+			// so later untagged `sirsi` calls from the session carry their
+			// audience. Guarded by --self: a multi-proc discover pass registers
+			// OTHER processes, whose threads must not be marked as this session's.
+			if threadDiscoverSelf {
+				if mErr := router.WriteSessionAgentMarker(router.CurrentSessionID(), out.AgentID); mErr != nil {
+					fmt.Fprintf(os.Stderr, "warning: could not write session→agent marker: %v\n", mErr)
+				}
+				if mErr := router.WriteSessionThreadMarker(router.CurrentSessionID(), out.ThreadID); mErr != nil {
+					fmt.Fprintf(os.Stderr, "warning: could not write session→thread marker: %v\n", mErr)
+				}
+			}
+
 			// ADR-024: discover REGISTERS, it does not arm. It used to fork a
 			// `watch-router` bridge here, and that fork is a self-feeding storm:
 			// watch-router runs the agent's spawn command, which starts a NEW
