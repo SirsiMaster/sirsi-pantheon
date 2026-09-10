@@ -12,7 +12,8 @@ import (
 //
 //  1. SIRSI_ROUTER_URL set → the router service (RemoteStore, bearer token from
 //     SIRSI_ROUTER_TOKEN). A missing token is refused loudly, never a silent
-//     fallback to a local file.
+//     fallback to a local file. A spool:// URL needs no token: the relay on this
+//     host holds it (ADR-062 20a.1b).
 //  2. SIRSI_ROUTER_DB set → that SQLite path (tests, sandboxes).
 //  3. host cut over (~/.sirsi/router-service.env present) and no URL → refused:
 //     a process started without the service env must not read a frozen copy
@@ -26,7 +27,7 @@ import (
 func Resolve() (Store, error) {
 	if u := strings.TrimSpace(os.Getenv("SIRSI_ROUTER_URL")); u != "" {
 		tok := strings.TrimSpace(os.Getenv("SIRSI_ROUTER_TOKEN"))
-		if tok == "" {
+		if tok == "" && SpoolDir(u) == "" {
 			// Never fall back to a local file: a node that believes it is on the
 			// service must not write a local ledger (split-brain, ADR-062 §1).
 			return nil, fmt.Errorf("routerstore: SIRSI_ROUTER_URL=%q is set but SIRSI_ROUTER_TOKEN is empty", u)
