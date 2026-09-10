@@ -35,9 +35,11 @@ import (
 )
 
 const (
-	spoolMaxBody     = 4 << 20  // request bodies: the service limit
-	spoolMaxResponse = 64 << 20 // response bodies: what RemoteStore itself accepts
-	spoolMaxInFlight = 64       // per lane
+	spoolMaxBody     = 4 << 20                       // request BODY (decoded): the service limit
+	spoolMaxEnvelope = spoolMaxBody/3*4 + 64<<10     // request FILE: base64 overhead + headers
+	spoolMaxResponse = 64 << 20                      // response BODY (decoded): what RemoteStore accepts
+	spoolMaxResFile  = spoolMaxResponse/3*4 + 64<<10 // response FILE
+	spoolMaxInFlight = 64                            // per lane, enforced with exclusive slot files
 	spoolStaleAfter  = 10 * time.Minute
 	spoolPoll        = 150 * time.Millisecond
 )
@@ -114,50 +116,86 @@ func (t *spoolTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		}
 	}
 	reqDir, resDir := filepath.Join(t.dir, "req"), filepath.Join(t.dir, "res")
-	for _, d := range []string{reqDir, resDir} {
+	for _, d := range []string{reqDir, resDir, filepath.Join(t.dir, "slots")} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			return nil, fmt.Errorf("spool: %w", err)
 		}
 	}
-	if n, _ := filepath.Glob(filepath.Join(reqDir, "*.json")); len(n) >= spoolMaxInFlight {
-		return nil, fmt.Errorf("spool: %d requests in flight for this lane; relay stalled?", len(n))
+	// In-flight cap, atomic across processes: one of spoolMaxInFlight slot files
+	// is created O_EXCL and removed when this call ends.
+	slot, err := acquireSlot(filepath.Join(t.dir, "slots"))
+	if err != nil {
+		return nil, err
 	}
+	defer func() { _ = os.Remove(slot) }()
 	id := t.nextID()
-	if err := writeAtomic(filepath.Join(reqDir, id+".json"), req); err != nil {
-		return nil, fmt.Errorf("spool: publish: %w", err)
+	reqPath := filepath.Join(reqDir, id+".json")
+	if err := writeAtomic(reqPath, req); err != nil {
+		return nil, fmt.Errorf("spool: publish %s id %s: %w", method, id, err)
 	}
 	resPath := filepath.Join(resDir, id+".json")
 	defer func() { _ = os.Remove(resPath) }()
+	// uncertain classifies a timeout or cancellation: if the request file is still
+	// in req/ nobody consumed it (withdraw it, outcome known: nothing happened);
+	// otherwise a relay consumed it (rename into inflight/ happens BEFORE the
+	// forward) and the outcome is unknown — say so, with method and id, and never
+	// retry a mutation here.
+	uncertain := func(cause string) error {
+		if err := os.Remove(reqPath); err == nil {
+			return fmt.Errorf("spool: %s id %s not picked up (%s); nothing was sent — is `sirsi router relay serve` running?", method, id, cause)
+		}
+		return fmt.Errorf("spool: %s id %s: OUTCOME UNKNOWN — a relay consumed the request but no response arrived (%s); re-query before retrying a mutation", method, id, cause)
+	}
 	ctx := r.Context()
 	deadline := t.now().Add(t.wait)
 	for {
-		if b, err := os.ReadFile(resPath); err == nil {
+		if f, err := os.Open(resPath); err == nil {
+			b, rerr := io.ReadAll(io.LimitReader(f, spoolMaxResFile+1))
+			_ = f.Close()
+			if rerr != nil {
+				return nil, fmt.Errorf("spool: %s id %s: read response: %w", method, id, rerr)
+			}
+			if len(b) > spoolMaxResFile {
+				return nil, fmt.Errorf("spool: %s id %s: response file over %d bytes", method, id, spoolMaxResFile)
+			}
 			var sr spoolResponse
 			if err := json.Unmarshal(b, &sr); err != nil {
-				return nil, fmt.Errorf("spool: bad response file: %w", err)
+				return nil, fmt.Errorf("spool: %s id %s: bad response file: %w", method, id, err)
+			}
+			if len(sr.Body) > spoolMaxResponse {
+				return nil, fmt.Errorf("spool: %s id %s: response body over %d bytes", method, id, spoolMaxResponse)
 			}
 			return &http.Response{StatusCode: sr.Status, Status: http.StatusText(sr.Status), Header: http.Header{"Content-Type": {"application/json"}},
 				Body: io.NopCloser(bytes.NewReader(sr.Body)), ContentLength: int64(len(sr.Body)), Request: r}, nil
 		}
 		if t.now().After(deadline) {
-			// Outcome-unknown by contract (20a.1b): the relay may have forwarded
-			// and the service may have committed. Withdraw the request file if it
-			// is still unconsumed, name the method and id, and never retry a
-			// mutation here — the caller re-queries and decides.
-			_, unconsumed := os.Stat(filepath.Join(reqDir, id+".json"))
-			_ = os.Remove(filepath.Join(reqDir, id+".json"))
-			if unconsumed == nil {
-				return nil, fmt.Errorf("spool: %s id %s not picked up within %s — outcome unknown only if a relay consumed it after this check; is `sirsi router relay serve` running?", method, id, t.wait)
-			}
-			return nil, fmt.Errorf("spool: %s id %s: OUTCOME UNKNOWN — the relay consumed the request but no response arrived within %s; re-query before retrying a mutation", method, id, t.wait)
+			return nil, uncertain(fmt.Sprintf("no response within %s", t.wait))
 		}
 		select {
 		case <-ctx.Done():
-			_ = os.Remove(filepath.Join(reqDir, id+".json"))
-			return nil, ctx.Err()
+			return nil, uncertain(ctx.Err().Error())
 		case <-time.After(spoolPoll):
 		}
 	}
+}
+
+// acquireSlot creates one of spoolMaxInFlight exclusive slot files; O_EXCL makes
+// the cap atomic across processes and lanes sharing a directory. Slots older
+// than spoolStaleAfter belong to dead callers and are reclaimed.
+func acquireSlot(dir string) (string, error) {
+	for i := 0; i < spoolMaxInFlight; i++ {
+		p := filepath.Join(dir, fmt.Sprintf("%02d", i))
+		f, err := os.OpenFile(p, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err == nil {
+			_ = f.Close()
+			return p, nil
+		}
+		if st, serr := os.Stat(p); serr == nil && time.Since(st.ModTime()) > spoolStaleAfter {
+			_ = os.Remove(p)
+			i-- // retry this slot once
+		}
+	}
+	return "", fmt.Errorf("spool: %d requests in flight for this lane; relay stalled?", spoolMaxInFlight)
 }
 
 // writeAtomic marshals v to path via a same-directory temp file and rename(2),
@@ -244,7 +282,7 @@ func (rl *Relay) serveOnce() int {
 			continue // consumed by someone else, or gone: never forward
 		}
 		n++
-		rl.publish(agent, id, rl.forward(agent, inflight))
+		rl.publish(agent, id, rl.forward(agent, id, inflight))
 		_ = os.Remove(inflight)
 	}
 	return n
@@ -281,24 +319,34 @@ func (rl *Relay) recoverInflight() int {
 	return len(files)
 }
 
-func (rl *Relay) forward(agent, path string) spoolResponse {
+func (rl *Relay) forward(agent, id, path string) spoolResponse {
 	fail := func(status int, msg string) spoolResponse {
 		b, _ := json.Marshal(wireResponse{Error: &wireError{Name: "relay", Message: msg}})
 		return spoolResponse{Status: status, Body: b}
 	}
-	raw, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return fail(http.StatusBadRequest, "relay: read request: "+err.Error())
 	}
-	if len(raw) > spoolMaxBody+4096 {
-		return fail(http.StatusRequestEntityTooLarge, "relay: request over the 4 MiB limit")
+	raw, err := io.ReadAll(io.LimitReader(f, spoolMaxEnvelope+1))
+	_ = f.Close()
+	if err != nil {
+		return fail(http.StatusBadRequest, "relay: read request: "+err.Error())
+	}
+	if len(raw) > spoolMaxEnvelope {
+		rl.Log.Warn("relay: request file over the envelope bound", "agent", agent, "id", id, "bytes", len(raw))
+		return fail(http.StatusRequestEntityTooLarge, "relay: request file over the envelope bound")
 	}
 	var req spoolRequest
 	if err := json.Unmarshal(raw, &req); err != nil {
 		return fail(http.StatusBadRequest, "relay: bad request file: "+err.Error())
 	}
+	if len(req.Body) > spoolMaxBody {
+		rl.Log.Warn("relay: request body over the limit", "agent", agent, "method", req.Method, "id", id, "bytes", len(req.Body))
+		return fail(http.StatusRequestEntityTooLarge, fmt.Sprintf("relay: request body %d bytes over the %d limit", len(req.Body), spoolMaxBody))
+	}
 	if spoolRefused[req.Method] {
-		rl.Log.Warn("relay: refused token method", "agent", agent, "method", req.Method)
+		rl.Log.Warn("relay: refused token method", "agent", agent, "method", req.Method, "id", id)
 		return fail(http.StatusForbidden, "relay: "+req.Method+" is never forwarded (token management stays on the service host)")
 	}
 	httpReq, err := http.NewRequest(http.MethodPost, strings.TrimRight(rl.Base, "/")+"/v1/call/"+req.Method, bytes.NewReader(req.Body))
@@ -314,18 +362,26 @@ func (rl *Relay) forward(agent, path string) spoolResponse {
 	}
 	resp, err := rl.Client.Do(httpReq)
 	if err != nil {
-		rl.Log.Error("relay: service unreachable", "agent", agent, "method", req.Method, "err", err)
+		rl.Log.Error("relay: service unreachable", "agent", agent, "method", req.Method, "id", id, "err", err)
 		return fail(http.StatusServiceUnavailable, "relay: service unreachable: "+err.Error())
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, spoolMaxResponse))
-	rl.Log.Info("relay: forwarded", "agent", agent, "method", req.Method, "status", resp.StatusCode)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, spoolMaxResponse+1))
+	if err != nil {
+		rl.Log.Error("relay: read service response", "agent", agent, "method", req.Method, "id", id, "err", err)
+		return fail(http.StatusBadGateway, "relay: read service response: "+err.Error())
+	}
+	if len(body) > spoolMaxResponse {
+		rl.Log.Error("relay: service response over the limit", "agent", agent, "method", req.Method, "id", id)
+		return fail(http.StatusBadGateway, fmt.Sprintf("relay: service response over %d bytes", spoolMaxResponse))
+	}
+	rl.Log.Info("relay: forwarded", "agent", agent, "method", req.Method, "id", id, "status", resp.StatusCode)
 	return spoolResponse{Status: resp.StatusCode, Body: body}
 }
 
 // sweep removes request/response files older than spoolStaleAfter.
 func (rl *Relay) sweep() {
-	for _, pat := range []string{"*/req/*.json", "*/res/*.json", "*/inflight/*.json", "*/req/*.tmp", "*/res/*.tmp"} {
+	for _, pat := range []string{"*/req/*.json", "*/res/*.json", "*/inflight/*.json", "*/req/*.tmp", "*/res/*.tmp", "*/slots/*"} {
 		files, _ := filepath.Glob(filepath.Join(rl.Spool, pat))
 		for _, f := range files {
 			if st, err := os.Stat(f); err == nil && rl.now().Sub(st.ModTime()) > spoolStaleAfter {

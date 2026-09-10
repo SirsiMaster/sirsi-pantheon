@@ -1,8 +1,10 @@
 package routerstore
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -164,5 +166,141 @@ func TestSpoolLostResponseIsOutcomeUnknown(t *testing.T) {
 	_, err := tr.RoundTrip(req)
 	if err == nil || !strings.Contains(err.Error(), "OUTCOME UNKNOWN") || !strings.Contains(err.Error(), "SendGuarded id ") {
 		t.Fatalf("want outcome-unknown naming method+id, got %v", err)
+	}
+}
+
+// A cancelled or short-deadline context (RemoteStore's own 5 s per call) after
+// a relay consumed the request must surface OUTCOME UNKNOWN with method and id,
+// never a bare "context deadline exceeded"; before consumption it is withdrawn
+// and reported as not sent.
+func TestSpoolCancelledMutationNamesOutcome(t *testing.T) {
+	spool := t.TempDir()
+	tr := newSpoolTransport(spool, "lane-c")
+	// (a) nothing consumes it: withdrawn, nothing sent.
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://spool/v1/call/SendGuarded", strings.NewReader(`{"args":[]}`))
+	_, err := tr.RoundTrip(req)
+	if err == nil || !strings.Contains(err.Error(), "SendGuarded id ") || !strings.Contains(err.Error(), "nothing was sent") {
+		t.Fatalf("unconsumed + cancelled must be withdrawn and named: %v", err)
+	}
+	if left, _ := filepath.Glob(filepath.Join(spool, "lane-c", "req", "*.json")); len(left) != 0 {
+		t.Fatalf("withdrawn request left behind: %v", left)
+	}
+	// (b) consumed (renamed into inflight) but unanswered: OUTCOME UNKNOWN.
+	go func() {
+		for i := 0; i < 50; i++ {
+			files, _ := filepath.Glob(filepath.Join(spool, "lane-c", "req", "*.json"))
+			for _, f := range files {
+				_ = os.MkdirAll(filepath.Join(spool, "lane-c", "inflight"), 0o700)
+				_ = os.Rename(f, filepath.Join(spool, "lane-c", "inflight", filepath.Base(f)))
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 400*time.Millisecond)
+	defer cancel2()
+	req2, _ := http.NewRequestWithContext(ctx2, http.MethodPost, "http://spool/v1/call/SendGuarded", strings.NewReader(`{"args":[]}`))
+	_, err = tr.RoundTrip(req2)
+	if err == nil || !strings.Contains(err.Error(), "OUTCOME UNKNOWN") || !strings.Contains(err.Error(), "SendGuarded id ") || !strings.Contains(err.Error(), "context deadline exceeded") {
+		t.Fatalf("consumed + cancelled must be outcome-unknown naming method, id and cause: %v", err)
+	}
+}
+
+// Bounds are enforced on the DECODED body, not the base64 envelope: 4 MiB minus
+// one byte is forwarded; 4 MiB plus one byte is refused with 413 before any
+// forward.
+func TestSpoolBodyBoundaryOnDecodedBytes(t *testing.T) {
+	spool := t.TempDir()
+	calls := 0
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		_, _ = io.Copy(io.Discard, r.Body)
+		_, _ = w.Write([]byte(`{"result":[]}`))
+	}))
+	t.Cleanup(svc.Close)
+	rl := &Relay{Spool: spool, Base: svc.URL, Token: "t", Log: slog.New(slog.NewTextHandler(&strings.Builder{}, nil)), Client: svc.Client(), now: time.Now}
+	lane := filepath.Join(spool, "lane-b")
+	for _, d := range []string{"req", "res"} {
+		if err := os.MkdirAll(filepath.Join(lane, d), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	big := bytes.Repeat([]byte("x"), spoolMaxBody-1)
+	if err := writeAtomic(filepath.Join(lane, "req", "1-1-ok.json"), spoolRequest{Method: "ListAll", Headers: map[string]string{}, Body: big}); err != nil {
+		t.Fatal(err)
+	}
+	rl.serveOnce()
+	b, _ := os.ReadFile(filepath.Join(lane, "res", "1-1-ok.json"))
+	var sr spoolResponse
+	if json.Unmarshal(b, &sr) != nil || sr.Status != 200 || calls != 1 {
+		t.Fatalf("4 MiB-1 must be forwarded: status=%d calls=%d", sr.Status, calls)
+	}
+	over := bytes.Repeat([]byte("x"), spoolMaxBody+1)
+	if err := writeAtomic(filepath.Join(lane, "req", "1-2-over.json"), spoolRequest{Method: "ListAll", Headers: map[string]string{}, Body: over}); err != nil {
+		t.Fatal(err)
+	}
+	rl.serveOnce()
+	b, _ = os.ReadFile(filepath.Join(lane, "res", "1-2-over.json"))
+	if json.Unmarshal(b, &sr) != nil || sr.Status != http.StatusRequestEntityTooLarge || calls != 1 {
+		t.Fatalf("4 MiB+1 must be refused with 413 before forwarding: status=%d calls=%d", sr.Status, calls)
+	}
+}
+
+// A request whose consumption fails (inflight/ is not writable) is never
+// forwarded and stays where it is.
+func TestSpoolFailedConsumeIsNotForwarded(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores modes")
+	}
+	spool := t.TempDir()
+	calls := 0
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { calls++; _, _ = w.Write([]byte(`{"result":[]}`)) }))
+	t.Cleanup(svc.Close)
+	rl := &Relay{Spool: spool, Base: svc.URL, Token: "t", Log: slog.New(slog.NewTextHandler(&strings.Builder{}, nil)), Client: svc.Client(), now: time.Now}
+	lane := filepath.Join(spool, "lane-f")
+	for _, d := range []string{"req", "inflight"} {
+		if err := os.MkdirAll(filepath.Join(lane, d), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writeAtomic(filepath.Join(lane, "req", "1-1-x.json"), spoolRequest{Method: "SendGuarded", Headers: map[string]string{}, Body: []byte(`{"args":[]}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(lane, "inflight"), 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(filepath.Join(lane, "inflight"), 0o700) })
+	if n := rl.serveOnce(); n != 0 || calls != 0 {
+		t.Fatalf("failed consume must not forward: handled=%d calls=%d", n, calls)
+	}
+	if _, err := os.Stat(filepath.Join(lane, "req", "1-1-x.json")); err != nil {
+		t.Fatal("request must remain in req/ when consumption fails")
+	}
+}
+
+// The in-flight cap is atomic across callers: the 65th concurrent publisher is
+// refused before writing anything.
+func TestSpoolInFlightCapIsAtomic(t *testing.T) {
+	spool := t.TempDir()
+	tr := newSpoolTransport(spool, "lane-s")
+	slots := filepath.Join(tr.dir, "slots")
+	if err := os.MkdirAll(slots, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	var held []string
+	for i := 0; i < spoolMaxInFlight; i++ {
+		p, err := acquireSlot(slots)
+		if err != nil {
+			t.Fatal(err)
+		}
+		held = append(held, p)
+	}
+	if _, err := acquireSlot(slots); err == nil || !strings.Contains(err.Error(), "in flight") {
+		t.Fatalf("65th must be refused: %v", err)
+	}
+	_ = os.Remove(held[0])
+	if _, err := acquireSlot(slots); err != nil {
+		t.Fatalf("released slot must be reusable: %v", err)
 	}
 }
