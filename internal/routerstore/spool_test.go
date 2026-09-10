@@ -67,7 +67,7 @@ func TestSpoolWithoutRelayTimesOut(t *testing.T) {
 	rs := NewRemoteStore("spool://"+spool, "")
 	rs.client.Transport = tr
 	_, err := rs.Get("nope")
-	if err == nil || !strings.Contains(err.Error(), "relay serve") {
+	if err == nil || !strings.Contains(err.Error(), "relay serve") || !strings.Contains(err.Error(), "MintSession id ") {
 		t.Fatalf("want a loud no-relay error, got %v", err)
 	}
 	if left, _ := filepath.Glob(filepath.Join(spool, "lane-y", "req", "*.json")); len(left) != 0 {

@@ -140,8 +140,16 @@ func (t *spoolTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 				Body: io.NopCloser(bytes.NewReader(sr.Body)), ContentLength: int64(len(sr.Body)), Request: r}, nil
 		}
 		if t.now().After(deadline) {
+			// Outcome-unknown by contract (20a.1b): the relay may have forwarded
+			// and the service may have committed. Withdraw the request file if it
+			// is still unconsumed, name the method and id, and never retry a
+			// mutation here — the caller re-queries and decides.
+			_, unconsumed := os.Stat(filepath.Join(reqDir, id+".json"))
 			_ = os.Remove(filepath.Join(reqDir, id+".json"))
-			return nil, fmt.Errorf("spool: no response within %s (is `sirsi router relay serve` running?)", t.wait)
+			if unconsumed == nil {
+				return nil, fmt.Errorf("spool: %s id %s not picked up within %s — outcome unknown only if a relay consumed it after this check; is `sirsi router relay serve` running?", method, id, t.wait)
+			}
+			return nil, fmt.Errorf("spool: %s id %s: OUTCOME UNKNOWN — the relay consumed the request but no response arrived within %s; re-query before retrying a mutation", method, id, t.wait)
 		}
 		select {
 		case <-ctx.Done():
