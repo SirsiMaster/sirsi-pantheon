@@ -1294,7 +1294,7 @@ func wakeLaunchAgentPlist(label string, cfg AgentConfig, sirsiBin string) string
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
-    <string>%s</string>
+    <string>%s</string>%s
   </dict>
   <key>ProgramArguments</key>
   <array>
@@ -1317,8 +1317,24 @@ func wakeLaunchAgentPlist(label string, cfg AgentConfig, sirsiBin string) string
   <string>%s</string>
 </dict>
 </plist>
-`, escapeXML(label), escapeXML(LaunchAgentPATH(sirsiBin)), escapeXML(sirsiBin),
+`, escapeXML(label), escapeXML(LaunchAgentPATH(sirsiBin)), routerServiceEnvXML(), escapeXML(sirsiBin),
 		escapeXML(cfg.ID), escapeXML(logPath), escapeXML(logPath))
+}
+
+// routerServiceEnvXML renders SIRSI_ROUTER_URL and SIRSI_ROUTER_TOKEN into the
+// plist when the installing process has them (ADR-062, post cut-over). launchd
+// runs no shell, so ~/.zshenv never reaches the loop: without this a wake loop on
+// a cut-over host would resolve the local (frozen) file and refuse to work. The
+// consumer it spawns still runs under a login shell and gets the same values from
+// ~/.zshenv; the plist is 0600 because it now carries a bearer token.
+func routerServiceEnvXML() string {
+	var b strings.Builder
+	for _, k := range []string{"SIRSI_ROUTER_URL", "SIRSI_ROUTER_TOKEN"} {
+		if v := strings.TrimSpace(os.Getenv(k)); v != "" {
+			fmt.Fprintf(&b, "\n    <key>%s</key>\n    <string>%s</string>", k, escapeXML(v))
+		}
+	}
+	return b.String()
 }
 
 // LaunchAgentPATH builds the PATH a Sirsi LaunchAgent must export so that
@@ -1455,7 +1471,7 @@ func InstallWakeLaunchAgent(cfg AgentConfig, sirsiBin string) (changed bool, pat
 	if existing, rerr := os.ReadFile(path); rerr == nil && string(existing) == content {
 		return false, path, nil
 	}
-	if err = os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err = os.WriteFile(path, []byte(content), 0o600); err != nil {
 		return false, path, fmt.Errorf("write plist: %w", err)
 	}
 	return true, path, nil

@@ -73,3 +73,21 @@ func TestLaunchAgentPATHLeadsWithBinDirAndDedupes(t *testing.T) {
 		t.Fatalf("/usr/bin must appear exactly once, got %d in %q", n, got)
 	}
 }
+
+// A cut-over host must hand its wake loops the service address and token: launchd
+// runs no shell, so nothing else can. Absent env → no keys (Anubis unchanged).
+func TestWakePlistCarriesRouterServiceEnv(t *testing.T) {
+	t.Setenv("SIRSI_ROUTER_URL", "https://router.example.test")
+	t.Setenv("SIRSI_ROUTER_TOKEN", "tok<&>")
+	got := wakeLaunchAgentPlist("ai.sirsi.router.wake.x", AgentConfig{ID: "x"}, "/usr/local/bin/sirsi")
+	for _, want := range []string{"<key>SIRSI_ROUTER_URL</key>", "<string>https://router.example.test</string>", "<key>SIRSI_ROUTER_TOKEN</key>", "<string>tok&lt;&amp;&gt;</string>"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("plist must carry %q:\n%s", want, got)
+		}
+	}
+	t.Setenv("SIRSI_ROUTER_URL", "")
+	t.Setenv("SIRSI_ROUTER_TOKEN", "")
+	if strings.Contains(wakeLaunchAgentPlist("l", AgentConfig{ID: "x"}, "/usr/local/bin/sirsi"), "SIRSI_ROUTER") {
+		t.Fatal("no service env → no service keys")
+	}
+}
