@@ -10,9 +10,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/report"
 )
 
@@ -39,6 +41,10 @@ var reportCmd = &cobra.Command{
 		}
 		for _, r := range f.Runs[:n] {
 			fmt.Println("  " + report.Sentence(r))
+		}
+		// ADR-064 §3: demotions are never silent.
+		if d := guard.RecentDemotions(time.Now().Add(-24*time.Hour), 4<<20); !d.Empty() {
+			fmt.Println("  " + d.String())
 		}
 		return nil
 	},
