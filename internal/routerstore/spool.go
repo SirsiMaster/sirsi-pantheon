@@ -246,9 +246,11 @@ func (rl *Relay) Serve(ctx context.Context) error {
 	if rl.Token == "" || rl.Base == "" {
 		return errors.New("relay: SIRSI_ROUTER_URL and SIRSI_ROUTER_TOKEN are required in the relay's own environment")
 	}
-	if err := os.MkdirAll(rl.Spool, 0o700); err != nil {
-		return err
+	canon, err := CheckSpoolDir(rl.Spool)
+	if err != nil {
+		return fmt.Errorf("relay: %w", err)
 	}
+	rl.Spool = canon
 	rl.recoverInflight()
 	lastSweep := rl.now()
 	for {

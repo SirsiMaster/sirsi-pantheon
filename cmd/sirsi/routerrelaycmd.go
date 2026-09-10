@@ -17,6 +17,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/spf13/cobra"
 )
@@ -37,9 +38,9 @@ Authorization header, and writes <spool>/<agent>/res/<id>.json atomically.
 MintHostToken, RevokeHostToken and ListHostTokens are refused by name. Lanes set
 SIRSI_ROUTER_URL=spool://<spool> and need no token.`,
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		base := strings.TrimSpace(os.Getenv("SIRSI_ROUTER_URL"))
-		if base == "" || routerstore.SpoolDir(base) != "" {
-			return errors.New("router relay serve: SIRSI_ROUTER_URL must be the service's https URL in the relay's own environment (a spool:// URL is for lanes)")
+		base, err := routerstore.CheckServiceURL(os.Getenv("SIRSI_ROUTER_URL"))
+		if err != nil {
+			return fmt.Errorf("router relay serve: %w (a spool:// URL is for lanes; the relay needs the service's https URL in its own environment)", err)
 		}
 		tok := strings.TrimSpace(os.Getenv("SIRSI_ROUTER_TOKEN"))
 		if tok == "" {
@@ -58,8 +59,28 @@ SIRSI_ROUTER_URL=spool://<spool> and need no token.`,
 	},
 }
 
+var routerRelayInstallCmd = &cobra.Command{
+	Use:   "install",
+	Short: "Install (or refresh) the ai.sirsi.router.relay LaunchAgent — the host's only token holder — from this shell's SIRSI_ROUTER_URL/TOKEN",
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		spool := relaySpool
+		if spool == "" {
+			home, _ := os.UserHomeDir()
+			spool = filepath.Join(home, ".sirsi", "relay")
+		}
+		changed, path, err := router.InstallRelayLaunchAgent(spool, os.Getenv("SIRSI_ROUTER_URL"), os.Getenv("SIRSI_ROUTER_TOKEN"))
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "relay LaunchAgent %s (%s): %s; spool %s\n", router.RelayLaunchAgentLabel, map[bool]string{true: "written", false: "unchanged"}[changed], path, spool)
+		fmt.Fprintln(cmd.OutOrStdout(), "lanes: SIRSI_ROUTER_URL=spool://"+spool+" and no SIRSI_ROUTER_TOKEN; codex lanes add -c sandbox_workspace_write.writable_roots=[\""+spool+"\"]")
+		return nil
+	},
+}
+
 func init() {
 	routerRelayServeCmd.Flags().StringVar(&relaySpool, "spool", "", "spool directory (default ~/.sirsi/relay)")
-	routerRelayCmd.AddCommand(routerRelayServeCmd)
+	routerRelayInstallCmd.Flags().StringVar(&relaySpool, "spool", "", "spool directory (default ~/.sirsi/relay)")
+	routerRelayCmd.AddCommand(routerRelayServeCmd, routerRelayInstallCmd)
 	routerCmd.AddCommand(routerRelayCmd)
 }
