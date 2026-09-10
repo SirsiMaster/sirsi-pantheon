@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed 2026-09-10 (claude-io, from the io-connect long-receipt investigation). Owner decision pending on §Decision's three knobs.
+Accepted 2026-09-10 — owner decision: keep both defaults (pressure gate on, governed-compute allowlist). Authored by claude-io from the io-connect long-receipt investigation.
 
 ## Context
 
