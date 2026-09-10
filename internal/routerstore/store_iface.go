@@ -33,7 +33,7 @@ type Store interface {
 	Complete(id, token, result string) error
 	CompleteTaskLease(agent, taskID, token, resultRef string) error
 	Counters() (DispatchCounters, error)
-	DeleteThreadCAS(threadID, status, lastSeenAt string) (bool, error)
+	DeleteThreadCAS(threadID, status, lastSeenAt, host string) (bool, error)
 	ExportItem(dir, id string) (string, error)
 	ExportMarkdown(dir string) (int, error)
 	Fail(id, token, reason, failureClass string) error

@@ -117,8 +117,10 @@ var ErrThreadAuthority = errors.New("routerstore: thread authority — a session
 // threadAuthority scopes the thread lifecycle verbs to the caller's host: every
 // record in the request is stamped with the session host (a record naming
 // another host is refused), and a thread that already exists must already be
-// on that host (legacy rows with no host are adoptable). Everything else
-// passes through untouched.
+// on that host (legacy rows with no host are adoptable). The lookup here only
+// turns the common case into a clear 403 — the GUARANTEE is the host predicate
+// inside each store mutation (threads.go), which holds across a competing
+// adoption between this check and the write, and across service instances.
 func (s *server) threadAuthority(sess Session, name string, in []reflect.Value) error {
 	own := func(id string) error {
 		b, err := s.store.ThreadBinding(id)
@@ -156,6 +158,7 @@ func (s *server) threadAuthority(sess Session, name string, in []reflect.Value) 
 		}
 		in[0] = reflect.ValueOf(r)
 	case "DeleteThreadCAS":
+		in[3] = reflect.ValueOf(sess.Host)
 		return own(in[0].Interface().(string))
 	}
 	return nil

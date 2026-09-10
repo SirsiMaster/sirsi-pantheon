@@ -6,10 +6,11 @@
 # behaviour, router_service least privilege — scripts/check-pg-schema.sh, which
 # includes its own negative controls), and the entire internal/routerstore
 # suite passes against it under SIRSI_TEST_PG_DSN. Runs on the self-hosted
-# macOS runners, which have Homebrew postgresql@14 and no Docker.
+# macOS runners, which have Homebrew postgresql@14/@16 and no Docker.
 #
 # Usage: bash scripts/ci-postgres.sh          (start → checks → tests → stop)
 set -euo pipefail
+export LC_ALL=C   # macOS: under a Unicode locale the postmaster "becomes multithreaded during startup" and refuses to start
 
 ROOT="$(git rev-parse --show-toplevel)"
 PORT="${SIRSI_CI_PG_PORT:-54331}"

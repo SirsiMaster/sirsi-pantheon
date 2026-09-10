@@ -87,6 +87,7 @@ ON CONFLICT(thread_id) DO UPDATE SET
  agent=excluded.agent,status=excluded.status,last_seen_at=excluded.last_seen_at,payload=excluded.payload,
  host=CASE WHEN excluded.host='' THEN threads.host ELSE excluded.host END
 WHERE threads.status NOT IN ('closed','reaped','suspended')
+  AND (threads.host='' OR excluded.host='' OR threads.host=excluded.host)
   AND (excluded.last_seen_at > threads.last_seen_at
        OR excluded.last_seen_at = threads.last_seen_at
           AND (excluded.status IN ('closed','reaped','suspended')
@@ -111,6 +112,7 @@ ON CONFLICT(thread_id) DO UPDATE SET
  agent=excluded.agent,status=excluded.status,last_seen_at=excluded.last_seen_at,payload=excluded.payload,
  host=CASE WHEN excluded.host='' THEN threads.host ELSE excluded.host END
 WHERE threads.status NOT IN ('closed','reaped','suspended')
+  AND (threads.host='' OR excluded.host='' OR threads.host=excluded.host)
   AND (excluded.last_seen_at > threads.last_seen_at
        OR excluded.last_seen_at = threads.last_seen_at
           AND (excluded.status IN ('closed','reaped','suspended')
@@ -132,8 +134,8 @@ WHERE threads.status NOT IN ('closed','reaped','suspended')
 func (s *SQLiteStore) ResumeThreadCAS(record ThreadRecord, suspendedAt string) error {
 	result, err := s.db.Exec(`UPDATE threads
 SET agent=?,status=?,last_seen_at=?,payload=?,host=CASE WHEN ?='' THEN host ELSE ? END
-WHERE thread_id=? AND status='suspended' AND last_seen_at=?`,
-		record.Agent, record.Status, record.LastSeenAt, record.Payload, record.Host, record.Host, record.ThreadID, suspendedAt)
+WHERE thread_id=? AND status='suspended' AND last_seen_at=? AND (host='' OR ?='' OR host=?)`,
+		record.Agent, record.Status, record.LastSeenAt, record.Payload, record.Host, record.Host, record.ThreadID, suspendedAt, record.Host, record.Host)
 	if err != nil {
 		return fmt.Errorf("routerstore: resume thread %q: %w", record.ThreadID, err)
 	}
@@ -147,11 +149,20 @@ WHERE thread_id=? AND status='suspended' AND last_seen_at=?`,
 	return nil
 }
 
-// DeleteThreadCAS removes only the exact row observed by the pruning read.
+// Host ownership (the Rule of Ra, SSA 2026-09-10 r2): every mutation above
+// and below carries the caller's host INSIDE its predicate — a row on another
+// host is never rewritten, resumed or deleted, and two hosts adopting one
+// blank legacy row cannot both win: the first commit sets host, the second
+// statement's predicate fails. A blank caller host ('' — a local file store
+// with no host identity; the service always stamps the session host) passes
+// through unchanged.
+
+// DeleteThreadCAS removes only the exact row observed by the pruning read,
+// and only when that row is on the caller's host.
 // A concurrent heartbeat/status transition changes last_seen/status and makes
 // this a safe no-op rather than deleting live truth.
-func (s *SQLiteStore) DeleteThreadCAS(threadID, status, lastSeenAt string) (bool, error) {
-	result, err := s.db.Exec(`DELETE FROM threads WHERE thread_id=? AND status=? AND last_seen_at=?`, threadID, status, lastSeenAt)
+func (s *SQLiteStore) DeleteThreadCAS(threadID, status, lastSeenAt, host string) (bool, error) {
+	result, err := s.db.Exec(`DELETE FROM threads WHERE thread_id=? AND status=? AND last_seen_at=? AND (host='' OR ?='' OR host=?)`, threadID, status, lastSeenAt, host, host)
 	if err != nil {
 		return false, fmt.Errorf("routerstore: delete thread %q: %w", threadID, err)
 	}

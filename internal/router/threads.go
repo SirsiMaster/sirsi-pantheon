@@ -385,7 +385,8 @@ func SaveThreadRegistry(routerRoot string, reg *ThreadRegistry) error {
 		}
 		for id, old := range reg.baseline {
 			if _, ok := reg.Threads[id]; !ok {
-				deleted, err := store.DeleteThreadCAS(id, old.Status, old.LastSeenAt)
+				host, _ := os.Hostname()
+				deleted, err := store.DeleteThreadCAS(id, old.Status, old.LastSeenAt, host)
 				if err != nil {
 					return err
 				}
