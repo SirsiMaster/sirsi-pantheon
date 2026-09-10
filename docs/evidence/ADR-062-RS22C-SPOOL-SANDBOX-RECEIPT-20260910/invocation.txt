@@ -1,0 +1,1 @@
+codex exec -C ~/Development/sirsi-pantheon --sandbox workspace-write -c sandbox_workspace_write.writable_roots=["/Users/thekryptodragon/.sirsi/relay"] --ephemeral --skip-git-repo-check <prompt>

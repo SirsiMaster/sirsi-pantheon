@@ -21,3 +21,13 @@ relay: forwarded agent=Mac method=ListAll     id=1789011967746-2-01d841de status
 `grep -c "$SIRSI_ROUTER_TOKEN" relay.log` = 0. Spool files left afterwards: 0.
 
 What this proves: a codex lane with **no network at all** reads the router service through the spool with **no token in its environment**; the host token lives only in the relay process. What it does not prove: a claim/close mutation through the spool (that is the 20a.5 receipt, on the SSA lane, after the relay LaunchAgent is installed), and same-uid isolation (none, as the charter states). Session caching inside the sandbox is unavailable (`~/.sirsi/sessions` is not a writable root), so each run mints a session — acceptable for lanes; a lane that wants the cache declares that directory too.
+
+## Full raw receipt (second run, exact head 1a054d20, 2026-09-10T03:55Z)
+Raw files, unedited except the host token replaced by `<redacted>` wherever it might appear (count: 0 occurrences found), in
+`docs/evidence/ADR-062-RS22C-SPOOL-SANDBOX-RECEIPT-20260910/`:
+- `env.txt` — head, host, time, `codex-cli 0.153.4`, macOS 26.6.2, sha256 prefix of the built binary, token-in-log=0, spool-leftovers=0
+- `invocation.txt` / `prompt.txt` — the exact `codex exec` command line and prompt
+- `codex-full.txt` — the COMPLETE codex transcript; its header is codex's own statement of the effective sandbox:
+  `sandbox: workspace-write [workdir, /tmp, $TMPDIR, /Users/thekryptodragon/.sirsi/relay]` (no network_access line, none configured)
+- `relay-log.txt` — the relay's log for the run (MintSession/ListAll × 3, each with agent, method, id, status)
+This is still author-reported: an independent verifier reruns `invocation.txt` on the M5 with the relay started as described and compares.

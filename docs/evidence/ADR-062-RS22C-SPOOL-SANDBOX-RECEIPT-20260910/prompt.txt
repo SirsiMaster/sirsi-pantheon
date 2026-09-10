@@ -1,0 +1,1 @@
+Run exactly this shell command and paste raw stdout+stderr verbatim, nothing else: env -u SIRSI_ROUTER_TOKEN SIRSI_ROUTER_URL=spool:///Users/thekryptodragon/.sirsi/relay /Users/thekryptodragon/.sirsi/build/sirsi-relay router status; echo exit=$?

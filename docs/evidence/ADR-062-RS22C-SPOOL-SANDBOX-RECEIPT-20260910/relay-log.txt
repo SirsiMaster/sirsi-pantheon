@@ -1,0 +1,6 @@
+time=2026-09-09T23:55:32.622-04:00 level=INFO msg="relay: forwarded" agent=Mac method=MintSession id=1789012532383-1-942b0ff1 status=200
+time=2026-09-09T23:55:33.921-04:00 level=INFO msg="relay: forwarded" agent=Mac method=ListAll id=1789012532686-2-668e185d status=200
+time=2026-09-09T23:55:42.777-04:00 level=INFO msg="relay: forwarded" agent=Mac method=MintSession id=1789012542603-1-0b7504a7 status=200
+time=2026-09-09T23:55:43.825-04:00 level=INFO msg="relay: forwarded" agent=Mac method=ListAll id=1789012542907-2-7dd44956 status=200
+time=2026-09-09T23:55:52.230-04:00 level=INFO msg="relay: forwarded" agent=Mac method=MintSession id=1789012552130-1-a908e99b status=200
+time=2026-09-09T23:55:53.431-04:00 level=INFO msg="relay: forwarded" agent=Mac method=ListAll id=1789012552282-2-c7f6fb08 status=200
