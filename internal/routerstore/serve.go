@@ -310,8 +310,13 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 					entry.Verdict = "refused"
 				}
 			}
+			// The row is written BEFORE the mutation and its failure refuses the
+			// call: a mutation the audit cannot see must not happen (SSA
+			// 2026-09-10, PR #726 P1). 503, not 401 — the ledger is unhealthy.
 			if aerr := s.store.RecordAudience(entry); aerr != nil {
-				s.logf("rule-of-ra: audience log write failed: %v", aerr)
+				s.logf("rule-of-ra: audience log write failed, refusing %s: %v", name, aerr)
+				writeErr(w, http.StatusServiceUnavailable, "", "audience log unavailable: "+aerr.Error())
+				return
 			}
 			if rerr != nil {
 				if mode == "enforce" {
@@ -412,6 +417,12 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 	if callErr != nil {
 		s.writeCallErr(w, name, callErr)
 		return
+	}
+	if name == "AudienceSince" && len(results) == 1 {
+		if rep, ok := results[0].Interface().(AudienceReport); ok {
+			rep.Mode = s.opts.RuleOfRa // the store cannot know the gate mode; the server does
+			results[0] = reflect.ValueOf(rep)
+		}
 	}
 
 	// Bind the session to what was just claimed, so ownership holds from here.

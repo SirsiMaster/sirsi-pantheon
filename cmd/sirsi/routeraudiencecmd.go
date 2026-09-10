@@ -36,9 +36,14 @@ var routerAudienceCmd = &cobra.Command{
 			return enc.Encode(rep)
 		}
 		out := cmd.OutOrStdout()
-		fmt.Fprintf(out, "audience since %s: %d gated calls, %d allowed, %d without audience\n", since, rep.Gated, rep.Allowed, len(rep.Failures))
-		if len(rep.Failures) == 0 {
-			fmt.Fprintln(out, "  every mutation in the window came from a session bound to its own active registered thread")
+		fmt.Fprintf(out, "audience since %s (gate mode %q): %d gated calls, %d allowed, %d without audience\n", since, rep.Mode, rep.Gated, rep.Allowed, len(rep.Failures))
+		switch {
+		case rep.Mode == "off":
+			fmt.Fprintln(out, "  the gate is OFF: nothing is recorded; this is not compliance")
+		case !rep.Recorded:
+			fmt.Fprintln(out, "  no gated calls recorded in the window: no history, not compliance")
+		case len(rep.Failures) == 0:
+			fmt.Fprintln(out, "  every recorded mutation in the window came from a session bound to its own active registered thread")
 		}
 		for agent, n := range rep.ByAgent {
 			fmt.Fprintf(out, "  %-24s %d\n", agent, n)

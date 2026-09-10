@@ -257,6 +257,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_host_agent ON sessions(host, agent);
 -- v19 — the Rule of Ra (ADR-062 20b.1): the registered thread a session was minted for.
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS thread_id TEXT NOT NULL DEFAULT '';
 -- v20 — the audience log (ADR-062 20b.3): one row per gated call with the verdict.
+-- ts is fixed-width UTC (YYYY-MM-DDTHH:MM:SS.nnnnnnnnnZ) so TEXT comparison is chronological.
 CREATE TABLE IF NOT EXISTS audience_log (
     ts         TEXT NOT NULL,
     method     TEXT NOT NULL,
@@ -268,18 +269,7 @@ CREATE TABLE IF NOT EXISTS audience_log (
     reason     TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_audience_log_ts ON audience_log(ts);
--- v20 — the audience log (ADR-062 20b.3): one row per gated call with the verdict.
-CREATE TABLE IF NOT EXISTS audience_log (
-    ts         TEXT NOT NULL,
-    method     TEXT NOT NULL,
-    session_id TEXT NOT NULL,
-    agent      TEXT NOT NULL,
-    host       TEXT NOT NULL,
-    thread_id  TEXT NOT NULL DEFAULT '',
-    verdict    TEXT NOT NULL,
-    reason     TEXT NOT NULL DEFAULT ''
-);
-CREATE INDEX IF NOT EXISTS idx_audience_log_ts ON audience_log(ts);
+
 
 -- Which session holds each lease. A side table, not columns on items/tasks:
 -- items mirror work.Item field-for-field and identity never round-trips
