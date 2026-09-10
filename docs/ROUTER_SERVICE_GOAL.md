@@ -127,9 +127,11 @@ named. A step is not done at green CI; it is done when its evidence row above is
       `Complete`, `Respond`, task verbs) automatically — the caller re-queries (`Get`, `Inbox`,
       `ledger`) and decides. Read-only methods may be retried freely. A durable service-side
       idempotency key for mutations is not part of this step; if the outcome-unknown rate is ever
-      non-zero in practice, it becomes a step of its own with its own evidence. Bounds: request and response bodies ≤ 4 MiB (the service
-      limit), at most 64 in-flight requests per lane, stale files older than 10 min are swept by
-      the relay with a log line. The relay refuses `MintHostToken`, `RevokeHostToken`,
+      non-zero in practice, it becomes a step of its own with its own evidence. Bounds: request bodies ≤ 4 MiB decoded (the service limit; the file
+      envelope allows base64 overhead), response bodies ≤ 64 MiB decoded (what `RemoteStore`
+      accepts over HTTPS — a full-ledger `ListAll` exceeds 4 MiB), oversize is an error never a
+      truncation; at most 64 in-flight requests per lane enforced with exclusive slot files; stale
+      files older than 10 min are swept by the relay with a log line. The relay refuses `MintHostToken`, `RevokeHostToken`,
       `ListHostTokens` by name; the spool carries no token; the relay log carries agent + method +
       id only. Least-privilege claim, exactly: the host token is held by one process instead of
       every lane's environment; same-uid processes are not isolated from each other by file modes.

@@ -124,10 +124,18 @@ func NewRemoteStore(base, token string) *RemoteStore {
 	if home, err := os.UserHomeDir(); err == nil {
 		dir = filepath.Join(home, ".sirsi", "sessions")
 	}
+	client := &http.Client{}
+	if d := SpoolDir(base); d != "" {
+		// spool:// — the lane has no network (ADR-062 20a.1b). Requests travel
+		// as files through the relay, which holds the host token; this side
+		// carries none and signs exactly as over HTTP.
+		client.Transport = newSpoolTransport(d, agent)
+		base, token = "http://spool", ""
+	}
 	return &RemoteStore{
 		base:       strings.TrimRight(base, "/"),
 		token:      token,
-		client:     &http.Client{},
+		client:     client,
 		perCall:    5 * time.Second,
 		host:       host,
 		agent:      agent,
