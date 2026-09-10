@@ -427,3 +427,92 @@ func TestSpoolCorruptResponseIsOutcomeUnknown(t *testing.T) {
 		t.Fatalf("corrupt response must be outcome-unknown naming method+id: %v", err)
 	}
 }
+
+// Lanes never wait on each other: with lane-slow holding the upstream for
+// 1.5 s, a request that ARRIVES afterwards on lane-fast is answered in well
+// under that time, and slow still completes.
+func TestSpoolRelayNewLaneIsNotBlockedBySlowLane(t *testing.T) {
+	spool := t.TempDir()
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Sirsi-Session") == "slow" {
+			time.Sleep(1500 * time.Millisecond)
+		}
+		_, _ = w.Write([]byte(`{"result":[]}`))
+	}))
+	t.Cleanup(svc.Close)
+	rl := &Relay{Spool: spool, Base: svc.URL, Token: "t", Log: slog.New(slog.NewTextHandler(&strings.Builder{}, nil)), Client: svc.Client(), now: time.Now}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go func() { _ = rl.Serve(ctx) }()
+	for _, lane := range []string{"lane-slow", "lane-fast"} {
+		if err := os.MkdirAll(filepath.Join(spool, lane, "req"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writeAtomic(filepath.Join(spool, "lane-slow", "req", "1-1-s.json"), spoolRequest{Method: "ListAll", Headers: map[string]string{"X-Sirsi-Session": "slow"}, Body: []byte(`{"args":[]}`)}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(400 * time.Millisecond) // slow is now held upstream
+	start := time.Now()
+	if err := writeAtomic(filepath.Join(spool, "lane-fast", "req", "1-1-f.json"), spoolRequest{Method: "ListAll", Headers: map[string]string{}, Body: []byte(`{"args":[]}`)}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(1200 * time.Millisecond)
+	for {
+		if _, err := os.Stat(filepath.Join(spool, "lane-fast", "res", "1-1-f.json")); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("fast lane blocked behind the slow lane")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if el := time.Since(start); el > 1000*time.Millisecond {
+		t.Fatalf("fast lane took %s", el)
+	}
+	deadline = time.Now().Add(3 * time.Second)
+	for {
+		if _, err := os.Stat(filepath.Join(spool, "lane-slow", "res", "1-1-s.json")); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("slow lane never completed")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// A backlog inside one lane must not spin the discovery loop, and cancellation
+// must return promptly while that backlog is still pending.
+func TestSpoolRelayBacklogDoesNotSpinAndCancels(t *testing.T) {
+	spool := t.TempDir()
+	release := make(chan struct{})
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { <-release; _, _ = w.Write([]byte(`{"result":[]}`)) }))
+	t.Cleanup(svc.Close)
+	rl := &Relay{Spool: spool, Base: svc.URL, Token: "t", Log: slog.New(slog.NewTextHandler(&strings.Builder{}, nil)), Client: svc.Client(), now: time.Now}
+	if err := os.MkdirAll(filepath.Join(spool, "lane-q", "req"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"1-1-a", "1-2-b"} { // two pending in the SAME lane
+		if err := writeAtomic(filepath.Join(spool, "lane-q", "req", id+".json"), spoolRequest{Method: "ListAll", Headers: map[string]string{}, Body: []byte(`{"args":[]}`)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { _ = rl.Serve(ctx); close(done) }()
+	time.Sleep(600 * time.Millisecond) // first request held upstream, second queued behind it
+	if n := rl.scans.Load(); n > 8 {
+		t.Fatalf("discovery spun: %d scans in 600 ms with a %s poll", n, spoolPoll)
+	}
+	start := time.Now()
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("Serve did not return within 300 ms of cancellation while a backlog was pending")
+	}
+	_ = start
+	close(release) // let the held worker finish before TempDir cleanup
+	time.Sleep(100 * time.Millisecond)
+}

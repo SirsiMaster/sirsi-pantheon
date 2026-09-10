@@ -31,6 +31,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -229,6 +230,15 @@ type Relay struct {
 	Client *http.Client
 	Log    *slog.Logger
 	now    func() time.Time
+
+	// One long-lived worker per lane: a slow lane never delays discovery or
+	// service of another lane (SSA 2026-09-10: a global wait barrier starved
+	// newly arriving lanes past the client's 5 s deadline). Each worker drains
+	// its lane's queue in order; consume-before-forward is unchanged.
+	laneMu  sync.Mutex
+	lanes   map[string]chan struct{}
+	handled atomic.Int32
+	scans   atomic.Int32 // discovery passes (tests assert no spin under backlog)
 }
 
 // Serve polls the spool until ctx is done. Each request file is forwarded once;
@@ -254,12 +264,20 @@ func (rl *Relay) Serve(ctx context.Context) error {
 	rl.recoverInflight()
 	lastSweep := rl.now()
 	for {
-		n := rl.serveOnce()
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+		}
+		woke := rl.discover(ctx)
 		if rl.now().Sub(lastSweep) > time.Minute {
 			rl.sweep()
 			lastSweep = rl.now()
 		}
-		if n == 0 {
+		// Sleep unless this pass actually delivered a NEW wake: a lane whose
+		// worker is busy with a backlog already has a pending signal, and
+		// rescanning for it would spin (SSA 2026-09-10: 471 scans in 100 ms).
+		if woke == 0 {
 			select {
 			case <-ctx.Done():
 				return nil
@@ -269,28 +287,84 @@ func (rl *Relay) Serve(ctx context.Context) error {
 	}
 }
 
-// serveOnce consumes and forwards every pending request file once and returns
-// how many it handled. At-most-once (20a.1b): a request is CONSUMED by renaming
-// it into <agent>/inflight/ BEFORE the HTTP forward; a failed rename means
-// another relay owns it and it is not forwarded. The response is published, then
-// the in-flight file is deleted last.
+// discover lists pending request files, wakes each lane's worker (starting it
+// on first sight) and returns immediately — it never waits for any lane. The
+// return value counts wakes actually DELIVERED (a worker that already holds a
+// pending signal is not counted), so a backlog never turns the loop into a spin.
+func (rl *Relay) discover(ctx context.Context) int {
+	rl.scans.Add(1)
+	files, _ := filepath.Glob(filepath.Join(rl.Spool, "*", "req", "*.json"))
+	seen := map[string]bool{}
+	for _, f := range files {
+		seen[filepath.Base(filepath.Dir(filepath.Dir(f)))] = true
+	}
+	rl.laneMu.Lock()
+	if rl.lanes == nil {
+		rl.lanes = map[string]chan struct{}{}
+	}
+	delivered := 0
+	for agent := range seen {
+		ch, ok := rl.lanes[agent]
+		if !ok {
+			ch = make(chan struct{}, 1)
+			rl.lanes[agent] = ch
+			go rl.laneWorker(ctx, agent, ch)
+		}
+		select { // coalesce wakes: one pending signal is enough
+		case ch <- struct{}{}:
+			delivered++
+		default:
+		}
+	}
+	rl.laneMu.Unlock()
+	return delivered
+}
+
+// laneWorker drains one lane's queue in file order whenever woken.
+func (rl *Relay) laneWorker(ctx context.Context, agent string, wake <-chan struct{}) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-wake:
+		}
+		files, _ := filepath.Glob(filepath.Join(rl.Spool, agent, "req", "*.json"))
+		sort.Strings(files)
+		for _, f := range files {
+			rl.handleOne(agent, f)
+		}
+	}
+}
+
+// handleOne consumes one request atomically (rename into inflight/ BEFORE the
+// HTTP forward; a failed rename means another relay owns it), publishes the
+// response, then deletes the in-flight file last. Returns whether it forwarded.
+func (rl *Relay) handleOne(agent, f string) bool {
+	id := strings.TrimSuffix(filepath.Base(f), ".json")
+	inflight := filepath.Join(rl.Spool, agent, "inflight", id+".json")
+	if err := os.MkdirAll(filepath.Dir(inflight), 0o700); err != nil {
+		return false
+	}
+	if err := os.Rename(f, inflight); err != nil {
+		return false
+	}
+	rl.handled.Add(1)
+	rl.publish(agent, id, rl.forward(agent, id, inflight))
+	_ = os.Remove(inflight)
+	return true
+}
+
+// serveOnce drains every pending request synchronously (lanes in name order,
+// files in order) and returns how many it forwarded. Tests use it; Serve uses
+// the per-lane workers above with the same handleOne.
 func (rl *Relay) serveOnce() int {
 	files, _ := filepath.Glob(filepath.Join(rl.Spool, "*", "req", "*.json"))
 	sort.Strings(files)
 	n := 0
 	for _, f := range files {
-		agent := filepath.Base(filepath.Dir(filepath.Dir(f)))
-		id := strings.TrimSuffix(filepath.Base(f), ".json")
-		inflight := filepath.Join(rl.Spool, agent, "inflight", id+".json")
-		if err := os.MkdirAll(filepath.Dir(inflight), 0o700); err != nil {
-			continue
+		if rl.handleOne(filepath.Base(filepath.Dir(filepath.Dir(f))), f) {
+			n++
 		}
-		if err := os.Rename(f, inflight); err != nil {
-			continue // consumed by someone else, or gone: never forward
-		}
-		n++
-		rl.publish(agent, id, rl.forward(agent, id, inflight))
-		_ = os.Remove(inflight)
 	}
 	return n
 }
