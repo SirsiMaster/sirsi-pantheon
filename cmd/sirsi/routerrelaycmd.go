@@ -68,11 +68,8 @@ var routerRelayInstallCmd = &cobra.Command{
 			home, _ := os.UserHomeDir()
 			spool = filepath.Join(home, ".sirsi", "relay")
 		}
-		changed, path, err := router.InstallRelayLaunchAgent("", spool, os.Getenv("SIRSI_ROUTER_URL"), os.Getenv("SIRSI_ROUTER_TOKEN"))
+		changed, path, err := router.InstallRelayLaunchAgent(spool, os.Getenv("SIRSI_ROUTER_URL"), os.Getenv("SIRSI_ROUTER_TOKEN"))
 		if err != nil {
-			return err
-		}
-		if err := router.LoadRelayAgent(path); err != nil {
 			return err
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "relay LaunchAgent %s (%s): %s; spool %s\n", router.RelayLaunchAgentLabel, map[bool]string{true: "written", false: "unchanged"}[changed], path, spool)
