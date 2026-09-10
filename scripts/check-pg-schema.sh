@@ -21,7 +21,13 @@ cleanup() { psqlq -d postgres -c "DROP DATABASE IF EXISTS $DB;" >/dev/null 2>&1 
 trap cleanup EXIT
 
 psqlq -d postgres -c "CREATE DATABASE $DB;"
+# Cloud SQL creates the users with CREATEROLE/CREATEDB before roles.sql ever runs; model that.
+# Roles are cluster-wide: start from none so a rerun on the same scratch server is the same test.
+psqlq -d "$DB" -c "DROP ROLE IF EXISTS router_service; DROP ROLE IF EXISTS router_migrator;" >/dev/null
+psqlq -d "$DB" -c "CREATE ROLE router_service LOGIN CREATEDB CREATEROLE;" >/dev/null
 psqlq -d "$DB" -f "$ROOT/internal/routerstore/pg/roles.sql" >/dev/null
+attrs=$(psqlq -d "$DB" -c "SELECT rolsuper||' '||rolcreaterole||' '||rolcreatedb||' '||rolbypassrls FROM pg_roles WHERE rolname='router_service';")
+[ "$attrs" = "false false false false" ] || { echo "FAIL: roles.sql must strip router_service attributes on an existing role, got [$attrs]"; exit 1; }
 psqlq -d "$DB" -c "ALTER DATABASE $DB OWNER TO router_migrator;" >/dev/null
 # DDL as the migrator, exactly as production will.
 PGUSER=router_migrator psqlq -1 -d "$DB" -f "$ROOT/internal/routerstore/pg/schema.sql" >/dev/null

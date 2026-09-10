@@ -19,3 +19,9 @@ BEGIN
     CREATE ROLE router_service LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;
   END IF;
 END $$;
+
+-- Attributes are enforced on EVERY apply, not only at CREATE: on Cloud SQL the
+-- users are created by `gcloud sql users create`, which grants CREATEROLE and
+-- CREATEDB, so the guarded CREATE above never ran and the live router_service
+-- held both (apply-schema job audit, 2026-09-10). Idempotent.
+ALTER ROLE router_service NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;

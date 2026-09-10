@@ -64,13 +64,13 @@ echo "tables=$tables triggers=$triggers partial=$partial version=$version"
 [ "$tables" = 15 ] && [ "$triggers" = 12 ] && [ "$partial" -ge 5 ] && [ "$version" = 19 ] || { echo FAIL-shape; exit 1; }
 # Closed privilege audit of router_service: every DDL path, not one probe.
 members=$(q "SELECT coalesce(string_agg(b.rolname, ','), '') FROM pg_auth_members m JOIN pg_roles b ON b.oid=m.roleid JOIN pg_roles r ON r.oid=m.member WHERE r.rolname='router_service'")
-attrs=$(q "SELECT rolsuper||' '||rolcreaterole||' '||rolcreatedb||' '||rolbypassrls FROM pg_roles WHERE rolname='router_service'")
+attrs=$(q "SELECT rolsuper||' '||rolcreaterole||' '||rolcreatedb||' '||rolbypassrls FROM pg_roles WHERE rolname='router_service'")  # booleans render as true/false
 schema_create=$(q "SELECT has_schema_privilege('router_service','router','CREATE')")
 db_create=$(q "SELECT has_database_privilege('router_service','router','CREATE')")
 defacl=$(q "SELECT count(*) FROM pg_default_acl d, aclexplode(d.defaclacl) a JOIN pg_roles g ON g.oid=a.grantee WHERE g.rolname='router_service' AND a.privilege_type NOT IN ('SELECT','INSERT','UPDATE','DELETE')")
 owned=$(q "SELECT count(*) FROM pg_class c JOIN pg_roles o ON o.oid=c.relowner WHERE o.rolname='router_service'")
 echo "router_service: memberships=[$members] super/createrole/createdb/bypassrls=[$attrs] schema.CREATE=$schema_create db.CREATE=$db_create non-DML-default-acl=$defacl owned-objects=$owned"
-[ -z "$members" ] && [ "$attrs" = "f f f f" ] && [ "$schema_create" = f ] && [ "$db_create" = f ] && [ "$defacl" = 0 ] && [ "$owned" = 0 ] || { echo "FAIL router_service holds a DDL path"; exit 1; }
+[ -z "$members" ] && [ "$attrs" = "false false false false" ] && [ "$schema_create" = f ] && [ "$db_create" = f ] && [ "$defacl" = 0 ] && [ "$owned" = 0 ] || { echo "FAIL router_service holds a DDL path"; exit 1; }
 if PGPASSWORD="$SVCPW" psql -qtA -h "$H" -U router_service -d router -c 'CREATE TABLE router.ddl_probe(i int)' 2>/dev/null; then
   echo "FAIL router_service can DDL"; exit 1
 fi
