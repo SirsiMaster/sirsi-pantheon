@@ -7,8 +7,8 @@
 #   1 preflight   service healthy; M5 binary speaks SIRSI_ROUTER_URL; no `sirsi router` process mid-write
 #   2 freeze      M5 router.db: WAL checkpoint, journal_mode=DELETE, chmod a-w  (old writers now FAIL LOUDLY)
 #   3 snapshot    .backup on the M5 → M1 → schema-advanced to the binary's version (v18)
-#   4 clear       destination identity tables (sessions, lease_sessions, host_tokens, threads): the hash
-#                 gate compares every table and these rows are destination-only (rs-18 lesson)
+#   4 empty       every router table on the destination: the final import lands on an empty ledger (the
+#                 service carries no traffic before the cut-over; stale rehearsal rows make the gate fail)
 #   5 import      migrate-job.sh REAL; gate = source sha256 == destination sha256
 #   6 tokens+env  one host-bound token per Mac (M5 `Mac`, M1 `MacBookPro`) via the token job, into
 #                 ~/.sirsi/router-service.env (0600) sourced from ~/.zshenv. The horus supervisor is
@@ -22,7 +22,7 @@
 # Rollback never touches the service: rows written there during the window stay there.
 # The M5 binary must already be rebuilt from main at or after PR #711 (step 1 prints the recipe).
 set -euo pipefail
-PROJECT=${PROJECT:-sirsi-nexus-live}; REGION=${REGION:-us-central1}
+PROJECT=${PROJECT:-sirsi-nexus-live}; REGION=${REGION:-us-central1}; INSTANCE=${INSTANCE:-sirsi-router}; CONN="$PROJECT:$REGION:$INSTANCE"
 URL=${URL:-https://sirsi-router-6kdf4or4qq-uc.a.run.app}
 M5=${M5:-thekryptodragon@192.168.1.155}; M5_HOST=${M5_HOST:-Mac}; M1_HOST=${M1_HOST:-$(hostname -s)}
 G="gcloud --project=$PROJECT --quiet"
@@ -93,7 +93,12 @@ fi
 TS=$(cat "$WORK/current")
 
 if [ "$FROM" -le 4 ]; then
-  step 4 "clear destination identity tables"
+  step 4 "empty the destination (every router table, not only identity rows)"
+  # 2026-09-10 lesson: the service still held the rehearsal snapshot; 6,422 rows had changed on the M5 since,
+  # ON CONFLICT DO NOTHING kept the stale versions, the gate failed and the import rolled back. The final
+  # import must land on an EMPTY ledger — the service carries no traffic of its own before the cut-over.
+  SQL="TRUNCATE router.items, router.agents, router.state, router.breakers, router.send_quota, router.counters, router.tasks, router.identifiers, router.requirements, router.wake_events, router.threads, router.sessions, router.lease_sessions, router.host_tokens CASCADE; SELECT (SELECT count(*) FROM router.items) items,(SELECT version FROM router.schema_version) v;"
+  $G run jobs update sirsi-router-psql --region="$REGION" --args="^@^-v@ON_ERROR_STOP=1@-h@/cloudsql/$CONN@-U@router_migrator@-d@router@-c@$SQL" >/dev/null
   $G run jobs execute sirsi-router-psql --region="$REGION" --wait
 fi
 
