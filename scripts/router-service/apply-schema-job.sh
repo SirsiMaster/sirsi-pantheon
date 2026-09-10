@@ -55,6 +55,12 @@ q() { psql -qtA -h "$H" -U router_migrator -d router -c "$1"; }
 # holds CREATEROLE (via its own cloudsqlsuperuser membership on Cloud SQL). Refuse rather than "succeed" silently.
 auth=$(q "SELECT rolcreaterole OR pg_has_role(current_user,'cloudsqlsuperuser','MEMBER') FROM pg_roles WHERE rolname=current_user")
 [ "$auth" = t ] || { echo "FAIL router_migrator cannot revoke role membership (no CREATEROLE / cloudsqlsuperuser)"; exit 1; }
+# roles.sql ALTERs router_service NOCREATEDB NOCREATEROLE. On PostgreSQL 16 a non-superuser may do that only with
+# CREATEROLE + CREATEDB itself + ADMIN OPTION on the target (user.c AlterRole). Probe the real attributes and the
+# real pg_auth_members row — never infer from cloudsqlsuperuser membership — and refuse with the exact one-time grant.
+alter_auth=$(q "SELECT (rolcreaterole AND rolcreatedb) FROM pg_roles WHERE rolname=current_user")
+admin_opt=$(q "SELECT coalesce(bool_or(admin_option),false) FROM pg_auth_members WHERE roleid='router_service'::regrole AND member=current_user::regrole")
+[ "$alter_auth" = t ] && [ "$admin_opt" = t ] || { echo "FAIL router_migrator cannot ALTER ROLE router_service (createrole+createdb=$alter_auth admin_option=$admin_opt). Owner, once, as the Cloud SQL postgres user: GRANT router_service TO router_migrator WITH ADMIN OPTION, INHERIT FALSE, SET FALSE;"; exit 1; }
 psql -1 -v ON_ERROR_STOP=1 -q -h "$H" -U router_migrator -d router -f /sql/apply.sql  # -1: one transaction, all or nothing
 tables=$(q "SELECT count(*) FROM information_schema.tables WHERE table_schema='router' AND table_type='BASE TABLE'")
 triggers=$(q "SELECT count(DISTINCT trigger_name) FROM information_schema.triggers WHERE trigger_schema='router'")
