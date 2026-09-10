@@ -186,8 +186,16 @@ func (s *server) ruleOfRa(sess Session, method string) error {
 	if b.Agent != sess.Agent || (b.Host != "" && b.Host != sess.Host) {
 		return fmt.Errorf("%w (thread %s belongs to %s@%s, session is %s@%s; method %s)", ErrUnregistered, sess.ThreadID, b.Agent, b.Host, sess.Agent, sess.Host, method)
 	}
-	if b.Status != "active" {
-		return fmt.Errorf("%w (thread %s is %s; method %s)", ErrUnregistered, sess.ThreadID, b.Status, method)
+	// A registered thread may mutate in any LIVE working state — active, idle,
+	// or blocked. Canon: "idle ≠ dead" (a drained inbox is a resting session,
+	// not an absent one); refusing an idle thread would turn every quiet moment
+	// into a lost audience. The heartbeat-freshness check below is the real
+	// liveness gate. Only the resting and terminal states are refused: suspended
+	// (ADR-025 — resume first), closed, reaped, stale-heartbeat.
+	switch b.Status {
+	case "active", "idle", "blocked":
+	default:
+		return fmt.Errorf("%w (thread %s is %s, not a live working state; method %s)", ErrUnregistered, sess.ThreadID, b.Status, method)
 	}
 	stale := s.opts.RuleOfRaStale
 	if stale <= 0 {

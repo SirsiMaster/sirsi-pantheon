@@ -500,3 +500,44 @@ func TestAudienceSinceValidatesAndCeilsFraction(t *testing.T) {
 		t.Fatalf("since just before must include the session: %v", rep.Unbound)
 	}
 }
+
+// A registered thread mutates in any live working state — active, idle, or
+// blocked ("idle ≠ dead") — but resting/terminal states are refused. The
+// heartbeat window is the liveness gate, orthogonal to status.
+func TestRuleOfRaAcceptsIdleAndBlockedRefusesRestingStates(t *testing.T) {
+	var logs strings.Builder
+	backend, client := ruleHarness(t, "enforce", &logs)
+	host, _ := os.Hostname()
+	now := time.Date(2026, 9, 10, 15, 0, 0, 0, time.UTC)
+	fresh := now.Add(-time.Minute)
+
+	send := func(agent, thread string) error {
+		_, _, err := client(agent, thread).SendGuarded(SendReq{From: agent, To: "b", Title: "x", Type: "proposal", Instructions: "y"})
+		return err
+	}
+
+	// live working states pass.
+	for _, st := range []string{"active", "idle", "blocked"} {
+		id := "thr-" + st
+		register(t, backend, id, "lane-"+st, host, st, fresh)
+		if err := send("lane-"+st, id); err != nil {
+			t.Fatalf("a %s thread must be allowed to mutate: %v", st, err)
+		}
+	}
+
+	// resting / terminal states are refused.
+	for _, st := range []string{"suspended", "closed", "reaped", "stale-heartbeat"} {
+		id := "thr-rest-" + st
+		register(t, backend, id, "lane-rest-"+st, host, st, fresh)
+		if err := send("lane-rest-"+st, id); !errors.Is(err, ErrUnregistered) {
+			t.Fatalf("a %s thread must be refused, got %v", st, err)
+		}
+	}
+
+	// a fresh heartbeat does not rescue a stale one: an idle thread with an old
+	// heartbeat is still refused by the freshness gate.
+	register(t, backend, "thr-idle-stale", "lane-idle-stale", host, "idle", now.Add(-time.Hour))
+	if err := send("lane-idle-stale", "thr-idle-stale"); !errors.Is(err, ErrUnregistered) {
+		t.Fatal("an idle thread with a stale heartbeat must still be refused")
+	}
+}
