@@ -2,6 +2,7 @@ package router
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -89,5 +90,41 @@ func TestWakePlistCarriesRouterServiceEnv(t *testing.T) {
 	t.Setenv("SIRSI_ROUTER_TOKEN", "")
 	if strings.Contains(wakeLaunchAgentPlist("l", AgentConfig{ID: "x"}, "/usr/local/bin/sirsi"), "SIRSI_ROUTER") {
 		t.Fatal("no service env → no service keys")
+	}
+}
+
+// Upgrading a 0644 plist (prior installs) must end 0600 — both when the content
+// changes and when it is already current — because it may now carry a token.
+func TestInstallWakeLaunchAgentSecuresExistingPlist(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, "Library", "LaunchAgents")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := AgentConfig{ID: "sec"}
+	path := filepath.Join(dir, WakeLaunchAgentLabel(cfg.ID)+".plist")
+	if err := os.WriteFile(path, []byte("stale"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := InstallWakeLaunchAgent(cfg, "/usr/local/bin/sirsi"); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := os.Stat(path); st.Mode().Perm() != 0o600 {
+		t.Fatalf("rewritten plist mode %o, want 0600", st.Mode().Perm())
+	}
+	// Equal content at 0644 (the idempotent path) must also be tightened.
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	changed, _, err := InstallWakeLaunchAgent(cfg, "/usr/local/bin/sirsi")
+	if err != nil || changed {
+		t.Fatalf("idempotent install: changed=%v err=%v", changed, err)
+	}
+	if st, _ := os.Stat(path); st.Mode().Perm() != 0o600 {
+		t.Fatalf("idempotent plist mode %o, want 0600", st.Mode().Perm())
+	}
+	if left, _ := filepath.Glob(filepath.Join(dir, ".*.plist")); len(left) != 0 {
+		t.Fatalf("temp files left behind: %v", left)
 	}
 }

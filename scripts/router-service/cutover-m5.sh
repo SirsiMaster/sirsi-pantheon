@@ -97,7 +97,11 @@ if [ "$FROM" -le 4 ]; then
   # 2026-09-10 lesson: the service still held the rehearsal snapshot; 6,422 rows had changed on the M5 since,
   # ON CONFLICT DO NOTHING kept the stale versions, the gate failed and the import rolled back. The final
   # import must land on an EMPTY ledger — the service carries no traffic of its own before the cut-over.
-  SQL="TRUNCATE router.items, router.agents, router.state, router.breakers, router.send_quota, router.counters, router.tasks, router.identifiers, router.requirements, router.wake_events, router.threads, router.sessions, router.lease_sessions, router.host_tokens CASCADE; SELECT (SELECT count(*) FROM router.items) items,(SELECT version FROM router.schema_version) v;"
+  # Executable guard (SSA 2026-09-10): an activated ledger has host tokens; the pre-cutover rehearsal state
+  # has none (identity tables are cleared before every rehearsal import). A destination with tokens or a
+  # local activation marker is live and is never emptied by this script.
+  [ -e "$WORK/activated" ] && { echo "REFUSED: $WORK/activated exists — this host already cut over; emptying the service would destroy live work" >&2; exit 1; }
+  SQL="DO \$\$ DECLARE n int; BEGIN SELECT count(*) INTO n FROM router.host_tokens; IF n > 0 THEN RAISE EXCEPTION 'REFUSED: destination has % host token(s) — it is an activated ledger, not rehearsal data', n; END IF; END \$\$; TRUNCATE router.items, router.agents, router.state, router.breakers, router.send_quota, router.counters, router.tasks, router.identifiers, router.requirements, router.wake_events, router.threads, router.sessions, router.lease_sessions, router.host_tokens CASCADE; SELECT (SELECT count(*) FROM router.items) items,(SELECT version FROM router.schema_version) v;"
   $G run jobs update sirsi-router-psql --region="$REGION" --args="^@^-v@ON_ERROR_STOP=1@-h@/cloudsql/$CONN@-U@router_migrator@-d@router@-c@$SQL" >/dev/null
   $G run jobs execute sirsi-router-psql --region="$REGION" --wait
 fi
@@ -124,5 +128,6 @@ if [ "$FROM" -le 7 ]; then
   m5 'sirsi router status' >"$WORK/verify-m5-$TS.txt"
   for f in m1 m5; do [ "$(items "$WORK/status-$TS.txt")" = "$(items "$WORK/verify-$f-$TS.txt")" ] && echo "   $f == snapshot:$(items "$WORK/verify-$f-$TS.txt")" || { echo "   $f DIFFERS from snapshot" >&2; exit 1; }; done
   m5 'sirsi router task reclaim-expired' >/dev/null && echo "   M5 write over HTTPS ok"
+  date -u +%Y-%m-%dT%H:%M:%SZ >"$WORK/activated"   # from here on step 4 refuses: the service is live
   echo "CUT OVER. Next: close rs-18/rs-19/rs-20 on the ledger; Bind #4; delete the migrate image printed above."
 fi

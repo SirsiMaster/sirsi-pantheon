@@ -1468,10 +1468,32 @@ func InstallWakeLaunchAgent(cfg AgentConfig, sirsiBin string) (changed bool, pat
 	}
 	path = filepath.Join(dir, label+".plist")
 	content := wakeLaunchAgentPlist(label, cfg, sirsiBin)
+	// The plist may carry a bearer token, so it is private (0600) whether it is
+	// new, rewritten, or already current: os.WriteFile keeps an existing file's
+	// mode (prior installs were 0644), so write a fresh private temp file and
+	// rename it into place, and chmod the idempotent path too (SSA 2026-09-10).
 	if existing, rerr := os.ReadFile(path); rerr == nil && string(existing) == content {
+		if cerr := os.Chmod(path, 0o600); cerr != nil {
+			return false, path, fmt.Errorf("secure plist: %w", cerr)
+		}
 		return false, path, nil
 	}
-	if err = os.WriteFile(path, []byte(content), 0o600); err != nil {
+	tmp, terr := os.CreateTemp(dir, "."+label+".*.plist")
+	if terr != nil {
+		return false, path, fmt.Errorf("write plist: %w", terr)
+	}
+	tmpName := tmp.Name()
+	if _, err = tmp.Write([]byte(content)); err == nil {
+		err = tmp.Chmod(0o600)
+	}
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Rename(tmpName, path)
+	}
+	if err != nil {
+		_ = os.Remove(tmpName)
 		return false, path, fmt.Errorf("write plist: %w", err)
 	}
 	return true, path, nil
