@@ -360,3 +360,51 @@ func TestSuperviseOnceMarksStaleAgentThread(t *testing.T) {
 	}
 	t.Fatal("claude-pantheon status not found")
 }
+
+// The Rule of Ra applies to the supervisor (ADR-062 20b.2): SuperviseOnce
+// registers its own thread and exports SIRSI_AGENT_ID/SIRSI_THREAD_ID before it
+// opens the durable store, so its own mutations carry an audience instead of
+// running as an anonymous host session.
+func TestSuperviseOnceRegistersItselfForTheRuleOfRa(t *testing.T) {
+	repoRoot := t.TempDir()
+	routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
+	if err := os.MkdirAll(filepath.Join(routerRoot, "items"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeSupervisorRegistry(t, routerRoot, repoRoot)
+	// Start from a clean environment so we prove SuperviseOnce sets it.
+	t.Setenv("SIRSI_AGENT_ID", "")
+	t.Setenv("SIRSI_THREAD_ID", "")
+
+	report, err := SuperviseOnce(SuperviseOptions{RepoRoot: repoRoot, AgentID: "horus-supervisor-test", PID: os.Getpid(), Now: time.Now().UTC()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The env the store reads at mint is now the supervisor's own identity…
+	if got := os.Getenv("SIRSI_AGENT_ID"); got != "horus-supervisor-test" {
+		t.Fatalf("SIRSI_AGENT_ID = %q, want horus-supervisor-test", got)
+	}
+	if got := os.Getenv("SIRSI_THREAD_ID"); got == "" || got != report.ThreadID {
+		t.Fatalf("SIRSI_THREAD_ID = %q, want the supervisor thread %q", got, report.ThreadID)
+	}
+	// …and that thread is registered and active in the registry.
+	reg, err := LoadThreadRegistry(routerRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	thr, ok := reg.Threads[report.ThreadID]
+	if !ok || thr == nil {
+		t.Fatalf("supervisor thread %q not in the registry", report.ThreadID)
+	}
+	if thr.AgentID != "horus-supervisor-test" || thr.Status.IsTerminal() {
+		t.Fatalf("supervisor thread record = %+v, want active horus-supervisor-test", thr)
+	}
+	// The id is stable across passes (adopt, not re-mint).
+	report2, err := SuperviseOnce(SuperviseOptions{RepoRoot: repoRoot, AgentID: "horus-supervisor-test", ThreadID: report.ThreadID, PID: os.Getpid(), Now: time.Now().UTC()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report2.ThreadID != report.ThreadID {
+		t.Fatalf("supervisor thread must be stable across passes: %q then %q", report.ThreadID, report2.ThreadID)
+	}
+}
