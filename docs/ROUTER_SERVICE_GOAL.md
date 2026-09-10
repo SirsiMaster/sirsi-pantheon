@@ -94,37 +94,104 @@ named. A step is not done at green CI; it is done when its evidence row above is
 20a. **Codex-lane relay — least privilege (owner 2026-09-10: "power invested in Ra").** Codex sandboxes
     have no DNS, so after the cut-over a Codex lane cannot reach the service; the interim is a
     network exception on the SSA lane only. The relay retires it. Steps, each with evidence:
-    - 20a.1 **Discovery**: prove whether a `codex exec --sandbox workspace-write` process can connect
-      to a unix-domain socket under `$HOME/.sirsi/` (seatbelt profile). Evidence: the raw codex
-      output of a socket round-trip, both with and without `network_access`. If it cannot, the
-      fallback design (per-lane loopback port or a filesystem queue) is written as 20a.1b before
-      any code.
-    - 20a.2 `sirsi router relay serve --socket $HOME/.sirsi/router.sock`: an HTTP listener on a
-      unix socket (0600) that forwards `/v1/*` to `SIRSI_ROUTER_URL` with the host token from its
-      OWN environment. It refuses the token methods by name (`/v1/call/MintHostToken`,
-      `RevokeHostToken`, `ListHostTokens`), forwards everything else byte-for-byte so the
-      service's session, signature, runtime-hash and ownership validation is unchanged, and logs
-      agent id + method only — never a token, session secret or nonce. Least-privilege claim, stated
-      exactly: the token is held by one process instead of every lane's environment; a 0600
-      socket does NOT isolate the relay from other processes under the same uid. Evidence: unit
-      tests (forwarding, refusal list, secret-free log) + `curl --unix-socket` receipt.
-    - 20a.3 Client: `RemoteStore` accepts `SIRSI_ROUTER_URL=unix:///path` (http over a unix
-      dialer) and `Resolve()` does not require `SIRSI_ROUTER_TOKEN` for it. Evidence: tests + a
-      `sirsi router status` through the socket.
+    - 20a.1 **Discovery — DONE 2026-09-10, answer NO.** A `codex exec --sandbox workspace-write` process
+      cannot connect to a unix socket either (`curl: (7)`), with `network_access=true` it can.
+      Evidence: `docs/evidence/ADR-062-RS22A-CODEX-SANDBOX-SOCKET-DISCOVERY-20260910.md`. The
+      socket relay is therefore superseded by 20a.1b; sub-steps 20a.2–20a.4 below are the spool
+      shape, replacing the socket shape they had before this amendment.
+    - 20a.1b **Design: filesystem spool — location proven.** Second discovery
+      (`docs/evidence/ADR-062-RS22-SPOOL-LOCATION-DISCOVERY-20260910.md`): a repo-rooted
+      workspace-write lane cannot write `~/.sirsi/relay` (EPERM) unless the directory is declared
+      with `-c sandbox_workspace_write.writable_roots=["$HOME/.sirsi/relay"]`; a HOME-rooted lane
+      can by default. So the spool is one fixed per-host directory `~/.sirsi/relay/` and every
+      Codex lane's consumer command declares it as a writable root (a file-scope grant, never
+      network). Layout: `~/.sirsi/relay/<agent>/req/` and `…/<agent>/res/`, each lane directory
+      0700 to the lane's uid (same uid as the relay: file modes separate lanes from accidents, not
+      from each other). Protocol: the client writes `req/<id>.json.tmp` then `rename(2)`s it to
+      `req/<id>.json` (atomic publication; the relay never sees a partial file); one request =
+      `{method, headers:{session,nonce,runtime,signature}, body}` forwarded byte-for-byte with the
+      relay adding only `Authorization`; the relay writes `res/<id>.json.tmp` → rename; the client
+      waits on the response with kqueue/poll and a bounded timeout (default 30 s, per-call
+      override), then deletes both files. **Correlation and uncertain writes:** the request id is
+      `<unixms>-<per-process sequence>-<8 random hex>` scoped to the lane directory, so two lanes,
+      two processes, or a relay restart cannot collide; the relay CONSUMES a request atomically BEFORE forwarding it —
+      `rename(req/<id>.json → inflight/<id>.json)`; a failed rename means another relay owns it and
+      it is not forwarded — then performs the HTTP call, publishes the response, and deletes the
+      in-flight file last. A restarted relay never re-forwards anything it finds under `inflight/`:
+      each such file gets a response of **outcome-unknown** ("relay restarted after consuming
+      <method> <id>") and is removed. So the failure trace "consume → forward → service commits →
+      relay crashes → restart" yields exactly one forward and an outcome-unknown to the caller,
+      never a duplicate mutation. A response lost after the service committed (relay crash between
+      forward and publish, or a client timeout) is reported to the caller as **outcome-unknown**
+      naming the method and id; the client NEVER retries a mutating method (`Send`, `Claim`,
+      `Complete`, `Respond`, task verbs) automatically — the caller re-queries (`Get`, `Inbox`,
+      `ledger`) and decides. Read-only methods may be retried freely. A durable service-side
+      idempotency key for mutations is not part of this step; if the outcome-unknown rate is ever
+      non-zero in practice, it becomes a step of its own with its own evidence. Bounds: request and response bodies ≤ 4 MiB (the service
+      limit), at most 64 in-flight requests per lane, stale files older than 10 min are swept by
+      the relay with a log line. The relay refuses `MintHostToken`, `RevokeHostToken`,
+      `ListHostTokens` by name; the spool carries no token; the relay log carries agent + method +
+      id only. Least-privilege claim, exactly: the host token is held by one process instead of
+      every lane's environment; same-uid processes are not isolated from each other by file modes.
+    - 20a.2 `sirsi router relay serve --spool ~/.sirsi/relay`: the forwarder above. Evidence: unit
+      tests (forward, refusal list, timeout, secret-free log, consume-before-forward with a failed
+      consume not forwarded, restart with an in-flight file → outcome-unknown and zero forwards,
+      response lost after forward → caller sees outcome-unknown) + a spooled `status` receipt.
+    - 20a.3 Client: `RemoteStore` accepts `SIRSI_ROUTER_URL=spool://~/.sirsi/relay` and `Resolve()`
+      requires no token for it. Evidence: tests + `sirsi router status` through the spool from
+      inside a `workspace-write` codex sandbox WITHOUT network_access (the raw output).
     - 20a.4 LaunchAgent `ai.sirsi.router.relay` per host, token only in its 0600 plist; installed
       by `sirsi router relay install`; wake plists stop carrying the token once the relay is up.
-      Evidence: `launchctl list`, plist mode, `ps eww` of a wake loop showing no token.
-    - 20a.5 Registry: every Codex lane's env points at the socket; the SSA lane's
-      `network_access=true` is removed. Evidence: the SSA lane claims and closes a router item with
-      network_access absent (wake log + item result). G7 then needs only 20a.6.
-    Ledger (D3): rows `rs-22a-relay-discovery` … `rs-22f-g7-closure` registered on `ra` with this
-    dependency chain, `rs-22f` owner-responsible; `rs-20-cutover-bind4` narrowed to its proven subset
-    and `rs-20b-bind4-full` holds the unfinished Bind #4 obligation, blocked by `rs-22f`.
+      Evidence: `launchctl list`, plist mode, `ps eww` of a wake loop (secrets redacted) showing no
+      token.
+    - 20a.5 Registry: every Codex lane's consumer command carries
+      `-c sandbox_workspace_write.writable_roots=["$HOME/.sirsi/relay"]` and the lane env
+      `SIRSI_ROUTER_URL=spool://$HOME/.sirsi/relay`; the SSA lane's `network_access=true` is
+      removed. Evidence: the SSA lane claims and closes a router item with network_access absent
+      (wake log + item result). G7 then needs only 20a.6.
+    Ledger (D3): rows `rs-22a-relay-discovery` (done) … `rs-22f-g7-closure` registered on `ra`
+    with this dependency chain, `rs-22f` owner-responsible; `rs-22b`, `rs-22c`, `rs-22e` subjects
+    carry the spool shape (updated 2026-09-10T03:25Z); `rs-20-cutover-bind4` narrowed to its proven
+    subset and `rs-20b-bind4-full` holds the unfinished Bind #4 obligation, blocked by `rs-22f`.
     - 20a.6 **G7 closure (owner gate).** The original condition is Codex AND Claude on BOTH hosts,
       and only an M1 Codex lane claiming and closing satisfies it. The alternate path is an owner
       decision that AMENDS G7's condition in this document (row G7 rewritten to name the amended
       scope and the decision's date/item), with the M1 Codex proof recorded in the evidence file
       as EXCLUDED — never as passed. G7 stays PARTIAL until one of those two exists.
+20b. **The Rule of Ra — registration gate (owner 2026-09-10: "every thread launched needs to
+    register with the router, new old or indifferent … everyone must register with you to receive
+    an audience").** Enforced in the service, not in prose:
+    - 20b.1 Service: `Send`, `Claim`, `Complete`/`Close`, `Respond` and task verbs are refused
+      unless the CALLING SESSION is bound to its OWN active registered thread: the session's
+      thread id must name a `threads` row whose agent and host equal the session's agent and host
+      and whose heartbeat is inside the staleness window. One registered thread never covers
+      another session under the same agent id. Bootstrap stays reachable: `MintSession`,
+      `RegisterThread`, `Heartbeat` and the read-only verbs (`status`, `show`, `ledger`, `list`)
+      are exempt; owner-surface `dismiss` is exempt. The refusal names
+      `sirsi thread register --agent <id>` and the session's thread id. Evidence: server tests —
+      unregistered session refused; registered allowed; stale heartbeat refused; TWO sessions under
+      one agent, one registered and one not: the registered one allowed, the other refused; read
+      and bootstrap verbs unaffected — plus one live refusal receipt from the service.
+    - 20b.2 Launchers register first: wake loops (already), horus (already), interactive sessions
+      (`sirsi thread register` in the session-start hook), GUI-launched codex (the consumer prompt's
+      first line). Evidence — registration freshness AT MUTATION TIME, not "active now": for every
+      item mutation of the last 24 h (`opened`, `closed`, claim/lease changes), the mutating
+      session's thread row was registered and inside its heartbeat window at that timestamp. A
+      session that registered, mutated, and then finished legitimately PASSES (its thread is
+      idle/closed now, but was live at the mutation). A mutation whose session had no registration
+      at that time FAILS. Current live-session coverage (`sirsi thread list`) is reported
+      separately and is not the pass criterion.
+    - 20b.3 Registry audit verb `sirsi router audience [--since 24h]`: two tables — (a) mutations
+      whose session was unregistered at mutation time (the failures), (b) live sessions without an
+      active thread right now (the coverage gap); both on the board and in `router doctor`.
+      Evidence: audit output with zero rows in (a) over 24 h, including at least one finished
+      session that passes and one synthetic unregistered mutation that appears in (a) (test).
+    - 20b.4 Canon: PANTHEON_RULES gains the Rule of Ra (A-number assigned there); ADR-062
+      amendment names the service check. Evidence: the merged rule text + ADR revision line.
+    Ledger (D3): rows `rs-22g-rule-of-ra-service`, `rs-22h-rule-of-ra-launchers`,
+    `rs-22i-rule-of-ra-audit`, `rs-22j-rule-of-ra-canon` are registered on `ra` (pending,
+    review-dependent, chained after `rs-22e`) as of 2026-09-10T03:25Z; no implementation is
+    claimed before this amendment merges.
 21. **Docs**: `docs/user-guides/router-service.md`, `internal/routerstore/README.md`, runbook
     `docs/runbooks/router-service-tokens-and-rollback.md`, CHANGELOG, ADR-INDEX (G11).
 22. **Retention**: M5 local `router.db` retained 30 days read-only, then pruned; retention policy
