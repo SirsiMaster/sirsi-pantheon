@@ -101,8 +101,13 @@ named. A step is not done at green CI; it is done when its evidence row above is
       any code.
     - 20a.2 `sirsi router relay serve --socket $HOME/.sirsi/router.sock`: an HTTP listener on a
       unix socket (0600) that forwards `/v1/*` to `SIRSI_ROUTER_URL` with the host token from its
-      OWN environment; per-request log line with agent id and verb; refuses `token` verbs.
-      Evidence: unit tests (forwarding, refusal, socket mode) + `curl --unix-socket` receipt.
+      OWN environment. It refuses the token methods by name (`/v1/call/MintHostToken`,
+      `RevokeHostToken`, `ListHostTokens`), forwards everything else byte-for-byte so the
+      service's session, signature, runtime-hash and ownership validation is unchanged, and logs
+      agent id + method only — never a token, session secret or nonce. Least-privilege claim, stated
+      exactly: the token is held by one process instead of every lane's environment; a 0600
+      socket does NOT isolate the relay from other processes under the same uid. Evidence: unit
+      tests (forwarding, refusal list, secret-free log) + `curl --unix-socket` receipt.
     - 20a.3 Client: `RemoteStore` accepts `SIRSI_ROUTER_URL=unix:///path` (http over a unix
       dialer) and `Resolve()` does not require `SIRSI_ROUTER_TOKEN` for it. Evidence: tests + a
       `sirsi router status` through the socket.
@@ -111,9 +116,15 @@ named. A step is not done at green CI; it is done when its evidence row above is
       Evidence: `launchctl list`, plist mode, `ps eww` of a wake loop showing no token.
     - 20a.5 Registry: every Codex lane's env points at the socket; the SSA lane's
       `network_access=true` is removed. Evidence: the SSA lane claims and closes a router item with
-      network_access absent (wake log + item result). G7 then needs only the M1 Codex runtime.
-    - 20a.6 G7 closure: a Codex lane on the M1 claims and closes (owner installs codex on the M1,
-      or records by decision that the M1 runs Claude lanes only — either closes the gate honestly).
+      network_access absent (wake log + item result). G7 then needs only 20a.6.
+    Ledger (D3): rows `rs-22a-relay-discovery` … `rs-22f-g7-closure` registered on `ra` with this
+    dependency chain, `rs-22f` owner-responsible; `rs-20-cutover-bind4` narrowed to its proven subset
+    and `rs-20b-bind4-full` holds the unfinished Bind #4 obligation, blocked by `rs-22f`.
+    - 20a.6 **G7 closure (owner gate).** The original condition is Codex AND Claude on BOTH hosts,
+      and only an M1 Codex lane claiming and closing satisfies it. The alternate path is an owner
+      decision that AMENDS G7's condition in this document (row G7 rewritten to name the amended
+      scope and the decision's date/item), with the M1 Codex proof recorded in the evidence file
+      as EXCLUDED — never as passed. G7 stays PARTIAL until one of those two exists.
 21. **Docs**: `docs/user-guides/router-service.md`, `internal/routerstore/README.md`, runbook
     `docs/runbooks/router-service-tokens-and-rollback.md`, CHANGELOG, ADR-INDEX (G11).
 22. **Retention**: M5 local `router.db` retained 30 days read-only, then pruned; retention policy
