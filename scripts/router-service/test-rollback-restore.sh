@@ -5,7 +5,8 @@
 # 3 already a file → idempotent.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd); T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
-RESTORE_LOCAL=$(sed -n "/^RESTORE_LOCAL='/,/^'$/p" "$here/cutover-m5.sh" | sed '1s/^RESTORE_LOCAL=.//; $s/.$//')
+RESTORE_LOCAL=$(sed -n "/^RESTORE_LOCAL='/,/^'\$/p" "$here/cutover-m5.sh" | sed '1s/^RESTORE_LOCAL=.//' | sed '$d')
+[ -n "$RESTORE_LOCAL" ] && bash -n <<<"$RESTORE_LOCAL" || { echo "FAIL: could not extract RESTORE_LOCAL"; exit 1; }
 sqlite3 "$T/frozen.db" "pragma user_version=16; create table t(i); insert into t values(1);"; H0=$(shasum -a 256 "$T/frozen.db" | cut -c1-16)
 mkdir "$T/router.db"; chmod 000 "$T/router.db"; printf '#!/bin/sh\necho prev\n' >"$T/prev"; chmod +x "$T/prev"; printf '#!/bin/sh\necho live\n' >"$T/bin"; chmod +x "$T/bin"
 # 1

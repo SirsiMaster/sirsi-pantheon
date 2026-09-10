@@ -64,7 +64,8 @@ fi
 [ -f "$DB" ] || { echo "REFUSED: no ledger file at $DB" >&2; exit 2; }
 chmod u+w "$DB"; sqlite3 "$DB" "PRAGMA journal_mode=wal;" >/dev/null
 if [ -n "${PREV:-}" ] && [ -e "$PREV" ]; then rm -f "$BIN"; cp "$PREV" "$BIN"; fi
-echo "restored: $DB ($(sqlite3 "$DB" "pragma user_version") schema, wal) binary=$BIN"'
+echo "restored: $DB ($(sqlite3 "$DB" "pragma user_version") schema, wal) binary=$BIN"
+'
 
 if [ "${1:-}" = rollback ]; then
   echo "== rollback: restore the local ledger on both Macs FIRST, then remove the env markers"
