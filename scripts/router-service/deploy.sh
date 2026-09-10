@@ -9,7 +9,7 @@ gcloud --project="$PROJECT" run deploy sirsi-router --source . --region="$REGION
   --add-cloudsql-instances="$PROJECT:$REGION:$INSTANCE" \
   --network=default --subnet=default --vpc-egress=private-ranges-only \
   --set-secrets="SIRSI_ROUTER_SERVE_TOKEN=sirsi-router-bootstrap-token:latest,SIRSI_ROUTER_STORE=sirsi-router-service-dsn:latest" \
-  --args="router,serve,--store,\$(SIRSI_ROUTER_STORE)" \
+  --args="router,serve" \
   --min-instances=0 --max-instances=2 --cpu=1 --memory=512Mi --concurrency=80 --timeout=90 \
   --labels=adr=062,workstream=router-service
 # --allow-unauthenticated: nodes authenticate with per-host bearer tokens inside the service (rs-10/11);

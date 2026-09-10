@@ -9,6 +9,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/SirsiMaster/s
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /sirsi /sirsi
-# Cloud Run expands $(VAR) in --args at deploy time; the DSN never appears in the image.
+# The DSN arrives as the SIRSI_ROUTER_STORE secret env var (deploy.sh); serve reads it as the --store default.
+# Cloud Run does NOT expand $(VAR) in args when VAR is secret-backed (first deploy 2026-09-07 ran with the literal).
 ENTRYPOINT ["/sirsi"]
-CMD ["router","serve","--store","$(SIRSI_ROUTER_STORE)"]
+CMD ["router","serve"]

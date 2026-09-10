@@ -12,8 +12,11 @@ SA=sirsi-router-svc
 SA_EMAIL="$SA@$PROJECT.iam.gserviceaccount.com"
 NETWORK=${NETWORK:-default}
 G="gcloud --project=$PROJECT --quiet"
-run() { if [ "${DRY_RUN:-0}" = 1 ]; then echo "+ $*"; else echo "+ $*" >&2; "$@"; fi; }
+run() { echo "+ $*" >&2; [ "${DRY_RUN:-0}" = 1 ] || "$@"; }
 exists() { "$@" >/dev/null 2>&1; }
+secret_get() { # name -> latest value. A dry run NEVER reads Secret Manager (SSA finding 2): placeholder always.
+  if [ "${DRY_RUN:-0}" = 1 ]; then echo "<dry-run:$1>"; else $G secrets versions access latest --secret="$1"; fi
+}
 secret_put() { # name, value-from-stdin
   if exists $G secrets describe "$1"; then run $G secrets versions add "$1" --data-file=-; else run $G secrets create "$1" --replication-policy=automatic --data-file=-; fi
 }
@@ -30,7 +33,7 @@ run $G services vpc-peerings connect --service=servicenetworking.googleapis.com 
 
 echo "== 3. Cloud SQL $INSTANCE (POSTGRES_16, db-f1-micro, zonal, private IP only, daily backups, PITR)"
 if ! exists $G sql instances describe $INSTANCE; then
-  run $G sql instances create $INSTANCE --database-version=POSTGRES_16 --tier=db-f1-micro --region=$REGION \
+  run $G sql instances create $INSTANCE --database-version=POSTGRES_16 --edition=ENTERPRISE --tier=db-f1-micro --region=$REGION \
     --availability-type=zonal --storage-size=10GB --storage-auto-increase \
     --backup-start-time=08:00 --enable-point-in-time-recovery --retained-backups-count=7 \
     --network=projects/$PROJECT/global/networks/$NETWORK --no-assign-ip --deletion-protection
@@ -44,11 +47,12 @@ for role in router_migrator router_service; do
     pw=$(openssl rand -base64 33 | tr -d '/+=' | cut -c1-40)
     printf '%s' "$pw" | secret_put "$secret"
   fi
-  pw=$($G secrets versions access latest --secret="$secret")
+  pw=$(secret_get "$secret")
   if exists $G sql users describe $role --instance=$INSTANCE; then
-    run $G sql users set-password $role --instance=$INSTANCE --password="$pw"
+    # --prompt-for-password reads stdin: the password never appears in argv, `run`'s echo, or a process listing.
+    printf '%s\n' "$pw" | run $G sql users set-password $role --instance=$INSTANCE --prompt-for-password
   else
-    run $G sql users create $role --instance=$INSTANCE --password="$pw"
+    printf '%s\n' "$pw" | run $G sql users create $role --instance=$INSTANCE --prompt-for-password
   fi
 done
 
@@ -58,12 +62,16 @@ if ! exists $G secrets describe sirsi-router-bootstrap-token; then
 fi
 
 echo "== 6. Service DSN secret (unix socket via the Cloud Run Cloud SQL connector)"
-svcpw=$($G secrets versions access latest --secret=sirsi-router-router-service-password)
+svcpw=$(secret_get sirsi-router-router-service-password)
 printf 'postgres://router_service:%s@/%s?host=/cloudsql/%s:%s:%s' "$svcpw" "$DB" "$PROJECT" "$REGION" "$INSTANCE" | secret_put sirsi-router-service-dsn
 
 echo "== 7. Service account $SA_EMAIL — cloudsql.client + accessor on exactly two secrets + logs"
 exists $G iam service-accounts describe "$SA_EMAIL" || run $G iam service-accounts create $SA --display-name="sirsi router serve (ADR-062)"
-run $G projects add-iam-policy-binding $PROJECT --member="serviceAccount:$SA_EMAIL" --role=roles/cloudsql.client >/dev/null
+# A just-created SA is invisible to IAM for a few seconds ("does not exist" on the first binding) — retry.
+for i in 1 2 3 4 5 6; do
+  run $G projects add-iam-policy-binding $PROJECT --member="serviceAccount:$SA_EMAIL" --role=roles/cloudsql.client >/dev/null && break
+  [ "$i" = 6 ] && exit 1; sleep 5
+done
 run $G projects add-iam-policy-binding $PROJECT --member="serviceAccount:$SA_EMAIL" --role=roles/logging.logWriter >/dev/null
 for s in sirsi-router-bootstrap-token sirsi-router-service-dsn; do
   run $G secrets add-iam-policy-binding $s --member="serviceAccount:$SA_EMAIL" --role=roles/secretmanager.secretAccessor >/dev/null

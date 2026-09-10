@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -49,7 +50,7 @@ process listings. Nodes present it as SIRSI_ROUTER_TOKEN.`,
 
 func init() {
 	routerServeCmd.Flags().StringVar(&routerServeListen, "listen", ":8080", "address to listen on ($PORT overrides, for Cloud Run)")
-	routerServeCmd.Flags().StringVar(&routerServeStore, "store", "", "postgres:// DSN or SQLite path (required)")
+	routerServeCmd.Flags().StringVar(&routerServeStore, "store", os.Getenv("SIRSI_ROUTER_STORE"), "postgres:// DSN or SQLite path (required; default $SIRSI_ROUTER_STORE — Cloud Run does not expand $(VAR) in args for secret-backed env vars)")
 	routerServeCmd.Flags().StringVar(&routerServeTokenEnv, "token-env", "SIRSI_ROUTER_SERVE_TOKEN", "env var holding the bearer token")
 	routerServeCmd.Flags().StringVar(&routerServeTLSCert, "tls-cert", "", "TLS certificate file (self-hosted; Cloud Run terminates TLS)")
 	routerServeCmd.Flags().StringVar(&routerServeTLSKey, "tls-key", "", "TLS key file")
@@ -71,12 +72,37 @@ func openServeStore(spec string) (routerstore.Store, error) {
 	}
 }
 
+// Boot-time store open is retried: on Cloud Run the first connect to the private-IP
+// Cloud SQL instance from a cold sandbox can exceed the 5 s query budget, and a
+// process that exits on that one miss costs the first request a 503 while a second
+// instance starts (observed 2026-09-09T17:14:49Z, revision 00006). Six tries over
+// ~30 s stay well inside the startup probe; a wrong DSN or schema still fails loudly.
+const (
+	serveOpenAttempts = 6
+	serveOpenWait     = 5 * time.Second
+)
+
+func openWithRetry(w io.Writer, attempts int, wait time.Duration, open func() (routerstore.Store, error)) (routerstore.Store, error) {
+	var err error
+	for i := 1; ; i++ {
+		var s routerstore.Store
+		if s, err = open(); err == nil {
+			return s, nil
+		}
+		if i >= attempts {
+			return nil, err
+		}
+		fmt.Fprintf(w, "router serve: open store attempt %d/%d: %v — retrying in %s\n", i, attempts, err, wait)
+		time.Sleep(wait)
+	}
+}
+
 func runRouterServe(cmd *cobra.Command, _ []string) error {
 	token := strings.TrimSpace(os.Getenv(routerServeTokenEnv))
 	if token == "" {
 		return fmt.Errorf("router serve: %s is empty; refusing to serve an unauthenticated ledger (ADR-062 §3)", routerServeTokenEnv)
 	}
-	store, err := openServeStore(routerServeStore)
+	store, err := openWithRetry(cmd.ErrOrStderr(), serveOpenAttempts, serveOpenWait, func() (routerstore.Store, error) { return openServeStore(routerServeStore) })
 	if err != nil {
 		return fmt.Errorf("router serve: open store: %w", err)
 	}
@@ -214,7 +240,7 @@ var routerTokenListCmd = &cobra.Command{
 }
 
 func init() {
-	routerTokenCmd.PersistentFlags().StringVar(&routerTokenStore, "store", "", "postgres:// DSN or SQLite path of the SERVICE's backend (required)")
+	routerTokenCmd.PersistentFlags().StringVar(&routerTokenStore, "store", os.Getenv("SIRSI_ROUTER_STORE"), "postgres:// DSN or SQLite path of the SERVICE's backend (required; default $SIRSI_ROUTER_STORE so a Cloud Run job can mint/revoke)")
 	routerTokenMintCmd.Flags().String("label", "", "free-text label (e.g. the machine's name)")
 	routerTokenCmd.AddCommand(routerTokenMintCmd, routerTokenRevokeCmd, routerTokenListCmd)
 	routerCmd.AddCommand(routerTokenCmd)
@@ -233,6 +259,29 @@ var (
 	migrateStoreJSON   bool
 	migrateStoreScrub  bool
 )
+
+// migrateMarkerMaxAge bounds how long a marker left by a previous migrate-store
+// run still counts as a live quiesce; beyond it the run that set it is gone.
+const migrateMarkerMaxAge = time.Hour
+
+// migrateMarkerAllowed accepts only a marker written by migrate-store within
+// migrateMarkerMaxAge of now; anything else (an operator quarantine, a stale
+// run, a hand-written file) is refused so the migration never rides an
+// unrelated marker.
+func migrateMarkerAllowed(content string, now time.Time) error {
+	ts, ok := strings.CutPrefix(strings.TrimSpace(content), "migrate-store ")
+	if !ok {
+		return fmt.Errorf("fabric quarantine marker is not a migrate-store quiesce (content %q)", strings.TrimSpace(content))
+	}
+	set, err := time.Parse(time.RFC3339, ts)
+	if err != nil {
+		return fmt.Errorf("fabric quarantine marker has no parseable migrate-store timestamp (%q)", ts)
+	}
+	if age := now.Sub(set); age > migrateMarkerMaxAge || age < 0 {
+		return fmt.Errorf("migrate-store marker is stale (set %s, %s ago)", ts, age.Round(time.Second))
+	}
+	return nil
+}
 
 var routerMigrateStoreCmd = &cobra.Command{
 	Use:   "migrate-store",
@@ -254,7 +303,17 @@ var routerMigrateStoreCmd = &cobra.Command{
 			created = true
 			fmt.Fprintf(cmd.ErrOrStderr(), "quiesce: fabric quarantine marker set (%s)\n", marker)
 		} else {
-			fmt.Fprintf(cmd.ErrOrStderr(), "quiesce: fabric quarantine marker already present (%s); left in place\n", marker)
+			// An existing marker is only a quiesce if THIS command set it recently
+			// (SSA finding 5, 2026-09-08): an operator quarantine or a stale marker
+			// from a crashed run says nothing about whether writers are stopped.
+			b, rerr := os.ReadFile(marker)
+			if rerr != nil {
+				return fmt.Errorf("read fabric quarantine marker: %w", rerr)
+			}
+			if merr := migrateMarkerAllowed(string(b), time.Now().UTC()); merr != nil {
+				return fmt.Errorf("quiesce: %w (%s) — clear it with `sirsi router unquarantine` once you have confirmed no writer is running", merr, marker)
+			}
+			fmt.Fprintf(cmd.ErrOrStderr(), "quiesce: fabric quarantine marker already held by migrate-store (%s); left in place\n", marker)
 		}
 		// Released ONLY here, success or failure, and only if we set it.
 		defer func() {
@@ -280,6 +339,8 @@ var routerMigrateStoreCmd = &cobra.Command{
 		}
 
 		rep, err := routerstore.MigrateStore(src, dst, routerstore.MigrateOptions{DryRun: migrateStoreDryRun, ScrubNUL: migrateStoreScrub})
+		// A run that wrote nothing against a populated destination is the idempotence receipt (rs-12 claim).
+		rep.Idempotent = err == nil && !migrateStoreDryRun && len(rep.Wrote) == 0
 		if migrateStoreJSON {
 			enc := json.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")
@@ -316,7 +377,7 @@ var routerMigrateStoreCmd = &cobra.Command{
 
 func init() {
 	routerMigrateStoreCmd.Flags().StringVar(&migrateStoreFrom, "from", "", "source SQLite ledger path")
-	routerMigrateStoreCmd.Flags().StringVar(&migrateStoreTo, "to", "", "destination: postgres:// DSN or SQLite path")
+	routerMigrateStoreCmd.Flags().StringVar(&migrateStoreTo, "to", os.Getenv("SIRSI_ROUTER_STORE"), "destination: postgres:// DSN or SQLite path (default $SIRSI_ROUTER_STORE so a Cloud Run job on the VPC can run it)")
 	routerMigrateStoreCmd.Flags().BoolVar(&migrateStoreDryRun, "dry-run", false, "report what would be written; write nothing")
 	routerMigrateStoreCmd.Flags().BoolVar(&migrateStoreJSON, "json", false, "machine-readable report")
 	routerMigrateStoreCmd.Flags().BoolVar(&migrateStoreScrub, "scrub-nul", false, "strip 0x00 bytes from text cells (Postgres cannot store them); the report lists every cell touched")

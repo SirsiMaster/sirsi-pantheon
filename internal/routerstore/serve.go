@@ -108,7 +108,9 @@ func Handler(store Store, opts ServerOptions) (http.Handler, error) {
 	}
 	s := &server{store: store, sv: reflect.ValueOf(store), opts: opts, nonces: map[string]time.Time{}}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+	// /v1/healthz, not /healthz: the *.run.app front end answers /healthz itself with an HTML 404 and never
+	// forwards it (observed on the first deploy, 2026-09-07). Every other path reaches the container.
+	mux.HandleFunc("/v1/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok\n"))
 	})
