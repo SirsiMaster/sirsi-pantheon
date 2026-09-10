@@ -75,23 +75,10 @@ func TestRegistryWakeCoverage(t *testing.T) {
 	}
 }
 
-func TestCodexInferenceNeverUsesCLISpawnWake(t *testing.T) {
-	raw, err := os.ReadFile("../../.agents/idea-router/agents.json")
-	if err != nil {
-		t.Fatalf("read agent registry: %v", err)
-	}
-	var reg Registry
-	if err := json.Unmarshal(raw, &reg); err != nil {
-		t.Fatalf("parse agent registry: %v", err)
-	}
-	cfg, ok := reg.Agents["codex-inference"]
-	if !ok {
-		t.Fatal("codex-inference registry entry missing")
-	}
-	if got := cfg.WakeMechanism(); got != WakeNone {
-		t.Fatalf("codex-inference registry wake = %q, want %q; live Codex tasks use thread-scoped app automation and must never fall back to cli-spawn", got, WakeNone)
-	}
-}
+// TestCodexInferenceNeverUsesCLISpawnWake was retired 2026-09-10 on the owner's
+// decision ("retire the guard: wake it like the others"): codex-inference now
+// wakes under launchd through the spool relay like every other codex lane.
+// The app-automation-only rule it encoded no longer holds.
 
 func TestRegistryConsumerCoverage(t *testing.T) {
 	const path = "../../.agents/idea-router/agents.json"
