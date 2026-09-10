@@ -193,8 +193,9 @@ named. A step is not done at green CI; it is done when its evidence row above is
     Ledger (D3): `rs-22g-rule-of-ra-service` DONE 2026-09-10T16:15Z — PR #724 (SSA-bound
     a4dfe4f5, merged 20c9db60), schema v19 applied transactionally, revision 00008-dtt serving in
     log mode, both Macs rebuilt; evidence `docs/evidence/ADR-062-RS22G-RULE-OF-RA-SERVICE-ROLLOUT-20260910.md`
-    (first signal: 44 WOULD REFUSE in 10 min, all the M5 supervisor session `Mac@Mac`, none from a
-    lane). `rs-22i-rule-of-ra-audit` = PR #726 (in review). `rs-22h-rule-of-ra-launchers` and
+    (first signal, receipt retained: 466 WOULD REFUSE in [16:14:30Z, 16:25:00Z) on revision
+    00008-dtt — 456 from the M5 supervisor session `Mac@Mac`, 10 from Ra's untagged M1 shell,
+    none from a lane). `rs-22i-rule-of-ra-audit` = PR #726 (in review). `rs-22h-rule-of-ra-launchers` and
     `rs-22j-rule-of-ra-canon` pending. Enforce waits for the 20b.3 audit, not a log grep.
 21. **Docs**: `docs/user-guides/router-service.md`, `internal/routerstore/README.md`, runbook
     `docs/runbooks/router-service-tokens-and-rollback.md`, CHANGELOG, ADR-INDEX (G11).
