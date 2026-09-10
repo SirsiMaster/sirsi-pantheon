@@ -114,9 +114,14 @@ named. A step is not done at green CI; it is done when its evidence row above is
       waits on the response with kqueue/poll and a bounded timeout (default 30 s, per-call
       override), then deletes both files. **Correlation and uncertain writes:** the request id is
       `<unixms>-<per-process sequence>-<8 random hex>` scoped to the lane directory, so two lanes,
-      two processes, or a relay restart cannot collide; the relay forwards each request file at
-      most once and deletes it before writing the response, so a relay restart re-forwards only
-      files it never consumed. A response lost after the service committed (relay crash between
+      two processes, or a relay restart cannot collide; the relay CONSUMES a request atomically BEFORE forwarding it —
+      `rename(req/<id>.json → inflight/<id>.json)`; a failed rename means another relay owns it and
+      it is not forwarded — then performs the HTTP call, publishes the response, and deletes the
+      in-flight file last. A restarted relay never re-forwards anything it finds under `inflight/`:
+      each such file gets a response of **outcome-unknown** ("relay restarted after consuming
+      <method> <id>") and is removed. So the failure trace "consume → forward → service commits →
+      relay crashes → restart" yields exactly one forward and an outcome-unknown to the caller,
+      never a duplicate mutation. A response lost after the service committed (relay crash between
       forward and publish, or a client timeout) is reported to the caller as **outcome-unknown**
       naming the method and id; the client NEVER retries a mutating method (`Send`, `Claim`,
       `Complete`, `Respond`, task verbs) automatically — the caller re-queries (`Get`, `Inbox`,
@@ -129,7 +134,9 @@ named. A step is not done at green CI; it is done when its evidence row above is
       id only. Least-privilege claim, exactly: the host token is held by one process instead of
       every lane's environment; same-uid processes are not isolated from each other by file modes.
     - 20a.2 `sirsi router relay serve --spool ~/.sirsi/relay`: the forwarder above. Evidence: unit
-      tests (forward, refusal list, timeout, secret-free log) + a spooled `status` receipt.
+      tests (forward, refusal list, timeout, secret-free log, consume-before-forward with a failed
+      consume not forwarded, restart with an in-flight file → outcome-unknown and zero forwards,
+      response lost after forward → caller sees outcome-unknown) + a spooled `status` receipt.
     - 20a.3 Client: `RemoteStore` accepts `SIRSI_ROUTER_URL=spool://~/.sirsi/relay` and `Resolve()`
       requires no token for it. Evidence: tests + `sirsi router status` through the spool from
       inside a `workspace-write` codex sandbox WITHOUT network_access (the raw output).
