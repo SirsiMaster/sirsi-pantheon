@@ -270,8 +270,8 @@ func (s *SQLiteStore) AudienceSince(since string) (AudienceReport, error) {
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var e AudienceEntry
-		if err := rows.Scan(&e.TS, &e.Method, &e.SessionID, &e.Agent, &e.Host, &e.ThreadID, &e.Verdict, &e.Reason); err != nil {
-			return rep, err
+		if scanErr := rows.Scan(&e.TS, &e.Method, &e.SessionID, &e.Agent, &e.Host, &e.ThreadID, &e.Verdict, &e.Reason); scanErr != nil {
+			return rep, scanErr
 		}
 		rep.Recorded = true
 		rep.Gated++
@@ -282,8 +282,8 @@ func (s *SQLiteStore) AudienceSince(since string) (AudienceReport, error) {
 		rep.Failures = append(rep.Failures, e)
 		rep.ByAgent[e.Agent]++
 	}
-	if err := rows.Err(); err != nil {
-		return rep, err
+	if rerr := rows.Err(); rerr != nil {
+		return rep, rerr
 	}
 	// (b) live coverage: the session table itself. Session timestamps are
 	// RFC3339 (second precision); compare on the same width.
@@ -294,8 +294,8 @@ func (s *SQLiteStore) AudienceSince(since string) (AudienceReport, error) {
 	defer func() { _ = live.Close() }()
 	for live.Next() {
 		var id, agent, host string
-		if err := live.Scan(&id, &agent, &host); err != nil {
-			return rep, err
+		if scanErr := live.Scan(&id, &agent, &host); scanErr != nil {
+			return rep, scanErr
 		}
 		rep.Unbound = append(rep.Unbound, agent+"@"+host+" "+id)
 	}
