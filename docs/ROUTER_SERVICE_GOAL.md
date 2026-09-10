@@ -23,7 +23,7 @@ keeps working alone on its local ledger when the service is unreachable.
 | G4 | Migration is provably lossless and idempotent | canonical dump hashes (before, after, re-import) equal; full diff empty; dry-run log |
 | G5 | Every request is authenticated as a registered session: host token, bound runtime, session id, signed nonce; ownership enforced on every lease and write | one rejection test per claim, each with a passing positive control |
 | G6 | Service runs on Cloud Run + Cloud SQL in `sirsi-nexus-live`; deploy has a rollback rehearsal, a revocation rehearsal, TLS pinning, least-privilege roles, and an audit receipt item in the ledger | receipt item id; `gcloud run services describe` digest matches it |
-| G7 | M5 and M1 both work the shared ledger; `sirsi router status` agrees on both; Codex lanes and Claude lanes on both hosts claim and close | status output from both hosts in the same minute |
+| G7 | M5 and M1 both work the shared ledger; `sirsi router status` agrees on both; Codex lanes and Claude lanes on both hosts claim and close | status output from both hosts in the same minute; **2026-09-10: PARTIAL** — Claude both hosts + one Codex lane (M5, network exception); closes via step 20a |
 | G8 | Unset `SIRSI_ROUTER_URL` on a node and it is back on its local file with no data loss | rehearsed, timed, recorded |
 | G9 | Adding a third machine is: mint token, set one env var, `sirsi thread register` | rehearsed on a fresh user account |
 | G10 | Owner-facing: Horus per node shows fleet-wide board; menubar and `sirsi router board` read the service | screenshot + board output |
@@ -91,6 +91,29 @@ named. A step is not done at green CI; it is done when its evidence row above is
 19. **Third-machine rehearsal** on a fresh macOS user account: token, env var, register, claim,
     close (G9).
 20. **Horus and menubar read the service**; `sirsi router board`/`fleet` show all hosts (G10).
+20a. **Codex-lane relay — least privilege (owner 2026-09-10: "power invested in Ra").** Codex sandboxes
+    have no DNS, so after the cut-over a Codex lane cannot reach the service; the interim is a
+    network exception on the SSA lane only. The relay retires it. Steps, each with evidence:
+    - 20a.1 **Discovery**: prove whether a `codex exec --sandbox workspace-write` process can connect
+      to a unix-domain socket under `$HOME/.sirsi/` (seatbelt profile). Evidence: the raw codex
+      output of a socket round-trip, both with and without `network_access`. If it cannot, the
+      fallback design (per-lane loopback port or a filesystem queue) is written as 20a.1b before
+      any code.
+    - 20a.2 `sirsi router relay serve --socket $HOME/.sirsi/router.sock`: an HTTP listener on a
+      unix socket (0600) that forwards `/v1/*` to `SIRSI_ROUTER_URL` with the host token from its
+      OWN environment; per-request log line with agent id and verb; refuses `token` verbs.
+      Evidence: unit tests (forwarding, refusal, socket mode) + `curl --unix-socket` receipt.
+    - 20a.3 Client: `RemoteStore` accepts `SIRSI_ROUTER_URL=unix:///path` (http over a unix
+      dialer) and `Resolve()` does not require `SIRSI_ROUTER_TOKEN` for it. Evidence: tests + a
+      `sirsi router status` through the socket.
+    - 20a.4 LaunchAgent `ai.sirsi.router.relay` per host, token only in its 0600 plist; installed
+      by `sirsi router relay install`; wake plists stop carrying the token once the relay is up.
+      Evidence: `launchctl list`, plist mode, `ps eww` of a wake loop showing no token.
+    - 20a.5 Registry: every Codex lane's env points at the socket; the SSA lane's
+      `network_access=true` is removed. Evidence: the SSA lane claims and closes a router item with
+      network_access absent (wake log + item result). G7 then needs only the M1 Codex runtime.
+    - 20a.6 G7 closure: a Codex lane on the M1 claims and closes (owner installs codex on the M1,
+      or records by decision that the M1 runs Claude lanes only — either closes the gate honestly).
 21. **Docs**: `docs/user-guides/router-service.md`, `internal/routerstore/README.md`, runbook
     `docs/runbooks/router-service-tokens-and-rollback.md`, CHANGELOG, ADR-INDEX (G11).
 22. **Retention**: M5 local `router.db` retained 30 days read-only, then pruned; retention policy
