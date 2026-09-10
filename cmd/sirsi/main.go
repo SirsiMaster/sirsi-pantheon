@@ -15,6 +15,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/mcp"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/tui"
@@ -733,6 +734,19 @@ func shouldLaunchTUI() bool {
 }
 
 func init() {
+	// Rule of Ra (ADR-062 20b.2): when a `sirsi` invocation carries no
+	// SIRSI_AGENT_ID / SIRSI_THREAD_ID (an interactive shell, not a launchd
+	// child), resolve this session's registered agent and thread from its local
+	// markers so its mutations carry an audience. Read-only and process-local —
+	// never os.Setenv, which would leak into anything sirsi spawns (PR #730).
+	routerstore.IdentityHook = func() (string, string) {
+		sid := router.CurrentSessionID()
+		if sid == "" {
+			return "", ""
+		}
+		return router.ReadSessionAgentMarker(sid), router.ReadSessionThreadMarker(sid)
+	}
+
 	rootCmd.PersistentFlags().BoolVar(&JsonOutput, "json", false, "Output in JSON format")
 	rootCmd.PersistentFlags().BoolVar(&quietMode, "quiet", false, "Suppress output")
 	rootCmd.PersistentFlags().BoolVarP(&verboseMode, "verbose", "v", false, "Debug logging")

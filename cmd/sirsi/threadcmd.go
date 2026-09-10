@@ -236,6 +236,12 @@ var threadRegisterCmd = &cobra.Command{
 		if mErr := router.WriteSessionAgentMarker(router.CurrentSessionID(), out.AgentID); mErr != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not write session→agent marker: %v\n", mErr)
 		}
+		// Rule of Ra (ADR-062 20b.2): also record session→thread so an interactive
+		// `sirsi` call from this session carries its registered thread without
+		// SIRSI_THREAD_ID in the environment. Best-effort, like the agent marker.
+		if mErr := router.WriteSessionThreadMarker(router.CurrentSessionID(), out.ThreadID); mErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not write session→thread marker: %v\n", mErr)
+		}
 
 		// ADR-024: register is a pure handshake. It no longer auto-spawns an
 		// fs-watcher; it RETURNS the canonical watcher the surface must arm.
@@ -396,6 +402,9 @@ var threadCloseCmd = &cobra.Command{
 		// Thread-liveness piece 1: drop this session's marker on close (idempotent).
 		if mErr := router.RemoveSessionAgentMarker(router.CurrentSessionID()); mErr != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not remove session→agent marker: %v\n", mErr)
+		}
+		if mErr := router.RemoveSessionThreadMarker(router.CurrentSessionID()); mErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not remove session→thread marker: %v\n", mErr)
 		}
 		fmt.Printf("Closed thread %s (agent=%s)\n", thr.ThreadID, thr.AgentID)
 		return nil

@@ -71,3 +71,47 @@ func TestSessionAgentMarker_SanitizeBlocksTraversal(t *testing.T) {
 		t.Fatalf("session id was not sanitized to a flat in-dir name: %q", name)
 	}
 }
+
+// The session→thread marker mirrors session→agent: write, read, remove, and
+// empty-input no-ops (ADR-062 20b.2).
+func TestSessionThreadMarkerRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	prev := sessionMarkerDirOverride
+	sessionMarkerDirOverride = dir
+	t.Cleanup(func() { sessionMarkerDirOverride = prev })
+
+	if ReadSessionThreadMarker("sess-1") != "" {
+		t.Fatal("absent marker must read empty")
+	}
+	if err := WriteSessionThreadMarker("sess-1", "thr-xyz"); err != nil {
+		t.Fatal(err)
+	}
+	if got := ReadSessionThreadMarker("sess-1"); got != "thr-xyz" {
+		t.Fatalf("read = %q, want thr-xyz", got)
+	}
+	// empty session or thread is a no-op, not an error.
+	if err := WriteSessionThreadMarker("", "thr-xyz"); err != nil {
+		t.Fatalf("empty session must be a no-op: %v", err)
+	}
+	if err := WriteSessionThreadMarker("sess-2", ""); err != nil {
+		t.Fatalf("empty thread must be a no-op: %v", err)
+	}
+	if ReadSessionThreadMarker("sess-2") != "" {
+		t.Fatal("a no-op write must leave no marker")
+	}
+	if err := RemoveSessionThreadMarker("sess-1"); err != nil {
+		t.Fatal(err)
+	}
+	if ReadSessionThreadMarker("sess-1") != "" {
+		t.Fatal("marker must be gone after remove")
+	}
+	if err := RemoveSessionThreadMarker("sess-1"); err != nil {
+		t.Fatalf("remove is idempotent: %v", err)
+	}
+	// the thread marker lives in its own subdir, not the agent-marker dir.
+	_ = WriteSessionAgentMarker("sess-3", "ra")
+	_ = WriteSessionThreadMarker("sess-3", "thr-3")
+	if ReadSessionAgentMarker("sess-3") != "ra" || ReadSessionThreadMarker("sess-3") != "thr-3" {
+		t.Fatal("agent and thread markers must not collide")
+	}
+}

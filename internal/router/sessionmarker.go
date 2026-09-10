@@ -35,6 +35,18 @@ func sessionMarkerDir() string {
 	return filepath.Join(home, ".claude", "run", "agent-by-session")
 }
 
+// sessionThreadMarkerDir holds session→thread markers, the Rule-of-Ra twin of
+// the session→agent markers: it lets an interactive `sirsi` call carry the
+// registered thread of its own session without SIRSI_THREAD_ID in the
+// environment (ADR-062 20b.2). Redirected by the same test override.
+func sessionThreadMarkerDir() string {
+	if sessionMarkerDirOverride != "" {
+		return filepath.Join(sessionMarkerDirOverride, "thread-by-session")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".claude", "run", "thread-by-session")
+}
+
 // sessionIDUnsafe matches anything that is NOT a safe session-id character. A
 // session id is a UUID, but sanitizing guards against a crafted value escaping
 // the marker dir via path separators.
@@ -86,6 +98,46 @@ func ReadSessionAgentMarker(sessionID string) string {
 		return ""
 	}
 	data, err := os.ReadFile(filepath.Join(sessionMarkerDir(), sessionID))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+// WriteSessionThreadMarker records that sessionID works for threadID. No-op when
+// either is empty. Mirrors WriteSessionAgentMarker.
+func WriteSessionThreadMarker(sessionID, threadID string) error {
+	sessionID = sanitizeSessionID(sessionID)
+	threadID = strings.TrimSpace(threadID)
+	if sessionID == "" || threadID == "" {
+		return nil
+	}
+	dir := sessionThreadMarkerDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, sessionID), []byte(threadID+"\n"), 0o644)
+}
+
+// RemoveSessionThreadMarker deletes the thread marker for sessionID (idempotent).
+func RemoveSessionThreadMarker(sessionID string) error {
+	sessionID = sanitizeSessionID(sessionID)
+	if sessionID == "" {
+		return nil
+	}
+	if err := os.Remove(filepath.Join(sessionThreadMarkerDir(), sessionID)); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+// ReadSessionThreadMarker returns the thread id recorded for sessionID, or "".
+func ReadSessionThreadMarker(sessionID string) string {
+	sessionID = sanitizeSessionID(sessionID)
+	if sessionID == "" {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(sessionThreadMarkerDir(), sessionID))
 	if err != nil {
 		return ""
 	}
