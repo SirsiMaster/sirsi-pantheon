@@ -146,3 +146,38 @@ ledger concurrently with exactly-once claims. Charter (ADR-063): goal #1 complet
 M1 empty). Gate truth: G1–G6 done (G6 rollback timing not re-run post-cutover); G7 PARTIAL — Codex lanes cannot reach the service from
 their no-network sandbox (owner decision: unix-socket relay / network / manual); G8 rollback verb exists, not rehearsed; G9–G12 = rs-21..25
 open. Follow-ups: PR #713 (runbook lessons), PR #714 (registry parity: ra/SSA on main), owner owes image deletes + card 005700.
+
+## 2026-09-10 (session 84ab1eaa, M1): fleet on the relay, Rule of Ra in review
+Owner decisions this day, each via the native picker or a routed line: "2 for SSA only, then 1" (network exception for the SSA lane,
+then the least-privilege relay); "get everyone to work their tasks"; reassign claude-nexus+codex-nexus → SSA and claude-pantheon+
+manual-pantheon → codex-pantheon (12 items moved with provenance, originals closed); "retire the guard: wake it like the others"
+(codex-inference); "every thread launched needs to register with the router … everyone must register with you to receive an
+audience" — the Rule of Ra.
+Landed and SSA-bound: #718 spool relay (20a.2+20a.3, 0a20a108), #720 relay installer (20a.4, 32016972), #721 per-lane workers +
+fail-closed loader (f27c8bc1), #723 conditional zshenv + fail-fast write_env (16d48e48), #719 registry: five codex lanes on the spool
+with token-clearing launch commands, SSA exception retired, codex-inference guard retired (3851905). Evidence boundary, as the
+accepted receipt `docs/evidence/ADR-062-RS22E-CODEX-LANES-SPOOL-RECEIPT-20260910.md` draws it: the token-clearing argv is in the
+registry; four lanes' claim/close activity through the relay is author-reported from the relay log; token absence was observed
+in ONE sandbox (codex-inference); the two-host changes were manual. Author-reported, no timestamped host receipt linked: relay
+installed canonically on both Macs (`sirsi router relay install`), and the M5 GUI launchd domain set to SIRSI_ROUTER_URL=spool://…
+(persisted by `ai.sirsi.router.gui-env`; the ChatGPT app must be relaunched; not yet shown to reach the ledger). Ledger rows
+rs-22a..rs-22e DONE (registry status; not G7 closure). Open-item count: author-reported 651 → 37 across the day from my own
+`sirsi router status` reads, no snapshots kept; the bounded, receipted window in #719 records 172 → 107.
+In review: #724 the Rule of Ra (20b.1, rs-22g lease held): v19 sessions.thread_id, MintSessionForThread from SIRSI_THREAD_ID, wake
+loops pass their thread, thread register records host, server gate off|log|enforce (default log). SSA changes-requested at
+1325351a (three findings: the PG bundle could publish v19 on a v18 ledger without the column; thread lifecycle verbs let an
+unregistered caller rewrite the binding that authorizes it; unknown gate modes failed open) — corrections proposed on fe62b9cc
+(transactional re-runnable schema with a postgres upgrade proof, host-scoped thread authority, mode validated at construction);
+SSA r2 (response 20260910-154019, `~/.sirsi/reviews/software-admin-20260910/pr724-r2-review.md` on the M5) accepted the schema
+and gate-mode corrections but found a remaining atomic host-adoption race: host B can adopt a legacy row between host A's
+authority lookup and its mutation, after which A overwrites B. Proposed fix on a4dfe4f5 (host predicate inside every thread
+mutation, competing-adoption test), r3 re-review sent (item 20260910-154913); host-authority closure NOT yet established.
+Rollout stays pending until SSA ACCEPT + bind + merge: apply-schema (transactional) → deploy log mode → rebuild Macs → audit
+(20b.3, `sirsi router audience`, PR #726 stacked) → enforce. CI note: the Test job's Postgres leg started running on the M1
+runner today (postgresql@16 installed for the proof) and needs LC_ALL=C — PR #727.
+Lessons written to memory: a shell chain that pushes after a failed test lies (test in its own call); CI runs -race (atomic counters);
+git bundle needs ref names; sirsi-bind.sh RECORDS an approval (never a request); codex runs commands in a login shell (zshenv must not
+re-add the token); set SIRSI_AGENT_ID per lane from the first dispatch (shared session "Mac" stranded leases); an in-progress task with
+an empty lease is an orphan (rs-23b); the M1 runner's Test job times out under load (Spotlight, other lanes' benchmarks).
+Open: rs-22f (owner: M1 codex or G7 amendment), rs-22g..j, rs-21, rs-23/23a/23b, rs-24 (M5 file frozen since 2026-09-10T01:59Z),
+rs-25, rs-20b. Owner owes: migrate image deletes (020154Z, 021020Z), card 005700 dismissal, Spotlight exclusions on the M1.
