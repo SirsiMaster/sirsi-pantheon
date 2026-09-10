@@ -94,26 +94,31 @@ named. A step is not done at green CI; it is done when its evidence row above is
 20a. **Codex-lane relay — least privilege (owner 2026-09-10: "power invested in Ra").** Codex sandboxes
     have no DNS, so after the cut-over a Codex lane cannot reach the service; the interim is a
     network exception on the SSA lane only. The relay retires it. Steps, each with evidence:
-    - 20a.1 **Discovery**: prove whether a `codex exec --sandbox workspace-write` process can connect
-      to a unix-domain socket under `$HOME/.sirsi/` (seatbelt profile). Evidence: the raw codex
-      output of a socket round-trip, both with and without `network_access`. If it cannot, the
-      fallback design (per-lane loopback port or a filesystem queue) is written as 20a.1b before
-      any code.
-    - 20a.2 `sirsi router relay serve --socket $HOME/.sirsi/router.sock`: an HTTP listener on a
-      unix socket (0600) that forwards `/v1/*` to `SIRSI_ROUTER_URL` with the host token from its
-      OWN environment. It refuses the token methods by name (`/v1/call/MintHostToken`,
-      `RevokeHostToken`, `ListHostTokens`), forwards everything else byte-for-byte so the
-      service's session, signature, runtime-hash and ownership validation is unchanged, and logs
-      agent id + method only — never a token, session secret or nonce. Least-privilege claim, stated
-      exactly: the token is held by one process instead of every lane's environment; a 0600
-      socket does NOT isolate the relay from other processes under the same uid. Evidence: unit
-      tests (forwarding, refusal list, secret-free log) + `curl --unix-socket` receipt.
-    - 20a.3 Client: `RemoteStore` accepts `SIRSI_ROUTER_URL=unix:///path` (http over a unix
-      dialer) and `Resolve()` does not require `SIRSI_ROUTER_TOKEN` for it. Evidence: tests + a
-      `sirsi router status` through the socket.
+    - 20a.1 **Discovery — DONE 2026-09-10, answer NO.** A `codex exec --sandbox workspace-write` process
+      cannot connect to a unix socket either (`curl: (7)`), with `network_access=true` it can.
+      Evidence: `docs/evidence/ADR-062-RS22A-CODEX-SANDBOX-SOCKET-DISCOVERY-20260910.md`. The
+      socket relay is therefore superseded by 20a.1b; sub-steps 20a.2–20a.4 below are the spool
+      shape, replacing the socket shape they had before this amendment.
+    - 20a.1b **Design: filesystem spool.** The sandbox allows file writes under its workspace, so
+      the relay is a per-host spool directory, not a listener: a lane writes one request file
+      `~/.sirsi/relay/req/<id>.json` (method, JSON body, agent id), the relay — the only process
+      holding the host token — forwards it to the service and writes `~/.sirsi/relay/res/<id>.json`;
+      the client waits on the response file (FSEvents/kqueue, bounded timeout). Per-lane
+      directories with 0700 modes; the relay refuses `MintHostToken`/`RevokeHostToken`/
+      `ListHostTokens` by name; the service's session/signature/runtime/ownership validation is
+      unchanged because the request body is forwarded byte-for-byte; the spool carries no token
+      and the relay log carries agent+method only. Least-privilege claim stated exactly: the
+      token is held by one process instead of every lane's environment; same-uid processes are
+      not isolated from each other by file modes.
+    - 20a.2 `sirsi router relay serve --spool ~/.sirsi/relay`: the forwarder above. Evidence: unit
+      tests (forward, refusal list, timeout, secret-free log) + a spooled `status` receipt.
+    - 20a.3 Client: `RemoteStore` accepts `SIRSI_ROUTER_URL=spool://~/.sirsi/relay` and `Resolve()`
+      requires no token for it. Evidence: tests + `sirsi router status` through the spool from
+      inside a `workspace-write` codex sandbox WITHOUT network_access (the raw output).
     - 20a.4 LaunchAgent `ai.sirsi.router.relay` per host, token only in its 0600 plist; installed
       by `sirsi router relay install`; wake plists stop carrying the token once the relay is up.
-      Evidence: `launchctl list`, plist mode, `ps eww` of a wake loop showing no token.
+      Evidence: `launchctl list`, plist mode, `ps eww` of a wake loop (secrets redacted) showing no
+      token.
     - 20a.5 Registry: every Codex lane's env points at the socket; the SSA lane's
       `network_access=true` is removed. Evidence: the SSA lane claims and closes a router item with
       network_access absent (wake log + item result). G7 then needs only 20a.6.
@@ -125,6 +130,26 @@ named. A step is not done at green CI; it is done when its evidence row above is
       decision that AMENDS G7's condition in this document (row G7 rewritten to name the amended
       scope and the decision's date/item), with the M1 Codex proof recorded in the evidence file
       as EXCLUDED — never as passed. G7 stays PARTIAL until one of those two exists.
+20b. **The Rule of Ra — registration gate (owner 2026-09-10: "every thread launched needs to
+    register with the router, new old or indifferent … everyone must register with you to receive
+    an audience").** Enforced in the service, not in prose:
+    - 20b.1 Service: `Send`, `Claim`, `Complete`/`Close`, `Respond` and task verbs are refused
+      when the calling agent has no ACTIVE registered thread (`threads` row with a heartbeat
+      inside the staleness window); the refusal names `sirsi thread register --agent <id>`.
+      Owner-surface verbs (`dismiss`) and read-only verbs (`status`, `show`, `ledger`) stay open.
+      Evidence: server tests (unregistered refused, registered allowed, stale-heartbeat refused,
+      read verbs unaffected) + one live refusal receipt.
+    - 20b.2 Launchers register first: wake loops (already), horus (already), interactive sessions
+      (`sirsi thread register` in the session-start hook), GUI-launched codex (the consumer prompt's
+      first line). Evidence: `sirsi thread list` on the service shows every sender of the last
+      24 h with an active thread.
+    - 20b.3 Registry audit verb `sirsi router audience`: senders without an active thread, in the
+      board and in `router doctor`. Evidence: board output with zero unregistered senders.
+    - 20b.4 Canon: PANTHEON_RULES gains the Rule of Ra (A-number assigned there); ADR-062
+      amendment names the service check. Evidence: the merged rule text + ADR revision line.
+    Ledger (D3): rows `rs-22g-rule-of-ra-service`, `rs-22h-rule-of-ra-launchers`,
+    `rs-22i-rule-of-ra-audit`, `rs-22j-rule-of-ra-canon`, chained, registered on `ra` when this
+    amendment merges; `rs-22b..d` subjects updated to the spool shape.
 21. **Docs**: `docs/user-guides/router-service.md`, `internal/routerstore/README.md`, runbook
     `docs/runbooks/router-service-tokens-and-rollback.md`, CHANGELOG, ADR-INDEX (G11).
 22. **Retention**: M5 local `router.db` retained 30 days read-only, then pruned; retention policy
