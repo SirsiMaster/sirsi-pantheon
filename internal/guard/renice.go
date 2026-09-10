@@ -270,6 +270,31 @@ func reniceByPIDWith(pid int, name string, reniceFnArg func(int, int) error, tas
 	return nil
 }
 
+// UndoRenice reverses one auto-renice: nice back to 0 and the process moved
+// out of PRIO_DARWIN_BG (`taskpolicy -B`). It refuses pid <= 1 like the
+// forward path. The owner-facing `sirsi guard undo <pid>` (ADR-064).
+func UndoRenice(pid int) error {
+	return undoReniceWith(pid, reniceFn, untaskpolicyFn)
+}
+
+var untaskpolicyFn = defaultUntaskpolicy
+
+func undoReniceWith(pid int, reniceFnArg func(int, int) error, untaskpolicyFnArg func(int) error) error {
+	if pid <= 1 {
+		return fmt.Errorf("refusing to touch PID %d", pid)
+	}
+	if err := reniceFnArg(pid, 0); err != nil {
+		return fmt.Errorf("renice PID %d back to 0: %w", pid, err)
+	}
+	return untaskpolicyFnArg(pid)
+}
+
+// defaultUntaskpolicy calls taskpolicy(1) -B to clear Background QoS.
+func defaultUntaskpolicy(pid int) error {
+	cmd := exec.Command("taskpolicy", "-B", "-p", strconv.Itoa(pid))
+	return cmd.Run()
+}
+
 // defaultRenice calls renice(1) to set a new nice value.
 func defaultRenice(pid int, nice int) error {
 	cmd := exec.Command("renice", strconv.Itoa(nice), "-p", strconv.Itoa(pid))

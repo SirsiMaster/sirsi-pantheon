@@ -64,6 +64,17 @@ type WatchConfig struct {
 	SampleSize   int           // Top-N processes to sample (default: 15)
 	SelfBudget   float64       // Max CPU% the watchdog itself should use (default: 5.0)
 	AutoRenice   bool          // Automatically renice sustained CPU hogs (opt-in, Rule A1)
+	// AutoReniceExempt lists case-insensitive process-name fragments that
+	// AutoRenice must leave alone on top of protectedReniceNames: governed
+	// compute (inference, agents, compilers, test binaries) runs hot by design
+	// and is not a runaway. nil means DefaultAutoReniceExempt; an empty
+	// non-nil slice means "exempt nothing" (ADR-064).
+	AutoReniceExempt []string
+	// AutoReniceOnlyUnderPressure gates AutoRenice on real host pressure
+	// (kernel memory-pressure Warn/Critical) instead of raw CPU%: a 10-core
+	// Mac at 540 % for one workload is a workload, not a runaway. The alert
+	// is still emitted either way; only the renice is held (ADR-064).
+	AutoReniceOnlyUnderPressure bool
 }
 
 // DefaultWatchConfig returns sensible defaults.
@@ -75,7 +86,72 @@ func DefaultWatchConfig() WatchConfig {
 		MaxAlerts:    0,
 		SampleSize:   15,
 		SelfBudget:   5.0,
+
+		AutoReniceExempt:            nil, // DefaultAutoReniceExempt
+		AutoReniceOnlyUnderPressure: true,
 	}
+}
+
+// DefaultAutoReniceExempt is the governed-compute allowlist AutoRenice skips
+// when WatchConfig.AutoReniceExempt is nil: measured victims from the stele on
+// 2026-09-10 (Python/MLX inference, codex lanes, compilers, linkers, Go test
+// binaries, the io-connect receipts) — every one of them hot by design.
+var DefaultAutoReniceExempt = []string{
+	"python", "mlx", "sne", "codex", "clang", "swift", "ld", "metal",
+	".test", "go", "node", "ioconnect", "tcpbench", "sirsimpi",
+}
+
+// hostPressureFn reports the current host memory-pressure level for the
+// AutoReniceOnlyUnderPressure gate: the in-process kernel-dispatch level when
+// this process subscribes to it, else the cross-process cache the Hapi loop
+// stamps, else Unknown. Injectable for tests (guarded like reniceByPIDFn).
+var (
+	hostPressureMu sync.RWMutex
+	hostPressureFn = defaultHostPressure
+)
+
+func defaultHostPressure() PressureLevel {
+	if l, ok := observedPressure(); ok {
+		return l
+	}
+	if l, _, ok := readPressureCache(); ok {
+		return l
+	}
+	return PressureUnknown
+}
+
+func getHostPressureFn() func() PressureLevel {
+	hostPressureMu.RLock()
+	defer hostPressureMu.RUnlock()
+	return hostPressureFn
+}
+
+func setHostPressureFn(fn func() PressureLevel) {
+	hostPressureMu.Lock()
+	defer hostPressureMu.Unlock()
+	hostPressureFn = fn
+}
+
+// autoReniceHeld reports whether AutoRenice must hold off for this process
+// and why: an exempt (governed-compute) name, or no host pressure when the
+// pressure gate is on. "" means go ahead. Pure apart from the pressure seam.
+func (cfg WatchConfig) autoReniceHeld(name string, pressure func() PressureLevel) string {
+	exempt := cfg.AutoReniceExempt
+	if exempt == nil {
+		exempt = DefaultAutoReniceExempt
+	}
+	lower := strings.ToLower(name)
+	for _, frag := range exempt {
+		if frag != "" && strings.Contains(lower, strings.ToLower(frag)) {
+			return "exempt:" + frag
+		}
+	}
+	if cfg.AutoReniceOnlyUnderPressure {
+		if l := pressure(); l < PressureWarn {
+			return "no-pressure:" + l.String()
+		}
+	}
+	return ""
 }
 
 // WatchAlert is emitted when a process sustains CPU > threshold.
@@ -244,17 +320,29 @@ func (w *Watchdog) run() {
 						// guard was DEAD CODE — this block only runs when hotStreak >=
 						// SustainCount, so it was never 0 here and auto-renice never fired.
 						if w.cfg.AutoRenice && !reniced[p.PID] {
-							reniced[p.PID] = true
-							renice := getReniceByPIDFn() // captured here (A21: goroutine never reads the global)
-							go func(pid int, name string) {
-								if err := renice(pid, name); err == nil {
-									stele.Inscribe("isis", stele.TypeGuardAlert, "", map[string]string{
-										"action": "auto_renice",
-										"pid":    fmt.Sprintf("%d", pid),
-										"name":   name,
-									})
-								}
-							}(p.PID, p.Name)
+							if why := w.cfg.autoReniceHeld(p.Name, getHostPressureFn()); why != "" {
+								// Held, not silent: the alert above still reaches the
+								// consumer; the stele records the hold so a later
+								// "why wasn't X demoted" has an answer (ADR-064).
+								stele.Inscribe("isis", stele.TypeGuardAlert, "", map[string]string{
+									"action": "auto_renice_held",
+									"pid":    fmt.Sprintf("%d", p.PID),
+									"name":   p.Name,
+									"why":    why,
+								})
+							} else {
+								reniced[p.PID] = true
+								renice := getReniceByPIDFn() // captured here (A21: goroutine never reads the global)
+								go func(pid int, name string) {
+									if err := renice(pid, name); err == nil {
+										stele.Inscribe("isis", stele.TypeGuardAlert, "", map[string]string{
+											"action": "auto_renice",
+											"pid":    fmt.Sprintf("%d", pid),
+											"name":   name,
+										})
+									}
+								}(p.PID, p.Name)
+							}
 						}
 
 						// Reset streak to avoid spamming
