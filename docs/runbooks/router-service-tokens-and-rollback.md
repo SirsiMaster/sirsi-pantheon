@@ -32,10 +32,43 @@ sessions` on the backend.
 
 ## Rollback — a node
 
-Unset `SIRSI_ROUTER_URL` (and `SIRSI_ROUTER_TOKEN`) on the machine. Every verb
-returns to the local `~/.sirsi/router.db`. Nothing is copied back: whatever
-the node wrote while on the service stays on the service. Rehearse it once per
-machine before cut-over and note the time.
+A cut-over node is marked by `~/.sirsi/router-service.env` (written by
+`scripts/router-service/cutover-m5.sh` step 6 and sourced from `~/.zshenv`).
+While that file exists, a process without `SIRSI_ROUTER_URL` is **refused** by
+`routerstore.Resolve()` — it does not fall back to the local file. That is
+deliberate: a GUI-launched process read a frozen `router.db` as a live inbox on
+2026-09-10, and a newer binary would have created an empty ledger and split the
+fabric. Unsetting the two variables is therefore not a rollback.
+
+Rolling a node back is a deliberate procedure, in this order:
+
+1. Stop or drain the node's wake loops and horus (their plists carry the env).
+2. Put the retained local file back at the path FIRST: on the M5 the cut-over
+   left `~/.sirsi/router.db.frozen-<date>` and an unopenable directory at
+   `~/.sirsi/router.db` (so no process can create a new file there). Remove the
+   directory, copy the frozen file into place, `chmod u+w`, and
+   `sqlite3 ~/.sirsi/router.db "PRAGMA journal_mode=wal;"`.
+3. Restore the pre-cut-over binary if the schema requires it
+   (`~/.sirsi/build/sirsi-prev` on the M5; the retained file is schema 16).
+4. Only now move the marker aside: `mv ~/.sirsi/router-service.env
+   ~/.sirsi/router-service.env.rolled-back-<date>` and remove the source line from
+   `~/.zshenv`; confirm the marker is gone. A host is never left with neither a
+   service env nor an openable ledger. Open shells keep their variables until
+   they `unset SIRSI_ROUTER_URL SIRSI_ROUTER_TOKEN`.
+5. Verify: `sirsi router status` from a fresh shell shows the frozen counts.
+
+**Retained-data boundary:** nothing is copied back. The local file holds exactly
+what the node had at the freeze; everything written on the service after that
+stays on the service (a service→local export does not exist — rs-20b). Rehearsed
+on the M5 2026-09-10: 0.03 s out, 0.57 s back, data-level dump hash identical
+(`docs/evidence/ADR-062-RS20-CUTOVER-EVIDENCE-20260910.md`). `scripts/router-service/cutover-m5.sh rollback` performs steps 2–4 on both
+Macs in that order (restore first, marker last), refuses with exit 2 when the
+placeholder directory has no frozen copy to restore, permits an absent marker but
+propagates a present marker's rename failure and asserts its absence before
+announcing success; `scripts/router-service/test-rollback-restore.sh` rehearses the restore
+against disposable paths (restore, refusal, idempotence, marker absent, marker
+present, injected rename failure). The live G8 rehearsal of
+2026-09-10 predates the placeholder directory and covered the file-only case.
 
 ## Rollback — the service (self-hosted)
 

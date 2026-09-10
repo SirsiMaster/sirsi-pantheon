@@ -52,12 +52,41 @@ mint() {
     --limit 50 --format='value(textPayload)' | sed -n 's/^SIRSI_ROUTER_TOKEN=//p' | head -1
 }
 
+# restore_local — the node-local half of a rollback, run ON the host (bash -s over ssh, or locally).
+# Env: DB (ledger path), FROZEN (retained frozen copy or empty), PREV (retained binary or empty), BIN (live binary).
+# Fails loudly on every step (set -e) so the caller's exit status is real. Idempotent.
+RESTORE_LOCAL='set -euo pipefail
+: "${DB:?}" "${BIN:?}"
+if [ -d "$DB" ]; then                                   # unopenable placeholder left by the cut-over
+  [ -n "${FROZEN:-}" ] && [ -f "$FROZEN" ] || { echo "REFUSED: $DB is the cut-over placeholder directory and no frozen copy was given — see the runbook (Rollback — a node)" >&2; exit 2; }
+  rmdir "$DB"; cp "$FROZEN" "$DB"                      # the frozen original stays untouched
+fi
+[ -f "$DB" ] || { echo "REFUSED: no ledger file at $DB" >&2; exit 2; }
+chmod u+w "$DB"; sqlite3 "$DB" "PRAGMA journal_mode=wal;" >/dev/null
+if [ -n "${PREV:-}" ] && [ -e "$PREV" ]; then rm -f "$BIN"; cp "$PREV" "$BIN"; fi
+echo "restored: $DB ($(sqlite3 "$DB" "pragma user_version") schema, wal) binary=$BIN"
+'
+
+# remove_marker — run ON the host after restore_local succeeded. An ABSENT marker is permitted explicitly;
+# a PRESENT marker that cannot be renamed is a failure (never `|| true`); absence is asserted before success.
+# Env: MARKER (default ~/.sirsi/router-service.env), ZSHENV (default ~/.zshenv).
+REMOVE_MARKER='set -euo pipefail
+M=${MARKER:-$HOME/.sirsi/router-service.env}; Z=${ZSHENV:-$HOME/.zshenv}
+if [ -e "$M" ]; then mv "$M" "$M.rolled-back-$(date -u +%Y%m%dT%H%M%SZ)"; fi
+[ -f "$Z" ] && sed -i "" "/router-service.env/d" "$Z"
+[ ! -e "$M" ] || { echo "FAILED: marker still present at $M" >&2; exit 3; }
+echo "marker removed: $M"
+'
+
 if [ "${1:-}" = rollback ]; then
-  echo "== rollback: env out on both Macs, M5 router.db writable, WAL back"
-  sh='sed -i "" "/router-service.env/d" "$HOME/.zshenv"; rm -f "$HOME/.sirsi/router-service.env"'
-  bash -c "$sh"; ssh "$M5" "$sh"
-  m5 'chmod u+w ~/.sirsi/router.db && sqlite3 ~/.sirsi/router.db "PRAGMA journal_mode=wal;"; [ -x ~/.sirsi/build/sirsi-prev ] && rm ~/.local/bin/sirsi && cp ~/.sirsi/build/sirsi-prev ~/.local/bin/sirsi'
-  echo "rolled back: M5 writes the local file again; service rows written during the window are NOT copied back"
+  echo "== rollback: restore the local ledger on both Macs FIRST, then remove the env markers"
+  # Order matters: the marker is removed only after the local file is back, so a host is never
+  # left with neither a service env nor an openable ledger. Failures propagate (no exit-0 lies).
+  ssh "$M5" "DB=\$HOME/.sirsi/router.db FROZEN=\$(ls -t \$HOME/.sirsi/router.db.frozen-* 2>/dev/null | head -1) PREV=\$HOME/.sirsi/build/sirsi-prev BIN=\$HOME/.local/bin/sirsi bash -s" <<<"$RESTORE_LOCAL"
+  DB=$HOME/.sirsi/router.db FROZEN=$(ls -t $HOME/.sirsi/router.db.old-* $HOME/.sirsi/router.db.frozen-* 2>/dev/null | head -1) PREV= BIN=$(command -v sirsi) bash -s <<<"$RESTORE_LOCAL"
+  bash -s <<<"$REMOVE_MARKER"; ssh "$M5" bash -s <<<"$REMOVE_MARKER"
+  rm -f "$WORK/activated"
+  echo "rolled back: both Macs write their local file again; service rows written after the freeze are NOT copied back (rs-20b)"
   exit 0
 fi
 FROM=${FROM:-1}
