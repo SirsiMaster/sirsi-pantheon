@@ -278,6 +278,29 @@ func runBounded(name string, args ...string) error {
 	return err
 }
 
+// wakeChildEnv builds a spawned worker's environment: the launcher's, MINUS the
+// two Rule-of-Ra identity variables, plus the worker's own cfg.Env. A child
+// must take its audience from its OWN registered thread (cfg.Env), never
+// inherit the launcher's ambient identity — otherwise a worker spawned by a
+// process that carries SIRSI_AGENT_ID/SIRSI_THREAD_ID (e.g. the supervisor,
+// which now binds its own identity for the Rule of Ra) would mint a session
+// attributed to the launcher, or keep the launcher's thread with its own agent
+// (an invalid tuple). Scrubbing both before the overlay makes cfg.Env the sole
+// source of a child's identity (SSA 2026-09-10, PR #730).
+func wakeChildEnv(base []string, cfg AgentConfig) []string {
+	out := make([]string, 0, len(base)+len(cfg.Env))
+	for _, kv := range base {
+		if strings.HasPrefix(kv, "SIRSI_AGENT_ID=") || strings.HasPrefix(kv, "SIRSI_THREAD_ID=") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	for k, v := range cfg.Env {
+		out = append(out, k+"="+v)
+	}
+	return out
+}
+
 func defaultWakeInvoke(cfg AgentConfig, adapter string) error {
 	switch adapter {
 	case WakeCLISpawn:
@@ -286,10 +309,7 @@ func defaultWakeInvoke(cfg AgentConfig, adapter string) error {
 		}
 		cmd := exec.Command(cfg.Command[0], cfg.Command[1:]...)
 		cmd.Dir = cfg.Cwd
-		cmd.Env = os.Environ()
-		for k, v := range cfg.Env {
-			cmd.Env = append(cmd.Env, k+"="+v)
-		}
+		cmd.Env = wakeChildEnv(os.Environ(), cfg)
 		// Detach (Unix Setsid) + Release so the nudged worker survives this
 		// short-lived doctor tick and leaves no zombie — the established
 		// cmd/sirsi router-event spawn pattern (codex SME #89, finding 2).

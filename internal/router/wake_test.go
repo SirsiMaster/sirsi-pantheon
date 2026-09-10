@@ -618,3 +618,55 @@ func TestCutoverReadersFailClosed(t *testing.T) {
 		t.Errorf("pre-cutover OpenItems = %+v, want the one legacy file item", items)
 	}
 }
+
+// SSA 2026-09-10 (PR #730 P1): a spawned worker takes its identity from its own
+// cfg.Env, never from the launcher's ambient environment. The supervisor binds
+// SIRSI_AGENT_ID/SIRSI_THREAD_ID for itself, so a child it spawns must not
+// inherit them.
+func TestWakeChildEnvNeverInheritsLauncherIdentity(t *testing.T) {
+	base := []string{
+		"PATH=/usr/bin",
+		"SIRSI_AGENT_ID=horus-supervisor",
+		"SIRSI_THREAD_ID=thr-supervisor",
+		"HOME=/x",
+	}
+	get := func(env []string, key string) (string, bool) {
+		for _, kv := range env {
+			if strings.HasPrefix(kv, key+"=") {
+				return kv[len(key)+1:], true
+			}
+		}
+		return "", false
+	}
+
+	// No cfg.Env override: the child inherits NEITHER identity var.
+	env := wakeChildEnv(base, AgentConfig{})
+	if _, ok := get(env, "SIRSI_AGENT_ID"); ok {
+		t.Fatal("child must not inherit the launcher's SIRSI_AGENT_ID")
+	}
+	if _, ok := get(env, "SIRSI_THREAD_ID"); ok {
+		t.Fatal("child must not inherit the launcher's SIRSI_THREAD_ID")
+	}
+	if v, _ := get(env, "PATH"); v != "/usr/bin" {
+		t.Fatalf("non-identity env must pass through, PATH=%q", v)
+	}
+
+	// cfg.Env sets its own identity: the child gets ITS OWN, not the launcher's.
+	env = wakeChildEnv(base, AgentConfig{Env: map[string]string{"SIRSI_AGENT_ID": "codex-deck", "SIRSI_THREAD_ID": "thr-deck"}})
+	if v, _ := get(env, "SIRSI_AGENT_ID"); v != "codex-deck" {
+		t.Fatalf("child agent = %q, want codex-deck", v)
+	}
+	if v, _ := get(env, "SIRSI_THREAD_ID"); v != "thr-deck" {
+		t.Fatalf("child thread = %q, want thr-deck", v)
+	}
+
+	// cfg.Env overrides only the agent: the child must NOT keep the launcher's
+	// thread (an invalid agent/thread tuple).
+	env = wakeChildEnv(base, AgentConfig{Env: map[string]string{"SIRSI_AGENT_ID": "codex-deck"}})
+	if v, _ := get(env, "SIRSI_AGENT_ID"); v != "codex-deck" {
+		t.Fatalf("child agent = %q, want codex-deck", v)
+	}
+	if v, ok := get(env, "SIRSI_THREAD_ID"); ok {
+		t.Fatalf("child must not keep the launcher's thread with its own agent, got SIRSI_THREAD_ID=%q", v)
+	}
+}
