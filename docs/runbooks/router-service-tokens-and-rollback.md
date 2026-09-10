@@ -59,8 +59,12 @@ Rolling a node back is a deliberate procedure, in this order:
 what the node had at the freeze; everything written on the service after that
 stays on the service (a service→local export does not exist — rs-20b). Rehearsed
 on the M5 2026-09-10: 0.03 s out, 0.57 s back, data-level dump hash identical
-(`docs/evidence/ADR-062-RS20-CUTOVER-EVIDENCE-20260910.md`). The runbook script's
-`rollback` verb performs steps 2–4 for both Macs and restores the WAL mode.
+(`docs/evidence/ADR-062-RS20-CUTOVER-EVIDENCE-20260910.md`). `scripts/router-service/cutover-m5.sh rollback` performs steps 2–4 on both
+Macs in that order (restore first, marker last), refuses with exit 2 when the
+placeholder directory has no frozen copy to restore, and propagates every
+failure; `scripts/router-service/test-rollback-restore.sh` rehearses the restore
+against disposable paths (restore, refusal, idempotence). The live G8 rehearsal of
+2026-09-10 predates the placeholder directory and covered the file-only case.
 
 ## Rollback — the service (self-hosted)
 

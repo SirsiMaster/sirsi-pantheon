@@ -52,12 +52,30 @@ mint() {
     --limit 50 --format='value(textPayload)' | sed -n 's/^SIRSI_ROUTER_TOKEN=//p' | head -1
 }
 
+# restore_local — the node-local half of a rollback, run ON the host (bash -s over ssh, or locally).
+# Env: DB (ledger path), FROZEN (retained frozen copy or empty), PREV (retained binary or empty), BIN (live binary).
+# Fails loudly on every step (set -e) so the caller's exit status is real. Idempotent.
+RESTORE_LOCAL='set -euo pipefail
+: "${DB:?}" "${BIN:?}"
+if [ -d "$DB" ]; then                                   # unopenable placeholder left by the cut-over
+  [ -n "${FROZEN:-}" ] && [ -f "$FROZEN" ] || { echo "REFUSED: $DB is the cut-over placeholder directory and no frozen copy was given — see the runbook (Rollback — a node)" >&2; exit 2; }
+  rmdir "$DB"; cp "$FROZEN" "$DB"                      # the frozen original stays untouched
+fi
+[ -f "$DB" ] || { echo "REFUSED: no ledger file at $DB" >&2; exit 2; }
+chmod u+w "$DB"; sqlite3 "$DB" "PRAGMA journal_mode=wal;" >/dev/null
+if [ -n "${PREV:-}" ] && [ -e "$PREV" ]; then rm -f "$BIN"; cp "$PREV" "$BIN"; fi
+echo "restored: $DB ($(sqlite3 "$DB" "pragma user_version") schema, wal) binary=$BIN"'
+
 if [ "${1:-}" = rollback ]; then
-  echo "== rollback: env out on both Macs, M5 router.db writable, WAL back"
-  sh='sed -i "" "/router-service.env/d" "$HOME/.zshenv"; rm -f "$HOME/.sirsi/router-service.env"'
+  echo "== rollback: restore the local ledger on both Macs FIRST, then remove the env markers"
+  # Order matters: the marker is removed only after the local file is back, so a host is never
+  # left with neither a service env nor an openable ledger. Failures propagate (no exit-0 lies).
+  ssh "$M5" "DB=\$HOME/.sirsi/router.db FROZEN=\$(ls -t \$HOME/.sirsi/router.db.frozen-* 2>/dev/null | head -1) PREV=\$HOME/.sirsi/build/sirsi-prev BIN=\$HOME/.local/bin/sirsi bash -s" <<<"$RESTORE_LOCAL"
+  DB=$HOME/.sirsi/router.db FROZEN=$(ls -t $HOME/.sirsi/router.db.old-* $HOME/.sirsi/router.db.frozen-* 2>/dev/null | head -1) PREV= BIN=$(command -v sirsi) bash -s <<<"$RESTORE_LOCAL"
+  sh='mv "$HOME/.sirsi/router-service.env" "$HOME/.sirsi/router-service.env.rolled-back-$(date -u +%Y%m%dT%H%M%SZ)" 2>/dev/null || true; sed -i "" "/router-service.env/d" "$HOME/.zshenv"'
   bash -c "$sh"; ssh "$M5" "$sh"
-  m5 'chmod u+w ~/.sirsi/router.db && sqlite3 ~/.sirsi/router.db "PRAGMA journal_mode=wal;"; [ -x ~/.sirsi/build/sirsi-prev ] && rm ~/.local/bin/sirsi && cp ~/.sirsi/build/sirsi-prev ~/.local/bin/sirsi'
-  echo "rolled back: M5 writes the local file again; service rows written during the window are NOT copied back"
+  rm -f "$WORK/activated"
+  echo "rolled back: both Macs write their local file again; service rows written after the freeze are NOT copied back (rs-20b)"
   exit 0
 fi
 FROM=${FROM:-1}
