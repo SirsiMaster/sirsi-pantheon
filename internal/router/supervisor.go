@@ -138,6 +138,42 @@ type PendingItem struct {
 	WakeError   string `json:"wake_error,omitempty"`   // why it is wake-unavailable, when it is
 }
 
+// ensureSupervisorRegistered registers the supervisor's own thread and exports
+// SIRSI_AGENT_ID/SIRSI_THREAD_ID into the process environment so the durable
+// store, opened next, mints a session bound to that thread (the Rule of Ra,
+// ADR-062 20b.2). Idempotent: opts.ThreadID (carried across resident-loop
+// passes) makes RegisterThread adopt the existing record. Returns the thread id.
+func ensureSupervisorRegistered(routerRoot string, opts SuperviseOptions, repoRoot string) (string, error) {
+	supervisorID := opts.AgentID
+	if supervisorID == "" {
+		supervisorID = SupervisorAgentID
+	}
+	pid := opts.PID
+	if pid <= 0 {
+		pid = os.Getpid()
+	}
+	host, _ := os.Hostname()
+	thread, err := RegisterThread(routerRoot, &Thread{
+		ThreadID:      opts.ThreadID,
+		AgentID:       supervisorID,
+		Surface:       SupervisorSurface,
+		Repo:          repoRoot,
+		Workstream:    SupervisorWorkstream,
+		Status:        ThreadStatusActive,
+		WakeMechanism: "resident-loop",
+		PID:           pid,
+		Host:          host,
+	})
+	if err != nil {
+		return "", err
+	}
+	// The store (routerstore.Resolve) reads these at session mint. Set them for
+	// this process so the supervisor's own calls carry its audience.
+	_ = os.Setenv("SIRSI_AGENT_ID", supervisorID)
+	_ = os.Setenv("SIRSI_THREAD_ID", thread.ThreadID)
+	return thread.ThreadID, nil
+}
+
 func SuperviseOnce(opts SuperviseOptions) (*SuperviseReport, error) {
 	repoRoot := opts.RepoRoot
 	if repoRoot == "" {
@@ -171,6 +207,19 @@ func SuperviseOnce(opts SuperviseOptions) (*SuperviseReport, error) {
 			agentSet[thread.AgentID] = struct{}{}
 		}
 	}
+
+	// The Rule of Ra applies to the supervisor itself (ADR-062 20b.2): register
+	// its thread and export SIRSI_AGENT_ID/SIRSI_THREAD_ID BEFORE opening the
+	// durable store, so every mutation this pass makes (ReconcileOperationalState,
+	// ClaimTask, CloseItem, …) runs on a session bound to the supervisor's own
+	// registered thread instead of an anonymous host session. Registration is a
+	// bootstrap verb, exempt from the gate; opts.ThreadID carries the id across
+	// passes so this adopts rather than mints anew.
+	supThreadID, err := ensureSupervisorRegistered(routerRoot, opts, repoRoot)
+	if err != nil {
+		return nil, fmt.Errorf("register supervisor for the Rule of Ra: %w", err)
+	}
+	opts.ThreadID = supThreadID
 
 	// One durable store for the pass. Migrate is idempotent and keeps the
 	// pre-cutover file corpus represented in the same authority the runnable
