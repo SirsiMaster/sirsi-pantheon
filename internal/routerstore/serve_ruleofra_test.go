@@ -463,3 +463,40 @@ func TestAudienceSinceIsChronologicalAtFractionalSeconds(t *testing.T) {
 		t.Fatalf("stored ts must be fixed width and included: %+v", rep)
 	}
 }
+
+// SSA 2026-09-10 (PR #726 r2): a malformed `since` is a normal error over the
+// wire, never a panic; and the live-coverage threshold excludes a session at
+// the whole second before a fractional `since`.
+func TestAudienceSinceValidatesAndCeilsFraction(t *testing.T) {
+	backend := newDst(t)
+	var logs strings.Builder
+	_, client := ruleHarnessOn(t, "log", &logs, backend)
+
+	// invalid since — store and wire both return an error, no panic.
+	if _, err := backend.AudienceSince("bad"); err == nil {
+		t.Fatal("store: invalid since must error")
+	}
+	if _, err := backend.AudienceSince(""); err == nil {
+		t.Fatal("store: empty since must error")
+	}
+	if _, err := client("lane-a", "").AudienceSince("nonsense"); err == nil {
+		t.Fatal("wire: invalid since must return an error, not crash the handler")
+	}
+
+	// A directly-inserted session at exactly 15:00:00Z (no minted real-clock
+	// rows in the way): excluded for a fractional since past that second,
+	// included at the whole second.
+	fresh := newDst(t)
+	if _, err := fresh.db.Exec(`INSERT INTO sessions(session_id,secret,host,agent,runtime_hash,thread_id,created,last_seen,revoked) VALUES('s1','x','h','lane-live','rh','','2026-09-10T15:00:00Z','2026-09-10T15:00:00Z','')`); err != nil {
+		t.Fatal(err)
+	}
+	if rep, err := fresh.AudienceSince("2026-09-10T15:00:00.5Z"); err != nil || len(rep.Unbound) != 0 {
+		t.Fatalf("fractional since must exclude the previous whole second: %+v %v", rep.Unbound, err)
+	}
+	if rep, _ := fresh.AudienceSince("2026-09-10T15:00:00Z"); len(rep.Unbound) != 1 {
+		t.Fatalf("whole-second since must include the session: %v", rep.Unbound)
+	}
+	if rep, _ := fresh.AudienceSince("2026-09-10T14:59:59.5Z"); len(rep.Unbound) != 1 {
+		t.Fatalf("since just before must include the session: %v", rep.Unbound)
+	}
+}

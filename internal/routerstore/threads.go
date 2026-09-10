@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -261,9 +262,26 @@ type AudienceReport struct {
 // AudienceSince builds the report over audience_log rows with ts >= since
 // (fixed-width comparison) and the live session population.
 func (s *SQLiteStore) AudienceSince(since string) (AudienceReport, error) {
-	since = NormalizeAudienceTS(since)
-	rep := AudienceReport{Since: since, ByAgent: map[string]int{}, Failures: []AudienceEntry{}, Unbound: []string{}}
-	rows, err := s.db.Query(`SELECT ts,method,session_id,agent,host,thread_id,verdict,reason FROM audience_log WHERE ts >= ? ORDER BY ts`, since)
+	// `since` reaches here over the generic remote API, so validate before any
+	// slice/query — a malformed value is a normal error, never a panic (SSA
+	// 2026-09-10, PR #726 r2 P2).
+	t, perr := time.Parse(time.RFC3339Nano, strings.TrimSpace(since))
+	if perr != nil {
+		return AudienceReport{}, fmt.Errorf("routerstore: AudienceSince: invalid since %q (want RFC3339): %w", since, perr)
+	}
+	t = t.UTC()
+	sinceLog := t.Format(AudienceTS) // fixed-width, for the nanosecond audience_log
+	// Sessions store last_seen at whole-second RFC3339. A fractional `since`
+	// (e.g. 15:00:00.5Z) must EXCLUDE a session at the previous whole second
+	// (15:00:00Z is the instant 15:00:00.0, before .5), so ceil the threshold
+	// to the next whole second when `since` has a sub-second part.
+	sinceSec := t.Truncate(time.Second)
+	if t.After(sinceSec) {
+		sinceSec = sinceSec.Add(time.Second)
+	}
+	sinceSess := sinceSec.Format(time.RFC3339)
+	rep := AudienceReport{Since: sinceLog, ByAgent: map[string]int{}, Failures: []AudienceEntry{}, Unbound: []string{}}
+	rows, err := s.db.Query(`SELECT ts,method,session_id,agent,host,thread_id,verdict,reason FROM audience_log WHERE ts >= ? ORDER BY ts`, sinceLog)
 	if err != nil {
 		return rep, fmt.Errorf("routerstore: AudienceSince: %w", err)
 	}
@@ -287,7 +305,7 @@ func (s *SQLiteStore) AudienceSince(since string) (AudienceReport, error) {
 	}
 	// (b) live coverage: the session table itself. Session timestamps are
 	// RFC3339 (second precision); compare on the same width.
-	live, err := s.db.Query(`SELECT session_id,agent,host FROM sessions WHERE revoked='' AND thread_id='' AND last_seen >= ? ORDER BY agent,host,session_id`, since[:19]+"Z")
+	live, err := s.db.Query(`SELECT session_id,agent,host FROM sessions WHERE revoked='' AND thread_id='' AND last_seen >= ? ORDER BY agent,host,session_id`, sinceSess)
 	if err != nil {
 		return rep, fmt.Errorf("routerstore: AudienceSince sessions: %w", err)
 	}
