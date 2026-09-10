@@ -166,10 +166,15 @@ rs-22a..rs-22e DONE (registry status; not G7 closure). Open-item count: author-r
 In review: #724 the Rule of Ra (20b.1, rs-22g lease held): v19 sessions.thread_id, MintSessionForThread from SIRSI_THREAD_ID, wake
 loops pass their thread, thread register records host, server gate off|log|enforce (default log). SSA changes-requested at
 1325351a (three findings: the PG bundle could publish v19 on a v18 ledger without the column; thread lifecycle verbs let an
-unregistered caller rewrite the binding that authorizes it; unknown gate modes failed open) — fixed on fe62b9cc (transactional
-re-runnable schema with a postgres upgrade proof, host-scoped thread authority, mode validated at construction), re-review sent
-(item 20260910-153527). Rollout only after SSA ACCEPT + bind + merge: apply-schema (transactional) → deploy log mode → rebuild
-Macs → audit (20b.3, `sirsi router audience`, stacked as the next PR) → enforce.
+unregistered caller rewrite the binding that authorizes it; unknown gate modes failed open) — corrections proposed on fe62b9cc
+(transactional re-runnable schema with a postgres upgrade proof, host-scoped thread authority, mode validated at construction);
+SSA r2 (response 20260910-154019, `~/.sirsi/reviews/software-admin-20260910/pr724-r2-review.md` on the M5) accepted the schema
+and gate-mode corrections but found a remaining atomic host-adoption race: host B can adopt a legacy row between host A's
+authority lookup and its mutation, after which A overwrites B. Proposed fix on a4dfe4f5 (host predicate inside every thread
+mutation, competing-adoption test), r3 re-review sent (item 20260910-154913); host-authority closure NOT yet established.
+Rollout stays pending until SSA ACCEPT + bind + merge: apply-schema (transactional) → deploy log mode → rebuild Macs → audit
+(20b.3, `sirsi router audience`, PR #726 stacked) → enforce. CI note: the Test job's Postgres leg started running on the M1
+runner today (postgresql@16 installed for the proof) and needs LC_ALL=C — PR #727.
 Lessons written to memory: a shell chain that pushes after a failed test lies (test in its own call); CI runs -race (atomic counters);
 git bundle needs ref names; sirsi-bind.sh RECORDS an approval (never a request); codex runs commands in a login shell (zshenv must not
 re-add the token); set SIRSI_AGENT_ID per lane from the first dispatch (shared session "Mac" stranded leases); an in-progress task with
