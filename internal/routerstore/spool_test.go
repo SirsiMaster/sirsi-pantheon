@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -169,7 +170,7 @@ func TestSpoolLostResponseIsOutcomeUnknown(t *testing.T) {
 	}
 }
 
-// A cancelled or short-deadline context (RemoteStore's own 5 s per call) after
+// A canceled or short-deadline context (RemoteStore's own 5 s per call) after
 // a relay consumed the request must surface OUTCOME UNKNOWN with method and id,
 // never a bare "context deadline exceeded"; before consumption it is withdrawn
 // and reported as not sent.
@@ -182,7 +183,7 @@ func TestSpoolCancelledMutationNamesOutcome(t *testing.T) {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://spool/v1/call/SendGuarded", strings.NewReader(`{"args":[]}`))
 	_, err := tr.RoundTrip(req)
 	if err == nil || !strings.Contains(err.Error(), "SendGuarded id ") || !strings.Contains(err.Error(), "nothing was sent") {
-		t.Fatalf("unconsumed + cancelled must be withdrawn and named: %v", err)
+		t.Fatalf("unconsumed + canceled must be withdrawn and named: %v", err)
 	}
 	if left, _ := filepath.Glob(filepath.Join(spool, "lane-c", "req", "*.json")); len(left) != 0 {
 		t.Fatalf("withdrawn request left behind: %v", left)
@@ -203,7 +204,7 @@ func TestSpoolCancelledMutationNamesOutcome(t *testing.T) {
 	req2, _ := http.NewRequestWithContext(ctx2, http.MethodPost, "http://spool/v1/call/SendGuarded", strings.NewReader(`{"args":[]}`))
 	_, err = tr.RoundTrip(req2)
 	if err == nil || !strings.Contains(err.Error(), "OUTCOME UNKNOWN") || !strings.Contains(err.Error(), "SendGuarded id ") || !strings.Contains(err.Error(), "context deadline exceeded") {
-		t.Fatalf("consumed + cancelled must be outcome-unknown naming method, id and cause: %v", err)
+		t.Fatalf("consumed + canceled must be outcome-unknown naming method, id and cause: %v", err)
 	}
 }
 
@@ -302,5 +303,99 @@ func TestSpoolInFlightCapIsAtomic(t *testing.T) {
 	_ = os.Remove(held[0])
 	if _, err := acquireSlot(slots); err != nil {
 		t.Fatalf("released slot must be reusable: %v", err)
+	}
+}
+
+// Post-forward failures are uncertain for the caller: exactly one upstream
+// commit followed by (a) a connection reset and (b) a truncated response body
+// must each surface OUTCOME UNKNOWN with method and id, never a plain
+// "service unreachable"/"read" error.
+func TestSpoolCommitThenResponseFailureIsOutcomeUnknown(t *testing.T) {
+	spool := t.TempDir()
+	commits := 0
+	mode := "reset"
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		commits++
+		switch mode {
+		case "reset":
+			if hj, ok := w.(http.Hijacker); ok {
+				c, _, _ := hj.Hijack()
+				_ = c.Close() // commit happened, connection dies before any response
+				return
+			}
+		case "truncate":
+			w.Header().Set("Content-Length", "1000")
+			_, _ = w.Write([]byte(`{"result":`)) // shorter than declared → unexpected EOF
+			if fl, ok := w.(http.Flusher); ok {
+				fl.Flush()
+			}
+			if hj, ok := w.(http.Hijacker); ok {
+				c, _, _ := hj.Hijack()
+				_ = c.Close()
+			}
+		}
+	}))
+	t.Cleanup(svc.Close)
+	rl := &Relay{Spool: spool, Base: svc.URL, Token: "t", Log: slog.New(slog.NewTextHandler(&strings.Builder{}, nil)), Client: svc.Client(), now: time.Now}
+	lane := filepath.Join(spool, "lane-u")
+	for _, d := range []string{"req", "res"} {
+		if err := os.MkdirAll(filepath.Join(lane, d), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i, m := range []string{"reset", "truncate"} {
+		mode = m
+		id := fmt.Sprintf("1-%d-%s", i+1, m)
+		if err := writeAtomic(filepath.Join(lane, "req", id+".json"), spoolRequest{Method: "SendGuarded", Headers: map[string]string{}, Body: []byte(`{"args":[]}`)}); err != nil {
+			t.Fatal(err)
+		}
+		rl.serveOnce()
+		b, _ := os.ReadFile(filepath.Join(lane, "res", id+".json"))
+		var sr spoolResponse
+		if json.Unmarshal(b, &sr) != nil || sr.Status != http.StatusBadGateway || !strings.Contains(string(sr.Body), "OUTCOME UNKNOWN") || !strings.Contains(string(sr.Body), "SendGuarded id "+id) {
+			t.Fatalf("%s: want OUTCOME UNKNOWN naming method+id, got status=%d body=%s", m, sr.Status, sr.Body)
+		}
+	}
+	if commits != 2 {
+		t.Fatalf("each request must reach upstream exactly once: %d", commits)
+	}
+}
+
+// Recovery reads lane-authored in-flight files bounded; an oversized or
+// malformed one still yields a correlated outcome-unknown, no allocation
+// beyond the envelope bound, and no forward.
+func TestSpoolRecoveryIsBoundedAndCorrelated(t *testing.T) {
+	spool := t.TempDir()
+	calls := 0
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { calls++ }))
+	t.Cleanup(svc.Close)
+	rl := &Relay{Spool: spool, Base: svc.URL, Token: "t", Log: slog.New(slog.NewTextHandler(&strings.Builder{}, nil)), Client: svc.Client(), now: time.Now}
+	lane := filepath.Join(spool, "lane-r")
+	if err := os.MkdirAll(filepath.Join(lane, "inflight"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// Oversized: envelope bound + 1 MiB of garbage; malformed: not JSON.
+	big := make([]byte, spoolMaxEnvelope+1<<20)
+	if err := os.WriteFile(filepath.Join(lane, "inflight", "1-1-big.json"), big, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(lane, "inflight", "1-2-bad.json"), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if n := rl.recoverInflight(); n != 2 {
+		t.Fatalf("recovered %d", n)
+	}
+	for _, id := range []string{"1-1-big", "1-2-bad"} {
+		b, _ := os.ReadFile(filepath.Join(lane, "res", id+".json"))
+		var sr spoolResponse
+		if json.Unmarshal(b, &sr) != nil || !strings.Contains(string(sr.Body), "OUTCOME UNKNOWN") || !strings.Contains(string(sr.Body), "? "+id) {
+			t.Fatalf("%s: want correlated outcome-unknown, got %s", id, b)
+		}
+	}
+	if calls != 0 {
+		t.Fatal("recovery must never forward")
+	}
+	if left, _ := filepath.Glob(filepath.Join(lane, "inflight", "*")); len(left) != 0 {
+		t.Fatalf("in-flight files must be removed: %v", left)
 	}
 }

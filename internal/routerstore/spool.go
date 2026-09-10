@@ -307,9 +307,13 @@ func (rl *Relay) recoverInflight() int {
 		agent := filepath.Base(filepath.Dir(filepath.Dir(f)))
 		id := strings.TrimSuffix(filepath.Base(f), ".json")
 		method := "?"
-		var req spoolRequest
-		if b, err := os.ReadFile(f); err == nil && json.Unmarshal(b, &req) == nil {
-			method = req.Method
+		if fh, oerr := os.Open(f); oerr == nil {
+			b, rerr := io.ReadAll(io.LimitReader(fh, spoolMaxEnvelope+1))
+			_ = fh.Close()
+			var req spoolRequest
+			if rerr == nil && len(b) <= spoolMaxEnvelope && json.Unmarshal(b, &req) == nil && req.Method != "" {
+				method = req.Method
+			}
 		}
 		body, _ := json.Marshal(wireResponse{Error: &wireError{Name: "relay", Message: "relay restarted after consuming " + method + " " + id + ": OUTCOME UNKNOWN — re-query before retrying a mutation"}})
 		rl.publish(agent, id, spoolResponse{Status: http.StatusBadGateway, Body: body})
@@ -360,20 +364,24 @@ func (rl *Relay) forward(agent, id, path string) spoolResponse {
 			httpReq.Header.Set(k, v)
 		}
 	}
+	// From here on the request has left this process: any failure is an
+	// UNCERTAIN outcome for the caller (the service may have committed), and is
+	// reported as such with method and id — never as a plain transport error.
+	unknown := func(cause string) spoolResponse {
+		rl.Log.Error("relay: outcome unknown after forward", "agent", agent, "method", req.Method, "id", id, "cause", cause)
+		return fail(http.StatusBadGateway, fmt.Sprintf("relay: %s id %s: OUTCOME UNKNOWN — %s; re-query before retrying a mutation", req.Method, id, cause))
+	}
 	resp, err := rl.Client.Do(httpReq)
 	if err != nil {
-		rl.Log.Error("relay: service unreachable", "agent", agent, "method", req.Method, "id", id, "err", err)
-		return fail(http.StatusServiceUnavailable, "relay: service unreachable: "+err.Error())
+		return unknown("service unreachable or connection lost: " + err.Error())
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, spoolMaxResponse+1))
-	if err != nil {
-		rl.Log.Error("relay: read service response", "agent", agent, "method", req.Method, "id", id, "err", err)
-		return fail(http.StatusBadGateway, "relay: read service response: "+err.Error())
+	body, rerr := io.ReadAll(io.LimitReader(resp.Body, spoolMaxResponse+1))
+	if rerr != nil {
+		return unknown("service response could not be read: " + rerr.Error())
 	}
 	if len(body) > spoolMaxResponse {
-		rl.Log.Error("relay: service response over the limit", "agent", agent, "method", req.Method, "id", id)
-		return fail(http.StatusBadGateway, fmt.Sprintf("relay: service response over %d bytes", spoolMaxResponse))
+		return unknown(fmt.Sprintf("service response over %d bytes", spoolMaxResponse))
 	}
 	rl.Log.Info("relay: forwarded", "agent", agent, "method", req.Method, "id", id, "status", resp.StatusCode)
 	return spoolResponse{Status: resp.StatusCode, Body: body}
