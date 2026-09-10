@@ -51,7 +51,7 @@ var notServed = map[string]bool{
 	"GetSession": true, "RevokeSession": true, "TouchSession": true,
 	"BindItemSession": true, "ItemSession": true, "BindTaskSession": true, "TaskSession": true,
 	"MintHostToken": true, "LookupHostToken": true, "RevokeHostToken": true, "ListHostTokens": true,
-	"Close": true,
+	"Close": true, "RecordAudience": true,
 }
 
 // itemOwnership: method → index of the item id argument. The caller's session
@@ -107,7 +107,7 @@ var ruleOfRaExempt = map[string]bool{
 	"GetState": true, "Counters": true, "Breakers": true, "Render": true, "ListWakeEvents": true, "ListIdentifiers": true,
 	"ListRequirements": true, "UnmetRequirements": true, "RunnableFor": true, "ClassifyLane": true, "OperationalAgents": true,
 	"Wait": true, "ListenNotify": true, "NotifyAgent": true, "NotifyPath": true, "ExportItem": true, "ExportMarkdown": true,
-	"ForceOwner": true,
+	"ForceOwner": true, "AudienceSince": true,
 }
 
 // ErrThreadAuthority: a session tried to write or delete a thread binding
@@ -301,8 +301,19 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// 6. the Rule of Ra — every thread registers or receives no audience.
-		if mode := s.opts.RuleOfRa; mode != "off" {
-			if rerr := s.ruleOfRa(sess, name); rerr != nil {
+		if mode := s.opts.RuleOfRa; mode != "off" && !ruleOfRaExempt[name] {
+			rerr := s.ruleOfRa(sess, name)
+			entry := AudienceEntry{TS: s.opts.now().UTC().Format(time.RFC3339Nano), Method: name, SessionID: sess.ID, Agent: sess.Agent, Host: sess.Host, ThreadID: sess.ThreadID, Verdict: "allowed"}
+			if rerr != nil {
+				entry.Verdict, entry.Reason = "would_refuse", rerr.Error()
+				if mode == "enforce" {
+					entry.Verdict = "refused"
+				}
+			}
+			if aerr := s.store.RecordAudience(entry); aerr != nil {
+				s.logf("rule-of-ra: audience log write failed: %v", aerr)
+			}
+			if rerr != nil {
 				if mode == "enforce" {
 					writeErr(w, http.StatusUnauthorized, "ErrUnregistered", rerr.Error())
 					return

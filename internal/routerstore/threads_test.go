@@ -11,16 +11,16 @@ func TestThreadMigrationIsCeilingAndUpgradesV15(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := MaxSupportedSchemaVersion(); got != 19 {
-		t.Fatalf("schema ceiling = %d, want 19", got)
+	if got := MaxSupportedSchemaVersion(); got != 20 {
+		t.Fatalf("schema ceiling = %d, want 20", got)
 	}
 	var version int
 	err = s.db.QueryRow(`PRAGMA user_version`).Scan(&version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 19 {
-		t.Fatalf("fresh schema = %d, want 19", version)
+	if version != 20 {
+		t.Fatalf("fresh schema = %d, want 20", version)
 	}
 	_, err = s.db.Exec(`DROP TABLE threads; PRAGMA user_version=15;`)
 	if err != nil {

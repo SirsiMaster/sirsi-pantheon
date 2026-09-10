@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
+	"time"
 )
 
 // ThreadRecord is the store-owned envelope for a CTR thread payload.
@@ -192,4 +194,75 @@ func (s *SQLiteStore) ListThreads() ([]ThreadRecord, error) {
 		return nil, fmt.Errorf("routerstore: iterate threads: %w", err)
 	}
 	return out, nil
+}
+
+// AudienceEntry is one gated call as the Rule of Ra saw it.
+type AudienceEntry struct {
+	TS        string `json:"ts"`
+	Method    string `json:"method"`
+	SessionID string `json:"session_id"`
+	Agent     string `json:"agent"`
+	Host      string `json:"host"`
+	ThreadID  string `json:"thread_id"`
+	Verdict   string `json:"verdict"` // allowed | would_refuse | refused
+	Reason    string `json:"reason,omitempty"`
+}
+
+// RecordAudience appends one gate verdict (ADR-062 20b.3).
+func (s *SQLiteStore) RecordAudience(e AudienceEntry) error {
+	if e.TS == "" {
+		e.TS = s.clock().Format(time.RFC3339Nano)
+	}
+	_, err := s.exec(`INSERT INTO audience_log(ts,method,session_id,agent,host,thread_id,verdict,reason) VALUES(?,?,?,?,?,?,?,?)`,
+		e.TS, e.Method, e.SessionID, e.Agent, e.Host, e.ThreadID, e.Verdict, e.Reason)
+	if err != nil {
+		return fmt.Errorf("routerstore: RecordAudience: %w", err)
+	}
+	return nil
+}
+
+// AudienceReport is the 20b.3 audit: (a) gated calls since `since` whose
+// session was NOT bound to its own active thread at that moment — the
+// failures — and (b) live coverage: sessions seen in the window that carry no
+// thread. Mutation-time truth comes from the log rows written at call time.
+type AudienceReport struct {
+	Since    string          `json:"since"`
+	Gated    int             `json:"gated"`
+	Allowed  int             `json:"allowed"`
+	Failures []AudienceEntry `json:"failures"` // would_refuse | refused
+	ByAgent  map[string]int  `json:"failures_by_agent"`
+	Unbound  []string        `json:"live_sessions_without_thread"` // "agent@host session" seen in the window
+	Mode     string          `json:"mode,omitempty"`
+}
+
+// AudienceSince builds the report over audience_log rows with ts >= since.
+func (s *SQLiteStore) AudienceSince(since string) (AudienceReport, error) {
+	rep := AudienceReport{Since: since, ByAgent: map[string]int{}}
+	rows, err := s.db.Query(`SELECT ts,method,session_id,agent,host,thread_id,verdict,reason FROM audience_log WHERE ts >= ? ORDER BY ts`, since)
+	if err != nil {
+		return rep, fmt.Errorf("routerstore: AudienceSince: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	unbound := map[string]bool{}
+	for rows.Next() {
+		var e AudienceEntry
+		if err := rows.Scan(&e.TS, &e.Method, &e.SessionID, &e.Agent, &e.Host, &e.ThreadID, &e.Verdict, &e.Reason); err != nil {
+			return rep, err
+		}
+		rep.Gated++
+		if e.Verdict == "allowed" {
+			rep.Allowed++
+			continue
+		}
+		rep.Failures = append(rep.Failures, e)
+		rep.ByAgent[e.Agent]++
+		if e.ThreadID == "" {
+			unbound[e.Agent+"@"+e.Host+" "+e.SessionID] = true
+		}
+	}
+	for k := range unbound {
+		rep.Unbound = append(rep.Unbound, k)
+	}
+	sort.Strings(rep.Unbound)
+	return rep, rows.Err()
 }

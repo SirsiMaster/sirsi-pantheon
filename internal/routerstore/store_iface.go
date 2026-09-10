@@ -64,6 +64,8 @@ type Store interface {
 	MintSession(host, agent, runtimeHash string) (Session, error)
 	MintSessionForThread(host, agent, runtimeHash, threadID string) (Session, error)
 	ThreadBinding(threadID string) (ThreadBinding, error)
+	RecordAudience(e AudienceEntry) error
+	AudienceSince(since string) (AudienceReport, error)
 	NotifyAgent(agent string)
 	NotifyPath(agent string) string
 	OperationalAgents() ([]string, error)

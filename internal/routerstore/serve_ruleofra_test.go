@@ -125,8 +125,8 @@ func TestSessionCarriesThreadAcrossTheWireAndSurvivesMigration(t *testing.T) {
 			_ = v.Scan(&ver)
 		}
 		_ = v.Close()
-		if ver != 19 {
-			t.Fatalf("schema version %d, want 19", ver)
+		if ver != 20 {
+			t.Fatalf("schema version %d, want 20", ver)
 		}
 	}
 }
@@ -340,5 +340,47 @@ func TestHostAuthoritySurvivesCompetingAdoption(t *testing.T) {
 	}
 	if b, _ := backend.ThreadBinding("thr-theirs"); b.Status != "suspended" || b.Host != "other-host" {
 		t.Fatalf("row must be untouched: %+v", b)
+	}
+}
+
+// The audience log records every gated call at mutation time (allowed,
+// would_refuse, refused) and AudienceSince reports the failures and the live
+// sessions that carried no thread — a finished session that was registered at
+// the time passes; a session unregistered at the time fails.
+func TestAudienceLogRecordsMutationTimeTruth(t *testing.T) {
+	var logs strings.Builder
+	backend, client := ruleHarness(t, "log", &logs)
+	host, _ := os.Hostname()
+	now := time.Date(2026, 9, 10, 15, 0, 0, 0, time.UTC)
+	register(t, backend, "thr-ok", "lane-ok", host, "active", now.Add(-time.Minute))
+	if _, _, err := client("lane-ok", "thr-ok").SendGuarded(SendReq{From: "lane-ok", To: "b", Title: "a", Type: "proposal", Instructions: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := client("lane-bad", "").SendGuarded(SendReq{From: "lane-bad", To: "b", Title: "b", Type: "proposal", Instructions: "x"}); err != nil {
+		t.Fatal(err) // log mode allows
+	}
+	// The registered thread finishes afterwards; its earlier mutation still passes the audit.
+	register(t, backend, "thr-ok", "lane-ok", host, "closed", now)
+	rep, err := backend.AudienceSince("2026-09-10T00:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Gated != 2 || rep.Allowed != 1 || len(rep.Failures) != 1 || rep.Failures[0].Agent != "lane-bad" || rep.Failures[0].Verdict != "would_refuse" {
+		t.Fatalf("report = %+v", rep)
+	}
+	if len(rep.Unbound) != 1 || !strings.HasPrefix(rep.Unbound[0], "lane-bad@") {
+		t.Fatalf("live coverage gap must name the unbound session: %v", rep.Unbound)
+	}
+	// Reads are not gated and not logged.
+	if _, err := client("lane-bad", "").Inbox("lane-bad"); err != nil {
+		t.Fatal(err)
+	}
+	rep2, _ := backend.AudienceSince("2026-09-10T00:00:00Z")
+	if rep2.Gated != 2 {
+		t.Fatalf("reads must not be logged: gated=%d", rep2.Gated)
+	}
+	// Over the wire, the report is readable by an unregistered session.
+	if wr, err := client("lane-bad", "").AudienceSince("2026-09-10T00:00:00Z"); err != nil || wr.Gated != 2 {
+		t.Fatalf("AudienceSince over the wire: %+v %v", wr, err)
 	}
 }

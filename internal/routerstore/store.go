@@ -698,6 +698,22 @@ DROP TABLE sessions;
 ALTER TABLE sessions_v19 RENAME TO sessions;
 CREATE INDEX IF NOT EXISTS idx_sessions_host_agent ON sessions(host, agent);
 `},
+	// v20 — the audience log (ADR-062 20b.3): one row per gated call with the
+	// gate's verdict, so "registration at mutation time" is a query, not a
+	// guess, and the switch from log to enforce is evidence-backed.
+	{20, `
+CREATE TABLE IF NOT EXISTS audience_log (
+    ts         TEXT NOT NULL,
+    method     TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    agent      TEXT NOT NULL,
+    host       TEXT NOT NULL,
+    thread_id  TEXT NOT NULL DEFAULT '',
+    verdict    TEXT NOT NULL,   -- 'allowed' | 'would_refuse' | 'refused'
+    reason     TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_audience_log_ts ON audience_log(ts);
+`},
 }
 
 // migrate applies any pending numbered migrations, tracked via the SQLite
