@@ -1,6 +1,7 @@
 package router
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -211,4 +212,61 @@ func mustEval(t *testing.T, p string) string {
 		t.Fatal(err)
 	}
 	return c
+}
+
+// The loader reports success only when bootstrap of the new plist succeeded:
+// a resident old job that will not leave, or a failing bootstrap, is an error —
+// never papered over by kickstart.
+func TestLoadRelayAgentFailsClosedWhenBootstrapNeverSucceeds(t *testing.T) {
+	prev := launchctlFn
+	t.Cleanup(func() { launchctlFn = prev })
+	var calls []string
+	resident := true
+	launchctlFn = func(args ...string) error {
+		calls = append(calls, args[0])
+		switch args[0] {
+		case "print":
+			if resident {
+				return nil
+			}
+			return errors.New("not found")
+		case "bootout":
+			return errors.New("bootout refused") // old job stays resident
+		case "bootstrap":
+			return errors.New("EIO")
+		}
+		return nil
+	}
+	prevWait := loadRelayAgentFn
+	_ = prevWait
+	err := loadRelayAgentFn("/tmp/x.plist")
+	if err == nil || !strings.Contains(err.Error(), "NOT loaded") {
+		t.Fatalf("must fail closed, got %v", err)
+	}
+	for _, c := range calls {
+		if c == "kickstart" {
+			t.Fatal("kickstart must never be a success path")
+		}
+	}
+	// Old job leaves after bootout and bootstrap succeeds: success.
+	calls = nil
+	launchctlFn = func(args ...string) error {
+		calls = append(calls, args[0])
+		switch args[0] {
+		case "print":
+			if resident {
+				return nil
+			}
+			return errors.New("not found")
+		case "bootout":
+			resident = false
+			return nil
+		case "bootstrap":
+			return nil
+		}
+		return nil
+	}
+	if err := loadRelayAgentFn("/tmp/x.plist"); err != nil {
+		t.Fatalf("bootout then bootstrap must succeed: %v", err)
+	}
 }

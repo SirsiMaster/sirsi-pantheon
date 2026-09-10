@@ -202,26 +202,35 @@ func writePrivatePlist(path, content string) (bool, string, error) {
 // consumes it, boots out any previous job (absence is fine) and bootstraps.
 // Unexported: only the installer's generated identity reaches launchd.
 // loadRelayAgentFn is the seam tests use to keep launchctl out of the run.
+// launchctlFn is the seam tests replace with a fake launchd.
+var launchctlFn = runLaunchctl
+
 var loadRelayAgentFn = func(plistPath string) error {
 	target := fmt.Sprintf("gui/%d/%s", os.Getuid(), RelayLaunchAgentLabel)
-	loaded := func() bool { return runLaunchctl("print", target) == nil }
-	if loaded() {
-		_ = runLaunchctl("bootout", target)
-		// bootout returns before the job is gone; bootstrapping too early fails
-		// with EIO (observed 2026-09-10 on the M5). Wait for it to leave.
-		for i := 0; i < 50 && loaded(); i++ {
-			time.Sleep(100 * time.Millisecond)
-		}
-	}
-	if err := runLaunchctl("bootstrap", fmt.Sprintf("gui/%d", os.Getuid()), plistPath); err != nil {
-		if loaded() { // already resident: restart it on the new plist instead of failing
-			if kerr := runLaunchctl("kickstart", "-k", target); kerr == nil {
-				return nil
+	loaded := func() bool { return launchctlFn("print", target) == nil }
+	// Only a successful `bootstrap` of THIS plist proves launchd consumed its
+	// executable/spool/env; `kickstart` merely reruns whatever is registered,
+	// so it is never used as a success path (SSA 2026-09-10). Bootout, wait
+	// for the old job to leave, bootstrap; up to three rounds; then fail closed.
+	var last error
+	for round := 0; round < 3; round++ {
+		if loaded() {
+			_ = launchctlFn("bootout", target)
+			for i := 0; i < 50 && loaded(); i++ {
+				time.Sleep(100 * time.Millisecond)
+			}
+			if loaded() {
+				last = fmt.Errorf("launchctl bootout %s: previous job still resident", RelayLaunchAgentLabel)
+				continue
 			}
 		}
-		return fmt.Errorf("launchctl bootstrap %s: %w", RelayLaunchAgentLabel, err)
+		if err := launchctlFn("bootstrap", fmt.Sprintf("gui/%d", os.Getuid()), plistPath); err != nil {
+			last = fmt.Errorf("launchctl bootstrap %s: %w", RelayLaunchAgentLabel, err)
+			continue
+		}
+		return nil
 	}
-	return nil
+	return fmt.Errorf("relay install: the new plist was NOT loaded (%w); the previous relay, if any, is what launchd runs — inspect `launchctl print %s`", last, target)
 }
 
 func loadRelayAgent(plistPath, content string) error {
