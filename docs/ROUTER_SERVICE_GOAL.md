@@ -190,10 +190,13 @@ named. A step is not done at green CI; it is done when its evidence row above is
       session that passes and one synthetic unregistered mutation that appears in (a) (test).
     - 20b.4 Canon: PANTHEON_RULES gains the Rule of Ra (A-number assigned there); ADR-062
       amendment names the service check. Evidence: the merged rule text + ADR revision line.
-    Ledger (D3): rows `rs-22g-rule-of-ra-service`, `rs-22h-rule-of-ra-launchers`,
-    `rs-22i-rule-of-ra-audit`, `rs-22j-rule-of-ra-canon` are registered on `ra` (pending,
-    review-dependent, chained after `rs-22e`) as of 2026-09-10T03:25Z; no implementation is
-    claimed before this amendment merges.
+    Ledger (D3): `rs-22g-rule-of-ra-service` DONE 2026-09-10T16:15Z — PR #724 (SSA-bound
+    a4dfe4f5, merged 20c9db60), schema v19 applied transactionally, revision 00008-dtt serving in
+    log mode, both Macs rebuilt; evidence `docs/evidence/ADR-062-RS22G-RULE-OF-RA-SERVICE-ROLLOUT-20260910.md`
+    (first signal, receipt retained: 466 WOULD REFUSE in [16:14:30Z, 16:25:00Z) on revision
+    00008-dtt — 456 from the M5 supervisor session `Mac@Mac`, 10 from Ra's untagged M1 shell,
+    none from a lane). `rs-22i-rule-of-ra-audit` = PR #726 (in review). `rs-22h-rule-of-ra-launchers` and
+    `rs-22j-rule-of-ra-canon` pending. Enforce waits for the 20b.3 audit, not a log grep.
 21. **Docs**: `docs/user-guides/router-service.md`, `internal/routerstore/README.md`, runbook
     `docs/runbooks/router-service-tokens-and-rollback.md`, CHANGELOG, ADR-INDEX (G11).
 22. **Retention**: M5 local `router.db` retained 30 days read-only, then pruned; retention policy
