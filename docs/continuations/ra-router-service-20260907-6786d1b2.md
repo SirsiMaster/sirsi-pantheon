@@ -137,3 +137,12 @@ Lessons: never edit a bash script while it runs (bash reads incrementally — st
 final import needs an EMPTY destination; `git bundle create` needs ref names. Still open: rs-21..25 (Phase E); SSA source review of #711
 (3 items, post-merge); owner: delete migrate images 020154Z/021020Z, dismiss card 005700. Existing M5/M1 shells need `source ~/.zshenv`.
 Rollback = `bash scripts/router-service/cutover-m5.sh rollback` (env out, router.db writable, WAL back, previous binary restored).
+
+## Goals, unified (2026-09-10T02:5xZ) — read this before claiming completion
+Original goal (docs/ROUTER_SERVICE_GOAL.md, owner 2026-09-02): any agent on any registered machine, Claude OR Codex, works the SAME
+ledger concurrently with exactly-once claims. Charter (ADR-063): goal #1 completes at rs-25 / G12, never at first deploy. Session goals
+(compaction 84ab1eaa): resume on the M1, unblock rs-15, provision→deploy→rehearse→migrate, rs-19 decision + unattended cut-over, land
+#711; owner 2026-09-10: unify M1/M5/GCP stores, unstall messages. State: rs-01..20 DONE; stores reconciled (service = record, M5 frozen,
+M1 empty). Gate truth: G1–G6 done (G6 rollback timing not re-run post-cutover); G7 PARTIAL — Codex lanes cannot reach the service from
+their no-network sandbox (owner decision: unix-socket relay / network / manual); G8 rollback verb exists, not rehearsed; G9–G12 = rs-21..25
+open. Follow-ups: PR #713 (runbook lessons), PR #714 (registry parity: ra/SSA on main), owner owes image deletes + card 005700.
