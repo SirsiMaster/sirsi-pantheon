@@ -133,11 +133,19 @@ func NewRemoteStore(base, token string) *RemoteStore {
 	threadID := strings.TrimSpace(os.Getenv("SIRSI_THREAD_ID"))
 	if (agent == "" || threadID == "") && IdentityHook != nil {
 		hookAgent, hookThread := IdentityHook()
+		hookAgent, hookThread = strings.TrimSpace(hookAgent), strings.TrimSpace(hookThread)
 		if agent == "" {
-			agent = strings.TrimSpace(hookAgent)
+			agent = hookAgent
 		}
-		if threadID == "" {
-			threadID = strings.TrimSpace(hookThread)
+		// Adopt the marker's thread only when it belongs to the agent we are
+		// about to bind as. A thread is meaningful only paired with its own
+		// agent, so an env-supplied foreign SIRSI_AGENT_ID must never inherit a
+		// marker thread that names a different agent (SSA 2026-09-10, PR #731):
+		// that would mint an incoherent (agentA, threadOfAgentB) audience. When
+		// they disagree, the foreign agent stays threadless until it supplies
+		// its own SIRSI_THREAD_ID.
+		if threadID == "" && hookThread != "" && hookAgent != "" && hookAgent == agent {
+			threadID = hookThread
 		}
 	}
 	if agent == "" {

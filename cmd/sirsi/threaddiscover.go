@@ -76,6 +76,7 @@ left for the operator to disambiguate in agents.json.
 		actions := router.ReconcileDiscovery(reg, threads, procs, host)
 
 		registered := 0
+		var selfAgent, selfThread string
 		for i := range actions {
 			if actions[i].Outcome != router.OutcomeRegister {
 				continue
@@ -102,19 +103,8 @@ left for the operator to disambiguate in agents.json.
 			}
 			registered++
 			actions[i].Reason = "registered " + out.ThreadID
-
-			// Rule of Ra (ADR-062 20b.2): on the SessionStart self-registration,
-			// the single registered thread IS this session — record its markers
-			// so later untagged `sirsi` calls from the session carry their
-			// audience. Guarded by --self: a multi-proc discover pass registers
-			// OTHER processes, whose threads must not be marked as this session's.
 			if threadDiscoverSelf {
-				if mErr := router.WriteSessionAgentMarker(router.CurrentSessionID(), out.AgentID); mErr != nil {
-					fmt.Fprintf(os.Stderr, "warning: could not write session→agent marker: %v\n", mErr)
-				}
-				if mErr := router.WriteSessionThreadMarker(router.CurrentSessionID(), out.ThreadID); mErr != nil {
-					fmt.Fprintf(os.Stderr, "warning: could not write session→thread marker: %v\n", mErr)
-				}
+				selfAgent, selfThread = out.AgentID, out.ThreadID
 			}
 
 			// ADR-024: discover REGISTERS, it does not arm. It used to fork a
@@ -137,8 +127,59 @@ left for the operator to disambiguate in agents.json.
 				router.WatcherFor(out.Surface, out.AgentID, out.ThreadID).Type + " — arm at the surface)"
 		}
 
+		// Rule of Ra (ADR-062 20b.2): record this session's identity markers so
+		// later untagged `sirsi` calls carry their audience. This must also fire
+		// when the session's thread ALREADY exists (OutcomeSkip), not only on a
+		// fresh register (SSA 2026-09-10, PR #731) — an already-registered
+		// session whose marker is missing (registered before this feature, or a
+		// cleared marker dir) would otherwise never acquire it. Guarded by
+		// --self so a multi-process discover never writes the caller's markers
+		// for another process's thread.
+		if threadDiscoverSelf {
+			if selfThread == "" {
+				selfAgent, selfThread = selfMarkerThread(threads, actions, host)
+			}
+			if selfAgent != "" && selfThread != "" {
+				if mErr := router.WriteSessionAgentMarker(router.CurrentSessionID(), selfAgent); mErr != nil {
+					fmt.Fprintf(os.Stderr, "warning: could not write session→agent marker: %v\n", mErr)
+				}
+				if mErr := router.WriteSessionThreadMarker(router.CurrentSessionID(), selfThread); mErr != nil {
+					fmt.Fprintf(os.Stderr, "warning: could not write session→thread marker: %v\n", mErr)
+				}
+			}
+		}
+
 		return renderDiscover(host, actions, registered)
 	},
+}
+
+// selfMarkerThread resolves the (agent, thread) for the current session from a
+// discover pass whose thread already exists (OutcomeSkip): it matches the live
+// thread on this host by the discovered PID. Returns empty strings when there
+// is no single unambiguous live thread — the caller then writes no marker
+// rather than guess. Pure, for testability.
+func selfMarkerThread(threads *router.ThreadRegistry, actions []router.DiscoverAction, host string) (string, string) {
+	if threads == nil || len(actions) != 1 {
+		return "", ""
+	}
+	pid := actions[0].Proc.PID
+	if pid <= 0 {
+		return "", ""
+	}
+	agent, thread := "", ""
+	for _, t := range threads.SortedThreads() {
+		if t == nil || t.Status.IsTerminal() || t.PID != pid {
+			continue
+		}
+		if t.Host != "" && host != "" && t.Host != host {
+			continue
+		}
+		if thread != "" {
+			return "", "" // more than one live thread for this pid — ambiguous
+		}
+		agent, thread = t.AgentID, t.ThreadID
+	}
+	return agent, thread
 }
 
 // localSurfaces returns the distinct process-surfaces present in the registry,

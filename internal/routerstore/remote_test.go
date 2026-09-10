@@ -156,12 +156,31 @@ func TestIdentityHookFillsAgentAndThreadWhenEnvUnset(t *testing.T) {
 		t.Fatalf("env must win: agent=%q thread=%q", rs.agent, rs.threadID)
 	}
 
-	// independent fallback: agent from env, thread from the hook.
+	// coherence (SSA #731): a FOREIGN env agent must NOT inherit the marker's
+	// thread (which names a different agent) — that would be an incoherent
+	// (claude-io, ra's thread) pair. Left threadless until it supplies its own.
 	t.Setenv("SIRSI_AGENT_ID", "claude-io")
 	t.Setenv("SIRSI_THREAD_ID", "")
 	rs = NewRemoteStore("https://x", "t")
-	if rs.agent != "claude-io" || rs.threadID != "thr-abc" {
-		t.Fatalf("agent from env, thread from hook: agent=%q thread=%q", rs.agent, rs.threadID)
+	if rs.agent != "claude-io" || rs.threadID != "" {
+		t.Fatalf("foreign env agent must stay threadless, not borrow the marker thread: agent=%q thread=%q", rs.agent, rs.threadID)
+	}
+
+	// but when the env agent AGREES with the marker agent, the thread is adopted.
+	IdentityHook = func() (string, string) { return "claude-io", "thr-io" }
+	t.Setenv("SIRSI_AGENT_ID", "claude-io")
+	t.Setenv("SIRSI_THREAD_ID", "")
+	rs = NewRemoteStore("https://x", "t")
+	if rs.agent != "claude-io" || rs.threadID != "thr-io" {
+		t.Fatalf("matching agent must adopt the marker thread: agent=%q thread=%q", rs.agent, rs.threadID)
+	}
+	// an explicit env thread is always honored, even with the agent from the marker.
+	IdentityHook = func() (string, string) { return "ra", "thr-abc" }
+	t.Setenv("SIRSI_AGENT_ID", "")
+	t.Setenv("SIRSI_THREAD_ID", "thr-explicit")
+	rs = NewRemoteStore("https://x", "t")
+	if rs.agent != "ra" || rs.threadID != "thr-explicit" {
+		t.Fatalf("explicit env thread must win with marker agent: agent=%q thread=%q", rs.agent, rs.threadID)
 	}
 
 	// no hook installed → env-only, host fallback for agent, empty thread.
