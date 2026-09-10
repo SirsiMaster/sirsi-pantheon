@@ -124,3 +124,16 @@ been re-run against the live instance yet (the schema is already applied); it ru
 Re-bind request = router item 20260909-172731 (ra → sirsi-software-admin). Correction on record: Ra first ran `scripts/bind/sirsi-bind.sh`
 thinking it sent the request; it recorded an APPROVED review as sirsi-bind[bot] on c8e4271 (review 5157708582), dismissed one minute
 later with the reason. The SSA reject stands until SSA re-reviews; nobody but the named binder runs sirsi-bind.sh.
+
+## CUT OVER — 2026-09-10T01:59Z–02:2xZ (session 84ab1eaa on the M1): the router service is the ledger of record
+Owner (native picker, after "get this done"): merge #711 now on owner authority → 6492a65a; repoint horus on the M5 → done (plist backup
+`.bak-20260910`, pid alive). Deploy rev 00007 (boot retry). M5 binary staged at ~/.sirsi/build/sirsi-main, swapped INSIDE the freeze (the
+new binary refuses the v16 local store). Run: freeze 21:59 local → snapshot 753/5717 v18 → import #1 v94gq ROLLED BACK (rehearsal rows on
+the service, 6,422 diverged keys — the transaction did its job) → TRUNCATE all 14 tables (psql sj98z) → import #2 gpld5 hash-equal
+e69c7de3, every row written, source identity bound → tokens Mac + MacBookPro → ~/.sirsi/router-service.env (0600) via ~/.zshenv on both
+Macs → both Macs `status` = 753/5717 over HTTPS, M5 write ok → horus kickstarted on new binary with SIRSI_ROUTER_URL. rs-18/19/20 closed
+from the M1 with no relay (run task verbs from a repo root: `no .agents/idea-router/` otherwise). Bind #4 routed to SSA with PR #713.
+Lessons: never edit a bash script while it runs (bash reads incrementally — step 6 died on a syntax error and was resumed FROM=6); the
+final import needs an EMPTY destination; `git bundle create` needs ref names. Still open: rs-21..25 (Phase E); SSA source review of #711
+(3 items, post-merge); owner: delete migrate images 020154Z/021020Z, dismiss card 005700. Existing M5/M1 shells need `source ~/.zshenv`.
+Rollback = `bash scripts/router-service/cutover-m5.sh rollback` (env out, router.db writable, WAL back, previous binary restored).
