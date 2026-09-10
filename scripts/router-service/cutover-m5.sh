@@ -83,7 +83,7 @@ if [ "$FROM" -le 2 ]; then
   m5 'sqlite3 ~/.sirsi/router.db "PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode=DELETE;" && chmod a-w ~/.sirsi/router.db && ls -la ~/.sirsi/router.db*'
   # Swap the binary now: rm then cp (cp over a live binary SIGKILLs it). Running processes keep the old inode.
   # sirsi-prev is the retained PRE-cutover binary: never overwrite an existing one.
-  m5 '[ -x ~/.sirsi/build/sirsi-prev ] || cp ~/.local/bin/sirsi ~/.sirsi/build/sirsi-prev; rm ~/.local/bin/sirsi && cp ~/.sirsi/build/sirsi-main ~/.local/bin/sirsi && ls -la ~/.local/bin/sirsi'
+  m5 '[ -e ~/.sirsi/build/sirsi-prev ] || cp ~/.local/bin/sirsi ~/.sirsi/build/sirsi-prev; rm ~/.local/bin/sirsi && cp ~/.sirsi/build/sirsi-main ~/.local/bin/sirsi && ls -la ~/.local/bin/sirsi'
 fi
 
 if [ "$FROM" -le 3 ]; then

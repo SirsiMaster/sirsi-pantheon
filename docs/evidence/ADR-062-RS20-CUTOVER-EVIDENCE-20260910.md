@@ -58,4 +58,3 @@ The two live host tokens (Mac, MacBookPro) were untouched and kept working throu
 
 ## Guards added after the run (PR #713, round 3)
 The activation guard now runs before ANY host mutation (top of the script, for FROM ≤ 4), so a default rerun on a cut-over host refuses before step 2; `~/.sirsi/build/sirsi-prev` is never overwritten once present; step 4 additionally refuses inside the psql job when the destination holds any host token.
-

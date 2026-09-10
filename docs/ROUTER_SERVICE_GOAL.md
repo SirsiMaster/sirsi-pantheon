@@ -23,7 +23,7 @@ keeps working alone on its local ledger when the service is unreachable.
 | G4 | Migration is provably lossless and idempotent | canonical dump hashes (before, after, re-import) equal; full diff empty; dry-run log |
 | G5 | Every request is authenticated as a registered session: host token, bound runtime, session id, signed nonce; ownership enforced on every lease and write | one rejection test per claim, each with a passing positive control |
 | G6 | Service runs on Cloud Run + Cloud SQL in `sirsi-nexus-live`; deploy has a rollback rehearsal, a revocation rehearsal, TLS pinning, least-privilege roles, and an audit receipt item in the ledger | receipt item id; `gcloud run services describe` digest matches it |
-| G7 | M5 and M1 both work the shared ledger; `sirsi router status` agrees on both; Codex lanes and Claude lanes on both hosts claim and close | status output from both hosts in the same minute |
+| G7 | M5 and M1 both work the shared ledger; `sirsi router status` agrees on both; Codex lanes and Claude lanes on both hosts claim and close | status output from both hosts in the same minute; **2026-09-10: PARTIAL** — Claude both hosts + one Codex lane (M5, network exception); closes via step 20a |
 | G8 | Unset `SIRSI_ROUTER_URL` on a node and it is back on its local file with no data loss | rehearsed, timed, recorded |
 | G9 | Adding a third machine is: mint token, set one env var, `sirsi thread register` | rehearsed on a fresh user account |
 | G10 | Owner-facing: Horus per node shows fleet-wide board; menubar and `sirsi router board` read the service | screenshot + board output |
@@ -91,6 +91,40 @@ named. A step is not done at green CI; it is done when its evidence row above is
 19. **Third-machine rehearsal** on a fresh macOS user account: token, env var, register, claim,
     close (G9).
 20. **Horus and menubar read the service**; `sirsi router board`/`fleet` show all hosts (G10).
+20a. **Codex-lane relay — least privilege (owner 2026-09-10: "power invested in Ra").** Codex sandboxes
+    have no DNS, so after the cut-over a Codex lane cannot reach the service; the interim is a
+    network exception on the SSA lane only. The relay retires it. Steps, each with evidence:
+    - 20a.1 **Discovery**: prove whether a `codex exec --sandbox workspace-write` process can connect
+      to a unix-domain socket under `$HOME/.sirsi/` (seatbelt profile). Evidence: the raw codex
+      output of a socket round-trip, both with and without `network_access`. If it cannot, the
+      fallback design (per-lane loopback port or a filesystem queue) is written as 20a.1b before
+      any code.
+    - 20a.2 `sirsi router relay serve --socket $HOME/.sirsi/router.sock`: an HTTP listener on a
+      unix socket (0600) that forwards `/v1/*` to `SIRSI_ROUTER_URL` with the host token from its
+      OWN environment. It refuses the token methods by name (`/v1/call/MintHostToken`,
+      `RevokeHostToken`, `ListHostTokens`), forwards everything else byte-for-byte so the
+      service's session, signature, runtime-hash and ownership validation is unchanged, and logs
+      agent id + method only — never a token, session secret or nonce. Least-privilege claim, stated
+      exactly: the token is held by one process instead of every lane's environment; a 0600
+      socket does NOT isolate the relay from other processes under the same uid. Evidence: unit
+      tests (forwarding, refusal list, secret-free log) + `curl --unix-socket` receipt.
+    - 20a.3 Client: `RemoteStore` accepts `SIRSI_ROUTER_URL=unix:///path` (http over a unix
+      dialer) and `Resolve()` does not require `SIRSI_ROUTER_TOKEN` for it. Evidence: tests + a
+      `sirsi router status` through the socket.
+    - 20a.4 LaunchAgent `ai.sirsi.router.relay` per host, token only in its 0600 plist; installed
+      by `sirsi router relay install`; wake plists stop carrying the token once the relay is up.
+      Evidence: `launchctl list`, plist mode, `ps eww` of a wake loop showing no token.
+    - 20a.5 Registry: every Codex lane's env points at the socket; the SSA lane's
+      `network_access=true` is removed. Evidence: the SSA lane claims and closes a router item with
+      network_access absent (wake log + item result). G7 then needs only 20a.6.
+    Ledger (D3): rows `rs-22a-relay-discovery` … `rs-22f-g7-closure` registered on `ra` with this
+    dependency chain, `rs-22f` owner-responsible; `rs-20-cutover-bind4` narrowed to its proven subset
+    and `rs-20b-bind4-full` holds the unfinished Bind #4 obligation, blocked by `rs-22f`.
+    - 20a.6 **G7 closure (owner gate).** The original condition is Codex AND Claude on BOTH hosts,
+      and only an M1 Codex lane claiming and closing satisfies it. The alternate path is an owner
+      decision that AMENDS G7's condition in this document (row G7 rewritten to name the amended
+      scope and the decision's date/item), with the M1 Codex proof recorded in the evidence file
+      as EXCLUDED — never as passed. G7 stays PARTIAL until one of those two exists.
 21. **Docs**: `docs/user-guides/router-service.md`, `internal/routerstore/README.md`, runbook
     `docs/runbooks/router-service-tokens-and-rollback.md`, CHANGELOG, ADR-INDEX (G11).
 22. **Retention**: M5 local `router.db` retained 30 days read-only, then pruned; retention policy
