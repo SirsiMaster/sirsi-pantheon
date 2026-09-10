@@ -2,8 +2,11 @@ package routerstore
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -90,5 +93,76 @@ func TestResolveSpoolNeedsNoToken(t *testing.T) {
 	t.Setenv("SIRSI_ROUTER_URL", "https://router.invalid")
 	if _, err := Resolve(); err == nil {
 		t.Fatal("https without token must still be refused")
+	}
+}
+
+// At-most-once: a relay that dies after consuming (in-flight file present) must
+// not re-forward on restart; the caller receives outcome-unknown and the
+// service sees zero calls for it. A request another relay already consumed is
+// never forwarded either.
+func TestSpoolRelayNeverReplaysInflight(t *testing.T) {
+	spool := t.TempDir()
+	calls := 0
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { calls++; _, _ = w.Write([]byte(`{"result":[]}`)) }))
+	t.Cleanup(svc.Close)
+	lane := filepath.Join(spool, "lane-z")
+	for _, d := range []string{"req", "inflight", "res"} {
+		if err := os.MkdirAll(filepath.Join(lane, d), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A previous relay consumed this Send and died before publishing.
+	if err := writeAtomic(filepath.Join(lane, "inflight", "1-1-dead.json"), spoolRequest{Method: "SendGuarded", Headers: map[string]string{}, Body: []byte(`{"args":[]}`)}); err != nil {
+		t.Fatal(err)
+	}
+	rl := &Relay{Spool: spool, Base: svc.URL, Token: "t", Log: slog.New(slog.NewTextHandler(&strings.Builder{}, nil)), Client: svc.Client(), now: time.Now}
+	if n := rl.recoverInflight(); n != 1 {
+		t.Fatalf("recover: %d", n)
+	}
+	b, err := os.ReadFile(filepath.Join(lane, "res", "1-1-dead.json"))
+	var sr spoolResponse
+	if err != nil || json.Unmarshal(b, &sr) != nil || sr.Status != http.StatusBadGateway || !strings.Contains(string(sr.Body), "OUTCOME UNKNOWN") || !strings.Contains(string(sr.Body), "SendGuarded 1-1-dead") {
+		t.Fatalf("in-flight file must yield outcome-unknown naming method+id: %s %v", b, err)
+	}
+	if calls != 0 {
+		t.Fatalf("restart must never re-forward: %d calls", calls)
+	}
+	if _, err := os.Stat(filepath.Join(lane, "inflight", "1-1-dead.json")); !os.IsNotExist(err) {
+		t.Fatal("in-flight file must be removed after reporting")
+	}
+	// Consume happens before forward: a request that vanishes between glob and
+	// rename (another relay took it) is not forwarded.
+	if err := writeAtomic(filepath.Join(lane, "req", "1-2-live.json"), spoolRequest{Method: "ListAll", Headers: map[string]string{}, Body: []byte(`{"args":[]}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if n := rl.serveOnce(); n != 1 || calls != 1 {
+		t.Fatalf("live request: handled=%d calls=%d", n, calls)
+	}
+	if left, _ := filepath.Glob(filepath.Join(lane, "inflight", "*")); len(left) != 0 {
+		t.Fatalf("in-flight must be deleted after publish: %v", left)
+	}
+}
+
+// Response lost after the forward (relay published nothing): the lane reports
+// OUTCOME UNKNOWN naming the method and id, and does not retry by itself.
+func TestSpoolLostResponseIsOutcomeUnknown(t *testing.T) {
+	spool := t.TempDir()
+	tr := newSpoolTransport(spool, "lane-w")
+	tr.wait = 600 * time.Millisecond
+	// A "relay" that consumes (renames into inflight) but never answers.
+	go func() {
+		for i := 0; i < 40; i++ {
+			files, _ := filepath.Glob(filepath.Join(spool, "lane-w", "req", "*.json"))
+			for _, f := range files {
+				_ = os.MkdirAll(filepath.Join(spool, "lane-w", "inflight"), 0o700)
+				_ = os.Rename(f, filepath.Join(spool, "lane-w", "inflight", filepath.Base(f)))
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}()
+	req, _ := http.NewRequest(http.MethodPost, "http://spool/v1/call/SendGuarded", strings.NewReader(`{"args":[]}`))
+	_, err := tr.RoundTrip(req)
+	if err == nil || !strings.Contains(err.Error(), "OUTCOME UNKNOWN") || !strings.Contains(err.Error(), "SendGuarded id ") {
+		t.Fatalf("want outcome-unknown naming method+id, got %v", err)
 	}
 }

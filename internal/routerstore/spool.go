@@ -206,6 +206,7 @@ func (rl *Relay) Serve(ctx context.Context) error {
 	if err := os.MkdirAll(rl.Spool, 0o700); err != nil {
 		return err
 	}
+	rl.recoverInflight()
 	lastSweep := rl.now()
 	for {
 		n := rl.serveOnce()
@@ -223,21 +224,59 @@ func (rl *Relay) Serve(ctx context.Context) error {
 	}
 }
 
-// serveOnce forwards every pending request file once and returns how many.
+// serveOnce consumes and forwards every pending request file once and returns
+// how many it handled. At-most-once (20a.1b): a request is CONSUMED by renaming
+// it into <agent>/inflight/ BEFORE the HTTP forward; a failed rename means
+// another relay owns it and it is not forwarded. The response is published, then
+// the in-flight file is deleted last.
 func (rl *Relay) serveOnce() int {
 	files, _ := filepath.Glob(filepath.Join(rl.Spool, "*", "req", "*.json"))
 	sort.Strings(files)
+	n := 0
 	for _, f := range files {
 		agent := filepath.Base(filepath.Dir(filepath.Dir(f)))
 		id := strings.TrimSuffix(filepath.Base(f), ".json")
-		resPath := filepath.Join(rl.Spool, agent, "res", id+".json")
-		sr := rl.forward(agent, f)
-		if err := os.MkdirAll(filepath.Dir(resPath), 0o700); err == nil {
-			if err := writeAtomic(resPath, sr); err != nil {
-				rl.Log.Error("relay: write response", "agent", agent, "id", id, "err", err)
-			}
+		inflight := filepath.Join(rl.Spool, agent, "inflight", id+".json")
+		if err := os.MkdirAll(filepath.Dir(inflight), 0o700); err != nil {
+			continue
 		}
+		if err := os.Rename(f, inflight); err != nil {
+			continue // consumed by someone else, or gone: never forward
+		}
+		n++
+		rl.publish(agent, id, rl.forward(agent, inflight))
+		_ = os.Remove(inflight)
+	}
+	return n
+}
+
+// publish writes the response file atomically.
+func (rl *Relay) publish(agent, id string, sr spoolResponse) {
+	resPath := filepath.Join(rl.Spool, agent, "res", id+".json")
+	if err := os.MkdirAll(filepath.Dir(resPath), 0o700); err == nil {
+		if err := writeAtomic(resPath, sr); err != nil {
+			rl.Log.Error("relay: write response", "agent", agent, "id", id, "err", err)
+		}
+	}
+}
+
+// recoverInflight runs once at startup: anything under <agent>/inflight/ was
+// consumed by a relay that died before deleting it. It is NEVER re-forwarded —
+// the service may already have committed — the caller gets outcome-unknown.
+func (rl *Relay) recoverInflight() int {
+	files, _ := filepath.Glob(filepath.Join(rl.Spool, "*", "inflight", "*.json"))
+	for _, f := range files {
+		agent := filepath.Base(filepath.Dir(filepath.Dir(f)))
+		id := strings.TrimSuffix(filepath.Base(f), ".json")
+		method := "?"
+		var req spoolRequest
+		if b, err := os.ReadFile(f); err == nil && json.Unmarshal(b, &req) == nil {
+			method = req.Method
+		}
+		body, _ := json.Marshal(wireResponse{Error: &wireError{Name: "relay", Message: "relay restarted after consuming " + method + " " + id + ": OUTCOME UNKNOWN — re-query before retrying a mutation"}})
+		rl.publish(agent, id, spoolResponse{Status: http.StatusBadGateway, Body: body})
 		_ = os.Remove(f)
+		rl.Log.Warn("relay: in-flight request from a previous relay reported as outcome-unknown", "agent", agent, "method", method, "id", id)
 	}
 	return len(files)
 }
@@ -286,7 +325,7 @@ func (rl *Relay) forward(agent, path string) spoolResponse {
 
 // sweep removes request/response files older than spoolStaleAfter.
 func (rl *Relay) sweep() {
-	for _, pat := range []string{"*/req/*.json", "*/res/*.json", "*/req/*.tmp", "*/res/*.tmp"} {
+	for _, pat := range []string{"*/req/*.json", "*/res/*.json", "*/inflight/*.json", "*/req/*.tmp", "*/res/*.tmp"} {
 		files, _ := filepath.Glob(filepath.Join(rl.Spool, pat))
 		for _, f := range files {
 			if st, err := os.Stat(f); err == nil && rl.now().Sub(st.ModTime()) > spoolStaleAfter {
