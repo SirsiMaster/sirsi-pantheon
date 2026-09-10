@@ -112,7 +112,17 @@ named. A step is not done at green CI; it is done when its evidence row above is
       `{method, headers:{session,nonce,runtime,signature}, body}` forwarded byte-for-byte with the
       relay adding only `Authorization`; the relay writes `res/<id>.json.tmp` → rename; the client
       waits on the response with kqueue/poll and a bounded timeout (default 30 s, per-call
-      override), then deletes both files. Bounds: request and response bodies ≤ 4 MiB (the service
+      override), then deletes both files. **Correlation and uncertain writes:** the request id is
+      `<unixms>-<per-process sequence>-<8 random hex>` scoped to the lane directory, so two lanes,
+      two processes, or a relay restart cannot collide; the relay forwards each request file at
+      most once and deletes it before writing the response, so a relay restart re-forwards only
+      files it never consumed. A response lost after the service committed (relay crash between
+      forward and publish, or a client timeout) is reported to the caller as **outcome-unknown**
+      naming the method and id; the client NEVER retries a mutating method (`Send`, `Claim`,
+      `Complete`, `Respond`, task verbs) automatically — the caller re-queries (`Get`, `Inbox`,
+      `ledger`) and decides. Read-only methods may be retried freely. A durable service-side
+      idempotency key for mutations is not part of this step; if the outcome-unknown rate is ever
+      non-zero in practice, it becomes a step of its own with its own evidence. Bounds: request and response bodies ≤ 4 MiB (the service
       limit), at most 64 in-flight requests per lane, stale files older than 10 min are swept by
       the relay with a log line. The relay refuses `MintHostToken`, `RevokeHostToken`,
       `ListHostTokens` by name; the spool carries no token; the relay log carries agent + method +
@@ -157,10 +167,18 @@ named. A step is not done at green CI; it is done when its evidence row above is
       and bootstrap verbs unaffected — plus one live refusal receipt from the service.
     - 20b.2 Launchers register first: wake loops (already), horus (already), interactive sessions
       (`sirsi thread register` in the session-start hook), GUI-launched codex (the consumer prompt's
-      first line). Evidence: `sirsi thread list` on the service shows every sender of the last
-      24 h with an active thread.
-    - 20b.3 Registry audit verb `sirsi router audience`: senders without an active thread, in the
-      board and in `router doctor`. Evidence: board output with zero unregistered senders.
+      first line). Evidence — registration freshness AT MUTATION TIME, not "active now": for every
+      item mutation of the last 24 h (`opened`, `closed`, claim/lease changes), the mutating
+      session's thread row was registered and inside its heartbeat window at that timestamp. A
+      session that registered, mutated, and then finished legitimately PASSES (its thread is
+      idle/closed now, but was live at the mutation). A mutation whose session had no registration
+      at that time FAILS. Current live-session coverage (`sirsi thread list`) is reported
+      separately and is not the pass criterion.
+    - 20b.3 Registry audit verb `sirsi router audience [--since 24h]`: two tables — (a) mutations
+      whose session was unregistered at mutation time (the failures), (b) live sessions without an
+      active thread right now (the coverage gap); both on the board and in `router doctor`.
+      Evidence: audit output with zero rows in (a) over 24 h, including at least one finished
+      session that passes and one synthetic unregistered mutation that appears in (a) (test).
     - 20b.4 Canon: PANTHEON_RULES gains the Rule of Ra (A-number assigned there); ADR-062
       amendment names the service check. Evidence: the merged rule text + ADR revision line.
     Ledger (D3): rows `rs-22g-rule-of-ra-service`, `rs-22h-rule-of-ra-launchers`,
