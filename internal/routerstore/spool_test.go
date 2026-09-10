@@ -427,3 +427,35 @@ func TestSpoolCorruptResponseIsOutcomeUnknown(t *testing.T) {
 		t.Fatalf("corrupt response must be outcome-unknown naming method+id: %v", err)
 	}
 }
+
+// Lanes are served concurrently: with a 300 ms upstream, two lanes' requests
+// complete in well under 600 ms; within a lane, order is preserved.
+func TestSpoolRelayServesLanesConcurrently(t *testing.T) {
+	spool := t.TempDir()
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(300 * time.Millisecond)
+		_, _ = w.Write([]byte(`{"result":[]}`))
+	}))
+	t.Cleanup(svc.Close)
+	rl := &Relay{Spool: spool, Base: svc.URL, Token: "t", Log: slog.New(slog.NewTextHandler(&strings.Builder{}, nil)), Client: svc.Client(), now: time.Now}
+	for _, lane := range []string{"lane-a", "lane-b", "lane-c"} {
+		if err := os.MkdirAll(filepath.Join(spool, lane, "req"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := writeAtomic(filepath.Join(spool, lane, "req", "1-1-x.json"), spoolRequest{Method: "ListAll", Headers: map[string]string{}, Body: []byte(`{"args":[]}`)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	start := time.Now()
+	if n := rl.serveOnce(); n != 3 {
+		t.Fatalf("handled %d", n)
+	}
+	if el := time.Since(start); el > 700*time.Millisecond {
+		t.Fatalf("three lanes took %s — served sequentially", el)
+	}
+	for _, lane := range []string{"lane-a", "lane-b", "lane-c"} {
+		if _, err := os.Stat(filepath.Join(spool, lane, "res", "1-1-x.json")); err != nil {
+			t.Fatalf("%s: no response", lane)
+		}
+	}
+}

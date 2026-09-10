@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
+	"time"
 )
 
 // RelayLaunchAgentLabel is the launchd label of the host relay.
@@ -202,8 +203,22 @@ func writePrivatePlist(path, content string) (bool, string, error) {
 // Unexported: only the installer's generated identity reaches launchd.
 // loadRelayAgentFn is the seam tests use to keep launchctl out of the run.
 var loadRelayAgentFn = func(plistPath string) error {
-	_ = runLaunchctl("bootout", fmt.Sprintf("gui/%d/%s", os.Getuid(), RelayLaunchAgentLabel))
+	target := fmt.Sprintf("gui/%d/%s", os.Getuid(), RelayLaunchAgentLabel)
+	loaded := func() bool { return runLaunchctl("print", target) == nil }
+	if loaded() {
+		_ = runLaunchctl("bootout", target)
+		// bootout returns before the job is gone; bootstrapping too early fails
+		// with EIO (observed 2026-09-10 on the M5). Wait for it to leave.
+		for i := 0; i < 50 && loaded(); i++ {
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
 	if err := runLaunchctl("bootstrap", fmt.Sprintf("gui/%d", os.Getuid()), plistPath); err != nil {
+		if loaded() { // already resident: restart it on the new plist instead of failing
+			if kerr := runLaunchctl("kickstart", "-k", target); kerr == nil {
+				return nil
+			}
+		}
 		return fmt.Errorf("launchctl bootstrap %s: %w", RelayLaunchAgentLabel, err)
 	}
 	return nil

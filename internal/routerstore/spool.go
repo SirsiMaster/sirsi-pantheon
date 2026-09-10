@@ -31,6 +31,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -277,22 +278,42 @@ func (rl *Relay) Serve(ctx context.Context) error {
 func (rl *Relay) serveOnce() int {
 	files, _ := filepath.Glob(filepath.Join(rl.Spool, "*", "req", "*.json"))
 	sort.Strings(files)
-	n := 0
+	// Lanes are served CONCURRENTLY (one goroutine per lane per pass) and each
+	// lane's requests in order: a full-ledger ListAll from one lane must not
+	// hold five other lanes past their 5 s per-call deadline (fleet activation
+	// 2026-09-10 showed exactly that with one sequential loop).
+	byLane := map[string][]string{}
+	var lanes []string
 	for _, f := range files {
 		agent := filepath.Base(filepath.Dir(filepath.Dir(f)))
-		id := strings.TrimSuffix(filepath.Base(f), ".json")
-		inflight := filepath.Join(rl.Spool, agent, "inflight", id+".json")
-		if err := os.MkdirAll(filepath.Dir(inflight), 0o700); err != nil {
-			continue
+		if _, ok := byLane[agent]; !ok {
+			lanes = append(lanes, agent)
 		}
-		if err := os.Rename(f, inflight); err != nil {
-			continue // consumed by someone else, or gone: never forward
-		}
-		n++
-		rl.publish(agent, id, rl.forward(agent, id, inflight))
-		_ = os.Remove(inflight)
+		byLane[agent] = append(byLane[agent], f)
 	}
-	return n
+	var wg sync.WaitGroup
+	var handled atomic.Int32
+	for _, agent := range lanes {
+		wg.Add(1)
+		go func(agent string, queue []string) {
+			defer wg.Done()
+			for _, f := range queue {
+				id := strings.TrimSuffix(filepath.Base(f), ".json")
+				inflight := filepath.Join(rl.Spool, agent, "inflight", id+".json")
+				if err := os.MkdirAll(filepath.Dir(inflight), 0o700); err != nil {
+					continue
+				}
+				if err := os.Rename(f, inflight); err != nil {
+					continue // consumed by someone else, or gone: never forward
+				}
+				handled.Add(1)
+				rl.publish(agent, id, rl.forward(agent, id, inflight))
+				_ = os.Remove(inflight)
+			}
+		}(agent, byLane[agent])
+	}
+	wg.Wait()
+	return int(handled.Load())
 }
 
 // publish writes the response file atomically.
