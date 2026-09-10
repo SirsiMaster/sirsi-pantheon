@@ -238,6 +238,7 @@ type Relay struct {
 	laneMu  sync.Mutex
 	lanes   map[string]chan struct{}
 	handled atomic.Int32
+	scans   atomic.Int32 // discovery passes (tests assert no spin under backlog)
 }
 
 // Serve polls the spool until ctx is done. Each request file is forwarded once;
@@ -263,11 +264,19 @@ func (rl *Relay) Serve(ctx context.Context) error {
 	rl.recoverInflight()
 	lastSweep := rl.now()
 	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+		}
 		woke := rl.discover(ctx)
 		if rl.now().Sub(lastSweep) > time.Minute {
 			rl.sweep()
 			lastSweep = rl.now()
 		}
+		// Sleep unless this pass actually delivered a NEW wake: a lane whose
+		// worker is busy with a backlog already has a pending signal, and
+		// rescanning for it would spin (SSA 2026-09-10: 471 scans in 100 ms).
 		if woke == 0 {
 			select {
 			case <-ctx.Done():
@@ -279,8 +288,11 @@ func (rl *Relay) Serve(ctx context.Context) error {
 }
 
 // discover lists pending request files, wakes each lane's worker (starting it
-// on first sight) and returns immediately — it never waits for any lane.
+// on first sight) and returns immediately — it never waits for any lane. The
+// return value counts wakes actually DELIVERED (a worker that already holds a
+// pending signal is not counted), so a backlog never turns the loop into a spin.
 func (rl *Relay) discover(ctx context.Context) int {
+	rl.scans.Add(1)
 	files, _ := filepath.Glob(filepath.Join(rl.Spool, "*", "req", "*.json"))
 	seen := map[string]bool{}
 	for _, f := range files {
@@ -290,6 +302,7 @@ func (rl *Relay) discover(ctx context.Context) int {
 	if rl.lanes == nil {
 		rl.lanes = map[string]chan struct{}{}
 	}
+	delivered := 0
 	for agent := range seen {
 		ch, ok := rl.lanes[agent]
 		if !ok {
@@ -299,11 +312,12 @@ func (rl *Relay) discover(ctx context.Context) int {
 		}
 		select { // coalesce wakes: one pending signal is enough
 		case ch <- struct{}{}:
+			delivered++
 		default:
 		}
 	}
 	rl.laneMu.Unlock()
-	return len(seen)
+	return delivered
 }
 
 // laneWorker drains one lane's queue in file order whenever woken.

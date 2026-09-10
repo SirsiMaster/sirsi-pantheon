@@ -12,9 +12,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
-	"time"
 )
 
 // RelayLaunchAgentLabel is the launchd label of the host relay.

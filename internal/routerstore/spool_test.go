@@ -481,3 +481,38 @@ func TestSpoolRelayNewLaneIsNotBlockedBySlowLane(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 }
+
+// A backlog inside one lane must not spin the discovery loop, and cancellation
+// must return promptly while that backlog is still pending.
+func TestSpoolRelayBacklogDoesNotSpinAndCancels(t *testing.T) {
+	spool := t.TempDir()
+	release := make(chan struct{})
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { <-release; _, _ = w.Write([]byte(`{"result":[]}`)) }))
+	t.Cleanup(svc.Close)
+	rl := &Relay{Spool: spool, Base: svc.URL, Token: "t", Log: slog.New(slog.NewTextHandler(&strings.Builder{}, nil)), Client: svc.Client(), now: time.Now}
+	if err := os.MkdirAll(filepath.Join(spool, "lane-q", "req"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"1-1-a", "1-2-b"} { // two pending in the SAME lane
+		if err := writeAtomic(filepath.Join(spool, "lane-q", "req", id+".json"), spoolRequest{Method: "ListAll", Headers: map[string]string{}, Body: []byte(`{"args":[]}`)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { _ = rl.Serve(ctx); close(done) }()
+	time.Sleep(600 * time.Millisecond) // first request held upstream, second queued behind it
+	if n := rl.scans.Load(); n > 8 {
+		t.Fatalf("discovery spun: %d scans in 600 ms with a %s poll", n, spoolPoll)
+	}
+	start := time.Now()
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("Serve did not return within 300 ms of cancellation while a backlog was pending")
+	}
+	_ = start
+	close(release) // let the held worker finish before TempDir cleanup
+	time.Sleep(100 * time.Millisecond)
+}
