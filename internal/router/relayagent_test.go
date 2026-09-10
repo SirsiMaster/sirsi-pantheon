@@ -50,8 +50,8 @@ func TestInstallRelayLaunchAgentIsPrivateAndCarriesTheToken(t *testing.T) {
 		t.Fatalf("launchctl must receive exactly the generated plist: %v", *loaded)
 	}
 	// Idempotent and re-tightened.
-	if err := os.Chmod(path, 0o644); err != nil {
-		t.Fatal(err)
+	if cerr := os.Chmod(path, 0o644); cerr != nil {
+		t.Fatal(cerr)
 	}
 	changed, _, err = InstallRelayLaunchAgent(spool, "https://router.example.test", "t<&>k")
 	if err != nil || changed {
@@ -63,10 +63,14 @@ func TestInstallRelayLaunchAgentIsPrivateAndCarriesTheToken(t *testing.T) {
 	// Refusals: spool URL, empty token, relative spool.
 	for name, c := range map[string][3]string{
 		"spool URL":      {spool, "spool://x", "t"},
+		"plaintext http": {spool, "http://router.example.test", "t"},
+		"loopback http":  {spool, "http://127.0.0.1:8080", "t"},
+		"credentials":    {spool, "https://u:p@router.example.test", "t"},
+		"empty URL":      {spool, "", "t"},
 		"empty token":    {spool, "https://x", ""},
 		"relative spool": {"relay", "https://x", "t"},
 	} {
-		if _, _, err := InstallRelayLaunchAgent(c[0], c[1], c[2]); err == nil {
+		if _, _, rerr := InstallRelayLaunchAgent(c[0], c[1], c[2]); rerr == nil {
 			t.Fatalf("%s must be refused", name)
 		}
 	}

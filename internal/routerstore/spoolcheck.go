@@ -2,8 +2,10 @@ package routerstore
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 )
 
@@ -38,8 +40,8 @@ func CheckSpoolDir(spool string) (string, error) {
 	st, err := os.Lstat(canon)
 	switch {
 	case os.IsNotExist(err):
-		if err := os.Mkdir(canon, 0o700); err != nil {
-			return "", fmt.Errorf("spool: create: %w", err)
+		if merr := os.Mkdir(canon, 0o700); merr != nil {
+			return "", fmt.Errorf("spool: create: %w", merr)
 		}
 		st, err = os.Lstat(canon)
 		if err != nil {
@@ -63,4 +65,20 @@ func CheckSpoolDir(spool string) (string, error) {
 		}
 	}
 	return canon, nil
+}
+
+// CheckServiceURL enforces the service contract for any process that will hold
+// the host token: an https URL with a host and nothing else. Plaintext http is
+// refused outright — a bearer token must never travel unencrypted — and there
+// is no development exception here (tests exercise the relay through the Go
+// struct with httptest, never through this gate).
+func CheckServiceURL(raw string) (string, error) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return "", fmt.Errorf("service URL %q: %w", raw, err)
+	}
+	if u.Scheme != "https" || u.Host == "" || u.User != nil {
+		return "", fmt.Errorf("service URL %q: must be https://host[:port][/path] with no credentials (the host token must never travel in plaintext)", raw)
+	}
+	return strings.TrimRight(u.String(), "/"), nil
 }

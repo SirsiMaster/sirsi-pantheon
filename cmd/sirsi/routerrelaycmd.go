@@ -38,9 +38,9 @@ Authorization header, and writes <spool>/<agent>/res/<id>.json atomically.
 MintHostToken, RevokeHostToken and ListHostTokens are refused by name. Lanes set
 SIRSI_ROUTER_URL=spool://<spool> and need no token.`,
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		base := strings.TrimSpace(os.Getenv("SIRSI_ROUTER_URL"))
-		if base == "" || routerstore.SpoolDir(base) != "" {
-			return errors.New("router relay serve: SIRSI_ROUTER_URL must be the service's https URL in the relay's own environment (a spool:// URL is for lanes)")
+		base, err := routerstore.CheckServiceURL(os.Getenv("SIRSI_ROUTER_URL"))
+		if err != nil {
+			return fmt.Errorf("router relay serve: %w (a spool:// URL is for lanes; the relay needs the service's https URL in its own environment)", err)
 		}
 		tok := strings.TrimSpace(os.Getenv("SIRSI_ROUTER_TOKEN"))
 		if tok == "" {
