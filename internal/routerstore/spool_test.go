@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -105,8 +106,8 @@ func TestResolveSpoolNeedsNoToken(t *testing.T) {
 // never forwarded either.
 func TestSpoolRelayNeverReplaysInflight(t *testing.T) {
 	spool := t.TempDir()
-	calls := 0
-	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { calls++; _, _ = w.Write([]byte(`{"result":[]}`)) }))
+	var calls atomic.Int32
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { calls.Add(1); _, _ = w.Write([]byte(`{"result":[]}`)) }))
 	t.Cleanup(svc.Close)
 	lane := filepath.Join(spool, "lane-z")
 	for _, d := range []string{"req", "inflight", "res"} {
@@ -127,8 +128,8 @@ func TestSpoolRelayNeverReplaysInflight(t *testing.T) {
 	if err != nil || json.Unmarshal(b, &sr) != nil || sr.Status != http.StatusBadGateway || !strings.Contains(string(sr.Body), "OUTCOME UNKNOWN") || !strings.Contains(string(sr.Body), "SendGuarded 1-1-dead") {
 		t.Fatalf("in-flight file must yield outcome-unknown naming method+id: %s %v", b, err)
 	}
-	if calls != 0 {
-		t.Fatalf("restart must never re-forward: %d calls", calls)
+	if calls.Load() != 0 {
+		t.Fatalf("restart must never re-forward: %d calls", calls.Load())
 	}
 	if _, err := os.Stat(filepath.Join(lane, "inflight", "1-1-dead.json")); !os.IsNotExist(err) {
 		t.Fatal("in-flight file must be removed after reporting")
@@ -138,8 +139,8 @@ func TestSpoolRelayNeverReplaysInflight(t *testing.T) {
 	if err := writeAtomic(filepath.Join(lane, "req", "1-2-live.json"), spoolRequest{Method: "ListAll", Headers: map[string]string{}, Body: []byte(`{"args":[]}`)}); err != nil {
 		t.Fatal(err)
 	}
-	if n := rl.serveOnce(); n != 1 || calls != 1 {
-		t.Fatalf("live request: handled=%d calls=%d", n, calls)
+	if n := rl.serveOnce(); n != 1 || calls.Load() != 1 {
+		t.Fatalf("live request: handled=%d calls=%d", n, calls.Load())
 	}
 	if left, _ := filepath.Glob(filepath.Join(lane, "inflight", "*")); len(left) != 0 {
 		t.Fatalf("in-flight must be deleted after publish: %v", left)
@@ -213,9 +214,9 @@ func TestSpoolCancelledMutationNamesOutcome(t *testing.T) {
 // forward.
 func TestSpoolBodyBoundaryOnDecodedBytes(t *testing.T) {
 	spool := t.TempDir()
-	calls := 0
+	var calls atomic.Int32
 	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls++
+		calls.Add(1)
 		_, _ = io.Copy(io.Discard, r.Body)
 		_, _ = w.Write([]byte(`{"result":[]}`))
 	}))
@@ -234,8 +235,8 @@ func TestSpoolBodyBoundaryOnDecodedBytes(t *testing.T) {
 	rl.serveOnce()
 	b, _ := os.ReadFile(filepath.Join(lane, "res", "1-1-ok.json"))
 	var sr spoolResponse
-	if json.Unmarshal(b, &sr) != nil || sr.Status != 200 || calls != 1 {
-		t.Fatalf("4 MiB-1 must be forwarded: status=%d calls=%d", sr.Status, calls)
+	if json.Unmarshal(b, &sr) != nil || sr.Status != 200 || calls.Load() != 1 {
+		t.Fatalf("4 MiB-1 must be forwarded: status=%d calls=%d", sr.Status, calls.Load())
 	}
 	over := bytes.Repeat([]byte("x"), spoolMaxBody+1)
 	if err := writeAtomic(filepath.Join(lane, "req", "1-2-over.json"), spoolRequest{Method: "ListAll", Headers: map[string]string{}, Body: over}); err != nil {
@@ -243,8 +244,8 @@ func TestSpoolBodyBoundaryOnDecodedBytes(t *testing.T) {
 	}
 	rl.serveOnce()
 	b, _ = os.ReadFile(filepath.Join(lane, "res", "1-2-over.json"))
-	if json.Unmarshal(b, &sr) != nil || sr.Status != http.StatusRequestEntityTooLarge || calls != 1 {
-		t.Fatalf("4 MiB+1 must be refused with 413 before forwarding: status=%d calls=%d", sr.Status, calls)
+	if json.Unmarshal(b, &sr) != nil || sr.Status != http.StatusRequestEntityTooLarge || calls.Load() != 1 {
+		t.Fatalf("4 MiB+1 must be refused with 413 before forwarding: status=%d calls=%d", sr.Status, calls.Load())
 	}
 }
 
@@ -255,8 +256,8 @@ func TestSpoolFailedConsumeIsNotForwarded(t *testing.T) {
 		t.Skip("root ignores modes")
 	}
 	spool := t.TempDir()
-	calls := 0
-	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { calls++; _, _ = w.Write([]byte(`{"result":[]}`)) }))
+	var calls atomic.Int32
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { calls.Add(1); _, _ = w.Write([]byte(`{"result":[]}`)) }))
 	t.Cleanup(svc.Close)
 	rl := &Relay{Spool: spool, Base: svc.URL, Token: "t", Log: slog.New(slog.NewTextHandler(&strings.Builder{}, nil)), Client: svc.Client(), now: time.Now}
 	lane := filepath.Join(spool, "lane-f")
@@ -272,8 +273,8 @@ func TestSpoolFailedConsumeIsNotForwarded(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(filepath.Join(lane, "inflight"), 0o700) })
-	if n := rl.serveOnce(); n != 0 || calls != 0 {
-		t.Fatalf("failed consume must not forward: handled=%d calls=%d", n, calls)
+	if n := rl.serveOnce(); n != 0 || calls.Load() != 0 {
+		t.Fatalf("failed consume must not forward: handled=%d calls=%d", n, calls.Load())
 	}
 	if _, err := os.Stat(filepath.Join(lane, "req", "1-1-x.json")); err != nil {
 		t.Fatal("request must remain in req/ when consumption fails")
@@ -312,11 +313,12 @@ func TestSpoolInFlightCapIsAtomic(t *testing.T) {
 // "service unreachable"/"read" error.
 func TestSpoolCommitThenResponseFailureIsOutcomeUnknown(t *testing.T) {
 	spool := t.TempDir()
-	commits := 0
-	mode := "reset"
+	var commits atomic.Int32
+	var mode atomic.Value
+	mode.Store("reset")
 	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		commits++
-		switch mode {
+		commits.Add(1)
+		switch mode.Load().(string) {
 		case "reset":
 			if hj, ok := w.(http.Hijacker); ok {
 				c, _, _ := hj.Hijack()
@@ -344,7 +346,7 @@ func TestSpoolCommitThenResponseFailureIsOutcomeUnknown(t *testing.T) {
 		}
 	}
 	for i, m := range []string{"reset", "truncate"} {
-		mode = m
+		mode.Store(m)
 		id := fmt.Sprintf("1-%d-%s", i+1, m)
 		if err := writeAtomic(filepath.Join(lane, "req", id+".json"), spoolRequest{Method: "SendGuarded", Headers: map[string]string{}, Body: []byte(`{"args":[]}`)}); err != nil {
 			t.Fatal(err)
@@ -356,8 +358,8 @@ func TestSpoolCommitThenResponseFailureIsOutcomeUnknown(t *testing.T) {
 			t.Fatalf("%s: want OUTCOME UNKNOWN naming method+id, got status=%d body=%s", m, sr.Status, sr.Body)
 		}
 	}
-	if commits != 2 {
-		t.Fatalf("each request must reach upstream exactly once: %d", commits)
+	if commits.Load() != 2 {
+		t.Fatalf("each request must reach upstream exactly once: %d", commits.Load())
 	}
 }
 
@@ -366,8 +368,8 @@ func TestSpoolCommitThenResponseFailureIsOutcomeUnknown(t *testing.T) {
 // beyond the envelope bound, and no forward.
 func TestSpoolRecoveryIsBoundedAndCorrelated(t *testing.T) {
 	spool := t.TempDir()
-	calls := 0
-	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { calls++ }))
+	var calls atomic.Int32
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { calls.Add(1) }))
 	t.Cleanup(svc.Close)
 	rl := &Relay{Spool: spool, Base: svc.URL, Token: "t", Log: slog.New(slog.NewTextHandler(&strings.Builder{}, nil)), Client: svc.Client(), now: time.Now}
 	lane := filepath.Join(spool, "lane-r")
@@ -392,7 +394,7 @@ func TestSpoolRecoveryIsBoundedAndCorrelated(t *testing.T) {
 			t.Fatalf("%s: want correlated outcome-unknown, got %s", id, b)
 		}
 	}
-	if calls != 0 {
+	if calls.Load() != 0 {
 		t.Fatal("recovery must never forward")
 	}
 	if left, _ := filepath.Glob(filepath.Join(lane, "inflight", "*")); len(left) != 0 {
