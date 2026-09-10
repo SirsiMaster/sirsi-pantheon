@@ -28,7 +28,10 @@ M5=${M5:-thekryptodragon@192.168.1.155}; M5_HOST=${M5_HOST:-Mac}; M1_HOST=${M1_H
 G="gcloud --project=$PROJECT --quiet"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 WORK=${WORK:-$HOME/.sirsi/cutover}; mkdir -p "$WORK"
-SRC_LINE='[ -r "$HOME/.sirsi/router-service.env" ] && . "$HOME/.sirsi/router-service.env"  # ADR-062 router service'
+# Only when SIRSI_ROUTER_URL is UNSET: a lane that chose spool:// (and unset its token) must keep both choices when
+# its shell re-sources ~/.zshenv — observed 2026-09-10: codex-inference's sandbox shells were handed the https URL
+# and the token back by this line and never reached the relay.
+SRC_LINE='[ -z "$SIRSI_ROUTER_URL" ] && [ -r "$HOME/.sirsi/router-service.env" ] && . "$HOME/.sirsi/router-service.env"  # ADR-062 router service (only when unset)'
 m5() { ssh "$M5" 'export PATH=/opt/homebrew/bin:$HOME/.local/bin:$PATH; '"$*"; }
 step() { echo; echo "== $1. $2"; }
 items() { grep -m1 'Items:' "$1"; }

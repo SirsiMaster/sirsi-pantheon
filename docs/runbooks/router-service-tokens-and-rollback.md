@@ -97,3 +97,9 @@ duplicate.
 See `docs/user-guides/router-service.md` § "Migrating an existing ledger":
 `sirsi router migrate-store --from … --to … [--dry-run] [--scrub-nul]`.
 It quiesces the fabric itself and releases the marker only when it exits.
+
+## Host env: the `~/.zshenv` source line is conditional
+`~/.zshenv` sources `~/.sirsi/router-service.env` only when `SIRSI_ROUTER_URL` is unset. A lane that starts with
+`env -u SIRSI_ROUTER_TOKEN SIRSI_ROUTER_URL=spool://…` keeps both choices in every shell it opens (codex runs its
+commands through a login shell); otherwise the https URL and the host token come back into a sandbox that has no
+DNS and must never hold the token (observed 2026-09-10 on codex-inference). Both Macs carry this form.
