@@ -151,7 +151,7 @@ named. A step is not done at green CI; it is done when its evidence row above is
       `SIRSI_ROUTER_URL=spool://$HOME/.sirsi/relay`; the SSA lane's `network_access=true` is
       removed. Evidence: the SSA lane claims and closes a router item with network_access absent
       (wake log + item result). G7 then needs only 20a.6.
-    Ledger (D3): rows `rs-22a-relay-discovery` (done) … `rs-22f-g7-closure` registered on `ra`
+    Ledger (D3): rows `rs-22a`…`rs-22e` DONE 2026-09-10 (PRs #718 #720 #721 #723 #719, all SSA-bound); `rs-22f-g7-closure` registered on `ra`
     with this dependency chain, `rs-22f` owner-responsible; `rs-22b`, `rs-22c`, `rs-22e` subjects
     carry the spool shape (updated 2026-09-10T03:25Z); `rs-20-cutover-bind4` narrowed to its proven
     subset and `rs-20b-bind4-full` holds the unfinished Bind #4 obligation, blocked by `rs-22f`.
