@@ -56,7 +56,7 @@ if [ "${1:-}" = rollback ]; then
   echo "== rollback: env out on both Macs, M5 router.db writable, WAL back"
   sh='sed -i "" "/router-service.env/d" "$HOME/.zshenv"; rm -f "$HOME/.sirsi/router-service.env"'
   bash -c "$sh"; ssh "$M5" "$sh"
-  m5 'chmod u+w ~/.sirsi/router.db && sqlite3 ~/.sirsi/router.db "PRAGMA journal_mode=wal;"'
+  m5 'chmod u+w ~/.sirsi/router.db && sqlite3 ~/.sirsi/router.db "PRAGMA journal_mode=wal;"; [ -x ~/.sirsi/build/sirsi-prev ] && rm ~/.local/bin/sirsi && cp ~/.sirsi/build/sirsi-prev ~/.local/bin/sirsi'
   echo "rolled back: M5 writes the local file again; service rows written during the window are NOT copied back"
   exit 0
 fi
@@ -65,9 +65,11 @@ FROM=${FROM:-1}
 if [ "$FROM" -le 1 ]; then
   step 1 preflight
   curl -fsS "$URL/v1/healthz" >/dev/null || { echo "service unhealthy: $URL/v1/healthz" >&2; exit 1; }; echo "   service healthy: $URL"
-  m5 'strings "$(command -v sirsi)" | grep -q SIRSI_ROUTER_URL' || {
-    echo "M5 sirsi has no service client — rebuild from main first (rm then cp: cp over a live binary SIGKILLs it):" >&2
-    echo "  ssh $M5 'cd ~/Development/sirsi-pantheon && git fetch origin main && git -c advice.detachedHead=false checkout origin/main && go build -o /tmp/sirsi ./cmd/sirsi && rm ~/.local/bin/sirsi && cp /tmp/sirsi ~/.local/bin/sirsi'" >&2
+  # The service-capable binary is STAGED, not live: it refuses the v16 local store ("deployment event"),
+  # so it must replace ~/.local/bin/sirsi only after the freeze (step 2), inside the window.
+  m5 'strings "$HOME/.sirsi/build/sirsi-main" | grep -q SIRSI_ROUTER_URL' || {
+    echo "stage the main-built binary first:" >&2
+    echo "  ssh $M5 'cd ~/Development/sirsi-pantheon && git fetch origin main && git worktree add -f ~/.sirsi/build/pantheon-main origin/main; cd ~/.sirsi/build/pantheon-main && go build -o ~/.sirsi/build/sirsi-main ./cmd/sirsi'" >&2
     exit 1; }
   if m5 'pgrep -fl "sirsi router (send|task|thread|complete|claim)"'; then echo "M5 has a router command mid-flight; wait" >&2; exit 1; fi
   m5 'launchctl list | grep -E "sirsi|horus"; uptime'
@@ -76,6 +78,8 @@ fi
 if [ "$FROM" -le 2 ]; then
   step 2 "freeze M5 router.db (old writers fail loudly from here on)"
   m5 'sqlite3 ~/.sirsi/router.db "PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode=DELETE;" && chmod a-w ~/.sirsi/router.db && ls -la ~/.sirsi/router.db*'
+  # Swap the binary now: rm then cp (cp over a live binary SIGKILLs it). Running processes keep the old inode.
+  m5 'cp ~/.local/bin/sirsi ~/.sirsi/build/sirsi-prev && rm ~/.local/bin/sirsi && cp ~/.sirsi/build/sirsi-main ~/.local/bin/sirsi && ls -la ~/.local/bin/sirsi'
 fi
 
 if [ "$FROM" -le 3 ]; then
