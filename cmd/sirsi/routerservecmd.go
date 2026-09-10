@@ -108,7 +108,9 @@ func runRouterServe(cmd *cobra.Command, _ []string) error {
 	}
 	defer func() { _ = store.Close() }()
 
-	opts := routerstore.ServerOptions{Token: token, MaxWait: routerServeMaxWait}
+	opts := routerstore.ServerOptions{Token: token, MaxWait: routerServeMaxWait, RuleOfRa: strings.TrimSpace(os.Getenv("SIRSI_ROUTER_RULE_OF_RA"))}
+	// Handler validates the mode: "" is the documented default (log), and a
+	// misspelling is a startup failure, never a gate that fails open.
 	if d, derr := time.ParseDuration(strings.TrimSpace(os.Getenv("SIRSI_ROUTER_SERVE_TEST_DELAY"))); derr == nil && d > 0 {
 		opts.TestDelay = d
 		fmt.Fprintf(cmd.ErrOrStderr(), "router serve: TEST DELAY %s injected on every call (SIRSI_ROUTER_SERVE_TEST_DELAY) — evidence runs only\n", d)

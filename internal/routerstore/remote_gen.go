@@ -88,9 +88,9 @@ func (rs *RemoteStore) Counters() (DispatchCounters, error) {
 	err := rs.call("Counters", nil, &o0)
 	return o0, err
 }
-func (rs *RemoteStore) DeleteThreadCAS(threadID, status, lastSeenAt string) (bool, error) {
+func (rs *RemoteStore) DeleteThreadCAS(threadID, status, lastSeenAt, host string) (bool, error) {
 	var o0 bool
-	err := rs.call("DeleteThreadCAS", []any{threadID, status, lastSeenAt}, &o0)
+	err := rs.call("DeleteThreadCAS", []any{threadID, status, lastSeenAt, host}, &o0)
 	return o0, err
 }
 func (rs *RemoteStore) ExportItem(dir, id string) (string, error) {

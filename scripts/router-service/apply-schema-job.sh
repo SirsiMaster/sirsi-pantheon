@@ -3,10 +3,11 @@
 # instance from a one-shot Cloud Run job on the VPC. No Mac can reach a private-IP instance, and
 # building an image just to carry 22 KB of SQL is waste: the public postgres image supplies psql and
 # Cloud Run mounts the SQL from Secret Manager as a file. Idempotent (roles.sql guards CREATE ROLE,
-# schema.sql is IF NOT EXISTS). DRY_RUN=1 prints only.
+# schema.sql is re-runnable and applied in ONE transaction with the version row last, so an
+# existing v18 ledger upgrades in place or stays exactly v18). DRY_RUN=1 prints only.
 #
 # Asserts the same four facts as scripts/check-pg-schema.sh (15 tables, 12 triggers, >=5 partial
-# indexes, version 18) and then a CLOSED privilege audit of router_service (SSA finding 3, 2026-09-08):
+# indexes, version 19) and then a CLOSED privilege audit of router_service (SSA finding 3, 2026-09-08):
 # no role memberships (Cloud SQL makes every gcloud-created user a cloudsqlsuperuser member — the
 # bundle revokes it, and the audit proves the revoke landed), no SUPERUSER/CREATEROLE/CREATEDB, no
 # CREATE on schema router or on the database, no default-ACL grants beyond DML, and the executing
@@ -54,13 +55,13 @@ q() { psql -qtA -h "$H" -U router_migrator -d router -c "$1"; }
 # holds CREATEROLE (via its own cloudsqlsuperuser membership on Cloud SQL). Refuse rather than "succeed" silently.
 auth=$(q "SELECT rolcreaterole OR pg_has_role(current_user,'cloudsqlsuperuser','MEMBER') FROM pg_roles WHERE rolname=current_user")
 [ "$auth" = t ] || { echo "FAIL router_migrator cannot revoke role membership (no CREATEROLE / cloudsqlsuperuser)"; exit 1; }
-psql -v ON_ERROR_STOP=1 -q -h "$H" -U router_migrator -d router -f /sql/apply.sql
+psql -1 -v ON_ERROR_STOP=1 -q -h "$H" -U router_migrator -d router -f /sql/apply.sql  # -1: one transaction, all or nothing
 tables=$(q "SELECT count(*) FROM information_schema.tables WHERE table_schema='router' AND table_type='BASE TABLE'")
 triggers=$(q "SELECT count(DISTINCT trigger_name) FROM information_schema.triggers WHERE trigger_schema='router'")
 partial=$(q "SELECT count(*) FROM pg_indexes WHERE schemaname='router' AND indexdef LIKE '%WHERE%'")
 version=$(q "SELECT version FROM router.schema_version")
 echo "tables=$tables triggers=$triggers partial=$partial version=$version"
-[ "$tables" = 15 ] && [ "$triggers" = 12 ] && [ "$partial" -ge 5 ] && [ "$version" = 18 ] || { echo FAIL-shape; exit 1; }
+[ "$tables" = 15 ] && [ "$triggers" = 12 ] && [ "$partial" -ge 5 ] && [ "$version" = 19 ] || { echo FAIL-shape; exit 1; }
 # Closed privilege audit of router_service: every DDL path, not one probe.
 members=$(q "SELECT coalesce(string_agg(b.rolname, ','), '') FROM pg_auth_members m JOIN pg_roles b ON b.oid=m.roleid JOIN pg_roles r ON r.oid=m.member WHERE r.rolname='router_service'")
 attrs=$(q "SELECT rolsuper||' '||rolcreaterole||' '||rolcreatedb||' '||rolbypassrls FROM pg_roles WHERE rolname='router_service'")

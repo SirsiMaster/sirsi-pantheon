@@ -1,6 +1,10 @@
 package routerstore
 
-import "fmt"
+import (
+	"database/sql"
+	"errors"
+	"fmt"
+)
 
 // ThreadRecord is the store-owned envelope for a CTR thread payload.
 type ThreadRecord struct {
@@ -9,6 +13,34 @@ type ThreadRecord struct {
 	Status     string
 	LastSeenAt string
 	Payload    []byte
+	Host       string // the machine the thread runs on (Rule of Ra binding); "" for legacy rows
+}
+
+// ThreadBinding is what the Rule of Ra gate needs about a thread.
+type ThreadBinding struct {
+	ThreadID   string `json:"thread_id"`
+	Agent      string `json:"agent"`
+	Host       string `json:"host"`
+	Status     string `json:"status"`
+	LastSeenAt string `json:"last_seen_at"`
+}
+
+// ErrThreadUnknown: no registered thread with that id.
+var ErrThreadUnknown = errors.New("routerstore: thread not registered")
+
+// ThreadBinding returns the gate view of one thread; ErrThreadUnknown when
+// there is no such row.
+func (s *SQLiteStore) ThreadBinding(threadID string) (ThreadBinding, error) {
+	var b ThreadBinding
+	err := s.db.QueryRow(`SELECT thread_id,agent,host,status,last_seen_at FROM threads WHERE thread_id=?`, threadID).
+		Scan(&b.ThreadID, &b.Agent, &b.Host, &b.Status, &b.LastSeenAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ThreadBinding{}, ErrThreadUnknown
+	}
+	if err != nil {
+		return ThreadBinding{}, fmt.Errorf("routerstore: ThreadBinding: %w", err)
+	}
+	return b, nil
 }
 
 // ImportThreadsIfEmpty atomically seeds the store at cutover. A non-empty
@@ -27,7 +59,7 @@ func (s *SQLiteStore) ImportThreadsIfEmpty(records []ThreadRecord) error {
 		return tx.Commit()
 	}
 	for _, r := range records {
-		if _, err := tx.Exec(`INSERT OR IGNORE INTO threads(thread_id,agent,status,last_seen_at,payload) VALUES(?,?,?,?,?)`, r.ThreadID, r.Agent, r.Status, r.LastSeenAt, r.Payload); err != nil {
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO threads(thread_id,agent,status,last_seen_at,payload,host) VALUES(?,?,?,?,?,?)`, r.ThreadID, r.Agent, r.Status, r.LastSeenAt, r.Payload, r.Host); err != nil {
 			return fmt.Errorf("routerstore: import thread %q: %w", r.ThreadID, err)
 		}
 	}
@@ -50,14 +82,16 @@ func (s *SQLiteStore) UpsertThreads(records []ThreadRecord) error {
 	defer func() { _ = tx.Rollback() }()
 	for _, r := range records {
 		if _, err := tx.Exec(`
-INSERT INTO threads(thread_id,agent,status,last_seen_at,payload) VALUES(?,?,?,?,?)
+INSERT INTO threads(thread_id,agent,status,last_seen_at,payload,host) VALUES(?,?,?,?,?,?)
 ON CONFLICT(thread_id) DO UPDATE SET
- agent=excluded.agent,status=excluded.status,last_seen_at=excluded.last_seen_at,payload=excluded.payload
+ agent=excluded.agent,status=excluded.status,last_seen_at=excluded.last_seen_at,payload=excluded.payload,
+ host=CASE WHEN excluded.host='' THEN threads.host ELSE excluded.host END
 WHERE threads.status NOT IN ('closed','reaped','suspended')
+  AND (threads.host='' OR excluded.host='' OR threads.host=excluded.host)
   AND (excluded.last_seen_at > threads.last_seen_at
        OR excluded.last_seen_at = threads.last_seen_at
           AND (excluded.status IN ('closed','reaped','suspended')
-               OR excluded.status = threads.status AND excluded.payload > threads.payload))`, r.ThreadID, r.Agent, r.Status, r.LastSeenAt, r.Payload); err != nil {
+               OR excluded.status = threads.status AND excluded.payload > threads.payload))`, r.ThreadID, r.Agent, r.Status, r.LastSeenAt, r.Payload, r.Host); err != nil {
 			return fmt.Errorf("routerstore: upsert thread %q: %w", r.ThreadID, err)
 		}
 	}
@@ -73,15 +107,17 @@ WHERE threads.status NOT IN ('closed','reaped','suspended')
 // verbs use this method so losing their own target fence fails loudly.
 func (s *SQLiteStore) UpsertThreadCAS(r ThreadRecord) (bool, error) {
 	result, err := s.db.Exec(`
-INSERT INTO threads(thread_id,agent,status,last_seen_at,payload) VALUES(?,?,?,?,?)
+INSERT INTO threads(thread_id,agent,status,last_seen_at,payload,host) VALUES(?,?,?,?,?,?)
 ON CONFLICT(thread_id) DO UPDATE SET
- agent=excluded.agent,status=excluded.status,last_seen_at=excluded.last_seen_at,payload=excluded.payload
+ agent=excluded.agent,status=excluded.status,last_seen_at=excluded.last_seen_at,payload=excluded.payload,
+ host=CASE WHEN excluded.host='' THEN threads.host ELSE excluded.host END
 WHERE threads.status NOT IN ('closed','reaped','suspended')
+  AND (threads.host='' OR excluded.host='' OR threads.host=excluded.host)
   AND (excluded.last_seen_at > threads.last_seen_at
        OR excluded.last_seen_at = threads.last_seen_at
           AND (excluded.status IN ('closed','reaped','suspended')
                OR excluded.status = threads.status AND excluded.payload > threads.payload))`,
-		r.ThreadID, r.Agent, r.Status, r.LastSeenAt, r.Payload)
+		r.ThreadID, r.Agent, r.Status, r.LastSeenAt, r.Payload, r.Host)
 	if err != nil {
 		return false, fmt.Errorf("routerstore: upsert thread %q: %w", r.ThreadID, err)
 	}
@@ -97,9 +133,9 @@ WHERE threads.status NOT IN ('closed','reaped','suspended')
 // before a concurrent suspend from implicitly resuming the thread.
 func (s *SQLiteStore) ResumeThreadCAS(record ThreadRecord, suspendedAt string) error {
 	result, err := s.db.Exec(`UPDATE threads
-SET agent=?,status=?,last_seen_at=?,payload=?
-WHERE thread_id=? AND status='suspended' AND last_seen_at=?`,
-		record.Agent, record.Status, record.LastSeenAt, record.Payload, record.ThreadID, suspendedAt)
+SET agent=?,status=?,last_seen_at=?,payload=?,host=CASE WHEN ?='' THEN host ELSE ? END
+WHERE thread_id=? AND status='suspended' AND last_seen_at=? AND (host='' OR ?='' OR host=?)`,
+		record.Agent, record.Status, record.LastSeenAt, record.Payload, record.Host, record.Host, record.ThreadID, suspendedAt, record.Host, record.Host)
 	if err != nil {
 		return fmt.Errorf("routerstore: resume thread %q: %w", record.ThreadID, err)
 	}
@@ -113,11 +149,20 @@ WHERE thread_id=? AND status='suspended' AND last_seen_at=?`,
 	return nil
 }
 
-// DeleteThreadCAS removes only the exact row observed by the pruning read.
+// Host ownership (the Rule of Ra, SSA 2026-09-10 r2): every mutation above
+// and below carries the caller's host INSIDE its predicate — a row on another
+// host is never rewritten, resumed or deleted, and two hosts adopting one
+// blank legacy row cannot both win: the first commit sets host, the second
+// statement's predicate fails. A blank caller host ('' — a local file store
+// with no host identity; the service always stamps the session host) passes
+// through unchanged.
+
+// DeleteThreadCAS removes only the exact row observed by the pruning read,
+// and only when that row is on the caller's host.
 // A concurrent heartbeat/status transition changes last_seen/status and makes
 // this a safe no-op rather than deleting live truth.
-func (s *SQLiteStore) DeleteThreadCAS(threadID, status, lastSeenAt string) (bool, error) {
-	result, err := s.db.Exec(`DELETE FROM threads WHERE thread_id=? AND status=? AND last_seen_at=?`, threadID, status, lastSeenAt)
+func (s *SQLiteStore) DeleteThreadCAS(threadID, status, lastSeenAt, host string) (bool, error) {
+	result, err := s.db.Exec(`DELETE FROM threads WHERE thread_id=? AND status=? AND last_seen_at=? AND (host='' OR ?='' OR host=?)`, threadID, status, lastSeenAt, host, host)
 	if err != nil {
 		return false, fmt.Errorf("routerstore: delete thread %q: %w", threadID, err)
 	}
@@ -130,7 +175,7 @@ func (s *SQLiteStore) DeleteThreadCAS(threadID, status, lastSeenAt string) (bool
 
 // ListThreads returns every durable thread payload.
 func (s *SQLiteStore) ListThreads() ([]ThreadRecord, error) {
-	rows, err := s.db.Query(`SELECT thread_id,agent,status,last_seen_at,payload FROM threads ORDER BY thread_id`)
+	rows, err := s.db.Query(`SELECT thread_id,agent,status,last_seen_at,payload,host FROM threads ORDER BY thread_id`)
 	if err != nil {
 		return nil, fmt.Errorf("routerstore: list threads: %w", err)
 	}
@@ -138,7 +183,7 @@ func (s *SQLiteStore) ListThreads() ([]ThreadRecord, error) {
 	var out []ThreadRecord
 	for rows.Next() {
 		var r ThreadRecord
-		if err := rows.Scan(&r.ThreadID, &r.Agent, &r.Status, &r.LastSeenAt, &r.Payload); err != nil {
+		if err := rows.Scan(&r.ThreadID, &r.Agent, &r.Status, &r.LastSeenAt, &r.Payload, &r.Host); err != nil {
 			return nil, fmt.Errorf("routerstore: scan thread: %w", err)
 		}
 		out = append(out, r)

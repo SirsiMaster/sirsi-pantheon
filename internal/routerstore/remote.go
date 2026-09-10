@@ -63,6 +63,9 @@ var sentinelErrors = map[string]error{
 	"ErrTokenRevoked":         ErrTokenRevoked,
 	"ErrHostMismatch":         ErrHostMismatch,
 	"ErrServiceUnavailable":   ErrServiceUnavailable,
+	"ErrUnregistered":         ErrUnregistered,
+	"ErrThreadUnknown":        ErrThreadUnknown,
+	"ErrThreadAuthority":      ErrThreadAuthority,
 }
 
 // ErrServiceUnavailable is a transient service/database failure (HTTP 503):
@@ -100,6 +103,7 @@ type RemoteStore struct {
 	perCall time.Duration
 
 	host, agent, runtime string
+	threadID             string // SIRSI_THREAD_ID: the registered thread this process works for (Rule of Ra)
 	sessionDir           string // "" disables the on-disk cache (tests)
 
 	mu      sync.Mutex
@@ -139,6 +143,7 @@ func NewRemoteStore(base, token string) *RemoteStore {
 		perCall:    5 * time.Second,
 		host:       host,
 		agent:      agent,
+		threadID:   strings.TrimSpace(os.Getenv("SIRSI_THREAD_ID")),
 		runtime:    RuntimeHash(),
 		sessionDir: dir,
 		now:        func() time.Time { return time.Now().UTC() },
@@ -184,14 +189,18 @@ func (rs *RemoteStore) ensureSession() (Session, error) {
 	if rs.sessionDir != "" {
 		if b, err := os.ReadFile(rs.sessionPath()); err == nil {
 			var cached Session
-			if json.Unmarshal(b, &cached) == nil && cached.ID != "" && cached.Secret != "" && cached.RuntimeHash == rs.runtime {
+			if json.Unmarshal(b, &cached) == nil && cached.ID != "" && cached.Secret != "" && cached.RuntimeHash == rs.runtime && cached.ThreadID == rs.threadID {
 				rs.session = cached
 				return cached, nil
 			}
 		}
 	}
 	var minted Session
-	if err := rs.callUnsigned("MintSession", []any{rs.host, rs.agent, rs.runtime}, &minted); err != nil {
+	mintMethod, mintArgs := "MintSession", []any{rs.host, rs.agent, rs.runtime}
+	if rs.threadID != "" {
+		mintMethod, mintArgs = "MintSessionForThread", []any{rs.host, rs.agent, rs.runtime, rs.threadID}
+	}
+	if err := rs.callUnsigned(mintMethod, mintArgs, &minted); err != nil {
 		return Session{}, fmt.Errorf("routerstore: mint session: %w", err)
 	}
 	rs.session = minted
@@ -380,4 +389,18 @@ func (rs *RemoteStore) NotifyPath(string) string { return "" }
 func (rs *RemoteStore) Close() error {
 	rs.client.CloseIdleConnections()
 	return nil
+}
+
+// MintSessionForThread over the wire (host token only, like MintSession).
+func (rs *RemoteStore) MintSessionForThread(host, agent, runtimeHash, threadID string) (Session, error) {
+	var out Session
+	err := rs.callUnsigned("MintSessionForThread", []any{host, agent, runtimeHash, threadID}, &out)
+	return out, err
+}
+
+// ThreadBinding over the wire.
+func (rs *RemoteStore) ThreadBinding(threadID string) (ThreadBinding, error) {
+	var out ThreadBinding
+	err := rs.call("ThreadBinding", []any{threadID}, &out)
+	return out, err
 }

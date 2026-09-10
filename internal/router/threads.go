@@ -385,7 +385,8 @@ func SaveThreadRegistry(routerRoot string, reg *ThreadRegistry) error {
 		}
 		for id, old := range reg.baseline {
 			if _, ok := reg.Threads[id]; !ok {
-				deleted, err := store.DeleteThreadCAS(id, old.Status, old.LastSeenAt)
+				host, _ := os.Hostname()
+				deleted, err := store.DeleteThreadCAS(id, old.Status, old.LastSeenAt, host)
 				if err != nil {
 					return err
 				}
@@ -433,7 +434,13 @@ func threadRecords(reg *ThreadRegistry) ([]routerstore.ThreadRecord, error) {
 		if err != nil {
 			return nil, fmt.Errorf("marshal store thread %q: %w", id, err)
 		}
-		records = append(records, routerstore.ThreadRecord{ThreadID: id, Agent: thread.AgentID, Status: string(thread.Status), LastSeenAt: thread.LastSeenAt.UTC().Format("2006-01-02T15:04:05.000000000Z07:00"), Payload: payload})
+		// Origin host travels with the record; the local name only fills a
+		// legacy thread that never recorded one (SSA 2026-09-10).
+		host := thread.Host
+		if host == "" {
+			host, _ = os.Hostname()
+		}
+		records = append(records, routerstore.ThreadRecord{ThreadID: id, Agent: thread.AgentID, Status: string(thread.Status), LastSeenAt: thread.LastSeenAt.UTC().Format("2006-01-02T15:04:05.000000000Z07:00"), Payload: payload, Host: host})
 	}
 	return records, nil
 }
