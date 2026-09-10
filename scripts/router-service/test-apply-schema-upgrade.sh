@@ -15,8 +15,17 @@ set -euo pipefail
 export LC_ALL=C   # macOS: the postmaster "becomes multithreaded" under a Unicode locale
 ROOT="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
 ver() { grep -oE 'VALUES \(([0-9]+), router.now_rfc3339' "$1" | grep -oE '[0-9]+' | head -1; }
-# The schema the live ledger already has = the previous revision of schema.sql in history (override with BASE=<rev>).
-BASE="${BASE:-$(git -C "$ROOT" log -2 --format=%H -- internal/routerstore/pg/schema.sql | tail -1)}"
+# The schema the live ledger already has: the newest schema.sql revision whose
+# version is LOWER than the working tree's (a branch may touch schema.sql more
+# than once at the same version, so "previous commit" is not enough). Override
+# with BASE=<rev>.
+VT_NOW=$(ver "$ROOT/internal/routerstore/pg/schema.sql")
+BASE="${BASE:-$(
+  for rev in $(git -C "$ROOT" log --format=%H -- internal/routerstore/pg/schema.sql); do
+    v=$(git -C "$ROOT" show "$rev:internal/routerstore/pg/schema.sql" 2>/dev/null | grep -oE 'VALUES \(([0-9]+), router.now_rfc3339' | grep -oE '[0-9]+' | head -1)
+    if [ -n "$v" ] && [ "$v" -lt "$VT_NOW" ]; then echo "$rev"; break; fi
+  done)}"
+[ -n "$BASE" ] || { echo "FAIL: no earlier-version schema.sql revision found to upgrade from"; exit 1; }
 PGBIN="${PGBIN:-$(dirname "$(command -v pg_ctl)")}"
 T="$(mktemp -d)"; PORT=$((20000 + RANDOM % 20000))
 cleanup() { "$PGBIN/pg_ctl" -D "$T/data" stop -m immediate -s >/dev/null 2>&1 || true; rm -rf "$T"; }
