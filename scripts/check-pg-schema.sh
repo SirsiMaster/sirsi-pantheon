@@ -24,7 +24,7 @@ psqlq -d postgres -c "CREATE DATABASE $DB;"
 psqlq -d "$DB" -f "$ROOT/internal/routerstore/pg/roles.sql" >/dev/null
 psqlq -d "$DB" -c "ALTER DATABASE $DB OWNER TO router_migrator;" >/dev/null
 # DDL as the migrator, exactly as production will.
-PGUSER=router_migrator psqlq -d "$DB" -f "$ROOT/internal/routerstore/pg/schema.sql" >/dev/null
+PGUSER=router_migrator psqlq -1 -d "$DB" -f "$ROOT/internal/routerstore/pg/schema.sql" >/dev/null
 
 tables=$(psqlq -d "$DB" -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='router' AND table_type='BASE TABLE';")
 triggers=$(psqlq -d "$DB" -c "SELECT count(*) FROM information_schema.triggers WHERE trigger_schema='router';")

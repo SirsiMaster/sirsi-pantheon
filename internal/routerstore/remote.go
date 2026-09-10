@@ -65,6 +65,7 @@ var sentinelErrors = map[string]error{
 	"ErrServiceUnavailable":   ErrServiceUnavailable,
 	"ErrUnregistered":         ErrUnregistered,
 	"ErrThreadUnknown":        ErrThreadUnknown,
+	"ErrThreadAuthority":      ErrThreadAuthority,
 }
 
 // ErrServiceUnavailable is a transient service/database failure (HTTP 503):

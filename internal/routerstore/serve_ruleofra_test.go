@@ -128,3 +128,123 @@ func TestSessionCarriesThreadAcrossTheWireAndSurvivesMigration(t *testing.T) {
 }
 
 func fmtSprintf(f string, a ...any) string { return strings.TrimSpace(fmt.Sprintf(f, a...)) }
+
+// SSA 2026-09-10 (PR #724 P1): an unregistered caller must not be able to
+// replace the binding the gate would authorize it with. Thread lifecycle verbs
+// are scoped to the caller's host: a record for another host is refused, an
+// existing thread on another host cannot be rewritten, resumed or deleted, and
+// the record the store keeps carries the session's host — while the same
+// machine's registry sync (every agent on that host) still passes.
+func TestThreadAuthorityIsHostScoped(t *testing.T) {
+	var logs strings.Builder
+	backend, client := ruleHarness(t, "enforce", &logs)
+	host, _ := os.Hostname()
+	now := time.Date(2026, 9, 10, 15, 0, 0, 0, time.UTC)
+	seen := now.Add(-time.Minute).UTC().Format(time.RFC3339Nano)
+	register(t, backend, "thr-victim", "victim", "other-host", "active", now.Add(-time.Minute))
+
+	attacker := client("attacker", "thr-victim")
+	// 1. the gate refuses: the thread belongs to victim@other-host.
+	if _, _, err := attacker.SendGuarded(SendReq{From: "attacker", To: "b", Title: "x", Type: "proposal", Instructions: "x"}); !errors.Is(err, ErrUnregistered) {
+		t.Fatalf("want ErrUnregistered, got %v", err)
+	}
+	// 2. rewriting the binding to attacker@<own host> with a newer timestamp is refused, not applied.
+	later := now.UTC().Format(time.RFC3339Nano)
+	if _, err := attacker.UpsertThreadCAS(ThreadRecord{ThreadID: "thr-victim", Agent: "attacker", Status: "active", LastSeenAt: later, Payload: []byte(`{}`), Host: host}); !errors.Is(err, ErrThreadAuthority) {
+		t.Fatalf("cross-host rewrite must be ErrThreadAuthority, got %v", err)
+	}
+	if err := attacker.UpsertThreads([]ThreadRecord{{ThreadID: "thr-victim", Agent: "attacker", Status: "active", LastSeenAt: later, Payload: []byte(`{}`)}}); !errors.Is(err, ErrThreadAuthority) {
+		t.Fatalf("cross-host snapshot rewrite must be ErrThreadAuthority, got %v", err)
+	}
+	if _, err := attacker.DeleteThreadCAS("thr-victim", "active", seen); !errors.Is(err, ErrThreadAuthority) {
+		t.Fatalf("cross-host delete must be ErrThreadAuthority, got %v", err)
+	}
+	if err := attacker.ResumeThreadCAS(ThreadRecord{ThreadID: "thr-victim", Agent: "attacker", Status: "active", LastSeenAt: later, Payload: []byte(`{}`)}, seen); !errors.Is(err, ErrThreadAuthority) {
+		t.Fatalf("cross-host resume must be ErrThreadAuthority, got %v", err)
+	}
+	// A record that names another host outright is refused too.
+	if _, err := attacker.UpsertThreadCAS(ThreadRecord{ThreadID: "thr-new", Agent: "attacker", Status: "active", LastSeenAt: later, Payload: []byte(`{}`), Host: "other-host"}); !errors.Is(err, ErrThreadAuthority) {
+		t.Fatalf("claiming another host must be ErrThreadAuthority, got %v", err)
+	}
+	// 3. still no audience.
+	if _, _, err := attacker.SendGuarded(SendReq{From: "attacker", To: "b", Title: "x", Type: "proposal", Instructions: "x"}); !errors.Is(err, ErrUnregistered) {
+		t.Fatalf("binding must be intact: want ErrUnregistered, got %v", err)
+	}
+	b, err := backend.ThreadBinding("thr-victim")
+	if err != nil || b.Agent != "victim" || b.Host != "other-host" {
+		t.Fatalf("victim binding was altered: %+v %v", b, err)
+	}
+
+	// Own host: the machine's registry sync carries every agent on it, a
+	// legacy row without a host is adoptable, and the stored host is the
+	// session's — even when the client left it blank.
+	register(t, backend, "thr-legacy", "lane-b", "", "active", now.Add(-time.Minute))
+	if err := attacker.UpsertThreads([]ThreadRecord{
+		{ThreadID: "thr-legacy", Agent: "lane-b", Status: "active", LastSeenAt: later, Payload: []byte(`{}`)},
+		{ThreadID: "thr-own", Agent: "attacker", Status: "active", LastSeenAt: later, Payload: []byte(`{}`)},
+	}); err != nil {
+		t.Fatalf("own-host registry sync must pass: %v", err)
+	}
+	for _, id := range []string{"thr-legacy", "thr-own"} {
+		if b, err := backend.ThreadBinding(id); err != nil || b.Host != host {
+			t.Fatalf("%s host = %q (%v), want session host %q", id, b.Host, err, host)
+		}
+	}
+	// And now the attacker, registered on its own host, has an audience.
+	if _, _, err := client("attacker", "thr-own").SendGuarded(SendReq{From: "attacker", To: "b", Title: "x", Type: "proposal", Instructions: "x"}); err != nil {
+		t.Fatalf("own registered thread must pass: %v", err)
+	}
+	// ListThreads carries the host over the wire.
+	all, err := attacker.ListThreads()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hosts := map[string]string{}
+	for _, r := range all {
+		hosts[r.ThreadID] = r.Host
+	}
+	if hosts["thr-victim"] != "other-host" || hosts["thr-own"] != host {
+		t.Fatalf("ListThreads must carry host: %v", hosts)
+	}
+}
+
+// SSA 2026-09-10 (PR #724 P2): the gate never fails open — an unknown mode is
+// a construction error and an empty mode is the documented default (log).
+func TestRuleOfRaModeIsValidatedAtConstruction(t *testing.T) {
+	backend := newDst(t)
+	if _, err := Handler(backend, ServerOptions{Token: "t0k", RuleOfRa: "enfroce"}); err == nil || !strings.Contains(err.Error(), "enfroce") {
+		t.Fatalf("misspelled mode must refuse to serve, got %v", err)
+	}
+	var logs strings.Builder
+	_, client := ruleHarness(t, "", &logs)
+	if _, _, err := client("lane-x", "").SendGuarded(SendReq{From: "lane-x", To: "b", Title: "x", Type: "proposal", Instructions: "x"}); err != nil {
+		t.Fatalf("default mode is log, not enforce: %v", err)
+	}
+	if !strings.Contains(logs.String(), "WOULD REFUSE SendGuarded from lane-x") {
+		t.Fatalf("default mode must log; logs=%q", logs.String())
+	}
+}
+
+// Resume keeps the origin host and fills a legacy blank.
+func TestResumeThreadCASFillsHostOnlyWhenBlank(t *testing.T) {
+	backend := newDst(t)
+	now := time.Date(2026, 9, 10, 15, 0, 0, 0, time.UTC)
+	register(t, backend, "thr-r", "lane-r", "", "suspended", now)
+	seen := now.UTC().Format(time.RFC3339Nano)
+	later := now.Add(time.Second).UTC().Format(time.RFC3339Nano)
+	if err := backend.ResumeThreadCAS(ThreadRecord{ThreadID: "thr-r", Agent: "lane-r", Status: "active", LastSeenAt: later, Payload: []byte(`{}`), Host: "m5"}, seen); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := backend.ThreadBinding("thr-r"); b.Host != "m5" || b.Status != "active" {
+		t.Fatalf("resume must fill a blank host: %+v", b)
+	}
+	if err := backend.UpsertThreads([]ThreadRecord{{ThreadID: "thr-r", Agent: "lane-r", Status: "suspended", LastSeenAt: later, Payload: []byte(`{}`), Host: "m5"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := backend.ResumeThreadCAS(ThreadRecord{ThreadID: "thr-r", Agent: "lane-r", Status: "active", LastSeenAt: now.Add(2 * time.Second).UTC().Format(time.RFC3339Nano), Payload: []byte(`{}`)}, later); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := backend.ThreadBinding("thr-r"); b.Host != "m5" {
+		t.Fatalf("resume with a blank host must keep the origin host: %+v", b)
+	}
+}

@@ -110,6 +110,57 @@ var ruleOfRaExempt = map[string]bool{
 	"ForceOwner": true,
 }
 
+// ErrThreadAuthority: a session tried to write or delete a thread binding
+// that is not on its own host.
+var ErrThreadAuthority = errors.New("routerstore: thread authority — a session may only register, update, resume or delete threads on its own host")
+
+// threadAuthority scopes the thread lifecycle verbs to the caller's host: every
+// record in the request is stamped with the session host (a record naming
+// another host is refused), and a thread that already exists must already be
+// on that host (legacy rows with no host are adoptable). Everything else
+// passes through untouched.
+func (s *server) threadAuthority(sess Session, name string, in []reflect.Value) error {
+	own := func(id string) error {
+		b, err := s.store.ThreadBinding(id)
+		if errors.Is(err, ErrThreadUnknown) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("thread authority: lookup %s: %w", id, err)
+		}
+		if b.Host != "" && b.Host != sess.Host {
+			return fmt.Errorf("%w: thread %s is on %s, session %s@%s (method %s)", ErrThreadAuthority, id, b.Host, sess.Agent, sess.Host, name)
+		}
+		return nil
+	}
+	stamp := func(r *ThreadRecord) error {
+		if r.Host != "" && r.Host != sess.Host {
+			return fmt.Errorf("%w: record %s names host %s, session is on %s (method %s)", ErrThreadAuthority, r.ThreadID, r.Host, sess.Host, name)
+		}
+		r.Host = sess.Host
+		return own(r.ThreadID)
+	}
+	switch name {
+	case "UpsertThreads", "ImportThreadsIfEmpty":
+		recs := in[0].Interface().([]ThreadRecord)
+		for i := range recs {
+			if err := stamp(&recs[i]); err != nil {
+				return err
+			}
+		}
+		in[0] = reflect.ValueOf(recs)
+	case "UpsertThreadCAS", "ResumeThreadCAS":
+		r := in[0].Interface().(ThreadRecord)
+		if err := stamp(&r); err != nil {
+			return err
+		}
+		in[0] = reflect.ValueOf(r)
+	case "DeleteThreadCAS":
+		return own(in[0].Interface().(string))
+	}
+	return nil
+}
+
 // ErrUnregistered is the Rule of Ra refusal: the session is not bound to an
 // active registered thread of its own agent on its own host.
 var ErrUnregistered = errors.New("routerstore: no audience — this session is not bound to an active registered thread of its own agent on its own host; run `sirsi thread register --agent <id>` and start the process with SIRSI_THREAD_ID=<thread id>")
@@ -171,6 +222,16 @@ func Handler(store Store, opts ServerOptions) (http.Handler, error) {
 	}
 	if opts.now == nil {
 		opts.now = func() time.Time { return time.Now().UTC() }
+	}
+	// The gate mode is validated here, once: "" means the documented default
+	// (log); anything but off|log|enforce is a refusal, never a silent open
+	// (SSA 2026-09-10, PR #724 P2).
+	switch opts.RuleOfRa = strings.ToLower(strings.TrimSpace(opts.RuleOfRa)); opts.RuleOfRa {
+	case "":
+		opts.RuleOfRa = "log"
+	case "off", "log", "enforce":
+	default:
+		return nil, fmt.Errorf("routerstore: serve: SIRSI_ROUTER_RULE_OF_RA=%q is not off|log|enforce; refusing to serve with an unknown gate mode", opts.RuleOfRa)
 	}
 	s := &server{store: store, sv: reflect.ValueOf(store), opts: opts, nonces: map[string]time.Time{}}
 	mux := http.NewServeMux()
@@ -237,7 +298,7 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// 6. the Rule of Ra — every thread registers or receives no audience.
-		if mode := s.opts.RuleOfRa; mode == "log" || mode == "enforce" {
+		if mode := s.opts.RuleOfRa; mode != "off" {
 			if rerr := s.ruleOfRa(sess, name); rerr != nil {
 				if mode == "enforce" {
 					writeErr(w, http.StatusUnauthorized, "ErrUnregistered", rerr.Error())
@@ -291,6 +352,18 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 		}
 		in = append(in, pv.Elem())
 		ai++
+	}
+	// 7. thread lifecycle authority — a session may only register, rewrite,
+	// resume or delete threads on ITS OWN host, so an unregistered caller cannot
+	// replace the binding the gate would authorize it with (SSA 2026-09-10,
+	// PR #724 P1). Host is the identity the bearer token binds; agent is
+	// self-asserted, and one machine's registry sync legitimately carries every
+	// agent on that machine.
+	if !isMint {
+		if aerr := s.threadAuthority(sess, name, in); aerr != nil {
+			writeErr(w, http.StatusForbidden, "ErrThreadAuthority", aerr.Error())
+			return
+		}
 	}
 	if name == "Wait" && len(in) == 3 {
 		if d, ok := in[2].Interface().(time.Duration); ok && (d <= 0 || d > s.opts.MaxWait) {

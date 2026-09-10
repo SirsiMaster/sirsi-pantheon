@@ -4,9 +4,10 @@
 -- migrations 1..18) translated once, plus the ADR-062 §3 identity tables
 -- (sessions, lease_sessions) and identity columns on threads. A Postgres ledger is
 -- always created fresh by `sirsi router migrate` from a quiesced SQLite dump
--- (rs-12), so there is no incremental migration chain here: one baseline,
--- versioned by router.schema_version so the migration tool can compare it
--- with SQLite's PRAGMA user_version.
+-- (rs-12). There is no migration chain: this file IS the upgrade — every
+-- statement is re-runnable (IF NOT EXISTS / OR REPLACE / ADD COLUMN IF NOT
+-- EXISTS), the job applies it in one transaction, and the version row is
+-- written last. Proof: scripts/router-service/test-apply-schema-upgrade.sh.
 --
 -- Translation rules (keep in sync with the dialect layer, rs-06):
 --   TEXT timestamps stay TEXT (RFC3339, UTC) — the store code compares them as
@@ -38,19 +39,19 @@ LANGUAGE sql VOLATILE AS $$
 $$;
 
 -- ── schema version (pairs with SQLite PRAGMA user_version) ─────────────────
+-- The version row is written at the END of this file (and the job applies the
+-- bundle in one transaction): a version is published only after every
+-- statement before it succeeded (SSA 2026-09-10, PR #724 P1).
 
 CREATE TABLE IF NOT EXISTS schema_version (
     singleton  BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
     version    INTEGER NOT NULL,
     applied_at TEXT    NOT NULL
 );
-INSERT INTO schema_version(version, applied_at) VALUES (19, router.now_rfc3339())
-  ON CONFLICT (singleton) DO UPDATE SET version = 19, applied_at = router.now_rfc3339()
-  WHERE schema_version.version < 19;
 
 -- ── v1 ─────────────────────────────────────────────────────────────────────
 
-CREATE TABLE items (
+CREATE TABLE IF NOT EXISTS items (
     id                TEXT PRIMARY KEY,
     from_agent        TEXT NOT NULL,
     to_agent          TEXT NOT NULL,
@@ -81,50 +82,50 @@ CREATE TABLE items (
     -- v13
     lease_updated     TEXT    NOT NULL DEFAULT ''
 );
-CREATE INDEX idx_items_to_status      ON items(to_agent, status);
-CREATE UNIQUE INDEX idx_items_idem    ON items(idem_key) WHERE idem_key <> '';
-CREATE UNIQUE INDEX idx_items_singleton ON items(source_item, failure_class)
+CREATE INDEX IF NOT EXISTS idx_items_to_status      ON items(to_agent, status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_items_idem    ON items(idem_key) WHERE idem_key <> '';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_items_singleton ON items(source_item, failure_class)
     WHERE source_item <> '' AND failure_class <> '';
-CREATE INDEX idx_items_lease          ON items(status, lease_expires);
-CREATE INDEX idx_items_blocked_by     ON items(blocked_by) WHERE blocked_by <> '';
-CREATE INDEX idx_items_lease_updated  ON items(to_agent, status, lease_updated);
+CREATE INDEX IF NOT EXISTS idx_items_lease          ON items(status, lease_expires);
+CREATE INDEX IF NOT EXISTS idx_items_blocked_by     ON items(blocked_by) WHERE blocked_by <> '';
+CREATE INDEX IF NOT EXISTS idx_items_lease_updated  ON items(to_agent, status, lease_updated);
 
-CREATE TABLE agents (
+CREATE TABLE IF NOT EXISTS agents (
     id            TEXT PRIMARY KEY,
     registered_at TEXT NOT NULL DEFAULT '',
     last_seen     TEXT NOT NULL DEFAULT '',
     pid           INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE TABLE state (
+CREATE TABLE IF NOT EXISTS state (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL DEFAULT ''
 );
 
 -- ── v2 ─────────────────────────────────────────────────────────────────────
 
-CREATE TABLE breakers (
+CREATE TABLE IF NOT EXISTS breakers (
     domain        TEXT PRIMARY KEY,
     failures      INTEGER NOT NULL DEFAULT 0,
     tripped_at    TEXT    NOT NULL DEFAULT '',
     operator_item TEXT    NOT NULL DEFAULT ''
 );
 
-CREATE TABLE send_quota (
+CREATE TABLE IF NOT EXISTS send_quota (
     sender TEXT NOT NULL,
     bucket TEXT NOT NULL,
     count  INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (sender, bucket)
 );
 
-CREATE TABLE counters (
+CREATE TABLE IF NOT EXISTS counters (
     name  TEXT PRIMARY KEY,
     value INTEGER NOT NULL DEFAULT 0
 );
 
 -- ── v3 / v4 / v7 / v9 ──────────────────────────────────────────────────────
 
-CREATE TABLE tasks (
+CREATE TABLE IF NOT EXISTS tasks (
     agent             TEXT NOT NULL,
     task_id           TEXT NOT NULL,
     subject           TEXT NOT NULL,
@@ -157,13 +158,13 @@ CREATE TABLE tasks (
     failure_reason    TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (agent, task_id)
 );
-CREATE INDEX idx_tasks_agent_status ON tasks(agent, status);
-CREATE UNIQUE INDEX idx_tasks_idempotency ON tasks(idempotency_key) WHERE idempotency_key <> '';
-CREATE INDEX idx_tasks_lease ON tasks(status, lease_expires);
+CREATE INDEX IF NOT EXISTS idx_tasks_agent_status ON tasks(agent, status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_idempotency ON tasks(idempotency_key) WHERE idempotency_key <> '';
+CREATE INDEX IF NOT EXISTS idx_tasks_lease ON tasks(status, lease_expires);
 
 -- ── v8 ─────────────────────────────────────────────────────────────────────
 
-CREATE TABLE identifiers (
+CREATE TABLE IF NOT EXISTS identifiers (
     namespace  TEXT NOT NULL,
     number     INTEGER NOT NULL,
     slug       TEXT NOT NULL DEFAULT '',
@@ -173,9 +174,9 @@ CREATE TABLE identifiers (
     claimed_at TEXT NOT NULL,
     PRIMARY KEY (namespace, number)
 );
-CREATE INDEX idx_identifiers_owner ON identifiers(namespace, owner);
+CREATE INDEX IF NOT EXISTS idx_identifiers_owner ON identifiers(namespace, owner);
 
-CREATE TABLE requirements (
+CREATE TABLE IF NOT EXISTS requirements (
     req_id         TEXT PRIMARY KEY,
     title          TEXT NOT NULL,
     source         TEXT NOT NULL,
@@ -194,12 +195,12 @@ CREATE TABLE requirements (
     -- v14
     waiver_ref     TEXT NOT NULL DEFAULT ''
 );
-CREATE INDEX idx_requirements_status ON requirements(status);
-CREATE INDEX idx_requirements_owner  ON requirements(owner, status);
+CREATE INDEX IF NOT EXISTS idx_requirements_status ON requirements(status);
+CREATE INDEX IF NOT EXISTS idx_requirements_owner  ON requirements(owner, status);
 
 -- ── v10 ────────────────────────────────────────────────────────────────────
 
-CREATE TABLE wake_events (
+CREATE TABLE IF NOT EXISTS wake_events (
     event_id       TEXT PRIMARY KEY,
     event_key      TEXT NOT NULL UNIQUE,
     agent          TEXT NOT NULL,
@@ -216,14 +217,14 @@ CREATE TABLE wake_events (
     created        TEXT NOT NULL,
     updated        TEXT NOT NULL
 );
-CREATE INDEX idx_wake_events_pending ON wake_events(status, next_attempt, created);
-CREATE INDEX idx_wake_events_agent   ON wake_events(agent, status);
+CREATE INDEX IF NOT EXISTS idx_wake_events_pending ON wake_events(status, next_attempt, created);
+CREATE INDEX IF NOT EXISTS idx_wake_events_agent   ON wake_events(agent, status);
 INSERT INTO state(key, value) VALUES ('operational_enforcement_since', router.now_rfc3339())
   ON CONFLICT (key) DO NOTHING;
 
 -- ── v16 ────────────────────────────────────────────────────────────────────
 
-CREATE TABLE threads (
+CREATE TABLE IF NOT EXISTS threads (
     thread_id    TEXT PRIMARY KEY,
     agent        TEXT NOT NULL,
     status       TEXT NOT NULL,
@@ -236,13 +237,13 @@ CREATE TABLE threads (
     session      TEXT NOT NULL DEFAULT '',
     runtime_hash TEXT NOT NULL DEFAULT ''
 );
-CREATE INDEX idx_threads_agent_status ON threads(agent, status);
-CREATE INDEX idx_threads_last_seen    ON threads(last_seen_at);
-CREATE UNIQUE INDEX idx_threads_session ON threads(session) WHERE session <> '';
+CREATE INDEX IF NOT EXISTS idx_threads_agent_status ON threads(agent, status);
+CREATE INDEX IF NOT EXISTS idx_threads_last_seen    ON threads(last_seen_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_threads_session ON threads(session) WHERE session <> '';
 
 -- ── v17 — ADR-062 §3 sessions ──────────────────────────────────────────────
 
-CREATE TABLE sessions (
+CREATE TABLE IF NOT EXISTS sessions (
     session_id   TEXT PRIMARY KEY,
     secret       TEXT NOT NULL,
     host         TEXT NOT NULL,
@@ -252,14 +253,14 @@ CREATE TABLE sessions (
     last_seen    TEXT NOT NULL,
     revoked      TEXT NOT NULL DEFAULT ''
 );
-CREATE INDEX idx_sessions_host_agent ON sessions(host, agent);
+CREATE INDEX IF NOT EXISTS idx_sessions_host_agent ON sessions(host, agent);
 -- v19 — the Rule of Ra (ADR-062 20b.1): the registered thread a session was minted for.
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS thread_id TEXT NOT NULL DEFAULT '';
 
 -- Which session holds each lease. A side table, not columns on items/tasks:
 -- items mirror work.Item field-for-field and identity never round-trips
 -- through markdown.
-CREATE TABLE lease_sessions (
+CREATE TABLE IF NOT EXISTS lease_sessions (
     kind    TEXT NOT NULL,
     key     TEXT NOT NULL,
     session TEXT NOT NULL,
@@ -268,7 +269,7 @@ CREATE TABLE lease_sessions (
 
 -- ── v18 — per-host bearer tokens (rs-11) ───────────────────────────────────
 
-CREATE TABLE host_tokens (
+CREATE TABLE IF NOT EXISTS host_tokens (
     token_id   TEXT PRIMARY KEY,
     token_hash TEXT NOT NULL UNIQUE,
     host       TEXT NOT NULL,
@@ -276,7 +277,7 @@ CREATE TABLE host_tokens (
     created    TEXT NOT NULL,
     revoked    TEXT NOT NULL DEFAULT ''
 );
-CREATE INDEX idx_host_tokens_host ON host_tokens(host, revoked);
+CREATE INDEX IF NOT EXISTS idx_host_tokens_host ON host_tokens(host, revoked);
 
 -- ── wake-event triggers (final state after migrations 10..15) ─────────────
 -- Each is one function + one trigger. A wake event is emitted in the SAME
@@ -293,7 +294,7 @@ BEGIN
   END IF;
   RETURN NULL;
 END $$;
-CREATE TRIGGER wake_item_created AFTER INSERT ON items
+CREATE OR REPLACE TRIGGER wake_item_created AFTER INSERT ON items
   FOR EACH ROW EXECUTE FUNCTION router.trg_wake_item_created();
 
 CREATE OR REPLACE FUNCTION router.trg_wake_item_unblocked() RETURNS TRIGGER
@@ -306,7 +307,7 @@ BEGIN
   END IF;
   RETURN NULL;
 END $$;
-CREATE TRIGGER wake_item_unblocked AFTER UPDATE OF status ON items
+CREATE OR REPLACE TRIGGER wake_item_unblocked AFTER UPDATE OF status ON items
   FOR EACH ROW EXECUTE FUNCTION router.trg_wake_item_unblocked();
 
 CREATE OR REPLACE FUNCTION router.trg_wake_item_blocker_cleared() RETURNS TRIGGER
@@ -319,7 +320,7 @@ BEGIN
   END IF;
   RETURN NULL;
 END $$;
-CREATE TRIGGER wake_item_blocker_cleared AFTER UPDATE OF blocked_by ON items
+CREATE OR REPLACE TRIGGER wake_item_blocker_cleared AFTER UPDATE OF blocked_by ON items
   FOR EACH ROW EXECUTE FUNCTION router.trg_wake_item_blocker_cleared();
 
 -- v12 wording
@@ -334,7 +335,7 @@ BEGIN
   END IF;
   RETURN NULL;
 END $$;
-CREATE TRIGGER wake_item_dependency_terminal AFTER UPDATE OF status ON items
+CREATE OR REPLACE TRIGGER wake_item_dependency_terminal AFTER UPDATE OF status ON items
   FOR EACH ROW EXECUTE FUNCTION router.trg_wake_item_dependency_terminal();
 
 CREATE OR REPLACE FUNCTION router.trg_wake_task_created() RETURNS TRIGGER
@@ -350,7 +351,7 @@ BEGIN
   END IF;
   RETURN NULL;
 END $$;
-CREATE TRIGGER wake_task_created AFTER INSERT ON tasks
+CREATE OR REPLACE TRIGGER wake_task_created AFTER INSERT ON tasks
   FOR EACH ROW EXECUTE FUNCTION router.trg_wake_task_created();
 
 CREATE OR REPLACE FUNCTION router.trg_wake_task_unblocked() RETURNS TRIGGER
@@ -364,7 +365,7 @@ BEGIN
   END IF;
   RETURN NULL;
 END $$;
-CREATE TRIGGER wake_task_unblocked AFTER UPDATE OF status, blocked_by ON tasks
+CREATE OR REPLACE TRIGGER wake_task_unblocked AFTER UPDATE OF status, blocked_by ON tasks
   FOR EACH ROW EXECUTE FUNCTION router.trg_wake_task_unblocked();
 
 CREATE OR REPLACE FUNCTION router.trg_wake_requirement_created() RETURNS TRIGGER
@@ -377,7 +378,7 @@ BEGIN
   END IF;
   RETURN NULL;
 END $$;
-CREATE TRIGGER wake_requirement_created AFTER INSERT ON requirements
+CREATE OR REPLACE TRIGGER wake_requirement_created AFTER INSERT ON requirements
   FOR EACH ROW EXECUTE FUNCTION router.trg_wake_requirement_created();
 
 -- v14 wording
@@ -392,7 +393,7 @@ BEGIN
   END IF;
   RETURN NULL;
 END $$;
-CREATE TRIGGER wake_continue_after_item AFTER UPDATE OF status ON items
+CREATE OR REPLACE TRIGGER wake_continue_after_item AFTER UPDATE OF status ON items
   FOR EACH ROW EXECUTE FUNCTION router.trg_wake_continue_after_item();
 
 -- v15
@@ -407,7 +408,7 @@ BEGIN
   END IF;
   RETURN NULL;
 END $$;
-CREATE TRIGGER wake_task_dependency_done AFTER UPDATE OF status ON tasks
+CREATE OR REPLACE TRIGGER wake_task_dependency_done AFTER UPDATE OF status ON tasks
   FOR EACH ROW EXECUTE FUNCTION router.trg_wake_task_dependency_done();
 
 CREATE OR REPLACE FUNCTION router.trg_wake_continue_after_task() RETURNS TRIGGER
@@ -423,7 +424,7 @@ BEGIN
   END IF;
   RETURN NULL;
 END $$;
-CREATE TRIGGER wake_continue_after_task AFTER UPDATE OF status ON tasks
+CREATE OR REPLACE TRIGGER wake_continue_after_task AFTER UPDATE OF status ON tasks
   FOR EACH ROW EXECUTE FUNCTION router.trg_wake_continue_after_task();
 
 -- v14 wording
@@ -438,7 +439,7 @@ BEGIN
   END IF;
   RETURN NULL;
 END $$;
-CREATE TRIGGER ack_wake_on_item_claim AFTER UPDATE OF lease_token ON items
+CREATE OR REPLACE TRIGGER ack_wake_on_item_claim AFTER UPDATE OF lease_token ON items
   FOR EACH ROW EXECUTE FUNCTION router.trg_ack_wake_on_item_claim();
 
 CREATE OR REPLACE FUNCTION router.trg_ack_wake_on_task_claim() RETURNS TRIGGER
@@ -454,7 +455,7 @@ BEGIN
   END IF;
   RETURN NULL;
 END $$;
-CREATE TRIGGER ack_wake_on_task_claim AFTER UPDATE OF lease_token ON tasks
+CREATE OR REPLACE TRIGGER ack_wake_on_task_claim AFTER UPDATE OF lease_token ON tasks
   FOR EACH ROW EXECUTE FUNCTION router.trg_ack_wake_on_task_claim();
 
 -- ── grants: the service is DML-only; DDL belongs to router_migrator ────────
@@ -462,3 +463,8 @@ GRANT USAGE ON SCHEMA router TO router_service;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA router TO router_service;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA router TO router_service;
 ALTER DEFAULT PRIVILEGES IN SCHEMA router GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO router_service;
+
+-- ── version — last, so a partial apply never publishes a version it does not have ──
+INSERT INTO schema_version(version, applied_at) VALUES (19, router.now_rfc3339())
+  ON CONFLICT (singleton) DO UPDATE SET version = 19, applied_at = router.now_rfc3339()
+  WHERE schema_version.version < 19;

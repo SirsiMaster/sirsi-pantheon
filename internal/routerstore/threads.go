@@ -131,9 +131,9 @@ WHERE threads.status NOT IN ('closed','reaped','suspended')
 // before a concurrent suspend from implicitly resuming the thread.
 func (s *SQLiteStore) ResumeThreadCAS(record ThreadRecord, suspendedAt string) error {
 	result, err := s.db.Exec(`UPDATE threads
-SET agent=?,status=?,last_seen_at=?,payload=?
+SET agent=?,status=?,last_seen_at=?,payload=?,host=CASE WHEN ?='' THEN host ELSE ? END
 WHERE thread_id=? AND status='suspended' AND last_seen_at=?`,
-		record.Agent, record.Status, record.LastSeenAt, record.Payload, record.ThreadID, suspendedAt)
+		record.Agent, record.Status, record.LastSeenAt, record.Payload, record.Host, record.Host, record.ThreadID, suspendedAt)
 	if err != nil {
 		return fmt.Errorf("routerstore: resume thread %q: %w", record.ThreadID, err)
 	}
@@ -164,7 +164,7 @@ func (s *SQLiteStore) DeleteThreadCAS(threadID, status, lastSeenAt string) (bool
 
 // ListThreads returns every durable thread payload.
 func (s *SQLiteStore) ListThreads() ([]ThreadRecord, error) {
-	rows, err := s.db.Query(`SELECT thread_id,agent,status,last_seen_at,payload FROM threads ORDER BY thread_id`)
+	rows, err := s.db.Query(`SELECT thread_id,agent,status,last_seen_at,payload,host FROM threads ORDER BY thread_id`)
 	if err != nil {
 		return nil, fmt.Errorf("routerstore: list threads: %w", err)
 	}
@@ -172,7 +172,7 @@ func (s *SQLiteStore) ListThreads() ([]ThreadRecord, error) {
 	var out []ThreadRecord
 	for rows.Next() {
 		var r ThreadRecord
-		if err := rows.Scan(&r.ThreadID, &r.Agent, &r.Status, &r.LastSeenAt, &r.Payload); err != nil {
+		if err := rows.Scan(&r.ThreadID, &r.Agent, &r.Status, &r.LastSeenAt, &r.Payload, &r.Host); err != nil {
 			return nil, fmt.Errorf("routerstore: scan thread: %w", err)
 		}
 		out = append(out, r)
