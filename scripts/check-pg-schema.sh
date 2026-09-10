@@ -21,10 +21,26 @@ cleanup() { psqlq -d postgres -c "DROP DATABASE IF EXISTS $DB;" >/dev/null 2>&1 
 trap cleanup EXIT
 
 psqlq -d postgres -c "CREATE DATABASE $DB;"
-psqlq -d "$DB" -f "$ROOT/internal/routerstore/pg/roles.sql" >/dev/null
+# Model Cloud SQL exactly: both users pre-exist, created by `gcloud sql users create` (LOGIN CREATEDB
+# CREATEROLE, non-superuser), and the WHOLE bundle — roles.sql then schema.sql — runs as router_migrator
+# in one transaction, as apply-schema-job.sh runs it. Roles are cluster-wide: start from none.
+psqlq -d "$DB" -c "DROP ROLE IF EXISTS router_service; DROP ROLE IF EXISTS router_migrator;" >/dev/null
+psqlq -d "$DB" -c "CREATE ROLE router_migrator LOGIN CREATEDB CREATEROLE; CREATE ROLE router_service LOGIN CREATEDB CREATEROLE;" >/dev/null
 psqlq -d "$DB" -c "ALTER DATABASE $DB OWNER TO router_migrator;" >/dev/null
-# DDL as the migrator, exactly as production will.
-PGUSER=router_migrator psqlq -1 -d "$DB" -f "$ROOT/internal/routerstore/pg/schema.sql" >/dev/null
+attrs() { psqlq -d "$DB" -c "SELECT rolsuper||' '||rolcreaterole||' '||rolcreatedb||' '||rolbypassrls FROM pg_roles WHERE rolname='router_service';"; }
+bundle="$(mktemp)"; cat "$ROOT/internal/routerstore/pg/roles.sql" "$ROOT/internal/routerstore/pg/schema.sql" > "$bundle"
+# Negative control first: without ADMIN OPTION on router_service the migrator's ALTER ROLE is refused
+# (PostgreSQL 16 user.c AlterRole) and, because the bundle is one transaction, nothing lands.
+if PGUSER=router_migrator psqlq -1 -d "$DB" -f "$bundle" >/dev/null 2>&1; then
+  echo "FAIL: the bundle must be refused when router_migrator lacks ADMIN OPTION on router_service"; exit 1
+fi
+[ "$(attrs)" = "false true true false" ] || { echo "FAIL: a refused bundle must leave router_service untouched, got [$(attrs)]"; exit 1; }
+[ "$(psqlq -d "$DB" -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='router';")" = 0 ] || { echo "FAIL: a refused bundle must leave no tables"; exit 1; }
+# The one-time owner grant the job names, then the real apply as the migrator.
+psqlq -d "$DB" -c "GRANT router_service TO router_migrator WITH ADMIN OPTION, INHERIT FALSE, SET FALSE;" >/dev/null
+PGUSER=router_migrator psqlq -1 -d "$DB" -f "$bundle" >/dev/null
+rm -f "$bundle"
+[ "$(attrs)" = "false false false false" ] || { echo "FAIL: roles.sql must strip router_service CREATEDB/CREATEROLE on an existing role, got [$(attrs)]"; exit 1; }
 
 tables=$(psqlq -d "$DB" -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='router' AND table_type='BASE TABLE';")
 triggers=$(psqlq -d "$DB" -c "SELECT count(*) FROM information_schema.triggers WHERE trigger_schema='router';")

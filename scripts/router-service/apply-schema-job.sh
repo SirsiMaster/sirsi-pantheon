@@ -55,6 +55,12 @@ q() { psql -qtA -h "$H" -U router_migrator -d router -c "$1"; }
 # holds CREATEROLE (via its own cloudsqlsuperuser membership on Cloud SQL). Refuse rather than "succeed" silently.
 auth=$(q "SELECT rolcreaterole OR pg_has_role(current_user,'cloudsqlsuperuser','MEMBER') FROM pg_roles WHERE rolname=current_user")
 [ "$auth" = t ] || { echo "FAIL router_migrator cannot revoke role membership (no CREATEROLE / cloudsqlsuperuser)"; exit 1; }
+# roles.sql ALTERs router_service NOCREATEDB NOCREATEROLE. On PostgreSQL 16 a non-superuser may do that only with
+# CREATEROLE + CREATEDB itself + ADMIN OPTION on the target (user.c AlterRole). Probe the real attributes and the
+# real pg_auth_members row — never infer from cloudsqlsuperuser membership — and refuse with the exact one-time grant.
+alter_auth=$(q "SELECT (rolcreaterole AND rolcreatedb) FROM pg_roles WHERE rolname=current_user")
+admin_opt=$(q "SELECT coalesce(bool_or(admin_option),false) FROM pg_auth_members WHERE roleid='router_service'::regrole AND member=current_user::regrole")
+[ "$alter_auth" = t ] && [ "$admin_opt" = t ] || { echo "FAIL router_migrator cannot ALTER ROLE router_service (createrole+createdb=$alter_auth admin_option=$admin_opt). Owner, once, as the Cloud SQL postgres user: GRANT router_service TO router_migrator WITH ADMIN OPTION, INHERIT FALSE, SET FALSE;"; exit 1; }
 psql -1 -v ON_ERROR_STOP=1 -q -h "$H" -U router_migrator -d router -f /sql/apply.sql  # -1: one transaction, all or nothing
 tables=$(q "SELECT count(*) FROM information_schema.tables WHERE table_schema='router' AND table_type='BASE TABLE'")
 triggers=$(q "SELECT count(DISTINCT trigger_name) FROM information_schema.triggers WHERE trigger_schema='router'")
@@ -64,13 +70,13 @@ echo "tables=$tables triggers=$triggers partial=$partial version=$version"
 [ "$tables" = 15 ] && [ "$triggers" = 12 ] && [ "$partial" -ge 5 ] && [ "$version" = 19 ] || { echo FAIL-shape; exit 1; }
 # Closed privilege audit of router_service: every DDL path, not one probe.
 members=$(q "SELECT coalesce(string_agg(b.rolname, ','), '') FROM pg_auth_members m JOIN pg_roles b ON b.oid=m.roleid JOIN pg_roles r ON r.oid=m.member WHERE r.rolname='router_service'")
-attrs=$(q "SELECT rolsuper||' '||rolcreaterole||' '||rolcreatedb||' '||rolbypassrls FROM pg_roles WHERE rolname='router_service'")
+attrs=$(q "SELECT rolsuper||' '||rolcreaterole||' '||rolcreatedb||' '||rolbypassrls FROM pg_roles WHERE rolname='router_service'")  # booleans render as true/false
 schema_create=$(q "SELECT has_schema_privilege('router_service','router','CREATE')")
 db_create=$(q "SELECT has_database_privilege('router_service','router','CREATE')")
 defacl=$(q "SELECT count(*) FROM pg_default_acl d, aclexplode(d.defaclacl) a JOIN pg_roles g ON g.oid=a.grantee WHERE g.rolname='router_service' AND a.privilege_type NOT IN ('SELECT','INSERT','UPDATE','DELETE')")
 owned=$(q "SELECT count(*) FROM pg_class c JOIN pg_roles o ON o.oid=c.relowner WHERE o.rolname='router_service'")
 echo "router_service: memberships=[$members] super/createrole/createdb/bypassrls=[$attrs] schema.CREATE=$schema_create db.CREATE=$db_create non-DML-default-acl=$defacl owned-objects=$owned"
-[ -z "$members" ] && [ "$attrs" = "f f f f" ] && [ "$schema_create" = f ] && [ "$db_create" = f ] && [ "$defacl" = 0 ] && [ "$owned" = 0 ] || { echo "FAIL router_service holds a DDL path"; exit 1; }
+[ -z "$members" ] && [ "$attrs" = "false false false false" ] && [ "$schema_create" = f ] && [ "$db_create" = f ] && [ "$defacl" = 0 ] && [ "$owned" = 0 ] || { echo "FAIL router_service holds a DDL path"; exit 1; }
 if PGPASSWORD="$SVCPW" psql -qtA -h "$H" -U router_service -d router -c 'CREATE TABLE router.ddl_probe(i int)' 2>/dev/null; then
   echo "FAIL router_service can DDL"; exit 1
 fi
