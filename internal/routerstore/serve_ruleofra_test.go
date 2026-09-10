@@ -125,8 +125,8 @@ func TestSessionCarriesThreadAcrossTheWireAndSurvivesMigration(t *testing.T) {
 			_ = v.Scan(&ver)
 		}
 		_ = v.Close()
-		if ver != 19 {
-			t.Fatalf("schema version %d, want 19", ver)
+		if ver != 20 {
+			t.Fatalf("schema version %d, want 20", ver)
 		}
 	}
 }
@@ -340,5 +340,163 @@ func TestHostAuthoritySurvivesCompetingAdoption(t *testing.T) {
 	}
 	if b, _ := backend.ThreadBinding("thr-theirs"); b.Status != "suspended" || b.Host != "other-host" {
 		t.Fatalf("row must be untouched: %+v", b)
+	}
+}
+
+// The audience log records every gated call at mutation time (allowed,
+// would_refuse, refused) and AudienceSince reports the failures and the live
+// sessions that carried no thread — a finished session that was registered at
+// the time passes; a session unregistered at the time fails.
+func TestAudienceLogRecordsMutationTimeTruth(t *testing.T) {
+	var logs strings.Builder
+	backend, client := ruleHarness(t, "log", &logs)
+	host, _ := os.Hostname()
+	now := time.Date(2026, 9, 10, 15, 0, 0, 0, time.UTC)
+	register(t, backend, "thr-ok", "lane-ok", host, "active", now.Add(-time.Minute))
+	if _, _, err := client("lane-ok", "thr-ok").SendGuarded(SendReq{From: "lane-ok", To: "b", Title: "a", Type: "proposal", Instructions: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := client("lane-bad", "").SendGuarded(SendReq{From: "lane-bad", To: "b", Title: "b", Type: "proposal", Instructions: "x"}); err != nil {
+		t.Fatal(err) // log mode allows
+	}
+	// The registered thread finishes afterwards; its earlier mutation still passes the audit.
+	register(t, backend, "thr-ok", "lane-ok", host, "closed", now)
+	rep, err := backend.AudienceSince("2026-09-10T00:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Gated != 2 || rep.Allowed != 1 || len(rep.Failures) != 1 || rep.Failures[0].Agent != "lane-bad" || rep.Failures[0].Verdict != "would_refuse" {
+		t.Fatalf("report = %+v", rep)
+	}
+	if len(rep.Unbound) != 1 || !strings.HasPrefix(rep.Unbound[0], "lane-bad@") {
+		t.Fatalf("live coverage gap must name the unbound session: %v", rep.Unbound)
+	}
+	// Reads are not gated and not logged.
+	if _, err := client("lane-bad", "").Inbox("lane-bad"); err != nil {
+		t.Fatal(err)
+	}
+	rep2, _ := backend.AudienceSince("2026-09-10T00:00:00Z")
+	if rep2.Gated != 2 {
+		t.Fatalf("reads must not be logged: gated=%d", rep2.Gated)
+	}
+	// Over the wire, the report is readable by an unregistered session.
+	if wr, err := client("lane-bad", "").AudienceSince("2026-09-10T00:00:00Z"); err != nil || wr.Gated != 2 {
+		t.Fatalf("AudienceSince over the wire: %+v %v", wr, err)
+	}
+}
+
+// auditFault makes RecordAudience fail on demand — SSA's fault injection.
+type auditFault struct {
+	Store
+	fail bool
+}
+
+func (a *auditFault) RecordAudience(e AudienceEntry) error {
+	if a.fail {
+		return errors.New("disk full")
+	}
+	return a.Store.RecordAudience(e)
+}
+
+// SSA 2026-09-10 (PR #726): (1) a failed audit write refuses the mutation
+// instead of letting an unrecorded mutation through; (2) live coverage comes
+// from the sessions table, so a threadless session that only reads is named;
+// (3) an empty window reports Recorded=false and carries the gate mode.
+func TestAudienceIsCompleteOrRefuses(t *testing.T) {
+	backend := newDst(t)
+	af := &auditFault{Store: backend}
+	var logs strings.Builder
+	_, client := ruleHarnessOn(t, "log", &logs, af)
+
+	// (2) a live, threadless session that only calls Inbox appears in coverage…
+	reader := client("lane-reader", "")
+	if _, err := reader.Inbox("lane-reader"); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := reader.AudienceSince("2026-09-10T00:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Recorded || rep.Gated != 0 || rep.Mode != "log" {
+		t.Fatalf("empty history must say so and carry the mode: %+v", rep)
+	}
+	if len(rep.Unbound) != 1 || !strings.HasPrefix(rep.Unbound[0], "lane-reader@") {
+		t.Fatalf("a live threadless session must be in the coverage table even with no mutation: %v", rep.Unbound)
+	}
+	// …and a revoked one drops out.
+	if err := backend.RevokeSession(strings.Fields(rep.Unbound[0])[1]); err != nil {
+		t.Fatal(err)
+	}
+	if rep2, _ := client("lane-x", "thr-none").AudienceSince("2026-09-10T00:00:00Z"); len(rep2.Unbound) != 0 {
+		t.Fatalf("a revoked session leaves coverage, and a session minted with a thread id is not threadless: %v", rep2.Unbound)
+	}
+
+	// (1) audit write fails → the mutation is refused and nothing is committed.
+	af.fail = true
+	writer := client("lane-writer", "")
+	if _, _, err := writer.SendGuarded(SendReq{From: "lane-writer", To: "b", Title: "lost", Type: "proposal", Instructions: "x"}); err == nil || !errors.Is(err, ErrServiceUnavailable) {
+		t.Fatalf("a mutation the audit cannot record must be refused with ErrServiceUnavailable, got %v", err)
+	}
+	af.fail = false
+	if items, _ := backend.Inbox("b"); len(items) != 0 {
+		t.Fatalf("refused mutation must not commit: %d items", len(items))
+	}
+	if rep3, _ := writer.AudienceSince("2026-09-10T00:00:00Z"); rep3.Recorded {
+		t.Fatalf("nothing was recorded during the fault: %+v", rep3)
+	}
+	if !strings.Contains(logs.String(), "audience log write failed, refusing SendGuarded") {
+		t.Fatalf("the refusal must be logged: %q", logs.String())
+	}
+}
+
+// SSA 2026-09-10 (PR #726 P2): the log's timestamp is fixed-width, so a
+// fractional-second `since` excludes an older whole-second row.
+func TestAudienceSinceIsChronologicalAtFractionalSeconds(t *testing.T) {
+	backend := newDst(t)
+	if err := backend.RecordAudience(AudienceEntry{TS: "2026-09-10T15:00:00Z", Method: "SendGuarded", SessionID: "s", Agent: "a", Host: "h", Verdict: "would_refuse"}); err != nil {
+		t.Fatal(err)
+	}
+	if rep, _ := backend.AudienceSince("2026-09-10T15:00:00.5Z"); rep.Gated != 0 {
+		t.Fatalf("a row at 15:00:00Z must not match since=15:00:00.5Z: %+v", rep)
+	}
+	if rep, _ := backend.AudienceSince("2026-09-10T14:59:59.999999999Z"); rep.Gated != 1 || rep.Failures[0].TS != "2026-09-10T15:00:00.000000000Z" {
+		t.Fatalf("stored ts must be fixed width and included: %+v", rep)
+	}
+}
+
+// SSA 2026-09-10 (PR #726 r2): a malformed `since` is a normal error over the
+// wire, never a panic; and the live-coverage threshold excludes a session at
+// the whole second before a fractional `since`.
+func TestAudienceSinceValidatesAndCeilsFraction(t *testing.T) {
+	backend := newDst(t)
+	var logs strings.Builder
+	_, client := ruleHarnessOn(t, "log", &logs, backend)
+
+	// invalid since — store and wire both return an error, no panic.
+	if _, err := backend.AudienceSince("bad"); err == nil {
+		t.Fatal("store: invalid since must error")
+	}
+	if _, err := backend.AudienceSince(""); err == nil {
+		t.Fatal("store: empty since must error")
+	}
+	if _, err := client("lane-a", "").AudienceSince("nonsense"); err == nil {
+		t.Fatal("wire: invalid since must return an error, not crash the handler")
+	}
+
+	// A directly-inserted session at exactly 15:00:00Z (no minted real-clock
+	// rows in the way): excluded for a fractional since past that second,
+	// included at the whole second.
+	fresh := newDst(t)
+	if _, err := fresh.db.Exec(`INSERT INTO sessions(session_id,secret,host,agent,runtime_hash,thread_id,created,last_seen,revoked) VALUES('s1','x','h','lane-live','rh','','2026-09-10T15:00:00Z','2026-09-10T15:00:00Z','')`); err != nil {
+		t.Fatal(err)
+	}
+	if rep, err := fresh.AudienceSince("2026-09-10T15:00:00.5Z"); err != nil || len(rep.Unbound) != 0 {
+		t.Fatalf("fractional since must exclude the previous whole second: %+v %v", rep.Unbound, err)
+	}
+	if rep, _ := fresh.AudienceSince("2026-09-10T15:00:00Z"); len(rep.Unbound) != 1 {
+		t.Fatalf("whole-second since must include the session: %v", rep.Unbound)
+	}
+	if rep, _ := fresh.AudienceSince("2026-09-10T14:59:59.5Z"); len(rep.Unbound) != 1 {
+		t.Fatalf("since just before must include the session: %v", rep.Unbound)
 	}
 }
