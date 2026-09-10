@@ -23,9 +23,10 @@ M5 Mac        2026-09-10T02:49:21Z   Items: 658 open, 5814 closed
 ```
 (Counts moved from the frozen 753/5717 because the SSA lane was closing its backlog at the time — the ledger is live.)
 Writers proven: Claude lane on the M1 (Ra: rs-18/19/20 closed via the service, no ssh); M5 write (`task reclaim-expired`) at 02:2xZ; **Codex lane on the M5**: `sirsi-software-admin` wake loop (pid 51686) dispatched `codex exec … -c sandbox_workspace_write.network_access=true`, which claimed and closed router items through the service (inbox 108 → 107 at 02:47Z, then 751 → 658 open fleet-wide by 02:49Z) and wrote response item `20260910-024658`.
-Boundary: codex sandboxes have no DNS, so codex lanes reach the service only with the owner's network exception (2026-09-10: SSA lane only) until the unix-socket relay (rs-22) lands. No codex runtime is installed on the M1. G7 is therefore closed for Claude lanes on both hosts and for the codex lane the owner authorized; the remaining codex lanes are gated on rs-22, not on the cut-over.
+**G7 state: PARTIAL.** `docs/ROUTER_SERVICE_GOAL.md` G7 requires Codex AND Claude lanes on BOTH hosts. Proven subset: Claude lanes on both hosts (Ra on the M1, horus/interactive on the M5) and ONE Codex lane on the M5 (`sirsi-software-admin`, under the owner's 2026-09-10 network exception). Not proven: any Codex lane on the M1 (no codex runtime is installed there) and the other Codex lanes on the M5 (their sandboxes have no DNS; they are gated on the rs-22 unix-socket relay, after which the SSA exception is retired). G7 closes when a Codex lane claims and closes on the M1 and the M5 Codex lanes reach the service without the exception.
 
-## Rollback rehearsal (G8), node-local on the M5, timed
+## Rollback rehearsal (G8), node-local on the M5, timed — scope: the local file only
+Scope as rehearsed: a node with `SIRSI_ROUTER_URL` unset is back on its local file with that file's data intact. It does NOT carry the service's post-snapshot writes back into the local file; a permanent rollback of the fleet would need a fresh export from the service (the reverse of migrate-store), which is not written and not claimed.
 ```
 G8 rehearsal #2 on Mac 2026-09-10T02:50:03Z: data dump sha 7aa0444cdf1c4125
 rolled back in .030 s   (env file out, chmod u+w, journal_mode=wal, previous binary)   local: Items: 753 open, 5717 closed
@@ -39,3 +40,22 @@ window .596 s; data dump sha after 7aa0444cdf1c4125 (IDENTICAL — no data loss)
 
 ## Guards added after the run (PR #713)
 Step 4 refuses when `~/.sirsi/cutover/activated` exists or the destination holds any host token (`RAISE EXCEPTION` inside the psql job); step 7 writes the activation marker. Wake plists are written privately (0600, temp + rename) and tightened on the idempotent path.
+
+## Service revision traffic rollback (ADR-062 Verification), timed
+```
+2026-09-10T02:54:06Z  update-traffic → sirsi-router-00006-d6v=100   5.924 s   healthz 200   status via 00006: Items: 654 open, 5827 closed
+                      update-traffic → sirsi-router-00007-dqm=100   7.847 s   healthz 200
+```
+Both revisions serve the same Cloud SQL ledger; no data path changes with traffic.
+
+## Per-host token revocation (ADR-062 Verification), timed
+```
+2026-09-10T02:54:24Z  mint bcbc87f5aa7d7db3 (host Mac, label revocation-rehearsal-20260910)   → M5 request with it: Items: 649 open, 5832 closed
+                      revoke bcbc87f5aa7d7db3 via job sirsi-router-token: 183.8 s job round trip (Cloud Run job provisioning dominates; the revoke itself is one row)
+2026-09-10T03:00:55Z  M5 request with the revoked token: HTTP 401: missing or invalid bearer token
+```
+The two live host tokens (Mac, MacBookPro) were untouched and kept working throughout.
+
+## Guards added after the run (PR #713, round 3)
+The activation guard now runs before ANY host mutation (top of the script, for FROM ≤ 4), so a default rerun on a cut-over host refuses before step 2; `~/.sirsi/build/sirsi-prev` is never overwritten once present; step 4 additionally refuses inside the psql job when the destination holds any host token.
+

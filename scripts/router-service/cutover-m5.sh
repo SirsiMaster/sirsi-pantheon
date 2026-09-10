@@ -61,6 +61,9 @@ if [ "${1:-}" = rollback ]; then
   exit 0
 fi
 FROM=${FROM:-1}
+# Already cut over? Refuse BEFORE any host mutation (SSA 2026-09-10): a default rerun must never reach the
+# freeze/swap in step 2 or the truncate in step 4. `rollback` above is the only verb that runs on an activated host.
+[ -e "$WORK/activated" ] && [ "$FROM" -le 4 ] && { echo "REFUSED: $WORK/activated exists (cut over $(cat "$WORK/activated")) — this host is live on the service; use \`rollback\` or FROM=5+ only" >&2; exit 1; }
 
 if [ "$FROM" -le 1 ]; then
   step 1 preflight
@@ -79,7 +82,8 @@ if [ "$FROM" -le 2 ]; then
   step 2 "freeze M5 router.db (old writers fail loudly from here on)"
   m5 'sqlite3 ~/.sirsi/router.db "PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode=DELETE;" && chmod a-w ~/.sirsi/router.db && ls -la ~/.sirsi/router.db*'
   # Swap the binary now: rm then cp (cp over a live binary SIGKILLs it). Running processes keep the old inode.
-  m5 'cp ~/.local/bin/sirsi ~/.sirsi/build/sirsi-prev && rm ~/.local/bin/sirsi && cp ~/.sirsi/build/sirsi-main ~/.local/bin/sirsi && ls -la ~/.local/bin/sirsi'
+  # sirsi-prev is the retained PRE-cutover binary: never overwrite an existing one.
+  m5 '[ -x ~/.sirsi/build/sirsi-prev ] || cp ~/.local/bin/sirsi ~/.sirsi/build/sirsi-prev; rm ~/.local/bin/sirsi && cp ~/.sirsi/build/sirsi-main ~/.local/bin/sirsi && ls -la ~/.local/bin/sirsi'
 fi
 
 if [ "$FROM" -le 3 ]; then

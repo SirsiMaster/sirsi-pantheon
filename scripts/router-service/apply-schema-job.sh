@@ -24,12 +24,9 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 run() { echo "+ $*" >&2; [ "${DRY_RUN:-0}" = 1 ] || "$@"; }
 exists() { "$@" >/dev/null 2>&1; }
 
-echo "== 0. Job identity $JOB_SA (cloudsql.client + secretAccessor on its three secrets, nothing else)"
+echo "== 0. Job identity $JOB_SA (cloudsql.client now; secret access granted AFTER the secrets exist)"
 exists $G iam service-accounts describe "$JOB_SA" || run $G iam service-accounts create "$JOB_SA_NAME" --display-name="router schema job (ADR-062)"
 run $G projects add-iam-policy-binding "$PROJECT" --member="serviceAccount:$JOB_SA" --role=roles/cloudsql.client --condition=None >/dev/null
-for sec in sirsi-router-schema-sql sirsi-router-router-migrator-password sirsi-router-router-service-password; do
-  run $G secrets add-iam-policy-binding "$sec" --member="serviceAccount:$JOB_SA" --role=roles/secretmanager.secretAccessor >/dev/null
-done
 
 echo "== 1. SQL bundle -> Secret Manager (sirsi-router-schema-sql)"
 bundle=$(mktemp); trap 'rm -f "$bundle"' EXIT
@@ -42,6 +39,11 @@ if exists $G secrets describe sirsi-router-schema-sql; then
 else
   run $G secrets create sirsi-router-schema-sql --replication-policy=automatic --data-file="$bundle"
 fi
+
+# Grants come after step 1 so a fresh project (no sirsi-router-schema-sql yet) does not fail under set -e (SSA 2026-09-10).
+for sec in sirsi-router-schema-sql sirsi-router-router-migrator-password sirsi-router-router-service-password; do
+  run $G secrets add-iam-policy-binding "$sec" --member="serviceAccount:$JOB_SA" --role=roles/secretmanager.secretAccessor >/dev/null
+done
 
 echo "== 2. Job $JOB (postgres:16-alpine for psql, Cloud SQL connector, secrets mounted)"
 read -r -d '' SCRIPT <<'SH' || true
