@@ -22,4 +22,11 @@ echo FAKE-FIXTURE-TOKEN | HOME=$L write_env ""; check legacy $L
 grep -q 'unrelated comment' $L/.zshenv && grep -q 'FOO=bar' $L/.zshenv && grep -q cargo $L/.zshenv || { echo "FAIL legacy: unrelated lines lost"; cat $L/.zshenv; exit 1; }
 # repeat: idempotent
 echo FAKE-FIXTURE-TOKEN | HOME=$L write_env ""; check repeat $L
-echo "OK: fresh, legacy upgrade (old managed line replaced, unrelated lines kept), repeat idempotent; lane keeps spool URL and no token in all cases"
+# grep-error: a filter that fails with exit 2 must abort before replacing ~/.zshenv; nothing lost, installer non-zero
+G=$T/greperr; mkdir -p $G $T/fakebin; cp $L/.zshenv $G/.zshenv; printf '#!/bin/sh\nexit 2\n' >$T/fakebin/grep; chmod +x $T/fakebin/grep
+before=$(shasum -a 256 $G/.zshenv | cut -c1-16)
+set +e; echo FAKE-FIXTURE-TOKEN | HOME=$G PATH="$T/fakebin:$PATH" write_env "" 2>/dev/null; rc=$?; set -e
+[ "$rc" != 0 ] || { echo "FAIL grep-error: installer returned 0"; exit 1; }
+[ "$(shasum -a 256 $G/.zshenv | cut -c1-16)" = "$before" ] || { echo "FAIL grep-error: ~/.zshenv was replaced after a filter failure"; exit 1; }
+[ -z "$(ls $G/.zshenv.tmp.* 2>/dev/null)" ] || { echo "FAIL grep-error: temp file left behind"; exit 1; }
+echo "OK: fresh, legacy upgrade (old managed line replaced, unrelated lines kept), repeat idempotent, grep-error aborts before mv (rc=$rc, file unchanged); lane keeps spool URL and no token in all cases"

@@ -44,7 +44,9 @@ items() { grep -m1 'Items:' "$1"; }
 ZSHENV_MARKER='# ADR-062 router service'
 write_env() {
   local tok; read -r tok
-  local sh='umask 077; mkdir -p "$HOME/.sirsi"; cat >"$HOME/.sirsi/router-service.env"; z="$HOME/.zshenv"; touch "$z"; tmp="$z.tmp.$$"; grep -vF "$1" "$z" >"$tmp" || true; printf "%s\n" "$0" >>"$tmp"; mv "$tmp" "$z"'
+  # Fail-fast inner script: grep exit 1 = no managed line (fine); exit 2 = I/O error → abort BEFORE mv, so a
+  # failed filter can never replace ~/.zshenv with a truncated copy (SSA 2026-09-10).
+  local sh='set -eu; umask 077; mkdir -p "$HOME/.sirsi"; cat >"$HOME/.sirsi/router-service.env"; z="$HOME/.zshenv"; touch "$z"; tmp="$z.tmp.$$"; set +e; grep -vF "$1" "$z" >"$tmp"; rc=$?; set -e; [ "$rc" -le 1 ] || { rm -f "$tmp"; echo "write_env: filtering $z failed (grep exit $rc); ~/.zshenv left untouched" >&2; exit 3; }; printf "%s\n" "$0" >>"$tmp"; mv "$tmp" "$z"'
   local body; body=$(printf "export SIRSI_ROUTER_URL='%s'\nexport SIRSI_ROUTER_TOKEN='%s'\n" "$URL" "$tok")
   if [ -z "$1" ]; then printf '%s\n' "$body" | bash -c "$sh" "$SRC_LINE" "$ZSHENV_MARKER"
   else printf '%s\n' "$body" | ssh "$1" "bash -c $(printf %q "$sh") $(printf %q "$SRC_LINE") $(printf %q "$ZSHENV_MARKER")"; fi
