@@ -7,8 +7,8 @@
 #   1 preflight   service healthy; M5 binary speaks SIRSI_ROUTER_URL; no `sirsi router` process mid-write
 #   2 freeze      M5 router.db: WAL checkpoint, journal_mode=DELETE, chmod a-w  (old writers now FAIL LOUDLY)
 #   3 snapshot    .backup on the M5 → M1 → schema-advanced to the binary's version (v18)
-#   4 clear       destination identity tables (sessions, lease_sessions, host_tokens, threads): the hash
-#                 gate compares every table and these rows are destination-only (rs-18 lesson)
+#   4 empty       every router table on the destination: the final import lands on an empty ledger (the
+#                 service carries no traffic before the cut-over; stale rehearsal rows make the gate fail)
 #   5 import      migrate-job.sh REAL; gate = source sha256 == destination sha256
 #   6 tokens+env  one host-bound token per Mac (M5 `Mac`, M1 `MacBookPro`) via the token job, into
 #                 ~/.sirsi/router-service.env (0600) sourced from ~/.zshenv. The horus supervisor is
@@ -22,7 +22,7 @@
 # Rollback never touches the service: rows written there during the window stay there.
 # The M5 binary must already be rebuilt from main at or after PR #711 (step 1 prints the recipe).
 set -euo pipefail
-PROJECT=${PROJECT:-sirsi-nexus-live}; REGION=${REGION:-us-central1}
+PROJECT=${PROJECT:-sirsi-nexus-live}; REGION=${REGION:-us-central1}; INSTANCE=${INSTANCE:-sirsi-router}; CONN="$PROJECT:$REGION:$INSTANCE"
 URL=${URL:-https://sirsi-router-6kdf4or4qq-uc.a.run.app}
 M5=${M5:-thekryptodragon@192.168.1.155}; M5_HOST=${M5_HOST:-Mac}; M1_HOST=${M1_HOST:-$(hostname -s)}
 G="gcloud --project=$PROJECT --quiet"
@@ -56,18 +56,23 @@ if [ "${1:-}" = rollback ]; then
   echo "== rollback: env out on both Macs, M5 router.db writable, WAL back"
   sh='sed -i "" "/router-service.env/d" "$HOME/.zshenv"; rm -f "$HOME/.sirsi/router-service.env"'
   bash -c "$sh"; ssh "$M5" "$sh"
-  m5 'chmod u+w ~/.sirsi/router.db && sqlite3 ~/.sirsi/router.db "PRAGMA journal_mode=wal;"'
+  m5 'chmod u+w ~/.sirsi/router.db && sqlite3 ~/.sirsi/router.db "PRAGMA journal_mode=wal;"; [ -x ~/.sirsi/build/sirsi-prev ] && rm ~/.local/bin/sirsi && cp ~/.sirsi/build/sirsi-prev ~/.local/bin/sirsi'
   echo "rolled back: M5 writes the local file again; service rows written during the window are NOT copied back"
   exit 0
 fi
 FROM=${FROM:-1}
+# Already cut over? Refuse BEFORE any host mutation (SSA 2026-09-10): a default rerun must never reach the
+# freeze/swap in step 2 or the truncate in step 4. `rollback` above is the only verb that runs on an activated host.
+[ -e "$WORK/activated" ] && [ "$FROM" -le 4 ] && { echo "REFUSED: $WORK/activated exists (cut over $(cat "$WORK/activated")) — this host is live on the service; use \`rollback\` or FROM=5+ only" >&2; exit 1; }
 
 if [ "$FROM" -le 1 ]; then
   step 1 preflight
   curl -fsS "$URL/v1/healthz" >/dev/null || { echo "service unhealthy: $URL/v1/healthz" >&2; exit 1; }; echo "   service healthy: $URL"
-  m5 'strings "$(command -v sirsi)" | grep -q SIRSI_ROUTER_URL' || {
-    echo "M5 sirsi has no service client — rebuild from main first (rm then cp: cp over a live binary SIGKILLs it):" >&2
-    echo "  ssh $M5 'cd ~/Development/sirsi-pantheon && git fetch origin main && git -c advice.detachedHead=false checkout origin/main && go build -o /tmp/sirsi ./cmd/sirsi && rm ~/.local/bin/sirsi && cp /tmp/sirsi ~/.local/bin/sirsi'" >&2
+  # The service-capable binary is STAGED, not live: it refuses the v16 local store ("deployment event"),
+  # so it must replace ~/.local/bin/sirsi only after the freeze (step 2), inside the window.
+  m5 'strings "$HOME/.sirsi/build/sirsi-main" | grep -q SIRSI_ROUTER_URL' || {
+    echo "stage the main-built binary first:" >&2
+    echo "  ssh $M5 'cd ~/Development/sirsi-pantheon && git fetch origin main && git worktree add -f ~/.sirsi/build/pantheon-main origin/main; cd ~/.sirsi/build/pantheon-main && go build -o ~/.sirsi/build/sirsi-main ./cmd/sirsi'" >&2
     exit 1; }
   if m5 'pgrep -fl "sirsi router (send|task|thread|complete|claim)"'; then echo "M5 has a router command mid-flight; wait" >&2; exit 1; fi
   m5 'launchctl list | grep -E "sirsi|horus"; uptime'
@@ -76,6 +81,9 @@ fi
 if [ "$FROM" -le 2 ]; then
   step 2 "freeze M5 router.db (old writers fail loudly from here on)"
   m5 'sqlite3 ~/.sirsi/router.db "PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode=DELETE;" && chmod a-w ~/.sirsi/router.db && ls -la ~/.sirsi/router.db*'
+  # Swap the binary now: rm then cp (cp over a live binary SIGKILLs it). Running processes keep the old inode.
+  # sirsi-prev is the retained PRE-cutover binary: never overwrite an existing one.
+  m5 '[ -x ~/.sirsi/build/sirsi-prev ] || cp ~/.local/bin/sirsi ~/.sirsi/build/sirsi-prev; rm ~/.local/bin/sirsi && cp ~/.sirsi/build/sirsi-main ~/.local/bin/sirsi && ls -la ~/.local/bin/sirsi'
 fi
 
 if [ "$FROM" -le 3 ]; then
@@ -89,7 +97,16 @@ fi
 TS=$(cat "$WORK/current")
 
 if [ "$FROM" -le 4 ]; then
-  step 4 "clear destination identity tables"
+  step 4 "empty the destination (every router table, not only identity rows)"
+  # 2026-09-10 lesson: the service still held the rehearsal snapshot; 6,422 rows had changed on the M5 since,
+  # ON CONFLICT DO NOTHING kept the stale versions, the gate failed and the import rolled back. The final
+  # import must land on an EMPTY ledger — the service carries no traffic of its own before the cut-over.
+  # Executable guard (SSA 2026-09-10): an activated ledger has host tokens; the pre-cutover rehearsal state
+  # has none (identity tables are cleared before every rehearsal import). A destination with tokens or a
+  # local activation marker is live and is never emptied by this script.
+  [ -e "$WORK/activated" ] && { echo "REFUSED: $WORK/activated exists — this host already cut over; emptying the service would destroy live work" >&2; exit 1; }
+  SQL="DO \$\$ DECLARE n int; BEGIN SELECT count(*) INTO n FROM router.host_tokens; IF n > 0 THEN RAISE EXCEPTION 'REFUSED: destination has % host token(s) — it is an activated ledger, not rehearsal data', n; END IF; END \$\$; TRUNCATE router.items, router.agents, router.state, router.breakers, router.send_quota, router.counters, router.tasks, router.identifiers, router.requirements, router.wake_events, router.threads, router.sessions, router.lease_sessions, router.host_tokens CASCADE; SELECT (SELECT count(*) FROM router.items) items,(SELECT version FROM router.schema_version) v;"
+  $G run jobs update sirsi-router-psql --region="$REGION" --args="^@^-v@ON_ERROR_STOP=1@-h@/cloudsql/$CONN@-U@router_migrator@-d@router@-c@$SQL" >/dev/null
   $G run jobs execute sirsi-router-psql --region="$REGION" --wait
 fi
 
@@ -115,5 +132,6 @@ if [ "$FROM" -le 7 ]; then
   m5 'sirsi router status' >"$WORK/verify-m5-$TS.txt"
   for f in m1 m5; do [ "$(items "$WORK/status-$TS.txt")" = "$(items "$WORK/verify-$f-$TS.txt")" ] && echo "   $f == snapshot:$(items "$WORK/verify-$f-$TS.txt")" || { echo "   $f DIFFERS from snapshot" >&2; exit 1; }; done
   m5 'sirsi router task reclaim-expired' >/dev/null && echo "   M5 write over HTTPS ok"
+  date -u +%Y-%m-%dT%H:%M:%SZ >"$WORK/activated"   # from here on step 4 refuses: the service is live
   echo "CUT OVER. Next: close rs-18/rs-19/rs-20 on the ledger; Bind #4; delete the migrate image printed above."
 fi

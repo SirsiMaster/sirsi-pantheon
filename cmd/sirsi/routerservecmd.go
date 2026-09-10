@@ -264,10 +264,12 @@ var (
 // run still counts as a live quiesce; beyond it the run that set it is gone.
 const migrateMarkerMaxAge = time.Hour
 
-// migrateMarkerAllowed accepts only a marker written by migrate-store within
-// migrateMarkerMaxAge of now; anything else (an operator quarantine, a stale
-// run, a hand-written file) is refused so the migration never rides an
-// unrelated marker.
+// migrateMarkerAllowed accepts only a marker in migrate-store's own format and
+// younger than migrateMarkerMaxAge; anything else (an operator quarantine, a
+// stale run, a hand-written file) is refused so the migration never rides an
+// unrelated marker. It is a format-and-age check, not proof that THIS process
+// wrote the marker and not proof that writers are stopped: actual quiescence is
+// the operator's prerequisite, and the source re-dump is the runtime detector.
 func migrateMarkerAllowed(content string, now time.Time) error {
 	ts, ok := strings.CutPrefix(strings.TrimSpace(content), "migrate-store ")
 	if !ok {

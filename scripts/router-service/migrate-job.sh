@@ -6,9 +6,9 @@
 #
 #   MODE=report SNAP=~/router-snap.db bash scripts/router-service/migrate-job.sh   # rehearsal: job runs migrate-store --dry-run
 #   MODE=import SNAP=...             bash scripts/router-service/migrate-job.sh   # the real import (cut-over)
-#   DRY_RUN=1 ...                    bash scripts/router-service/migrate-job.sh   # prints every gcloud command, touches NOTHING
+#   DRY_RUN=1 ...                    bash scripts/router-service/migrate-job.sh   # prints every gcloud command, no remote mutation
 #
-# DRY_RUN=1 is read-only on GCP (SSA finding 1, 2026-09-08); MODE=report still builds an image and runs
+# DRY_RUN=1 touches nothing REMOTE (it still copies the snapshot to a local temp dir); MODE=report builds an image and runs
 # a job, because that IS the rehearsal — it only never writes the ledger.
 # The snapshot must already be at the binary's schema version (open it once with the same `sirsi`
 # build and SIRSI_ALLOW_SCHEMA_MIGRATE=1). Take it with `sqlite3 router.db ".backup <file>"`.

@@ -2,6 +2,7 @@ package router
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -71,5 +72,59 @@ func TestLaunchAgentPATHLeadsWithBinDirAndDedupes(t *testing.T) {
 	// or the exported PATH grows a duplicate on every install.
 	if n := strings.Count(":"+got+":", ":/usr/bin:"); n != 1 {
 		t.Fatalf("/usr/bin must appear exactly once, got %d in %q", n, got)
+	}
+}
+
+// A cut-over host must hand its wake loops the service address and token: launchd
+// runs no shell, so nothing else can. Absent env → no keys (Anubis unchanged).
+func TestWakePlistCarriesRouterServiceEnv(t *testing.T) {
+	t.Setenv("SIRSI_ROUTER_URL", "https://router.example.test")
+	t.Setenv("SIRSI_ROUTER_TOKEN", "tok<&>")
+	got := wakeLaunchAgentPlist("ai.sirsi.router.wake.x", AgentConfig{ID: "x"}, "/usr/local/bin/sirsi")
+	for _, want := range []string{"<key>SIRSI_ROUTER_URL</key>", "<string>https://router.example.test</string>", "<key>SIRSI_ROUTER_TOKEN</key>", "<string>tok&lt;&amp;&gt;</string>"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("plist must carry %q:\n%s", want, got)
+		}
+	}
+	t.Setenv("SIRSI_ROUTER_URL", "")
+	t.Setenv("SIRSI_ROUTER_TOKEN", "")
+	if strings.Contains(wakeLaunchAgentPlist("l", AgentConfig{ID: "x"}, "/usr/local/bin/sirsi"), "SIRSI_ROUTER") {
+		t.Fatal("no service env → no service keys")
+	}
+}
+
+// Upgrading a 0644 plist (prior installs) must end 0600 — both when the content
+// changes and when it is already current — because it may now carry a token.
+func TestInstallWakeLaunchAgentSecuresExistingPlist(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, "Library", "LaunchAgents")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := AgentConfig{ID: "sec"}
+	path := filepath.Join(dir, WakeLaunchAgentLabel(cfg.ID)+".plist")
+	if err := os.WriteFile(path, []byte("stale"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := InstallWakeLaunchAgent(cfg, "/usr/local/bin/sirsi"); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := os.Stat(path); st.Mode().Perm() != 0o600 {
+		t.Fatalf("rewritten plist mode %o, want 0600", st.Mode().Perm())
+	}
+	// Equal content at 0644 (the idempotent path) must also be tightened.
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	changed, _, err := InstallWakeLaunchAgent(cfg, "/usr/local/bin/sirsi")
+	if err != nil || changed {
+		t.Fatalf("idempotent install: changed=%v err=%v", changed, err)
+	}
+	if st, _ := os.Stat(path); st.Mode().Perm() != 0o600 {
+		t.Fatalf("idempotent plist mode %o, want 0600", st.Mode().Perm())
+	}
+	if left, _ := filepath.Glob(filepath.Join(dir, ".*.plist")); len(left) != 0 {
+		t.Fatalf("temp files left behind: %v", left)
 	}
 }
