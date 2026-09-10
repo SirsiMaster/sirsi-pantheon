@@ -32,10 +32,35 @@ sessions` on the backend.
 
 ## Rollback — a node
 
-Unset `SIRSI_ROUTER_URL` (and `SIRSI_ROUTER_TOKEN`) on the machine. Every verb
-returns to the local `~/.sirsi/router.db`. Nothing is copied back: whatever
-the node wrote while on the service stays on the service. Rehearse it once per
-machine before cut-over and note the time.
+A cut-over node is marked by `~/.sirsi/router-service.env` (written by
+`scripts/router-service/cutover-m5.sh` step 6 and sourced from `~/.zshenv`).
+While that file exists, a process without `SIRSI_ROUTER_URL` is **refused** by
+`routerstore.Resolve()` — it does not fall back to the local file. That is
+deliberate: a GUI-launched process read a frozen `router.db` as a live inbox on
+2026-09-10, and a newer binary would have created an empty ledger and split the
+fabric. Unsetting the two variables is therefore not a rollback.
+
+Rolling a node back is a deliberate procedure, in this order:
+
+1. Stop or drain the node's wake loops and horus (their plists carry the env).
+2. Move the marker aside: `mv ~/.sirsi/router-service.env ~/.sirsi/router-service.env.rolled-back`
+   (this also removes what `~/.zshenv` sources; open shells keep their variables
+   until they `unset SIRSI_ROUTER_URL SIRSI_ROUTER_TOKEN`).
+3. Put the retained local file back at the path: on the M5 the cut-over left
+   `~/.sirsi/router.db.frozen-<date>` and an unopenable directory at
+   `~/.sirsi/router.db` (so no process can create a new file there). Remove the
+   directory, copy the frozen file into place, `chmod u+w`, and
+   `sqlite3 ~/.sirsi/router.db "PRAGMA journal_mode=wal;"`.
+4. Restore the pre-cut-over binary if the schema requires it
+   (`~/.sirsi/build/sirsi-prev` on the M5; the retained file is schema 16).
+5. Verify: `sirsi router status` from a fresh shell shows the frozen counts.
+
+**Retained-data boundary:** nothing is copied back. The local file holds exactly
+what the node had at the freeze; everything written on the service after that
+stays on the service (a service→local export does not exist — rs-20b). Rehearsed
+on the M5 2026-09-10: 0.03 s out, 0.57 s back, data-level dump hash identical
+(`docs/evidence/ADR-062-RS20-CUTOVER-EVIDENCE-20260910.md`). The runbook script's
+`rollback` verb performs steps 2–4 for both Macs and restores the WAL mode.
 
 ## Rollback — the service (self-hosted)
 
