@@ -399,3 +399,29 @@ func TestSpoolRecoveryIsBoundedAndCorrelated(t *testing.T) {
 		t.Fatalf("in-flight files must be removed: %v", left)
 	}
 }
+
+// A response file that exists but is unusable (malformed JSON here) means the
+// request was consumed and forwarded: the lane must see OUTCOME UNKNOWN with
+// method and id, never a plain parse error.
+func TestSpoolCorruptResponseIsOutcomeUnknown(t *testing.T) {
+	spool := t.TempDir()
+	tr := newSpoolTransport(spool, "lane-k")
+	tr.wait = 2 * time.Second
+	go func() { // a "relay" that consumes and answers with garbage
+		for i := 0; i < 100; i++ {
+			files, _ := filepath.Glob(filepath.Join(spool, "lane-k", "req", "*.json"))
+			for _, f := range files {
+				id := strings.TrimSuffix(filepath.Base(f), ".json")
+				_ = os.MkdirAll(filepath.Join(spool, "lane-k", "res"), 0o700)
+				_ = os.Remove(f)
+				_ = os.WriteFile(filepath.Join(spool, "lane-k", "res", id+".json"), []byte("{garbage"), 0o600)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+	req, _ := http.NewRequest(http.MethodPost, "http://spool/v1/call/SendGuarded", strings.NewReader(`{"args":[]}`))
+	_, err := tr.RoundTrip(req)
+	if err == nil || !strings.Contains(err.Error(), "OUTCOME UNKNOWN") || !strings.Contains(err.Error(), "SendGuarded id ") || !strings.Contains(err.Error(), "malformed") {
+		t.Fatalf("corrupt response must be outcome-unknown naming method+id: %v", err)
+	}
+}

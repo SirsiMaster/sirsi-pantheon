@@ -149,21 +149,26 @@ func (t *spoolTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	ctx := r.Context()
 	deadline := t.now().Add(t.wait)
 	for {
-		if f, err := os.Open(resPath); err == nil {
+		if f, oerr := os.Open(resPath); oerr == nil {
+			// A response file exists, so the request was consumed and forwarded:
+			// any defect in the file is an UNCERTAIN outcome for the caller.
+			unknownResp := func(cause string) error {
+				return fmt.Errorf("spool: %s id %s: OUTCOME UNKNOWN — response file unusable (%s); re-query before retrying a mutation", method, id, cause)
+			}
 			b, rerr := io.ReadAll(io.LimitReader(f, spoolMaxResFile+1))
 			_ = f.Close()
 			if rerr != nil {
-				return nil, fmt.Errorf("spool: %s id %s: read response: %w", method, id, rerr)
+				return nil, unknownResp("read: " + rerr.Error())
 			}
 			if len(b) > spoolMaxResFile {
-				return nil, fmt.Errorf("spool: %s id %s: response file over %d bytes", method, id, spoolMaxResFile)
+				return nil, unknownResp(fmt.Sprintf("file over %d bytes", spoolMaxResFile))
 			}
 			var sr spoolResponse
-			if err := json.Unmarshal(b, &sr); err != nil {
-				return nil, fmt.Errorf("spool: %s id %s: bad response file: %w", method, id, err)
+			if uerr := json.Unmarshal(b, &sr); uerr != nil {
+				return nil, unknownResp("malformed: " + uerr.Error())
 			}
 			if len(sr.Body) > spoolMaxResponse {
-				return nil, fmt.Errorf("spool: %s id %s: response body over %d bytes", method, id, spoolMaxResponse)
+				return nil, unknownResp(fmt.Sprintf("body over %d bytes", spoolMaxResponse))
 			}
 			return &http.Response{StatusCode: sr.Status, Status: http.StatusText(sr.Status), Header: http.Header{"Content-Type": {"application/json"}},
 				Body: io.NopCloser(bytes.NewReader(sr.Body)), ContentLength: int64(len(sr.Body)), Request: r}, nil
@@ -342,8 +347,8 @@ func (rl *Relay) forward(agent, id, path string) spoolResponse {
 		return fail(http.StatusRequestEntityTooLarge, "relay: request file over the envelope bound")
 	}
 	var req spoolRequest
-	if err := json.Unmarshal(raw, &req); err != nil {
-		return fail(http.StatusBadRequest, "relay: bad request file: "+err.Error())
+	if uerr := json.Unmarshal(raw, &req); uerr != nil {
+		return fail(http.StatusBadRequest, "relay: bad request file: "+uerr.Error())
 	}
 	if len(req.Body) > spoolMaxBody {
 		rl.Log.Warn("relay: request body over the limit", "agent", agent, "method", req.Method, "id", id, "bytes", len(req.Body))
