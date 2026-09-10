@@ -37,13 +37,17 @@ step() { echo; echo "== $1. $2"; }
 items() { grep -m1 'Items:' "$1"; }
 
 # write_env "" | write_env <ssh target>: token on stdin, never in argv or a log line. The file
-# travels on stdin too, so nothing is quoted across the ssh boundary.
+# travels on stdin too, so nothing is quoted across the ssh boundary. The managed ~/.zshenv line is
+# identified by its marker "# ADR-062 router service": every prior managed form (including the old
+# unconditional one) is REPLACED by the current conditional form; unrelated lines that merely mention
+# router-service.env are untouched; repeat runs are idempotent (SSA 2026-09-10).
+ZSHENV_MARKER='# ADR-062 router service'
 write_env() {
   local tok; read -r tok
-  local sh='umask 077; mkdir -p "$HOME/.sirsi"; cat >"$HOME/.sirsi/router-service.env"; grep -qF router-service.env "$HOME/.zshenv" 2>/dev/null || printf "%s\n" "$0" >>"$HOME/.zshenv"'
+  local sh='umask 077; mkdir -p "$HOME/.sirsi"; cat >"$HOME/.sirsi/router-service.env"; z="$HOME/.zshenv"; touch "$z"; tmp="$z.tmp.$$"; grep -vF "$1" "$z" >"$tmp" || true; printf "%s\n" "$0" >>"$tmp"; mv "$tmp" "$z"'
   local body; body=$(printf "export SIRSI_ROUTER_URL='%s'\nexport SIRSI_ROUTER_TOKEN='%s'\n" "$URL" "$tok")
-  if [ -z "$1" ]; then printf '%s\n' "$body" | bash -c "$sh" "$SRC_LINE"
-  else printf '%s\n' "$body" | ssh "$1" "bash -c $(printf %q "$sh") $(printf %q "$SRC_LINE")"; fi
+  if [ -z "$1" ]; then printf '%s\n' "$body" | bash -c "$sh" "$SRC_LINE" "$ZSHENV_MARKER"
+  else printf '%s\n' "$body" | ssh "$1" "bash -c $(printf %q "$sh") $(printf %q "$SRC_LINE") $(printf %q "$ZSHENV_MARKER")"; fi
 }
 # mint <host> <label>: token on stdout. The job's stdout line is the only other copy (Cloud Logging).
 mint() {

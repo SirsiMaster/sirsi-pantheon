@@ -99,7 +99,13 @@ See `docs/user-guides/router-service.md` § "Migrating an existing ledger":
 It quiesces the fabric itself and releases the marker only when it exits.
 
 ## Host env: the `~/.zshenv` source line is conditional
-`~/.zshenv` sources `~/.sirsi/router-service.env` only when `SIRSI_ROUTER_URL` is unset. A lane that starts with
+`~/.zshenv` sources `~/.sirsi/router-service.env` only when `SIRSI_ROUTER_URL` is unset or empty. A lane that starts with
 `env -u SIRSI_ROUTER_TOKEN SIRSI_ROUTER_URL=spool://…` keeps both choices in every shell it opens (codex runs its
 commands through a login shell); otherwise the https URL and the host token come back into a sandbox that has no
 DNS and must never hold the token (observed 2026-09-10 on codex-inference). Both Macs carry this form.
+
+Upgrade of an already-cut-over host: `cutover-m5.sh` step 6 (`write_env`) replaces any prior line carrying the
+marker `# ADR-062 router service` — including the old unconditional form — with the current conditional line,
+leaves every other line alone, and is idempotent on repeat; `scripts/router-service/test-write-env.sh`
+rehearses fresh, legacy-upgrade and repeat fixtures. To upgrade by hand: delete the marked line and append
+the current `SRC_LINE` from the script.
