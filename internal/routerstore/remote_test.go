@@ -204,7 +204,7 @@ func TestPerCallTimeoutExceedsSpoolWait(t *testing.T) {
 	if rs.perCall <= st.wait {
 		t.Fatalf("client perCall %v must exceed the spool wait %v", rs.perCall, st.wait)
 	}
-	// And a comfortable ceiling for a slow warm read (was 5s, which cancelled a 4s read).
+	// And a comfortable ceiling for a slow warm read (was 5s, which canceled a 4s read).
 	if rs.perCall < 20*time.Second {
 		t.Fatalf("client perCall %v is too tight for a large ledger read", rs.perCall)
 	}

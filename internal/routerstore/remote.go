@@ -167,7 +167,7 @@ func NewRemoteStore(base, token string) *RemoteStore {
 		base:       strings.TrimRight(base, "/"),
 		token:      token,
 		client:     client,
-		perCall:    35 * time.Second, // > spoolWait(30s) > relayHTTP(25s) > serverCallTimeout(20s): each hop's bound exceeds the next so a large read surfaces the innermost timeout, never a premature client cancel (SSA 2026-09-11: 5s cancelled a 4s ListAll and even pre-empted the 30s spool wait)
+		perCall:    35 * time.Second, // > spoolWait(30s) > relayHTTP(25s) > serverCallTimeout(20s): each hop's bound exceeds the next so a large read surfaces the innermost timeout, never a premature client cancel (SSA 2026-09-11: 5s canceled a 4s ListAll and even pre-empted the 30s spool wait)
 		host:       host,
 		agent:      agent,
 		threadID:   threadID,

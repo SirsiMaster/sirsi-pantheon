@@ -230,7 +230,7 @@ func Handler(store Store, opts ServerOptions) (http.Handler, error) {
 	}
 	if opts.CallTimeout <= 0 {
 		// 20s, not 5s: a full-ledger read (ListAll of thousands of items) takes
-		// ~3-4s warm and more cold, and the old 5s bound cancelled it
+		// ~3-4s warm and more cold, and the old 5s bound canceled it
 		// intermittently (SSA 2026-09-11). Kept below the relay's 25s HTTP
 		// timeout so the relay never gives up before the server finishes.
 		opts.CallTimeout = 20 * time.Second
