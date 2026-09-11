@@ -68,24 +68,24 @@ func TestBreakerTimedResetAfterCooldown(t *testing.T) {
 	if opItem == "" {
 		t.Fatal("tripped breaker must record an operator_item cause receipt")
 	}
-	if _, err := s.Get(opItem); err != nil {
-		t.Fatalf("breaker cause receipt %q must resolve to a real item, got %v", opItem, err)
+	if _, gerr := s.Get(opItem); gerr != nil {
+		t.Fatalf("breaker cause receipt %q must resolve to a real item, got %v", opItem, gerr)
 	}
 
 	// Inside the cooldown the breaker still gates.
-	if err := gate(); !errors.Is(err, ErrBreakerOpen) {
-		t.Fatalf("tripped breaker must reject within cooldown, got %v", err)
+	if gerr := gate(); !errors.Is(gerr, ErrBreakerOpen) {
+		t.Fatalf("tripped breaker must reject within cooldown, got %v", gerr)
 	}
 
 	// Once the cooldown elapses the gate does a timed full reset: it clears the
 	// trip and failure count, so this call AND a subsequent one both pass (this
 	// is a full reset, not a single probe).
 	now = now.Add(BreakerCooldown + time.Second)
-	if err := gate(); err != nil {
-		t.Fatalf("after cooldown the first call must pass (timed reset), got %v", err)
+	if gerr := gate(); gerr != nil {
+		t.Fatalf("after cooldown the first call must pass (timed reset), got %v", gerr)
 	}
-	if err := gate(); err != nil {
-		t.Fatalf("after a timed reset a second call must also pass (not single-probe), got %v", err)
+	if gerr := gate(); gerr != nil {
+		t.Fatalf("after a timed reset a second call must also pass (not single-probe), got %v", gerr)
 	}
 	bs, err := s.Breakers()
 	if err != nil {
