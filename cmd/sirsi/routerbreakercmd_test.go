@@ -83,10 +83,15 @@ func TestBreakerResetUnblocksSend(t *testing.T) {
 		t.Fatalf("ResetBreaker: %v", err)
 	}
 
-	// The quota window is still spent, so the send may be refused for quota —
-	// but it MUST NOT be refused by the breaker any more. That is the fix.
-	if _, _, sErr := send("after-reset"); errors.Is(sErr, routerstore.ErrBreakerOpen) {
-		t.Fatal("send still gated by the breaker after reset — the reset did nothing")
+	// Only three jobs were sent (well under quota), so after the reset a fresh
+	// send must SUCCEED outright — not merely escape the breaker. A returned id
+	// with no error is the proof the reset re-opened the path.
+	id, _, sErr := send("after-reset")
+	if sErr != nil {
+		t.Fatalf("send after reset must succeed, got %v", sErr)
+	}
+	if id == "" {
+		t.Fatal("send after reset returned no id — the path is not truly re-opened")
 	}
 }
 

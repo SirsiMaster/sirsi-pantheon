@@ -18,22 +18,22 @@ import (
 // trips its own breaker long before it can pause the whole fabric.
 var BreakerThreshold = 5
 
-// BreakerCooldown is how long a tripped domain stays open before the gate does
+// BreakerCooldown is how long a tripped domain stays paused before the gate does
 // a TIMED FULL RESET. This is deliberately NOT a standard half-open breaker: it
 // does not hold a single in-flight probe and reopen or re-trip on that one
-// probe's outcome. When the cooldown elapses the gate clears the domain's trip
-// and failure count outright, so ALL calls in the next window pass; if the
-// fault has passed the domain simply stays closed, and if it persists
+// probe's outcome. When a call arrives after the cooldown has elapsed, the gate
+// clears the domain's trip and failure count outright, so subsequent calls pass;
+// if the fault has passed the domain simply stays closed, and if it persists
 // recordFailureTx re-trips it once dead-letters again cross BreakerThreshold.
 //
-// Sustained-outage exposure (documented, accepted): while a fault persists, the
-// domain reopens for one cooldown window each cycle and readmits traffic that
-// then fails; those failures re-trip it only after items exhaust their retries
-// and dead-letter (lease.go), so recovery is periodic bursts, not one probe.
-// That is bounded and far better than the previous permanent latch (the only
-// exit was a manual `breaker-reset`, which paused critical dispatch until a
-// human noticed). A true single-probe half-open is a possible future upgrade if
-// the burst exposure proves too costly; it is not what this is.
+// Behavior after the pause (stated precisely — there is no admission-window
+// timer): after at least five minutes paused, traffic is admitted until fresh
+// dead letters reach the trip threshold. Cooldown bounds the PAUSED interval,
+// not the following admission duration or the aggregate loss across repeated
+// cycles. This is far better than the previous permanent latch, whose only exit
+// was a manual `breaker-reset` that paused critical dispatch until a human
+// noticed. A true single-probe half-open is a possible future upgrade; it is
+// not what this is.
 var BreakerCooldown = 5 * time.Minute
 
 // ErrBreakerOpen means a circuit breaker has this dispatch path paused.
