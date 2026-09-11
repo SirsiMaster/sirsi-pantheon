@@ -58,12 +58,14 @@
     {
       "doc": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
       "section": "8, 10, 15, 18",
-      "claim": "Delivered repo-scoped contract and integration plan preserving SNE engineering boundary; release and native Workspace publication remain unproven",
+      "claim": "Converged duplicate drafts onto codex-pantheon sole contract; SSA path is a supersession pointer. Runtime and native Workspace remain pending.",
       "files_changed": [
-        "docs/architecture/MAAT_PANTHEON_FAILURE_MEMORY_CONTRACT.md"
+        "docs/architecture/MAAT_PANTHEON_FAILURE_MEMORY_CONTRACT.md",
+        "docs/contracts/PANTHEON_MAAT_FAILURE_MEMORY_CONTRACT.md"
       ],
       "evidence": [
-        "/Users/thekryptodragon/.sirsi/reviews/software-admin-20260911/maat-contract/verification.json"
+        "/Users/thekryptodragon/.sirsi/reviews/software-admin-20260911/maat-contract/verification.json",
+        "/Users/thekryptodragon/.sirsi/reviews/software-admin-20260911/maat-contract/convergence-verification.json"
       ]
     }
   ],
@@ -72,7 +74,7 @@
     "design": "Shared explanation, empty/loading/unverified/failure/recovery semantics specified; UI implementation not part of contract delivery.",
     "technical": "Eight scope rows and precise signature, envelope, evidence and admission requirements; SNE v1 reader compatibility based on retained source. Executable integration not implemented by this contract artifact.",
     "operational": "Existing operation controllers remain owners; crash recovery and support privacy required. Independent review and implementation qualification pending.",
-    "narrative": "Repo and Desktop identical with explicit native Workspace blocker; no correctness/performance inference."
+    "narrative": "Sole authority docs/contracts/PANTHEON_MAAT_FAILURE_MEMORY_CONTRACT.md; former SSA path explicitly superseded. Existing Desktop entry reproduces owner contract with publication status header. Workspace pending."
   },
   "verification": [
     {
@@ -104,15 +106,34 @@
       "command": "Local link resolution and SHA-256 byte equality",
       "status": "pass",
       "evidence": "/Users/thekryptodragon/.sirsi/reviews/software-admin-20260911/maat-contract/verification.json"
+    },
+    {
+      "name": "authority convergence",
+      "command": "SHA256 identity and exact Desktop body comparison",
+      "status": "pass",
+      "evidence": "/Users/thekryptodragon/.sirsi/reviews/software-admin-20260911/maat-contract/convergence-verification.json"
     }
   ],
   "working_status": {
     "environment": "Shared local Pantheon checkout; documentation only",
     "how_verified": "Read SNE policy and v1 producer, resolve links and compare Desktop bytes",
-    "observed_result": "Contract authored; native Workspace runtime unavailable, independent review pending, executable integration unqualified",
-    "verified_at": "2026-09-11T06:45:44.402270+00:00"
+    "observed_result": "Owner contract a2dd423f committed verbatim in 7bae1ec40; SSA draft withdrawn; Desktop body exact; review and implementation pending.",
+    "verified_at": "2026-09-11T06:50:49.031790+00:00"
   },
-  "handoffs": [],
+  "handoffs": [
+    {
+      "from": "sirsi-software-admin",
+      "to": "codex-pantheon",
+      "router_item": "20260911-065015-sirsi-software-admin-codex-pantheon-one-maat-contract-your-a2dd423f-preserved-ssa-draft-supersed",
+      "status": "delivered; consolidate implementation ledger"
+    },
+    {
+      "from": "sirsi-software-admin",
+      "to": "claude-pantheon",
+      "router_item": "20260911-065015-sirsi-software-admin-claude-pantheon-maat-review-convergence-sole-owner-contract-a2dd423f-ssa-dra",
+      "status": "delivered; review sole owner contract"
+    }
+  ],
   "blockers": [
     "Native Workspace publication requires documents managed dependency/runtime surface, not available in session.",
     "Independent contract review pending; runtime integration remains the explicit next engineering phase."
