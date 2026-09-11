@@ -194,10 +194,10 @@ func TestIdentityHookFillsAgentAndThreadWhenEnvUnset(t *testing.T) {
 	}
 }
 
-// The per-call timeouts must nest so a large read (a full-ledger ListAll takes
-// ~3-4s) surfaces the innermost timeout, never a premature client cancel: the
-// client per-call context must exceed the 30s spool wait, or it cancels a spool
-// round-trip before the relay can answer (SSA 2026-09-11 — the old 5s did both).
+// The CLIENT per-call context must exceed the 30s spool wait, or it cancels a
+// spool round-trip before the relay can answer; the old 5s also canceled a warm
+// ~3-4s full-ledger read outright (SSA 2026-09-11). This is a client-side budget
+// only — it does not make the server cancel an in-flight ListAll.
 func TestPerCallTimeoutExceedsSpoolWait(t *testing.T) {
 	rs := NewRemoteStore("https://x", "t")
 	st := newSpoolTransport(t.TempDir(), "a")

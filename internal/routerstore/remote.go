@@ -167,7 +167,7 @@ func NewRemoteStore(base, token string) *RemoteStore {
 		base:       strings.TrimRight(base, "/"),
 		token:      token,
 		client:     client,
-		perCall:    35 * time.Second, // > spoolWait(30s) > relayHTTP(25s) > serverCallTimeout(20s): each hop's bound exceeds the next so a large read surfaces the innermost timeout, never a premature client cancel (SSA 2026-09-11: 5s canceled a 4s ListAll and even pre-empted the 30s spool wait)
+		perCall:    35 * time.Second, // CLIENT-side call budget. Must exceed the 30s spool wait, or it cancels a spool round-trip before the relay answers; the old 5s also canceled a warm ~3-4s full-ledger ListAll outright (SSA 2026-09-11, confirmed by a client negative control). This bounds only the CLIENT; the server does not yet cancel an in-flight ListAll (no ctx on that read — ledger rs-26).
 		host:       host,
 		agent:      agent,
 		threadID:   threadID,
