@@ -96,7 +96,7 @@ func (s *SQLiteStore) sendGuardedOnce(r SendReq) (string, bool, error) {
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if err = s.breakerGateTx(tx, "global", "sender:"+r.From); err != nil {
+	if err = s.breakerGateTx(tx, now, "global", "sender:"+r.From); err != nil {
 		return "", false, err
 	}
 

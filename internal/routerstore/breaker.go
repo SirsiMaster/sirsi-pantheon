@@ -18,6 +18,16 @@ import (
 // trips its own breaker long before it can pause the whole fabric.
 var BreakerThreshold = 5
 
+// BreakerCooldown is how long a tripped domain stays fully open before the gate
+// admits a half-open probe. Once it elapses the gate clears the trip and lets a
+// send through; if the fault is gone the domain stays closed, and if it
+// persists recordFailureTx re-trips it after BreakerThreshold failures. This
+// makes the breaker self-healing: `breaker-reset` is the fast manual path, not
+// the ONLY path. A latching breaker with no time-based recovery pauses critical
+// dispatch until a human happens to notice — the wrong default for
+// infrastructure many threads depend on.
+var BreakerCooldown = 5 * time.Minute
+
 // ErrBreakerOpen means a circuit breaker has this dispatch path paused.
 // Operator action (inspect + ResetBreaker) is the way through — retrying
 // into an open breaker is how floods happen.
@@ -31,8 +41,14 @@ type Breaker struct {
 	OperatorItem string `json:"operator_item,omitempty"`
 }
 
-// breakerGateTx fails with ErrBreakerOpen if any given domain is tripped.
-func (s *SQLiteStore) breakerGateTx(tx *txHandle, domains ...string) error {
+// breakerGateTx fails with ErrBreakerOpen if any given domain is tripped and
+// still inside its cooldown. Once BreakerCooldown has elapsed since the trip,
+// the gate half-opens: it clears the trip in-tx and admits the probe, so a
+// domain whose fault has passed recovers on its own instead of latching until
+// an operator runs breaker-reset. The stale operator card is a keyed singleton
+// and self-updates on any re-trip, so leaving it (as ResetBreaker also does) is
+// harmless.
+func (s *SQLiteStore) breakerGateTx(tx *txHandle, now time.Time, domains ...string) error {
 	for _, d := range domains {
 		var tripped string
 		err := tx.QueryRow(`SELECT tripped_at FROM breakers WHERE domain = ?;`, d).Scan(&tripped)
@@ -42,9 +58,17 @@ func (s *SQLiteStore) breakerGateTx(tx *txHandle, domains ...string) error {
 		if err != nil {
 			return fmt.Errorf("routerstore: breaker gate %s: %w", d, err)
 		}
-		if tripped != "" {
-			return fmt.Errorf("%w: %s", ErrBreakerOpen, d)
+		if tripped == "" {
+			continue
 		}
+		if t, perr := time.Parse(time.RFC3339, tripped); perr == nil && now.Sub(t) >= BreakerCooldown {
+			// Half-open probe: clear the trip and failure count, admit this send.
+			if _, err := tx.Exec(`UPDATE breakers SET failures = 0, tripped_at = '', operator_item = '' WHERE domain = ?;`, d); err != nil {
+				return fmt.Errorf("routerstore: breaker half-open %s: %w", d, err)
+			}
+			continue
+		}
+		return fmt.Errorf("%w: %s", ErrBreakerOpen, d)
 	}
 	return nil
 }

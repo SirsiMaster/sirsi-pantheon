@@ -185,7 +185,7 @@ func (s *SQLiteStore) claimNextOnce(agent string, ttl time.Duration) (*Lease, er
 	if err = s.reclaimExpiredTx(tx, now); err != nil {
 		return nil, err
 	}
-	if err = s.breakerGateTx(tx, "global", "target:"+agent); err != nil {
+	if err = s.breakerGateTx(tx, now, "global", "target:"+agent); err != nil {
 		return nil, err
 	}
 
