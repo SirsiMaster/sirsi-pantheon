@@ -191,49 +191,56 @@ func TestSync_MissingRoot(t *testing.T) {
 	}
 }
 
-func TestSync_MissingMemory(t *testing.T) {
+func TestSync_WritesProjectionWithoutMemory(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
-	err := Sync(SyncOptions{RepoRoot: tmp})
-	if err == nil {
-		t.Error("Sync with no memory.yaml should error")
+	// Fresh-clone robustness (SSA #733): sync no longer requires an existing
+	// memory.yaml — it writes only the git-ignored stats projection.
+	if err := Sync(SyncOptions{RepoRoot: tmp}); err != nil {
+		t.Fatalf("Sync without memory.yaml must succeed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(tmp, ".thoth", "stats.generated.yaml")); err != nil {
+		t.Fatalf("stats projection must be written: %v", err)
 	}
 }
 
-func TestSync_UpdatesMemory(t *testing.T) {
+func TestSync_WritesProjectionAndNeverTouchesAuthoredMemory(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
-
-	// Create required structure
 	os.MkdirAll(filepath.Join(tmp, ".thoth"), 0o755)
 	os.MkdirAll(filepath.Join(tmp, "internal", "cleaner"), 0o755)
 	os.MkdirAll(filepath.Join(tmp, "internal", "guard"), 0o755)
 	os.MkdirAll(filepath.Join(tmp, "cmd", "sirsi"), 0o755)
 
-	memoryContent := `# memory.yaml
-module_count: 0
-binary_count: 0
-test_count: 0
-line_count: ~0
-command_count: 0
-# Last updated: never
-`
+	// Authored memory: NOT statistics. Sync must leave it byte-for-byte.
+	memoryContent := "project: test\n## Critical Design Decisions\n# 2026-08-02: keep history, relocate never delete\n"
 	memoryPath := filepath.Join(tmp, ".thoth", "memory.yaml")
 	os.WriteFile(memoryPath, []byte(memoryContent), 0o644)
 
-	err := Sync(SyncOptions{RepoRoot: tmp, UpdateDate: true})
-	if err != nil {
+	if err := Sync(SyncOptions{RepoRoot: tmp, UpdateDate: true}); err != nil {
 		t.Fatalf("Sync() error: %v", err)
 	}
 
-	data, _ := os.ReadFile(memoryPath)
-	content := string(data)
-
-	if !strings.Contains(content, "module_count: 2") {
-		t.Errorf("expected module_count: 2 in output, got:\n%s", content)
+	// memory.yaml is untouched.
+	after, _ := os.ReadFile(memoryPath)
+	if string(after) != memoryContent {
+		t.Fatalf("sync must not modify authored memory.yaml.\nbefore:\n%s\nafter:\n%s", memoryContent, string(after))
 	}
-	if !strings.Contains(content, "binary_count: 1") {
-		t.Errorf("expected binary_count: 1 in output, got:\n%s", content)
+
+	// the derived counts land in the git-ignored projection instead.
+	proj, err := os.ReadFile(filepath.Join(tmp, ".thoth", "stats.generated.yaml"))
+	if err != nil {
+		t.Fatalf("stats projection must be written: %v", err)
+	}
+	ps := string(proj)
+	if !strings.Contains(ps, "module_count: 2") {
+		t.Errorf("projection module_count: 2 expected, got:\n%s", ps)
+	}
+	if !strings.Contains(ps, "binary_count: 1") {
+		t.Errorf("projection binary_count: 1 expected, got:\n%s", ps)
+	}
+	if !strings.Contains(ps, "git-ignored") {
+		t.Errorf("projection must be marked do-not-commit, got:\n%s", ps)
 	}
 }
 
