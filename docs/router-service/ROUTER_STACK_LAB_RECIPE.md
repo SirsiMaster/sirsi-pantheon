@@ -98,7 +98,17 @@ Each labelled by kind. A resolvable receipt is a run/exec ID or a file path; a t
 7. **Receipt** — update §1 + Change Log; add a `docs/evidence/` doc for a material change; update the ledger task (§6).
 8. **Rollback** —
    - **Service** (quoted; name the known previous revision): `gcloud --project=sirsi-nexus-live run services update-traffic sirsi-router --region=us-central1 --to-revisions="sirsi-router-00010-s6c=100"` (the revision before C5; `00010-s6c` is C4's image without the `min-instances=1` override).
-   - **Client** (retained candidate, full hash, host scope): reinstall the previous M1 candidate `~/.sirsi/candidates/sirsi-f72a3aaf` sha256 `7dd994bab3aea047b537e5e11972c8e629dda212b9f25ef32b3f721cf9fa21b4` (M1) with `rm ~/.local/bin/sirsi && cp <candidate> ~/.local/bin/sirsi`. The M5 keeps its own `~/.sirsi/candidates/` set (hashes not catalogued here — pending, `rs-27`).
+   - **Client** (retained candidate, full hash, host scope) — verify the candidate, stage it, then **atomic rename** (never `cp` over the executing binary → SIGKILL/exit 137; `mv` on the same filesystem swaps the inode and the running process keeps its old one until exit). On the M1, to roll back to candidate `sirsi-f72a3aaf`:
+     ```sh
+     cand="$HOME/.sirsi/candidates/sirsi-f72a3aaf"
+     [ "$(shasum -a 256 "$cand" | cut -d' ' -f1)" = 7dd994bab3aea047b537e5e11972c8e629dda212b9f25ef32b3f721cf9fa21b4 ] \
+       && cp "$cand" "$HOME/.local/bin/sirsi.new" \
+       && chmod 755 "$HOME/.local/bin/sirsi.new" \
+       && mv "$HOME/.local/bin/sirsi.new" "$HOME/.local/bin/sirsi" \
+       && echo "rolled back to sirsi-f72a3aaf" \
+       || echo "ABORTED — candidate missing or hash mismatch; installed binary untouched"
+     ```
+     The installed binary is only replaced after the candidate is confirmed present and hash-matched, so a bad candidate never leaves the host without a router client. The M5 keeps its own `~/.sirsi/candidates/` set (paths/hashes not catalogued here — pending, `rs-27`); use the same verify→stage→rename flow with the M5 candidate hash.
    - **Schema** is forward-only (re-runnable, never destructive).
 
 ## 5. Observability (read the live state)
@@ -127,6 +137,6 @@ Each labelled by kind. A resolvable receipt is a run/exec ID or a file path; a t
 
 ## Change Log
 
-- 2026-09-11 (rev 3) — self-audited to the Stack Lab rubric (owner: adopt the rubric as own practice) and closed SSA item 20260911-024401: reframed the promise from "reproduce from this file alone" to an **operating inventory with explicit gaps**; C3a/C3b/C4 lineage labelled *reconstructed* (hash+toolchain verified, C1 lineage not receipted — no `vcs.revision`); §3 receipts corrected — the RS22G doc is HISTORICAL (`00008`/schema 19/unresolved privilege), current 00011 is Ra-reported (retained receipt pending), compiled cites per-PR CI; executable rollback with the named previous revision `00010-s6c` (quoted) and a real retained candidate `sirsi-f72a3aaf` + hash + host scope; publication ownership named (contract → codex-inference; Desktop → routine ra sync; Workspace → share dependency); drift D5 (build receipts) + D6 (current/live receipts) added, residuals in `rs-27`.
+- 2026-09-11 (rev 3) — self-audited to the Stack Lab rubric (owner: adopt the rubric as own practice) and closed SSA item 20260911-024401: reframed the promise from "reproduce from this file alone" to an **operating inventory with explicit gaps**; C3a/C3b/C4 lineage labelled *reconstructed* (hash+toolchain verified, C1 lineage not receipted — no `vcs.revision`); §3 receipts corrected — the RS22G doc is HISTORICAL (`00008`/schema 19/unresolved privilege), current 00011 is Ra-reported (retained receipt pending), compiled cites per-PR CI; executable rollback: service `--to-revisions="sirsi-router-00010-s6c=100"` (quoted, named); client = **verify hash → stage → atomic `mv`** with the retained candidate `sirsi-f72a3aaf` + hash (no angle-bracket placeholder; never `cp` over the live inode; installed binary replaced only after the candidate is confirmed — tested on disposable fixtures: correct hash replaces, wrong hash leaves it untouched, no leftover); publication ownership named (contract → codex-inference; Desktop → routine ra sync; Workspace → share dependency); drift D5 (build receipts) + D6 (current/live receipts) added, residuals in `rs-27`.
 - 2026-09-11 (rev 2) — corrected per SSA (item 023457): fixed secret names; added DB roles C8r + apply-schema C12 + grant C13; split toolchains; full hashes + image URI; host scope; drift D3/D4.
 - 2026-09-11 (rev 1) — recipe created; captured C1–C11 at main `bd5a4614`, rev `00011-x7t`, schema v20, gate `log`.
