@@ -25,6 +25,15 @@ func Sync(opts SyncOptions) error {
 		return fmt.Errorf("thoth sync: repo root required")
 	}
 
+	// Presence guard: memory.yaml (authored, tracked) is what marks a Thoth
+	// project. Sync never modifies it — it only confirms the project exists so
+	// callers keep their "not a Thoth project" signal. A real checkout always
+	// has it (it is committed); only a bare temp dir does not.
+	memoryPath := filepath.Join(repoRoot, ".thoth", "memory.yaml")
+	if _, err := os.Stat(memoryPath); err != nil {
+		return fmt.Errorf("thoth sync: no project memory at %s: %w", memoryPath, err)
+	}
+
 	// Discover source facts.
 	moduleCount := countSubdirs(filepath.Join(repoRoot, "internal"))
 	binaryCount, binaryNames := listSubdirs(filepath.Join(repoRoot, "cmd"))
@@ -38,8 +47,6 @@ func Sync(opts SyncOptions) error {
 	// perpetually dirty and blocked clean-tree-gated operations. The authored
 	// memory — Design Decisions, Session Decisions — stays in memory.yaml and is
 	// never rewritten by sync; compact still appends authored decisions there.
-	// Nothing requires memory.yaml to exist: a fresh clone regenerates the
-	// projection on first sync and its authored memory arrives with the checkout.
 	statsPath := filepath.Join(repoRoot, ".thoth", "stats.generated.yaml")
 	if err := os.MkdirAll(filepath.Dir(statsPath), 0o755); err != nil {
 		return fmt.Errorf("thoth sync: %w", err)

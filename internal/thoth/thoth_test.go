@@ -191,16 +191,13 @@ func TestSync_MissingRoot(t *testing.T) {
 	}
 }
 
-func TestSync_WritesProjectionWithoutMemory(t *testing.T) {
+func TestSync_MissingMemory(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
-	// Fresh-clone robustness (SSA #733): sync no longer requires an existing
-	// memory.yaml — it writes only the git-ignored stats projection.
-	if err := Sync(SyncOptions{RepoRoot: tmp}); err != nil {
-		t.Fatalf("Sync without memory.yaml must succeed: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(tmp, ".thoth", "stats.generated.yaml")); err != nil {
-		t.Fatalf("stats projection must be written: %v", err)
+	// memory.yaml is the project-presence guard; a bare dir is not a Thoth
+	// project. (A real checkout always has the tracked authored memory.)
+	if err := Sync(SyncOptions{RepoRoot: tmp}); err == nil {
+		t.Error("Sync with no memory.yaml should error")
 	}
 }
 
