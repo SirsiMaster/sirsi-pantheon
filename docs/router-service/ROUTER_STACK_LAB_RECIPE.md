@@ -1,15 +1,15 @@
-<!-- agent: ra | workstream: router-service (ADR-062) | recipe revision: 2 | authority: this file is the SINGLE authority for the router runtime recipe; screenshots, dashboards and summaries are projections of it. -->
+<!-- agent: ra | workstream: router-service (ADR-062) | recipe revision: 3 | authority: this file is the SINGLE authority for the router runtime recipe; screenshots, dashboards and summaries are projections of it. -->
 
 # Router Service — Stack Lab Recipe
 
-**Status:** Active operating recipe (revision 2)
+**Status:** Active operating recipe (revision 3)
 **Owner:** `ra` (router / worker-plane; ADR-062, ADR-063)
 **Classification:** Core platform foundation — the router is critical infrastructure; if it fails, many threads' business goes undone. It is therefore built and maintained under Stack Lab methodology: a reproducible recipe assembled from *identified* components, not an untraceable build.
 **Observation:** all live identities below captured 2026-09-11 ~02:30–02:40 UTC from the M1 (`sirsimasterdev`) and M5 (`thekryptodragon`) hosts and from `gcloud` (project `sirsi-nexus-live`, region `us-central1`), unless a row is marked *reconstructed* or *unverified*.
 
-## Why this recipe exists
+## What this document is (and is not)
 
-The router is a runtime: a Cloud Run service, a Cloud SQL ledger, per-host client binaries, and per-host relays. This file makes every component a named, hash-identified part with a distinct evidence state, so the running system can be reproduced, audited, and recovered from this document alone. A reader must be able to *reproduce or recover from this file* — so every identity is full, every receipt is a resolvable path/ID, and anything not directly observed is labelled.
+The router is a runtime: a Cloud Run service, a Cloud SQL ledger, per-host client binaries, and per-host relays. This file is an **operating inventory with explicit reconstruction gaps** — every component named and hash-identified, each fact labelled by how it is known: **verified** (observed live now), **Ra-reported** (observed this session, retained receipt pending), **reconstructed** (inferred, e.g. a source→binary edge with no retained build receipt), or **pending** (not done). It is **not yet** a full reproduce-from-this-file-alone recipe: the source→binary build receipts (dirty state, exact command, output hash) and the pinned server-image digests are not captured (Reconciliation D3/D5). Where a gap exists it is stated, and the residual is tracked in `rs-27`.
 
 ## Stack Lab rules applied here
 
@@ -33,14 +33,14 @@ The three toolchains differ on purpose (per-host client builds + a container ser
 ### Client binaries (per host — distinct identities)
 | # | Host | sha256 | Built from | Evidence state |
 |---|------|--------|-----------|----------------|
-| C3a | M1 `~/.local/bin/sirsi` | `b1911d04eef3a01f89121f963e940d9b2ca71550a049e174340046bb4c166884` | C1 + C2a, `go build -trimpath ./cmd/sirsi` | deployed + verified (M1 `sirsi router status ra` reads C5) |
-| C3b | M5 `~/.local/bin/sirsi` | `3419d20d2548e52eb646da1e1c4351b68de84d0447abfecd2bec85690c003f62` | C1 + C2b | deployed + verified (M5 spool round-trip forwards; relay runs this binary) |
+| C3a | M1 `~/.local/bin/sirsi` | sha256 `b1911d04eef3a01f89121f963e940d9b2ca71550a049e174340046bb4c166884`; `go version -m`: go1.27.1, arm64, trimpath=true | *reconstructed* C1→C3a (built this session `go build -trimpath ./cmd/sirsi`; the binary carries no `vcs.revision`, so the hash+toolchain are verified but C1 lineage is Ra-reported, not receipted) | hash+toolchain verified; **live-verified** (M1 `sirsi router status ra` reads C5, 2026-09-11 ~02:30Z) |
+| C3b | M5 `~/.local/bin/sirsi` | sha256 `3419d20d2548e52eb646da1e1c4351b68de84d0447abfecd2bec85690c003f62`; go1.26.2, arm64, trimpath=true, CGO_ENABLED=1 (independently re-observed by SSA) | *reconstructed* C1→C3b (as C3a, M5 toolchain) | hash+toolchain verified; **live-verified** (M5 spool round-trip forwards HTTP 200; relay runs this binary) |
 
 ### Service
 | # | Component | Identity | Provenance | Evidence state |
 |---|-----------|----------|-----------|----------------|
-| C4 | Service image | `us-central1-docker.pkg.dev/sirsi-nexus-live/cloud-run-source-deploy/sirsi-router@sha256:39eac505abc4e83b1d0aab500679c3865011ebf233b67824c0944cd0ac7f71a6` | `deploy.sh --source .` (Cloud Build) at server-code commit **`397eb638`** — the last commit that changed server code (`#732` idle-gate); C1's later commits (`#734` thoth, `#735` client per-call) are client-only, so C4 is current for server behaviour | deployed. *Source edge is `397eb638`→C4, not today's `bd5a4614`; the full server build inputs are not otherwise captured* |
-| C5 | Service revision | `sirsi-router-00011-x7t`, 100% traffic (latestRevision) | C4 image + `run services update --min-instances=1` on rev `00010-s6c` | verified — serving; audit query and `status` return |
+| C4 | Service image | `us-central1-docker.pkg.dev/sirsi-nexus-live/cloud-run-source-deploy/sirsi-router@sha256:39eac505abc4e83b1d0aab500679c3865011ebf233b67824c0944cd0ac7f71a6` | *reconstructed*: built by `deploy.sh --source .` (Cloud Build) whose last server-code input was commit **`397eb638`** (`#732` idle-gate); C1's later commits (`#734` thoth, `#735` client per-call) are client-only. The *complete* server build inputs (full source tree, resolved builder digest) are NOT captured — the `397eb638`→C4 edge is a last-code-change marker, not a source-build receipt (D3). | deployed (image digest is verified; source lineage reconstructed) |
+| C5 | Service revision | `sirsi-router-00011-x7t`, 100% traffic (latestRevision) | C4 image + `gcloud run services update --min-instances=1` (my action, 2026-09-11 ~01:20Z) on rev `00010-s6c`; **00010-s6c** was the `#732` deploy of C4 | verified — serving; `status`/`audience` return (2026-09-11 ~02:30Z, M1) |
 | C6 | Gate mode | `SIRSI_ROUTER_RULE_OF_RA` **unset ⇒ default `log`** (observe, never refuse) | serve.go default; not in the service env | verified — audit reports `mode: log` |
 | C11 | TLS pin | SPKI `78rPvnhm1Lb3jziI2hDDogyku5XoaVABHemUnWwOd7M=` | `deploy.sh` release manifest | verified (openssl from M5) |
 
@@ -77,12 +77,15 @@ apply-schema-job (C12, SA sirsi-router-schema@) with pg/schema.sql,roles.sql ─
 grant job (C13) ─▶ ADMIN OPTION on router_service (recovery prerequisite for C12's ALTER)
 ```
 
-## 3. Evidence-state receipts (resolvable)
+## 3. Evidence-state receipts
 
-- **compiled:** hosted CI on the merge commit (per PR) + local `go test -race -short ./internal/routerstore ./internal/router ./cmd/sirsi` + `golangci-lint`.
-- **applied (schema):** job execution **`sirsi-router-apply-schema-ndlkn`** (2026-09-10T19:04:21Z), assertions in its logs.
-- **deployed (service):** revision `sirsi-router-00011-x7t`; rollout evidence `docs/evidence/ADR-062-RS22G-RULE-OF-RA-SERVICE-ROLLOUT-20260910.md` (+ retained would-refuse log under its sibling directory).
-- **verified (live, host-scoped):** M1 `sirsi router status ra` and `sirsi router audience --since 30m` return (2026-09-11 ~02:30Z); M5 spool round-trip for a lane forwards HTTP 200.
+Each labelled by kind. A resolvable receipt is a run/exec ID or a file path; a timestamp alone or a runnable command is not a receipt.
+
+- **compiled** — per-PR hosted CI on each merge commit: `#732` (`397eb638`, server/gate → C4), `#734`/`#735` (client → C3). *Exact CI run IDs are not transcribed here* (pending — retrievable via `gh run list` per commit); the merge itself is the gate.
+- **applied (schema v20)** — resolvable: job execution **`sirsi-router-apply-schema-ndlkn`** (2026-09-10T19:04:21Z); its logs asserted 16 tables / 12 triggers / version 20 / `router_service` DML-only. This is the receipt for **C7 schema v20** and **C8r role closure**.
+- **deployed (service code → C4)** — resolvable historical receipt: `docs/evidence/ADR-062-RS22G-RULE-OF-RA-SERVICE-ROLLOUT-20260910.md`. **Scope caution:** that document records revision **`00008-dtt`**, **schema 19**, exec **`4bqj2`**, binaries from **`20c9db60`**, and *unresolved* privilege closure — it is the evidence for the **initial log-mode rollout**, NOT for the current 00011/schema-20/closed-privilege state. It stands as history only. The current server code (C4, from `#732` `397eb638`) landed at revision **`00010-s6c`**; **`00011-x7t`** is C4's image + my `min-instances=1` update.
+- **deployed (current revision 00011)** — *Ra-reported, retained receipt pending*: I observed `00011-x7t` serving 100% traffic and the closed privilege audit (exec `…-ndlkn`) this session; a dedicated 00011 evidence doc is not yet written (residual in `rs-27`).
+- **verified (live, host-scoped, Ra-reported this session 2026-09-11 ~02:30–02:40Z)** — M1 `sirsi router status ra` and `sirsi router audience --since 30m` returned; M5 spool round-trip for the `codex-pantheon` lane forwarded MintSession+Inbox HTTP 200. Per-request/per-run IDs not retained here (residual in `rs-27`).
 
 ## 4. Build & maintenance procedure (recipe → build → deploy → verify → receipt)
 
@@ -93,7 +96,10 @@ grant job (C13) ─▶ ADMIN OPTION on router_service (recovery prerequisite for
 5. **Roll the client (CLI changed)** — rebuild per host; **`rm` then `cp`** into `~/.local/bin/sirsi` (never `cp` over the live binary → SIGKILL/exit 137); restart relay + wake loops so they run the new binary. Record the new per-host hash in C3.
 6. **Verify** — live audit + a positive control; confirm no new would-refuse class.
 7. **Receipt** — update §1 + Change Log; add a `docs/evidence/` doc for a material change; update the ledger task (§6).
-8. **Rollback** — service: `gcloud --project=sirsi-nexus-live run services update-traffic sirsi-router --region=us-central1 --to-revisions <prev-rev>=100`; client: reinstall the previous candidate from `~/.sirsi/candidates/`; schema is forward-only (re-runnable, never destructive).
+8. **Rollback** —
+   - **Service** (quoted; name the known previous revision): `gcloud --project=sirsi-nexus-live run services update-traffic sirsi-router --region=us-central1 --to-revisions="sirsi-router-00010-s6c=100"` (the revision before C5; `00010-s6c` is C4's image without the `min-instances=1` override).
+   - **Client** (retained candidate, full hash, host scope): reinstall the previous M1 candidate `~/.sirsi/candidates/sirsi-f72a3aaf` sha256 `7dd994bab3aea047b537e5e11972c8e629dda212b9f25ef32b3f721cf9fa21b4` (M1) with `rm ~/.local/bin/sirsi && cp <candidate> ~/.local/bin/sirsi`. The M5 keeps its own `~/.sirsi/candidates/` set (hashes not catalogued here — pending, `rs-27`).
+   - **Schema** is forward-only (re-runnable, never destructive).
 
 ## 5. Observability (read the live state)
 
@@ -105,8 +111,8 @@ grant job (C13) ─▶ ADMIN OPTION on router_service (recovery prerequisite for
 ## 6. Ledger binding & publication
 
 - Tracked as ra task `rs-27-router-stack-lab-recipe` (recipe = task; provenance = links).
-- **Build Recipe Contract:** this recipe adopts the intent of `SIRSI_BUILD_RECIPE_CONTRACT_V1.md` (owner-ratified, owned by `codex-inference`). That contract file is **not yet mirrored into this repo**; pending owner: `codex-inference` to publish it to the canonical repo, after which this recipe links it directly.
-- **Publication state:** canonical repo = this file (on merge). Owner Reading Room (Desktop) and Google Workspace copies = **pending** (owner action; recorded here as not-yet-published rather than claimed).
+- **Build Recipe Contract:** this recipe adopts the intent of `SIRSI_BUILD_RECIPE_CONTRACT_V1.md` (owner-ratified, owned by `codex-inference`). It is **not in this repo**; the sync dependency is `codex-inference` mirroring it to the canonical repo. This recipe links it directly once mirrored; linking it in its own canonical location can precede a Pantheon mirror.
+- **Publication state:** canonical repo = this file (on merge — the authority). Owner Reading Room (Desktop) mirror = routine sync by `ra` post-merge (not a new permission gate). Google Workspace copy = pending the Workspace share dependency (owner-held share to the `claude-agent` SA; recorded as not-yet-published, not claimed).
 
 ## 7. Reconciliation — recipe-vs-reality drift (open)
 
@@ -116,8 +122,11 @@ grant job (C13) ─▶ ADMIN OPTION on router_service (recovery prerequisite for
 | D2 Gate mode | target `enforce` | live `log` | Flip to `enforce` only after a clean 24h audit; blocked by `rs-22h` (codex-lane + interactive-shell registration). |
 | D3 Server build pinning | pinned builder/runtime digests | `Dockerfile` uses mutable tags `golang:1.25-alpine` + `distroless/…:nonroot`; digests not captured | Capture and pin the resolved image digests on the next deploy; until then C2s/C4 server build inputs are *reconstructed*, not fully evidenced. |
 | D4 Per-host client parity | (informational) | M1 `b1911d04…`/go1.27.1 vs M5 `3419d20d…`/go1.26.2 | Expected (per-host toolchains); recorded so a hash mismatch is read as drift, not tampering. |
+| D5 Build receipts | full source→binary/image receipts (dirty state, command, output hash) | not captured; binaries carry no `vcs.revision`; C1→C3/C4 lineage is reconstructed | Add a build-receipt step (record commit, clean/dirty, `go build` invocation, output hash per host) to the maintenance procedure; then C3/C4 lineage moves verified. Residual `rs-27`. |
+| D6 Current-revision + live receipts | resolvable 00011 evidence doc + retained CI/per-request IDs | Ra-reported this session, not yet a written doc | Write a 00011 rollout evidence doc + transcribe CI run IDs / live-verify request IDs. Residual `rs-27`. |
 
 ## Change Log
 
-- 2026-09-11 (rev 2) — corrected per SSA review (item 20260911-023457): fixed secret names (`sirsi-router-router-{migrator,service}-password`); added DB roles C8r + apply-schema C12 + grant C13 jobs with SA identities and role authority; split client (per-host) vs server toolchains (C2a/C2b/C2s); full binary hashes + full image URI + resolvable receipt paths + observation timestamps + host scope; labelled service-boot-unverified secrets; executable rollback; publication state and Build Recipe Contract pending owner recorded; drift D3/D4 added.
+- 2026-09-11 (rev 3) — self-audited to the Stack Lab rubric (owner: adopt the rubric as own practice) and closed SSA item 20260911-024401: reframed the promise from "reproduce from this file alone" to an **operating inventory with explicit gaps**; C3a/C3b/C4 lineage labelled *reconstructed* (hash+toolchain verified, C1 lineage not receipted — no `vcs.revision`); §3 receipts corrected — the RS22G doc is HISTORICAL (`00008`/schema 19/unresolved privilege), current 00011 is Ra-reported (retained receipt pending), compiled cites per-PR CI; executable rollback with the named previous revision `00010-s6c` (quoted) and a real retained candidate `sirsi-f72a3aaf` + hash + host scope; publication ownership named (contract → codex-inference; Desktop → routine ra sync; Workspace → share dependency); drift D5 (build receipts) + D6 (current/live receipts) added, residuals in `rs-27`.
+- 2026-09-11 (rev 2) — corrected per SSA (item 023457): fixed secret names; added DB roles C8r + apply-schema C12 + grant C13; split toolchains; full hashes + image URI; host scope; drift D3/D4.
 - 2026-09-11 (rev 1) — recipe created; captured C1–C11 at main `bd5a4614`, rev `00011-x7t`, schema v20, gate `log`.
