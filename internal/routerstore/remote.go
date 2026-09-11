@@ -167,7 +167,7 @@ func NewRemoteStore(base, token string) *RemoteStore {
 		base:       strings.TrimRight(base, "/"),
 		token:      token,
 		client:     client,
-		perCall:    5 * time.Second,
+		perCall:    35 * time.Second, // CLIENT-side call budget. Must exceed the 30s spool wait, or it cancels a spool round-trip before the relay answers; the old 5s also canceled a warm ~3-4s full-ledger ListAll outright (SSA 2026-09-11, confirmed by a client negative control). This bounds only the CLIENT; the server does not yet cancel an in-flight ListAll (no ctx on that read — ledger rs-26).
 		host:       host,
 		agent:      agent,
 		threadID:   threadID,

@@ -193,3 +193,19 @@ func TestIdentityHookFillsAgentAndThreadWhenEnvUnset(t *testing.T) {
 		t.Fatalf("without a hook, env-only: agent=%q (want host %q) thread=%q", rs.agent, host, rs.threadID)
 	}
 }
+
+// The CLIENT per-call context must exceed the 30s spool wait, or it cancels a
+// spool round-trip before the relay can answer; the old 5s also canceled a warm
+// ~3-4s full-ledger read outright (SSA 2026-09-11). This is a client-side budget
+// only — it does not make the server cancel an in-flight ListAll.
+func TestPerCallTimeoutExceedsSpoolWait(t *testing.T) {
+	rs := NewRemoteStore("https://x", "t")
+	st := newSpoolTransport(t.TempDir(), "a")
+	if rs.perCall <= st.wait {
+		t.Fatalf("client perCall %v must exceed the spool wait %v", rs.perCall, st.wait)
+	}
+	// And a comfortable ceiling for a slow warm read (was 5s, which canceled a 4s read).
+	if rs.perCall < 20*time.Second {
+		t.Fatalf("client perCall %v is too tight for a large ledger read", rs.perCall)
+	}
+}
