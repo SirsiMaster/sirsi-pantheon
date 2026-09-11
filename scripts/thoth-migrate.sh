@@ -1,47 +1,39 @@
 #!/usr/bin/env bash
 # thoth-migrate.sh — safely ready a checkout to pull the thoth stats-projection
-# change (PR #734). The tracked .thoth/memory.yaml and journal.md hold AUTHORED
-# decisions; this script NEVER discards them. It only clears the derived-stat
-# churn that `thoth sync` used to write, and refuses (loudly) if it finds any
-# authored change, leaving that for the operator to commit or stash.
+# change (PR #734), which edits the tracked .thoth/memory.yaml.
 #
-# Run from anywhere inside the repo. It makes an external backup and a retained
-# patch before touching anything, and never resets authored content.
+# It NEVER discards anything and NEVER classifies content. It preserves every
+# local .thoth change — staged and unstaged, text or binary, any file — in a
+# git stash plus an external backup, leaving .thoth clean so the pull applies.
+# The operator then decides what to reapply. Fail-safe by construction: there is
+# no path in which authored content is lost.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 ts=$(date +%Y%m%d-%H%M%S)
 backup="${TMPDIR:-/tmp}/thoth-backup-$ts"
-patch="${TMPDIR:-/tmp}/thoth-local-$ts.patch"
 
 if git diff --quiet -- .thoth/ && git diff --cached --quiet -- .thoth/; then
-  echo "thoth-migrate: .thoth already clean — nothing to do. Safe to pull."
+  echo "thoth-migrate: .thoth already clean — safe to: git pull"
   exit 0
 fi
 
 cp -R .thoth "$backup"
-git diff -- .thoth/ > "$patch" || true
-echo "thoth-migrate: backup=$backup  patch=$patch"
 
-# The ONLY lines sync used to churn: the six derived stats + the timestamp.
-# Any other content +/- line in the .thoth diff is authored content we must not
-# touch. Exclude the diff's file headers (+++ / ---) precisely — NOT a broad
-# ^[+-][+-], which would wrongly drop an added markdown list item ("+- item").
-authored=$(git diff -- .thoth/ \
-  | grep -E '^[+-]' | grep -vE '^(\+\+\+ |--- )' \
-  | grep -vE '^[+-](# Last updated:|binary_count:|module_count:|test_count:|line_count:|command_count:)[[:space:]]*' \
-  | grep -c . || true)
+# Preserve EVERYTHING under .thoth (index + worktree) in a stash. No discard,
+# no classification — the stash and the backup hold all local state.
+git stash push -- .thoth/ >/dev/null
 
-if [ "$authored" -gt 0 ]; then
-  echo "thoth-migrate: REFUSING — $authored authored line(s) are uncommitted in .thoth/."
-  echo "  Preserve them first (commit on a branch, or stash), e.g.:"
-  echo "    git add .thoth && git switch -c thoth-wip-$ts && git $(printf 'commit') -m 'wip: thoth decisions'"
-  echo "  or:  git stash push -- .thoth/"
-  echo "  Then pull and reapply. Nothing was changed. Backup: $backup  Patch: $patch"
-  exit 2
+# Postcondition: .thoth must now be clean, or we refuse loudly and restore.
+if ! git diff --quiet -- .thoth/ || ! git diff --cached --quiet -- .thoth/; then
+  echo "thoth-migrate: FAILED to fully stash .thoth changes — nothing discarded."
+  echo "  Restore from $backup and reconcile manually before pulling."
+  exit 1
 fi
 
-# Only derived-stat churn remains — safe to discard (backup + patch retained).
-git checkout -- .thoth/
-echo "thoth-migrate: cleared derived-stat churn only; authored content untouched."
-echo "  Now pull. Restore from $backup or $patch if ever needed."
+echo "thoth-migrate: local .thoth changes stashed (see 'git stash list'); backup at $backup."
+echo "  Next:"
+echo "    1) git pull"
+echo "    2) if you had uncommitted AUTHORED decisions, reapply them:  git stash pop"
+echo "       (resolve any conflict on the removed stat lines by keeping the incoming version)"
+echo "       if it was only derived-stat churn, just discard it:       git stash drop"
