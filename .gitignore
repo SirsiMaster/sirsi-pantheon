@@ -35,6 +35,7 @@ tmp/
 /pantheon-agent
 /pantheon-menubar
 /thoth
+.thoth/stats.generated.yaml
 /language_server_macos_arm
 
 bin/
