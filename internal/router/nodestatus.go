@@ -15,6 +15,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
 
 // NodeStatusSchemaVersion is the frozen contract version for the NodeStatus
@@ -362,7 +365,26 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 	ns.LastClaudeRead = state.LastClaudeRead
 	ns.LastCodexRead = state.LastCodexRead
 
-	if items, listErr := inboxUnion(routerRoot, ""); listErr == nil && len(items) > 0 {
+	// Pending inbox items. Post-cutover the authoritative queue is the SERVICE
+	// store, not the file router's items/*.md — so when the wake store is the
+	// service, source pending from it (routerstore.Resolve → ListAll, open items
+	// grouped by recipient). This is what makes ctr/doctor surface the real
+	// backlog + stranded lanes on a service host instead of seeing an empty file
+	// queue. The file paths below remain for a pre-cutover local router.
+	if routercfg.StoreWake() {
+		if store, sErr := routerstore.Resolve(); sErr == nil {
+			defer func() { _ = store.Close() }()
+			if items, lErr := store.ListAll(); lErr == nil {
+				for _, item := range items {
+					if item.Status != routerstore.StatusOpen {
+						continue // pending = an open item nobody has picked up
+					}
+					ns.PendingByAgent[item.To] = append(ns.PendingByAgent[item.To], item.ID)
+					ns.TotalPending++
+				}
+			}
+		}
+	} else if items, listErr := inboxUnion(routerRoot, ""); listErr == nil && len(items) > 0 {
 		for _, item := range items {
 			ns.PendingByAgent[item.To] = append(ns.PendingByAgent[item.To], item.ID)
 			ns.TotalPending++

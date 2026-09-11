@@ -8,7 +8,77 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
+
+// TestReadStateMissingFileReturnsEmpty: post-cutover the file router's
+// state.json is legitimately absent (the service is the authority). ReadState
+// must degrade to an empty state, not hard-fail — otherwise CollectNodeStatus,
+// ctr and doctor all crash on a service host ("open state.json: no such file").
+func TestReadStateMissingFileReturnsEmpty(t *testing.T) {
+	repoRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repoRoot, ".agents", "idea-router"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r, err := New(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := r.ReadState()
+	if err != nil {
+		t.Fatalf("missing state.json must not error, got %v", err)
+	}
+	if st == nil {
+		t.Fatal("expected an empty State, got nil")
+	}
+	if len(st.Pending) != 0 || len(st.ActiveTopics) != 0 {
+		t.Fatalf("expected an empty state, got pending=%v topics=%v", st.Pending, st.ActiveTopics)
+	}
+}
+
+// TestCollectNodeStatus_PendingFromServiceStore: under store-wake (service)
+// mode, CollectNodeStatus sources PendingByAgent from the SERVICE store, not the
+// file router — so ctr/doctor surface the real backlog on a service host. The
+// file router's own state.Pending must NOT leak in when the service is the
+// authority.
+func TestCollectNodeStatus_PendingFromServiceStore(t *testing.T) {
+	repoRoot := setupNodeTestRouter(t) // file router has state.Pending{claude-pantheon: item-1}
+	dbPath := filepath.Join(t.TempDir(), "svc.db")
+	t.Setenv(routercfg.StoreWakeEnv, "1") // force store-wake mode
+	t.Setenv("SIRSI_ROUTER_URL", "")      // no remote — Resolve uses the DB below
+	t.Setenv("SIRSI_ROUTER_TOKEN", "")
+	t.Setenv("SIRSI_ROUTER_DB", dbPath) // Resolve → this SQLite service store
+
+	store, err := routerstore.OpenPath(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		if _, _, sErr := store.SendGuarded(routerstore.SendReq{From: "seed", To: "claude-nexus", Type: "decision", Title: fmt.Sprintf("m%d", i)}); sErr != nil {
+			t.Fatal(sErr)
+		}
+	}
+	if _, _, sErr := store.SendGuarded(routerstore.SendReq{From: "seed", To: "owner", Type: "decision", Title: "o"}); sErr != nil {
+		t.Fatal(sErr)
+	}
+	_ = store.Close()
+
+	ns, err := CollectNodeStatus(repoRoot, nil, mockAuthProbe(true, false, ""))
+	if err != nil {
+		t.Fatalf("CollectNodeStatus: %v", err)
+	}
+	if got := len(ns.PendingByAgent["claude-nexus"]); got != 3 {
+		t.Fatalf("service-sourced pending for claude-nexus = %d, want 3", got)
+	}
+	if got := len(ns.PendingByAgent["owner"]); got != 1 {
+		t.Fatalf("service-sourced pending for owner = %d, want 1", got)
+	}
+	if _, leaked := ns.PendingByAgent["claude-pantheon"]; leaked {
+		t.Fatal("file state.Pending leaked in — the service store must be the sole pending source under store-wake")
+	}
+}
 
 // mockAuthProbe returns a fake auth probe for testing.
 func mockAuthProbe(authOK, needsLogin bool, detail string) AuthProbeFunc {
