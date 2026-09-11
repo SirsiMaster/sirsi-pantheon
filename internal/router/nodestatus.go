@@ -372,17 +372,26 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 	// backlog + stranded lanes on a service host instead of seeing an empty file
 	// queue. The file paths below remain for a pre-cutover local router.
 	if routercfg.StoreWake() {
-		if store, sErr := routerstore.Resolve(); sErr == nil {
-			defer func() { _ = store.Close() }()
-			if items, lErr := store.ListAll(); lErr == nil {
-				for _, item := range items {
-					if item.Status != routerstore.StatusOpen {
-						continue // pending = an open item nobody has picked up
-					}
-					ns.PendingByAgent[item.To] = append(ns.PendingByAgent[item.To], item.ID)
-					ns.TotalPending++
-				}
+		// FAIL CLOSED. A service auth rejection, outage, or failed store
+		// resolution must NOT read as "no pending work" — that would render
+		// "Router is clear" over an unread backlog. Return the wrapped error so
+		// every caller (ctr, doctor) surfaces the failure instead of a false
+		// clear; never fall back to stale file pending in service mode.
+		store, sErr := routerstore.Resolve()
+		if sErr != nil {
+			return nil, fmt.Errorf("node-status: resolve service store for pending: %w", sErr)
+		}
+		defer func() { _ = store.Close() }()
+		items, lErr := store.ListAll()
+		if lErr != nil {
+			return nil, fmt.Errorf("node-status: list service pending: %w", lErr)
+		}
+		for _, item := range items {
+			if item.Status != routerstore.StatusOpen {
+				continue // pending = an open item nobody has picked up
 			}
+			ns.PendingByAgent[item.To] = append(ns.PendingByAgent[item.To], item.ID)
+			ns.TotalPending++
 		}
 	} else if items, listErr := inboxUnion(routerRoot, ""); listErr == nil && len(items) > 0 {
 		for _, item := range items {

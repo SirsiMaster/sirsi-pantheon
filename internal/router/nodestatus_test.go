@@ -80,6 +80,60 @@ func TestCollectNodeStatus_PendingFromServiceStore(t *testing.T) {
 	}
 }
 
+// TestCollectNodeStatus_ServiceResolveFailureIsSurfaced: under store-wake, a
+// store-resolution failure must be returned, not swallowed into an empty inbox
+// that reads as "Router is clear" over an unread backlog (SSA #739 P1).
+func TestCollectNodeStatus_ServiceResolveFailureIsSurfaced(t *testing.T) {
+	repoRoot := setupNodeTestRouter(t)
+	t.Setenv(routercfg.StoreWakeEnv, "1")
+	t.Setenv("SIRSI_ROUTER_DB", "")
+	t.Setenv("SIRSI_ROUTER_URL", "https://router.invalid.test")
+	t.Setenv("SIRSI_ROUTER_TOKEN", "") // URL set + empty token → Resolve errors, no network
+
+	if _, err := CollectNodeStatus(repoRoot, nil, mockAuthProbe(true, false, "")); err == nil {
+		t.Fatal("a service resolve failure must be surfaced, not rendered as an empty (clear) inbox")
+	} else if !strings.Contains(err.Error(), "service store") {
+		t.Fatalf("error must name the service store read, got %v", err)
+	}
+}
+
+// TestCollectNodeStatus_ServiceListAllFailureIsSurfaced: Resolve succeeds
+// (RemoteStore is constructed without dialing) but ListAll dials a dead endpoint
+// and fails; that failure must be surfaced, not swallowed.
+func TestCollectNodeStatus_ServiceListAllFailureIsSurfaced(t *testing.T) {
+	repoRoot := setupNodeTestRouter(t)
+	t.Setenv(routercfg.StoreWakeEnv, "1")
+	t.Setenv("SIRSI_ROUTER_DB", "")
+	t.Setenv("SIRSI_ROUTER_URL", "http://127.0.0.1:1") // nothing listens on port 1 → ListAll dial refused
+	t.Setenv("SIRSI_ROUTER_TOKEN", "probe-token")
+
+	if _, err := CollectNodeStatus(repoRoot, nil, mockAuthProbe(true, false, "")); err == nil {
+		t.Fatal("a service ListAll failure must be surfaced, not rendered as an empty (clear) inbox")
+	} else if !strings.Contains(err.Error(), "service pending") {
+		t.Fatalf("error must name the service pending read, got %v", err)
+	}
+}
+
+// TestCollectNodeStatus_EmptyServiceQueueIsClear: a genuinely empty service
+// queue is the ONE case that legitimately reports zero pending with no error —
+// the control that distinguishes "clear" from "read failed".
+func TestCollectNodeStatus_EmptyServiceQueueIsClear(t *testing.T) {
+	repoRoot := setupNodeTestRouter(t)
+	dbPath := filepath.Join(t.TempDir(), "empty.db")
+	t.Setenv(routercfg.StoreWakeEnv, "1")
+	t.Setenv("SIRSI_ROUTER_URL", "")
+	t.Setenv("SIRSI_ROUTER_TOKEN", "")
+	t.Setenv("SIRSI_ROUTER_DB", dbPath) // fresh, empty service store
+
+	ns, err := CollectNodeStatus(repoRoot, nil, mockAuthProbe(true, false, ""))
+	if err != nil {
+		t.Fatalf("an empty service queue must succeed, got %v", err)
+	}
+	if ns.TotalPending != 0 || len(ns.PendingByAgent) != 0 {
+		t.Fatalf("empty service queue must report zero pending, got total=%d map=%v", ns.TotalPending, ns.PendingByAgent)
+	}
+}
+
 // mockAuthProbe returns a fake auth probe for testing.
 func mockAuthProbe(authOK, needsLogin bool, detail string) AuthProbeFunc {
 	return func(cliPath, agentType string) (bool, bool, string) {
