@@ -232,7 +232,7 @@ func TestEscalationDefaultsToOwnerAndIsConfigurable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ifErr29 := s.escalateTx(tx, s.clock(), "source", "failure", "title", "body"); ifErr29 != nil {
+	if _, ifErr29 := s.escalateTx(tx, s.clock(), "source", "failure", "title", "body"); ifErr29 != nil {
 		t.Fatal(ifErr29)
 	}
 	if ifErr30 := tx.Commit(); ifErr30 != nil {
@@ -250,7 +250,7 @@ func TestEscalationDefaultsToOwnerAndIsConfigurable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ifErr32 := s.escalateTx(tx, s.clock(), "source-2", "failure", "title", "body"); ifErr32 != nil {
+	if _, ifErr32 := s.escalateTx(tx, s.clock(), "source-2", "failure", "title", "body"); ifErr32 != nil {
 		t.Fatal(ifErr32)
 	}
 	if ifErr33 := tx.Commit(); ifErr33 != nil {

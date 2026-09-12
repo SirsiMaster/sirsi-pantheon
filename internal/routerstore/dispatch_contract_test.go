@@ -199,13 +199,19 @@ func TestRestartMidLease(t *testing.T) {
 // TestSenderFloodRejected reproduces the flood: hundreds of sends from one
 // runaway sender yield at most quota rows + ONE throttle singleton. The other
 // 460+ sends leave a counter, not items.
+//
+// Quota is BACKPRESSURE, not a breaker failure (Stack Lab convention,
+// codex-inference 2026-09-11): the flood must be fully absorbed by the quota
+// throttle and NEVER trip the sender's dispatch breaker. A healthy sender that
+// merely hit its rate limit keeping working once the window rolls over is the
+// point — the breaker is reserved for genuine delivery faults.
 func TestSenderFloodRejected(t *testing.T) {
 	s := openTestStore(t)
 	oldQ := MaxSendsPerSenderPerWindow
 	MaxSendsPerSenderPerWindow = 10
 	t.Cleanup(func() { MaxSendsPerSenderPerWindow = oldQ })
 
-	quotaDrops, breakerBlocks := 0, 0
+	quotaDrops := 0
 	for i := 0; i < 500; i++ {
 		_, _, err := s.SendGuarded(SendReq{
 			From: "runaway-worker", To: "claude-home",
@@ -215,23 +221,33 @@ func TestSenderFloodRejected(t *testing.T) {
 		case errors.Is(err, ErrOverQuota):
 			quotaDrops++ // quota refused it; throttle singleton updated
 		case errors.Is(err, ErrBreakerOpen):
-			breakerBlocks++ // defense-in-depth: repeated drops tripped the sender's breaker
+			t.Fatal("quota backpressure must NOT trip the sender breaker (Stack Lab convention)")
 		case err != nil:
 			t.Fatal(err)
 		}
 	}
-	if quotaDrops == 0 || breakerBlocks == 0 {
-		t.Fatalf("flood must first throttle (%d) then trip the sender breaker (%d)", quotaDrops, breakerBlocks)
+	if quotaDrops == 0 {
+		t.Fatalf("flood must throttle (drops=%d)", quotaDrops)
+	}
+	// The sender breaker must remain untripped — quota is not a breaker fault.
+	brs, err := s.Breakers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range brs {
+		if b.Domain == "sender:runaway-worker" && b.TrippedAt != "" {
+			t.Fatalf("quota drops tripped the sender breaker (%s) — must be throttle-only", b.Domain)
+		}
 	}
 	all, err := s.ListAll()
 	if err != nil {
 		t.Fatal(err)
 	}
-	// quota rows + one throttle singleton + one breaker operator item — NOT 500.
-	if len(all) > MaxSendsPerSenderPerWindow+2 {
+	// quota rows + exactly ONE throttle singleton — NOT 500, and no breaker card.
+	if len(all) > MaxSendsPerSenderPerWindow+1 {
 		t.Fatalf("flood appended %d items — the 11,564 flood lives", len(all))
 	}
-	var throttle, operator int
+	var throttle, other int
 	for i := range all {
 		if all[i].From != "routerstore" {
 			continue
@@ -239,14 +255,14 @@ func TestSenderFloodRejected(t *testing.T) {
 		if all[i].Title == "throttled: runaway-worker over send quota" {
 			throttle++
 		} else {
-			operator++
+			other++
 		}
 	}
 	if throttle != 1 {
 		t.Fatalf("expected exactly 1 throttle singleton, got %d", throttle)
 	}
-	if operator > 1 {
-		t.Fatalf("expected at most 1 breaker operator item, got %d", operator)
+	if other != 0 {
+		t.Fatalf("expected no breaker/other routerstore item from a quota flood, got %d", other)
 	}
 	c, err := s.Counters()
 	if err != nil {

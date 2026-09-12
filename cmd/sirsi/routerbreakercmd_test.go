@@ -2,8 +2,8 @@ package main
 
 import (
 	"errors"
-	"strings"
 	"testing"
+	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
@@ -12,6 +12,10 @@ import (
 // outage: sender:claude-home tripped, every send returned ErrBreakerOpen, and
 // no verb existed to clear it. The test drives the real store through that
 // exact sequence — trip, verify blocked, reset, verify sending again.
+//
+// The trip is driven through a GENUINE delivery fault (items from claude-home
+// dead-lettering), not a quota flood: quota backpressure is a throttle, not a
+// breaker failure (Stack Lab convention), so only real faults trip the breaker.
 //
 // Delete ResetBreaker's wiring and the final send still returns
 // ErrBreakerOpen, so this fails by name.
@@ -22,6 +26,13 @@ func TestBreakerResetUnblocksSend(t *testing.T) {
 	}
 	defer store.Close()
 
+	oldT := routerstore.BreakerThreshold
+	routerstore.BreakerThreshold = 3
+	t.Cleanup(func() { routerstore.BreakerThreshold = oldT })
+	oldR := routerstore.MaxRetriesPerItem
+	routerstore.MaxRetriesPerItem = 1 // each Fail dead-letters immediately
+	t.Cleanup(func() { routerstore.MaxRetriesPerItem = oldR })
+
 	send := func(title string) (string, bool, error) {
 		return store.SendGuarded(routerstore.SendReq{
 			From: "claude-home", To: "codex-home", Type: "decision",
@@ -29,17 +40,24 @@ func TestBreakerResetUnblocksSend(t *testing.T) {
 		})
 	}
 
-	// Trip sender:claude-home by blowing the per-window send quota. Each
-	// over-quota rejection records a breaker failure (facade.go), so the
-	// breaker trips at BreakerThreshold rejections.
-	for i := 0; i < routerstore.MaxSendsPerSenderPerWindow+routerstore.BreakerThreshold+1; i++ {
-		if _, _, sErr := send(strings.Repeat("x", 3) + string(rune('a'+i%26)) + itoa(i)); sErr != nil {
-			if errors.Is(sErr, routerstore.ErrBreakerOpen) {
-				break
-			}
-			if !errors.Is(sErr, routerstore.ErrOverQuota) {
-				t.Fatalf("unexpected send error at %d: %v", i, sErr)
-			}
+	// Trip sender:claude-home through real dead-letters: send work FROM
+	// claude-home to a worker, then claim and fail each until it dead-letters,
+	// which records a sender:claude-home breaker failure (lease.go). At
+	// BreakerThreshold dead-letters the sender breaker trips.
+	for i := 0; i < routerstore.BreakerThreshold; i++ {
+		id, _, sErr := store.SendGuarded(routerstore.SendReq{
+			From: "claude-home", To: "w", Type: "decision",
+			Title: "job-" + itoa(i), Instructions: "body",
+		})
+		if sErr != nil {
+			t.Fatalf("seed send %d: %v", i, sErr)
+		}
+		lease, cErr := store.ClaimNext("w", time.Minute)
+		if cErr != nil {
+			t.Fatalf("claim %d (%s): %v", i, id, cErr)
+		}
+		if fErr := store.Fail(lease.ItemID, lease.Token, "delivery fault", "downstream"); fErr != nil {
+			t.Fatalf("fail %d: %v", i, fErr)
 		}
 	}
 
@@ -65,10 +83,15 @@ func TestBreakerResetUnblocksSend(t *testing.T) {
 		t.Fatalf("ResetBreaker: %v", err)
 	}
 
-	// The quota window is still spent, so the send may be refused for quota —
-	// but it MUST NOT be refused by the breaker any more. That is the fix.
-	if _, _, sErr := send("after-reset"); errors.Is(sErr, routerstore.ErrBreakerOpen) {
-		t.Fatal("send still gated by the breaker after reset — the reset did nothing")
+	// Only three jobs were sent (well under quota), so after the reset a fresh
+	// send must SUCCEED outright — not merely escape the breaker. A returned id
+	// with no error is the proof the reset re-opened the path.
+	id, _, sErr := send("after-reset")
+	if sErr != nil {
+		t.Fatalf("send after reset must succeed, got %v", sErr)
+	}
+	if id == "" {
+		t.Fatal("send after reset returned no id — the path is not truly re-opened")
 	}
 }
 

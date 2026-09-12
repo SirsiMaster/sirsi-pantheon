@@ -96,7 +96,7 @@ func (s *SQLiteStore) sendGuardedOnce(r SendReq) (string, bool, error) {
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if err = s.breakerGateTx(tx, "global", "sender:"+r.From); err != nil {
+	if err = s.breakerGateTx(tx, now, "global", "sender:"+r.From); err != nil {
 		return "", false, err
 	}
 
@@ -131,7 +131,7 @@ func (s *SQLiteStore) sendGuardedOnce(r SendReq) (string, bool, error) {
 	}
 	if used > MaxSendsPerSenderPerWindow {
 		// Over-quota UPDATES a singleton throttle item; it never appends.
-		if err = s.escalateTx(tx, now, "throttle:"+r.From, "over_quota",
+		if _, err = s.escalateTx(tx, now, "throttle:"+r.From, "over_quota",
 			fmt.Sprintf("throttled: %s over send quota", r.From),
 			fmt.Sprintf("Sender %s exceeded %d sends in window %s. Dropped sends are counted here, not appended.", r.From, MaxSendsPerSenderPerWindow, bucket),
 		); err != nil {
@@ -140,9 +140,14 @@ func (s *SQLiteStore) sendGuardedOnce(r SendReq) (string, bool, error) {
 		if err = bumpCounterTx(tx, "rate_limit_drops", 1); err != nil {
 			return "", false, err
 		}
-		if err = s.recordFailureTx(tx, now, "sender:"+r.From); err != nil {
-			return "", false, err
-		}
+		// Quota is BACKPRESSURE, not a circuit-breaker failure (Stack Lab
+		// convention, codex-inference 2026-09-11): a healthy sender that merely
+		// hit its rate limit must not trip its own dispatch breaker. The
+		// throttle singleton above + the rate_limit_drops counter are the
+		// telemetry; the breaker is reserved for genuine delivery faults
+		// (dead-letters, lease.go), each of which carries a retrievable cause
+		// receipt. (Was: recordFailureTx(sender) here — that let normal
+		// rate-limit drops trip a sender breaker on a healthy delivery path.)
 		if err = tx.Commit(); err != nil {
 			return "", false, fmt.Errorf("routerstore: SendGuarded: commit: %w", err)
 		}
@@ -170,9 +175,9 @@ func (s *SQLiteStore) sendGuardedOnce(r SendReq) (string, bool, error) {
 // (source_item, failure_class) — §2b axiom 5. First occurrence creates ONE
 // bounded item; every recurrence bumps occurrences/last_seen in place. The
 // partial unique index makes duplicate rows impossible even under races.
-func (s *SQLiteStore) escalateTx(tx *txHandle, now time.Time, sourceItem, failureClass, title, body string) error {
+func (s *SQLiteStore) escalateTx(tx *txHandle, now time.Time, sourceItem, failureClass, title, body string) (string, error) {
 	if sourceItem == "" || failureClass == "" {
-		return fmt.Errorf("routerstore: escalate: source_item and failure_class are required")
+		return "", fmt.Errorf("routerstore: escalate: source_item and failure_class are required")
 	}
 	id := fmt.Sprintf("%s-escalation-%s-%s", now.Format("20060102-150405"), slugify(sourceItem), slugify(failureClass))
 	recipient := strings.TrimSpace(s.escalationAgent)
@@ -189,9 +194,17 @@ func (s *SQLiteStore) escalateTx(tx *txHandle, now time.Time, sourceItem, failur
 		sourceItem, failureClass, now.Format(time.RFC3339), now.Format(time.RFC3339),
 	)
 	if err != nil {
-		return fmt.Errorf("routerstore: escalate %s/%s: %w", sourceItem, failureClass, err)
+		return "", fmt.Errorf("routerstore: escalate %s/%s: %w", sourceItem, failureClass, err)
 	}
-	return nil
+	// Read back the stable id (the dedupe keeps the first insert's id, and the
+	// (source_item, failure_class) key is unique), so a caller — the breaker
+	// recording a trip's cause receipt — holds a reference that actually
+	// resolves in the items table rather than the source_item key.
+	var stableID string
+	if err := tx.QueryRow(`SELECT id FROM items WHERE source_item = ? AND failure_class = ?;`, sourceItem, failureClass).Scan(&stableID); err != nil {
+		return "", fmt.Errorf("routerstore: escalate readback %s/%s: %w", sourceItem, failureClass, err)
+	}
+	return stableID, nil
 }
 
 // DispatchCounters is the ONE aggregate node-status renders (§2b axiom 9):

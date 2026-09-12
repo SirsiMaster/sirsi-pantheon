@@ -185,7 +185,7 @@ func (s *SQLiteStore) claimNextOnce(agent string, ttl time.Duration) (*Lease, er
 	if err = s.reclaimExpiredTx(tx, now); err != nil {
 		return nil, err
 	}
-	if err = s.breakerGateTx(tx, "global", "target:"+agent); err != nil {
+	if err = s.breakerGateTx(tx, now, "global", "target:"+agent); err != nil {
 		return nil, err
 	}
 
@@ -344,7 +344,7 @@ func (s *SQLiteStore) Fail(id, token, reason, failureClass string) error {
 		if err = bumpCounterTx(tx, "dead_letters", 1); err != nil {
 			return err
 		}
-		if err = s.escalateTx(tx, now, id, failureClass,
+		if _, err = s.escalateTx(tx, now, id, failureClass,
 			fmt.Sprintf("dead-letter: %s (→%s)", id, to),
 			fmt.Sprintf("Item %s dead-lettered after %d attempts. Class: %s. Last error: %s", id, attempts, failureClass, strings.TrimSpace(reason)),
 		); err != nil {
@@ -511,7 +511,7 @@ func (s *SQLiteStore) reclaimExpiredForTx(tx *txHandle, now time.Time, agent str
 			if err = bumpCounterTx(tx, "dead_letters", 1); err != nil {
 				return err
 			}
-			if err = s.escalateTx(tx, now, e.id, e.class,
+			if _, err = s.escalateTx(tx, now, e.id, e.class,
 				fmt.Sprintf("dead-letter: %s (→%s)", e.id, e.to),
 				fmt.Sprintf("Item %s dead-lettered after %d attempts (lease expired unreleased).", e.id, attempts),
 			); err != nil {
