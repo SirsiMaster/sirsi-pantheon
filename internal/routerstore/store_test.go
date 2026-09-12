@@ -2,6 +2,7 @@ package routerstore
 
 import (
 	"bytes"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -1061,9 +1062,52 @@ func TestV21MigrationFailsClosedOnPartialDrift(t *testing.T) {
 	if !strings.Contains(err.Error(), "duplicate column name") {
 		t.Fatalf("Open error = %v, want it to surface the duplicate-column drift", err)
 	}
-	// The failed attempt must have left the schema exactly as constructed —
-	// still v20, still only the one drifted column — never advanced to v21.
+	// The failed attempt must have left the schema EXACTLY as constructed — not
+	// just the version, but the physical columns/indexes too (SSA re-review,
+	// PR #745: prove the two items ADD COLUMN statements that ran before the
+	// duplicate-column error were actually rolled back, not merely that the
+	// version number stayed at 20). Probed via a separate read-only connection
+	// — s2 never opened (OpenPath failed), and a plain sql.Open bypasses
+	// migrate() entirely so probing does not itself retrigger the failure.
 	if v, e := ReadSchemaVersion(path); e != nil || v != 20 {
 		t.Fatalf("post-failure version = %d (err %v), want unchanged at 20", v, e)
+	}
+	probe, err := sql.Open("sqlite", path+"?mode=ro")
+	if err != nil {
+		t.Fatalf("open probe: %v", err)
+	}
+	defer probe.Close()
+	hasColumn := func(table, column string) bool {
+		t.Helper()
+		rows, e := probe.Query(`SELECT name FROM pragma_table_info(?);`, table)
+		if e != nil {
+			t.Fatalf("pragma_table_info(%s): %v", table, e)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var name string
+			if e := rows.Scan(&name); e != nil {
+				t.Fatalf("scan column name: %v", e)
+			}
+			if name == column {
+				return true
+			}
+		}
+		return false
+	}
+	if hasColumn("items", "project_id") || hasColumn("items", "router_namespace") {
+		t.Error("items carries a v21 scope column after a failed migration — the pre-error ADD COLUMN statements were not rolled back")
+	}
+	if !hasColumn("tasks", "project_id") {
+		t.Error("tasks.project_id (the drift fixture's pre-existing column) vanished — the rollback undid more than the migration touched")
+	}
+	if hasColumn("tasks", "router_namespace") {
+		t.Error("tasks.router_namespace exists after a failed migration — it was never supposed to be added on this path")
+	}
+	for _, idx := range []string{"idx_items_scope", "idx_tasks_scope"} {
+		var name string
+		if e := probe.QueryRow(`SELECT name FROM sqlite_master WHERE type='index' AND name=?;`, idx).Scan(&name); e != sql.ErrNoRows {
+			t.Errorf("index %s exists after a failed migration (err=%v), want absent", idx, e)
+		}
 	}
 }
