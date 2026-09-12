@@ -12,13 +12,15 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/isis"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/scales"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/suggest"
 )
 
 var (
-	maatSudo bool
-	maatFix  bool
-	maatDocs bool
+	maatSudo       bool
+	maatFix        bool
+	maatPolicyFile string
+	maatDocs       bool
 
 	// Audit flags
 	auditSkipTests bool
@@ -98,6 +100,7 @@ func init() {
 	maatAuditCmd.Flags().BoolVar(&auditSkipTests, "skip-test", false, "Deprecated: fast/cached is now the default")
 	_ = maatAuditCmd.Flags().MarkHidden("skip-test")
 	maatScalesCmd.Flags().BoolVar(&maatFix, "fix", false, "Actually apply policy fixes")
+	maatScalesCmd.Flags().StringVarP(&maatPolicyFile, "policy", "f", "", "Policy YAML to weigh instead of the built-in workstation-hygiene policy")
 
 	maatHealCmd.Flags().BoolVar(&maatFix, "fix", false, "Apply healing remedies")
 	maatHealCmd.Flags().BoolVar(&healFull, "full", false, "Run full (slow) test suite")
@@ -229,10 +232,99 @@ func runMaatAudit(cmd *cobra.Command, args []string) error {
 
 func runMaatScales(cmd *cobra.Command, args []string) error {
 	start := time.Now()
-	output.Banner()
-	output.Header("Quality Assessment")
-	output.Footer(time.Since(start))
-	output.NextSteps(output.SuggestSteps(suggest.Context{Deity: "maat", Subcommand: "scales"}))
+	res := &output.CommandResult{Command: "sirsi maat scales", BriefTitle: "Infrastructure Policies"}
+
+	// Weigh the built-in workstation-hygiene policy (or a file) against the
+	// machine as it is right now. This verb was a banner stub until the
+	// Thunderbolt lane invariant (scales.DefaultPolicy rule 0) needed a home
+	// in governance (owner, 2026-09-12): the lanes drift on every link
+	// renegotiation and take a transport down; Scales now weighs and heals it.
+	pf := scales.DefaultPolicy()
+	if maatPolicyFile != "" {
+		loaded, err := scales.LoadPolicyFile(maatPolicyFile)
+		if err != nil {
+			return err
+		}
+		pf = loaded
+	}
+	weigh := func() (*scales.ScanMetrics, []*scales.EnforceResult, error) {
+		m, err := scales.CollectMetrics()
+		if err != nil {
+			return nil, nil, err
+		}
+		var results []*scales.EnforceResult
+		for _, p := range pf.Policies {
+			results = append(results, scales.EnforceWithMetrics(p, m))
+		}
+		return m, results, nil
+	}
+	_, results, err := weigh()
+	if err != nil {
+		return fmt.Errorf("weigh: %w", err)
+	}
+	failures, warnings := 0, 0
+	var breachedLanes bool
+	for _, r := range results {
+		failures += r.Failures
+		warnings += r.Warnings
+		for _, v := range r.Verdicts {
+			mark := "✓"
+			if !v.Passed {
+				mark = "✗"
+				if v.Metric == "tb_lane_drift" {
+					breachedLanes = true
+				}
+			}
+			res.AddEvidence(mark+" "+v.RuleName, v.Message)
+		}
+	}
+
+	// --fix: the only mechanical remediation Scales owns today is the lane
+	// heal (deletem from bridge0, mtu 65518). Everything else stays advisory.
+	if maatFix && breachedLanes {
+		fixed, remaining, err := scales.FixTBLanes(false)
+		if err != nil {
+			return fmt.Errorf("heal thunderbolt lanes: %w", err)
+		}
+		if _, results, err = weigh(); err == nil {
+			// Re-render from the re-weigh so the verdicts shown are the
+			// machine's state AFTER the heal, not before it.
+			res.Evidence = nil
+			failures, warnings = 0, 0
+			for _, r := range results {
+				failures += r.Failures
+				warnings += r.Warnings
+				for _, v := range r.Verdicts {
+					mark := "✓"
+					if !v.Passed {
+						mark = "✗"
+					}
+					res.AddEvidence(mark+" "+v.RuleName, v.Message)
+				}
+			}
+		}
+		res.AddEvidence("Healed lanes", fmt.Sprintf("%d (still drifted: %d)", fixed, len(remaining)))
+	}
+
+	switch {
+	case failures > 0:
+		res.Status = "fail"
+		res.Summary = fmt.Sprintf("%d policy failure(s), %d warning(s).", failures, warnings)
+		if breachedLanes && !maatFix {
+			res.NextActions = append(res.NextActions, output.NextAction{
+				Label: "Heal the Thunderbolt lanes", Command: "sirsi maat scales --fix",
+				Description: "Removes each drifted lane from bridge0 and sets MTU 65518 (needs sudo -n).",
+			})
+		}
+	case warnings > 0:
+		res.Status = "warn"
+		res.Summary = fmt.Sprintf("Balanced with %d warning(s).", warnings)
+	default:
+		res.Status = "ok"
+		res.Summary = "The Scales are balanced: every policy passes."
+	}
+	res.Duration = time.Since(start)
+	res.Render()
 	return nil
 }
 
