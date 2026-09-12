@@ -55,26 +55,39 @@ In this very record, `workspace.writable_roots` includes
 /Users/thekryptodragon/Library/Application Support/Sirsi/RouterBackups/sirsi-pantheon/router
 ```
 
-which is **outside** the declared `repository_root` and `evidence_root`. A
-strict runtime MUST reject that root absent a separately bound project/namespace
-permission — schema validation alone does not authorize it. The negative-control
-fixture also covers a schema-*valid* adversary: a foreign `repository_root`
-inserted into `writable_roots` with no unknown field passes shape but must be
-rejected on authority.
+which is **outside** the declared `repository_root` and `evidence_root`. Under
+this schema version a strict runtime MUST reject that root **unconditionally** —
+schema validation alone does not authorize it, and this reference grants no
+exception. Any future authority for an extra writable root would require its own
+explicit, versioned contract, never an implied exception here.
+
+Two distinct adversaries, do not conflate them:
+
+- **Shape-invalid (the shipped `reject-router-wing-cross-project-write.json`,
+  `cf69bca5…`)**: it adds an unknown `workspace.cross_project_write_root`, so the
+  schema's `additionalProperties:false` rejects it at **validation**, before any
+  runtime ownership check. Its `writable_roots` holds only the Pantheon repo.
+- **Schema-valid adversary (not shipped here)**: a foreign path placed directly
+  in `writable_roots` with no unknown field — it passes schema shape and MUST be
+  rejected at **runtime** on ownership. Pinning this derived fixture and the
+  runtime rejection is **rs-31 future work**; the authored `cf69bca5…` bytes are
+  preserved unchanged as provenance.
 
 ## Required Router behaviors (SNE) and status
 
 1. Validate every wing record against the schema — **tracked: rs-31**.
-2. Enforce project/namespace ownership of writable roots; deny the
-   cross-project-write fixture — **tracked: rs-31** (default-deny; a repo-local
-   test projection is used for the positive case, the SNE fixture bytes are
-   preserved as provenance).
+2. Enforce project/namespace ownership of writable roots — **tracked: rs-31**
+   (unconditional default-deny for any root outside repo/evidence root). Note the
+   shipped `cf69bca5…` fixture is denied by the **schema** (unknown property); the
+   runtime-ownership test needs a separate schema-valid adversary fixture (a
+   foreign path in `writable_roots`, no unknown field) — that derived fixture is
+   rs-31 work. The authored SNE bytes are preserved unchanged as provenance.
 3. Show task phase, owner, blocked-by links, and receipt links in the worker
    plane without duplicating recipe or payload bytes — **tracked: rs-31**.
 4. Treat quota backpressure as a throttle/counter, not a delivery-breaker
    failure; every breaker trip carries a retrievable cause receipt —
-   **DONE in PR #737** (quota decoupled from the breaker; `escalateTx` returns a
-   retrievable cause id stored on the breaker row).
+   **DONE: PR #737 MERGED to main (squash `c9d6c8e4`)** (quota decoupled from the
+   breaker; `escalateTx` returns a retrievable cause id stored on the breaker row).
 
 ## Validation receipt
 
