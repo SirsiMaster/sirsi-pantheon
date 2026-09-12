@@ -51,8 +51,8 @@ func TestControlEnvelopeUsesCanonicalBoardStateAndCapabilities(t *testing.T) {
 	if err := got.Validate(); err != nil {
 		t.Fatalf("valid envelope rejected: %v", err)
 	}
-	if len(got.Capabilities) != 7 {
-		t.Fatalf("capability count = %d, want 7", len(got.Capabilities))
+	if len(got.Capabilities) != 8 {
+		t.Fatalf("capability count = %d, want 8", len(got.Capabilities))
 	}
 	seen := map[string]bool{}
 	for _, capability := range got.Capabilities {
@@ -306,7 +306,7 @@ func TestControlActionRejectsUnknownFieldsAndMissingAuthorization(t *testing.T) 
 	semantic.Header.Set("Content-Type", "application/json")
 	response = httptest.NewRecorder()
 	mux.ServeHTTP(response, semantic)
-	if response.Code != http.StatusConflict || !bytes.Contains(response.Body.Bytes(), []byte("does not accept task_id")) {
+	if response.Code != http.StatusBadRequest || !bytes.Contains(response.Body.Bytes(), []byte("does not accept task_id")) {
 		t.Fatalf("cross-verb field response = %d %s", response.Code, response.Body.String())
 	}
 

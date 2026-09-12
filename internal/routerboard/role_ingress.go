@@ -71,7 +71,14 @@ func NewHeaderControlRoleReceiptSource(authenticator ControlRoleReceiptAuthentic
 // yields a fail-closed HTTP handler; it never falls back to bearer-only access.
 func NewReceiptBoundControlHandler(b *Board, dir, token string, policy ControlRolePolicy, source ControlRoleReceiptSource) http.Handler {
 	handler := NewHandlerWithControlAuthAndRolePolicy(b, dir, token, policy, ContextControlRoleAuthorizer)
-	return WithControlRoleReceiptSource(handler, source)
+	mux := http.NewServeMux()
+	// Keep the receipt boundary limited to the canonical worker-control routes.
+	// Legacy presentation and local dashboard routes retain their separate
+	// authentication/composition contract and are not silently promoted into
+	// the externally authenticated M1 surface.
+	mux.HandleFunc("/api/control", handler.control)
+	mux.HandleFunc("/api/control/action", handler.controlAction)
+	return WithControlRoleReceiptSource(mux, source)
 }
 
 // NewHeaderReceiptBoundControlHandler is the canonical M5 composition point

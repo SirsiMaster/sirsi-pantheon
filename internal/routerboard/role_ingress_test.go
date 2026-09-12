@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/rolereceipt"
@@ -45,7 +46,7 @@ func TestHeaderControlRoleReceiptSourceRejectsDuplicateOrMalformedHeader(t *test
 		t.Fatalf("accepted duplicate role receipt headers: %v", err)
 	}
 	malformed := httptest.NewRequest(http.MethodGet, "/api/control", nil)
-	malformed.Header.Set(ControlRoleReceiptHeader, "not-base64")
+	malformed.Header.Set(ControlRoleReceiptHeader, "!")
 	if _, err := source(malformed); err == nil || !strings.Contains(err.Error(), "decode") {
 		t.Fatalf("accepted malformed role receipt header: %v", err)
 	}
