@@ -141,7 +141,10 @@ func runCtr(_ *cobra.Command, args []string) error {
 	if ctrJSON {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		return enc.Encode(res)
+		if err := enc.Encode(res); err != nil {
+			return err
+		}
+		return ctrResultError(res)
 	}
 	if ctrQuiet {
 		fmt.Printf("ctr: %d pending across %d agent(s) · woke %d · watching %d · needs-owner %d\n",
@@ -152,9 +155,12 @@ func runCtr(_ *cobra.Command, args []string) error {
 		if res.LedgerError != "" {
 			fmt.Printf("ctr: ledger-error: %s\n", res.LedgerError)
 		}
-		return nil
+		return ctrResultError(res)
 	}
 	renderCtr(res)
+	if err := ctrResultError(res); err != nil {
+		return err
+	}
 
 	// Local-model-first (A30 Tier-0): with --reconcile, hand the open items to the
 	// on-device model to RECEIVE and RECONCILE before anything escalates to a cloud
@@ -165,6 +171,17 @@ func runCtr(_ *cobra.Command, args []string) error {
 		renderReconcile(routerRoot)
 	}
 	return nil
+}
+
+// ctrResultError makes an incomplete ledger observation fail closed for
+// process/hook consumers. The diagnostic result is still rendered, but a
+// zero-count surface must never be treated as a healthy empty inbox when the
+// authoritative task ledger could not be read.
+func ctrResultError(res ctrResult) error {
+	if res.LedgerError == "" {
+		return nil
+	}
+	return fmt.Errorf("task ledger unavailable: %s", res.LedgerError)
 }
 
 // renderReconcile asks the on-device local model to triage the open items —

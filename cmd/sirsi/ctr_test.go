@@ -75,6 +75,16 @@ func TestBuildCtrResultScopedFilters(t *testing.T) {
 	}
 }
 
+func TestCtrResultErrorFailsClosedOnLedgerError(t *testing.T) {
+	if err := ctrResultError(ctrResult{PendingTotal: 0}); err != nil {
+		t.Fatalf("healthy result returned error: %v", err)
+	}
+	err := ctrResultError(ctrResult{PendingTotal: 0, LedgerError: "routerstore: unavailable"})
+	if err == nil || err.Error() != "task ledger unavailable: routerstore: unavailable" {
+		t.Fatalf("ledger error = %v, want fail-closed diagnostic", err)
+	}
+}
+
 // Per-item wake outcomes collapse to per-agent counts for display.
 func TestByAgentCount(t *testing.T) {
 	got := byAgentCount([]router.WakeOutcome{
