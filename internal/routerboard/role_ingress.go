@@ -16,6 +16,14 @@ import (
 // Pantheon does not provide a default source or read private key material.
 type ControlRoleReceiptSource func(*http.Request) (rolereceipt.AuthenticatedReceipt, error)
 
+// NewReceiptBoundControlHandler composes the canonical role-policy handler
+// with the external receipt ingress boundary. Supplying no source intentionally
+// yields a fail-closed HTTP handler; it never falls back to bearer-only access.
+func NewReceiptBoundControlHandler(b *Board, dir, token string, policy ControlRolePolicy, source ControlRoleReceiptSource) http.Handler {
+	handler := NewHandlerWithControlAuthAndRolePolicy(b, dir, token, policy, ContextControlRoleAuthorizer)
+	return WithControlRoleReceiptSource(handler, source)
+}
+
 // ContextControlRoleAuthorizer adapts an ingress-bound receipt to the handler's
 // operation callback. It never treats a missing context value as local access.
 func ContextControlRoleAuthorizer(ctx context.Context, _ string) (rolereceipt.AuthenticatedReceipt, error) {

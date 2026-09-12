@@ -20,6 +20,16 @@ func TestWithControlRoleReceiptSourceFailsClosedWhenMissing(t *testing.T) {
 	}
 }
 
+func TestNewReceiptBoundControlHandlerDoesNotFallBackWithoutSource(t *testing.T) {
+	handler := NewReceiptBoundControlHandler(nil, "", "", ControlRolePolicy{}, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/control", nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, req)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status=%d, want %d", response.Code, http.StatusServiceUnavailable)
+	}
+}
+
 func TestWithControlRoleReceiptSourceBindsExactReceiptToContext(t *testing.T) {
 	receipt := authenticatedRoleReceipt(t)
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
