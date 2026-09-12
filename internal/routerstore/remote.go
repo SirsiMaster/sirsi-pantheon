@@ -361,6 +361,20 @@ func (rs *RemoteStore) do(ctx context.Context, method string, args []any, sess *
 
 // ── methods that cannot be generated ───────────────────────────────────────
 
+// ListAll takes a context, so it is hand-written rather than generated (the
+// stub generator only emits context-free methods). The caller's ctx is honored,
+// but rs.perCall is always applied as a ceiling so the client-side per-call
+// budget the generated call() gave this method is preserved (WithTimeout takes
+// the earlier of the two deadlines). The server injects its own deadline on the
+// read regardless (serve.go), which is the true server-side bound (rs-26).
+func (rs *RemoteStore) ListAll(ctx context.Context) ([]Item, error) {
+	ctx, cancel := context.WithTimeout(ctx, rs.perCall)
+	defer cancel()
+	var out []Item
+	err := rs.callCtx(ctx, "ListAll", nil, &out)
+	return out, err
+}
+
 // Wait is a long poll: the server blocks up to timeout on the store's own
 // Wait and answers true when work landed.
 func (rs *RemoteStore) Wait(ctx context.Context, agent string, timeout time.Duration) (bool, error) {

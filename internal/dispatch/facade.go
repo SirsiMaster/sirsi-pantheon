@@ -335,7 +335,7 @@ func (f *Facade) ListAll() ([]work.Item, error) {
 	// unioning the frozen files inflates every whole-fabric count (open AND
 	// closed) with items the store already resolved.
 	if routercfg.StoreWake() {
-		rows, err := f.store.ListAll()
+		rows, err := f.store.ListAll(context.Background())
 		if err != nil {
 			return nil, fmt.Errorf("store list unavailable (store is the cutover authority): %w", err)
 		}
@@ -350,7 +350,7 @@ func (f *Facade) ListAll() ([]work.Item, error) {
 	if err != nil {
 		return nil, err
 	}
-	rows, err := f.store.ListAll()
+	rows, err := f.store.ListAll(context.Background())
 	if err != nil {
 		// Pre-cutover only (the cutover path returned above): the store is merely
 		// additive here, so a broken store must not blind the caller — degrade to

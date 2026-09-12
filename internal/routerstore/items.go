@@ -1,6 +1,7 @@
 package routerstore
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -155,8 +156,15 @@ func (s *SQLiteStore) Inbox(agent string) ([]Item, error) {
 }
 
 // ListAll returns every item regardless of status, oldest id first.
-func (s *SQLiteStore) ListAll() ([]Item, error) {
-	rows, err := s.db.Query(`SELECT ` + itemCols + ` FROM items ORDER BY id ASC;`)
+//
+// This is the one unbounded full-table read in the hot path, so it takes a
+// context and issues QueryContext (not db.Query): the server injects its
+// per-request deadline (serve.go dispatch), so a full scan of a large items
+// table terminates at that deadline instead of running unbounded and holding a
+// connection past it. modernc.org/sqlite honors ctx cancellation, so an already
+// expired ctx returns before any rows are read (TestListAllHonorsContext).
+func (s *SQLiteStore) ListAll(ctx context.Context) ([]Item, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+itemCols+` FROM items ORDER BY id ASC;`)
 	if err != nil {
 		return nil, fmt.Errorf("routerstore: ListAll: %w", err)
 	}

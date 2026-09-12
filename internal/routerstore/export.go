@@ -1,6 +1,7 @@
 package routerstore
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -28,7 +29,7 @@ func quoteYAML(v string) string {
 // number of items written; on error, files already written are left in place
 // (a partial audit dump is still an audit dump).
 func (s *SQLiteStore) ExportMarkdown(dir string) (int, error) {
-	items, err := s.ListAll()
+	items, err := s.ListAll(context.Background())
 	if err != nil {
 		return 0, fmt.Errorf("routerstore: ExportMarkdown: %w", err)
 	}

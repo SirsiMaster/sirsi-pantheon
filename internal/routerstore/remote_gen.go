@@ -162,11 +162,6 @@ func (rs *RemoteStore) ListAgents() ([]Agent, error) {
 	err := rs.call("ListAgents", nil, &o0)
 	return o0, err
 }
-func (rs *RemoteStore) ListAll() ([]Item, error) {
-	var o0 []Item
-	err := rs.call("ListAll", nil, &o0)
-	return o0, err
-}
 func (rs *RemoteStore) ListHostTokens() ([]HostToken, error) {
 	var o0 []HostToken
 	err := rs.call("ListHostTokens", nil, &o0)
