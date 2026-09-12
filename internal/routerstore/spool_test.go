@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -571,12 +572,68 @@ func TestRelayHTTPClientPreservesProxy(t *testing.T) {
 }
 
 // TestLaneDirModeDefaultsUnchanged: with SIRSI_RELAY_TRUST_GROUP unset (every
-// existing deployment, and every other test in this file), laneDirMode must
-// return exactly 0700 — the widened mode is opt-in only.
+// existing deployment, and every other test in this file), resolvedLaneModes
+// must return exactly the single-uid defaults — the widened mode is opt-in
+// only.
 func TestLaneDirModeDefaultsUnchanged(t *testing.T) {
 	t.Setenv("SIRSI_RELAY_TRUST_GROUP", "")
-	if got := laneDirMode(); got != 0o700 {
-		t.Fatalf("laneDirMode() with no trust group = %o, want 0700", got)
+	dirMode, fileMode, gid, err := resolvedLaneModes()
+	if err != nil {
+		t.Fatalf("resolvedLaneModes() with no trust group: %v", err)
+	}
+	if dirMode != 0o700 || fileMode != 0o600 || gid != -1 {
+		t.Fatalf("resolvedLaneModes() with no trust group = (%o,%o,%d), want (0700,0600,-1)", dirMode, fileMode, gid)
+	}
+}
+
+// TestResolvedLaneModesUnknownGroupFailsClosed (SSA review, PR #753): a
+// misconfigured or typo'd SIRSI_RELAY_TRUST_GROUP must be a hard error, never
+// silently treated as "any non-empty string widens permissions" — the first
+// version of this feature did exactly that, so a typo'd group name still
+// produced group-writable directories inherited from whatever group the
+// parent's setgid bit happened to carry, verified against nothing.
+func TestResolvedLaneModesUnknownGroupFailsClosed(t *testing.T) {
+	t.Setenv("SIRSI_RELAY_TRUST_GROUP", "sirsi-nonexistent-group-xyz")
+	if _, _, _, err := resolvedLaneModes(); err == nil {
+		t.Fatal("unresolvable trust group must be refused, not silently ignored or silently trusted")
+	}
+}
+
+// TestMkdirTrustedRefusesToWidenAMismatchedExistingGroup (SSA review, PR
+// #753): an existing directory whose ACTUAL group does not match the
+// resolved trust group must never be widened — that would grant group-write
+// to whatever unrelated group the directory happens to carry (e.g. it
+// predates the spool's setgid bit) rather than the specific, verified trust
+// group the operator configured.
+func TestMkdirTrustedRefusesToWidenAMismatchedExistingGroup(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "lane")
+	if err := os.Mkdir(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	st, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sys, ok := st.Sys().(*syscall.Stat_t)
+	if !ok {
+		t.Skip("cannot read raw stat_t on this platform")
+	}
+	actualGID := int(sys.Gid)
+	wrongGID := actualGID + 1 // guaranteed not to match
+	if merr := mkdirTrusted(target, 0o770, wrongGID); merr == nil {
+		t.Fatal("mkdirTrusted must refuse to widen a directory whose actual group does not match the configured trust group")
+	}
+	st2, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st2.Mode().Perm() != 0o700 {
+		t.Fatalf("mode was changed despite the group mismatch: now %o, want untouched at 0700", st2.Mode().Perm())
+	}
+	// Negative control on the test itself: the CORRECT gid must succeed.
+	if err := mkdirTrusted(target, 0o770, actualGID); err != nil {
+		t.Fatalf("mkdirTrusted with the CORRECT gid must succeed: %v", err)
 	}
 }
 
@@ -589,7 +646,16 @@ func TestLaneDirModeDefaultsUnchanged(t *testing.T) {
 // lane's freshly created directory because the lane never knew to leave room
 // for it.
 func TestLaneCreatesGroupWritableDirsWhenTrustGroupConfigured(t *testing.T) {
-	t.Setenv("SIRSI_RELAY_TRUST_GROUP", "some-group") // client never resolves it, just switches mode
+	// Must be a REAL resolvable group now that resolvedLaneModes fails closed
+	// on an unresolvable name (the fix for TestResolvedLaneModesUnknownGroupFailsClosed
+	// above) — reuse the current process's own primary group, which any fresh
+	// t.TempDir() subdirectory will actually carry, so the gid-match check in
+	// mkdirTrusted passes honestly rather than being bypassed by trustGID<0.
+	trustGroup, terr := currentPrimaryGroupName()
+	if terr != nil {
+		t.Skipf("cannot resolve current primary group: %v", terr)
+	}
+	t.Setenv("SIRSI_RELAY_TRUST_GROUP", trustGroup)
 	spool := t.TempDir()
 	tr := newSpoolTransport(spool, "trust-mode-lane")
 	req := httptest.NewRequest(http.MethodPost, "http://spool/v1/call/Status", nil)
@@ -643,12 +709,16 @@ func TestWriteAtomicModeSurvivesUmask(t *testing.T) {
 // file exist (via directory listing) yet be refused reading its content.
 func TestLaneFileModeDefaultsUnchanged(t *testing.T) {
 	t.Setenv("SIRSI_RELAY_TRUST_GROUP", "")
-	if got := laneFileMode(); got != 0o600 {
-		t.Fatalf("laneFileMode() with no trust group = %o, want 0600", got)
+	if _, fileMode, _, err := resolvedLaneModes(); err != nil || fileMode != 0o600 {
+		t.Fatalf("resolvedLaneModes() with no trust group: fileMode=%o err=%v, want 0600 nil", fileMode, err)
 	}
-	t.Setenv("SIRSI_RELAY_TRUST_GROUP", "some-group")
-	if got := laneFileMode(); got != 0o640 {
-		t.Fatalf("laneFileMode() with trust group set = %o, want 0640", got)
+	trustGroup, terr := currentPrimaryGroupName()
+	if terr != nil {
+		t.Skipf("cannot resolve current primary group: %v", terr)
+	}
+	t.Setenv("SIRSI_RELAY_TRUST_GROUP", trustGroup)
+	if _, fileMode, gid, err := resolvedLaneModes(); err != nil || fileMode != 0o640 || gid < 0 {
+		t.Fatalf("resolvedLaneModes() with trust group set: fileMode=%o gid=%d err=%v, want 0640 >=0 nil", fileMode, gid, err)
 	}
 }
 
@@ -723,7 +793,11 @@ func TestPublishNeverAttemptsToChmodAnExistingResDir(t *testing.T) {
 	if err := os.MkdirAll(resDir, 0o750); err != nil { // an unusual, distinctive mode
 		t.Fatal(err)
 	}
-	rl := &Relay{Spool: spool, TrustGroup: "irrelevant-for-this-test", Log: slog.Default()}
+	trustGroup, terr := currentPrimaryGroupName()
+	if terr != nil {
+		t.Skipf("cannot resolve current primary group: %v", terr)
+	}
+	rl := &Relay{Spool: spool, TrustGroup: trustGroup, Log: slog.Default()}
 	rl.publish("lane-p", "id1", spoolResponse{Status: 200, Body: []byte("{}")})
 
 	st, err := os.Stat(resDir)
@@ -757,5 +831,37 @@ func TestPublishLogsWhenItCannotCreateResDir(t *testing.T) {
 	}
 	if l := logBuf.String(); !strings.Contains(l, "create response dir") {
 		t.Fatalf("a failed resDir creation must be logged, not swallowed silently:\n%s", l)
+	}
+}
+
+// TestPublishFallbackCreatesGroupAccessibleResDir (SSA review, PR #753): the
+// FRESH-creation branch of publish() — res/ genuinely does not exist yet —
+// must create it at the widened mode (0770) when a trust group is
+// configured, not the plain single-uid 0700 the first version of this fix
+// hardcoded unconditionally. That version fixed the "chmod on an existing,
+// unowned directory" bug correctly but, in doing so, dropped trust-awareness
+// from the fresh-creation path entirely — the one path where widening is
+// actually safe, since the relay just created (and therefore owns) it. The
+// result was the fallback path becoming the one thing a trust-group-enabled
+// client could never read.
+func TestPublishFallbackCreatesGroupAccessibleResDir(t *testing.T) {
+	trustGroup, terr := currentPrimaryGroupName()
+	if terr != nil {
+		t.Skipf("cannot resolve current primary group: %v", terr)
+	}
+	spool := t.TempDir() // fresh: lane-fresh/res does NOT exist yet
+	rl := &Relay{Spool: spool, TrustGroup: trustGroup, Log: slog.Default()}
+	rl.publish("lane-fresh", "id1", spoolResponse{Status: 200, Body: []byte("{}")})
+
+	resDir := filepath.Join(spool, "lane-fresh", "res")
+	st, err := os.Stat(resDir)
+	if err != nil {
+		t.Fatalf("publish() must create res/ on the fresh path: %v", err)
+	}
+	if st.Mode().Perm() != 0o770 {
+		t.Fatalf("freshly created res/ mode = %o, want 0770 under a configured trust group — the client must be able to read it", st.Mode().Perm())
+	}
+	if _, err := os.Stat(filepath.Join(resDir, "id1.json")); err != nil {
+		t.Fatalf("response file must exist: %v", err)
 	}
 }

@@ -120,3 +120,37 @@ func currentPrimaryGroupName() (string, error) {
 	}
 	return g.Name, nil
 }
+
+// TestCheckSpoolDirTrustingGroupConvergesA0700MigratedSpool (SSA review, PR
+// #753): reproduces the exact migration gap found — a spool already
+// correctly chgrp'd to the trust group, but only chgrp'd (no chmod), stays at
+// the plain 0700 it was created with. The first version of this function
+// only stripped DISALLOWED bits, so 0700 (which has none) passed through
+// completely unchanged: group-write was never actually granted, silently
+// defeating the exact one-time migration step the doc comment claimed was
+// sufficient. This proves it now converges to 0770 on the very next call.
+func TestCheckSpoolDirTrustingGroupConvergesA0700MigratedSpool(t *testing.T) {
+	base := t.TempDir()
+	spool := filepath.Join(base, "spool")
+	if err := os.Mkdir(spool, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	selfGroup, err := currentPrimaryGroupName()
+	if err != nil {
+		t.Skipf("cannot resolve current primary group: %v", err)
+	}
+	// Deliberately do NOT chmod — only the group is "migrated", exactly the
+	// gap SSA found: an operator who only ran chgrp, trusting the doc comment's
+	// claim that the code alone converges the rest.
+	got, err := CheckSpoolDirTrustingGroup(spool, selfGroup)
+	if err != nil {
+		t.Fatalf("CheckSpoolDirTrustingGroup on a chgrp'd-but-not-chmod'd 0700 spool: %v", err)
+	}
+	st, statErr := os.Stat(got)
+	if statErr != nil {
+		t.Fatal(statErr)
+	}
+	if st.Mode().Perm() != 0o770 {
+		t.Fatalf("migrated spool mode = %o, want 0770 — a correctly-grouped 0700 spool must be WIDENED, not left unchanged", st.Mode().Perm())
+	}
+}

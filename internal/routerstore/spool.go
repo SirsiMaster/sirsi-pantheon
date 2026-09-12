@@ -27,11 +27,14 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/user"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -48,44 +51,59 @@ import (
 // read/write instead of leaving it inherited-but-closed at 0700.
 const spoolTrustGroupEnv = "SIRSI_RELAY_TRUST_GROUP"
 
-// laneDirMode is the mode a lane creates its own req/res/slots directories
-// with. 0700 (default, unchanged from before this existed) unless
-// SIRSI_RELAY_TRUST_GROUP is set in THIS process's environment, in which case
-// 0770 — group access is then whatever group the directory inherits via the
-// spool's setgid bit, never chosen by the lane itself.
-func laneDirMode() os.FileMode {
-	if strings.TrimSpace(os.Getenv(spoolTrustGroupEnv)) != "" {
-		return 0o770
+// resolvedLaneModes resolves SIRSI_RELAY_TRUST_GROUP (if set in THIS
+// process's environment) to its gid and returns the widened dir/file modes
+// alongside it, or the untouched single-uid defaults with gid -1 when unset.
+// An explicitly configured but UNRESOLVABLE group name is a hard error, never
+// a silent fall-through to either behavior: SSA review, PR #753, found the
+// first version of this treated any non-empty string as license to widen
+// permissions — a typo'd name still produced group-writable directories,
+// inherited from whatever group the parent's setgid bit happened to carry,
+// never verified against anything the operator actually configured.
+func resolvedLaneModes() (dirMode, fileMode os.FileMode, trustGID int, err error) {
+	name := strings.TrimSpace(os.Getenv(spoolTrustGroupEnv))
+	if name == "" {
+		return 0o700, 0o600, -1, nil
 	}
-	return 0o700
+	g, lerr := user.LookupGroup(name)
+	if lerr != nil {
+		return 0, 0, -1, fmt.Errorf("spool: %s %q: %w", spoolTrustGroupEnv, name, lerr)
+	}
+	gid, aerr := strconv.Atoi(g.Gid)
+	if aerr != nil {
+		return 0, 0, -1, fmt.Errorf("spool: %s %q: bad gid %q: %w", spoolTrustGroupEnv, name, g.Gid, aerr)
+	}
+	return 0o770, 0o640, gid, nil
 }
 
-// laneFileMode is the client-side counterpart to laneDirMode for the files
-// themselves (request files): 0600 by default, 0640 (group-readable, never
-// group-writable — nobody but its writer should overwrite a request or
-// response body) when SIRSI_RELAY_TRUST_GROUP is set in this process's
-// environment.
-func laneFileMode() os.FileMode {
-	if strings.TrimSpace(os.Getenv(spoolTrustGroupEnv)) != "" {
-		return 0o640
-	}
-	return 0o600
-}
-
-// mkdirTrusted creates dir (with any needed parents) and then explicitly
-// chmods it to mode. MkdirAll alone is not enough: the requested mode is
-// masked by the process umask exactly like a bare mkdir(2), so a umask of the
-// common 022 silently turns the intended 0770 into 0750 — defeating the whole
-// point of laneDirMode's widened mode without any error to notice it by. The
-// chmod runs even when the directory already existed (MkdirAll no-ops on an
-// existing directory, indistinguishable from "just created"), so a lane's
-// directories converge to the current mode on every call — a lane created
-// under the old single-uid default self-heals to group-writable the first
-// time it runs again after SIRSI_RELAY_TRUST_GROUP is configured, with no
-// separate migration step.
-func mkdirTrusted(dir string, mode os.FileMode) error {
+// mkdirTrusted creates dir (with any needed parents) and converges it to
+// mode. MkdirAll's requested mode alone is not enough: it is masked by the
+// process umask exactly like a bare mkdir(2), so a umask of the common 022
+// silently turns an intended 0770 into 0750 with no error to notice it by —
+// the explicit os.Chmod after is what actually guarantees the final mode.
+//
+// When trustGID >= 0 and dir already exists, its ACTUAL group must already
+// equal trustGID before this widens it — SSA review, PR #753: a directory
+// that inherited some OTHER, unrelated group (predates the spool's setgid
+// bit, or was created under a different configuration entirely) must never
+// have its permissions widened just because trust mode is configured
+// somewhere; that would grant group-write to whatever group the directory
+// happens to carry, not the specific, verified trust group. A mismatch fails
+// closed with an actionable message rather than silently doing the wrong
+// thing in either direction. trustGID < 0 (the default, no-trust-group path)
+// skips this check entirely and behaves exactly as before this existed.
+func mkdirTrusted(dir string, mode os.FileMode, trustGID int) error {
 	if err := os.MkdirAll(dir, mode); err != nil {
 		return err
+	}
+	if trustGID >= 0 {
+		st, err := os.Stat(dir)
+		if err != nil {
+			return err
+		}
+		if sys, ok := st.Sys().(*syscall.Stat_t); ok && int(sys.Gid) != trustGID {
+			return fmt.Errorf("spool: %s has group %d, not the configured trust group (gid %d); refusing to widen an unrelated group's access — verify the spool's setgid inheritance or chgrp this directory to the trust group first", dir, sys.Gid, trustGID)
+		}
 	}
 	return os.Chmod(dir, mode)
 }
@@ -171,12 +189,16 @@ func (t *spoolTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 			req.Headers[k] = r.Header.Get(k)
 		}
 	}
+	dirMode, fileMode, trustGID, merr := resolvedLaneModes()
+	if merr != nil {
+		return nil, merr
+	}
 	reqDir, resDir := filepath.Join(t.dir, "req"), filepath.Join(t.dir, "res")
 	// t.dir itself (<spool>/<agent>) is included: the relay needs to traverse
 	// INTO it, not just into its req/res/slots children, and MkdirAll creates
 	// it as an intermediate directory with the same requested mode.
 	for _, d := range []string{t.dir, reqDir, resDir, filepath.Join(t.dir, "slots")} {
-		if err := mkdirTrusted(d, laneDirMode()); err != nil {
+		if err := mkdirTrusted(d, dirMode, trustGID); err != nil {
 			return nil, fmt.Errorf("spool: %w", err)
 		}
 	}
@@ -189,7 +211,7 @@ func (t *spoolTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	defer func() { _ = os.Remove(slot) }()
 	id := t.nextID()
 	reqPath := filepath.Join(reqDir, id+".json")
-	if err := writeAtomic(reqPath, req, laneFileMode()); err != nil {
+	if err := writeAtomic(reqPath, req, fileMode); err != nil {
 		return nil, fmt.Errorf("spool: publish %s id %s: %w", method, id, err)
 	}
 	resPath := filepath.Join(resDir, id+".json")
@@ -486,18 +508,32 @@ func (rl *Relay) publish(agent, id string, sr spoolResponse) {
 	// res/ almost always already exists — the lane client creates req/, res/
 	// and slots/ together, up front, before ever writing anything (RoundTrip).
 	// This is only a defensive fallback for a lane that somehow never did.
-	// mkdirTrusted's unconditional chmod is deliberately NOT used here: it
-	// would try to chmod a directory the RELAY does not own whenever res/
-	// already exists (the normal case, created by the client) — chmod
-	// requires ownership, so that call would fail with EPERM every time,
-	// which the original "if err == nil" structure then swallowed with zero
-	// log output. Widening res/'s mode is the CREATING side's job (the
-	// client's laneDirMode()); the relay only creates it, at the plain
-	// default mode, on the rare path where it must.
+	// mkdirTrusted's chmod is safe to use HERE (unlike the earlier bug where it
+	// ran on an already-existing directory the relay might not own): this
+	// branch only runs when os.Stat just reported the directory absent, so a
+	// successful MkdirAll here means THIS process created it and therefore
+	// owns it — chmod on your own freshly created directory cannot hit the
+	// ownership-required EPERM that broke the pre-existing case (SSA review,
+	// PR #753: the first version of this fix over-corrected and hardcoded
+	// 0700 even under a configured trust group, leaving the fallback path
+	// itself inaccessible to the client — this restores the widening, scoped
+	// to only the fresh-creation branch where it is actually safe).
 	resDir := filepath.Dir(resPath)
+	dirMode, trustGID := os.FileMode(0o700), -1
+	if rl.TrustGroup != "" {
+		dirMode = 0o770
+		g, gerr := user.LookupGroup(rl.TrustGroup)
+		if gerr != nil {
+			rl.Log.Error("relay: resolve trust group", "agent", agent, "id", id, "group", rl.TrustGroup, "err", gerr)
+			return
+		}
+		if gid, aerr := strconv.Atoi(g.Gid); aerr == nil {
+			trustGID = gid
+		}
+	}
 	mkErr := error(nil)
 	if _, statErr := os.Stat(resDir); os.IsNotExist(statErr) {
-		mkErr = os.MkdirAll(resDir, 0o700)
+		mkErr = mkdirTrusted(resDir, dirMode, trustGID)
 	}
 	if mkErr != nil {
 		rl.Log.Error("relay: create response dir", "agent", agent, "id", id, "err", mkErr)

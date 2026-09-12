@@ -151,22 +151,32 @@ func checkSpoolDir(spool, trustGroup string) (string, error) {
 	}
 	// No explicit other-write refusal here, matching the original: any looseness
 	// on the spool dir itself (group OR other bits) is silently corrected below,
-	// never refused — only the auto-tighten target changes for a trusted group.
-	// disallowed is the bit set that must not be present: 0o077 (all of
-	// group+other) by default, matching the original exactly; 0o007 (other
-	// only) when the directory's group is the trusted group, since group-write
-	// is then the intended, configured state rather than looseness to correct.
-	// Only chmod when a disallowed bit is actually present — an already-tighter
-	// mode (e.g. 0600) is left alone, exactly as before this function grew a
-	// trust group.
-	wantPerm := os.FileMode(0o700)
-	disallowed := os.FileMode(0o077)
+	// never refused.
+	//
+	// groupTrusted CONVERGES unconditionally to 0770 — both directions, not
+	// just tightening. SSA review, PR #753: the first version only stripped
+	// disallowed bits, so a spool already correctly chgrp'd to the trust group
+	// but still at the plain 0700 it was created with (chgrp alone, no chmod)
+	// passed this check UNCHANGED at 0700 — group-write was never actually
+	// granted, silently defeating the migration path the doc comment claimed
+	// worked. A verified-correct group is exactly the case where widening is
+	// safe and intended, unlike the default path below.
+	//
+	// The DEFAULT (non-trusted) path is UNCHANGED from before this function
+	// grew a trust group: only chmod when a disallowed bit (0o077) is actually
+	// present, so an already-tighter mode (e.g. 0600) is left alone — widening
+	// a single-uid spool that nobody configured for sharing is never
+	// appropriate, and there is no verified group to justify it.
 	if groupTrusted {
-		wantPerm = 0o770
-		disallowed = 0o007
+		if st.Mode().Perm() != 0o770 {
+			if err := os.Chmod(canon, 0o770); err != nil {
+				return "", fmt.Errorf("spool: converge mode: %w", err)
+			}
+		}
+		return canon, nil
 	}
-	if st.Mode().Perm()&disallowed != 0 {
-		if err := os.Chmod(canon, wantPerm); err != nil {
+	if st.Mode().Perm()&0o077 != 0 {
+		if err := os.Chmod(canon, 0o700); err != nil {
 			return "", fmt.Errorf("spool: tighten mode: %w", err)
 		}
 	}
