@@ -732,10 +732,11 @@ func TestLaneFileModeDefaultsUnchanged(t *testing.T) {
 // made the real deployment's response files unreadable across uids even
 // though their containing directories were correctly group-writable.
 func TestSpoolRelayEndToEndWithTrustGroupWritesReadableFiles(t *testing.T) {
-	// The relay's own TrustGroup must resolve via user.LookupGroup (unlike the
-	// client side, which only checks its env var is non-empty) — reuse the
-	// current real primary group so Serve() doesn't fail closed on a
-	// nonexistent name and silently exit before ever consuming anything.
+	// Both sides now resolve the group via user.LookupGroup and fail closed on
+	// an unresolvable name (resolvedLaneModes on the client, Serve's
+	// CheckSpoolDirTrustingGroup on the relay) — reuse the current real
+	// primary group so neither side fails closed on a nonexistent name before
+	// ever consuming anything.
 	trustGroup, err := currentPrimaryGroupName()
 	if err != nil {
 		t.Skipf("cannot resolve current primary group: %v", err)

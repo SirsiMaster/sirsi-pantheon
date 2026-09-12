@@ -40,15 +40,21 @@ import (
 
 // spoolTrustGroupEnv is read on BOTH sides of the spool: the relay reads it
 // (via the CLI layer, into Relay.TrustGroup) to decide which owner it accepts
-// besides itself; a lane client reads it here to decide the mode it creates
-// its own directories with. The group itself is never resolved on the client
-// side — a lane cannot chgrp a directory it creates (only its own primary
-// group applies), so the mechanism is the spool's OWN setgid bit: once the top
-// spool directory is group-owned by the trust group with setgid set (set up
-// once, out of band, when the relay is deployed under a service account),
+// besides itself; a lane client reads it here, via resolvedLaneModes, to
+// decide the mode it creates its own directories with. Both sides resolve the
+// name to a real gid (user.LookupGroup) and fail closed if it does not
+// resolve — SSA review, PR #753: an earlier version treated any non-empty
+// string as license to widen permissions, unverified.
+//
+// A lane cannot CHGRP a directory it creates (only its own primary group
+// applies at creation time), so actually landing in the trust group depends
+// on the spool's OWN setgid bit: once the top spool directory is group-owned
+// by the trust group with setgid set (an owner-run, one-time step — a
+// DIFFERENT uid can never chmod/chgrp a directory it does not own; see
+// CheckSpoolDirTrustingGroup's doc comment for the exact migration path),
 // every directory MkdirAll creates beneath it inherits that group
-// automatically. The client's only job is to grant that inherited group
-// read/write instead of leaving it inherited-but-closed at 0700.
+// automatically. mkdirTrusted then verifies the actual inherited gid matches
+// before granting it read/write, rather than trusting inheritance blindly.
 const spoolTrustGroupEnv = "SIRSI_RELAY_TRUST_GROUP"
 
 // resolvedLaneModes resolves SIRSI_RELAY_TRUST_GROUP (if set in THIS
@@ -287,14 +293,19 @@ func acquireSlot(dir string) (string, error) {
 // writeAtomic marshals v to path via a same-directory temp file and rename(2),
 // so a reader never observes a partial file. mode is the file's final
 // permission: 0600 (owner-only, the historical default) unless the caller
-// opts into laneFileMode()'s widened 0640 — a directory being group-writable
-// (laneDirMode/mkdirTrusted) does NOT make the FILES inside it group-readable;
-// file permissions are independent of their containing directory's, so a
-// request or response file written at 0600 is invisible to a relay or lane
-// running as a different, even trust-group-configured, uid. mode is chmod'd
-// explicitly after the rename (not just passed to WriteFile) because the
-// requested mode is masked by the process umask exactly like a bare
-// open(2)/creat(2) — the same reason mkdirTrusted exists for directories.
+// opts into resolvedLaneModes' widened 0640 — a directory being
+// group-writable (mkdirTrusted) does NOT make the FILES inside it
+// group-readable; file permissions are independent of their containing
+// directory's, so a request or response file written at 0600 is invisible to
+// a relay or lane running as a different, even trust-group-configured, uid.
+// mode is chmod'd explicitly on the TEMP file, before the rename into place
+// (not just passed to WriteFile) because the requested mode is masked by the
+// process umask exactly like a bare open(2)/creat(2) — the same reason
+// mkdirTrusted exists for directories. Chmod-then-rename (rather than
+// rename-then-chmod) means a reader can never observe the file at its
+// pre-chmod, too-narrow mode: rename(2) is what makes it visible under its
+// final name at all, so by the time it appears its permissions are already
+// final.
 func writeAtomic(path string, v any, mode os.FileMode) error {
 	b, err := json.Marshal(v)
 	if err != nil {

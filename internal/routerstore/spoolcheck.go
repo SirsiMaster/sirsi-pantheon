@@ -123,9 +123,15 @@ func checkSpoolDir(spool, trustGroup string) (string, error) {
 		// CheckSpoolDirTrustingGroup: this process's own gid at creation time
 		// need not be trustGID (group MEMBERSHIP does not imply it is your
 		// PRIMARY gid), so there is nothing correct to widen to yet. Migrating
-		// an EXISTING spool to a trust group is the supported path — chgrp it
-		// to the trust group once, out of band, and the tightening step below
-		// converges it to 0770 on this and every future call.
+		// an EXISTING spool to a trust group is the supported path — the OWNER
+		// (whoever already has the directory) chgrp's it to the trust group
+		// once, out of band, and the tightening step below converges it to 0770
+		// on this and every future call. This must be run by the owning uid: a
+		// DIFFERENT uid can never chmod or chgrp a directory it does not own
+		// (that is exactly the ownership check above), so a service account
+		// discovering someone else's 0700 spool cannot self-migrate it — the
+		// migration is an owner-run, one-time step, not something this
+		// function, or the service account, can perform on its own.
 		if merr := os.Mkdir(canon, 0o700); merr != nil {
 			return "", fmt.Errorf("spool: create: %w", merr)
 		}
