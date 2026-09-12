@@ -24,11 +24,11 @@ var routerControlCmd = &cobra.Command{
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if endpoint := firstNonEmptyControlEndpoint(routerControlEndpoint, os.Getenv("SIRSI_CONTROL_ENDPOINT")); endpoint != "" {
-			roleID, roleSHA256, err := expectedControlRoleReference()
+			proof, err := loadControlRoleProof(routerControlClientOnly || controlClientOnlyEnv(os.Getenv("SIRSI_CONTROL_CLIENT_ONLY")))
 			if err != nil {
 				return err
 			}
-			body, err := fetchRemoteControlWithRole(cmd.Context(), endpoint, os.Getenv("SIRSI_CONTROL_TOKEN"), roleID, roleSHA256)
+			body, err := fetchRemoteControlWithRoleAndHeader(cmd.Context(), endpoint, os.Getenv("SIRSI_CONTROL_TOKEN"), proof.expectedID, proof.expectedSHA, proof.header)
 			if err != nil {
 				return err
 			}
@@ -90,11 +90,11 @@ var routerControlActionCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		roleID, roleSHA256, err := expectedControlRoleReference()
+		proof, err := loadControlRoleProof(true)
 		if err != nil {
 			return err
 		}
-		response, err := sendRemoteControlActionWithRole(cmd.Context(), endpoint, os.Getenv("SIRSI_CONTROL_TOKEN"), body, roleID, roleSHA256)
+		response, err := sendRemoteControlActionWithRoleAndHeader(cmd.Context(), endpoint, os.Getenv("SIRSI_CONTROL_TOKEN"), body, proof.expectedID, proof.expectedSHA, proof.header)
 		if err != nil {
 			return err
 		}

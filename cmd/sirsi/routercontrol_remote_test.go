@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"io"
@@ -13,7 +14,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/rolereceipt"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerboard"
 )
 
@@ -317,6 +320,96 @@ func TestExpectedControlRoleReferenceRejectsPartialOrNonCanonicalEnvironment(t *
 	t.Setenv("SIRSI_CONTROL_ROLE_RECEIPT_SHA256", strings.Repeat("a", 64))
 	if _, _, err := expectedControlRoleReference(); err == nil || !strings.Contains(err.Error(), "whitespace") {
 		t.Fatalf("accepted non-canonical role expectation: %v", err)
+	}
+}
+
+func controlRoleReceiptFixture(t *testing.T) []byte {
+	t.Helper()
+	now := time.Date(2026, 9, 12, 7, 0, 0, 0, time.UTC)
+	receipt := rolereceipt.Receipt{
+		Schema: rolereceipt.Schema, ReceiptID: "rr-m1-transport", Role: rolereceipt.ConstrainedClient,
+		HostProfile: rolereceipt.HostProfile{ID: "m1-test", OS: "macOS", Toolchain: "go", Transport: "tailscale"},
+		Scope:       []string{"inspect", "delegate"}, IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour),
+		RevocationReference: "revocations-v1", Issuer: "ssa", KeyID: "test-key", PolicyVersion: "v1",
+		ObservedState: rolereceipt.ObservedState{
+			RouterNamespace: "sirsi-primary", ProtectedProcesses: []string{"codex"},
+			ResourceFacts: []rolereceipt.ResourceFact{{Name: "swap", Value: "1"}},
+		},
+		Signature: "test-signature",
+	}
+	raw, err := json.Marshal(receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+func TestLoadControlRoleProofBindsExactReceiptFileBytes(t *testing.T) {
+	raw := controlRoleReceiptFixture(t)
+	path := filepath.Join(t.TempDir(), "role-receipt.json")
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(controlRoleReceiptFileEnv, path)
+	t.Setenv("SIRSI_CONTROL_ROLE_RECEIPT_ID", "")
+	t.Setenv("SIRSI_CONTROL_ROLE_RECEIPT_SHA256", "")
+	proof, err := loadControlRoleProof(true)
+	if err != nil {
+		t.Fatalf("loadControlRoleProof: %v", err)
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(proof.header)
+	if err != nil || !bytes.Equal(decoded, raw) {
+		t.Fatalf("header bytes differ from receipt file: err=%v", err)
+	}
+	sum := sha256.Sum256(raw)
+	if proof.expectedID != "rr-m1-transport" || proof.expectedSHA != hex.EncodeToString(sum[:]) {
+		t.Fatalf("proof reference = %q/%q", proof.expectedID, proof.expectedSHA)
+	}
+	t.Setenv("SIRSI_CONTROL_ROLE_RECEIPT_ID", "rr-other")
+	t.Setenv("SIRSI_CONTROL_ROLE_RECEIPT_SHA256", strings.Repeat("a", 64))
+	if _, err := loadControlRoleProof(true); err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("accepted mismatched expected reference: %v", err)
+	}
+}
+
+func TestLoadControlRoleProofRequiresFileForAuthenticatedAction(t *testing.T) {
+	t.Setenv(controlRoleReceiptFileEnv, "")
+	t.Setenv("SIRSI_CONTROL_ROLE_RECEIPT_ID", "")
+	t.Setenv("SIRSI_CONTROL_ROLE_RECEIPT_SHA256", "")
+	if _, err := loadControlRoleProof(true); err == nil || !strings.Contains(err.Error(), controlRoleReceiptFileEnv) {
+		t.Fatalf("accepted authenticated action without a receipt file: %v", err)
+	}
+}
+
+func TestFetchRemoteControlWithRoleAndHeaderSendsExactReceipt(t *testing.T) {
+	raw := controlRoleReceiptFixture(t)
+	sum := sha256.Sum256(raw)
+	roleSHA := hex.EncodeToString(sum[:])
+	state := routerboard.Payload{GeneratedAt: "2026-09-12T07:00:00Z"}
+	stateBytes, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stateSum := sha256.Sum256(stateBytes)
+	responseBody, err := json.Marshal(routerboard.ControlEnvelope{
+		Schema: routerboard.ControlSchema, Authority: "canonical-routerstore", Revision: 1,
+		GeneratedAt: state.GeneratedAt, StateSHA256: hex.EncodeToString(stateSum[:]),
+		RoleReceiptID: "rr-m1-transport", RoleReceiptSHA256: roleSHA,
+		Capabilities: routerboard.ControlCapabilities(), State: state,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got, err := base64.RawURLEncoding.DecodeString(r.Header.Get(routerboard.ControlRoleReceiptHeader)); err != nil || !bytes.Equal(got, raw) {
+			t.Fatalf("role receipt header differs from exact file: err=%v", err)
+		}
+		_, _ = w.Write(responseBody)
+	}))
+	defer server.Close()
+	proof := controlRoleProof{header: base64.RawURLEncoding.EncodeToString(raw), expectedID: "rr-m1-transport", expectedSHA: roleSHA}
+	if _, err := fetchRemoteControlWithRoleAndHeader(context.Background(), server.URL, "test-token", proof.expectedID, proof.expectedSHA, proof.header); err != nil {
+		t.Fatalf("fetchRemoteControlWithRoleAndHeader: %v", err)
 	}
 }
 

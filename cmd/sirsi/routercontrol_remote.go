@@ -3,6 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,11 +17,76 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/rolereceipt"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerboard"
 )
 
 const remoteControlBodyLimit = 8 << 20
 const remoteControlActionBodyLimit = 64 << 10
+const controlRoleReceiptFileEnv = "SIRSI_CONTROL_ROLE_RECEIPT_FILE"
+
+type controlRoleProof struct {
+	header      string
+	expectedID  string
+	expectedSHA string
+}
+
+// loadControlRoleProof loads the exact externally issued receipt bytes that
+// M5's header-bound ingress authenticates. Pantheon only parses the closed
+// shape and binds raw bytes; signature verification remains at the M5 trust
+// root. Client-only/action paths require the file so bearer auth cannot be
+// mistaken for the role authority.
+func loadControlRoleProof(required bool) (controlRoleProof, error) {
+	source := strings.TrimSpace(os.Getenv(controlRoleReceiptFileEnv))
+	expectedID, expectedSHA, err := expectedControlRoleReference()
+	if err != nil {
+		return controlRoleProof{}, err
+	}
+	if source == "" {
+		if required || expectedID != "" || expectedSHA != "" {
+			return controlRoleProof{}, fmt.Errorf("%s is required for authenticated M5 control", controlRoleReceiptFileEnv)
+		}
+		return controlRoleProof{}, nil
+	}
+	file, err := os.Open(filepath.Clean(source)) //nolint:gosec // explicit operator-selected receipt file
+	if err != nil {
+		return controlRoleProof{}, fmt.Errorf("open control role receipt file: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+	info, err := file.Stat()
+	if err != nil {
+		return controlRoleProof{}, fmt.Errorf("stat control role receipt file: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return controlRoleProof{}, fmt.Errorf("control role receipt file is not regular")
+	}
+	if info.Size() < 1 || info.Size() > maxRoleReceiptBytes {
+		return controlRoleProof{}, fmt.Errorf("control role receipt file must be between 1 and %d bytes", maxRoleReceiptBytes)
+	}
+	raw, err := io.ReadAll(io.LimitReader(file, maxRoleReceiptBytes+1))
+	if err != nil {
+		return controlRoleProof{}, fmt.Errorf("read control role receipt file: %w", err)
+	}
+	if len(raw) > maxRoleReceiptBytes {
+		return controlRoleProof{}, fmt.Errorf("control role receipt file exceeds %d bytes", maxRoleReceiptBytes)
+	}
+	receipt, err := rolereceipt.Parse(raw)
+	if err != nil {
+		return controlRoleProof{}, fmt.Errorf("parse control role receipt file: %w", err)
+	}
+	sum := sha256.Sum256(raw)
+	rawSHA := hex.EncodeToString(sum[:])
+	if expectedID == "" {
+		expectedID, expectedSHA = receipt.ReceiptID, rawSHA
+	} else if expectedID != receipt.ReceiptID || expectedSHA != rawSHA {
+		return controlRoleProof{}, fmt.Errorf("control role receipt file does not match the expected receipt reference")
+	}
+	return controlRoleProof{
+		header:      base64.RawURLEncoding.EncodeToString(raw),
+		expectedID:  expectedID,
+		expectedSHA: rawSHA,
+	}, nil
+}
 
 func firstNonEmptyControlEndpoint(values ...string) string {
 	for _, value := range values {
@@ -77,6 +145,10 @@ func fetchRemoteControl(ctx context.Context, rawEndpoint, token string) ([]byte,
 }
 
 func fetchRemoteControlWithRole(ctx context.Context, rawEndpoint, token, expectedRoleID, expectedRoleSHA256 string) ([]byte, error) {
+	return fetchRemoteControlWithRoleAndHeader(ctx, rawEndpoint, token, expectedRoleID, expectedRoleSHA256, "")
+}
+
+func fetchRemoteControlWithRoleAndHeader(ctx context.Context, rawEndpoint, token, expectedRoleID, expectedRoleSHA256, roleHeader string) ([]byte, error) {
 	if strings.TrimSpace(token) == "" {
 		return nil, fmt.Errorf("fetch control snapshot: bearer token is required for remote control")
 	}
@@ -90,6 +162,9 @@ func fetchRemoteControlWithRole(ctx context.Context, rawEndpoint, token, expecte
 	}
 	if token = strings.TrimSpace(token); token != "" {
 		request.Header.Set("Authorization", "Bearer "+token)
+	}
+	if strings.TrimSpace(roleHeader) != "" {
+		request.Header.Set(routerboard.ControlRoleReceiptHeader, roleHeader)
 	}
 	client := &http.Client{Timeout: 10 * time.Second}
 	response, err := client.Do(request)
@@ -181,6 +256,10 @@ func sendRemoteControlAction(ctx context.Context, rawEndpoint, token string, bod
 }
 
 func sendRemoteControlActionWithRole(ctx context.Context, rawEndpoint, token string, body []byte, expectedRoleID, expectedRoleSHA256 string) ([]byte, error) {
+	return sendRemoteControlActionWithRoleAndHeader(ctx, rawEndpoint, token, body, expectedRoleID, expectedRoleSHA256, "")
+}
+
+func sendRemoteControlActionWithRoleAndHeader(ctx context.Context, rawEndpoint, token string, body []byte, expectedRoleID, expectedRoleSHA256, roleHeader string) ([]byte, error) {
 	if strings.TrimSpace(token) == "" {
 		return nil, fmt.Errorf("send control action: bearer token is required for remote control")
 	}
@@ -195,6 +274,9 @@ func sendRemoteControlActionWithRole(ctx context.Context, rawEndpoint, token str
 	request.Header.Set("Content-Type", "application/json")
 	if token = strings.TrimSpace(token); token != "" {
 		request.Header.Set("Authorization", "Bearer "+token)
+	}
+	if strings.TrimSpace(roleHeader) != "" {
+		request.Header.Set(routerboard.ControlRoleReceiptHeader, roleHeader)
 	}
 	client := &http.Client{Timeout: 10 * time.Second}
 	response, err := client.Do(request)
