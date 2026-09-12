@@ -141,3 +141,41 @@ func TestUnnormalisedCanonicalPathIsStillRefused(t *testing.T) {
 		t.Error("an unnormalised spelling of the canonical store was allowed — the gate is walkable")
 	}
 }
+
+// TestDirtyFreshInitPointsAtEnvNotMigration (rs-29): a dirty-build refusal on a
+// FRESH store init (from==0) must tell the operator they are almost certainly
+// not pointed at the router service and to fix the environment — NOT chase a
+// phantom migration to commit/push. A real migration (from>0) must NOT carry
+// that fresh-init note.
+func TestDirtyFreshInitPointsAtEnvNotMigration(t *testing.T) {
+	restore := stubBuild(buildStamp{Revision: "abc123def456789", Dirty: true, Known: true})
+	defer restore()
+	t.Setenv("SIRSI_ALLOW_DIRTY_MIGRATION", "")
+
+	freshErr := checkMigrationAllowed(0, 1, "") // "" = shared (deterministic, no host dependency)
+	if freshErr == nil {
+		t.Fatal("dirty fresh-init on a shared/unknown store must be refused")
+	}
+	for _, want := range []string{"FRESH local store", "SIRSI_ROUTER_URL", "SIRSI_ROUTER_DB", "canonical store"} {
+		if !strings.Contains(freshErr.Error(), want) {
+			t.Errorf("fresh-init refusal must point at the env fix; missing %q in:\n%s", want, freshErr)
+		}
+	}
+
+	// Fresh-init must NOT carry the migration remediation — that contradictory
+	// "commit and push" advice is exactly what rs-29 removes (SSA review).
+	if strings.Contains(freshErr.Error(), "commit and push") {
+		t.Errorf("fresh-init refusal must NOT tell the operator to commit and push a migration:\n%s", freshErr)
+	}
+
+	migErr := checkMigrationAllowed(19, 20, "")
+	if migErr == nil {
+		t.Fatal("dirty migration must be refused")
+	}
+	if strings.Contains(migErr.Error(), "FRESH local store") {
+		t.Errorf("a real migration (from>0) must NOT carry the fresh-init note:\n%s", migErr)
+	}
+	if !strings.Contains(migErr.Error(), "commit and push") {
+		t.Errorf("a real migration (from>0) must keep the commit-and-push remediation:\n%s", migErr)
+	}
+}
