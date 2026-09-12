@@ -73,6 +73,10 @@ func isLoopbackControlHost(host string) bool {
 }
 
 func fetchRemoteControl(ctx context.Context, rawEndpoint, token string) ([]byte, error) {
+	return fetchRemoteControlWithRole(ctx, rawEndpoint, token, "", "")
+}
+
+func fetchRemoteControlWithRole(ctx context.Context, rawEndpoint, token, expectedRoleID, expectedRoleSHA256 string) ([]byte, error) {
 	if strings.TrimSpace(token) == "" {
 		return nil, fmt.Errorf("fetch control snapshot: bearer token is required for remote control")
 	}
@@ -103,13 +107,17 @@ func fetchRemoteControl(ctx context.Context, rawEndpoint, token string) ([]byte,
 	if response.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("control snapshot returned HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(body)))
 	}
-	if err := validateRemoteControlSnapshot(body); err != nil {
+	if err := validateRemoteControlSnapshotWithRole(body, expectedRoleID, expectedRoleSHA256); err != nil {
 		return nil, err
 	}
 	return body, nil
 }
 
 func validateRemoteControlSnapshot(body []byte) error {
+	return validateRemoteControlSnapshotWithRole(body, "", "")
+}
+
+func validateRemoteControlSnapshotWithRole(body []byte, expectedRoleID, expectedRoleSHA256 string) error {
 	if err := routerboard.ValidateJSONNoDuplicateKeys(body); err != nil {
 		return fmt.Errorf("control snapshot JSON is ambiguous: %w", err)
 	}
@@ -128,6 +136,9 @@ func validateRemoteControlSnapshot(body []byte) error {
 	}
 	if err := envelope.Validate(); err != nil {
 		return fmt.Errorf("control snapshot envelope: %w", err)
+	}
+	if err := routerboard.RequireRoleReceiptReference(envelope.RoleReceiptID, envelope.RoleReceiptSHA256, expectedRoleID, expectedRoleSHA256); err != nil {
+		return fmt.Errorf("control snapshot role receipt: %w", err)
 	}
 	return nil
 }
@@ -166,6 +177,10 @@ func readControlActionRequest(source string) ([]byte, error) {
 }
 
 func sendRemoteControlAction(ctx context.Context, rawEndpoint, token string, body []byte) ([]byte, error) {
+	return sendRemoteControlActionWithRole(ctx, rawEndpoint, token, body, "", "")
+}
+
+func sendRemoteControlActionWithRole(ctx context.Context, rawEndpoint, token string, body []byte, expectedRoleID, expectedRoleSHA256 string) ([]byte, error) {
 	if strings.TrimSpace(token) == "" {
 		return nil, fmt.Errorf("send control action: bearer token is required for remote control")
 	}
@@ -204,7 +219,7 @@ func sendRemoteControlAction(ctx context.Context, rawEndpoint, token string, bod
 		}
 		return nil, fmt.Errorf("control action rejected HTTP %d: %s", response.StatusCode, failure.Error)
 	}
-	if err := validateRemoteControlActionResponse(body, result); err != nil {
+	if err := validateRemoteControlActionResponseWithRole(body, result, expectedRoleID, expectedRoleSHA256); err != nil {
 		return nil, err
 	}
 	return result, nil
@@ -241,6 +256,10 @@ func validateRemoteControlActionFailure(requestBody, responseBody []byte) error 
 }
 
 func validateRemoteControlActionResponse(requestBody, responseBody []byte) error {
+	return validateRemoteControlActionResponseWithRole(requestBody, responseBody, "", "")
+}
+
+func validateRemoteControlActionResponseWithRole(requestBody, responseBody []byte, expectedRoleID, expectedRoleSHA256 string) error {
 	if err := routerboard.ValidateJSONNoDuplicateKeys(requestBody); err != nil {
 		return fmt.Errorf("control action request JSON is ambiguous: %w", err)
 	}
@@ -329,7 +348,19 @@ func validateRemoteControlActionResponse(requestBody, responseBody []byte) error
 	if err := response.VerifyControlActionResponse(requestBody); err != nil {
 		return fmt.Errorf("control action response receipt invalid: %w", err)
 	}
+	if err := routerboard.RequireRoleReceiptReference(response.RoleReceiptID, response.RoleReceiptSHA256, expectedRoleID, expectedRoleSHA256); err != nil {
+		return fmt.Errorf("control action response role receipt: %w", err)
+	}
 	return nil
+}
+
+func expectedControlRoleReference() (string, string, error) {
+	id := os.Getenv("SIRSI_CONTROL_ROLE_RECEIPT_ID")
+	digest := os.Getenv("SIRSI_CONTROL_ROLE_RECEIPT_SHA256")
+	if err := routerboard.ValidateRoleReceiptReference(id, digest); err != nil {
+		return "", "", fmt.Errorf("control role receipt expectation: %w", err)
+	}
+	return id, digest, nil
 }
 
 func printControlJSON(body []byte) error {

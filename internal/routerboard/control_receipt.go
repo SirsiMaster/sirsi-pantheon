@@ -160,6 +160,33 @@ func validateRoleReceiptReference(receiptID, receiptSHA256 string) error {
 	return nil
 }
 
+// ValidateRoleReceiptReference exposes the closed reference grammar to
+// clients that bind a response to an externally authenticated role receipt.
+// It validates only the reference shape; signature, issuer, and revocation
+// remain the responsibility of the separately governed trust root.
+func ValidateRoleReceiptReference(receiptID, receiptSHA256 string) error {
+	return validateRoleReceiptReference(receiptID, receiptSHA256)
+}
+
+// RequireRoleReceiptReference verifies that a response carries the exact
+// receipt reference expected by the caller. An empty expected pair means the
+// caller selected the legacy compatibility boundary explicitly.
+func RequireRoleReceiptReference(receiptID, receiptSHA256, expectedID, expectedSHA256 string) error {
+	if err := validateRoleReceiptReference(expectedID, expectedSHA256); err != nil {
+		return fmt.Errorf("expected role receipt reference: %w", err)
+	}
+	if expectedID == "" && expectedSHA256 == "" {
+		return nil
+	}
+	if err := validateRoleReceiptReference(receiptID, receiptSHA256); err != nil {
+		return fmt.Errorf("response role receipt reference: %w", err)
+	}
+	if receiptID != expectedID || receiptSHA256 != expectedSHA256 {
+		return fmt.Errorf("response role receipt reference does not match the expected authenticated receipt")
+	}
+	return nil
+}
+
 func isControlCapabilityVerb(verb string) bool {
 	for _, capability := range controlCapabilities {
 		if capability.Verb == verb {

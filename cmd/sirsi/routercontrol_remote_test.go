@@ -274,3 +274,48 @@ func TestRemoteControlSnapshotRejectsMalformedObservationTimestamp(t *testing.T)
 		t.Fatalf("malformed observation timestamp was accepted: %v", err)
 	}
 }
+
+func TestRemoteControlActionCanRequireExactRoleReceipt(t *testing.T) {
+	request := []byte(`{"verb":"delegate","agent":"codex","task_id":"t-1","subject":"ship"}`)
+	expectedID := "rr-m1-exact"
+	expectedSHA := strings.Repeat("a", 64)
+	response := routerboard.ControlActionResponse{
+		Schema: routerboard.ControlSchema, Authority: "canonical-routerstore", Verb: "delegate", TaskID: "t-1",
+		RoleReceiptID: expectedID, RoleReceiptSHA256: expectedSHA,
+	}
+	if err := response.SealControlActionResponse(request); err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateRemoteControlActionResponseWithRole(request, body, expectedID, expectedSHA); err != nil {
+		t.Fatalf("exact role receipt was rejected: %v", err)
+	}
+	response.RoleReceiptID = ""
+	response.RoleReceiptSHA256 = ""
+	if err := response.SealControlActionResponse(request); err != nil {
+		t.Fatal(err)
+	}
+	body, err = json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateRemoteControlActionResponseWithRole(request, body, expectedID, expectedSHA); err == nil || !strings.Contains(err.Error(), "role receipt") {
+		t.Fatalf("accepted response without the expected role receipt: %v", err)
+	}
+}
+
+func TestExpectedControlRoleReferenceRejectsPartialOrNonCanonicalEnvironment(t *testing.T) {
+	t.Setenv("SIRSI_CONTROL_ROLE_RECEIPT_ID", "rr-m1")
+	t.Setenv("SIRSI_CONTROL_ROLE_RECEIPT_SHA256", "")
+	if _, _, err := expectedControlRoleReference(); err == nil || !strings.Contains(err.Error(), "supplied together") {
+		t.Fatalf("accepted partial role expectation: %v", err)
+	}
+	t.Setenv("SIRSI_CONTROL_ROLE_RECEIPT_ID", " rr-m1")
+	t.Setenv("SIRSI_CONTROL_ROLE_RECEIPT_SHA256", strings.Repeat("a", 64))
+	if _, _, err := expectedControlRoleReference(); err == nil || !strings.Contains(err.Error(), "whitespace") {
+		t.Fatalf("accepted non-canonical role expectation: %v", err)
+	}
+}

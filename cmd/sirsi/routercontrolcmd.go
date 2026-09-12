@@ -24,7 +24,11 @@ var routerControlCmd = &cobra.Command{
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if endpoint := firstNonEmptyControlEndpoint(routerControlEndpoint, os.Getenv("SIRSI_CONTROL_ENDPOINT")); endpoint != "" {
-			body, err := fetchRemoteControl(cmd.Context(), endpoint, os.Getenv("SIRSI_CONTROL_TOKEN"))
+			roleID, roleSHA256, err := expectedControlRoleReference()
+			if err != nil {
+				return err
+			}
+			body, err := fetchRemoteControlWithRole(cmd.Context(), endpoint, os.Getenv("SIRSI_CONTROL_TOKEN"), roleID, roleSHA256)
 			if err != nil {
 				return err
 			}
@@ -86,7 +90,11 @@ var routerControlActionCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		response, err := sendRemoteControlAction(cmd.Context(), endpoint, os.Getenv("SIRSI_CONTROL_TOKEN"), body)
+		roleID, roleSHA256, err := expectedControlRoleReference()
+		if err != nil {
+			return err
+		}
+		response, err := sendRemoteControlActionWithRole(cmd.Context(), endpoint, os.Getenv("SIRSI_CONTROL_TOKEN"), body, roleID, roleSHA256)
 		if err != nil {
 			return err
 		}
