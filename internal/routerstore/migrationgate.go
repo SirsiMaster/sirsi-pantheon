@@ -131,28 +131,30 @@ func checkMigrationAllowed(from, to int, storePath string) error {
 			from, to, b)
 		return nil
 	}
-	msg := fmt.Sprintf(
+	// Common head, then ONE remediation selected by case — never both. from==0 is
+	// a fresh LOCAL store init (not a migration of the canonical ledger), so it
+	// must NOT carry the "commit and push" advice at all (that misled lanes into
+	// chasing a phantom migration, rs-29); it gets the env-fix remediation only.
+	head := fmt.Sprintf(
 		"routerstore: refusing to migrate v%d->v%d from a build with uncommitted changes (%s).\n"+
 			"  A schema migration is a one-way write to the shared store. Source that exists only in a working\n"+
 			"  tree cannot be rebuilt by any other agent, so every peer binary would fail closed with no commit\n"+
 			"  to recover from. This exact sequence took the fleet down on 2026-08-05.\n"+
-			"  Fix: commit and push the migration, then build from the pushed commit.\n"+
 			"  Override (accepting fleet-wide breakage): SIRSI_ALLOW_DIRTY_MIGRATION=1",
 		from, to, b)
+	var remedy string
 	if from == 0 {
-		// from==0 is a FRESH store init, not a migration of the canonical ledger.
-		// A lane hitting this is almost always NOT pointed at the router service —
-		// it fell back to a local store (rs-29). Say so, so the operator fixes the
-		// env instead of chasing a phantom migration to commit/push.
-		msg += "\n\n" +
-			"  NOTE: from=0 means you are INITIALIZING A FRESH local store, not migrating the canonical ledger.\n" +
-			"  This process is almost certainly NOT pointed at the router service and fell back to a local store.\n" +
-			"  Do NOT commit/push a migration for this — fix the environment instead:\n" +
+		remedy = "\n" +
+			"  This is a FRESH local store init (from=0), NOT a migration of the canonical ledger. Do NOT\n" +
+			"  commit/push a migration for it — this process is almost certainly not pointed at the router\n" +
+			"  service and fell back to a local store. Fix the environment instead:\n" +
 			"    echo $SIRSI_ROUTER_URL   # want the https service URL (+ SIRSI_ROUTER_TOKEN), or spool://<dir>\n" +
 			"    echo $SIRSI_ROUTER_DB    # unset for a work lane — when set it FORCES this local store\n" +
 			"  Point at the canonical store (e.g. `source ~/.sirsi/router-service.env`) and this fresh-init never happens."
+	} else {
+		remedy = "\n  Fix: commit and push the migration, then build from the pushed commit."
 	}
-	return fmt.Errorf("%s", msg)
+	return fmt.Errorf("%s%s", head, remedy)
 }
 
 // recordMigrationProvenance stamps who migrated, into the existing state table.

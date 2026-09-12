@@ -156,10 +156,16 @@ func TestDirtyFreshInitPointsAtEnvNotMigration(t *testing.T) {
 	if freshErr == nil {
 		t.Fatal("dirty fresh-init on a shared/unknown store must be refused")
 	}
-	for _, want := range []string{"FRESH local store", "SIRSI_ROUTER_URL", "SIRSI_ROUTER_DB", "pointed at the router service"} {
+	for _, want := range []string{"FRESH local store", "SIRSI_ROUTER_URL", "SIRSI_ROUTER_DB", "canonical store"} {
 		if !strings.Contains(freshErr.Error(), want) {
 			t.Errorf("fresh-init refusal must point at the env fix; missing %q in:\n%s", want, freshErr)
 		}
+	}
+
+	// Fresh-init must NOT carry the migration remediation — that contradictory
+	// "commit and push" advice is exactly what rs-29 removes (SSA review).
+	if strings.Contains(freshErr.Error(), "commit and push") {
+		t.Errorf("fresh-init refusal must NOT tell the operator to commit and push a migration:\n%s", freshErr)
 	}
 
 	migErr := checkMigrationAllowed(19, 20, "")
@@ -168,5 +174,8 @@ func TestDirtyFreshInitPointsAtEnvNotMigration(t *testing.T) {
 	}
 	if strings.Contains(migErr.Error(), "FRESH local store") {
 		t.Errorf("a real migration (from>0) must NOT carry the fresh-init note:\n%s", migErr)
+	}
+	if !strings.Contains(migErr.Error(), "commit and push") {
+		t.Errorf("a real migration (from>0) must keep the commit-and-push remediation:\n%s", migErr)
 	}
 }
