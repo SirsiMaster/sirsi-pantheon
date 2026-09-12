@@ -43,8 +43,8 @@ func (h *Handler) authorizeControlRole(ctx context.Context, operation string) er
 		return nil
 	}
 	operation = strings.TrimSpace(operation)
-	if operation == "" {
-		return fmt.Errorf("control role authorization requires an operation")
+	if err := ValidateControlRoleOperation(operation); err != nil {
+		return fmt.Errorf("control role authorization requires an operation: %w", err)
 	}
 	if h.controlRoleAuthorizer == nil {
 		return fmt.Errorf("control role authorization is not configured")
