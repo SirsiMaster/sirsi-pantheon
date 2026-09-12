@@ -466,10 +466,19 @@ func WakePassFiltered(routerRoot string, now time.Time, allow func(work.Item) bo
 	var f *dispatch.Facade
 	if routercfg.StoreWake() {
 		repoRoot := filepath.Dir(filepath.Dir(routerRoot)) // <repo> from <repo>/.agents/idea-router
-		if fac, ferr := dispatch.Open(repoRoot); ferr == nil {
-			f = fac
-			defer func() { _ = f.Close() }()
+		// FAIL CLOSED (rs-33 M0b): under store-wake the service is authoritative.
+		// If it cannot be opened, return the error — do NOT fall back to the file
+		// inbox (empty on a service host), which would silently wake NOTHING and
+		// report success over a real backlog. WakePass also fails closed at the
+		// thread-load stage above (same resolution); this is the independent
+		// backstop for the item-open stage, proven load-bearing if the thread-load
+		// stage is ever made tolerant (see TestWakePassFailsClosedOnBrokenServiceStore).
+		fac, ferr := dispatch.Open(repoRoot)
+		if ferr != nil {
+			return rep, fmt.Errorf("wake pass: open service store: %w", ferr)
 		}
+		f = fac
+		defer func() { _ = f.Close() }()
 	}
 	setWake := func(id string, ann work.WakeAnnotation) {
 		if f != nil {
