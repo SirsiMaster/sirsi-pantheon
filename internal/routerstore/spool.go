@@ -35,6 +35,61 @@ import (
 	"time"
 )
 
+// spoolTrustGroupEnv is read on BOTH sides of the spool: the relay reads it
+// (via the CLI layer, into Relay.TrustGroup) to decide which owner it accepts
+// besides itself; a lane client reads it here to decide the mode it creates
+// its own directories with. The group itself is never resolved on the client
+// side — a lane cannot chgrp a directory it creates (only its own primary
+// group applies), so the mechanism is the spool's OWN setgid bit: once the top
+// spool directory is group-owned by the trust group with setgid set (set up
+// once, out of band, when the relay is deployed under a service account),
+// every directory MkdirAll creates beneath it inherits that group
+// automatically. The client's only job is to grant that inherited group
+// read/write instead of leaving it inherited-but-closed at 0700.
+const spoolTrustGroupEnv = "SIRSI_RELAY_TRUST_GROUP"
+
+// laneDirMode is the mode a lane creates its own req/res/slots directories
+// with. 0700 (default, unchanged from before this existed) unless
+// SIRSI_RELAY_TRUST_GROUP is set in THIS process's environment, in which case
+// 0770 — group access is then whatever group the directory inherits via the
+// spool's setgid bit, never chosen by the lane itself.
+func laneDirMode() os.FileMode {
+	if strings.TrimSpace(os.Getenv(spoolTrustGroupEnv)) != "" {
+		return 0o770
+	}
+	return 0o700
+}
+
+// laneFileMode is the client-side counterpart to laneDirMode for the files
+// themselves (request files): 0600 by default, 0640 (group-readable, never
+// group-writable — nobody but its writer should overwrite a request or
+// response body) when SIRSI_RELAY_TRUST_GROUP is set in this process's
+// environment.
+func laneFileMode() os.FileMode {
+	if strings.TrimSpace(os.Getenv(spoolTrustGroupEnv)) != "" {
+		return 0o640
+	}
+	return 0o600
+}
+
+// mkdirTrusted creates dir (with any needed parents) and then explicitly
+// chmods it to mode. MkdirAll alone is not enough: the requested mode is
+// masked by the process umask exactly like a bare mkdir(2), so a umask of the
+// common 022 silently turns the intended 0770 into 0750 — defeating the whole
+// point of laneDirMode's widened mode without any error to notice it by. The
+// chmod runs even when the directory already existed (MkdirAll no-ops on an
+// existing directory, indistinguishable from "just created"), so a lane's
+// directories converge to the current mode on every call — a lane created
+// under the old single-uid default self-heals to group-writable the first
+// time it runs again after SIRSI_RELAY_TRUST_GROUP is configured, with no
+// separate migration step.
+func mkdirTrusted(dir string, mode os.FileMode) error {
+	if err := os.MkdirAll(dir, mode); err != nil {
+		return err
+	}
+	return os.Chmod(dir, mode)
+}
+
 const (
 	spoolMaxBody     = 4 << 20                       // request BODY (decoded): the service limit
 	spoolMaxEnvelope = spoolMaxBody/3*4 + 64<<10     // request FILE: base64 overhead + headers
@@ -117,8 +172,11 @@ func (t *spoolTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		}
 	}
 	reqDir, resDir := filepath.Join(t.dir, "req"), filepath.Join(t.dir, "res")
-	for _, d := range []string{reqDir, resDir, filepath.Join(t.dir, "slots")} {
-		if err := os.MkdirAll(d, 0o700); err != nil {
+	// t.dir itself (<spool>/<agent>) is included: the relay needs to traverse
+	// INTO it, not just into its req/res/slots children, and MkdirAll creates
+	// it as an intermediate directory with the same requested mode.
+	for _, d := range []string{t.dir, reqDir, resDir, filepath.Join(t.dir, "slots")} {
+		if err := mkdirTrusted(d, laneDirMode()); err != nil {
 			return nil, fmt.Errorf("spool: %w", err)
 		}
 	}
@@ -131,7 +189,7 @@ func (t *spoolTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	defer func() { _ = os.Remove(slot) }()
 	id := t.nextID()
 	reqPath := filepath.Join(reqDir, id+".json")
-	if err := writeAtomic(reqPath, req); err != nil {
+	if err := writeAtomic(reqPath, req, laneFileMode()); err != nil {
 		return nil, fmt.Errorf("spool: publish %s id %s: %w", method, id, err)
 	}
 	resPath := filepath.Join(resDir, id+".json")
@@ -205,14 +263,27 @@ func acquireSlot(dir string) (string, error) {
 }
 
 // writeAtomic marshals v to path via a same-directory temp file and rename(2),
-// so a reader never observes a partial file.
-func writeAtomic(path string, v any) error {
+// so a reader never observes a partial file. mode is the file's final
+// permission: 0600 (owner-only, the historical default) unless the caller
+// opts into laneFileMode()'s widened 0640 — a directory being group-writable
+// (laneDirMode/mkdirTrusted) does NOT make the FILES inside it group-readable;
+// file permissions are independent of their containing directory's, so a
+// request or response file written at 0600 is invisible to a relay or lane
+// running as a different, even trust-group-configured, uid. mode is chmod'd
+// explicitly after the rename (not just passed to WriteFile) because the
+// requested mode is masked by the process umask exactly like a bare
+// open(2)/creat(2) — the same reason mkdirTrusted exists for directories.
+func writeAtomic(path string, v any, mode os.FileMode) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+	if err := os.WriteFile(tmp, b, mode); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmp, mode); err != nil {
+		_ = os.Remove(tmp)
 		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {
@@ -256,6 +327,13 @@ type Relay struct {
 	Log    *slog.Logger
 	now    func() time.Time
 
+	// TrustGroup opts into CheckSpoolDirTrustingGroup instead of the default
+	// single-UID CheckSpoolDir — for a relay deployed under a dedicated service
+	// account that must still accept requests from lane clients running as a
+	// different (interactive) uid. Empty (the default) preserves exact
+	// single-UID behavior; this is additive, never a widening of the default.
+	TrustGroup string
+
 	// One long-lived worker per lane: a slow lane never delays discovery or
 	// service of another lane (SSA 2026-09-10: a global wait barrier starved
 	// newly arriving lanes past the client's 5 s deadline). Each worker drains
@@ -281,7 +359,11 @@ func (rl *Relay) Serve(ctx context.Context) error {
 	if rl.Token == "" || rl.Base == "" {
 		return errors.New("relay: SIRSI_ROUTER_URL and SIRSI_ROUTER_TOKEN are required in the relay's own environment")
 	}
-	canon, err := CheckSpoolDir(rl.Spool)
+	checkFn := CheckSpoolDir
+	if rl.TrustGroup != "" {
+		checkFn = func(spool string) (string, error) { return CheckSpoolDirTrustingGroup(spool, rl.TrustGroup) }
+	}
+	canon, err := checkFn(rl.Spool)
 	if err != nil {
 		return fmt.Errorf("relay: %w", err)
 	}
@@ -397,10 +479,32 @@ func (rl *Relay) serveOnce() int {
 // publish writes the response file atomically.
 func (rl *Relay) publish(agent, id string, sr spoolResponse) {
 	resPath := filepath.Join(rl.Spool, agent, "res", id+".json")
-	if err := os.MkdirAll(filepath.Dir(resPath), 0o700); err == nil {
-		if err := writeAtomic(resPath, sr); err != nil {
-			rl.Log.Error("relay: write response", "agent", agent, "id", id, "err", err)
-		}
+	fileMode := os.FileMode(0o600)
+	if rl.TrustGroup != "" {
+		fileMode = 0o640
+	}
+	// res/ almost always already exists — the lane client creates req/, res/
+	// and slots/ together, up front, before ever writing anything (RoundTrip).
+	// This is only a defensive fallback for a lane that somehow never did.
+	// mkdirTrusted's unconditional chmod is deliberately NOT used here: it
+	// would try to chmod a directory the RELAY does not own whenever res/
+	// already exists (the normal case, created by the client) — chmod
+	// requires ownership, so that call would fail with EPERM every time,
+	// which the original "if err == nil" structure then swallowed with zero
+	// log output. Widening res/'s mode is the CREATING side's job (the
+	// client's laneDirMode()); the relay only creates it, at the plain
+	// default mode, on the rare path where it must.
+	resDir := filepath.Dir(resPath)
+	mkErr := error(nil)
+	if _, statErr := os.Stat(resDir); os.IsNotExist(statErr) {
+		mkErr = os.MkdirAll(resDir, 0o700)
+	}
+	if mkErr != nil {
+		rl.Log.Error("relay: create response dir", "agent", agent, "id", id, "err", mkErr)
+		return
+	}
+	if err := writeAtomic(resPath, sr, fileMode); err != nil {
+		rl.Log.Error("relay: write response", "agent", agent, "id", id, "err", err)
 	}
 }
 

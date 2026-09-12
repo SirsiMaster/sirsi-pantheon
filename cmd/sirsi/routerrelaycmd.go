@@ -36,7 +36,13 @@ var routerRelayServeCmd = &cobra.Command{
 polls <spool>/<agent>/req/*.json, forwards each to the service replacing only the
 Authorization header, and writes <spool>/<agent>/res/<id>.json atomically.
 MintHostToken, RevokeHostToken and ListHostTokens are refused by name. Lanes set
-SIRSI_ROUTER_URL=spool://<spool> and need no token.`,
+SIRSI_ROUTER_URL=spool://<spool> and need no token.
+
+SIRSI_RELAY_TRUST_GROUP names a group whose members may also own the spool
+directory (checked via CheckSpoolDirTrustingGroup instead of the default
+single-UID CheckSpoolDir) — for a relay running under a dedicated service
+account that must still serve lane clients running as a different uid. Unset
+by default: leaving it empty preserves exact single-UID behavior.`,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		base, err := routerstore.CheckServiceURL(os.Getenv("SIRSI_ROUTER_URL"))
 		if err != nil {
@@ -51,10 +57,20 @@ SIRSI_ROUTER_URL=spool://<spool> and need no token.`,
 			home, _ := os.UserHomeDir()
 			spool = filepath.Join(home, ".sirsi", "relay")
 		}
-		rl := &routerstore.Relay{Spool: spool, Base: base, Token: tok, Log: slog.New(slog.NewTextHandler(cmd.ErrOrStderr(), nil))}
+		rl := &routerstore.Relay{
+			Spool:      spool,
+			Base:       base,
+			Token:      tok,
+			TrustGroup: strings.TrimSpace(os.Getenv("SIRSI_RELAY_TRUST_GROUP")),
+			Log:        slog.New(slog.NewTextHandler(cmd.ErrOrStderr(), nil)),
+		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		fmt.Fprintf(cmd.ErrOrStderr(), "router relay: spool %s → %s (token held here only)\n", spool, base)
+		trustNote := ""
+		if rl.TrustGroup != "" {
+			trustNote = fmt.Sprintf(" (trusting group %q)", rl.TrustGroup)
+		}
+		fmt.Fprintf(cmd.ErrOrStderr(), "router relay: spool %s → %s (token held here only)%s\n", spool, base, trustNote)
 		return rl.Serve(ctx)
 	},
 }
