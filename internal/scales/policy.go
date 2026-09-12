@@ -176,7 +176,7 @@ func validatePolicies(pf *PolicyFile) []ValidationError {
 					PolicyName: p.Name,
 					RuleID:     r.ID,
 					Field:      "metric",
-					Message:    fmt.Sprintf("invalid metric %q (valid: total_size, finding_count, ghost_count)", r.Metric),
+					Message:    fmt.Sprintf("invalid metric %q (valid: total_size, finding_count, ghost_count, tb_lane_drift)", r.Metric),
 				})
 			}
 		}
@@ -203,7 +203,7 @@ func isValidSeverity(s Severity) bool {
 
 func isValidMetric(m string) bool {
 	switch m {
-	case "total_size", "finding_count", "ghost_count":
+	case "total_size", "finding_count", "ghost_count", "tb_lane_drift":
 		return true
 	}
 	return false
@@ -235,6 +235,22 @@ func DefaultPolicy() *PolicyFile {
 				Description: "Default infrastructure hygiene policy for developer workstations",
 				Version:     "1.0.0",
 				Rules: []PolicyRule{
+					{
+						// Rule 0: the Thunderbolt lane invariant (tblanes.go). What
+						// sirsi-io-connect's raw Thunderbolt transport needs on every
+						// Mac in a pod; drifts on every link renegotiation (2026-09-12).
+						ID:          "tb-lanes-drift",
+						Name:        "Thunderbolt lanes drifted",
+						Description: "Every active Thunderbolt port must be out of bridge0 at MTU 65518; a 65518-byte raw frame on a 1500-MTU lane fails with EMSGSIZE and takes the transport down",
+						Category:    "network",
+						Metric:      "tb_lane_drift",
+						Operator:    "gt",
+						Threshold:   0,
+						Unit:        "lanes",
+						Severity:    SeverityFail,
+						Remediation: "Run 'sirsi maat scales --fix' (removes the lane from bridge0, sets MTU 65518); io-connect's ai.sirsi.tb-lanes daemon keeps it healed every 30 s",
+						AutoClean:   true,
+					},
 					{
 						ID:          "waste-warning",
 						Name:        "Infrastructure waste warning",
