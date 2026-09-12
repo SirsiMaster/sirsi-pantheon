@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -117,7 +118,7 @@ func TestSpoolRelayNeverReplaysInflight(t *testing.T) {
 		}
 	}
 	// A previous relay consumed this Send and died before publishing.
-	if err := writeAtomic(filepath.Join(lane, "inflight", "1-1-dead.json"), spoolRequest{Method: "SendGuarded", Headers: map[string]string{}, Body: []byte(`{"args":[]}`)}); err != nil {
+	if err := writeAtomic(filepath.Join(lane, "inflight", "1-1-dead.json"), spoolRequest{Method: "SendGuarded", Headers: map[string]string{}, Body: []byte(`{"args":[]}`)}, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	rl := &Relay{Spool: spool, Base: svc.URL, Token: "t", Log: slog.New(slog.NewTextHandler(&strings.Builder{}, nil)), Client: svc.Client(), now: time.Now}
@@ -137,7 +138,7 @@ func TestSpoolRelayNeverReplaysInflight(t *testing.T) {
 	}
 	// Consume happens before forward: a request that vanishes between glob and
 	// rename (another relay took it) is not forwarded.
-	if err := writeAtomic(filepath.Join(lane, "req", "1-2-live.json"), spoolRequest{Method: "ListAll", Headers: map[string]string{}, Body: []byte(`{"args":[]}`)}); err != nil {
+	if err := writeAtomic(filepath.Join(lane, "req", "1-2-live.json"), spoolRequest{Method: "ListAll", Headers: map[string]string{}, Body: []byte(`{"args":[]}`)}, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if n := rl.serveOnce(); n != 1 || calls.Load() != 1 {
@@ -230,7 +231,7 @@ func TestSpoolBodyBoundaryOnDecodedBytes(t *testing.T) {
 		}
 	}
 	big := bytes.Repeat([]byte("x"), spoolMaxBody-1)
-	if err := writeAtomic(filepath.Join(lane, "req", "1-1-ok.json"), spoolRequest{Method: "ListAll", Headers: map[string]string{}, Body: big}); err != nil {
+	if err := writeAtomic(filepath.Join(lane, "req", "1-1-ok.json"), spoolRequest{Method: "ListAll", Headers: map[string]string{}, Body: big}, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	rl.serveOnce()
@@ -240,7 +241,7 @@ func TestSpoolBodyBoundaryOnDecodedBytes(t *testing.T) {
 		t.Fatalf("4 MiB-1 must be forwarded: status=%d calls=%d", sr.Status, calls.Load())
 	}
 	over := bytes.Repeat([]byte("x"), spoolMaxBody+1)
-	if err := writeAtomic(filepath.Join(lane, "req", "1-2-over.json"), spoolRequest{Method: "ListAll", Headers: map[string]string{}, Body: over}); err != nil {
+	if err := writeAtomic(filepath.Join(lane, "req", "1-2-over.json"), spoolRequest{Method: "ListAll", Headers: map[string]string{}, Body: over}, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	rl.serveOnce()
@@ -267,7 +268,7 @@ func TestSpoolFailedConsumeIsNotForwarded(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := writeAtomic(filepath.Join(lane, "req", "1-1-x.json"), spoolRequest{Method: "SendGuarded", Headers: map[string]string{}, Body: []byte(`{"args":[]}`)}); err != nil {
+	if err := writeAtomic(filepath.Join(lane, "req", "1-1-x.json"), spoolRequest{Method: "SendGuarded", Headers: map[string]string{}, Body: []byte(`{"args":[]}`)}, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Chmod(filepath.Join(lane, "inflight"), 0o500); err != nil {
@@ -349,7 +350,7 @@ func TestSpoolCommitThenResponseFailureIsOutcomeUnknown(t *testing.T) {
 	for i, m := range []string{"reset", "truncate"} {
 		mode.Store(m)
 		id := fmt.Sprintf("1-%d-%s", i+1, m)
-		if err := writeAtomic(filepath.Join(lane, "req", id+".json"), spoolRequest{Method: "SendGuarded", Headers: map[string]string{}, Body: []byte(`{"args":[]}`)}); err != nil {
+		if err := writeAtomic(filepath.Join(lane, "req", id+".json"), spoolRequest{Method: "SendGuarded", Headers: map[string]string{}, Body: []byte(`{"args":[]}`)}, 0o600); err != nil {
 			t.Fatal(err)
 		}
 		rl.serveOnce()
@@ -450,12 +451,12 @@ func TestSpoolRelayNewLaneIsNotBlockedBySlowLane(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := writeAtomic(filepath.Join(spool, "lane-slow", "req", "1-1-s.json"), spoolRequest{Method: "ListAll", Headers: map[string]string{"X-Sirsi-Session": "slow"}, Body: []byte(`{"args":[]}`)}); err != nil {
+	if err := writeAtomic(filepath.Join(spool, "lane-slow", "req", "1-1-s.json"), spoolRequest{Method: "ListAll", Headers: map[string]string{"X-Sirsi-Session": "slow"}, Body: []byte(`{"args":[]}`)}, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(400 * time.Millisecond) // slow is now held upstream
 	start := time.Now()
-	if err := writeAtomic(filepath.Join(spool, "lane-fast", "req", "1-1-f.json"), spoolRequest{Method: "ListAll", Headers: map[string]string{}, Body: []byte(`{"args":[]}`)}); err != nil {
+	if err := writeAtomic(filepath.Join(spool, "lane-fast", "req", "1-1-f.json"), spoolRequest{Method: "ListAll", Headers: map[string]string{}, Body: []byte(`{"args":[]}`)}, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(1200 * time.Millisecond)
@@ -495,7 +496,7 @@ func TestSpoolRelayBacklogDoesNotSpinAndCancels(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, id := range []string{"1-1-a", "1-2-b"} { // two pending in the SAME lane
-		if err := writeAtomic(filepath.Join(spool, "lane-q", "req", id+".json"), spoolRequest{Method: "ListAll", Headers: map[string]string{}, Body: []byte(`{"args":[]}`)}); err != nil {
+		if err := writeAtomic(filepath.Join(spool, "lane-q", "req", id+".json"), spoolRequest{Method: "ListAll", Headers: map[string]string{}, Body: []byte(`{"args":[]}`)}, 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -567,5 +568,301 @@ func TestRelayHTTPClientPreservesProxy(t *testing.T) {
 	}
 	if tr.Proxy == nil {
 		t.Fatal("relay transport dropped its Proxy function — a configured HTTPS_PROXY would be bypassed; clone the default transport")
+	}
+}
+
+// TestLaneDirModeDefaultsUnchanged: with SIRSI_RELAY_TRUST_GROUP unset (every
+// existing deployment, and every other test in this file), resolvedLaneModes
+// must return exactly the single-uid defaults — the widened mode is opt-in
+// only.
+func TestLaneDirModeDefaultsUnchanged(t *testing.T) {
+	t.Setenv("SIRSI_RELAY_TRUST_GROUP", "")
+	dirMode, fileMode, gid, err := resolvedLaneModes()
+	if err != nil {
+		t.Fatalf("resolvedLaneModes() with no trust group: %v", err)
+	}
+	if dirMode != 0o700 || fileMode != 0o600 || gid != -1 {
+		t.Fatalf("resolvedLaneModes() with no trust group = (%o,%o,%d), want (0700,0600,-1)", dirMode, fileMode, gid)
+	}
+}
+
+// TestResolvedLaneModesUnknownGroupFailsClosed (SSA review, PR #753): a
+// misconfigured or typo'd SIRSI_RELAY_TRUST_GROUP must be a hard error, never
+// silently treated as "any non-empty string widens permissions" — the first
+// version of this feature did exactly that, so a typo'd group name still
+// produced group-writable directories inherited from whatever group the
+// parent's setgid bit happened to carry, verified against nothing.
+func TestResolvedLaneModesUnknownGroupFailsClosed(t *testing.T) {
+	t.Setenv("SIRSI_RELAY_TRUST_GROUP", "sirsi-nonexistent-group-xyz")
+	if _, _, _, err := resolvedLaneModes(); err == nil {
+		t.Fatal("unresolvable trust group must be refused, not silently ignored or silently trusted")
+	}
+}
+
+// TestMkdirTrustedRefusesToWidenAMismatchedExistingGroup (SSA review, PR
+// #753): an existing directory whose ACTUAL group does not match the
+// resolved trust group must never be widened — that would grant group-write
+// to whatever unrelated group the directory happens to carry (e.g. it
+// predates the spool's setgid bit) rather than the specific, verified trust
+// group the operator configured.
+func TestMkdirTrustedRefusesToWidenAMismatchedExistingGroup(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "lane")
+	if err := os.Mkdir(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	st, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sys, ok := st.Sys().(*syscall.Stat_t)
+	if !ok {
+		t.Skip("cannot read raw stat_t on this platform")
+	}
+	actualGID := int(sys.Gid)
+	wrongGID := actualGID + 1 // guaranteed not to match
+	if merr := mkdirTrusted(target, 0o770, wrongGID); merr == nil {
+		t.Fatal("mkdirTrusted must refuse to widen a directory whose actual group does not match the configured trust group")
+	}
+	st2, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st2.Mode().Perm() != 0o700 {
+		t.Fatalf("mode was changed despite the group mismatch: now %o, want untouched at 0700", st2.Mode().Perm())
+	}
+	// Negative control on the test itself: the CORRECT gid must succeed.
+	if err := mkdirTrusted(target, 0o770, actualGID); err != nil {
+		t.Fatalf("mkdirTrusted with the CORRECT gid must succeed: %v", err)
+	}
+}
+
+// TestLaneCreatesGroupWritableDirsWhenTrustGroupConfigured: a lane's own
+// RoundTrip call creates req/res/slots at 0770, not 0700, when
+// SIRSI_RELAY_TRUST_GROUP is set in ITS OWN environment — proving the actual
+// directories a real round trip creates get the widened mode, not just the
+// helper function in isolation. This is the fix for the exact bug that shipped
+// first: a relay running under a separate service account locked out of a
+// lane's freshly created directory because the lane never knew to leave room
+// for it.
+func TestLaneCreatesGroupWritableDirsWhenTrustGroupConfigured(t *testing.T) {
+	// Must be a REAL resolvable group now that resolvedLaneModes fails closed
+	// on an unresolvable name (the fix for TestResolvedLaneModesUnknownGroupFailsClosed
+	// above) — reuse the current process's own primary group, which any fresh
+	// t.TempDir() subdirectory will actually carry, so the gid-match check in
+	// mkdirTrusted passes honestly rather than being bypassed by trustGID<0.
+	trustGroup, terr := currentPrimaryGroupName()
+	if terr != nil {
+		t.Skipf("cannot resolve current primary group: %v", terr)
+	}
+	t.Setenv("SIRSI_RELAY_TRUST_GROUP", trustGroup)
+	spool := t.TempDir()
+	tr := newSpoolTransport(spool, "trust-mode-lane")
+	req := httptest.NewRequest(http.MethodPost, "http://spool/v1/call/Status", nil)
+	go func() { _, _ = tr.RoundTrip(req) }() // will time out waiting for a response; only the mkdir matters here
+	deadline := time.Now().Add(2 * time.Second)
+	var st os.FileInfo
+	for time.Now().Before(deadline) {
+		if s, err := os.Stat(filepath.Join(spool, "trust-mode-lane", "req")); err == nil {
+			st = s
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if st == nil {
+		t.Fatal("req dir was never created")
+	}
+	if st.Mode().Perm() != 0o770 {
+		t.Fatalf("req dir mode = %o, want 0770 when SIRSI_RELAY_TRUST_GROUP is set", st.Mode().Perm())
+	}
+}
+
+// TestWriteAtomicModeSurvivesUmask: writeAtomic's mode parameter must be the
+// file's ACTUAL final mode, not merely the mode requested at creation time —
+// WriteFile's mode, like MkdirAll's, is masked by the process umask exactly
+// like open(2)/creat(2). A umask of the common 022 would silently turn a
+// requested 0640 into 0640 unaffected (022 only strips write bits, and 0640
+// has none to strip) — but proving the ACTUAL bytes-on-disk mode, not just
+// trusting the requested value, is what actually matters here: this is the
+// exact bug class (request mode != actual mode) that broke the directory side
+// of this feature, so the file side gets the same explicit proof.
+func TestWriteAtomicModeSurvivesUmask(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "x.json")
+	if err := writeAtomic(path, spoolResponse{Status: 200}, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	st, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Mode().Perm() != 0o640 {
+		t.Fatalf("writeAtomic mode = %o, want exactly 0640 regardless of umask", st.Mode().Perm())
+	}
+}
+
+// TestLaneFileModeDefaultsUnchanged: with SIRSI_RELAY_TRUST_GROUP unset, lane
+// request files stay 0600 — the historical default, readable only by their
+// own writer. This is the fix for the actual deployed bug: a directory being
+// group-writable does NOT make files inside it group-readable, so a relay
+// running under a different uid than its lane clients could see a response
+// file exist (via directory listing) yet be refused reading its content.
+func TestLaneFileModeDefaultsUnchanged(t *testing.T) {
+	t.Setenv("SIRSI_RELAY_TRUST_GROUP", "")
+	if _, fileMode, _, err := resolvedLaneModes(); err != nil || fileMode != 0o600 {
+		t.Fatalf("resolvedLaneModes() with no trust group: fileMode=%o err=%v, want 0600 nil", fileMode, err)
+	}
+	trustGroup, terr := currentPrimaryGroupName()
+	if terr != nil {
+		t.Skipf("cannot resolve current primary group: %v", terr)
+	}
+	t.Setenv("SIRSI_RELAY_TRUST_GROUP", trustGroup)
+	if _, fileMode, gid, err := resolvedLaneModes(); err != nil || fileMode != 0o640 || gid < 0 {
+		t.Fatalf("resolvedLaneModes() with trust group set: fileMode=%o gid=%d err=%v, want 0640 >=0 nil", fileMode, gid, err)
+	}
+}
+
+// TestSpoolRelayEndToEndWithTrustGroupWritesReadableFiles: the actual
+// production bug, reproduced and fixed. Without SIRSI_RELAY_TRUST_GROUP set,
+// this is identical to TestSpoolRelayEndToEnd; WITH it set (simulating a lane
+// and a relay that are different processes potentially running as different
+// uids, though this test cannot fork a real second uid — see the package
+// doc on CheckSpoolDirTrustingGroup for that boundary), every file the relay
+// and the lane exchange must be at least 0640, not the 0600 default that
+// made the real deployment's response files unreadable across uids even
+// though their containing directories were correctly group-writable.
+func TestSpoolRelayEndToEndWithTrustGroupWritesReadableFiles(t *testing.T) {
+	// Both sides now resolve the group via user.LookupGroup and fail closed on
+	// an unresolvable name (resolvedLaneModes on the client, Serve's
+	// CheckSpoolDirTrustingGroup on the relay) — reuse the current real
+	// primary group so neither side fails closed on a nonexistent name before
+	// ever consuming anything.
+	trustGroup, err := currentPrimaryGroupName()
+	if err != nil {
+		t.Skipf("cannot resolve current primary group: %v", err)
+	}
+	t.Setenv("SIRSI_RELAY_TRUST_GROUP", trustGroup)
+	backend := newDst(t)
+	h, herr := Handler(backend, ServerOptions{Token: "h0st", MaxWait: 3 * time.Second})
+	if herr != nil {
+		t.Fatal(herr)
+	}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	spool := t.TempDir()
+	logBuf := &strings.Builder{}
+	rl := &Relay{Spool: spool, Base: srv.URL, Token: "h0st", TrustGroup: trustGroup, Log: slog.New(slog.NewTextHandler(logBuf, nil))}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go func() {
+		if serveErr := rl.Serve(ctx); serveErr != nil {
+			t.Logf("relay.Serve exited: %v", serveErr)
+		}
+	}()
+
+	t.Setenv("SIRSI_AGENT_ID", "lane-trust")
+	t.Setenv("HOME", t.TempDir()) // session cache dir
+	rs := NewRemoteStore("spool://"+spool, "")
+	if _, err := rs.ListAll(context.Background()); err != nil {
+		t.Fatalf("ListAll over trust-group spool: %v\nrelay log:\n%s", err, logBuf.String())
+	}
+	// Request and response files are deliberately self-cleaning on a
+	// successful round trip (TestSpoolRelayEndToEnd's own comment: "Files are
+	// cleaned up after each round trip") — nothing survives to inspect here
+	// by design, so THIS test's job is only proving the round trip still
+	// succeeds end-to-end with a trust group engaged (mode 0640 is not
+	// silently breaking anything). The actual mode-correctness claim is
+	// proved directly by TestWriteAtomicModeSurvivesUmask and
+	// TestLaneFileModeDefaultsUnchanged, which inspect files before cleanup
+	// removes them.
+}
+
+// TestPublishNeverAttemptsToChmodAnExistingResDir is the exact production
+// bug, reproduced directly: publish() must NOT try to modify the mode of an
+// already-existing res/ directory. In the real deployment this directory is
+// created by the LANE CLIENT, not the relay; when the relay runs under a
+// different uid (a dedicated service account), a chmod on a directory it
+// does not own fails with EPERM — and the original code's
+// "if mkdirErr == nil { write }" structure swallowed that failure with zero
+// log output, so requests were silently forwarded successfully while their
+// responses vanished into nothing. This test proves publish() leaves an
+// existing res/ directory's mode completely untouched (proving no chmod
+// attempt happens against it) and still successfully writes the response.
+func TestPublishNeverAttemptsToChmodAnExistingResDir(t *testing.T) {
+	spool := t.TempDir()
+	resDir := filepath.Join(spool, "lane-p", "res")
+	if err := os.MkdirAll(resDir, 0o750); err != nil { // an unusual, distinctive mode
+		t.Fatal(err)
+	}
+	trustGroup, terr := currentPrimaryGroupName()
+	if terr != nil {
+		t.Skipf("cannot resolve current primary group: %v", terr)
+	}
+	rl := &Relay{Spool: spool, TrustGroup: trustGroup, Log: slog.Default()}
+	rl.publish("lane-p", "id1", spoolResponse{Status: 200, Body: []byte("{}")})
+
+	st, err := os.Stat(resDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Mode().Perm() != 0o750 {
+		t.Fatalf("publish() modified an existing res/ dir's mode: now %o, want untouched at 0750 — it must never chmod a directory it may not own", st.Mode().Perm())
+	}
+	if _, err := os.Stat(filepath.Join(resDir, "id1.json")); err != nil {
+		t.Fatalf("publish() must still write the response into the existing directory: %v", err)
+	}
+}
+
+// TestPublishLogsWhenItCannotCreateResDir: the fresh-creation fallback path
+// must never fail silently — an unlogged failure here is exactly what let a
+// forwarded-and-succeeded request vanish with no response and no trace in
+// the real incident this fix responds to.
+func TestPublishLogsWhenItCannotCreateResDir(t *testing.T) {
+	lockedSpool := t.TempDir()
+	if err := os.Chmod(lockedSpool, 0o500); err != nil { // no write bit: MkdirAll below must fail
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(lockedSpool, 0o700) }) // let t.TempDir() clean up
+	logBuf := &strings.Builder{}
+	rl := &Relay{Spool: lockedSpool, Log: slog.New(slog.NewTextHandler(logBuf, nil))}
+	rl.publish("lane-locked", "id1", spoolResponse{Status: 200})
+
+	if _, err := os.Stat(filepath.Join(lockedSpool, "lane-locked", "res", "id1.json")); !os.IsNotExist(err) {
+		t.Fatalf("response must not exist when its directory could not be created: %v", err)
+	}
+	if l := logBuf.String(); !strings.Contains(l, "create response dir") {
+		t.Fatalf("a failed resDir creation must be logged, not swallowed silently:\n%s", l)
+	}
+}
+
+// TestPublishFallbackCreatesGroupAccessibleResDir (SSA review, PR #753): the
+// FRESH-creation branch of publish() — res/ genuinely does not exist yet —
+// must create it at the widened mode (0770) when a trust group is
+// configured, not the plain single-uid 0700 the first version of this fix
+// hardcoded unconditionally. That version fixed the "chmod on an existing,
+// unowned directory" bug correctly but, in doing so, dropped trust-awareness
+// from the fresh-creation path entirely — the one path where widening is
+// actually safe, since the relay just created (and therefore owns) it. The
+// result was the fallback path becoming the one thing a trust-group-enabled
+// client could never read.
+func TestPublishFallbackCreatesGroupAccessibleResDir(t *testing.T) {
+	trustGroup, terr := currentPrimaryGroupName()
+	if terr != nil {
+		t.Skipf("cannot resolve current primary group: %v", terr)
+	}
+	spool := t.TempDir() // fresh: lane-fresh/res does NOT exist yet
+	rl := &Relay{Spool: spool, TrustGroup: trustGroup, Log: slog.Default()}
+	rl.publish("lane-fresh", "id1", spoolResponse{Status: 200, Body: []byte("{}")})
+
+	resDir := filepath.Join(spool, "lane-fresh", "res")
+	st, err := os.Stat(resDir)
+	if err != nil {
+		t.Fatalf("publish() must create res/ on the fresh path: %v", err)
+	}
+	if st.Mode().Perm() != 0o770 {
+		t.Fatalf("freshly created res/ mode = %o, want 0770 under a configured trust group — the client must be able to read it", st.Mode().Perm())
+	}
+	if _, err := os.Stat(filepath.Join(resDir, "id1.json")); err != nil {
+		t.Fatalf("response file must exist: %v", err)
 	}
 }
