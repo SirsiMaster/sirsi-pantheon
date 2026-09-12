@@ -22,6 +22,22 @@ type ControlRoleAuthorizer func(context.Context, string) (rolereceipt.Authentica
 // those independently governed identities.
 type ControlRolePolicy = rolereceipt.Constraints
 
+type controlRoleReceiptContextKey struct{}
+
+// WithAuthenticatedControlRole binds an externally authenticated receipt to
+// the request context. An ingress verifier may use this seam after checking
+// the raw receipt against its governed trust root and revocation policy.
+func WithAuthenticatedControlRole(ctx context.Context, receipt rolereceipt.AuthenticatedReceipt) context.Context {
+	return context.WithValue(ctx, controlRoleReceiptContextKey{}, receipt)
+}
+
+// AuthenticatedControlRoleFromContext retrieves the exact receipt bound by an
+// ingress verifier. Absence is distinct from an unbound zero receipt.
+func AuthenticatedControlRoleFromContext(ctx context.Context) (rolereceipt.AuthenticatedReceipt, bool) {
+	receipt, ok := ctx.Value(controlRoleReceiptContextKey{}).(rolereceipt.AuthenticatedReceipt)
+	return receipt, ok
+}
+
 func (h *Handler) authorizeControlRole(ctx context.Context, operation string) error {
 	if !h.requireControlRole {
 		return nil
@@ -36,6 +52,12 @@ func (h *Handler) authorizeControlRole(ctx context.Context, operation string) er
 	granted, err := h.controlRoleAuthorizer(ctx, operation)
 	if err != nil {
 		return fmt.Errorf("control role authorization for %q: %w", operation, err)
+	}
+	if bound, ok := AuthenticatedControlRoleFromContext(ctx); ok {
+		if bound.RawSHA256() == "" || granted.RawSHA256() == "" || bound.RawSHA256() != granted.RawSHA256() {
+			return fmt.Errorf("control role authorization for %q: receipt is not bound to the request context", operation)
+		}
+		granted = bound
 	}
 	if err := granted.AuthorizesWith(operation, time.Now().UTC(), h.controlRolePolicy); err != nil {
 		return fmt.Errorf("control role authorization for %q: %w", operation, err)

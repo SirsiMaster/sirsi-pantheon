@@ -120,3 +120,17 @@ func TestControlRoleAuthorizerRejectsReceiptForWrongRole(t *testing.T) {
 		t.Fatal("receipt for the wrong role was accepted")
 	}
 }
+
+func TestControlRoleAuthorizerRejectsReceiptNotBoundToRequestContext(t *testing.T) {
+	receipt := authenticatedRoleReceipt(t)
+	h := &Handler{
+		requireControlRole: true,
+		controlRoleAuthorizer: func(context.Context, string) (rolereceipt.AuthenticatedReceipt, error) {
+			return rolereceipt.AuthenticatedReceipt{}, nil
+		},
+	}
+	ctx := WithAuthenticatedControlRole(context.Background(), receipt)
+	if err := h.authorizeControlRole(ctx, "inspect"); err == nil {
+		t.Fatal("receipt not bound to the request context was accepted")
+	}
+}
