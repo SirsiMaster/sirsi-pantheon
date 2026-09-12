@@ -239,7 +239,7 @@ func TestSenderFloodRejected(t *testing.T) {
 			t.Fatalf("quota drops tripped the sender breaker (%s) — must be throttle-only", b.Domain)
 		}
 	}
-	all, err := s.ListAll()
+	all, err := s.ListAll(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,7 +286,7 @@ func TestIdempotentDuplicateSend(t *testing.T) {
 	if err != nil || !dup2 || id2 != id1 {
 		t.Fatalf("second send must dedupe to same id: id=%s dup=%v err=%v", id2, dup2, err)
 	}
-	all, _ := s.ListAll()
+	all, _ := s.ListAll(context.Background())
 	if len(all) != 1 {
 		t.Fatalf("expected 1 row, got %d", len(all))
 	}
@@ -311,7 +311,7 @@ func TestStuckItemProducesOneEscalation(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	all, _ := s.ListAll()
+	all, _ := s.ListAll(context.Background())
 	var escalations, deadLetters int
 	for _, it := range all {
 		if it.Status == StatusDeadLetter {
@@ -352,7 +352,7 @@ func TestBreakerTripsOnceAndGates(t *testing.T) {
 		t.Fatalf("tripped target breaker must pause claims, got %v", err)
 	}
 	// Exactly one operator item for the tripped domain, no matter how many failures followed.
-	all, _ := s.ListAll()
+	all, _ := s.ListAll(context.Background())
 	operator := 0
 	for _, it := range all {
 		if it.From == "routerstore" && it.Title == "breaker tripped: target:worker" {

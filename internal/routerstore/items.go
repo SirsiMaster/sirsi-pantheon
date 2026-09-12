@@ -1,6 +1,7 @@
 package routerstore
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -155,8 +156,15 @@ func (s *SQLiteStore) Inbox(agent string) ([]Item, error) {
 }
 
 // ListAll returns every item regardless of status, oldest id first.
-func (s *SQLiteStore) ListAll() ([]Item, error) {
-	rows, err := s.db.Query(`SELECT ` + itemCols + ` FROM items ORDER BY id ASC;`)
+//
+// This is the one unbounded full-table read in the hot path, so it takes a
+// context and issues QueryContext (not db.Query): the server injects its
+// per-request deadline (serve.go dispatch), so a full scan of a large items
+// table terminates at that deadline instead of running unbounded and holding a
+// connection past it. modernc.org/sqlite honors ctx cancellation, so an already
+// expired ctx returns before any rows are read (TestListAllHonorsContext).
+func (s *SQLiteStore) ListAll(ctx context.Context) ([]Item, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+itemCols+` FROM items ORDER BY id ASC;`)
 	if err != nil {
 		return nil, fmt.Errorf("routerstore: ListAll: %w", err)
 	}
@@ -232,10 +240,24 @@ func scanItem(scan func(dest ...any) error) (Item, error) {
 	return it, err
 }
 
+// scanRowHook runs once per row scanned by scanItems, immediately after
+// rows.Next() succeeds. Nil in production; test-only, so a deterministic
+// server-side-deadline test (TestServerListAllDeadlineEndsAnInFlightRead) can
+// force an in-flight read to still be running when ctx expires, instead of
+// racing a timer against a small in-memory table. Like afterTaskReadHook
+// (store.go), this is a bare var rather than a mutex-guarded accessor (Rule
+// A21): it is set once, serially, before the single request under test is
+// sent, and the TCP round-trip carrying that request is itself a
+// happens-before edge for the goroutine that reads it.
+var scanRowHook func()
+
 // scanItems drains a *sql.Rows of item columns into a slice.
 func scanItems(rows *sql.Rows) ([]Item, error) {
 	var items []Item
 	for rows.Next() {
+		if scanRowHook != nil {
+			scanRowHook()
+		}
 		it, err := scanItem(rows.Scan)
 		if err != nil {
 			return nil, fmt.Errorf("routerstore: scan: %w", err)
