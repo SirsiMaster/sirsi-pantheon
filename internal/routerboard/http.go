@@ -202,15 +202,21 @@ func (h *Handler) controlAction(w http.ResponseWriter, r *http.Request) {
 		h.writeControlActionFailure(w, http.StatusForbidden, raw, request.Verb, err)
 		return
 	}
-	store, owned, err := h.openControlStore()
-	if err != nil {
-		h.writeControlActionFailure(w, http.StatusServiceUnavailable, raw, request.Verb, fmt.Errorf("control store unavailable: %w", err), roleReceipt.Receipt().ReceiptID, roleReceipt.RawSHA256())
-		return
+	request = request.normalized()
+	var response ControlActionResponse
+	if request.Verb == "arm" {
+		response, err = h.applyArmControlAction(r.Context(), request)
+	} else {
+		store, owned, storeErr := h.openControlStore()
+		if storeErr != nil {
+			h.writeControlActionFailure(w, http.StatusServiceUnavailable, raw, request.Verb, fmt.Errorf("control store unavailable: %w", storeErr), roleReceipt.Receipt().ReceiptID, roleReceipt.RawSHA256())
+			return
+		}
+		if owned {
+			defer store.Close()
+		}
+		response, err = ApplyControlAction(store, request)
 	}
-	if owned {
-		defer store.Close()
-	}
-	response, err := ApplyControlAction(store, request)
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	if err != nil {
@@ -386,26 +392,42 @@ func (h *Handler) arm(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 
-	// Whitelist against the live registry: never pass an arbitrary query-param
-	// string into a subprocess argument list.
-	var errs []string
-	known := h.board.registeredAgents(&errs)
-	if _, ok := known[agent]; !ok || agent == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "unknown agent"})
-		return
-	}
-
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, h.board.sirsiBin, "router", "wake-install", agent).CombinedOutput()
-	detail := string(out)
+	detail, err := h.runArm(ctx, agent)
 	if len(detail) > 400 {
 		detail = detail[:400]
 	}
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"ok": err == nil, "agent": agent, "detail": detail,
 	})
+}
+
+func (h *Handler) applyArmControlAction(ctx context.Context, request ControlActionRequest) (ControlActionResponse, error) {
+	armContext, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if _, err := h.runArm(armContext, request.Agent); err != nil {
+		return ControlActionResponse{}, err
+	}
+	return ControlActionResponse{Schema: ControlSchema, Authority: "canonical-routerstore", Verb: "arm", Agent: request.Agent}, nil
+}
+
+// runArm is the one fixed-command implementation shared by the legacy board
+// button and the canonical control-action protocol. Registry membership is
+// checked before the exact wake-install command can be reached.
+func (h *Handler) runArm(ctx context.Context, agent string) (string, error) {
+	agent = strings.TrimSpace(agent)
+	var errs []string
+	known := h.board.registeredAgents(&errs)
+	if _, ok := known[agent]; !ok || agent == "" {
+		return "", fmt.Errorf("unknown agent")
+	}
+	out, err := exec.CommandContext(ctx, h.board.sirsiBin, "router", "wake-install", agent).CombinedOutput()
+	detail := string(out)
+	if err != nil {
+		return detail, fmt.Errorf("wake-install failed: %w", err)
+	}
+	return detail, nil
 }
 
 // Run polls until the context is canceled.

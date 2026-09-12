@@ -413,6 +413,34 @@ func TestFetchRemoteControlWithRoleAndHeaderSendsExactReceipt(t *testing.T) {
 	}
 }
 
+func TestRemoteControlActionArmResponseBindsRequestedAgent(t *testing.T) {
+	request := []byte(`{"verb":"arm","agent":"claude-pantheon"}`)
+	response := routerboard.ControlActionResponse{
+		Schema: routerboard.ControlSchema, Authority: "canonical-routerstore", Verb: "arm", Agent: "claude-pantheon",
+	}
+	if err := response.SealControlActionResponse(request); err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateRemoteControlActionResponse(request, body); err != nil {
+		t.Fatalf("valid arm response rejected: %v", err)
+	}
+	response.Agent = "other-agent"
+	if err := response.SealControlActionResponse(request); err != nil {
+		t.Fatal(err)
+	}
+	body, err = json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateRemoteControlActionResponse(request, body); err == nil || !strings.Contains(err.Error(), "agent") {
+		t.Fatalf("accepted arm response for another agent: %v", err)
+	}
+}
+
 func TestRemoteControlFailureCanRequireExactRoleReceipt(t *testing.T) {
 	request := []byte(`{"verb":"delegate","agent":"codex","task_id":"t-1","subject":"ship"}`)
 	expectedID := "rr-m1-failure"

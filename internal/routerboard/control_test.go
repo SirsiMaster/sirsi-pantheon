@@ -401,6 +401,23 @@ func TestControlActionCanonicalizesLedgerFieldsAndRequiresHandbackReason(t *test
 	}
 }
 
+func TestControlActionArmHasClosedRequestShape(t *testing.T) {
+	if err := (ControlActionRequest{Verb: "arm", Agent: "claude-pantheon"}).validate(); err != nil {
+		t.Fatalf("valid arm request rejected: %v", err)
+	}
+	for name, request := range map[string]ControlActionRequest{
+		"missing agent":   {Verb: "arm"},
+		"unexpected task": {Verb: "arm", Agent: "claude-pantheon", TaskID: "task-1"},
+		"unexpected ttl":  {Verb: "arm", Agent: "claude-pantheon", TTLSeconds: 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := request.validate(); err == nil {
+				t.Fatal("malformed arm request was accepted")
+			}
+		})
+	}
+}
+
 func TestControlActionReceiptBindsExactRequestAndResponse(t *testing.T) {
 	response := ControlActionResponse{
 		Schema: ControlSchema, Authority: "canonical-routerstore", Verb: "message", ItemID: "item-1",

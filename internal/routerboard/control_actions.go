@@ -37,6 +37,7 @@ type ControlActionResponse struct {
 	Schema    string `json:"schema"`
 	Authority string `json:"authority"`
 	Verb      string `json:"verb"`
+	Agent     string `json:"agent,omitempty"`
 	// RequestSHA256 binds the outcome to the exact JSON bytes the caller sent;
 	// ReceiptSHA256 covers this response with that field omitted. Together they
 	// let a remote worker reject a response that was replayed or detached from
@@ -135,6 +136,19 @@ func (r ControlActionRequest) validate() error {
 		if strings.TrimSpace(r.Agent) == "" || strings.TrimSpace(r.TaskID) == "" || strings.TrimSpace(r.LeaseToken) == "" || strings.TrimSpace(r.ResultRef) == "" {
 			return fmt.Errorf("result_return requires agent, task_id, lease_token, and result_ref")
 		}
+	case "arm":
+		if err := rejectNonEmptyActionFields(r.Verb,
+			actionField{"from", r.From}, actionField{"to", r.To}, actionField{"title", r.Title}, actionField{"type", r.Type},
+			actionField{"instructions", r.Instructions}, actionField{"subject_key", r.SubjectKey}, actionField{"source_item", r.SourceItem},
+			actionField{"task_id", r.TaskID}, actionField{"subject", r.Subject}, actionField{"phase", r.Phase},
+			actionField{"responsible_party", r.ResponsibleParty}, actionField{"worker", r.Worker}, actionField{"thread_id", r.ThreadID},
+			actionField{"lease_token", r.LeaseToken}, actionField{"reason", r.Reason}, actionField{"result_ref", r.ResultRef},
+		); err != nil {
+			return err
+		}
+		if strings.TrimSpace(r.Agent) == "" {
+			return fmt.Errorf("arm requires agent")
+		}
 	default:
 		return fmt.Errorf("unsupported control action %q", r.Verb)
 	}
@@ -231,6 +245,8 @@ func ApplyControlAction(store *routerstore.Store, req ControlActionRequest) (Con
 			return ControlActionResponse{}, err
 		}
 		out.TaskID, out.ResultRef = req.TaskID, strings.TrimSpace(req.ResultRef)
+	case "arm":
+		return ControlActionResponse{}, fmt.Errorf("arm action requires the canonical worker-plane handler")
 	}
 	return out, nil
 }

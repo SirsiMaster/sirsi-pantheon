@@ -403,6 +403,10 @@ func validateRemoteControlActionResponseWithRole(requestBody, responseBody []byt
 		if strings.TrimSpace(request.TaskID) == "" || strings.TrimSpace(response.TaskID) != strings.TrimSpace(request.TaskID) {
 			return fmt.Errorf("control action response task_id %q does not match requested task_id %q", response.TaskID, request.TaskID)
 		}
+	case "arm":
+		if strings.TrimSpace(response.Agent) == "" || strings.TrimSpace(response.Agent) != strings.TrimSpace(request.Agent) {
+			return fmt.Errorf("control action response agent %q does not match requested agent %q", response.Agent, request.Agent)
+		}
 	case "claim":
 		if response.Lease == nil || strings.TrimSpace(response.Lease.Token) == "" || strings.TrimSpace(response.Lease.TaskID) == "" {
 			return fmt.Errorf("control action response omitted lease proof")
