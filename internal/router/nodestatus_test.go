@@ -8,7 +8,131 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
+
+// TestReadStateMissingFileReturnsEmpty: post-cutover the file router's
+// state.json is legitimately absent (the service is the authority). ReadState
+// must degrade to an empty state, not hard-fail — otherwise CollectNodeStatus,
+// ctr and doctor all crash on a service host ("open state.json: no such file").
+func TestReadStateMissingFileReturnsEmpty(t *testing.T) {
+	repoRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repoRoot, ".agents", "idea-router"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r, err := New(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := r.ReadState()
+	if err != nil {
+		t.Fatalf("missing state.json must not error, got %v", err)
+	}
+	if st == nil {
+		t.Fatal("expected an empty State, got nil")
+	}
+	if len(st.Pending) != 0 || len(st.ActiveTopics) != 0 {
+		t.Fatalf("expected an empty state, got pending=%v topics=%v", st.Pending, st.ActiveTopics)
+	}
+}
+
+// TestCollectNodeStatus_PendingFromServiceStore: under store-wake (service)
+// mode, CollectNodeStatus sources PendingByAgent from the SERVICE store, not the
+// file router — so ctr/doctor surface the real backlog on a service host. The
+// file router's own state.Pending must NOT leak in when the service is the
+// authority.
+func TestCollectNodeStatus_PendingFromServiceStore(t *testing.T) {
+	repoRoot := setupNodeTestRouter(t) // file router has state.Pending{claude-pantheon: item-1}
+	dbPath := filepath.Join(t.TempDir(), "svc.db")
+	t.Setenv(routercfg.StoreWakeEnv, "1") // force store-wake mode
+	t.Setenv("SIRSI_ROUTER_URL", "")      // no remote — Resolve uses the DB below
+	t.Setenv("SIRSI_ROUTER_TOKEN", "")
+	t.Setenv("SIRSI_ROUTER_DB", dbPath) // Resolve → this SQLite service store
+
+	store, err := routerstore.OpenPath(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		if _, _, sErr := store.SendGuarded(routerstore.SendReq{From: "seed", To: "claude-nexus", Type: "decision", Title: fmt.Sprintf("m%d", i)}); sErr != nil {
+			t.Fatal(sErr)
+		}
+	}
+	if _, _, sErr := store.SendGuarded(routerstore.SendReq{From: "seed", To: "owner", Type: "decision", Title: "o"}); sErr != nil {
+		t.Fatal(sErr)
+	}
+	_ = store.Close()
+
+	ns, err := CollectNodeStatus(repoRoot, nil, mockAuthProbe(true, false, ""))
+	if err != nil {
+		t.Fatalf("CollectNodeStatus: %v", err)
+	}
+	if got := len(ns.PendingByAgent["claude-nexus"]); got != 3 {
+		t.Fatalf("service-sourced pending for claude-nexus = %d, want 3", got)
+	}
+	if got := len(ns.PendingByAgent["owner"]); got != 1 {
+		t.Fatalf("service-sourced pending for owner = %d, want 1", got)
+	}
+	if _, leaked := ns.PendingByAgent["claude-pantheon"]; leaked {
+		t.Fatal("file state.Pending leaked in — the service store must be the sole pending source under store-wake")
+	}
+}
+
+// TestCollectNodeStatus_ServiceResolveFailureIsSurfaced: under store-wake, a
+// store-resolution failure must be returned, not swallowed into an empty inbox
+// that reads as "Router is clear" over an unread backlog (SSA #739 P1).
+func TestCollectNodeStatus_ServiceResolveFailureIsSurfaced(t *testing.T) {
+	repoRoot := setupNodeTestRouter(t)
+	t.Setenv(routercfg.StoreWakeEnv, "1")
+	t.Setenv("SIRSI_ROUTER_DB", "")
+	t.Setenv("SIRSI_ROUTER_URL", "https://router.invalid.test")
+	t.Setenv("SIRSI_ROUTER_TOKEN", "") // URL set + empty token → Resolve errors, no network
+
+	if _, err := CollectNodeStatus(repoRoot, nil, mockAuthProbe(true, false, "")); err == nil {
+		t.Fatal("a service resolve failure must be surfaced, not rendered as an empty (clear) inbox")
+	} else if !strings.Contains(err.Error(), "service store") {
+		t.Fatalf("error must name the service store read, got %v", err)
+	}
+}
+
+// TestCollectNodeStatus_ServiceListAllFailureIsSurfaced: Resolve succeeds
+// (RemoteStore is constructed without dialing) but ListAll dials a dead endpoint
+// and fails; that failure must be surfaced, not swallowed.
+func TestCollectNodeStatus_ServiceListAllFailureIsSurfaced(t *testing.T) {
+	repoRoot := setupNodeTestRouter(t)
+	t.Setenv(routercfg.StoreWakeEnv, "1")
+	t.Setenv("SIRSI_ROUTER_DB", "")
+	t.Setenv("SIRSI_ROUTER_URL", "http://127.0.0.1:1") // nothing listens on port 1 → ListAll dial refused
+	t.Setenv("SIRSI_ROUTER_TOKEN", "probe-token")
+
+	if _, err := CollectNodeStatus(repoRoot, nil, mockAuthProbe(true, false, "")); err == nil {
+		t.Fatal("a service ListAll failure must be surfaced, not rendered as an empty (clear) inbox")
+	} else if !strings.Contains(err.Error(), "service pending") {
+		t.Fatalf("error must name the service pending read, got %v", err)
+	}
+}
+
+// TestCollectNodeStatus_EmptyServiceQueueIsClear: a genuinely empty service
+// queue is the ONE case that legitimately reports zero pending with no error —
+// the control that distinguishes "clear" from "read failed".
+func TestCollectNodeStatus_EmptyServiceQueueIsClear(t *testing.T) {
+	repoRoot := setupNodeTestRouter(t)
+	dbPath := filepath.Join(t.TempDir(), "empty.db")
+	t.Setenv(routercfg.StoreWakeEnv, "1")
+	t.Setenv("SIRSI_ROUTER_URL", "")
+	t.Setenv("SIRSI_ROUTER_TOKEN", "")
+	t.Setenv("SIRSI_ROUTER_DB", dbPath) // fresh, empty service store
+
+	ns, err := CollectNodeStatus(repoRoot, nil, mockAuthProbe(true, false, ""))
+	if err != nil {
+		t.Fatalf("an empty service queue must succeed, got %v", err)
+	}
+	if ns.TotalPending != 0 || len(ns.PendingByAgent) != 0 {
+		t.Fatalf("empty service queue must report zero pending, got total=%d map=%v", ns.TotalPending, ns.PendingByAgent)
+	}
+}
 
 // mockAuthProbe returns a fake auth probe for testing.
 func mockAuthProbe(authOK, needsLogin bool, detail string) AuthProbeFunc {

@@ -313,6 +313,14 @@ func defaultGitCommonDir() (string, bool) {
 func (r *Router) ReadState() (*State, error) {
 	data, err := os.ReadFile(filepath.Join(r.root, "state.json"))
 	if err != nil {
+		if os.IsNotExist(err) {
+			// Post-cutover the file router is not written and its state.json is
+			// legitimately absent — the authoritative queue and threads live in
+			// the service store now. Callers (CollectNodeStatus, ctr, doctor)
+			// must degrade to an empty file-router state, not hard-fail, or the
+			// whole wake/health surface crashes on a service host.
+			return &State{}, nil
+		}
 		return nil, fmt.Errorf("read state: %w", err)
 	}
 	var state State
