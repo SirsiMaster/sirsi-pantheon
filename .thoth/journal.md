@@ -3,6 +3,10 @@
 # Each entry is timestamped with context and reasoning.
 # This is the "why" behind every decision.
 
+## 2026-08-23 — Pantheon authenticated SNE artifact lease integration
+
+Implemented the governed lifecycle seam for the previously proven SNE artifact-verification lease. The signed runtime catalog now optionally binds the package-local issuer and SHA256SUMS; lease support is unavailable unless both identities are present and verified. Pantheon creates a prompt-free 0600 HMAC key, issues private model/runtime-scoped leases atomically, passes the complete three-argument identity to sned, and invalidates model leases on checkout/removal. Older packages remain on full hashing. Focused internal/sne and internal/dashboard tests pass. A real host-level isolated lifecycle passed on port 18481 with verification_mode=pantheon-authenticated-lease, artifact set 27341bad..., 9 files, 13,780,879,415 bytes, service e34db906..., native runtime 82779b87..., and clean readiness/shutdown. Installed Pantheon remained disabled and Codex Home/Tailscale were untouched. Next gate: lease-integrated fresh100 and clean-host lifecycle.
+
 ## 2026-08-21 - M1 post-repair serving continuity
 
 - Sent one bounded 32-token OpenAI-compatible request after ownership repair.
@@ -114,24 +118,6 @@
 - Privacy follow-up: the dashboard no longer returns raw browser-opener errors.
   Failure uses stable public text, preventing platform diagnostics from ever
   echoing launch arguments or fragment capability material. Dashboard suite passes.
-
----
-
-## Entry 029 — 2026-04-01 15:47 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- {"session_id":"b3eafb76-9e33-4114-9bf6-345bb2dd653b","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/b3eafb76-9e33-4114-9bf6-345bb2dd653b.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"manual","custom_instructions":""}
-
----
-
-## Entry 030 — 2026-04-02 16:50 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- Session: Seshat v2.0 adapters built, 22 plugins installed, screenshots MCP, Sirsi Orchestrator, GitHub CI cleanup (225+ runs), NexusApp workflow fix, Go 1.24 compat, 78G iCloud migration for M5 transfer. All repos clean and pushed.
 
 ---
 
@@ -3679,3 +3665,690 @@ not a reason to ad-hoc replace the installed application.
 - Fenced and completed four exact false-open inference records with distinct
   evidence. Partial, failed, and active work remains open. Added a lineage map
   from legacy SNE/AppleStack families into the active 36-item inventory.
+
+## 2026-08-23 - SNE v2 copied-package clean-host lifecycle accepted
+The real isolated lifecycle gate passed in 93.86s. It installed the immutable artifact-lease candidate under a disposable HOME, issued and reused the same private lease, launched the copied Metal service twice with exact service/native identities, invalidated model-scoped leases before update, rollback, and uninstall, then proved both the install root and rollback archive absent. This closes package transaction durability but not GA, context, longitudinal performance, signing, or notarization.
+
+## 2026-08-23 — Quiet Pantheon surface accepted under containment
+
+Audited the remaining unsolicited macOS interaction paths while Pantheon stayed
+disabled. Removed startup-driven setup, replaced Finder AppleScript Trash
+emptying with the existing confirmed native deletion path, and made toast
+delivery fail silent without a private authorization receipt or explicit
+environment grant. Added fail-closed release checks. Focused menubar/notify Go
+tests, the menubar release contract, and the portfolio permission contract all
+passed. No application restart, administrator prompt, TCC prompt, or Tailscale
+change occurred. Evidence:
+`docs/evidence/PANTHEON_QUIET_SURFACE_ACCEPTANCE_20260823.md`.
+
+## 2026-08-23 — OpenAI-compatible local SNE boundary hardened
+
+The launch-grade audit found that request-side signed identity was enforced but
+successful upstream responses were trusted. Pantheon now refuses redirects,
+requires the correct JSON or SSE media type, caps non-streaming response bytes,
+and verifies the returned model identity before releasing a successful JSON
+response. All failures retain the stable OpenAI-shaped no-fallback envelope.
+Focused proxy, discovery, cancellation, deadline, capability, origin, and
+loopback tests pass. The exact signed packaged service still needs the real
+client conformance gate; Pantheon stayed disabled during this source work.
+
+## 2026-08-23 - Spotlight sole-indexer closure reconciled
+
+- Audited every ordinary Jackal product entrypoint after containment rather
+  than implementing a duplicate provider from a stale pending note.
+- Confirmed the Darwin provider already consumes `mdfind -onlyin` metadata with
+  bounded `lstat`, and `anubis`, `fix`, `quickstart`, and explicit menubar scans
+  all supply it to the engine.
+- Added Darwin behavior and source-wiring regression gates. Resident Pantheon
+  remains free of startup or scheduled filesystem scans; deep walking is an
+  explicit forensic/non-macOS behavior only.
+- Pantheon stayed disabled. No Tailscale, Codex, TCC, keychain, OAuth, or daemon
+  state changed. Canon:
+  `docs/evidence/PANTHEON_SPOTLIGHT_DISCOVERY_CLOSURE_20260823.md`.
+
+## 2026-08-23 - Optional restart/resume semantics repaired
+
+- Found a deterministic UI/command mismatch: the menubar promised application
+  resume while invoking the authenticated restart command without
+  `--resume-registered`.
+- Split the surface into explicit no-resume, registered restore, and registered
+  fresh operations. Each retains `--authenticated --confirm`; only the latter
+  two arm the durable recovery manager, and fresh mode clears only target-owned
+  declared transient files.
+- Pantheon stayed disabled. No restart, authorization prompt, recovery launch,
+  Tailscale mutation, or Codex restart occurred. Canon:
+  `docs/evidence/PANTHEON_OPTIONAL_RESTART_RESUME_REPAIR_20260823.md`.
+
+## 2026-08-23 - Direct liveness containment bypass closed
+
+- `diagnose` already respected the owner-approved liveness hold, but direct
+  `run`, `install`, and `status` commands did not.
+- Added one shared fail-closed containment guard. Run/install now refuse, while
+  status reports containment without recommending installation.
+- Tests use an isolated HOME. Pantheon and liveness stayed disabled; launchd,
+  authorization, Tailscale, and Codex were untouched. Canon:
+  `docs/evidence/PANTHEON_LIVENESS_CONTAINMENT_COMMAND_GATE_20260823.md`.
+
+## 2026-08-23 - Native ghost cleanup narrowed to one selected app
+
+- The Swift screen grouped results by app but invoked the CLI without its
+  existing `--app` scope, widening one confirmation to every safe ghost.
+- Added explicit single-app selection, named confirmation, disabled cleanup
+  until selection, and exact `--app` execution. Trash-first and protected/admin
+  exclusions remain owned by Go.
+- Pantheon stayed disabled and no host files were scanned or removed. Canon:
+  `docs/evidence/PANTHEON_NATIVE_SELECTED_GHOST_CLEANUP_20260823.md`.
+
+## 2026-08-23 - Vault CLI destructive bypass repaired
+
+- The dashboard required prepare/token/commit, but `sirsi vault prune` mutated
+  immediately. Native menubar wiring would have inherited that unsafe bypass.
+- Added a non-mutating count preview, made CLI prune preview-only by default,
+  required `--confirm`, and rejected zero/negative retention in store, CLI, and
+  dashboard contracts.
+- Pantheon stayed disabled and the host Vault was not opened. Canon:
+  `docs/evidence/PANTHEON_VAULT_PRUNE_FAIL_CLOSED_REPAIR_20260823.md`.
+
+## 2026-08-23 - Vault maintenance becomes a native fail-closed workflow
+
+- Replaced the generic Vault statistics drill-in with a dedicated native view.
+- Kept Go as the sole maintenance owner: preview counts matching entries and
+  commit requires both `--confirm` and a second native destructive confirmation.
+- Added 7/30/90-day retention choices, preview invalidation when the choice
+  changes, Activity receipts, and post-commit statistics reload.
+- The first build rejected a macOS 14-only `onChange` overload; the compatible
+  deployment-target form replaced it before admission.
+- Pantheon remained disabled and no Vault entry was inspected or removed.
+
+## 2026-08-23 - Activity history can no longer become stale executable authority
+
+- Exposed exact command identities from the existing Go action registry through
+  a read-only `sirsi actions --json` catalog.
+- Native Activity offers Retry only for exact, current, non-destructive,
+  argument-free matches. Destructive, parameterized, unknown, and stale entries
+  remain receipts without controls.
+- Registry Go tests and native Swift build pass. Pantheon stayed disabled and no
+  historical action was replayed.
+
+## 2026-08-23 - Permission postconditions stop fabricating FDA certainty
+
+- Removed legacy TCC.db reads from setup/initiate status paths.
+- Native FDA guidance now proves only that Pantheon opened the correct pane and
+  revealed its stable identity; it states that macOS exposes no silent grant API.
+- Protected-resource success remains an explicit operational proof, never a
+  resident/startup probe. Focused Go tests and native Swift build pass.
+
+## 2026-08-23 - Resident headless vs cold GPU reacquisition
+
+Direct M5 evidence showed that `IOConsoleLocked=Yes` does not expose a default Metal device to a fresh process, while the product requirement remains that an already-resident SNE service continue headlessly. Pantheon's authoritative `SNELifecycleManager` now preflights cold starts, launches no child while locked, preserves the exact signed model/runtime tuple, and publishes `awaiting-session-for-gpu-reacquisition` / `awaiting_session_for_gpu_reacquisition`. Unlock detection re-enters the normal signed lifecycle once; explicit stop cancels that retry and clears recovery state. No CPU/cloud fallback, automatic login, SIP bypass, Pantheon restart, Codex restart, or Tailscale change was introduced. Focused lifecycle and projection tests passed. Resident before-lock/locked/after-unlock physical continuity remains a separate SNE qualification gate.
+
+## 2026-08-23 - SNE source-security control reconciliation
+
+Full `internal/dashboard` and `internal/sne` suites plus `internal/snemodels` pass. The tested boundary covers canonical loopback/DNS-rebinding rejection, fixed host/origin/capability authorization order, lifecycle and support same-origin controls, resumable exact-source acquisition, corruption and unsafe-transport rejection, revision path-injection rejection, first-party derivative identity, signed catalog mutation/wrong-key rejection, package symlink confinement, package-relative load paths, and sanitized child dynamic-library environments. This closes source/test controls only; clean-host adversarial, live runtime, accessibility, Developer ID, notarization, and post-sign gates remain open.
+## 2026-08-23 - Permission silence corrected across both menubars
+
+- Removed ambient Full Disk Access probing from Go refresh/title paths.
+- Removed the Swift synthetic `hasFDA=false` state that permanently displayed a
+  false permission warning.
+- Both canonical surfaces now expose neutral, owner-invoked `Permissions &
+  Access...`; no automatic grant, inference, warning, or settings handoff.
+- Extended the release verifier to reject regression of these behaviors.
+- Focused release-contract, Go menubar, and notification tests pass.
+- Pantheon remained disabled and was not restarted or deployed.
+- Evidence: `docs/evidence/PANTHEON_PERMISSION_SILENCE_GATE_20260823.md`.
+## 2026-08-23 - Seshat OAuth silence locked
+
+- Audited installed launch items and source call sites.
+- No Sirsi/Pantheon launch item invokes Google/Firebase/OAuth authentication.
+- Google Workspace browser authorization remains exclusively behind explicit
+  `sirsi seshat auth google`; default ingestion cannot open OAuth UI.
+- Added a release-contract guard requiring exactly one production
+  `AuthorizeGoogleWorkspace` call and rejecting it from the launch agent.
+- Evidence: `docs/evidence/PANTHEON_SESHAT_OAUTH_SILENCE_GATE_20260823.md`.
+## 2026-08-23 - Pantheon caretaker process budget repaired
+
+- Fixed `Sirsi Processes` map-by-name accounting that silently overwrote
+  duplicate PIDs.
+- Every PID is retained; duplicate executable families are named and warned.
+- Added a separate 512 MiB aggregate budget for Pantheon caretaker executables;
+  SNE model memory remains under measured SNE admission.
+- Physical footprint remains authoritative, RSS fallback only.
+- Focused `internal/guard` tests pass; live containment had zero Sirsi-family
+  processes and no service was restarted.
+- Evidence: `docs/evidence/PANTHEON_CARETAKER_PROCESS_BUDGET_GATE_20260823.md`.
+## 2026-08-23 - Native menubar action coverage and Router Doctor safety
+
+- Found `router/doctor` mislabeled non-destructive while carrying `--fix`.
+- Removed `--fix`; diagnosis is read-only and repair remains behind the canonical
+  prepare/confirm/commit boundary.
+- Added a complete contract for every safe and mutating key wired by the native
+  Go menubar, preventing missing-key dead clicks and category drift.
+- Focused dashboard/menubar tests and release contract pass.
+- Evidence: `docs/evidence/PANTHEON_NATIVE_MENUBAR_ACTION_COVERAGE_GATE_20260823.md`.
+## 2026-08-23 - Ambiguous Homebrew remediation prevented
+
+- Confirmed current product source already emits fully qualified cask/formula
+  upgrade commands; the owner's failed command came from an older installed
+  build.
+- Corrected the active roadmap's remaining bare `brew upgrade` reference.
+- Extended the release contract to require the exact cask upgrade identity and
+  reject ambiguous bare Pantheon Homebrew commands in product source.
+- Release contract passes; no install or deployment occurred.
+
+## 2026-08-23 — Homebrew troubleshooting ambiguity removed
+
+Repaired the remaining public cask/formula confusion in the FAQ, added fail-closed release-contract checks, and corrected README permission language. Verification passes. The authorized M1 clean-host target was unreachable over SSH, so no lifecycle claim was made and closure item 3 remains runnable.
+
+## 2026-08-23 — SNE menubar lifecycle action repair
+- Found and fixed a genuine silent dead click: gemma/resume was destructive but wired to the read-only runner. Start/Restore also used ambiguous gemma/serve instead of governed gemma/restore.
+- Both now use typed prepare/confirm/commit/receipt paths; focused menubar/dashboard tests pass.
+- Copied 0.23.8-beta-20260823.9 app passed package identity. CLI SHA 2d610229...c484; menubar SHA 9d722e0a...bed.
+- Locked-session DMG creation rejected with hdiutil Device not configured; no promotion/install. Signed/notarized/clean-host gates remain open.
+
+## 2026-08-23 - SNE readiness and canonical five-lane repair
+
+- Replaced hard-coded false thermal/power inputs with attributed public NSProcessInfo/IOPowerSources evidence.
+- Hardened exact identity and RAM/swap/reserve/pressure gates.
+- Canonical benchmark lanes are raw MLX, patched MLX, current oMLX, SNE v2 plain, SNE v2 MTP.
+- Performance claims require AC; battery characterization is separate; MTP not-applicable requires exact reason.
+- Focused internal/sne and dashboard tests passed; no quarantined Pantheon service was installed or restarted.
+- Evidence: `docs/evidence/PANTHEON_SNE_READINESS_AND_FIVE_LANE_CONTRACT_20260823.md`.
+
+## 2026-08-23 - Unified SNE recovery state machine and receipt
+
+- Replaced the thin recovery validator with exact tuple/lease/containment plan-and-receipt contracts.
+- Retry preserves the tuple and is blocked by disabled/quarantined state.
+- Rollback and uninstall require lease invalidation; quarantined rollback remains stopped; uninstall has no result identity.
+- Recovery containment reuses router marker and broker-plist quarantine authorities read-only.
+- Focused recovery/containment tests pass. No Pantheon service was started or deployed.
+- Canon: `docs/evidence/PANTHEON_SNE_UNIFIED_RECOVERY_CONTRACT_20260823.md`.
+
+## 2026-08-23 — Unified SNE recovery receipt store
+
+- Added validated immutable recovery records in `internal/sne/recovery_store.go`.
+- Private real directories, path-safe IDs, staged `fsync`, atomic no-overwrite publication, mode `0600`, strict decode, and semantic revalidation are mandatory.
+- Focused `Recovery|Containment` tests passed.
+- No service deployment/restart or operator-state mutation occurred.
+- Pantheon adapter work was delegated to retain authoritative artifact-set and lease identity; missing identity must fail closed.
+
+## 2026-08-23 — M1 closed-lid reachability correction
+
+- With the owner reporting M1 closed-lid and locked, unrestricted probes proved ICMP 2/2, TCP 22, TCP 5900, and authenticated SSH to `MacBookPro`.
+- The prior unavailable label came from local sandbox `Operation not permitted`, not target evidence, and is withdrawn.
+- Permanent Pantheon rule: observer denial is `unknown`, never `offline`.
+- M1 closed-lid transport continuity is complete; M5 pre-login continuity remains separate.
+
+## 2026-08-23 — Unified SNE permission broker
+
+- Added a pure permission policy/receipt contract for SNE lifecycle, readiness, recovery, and benchmark interfaces.
+- Public API, terminal sudo, System Settings, keychain, and OAuth boundaries are explicit.
+- Resident/background execution cannot manufacture owner prompts; required uncertainty fails closed.
+- Deterministic receipt validation rejects forged admissions.
+- Focused `Permission|Recovery|Containment` tests passed; no deployment or service mutation occurred.
+- Google Workspace mirror remains blocked by the separately tracked OAuth activation repair.
+
+## 2026-08-27 — Hapi command seams made A21-safe
+
+- Found two remaining mutable Hapi command seams (`vm_stat` and `ps`) being read
+  directly from package globals while tests could replace them concurrently.
+- Added mutex-guarded getters/setters and routed production reads through those
+  accessors; updated the parser tests to use the same seam contract.
+- Focused Hapi parser tests pass and `git diff --check` is clean for the changed
+  files. Source-only change; no Pantheon, Tailscale, SNE, service, or security
+  state was changed.
+- Extended the same guarded seam contract to the network audit's DNS and TLS
+  seams after the follow-up audit found those direct package globals as well.
+- Race-enabled Hapi/network focused tests pass; no host or runtime state changed.
+- Extended the contract to the renice/task-policy execution seams, which were
+  also direct mutable package globals. Race-enabled renice tests pass.
+
+## 2026-08-27 — Sirsi Software Admin router reconciliation
+
+- Registered this Codex lane as `sirsi-software-admin` for the
+  `/Users/thekryptodragon/Development/sirsi-pantheon` repository, watching
+  Software Admin, Hardware Admin, and Codex SNE runtime.
+- Reconciled six stale inbox items: four FinalWishes candidate/workflow
+  requests superseded by the current PR #152 binding, and two Pantheon A21
+  reviews closed after the mutex/accessor seam repair.
+- Preserved the two Scheduler IAM items as separate owner-action work; no
+  project IAM mutation or deployment receipt was fabricated.
+- Current FinalWishes remote binding is PR #152 / product `2f482d18` and
+  workflow `e710d1ae`; exact-SHA CI remains prepared but not dispatched while
+  SNE owns the M5 reservation.
+- Disposition artifact: `/private/tmp/sirsi-software-admin-router-disposition-20260827.md`.
+- Read-only GCP reconciliation found the historical Scheduler IAM request is
+  tied to the old deployed candidate; the job is enabled, but current policy
+  metadata does not prove the old update failure. The two candidate-specific
+  Scheduler items were closed with retained evidence at
+  `/private/tmp/finalwishes-scheduler-iam-readonly-reconciliation-20260827.md`.
+- Prepared a clean `origin/main` Pantheon source candidate in
+  `/private/tmp/pantheon-software-admin-a21-candidate-20260827` carrying the
+  A21 Hapi/network/renice seam repairs and protected test swaps. `gofmt` and
+  `git diff --check` pass; tests remain deferred during the active M5 SNE
+  reservation. Manifest SHA-256 is
+  `3a3add51c15b88e6bb269ef91ea1004fca41c46779cd22f8b3ea5ddb8a1766c8`.
+- The candidate is now committed locally at `1d68e4b9900e4a5b8c43a7b899dd133995f402d4`
+  (tree `1bf617339c19c837b2540c01cf89358452414261`); the manifest was corrected
+  to bind that immutable identity. It remains unpublished and uninstalled.
+
+## 2026-08-27 — FinalWishes exact-SHA CI completed
+
+- Dispatched reviewed workflow ref `e710d1ae5636dc8fbc9be2f8cb1e1a1da9d7f6a8`
+  against product `2f482d18d8488ed5fd59e3deb9f1773bf579785a` / tree
+  `8df2c3bf27251eab7368eb81dcabfb1cc88f183b` as run `33090151521`.
+- Exact checkout/provenance, web (942 tests), Functions (52 tests), API, and
+  cleanup gates passed. The optional artifact upload hit exhausted GitHub
+  quota, while the finalized receipt was published to the run summary/log.
+- The completion audit now marks protected exact-SHA CI complete while leaving
+  production change ID, deployment/smoke, and Pantheon release gates open. No
+  merge or production mutation occurred.
+
+## 2026-08-27 — FinalWishes remote run reconciliation
+
+- Fresh read-only GitHub verification kept PR #152 at product
+  `2f482d18d8488ed5fd59e3deb9f1773bf579785a` / tree
+  `8df2c3bf27251eab7368eb81dcabfb1cc88f183b` and the reviewed workflow at
+  `e710d1ae5636dc8fbc9be2f8cb1e1a1da9d7f6a8`.
+- New run `33061985524` was a push-triggered failure with zero jobs/steps;
+  it is non-diagnostic and is not exact-SHA workflow-dispatch evidence.
+- Updated `/private/tmp/finalwishes-release-reconciliation-20260827.md`
+  (SHA-256 `694a8c057aa01a74b804933b6c24d0e3c16d316ae8a75a1cb0a129bab3a0f946`).
+- No CI dispatch, merge, deployment, production, M5, Pantheon, Tailscale,
+  Codex, or security state was changed.
+
+## 2026-08-27 — FinalWishes self-hosted runner inventory
+
+- Read-only GitHub runner inventory found exactly one online idle runner for
+  FinalWishes: `m5-sirsi` with `self-hosted`, `macOS`, `ARM64`, and `m5` labels.
+- No alternate online runner can carry the reviewed exact-SHA workflow without
+  changing the reviewed workflow or adding a runner. The dispatch remains
+  deferred until SNE releases M5.
+- Reconciliation artifact updated at
+  `/private/tmp/finalwishes-release-reconciliation-20260827.md`, SHA-256
+  `ae39e41200882ce29bee43ab2881d7bb541a68f91c922d10cb6a8db09d185639`.
+
+## 2026-08-27 — Combined Software Admin completion audit
+
+- Created `/private/tmp/sirsi-software-admin-completion-audit-20260827.md`
+  (SHA-256 `d5fddd5dee2061b118ea822ce5668bbf14cf575ca6e88b18264d4566c33c9e75`).
+- The audit maps every stated FinalWishes and Pantheon requirement to current
+  evidence and identifies the exact remaining actions: current-candidate
+  exact-SHA CI, production change ID/deploy/smoke, and Pantheon package,
+  signing/notarization, lifecycle, and fresh host/drift proof.
+- It preserves the distinction between source proof, historical evidence,
+  current host proof, and release evidence; no completion claim was made.
+## 2026-08-27 — SNE v38 supported Aqua transport decision
+
+- Classified the sealed v38 diagnostic as blocked by the absence of a loaded,
+  authorized per-user Aqua request controller; this is not host-offline, lock,
+  root-required, or model-runtime failure.
+- Preserved exact preflight rejection evidence: v36 broker identity mismatch,
+  v37 LaunchServices `-10822`, and v38 `launchctl bootstrap gui/501` exit 5.
+- Existing broker PIDs 69092 and 85269 remain protected and cannot be reused
+  because their queue/mapped executable identities do not satisfy v38.
+- Canonical machine decision:
+  `docs/evidence/artifacts/m5-sne-v2-v38-aqua-transport-decision-20260827/transport-decision.json`
+  (SHA-256 `d468e16fd3f311d3997f16739482dfcb8d7270e3dffb5eee4718a43a35ac5119`).
+- No model, Metal, service, broker, security, Pantheon, Tailscale, or Codex
+  mutation occurred.
+## 2026-08-27 — SNE v17/v18 stale reservation cleared
+
+- Verified immutable v17 and later v18 summaries are both terminal rejected.
+- Unrestricted read-only process enumeration found zero SNE model, provider,
+  controller, native-observer, or qualification residue; only protected idle
+  Aqua broker PIDs 69092 and 85269 remain.
+- TCP 18577-18582 have zero listeners. Receipt state is `ZERO_RESIDUE` and does
+  not itself admit later model/GPU work.
+- Receipt:
+  `docs/evidence/artifacts/m5-sne-v17-v18-reservation-reconciliation-20260827T221634Z/zero-residue-receipt.json`,
+  SHA-256 `dcc472479aef4c9e34fd721eca85f6c57f3ab4201d1135ab93904870adad9d8c`.
+- No process, listener, service, broker, runner, Pantheon, Tailscale, Codex, or
+  security state was changed.
+# 2026-08-28 — M1/M5 unattended continuity watcher closure
+
+Replaced the installed legacy single-sample watcher on M5 and M1 with the
+canonical three-attempt observation-only monitor under the existing
+`ai.sirsi.host-readiness-watch` identity and 60-second interval. Fixed repeated
+publication by writing an immutable timestamped receipt per run and atomically
+updating `current.json`. Both hosts retained rollback copies. Repeated runs and
+bidirectional TCP 22/5900 evidence passed; M1 was reachable while locked. The
+earlier transport-unavailable receipt remains historical evidence, not current
+state. Migration packet transport is satisfied, but admission is deferred while
+M1 is on battery because the packet requires AC. No hidden auth, second
+Tailscale plane, security change, product restart, or model launch occurred.
+
+## Conduit run 2026-09-02T18:20Z
+
+Inbox to zero: answered and closed both codex-deck fallback reviews of the investor deck
+(`20260830-205731`, `20260830-213357`), routing Results back. Neither request was reviewable as
+written — both cited SHAs the artifact had already moved past (live `62d88283…`, mtime 08-31 01:54)
+and all six `/tmp` render-evidence dirs had been reaped — so I re-rendered the deck locally instead
+of returning "unverified". One blocking defect: the ask (`s15`, slide 16) does not close the deck;
+`s19` Category Vision follows it at 17 with no CTA or contact. Claim safety, the 45,293 Census
+beachhead math, and the $4M Sankey/prose reconciliation all pass. Also reported: the RTX/DGX
+optionality appendix both briefs assume is gone (only orphaned `#s20 .market-card-dgx` CSS remains),
+five slide-ID CSS blocks are dead (`s04 s05 s09 s16 s20`; `#s16` alone 199 rules), and the
+disclosure footnotes render near-illegibly small — a hedge nobody can read is a weak hedge. Sent a
+follow-up on public-numeric consistency: deck slide 09 says 2.2x OMLX / 2.5x MLX off the Fixed32
+short-response test (98.860/45.561/38.881 — arithmetic correct) while PR #281's article publishes
+1.84x / 1.62x off the Gemma 4 12B MTP serving contract. Different benchmarks, both footnoted, but
+they land on the same domain in the same week.
+
+**Root cause found for horus exit 127 and for this session's failed `sirsi` MCP server — one defect,
+two victims.** `ai.sirsi.horus.agent-router.plist` (Aug 30 22:49) and `~/.claude.json` both prepend
+`/private/tmp/pantheon-sne-product-integration-20260830/artifacts/development/sne-qualified-lifecycle-20260831`
+to PATH. `/tmp` reaping deleted it, so horus's supervisor loop logs `no such file or directory …/sirsi`
+every spawn and latches 127, and the MCP server dies with ENOENT on the same path. Pinning a launchd
+or MCP PATH to a `/private/tmp` build artifact is the class; the artifact always outlives its
+directory in someone's notes and never on disk. Reported only — horus is owner-parked and card
+`20260813-221332` is still unanswered, so nothing was re-wired or restored.
+
+PRs left deliberately: pantheon #678/#677 and FinalWishes #164/#162 are failing or CONFLICTING and
+belong to their lane agents; SirsiNexusApp #282/#280 are dependabot with cancelled/incomplete checks.
+#281 is green and mergeable but is the owner's own PR publishing performance claims to sirsi.ai —
+an owner action, not a conduit merge. Vitals green: swap 0.00M, RAM 85% free, 0 headless sessions,
+0 BINARY_MISSING, diagnose 88/100 (both priorities are the known launchd-override quarantine and the
+uninstalled liveness watch). Thread reconcile clean, prune 0, `ccd reap` archived 1 stale record.
+
+## Conduit run 2026-09-02T20:20Z
+
+Inbox `pull claude-home` was zero again, but the run was not a no-op: gating PR #679 (docs-only,
+one ADR file) surfaced a `Lint FAILURE` that could not have come from the PR. It came from `main` —
+three `SA9010: deferred return function not called` errors in
+`internal/router/router_findreporoot_test.go`, where `defer setGitCommonDirFn(restore)` restores a
+swapped hook and discards the returned previous value. staticcheck reads that as a forgotten
+`defer restore()`. Because Lint is a required context, a red `main` fails Lint on *every* open PR in
+the repo including ones that touch no Go at all (#677 and #679 both observed). Fixed by wrapping the
+restore in a deferred closure — behavior identical — as PR **#680**. Verification has a stated
+limit: `go test -run FindRepoRoot` passes and `go vet` is clean, but the locally installed
+golangci-lint is older than CI's and reports 0 issues *even on the unfixed file*, so the negative
+control did not reproduce and local lint output is not evidence in either direction; #680's own CI
+Lint run is the verification. Bind request routed to codex-home BEFORE merge
+(`20260902-201245`), never retroactively, together with a verified-complete offline review bundle
+`~/.sirsi/handoff/pantheon-review-679-680-20260902T201222Z.bundle` (refs: `origin/main`,
+`origin/pr679`, the fix branch). That bundle also closes a gap from the previous run, which routed
+the #679 review to codex-home with no artifact attached while the codex lanes have no network.
+Nothing merged: binding-hold remains a hard never for the conduit, and #680 is my own PR. Fabric
+otherwise steady — broker still structurally absent (`gemma-server.port` no longer exists at all, so
+the leak stays unmeasurable and must never be recorded as clean), horus still latched at exit 127 on
+the reaped-path defect, swap 0.00M, headless sessions 0, quarantine holding.
+
+**Update 20:32Z:** #680 CI returned **Lint success, Test success, Build success** (run 33677871570).
+The SA9010 fix is confirmed by the only evidence that counts. #680 now carries only `binding-hold`
+FAILURE — unbound, not broken — and stays unmerged pending codex-home's bind.
+
+## Conduit run 2026-09-02T21:15Z
+
+Inbox reached zero for both `ra` and `claude-home`, but the run's real output was a source-deep
+review of **PR #678** ("Embed qualified SNE in signed Pantheon release"). Its CI is fully green —
+Lint, Test, Build and gitleaks all SUCCESS, with only `binding-hold` outstanding — which made it
+look like a straightforward bind-and-merge. It is not. `scripts/build-dmg.sh` signs inner
+executables from a hardcoded two-item list (`Contents/MacOS/sirsi`, `sirsi-menubar`) and
+deliberately avoids `--deep`, while the PR copies the whole qualified SNE bundle into
+`Contents/Resources/SNE/`. Extracting the pinned asset confirmed three arm64 Mach-O executables in
+that payload — `bin/sirsi-infer`, `bin/sned`, `pantheon/sirsi-sne-supervisor` — all currently
+**ad-hoc signed** and covered by neither the loop nor any `--deep` pass. Ad-hoc nested code inside a
+Developer-ID hardened-runtime app is a hard notarization reject, and the `codesign --verify --deep
+--strict` on the following line walks straight into it. PR CI cannot catch this because the `menubar`
+job only runs on a tag push: the failure surfaces on release day, after the DMG exists. Minimal fix
+is extending the inner-signing loop with `find … -perm -111` over the SNE directory; the
+second-order consequence — re-signing invalidates the `SHA256SUMS` shipped inside the payload, which
+`build-dmg.sh` verifies before signing and something may re-verify at runtime — needs an explicit
+decision rather than a guess. Finding posted to the PR (comment 5516496361) and routed to owner as
+`20260902-211336-ra-owner-pr-678-blocked-…`. Verified as accepted-not-defect along the way: the
+checksum pin is exact (`d2a215a9…6472c9` matches the lock byte for byte), the `pantheon-sne` runner
+label resolves to a live runner (PID 687), and the ADR-042 local-frame absolute path is deliberate.
+Also noted that #678 already carries the identical SA9010 `defer func() { restore() }()` hunk that
+PR #680 was opened for, a day earlier — whichever lands first makes the other a no-op. #680 stays
+parked awaiting its bind from the offline codex-home lane; it is claude-home's own PR and
+binding-hold is never a conduit merge. #679 (ADR-062) and #681 (ROUTER_SERVICE_GOAL) both merged
+earlier today; SSA's conditional review of #681 and its ADR-062 acknowledgement were ACK-closed, with
+conditions 1–4 carried forward as binding on future work. Hygiene: `ccd reap` killed one leaked
+conduit session, reconcile and thread prune clean, `router prune` within retention, health 82→88.
+
+## Conduit run 2026-09-02T22:11Z
+
+Inbox zero on both `claude-home` and `ra`. The pass's real finding was a new seven-PR stack on
+pantheon (#682–#688, branches `rs01-store-interface` → `rs10-identity`) implementing ADR-062's
+router-service split. Six of the seven report `mergeStateStatus: CLEAN` with **zero check runs at
+head** — the vacuous-green shape — because they are a true stack: #682 targets `main` and each
+later PR targets its predecessor, so CI only ever ran on the bottom of the chain. #682 alone has
+real checks (Lint/Test/Build/gitleaks SUCCESS, `binding-hold` SUCCESS — which only asserts the hold
+*label* is absent, not that a bind exists; no bind record was found for it). None were merged, and
+the decisive reason is not the checks: the authoring lane is **live**. `thr-deb68db32b214bdf`
+(agent `ra`, active, idle 163s) is still pushing the stack — #688 landed six minutes before this
+pass — and merging the bottom of a live stack rebases every child under the author. #682 is also
+under the >1h age rule. Left the whole chain to its lane. PR #678 unchanged since last run's
+verified signing blocker (head `a131b3e0`, no reply, no new commit to the signing loop) — do not
+re-review it from scratch. `ccd reap` killed 2 leaked conduit sessions (4 procs). Vitals green:
+swap 0.00M, no new Jetsam/crash reports, 0 headless sessions, diagnose 88/100 with only the
+owner-quarantine override and the uninstalled liveness-watch. `router doctor --fix` surfaced one
+genuinely actionable-but-deferred gap: `claude-pantheon` has a missing wake LaunchAgent (a real
+defect, unlike the wake-disabled codex lanes, which are parked posture) — not installed, because a
+24th wake loop under the deliberately-undeployed #639 image would add to the known spawn leak.
+
+## Conduit run 2026-09-02T23:10Z
+Inbox zero on both watched lanes (`claude-home`, `ra`) — nothing pulled, nothing closed, nothing
+merged. The material change since 22:11Z is that the `ra` lane landed the bottom of its own ADR-062
+router-service stack: #682 (22:49Z), #683 (22:54Z) and #684 (22:57Z) are MERGED by their author, and
+the stack has since grown to #692 — #685/#686 rebased onto `main`, #687–#691 still chained. The
+lane's thread `thr-deb68db32b214bdf` was idle only 104s at probe time, so the previous run's
+hands-off gate ("re-check whether `ra` has gone idle and requested its own bind") resolves the other
+way: the author is actively self-landing, and a conduit merge would rebase children under a live
+writer. PR #678 is byte-identical to last run (head `a131b3e0`, last comment 21:13:36Z is still my
+own review, no reply and no new signing-loop commit) — the notarization blocker stands and its owner
+item stays open, un-nagged. `sirsi thread reconcile` healed one reaped→successor thread
+(`thr-47150ead40cfd23f` [claude-io] → `thr-2e015e4ac3f90574`) and flagged 600 uncommitted files as
+possibly stranded in the shared worktree — reported, never auto-staged. `ccd reap --apply` killed one
+leaked conduit session (2 procs). Vitals unchanged and green: 88/100 (only the launchd-override
+quarantine and the uninstalled liveness-watch), 73% RAM free with **swap 0.00M**, zero headless
+sessions, no new Jetsam or crash reports, zero BINARY_MISSING sentinels. The broker port file is
+still absent, so the leak remains UNMEASURABLE and is not recorded clean.
+
+## Conduit run 2026-09-03T00:10Z
+
+A Jetsam event at 2026-09-02T23:39:44Z (19:39 EDT) shows `sirsi-infer-six-arm` pid 53746 at
+4,090,203 rpages = **67.0 GB** (lifetimeMax 67.2 GB), matching the known 68.3 GB inference
+pathology and sitting 3.3x above the 20 GiB scheduler figure. It was **not** the victim — it
+carries no `reason`/`killDelta` key, while **347 other processes were jettisoned** around it
+(17x mdworker_shared, 9x MTLCompilerService, 9x cfprefsd, 6x trustd, 6x com.apple.geod),
+dominant reason `vm-compressor-space-shortage`; free memory 0.88 GB, compressor 26.2 GB. No
+sirsi/gemma process appears in the killed set, which is exactly why a survival-only check reads
+this event as clean. Residue is still live: swap 6001.81M used of 7168.00M (83.7%) against
+**0.00M** recorded by the 23:10Z run 29 minutes before the event. Routed as P0 to claude-nexus
+(`20260903-001150`); `router doctor --fix` then reported that item undeliverable — no live
+claude-nexus thread and `ai.sirsi.router.wake.claude-nexus` not installed — so an owner decision
+card followed (`20260903-001237`) offering hand-wake / install-the-lane / accept-and-log, since
+installing a 24th wake loop under the undeployed #639 image is the owner's call. Nothing was
+killed, restarted or re-wired. Otherwise: claude-home inbox zero, `ra` live at 22s idle so the
+whole ADR-062 stack (#688-#691, #703) stayed untouched, #678 byte-identical for the third run,
+`ccd reap --apply` killed one leaked conduit session, reconcile healed two reaped threads
+(claude-io, claude-deck) into successors, prune 0, router prune within retention, 0
+BINARY_MISSING, board :8734 still 000, diagnose 88/100.
+
+## Conduit run 2026-09-03T01:15Z
+Inbox zero for claude-home; nothing merged (correctly). The 2026-09-02T23:39Z six-arm P0 is
+quiescent: swap read 6248.94M/7168M byte-identical across two samples in this run, no Jetsam newer
+than 19:39, and no six-arm process resident. Both items routed last run are confirmed open in the
+store (`20260903-001150` → claude-nexus, `20260903-001237` → owner); the earlier "not found" was a
+`router show` prefix error, not a missing row — that verb needs the full id. Evaluated three
+previously-unread crash reports (sirsi-infer-six-arm 17:54, sirsi-inference.test 17:29 and 18:07),
+all `EXC_CRASH/SIGABRT`, `Library not loaded: @rpath/libmlxc.dylib … no LC_RPATH's found`. Traced
+and closed out without routing: the crashing image is UUID 28506FEB, while the current artifact
+rebuilt at 21:10 is C5F71EE4 and carries three LC_RPATHs whose first entry
+(`sirsi-unified-v145-relocatable-prime-v1/lib`) does contain libmlxc.dylib — the defect is already
+superseded by a newer build. ADR-062 stack left untouched (#688-#691 DIRTY, author `ra` live and
+idle 1s); #703 merged by its author since the last run. Dependabot NexusApp #282/#280 re-checked at
+conclusion level: content checks are CANCELLED or empty, never SUCCESS, so no `--admin` merge. PR
+#678 byte-identical for a fourth run, not re-reviewed. Housekeeping: reconcile healed
+thr-eb47e94b4f1bc8c2 [claude-io] → thr-3ecf9ed3dae3e894, `ccd reap --apply` killed one leaked
+conduit session, thread prune and router prune both no-ops within retention.
+
+## Conduit run 2026-09-03T02:12Z
+Inbox zero for claude-home; zero new router items minted since 01:15Z (parked posture holding).
+P0 six-arm watch: swap byte-identical over a 20s window (8502.94M/10240M — the rise since 01:15Z
+is pool growth 7168→10240M plus historical use, not a live climb), no Jetsam or crash newer than
+18:07 (already evaluated), and the 9.7 GB codex app-server hog is gone — top RSS now 1.1 GB. Both
+escalations (`20260903-001150` claude-nexus, `20260903-001237` owner) remain open and unanswered;
+not re-escalated. Healed `thr-3ecf9ed3dae3e894` [claude-io] → `thr-3d3a93ee07d7fb3b`; archived one
+completed conduit session record. Nothing merged: every open PR is DIRTY, UNSTABLE, BLOCKED, or
+the owner's own. New finding — `sirsi-hardware-admin` holds **31 of the 57 open owner items**, all
+minted in a ~2h burst on 2026-09-02; that is a nag-storm against the one-item-per-blocker rule,
+reported not routed (the lane has no live thread, and a 32nd item saying "you have 31 items" would
+be the same defect).
+
+## Conduit run 2026-09-03T03:0xZ
+Inbox zero; zero items minted fabric-wide since 02:12Z. The six-arm P0 watch item closes on the
+evidence side: swap **shrank** — pool 10240M→7168M, used 8502.94M→5972.06M, byte-identical over a
+20s window. That retires the "is it climbing?" question and confirms last run's read that the
+earlier jump was macOS growing the swapfile, not a live leak. No Jetsam or crash newer than 18:07
+(already evaluated), headless sessions 0. Items `20260903-001150` (→claude-nexus) and
+`20260903-001237` (→owner) stay OPEN and un-nagged: pressure receding does not retire the forensic
+ask about 347 jettisoned processes. Housekeeping: reconcile healed thr-3d3a93ee07d7fb3b
+[claude-io] → thr-fda09be992c089b8, prune 6→5, ccd reap archived 1 record, router prune within
+retention. Zero PRs merged, correctly — every open PR is DIRTY, BLOCKED, UNSTABLE, or vacuously
+CLEAN; #678 is byte-identical for the sixth consecutive run. sirsi-hardware-admin's 31-item owner
+nag-storm is frozen at 31 with no new members, so it stays report-only.
+
+## 2026-09-03 — Ra: Phase C landed, ledger reconciled, durability fixed
+Ra's previous session died at /compact (14.6 MB transcript); its thread was retired as a dead PID.
+Reconciled against live truth: #703 (e7af6a04) landed rs-10..13 plus SSA's Bind #3 condition fix, so
+#688-#691 were closed as superseded and rs-08..13 marked done. Phase D waits on the owner's rs-14
+card. Continuation: docs/continuations/ra-router-service-20260903-89132fa4.md.
+
+**Correction, same run (owner directive):** the `thread prune` and `ccd reap` I reported above as
+routine housekeeping are now FORBIDDEN — *"stop reaping active idle threads. you are destroying
+continuity."* A thread record is the handle by which a lane resumes; an idle thread is a resumable
+agent, not garbage, and the registry had been thinned to 2 live records. The old justification
+("only deletes terminal records, fewer registry writes reduce Spotlight churn") is superseded, not
+refuted — continuity outranks registry size, and that trade is the owner's to make, not a timer's.
+Removed from the conduit task file (steps 3 and Hard rules; the "sanctioned reaper" exception is
+revoked) and from the memory that told future runs to wire prune into the tick. Separately, on the
+owner's 7-day retention directive, reclaimed **115 MB** of aged conduit artifacts: agent/worker/
+gemma/triage logs, `~/.sirsi/logs` + `dispatch` (43 records), four superseded `router.db.bak-*` and
+`sirsi.bak-*`, and two aged conduit transcripts. Left other lanes' data untouched and reported it
+instead — `actions-runner` 5.1G, `m5-observatory` 2.3G, `ws3d-traces` 1.0G are not the conduit's to
+delete.
+
+## Conduit run 2026-09-03T06:20Z
+Inbox zero for claude-home; nothing routed, nothing merged. Only board delta since 03:05Z: the
+ADR-062 stack **#688 #689 #690 #691 all CLOSED** — superseded by `ra`'s squashed Phase C PR #703
+(merged 00:11Z). Nothing left for this lane to review there. Swap re-checked because the pool had
+returned to 10240M and `used` crossed the 8500M watch line (9001M): three reads over 20s went
+9001 → 8993 → 8953, i.e. **flat-to-receding, not climbing** — the six-arm P0 stays closed and
+un-escalated. No `.ips` crash/Jetsam reports exist at all; headless session count 0. `sirsi diagnose`
+88/100 with the same two findings, both owner decisions (launchd override quarantine, uninstalled
+liveness-watch). `thread reconcile` healed one reaped claude-io thread
+(thr-fda09be992c089b8 → thr-5b9e2ae1b1dba8ba) and again warned about 610 uncommitted files in the
+shared worktree — reported, never staged. 0 BINARY_MISSING sentinels; router prune within retention.
+
+## Conduit run 2026-09-03T06:09Z
+
+Source-deep review of PR #704 (`ra`, ADR-062 rs-15/16 — Cloud Run image plus GCP
+provision/deploy scripts, head `e6bbcbbf`). All five required contexts SUCCESS, MERGEABLE, no hold
+label, past the >1h age gate — and **not merged**, because the artifact does not work. The
+Dockerfile's `CMD ["router","serve","--store","$(SIRSI_ROUTER_STORE)"]` and `deploy.sh`'s matching
+`--args` both invoke a subcommand that does not exist: `cmd/sirsi/routercmd.go` registers status,
+send, pull, wait, show, ack, respond, close, dismiss, wake-install, cutover, install-daemons,
+quarantine-worker, quarantine, unquarantine, migrate, board, prune and dump, and the only
+`Use: "serve"` anywhere in the tree is `cmd/sirsi/gemma_serve.go`. The container would start, cobra
+would return "unknown command", and the Cloud Run revision would never go ready — a green CI run
+proves the scripts lint and the module builds, never that the entrypoint resolves. Second, smaller
+finding: `deploy.sh --build-env-vars-file=/dev/null` passes an empty file to a flag gcloud parses as
+a YAML dict, which errors rather than meaning "no build env vars"; omitting the flag is how you pass
+none. Confirmed sound and worth keeping: the `$(VAR)` arg-expansion trick genuinely keeps the DSN out
+of the image, `provision.sh` secret naming is self-consistent across steps 4/6/8, every step is
+idempotent, the service account carries exactly `cloudsql.client` + `logging.logWriter` + accessor on
+two named secrets, and `--allow-unauthenticated` is justified in-comment by the rs-10/11 per-host
+bearer design. Routed to `ra` as `20260903-061113`; it merges next pass once finding 1 is fixed or
+explicitly scoped in the body. Otherwise: claude-home inbox zero, retention prune found nothing,
+swap receded further to 6276M used of a 7168M pool, headless session count 0, no new crash or Jetsam
+reports in either DiagnosticReports directory.
+
+## Conduit run 2026-09-03T11:10Z
+
+Sixth consecutive zero-delta pass on the queues (inbox zero, 671 open / 5490 closed unchanged,
+nothing merged or routed), but the run surfaced one thing the previous five missed: the
+DiagnosticReports sweep had never been searching `Retired/`, where macOS files aged reports. Three
+sirsi crash `.ips` and three JetsamEvents from 2026-09-02 were sitting there unread.
+`sirsi-infer-six-arm-2026-09-02-175457.ips` is a dyld termination — `Library not loaded:
+@rpath/libmlxc.dylib`, `no LC_RPATH's found`, terminated at launch — the same link-time class
+already routed to claude-nexus as `20260814-011828` (open, unanswered 20 days), so it was recorded
+as fresh evidence rather than re-routed as a duplicate nag. The 19:39Z JetsamEvent names
+`sirsi-infer-six-arm` at 4,090,203 rpages (~65 GB at 16 KB/page) as the pressure source, not the
+victim — only `mediaanalysisd` was jettisoned — which accounts for the swap plateau the last several
+runs have been watching. Swap has since eased for a fourth consecutive run (6648M → 6017M used).
+PR #704 is unchanged at head `e6bbcbbf` with no comment since 04:24Z; findings are already derived
+and it stays held for ra's fix, not re-reviewed.
+
+## 2026-09-08 - SNE connector explicit temperature
+
+Repaired the Pantheon SNE HTTP seam so zero temperature is present on the wire;
+SNE health uses 0 while oMLX retains 0.01. Added focused httptest coverage for
+numeric serialization and backend-specific health behavior. No validation was run.
+
+## 2026-09-10 — sirsi-software-admin inbox loop
+
+Processed 109 router items with evidence and sender replies; 96 historical reports retained with original HOLD boundaries. PR713 successor credential repair passes but early activation guard and gate truth remain unresolved with Ra. PR711 focused checks pass; first-run secret ordering correction routed. Exact CLI admission contract missing, HOLD returned. See `Development/sirsi-pantheon/docs/evidence/SSA_ROUTER_LOOP_20260910.md` and `~/.sirsi/reviews/software-admin-20260910/`.
+
+## 2026-09-10 — SSA PR713 third review
+
+Accepted requested corrections at 51a453954 after exact-tree inspection, hermetic early-guard/negative-control execution, schema ordering and wake permission tests, and green CI. Reply 20260910-030457 returned to Ra atomically. G7 partial and G8 local-file-only remain explicit; no merge, deployment, or full Bind #4 claim. Durable evidence: /Users/thekryptodragon/.sirsi/reviews/software-admin-20260910/pr713-r3-review.md.
+
+## Entry 049 — 2026-09-10 01:53 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- {"session_id":"01a089ca-c9ef-7183-ba25-163fab077728","turn_id":"01a089ca-d0e0-7f21-83f0-96a2add7a6ec","transcript_path":null,"cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-6-astra","trigger":"auto"}
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-06-16T15:30:16Z
+- pending: none
+
+---
+
+
+## 2026-09-11 — codex-pantheon Stack Lab adoption and ledger loop
+
+- Fully read, claimed, fenced-completed and responded to inbox proposal 20260911-015506-codex-inference-codex-pantheon-pantheon-adopt-stack-lab-lifecycle-and-studio-contract. Result: tmp/codex-router-20260911-stacklab/adoption.md; local source SHA pins: sources.json. This is adoption only, not Studio or release completion.
+- Successor pantheon-stacklab-contract-integration is blocked pending codex-inference versioned schema/fixtures/catalog and action APIs, clean package boundary and pinned Pantheon integration base. Review routed to claude-pantheon as 20260911-020146-codex-pantheon-claude-pantheon-review-pantheon-stack-lab-adoption-and-lifecycle-acceptance-.
+- Live GitHub main f72a3aaffcde3a126c9057e80d350a2dcfa3d2cc lacks internal/engine and internal/sne; local development ABI/catalog must not be represented as shipped. Apollo construction receipt is explicitly unqualified; old parity-qualified bins are never release admission.
+- Ten older unfinished tasks remain blocked with evidence. Streaming test_state corrected to tested, retaining independent focused acceptance but no full-suite/publication claim. Continuity subject narrowed to required proof rather than an unsupported current diagnosis. See ledger-evidence.md beside adoption.md.
+- Git metadata is read-only; fetch failed on FETCH_HEAD. No code, package, model or service changed. Zero commits. Next: pull again, execute producer response/review when available; preserve blockers, do not invent a second catalog contract.
+
+## 2026-09-11 — RBR-0 router replication and recovery firewall
+
+Published `docs/ROUTER_REPLICATION_AND_RECOVERY_PLAN.md` and `docs/contracts/sirsi-router-backup-v1.schema.json`. This is a design/contract milestone only: no backup, cloud resource, live Router mutation, schedule, or restore occurred. The design establishes per-project/per-namespace isolation, a single live authority, private encrypted full snapshots, manifest-only repository projection, and disposable-first restore.
+
+## 2026-09-11 — codex-pantheon accepted lifecycle consumer and cleanup loop
+
+- Fully read and fenced-claimed three inbox items 050303, 050553, 050828. Verified all 22 accepted integrated producer hashes and read SSA 050126 verdict. Supersedes the earlier producer-schema/review blocker, not the parent product goal.
+- Tested isolated successor archive tmp/codex-router-20260911-consumer/candidate.tar.gz SHA256 0a2af07977a217dfa089c161fab4e33b4313f29f99e1501f0ab13929aed152f3. ReadLifecycle preserves original event_sha256/event identities; 28 producer semantic cases and adversarial tests pass, race suite 4.543s, vet/build pass, project lint 0 issues. Pure helper only; sole surface contract is producer stacklab studio snapshot, no second Studio/store.
+- Independent critique routed to claude-pantheon as 20260911-051333. Parent pantheon-stacklab-contract-integration remains blocked on review, clean base/dependency/public-fixture review, root-confined full Studio/service/native wiring and separate operational/package/ABI/installed proof. Protected .agents/proofs init and .git/FETCH_HEAD denied; zero commits, no false completion gate.
+- Cleanup dry-run retained four local evidence trees; no proven discardable transaction residue, reclaimed 0 bytes. Ra request 20260911-051229 extends existing canonical recovery proof; new pantheon-stacklab-cleanup-provenance retains missing transaction/retention evidence. No source, payload, service, canonical object or app bundle removed.
+- Original informational delivery closed with --blocked plus evidence after proof gate refused implementation-style completion; its done registry row explicitly denotes contract disposition. Other directives received atomic replies 051357 and 051359. Durable results, review archive, manifest, tests and ledger: tmp/codex-router-20260911-consumer/.
+- Task/ledger checkpoint: 94 done disposition records and 13 blocked goals; zero pending/in-progress. Installer still zero visible signing identities; streaming archive d38b1c51 unchanged; continuity still needs R1-R7 proof; seven Ra historical evidence tasks and migration recovery receipt remain. Empty inbox is not product completion. Next actor: claude-pantheon independent critique, Ra scoped evidence, then codex-pantheon executes the next receipt. Continue inbox/ledger loop only.
+
+# SSA 2026-09-11 0639–0648 Ma’at shared contract
+# Request fully read and exact task leased. Authored Pantheon contract covering eight scopes, SNE v1 envelope compatibility, scoped incident/preflight semantics and implementation plan. Local commit 707c27a36; contract c5da5356; repo/Desktop identical and links verified. Reply 20260911-064649 delivered and source Result closure verified. Proof validates BLOCKED, not completion: native Workspace managed document runtime absent, independent review pending. Review routed claude-pantheon 20260911-064545; runtime phases routed repo owner codex-pantheon 20260911-064747. SSA contract and integration ledger retain dependencies truthfully; five inherited blockers freshly checked in loop-0646-checks.json. No SNE mutation/build/benchmark or product readiness claim. Native plan tool unavailable; durable outline maintained. Continue only assigned inbox/ledger loop.
+
+# SSA 2026-09-11 0648–0650 Ma’at authority convergence
+# Sender identified concurrent owner contract a2dd423f. Fully read and leased reconciliation, preserved codex-pantheon docs/contracts/PANTHEON_MAAT_FAILURE_MEMORY_CONTRACT.md verbatim in local 7bae1ec40; own architecture draft replaced by supersession pointer. Outcomes pass/reject/unverifiable and owner proposed fields now sole authority; SNE keys remain opaque. Existing Desktop entry carries exact owner body plus current publication header. Reply 065013 and coordination 065015 delivered; fenced convergence task complete. Contract proof remains blocked (review, Workspace); runtime with codex-pantheon. Evidence maat-contract/convergence-verification.json. Earlier 707c27a36 draft is historical only. Continue inbox/ledger only.
+
+## Entry 050 — 2026-09-12 01:24 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- Recorded market-materials router continuity and inbox reconciliation for codex-deck.
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-06-16T15:30:16Z
+- pending: none
+
+---

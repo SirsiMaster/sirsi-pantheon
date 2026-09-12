@@ -1,3 +1,29 @@
+# 2026-08-27: Cleared stale SNE v17 protected-run reservation with unrestricted
+# read-only evidence. v17 and later v18 summaries are terminal rejected; live
+# executable enumeration found only protected idle Aqua brokers 69092/85269,
+# with zero model/provider/controller/native-observer processes and zero TCP
+# listeners on 18577-18582. Receipt dcc47247...d9d8c. This is ZERO_RESIDUE,
+# not admission for later GPU work. Canon:
+# docs/evidence/SNE_V17_V18_STALE_RESERVATION_RECONCILIATION_20260827.md.
+# 2026-08-27: SNE v38 Aqua transport is blocked at an external per-user
+# controller enrollment/identity boundary, not host readiness. Existing brokers
+# cannot satisfy the sealed launcher hash; v37 LaunchServices failed -10822 and
+# v38 transient launchctl bootstrap gui/501 failed exit 5 before preflight.
+# Supported design is a visibly installed, stable signed gui/501 request broker
+# with exact package/launcher/preflight/command validation and receipt-backed
+# cleanup. No model/Metal work or protected-state mutation occurred. Canon:
+# docs/evidence/SNE_V38_SUPPORTED_NONROOT_AQUA_TRANSPORT_DECISION_20260827.md.
+# 2026-08-23: Pantheon authenticated SNE artifact leases are integrated and
+# host-proven without enabling installed Pantheon. Signed runtime catalogs must
+# bind both the issuer and SHA256SUMS; old catalogs stay full-hash. Pantheon owns
+# a prompt-free 0600 key, model-scoped invalidation, and fail-closed launch args.
+# Real isolated lifecycle passed for 9 files/13,780,879,415 bytes with service
+# e34db906... and native runtime 82779b87.... Canon:
+# docs/SNE_ARTIFACT_VERIFICATION_LEASE_INTEGRATION_20260823.md.
+# Lease-integrated fresh100 is accepted: transport/identity/lease-mode 100/100,
+# strict fixture quality 98/100, readiness p50 4.114s, request p50 1.332s,
+# engine p50 92.374 and visible p50 78.107 tok/s. Swap stayed 1.81MiB on AC
+# with no thermal warning. The two misses were exact-format-only outputs.
 # 2026-08-21: Pantheon .8 passed the true lock-independent control-plane gate:
 # one atomic host sample showed IOConsoleLocked=Yes, exact .8 launchd PID 2534,
 # runs=1, no prior exit, and a fresh /api/stats response on loopback 9119. The
@@ -209,18 +235,18 @@
 # Memory/concurrency/yield fields are declared but require enforcement evidence
 # before product admission. SNE remains replaceable behind Runtime API v0.
 # Read this FIRST before any source files.
-# Last updated: 2026-08-22T11:01:09-04:00
+# Last updated: 2026-09-10T01:53:22-04:00
 
 ## Identity
 project: sirsi-pantheon
 repo: github.com/SirsiMaster/sirsi-pantheon
 language: Go 1.25 / TypeScript / Kotlin / Swift
 version: 0.23.8-beta
-binary_count: 13 (sirsi, sirsi-agent, sirsi-gemma, sirsi-gui, sirsi-menubar, sirsi-sne-acquire, sirsi-sne-catalog-candidate, sirsi-sne-catalog-portable, sirsi-sne-catalog-sign, sirsi-sne-catalog-store, sirsi-sne-catalog-verify, sirsi-sne-registry-verify, sirsi-sne-supervisor)
-test_count: 15043+
-line_count: ~686,003
-module_count: 69
-command_count: 282
+binary_count: 18 (pantheon-inbox-receipt-repair, pantheon-inbox-repair, pantheon-inbox-route, sirsi, sirsi-agent, sirsi-gemma, sirsi-gui, sirsi-menubar, sirsi-package-inventory, sirsi-sne-acquire, sirsi-sne-catalog-candidate, sirsi-sne-catalog-portable, sirsi-sne-catalog-sign, sirsi-sne-catalog-store, sirsi-sne-catalog-verify, sirsi-sne-permission-fixture, sirsi-sne-registry-verify, sirsi-sne-supervisor)
+test_count: 18870+
+line_count: ~862,850
+module_count: 72
+command_count: 290
 mcp_tools: 16 (scan_workspace, ghost_report, health_check, classify_files, watchdog_alerts + 10 RTK/Vault/Horus + filter_output)
 mobile_targets: 2 (iOS xcframework, Android AAR)
 mobile_bindings: 29 (Anubis 2, Ka 2, Thoth 4, Seba 2, Seshat 3, RTK 2, Vault 5, Horus 4, Brain 3, Version 1, Categories 1)
@@ -464,6 +490,19 @@ sync_protocol:
 # .agent/workflows/session-start.md — session workflow (includes build-in-public step)
 
 ## Session Decisions
+# 2026-09-12: Recorded market-materials router continuity and inbox reconciliation for codex-deck.
+# 2026-09-12: Router snapshot:
+# 2026-09-12: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-09-12: completed topics: 41
+# 2026-09-12: last Codex read: 2026-06-11T04:28:50Z
+# 2026-09-12: last Claude read: 2026-06-16T15:30:16Z
+# 2026-09-12: pending: none
+# 2026-09-10: Router snapshot:
+# 2026-09-10: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-09-10: completed topics: 41
+# 2026-09-10: last Codex read: 2026-06-11T04:28:50Z
+# 2026-09-10: last Claude read: 2026-06-16T15:30:16Z
+# 2026-09-10: pending: none
 # 2026-08-21: Pantheon native menu-bar SNE/Nexus handoff drift fixed. Menubar no longer hardcodes sirsi.ai root fragment; it calls shared dashboard.BuildNexusCapabilityURL with governed https://sirsi.ai/local-ai route, fragment-only capability, no query credential, and missing-capability rejection. Focused cmd/sirsi-menubar test passes. Evidence: docs/evidence/PANTHEON_MENUBAR_NEXUS_GOVERNED_HANDOFF_20260821.md.
 # 2026-08-21: Router snapshot:
 # 2026-08-21: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
@@ -491,19 +530,6 @@ sync_protocol:
 # 2026-08-17: completed topics: 41
 # 2026-08-17: last Codex read: 2026-06-11T04:28:50Z
 # 2026-08-17: last Claude read: 2026-06-16T15:30:16Z
-# 2026-08-17: pending: none
-# 2026-08-02 (codex-inference): CTR durable-host selection was repaired at the
-# source and installed. Fixed-depth parent/grandparent resolution was replaced
-# by exact executable-identity ancestry; helper/prefix matches are rejected and
-# unknown resident surfaces fail closed unless given --anchor-pid. Codex Desktop
-# required an additional structural repair: tool commands descend from the
-# application-wide `codex` broker while the task lifetime belongs to its sibling
-# `codex-code-mode-host`, so the resolver now refines the broker to exactly one
-# host child and fails closed on zero/multiple candidates. Commit `728fefcd`.
-# Targeted and broader cmd/router Go suites passed. Two separate live proofs—
-# first the candidate binary, then the installed ~/.local/bin/sirsi—registered
-# thread 019f8fc4-96a4-7f00-b564-d91a64d0a4d1 without --anchor-pid and selected
-# durable task host PID 40821, not broker PID 37423. Quiet-machine policy held.
 
 sne_supervision_update_20260815:
   status: source-complete-awaiting-admission
@@ -1210,7 +1236,29 @@ pantheon_containment_and_memory_repair_20260822:
   resident_indexing: no_timer_no_background_jackal_scan
   installed_menubar_sha256: 69b2c685a19251096c6e1817ac8eedda840117b47ff5bc74b4347385bc019358
   manual_forensics: explicit_Jackal_scan_remains_available
-  pending: add Spotlight-backed provider for broad discovery while preserving explicit deep-forensic Jackal scans
+  spotlight_provider: complete_and_wired_to_all_ordinary_scan_entrypoints
+  prevention: [TestPlatformManifestUsesBoundedSpotlightProvider, TestOrdinaryScanEntrypointsUsePlatformManifest]
+  evidence: docs/evidence/PANTHEON_SPOTLIGHT_DISCOVERY_CLOSURE_20260823.md
+  deep_forensics: explicit_only_never_resident
+  restart_resume_repair:
+    no_resume: host_restart_authenticated_confirm
+    restore: resume_registered_recovery_mode_restore
+    fresh: resume_registered_recovery_mode_fresh
+    evidence: docs/evidence/PANTHEON_OPTIONAL_RESTART_RESUME_REPAIR_20260823.md
+  liveness_command_containment:
+    guarded: [run, install, status]
+    behavior: fail_closed_without_install_advice
+    evidence: docs/evidence/PANTHEON_LIVENESS_CONTAINMENT_COMMAND_GATE_20260823.md
+  native_selected_ghost_cleanup:
+    selection: exactly_one_app_required
+    execution: ghosts_clean_app_selected_confirm_json
+    safety: [trash_first, protected_paths_skipped, admin_residuals_skipped]
+    evidence: docs/evidence/PANTHEON_NATIVE_SELECTED_GHOST_CLEANUP_20260823.md
+  vault_prune_fail_closed:
+    default: preview_only
+    commit: explicit_confirm
+    retention: strictly_positive
+    evidence: docs/evidence/PANTHEON_VAULT_PRUNE_FAIL_CLOSED_REPAIR_20260823.md
 
 pantheon_menubar_action_closure_20260822:
   status: local_candidate_complete
@@ -1261,3 +1309,233 @@ zero_open_local_ai_goal_20260822:
   stale_routes_closed: 4
   homebrew_repair: source_validated_publication_and_clean_host_pending
   invariant: no_goal_completion_while_any_non_owner_gated_item_is_runnable_unknown_stale_or_hung
+# 2026-08-23: Copied SNE v2 clean-host lifecycle gate accepted. Exact candidate ledger a5e9ca60119940f62525c02253deb543903247604f8f662b42cf55f3960b9449 installed under an isolated HOME, reused a stable Pantheon authenticated lease, reached Metal readiness twice, invalidated leases across update/rollback/uninstall, and left no install root or rollback archive. Durable receipt SHA-256 dfa318a767197f6f8ba8ebbea97a39d4dbc69896141ce1d21b114701764cd4a7. Installed Pantheon/model store/Tailscale/Codex Home were untouched.
+# 2026-08-23: Pantheon quiet-surface acceptance removed ambient first-run setup,
+# Finder/AppleScript Trash automation, and unauthorized notification delivery.
+# Setup is now an explicit menubar action; permanent deletion stays in the
+# confirmed native path; notifications require an explicit environment grant or
+# a private 0600 authorization receipt. Focused Go tests, the menubar release
+# contract, and the six-repository permission contract pass. Pantheon remained
+# disabled and Tailscale/Codex Home were untouched. Canon:
+# docs/evidence/PANTHEON_QUIET_SURFACE_ACCEPTANCE_20260823.md.
+# 2026-08-23: Pantheon SNE's OpenAI-compatible loopback boundary now fails
+# closed after upstream execution as well as before it. Successful non-streaming
+# responses require application/json, an 8 MiB ceiling, and an exact returned
+# model identity; successful streams require text/event-stream; redirects are
+# refused. Focused identity, JSON/SSE, cancellation, deadline, capability,
+# origin, and DNS-rebinding tests pass. Packaged live-client conformance remains
+# open. Canon: docs/evidence/PANTHEON_SNE_OPENAI_API_BOUNDARY_20260823.md.
+# 2026-08-23: Vault maintenance is now preview-first and native. The menubar
+# selects 7/30/90-day retention, previews through Go without mutation, requires
+# explicit destructive confirmation, commits through `vault prune --confirm`,
+# reloads statistics, and records Activity. Pantheon stayed disabled and no
+# Vault entry was opened or removed. Canon:
+# docs/evidence/PANTHEON_NATIVE_VAULT_MAINTENANCE_20260823.md.
+# 2026-08-23: Activity retry now fails closed against Go's live canonical action
+# registry. Retry appears only for an exact current command that is both
+# non-destructive and argument-free; history, destructive actions, placeholders,
+# and stale spellings remain receipts only. Go tests and native Swift build pass;
+# Pantheon stayed disabled and no action was replayed. Canon:
+# docs/evidence/PANTHEON_SAFE_CURRENT_ACTIVITY_RETRY_20260823.md.
+# 2026-08-23: Permission postconditions now report only provable facts. The
+# native FDA guide confirms Settings/Finder handoff but never claims a grant;
+# legacy setup/initiate paths no longer read TCC.db to infer authorization.
+# macOS silent status remains unknown until an explicit protected operation.
+# Focused Go tests and native Swift build pass; Pantheon stayed disabled. Canon:
+# docs/evidence/PANTHEON_PERMISSION_POSTCONDITION_TRUTH_20260823.md.
+# 2026-08-23: SNE headless GPU lifecycle now distinguishes resident locked
+# execution from cold Metal reacquisition. Cold starts fail closed as
+# awaiting-session-for-gpu-reacquisition, retain the exact signed tuple, launch
+# no doomed child, and retry only after an active graphical login. Focused
+# dashboard lifecycle tests pass; no installed Pantheon service was restarted.
+# 2026-08-23: Pantheon SNE source security controls are focused-test proven.
+# Canonical loopback/DNS-rebinding, origin/capability ordering, resumable exact
+# acquisition, corruption/unsafe-transport rejection, revision path-injection,
+# signed derivatives/catalogs, package escape/load paths, and bounded support
+# operations are covered. This is source scope only; clean-host and GA gates remain.
+# 2026-08-23: Pantheon Homebrew public guidance now uses only explicit cask/formula identities. FAQ rejects `brew link sirsi-pantheon` and ambiguous `brew list sirsi-pantheon`, requires cask verify/reinstall commands, and README calls permission review optional. Release-contract verifier passes. M1 clean-host lifecycle remains pending because SSH timed out; no install attempted.
+
+pantheon_sne_menubar_lifecycle_repair_20260823:
+  status: source_and_copied_bundle_passed_distribution_pending
+  cli_sha256: 2d610229258e9a09a71cc38dd524a31c449b30c6ff4f1af95e722d215baec484
+  menubar_sha256: 9d722e0a777368ebb6b31e6c85de11f5535fdf381c880b985be74b45eac04bed
+  fixed: Start/Restore and Resume use typed confirmation plus receipts
+  installed_app_changed: false
+  blocker: locked Aqua hdiutil Device not configured; M1 SSH unavailable
+
+# 2026-08-23 SNE control plane: readiness now uses attributed public thermal/power evidence and strict hash/resource gates; five-lane benchmark identity fixed to raw-mlx, patched-mlx, omlx-current, sne-v2-plain, sne-v2-mtp; source candidate only, Pantheon remains quarantined.
+
+# 2026-08-23 SNE recovery: unified exact tuple + artifact lease + authoritative containment state machine and SHA-bound receipt implemented; focused tests pass; execution adapters remain with active lifecycle/UI lane; no deploy.
+
+# 2026-08-23 SNE recovery persistence closure
+sne_recovery_receipt_store_20260823:
+  status: source_complete_test_clean_not_deployed
+  source:
+    - internal/sne/recovery_store.go
+    - internal/sne/recovery_store_test.go
+  guarantees:
+    - validated_exact_recovery_semantics
+    - private_real_receipt_root
+    - staged_fsync_and_atomic_no_overwrite_publish
+    - immutable_mode_0600_records
+    - strict_load_and_revalidation
+    - operator_disabled_and_quarantine_preserved
+  focused_test: "go test ./internal/sne -run 'Recovery|Containment' -count=1 -v"
+  integration_next: retain_exact_artifact_set_and_lease_identity_in_pantheon_lifecycle_adapter
+
+# 2026-08-23 M1 closed-lid live correction
+m1_closed_lid_reachability_20260823:
+  status: live_positive
+  owner_reported_state: closed_lid_locked
+  evidence:
+    icmp: 2_of_2_zero_loss
+    tcp_22: reachable
+    tcp_5900: reachable
+    ssh_identity: MacBookPro_sirsimasterdev
+  correction: prior_negative_was_local_sandbox_EPERM_not_target_failure
+  product_rule: observer_denied_means_unknown_never_offline
+  remaining_boundary: M5_prelogin_after_reboot
+
+# 2026-08-23 unified SNE permission contract
+sne_permission_broker_20260823:
+  status: source_complete_test_clean_not_deployed
+  interfaces: [lifecycle, readiness, recovery, benchmark]
+  boundaries: [public_api, explicit_terminal_sudo, owner_system_settings, owner_keychain, owner_oauth]
+  invariants:
+    - policy_and_receipt_only_no_prompt_execution
+    - resident_background_never_manufactures_authorization
+    - required_uncertainty_fails_closed
+    - unsupported_required_capability_rejects
+    - forged_allowed_receipt_rejects
+    - no_secret_fields
+  focused_test: "go test ./internal/sne -run 'Permission|Recovery|Containment' -count=1 -v"
+  workspace_mirror: pending_google_oauth_activation_repair
+
+# 2026-08-27 Hapi A21 seam repair
+hapi_command_seams_a21_20260827:
+  status: source_repaired_focused_tests_passed
+  changed:
+    - internal/guard/hapi.go
+    - internal/guard/network.go
+    - internal/guard/coverage_lift_test.go
+  seams: [vm_stat, ps, dns_reachable, dns_resolves, tls_audit_addr, renice, taskpolicy]
+  guarantee: mutex_guarded_getters_and_setters
+  verification: "go test -race ./internal/guard -run 'Test(CheckTLSConnection|NetworkAuditWith|Hapi)' -count=1"
+  deployment: none
+
+# 2026-08-27 Software Admin router registration/reconciliation
+sirsi_software_admin_router_20260827:
+  status: active
+  thread: 019ff6bc-d184-7fb1-b76d-990a00d3e939
+  agent: sirsi-software-admin
+  watches: [sirsi-software-admin, sirsi-hardware-admin, codex-sne-runtime]
+  finalwishes:
+    product_pr: 152
+    product_sha: 2f482d18d8488ed5fd59e3deb9f1773bf579785a
+    product_tree: 8df2c3bf27251eab7368eb81dcabfb1cc88f183b
+    workflow_sha: e710d1ae5636dc8fbc9be2f8cb1e1a1da9d7f6a8
+    exact_ci: prepared_not_dispatched
+  pantheon:
+    a21_seams: repaired_and_race_checked
+    release_identity: still_open
+  durable_disposition: /private/tmp/sirsi-software-admin-router-disposition-20260827.md
+  scheduler_iam_audit: /private/tmp/finalwishes-scheduler-iam-readonly-reconciliation-20260827.md
+  pantheon_a21_candidate:
+    worktree: /private/tmp/pantheon-software-admin-a21-candidate-20260827
+    base: 92ad980871b9b87963878efb3a2ebc80b0b64d64
+    tree: e42fc8620f20a0a5fe1d6fd01035d7de74754173
+    commit: 1d68e4b9900e4a5b8c43a7b899dd133995f402d4
+    commit_tree: 1bf617339c19c837b2540c01cf89358452414261
+    manifest: /private/tmp/pantheon-software-admin-a21-candidate-20260827/docs/evidence/SIRSI_SOFTWARE_ADMIN_A21_CANDIDATE_20260827.md
+    manifest_sha256: 4618ae41ff9d558e5d0e548d1fb596fcfc29074300608634dc80d5b53537427d
+    tests: deferred_during_m5_reservation
+
+# 2026-08-27 Software Admin FinalWishes remote reconciliation
+finalwishes_release_remote_20260827:
+  product_pr: 152
+  product_sha: 2f482d18d8488ed5fd59e3deb9f1773bf579785a
+  product_tree: 8df2c3bf27251eab7368eb81dcabfb1cc88f183b
+  workflow_ref: codex/ssa-finalwishes-ci-hardening-20260827
+  workflow_sha: e710d1ae5636dc8fbc9be2f8cb1e1a1da9d7f6a8
+  new_run: 33061985524
+  new_run_disposition: push_failure_zero_jobs_non_diagnostic
+  exact_ci: not_dispatched
+  artifact: /private/tmp/finalwishes-release-reconciliation-20260827.md
+  artifact_sha256: 694a8c057aa01a74b804933b6c24d0e3c16d316ae8a75a1cb0a129bab3a0f946
+
+# 2026-08-27 FinalWishes runner availability
+finalwishes_runner_inventory_20260827:
+  repository: SirsiMaster/FinalWishes
+  online_idle_runner: m5-sirsi
+  labels: [self-hosted, macOS, ARM64, m5]
+  alternate_online_runner: none
+  exact_ci_dispatch: deferred_until_sne_release
+  reconciliation_artifact_sha256: ae39e41200882ce29bee43ab2881d7bb541a68f91c922d10cb6a8db09d185639
+
+# 2026-08-27 combined Software Admin completion audit
+software_admin_completion_audit_20260827:
+  artifact: /private/tmp/sirsi-software-admin-completion-audit-20260827.md
+  artifact_sha256: 270ffbad9498f18e3a968980e472f55fb2bff10b98f911a4d3eb8b088da4106a
+  finalwishes: exact_candidate_and_protected_ci_complete_deployment_pending
+  pantheon: source_a21_candidate_ready_host_package_signing_lifecycle_open
+  containment: preserved
+
+# 2026-08-27 FinalWishes exact-SHA CI completion
+finalwishes_exact_ci_20260827:
+  run: 33090151521
+  product_sha: 2f482d18d8488ed5fd59e3deb9f1773bf579785a
+  product_tree: 8df2c3bf27251eab7368eb81dcabfb1cc88f183b
+  workflow_sha: e710d1ae5636dc8fbc9be2f8cb1e1a1da9d7f6a8
+  result: success
+  gates: [exact_checkout, provenance, web_942_tests, functions_52_tests, api, cleanup]
+  artifact_upload: non_fatal_quota_failure
+  receipt: github_step_summary_and_logs
+  deployment: not_performed
+# 2026-08-28: Hardware Admin closed the installed M1/M5 unattended-watcher
+# drift. Both hosts now run identical observation-only 60-second
+# ai.sirsi.host-readiness-watch sources (monitor SHA cf5ec6d0..., wrapper SHA
+# 06e6bbc6...) with immutable per-run receipts plus atomic current.json. Natural
+# recurrence passed 3 runs on M5 and 2 on M1; both directions proved SSH 22 and
+# Screen Sharing 5900 reachable 3/3, including M5 observing M1 while locked.
+# Legacy metadata-driven GUI Tailscale relaunch behavior is removed and backed
+# up per host. Aggregate receipt:
+# docs/evidence/artifacts/m1-m5-unattended-continuity-20260828/receipt.json.
+# SNE M1 migration remains DEFERRED only because M1 was on battery/discharging;
+# transport is satisfied. No Tailscale/product/security/Aqua/SNE mutation.
+
+# 2026-09-08: SNE connector health compatibility repair. cmd/sirsi-gemma/sne_runner.go
+# now serializes temperature explicitly and sends SNE Health at numeric 0, while
+# preserving oMLX Health at 0.01. New sne_runner_temperature_test.go captures the
+# wire payloads with httptest. Tests/build/network execution intentionally deferred.
+
+# 2026-09-10 SSA router loop: initial 108 items plus successor dispositioned with evidence.
+# PR713 1244c752 remains CHANGES REQUESTED: early activation guard + truthful G7.
+# PR711 first-run schema-secret IAM ordering correction routed to Ra; focused tests pass.
+# Evidence: Development/sirsi-pantheon/docs/evidence/SSA_ROUTER_LOOP_20260910.md.
+
+# 2026-09-10 SSA PR713 round 3: 51a453954 / tree 6991e630 accepted for requested
+# corrections. Hermetic activation guard FROM=1..4 passes; previous-head negative
+# control detects SSH. Schema-order and wake-plist tests pass; exact-head CI green.
+# G7 stays PARTIAL; G8 local-file-only. Review response to Ra: 20260910-030457.
+# Evidence: .sirsi/reviews/software-admin-20260910/pr713-r3-review.md.
+
+# 2026-09-11 — RBR-0 router replication firewall adopted
+# Canonical plan: docs/ROUTER_REPLICATION_AND_RECOVERY_PLAN.md. Backups bind exactly one project_id and router_namespace; one live authority only; local/GCP full snapshots private and encrypted; repo contains manifests only; recovery is disposable-first and requires a fresh authority receipt to promote.
+
+# 2026-09-11 codex-pantheon consumer successor: producer accepted (22 hashes verified).
+# Candidate archive tmp/codex-router-20260911-consumer/candidate.tar.gz SHA256
+# 0a2af07977a217dfa089c161fab4e33b4313f29f99e1501f0ab13929aed152f3; race tests,
+# all 28 producer semantic cases, vet/build and project lint pass. Review 20260911-051333
+# to claude-pantheon. Sole read model: stacklab studio snapshot; lifecycle helper only.
+# Parent integration remains blocked: clean base, root confinement, full Studio wiring,
+# independent review, public fixture authorization, package/ABI/installed proof.
+# Cleanup reclaimed 0 bytes; no eligible residue proved. Ra request 20260911-051229;
+# durable cleanup task retains missing ownership/recovery proof. See consumer/result.md
+# and ledger-evidence.md. 13 blocked goals; empty inbox is not completion. Git/proof
+# metadata denied; zero commits. Next: pull, read, claim, execute, evidence, reconcile.
+
+# SSA 2026-09-11 0639–0648 Ma’at shared contract
+# Request fully read and exact task leased. Authored Pantheon contract covering eight scopes, SNE v1 envelope compatibility, scoped incident/preflight semantics and implementation plan. Local commit 707c27a36; contract c5da5356; repo/Desktop identical and links verified. Reply 20260911-064649 delivered and source Result closure verified. Proof validates BLOCKED, not completion: native Workspace managed document runtime absent, independent review pending. Review routed claude-pantheon 20260911-064545; runtime phases routed repo owner codex-pantheon 20260911-064747. SSA contract and integration ledger retain dependencies truthfully; five inherited blockers freshly checked in loop-0646-checks.json. No SNE mutation/build/benchmark or product readiness claim. Native plan tool unavailable; durable outline maintained. Continue only assigned inbox/ledger loop.
+
+# SSA 2026-09-11 0648–0650 Ma’at authority convergence
+# Sender identified concurrent owner contract a2dd423f. Fully read and leased reconciliation, preserved codex-pantheon docs/contracts/PANTHEON_MAAT_FAILURE_MEMORY_CONTRACT.md verbatim in local 7bae1ec40; own architecture draft replaced by supersession pointer. Outcomes pass/reject/unverifiable and owner proposed fields now sole authority; SNE keys remain opaque. Existing Desktop entry carries exact owner body plus current publication header. Reply 065013 and coordination 065015 delivered; fenced convergence task complete. Contract proof remains blocked (review, Workspace); runtime with codex-pantheon. Evidence maat-contract/convergence-verification.json. Earlier 707c27a36 draft is historical only. Continue inbox/ledger only.
