@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -515,4 +516,36 @@ func TestSpoolRelayBacklogDoesNotSpinAndCancels(t *testing.T) {
 	_ = start
 	close(release) // let the held worker finish before TempDir cleanup
 	time.Sleep(100 * time.Millisecond)
+}
+
+// TestRelayHTTPClientDialsFreshNoKeepAlive proves rs-30: the relay's forward
+// client does NOT reuse pooled connections. A long-lived launchd relay that
+// pools keep-alive connections wedges when a pooled HTTPS connection goes
+// half-open (macOS idle/sleep) — the next forward hangs to the timeout while a
+// fresh dial works. Three sequential requests must open three NEW connections.
+func TestRelayHTTPClientDialsFreshNoKeepAlive(t *testing.T) {
+	var newConns atomic.Int32
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	srv.Config.ConnState = func(_ net.Conn, st http.ConnState) {
+		if st == http.StateNew {
+			newConns.Add(1)
+		}
+	}
+	srv.Start()
+	defer srv.Close()
+
+	c := newRelayHTTPClient()
+	for i := 0; i < 3; i++ {
+		resp, err := c.Get(srv.URL)
+		if err != nil {
+			t.Fatalf("request %d: %v", i, err)
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}
+	if got := newConns.Load(); got != 3 {
+		t.Fatalf("relay client must dial fresh each forward (no keep-alive reuse): new connections=%d, want 3", got)
+	}
 }

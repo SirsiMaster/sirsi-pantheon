@@ -222,6 +222,25 @@ func writeAtomic(path string, v any) error {
 	return nil
 }
 
+// newRelayHTTPClient builds the relay's forward client. A relay is a long-lived
+// launchd process; it MUST NOT pool keep-alive connections to the service. On
+// macOS a pooled HTTPS connection goes half-open after idle/sleep, and the next
+// forward then hangs to the client Timeout ("context deadline exceeded while
+// awaiting headers") while a fresh dial from any other process reaches the same
+// healthy service instantly (rs-30, observed 2026-09-11). Dial fresh per forward
+// — the relay's request volume is low, so a new handshake each time is cheap and
+// the reliability is worth it — and bound the header wait below the overall
+// Timeout so a dead peer fails fast instead of stalling the lane's whole budget.
+func newRelayHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: 25 * time.Second,
+		Transport: &http.Transport{
+			DisableKeepAlives:     true,
+			ResponseHeaderTimeout: 20 * time.Second,
+		},
+	}
+}
+
 // Relay is the host side: it holds the host token and forwards spooled requests.
 type Relay struct {
 	Spool  string
@@ -245,7 +264,7 @@ type Relay struct {
 // its response file is written atomically; stale files are swept with a log line.
 func (rl *Relay) Serve(ctx context.Context) error {
 	if rl.Client == nil {
-		rl.Client = &http.Client{Timeout: 25 * time.Second}
+		rl.Client = newRelayHTTPClient()
 	}
 	if rl.Log == nil {
 		rl.Log = slog.Default()
