@@ -197,12 +197,16 @@ func (h *Handler) controlAction(w http.ResponseWriter, r *http.Request) {
 		h.writeControlActionFailure(w, http.StatusBadRequest, raw, request.Verb, fmt.Errorf("invalid control action: trailing data: %w", err))
 		return
 	}
+	request = request.normalized()
+	if err := request.validate(); err != nil {
+		h.writeControlActionFailure(w, http.StatusBadRequest, raw, request.Verb, err)
+		return
+	}
 	roleReceipt, err := h.authorizeControlRole(r.Context(), request.Verb)
 	if err != nil {
 		h.writeControlActionFailure(w, http.StatusForbidden, raw, request.Verb, err)
 		return
 	}
-	request = request.normalized()
 	var response ControlActionResponse
 	if request.Verb == "arm" {
 		response, err = h.applyArmControlAction(r.Context(), request)
