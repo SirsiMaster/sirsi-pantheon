@@ -518,11 +518,12 @@ func TestSpoolRelayBacklogDoesNotSpinAndCancels(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 }
 
-// TestRelayHTTPClientDialsFreshNoKeepAlive proves rs-30: the relay's forward
-// client does NOT reuse pooled connections. A long-lived launchd relay that
-// pools keep-alive connections wedges when a pooled HTTPS connection goes
-// half-open (macOS idle/sleep) — the next forward hangs to the timeout while a
-// fresh dial works. Three sequential requests must open three NEW connections.
+// TestRelayHTTPClientDialsFreshNoKeepAlive proves ONLY that the relay's forward
+// client opens a new connection per request (no keep-alive reuse): three
+// sequential requests open three NEW server connections. That mitigates the
+// SUSPECTED wedge where a long-lived relay's pooled HTTPS connection goes
+// half-open (e.g. macOS idle/sleep) and hangs the next forward — this test does
+// not itself reproduce that idle/sleep causality.
 func TestRelayHTTPClientDialsFreshNoKeepAlive(t *testing.T) {
 	var newConns atomic.Int32
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

@@ -223,13 +223,14 @@ func writeAtomic(path string, v any) error {
 }
 
 // newRelayHTTPClient builds the relay's forward client. A relay is a long-lived
-// launchd process; it MUST NOT pool keep-alive connections to the service. On
-// macOS a pooled HTTPS connection goes half-open after idle/sleep, and the next
-// forward then hangs to the client Timeout ("context deadline exceeded while
-// awaiting headers") while a fresh dial from any other process reaches the same
-// healthy service instantly (rs-30, observed 2026-09-11). Dial fresh per forward
-// — the relay's request volume is low, so a new handshake each time is cheap and
-// the reliability is worth it — and bound the header wait below the overall
+// launchd process; it MUST NOT pool keep-alive connections to the service. The
+// SUSPECTED failure (rs-30, 2026-09-11): a pooled HTTPS connection goes
+// half-open (e.g. macOS idle/sleep) and the next forward then hangs to the
+// client Timeout ("context deadline exceeded while awaiting headers") while a
+// fresh dial from another process reaches the same healthy service instantly.
+// This prevents pooled-connection reuse to mitigate that suspected wedge — it is
+// not proven incident closure. Dial fresh per forward (the relay's volume is
+// low, so a new handshake is cheap) and bound the header wait below the overall
 // Timeout so a dead peer fails fast instead of stalling the lane's whole budget.
 func newRelayHTTPClient() *http.Client {
 	// Clone the default transport so proxy resolution (ProxyFromEnvironment /
