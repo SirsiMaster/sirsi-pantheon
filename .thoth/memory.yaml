@@ -490,6 +490,13 @@ sync_protocol:
 # .agent/workflows/session-start.md — session workflow (includes build-in-public step)
 
 ## Session Decisions
+# 2026-09-12: Notified Claude Deck of bounded contrast and print-route repairs to prevent overwrite.
+# 2026-09-12: Router snapshot:
+# 2026-09-12: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-09-12: completed topics: 41
+# 2026-09-12: last Codex read: 2026-06-11T04:28:50Z
+# 2026-09-12: last Claude read: 2026-06-16T15:30:16Z
+# 2026-09-12: pending: none
 # 2026-09-12: Recorded market-materials router continuity and inbox reconciliation for codex-deck.
 # 2026-09-12: Router snapshot:
 # 2026-09-12: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
@@ -518,13 +525,6 @@ sync_protocol:
 # 2026-08-21: last Claude read: 2026-06-16T15:30:16Z
 # 2026-08-21: pending: none
 # 2026-08-17: 2026-08-17: Pantheon SNE lifecycle now supports exact assistant-bound MTP packages. resolveLaunch derives the sole assistant artifact from the admitted manifest and formal checkout, verifies SHA identity, and passes AssistantSafetensors to the supervisor. Plain manifests reject assistants. Runtime catalog v2 now includes formal candidate9 and pins sned, native runtime, MLX dylib, metallib, and JACCL. Unit tests pass outside the sandbox; dashboard candidate b390b005 passed a real Start/serve/Stop using only formal package/model-store roots and returned exact pantheon mtp ready content. SNE formal gate passed but swap contamination prohibits a new performance claim.
-# 2026-08-17: Router snapshot:
-# 2026-08-17: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-# 2026-08-17: completed topics: 41
-# 2026-08-17: last Codex read: 2026-06-11T04:28:50Z
-# 2026-08-17: last Claude read: 2026-06-16T15:30:16Z
-# 2026-08-17: pending: none
-# 2026-08-17: 2026-08-17 SNE product integration: added transactional lifecycle UI endpoints and Start/Stop actions, formal runtime package resolver, strict checkout receipt provenance, authoritative service_url, and runtime catalog schema pantheon.sne-runtime-packages.v2. Before launch Pantheon now pins/verifies sned, model-specific native runtime, libmlx.dylib, mlx.metallib, and libjaccl.dylib plus admitted manifest and checkpoint receipt. Five formal tuples appear installed/startable: 26B-A4B Q4; 12B Q4/Q5/Q6/plain-Q8. Real Pantheon generations passed for 26B, 12B Q4, and 12B Q5 with clean Stop. Tests passed outside sandbox; sandbox-only listener failures were environmental. Next: MTP assistant checkout/lifecycle, 31B/E2B/E4B package entries, signing/notarized installer UX, clean-host and M1 pilots.
 # 2026-08-17: Router snapshot:
 # 2026-08-17: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
 # 2026-08-17: completed topics: 41

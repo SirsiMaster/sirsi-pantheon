@@ -121,15 +121,6 @@ Implemented the governed lifecycle seam for the previously proven SNE artifact-v
 
 ---
 
-## Entry 031 — 2026-04-04 18:17 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- Session: ProtectGlyph, Stele Universal Event Bus, SIRSI_MASTER_PLAN, Deity Registry (Rule A25). Shipped v0.10.0. All deities inscribe to Stele. Ma'at owns all quality gates across all repos. Pre-push hooks corrected. Case studies written. Full lifecycle LoE assessed for all 4 repos. Next session: KV cache optimizations, token usage improvements, agentic harness enhancements, then full-throttle dev on FinalWishes Sprint 5-6 and Assiduous Sprint 11-13.
-
----
-
 ## Entry 032 — 2026-04-04 18:21 — Session Compact (COMPACT)
 
 > Persisted via `thoth compact` before context compression.
@@ -4344,6 +4335,21 @@ Published `docs/ROUTER_REPLICATION_AND_RECOVERY_PLAN.md` and `docs/contracts/sir
 
 **Decisions**:
 - Recorded market-materials router continuity and inbox reconciliation for codex-deck.
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-06-16T15:30:16Z
+- pending: none
+
+---
+
+## Entry 051 — 2026-09-12 01:34 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- Notified Claude Deck of bounded contrast and print-route repairs to prevent overwrite.
 - Router snapshot:
 - active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
 - completed topics: 41
