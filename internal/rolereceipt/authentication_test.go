@@ -63,3 +63,30 @@ func TestAuthenticateAndValidateBindsExactRawBytes(t *testing.T) {
 		t.Fatal("trust root accepted bytes different from the signed input")
 	}
 }
+
+func TestAuthenticatedReceiptRechecksConsumerPolicyAtUse(t *testing.T) {
+	receipt := validReceipt(t)
+	raw, err := json.Marshal(receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := receipt.IssuedAt.Add(time.Minute)
+	verified, err := AuthenticateAndValidate(raw, Constraints{
+		Now: receipt.IssuedAt, Role: ConstrainedClient, HostID: receipt.HostProfile.ID,
+		RequiredScope: []string{"inspect"},
+	}, testAuthenticator{wantRaw: raw})
+	if err != nil {
+		t.Fatalf("AuthenticateAndValidate: %v", err)
+	}
+	if err := verified.AuthorizesWith("inspect", now, Constraints{
+		Role: receipt.Role, HostID: receipt.HostProfile.ID,
+	}); err != nil {
+		t.Fatalf("AuthorizesWith valid receipt: %v", err)
+	}
+	if err := verified.AuthorizesWith("claim", now, Constraints{Role: receipt.Role}); err == nil {
+		t.Fatal("out-of-scope operation was accepted")
+	}
+	if err := verified.AuthorizesWith("inspect", receipt.ExpiresAt, Constraints{Role: receipt.Role}); err == nil {
+		t.Fatal("expired receipt was accepted at point of use")
+	}
+}
