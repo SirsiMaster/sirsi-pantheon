@@ -532,6 +532,31 @@ func TestControlEnvelopeRejectsPartialRoleReference(t *testing.T) {
 	}
 }
 
+func TestBindControlEnvelopeRoleReceiptDoesNotReplaceExistingProof(t *testing.T) {
+	b := New("/bin/false", "", "test-build")
+	b.mu.Lock()
+	b.version = 4
+	b.payload = []byte(`{"build":"test-build","generated_at":"2026-09-07T12:00:00Z","evidence":[],"fleet":[],"activity":[],"data_errors":[],"threads":[],"registration_gaps":[],"tasks":[],"board":{},"ledger":{},"counters":{}}`)
+	b.mu.Unlock()
+	body, _, err := b.SnapshotControl()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope ControlEnvelope
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	envelope.RoleReceiptID = "existing-receipt"
+	envelope.RoleReceiptSHA256 = strings.Repeat("a", 64)
+	boundBody, err := json.Marshal(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := BindControlEnvelopeRoleReceipt(boundBody, authenticatedRoleReceipt(t)); err == nil {
+		t.Fatal("existing role proof was replaced")
+	}
+}
+
 func TestProtectedControlInspectionRequiresBearerToken(t *testing.T) {
 	store, err := routerstore.Open(t.TempDir() + "/router.db")
 	if err != nil {

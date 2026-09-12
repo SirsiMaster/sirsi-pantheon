@@ -152,6 +152,9 @@ func BindControlEnvelopeRoleReceipt(body []byte, receipt rolereceipt.Authenticat
 	if err := envelope.Validate(); err != nil {
 		return nil, err
 	}
+	if envelope.RoleReceiptID != "" || envelope.RoleReceiptSHA256 != "" {
+		return nil, errors.New("control envelope already has a role receipt")
+	}
 	envelope.RoleReceiptID = receipt.Receipt().ReceiptID
 	envelope.RoleReceiptSHA256 = receipt.RawSHA256()
 	if err := envelope.Validate(); err != nil {
