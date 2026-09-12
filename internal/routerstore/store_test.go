@@ -2,11 +2,13 @@ package routerstore
 
 import (
 	"bytes"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -622,6 +624,10 @@ func TestFieldFidelityWithWorkItem(t *testing.T) {
 		"lease_token": true, "lease_expires": true, "claimed_by": true, "lease_updated": true,
 		"attempts": true, "idem_key": true, "source_item": true,
 		"failure_class": true, "occurrences": true, "first_seen": true, "last_seen": true,
+		// v21 (rs-32): project/namespace scope is SERVICE-DERIVED from the admitted
+		// wing binding at write time — store-only, never mirrored into work.Item, so
+		// a mutated markdown file cannot forge a row's scope (same axiom-8 rationale).
+		"project_id": true, "router_namespace": true,
 	}
 	for col := range schemaCols {
 		if !mapped[col] && !dispatchContractCols[col] {
@@ -922,5 +928,186 @@ func TestConnEstablishRetriesReadonlyContention(t *testing.T) {
 	if !retryable {
 		t.Error("a readonly-contention error must be retryable at connection-establish, " +
 			"not just at the write-retry layer — this is the exact 2026-08-07 registration-failure class")
+	}
+}
+
+// TestSchemaV21AddsScopeColumns (rs-32a): schema v21 adds project_id +
+// router_namespace to items and tasks (empty groundwork), on a fresh store, and
+// the migration applies cleanly (MaxSupportedSchemaVersion==21). Values stay
+// empty — derivation/backfill is rs-32b.
+func TestSchemaV21AddsScopeColumns(t *testing.T) {
+	if MaxSupportedSchemaVersion() != 21 {
+		t.Fatalf("MaxSupportedSchemaVersion = %d, want 21", MaxSupportedSchemaVersion())
+	}
+	path := filepath.Join(t.TempDir(), "v21.db")
+	s, err := OpenPath(path)
+	if err != nil {
+		t.Fatalf("open (v21 migration must apply cleanly): %v", err)
+	}
+	defer s.Close()
+	if v, err := ReadSchemaVersion(path); err != nil || v != 21 {
+		t.Fatalf("fresh store version = %d (err %v), want 21", v, err)
+	}
+	// Columns must exist and be usable (WHERE 1=0 touches no rows but binds them).
+	if _, e := s.exec(`UPDATE items SET project_id='p', router_namespace='n' WHERE 1=0;`); e != nil {
+		t.Fatalf("items scope columns missing: %v", e)
+	}
+	if _, e := s.exec(`UPDATE tasks SET project_id='p', router_namespace='n' WHERE 1=0;`); e != nil {
+		t.Fatalf("tasks scope columns missing: %v", e)
+	}
+	// Reopen is idempotent (already at v21, applies nothing).
+	s2, e2 := OpenPath(path)
+	if e2 != nil {
+		t.Fatalf("reopen at v21 must be idempotent: %v", e2)
+	}
+	_ = s2.Close()
+}
+
+// TestV20ToV21UpgradeWithExistingRows (SSA review, PR #745): a GENUINE v20
+// schema — v21's columns/indexes rewound the same way the backward-version
+// migration tests do — with existing rows in both items and tasks, upgrades
+// to v21 with default-empty scope values and BOTH indexes present. The fresh-
+// store test above never exercises an actual upgrade path or checks the
+// indexes; this closes that gap.
+func TestV20ToV21UpgradeWithExistingRows(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "v20-upgrade.db")
+	s, err := OpenPath(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if _, sendErr := s.Send("a", "b", "pre-v21 item", "review", "exists before the scope columns land"); sendErr != nil {
+		t.Fatalf("Send: %v", sendErr)
+	}
+	if taskErr := s.AddTask(Task{Agent: "a", TaskID: "t1", Subject: "pre-v21 task"}); taskErr != nil {
+		t.Fatalf("AddTask: %v", taskErr)
+	}
+	if _, e := s.db.Exec(`
+		DROP INDEX idx_items_scope; DROP INDEX idx_tasks_scope;
+		ALTER TABLE items DROP COLUMN project_id; ALTER TABLE items DROP COLUMN router_namespace;
+		ALTER TABLE tasks DROP COLUMN project_id; ALTER TABLE tasks DROP COLUMN router_namespace;
+		PRAGMA user_version=20;`); e != nil {
+		t.Fatalf("rewind to genuine v20: %v", e)
+	}
+	if e := s.Close(); e != nil {
+		t.Fatalf("close: %v", e)
+	}
+
+	s2, err := OpenPath(path)
+	if err != nil {
+		t.Fatalf("v20 to v21 upgrade must apply cleanly: %v", err)
+	}
+	defer s2.Close()
+	if v, e := ReadSchemaVersion(path); e != nil || v != 21 {
+		t.Fatalf("post-upgrade version = %d (err %v), want 21", v, e)
+	}
+	// Existing rows survive with default-empty scope values (no backfill guess).
+	var proj, ns string
+	if e := s2.db.QueryRow(`SELECT project_id, router_namespace FROM items LIMIT 1;`).Scan(&proj, &ns); e != nil {
+		t.Fatalf("read upgraded items row: %v", e)
+	}
+	if proj != "" || ns != "" {
+		t.Errorf("pre-existing item scope = (%q,%q), want empty defaults, not backfilled", proj, ns)
+	}
+	if e := s2.db.QueryRow(`SELECT project_id, router_namespace FROM tasks LIMIT 1;`).Scan(&proj, &ns); e != nil {
+		t.Fatalf("read upgraded tasks row: %v", e)
+	}
+	if proj != "" || ns != "" {
+		t.Errorf("pre-existing task scope = (%q,%q), want empty defaults, not backfilled", proj, ns)
+	}
+	// Both indexes must exist (the fresh-store test never checked this).
+	for _, idx := range []string{"idx_items_scope", "idx_tasks_scope"} {
+		var name string
+		if e := s2.db.QueryRow(`SELECT name FROM sqlite_master WHERE type='index' AND name=?;`, idx).Scan(&name); e != nil {
+			t.Errorf("index %s missing after v20->v21 upgrade: %v", idx, e)
+		}
+	}
+}
+
+// TestV21MigrationFailsClosedOnPartialDrift reproduces SSA's independent
+// finding on PR #745: a physical schema where only ONE of v21's four new
+// columns already exists (schema/version disagreement, not a normal fresh or
+// fully-applied store) must make migrate() FAIL and roll back — never commit
+// user_version=21 over a half-applied schema. The prior code treated any
+// "duplicate column name" error as proof the whole step already applied,
+// which is false here: only tasks.project_id pre-exists, so the v21 script's
+// earlier statements (both items columns) would run and NOT be rolled back
+// under that logic, silently persisting a schema with items fully scoped but
+// tasks.router_namespace and both indexes missing.
+func TestV21MigrationFailsClosedOnPartialDrift(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "drift.db")
+	s, err := OpenPath(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	// Rewind to a genuine v20 physical schema, then apply ONLY ONE of the four
+	// v21 columns — the drift case, distinct from both "fresh v20" and "fully
+	// applied v21".
+	if _, e := s.db.Exec(`
+		DROP INDEX idx_items_scope; DROP INDEX idx_tasks_scope;
+		ALTER TABLE items DROP COLUMN project_id; ALTER TABLE items DROP COLUMN router_namespace;
+		ALTER TABLE tasks DROP COLUMN project_id; ALTER TABLE tasks DROP COLUMN router_namespace;
+		ALTER TABLE tasks ADD COLUMN project_id TEXT NOT NULL DEFAULT '';
+		PRAGMA user_version=20;`); e != nil {
+		t.Fatalf("construct drift fixture: %v", e)
+	}
+	if e := s.Close(); e != nil {
+		t.Fatalf("close: %v", e)
+	}
+
+	s2, err := OpenPath(path)
+	if err == nil {
+		_ = s2.Close()
+		t.Fatal("Open over a partially-drifted v20 schema returned nil error — migrate() committed a half-applied v21 schema instead of failing closed")
+	}
+	if !strings.Contains(err.Error(), "duplicate column name") {
+		t.Fatalf("Open error = %v, want it to surface the duplicate-column drift", err)
+	}
+	// The failed attempt must have left the schema EXACTLY as constructed — not
+	// just the version, but the physical columns/indexes too (SSA re-review,
+	// PR #745: prove the two items ADD COLUMN statements that ran before the
+	// duplicate-column error were actually rolled back, not merely that the
+	// version number stayed at 20). Probed via a separate read-only connection
+	// — s2 never opened (OpenPath failed), and a plain sql.Open bypasses
+	// migrate() entirely so probing does not itself retrigger the failure.
+	if v, e := ReadSchemaVersion(path); e != nil || v != 20 {
+		t.Fatalf("post-failure version = %d (err %v), want unchanged at 20", v, e)
+	}
+	probe, err := sql.Open("sqlite", path+"?mode=ro")
+	if err != nil {
+		t.Fatalf("open probe: %v", err)
+	}
+	defer probe.Close()
+	hasColumn := func(table, column string) bool {
+		t.Helper()
+		rows, e := probe.Query(`SELECT name FROM pragma_table_info(?);`, table)
+		if e != nil {
+			t.Fatalf("pragma_table_info(%s): %v", table, e)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var name string
+			if e := rows.Scan(&name); e != nil {
+				t.Fatalf("scan column name: %v", e)
+			}
+			if name == column {
+				return true
+			}
+		}
+		return false
+	}
+	if hasColumn("items", "project_id") || hasColumn("items", "router_namespace") {
+		t.Error("items carries a v21 scope column after a failed migration — the pre-error ADD COLUMN statements were not rolled back")
+	}
+	if !hasColumn("tasks", "project_id") {
+		t.Error("tasks.project_id (the drift fixture's pre-existing column) vanished — the rollback undid more than the migration touched")
+	}
+	if hasColumn("tasks", "router_namespace") {
+		t.Error("tasks.router_namespace exists after a failed migration — it was never supposed to be added on this path")
+	}
+	for _, idx := range []string{"idx_items_scope", "idx_tasks_scope"} {
+		var name string
+		if e := probe.QueryRow(`SELECT name FROM sqlite_master WHERE type='index' AND name=?;`, idx).Scan(&name); e != sql.ErrNoRows {
+			t.Errorf("index %s exists after a failed migration (err=%v), want absent", idx, e)
+		}
 	}
 }

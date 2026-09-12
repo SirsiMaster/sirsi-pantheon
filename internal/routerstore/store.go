@@ -714,6 +714,18 @@ CREATE TABLE IF NOT EXISTS audience_log (
 );
 CREATE INDEX IF NOT EXISTS idx_audience_log_ts ON audience_log(ts);
 `},
+	// v21 — Stack Lab wing scope (rs-32): every durable row carries its
+	// originating admitted wing's project_id + router_namespace. Columns land
+	// EMPTY (explicitly incomplete groundwork); values are derived from the
+	// admitted wing binding at write time (rs-32b), never backfilled here.
+	{21, `
+ALTER TABLE items ADD COLUMN project_id       TEXT NOT NULL DEFAULT '';
+ALTER TABLE items ADD COLUMN router_namespace TEXT NOT NULL DEFAULT '';
+ALTER TABLE tasks ADD COLUMN project_id       TEXT NOT NULL DEFAULT '';
+ALTER TABLE tasks ADD COLUMN router_namespace TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_items_scope ON items(project_id, router_namespace);
+CREATE INDEX IF NOT EXISTS idx_tasks_scope ON tasks(project_id, router_namespace);
+`},
 }
 
 // migrate applies any pending numbered migrations, tracked via the SQLite
@@ -809,6 +821,27 @@ func (s *SQLiteStore) migrate() error {
 			return gateErr
 		}
 		if _, err := conn.ExecContext(ctx, next.sql); err != nil {
+			// Always roll back on any Exec failure, including "duplicate column
+			// name". A migration's SQL runs as one multi-statement Exec; SQLite
+			// executes each statement in order and stops at the first failure, but
+			// the statements that already ran are NOT automatically undone — only
+			// the surrounding ROLLBACK undoes them. A prior version of this code
+			// treated "duplicate column name" as proof the WHOLE step already
+			// applied and skipped straight to recording the new version without
+			// rolling back; SSA's independent reproduction (PR #745 review) showed
+			// that when only PART of a multi-column migration's columns already
+			// exist, that path committed a partially-applied schema — exactly the
+			// silent-drift failure this gate exists to prevent (rs-32a). There is
+			// no way to tell "duplicate column, safe to skip" apart from "duplicate
+			// column, mid-migration partial state" from the error string alone, so
+			// treat every Exec failure the same: roll back, fail closed, return the
+			// error. Idempotent re-application of a column-add migration (needed by
+			// the backward-version tests that replay an old user_version) must be
+			// achieved by giving those tests a schema that is GENUINELY at that
+			// older version — see TestThreadMigrationIsCeilingAndUpgradesV15 and
+			// TestMigration11ReplacesAgentWideWakeAckTriggers, which now roll back
+			// the v21 scope columns/indexes before faking the older user_version —
+			// never by having production code guess that an error is harmless.
 			_, _ = conn.ExecContext(ctx, `ROLLBACK;`)
 			return fmt.Errorf("routerstore: migrate to v%d: %w", next.version, err)
 		}

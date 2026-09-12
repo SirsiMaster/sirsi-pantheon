@@ -23,6 +23,11 @@ func TestMigration11ReplacesAgentWideWakeAckTriggers(t *testing.T) {
 		-- v17 (ADR-062 identity) must be rewound too, or replaying it duplicates columns
 		DROP TABLE sessions; DROP TABLE lease_sessions; DROP TABLE host_tokens;
 		ALTER TABLE threads DROP COLUMN host; ALTER TABLE threads DROP COLUMN user_id; ALTER TABLE threads DROP COLUMN session; ALTER TABLE threads DROP COLUMN runtime_hash;
+		-- v21 (Stack Lab wing scope) must be rewound too, or replaying it duplicates
+		-- columns — index dropped before the columns it references (SSA review, PR #745).
+		DROP INDEX idx_items_scope; DROP INDEX idx_tasks_scope;
+		ALTER TABLE items DROP COLUMN project_id; ALTER TABLE items DROP COLUMN router_namespace;
+		ALTER TABLE tasks DROP COLUMN project_id; ALTER TABLE tasks DROP COLUMN router_namespace;
 		CREATE TRIGGER ack_wake_on_item_claim AFTER UPDATE OF lease_token ON items
 		WHEN NEW.lease_token<>'' AND OLD.lease_token='' BEGIN
 		UPDATE wake_events SET status='acked' WHERE agent=NEW.to_agent AND status='leased'; END;
