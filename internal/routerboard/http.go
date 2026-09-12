@@ -370,6 +370,11 @@ func (h *Handler) stream(w http.ResponseWriter, r *http.Request) {
 // surfaces cannot disagree about what arming means. A board that can only
 // REPORT a stranded lane makes you go elsewhere to fix it.
 func (h *Handler) arm(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "arm endpoint requires POST", http.StatusMethodNotAllowed)
+		return
+	}
 	if !h.authorizeControl(w, r, true) {
 		return
 	}

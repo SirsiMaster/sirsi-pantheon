@@ -891,7 +891,7 @@
       function armLane(agent, btn) {
         btn.disabled = true;
         btn.textContent = "arming…";
-        fetch("/api/arm?agent=" + encodeURIComponent(agent))
+        fetch("/api/arm?agent=" + encodeURIComponent(agent), { method: "POST" })
           .then((r) => r.json().then((j) => ({ ok: r.ok && j.ok, j })))
           .then(({ ok, j }) => {
             btn.textContent = ok ? "armed ✓" : "failed";

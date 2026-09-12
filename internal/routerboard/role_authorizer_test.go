@@ -139,12 +139,17 @@ func TestArmEndpointRequiresBearerAndRoleBeforeRegistryOrLaunch(t *testing.T) {
 	h := &Handler{controlToken: "token", requireControlAuth: true, requireControlRole: true}
 	mux := http.NewServeMux()
 	h.Register(mux)
+	get := httptest.NewRecorder()
+	mux.ServeHTTP(get, httptest.NewRequest(http.MethodGet, "/api/arm?agent=codex", nil))
+	if get.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("GET arm status=%d, want %d", get.Code, http.StatusMethodNotAllowed)
+	}
 	unauthorized := httptest.NewRecorder()
-	mux.ServeHTTP(unauthorized, httptest.NewRequest(http.MethodGet, "/api/arm?agent=codex", nil))
+	mux.ServeHTTP(unauthorized, httptest.NewRequest(http.MethodPost, "/api/arm?agent=codex", nil))
 	if unauthorized.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthorized arm status=%d, want %d", unauthorized.Code, http.StatusUnauthorized)
 	}
-	authorized := httptest.NewRequest(http.MethodGet, "/api/arm?agent=codex", nil)
+	authorized := httptest.NewRequest(http.MethodPost, "/api/arm?agent=codex", nil)
 	authorized.Header.Set("Authorization", "Bearer token")
 	denied := httptest.NewRecorder()
 	mux.ServeHTTP(denied, authorized)
