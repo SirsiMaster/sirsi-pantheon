@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -241,14 +242,14 @@ func runMaatScales(cmd *cobra.Command, args []string) error {
 	// renegotiation and take a transport down; Scales now weighs and heals it.
 	pf := scales.DefaultPolicy()
 	if maatPolicyFile != "" {
-		loaded, err := scales.LoadPolicyFile(maatPolicyFile)
+		loaded, err := loadPolicyStrict(maatPolicyFile)
 		if err != nil {
 			return err
 		}
 		pf = loaded
 	}
 	weigh := func() (*scales.ScanMetrics, []*scales.EnforceResult, error) {
-		m, err := scales.CollectMetrics()
+		m, err := scales.Collect()
 		if err != nil {
 			return nil, nil, err
 		}
@@ -286,36 +287,58 @@ func runMaatScales(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("heal thunderbolt lanes: %w", err)
 		}
-		if _, results, err = weigh(); err == nil {
-			// Re-render from the re-weigh so the verdicts shown are the
-			// machine's state AFTER the heal, not before it.
+		healed := fmt.Sprintf("%d (still drifted: %d)", fixed, len(remaining))
+		_, results, err = weigh()
+		if err != nil {
+			// The repair happened; what we cannot do is say what the machine
+			// looks like now. Never render the pre-heal verdicts as current
+			// (SNE review of #751, P2): report the repair separately and
+			// fail the verification step out loud.
 			res.Evidence = nil
-			failures, warnings = 0, 0
-			for _, r := range results {
-				failures += r.Failures
-				warnings += r.Warnings
-				for _, v := range r.Verdicts {
-					mark := "✓"
-					if !v.Passed {
-						mark = "✗"
-					}
-					res.AddEvidence(mark+" "+v.RuleName, v.Message)
+			res.AddEvidence("Healed lanes", healed)
+			res.AddEvidence("Post-heal state", "unavailable: "+err.Error())
+			res.Status = "fail"
+			res.Summary = "Lanes were healed, but the post-heal verification could not be collected."
+			res.Duration = time.Since(start)
+			res.Render()
+			return fmt.Errorf("post-heal verification: %w", err)
+		}
+		// Re-render from the re-weigh so the verdicts shown are the machine's
+		// state AFTER the heal, not before it.
+		res.Evidence = nil
+		failures, warnings = 0, 0
+		for _, r := range results {
+			failures += r.Failures
+			warnings += r.Warnings
+			for _, v := range r.Verdicts {
+				mark := "✓"
+				if !v.Passed {
+					mark = "✗"
 				}
+				res.AddEvidence(mark+" "+v.RuleName, v.Message)
 			}
 		}
-		res.AddEvidence("Healed lanes", fmt.Sprintf("%d (still drifted: %d)", fixed, len(remaining)))
+		res.AddEvidence("Healed lanes", healed)
+	}
+
+	// A breached lane rule of ANY severity gets the heal offered (a
+	// warning-only custom rule too — SNE review of #751), with the selected
+	// policy preserved in the suggested invocation.
+	if breachedLanes && !maatFix {
+		cmdline := "sirsi maat scales --fix"
+		if maatPolicyFile != "" {
+			cmdline += " --policy " + maatPolicyFile
+		}
+		res.NextActions = append(res.NextActions, output.NextAction{
+			Label: "Heal the Thunderbolt lanes", Command: cmdline,
+			Description: "Removes each drifted lane from bridge0 and sets MTU 65518 (needs sudo -n).",
+		})
 	}
 
 	switch {
 	case failures > 0:
 		res.Status = "fail"
 		res.Summary = fmt.Sprintf("%d policy failure(s), %d warning(s).", failures, warnings)
-		if breachedLanes && !maatFix {
-			res.NextActions = append(res.NextActions, output.NextAction{
-				Label: "Heal the Thunderbolt lanes", Command: "sirsi maat scales --fix",
-				Description: "Removes each drifted lane from bridge0 and sets MTU 65518 (needs sudo -n).",
-			})
-		}
 	case warnings > 0:
 		res.Status = "warn"
 		res.Summary = fmt.Sprintf("Balanced with %d warning(s).", warnings)
@@ -428,4 +451,30 @@ func runMaatPulse(cmd *cobra.Command, args []string) error {
 	}
 	output.NextSteps(steps)
 	return nil
+}
+
+// loadPolicyStrict reads a policy file and deep-validates the exact object
+// that will be weighed: LoadPolicyFile alone only checks that the list is
+// non-empty, so an empty rule set would "pass" and a misspelled operator or
+// severity would fall through to a silent pass (SNE review of #751, P2).
+func loadPolicyStrict(path string) (*scales.PolicyFile, error) {
+	pf, err := scales.LoadPolicyFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if errs := scales.ValidatePolicyFileStrict(pf); len(errs) > 0 {
+		msgs := make([]string, 0, len(errs))
+		for _, e := range errs {
+			where := e.PolicyName
+			if e.RuleID != "" {
+				where += "/" + e.RuleID
+			}
+			if e.Field != "" {
+				where += "." + e.Field
+			}
+			msgs = append(msgs, where+": "+e.Message)
+		}
+		return nil, fmt.Errorf("policy %s is invalid: %s", path, strings.Join(msgs, "; "))
+	}
+	return pf, nil
 }

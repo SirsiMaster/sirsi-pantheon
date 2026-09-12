@@ -85,6 +85,27 @@ func ParsePolicy(data []byte) (*PolicyFile, error) {
 	return &pf, nil
 }
 
+// ValidatePolicyFileStrict deep-validates an already-parsed policy file —
+// every rule's metric, operator, severity, non-empty rules and unique rule
+// IDs — so a caller weighs exactly the object it validated (not one file
+// read followed by another). Returns nil when valid.
+func ValidatePolicyFileStrict(pf *PolicyFile) []ValidationError {
+	errs := validatePolicies(pf)
+	for _, p := range pf.Policies {
+		if len(p.Rules) == 0 {
+			errs = append(errs, ValidationError{PolicyName: p.Name, Field: "rules", Message: "policy has no rules; an empty policy cannot pass"})
+		}
+		seen := map[string]bool{}
+		for _, r := range p.Rules {
+			if r.ID != "" && seen[r.ID] {
+				errs = append(errs, ValidationError{PolicyName: p.Name, RuleID: r.ID, Field: "id", Message: "duplicate rule id"})
+			}
+			seen[r.ID] = true
+		}
+	}
+	return errs
+}
+
 // ValidatePolicy checks a policy file for correctness.
 func ValidatePolicy(path string) []ValidationError {
 	pf, err := LoadPolicyFile(path)

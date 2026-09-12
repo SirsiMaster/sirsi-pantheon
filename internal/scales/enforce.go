@@ -68,6 +68,13 @@ func getKaScanner() *ka.Scanner {
 	return newKaScanner()
 }
 
+// Collect runs the metrics collector currently in force — the injected one
+// under test (SetMetricsCollector), CollectMetrics otherwise. Callers that
+// weigh outside Enforce (the `sirsi maat scales` verb) must go through this,
+// not CollectMetrics directly, or the injection is silently bypassed and a
+// test exercises the real scanners (SNE review of #751).
+func Collect() (*ScanMetrics, error) { return getMetricsCollector()() }
+
 // Verdict is the result of evaluating a single policy rule.
 type Verdict struct {
 	RuleID      string   `json:"rule_id"`
