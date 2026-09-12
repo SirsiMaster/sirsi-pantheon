@@ -144,12 +144,17 @@ func runCtr(_ *cobra.Command, args []string) error {
 
 	res := buildCtrResult(repoRoot, scope, ns, wp)
 	res.LedgerAgents = ledgerAgents
+	return finishCtr(res, func() { renderReconcile(routerRoot) })
+}
+
+// finishCtr keeps optional human triage separate from machine output.
+func finishCtr(res ctrResult, reconcile func()) error {
 	if err := emitCtrResult(res); err != nil {
 		return err
 	}
 
-	if res.PendingTotal > 0 && ctrReconcile {
-		renderReconcile(routerRoot)
+	if res.PendingTotal > 0 && ctrReconcile && !ctrJSON && !ctrQuiet {
+		reconcile()
 	}
 	return nil
 }

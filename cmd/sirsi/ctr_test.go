@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -195,5 +197,59 @@ func repoRootFromTest(t *testing.T) string {
 			t.Fatal("go.mod not found walking up from test cwd")
 		}
 		dir = parent
+	}
+}
+
+func TestFinishCtrOutputIsolation(t *testing.T) {
+	for _, tc := range []struct {
+		name                   string
+		json, quiet, reconcile bool
+		pending                int
+		ledgerError            string
+		wantCalls              int
+	}{
+		{name: "json", json: true, reconcile: true, pending: 1},
+		{name: "quiet", quiet: true, reconcile: true, pending: 1},
+		{name: "json precedence", json: true, quiet: true, reconcile: true, pending: 1},
+		{name: "human reconcile", reconcile: true, pending: 1, wantCalls: 1},
+		{name: "human no opt in", pending: 1},
+		{name: "empty", reconcile: true},
+		{name: "human ledger error", reconcile: true, pending: 1, ledgerError: "unavailable"},
+		{name: "json ledger error", json: true, reconcile: true, pending: 1, ledgerError: "unavailable"},
+		{name: "quiet ledger error", quiet: true, reconcile: true, pending: 1, ledgerError: "unavailable"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			oldJSON, oldQuiet, oldReconcile, oldOut := ctrJSON, ctrQuiet, ctrReconcile, os.Stdout
+			out, err := os.CreateTemp(t.TempDir(), "stdout")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				ctrJSON, ctrQuiet, ctrReconcile, os.Stdout = oldJSON, oldQuiet, oldReconcile, oldOut
+				out.Close()
+			})
+			ctrJSON, ctrQuiet, ctrReconcile, os.Stdout = tc.json, tc.quiet, tc.reconcile, out
+			calls := 0
+			err = finishCtr(ctrResult{PendingTotal: tc.pending, LedgerError: tc.ledgerError}, func() { calls++; fmt.Println("human-triage-marker") })
+			if (err != nil) != (tc.ledgerError != "") {
+				t.Errorf("error = %v", err)
+			}
+			if calls != tc.wantCalls {
+				t.Errorf("reconcile calls = %d, want %d", calls, tc.wantCalls)
+			}
+			data, err := os.ReadFile(out.Name())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.json && !json.Valid(data) {
+				t.Errorf("invalid JSON output: %s", data)
+			}
+			if tc.quiet && !tc.json && tc.ledgerError == "" && strings.Count(string(data), "\n") != 1 {
+				t.Errorf("quiet output is not one line: %s", data)
+			}
+			if tc.ledgerError != "" && !strings.Contains(string(data), tc.ledgerError) {
+				t.Errorf("missing ledger diagnostic: %s", data)
+			}
+		})
 	}
 }
