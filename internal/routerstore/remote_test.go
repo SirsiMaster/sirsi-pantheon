@@ -1,11 +1,13 @@
 package routerstore
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -196,8 +198,10 @@ func TestIdentityHookFillsAgentAndThreadWhenEnvUnset(t *testing.T) {
 
 // The CLIENT per-call context must exceed the 30s spool wait, or it cancels a
 // spool round-trip before the relay can answer; the old 5s also canceled a warm
-// ~3-4s full-ledger read outright (SSA 2026-09-11). This is a client-side budget
-// only — it does not make the server cancel an in-flight ListAll.
+// ~3-4s full-ledger read outright (SSA 2026-09-11). This is a client-side
+// budget. ListAll's server-side QueryContext (rs-26) is a separate, independent
+// bound enforced by serve.go's own per-request deadline — see
+// TestServerListAllDeadlineEndsAnInFlightRead below.
 func TestPerCallTimeoutExceedsSpoolWait(t *testing.T) {
 	rs := NewRemoteStore("https://x", "t")
 	st := newSpoolTransport(t.TempDir(), "a")
@@ -207,5 +211,96 @@ func TestPerCallTimeoutExceedsSpoolWait(t *testing.T) {
 	// And a comfortable ceiling for a slow warm read (was 5s, which canceled a 4s read).
 	if rs.perCall < 20*time.Second {
 		t.Fatalf("client perCall %v is too tight for a large ledger read", rs.perCall)
+	}
+}
+
+// TestRemoteListAllSessionMintRacesCallerContext (SSA review, PR #746): a
+// caller's ctx must bound session acquisition, not just the eventual
+// ListAll RPC. Before this fix, ensureSession/callUnsigned built their own
+// context.Background(), so an already-canceled caller ctx still let
+// MintSession run to completion against a slow/unresponsive server instead of
+// failing fast. A plain fast local httptest server can't distinguish "ctx
+// honored" from "ctx ignored" — both return near-instantly — so the mint
+// route is deliberately delayed past both rs.perCall (short, for this test)
+// and the assertion threshold: only a canceled ctx that is ACTUALLY wired into
+// the mint's HTTP request aborts before that delay elapses.
+func TestRemoteListAllSessionMintRacesCallerContext(t *testing.T) {
+	backend := openBackendStore(t, filepath.Join(t.TempDir(), "router.db"))
+	t.Cleanup(func() { _ = backend.Close() })
+	backend.notifyDir = t.TempDir()
+	real, err := Handler(backend, ServerOptions{Token: "t0k", MaxWait: time.Second})
+	if err != nil {
+		t.Fatalf("Handler: %v", err)
+	}
+	const mintDelay = 1 * time.Second
+	slowMint := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "MintSession") {
+			time.Sleep(mintDelay)
+		}
+		real.ServeHTTP(w, r)
+	})
+	srv := httptest.NewServer(slowMint)
+	t.Cleanup(srv.Close)
+	rs := NewRemoteStore(srv.URL, "t0k")
+	rs.sessionDir = ""           // no cached session — ListAll must mint
+	rs.perCall = 5 * time.Second // longer than mintDelay: a ctx-ignoring mint would ride this out, not its own short budget
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	start := time.Now()
+	_, err = rs.ListAll(ctx)
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("ListAll(canceled ctx) with no cached session = nil error, want a context error from the mint path")
+	}
+	if elapsed > 200*time.Millisecond {
+		t.Fatalf("ListAll(canceled ctx) took %v against a %v-delayed mint endpoint — session mint is not bound to the caller's ctx (SSA PR #746 finding)", elapsed, mintDelay)
+	}
+}
+
+// TestServerListAllDeadlineEndsAnInFlightRead (SSA review, PR #746): proves
+// the SERVER actually terminates an in-flight ListAll read at its own
+// deadline — not merely that QueryContext receives an already-expired ctx
+// before starting (TestListAllHonorsContext covers that narrower claim).
+// scanRowHook forces determinism: it sleeps well past the server's CallTimeout
+// after the first row is scanned, so the query has demonstrably started
+// returning rows before the deadline fires, then the read must still be cut
+// off — proven by the whole request completing near CallTimeout, not near the
+// sum of the hook's sleeps.
+func TestServerListAllDeadlineEndsAnInFlightRead(t *testing.T) {
+	backend := openBackendStore(t, filepath.Join(t.TempDir(), "router.db"))
+	t.Cleanup(func() { _ = backend.Close() })
+	backend.notifyDir = t.TempDir()
+	for i := 0; i < 3; i++ {
+		if _, err := backend.Send("a", "b", "row", "review", "x"); err != nil {
+			t.Fatalf("seed row %d: %v", i, err)
+		}
+	}
+	const callTimeout = 40 * time.Millisecond
+	const hookSleep = 150 * time.Millisecond // >> callTimeout, << t.Deadline
+	h, err := Handler(backend, ServerOptions{Token: "t0k", CallTimeout: callTimeout, MaxWait: time.Second})
+	if err != nil {
+		t.Fatalf("Handler: %v", err)
+	}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	rs := NewRemoteStore(srv.URL, "t0k")
+	rs.sessionDir = ""
+	rs.perCall = 5 * time.Second // client budget stays generous; the SERVER deadline is what's under test
+
+	scanRowHook = func() { time.Sleep(hookSleep) }
+	t.Cleanup(func() { scanRowHook = nil })
+
+	start := time.Now()
+	_, err = rs.ListAll(context.Background())
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("ListAll over a server read that outlives CallTimeout = nil error, want the server deadline to end it")
+	}
+	// If the server did NOT cancel the in-flight read, scanning all 3 rows
+	// would take ~3*hookSleep (450ms) before the response is even written. A
+	// server-side cutoff at CallTimeout returns close to that instead.
+	if elapsed > 300*time.Millisecond {
+		t.Fatalf("ListAll took %v — the server did not cut off the in-flight read at its %v deadline (ran closer to the full %v of hook sleeps)", elapsed, callTimeout, 3*hookSleep)
 	}
 }
