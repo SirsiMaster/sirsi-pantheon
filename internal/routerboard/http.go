@@ -23,11 +23,25 @@ import (
 
 // Handler serves the router board: the page, the stream, and the one lever.
 type Handler struct {
-	board              *Board
-	dir                string // holds index.html
-	controlToken       string
-	requireControlAuth bool
-	openControlStore   func() (*routerstore.Store, bool, error)
+	board                 *Board
+	dir                   string // holds index.html
+	controlToken          string
+	requireControlAuth    bool
+	requireControlRole    bool
+	controlRoleAuthorizer ControlRoleAuthorizer
+	openControlStore      func() (*routerstore.Store, bool, error)
+}
+
+// NewHandlerWithControlAuthAndRole is the production-facing constructor for
+// a receipt-bound worker plane. The authorizer is supplied by the separately
+// governed issuer/keyring/revocation layer; nil is intentionally fail-closed.
+// The existing constructors remain available for local presentation and
+// explicit tests, where no remote role is claimed.
+func NewHandlerWithControlAuthAndRole(b *Board, dir, token string, authorizer ControlRoleAuthorizer) *Handler {
+	h := NewHandlerWithControlAuth(b, dir, token, true)
+	h.requireControlRole = true
+	h.controlRoleAuthorizer = authorizer
+	return h
 }
 
 func NewHandler(b *Board, dir string) *Handler {
@@ -105,6 +119,10 @@ func (h *Handler) control(w http.ResponseWriter, r *http.Request) {
 	if !h.authorizeControl(w, r, h.requireControlAuth) {
 		return
 	}
+	if err := h.authorizeControlRole(r.Context(), "inspect"); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusForbidden)
+		return
+	}
 	body, version, err := h.board.SnapshotControl()
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
@@ -157,6 +175,10 @@ func (h *Handler) controlAction(w http.ResponseWriter, r *http.Request) {
 		return
 	} else if err != io.EOF {
 		h.writeControlActionFailure(w, http.StatusBadRequest, raw, request.Verb, fmt.Errorf("invalid control action: trailing data: %w", err))
+		return
+	}
+	if err := h.authorizeControlRole(r.Context(), request.Verb); err != nil {
+		h.writeControlActionFailure(w, http.StatusForbidden, raw, request.Verb, err)
 		return
 	}
 	store, owned, err := h.openControlStore()
