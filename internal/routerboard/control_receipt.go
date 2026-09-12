@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 const ControlFailureSchema = "pantheon.worker-control-failure/v1"
@@ -79,6 +80,9 @@ func (r *ControlActionResponse) SealControlActionResponse(requestBody []byte) er
 	if r == nil {
 		return fmt.Errorf("control action receipt: response is nil")
 	}
+	if err := validateRoleReceiptReference(r.RoleReceiptID, r.RoleReceiptSHA256); err != nil {
+		return fmt.Errorf("control action receipt: role receipt reference: %w", err)
+	}
 	requestSum := sha256.Sum256(requestBody)
 	r.RequestSHA256 = hex.EncodeToString(requestSum[:])
 	r.ReceiptSHA256 = ""
@@ -101,6 +105,9 @@ func (r ControlActionResponse) VerifyControlActionResponse(requestBody []byte) e
 	if r.RequestSHA256 == "" || r.ReceiptSHA256 == "" {
 		return fmt.Errorf("control action receipt is incomplete")
 	}
+	if err := validateRoleReceiptReference(r.RoleReceiptID, r.RoleReceiptSHA256); err != nil {
+		return fmt.Errorf("control action receipt role reference: %w", err)
+	}
 	requestSum := sha256.Sum256(requestBody)
 	expectedRequest := hex.EncodeToString(requestSum[:])
 	if subtle.ConstantTimeCompare([]byte(r.RequestSHA256), []byte(expectedRequest)) != 1 {
@@ -116,6 +123,24 @@ func (r ControlActionResponse) VerifyControlActionResponse(requestBody []byte) e
 	actualReceipt := hex.EncodeToString(receiptSum[:])
 	if subtle.ConstantTimeCompare([]byte(expectedReceipt), []byte(actualReceipt)) != 1 {
 		return fmt.Errorf("control action receipt digest mismatch")
+	}
+	return nil
+}
+
+func validateRoleReceiptReference(receiptID, receiptSHA256 string) error {
+	receiptID = strings.TrimSpace(receiptID)
+	receiptSHA256 = strings.TrimSpace(receiptSHA256)
+	if receiptID == "" && receiptSHA256 == "" {
+		return nil
+	}
+	if receiptID == "" || receiptSHA256 == "" {
+		return fmt.Errorf("role receipt id and sha256 must be supplied together")
+	}
+	if len(receiptSHA256) != sha256.Size*2 {
+		return fmt.Errorf("role receipt sha256 must be %d hexadecimal characters", sha256.Size*2)
+	}
+	if _, err := hex.DecodeString(receiptSHA256); err != nil {
+		return fmt.Errorf("role receipt sha256 is not hexadecimal: %w", err)
 	}
 	return nil
 }

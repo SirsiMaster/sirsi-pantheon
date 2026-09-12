@@ -477,6 +477,41 @@ func TestControlActionReceiptRejectsNonCanonicalIdentity(t *testing.T) {
 	}
 }
 
+func TestControlActionReceiptRejectsPartialOrMalformedRoleReference(t *testing.T) {
+	request := []byte(`{"verb":"message","from":"m1","to":"m5","title":"inspect"}`)
+	base := ControlActionResponse{
+		Schema: ControlSchema, Authority: "canonical-routerstore", Verb: "message", ItemID: "item-1",
+	}
+	for name, mutated := range map[string]ControlActionResponse{
+		"id without digest": func() ControlActionResponse {
+			v := base
+			v.RoleReceiptID = "rr-1"
+			return v
+		}(),
+		"digest without id": func() ControlActionResponse {
+			v := base
+			v.RoleReceiptSHA256 = strings.Repeat("a", 64)
+			return v
+		}(),
+		"short digest": func() ControlActionResponse {
+			v := base
+			v.RoleReceiptID, v.RoleReceiptSHA256 = "rr-1", "abcd"
+			return v
+		}(),
+		"non-hex digest": func() ControlActionResponse {
+			v := base
+			v.RoleReceiptID, v.RoleReceiptSHA256 = "rr-1", strings.Repeat("z", 64)
+			return v
+		}(),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := mutated.SealControlActionResponse(request); err == nil {
+				t.Fatal("malformed role receipt reference was sealed")
+			}
+		})
+	}
+}
+
 func TestProtectedControlInspectionRequiresBearerToken(t *testing.T) {
 	store, err := routerstore.Open(t.TempDir() + "/router.db")
 	if err != nil {
