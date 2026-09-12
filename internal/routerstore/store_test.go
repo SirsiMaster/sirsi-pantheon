@@ -622,6 +622,10 @@ func TestFieldFidelityWithWorkItem(t *testing.T) {
 		"lease_token": true, "lease_expires": true, "claimed_by": true, "lease_updated": true,
 		"attempts": true, "idem_key": true, "source_item": true,
 		"failure_class": true, "occurrences": true, "first_seen": true, "last_seen": true,
+		// v21 (rs-32): project/namespace scope is SERVICE-DERIVED from the admitted
+		// wing binding at write time — store-only, never mirrored into work.Item, so
+		// a mutated markdown file cannot forge a row's scope (same axiom-8 rationale).
+		"project_id": true, "router_namespace": true,
 	}
 	for col := range schemaCols {
 		if !mapped[col] && !dispatchContractCols[col] {
@@ -923,4 +927,36 @@ func TestConnEstablishRetriesReadonlyContention(t *testing.T) {
 		t.Error("a readonly-contention error must be retryable at connection-establish, " +
 			"not just at the write-retry layer — this is the exact 2026-08-07 registration-failure class")
 	}
+}
+
+// TestSchemaV21AddsScopeColumns (rs-32a): schema v21 adds project_id +
+// router_namespace to items and tasks (empty groundwork), on a fresh store, and
+// the migration applies cleanly (MaxSupportedSchemaVersion==21). Values stay
+// empty — derivation/backfill is rs-32b.
+func TestSchemaV21AddsScopeColumns(t *testing.T) {
+	if MaxSupportedSchemaVersion() != 21 {
+		t.Fatalf("MaxSupportedSchemaVersion = %d, want 21", MaxSupportedSchemaVersion())
+	}
+	path := filepath.Join(t.TempDir(), "v21.db")
+	s, err := OpenPath(path)
+	if err != nil {
+		t.Fatalf("open (v21 migration must apply cleanly): %v", err)
+	}
+	defer s.Close()
+	if v, err := ReadSchemaVersion(path); err != nil || v != 21 {
+		t.Fatalf("fresh store version = %d (err %v), want 21", v, err)
+	}
+	// Columns must exist and be usable (WHERE 1=0 touches no rows but binds them).
+	if _, e := s.exec(`UPDATE items SET project_id='p', router_namespace='n' WHERE 1=0;`); e != nil {
+		t.Fatalf("items scope columns missing: %v", e)
+	}
+	if _, e := s.exec(`UPDATE tasks SET project_id='p', router_namespace='n' WHERE 1=0;`); e != nil {
+		t.Fatalf("tasks scope columns missing: %v", e)
+	}
+	// Reopen is idempotent (already at v21, applies nothing).
+	s2, e2 := OpenPath(path)
+	if e2 != nil {
+		t.Fatalf("reopen at v21 must be idempotent: %v", e2)
+	}
+	_ = s2.Close()
 }

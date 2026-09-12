@@ -269,6 +269,17 @@ CREATE TABLE IF NOT EXISTS audience_log (
     reason     TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_audience_log_ts ON audience_log(ts);
+-- v21 — Stack Lab wing scope (ADR-062 / rs-32): every durable row carries its
+-- originating admitted wing's project_id + router_namespace. Columns land EMPTY;
+-- values are derived from the admitted wing binding at write time (rs-32b), not
+-- backfilled here. ADD COLUMN IF NOT EXISTS upgrades an existing live ledger and
+-- also equips a fresh one (same idiom as v19 sessions.thread_id).
+ALTER TABLE items ADD COLUMN IF NOT EXISTS project_id       TEXT NOT NULL DEFAULT '';
+ALTER TABLE items ADD COLUMN IF NOT EXISTS router_namespace TEXT NOT NULL DEFAULT '';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS project_id       TEXT NOT NULL DEFAULT '';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS router_namespace TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_items_scope ON items(project_id, router_namespace);
+CREATE INDEX IF NOT EXISTS idx_tasks_scope ON tasks(project_id, router_namespace);
 
 
 -- Which session holds each lease. A side table, not columns on items/tasks:
@@ -479,6 +490,6 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA router TO router_service;
 ALTER DEFAULT PRIVILEGES IN SCHEMA router GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO router_service;
 
 -- ── version — last, so a partial apply never publishes a version it does not have ──
-INSERT INTO schema_version(version, applied_at) VALUES (20, router.now_rfc3339())
-  ON CONFLICT (singleton) DO UPDATE SET version = 20, applied_at = router.now_rfc3339()
-  WHERE schema_version.version < 20;
+INSERT INTO schema_version(version, applied_at) VALUES (21, router.now_rfc3339())
+  ON CONFLICT (singleton) DO UPDATE SET version = 21, applied_at = router.now_rfc3339()
+  WHERE schema_version.version < 21;

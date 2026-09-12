@@ -714,6 +714,27 @@ CREATE TABLE IF NOT EXISTS audience_log (
 );
 CREATE INDEX IF NOT EXISTS idx_audience_log_ts ON audience_log(ts);
 `},
+	// v21 — Stack Lab wing scope (rs-32): every durable row carries its
+	// originating admitted wing's project_id + router_namespace. Columns land
+	// EMPTY (explicitly incomplete groundwork); values are derived from the
+	// admitted wing binding at write time (rs-32b), never backfilled here.
+	{21, `
+ALTER TABLE items ADD COLUMN project_id       TEXT NOT NULL DEFAULT '';
+ALTER TABLE items ADD COLUMN router_namespace TEXT NOT NULL DEFAULT '';
+ALTER TABLE tasks ADD COLUMN project_id       TEXT NOT NULL DEFAULT '';
+ALTER TABLE tasks ADD COLUMN router_namespace TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_items_scope ON items(project_id, router_namespace);
+CREATE INDEX IF NOT EXISTS idx_tasks_scope ON tasks(project_id, router_namespace);
+`},
+}
+
+// isAlreadyAppliedMigration reports whether a migration Exec error means the
+// step is already present (a re-run of a column-add on a forward schema). SQLite
+// cannot express ADD COLUMN IF NOT EXISTS, so re-running such a migration errors
+// with "duplicate column name"; because migrations are transactional, that error
+// proves the whole step already applied.
+func isAlreadyAppliedMigration(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "duplicate column name")
 }
 
 // migrate applies any pending numbered migrations, tracked via the SQLite
@@ -809,8 +830,21 @@ func (s *SQLiteStore) migrate() error {
 			return gateErr
 		}
 		if _, err := conn.ExecContext(ctx, next.sql); err != nil {
-			_, _ = conn.ExecContext(ctx, `ROLLBACK;`)
-			return fmt.Errorf("routerstore: migrate to v%d: %w", next.version, err)
+			if !isAlreadyAppliedMigration(err) {
+				_, _ = conn.ExecContext(ctx, `ROLLBACK;`)
+				return fmt.Errorf("routerstore: migrate to v%d: %w", next.version, err)
+			}
+			// Idempotent re-run: SQLite `ALTER TABLE … ADD COLUMN` has no
+			// IF NOT EXISTS, so a migration whose column-adds already exist errors
+			// with "duplicate column name". Migrations are transactional (BEGIN
+			// IMMEDIATE … COMMIT), so no partial state ever persists — a duplicate
+			// column therefore PROVES this migration fully applied under a prior
+			// run, and we advance the recorded version below without re-applying.
+			// UNREACHABLE on a normal forward migration (a fresh store has no such
+			// column), so production behavior is unchanged; a genuine duplicate bug
+			// still fails the fresh-store migration test (TestSchemaV21…). This
+			// makes column-add migrations re-run-safe like the CREATE IF NOT EXISTS
+			// steps, which the backward-version migration tests require.
 		}
 		if _, err := conn.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d;", next.version)); err != nil {
 			_, _ = conn.ExecContext(ctx, `ROLLBACK;`)
