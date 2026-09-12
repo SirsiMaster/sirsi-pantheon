@@ -1,0 +1,45 @@
+{
+  "schema": "sirsi.stacklab.wing.v1",
+  "id": "stacklab.wing.m1-ra",
+  "owner": "ra",
+  "project_id": "sirsi-pantheon",
+  "router_namespace": "router",
+  "class": "control-plane",
+  "scope": "Router replication, constrained-client parity, worker-plane visibility, and recovery receipts. This wing does not own SNE source or model assets.",
+  "status": "active",
+  "first_gate": "RA-WING-001.G1: host-neutral router-authority receipt and no competing replica proof",
+  "workspace": {
+    "repository_root": "/Users/thekryptodragon/Development/sirsi-pantheon",
+    "writable_roots": [
+      "/Users/thekryptodragon/Development/sirsi-pantheon",
+      "/Users/thekryptodragon/Library/Application Support/Sirsi/RouterBackups/sirsi-pantheon/router"
+    ],
+    "evidence_root": "/Users/thekryptodragon/Development/sirsi-pantheon/docs/evidence/router",
+    "shared_payload_access": "none",
+    "boundary_policy": "default-deny"
+  },
+  "handoffs": {
+    "inbound": "router-receipt-only",
+    "outbound": "router-receipt-only",
+    "allowed_peer_wings": [
+      "stacklab.wing.sne-engine",
+      "stacklab.wing.pantheon.pt-wing-001",
+      "stacklab.wing.io-connect",
+      "stacklab.wing.hardware-estate"
+    ]
+  },
+  "provenance": {
+    "lifecycle_task_id": "ra-wing-router-v1",
+    "component_catalog": "docs/router-service/ROUTER_STACK_LAB_RECIPE.md@6eaa89b4b8cbaa659cdef3d1b85e94ec2b59f851",
+    "receipt_links": [
+      "router:20260911-034655-codex-inference-ra-router-architecture-review-for-sne-and-multi-wing-operation",
+      "router:20260911-034750-codex-inference-ra-router-breaker-evidence-addendum"
+    ]
+  },
+  "mirrors": {
+    "repository": "current",
+    "desktop": "pending",
+    "workspace": "pending"
+  },
+  "next_action": "Register lifecycle task ra-wing-router-v1 and implement project/namespace enforcement plus breaker cause receipts."
+}
