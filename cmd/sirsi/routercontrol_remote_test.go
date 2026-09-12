@@ -319,3 +319,35 @@ func TestExpectedControlRoleReferenceRejectsPartialOrNonCanonicalEnvironment(t *
 		t.Fatalf("accepted non-canonical role expectation: %v", err)
 	}
 }
+
+func TestRemoteControlFailureCanRequireExactRoleReceipt(t *testing.T) {
+	request := []byte(`{"verb":"delegate","agent":"codex","task_id":"t-1","subject":"ship"}`)
+	expectedID := "rr-m1-failure"
+	expectedSHA := strings.Repeat("b", 64)
+	failure := routerboard.ControlActionFailure{
+		Schema: routerboard.ControlFailureSchema, Authority: "canonical-routerstore", Verb: "delegate", Error: "task unavailable",
+		RoleReceiptID: expectedID, RoleReceiptSHA256: expectedSHA,
+	}
+	if err := failure.SealControlActionFailure(request); err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(failure)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateRemoteControlActionFailureWithRole(request, body, expectedID, expectedSHA); err != nil {
+		t.Fatalf("exact failure role receipt was rejected: %v", err)
+	}
+	failure.RoleReceiptID = ""
+	failure.RoleReceiptSHA256 = ""
+	if err := failure.SealControlActionFailure(request); err != nil {
+		t.Fatal(err)
+	}
+	body, err = json.Marshal(failure)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateRemoteControlActionFailureWithRole(request, body, expectedID, expectedSHA); err == nil || !strings.Contains(err.Error(), "role receipt") {
+		t.Fatalf("accepted failure without the expected role receipt: %v", err)
+	}
+}

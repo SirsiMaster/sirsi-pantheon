@@ -204,7 +204,7 @@ func (h *Handler) controlAction(w http.ResponseWriter, r *http.Request) {
 	}
 	store, owned, err := h.openControlStore()
 	if err != nil {
-		h.writeControlActionFailure(w, http.StatusServiceUnavailable, raw, request.Verb, fmt.Errorf("control store unavailable: %w", err))
+		h.writeControlActionFailure(w, http.StatusServiceUnavailable, raw, request.Verb, fmt.Errorf("control store unavailable: %w", err), roleReceipt.Receipt().ReceiptID, roleReceipt.RawSHA256())
 		return
 	}
 	if owned {
@@ -214,7 +214,7 @@ func (h *Handler) controlAction(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	if err != nil {
-		h.writeControlActionFailure(w, http.StatusConflict, raw, request.Verb, err)
+		h.writeControlActionFailure(w, http.StatusConflict, raw, request.Verb, err, roleReceipt.Receipt().ReceiptID, roleReceipt.RawSHA256())
 		return
 	}
 	if roleReceipt.RawSHA256() != "" {
@@ -230,9 +230,16 @@ func (h *Handler) controlAction(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) writeControlActionFailure(w http.ResponseWriter, status int, requestBody []byte, verb string, cause error) {
+func (h *Handler) writeControlActionFailure(w http.ResponseWriter, status int, requestBody []byte, verb string, cause error, roleReference ...string) {
 	failure := ControlActionFailure{
 		Schema: ControlFailureSchema, Authority: "canonical-routerstore", Verb: strings.TrimSpace(verb), Error: cause.Error(),
+	}
+	if len(roleReference) != 0 {
+		if len(roleReference) != 2 {
+			http.Error(w, `{"error":"control action failure role reference is malformed"}`, http.StatusInternalServerError)
+			return
+		}
+		failure.RoleReceiptID, failure.RoleReceiptSHA256 = roleReference[0], roleReference[1]
 	}
 	if err := failure.SealControlActionFailure(requestBody); err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)

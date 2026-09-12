@@ -210,7 +210,7 @@ func sendRemoteControlActionWithRole(ctx context.Context, rawEndpoint, token str
 		return nil, fmt.Errorf("control action response exceeds %d-byte limit", remoteControlBodyLimit)
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		if err := validateRemoteControlActionFailure(body, result); err != nil {
+		if err := validateRemoteControlActionFailureWithRole(body, result, expectedRoleID, expectedRoleSHA256); err != nil {
 			return nil, fmt.Errorf("control action returned HTTP %d with invalid failure receipt: %w", response.StatusCode, err)
 		}
 		var failure routerboard.ControlActionFailure
@@ -226,6 +226,10 @@ func sendRemoteControlActionWithRole(ctx context.Context, rawEndpoint, token str
 }
 
 func validateRemoteControlActionFailure(requestBody, responseBody []byte) error {
+	return validateRemoteControlActionFailureWithRole(requestBody, responseBody, "", "")
+}
+
+func validateRemoteControlActionFailureWithRole(requestBody, responseBody []byte, expectedRoleID, expectedRoleSHA256 string) error {
 	if err := routerboard.ValidateJSONNoDuplicateKeys(responseBody); err != nil {
 		return fmt.Errorf("control action failure JSON is ambiguous: %w", err)
 	}
@@ -251,6 +255,9 @@ func validateRemoteControlActionFailure(requestBody, responseBody []byte) error 
 	}
 	if err := failure.VerifyControlActionFailure(requestBody); err != nil {
 		return err
+	}
+	if err := routerboard.RequireRoleReceiptReference(failure.RoleReceiptID, failure.RoleReceiptSHA256, expectedRoleID, expectedRoleSHA256); err != nil {
+		return fmt.Errorf("control action failure role receipt: %w", err)
 	}
 	return nil
 }

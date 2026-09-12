@@ -16,17 +16,22 @@ const ControlFailureSchema = "pantheon.worker-control-failure/v1"
 // bytes, so a remote worker can distinguish a real router rejection from a
 // detached or replayed error body.
 type ControlActionFailure struct {
-	Schema        string `json:"schema"`
-	Authority     string `json:"authority"`
-	Verb          string `json:"verb,omitempty"`
-	Error         string `json:"error"`
-	RequestSHA256 string `json:"request_sha256"`
-	ReceiptSHA256 string `json:"receipt_sha256,omitempty"`
+	Schema            string `json:"schema"`
+	Authority         string `json:"authority"`
+	Verb              string `json:"verb,omitempty"`
+	Error             string `json:"error"`
+	RequestSHA256     string `json:"request_sha256"`
+	ReceiptSHA256     string `json:"receipt_sha256,omitempty"`
+	RoleReceiptID     string `json:"role_receipt_id,omitempty"`
+	RoleReceiptSHA256 string `json:"role_receipt_sha256,omitempty"`
 }
 
 func (f *ControlActionFailure) SealControlActionFailure(requestBody []byte) error {
 	if f == nil {
 		return fmt.Errorf("control action failure receipt: response is nil")
+	}
+	if err := validateRoleReceiptReference(f.RoleReceiptID, f.RoleReceiptSHA256); err != nil {
+		return fmt.Errorf("control action failure receipt: role receipt reference: %w", err)
 	}
 	requestSum := sha256.Sum256(requestBody)
 	f.RequestSHA256 = hex.EncodeToString(requestSum[:])
@@ -53,6 +58,9 @@ func (f ControlActionFailure) VerifyControlActionFailure(requestBody []byte) err
 	}
 	if f.Error == "" || f.RequestSHA256 == "" || f.ReceiptSHA256 == "" {
 		return fmt.Errorf("control action failure receipt is incomplete")
+	}
+	if err := validateRoleReceiptReference(f.RoleReceiptID, f.RoleReceiptSHA256); err != nil {
+		return fmt.Errorf("control action failure role reference: %w", err)
 	}
 	requestSum := sha256.Sum256(requestBody)
 	expectedRequest := hex.EncodeToString(requestSum[:])
