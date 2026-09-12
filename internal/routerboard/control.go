@@ -53,6 +53,7 @@ var controlCapabilities = []ControlCapability{
 	{Verb: "claim", Command: "sirsi router task claim <agent>", Mutates: true, Description: "Atomically claim work with a fenced lease."},
 	{Verb: "cancel_handback", Command: "sirsi router task release <agent> <task-id>", Mutates: true, Description: "Release leased work with an explicit handback reason."},
 	{Verb: "result_return", Command: "sirsi router task complete <agent> <task-id>", Mutates: true, Description: "Return a result through the fenced task lease."},
+	{Verb: "arm", Command: "sirsi router wake-install <agent>", Mutates: true, Description: "Arm a registered worker wake channel through the canonical router."},
 }
 
 func cloneCapabilities() []ControlCapability {

@@ -134,3 +134,21 @@ func TestControlRoleAuthorizerRejectsReceiptNotBoundToRequestContext(t *testing.
 		t.Fatal("receipt not bound to the request context was accepted")
 	}
 }
+
+func TestArmEndpointRequiresBearerAndRoleBeforeRegistryOrLaunch(t *testing.T) {
+	h := &Handler{controlToken: "token", requireControlAuth: true, requireControlRole: true}
+	mux := http.NewServeMux()
+	h.Register(mux)
+	unauthorized := httptest.NewRecorder()
+	mux.ServeHTTP(unauthorized, httptest.NewRequest(http.MethodGet, "/api/arm?agent=codex", nil))
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized arm status=%d, want %d", unauthorized.Code, http.StatusUnauthorized)
+	}
+	authorized := httptest.NewRequest(http.MethodGet, "/api/arm?agent=codex", nil)
+	authorized.Header.Set("Authorization", "Bearer token")
+	denied := httptest.NewRecorder()
+	mux.ServeHTTP(denied, authorized)
+	if denied.Code != http.StatusForbidden {
+		t.Fatalf("roleless arm status=%d, want %d", denied.Code, http.StatusForbidden)
+	}
+}
