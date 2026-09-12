@@ -68,6 +68,17 @@ func TestHeaderControlRoleReceiptSourceRejectsAuthenticatorByteMismatch(t *testi
 	}
 }
 
+func TestNewHeaderReceiptBoundControlHandlerFailsClosedWithoutAuthenticator(t *testing.T) {
+	handler := NewHeaderReceiptBoundControlHandler(nil, "", "token", ControlRolePolicy{}, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/control", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, req)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status=%d, want %d", response.Code, http.StatusForbidden)
+	}
+}
+
 func TestWithControlRoleReceiptSourceFailsClosedWhenMissing(t *testing.T) {
 	nextCalled := false
 	next := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { nextCalled = true })

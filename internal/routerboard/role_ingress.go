@@ -74,6 +74,14 @@ func NewReceiptBoundControlHandler(b *Board, dir, token string, policy ControlRo
 	return WithControlRoleReceiptSource(handler, source)
 }
 
+// NewHeaderReceiptBoundControlHandler is the canonical M5 composition point
+// for HTTP deployments that transport the external role receipt in the
+// standard header. A nil authenticator deliberately produces a handler that
+// denies every request; it never downgrades to bearer-only control.
+func NewHeaderReceiptBoundControlHandler(b *Board, dir, token string, policy ControlRolePolicy, authenticator ControlRoleReceiptAuthenticator) http.Handler {
+	return NewReceiptBoundControlHandler(b, dir, token, policy, NewHeaderControlRoleReceiptSource(authenticator))
+}
+
 // ContextControlRoleAuthorizer adapts an ingress-bound receipt to the handler's
 // operation callback. It never treats a missing context value as local access.
 func ContextControlRoleAuthorizer(ctx context.Context, _ string) (rolereceipt.AuthenticatedReceipt, error) {
