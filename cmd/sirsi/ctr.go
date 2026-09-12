@@ -122,6 +122,17 @@ func runCtr(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("read router state: %w", err)
 	}
 
+	// Read the authoritative task ledger before any wake pass. A ledger failure
+	// must not be paired with wake mutations based on an incomplete surface.
+	var ledgerAgents []ledger.Agent
+	if snapshot, lerr := ledger.Build(repoRoot, scope, time.Now().UTC(), ledger.DefaultStaleAfter); lerr == nil {
+		ledgerAgents = snapshot.Agents
+	} else {
+		res := buildCtrResult(repoRoot, scope, ns, router.WakePassReport{})
+		res.LedgerError = lerr.Error()
+		return emitCtrResult(res)
+	}
+
 	var wp router.WakePassReport
 	if !ctrNoWake {
 		// The wake-or-declare-unavailable pass. Idempotent: an item already woken
@@ -132,12 +143,20 @@ func runCtr(_ *cobra.Command, args []string) error {
 	}
 
 	res := buildCtrResult(repoRoot, scope, ns, wp)
-	if snapshot, lerr := ledger.Build(repoRoot, scope, time.Now().UTC(), ledger.DefaultStaleAfter); lerr == nil {
-		res.LedgerAgents = snapshot.Agents
-	} else {
-		res.LedgerError = lerr.Error()
+	res.LedgerAgents = ledgerAgents
+	if err := emitCtrResult(res); err != nil {
+		return err
 	}
 
+	if res.PendingTotal > 0 && ctrReconcile {
+		renderReconcile(routerRoot)
+	}
+	return nil
+}
+
+// emitCtrResult preserves the diagnostic surface for every renderer while
+// propagating ledger failures as a nonzero command result.
+func emitCtrResult(res ctrResult) error {
 	if ctrJSON {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -158,19 +177,7 @@ func runCtr(_ *cobra.Command, args []string) error {
 		return ctrResultError(res)
 	}
 	renderCtr(res)
-	if err := ctrResultError(res); err != nil {
-		return err
-	}
-
-	// Local-model-first (A30 Tier-0): with --reconcile, hand the open items to the
-	// on-device model to RECEIVE and RECONCILE before anything escalates to a cloud
-	// thread. The reconciliation is a SCREEN, never a binding verdict; it is
-	// warm-broker-only (never cold-loads a multi-GB model) and time-bounded so a
-	// plain `ctr` stays a fast wake primitive — opt in when you want the triage.
-	if res.PendingTotal > 0 && ctrReconcile {
-		renderReconcile(routerRoot)
-	}
-	return nil
+	return ctrResultError(res)
 }
 
 // ctrResultError makes an incomplete ledger observation fail closed for
