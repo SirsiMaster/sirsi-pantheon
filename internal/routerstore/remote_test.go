@@ -262,15 +262,6 @@ func TestRemoteListAllSessionMintRacesCallerContext(t *testing.T) {
 	}
 }
 
-// TestServerListAllDeadlineEndsAnInFlightRead (SSA review, PR #746): proves
-// the SERVER actually terminates an in-flight ListAll read at its own
-// deadline — not merely that QueryContext receives an already-expired ctx
-// before starting (TestListAllHonorsContext covers that narrower claim).
-// scanRowHook forces determinism: it sleeps well past the server's CallTimeout
-// after the first row is scanned, so the query has demonstrably started
-// returning rows before the deadline fires, then the read must still be cut
-// off — proven by the whole request completing near CallTimeout, not near the
-// sum of the hook's sleeps.
 // TestServerListAllDeadlineEndsAnInFlightRead proves the SERVER actually
 // terminates an in-flight ListAll read at its own deadline (rs-26) — not
 // merely that QueryContext receives an already-expired ctx before starting
