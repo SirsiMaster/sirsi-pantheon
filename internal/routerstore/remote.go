@@ -385,11 +385,20 @@ func (rs *RemoteStore) do(ctx context.Context, method string, args []any, sess *
 // ── methods that cannot be generated ───────────────────────────────────────
 
 // ListAll takes a context, so it is hand-written rather than generated (the
-// stub generator only emits context-free methods). The caller's ctx is honored,
-// but rs.perCall is always applied as a ceiling so the client-side per-call
-// budget the generated call() gave this method is preserved (WithTimeout takes
-// the earlier of the two deadlines). The server injects its own deadline on the
-// read regardless (serve.go), which is the true server-side bound (rs-26).
+// stub generator only emits context-free methods). rs.perCall is always
+// applied as a ceiling so the client-side per-call budget the generated
+// call() gave this method is preserved (WithTimeout takes the earlier of the
+// two deadlines). The server injects its own deadline on the read regardless
+// (serve.go), which is the true server-side bound (rs-26).
+//
+// The caller's ctx is honored through session mint and the HTTP round trip
+// (callCtx → ensureSession → callUnsignedCtx, all ctx-aware) — but NOT
+// through ensureSession's rs.mu.Lock() acquisition itself, which is a plain
+// sync.Mutex and not cancellable. A caller queued behind a concurrent mint
+// under contention cannot be preempted by its own ctx expiring while waiting
+// for that lock (SSA review, PR #748). This is narrower than "unconditionally
+// honored" and is a known, undeferred residual — lock contention, not the
+// RPC-races-an-independent-timeout gap this fix actually closes.
 func (rs *RemoteStore) ListAll(ctx context.Context) ([]Item, error) {
 	ctx, cancel := context.WithTimeout(ctx, rs.perCall)
 	defer cancel()

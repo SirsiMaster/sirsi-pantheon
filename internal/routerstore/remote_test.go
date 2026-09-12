@@ -3,11 +3,13 @@ package routerstore
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -214,16 +216,18 @@ func TestPerCallTimeoutExceedsSpoolWait(t *testing.T) {
 	}
 }
 
-// TestRemoteListAllSessionMintRacesCallerContext (SSA review, PR #746): a
+// TestRemoteListAllSessionMintRacesCallerContext (SSA review, PR #746/#748): a
 // caller's ctx must bound session acquisition, not just the eventual
 // ListAll RPC. Before this fix, ensureSession/callUnsigned built their own
 // context.Background(), so an already-canceled caller ctx still let
 // MintSession run to completion against a slow/unresponsive server instead of
 // failing fast. A plain fast local httptest server can't distinguish "ctx
 // honored" from "ctx ignored" — both return near-instantly — so the mint
-// route is deliberately delayed past both rs.perCall (short, for this test)
-// and the assertion threshold: only a canceled ctx that is ACTUALLY wired into
-// the mint's HTTP request aborts before that delay elapses.
+// route is deliberately delayed (mintDelay = 1s). rs.perCall is set LARGER
+// than mintDelay (5s) so the client's OWN generic call budget cannot be what
+// cuts the mint off first — that would pass for the wrong reason. Only a
+// canceled ctx that is ACTUALLY wired into the mint's HTTP request aborts
+// before mintDelay elapses; the assertion threshold (200ms) is far below both.
 func TestRemoteListAllSessionMintRacesCallerContext(t *testing.T) {
 	backend := openBackendStore(t, filepath.Join(t.TempDir(), "router.db"))
 	t.Cleanup(func() { _ = backend.Close() })
@@ -267,17 +271,36 @@ func TestRemoteListAllSessionMintRacesCallerContext(t *testing.T) {
 // returning rows before the deadline fires, then the read must still be cut
 // off — proven by the whole request completing near CallTimeout, not near the
 // sum of the hook's sleeps.
+// TestServerListAllDeadlineEndsAnInFlightRead proves the SERVER actually
+// terminates an in-flight ListAll read at its own deadline (rs-26) — not
+// merely that QueryContext receives an already-expired ctx before starting
+// (TestListAllHonorsContext covers that narrower claim). This closes SSA's
+// review of the first version of this test (PR #748): the earlier version
+// only checked "err != nil" and an elapsed-time ceiling, which a fast
+// unrelated failure (a mint/auth/query error with no in-flight read at all)
+// would also satisfy — not a proof the read had actually started.
+//
+// scanRowHook is a synchronous time.Sleep, NOT itself context-aware — it
+// cannot be interrupted mid-sleep. database/sql's own ctx-cancellation only
+// takes effect at the NEXT iterator boundary (the next Rows.Next()/Scan)
+// after ctx.Done() fires, so cancellation is bounded by one hook cycle past
+// the deadline, not instantaneous. The elapsed-time assertion reflects that:
+// bounded by roughly one hookSleep beyond callTimeout, nowhere near the sum
+// of all rows' hook sleeps (which is what an uncancelled read would take).
 func TestServerListAllDeadlineEndsAnInFlightRead(t *testing.T) {
 	backend := openBackendStore(t, filepath.Join(t.TempDir(), "router.db"))
 	t.Cleanup(func() { _ = backend.Close() })
 	backend.notifyDir = t.TempDir()
 	for i := 0; i < 3; i++ {
-		if _, err := backend.Send("a", "b", "row", "review", "x"); err != nil {
+		// Distinct titles: Send's id is second-resolution timestamp + slugified
+		// args, so identical calls within the same second collide and upsert
+		// over each other — three "row" sends would silently collapse to one.
+		if _, err := backend.Send("a", "b", fmt.Sprintf("row-%d", i), "review", "x"); err != nil {
 			t.Fatalf("seed row %d: %v", i, err)
 		}
 	}
 	const callTimeout = 40 * time.Millisecond
-	const hookSleep = 150 * time.Millisecond // >> callTimeout, << t.Deadline
+	const hookSleep = 200 * time.Millisecond // >> callTimeout, so the deadline fires mid-sleep on row 1
 	h, err := Handler(backend, ServerOptions{Token: "t0k", CallTimeout: callTimeout, MaxWait: time.Second})
 	if err != nil {
 		t.Fatalf("Handler: %v", err)
@@ -288,19 +311,45 @@ func TestServerListAllDeadlineEndsAnInFlightRead(t *testing.T) {
 	rs.sessionDir = ""
 	rs.perCall = 5 * time.Second // client budget stays generous; the SERVER deadline is what's under test
 
-	scanRowHook = func() { time.Sleep(hookSleep) }
+	var hookCalls atomic.Int32
+	scanRowHook = func() { hookCalls.Add(1); time.Sleep(hookSleep) }
 	t.Cleanup(func() { scanRowHook = nil })
 
 	start := time.Now()
 	_, err = rs.ListAll(context.Background())
 	elapsed := time.Since(start)
+
+	// Proof the read had actually STARTED before the deadline ended it: the
+	// hook must have fired (rows.Next() returned at least one row) — a fast
+	// failure before any row is read (bad session, bad query) would leave
+	// this at zero and prove nothing about in-flight cancellation.
+	if hookCalls.Load() == 0 {
+		t.Fatal("scanRowHook never ran — the read never started, so this proves nothing about cutting off an IN-FLIGHT read")
+	}
 	if err == nil {
 		t.Fatal("ListAll over a server read that outlives CallTimeout = nil error, want the server deadline to end it")
 	}
-	// If the server did NOT cancel the in-flight read, scanning all 3 rows
-	// would take ~3*hookSleep (450ms) before the response is even written. A
-	// server-side cutoff at CallTimeout returns close to that instead.
-	if elapsed > 300*time.Millisecond {
-		t.Fatalf("ListAll took %v — the server did not cut off the in-flight read at its %v deadline (ran closer to the full %v of hook sleeps)", elapsed, callTimeout, 3*hookSleep)
+	// The specific failure mode, not just "some error": a context deadline
+	// (surfaced as plain text over the wire by writeCallErr, since it is not
+	// a registered sentinel — see sentinelErrors in remote.go).
+	if !strings.Contains(err.Error(), "context deadline exceeded") {
+		t.Fatalf("ListAll error = %v, want it to name a context deadline, not an unrelated failure", err)
+	}
+	// Bounded by roughly one hook cycle past the deadline (cancellation takes
+	// effect at the next iterator boundary, not mid-sleep) — NOT anywhere near
+	// scanning all 3 rows uncancelled (3*hookSleep = 600ms).
+	if elapsed > hookSleep+150*time.Millisecond {
+		t.Fatalf("ListAll took %v — wanted roughly one hook cycle (%v) past the %v deadline, not the full %v of an uncancelled 3-row scan", elapsed, hookSleep, callTimeout, 3*hookSleep)
+	}
+
+	// The server-side connection must be released, not stuck mid-transaction —
+	// prove it by making an ordinary, un-delayed call succeed right after.
+	scanRowHook = nil
+	items, err := rs.ListAll(context.Background())
+	if err != nil {
+		t.Fatalf("ListAll after the canceled read failed: %v — the prior cancellation may have left the connection unusable", err)
+	}
+	if len(items) != 3 {
+		t.Fatalf("post-cancellation ListAll returned %d items, want 3 (backend state must be intact too)", len(items))
 	}
 }
