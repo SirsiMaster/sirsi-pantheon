@@ -22,7 +22,18 @@ func TestThreadMigrationIsCeilingAndUpgradesV15(t *testing.T) {
 	if version != 21 {
 		t.Fatalf("fresh schema = %d, want 21", version)
 	}
-	_, err = s.db.Exec(`DROP TABLE threads; PRAGMA user_version=15;`)
+	// Rewind v21's scope columns/indexes too (drop the index before the columns
+	// it references — SQLite errors "error in index ... after drop column"
+	// otherwise), so the faked user_version=15 pairs with a GENUINELY v15
+	// physical schema rather than a v21 schema wearing an old version number.
+	// A forward migration must never see a duplicate-column error from this
+	// fixture (SSA review, PR #745): if it did, migrate() now fails closed
+	// instead of silently committing a partially-applied schema.
+	_, err = s.db.Exec(`DROP TABLE threads;
+		DROP INDEX idx_items_scope; DROP INDEX idx_tasks_scope;
+		ALTER TABLE items DROP COLUMN project_id; ALTER TABLE items DROP COLUMN router_namespace;
+		ALTER TABLE tasks DROP COLUMN project_id; ALTER TABLE tasks DROP COLUMN router_namespace;
+		PRAGMA user_version=15;`)
 	if err != nil {
 		t.Fatal(err)
 	}

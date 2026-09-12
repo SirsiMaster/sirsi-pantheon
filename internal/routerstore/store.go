@@ -728,15 +728,6 @@ CREATE INDEX IF NOT EXISTS idx_tasks_scope ON tasks(project_id, router_namespace
 `},
 }
 
-// isAlreadyAppliedMigration reports whether a migration Exec error means the
-// step is already present (a re-run of a column-add on a forward schema). SQLite
-// cannot express ADD COLUMN IF NOT EXISTS, so re-running such a migration errors
-// with "duplicate column name"; because migrations are transactional, that error
-// proves the whole step already applied.
-func isAlreadyAppliedMigration(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "duplicate column name")
-}
-
 // migrate applies any pending numbered migrations, tracked via the SQLite
 // user_version pragma. Idempotent — safe to call on every Open: a database
 // already at the current version applies nothing.
@@ -830,21 +821,29 @@ func (s *SQLiteStore) migrate() error {
 			return gateErr
 		}
 		if _, err := conn.ExecContext(ctx, next.sql); err != nil {
-			if !isAlreadyAppliedMigration(err) {
-				_, _ = conn.ExecContext(ctx, `ROLLBACK;`)
-				return fmt.Errorf("routerstore: migrate to v%d: %w", next.version, err)
-			}
-			// Idempotent re-run: SQLite `ALTER TABLE … ADD COLUMN` has no
-			// IF NOT EXISTS, so a migration whose column-adds already exist errors
-			// with "duplicate column name". Migrations are transactional (BEGIN
-			// IMMEDIATE … COMMIT), so no partial state ever persists — a duplicate
-			// column therefore PROVES this migration fully applied under a prior
-			// run, and we advance the recorded version below without re-applying.
-			// UNREACHABLE on a normal forward migration (a fresh store has no such
-			// column), so production behavior is unchanged; a genuine duplicate bug
-			// still fails the fresh-store migration test (TestSchemaV21…). This
-			// makes column-add migrations re-run-safe like the CREATE IF NOT EXISTS
-			// steps, which the backward-version migration tests require.
+			// Always roll back on any Exec failure, including "duplicate column
+			// name". A migration's SQL runs as one multi-statement Exec; SQLite
+			// executes each statement in order and stops at the first failure, but
+			// the statements that already ran are NOT automatically undone — only
+			// the surrounding ROLLBACK undoes them. A prior version of this code
+			// treated "duplicate column name" as proof the WHOLE step already
+			// applied and skipped straight to recording the new version without
+			// rolling back; SSA's independent reproduction (PR #745 review) showed
+			// that when only PART of a multi-column migration's columns already
+			// exist, that path committed a partially-applied schema — exactly the
+			// silent-drift failure this gate exists to prevent (rs-32a). There is
+			// no way to tell "duplicate column, safe to skip" apart from "duplicate
+			// column, mid-migration partial state" from the error string alone, so
+			// treat every Exec failure the same: roll back, fail closed, return the
+			// error. Idempotent re-application of a column-add migration (needed by
+			// the backward-version tests that replay an old user_version) must be
+			// achieved by giving those tests a schema that is GENUINELY at that
+			// older version — see TestThreadMigrationIsCeilingAndUpgradesV15 and
+			// TestMigration11ReplacesAgentWideWakeAckTriggers, which now roll back
+			// the v21 scope columns/indexes before faking the older user_version —
+			// never by having production code guess that an error is harmless.
+			_, _ = conn.ExecContext(ctx, `ROLLBACK;`)
+			return fmt.Errorf("routerstore: migrate to v%d: %w", next.version, err)
 		}
 		if _, err := conn.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d;", next.version)); err != nil {
 			_, _ = conn.ExecContext(ctx, `ROLLBACK;`)
