@@ -549,3 +549,22 @@ func TestRelayHTTPClientDialsFreshNoKeepAlive(t *testing.T) {
 		t.Fatalf("relay client must dial fresh each forward (no keep-alive reuse): new connections=%d, want 3", got)
 	}
 }
+
+// TestRelayHTTPClientPreservesProxy (rs-30 review): disabling keep-alives must
+// NOT drop proxy resolution. Cloning the default transport preserves its Proxy
+// function (ProxyFromEnvironment); a zero-value Transport would have Proxy==nil
+// and silently bypass HTTPS_PROXY. (ProxyFromEnvironment caches the env once per
+// process, so this asserts the function is preserved rather than resolving a
+// runtime-set proxy, which t.Setenv cannot reach.)
+func TestRelayHTTPClientPreservesProxy(t *testing.T) {
+	tr, ok := newRelayHTTPClient().Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("relay transport = %T, want *http.Transport", newRelayHTTPClient().Transport)
+	}
+	if !tr.DisableKeepAlives {
+		t.Fatal("relay transport must keep DisableKeepAlives=true")
+	}
+	if tr.Proxy == nil {
+		t.Fatal("relay transport dropped its Proxy function — a configured HTTPS_PROXY would be bypassed; clone the default transport")
+	}
+}

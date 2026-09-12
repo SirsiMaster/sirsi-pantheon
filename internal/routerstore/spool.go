@@ -232,13 +232,18 @@ func writeAtomic(path string, v any) error {
 // the reliability is worth it — and bound the header wait below the overall
 // Timeout so a dead peer fails fast instead of stalling the lane's whole budget.
 func newRelayHTTPClient() *http.Client {
-	return &http.Client{
-		Timeout: 25 * time.Second,
-		Transport: &http.Transport{
-			DisableKeepAlives:     true,
-			ResponseHeaderTimeout: 20 * time.Second,
-		},
-	}
+	// Clone the default transport so proxy resolution (ProxyFromEnvironment /
+	// HTTPS_PROXY) and the other stdlib defaults are PRESERVED — a zero-value
+	// Transport has Proxy==nil and would break proxy-only egress (rs-30 review).
+	// Only the pooling and header-wait are overridden: a long-lived launchd
+	// relay must not reuse pooled keep-alive connections, because a pooled HTTPS
+	// connection that goes half-open (suspected macOS idle/sleep) then hangs the
+	// next forward to the timeout while a fresh dial succeeds. Dialing fresh per
+	// forward prevents that reuse; the relay's volume is low.
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.DisableKeepAlives = true
+	tr.ResponseHeaderTimeout = 20 * time.Second
+	return &http.Client{Timeout: 25 * time.Second, Transport: tr}
 }
 
 // Relay is the host side: it holds the host token and forwards spooled requests.
