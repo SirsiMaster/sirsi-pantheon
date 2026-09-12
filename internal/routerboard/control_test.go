@@ -512,6 +512,26 @@ func TestControlActionReceiptRejectsPartialOrMalformedRoleReference(t *testing.T
 	}
 }
 
+func TestControlEnvelopeRejectsPartialRoleReference(t *testing.T) {
+	b := New("/bin/false", "", "test-build")
+	b.mu.Lock()
+	b.version = 4
+	b.payload = []byte(`{"build":"test-build","generated_at":"2026-09-07T12:00:00Z","evidence":[],"fleet":[],"activity":[],"data_errors":[],"threads":[],"registration_gaps":[],"tasks":[],"board":{},"ledger":{},"counters":{}}`)
+	b.mu.Unlock()
+	body, _, err := b.SnapshotControl()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope ControlEnvelope
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	envelope.RoleReceiptID = "rr-1"
+	if err := envelope.Validate(); err == nil {
+		t.Fatal("partial role reference was accepted")
+	}
+}
+
 func TestProtectedControlInspectionRequiresBearerToken(t *testing.T) {
 	store, err := routerstore.Open(t.TempDir() + "/router.db")
 	if err != nil {

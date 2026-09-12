@@ -1,13 +1,17 @@
 package routerboard
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/rolereceipt"
 )
 
 // ControlSchema is the stable machine-facing envelope used by remote workers.
@@ -30,13 +34,15 @@ type ControlCapability struct {
 // Payload used by the board and SSE stream, so remote inspection cannot drift
 // from the local UI or menubar projection.
 type ControlEnvelope struct {
-	Schema       string              `json:"schema"`
-	Authority    string              `json:"authority"`
-	Revision     uint64              `json:"revision"`
-	GeneratedAt  string              `json:"generated_at"`
-	StateSHA256  string              `json:"state_sha256"`
-	Capabilities []ControlCapability `json:"capabilities"`
-	State        Payload             `json:"state"`
+	Schema            string              `json:"schema"`
+	Authority         string              `json:"authority"`
+	Revision          uint64              `json:"revision"`
+	GeneratedAt       string              `json:"generated_at"`
+	StateSHA256       string              `json:"state_sha256"`
+	RoleReceiptID     string              `json:"role_receipt_id,omitempty"`
+	RoleReceiptSHA256 string              `json:"role_receipt_sha256,omitempty"`
+	Capabilities      []ControlCapability `json:"capabilities"`
+	State             Payload             `json:"state"`
 }
 
 var controlCapabilities = []ControlCapability{
@@ -70,6 +76,9 @@ func (e ControlEnvelope) Validate() error {
 	}
 	if e.Revision == 0 {
 		return errors.New("control envelope revision is zero")
+	}
+	if err := validateRoleReceiptReference(e.RoleReceiptID, e.RoleReceiptSHA256); err != nil {
+		return fmt.Errorf("control envelope role reference: %w", err)
 	}
 	if strings.TrimSpace(e.GeneratedAt) == "" || e.GeneratedAt != e.State.GeneratedAt {
 		return errors.New("control envelope generated_at does not match canonical state")
@@ -115,6 +124,44 @@ func (e ControlEnvelope) Validate() error {
 		}
 	}
 	return nil
+}
+
+// BindControlEnvelopeRoleReceipt adds the exact authenticated role proof to a
+// canonical inspect response. It validates the existing envelope first and
+// revalidates after binding so callers cannot attach proof to malformed state.
+func BindControlEnvelopeRoleReceipt(body []byte, receipt rolereceipt.AuthenticatedReceipt) ([]byte, error) {
+	if receipt.RawSHA256() == "" || strings.TrimSpace(receipt.Receipt().ReceiptID) == "" {
+		return nil, errors.New("control envelope role receipt is unbound")
+	}
+	if err := ValidateJSONNoDuplicateKeys(body); err != nil {
+		return nil, fmt.Errorf("control envelope JSON is ambiguous: %w", err)
+	}
+	var envelope ControlEnvelope
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&envelope); err != nil {
+		return nil, fmt.Errorf("decode control envelope: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return nil, errors.New("control envelope contains multiple JSON values")
+		}
+		return nil, fmt.Errorf("control envelope trailing JSON: %w", err)
+	}
+	if err := envelope.Validate(); err != nil {
+		return nil, err
+	}
+	envelope.RoleReceiptID = receipt.Receipt().ReceiptID
+	envelope.RoleReceiptSHA256 = receipt.RawSHA256()
+	if err := envelope.Validate(); err != nil {
+		return nil, err
+	}
+	out, err := json.Marshal(envelope)
+	if err != nil {
+		return nil, fmt.Errorf("encode control envelope: %w", err)
+	}
+	return out, nil
 }
 
 // SnapshotControl wraps the latest successful board poll. A zero version is

@@ -131,7 +131,8 @@ func (h *Handler) control(w http.ResponseWriter, r *http.Request) {
 	if !h.authorizeControl(w, r, h.requireControlAuth) {
 		return
 	}
-	if _, err := h.authorizeControlRole(r.Context(), "inspect"); err != nil {
+	roleReceipt, err := h.authorizeControlRole(r.Context(), "inspect")
+	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusForbidden)
 		return
 	}
@@ -146,6 +147,13 @@ func (h *Handler) control(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = w.Write([]byte(`{"error":"no poll completed yet"}`))
 		return
+	}
+	if roleReceipt.RawSHA256() != "" {
+		body, err = BindControlEnvelopeRoleReceipt(body, roleReceipt)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, "control snapshot role receipt: "+err.Error()), http.StatusInternalServerError)
+			return
+		}
 	}
 	_, _ = w.Write(body)
 }
