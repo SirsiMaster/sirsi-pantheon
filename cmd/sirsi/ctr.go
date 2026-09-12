@@ -166,14 +166,12 @@ func emitCtrResult(res ctrResult) error {
 		return ctrResultError(res)
 	}
 	if ctrQuiet {
+		if res.LedgerError != "" {
+			fmt.Printf("ctr: task ledger unavailable — %s\n", res.LedgerError)
+			return ctrResultError(res)
+		}
 		fmt.Printf("ctr: %d pending across %d agent(s) · woke %d · watching %d · needs-owner %d\n",
 			res.PendingTotal, res.AgentsPending, len(res.Woke), len(res.AlreadyLive), len(res.NeedsOwner))
-		// D-CTR-1: LedgerError must reach every renderer, including --quiet,
-		// because hooks and shell prompts consume quiet output and an unknown
-		// ledger state should not vanish on the path a machine reads.
-		if res.LedgerError != "" {
-			fmt.Printf("ctr: ledger-error: %s\n", res.LedgerError)
-		}
 		return ctrResultError(res)
 	}
 	renderCtr(res)
@@ -367,6 +365,8 @@ func renderCtr(res ctrResult) {
 	}
 
 	switch {
+	case res.LedgerError != "":
+		fmt.Println("Router status incomplete — task ledger unavailable; no wake was attempted.")
 	case res.PendingTotal == 0:
 		fmt.Println("Router is clear — no items waiting. Nothing to wake.")
 	case ctrNoWake:
