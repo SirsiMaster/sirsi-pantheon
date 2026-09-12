@@ -1,6 +1,9 @@
 package routerboard
 
 import (
+	"bytes"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -8,6 +11,45 @@ import (
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/rolereceipt"
 )
+
+func TestHeaderControlRoleReceiptSourceDelegatesExactBytes(t *testing.T) {
+	receipt := authenticatedRoleReceipt(t)
+	raw, err := json.Marshal(receipt.Receipt())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []byte
+	source := NewHeaderControlRoleReceiptSource(func(candidate []byte) (rolereceipt.AuthenticatedReceipt, error) {
+		got = append([]byte(nil), candidate...)
+		return receipt, nil
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/control", nil)
+	req.Header.Set(ControlRoleReceiptHeader, base64.RawURLEncoding.EncodeToString(raw))
+	gotReceipt, err := source(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, raw) || gotReceipt.RawSHA256() != receipt.RawSHA256() {
+		t.Fatalf("receipt bytes or binding changed: bytes_equal=%t digest=%q want %q", bytes.Equal(got, raw), gotReceipt.RawSHA256(), receipt.RawSHA256())
+	}
+}
+
+func TestHeaderControlRoleReceiptSourceRejectsDuplicateOrMalformedHeader(t *testing.T) {
+	source := NewHeaderControlRoleReceiptSource(func([]byte) (rolereceipt.AuthenticatedReceipt, error) {
+		return authenticatedRoleReceipt(t), nil
+	})
+	duplicate := httptest.NewRequest(http.MethodGet, "/api/control", nil)
+	duplicate.Header.Add(ControlRoleReceiptHeader, "one")
+	duplicate.Header.Add(ControlRoleReceiptHeader, "two")
+	if _, err := source(duplicate); err == nil || !strings.Contains(err.Error(), "exactly one") {
+		t.Fatalf("accepted duplicate role receipt headers: %v", err)
+	}
+	malformed := httptest.NewRequest(http.MethodGet, "/api/control", nil)
+	malformed.Header.Set(ControlRoleReceiptHeader, "not-base64")
+	if _, err := source(malformed); err == nil || !strings.Contains(err.Error(), "decode") {
+		t.Fatalf("accepted malformed role receipt header: %v", err)
+	}
+}
 
 func TestWithControlRoleReceiptSourceFailsClosedWhenMissing(t *testing.T) {
 	nextCalled := false
