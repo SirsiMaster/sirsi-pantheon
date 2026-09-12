@@ -106,3 +106,17 @@ func TestControlRoleAuthorizerRejectsUnboundReceipt(t *testing.T) {
 		t.Fatal("unbound receipt was accepted")
 	}
 }
+
+func TestControlRoleAuthorizerRejectsReceiptForWrongRole(t *testing.T) {
+	receipt := authenticatedRoleReceipt(t)
+	h := &Handler{
+		requireControlRole: true,
+		controlRolePolicy:  ControlRolePolicy{Role: rolereceipt.RouterAuthority},
+		controlRoleAuthorizer: func(context.Context, string) (rolereceipt.AuthenticatedReceipt, error) {
+			return receipt, nil
+		},
+	}
+	if err := h.authorizeControlRole(context.Background(), "inspect"); err == nil {
+		t.Fatal("receipt for the wrong role was accepted")
+	}
+}

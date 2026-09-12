@@ -16,6 +16,12 @@ import (
 // trust root must fail closed rather than become an implicit local role.
 type ControlRoleAuthorizer func(context.Context, string) (rolereceipt.AuthenticatedReceipt, error)
 
+// ControlRolePolicy is the local consumer policy applied after the external
+// trust root authenticates a receipt. Role is normally constrained-client for
+// M1 requests; host, issuer, and key can be pinned when the deployment has
+// those independently governed identities.
+type ControlRolePolicy = rolereceipt.Constraints
+
 func (h *Handler) authorizeControlRole(ctx context.Context, operation string) error {
 	if !h.requireControlRole {
 		return nil
@@ -31,7 +37,7 @@ func (h *Handler) authorizeControlRole(ctx context.Context, operation string) er
 	if err != nil {
 		return fmt.Errorf("control role authorization for %q: %w", operation, err)
 	}
-	if err := granted.Authorizes(operation, time.Now().UTC()); err != nil {
+	if err := granted.AuthorizesWith(operation, time.Now().UTC(), h.controlRolePolicy); err != nil {
 		return fmt.Errorf("control role authorization for %q: %w", operation, err)
 	}
 	return nil

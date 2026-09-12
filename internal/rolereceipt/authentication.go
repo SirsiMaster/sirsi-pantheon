@@ -58,6 +58,14 @@ func (r AuthenticatedReceipt) RawSHA256() string { return r.rawHash }
 // within the receipt's scope and validity window; structural evidence alone
 // never becomes an authorization.
 func (r AuthenticatedReceipt) Authorizes(operation string, now time.Time) error {
+	return r.AuthorizesWith(operation, now, Constraints{})
+}
+
+// AuthorizesWith applies the handler's explicit role/host/issuer policy to the
+// same authenticated receipt while also binding the requested operation and
+// current time. Callers cannot replace the operation or time with values from
+// another receipt because both are supplied by the consumer at use time.
+func (r AuthenticatedReceipt) AuthorizesWith(operation string, now time.Time, constraints Constraints) error {
 	if r.rawHash == "" || r.receipt.ReceiptID == "" {
 		return errors.New("authenticated role receipt is unbound")
 	}
@@ -65,5 +73,7 @@ func (r AuthenticatedReceipt) Authorizes(operation string, now time.Time) error 
 	if operation == "" {
 		return errors.New("authorized operation is required")
 	}
-	return r.receipt.ValidateFor(Constraints{Now: now, RequiredScope: []string{operation}})
+	constraints.Now = now
+	constraints.RequiredScope = []string{operation}
+	return r.receipt.ValidateFor(constraints)
 }

@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/rolereceipt"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
 
@@ -29,6 +30,7 @@ type Handler struct {
 	requireControlAuth    bool
 	requireControlRole    bool
 	controlRoleAuthorizer ControlRoleAuthorizer
+	controlRolePolicy     ControlRolePolicy
 	openControlStore      func() (*routerstore.Store, bool, error)
 }
 
@@ -38,8 +40,18 @@ type Handler struct {
 // The existing constructors remain available for local presentation and
 // explicit tests, where no remote role is claimed.
 func NewHandlerWithControlAuthAndRole(b *Board, dir, token string, authorizer ControlRoleAuthorizer) *Handler {
+	return NewHandlerWithControlAuthAndRolePolicy(b, dir, token, ControlRolePolicy{Role: rolereceipt.ConstrainedClient}, authorizer)
+}
+
+// NewHandlerWithControlAuthAndRolePolicy constructs the receipt-bound worker
+// plane with an explicit consumer policy. The callback remains responsible
+// for external signature/revocation verification; this policy prevents a
+// valid receipt for another role, host, issuer, or key from crossing the M5
+// control boundary.
+func NewHandlerWithControlAuthAndRolePolicy(b *Board, dir, token string, policy ControlRolePolicy, authorizer ControlRoleAuthorizer) *Handler {
 	h := NewHandlerWithControlAuth(b, dir, token, true)
 	h.requireControlRole = true
+	h.controlRolePolicy = policy
 	h.controlRoleAuthorizer = authorizer
 	return h
 }
