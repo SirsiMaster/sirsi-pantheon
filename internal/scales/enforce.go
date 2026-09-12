@@ -98,6 +98,7 @@ type ScanMetrics struct {
 	TotalSize    int64 `json:"total_size"`
 	FindingCount int   `json:"finding_count"`
 	GhostCount   int   `json:"ghost_count"`
+	TBLaneDrift  int   `json:"tb_lane_drift"` // active Thunderbolt lanes in bridge0 or not at MTU 65518 (tblanes.go)
 }
 
 // CollectMetrics runs the necessary scans to gather current metrics.
@@ -124,6 +125,15 @@ func CollectMetrics() (*ScanMetrics, error) {
 	ghosts, err := scanner.Scan(ctx, false) // no sudo
 	if err == nil {
 		metrics.GhostCount = len(ghosts)
+	}
+
+	// Thunderbolt lane hygiene (tblanes.go): cheap, and the one metric that
+	// takes a whole transport down when it drifts. A collection error here is
+	// a real failure to weigh, not a zero.
+	if d, _, err := CollectTBLaneDrift(); err != nil {
+		return nil, fmt.Errorf("thunderbolt lanes: %w", err)
+	} else {
+		metrics.TBLaneDrift = d
 	}
 
 	return metrics, nil
@@ -177,6 +187,8 @@ func evaluateRule(rule PolicyRule, metrics *ScanMetrics) Verdict {
 		actual = int64(metrics.FindingCount)
 	case "ghost_count":
 		actual = int64(metrics.GhostCount)
+	case "tb_lane_drift":
+		actual = int64(metrics.TBLaneDrift)
 	default:
 		return Verdict{
 			RuleID:   rule.ID,

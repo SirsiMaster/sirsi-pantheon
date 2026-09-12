@@ -69,3 +69,15 @@ policies:
         threshold: 0
         severity: fail
         remediation: Ensure clean base images without ghost apps
+
+      - id: tb-lanes-drift
+        name: Thunderbolt lanes drifted
+        description: Every active Thunderbolt port must be out of bridge0 at MTU 65518 (raw Thunderbolt frames fail with EMSGSIZE otherwise)
+        category: network
+        metric: tb_lane_drift
+        operator: gt
+        threshold: 0
+        unit: lanes
+        severity: fail
+        remediation: Run 'sirsi maat scales --fix' (deletem from bridge0, mtu 65518)
+        auto_clean: true
