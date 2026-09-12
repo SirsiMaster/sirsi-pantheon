@@ -382,7 +382,7 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 			return nil, fmt.Errorf("node-status: resolve service store for pending: %w", sErr)
 		}
 		defer func() { _ = store.Close() }()
-		items, lErr := store.ListAll()
+		items, lErr := store.ListAll(context.Background())
 		if lErr != nil {
 			return nil, fmt.Errorf("node-status: list service pending: %w", lErr)
 		}

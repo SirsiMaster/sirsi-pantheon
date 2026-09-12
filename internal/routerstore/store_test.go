@@ -2,6 +2,7 @@ package routerstore
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -50,7 +51,7 @@ func TestOpenAndMigrateIdempotent(t *testing.T) {
 		t.Fatalf("re-Open: %v", err)
 	}
 	defer s2.Close()
-	all, err := s2.ListAll()
+	all, err := s2.ListAll(context.Background())
 	if err != nil {
 		t.Fatalf("ListAll: %v", err)
 	}
@@ -250,7 +251,7 @@ func TestInboxFiltering(t *testing.T) {
 		t.Errorf("all-open inbox = %d, want 3", len(allOpen))
 	}
 
-	all, _ := s.ListAll()
+	all, _ := s.ListAll(context.Background())
 	if len(all) != 4 {
 		t.Errorf("ListAll = %d, want 4", len(all))
 	}
@@ -270,7 +271,7 @@ func TestPutUpsert(t *testing.T) {
 	if got.Title != "v2" {
 		t.Errorf("upsert title = %q, want v2", got.Title)
 	}
-	all, _ := s.ListAll()
+	all, _ := s.ListAll(context.Background())
 	if len(all) != 1 {
 		t.Errorf("upsert produced %d rows, want 1", len(all))
 	}
@@ -330,7 +331,7 @@ func TestBackfillIdempotent(t *testing.T) {
 	if rep2.Inserted != 0 || rep2.Updated != 2 {
 		t.Errorf("second backfill report = %+v, want 0 inserted / 2 updated", rep2)
 	}
-	all, _ := s.ListAll()
+	all, _ := s.ListAll(context.Background())
 	if len(all) != 2 {
 		t.Errorf("after 2 backfills: %d rows, want 2 (no duplicates)", len(all))
 	}
@@ -437,7 +438,7 @@ func TestConcurrentWrites(t *testing.T) {
 		t.Errorf("concurrent write error: %v", err)
 	}
 
-	all, err := s.ListAll()
+	all, err := s.ListAll(context.Background())
 	if err != nil {
 		t.Fatalf("ListAll: %v", err)
 	}
@@ -1109,5 +1110,28 @@ func TestV21MigrationFailsClosedOnPartialDrift(t *testing.T) {
 		if e := probe.QueryRow(`SELECT name FROM sqlite_master WHERE type='index' AND name=?;`, idx).Scan(&name); e != sql.ErrNoRows {
 			t.Errorf("index %s exists after a failed migration (err=%v), want absent", idx, e)
 		}
+	}
+}
+
+// TestListAllHonorsContext proves ListAll's read is actually bound to its
+// caller's ctx (QueryContext), not merely typed to accept one (rs-26, SSA
+// item 20260911-014910: the client-side per-call budget in PR #735 is not the
+// server-side bound). A context canceled before the call is made is the
+// deterministic form of "the deadline already passed" — no timing race, no
+// flaky sleep. If ListAll used db.Query (ignoring ctx) this would pass despite
+// the cancellation, which is exactly the gap the fix closes.
+func TestListAllHonorsContext(t *testing.T) {
+	s, err := OpenPath(":memory:")
+	if err != nil {
+		t.Fatalf("OpenPath: %v", err)
+	}
+	defer s.Close()
+	if err := s.Put(Item{ID: "1", From: "a", To: "b", Title: "x", Status: StatusOpen}); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // already done before ListAll ever touches the driver
+	if _, err := s.ListAll(ctx); err == nil {
+		t.Fatal("ListAll(canceled ctx) = nil error, want context.Canceled (or wrapped) — read is not bound to ctx")
 	}
 }

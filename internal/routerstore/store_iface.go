@@ -50,7 +50,7 @@ type Store interface {
 	Inbox(agent string) ([]Item, error)
 	ItemSession(id string) (string, error)
 	ListAgents() ([]Agent, error)
-	ListAll() ([]Item, error)
+	ListAll(ctx context.Context) ([]Item, error)
 	ListHostTokens() ([]HostToken, error)
 	ListIdentifiers(namespace string) ([]Identifier, error)
 	ListRequirements(owner string) ([]Requirement, error)
