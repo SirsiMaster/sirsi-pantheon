@@ -41,13 +41,15 @@ type ControlActionResponse struct {
 	// ReceiptSHA256 covers this response with that field omitted. Together they
 	// let a remote worker reject a response that was replayed or detached from
 	// its submitted action without creating a second persistence authority.
-	RequestSHA256 string                 `json:"request_sha256"`
-	ReceiptSHA256 string                 `json:"receipt_sha256,omitempty"`
-	ItemID        string                 `json:"item_id,omitempty"`
-	Deduped       bool                   `json:"deduped,omitempty"`
-	TaskID        string                 `json:"task_id,omitempty"`
-	ResultRef     string                 `json:"result_ref,omitempty"`
-	Lease         *routerstore.TaskLease `json:"lease,omitempty"`
+	RequestSHA256     string                 `json:"request_sha256"`
+	ReceiptSHA256     string                 `json:"receipt_sha256,omitempty"`
+	RoleReceiptID     string                 `json:"role_receipt_id,omitempty"`
+	RoleReceiptSHA256 string                 `json:"role_receipt_sha256,omitempty"`
+	ItemID            string                 `json:"item_id,omitempty"`
+	Deduped           bool                   `json:"deduped,omitempty"`
+	TaskID            string                 `json:"task_id,omitempty"`
+	ResultRef         string                 `json:"result_ref,omitempty"`
+	Lease             *routerstore.TaskLease `json:"lease,omitempty"`
 }
 
 type actionField struct {

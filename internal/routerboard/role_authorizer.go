@@ -38,29 +38,29 @@ func AuthenticatedControlRoleFromContext(ctx context.Context) (rolereceipt.Authe
 	return receipt, ok
 }
 
-func (h *Handler) authorizeControlRole(ctx context.Context, operation string) error {
+func (h *Handler) authorizeControlRole(ctx context.Context, operation string) (rolereceipt.AuthenticatedReceipt, error) {
 	if !h.requireControlRole {
-		return nil
+		return rolereceipt.AuthenticatedReceipt{}, nil
 	}
 	operation = strings.TrimSpace(operation)
 	if err := ValidateControlRoleOperation(operation); err != nil {
-		return fmt.Errorf("control role authorization requires an operation: %w", err)
+		return rolereceipt.AuthenticatedReceipt{}, fmt.Errorf("control role authorization requires an operation: %w", err)
 	}
 	if h.controlRoleAuthorizer == nil {
-		return fmt.Errorf("control role authorization is not configured")
+		return rolereceipt.AuthenticatedReceipt{}, fmt.Errorf("control role authorization is not configured")
 	}
 	granted, err := h.controlRoleAuthorizer(ctx, operation)
 	if err != nil {
-		return fmt.Errorf("control role authorization for %q: %w", operation, err)
+		return rolereceipt.AuthenticatedReceipt{}, fmt.Errorf("control role authorization for %q: %w", operation, err)
 	}
 	if bound, ok := AuthenticatedControlRoleFromContext(ctx); ok {
 		if bound.RawSHA256() == "" || granted.RawSHA256() == "" || bound.RawSHA256() != granted.RawSHA256() {
-			return fmt.Errorf("control role authorization for %q: receipt is not bound to the request context", operation)
+			return rolereceipt.AuthenticatedReceipt{}, fmt.Errorf("control role authorization for %q: receipt is not bound to the request context", operation)
 		}
 		granted = bound
 	}
 	if err := granted.AuthorizesWith(operation, time.Now().UTC(), h.controlRolePolicy); err != nil {
-		return fmt.Errorf("control role authorization for %q: %w", operation, err)
+		return rolereceipt.AuthenticatedReceipt{}, fmt.Errorf("control role authorization for %q: %w", operation, err)
 	}
-	return nil
+	return granted, nil
 }

@@ -14,7 +14,7 @@ import (
 
 func TestControlRoleAuthorizerFailsClosedWhenMissing(t *testing.T) {
 	h := &Handler{requireControlRole: true}
-	if err := h.authorizeControlRole(context.Background(), "inspect"); err == nil {
+	if _, err := h.authorizeControlRole(context.Background(), "inspect"); err == nil {
 		t.Fatal("missing role authorizer was accepted")
 	}
 }
@@ -28,7 +28,7 @@ func TestControlRoleAuthorizerBindsExactOperation(t *testing.T) {
 			return authenticatedRoleReceipt(t), nil
 		},
 	}
-	if err := h.authorizeControlRole(context.Background(), " result_return "); err != nil {
+	if _, err := h.authorizeControlRole(context.Background(), " result_return "); err != nil {
 		t.Fatalf("authorizeControlRole: %v", err)
 	}
 	if got != "result_return" {
@@ -102,7 +102,7 @@ func TestControlRoleAuthorizerRejectsUnboundReceipt(t *testing.T) {
 			return rolereceipt.AuthenticatedReceipt{}, nil
 		},
 	}
-	if err := h.authorizeControlRole(context.Background(), "inspect"); err == nil {
+	if _, err := h.authorizeControlRole(context.Background(), "inspect"); err == nil {
 		t.Fatal("unbound receipt was accepted")
 	}
 }
@@ -116,7 +116,7 @@ func TestControlRoleAuthorizerRejectsReceiptForWrongRole(t *testing.T) {
 			return receipt, nil
 		},
 	}
-	if err := h.authorizeControlRole(context.Background(), "inspect"); err == nil {
+	if _, err := h.authorizeControlRole(context.Background(), "inspect"); err == nil {
 		t.Fatal("receipt for the wrong role was accepted")
 	}
 }
@@ -130,7 +130,7 @@ func TestControlRoleAuthorizerRejectsReceiptNotBoundToRequestContext(t *testing.
 		},
 	}
 	ctx := WithAuthenticatedControlRole(context.Background(), receipt)
-	if err := h.authorizeControlRole(ctx, "inspect"); err == nil {
+	if _, err := h.authorizeControlRole(ctx, "inspect"); err == nil {
 		t.Fatal("receipt not bound to the request context was accepted")
 	}
 }

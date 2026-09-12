@@ -131,7 +131,7 @@ func (h *Handler) control(w http.ResponseWriter, r *http.Request) {
 	if !h.authorizeControl(w, r, h.requireControlAuth) {
 		return
 	}
-	if err := h.authorizeControlRole(r.Context(), "inspect"); err != nil {
+	if _, err := h.authorizeControlRole(r.Context(), "inspect"); err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusForbidden)
 		return
 	}
@@ -189,7 +189,8 @@ func (h *Handler) controlAction(w http.ResponseWriter, r *http.Request) {
 		h.writeControlActionFailure(w, http.StatusBadRequest, raw, request.Verb, fmt.Errorf("invalid control action: trailing data: %w", err))
 		return
 	}
-	if err := h.authorizeControlRole(r.Context(), request.Verb); err != nil {
+	roleReceipt, err := h.authorizeControlRole(r.Context(), request.Verb)
+	if err != nil {
 		h.writeControlActionFailure(w, http.StatusForbidden, raw, request.Verb, err)
 		return
 	}
@@ -207,6 +208,10 @@ func (h *Handler) controlAction(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.writeControlActionFailure(w, http.StatusConflict, raw, request.Verb, err)
 		return
+	}
+	if roleReceipt.RawSHA256() != "" {
+		response.RoleReceiptID = roleReceipt.Receipt().ReceiptID
+		response.RoleReceiptSHA256 = roleReceipt.RawSHA256()
 	}
 	if err := response.SealControlActionResponse(raw); err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, "control action receipt: "+err.Error()), http.StatusInternalServerError)
