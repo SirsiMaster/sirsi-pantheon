@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -515,4 +516,56 @@ func TestSpoolRelayBacklogDoesNotSpinAndCancels(t *testing.T) {
 	_ = start
 	close(release) // let the held worker finish before TempDir cleanup
 	time.Sleep(100 * time.Millisecond)
+}
+
+// TestRelayHTTPClientDialsFreshNoKeepAlive proves ONLY that the relay's forward
+// client opens a new connection per request (no keep-alive reuse): three
+// sequential requests open three NEW server connections. That mitigates the
+// SUSPECTED wedge where a long-lived relay's pooled HTTPS connection goes
+// half-open (e.g. macOS idle/sleep) and hangs the next forward — this test does
+// not itself reproduce that idle/sleep causality.
+func TestRelayHTTPClientDialsFreshNoKeepAlive(t *testing.T) {
+	var newConns atomic.Int32
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	srv.Config.ConnState = func(_ net.Conn, st http.ConnState) {
+		if st == http.StateNew {
+			newConns.Add(1)
+		}
+	}
+	srv.Start()
+	defer srv.Close()
+
+	c := newRelayHTTPClient()
+	for i := 0; i < 3; i++ {
+		resp, err := c.Get(srv.URL)
+		if err != nil {
+			t.Fatalf("request %d: %v", i, err)
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}
+	if got := newConns.Load(); got != 3 {
+		t.Fatalf("relay client must dial fresh each forward (no keep-alive reuse): new connections=%d, want 3", got)
+	}
+}
+
+// TestRelayHTTPClientPreservesProxy (rs-30 review): disabling keep-alives must
+// NOT drop proxy resolution. Cloning the default transport preserves its Proxy
+// function (ProxyFromEnvironment); a zero-value Transport would have Proxy==nil
+// and silently bypass HTTPS_PROXY. (ProxyFromEnvironment caches the env once per
+// process, so this asserts the function is preserved rather than resolving a
+// runtime-set proxy, which t.Setenv cannot reach.)
+func TestRelayHTTPClientPreservesProxy(t *testing.T) {
+	tr, ok := newRelayHTTPClient().Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("relay transport = %T, want *http.Transport", newRelayHTTPClient().Transport)
+	}
+	if !tr.DisableKeepAlives {
+		t.Fatal("relay transport must keep DisableKeepAlives=true")
+	}
+	if tr.Proxy == nil {
+		t.Fatal("relay transport dropped its Proxy function — a configured HTTPS_PROXY would be bypassed; clone the default transport")
+	}
 }

@@ -222,6 +222,31 @@ func writeAtomic(path string, v any) error {
 	return nil
 }
 
+// newRelayHTTPClient builds the relay's forward client. A relay is a long-lived
+// launchd process; it MUST NOT pool keep-alive connections to the service. The
+// SUSPECTED failure (rs-30, 2026-09-11): a pooled HTTPS connection goes
+// half-open (e.g. macOS idle/sleep) and the next forward then hangs to the
+// client Timeout ("context deadline exceeded while awaiting headers") while a
+// fresh dial from another process reaches the same healthy service instantly.
+// This prevents pooled-connection reuse to mitigate that suspected wedge — it is
+// not proven incident closure. Dial fresh per forward (the relay's volume is
+// low, so a new handshake is cheap) and bound the header wait below the overall
+// Timeout so a dead peer fails fast instead of stalling the lane's whole budget.
+func newRelayHTTPClient() *http.Client {
+	// Clone the default transport so proxy resolution (ProxyFromEnvironment /
+	// HTTPS_PROXY) and the other stdlib defaults are PRESERVED — a zero-value
+	// Transport has Proxy==nil and would break proxy-only egress (rs-30 review).
+	// Only the pooling and header-wait are overridden: a long-lived launchd
+	// relay must not reuse pooled keep-alive connections, because a pooled HTTPS
+	// connection that goes half-open (suspected macOS idle/sleep) then hangs the
+	// next forward to the timeout while a fresh dial succeeds. Dialing fresh per
+	// forward prevents that reuse; the relay's volume is low.
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.DisableKeepAlives = true
+	tr.ResponseHeaderTimeout = 20 * time.Second
+	return &http.Client{Timeout: 25 * time.Second, Transport: tr}
+}
+
 // Relay is the host side: it holds the host token and forwards spooled requests.
 type Relay struct {
 	Spool  string
@@ -245,7 +270,7 @@ type Relay struct {
 // its response file is written atomically; stale files are swept with a log line.
 func (rl *Relay) Serve(ctx context.Context) error {
 	if rl.Client == nil {
-		rl.Client = &http.Client{Timeout: 25 * time.Second}
+		rl.Client = newRelayHTTPClient()
 	}
 	if rl.Log == nil {
 		rl.Log = slog.Default()
