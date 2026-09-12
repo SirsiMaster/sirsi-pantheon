@@ -13,8 +13,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/SirsiMaster/sirsi-pantheon/internal/routerboard"
 )
 
 const Schema = "pantheon.role-receipt/v1"
@@ -82,7 +80,7 @@ func Parse(body []byte) (Receipt, error) {
 	if len(body) == 0 {
 		return Receipt{}, errors.New("role receipt is empty")
 	}
-	if err := routerboard.ValidateJSONNoDuplicateKeys(body); err != nil {
+	if err := validateJSONNoDuplicateKeys(body); err != nil {
 		return Receipt{}, fmt.Errorf("role receipt JSON is ambiguous: %w", err)
 	}
 	var receipt Receipt
@@ -102,6 +100,80 @@ func Parse(body []byte) (Receipt, error) {
 		return Receipt{}, err
 	}
 	return receipt, nil
+}
+
+// validateJSONNoDuplicateKeys is kept local so the role-receipt package can
+// be consumed by routerboard without an import cycle. Structural parsing and
+// duplicate-key rejection remain part of the same closed receipt boundary.
+func validateJSONNoDuplicateKeys(body []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
+	if err := walkJSONValue(decoder); err != nil {
+		return fmt.Errorf("invalid role receipt JSON: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return errors.New("role receipt contains multiple JSON values")
+		}
+		return fmt.Errorf("role receipt trailing JSON: %w", err)
+	}
+	return nil
+}
+
+func walkJSONValue(decoder *json.Decoder) error {
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	delim, isDelim := token.(json.Delim)
+	if !isDelim {
+		return nil
+	}
+	switch delim {
+	case '{':
+		seen := map[string]struct{}{}
+		for decoder.More() {
+			key, err := decoder.Token()
+			if err != nil {
+				return err
+			}
+			name, ok := key.(string)
+			if !ok {
+				return errors.New("role receipt object key is not a string")
+			}
+			if _, exists := seen[name]; exists {
+				return fmt.Errorf("role receipt duplicate object key %q", name)
+			}
+			seen[name] = struct{}{}
+			if err := walkJSONValue(decoder); err != nil {
+				return err
+			}
+		}
+		end, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		if end != json.Delim('}') {
+			return errors.New("role receipt object did not terminate")
+		}
+	case '[':
+		for decoder.More() {
+			if err := walkJSONValue(decoder); err != nil {
+				return err
+			}
+		}
+		end, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		if end != json.Delim(']') {
+			return errors.New("role receipt array did not terminate")
+		}
+	default:
+		return fmt.Errorf("role receipt unexpected delimiter %q", delim)
+	}
+	return nil
 }
 
 func (r Receipt) ValidateStructural() error {

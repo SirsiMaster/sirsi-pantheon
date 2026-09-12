@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 )
 
 // Authenticator is the external trust-root boundary. The Pantheon parser does
@@ -50,3 +52,18 @@ func (r AuthenticatedReceipt) Receipt() Receipt { return r.receipt }
 
 // RawSHA256 identifies the exact bytes that the external trust root accepted.
 func (r AuthenticatedReceipt) RawSHA256() string { return r.rawHash }
+
+// Authorizes rechecks the authenticated receipt at the point of control-plane
+// use. The zero value is deliberately invalid, and the operation must remain
+// within the receipt's scope and validity window; structural evidence alone
+// never becomes an authorization.
+func (r AuthenticatedReceipt) Authorizes(operation string, now time.Time) error {
+	if r.rawHash == "" || r.receipt.ReceiptID == "" {
+		return errors.New("authenticated role receipt is unbound")
+	}
+	operation = strings.TrimSpace(operation)
+	if operation == "" {
+		return errors.New("authorized operation is required")
+	}
+	return r.receipt.ValidateFor(Constraints{Now: now, RequiredScope: []string{operation}})
+}
