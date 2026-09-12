@@ -2,7 +2,9 @@ package routerboard
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -53,8 +55,12 @@ func NewHeaderControlRoleReceiptSource(authenticator ControlRoleReceiptAuthentic
 		if err != nil {
 			return rolereceipt.AuthenticatedReceipt{}, fmt.Errorf("authenticate control role receipt header: %w", err)
 		}
+		sum := sha256.Sum256(raw)
 		if receipt.RawSHA256() == "" {
 			return rolereceipt.AuthenticatedReceipt{}, errors.New("control role receipt authenticator returned an unbound receipt")
+		}
+		if receipt.RawSHA256() != hex.EncodeToString(sum[:]) {
+			return rolereceipt.AuthenticatedReceipt{}, errors.New("control role receipt authenticator returned a receipt for different bytes")
 		}
 		return receipt, nil
 	}

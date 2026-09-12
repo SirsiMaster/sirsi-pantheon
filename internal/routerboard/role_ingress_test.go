@@ -51,6 +51,23 @@ func TestHeaderControlRoleReceiptSourceRejectsDuplicateOrMalformedHeader(t *test
 	}
 }
 
+func TestHeaderControlRoleReceiptSourceRejectsAuthenticatorByteMismatch(t *testing.T) {
+	receipt := authenticatedRoleReceipt(t)
+	raw, err := json.Marshal(receipt.Receipt())
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw = append(raw, ' ')
+	source := NewHeaderControlRoleReceiptSource(func([]byte) (rolereceipt.AuthenticatedReceipt, error) {
+		return receipt, nil
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/control", nil)
+	req.Header.Set(ControlRoleReceiptHeader, base64.RawURLEncoding.EncodeToString(raw))
+	if _, err := source(req); err == nil || !strings.Contains(err.Error(), "different bytes") {
+		t.Fatalf("accepted authenticator result bound to different bytes: %v", err)
+	}
+}
+
 func TestWithControlRoleReceiptSourceFailsClosedWhenMissing(t *testing.T) {
 	nextCalled := false
 	next := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { nextCalled = true })
