@@ -670,3 +670,22 @@ func TestWakeChildEnvNeverInheritsLauncherIdentity(t *testing.T) {
 		t.Fatalf("child must not keep the launcher's thread with its own agent, got SIRSI_THREAD_ID=%q", v)
 	}
 }
+
+// TestWakePassFailsClosedOnBrokenServiceStore (rs-33 M0b): under store-wake the
+// service is authoritative. If it cannot be opened, WakePass MUST return an
+// error — never a silent empty (no-op) wake that reads as "nothing to wake" over
+// a real backlog during a service outage/auth failure. (The thread-load stage
+// already fails closed on the same resolution; the item-open guard is
+// defense-in-depth so the guarantee survives if that stage is ever made
+// tolerant.)
+func TestWakePassFailsClosedOnBrokenServiceStore(t *testing.T) {
+	root := wakeTestRoot(t)
+	t.Setenv(routercfg.StoreWakeEnv, "1")
+	t.Setenv("SIRSI_ROUTER_DB", "")
+	t.Setenv("SIRSI_ROUTER_URL", "https://router.invalid.test") // URL + empty token → Resolve errors, no network
+	t.Setenv("SIRSI_ROUTER_TOKEN", "")
+
+	if _, err := WakePass(root, time.Now().UTC()); err == nil {
+		t.Fatal("WakePass under store-wake must FAIL CLOSED when the service store can't be opened, not report an empty wake")
+	}
+}
