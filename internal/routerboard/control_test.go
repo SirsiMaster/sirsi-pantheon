@@ -503,6 +503,21 @@ func TestControlActionReceiptRejectsPartialOrMalformedRoleReference(t *testing.T
 			v.RoleReceiptID, v.RoleReceiptSHA256 = "rr-1", strings.Repeat("z", 64)
 			return v
 		}(),
+		"uppercase digest": func() ControlActionResponse {
+			v := base
+			v.RoleReceiptID, v.RoleReceiptSHA256 = "rr-1", strings.Repeat("A", 64)
+			return v
+		}(),
+		"whitespace": func() ControlActionResponse {
+			v := base
+			v.RoleReceiptID, v.RoleReceiptSHA256 = " rr-1", strings.Repeat("a", 64)
+			return v
+		}(),
+		"control character id": func() ControlActionResponse {
+			v := base
+			v.RoleReceiptID, v.RoleReceiptSHA256 = "rr-\n1", strings.Repeat("a", 64)
+			return v
+		}(),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := mutated.SealControlActionResponse(request); err == nil {

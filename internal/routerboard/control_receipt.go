@@ -128,16 +128,31 @@ func (r ControlActionResponse) VerifyControlActionResponse(requestBody []byte) e
 }
 
 func validateRoleReceiptReference(receiptID, receiptSHA256 string) error {
+	originalID, originalSHA256 := receiptID, receiptSHA256
 	receiptID = strings.TrimSpace(receiptID)
 	receiptSHA256 = strings.TrimSpace(receiptSHA256)
 	if receiptID == "" && receiptSHA256 == "" {
 		return nil
 	}
+	if originalID != receiptID || originalSHA256 != receiptSHA256 {
+		return fmt.Errorf("role receipt id and sha256 must not contain surrounding whitespace")
+	}
 	if receiptID == "" || receiptSHA256 == "" {
 		return fmt.Errorf("role receipt id and sha256 must be supplied together")
 	}
+	if len(receiptID) > 256 {
+		return fmt.Errorf("role receipt id exceeds 256 bytes")
+	}
+	for _, character := range receiptID {
+		if character < 0x20 || character == 0x7f {
+			return fmt.Errorf("role receipt id contains a control character")
+		}
+	}
 	if len(receiptSHA256) != sha256.Size*2 {
 		return fmt.Errorf("role receipt sha256 must be %d hexadecimal characters", sha256.Size*2)
+	}
+	if receiptSHA256 != strings.ToLower(receiptSHA256) {
+		return fmt.Errorf("role receipt sha256 must use lowercase hexadecimal")
 	}
 	if _, err := hex.DecodeString(receiptSHA256); err != nil {
 		return fmt.Errorf("role receipt sha256 is not hexadecimal: %w", err)
