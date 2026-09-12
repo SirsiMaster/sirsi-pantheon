@@ -75,7 +75,7 @@ func TestRegistryWakeCoverage(t *testing.T) {
 	}
 }
 
-func TestCodexInferenceNeverUsesCLISpawnWake(t *testing.T) {
+func TestCodexInferenceUsesConfiguredLaunchAgentWake(t *testing.T) {
 	raw, err := os.ReadFile("../../.agents/idea-router/agents.json")
 	if err != nil {
 		t.Fatalf("read agent registry: %v", err)
@@ -88,8 +88,8 @@ func TestCodexInferenceNeverUsesCLISpawnWake(t *testing.T) {
 	if !ok {
 		t.Fatal("codex-inference registry entry missing")
 	}
-	if got := cfg.WakeMechanism(); got != WakeNone {
-		t.Fatalf("codex-inference registry wake = %q, want %q; live Codex tasks use thread-scoped app automation and must never fall back to cli-spawn", got, WakeNone)
+	if got := cfg.WakeMechanism(); got != WakeLaunchAgent {
+		t.Fatalf("codex-inference registry wake = %q, want %q; the current consumer is an explicit launchagent pull-loop", got, WakeLaunchAgent)
 	}
 }
 

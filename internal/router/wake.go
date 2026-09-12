@@ -509,8 +509,12 @@ func WakePassFiltered(routerRoot string, now time.Time, allow func(work.Item) bo
 		}
 
 		if !health.Ready {
-			// Idempotent (same reason as the armed branch): only write on change.
-			if item.WakeStatus != WakeStatusUnavailable {
+			// Preserve idempotence while refreshing a stale diagnostic. The
+			// status can remain unavailable even when the readiness cause changes
+			// (for example, an old "agent not registered" annotation after the
+			// registry is loaded but its consumer is still unready). Comparing the
+			// error prevents stale wake_error text from surviving indefinitely.
+			if item.WakeStatus != WakeStatusUnavailable || item.WakeError != health.Detail {
 				setWake(item.ID, work.WakeAnnotation{Status: WakeStatusUnavailable, Error: health.Detail})
 			}
 			rep.Unavailable = append(rep.Unavailable, WakeOutcome{ItemID: item.ID, AgentID: agentID, Detail: health.Detail})

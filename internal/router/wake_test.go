@@ -264,6 +264,30 @@ func TestWakePassSharedFailureAnnotatesEveryItem(t *testing.T) {
 	}
 }
 
+func TestWakePassRefreshesChangedUnavailableReason(t *testing.T) {
+	agent := AgentConfig{ID: "muted-refresh", Type: "worker", Wake: WakeConfig{Mechanism: WakeNone}}
+	root := wakeTestRoot(t, agent)
+	id := sendItem(t, root, agent.ID, "refresh-unavailable-reason")
+	if err := work.SetWake(root, id, work.WakeAnnotation{
+		Status: WakeStatusUnavailable,
+		Error:  "stale registry diagnostic",
+	}); err != nil {
+		t.Fatalf("seed stale wake annotation: %v", err)
+	}
+
+	if _, err := WakePass(root, time.Now().UTC()); err != nil {
+		t.Fatalf("WakePass: %v", err)
+	}
+	got := wakeStatusOf(t, root, id)
+	if got.WakeStatus != WakeStatusUnavailable {
+		t.Fatalf("wake status = %q, want %q", got.WakeStatus, WakeStatusUnavailable)
+	}
+	want := "wake disabled (mechanism: none)"
+	if got.WakeError != want {
+		t.Fatalf("wake error = %q, want refreshed diagnostic %q", got.WakeError, want)
+	}
+}
+
 // The deadline must actually fire and kill a child that would otherwise block
 // forever — the whole point of the fix. Drives a real blocking process against a
 // shortened bound: if runBounded reverted to unbounded exec.Command this hangs
