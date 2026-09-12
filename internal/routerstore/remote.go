@@ -167,7 +167,7 @@ func NewRemoteStore(base, token string) *RemoteStore {
 		base:       strings.TrimRight(base, "/"),
 		token:      token,
 		client:     client,
-		perCall:    35 * time.Second, // CLIENT-side call budget. Must exceed the 30s spool wait, or it cancels a spool round-trip before the relay answers; the old 5s also canceled a warm ~3-4s full-ledger ListAll outright (SSA 2026-09-11, confirmed by a client negative control). This bounds only the CLIENT; the server does not yet cancel an in-flight ListAll (no ctx on that read — ledger rs-26).
+		perCall:    35 * time.Second, // CLIENT-side call budget. Must exceed the 30s spool wait, or it cancels a spool round-trip before the relay answers; the old 5s also canceled a warm ~3-4s full-ledger ListAll outright (SSA 2026-09-11, confirmed by a client negative control). ListAll's own QueryContext is now server-bound too (rs-26, serve.go's per-request timeout), so this ceiling and the server's deadline both apply. A LOCAL SQLiteStore's ExportMarkdown, by contrast, has no server injecting a deadline — its context.Background() bounds nothing.
 		host:       host,
 		agent:      agent,
 		threadID:   threadID,
@@ -205,9 +205,17 @@ func RuntimeHash() string {
 	return runtimeHash
 }
 
-// ensureSession returns the cached session or mints one. The on-disk cache is
-// keyed by agent and validated against the current runtime hash.
-func (rs *RemoteStore) ensureSession() (Session, error) {
+// ensureSession returns the cached session or mints one, bounding the mint
+// RPC by ctx (SSA review, PR #746) so a caller whose deadline already passed
+// (or is about to) fails fast on the mint instead of racing an unrelated
+// independent timeout. The cache lookup itself is in-memory/local-disk and not
+// worth threading ctx through. rs.mu still serializes concurrent callers with
+// a plain sync.Mutex — that acquisition is not itself ctx-cancellable, but the
+// critical section it guards is now bounded by ctx, which is what SSA's
+// reproduction actually exercised (a pre-canceled mint call running to its own
+// full timeout, not lock contention). The on-disk cache is keyed by agent and
+// validated against the current runtime hash.
+func (rs *RemoteStore) ensureSession(ctx context.Context) (Session, error) {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
 	if rs.session.ID != "" {
@@ -227,7 +235,7 @@ func (rs *RemoteStore) ensureSession() (Session, error) {
 	if rs.threadID != "" {
 		mintMethod, mintArgs = "MintSessionForThread", []any{rs.host, rs.agent, rs.runtime, rs.threadID}
 	}
-	if err := rs.callUnsigned(mintMethod, mintArgs, &minted); err != nil {
+	if err := rs.callUnsignedCtx(ctx, mintMethod, mintArgs, &minted); err != nil {
 		return Session{}, fmt.Errorf("routerstore: mint session: %w", err)
 	}
 	rs.session = minted
@@ -268,7 +276,7 @@ func (rs *RemoteStore) call(method string, args []any, outs ...any) error {
 }
 
 func (rs *RemoteStore) callCtx(ctx context.Context, method string, args []any, outs ...any) error {
-	sess, err := rs.ensureSession()
+	sess, err := rs.ensureSession(ctx)
 	if err != nil {
 		return err
 	}
@@ -276,16 +284,31 @@ func (rs *RemoteStore) callCtx(ctx context.Context, method string, args []any, o
 	if errors.Is(err, ErrSessionUnknown) || errors.Is(err, ErrSessionRevoked) {
 		// One re-mint, then surface the error: a revoked runtime keeps failing.
 		rs.dropSession()
-		if sess2, e := rs.ensureSession(); e == nil {
+		if sess2, e := rs.ensureSession(ctx); e == nil {
 			return rs.do(ctx, method, args, &sess2, outs...)
 		}
 	}
 	return err
 }
 
-// callUnsigned is MintSession's path: host token only.
+// callUnsigned is MintSession's path: host token only, no caller ctx (used
+// directly by the context-free MintSessionForThread interface method — the
+// Store interface predates ctx-taking methods). It gets its own perCall
+// budget, same as call().
 func (rs *RemoteStore) callUnsigned(method string, args []any, outs ...any) error {
 	ctx, cancel := context.WithTimeout(context.Background(), rs.perCall)
+	defer cancel()
+	return rs.callUnsignedCtx(ctx, method, args, outs...)
+}
+
+// callUnsignedCtx is callUnsigned's ctx-aware twin, used by ensureSession so a
+// session mint triggered by a ctx-taking call (ListAll) actually races the
+// caller's deadline instead of an independent one (SSA review, PR #746: a
+// pre-canceled ListAll still ran MintSession to completion on its own timeout
+// because ensureSession/callUnsigned built context.Background() internally).
+// rs.perCall is still applied as a ceiling, same reasoning as ListAll.
+func (rs *RemoteStore) callUnsignedCtx(ctx context.Context, method string, args []any, outs ...any) error {
+	ctx, cancel := context.WithTimeout(ctx, rs.perCall)
 	defer cancel()
 	return rs.do(ctx, method, args, nil, outs...)
 }

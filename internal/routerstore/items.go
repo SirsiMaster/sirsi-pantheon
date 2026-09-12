@@ -240,10 +240,24 @@ func scanItem(scan func(dest ...any) error) (Item, error) {
 	return it, err
 }
 
+// scanRowHook runs once per row scanned by scanItems, immediately after
+// rows.Next() succeeds. Nil in production; test-only, so a deterministic
+// server-side-deadline test (TestServerListAllDeadlineEndsAnInFlightRead) can
+// force an in-flight read to still be running when ctx expires, instead of
+// racing a timer against a small in-memory table. Like afterTaskReadHook
+// (store.go), this is a bare var rather than a mutex-guarded accessor (Rule
+// A21): it is set once, serially, before the single request under test is
+// sent, and the TCP round-trip carrying that request is itself a
+// happens-before edge for the goroutine that reads it.
+var scanRowHook func()
+
 // scanItems drains a *sql.Rows of item columns into a slice.
 func scanItems(rows *sql.Rows) ([]Item, error) {
 	var items []Item
 	for rows.Next() {
+		if scanRowHook != nil {
+			scanRowHook()
+		}
 		it, err := scanItem(rows.Scan)
 		if err != nil {
 			return nil, fmt.Errorf("routerstore: scan: %w", err)
