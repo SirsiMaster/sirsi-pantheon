@@ -1,0 +1,141 @@
+{
+  "work_item_id": "maat-pantheon-contract-20260911",
+  "agent_id": "sirsi-software-admin",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "blocked",
+  "classification": "platform-foundation",
+  "canon_read": [
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-09-11T06:42:18.807564+00:00",
+      "notes": ""
+    },
+    {
+      "path": "AGENTS.md",
+      "role": "agent-law",
+      "read_at": "2026-09-11T06:42:18.807564+00:00",
+      "notes": ""
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-09-11T06:42:18.807564+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "role": "architecture",
+      "read_at": "2026-09-11T06:42:18.807564+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-09-11T06:42:18.807564+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-09-11T06:42:18.807564+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-09-11T06:42:18.807564+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/RELEASE_SIGNING.md",
+      "role": "operational-release",
+      "read_at": "2026-09-11T06:42:18.807564+00:00",
+      "notes": ""
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "section": "8, 10, 15, 18",
+      "claim": "Converged duplicate drafts onto codex-pantheon sole contract; SSA path is a supersession pointer. Runtime and native Workspace remain pending.",
+      "files_changed": [
+        "docs/architecture/MAAT_PANTHEON_FAILURE_MEMORY_CONTRACT.md",
+        "docs/contracts/PANTHEON_MAAT_FAILURE_MEMORY_CONTRACT.md"
+      ],
+      "evidence": [
+        "/Users/thekryptodragon/.sirsi/reviews/software-admin-20260911/maat-contract/verification.json",
+        "/Users/thekryptodragon/.sirsi/reviews/software-admin-20260911/maat-contract/convergence-verification.json"
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "Contract names Mac operator, recurrent failure workflow, value and measurable scope tests. No launch claim.",
+    "design": "Shared explanation, empty/loading/unverified/failure/recovery semantics specified; UI implementation not part of contract delivery.",
+    "technical": "Eight scope rows and precise signature, envelope, evidence and admission requirements; SNE v1 reader compatibility based on retained source. Executable integration not implemented by this contract artifact.",
+    "operational": "Existing operation controllers remain owners; crash recovery and support privacy required. Independent review and implementation qualification pending.",
+    "narrative": "Sole authority docs/contracts/PANTHEON_MAAT_FAILURE_MEMORY_CONTRACT.md; former SSA path explicitly superseded. Existing Desktop entry reproduces owner contract with publication status header. Workspace pending."
+  },
+  "verification": [
+    {
+      "name": "go tests",
+      "command": "go test ./...",
+      "status": "not-run",
+      "evidence": "Contract-only artifact: full product verification not executed; see /Users/thekryptodragon/.sirsi/reviews/software-admin-20260911/maat-contract/verification.json"
+    },
+    {
+      "name": "go vet",
+      "command": "go vet ./...",
+      "status": "not-run",
+      "evidence": "Contract-only artifact: full product verification not executed; see /Users/thekryptodragon/.sirsi/reviews/software-admin-20260911/maat-contract/verification.json"
+    },
+    {
+      "name": "dashboard SNE integration",
+      "command": "go test ./internal/dashboard ./internal/sne ./internal/snemodels",
+      "status": "not-run",
+      "evidence": "Contract-only artifact: full product verification not executed; see /Users/thekryptodragon/.sirsi/reviews/software-admin-20260911/maat-contract/verification.json"
+    },
+    {
+      "name": "completion gate",
+      "command": "python3 /Users/thekryptodragon/Development/tools/agent_completion_gate.py validate --repo . --proof <proof>",
+      "status": "not-run",
+      "evidence": "Contract-only artifact: full product verification not executed; see /Users/thekryptodragon/.sirsi/reviews/software-admin-20260911/maat-contract/verification.json"
+    },
+    {
+      "name": "contract and mirror",
+      "command": "Local link resolution and SHA-256 byte equality",
+      "status": "pass",
+      "evidence": "/Users/thekryptodragon/.sirsi/reviews/software-admin-20260911/maat-contract/verification.json"
+    },
+    {
+      "name": "authority convergence",
+      "command": "SHA256 identity and exact Desktop body comparison",
+      "status": "pass",
+      "evidence": "/Users/thekryptodragon/.sirsi/reviews/software-admin-20260911/maat-contract/convergence-verification.json"
+    }
+  ],
+  "working_status": {
+    "environment": "Shared local Pantheon checkout; documentation only",
+    "how_verified": "Read SNE policy and v1 producer, resolve links and compare Desktop bytes",
+    "observed_result": "Owner contract a2dd423f committed verbatim in 7bae1ec40; SSA draft withdrawn; Desktop body exact; review and implementation pending.",
+    "verified_at": "2026-09-11T06:50:49.031790+00:00"
+  },
+  "handoffs": [
+    {
+      "from": "sirsi-software-admin",
+      "to": "codex-pantheon",
+      "router_item": "20260911-065015-sirsi-software-admin-codex-pantheon-one-maat-contract-your-a2dd423f-preserved-ssa-draft-supersed",
+      "status": "delivered; consolidate implementation ledger"
+    },
+    {
+      "from": "sirsi-software-admin",
+      "to": "claude-pantheon",
+      "router_item": "20260911-065015-sirsi-software-admin-claude-pantheon-maat-review-convergence-sole-owner-contract-a2dd423f-ssa-dra",
+      "status": "delivered; review sole owner contract"
+    }
+  ],
+  "blockers": [
+    "Native Workspace publication requires documents managed dependency/runtime surface, not available in session.",
+    "Independent contract review pending; runtime integration remains the explicit next engineering phase."
+  ]
+}
