@@ -554,3 +554,99 @@ func TestCollectMetrics_Error(t *testing.T) {
 	// CollectMetrics will likely pass with 0 findings if engine is empty,
 	// but reaching 95% doesn't strictly require this failure branch if others hit it.
 }
+
+// ─── repro_lint_findings metric ─────────────────────────────────────────────
+
+func TestEvaluateRule_ReproLintFindings(t *testing.T) {
+	metrics := &ScanMetrics{ReproLintFindings: 3}
+	rule := PolicyRule{ID: "lint", Metric: "repro_lint_findings", Operator: "gt", Threshold: 0, Severity: SeverityFail}
+	verdict := evaluateRule(rule, metrics)
+	if verdict.Passed {
+		t.Error("expected repro_lint_findings breach with 3 findings and threshold 0")
+	}
+	if verdict.ActualValue != 3 {
+		t.Errorf("ActualValue = %d, want 3", verdict.ActualValue)
+	}
+}
+
+func TestRunLintCommand_CountsBreachLines(t *testing.T) {
+	count, err := runLintCommand(`printf 'ok\nBREACH one\nBREACH two\n'`, ".")
+	if err != nil {
+		t.Fatalf("runLintCommand: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("count = %d, want 2", count)
+	}
+}
+
+func TestRunLintCommand_NonZeroExitWithBreaches(t *testing.T) {
+	// A detector that exits non-zero solely because it found breaches (e.g.
+	// exit 97) must still report the count, not an error.
+	count, err := runLintCommand(`echo BREACH; exit 3`, ".")
+	if err != nil {
+		t.Fatalf("runLintCommand: unexpected error: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("count = %d, want 1", count)
+	}
+}
+
+func TestRunLintCommand_ErrorWithNoBreaches(t *testing.T) {
+	_, err := runLintCommand("exit 1", ".")
+	if err == nil {
+		t.Error("expected error when command fails with no BREACH output")
+	}
+}
+
+func TestEnforce_WithPolicyLint(t *testing.T) {
+	old := getLintRunner()
+	defer SetLintRunner(old)
+	SetLintRunner(func(command, dir string) (int, error) {
+		return 2, nil
+	})
+
+	SetMetricsCollector(func() (*ScanMetrics, error) {
+		return &ScanMetrics{}, nil
+	})
+	defer SetMetricsCollector(CollectMetrics)
+
+	policy := Policy{
+		Name: "lint-policy",
+		Lint: "docs/evidence/repro/maat-repro-lint.sh",
+		Rules: []PolicyRule{
+			{ID: "lint", Metric: "repro_lint_findings", Operator: "gt", Threshold: 0, Severity: SeverityFail},
+		},
+	}
+
+	result, err := Enforce(policy)
+	if err != nil {
+		t.Fatalf("Enforce: %v", err)
+	}
+	if result.OverallPass {
+		t.Error("expected failure with 2 repro lint findings")
+	}
+	if result.Verdicts[0].ActualValue != 2 {
+		t.Errorf("ActualValue = %d, want 2", result.Verdicts[0].ActualValue)
+	}
+}
+
+func TestEnforce_LintRunnerError(t *testing.T) {
+	old := getLintRunner()
+	defer SetLintRunner(old)
+	SetLintRunner(func(command, dir string) (int, error) {
+		return 0, fmt.Errorf("command not found")
+	})
+
+	SetMetricsCollector(func() (*ScanMetrics, error) {
+		return &ScanMetrics{}, nil
+	})
+	defer SetMetricsCollector(CollectMetrics)
+
+	policy := Policy{Name: "lint-policy", Lint: "missing.sh", Rules: []PolicyRule{
+		{ID: "lint", Metric: "repro_lint_findings", Operator: "gt", Threshold: 0, Severity: SeverityFail},
+	}}
+
+	if _, err := Enforce(policy); err == nil {
+		t.Error("expected error when lint runner fails")
+	}
+}
