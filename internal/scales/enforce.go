@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -102,10 +104,11 @@ type EnforceResult struct {
 
 // ScanMetrics holds the measured values from a scan for policy evaluation.
 type ScanMetrics struct {
-	TotalSize    int64 `json:"total_size"`
-	FindingCount int   `json:"finding_count"`
-	GhostCount   int   `json:"ghost_count"`
-	TBLaneDrift  int   `json:"tb_lane_drift"` // active Thunderbolt lanes in bridge0 or not at MTU 65518 (tblanes.go)
+	TotalSize         int64 `json:"total_size"`
+	FindingCount      int   `json:"finding_count"`
+	GhostCount        int   `json:"ghost_count"`
+	TBLaneDrift       int   `json:"tb_lane_drift"` // active Thunderbolt lanes in bridge0 or not at MTU 65518 (tblanes.go)
+	ReproLintFindings int   `json:"repro_lint_findings"`
 }
 
 // CollectMetrics runs the necessary scans to gather current metrics.
@@ -154,7 +157,61 @@ func Enforce(policy Policy) (*EnforceResult, error) {
 		return nil, fmt.Errorf("collect metrics: %w", err)
 	}
 
+	if policy.Lint != "" {
+		dir, err := os.Getwd()
+		if err != nil {
+			return nil, fmt.Errorf("resolve lint working dir: %w", err)
+		}
+		count, err := getLintRunner()(policy.Lint, dir)
+		if err != nil {
+			return nil, fmt.Errorf("run policy lint %q: %w", policy.Lint, err)
+		}
+		metrics.ReproLintFindings = count
+	}
+
 	return EnforceWithMetrics(policy, metrics), nil
+}
+
+var (
+	lintRunner   func(command, dir string) (int, error) = runLintCommand
+	lintRunnerMu sync.RWMutex
+)
+
+// SetLintRunner allows overriding the policy lint execution (for testing).
+// Compliant with Rule A21 (Concurrency-Safe Injectable Mocks).
+func SetLintRunner(fn func(command, dir string) (int, error)) {
+	lintRunnerMu.Lock()
+	defer lintRunnerMu.Unlock()
+	lintRunner = fn
+}
+
+func getLintRunner() func(command, dir string) (int, error) {
+	lintRunnerMu.RLock()
+	defer lintRunnerMu.RUnlock()
+	return lintRunner
+}
+
+// runLintCommand runs a policy-declared shell command from dir and counts
+// output lines containing "BREACH" — the repro_lint_findings metric. A
+// non-zero exit is expected of detectors that fail their run on a breach
+// (e.g. exit 97); it is only propagated as an error when no BREACH line was
+// found, since that combination means the command itself failed to run.
+func runLintCommand(command, dir string) (int, error) {
+	cmd := exec.Command("/bin/sh", "-c", command)
+	cmd.Dir = dir
+	out, runErr := cmd.CombinedOutput()
+
+	count := 0
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.Contains(line, "BREACH") {
+			count++
+		}
+	}
+
+	if runErr != nil && count == 0 {
+		return 0, fmt.Errorf("%w: %s", runErr, strings.TrimSpace(string(out)))
+	}
+	return count, nil
 }
 
 // EnforceWithMetrics evaluates a policy against provided metrics (for testing).
@@ -196,6 +253,8 @@ func evaluateRule(rule PolicyRule, metrics *ScanMetrics) Verdict {
 		actual = int64(metrics.GhostCount)
 	case "tb_lane_drift":
 		actual = int64(metrics.TBLaneDrift)
+	case "repro_lint_findings":
+		actual = int64(metrics.ReproLintFindings)
 	default:
 		return Verdict{
 			RuleID:   rule.ID,

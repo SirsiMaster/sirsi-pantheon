@@ -30,6 +30,10 @@ type Policy struct {
 	Version     string         `yaml:"version" json:"version"`
 	Rules       []PolicyRule   `yaml:"rules" json:"rules"`
 	Notify      []NotifyTarget `yaml:"notify,omitempty" json:"notify,omitempty"`
+	// Lint is an optional shell command run from the repo root before rules
+	// are evaluated. Its output lines containing "BREACH" are counted into
+	// the repro_lint_findings metric (e.g. a wing-owned repro-defect linter).
+	Lint string `yaml:"lint,omitempty" json:"lint,omitempty"`
 }
 
 // PolicyRule is a single threshold or condition in a policy.
@@ -197,7 +201,7 @@ func validatePolicies(pf *PolicyFile) []ValidationError {
 					PolicyName: p.Name,
 					RuleID:     r.ID,
 					Field:      "metric",
-					Message:    fmt.Sprintf("invalid metric %q (valid: total_size, finding_count, ghost_count, tb_lane_drift)", r.Metric),
+					Message:    fmt.Sprintf("invalid metric %q (valid: total_size, finding_count, ghost_count, tb_lane_drift, repro_lint_findings)", r.Metric),
 				})
 			}
 		}
@@ -224,7 +228,7 @@ func isValidSeverity(s Severity) bool {
 
 func isValidMetric(m string) bool {
 	switch m {
-	case "total_size", "finding_count", "ghost_count", "tb_lane_drift":
+	case "total_size", "finding_count", "ghost_count", "tb_lane_drift", "repro_lint_findings":
 		return true
 	}
 	return false
