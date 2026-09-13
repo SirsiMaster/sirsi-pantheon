@@ -141,6 +141,14 @@ type Item struct {
 	WakeAttemptedAt string // RFC3339, set when an adapter was invoked
 	WakeAdapter     string // the adapter that fired (cli-spawn/api-call/launchagent/...)
 	WakeError       string // why the item is wake-unavailable, when it is
+
+	// AckedAt is the recipient's FIRST acknowledgement that the item's body was
+	// read (RFC3339; "" until acknowledged). Delivery truth like the wake_*
+	// fields, mirrored into work.Item and the frontmatter for the same reason:
+	// an item that was read but never acted on must not be indistinguishable
+	// from one that never arrived (A2A property 6 — sirsi-hardware-admin
+	// 20260913-071315). Set once by AckItem; never closes, never changes status.
+	AckedAt string
 }
 
 // Store is a durable index over the work queue backed by SQLite.
@@ -725,6 +733,13 @@ ALTER TABLE tasks ADD COLUMN project_id       TEXT NOT NULL DEFAULT '';
 ALTER TABLE tasks ADD COLUMN router_namespace TEXT NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_items_scope ON items(project_id, router_namespace);
 CREATE INDEX IF NOT EXISTS idx_tasks_scope ON tasks(project_id, router_namespace);
+`},
+	// v22 — recipient read-acknowledgement (sirsi-hardware-admin 20260913-071315;
+	// A2A property 6). One column, first-ack-wins, never touches status. Every
+	// test that rewinds user_version below 22 on a forward schema must DROP
+	// this column first, or replaying this step duplicates it (rs-32a lesson).
+	{22, `
+ALTER TABLE items ADD COLUMN acked_at TEXT NOT NULL DEFAULT '';
 `},
 }
 

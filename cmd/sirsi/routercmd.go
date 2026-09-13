@@ -66,11 +66,38 @@ const inlineBodyLimit = 280
 // Refuses a long inline body rather than storing text the shell may already
 // have rewritten. The refusal is the feature: a truncated record looks
 // plausible, which is precisely what makes it dangerous.
+//
+// Also refuses an empty (or whitespace-only) result from EITHER path, for the
+// same reason: a literal body that is entirely a shell substitution —
+// `--instructions "$(true)"` — is invisible to the length guard above. The
+// shell collapses it to "" before this process ever starts, so the argument
+// that arrives is genuinely empty and no length is ever exceeded. This
+// reached production (SSA-hardware-admin, PR delivery to claude-io,
+// 2026-09-13): a valid title, an empty Instructions body, no error, no way
+// for the recipient to tell "the sender wanted no body" from "the shell ate
+// it." Applied to the @file path too: a zero-byte or whitespace-only file is
+// the same silent-corruption shape (a truncated write, an empty heredoc) and
+// deserves the same loud refusal.
+//
+// This function ONLY validates a value the caller actually intends to use —
+// it has no way to see whether the flag was passed at all. Callers where an
+// OMITTED flag is legitimate (e.g. `router close <id>` with no --result, an
+// idempotent no-op re-close) MUST check cmd.Flags().Changed(name) themselves
+// and skip this call entirely when false — see loadOrLiteralIfSet. Calling
+// this directly on a flag's zero-value default would refuse a case that was
+// never dangerous, only unset.
 func loadOrLiteral(v string) (string, error) {
 	if strings.HasPrefix(v, "@") {
-		data, err := os.ReadFile(strings.TrimPrefix(v, "@"))
+		path := strings.TrimPrefix(v, "@")
+		data, err := os.ReadFile(path)
 		if err != nil {
 			return "", err
+		}
+		if strings.TrimSpace(string(data)) == "" {
+			return "", fmt.Errorf(
+				"%s is empty (or whitespace-only); refusing to store a blank body.\n"+
+					"  A zero-byte file usually means a truncated write or an empty heredoc\n"+
+					"  — write the real content and retry.", path)
 		}
 		return string(data), nil
 	}
@@ -82,7 +109,32 @@ func loadOrLiteral(v string) (string, error) {
 				"  Write it to a file and pass @that-file.",
 			len(v), inlineBodyLimit)
 	}
+	if strings.TrimSpace(v) == "" {
+		return "", fmt.Errorf(
+			"body is empty (or whitespace-only); refusing to store a blank body.\n" +
+				"  Shells evaluate backticks and $(...) inside a quoted argument BEFORE sirsi sees it,\n" +
+				"  so a literal body that is ENTIRELY a substitution (e.g. \"$(true)\") arrives here\n" +
+				"  as \"\" with no error and no way to tell intent from corruption\n" +
+				"  (SSA-hardware-admin, 2026-09-13: a valid title, a silently blanked body).\n" +
+				"  Pass real text, or @file if the content is generated.")
+	}
 	return v, nil
+}
+
+// loadOrLiteralIfSet is loadOrLiteral, gated on whether the caller actually
+// passed --<flagName>. An omitted flag is a deliberate, legitimate "no body"
+// (a bare `router close <id>` re-closing an already-closed item, an ack-only
+// respond) and must pass straight through as "" — it never reached a shell
+// substitution, there is nothing to have silently lost. Only a flag that WAS
+// passed and resolved to empty is the dangerous case loadOrLiteral exists to
+// catch. Every send/respond/close/dismiss call site must use this, not
+// loadOrLiteral directly, or an omitted flag's zero-value default gets
+// refused as if it were a corrupted one.
+func loadOrLiteralIfSet(cmd *cobra.Command, flagName, v string) (string, error) {
+	if !cmd.Flags().Changed(flagName) {
+		return "", nil
+	}
+	return loadOrLiteral(v)
 }
 
 var routerCmd = &cobra.Command{
@@ -221,6 +273,14 @@ cutover live the store row IS the record.
 		}
 		if sendTitle == "" {
 			return fmt.Errorf("--title is required")
+		}
+		// Unlike close/respond/dismiss, an omitted body here is not a
+		// legitimate no-op — send is creating a NEW item, and a title with no
+		// instructions leaves the recipient with no ask at all. Required
+		// explicitly (not just via loadOrLiteral's non-empty check) so the
+		// error names the right flag before ever touching its value.
+		if !cmd.Flags().Changed("instructions") {
+			return fmt.Errorf("--instructions is required")
 		}
 		instr, err := loadOrLiteral(sendInstructions)
 		if err != nil {
@@ -387,6 +447,42 @@ var routerShowCmd = &cobra.Command{
 	},
 }
 
+var routerAcknowledgeCmd = &cobra.Command{
+	Use:   "acknowledge <id>",
+	Short: "Record that you, the recipient, have read an item — never closes it",
+	Long: `Persists the FIRST acknowledgement timestamp on an item and surfaces it as
+acked_at in 'router show'. Recipient-only and idempotent: a repeat is a no-op,
+any agent other than the recipient is refused, and it never closes the item
+or changes completion semantics — close/respond still do that.
+
+Distinct from two older verbs that share the word: 'router ack <agent> <id>'
+is a legacy state.json migration helper, and 'router close --ack' is a
+CLOSING acknowledgement. This one asserts only "I read this".
+
+  sirsi router acknowledge 20260913-071315-sirsi-hardware-admin-ra-approve-narrow-a2a-acknowledgement-hardening`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repoRoot, err := router.FindRepoRoot()
+		if err != nil {
+			return fmt.Errorf("no .agents/idea-router/ found: %w", err)
+		}
+		f, err := dispatch.Open(repoRoot)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = f.Close() }()
+		actor, reason := resolveCurrentAgent(filepath.Join(repoRoot, ".agents", "idea-router"), acknowledgeAgent)
+		if actor == "" {
+			return fmt.Errorf("resolve acting agent: %s", reason)
+		}
+		if err := f.AckItem(actor, args[0]); err != nil {
+			return err
+		}
+		fmt.Printf("  Acknowledged %s\n", args[0])
+		return nil
+	},
+}
+
 var routerAckCmd = &cobra.Command{
 	Use:   "ack <agent> <id> [<id> ...]",
 	Short: "Acknowledge legacy state.json pending entries",
@@ -488,6 +584,8 @@ var (
 	closeAgent   string
 )
 
+var acknowledgeAgent string
+
 var (
 	dismissResult string
 	dismissAgent  string
@@ -512,7 +610,7 @@ var routerRespondCmd = &cobra.Command{
 	Short: "Close a request with a Result AND route the response back to its sender (atomic)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := loadOrLiteral(respondResult)
+		result, err := loadOrLiteralIfSet(cmd, "result", respondResult)
 		if err != nil {
 			return fmt.Errorf("--result: %w", err)
 		}
@@ -590,7 +688,7 @@ var routerCloseCmd = &cobra.Command{
 	Short: "Mark a work item closed",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := loadOrLiteral(closeResult)
+		result, err := loadOrLiteralIfSet(cmd, "result", closeResult)
 		if err != nil {
 			return fmt.Errorf("--result: %w", err)
 		}
@@ -637,8 +735,8 @@ useless as a general-purpose close:any bypass.
 Run this as the owner, naming yourself explicitly:
   sirsi router dismiss <id> --agent owner --result "reviewed, no action needed"`,
 	Args: cobra.ExactArgs(1),
-	RunE: func(_ *cobra.Command, args []string) error {
-		result, err := loadOrLiteral(dismissResult)
+	RunE: func(cmd *cobra.Command, args []string) error {
+		result, err := loadOrLiteralIfSet(cmd, "result", dismissResult)
 		if err != nil {
 			return fmt.Errorf("--result: %w", err)
 		}
@@ -1421,6 +1519,7 @@ func init() {
 	routerSendCmd.Flags().StringVar(&sendInstructions, "instructions", "", "Instructions body (literal text, or @file)")
 	routerCloseCmd.Flags().StringVar(&closeResult, "result", "", "Result body (literal text, or @file)")
 	routerCloseCmd.Flags().StringVar(&closeAgent, "agent", "", "Acting agent id (otherwise resolved from the current session)")
+	routerAcknowledgeCmd.Flags().StringVar(&acknowledgeAgent, "agent", "", "Acting agent id — must be the item's recipient (otherwise resolved from the current session)")
 	routerRespondCmd.Flags().StringVar(&respondResult, "result", "", "Response body routed back to the requester (literal text, or @file)")
 	routerRespondCmd.Flags().StringVar(&respondTitle, "title", "", "Title for the response inbound (default: RESPONSE: <request title>)")
 	routerRespondCmd.Flags().StringVar(&respondAgent, "agent", "", "Acting agent id (otherwise resolved from the current session)")
@@ -1443,5 +1542,5 @@ func init() {
 	routerPruneCmd.Flags().BoolVar(&pruneLogsOnly, "logs-only", false, "prune only the router logs/ directory")
 	routerPruneCmd.Flags().BoolVar(&pruneNoHome, "no-home", false, "do not sweep ~/.sirsi runtime logs")
 	routerBreakersCmd.Flags().BoolVar(&routerBreakersJSON, "json", false, "emit the breaker states as JSON")
-	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerWaitCmd, routerShowCmd, routerCloseCmd, routerDismissCmd, routerRespondCmd, routerAckCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd, routerInstallDaemonsCmd, routerBoardCmd, routerFleetCmd, routerQuarantineWorkerCmd, routerQuarantineCmd, routerUnquarantineCmd, routerMigrateCmd, routerCutoverCmd, routerPruneCmd, routerDumpCmd, routerBreakersCmd, routerBreakerResetCmd)
+	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerWaitCmd, routerShowCmd, routerCloseCmd, routerDismissCmd, routerRespondCmd, routerAckCmd, routerAcknowledgeCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd, routerInstallDaemonsCmd, routerBoardCmd, routerFleetCmd, routerQuarantineWorkerCmd, routerQuarantineCmd, routerUnquarantineCmd, routerMigrateCmd, routerCutoverCmd, routerPruneCmd, routerDumpCmd, routerBreakersCmd, routerBreakerResetCmd)
 }

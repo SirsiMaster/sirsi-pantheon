@@ -6,6 +6,9 @@ package routerstore
 
 import "time"
 
+func (rs *RemoteStore) AckItem(id string) error {
+	return rs.call("AckItem", []any{id})
+}
 func (rs *RemoteStore) AckWakeEvent(eventID, token, ackRef string) error {
 	return rs.call("AckWakeEvent", []any{eventID, token, ackRef})
 }

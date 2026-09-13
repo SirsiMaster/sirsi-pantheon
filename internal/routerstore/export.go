@@ -80,6 +80,9 @@ func renderMarkdown(it Item) string {
 	if it.WakeError != "" {
 		b.WriteString("wake_error: " + quoteYAML(it.WakeError) + "\n")
 	}
+	if it.AckedAt != "" {
+		b.WriteString("acked_at: " + quoteYAML(it.AckedAt) + "\n")
+	}
 	if it.BlockedBy != "" {
 		b.WriteString("blocked_by: " + quoteYAML(it.BlockedBy) + "\n")
 	}

@@ -53,6 +53,74 @@ func writeTestRegistry(t *testing.T, root string) {
 	}
 }
 
+// TestAckItemRecipientPersistsAndIsIdempotent — sirsi-hardware-admin
+// 20260913-071315, the POSITIVE case: the recipient's acknowledgement
+// persists, surfaces as `acked_at:` in the rendered item, does NOT close the
+// item, and a second ack keeps the first timestamp (no-op success).
+func TestAckItemRecipientPersistsAndIsIdempotent(t *testing.T) {
+	f := testFacade(t)
+	res, err := f.Send("a", "b", "read me", "review", "please read this")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ackErr := f.AckItem("b", res.ID); ackErr != nil {
+		t.Fatalf("recipient ack: %v", ackErr)
+	}
+	got, err := f.Get(res.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AckedAt == "" {
+		t.Fatal("acked_at was not persisted")
+	}
+	if got.Status != "open" {
+		t.Fatalf("ack must not close the item: status=%q", got.Status)
+	}
+	first := got.AckedAt
+	if againErr := f.AckItem("b", res.ID); againErr != nil {
+		t.Fatalf("second ack must be a no-op success: %v", againErr)
+	}
+	again, err := f.Get(res.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.AckedAt != first {
+		t.Fatalf("first ack must win: %q -> %q", first, again.AckedAt)
+	}
+	// Item output: the store renderer is the post-cutover `router show` path.
+	md, err := f.store.Render(res.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(md, "acked_at: ") {
+		t.Fatalf("acked_at missing from rendered item:\n%s", md)
+	}
+}
+
+// TestAckItemRejectsNonRecipient — the NEGATIVE case: neither the sender nor
+// a close:any holder may acknowledge on the recipient's behalf, and a
+// rejected ack persists nothing.
+func TestAckItemRejectsNonRecipient(t *testing.T) {
+	f := testFacade(t)
+	res, err := f.Send("a", "b", "read me", "review", "please read this")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if senderErr := f.AckItem("a", res.ID); senderErr == nil {
+		t.Fatal("the sender acknowledged the recipient's item")
+	}
+	if supErr := f.AckItem("supervisor", res.ID); supErr == nil {
+		t.Fatal("close:any must not grant acknowledgement on another agent's behalf")
+	}
+	got, err := f.Get(res.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AckedAt != "" {
+		t.Fatalf("a rejected ack persisted a timestamp: %q", got.AckedAt)
+	}
+}
+
 // TestSendCommitsStoreThenAuditFile: the store row is the authority and the
 // items/<id>.md audit view carries the SAME id in the file router's format.
 func TestSendCommitsStoreThenAuditFile(t *testing.T) {

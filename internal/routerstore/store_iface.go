@@ -12,6 +12,7 @@ import (
 // backend and an HTTP client behind the same interface. No production code
 // may depend on the concrete type.
 type Store interface {
+	AckItem(id string) error
 	AckWakeEvent(eventID, token, ackRef string) error
 	AddRequirement(title, source, sourceRef, owner string) (Requirement, error)
 	AddTask(t Task) error
