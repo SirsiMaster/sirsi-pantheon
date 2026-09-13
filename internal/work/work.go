@@ -39,6 +39,12 @@ type Item struct {
 	WakeAttemptedAt string // RFC3339, set when an adapter was invoked
 	WakeAdapter     string // the adapter that fired (cli-spawn/api-call/launchagent/...)
 	WakeError       string // why the item is wake-unavailable, when it is
+
+	// AckedAt: the recipient's FIRST acknowledgement that the body was read
+	// (RFC3339, "" until acknowledged). Delivery truth like wake_*, carried in
+	// the frontmatter as `acked_at:`. Set once by `sirsi router acknowledge`;
+	// never closes the item (A2A property 6, sirsi-hardware-admin 20260913-071315).
+	AckedAt string
 }
 
 // IsBuildable reports whether this item is a build-shaped work item that a
@@ -327,6 +333,43 @@ func SetWake(root, id string, w WakeAnnotation) error {
 	return os.WriteFile(path, []byte("---\n"+strings.Join(lines, "\n")+rest), 0o644)
 }
 
+// SetAckedAt writes the recipient's first acknowledgement timestamp into an
+// item file's frontmatter (`acked_at:`), rewriting only the frontmatter block
+// — the same shape as SetWake, for the same reason: pre-cutover Get/Show read
+// the file first, so delivery truth recorded only in the store would be
+// invisible exactly where it is read. Idempotent (a re-set is a replace); an
+// empty ts removes the line. Post-cutover there is no file and the caller
+// treats os.ErrNotExist as "nothing to mirror".
+func SetAckedAt(root, id, ts string) error {
+	path := filepath.Join(itemsDir(root), id+".md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	content := string(data)
+	if !strings.HasPrefix(content, "---\n") {
+		return fmt.Errorf("missing frontmatter")
+	}
+	end := strings.Index(content[4:], "\n---\n")
+	if end < 0 {
+		return fmt.Errorf("unterminated frontmatter")
+	}
+	fm := content[4 : 4+end]
+	rest := content[4+end:]
+	lines := strings.Split(fm, "\n")
+	filtered := make([]string, 0, len(lines)+1)
+	for _, l := range lines {
+		if strings.HasPrefix(strings.TrimSpace(l), "acked_at:") {
+			continue
+		}
+		filtered = append(filtered, l)
+	}
+	if ts != "" {
+		filtered = append(filtered, "acked_at: "+quoteYAML(ts))
+	}
+	return os.WriteFile(path, []byte("---\n"+strings.Join(filtered, "\n")+rest), 0o644)
+}
+
 // parse extracts an Item from frontmatter + body text.
 func parse(id, content string) (Item, error) {
 	it := Item{ID: id}
@@ -371,6 +414,8 @@ func parse(id, content string) (Item, error) {
 			it.WakeAdapter = v
 		case "wake_error":
 			it.WakeError = v
+		case "acked_at":
+			it.AckedAt = v
 		}
 	}
 	if instr, rest, ok := strings.Cut(body, "## Instructions"); ok {

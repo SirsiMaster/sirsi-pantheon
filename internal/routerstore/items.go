@@ -12,7 +12,7 @@ import (
 // itemCols is the canonical items column list, in the exact order scanItem
 // reads them. One definition keeps Put/Get/Inbox/ListAll from drifting;
 // TestFieldFidelityWithWorkItem enforces the columns↔Item-fields bijection.
-const itemCols = "id, from_agent, to_agent, title, type, status, opened, closed, instructions, result, wake_status, wake_attempted_at, wake_adapter, wake_error, blocked_by"
+const itemCols = "id, from_agent, to_agent, title, type, status, opened, closed, instructions, result, wake_status, wake_attempted_at, wake_adapter, wake_error, blocked_by, acked_at"
 
 // validStatus reports whether status is one of the accepted item states —
 // the file-router pair (open/closed) plus the Phase-2 §2b lifecycle states,
@@ -50,7 +50,7 @@ func (s *SQLiteStore) Put(it Item) error {
 	}
 	const q = `
 INSERT INTO items (` + itemCols + `)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
     from_agent=excluded.from_agent,
     to_agent=excluded.to_agent,
@@ -65,16 +65,48 @@ ON CONFLICT(id) DO UPDATE SET
     wake_attempted_at=excluded.wake_attempted_at,
     wake_adapter=excluded.wake_adapter,
     wake_error=excluded.wake_error,
-    blocked_by=excluded.blocked_by;`
+    blocked_by=excluded.blocked_by,
+    acked_at=excluded.acked_at;`
 	_, err := s.exec(q,
 		it.ID, it.From, it.To, it.Title, it.Type, it.Status, it.Opened, it.Closed,
 		it.Instructions, it.Result,
 		it.WakeStatus, it.WakeAttemptedAt, it.WakeAdapter, it.WakeError, it.BlockedBy,
+		it.AckedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("routerstore: Put %q: %w", it.ID, err)
 	}
 	return nil
+}
+
+// AckItem records the recipient's FIRST acknowledgement that an item's body
+// was read (sirsi-hardware-admin 20260913-071315; A2A property 6). It never
+// closes the item and never touches status or completion semantics — that
+// stays with CloseItem/Complete. First-ack-wins and idempotent by
+// construction: the UPDATE is guarded on acked_at=” so a repeat matches no
+// row and is a no-op success, with no read-then-write window for two
+// concurrent acks to both "win". Zero rows affected is therefore either
+// "already acked" (success) or "no such item" (ErrNotFound) — disambiguated
+// by a Get, never by inference. Identity (recipient-only) is enforced one
+// layer up in dispatch.Facade.AckItem, where the actor is validated; the
+// store, like CloseItem, is identity-agnostic.
+func (s *SQLiteStore) AckItem(id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("routerstore: AckItem: id is required")
+	}
+	res, err := s.exec(`UPDATE items SET acked_at = ? WHERE id = ? AND acked_at = '';`,
+		s.clock().Format(time.RFC3339), id)
+	if err != nil {
+		return fmt.Errorf("routerstore: AckItem %q: %w", id, err)
+	}
+	if n, _ := res.RowsAffected(); n == 1 {
+		return nil
+	}
+	if _, gerr := s.Get(id); gerr != nil {
+		return gerr
+	}
+	return nil // already acknowledged — the first timestamp stands
 }
 
 // SetBlockedBy replaces an item's optional dependency edge.
@@ -236,6 +268,7 @@ func scanItem(scan func(dest ...any) error) (Item, error) {
 		&it.ID, &it.From, &it.To, &it.Title, &it.Type,
 		&it.Status, &it.Opened, &it.Closed, &it.Instructions, &it.Result,
 		&it.WakeStatus, &it.WakeAttemptedAt, &it.WakeAdapter, &it.WakeError, &it.BlockedBy,
+		&it.AckedAt,
 	)
 	return it, err
 }

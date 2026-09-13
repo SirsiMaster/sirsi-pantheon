@@ -280,6 +280,10 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS project_id       TEXT NOT NULL DEFAUL
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS router_namespace TEXT NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_items_scope ON items(project_id, router_namespace);
 CREATE INDEX IF NOT EXISTS idx_tasks_scope ON tasks(project_id, router_namespace);
+-- v22 — recipient read-acknowledgement (sirsi-hardware-admin 20260913-071315;
+-- A2A property 6). First-ack-wins; never touches status. Same IF NOT EXISTS
+-- idiom as v21 so it upgrades a live ledger and equips a fresh one.
+ALTER TABLE items ADD COLUMN IF NOT EXISTS acked_at TEXT NOT NULL DEFAULT '';
 
 
 -- Which session holds each lease. A side table, not columns on items/tasks:
@@ -490,6 +494,6 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA router TO router_service;
 ALTER DEFAULT PRIVILEGES IN SCHEMA router GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO router_service;
 
 -- ── version — last, so a partial apply never publishes a version it does not have ──
-INSERT INTO schema_version(version, applied_at) VALUES (21, router.now_rfc3339())
-  ON CONFLICT (singleton) DO UPDATE SET version = 21, applied_at = router.now_rfc3339()
-  WHERE schema_version.version < 21;
+INSERT INTO schema_version(version, applied_at) VALUES (22, router.now_rfc3339())
+  ON CONFLICT (singleton) DO UPDATE SET version = 22, applied_at = router.now_rfc3339()
+  WHERE schema_version.version < 22;

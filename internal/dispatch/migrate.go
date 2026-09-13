@@ -45,6 +45,7 @@ func adaptWorkItem(w work.Item) routerstore.Item {
 		WakeAttemptedAt: w.WakeAttemptedAt,
 		WakeAdapter:     w.WakeAdapter,
 		WakeError:       w.WakeError,
+		AckedAt:         w.AckedAt,
 	}
 }
 

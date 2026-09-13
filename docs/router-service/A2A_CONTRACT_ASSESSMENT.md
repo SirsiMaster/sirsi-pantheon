@@ -45,6 +45,19 @@ The sixth (delivery/read acknowledgement) is a genuine, narrow gap. Recommendati
 
 This recommendation has **not** been implemented. Awaiting SHA's response (sent as router item, see Change Log) before writing any code — this is an architecture decision, not a bugfix, and per PANTHEON_RULES.md §2.23 (A26) large workstream decisions route through this correspondence before implementation.
 
+## Addendum (2026-09-13, same day) — the conclusion above was scoped too narrowly
+
+Within hours of sending this, the review cycle for rs-34 produced live evidence that the "five of six already implemented" conclusion, while accurate about what it measured, measured the wrong thing (Rule A35, Scope The Check To The Claim). Every property above was verified against the **store's internal invariants** — does the row carry identity, is the insert idempotent, is there a correlation field. None of them asks whether a message or a code change **arrives somewhere a genuinely isolated agent can see it**. That is the claim ADR-052 actually makes ("sole authority", "edge-triggered marker"), and it is the claim that failed:
+
+- `sirsi-software-admin` was 15 commits behind `main` with no network by design and a canon'd bundle handoff that had never been operated (rs-36).
+- A reply SHA sent was invisible to `ra`'s own `router pull`; the session-start health check reported a live second thread registry.
+- Nine per-lane wake configs on one host, seven wrong; a fallback env file on the same host, wrong.
+
+The owner's verdict on this evidence — *"you have an architecture which doesn't really work... it should be A2A compliant"* — stands. The store is sound; **delivery is not guaranteed**, because the logic that decides whether a lane is reachable lives in each lane rather than in the router. Property 6 (delivery/read acknowledgement) is therefore not a "narrow gap" to harden later; it is the property whose absence made every failure above silent.
+
+**Resolution: ADR-065** (`docs/ADR-065-ROUTER-OWNED-INFORMER-LANES-CARRY-NO-ARMING-LOGIC.md`). The router owns a single watcher/informer per host that subscribes for all registered agents over the store's existing `ListenNotify`/`Wait` edge signal and pushes to each lane; per-lane wake loops are retired; the informer's push is acknowledged (`read_at`) on the return channel — property 6 becomes the informer's two-way half. Two owner refinements are part of the decision: arming strategy is selected from the lane's **declared agent type** (codex / claude-interactive / claude-headless / gemma-qwen resident) in one router-side table, so each environment's vagaries live in one place; and **connection is the lane's contract** — a lane must register truthfully and stay demonstrably connected (pushes acknowledged), and an unacknowledged lane is surfaced as that lane's defect, never silently re-armed. The "harden, do not replace" recommendation above is superseded to that extent: the transport stays (spool + store), but its *subscriber* is relocated and the per-lane copies are removed.
+
 ## Change Log
 
+- 2026-09-13 (later) — addendum: conclusion re-scoped after the live incident; resolution is ADR-065; ledger `rs-36` (incident) and `rs-37` (ADR-065 implementation) added, both under `rs-35`.
 - 2026-09-13 — assessment written and sent to sirsi-hardware-admin. Ledger: `rs-35-a2a-contract-assessment` (blocked-by `rs-34-router-body-loss-empty-guard`, which this assessment's property 3 depends on).

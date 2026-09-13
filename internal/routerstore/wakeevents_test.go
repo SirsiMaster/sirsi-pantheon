@@ -28,6 +28,8 @@ func TestMigration11ReplacesAgentWideWakeAckTriggers(t *testing.T) {
 		DROP INDEX idx_items_scope; DROP INDEX idx_tasks_scope;
 		ALTER TABLE items DROP COLUMN project_id; ALTER TABLE items DROP COLUMN router_namespace;
 		ALTER TABLE tasks DROP COLUMN project_id; ALTER TABLE tasks DROP COLUMN router_namespace;
+		-- v22 (read-acknowledgement) must be rewound too, for the same reason.
+		ALTER TABLE items DROP COLUMN acked_at;
 		CREATE TRIGGER ack_wake_on_item_claim AFTER UPDATE OF lease_token ON items
 		WHEN NEW.lease_token<>'' AND OLD.lease_token='' BEGIN
 		UPDATE wake_events SET status='acked' WHERE agent=NEW.to_agent AND status='leased'; END;

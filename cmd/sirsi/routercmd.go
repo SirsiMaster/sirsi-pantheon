@@ -447,6 +447,42 @@ var routerShowCmd = &cobra.Command{
 	},
 }
 
+var routerAcknowledgeCmd = &cobra.Command{
+	Use:   "acknowledge <id>",
+	Short: "Record that you, the recipient, have read an item — never closes it",
+	Long: `Persists the FIRST acknowledgement timestamp on an item and surfaces it as
+acked_at in 'router show'. Recipient-only and idempotent: a repeat is a no-op,
+any agent other than the recipient is refused, and it never closes the item
+or changes completion semantics — close/respond still do that.
+
+Distinct from two older verbs that share the word: 'router ack <agent> <id>'
+is a legacy state.json migration helper, and 'router close --ack' is a
+CLOSING acknowledgement. This one asserts only "I read this".
+
+  sirsi router acknowledge 20260913-071315-sirsi-hardware-admin-ra-approve-narrow-a2a-acknowledgement-hardening`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repoRoot, err := router.FindRepoRoot()
+		if err != nil {
+			return fmt.Errorf("no .agents/idea-router/ found: %w", err)
+		}
+		f, err := dispatch.Open(repoRoot)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = f.Close() }()
+		actor, reason := resolveCurrentAgent(filepath.Join(repoRoot, ".agents", "idea-router"), acknowledgeAgent)
+		if actor == "" {
+			return fmt.Errorf("resolve acting agent: %s", reason)
+		}
+		if err := f.AckItem(actor, args[0]); err != nil {
+			return err
+		}
+		fmt.Printf("  Acknowledged %s\n", args[0])
+		return nil
+	},
+}
+
 var routerAckCmd = &cobra.Command{
 	Use:   "ack <agent> <id> [<id> ...]",
 	Short: "Acknowledge legacy state.json pending entries",
@@ -547,6 +583,8 @@ var (
 	closeAck     bool
 	closeAgent   string
 )
+
+var acknowledgeAgent string
 
 var (
 	dismissResult string
@@ -1481,6 +1519,7 @@ func init() {
 	routerSendCmd.Flags().StringVar(&sendInstructions, "instructions", "", "Instructions body (literal text, or @file)")
 	routerCloseCmd.Flags().StringVar(&closeResult, "result", "", "Result body (literal text, or @file)")
 	routerCloseCmd.Flags().StringVar(&closeAgent, "agent", "", "Acting agent id (otherwise resolved from the current session)")
+	routerAcknowledgeCmd.Flags().StringVar(&acknowledgeAgent, "agent", "", "Acting agent id — must be the item's recipient (otherwise resolved from the current session)")
 	routerRespondCmd.Flags().StringVar(&respondResult, "result", "", "Response body routed back to the requester (literal text, or @file)")
 	routerRespondCmd.Flags().StringVar(&respondTitle, "title", "", "Title for the response inbound (default: RESPONSE: <request title>)")
 	routerRespondCmd.Flags().StringVar(&respondAgent, "agent", "", "Acting agent id (otherwise resolved from the current session)")
@@ -1503,5 +1542,5 @@ func init() {
 	routerPruneCmd.Flags().BoolVar(&pruneLogsOnly, "logs-only", false, "prune only the router logs/ directory")
 	routerPruneCmd.Flags().BoolVar(&pruneNoHome, "no-home", false, "do not sweep ~/.sirsi runtime logs")
 	routerBreakersCmd.Flags().BoolVar(&routerBreakersJSON, "json", false, "emit the breaker states as JSON")
-	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerWaitCmd, routerShowCmd, routerCloseCmd, routerDismissCmd, routerRespondCmd, routerAckCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd, routerInstallDaemonsCmd, routerBoardCmd, routerFleetCmd, routerQuarantineWorkerCmd, routerQuarantineCmd, routerUnquarantineCmd, routerMigrateCmd, routerCutoverCmd, routerPruneCmd, routerDumpCmd, routerBreakersCmd, routerBreakerResetCmd)
+	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerWaitCmd, routerShowCmd, routerCloseCmd, routerDismissCmd, routerRespondCmd, routerAckCmd, routerAcknowledgeCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd, routerInstallDaemonsCmd, routerBoardCmd, routerFleetCmd, routerQuarantineWorkerCmd, routerQuarantineCmd, routerUnquarantineCmd, routerMigrateCmd, routerCutoverCmd, routerPruneCmd, routerDumpCmd, routerBreakersCmd, routerBreakerResetCmd)
 }

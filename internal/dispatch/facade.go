@@ -416,6 +416,7 @@ func itemFromRow(r routerstore.Item) work.Item {
 		Instructions: r.Instructions, Result: r.Result,
 		WakeStatus: r.WakeStatus, WakeAttemptedAt: r.WakeAttemptedAt,
 		WakeAdapter: r.WakeAdapter, WakeError: r.WakeError, BlockedBy: r.BlockedBy,
+		AckedAt: r.AckedAt,
 	}
 }
 
@@ -519,6 +520,47 @@ func (f *Facade) CloseItem(actor, id, result string) error {
 		result = fmt.Sprintf("Closed by declared actor %s on behalf of recipient %s.\n\n%s", actor, item.To, result)
 	}
 	return f.closeRaw(id, result)
+}
+
+// AckItem records the recipient's first acknowledgement that an item's body
+// was read — A2A property 6, the one gap in
+// docs/router-service/A2A_CONTRACT_ASSESSMENT.md — exactly as scoped by
+// sirsi-hardware-admin 20260913-071315: it never closes the item and never
+// changes completion semantics (CloseItem/Complete still own those).
+//
+// Recipient-only, deliberately narrower than CloseItem: there is no
+// close:any delegation here, because an acknowledgement asserts "I read
+// this" and nobody can read on another agent's behalf — a supervisor acking
+// for a lane would be the false-green ADR-061 forbids. Idempotent: the store
+// keeps the first timestamp and a repeat is a no-op success.
+func (f *Facade) AckItem(actor, id string) error {
+	if err := f.ValidateAgent("acting agent", actor); err != nil {
+		return err
+	}
+	item, err := f.Get(id)
+	if err != nil {
+		return err
+	}
+	if item.To != actor {
+		return fmt.Errorf("dispatch: acting agent %q cannot acknowledge item %s addressed to %q — acknowledgement is recipient-only", actor, id, item.To)
+	}
+	if ackErr := f.store.AckItem(id); ackErr != nil {
+		return ackErr
+	}
+	// Mirror the store's (authoritative, first-wins) stamp into the audit file
+	// when one exists — pre-cutover Get/Show read the file first, so an ack
+	// recorded only in the store would be invisible exactly where it is read
+	// (the wake_* fields follow the same two-world rule). Post-cutover there
+	// is no file: ErrNotExist is "nothing to mirror", not a failure — the
+	// store row is the record and the ack already succeeded.
+	row, readErr := f.store.Get(id)
+	if readErr != nil {
+		return fmt.Errorf("dispatch: read back acknowledgement for %s: %w", id, readErr)
+	}
+	if mirrorErr := work.SetAckedAt(f.root, id, row.AckedAt); mirrorErr != nil && !errors.Is(mirrorErr, os.ErrNotExist) {
+		return fmt.Errorf("dispatch: mirror acknowledgement into audit file for %s: %w", id, mirrorErr)
+	}
+	return nil
 }
 
 // DismissOwnerItem is the sole exemption to the owner-recipient guard in

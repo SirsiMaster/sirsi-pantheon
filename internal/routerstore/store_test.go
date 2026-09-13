@@ -532,6 +532,7 @@ var columnFor = map[string]string{
 	"WakeAdapter":     "wake_adapter",
 	"WakeError":       "wake_error",
 	"BlockedBy":       "blocked_by",
+	"AckedAt":         "acked_at",
 }
 
 func fieldNames(t reflect.Type) map[string]bool {
@@ -653,6 +654,38 @@ func TestFieldFidelityWithWorkItem(t *testing.T) {
 	}
 	if !reflect.DeepEqual(in, got) {
 		t.Errorf("field round-trip mismatch:\n put: %+v\n got: %+v", in, got)
+	}
+}
+
+// TestAckItemFirstAckWins (sirsi-hardware-admin 20260913-071315): the store
+// persists the FIRST acknowledgement timestamp; a later ack under a different
+// clock is a no-op success (idempotent, first-ack-wins by the acked_at=”
+// guard — no read-then-write window); ack never closes or changes status; an
+// unknown id is ErrNotFound rather than a silent no-op.
+func TestAckItemFirstAckWins(t *testing.T) {
+	s := newTestStore(t)
+	mustPut(t, s, Item{ID: "ack-1", From: "a", To: "b", Title: "t", Status: "open", Opened: "t"})
+	t0 := time.Date(2026, 9, 13, 7, 0, 0, 0, time.UTC)
+	s.now = func() time.Time { return t0 }
+	if err := s.AckItem("ack-1"); err != nil {
+		t.Fatalf("first ack: %v", err)
+	}
+	s.now = func() time.Time { return t0.Add(time.Hour) }
+	if err := s.AckItem("ack-1"); err != nil {
+		t.Fatalf("repeat ack must be a no-op success: %v", err)
+	}
+	got, err := s.Get("ack-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AckedAt != t0.Format(time.RFC3339) {
+		t.Fatalf("first ack must win: got %q, want %q", got.AckedAt, t0.Format(time.RFC3339))
+	}
+	if got.Status != "open" {
+		t.Fatalf("ack must not close or change status: got %q", got.Status)
+	}
+	if err := s.AckItem("no-such-item"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown id: want ErrNotFound, got %v", err)
 	}
 }
 
@@ -934,11 +967,12 @@ func TestConnEstablishRetriesReadonlyContention(t *testing.T) {
 
 // TestSchemaV21AddsScopeColumns (rs-32a): schema v21 adds project_id +
 // router_namespace to items and tasks (empty groundwork), on a fresh store, and
-// the migration applies cleanly (MaxSupportedSchemaVersion==21). Values stay
-// empty — derivation/backfill is rs-32b.
+// the migration applies cleanly (MaxSupportedSchemaVersion is the current
+// ceiling — 22 since the v22 read-ack column). Values stay empty —
+// derivation/backfill is rs-32b.
 func TestSchemaV21AddsScopeColumns(t *testing.T) {
-	if MaxSupportedSchemaVersion() != 21 {
-		t.Fatalf("MaxSupportedSchemaVersion = %d, want 21", MaxSupportedSchemaVersion())
+	if MaxSupportedSchemaVersion() != 22 {
+		t.Fatalf("MaxSupportedSchemaVersion = %d, want 22", MaxSupportedSchemaVersion())
 	}
 	path := filepath.Join(t.TempDir(), "v21.db")
 	s, err := OpenPath(path)
@@ -946,8 +980,8 @@ func TestSchemaV21AddsScopeColumns(t *testing.T) {
 		t.Fatalf("open (v21 migration must apply cleanly): %v", err)
 	}
 	defer s.Close()
-	if v, err := ReadSchemaVersion(path); err != nil || v != 21 {
-		t.Fatalf("fresh store version = %d (err %v), want 21", v, err)
+	if v, err := ReadSchemaVersion(path); err != nil || v != 22 {
+		t.Fatalf("fresh store version = %d (err %v), want 22", v, err)
 	}
 	// Columns must exist and be usable (WHERE 1=0 touches no rows but binds them).
 	if _, e := s.exec(`UPDATE items SET project_id='p', router_namespace='n' WHERE 1=0;`); e != nil {
@@ -986,6 +1020,7 @@ func TestV20ToV21UpgradeWithExistingRows(t *testing.T) {
 		DROP INDEX idx_items_scope; DROP INDEX idx_tasks_scope;
 		ALTER TABLE items DROP COLUMN project_id; ALTER TABLE items DROP COLUMN router_namespace;
 		ALTER TABLE tasks DROP COLUMN project_id; ALTER TABLE tasks DROP COLUMN router_namespace;
+		ALTER TABLE items DROP COLUMN acked_at;
 		PRAGMA user_version=20;`); e != nil {
 		t.Fatalf("rewind to genuine v20: %v", e)
 	}
@@ -998,8 +1033,8 @@ func TestV20ToV21UpgradeWithExistingRows(t *testing.T) {
 		t.Fatalf("v20 to v21 upgrade must apply cleanly: %v", err)
 	}
 	defer s2.Close()
-	if v, e := ReadSchemaVersion(path); e != nil || v != 21 {
-		t.Fatalf("post-upgrade version = %d (err %v), want 21", v, e)
+	if v, e := ReadSchemaVersion(path); e != nil || v != 22 {
+		t.Fatalf("post-upgrade version = %d (err %v), want 22 (v20 upgrades through v21 to the current ceiling)", v, e)
 	}
 	// Existing rows survive with default-empty scope values (no backfill guess).
 	var proj, ns string
@@ -1048,6 +1083,7 @@ func TestV21MigrationFailsClosedOnPartialDrift(t *testing.T) {
 		ALTER TABLE items DROP COLUMN project_id; ALTER TABLE items DROP COLUMN router_namespace;
 		ALTER TABLE tasks DROP COLUMN project_id; ALTER TABLE tasks DROP COLUMN router_namespace;
 		ALTER TABLE tasks ADD COLUMN project_id TEXT NOT NULL DEFAULT '';
+		ALTER TABLE items DROP COLUMN acked_at;
 		PRAGMA user_version=20;`); e != nil {
 		t.Fatalf("construct drift fixture: %v", e)
 	}
