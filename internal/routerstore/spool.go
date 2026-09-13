@@ -97,8 +97,21 @@ func resolvedLaneModes() (dirMode, fileMode os.FileMode, trustGID int, err error
 // happens to carry, not the specific, verified trust group. A mismatch fails
 // closed with an actionable message rather than silently doing the wrong
 // thing in either direction. trustGID < 0 (the default, no-trust-group path)
-// skips this check entirely and behaves exactly as before this existed.
+// skips this check entirely.
+//
+// The chmod applies ONLY to a directory this call created. chmod(2) requires
+// OWNERSHIP, not access: a lane client (uid 501) sharing a spool whose lane
+// directory the relay's uid (_sirsipantheon) created can read and write it
+// through the setgid group but can never chmod it — EPERM. The first version
+// chmod'd unconditionally and, on 2026-09-13, crash-looped every wake loop on
+// the M5 the moment the client was rolled (rs-38); the pre-#753 code never
+// chmod'd at all, so "behaves exactly as before" was never true of it. A
+// pre-existing directory keeps the mode its owner gave it — the owner (relay,
+// CheckSpoolDirTrustingGroup) converges modes; this call only guarantees the
+// mode of what it made, which is the umask-bypass the chmod exists for.
 func mkdirTrusted(dir string, mode os.FileMode, trustGID int) error {
+	_, statErr := os.Stat(dir)
+	existed := statErr == nil
 	if err := os.MkdirAll(dir, mode); err != nil {
 		return err
 	}
@@ -110,6 +123,9 @@ func mkdirTrusted(dir string, mode os.FileMode, trustGID int) error {
 		if sys, ok := st.Sys().(*syscall.Stat_t); ok && int(sys.Gid) != trustGID {
 			return fmt.Errorf("spool: %s has group %d, not the configured trust group (gid %d); refusing to widen an unrelated group's access — verify the spool's setgid inheritance or chgrp this directory to the trust group first", dir, sys.Gid, trustGID)
 		}
+	}
+	if existed {
+		return nil
 	}
 	return os.Chmod(dir, mode)
 }

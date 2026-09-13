@@ -637,6 +637,48 @@ func TestMkdirTrustedRefusesToWidenAMismatchedExistingGroup(t *testing.T) {
 	}
 }
 
+// TestMkdirTrustedNeverChmodsAPreExistingDir (rs-38, 2026-09-13): chmod(2)
+// needs OWNERSHIP, so a lane client sharing a spool whose lane directory the
+// relay's uid created got EPERM from the unconditional chmod and every M5
+// wake loop crash-looped the moment the client was rolled. A directory that
+// already exists must keep the mode its owner gave it — this call may only
+// set the mode of what it created. We cannot create a foreign-owned directory
+// without root, so the testable half of the rule is asserted directly: a
+// pre-existing directory's mode is untouched (the chmod is skipped entirely,
+// which is what makes the foreign-owner case an EPERM that never happens),
+// with a fresh sibling as the positive control proving the chmod still
+// applies to what this call creates.
+func TestMkdirTrustedNeverChmodsAPreExistingDir(t *testing.T) {
+	dir := t.TempDir()
+	existing := filepath.Join(dir, "lane")
+	if err := os.Mkdir(existing, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := mkdirTrusted(existing, 0o770, -1); err != nil {
+		t.Fatalf("mkdirTrusted on a pre-existing dir must succeed without touching it: %v", err)
+	}
+	st, err := os.Stat(existing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Mode().Perm() != 0o700 {
+		t.Fatalf("pre-existing dir was chmod'd: %o, want its owner's 0700 untouched", st.Mode().Perm())
+	}
+	// Positive control: a directory this call CREATES gets the requested mode
+	// regardless of umask (the reason the chmod exists at all).
+	fresh := filepath.Join(dir, "fresh", "lane")
+	if freshErr := mkdirTrusted(fresh, 0o770, -1); freshErr != nil {
+		t.Fatal(freshErr)
+	}
+	st2, err := os.Stat(fresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st2.Mode().Perm() != 0o770 {
+		t.Fatalf("freshly created dir = %o, want 0770 (chmod must still apply to what this call creates)", st2.Mode().Perm())
+	}
+}
+
 // TestLaneCreatesGroupWritableDirsWhenTrustGroupConfigured: a lane's own
 // RoundTrip call creates req/res/slots at 0770, not 0700, when
 // SIRSI_RELAY_TRUST_GROUP is set in ITS OWN environment — proving the actual
