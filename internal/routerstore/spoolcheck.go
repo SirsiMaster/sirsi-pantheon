@@ -57,15 +57,19 @@ func CheckSpoolDirTrustingGroup(spool, trustGroup string) (string, error) {
 // spoolOwnerTrusted decides whether a directory owned by (uid, gid) is
 // acceptable to a process running as selfUID, given the configured trust
 // group's gid (trustGID, or -1 when no trust group is configured) and whether
-// group-write is actually set on the directory's mode. Pulled out as a pure
+// the group actually holds the specific access bit the caller needs
+// (groupAccessOK) — group-execute to merely traverse a parent directory,
+// group-write to read/write the spool directory itself. Callers pass the bit
+// that matches their own need (Rule A35: scope the check to the claim); this
+// function only combines it with the uid/gid decision. Pulled out as a pure
 // function so the group-trust decision is unit-testable without needing real
 // multi-user file ownership (chown requires root) — tests drive this directly
 // with synthetic uid/gid values.
-func spoolOwnerTrusted(uid, gid uint32, selfUID, trustGID int, groupWritable bool) bool {
+func spoolOwnerTrusted(uid, gid uint32, selfUID, trustGID int, groupAccessOK bool) bool {
 	if int(uid) == selfUID {
 		return true
 	}
-	if trustGID >= 0 && int(gid) == trustGID && groupWritable {
+	if trustGID >= 0 && int(gid) == trustGID && groupAccessOK {
 		return true
 	}
 	return false
@@ -99,7 +103,13 @@ func checkSpoolDir(spool, trustGroup string) (string, error) {
 	parentGroupTrusted := false
 	if sys, ok := pst.Sys().(*syscall.Stat_t); ok {
 		parentGroupTrusted = trustGID >= 0 && int(sys.Gid) == trustGID
-		trusted := sys.Uid == 0 || spoolOwnerTrusted(sys.Uid, sys.Gid, selfUID, trustGID, pst.Mode().Perm()&0o020 != 0)
+		// The parent is only ever traversed (opened to reach the spool dir
+		// beneath it), never written through directly — that needs the
+		// directory's execute bit, not its write bit. Requiring group-write
+		// here (Rule A35) forced operators to grant the trust group write
+		// access to a directory nothing ever writes to just to satisfy this
+		// check; a parent that is correctly group-execute-only was refused.
+		trusted := sys.Uid == 0 || spoolOwnerTrusted(sys.Uid, sys.Gid, selfUID, trustGID, pst.Mode().Perm()&0o010 != 0)
 		if !trusted {
 			return "", fmt.Errorf("spool: parent %s is owned by uid %d, not %d or root; refusing", parent, sys.Uid, selfUID)
 		}
