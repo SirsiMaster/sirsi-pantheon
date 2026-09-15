@@ -180,7 +180,7 @@
         "--permission-mode",
         "auto"
       ],
-      "cwd": "/Users/thekryptodragon/Development/sirsi-io",
+      "cwd": "/Users/thekryptodragon/Development/sirsi-io-connect",
       "workstream": "io",
       "wake": {
         "mechanism": "none"
@@ -536,7 +536,7 @@
       "command": [
         "codex"
       ],
-      "cwd": "/Users/thekryptodragon/Development/sirsi-io",
+      "cwd": "/Users/thekryptodragon/Development/sirsi-io-connect",
       "workstream": "io",
       "wake": {
         "mechanism": "none"
@@ -546,7 +546,7 @@
           "codex",
           "exec",
           "-C",
-          "/Users/thekryptodragon/Development/sirsi-io",
+          "/Users/thekryptodragon/Development/sirsi-io-connect",
           "--sandbox",
           "workspace-write",
           "--add-dir",
