@@ -29,4 +29,4 @@ docs/continuations/<agent>-<workstream-slug>-<YYYYMMDD>-<session8>.md
 When you write a new continuation: create the per-thread file above, then add/replace your row
 in this table (one row per agent+workstream; keep the latest). The `<session8>` makes two same-day
 runs of the same workstream distinct. Never write the full continuation into this index file.
-| ra | router-service (ADR-062) — PR #754 + #755 merged (main `1995046`): schema v22, Cloud Run `00013-nhn`, M1 `341b7ae0…`, M5 `0b2fd3da…` live-verified; rs-34/35/38 done; rs-36 open (SSA bundle delivery manual); rs-37 blocked on SHA+SSA ADR-065 verdict | 2026-09-13 | /Users/sirsimasterdev/Development/sirsi-pantheon/docs/continuations/ra-router-a2a-ack-adr065-20260913-84ab1eaa.md |
+| ra | router-service (ADR-062) | 2026-09-15 | /Users/sirsimasterdev/Development/sirsi-pantheon/docs/continuations/ra-router-stall-gate-spool-20260915-6509a1af.md |
