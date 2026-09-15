@@ -29,4 +29,4 @@ docs/continuations/<agent>-<workstream-slug>-<YYYYMMDD>-<session8>.md
 When you write a new continuation: create the per-thread file above, then add/replace your row
 in this table (one row per agent+workstream; keep the latest). The `<session8>` makes two same-day
 runs of the same workstream distinct. Never write the full continuation into this index file.
-| ra | router-service (ADR-062) | 2026-09-15 | /Users/sirsimasterdev/Development/sirsi-pantheon/docs/continuations/ra-router-stall-gate-spool-20260915-6509a1af.md |
+| ra | router-service (ADR-062) — PR #761 open (running-consumer stall gate, spool fail-fast + owned-dir converge, node-status `Inbox("")`); M5 relay daemon trust group repaired live (bootout+bootstrap); rs-40 pending on merge, rs-41 anchor ADR not started; owner cards: pin M1 HostName, SIP/FileVault, M5 key enrollment | 2026-09-15 | /Users/sirsimasterdev/Development/sirsi-pantheon/docs/continuations/ra-router-stall-gate-spool-20260915-6509a1af.md |
