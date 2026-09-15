@@ -14,6 +14,40 @@ import (
 
 var routerDoctorFix bool
 
+// routerDBOnCutoverHostWarning reports when SIRSI_ROUTER_DB is set in THIS
+// process's own environment on a host already cut over to the router service
+// (~/.sirsi/router-service.env exists). routerstore.Resolve's own split-brain
+// refusal (ADR-062 §1: a cut-over host with no SIRSI_ROUTER_URL must error,
+// never fall back to a local file) is deliberately SKIPPED whenever
+// SIRSI_ROUTER_DB is set — internal/routerstore/resolve.go's cutOverMarker
+// treats that as "a deliberate local store (tests, sandboxes)", by design.
+// That design choice has no way to tell a test process from a real shell
+// where the var was left set by accident: 2026-09-15, a stray
+// SIRSI_ROUTER_DB in an interactive M5 shell silently wrote a router item to
+// a private local file instead of the shared service — the item existed,
+// but no other host, including the sender's own later reads, could ever see
+// it (SHA item 20260915-204553, "router split-brain"). This is a read-only
+// diagnostic; it changes no behavior and never touches the resolve/refusal
+// logic itself.
+func routerDBOnCutoverHostWarning() string {
+	db := strings.TrimSpace(os.Getenv("SIRSI_ROUTER_DB"))
+	if db == "" {
+		return ""
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	marker := filepath.Join(home, ".sirsi", "router-service.env")
+	if _, err := os.Stat(marker); err != nil {
+		return "" // this host isn't cut over — SIRSI_ROUTER_DB is the normal, intended path here
+	}
+	return fmt.Sprintf("SIRSI_ROUTER_DB=%q is set in this shell's environment on a host cut over to the "+
+		"router service (%s exists). Every router call from THIS process writes to that private file, "+
+		"never the shared service — invisible to every other host. Legitimate only in a test/sandbox "+
+		"process; if this is an interactive shell, unset SIRSI_ROUTER_DB.", db, marker)
+}
+
 // partitionWakeDrift classifies wake.mechanism ChangedFields by statting the
 // LaunchAgent plist on disk. Three outcomes:
 //
@@ -134,6 +168,10 @@ var routerDoctorCmd = &cobra.Command{
 		fmt.Printf("   Dispatch authority: %s\n\n", cutoverModeLine())
 
 		issues := 0
+		if w := routerDBOnCutoverHostWarning(); w != "" {
+			issues++
+			fmt.Printf("⚠ split-brain risk: %s\n\n", w)
+		}
 		threadReg, threadErr := router.LoadThreadRegistry(routerRoot)
 		if threadErr != nil {
 			issues++
