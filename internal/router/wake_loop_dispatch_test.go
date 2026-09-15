@@ -5,7 +5,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -723,6 +725,78 @@ func TestResidentHealthCheckNeverArmsTheWatcher(t *testing.T) {
 		}
 		if th.IsInboxConsumer() {
 			t.Error("resident watcher counts as an inbox consumer; it must be watch-only")
+		}
+	}
+}
+
+// A RUNNING consumer that never produces a durable router action must not hold
+// the dispatch slot forever. Observed 2026-09-14 (SHA → ra): claude-io's
+// `claude --print` sat blocked on open HTTPS connections for 40+ minutes, the
+// wake-loop stayed green, and 12 Hermes items went unclaimed behind it. The
+// stall gate terminates that consumer ONCE (its whole process group), records
+// the reason, and the ordinary no-progress path dispatches one replacement.
+func TestStalledConsumerIsTerminatedOnceAndReplaced(t *testing.T) {
+	SetLoadAvgFn(func() (float64, bool) { return 0.1, true })
+	defer SetLoadAvgFn(nil)
+	hermeticDispatchDir(t)
+	oldStall, oldGrace := wakeLoopConsumerStall, consumerKillGrace
+	wakeLoopConsumerStall, consumerKillGrace = 150*time.Millisecond, 100*time.Millisecond
+	defer func() { wakeLoopConsumerStall, consumerKillGrace = oldStall, oldGrace }()
+
+	log := filepath.Join(t.TempDir(), "fired.txt")
+	pids := filepath.Join(t.TempDir(), "pids.txt")
+	// Blocks far longer than the stall window and drains nothing — the
+	// blocked-`claude --print` shape. Records its pid so the kill is provable.
+	script := filepath.Join(t.TempDir(), "consumer.sh")
+	body := "#!/bin/sh\necho \"argv=$*\" >> " + log + "\necho $$ >> " + pids + "\nsleep 30\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatalf("write consumer: %v", err)
+	}
+
+	root := wakeTestRoot(t, AgentConfig{
+		ID:       "stuck-agent",
+		Type:     "worker",
+		Consumer: ConsumerConfig{Command: []string{script, consumerAgentPlaceholder}},
+	})
+	sendItem(t, root, "stuck-agent", "work that is never claimed")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- RunWakeLoop(ctx, root, "stuck-agent", 40*time.Millisecond) }()
+
+	mustAwaitConsumerLines(t, log, 1)
+	// The replacement can only appear if the first consumer was terminated: a
+	// still-running consumer holds the slot (TestNoSecondConsumerWhileFirstIsStillRunning
+	// is the negative control) and this one sleeps 30 s.
+	n := len(awaitConsumerLines(t, log, 2))
+	cancel()
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("RunWakeLoop: %v", err)
+	}
+	if n < 2 {
+		t.Fatalf("saw %d dispatch(es) — the stalled consumer was never replaced", n)
+	}
+
+	// The first consumer's whole group is gone: pid from the script's own $$.
+	b, err := os.ReadFile(pids)
+	if err != nil {
+		t.Fatalf("read pids: %v", err)
+	}
+	first, _ := strconv.Atoi(strings.Fields(string(b))[0])
+	deadline := time.Now().Add(2 * time.Second)
+	for syscall.Kill(first, 0) == nil && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if syscall.Kill(first, 0) == nil {
+		_ = syscall.Kill(-first, syscall.SIGKILL)
+		t.Fatalf("stalled consumer pid %d still alive after termination", first)
+	}
+	// Every later consumer is killed on cancel-independent grounds too; sweep so
+	// no 30 s sleeper outlives the test.
+	for _, f := range strings.Fields(string(b))[1:] {
+		if p, _ := strconv.Atoi(f); p > 0 {
+			_ = syscall.Kill(-p, syscall.SIGKILL)
 		}
 	}
 }
