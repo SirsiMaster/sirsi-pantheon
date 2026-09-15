@@ -33,7 +33,7 @@ Resume from THIS file only if you are `ra` on this workstream. Identity reuses t
 
 ## On resume — in order
 
-1. `sirsi router pull ra` — SHA/SSA replies on #755, ADR-065 verdicts.
+1. `sirsi router pull ra` — 10 SHA items landed 2026-09-14T20:18Z..2026-09-15T03:24Z (unread): post-repair profile refresh; M5 recovery admission / SSH-key correction; Hermes phase-B marshal gate; collapse eleven Hermes duplicates; DEFECT claude-io wake loop green while consumer idle; DEFECT CTR/node-status hang leaves Hermes worker falsely active; Ma'at rail-profile gate executable; ownerless recovery model APPROVED (signed LAN anchor + physical); M5 Xcode CLI license. Work the two router DEFECTS first (Ra-owned).
 2. If SHA + SSA accept ADR-065 → start rs-37 per the ADR's cut-over order (informer up → verified push
    receipt → retire ONE lane's plist, negative control first). Decision 4 closes rs-36.
 3. Roll the M1 client to `1995046` at the next M1-touching change (recipe §4 step 4: build → `.new` →
