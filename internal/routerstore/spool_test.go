@@ -73,6 +73,12 @@ func TestSpoolWithoutRelayTimesOut(t *testing.T) {
 	tr.wait = 400 * time.Millisecond
 	t.Setenv("SIRSI_AGENT_ID", "lane-y")
 	t.Setenv("HOME", t.TempDir())
+	// A SIRSI_THREAD_ID leaking in from the calling process's own environment
+	// (this test's host session, not this test) would otherwise switch
+	// NewRemoteStore onto the MintSessionForThread path instead of the plain
+	// MintSession this assertion names — clear it so the test is hermetic
+	// regardless of what environment it runs under.
+	t.Setenv("SIRSI_THREAD_ID", "")
 	rs := NewRemoteStore("spool://"+spool, "")
 	rs.client.Transport = tr
 	_, err := rs.Get("nope")
