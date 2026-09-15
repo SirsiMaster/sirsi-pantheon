@@ -121,7 +121,25 @@ var ErrThreadAuthority = errors.New("routerstore: thread authority — a session
 // turns the common case into a clear 403 — the GUARANTEE is the host predicate
 // inside each store mutation (threads.go), which holds across a competing
 // adoption between this check and the write, and across service instances.
+//
+// NOTE (2026-09-15): a shape-based "hostname <-> machine id" transition
+// allowance was drafted here and DELIBERATELY REJECTED before landing.
+// threadAuthority has no credential tying a thread record to any particular
+// session — TestThreadAuthorityIsHostScoped's "attacker" is a fully
+// authenticated session on its OWN host; the whole point of this check is to
+// refuse it against a DIFFERENT host's thread anyway. A shape mismatch
+// (one hostname-shaped Host, one machine-id-shaped sess.Host) is
+// indistinguishable, by string content alone, from that exact attack —
+// proven by running this file's own existing test suite against the
+// drafted version, which passed a cross-host rewrite that must be refused.
+// Migrating identity safely needs an explicit, credentialed migration verb
+// (proof of the OLD identity authorizing the NEW one, recorded once), not a
+// runtime heuristic. See internal/machineid.InTransition's doc comment and
+// ledger rs-42/rs-43 for the design this still needs.
 func (s *server) threadAuthority(sess Session, name string, in []reflect.Value) error {
+	mismatch := func(recordHost string) bool {
+		return recordHost != sess.Host
+	}
 	own := func(id string) error {
 		b, err := s.store.ThreadBinding(id)
 		if errors.Is(err, ErrThreadUnknown) {
@@ -130,13 +148,13 @@ func (s *server) threadAuthority(sess Session, name string, in []reflect.Value) 
 		if err != nil {
 			return fmt.Errorf("thread authority: lookup %s: %w", id, err)
 		}
-		if b.Host != "" && b.Host != sess.Host {
+		if b.Host != "" && mismatch(b.Host) {
 			return fmt.Errorf("%w: thread %s is on %s, session %s@%s (method %s)", ErrThreadAuthority, id, b.Host, sess.Agent, sess.Host, name)
 		}
 		return nil
 	}
 	stamp := func(r *ThreadRecord) error {
-		if r.Host != "" && r.Host != sess.Host {
+		if r.Host != "" && mismatch(r.Host) {
 			return fmt.Errorf("%w: record %s names host %s, session is on %s (method %s)", ErrThreadAuthority, r.ThreadID, r.Host, sess.Host, name)
 		}
 		r.Host = sess.Host
@@ -304,6 +322,7 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 		// session-bearing request.  Checking it only while minting would let a
 		// session secret stolen from host A be replayed with any valid token for
 		// host B.  The service bootstrap token is deliberately operator-wide.
+		//
 		if tokenHost != bootstrapHost && tokenHost != sess.Host {
 			writeErr(w, http.StatusForbidden, "", ErrHostMismatch.Error()+": token is for "+tokenHost)
 			return
@@ -345,6 +364,13 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 	}
 	// A per-host token may only mint sessions for its own host: a node cannot
 	// claim to be another machine. The bootstrap token is unconstrained.
+	//
+	// A shape-based "legacy token may claim a machine id" waiver was drafted
+	// and rejected here too, for a related reason: it would turn any
+	// hostname-bound token into a credential that mints a session for ANY
+	// machine id the caller chooses, not just its own host's — a real
+	// widening of what that token authorizes, not a neutral bridge. See the
+	// note on threadAuthority above; same conclusion, same ledger rows.
 	if isMint && tokenHost != bootstrapHost && len(req.Args) > 0 {
 		var claimed string
 		if json.Unmarshal(req.Args[0], &claimed) == nil && claimed != tokenHost {
