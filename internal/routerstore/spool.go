@@ -38,48 +38,44 @@ import (
 	"time"
 )
 
-// spoolTrustGroupEnv is read on BOTH sides of the spool: the relay reads it
-// (via the CLI layer, into Relay.TrustGroup) to decide which owner it accepts
-// besides itself; a lane client reads it here, via resolvedLaneModes, to
-// decide the mode it creates its own directories with. Both sides resolve the
-// name to a real gid (user.LookupGroup) and fail closed if it does not
-// resolve — SSA review, PR #753: an earlier version treated any non-empty
-// string as license to widen permissions, unverified.
+// SIRSI_RELAY_TRUST_GROUP is read on the RELAY side only (via the CLI layer,
+// into Relay.TrustGroup) to decide which owner it accepts besides itself —
+// see cmd/sirsi/routerrelaycmd.go. It resolves the name to a real gid
+// (user.LookupGroup) and fails closed if it does not resolve — SSA review, PR
+// #753: an earlier version treated any non-empty string as license to widen
+// permissions, unverified.
 //
-// A lane cannot CHGRP a directory it creates (only its own primary group
-// applies at creation time), so actually landing in the trust group depends
-// on the spool's OWN setgid bit: once the top spool directory is group-owned
-// by the trust group with setgid set (an owner-run, one-time step — a
-// DIFFERENT uid can never chmod/chgrp a directory it does not own; see
-// CheckSpoolDirTrustingGroup's doc comment for the exact migration path),
-// every directory MkdirAll creates beneath it inherits that group
-// automatically. mkdirTrusted then verifies the actual inherited gid matches
-// before granting it read/write, rather than trusting inheritance blindly.
-const spoolTrustGroupEnv = "SIRSI_RELAY_TRUST_GROUP"
+// A lane client does NOT read this env var (Rule A35, 2026-09-15): it used to
+// carry its own copy of the same group name, which meant every lane needed
+// its environment kept in sync with whatever the relay operator configured,
+// and a lane whose env forgot the var — or carried a stale one — silently
+// fell back to single-uid mode with no signal that anything was wrong.
+// resolvedLaneModes derives the same decision from the spool root's actual
+// on-disk state instead: the one place the operator's trust decision is
+// really recorded (chgrp the root to the trust group — CheckSpoolDirTrusting
+// Group's own convergence widens it to 0770 from there).
 
-// resolvedLaneModes resolves SIRSI_RELAY_TRUST_GROUP (if set in THIS
-// process's environment) to its gid and returns the widened dir/file modes
-// alongside it, or the untouched single-uid defaults with gid -1 when unset.
-// An explicitly configured but UNRESOLVABLE group name is a hard error, never
-// a silent fall-through to either behavior: SSA review, PR #753, found the
-// first version of this treated any non-empty string as license to widen
-// permissions — a typo'd name still produced group-writable directories,
-// inherited from whatever group the parent's setgid bit happened to carry,
-// never verified against anything the operator actually configured.
-func resolvedLaneModes() (dirMode, fileMode os.FileMode, trustGID int, err error) {
-	name := strings.TrimSpace(os.Getenv(spoolTrustGroupEnv))
-	if name == "" {
+// resolvedLaneModes derives the lane's own directory/file modes and trust gid
+// from root — the top-level spool directory — instead of a separately
+// configured env var: if root exists and is group-writable, its actual gid IS
+// the trust group, self-derived rather than named twice, matching exactly the
+// gid+write-bit trust decision checkSpoolDir's own groupTrusted branch makes
+// for the same directory. root not existing yet (the very first call, before
+// the relay has ever created or validated it) falls back to the single-uid
+// default — nothing on disk yet to inherit trust from.
+func resolvedLaneModes(root string) (dirMode, fileMode os.FileMode, trustGID int, err error) {
+	st, statErr := os.Stat(root)
+	if statErr != nil {
 		return 0o700, 0o600, -1, nil
 	}
-	g, lerr := user.LookupGroup(name)
-	if lerr != nil {
-		return 0, 0, -1, fmt.Errorf("spool: %s %q: %w", spoolTrustGroupEnv, name, lerr)
+	if st.Mode().Perm()&0o020 == 0 {
+		return 0o700, 0o600, -1, nil
 	}
-	gid, aerr := strconv.Atoi(g.Gid)
-	if aerr != nil {
-		return 0, 0, -1, fmt.Errorf("spool: %s %q: bad gid %q: %w", spoolTrustGroupEnv, name, g.Gid, aerr)
+	sys, ok := st.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0o700, 0o600, -1, nil
 	}
-	return 0o770, 0o640, gid, nil
+	return 0o770, 0o640, int(sys.Gid), nil
 }
 
 // mkdirTrusted creates dir (with any needed parents) and converges it to
@@ -170,6 +166,7 @@ func SpoolDir(u string) string {
 // spoolTransport is the lane side: an http.RoundTripper over files.
 type spoolTransport struct {
 	dir   string // <spool>/<agent>
+	root  string // <spool> — stat'd by resolvedLaneModes to self-derive trust
 	wait  time.Duration
 	now   func() time.Time
 	seqMu sync.Mutex
@@ -177,7 +174,7 @@ type spoolTransport struct {
 }
 
 func newSpoolTransport(spool, agent string) *spoolTransport {
-	return &spoolTransport{dir: filepath.Join(spool, agent), wait: 30 * time.Second, now: time.Now}
+	return &spoolTransport{dir: filepath.Join(spool, agent), root: spool, wait: 30 * time.Second, now: time.Now}
 }
 
 func (t *spoolTransport) nextID() string {
@@ -211,7 +208,7 @@ func (t *spoolTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 			req.Headers[k] = r.Header.Get(k)
 		}
 	}
-	dirMode, fileMode, trustGID, merr := resolvedLaneModes()
+	dirMode, fileMode, trustGID, merr := resolvedLaneModes(t.root)
 	if merr != nil {
 		return nil, merr
 	}
