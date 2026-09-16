@@ -428,6 +428,23 @@ func registerTools(s *Server) {
 	}, handleRouterGet)
 
 	s.RegisterTool(Tool{
+		Name:        "router_close",
+		Description: "Close a work item through the same guarded facade as `sirsi router close` (ADR-036) — MCP-only agents no longer need to shell out to the CLI to close an item. Enforces the ADR-037 completion-proof gate: a repo with .agents/completion.contract.json requires proof, blocked, or ack.",
+		InputSchema: InputSchema{
+			Type: "object",
+			Properties: map[string]SchemaField{
+				"id":      {Type: "string", Description: "Item ID to close."},
+				"result":  {Type: "string", Description: "Result body recorded on close — required when blocked or ack is set."},
+				"agent":   {Type: "string", Description: "Acting agent id. Falls back to $SIRSI_AGENT_ID, then a session marker, then the sole live thread."},
+				"proof":   {Type: "string", Description: "Completion proof JSON path (ADR-037), relative to repo root or absolute."},
+				"blocked": {Type: "boolean", Description: "Close as explicitly blocked; requires result, skips proof validation."},
+				"ack":     {Type: "boolean", Description: "Close as coordination/ack only; requires result, skips proof validation."},
+			},
+			Required: []string{"id"},
+		},
+	}, handleRouterClose)
+
+	s.RegisterTool(Tool{
 		Name:        "router_ledger",
 		Description: "Universal task ledger board: completion %, done/in-review/queued/blocked counts, and blocked-item list. The same board the owner sees in the menubar and TUI. Call without agent for global view.",
 		InputSchema: InputSchema{
@@ -1252,6 +1269,46 @@ func handleRouterSubmit(args map[string]interface{}) (*ToolResult, error) {
 		return textResult(fmt.Sprintf("Deduped: an identical %s to %s already exists this window (ID: %s). Nothing was appended.", docType, addressedTo, res.ID), false), nil
 	}
 	return textResult(fmt.Sprintf("Submitted %s %q (ID: %s)\nAdded to %s's inbox (items/). They will see it via router_poll or `sirsi router pull`.", docType, title, res.ID, addressedTo), false), nil
+}
+
+func handleRouterClose(args map[string]interface{}) (*ToolResult, error) {
+	id, _ := args["id"].(string)
+	if id == "" {
+		return textResult("Error: id is required.", true), nil
+	}
+	result, _ := args["result"].(string)
+	proof, _ := args["proof"].(string)
+	blocked, _ := args["blocked"].(bool)
+	ack, _ := args["ack"].(bool)
+	agentArg, _ := args["agent"].(string)
+
+	repoRoot, err := router.FindRepoRoot()
+	if err != nil {
+		return textResult(fmt.Sprintf("Error: %v", err), true), nil
+	}
+
+	// Same ADR-037 gate the CLI's `sirsi router close` enforces (ADR-036: one
+	// facade, two surfaces) — a bare close in a gated repo is a done-claim
+	// without evidence, regardless of which surface issued it.
+	if gateErr := router.EnforceCompletionProof(repoRoot, id, proof, blocked, ack, result); gateErr != nil {
+		return textResult(fmt.Sprintf("Error: %v", gateErr), true), nil
+	}
+
+	f, err := dispatch.Open(repoRoot)
+	if err != nil {
+		return textResult(fmt.Sprintf("Error: %v", err), true), nil
+	}
+	defer func() { _ = f.Close() }()
+
+	actor, reason := router.ResolveCurrentAgent(filepath.Join(repoRoot, ".agents", "idea-router"), agentArg)
+	if actor == "" {
+		return textResult(fmt.Sprintf("Error: resolve acting agent: %s", reason), true), nil
+	}
+
+	if err := f.CloseItem(actor, id, result); err != nil {
+		return textResult(fmt.Sprintf("Error: %v", err), true), nil
+	}
+	return textResult(fmt.Sprintf("Closed %s", id), false), nil
 }
 
 func handleRouterNotify(args map[string]interface{}) (*ToolResult, error) {

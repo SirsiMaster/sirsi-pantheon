@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"sort"
@@ -203,6 +202,19 @@ var (
 	sendInstructions string
 )
 
+// canonicalInferenceRecipient consolidates the retired SNE worker aliases into
+// the owner-designated inference lane. It applies only to new sends: historical
+// work items retain their recorded recipients and responses preserve their
+// original sender.
+func canonicalInferenceRecipient(recipient string) string {
+	switch strings.ToLower(strings.TrimSpace(recipient)) {
+	case "sne", "inference", "codex-sne-runtime", "claude-inference":
+		return "codex-inference"
+	default:
+		return recipient
+	}
+}
+
 var routerSendCmd = &cobra.Command{
 	Use:   "send",
 	Short: "Send a work item from one agent to another",
@@ -237,14 +249,15 @@ cutover live the store row IS the record.
 			return err
 		}
 		defer func() { _ = f.Close() }()
-		res, err := f.Send(sendFrom, sendTo, sendTitle, sendType, instr)
+		recipient := canonicalInferenceRecipient(sendTo)
+		res, err := f.Send(sendFrom, recipient, sendTitle, sendType, instr)
 		if err != nil {
 			return err
 		}
 		if res.Deduped {
-			fmt.Printf("  Deduped %s → %s: %s (same logical send this window — nothing appended)\n", sendFrom, sendTo, res.ID)
+			fmt.Printf("  Deduped %s → %s: %s (same logical send this window — nothing appended)\n", sendFrom, recipient, res.ID)
 		} else {
-			fmt.Printf("  Sent %s → %s: %s\n", sendFrom, sendTo, res.ID)
+			fmt.Printf("  Sent %s → %s: %s\n", sendFrom, recipient, res.ID)
 		}
 		return nil
 	},
@@ -669,61 +682,15 @@ Run this as the owner, naming yourself explicitly:
 // explicit --ack (coordination-only close, with --result). Repos without a
 // contract are ungated. Restored from the pre-facade close path; the target
 // repo is the router's own repo — Router v2 items no longer carry a Repo field.
+// enforceCompletionProof and validateCompletionProof delegate to the shared
+// router package (internal/router/completionproof.go) so the CLI and MCP
+// surfaces enforce the ADR-037 gate identically — same facade (ADR-036).
 func enforceCompletionProof(repoRoot, itemID, proof string, blocked, ack bool, result string) error {
-	contractPath := filepath.Join(repoRoot, ".agents", "completion.contract.json")
-	_, contractErr := os.Stat(contractPath)
-	hasContract := contractErr == nil
-	if contractErr != nil && !os.IsNotExist(contractErr) {
-		return fmt.Errorf("check completion contract: %w", contractErr)
-	}
-
-	if blocked {
-		if strings.TrimSpace(result) == "" {
-			return fmt.Errorf("--blocked requires --result explaining the blocker")
-		}
-		return nil
-	}
-	if ack {
-		if strings.TrimSpace(result) == "" {
-			return fmt.Errorf("--ack requires --result explaining what was acknowledged")
-		}
-		return nil
-	}
-	if proof == "" {
-		if hasContract {
-			return fmt.Errorf("completion proof required for %s: pass --proof .agents/proofs/%s.json, or use --blocked/--ack with --result", repoRoot, itemID)
-		}
-		return nil
-	}
-	if !hasContract {
-		return fmt.Errorf("--proof supplied but no completion contract exists at %s", contractPath)
-	}
-	return validateCompletionProof(repoRoot, proof)
+	return router.EnforceCompletionProof(repoRoot, itemID, proof, blocked, ack, result)
 }
 
-// validateCompletionProof shells out to the portfolio gate validator
-// (tools/agent_completion_gate.py beside the repo, or
-// SIRSI_COMPLETION_GATE_SCRIPT). The proof schema and validation rules live
-// with the portfolio law, not in this binary.
 func validateCompletionProof(repoRoot, proof string) error {
-	script := os.Getenv("SIRSI_COMPLETION_GATE_SCRIPT")
-	if script == "" {
-		devRoot := filepath.Dir(repoRoot)
-		script = filepath.Join(devRoot, "tools", "agent_completion_gate.py")
-	}
-	proofPath := proof
-	if !filepath.IsAbs(proofPath) {
-		proofPath = filepath.Join(repoRoot, proofPath)
-	}
-	out, err := exec.Command("python3", script, "validate", "--repo", repoRoot, "--proof", proofPath).CombinedOutput()
-	if err != nil {
-		msg := strings.TrimSpace(string(out))
-		if msg == "" {
-			msg = err.Error()
-		}
-		return fmt.Errorf("completion proof validation failed: %s", msg)
-	}
-	return nil
+	return router.ValidateCompletionProof(repoRoot, proof)
 }
 
 // routerWakeInstallCmd installs the per-agent pull-loop LaunchAgent (PR#2,

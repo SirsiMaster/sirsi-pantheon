@@ -691,39 +691,10 @@ var (
 //
 // Returns "" with a helpful reason when it cannot be resolved unambiguously, so
 // the caller can tell the operator to pass --agent rather than guessing.
+// resolveCurrentAgent delegates to the shared router package so the CLI and
+// MCP surfaces resolve "who is acting" identically (same facade, ADR-036).
 func resolveCurrentAgent(routerRoot, override string) (string, string) {
-	if a := strings.TrimSpace(override); a != "" {
-		return a, "flag"
-	}
-	if a := strings.TrimSpace(os.Getenv("SIRSI_AGENT_ID")); a != "" {
-		return a, "env SIRSI_AGENT_ID"
-	}
-	if a := router.ReadSessionAgentMarker(router.CurrentSessionID()); a != "" {
-		return a, "session marker"
-	}
-	// Sole-live-thread fallback: unambiguous only when exactly one non-terminal
-	// thread is registered on this host.
-	if reg, err := router.LoadThreadRegistry(routerRoot); err == nil {
-		var candidates []string
-		seen := map[string]bool{}
-		now := time.Now().UTC()
-		for _, t := range reg.SortedThreads() {
-			if t.Status.IsTerminal() {
-				continue
-			}
-			if router.EffectiveStale(t, now, router.DefaultThreadStaleAfter) {
-				continue
-			}
-			if !seen[t.AgentID] {
-				seen[t.AgentID] = true
-				candidates = append(candidates, t.AgentID)
-			}
-		}
-		if len(candidates) == 1 {
-			return candidates[0], "sole live thread"
-		}
-	}
-	return "", "could not resolve the current agent — pass --agent <id> (no $SIRSI_AGENT_ID, no session marker, and not a sole live thread)"
+	return router.ResolveCurrentAgent(routerRoot, override)
 }
 
 // threadWatchCmd is the thread-scoped, self-resolving alias over the existing
@@ -880,6 +851,14 @@ var threadListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		agentRegistry, _ := router.LoadRegistry(routerRoot)
+		publicIdentity := func(agentID string) (string, string, string) {
+			cfg, ok := agentRegistry.Agents[agentID]
+			if !ok {
+				return agentID, "", ""
+			}
+			return cfg.PublicIdentity()
+		}
 
 		now := time.Now().UTC()
 		type row struct {
@@ -906,8 +885,12 @@ var threadListCmd = &cobra.Command{
 		if JsonOutput {
 			payload := make([]map[string]any, 0, len(rows))
 			for _, r := range rows {
+				publicName, callsign, banner := publicIdentity(r.thr.AgentID)
 				payload = append(payload, map[string]any{
 					"thread":       r.thr,
+					"public_name":  publicName,
+					"callsign":     callsign,
+					"banner":       banner,
 					"stale":        r.stale,
 					"idle_seconds": now.Sub(r.thr.LastSeenAt).Seconds(),
 				})
@@ -941,8 +924,12 @@ var threadListCmd = &cobra.Command{
 		}
 		for _, r := range rows {
 			marker := threadGlyph(r.thr.Status, r.stale)
-			fmt.Printf("  %s %s  agent=%s surface=%s status=%s\n",
-				marker, r.thr.ThreadID, r.thr.AgentID, r.thr.Surface, r.thr.Status)
+			publicName, callsign, banner := publicIdentity(r.thr.AgentID)
+			fmt.Printf("  %s %s  agent=%s public=%s callsign=%s surface=%s status=%s\n",
+				marker, r.thr.ThreadID, r.thr.AgentID, publicName, displayUnknown(callsign), r.thr.Surface, r.thr.Status)
+			if banner != "" {
+				fmt.Printf("      banner=%s\n", banner)
+			}
 			fmt.Printf("      last_seen=%s (idle %.0fs)\n",
 				r.thr.LastSeenAt.Format(time.RFC3339),
 				now.Sub(r.thr.LastSeenAt).Seconds())
