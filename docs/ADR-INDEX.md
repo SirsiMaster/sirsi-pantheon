@@ -2,7 +2,7 @@
 
 This index tracks **all** architectural decisions for the Sirsi Pantheon ecosystem.
 
-**Total ADRs: 62 (+ ADR-031-A/B/C sub-decisions, + the ADR-054 companion contracts)** | **Next available: ADR-066**
+**Total ADRs: 63 (+ ADR-031-A/B/C sub-decisions, + the ADR-054 companion contracts)** | **Next available: ADR-067**
 
 ---
 
