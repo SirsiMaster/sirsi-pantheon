@@ -73,6 +73,25 @@ core.hooksPath .githooks` on M1 (verified: hook fired and BLOCKED a push).
   claude-io unblocked (stale GH_TOKEN check + own worktree, item 175915). Awaiting: SSA bind, claude-home
   doctor PR, claude-io #197 merge + node-profile PR.
 
+## Close of day 2026-09-16 (~20:4xZ) — all on main unless noted
+- #767 `365ba8fd` + #770 `0016b726` MERGED on claude-home's bind (owner rerouted from SSA, out to 09-20;
+  owner cleared claude-home's disclosed ADR-066 conflict). ADR-066 + Rule A37 + ADR-065 hardware verdict live.
+- #771 `sirsi stacklab doctor` MERGED `e716392a` on Ra's bind after two blockers fixed (repo-404 → Unknown;
+  branch-scan failure → no finding; roster ids validated). First live run: 3 stranded (§6 map unknown),
+  1 undeclared = router wing's own pin (self-exclusion → claude-home follow-up), 1 unknown = catalog file
+  misfiled under wings/pinned (→ claude-inference). io-connect canonical (#197 merged `1edd0cca`, hash == pin).
+- CLIs on M1 + M5 rolled to `e716392a` (old copies kept). M5 relay daemon rolled to 4d7abc3 earlier; M5
+  FileVault ON; M5 SSH-key card closed. M1: HostName pinned, FileVault on; SIP-off ruled unnecessary by
+  claude-io (B) → owner runs `csrutil enable` at next reboot.
+- Owner "clean up your CI": 3 red runs deleted; #772 (M5 claude-io lane) paths-ignore docs + docs-canon-check
+  with stub jobs for the required check names — Ra bind pending green. THIS commit is the docs-only live
+  proof: it must run only "Canon + ADR-INDEX guard" + the three stubs, not the heavy jobs.
+- Two claude-io processes on one lane (M5 wake lane headless + live session): owner "belt and suspenders" —
+  M5 gh logged in by owner; rule "deferred to attended session" sent to claude-home for rs-37.
+- Ledger: rs-45 added (roster + nexus-experience, finalwishes, apple-accelerator-routes).
+- Open on other lanes: claude-home doctor follow-up (§6 map, self-exclusion, --fix, guard, quiet CI wiring on
+  the roster path); claude-inference registry fix; claude-io PR #369 (SirsiNexusApp node profile) for SHA 09-19.
+
 ## Residuals (open by design)
 rs-42/43 authenticated hostname→machine-id migration (shape bridge REJECTED, `TestThreadAuthorityIsHostScoped`);
 rs-44 scoped read-only token (claude-home cloud Routine waits on it); rs-41 anchor ADR not started;
