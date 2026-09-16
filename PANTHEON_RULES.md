@@ -523,6 +523,20 @@ Two more from the same week, same shape: `sirsi diagnose` reporting **100/100 ac
 
 **Enforcement**: Ma'at and review treat an unscoped claim as a defect even when the code is correct, because the record is the thing later work depends on. Where a scope gap cannot be closed now, the claim MUST be narrowed in the same change, with the residual named.
 
+### 2.34 A Record Exists Only On Origin (Rule A37)
+> Established September 16, 2026 (ADR-066), after a Stack Lab wing record committed on the M5 and never pushed sat behind a roster entry that declared it live — invisible to the M1, to origin, and to every check, with no alarm.
+
+**Rule**: A canonical record — a Stack Lab wing, a contract fixture, a catalog — exists for the fabric **only** when it is on `origin/main` of its owning repository at its canonical path. A local commit, an unpushed commit, an unmerged branch, a control-plane copy, a mirror, or a host-local file is **stranded** and does not count. Where a universal registry exists (`SirsiMaster/sirsi-stacklab` for wings), it **pins** origin records by content hash and authors nothing; an unpinned entry is a draft.
+
+**How to apply:**
+
+1. A roster entry (e.g. the router wing's `allowed_peer_wings`) is a claim that a record exists. The claim is checked against `origin/main`, never against a working tree or a mirror (A35: scope the check to the claim).
+2. A check that can name a stranded record MUST exist and MUST run in CI: `stranded/unbuilt`, `unpushed`, `unpinned`, `undeclared`, `invalid`. Red for a declared-but-unbuilt record is the honest state, not a failure of the check.
+3. A pre-push guard refuses to leave a canonical-path change behind on an unmerged branch.
+4. Mirrors (fleet-mirror, Reading Room, Workspace) carry origin content and are never the source.
+
+**Enforcement**: a review that accepts "it is on the M5" or "it is in the mirror" as proof of existence has accepted a stranded record. The reviewer names the origin commit or the record does not exist.
+
 ## 3. Technology Stack
 
 > **Platform scope (ADR-032 — Mac-first):** build targets are **Mac only** today (darwin/arm64 + darwin/amd64) in the order CLI → Menubar → TUI → GUI. The cross-platform language/build properties below are *latent capability*, not current targets — Windows/Linux are deferred 3–6mo and demand-gated. **Rule A3 carve-out:** cross-platform agent/CLI binaries are deferred until the fleet/Ra phase AND cross-platform demand.
