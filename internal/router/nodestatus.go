@@ -382,14 +382,16 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 			return nil, fmt.Errorf("node-status: resolve service store for pending: %w", sErr)
 		}
 		defer func() { _ = store.Close() }()
-		items, lErr := store.ListAll(context.Background())
+		// Inbox("") = every OPEN item, indexed — the claim is "pending", and
+		// that is all this reads. ListAll here pulled the whole corpus (7,700
+		// items, a 36 MB response on 2026-09-15) through the relay's response
+		// cap and the client's 30 s spool wait, so `ctr`/`node-status` on the
+		// M5 "hung" and printed nothing (SHA 20260914-234610; A31, A35).
+		items, lErr := store.Inbox("")
 		if lErr != nil {
 			return nil, fmt.Errorf("node-status: list service pending: %w", lErr)
 		}
 		for _, item := range items {
-			if item.Status != routerstore.StatusOpen {
-				continue // pending = an open item nobody has picked up
-			}
 			ns.PendingByAgent[item.To] = append(ns.PendingByAgent[item.To], item.ID)
 			ns.TotalPending++
 		}

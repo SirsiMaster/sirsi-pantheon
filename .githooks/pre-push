@@ -247,16 +247,16 @@ if [ -n "$DIRTY_TREE" ]; then
 fi
 
 if [ "$DEPTH" = "deep" ]; then
-    # Deep: full test suite (same as CI)
+    # Deep: full test suite under CI's exact flags (-race -short; A28 parity)
     echo "  🧪 Running full test suite..."
-    if ! go test ./... -count=1 -timeout 120s 2>/dev/null; then
+    if ! go test -race -short ./... -count=1 -timeout 300s 2>/dev/null; then
         echo "  ❌ Tests failed — fix before pushing."
         exit 1
     fi
 elif [ -n "$CHANGED_PKGS" ]; then
     # Fast/Standard: only test changed packages
     echo "  🧪 Testing changed packages: $(echo $CHANGED_PKGS | wc -w | tr -d ' ') pkg(s)"
-    if ! go test $CHANGED_PKGS -short -count=1 -timeout 60s 2>/dev/null; then
+    if ! go test -race -short $CHANGED_PKGS -count=1 -timeout 180s 2>/dev/null; then
         echo "  ❌ Tests failed in changed packages — fix before pushing."
         exit 1
     fi
