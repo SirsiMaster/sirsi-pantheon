@@ -107,6 +107,17 @@ jobs:
         run: go test -v -race -short -coverprofile=coverage.out ./...
         env:
           CGO_ENABLED: 1
+          # This self-hosted runner's service process is launched outside the
+          # login session's own process tree (nohup, not launchd's GUI
+          # domain), so it inherits no TMPDIR — Go's t.TempDir() then falls
+          # back to /tmp (root:wheel) instead of the per-user sandboxed tmp
+          # (the invoking user's own primary group). Every routerstore spool
+          # test asserting a trust-group directory mode fails on gid 0 vs the
+          # expected primary-group gid as a result — reproduced on main,
+          # unrelated to any PR's diff (2026-09-16). runner.temp is scoped to
+          # this job and owned by the runner's own user on every runner,
+          # hosted or self-hosted, so this needs no host-specific path.
+          TMPDIR: ${{ runner.temp }}
 
       # ADR-062 rs-07b: the same routerstore suite on PostgreSQL (the Ra backend),
       # plus pg/schema.sql structure/behaviour/least-privilege checks with their
