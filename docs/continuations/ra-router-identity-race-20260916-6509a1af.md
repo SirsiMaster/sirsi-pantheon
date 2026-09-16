@@ -55,7 +55,9 @@ core.hooksPath .githooks` on M1 (verified: hook fired and BLOCKED a push).
   inode until they respawn on their own (PIDs verified unchanged; nothing restarted). Negative
   control: old M5 binary already had #755 — M5 was never exposed to the EPERM class.
 - **~03:1xZ owner at M5**: relay daemon rolled to 4d7abc3 (sudo -n, rename not cp, bootout+bootstrap;
-  verified). M5 SSH-key card closed. FileVault on M5 ON (verified). M5 cards all closed; M1 cards (HostName pin, SIP, FileVault) still open.
+  verified). M5 SSH-key card closed. FileVault on M5 ON (verified). M5 cards all closed. M1: HostName already pinned, FileVault on. SIP: claude-io ruled B
+  (decision 20260916-174733) — no longer needed for TB4 RDMA (silicon-gated; dext signed). Owner
+  enables it at next reboot (Recovery → csrutil enable); no reboot today (mid-build).
 
 ## Residuals (open by design)
 rs-42/43 authenticated hostname→machine-id migration (shape bridge REJECTED, `TestThreadAuthorityIsHostScoped`);
