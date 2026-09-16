@@ -68,6 +68,10 @@ core.hooksPath .githooks` on M1 (verified: hook fired and BLOCKED a push).
 - **ADR-066 Stack Lab wing authority + Rule A37: PR #770** (Proposed). GO sent to claude-home to build
   `sirsi stacklab doctor` under Ra bind. rs-45 = roster + 3 undeclared wings. Six drafts to ratify.
 - SIP on M1: claude-io ruled B (not needed); owner enables at next reboot.
+- **18:1xZ**: #770 green (after mirroring A37 into CLAUDE.md/GEMINI.md + index fix). **Bind requested from
+  SSA** for #767 + #770, bundles in ~/.sirsi/handoff/sirsi-pantheon-*-20260916.bundle. rs-45 on ledger.
+  claude-io unblocked (stale GH_TOKEN check + own worktree, item 175915). Awaiting: SSA bind, claude-home
+  doctor PR, claude-io #197 merge + node-profile PR.
 
 ## Residuals (open by design)
 rs-42/43 authenticated hostname→machine-id migration (shape bridge REJECTED, `TestThreadAuthorityIsHostScoped`);
