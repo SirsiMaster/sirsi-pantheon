@@ -36,6 +36,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/machineid"
 )
 
 // sentinelErrors is the closed set that crosses the wire by name.
@@ -127,8 +129,31 @@ var _ Store = (*RemoteStore)(nil)
 // independently: the hook fills only what the environment left empty.
 var IdentityHook func() (agent, threadID string)
 
+// EnvUseMachineIDHost opts THIS process into claiming a stable machine id
+// (internal/machineid.MachineID — the hardware UUID) instead of os.Hostname()
+// as its auth identity. Off by default: os.Hostname() is what every existing
+// token and thread record on the fleet is bound to today, and the server has
+// no safe way to bridge the two shapes automatically (a runtime "one side
+// looks migrated" heuristic was drafted and rejected — internal/routerstore/serve.go's
+// threadAuthority is indistinguishable, by string content alone, from a
+// genuine cross-host attack; TestThreadAuthorityIsHostScoped catches exactly
+// this if the bridge is reintroduced). Flipping this on a host BEFORE its
+// token and existing thread records are re-minted/migrated for its machine id
+// 403s that host exactly as the M1↔M5 hostname fight did on 2026-09-15 —
+// this only removes the VOLATILITY (a stable id instead of a name DHCP/mDNS
+// can rewrite), it does not remove the need to migrate deliberately.
+const EnvUseMachineIDHost = "SIRSI_ROUTER_USE_MACHINE_ID"
+
 func NewRemoteStore(base, token string) *RemoteStore {
-	host, _ := os.Hostname()
+	displayHost, _ := os.Hostname() // readable name; the agent-id fallback below, and the default auth claim
+	host := displayHost
+	if strings.TrimSpace(os.Getenv(EnvUseMachineIDHost)) != "" {
+		if id := machineid.MachineID(); id != "" {
+			host = id
+		}
+		// id == "": platform exposes no machine id (non-Mac/Linux, or the probe
+		// failed) — keep the hostname claim rather than authenticate as "".
+	}
 	agent := strings.TrimSpace(os.Getenv("SIRSI_AGENT_ID"))
 	threadID := strings.TrimSpace(os.Getenv("SIRSI_THREAD_ID"))
 	if (agent == "" || threadID == "") && IdentityHook != nil {
@@ -149,7 +174,7 @@ func NewRemoteStore(base, token string) *RemoteStore {
 		}
 	}
 	if agent == "" {
-		agent = host
+		agent = displayHost // readable ("Mac", "M1.local"), not the UUID auth claim
 	}
 	dir := ""
 	if home, err := os.UserHomeDir(); err == nil {
