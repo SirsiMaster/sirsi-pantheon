@@ -9,7 +9,10 @@ session: 6509a1af-6205-4a70-b158-8c3a4cb16b23
 # Ra continuation — 2026-09-16 ~06:10Z
 
 Owner directive in force: **"fix these issues once and for all; don't report done until verifiably
-fixed; if claude-home doesn't think they are clean, continue until fixed."** Not done yet.
+fixed; if claude-home doesn't think they are clean, continue until fixed."**
+**DONE 06:45Z — claude-home verdict: ALL SIX CLEAN at main 4d7abc30** (item 20260916-064531,
+read-only live check, own bash negative control). Reported to owner. Remaining work is the
+residuals below, none of it part of tonight's directive.
 
 ## Merged tonight (verified via `gh pr view --json mergeCommit`)
 #766 `e7448c2f` CI TMPDIR · #761 `122bb02b` stall gate/spool/node-status · #763 `e47f4ee3` cwd ·
