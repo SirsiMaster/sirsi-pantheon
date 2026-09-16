@@ -59,6 +59,16 @@ core.hooksPath .githooks` on M1 (verified: hook fired and BLOCKED a push).
   (decision 20260916-174733) — no longer needed for TB4 RDMA (silicon-gated; dext signed). Owner
   enables it at next reboot (Recovery → csrutil enable); no reboot today (mid-build).
 
+## Inbox sweep 2026-09-16 ~18:0xZ (12 items → 0 open)
+- SHA gate facts (8,184 B DF ceiling / 64 KiB TCP PASS) recorded → memory; closed. SHA node-profile
+  update routed to claude-io (acting SHA to 09-19) item 175345 + merge io-connect PR #197.
+- claude-io spool thread: ADR-062 cross-host audit done (both hosts service URL; no SIRSI_ROUTER_DB
+  anywhere); closed. Delegation ack'd.
+- ADR-065 hardware-seat ACCEPT (2 conditions) recorded in ADR + index (PR #770). SSA + bind pending.
+- **ADR-066 Stack Lab wing authority + Rule A37: PR #770** (Proposed). GO sent to claude-home to build
+  `sirsi stacklab doctor` under Ra bind. rs-45 = roster + 3 undeclared wings. Six drafts to ratify.
+- SIP on M1: claude-io ruled B (not needed); owner enables at next reboot.
+
 ## Residuals (open by design)
 rs-42/43 authenticated hostname→machine-id migration (shape bridge REJECTED, `TestThreadAuthorityIsHostScoped`);
 rs-44 scoped read-only token (claude-home cloud Routine waits on it); rs-41 anchor ADR not started;
