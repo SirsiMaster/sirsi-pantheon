@@ -53,7 +53,7 @@ unpinned, undeclared, invalid. Clean only when every peer clears all five.`,
 		}
 		roster := routerWing.Handoffs.AllowedPeerWings
 
-		rep := stacklab.Run(stacklab.GHRemoteReader{}, roster, stacklab.LaneRepoMap)
+		rep := stacklab.Run(stacklab.NewGHRemoteReader(), roster, stacklab.LaneRepoMap)
 
 		out := cmd.OutOrStdout()
 		if stacklabDoctorJSON {

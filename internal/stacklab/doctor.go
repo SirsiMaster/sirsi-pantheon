@@ -144,6 +144,15 @@ func Run(reader RemoteReader, roster []string, laneRepoMap map[string]string) Re
 	rep.Unknown = append(rep.Unknown, pinsUnknown...)
 
 	for _, wingID := range sortedRoster {
+		// A35 hardening: a malformed roster entry must never become an API
+		// path segment (contracts/stacklab/<lane>-wing-v1.json,
+		// wings/pinned/<lane>...). Reject it before laneOf/wingPath ever run.
+		if !wingIDPattern.MatchString(wingID) {
+			rep.Findings = append(rep.Findings, Finding{wingID, KindInvalid,
+				"roster entry does not match ^stacklab\\.wing\\.[a-z0-9][a-z0-9.-]*$ — refusing to derive a repo path from it"})
+			continue
+		}
+
 		lane := laneOf(wingID)
 		repo, known := laneRepoMap[lane]
 		if !known {
@@ -158,7 +167,9 @@ func Run(reader RemoteReader, roster []string, laneRepoMap map[string]string) Re
 			continue
 		}
 		if !exists {
-			rep.Findings = append(rep.Findings, classifyMissing(reader, wingID, repo, lane, &rep.Unknown))
+			if f, ok := classifyMissing(reader, wingID, repo, lane, &rep.Unknown); ok {
+				rep.Findings = append(rep.Findings, f)
+			}
 			continue
 		}
 
@@ -199,12 +210,15 @@ func Run(reader RemoteReader, roster []string, laneRepoMap map[string]string) Re
 
 // classifyMissing distinguishes stranded/unbuilt (no record anywhere) from
 // unpushed/stranded (a record exists on some non-main branch of the owning
-// repo but never reached origin/main — the io-connect class).
-func classifyMissing(reader RemoteReader, wingID, repo, lane string, unknown *[]string) Finding {
+// repo but never reached origin/main — the io-connect class). A failed scan
+// (branch listing or a branch read) is not a verdict either way: it returns
+// ok=false and only records the failure in unknown — the caller must not
+// synthesize a finding from an inconclusive scan.
+func classifyMissing(reader RemoteReader, wingID, repo, lane string, unknown *[]string) (finding Finding, ok bool) {
 	branches, berr := reader.ListBranches(repo)
 	if berr != nil {
 		*unknown = append(*unknown, fmt.Sprintf("%s: list branches of %s: %v", wingID, repo, berr))
-		return Finding{wingID, KindStrandedUnbuilt, fmt.Sprintf("no record at %s on %s@main (branch scan failed: %v)", wingPath(lane), repo, berr)}
+		return Finding{}, false
 	}
 	for _, b := range branches {
 		if b == "main" {
@@ -217,8 +231,8 @@ func classifyMissing(reader RemoteReader, wingID, repo, lane string, unknown *[]
 		}
 		if exists {
 			return Finding{wingID, KindUnpushedStranded,
-				fmt.Sprintf("record exists on branch %q of %s but not on origin/main — open a recovery PR to publish it", b, repo)}
+				fmt.Sprintf("record exists on branch %q of %s but not on origin/main — open a recovery PR to publish it", b, repo)}, true
 		}
 	}
-	return Finding{wingID, KindStrandedUnbuilt, fmt.Sprintf("no record at %s on any branch of %s — needs authoring", wingPath(lane), repo)}
+	return Finding{wingID, KindStrandedUnbuilt, fmt.Sprintf("no record at %s on any branch of %s — needs authoring", wingPath(lane), repo)}, true
 }

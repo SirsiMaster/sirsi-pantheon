@@ -16,15 +16,17 @@ type mockReader struct {
 	// dirs[repo][ref][dirPath] = file names
 	dirs map[string]map[string]map[string][]string
 
-	readErr map[string]error // key "repo/ref/path" -> forced error
+	readErr   map[string]error // key "repo/ref/path" -> forced error
+	branchErr map[string]error // key repo -> forced ListBranches error
 }
 
 func newMockReader() *mockReader {
 	return &mockReader{
-		files:    map[string]map[string]map[string][]byte{},
-		branches: map[string][]string{},
-		dirs:     map[string]map[string]map[string][]string{},
-		readErr:  map[string]error{},
+		files:     map[string]map[string]map[string][]byte{},
+		branches:  map[string][]string{},
+		dirs:      map[string]map[string]map[string][]string{},
+		readErr:   map[string]error{},
+		branchErr: map[string]error{},
 	}
 }
 
@@ -84,6 +86,9 @@ func (m *mockReader) ListDir(repo, path, ref string) ([]string, bool, error) {
 }
 
 func (m *mockReader) ListBranches(repo string) ([]string, error) {
+	if err, ok := m.branchErr[repo]; ok {
+		return nil, err
+	}
 	return append([]string{"main"}, m.branches[repo]...), nil
 }
 
@@ -263,6 +268,76 @@ func TestValidateWing_RejectsUnknownFields(t *testing.T) {
 	bad := append(valid[:len(valid)-1], []byte(`,"unexpected_field":"x"}`)...)
 	if _, err := ValidateWing(bad); err == nil {
 		t.Fatalf("expected an error for an unknown field")
+	}
+}
+
+// TestRun_RepoUnreadable_NoFindingOnlyUnknown covers BLOCKER 1: a repo the
+// caller cannot read at all (private + missing/insufficient auth, or a
+// wrong LaneRepoMap entry) must never be reported as a confident
+// stranded/unbuilt finding — GHRemoteReader.ReadFile wraps that case in an
+// error precisely so it lands here, in Unknown, not as a finding.
+func TestRun_RepoUnreadable_NoFindingOnlyUnknown(t *testing.T) {
+	r := newMockReader()
+	r.readErr[testRepo+"/main/"+wingPath(testLane)] = fmt.Errorf("gh api read %s@main:%s: repo unreadable, cannot distinguish from a real path-404: repo %s: exit status 1 ()", testRepo, wingPath(testLane), testRepo)
+	r.putDir(RegistryRepo, "main", "wings/pinned", nil)
+
+	rep := Run(r, []string{testWingID}, testLaneRepoMap())
+	if len(rep.Findings) != 0 {
+		t.Fatalf("a repo-unreadable read must produce NO finding, got %+v", rep.Findings)
+	}
+	if len(rep.Unknown) != 1 {
+		t.Fatalf("expected exactly one unknown entry, got %v", rep.Unknown)
+	}
+	if rep.Clean() {
+		t.Fatalf("a repo-unreadable read must never be reported as clean")
+	}
+}
+
+// TestRun_BranchScanFailure_NoFinding covers BLOCKER 2: when ListBranches
+// fails while classifying a missing origin record, that is an inconclusive
+// scan, not a verdict — it must land only in Unknown, never as a
+// stranded/unbuilt finding.
+func TestRun_BranchScanFailure_NoFinding(t *testing.T) {
+	r := newMockReader()
+	r.branchErr[testRepo] = fmt.Errorf("gh api list branches %s: exit status 1", testRepo)
+	r.putDir(RegistryRepo, "main", "wings/pinned", nil)
+
+	rep := Run(r, []string{testWingID}, testLaneRepoMap())
+	if len(rep.Findings) != 0 {
+		t.Fatalf("a failed branch scan must produce NO finding, got %+v", rep.Findings)
+	}
+	if len(rep.Unknown) != 1 {
+		t.Fatalf("expected exactly one unknown entry, got %v", rep.Unknown)
+	}
+}
+
+// TestClassifyMissing_BranchScanFailure_ReturnsNotOK is the same BLOCKER 2
+// guarantee at the classifyMissing unit level: ok must be false so the
+// caller never synthesizes a finding from an inconclusive scan.
+func TestClassifyMissing_BranchScanFailure_ReturnsNotOK(t *testing.T) {
+	r := newMockReader()
+	r.branchErr[testRepo] = fmt.Errorf("boom")
+	var unknown []string
+	_, ok := classifyMissing(r, testWingID, testRepo, testLane, &unknown)
+	if ok {
+		t.Fatalf("expected ok=false on a branch-scan failure")
+	}
+	if len(unknown) != 1 {
+		t.Fatalf("expected exactly one unknown entry, got %v", unknown)
+	}
+}
+
+// TestRun_MalformedRosterEntry_Invalid covers the A35 roster-hardening ask:
+// a roster entry that fails wingIDPattern must be rejected as `invalid`
+// BEFORE laneOf/wingPath ever turn it into an API path segment.
+func TestRun_MalformedRosterEntry_Invalid(t *testing.T) {
+	r := newMockReader()
+	r.putDir(RegistryRepo, "main", "wings/pinned", nil)
+
+	bad := "stacklab.wing./../../etc/passwd"
+	rep := Run(r, []string{bad}, map[string]string{}) // no lane mapping — would be a giveaway if reached
+	if len(rep.Findings) != 1 || rep.Findings[0].Kind != KindInvalid || rep.Findings[0].WingID != bad {
+		t.Fatalf("expected exactly one invalid finding for the malformed roster entry, got %+v", rep.Findings)
 	}
 }
 
