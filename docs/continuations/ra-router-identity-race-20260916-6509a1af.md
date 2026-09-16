@@ -50,6 +50,10 @@ core.hooksPath .githooks` on M1 (verified: hook fired and BLOCKED a push).
   from main `4d7abc3`, installed (rm+cp; old at ~/.sirsi/tmp/bin/sirsi-old-20260913), verified both
   identities, negative control on old binary. Replied on router (type decision). claude-home is
   running the 6-claim verification via the plain path meanwhile. Relay daemon untouched.
+- **02:55Z M5 lane CLI rebuilt too (owner asked)**: `thekryptodragon@m5:~/.local/bin/sirsi`
+  09-13 04:39 → 4d7abc3 via scp of the M1 build (no Go on M5). 10 wake loops + horus keep the old
+  inode until they respawn on their own (PIDs verified unchanged; nothing restarted). Negative
+  control: old M5 binary already had #755 — M5 was never exposed to the EPERM class.
 
 ## Residuals (open by design)
 rs-42/43 authenticated hostname→machine-id migration (shape bridge REJECTED, `TestThreadAuthorityIsHostScoped`);
