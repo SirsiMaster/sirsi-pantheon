@@ -54,7 +54,13 @@ re-run that command before relying on this section, since PR state moves.
   `runsvc.sh` itself, since the runner's Node service wrapper does not pass an externally-set
   `TMPDIR` through to its child at all — confirmed by direct process-environment inspection, not
   assumed). This is the dependency every other PR below needed to get a clean CI run at all.
-- **PR #761 — MERGED, verified** (`122bb02b32d303cbec70303b50c90d82e40daf3d`). A wake-loop
+- **PR #761 — MERGED** (`122bb02b32d303cbec70303b50c90d82e40daf3d`), **but it shipped a data
+  race** that "locally verified" missed: the local run was `go test` without `-race`, while CI runs
+  with it. `terminateConsumer`'s SIGKILL goroutine read the package var `consumerKillGrace` after
+  its sleep; the stall-gate test mutates that var and restores it via `defer`, unsynchronized.
+  Surfaced on PR #767's Test job (a docs-only PR rebased onto post-#761 `main`); fixed in PR #768
+  by capturing the grace value in the caller before spawning. "Verified" below this line means
+  "under the same flags CI uses" — anything less is a narrower check than the claim (A35). A wake-loop
   consumer with no durable action for 30 min is terminated once and replaced (the "stuck
   `claude --print`" class); spool clients fail fast on a trust-group mismatch instead of a silent
   30s wait; `node-status` reads the indexed open-items view instead of the whole corpus.
