@@ -3,8 +3,15 @@ name: CI — Sirsi Pantheon
 on:
   push:
     branches: [main, develop]
+    # Docs-only pushes (e.g. the acting ledger) get their own lightweight
+    # guard instead — see docs-canon-check.yml. It still exercises the two
+    # checks that actually read these files (internal/canon, ADR numbers),
+    # so this exclusion does not go blind on canon drift; it only skips the
+    # heavy Lint/Test/Build jobs that these paths cannot affect.
+    paths-ignore: ['docs/**', '**/*.md', '.thoth/**']
   pull_request:
     branches: [main, develop]
+    paths-ignore: ['docs/**', '**/*.md', '.thoth/**']
 
 # Auto-cancel a branch's prior in-flight run on every new push, so a
 # rebase-heavy PR stack never leaves superseded runs starving the serialized

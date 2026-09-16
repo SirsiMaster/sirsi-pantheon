@@ -1,0 +1,40 @@
+name: Docs Canon Check
+
+# Lightweight counterpart to ci.yml's paths-ignore on docs/**, **/*.md, .thoth/**.
+# Those paths include PANTHEON_RULES.md, CLAUDE.md, GEMINI.md and ADR-INDEX.md —
+# exactly what internal/canon and the ADR number check read — so excluding them
+# from the full CI run must not also blind the repo to canon drift. This job
+# runs the two checks that matter on a docs-only change and skips the rest
+# (Lint/Test/Build), which cannot be affected by a docs-only diff.
+
+on:
+  push:
+    branches: [main, develop]
+    paths: ['docs/**', '**/*.md', '.thoth/**']
+  pull_request:
+    branches: [main, develop]
+    paths: ['docs/**', '**/*.md', '.thoth/**']
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  docs-canon-check:
+    name: Canon + ADR-INDEX guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Canon sync (PANTHEON_RULES vs CLAUDE.md/GEMINI.md)
+        run: go test ./internal/canon/...
+
+      - name: ADR number uniqueness + index high-water mark
+        run: bash scripts/check-adr-numbers.sh
