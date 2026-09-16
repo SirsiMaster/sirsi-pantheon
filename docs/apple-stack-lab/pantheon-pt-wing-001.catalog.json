@@ -1,0 +1,86 @@
+{
+  "schema": "sirsi.stacklab.catalog.v2",
+  "library_root": "/Users/thekryptodragon/Library/Application Support/Sirsi/StackLab",
+  "components": [
+    {
+      "id": "pantheon.pt-abi",
+      "category": "engine-abi",
+      "state": "candidate",
+      "source": {"path": "/Users/thekryptodragon/Development/sirsi-pantheon/internal/engine/abi.go", "sha256": "bbc0c713ce7ba88bcc150538fb041104d5d910b00a4c1d8a9a3f5e363cf22644"},
+      "storage": {"object_id": "pantheon-pt-abi-bbc0c713", "class": "source", "canonical_path": "/Users/thekryptodragon/Development/sirsi-pantheon/internal/engine/abi.go", "sha256": "bbc0c713ce7ba88bcc150538fb041104d5d910b00a4c1d8a9a3f5e363cf22644"},
+      "evidence": [
+        {"path": "/Users/thekryptodragon/Development/sirsi-inference/docs/engineering/stacklab/wings/PANTHEON_PT_WING_001.md", "sha256": "6c589c0a537cdeb9cae504c78dfb60e85b5cf6754d8a66e084a0c7b3fccc46d5"}
+      ]
+    },
+    {
+      "id": "pantheon.pt-sne-v2",
+      "category": "sne-connector",
+      "state": "candidate",
+      "source": {"path": "/Users/thekryptodragon/Development/sirsi-pantheon/cmd/sirsi-gemma/sne_runner.go", "sha256": "a2bfab7cb6158759b67fd4acf3509b8124508519903731a7bff947cd18779587"},
+      "storage": {"object_id": "pantheon-pt-sne-v2-a2bfab7c", "class": "source", "canonical_path": "/Users/thekryptodragon/Development/sirsi-pantheon/cmd/sirsi-gemma/sne_runner.go", "sha256": "a2bfab7cb6158759b67fd4acf3509b8124508519903731a7bff947cd18779587"},
+      "evidence": [
+        {"path": "/Users/thekryptodragon/Development/sirsi-inference/artifacts/evidence/router-loop-20260911-0308/pantheon-response.md", "sha256": "442d088aa703d87279c0f47ac57cfa0e0b4d54c909dbca4db2587f02710a05bb"}
+      ]
+    },
+    {
+      "id": "pantheon.pt-route",
+      "category": "route-selection",
+      "state": "candidate",
+      "source": {"path": "/Users/thekryptodragon/Development/sirsi-pantheon/internal/engine/router.go", "sha256": "c7f7600b603eddc590ff117a6a3d44c22e9ca48c628fb8421a9e3bf00da0c317"},
+      "storage": {"object_id": "pantheon-pt-route-c7f7600b", "class": "source", "canonical_path": "/Users/thekryptodragon/Development/sirsi-pantheon/internal/engine/router.go", "sha256": "c7f7600b603eddc590ff117a6a3d44c22e9ca48c628fb8421a9e3bf00da0c317"},
+      "evidence": [
+        {"path": "/Users/thekryptodragon/Development/sirsi-inference/docs/engineering/stacklab/wings/PANTHEON_PT_WING_001.md", "sha256": "6c589c0a537cdeb9cae504c78dfb60e85b5cf6754d8a66e084a0c7b3fccc46d5"}
+      ]
+    },
+    {
+      "id": "pantheon.pt-worker",
+      "category": "worker-control-plane",
+      "state": "candidate",
+      "source": {"path": "/Users/thekryptodragon/Development/sirsi-pantheon/internal/dashboard/fleet.go", "sha256": "517562c9c38e5a844d2bc4f073d439ae2b35f316c777ca8317df8e075321cb9a"},
+      "storage": {"object_id": "pantheon-pt-worker-517562c9", "class": "source", "canonical_path": "/Users/thekryptodragon/Development/sirsi-pantheon/internal/dashboard/fleet.go", "sha256": "517562c9c38e5a844d2bc4f073d439ae2b35f316c777ca8317df8e075321cb9a"},
+      "evidence": [
+        {"path": "/Users/thekryptodragon/Development/sirsi-inference/artifacts/evidence/router-loop-20260911-0308/pantheon-response.md", "sha256": "442d088aa703d87279c0f47ac57cfa0e0b4d54c909dbca4db2587f02710a05bb"}
+      ]
+    },
+    {
+      "id": "pantheon.pt-qual",
+      "category": "qualification-contract",
+      "state": "candidate",
+      "source": {"path": "/Users/thekryptodragon/Development/sirsi-pantheon/internal/engine/selection.go", "sha256": "7b7f033cfc68e700067e6cace5772b0385b502b64397986841c7a57040bafb8a"},
+      "storage": {"object_id": "pantheon-pt-qual-7b7f033c", "class": "source", "canonical_path": "/Users/thekryptodragon/Development/sirsi-pantheon/internal/engine/selection.go", "sha256": "7b7f033cfc68e700067e6cace5772b0385b502b64397986841c7a57040bafb8a"},
+      "evidence": [
+        {"path": "/Users/thekryptodragon/Development/sirsi-inference/docs/engineering/stacklab/wings/PANTHEON_PT_WING_001.md", "sha256": "6c589c0a537cdeb9cae504c78dfb60e85b5cf6754d8a66e084a0c7b3fccc46d5"}
+      ]
+    },
+    {
+      "id": "pantheon.pt-package",
+      "category": "package-inventory",
+      "state": "candidate",
+      "source": {"path": "/Users/thekryptodragon/Development/sirsi-pantheon/internal/packageinventory/inventory.go", "sha256": "01deca0a7b74c2773b2ae82992ddaa415470524d8f8bfff7bb87b99ac148e442"},
+      "storage": {"object_id": "pantheon-pt-package-01deca0a", "class": "source", "canonical_path": "/Users/thekryptodragon/Development/sirsi-pantheon/internal/packageinventory/inventory.go", "sha256": "01deca0a7b74c2773b2ae82992ddaa415470524d8f8bfff7bb87b99ac148e442"},
+      "evidence": [
+        {"path": "/Users/thekryptodragon/Development/sirsi-inference/artifacts/evidence/router-loop-20260911-0308/pantheon-response.md", "sha256": "442d088aa703d87279c0f47ac57cfa0e0b4d54c909dbca4db2587f02710a05bb"}
+      ]
+    },
+    {
+      "id": "pantheon.pt-cask",
+      "category": "cask-lifecycle",
+      "state": "candidate",
+      "source": {"path": "/Users/thekryptodragon/Development/sirsi-pantheon/docs/product/SNE_OPENAI_LOCAL_API_CONTRACT_20260820.md", "sha256": "e25c637e52852219a0afd5b98919d261f549637f9bfd1c5be8271236d5aa21b8"},
+      "storage": {"object_id": "pantheon-pt-cask-e25c637e5", "class": "source", "canonical_path": "/Users/thekryptodragon/Development/sirsi-pantheon/docs/product/SNE_OPENAI_LOCAL_API_CONTRACT_20260820.md", "sha256": "e25c637e52852219a0afd5b98919d261f549637f9bfd1c5be8271236d5aa21b8"},
+      "evidence": [
+        {"path": "/Users/thekryptodragon/Development/sirsi-inference/docs/engineering/stacklab/wings/PANTHEON_PT_WING_001.md", "sha256": "6c589c0a537cdeb9cae504c78dfb60e85b5cf6754d8a66e084a0c7b3fccc46d5"}
+      ]
+    },
+    {
+      "id": "pantheon.pt-release",
+      "category": "release-boundary",
+      "state": "candidate",
+      "source": {"path": "/Users/thekryptodragon/Development/sirsi-pantheon/internal/engine/sne_control.go", "sha256": "1b973d9ae5bbe19ed0e3cfd384f872ee8355e05d2f2236a5d5acef12e6727a88"},
+      "storage": {"object_id": "pantheon-pt-release-1b973d9a", "class": "source", "canonical_path": "/Users/thekryptodragon/Development/sirsi-pantheon/internal/engine/sne_control.go", "sha256": "1b973d9ae5bbe19ed0e3cfd384f872ee8355e05d2f2236a5d5acef12e6727a88"},
+      "evidence": [
+        {"path": "/Users/thekryptodragon/Development/sirsi-inference/artifacts/evidence/router-loop-20260911-0308/pantheon-response.md", "sha256": "442d088aa703d87279c0f47ac57cfa0e0b4d54c909dbca4db2587f02710a05bb"}
+      ]
+    }
+  ]
+}

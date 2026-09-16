@@ -1,0 +1,13 @@
+{
+  "schema": "sirsi.stacklab.recipe.v2",
+  "id": "pantheon.pt-r04",
+  "intent": "Provide a host-neutral authenticated worker plane with local Horus authority and Ra subclient behavior.",
+  "track": "platform-route",
+  "evidence_state": "intake",
+  "profile": null,
+  "components": ["pantheon.pt-worker", "pantheon.pt-route"],
+  "execution_graph": {"routes": ["local-horus-client->authenticated-ra-subclient->role-bound-worker"], "prewarm": "none", "residency": "durable-receipt-bound", "fallback": "deny-unauthenticated-role-or-replica", "description": "Any supported Mac may hold the current role; no M1/M5 label or copied router database is authority."},
+  "acceptance": {"exactness_oracle": "pantheon-worker-role-receipt-v1", "comparators": [], "promotion_rule": "Promote only after constrained inspect/message/review/delegate/claim/cancel/handback/result operations and non-replica proof."},
+  "mirrors": {"repository": "current", "desktop": "pending", "workspace": "blocked"},
+  "next_action": "Bind an independently reviewed, unexpired host-neutral role receipt for the current operation under ROLE-RECEIPT-001.G1; retain M1/M5 only as historical host-profile evidence."
+}

@@ -1,0 +1,13 @@
+{
+  "schema": "sirsi.stacklab.recipe.v2",
+  "id": "pantheon.pt-r01",
+  "intent": "Bind explicit engine selection and identity-bound route receipts across supported Mac environments.",
+  "track": "platform-route",
+  "evidence_state": "intake",
+  "profile": null,
+  "components": ["pantheon.pt-abi", "pantheon.pt-route"],
+  "execution_graph": {"routes": ["selected-engine->admitted-connector->receipt"], "prewarm": "none", "residency": "current-process-only", "fallback": "fail-closed", "description": "Metadata-only intake; any runtime execution requires a fresh SSA admission and an environment profile."},
+  "acceptance": {"exactness_oracle": "pantheon-route-receipt-v1", "comparators": [], "promotion_rule": "Promote only after independent source review and fresh normal/race evidence for the exact source identities."},
+  "mirrors": {"repository": "current", "desktop": "pending", "workspace": "blocked"},
+  "next_action": "Submit the catalog and this recipe to Stack Lab G1; do not start an engine or infer qualification."
+}

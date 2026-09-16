@@ -1,0 +1,13 @@
+{
+  "schema": "sirsi.stacklab.recipe.v2",
+  "id": "pantheon.pt-r03",
+  "intent": "Keep engine and utilization qualification separate, reproducible, and environment-specific.",
+  "track": "platform-route",
+  "evidence_state": "intake",
+  "profile": null,
+  "components": ["pantheon.pt-qual", "pantheon.pt-route"],
+  "execution_graph": {"routes": ["engine->profile->workload->receipt"], "prewarm": "declared-per-recipe", "residency": "profile-bound", "fallback": "no-cross-environment-substitution", "description": "No throughput or capacity claim is promoted without model, precision, batch, KV, resource, power, and current-host evidence."},
+  "acceptance": {"exactness_oracle": "pantheon-qualification-receipt-v1", "comparators": [], "promotion_rule": "Promote only matched batch 1/8/32/128 receipts with explicit environment and resource telemetry."},
+  "mirrors": {"repository": "current", "desktop": "pending", "workspace": "blocked"},
+  "next_action": "Request SNE Max/Ultra qualification receipts for each environment independently."
+}

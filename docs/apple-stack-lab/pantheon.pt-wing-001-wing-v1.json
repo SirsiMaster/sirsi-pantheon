@@ -1,0 +1,43 @@
+{
+  "schema": "sirsi.stacklab.wing.v1",
+  "id": "stacklab.wing.pantheon.pt-wing-001",
+  "owner": "Pantheon (claude-pantheon / codex-pantheon)",
+  "project_id": "sirsi-pantheon",
+  "router_namespace": "claude-pantheon",
+  "class": "control-plane",
+  "scope": "Engine ABI consumer, lifecycle, route/UI/CLI/MCP, package and release composition",
+  "status": "intake",
+  "first_gate": "PT-WING-001.G1",
+  "workspace": {
+    "repository_root": "/Users/thekryptodragon/Development/sirsi-pantheon",
+    "writable_roots": [
+      "/Users/thekryptodragon/Development/sirsi-pantheon/docs/apple-stack-lab",
+      "/Users/thekryptodragon/Development/sirsi-pantheon/contracts/stacklab"
+    ],
+    "evidence_root": "/Users/thekryptodragon/Development/sirsi-pantheon/docs/apple-stack-lab",
+    "shared_payload_access": "none",
+    "boundary_policy": "default-deny"
+  },
+  "handoffs": {
+    "inbound": "router-receipt-only",
+    "outbound": "router-receipt-only",
+    "allowed_peer_wings": [
+      "stacklab.wing.sne-engine",
+      "stacklab.wing.m1-ra"
+    ]
+  },
+  "provenance": {
+    "lifecycle_task_id": "PT-WING-001",
+    "component_catalog": "/Users/thekryptodragon/Development/sirsi-pantheon/docs/apple-stack-lab/pantheon-pt-wing-001.catalog.json",
+    "receipt_links": [
+      "Reading Room: SNE/Stack Lab/Pantheon Stack Lab Wing PT-WING-001 - 2026-09-11.md",
+      "SirsiNexusApp:docs/apple-stack-lab/fleet-mirror-20260913/stack-lab-control/pantheon/PANTHEON_PT_WING_001_G1_SUBMISSION.md"
+    ]
+  },
+  "mirrors": {
+    "repository": "current",
+    "desktop": "current",
+    "workspace": "blocked"
+  },
+  "next_action": "G1 catalog and recipes are already in-tree (docs/apple-stack-lab/pantheon-pt-wing-001.catalog.json, pantheon-pt-r01..r06 recipes); wing.schema.json (contracts/stacklab/v2/wing.schema.json, SHA-256 a69e0094b8ec4596c30b316fc8bd6ce5f806f5a801b5c80c10a972e3d86338ad) exists only on unmerged branches (bf28fe46, PR #747) and must land on main before this record can be schema-validated in-repo."
+}

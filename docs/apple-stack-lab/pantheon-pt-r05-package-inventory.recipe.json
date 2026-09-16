@@ -1,0 +1,13 @@
+{
+  "schema": "sirsi.stacklab.recipe.v2",
+  "id": "pantheon.pt-r05",
+  "intent": "Verify deterministic one-engine and Python-free package claims without executing payloads.",
+  "track": "platform-route",
+  "evidence_state": "intake",
+  "profile": null,
+  "components": ["pantheon.pt-package", "pantheon.pt-cask"],
+  "execution_graph": {"routes": ["copied-app->descriptor-bound-inventory->cask-bytes"], "prewarm": "none", "residency": "artifact-only", "fallback": "reject-unknown-or-ambiguous-inventory", "description": "Package and cask identity are checked against exact bytes; signing and notarization are separate credential gates."},
+  "acceptance": {"exactness_oracle": "pantheon-package-inventory-v1", "comparators": [], "promotion_rule": "Promote only after fresh admitted copied-package, one-engine, Python-free, cask lifecycle, and cleanup evidence."},
+  "mirrors": {"repository": "current", "desktop": "pending", "workspace": "blocked"},
+  "next_action": "Request a fresh non-GPU admission after shared-host contention clears; do not sign or install."
+}

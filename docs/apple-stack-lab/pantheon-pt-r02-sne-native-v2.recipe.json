@@ -1,0 +1,13 @@
+{
+  "schema": "sirsi.stacklab.recipe.v2",
+  "id": "pantheon.pt-r02",
+  "intent": "Consume an explicitly selected SNE Native v2 loopback endpoint with environment-bound identity and no fallback.",
+  "track": "platform-route",
+  "evidence_state": "intake",
+  "profile": null,
+  "components": ["pantheon.pt-sne-v2", "pantheon.pt-abi"],
+  "execution_graph": {"routes": ["current-host-loopback->sne-native-v2"], "prewarm": "none", "residency": "current-environment-only", "fallback": "reject-missing-or-unhealthy-endpoint", "description": "SNE owns runtime/model qualification; Pantheon records endpoint, model, environment profile, and receipt without copying host assumptions."},
+  "acceptance": {"exactness_oracle": "sne-native-v2-receipt-v1", "comparators": [], "promotion_rule": "Promote only when SNE supplies a matching runtime/model/environment receipt and Pantheon parity evidence exists."},
+  "mirrors": {"repository": "current", "desktop": "pending", "workspace": "blocked"},
+  "next_action": "Bind a fresh SNE receipt for the current environment before any admitted request."
+}

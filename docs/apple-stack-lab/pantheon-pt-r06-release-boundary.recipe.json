@@ -1,0 +1,13 @@
+{
+  "schema": "sirsi.stacklab.recipe.v2",
+  "id": "pantheon.pt-r06",
+  "intent": "Compose unsigned source/package evidence with separately authorized Developer ID, notarization, publication, and install gates.",
+  "track": "platform-route",
+  "evidence_state": "intake",
+  "profile": null,
+  "components": ["pantheon.pt-release", "pantheon.pt-package", "pantheon.pt-cask"],
+  "execution_graph": {"routes": ["source->unsigned-package->credentialed-release->installed-host"], "prewarm": "none", "residency": "artifact-and-receipt-bound", "fallback": "never-promote-missing-credential-or-host-proof", "description": "Credentialed release work is not inferred from source or unsigned package evidence and requires explicit owner authority."},
+  "acceptance": {"exactness_oracle": "pantheon-release-boundary-v1", "comparators": [], "promotion_rule": "Promote only when unsigned, signed, notarized, published, cask, and installed-host receipts bind the same artifact identity."},
+  "mirrors": {"repository": "current", "desktop": "pending", "workspace": "blocked"},
+  "next_action": "Keep Developer ID and notarization as explicit owner credential gates while advancing unsigned package evidence independently."
+}
