@@ -59,8 +59,12 @@ re-run that command before relying on this section, since PR state moves.
   with it. `terminateConsumer`'s SIGKILL goroutine read the package var `consumerKillGrace` after
   its sleep; the stall-gate test mutates that var and restores it via `defer`, unsynchronized.
   Surfaced on PR #767's Test job (a docs-only PR rebased onto post-#761 `main`); fixed in PR #768
-  by capturing the grace value in the caller before spawning. "Verified" below this line means
-  "under the same flags CI uses" — anything less is a narrower check than the claim (A35). A wake-loop
+  by capturing the grace value in the caller before spawning. Two gate defects let it through, both
+  fixed in #768 or on the spot: the Ma'at pre-push hook and every `make test` target ran without
+  `-race` (the hook's own comment said "same as CI"), AND the hook was **disarmed** on this machine
+  (`core.hooksPath` unset — A28's exact "shipped but not armed" case), so no local gate ran at all.
+  "Verified" below this line means "under the same flags CI uses, by a gate that actually fires" —
+  anything less is a narrower check than the claim (A35). A wake-loop
   consumer with no durable action for 30 min is terminated once and replaced (the "stuck
   `claude --print`" class); spool clients fail fast on a trust-group mismatch instead of a silent
   30s wait; `node-status` reads the indexed open-items view instead of the whole corpus.
