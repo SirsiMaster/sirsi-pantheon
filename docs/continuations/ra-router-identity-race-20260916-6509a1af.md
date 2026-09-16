@@ -34,8 +34,8 @@ core.hooksPath .githooks` on M1 (verified: hook fired and BLOCKED a push).
 - **Control CONFIRMED (06:1xZ)**: same `main` head — clean env: 0 failures; with the shell's
   `SIRSI_ROUTER_URL`/`SIRSI_RELAY_TRUST_GROUP`: dozens of router/routerstore FAILs. Hook block was
   env, not code. Fix authored + pushed on branch `fix/prepush-scrub-sirsi-env` (hook runs
-  `env $SCRUB_SIRSI go test ...`); PR opened — get it green, merge, then verify a push from the
-  exporting shell passes without manual `env -u`.
+  `env $SCRUB_SIRSI go test ...`); **PR #769 MERGED `4d7abc30`**. This commit's push is the
+  proof: made from the exporting shell with NO manual `env -u` — hook must pass on its own.
 - **Then** send `scratchpad/claude-home-verify-request.md` (drafted, 6 claims + residuals) to
   claude-home via `SIRSI_AGENT_ID=ra sirsi router send --to claude-home ... @file`; act on any
   NOT CLEAN until CLEAN. Only then report done.
