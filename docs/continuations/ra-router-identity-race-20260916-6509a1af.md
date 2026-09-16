@@ -54,6 +54,8 @@ core.hooksPath .githooks` on M1 (verified: hook fired and BLOCKED a push).
   09-13 04:39 → 4d7abc3 via scp of the M1 build (no Go on M5). 10 wake loops + horus keep the old
   inode until they respawn on their own (PIDs verified unchanged; nothing restarted). Negative
   control: old M5 binary already had #755 — M5 was never exposed to the EPERM class.
+- **~03:1xZ owner at M5**: relay daemon rolled to 4d7abc3 (sudo -n, rename not cp, bootout+bootstrap;
+  verified). M5 SSH-key card closed. FileVault on M5 being enabled by owner. M1 cards still open.
 
 ## Residuals (open by design)
 rs-42/43 authenticated hostname→machine-id migration (shape bridge REJECTED, `TestThreadAuthorityIsHostScoped`);
