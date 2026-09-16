@@ -54,29 +54,25 @@ re-run that command before relying on this section, since PR state moves.
   `runsvc.sh` itself, since the runner's Node service wrapper does not pass an externally-set
   `TMPDIR` through to its child at all — confirmed by direct process-environment inspection, not
   assumed). This is the dependency every other PR below needed to get a clean CI run at all.
-- **PR #761 — OPEN, built and locally verified** (`go vet` clean, full local test suite green as
-  of the last local run; not yet merged). A wake-loop consumer with no durable action for 30 min
-  is terminated once and replaced (the "stuck `claude --print`" class); spool clients fail fast on
-  a trust-group mismatch instead of a silent 30s wait; `node-status` reads the indexed open-items
-  view instead of the whole corpus.
-- **PR #763 — OPEN, built and locally verified**, not yet merged. The `claude-io`/`codex-io`
-  registry cwd correction (a stale, uncommitted SSA fix finally committed).
-- **PR #764 — OPEN, built and locally verified** (new test `TestRouterDBOnCutoverHostWarning`
-  passing locally), not yet merged. `sirsi router doctor` now warns, once, whenever
-  `SIRSI_ROUTER_DB` is set on a cut-over host — the fix for the "vanished item" row above:
-  read-only, on by default, catches the exact misconfiguration before it drops another item.
-- **PR #765 — OPEN, built and locally verified** (new tests for the opt-in path and the shape
-  helpers passing locally; `TestThreadAuthorityIsHostScoped` re-run and still passing, confirming
-  the rejected bridge in §4 was correctly left out), not yet merged.
-  `internal/machineid` extracted as a shared leaf package; `internal/routerstore` can claim
-  `MachineID()` instead of `os.Hostname()` via an explicit opt-in
-  (`SIRSI_ROUTER_USE_MACHINE_ID`), **off by default**.
+- **PR #761 — MERGED, verified** (`122bb02b32d303cbec70303b50c90d82e40daf3d`). A wake-loop
+  consumer with no durable action for 30 min is terminated once and replaced (the "stuck
+  `claude --print`" class); spool clients fail fast on a trust-group mismatch instead of a silent
+  30s wait; `node-status` reads the indexed open-items view instead of the whole corpus.
+- **PR #763 — MERGED, verified** (`e47f4ee34669cf23be2b3a1949b73675636a285f`). The
+  `claude-io`/`codex-io` registry cwd correction (a stale, uncommitted SSA fix finally committed).
+- **PR #764 — MERGED, verified** (`4f9137665cd873f515d040b1dfba7a553be64147`). `sirsi router
+  doctor` now warns, once, whenever `SIRSI_ROUTER_DB` is set on a cut-over host — the fix for the
+  "vanished item" row above: read-only, on by default, catches the exact misconfiguration before
+  it drops another item. Its first CI run's `Test` job failed with the exact env-contamination
+  signature from §2/§6 (stale, timestamped inside the runner-restart window); reproduced clean on
+  a second local run with a correctly-owned `TMPDIR`, then reran clean in CI once the runner
+  cleared its backlog — the failure was the environment, not the code.
+- **PR #765 — MERGED, verified** (`b014437b58eff6273acaafdc305e02c796707cc7`). `internal/machineid`
+  extracted as a shared leaf package; `internal/routerstore` can claim `MachineID()` instead of
+  `os.Hostname()` via an explicit opt-in (`SIRSI_ROUTER_USE_MACHINE_ID`), **off by default**.
 
-**Why four of five are still OPEN**: their CI depends on #766's fix, and the self-hosted runner
-that executes CI needed two rounds of environment-contamination repair (§6) before it could run
-clean. "Built and locally verified" is a real, checkable state — it is not "merged" and this
-document does not claim it is. Re-run the `gh pr view` check above for current status before
-treating any of #761/#763/#764/#765 as shipped.
+All five are merged as of this writing. Re-run the `gh pr view` check above before relying on this
+section in the future — it is a snapshot, not a standing guarantee.
 
 ## 4. What was designed, then rejected — and must not be quietly re-attempted
 
