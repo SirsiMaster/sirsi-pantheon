@@ -1,0 +1,68 @@
+name: Docs Canon Check
+
+# Lightweight counterpart to ci.yml's paths-ignore on docs/**, **/*.md, .thoth/**.
+# Those paths include PANTHEON_RULES.md, CLAUDE.md, GEMINI.md and ADR-INDEX.md —
+# exactly what internal/canon and the ADR number check read — so excluding them
+# from the full CI run must not also blind the repo to canon drift. This job
+# runs the two checks that matter on a docs-only change and skips the rest
+# (Lint/Test/Build), which cannot be affected by a docs-only diff.
+
+on:
+  push:
+    branches: [main, develop]
+    paths: ['docs/**', '**/*.md', '.thoth/**']
+  pull_request:
+    branches: [main, develop]
+    paths: ['docs/**', '**/*.md', '.thoth/**']
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  docs-canon-check:
+    name: Canon + ADR-INDEX guard
+    # ubuntu-latest, not the owned M5 frame: owned frames are the default
+    # (owner doctrine 2026-07-22), but Lint already runs hosted, linux minutes
+    # bill 1x, and this keeps the serialized self-hosted runner free for Test/Build.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Canon sync (PANTHEON_RULES vs CLAUDE.md/GEMINI.md)
+        run: go test ./internal/canon/...
+
+      - name: ADR number uniqueness + index high-water mark
+        run: bash scripts/check-adr-numbers.sh
+
+  # ci.yml paths-ignores this same docs/**, **/*.md, .thoth/** set, so a
+  # docs-only PR never produces Lint/Test/Build — but main's branch protection
+  # requires those three names by name, so GitHub holds a docs-only PR at
+  # "Expected — waiting for status to be reported" forever. These stubs report
+  # success under the exact required names on docs-only changes; on a code PR
+  # this workflow's path filter doesn't trigger, so ci.yml's real jobs report
+  # instead and these never run.
+  Lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "docs-only change — heavy job not applicable (see ci.yml paths-ignore)"
+
+  Test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "docs-only change — heavy job not applicable (see ci.yml paths-ignore)"
+
+  Build:
+    name: "Build (self-hosted, macOS, ARM64, 1.25)"
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "docs-only change — heavy job not applicable (see ci.yml paths-ignore)"
