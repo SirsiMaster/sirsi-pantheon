@@ -157,6 +157,8 @@ func TestWakeLoopDispatchGateChecksProgressAndCeiling(t *testing.T) {
 		{"nextDispatchAllowed", "the backoff is not consulted before dispatching"},
 		{"wakeLoopFruitlessQuarantine", "a lane that never makes progress is no longer quarantined"},
 		{"recordDispatch(", "dispatches are not recorded, so the rate ceiling can never trip"},
+		{"wakeLoopConsumerStall", "a RUNNING consumer with no durable router action is never terminated — " +
+			"a blocked `claude --print` holds the slot and its queue forever (SHA 2026-09-14)"},
 	} {
 		if !strings.Contains(fn, want.frag) {
 			t.Errorf("RunWakeLoop is missing %q: %s", want.frag, want.why)
