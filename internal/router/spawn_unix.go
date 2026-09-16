@@ -30,8 +30,13 @@ func terminateConsumer(pid int) error {
 	if err := syscall.Kill(-pid, syscall.SIGTERM); err != nil {
 		return err
 	}
+	// Capture the grace period here, in the caller's goroutine, instead of
+	// reading the package var from inside the spawned goroutine below — a
+	// test that mutates consumerKillGrace and restores it via defer races
+	// with that later read otherwise (found by -race in CI, 2026-09-16).
+	grace := consumerKillGrace
 	go func() {
-		time.Sleep(consumerKillGrace)
+		time.Sleep(grace)
 		_ = syscall.Kill(-pid, syscall.SIGKILL)
 	}()
 	return nil
