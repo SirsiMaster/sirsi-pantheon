@@ -42,6 +42,11 @@ core.hooksPath .githooks` on M1 (verified: hook fired and BLOCKED a push).
 - **SENT** verify request to claude-home (router item, type review, 6 claims + residuals).
   **WAITING on verdict.** Pull replies: `SIRSI_AGENT_ID=ra sirsi router pull ra`. Act on any
   NOT CLEAN until CLEAN. Only then report done to the owner.
+- **02:37Z claude-home reported a spool gap** (`SIRSI_AGENT_ID=claude-home … chmod relay/claude-home
+  EPERM`). Root cause: stale `~/.local/bin/sirsi` (09-13 04:09) predating PR #755 (04:39). Rebuilt
+  from main `4d7abc3`, installed (rm+cp; old at ~/.sirsi/tmp/bin/sirsi-old-20260913), verified both
+  identities, negative control on old binary. Replied on router (type decision). claude-home is
+  running the 6-claim verification via the plain path meanwhile. Relay daemon untouched.
 
 ## Residuals (open by design)
 rs-42/43 authenticated hostname→machine-id migration (shape bridge REJECTED, `TestThreadAuthorityIsHostScoped`);
