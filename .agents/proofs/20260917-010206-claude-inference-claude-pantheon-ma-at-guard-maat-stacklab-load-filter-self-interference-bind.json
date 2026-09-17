@@ -1,0 +1,98 @@
+{
+  "work_item_id": "20260917-010206-claude-inference-claude-pantheon-ma-at-guard-maat-stacklab-load-filter-self-interference-bind",
+  "agent_id": "claude-pantheon",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "internal-tool",
+  "canon_read": [
+    {
+      "path": "/tmp/maat-stacklab-load-filter-result.md",
+      "role": "governing-guard",
+      "read_at": "2026-09-17T00:00:00Z",
+      "notes": "Governing canon (sirsi-stacklab/canon/docs/engineering/MAAT_GUARD_STACKLAB_LOAD_FILTER_SELF_INTERFERENCE_20260916.md, commit fc67ed4b1) was read via the router item body, which quoted the full guard text inline; that repo is not checked out locally so the canon path itself cannot be referenced from this filesystem."
+    },
+    {
+      "path": "docs/apple-stack-lab/pantheon.pt-wing-001-wing-v1.json",
+      "role": "wing-record",
+      "read_at": "2026-09-17T00:00:00Z",
+      "notes": "This repo's only stacklab wing record; owner of PT-WING-001"
+    },
+    {
+      "path": "docs/apple-stack-lab/pantheon-pt-r01-route-receipt.recipe.json",
+      "role": "harness-definition",
+      "read_at": "2026-09-17T00:00:00Z",
+      "notes": "r01-r06 recipes reviewed for admission-gate/fallback shape"
+    },
+    {
+      "path": "docs/apple-stack-lab/pantheon-pt-r05-package-inventory.recipe.json",
+      "role": "harness-definition",
+      "read_at": "2026-09-17T00:00:00Z",
+      "notes": "Only recipe mentioning host contention (\"shared-host contention clears\"), checked and confirmed as a manual retry note, not an automated averaged-load admission gate"
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-09-17T00:00:00Z",
+      "notes": "router closure requirement"
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-09-17T00:00:00Z",
+      "notes": ""
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-09-17T00:00:00Z",
+      "notes": ""
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-09-17T00:00:00Z",
+      "notes": ""
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-09-17T00:00:00Z",
+      "notes": ""
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "/tmp/maat-stacklab-load-filter-result.md",
+      "section": "binding on every wing",
+      "claim": "Each owner must bind the guard to their own wing record if it gates on host load today, or confirm it does not.",
+      "files_changed": [
+        "docs/apple-stack-lab/pantheon.pt-wing-001-wing-v1.json"
+      ],
+      "evidence": [
+        "/tmp/maat-stacklab-load-filter-result.md"
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "No product change; this is a governance confirmation, not a code change.",
+    "design": "N/A — PT-WING-001 has no harness or admission-gate design that samples an averaged load metric.",
+    "technical": "Reviewed PT-WING-001's six recipes (r01-r06): all `execution_graph.fallback` values are admission/receipt/credential gates (fail-closed, reject-missing-or-unhealthy-endpoint, no-cross-environment-substitution, deny-unauthenticated-role-or-replica, reject-unknown-or-ambiguous-inventory, never-promote-missing-credential-or-host-proof). None sample load1 or any averaged load metric per window. `grep -riE \"load1|loadavg|getloadavg\" docs/apple-stack-lab/` returned zero matches.",
+    "operational": "Added a `provenance.receipt_links` entry to PT-WING-001's wing record (docs/apple-stack-lab/pantheon.pt-wing-001-wing-v1.json) acknowledging the guard and recording that it does not apply, per canon (\"each owner binds their own record\"). Committed as 40ce860e on fix/broker-quarantine.",
+    "narrative": "PT-WING-001 (control-plane: engine ABI consumer, lifecycle, route/UI/CLI/MCP, package/release composition) has no wing/harness/acceptance rule that samples an averaged load metric as a quiet precondition, so MAAT-STACKLAB-load-filter-self-interference does not apply to this wing today. Confirmed and recorded per canon."
+  },
+  "verification": [
+    {
+      "name": "search for load-average based gating in stacklab docs",
+      "command": "grep -riE \"load1|loadavg|getloadavg|quiet.?window|quiet.?precondition\" docs/apple-stack-lab/",
+      "status": "pass",
+      "evidence": "No matches — zero load-based admission gates in PT-WING-001's recipes or wing record"
+    }
+  ],
+  "working_status": {
+    "environment": "fix/broker-quarantine branch, sirsi-pantheon working tree",
+    "how_verified": "grep across docs/apple-stack-lab/ plus manual review of all six recipe execution_graph.fallback fields",
+    "observed_result": "No load-based quiet-precondition harness present; guard not applicable to PT-WING-001",
+    "verified_at": "2026-09-17T00:00:00Z"
+  },
+  "blockers": []
+}
