@@ -31,7 +31,8 @@
     "component_catalog": "/Users/thekryptodragon/Development/sirsi-pantheon/docs/apple-stack-lab/pantheon-pt-wing-001.catalog.json",
     "receipt_links": [
       "Reading Room: SNE/Stack Lab/Pantheon Stack Lab Wing PT-WING-001 - 2026-09-11.md",
-      "SirsiNexusApp:docs/apple-stack-lab/fleet-mirror-20260913/stack-lab-control/pantheon/PANTHEON_PT_WING_001_G1_SUBMISSION.md"
+      "SirsiNexusApp:docs/apple-stack-lab/fleet-mirror-20260913/stack-lab-control/pantheon/PANTHEON_PT_WING_001_G1_SUBMISSION.md",
+      "sirsi-stacklab:canon/docs/engineering/MAAT_GUARD_STACKLAB_LOAD_FILTER_SELF_INTERFERENCE_20260916.md (fc67ed4b1) — acknowledged; PT-WING-001 has no load-based quiet precondition (recipes r01-r06 gate on admission/receipt/credential, not an averaged load metric), so MAAT-STACKLAB-load-filter-self-interference does not apply to this wing today"
     ]
   },
   "mirrors": {
