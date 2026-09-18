@@ -871,6 +871,20 @@
         "mechanism": "none"
       },
       "workstream": "ra"
+    },
+    "claude-io-cylton": {
+      "id": "claude-io-cylton",
+      "type": "claude",
+      "command": [
+        "claude"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/sirsi-io-connect",
+      "workstream": "io",
+      "wake": {
+        "mechanism": "none"
+      },
+      "consumer": {},
+      "repo": "/Users/thekryptodragon/Development/sirsi-io-connect"
     }
   }
 }
