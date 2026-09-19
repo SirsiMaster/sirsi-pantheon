@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -64,6 +65,14 @@ import (
 // caller-supplied FileInfo, not a path) so the derivation policy stays
 // unit-testable without needing a live os.Root for every case — openLaneRoot
 // is what actually binds this decision to the object it is read from.
+
+// spoolTrustGroupEnv is the env var name, still read on the RELAY side (via
+// the CLI layer, into Relay.TrustGroup — cmd/sirsi/routerrelaycmd.go) and
+// quoted in refuseUntrustedClientOnTrustedSpool's error message so an
+// operator knows what to export. The lane side no longer reads it itself
+// (see the comment above).
+const spoolTrustGroupEnv = "SIRSI_RELAY_TRUST_GROUP"
+
 func laneModesFromRoot(st os.FileInfo) (dirMode, fileMode os.FileMode, trustGID int) {
 	if st.Mode().Perm()&0o020 == 0 {
 		return 0o700, 0o600, -1
@@ -121,6 +130,34 @@ func openLaneRoot(root string) (*os.Root, os.FileMode, os.FileMode, int, error) 
 	return r, dirMode, fileMode, trustGID, nil
 }
 
+// refuseUntrustedClientOnTrustedSpool fails FAST, before anything is
+// published, when the spool root is group-trusted (setgid: the owner-run
+// migration in CheckSpoolDirTrustingGroup's doc) but THIS client has no
+// SIRSI_RELAY_TRUST_GROUP. Such a client would create its lane directory 0700
+// under a relay that runs as another uid; the relay never sees the request and
+// the client waits the whole spool timeout for nothing — the exact hang SHA
+// measured 2026-09-14 in `ctr`/`node-status`/`doctor`. A bounded, actionable
+// error is what A31 requires of CTR; a silent 30 s wait is not.
+func refuseUntrustedClientOnTrustedSpool(spoolRoot string, trustGID int) error {
+	if trustGID >= 0 {
+		return nil
+	}
+	st, err := os.Stat(spoolRoot)
+	if err != nil || st.Mode()&os.ModeSetgid == 0 {
+		return nil // absent or single-uid spool: the existing path decides
+	}
+	group := "<gid>"
+	if sys, ok := st.Sys().(*syscall.Stat_t); ok {
+		group = strconv.Itoa(int(sys.Gid))
+		if g, lerr := user.LookupGroupId(group); lerr == nil {
+			group = g.Name
+		}
+	}
+	return fmt.Errorf("spool: %s is group-trusted (setgid, group %s) but this process has no %s; "+
+		"its lane directory would be unreadable by the relay and every call would wait unanswered — "+
+		"export %s=%s (lanes get it from their plist)", spoolRoot, group, spoolTrustGroupEnv, spoolTrustGroupEnv, group)
+}
+
 // mkdirTrusted creates dir (with any needed parents) and converges it to
 // mode. MkdirAll's requested mode alone is not enough: it is masked by the
 // process umask exactly like a bare mkdir(2), so a umask of the common 022
@@ -163,10 +200,25 @@ func mkdirTrusted(dir string, mode os.FileMode, trustGID int) error {
 			return fmt.Errorf("spool: %s has group %d, not the configured trust group (gid %d); refusing to widen an unrelated group's access — verify the spool's setgid inheritance or chgrp this directory to the trust group first", dir, sys.Gid, trustGID)
 		}
 	}
-	if existed {
-		return nil
+	if !existed {
+		return os.Chmod(dir, mode)
 	}
-	return os.Chmod(dir, mode)
+	// A pre-existing directory THIS uid owns is converged too — chmod on one's
+	// own directory never EPERMs (the rs-38 crash was a chmod on the relay's).
+	// Without this a lane dir first created by a client that lacked
+	// SIRSI_RELAY_TRUST_GROUP stays 0700 forever: the relay's uid cannot enter
+	// it, every request waits the full spool timeout unseen, and `ctr` hangs
+	// (SHA 2026-09-14, M5; reproduced on the M1 2026-09-15).
+	if trustGID >= 0 {
+		st, err := os.Stat(dir)
+		if err != nil {
+			return err
+		}
+		if sys, ok := st.Sys().(*syscall.Stat_t); ok && int(sys.Uid) == os.Getuid() && st.Mode().Perm()&0o070 != mode&0o070 {
+			return os.Chmod(dir, mode)
+		}
+	}
+	return nil
 }
 
 // mkdirTrustedIn is mkdirTrusted's Root-bound twin for the lane side, where
@@ -286,6 +338,9 @@ func (t *spoolTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		return nil, rerr
 	}
 	defer func() { _ = root.Close() }()
+	if err := refuseUntrustedClientOnTrustedSpool(t.root, trustGID); err != nil {
+		return nil, err
+	}
 	reqDir, resDir := filepath.Join(t.agent, "req"), filepath.Join(t.agent, "res")
 	// t.agent itself (<spool>/<agent>) is included: the relay needs to traverse
 	// INTO it, not just into its req/res/slots children, and MkdirAll creates
@@ -486,10 +541,11 @@ type Relay struct {
 	// service of another lane (SSA 2026-09-10: a global wait barrier starved
 	// newly arriving lanes past the client's 5 s deadline). Each worker drains
 	// its lane's queue in order; consume-before-forward is unchanged.
-	laneMu  sync.Mutex
-	lanes   map[string]chan struct{}
-	handled atomic.Int32
-	scans   atomic.Int32 // discovery passes (tests assert no spin under backlog)
+	laneMu     sync.Mutex
+	lanes      map[string]chan struct{}
+	unreadable map[string]bool // lane dirs already reported as not readable by this uid
+	handled    atomic.Int32
+	scans      atomic.Int32 // discovery passes (tests assert no spin under backlog)
 }
 
 // Serve polls the spool until ctx is done. Each request file is forwarded once;
@@ -556,6 +612,22 @@ func (rl *Relay) discover(ctx context.Context) int {
 	rl.laneMu.Lock()
 	if rl.lanes == nil {
 		rl.lanes = map[string]chan struct{}{}
+		rl.unreadable = map[string]bool{}
+	}
+	// Glob silently skips a lane directory this uid cannot enter (a client
+	// without the trust group created it 0700). Say so ONCE per lane in the
+	// relay's own log, so a hung client has a daemon-side trace to find.
+	if lanes, _ := os.ReadDir(rl.Spool); lanes != nil {
+		for _, l := range lanes {
+			if !l.IsDir() || rl.unreadable[l.Name()] {
+				continue
+			}
+			if _, err := os.ReadDir(filepath.Join(rl.Spool, l.Name(), "req")); err != nil && errors.Is(err, fs.ErrPermission) {
+				rl.unreadable[l.Name()] = true
+				rl.Log.Warn("relay: lane directory not readable by this uid; its requests will never be seen — "+
+					"chmod g+rwx it (owner) or start the client with SIRSI_RELAY_TRUST_GROUP", "lane", l.Name(), "err", err)
+			}
+		}
 	}
 	delivered := 0
 	for agent := range seen {

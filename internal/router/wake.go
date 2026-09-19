@@ -676,6 +676,37 @@ type consumerRun struct {
 	// on it). running() polls OS-truth liveness instead, recycle-guarded by
 	// this start signature.
 	startedAt string
+
+	// Stall gate for a RUNNING consumer (SHA 2026-09-14: claude-io's consumer
+	// sat in `Ss` for 40+ min on open HTTPS connections, never claimed, acked
+	// or closed anything, and the green wake-loop held the slot against its
+	// own inbox). progressMark is the inbox fingerprint (ids + acked_at) last
+	// seen changing; progressAt is when. stalled latches the one-time kill.
+	progressMark string
+	progressAt   time.Time
+	stalled      bool
+}
+
+// wakeLoopConsumerStall bounds how long a running consumer may hold the
+// dispatch slot with NO durable router action visible in its inbox — no item
+// claimed/closed, none acknowledged. Liveness (#636 C1 scores only FINISHED
+// consumers) cannot see a blocked `claude --print`; this can. A var so the
+// test can shorten it.
+//
+// ponytail: the fingerprint also changes on an ARRIVAL, which resets the clock
+// in the consumer's favor; replace with the ledger's last durable action per
+// consumer if arrivals ever mask a real stall.
+var wakeLoopConsumerStall = 30 * time.Minute
+
+// inboxMark fingerprints the open inbox: a change means a durable router action
+// landed (close removes an id, acknowledge stamps acked_at) or an item arrived.
+func inboxMark(items []work.Item) string {
+	parts := make([]string, 0, len(items))
+	for _, it := range items {
+		parts = append(parts, it.ID+"@"+it.AckedAt)
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, "\n")
 }
 
 // consumerTailBytes bounds what a failing consumer can put in the log. The
@@ -1075,6 +1106,29 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 		//
 		// A read error is NOT a drain: lerr leaves depth 0, and dispatching on it
 		// would treat an unreadable inbox as an empty one.
+		// Stall gate for the RUNNING consumer: a live process that produces no
+		// durable router action within wakeLoopConsumerStall is terminated ONCE
+		// (its whole Setsid group), the exact reason is written to the thread
+		// record, and the normal exit path below scores it as no-progress — so
+		// exactly one replacement is dispatched after the backoff, against the
+		// same durable queue. The queue is the truth; the replacement re-pulls it
+		// and assumes nothing about what the stale consumer did.
+		if run != nil && lerr == nil && run.running() {
+			mark := inboxMark(items)
+			switch {
+			case run.progressAt.IsZero() || mark != run.progressMark:
+				run.progressMark, run.progressAt = mark, now
+			case !run.stalled && now.Sub(run.progressAt) >= wakeLoopConsumerStall:
+				run.stalled = true
+				lastError = fmt.Sprintf("stale consumer pid %d terminated: no durable router action "+
+					"(claim/acknowledge/close) in %s at inbox depth %d", run.pid, now.Sub(run.progressAt).Round(time.Second), depth)
+				log.Printf("wake-loop %s: %s — last output: %s", agentID, lastError, run.tail)
+				if err := terminateConsumer(run.pid); err != nil {
+					log.Printf("wake-loop %s: terminate stale consumer pid %d: %v", agentID, run.pid, err)
+				}
+			}
+		}
+
 		// #636 C1 — score the FINISHED consumer for progress before considering
 		// another. Liveness alone cannot distinguish "worked and drained" from
 		// "exited instantly having done nothing", and only the second one loops.
@@ -1361,7 +1415,11 @@ func wakeLaunchAgentPlist(label string, cfg AgentConfig, sirsiBin string) string
 // ~/.zshenv; the plist is 0600 because it now carries a bearer token.
 func routerServiceEnvXML() string {
 	var b strings.Builder
-	for _, k := range []string{"SIRSI_ROUTER_URL", "SIRSI_ROUTER_TOKEN"} {
+	// SIRSI_RELAY_TRUST_GROUP rides along: a lane installed without it on a
+	// group-trusted spool creates 0700 lane directories the relay cannot enter
+	// (M5, 2026-09-14: `claude-io/` and `M5.local/` — every call from them
+	// waited 30 s unseen).
+	for _, k := range []string{"SIRSI_ROUTER_URL", "SIRSI_ROUTER_TOKEN", "SIRSI_RELAY_TRUST_GROUP"} {
 		if v := strings.TrimSpace(os.Getenv(k)); v != "" {
 			fmt.Fprintf(&b, "\n    <key>%s</key>\n    <string>%s</string>", k, escapeXML(v))
 		}
