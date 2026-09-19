@@ -159,8 +159,7 @@ func TestRun_StrandedUnbuilt(t *testing.T) {
 	r.putDir(RegistryRepo, "main", "wings/pinned", nil)
 
 	rep := Run(r, []string{testWingID}, testLaneRepoMap())
-	want := Finding{testWingID, KindStrandedUnbuilt, ""}
-	if len(rep.Findings) != 1 || rep.Findings[0].WingID != want.WingID || rep.Findings[0].Kind != want.Kind {
+	if len(rep.Findings) != 1 || rep.Findings[0].WingID != testWingID || rep.Findings[0].Kind != KindStrandedUnbuilt {
 		t.Fatalf("expected exactly one stranded/unbuilt finding, got %+v", rep.Findings)
 	}
 }
