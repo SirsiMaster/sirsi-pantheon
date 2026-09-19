@@ -294,23 +294,28 @@ func TestSpoolFailedConsumeIsNotForwarded(t *testing.T) {
 func TestSpoolInFlightCapIsAtomic(t *testing.T) {
 	spool := t.TempDir()
 	tr := newSpoolTransport(spool, "lane-s")
-	slots := filepath.Join(tr.dir, "slots")
-	if err := os.MkdirAll(slots, 0o700); err != nil {
+	slots := filepath.Join(tr.agent, "slots")
+	if err := os.MkdirAll(filepath.Join(spool, slots), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	root, err := os.OpenRoot(spool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = root.Close() })
 	var held []string
 	for i := 0; i < spoolMaxInFlight; i++ {
-		p, err := acquireSlot(slots)
+		p, err := acquireSlotIn(root, slots)
 		if err != nil {
 			t.Fatal(err)
 		}
 		held = append(held, p)
 	}
-	if _, err := acquireSlot(slots); err == nil || !strings.Contains(err.Error(), "in flight") {
+	if _, err := acquireSlotIn(root, slots); err == nil || !strings.Contains(err.Error(), "in flight") {
 		t.Fatalf("65th must be refused: %v", err)
 	}
-	_ = os.Remove(held[0])
-	if _, err := acquireSlot(slots); err != nil {
+	_ = root.Remove(held[0])
+	if _, err := acquireSlotIn(root, slots); err != nil {
 		t.Fatalf("released slot must be reusable: %v", err)
 	}
 }
@@ -583,12 +588,13 @@ func TestRelayHTTPClientPreservesProxy(t *testing.T) {
 // derived only from an actual, already-configured root.
 func TestLaneDirModeDefaultsUnchanged(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "does-not-exist-yet")
-	dirMode, fileMode, gid, err := resolvedLaneModes(root)
+	r, dirMode, fileMode, gid, err := openLaneRoot(root)
 	if err != nil {
-		t.Fatalf("resolvedLaneModes(%q): %v", root, err)
+		t.Fatalf("openLaneRoot(%q): %v", root, err)
 	}
+	t.Cleanup(func() { _ = r.Close() })
 	if dirMode != 0o700 || fileMode != 0o600 || gid != -1 {
-		t.Fatalf("resolvedLaneModes(%q) = (%o,%o,%d), want (0700,0600,-1)", root, dirMode, fileMode, gid)
+		t.Fatalf("openLaneRoot(%q) = (%o,%o,%d), want (0700,0600,-1)", root, dirMode, fileMode, gid)
 	}
 }
 
@@ -602,10 +608,11 @@ func TestResolvedLaneModesFallsBackWhenRootNotGroupWritable(t *testing.T) {
 	if err := os.Mkdir(root, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	dirMode, fileMode, gid, err := resolvedLaneModes(root)
+	r, dirMode, fileMode, gid, err := openLaneRoot(root)
 	if err != nil {
-		t.Fatalf("resolvedLaneModes(%q): %v", root, err)
+		t.Fatalf("openLaneRoot(%q): %v", root, err)
 	}
+	t.Cleanup(func() { _ = r.Close() })
 	if dirMode != 0o700 || fileMode != 0o600 || gid != -1 {
 		t.Fatalf("resolvedLaneModes(%q) on a non-group-writable root = (%o,%o,%d), want (0700,0600,-1)", root, dirMode, fileMode, gid)
 	}
@@ -691,6 +698,68 @@ func TestMkdirTrustedNeverChmodsAPreExistingDir(t *testing.T) {
 	}
 }
 
+// TestOpenLaneRootBindsPastRootSubstitution reproduces PR #762's source
+// review finding directly (Rule A35, 2026-09-19): resolvedLaneModes used to
+// derive dirMode/fileMode/trustGID from a PATH stat, and every later
+// mkdir/write walked the same path again through independent, unbound
+// syscalls — a same-uid actor able to relocate the real spool root and plant
+// a symlink to an unrelated, group-writable directory at the original path
+// between those two steps could make the trust decision (from the real
+// directory) govern writes that actually land under the attacker's
+// substituted directory. openLaneRoot's os.Root binds to the directory via
+// descriptor at open time; this proves every later Root-relative create/write
+// still resolves against the ORIGINAL directory (now relocated), never the
+// substituted path, and that nothing is created under the attacker's target.
+func TestOpenLaneRootBindsPastRootSubstitution(t *testing.T) {
+	base := t.TempDir()
+	real := filepath.Join(base, "real-spool")
+	if err := os.Mkdir(real, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	root, dirMode, fileMode, trustGID, err := openLaneRoot(real)
+	if err != nil {
+		t.Fatalf("openLaneRoot: %v", err)
+	}
+	t.Cleanup(func() { _ = root.Close() })
+
+	// The substitution: relocate the real spool directory, then plant a
+	// symlink to an unrelated, wide-open directory at the path the trust
+	// decision above was derived from.
+	moved := filepath.Join(base, "real-spool-moved")
+	if err := os.Rename(real, moved); err != nil {
+		t.Fatal(err)
+	}
+	attacker := filepath.Join(base, "attacker-writable")
+	if err := os.Mkdir(attacker, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(attacker, real); err != nil {
+		t.Fatal(err)
+	}
+
+	// Every step a real RoundTrip takes after deriving trust: create the
+	// agent/req descendants, then publish a request file.
+	agentDir := "lane-substituted"
+	reqDir := filepath.Join(agentDir, "req")
+	for _, d := range []string{agentDir, reqDir} {
+		if err := mkdirTrustedIn(root, d, dirMode, trustGID); err != nil {
+			t.Fatalf("mkdirTrustedIn after substitution: %v", err)
+		}
+	}
+	reqPath := filepath.Join(reqDir, "1-1-x.json")
+	if err := writeAtomicRoot(root, reqPath, spoolRequest{Method: "Status"}, fileMode); err != nil {
+		t.Fatalf("writeAtomicRoot after substitution: %v", err)
+	}
+
+	if _, err := os.Lstat(filepath.Join(attacker, agentDir)); err == nil {
+		t.Fatal("agent directory was created under the attacker's substituted path, not the bound root")
+	}
+	if _, err := os.Stat(filepath.Join(moved, reqPath)); err != nil {
+		t.Fatalf("request file was not created under the original, relocated root: %v", err)
+	}
+}
+
 // TestLaneCreatesGroupWritableDirsWhenTrustGroupConfigured: a lane's own
 // RoundTrip call creates req/res/slots at 0770, not 0700, when the spool ROOT
 // it was pointed at is already group-writable — proving the actual
@@ -765,15 +834,19 @@ func TestWriteAtomicModeSurvivesUmask(t *testing.T) {
 // refused reading its content.
 func TestLaneFileModeDefaultsUnchanged(t *testing.T) {
 	root := t.TempDir()
-	if _, fileMode, _, err := resolvedLaneModes(root); err != nil || fileMode != 0o600 {
-		t.Fatalf("resolvedLaneModes(%q): fileMode=%o err=%v, want 0600 nil", root, fileMode, err)
+	r1, _, fileMode, _, err := openLaneRoot(root)
+	if err != nil || fileMode != 0o600 {
+		t.Fatalf("openLaneRoot(%q): fileMode=%o err=%v, want 0600 nil", root, fileMode, err)
 	}
-	if err := os.Chmod(root, 0o770); err != nil {
-		t.Fatal(err)
+	_ = r1.Close()
+	if cerr := os.Chmod(root, 0o770); cerr != nil {
+		t.Fatal(cerr)
 	}
-	if _, fileMode, gid, err := resolvedLaneModes(root); err != nil || fileMode != 0o640 || gid < 0 {
-		t.Fatalf("resolvedLaneModes(%q) group-writable: fileMode=%o gid=%d err=%v, want 0640 >=0 nil", root, fileMode, gid, err)
+	r2, _, fileMode, gid, err := openLaneRoot(root)
+	if err != nil || fileMode != 0o640 || gid < 0 {
+		t.Fatalf("openLaneRoot(%q) group-writable: fileMode=%o gid=%d err=%v, want 0640 >=0 nil", root, fileMode, gid, err)
 	}
+	_ = r2.Close()
 }
 
 // TestSpoolRelayEndToEndWithTrustGroupWritesReadableFiles: the actual

@@ -55,27 +55,70 @@ import (
 // really recorded (chgrp the root to the trust group — CheckSpoolDirTrusting
 // Group's own convergence widens it to 0770 from there).
 
-// resolvedLaneModes derives the lane's own directory/file modes and trust gid
-// from root — the top-level spool directory — instead of a separately
-// configured env var: if root exists and is group-writable, its actual gid IS
-// the trust group, self-derived rather than named twice, matching exactly the
-// gid+write-bit trust decision checkSpoolDir's own groupTrusted branch makes
-// for the same directory. root not existing yet (the very first call, before
-// the relay has ever created or validated it) falls back to the single-uid
-// default — nothing on disk yet to inherit trust from.
-func resolvedLaneModes(root string) (dirMode, fileMode os.FileMode, trustGID int, err error) {
-	st, statErr := os.Stat(root)
-	if statErr != nil {
-		return 0o700, 0o600, -1, nil
-	}
+// laneModesFromRoot derives the lane's own directory/file modes and trust gid
+// from st — the top-level spool directory's own stat — instead of a
+// separately configured env var: if the root is group-writable, its actual
+// gid IS the trust group, self-derived rather than named twice, matching
+// exactly the gid+write-bit trust decision checkSpoolDir's own groupTrusted
+// branch makes for the same directory. Pulled out as a pure function (over a
+// caller-supplied FileInfo, not a path) so the derivation policy stays
+// unit-testable without needing a live os.Root for every case — openLaneRoot
+// is what actually binds this decision to the object it is read from.
+func laneModesFromRoot(st os.FileInfo) (dirMode, fileMode os.FileMode, trustGID int) {
 	if st.Mode().Perm()&0o020 == 0 {
-		return 0o700, 0o600, -1, nil
+		return 0o700, 0o600, -1
 	}
 	sys, ok := st.Sys().(*syscall.Stat_t)
 	if !ok {
-		return 0o700, 0o600, -1, nil
+		return 0o700, 0o600, -1
 	}
-	return 0o770, 0o640, int(sys.Gid), nil
+	return 0o770, 0o640, int(sys.Gid)
+}
+
+// openLaneRoot binds the lane's spool root to a single descriptor (os.Root)
+// and derives its trust decision from that SAME bound object, then returns
+// the root for every descendant create/write the caller goes on to make.
+//
+// The previous design (resolvedLaneModes(root string), removed here) called
+// os.Stat(root) once by PATH to derive trustGID, then RoundTrip walked the
+// same path again through independent, unbound os.MkdirAll/os.Chmod/os.Open
+// calls (SSA review, Rule A35, 2026-09-19: PR #762 source review). A same-uid
+// actor able to repoint the spool namespace between those calls — e.g. swap
+// the root for a symlink to a group-writable directory after the trust stat
+// but before publication — could make the trust decision and the actual
+// writes land on two different filesystem objects, publishing under an
+// object never verified to carry that gid. os.Root closes the gap
+// structurally rather than by convention: it opens a real descriptor once,
+// and every Root-relative operation below (mkdirTrustedIn, acquireSlotIn,
+// writeAtomicRoot, and the response read/remove in RoundTrip) resolves
+// through that same descriptor — even a root moved or replaced on disk after
+// this call leaves the already-open descriptor referencing what it actually
+// opened (see the os.Root doc comment), and no descendant path can escape it
+// to a different directory.
+func openLaneRoot(root string) (*os.Root, os.FileMode, os.FileMode, int, error) {
+	r, err := os.OpenRoot(root)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return nil, 0, 0, 0, fmt.Errorf("spool: open root %s: %w", root, err)
+		}
+		// Nothing on disk yet to inherit trust from (the very first call,
+		// before the relay has ever created or validated it): create it
+		// single-owner, matching the previous single-uid fallback exactly,
+		// then open it the same way every later call will.
+		if merr := os.MkdirAll(root, 0o700); merr != nil {
+			return nil, 0, 0, 0, fmt.Errorf("spool: create root %s: %w", root, merr)
+		}
+		if r, err = os.OpenRoot(root); err != nil {
+			return nil, 0, 0, 0, fmt.Errorf("spool: open root %s: %w", root, err)
+		}
+	}
+	st, err := r.Lstat(".")
+	if err != nil {
+		_ = r.Close()
+		return nil, 0, 0, 0, fmt.Errorf("spool: stat root %s: %w", root, err)
+	}
+	dirMode, fileMode, trustGID := laneModesFromRoot(st)
+	return r, dirMode, fileMode, trustGID, nil
 }
 
 // mkdirTrusted creates dir (with any needed parents) and converges it to
@@ -126,6 +169,36 @@ func mkdirTrusted(dir string, mode os.FileMode, trustGID int) error {
 	return os.Chmod(dir, mode)
 }
 
+// mkdirTrustedIn is mkdirTrusted's Root-bound twin for the lane side, where
+// path-based operations are exactly the check/use gap Rule A35 flags (see
+// openLaneRoot): relDir is resolved through root's own descriptor, so it can
+// never land outside the directory that root's trust decision was derived
+// from, regardless of what happens to the path on disk after root was
+// opened. Logic is identical to mkdirTrusted otherwise; kept as a separate
+// function rather than a shared one because the relay's mkdirTrusted call
+// (publish, over an already-canonicalized, symlink-refused rl.Spool) sits in
+// a different trust boundary than the lane's and does not need this bound.
+func mkdirTrustedIn(root *os.Root, relDir string, mode os.FileMode, trustGID int) error {
+	_, statErr := root.Lstat(relDir)
+	existed := statErr == nil
+	if err := root.MkdirAll(relDir, mode); err != nil {
+		return err
+	}
+	if trustGID >= 0 {
+		st, err := root.Lstat(relDir)
+		if err != nil {
+			return err
+		}
+		if sys, ok := st.Sys().(*syscall.Stat_t); ok && int(sys.Gid) != trustGID {
+			return fmt.Errorf("spool: %s has group %d, not the configured trust group (gid %d); refusing to widen an unrelated group's access — verify the spool's setgid inheritance or chgrp this directory to the trust group first", relDir, sys.Gid, trustGID)
+		}
+	}
+	if existed {
+		return nil
+	}
+	return root.Chmod(relDir, mode)
+}
+
 const (
 	spoolMaxBody     = 4 << 20                       // request BODY (decoded): the service limit
 	spoolMaxEnvelope = spoolMaxBody/3*4 + 64<<10     // request FILE: base64 overhead + headers
@@ -165,8 +238,8 @@ func SpoolDir(u string) string {
 
 // spoolTransport is the lane side: an http.RoundTripper over files.
 type spoolTransport struct {
-	dir   string // <spool>/<agent>
-	root  string // <spool> — stat'd by resolvedLaneModes to self-derive trust
+	agent string // <spool>/<agent> — resolved Root-relative, never as a bare path
+	root  string // <spool> — opened by openLaneRoot to self-derive and bind trust
 	wait  time.Duration
 	now   func() time.Time
 	seqMu sync.Mutex
@@ -174,7 +247,7 @@ type spoolTransport struct {
 }
 
 func newSpoolTransport(spool, agent string) *spoolTransport {
-	return &spoolTransport{dir: filepath.Join(spool, agent), root: spool, wait: 30 * time.Second, now: time.Now}
+	return &spoolTransport{agent: agent, root: spool, wait: 30 * time.Second, now: time.Now}
 }
 
 func (t *spoolTransport) nextID() string {
@@ -208,40 +281,41 @@ func (t *spoolTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 			req.Headers[k] = r.Header.Get(k)
 		}
 	}
-	dirMode, fileMode, trustGID, merr := resolvedLaneModes(t.root)
-	if merr != nil {
-		return nil, merr
+	root, dirMode, fileMode, trustGID, rerr := openLaneRoot(t.root)
+	if rerr != nil {
+		return nil, rerr
 	}
-	reqDir, resDir := filepath.Join(t.dir, "req"), filepath.Join(t.dir, "res")
-	// t.dir itself (<spool>/<agent>) is included: the relay needs to traverse
+	defer func() { _ = root.Close() }()
+	reqDir, resDir := filepath.Join(t.agent, "req"), filepath.Join(t.agent, "res")
+	// t.agent itself (<spool>/<agent>) is included: the relay needs to traverse
 	// INTO it, not just into its req/res/slots children, and MkdirAll creates
 	// it as an intermediate directory with the same requested mode.
-	for _, d := range []string{t.dir, reqDir, resDir, filepath.Join(t.dir, "slots")} {
-		if err := mkdirTrusted(d, dirMode, trustGID); err != nil {
+	for _, d := range []string{t.agent, reqDir, resDir, filepath.Join(t.agent, "slots")} {
+		if err := mkdirTrustedIn(root, d, dirMode, trustGID); err != nil {
 			return nil, fmt.Errorf("spool: %w", err)
 		}
 	}
 	// In-flight cap, atomic across processes: one of spoolMaxInFlight slot files
 	// is created O_EXCL and removed when this call ends.
-	slot, err := acquireSlot(filepath.Join(t.dir, "slots"))
+	slot, err := acquireSlotIn(root, filepath.Join(t.agent, "slots"))
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = os.Remove(slot) }()
+	defer func() { _ = root.Remove(slot) }()
 	id := t.nextID()
 	reqPath := filepath.Join(reqDir, id+".json")
-	if err := writeAtomic(reqPath, req, fileMode); err != nil {
+	if err := writeAtomicRoot(root, reqPath, req, fileMode); err != nil {
 		return nil, fmt.Errorf("spool: publish %s id %s: %w", method, id, err)
 	}
 	resPath := filepath.Join(resDir, id+".json")
-	defer func() { _ = os.Remove(resPath) }()
+	defer func() { _ = root.Remove(resPath) }()
 	// uncertain classifies a timeout or cancellation: if the request file is still
 	// in req/ nobody consumed it (withdraw it, outcome known: nothing happened);
 	// otherwise a relay consumed it (rename into inflight/ happens BEFORE the
 	// forward) and the outcome is unknown — say so, with method and id, and never
 	// retry a mutation here.
 	uncertain := func(cause string) error {
-		if err := os.Remove(reqPath); err == nil {
+		if err := root.Remove(reqPath); err == nil {
 			return fmt.Errorf("spool: %s id %s not picked up (%s); nothing was sent — is `sirsi router relay serve` running?", method, id, cause)
 		}
 		return fmt.Errorf("spool: %s id %s: OUTCOME UNKNOWN — a relay consumed the request but no response arrived (%s); re-query before retrying a mutation", method, id, cause)
@@ -249,7 +323,7 @@ func (t *spoolTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	ctx := r.Context()
 	deadline := t.now().Add(t.wait)
 	for {
-		if f, oerr := os.Open(resPath); oerr == nil {
+		if f, oerr := root.Open(resPath); oerr == nil {
 			// A response file exists, so the request was consumed and forwarded:
 			// any defect in the file is an UNCERTAIN outcome for the caller.
 			unknownResp := func(cause string) error {
@@ -284,19 +358,22 @@ func (t *spoolTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 }
 
-// acquireSlot creates one of spoolMaxInFlight exclusive slot files; O_EXCL makes
-// the cap atomic across processes and lanes sharing a directory. Slots older
-// than spoolStaleAfter belong to dead callers and are reclaimed.
-func acquireSlot(dir string) (string, error) {
+// acquireSlotIn creates one of spoolMaxInFlight exclusive slot files; O_EXCL
+// makes the cap atomic across processes and lanes sharing a directory. Slots
+// older than spoolStaleAfter belong to dead callers and are reclaimed. Bound
+// through root, same as mkdirTrustedIn (see openLaneRoot): relDir is resolved
+// through root's own descriptor, so a slot can never be created outside the
+// directory root's trust decision was derived from.
+func acquireSlotIn(root *os.Root, relDir string) (string, error) {
 	for i := 0; i < spoolMaxInFlight; i++ {
-		p := filepath.Join(dir, fmt.Sprintf("%02d", i))
-		f, err := os.OpenFile(p, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		p := filepath.Join(relDir, fmt.Sprintf("%02d", i))
+		f, err := root.OpenFile(p, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if err == nil {
 			_ = f.Close()
 			return p, nil
 		}
-		if st, serr := os.Stat(p); serr == nil && time.Since(st.ModTime()) > spoolStaleAfter {
-			_ = os.Remove(p)
+		if st, serr := root.Stat(p); serr == nil && time.Since(st.ModTime()) > spoolStaleAfter {
+			_ = root.Remove(p)
 			i-- // retry this slot once
 		}
 	}
@@ -306,8 +383,8 @@ func acquireSlot(dir string) (string, error) {
 // writeAtomic marshals v to path via a same-directory temp file and rename(2),
 // so a reader never observes a partial file. mode is the file's final
 // permission: 0600 (owner-only, the historical default) unless the caller
-// opts into resolvedLaneModes' widened 0640 — a directory being
-// group-writable (mkdirTrusted) does NOT make the FILES inside it
+// opts into the widened 0640 (openLaneRoot / CheckSpoolDirTrustingGroup) — a
+// directory being group-writable (mkdirTrusted) does NOT make the FILES inside it
 // group-readable; file permissions are independent of their containing
 // directory's, so a request or response file written at 0600 is invisible to
 // a relay or lane running as a different, even trust-group-configured, uid.
@@ -334,6 +411,31 @@ func writeAtomic(path string, v any, mode os.FileMode) error {
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
+}
+
+// writeAtomicRoot is writeAtomic's Root-bound twin, used only by the lane
+// side (see openLaneRoot): path is resolved through root's own descriptor
+// for every step (temp write, chmod, rename), so the file that ends up
+// visible under its final name can never land outside the directory root's
+// trust decision was derived from.
+func writeAtomicRoot(root *os.Root, path string, v any, mode os.FileMode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := root.WriteFile(tmp, b, mode); err != nil {
+		return err
+	}
+	if err := root.Chmod(tmp, mode); err != nil {
+		_ = root.Remove(tmp)
+		return err
+	}
+	if err := root.Rename(tmp, path); err != nil {
+		_ = root.Remove(tmp)
 		return err
 	}
 	return nil
