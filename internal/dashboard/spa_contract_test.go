@@ -159,3 +159,16 @@ func TestHomeViewDemoPathUsesCanonicalRoutes(t *testing.T) {
 		}
 	}
 }
+
+func TestSidebarNavigationIsLabelFirst(t *testing.T) {
+	page := fetchSPA(t)
+
+	for _, label := range []string{"Home", "Fleet", "Scan", "Ghosts", "Guard", "Notifications", "Horus", "Vault", "Engine", "SNE", "Recovery", "Ra"} {
+		if !strings.Contains(page, `<span class="nav-label">`+label+`</span>`) {
+			t.Errorf("sidebar is missing the readable %q label", label)
+		}
+	}
+	if strings.Contains(page, `class="nav-glyph"`) {
+		t.Error("sidebar still relies on decorative glyph spans instead of readable labels")
+	}
+}

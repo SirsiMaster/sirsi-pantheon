@@ -22,21 +22,20 @@ import (
 func pageShell(title, activePage, bodyContent string, port int) string {
 	navItems := []struct {
 		Key   string
-		Glyph string
 		Label string
 	}{
-		{"home", "☥", "Home"},
-		{"fleet", "⚑", "Fleet"},
-		{"scan", "𓁢", "Scan"},
-		{"ghosts", "𓂓", "Ghosts"},
-		{"guard", "🛡", "Guard"},
-		{"notifications", "🔔", "Notifications"},
-		{"horus", "𓂀", "Horus"},
-		{"vault", "🏛", "Vault"},
-		{"engine", "◈", "Engine"},
-		{"sne", "⚡", "SNE"},
-		{"recovery", "↻", "Recovery"},
-		{"ra", "𓇶", "Ra"},
+		{"home", "Home"},
+		{"fleet", "Fleet"},
+		{"scan", "Scan"},
+		{"ghosts", "Ghosts"},
+		{"guard", "Guard"},
+		{"notifications", "Notifications"},
+		{"horus", "Horus"},
+		{"vault", "Vault"},
+		{"engine", "Engine"},
+		{"sne", "SNE"},
+		{"recovery", "Recovery"},
+		{"ra", "Ra"},
 	}
 
 	var navHTML strings.Builder
@@ -46,8 +45,8 @@ func pageShell(title, activePage, bodyContent string, port int) string {
 			cls += " active"
 		}
 		navHTML.WriteString(fmt.Sprintf(
-			`<a href="#" class="%s" data-view="%s" onclick="switchView('%s');return false"><span class="nav-glyph">%s</span><span class="nav-label">%s</span></a>`,
-			cls, n.Key, n.Key, n.Glyph, n.Label,
+			`<a href="#" class="%s" data-view="%s" onclick="switchView('%s');return false"><span class="nav-label">%s</span></a>`,
+			cls, n.Key, n.Key, n.Label,
 		))
 	}
 
@@ -74,7 +73,7 @@ display:flex;flex-direction:column;position:fixed;left:0;top:0;bottom:0;z-index:
 color:%s;letter-spacing:2px;text-transform:uppercase}
 .sidebar-nav{flex:1;padding:8px 0}
 .nav-item{display:flex;align-items:center;padding:8px 16px;color:%s;text-decoration:none;
-font-size:12px;letter-spacing:.3px;transition:all .15s;border-left:2px solid transparent;cursor:pointer;
+font-size:12px;font-weight:600;letter-spacing:.3px;transition:all .15s;border-left:2px solid transparent;cursor:pointer;
 font-family:Inter,-apple-system,system-ui,sans-serif}
 .nav-item:hover{background:color-mix(in srgb, var(--gold) 6%%, transparent);color:%s}
 .nav-item.active{background:color-mix(in srgb, var(--gold) 8%%, transparent);color:%s;border-left-color:%s}
@@ -214,7 +213,6 @@ font-family:Inter,-apple-system,system-ui,sans-serif;flex-shrink:0}
 	 .sidebar-nav::-webkit-scrollbar{display:none}
 	 .nav-item{flex:0 0 auto;padding:12px 10px;border-left:0;border-bottom:2px solid transparent;font-size:11px}
 	 .nav-item.active{border-left:0;border-bottom-color:var(--gold)}
-	 .nav-glyph{width:auto;margin-right:5px}
 	 .sidebar-footer{display:none}
 	 .main{margin-left:0;min-height:calc(100vh - 48px);height:auto;align-items:stretch}
 	 .main-inner{max-width:none;min-height:calc(100vh - 48px);height:auto;overflow:visible;border-left:0;border-right:0}
@@ -246,7 +244,7 @@ font-family:Inter,-apple-system,system-ui,sans-serif;flex-shrink:0}
 </head>
 <body>
 <div class="sidebar">
- <div class="sidebar-brand"><h1>𓂀 Horus</h1></div>
+ <div class="sidebar-brand"><h1>Horus</h1></div>
  <nav class="sidebar-nav">%s</nav>
  <div class="sidebar-footer">LOCAL NODE • 127.0.0.1:%d</div>
 </div>
