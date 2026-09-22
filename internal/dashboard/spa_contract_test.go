@@ -110,10 +110,21 @@ func TestGuardViewProvidesSeveritySummaryAndProgressiveDisclosure(t *testing.T) 
 func TestHomeView_CommandsAreClickable(t *testing.T) {
 	page := fetchSPA(t)
 
-	for _, cmd := range []string{"scan", "ghosts", "guard", "engine", "doctor", "network", "hardware", "quality", "dedup"} {
-		if !strings.Contains(page, "cmdRow('"+cmd+"'") {
-			t.Errorf("home command %q is not rendered as a clickable row", cmd)
+	for _, action := range []string{"engine','Choose an engine", "doctor','Check system health", "scan','Scan infrastructure", "guard','Review system controls"} {
+		if !strings.Contains(page, action) {
+			t.Errorf("primary Home action missing %q", action)
 		}
+	}
+	for _, action := range []string{"ghosts','Find application remnants", "network','Audit network security", "hardware','Inspect hardware", "quality','Check code governance", "dedup','Find duplicate files"} {
+		if !strings.Contains(page, action) {
+			t.Errorf("secondary Home action missing from More actions: %q", action)
+		}
+	}
+	if !strings.Contains(page, "moreSummary.textContent='More actions'") || !strings.Contains(page, "makeHomeAction") {
+		t.Error("secondary Home actions are not grouped under the accessible More actions disclosure")
+	}
+	if !strings.Contains(page, "button.type='button'") || !strings.Contains(page, "exec(item[0])") {
+		t.Error("Home actions are not real buttons dispatched through the shared command handler")
 	}
 	for _, want := range []string{"Ask Horus about this machine", "Choose an engine policy", "home-route", "Open engine selector"} {
 		if !strings.Contains(page, want) {
@@ -123,6 +134,11 @@ func TestHomeView_CommandsAreClickable(t *testing.T) {
 	for _, want := range []string{"home-hero", "Start with a question", "Inspect Fleet evidence", "home-primary-action"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("home investor path missing %q", want)
+		}
+	}
+	for _, want := range []string{"document.createElement('h1')", "document.createElement('h2')", "home-tools-title"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("home heading hierarchy missing %q", want)
 		}
 	}
 	if !strings.Contains(page, "engine:'engine'") {

@@ -203,6 +203,17 @@ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;flex-shrink:0
 	.demo-step-copy{min-height:34px;margin-top:3px;color:var(--dim);font:11px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
 	.demo-step-action{margin-top:8px;padding:4px 8px;border:1px solid var(--line);border-radius:3px;background:transparent;color:var(--gold);font:600 10px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;cursor:pointer}
 	.demo-step-action:hover,.demo-step-action:focus-visible{border-color:var(--gold);background:color-mix(in srgb, var(--gold) 8%%, transparent);outline:2px solid var(--gold);outline-offset:2px}
+	.home-tools{max-width:1180px;margin:0 auto 18px}
+	.home-tools-title{margin:0 0 10px;color:var(--ink);font:650 17px/1.3 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;letter-spacing:-.015em}
+	.home-action-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+	.home-action{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-height:68px;padding:11px 13px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);text-align:left;cursor:pointer;font:inherit;transition:border-color .15s,background .15s}
+	.home-action:hover,.home-action:focus-visible{border-color:var(--emerald);background:color-mix(in srgb, var(--emerald) 7%%, var(--panel));outline:2px solid color-mix(in srgb, var(--emerald) 55%%, transparent);outline-offset:2px}
+	.home-action-name{color:var(--ink);font:650 13px/1.3 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+	.home-action-copy{color:var(--dim);font:12px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+	.home-more{margin-top:10px;border-top:1px solid var(--line)}
+	.home-more summary{width:max-content;padding:10px 0;color:var(--gold);cursor:pointer;font:600 12px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+	.home-more summary:focus-visible{outline:2px solid var(--gold);outline-offset:3px}
+	.home-more .home-action-grid{padding-bottom:8px}
 	.t-sep{border-top:1px solid color-mix(in srgb, var(--gold) 6%%, transparent);margin:6px 0}
 	@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}}
 	@media (prefers-contrast:more){.t-action:focus-visible,.nav-item:focus-visible,.stat-go:focus-visible{outline-width:3px}.t-dim,.t-action{color:var(--ink2)}}
@@ -237,6 +248,7 @@ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;flex-shrink:0
 	 .engine-grid{grid-template-columns:1fr}
 	 .home-hero{grid-template-columns:1fr;gap:14px}
 	 .home-title{font-size:22px}
+	 .home-action-grid{grid-template-columns:1fr}
 	 .demo-steps{grid-template-columns:1fr}
 	 .demo-step,.demo-step+.demo-step{padding:10px 0;border-right:0;border-bottom:1px solid var(--line)}
 	 .demo-step:last-child{border-bottom:0}
@@ -367,7 +379,7 @@ function viewHome(){
  const intro=document.createElement('section');intro.className='home-intro';intro.setAttribute('aria-labelledby','home-title');
  const hero=document.createElement('div');hero.className='home-hero';
  const copy=document.createElement('div');
- const title=document.createElement('div');title.className='home-title';title.id='home-title';title.textContent='Ask Horus about this machine';copy.appendChild(title);
+	const title=document.createElement('h1');title.className='home-title';title.id='home-title';title.textContent='Ask Horus about this machine';copy.appendChild(title);
  const subtitle=document.createElement('div');subtitle.className='home-subtitle';subtitle.textContent='Choose an engine policy, ask a question, and get exact findings with route provenance.';copy.appendChild(subtitle);
  const actions=document.createElement('div');actions.className='home-actions';
  const start=document.createElement('button');start.type='button';start.className='home-primary-action';start.textContent='Start with a question';start.addEventListener('click',function(){input.value='';input.focus()});actions.appendChild(start);
@@ -385,7 +397,7 @@ function viewHome(){
  }).catch(function(e){routeValue.textContent='Unavailable';routeDetail.textContent='Engine policy could not be read: '+e.message;});
 	const demo=document.createElement('section');demo.className='demo-rail';demo.setAttribute('aria-labelledby','demo-title');
 	const demoHead=document.createElement('div');demoHead.className='demo-rail-head';
-	const demoTitle=document.createElement('div');demoTitle.className='demo-rail-title';demoTitle.id='demo-title';demoTitle.textContent='Demo path';demoHead.appendChild(demoTitle);
+	const demoTitle=document.createElement('h2');demoTitle.className='demo-rail-title';demoTitle.id='demo-title';demoTitle.textContent='Demo path';demoHead.appendChild(demoTitle);
 	const demoSubtitle=document.createElement('div');demoSubtitle.className='demo-rail-subtitle';demoSubtitle.textContent='A short, truthful tour of the product surface.';demoHead.appendChild(demoSubtitle);
 	demo.appendChild(demoHead);
 	const steps=document.createElement('div');steps.className='demo-steps';
@@ -397,22 +409,28 @@ function viewHome(){
 	 const action=document.createElement('button');action.type='button';action.className='demo-step-action';action.textContent=label;action.addEventListener('click',go);step.appendChild(action);
 	 return step;
 	};
-	steps.appendChild(makeStep('01','Choose a route','Select SNE, MLX, or oMLX for this session.','Open engine selector',function(){switchView('engine')}));
-	steps.appendChild(makeStep('02','Ask Horus','Submit one grounded workstation question and show its route receipt.','Focus prompt',function(){input.value='';input.focus()}));
-	steps.appendChild(makeStep('03','Inspect evidence','Open the canonical M5 board; worker state is never copied into the client.','Open Fleet board',function(){switchView('fleet')}));
+	steps.appendChild(makeStep('1','Choose a route','Select SNE, MLX, or oMLX for this session.','Open engine selector',function(){switchView('engine')}));
+	steps.appendChild(makeStep('2','Ask Horus','Submit one grounded workstation question and show its route receipt.','Focus prompt',function(){input.value='';input.focus()}));
+	steps.appendChild(makeStep('3','Inspect evidence','Open the canonical M5 board; worker state is never copied into the client.','Open Fleet board',function(){switchView('fleet')}));
 	demo.appendChild(steps);intro.appendChild(demo);
-	out('');
- cmdRow('scan','Scan for infrastructure waste + ghost remnants');
- cmdRow('ghosts','Hunt dead application residuals');
- cmdRow('guard','System health, process slayer');
- cmdRow('engine','Choose SNE, MLX, or oMLX for the next session');
- cmdRow('doctor','Full diagnostic health check');
- cmdRow('network','Network security audit');
- cmdRow('hardware','CPU/GPU/ANE detection');
- cmdRow('quality','Code governance audit');
- cmdRow('dedup','Find duplicate files');
- out('');
- out('Click any command above, or type it. The sidebar switches views.','t-dim');
+	const tools=document.createElement('section');tools.className='home-tools';tools.setAttribute('aria-labelledby','home-tools-title');
+	const toolsTitle=document.createElement('h2');toolsTitle.className='home-tools-title';toolsTitle.id='home-tools-title';toolsTitle.textContent='Explore Horus';tools.appendChild(toolsTitle);
+	const primary=document.createElement('div');primary.className='home-action-grid';
+	[['engine','Choose an engine','Set SNE, MLX, or oMLX for the next question.'],['doctor','Check system health','Review this machine’s current health findings.'],['scan','Scan infrastructure','Find infrastructure waste and residual resources.'],['guard','Review system controls','Inspect guard status and available controls.']].forEach(function(item){primary.appendChild(makeHomeAction(item))});
+	tools.appendChild(primary);
+	const more=document.createElement('details');more.className='home-more';
+	const moreSummary=document.createElement('summary');moreSummary.textContent='More actions';more.appendChild(moreSummary);
+	const secondary=document.createElement('div');secondary.className='home-action-grid';
+	[['ghosts','Find application remnants','Review unused application files.'],['network','Audit network security','Review available network findings.'],['hardware','Inspect hardware','View CPU, GPU, and ANE detection.'],['quality','Check code governance','Review repository governance findings.'],['dedup','Find duplicate files','Review duplicate-file findings.']].forEach(function(item){secondary.appendChild(makeHomeAction(item))});
+	more.appendChild(secondary);tools.appendChild(more);T.appendChild(tools);
+}
+
+function makeHomeAction(item){
+ const button=document.createElement('button');button.type='button';button.className='home-action';
+ const name=document.createElement('span');name.className='home-action-name';name.textContent=item[1];button.appendChild(name);
+ const detail=document.createElement('span');detail.className='home-action-copy';detail.textContent=item[2];button.appendChild(detail);
+ button.addEventListener('click',function(){input.value='';exec(item[0])});
+ return button;
 }
 
 function viewEngine(){
