@@ -115,6 +115,11 @@ func TestHomeView_CommandsAreClickable(t *testing.T) {
 			t.Errorf("home command %q is not rendered as a clickable row", cmd)
 		}
 	}
+	for _, want := range []string{"Ask Horus about this machine", "Choose an engine policy", "home-route", "Open engine selector"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("home demo path missing %q", want)
+		}
+	}
 	if !strings.Contains(page, "row.addEventListener('click',go)") {
 		t.Error("command rows carry no click handler")
 	}
