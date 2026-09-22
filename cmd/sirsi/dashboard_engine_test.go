@@ -73,6 +73,24 @@ func TestDashboardEngineVariantSelectionAndDefaults(t *testing.T) {
 	}
 }
 
+func TestBuildDashboardEngineSelectionLoadsRawAndPatchedMLXSideBySide(t *testing.T) {
+	setDashboardEngineIdentity(t, "SIRSI_MLX_RAW", "mlx")
+	setDashboardEngineIdentity(t, "SIRSI_MLX_PATCHED", "mlx")
+	t.Setenv("SIRSI_ENGINE_PREFERRED", "mlx")
+	t.Setenv("SIRSI_ENGINE_PREFERRED_VARIANT", "mlx-patched")
+	controller, err := buildDashboardEngineSelection()
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := controller.Snapshot()
+	if len(snapshot.Connectors) != 2 || snapshot.Connectors[0].Variant != engine.VariantMLXRaw || snapshot.Connectors[1].Variant != engine.VariantMLXPatched {
+		t.Fatalf("co-configured MLX variants = %+v", snapshot.Connectors)
+	}
+	if snapshot.Preferred != engine.KindMLX || snapshot.PreferredVariant != engine.VariantMLXPatched {
+		t.Fatalf("preferred route = %s/%s", snapshot.Preferred, snapshot.PreferredVariant)
+	}
+}
+
 func TestDashboardRejectsIncompatibleConfiguredVariant(t *testing.T) {
 	setDashboardEngineIdentity(t, "SIRSI_MLX", "mlx")
 	t.Setenv("SIRSI_MLX_VARIANT", "sne-plain")

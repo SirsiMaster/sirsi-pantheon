@@ -407,22 +407,22 @@ function viewEngine(){
  sep();
  fetch('/api/engine').then(function(r){return r.json().then(function(body){
   if(!r.ok)throw new Error(body.error||('HTTP '+r.status));return body})}).then(function(data){
-  out('Preferred    '+(data.preferred||'none'),'t-ok');
+  out('Preferred    '+(data.preferred||'none')+(data.preferred_variant?' · '+data.preferred_variant:''),'t-ok');
   out('Fallback     '+(data.allow_fallback?'explicitly allowed':'disabled'),'t-out');
   out('Configured engines','t-head');
   const grid=document.createElement('div');grid.className='engine-grid';
   (data.connectors||[]).forEach(function(connector){
-   const selected=connector.kind===data.preferred;
+   const selected=connector.kind===data.preferred&&connector.variant===data.preferred_variant;
    const card=document.createElement('section');card.className='engine-card'+(selected?' selected':'');
-   card.setAttribute('aria-label',connector.kind.toUpperCase()+' engine');
-   const label=document.createElement('div');label.className='engine-name';label.textContent=connector.kind.toUpperCase();
+   card.setAttribute('aria-label',connector.kind.toUpperCase()+' '+connector.variant+' engine');
+   const label=document.createElement('div');label.className='engine-name';label.textContent=connector.kind.toUpperCase()+' · '+connector.variant;
    const status=document.createElement('div');status.className='engine-status';status.textContent=selected?'Preferred policy':'Configured';
    const caps=connector.capabilities||{};const names=[];
    Object.keys(caps).forEach(function(k){if(caps[k]===true)names.push(k)});
    const detail=document.createElement('div');detail.className='engine-caps';detail.textContent=names.join(' · ')||'No optional capabilities';
-   const choose=document.createElement('button');choose.className='engine-select';choose.type='button';choose.textContent=selected?'Selected':'Use '+connector.kind.toUpperCase();
+   const choose=document.createElement('button');choose.className='engine-select';choose.type='button';choose.textContent=selected?'Selected':'Use '+connector.variant;
    choose.disabled=selected;choose.setAttribute('aria-pressed',selected?'true':'false');
-   if(!selected){choose.onclick=function(){selectEngine(connector.kind)}}
+   if(!selected){choose.onclick=function(){selectEngine(connector.kind,connector.variant)}}
    card.appendChild(label);card.appendChild(status);card.appendChild(detail);card.appendChild(choose);grid.appendChild(card);
   });
   T.appendChild(grid);
@@ -430,11 +430,11 @@ function viewEngine(){
  }).catch(function(e){out('Engine selection unavailable: '+e.message,'t-err')});
 }
 
-function selectEngine(kind){
+function selectEngine(kind,variant){
  fetch('/api/engine').then(function(r){return r.json()}).then(function(current){
-  return fetch('/api/engine/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({preferred:kind,allow_fallback:current.allow_fallback,required_capabilities:current.required_capabilities||[]})})
+  return fetch('/api/engine/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({preferred:kind,preferred_variant:variant,allow_fallback:current.allow_fallback,required_capabilities:current.required_capabilities||[]})})
  }).then(function(r){return r.json().then(function(body){if(!r.ok)throw new Error(body.error||('HTTP '+r.status));return body})})
- .then(function(){out('Preferred engine set to '+kind.toUpperCase(),'t-ok');setTimeout(viewEngine,250)})
+ .then(function(){out('Preferred engine set to '+kind.toUpperCase()+' · '+variant,'t-ok');setTimeout(viewEngine,250)})
  .catch(function(e){out('Engine selection rejected: '+e.message,'t-err')});
 }
 

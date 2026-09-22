@@ -54,24 +54,29 @@ func (d RouteDecision) validate(selected Kind, selectedVariant BackendVariant) e
 			return fmt.Errorf("engine route: selected variant %q does not match connector %q", d.SelectedVariant, selectedVariant)
 		}
 	}
-	if d.RequestedVariant != "" && d.RequestedVariant != selectedVariant {
+	if d.Selected == d.Requested && d.RequestedVariant != "" && d.RequestedVariant != selectedVariant {
 		return fmt.Errorf("engine route: selected variant %q does not match requested variant %q", selectedVariant, d.RequestedVariant)
 	}
 	return nil
 }
 
 // Router is the one engine-neutral selection authority. Connectors are keyed
-// by ABI Kind, so MLX/OMLX/SNE cannot silently overwrite one another or route
-// through a backend-specific side channel.
+// by ABI Kind and BackendVariant, so variants can coexist without silently
+// overwriting one another or routing through a backend-specific side channel.
 type Router struct {
-	connectors map[Kind]Connector
+	connectors map[connectorKey]Connector
+}
+
+type connectorKey struct {
+	kind    Kind
+	variant BackendVariant
 }
 
 func NewRouter(connectors ...Connector) (*Router, error) {
 	if len(connectors) == 0 {
 		return nil, fmt.Errorf("engine router: at least one connector is required")
 	}
-	byKind := make(map[Kind]Connector, len(connectors))
+	byVariant := make(map[connectorKey]Connector, len(connectors))
 	for _, connector := range connectors {
 		if connector == nil {
 			return nil, fmt.Errorf("engine router: nil connector")
@@ -83,12 +88,13 @@ func NewRouter(connectors ...Connector) (*Router, error) {
 		if err := connector.Variant().ValidateForEngine(kind); err != nil {
 			return nil, fmt.Errorf("engine router: %s connector has invalid variant: %w", kind, err)
 		}
-		if _, exists := byKind[kind]; exists {
-			return nil, fmt.Errorf("engine router: duplicate connector kind %q", kind)
+		key := connectorKey{kind: kind, variant: connector.Variant()}
+		if _, exists := byVariant[key]; exists {
+			return nil, fmt.Errorf("engine router: duplicate connector %q variant %q", kind, key.variant)
 		}
-		byKind[kind] = connector
+		byVariant[key] = connector
 	}
-	return &Router{connectors: byKind}, nil
+	return &Router{connectors: byVariant}, nil
 }
 
 func (r *Router) OpenSession(ctx context.Context, sessionID string, policy RoutePolicy) (Session, RouteDecision, error) {
@@ -106,14 +112,27 @@ func (r *Router) OpenSession(ctx context.Context, sessionID string, policy Route
 			return Session{}, RouteDecision{}, fmt.Errorf("engine router: preferred variant: %w", err)
 		}
 	}
-	order := r.candidateOrder(policy.Preferred)
+	preferredVariant := policy.PreferredVariant
+	if preferredVariant == "" {
+		var err error
+		preferredVariant, err = r.resolveVariant(policy.Preferred, "")
+		if err != nil {
+			return Session{}, RouteDecision{}, err
+		}
+	}
+	order := r.candidateOrder(policy.Preferred, preferredVariant)
 	reasons := make([]string, 0, len(order))
 	capabilityFailures := 0
 	for index, kind := range order {
 		if index > 0 && !policy.AllowFallback {
 			break
 		}
-		connector, configured := r.connectors[kind]
+		candidateVariant := variantForCandidate(kind, policy.Preferred, preferredVariant)
+		connector, configured := r.connectors[connectorKey{kind: kind, variant: candidateVariant}]
+		if !configured && kind != policy.Preferred {
+			candidateVariant, _ = r.resolveVariant(kind, "")
+			connector, configured = r.connectors[connectorKey{kind: kind, variant: candidateVariant}]
+		}
 		if !configured {
 			reasons = append(reasons, fmt.Sprintf("%s: connector is not configured", kind))
 			continue
@@ -126,10 +145,6 @@ func (r *Router) OpenSession(ctx context.Context, sessionID string, policy Route
 		variant := connector.Variant()
 		if err := variant.ValidateForEngine(kind); err != nil {
 			return Session{}, RouteDecision{}, fmt.Errorf("engine router: %s connector has invalid variant: %w", kind, err)
-		}
-		if policy.PreferredVariant != "" && variant != policy.PreferredVariant {
-			reasons = append(reasons, fmt.Sprintf("%s: variant %q does not match requested variant %q", kind, variant, policy.PreferredVariant))
-			continue
 		}
 		session, err := connector.OpenSession(ctx, sessionID)
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -152,8 +167,8 @@ func (r *Router) OpenSession(ctx context.Context, sessionID string, policy Route
 		if session.Identity.EffectiveVariant() != variant {
 			return Session{}, RouteDecision{}, fmt.Errorf("engine router: %s connector returned variant %q, want %q", kind, session.Identity.EffectiveVariant(), variant)
 		}
-		decision := RouteDecision{Requested: policy.Preferred, RequestedVariant: policy.PreferredVariant, Selected: kind, SelectedVariant: variant, Fallback: index > 0}
-		if index == 0 {
+		decision := RouteDecision{Requested: policy.Preferred, RequestedVariant: policy.PreferredVariant, Selected: kind, SelectedVariant: variant, Fallback: kind != policy.Preferred}
+		if kind == policy.Preferred {
 			decision.Rationale = fmt.Sprintf("preferred %s connector admitted", kind)
 		} else {
 			decision.Rationale = fmt.Sprintf("preferred %s unavailable; explicit fallback selected %s", policy.Preferred, kind)
@@ -249,7 +264,7 @@ func (r *Router) connectorForDecision(session Session, decision RouteDecision) (
 	if decision.Selected != session.Identity.Engine {
 		return nil, fmt.Errorf("engine router: decision %q does not match session engine %q", decision.Selected, session.Identity.Engine)
 	}
-	connector, ok := r.connectors[decision.Selected]
+	connector, ok := r.connectors[connectorKey{kind: decision.Selected, variant: decision.SelectedVariant}]
 	if !ok {
 		return nil, fmt.Errorf("engine router: selected connector %q is not configured", decision.Selected)
 	}
@@ -273,16 +288,57 @@ func routerEmitError(ctx context.Context, events chan<- Event, previous uint64, 
 	}
 }
 
-func (r *Router) candidateOrder(preferred Kind) []Kind {
+func (r *Router) candidateOrder(preferred Kind, preferredVariant BackendVariant) []Kind {
 	order := []Kind{preferred}
 	for _, kind := range []Kind{KindMLX, KindOMLX, KindSNE} {
 		if kind != preferred {
-			if _, ok := r.connectors[kind]; ok {
+			configured := false
+			for key := range r.connectors {
+				if key.kind == kind {
+					configured = true
+					break
+				}
+			}
+			if configured {
 				order = append(order, kind)
 			}
 		}
 	}
 	return order
+}
+
+func variantForCandidate(kind, preferred Kind, preferredVariant BackendVariant) BackendVariant {
+	if kind == preferred {
+		return preferredVariant
+	}
+	return DefaultVariant(kind)
+}
+
+func (r *Router) resolveVariant(kind Kind, requested BackendVariant) (BackendVariant, error) {
+	if requested != "" {
+		if _, ok := r.connectors[connectorKey{kind: kind, variant: requested}]; !ok {
+			return "", fmt.Errorf("engine router: connector %q variant %q is not configured", kind, requested)
+		}
+		return requested, nil
+	}
+	defaultVariant := DefaultVariant(kind)
+	if _, ok := r.connectors[connectorKey{kind: kind, variant: defaultVariant}]; ok {
+		return defaultVariant, nil
+	}
+	var only BackendVariant
+	for key := range r.connectors {
+		if key.kind != kind {
+			continue
+		}
+		if only != "" {
+			return "", fmt.Errorf("engine router: engine %q has multiple variants; an explicit variant is required", kind)
+		}
+		only = key.variant
+	}
+	if only == "" {
+		return "", fmt.Errorf("engine router: connector %q is not configured", kind)
+	}
+	return only, nil
 }
 
 func requireCapabilities(actual Capabilities, required []Capability) error {

@@ -49,7 +49,7 @@ func TestEngineSelectionAPIProjectsAndChangesOnlyPolicy(t *testing.T) {
 		t.Fatalf("unexpected engine snapshot: %+v", snapshot)
 	}
 
-	body := `{"preferred":"sne","allow_fallback":true}`
+	body := `{"preferred":"sne","preferred_variant":"sne-mtp","allow_fallback":true}`
 	request, err := http.NewRequest(http.MethodPost, ts.URL+"/api/engine/select", strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
@@ -64,7 +64,7 @@ func TestEngineSelectionAPIProjectsAndChangesOnlyPolicy(t *testing.T) {
 	if selected.StatusCode != http.StatusOK {
 		t.Fatalf("POST /api/engine/select = %d", selected.StatusCode)
 	}
-	if selection.selected.Preferred != engine.KindSNE || !selection.selected.AllowFallback {
+	if selection.selected.Preferred != engine.KindSNE || selection.selected.PreferredVariant != engine.VariantSNEMTP || !selection.selected.AllowFallback {
 		t.Fatalf("selection policy = %+v", selection.selected)
 	}
 }

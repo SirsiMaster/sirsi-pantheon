@@ -84,7 +84,8 @@ func NewSelectionController(router *Router, policy RoutePolicy) (*SelectionContr
 	if router == nil {
 		return nil, fmt.Errorf("engine selection: router is required")
 	}
-	if err := validateSelectionPolicy(router, policy); err != nil {
+	policy, err := resolveSelectionPolicy(router, policy)
+	if err != nil {
 		return nil, err
 	}
 	return &SelectionController{router: router, policy: cloneRoutePolicy(policy)}, nil
@@ -94,7 +95,8 @@ func (c *SelectionController) Select(policy RoutePolicy) (SelectionSnapshot, err
 	if c == nil || c.router == nil {
 		return SelectionSnapshot{}, fmt.Errorf("engine selection: controller is required")
 	}
-	if err := validateSelectionPolicy(c.router, policy); err != nil {
+	policy, err := resolveSelectionPolicy(c.router, policy)
+	if err != nil {
 		return SelectionSnapshot{}, err
 	}
 	c.mu.Lock()
@@ -120,41 +122,55 @@ func (c *SelectionController) Snapshot() SelectionSnapshot {
 	policy := cloneRoutePolicy(c.policy)
 	c.mu.RUnlock()
 	connectors := make([]ConnectorSummary, 0, len(c.router.connectors))
+	variants := []BackendVariant{VariantMLXRaw, VariantMLXPatched, VariantOMLXPublic, VariantSNEPlain, VariantSNEMTP}
 	for _, kind := range []Kind{KindMLX, KindOMLX, KindSNE} {
-		if connector, ok := c.router.connectors[kind]; ok {
-			connectors = append(connectors, ConnectorSummary{Kind: kind, Variant: connector.Variant(), Capabilities: connector.Capabilities()})
+		for _, variant := range variants {
+			if connector, ok := c.router.connectors[connectorKey{kind: kind, variant: variant}]; ok {
+				connectors = append(connectors, ConnectorSummary{Kind: kind, Variant: variant, Capabilities: connector.Capabilities()})
+			}
 		}
 	}
 	return SelectionSnapshot{Schema: SelectionSchema, Preferred: policy.Preferred, PreferredVariant: policy.PreferredVariant, AllowFallback: policy.AllowFallback, RequiredCapabilities: append([]Capability(nil), policy.RequiredCapabilities...), Connectors: connectors}
 }
 
-func validateSelectionPolicy(router *Router, policy RoutePolicy) error {
+func resolveSelectionPolicy(router *Router, policy RoutePolicy) (RoutePolicy, error) {
 	if policy.Preferred != KindMLX && policy.Preferred != KindOMLX && policy.Preferred != KindSNE {
-		return fmt.Errorf("engine selection: preferred engine %q is required", policy.Preferred)
+		return RoutePolicy{}, fmt.Errorf("engine selection: preferred engine %q is required", policy.Preferred)
 	}
-	if policy.PreferredVariant != "" {
-		if err := policy.PreferredVariant.ValidateForEngine(policy.Preferred); err != nil {
-			return fmt.Errorf("engine selection: preferred variant: %w", err)
-		}
+	variant, err := router.resolveVariant(policy.Preferred, policy.PreferredVariant)
+	if err != nil {
+		return RoutePolicy{}, fmt.Errorf("engine selection: %w", err)
 	}
-	preferred, ok := router.connectors[policy.Preferred]
+	policy.PreferredVariant = variant
+	if err := validateSelectionPolicy(router, policy); err != nil {
+		return RoutePolicy{}, err
+	}
+	return policy, nil
+}
+
+func validateSelectionPolicy(router *Router, policy RoutePolicy) error {
+	preferred, ok := router.connectors[connectorKey{kind: policy.Preferred, variant: policy.PreferredVariant}]
 	if !ok {
-		return fmt.Errorf("engine selection: preferred connector %q is not configured", policy.Preferred)
+		return fmt.Errorf("engine selection: preferred connector %q variant %q is not configured", policy.Preferred, policy.PreferredVariant)
 	}
 	if !policy.AllowFallback {
-		if policy.PreferredVariant != "" && preferred.Variant() != policy.PreferredVariant {
-			return fmt.Errorf("engine selection: preferred connector variant %q does not match requested variant %q", preferred.Variant(), policy.PreferredVariant)
-		}
 		return requireCapabilities(preferred.Capabilities(), policy.RequiredCapabilities)
 	}
-	for kind, connector := range router.connectors {
-		if policy.PreferredVariant != "" && connector.Variant() != policy.PreferredVariant {
+	for _, kind := range []Kind{KindMLX, KindOMLX, KindSNE} {
+		if kind == policy.Preferred {
+			continue
+		}
+		variant, err := router.resolveVariant(kind, "")
+		if err != nil {
+			continue
+		}
+		connector, configured := router.connectors[connectorKey{kind: kind, variant: variant}]
+		if !configured {
 			continue
 		}
 		if requireCapabilities(connector.Capabilities(), policy.RequiredCapabilities) == nil {
 			return nil
 		}
-		_ = kind
 	}
 	return fmt.Errorf("engine selection: no configured connector satisfies required capabilities")
 }

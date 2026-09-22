@@ -136,6 +136,34 @@ func TestRouterDecisionCarriesSelectedVariant(t *testing.T) {
 	}
 }
 
+func TestRouterSupportsCoConfiguredVariantsAndRoutesExactSelection(t *testing.T) {
+	rawIdentity := identityFor(KindMLX)
+	rawIdentity.Variant = VariantMLXRaw
+	patchedIdentity := identityFor(KindMLX)
+	patchedIdentity.Variant = VariantMLXPatched
+	rawOpened, patchedOpened := 0, 0
+	r, err := NewRouter(
+		routerFixtureConnector{kind: KindMLX, variant: VariantMLXRaw, identity: rawIdentity, caps: Capabilities{Sessions: true}, available: true, onOpen: func() { rawOpened++ }},
+		routerFixtureConnector{kind: KindMLX, variant: VariantMLXPatched, identity: patchedIdentity, caps: Capabilities{Sessions: true}, available: true, onOpen: func() { patchedOpened++ }},
+	)
+	if err != nil {
+		t.Fatalf("co-configured variants rejected: %v", err)
+	}
+	session, decision, err := r.OpenSession(context.Background(), "patched-route", RoutePolicy{Preferred: KindMLX, PreferredVariant: VariantMLXPatched})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.Identity.EffectiveVariant() != VariantMLXPatched || decision.SelectedVariant != VariantMLXPatched || rawOpened != 0 || patchedOpened != 1 {
+		t.Fatalf("wrong variant admitted: identity=%+v decision=%+v opened raw/patched=%d/%d", session.Identity, decision, rawOpened, patchedOpened)
+	}
+	if _, err := NewRouter(
+		routerFixtureConnector{kind: KindMLX, variant: VariantMLXRaw, identity: rawIdentity, caps: Capabilities{Sessions: true}, available: true},
+		routerFixtureConnector{kind: KindMLX, variant: VariantMLXRaw, identity: rawIdentity, caps: Capabilities{Sessions: true}, available: true},
+	); err == nil {
+		t.Fatal("duplicate kind+variant connector was accepted")
+	}
+}
+
 func TestRouterRejectsCancelledSessionAdmission(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	r, err := NewRouter(routerFixtureConnector{

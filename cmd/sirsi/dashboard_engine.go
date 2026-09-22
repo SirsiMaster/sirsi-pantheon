@@ -16,16 +16,21 @@ import (
 // identity-bound connectors. It performs no network probe: session opening
 // remains the point where provider availability/readiness is established.
 func buildDashboardEngineSelection() (*engine.SelectionController, error) {
-	connectors := make([]engine.Connector, 0, 3)
+	connectors := make([]engine.Connector, 0, 7)
 	for _, spec := range []struct {
-		kind   engine.Kind
-		prefix string
+		kind    engine.Kind
+		prefix  string
+		variant engine.BackendVariant
 	}{
-		{kind: engine.KindMLX, prefix: "SIRSI_MLX"},
+		{kind: engine.KindMLX, prefix: "SIRSI_MLX"}, // legacy single-variant configuration
 		{kind: engine.KindOMLX, prefix: "SIRSI_OMLX"},
 		{kind: engine.KindSNE, prefix: "SIRSI_SNE"},
+		{kind: engine.KindMLX, prefix: "SIRSI_MLX_RAW", variant: engine.VariantMLXRaw},
+		{kind: engine.KindMLX, prefix: "SIRSI_MLX_PATCHED", variant: engine.VariantMLXPatched},
+		{kind: engine.KindSNE, prefix: "SIRSI_SNE_PLAIN", variant: engine.VariantSNEPlain},
+		{kind: engine.KindSNE, prefix: "SIRSI_SNE_MTP", variant: engine.VariantSNEMTP},
 	} {
-		connector, configured, err := buildDashboardConnector(spec.kind, spec.prefix)
+		connector, configured, err := buildDashboardConnectorVariant(spec.kind, spec.prefix, spec.variant)
 		if err != nil {
 			return nil, err
 		}
@@ -71,11 +76,15 @@ func dashboardPreferredVariant(preferred engine.Kind) (engine.BackendVariant, er
 }
 
 func buildDashboardConnector(kind engine.Kind, prefix string) (engine.Connector, bool, error) {
+	return buildDashboardConnectorVariant(kind, prefix, "")
+}
+
+func buildDashboardConnectorVariant(kind engine.Kind, prefix string, fixedVariant engine.BackendVariant) (engine.Connector, bool, error) {
 	endpoint := strings.TrimSpace(os.Getenv(prefix + "_ENDPOINT"))
 	if endpoint == "" {
 		return nil, false, nil
 	}
-	identity, modelID, err := dashboardEngineIdentity(kind, prefix)
+	identity, modelID, err := dashboardEngineIdentityVariant(kind, prefix, fixedVariant)
 	if err != nil {
 		return nil, false, err
 	}
@@ -120,9 +129,22 @@ func buildDashboardConnector(kind engine.Kind, prefix string) (engine.Connector,
 }
 
 func dashboardEngineIdentity(kind engine.Kind, prefix string) (engine.Identity, string, error) {
+	return dashboardEngineIdentityVariant(kind, prefix, "")
+}
+
+func dashboardEngineIdentityVariant(kind engine.Kind, prefix string, fixedVariant engine.BackendVariant) (engine.Identity, string, error) {
 	variant, err := dashboardConfiguredVariant(kind, prefix)
 	if err != nil {
 		return engine.Identity{}, "", err
+	}
+	if fixedVariant != "" {
+		if err := fixedVariant.ValidateForEngine(kind); err != nil {
+			return engine.Identity{}, "", err
+		}
+		if rawVariant := strings.TrimSpace(os.Getenv(prefix + "_VARIANT")); rawVariant != "" && variant != fixedVariant {
+			return engine.Identity{}, "", fmt.Errorf("%s variant %q conflicts with fixed variant %q", prefix, variant, fixedVariant)
+		}
+		variant = fixedVariant
 	}
 	values := map[string]string{
 		"model":            strings.TrimSpace(os.Getenv(prefix + "_MODEL")),

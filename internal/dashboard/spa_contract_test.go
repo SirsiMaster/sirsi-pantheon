@@ -179,6 +179,20 @@ func TestHomeViewDemoPathUsesCanonicalRoutes(t *testing.T) {
 	}
 }
 
+func TestEngineViewSelectsAndDisplaysExactVariant(t *testing.T) {
+	page := fetchSPA(t)
+	for _, want := range []string{
+		"connector.kind===data.preferred&&connector.variant===data.preferred_variant",
+		"connector.kind.toUpperCase()+' · '+connector.variant",
+		"selectEngine(connector.kind,connector.variant)",
+		"preferred_variant:variant",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("engine variant selection contract missing %q", want)
+		}
+	}
+}
+
 func TestSidebarNavigationIsLabelFirst(t *testing.T) {
 	page := fetchSPA(t)
 

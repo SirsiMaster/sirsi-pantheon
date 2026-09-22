@@ -67,6 +67,34 @@ func TestSelectionControllerPublishesConfiguredEnginePolicy(t *testing.T) {
 	}
 }
 
+func TestSelectionControllerListsAndSelectsVariantsIndependently(t *testing.T) {
+	raw := &recordingSelectionConnector{identity: selectionIdentity(KindMLX)}
+	raw.identity.Variant = VariantMLXRaw
+	patched := &recordingSelectionConnector{identity: selectionIdentity(KindMLX)}
+	patched.identity.Variant = VariantMLXPatched
+	router, err := NewRouter(raw, patched)
+	if err != nil {
+		t.Fatal(err)
+	}
+	controller, err := NewSelectionController(router, RoutePolicy{Preferred: KindMLX, RequiredCapabilities: []Capability{CapabilitySessions}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := controller.Snapshot().Connectors; len(got) != 2 || got[0].Variant != VariantMLXRaw || got[1].Variant != VariantMLXPatched {
+		t.Fatalf("variant snapshot is not complete/deterministic: %+v", got)
+	}
+	if _, err := controller.Select(RoutePolicy{Preferred: KindMLX, PreferredVariant: VariantMLXPatched, RequiredCapabilities: []Capability{CapabilitySessions}}); err != nil {
+		t.Fatal(err)
+	}
+	_, receipt, err := controller.CompletePrompt(context.Background(), PromptRequest{Prompt: "hello", MaxTokens: 8})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.Route == nil || receipt.Route.SelectedVariant != VariantMLXPatched || receipt.Identity.EffectiveVariant() != VariantMLXPatched {
+		t.Fatalf("selected variant was not bound into receipt: %+v", receipt)
+	}
+}
+
 func TestSelectionControllerRejectsUnsupportedPolicy(t *testing.T) {
 	mlx, err := NewMLXConnector(selectionProvider{name: "mlx", ready: true}, selectionIdentity(KindMLX), Capabilities{Sessions: true})
 	if err != nil {
