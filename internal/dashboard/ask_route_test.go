@@ -2,6 +2,9 @@ package dashboard
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/engine"
@@ -14,6 +17,46 @@ type askPromptExecutor struct {
 
 func (f askPromptExecutor) CompletePrompt(context.Context, engine.PromptRequest) (engine.Completion, engine.Receipt, error) {
 	return f.completion, f.receipt, nil
+}
+
+type askControllerWithoutReceipt struct{}
+
+func (askControllerWithoutReceipt) Snapshot() engine.SelectionSnapshot {
+	return engine.SelectionSnapshot{}
+}
+func (askControllerWithoutReceipt) Select(engine.RoutePolicy) (engine.SelectionSnapshot, error) {
+	return engine.SelectionSnapshot{}, nil
+}
+func (askControllerWithoutReceipt) CompletePrompt(context.Context, engine.PromptRequest) (engine.Completion, engine.Receipt, error) {
+	return engine.Completion{Model: "local", Text: `{"findings":[],"summary":"local answer"}`}, engine.Receipt{}, nil
+}
+
+func TestAPIAskFailsClosedWithoutCanonicalPromptController(t *testing.T) {
+	server := New(Config{})
+	req := httptest.NewRequest(http.MethodPost, "/api/ask", strings.NewReader(`{"question":"what should I address?"}`))
+	resp := httptest.NewRecorder()
+	server.apiAsk(resp, req)
+
+	if resp.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d; body=%s", resp.Code, http.StatusServiceUnavailable, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "canonical engine selection and receipt controller is not configured") {
+		t.Fatalf("missing-controller response = %s", resp.Body.String())
+	}
+}
+
+func TestAPIAskRejectsAnswerWithoutVerifiableRouteReceipt(t *testing.T) {
+	server := New(Config{EngineSelection: askControllerWithoutReceipt{}})
+	req := httptest.NewRequest(http.MethodPost, "/api/ask", strings.NewReader(`{"question":"what should I address?"}`))
+	resp := httptest.NewRecorder()
+	server.apiAsk(resp, req)
+
+	if resp.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d; body=%s", resp.Code, http.StatusServiceUnavailable, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "selected engine returned no verifiable route receipt") {
+		t.Fatalf("missing-receipt response = %s", resp.Body.String())
+	}
 }
 
 func TestAskSelectedEngineReturnsRouteBoundReceipt(t *testing.T) {

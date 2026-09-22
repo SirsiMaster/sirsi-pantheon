@@ -172,6 +172,11 @@ func (s *Server) apiAsk(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "question is required", http.StatusBadRequest)
 		return
 	}
+	executor, ok := s.cfg.EngineSelection.(EnginePromptExecutor)
+	if !ok {
+		writeError(w, "canonical engine selection and receipt controller is not configured", http.StatusServiceUnavailable)
+		return
+	}
 
 	report, err := guard.Doctor()
 	if err != nil {
@@ -182,12 +187,7 @@ func (s *Server) apiAsk(w http.ResponseWriter, r *http.Request) {
 	grounding := groundingFromDoctor(report)
 	var sel modelSelection
 	var model string
-	var receipt *engine.Receipt
-	if executor, ok := s.cfg.EngineSelection.(EnginePromptExecutor); ok {
-		sel, model, receipt, err = askSelectedEngine(r.Context(), executor, req.Question, grounding)
-	} else {
-		sel, model, err = askLocalEngine(r.Context(), req.Question, grounding)
-	}
+	sel, model, receipt, err := askSelectedEngine(r.Context(), executor, req.Question, grounding)
 	if err != nil {
 		// Fail loud. A degraded answer here would be indistinguishable from a
 		// real one, which is the failure mode this whole surface exists to avoid.
@@ -195,6 +195,10 @@ func (s *Server) apiAsk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if receipt == nil || receipt.Route == nil || receipt.IdentityDigest == "" || receipt.RequestSHA256 == "" {
+		writeError(w, "selected engine returned no verifiable route receipt", http.StatusServiceUnavailable)
+		return
+	}
 	resp := askResponse{Model: model, Receipt: receipt}
 
 	// Findings are rendered from the report, never from model text. An index
