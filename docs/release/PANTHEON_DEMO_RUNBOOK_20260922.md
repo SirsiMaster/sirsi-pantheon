@@ -6,31 +6,36 @@ notarization, installation, or production-readiness receipt.
 
 ## The three-minute story
 
-1. Start the local dashboard without opening an uncontrolled browser window:
+1. Only after a fresh SSA admission for the exact candidate, set
+   `CANDIDATE_SIRSI` to its separately built CLI. Do not use an ambient `sirsi`
+   from `PATH`. In Terminal A, start the candidate on an isolated loopback
+   port; leave that process in the foreground:
 
    ```sh
-   sirsi dashboard --no-open
-   open http://127.0.0.1:9119/
+   "$CANDIDATE_SIRSI" dashboard --no-open --port 9120
    ```
 
-   Before presenting the page, verify that the listener is the intended build
-   rather than an older process left on the port:
+   In Terminal B, verify the listener is the intended build before opening the
+   page in Chrome:
 
    ```sh
-   sirsi dashboard preflight --port 9119 \
-     --expect-commit <candidate-commit> \
+   "$CANDIDATE_SIRSI" dashboard preflight --port 9120 \
+     --expect-commit 4aaeba55201e6efb2a7cea319a07a92d416bf39e \
      --expect-version 0.23.9-beta
    ```
 
+   Only after preflight succeeds, open `http://127.0.0.1:9120/` in Chrome.
+
    The command validates `schema`=`pantheon.dashboard-identity/v1`, commit, and
    version. A 404 or mismatch means the visible listener is not the demo
-   candidate; stop and obtain the bounded preview/restart authorization instead
-   of presenting it. `curl .../api/identity | jq .` remains a read-only manual
-   fallback when the CLI binary itself is not the candidate.
+   candidate; stop and do not present it. This runbook does not itself grant
+   build, preview, or restart authority; `curl .../api/identity | jq .` is a
+   read-only diagnostic, not a substitute for the fresh admission.
 
-2. On Home, start with **Ask Horus about this machine**. The four common
-   actions are visible; **More actions** expands the secondary tools. Point
-   out the path: **Session route** → **Open engine selector** → prompt input.
+2. On Home, start with **Ask Horus about this machine**. The primary path is
+   **Session route** → **Open engine selector** → **Start with a question**.
+   **All tools** expands the secondary tools; the Home screen does not repeat
+   the primary path as a second numbered tour.
 
 3. Open the engine selector and choose the configured SNE, MLX, or oMLX
    connector. The UI says **policy selected**, not **backend live**; that
