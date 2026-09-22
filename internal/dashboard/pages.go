@@ -381,7 +381,7 @@ function viewHome(){
   routeValue.textContent=data.preferred?(String(data.preferred).toUpperCase()+(data.preferred_variant?' · '+data.preferred_variant:'')):'No engine selected';
   routeDetail.textContent=data.preferred?'Policy selected; live availability is proved when a session opens.':'Choose SNE, MLX, or oMLX before asking a model-backed question.';
  }).catch(function(e){routeValue.textContent='Unavailable';routeDetail.textContent='Engine policy could not be read: '+e.message;});
-	const tools=document.createElement('section');tools.className='home-tools';tools.setAttribute('aria-labelledby','home-tools-title');
+	const tools=document.createElement('section');tools.className='home-tools';tools.setAttribute('aria-label','Additional tools');
 	const more=document.createElement('details');more.className='home-more';
 	const moreSummary=document.createElement('summary');moreSummary.textContent='All tools';more.appendChild(moreSummary);
 	const secondary=document.createElement('div');secondary.className='home-action-grid';

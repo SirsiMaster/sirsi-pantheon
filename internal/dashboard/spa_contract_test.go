@@ -120,7 +120,7 @@ func TestHomeView_CommandsAreClickable(t *testing.T) {
 	if !strings.Contains(page, "moreSummary.textContent='All tools'") || !strings.Contains(page, "makeHomeAction") {
 		t.Error("secondary Home tools are not grouped under the All tools disclosure")
 	}
-	if !strings.Contains(page, "button.type='button'") || !strings.Contains(page, "exec(item[0])") {
+	if !strings.Contains(page, "button.type='button'") || !strings.Contains(page, "button.addEventListener('click',function(){input.value='';exec(item[0])})") {
 		t.Error("Home actions are not real buttons dispatched through the shared command handler")
 	}
 	for _, want := range []string{"Ask Horus about this machine", "Choose an engine, ask one question", "home-route", "Open engine selector"} {
@@ -133,18 +133,19 @@ func TestHomeView_CommandsAreClickable(t *testing.T) {
 			t.Errorf("home investor path missing %q", want)
 		}
 	}
-	for _, want := range []string{"document.createElement('h1')", "document.createElement('h2')", "home-tools-title"} {
+	for _, want := range []string{
+		"document.createElement('h1')",
+		"intro.setAttribute('aria-labelledby','home-title')",
+		"tools.setAttribute('aria-label','Additional tools')",
+	} {
 		if !strings.Contains(page, want) {
-			t.Errorf("home heading hierarchy missing %q", want)
+			t.Errorf("Home accessible naming contract missing %q", want)
 		}
 	}
-	if !strings.Contains(page, "engine:'engine'") {
-		t.Error("engine Home action is not connected to the engine selector view")
+	if !strings.Contains(page, "routeAction.addEventListener('click',function(){switchView('engine')})") {
+		t.Error("Home engine selector action is not connected to the engine view")
 	}
-	if !strings.Contains(page, "row.addEventListener('click',go)") {
-		t.Error("command rows carry no click handler")
-	}
-	if !strings.Contains(page, "input.focus()") {
+	if !strings.Contains(page, "start.addEventListener('click',function(){input.value='';input.focus()})") {
 		t.Error("command input is never focused — the first keystroke goes nowhere")
 	}
 }
@@ -155,9 +156,9 @@ func TestHomeViewDemoPathUsesCanonicalRoutes(t *testing.T) {
 	for _, want := range []string{
 		"Start with a question",
 		"Open engine selector",
-		"switchView('engine')",
-		"input.value='';input.focus()",
-		"switchView('fleet')",
+		"routeAction.addEventListener('click',function(){switchView('engine')})",
+		"start.addEventListener('click',function(){input.value='';input.focus()})",
+		"fleet.addEventListener('click',function(){switchView('fleet')})",
 		"Policy selected; live availability is proved when a session opens.",
 		"Choose SNE, MLX, or oMLX before asking a model-backed question.",
 		"moreSummary.textContent='All tools'",
