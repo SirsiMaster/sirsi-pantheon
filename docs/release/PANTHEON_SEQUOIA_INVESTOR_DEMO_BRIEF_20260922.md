@@ -6,23 +6,25 @@ M1/M5 transport, and release credentials visibly separate.
 
 ## Candidate being shown
 
-- Commit: `fe1cebaae767c81ed298b637ba057acca93d3373`
-- Tree: `82f6d0febb543a07e40ae56d7fda24801af89fcb`
+- Commit: `344505fbfb671cee792ee6cc643dcf8b45c1328b`
+- Tree: `4246e731c284212d97d33b6829668542a18e6834`
 - Version: `0.23.9-beta`
-- Local readiness receipt: `/private/tmp/pantheon-demo-readiness-gate-dd0e701b-receipt-20260922.json`
-- Receipt SHA-256: `d0e9b9b0065a1be616c9c4d3c8c1f96658a7028c6dd46b219d17d23f8600c375`
+- Current focused Home receipt: `/private/tmp/pantheon-home-actions-344505fb-receipt-20260922.json`
+- Receipt SHA-256: `8ab6efb7241206caacbd32c10fc63a6e5a467b7c193a6fcb983ceece0592fe6e`
 
 ## The five-minute path
 
 1. Run the read-only identity preflight against the demo port:
    `sirsi dashboard preflight --port 9119 --expect-commit
-   fe1cebaae767c81ed298b637ba057acca93d3373 --expect-version 0.23.9-beta`.
+   344505fbfb671cee792ee6cc643dcf8b45c1328b --expect-version 0.23.9-beta`.
    It requires `pantheon.dashboard-identity/v1` and compares the running
    commit/version with the candidate above. If the endpoint is missing or
    mismatched, do not present the page: the port is serving an older process.
-2. Open Home. The page starts with **Ask Horus about this machine**, not a
-   status wall. Explain that Pantheon owns the product experience and route
-   provenance while the selected engine remains an explicit policy choice.
+2. Open Home. Start with **Ask Horus about this machine**, choose an engine or
+   health task from the four visible actions, and open **More actions** only
+   when the audience wants the secondary tools. Explain that Pantheon owns
+   the product experience and route provenance while the selected engine
+   remains an explicit policy choice.
 3. Press **Open engine selector**. Choose SNE, MLX, or oMLX only when that
    connector is configured. The route panel says **policy selected**; it does
    not pretend that a live session has been admitted.
@@ -52,9 +54,11 @@ unrestricted SSH or a copied router store.
 
 ## What is verified versus not shown
 
-The candidate has local PASS evidence for Engine ABI, provider, dashboard, CLI
-engine/control workflows, routerboard control tests, and committed diff-check.
-The isolated Go cache was removed after verification.
+This candidate has focused PASS evidence for the Home action hierarchy,
+keyboard-accessible disclosure, dashboard identity contract, and formatting.
+The isolated Go cache was removed after verification. The broader readiness
+receipt for `dd0e701b` covers a predecessor and is not evidence for this
+candidate's later Home changes.
 
 This brief does not claim a live M1/M5 prompt, signed or notarized assets,
 installation, publication, or production readiness. The current 9119 process

@@ -28,8 +28,9 @@ notarization, installation, or production-readiness receipt.
    of presenting it. `curl .../api/identity | jq .` remains a read-only manual
    fallback when the CLI binary itself is not the candidate.
 
-2. On Home, point out the single flow: **Ask Horus about this machine** →
-   **Session route** → **Open engine selector** → prompt input.
+2. On Home, start with **Ask Horus about this machine**. The four common
+   actions are visible; **More actions** expands the secondary tools. Point
+   out the path: **Session route** → **Open engine selector** → prompt input.
 
 3. Open the engine selector and choose the configured SNE, MLX, or oMLX
    connector. The UI says **policy selected**, not **backend live**; that
