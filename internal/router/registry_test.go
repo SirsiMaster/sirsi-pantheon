@@ -48,6 +48,22 @@ func TestLoadRegistry_WithAgents(t *testing.T) {
 	}
 }
 
+func TestAgentConfigPublicIdentityUsesExplicitMetadata(t *testing.T) {
+	cfg := AgentConfig{ID: "codex-pantheon", PublicName: "Pantheon", Callsign: "APOLLO", Banner: "Pantheon // APOLLO"}
+	name, callsign, banner := cfg.PublicIdentity()
+	if name != "Pantheon" || callsign != "APOLLO" || banner != "Pantheon // APOLLO" {
+		t.Fatalf("explicit public identity = %q/%q/%q", name, callsign, banner)
+	}
+}
+
+func TestAgentConfigPublicIdentityDerivesLegacyMetadataDeterministically(t *testing.T) {
+	cfg := AgentConfig{ID: "claude-finalwishes-web"}
+	name, callsign, banner := cfg.PublicIdentity()
+	if name != "Finalwishes Web" || callsign != "CLAUDE-FINALWISHES-WEB" || banner != "CLAUDE // FINALWISHES WEB" {
+		t.Fatalf("derived public identity = %q/%q/%q", name, callsign, banner)
+	}
+}
+
 func TestLookup_Found(t *testing.T) {
 	reg := &Registry{Agents: map[string]AgentConfig{
 		"claude-test": {ID: "claude-test", Type: "claude", Command: []string{"claude"}, Cwd: "/tmp"},

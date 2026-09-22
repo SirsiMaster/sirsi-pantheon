@@ -85,6 +85,20 @@ func TestParseEnginePromptOptionsAcceptsVariant(t *testing.T) {
 	}
 }
 
+func TestEngineCLIWorkflowIsRegisteredAndDocumented(t *testing.T) {
+	if engineCmd.Parent() != rootCmd {
+		t.Fatal("engine command is not registered on the root command")
+	}
+	if engineStatusCmd.Parent() != engineCmd || enginePromptCmd.Parent() != engineCmd {
+		t.Fatal("engine status/prompt commands are not registered under engine")
+	}
+	for _, want := range []string{"sirsi engine status", "sirsi engine prompt", "explicit engine route"} {
+		if !strings.Contains(rootCmd.Long, want) {
+			t.Errorf("root help does not document %q", want)
+		}
+	}
+}
+
 func TestExecuteEnginePromptProjectsCompletionAndRouteReceipt(t *testing.T) {
 	controller := testEngineController(t)
 	opts := enginePromptOptions{Engine: "mlx", Variant: "mlx-raw", Prompt: "hello", MaxTokens: 8}

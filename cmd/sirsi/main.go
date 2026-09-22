@@ -130,6 +130,8 @@ var rootCmd = &cobra.Command{
   sirsi isis <verb>        Health & networking module
   sirsi maat <verb>        Quality & governance module
   sirsi ra <verb>          Fleet orchestration module
+  sirsi engine status      Show the canonical engine selection
+  sirsi engine prompt      Ask one prompt through an explicit engine route
   sirsi version            Show version`,
 	Run: func(cmd *cobra.Command, args []string) {
 		// sirsi no-args launches the interactive operator console (the TUI,

@@ -10,12 +10,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // AgentConfig defines a registered agent that can receive work.
 type AgentConfig struct {
 	// ID is the unique agent identifier (e.g., "claude-pantheon", "codex-pantheon")
 	ID string `json:"id"`
+
+	// PublicName, Callsign, and Banner are operator-facing identity only. They
+	// never replace ID, which remains the stable routing key.
+	PublicName string `json:"public_name,omitempty"`
+	Callsign   string `json:"callsign,omitempty"`
+	Banner     string `json:"banner,omitempty"`
 
 	// Type is the agent platform (e.g., "claude", "codex", "gemini", "qwen")
 	Type string `json:"type"`
@@ -54,6 +61,31 @@ type AgentConfig struct {
 	// is now typed above — exactly the additive evolution this was built for:
 	// the extra copy is simply dropped on load once a real field claims the key.
 	extra map[string]json.RawMessage
+}
+
+// PublicIdentity returns the stable operator-facing identity. Explicit
+// metadata wins; older registrations receive a deterministic family/lane
+// label without changing their routing ID.
+func (cfg AgentConfig) PublicIdentity() (name, callsign, banner string) {
+	if cfg.PublicName != "" {
+		return cfg.PublicName, cfg.Callsign, cfg.Banner
+	}
+	parts := strings.Split(cfg.ID, "-")
+	if len(parts) > 1 {
+		lane := strings.Join(parts[1:], " ")
+		name = strings.Title(strings.ReplaceAll(lane, "-", " "))
+	} else {
+		name = cfg.ID
+	}
+	family := strings.ToUpper(parts[0])
+	laneCall := strings.ToUpper(strings.Join(parts[1:], "-"))
+	if laneCall == "" {
+		callsign = family
+	} else {
+		callsign = family + "-" + laneCall
+	}
+	banner = family + " // " + strings.ToUpper(name)
+	return name, callsign, banner
 }
 
 // UnmarshalJSON decodes known fields into the struct and captures everything
