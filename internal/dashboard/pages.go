@@ -183,6 +183,19 @@ font-family:Inter,-apple-system,system-ui,sans-serif;flex-shrink:0}
 	.home-route-detail{flex:1 1 240px;color:var(--dim);font:11px/1.4 Inter,-apple-system,system-ui,sans-serif}
 	.home-route-action{padding:4px 8px;border:1px solid var(--line);border-radius:3px;background:transparent;color:var(--gold);font:600 11px Inter,-apple-system,system-ui,sans-serif;cursor:pointer}
 	.home-route-action:hover,.home-route-action:focus-visible{border-color:var(--gold);background:color-mix(in srgb, var(--gold) 8%%, transparent);outline:2px solid var(--gold);outline-offset:2px}
+	.demo-rail{max-width:980px;margin:14px 0 18px;padding:12px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+	.demo-rail-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+	.demo-rail-title{color:var(--ink2);font:600 13px/1.4 Inter,-apple-system,system-ui,sans-serif;letter-spacing:.02em}
+	.demo-rail-subtitle{color:var(--dim);font:11px/1.4 Inter,-apple-system,system-ui,sans-serif}
+	.demo-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin-top:10px}
+	.demo-step{min-width:0;padding:8px 14px 8px 0;border-right:1px solid var(--line)}
+	.demo-step+.demo-step{padding-left:14px}
+	.demo-step:last-child{padding-right:0;border-right:0}
+	.demo-step-index{color:var(--gold);font:600 10px Inter,-apple-system,system-ui,sans-serif;letter-spacing:.12em}
+	.demo-step-title{margin-top:3px;color:var(--ink2);font:600 12px/1.4 Inter,-apple-system,system-ui,sans-serif}
+	.demo-step-copy{min-height:34px;margin-top:3px;color:var(--dim);font:11px/1.45 Inter,-apple-system,system-ui,sans-serif}
+	.demo-step-action{margin-top:8px;padding:4px 8px;border:1px solid var(--line);border-radius:3px;background:transparent;color:var(--gold);font:600 10px Inter,-apple-system,system-ui,sans-serif;cursor:pointer}
+	.demo-step-action:hover,.demo-step-action:focus-visible{border-color:var(--gold);background:color-mix(in srgb, var(--gold) 8%%, transparent);outline:2px solid var(--gold);outline-offset:2px}
 	.t-sep{border-top:1px solid color-mix(in srgb, var(--gold) 6%%, transparent);margin:6px 0}
 	@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}}
 	@media (prefers-contrast:more){.t-action:focus-visible,.nav-item:focus-visible,.stat-go:focus-visible{outline-width:3px}.t-dim,.t-action{color:var(--ink2)}}
@@ -216,6 +229,9 @@ font-family:Inter,-apple-system,system-ui,sans-serif;flex-shrink:0}
 	 .guard-finding{grid-template-columns:22px minmax(0,1fr)}
 	 .guard-finding-message{grid-column:2}
 	 .engine-grid{grid-template-columns:1fr}
+	 .demo-steps{grid-template-columns:1fr}
+	 .demo-step,.demo-step+.demo-step{padding:10px 0;border-right:0;border-bottom:1px solid var(--line)}
+	 .demo-step:last-child{border-bottom:0}
 	}
 </style>
 </head>
@@ -353,7 +369,25 @@ function viewHome(){
   routeValue.textContent=data.preferred?(String(data.preferred).toUpperCase()+(data.preferred_variant?' · '+data.preferred_variant:'')):'No engine selected';
   routeDetail.textContent=data.preferred?'Policy selected; live availability is proved when a session opens.':'Choose SNE, MLX, or oMLX before asking a model-backed question.';
  }).catch(function(e){routeValue.textContent='Unavailable';routeDetail.textContent='Engine policy could not be read: '+e.message;});
- out('');
+	const demo=document.createElement('section');demo.className='demo-rail';demo.setAttribute('aria-labelledby','demo-title');
+	const demoHead=document.createElement('div');demoHead.className='demo-rail-head';
+	const demoTitle=document.createElement('div');demoTitle.className='demo-rail-title';demoTitle.id='demo-title';demoTitle.textContent='Demo path';demoHead.appendChild(demoTitle);
+	const demoSubtitle=document.createElement('div');demoSubtitle.className='demo-rail-subtitle';demoSubtitle.textContent='A short, truthful tour of the product surface.';demoHead.appendChild(demoSubtitle);
+	demo.appendChild(demoHead);
+	const steps=document.createElement('div');steps.className='demo-steps';
+	const makeStep=function(index,title,copy,label,go){
+	 const step=document.createElement('div');step.className='demo-step';
+	 const number=document.createElement('div');number.className='demo-step-index';number.textContent=index;step.appendChild(number);
+	 const heading=document.createElement('div');heading.className='demo-step-title';heading.textContent=title;step.appendChild(heading);
+	 const detail=document.createElement('div');detail.className='demo-step-copy';detail.textContent=copy;step.appendChild(detail);
+	 const action=document.createElement('button');action.type='button';action.className='demo-step-action';action.textContent=label;action.addEventListener('click',go);step.appendChild(action);
+	 return step;
+	};
+	steps.appendChild(makeStep('01','Choose a route','Select SNE, MLX, or oMLX for this session.','Open engine selector',function(){switchView('engine')}));
+	steps.appendChild(makeStep('02','Ask Horus','Submit one grounded workstation question and show its route receipt.','Focus prompt',function(){input.value='';input.focus()}));
+	steps.appendChild(makeStep('03','Inspect evidence','Open the canonical M5 board; worker state is never copied into the client.','Open Fleet board',function(){switchView('fleet')}));
+	demo.appendChild(steps);intro.appendChild(demo);
+	out('');
  cmdRow('scan','Scan for infrastructure waste + ghost remnants');
  cmdRow('ghosts','Hunt dead application residuals');
  cmdRow('guard','System health, process slayer');

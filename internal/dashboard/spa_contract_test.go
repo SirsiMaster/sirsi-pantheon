@@ -130,3 +130,25 @@ func TestHomeView_CommandsAreClickable(t *testing.T) {
 		t.Error("command input is never focused — the first keystroke goes nowhere")
 	}
 }
+
+func TestHomeViewDemoPathUsesCanonicalRoutes(t *testing.T) {
+	page := fetchSPA(t)
+
+	for _, want := range []string{
+		"Demo path",
+		"A short, truthful tour of the product surface.",
+		"Choose a route",
+		"Ask Horus",
+		"Inspect evidence",
+		"Open engine selector",
+		"Focus prompt",
+		"Open Fleet board",
+		"switchView('engine')",
+		"input.value='';input.focus()",
+		"switchView('fleet')",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("Home demo path missing %q", want)
+		}
+	}
+}
