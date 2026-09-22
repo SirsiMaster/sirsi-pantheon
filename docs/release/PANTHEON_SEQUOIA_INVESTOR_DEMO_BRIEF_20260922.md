@@ -6,8 +6,8 @@ M1/M5 transport, and release credentials visibly separate.
 
 ## Candidate being shown
 
-- Commit: `e8f8719e80bf21eb33353cec6d0be124770f463a`
-- Tree: `0cccc3191b701ac1c46e65bc1dd68695a5b4ffc9`
+- Commit: `fe1cebaae767c81ed298b637ba057acca93d3373`
+- Tree: `82f6d0febb543a07e40ae56d7fda24801af89fcb`
 - Version: `0.23.9-beta`
 - Local readiness receipt: `/private/tmp/pantheon-demo-readiness-gate-dd0e701b-receipt-20260922.json`
 - Receipt SHA-256: `d0e9b9b0065a1be616c9c4d3c8c1f96658a7028c6dd46b219d17d23f8600c375`
@@ -16,7 +16,7 @@ M1/M5 transport, and release credentials visibly separate.
 
 1. Run the read-only identity preflight against the demo port:
    `sirsi dashboard preflight --port 9119 --expect-commit
-   e8f8719e80bf21eb33353cec6d0be124770f463a --expect-version 0.23.9-beta`.
+   fe1cebaae767c81ed298b637ba057acca93d3373 --expect-version 0.23.9-beta`.
    It requires `pantheon.dashboard-identity/v1` and compares the running
    commit/version with the candidate above. If the endpoint is missing or
    mismatched, do not present the page: the port is serving an older process.
