@@ -16,6 +16,30 @@ import (
 // identity-bound connectors. It performs no network probe: session opening
 // remains the point where provider availability/readiness is established.
 func buildDashboardEngineSelection() (*engine.SelectionController, error) {
+	return buildDashboardEngineSelectionWithOverrides("", "", false)
+}
+
+func buildDashboardEngineSelectionForPrompt(opts enginePromptOptions) (*engine.SelectionController, error) {
+	preferred, variant := opts.Engine, opts.Variant
+	if preferred == "" && variant != "" {
+		parsed, err := engine.ParseVariant(variant)
+		if err != nil {
+			return nil, fmt.Errorf("engine prompt variant: %w", err)
+		}
+		for _, kind := range []engine.Kind{engine.KindMLX, engine.KindOMLX, engine.KindSNE} {
+			if parsed.ValidateForEngine(kind) == nil {
+				preferred = string(kind)
+				break
+			}
+		}
+	}
+	if preferred == "" && variant == "" {
+		return buildDashboardEngineSelection()
+	}
+	return buildDashboardEngineSelectionWithOverrides(preferred, variant, true)
+}
+
+func buildDashboardEngineSelectionWithOverrides(engineOverride, variantOverride string, override bool) (*engine.SelectionController, error) {
 	connectors := make([]engine.Connector, 0, 7)
 	for _, spec := range []struct {
 		kind    engine.Kind
@@ -46,6 +70,9 @@ func buildDashboardEngineSelection() (*engine.SelectionController, error) {
 		return nil, err
 	}
 	preferred := engine.Kind(strings.ToLower(strings.TrimSpace(os.Getenv("SIRSI_ENGINE_PREFERRED"))))
+	if override && engineOverride != "" {
+		preferred = engine.Kind(strings.ToLower(strings.TrimSpace(engineOverride)))
+	}
 	if preferred == "" {
 		preferred = connectors[0].Kind()
 	}
@@ -53,11 +80,30 @@ func buildDashboardEngineSelection() (*engine.SelectionController, error) {
 	if err != nil && strings.TrimSpace(os.Getenv("SIRSI_ENGINE_ALLOW_FALLBACK")) != "" {
 		return nil, fmt.Errorf("SIRSI_ENGINE_ALLOW_FALLBACK must be boolean: %w", err)
 	}
-	preferredVariant, err := dashboardPreferredVariant(preferred)
+	preferredVariant := engine.BackendVariant("")
+	if override {
+		preferredVariant, err = dashboardExplicitVariant(preferred, variantOverride)
+	} else {
+		preferredVariant, err = dashboardPreferredVariant(preferred)
+	}
 	if err != nil {
 		return nil, err
 	}
 	return engine.NewSelectionController(router, engine.RoutePolicy{Preferred: preferred, PreferredVariant: preferredVariant, AllowFallback: allowFallback})
+}
+
+func dashboardExplicitVariant(preferred engine.Kind, raw string) (engine.BackendVariant, error) {
+	if strings.TrimSpace(raw) == "" {
+		return "", nil
+	}
+	variant, err := engine.ParseVariant(raw)
+	if err != nil {
+		return "", fmt.Errorf("engine prompt --variant: %w", err)
+	}
+	if err := variant.ValidateForEngine(preferred); err != nil {
+		return "", fmt.Errorf("engine prompt --variant: %w", err)
+	}
+	return variant, nil
 }
 
 func dashboardPreferredVariant(preferred engine.Kind) (engine.BackendVariant, error) {

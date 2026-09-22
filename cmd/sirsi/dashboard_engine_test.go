@@ -91,6 +91,30 @@ func TestBuildDashboardEngineSelectionLoadsRawAndPatchedMLXSideBySide(t *testing
 	}
 }
 
+func TestEnginePromptCanBootstrapExplicitNonDefaultOnlyConnector(t *testing.T) {
+	setDashboardEngineIdentity(t, "SIRSI_SNE_MTP", "sne")
+	t.Setenv("SIRSI_ENGINE_PREFERRED", "")
+	t.Setenv("SIRSI_ENGINE_PREFERRED_VARIANT", "")
+	t.Setenv("SIRSI_ENGINE_ALLOW_FALLBACK", "")
+	if _, err := buildDashboardEngineSelection(); err == nil {
+		t.Fatal("dashboard inferred SNE MTP without an explicit preferred variant")
+	}
+	controller, err := buildDashboardEngineSelectionForPrompt(enginePromptOptions{Engine: "sne", Variant: "sne-mtp"})
+	if err != nil {
+		t.Fatalf("explicit CLI engine+variant could not build its controller: %v", err)
+	}
+	if policy := controller.Policy(); policy.Preferred != engine.KindSNE || policy.PreferredVariant != engine.VariantSNEMTP {
+		t.Fatalf("CLI initial policy = %+v", policy)
+	}
+	controller, err = buildDashboardEngineSelectionForPrompt(enginePromptOptions{Variant: "sne-mtp"})
+	if err != nil {
+		t.Fatalf("variant-only CLI route could not infer its ABI kind: %v", err)
+	}
+	if policy := controller.Policy(); policy.Preferred != engine.KindSNE || policy.PreferredVariant != engine.VariantSNEMTP {
+		t.Fatalf("variant-only CLI policy = %+v", policy)
+	}
+}
+
 func TestDashboardRejectsIncompatibleConfiguredVariant(t *testing.T) {
 	setDashboardEngineIdentity(t, "SIRSI_MLX", "mlx")
 	t.Setenv("SIRSI_MLX_VARIANT", "sne-plain")

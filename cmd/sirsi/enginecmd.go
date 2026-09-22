@@ -63,7 +63,10 @@ var enginePromptCmd = &cobra.Command{
 		if err := opts.validate(); err != nil {
 			return err
 		}
-		return executeEnginePrompt(cmd.Context(), opts, cmd.OutOrStdout(), buildDashboardEngineSelection, completeEnginePrompt)
+		builder := func() (*engine.SelectionController, error) {
+			return buildDashboardEngineSelectionForPrompt(opts)
+		}
+		return executeEnginePrompt(cmd.Context(), opts, cmd.OutOrStdout(), builder, completeEnginePrompt)
 	},
 }
 
