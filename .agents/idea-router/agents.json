@@ -726,6 +726,17 @@
       "wake": {
         "mechanism": "owner-surface"
       }
+    },
+    "claude-finalwishes-helper": {
+      "id": "claude-finalwishes-helper",
+      "type": "claude",
+      "cwd": "/Users/thekryptodragon/Development/finalwishes-helper-startup",
+      "repo": "/Users/thekryptodragon/Development/FinalWishes",
+      "workstream": "finalwishes",
+      "wake": {
+        "mechanism": "none"
+      },
+      "notes": "Interactive Claude Code session (desktop app) co-working FinalWishes with codex-finalwishes; gates Codex PRs on Rule 29, reviews, live-verifies. No consumer: woken by the human, not the router."
     }
   }
 }
