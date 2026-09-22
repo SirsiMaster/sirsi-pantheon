@@ -69,11 +69,18 @@ endpoint is not probed while the dashboard starts; the first submitted prompt
 performs session admission and returns an actionable readiness error if SNE is
 not available.
 
-There is no separate `sirsi engine select` CLI today. Connector selection is
-configured with the `SIRSI_*` environment contract above. For the MCP CLI
-surface, `sirsi-gemma --engine sne` (or `mlx`/`omlx`) overrides the file for
-that process without rewriting it; its `gemma_chat` and `gemma_complete` tools
-then submit prompts through the selected connector. The dashboard selection is
+The Pantheon CLI exposes the same route contract for a demo or one-shot
+operator request:
+
+```sh
+sirsi engine status
+sirsi engine prompt --engine sne --prompt "What should I address first?"
+```
+
+Replace `sne` with `mlx` or `omlx` (and add `--variant` when the configured
+identity requires it). `engine prompt` selects the route for that invocation,
+returns JSON containing the completion and identity-bound receipt, and does not
+silently rewrite the persistent environment policy. The dashboard selection is
 changed during a running session through the Engine view. Do not start a model
 workload merely to inspect the selection snapshot; availability is proved only
 when an operator submits a prompt.
