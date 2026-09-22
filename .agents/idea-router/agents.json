@@ -186,6 +186,50 @@
       "consumer": {},
       "repo": "/Users/thekryptodragon/Development/sirsi-io-connect"
     },
+    "m5-hermes": {
+      "id": "m5-hermes",
+      "type": "claude",
+      "command": [
+        "claude"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/sirsi-io-connect",
+      "repo": "/Users/thekryptodragon/Development/sirsi-io-connect",
+      "workstream": "hermes",
+      "wake": {
+        "mechanism": "none"
+      },
+      "consumer": {}
+    },
+    "sirsi-hardware-admin": {
+      "id": "sirsi-hardware-admin",
+      "type": "codex",
+      "command": [
+        "codex"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/sirsi-pantheon",
+      "workstream": "hardware-readiness",
+      "wake": {
+        "mechanism": "none"
+      },
+      "consumer": {
+        "mode": "resident",
+        "health_check": [
+          "sirsi",
+          "thread",
+          "attended",
+          "sirsi-hardware-admin",
+          "--quiet"
+        ]
+      },
+      "capabilities": [
+        "hardware-readiness",
+        "host-reachability",
+        "software-readiness",
+        "close:any"
+      ],
+      "callsign": "Hardware Admin",
+      "public_name": "Sirsi Hardware Admin"
+    },
     "claude-kfca": {
       "id": "claude-kfca",
       "type": "claude",
