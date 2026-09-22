@@ -128,7 +128,7 @@ func TestHomeView_CommandsAreClickable(t *testing.T) {
 			t.Errorf("home demo path missing %q", want)
 		}
 	}
-	for _, want := range []string{"home-hero", "Start with a question", "View worker evidence", "home-primary-action"} {
+	for _, want := range []string{"home-hero", "Use sample question", "View worker evidence", "home-primary-action"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("home investor path missing %q", want)
 		}
@@ -145,8 +145,14 @@ func TestHomeView_CommandsAreClickable(t *testing.T) {
 	if !strings.Contains(page, "routeAction.addEventListener('click',function(){switchView('engine')})") {
 		t.Error("Home engine selector action is not connected to the engine view")
 	}
-	if !strings.Contains(page, "start.addEventListener('click',function(){input.value='';input.focus()})") {
-		t.Error("command input is never focused — the first keystroke goes nowhere")
+	for _, want := range []string{
+		"const sampleQuestion='What should I address first on this machine?'",
+		"start.addEventListener('click',function(){input.value=sampleQuestion;input.focus();input.setSelectionRange(input.value.length,input.value.length)})",
+		"Loads into the prompt. Review it, then press Enter to send.",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("Home sample-question action missing or unsafe: %q", want)
+		}
 	}
 }
 
@@ -154,10 +160,11 @@ func TestHomeViewDemoPathUsesCanonicalRoutes(t *testing.T) {
 	page := fetchSPA(t)
 
 	for _, want := range []string{
-		"Start with a question",
+		"Use sample question",
 		"Open engine selector",
 		"routeAction.addEventListener('click',function(){switchView('engine')})",
-		"start.addEventListener('click',function(){input.value='';input.focus()})",
+		"start.addEventListener('click',function(){input.value=sampleQuestion;input.focus();input.setSelectionRange(input.value.length,input.value.length)})",
+		"Loads into the prompt. Review it, then press Enter to send.",
 		"fleet.addEventListener('click',function(){switchView('fleet')})",
 		"Policy selected; live availability is proved when a session opens.",
 		"Choose SNE, MLX, or oMLX before asking a model-backed question.",

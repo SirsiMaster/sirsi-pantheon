@@ -181,6 +181,7 @@ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;flex-shrink:0
 	.home-title{color:var(--ink);font:700 34px/1.1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;letter-spacing:-.035em}
 	.home-subtitle{max-width:58ch;margin-top:12px;color:var(--ink2);font:15px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
 	.home-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px}
+	.home-sample-note{margin-top:8px;color:var(--ink2);font:12px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
 	.home-primary-action,.home-secondary-action{padding:10px 14px;border:1px solid var(--line);border-radius:6px;font:650 12px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;cursor:pointer}
 	.home-primary-action{border-color:var(--emerald);background:var(--emerald);color:var(--bg)}
 	.home-secondary-action{background:transparent;color:var(--gold)}
@@ -368,9 +369,12 @@ function viewHome(){
 	const title=document.createElement('h1');title.className='home-title';title.id='home-title';title.textContent='Ask Horus about this machine';copy.appendChild(title);
 	const subtitle=document.createElement('div');subtitle.className='home-subtitle';subtitle.textContent='Choose an engine, ask one question, then inspect the route receipt.';copy.appendChild(subtitle);
 	const actions=document.createElement('div');actions.className='home-actions';
-	const start=document.createElement('button');start.type='button';start.className='home-primary-action';start.textContent='Start with a question';start.addEventListener('click',function(){input.value='';input.focus()});actions.appendChild(start);
+	const sampleQuestion='What should I address first on this machine?';
+	const start=document.createElement('button');start.type='button';start.className='home-primary-action';start.textContent='Use sample question';start.addEventListener('click',function(){input.value=sampleQuestion;input.focus();input.setSelectionRange(input.value.length,input.value.length)});actions.appendChild(start);
 	const fleet=document.createElement('button');fleet.type='button';fleet.className='home-secondary-action';fleet.textContent='View worker evidence';fleet.addEventListener('click',function(){switchView('fleet')});actions.appendChild(fleet);
- copy.appendChild(actions);hero.appendChild(copy);
+	copy.appendChild(actions);
+	const sampleNote=document.createElement('p');sampleNote.className='home-sample-note';sampleNote.textContent='Loads into the prompt. Review it, then press Enter to send.';copy.appendChild(sampleNote);
+	hero.appendChild(copy);
  const route=document.createElement('div');route.className='home-route';route.setAttribute('aria-live','polite');
  const routeLabel=document.createElement('span');routeLabel.className='home-route-label';routeLabel.textContent='Session route';route.appendChild(routeLabel);
  const routeValue=document.createElement('span');routeValue.className='home-route-value';routeValue.textContent='Loading policy…';route.appendChild(routeValue);
