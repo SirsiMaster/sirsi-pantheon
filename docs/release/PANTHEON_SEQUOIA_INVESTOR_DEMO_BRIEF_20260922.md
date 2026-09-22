@@ -6,17 +6,17 @@ M1/M5 transport, and release credentials visibly separate.
 
 ## Candidate being shown
 
-- Commit: `344505fbfb671cee792ee6cc643dcf8b45c1328b`
-- Tree: `4246e731c284212d97d33b6829668542a18e6834`
+- Commit: `5115015a352f80620dcf16b023ca4c6552f72c87`
+- Tree: `b154806ea7f00ed4091b3cb105d674bbd8a64fce`
 - Version: `0.23.9-beta`
-- Current focused Home receipt: `/private/tmp/pantheon-home-actions-344505fb-receipt-20260922.json`
-- Receipt SHA-256: `8ab6efb7241206caacbd32c10fc63a6e5a467b7c193a6fcb983ceece0592fe6e`
+- Current focused dashboard receipt: `/private/tmp/pantheon-accessibility-5115015a-receipt-20260922.json`
+- Receipt SHA-256: `5f176438c5712d6249d9d3cdd933581d5e4779a08e1fbfba24384f874d1dc943`
 
 ## The five-minute path
 
 1. Run the read-only identity preflight against the demo port:
    `sirsi dashboard preflight --port 9119 --expect-commit
-   344505fbfb671cee792ee6cc643dcf8b45c1328b --expect-version 0.23.9-beta`.
+   5115015a352f80620dcf16b023ca4c6552f72c87 --expect-version 0.23.9-beta`.
    It requires `pantheon.dashboard-identity/v1` and compares the running
    commit/version with the candidate above. If the endpoint is missing or
    mismatched, do not present the page: the port is serving an older process.
@@ -55,10 +55,11 @@ unrestricted SSH or a copied router store.
 ## What is verified versus not shown
 
 This candidate has focused PASS evidence for the Home action hierarchy,
-keyboard-accessible disclosure, dashboard identity contract, and formatting.
-The isolated Go cache was removed after verification. The broader readiness
-receipt for `dd0e701b` covers a predecessor and is not evidence for this
-candidate's later Home changes.
+keyboard-accessible disclosure, dashboard identity contract, skip link,
+primary-navigation landmark, and semantic main landmark. The isolated Go
+cache was removed after verification. The receipt above binds the dashboard
+landmark change to this exact candidate; the broader readiness receipt for
+`dd0e701b` covers a predecessor and is not evidence for this candidate.
 
 This brief does not claim a live M1/M5 prompt, signed or notarized assets,
 installation, publication, or production readiness. The current 9119 process
