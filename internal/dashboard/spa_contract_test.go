@@ -103,35 +103,32 @@ func TestGuardViewProvidesSeveritySummaryAndProgressiveDisclosure(t *testing.T) 
 	}
 }
 
-// TestHomeView_CommandsAreClickable pins the affordance fix: the home screen
-// listed eight commands as inert text, so the only way to act on one was to
-// retype it. Each is now a row that dispatches through the same exec() the
-// input box uses — one dispatch, so a click can never drift from the typed word.
+// TestHomeView_CommandsAreClickable keeps every tool reachable while the
+// first-question path stays focused on the selected route and prompt.
 func TestHomeView_CommandsAreClickable(t *testing.T) {
 	page := fetchSPA(t)
 
-	for _, action := range []string{"engine','Choose an engine", "doctor','Check system health", "scan','Scan infrastructure", "guard','Review system controls"} {
+	for _, action := range []string{
+		"doctor','Check system health", "scan','Scan infrastructure", "guard','Review system controls",
+		"ghosts','Find application remnants", "network','Audit network security", "hardware','Inspect hardware",
+		"quality','Check code governance", "dedup','Find duplicate files",
+	} {
 		if !strings.Contains(page, action) {
-			t.Errorf("primary Home action missing %q", action)
+			t.Errorf("Home tool missing %q", action)
 		}
 	}
-	for _, action := range []string{"ghosts','Find application remnants", "network','Audit network security", "hardware','Inspect hardware", "quality','Check code governance", "dedup','Find duplicate files"} {
-		if !strings.Contains(page, action) {
-			t.Errorf("secondary Home action missing from More actions: %q", action)
-		}
-	}
-	if !strings.Contains(page, "moreSummary.textContent='More actions'") || !strings.Contains(page, "makeHomeAction") {
-		t.Error("secondary Home actions are not grouped under the accessible More actions disclosure")
+	if !strings.Contains(page, "moreSummary.textContent='All tools'") || !strings.Contains(page, "makeHomeAction") {
+		t.Error("secondary Home tools are not grouped under the All tools disclosure")
 	}
 	if !strings.Contains(page, "button.type='button'") || !strings.Contains(page, "exec(item[0])") {
 		t.Error("Home actions are not real buttons dispatched through the shared command handler")
 	}
-	for _, want := range []string{"Ask Horus about this machine", "Choose an engine policy", "home-route", "Open engine selector"} {
+	for _, want := range []string{"Ask Horus about this machine", "Choose an engine, ask one question", "home-route", "Open engine selector"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("home demo path missing %q", want)
 		}
 	}
-	for _, want := range []string{"home-hero", "Start with a question", "Inspect Fleet evidence", "home-primary-action"} {
+	for _, want := range []string{"home-hero", "Start with a question", "View worker evidence", "home-primary-action"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("home investor path missing %q", want)
 		}
@@ -156,23 +153,21 @@ func TestHomeViewDemoPathUsesCanonicalRoutes(t *testing.T) {
 	page := fetchSPA(t)
 
 	for _, want := range []string{
-		"Demo path",
-		"A short, truthful tour of the product surface.",
 		"Start with a question",
-		"Inspect Fleet evidence",
-		"Choose a route",
-		"Ask Horus",
-		"Inspect evidence",
 		"Open engine selector",
-		"Focus prompt",
-		"Open Fleet board",
 		"switchView('engine')",
 		"input.value='';input.focus()",
 		"switchView('fleet')",
+		"Policy selected; live availability is proved when a session opens.",
+		"Choose SNE, MLX, or oMLX before asking a model-backed question.",
+		"moreSummary.textContent='All tools'",
 	} {
 		if !strings.Contains(page, want) {
-			t.Errorf("Home demo path missing %q", want)
+			t.Errorf("Home first-question path missing %q", want)
 		}
+	}
+	if strings.Contains(page, "demo-steps") || strings.Contains(page, "Demo path") {
+		t.Error("Home still repeats the route, prompt, and evidence actions in a separate demo rail")
 	}
 }
 
