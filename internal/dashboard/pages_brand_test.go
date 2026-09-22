@@ -98,3 +98,32 @@ func TestDashboardFleetUnavailableStateIsActionable(t *testing.T) {
 		}
 	}
 }
+
+func TestDashboardRaViewBridgesToCanonicalFleet(t *testing.T) {
+	t.Parallel()
+
+	ts := testServer(t, Config{})
+	defer ts.Close()
+	resp, err := http.Get(ts.URL + "/")
+	if err != nil {
+		t.Fatalf("GET dashboard: %v", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read dashboard: %v", err)
+	}
+	page := string(body)
+	for _, want := range []string{
+		"M5 is the single worker/router authority.",
+		"Horus reads the same canonical Fleet board; it never keeps a local worker registry.",
+		"Canonical worker board",
+		"Authenticated control actions appear only when the M5 action surface is configured.",
+		"Open canonical Fleet board",
+		"fleet.onclick=function(){switchView('fleet')}",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("Ra canonical Fleet bridge missing %q", want)
+		}
+	}
+}

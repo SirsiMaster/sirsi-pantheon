@@ -958,19 +958,23 @@ function viewVault(){
  }).catch(function(){out('Vault not available.','t-dim')});
 }
 
-/* Ra fleet orchestration has no backend yet — say so plainly instead of
-   dead-ending on fetches that can never succeed. Plain info, no alarm
-   styling: nothing here is fixable by the user, so nothing may alarm. */
+/* Ra is the control-plane name; M5 owns the canonical worker state. Keep this
+   entry point useful without creating a second registry or implying that
+   mutation endpoints exist before the authenticated action surface is wired. */
 function viewRa(){
  out('𓇶 Ra — Fleet Orchestration','t-gold');
  out('');
- out('  Fleet orchestration — coming with the Ra backend.','t-out');
+ out('  M5 is the single worker/router authority.','t-out');
  out('');
- out('  Ra will balance work across your machines: each node reports its','t-dim');
- out('  capacity (RAM, GPU, pressure) and Ra deploys builds where they fit.','t-dim');
+ out('  Horus reads the same canonical Fleet board; it never keeps a local worker registry.','t-dim');
  out('');
- out('  This tab will light up when the backend ships. Nothing to configure','t-dim');
- out('  or fix here today.','t-dim');
+ const bridge=document.createElement('section');bridge.className='t-empty-state';bridge.setAttribute('role','status');bridge.setAttribute('aria-live','polite');
+ const title=document.createElement('div');title.className='t-empty-title';title.textContent='Canonical worker board';bridge.appendChild(title);
+ const copy=document.createElement('div');copy.className='t-empty-copy';copy.textContent='Inspect live worker state in Fleet. Authenticated control actions appear only when the M5 action surface is configured.';bridge.appendChild(copy);
+ const actions=document.createElement('div');actions.className='t-empty-actions';
+ const fleet=document.createElement('button');fleet.type='button';fleet.className='t-empty-action';fleet.textContent='Open canonical Fleet board';fleet.setAttribute('aria-label','Open canonical Fleet board');fleet.onclick=function(){switchView('fleet')};actions.appendChild(fleet);
+ const home=document.createElement('button');home.type='button';home.className='t-empty-action';home.textContent='Return home';home.onclick=function(){switchView('home')};actions.appendChild(home);
+ bridge.appendChild(actions);T.appendChild(bridge);
 }
 
 /* ── Command input ────────────────────────────────────── */
