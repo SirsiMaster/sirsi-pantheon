@@ -73,6 +73,12 @@ func TestSpoolWithoutRelayTimesOut(t *testing.T) {
 	tr.wait = 400 * time.Millisecond
 	t.Setenv("SIRSI_AGENT_ID", "lane-y")
 	t.Setenv("HOME", t.TempDir())
+	// A SIRSI_THREAD_ID leaking in from the calling process's own environment
+	// (this test's host session, not this test) would otherwise switch
+	// NewRemoteStore onto the MintSessionForThread path instead of the plain
+	// MintSession this assertion names — clear it so the test is hermetic
+	// regardless of what environment it runs under.
+	t.Setenv("SIRSI_THREAD_ID", "")
 	rs := NewRemoteStore("spool://"+spool, "")
 	rs.client.Transport = tr
 	_, err := rs.Get("nope")
@@ -288,23 +294,28 @@ func TestSpoolFailedConsumeIsNotForwarded(t *testing.T) {
 func TestSpoolInFlightCapIsAtomic(t *testing.T) {
 	spool := t.TempDir()
 	tr := newSpoolTransport(spool, "lane-s")
-	slots := filepath.Join(tr.dir, "slots")
-	if err := os.MkdirAll(slots, 0o700); err != nil {
+	slots := filepath.Join(tr.agent, "slots")
+	if err := os.MkdirAll(filepath.Join(spool, slots), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	root, err := os.OpenRoot(spool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = root.Close() })
 	var held []string
 	for i := 0; i < spoolMaxInFlight; i++ {
-		p, err := acquireSlot(slots)
+		p, err := acquireSlotIn(root, slots)
 		if err != nil {
 			t.Fatal(err)
 		}
 		held = append(held, p)
 	}
-	if _, err := acquireSlot(slots); err == nil || !strings.Contains(err.Error(), "in flight") {
+	if _, err := acquireSlotIn(root, slots); err == nil || !strings.Contains(err.Error(), "in flight") {
 		t.Fatalf("65th must be refused: %v", err)
 	}
-	_ = os.Remove(held[0])
-	if _, err := acquireSlot(slots); err != nil {
+	_ = root.Remove(held[0])
+	if _, err := acquireSlotIn(root, slots); err != nil {
 		t.Fatalf("released slot must be reusable: %v", err)
 	}
 }
@@ -571,31 +582,39 @@ func TestRelayHTTPClientPreservesProxy(t *testing.T) {
 	}
 }
 
-// TestLaneDirModeDefaultsUnchanged: with SIRSI_RELAY_TRUST_GROUP unset (every
-// existing deployment, and every other test in this file), resolvedLaneModes
-// must return exactly the single-uid defaults — the widened mode is opt-in
-// only.
+// TestLaneDirModeDefaultsUnchanged: a spool root that does not exist yet
+// (every existing deployment's very first call, and every other test in this
+// file) must return exactly the single-uid defaults — the widened mode is
+// derived only from an actual, already-configured root.
 func TestLaneDirModeDefaultsUnchanged(t *testing.T) {
-	t.Setenv("SIRSI_RELAY_TRUST_GROUP", "")
-	dirMode, fileMode, gid, err := resolvedLaneModes()
+	root := filepath.Join(t.TempDir(), "does-not-exist-yet")
+	r, dirMode, fileMode, gid, err := openLaneRoot(root)
 	if err != nil {
-		t.Fatalf("resolvedLaneModes() with no trust group: %v", err)
+		t.Fatalf("openLaneRoot(%q): %v", root, err)
 	}
+	t.Cleanup(func() { _ = r.Close() })
 	if dirMode != 0o700 || fileMode != 0o600 || gid != -1 {
-		t.Fatalf("resolvedLaneModes() with no trust group = (%o,%o,%d), want (0700,0600,-1)", dirMode, fileMode, gid)
+		t.Fatalf("openLaneRoot(%q) = (%o,%o,%d), want (0700,0600,-1)", root, dirMode, fileMode, gid)
 	}
 }
 
-// TestResolvedLaneModesUnknownGroupFailsClosed (SSA review, PR #753): a
-// misconfigured or typo'd SIRSI_RELAY_TRUST_GROUP must be a hard error, never
-// silently treated as "any non-empty string widens permissions" — the first
-// version of this feature did exactly that, so a typo'd group name still
-// produced group-writable directories inherited from whatever group the
-// parent's setgid bit happened to carry, verified against nothing.
-func TestResolvedLaneModesUnknownGroupFailsClosed(t *testing.T) {
-	t.Setenv("SIRSI_RELAY_TRUST_GROUP", "sirsi-nonexistent-group-xyz")
-	if _, _, _, err := resolvedLaneModes(); err == nil {
-		t.Fatal("unresolvable trust group must be refused, not silently ignored or silently trusted")
+// TestResolvedLaneModesFallsBackWhenRootNotGroupWritable: a spool root that
+// exists but isn't group-writable (the untouched single-uid case) must not be
+// treated as a trust configuration just because it happens to have SOME
+// non-default group — matching checkSpoolDir's own groupTrusted branch, which
+// requires the write bit, not merely a gid.
+func TestResolvedLaneModesFallsBackWhenRootNotGroupWritable(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "spool")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	r, dirMode, fileMode, gid, err := openLaneRoot(root)
+	if err != nil {
+		t.Fatalf("openLaneRoot(%q): %v", root, err)
+	}
+	t.Cleanup(func() { _ = r.Close() })
+	if dirMode != 0o700 || fileMode != 0o600 || gid != -1 {
+		t.Fatalf("resolvedLaneModes(%q) on a non-group-writable root = (%o,%o,%d), want (0700,0600,-1)", root, dirMode, fileMode, gid)
 	}
 }
 
@@ -679,26 +698,89 @@ func TestMkdirTrustedNeverChmodsAPreExistingDir(t *testing.T) {
 	}
 }
 
+// TestOpenLaneRootBindsPastRootSubstitution reproduces PR #762's source
+// review finding directly (Rule A35, 2026-09-19): resolvedLaneModes used to
+// derive dirMode/fileMode/trustGID from a PATH stat, and every later
+// mkdir/write walked the same path again through independent, unbound
+// syscalls — a same-uid actor able to relocate the real spool root and plant
+// a symlink to an unrelated, group-writable directory at the original path
+// between those two steps could make the trust decision (from the real
+// directory) govern writes that actually land under the attacker's
+// substituted directory. openLaneRoot's os.Root binds to the directory via
+// descriptor at open time; this proves every later Root-relative create/write
+// still resolves against the ORIGINAL directory (now relocated), never the
+// substituted path, and that nothing is created under the attacker's target.
+func TestOpenLaneRootBindsPastRootSubstitution(t *testing.T) {
+	base := t.TempDir()
+	real := filepath.Join(base, "real-spool")
+	if err := os.Mkdir(real, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	root, dirMode, fileMode, trustGID, err := openLaneRoot(real)
+	if err != nil {
+		t.Fatalf("openLaneRoot: %v", err)
+	}
+	t.Cleanup(func() { _ = root.Close() })
+
+	// The substitution: relocate the real spool directory, then plant a
+	// symlink to an unrelated, wide-open directory at the path the trust
+	// decision above was derived from.
+	moved := filepath.Join(base, "real-spool-moved")
+	if err := os.Rename(real, moved); err != nil {
+		t.Fatal(err)
+	}
+	attacker := filepath.Join(base, "attacker-writable")
+	if err := os.Mkdir(attacker, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(attacker, real); err != nil {
+		t.Fatal(err)
+	}
+
+	// Every step a real RoundTrip takes after deriving trust: create the
+	// agent/req descendants, then publish a request file.
+	agentDir := "lane-substituted"
+	reqDir := filepath.Join(agentDir, "req")
+	for _, d := range []string{agentDir, reqDir} {
+		if err := mkdirTrustedIn(root, d, dirMode, trustGID); err != nil {
+			t.Fatalf("mkdirTrustedIn after substitution: %v", err)
+		}
+	}
+	reqPath := filepath.Join(reqDir, "1-1-x.json")
+	if err := writeAtomicRoot(root, reqPath, spoolRequest{Method: "Status"}, fileMode); err != nil {
+		t.Fatalf("writeAtomicRoot after substitution: %v", err)
+	}
+
+	if _, err := os.Lstat(filepath.Join(attacker, agentDir)); err == nil {
+		t.Fatal("agent directory was created under the attacker's substituted path, not the bound root")
+	}
+	if _, err := os.Stat(filepath.Join(moved, reqPath)); err != nil {
+		t.Fatalf("request file was not created under the original, relocated root: %v", err)
+	}
+}
+
 // TestLaneCreatesGroupWritableDirsWhenTrustGroupConfigured: a lane's own
-// RoundTrip call creates req/res/slots at 0770, not 0700, when
-// SIRSI_RELAY_TRUST_GROUP is set in ITS OWN environment — proving the actual
+// RoundTrip call creates req/res/slots at 0770, not 0700, when the spool ROOT
+// it was pointed at is already group-writable — proving the actual
 // directories a real round trip creates get the widened mode, not just the
 // helper function in isolation. This is the fix for the exact bug that shipped
 // first: a relay running under a separate service account locked out of a
 // lane's freshly created directory because the lane never knew to leave room
 // for it.
 func TestLaneCreatesGroupWritableDirsWhenTrustGroupConfigured(t *testing.T) {
-	// Must be a REAL resolvable group now that resolvedLaneModes fails closed
-	// on an unresolvable name (the fix for TestResolvedLaneModesUnknownGroupFailsClosed
-	// above) — reuse the current process's own primary group, which any fresh
-	// t.TempDir() subdirectory will actually carry, so the gid-match check in
-	// mkdirTrusted passes honestly rather than being bypassed by trustGID<0.
-	trustGroup, terr := currentPrimaryGroupName()
-	if terr != nil {
+	// The root's actual gid must be a REAL one this test can prove landed
+	// correctly — reuse the current process's own primary group, which any
+	// fresh t.TempDir() subdirectory will actually carry, so the gid-match
+	// check in mkdirTrusted passes honestly rather than being bypassed by
+	// trustGID<0.
+	if _, terr := currentPrimaryGroupName(); terr != nil {
 		t.Skipf("cannot resolve current primary group: %v", terr)
 	}
-	t.Setenv("SIRSI_RELAY_TRUST_GROUP", trustGroup)
 	spool := t.TempDir()
+	if err := os.Chmod(spool, 0o770); err != nil {
+		t.Fatal(err)
+	}
 	tr := newSpoolTransport(spool, "trust-mode-lane")
 	req := httptest.NewRequest(http.MethodPost, "http://spool/v1/call/Status", nil)
 	go func() { _, _ = tr.RoundTrip(req) }() // will time out waiting for a response; only the mkdir matters here
@@ -743,25 +825,28 @@ func TestWriteAtomicModeSurvivesUmask(t *testing.T) {
 	}
 }
 
-// TestLaneFileModeDefaultsUnchanged: with SIRSI_RELAY_TRUST_GROUP unset, lane
-// request files stay 0600 — the historical default, readable only by their
-// own writer. This is the fix for the actual deployed bug: a directory being
-// group-writable does NOT make files inside it group-readable, so a relay
-// running under a different uid than its lane clients could see a response
-// file exist (via directory listing) yet be refused reading its content.
+// TestLaneFileModeDefaultsUnchanged: with a spool root that isn't
+// group-writable, lane request files stay 0600 — the historical default,
+// readable only by their own writer. This is the fix for the actual deployed
+// bug: a directory being group-writable does NOT make files inside it
+// group-readable, so a relay running under a different uid than its lane
+// clients could see a response file exist (via directory listing) yet be
+// refused reading its content.
 func TestLaneFileModeDefaultsUnchanged(t *testing.T) {
-	t.Setenv("SIRSI_RELAY_TRUST_GROUP", "")
-	if _, fileMode, _, err := resolvedLaneModes(); err != nil || fileMode != 0o600 {
-		t.Fatalf("resolvedLaneModes() with no trust group: fileMode=%o err=%v, want 0600 nil", fileMode, err)
+	root := t.TempDir()
+	r1, _, fileMode, _, err := openLaneRoot(root)
+	if err != nil || fileMode != 0o600 {
+		t.Fatalf("openLaneRoot(%q): fileMode=%o err=%v, want 0600 nil", root, fileMode, err)
 	}
-	trustGroup, terr := currentPrimaryGroupName()
-	if terr != nil {
-		t.Skipf("cannot resolve current primary group: %v", terr)
+	_ = r1.Close()
+	if cerr := os.Chmod(root, 0o770); cerr != nil {
+		t.Fatal(cerr)
 	}
-	t.Setenv("SIRSI_RELAY_TRUST_GROUP", trustGroup)
-	if _, fileMode, gid, err := resolvedLaneModes(); err != nil || fileMode != 0o640 || gid < 0 {
-		t.Fatalf("resolvedLaneModes() with trust group set: fileMode=%o gid=%d err=%v, want 0640 >=0 nil", fileMode, gid, err)
+	r2, _, fileMode, gid, err := openLaneRoot(root)
+	if err != nil || fileMode != 0o640 || gid < 0 {
+		t.Fatalf("openLaneRoot(%q) group-writable: fileMode=%o gid=%d err=%v, want 0640 >=0 nil", root, fileMode, gid, err)
 	}
+	_ = r2.Close()
 }
 
 // TestSpoolRelayEndToEndWithTrustGroupWritesReadableFiles: the actual
