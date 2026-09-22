@@ -14,12 +14,18 @@ M1/M5 transport, and release credentials visibly separate.
 
 ## The five-minute path
 
-1. Run the read-only identity preflight against the demo port:
-   `sirsi dashboard preflight --port 9119 --expect-commit
+1. Start the preview from the CLI built from this exact candidate, bound to
+   loopback on a separate free port (use `9120` if available). Do not use the
+   ambient `sirsi` on `PATH`: the currently installed CLI is older and does
+   not include the identity-preflight command. Then run the candidate-built
+   CLI's read-only identity check:
+   `sirsi dashboard preflight --port 9120 --expect-commit
    5115015a352f80620dcf16b023ca4c6552f72c87 --expect-version 0.23.9-beta`.
    It requires `pantheon.dashboard-identity/v1` and compares the running
    commit/version with the candidate above. If the endpoint is missing or
-   mismatched, do not present the page: the port is serving an older process.
+   mismatched, do not present the page. Keep the existing installed-app
+   process on 9119 untouched; the live listener there currently lacks the
+   identity endpoint and is not this demo candidate.
 2. Open Home. Start with **Ask Horus about this machine**, choose an engine or
    health task from the four visible actions, and open **More actions** only
    when the audience wants the secondary tools. Explain that Pantheon owns
@@ -69,6 +75,8 @@ the new Home surface is shown from a running service.
 ## Demo safety
 
 - Keep the dashboard on loopback.
+- Use the separately authorized preview instance; do not replace or restart
+  the existing dashboard process.
 - Never display control tokens or private receipts.
 - Do not silently switch engines when a selected connector is unavailable.
 - Do not use source/test receipts as live inference evidence.
