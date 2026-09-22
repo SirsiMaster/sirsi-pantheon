@@ -187,4 +187,14 @@ func TestSidebarNavigationIsLabelFirst(t *testing.T) {
 	if strings.Contains(page, `class="nav-glyph"`) {
 		t.Error("sidebar still relies on decorative glyph spans instead of readable labels")
 	}
+	for _, want := range []string{
+		`<nav class="sidebar-nav" aria-label="Primary navigation">`,
+		`<a class="skip-link" href="#main-content">Skip to main content</a>`,
+		`<main class="main" id="main-content" tabindex="-1">`,
+		`.skip-link:focus{top:12px`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("dashboard keyboard/screen-reader landmark missing %q", want)
+		}
+	}
 }

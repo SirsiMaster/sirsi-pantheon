@@ -61,6 +61,8 @@ func pageShell(title, activePage, bodyContent string, port int) string {
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:%s;color:%s;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 display:flex;min-height:100vh;overflow:hidden}
+.skip-link{position:fixed;left:12px;top:-64px;z-index:30;padding:10px 14px;border-radius:6px;background:var(--emerald);color:var(--bg);font:600 13px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;text-decoration:none}
+.skip-link:focus{top:12px;outline:3px solid var(--ink);outline-offset:2px}
 ::-webkit-scrollbar{width:6px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:color-mix(in srgb, var(--gold) 20%%, transparent);border-radius:3px}
@@ -256,12 +258,13 @@ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;flex-shrink:0
 </style>
 </head>
 <body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
 <div class="sidebar">
  <div class="sidebar-brand"><h1>Horus</h1></div>
- <nav class="sidebar-nav">%s</nav>
+ <nav class="sidebar-nav" aria-label="Primary navigation">%s</nav>
  <div class="sidebar-footer">LOCAL NODE • 127.0.0.1:%d</div>
 </div>
-<div class="main"><div class="main-inner">%s</div></div>
+<main class="main" id="main-content" tabindex="-1"><div class="main-inner">%s</div></main>
 </body>
 </html>`,
 		title,
