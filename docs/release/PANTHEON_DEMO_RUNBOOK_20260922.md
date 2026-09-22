@@ -44,6 +44,38 @@ configured. `engine prompt` applies the explicit selection to that invocation
 and returns JSON with `completion` and `receipt`; it does not silently persist
 or widen fallback policy. `--allow-fallback` must be supplied explicitly.
 
+## M1 → M5 control-plane proof
+
+When the demo includes the worker plane, use the M1 client mode. It refuses a
+local router-store fallback and requires the authenticated M5 endpoint:
+
+```sh
+export SIRSI_CONTROL_ENDPOINT="https://<m5-tailnet-name>:8734"
+export SIRSI_CONTROL_TOKEN="<protected-token-from-the-authorized-session>"
+sirsi router control --client-only
+```
+
+Point out the returned `pantheon.worker-control/v1` envelope: its
+`authority` is `canonical-routerstore`, its `revision` and `state_sha256` bind
+the worker/task/event/evidence projection, and its closed `capabilities` list
+shows the allowed control verbs. The client does not keep a second worker
+registry.
+
+Only with explicit owner authorization should the demo show a mutation. The
+closed action client takes JSON values, not shell commands, and validates the
+canonical receipt returned by M5:
+
+```sh
+printf '%s\n' '{"verb":"review_request","from":"m1","to":"m5","title":"Demo review","instructions":"Return the bounded result."}' \
+  | sirsi router control-action --endpoint "$SIRSI_CONTROL_ENDPOINT" --request-file -
+```
+
+Do not display the token, use an unrestricted SSH shell, or imply that a
+successful source/static receipt is a live worker result. `inspect` is the
+safe read-only proof; `message`, `review_request`, `delegate`, `claim`,
+`cancel_handback`, and `result_return` remain authenticated, receipt-bound
+control-plane actions.
+
 ## Preflight checklist
 
 - Confirm the selected connector has a complete identity: engine version,
