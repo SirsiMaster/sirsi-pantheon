@@ -17,13 +17,16 @@ notarization, installation, or production-readiness receipt.
    rather than an older process left on the port:
 
    ```sh
-   curl --fail --silent http://127.0.0.1:9119/api/identity | jq .
+   sirsi dashboard preflight --port 9119 \
+     --expect-commit <candidate-commit> \
+     --expect-version 0.23.9-beta
    ```
 
-   Require `schema`=`pantheon.dashboard-identity/v1` and compare `commit` and
-   `version` with the candidate receipt. A 404 or mismatched commit means the
-   visible listener is not the demo candidate; stop and obtain the bounded
-   preview/restart authorization instead of presenting it.
+   The command validates `schema`=`pantheon.dashboard-identity/v1`, commit, and
+   version. A 404 or mismatch means the visible listener is not the demo
+   candidate; stop and obtain the bounded preview/restart authorization instead
+   of presenting it. `curl .../api/identity | jq .` remains a read-only manual
+   fallback when the CLI binary itself is not the candidate.
 
 2. On Home, point out the single flow: **Ask Horus about this machine** →
    **Session route** → **Open engine selector** → prompt input.
