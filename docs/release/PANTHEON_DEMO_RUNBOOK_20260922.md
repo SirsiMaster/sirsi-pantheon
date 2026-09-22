@@ -20,7 +20,7 @@ notarization, installation, or production-readiness receipt.
 
    ```sh
    "$CANDIDATE_SIRSI" dashboard preflight --port 9120 \
-     --expect-commit 4aaeba55201e6efb2a7cea319a07a92d416bf39e \
+     --expect-commit b642c77b7a80430f3278dab8dca85541661c000a \
      --expect-version 0.23.9-beta
    ```
 
@@ -41,7 +41,8 @@ notarization, installation, or production-readiness receipt.
    connector. The UI says **policy selected**, not **backend live**; that
    distinction is intentional.
 
-4. Return Home and ask a grounded workstation question, for example:
+4. Return Home, press **Use sample question**, review the text inserted into
+   the prompt, and press Enter only when you're ready to submit:
 
    ```text
    What should I address first on this machine?
@@ -56,8 +57,8 @@ notarization, installation, or production-readiness receipt.
 The same route is available without the browser:
 
 ```sh
-sirsi engine status
-sirsi engine prompt --engine sne --prompt "What should I address first?"
+"$CANDIDATE_SIRSI" engine status
+"$CANDIDATE_SIRSI" engine prompt --engine sne --prompt "What should I address first?"
 ```
 
 Use `mlx` or `omlx` in place of `sne` when those identity-bound connectors are
@@ -73,7 +74,7 @@ local router-store fallback and requires the authenticated M5 endpoint:
 ```sh
 export SIRSI_CONTROL_ENDPOINT="https://<m5-tailnet-name>:8734"
 export SIRSI_CONTROL_TOKEN="<protected-token-from-the-authorized-session>"
-sirsi router control --client-only
+"$CANDIDATE_SIRSI" router control --client-only
 ```
 
 Point out the returned `pantheon.worker-control/v1` envelope: its
@@ -88,7 +89,8 @@ canonical receipt returned by M5:
 
 ```sh
 printf '%s\n' '{"verb":"review_request","from":"m1","to":"m5","title":"Demo review","instructions":"Return the bounded result."}' \
-  | sirsi router control-action --endpoint "$SIRSI_CONTROL_ENDPOINT" --request-file -
+  | "$CANDIDATE_SIRSI" router control-action \
+    --endpoint "$SIRSI_CONTROL_ENDPOINT" --request-file -
 ```
 
 Do not display the token, use an unrestricted SSH shell, or imply that a
@@ -101,8 +103,8 @@ control-plane actions.
 
 - Confirm the selected connector has a complete identity: engine version,
   model ID and digest, tokenizer ID and digest, precision, and cache namespace.
-- Run `sirsi engine status` and show the configured policy before submitting a
-  prompt.
+- Run `"$CANDIDATE_SIRSI" engine status` and show the configured policy before
+  submitting a prompt.
 - Submit one prompt only after the audience understands that this is the
   readiness boundary; an unavailable provider must remain an explicit error.
 - Never place tokens, endpoint credentials, or private receipts in slides,
