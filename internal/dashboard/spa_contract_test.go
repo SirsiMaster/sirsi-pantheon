@@ -120,6 +120,11 @@ func TestHomeView_CommandsAreClickable(t *testing.T) {
 			t.Errorf("home demo path missing %q", want)
 		}
 	}
+	for _, want := range []string{"home-hero", "Start with a question", "Inspect Fleet evidence", "home-primary-action"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("home investor path missing %q", want)
+		}
+	}
 	if !strings.Contains(page, "engine:'engine'") {
 		t.Error("engine Home action is not connected to the engine selector view")
 	}
@@ -137,6 +142,8 @@ func TestHomeViewDemoPathUsesCanonicalRoutes(t *testing.T) {
 	for _, want := range []string{
 		"Demo path",
 		"A short, truthful tour of the product surface.",
+		"Start with a question",
+		"Inspect Fleet evidence",
 		"Choose a route",
 		"Ask Horus",
 		"Inspect evidence",

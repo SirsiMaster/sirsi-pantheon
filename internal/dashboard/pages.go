@@ -174,13 +174,20 @@ font-family:Inter,-apple-system,system-ui,sans-serif;flex-shrink:0}
 	.engine-select:hover{border-color:var(--gold);background:color-mix(in srgb, var(--gold) 8%%, transparent)}
 	.engine-select:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 	.engine-select:disabled{border-color:var(--gold);color:var(--gold);cursor:default;opacity:.9}
-	.home-intro{max-width:72ch;margin:0 0 14px}
-	.home-title{color:var(--ink2);font:600 19px/1.25 Inter,-apple-system,system-ui,sans-serif;letter-spacing:-.02em}
-	.home-subtitle{margin-top:5px;color:var(--dim);font:12px/1.5 Inter,-apple-system,system-ui,sans-serif}
-	.home-route{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:11px;padding:8px 10px;border:1px solid var(--line);border-radius:5px;background:rgba(255,255,255,.018)}
+	.home-intro{max-width:1040px;margin:0 0 18px}
+	.home-hero{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(260px,.8fr);gap:22px;padding:18px 0 16px;border-bottom:1px solid var(--line)}
+	.home-title{color:var(--ink);font:600 26px/1.15 Inter,-apple-system,system-ui,sans-serif;letter-spacing:-.03em}
+	.home-subtitle{max-width:58ch;margin-top:8px;color:var(--ink2);font:13px/1.55 Inter,-apple-system,system-ui,sans-serif}
+	.home-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+	.home-primary-action,.home-secondary-action{padding:8px 12px;border:1px solid var(--line);border-radius:4px;font:600 11px Inter,-apple-system,system-ui,sans-serif;cursor:pointer}
+	.home-primary-action{border-color:var(--emerald);background:var(--emerald);color:var(--bg)}
+	.home-secondary-action{background:transparent;color:var(--gold)}
+	.home-primary-action:hover,.home-primary-action:focus-visible{filter:brightness(1.08);outline:2px solid var(--emerald);outline-offset:2px}
+	.home-secondary-action:hover,.home-secondary-action:focus-visible{border-color:var(--gold);background:color-mix(in srgb, var(--gold) 8%%, transparent);outline:2px solid var(--gold);outline-offset:2px}
+	.home-route{display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;margin:0;padding:12px;border:1px solid var(--line);border-radius:6px;background:var(--panel)}
 	.home-route-label{color:var(--dim);font:10px Inter,-apple-system,system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase}
-	.home-route-value{color:var(--ink2);font:600 11px Inter,-apple-system,system-ui,sans-serif}
-	.home-route-detail{flex:1 1 240px;color:var(--dim);font:11px/1.4 Inter,-apple-system,system-ui,sans-serif}
+	.home-route-value{flex:1 1 160px;color:var(--ink);font:600 14px/1.25 Inter,-apple-system,system-ui,sans-serif}
+	.home-route-detail{flex-basis:100%%;color:var(--dim);font:11px/1.45 Inter,-apple-system,system-ui,sans-serif}
 	.home-route-action{padding:4px 8px;border:1px solid var(--line);border-radius:3px;background:transparent;color:var(--gold);font:600 11px Inter,-apple-system,system-ui,sans-serif;cursor:pointer}
 	.home-route-action:hover,.home-route-action:focus-visible{border-color:var(--gold);background:color-mix(in srgb, var(--gold) 8%%, transparent);outline:2px solid var(--gold);outline-offset:2px}
 	.demo-rail{max-width:980px;margin:14px 0 18px;padding:12px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
@@ -229,6 +236,8 @@ font-family:Inter,-apple-system,system-ui,sans-serif;flex-shrink:0}
 	 .guard-finding{grid-template-columns:22px minmax(0,1fr)}
 	 .guard-finding-message{grid-column:2}
 	 .engine-grid{grid-template-columns:1fr}
+	 .home-hero{grid-template-columns:1fr;gap:14px}
+	 .home-title{font-size:22px}
 	 .demo-steps{grid-template-columns:1fr}
 	 .demo-step,.demo-step+.demo-step{padding:10px 0;border-right:0;border-bottom:1px solid var(--line)}
 	 .demo-step:last-child{border-bottom:0}
@@ -357,14 +366,20 @@ window.switchView=function(view){
 
 function viewHome(){
  const intro=document.createElement('section');intro.className='home-intro';intro.setAttribute('aria-labelledby','home-title');
- const title=document.createElement('div');title.className='home-title';title.id='home-title';title.textContent='Ask Horus about this machine';intro.appendChild(title);
- const subtitle=document.createElement('div');subtitle.className='home-subtitle';subtitle.textContent='Choose an engine policy, ask a question, and get exact findings with route provenance.';intro.appendChild(subtitle);
+ const hero=document.createElement('div');hero.className='home-hero';
+ const copy=document.createElement('div');
+ const title=document.createElement('div');title.className='home-title';title.id='home-title';title.textContent='Ask Horus about this machine';copy.appendChild(title);
+ const subtitle=document.createElement('div');subtitle.className='home-subtitle';subtitle.textContent='Choose an engine policy, ask a question, and get exact findings with route provenance.';copy.appendChild(subtitle);
+ const actions=document.createElement('div');actions.className='home-actions';
+ const start=document.createElement('button');start.type='button';start.className='home-primary-action';start.textContent='Start with a question';start.addEventListener('click',function(){input.value='';input.focus()});actions.appendChild(start);
+ const fleet=document.createElement('button');fleet.type='button';fleet.className='home-secondary-action';fleet.textContent='Inspect Fleet evidence';fleet.addEventListener('click',function(){switchView('fleet')});actions.appendChild(fleet);
+ copy.appendChild(actions);hero.appendChild(copy);
  const route=document.createElement('div');route.className='home-route';route.setAttribute('aria-live','polite');
  const routeLabel=document.createElement('span');routeLabel.className='home-route-label';routeLabel.textContent='Session route';route.appendChild(routeLabel);
  const routeValue=document.createElement('span');routeValue.className='home-route-value';routeValue.textContent='Loading policy…';route.appendChild(routeValue);
  const routeDetail=document.createElement('span');routeDetail.className='home-route-detail';routeDetail.textContent='Reading the canonical engine selection; availability is checked when a session opens.';route.appendChild(routeDetail);
  const routeAction=document.createElement('button');routeAction.className='home-route-action';routeAction.type='button';routeAction.textContent='Open engine selector';routeAction.addEventListener('click',function(){switchView('engine')});route.appendChild(routeAction);
- intro.appendChild(route);T.appendChild(intro);
+ hero.appendChild(route);intro.appendChild(hero);T.appendChild(intro);
  fetch('/api/engine').then(function(r){return r.json().then(function(body){if(!r.ok)throw new Error(body.error||('HTTP '+r.status));return body})}).then(function(data){
   routeValue.textContent=data.preferred?(String(data.preferred).toUpperCase()+(data.preferred_variant?' · '+data.preferred_variant:'')):'No engine selected';
   routeDetail.textContent=data.preferred?'Policy selected; live availability is proved when a session opens.':'Choose SNE, MLX, or oMLX before asking a model-backed question.';
