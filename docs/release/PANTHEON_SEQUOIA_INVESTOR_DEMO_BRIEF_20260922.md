@@ -6,14 +6,19 @@ M1/M5 transport, and release credentials visibly separate.
 
 ## Candidate being shown
 
-- Commit: `b642c77b7a80430f3278dab8dca85541661c000a`
-- Tree: `e8ddc90ccd9ea7cf88cf0a2c0fc0956ca8cc3a8a`
-- Parent: `a5fa31845b502c3db80795125238fdf2d2dc1a99`
+- Commit: `937aba9d86a66862344374ea602c9d0909a09e63`
+- Tree: `ff5781fcb893b7e20ad96717163df9aa68cabc27`
+- Parent: `35314f3b788aa6a3426ca10c7acc70cea399346f`
 - Version: `0.23.9-beta`
-- Accepted parent source review: `4aaeba55201e6efb2a7cea319a07a92d416bf39e`
-  (`/private/tmp/pantheon-home-focus-4aaeba55-independent-source-review-20260922.json`,
-  SHA-256 `f25c46a7684c0a8b2f2e3e4def516b834729b5b5d6d876574e9a9827c646e46b`)
-- The sample-question successor is pending exact-object source review.
+- Accepted cumulative source reviews:
+  - Variant routing: `/private/tmp/pantheon-variant-routing-df22b212-independent-source-review-20260922.json`
+    (SHA-256 `e2903f3852e0259f2a8fc265373684f4f0ee80e4acd5a7bb5cb32c817a8c040f`).
+  - CLI bootstrap: `/private/tmp/pantheon-cli-variant-bootstrap-35314f3b-independent-source-review-20260922.json`
+    (SHA-256 `4a578a2272f2d630dd8750d90d0474c81fa82ab4475312e54033d10e14980da0`).
+  - First-question layout: `/private/tmp/pantheon-first-question-layout-937aba9d-independent-source-review-20260922.json`
+    (SHA-256 `cc2ed54b365acb9e4f4850ef59862ca0e130433bff0fe9633f2f618cbccdb7c9`).
+- The review accepts source/layout only; it is not a test, build, preview, or
+  live-session result.
 
 ## The five-minute path
 
@@ -21,8 +26,12 @@ M1/M5 transport, and release credentials visibly separate.
    this exact commit and start it on loopback port `9120`. Do not use the
    ambient `sirsi` on `PATH`. In a second terminal run the read-only identity
    check:
-   `"$CANDIDATE_SIRSI" dashboard preflight --port 9120 --expect-commit
-   b642c77b7a80430f3278dab8dca85541661c000a --expect-version 0.23.9-beta`.
+
+   ```sh
+   "$CANDIDATE_SIRSI" dashboard preflight --port 9120 \
+     --expect-commit 937aba9d86a66862344374ea602c9d0909a09e63 \
+     --expect-version 0.23.9-beta
+   ```
    It requires `pantheon.dashboard-identity/v1` and compares the running
    commit/version with the candidate above. If the endpoint is missing or
    mismatched, do not present the page. Open the verified 9120 URL in Chrome;
@@ -32,9 +41,10 @@ M1/M5 transport, and release credentials visibly separate.
    Use **All tools** only if the audience wants a health or infrastructure
    workflow. Explain that Pantheon owns the product experience and route
    provenance while the selected engine remains an explicit policy choice.
-3. Press **Open engine selector**. Choose SNE, MLX, or oMLX only when that
-   connector is configured. The route panel says **policy selected**; it does
-   not pretend that a live session has been admitted.
+3. Press **Open engine selector**. Choose a configured engine variant:
+   `mlx-raw`, `mlx-patched`, `omlx-public`, `sne-plain`, or `sne-mtp`. The
+   route row says **policy selected**; it does not pretend that a live session
+   has been admitted.
 4. Press **Use sample question**. It only fills the prompt; review the text
    and press Enter to submit it:
 
@@ -49,6 +59,19 @@ M1/M5 transport, and release credentials visibly separate.
    authority and M1 is a constrained client. Do not show a mutation unless a
    separate owner authorization is active.
 
+## CLI backup path
+
+If the dashboard preview is unavailable, use the same exact candidate CLI and
+an explicitly configured route:
+
+```sh
+"$CANDIDATE_SIRSI" engine prompt --engine sne --variant sne-plain \
+  --prompt "What should I address first on this machine?"
+```
+
+The command returns completion and receipt JSON. It is not a substitute for a
+live dashboard rehearsal, and an unavailable connector must remain an error.
+
 ## What to say when asked about the architecture
 
 “Pantheon is the product and control plane. It gives the operator one Engine
@@ -62,12 +85,11 @@ unrestricted SSH or a copied router store.
 
 ## What is verified versus not shown
 
-The parent `4aaeba55` has independent `ACCEPT_SOURCE_ONLY` review for the Home
-route, question and worker-evidence controls, All tools disclosure, and
-accessible naming. This successor adds the sample-question fill-only
-interaction; it is pending exact-object review. Focused dashboard tests ran
-for ancestor `5115015a` only and do not cover `b642c77b`. Tests, build, browser
-preview and live dashboard were not run for this candidate.
+The exact candidate has independent `ACCEPT_SOURCE_ONLY` review for the
+variant-aware route selector, first-question structure, and responsive route
+status row. Focused tests, build, browser preview and live dashboard have not
+been run for this candidate. The runbook's preflight step is still required to
+bind a future preview to the exact candidate.
 
 This brief does not claim a live M1/M5 prompt, signed or notarized assets,
 installation, publication, or production readiness. Keep any existing 9119

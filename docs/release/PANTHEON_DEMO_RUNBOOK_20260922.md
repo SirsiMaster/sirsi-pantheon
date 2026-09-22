@@ -20,7 +20,7 @@ notarization, installation, or production-readiness receipt.
 
    ```sh
    "$CANDIDATE_SIRSI" dashboard preflight --port 9120 \
-     --expect-commit b642c77b7a80430f3278dab8dca85541661c000a \
+     --expect-commit 937aba9d86a66862344374ea602c9d0909a09e63 \
      --expect-version 0.23.9-beta
    ```
 
@@ -37,9 +37,10 @@ notarization, installation, or production-readiness receipt.
    **All tools** expands the secondary tools; the Home screen does not repeat
    the primary path as a second numbered tour.
 
-3. Open the engine selector and choose the configured SNE, MLX, or oMLX
-   connector. The UI says **policy selected**, not **backend live**; that
-   distinction is intentional.
+3. Open the engine selector and choose a configured variant: `mlx-raw`,
+   `mlx-patched`, `omlx-public`, `sne-plain`, or `sne-mtp`. The UI identifies
+   both engine and variant. It says **policy selected**, not **backend live**;
+   availability is established only when the prompt opens a session.
 
 4. Return Home, press **Use sample question**, review the text inserted into
    the prompt, and press Enter only when you're ready to submit:
@@ -58,13 +59,40 @@ The same route is available without the browser:
 
 ```sh
 "$CANDIDATE_SIRSI" engine status
-"$CANDIDATE_SIRSI" engine prompt --engine sne --prompt "What should I address first?"
+"$CANDIDATE_SIRSI" engine prompt --engine sne --variant sne-plain \
+  --prompt "What should I address first?"
 ```
 
-Use `mlx` or `omlx` in place of `sne` when those identity-bound connectors are
-configured. `engine prompt` applies the explicit selection to that invocation
-and returns JSON with `completion` and `receipt`; it does not silently persist
-or widen fallback policy. `--allow-fallback` must be supplied explicitly.
+Use `--engine mlx --variant mlx-raw`, `--engine mlx --variant mlx-patched`,
+`--engine omlx --variant omlx-public`, or `--engine sne --variant sne-mtp`
+for the other routes. A variant-only call such as `--variant sne-mtp` also
+selects its compatible engine kind. The CLI selection applies only to that
+invocation and returns JSON with `completion` and `receipt`; it does not
+silently persist or widen fallback policy. `--allow-fallback` must be supplied
+explicitly.
+
+## Connector configuration reference
+
+The dashboard accepts one endpoint and identity tuple per configured route:
+
+| Route | Endpoint variable |
+|---|---|
+| Raw MLX | `SIRSI_MLX_RAW_ENDPOINT` |
+| Patched MLX | `SIRSI_MLX_PATCHED_ENDPOINT` |
+| Public oMLX | `SIRSI_OMLX_ENDPOINT` |
+| SNE plain | `SIRSI_SNE_PLAIN_ENDPOINT` |
+| SNE MTP | `SIRSI_SNE_MTP_ENDPOINT` |
+
+For each endpoint prefix, provide `_MODEL`, `_ENGINE_VERSION`, `_MODEL_SHA256`,
+`_TOKENIZER_ID`, `_TOKENIZER_SHA256`, `_PRECISION`, and `_CACHE_NAMESPACE`.
+SNE routes additionally require `_TOKEN`, `_RUNTIME_SHA256`,
+`_NATIVE_RUNTIME_SHA256`, and `_MANIFEST_SHA256`. Keep credentials in the
+authorized local environment, never in this runbook, screenshots, or investor
+materials. To pin the initial dashboard policy, set both
+`SIRSI_ENGINE_PREFERRED` and `SIRSI_ENGINE_PREFERRED_VARIANT`; non-default-only
+routes require an explicit variant. Legacy `SIRSI_MLX_*` and `SIRSI_SNE_*`
+single-variant prefixes remain supported, but do not configure the same
+kind/variant twice.
 
 ## M1 → M5 control-plane proof
 
