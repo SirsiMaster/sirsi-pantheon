@@ -14,22 +14,26 @@ M1/M5 transport, and release credentials visibly separate.
 
 ## The five-minute path
 
-1. Open Home. The page starts with **Ask Horus about this machine**, not a
+1. Run the read-only identity preflight against the demo port. Require
+   `pantheon.dashboard-identity/v1` and compare the returned commit with the
+   candidate above. If the endpoint is missing or mismatched, do not present
+   the page: the port is serving an older process.
+2. Open Home. The page starts with **Ask Horus about this machine**, not a
    status wall. Explain that Pantheon owns the product experience and route
    provenance while the selected engine remains an explicit policy choice.
-2. Press **Open engine selector**. Choose SNE, MLX, or oMLX only when that
+3. Press **Open engine selector**. Choose SNE, MLX, or oMLX only when that
    connector is configured. The route panel says **policy selected**; it does
    not pretend that a live session has been admitted.
-3. Press **Start with a question** and ask:
+4. Press **Start with a question** and ask:
 
    ```text
    What should I address first on this machine?
    ```
 
-4. Show the exact answer, selected route, and request receipt. Explain that
+5. Show the exact answer, selected route, and request receipt. Explain that
    findings are quoted from the machine's diagnostic report; the engine does
    not invent paths, names, or numbers.
-5. Press **Inspect Fleet evidence**. Show that M5 is the canonical worker
+6. Press **Inspect Fleet evidence**. Show that M5 is the canonical worker
    authority and M1 is a constrained client. Do not show a mutation unless a
    separate owner authorization is active.
 

@@ -13,6 +13,18 @@ notarization, installation, or production-readiness receipt.
    open http://127.0.0.1:9119/
    ```
 
+   Before presenting the page, verify that the listener is the intended build
+   rather than an older process left on the port:
+
+   ```sh
+   curl --fail --silent http://127.0.0.1:9119/api/identity | jq .
+   ```
+
+   Require `schema`=`pantheon.dashboard-identity/v1` and compare `commit` and
+   `version` with the candidate receipt. A 404 or mismatched commit means the
+   visible listener is not the demo candidate; stop and obtain the bounded
+   preview/restart authorization instead of presenting it.
+
 2. On Home, point out the single flow: **Ask Horus about this machine** →
    **Session route** → **Open engine selector** → prompt input.
 

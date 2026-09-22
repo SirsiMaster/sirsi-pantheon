@@ -13,7 +13,18 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
+	buildversion "github.com/SirsiMaster/sirsi-pantheon/internal/version"
 )
+
+const IdentitySchema = "pantheon.dashboard-identity/v1"
+
+// IdentityResponse is the read-only process identity used by demo preflight.
+// A dashboard URL is not proof that the expected checkout is serving it; the
+// caller must compare this response with the candidate it intends to show.
+type IdentityResponse struct {
+	Schema string `json:"schema"`
+	buildversion.Info
+}
 
 // Config holds the dependencies for the dashboard server.
 // All data sources are nil-safe — the server degrades gracefully.
@@ -76,6 +87,9 @@ type Config struct {
 	// EngineSelection is the one engine-neutral policy owner shared by UI
 	// surfaces. Nil disables selection rather than inventing a default engine.
 	EngineSelection EngineSelection
+	// BuildIdentity is the immutable build identity exposed by the read-only
+	// demo preflight endpoint. Zero value is filled from the running process.
+	BuildIdentity buildversion.Info
 	// SNEInstall configures Pantheon's asynchronous, integrity-gated model
 	// acquisition bridge. Nil keeps model install controls honestly disabled.
 	SNEInstall *SNEInstallConfig
@@ -114,6 +128,9 @@ type Server struct {
 func New(cfg Config) *Server {
 	if cfg.Port == 0 {
 		cfg.Port = DashboardPort
+	}
+	if cfg.BuildIdentity.Binary == "" {
+		cfg.BuildIdentity = buildversion.Current("sirsi")
 	}
 
 	s := &Server{cfg: cfg, confirm: NewConfirmGuard(), fleet: NewFleetTracker(cfg.Unroutable), appRecovery: cfg.AppRecovery, sneAccess: newSNELocalAccess(cfg.SNELocalAccessToken), sneAccessPath: cfg.SNELocalAccessTokenPath}
@@ -168,11 +185,12 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("/api/vault/prune", s.apiVaultPrune)
 	mux.HandleFunc("/api/ra/status", s.apiRaStatus)
 	mux.HandleFunc("/api/ra/scopes", s.apiRaScopes)
-	mux.HandleFunc("/api/node-status", s.apiNodeStatus)                   // ADR-026 Horus ops-view read endpoint
-	mux.HandleFunc("/api/fleet", s.apiFleet)                              // A32 owner-reporting board (replaces server.py)
-	mux.HandleFunc("/api/ledger", s.apiLedger)                            // A26 Nexus board seam — ledger.BoardSummary
-	mux.HandleFunc("/api/fabric", s.apiFabric)                            // unified work/message/lane contract
+	mux.HandleFunc("/api/node-status", s.apiNodeStatus) // ADR-026 Horus ops-view read endpoint
+	mux.HandleFunc("/api/fleet", s.apiFleet)            // A32 owner-reporting board (replaces server.py)
+	mux.HandleFunc("/api/ledger", s.apiLedger)          // A26 Nexus board seam — ledger.BoardSummary
+	mux.HandleFunc("/api/fabric", s.apiFabric)          // unified work/message/lane contract
 	mux.HandleFunc("/api/engine", s.apiEngine)
+	mux.HandleFunc("/api/identity", s.apiIdentity)
 	mux.HandleFunc("/api/engine/select", s.secureSNERoute(true, s.apiEngineSelect))
 	mux.HandleFunc("/api/sne", s.secureSNERoute(false, s.apiSNE))         // local SNE catalog and runtime read-model
 	mux.HandleFunc("/api/sne/chat", s.secureSNERoute(true, s.apiSNEChat)) // governed streaming bridge to the verified local runtime
