@@ -79,6 +79,22 @@ func TestRouterRequiresExplicitFallbackAndPreservesSelectedIdentity(t *testing.T
 	}
 }
 
+func TestRouterCanExplicitlyFallbackWhenPreferredEngineIsUnconfigured(t *testing.T) {
+	r, err := NewRouter(routerFixtureConnector{
+		kind: KindMLX, identity: identityFor(KindMLX), caps: Capabilities{Sessions: true}, available: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, decision, err := r.OpenSession(context.Background(), "unconfigured-fallback", RoutePolicy{Preferred: KindSNE, AllowFallback: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.Identity.Engine != KindMLX || decision.Requested != KindSNE || decision.Selected != KindMLX || !decision.Fallback {
+		t.Fatalf("explicit unconfigured-engine fallback = session %+v, decision %+v", session.Identity, decision)
+	}
+}
+
 func TestRouterRejectsCapabilityGapBeforeConnectorAdmission(t *testing.T) {
 	r, err := NewRouter(routerFixtureConnector{kind: KindSNE, identity: identityFor(KindSNE), caps: Capabilities{Sessions: true}, available: true})
 	if err != nil {

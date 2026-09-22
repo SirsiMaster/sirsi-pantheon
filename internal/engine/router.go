@@ -117,7 +117,9 @@ func (r *Router) OpenSession(ctx context.Context, sessionID string, policy Route
 		var err error
 		preferredVariant, err = r.resolveVariant(policy.Preferred, "")
 		if err != nil {
-			return Session{}, RouteDecision{}, err
+			if !policy.AllowFallback {
+				return Session{}, RouteDecision{}, err
+			}
 		}
 	}
 	order := r.candidateOrder(policy.Preferred, preferredVariant)
