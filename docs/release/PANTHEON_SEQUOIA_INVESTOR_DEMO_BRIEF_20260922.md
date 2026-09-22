@@ -37,7 +37,7 @@ M1/M5 transport, and release credentials visibly separate.
    mismatched, do not present the page. Open the verified 9120 URL in Chrome;
    keep any existing installed-app process on 9119 untouched.
 2. Open Home. Start with **Ask Horus about this machine**. The primary path is
-   **Session route** → **Open engine selector** → **Start with a question**.
+   **Session route** → **Open engine selector** → **Use sample question**.
    Use **All tools** only if the audience wants a health or infrastructure
    workflow. Explain that Pantheon owns the product experience and route
    provenance while the selected engine remains an explicit policy choice.
@@ -98,7 +98,7 @@ observation/admission first. The prior `HOLD_SNE_ACTIVE` receipt
 `/private/tmp/pantheon-5115015a-sne-active-preview-hold-20260922.json`
 (SHA-256 `c1e153050c671efbe64c6e5c9f6a1355c5788d2dcfdc432d91164108253c6ac1`)
 binds older ancestor `5115015a`, is nonreusable, and grants no authority for
-`b642c77b`. SNE task `01a0932e-2ad2-7fa3-b884-0550bd287043` was active at the
+`771293e0`. SNE task `01a0932e-2ad2-7fa3-b884-0550bd287043` was active at the
 latest read-thread observation; obtain a wholly fresh SSA disposition after
 its terminal handback or explicit release.
 

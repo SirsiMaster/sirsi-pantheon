@@ -1144,7 +1144,10 @@ function ask(q){
    out('  — findings quoted verbatim from this machine; selection by '+d.model,'t-dim');
    if(d.receipt){
     const route=d.receipt.route||{};
-    out('  — route '+(route.selected||'unknown')+' · receipt '+(d.receipt.request_sha256||'unavailable'),'t-dim');
+    const requested=(route.requested||'unknown')+(route.requested_variant?' ('+route.requested_variant+')':'');
+    const selected=(route.selected||'unknown')+(route.selected_variant?' ('+route.selected_variant+')':'');
+    out('  — route '+requested+' → '+selected+(route.fallback?' · fallback':' · no fallback'),'t-dim');
+    out('  — identity '+(d.receipt.identity_digest||'unavailable')+' · receipt '+(d.receipt.request_sha256||'unavailable'),'t-dim');
    }
   })
   .catch(function(e){

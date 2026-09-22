@@ -180,6 +180,20 @@ func TestHomeViewDemoPathUsesCanonicalRoutes(t *testing.T) {
 	}
 }
 
+func TestAskViewExposesBoundRouteAndExecutionIdentity(t *testing.T) {
+	page := fetchSPA(t)
+	for _, want := range []string{
+		"route '+requested+' → '+selected",
+		"route.fallback?' · fallback':' · no fallback'",
+		"d.receipt.identity_digest||'unavailable'",
+		"d.receipt.request_sha256||'unavailable'",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("Ask route proof is missing %q", want)
+		}
+	}
+}
+
 func TestEngineViewSelectsAndDisplaysExactVariant(t *testing.T) {
 	page := fetchSPA(t)
 	for _, want := range []string{

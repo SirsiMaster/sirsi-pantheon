@@ -33,7 +33,7 @@ notarization, installation, or production-readiness receipt.
    read-only diagnostic, not a substitute for the fresh admission.
 
 2. On Home, start with **Ask Horus about this machine**. The primary path is
-   **Session route** → **Open engine selector** → **Start with a question**.
+   **Session route** → **Open engine selector** → **Use sample question**.
    **All tools** expands the secondary tools; the Home screen does not repeat
    the primary path as a second numbered tour.
 
