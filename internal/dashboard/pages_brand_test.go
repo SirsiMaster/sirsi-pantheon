@@ -70,3 +70,31 @@ func TestDashboardCommandInputIsLabeled(t *testing.T) {
 		}
 	}
 }
+
+func TestDashboardFleetUnavailableStateIsActionable(t *testing.T) {
+	t.Parallel()
+
+	ts := testServer(t, Config{})
+	defer ts.Close()
+	resp, err := http.Get(ts.URL + "/")
+	if err != nil {
+		t.Fatalf("GET dashboard: %v", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read dashboard: %v", err)
+	}
+	page := string(body)
+	for _, want := range []string{
+		"t-empty-state",
+		"Fleet is not connected",
+		"canonical fleet producer",
+		"Retry fleet data",
+		`setAttribute('role','status')`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("fleet unavailable state missing %q", want)
+		}
+	}
+}

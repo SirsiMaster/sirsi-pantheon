@@ -132,8 +132,15 @@ font-family:Inter,-apple-system,system-ui,sans-serif;flex-shrink:0}
 .t-col{color:var(--ink2)}.t-col-r{color:var(--gold);text-align:right;min-width:80px}
 	.t-action{color:var(--dim);cursor:pointer;transition:color .15s;text-decoration:underline;text-decoration-color:var(--line)}
 	.t-action:hover{color:var(--gold);text-decoration-color:var(--gold)}
-.t-action:focus-visible,.nav-item:focus-visible{color:var(--gold);outline:2px solid var(--gold);outline-offset:3px;text-decoration-color:var(--gold)}
+	.t-action:focus-visible,.nav-item:focus-visible{color:var(--gold);outline:2px solid var(--gold);outline-offset:3px;text-decoration-color:var(--gold)}
 	.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+	.t-empty-state{max-width:680px;margin:18px 0;padding:18px 18px 16px;border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:6px;background:color-mix(in srgb, var(--warn) 7%%, transparent)}
+	.t-empty-title{color:var(--ink2);font:600 14px/1.4 Inter,-apple-system,system-ui,sans-serif;letter-spacing:.02em}
+	.t-empty-copy{max-width:62ch;margin-top:7px;color:var(--dim);font:13px/1.55 Inter,-apple-system,system-ui,sans-serif}
+	.t-empty-detail{margin-top:8px;color:var(--dim);font-size:11px;overflow-wrap:anywhere}
+	.t-empty-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+	.t-empty-action{padding:6px 10px;border:1px solid var(--line);border-radius:4px;background:transparent;color:var(--gold);font:600 11px Inter,-apple-system,system-ui,sans-serif;cursor:pointer}
+	.t-empty-action:hover,.t-empty-action:focus-visible{border-color:var(--gold);background:color-mix(in srgb, var(--gold) 8%%, transparent);outline:2px solid var(--gold);outline-offset:2px}
 	.engine-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:10px 0 14px}
 	.engine-card{display:flex;flex-direction:column;gap:6px;padding:12px;border:1px solid var(--line);border-radius:4px;background:rgba(255,255,255,.025);min-height:122px}
 	.engine-card.selected{border-color:var(--gold);background:color-mix(in srgb, var(--gold) 8%%, transparent)}
@@ -790,7 +797,17 @@ function viewFleet(){
    if(l.touched_ago)parts.push('touched '+l.touched_ago);
    cts.textContent=parts.join(' · ');
    row.appendChild(ag);row.appendChild(st);row.appendChild(cts);T.appendChild(row)});
- }).catch(function(e){out('  fleet board unavailable: '+e.message,'t-err')});
+ }).catch(function(e){
+  const notConfigured=e.message==='fleet producer not configured';
+  const card=document.createElement('section');card.className='t-empty-state';card.setAttribute('role','status');card.setAttribute('aria-live','polite');
+  const title=document.createElement('div');title.className='t-empty-title';title.textContent=notConfigured?'Fleet is not connected':'Fleet is temporarily unavailable';card.appendChild(title);
+  const copy=document.createElement('div');copy.className='t-empty-copy';copy.textContent=notConfigured?'The canonical fleet producer is not configured on this node yet. Horus is showing no worker state rather than guessing or replaying stale data.':'Horus could not read the canonical fleet producer. Worker state is withheld until the source responds.';card.appendChild(copy);
+  if(!notConfigured){const detail=document.createElement('div');detail.className='t-empty-detail';detail.textContent='Source: '+e.message;card.appendChild(detail)}
+  const actions=document.createElement('div');actions.className='t-empty-actions';
+  const retry=document.createElement('button');retry.type='button';retry.className='t-empty-action';retry.textContent='Retry fleet data';retry.setAttribute('aria-label','Retry fleet data');retry.onclick=function(){switchView('fleet')};actions.appendChild(retry);
+  const home=document.createElement('button');home.type='button';home.className='t-empty-action';home.textContent='Return home';home.onclick=function(){switchView('home')};actions.appendChild(home);
+  card.appendChild(actions);T.appendChild(card);
+ });
 }
 
 function viewGhosts(){
