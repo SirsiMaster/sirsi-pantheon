@@ -277,7 +277,7 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
  <div class="term-input-bar">
   <span class="term-prompt">𓉴 </span>
   <label class="sr-only" for="term-input">Command</label>
-  <input type="text" class="term-input" id="term-input" aria-label="Command" placeholder="Ask a question, or type a command (scan, ghosts, doctor, guard, network, hardware)" autocomplete="off">
+  <input type="text" class="term-input" id="term-input" aria-label="Command" placeholder="Ask a question or type a command (engine, scan, guard…)" autocomplete="off">
   <span class="term-view-label" id="view-label">home</span>
  </div>
  <div class="terminal" id="terminal">
@@ -336,6 +336,7 @@ function viewHome(){
  cmdRow('scan','Scan for infrastructure waste + ghost remnants');
  cmdRow('ghosts','Hunt dead application residuals');
  cmdRow('guard','System health, process slayer');
+ cmdRow('engine','Choose SNE, MLX, or oMLX for the next session');
  cmdRow('doctor','Full diagnostic health check');
  cmdRow('network','Network security audit');
  cmdRow('hardware','CPU/GPU/ANE detection');

@@ -110,7 +110,7 @@ func TestGuardViewProvidesSeveritySummaryAndProgressiveDisclosure(t *testing.T) 
 func TestHomeView_CommandsAreClickable(t *testing.T) {
 	page := fetchSPA(t)
 
-	for _, cmd := range []string{"scan", "ghosts", "guard", "doctor", "network", "hardware", "quality", "dedup"} {
+	for _, cmd := range []string{"scan", "ghosts", "guard", "engine", "doctor", "network", "hardware", "quality", "dedup"} {
 		if !strings.Contains(page, "cmdRow('"+cmd+"'") {
 			t.Errorf("home command %q is not rendered as a clickable row", cmd)
 		}
