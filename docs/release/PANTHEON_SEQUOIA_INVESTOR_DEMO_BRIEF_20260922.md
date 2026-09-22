@@ -98,7 +98,7 @@ observation/admission first. The prior `HOLD_SNE_ACTIVE` receipt
 `/private/tmp/pantheon-5115015a-sne-active-preview-hold-20260922.json`
 (SHA-256 `c1e153050c671efbe64c6e5c9f6a1355c5788d2dcfdc432d91164108253c6ac1`)
 binds older ancestor `5115015a`, is nonreusable, and grants no authority for
-`771293e0`. SNE task `01a0932e-2ad2-7fa3-b884-0550bd287043` was active at the
+`937aba9d`. SNE task `01a0932e-2ad2-7fa3-b884-0550bd287043` was active at the
 latest read-thread observation; obtain a wholly fresh SSA disposition after
 its terminal handback or explicit release.
 
