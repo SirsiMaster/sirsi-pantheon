@@ -187,11 +187,11 @@ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;flex-shrink:0
 	.home-secondary-action{background:transparent;color:var(--gold)}
 	.home-primary-action:hover,.home-primary-action:focus-visible{filter:brightness(1.08);outline:2px solid var(--emerald);outline-offset:2px}
 	.home-secondary-action:hover,.home-secondary-action:focus-visible{border-color:var(--gold);background:color-mix(in srgb, var(--gold) 8%%, transparent);outline:2px solid var(--gold);outline-offset:2px}
-	.home-route{display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap;margin:0;padding:16px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+	.home-route{display:grid;grid-template-columns:110px minmax(150px,1fr) minmax(260px,1.2fr) auto;align-items:center;gap:14px;margin:0 8px 16px;padding:18px 4px 0;border-top:1px solid var(--line)}
 	.home-route-label{color:var(--dim);font:10px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;letter-spacing:.08em;text-transform:uppercase}
-	.home-route-value{flex:1 1 160px;color:var(--ink);font:600 14px/1.25 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
-	.home-route-detail{flex-basis:100%%;color:var(--dim);font:11px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
-	.home-route-action{padding:4px 8px;border:1px solid var(--line);border-radius:3px;background:transparent;color:var(--gold);font:600 11px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;cursor:pointer}
+	.home-route-value{min-width:0;color:var(--ink);font:600 14px/1.35 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;overflow-wrap:anywhere}
+	.home-route-detail{color:var(--dim);font:12px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+	.home-route-action{padding:7px 10px;border:1px solid var(--line);border-radius:4px;background:transparent;color:var(--gold);font:600 11px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;cursor:pointer;white-space:nowrap}
 	.home-route-action:hover,.home-route-action:focus-visible{border-color:var(--gold);background:color-mix(in srgb, var(--gold) 8%%, transparent);outline:2px solid var(--gold);outline-offset:2px}
 	.home-tools{max-width:1180px;margin:0 auto 18px}
 	.home-action-grid{display:flex;flex-direction:column}
@@ -206,6 +206,7 @@ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;flex-shrink:0
 	.t-sep{border-top:1px solid color-mix(in srgb, var(--gold) 6%%, transparent);margin:6px 0}
 	@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}}
 	@media (prefers-contrast:more){.t-action:focus-visible,.nav-item:focus-visible,.stat-go:focus-visible{outline-width:3px}.t-dim,.t-action{color:var(--ink2)}}
+	@media (min-width:761px) and (max-width:1024px){.home-route{grid-template-columns:95px minmax(0,1fr) auto}.home-route-detail{grid-column:2/4}}
 	@media (max-width:760px){
 	 body{display:block;min-height:100vh;overflow:auto}
 	 .sidebar{position:sticky;top:0;width:100%%;min-height:0;height:auto;flex-direction:row;align-items:center;border-right:0;border-bottom:1px solid var(--line)}
@@ -236,6 +237,10 @@ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;flex-shrink:0
 	 .guard-finding-message{grid-column:2}
 	 .engine-grid{grid-template-columns:1fr}
 	 .home-hero{grid-template-columns:1fr;gap:14px}
+	 .home-route{grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;margin:0 4px 14px;padding-top:14px}
+	 .home-route-label{grid-column:1/-1}
+	 .home-route-detail{grid-column:1/-1}
+	 .home-route-action{grid-column:1/-1;justify-self:start;margin-top:4px}
 	 .home-title{font-size:22px}
 	 .home-action{align-items:flex-start;flex-direction:column;gap:3px}
 	}
@@ -380,7 +385,7 @@ function viewHome(){
  const routeValue=document.createElement('span');routeValue.className='home-route-value';routeValue.textContent='Loading policy…';route.appendChild(routeValue);
  const routeDetail=document.createElement('span');routeDetail.className='home-route-detail';routeDetail.textContent='Reading the canonical engine selection; availability is checked when a session opens.';route.appendChild(routeDetail);
  const routeAction=document.createElement('button');routeAction.className='home-route-action';routeAction.type='button';routeAction.textContent='Open engine selector';routeAction.addEventListener('click',function(){switchView('engine')});route.appendChild(routeAction);
- hero.appendChild(route);intro.appendChild(hero);T.appendChild(intro);
+	 intro.appendChild(hero);intro.appendChild(route);T.appendChild(intro);
  fetch('/api/engine').then(function(r){return r.json().then(function(body){if(!r.ok)throw new Error(body.error||('HTTP '+r.status));return body})}).then(function(data){
   routeValue.textContent=data.preferred?(String(data.preferred).toUpperCase()+(data.preferred_variant?' · '+data.preferred_variant:'')):'No engine selected';
   routeDetail.textContent=data.preferred?'Policy selected; live availability is proved when a session opens.':'Choose SNE, MLX, or oMLX before asking a model-backed question.';

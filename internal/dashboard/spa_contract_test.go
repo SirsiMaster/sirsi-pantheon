@@ -165,6 +165,7 @@ func TestHomeViewDemoPathUsesCanonicalRoutes(t *testing.T) {
 		"routeAction.addEventListener('click',function(){switchView('engine')})",
 		"start.addEventListener('click',function(){input.value=sampleQuestion;input.focus();input.setSelectionRange(input.value.length,input.value.length)})",
 		"Loads into the prompt. Review it, then press Enter to send.",
+		"intro.appendChild(hero);intro.appendChild(route);T.appendChild(intro)",
 		"fleet.addEventListener('click',function(){switchView('fleet')})",
 		"Policy selected; live availability is proved when a session opens.",
 		"Choose SNE, MLX, or oMLX before asking a model-backed question.",
