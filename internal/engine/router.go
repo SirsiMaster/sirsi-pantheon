@@ -2,9 +2,12 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 )
+
+var errVariantSelectionRequired = errors.New("engine router: explicit variant selection is required")
 
 // RoutePolicy is the caller's explicit engine preference. Fallback is never
 // implicit: a caller must opt in, and the returned decision records whether it
@@ -117,7 +120,7 @@ func (r *Router) OpenSession(ctx context.Context, sessionID string, policy Route
 		var err error
 		preferredVariant, err = r.resolveVariant(policy.Preferred, "")
 		if err != nil {
-			if !policy.AllowFallback {
+			if !policy.AllowFallback || errors.Is(err, errVariantSelectionRequired) {
 				return Session{}, RouteDecision{}, err
 			}
 		}
@@ -327,20 +330,17 @@ func (r *Router) resolveVariant(kind Kind, requested BackendVariant) (BackendVar
 	if _, ok := r.connectors[connectorKey{kind: kind, variant: defaultVariant}]; ok {
 		return defaultVariant, nil
 	}
-	var only BackendVariant
+	configured := false
 	for key := range r.connectors {
-		if key.kind != kind {
-			continue
+		if key.kind == kind {
+			configured = true
+			break
 		}
-		if only != "" {
-			return "", fmt.Errorf("engine router: engine %q has multiple variants; an explicit variant is required", kind)
-		}
-		only = key.variant
 	}
-	if only == "" {
+	if !configured {
 		return "", fmt.Errorf("engine router: connector %q is not configured", kind)
 	}
-	return only, nil
+	return "", fmt.Errorf("%w for engine %q without its default variant %q", errVariantSelectionRequired, kind, defaultVariant)
 }
 
 func requireCapabilities(actual Capabilities, required []Capability) error {

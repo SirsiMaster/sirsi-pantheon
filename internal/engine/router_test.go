@@ -95,6 +95,31 @@ func TestRouterCanExplicitlyFallbackWhenPreferredEngineIsUnconfigured(t *testing
 	}
 }
 
+func TestRouterDoesNotFallbackWhenNonDefaultPreferredVariantIsUnspecified(t *testing.T) {
+	mlxOpened, sneOpened := 0, 0
+	mlx := routerFixtureConnector{kind: KindMLX, identity: identityFor(KindMLX), caps: Capabilities{Sessions: true}, available: true, onOpen: func() { mlxOpened++ }}
+	sneIdentity := identityFor(KindSNE)
+	sneIdentity.Variant = VariantSNEMTP
+	sne := routerFixtureConnector{kind: KindSNE, variant: VariantSNEMTP, identity: sneIdentity, caps: Capabilities{Sessions: true, MTP: true}, available: true, onOpen: func() { sneOpened++ }}
+	r, err := NewRouter(mlx, sne)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := r.OpenSession(context.Background(), "variant-required", RoutePolicy{Preferred: KindSNE, AllowFallback: true}); err == nil || !strings.Contains(err.Error(), "explicit variant selection is required") {
+		t.Fatalf("implicit non-default variant or fallback was accepted: %v", err)
+	}
+	if mlxOpened != 0 || sneOpened != 0 {
+		t.Fatalf("connectors opened before explicit variant selection: MLX=%d SNE=%d", mlxOpened, sneOpened)
+	}
+	session, decision, err := r.OpenSession(context.Background(), "variant-explicit", RoutePolicy{Preferred: KindSNE, PreferredVariant: VariantSNEMTP})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.Identity.EffectiveVariant() != VariantSNEMTP || decision.SelectedVariant != VariantSNEMTP || decision.Fallback {
+		t.Fatalf("explicit MTP route = identity %+v, decision %+v", session.Identity, decision)
+	}
+}
+
 func TestRouterRejectsCapabilityGapBeforeConnectorAdmission(t *testing.T) {
 	r, err := NewRouter(routerFixtureConnector{kind: KindSNE, identity: identityFor(KindSNE), caps: Capabilities{Sessions: true}, available: true})
 	if err != nil {
