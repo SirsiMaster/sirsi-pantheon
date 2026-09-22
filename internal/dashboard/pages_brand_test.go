@@ -1,6 +1,8 @@
 package dashboard
 
 import (
+	"io"
+	"net/http"
 	"regexp"
 	"strings"
 	"testing"
@@ -25,5 +27,46 @@ func TestPageShellDerivesFromBrand(t *testing.T) {
 	}
 	if !strings.Contains(html, "var(--gold)") {
 		t.Error("expected classes to reference var(--gold)")
+	}
+}
+
+func TestPageShellResponsiveCommandSurface(t *testing.T) {
+	t.Parallel()
+
+	html := pageShell("Test", "home", "<p>body</p>", DashboardPort)
+	for _, want := range []string{
+		"overflow-wrap:anywhere;word-break:normal",
+		"@media (max-width:760px)",
+		".sidebar-nav{display:flex;min-width:0;overflow-x:auto",
+		".main{margin-left:0;",
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("responsive command surface missing %q", want)
+		}
+	}
+}
+
+func TestDashboardCommandInputIsLabeled(t *testing.T) {
+	t.Parallel()
+
+	ts := testServer(t, Config{})
+	defer ts.Close()
+	resp, err := http.Get(ts.URL + "/")
+	if err != nil {
+		t.Fatalf("GET dashboard: %v", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read dashboard: %v", err)
+	}
+	page := string(body)
+	for _, want := range []string{
+		`<label class="sr-only" for="term-input">Command</label>`,
+		`aria-label="Command"`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("dashboard command input missing %q", want)
+		}
 	}
 }

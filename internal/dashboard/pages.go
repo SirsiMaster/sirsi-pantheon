@@ -120,7 +120,7 @@ font-family:inherit;outline:none}
 .term-view-label{color:var(--dim);font-size:10px;padding-right:16px;letter-spacing:1px;text-transform:uppercase;
 font-family:Inter,-apple-system,system-ui,sans-serif;flex-shrink:0}
 .terminal{flex:1;overflow-y:auto;padding:12px 16px;background:rgba(3,3,8,.95);line-height:1.6;font-size:12px}
-.t-line{margin:0;white-space:pre-wrap;word-break:break-all}
+.t-line{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;word-break:normal}
 .t-dim{color:var(--dim)}
 .t-out{color:var(--ink2)}
 .t-ok{color:var(--ok)}
@@ -132,20 +132,48 @@ font-family:Inter,-apple-system,system-ui,sans-serif;flex-shrink:0}
 .t-col{color:var(--ink2)}.t-col-r{color:var(--gold);text-align:right;min-width:80px}
 	.t-action{color:var(--dim);cursor:pointer;transition:color .15s;text-decoration:underline;text-decoration-color:var(--line)}
 	.t-action:hover{color:var(--gold);text-decoration-color:var(--gold)}
-	.t-action:focus-visible,.nav-item:focus-visible{color:var(--gold);outline:2px solid var(--gold);outline-offset:3px;text-decoration-color:var(--gold)}
+.t-action:focus-visible,.nav-item:focus-visible{color:var(--gold);outline:2px solid var(--gold);outline-offset:3px;text-decoration-color:var(--gold)}
+	.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 	.engine-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:10px 0 14px}
 	.engine-card{display:flex;flex-direction:column;gap:6px;padding:12px;border:1px solid var(--line);border-radius:4px;background:rgba(255,255,255,.025);min-height:122px}
-	.engine-card.selected{border-color:var(--gold);background:rgba(200,169,81,.08)}
+	.engine-card.selected{border-color:var(--gold);background:color-mix(in srgb, var(--gold) 8%%, transparent)}
 	.engine-name{color:var(--ink2);font-size:14px;font-weight:600;letter-spacing:.08em}
 	.engine-status{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
 	.engine-caps{color:var(--dim);font-size:11px;line-height:1.5;flex:1}
 	.engine-select{align-self:flex-start;padding:4px 9px;border:1px solid var(--line);border-radius:3px;background:transparent;color:var(--gold);font:inherit;font-size:11px;cursor:pointer}
-	.engine-select:hover{border-color:var(--gold);background:rgba(200,169,81,.08)}
+	.engine-select:hover{border-color:var(--gold);background:color-mix(in srgb, var(--gold) 8%%, transparent)}
 	.engine-select:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 	.engine-select:disabled{border-color:var(--gold);color:var(--gold);cursor:default;opacity:.9}
 	.t-sep{border-top:1px solid color-mix(in srgb, var(--gold) 6%%, transparent);margin:6px 0}
 	@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}}
 	@media (prefers-contrast:more){.t-action:focus-visible,.nav-item:focus-visible,.stat-go:focus-visible{outline-width:3px}.t-dim,.t-action{color:var(--ink2)}}
+	@media (max-width:760px){
+	 body{display:block;min-height:100vh;overflow:auto}
+	 .sidebar{position:sticky;top:0;width:100%%;min-height:0;height:auto;flex-direction:row;align-items:center;border-right:0;border-bottom:1px solid var(--line)}
+	 .sidebar-brand{flex:0 0 auto;padding:12px 14px;border-right:1px solid var(--line);border-bottom:0}
+	 .sidebar-nav{display:flex;min-width:0;overflow-x:auto;padding:0;scrollbar-width:none}
+	 .sidebar-nav::-webkit-scrollbar{display:none}
+	 .nav-item{flex:0 0 auto;padding:12px 10px;border-left:0;border-bottom:2px solid transparent;font-size:11px}
+	 .nav-item.active{border-left:0;border-bottom-color:var(--gold)}
+	 .nav-glyph{width:auto;margin-right:5px}
+	 .sidebar-footer{display:none}
+	 .main{margin-left:0;min-height:calc(100vh - 48px);height:auto;align-items:stretch}
+	 .main-inner{max-width:none;min-height:calc(100vh - 48px);height:auto;overflow:visible;border-left:0;border-right:0}
+	 .stats-bar{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+	 .stat{min-width:0;padding:10px 12px}
+	 .stat-value{font-size:14px}
+	 .stat-sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+	 .terminal-wrap{min-height:calc(100vh - 150px);overflow:visible}
+	 .term-input{min-width:0;font-size:12px}
+	 .term-view-label{display:none}
+	 .terminal{min-height:calc(100vh - 150px);overflow-x:hidden;padding:14px 12px;font-size:12px}
+	 .t-cmd{display:grid;grid-template-columns:minmax(68px,max-content) minmax(0,1fr);gap:8px;align-items:start}
+	 .t-cmd-name{min-width:0}
+	 .t-cmd-desc{min-width:0;overflow-wrap:anywhere}
+	 .t-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
+	 .t-col-r{min-width:0;text-align:left}
+	 .engine-grid{grid-template-columns:1fr}
+	}
 </style>
 </head>
 <body>
@@ -214,7 +242,8 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 <div class="terminal-wrap">
  <div class="term-input-bar">
   <span class="term-prompt">𓉴 </span>
-  <input type="text" class="term-input" id="term-input" placeholder="Ask a question, or type a command (scan, ghosts, doctor, guard, network, hardware)" autocomplete="off">
+  <label class="sr-only" for="term-input">Command</label>
+  <input type="text" class="term-input" id="term-input" aria-label="Command" placeholder="Ask a question, or type a command (scan, ghosts, doctor, guard, network, hardware)" autocomplete="off">
   <span class="term-view-label" id="view-label">home</span>
  </div>
  <div class="terminal" id="terminal">
