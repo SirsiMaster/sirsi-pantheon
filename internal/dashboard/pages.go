@@ -59,40 +59,40 @@ func pageShell(title, activePage, bodyContent string, port int) string {
 <style>
 :root{%s}
 *{margin:0;padding:0;box-sizing:border-box}
-body{background:%s;color:%s;font-family:'SF Mono',Menlo,Consolas,'Courier New',monospace;
+body{background:%s;color:%s;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 display:flex;min-height:100vh;overflow:hidden}
 ::-webkit-scrollbar{width:6px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:color-mix(in srgb, var(--gold) 20%%, transparent);border-radius:3px}
 
 /* Sidebar */
-.sidebar{width:180px;min-height:100vh;background:rgba(6,6,15,.96);border-right:1px solid %s;
+.sidebar{width:224px;min-height:100vh;background:var(--panel);border-right:1px solid %s;
 display:flex;flex-direction:column;position:fixed;left:0;top:0;bottom:0;z-index:10}
-.sidebar-brand{padding:16px 16px 12px;border-bottom:1px solid %s}
-.sidebar-brand h1{font-family:Inter,-apple-system,system-ui,sans-serif;font-size:13px;font-weight:600;
-color:%s;letter-spacing:2px;text-transform:uppercase}
-.sidebar-nav{flex:1;padding:8px 0}
-.nav-item{display:flex;align-items:center;padding:8px 16px;color:%s;text-decoration:none;
-font-size:12px;font-weight:600;letter-spacing:.3px;transition:all .15s;border-left:2px solid transparent;cursor:pointer;
-font-family:Inter,-apple-system,system-ui,sans-serif}
-.nav-item:hover{background:color-mix(in srgb, var(--gold) 6%%, transparent);color:%s}
-.nav-item.active{background:color-mix(in srgb, var(--gold) 8%%, transparent);color:%s;border-left-color:%s}
+.sidebar-brand{padding:24px 20px 20px;border-bottom:1px solid %s}
+.sidebar-brand h1{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:15px;font-weight:700;
+color:%s;letter-spacing:.16em;text-transform:uppercase}
+.sidebar-nav{flex:1;padding:14px 10px}
+.nav-item{display:flex;align-items:center;padding:11px 12px;color:%s;text-decoration:none;
+font-size:13px;font-weight:600;letter-spacing:.01em;transition:background .15s,color .15s,border-color .15s;border-left:2px solid transparent;border-radius:6px;cursor:pointer;
+font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+.nav-item:hover{background:color-mix(in srgb, var(--gold) 7%%, transparent);color:%s}
+.nav-item.active{background:color-mix(in srgb, var(--emerald) 10%%, transparent);color:%s;border-left-color:%s}
 .nav-glyph{width:20px;font-size:14px;margin-right:8px;text-align:center}
-.sidebar-footer{padding:12px 16px;border-top:1px solid %s;font-size:8px;color:var(--line);letter-spacing:1px;
-font-family:Inter,-apple-system,system-ui,sans-serif}
+.sidebar-footer{padding:14px 20px;border-top:1px solid %s;font-size:9px;color:var(--dim);letter-spacing:.08em;
+font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
 
 /* Main — content is capped at 1400px and centered in the space right of the
    fixed sidebar so ultra-wide viewports don't strand everything top-left. */
-.main{margin-left:180px;flex:1;display:flex;flex-direction:column;align-items:center;height:100vh;overflow:hidden}
+.main{margin-left:224px;flex:1;display:flex;flex-direction:column;align-items:center;height:100vh;overflow:hidden}
 .main-inner{width:100%%;max-width:1400px;display:flex;flex-direction:column;height:100vh;overflow:hidden;
 border-left:1px solid color-mix(in srgb, var(--gold) 6%%, transparent);border-right:1px solid color-mix(in srgb, var(--gold) 6%%, transparent)}
 
 /* Stats bar */
-.stats-bar{display:flex;gap:1px;background:color-mix(in srgb, var(--gold) 6%%, transparent);border-bottom:1px solid %s;flex-shrink:0}
-.stat{flex:1;padding:12px 16px;background:%s}
-.stat-label{font-size:9px;color:%s;letter-spacing:1.5px;text-transform:uppercase;
-font-family:Inter,-apple-system,system-ui,sans-serif;margin-bottom:4px}
-.stat-value{font-size:16px;color:%s;font-weight:400}
+.stats-bar{display:flex;gap:10px;padding:12px 16px;background:var(--bg);border-bottom:1px solid %s;flex-shrink:0}
+.stat{flex:1;padding:13px 15px;background:var(--panel);border:1px solid var(--line);border-radius:8px}
+.stat-label{font-size:10px;color:%s;letter-spacing:.12em;text-transform:uppercase;
+font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin-bottom:4px}
+.stat-value{font-size:18px;color:%s;font-weight:650;letter-spacing:-.02em}
 .stat-sub{font-size:10px;color:var(--dim);margin-top:2px}
 /* Only tiles that actually go somewhere get a pointer and a chevron. A readout
    that looks clickable and isn't is worse than one that plainly isn't. */
@@ -111,14 +111,15 @@ font-family:Inter,-apple-system,system-ui,sans-serif;margin-bottom:4px}
 
 /* Terminal */
 .terminal-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
-.term-input-bar{display:flex;align-items:center;padding:0;border-bottom:1px solid %s;background:rgba(3,3,8,.9);flex-shrink:0}
-.term-prompt{color:%s;padding:8px 0 8px 16px;font-size:13px;flex-shrink:0}
-.term-input{flex:1;background:none;border:none;color:%s;font-size:13px;padding:8px 16px 8px 8px;
+.term-input-bar{display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid %s;background:var(--bg);flex-shrink:0}
+.term-prompt{color:%s;padding:0 2px;font-size:14px;font-weight:700;flex-shrink:0}
+.term-input{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:6px;color:%s;font-size:14px;padding:10px 12px;
 font-family:inherit;outline:none}
+.term-input:focus{border-color:var(--emerald);box-shadow:0 0 0 3px color-mix(in srgb, var(--emerald) 16%%, transparent)}
 .term-input::placeholder{color:var(--dim)}
 .term-view-label{color:var(--dim);font-size:10px;padding-right:16px;letter-spacing:1px;text-transform:uppercase;
-font-family:Inter,-apple-system,system-ui,sans-serif;flex-shrink:0}
-.terminal{flex:1;overflow-y:auto;padding:12px 16px;background:rgba(3,3,8,.95);line-height:1.6;font-size:12px}
+font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;flex-shrink:0}
+.terminal{flex:1;overflow-y:auto;padding:24px 28px;background:var(--bg);line-height:1.7;font:13px/1.7 'SF Mono',Menlo,Consolas,'Courier New',monospace}
 .t-line{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;word-break:normal}
 .t-dim{color:var(--dim)}
 .t-out{color:var(--ink2)}
@@ -133,34 +134,34 @@ font-family:Inter,-apple-system,system-ui,sans-serif;flex-shrink:0}
 	.t-action:hover{color:var(--gold);text-decoration-color:var(--gold)}
 	.t-action:focus-visible,.nav-item:focus-visible{color:var(--gold);outline:2px solid var(--gold);outline-offset:3px;text-decoration-color:var(--gold)}
 	.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-	.t-empty-state{max-width:680px;margin:18px 0;padding:18px 18px 16px;border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:6px;background:color-mix(in srgb, var(--warn) 7%%, transparent)}
-	.t-empty-title{color:var(--ink2);font:600 14px/1.4 Inter,-apple-system,system-ui,sans-serif;letter-spacing:.02em}
-	.t-empty-copy{max-width:62ch;margin-top:7px;color:var(--dim);font:13px/1.55 Inter,-apple-system,system-ui,sans-serif}
+	.t-empty-state{max-width:680px;margin:24px 0;padding:20px;border:1px solid var(--line);border-top:3px solid var(--warn);border-radius:8px;background:color-mix(in srgb, var(--warn) 7%%, transparent)}
+	.t-empty-title{color:var(--ink2);font:600 14px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;letter-spacing:.02em}
+	.t-empty-copy{max-width:62ch;margin-top:7px;color:var(--dim);font:13px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
 	.t-empty-detail{margin-top:8px;color:var(--dim);font-size:11px;overflow-wrap:anywhere}
 	.t-empty-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
-	.t-empty-action{padding:6px 10px;border:1px solid var(--line);border-radius:4px;background:transparent;color:var(--gold);font:600 11px Inter,-apple-system,system-ui,sans-serif;cursor:pointer}
+	.t-empty-action{padding:6px 10px;border:1px solid var(--line);border-radius:4px;background:transparent;color:var(--gold);font:600 11px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;cursor:pointer}
 	.t-empty-action:hover,.t-empty-action:focus-visible{border-color:var(--gold);background:color-mix(in srgb, var(--gold) 8%%, transparent);outline:2px solid var(--gold);outline-offset:2px}
 	.guard-summary{display:grid;grid-template-columns:minmax(180px,1.6fr) repeat(3,minmax(86px,1fr));gap:8px;margin:8px 0 16px}
 	.guard-score-card,.guard-kpi{padding:12px;border:1px solid var(--line);border-radius:5px;background:rgba(255,255,255,.025)}
-	.guard-score-card{border-left:3px solid var(--gold)}
+	.guard-score-card{border-top:3px solid var(--gold)}
 	.guard-score-value{color:var(--ink2);font-size:20px;line-height:1.2}
-	.guard-score-label,.guard-kpi-label{margin-top:4px;color:var(--dim);font:10px Inter,-apple-system,system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase}
+	.guard-score-label,.guard-kpi-label{margin-top:4px;color:var(--dim);font:10px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;letter-spacing:.08em;text-transform:uppercase}
 	.guard-kpi-value{color:var(--ink2);font-size:18px;line-height:1.2}
-	.guard-kpi.critical{border-left:3px solid var(--danger)}
-	.guard-kpi.warning{border-left:3px solid var(--warn)}
-	.guard-kpi.healthy{border-left:3px solid var(--ok)}
-	.guard-section-label{margin:8px 0;color:var(--gold);font:600 11px Inter,-apple-system,system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase}
+	.guard-kpi.critical{border-top:3px solid var(--danger)}
+	.guard-kpi.warning{border-top:3px solid var(--warn)}
+	.guard-kpi.healthy{border-top:3px solid var(--ok)}
+	.guard-section-label{margin:8px 0;color:var(--gold);font:600 11px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;letter-spacing:.08em;text-transform:uppercase}
 	.guard-list{display:flex;flex-direction:column;gap:6px}
-	.guard-finding{display:grid;grid-template-columns:22px minmax(140px,220px) minmax(0,1fr);gap:10px;align-items:start;padding:9px 10px;border:1px solid var(--line);border-left:3px solid var(--line);border-radius:4px;background:rgba(255,255,255,.018)}
-	.guard-finding.severity-3{border-left-color:var(--danger);background:color-mix(in srgb, var(--danger) 7%%, transparent)}
-	.guard-finding.severity-2{border-left-color:var(--warn);background:color-mix(in srgb, var(--warn) 6%%, transparent)}
-	.guard-finding.severity-1{border-left-color:var(--gold)}
-	.guard-finding.severity-0{border-left-color:var(--ok)}
+	.guard-finding{display:grid;grid-template-columns:22px minmax(140px,220px) minmax(0,1fr);gap:10px;align-items:start;padding:9px 10px;border:1px solid var(--line);border-radius:4px;background:rgba(255,255,255,.018)}
+	.guard-finding.severity-3{border-top:2px solid var(--danger);background:color-mix(in srgb, var(--danger) 7%%, transparent)}
+	.guard-finding.severity-2{border-top:2px solid var(--warn);background:color-mix(in srgb, var(--warn) 6%%, transparent)}
+	.guard-finding.severity-1{border-top:2px solid var(--gold)}
+	.guard-finding.severity-0{border-top:2px solid var(--ok)}
 	.guard-finding-icon{font-size:13px;line-height:1.4}
-	.guard-finding-name{color:var(--ink2);font:600 12px/1.4 Inter,-apple-system,system-ui,sans-serif}
-	.guard-finding-message{min-width:0;color:var(--dim);font:12px/1.45 Inter,-apple-system,system-ui,sans-serif;overflow-wrap:anywhere}
+	.guard-finding-name{color:var(--ink2);font:600 12px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+	.guard-finding-message{min-width:0;color:var(--dim);font:12px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;overflow-wrap:anywhere}
 	.guard-all{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
-	.guard-all summary{color:var(--dim);cursor:pointer;font:600 11px Inter,-apple-system,system-ui,sans-serif;letter-spacing:.04em}
+	.guard-all summary{color:var(--dim);cursor:pointer;font:600 11px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;letter-spacing:.04em}
 	.guard-all summary:focus-visible{outline:2px solid var(--gold);outline-offset:3px}
 	.guard-all .guard-list{margin-top:10px}
 	.engine-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:10px 0 14px}
@@ -173,34 +174,34 @@ font-family:Inter,-apple-system,system-ui,sans-serif;flex-shrink:0}
 	.engine-select:hover{border-color:var(--gold);background:color-mix(in srgb, var(--gold) 8%%, transparent)}
 	.engine-select:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 	.engine-select:disabled{border-color:var(--gold);color:var(--gold);cursor:default;opacity:.9}
-	.home-intro{max-width:1040px;margin:0 0 18px}
-	.home-hero{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(260px,.8fr);gap:22px;padding:18px 0 16px;border-bottom:1px solid var(--line)}
-	.home-title{color:var(--ink);font:600 26px/1.15 Inter,-apple-system,system-ui,sans-serif;letter-spacing:-.03em}
-	.home-subtitle{max-width:58ch;margin-top:8px;color:var(--ink2);font:13px/1.55 Inter,-apple-system,system-ui,sans-serif}
-	.home-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
-	.home-primary-action,.home-secondary-action{padding:8px 12px;border:1px solid var(--line);border-radius:4px;font:600 11px Inter,-apple-system,system-ui,sans-serif;cursor:pointer}
+	.home-intro{max-width:1180px;margin:0 auto 18px}
+	.home-hero{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(280px,.8fr);gap:28px;padding:30px 28px 26px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+	.home-title{color:var(--ink);font:700 34px/1.1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;letter-spacing:-.035em}
+	.home-subtitle{max-width:58ch;margin-top:12px;color:var(--ink2);font:15px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+	.home-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px}
+	.home-primary-action,.home-secondary-action{padding:10px 14px;border:1px solid var(--line);border-radius:6px;font:650 12px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;cursor:pointer}
 	.home-primary-action{border-color:var(--emerald);background:var(--emerald);color:var(--bg)}
 	.home-secondary-action{background:transparent;color:var(--gold)}
 	.home-primary-action:hover,.home-primary-action:focus-visible{filter:brightness(1.08);outline:2px solid var(--emerald);outline-offset:2px}
 	.home-secondary-action:hover,.home-secondary-action:focus-visible{border-color:var(--gold);background:color-mix(in srgb, var(--gold) 8%%, transparent);outline:2px solid var(--gold);outline-offset:2px}
-	.home-route{display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;margin:0;padding:12px;border:1px solid var(--line);border-radius:6px;background:var(--panel)}
-	.home-route-label{color:var(--dim);font:10px Inter,-apple-system,system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase}
-	.home-route-value{flex:1 1 160px;color:var(--ink);font:600 14px/1.25 Inter,-apple-system,system-ui,sans-serif}
-	.home-route-detail{flex-basis:100%%;color:var(--dim);font:11px/1.45 Inter,-apple-system,system-ui,sans-serif}
-	.home-route-action{padding:4px 8px;border:1px solid var(--line);border-radius:3px;background:transparent;color:var(--gold);font:600 11px Inter,-apple-system,system-ui,sans-serif;cursor:pointer}
+	.home-route{display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap;margin:0;padding:16px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+	.home-route-label{color:var(--dim);font:10px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;letter-spacing:.08em;text-transform:uppercase}
+	.home-route-value{flex:1 1 160px;color:var(--ink);font:600 14px/1.25 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+	.home-route-detail{flex-basis:100%%;color:var(--dim);font:11px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+	.home-route-action{padding:4px 8px;border:1px solid var(--line);border-radius:3px;background:transparent;color:var(--gold);font:600 11px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;cursor:pointer}
 	.home-route-action:hover,.home-route-action:focus-visible{border-color:var(--gold);background:color-mix(in srgb, var(--gold) 8%%, transparent);outline:2px solid var(--gold);outline-offset:2px}
-	.demo-rail{max-width:980px;margin:14px 0 18px;padding:12px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+	.demo-rail{max-width:1180px;margin:18px 0 22px;padding:16px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
 	.demo-rail-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
-	.demo-rail-title{color:var(--ink2);font:600 13px/1.4 Inter,-apple-system,system-ui,sans-serif;letter-spacing:.02em}
-	.demo-rail-subtitle{color:var(--dim);font:11px/1.4 Inter,-apple-system,system-ui,sans-serif}
+	.demo-rail-title{color:var(--ink2);font:600 13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;letter-spacing:.02em}
+	.demo-rail-subtitle{color:var(--dim);font:11px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
 	.demo-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin-top:10px}
 	.demo-step{min-width:0;padding:8px 14px 8px 0;border-right:1px solid var(--line)}
 	.demo-step+.demo-step{padding-left:14px}
 	.demo-step:last-child{padding-right:0;border-right:0}
-	.demo-step-index{color:var(--gold);font:600 10px Inter,-apple-system,system-ui,sans-serif;letter-spacing:.12em}
-	.demo-step-title{margin-top:3px;color:var(--ink2);font:600 12px/1.4 Inter,-apple-system,system-ui,sans-serif}
-	.demo-step-copy{min-height:34px;margin-top:3px;color:var(--dim);font:11px/1.45 Inter,-apple-system,system-ui,sans-serif}
-	.demo-step-action{margin-top:8px;padding:4px 8px;border:1px solid var(--line);border-radius:3px;background:transparent;color:var(--gold);font:600 10px Inter,-apple-system,system-ui,sans-serif;cursor:pointer}
+	.demo-step-index{color:var(--gold);font:600 10px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;letter-spacing:.12em}
+	.demo-step-title{margin-top:3px;color:var(--ink2);font:600 12px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+	.demo-step-copy{min-height:34px;margin-top:3px;color:var(--dim);font:11px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+	.demo-step-action{margin-top:8px;padding:4px 8px;border:1px solid var(--line);border-radius:3px;background:transparent;color:var(--gold);font:600 10px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;cursor:pointer}
 	.demo-step-action:hover,.demo-step-action:focus-visible{border-color:var(--gold);background:color-mix(in srgb, var(--gold) 8%%, transparent);outline:2px solid var(--gold);outline-offset:2px}
 	.t-sep{border-top:1px solid color-mix(in srgb, var(--gold) 6%%, transparent);margin:6px 0}
 	@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}}
@@ -258,7 +259,7 @@ font-family:Inter,-apple-system,system-ui,sans-serif;flex-shrink:0}
 		ColorEmerald,
 		ColorDim, ColorWhite, ColorEmerald, ColorEmerald,
 		ColorBorder,
-		ColorBorder, ColorBg,
+		ColorBorder,
 		ColorEmerald, ColorEmerald,
 		ColorBorder, ColorEmerald, ColorWhite,
 		navHTML.String(),
@@ -307,13 +308,13 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 <!-- Terminal -->
 <div class="terminal-wrap">
  <div class="term-input-bar">
-  <span class="term-prompt">𓉴 </span>
+  <span class="term-prompt">&gt;</span>
   <label class="sr-only" for="term-input">Command</label>
   <input type="text" class="term-input" id="term-input" aria-label="Command" placeholder="Ask a question or type a command (engine, scan, guard…)" autocomplete="off">
   <span class="term-view-label" id="view-label">home</span>
  </div>
  <div class="terminal" id="terminal">
-  <div class="t-line t-dim">𓂀 Horus — use sidebar or type a command</div>
+  <div class="t-line t-dim">Horus — use the sidebar or type a command</div>
  </div>
 </div>
 
@@ -415,7 +416,7 @@ function viewHome(){
 }
 
 function viewEngine(){
- out('◈ Engine — Pantheon routing','t-gold');
+ out('Engine — Pantheon routing','t-gold');
  out('Choose the preferred engine once; every surface uses the same ABI router.','t-dim');
  sep();
  fetch('/api/engine').then(function(r){return r.json().then(function(body){
@@ -447,12 +448,12 @@ function selectEngine(kind){
  fetch('/api/engine').then(function(r){return r.json()}).then(function(current){
   return fetch('/api/engine/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({preferred:kind,allow_fallback:current.allow_fallback,required_capabilities:current.required_capabilities||[]})})
  }).then(function(r){return r.json().then(function(body){if(!r.ok)throw new Error(body.error||('HTTP '+r.status));return body})})
- .then(function(){out('✓ Preferred engine set to '+kind.toUpperCase(),'t-ok');setTimeout(viewEngine,250)})
- .catch(function(e){out('✗ Engine selection rejected: '+e.message,'t-err')});
+ .then(function(){out('Preferred engine set to '+kind.toUpperCase(),'t-ok');setTimeout(viewEngine,250)})
+ .catch(function(e){out('Engine selection rejected: '+e.message,'t-err')});
 }
 
 function viewSNE(){
- out('⚡ SNE — Local AI Engine','t-gold');
+ out('SNE — Local AI Engine','t-gold');
  out('Pantheon installs, verifies, admits, and supervises. SNE computes. Nexus presents.','t-dim');
  sep();
  fetch('/api/sne').then(function(r){return r.json().then(function(body){
@@ -741,7 +742,7 @@ function pollSNEInstall(id){
 }
 
 function viewScan(){
- out('𓁢 Scan Results','t-gold');
+ out('Scan Results','t-gold');
  fetch('/api/findings').then(r=>r.json()).then(function(data){
   if(!data.findings||!data.findings.length){
    out('');out('No scan results. Type "scan" to run one.','t-dim');return}
@@ -840,7 +841,7 @@ function cleanIdx(el,idx){
 }
 
 function viewFleet(){
- out('⚑ Fleet — every lane, live','t-gold');
+ out('Fleet — every lane, live','t-gold');
  fetch('/api/fleet').then(function(r){
   if(!r.ok)return r.json().then(function(e){throw new Error(e.error||('HTTP '+r.status))});
   return r.json()}).then(function(d){
@@ -907,7 +908,7 @@ function viewFleet(){
 }
 
 function viewGhosts(){
- out('𓂓 Ghost Hunt — Scanning...','t-gold');
+ out('Ghost Hunt — Scanning...','t-gold');
  fetch('/api/ghosts').then(r=>r.json()).then(function(ghosts){
   if(!ghosts.length){out('');out('No ghost remnants found. System is clean.','t-ok');return}
   let total=0;ghosts.forEach(function(g){total+=g.total_size});
@@ -934,7 +935,7 @@ function viewGhosts(){
 }
 
 function viewGuard(){
- out('🛡 Guard — System Monitor','t-gold');
+ out('Guard — System Monitor','t-gold');
  out('');out('Running diagnostics...','t-dim');
  /* Lowercase keys only — /api/doctor marshals guard.DoctorReport through its
     json tags (score/findings/check/severity/message). This block used to read
@@ -981,7 +982,7 @@ function viewGuard(){
 }
 
 function viewNotifications(){
- out('🔔 Notifications','t-gold');
+ out('Notifications','t-gold');
  fetch('/api/notifications?limit=30').then(r=>r.json()).then(function(items){
   if(!items.length){out('');out('No notifications yet.','t-dim');return}
   out('  '+items.length+' recent notifications','t-dim');sep();
@@ -992,12 +993,12 @@ function viewNotifications(){
 }
 
 function viewHorus(){
- out('𓂀 Horus — Code Graph','t-gold');
+ out('Horus — Code Graph','t-gold');
  out('');out('Type a symbol name to search, or "horus scan" to analyze the project.','t-dim');
 }
 
 function viewVault(){
- out('🏛 Vault — Context Sandbox','t-gold');
+ out('Vault — Context Sandbox','t-gold');
  fetch('/api/vault/stats').then(r=>r.json()).then(function(s){
   out('  '+s.totalEntries+' entries · '+fmtSize(s.totalBytes||0)+' · '+
    Object.keys(s.tagCounts||{}).length+' tags','t-dim');
@@ -1009,7 +1010,7 @@ function viewVault(){
    entry point useful without creating a second registry or implying that
    mutation endpoints exist before the authenticated action surface is wired. */
 function viewRa(){
- out('𓇶 Ra — Fleet Orchestration','t-gold');
+ out('Ra — Fleet Orchestration','t-gold');
  out('');
  out('  M5 is the single worker/router authority.','t-out');
  out('');
