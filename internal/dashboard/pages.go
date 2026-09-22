@@ -141,6 +141,29 @@ font-family:Inter,-apple-system,system-ui,sans-serif;flex-shrink:0}
 	.t-empty-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
 	.t-empty-action{padding:6px 10px;border:1px solid var(--line);border-radius:4px;background:transparent;color:var(--gold);font:600 11px Inter,-apple-system,system-ui,sans-serif;cursor:pointer}
 	.t-empty-action:hover,.t-empty-action:focus-visible{border-color:var(--gold);background:color-mix(in srgb, var(--gold) 8%%, transparent);outline:2px solid var(--gold);outline-offset:2px}
+	.guard-summary{display:grid;grid-template-columns:minmax(180px,1.6fr) repeat(3,minmax(86px,1fr));gap:8px;margin:8px 0 16px}
+	.guard-score-card,.guard-kpi{padding:12px;border:1px solid var(--line);border-radius:5px;background:rgba(255,255,255,.025)}
+	.guard-score-card{border-left:3px solid var(--gold)}
+	.guard-score-value{color:var(--ink2);font-size:20px;line-height:1.2}
+	.guard-score-label,.guard-kpi-label{margin-top:4px;color:var(--dim);font:10px Inter,-apple-system,system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase}
+	.guard-kpi-value{color:var(--ink2);font-size:18px;line-height:1.2}
+	.guard-kpi.critical{border-left:3px solid var(--danger)}
+	.guard-kpi.warning{border-left:3px solid var(--warn)}
+	.guard-kpi.healthy{border-left:3px solid var(--ok)}
+	.guard-section-label{margin:8px 0;color:var(--gold);font:600 11px Inter,-apple-system,system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase}
+	.guard-list{display:flex;flex-direction:column;gap:6px}
+	.guard-finding{display:grid;grid-template-columns:22px minmax(140px,220px) minmax(0,1fr);gap:10px;align-items:start;padding:9px 10px;border:1px solid var(--line);border-left:3px solid var(--line);border-radius:4px;background:rgba(255,255,255,.018)}
+	.guard-finding.severity-3{border-left-color:var(--danger);background:color-mix(in srgb, var(--danger) 7%%, transparent)}
+	.guard-finding.severity-2{border-left-color:var(--warn);background:color-mix(in srgb, var(--warn) 6%%, transparent)}
+	.guard-finding.severity-1{border-left-color:var(--gold)}
+	.guard-finding.severity-0{border-left-color:var(--ok)}
+	.guard-finding-icon{font-size:13px;line-height:1.4}
+	.guard-finding-name{color:var(--ink2);font:600 12px/1.4 Inter,-apple-system,system-ui,sans-serif}
+	.guard-finding-message{min-width:0;color:var(--dim);font:12px/1.45 Inter,-apple-system,system-ui,sans-serif;overflow-wrap:anywhere}
+	.guard-all{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
+	.guard-all summary{color:var(--dim);cursor:pointer;font:600 11px Inter,-apple-system,system-ui,sans-serif;letter-spacing:.04em}
+	.guard-all summary:focus-visible{outline:2px solid var(--gold);outline-offset:3px}
+	.guard-all .guard-list{margin-top:10px}
 	.engine-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:10px 0 14px}
 	.engine-card{display:flex;flex-direction:column;gap:6px;padding:12px;border:1px solid var(--line);border-radius:4px;background:rgba(255,255,255,.025);min-height:122px}
 	.engine-card.selected{border-color:var(--gold);background:color-mix(in srgb, var(--gold) 8%%, transparent)}
@@ -179,6 +202,10 @@ font-family:Inter,-apple-system,system-ui,sans-serif;flex-shrink:0}
 	 .t-cmd-desc{min-width:0;overflow-wrap:anywhere}
 	 .t-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
 	 .t-col-r{min-width:0;text-align:left}
+	 .guard-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
+	 .guard-score-card{grid-column:1/-1}
+	 .guard-finding{grid-template-columns:22px minmax(0,1fr)}
+	 .guard-finding-message{grid-column:2}
 	 .engine-grid{grid-template-columns:1fr}
 	}
 </style>
@@ -847,12 +874,37 @@ function viewGuard(){
     16 real findings shown as none, on the one screen whose whole job is to
     tell you something is wrong. Pinned by TestGuardView_ReadsDoctorJSONKeys… */
  fetch('/api/doctor').then(r=>r.json()).then(function(rpt){
-  out('  Health Score: '+rpt.score+'/100','t-head');sep();
   const fs=rpt.findings||[];
-  if(!fs.length){out('  No diagnostics returned.','t-dim')}
-  fs.forEach(function(f){
-   const icon=({0:'✅',1:'ℹ️',2:'⚠️',3:'🔴'}[f.severity]||'⚪');
-   out('  '+icon+' '+f.check+' — '+f.message)});
+  const counts={0:0,1:0,2:0,3:0};fs.forEach(function(f){counts[f.severity]=(counts[f.severity]||0)+1});
+  const summary=document.createElement('div');summary.className='guard-summary';summary.setAttribute('aria-label','Guard health summary');
+  const score=document.createElement('div');score.className='guard-score-card';
+  const scoreValue=document.createElement('div');scoreValue.className='guard-score-value';scoreValue.textContent=(rpt.score==null?'—':rpt.score)+'/100';
+  const scoreLabel=document.createElement('div');scoreLabel.className='guard-score-label';scoreLabel.textContent='Health score';score.appendChild(scoreValue);score.appendChild(scoreLabel);summary.appendChild(score);
+  [{key:3,label:'Critical',cls:'critical'},{key:2,label:'Warnings',cls:'warning'},{key:0,label:'Healthy',cls:'healthy'}].forEach(function(k){
+   const card=document.createElement('div');card.className='guard-kpi '+k.cls;
+   const value=document.createElement('div');value.className='guard-kpi-value';value.textContent=counts[k.key]||0;
+   const label=document.createElement('div');label.className='guard-kpi-label';label.textContent=k.label;card.appendChild(value);card.appendChild(label);summary.appendChild(card);
+  });
+  T.appendChild(summary);
+  function findingRow(f){
+   const row=document.createElement('div');row.className='guard-finding severity-'+(f.severity==null?0:f.severity);
+   const icon=document.createElement('span');icon.className='guard-finding-icon';icon.textContent=({0:'✅',1:'ℹ️',2:'⚠️',3:'🔴'}[f.severity]||'⚪');
+   const name=document.createElement('span');name.className='guard-finding-name';name.textContent=f.check||'Unnamed check';
+   const message=document.createElement('span');message.className='guard-finding-message';message.textContent=f.message||'No detail provided';
+   row.appendChild(icon);row.appendChild(name);row.appendChild(message);return row;
+  }
+  const attention=fs.filter(function(f){return Number(f.severity)>=2});
+  const section=document.createElement('div');section.className='guard-section-label';section.textContent=attention.length?'Needs attention':'All checks healthy';T.appendChild(section);
+  const issueList=document.createElement('div');issueList.className='guard-list';
+  if(attention.length){attention.forEach(function(f){issueList.appendChild(findingRow(f))})}
+  else if(fs.length){fs.slice(0,3).forEach(function(f){issueList.appendChild(findingRow(f))})}
+  else{const empty=document.createElement('div');empty.className='t-dim';empty.textContent='No diagnostics returned.';issueList.appendChild(empty)}
+  T.appendChild(issueList);
+  if(fs.length>attention.length && attention.length){
+   const all=document.createElement('details');all.className='guard-all';
+   const allSummary=document.createElement('summary');allSummary.textContent='Show all '+fs.length+' checks';all.appendChild(allSummary);
+   const allList=document.createElement('div');allList.className='guard-list';fs.forEach(function(f){allList.appendChild(findingRow(f))});all.appendChild(allList);T.appendChild(all);
+  }
   sep();out('');
   out('Process Slayer — type: kill node | kill electron | kill docker | kill lsp | kill build | kill ai','t-dim');
   out('Deprioritize — type: deprioritize (safe, reversible — lowers background process priority)','t-dim');

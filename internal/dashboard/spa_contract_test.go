@@ -87,6 +87,22 @@ func TestGuardView_ReadsDoctorJSONKeysNotGoFieldNames(t *testing.T) {
 	}
 }
 
+func TestGuardViewProvidesSeveritySummaryAndProgressiveDisclosure(t *testing.T) {
+	page := fetchSPA(t)
+
+	for _, want := range []string{
+		"guard-summary",
+		"Needs attention",
+		"Show all '+fs.length+' checks",
+		"guard-finding-message",
+		"Health score",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("Guard view missing structured summary contract %q", want)
+		}
+	}
+}
+
 // TestHomeView_CommandsAreClickable pins the affordance fix: the home screen
 // listed eight commands as inert text, so the only way to act on one was to
 // retype it. Each is now a row that dispatches through the same exec() the
