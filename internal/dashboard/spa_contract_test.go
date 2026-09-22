@@ -120,6 +120,9 @@ func TestHomeView_CommandsAreClickable(t *testing.T) {
 			t.Errorf("home demo path missing %q", want)
 		}
 	}
+	if !strings.Contains(page, "engine:'engine'") {
+		t.Error("engine Home action is not connected to the engine selector view")
+	}
 	if !strings.Contains(page, "row.addEventListener('click',go)") {
 		t.Error("command rows carry no click handler")
 	}

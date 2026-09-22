@@ -990,7 +990,7 @@ function exec(raw){
  if(raw==='home'){switchView('home');return}
 
  /* View switches */
- const viewMap={scan:'scan',ghosts:'ghosts',guard:'guard',doctor:'guard',
+ const viewMap={scan:'scan',ghosts:'ghosts',guard:'guard',engine:'engine',doctor:'guard',
   notifications:'notifications',horus:'horus',vault:'vault',ra:'ra',deploy:'ra'};
  if(viewMap[raw]){switchView(viewMap[raw]);return}
 
