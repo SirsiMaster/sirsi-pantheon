@@ -208,6 +208,14 @@ const claudeAuthProbeTimeout = 30 * time.Second
 // single 30s probe — a raised production budget must not slow the test suite.
 const authProbeTimeoutEnv = "SIRSI_AUTH_PROBE_TIMEOUT_MS"
 
+// AuthProbeTimeoutEnv exports authProbeTimeoutEnv for callers outside this
+// package (the `node-status` operator-surface CLI, 2026-09-20: SHA measured
+// the default 30s cold-start budget making that specific read-only surface
+// time out against an 8s caller deadline; setting this env var to a bounded
+// value fixed it without touching the deliberately-generous production
+// default other callers — dispatch, doctor — still need).
+const AuthProbeTimeoutEnv = authProbeTimeoutEnv
+
 // claudeProbeTimeout returns the Claude auth-probe timeout, honoring an override
 // from authProbeTimeoutEnv (ms) when it is a positive integer.
 func claudeProbeTimeout() time.Duration {
