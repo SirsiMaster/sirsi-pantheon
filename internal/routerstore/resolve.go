@@ -1,6 +1,7 @@
 package routerstore
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -44,7 +45,19 @@ func Resolve() (Store, error) {
 		// env — a GUI app, a plist with no EnvironmentVariables, an old shell — must
 		// not fall back to the local file: it would read a frozen copy as if live,
 		// or create an empty ledger and split the fabric (observed 2026-09-10).
-		return nil, fmt.Errorf("routerstore: this host is cut over to the router service (%s exists) but SIRSI_ROUTER_URL is unset — run `source ~/.zshenv` or start the process with the service env; the local file is not a ledger here", p)
+		//
+		// Self-heal instead of just erroring (2026-09-23: a live Codex session
+		// spawned outside any shell that sources ~/.zshenv hit this on the M5 —
+		// "the router relay failed and confirmed nothing was sent"; the marker
+		// this process just found IS the authoritative pointer the cut-over
+		// wrote, so read the URL/trust-group straight out of it and proceed —
+		// this is NOT the forbidden fallback: it never touches a local ledger,
+		// it only recovers the same pointer `source ~/.zshenv` would have set.
+		if url := loadCutOverEnv(p); url != "" {
+			os.Setenv("SIRSI_ROUTER_URL", url)
+			return Resolve()
+		}
+		return nil, fmt.Errorf("routerstore: this host is cut over to the router service (%s exists) but SIRSI_ROUTER_URL is unset and could not be recovered from the marker file — run `source ~/.zshenv` or start the process with the service env; the local file is not a ledger here", p)
 	}
 	path, err := LocalPath()
 	if err != nil {
@@ -56,6 +69,63 @@ func Resolve() (Store, error) {
 		}
 	}
 	return OpenPath(path)
+}
+
+// loadCutOverEnv parses the simple `export KEY='value'` / `export KEY="value"`
+// lines a cut-over script writes to path (scripts/router-service/cutover-*.sh)
+// and sets each recognized variable in this process's own environment — but
+// ONLY when that variable is not already set, so an operator's explicit
+// override always wins over the file. Returns the SIRSI_ROUTER_URL value
+// found ("" if none), which is all the caller needs to know recovery
+// succeeded; SIRSI_RELAY_TRUST_GROUP is set as a side effect for the spool
+// client to pick up via its own later os.Getenv (internal/routerstore/spool.go).
+// Malformed or unreadable input yields "" — never a partial, misleading state.
+func loadCutOverEnv(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	recognized := map[string]bool{"SIRSI_ROUTER_URL": true, "SIRSI_RELAY_TRUST_GROUP": true}
+	var url string
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		line = strings.TrimPrefix(line, "export ")
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, val, ok := strings.Cut(line, "=")
+		if !ok || !recognized[key] {
+			continue
+		}
+		// Extract the value: a quoted string up to its matching close-quote
+		// (a trailing shell comment like the real M5 file's
+		// `export SIRSI_RELAY_TRUST_GROUP="_sirsipantheon"  # added by claude-io ...`
+		// sits safely outside that range and is discarded), or the first
+		// whitespace-delimited token when unquoted.
+		val = strings.TrimSpace(val)
+		if len(val) >= 2 && (val[0] == '\'' || val[0] == '"') {
+			if end := strings.IndexByte(val[1:], val[0]); end >= 0 {
+				val = val[1 : 1+end]
+			} else {
+				val = "" // unterminated quote — malformed, do not guess
+			}
+		} else if i := strings.IndexAny(val, " \t#"); i >= 0 {
+			val = val[:i]
+		}
+		if val == "" {
+			continue
+		}
+		if strings.TrimSpace(os.Getenv(key)) == "" {
+			os.Setenv(key, val)
+		}
+		if key == "SIRSI_ROUTER_URL" {
+			url = strings.TrimSpace(os.Getenv(key))
+		}
+	}
+	return url
 }
 
 // cutOverMarker returns the path of the per-host service env file when it
