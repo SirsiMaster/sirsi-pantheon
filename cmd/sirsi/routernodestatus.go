@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/spf13/cobra"
@@ -19,6 +20,18 @@ import (
 // it never existed.
 
 var routerNodeStatusJSON bool
+var routerNodeStatusProbeTimeoutMS int
+
+// nodeStatusDefaultProbeTimeoutMS bounds the Claude auth probe for THIS
+// operator surface only. The library default (claudeAuthProbeTimeout, 30s) is
+// deliberately generous for dispatch/doctor callers that can afford to wait
+// out a cold CLI start; node-status is read-only and operator-facing, and a
+// hung/cold probe should degrade to "inconclusive" fast rather than stall the
+// whole surface. SHA measured 2026-09-20: default 30s budget made node-status
+// --json time out at an 8s caller deadline with zero output; 1000ms returned
+// full data in 7.2s. 5s here keeps real signal (most warm CLIs answer well
+// under that) while bounding the worst case to a fraction of the old 30-60s.
+const nodeStatusDefaultProbeTimeoutMS = 5000
 
 var routerNodeStatusCmd = &cobra.Command{
 	Use:   "node-status",
@@ -29,11 +42,19 @@ auth health into one read-model. Mirrors GET /api/node-status (ADR-026);
 --json output is byte-identical to the HTTP body.
 
 This is a read-only verb: it never registers a thread, writes the inbox, or
-mutates registry state.`,
+mutates registry state.
+
+The Claude auth probe is bounded to --probe-timeout-ms (default 5000) for
+this surface — pass a higher value (e.g. 30000) for the full cold-start
+patience dispatch/doctor use, or set SIRSI_AUTH_PROBE_TIMEOUT_MS yourself to
+override outright; an explicit env var always wins over the flag default.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		repoRoot, err := router.FindRepoRoot()
 		if err != nil {
 			return fmt.Errorf("locate repo root: %w", err)
+		}
+		if os.Getenv(router.AuthProbeTimeoutEnv) == "" {
+			os.Setenv(router.AuthProbeTimeoutEnv, strconv.Itoa(routerNodeStatusProbeTimeoutMS))
 		}
 		ns, err := router.CollectNodeStatus(repoRoot, nil)
 		if err != nil {
@@ -163,5 +184,7 @@ func renderNodeStatus(ns *router.NodeStatus) {
 func init() {
 	routerNodeStatusCmd.Flags().BoolVar(&routerNodeStatusJSON, "json", false,
 		"Output the raw NodeStatus JSON (byte-identical to GET /api/node-status)")
+	routerNodeStatusCmd.Flags().IntVar(&routerNodeStatusProbeTimeoutMS, "probe-timeout-ms", nodeStatusDefaultProbeTimeoutMS,
+		"Bound the Claude auth probe to this many milliseconds (ignored if SIRSI_AUTH_PROBE_TIMEOUT_MS is already set)")
 	routerCmd.AddCommand(routerNodeStatusCmd)
 }
