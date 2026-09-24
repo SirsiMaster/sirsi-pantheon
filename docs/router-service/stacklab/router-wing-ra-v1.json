@@ -33,7 +33,10 @@
     "component_catalog": "docs/router-service/ROUTER_STACK_LAB_RECIPE.md@6eaa89b4b8cbaa659cdef3d1b85e94ec2b59f851",
     "receipt_links": [
       "router:20260911-034655-codex-inference-ra-router-architecture-review-for-sne-and-multi-wing-operation",
-      "router:20260911-034750-codex-inference-ra-router-breaker-evidence-addendum"
+      "router:20260911-034750-codex-inference-ra-router-breaker-evidence-addendum",
+      "sirsi-stacklab:docs/router-architecture/ROUTER_HIERARCHY.md",
+      "sirsi-stacklab:docs/router-architecture/ROUTER_TECHNICAL_MAP.md",
+      "sirsi-stacklab:docs/router-architecture/README.md"
     ]
   },
   "mirrors": {

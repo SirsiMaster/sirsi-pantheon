@@ -19,10 +19,16 @@ copied into Pantheon as an editable second authority (per codex-inference,
 | `router-wing-ra-v1.json` (this wing's record) | `contracts/stacklab/v2/fixtures/router-wing-ra-v1.json` | `f03456822b36c0649f34e474c23e74bc4a1020d6484195458ae781df99095ce7` |
 | `reject-router-wing-cross-project-write.json` (negative control) | `contracts/stacklab/v2/fixtures/reject-router-wing-cross-project-write.json` | `cf69bca52c39b4598759fde1ac2926a478ada1a3f01c8ccb1ae9b046cef089ad` |
 
-The wing record `router-wing-ra-v1.json` is vendored **beside this file** as
-provenance (byte-identical to the SNE fixture, SHA256 `f0345682…`). To refresh,
-re-fetch from the SNE authority and re-verify the hash — never hand-edit the
-vendored copy into drift.
+The **schema** is SNE's and consumed by hash (above) — never forked here. The
+**record** `router-wing-ra-v1.json` is **Ra's wing** (`owner: ra`): Ra owns and
+maintains its content — `provenance.receipt_links`, `next_action`, `mirrors`,
+and the like — as the router wing evolves, exactly as ADR-066 requires ("each
+owner binds their own record"). It was seeded from an SNE fixture template
+(SHA256 `f0345682…`), but the seed is a starting point, not a standing lock: the
+only hard invariant is that the record **validates against `wing.schema.json`**
+(verified with `stacklab.ValidateWing` / `sirsi stacklab doctor` before any
+re-pin). Do not add fields the schema does not define; do keep the record
+current with the wing's real provenance.
 
 ## The wing
 
