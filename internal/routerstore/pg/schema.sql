@@ -304,9 +304,16 @@ CREATE TABLE IF NOT EXISTS host_tokens (
     host       TEXT NOT NULL,
     label      TEXT NOT NULL DEFAULT '',
     created    TEXT NOT NULL,
-    revoked    TEXT NOT NULL DEFAULT ''
+    revoked    TEXT NOT NULL DEFAULT '',
+    machine_id TEXT NOT NULL DEFAULT ''   -- ADR-067 (rs-42): adopted once, proof = the token
 );
 CREATE INDEX IF NOT EXISTS idx_host_tokens_host ON host_tokens(host, revoked);
+-- existing databases: the CREATE above is a no-op, so add the column explicitly.
+ALTER TABLE host_tokens ADD COLUMN IF NOT EXISTS machine_id TEXT NOT NULL DEFAULT '';
+-- ADR-067 §3.2 exclusivity: at most one NON-REVOKED token per machine id (caps the
+-- worst case at a reversible DoS, not silent impersonation). Revoking frees the id.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_host_tokens_machine_id
+    ON host_tokens(machine_id) WHERE machine_id <> '' AND revoked = '';
 
 -- ── wake-event triggers (final state after migrations 10..15) ─────────────
 -- Each is one function + one trigger. A wake event is emitted in the SAME
@@ -494,6 +501,6 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA router TO router_service;
 ALTER DEFAULT PRIVILEGES IN SCHEMA router GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO router_service;
 
 -- ── version — last, so a partial apply never publishes a version it does not have ──
-INSERT INTO schema_version(version, applied_at) VALUES (22, router.now_rfc3339())
-  ON CONFLICT (singleton) DO UPDATE SET version = 22, applied_at = router.now_rfc3339()
-  WHERE schema_version.version < 22;
+INSERT INTO schema_version(version, applied_at) VALUES (23, router.now_rfc3339())
+  ON CONFLICT (singleton) DO UPDATE SET version = 23, applied_at = router.now_rfc3339()
+  WHERE schema_version.version < 23;

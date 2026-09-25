@@ -70,7 +70,7 @@ echo "tables=$tables triggers=$triggers partial=$partial version=$version"
 # The version pin MUST track internal/routerstore/open_postgres.go postgresSchemaVersion (and
 # scripts/check-pg-schema.sh). It sat at 20 through v21 and v22: exec sirsi-router-apply-schema-mlccq
 # (2026-09-13) applied v22 correctly and then reported FAIL-shape purely from this stale literal.
-[ "$tables" = 16 ] && [ "$triggers" = 12 ] && [ "$partial" -ge 5 ] && [ "$version" = 22 ] || { echo FAIL-shape; exit 1; }
+[ "$tables" = 16 ] && [ "$triggers" = 12 ] && [ "$partial" -ge 5 ] && [ "$version" = 23 ] || { echo FAIL-shape; exit 1; }
 # Closed privilege audit of router_service: every DDL path, not one probe.
 members=$(q "SELECT coalesce(string_agg(b.rolname, ','), '') FROM pg_auth_members m JOIN pg_roles b ON b.oid=m.roleid JOIN pg_roles r ON r.oid=m.member WHERE r.rolname='router_service'")
 attrs=$(q "SELECT rolsuper||' '||rolcreaterole||' '||rolcreatedb||' '||rolbypassrls FROM pg_roles WHERE rolname='router_service'")  # booleans render as true/false

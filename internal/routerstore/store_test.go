@@ -971,8 +971,8 @@ func TestConnEstablishRetriesReadonlyContention(t *testing.T) {
 // ceiling — 22 since the v22 read-ack column). Values stay empty —
 // derivation/backfill is rs-32b.
 func TestSchemaV21AddsScopeColumns(t *testing.T) {
-	if MaxSupportedSchemaVersion() != 22 {
-		t.Fatalf("MaxSupportedSchemaVersion = %d, want 22", MaxSupportedSchemaVersion())
+	if MaxSupportedSchemaVersion() != 23 {
+		t.Fatalf("MaxSupportedSchemaVersion = %d, want 23", MaxSupportedSchemaVersion())
 	}
 	path := filepath.Join(t.TempDir(), "v21.db")
 	s, err := OpenPath(path)
@@ -980,8 +980,8 @@ func TestSchemaV21AddsScopeColumns(t *testing.T) {
 		t.Fatalf("open (v21 migration must apply cleanly): %v", err)
 	}
 	defer s.Close()
-	if v, err := ReadSchemaVersion(path); err != nil || v != 22 {
-		t.Fatalf("fresh store version = %d (err %v), want 22", v, err)
+	if v, err := ReadSchemaVersion(path); err != nil || v != 23 {
+		t.Fatalf("fresh store version = %d (err %v), want 23", v, err)
 	}
 	// Columns must exist and be usable (WHERE 1=0 touches no rows but binds them).
 	if _, e := s.exec(`UPDATE items SET project_id='p', router_namespace='n' WHERE 1=0;`); e != nil {
@@ -1021,6 +1021,7 @@ func TestV20ToV21UpgradeWithExistingRows(t *testing.T) {
 		ALTER TABLE items DROP COLUMN project_id; ALTER TABLE items DROP COLUMN router_namespace;
 		ALTER TABLE tasks DROP COLUMN project_id; ALTER TABLE tasks DROP COLUMN router_namespace;
 		ALTER TABLE items DROP COLUMN acked_at;
+		DROP INDEX idx_host_tokens_machine_id; ALTER TABLE host_tokens DROP COLUMN machine_id;
 		PRAGMA user_version=20;`); e != nil {
 		t.Fatalf("rewind to genuine v20: %v", e)
 	}
@@ -1033,8 +1034,8 @@ func TestV20ToV21UpgradeWithExistingRows(t *testing.T) {
 		t.Fatalf("v20 to v21 upgrade must apply cleanly: %v", err)
 	}
 	defer s2.Close()
-	if v, e := ReadSchemaVersion(path); e != nil || v != 22 {
-		t.Fatalf("post-upgrade version = %d (err %v), want 22 (v20 upgrades through v21 to the current ceiling)", v, e)
+	if v, e := ReadSchemaVersion(path); e != nil || v != 23 {
+		t.Fatalf("post-upgrade version = %d (err %v), want 23 (v20 upgrades through v21 to the current ceiling)", v, e)
 	}
 	// Existing rows survive with default-empty scope values (no backfill guess).
 	var proj, ns string

@@ -158,6 +158,14 @@ func TestReapDeadThreads_DefunctAndGone(t *testing.T) {
 		}
 	})
 	defer setPIDStateFn(old)
+	// The claude-surface command check (PIDStateOfThread) runs after the state
+	// prober says PIDAlive: without controlling the command prober too, PID 4003
+	// collides with whatever real process holds that pid on the host/runner, whose
+	// command is not "claude", so the alive thread is misjudged PIDMismatched and
+	// over-reaped. Pin the command prober so this test is hermetic w.r.t. real pids.
+	oldCmd := getPIDCommandFn()
+	setPIDCommandFn(func(pid int) string { return "claude" })
+	defer setPIDCommandFn(oldCmd)
 
 	reaped, err := ReapDeadThreads(tmp)
 	if err != nil {
