@@ -34,6 +34,15 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	defer os.RemoveAll(dbDir)
+	// rs-23a: Resolve() checks SIRSI_ROUTER_URL BEFORE the SIRSI_ROUTER_DB seam
+	// below, so on any host (or CI runner) that carries the router service env,
+	// setting the db alone does NOT isolate — the test binary routes to the LIVE
+	// service via the relay and its threadAuthority refuses on host drift
+	// (TestReapDeadThreads_DefunctAndGone reddened main this way). Clear the
+	// service env so the db seam actually takes; the SIRSI_ROUTER_DB set marks
+	// this a sandbox process, so the cut-over refusal in Resolve is a no-op.
+	os.Unsetenv("SIRSI_ROUTER_URL")
+	os.Unsetenv("SIRSI_ROUTER_TOKEN")
 	os.Setenv("SIRSI_ROUTER_DB", filepath.Join(dbDir, "router.db"))
 
 	// Same class, third instance — the spawn-ceiling ledger (#639 C3). It
