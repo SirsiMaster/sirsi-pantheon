@@ -15,6 +15,9 @@ type Store interface {
 	AckItem(id string) error
 	AckWakeEvent(eventID, token, ackRef string) error
 	AddRequirement(title, source, sourceRef, owner string) (Requirement, error)
+	// AdoptTokenMachineID binds the caller's live host token to a stable machine
+	// id (ADR-067). host is injected server-side from the authenticated session.
+	AdoptTokenMachineID(host, machineID string) error
 	AddTask(t Task) error
 	AllocateIdentifier(namespace, title, owner string) (Identifier, error)
 	Backfill(items []Item) (BackfillReport, error)
@@ -47,6 +50,10 @@ type Store interface {
 	GetState(key string) (string, bool, error)
 	GetTask(agent, taskID string) (Task, error)
 	Heartbeat(id string) error
+	// HostIdentity resolves an identity string to its canonical machine id via
+	// adopted host tokens (ADR-067 §3.3). Server-internal (notServed): read by
+	// threadAuthority and MintSession, never reachable over the wire.
+	HostIdentity(id string) (string, error)
 	ImportThreadsIfEmpty(records []ThreadRecord) error
 	Inbox(agent string) ([]Item, error)
 	ItemSession(id string) (string, error)

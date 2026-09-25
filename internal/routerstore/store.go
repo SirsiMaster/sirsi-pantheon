@@ -741,6 +741,20 @@ CREATE INDEX IF NOT EXISTS idx_tasks_scope ON tasks(project_id, router_namespace
 	{22, `
 ALTER TABLE items ADD COLUMN acked_at TEXT NOT NULL DEFAULT '';
 `},
+	// v23 — ADR-067 (rs-42/rs-43): credentialed machine-id adoption. A host token
+	// may adopt the caller's stable machine id ONCE (proof = the token itself,
+	// which MintSession already verifies), so identity survives hostname drift.
+	// The partial UNIQUE index is the ADR-067 §3.2 exclusivity invariant: at most
+	// one NON-REVOKED token may hold a given machine id — this is what caps the
+	// worst case at a reversible DoS instead of silent impersonation. Revoking a
+	// token frees its machine id (the revoked!='' rows drop out of the index).
+	// Every test that rewinds user_version below 23 on a forward schema must DROP
+	// this column + index first, or replaying duplicates them (rs-32a lesson).
+	{23, `
+ALTER TABLE host_tokens ADD COLUMN machine_id TEXT NOT NULL DEFAULT '';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_host_tokens_machine_id
+    ON host_tokens(machine_id) WHERE machine_id != '' AND revoked = '';
+`},
 }
 
 // migrate applies any pending numbered migrations, tracked via the SQLite

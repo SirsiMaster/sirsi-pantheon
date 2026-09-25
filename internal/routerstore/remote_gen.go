@@ -18,6 +18,9 @@ func (rs *RemoteStore) AddRequirement(title, source, sourceRef, owner string) (R
 	return o0, err
 }
 func (rs *RemoteStore) AddTask(t Task) error { return rs.call("AddTask", []any{t}) }
+func (rs *RemoteStore) AdoptTokenMachineID(host, machineID string) error {
+	return rs.call("AdoptTokenMachineID", []any{host, machineID})
+}
 func (rs *RemoteStore) AllocateIdentifier(namespace, title, owner string) (Identifier, error) {
 	var o0 Identifier
 	err := rs.call("AllocateIdentifier", []any{namespace, title, owner}, &o0)
@@ -147,6 +150,11 @@ func (rs *RemoteStore) GetTask(agent, taskID string) (Task, error) {
 	return o0, err
 }
 func (rs *RemoteStore) Heartbeat(id string) error { return rs.call("Heartbeat", []any{id}) }
+func (rs *RemoteStore) HostIdentity(id string) (string, error) {
+	var o0 string
+	err := rs.call("HostIdentity", []any{id}, &o0)
+	return o0, err
+}
 func (rs *RemoteStore) ImportThreadsIfEmpty(records []ThreadRecord) error {
 	return rs.call("ImportThreadsIfEmpty", []any{records})
 }

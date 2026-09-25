@@ -52,6 +52,9 @@ var notServed = map[string]bool{
 	"BindItemSession": true, "ItemSession": true, "BindTaskSession": true, "TaskSession": true,
 	"MintHostToken": true, "LookupHostToken": true, "RevokeHostToken": true, "ListHostTokens": true,
 	"Close": true, "RecordAudience": true,
+	// HostIdentity is the ADR-067 identity resolver: read by threadAuthority and
+	// the mint host-check, never a node-reachable RPC (it takes no credential).
+	"HostIdentity": true,
 }
 
 // itemOwnership: method → index of the item id argument. The caller's session
@@ -102,7 +105,7 @@ const ruleOfRaDefaultStale = 10 * time.Minute
 var ruleOfRaExempt = map[string]bool{
 	"MintSession": true, "MintSessionForThread": true, "ThreadBinding": true,
 	"UpsertThreads": true, "UpsertThreadCAS": true, "ResumeThreadCAS": true, "DeleteThreadCAS": true, "ImportThreadsIfEmpty": true,
-	"Heartbeat": true, "RegisterAgent": true, "ListThreads": true,
+	"Heartbeat": true, "RegisterAgent": true, "ListThreads": true, "AdoptTokenMachineID": true,
 	"Get": true, "Inbox": true, "ListAll": true, "ListTasks": true, "GetTask": true, "GetAgent": true, "ListAgents": true,
 	"GetState": true, "Counters": true, "Breakers": true, "Render": true, "ListWakeEvents": true, "ListIdentifiers": true,
 	"ListRequirements": true, "UnmetRequirements": true, "RunnableFor": true, "ClassifyLane": true, "OperationalAgents": true,
@@ -137,8 +140,34 @@ var ErrThreadAuthority = errors.New("routerstore: thread authority — a session
 // runtime heuristic. See internal/machineid.InTransition's doc comment and
 // ledger rs-42/rs-43 for the design this still needs.
 func (s *server) threadAuthority(sess Session, name string, in []reflect.Value) error {
-	mismatch := func(recordHost string) bool {
-		return recordHost != sess.Host
+	// AdoptTokenMachineID is a host-bearing verb, not a thread verb: scope it to
+	// the authenticated host exactly as DeleteThreadCAS is scoped below — inject
+	// sess.Host so a caller can only adopt onto its OWN token (ADR-067 §3.1). The
+	// client's arg[0] is never trusted.
+	if name == "AdoptTokenMachineID" {
+		if len(in) > 0 {
+			in[0] = reflect.ValueOf(sess.Host)
+		}
+		return nil
+	}
+	// The session's canonical identity, resolved once (ADR-067 §3.3). Equal host
+	// strings always match; two DIFFERENT strings match ONLY when a live, adopted
+	// host token ties both to the same machine id — a fact created by an
+	// authenticated act (AdoptTokenMachineID), never inferred from string shape
+	// (the rejected bridge — see the NOTE above and IDENTITY_ARCHITECTURE §4).
+	sessID, err := s.store.HostIdentity(sess.Host)
+	if err != nil {
+		return fmt.Errorf("thread authority: resolve session host %q: %w", sess.Host, err)
+	}
+	mismatch := func(recordHost string) (bool, error) {
+		if recordHost == sess.Host {
+			return false, nil
+		}
+		rid, herr := s.store.HostIdentity(recordHost)
+		if herr != nil {
+			return true, fmt.Errorf("thread authority: resolve record host %q: %w", recordHost, herr)
+		}
+		return rid != sessID, nil
 	}
 	own := func(id string) error {
 		b, err := s.store.ThreadBinding(id)
@@ -148,14 +177,26 @@ func (s *server) threadAuthority(sess Session, name string, in []reflect.Value) 
 		if err != nil {
 			return fmt.Errorf("thread authority: lookup %s: %w", id, err)
 		}
-		if b.Host != "" && mismatch(b.Host) {
-			return fmt.Errorf("%w: thread %s is on %s, session %s@%s (method %s)", ErrThreadAuthority, id, b.Host, sess.Agent, sess.Host, name)
+		if b.Host != "" {
+			bad, merr := mismatch(b.Host)
+			if merr != nil {
+				return merr
+			}
+			if bad {
+				return fmt.Errorf("%w: thread %s is on %s, session %s@%s (method %s)", ErrThreadAuthority, id, b.Host, sess.Agent, sess.Host, name)
+			}
 		}
 		return nil
 	}
 	stamp := func(r *ThreadRecord) error {
-		if r.Host != "" && mismatch(r.Host) {
-			return fmt.Errorf("%w: record %s names host %s, session is on %s (method %s)", ErrThreadAuthority, r.ThreadID, r.Host, sess.Host, name)
+		if r.Host != "" {
+			bad, merr := mismatch(r.Host)
+			if merr != nil {
+				return merr
+			}
+			if bad {
+				return fmt.Errorf("%w: record %s names host %s, session is on %s (method %s)", ErrThreadAuthority, r.ThreadID, r.Host, sess.Host, name)
+			}
 		}
 		r.Host = sess.Host
 		return own(r.ThreadID)
@@ -323,9 +364,16 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 		// session secret stolen from host A be replayed with any valid token for
 		// host B.  The service bootstrap token is deliberately operator-wide.
 		//
-		if tokenHost != bootstrapHost && tokenHost != sess.Host {
-			writeErr(w, http.StatusForbidden, "", ErrHostMismatch.Error()+": token is for "+tokenHost)
-			return
+		if tokenHost != bootstrapHost {
+			same, serr := s.sameIdentity(tokenHost, sess.Host)
+			if serr != nil {
+				writeErr(w, http.StatusServiceUnavailable, "", "identity resolve unavailable: "+serr.Error())
+				return
+			}
+			if !same {
+				writeErr(w, http.StatusForbidden, "", ErrHostMismatch.Error()+": token is for "+tokenHost)
+				return
+			}
 		}
 		// 6. the Rule of Ra — every thread registers or receives no audience.
 		if mode := s.opts.RuleOfRa; mode != "off" && !ruleOfRaExempt[name] {
@@ -366,16 +414,25 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 	// claim to be another machine. The bootstrap token is unconstrained.
 	//
 	// A shape-based "legacy token may claim a machine id" waiver was drafted
-	// and rejected here too, for a related reason: it would turn any
-	// hostname-bound token into a credential that mints a session for ANY
-	// machine id the caller chooses, not just its own host's — a real
-	// widening of what that token authorizes, not a neutral bridge. See the
-	// note on threadAuthority above; same conclusion, same ledger rows.
+	// and rejected here too: it would turn any hostname-bound token into a
+	// credential that mints a session for ANY machine id the caller chooses,
+	// not just its own host's — a real widening of what that token authorizes.
+	// The SANCTIONED path is instead ADR-067's AdoptTokenMachineID: the token
+	// binds its own machine id once, by an authenticated act, and only then does
+	// a claim of that id resolve (via sameIdentity) to this token's host. A
+	// claim that has NOT been adopted still fails exactly as before.
 	if isMint && tokenHost != bootstrapHost && len(req.Args) > 0 {
 		var claimed string
-		if json.Unmarshal(req.Args[0], &claimed) == nil && claimed != tokenHost {
-			writeErr(w, http.StatusForbidden, "", ErrHostMismatch.Error()+": token is for "+tokenHost)
-			return
+		if json.Unmarshal(req.Args[0], &claimed) == nil {
+			same, serr := s.sameIdentity(claimed, tokenHost)
+			if serr != nil {
+				writeErr(w, http.StatusServiceUnavailable, "", "identity resolve unavailable: "+serr.Error())
+				return
+			}
+			if !same {
+				writeErr(w, http.StatusForbidden, "", ErrHostMismatch.Error()+": token is for "+tokenHost)
+				return
+			}
 		}
 	}
 
@@ -601,6 +658,25 @@ func Sign(secret, method, nonce string, body []byte) string {
 
 // bootstrapHost is the host name recorded for the ServerOptions.Token path.
 const bootstrapHost = "*"
+
+// sameIdentity reports whether two identity strings resolve to the same machine
+// (ADR-067 §3.3): equal strings always do; different strings do ONLY when a
+// live, adopted host token ties both to one machine id. The bool is the verdict;
+// a non-nil error is a STORE failure (map to 503), never an auth verdict.
+func (s *server) sameIdentity(a, b string) (bool, error) {
+	if a == b {
+		return true, nil
+	}
+	ida, err := s.store.HostIdentity(a)
+	if err != nil {
+		return false, err
+	}
+	idb, err := s.store.HostIdentity(b)
+	if err != nil {
+		return false, err
+	}
+	return ida == idb, nil
+}
 
 // hostForBearer resolves the bearer to a host: the bootstrap token → "*",
 // a minted per-host token → its host, anything else → not authorized. The
