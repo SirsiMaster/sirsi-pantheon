@@ -169,24 +169,33 @@ func (s *server) threadAuthority(sess Session, name string, in []reflect.Value) 
 		}
 		return rid != sessID, nil
 	}
-	own := func(id string) error {
+	// authorizedHost checks the caller may touch id and returns the host string
+	// the store fence must carry: "" when the caller should stamp its OWN
+	// identity (a new thread, or a blank legacy row that is adoptable), or the
+	// existing binding's host when that host resolves to the caller's machine via
+	// an adopted alias (ADR-067). It preserves the host AUTHORIZED BY THIS LOOKUP
+	// and never re-reads — so if a competing host adopts the row between here and
+	// the store write, the caller's stamped identity no longer matches and the
+	// store's own host fence (threads.go) makes it lose, exactly as before.
+	authorizedHost := func(id string) (string, error) {
 		b, err := s.store.ThreadBinding(id)
 		if errors.Is(err, ErrThreadUnknown) {
-			return nil
+			return "", nil
 		}
 		if err != nil {
-			return fmt.Errorf("thread authority: lookup %s: %w", id, err)
+			return "", fmt.Errorf("thread authority: lookup %s: %w", id, err)
 		}
-		if b.Host != "" {
-			bad, merr := mismatch(b.Host)
-			if merr != nil {
-				return merr
-			}
-			if bad {
-				return fmt.Errorf("%w: thread %s is on %s, session %s@%s (method %s)", ErrThreadAuthority, id, b.Host, sess.Agent, sess.Host, name)
-			}
+		if b.Host == "" {
+			return "", nil
 		}
-		return nil
+		bad, merr := mismatch(b.Host)
+		if merr != nil {
+			return "", merr
+		}
+		if bad {
+			return "", fmt.Errorf("%w: thread %s is on %s, session %s@%s (method %s)", ErrThreadAuthority, id, b.Host, sess.Agent, sess.Host, name)
+		}
+		return b.Host, nil
 	}
 	stamp := func(r *ThreadRecord) error {
 		if r.Host != "" {
@@ -198,8 +207,16 @@ func (s *server) threadAuthority(sess Session, name string, in []reflect.Value) 
 				return fmt.Errorf("%w: record %s names host %s, session is on %s (method %s)", ErrThreadAuthority, r.ThreadID, r.Host, sess.Host, name)
 			}
 		}
-		r.Host = sess.Host
-		return own(r.ThreadID)
+		keep, err := authorizedHost(r.ThreadID)
+		if err != nil {
+			return err
+		}
+		if keep != "" {
+			r.Host = keep // preserve the aliased existing string so the store fence accepts
+		} else {
+			r.Host = sess.Host
+		}
+		return nil
 	}
 	switch name {
 	case "UpsertThreads", "ImportThreadsIfEmpty":
@@ -217,8 +234,16 @@ func (s *server) threadAuthority(sess Session, name string, in []reflect.Value) 
 		}
 		in[0] = reflect.ValueOf(r)
 	case "DeleteThreadCAS":
-		in[3] = reflect.ValueOf(sess.Host)
-		return own(in[0].Interface().(string))
+		keep, err := authorizedHost(in[0].Interface().(string))
+		if err != nil {
+			return err
+		}
+		host := sess.Host
+		if keep != "" {
+			host = keep // aliased prune targets the row's own (authorized) host string
+		}
+		in[3] = reflect.ValueOf(host)
+		return nil
 	}
 	return nil
 }
