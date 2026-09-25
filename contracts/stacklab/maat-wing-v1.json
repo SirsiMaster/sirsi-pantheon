@@ -1,0 +1,50 @@
+{
+  "schema": "sirsi.stacklab.wing.v1",
+  "id": "stacklab.wing.maat",
+  "owner": "Maat \u2014 QA Sovereign (steward: ra; custodian: owner)",
+  "project_id": "sirsi-pantheon",
+  "router_namespace": "maat",
+  "class": "control-plane",
+  "scope": "Quality, truth, and order governance: the Ma'at pre-push/CI gate (A28), the Feather-Weight quality score (A17), the Stack Lab measurement guards, incident intelligence and recurrence prevention, and the metal reservation scheduler that admits, schedules, and de-conflicts shared machine and rail usage across every lane. Judges and governs; does NOT own the code, engines, transport, or hardware it measures.",
+  "status": "active",
+  "first_gate": "MAAT-WING-001.G1",
+  "workspace": {
+    "repository_root": "/Users/thekryptodragon/Development/sirsi-pantheon",
+    "writable_roots": [
+      "/Users/thekryptodragon/Development/sirsi-pantheon/docs/qa",
+      "/Users/thekryptodragon/Development/sirsi-pantheon/internal/maat"
+    ],
+    "evidence_root": "/Users/thekryptodragon/Development/sirsi-pantheon/docs/evidence/maat",
+    "shared_payload_access": "none",
+    "boundary_policy": "default-deny"
+  },
+  "handoffs": {
+    "inbound": "router-receipt-only",
+    "outbound": "router-receipt-only",
+    "allowed_peer_wings": [
+      "stacklab.wing.m1-ra",
+      "stacklab.wing.io-connect",
+      "stacklab.wing.sne-engine",
+      "stacklab.wing.hardware-estate"
+    ]
+  },
+  "provenance": {
+    "lifecycle_task_id": "maat-wing-v1",
+    "component_catalog": "docs/QA_PLAN.md",
+    "receipt_links": [
+      "sirsi-stacklab:canon/docs/engineering/MAAT_INCIDENT_INTELLIGENCE_AND_RECURRENCE_POLICY.md",
+      "sirsi-stacklab:canon/docs/engineering/MAAT_GUARD_STACKLAB_LOAD_FILTER_SELF_INTERFERENCE_20260916.md",
+      "sirsi-stacklab:canon/docs/engineering/MAAT_GUARD_STACKLAB_MEASURE_ON_VERIFIED_SHA_20260917.md",
+      "sirsi-stacklab:canon/docs/engineering/MAAT_FAILURE_MEMORY_AND_RECIPE_PREFLIGHT_POLICY.md",
+      "router:20260924-121653-claude-io-ra-stand-up-the-ma-at-metal-scheduler-per-machine-reservations",
+      "router:20260924-145757-claude-io-ra-ma-at-scheduler-2nd-foreign-run-collision-today-raise-priori",
+      "router:20260924-195508-ra-claude-io-ma-at-metal-scheduler-live-on-both-macs"
+    ]
+  },
+  "mirrors": {
+    "repository": "current",
+    "desktop": "pending",
+    "workspace": "pending"
+  },
+  "next_action": "MAAT-WING-001.G1 DELIVERED: the metal reservation scheduler is built (sirsi-pantheon #781, internal/maat/schedule + `sirsi maat \u2026`), deployed M1+M5, and cross-host enforcement proven live (an M1 rail reservation refuses an M5 foreign reserve, exit 97). Open follow-ups: per-rail traffic detector (maat-02) and the dashboard tile (maat-03)."
+}

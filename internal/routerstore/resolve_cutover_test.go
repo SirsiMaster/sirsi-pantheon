@@ -24,13 +24,33 @@ func TestResolveRefusesLocalFileOnCutOverHost(t *testing.T) {
 	} else {
 		_ = s.Close()
 	}
+	dbPath := filepath.Join(home, ".sirsi", "router.db")
+	before, statErr := os.Stat(dbPath) // the plain-host call above legitimately created this
+	if statErr != nil {
+		t.Fatalf("expected router.db from the plain-host resolve above: %v", statErr)
+	}
 	if err := os.WriteFile(filepath.Join(home, ".sirsi", "router-service.env"), []byte("export SIRSI_ROUTER_URL=x\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err := Resolve()
-	if err == nil || !strings.Contains(err.Error(), "cut over") {
-		t.Fatalf("cut-over host without env must refuse the local file, got %v", err)
+	// Self-heal (2026-09-23) means this marker's bare "x" IS now recovered as
+	// SIRSI_ROUTER_URL, so Resolve refuses for a different, legitimate reason
+	// (x is not a spool:// URL and carries no token) rather than the original
+	// "unset" message — a stronger proof of the actual invariant this test
+	// protects, since it now exercises the RemoteStore/token path entirely and
+	// never goes anywhere near LocalPath(). Assert the invariant directly: the
+	// pre-existing router.db from the plain-host phase above is untouched.
+	if _, err := Resolve(); err == nil {
+		t.Fatal("cut-over host without a usable env must refuse, got success")
 	}
+	after, statErr := os.Stat(dbPath)
+	if statErr != nil {
+		t.Fatalf("router.db vanished: %v", statErr)
+	}
+	if !after.ModTime().Equal(before.ModTime()) || after.Size() != before.Size() {
+		t.Fatalf("cut-over host must never touch the local router.db: before=%v/%d after=%v/%d",
+			before.ModTime(), before.Size(), after.ModTime(), after.Size())
+	}
+	t.Setenv("SIRSI_ROUTER_URL", "") // undo this test's own self-heal before the explicit-DB case below
 	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(home, "explicit.db"))
 	if s, err := Resolve(); err != nil {
 		t.Fatalf("explicit SIRSI_ROUTER_DB must still open: %v", err)

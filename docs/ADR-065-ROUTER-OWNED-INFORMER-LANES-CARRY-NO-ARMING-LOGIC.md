@@ -4,6 +4,8 @@
 
 **Proposed** — 2026-09-13. Owner decision, given directly in-session: *"two way with a watcher and informer logic in the router... that way lanes don't have to have arming logic; the watcher code is in the router."* Authored by `ra` (router / worker-plane, ADR-062/063). Requires SHA (`sirsi-hardware-admin`, who raised the A2A question) and SSA bind before implementation. Ledger: `rs-37-adr065-router-owned-informer` (blocked-by `rs-36`).
 
+**Hardware-seat verdict 2026-09-16 (claude-io acting as sirsi-hardware-admin, owner delegation to 2026-09-19; item `20260916-040736`): ACCEPT as written, with two conditions on the build (rs-37): (1) node identity is config-pinned before or with the informer — rs-42 lands first or as one cut-over; (2) Decision 6 supervision covers the token holder's host binding (`token host == pinned node host`), not liveness alone. Cut-over needs rs-22-style proof-before-retire per lane per host, M1/M5 first. SSA verdict and owner bind still pending.
+
 ## Context
 
 On 2026-09-13, one review cycle produced four independent failures with a single shape:

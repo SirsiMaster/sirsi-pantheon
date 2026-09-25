@@ -500,6 +500,10 @@ Anubis scans filesystems and processes. Scan results may contain sensitive infor
 | "the broker is capped at 20.8 GiB" | one allocator (MLX's) | 43.94 GB footprint; three OOM kills in 24h |
 | "Phase 4 — all four deliverables shipped" | graded by its own author | a required `DEPRECATED` warning was never shipped and was marked complete |
 | "the fork storm is *the* cause of the OOM" | one window (before 22:17Z) | a third Jetsam fired 21 min later from a different consumer |
+| "the runner's environment is clean" (2026-09-16) | verified once, at the FIRST `env -i` launch | the SAME session, hours later, restarted it with a bare `nohup` (no `env -i`), inheriting every `SIRSI_*` var exported in the interactive shell meanwhile — silently reintroduced the exact contamination already diagnosed and fixed, twice, in one night |
+| "PR #761 built and locally verified, full test suite green" (2026-09-16) | `go test` WITHOUT `-race`; CI runs WITH it | merged with a live data race in `terminateConsumer` (goroutine read of a package var the test mutates and defer-restores); caught only when an unrelated docs-only PR rebased onto `main` and CI's race detector fired — fixed in PR #768. "Green locally" must mean "under CI's exact flags," or it is a smaller claim than the words say |
+
+**"Clean" is a property of one invocation, not of a session or a script.** "I already fixed the environment" is a claim about a moment, not a standing fact — the very next restart, copy-pasted without the isolation flag, is a fresh claim that needs its own verification. Treat every process-launch command as guilty until the launched process's OWN environment is read back (`ps eww -p <pid>`), not until the command LOOKS like the one that worked before.
 
 Two more from the same week, same shape: `sirsi diagnose` reporting **100/100 across 16 signals** while macOS displayed *out of application memory* (none of the 16 measured swap headroom or process growth); and `isCapacityCappedGemmaBroker`, which **exempted Sirsi's own broker** from the memory-hog check on the premise that two other checks would catch it — both of which also sampled the wrong metric.
 
@@ -518,6 +522,20 @@ Two more from the same week, same shape: `sirsi diagnose` reporting **100/100 ac
 *   **A cause established in one window is *a* cause.** Check whether the symptom recurred after the fix.
 
 **Enforcement**: Ma'at and review treat an unscoped claim as a defect even when the code is correct, because the record is the thing later work depends on. Where a scope gap cannot be closed now, the claim MUST be narrowed in the same change, with the residual named.
+
+### 2.34 A Record Exists Only On Origin (Rule A37)
+> Established September 16, 2026 (ADR-066), after a Stack Lab wing record committed on the M5 and never pushed sat behind a roster entry that declared it live — invisible to the M1, to origin, and to every check, with no alarm.
+
+**Rule**: A canonical record — a Stack Lab wing, a contract fixture, a catalog — exists for the fabric **only** when it is on `origin/main` of its owning repository at its canonical path. A local commit, an unpushed commit, an unmerged branch, a control-plane copy, a mirror, or a host-local file is **stranded** and does not count. Where a universal registry exists (`SirsiMaster/sirsi-stacklab` for wings), it **pins** origin records by content hash and authors nothing; an unpinned entry is a draft.
+
+**How to apply:**
+
+1. A roster entry (e.g. the router wing's `allowed_peer_wings`) is a claim that a record exists. The claim is checked against `origin/main`, never against a working tree or a mirror (A35: scope the check to the claim).
+2. A check that can name a stranded record MUST exist and MUST run in CI: `stranded/unbuilt`, `unpushed`, `unpinned`, `undeclared`, `invalid`. Red for a declared-but-unbuilt record is the honest state, not a failure of the check.
+3. A pre-push guard refuses to leave a canonical-path change behind on an unmerged branch.
+4. Mirrors (fleet-mirror, Reading Room, Workspace) carry origin content and are never the source.
+
+**Enforcement**: a review that accepts "it is on the M5" or "it is in the mirror" as proof of existence has accepted a stranded record. The reviewer names the origin commit or the record does not exist.
 
 ## 3. Technology Stack
 
