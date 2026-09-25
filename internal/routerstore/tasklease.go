@@ -52,10 +52,6 @@ func (s *Store) claimTask(agent, exactTaskID, worker, threadID string, ttl time.
 	if err != nil {
 		return nil, err
 	}
-	token, err := newToken()
-	if err != nil {
-		return nil, err
-	}
 	now := s.clock().UTC()
 	tx, err := s.beginImmediate()
 	if err != nil {
@@ -93,6 +89,44 @@ func (s *Store) claimTask(agent, exactTaskID, worker, threadID string, ttl time.
 		  AND (lease_token<>'' OR lease_expires<>'' OR claimed_by<>'' OR thread_id<>'');`,
 		now.Format(time.RFC3339), agent); err != nil {
 		return nil, fmt.Errorf("routerstore: clear non-active task leases: %w", err)
+	}
+
+	// A caller may retry after the transaction committed but before its lease
+	// response arrived. Return that still-live lease for the same worker/thread
+	// rather than claiming the next task a second time. Exact claims are
+	// idempotent only for the same task; a different explicit task remains a
+	// distinct request.
+	existingQuery := `SELECT task_id,lease_token,lease_expires,attempts FROM tasks
+		WHERE agent=? AND status='in-progress' AND claimed_by=? AND thread_id=?
+		  AND lease_token<>'' AND lease_expires>?`
+	existingArgs := []any{agent, worker, threadID, now.Format(time.RFC3339)}
+	if exactTaskID != "" {
+		existingQuery += ` AND task_id=?`
+		existingArgs = append(existingArgs, exactTaskID)
+	}
+	existingQuery += ` ORDER BY created,task_id LIMIT 1;`
+	var existing TaskLease
+	var existingExpiry string
+	err = tx.QueryRow(existingQuery, existingArgs...).Scan(&existing.TaskID, &existing.Token, &existingExpiry, &existing.Attempt)
+	if err == nil {
+		existing.Agent = agent
+		existing.Worker = worker
+		existing.ThreadID = threadID
+		existing.Expires, err = time.Parse(time.RFC3339, existingExpiry)
+		if err != nil {
+			return nil, fmt.Errorf("routerstore: parse existing task lease expiry: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return nil, fmt.Errorf("routerstore: commit existing task lease lookup: %w", err)
+		}
+		return &existing, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("routerstore: find existing task lease: %w", err)
+	}
+	token, err := newToken()
+	if err != nil {
+		return nil, err
 	}
 
 	var taskID string
@@ -136,7 +170,7 @@ func (s *Store) claimTask(agent, exactTaskID, worker, threadID string, ttl time.
 
 func (s *Store) taskLeaseUpdate(agent, taskID, token string, query string, args ...any) error {
 	now := s.clock().UTC()
-	args = append(args, agent, taskID, token, now.Format(time.RFC3339))
+	args = append(args, strings.TrimSpace(agent), strings.TrimSpace(taskID), strings.TrimSpace(token), now.Format(time.RFC3339))
 	res, err := s.db.Exec(query+taskLeaseFence+`;`, args...)
 	if err != nil {
 		return fmt.Errorf("routerstore: task lease update: %w", err)
@@ -178,6 +212,7 @@ func (s *Store) CompleteTaskLease(agent, taskID, token, resultRef string) error 
 // The attempt counter is retained and the reason is recorded in failure_reason;
 // blocked_by remains reserved exclusively for dependency identity.
 func (s *Store) ReleaseTaskLease(agent, taskID, token, reason string) error {
+	agent, taskID, token = strings.TrimSpace(agent), strings.TrimSpace(taskID), strings.TrimSpace(token)
 	now := s.clock().UTC()
 	tx, err := s.beginImmediate()
 	if err != nil {

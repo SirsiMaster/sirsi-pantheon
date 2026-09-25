@@ -35,6 +35,38 @@ func TestTaskLeaseClaimRenewComplete(t *testing.T) {
 	if err != nil || got.Status != "done" {
 		t.Fatalf("task not completed: %+v err=%v", got, err)
 	}
+	if got.ResultRef != "proof://R1" {
+		t.Fatalf("task result reference = %q, want proof://R1", got.ResultRef)
+	}
+}
+
+// TestTaskLeaseUpdatesTolerateWhitespaceContaminatedToken covers the router
+// item filed by claude-io 2026-09-25: a lease token round-tripped through a
+// shell (e.g. `$(... --json | jq .lease_id)`) can pick up a trailing
+// newline. Every other identity field in this file (agent, worker, thread,
+// task id) is TrimSpace'd at its entry point; the token was not, so a
+// same-session, same-token complete/release/renew call was rejected with
+// ErrLeaseInvalid even though the lease genuinely existed server-side.
+func TestTaskLeaseUpdatesTolerateWhitespaceContaminatedToken(t *testing.T) {
+	s := newTestStore(t)
+	if err := s.AddTask(Task{Agent: "claude-io", TaskID: "R1", Subject: "runtime"}); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := s.ClaimNextTask("claude-io", "worker-1", "thread-1", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dirty := lease.Token + "\n"
+	if err := s.RenewTaskLease(lease.Agent, lease.TaskID, dirty, time.Minute); err != nil {
+		t.Fatalf("renew with whitespace-contaminated token: %v", err)
+	}
+	if err := s.CompleteTaskLease(lease.Agent, lease.TaskID, dirty, "proof://R1"); err != nil {
+		t.Fatalf("complete with whitespace-contaminated token: %v", err)
+	}
+	got, err := s.GetTask("claude-io", "R1")
+	if err != nil || got.Status != "done" {
+		t.Fatalf("task not completed: %+v err=%v", got, err)
+	}
 }
 
 func TestTaskLeaseExpiryReclaimsAndFencesOldWorker(t *testing.T) {
