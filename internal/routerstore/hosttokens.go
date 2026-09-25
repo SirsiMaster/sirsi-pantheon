@@ -140,13 +140,13 @@ func (s *SQLiteStore) AdoptTokenMachineID(host, machineID string) error {
 	var toks []tok
 	for rows.Next() {
 		var t tok
-		if err := rows.Scan(&t.id, &t.mid); err != nil {
+		if err = rows.Scan(&t.id, &t.mid); err != nil {
 			_ = rows.Close()
 			return err
 		}
 		toks = append(toks, t)
 	}
-	if err := rows.Err(); err != nil {
+	if err = rows.Err(); err != nil {
 		_ = rows.Close()
 		return err
 	}
