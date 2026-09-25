@@ -1,0 +1,9 @@
+# Sirsi Mail Ops — account registry (ADR-062).
+# Copy to ~/.sirsi/mailops/accounts.yaml (or point `sirsi mail --accounts`
+# at a custom path). No secrets live here — only the token file path.
+# Run `sirsi mail auth <label>` once per account first to mint that token.
+
+accounts:
+  - label: sirsi
+    email: cylton@sirsi.ai
+    token_path: ~/.sirsi/mailops/token-sirsi.json

@@ -1,5 +1,5 @@
 # Deity Registry — Canonical Glyph & Domain Reference
-**Version:** 2.1.0 | **Date:** May 19, 2026 | **Custodian:** Net (The Weaver)
+**Version:** 2.2.0 | **Date:** September 25, 2026 | **Custodian:** Net (The Weaver)
 
 > This document is the single source of truth for deity identities, glyphs, and functional domains across the entire Sirsi portfolio. Every repo, hook, CLI output, and agent prompt must reference this registry. Misattributing a deity's glyph or function is a governance violation.
 
@@ -15,7 +15,7 @@
 | **Ma'at** | 𓆄 | Quality Gate | QA governance, quality gates, pre-push hooks, coverage audits, Feather Weight scoring, router governance validation | All pre-push gates across all repos are Ma'at's domain |
 | **Isis** | 𓁐 | Health & Remediation | Doctor, network security, process guard, remediation engine, auto-fix lint/vet/coverage/canon drift, watchdog daemon, CPU/RAM monitoring, ANE hardening | |
 | **Seshat** | 𓁆 | Knowledge Bridge | Knowledge grafting, ingestion/export, Gemini Bridge, NotebookLM sync, cross-platform knowledge | |
-| **Anubis** | 𓃣 | Hygiene Engine | Infrastructure hygiene, waste scanning, policy enforcement, ghost app detection, residual hunting, file deduplication, semantic ranking | Jackal head (profile), NOT full-body jackal |
+| **Anubis** | 𓃣 | Hygiene Engine | Infrastructure hygiene, waste scanning, policy enforcement, ghost app detection, residual hunting, file deduplication, semantic ranking, **mailbox hygiene** (poison-message detection, archive-only cleanup, sender census — ADR-067) | Jackal head (profile), NOT full-body jackal |
 | **Seba** | 𓇽 | Infra & Hardware | Architecture mapping, topology visualization, dependency graphs, fleet discovery, subnet scanning, container audit, hardware detection, GPU/ANE/CUDA profiling | Absorbs Hapi (v2.0.0) |
 | **Horus** | 𓂀 | Local Workstation Lord | Per-desktop runtime node: daemon health, local agent/window visibility, repo status, operator dashboard, code graph (AST symbols), file watching | Ra orchestrates across machines; Horus sees everything on ONE machine (ADR-017) |
 | **Osiris** | 𓁹 | Checkpoint Guardian | Uncommitted work detection, risk assessment, time-based escalation, checkpoint snapshots | NOT the quality gate — that's Ma'at |
