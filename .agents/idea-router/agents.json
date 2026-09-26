@@ -1,5 +1,19 @@
 {
   "agents": {
+    "cylton-hermes": {
+      "id": "cylton-hermes",
+      "type": "claude",
+      "command": [
+        "claude"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/sirsi-io-connect",
+      "repo": "/Users/thekryptodragon/Development/sirsi-io-connect",
+      "workstream": "hermes",
+      "wake": {
+        "mechanism": "none"
+      },
+      "consumer": {}
+    },
     "claude-assiduous": {
       "id": "claude-assiduous",
       "type": "claude",
