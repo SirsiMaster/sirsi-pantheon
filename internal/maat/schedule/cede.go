@@ -11,12 +11,14 @@
 // so every lane keeps getting time on every machine, and the whole exchange
 // (who asked, who ceded, what, when, why) is recorded for audit.
 //
-// No ticket beyond an open ask (owner directive, 2026-09-26): a lane answers
-// every cede request addressed to it — grant, counter, or decline — before it
-// starts or extends work; its current run always finishes. Reserve and Extend
-// (reservation.go) refuse while any cede addressed to the holder sits
-// pending; Heartbeat and Release are unaffected, so a run in progress runs to
-// completion. Any response, or a withdraw by the requester, clears the block.
+// No ticket beyond an open ask, but never a lockout (owner directive,
+// 2026-09-26): a lane is expected to answer every cede request addressed to
+// it — grant, counter, or decline — before it starts or extends NEW work at
+// full share. Reserve and Extend (reservation.go) never refuse for this; they
+// cap the grant to the floor share (capacity.go) while any cede addressed to
+// the holder sits pending, and Heartbeat/Release are unaffected either way,
+// so a run in progress always runs to completion. Any response, or a
+// withdraw by the requester, restores full grants on the next call.
 package schedule
 
 import (
@@ -287,8 +289,12 @@ func newCedeID(resource, requester string, now time.Time) string {
 }
 
 // pendingCedeIDs returns the ids of every pending cede addressed to holder,
-// across all resources — the check behind "no ticket beyond an open ask"
-// (Reserve/Extend, reservation.go).
+// across all resources — the check behind "no ticket beyond an open ask, but
+// never a lockout" (Reserve/Extend, reservation.go): while any id is
+// returned, new or extended work for holder is capped to the floor share
+// (capacity.go) rather than refused. Any response (grant/counter/decline) or
+// a withdraw by the requester clears an id from this list on the next call,
+// which is all Reserve/Extend need to restore full grants.
 func (l *Ledger) pendingCedeIDs(holder string) ([]string, error) {
 	cedes, err := l.ListCedes(CedeFilter{Holder: holder, PendingOnly: true})
 	if err != nil {
@@ -299,18 +305,4 @@ func (l *Ledger) pendingCedeIDs(holder string) ([]string, error) {
 		ids = append(ids, c.ID)
 	}
 	return ids, nil
-}
-
-// PendingCedeError is returned by Extend when its reservation's holder has an
-// unanswered cede request — extending is new work, refused the same way
-// Reserve refuses (via ReserveResult.PendingCedes).
-type PendingCedeError struct {
-	Holder   string
-	Resource string
-	CedeIDs  []string
-}
-
-func (e *PendingCedeError) Error() string {
-	return fmt.Sprintf("maat: %s has %d unanswered cede request(s) — answer them (grant/counter/decline) before starting or extending work: %s",
-		e.Holder, len(e.CedeIDs), strings.Join(e.CedeIDs, ", "))
 }
