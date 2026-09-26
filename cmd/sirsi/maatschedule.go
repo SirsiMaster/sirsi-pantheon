@@ -17,6 +17,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/spf13/cobra"
@@ -32,6 +33,57 @@ func maatLedger() (*schedule.Ledger, error) {
 		return nil, fmt.Errorf("resolve router store: %w", err)
 	}
 	return schedule.NewLedger(st), nil
+}
+
+var newMaatDecisionJournal = func() (maat.DecisionJournal, error) {
+	return maat.NewDefaultDecisionJournal()
+}
+
+// recordReservationDecision gives every native reserve outcome the same
+// explanatory shape that the dashboard, CLI, and future Ra projection read.
+// The reservation store remains the scheduler authority; this is an append-only
+// explanation of the decision, never a second reservation registry.
+func recordReservationDecision(req schedule.Reservation, result schedule.ReserveResult) error {
+	journal, err := newMaatDecisionJournal()
+	if err != nil {
+		return err
+	}
+	decision := maat.Decision{
+		Kind:          "reservation grant",
+		Requester:     req.Holder,
+		Resource:      req.Resource,
+		Assessed:      "no conflicting active reservation",
+		Determination: "grant",
+		Why:           "requested window is available",
+	}
+	switch {
+	case result.Granted:
+		if result.Reservation != nil {
+			decision.Evidence = "reservation:" + result.Reservation.ID
+		}
+	case result.Queued:
+		decision.Kind = "reservation queue"
+		decision.Assessed = "conflicting active reservation"
+		decision.Determination = "queue"
+		decision.Why = "request queued behind current holder"
+		if result.Conflict != nil {
+			decision.Affected = result.Conflict.Holder
+			decision.Evidence = "reservation:" + result.Conflict.ID
+		}
+	default:
+		decision.Kind = "reservation refusal"
+		decision.Assessed = "conflicting active reservation"
+		decision.Determination = "refuse"
+		decision.Why = "requested window overlaps a live foreign reservation"
+		if result.Conflict != nil {
+			decision.Affected = result.Conflict.Holder
+			decision.Evidence = "reservation:" + result.Conflict.ID
+		}
+	}
+	if err := journal.Append(decision); err != nil {
+		return fmt.Errorf("append Ma'at reservation decision: %w", err)
+	}
+	return nil
 }
 
 func emitJSON(v any) error {
@@ -78,6 +130,12 @@ A harness calls this before touching a cable; it is the rails.lock replacement.`
 		if err != nil {
 			return err
 		}
+		if err := recordReservationDecision(req, res); err != nil {
+			// The scheduler state is already durable. Return the append failure
+			// explicitly so a caller never mistakes an unprojected decision for a
+			// complete, drillable outcome.
+			return err
+		}
 		if maatJSON {
 			_ = emitJSON(res)
 		} else if res.Granted {
@@ -122,6 +180,39 @@ var maatStatusCmd = &cobra.Command{
 		for _, r := range rows {
 			fmt.Printf("  %-14s %-9s %-7s %-12s %s → %s  %s\n",
 				r.Resource, r.Status, r.Regime, r.Holder, short(r.Start), short(r.EstEnd), r.Work)
+		}
+		return nil
+	},
+}
+
+var maatDecisionsCmd = &cobra.Command{
+	Use:   "decisions",
+	Short: "Show recent Ma'at grants, refusals, queues, and assessment reasons",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		journal, err := newMaatDecisionJournal()
+		if err != nil {
+			return err
+		}
+		rows, err := journal.Recent(50)
+		if err != nil {
+			return err
+		}
+		if maatJSON {
+			return emitJSON(rows)
+		}
+		if len(rows) == 0 {
+			fmt.Println("𓆄 no Ma'at decisions recorded")
+			return nil
+		}
+		fmt.Printf("𓆄 Ma'at decisions (%d)\n", len(rows))
+		for _, d := range rows {
+			affected := ""
+			if d.Affected != "" {
+				affected = " affects " + d.Affected
+			}
+			fmt.Printf("  %-7s %-10s %-12s %-14s %s%s\n",
+				short(d.Time), d.Determination, d.Resource, d.Requester, d.Why, affected)
 		}
 		return nil
 	},
@@ -351,10 +442,10 @@ func init() {
 	maatCoverageCmd.Flags().IntVar(&covHorizon, "horizon", 24, "horizon hours")
 	maatConflictCheckCmd.Flags().StringVar(&conflictMachine, "machine", "", "machine to probe (default: the resource)")
 
-	for _, c := range []*cobra.Command{maatStatusCmd, maatWhoCmd, maatHeartbeatCmd, maatReleaseCmd, maatCoverageCmd, maatShouldDeferCmd, maatConflictCheckCmd, maatExtendCmd} {
+	for _, c := range []*cobra.Command{maatStatusCmd, maatDecisionsCmd, maatWhoCmd, maatHeartbeatCmd, maatReleaseCmd, maatCoverageCmd, maatShouldDeferCmd, maatConflictCheckCmd, maatExtendCmd} {
 		c.Flags().BoolVar(&maatJSON, "json", false, "JSON output")
 	}
 
-	maatCmd.AddCommand(maatReserveCmd, maatStatusCmd, maatWhoCmd, maatHeartbeatCmd, maatExtendCmd,
+	maatCmd.AddCommand(maatReserveCmd, maatStatusCmd, maatDecisionsCmd, maatWhoCmd, maatHeartbeatCmd, maatExtendCmd,
 		maatReleaseCmd, maatCoverageCmd, maatShouldDeferCmd, maatConflictCheckCmd)
 }
