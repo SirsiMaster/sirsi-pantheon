@@ -912,6 +912,74 @@
       },
       "consumer": {},
       "repo": "/Users/thekryptodragon/Development/sirsi-inference"
+    },
+    "claude-finalwishes-helper": {
+      "id": "claude-finalwishes-helper",
+      "type": "claude",
+      "command": [
+        "claude",
+        "--print",
+        "--permission-mode",
+        "auto"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/FinalWishes",
+      "workstream": "finalwishes",
+      "wake": {
+        "mechanism": "none"
+      },
+      "consumer": {},
+      "repo": "/Users/thekryptodragon/Development/FinalWishes"
+    },
+    "claude-fw": {
+      "id": "claude-fw",
+      "type": "claude",
+      "command": [
+        "claude",
+        "--print",
+        "--permission-mode",
+        "auto"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/FinalWishes",
+      "workstream": "finalwishes",
+      "wake": {
+        "mechanism": "none"
+      },
+      "consumer": {},
+      "repo": "/Users/thekryptodragon/Development/FinalWishes"
+    },
+    "claude-inference-cylton": {
+      "id": "claude-inference-cylton",
+      "type": "claude",
+      "command": [
+        "claude",
+        "--print",
+        "--permission-mode",
+        "auto"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/sirsi-inference",
+      "workstream": "inference",
+      "wake": {
+        "mechanism": "none"
+      },
+      "consumer": {},
+      "repo": "/Users/thekryptodragon/Development/sirsi-inference"
+    },
+    "cylton-apollo": {
+      "id": "cylton-apollo",
+      "type": "claude",
+      "command": [
+        "claude",
+        "--print",
+        "--permission-mode",
+        "auto"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/sirsi-inference",
+      "workstream": "apollo",
+      "wake": {
+        "mechanism": "none"
+      },
+      "consumer": {},
+      "repo": "/Users/thekryptodragon/Development/sirsi-inference"
     }
   }
 }
