@@ -26,6 +26,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/user"
@@ -765,6 +766,39 @@ func (rl *Relay) recoverInflight() int {
 		rl.Log.Warn("relay: in-flight request from a previous relay reported as outcome-unknown", "agent", agent, "method", method, "id", id)
 	}
 	return len(files)
+}
+
+// neverReachedService reports whether a forward error means the request
+// PROVABLY never reached the service — a connection could not be established
+// (dial refused, no route, DNS failure, dial/TLS-handshake timeout). Such a
+// request is NOT committed, so it is safe to HOLD in the outbox and re-forward
+// in order once the cloud is reachable (ADR-069: a message that cannot reach
+// the cloud is stored for future release, never dropped). A failure AFTER the
+// request was sent (response lost mid-flight) is deliberately NOT this: the
+// service may have committed, so that path stays OUTCOME UNKNOWN and is never
+// auto-retried. This is the safety hinge of the durable-outbox design — it is
+// method-agnostic because "never sent" means "never committed" for any verb.
+func neverReachedService(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Connection refused/reset before the request left → never connected.
+	if errors.Is(err, syscall.ECONNREFUSED) {
+		return true
+	}
+	// DNS resolution failed → never connected.
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return true
+	}
+	// A dial-phase network op (dial timeout, no route to host, TLS handshake
+	// during dial) → never sent. A read/write op AFTER connect is intentionally
+	// excluded: the request may have reached the service.
+	var opErr *net.OpError
+	if errors.As(err, &opErr) && opErr.Op == "dial" {
+		return true
+	}
+	return false
 }
 
 func (rl *Relay) forward(agent, id, path string) spoolResponse {
