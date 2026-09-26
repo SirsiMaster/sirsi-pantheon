@@ -91,8 +91,8 @@ func logCedeDecision(kind, determination, requester, resource, assessed, affecte
 		return
 	}
 	path := decisionsPath()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		fmt.Fprintf(os.Stderr, "𓆄 warning: decision ledger mkdir failed: %v\n", err)
+	if mkdirErr := os.MkdirAll(filepath.Dir(path), 0o755); mkdirErr != nil {
+		fmt.Fprintf(os.Stderr, "𓆄 warning: decision ledger mkdir failed: %v\n", mkdirErr)
 		return
 	}
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
