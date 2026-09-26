@@ -661,6 +661,12 @@ func (rl *Relay) laneWorker(ctx context.Context, agent string, wake <-chan struc
 		for _, f := range files {
 			rl.handleOne(agent, f)
 		}
+		// ADR-069: re-forward any messages held during a prior outage, in order.
+		// If some are still unreachable, schedule a backed-off re-wake so they
+		// drain when the cloud returns — without hot-looping.
+		if rl.drainOutbox(agent) > 0 {
+			rl.scheduleOutboxRewake(ctx, agent)
+		}
 	}
 }
 
@@ -677,9 +683,84 @@ func (rl *Relay) handleOne(agent, f string) bool {
 		return false
 	}
 	rl.handled.Add(1)
-	rl.publish(agent, id, rl.forward(agent, id, inflight))
+	sr := rl.forward(agent, id, inflight)
+	if sr.Status == statusHoldForRetry {
+		// ADR-069: the service was unreachable — HOLD the request in the
+		// relay-owned outbox/ (which the client never touches, so no ownership
+		// race) and tell the client it is durably queued. drainOutbox re-forwards
+		// it in id order when the cloud returns. Never dropped.
+		outbox := filepath.Join(rl.Spool, agent, "outbox", id+".json")
+		if mkErr := os.MkdirAll(filepath.Dir(outbox), 0o700); mkErr == nil {
+			if mvErr := os.Rename(inflight, outbox); mvErr == nil {
+				rl.publish(agent, id, queuedForRetryResponse(id))
+				return false
+			}
+		}
+		// Could not stage the outbox — do not lose it silently; report unknown.
+		b, _ := json.Marshal(wireResponse{Error: &wireError{Name: "relay", Message: "relay: could not stage " + id + " for retry: OUTCOME UNKNOWN — re-query before retrying a mutation"}})
+		rl.publish(agent, id, spoolResponse{Status: http.StatusBadGateway, Body: b})
+		_ = os.Remove(inflight)
+		return false
+	}
+	rl.publish(agent, id, sr)
 	_ = os.Remove(inflight)
 	return true
+}
+
+// retryOutboxOne re-forwards one held request (ADR-069). On delivery it clears
+// the file — the client already received QUEUED_FOR_RETRY, so no response is
+// re-published. Still unreachable → keep it in the outbox, in order, for the
+// next wake. Returns whether it drained (delivered).
+func (rl *Relay) retryOutboxOne(agent, f string) bool {
+	id := strings.TrimSuffix(filepath.Base(f), ".json")
+	inflight := filepath.Join(rl.Spool, agent, "inflight", id+".json")
+	if err := os.MkdirAll(filepath.Dir(inflight), 0o700); err != nil {
+		return false
+	}
+	if err := os.Rename(f, inflight); err != nil {
+		return false
+	}
+	sr := rl.forward(agent, id, inflight)
+	if sr.Status == statusHoldForRetry {
+		_ = os.Rename(inflight, f) // still unreachable — keep held in order
+		return false
+	}
+	_ = os.Remove(inflight) // delivered (client already got QUEUED_FOR_RETRY)
+	rl.Log.Info("relay: held request delivered on retry", "agent", agent, "id", id)
+	return true
+}
+
+// drainOutbox retries every held item for agent in id order and returns how
+// many remain held (still unreachable).
+func (rl *Relay) drainOutbox(agent string) int {
+	held, _ := filepath.Glob(filepath.Join(rl.Spool, agent, "outbox", "*.json"))
+	sort.Strings(held)
+	remaining := 0
+	for _, f := range held {
+		if !rl.retryOutboxOne(agent, f) {
+			remaining++
+		}
+	}
+	return remaining
+}
+
+// scheduleOutboxRewake re-wakes a lane after a backoff so a persistent outage
+// keeps retrying the outbox without hot-looping.
+func (rl *Relay) scheduleOutboxRewake(ctx context.Context, agent string) {
+	time.AfterFunc(outboxRetryBackoff, func() {
+		if ctx.Err() != nil {
+			return
+		}
+		rl.laneMu.Lock()
+		ch := rl.lanes[agent]
+		rl.laneMu.Unlock()
+		if ch != nil {
+			select {
+			case ch <- struct{}{}:
+			default:
+			}
+		}
+	})
 }
 
 // serveOnce drains every pending request synchronously (lanes in name order,
@@ -691,6 +772,15 @@ func (rl *Relay) serveOnce() int {
 	n := 0
 	for _, f := range files {
 		if rl.handleOne(filepath.Base(filepath.Dir(filepath.Dir(f))), f) {
+			n++
+		}
+	}
+	// ADR-069: retry held outbox items too (per lane, in id order), so a
+	// synchronous drain delivers what a prior outage held.
+	held, _ := filepath.Glob(filepath.Join(rl.Spool, "*", "outbox", "*.json"))
+	sort.Strings(held)
+	for _, f := range held {
+		if rl.retryOutboxOne(filepath.Base(filepath.Dir(filepath.Dir(f))), f) {
 			n++
 		}
 	}
@@ -801,6 +891,29 @@ func neverReachedService(err error) bool {
 	return false
 }
 
+// statusHoldForRetry is an internal sentinel (never a real HTTP status): forward
+// could not REACH the service, so the request is provably not committed and
+// handleOne holds it in the relay-owned outbox for ordered retry instead of
+// dropping it (ADR-069). handleOne translates it to a client-facing
+// QUEUED_FOR_RETRY response; it is never written to a response file as-is.
+const statusHoldForRetry = -1
+
+// outboxRetryBackoff paces held-item retries so a persistent outage does not
+// hot-loop the lane worker (ponytail: fixed backoff; exponential only if a real
+// outage shows it matters).
+var outboxRetryBackoff = 30 * time.Second
+
+// queuedForRetryResponse is what a client sees when its message was durably held
+// because the service was unreachable: not an error, not OUTCOME UNKNOWN —
+// accepted, will deliver in order when the cloud is reachable (ADR-069 §2.3).
+func queuedForRetryResponse(id string) spoolResponse {
+	b, _ := json.Marshal(wireResponse{Error: &wireError{
+		Name:    "queued",
+		Message: "relay: " + id + " QUEUED_FOR_RETRY — service unreachable; held durably and will deliver in order when the cloud is reachable",
+	}})
+	return spoolResponse{Status: http.StatusAccepted, Body: b}
+}
+
 func (rl *Relay) forward(agent, id, path string) spoolResponse {
 	fail := func(status int, msg string) spoolResponse {
 		b, _ := json.Marshal(wireResponse{Error: &wireError{Name: "relay", Message: msg}})
@@ -851,6 +964,13 @@ func (rl *Relay) forward(agent, id, path string) spoolResponse {
 	}
 	resp, err := rl.Client.Do(httpReq)
 	if err != nil {
+		if neverReachedService(err) {
+			// Provably never reached the service → NOT committed → hold for
+			// ordered retry rather than drop (ADR-069). The sentinel tells
+			// handleOne to move it to the outbox and tell the client it is queued.
+			rl.Log.Warn("relay: service unreachable, holding request for ordered retry", "agent", agent, "method", req.Method, "id", id, "err", err.Error())
+			return spoolResponse{Status: statusHoldForRetry}
+		}
 		return unknown("service unreachable or connection lost: " + err.Error())
 	}
 	defer func() { _ = resp.Body.Close() }()
