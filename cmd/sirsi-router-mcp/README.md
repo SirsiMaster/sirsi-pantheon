@@ -5,7 +5,9 @@ as an agent-to-agent (A2A) interface for developer agents — the "ignition key"
 of **ADR-068**. A developer points their MCP client (Claude Desktop, Cursor,
 Cline) at this binary and can read the router fabric; they never touch a secret.
 
-## What it exposes (P1 — read-only)
+## What it exposes
+
+**P1 — read-only** (no registration; reads are open):
 
 | Tool | Reads |
 | :--- | :--- |
@@ -15,9 +17,31 @@ Cline) at this binary and can read the router fabric; they never touch a secret.
 
 Plus the resource `router://inbox` — the caller's inbox as JSON.
 
-P2 adds the resident `surface="mcp"` thread (A27) + mutate tools
-(`router_send`, `router_acknowledge`, `router_close`, `router_claim`) behind it.
-P3 adds `thread_adopt` (ADR-067) + `sirsi setup` wiring.
+**P2 — resident thread + mutate** (behind the server's registered thread):
+
+| Tool | Acts |
+| :--- | :--- |
+| `router_send` | Send an item to another agent (idempotent). |
+| `router_acknowledge` | Mark an item read (recipient-only). |
+| `router_claim` | Claim the oldest open item for exclusive work (a lease). |
+| `router_close` | Close an item **this session claimed**, with a result. |
+
+On startup the server registers a `surface="mcp"` resident thread (A27) bound to
+`SIRSI_AGENT_ID` + its PID, heartbeats every 90s, and closes the thread on
+SIGINT/SIGTERM. Mutate tools **fail closed** with an actionable message until the
+thread is registered; `router_close` is session-ownership bound (only work this
+instance claimed). The tools add no authority — each is a thin translator over a
+facade verb that enforces its own gate.
+
+> **Registration prerequisite (ADR-067):** the service authorizes a thread only
+> for the host the session authenticates as. On a cut-over host that means the
+> **relay daemon must run a current binary** (with the ADR-067 identity/adoption
+> logic) — a stale relay makes registration (and therefore every mutate) fail
+> closed with `thread authority — a session may only register … on its own host`.
+> This affects `sirsi thread register` fabric-wide, not just this server.
+
+P3 adds `thread_adopt` (ADR-067) + a `docs/setup/MCP_CONFIG_ROUTER.md` onboarding
+doc + `sirsi setup` wiring.
 
 ## Architecture
 
