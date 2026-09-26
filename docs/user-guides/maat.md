@@ -36,6 +36,18 @@ sirsi maat pulse --json       # JSON output to .pantheon/metrics.json
 
 Captures current quality metrics for dashboards and CI integration.
 
+### Decision ledger — live and drillable
+```bash
+sirsi maat decisions                        # recent decisions, newest first
+sirsi maat decisions --kind "reservation grant" --since 24h
+sirsi maat decisions show <id>               # full record: what, who, why, evidence
+```
+
+Every grant/refuse, conflict check, guard verdict, window-gate block, and CI
+pause/resume Ma'at makes is recorded to `~/.sirsi/maat/decisions.jsonl` (one
+host's file — see `internal/maat/decision/README.md` for the cross-host
+follow-up). `sirsi maat reserve|release|conflict-check` write here natively.
+
 ## Pre-Push Gate
 
 Ma'at runs automatically on every `git push` via the pre-push hook:

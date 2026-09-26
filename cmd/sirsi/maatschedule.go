@@ -17,10 +17,19 @@ import (
 	"os"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/decision"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/spf13/cobra"
 )
+
+// recordDecision appends to the live decision ledger (`sirsi maat decisions`).
+// Logged best-effort: a decision that already happened (the reservation grant
+// itself) must not fail because the ledger write did — the caller has already
+// acted on it.
+func recordDecision(kind, requester, resource, assessed, affected, determination, why, evidence string) {
+	_ = decision.Append("", decision.New(kind, requester, resource, assessed, affected, determination, why, evidence))
+}
 
 // admissionRefusedExit mirrors maat-repro-lint's exit 97: a harness that calls
 // `reserve` and is refused stops with this code instead of touching the cable.
@@ -77,6 +86,16 @@ A harness calls this before touching a cable; it is the rails.lock replacement.`
 		res, err := l.Reserve(req, resQueue)
 		if err != nil {
 			return err
+		}
+		assessed := fmt.Sprintf("window %s → %s, regime %s", req.Start, orNow(req.EstEnd), req.Regime)
+		if res.Granted {
+			recordDecision("reservation grant", req.Holder, req.Resource, assessed, req.Resource, "granted", req.Work, res.Reservation.ID)
+		} else if res.Queued {
+			recordDecision("reservation queue", req.Holder, req.Resource, assessed, req.Resource,
+				"queued", fmt.Sprintf("held by %s until %s", res.Conflict.Holder, orNow(res.Conflict.EstEnd)), req.ID)
+		} else {
+			recordDecision("reservation refuse", req.Holder, req.Resource, assessed, req.Resource,
+				"refused", fmt.Sprintf("held by %s until %s (work %q)", res.Conflict.Holder, orNow(res.Conflict.EstEnd), res.Conflict.Work), res.Conflict.ID)
 		}
 		if maatJSON {
 			_ = emitJSON(res)
@@ -204,6 +223,7 @@ var maatReleaseCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		recordDecision("reservation release", r.Holder, r.Resource, fmt.Sprintf("held %s → %s", r.Start, orNow(r.EstEnd)), r.Resource, "released", r.Work, r.ID)
 		if maatJSON {
 			return emitJSON(r)
 		}
@@ -287,6 +307,11 @@ var maatConflictCheckCmd = &cobra.Command{
 			}
 			notifyIntruders(rep)
 		}
+		determination := "clean"
+		if !rep.Clean {
+			determination = "conflict"
+		}
+		recordDecision("conflict-check", rep.Holder, rep.Resource, fmt.Sprintf("live activity on %s", machine), rep.Holder, determination, rep.Summary, rep.Reservation)
 		if maatJSON {
 			_ = emitJSON(rep)
 		} else if rep.Clean {
