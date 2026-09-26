@@ -16,6 +16,10 @@
 //     reservation cadence is a handful per hour across lanes, so the collision
 //     probability is negligible; upgrade to a compare-and-swap on the state key
 //     if throughput ever demands it. (maat: RMW grant, CAS if contended.)
+//
+// Ma'at never preempts; lanes cede willingly (cede.go, owner directive
+// 2026-09-26): priority decides who wins a conflicting NEW reservation, never
+// who gets pulled off a live one.
 package schedule
 
 import (

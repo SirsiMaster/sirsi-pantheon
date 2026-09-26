@@ -123,6 +123,12 @@ var maatStatusCmd = &cobra.Command{
 			fmt.Printf("  %-14s %-9s %-7s %-12s %s → %s  %s\n",
 				r.Resource, r.Status, r.Regime, r.Holder, short(r.Start), short(r.EstEnd), r.Work)
 		}
+		if cedes, err := l.ListCedes(schedule.CedeFilter{Resource: resource, PendingOnly: true}); err == nil && len(cedes) > 0 {
+			fmt.Printf("𓆄 pending cede requests (%d) — never auto-granted\n", len(cedes))
+			for _, c := range cedes {
+				fmt.Printf("  %-8s %-14s %s→%s  %s (%d min)  %q\n", c.Status, c.Resource, c.Requester, c.Holder, c.Ask, c.Minutes, c.Reason)
+			}
+		}
 		return nil
 	},
 }
