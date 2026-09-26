@@ -131,15 +131,25 @@ func loadCutOverEnv(path string) string {
 // cutOverMarker returns the path of the per-host service env file when it
 // exists (written by scripts/router-service/cutover-m5.sh step 6), "" when it
 // does not, and an error for any other stat failure: an unreadable or invalid
-// marker must never silently authorize the local fallback. SIRSI_ROUTER_DB set
-// explicitly (tests, sandboxes) bypasses the check: that is a deliberate local
-// store, not a fallback.
+// marker must never silently authorize the local fallback.
+//
+// SIRSI_ROUTER_DB set explicitly (tests, sandboxes) bypasses the check — a
+// deliberate local store, not a fallback — with ONE exception (ADR-069/keystone,
+// 2026-09-26): if SIRSI_ROUTER_DB points at the CANONICAL local ledger
+// (~/.sirsi/router.db, the very path the service replaced) on a cut-over host,
+// that is not a sandbox — it is the split-brain strand (M5: 44 messages to `ra`
+// written to a local ledger the service never saw). It must NOT bypass; the
+// caller falls through and self-heals to the service instead of opening the
+// dead local ledger. A genuinely different path still bypasses as before.
+// (ponytail: a literal-tilde "~/..." in SIRSI_ROUTER_DB is not expanded here;
+// the strand always carries an absolute path, which samePath matches.)
 func cutOverMarker() (string, error) {
-	if strings.TrimSpace(os.Getenv("SIRSI_ROUTER_DB")) != "" {
-		return "", nil
-	}
 	home, err := os.UserHomeDir()
 	if err != nil {
+		return "", nil // cannot resolve home → cannot check marker or canonical path
+	}
+	canon := filepath.Join(home, ".sirsi", "router.db")
+	if db := strings.TrimSpace(os.Getenv("SIRSI_ROUTER_DB")); db != "" && !samePath(db, canon) {
 		return "", nil
 	}
 	p := filepath.Join(home, ".sirsi", "router-service.env")
@@ -151,4 +161,16 @@ func cutOverMarker() (string, error) {
 	default:
 		return "", fmt.Errorf("routerstore: cannot read cut-over marker %s: %w (refusing the local file until it is readable)", p, err)
 	}
+}
+
+// samePath reports whether two paths refer to the same location, compared as
+// cleaned absolute paths (best-effort: falls back to a cleaned string compare
+// if either cannot be made absolute).
+func samePath(a, b string) bool {
+	ca, e1 := filepath.Abs(a)
+	cb, e2 := filepath.Abs(b)
+	if e1 != nil || e2 != nil {
+		return filepath.Clean(a) == filepath.Clean(b)
+	}
+	return ca == cb
 }
