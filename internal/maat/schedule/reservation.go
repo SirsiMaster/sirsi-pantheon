@@ -19,7 +19,9 @@
 //
 // Ma'at never preempts; lanes cede willingly (cede.go, owner directive
 // 2026-09-26): priority decides who wins a conflicting NEW reservation, never
-// who gets pulled off a live one.
+// who gets pulled off a live one. A lane answers every cede request
+// addressed to it before it starts or extends work; its current run always
+// finishes.
 package schedule
 
 import (
@@ -198,10 +200,11 @@ func isTerminal(s Status) bool {
 
 // ReserveResult is the outcome of a Reserve call.
 type ReserveResult struct {
-	Granted     bool         `json:"granted"`
-	Reservation *Reservation `json:"reservation,omitempty"`
-	Conflict    *Reservation `json:"conflict,omitempty"` // the live holder that blocked the grant
-	Queued      bool         `json:"queued,omitempty"`
+	Granted      bool         `json:"granted"`
+	Reservation  *Reservation `json:"reservation,omitempty"`
+	Conflict     *Reservation `json:"conflict,omitempty"` // the live holder that blocked the grant
+	Queued       bool         `json:"queued,omitempty"`
+	PendingCedes []string     `json:"pending_cedes,omitempty"` // open cede ids addressed to req.Holder that must be answered first
 }
 
 // Reserve attempts to hold resource for the given window. If a live (active,
@@ -209,9 +212,22 @@ type ReserveResult struct {
 // is refused and Conflict names the holder — unless queue is set, in which case
 // the request is recorded as queued behind it. A holder re-reserving its own
 // overlapping window just refreshes (idempotent heartbeat/extend).
+//
+// "No ticket beyond an open ask" (owner directive 2026-09-26): if req.Holder
+// has any unanswered cede request addressed to it, on any resource, the grant
+// is refused with PendingCedes naming them — even for its own overlap-refresh
+// path, because starting a new window is new work. Heartbeat and Release are
+// unaffected: the holder's CURRENT run always finishes.
 func (l *Ledger) Reserve(req Reservation, queue bool) (ReserveResult, error) {
 	if err := validate(req); err != nil {
 		return ReserveResult{}, err
+	}
+	pendingCedes, err := l.pendingCedeIDs(req.Holder)
+	if err != nil {
+		return ReserveResult{}, err
+	}
+	if len(pendingCedes) > 0 {
+		return ReserveResult{Granted: false, PendingCedes: pendingCedes}, nil
 	}
 	reservations, _, err := l.load()
 	if err != nil {
@@ -274,7 +290,10 @@ func (l *Ledger) Heartbeat(id string) (*Reservation, error) {
 	})
 }
 
-// Extend pushes the est-end out (and refreshes the lease).
+// Extend pushes the est-end out (and refreshes the lease). Refused with a
+// *PendingCedeError if the reservation's holder has an unanswered cede
+// request — extending is new work, same as Reserve (owner directive
+// 2026-09-26). Heartbeat and Release are unaffected.
 func (l *Ledger) Extend(id, newEstEnd string) (*Reservation, error) {
 	if _, err := time.Parse(time.RFC3339, newEstEnd); err != nil {
 		return nil, fmt.Errorf("maat: extend: est_end %q is not RFC3339", newEstEnd)
@@ -282,6 +301,13 @@ func (l *Ledger) Extend(id, newEstEnd string) (*Reservation, error) {
 	return l.mutate(id, func(r *Reservation) error {
 		if r.Status != StatusActive {
 			return fmt.Errorf("maat: reservation %s is %s, not active", id, r.Status)
+		}
+		pendingCedes, err := l.pendingCedeIDs(r.Holder)
+		if err != nil {
+			return err
+		}
+		if len(pendingCedes) > 0 {
+			return &PendingCedeError{Holder: r.Holder, Resource: r.Resource, CedeIDs: pendingCedes}
 		}
 		r.EstEnd = newEstEnd
 		r.HeartbeatAt = l.now().Format(time.RFC3339)

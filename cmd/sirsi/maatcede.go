@@ -8,8 +8,12 @@ package main
 // its own reservation, and the requester then reserves normally.
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 	"github.com/spf13/cobra"
@@ -28,6 +32,96 @@ func cedeActor(flagVal string) string {
 		return flagVal
 	}
 	return os.Getenv("SIRSI_AGENT_ID")
+}
+
+// cedeDecisionRecord is one JSON line in the Ma'at decision ledger — a
+// read-only operator projection (codex-pantheon, PR #793 follow-up). Field
+// names/order match the existing writer ~/.local/bin/maat-decision exactly.
+// "maat:cedes" (cede.go) stays the scheduler's actual authority; this is only
+// a drillable record of what was assessed, who was affected, and why.
+type cedeDecisionRecord struct {
+	TS            string `json:"ts"`
+	Host          string `json:"host"`
+	Kind          string `json:"kind"`
+	Determination string `json:"determination"`
+	Requester     string `json:"requester"`
+	Resource      string `json:"resource"`
+	Assessed      string `json:"assessed"`
+	Affected      string `json:"affected"`
+	Why           string `json:"why"`
+	Evidence      string `json:"evidence"`
+}
+
+// decisionsPath resolves the decision ledger path: $MAAT_DECISIONS if set,
+// else ~/.sirsi/maat/decisions.jsonl.
+func decisionsPath() string {
+	if p := os.Getenv("MAAT_DECISIONS"); p != "" {
+		return p
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = "."
+	}
+	return filepath.Join(home, ".sirsi", "maat", "decisions.jsonl")
+}
+
+// shortHostname mirrors `hostname -s`: the hostname up to the first dot.
+func shortHostname() string {
+	h, err := os.Hostname()
+	if err != nil {
+		return "unknown"
+	}
+	if i := strings.Index(h, "."); i >= 0 {
+		h = h[:i]
+	}
+	return h
+}
+
+// logCedeDecision appends one JSON line to the decision ledger. Best-effort:
+// a write failure never fails the cede operation, only warns on stderr.
+func logCedeDecision(kind, determination, requester, resource, assessed, affected, why, evidence string) {
+	rec := cedeDecisionRecord{
+		TS: time.Now().Format(time.RFC3339), Host: shortHostname(),
+		Kind: kind, Determination: determination, Requester: requester, Resource: resource,
+		Assessed: assessed, Affected: affected, Why: why, Evidence: evidence,
+	}
+	b, err := json.Marshal(rec)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "𓆄 warning: decision ledger marshal failed: %v\n", err)
+		return
+	}
+	path := decisionsPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		fmt.Fprintf(os.Stderr, "𓆄 warning: decision ledger mkdir failed: %v\n", err)
+		return
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "𓆄 warning: decision ledger open failed: %v\n", err)
+		return
+	}
+	defer f.Close()
+	if _, err := f.Write(append(b, '\n')); err != nil {
+		fmt.Fprintf(os.Stderr, "𓆄 warning: decision ledger write failed: %v\n", err)
+	}
+}
+
+// cedeAssessed renders the "assessed" field, e.g. "cede machine 25 min on m1
+// from 2026-09-26T11:00:00Z".
+func cedeAssessed(c *schedule.Cede) string {
+	s := fmt.Sprintf("cede %s %d min on %s", c.Ask, c.Minutes, c.Resource)
+	if c.EarliestStart != "" {
+		s += " from " + c.EarliestStart
+	}
+	return s
+}
+
+// cedeKindByStatus maps a response status to the decision ledger's kind and
+// determination strings.
+var cedeKindByStatus = map[schedule.CedeStatus]struct{ Kind, Determination string }{
+	schedule.CedeStatusGranted:   {"cede-grant", "grant"},
+	schedule.CedeStatusCountered: {"cede-counter", "counter"},
+	schedule.CedeStatusDeclined:  {"cede-decline", "decline"},
 }
 
 var maatCedeCmd = &cobra.Command{
@@ -52,6 +146,7 @@ var maatCedeRequestCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		logCedeDecision("cede-request", "pending", c.Requester, c.Resource, cedeAssessed(c), c.Holder, c.Reason, c.ID)
 		if maatJSON {
 			return emitJSON(c)
 		}
@@ -76,6 +171,15 @@ func respondCedeCmd(use, short string, status schedule.CedeStatus) *cobra.Comman
 			if err != nil {
 				return err
 			}
+			info := cedeKindByStatus[status]
+			why := ""
+			if c.Decision != nil {
+				why = c.Decision.Reason
+				if status == schedule.CedeStatusCountered && c.Decision.Counter != "" {
+					why = fmt.Sprintf("%s — counter: %s", why, c.Decision.Counter)
+				}
+			}
+			logCedeDecision(info.Kind, info.Determination, by, c.Resource, cedeAssessed(c), c.Requester, why, c.ID)
 			if maatJSON {
 				return emitJSON(c)
 			}
@@ -103,6 +207,7 @@ var maatCedeWithdrawCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		logCedeDecision("cede-withdraw", "withdraw", by, c.Resource, cedeAssessed(c), c.Holder, c.Reason, c.ID)
 		if maatJSON {
 			return emitJSON(c)
 		}

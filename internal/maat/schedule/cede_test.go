@@ -192,3 +192,111 @@ func TestListCedes_Filters(t *testing.T) {
 		t.Fatalf("want 1 cede held by sne, got %+v", byHolderSne)
 	}
 }
+
+// --- "no ticket beyond an open ask" (owner directive 2026-09-26) ---
+
+func TestReserve_RefusedWhilePendingCedeUnanswered(t *testing.T) {
+	l := fixedLedger("2026-09-26T10:00:00Z")
+	res, err := l.Reserve(mkReq("m1", "sne", "2026-09-26T09:00:00Z", "2026-09-26T09:12:00Z", RegimeLoaded), false)
+	if err != nil || !res.Granted {
+		t.Fatalf("initial reserve: %v %+v", err, res)
+	}
+	c, _ := l.RequestCede(mkCede("m5", "claude-io", "sne", "machine", 20, "need m5"))
+
+	// A brand-new reservation for sne is refused, naming the open cede.
+	blocked, err := l.Reserve(mkReq("m5", "sne", "2026-09-26T10:00:00Z", "2026-09-26T10:20:00Z", RegimeQuiet), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if blocked.Granted || len(blocked.PendingCedes) != 1 || blocked.PendingCedes[0] != c.ID {
+		t.Fatalf("want refused naming %s, got %+v", c.ID, blocked)
+	}
+
+	// Extending the CURRENT ticket is also refused (extending is new work).
+	if _, err := l.Extend(res.Reservation.ID, "2026-09-26T09:30:00Z"); err == nil {
+		t.Fatal("extend must be refused while a cede is unanswered")
+	} else {
+		var pce *PendingCedeError
+		if !errorsAsPendingCede(err, &pce) || pce.Holder != "sne" || len(pce.CedeIDs) != 1 || pce.CedeIDs[0] != c.ID {
+			t.Fatalf("want *PendingCedeError naming %s, got %v", c.ID, err)
+		}
+	}
+
+	// But the CURRENT ticket still runs to completion: heartbeat and release work.
+	if _, err := l.Heartbeat(res.Reservation.ID); err != nil {
+		t.Fatalf("heartbeat must still work: %v", err)
+	}
+	if _, err := l.Release(res.Reservation.ID); err != nil {
+		t.Fatalf("release must still work: %v", err)
+	}
+}
+
+// errorsAsPendingCede avoids importing "errors" just for one assertion.
+func errorsAsPendingCede(err error, target **PendingCedeError) bool {
+	pce, ok := err.(*PendingCedeError)
+	if !ok {
+		return false
+	}
+	*target = pce
+	return true
+}
+
+func TestReserve_GrantedAfterEachResponseType(t *testing.T) {
+	for _, status := range []CedeStatus{CedeStatusGranted, CedeStatusCountered, CedeStatusDeclined} {
+		l := fixedLedger("2026-09-26T10:00:00Z")
+		c, _ := l.RequestCede(mkCede("m5", "claude-io", "sne", "machine", 20, "need m5"))
+		blocked, _ := l.Reserve(mkReq("m5", "sne", "2026-09-26T10:00:00Z", "2026-09-26T10:20:00Z", RegimeQuiet), false)
+		if blocked.Granted {
+			t.Fatalf("[%s] must be refused before the response", status)
+		}
+		if _, err := l.RespondCede(c.ID, "sne", status, "answered", "", "counter offer"); err != nil {
+			t.Fatalf("[%s] respond: %v", status, err)
+		}
+		granted, err := l.Reserve(mkReq("m5", "sne", "2026-09-26T10:00:00Z", "2026-09-26T10:20:00Z", RegimeQuiet), false)
+		if err != nil || !granted.Granted {
+			t.Fatalf("[%s] must be granted after the response, got %v %+v", status, err, granted)
+		}
+	}
+}
+
+func TestReserve_GrantedAfterWithdraw(t *testing.T) {
+	l := fixedLedger("2026-09-26T10:00:00Z")
+	c, _ := l.RequestCede(mkCede("m5", "claude-io", "sne", "machine", 20, "need m5"))
+	blocked, _ := l.Reserve(mkReq("m5", "sne", "2026-09-26T10:00:00Z", "2026-09-26T10:20:00Z", RegimeQuiet), false)
+	if blocked.Granted {
+		t.Fatal("must be refused before the withdraw")
+	}
+	if _, err := l.WithdrawCede(c.ID, "claude-io"); err != nil {
+		t.Fatal(err)
+	}
+	granted, err := l.Reserve(mkReq("m5", "sne", "2026-09-26T10:00:00Z", "2026-09-26T10:20:00Z", RegimeQuiet), false)
+	if err != nil || !granted.Granted {
+		t.Fatalf("must be granted after the withdraw, got %v %+v", err, granted)
+	}
+}
+
+func TestReserve_PendingCedeToOtherLaneDoesNotBlock(t *testing.T) {
+	l := fixedLedger("2026-09-26T10:00:00Z")
+	l.RequestCede(mkCede("m5", "claude-io", "sne", "machine", 20, "need m5")) // addressed to sne, not claude-io
+	granted, err := l.Reserve(mkReq("m1", "claude-io", "2026-09-26T10:00:00Z", "2026-09-26T10:20:00Z", RegimeQuiet), false)
+	if err != nil || !granted.Granted {
+		t.Fatalf("a cede addressed to another lane must not block this one, got %v %+v", err, granted)
+	}
+}
+
+func TestReserve_RefusalListsEveryOpenID(t *testing.T) {
+	l := fixedLedger("2026-09-26T10:00:00Z")
+	c1, _ := l.RequestCede(mkCede("m1", "claude-io", "sne", "machine", 20, "a"))
+	c2, _ := l.RequestCede(mkCede("m5", "sha", "sne", "cores:2", 10, "b"))
+	blocked, err := l.Reserve(mkReq("m1", "sne", "2026-09-26T10:00:00Z", "2026-09-26T10:10:00Z", RegimeQuiet), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if blocked.Granted || len(blocked.PendingCedes) != 2 {
+		t.Fatalf("want both open ids listed, got %+v", blocked)
+	}
+	got := map[string]bool{blocked.PendingCedes[0]: true, blocked.PendingCedes[1]: true}
+	if !got[c1.ID] || !got[c2.ID] {
+		t.Fatalf("refusal must list every open id, want %s and %s, got %+v", c1.ID, c2.ID, blocked.PendingCedes)
+	}
+}

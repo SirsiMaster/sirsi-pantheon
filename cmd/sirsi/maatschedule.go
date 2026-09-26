@@ -13,8 +13,10 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
@@ -78,12 +80,17 @@ A harness calls this before touching a cable; it is the rails.lock replacement.`
 		if err != nil {
 			return err
 		}
+		if len(res.PendingCedes) > 0 {
+			logPendingCedeRefusal(l, "reserve", req.Holder, req.Resource, fmt.Sprintf("reserve %s", req.Resource), res.PendingCedes)
+		}
 		if maatJSON {
 			_ = emitJSON(res)
 		} else if res.Granted {
 			fmt.Printf("𓆄 reserved %s for %s until %s  (id %s)\n", req.Resource, req.Holder, orNow(req.EstEnd), res.Reservation.ID)
 		} else if res.Queued {
 			fmt.Printf("𓆄 QUEUED behind %s on %s (held until %s)\n", res.Conflict.Holder, req.Resource, orNow(res.Conflict.EstEnd))
+		} else if len(res.PendingCedes) > 0 {
+			printPendingCedeRefusal(req.Holder, res.PendingCedes)
 		} else {
 			fmt.Printf("𓆄 REFUSED — %s is held by %s until %s (work %q)\n", req.Resource, res.Conflict.Holder, orNow(res.Conflict.EstEnd), res.Conflict.Work)
 		}
@@ -92,6 +99,28 @@ A harness calls this before touching a cable; it is the rails.lock replacement.`
 		}
 		return nil
 	},
+}
+
+// printPendingCedeRefusal prints the "no ticket beyond an open ask" refusal
+// (owner directive 2026-09-26): the open cede ids and the exact command to
+// answer each one.
+func printPendingCedeRefusal(holder string, ids []string) {
+	fmt.Printf("𓆄 REFUSED — %s has %d unanswered cede request(s); answer them before starting or extending work:\n", holder, len(ids))
+	for _, id := range ids {
+		fmt.Printf("    sirsi maat cede grant|counter|decline %s --reason \"...\"\n", id)
+	}
+}
+
+// logPendingCedeRefusal appends the decision-ledger line for a reserve/extend
+// refused over unanswered cede requests (best-effort, via logCedeDecision).
+func logPendingCedeRefusal(l *schedule.Ledger, kind, holder, resource, assessed string, ids []string) {
+	cedes, _ := l.ListCedes(schedule.CedeFilter{Holder: holder, PendingOnly: true})
+	requesters := make([]string, 0, len(cedes))
+	for _, c := range cedes {
+		requesters = append(requesters, c.Requester)
+	}
+	logCedeDecision(kind, "refuse", holder, resource, assessed,
+		strings.Join(requesters, ","), "unanswered cede requests: "+strings.Join(ids, ","), strings.Join(ids, ","))
 }
 
 var maatStatusCmd = &cobra.Command{
@@ -189,6 +218,16 @@ var maatExtendCmd = &cobra.Command{
 		}
 		r, err := l.Extend(args[0], resEstEnd)
 		if err != nil {
+			var pce *schedule.PendingCedeError
+			if errors.As(err, &pce) {
+				logPendingCedeRefusal(l, "reserve", pce.Holder, pce.Resource, "extend "+args[0], pce.CedeIDs)
+				if maatJSON {
+					_ = emitJSON(map[string]any{"granted": false, "pending_cedes": pce.CedeIDs, "holder": pce.Holder})
+				} else {
+					printPendingCedeRefusal(pce.Holder, pce.CedeIDs)
+				}
+				os.Exit(admissionRefusedExit)
+			}
 			return err
 		}
 		if maatJSON {

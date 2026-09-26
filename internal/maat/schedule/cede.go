@@ -10,6 +10,13 @@
 // normally through the existing ledger. Every ask is bounded (<=60 minutes)
 // so every lane keeps getting time on every machine, and the whole exchange
 // (who asked, who ceded, what, when, why) is recorded for audit.
+//
+// No ticket beyond an open ask (owner directive, 2026-09-26): a lane answers
+// every cede request addressed to it — grant, counter, or decline — before it
+// starts or extends work; its current run always finishes. Reserve and Extend
+// (reservation.go) refuse while any cede addressed to the holder sits
+// pending; Heartbeat and Release are unaffected, so a run in progress runs to
+// completion. Any response, or a withdraw by the requester, clears the block.
 package schedule
 
 import (
@@ -277,4 +284,33 @@ func (l *Ledger) ListCedes(filter CedeFilter) ([]Cede, error) {
 func newCedeID(resource, requester string, now time.Time) string {
 	slug := strings.NewReplacer("/", "-", " ", "-", "@", "-").Replace(requester)
 	return fmt.Sprintf("cede-%s-%s-%s", now.UTC().Format("20060102T150405Z"), resource, slug)
+}
+
+// pendingCedeIDs returns the ids of every pending cede addressed to holder,
+// across all resources — the check behind "no ticket beyond an open ask"
+// (Reserve/Extend, reservation.go).
+func (l *Ledger) pendingCedeIDs(holder string) ([]string, error) {
+	cedes, err := l.ListCedes(CedeFilter{Holder: holder, PendingOnly: true})
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(cedes))
+	for _, c := range cedes {
+		ids = append(ids, c.ID)
+	}
+	return ids, nil
+}
+
+// PendingCedeError is returned by Extend when its reservation's holder has an
+// unanswered cede request — extending is new work, refused the same way
+// Reserve refuses (via ReserveResult.PendingCedes).
+type PendingCedeError struct {
+	Holder   string
+	Resource string
+	CedeIDs  []string
+}
+
+func (e *PendingCedeError) Error() string {
+	return fmt.Sprintf("maat: %s has %d unanswered cede request(s) — answer them (grant/counter/decline) before starting or extending work: %s",
+		e.Holder, len(e.CedeIDs), strings.Join(e.CedeIDs, ", "))
 }
