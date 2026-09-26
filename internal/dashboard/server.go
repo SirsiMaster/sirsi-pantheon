@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 )
@@ -65,7 +66,14 @@ type Config struct {
 	// their state from this producer). If nil, the endpoint returns 503
 	// rather than a misleading zero-valued payload.
 	FabricFn FabricProducer
+	// MaatDecisionsFn supplies the shared, read-only decision projection. The
+	// dashboard never recalculates a Ma'at determination from reservations or
+	// host facts; it renders the producer's recorded assessment verbatim.
+	MaatDecisionsFn MaatDecisionProducer
 }
+
+// MaatDecisionProducer supplies the most recent recorded Ma'at decisions.
+type MaatDecisionProducer func(limit int) ([]maat.Decision, error)
 
 // FleetProducer supplies the raw ledger snapshot the fleet board diffs into a
 // transition feed.
@@ -140,6 +148,7 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("/api/fleet", s.apiFleet)            // A32 owner-reporting board (replaces server.py)
 	mux.HandleFunc("/api/ledger", s.apiLedger)          // A26 Nexus board seam — ledger.BoardSummary
 	mux.HandleFunc("/api/fabric", s.apiFabric)          // unified work/message/lane contract
+	mux.HandleFunc("/api/maat/decisions", s.apiMaatDecisions)
 
 	s.handler = mux
 	s.srv = &http.Server{

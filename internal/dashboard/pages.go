@@ -30,6 +30,7 @@ func pageShell(title, activePage, bodyContent string, port int) string {
 		{"scan", "𓁢", "Scan"},
 		{"ghosts", "𓂓", "Ghosts"},
 		{"guard", "🛡", "Guard"},
+		{"maat", "𓆄", "Ma'at"},
 		{"notifications", "🔔", "Notifications"},
 		{"horus", "𓂀", "Horus"},
 		{"vault", "🏛", "Vault"},
@@ -238,7 +239,7 @@ window.switchView=function(view){
   n.classList.toggle('active',n.dataset.view===view)});
  clear();
  var loader={home:viewHome,fleet:viewFleet,scan:viewScan,ghosts:viewGhosts,guard:viewGuard,
-  notifications:viewNotifications,horus:viewHorus,vault:viewVault,ra:viewRa};
+  maat:viewMaat,notifications:viewNotifications,horus:viewHorus,vault:viewVault,ra:viewRa};
  (loader[view]||viewHome)();
 };
 
@@ -411,6 +412,31 @@ function viewFleet(){
    cts.textContent=parts.join(' · ');
    row.appendChild(ag);row.appendChild(st);row.appendChild(cts);T.appendChild(row)});
  }).catch(function(e){out('  fleet board unavailable: '+e.message,'t-err')});
+}
+
+function viewMaat(){
+ out('𓆄 Ma’at — Decision Ledger','t-gold');
+ out('  Live recorded grants, refusals, queues, and their reasons. This is a read-only explanation of what Ma’at assessed.','t-dim');
+ fetch('/api/maat/decisions?limit=50').then(function(r){
+  if(!r.ok)return r.json().then(function(e){throw new Error(e.error||('HTTP '+r.status))});
+  return r.json()
+ }).then(function(rows){
+  if(!rows.length){out('');out('  No Ma’at decisions have been recorded on this node yet.','t-dim');return}
+  out('');out('  '+rows.length+' recorded decision'+(rows.length===1?'':'s'),'t-head');sep();
+  rows.forEach(function(d){
+   const row=document.createElement('div');row.className='t-line t-row';
+   const at=document.createElement('span');at.className='t-col';at.style.width='110px';at.style.color='var(--dim)';at.textContent=ago(d.time)||d.time;
+   const verdict=document.createElement('span');verdict.className='t-col';verdict.style.width='76px';
+   verdict.style.color=(d.determination==='grant')?'var(--ok)':(d.determination==='refuse'?'var(--danger)':'var(--gold)');verdict.textContent=(d.determination||'unknown').toUpperCase();
+   const subject=document.createElement('span');subject.className='t-col';subject.style.flex='1';subject.textContent=(d.resource||'—')+' · '+(d.requester||'unknown')+' · '+(d.why||'no reason recorded');
+   row.appendChild(at);row.appendChild(verdict);row.appendChild(subject);T.appendChild(row);
+   const detail=document.createElement('div');detail.className='t-line t-dim';detail.style.paddingLeft='202px';
+   let bits=['host '+(d.host||'unknown'),'assessment: '+(d.assessed||'unknown')];
+   if(d.affected)bits.push('affected: '+d.affected);
+   if(d.evidence)bits.push('evidence: '+d.evidence);
+   detail.textContent=bits.join(' · ');T.appendChild(detail);
+  });
+ }).catch(function(e){out('  Ma’at decision ledger unavailable: '+e.message,'t-err')});
 }
 
 function viewGhosts(){

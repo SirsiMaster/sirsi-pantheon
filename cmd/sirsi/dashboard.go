@@ -12,6 +12,7 @@ import (
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dashboard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
@@ -60,11 +61,12 @@ func runDashboard(cmd *cobra.Command, args []string) {
 			snap := collectDashboardStats()
 			return json.Marshal(snap)
 		},
-		NodeStatusFn: collectDashboardNodeStatus,
-		LedgerFn:     collectDashboardLedger,
-		FleetFn:      collectDashboardFleet,
-		Unroutable:   dashboardUnroutable(),
-		FabricFn:     collectDashboardFabric,
+		NodeStatusFn:    collectDashboardNodeStatus,
+		LedgerFn:        collectDashboardLedger,
+		FleetFn:         collectDashboardFleet,
+		Unroutable:      dashboardUnroutable(),
+		FabricFn:        collectDashboardFabric,
+		MaatDecisionsFn: collectDashboardMaatDecisions,
 	})
 
 	if err := srv.Start(); err != nil {
@@ -93,6 +95,14 @@ func runDashboard(cmd *cobra.Command, args []string) {
 	if nStore != nil {
 		nStore.Close()
 	}
+}
+
+func collectDashboardMaatDecisions(limit int) ([]maat.Decision, error) {
+	journal, err := maat.NewDefaultDecisionJournal()
+	if err != nil {
+		return nil, err
+	}
+	return journal.Recent(limit)
 }
 
 func collectDashboardFabric() (ledger.FabricBoard, error) {
