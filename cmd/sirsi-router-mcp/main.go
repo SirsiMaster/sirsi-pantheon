@@ -54,6 +54,13 @@ func main() {
 		"[sirsi-router-mcp] ")
 
 	registerReadTools(srv)
+	registerMutateTools(srv)
+
+	// P2: register this process as a resident surface="mcp" thread (A27) and
+	// start its heartbeat. Reads work regardless; mutate tools require it. The
+	// shutdown func closes the thread on graceful exit.
+	shutdown := registerSurface(logger)
+	installSignalClose(shutdown, logger)
 
 	if err := srv.Run(); err != nil {
 		logger.Fatalf("server: %v", err)
