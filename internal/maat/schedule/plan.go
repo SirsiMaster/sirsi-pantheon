@@ -2,8 +2,41 @@ package schedule
 
 import (
 	"sort"
+	"sync"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 )
+
+// pressureFn is the injectable seam for this host's live memory pressure
+// (A16/A21: mutex-guarded, mirrors router.SetLoadAvgFn). guard.CurrentPressure
+// samples the CALLING host's own kernel, never a remote one — ShouldDefer is
+// always called BY the machine it's checking (a runner asks "should I defer"
+// about itself), so that is the correct scope; Reserve/Extend can run on a
+// different machine than the resource they reserve and are deliberately left
+// unwired here.
+var (
+	pressureMu sync.RWMutex
+	pressureFn = guard.CurrentPressure
+)
+
+// SetPressureFn installs a test double for the memory-pressure reader.
+// Passing nil restores the real guard.CurrentPressure default.
+func SetPressureFn(fn func() (guard.PressureLevel, string)) {
+	pressureMu.Lock()
+	defer pressureMu.Unlock()
+	if fn != nil {
+		pressureFn = fn
+		return
+	}
+	pressureFn = guard.CurrentPressure
+}
+
+func getPressureFn() func() (guard.PressureLevel, string) {
+	pressureMu.RLock()
+	defer pressureMu.RUnlock()
+	return pressureFn
+}
 
 // Coverage is the per-resource usage read-model the dashboard consumes: the live
 // holder, the queue, upcoming/active windows, utilization over the horizon, and
@@ -115,10 +148,18 @@ func mergedMinutes(intervals [][2]time.Time) int64 {
 
 // ShouldDefer reports whether a self-hosted CI runner (or any low-priority
 // background job) on `machine` must defer right now, because a quiet or loaded
-// measurement reservation currently covers that machine. Build-regime
-// reservations do not force a deferral (they are the runners themselves).
-// A runner calls this before starting a job (P3).
+// measurement reservation currently covers that machine, OR because this
+// host's own live memory pressure is at Warn/Critical. The pressure check runs
+// FIRST — it's the cheaper read (no ledger fetch) and must never be masked by
+// "no reservation covers this machine" (2026-09-26: the stall that motivated
+// this had no covering reservation at all). Build-regime reservations do not
+// force a deferral on the regime check (they are the runners themselves), but
+// pressure still applies regardless of regime. A runner calls this before
+// starting a job (P3).
 func (l *Ledger) ShouldDefer(machine string) (bool, *Reservation, error) {
+	if level, _ := getPressureFn()(); level >= guard.PressureWarn {
+		return true, nil, nil
+	}
 	cur, err := l.WhoIsOn(machine)
 	if err != nil {
 		return false, nil, err

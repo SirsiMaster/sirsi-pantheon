@@ -5,6 +5,8 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 )
 
 // Actor is one process/load source active on a machine right now, as seen by an
@@ -52,6 +54,15 @@ type ConflictReport struct {
 	Intruders   []Actor  `json:"intruders,omitempty"`
 	Shared      []string `json:"shared,omitempty"` // granted floor-share lanes seen active alongside the holder — not intruders
 	Summary     string   `json:"summary,omitempty"`
+	// Pressure/PressureSource/FloorMemGB are reported alongside the process
+	// scan, never folded into Clean/Intruders: memory pressure isn't an Actor
+	// (no process is "wrong"), so it doesn't become an Intruder — it's a
+	// parallel signal the caller (CLI/human) sees beside the clean process
+	// list, closing the gap where a clean report can coexist with a host
+	// that's swapping.
+	Pressure       guard.PressureLevel `json:"pressure,omitempty"`
+	PressureSource string              `json:"pressure_source,omitempty"`
+	FloorMemGB     int                 `json:"floor_mem_gb,omitempty"` // FloorShareMemGB(resource), informational
 }
 
 // CheckConflicts samples current activity on the resource's machine and reports
@@ -80,6 +91,10 @@ func (l *Ledger) CheckConflicts(resource, machine string) (ConflictReport, error
 	if cur.Regime == RegimeBuild {
 		rep.Summary = "build-regime reservation tolerates foreign load"
 		return rep, nil
+	}
+	rep.Pressure, rep.PressureSource = getPressureFn()()
+	if floorMemGB, ferr := l.FloorShareMemGB(resource); ferr == nil {
+		rep.FloorMemGB = floorMemGB
 	}
 	known := make(map[string]Reservation, len(holders))
 	for _, h := range holders {
@@ -123,6 +138,9 @@ func (l *Ledger) CheckConflicts(resource, machine string) (ConflictReport, error
 			" reservation " + cur.ID + " held by " + cur.Holder
 	} else {
 		rep.Summary = "clean: only the holder's work (and any granted floor shares) is active"
+	}
+	if rep.Pressure >= guard.PressureWarn {
+		rep.Summary += fmt.Sprintf(" — memory pressure %s (floor %dGB)", rep.Pressure, rep.FloorMemGB)
 	}
 	return rep, nil
 }

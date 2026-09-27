@@ -81,8 +81,16 @@ type Reservation struct {
 	// bounded floor share granted alongside a live conflict or an unanswered
 	// cede request ("floor"); Reason explains which (owner directive
 	// 2026-09-26: "never totally block lanes from operation").
-	Cores         int      `json:"cores,omitempty"`
-	Share         string   `json:"share,omitempty"` // "full" | "floor"
+	Cores int    `json:"cores,omitempty"`
+	Share string `json:"share,omitempty"` // "full" | "floor"
+	// MemGB is an ADVISORY memory ask in GB — same posture as Cores, Ma'at
+	// never enforces RSS itself. Unlike Cores, 0 means "no explicit ask", NOT
+	// "the whole machine": an unbounded ask is the exact failure mode the
+	// 2026-09-26 M1 stall exposed (no gate read memory at all). MemShare
+	// mirrors Share but is set independently — see plan.go/conflict.go
+	// pressure wiring.
+	MemGB         int      `json:"mem_gb,omitempty"`
+	MemShare      string   `json:"mem_share,omitempty"` // "full" | "floor"
 	Reason        string   `json:"reason,omitempty"`
 	PendingCedes  []string `json:"pending_cedes,omitempty"` // open cede ids capping this ticket to the floor
 	Repro         string   `json:"repro,omitempty"`         // repro path

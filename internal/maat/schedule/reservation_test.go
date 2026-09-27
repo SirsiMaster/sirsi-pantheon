@@ -372,6 +372,28 @@ func TestCapacity_DefaultsAndSet(t *testing.T) {
 	}
 }
 
+func TestFloorShareMemGB_DefaultsToOneUntilConfigured(t *testing.T) {
+	l := fixedLedger("2026-09-26T10:00:00Z")
+	// No owner-provided defaultMemCapacityGB yet — every resource floors to 1,
+	// never 0 (an unbounded ask is the exact failure mode this closes).
+	floorM1, err := l.FloorShareMemGB("m1")
+	if err != nil || floorM1 != 1 {
+		t.Fatalf("want unconfigured mem floor 1, got %d %v", floorM1, err)
+	}
+
+	if err = l.SetCapacityMemGB("m1", 32); err != nil {
+		t.Fatal(err)
+	}
+	floorAfter, err := l.FloorShareMemGB("m1")
+	if err != nil || floorAfter != 8 {
+		t.Fatalf("want mem floor 8 (32/4) after SetCapacityMemGB, got %d %v", floorAfter, err)
+	}
+
+	if err = l.SetCapacityMemGB("m1", 0); err == nil {
+		t.Fatal("mem capacity below 1 must be rejected")
+	}
+}
+
 func TestReserve_NeverRefusesExceptInvalidInput(t *testing.T) {
 	l := fixedLedger("2026-09-26T10:00:00Z")
 
