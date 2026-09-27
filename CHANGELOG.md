@@ -6,6 +6,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.6] — 2026-09-27 — Ma’at audit coverage closure
+**Commercial patch release.** The full Ma’at audit now exercises the previously under-covered machine identity, diagnostic reasoning, runner, and router-board paths:
+- machine identity probe/cache and cross-host matching behavior;
+- diagnostic policy/registry, observation tools, and restart-verdict branches;
+- hermetic runner installation/status contracts; and
+- router-board polling, projection, transition, and malformed-payload handling.
+
+The live full audit reports 95/100 with zero failures; remaining warnings are packages without coverage data or non-blocking sub-threshold tiers.
+
 ## [0.24.5] — 2026-09-27 — Willing cessation for shared resources
 **Commercial patch release.** Ma’at now supports explicit, non-preemptive resource handoff:
 - lanes may request, grant, counter, decline, or withdraw a cede for a machine or bounded core share;
