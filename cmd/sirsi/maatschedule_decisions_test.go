@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
@@ -12,6 +13,32 @@ type capturedDecisionJournal struct{ decisions []maat.Decision }
 func (j *capturedDecisionJournal) Append(d maat.Decision) error {
 	j.decisions = append(j.decisions, d)
 	return nil
+}
+
+func TestMaatCasebookCommandProjectsJournalWithoutPolicyWrites(t *testing.T) {
+	oldFactory := newMaatDecisionJournal
+	oldKind, oldStatus, oldLimit, oldJSON := maatCasebookKind, maatCasebookStatus, maatCasebookLimit, maatJSON
+	defer func() {
+		newMaatDecisionJournal = oldFactory
+		maatCasebookKind, maatCasebookStatus, maatCasebookLimit, maatJSON = oldKind, oldStatus, oldLimit, oldJSON
+	}()
+	journal := &capturedDecisionJournal{decisions: []maat.Decision{{
+		Time: "2026-09-27T09:00:00Z", Host: "m5", Kind: "reservation refusal", Requester: "codex-pantheon", Resource: "m5",
+		Assessed: "occupied", Determination: "refuse", Why: "live reservation", Evidence: "reservation:m5-1",
+	}}}
+	newMaatDecisionJournal = func() (maat.DecisionJournal, error) { return journal, nil }
+	maatCasebookKind, maatCasebookStatus, maatCasebookLimit, maatJSON = "allocation", "open", 10, false
+	if err := maatCasebookCmd.RunE(maatCasebookCmd, []string{"m5"}); err != nil {
+		t.Fatalf("casebook command: %v", err)
+	}
+	if len(journal.decisions) != 1 || journal.decisions[0].Determination != "refuse" {
+		t.Fatalf("casebook changed source journal: %+v", journal.decisions)
+	}
+	maatCasebookStatus = "invented"
+	err := maatCasebookCmd.RunE(maatCasebookCmd, nil)
+	if err == nil || !strings.Contains(err.Error(), "invalid --status") {
+		t.Fatalf("invalid status error = %v", err)
+	}
 }
 
 func (j *capturedDecisionJournal) Recent(int) ([]maat.Decision, error) { return j.decisions, nil }

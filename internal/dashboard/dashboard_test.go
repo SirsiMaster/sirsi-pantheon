@@ -12,6 +12,7 @@ import (
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/casebook"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/stele"
 )
@@ -22,6 +23,47 @@ func testServer(t *testing.T, cfg Config) *httptest.Server {
 	t.Helper()
 	s := New(cfg)
 	return httptest.NewServer(s.srv.Handler)
+}
+
+func TestMaatCasebook_ProjectionAndFilters(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t, Config{MaatCasebookFn: func(q casebook.Query) (casebook.View, error) {
+		if q.Status != casebook.StatusOpen || q.Kind != "allocation" || q.Text != "m5" || q.Limit != 3 {
+			t.Fatalf("query = %+v", q)
+		}
+		return casebook.View{Cases: []casebook.Case{{ID: "maat-case-1", Status: casebook.StatusOpen}}, Summary: casebook.Summary{Total: 1, Open: 1}}, nil
+	}})
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/maat/casebook?q=m5&kind=allocation&status=open&limit=3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/maat/casebook = %d, want 200", resp.StatusCode)
+	}
+	var got casebook.View
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Summary.Open != 1 || len(got.Cases) != 1 {
+		t.Fatalf("casebook = %+v", got)
+	}
+}
+
+func TestMaatCasebook_RejectsUnknownStatus(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t, Config{MaatCasebookFn: func(casebook.Query) (casebook.View, error) { return casebook.View{}, nil }})
+	defer ts.Close()
+	resp, err := http.Get(ts.URL + "/api/maat/casebook?status=unknown")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("GET /api/maat/casebook?status=unknown = %d, want 400", resp.StatusCode)
+	}
 }
 
 func TestMaatDecisions_Projection(t *testing.T) {

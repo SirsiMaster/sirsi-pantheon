@@ -11,6 +11,7 @@ import (
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/casebook"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 )
@@ -70,10 +71,18 @@ type Config struct {
 	// dashboard never recalculates a Ma'at determination from reservations or
 	// host facts; it renders the producer's recorded assessment verbatim.
 	MaatDecisionsFn MaatDecisionProducer
+	// MaatCasebookFn provides a local System One projection over the shared
+	// decision journal. It remains read-only: the dashboard cannot treat a
+	// case as a new decision or authorization.
+	MaatCasebookFn MaatCasebookProducer
 }
 
 // MaatDecisionProducer supplies the most recent recorded Ma'at decisions.
 type MaatDecisionProducer func(limit int) ([]maat.Decision, error)
+
+// MaatCasebookProducer supplies a classified and evidence-linked decision
+// projection for the Ma'at dashboard view.
+type MaatCasebookProducer func(casebook.Query) (casebook.View, error)
 
 // FleetProducer supplies the raw ledger snapshot the fleet board diffs into a
 // transition feed.
@@ -149,6 +158,7 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("/api/ledger", s.apiLedger)          // A26 Nexus board seam — ledger.BoardSummary
 	mux.HandleFunc("/api/fabric", s.apiFabric)          // unified work/message/lane contract
 	mux.HandleFunc("/api/maat/decisions", s.apiMaatDecisions)
+	mux.HandleFunc("/api/maat/casebook", s.apiMaatCasebook)
 
 	s.handler = mux
 	s.srv = &http.Server{

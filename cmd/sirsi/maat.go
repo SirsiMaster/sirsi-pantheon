@@ -191,6 +191,16 @@ func runMaatAudit(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	// The audit is only fully accounted for when its findings are available to
+	// the local System One casebook. Keep the decision journal as the single
+	// append-only record; Casebook projects it but never becomes a policy store.
+	journal, err := newMaatDecisionJournal()
+	if err != nil {
+		return fmt.Errorf("open Ma'at decision journal: %w", err)
+	}
+	if err := maat.RecordReport(journal, "sirsi maat audit", report); err != nil {
+		return fmt.Errorf("record Ma'at audit: %w", err)
+	}
 
 	if !JsonOutput {
 		// Print per-module verdict table.

@@ -59,3 +59,34 @@ func TestFileDecisionJournalReadsExistingMaatDecisionShape(t *testing.T) {
 		t.Fatalf("existing decision shape = %+v", got)
 	}
 }
+
+func TestRecordReportProjectsEveryAssessmentAndSummary(t *testing.T) {
+	j := &FileDecisionJournal{Path: filepath.Join(t.TempDir(), "decisions.jsonl")}
+	report := NewReport([]Assessment{
+		{Domain: DomainCanon, Subject: "abc feature", Standard: "ADR reference", Verdict: VerdictPass, FeatherWeight: 100, Message: "linked"},
+		{Domain: DomainCoverage, Subject: "internal/maat", Standard: "80%", Verdict: VerdictFail, FeatherWeight: 0, Message: "coverage low", Remediation: "add tests"},
+	})
+	report.AssessedAt = report.AssessedAt.UTC()
+	if err := RecordReport(j, "sirsi maat audit", report); err != nil {
+		t.Fatal(err)
+	}
+	got, err := j.Recent(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("recorded %d decisions, want two assessments plus summary", len(got))
+	}
+	seen := map[string]bool{}
+	for _, decision := range got {
+		seen[decision.Kind] = true
+		if decision.Requester != "sirsi maat audit" || decision.Evidence == "" {
+			t.Fatalf("record = %+v", decision)
+		}
+	}
+	for _, kind := range []string{"assessment canon", "assessment coverage", "assessment report"} {
+		if !seen[kind] {
+			t.Fatalf("missing %q in %+v", kind, got)
+		}
+	}
+}

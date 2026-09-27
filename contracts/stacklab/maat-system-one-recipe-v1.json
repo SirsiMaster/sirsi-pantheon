@@ -1,0 +1,121 @@
+{
+  "schema": "sirsi.stacklab.recipe.v1",
+  "id": "stacklab.recipe.maat-system-one",
+  "wing": "stacklab.wing.maat",
+  "product": "sirsi-pantheon",
+  "version": 1,
+  "purpose": "Local, deterministic operational intelligence that records Ma'at facts and projects them into inspectable cases without an LLM, external service, or a second policy store.",
+  "authority": {
+    "decision_writer": "internal/maat.DecisionJournal",
+    "assessment_owner": "internal/maat",
+    "projection_owner": "internal/maat/casebook",
+    "cross_device_transport": "router receipt only",
+    "prohibited": [
+      "casebook cannot authorize work",
+      "casebook cannot reserve a resource",
+      "casebook cannot execute payloads",
+      "casebook cannot invent evidence or remote attestations"
+    ]
+  },
+  "components": [
+    {
+      "id": "maat-core",
+      "source": ["internal/maat/maat.go"],
+      "tests": ["internal/maat/maat_test.go"],
+      "inputs": ["Assessor implementations"],
+      "outputs": ["Report", "Assessment", "Verdict"],
+      "writes": [],
+      "upgrade_recipe": ["preserve Verdict meanings", "add assessor through the Assessor interface", "run internal/maat tests"]
+    },
+    {
+      "id": "maat-canon",
+      "source": ["internal/maat/canon.go"],
+      "tests": ["internal/maat/canon_test.go", "internal/maat/coverage_sprint2_test.go"],
+      "inputs": ["repository git history", "recognized canon documents"],
+      "outputs": ["canon assessments"],
+      "writes": [],
+      "upgrade_recipe": ["extend reference patterns with positive and negative fixtures", "record report through RecordReport"]
+    },
+    {
+      "id": "maat-coverage",
+      "source": ["internal/maat/coverage.go"],
+      "tests": ["internal/maat/coverage_test.go", "internal/maat/coverage_fastmode_test.go"],
+      "inputs": ["Go coverage output", "bounded cache"],
+      "outputs": ["coverage assessments"],
+      "writes": ["coverage cache"],
+      "upgrade_recipe": ["preserve cache honesty", "exercise fast and cold-cache fixtures", "record report through RecordReport"]
+    },
+    {
+      "id": "maat-pipeline",
+      "source": ["internal/maat/pipeline.go"],
+      "tests": ["internal/maat/pipeline_test.go", "internal/maat/pipeline_sprint_test.go"],
+      "inputs": ["injected or gh CI run/log data"],
+      "outputs": ["pipeline assessments", "failure category and remediation"],
+      "writes": [],
+      "upgrade_recipe": ["add parser fixtures before new category rules", "record report through RecordReport"]
+    },
+    {
+      "id": "maat-pulse-proof-platform",
+      "source": ["internal/maat/pulse.go", "internal/maat/proof.go", "internal/maat/platform.go"],
+      "tests": ["internal/maat/pulse_test.go", "internal/maat/proof_test.go", "internal/maat/platform_test.go"],
+      "inputs": ["bounded local measurements"],
+      "outputs": ["metrics", "hardening proof", "platform integrity result"],
+      "writes": [".pantheon/metrics.json"],
+      "upgrade_recipe": ["make each collector injectable", "bound every generated metric to its measurement scope"]
+    },
+    {
+      "id": "maat-decision-journal",
+      "source": ["internal/maat/decisions.go"],
+      "tests": ["internal/maat/decisions_test.go"],
+      "inputs": ["Ma'at decisions and reports"],
+      "outputs": ["ordered decision records"],
+      "writes": ["~/.sirsi/maat/decisions.jsonl"],
+      "upgrade_recipe": ["retain JSONL compatibility", "append and fsync records", "reject malformed records", "never turn local evidence into remote proof"]
+    },
+    {
+      "id": "maat-casebook",
+      "source": ["internal/maat/casebook/casebook.go"],
+      "tests": ["internal/maat/casebook/casebook_test.go"],
+      "inputs": ["DecisionJournal records"],
+      "outputs": ["classified cases", "priority summary", "actor/resource/evidence graph"],
+      "writes": [],
+      "upgrade_recipe": ["keep classification descriptive", "add deterministic source fixtures", "never add policy or execution authority"]
+    },
+    {
+      "id": "maat-scheduler",
+      "source": ["internal/maat/schedule/reservation.go", "internal/maat/schedule/conflict.go", "internal/maat/schedule/plan.go"],
+      "tests": ["internal/maat/schedule/reservation_test.go"],
+      "inputs": ["router state", "activity probe", "time"],
+      "outputs": ["reservation grants/refusals/queues", "conflict and coverage reports"],
+      "writes": ["shared router reservation state", "decision journal via CLI"],
+      "upgrade_recipe": ["retain foreign-overlap refusal", "test lease expiry and collision paths", "record each user-visible outcome"]
+    },
+    {
+      "id": "maat-cli",
+      "source": ["cmd/sirsi/maat.go", "cmd/sirsi/maatschedule.go", "cmd/sirsi/maatcasebook.go"],
+      "tests": ["cmd/sirsi/maatschedule_decisions_test.go"],
+      "inputs": ["local operator command"],
+      "outputs": ["human and JSON views"],
+      "writes": ["only explicit audit and reservation decision records"],
+      "upgrade_recipe": ["keep JSON and human output derived from shared types", "add command tests for each new flag"]
+    },
+    {
+      "id": "maat-horus-surface",
+      "source": ["internal/dashboard/maat.go", "internal/dashboard/server.go", "internal/dashboard/pages.go", "cmd/sirsi/dashboard.go"],
+      "tests": ["internal/dashboard/dashboard_test.go"],
+      "inputs": ["MaatDecisionProducer", "MaatCasebookProducer"],
+      "outputs": ["GET /api/maat/decisions", "GET /api/maat/casebook", "Horus Ma'at view"],
+      "writes": [],
+      "upgrade_recipe": ["keep endpoints GET-only", "reject invalid filters", "return 503 rather than a fabricated empty projection"]
+    },
+    {
+      "id": "maat-wing-contract",
+      "source": ["contracts/stacklab/maat-wing-v1.json", "contracts/stacklab/maat-system-one-recipe-v1.json", "docs/qa/MAAT_SYSTEM_ONE_CATALOG.md"],
+      "tests": ["internal/stacklab/doctor_test.go", "internal/stacklab/maat_recipe_test.go"],
+      "inputs": ["Stack Lab schema and registry pin"],
+      "outputs": ["wing authority record", "upgrade recipes"],
+      "writes": ["source contract only"],
+      "upgrade_recipe": ["validate schema locally", "merge to origin/main", "obtain universal registry byte pin before calling the wing canonical"]
+    }
+  ]
+}
