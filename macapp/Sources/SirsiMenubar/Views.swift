@@ -3087,32 +3087,6 @@ struct AskSirsiView: View {
         }
         return "READING LOCAL CONDUIT"
     }
-    private var managerTiles: [ManagerTileSpec] {
-        let canon = engine.askSirsiCanonGroundingStatus()
-        return [
-            ManagerTileSpec(symbol: "point.3.connected.trianglepath.dotted",
-                            title: "Router Fabric",
-                            value: "\(engine.threadsTotal) live threads",
-                            detail: engine.routerSummary,
-                            tint: statusColor(engine.routerStatus)),
-            ManagerTileSpec(symbol: "cpu",
-                            title: "Compute",
-                            value: engine.vitals.map { SirsiEngine.human($0.freeBytes) + " free" } ?? "sampling node",
-                            detail: engine.vitals.map { "pressure \($0.pressure)" } ?? "ANE/MLX/Metal/CPU lanes",
-                            tint: engine.vitals?.pressure == "critical" ? .red : (engine.vitals?.pressure == "warn" ? .orange : .green)),
-            ManagerTileSpec(symbol: "books.vertical",
-                            title: "Knowledge",
-                            value: canon.value,
-                            detail: canon.detail,
-                            tint: canon.healthy ? .green : .orange),
-            ManagerTileSpec(symbol: "lock.shield",
-                            title: "Authority",
-                            value: engine.ownerGatedItems.isEmpty ? "action-gated" : "\(engine.ownerGatedItems.count) owner items",
-                            detail: "explains, routes, and keeps destructive work governed",
-                            tint: engine.ownerGatedItems.isEmpty ? .green : .yellow),
-        ]
-    }
-
     init(engine: SirsiEngine, preloadedAnswer: String? = nil) {
         self.engine = engine
         _answer = State(initialValue: preloadedAnswer)
@@ -3155,197 +3129,119 @@ struct AskSirsiView: View {
     }
 
     private var managerContent: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .top, spacing: 12) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(gold.opacity(0.18))
-                            .frame(width: 44, height: 44)
-                        Image(systemName: "terminal.fill")
-                            .sirsiFont(20, weight: .bold)
-                            .foregroundStyle(gold)
-                    }
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Internal System Manager")
-                            .sirsiFont(17, weight: .bold)
-                            .foregroundStyle(.primary)
-                        Text("Ask Sirsi knows Pantheon, the router, Hypergraph, Sirsi IO, portfolio apps, and this Mac's local operating state.")
-                            .sirsiFont(11, weight: .medium)
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Ask Sirsi")
+                            .font(.title2.weight(.bold))
+                        Text("A private assistant for this Mac and its active work.")
+                            .font(.subheadline)
                             .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    Spacer(minLength: 8)
+                    Spacer()
+                    Label(online ? "On device" : "Unavailable", systemImage: online ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(online ? .green : .orange)
                 }
-
-                HStack(spacing: 7) {
-                    ManagerPill(text: liveStatus, tint: online ? .green : .yellow)
-                    ManagerPill(text: "LOCAL ONLY", tint: gold)
-                }
+                Text(liveStatus)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             .padding(14)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(deepPanelFill)
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(gold.opacity(0.38), lineWidth: 1))
-            )
+            .background(RoundedRectangle(cornerRadius: 10).fill(deepPanelFill))
 
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 152), spacing: 8)], spacing: 8) {
-                ForEach(managerTiles) { tile in
-                    ManagerTile(tile: tile, fill: panelFill)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles").foregroundStyle(gold)
-                    Text("Operator Query")
-                        .sirsiFont(12, weight: .bold)
-                        .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("What would you like to know?")
+                        .font(.headline)
                     Spacer()
                     if asking { ProgressView().controlSize(.small) }
                 }
 
                 if snapshotMode {
-                    HStack(spacing: 6) {
-                        Text("Ask Sirsi about router work, local health, or what changed.")
-                            .sirsiFont(13)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Image(systemName: "arrow.up.circle.fill").foregroundStyle(gold)
-                    }
-                    .padding(10)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(panelFill))
-                } else {
-                    HStack(spacing: 8) {
-                        TextField("Ask about Sirsi, Pantheon, router work, local health, or what changed.", text: $question)
-                            .textFieldStyle(.plain)
-                            .sirsiFont(13)
-                            .onSubmit { ask() }
-                        Button { ask() } label: { Image(systemName: "arrow.up.circle.fill").sirsiFont(20) }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(gold)
-                            .disabled(question.trimmingCharacters(in: .whitespaces).isEmpty || !online || asking)
-                    }
-                    .padding(10)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(panelFill))
-                }
-
-                if snapshotMode {
-                    Label("Report what Sirsi taught you", systemImage: "book.closed")
-                        .frame(maxWidth: .infinity)
-                        .sirsiFont(12, weight: .semibold)
-                        .foregroundStyle(gold)
-                        .padding(.vertical, 6)
+                    Label("Ask about current work, the router, or this Mac.", systemImage: "text.cursor")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
                         .background(RoundedRectangle(cornerRadius: 8).fill(panelFill))
                 } else {
-                    Button { askKnowledgeReport() } label: {
-                        Label("Report what Sirsi taught you", systemImage: "book.closed")
-                            .frame(maxWidth: .infinity)
+                    HStack(spacing: 10) {
+                        TextField("Ask about current work, the router, or this Mac.", text: $question)
+                            .textFieldStyle(.plain)
+                            .font(.body)
+                            .onSubmit { ask() }
+                        Button { ask() } label: {
+                            Label("Send", systemImage: "arrow.up")
+                                .labelStyle(.iconOnly)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !online || asking)
                     }
-                    .buttonStyle(.borderless)
-                    .sirsiFont(12, weight: .semibold)
-                    .foregroundStyle(gold)
-                    .padding(.vertical, 6)
+                    .padding(10)
                     .background(RoundedRectangle(cornerRadius: 8).fill(panelFill))
-                    .disabled(asking || !online)
+                }
+
+                HStack(spacing: 8) {
+                    suggestion("What needs attention?")
+                    suggestion("What changed?")
+                    suggestion("Summarize active work")
                 }
             }
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 8).fill(deepPanelFill))
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.045)))
 
             if let answer {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Sirsi Response")
-                        .sirsiFont(12, weight: .bold)
-                        .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Sirsi's answer", systemImage: "sparkles")
+                        .font(.headline)
                     Text(answer)
-                        .sirsiFont(13)
-                        .lineLimit(snapshotMode ? 7 : nil)
+                        .font(.body)
+                        .lineLimit(snapshotMode ? 8 : nil)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
-                    Text("answered on-device by Sirsi - no cloud")
-                        .sirsiFont(.caption2)
-                        .foregroundStyle(.tertiary)
+                    Text("Generated locally on this Mac")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                .padding(12)
-                .background(RoundedRectangle(cornerRadius: 8).fill(panelFill))
+                .padding(14)
+                .background(RoundedRectangle(cornerRadius: 10).fill(panelFill))
             }
-        }
-        .padding(.horizontal, 12)
-        .padding(.top, 8)
-        .padding(.bottom, 12)
-    }
-}
 
-struct ManagerTileSpec: Identifiable {
-    var id: String { title }
-    let symbol: String
-    let title: String
-    let value: String
-    let detail: String
-    let tint: Color
-}
-
-struct ManagerPill: View {
-    let text: String
-    let tint: Color
-
-    var body: some View {
-        HStack(spacing: 5) {
-            Circle().fill(tint).frame(width: 6, height: 6)
-            Text(text)
-                .sirsiFont(9, weight: .bold)
-                .lineLimit(1)
-                .minimumScaleFactor(0.78)
-        }
-        .foregroundStyle(.primary)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(
-            RoundedRectangle(cornerRadius: 7)
-                .fill(tint.opacity(0.12))
-                .overlay(RoundedRectangle(cornerRadius: 7).stroke(tint.opacity(0.35), lineWidth: 1))
-        )
-    }
-}
-
-struct ManagerTile: View {
-    let tile: ManagerTileSpec
-    let fill: Color
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 7) {
-                Image(systemName: tile.symbol)
-                    .sirsiFont(13, weight: .bold)
-                    .foregroundStyle(tile.tint)
-                    .sirsiFrame(width: 18)
-                Text(tile.title.uppercased())
-                    .sirsiFont(9, weight: .bold)
+            if snapshotMode {
+                Label("Create a local briefing", systemImage: "doc.text")
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                Spacer(minLength: 4)
+                    .padding(.vertical, 7)
+            } else {
+                Button { askKnowledgeReport() } label: {
+                    Label("Create a local briefing", systemImage: "doc.text")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .buttonStyle(.bordered)
+                .disabled(asking || !online)
+                .accessibilityHint("Creates a concise local summary of Sirsi's current context")
             }
-            Text(tile.value)
-                .sirsiFont(13, weight: .bold)
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-            Text(tile.detail)
-                .sirsiFont(11, weight: .medium)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(maxWidth: .infinity, minHeight: 86, alignment: .topLeading)
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(fill)
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(tile.tint.opacity(0.26), lineWidth: 1))
-        )
+        .padding(16)
+    }
+
+    @ViewBuilder private func suggestion(_ text: String) -> some View {
+        if snapshotMode {
+            Text(text)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(panelFill))
+        } else {
+            Button(text) { question = text }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(asking || !online)
+        }
     }
 }
 
