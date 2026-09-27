@@ -259,10 +259,9 @@ struct PantheonLibraryView: View {
                         libraryLink("Osiris", symbol: "shield") { RiskView(engine: engine) }
                     }
                     librarySection("INTELLIGENCE") {
-                        libraryLink("Ma'at", symbol: "checkmark.seal") { MaatCasebookView(engine: engine) }
+                        libraryLink("Ma'at", symbol: "checkmark.seal") { MaatWorkspaceView(engine: engine) }
                         libraryLink("Thoth", symbol: "books.vertical") { ThothMemoryInfoView(engine: engine) }
                         libraryLink("Ra", symbol: "person.3") { ResultView(engine: engine, title: "Ra — Agent Fleet", args: ["ra", "status"]) }
-                        libraryLink("Seshat", symbol: "text.book.closed") { ResultView(engine: engine, title: "Seshat — Knowledge", args: ["seshat", "list"]) }
                         libraryLink("Net", symbol: "arrow.triangle.branch") { ResultView(engine: engine, title: "Net — Plan", args: ["net", "status"]) }
                         libraryLink("Vault", symbol: "archivebox") { ResultView(engine: engine, title: "Vault — Context", args: ["vault", "stats"]) }
                         libraryLink("RTK", symbol: "line.3.horizontal.decrease.circle") { ResultView(engine: engine, title: "RTK — Output Filter", args: ["rtk", "stats"]) }
