@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.5] — 2026-09-27 — Willing cessation for shared resources
+**Commercial patch release.** Ma’at now supports explicit, non-preemptive resource handoff:
+- lanes may request, grant, counter, decline, or withdraw a cede for a machine or bounded core share;
+- only the named holder may answer a request, and unanswered requests remain pending;
+- scheduler reservations are never silently revoked and running work is never killed by Ma’at;
+- `sirsi maat status` exposes pending cedes without changing the reservation JSON contract.
+
 ## [0.24.4] — 2026-09-27 — Ma'at decision ledger
 **Commercial patch release.** Ma'at reservation outcomes are now directly visible and drillable from the Pantheon CLI:
 - `sirsi maat decisions` lists grants, queues, refusals, releases, and conflict checks with filters.
