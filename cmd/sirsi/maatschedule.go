@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/decision"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/spf13/cobra"
@@ -26,6 +27,13 @@ import (
 // admissionRefusedExit mirrors maat-repro-lint's exit 97: a harness that calls
 // `reserve` and is refused stops with this code instead of touching the cable.
 const admissionRefusedExit = 97
+
+// recordDecision appends the human-readable outcome to Ma'at's host-local
+// decision ledger. The reservation ledger remains the scheduling authority;
+// this is an explanatory projection for `sirsi maat decisions`.
+func recordDecision(kind, requester, resource, assessed, affected, determination, why, evidence string) {
+	_ = decision.Append("", decision.New(kind, requester, resource, assessed, affected, determination, why, evidence))
+}
 
 func maatLedger() (*schedule.Ledger, error) {
 	st, err := routerstore.Resolve()
@@ -185,39 +193,6 @@ var maatStatusCmd = &cobra.Command{
 	},
 }
 
-var maatDecisionsCmd = &cobra.Command{
-	Use:   "decisions",
-	Short: "Show recent Ma'at grants, refusals, queues, and assessment reasons",
-	Args:  cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		journal, err := newMaatDecisionJournal()
-		if err != nil {
-			return err
-		}
-		rows, err := journal.Recent(50)
-		if err != nil {
-			return err
-		}
-		if maatJSON {
-			return emitJSON(rows)
-		}
-		if len(rows) == 0 {
-			fmt.Println("𓆄 no Ma'at decisions recorded")
-			return nil
-		}
-		fmt.Printf("𓆄 Ma'at decisions (%d)\n", len(rows))
-		for _, d := range rows {
-			affected := ""
-			if d.Affected != "" {
-				affected = " affects " + d.Affected
-			}
-			fmt.Printf("  %-7s %-10s %-12s %-14s %s%s\n",
-				short(d.Time), d.Determination, d.Resource, d.Requester, d.Why, affected)
-		}
-		return nil
-	},
-}
-
 var maatWhoCmd = &cobra.Command{
 	Use:   "who-is-on <resource>",
 	Short: "Show the current live holder of a resource",
@@ -295,6 +270,7 @@ var maatReleaseCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		recordDecision("reservation release", r.Holder, r.Resource, fmt.Sprintf("held %s → %s", r.Start, orNow(r.EstEnd)), r.Resource, "released", r.Work, r.ID)
 		if maatJSON {
 			return emitJSON(r)
 		}
@@ -378,6 +354,11 @@ var maatConflictCheckCmd = &cobra.Command{
 			}
 			notifyIntruders(rep)
 		}
+		determination := "clean"
+		if !rep.Clean {
+			determination = "conflict"
+		}
+		recordDecision("conflict-check", rep.Holder, rep.Resource, fmt.Sprintf("live activity on %s", machine), rep.Holder, determination, rep.Summary, rep.Reservation)
 		if maatJSON {
 			_ = emitJSON(rep)
 		} else if rep.Clean {

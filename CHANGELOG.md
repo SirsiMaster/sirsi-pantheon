@@ -7,6 +7,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ---
 
 ## [Unreleased]
+- **feat(maat): live, drillable decision ledger — `sirsi maat decisions`** (claude-pantheon, 2026-09-26; router item `20260926-143533`). Owner ask via claude-io: Ma'at's grants/refusals/other work should be live and drillable to what it assessed, who it affected, what determination was made and why. `internal/maat/decision` is a schema-tolerant JSONL reader/writer over `~/.sirsi/maat/decisions.jsonl` (the file other hosts' writers — m5go, the `maat-window-gate` hook, `maat-run-guard` — already append to); `sirsi maat decisions` lists (filterable by `--kind`/`--host`/`--since`), `sirsi maat decisions show <id>` drills into one record by a stable content-derived short id. `sirsi maat reserve|release|conflict-check` now write their own decision records natively (closing the gap the ask named). Host-local by design for now — cross-host aggregation is the follow-up pending Ra's canonical-ledger-location answer; each host's ledger is self-contained and drillable today. Refs: PANTHEON_RULES.md A26; internal/maat/decision/README.md; docs/user-guides/maat.md; Changelog: Unreleased
 
 ## [0.24.0] — 2026-09-27 — Router A2A Fabric
 **First tagged, packaged, published release.** The router agent-to-agent (A2A) fabric ships end-to-end and is the canonical baseline for the next build:

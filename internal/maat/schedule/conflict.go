@@ -134,12 +134,21 @@ func probeProcesses(machine string) ([]Actor, error) {
 }
 
 // classifyProc maps a `ps` command line to a contaminant class, or "" to ignore.
+//
+// A self-hosted GitHub Actions runner is IDLE — no job in flight, not load —
+// whenever only its service processes are up: Runner.Listener (waits for
+// jobs) and runsvc.sh (the launchd wrapper that starts it). Both live under
+// an "actions-runner" path, same as the runner's actual job-execution
+// process, Runner.Worker. Matching on the path substring ("actions-runner")
+// or the listener's own start script ("run.sh") flagged the idle listener as
+// build load and killed a live reservation (2026-09-26, M1, rc8 signing run,
+// router item 20260926-171755). Only Runner.Worker — spawned per job — is load.
 func classifyProc(cmd string) string {
 	lc := strings.ToLower(cmd)
 	switch {
 	case containsAny(lc, "tbraw-bench", "tcp-bench", "tbraw ", "rail-bench", "hermes-bench", "iperf"):
 		return "bench"
-	case containsAny(lc, "go build", "vite build", "xcodebuild", "cargo build", "actions-runner", "run.sh"):
+	case containsAny(lc, "go build", "vite build", "xcodebuild", "cargo build", "runner.worker"):
 		return "build"
 	case containsAny(lc, "mlx_lm", "gemma serve", "sne-runner", "llama", "model-load"):
 		return "model"
