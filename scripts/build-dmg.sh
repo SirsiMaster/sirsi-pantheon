@@ -87,6 +87,14 @@ cp -R "${PROJECT_ROOT}/contracts/stacklab" "${BUNDLE_DIR}/Contents/Resources/Sta
 # package and both executables are built from the requested release version.
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "${BUNDLE_DIR}/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${VERSION}" "${BUNDLE_DIR}/Contents/Info.plist"
+# AppleDouble sidecars are transport metadata, never product resources.  They
+# can appear when a source tree crosses volumes; remove them before signing so
+# a DMG and PKG cannot silently ship hidden duplicate payload entries.
+/usr/bin/find "${BUNDLE_DIR}" -type f -name '._*' -delete
+if /usr/bin/find "${BUNDLE_DIR}" -type f -name '._*' -print -quit | /usr/bin/grep -q .; then
+    echo "ERROR: AppleDouble metadata remains in application bundle." >&2
+    exit 1
+fi
 
 # --- Code signing ---
 if [ -n "${DEVELOPER_ID_APPLICATION:-}" ]; then

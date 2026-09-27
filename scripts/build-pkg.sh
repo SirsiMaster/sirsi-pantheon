@@ -31,7 +31,15 @@ PAYLOAD_ROOT="$(mktemp -d /private/tmp/pantheon-pkg-payload.XXXXXX)"
 PAYLOAD_APP_DIR="$PAYLOAD_ROOT/Applications"
 PKG_PATH="$BUILD_DIR/SirsiPantheon-${VERSION}-arm64.pkg"
 mkdir -p "$PAYLOAD_APP_DIR"
-/usr/bin/ditto "$APP_PATH" "$PAYLOAD_APP_DIR/Pantheon.app"
+# The payload staging tree is generated for this package only.  Do not carry
+# Finder/resource-fork metadata across volumes: pkgbuild otherwise serializes
+# it as visible AppleDouble `._*` files in the installer payload.
+COPYFILE_DISABLE=1 /usr/bin/ditto "$APP_PATH" "$PAYLOAD_APP_DIR/Pantheon.app"
+/usr/bin/xattr -cr "$PAYLOAD_ROOT"
+if /usr/bin/find "$PAYLOAD_ROOT" -type f -name '._*' -print -quit | /usr/bin/grep -q .; then
+    echo "ERROR: refusing PKG payload containing AppleDouble metadata." >&2
+    exit 1
+fi
 
 PKGBUILD_ARGS=(
     --root "$PAYLOAD_ROOT"
@@ -45,6 +53,39 @@ else
     echo "WARNING: creating unsigned PKG (DEVELOPER_ID_INSTALLER is not configured)." >&2
 fi
 PKGBUILD_ARGS+=("$PKG_PATH")
-/usr/bin/pkgbuild "${PKGBUILD_ARGS[@]}"
-/usr/sbin/pkgutil --check-signature "$PKG_PATH"
+COPYFILE_DISABLE=1 /usr/bin/pkgbuild "${PKGBUILD_ARGS[@]}"
+
+# `pkgutil --payload-files` includes metadata records that look like
+# AppleDouble paths.  Inspect the expanded archive instead: this proves what
+# Installer will actually unpack and verifies the Stack Lab release contract
+# survived the package boundary.
+EXPANDED_ROOT="$PAYLOAD_ROOT/expanded-payload"
+/usr/sbin/pkgutil --expand-full "$PKG_PATH" "$EXPANDED_ROOT"
+if /usr/bin/find "$EXPANDED_ROOT" -type f -name '._*' -print -quit | /usr/bin/grep -q .; then
+    echo "ERROR: refusing PKG with AppleDouble files in its expanded payload." >&2
+    exit 1
+fi
+if [[ ! -f "$EXPANDED_ROOT/Payload/Applications/Pantheon.app/Contents/Resources/StackLab/ra-horus-fabric-wing-v1.json" ]]; then
+    echo "ERROR: expanded PKG payload is missing the Ra Stack Lab contract." >&2
+    exit 1
+fi
+
+# pkgutil intentionally exits nonzero for an unsigned package.  That is a
+# useful signal for distribution, but not a reason to throw away a clearly
+# labelled local release candidate.  A configured installer identity is the
+# opposite: signature verification is mandatory and any failure is fatal.
+if [[ -n "${DEVELOPER_ID_INSTALLER:-}" ]]; then
+    /usr/sbin/pkgutil --check-signature "$PKG_PATH"
+else
+    set +e
+    SIGNATURE_REPORT="$(/usr/sbin/pkgutil --check-signature "$PKG_PATH" 2>&1)"
+    SIGNATURE_STATUS=$?
+    set -e
+    printf '%s\n' "$SIGNATURE_REPORT"
+    if [[ "$SIGNATURE_REPORT" != *"Status: no signature"* ]]; then
+        echo "ERROR: unsigned PKG did not report the expected unsigned state (pkgutil=$SIGNATURE_STATUS)." >&2
+        exit 1
+    fi
+    echo "WARNING: unsigned PKG is a release candidate only; do not distribute it as a commercial installer." >&2
+fi
 echo "PKG created: $PKG_PATH"
