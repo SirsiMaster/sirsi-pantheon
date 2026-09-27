@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.11] — 2026-09-27 — Canonical Hermes router identity
+**Commercial patch release.** The router registry now has one explicit Hermes
+software identity for the M1 Photon seat and one explicit `hermes-m5` identity
+for the M5 seat, while `claude-io` is restored to the I/O pillar. This removes
+the ambiguous two-seats-one-identity mapping and makes router ownership,
+working directory, and Stack Lab workstream resolution deterministic.
+
 ## [0.24.10] — 2026-09-27 — Hermes and Photon lane identity
 **Commercial patch release.** Pantheon’s Stack Lab lane map now resolves the
 renamed `sirsi-hermes` transport repository and the new `sirsi-photon`
