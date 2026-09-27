@@ -3,6 +3,7 @@ package router
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -51,6 +52,9 @@ func TestDispatchConsumerRunsThroughLoginShellSoStartupFilesApply(t *testing.T) 
 // Without the wrapper the consumer never sees the shell startup files that
 // export its credentials. Assert the wrapper is actually applied.
 func TestLoginShellArgvWrapsThroughShell(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("login-shell wrapper contract is macOS-specific")
+	}
 	t.Setenv("SHELL", "/bin/zsh")
 	got := loginShellArgv([]string{"claude", "--print", "hi"})
 	want := []string{"/bin/zsh", "-lc", `exec "$@"`, "/bin/zsh", "claude", "--print", "hi"}

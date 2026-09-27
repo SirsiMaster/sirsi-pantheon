@@ -296,3 +296,8 @@ sync_protocol:
 # Only loopback endpoints are accepted; the same local-provider predicate
 # prevents a selected Native v2 endpoint from becoming a remote rung. This is
 # ABI consumption only—SNE retains runtime lifecycle and qualification.
+# 2026-09-27 (SSA): Pantheon v0.24.2 release candidate head 96d78cf1 binds
+# native Ra handoff messages to the declared local Horus identity `horus` and
+# removes the editable sender field/undeclared `horus-local` alias. Swift
+# release build and CLI flag checks pass; full Go-suite host/router failures are
+# recorded in the build log.

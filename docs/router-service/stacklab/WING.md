@@ -1,4 +1,4 @@
-<!-- agent: ra | workstream: router-service (ADR-062) | Stack Lab wing: stacklab.wing.m1-ra -->
+<!-- agent: ra | workstream: router-service (ADR-062) | Stack Lab wing: stacklab.wing.ra-horus-fabric -->
 
 # Router Stack Lab Wing — `stacklab.wing.m1-ra`
 

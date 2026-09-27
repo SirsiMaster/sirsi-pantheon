@@ -399,6 +399,12 @@ func runJudge(ctx context.Context) error {
 	start := time.Now()
 	output.Banner()
 	output.Header("Cleanup")
+	// State the safety boundary before reading a scan or returning an empty
+	// plan. A dry run may legitimately find nothing cleanable, but it must
+	// never look like an apply operation to either a person or an automation.
+	if decideCleanAction(anubisDryRun, anubisConfirm, anubisYes) == cleanActionPreview {
+		output.Info("Dry run: preview only; nothing will be moved or deleted.")
+	}
 
 	// Load latest scan results.
 	persisted, err := jackal.LoadLatest()

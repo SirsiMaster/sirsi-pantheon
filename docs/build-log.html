@@ -567,6 +567,22 @@
     <div class="scroll-cue">↓ Scroll to see the journey</div>
   </section>
 
+  <!-- ═══ Release v0.24.2 ═══ -->
+  <section class="section" style="padding-bottom:2rem;">
+    <div style="max-width:900px; margin:0 auto;">
+      <p style="font-size:0.7rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.15em; margin-bottom:1rem;">2026-09-27 · Release candidate v0.24.2</p>
+      <h2 style="font-size:clamp(1.2rem,2.5vw,1.6rem);">Ra identity-bound handoff</h2>
+      <p style="color:var(--text-secondary); font-size:0.95rem; line-height:1.9; margin-top:1rem;">
+        The native Ra handoff surface now sends only as the declared local
+        <code>horus</code> agent. The editable <code>--from</code> field and the
+        undeclared <code>horus-local</code> alias are gone, closing a sender
+        impersonation path in the UI. Swift release build, CLI flag regression
+        checks, and diff checks passed; the full Go suite exposed existing
+        host/router-dependent failures and they remain explicitly recorded.
+      </p>
+    </div>
+  </section>
+
   <!-- ═══ What is Pantheon ═══ -->
   <section class="section" style="padding-bottom:2rem;">
     <div style="max-width:700px; margin:0 auto; text-align:center;">

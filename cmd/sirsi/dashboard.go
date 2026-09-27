@@ -12,6 +12,8 @@ import (
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dashboard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/casebook"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
@@ -60,11 +62,13 @@ func runDashboard(cmd *cobra.Command, args []string) {
 			snap := collectDashboardStats()
 			return json.Marshal(snap)
 		},
-		NodeStatusFn: collectDashboardNodeStatus,
-		LedgerFn:     collectDashboardLedger,
-		FleetFn:      collectDashboardFleet,
-		Unroutable:   dashboardUnroutable(),
-		FabricFn:     collectDashboardFabric,
+		NodeStatusFn:    collectDashboardNodeStatus,
+		LedgerFn:        collectDashboardLedger,
+		FleetFn:         collectDashboardFleet,
+		Unroutable:      dashboardUnroutable(),
+		FabricFn:        collectDashboardFabric,
+		MaatDecisionsFn: collectDashboardMaatDecisions,
+		MaatCasebookFn:  collectDashboardMaatCasebook,
 	})
 
 	if err := srv.Start(); err != nil {
@@ -93,6 +97,29 @@ func runDashboard(cmd *cobra.Command, args []string) {
 	if nStore != nil {
 		nStore.Close()
 	}
+}
+
+func collectDashboardMaatDecisions(limit int) ([]maat.Decision, error) {
+	journal, err := maat.NewDefaultDecisionJournal()
+	if err != nil {
+		return nil, err
+	}
+	return journal.Recent(limit)
+}
+
+func collectDashboardMaatCasebook(query casebook.Query) (casebook.View, error) {
+	if query.Limit <= 0 {
+		query.Limit = 50
+	}
+	journal, err := maat.NewDefaultDecisionJournal()
+	if err != nil {
+		return casebook.View{}, err
+	}
+	rows, err := journal.Recent(query.Limit)
+	if err != nil {
+		return casebook.View{}, err
+	}
+	return casebook.Search(rows, query), nil
 }
 
 func collectDashboardFabric() (ledger.FabricBoard, error) {

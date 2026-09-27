@@ -341,179 +341,9 @@ struct RootView: View {
 
 struct HomeView: View {
     @ObservedObject var engine: SirsiEngine
-    // Snapshot QA renders ScrollView viewports empty — swap for a plain stack.
-    @Environment(\.snapshotMode) private var snapshotMode
 
     var body: some View {
-        VStack(spacing: 0) {
-            CommandDeckView(engine: engine)
-                .padding(.horizontal, 12)
-                .padding(.top, 12)
-                .padding(.bottom, 8)
-                .task { await engine.fetchVitals() }
-                .task { await engine.fetchAutonomous() }
-
-            Divider().padding(.horizontal, 12)
-
-            // Home is two honest groups (owner, 2026-07-22 — "this is a mess"):
-            // NEEDS ATTENTION = rows with a CURRENT non-green condition, shown
-            // only while the condition holds; TOOLS = everything else, quiet,
-            // no fake-state chips. Canon: surfaces are current + actionable.
-            maybeScroll {
-                VStack(spacing: 2) {
-                    let attention = !engine.ownerGatedItems.isEmpty
-                        || engine.healthStatus != "green"
-                        || engine.routerStatus != "green"
-                        || engine.safeBytes >= SirsiEngine.wasteThreshold
-                    if attention {
-                        SectionLabel("NEEDS ATTENTION")
-                            .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 2)
-                        if !engine.ownerGatedItems.isEmpty {
-                            NavLink { OwnerActionsListView(engine: engine) } label: {
-                                DeityRow(glyph: "🔑", title: "Needs you — owner actions",
-                                         detail: "\(engine.ownerGatedItems.count) waiting", dot: .yellow)
-                            }.buttonStyle(.plain)
-                        }
-                        if engine.healthStatus != "green" {
-                            NavLink { HorusView(engine: engine) } label: {
-                                DeityRow(glyph: "𓂀", title: "Horus — Ops",
-                                         detail: engine.healthLoading ? "checking…" : engine.healthSummary,
-                                         dot: statusColor(engine.healthStatus))
-                            }.buttonStyle(.plain)
-                        }
-                        if engine.routerStatus != "green" {
-                            NavLink { RouterView(engine: engine) } label: {
-                                DeityRow(glyph: "🛰️", title: "Router — Fabric",
-                                         detail: engine.routerSummary,
-                                         dot: statusColor(engine.routerStatus))
-                            }.buttonStyle(.plain)
-                        }
-                        if engine.safeBytes >= SirsiEngine.wasteThreshold {
-                            NavLink { AnubisView(engine: engine) } label: {
-                                DeityRow(glyph: "🐺", title: "Anubis — Hygiene",
-                                         detail: "\(engine.safe.count) items ready", dot: .yellow)
-                            }.buttonStyle(.plain)
-                        }
-                        SectionLabel("TOOLS")
-                            .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 2)
-                    }
-
-                    NavLink { AskSirsiView(engine: engine) } label: {
-                        DeityRow(glyph: "🗣️", title: "Ask Sirsi — Local AI",
-                                 detail: engine.localLLM.map { $0.healthy == true ? "online" : "offline" },
-                                 dot: engine.localLLM.map { $0.healthy == true ? .green : .red })
-                    }.buttonStyle(.plain)
-
-                    NavLink { InsightView(engine: engine) } label: {
-                        DeityRow(glyph: "✨", title: "Insight — what to do next")
-                    }.buttonStyle(.plain)
-
-                    if engine.healthStatus == "green" {
-                        NavLink { HorusView(engine: engine) } label: {
-                            DeityRow(glyph: "𓂀", title: "Horus — Ops",
-                                     detail: engine.healthLoading ? "checking…" : engine.healthSummary,
-                                     dot: .green)
-                        }.buttonStyle(.plain)
-                    }
-
-                    if engine.routerStatus == "green" {
-                        NavLink { RouterView(engine: engine) } label: {
-                            DeityRow(glyph: "🛰️", title: "Router — Fabric",
-                                     detail: engine.routerSummary == "healthy" ? nil : engine.routerSummary)
-                        }.buttonStyle(.plain)
-                    }
-
-                    // Fleet reads the shared producer, so this row and the Horus
-                    // board cannot disagree. Detail stays nil until the board is
-                    // loaded — a placeholder count would be a number the surface
-                    // has not actually read.
-                    NavLink { FleetView(engine: engine) } label: {
-                        DeityRow(glyph: "⚑", title: "Fleet — every lane",
-                                 detail: engine.fleetBoard.map { "\($0.summary.lanesWorking) of \($0.summary.lanesTotal) working · \($0.summary.pctDone)% done" })
-                    }.buttonStyle(.plain)
-
-                    if engine.safeBytes < SirsiEngine.wasteThreshold {
-                        NavLink { AnubisView(engine: engine) } label: {
-                            DeityRow(glyph: "🐺", title: "Anubis — Hygiene", detail: "clean")
-                        }.buttonStyle(.plain)
-                    }
-
-                    NavLink { ThreadsView(engine: engine) } label: {
-                        DeityRow(glyph: "💓", title: "Threads — Heartbeat",
-                                 detail: engine.threadsTotal > 0 ? "\(engine.threadsTotal) live" : nil)
-                    }.buttonStyle(.plain)
-
-                    NavLink { ResultView(engine: engine, title: "Ma'at — Quality", args: ["maat", "audit"]) } label: {
-                        DeityRow(glyph: "𓆄", title: "Ma'at — Quality", detail: engine.projectName)
-                    }.buttonStyle(.plain)
-
-                    NavLink { ResultView(engine: engine, title: "Net — Plan", args: ["net", "status"]) } label: {
-                        DeityRow(glyph: "𓁯", title: "Net — Plan", detail: engine.projectName)
-                    }.buttonStyle(.plain)
-
-                    NavLink { RiskView(engine: engine) } label: {
-                        DeityRow(glyph: "𓁹", title: "Osiris — Checkpoints")
-                    }.buttonStyle(.plain)
-
-                    NavLink { ThothMemoryInfoView(engine: engine) } label: {
-                        DeityRow(glyph: "𓁟", title: "Thoth — Memory")
-                    }.buttonStyle(.plain)
-
-                    NavLink { ResultView(engine: engine, title: "Ra — Agent Fleet", args: ["ra", "status"]) } label: {
-                        DeityRow(glyph: "𓇶", title: "Ra — Agent Fleet")
-                    }.buttonStyle(.plain)
-
-                    NavLink { ResultView(engine: engine, title: "Seshat — Knowledge", args: ["seshat", "list"]) } label: {
-                        DeityRow(glyph: "𓁆", title: "Seshat — Knowledge")
-                    }.buttonStyle(.plain)
-
-                    NavLink { ResultView(engine: engine, title: "Vault — Context", args: ["vault", "stats"]) } label: {
-                        DeityRow(glyph: "🏛️", title: "Vault — Context")
-                    }.buttonStyle(.plain)
-
-                    NavLink { ResultView(engine: engine, title: "RTK — Output Filter", args: ["rtk", "stats"]) } label: {
-                        DeityRow(glyph: "⚡", title: "RTK — Output Filter")
-                    }.buttonStyle(.plain)
-
-                    NavLink { ActivityView(engine: engine) } label: {
-                        DeityRow(glyph: "𓆎", title: "Activity — what Pantheon did",
-                                 detail: engine.activity.isEmpty ? nil : "\(engine.activity.count) logged")
-                    }.buttonStyle(.plain)
-
-                    // Only nag for Full Disk Access while we don't have it; once
-                    // granted the row disappears entirely (a permanent "granted"
-                    // confirmation row is exactly the noise this screen sheds).
-                    if !engine.hasFDA {
-                        NavLink { FDAGuideView() } label: {
-                            DeityRow(glyph: "⚠️", title: "Grant Full Disk Access…",
-                                     detail: "so Sirsi sees everything", dot: .yellow)
-                        }.buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal, 10).padding(.top, 6)
-            }
-
-            Divider()
-            HStack {
-                Button { Task { await engine.rescan() } } label: {
-                    Label("Scan", systemImage: "arrow.clockwise")
-                }.sirsiFont(14, weight: .semibold).disabled(engine.busy)
-                if engine.busy { ProgressView().controlSize(.small).padding(.leading, 4) }
-                Spacer()
-                Button("Quit") { NSApplication.shared.terminate(nil) }
-                    .sirsiFont(14, weight: .semibold)
-            }
-            .padding(.horizontal, 14).padding(.vertical, 10)
-        }
-        .task { engine.loadProjectRoot(); engine.loadActivity(); engine.loadRunReport(); await engine.diagnose(); await engine.loadRouterBoard() }   // project + health + ledger + run report + fabric on open
-    }
-
-    @ViewBuilder private func maybeScroll<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        if snapshotMode {
-            content().frame(maxHeight: .infinity, alignment: .top)
-        } else {
-            ScrollView { content() }
-        }
+        PantheonControlCenterView(engine: engine)
     }
 }
 
@@ -576,7 +406,7 @@ struct CommandDeckView: View {
     }
 
     private var routerState: CommandDeckSignal {
-        CommandDeckSignal(title: "Router", detail: engine.routerSummary, tint: statusColor(engine.routerStatus))
+        CommandDeckSignal(title: "Ra fabric", detail: engine.routerSummary, tint: statusColor(engine.routerStatus))
     }
 
     private var contextState: CommandDeckSignal {
@@ -670,7 +500,7 @@ struct CommandDeckView: View {
                     : (engine.safeBytes >= SirsiEngine.wasteThreshold ? .anubis : .osiris)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 132), spacing: 8)], spacing: 8) {
                     CommandDeckMetric(state: computeState, fill: tileFill, destinationName: DeckRoute.horus.surfaceName) { HorusView(engine: engine) }
-                    CommandDeckMetric(state: routerState, fill: tileFill, destinationName: DeckRoute.routerFabric.surfaceName) { RouterView(engine: engine) }
+                    CommandDeckMetric(state: routerState, fill: tileFill, destinationName: DeckRoute.routerFabric.surfaceName) { RaFabricView(engine: engine) }
                     CommandDeckMetric(state: contextState, fill: tileFill, destinationName: ctxRoute.surfaceName) {
                         DeckRouteView(route: ctxRoute, engine: engine)
                     }
@@ -707,8 +537,8 @@ struct CommandDeckView: View {
                 CommandDeckNav(title: "Ask", symbol: "sparkles", fill: panelFill) {
                     AskSirsiView(engine: engine)
                 }
-                CommandDeckNav(title: "Router", symbol: "point.3.connected.trianglepath.dotted", fill: panelFill) {
-                    RouterView(engine: engine)
+                CommandDeckNav(title: "Ra fabric", symbol: "point.3.connected.trianglepath.dotted", fill: panelFill) {
+                    RaFabricView(engine: engine)
                 }
                 CommandDeckNav(title: "Ops", symbol: "waveform.path.ecg", fill: panelFill) {
                     HorusView(engine: engine)
@@ -753,7 +583,7 @@ enum DeckRoute {
     var surfaceName: String {
         switch self {
         case .horus: return "Horus — Ops"
-        case .routerFabric: return "Router — Fabric"
+        case .routerFabric: return "Ra — Fabric"
         case .ownerActions: return "Owner Actions"
         case .threads: return "Threads"
         case .anubis: return "Anubis — Hygiene"
@@ -769,7 +599,7 @@ struct DeckRouteView: View {
     var body: some View {
         switch route {
         case .horus: HorusView(engine: engine)
-        case .routerFabric: RouterView(engine: engine)
+        case .routerFabric: RaFabricView(engine: engine)
         case .ownerActions: OwnerActionsListView(engine: engine)
         case .threads: ThreadsView(engine: engine)
         case .anubis: AnubisView(engine: engine)
@@ -1601,9 +1431,9 @@ struct FleetTile: View {
     }
 }
 
-// ── Router — Fabric (liveness + wake-enablement) ─────────────────────────────
+// ── Ra — Fabric (liveness + wake-enablement) ─────────────────────────────────
 //
-// The Router view is the owner-actionable board: it leads with BLOCKERS (only
+// The Ra view is the owner-actionable board: it leads with BLOCKERS (only
 // current, fixable conditions — a real logout, a broken router daemon), then
 // stranded inboxes (per-agent open-item counts, each with a one-click "Arm wake
 // channel"). A degraded/inconclusive auth probe is shown as plain INFO, never an
@@ -1627,9 +1457,13 @@ func openTerminal() {
     try? p.run()
 }
 
-struct RouterView: View {
+// RaFabricView is the operator's native work surface. Ra owns the router
+// function; “router” remains the compatibility CLI/store name underneath, not
+// a second product surface.
+struct RaFabricView: View {
     @ObservedObject var engine: SirsiEngine
     @State private var resultLine: String?
+    @State private var showingHandoff = false
     @Environment(\.snapshotMode) private var snapshotMode
 
     // ImageRenderer draws ScrollView viewports EMPTY — swap for a plain stack
@@ -1644,9 +1478,33 @@ struct RouterView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            BackBar(title: "Router — Fabric")
+            BackBar(title: "Ra — Fabric")
             maybeScrollRouter {
                 VStack(alignment: .leading, spacing: 14) {
+
+                    HStack(spacing: 8) {
+                        Button {
+                            showingHandoff = true
+                        } label: {
+                            Label("Hand off work", systemImage: "arrowshape.turn.up.right.fill")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(gold)
+                        .disabled(engine.busy)
+
+                        NavLink {
+                            ThreadsView(engine: engine)
+                        } label: {
+                            Label("Live work", systemImage: "circle.dotted")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    Text("Ra keeps Horus instances on one durable work fabric. Handoffs, decisions, and recovery stay visible here instead of ending in a terminal transcript.")
+                        .sirsiFont(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
 
                     // ── Honest empty state: never a false "healthy" ─────────
                     if engine.routerBoard == nil {
@@ -1678,15 +1536,39 @@ struct RouterView: View {
                             Spacer()
                         }
                         let pending = (board.pendingByAgent ?? [:]).filter { !$0.value.isEmpty }
-                        if !pending.isEmpty {
+                        let activeRecipients = pending.keys.sorted {
+                            let left = pending[$0]?.count ?? 0
+                            let right = pending[$1]?.count ?? 0
+                            return left == right ? $0 < $1 : left > right
+                        }
+                        if !activeRecipients.isEmpty {
                             VStack(spacing: 0) {
-                                ForEach(pending.keys.sorted(), id: \.self) { agent in
+                                ForEach(Array(activeRecipients.prefix(4).enumerated()), id: \.element) { index, agent in
                                     HStack {
                                         Text(agent).sirsiFont(.caption)
                                         Spacer()
                                         Text("\(pending[agent]?.count ?? 0) open").sirsiFont(.caption, design: .monospaced).foregroundStyle(.secondary)
-                                    }.padding(.vertical, 6)
-                                    if agent != pending.keys.sorted().last { Divider() }
+                                    }
+                                    .padding(.vertical, 6)
+                                    if index < min(activeRecipients.count, 4) - 1 { Divider() }
+                                }
+                                if activeRecipients.count > 4 {
+                                    Divider()
+                                    NavLink {
+                                        ThreadsView(engine: engine)
+                                    } label: {
+                                        HStack {
+                                            Text("View \(activeRecipients.count - 4) more active recipients")
+                                                .sirsiFont(.caption, weight: .semibold)
+                                            Spacer()
+                                            Image(systemName: "chevron.right")
+                                                .sirsiFont(.caption2)
+                                                .foregroundStyle(.tertiary)
+                                        }
+                                        .padding(.vertical, 8)
+                                        .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
                                 }
                             }
                             .padding(.horizontal, 12)
@@ -1724,24 +1606,31 @@ struct RouterView: View {
                         Text("These agents have work waiting but no armed session watching. Arm a wake channel so their inbox is pulled automatically.")
                             .sirsiFont(.caption).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
-                        ForEach(engine.routerStranded) { s in
+                        ForEach(Array(engine.routerStranded.prefix(3))) { s in
                             NavLink {
                                 StrandedAgentView(engine: engine, agent: s)
                             } label: {
-                                HStack(spacing: 10) {
-                                    Text("📥").sirsiFont(16).frame(width: 24)
-                                    VStack(alignment: .leading, spacing: 1) {
-                                        Text(s.agentId).sirsiFont(13, weight: .medium)
-                                        Text("\(s.openItems) item\(s.openItems == 1 ? "" : "s") waiting")
-                                            .sirsiFont(.caption).foregroundStyle(.secondary)
-                                    }
+                                RaStrandedInboxRow(stranded: s)
+                            }.buttonStyle(.plain)
+                        }
+                        if engine.routerStranded.count > 3 {
+                            NavLink {
+                                RaStrandedInboxesView(engine: engine)
+                            } label: {
+                                HStack {
+                                    Text("View all \(engine.routerStranded.count) stranded inboxes")
+                                        .sirsiFont(.caption, weight: .semibold)
                                     Spacer()
-                                    Image(systemName: "chevron.right").sirsiFont(.caption2).foregroundStyle(.tertiary)
+                                    Image(systemName: "chevron.right")
+                                        .sirsiFont(.caption2)
+                                        .foregroundStyle(.tertiary)
                                 }
-                                .padding(.vertical, 8).padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 10)
                                 .contentShape(Rectangle())
                                 .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.04)))
-                            }.buttonStyle(.plain)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
 
@@ -1780,10 +1669,222 @@ struct RouterView: View {
             }
         }
         .task { await engine.loadRouterBoard() }
+        .sheet(isPresented: $showingHandoff) {
+            RaHandoffView(engine: engine, isPresented: $showingHandoff)
+        }
     }
 }
 
-// SectionLabel is a small caption header used across the Router view.
+// RaHandoffView replaces the former “copy a router command and hope” dead end
+// with a typed, durable handoff. It never executes arbitrary shell input: the
+// only mutation is the canonical router send command with its instruction body
+// passed as the router's required @file argument.
+struct RaHandoffView: View {
+    @ObservedObject var engine: SirsiEngine
+    @Binding var isPresented: Bool
+    @State private var recipient = ""
+    @State private var title = ""
+    @State private var kind = "proposal"
+    @State private var instructions = ""
+    @State private var result: SirsiEngine.FabricHandoffOutcome?
+    @State private var sending = false
+
+    private var knownRecipients: [String] {
+        let pending = engine.routerBoard?.pendingByAgent?.keys.map { $0 } ?? []
+        let active = engine.threadRoster.map(\.agent)
+        return Array(Set(pending + active)).sorted()
+    }
+
+    private var canSend: Bool {
+        !recipient.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            !instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            !sending
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Hand off work")
+                        .sirsiFont(18, weight: .bold)
+                    Text("Create one durable Ra work item.")
+                        .sirsiFont(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Cancel") { isPresented = false }
+                    .disabled(sending)
+            }
+            .padding(16)
+
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("FROM")
+                            .sirsiFont(.caption2, weight: .semibold)
+                            .foregroundStyle(.secondary)
+                        Text("horus")
+                            .sirsiFont(13, weight: .medium)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(8)
+                            .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.055)))
+                            .accessibilityLabel("Sending as Horus")
+                    }
+                    field("TO", text: $recipient, prompt: "Horus or agent id")
+
+                    if !knownRecipients.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("ON THE FABRIC")
+                                .sirsiFont(.caption2, weight: .semibold)
+                                .foregroundStyle(.secondary)
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 6) {
+                                    ForEach(knownRecipients, id: \.self) { agent in
+                                        Button(agent) { recipient = agent }
+                                            .buttonStyle(.bordered)
+                                            .tint(recipient == agent ? gold : .gray)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    field("TITLE", text: $title, prompt: "What needs to happen?")
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("KIND")
+                            .sirsiFont(.caption2, weight: .semibold)
+                            .foregroundStyle(.secondary)
+                        Picker("Kind", selection: $kind) {
+                            Text("Proposal").tag("proposal")
+                            Text("Review").tag("review")
+                            Text("Decision").tag("decision")
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("THE WORK")
+                            .sirsiFont(.caption2, weight: .semibold)
+                            .foregroundStyle(.secondary)
+                        TextEditor(text: $instructions)
+                            .sirsiFont(13)
+                            .frame(minHeight: 132)
+                            .padding(7)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.055)))
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.10), lineWidth: 1))
+                    }
+
+                    if let result {
+                        Label(result.text, systemImage: result.succeeded ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                            .sirsiFont(.caption)
+                            .foregroundStyle(result.succeeded ? .green : .red)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .padding(16)
+            }
+            Divider()
+            Button {
+                sending = true
+                Task {
+                    result = await engine.sendFabricWork(to: recipient, title: title, type: kind, instructions: instructions)
+                    sending = false
+                }
+            } label: {
+                HStack {
+                    if sending { ProgressView().controlSize(.small) }
+                    Text(sending ? "Sending…" : "Send to Ra fabric")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(gold)
+            .disabled(!canSend)
+            .padding(16)
+        }
+        .frame(minWidth: 460, minHeight: 560)
+    }
+
+    private func field(_ label: String, text: Binding<String>, prompt: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .sirsiFont(.caption2, weight: .semibold)
+                .foregroundStyle(.secondary)
+            TextField(prompt, text: text)
+                .textFieldStyle(.roundedBorder)
+                .sirsiFont(13)
+        }
+    }
+}
+
+private struct RaStrandedInboxRow: View {
+    let stranded: RBStranded
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "tray.and.arrow.down.fill")
+                .foregroundStyle(.orange)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(stranded.agentId).sirsiFont(13, weight: .medium)
+                Text("\(stranded.openItems) item\(stranded.openItems == 1 ? "" : "s") waiting")
+                    .sirsiFont(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right").sirsiFont(.caption2).foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .contentShape(Rectangle())
+        .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.04)))
+    }
+}
+
+// The fabric overview intentionally stays short. This companion screen keeps
+// every stranded inbox actionable without burying the Ra summary and handoff.
+struct RaStrandedInboxesView: View {
+    @ObservedObject var engine: SirsiEngine
+
+    var body: some View {
+        VStack(spacing: 0) {
+            BackBar(title: "Ra — Stranded inboxes")
+            if engine.routerStranded.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "tray").sirsiFont(.title).foregroundStyle(.tertiary)
+                    Text("No stranded inboxes").sirsiFont(.callout).foregroundStyle(.secondary)
+                    Text("Every open work queue has a watcher.")
+                        .sirsiFont(.caption).foregroundStyle(.tertiary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(28)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("These queues have work waiting but no armed watcher. Open one to inspect it and arm its wake channel.")
+                            .sirsiFont(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        ForEach(engine.routerStranded) { stranded in
+                            NavLink {
+                                StrandedAgentView(engine: engine, agent: stranded)
+                            } label: {
+                                RaStrandedInboxRow(stranded: stranded)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(16)
+                }
+            }
+        }
+        .task { await engine.loadRouterBoard() }
+    }
+}
+
+// SectionLabel is a small caption header used across the Ra Fabric view.
 struct SectionLabel: View {
     let text: String
     var tint: Color = .secondary
@@ -1851,7 +1952,7 @@ struct DaemonBlockerCard: View {
             HStack(spacing: 8) {
                 Text("⚙️").sirsiFont(18)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("\(broken.count) router daemon\(broken.count == 1 ? "" : "s") missing")
+                    Text("\(broken.count) Ra relay\(broken.count == 1 ? "" : "s") missing")
                         .sirsiFont(13, weight: .semibold)
                     Text("Work can't relay while a session is closed.")
                         .sirsiFont(.caption).foregroundStyle(.secondary)
@@ -1866,7 +1967,7 @@ struct DaemonBlockerCard: View {
             Button {
                 Task { onResult(await engine.installRouterDaemons()) }
             } label: {
-                Label("Install router daemons", systemImage: "wrench.and.screwdriver.fill")
+                Label("Repair Ra relays", systemImage: "wrench.and.screwdriver.fill")
                     .frame(maxWidth: .infinity)
             }.buttonStyle(.borderedProminent).tint(gold).disabled(engine.busy)
         }
@@ -1876,10 +1977,10 @@ struct DaemonBlockerCard: View {
     }
 }
 
-// friendlyDaemon turns a router role into plain English.
+// friendlyDaemon turns a Ra relay role into plain English.
 func friendlyDaemon(_ role: String) -> String {
     switch role {
-    case "router-supervisor": return "Background router supervisor"
+    case "router-supervisor": return "Ra background supervisor"
     case "router-watchpaths": return "Live dispatch (on change)"
     case "router-sweep": return "Hourly queue sweep"
     case "registry-police": return "Thread cleanup"
@@ -3257,32 +3358,6 @@ struct AskSirsiView: View {
         }
         return "READING LOCAL CONDUIT"
     }
-    private var managerTiles: [ManagerTileSpec] {
-        let canon = engine.askSirsiCanonGroundingStatus()
-        return [
-            ManagerTileSpec(symbol: "point.3.connected.trianglepath.dotted",
-                            title: "Router Fabric",
-                            value: "\(engine.threadsTotal) live threads",
-                            detail: engine.routerSummary,
-                            tint: statusColor(engine.routerStatus)),
-            ManagerTileSpec(symbol: "cpu",
-                            title: "Compute",
-                            value: engine.vitals.map { SirsiEngine.human($0.freeBytes) + " free" } ?? "sampling node",
-                            detail: engine.vitals.map { "pressure \($0.pressure)" } ?? "ANE/MLX/Metal/CPU lanes",
-                            tint: engine.vitals?.pressure == "critical" ? .red : (engine.vitals?.pressure == "warn" ? .orange : .green)),
-            ManagerTileSpec(symbol: "books.vertical",
-                            title: "Knowledge",
-                            value: canon.value,
-                            detail: canon.detail,
-                            tint: canon.healthy ? .green : .orange),
-            ManagerTileSpec(symbol: "lock.shield",
-                            title: "Authority",
-                            value: engine.ownerGatedItems.isEmpty ? "action-gated" : "\(engine.ownerGatedItems.count) owner items",
-                            detail: "explains, routes, and keeps destructive work governed",
-                            tint: engine.ownerGatedItems.isEmpty ? .green : .yellow),
-        ]
-    }
-
     init(engine: SirsiEngine, preloadedAnswer: String? = nil) {
         self.engine = engine
         _answer = State(initialValue: preloadedAnswer)
@@ -3325,197 +3400,119 @@ struct AskSirsiView: View {
     }
 
     private var managerContent: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .top, spacing: 12) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(gold.opacity(0.18))
-                            .frame(width: 44, height: 44)
-                        Image(systemName: "terminal.fill")
-                            .sirsiFont(20, weight: .bold)
-                            .foregroundStyle(gold)
-                    }
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Internal System Manager")
-                            .sirsiFont(17, weight: .bold)
-                            .foregroundStyle(.primary)
-                        Text("Ask Sirsi knows Pantheon, the router, Hypergraph, Sirsi IO, portfolio apps, and this Mac's local operating state.")
-                            .sirsiFont(11, weight: .medium)
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Ask Sirsi")
+                            .sirsiFont(.title2, weight: .bold)
+                        Text("A private assistant for this Mac and its active work.")
+                            .sirsiFont(.subheadline)
                             .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    Spacer(minLength: 8)
+                    Spacer()
+                    Label(online ? "On device" : "Unavailable", systemImage: online ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        .sirsiFont(.caption, weight: .semibold)
+                        .foregroundStyle(online ? .green : .orange)
                 }
-
-                HStack(spacing: 7) {
-                    ManagerPill(text: liveStatus, tint: online ? .green : .yellow)
-                    ManagerPill(text: "LOCAL ONLY", tint: gold)
-                }
+                Text(liveStatus)
+                    .sirsiFont(.caption)
+                    .foregroundStyle(.secondary)
             }
             .padding(14)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(deepPanelFill)
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(gold.opacity(0.38), lineWidth: 1))
-            )
+            .background(RoundedRectangle(cornerRadius: 10).fill(deepPanelFill))
 
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 152), spacing: 8)], spacing: 8) {
-                ForEach(managerTiles) { tile in
-                    ManagerTile(tile: tile, fill: panelFill)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles").foregroundStyle(gold)
-                    Text("Operator Query")
-                        .sirsiFont(12, weight: .bold)
-                        .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("What would you like to know?")
+                        .sirsiFont(.headline)
                     Spacer()
                     if asking { ProgressView().controlSize(.small) }
                 }
 
                 if snapshotMode {
-                    HStack(spacing: 6) {
-                        Text("Ask Sirsi about router work, local health, or what changed.")
-                            .sirsiFont(13)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Image(systemName: "arrow.up.circle.fill").foregroundStyle(gold)
-                    }
-                    .padding(10)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(panelFill))
-                } else {
-                    HStack(spacing: 8) {
-                        TextField("Ask about Sirsi, Pantheon, router work, local health, or what changed.", text: $question)
-                            .textFieldStyle(.plain)
-                            .sirsiFont(13)
-                            .onSubmit { ask() }
-                        Button { ask() } label: { Image(systemName: "arrow.up.circle.fill").sirsiFont(20) }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(gold)
-                            .disabled(question.trimmingCharacters(in: .whitespaces).isEmpty || !online || asking)
-                    }
-                    .padding(10)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(panelFill))
-                }
-
-                if snapshotMode {
-                    Label("Report what Sirsi taught you", systemImage: "book.closed")
-                        .frame(maxWidth: .infinity)
-                        .sirsiFont(12, weight: .semibold)
-                        .foregroundStyle(gold)
-                        .padding(.vertical, 6)
+                    Label("Ask about current work, the Ra fabric, or this Mac.", systemImage: "text.cursor")
+                        .sirsiFont(.body)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
                         .background(RoundedRectangle(cornerRadius: 8).fill(panelFill))
                 } else {
-                    Button { askKnowledgeReport() } label: {
-                        Label("Report what Sirsi taught you", systemImage: "book.closed")
-                            .frame(maxWidth: .infinity)
+                    HStack(spacing: 10) {
+                        TextField("Ask about current work, the Ra fabric, or this Mac.", text: $question)
+                            .textFieldStyle(.plain)
+                            .sirsiFont(.body)
+                            .onSubmit { ask() }
+                        Button { ask() } label: {
+                            Label("Send", systemImage: "arrow.up")
+                                .labelStyle(.iconOnly)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !online || asking)
                     }
-                    .buttonStyle(.borderless)
-                    .sirsiFont(12, weight: .semibold)
-                    .foregroundStyle(gold)
-                    .padding(.vertical, 6)
+                    .padding(10)
                     .background(RoundedRectangle(cornerRadius: 8).fill(panelFill))
-                    .disabled(asking || !online)
+                }
+
+                HStack(spacing: 8) {
+                    suggestion("What needs attention?")
+                    suggestion("What changed?")
+                    suggestion("Summarize active work")
                 }
             }
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 8).fill(deepPanelFill))
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.045)))
 
             if let answer {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Sirsi Response")
-                        .sirsiFont(12, weight: .bold)
-                        .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Sirsi's answer", systemImage: "sparkles")
+                        .sirsiFont(.headline)
                     Text(answer)
-                        .sirsiFont(13)
-                        .lineLimit(snapshotMode ? 7 : nil)
+                        .sirsiFont(.body)
+                        .lineLimit(snapshotMode ? 8 : nil)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
-                    Text("answered on-device by Sirsi - no cloud")
-                        .sirsiFont(.caption2)
-                        .foregroundStyle(.tertiary)
+                    Text("Generated locally on this Mac")
+                        .sirsiFont(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                .padding(12)
-                .background(RoundedRectangle(cornerRadius: 8).fill(panelFill))
+                .padding(14)
+                .background(RoundedRectangle(cornerRadius: 10).fill(panelFill))
             }
-        }
-        .padding(.horizontal, 12)
-        .padding(.top, 8)
-        .padding(.bottom, 12)
-    }
-}
 
-struct ManagerTileSpec: Identifiable {
-    var id: String { title }
-    let symbol: String
-    let title: String
-    let value: String
-    let detail: String
-    let tint: Color
-}
-
-struct ManagerPill: View {
-    let text: String
-    let tint: Color
-
-    var body: some View {
-        HStack(spacing: 5) {
-            Circle().fill(tint).frame(width: 6, height: 6)
-            Text(text)
-                .sirsiFont(9, weight: .bold)
-                .lineLimit(1)
-                .minimumScaleFactor(0.78)
-        }
-        .foregroundStyle(.primary)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(
-            RoundedRectangle(cornerRadius: 7)
-                .fill(tint.opacity(0.12))
-                .overlay(RoundedRectangle(cornerRadius: 7).stroke(tint.opacity(0.35), lineWidth: 1))
-        )
-    }
-}
-
-struct ManagerTile: View {
-    let tile: ManagerTileSpec
-    let fill: Color
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 7) {
-                Image(systemName: tile.symbol)
-                    .sirsiFont(13, weight: .bold)
-                    .foregroundStyle(tile.tint)
-                    .sirsiFrame(width: 18)
-                Text(tile.title.uppercased())
-                    .sirsiFont(9, weight: .bold)
+            if snapshotMode {
+                Label("Create a local briefing", systemImage: "doc.text")
+                    .sirsiFont(.subheadline, weight: .semibold)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                Spacer(minLength: 4)
+                    .padding(.vertical, 7)
+            } else {
+                Button { askKnowledgeReport() } label: {
+                    Label("Create a local briefing", systemImage: "doc.text")
+                        .sirsiFont(.subheadline, weight: .semibold)
+                }
+                .buttonStyle(.bordered)
+                .disabled(asking || !online)
+                .accessibilityHint("Creates a concise local summary of Sirsi's current context")
             }
-            Text(tile.value)
-                .sirsiFont(13, weight: .bold)
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-            Text(tile.detail)
-                .sirsiFont(11, weight: .medium)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(maxWidth: .infinity, minHeight: 86, alignment: .topLeading)
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(fill)
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(tile.tint.opacity(0.26), lineWidth: 1))
-        )
+        .padding(16)
+    }
+
+    @ViewBuilder private func suggestion(_ text: String) -> some View {
+        if snapshotMode {
+            Text(text)
+                .sirsiFont(.caption, weight: .medium)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(panelFill))
+        } else {
+            Button(text) { question = text }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(asking || !online)
+        }
     }
 }
 
@@ -4074,7 +4071,7 @@ struct OwnerActionView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Closes the item in the router. Do this after you've actually done what it asks.")
+            Text("Closes the item in the Ra fabric. Do this after you've actually done what it asks.")
         }
     }
 
