@@ -33,6 +33,20 @@ paths = [
   # Allowlisted so extending these fixtures with a rule-tripping literal can't false-block.
   '''^internal/seshat/filter_test\.go$''',
   '''^internal/seshat/coverage_boost_test\.go$''',
+
+  # Found blocking push on fix/broker-quarantine 2026-09-27 (branch was 139 commits
+  # behind origin — Rule 9 silently unmet — because these were never allowlisted).
+  # All four are hex/text fixture literals, never real credentials:
+  #   - selection_test.go: a hand-written 64-char hex TokenizerSHA256 placeholder.
+  #   - the two docs/evidence/ files: recorded SHA-256 hashes from an SNE catalog
+  #     lifecycle test run (public key digest, generated-tokens digest) — hashes are
+  #     one-way and were never secret inputs.
+  #   - loopback_boundary_test.go: the XKCD "correct horse battery staple" example
+  #     phrase used as a test-only bearer token literal.
+  '''^internal/engine/selection_test\.go$''',
+  '''^docs/evidence/SNE_PORTABLE_SIGNED_CATALOG_LIFECYCLE_GATE_20260818\.md$''',
+  '''^docs/evidence/sne-e2b-api-v2-compat-v6-pantheon-m1-20260821/response\.json$''',
+  '''^internal/dashboard/loopback_boundary_test\.go$''',
 ]
 
 regexes = [
