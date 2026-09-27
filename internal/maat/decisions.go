@@ -40,6 +40,55 @@ type DecisionJournal interface {
 	Recent(limit int) ([]Decision, error)
 }
 
+// RecordReport projects a completed Ma'at report into the same append-only
+// decision journal used by reservations and cede outcomes. It makes local
+// quality, canon, pipeline, and future Stack Lab assessments inspectable by
+// Casebook without giving Casebook a second assessment or policy authority.
+//
+// Every assessment is recorded independently, followed by a report summary.
+// A caller must treat an append error as an incomplete audit: rendering an
+// unrecorded report as though it were available to local intelligence would
+// create a false clean state.
+func RecordReport(j DecisionJournal, requester string, report *Report) error {
+	if j == nil {
+		return fmt.Errorf("maat decision journal: nil")
+	}
+	if report == nil {
+		return fmt.Errorf("maat decision journal: nil report")
+	}
+	requester = strings.TrimSpace(requester)
+	if requester == "" {
+		return fmt.Errorf("maat decision journal: requester is required")
+	}
+	evidence := "maat-report:" + report.AssessedAt.UTC().Format(time.RFC3339Nano)
+	for _, assessment := range report.Assessments {
+		why := assessment.Message
+		if assessment.Remediation != "" {
+			why += "; remediation: " + assessment.Remediation
+		}
+		if err := j.Append(Decision{
+			Kind:          "assessment " + string(assessment.Domain),
+			Requester:     requester,
+			Resource:      string(assessment.Domain),
+			Assessed:      assessment.Standard,
+			Determination: assessment.Verdict.String(),
+			Why:           why,
+			Evidence:      evidence,
+		}); err != nil {
+			return fmt.Errorf("record assessment %q: %w", assessment.Subject, err)
+		}
+	}
+	return j.Append(Decision{
+		Kind:          "assessment report",
+		Requester:     requester,
+		Resource:      "maat",
+		Assessed:      "overall quality report",
+		Determination: report.OverallVerdict.String(),
+		Why:           fmt.Sprintf("weight %d/100; %d passed, %d warnings, %d failures", report.OverallWeight, report.Passes, report.Warnings, report.Failures),
+		Evidence:      evidence,
+	})
+}
+
 // FileDecisionJournal stores newline-delimited JSON beneath the user's Sirsi
 // state. It is a projection, not the reservation scheduler's authority.
 type FileDecisionJournal struct {

@@ -415,28 +415,29 @@ function viewFleet(){
 }
 
 function viewMaat(){
- out('𓆄 Ma’at — Decision Ledger','t-gold');
- out('  Live recorded grants, refusals, queues, and their reasons. This is a read-only explanation of what Ma’at assessed.','t-dim');
- fetch('/api/maat/decisions?limit=50').then(function(r){
+ out('𓆄 Ma’at — Local System One','t-gold');
+ out('  Searchable, evidence-linked cases projected from Ma’at’s recorded decisions. Read-only: it explains decisions; it never makes them.','t-dim');
+ fetch('/api/maat/casebook?limit=50').then(function(r){
   if(!r.ok)return r.json().then(function(e){throw new Error(e.error||('HTTP '+r.status))});
   return r.json()
- }).then(function(rows){
-  if(!rows.length){out('');out('  No Ma’at decisions have been recorded on this node yet.','t-dim');return}
-  out('');out('  '+rows.length+' recorded decision'+(rows.length===1?'':'s'),'t-head');sep();
+ }).then(function(view){
+  const rows=view.cases||[], summary=view.summary||{};
+  if(!rows.length){out('');out('  No Ma’at cases have been recorded on this node yet.','t-dim');return}
+  out('');out('  '+summary.total+' cases · '+summary.open+' open · '+summary.urgent+' urgent · '+summary.high+' high · '+summary.resolved+' resolved','t-head');sep();
   rows.forEach(function(d){
    const row=document.createElement('div');row.className='t-line t-row';
    const at=document.createElement('span');at.className='t-col';at.style.width='110px';at.style.color='var(--dim)';at.textContent=ago(d.time)||d.time;
-   const verdict=document.createElement('span');verdict.className='t-col';verdict.style.width='76px';
-   verdict.style.color=(d.determination==='grant')?'var(--ok)':(d.determination==='refuse'?'var(--danger)':'var(--gold)');verdict.textContent=(d.determination||'unknown').toUpperCase();
-   const subject=document.createElement('span');subject.className='t-col';subject.style.flex='1';subject.textContent=(d.resource||'—')+' · '+(d.requester||'unknown')+' · '+(d.why||'no reason recorded');
+   const verdict=document.createElement('span');verdict.className='t-col';verdict.style.width='82px';
+   verdict.style.color=(d.priority==='urgent')?'var(--danger)':(d.priority==='high'?'var(--gold)':'var(--ok)');verdict.textContent=(d.priority||'normal').toUpperCase();
+   const subject=document.createElement('span');subject.className='t-col';subject.style.flex='1';subject.textContent=(d.category||'assessment')+' · '+(d.resource||'—')+' · '+(d.why||'no reason recorded');
    row.appendChild(at);row.appendChild(verdict);row.appendChild(subject);T.appendChild(row);
    const detail=document.createElement('div');detail.className='t-line t-dim';detail.style.paddingLeft='202px';
-   let bits=['host '+(d.host||'unknown'),'assessment: '+(d.assessed||'unknown')];
+   let bits=['status: '+(d.status||'open'),'decision: '+(d.kind||'unknown')+' → '+(d.determination||'unknown'),'assessment: '+(d.assessed||'unknown')];
    if(d.affected)bits.push('affected: '+d.affected);
    if(d.evidence)bits.push('evidence: '+d.evidence);
    detail.textContent=bits.join(' · ');T.appendChild(detail);
   });
- }).catch(function(e){out('  Ma’at decision ledger unavailable: '+e.message,'t-err')});
+ }).catch(function(e){out('  Ma’at casebook unavailable: '+e.message,'t-err')});
 }
 
 function viewGhosts(){
