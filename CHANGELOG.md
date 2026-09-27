@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.10] — 2026-09-27 — Hermes and Photon lane identity
+**Commercial patch release.** Pantheon’s Stack Lab lane map now resolves the
+renamed `sirsi-hermes` transport repository and the new `sirsi-photon`
+hardware repository, while preserving the stable `io-connect` wing id. The
+local router identity hook follows the same repository split.
+
 ## [Unreleased]
 - **feat(maat): live, drillable decision ledger — `sirsi maat decisions`** (claude-pantheon, 2026-09-26; router item `20260926-143533`). Owner ask via claude-io: Ma'at's grants/refusals/other work should be live and drillable to what it assessed, who it affected, what determination was made and why. `internal/maat/decision` is a schema-tolerant JSONL reader/writer over `~/.sirsi/maat/decisions.jsonl` (the file other hosts' writers — m5go, the `maat-window-gate` hook, `maat-run-guard` — already append to); `sirsi maat decisions` lists (filterable by `--kind`/`--host`/`--since`), `sirsi maat decisions show <id>` drills into one record by a stable content-derived short id. `sirsi maat reserve|release|conflict-check` now write their own decision records natively (closing the gap the ask named). Host-local by design for now — cross-host aggregation is the follow-up pending Ra's canonical-ledger-location answer; each host's ledger is self-contained and drillable today. Refs: PANTHEON_RULES.md A26; internal/maat/decision/README.md; docs/user-guides/maat.md; Changelog: Unreleased
 - **fix(core): router delivery-boundary hardening — fail closed at four boundaries (SSA #792/#794, PR #814)** (ra, 2026-09-27). Each fix fails closed, each with a negative-control-verified regression test (A35): keystone `cutOverMarker` errors on `os.UserHomeDir()` failure instead of opening the local ledger (#792); `drainOutbox` stops at the first non-delivery frontier for ordered release (#794.1); `retryOutboxOne` removes a held record only on confirmed delivery and parks post-send OUTCOME-UNKNOWN in `failed/` (#794.2); `neverReachedService` requires a dial-phase `net.OpError` so post-connect ECONNREFUSED stays UNKNOWN (#794.3). Refs: ADR-069, A34/A35. Version assigned at release.
