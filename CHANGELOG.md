@@ -6,6 +6,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.7] — 2026-09-27 — Host memory-pressure scheduling
+**Commercial patch release.** Ma’at now samples the calling host's live memory pressure before scheduling, reports pressure beside conflict results without misclassifying it as a process intruder, and exposes advisory per-resource memory-floor fields. The release preserves the existing core reservation behavior; real per-machine RAM capacities remain explicitly unconfigured until owner-provided values are available.
+
 ## [0.24.6] — 2026-09-27 — Ma’at audit coverage closure
 **Commercial patch release.** The full Ma’at audit now exercises the previously under-covered machine identity, diagnostic reasoning, runner, and router-board paths:
 - machine identity probe/cache and cross-host matching behavior;
