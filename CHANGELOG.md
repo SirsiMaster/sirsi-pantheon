@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.13] — 2026-09-27 — Router token-job image parity
+**Commercial patch release.** Router deployment now pins the
+`sirsi-router-token` Cloud Run job to the same image as the just-deployed
+`sirsi-router` service, preventing schema and binary drift between the
+service and its token job. Live Cloud Run mutation is not claimed by this
+source release receipt.
+
 ## [0.24.12] — 2026-09-27 — Ma'at runner-listener classification
 **Commercial patch release.** Ma'at conflict checks now distinguish an idle
 GitHub Actions `Runner.Listener` and its launchd wrapper from an active
