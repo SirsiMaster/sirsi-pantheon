@@ -52,7 +52,7 @@
       "inputs": ["injected or gh CI run/log data"],
       "outputs": ["pipeline assessments", "failure category and remediation"],
       "writes": [],
-      "upgrade_recipe": ["add parser fixtures before new category rules", "record report through RecordReport"]
+      "upgrade_recipe": ["add parser fixtures before new category rules", "run only through the explicit audit assessor recipe", "record report through RecordReport"]
     },
     {
       "id": "maat-pulse-proof-platform",

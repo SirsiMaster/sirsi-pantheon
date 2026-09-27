@@ -51,7 +51,7 @@ not get silently co-upgraded because they share a deity name.
 | Quality audit | one decision per assessment plus report summary | `sirsi maat audit` via `maat.RecordReport` | `assessment` cases, with pass/warning/fail priority |
 | Canon linkage | audit assessment with ADR/rule standard | `CanonAssessor` through audit report | `assessment` cases, evidence is the report generation |
 | Coverage | audit assessment with threshold and remediation | `CoverageAssessor` through audit report | `assessment` cases, failed cases are urgent |
-| Pipeline/CI | audit assessment when the pipeline assessor is selected | `PipelineAssessor` through a report | `governance` or `assessment` cases, never synthetic success |
+| Pipeline/CI | audit assessment with the current CI run/log classification | `PipelineAssessor` through `sirsi maat audit` | `governance` or `assessment` cases, never synthetic success |
 | Stack Lab guard/review | decision with a receipt reference | Ma'at/approved caller through the decision journal | `governance` cases linked to the receipt |
 | Shared host, rail, and device capacity | reservation grant/refusal/queue/release | `sirsi maat reserve` | `allocation` cases tied to resource and holder |
 | Cede, handback, or counter-request | explicit router-derived decision record | authorized Ma'at producer | `allocation` cases; pending is high priority, never inferred as granted |
