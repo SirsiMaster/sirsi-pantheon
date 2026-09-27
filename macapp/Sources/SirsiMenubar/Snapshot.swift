@@ -40,7 +40,7 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380, appearance: ColorSche
         let net = await SirsiEngine.runResult(args: ["net", "status"])
         let rtk = await SirsiEngine.runResult(args: ["rtk", "stats"])
         let ra = await SirsiEngine.runResult(args: ["ra", "status"])
-        let seshat = await SirsiEngine.runResult(args: ["seshat", "list"])
+        let maatKnowledge = await MaatKnowledgeView.fetch()
         let vault = await SirsiEngine.runResult(args: ["vault", "stats"])
         await engine.diagnose()
         engine.refresh()
@@ -75,15 +75,13 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380, appearance: ColorSche
             // development. Keep the visual regression screen complete with a
             // deterministic fixture in that case; live menubar use never falls
             // back to it and reads the local casebook projection.
-            ("maat-casebook", AnyView(MaatCasebookView(engine: engine, preloaded: maatCasebook ?? .snapshotPreview))),
+            ("maat-workspace", AnyView(MaatWorkspaceView(engine: engine, preloadedCasebook: maatCasebook ?? .snapshotPreview, preloadedKnowledge: maatKnowledge ?? .snapshotPreview))),
             ("thoth-memory", AnyView(ThothMemoryInfoView(engine: engine))),
             ("ra-agent-fleet", AnyView(ResultView(engine: engine, title: "Ra — Agent Fleet",
                                                   args: ["ra", "status"], preloaded: ra))),
             ("router-fabric", AnyView(RouterView(engine: engine))),
             ("threads-heartbeat", AnyView(ThreadsView(engine: engine))),
             ("risk", AnyView(RiskView(engine: engine))),
-            ("seshat-knowledge", AnyView(ResultView(engine: engine, title: "Seshat — Knowledge",
-                                                    args: ["seshat", "list"], preloaded: seshat))),
             ("net-plan", AnyView(ResultView(engine: engine, title: "Net — Plan",
                                             args: ["net", "status"], preloaded: net))),
             ("vault-context", AnyView(ResultView(engine: engine, title: "Vault — Context",
@@ -109,7 +107,7 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380, appearance: ColorSche
             // its headless evidence enough canvas to capture every section from
             // the title onward instead of centering and clipping its first rows.
             let height: CGFloat = switch shot.name {
-            case "ask-sirsi", "maat-casebook": 960
+            case "ask-sirsi", "maat-workspace": 960
             case "all-tools": 1_040
             default: 520
             }
