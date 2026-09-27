@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [Unreleased]
+- **feat(maat): live, drillable decision ledger — `sirsi maat decisions`** (claude-pantheon, 2026-09-26; router item `20260926-143533`). Owner ask via claude-io: Ma'at's grants/refusals/other work should be live and drillable to what it assessed, who it affected, what determination was made and why. `internal/maat/decision` is a schema-tolerant JSONL reader/writer over `~/.sirsi/maat/decisions.jsonl` (the file other hosts' writers — m5go, the `maat-window-gate` hook, `maat-run-guard` — already append to); `sirsi maat decisions` lists (filterable by `--kind`/`--host`/`--since`), `sirsi maat decisions show <id>` drills into one record by a stable content-derived short id. `sirsi maat reserve|release|conflict-check` now write their own decision records natively (closing the gap the ask named). Host-local by design for now — cross-host aggregation is the follow-up pending Ra's canonical-ledger-location answer; each host's ledger is self-contained and drillable today. Refs: PANTHEON_RULES.md A26; internal/maat/decision/README.md; docs/user-guides/maat.md; Changelog: Unreleased
+- **fix(core): router delivery-boundary hardening — fail closed at four boundaries (SSA #792/#794, PR #814)** (ra, 2026-09-27). Each fix fails closed, each with a negative-control-verified regression test (A35): keystone `cutOverMarker` errors on `os.UserHomeDir()` failure instead of opening the local ledger (#792); `drainOutbox` stops at the first non-delivery frontier for ordered release (#794.1); `retryOutboxOne` removes a held record only on confirmed delivery and parks post-send OUTCOME-UNKNOWN in `failed/` (#794.2); `neverReachedService` requires a dial-phase `net.OpError` so post-connect ECONNREFUSED stays UNKNOWN (#794.3). Refs: ADR-069, A34/A35. Version assigned at release.
+
 ## [0.24.7] — 2026-09-27 — Host memory-pressure scheduling
 **Commercial patch release.** Ma’at now samples the calling host's live memory pressure before scheduling, reports pressure beside conflict results without misclassifying it as a process intruder, and exposes advisory per-resource memory-floor fields. The release preserves the existing core reservation behavior; real per-machine RAM capacities remain explicitly unconfigured until owner-provided values are available.
 
@@ -31,9 +35,6 @@ The live full audit reports 95/100 with zero failures; remaining warnings are pa
 - `sirsi maat decisions show <id>` renders the complete decision record.
 - Native reservation, release, and conflict-check paths publish explanatory records without changing scheduler authority.
 - Host-local ledger scope is explicit; cross-host aggregation remains a separately tracked follow-up.
-
-## [Unreleased]
-- **feat(maat): live, drillable decision ledger — `sirsi maat decisions`** (claude-pantheon, 2026-09-26; router item `20260926-143533`). Owner ask via claude-io: Ma'at's grants/refusals/other work should be live and drillable to what it assessed, who it affected, what determination was made and why. `internal/maat/decision` is a schema-tolerant JSONL reader/writer over `~/.sirsi/maat/decisions.jsonl` (the file other hosts' writers — m5go, the `maat-window-gate` hook, `maat-run-guard` — already append to); `sirsi maat decisions` lists (filterable by `--kind`/`--host`/`--since`), `sirsi maat decisions show <id>` drills into one record by a stable content-derived short id. `sirsi maat reserve|release|conflict-check` now write their own decision records natively (closing the gap the ask named). Host-local by design for now — cross-host aggregation is the follow-up pending Ra's canonical-ledger-location answer; each host's ledger is self-contained and drillable today. Refs: PANTHEON_RULES.md A26; internal/maat/decision/README.md; docs/user-guides/maat.md; Changelog: Unreleased
 
 ## [0.24.0] — 2026-09-27 — Router A2A Fabric
 **First tagged, packaged, published release.** The router agent-to-agent (A2A) fabric ships end-to-end and is the canonical baseline for the next build:
@@ -533,27 +534,6 @@ Merged to `origin/main`, deployed to M1 & M5 CLIs + both relays, verified live (
 - Path containment check in the (removed) `submit-existing` verb used `filepath.EvalSymlinks` so tempdir tests worked on macOS; same pattern carries forward to `workRoot()`.
 
 ---
-
-## [0.23.0-beta] — 2026-05-19
-
-### Claude Router Inbox Hooks
-
-- Added repo-local Claude Code hooks for router inbox awareness at session start and user prompt submit.
-- Added `.claude/hooks/router_inbox_check.py` to read the Idea Router state and stay silent unless the registered Claude agent has pending work.
-
-### Ra/Horus CTR Hypervisor Canon Completion
-
-#### Code Surface
-- `sirsi router node-status` — Horus local-node status command showing router home, registered agents, pending work by agent, work-queue item statuses, daemon health, configured binary, and recent dispatch failures
-- `internal/router/nodestatus.go` — `CollectNodeStatus()` aggregation with `LaunchctlChecker` injectable for testability
-- `internal/router/nodestatus_test.go` — 5 tests covering basic fields, pending-by-agent, sorted agents, daemon-not-installed, and work-queue summary with failures
-- `internal/router/executor_test.go` — added non-Claude/non-Codex webhook registration and API wake dispatch coverage for universal agent wake proof
-
-#### Documentation
-- Case study indexed: `docs/case-studies/ra-horus-ctr-hypervisor.md`
-- Rule D6 in DEITY_REGISTRY.md updated with Horus per-desktop node split
-- PANTHEON_HIERARCHY.md §VII CTR Hypervisor boundary table verified
-- ADR-017 propagated to ARCHITECTURE_DESIGN.md §2.8
 
 ## [0.22.0-beta] — 2026-05-18
 
@@ -1376,7 +1356,6 @@ v0.8.0-beta is the first credible public release of Pantheon. All metrics are ve
   - Runs gofmt + go vet + golangci-lint + go build before every push
   - Prevents lint issues from ever reaching the pipeline
 - **Maat proposed** — pipeline purifier module (CI monitoring + auto-remediation)
-
 
 ## [0.2.0-alpha] — 2026-03-25 (Ship Week Day 5)
 ### Added (Day 5: Neural Brain Downloader)

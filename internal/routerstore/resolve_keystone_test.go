@@ -53,3 +53,26 @@ func TestCutOverMarkerRefusesCanonicalLocalDB(t *testing.T) {
 		t.Fatalf("canonical db with no cut-over marker must NOT refuse; got p=%q err=%v (want \"\")", p, err)
 	}
 }
+
+// SSA #792 (2026-09-27): if the home directory cannot be resolved, cutOverMarker
+// cannot check the marker OR build the canonical path — so it cannot PROVE this
+// is not a cut-over host. It must FAIL CLOSED (return an error) so Resolve()
+// refuses the local ledger, not fall through to open/create it. The old code
+// returned ("", nil) here, which was the exact split-brain the keystone exists
+// to prevent. Negative control: a resolvable home does not error.
+func TestCutOverMarkerFailsClosedOnHomeError(t *testing.T) {
+	t.Setenv("SIRSI_ROUTER_URL", "")
+	t.Setenv("SIRSI_ROUTER_DB", "")
+
+	// HOME empty → os.UserHomeDir() fails on unix/darwin. Must return an error.
+	t.Setenv("HOME", "")
+	if p, err := cutOverMarker(); err == nil {
+		t.Fatalf("home unresolvable must FAIL CLOSED with an error; got p=%q err=nil", p)
+	}
+
+	// Negative control: a resolvable home with no marker returns ("", nil).
+	t.Setenv("HOME", t.TempDir())
+	if p, err := cutOverMarker(); err != nil || p != "" {
+		t.Fatalf("resolvable home, no marker → (\"\", nil); got p=%q err=%v", p, err)
+	}
+}
