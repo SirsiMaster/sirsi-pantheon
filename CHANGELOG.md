@@ -8,6 +8,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.4] — 2026-09-27 — Router delivery-boundary hardening (SSA #792/#794)
+Fixes the four fail-open boundary defects SSA found in the shipped A2A fabric (deploy of #792/#794 was held/rejected pending these). Each fix fails **closed**; each is covered by a regression test verified against the old code (negative control red, fixed code green — A35).
+- **Keystone fails closed on home-resolution failure** (`routerstore/resolve.go`, SSA #792) — `cutOverMarker` returned `("", nil)` when `os.UserHomeDir()` failed, letting `Resolve()` fall through and open the local ledger without proving the cut-over marker absent (the exact split-brain the keystone prevents). It now returns an error so `Resolve()` refuses the local file.
+- **Ordered-release honored on drain** (`routerstore/spool.go`, SSA #794.1) — `drainOutbox` continued past a still-unreachable held request, so a later reachable request could be forwarded before an earlier held one. It now stops at the first non-delivery frontier; `serveOnce` drains per-lane through it.
+- **Held record removed only on confirmed delivery** (`routerstore/spool.go`, SSA #794.2) — `retryOutboxOne` deleted the durable outbox record for any non-hold result, discarding a record on a post-send `OUTCOME UNKNOWN`. It now has three outcomes: delivered → remove; never-reached → re-hold in order; unknown → park in `failed/` for audit (never re-forwarded, never dropped).
+- **`neverReachedService` requires the dial phase** (`routerstore/spool.go`, SSA #794.3) — a bare or post-connect `ECONNREFUSED` was classified as never-sent and auto-retried, risking a double-commit. Classification now requires a dial/connection-establishment-phase `net.OpError`; read/write-phase errors stay `OUTCOME UNKNOWN`.
+
 ## [0.24.0] — 2026-09-27 — Router A2A Fabric
 **First tagged, packaged, published release.** The router agent-to-agent (A2A) fabric ships end-to-end and is the canonical baseline for the next build:
 - **One ledger, enforced by code** — `resolve.go` keystone refuses the local `~/.sirsi/router.db` fallback on a cut-over host and self-heals to the service (retires the per-host chmod hacks).

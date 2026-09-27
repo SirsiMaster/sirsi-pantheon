@@ -707,41 +707,79 @@ func (rl *Relay) handleOne(agent, f string) bool {
 	return true
 }
 
-// retryOutboxOne re-forwards one held request (ADR-069). On delivery it clears
-// the file — the client already received QUEUED_FOR_RETRY, so no response is
-// re-published. Still unreachable → keep it in the outbox, in order, for the
-// next wake. Returns whether it drained (delivered).
-func (rl *Relay) retryOutboxOne(agent, f string) bool {
+// outboxOutcome is the disposition of one retryOutboxOne attempt.
+type outboxOutcome int
+
+const (
+	// outboxDelivered: the service positively answered (a real HTTP status was
+	// read). The held record is removed — the ONLY case that may remove it.
+	outboxDelivered outboxOutcome = iota
+	// outboxHeld: the service was provably never reached (statusHoldForRetry).
+	// The record is kept in the outbox, in order, for the next wake.
+	outboxHeld
+	// outboxUnknown: a post-send failure (OUTCOME UNKNOWN — connection lost
+	// after the request left, or an unreadable response). The service MAY have
+	// committed, so the record is neither re-forwarded (double-commit) nor
+	// dropped: it is parked in failed/ for audit and re-query.
+	outboxUnknown
+)
+
+// retryOutboxOne re-forwards one held request (ADR-069). Three outcomes (SSA
+// #794, 2026-09-27): a held request is removed ONLY on a positively confirmed
+// delivery. A never-reached result is re-held in order for the next wake; a
+// post-send OUTCOME-UNKNOWN result is parked for audit — never auto-deleted and
+// never auto-re-forwarded, because the service may already have committed it.
+// The client already received QUEUED_FOR_RETRY, so no response is re-published.
+func (rl *Relay) retryOutboxOne(agent, f string) outboxOutcome {
 	id := strings.TrimSuffix(filepath.Base(f), ".json")
 	inflight := filepath.Join(rl.Spool, agent, "inflight", id+".json")
 	if err := os.MkdirAll(filepath.Dir(inflight), 0o700); err != nil {
-		return false
+		return outboxHeld // could not stage — leave it in the outbox, stop the drain
 	}
 	if err := os.Rename(f, inflight); err != nil {
-		return false
+		return outboxHeld // lost the race / gone — treat as still held, stop the drain
 	}
 	sr := rl.forward(agent, id, inflight)
-	if sr.Status == statusHoldForRetry {
-		_ = os.Rename(inflight, f) // still unreachable — keep held in order
-		return false
+	switch {
+	case sr.Status == statusHoldForRetry:
+		_ = os.Rename(inflight, f) // provably never reached — keep held in order
+		return outboxHeld
+	case sr.Status == http.StatusBadGateway:
+		// forward's OUTCOME-UNKNOWN sentinel (post-send failure). The request may
+		// have crossed the service boundary and committed. Park for audit; do NOT
+		// re-forward and do NOT delete. A genuine service 502 is equally uncertain,
+		// so parking it too is the safe (conservative) direction — no data loss.
+		failed := filepath.Join(rl.Spool, agent, "failed", id+".json")
+		if os.MkdirAll(filepath.Dir(failed), 0o700) == nil && os.Rename(inflight, failed) == nil {
+			rl.Log.Error("relay: held request OUTCOME UNKNOWN on retry — parked for audit, not re-forwarded", "agent", agent, "id", id)
+		} else {
+			_ = os.Rename(inflight, f) // could not park — leave held rather than lose it
+		}
+		return outboxUnknown
+	default:
+		_ = os.Remove(inflight) // positively delivered (service answered)
+		rl.Log.Info("relay: held request delivered on retry", "agent", agent, "id", id, "status", sr.Status)
+		return outboxDelivered
 	}
-	_ = os.Remove(inflight) // delivered (client already got QUEUED_FOR_RETRY)
-	rl.Log.Info("relay: held request delivered on retry", "agent", agent, "id", id)
-	return true
 }
 
-// drainOutbox retries every held item for agent in id order and returns how
-// many remain held (still unreachable).
+// drainOutbox re-forwards held items for agent in id order and returns how many
+// remain unresolved. It STOPS at the first non-delivery (SSA #794, 2026-09-27):
+// if an earlier held request is still unreachable while a later one is
+// reachable, forwarding the later one first would violate ADR-069's
+// ordered-release guarantee. The frontier (the first non-delivered item and
+// everything after it) is left for the next wake.
 func (rl *Relay) drainOutbox(agent string) int {
 	held, _ := filepath.Glob(filepath.Join(rl.Spool, agent, "outbox", "*.json"))
 	sort.Strings(held)
-	remaining := 0
-	for _, f := range held {
-		if !rl.retryOutboxOne(agent, f) {
-			remaining++
+	for i, f := range held {
+		if rl.retryOutboxOne(agent, f) != outboxDelivered {
+			// Stop at the frontier. Count the rest as unresolved so the caller
+			// schedules a backed-off re-wake to drain from here next time.
+			return len(held) - i
 		}
 	}
-	return remaining
+	return 0
 }
 
 // scheduleOutboxRewake re-wakes a lane after a backoff so a persistent outage
@@ -775,14 +813,23 @@ func (rl *Relay) serveOnce() int {
 			n++
 		}
 	}
-	// ADR-069: retry held outbox items too (per lane, in id order), so a
-	// synchronous drain delivers what a prior outage held.
+	// ADR-069: retry held outbox items too, per lane in id order, via drainOutbox
+	// so each lane STOPS at its first non-delivery and never releases a later
+	// held request before an earlier one (ordered-release guarantee, SSA #794).
 	held, _ := filepath.Glob(filepath.Join(rl.Spool, "*", "outbox", "*.json"))
-	sort.Strings(held)
+	laneSet := map[string]struct{}{}
 	for _, f := range held {
-		if rl.retryOutboxOne(filepath.Base(filepath.Dir(filepath.Dir(f))), f) {
-			n++
-		}
+		laneSet[filepath.Base(filepath.Dir(filepath.Dir(f)))] = struct{}{}
+	}
+	lanes := make([]string, 0, len(laneSet))
+	for a := range laneSet {
+		lanes = append(lanes, a)
+	}
+	sort.Strings(lanes) // deterministic: lanes in name order
+	for _, agent := range lanes {
+		before, _ := filepath.Glob(filepath.Join(rl.Spool, agent, "outbox", "*.json"))
+		remaining := rl.drainOutbox(agent)
+		n += len(before) - remaining // items delivered before this lane's frontier
 	}
 	return n
 }
@@ -872,22 +919,28 @@ func neverReachedService(err error) bool {
 	if err == nil {
 		return false
 	}
-	// Connection refused/reset before the request left → never connected.
-	if errors.Is(err, syscall.ECONNREFUSED) {
-		return true
-	}
-	// DNS resolution failed → never connected.
+	// DNS resolution failed → never connected (no socket was ever opened).
 	var dnsErr *net.DNSError
 	if errors.As(err, &dnsErr) {
 		return true
 	}
-	// A dial-phase network op (dial timeout, no route to host, TLS handshake
-	// during dial) → never sent. A read/write op AFTER connect is intentionally
-	// excluded: the request may have reached the service.
+	// A network op error is "never reached" ONLY when it occurred during the
+	// dial/connection-establishment phase (SSA #794, 2026-09-27). The phase is
+	// the safety hinge: a read/write-phase op error — EVEN one carrying
+	// ECONNREFUSED/ECONNRESET (a reset arriving mid-write after the socket was
+	// established) — happened after the request may already have crossed the
+	// service boundary, so it must stay OUTCOME UNKNOWN and is never auto-retried.
+	// The Go dialer wraps connect-time refusals as a dial-phase *net.OpError, so
+	// a genuine "connection refused before we sent anything" is caught here.
 	var opErr *net.OpError
-	if errors.As(err, &opErr) && opErr.Op == "dial" {
-		return true
+	if errors.As(err, &opErr) {
+		return opErr.Op == "dial"
 	}
+	// A bare ECONNREFUSED with no net.OpError carries no phase information of its
+	// own, so we cannot prove it was pre-send. Classify conservatively as
+	// UNKNOWN (not never-reached) rather than risk auto-retrying a mutation that
+	// may have committed. In practice the stdlib always wraps a connect-time
+	// refusal in the dial-phase *net.OpError handled above.
 	return false
 }
 

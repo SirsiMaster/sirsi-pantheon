@@ -146,7 +146,13 @@ func loadCutOverEnv(path string) string {
 func cutOverMarker() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", nil // cannot resolve home → cannot check marker or canonical path
+		// FAIL CLOSED (SSA #792, 2026-09-27): if home cannot be resolved we
+		// cannot check for the cut-over marker OR build the canonical path, so
+		// we CANNOT prove this is not a cut-over host. Returning ("", nil) here
+		// let Resolve() fall through to LocalPath() and open/create the local
+		// ledger — the exact split-brain this keystone exists to prevent. An
+		// error propagates through Resolve()'s merr and refuses the local file.
+		return "", fmt.Errorf("routerstore: cannot resolve home directory to check cut-over marker: %w (refusing the local ledger until home resolves — this may be a cut-over host)", err)
 	}
 	canon := filepath.Join(home, ".sirsi", "router.db")
 	if db := strings.TrimSpace(os.Getenv("SIRSI_ROUTER_DB")); db != "" && !samePath(db, canon) {
