@@ -3,6 +3,15 @@
 # Each entry is timestamped with context and reasoning.
 # This is the "why" behind every decision.
 
+## Entry 028 — 2026-09-27 — Ra native handoff identity release candidate
+
+The native Ra handoff form exposed a free-form sender and defaulted it to the
+undeclared `horus-local` alias. The fix removes that sender input and passes
+the single local `horus` identity from the engine. Swift release build and CLI
+flag checks passed. The full Go suite was run; host/router-dependent failures
+are retained as release evidence rather than misclassified as caused by this
+UI change. Candidate head is `96d78cf1`.
+
 ---
 
 ## Entry 027 — 2026-08-02 — "A Parent Is Not Necessarily the Task"
