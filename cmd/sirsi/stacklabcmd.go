@@ -21,7 +21,7 @@ import (
 
 // routerWingPath is this repo's own router wing record — the roster of
 // declared peers lives in its handoffs.allowed_peer_wings (ADR-066 §3).
-const routerWingPath = "docs/router-service/stacklab/router-wing-ra-v1.json"
+const routerWingPath = "contracts/stacklab/ra-horus-fabric-wing-v1.json"
 
 var stacklabCmd = &cobra.Command{
 	Use:   "stacklab",

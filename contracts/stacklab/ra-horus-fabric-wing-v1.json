@@ -26,6 +26,8 @@
     "allowed_peer_wings": [
       "stacklab.wing.maat",
       "stacklab.wing.sne-engine",
+      "stacklab.wing.pantheon.pt-wing-001",
+      "stacklab.wing.io-connect",
       "stacklab.wing.hardware-estate"
     ]
   },
@@ -36,6 +38,7 @@
       "sirsi-stacklab:canon/contracts/stacklab/ra-horus-fabric-wing-v1.json",
       "sirsi-stacklab:canon/contracts/stacklab/ra-horus-fabric-recipe-v1.json",
       "sirsi-stacklab:canon/docs/stacklab/RA_HORUS_FABRIC_TRACEABILITY_MATRIX.md",
+      "sirsi-stacklab:canon/docs/router-service/stacklab/WING.md",
       "sirsi-stacklab:canon/cmd/sirsi/routercmd.go",
       "sirsi-stacklab:canon/cmd/sirsi/ra.go"
     ]
@@ -45,5 +48,5 @@
     "desktop": "current",
     "workspace": "current"
   },
-  "next_action": "RA-HORUS-FABRIC-001.G1 delivers the native Ra Fabric workspace: visible live work, blocker repair, agent wake actions, and typed durable handoff. M1 Ra reviews cross-instance semantics; follow-on work replaces remaining compatibility CLI-only actions with typed native flows without creating a second router store."
+  "next_action": "RA-HORUS-FABRIC-001.G1 is the canonical router wing record consumed by sirsi stacklab doctor. Continue the native Ra Fabric workspace and pin this exact contract in SirsiMaster/sirsi-stacklab; the legacy docs/router-service/stacklab/router-wing-ra-v1.json record is retained only as compatibility provenance and is not an authority."
 }

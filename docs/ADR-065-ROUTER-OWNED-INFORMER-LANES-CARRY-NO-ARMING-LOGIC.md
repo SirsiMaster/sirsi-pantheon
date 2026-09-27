@@ -74,7 +74,7 @@ It is registered in the thread census (A33) and recognised by pidfile as load-be
 - `docs/ADR-052-A2A-CONDUIT-OPERATING-RULES.md` — the compliance claim this ADR makes enforceable; property table amended per Decision 2
 - `docs/router-service/A2A_CONTRACT_ASSESSMENT.md` — property-by-property evidence; §6 is the ack gap; addendum records the live incident
 - `docs/router-service/ROUTER_STACK_LAB_RECIPE.md` — component inventory; Change Log carries this ADR
-- `docs/router-service/stacklab/WING.md` — `stacklab.wing.m1-ra`; this ADR is registered against the wing (task `ra-wing-router-v1`)
+- `docs/router-service/stacklab/WING.md` — `stacklab.wing.ra-horus-fabric`; this ADR is registered against the wing (task `ra-horus-fabric-wing-v1`)
 - PANTHEON_RULES.md — A29 (wake subsystem exists, do not rebuild), A32 (load-bearing recognition), A33 (census), A35 (scope the check to the claim), Rule 0
 - Ledger: `rs-34-router-body-loss-empty-guard`, `rs-35-a2a-contract-assessment`, `rs-36-ssa-sandbox-sync-never-operated`, `rs-37-adr065-router-owned-informer`
 - Router: `20260913-043215` (SHA's originating item), `20260913-063953` (assessment), `20260913-070742` (bundle notice)

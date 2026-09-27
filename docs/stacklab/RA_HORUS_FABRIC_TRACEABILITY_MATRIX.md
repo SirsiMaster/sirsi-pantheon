@@ -2,7 +2,7 @@
 
 **Lane:** `stacklab.wing.ra-horus-fabric`  
 **Last reviewed:** 2026-09-27  
-**Status:** source candidate; release promotion remains evidence-bound.
+**Status:** v0.24.3 released; DMG signed/notarized/stapled, CLI artifacts published, PKG remains unsigned and is not a commercial installer.
 
 This is the single lane-level index for the required product documents. Each
 row names the authoritative artifact, implementation surface, and proof still
@@ -22,8 +22,9 @@ has not been proven.
 | Stack Lab component catalog | `docs/stacklab/RA_HORUS_FABRIC_COMPONENT_CATALOG.md`, `contracts/stacklab/ra-horus-fabric-recipe-v1.json` | source/test/input/output/write inventory | ACCEPTED SOURCE | pin catalog and recipe in registry |
 | Native sender identity | `macapp/Sources/SirsiMenubar/SirsiEngine.swift` | sender fixed to `horus`; caller cannot choose `--from` | ACCEPTED SOURCE | release build and runtime handoff proof |
 | One router authority | `internal/routerstore`, `docs/runbooks/router-service-tokens-and-rollback.md` | service env refusal of local fallback | ACCEPTED SOURCE | verify both installed Macs after cut-over |
-| Release readiness | `.github/workflows/release.yml`, `.goreleaser.yaml` | build/package/sign/notarize receipts | OPEN | repair platform-specific CI skips, then run protected release workflow |
-| Stack Lab registry authority | `contracts/stacklab/v2/PROVENANCE.md` | universal registry byte pin | OPEN | publish accepted contract bytes to registry |
+| Release readiness | `.github/workflows/release.yml`, `.goreleaser.yaml` | protected run `36328430291` at merge `0a95a045`; DMG `e846c682…`, notarization accepted/stapled; PKG `e6ad20ca…` explicitly unsigned | CONDITIONAL | provision `DEVELOPER_ID_INSTALLER` and rerun the protected workflow before calling the PKG commercial-ready |
+| Homebrew cask lifecycle | `homebrew-tools/Casks/sirsi-pantheon.rb` | cask v0.24.3, SHA256 `e846c682…`, matches release DMG | ACCEPTED SOURCE/RELEASE | execute isolated install/upgrade/rollback/uninstall rehearsal |
+| Stack Lab registry authority | `contracts/stacklab/ra-horus-fabric-wing-v1.json`, `contracts/stacklab/v2/PROVENANCE.md` | doctor now consumes the canonical Ra/Horus record; registry byte pin still external | OPEN | publish the exact canonical contract bytes to the universal registry |
 
 ## Definition of done
 
