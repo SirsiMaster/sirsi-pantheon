@@ -406,7 +406,7 @@ struct CommandDeckView: View {
     }
 
     private var routerState: CommandDeckSignal {
-        CommandDeckSignal(title: "Router", detail: engine.routerSummary, tint: statusColor(engine.routerStatus))
+        CommandDeckSignal(title: "Ra fabric", detail: engine.routerSummary, tint: statusColor(engine.routerStatus))
     }
 
     private var contextState: CommandDeckSignal {
@@ -583,7 +583,7 @@ enum DeckRoute {
     var surfaceName: String {
         switch self {
         case .horus: return "Horus — Ops"
-        case .routerFabric: return "Router — Fabric"
+        case .routerFabric: return "Ra — Fabric"
         case .ownerActions: return "Owner Actions"
         case .threads: return "Threads"
         case .anubis: return "Anubis — Hygiene"
@@ -1431,9 +1431,9 @@ struct FleetTile: View {
     }
 }
 
-// ── Router — Fabric (liveness + wake-enablement) ─────────────────────────────
+// ── Ra — Fabric (liveness + wake-enablement) ─────────────────────────────────
 //
-// The Router view is the owner-actionable board: it leads with BLOCKERS (only
+// The Ra view is the owner-actionable board: it leads with BLOCKERS (only
 // current, fixable conditions — a real logout, a broken router daemon), then
 // stranded inboxes (per-agent open-item counts, each with a one-click "Arm wake
 // channel"). A degraded/inconclusive auth probe is shown as plain INFO, never an
@@ -1876,7 +1876,7 @@ struct RaStrandedInboxesView: View {
     }
 }
 
-// SectionLabel is a small caption header used across the Router view.
+// SectionLabel is a small caption header used across the Ra Fabric view.
 struct SectionLabel: View {
     let text: String
     var tint: Color = .secondary
@@ -1944,7 +1944,7 @@ struct DaemonBlockerCard: View {
             HStack(spacing: 8) {
                 Text("⚙️").sirsiFont(18)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("\(broken.count) router daemon\(broken.count == 1 ? "" : "s") missing")
+                    Text("\(broken.count) Ra relay\(broken.count == 1 ? "" : "s") missing")
                         .sirsiFont(13, weight: .semibold)
                     Text("Work can't relay while a session is closed.")
                         .sirsiFont(.caption).foregroundStyle(.secondary)
@@ -1959,7 +1959,7 @@ struct DaemonBlockerCard: View {
             Button {
                 Task { onResult(await engine.installRouterDaemons()) }
             } label: {
-                Label("Install router daemons", systemImage: "wrench.and.screwdriver.fill")
+                Label("Repair Ra relays", systemImage: "wrench.and.screwdriver.fill")
                     .frame(maxWidth: .infinity)
             }.buttonStyle(.borderedProminent).tint(gold).disabled(engine.busy)
         }
@@ -1969,10 +1969,10 @@ struct DaemonBlockerCard: View {
     }
 }
 
-// friendlyDaemon turns a router role into plain English.
+// friendlyDaemon turns a Ra relay role into plain English.
 func friendlyDaemon(_ role: String) -> String {
     switch role {
-    case "router-supervisor": return "Background router supervisor"
+    case "router-supervisor": return "Ra background supervisor"
     case "router-watchpaths": return "Live dispatch (on change)"
     case "router-sweep": return "Hourly queue sweep"
     case "registry-police": return "Thread cleanup"
@@ -3423,7 +3423,7 @@ struct AskSirsiView: View {
                 }
 
                 if snapshotMode {
-                    Label("Ask about current work, the router, or this Mac.", systemImage: "text.cursor")
+                    Label("Ask about current work, the Ra fabric, or this Mac.", systemImage: "text.cursor")
                         .font(.body)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -3431,7 +3431,7 @@ struct AskSirsiView: View {
                         .background(RoundedRectangle(cornerRadius: 8).fill(panelFill))
                 } else {
                     HStack(spacing: 10) {
-                        TextField("Ask about current work, the router, or this Mac.", text: $question)
+                        TextField("Ask about current work, the Ra fabric, or this Mac.", text: $question)
                             .textFieldStyle(.plain)
                             .font(.body)
                             .onSubmit { ask() }
@@ -4063,7 +4063,7 @@ struct OwnerActionView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Closes the item in the router. Do this after you've actually done what it asks.")
+            Text("Closes the item in the Ra fabric. Do this after you've actually done what it asks.")
         }
     }
 

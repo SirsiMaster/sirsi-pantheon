@@ -1285,11 +1285,12 @@ final class SirsiEngine: ObservableObject {
         Core identity:
         - Sirsi is Cylton Collymore's system for local-first AI, agent routing, infrastructure hygiene,
           project memory, and portfolio orchestration.
-        - Pantheon is the local Mac application, CLI, TUI, menubar, router, and deity-governed operations layer.
+        - Pantheon is the local Mac application, CLI, TUI, menubar, Ra fabric, and deity-governed operations layer.
+        - Horus is the local Pantheon system instance; Ra unifies Horus instances and owns their router behavior. Hermes is the information interconnect between Horus instances. Photon is the hardware transfer device. Apollo runs local inference workloads.
         - Ra owns routing/orchestration. Horus owns workstation visibility. Thoth preserves memory.
-          Ma'at governs quality/truth. Seshat moves knowledge. Hapi governs pressure/admission.
+          Ma'at governs quality, decisions, and the user-facing knowledge surface. Seshat is legacy ingestion compatibility only. Hapi governs pressure/admission.
           Seba maps hardware and architecture. Anubis/Ka handle scan, cleanup, and app remnants.
-        - The router/CTR coordinates Claude, Codex, Gemini, Gemma, Qwen, and future agents through
+        - Ra coordinates Claude, Codex, Gemini, Gemma, Qwen, and future agents through
           repo-scoped ids such as claude-pantheon, codex-pantheon, claude-home, codex-home,
           claude-finalwishes, codex-nexus, and others.
         - Claude Home is the routing owner. Codex Pantheon is an independent Pantheon review/build lane.
@@ -1406,7 +1407,7 @@ final class SirsiEngine: ObservableObject {
         if let name = projectName { lines.append("Current project: \(name)") }
 
         if let board = routerBoard {
-            lines.append("Router pending total: \(board.totalPending ?? 0)")
+            lines.append("Ra pending total: \(board.totalPending ?? 0)")
             lines.append("Live thread count: \(board.liveThreadCount ?? threadsTotal)")
             let pending = (board.pendingByAgent ?? [:])
                 .filter { !$0.value.isEmpty }
@@ -1443,7 +1444,7 @@ final class SirsiEngine: ObservableObject {
         KNOWLEDGE SURFACES TO MENTION WHEN RELEVANT
         CLI: sirsi, ctr, router, thread, workstream, setup, seba, hapi, thoth, seshat, maat, anubis, ka.
         TUI: terminal-guided Sirsi operation when no IDE/app surface is active.
-        Menubar: local Mac operator surface for health, router fabric, owner actions, cleanup, Ask Sirsi, and thread visibility.
+        Menubar: local Mac operator surface for health, Ra fabric, owner actions, cleanup, Ask Sirsi, and thread visibility.
         Local model: Gemma/MLX is the Tier-0 reasoning engine; cloud/frontier agents bind or review where needed.
         Acceleration doctrine: ANE + MLX/GPU + Metal + multithreaded CPU are AND lanes, governed by Hapi admission.
         """)
@@ -1463,7 +1464,7 @@ final class SirsiEngine: ObservableObject {
             "User: Cylton Collymore, founder/operator of Sirsi.",
         ]
         if let board = routerBoard {
-            lines.append("Live router pending total: \(board.totalPending ?? 0); live threads: \(board.liveThreadCount ?? threadsTotal).")
+            lines.append("Live Ra pending total: \(board.totalPending ?? 0); live threads: \(board.liveThreadCount ?? threadsTotal).")
         }
         return lines.joined(separator: "\n")
     }
@@ -1595,7 +1596,7 @@ final class SirsiEngine: ObservableObject {
         let ctx = threadRoster.map { a in
             "\(a.agent): \(a.live) live, \(a.idle) idle, \(a.staleN) stale; freshest seen \(Int(a.freshestIdle))s ago; surfaces \(a.surfaces.joined(separator: "/"))"
         }.joined(separator: "\n")
-        let system = "You answer questions about the Sirsi router thread fabric concisely (2-4 sentences), using ONLY the live state provided. If the state doesn't contain the answer, say so plainly."
+        let system = "You answer questions about the Sirsi Ra work fabric concisely (2-4 sentences), using ONLY the live state provided. If the state doesn't contain the answer, say so plainly."
         let prompt = "Live thread fabric (\(threadsTotal) live threads across \(threadRoster.count) agents):\n\(ctx.isEmpty ? "(no agents)" : ctx)\n\nQuestion: \(question)"
         return await Self.runGemma(prompt: prompt, system: system)
     }
