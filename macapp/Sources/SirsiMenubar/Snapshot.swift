@@ -106,7 +106,7 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380, appearance: ColorSche
             // its headless evidence enough canvas to capture every section from
             // the title onward instead of centering and clipping its first rows.
             let height: CGFloat = switch shot.name {
-            case "ask-sirsi": 760
+            case "ask-sirsi": 960
             case "all-tools": 1_040
             default: 520
             }
