@@ -24,10 +24,18 @@ jobs:
         with:
           go-version: '1.25'
 
-      - name: Run tests (skip CGO-dependent packages on Linux)
+      - name: Verify release build compiles (static, all packages)
+        # The PR gate (self-hosted macOS) runs the full `-race` suite before merge, and a
+        # tag is cut from tested main — so the release job BUILDS + PUBLISHES, it does not
+        # re-test. Re-running the suite here on ubuntu FAILS on Mac/env-specific tests
+        # (Thunderbolt tb_lane_drift, GH-runner health, login-shell, wake-loop timing) that
+        # cannot pass on Linux, and it never exercised the STATIC build — the exact defect
+        # class a release must catch (the CGO_ENABLED=0 `vitals` break, #806, which the
+        # CGO-on PR gate missed). Verify the static compile instead; goreleaser then
+        # cross-builds every target (darwin/linux × arm64/amd64) as the real release gate.
         env:
           CGO_ENABLED: "0"
-        run: go test -short $(go list ./... | grep -v '/seba$\|/brain$\|/mcp$\|/ka$\|/tests/')
+        run: go build ./...
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
