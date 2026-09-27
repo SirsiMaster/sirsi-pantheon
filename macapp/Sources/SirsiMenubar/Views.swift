@@ -1769,7 +1769,7 @@ struct RaHandoffView: View {
                             .sirsiFont(.caption2, weight: .semibold)
                             .foregroundStyle(.secondary)
                         TextEditor(text: $instructions)
-                            .font(.system(size: 13))
+                            .sirsiFont(13)
                             .frame(minHeight: 132)
                             .padding(7)
                             .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.055)))
@@ -3405,18 +3405,18 @@ struct AskSirsiView: View {
                 HStack(alignment: .firstTextBaseline) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Ask Sirsi")
-                            .font(.title2.weight(.bold))
+                            .sirsiFont(.title2, weight: .bold)
                         Text("A private assistant for this Mac and its active work.")
-                            .font(.subheadline)
+                            .sirsiFont(.subheadline)
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
                     Label(online ? "On device" : "Unavailable", systemImage: online ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                        .font(.caption.weight(.semibold))
+                        .sirsiFont(.caption, weight: .semibold)
                         .foregroundStyle(online ? .green : .orange)
                 }
                 Text(liveStatus)
-                    .font(.caption)
+                    .sirsiFont(.caption)
                     .foregroundStyle(.secondary)
             }
             .padding(14)
@@ -3425,14 +3425,14 @@ struct AskSirsiView: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text("What would you like to know?")
-                        .font(.headline)
+                        .sirsiFont(.headline)
                     Spacer()
                     if asking { ProgressView().controlSize(.small) }
                 }
 
                 if snapshotMode {
                     Label("Ask about current work, the Ra fabric, or this Mac.", systemImage: "text.cursor")
-                        .font(.body)
+                        .sirsiFont(.body)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(12)
@@ -3441,7 +3441,7 @@ struct AskSirsiView: View {
                     HStack(spacing: 10) {
                         TextField("Ask about current work, the Ra fabric, or this Mac.", text: $question)
                             .textFieldStyle(.plain)
-                            .font(.body)
+                            .sirsiFont(.body)
                             .onSubmit { ask() }
                         Button { ask() } label: {
                             Label("Send", systemImage: "arrow.up")
@@ -3466,15 +3466,15 @@ struct AskSirsiView: View {
             if let answer {
                 VStack(alignment: .leading, spacing: 8) {
                     Label("Sirsi's answer", systemImage: "sparkles")
-                        .font(.headline)
+                        .sirsiFont(.headline)
                     Text(answer)
-                        .font(.body)
+                        .sirsiFont(.body)
                         .lineLimit(snapshotMode ? 8 : nil)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
                     Text("Generated locally on this Mac")
-                        .font(.caption)
+                        .sirsiFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .padding(14)
@@ -3483,13 +3483,13 @@ struct AskSirsiView: View {
 
             if snapshotMode {
                 Label("Create a local briefing", systemImage: "doc.text")
-                    .font(.subheadline.weight(.semibold))
+                    .sirsiFont(.subheadline, weight: .semibold)
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 7)
             } else {
                 Button { askKnowledgeReport() } label: {
                     Label("Create a local briefing", systemImage: "doc.text")
-                        .font(.subheadline.weight(.semibold))
+                        .sirsiFont(.subheadline, weight: .semibold)
                 }
                 .buttonStyle(.bordered)
                 .disabled(asking || !online)
@@ -3502,7 +3502,7 @@ struct AskSirsiView: View {
     @ViewBuilder private func suggestion(_ text: String) -> some View {
         if snapshotMode {
             Text(text)
-                .font(.caption.weight(.medium))
+                .sirsiFont(.caption, weight: .medium)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)

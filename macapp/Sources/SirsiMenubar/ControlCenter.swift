@@ -89,15 +89,15 @@ struct PantheonControlCenterView: View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Pantheon")
-                    .font(.title2.weight(.bold))
+                    .sirsiFont(.title2, weight: .bold)
                 Text(engine.projectName ?? "Local operator view")
-                    .font(.subheadline)
+                    .sirsiFont(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
             Spacer()
             Label(overallTitle, systemImage: overallSymbol)
-                .font(.caption.weight(.semibold))
+                .sirsiFont(.caption, weight: .semibold)
                 .foregroundStyle(overallTint)
                 .labelStyle(.titleAndIcon)
         }
@@ -107,18 +107,18 @@ struct PantheonControlCenterView: View {
         NavLink { AskSirsiView(engine: engine) } label: {
             HStack(spacing: 12) {
                 Image(systemName: "sparkles")
-                    .font(.title3.weight(.semibold))
+                    .sirsiFont(.title3, weight: .semibold)
                     .frame(width: 24)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Ask Sirsi")
-                        .font(.headline)
+                        .sirsiFont(.headline)
                     Text(engine.localLLM?.healthy == true ? "Start with local intelligence" : "Check local intelligence")
-                        .font(.subheadline)
+                        .sirsiFont(.subheadline)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
                 Image(systemName: "arrow.right")
-                    .font(.body.weight(.semibold))
+                    .sirsiFont(.body, weight: .semibold)
             }
             .foregroundStyle(.primary)
             .padding(14)
@@ -132,7 +132,7 @@ struct PantheonControlCenterView: View {
     private var attention: some View {
         VStack(alignment: .leading, spacing: 7) {
             Text("NOW")
-                .font(.caption.weight(.bold))
+                .sirsiFont(.caption, weight: .bold)
                 .foregroundStyle(.secondary)
             priorityLink
                 .padding(12)
@@ -163,7 +163,7 @@ struct PantheonControlCenterView: View {
     private var controls: some View {
         VStack(alignment: .leading, spacing: 7) {
             Text("CONTROL")
-                .font(.caption.weight(.bold))
+                .sirsiFont(.caption, weight: .bold)
                 .foregroundStyle(.secondary)
             VStack(spacing: 1) {
                 NavLink { RaFabricView(engine: engine) } label: {
@@ -190,10 +190,10 @@ struct PantheonControlCenterView: View {
         NavLink { PantheonLibraryView(engine: engine) } label: {
             HStack {
                 Label("All Pantheon tools", systemImage: "square.grid.2x2")
-                    .font(.headline)
+                    .sirsiFont(.headline)
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
+                    .sirsiFont(.caption, weight: .semibold)
                     .foregroundStyle(.tertiary)
             }
             .padding(.vertical, 10)
@@ -214,21 +214,21 @@ private struct ControlCenterRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: symbol)
-                .font(.body.weight(.semibold))
+                .sirsiFont(.body, weight: .semibold)
                 .foregroundStyle(tint)
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.headline)
+                    .sirsiFont(.headline)
                     .foregroundStyle(.primary)
                 Text(detail)
-                    .font(.subheadline)
+                    .sirsiFont(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
             Spacer(minLength: 8)
             Image(systemName: "chevron.right")
-                .font(.caption.weight(.semibold))
+                .sirsiFont(.caption, weight: .semibold)
                 .foregroundStyle(.tertiary)
         }
         .padding(.horizontal, 12)
@@ -274,7 +274,7 @@ struct PantheonLibraryView: View {
     private func librarySection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(title)
-                .font(.caption.weight(.bold))
+                .sirsiFont(.caption, weight: .bold)
                 .foregroundStyle(.secondary)
             VStack(spacing: 1) { content() }
                 .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.045)))
@@ -288,11 +288,11 @@ struct PantheonLibraryView: View {
                     .frame(width: 20)
                     .foregroundStyle(.secondary)
                 Text(title)
-                    .font(.body.weight(.medium))
+                    .sirsiFont(.body, weight: .medium)
                     .foregroundStyle(.primary)
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
+                    .sirsiFont(.caption, weight: .semibold)
                     .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 12)
