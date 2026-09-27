@@ -34,7 +34,11 @@ const RegistryPinsDir = "wings/pinned"
 // to do with the lane. Doctor reports an unmapped lane as stranded/unbuilt
 // with a "mapping unknown" detail rather than fabricating a repo.
 var LaneRepoMap = map[string]string{
-	"io-connect": "SirsiMaster/sirsi-io-connect",
+	// io-connect split 2026-09-26: SirsiMaster/sirsi-io-connect renamed to
+	// sirsi-hermes (GitHub redirects the old URL); the new sirsi-photon repo
+	// carries the hardware/NIC stack split out of the same lane.
+	"io-connect": "SirsiMaster/sirsi-hermes",
+	"photon":     "SirsiMaster/sirsi-photon",
 	// TODO(ADR-066 §6): sne-engine — inference-engine repo name not confirmed
 	//   in this session (memory names the *project* "Sirsi Inference Engine"
 	//   but not its GitHub repo).
