@@ -18,6 +18,13 @@ the undeclared `horus-local` alias. The Stack Lab wing is
 host-dependent failures remain recorded rather than hidden. Candidate head:
 `96d78cf1`.
 
+**CI hardening:** the release test surface now states its platform boundaries
+instead of relying on the host. Launchd broker/runner and zsh login-shell
+assertions skip on non-Darwin builders, and the CLI integration `TestMain`
+clears inherited router service/local-store variables before running isolated
+stores. This preserves the production service-first rule while preventing a
+developer shell from redirecting local tests into the live router.
+
 ---
 
 ## 2026-07-04 — INCIDENT: the runaway executor — 19,195 sessions, 11,564 items, 1.3 TB

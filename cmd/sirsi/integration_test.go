@@ -64,6 +64,14 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
+	// The developer shell normally exports the canonical service URL. These
+	// tests deliberately exercise isolated local stores, so do not let the
+	// host's live-router environment turn a hermetic test into a fabric write.
+	// Tests that cover service resolution set these variables explicitly.
+	for _, key := range []string{"SIRSI_ROUTER_URL", "SIRSI_ROUTER_TOKEN", "SIRSI_ROUTER_DB"} {
+		os.Unsetenv(key)
+	}
+
 	// os.Exit does not run deferred functions, so tmpDir must be removed
 	// explicitly — a `defer os.RemoveAll(tmpDir)` here never fires and leaks the
 	// build directory and the router store on every run.
