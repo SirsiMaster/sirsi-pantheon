@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.12] — 2026-09-27 — Ma'at runner-listener classification
+**Commercial patch release.** Ma'at conflict checks now distinguish an idle
+GitHub Actions `Runner.Listener` and its launchd wrapper from an active
+`runner.worker` job. Idle runner infrastructure no longer blocks or invalidates
+quiet-regime reservations, while a real in-flight worker remains governed as
+build load. Regression coverage protects both sides of the classification.
+
 ## [0.24.11] — 2026-09-27 — Canonical Hermes router identity
 **Commercial patch release.** The router registry now has one explicit Hermes
 software identity for the M1 Photon seat and one explicit `hermes-m5` identity
