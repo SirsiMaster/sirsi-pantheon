@@ -185,6 +185,16 @@ func (n NodeCapacity) DynamicCap(perModelBytes int64) int64 {
 	return cap
 }
 
+// CurrentPressure returns this host's live memory-pressure level + source
+// (kernel-dispatch, bootstrap-snapshot, or unknown) via the same resolution
+// SampleNodeCapacity uses. It samples THIS process's kernel — there is no
+// cross-host relay — so callers gating on it must already be evaluating the
+// machine they're running on (see internal/maat/schedule/plan.go ShouldDefer).
+func CurrentPressure() (PressureLevel, string) {
+	n := SampleNodeCapacity()
+	return n.Pressure, n.PressureSource
+}
+
 // bootstrapPressure seeds a level from free-% — the FALLBACK only (ADR-031-B #4
 // makes the kernel DISPATCH_SOURCE_MEMORYPRESSURE level authoritative). These
 // percents are a seed, never the governance contract; they are replaced by the

@@ -96,3 +96,87 @@ func (l *Ledger) FloorShare(resource string) (int, error) {
 	}
 	return floor, nil
 }
+
+// memCapacityStateKey holds the fleet's per-resource RAM capacity in GB, same
+// shape as capacityStateKey but its own key/map: core contention and memory
+// pressure are different signals, so a resource's core and memory capacity
+// are tracked independently.
+const memCapacityStateKey = "maat:capacity-mem-gb"
+
+// defaultMemCapacityGB applies when the state key is absent or a resource has
+// no explicit entry in it.
+//
+// TODO(owner): real per-machine RAM GB, not guessed here — capacity.go's
+// defaultCapacity (m1=10, m5=18 cores) was an owner-provided number; this
+// needs the same for GB before it ships.
+var defaultMemCapacityGB = map[string]int{}
+
+func (l *Ledger) capacityMemGB(resource string) (int, error) {
+	capacities := make(map[string]int, len(defaultMemCapacityGB))
+	for k, v := range defaultMemCapacityGB {
+		capacities[k] = v
+	}
+	raw, ok, err := l.store.GetState(memCapacityStateKey)
+	if err != nil {
+		return 0, fmt.Errorf("maat: read mem capacity: %w", err)
+	}
+	if !ok || strings.TrimSpace(raw) == "" {
+		return capacities[resource], nil
+	}
+	var stored map[string]int
+	if err := json.Unmarshal([]byte(raw), &stored); err != nil {
+		return 0, fmt.Errorf("maat: parse mem capacity: %w", err)
+	}
+	for k, v := range stored {
+		capacities[k] = v
+	}
+	return capacities[resource], nil
+}
+
+// SetCapacityMemGB records resource's RAM capacity in GB, overriding the default.
+func (l *Ledger) SetCapacityMemGB(resource string, gb int) error {
+	if !resourceRe.MatchString(resource) {
+		return fmt.Errorf("maat: resource %q invalid (want a lowercase slug like m1, rail-a, ci-runners@m5)", resource)
+	}
+	if gb < 1 {
+		return fmt.Errorf("maat: mem capacity gb must be >= 1, got %d", gb)
+	}
+	capacities := make(map[string]int, len(defaultMemCapacityGB))
+	for k, v := range defaultMemCapacityGB {
+		capacities[k] = v
+	}
+	raw, ok, err := l.store.GetState(memCapacityStateKey)
+	if err != nil {
+		return fmt.Errorf("maat: read mem capacity: %w", err)
+	}
+	if ok && strings.TrimSpace(raw) != "" {
+		var stored map[string]int
+		if err = json.Unmarshal([]byte(raw), &stored); err != nil {
+			return fmt.Errorf("maat: parse mem capacity: %w", err)
+		}
+		for k, v := range stored {
+			capacities[k] = v
+		}
+	}
+	capacities[resource] = gb
+	b, err := json.Marshal(capacities)
+	if err != nil {
+		return fmt.Errorf("maat: marshal mem capacity: %w", err)
+	}
+	return l.store.SetState(memCapacityStateKey, string(b))
+}
+
+// FloorShareMemGB returns the guaranteed minimum RAM (GB) for resource: its
+// mem capacity divided by FairShareLanes, never below 1 — FloorShare's twin
+// for memory instead of cores.
+func (l *Ledger) FloorShareMemGB(resource string) (int, error) {
+	gb, err := l.capacityMemGB(resource)
+	if err != nil {
+		return 0, err
+	}
+	floor := gb / FairShareLanes
+	if floor < 1 {
+		floor = 1
+	}
+	return floor, nil
+}
