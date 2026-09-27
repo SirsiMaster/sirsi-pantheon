@@ -18,6 +18,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/decision"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/spf13/cobra"
@@ -27,12 +29,70 @@ import (
 // `reserve` and is refused stops with this code instead of touching the cable.
 const admissionRefusedExit = 97
 
+// recordDecision appends the human-readable outcome to Ma'at's host-local
+// decision ledger. The reservation ledger remains the scheduling authority;
+// this is an explanatory projection for `sirsi maat decisions`.
+func recordDecision(kind, requester, resource, assessed, affected, determination, why, evidence string) {
+	_ = decision.Append("", decision.New(kind, requester, resource, assessed, affected, determination, why, evidence))
+}
+
 func maatLedger() (*schedule.Ledger, error) {
 	st, err := routerstore.Resolve()
 	if err != nil {
 		return nil, fmt.Errorf("resolve router store: %w", err)
 	}
 	return schedule.NewLedger(st), nil
+}
+
+var newMaatDecisionJournal = func() (maat.DecisionJournal, error) {
+	return maat.NewDefaultDecisionJournal()
+}
+
+// recordReservationDecision gives every native reserve outcome the same
+// explanatory shape that the dashboard, CLI, and future Ra projection read.
+// The reservation store remains the scheduler authority; this is an append-only
+// explanation of the decision, never a second reservation registry.
+func recordReservationDecision(req schedule.Reservation, result schedule.ReserveResult) error {
+	journal, err := newMaatDecisionJournal()
+	if err != nil {
+		return err
+	}
+	decision := maat.Decision{
+		Kind:          "reservation grant",
+		Requester:     req.Holder,
+		Resource:      req.Resource,
+		Assessed:      "no conflicting active reservation",
+		Determination: "grant",
+		Why:           "requested window is available",
+	}
+	switch {
+	case result.Granted:
+		if result.Reservation != nil {
+			decision.Evidence = "reservation:" + result.Reservation.ID
+		}
+	case result.Queued:
+		decision.Kind = "reservation queue"
+		decision.Assessed = "conflicting active reservation"
+		decision.Determination = "queue"
+		decision.Why = "request queued behind current holder"
+		if result.Conflict != nil {
+			decision.Affected = result.Conflict.Holder
+			decision.Evidence = "reservation:" + result.Conflict.ID
+		}
+	default:
+		decision.Kind = "reservation refusal"
+		decision.Assessed = "conflicting active reservation"
+		decision.Determination = "refuse"
+		decision.Why = "requested window overlaps a live foreign reservation"
+		if result.Conflict != nil {
+			decision.Affected = result.Conflict.Holder
+			decision.Evidence = "reservation:" + result.Conflict.ID
+		}
+	}
+	if err := journal.Append(decision); err != nil {
+		return fmt.Errorf("append Ma'at reservation decision: %w", err)
+	}
+	return nil
 }
 
 func emitJSON(v any) error {
@@ -87,6 +147,12 @@ a cable; it is the rails.lock replacement.`,
 				conflictHolder = res.Conflict.Holder
 			}
 			logFloorGrant(l, req.Holder, req.Resource, res.Reservation, conflictHolder)
+		}
+		if err := recordReservationDecision(req, res); err != nil {
+			// The scheduler state is already durable. Return the append failure
+			// explicitly so a caller never mistakes an unprojected decision for a
+			// complete, drillable outcome.
+			return err
 		}
 		switch {
 		case maatJSON:
@@ -260,6 +326,7 @@ var maatReleaseCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		recordDecision("reservation release", r.Holder, r.Resource, fmt.Sprintf("held %s → %s", r.Start, orNow(r.EstEnd)), r.Resource, "released", r.Work, r.ID)
 		if maatJSON {
 			return emitJSON(r)
 		}
@@ -343,6 +410,11 @@ var maatConflictCheckCmd = &cobra.Command{
 			}
 			notifyIntruders(rep)
 		}
+		determination := "clean"
+		if !rep.Clean {
+			determination = "conflict"
+		}
+		recordDecision("conflict-check", rep.Holder, rep.Resource, fmt.Sprintf("live activity on %s", machine), rep.Holder, determination, rep.Summary, rep.Reservation)
 		if maatJSON {
 			_ = emitJSON(rep)
 		} else if rep.Clean {
@@ -410,10 +482,10 @@ func init() {
 	maatCoverageCmd.Flags().IntVar(&covHorizon, "horizon", 24, "horizon hours")
 	maatConflictCheckCmd.Flags().StringVar(&conflictMachine, "machine", "", "machine to probe (default: the resource)")
 
-	for _, c := range []*cobra.Command{maatStatusCmd, maatWhoCmd, maatHeartbeatCmd, maatReleaseCmd, maatCoverageCmd, maatShouldDeferCmd, maatConflictCheckCmd, maatExtendCmd} {
+	for _, c := range []*cobra.Command{maatStatusCmd, maatDecisionsCmd, maatWhoCmd, maatHeartbeatCmd, maatReleaseCmd, maatCoverageCmd, maatShouldDeferCmd, maatConflictCheckCmd, maatExtendCmd} {
 		c.Flags().BoolVar(&maatJSON, "json", false, "JSON output")
 	}
 
-	maatCmd.AddCommand(maatReserveCmd, maatStatusCmd, maatWhoCmd, maatHeartbeatCmd, maatExtendCmd,
+	maatCmd.AddCommand(maatReserveCmd, maatStatusCmd, maatDecisionsCmd, maatWhoCmd, maatHeartbeatCmd, maatExtendCmd,
 		maatReleaseCmd, maatCoverageCmd, maatShouldDeferCmd, maatConflictCheckCmd)
 }

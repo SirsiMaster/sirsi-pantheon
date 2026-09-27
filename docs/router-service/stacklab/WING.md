@@ -1,6 +1,6 @@
-<!-- agent: ra | workstream: router-service (ADR-062) | Stack Lab wing: stacklab.wing.m1-ra -->
+<!-- agent: ra | workstream: router-service (ADR-062) | Stack Lab wing: stacklab.wing.ra-horus-fabric -->
 
-# Router Stack Lab Wing — `stacklab.wing.m1-ra`
+# Router Stack Lab Wing — `stacklab.wing.ra-horus-fabric`
 
 The router's entry in the Sirsi Stack Lab catalogue, in SNE's authoritative
 wing format. This is a **hash-pinned reference**, not a second authority: the
@@ -16,26 +16,23 @@ copied into Pantheon as an editable second authority (per codex-inference,
 | Artifact | Location (authority: `sirsi-inference`) | SHA256 |
 |---|---|---|
 | `wing.schema.json` | `contracts/stacklab/v2/wing.schema.json` | `a69e0094b8ec4596c30b316fc8bd6ce5f806f5a801b5c80c10a972e3d86338ad` |
-| `router-wing-ra-v1.json` (this wing's record) | `contracts/stacklab/v2/fixtures/router-wing-ra-v1.json` | `f03456822b36c0649f34e474c23e74bc4a1020d6484195458ae781df99095ce7` |
+| `ra-horus-fabric-wing-v1.json` (canonical wing record) | `contracts/stacklab/ra-horus-fabric-wing-v1.json` | regenerated from the exact origin bytes |
 | `reject-router-wing-cross-project-write.json` (negative control) | `contracts/stacklab/v2/fixtures/reject-router-wing-cross-project-write.json` | `cf69bca52c39b4598759fde1ac2926a478ada1a3f01c8ccb1ae9b046cef089ad` |
 
 The **schema** is SNE's and consumed by hash (above) — never forked here. The
-**record** `router-wing-ra-v1.json` is **Ra's wing** (`owner: ra`): Ra owns and
-maintains its content — `provenance.receipt_links`, `next_action`, `mirrors`,
-and the like — as the router wing evolves, exactly as ADR-066 requires ("each
-owner binds their own record"). It was seeded from an SNE fixture template
-(SHA256 `f0345682…`), but the seed is a starting point, not a standing lock: the
-only hard invariant is that the record **validates against `wing.schema.json`**
-(verified with `stacklab.ValidateWing` / `sirsi stacklab doctor` before any
-re-pin). Do not add fields the schema does not define; do keep the record
-current with the wing's real provenance.
+record `contracts/stacklab/ra-horus-fabric-wing-v1.json` is Ra's canonical wing
+record: Ra owns and maintains its content — `provenance.receipt_links`,
+`next_action`, `mirrors`, and the like — as ADR-066 requires ("each owner binds
+their own record"). The former `router-wing-ra-v1.json` record remains only as
+compatibility provenance for the old registry pin; it is not read by the Stack
+Lab doctor and must not receive new authority.
 
 ## The wing
 
-- **id**: `stacklab.wing.m1-ra` · **class**: `control-plane` · **owner**: `ra`
+- **id**: `stacklab.wing.ra-horus-fabric` · **class**: `control-plane` · **owner**: `Ra — Horus Fabric Sovereign (steward: owner)`
 - **project**: `sirsi-pantheon` · **namespace**: `router`
 - **first gate**: `RA-WING-001.G1` — host-neutral router-authority receipt and no competing replica proof
-- **component catalog**: `docs/router-service/ROUTER_STACK_LAB_RECIPE.md@6eaa89b4b8cbaa659cdef3d1b85e94ec2b59f851` (the SSA-accepted operating inventory, PR #736)
+- **component catalog**: `docs/stacklab/RA_HORUS_FABRIC_COMPONENT_CATALOG.md` with `contracts/stacklab/ra-horus-fabric-recipe-v1.json`
 - **scope**: router replication, constrained-client parity, worker-plane visibility, recovery receipts. **Does NOT own** SNE source, models, model stores, or engine promotion.
 
 ### Lifecycle (per SNE convention)
@@ -44,7 +41,7 @@ current with the wing's real provenance.
 
 Router items are immutable material-state receipts; the phase is independent of
 the Stack Lab evidence state (a rejected result keeps its lifecycle + evidence
-rather than disappearing). Tracked as router task `ra-wing-router-v1`.
+rather than disappearing). Tracked as router task `ra-horus-fabric-wing-v1`.
 
 ## Enforcement invariant — schema shape is NOT an authority grant
 
@@ -97,8 +94,9 @@ Two distinct adversaries, do not conflate them:
 
 ## Validation receipt
 
-`router-wing-ra-v1.json` (SHA256 `f0345682…`) structurally validates against
-`wing.schema.json` (SHA256 `a69e0094…`): all 14 required fields present;
-`schema`=`sirsi.stacklab.wing.v1`; `class`/`status` in enum; `boundary_policy`
-=`default-deny`; `handoffs` `router-receipt-only`. The independent enforcement
-check flags the one foreign writable root named above (as required).
+`ra-horus-fabric-wing-v1.json` structurally validates against `wing.schema.json`:
+all required fields are present; `schema`=`sirsi.stacklab.wing.v1`;
+`class`/`status` are in enum; `boundary_policy`=`default-deny`; and both
+handoff directions are `router-receipt-only`. The Stack Lab doctor reads this
+record directly. The legacy `router-wing-ra-v1.json` is intentionally not used
+for roster evaluation.

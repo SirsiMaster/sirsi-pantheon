@@ -6,6 +6,24 @@ import (
 	"time"
 )
 
+func TestClassifyProc_IdleRunnerServiceIsNotLoad(t *testing.T) {
+	cases := []struct {
+		name string
+		cmd  string
+		want string
+	}{
+		{"idle listener", "/Users/x/actions-runner/bin/Runner.Listener run", ""},
+		{"launchd wrapper", "/Users/x/actions-runner/runsvc.sh", ""},
+		{"job in flight", "/Users/x/actions-runner/bin/Runner.Worker spawner.pipe", "build"},
+		{"plain go build", "go build ./...", "build"},
+	}
+	for _, c := range cases {
+		if got := classifyProc(c.cmd); got != c.want {
+			t.Errorf("%s: classifyProc(%q) = %q, want %q", c.name, c.cmd, got, c.want)
+		}
+	}
+}
+
 // fakeStore is an in-memory StateStore for tests.
 type fakeStore struct {
 	mu sync.Mutex

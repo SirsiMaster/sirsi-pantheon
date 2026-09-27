@@ -6,6 +6,25 @@
 [![Tests](https://img.shields.io/badge/tests-1450%20passing-brightgreen?style=flat)](.github/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat)](LICENSE)
 
+## 2026-09-27 — RELEASE CANDIDATE v0.24.3: Ra identity-bound handoff
+
+**Built:** the native Ra handoff binds the sender to the declared local
+`horus` identity. The UI no longer accepts a caller-selected `--from` value or
+the undeclared `horus-local` alias. The Stack Lab wing is
+`stacklab.wing.ra-horus-fabric`.
+
+**Verified:** Swift release build, CLI flag regression suite, and
+`git diff --check` pass. The full Go suite was run; existing live-router and
+host-dependent failures remain recorded rather than hidden. Candidate head:
+`96d78cf1`.
+
+**CI hardening:** the release test surface now states its platform boundaries
+instead of relying on the host. Launchd broker/runner and zsh login-shell
+assertions skip on non-Darwin builders, and the CLI integration `TestMain`
+clears inherited router service/local-store variables before running isolated
+stores. This preserves the production service-first rule while preventing a
+developer shell from redirecting local tests into the live router.
+
 ---
 
 ## 2026-07-04 — INCIDENT: the runaway executor — 19,195 sessions, 11,564 items, 1.3 TB

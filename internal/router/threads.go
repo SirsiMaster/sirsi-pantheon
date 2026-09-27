@@ -353,6 +353,20 @@ func retryOnLostFenceErr(pass func() error) error {
 }
 
 // SaveThreadRegistry writes threads.json atomically.
+// ownsRecordHost reports whether a thread record on recordHost belongs to this
+// host (selfHost) and may therefore be written or pruned here. A non-empty host
+// that differs from ours is ANOTHER host's record: the service's ADR-067
+// authority check (serve.go) refuses our write of it, so we must not attempt
+// one — attempting it, then aborting the whole registry save on the resulting
+// 403, is what stranded the caller's own just-committed registration
+// fabric-wide (confirmed 2026-09-26). An empty host is treated as ours (the
+// service stamps this host's identity onto it); an empty selfHost (no probe)
+// stays permissive so we never over-skip our own records. This narrows what we
+// WRITE, never what the service ALLOWS — the boundary stays enforced server-side.
+func ownsRecordHost(recordHost, selfHost string) bool {
+	return recordHost == "" || selfHost == "" || recordHost == selfHost
+}
+
 func SaveThreadRegistry(routerRoot string, reg *ThreadRegistry) error {
 	if reg.Threads == nil {
 		reg.Threads = map[string]*Thread{}
@@ -367,8 +381,28 @@ func SaveThreadRegistry(routerRoot string, reg *ThreadRegistry) error {
 		if err != nil {
 			return err
 		}
+		// A host may only persist its OWN thread records. The service's ADR-067
+		// authority check (serve.go) refuses a write or delete of another host's
+		// thread, and a per-host registry save that aborts on that refusal
+		// strands the caller's OWN registration — which committed moments before
+		// (UpsertThreadCAS 200) — behind a foreign record it was never entitled
+		// to touch. Confirmed 2026-09-26 via relay log: a plain
+		// `sirsi thread register` did UpsertThreadCAS(self)=200 then
+		// DeleteThreadCAS(a foreign terminal record)=403, and the 403 aborted the
+		// whole save, so registration failed fabric-wide (blocking A27 heartbeat
+		// registration + the MCP surface=mcp thread). Skip records this host does
+		// not own — a non-empty Host that differs from ours. This narrows what we
+		// WRITE, never what the service ALLOWS: the authority boundary stays
+		// fully enforced server-side; we simply stop attempting a write we have
+		// no right to make. An empty Host is treated as ours (the service stamps
+		// it for this host); a genuine authority failure on one of OUR OWN
+		// records still surfaces (negative control).
+		selfHost, _ := os.Hostname()
 		dirty := records[:0]
 		for _, record := range records {
+			if !ownsRecordHost(record.Host, selfHost) {
+				continue
+			}
 			old, exists := reg.baseline[record.ThreadID]
 			if !exists || string(old.Payload) != string(record.Payload) {
 				dirty = append(dirty, record)
@@ -385,6 +419,9 @@ func SaveThreadRegistry(routerRoot string, reg *ThreadRegistry) error {
 		}
 		for id, old := range reg.baseline {
 			if _, ok := reg.Threads[id]; !ok {
+				if !ownsRecordHost(old.Host, selfHost) {
+					continue // another host's terminal record — its owner/reaper prunes it, not us
+				}
 				host, _ := os.Hostname()
 				deleted, err := store.DeleteThreadCAS(id, old.Status, old.LastSeenAt, host)
 				if err != nil {

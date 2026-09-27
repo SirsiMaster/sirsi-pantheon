@@ -24,9 +24,9 @@
 set -euo pipefail
 
 # --- Defaults ---
-VERSION="0.17.0"
-ARCH="arm64"
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+VERSION="$(tr -d '\n' < "${PROJECT_ROOT}/VERSION")"
+ARCH="arm64"
 BUILD_DIR="${PROJECT_ROOT}/bin"
 APP_NAME="Pantheon.app"
 BUNDLE_DIR="${PROJECT_ROOT}/${APP_NAME}"
@@ -80,6 +80,21 @@ cp "${BUILD_DIR}/sirsi"         "${BUNDLE_DIR}/Contents/MacOS/sirsi"
 cp "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/Info.plist" "${BUNDLE_DIR}/Contents/Info.plist"
 cp "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/PkgInfo"    "${BUNDLE_DIR}/Contents/PkgInfo"
 cp "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" "${BUNDLE_DIR}/Contents/Resources/ai.sirsi.pantheon.plist"
+# Stack Lab is a shipped, inspectable recipe surface rather than build-only
+# documentation.  Keep its contracts alongside the app they describe.
+cp -R "${PROJECT_ROOT}/contracts/stacklab" "${BUNDLE_DIR}/Contents/Resources/StackLab"
+# Never ship the historical template version from the source plist.  The
+# package and both executables are built from the requested release version.
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "${BUNDLE_DIR}/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${VERSION}" "${BUNDLE_DIR}/Contents/Info.plist"
+# AppleDouble sidecars are transport metadata, never product resources.  They
+# can appear when a source tree crosses volumes; remove them before signing so
+# a DMG and PKG cannot silently ship hidden duplicate payload entries.
+/usr/bin/find "${BUNDLE_DIR}" -type f -name '._*' -delete
+if /usr/bin/find "${BUNDLE_DIR}" -type f -name '._*' -print -quit | /usr/bin/grep -q .; then
+    echo "ERROR: AppleDouble metadata remains in application bundle." >&2
+    exit 1
+fi
 
 # --- Code signing ---
 if [ -n "${DEVELOPER_ID_APPLICATION:-}" ]; then
