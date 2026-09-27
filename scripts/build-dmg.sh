@@ -24,9 +24,9 @@
 set -euo pipefail
 
 # --- Defaults ---
-VERSION="0.17.0"
-ARCH="arm64"
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+VERSION="$(tr -d '\n' < "${PROJECT_ROOT}/VERSION")"
+ARCH="arm64"
 BUILD_DIR="${PROJECT_ROOT}/bin"
 APP_NAME="Pantheon.app"
 BUNDLE_DIR="${PROJECT_ROOT}/${APP_NAME}"
