@@ -67,6 +67,7 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380, appearance: ColorSche
         // loading shell; ResultViews get real preloaded output.
         var shots: [(name: String, view: AnyView)] = [
             ("home", AnyView(RootView(engine: engine))),
+            ("all-tools", AnyView(PantheonLibraryView(engine: engine))),
             ("insight", AnyView(InsightView(engine: engine, preloaded: insight))),
             ("anubis-hygiene", AnyView(AnubisView(engine: engine))),
             ("horus-ops", AnyView(HorusView(engine: engine))),
@@ -101,7 +102,14 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380, appearance: ColorSche
         }
 
         for shot in shots {
-            let height: CGFloat = shot.name == "ask-sirsi" ? 760 : 520
+            // The library is intentionally scrollable in the live panel. Give
+            // its headless evidence enough canvas to capture every section from
+            // the title onward instead of centering and clipping its first rows.
+            let height: CGFloat = switch shot.name {
+            case "ask-sirsi": 760
+            case "all-tools": 1_040
+            default: 520
+            }
             let renderer = ImageRenderer(content: shot.view
                 .environmentObject(Nav())
                 .environment(\.snapshotMode, true)
