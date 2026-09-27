@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.14] — 2026-09-27 — Hermes M5 seat registry alias
+**Commercial patch release.** The canonical router registry now includes the
+`cylton-hermes` software identity for the Hermes M5 seat and its
+`sirsi-io-connect` repository, preserving the existing Hermes identities and
+canonical paths. This release changes registry metadata only; it makes no
+service, credential, or live-router mutation claim.
+
 ## [0.24.13] — 2026-09-27 — Router token-job image parity
 **Commercial patch release.** Router deployment now pins the
 `sirsi-router-token` Cloud Run job to the same image as the just-deployed
