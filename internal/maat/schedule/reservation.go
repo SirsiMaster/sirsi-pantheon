@@ -16,6 +16,14 @@
 //     reservation cadence is a handful per hour across lanes, so the collision
 //     probability is negligible; upgrade to a compare-and-swap on the state key
 //     if throughput ever demands it. (maat: RMW grant, CAS if contended.)
+//
+// Ma'at never preempts and never locks a lane out (owner directive
+// 2026-09-26): every lane always gets at least its floor share; priority and
+// cedes decide who gets more. A conflicting NEW reservation is granted a
+// bounded floor share (capacity.go) rather than refused; nothing pulls a
+// live holder off its window. A lane that has not answered a cede request
+// addressed to it (cede.go) is likewise never locked out — it is capped to
+// the floor share for any new or extended work until it answers.
 package schedule
 
 import (
@@ -60,21 +68,38 @@ var resourceRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._@-]{0,63}$`)
 
 // Reservation is one hold on one resource for one time window.
 type Reservation struct {
-	ID            string `json:"id"`
-	Resource      string `json:"resource"` // machine id or rail, e.g. "m1", "rail-a", "ci-runners@m5"
-	Holder        string `json:"holder"`   // agent id
-	Work          string `json:"work"`     // series/arm, e.g. "H6.2/sr-A-fwd"
-	Regime        Regime `json:"regime"`
-	Priority      int    `json:"priority"`
-	Repro         string `json:"repro,omitempty"` // repro path
-	Start         string `json:"start"`           // RFC3339
-	EstEnd        string `json:"est_end"`         // RFC3339
-	Created       string `json:"created"`         // RFC3339
-	HeartbeatAt   string `json:"heartbeat_at"`    // RFC3339 — lease liveness
-	LeaseTTLSec   int    `json:"lease_ttl_sec"`   // reservation void if heartbeat older than this
-	Status        Status `json:"status"`
-	InvalidatedBy string `json:"invalidated_by,omitempty"` // intruder description
+	ID       string `json:"id"`
+	Resource string `json:"resource"` // machine id or rail, e.g. "m1", "rail-a", "ci-runners@m5"
+	Holder   string `json:"holder"`   // agent id
+	Work     string `json:"work"`     // series/arm, e.g. "H6.2/sr-A-fwd"
+	Regime   Regime `json:"regime"`
+	Priority int    `json:"priority"`
+	// Cores is an ADVISORY core count: Ma'at itself never limits CPU. 0 means
+	// "the whole machine" (the pre-fair-share default). Callers enforce it
+	// themselves — GOMAXPROCS, a worker-pool cap, `nice` — same as Regime is
+	// advisory. Share says whether Cores is the full ask ("full") or a
+	// bounded floor share granted alongside a live conflict or an unanswered
+	// cede request ("floor"); Reason explains which (owner directive
+	// 2026-09-26: "never totally block lanes from operation").
+	Cores         int      `json:"cores,omitempty"`
+	Share         string   `json:"share,omitempty"` // "full" | "floor"
+	Reason        string   `json:"reason,omitempty"`
+	PendingCedes  []string `json:"pending_cedes,omitempty"` // open cede ids capping this ticket to the floor
+	Repro         string   `json:"repro,omitempty"`         // repro path
+	Start         string   `json:"start"`                   // RFC3339
+	EstEnd        string   `json:"est_end"`                 // RFC3339
+	Created       string   `json:"created"`                 // RFC3339
+	HeartbeatAt   string   `json:"heartbeat_at"`            // RFC3339 — lease liveness
+	LeaseTTLSec   int      `json:"lease_ttl_sec"`           // reservation void if heartbeat older than this
+	Status        Status   `json:"status"`
+	InvalidatedBy string   `json:"invalidated_by,omitempty"` // intruder description
 }
+
+// ShareFull and ShareFloor are the two values Reservation.Share takes.
+const (
+	ShareFull  = "full"
+	ShareFloor = "floor"
+)
 
 // leaseExpired reports whether the heartbeat lease has lapsed as of now.
 func (r Reservation) leaseExpired(now time.Time) bool {
@@ -192,21 +217,47 @@ func isTerminal(s Status) bool {
 	return false
 }
 
-// ReserveResult is the outcome of a Reserve call.
+// ReserveResult is the outcome of a Reserve call. Granted is false only for
+// invalid input (a validation error, returned separately) or an explicit
+// --queue wait; every other request grants at least the floor share (owner
+// directive 2026-09-26: "not totally block lanes from operation").
 type ReserveResult struct {
-	Granted     bool         `json:"granted"`
-	Reservation *Reservation `json:"reservation,omitempty"`
-	Conflict    *Reservation `json:"conflict,omitempty"` // the live holder that blocked the grant
-	Queued      bool         `json:"queued,omitempty"`
+	Granted      bool         `json:"granted"`
+	Reservation  *Reservation `json:"reservation,omitempty"`
+	Conflict     *Reservation `json:"conflict,omitempty"` // the live holder that caused a floor grant (or a queue wait)
+	Queued       bool         `json:"queued,omitempty"`
+	PendingCedes []string     `json:"pending_cedes,omitempty"` // open cede ids that capped this grant to the floor
 }
 
-// Reserve attempts to hold resource for the given window. If a live (active,
-// non-expired) reservation by a DIFFERENT holder overlaps the window, the grant
-// is refused and Conflict names the holder — unless queue is set, in which case
-// the request is recorded as queued behind it. A holder re-reserving its own
-// overlapping window just refreshes (idempotent heartbeat/extend).
+// Reserve attempts to hold resource for the given window.
+//
+// Ma'at never locks a lane out (owner directive 2026-09-26: "not totally
+// block lanes from operation... there's room for all of you to never be
+// locked out"):
+//   - No conflict, no pending cede: grants exactly what was asked (Share
+//     "full"), as before.
+//   - A live (active, non-expired) reservation by a DIFFERENT holder overlaps
+//     the window: grants a FLOOR share instead of refusing (FloorShare,
+//     capacity.go) — Cores set to the floor, Share "floor", Conflict names
+//     the live holder, Reason explains it. --queue keeps its old meaning: it
+//     queues for the FULL window behind the holder instead of taking a floor
+//     grant now.
+//   - req.Holder has any unanswered cede request addressed to it, on any
+//     resource — including its own overlap-refresh path, since starting a
+//     new window is new work: grants only the floor share, PendingCedes
+//     names the open ids, Reason points at answering them. Heartbeat and
+//     Release are unaffected: the holder's CURRENT run always finishes, and
+//     any response or a withdraw restores full grants on the next Reserve.
 func (l *Ledger) Reserve(req Reservation, queue bool) (ReserveResult, error) {
 	if err := validate(req); err != nil {
+		return ReserveResult{}, err
+	}
+	pendingCedes, err := l.pendingCedeIDs(req.Holder)
+	if err != nil {
+		return ReserveResult{}, err
+	}
+	floor, err := l.FloorShare(req.Resource)
+	if err != nil {
 		return ReserveResult{}, err
 	}
 	reservations, _, err := l.load()
@@ -223,6 +274,19 @@ func (l *Ledger) Reserve(req Reservation, queue bool) (ReserveResult, error) {
 		req.ID = newID(req.Resource, req.Holder, now)
 	}
 
+	if len(pendingCedes) > 0 {
+		req.Cores = floor
+		req.Share = ShareFloor
+		req.Reason = "answer open cede requests to get more than the floor"
+		req.PendingCedes = pendingCedes
+		req.Status = StatusActive
+		reservations = append(reservations, req)
+		if err := l.save(reservations); err != nil {
+			return ReserveResult{}, err
+		}
+		return ReserveResult{Granted: true, Reservation: &req, PendingCedes: pendingCedes}, nil
+	}
+
 	for _, r := range reservations {
 		if r.Resource != req.Resource || r.Status != StatusActive {
 			continue
@@ -236,7 +300,8 @@ func (l *Ledger) Reserve(req Reservation, queue bool) (ReserveResult, error) {
 		if r.Holder == req.Holder {
 			continue // own overlapping hold — the new one is additive/refresh, allow
 		}
-		// A live foreign holder blocks the window.
+		// A live foreign holder is on the window — --queue waits for the
+		// full window; otherwise grant the floor share now (never a lockout).
 		if queue {
 			req.Status = StatusQueued
 			reservations = append(reservations, req)
@@ -246,16 +311,33 @@ func (l *Ledger) Reserve(req Reservation, queue bool) (ReserveResult, error) {
 			conflict := r
 			return ReserveResult{Granted: false, Queued: true, Reservation: &req, Conflict: &conflict}, nil
 		}
+		req.Cores = floor
+		req.Share = ShareFloor
+		req.Reason = fmt.Sprintf("%s holds %s until %s — granted the floor share", r.Holder, req.Resource, orOpen(r.EstEnd))
+		req.Status = StatusActive
+		reservations = append(reservations, req)
+		if err := l.save(reservations); err != nil {
+			return ReserveResult{}, err
+		}
 		conflict := r
-		return ReserveResult{Granted: false, Conflict: &conflict}, nil
+		return ReserveResult{Granted: true, Reservation: &req, Conflict: &conflict}, nil
 	}
 
+	req.Share = ShareFull
 	req.Status = StatusActive
 	reservations = append(reservations, req)
 	if err := l.save(reservations); err != nil {
 		return ReserveResult{}, err
 	}
 	return ReserveResult{Granted: true, Reservation: &req}, nil
+}
+
+// orOpen renders an est-end for a Reason string ("open" if unset).
+func orOpen(estEnd string) string {
+	if estEnd == "" {
+		return "open"
+	}
+	return estEnd
 }
 
 // Heartbeat refreshes a reservation's lease so it does not expire. Returns the
@@ -270,7 +352,11 @@ func (l *Ledger) Heartbeat(id string) (*Reservation, error) {
 	})
 }
 
-// Extend pushes the est-end out (and refreshes the lease).
+// Extend pushes the est-end out (and refreshes the lease). Never refused over
+// an unanswered cede (owner directive 2026-09-26: no lockout) — the ticket
+// keeps running; if req.Holder has a pending cede, its cores are capped to
+// the floor share (PendingCedes recorded) instead of refusing the extend.
+// Heartbeat and Release are unaffected.
 func (l *Ledger) Extend(id, newEstEnd string) (*Reservation, error) {
 	if _, err := time.Parse(time.RFC3339, newEstEnd); err != nil {
 		return nil, fmt.Errorf("maat: extend: est_end %q is not RFC3339", newEstEnd)
@@ -278,6 +364,24 @@ func (l *Ledger) Extend(id, newEstEnd string) (*Reservation, error) {
 	return l.mutate(id, func(r *Reservation) error {
 		if r.Status != StatusActive {
 			return fmt.Errorf("maat: reservation %s is %s, not active", id, r.Status)
+		}
+		pendingCedes, err := l.pendingCedeIDs(r.Holder)
+		if err != nil {
+			return err
+		}
+		if len(pendingCedes) > 0 {
+			floor, ferr := l.FloorShare(r.Resource)
+			if ferr != nil {
+				return ferr
+			}
+			if r.Cores == 0 || r.Cores > floor {
+				r.Cores = floor
+			}
+			r.Share = ShareFloor
+			r.Reason = "answer open cede requests to get more than the floor"
+			r.PendingCedes = pendingCedes
+		} else {
+			r.PendingCedes = nil
 		}
 		r.EstEnd = newEstEnd
 		r.HeartbeatAt = l.now().Format(time.RFC3339)
@@ -349,6 +453,33 @@ func (l *Ledger) WhoIsOn(resource string) (*Reservation, error) {
 		}
 	}
 	return nil, nil
+}
+
+// LiveHolders returns every active, non-expired reservation on resource whose
+// window covers now — the full-share holder (if any) plus any floor-share
+// lanes riding beside it (owner directive 2026-09-26: Ma'at never locks a
+// lane out, so more than one holder can be live on the same resource at
+// once). Empty when the resource is free.
+func (l *Ledger) LiveHolders(resource string) ([]Reservation, error) {
+	reservations, changed, err := l.load()
+	if err != nil {
+		return nil, err
+	}
+	if changed {
+		_ = l.save(reservations)
+	}
+	now := l.now()
+	var out []Reservation
+	for _, r := range reservations {
+		if r.Resource != resource || r.Status != StatusActive || r.leaseExpired(now) {
+			continue
+		}
+		s, e := parseWindow(r)
+		if !now.Before(s) && now.Before(e) {
+			out = append(out, r)
+		}
+	}
+	return out, nil
 }
 
 // Status lists reservations, optionally filtered to one resource, newest window
