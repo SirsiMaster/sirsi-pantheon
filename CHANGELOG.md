@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.4] — 2026-09-27 — Ma'at decision ledger
+**Commercial patch release.** Ma'at reservation outcomes are now directly visible and drillable from the Pantheon CLI:
+- `sirsi maat decisions` lists grants, queues, refusals, releases, and conflict checks with filters.
+- `sirsi maat decisions show <id>` renders the complete decision record.
+- Native reservation, release, and conflict-check paths publish explanatory records without changing scheduler authority.
+- Host-local ledger scope is explicit; cross-host aggregation remains a separately tracked follow-up.
+
 ## [Unreleased]
 - **feat(maat): live, drillable decision ledger — `sirsi maat decisions`** (claude-pantheon, 2026-09-26; router item `20260926-143533`). Owner ask via claude-io: Ma'at's grants/refusals/other work should be live and drillable to what it assessed, who it affected, what determination was made and why. `internal/maat/decision` is a schema-tolerant JSONL reader/writer over `~/.sirsi/maat/decisions.jsonl` (the file other hosts' writers — m5go, the `maat-window-gate` hook, `maat-run-guard` — already append to); `sirsi maat decisions` lists (filterable by `--kind`/`--host`/`--since`), `sirsi maat decisions show <id>` drills into one record by a stable content-derived short id. `sirsi maat reserve|release|conflict-check` now write their own decision records natively (closing the gap the ask named). Host-local by design for now — cross-host aggregation is the follow-up pending Ra's canonical-ledger-location answer; each host's ledger is self-contained and drillable today. Refs: PANTHEON_RULES.md A26; internal/maat/decision/README.md; docs/user-guides/maat.md; Changelog: Unreleased
 
