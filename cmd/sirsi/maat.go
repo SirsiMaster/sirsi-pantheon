@@ -123,7 +123,8 @@ func runMaatAudit(cmd *cobra.Command, args []string) error {
 	// weighed the user's home directory — fabricating "❌ 59/100 fail" on an
 	// owner-facing surface (2026-07-05 popover). Unmeasured is not unhealthy:
 	// say so plainly and point at the fix (Rule A14; surfaces canon).
-	if _, inRepo := findGoRepoRoot(); !inRepo {
+	repoRoot, inRepo := findGoRepoRoot()
+	if !inRepo {
 		// Distinguish "not a git repo at all" from "a git repo that just isn't a
 		// Go module" — a JS/web repo (e.g. assiduous) IS a code repository; maat
 		// weighs Go coverage/canon and simply has no Go module to measure there.
@@ -187,7 +188,7 @@ func runMaatAudit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	report, err := maat.Weigh(assessor)
+	report, err := maat.Weigh(newMaatAuditAssessors(repoRoot, assessor)...)
 	if err != nil {
 		return err
 	}
@@ -239,6 +240,18 @@ func runMaatAudit(cmd *cobra.Command, args []string) error {
 	cr.AddNextAction("sirsi scan", "Scan for infrastructure waste")
 	cr.Render()
 	return nil
+}
+
+// newMaatAuditAssessors is the explicit recipe for a full local governance
+// audit. Keep its components concrete and inspectable: changing the audit's
+// coverage means adding a bounded assessor here and recording it through the
+// report journal, never silently adding an untracked side channel.
+func newMaatAuditAssessors(repoRoot string, coverage *maat.CoverageAssessor) []maat.Assessor {
+	return []maat.Assessor{
+		coverage,
+		&maat.CanonAssessor{ProjectRoot: repoRoot},
+		&maat.PipelineAssessor{ProjectRoot: repoRoot},
+	}
 }
 
 func runMaatScales(cmd *cobra.Command, args []string) error {

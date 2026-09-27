@@ -41,6 +41,27 @@ func TestMaatCasebookCommandProjectsJournalWithoutPolicyWrites(t *testing.T) {
 	}
 }
 
+func TestMaatAuditAssessorRecipeCoversQualityCanonAndPipeline(t *testing.T) {
+	assessors := newMaatAuditAssessors("/repo", &maat.CoverageAssessor{})
+	if len(assessors) != 3 {
+		t.Fatalf("assessor count = %d, want 3", len(assessors))
+	}
+	want := []maat.Domain{maat.DomainCoverage, maat.DomainCanon, maat.DomainPipeline}
+	for i, domain := range want {
+		if got := assessors[i].Domain(); got != domain {
+			t.Fatalf("assessor %d domain = %q, want %q", i, got, domain)
+		}
+	}
+	canon, ok := assessors[1].(*maat.CanonAssessor)
+	if !ok || canon.ProjectRoot != "/repo" {
+		t.Fatalf("canon assessor = %#v", assessors[1])
+	}
+	pipeline, ok := assessors[2].(*maat.PipelineAssessor)
+	if !ok || pipeline.ProjectRoot != "/repo" {
+		t.Fatalf("pipeline assessor = %#v", assessors[2])
+	}
+}
+
 func (j *capturedDecisionJournal) Recent(int) ([]maat.Decision, error) { return j.decisions, nil }
 
 func TestRecordReservationDecisionExplainsGrantAndRefusal(t *testing.T) {
