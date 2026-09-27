@@ -237,7 +237,7 @@ private struct ControlCenterRow: View {
     }
 }
 
-private struct PantheonLibraryView: View {
+struct PantheonLibraryView: View {
     @ObservedObject var engine: SirsiEngine
 
     var body: some View {
