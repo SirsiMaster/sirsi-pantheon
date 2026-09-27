@@ -259,7 +259,7 @@ struct PantheonLibraryView: View {
                         libraryLink("Osiris", symbol: "shield") { RiskView(engine: engine) }
                     }
                     librarySection("INTELLIGENCE") {
-                        libraryLink("Ma'at", symbol: "checkmark.seal") { ResultView(engine: engine, title: "Ma'at — Quality", args: ["maat", "audit"]) }
+                        libraryLink("Ma'at", symbol: "checkmark.seal") { MaatCasebookView(engine: engine) }
                         libraryLink("Thoth", symbol: "books.vertical") { ThothMemoryInfoView(engine: engine) }
                         libraryLink("Ra", symbol: "person.3") { ResultView(engine: engine, title: "Ra — Agent Fleet", args: ["ra", "status"]) }
                         libraryLink("Seshat", symbol: "text.book.closed") { ResultView(engine: engine, title: "Seshat — Knowledge", args: ["seshat", "list"]) }
