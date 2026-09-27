@@ -146,7 +146,7 @@ struct PantheonControlCenterView: View {
         } else if engine.healthStatus != "green" {
             NavLink { HorusView(engine: engine) } label: { priorityRow }
         } else if engine.routerStatus != "green" {
-            NavLink { RouterView(engine: engine) } label: { priorityRow }
+            NavLink { RaFabricView(engine: engine) } label: { priorityRow }
         } else if engine.safeBytes >= SirsiEngine.wasteThreshold {
             NavLink { AnubisView(engine: engine) } label: { priorityRow }
         } else if !engine.hasFDA {
@@ -166,8 +166,8 @@ struct PantheonControlCenterView: View {
                 .font(.caption.weight(.bold))
                 .foregroundStyle(.secondary)
             VStack(spacing: 1) {
-                NavLink { RouterView(engine: engine) } label: {
-                    ControlCenterRow(symbol: "point.3.connected.trianglepath.dotted", title: "Router", detail: engine.routerSummary, tint: statusColor(engine.routerStatus))
+                NavLink { RaFabricView(engine: engine) } label: {
+                    ControlCenterRow(symbol: "point.3.connected.trianglepath.dotted", title: "Ra fabric", detail: engine.routerSummary, tint: statusColor(engine.routerStatus))
                 }
                 Divider().padding(.leading, 38)
                 NavLink { HorusView(engine: engine) } label: {
@@ -253,7 +253,7 @@ struct PantheonLibraryView: View {
                         libraryLink("Fleet", symbol: "rectangle.3.group") { FleetView(engine: engine) }
                     }
                     librarySection("OPERATIONS") {
-                        libraryLink("Router", symbol: "point.3.connected.trianglepath.dotted") { RouterView(engine: engine) }
+                        libraryLink("Ra fabric", symbol: "point.3.connected.trianglepath.dotted") { RaFabricView(engine: engine) }
                         libraryLink("Horus", symbol: "waveform.path.ecg") { HorusView(engine: engine) }
                         libraryLink("Anubis", symbol: "trash") { AnubisView(engine: engine) }
                         libraryLink("Osiris", symbol: "shield") { RiskView(engine: engine) }
@@ -261,7 +261,6 @@ struct PantheonLibraryView: View {
                     librarySection("INTELLIGENCE") {
                         libraryLink("Ma'at", symbol: "checkmark.seal") { MaatWorkspaceView(engine: engine) }
                         libraryLink("Thoth", symbol: "books.vertical") { ThothMemoryInfoView(engine: engine) }
-                        libraryLink("Ra", symbol: "person.3") { ResultView(engine: engine, title: "Ra — Agent Fleet", args: ["ra", "status"]) }
                         libraryLink("Net", symbol: "arrow.triangle.branch") { ResultView(engine: engine, title: "Net — Plan", args: ["net", "status"]) }
                         libraryLink("Vault", symbol: "archivebox") { ResultView(engine: engine, title: "Vault — Context", args: ["vault", "stats"]) }
                         libraryLink("RTK", symbol: "line.3.horizontal.decrease.circle") { ResultView(engine: engine, title: "RTK — Output Filter", args: ["rtk", "stats"]) }
