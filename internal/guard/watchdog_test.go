@@ -282,15 +282,19 @@ func TestWatchdog_Backoff_Mocked(t *testing.T) {
 func TestWatchdog_SamplerError_Mocked(t *testing.T) {
 	saveAndRestoreSampler(t)
 	calls := 0
+	recovered := make(chan struct{})
 	setSampleFn(func(n int) ([]ProcessInfo, error) {
 		calls++
 		if calls <= 2 {
 			return nil, fmt.Errorf("transient error")
 		}
+		if calls == 3 {
+			close(recovered)
+		}
 		return []ProcessInfo{}, nil
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	cfg := WatchConfig{
@@ -302,7 +306,11 @@ func TestWatchdog_SamplerError_Mocked(t *testing.T) {
 	}
 
 	w := StartWatch(ctx, cfg)
-	<-ctx.Done()
+	select {
+	case <-recovered:
+	case <-time.After(time.Second):
+		t.Fatal("watchdog did not recover after transient sampler errors")
+	}
 	w.Stop()
 
 	polls, _, _ := w.Stats()
