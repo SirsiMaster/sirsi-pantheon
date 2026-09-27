@@ -1,0 +1,52 @@
+{
+  "schema": "sirsi.stacklab.wing.v1",
+  "id": "stacklab.wing.ra-horus-fabric",
+  "owner": "Ra — Horus Fabric Sovereign (steward: owner)",
+  "project_id": "sirsi-pantheon",
+  "router_namespace": "ra-horus-fabric",
+  "class": "control-plane",
+  "scope": "M1 Ra is the Ra fabric authority: it unifies independently operated Horus instances into one durable work fabric and owns router behavior. Horus is the local Pantheon system instance on the Mac in front of the operator; each Horus retains local system authority but does not supersede M1 Ra for routing or shared-fabric decisions. Hermes is the authenticated information-interconnect protocol between Horus instances. Photon is the hardware transfer device, not a Horus alias or a control-plane owner. Apollo is the inference engine used by local LLM workloads; Apollo Flash is its speculative execution profile. Ma'at evaluates evidence, decisions, quality, and resource contention across the fabric.",
+  "status": "active",
+  "first_gate": "RA-HORUS-FABRIC-001.G1",
+  "workspace": {
+    "repository_root": "/Users/thekryptodragon/Development/sirsi-pantheon",
+    "writable_roots": [
+      "/Users/thekryptodragon/Development/sirsi-pantheon/cmd/sirsi",
+      "/Users/thekryptodragon/Development/sirsi-pantheon/internal/ra",
+      "/Users/thekryptodragon/Development/sirsi-pantheon/internal/routerstore",
+      "/Users/thekryptodragon/Development/sirsi-pantheon/macapp/Sources/SirsiMenubar"
+    ],
+    "evidence_root": "/Users/thekryptodragon/Development/sirsi-pantheon/docs/evidence/ra-horus-fabric",
+    "shared_payload_access": "read-only-by-identity",
+    "boundary_policy": "default-deny"
+  },
+  "handoffs": {
+    "inbound": "router-receipt-only",
+    "outbound": "router-receipt-only",
+    "allowed_peer_wings": [
+      "stacklab.wing.maat",
+      "stacklab.wing.sne-engine",
+      "stacklab.wing.pantheon.pt-wing-001",
+      "stacklab.wing.io-connect",
+      "stacklab.wing.hardware-estate"
+    ]
+  },
+  "provenance": {
+    "lifecycle_task_id": "ra-horus-fabric-wing-v1",
+    "component_catalog": "docs/stacklab/RA_HORUS_FABRIC_COMPONENT_CATALOG.md",
+    "receipt_links": [
+      "sirsi-stacklab:canon/contracts/stacklab/ra-horus-fabric-wing-v1.json",
+      "sirsi-stacklab:canon/contracts/stacklab/ra-horus-fabric-recipe-v1.json",
+      "sirsi-stacklab:canon/docs/stacklab/RA_HORUS_FABRIC_TRACEABILITY_MATRIX.md",
+      "sirsi-stacklab:canon/docs/router-service/stacklab/WING.md",
+      "sirsi-stacklab:canon/cmd/sirsi/routercmd.go",
+      "sirsi-stacklab:canon/cmd/sirsi/ra.go"
+    ]
+  },
+  "mirrors": {
+    "repository": "current",
+    "desktop": "current",
+    "workspace": "current"
+  },
+  "next_action": "RA-HORUS-FABRIC-001.G1 is the canonical router wing record consumed by sirsi stacklab doctor. Continue the native Ra Fabric workspace and pin this exact contract in SirsiMaster/sirsi-stacklab; the legacy docs/router-service/stacklab/router-wing-ra-v1.json record is retained only as compatibility provenance and is not an authority."
+}

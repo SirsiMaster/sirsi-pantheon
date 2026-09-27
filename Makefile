@@ -96,6 +96,13 @@ dmg: bundle
 	@echo "📦 Creating DMG installer..."
 	scripts/build-dmg.sh --version $(VERSION) --arch $(shell uname -m)
 
+# --- macOS PKG Installer ---
+# Produces an installer from the same assembled Pantheon.app as the DMG.
+pkg:
+	@echo "📦 Creating PKG installer..."
+	scripts/build-dmg.sh --version $(VERSION) --arch $(shell uname -m)
+	scripts/build-pkg.sh --version $(VERSION) --app Pantheon.app
+
 # --- Horus Auto-Publish ---
 # Generates docs/build-log.html and docs/case-studies.html
 publish:

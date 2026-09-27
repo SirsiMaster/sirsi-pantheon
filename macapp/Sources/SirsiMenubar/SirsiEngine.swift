@@ -389,6 +389,11 @@ struct ActivityEntry: Codable, Identifiable {
 // this type only reads the persisted scan and runs the CLI.
 @MainActor
 final class SirsiEngine: ObservableObject {
+    struct FabricHandoffOutcome {
+        let text: String
+        let succeeded: Bool
+    }
+
     @Published var findings: [Finding] = []
     @Published var totalSize: Int64 = 0
     @Published var scannedAt: String = ""
@@ -737,6 +742,51 @@ final class SirsiEngine: ObservableObject {
         recordActivity(title: "Owner action — decision sent", command: "respond \(id)", result: line)
         await loadRouterBoard()
         return line
+    }
+
+    // sendFabricWork is the menubar's native Ra handoff. The form owns the
+    // interaction; the durable Ra router remains the only writer of a work
+    // record. The instruction body is staged in a private temporary file
+    // because the router deliberately requires prose bodies through @file,
+    // rather than trusting shell-interpreted inline text.
+    func sendFabricWork(to: String, title: String, type: String, instructions: String) async -> FabricHandoffOutcome {
+        // The native surface is the local Horus operator. Do not accept a
+        // caller-selected --from identity: the router validates declaration,
+        // but declaration alone is not proof that this surface owns another
+        // agent's identity.
+        let sender = "horus"
+        let recipient = to.trimmingCharacters(in: .whitespacesAndNewlines)
+        let subject = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !sender.isEmpty, !recipient.isEmpty, !subject.isEmpty, !body.isEmpty else {
+            return FabricHandoffOutcome(text: "Add a sender, recipient, title, and the work to hand off.", succeeded: false)
+        }
+
+        busy = true
+        defer { busy = false }
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sirsi-ra-handoff-\(UUID().uuidString).md")
+        do {
+            try Data(body.utf8).write(to: file, options: .atomic)
+        } catch {
+            return FabricHandoffOutcome(text: "Couldn't prepare the handoff: \(error.localizedDescription)", succeeded: false)
+        }
+        defer { try? FileManager.default.removeItem(at: file) }
+
+        var args = ["router", "send", "--from", sender, "--to", recipient,
+                    "--title", subject, "--instructions", "@\(file.path)"]
+        if !type.isEmpty { args += ["--type", type] }
+        let out = await Self.run(args: args, stdin: nil)
+        let line = Self.firstMeaningful(out)
+        let succeeded = Self.resultOK(out)
+        if succeeded {
+            recordActivity(title: "Ra handoff — \(subject)",
+                           command: "ra handoff \(sender) → \(recipient)",
+                           result: line)
+            await loadRouterBoard()
+            await loadThreads()
+        }
+        return FabricHandoffOutcome(text: line, succeeded: succeeded)
     }
 
     // installWake shells `sirsi router wake-install <agent>` to arm a stranded
@@ -1239,11 +1289,12 @@ final class SirsiEngine: ObservableObject {
         Core identity:
         - Sirsi is Cylton Collymore's system for local-first AI, agent routing, infrastructure hygiene,
           project memory, and portfolio orchestration.
-        - Pantheon is the local Mac application, CLI, TUI, menubar, router, and deity-governed operations layer.
+        - Pantheon is the local Mac application, CLI, TUI, menubar, Ra fabric, and deity-governed operations layer.
+        - Horus is the local Pantheon system instance; Ra unifies Horus instances and owns their router behavior. Hermes is the information interconnect between Horus instances. Photon is the hardware transfer device. Apollo runs local inference workloads.
         - Ra owns routing/orchestration. Horus owns workstation visibility. Thoth preserves memory.
-          Ma'at governs quality/truth. Seshat moves knowledge. Hapi governs pressure/admission.
+          Ma'at governs quality, decisions, and the user-facing knowledge surface. Seshat is legacy ingestion compatibility only. Hapi governs pressure/admission.
           Seba maps hardware and architecture. Anubis/Ka handle scan, cleanup, and app remnants.
-        - The router/CTR coordinates Claude, Codex, Gemini, Gemma, Qwen, and future agents through
+        - Ra coordinates Claude, Codex, Gemini, Gemma, Qwen, and future agents through
           repo-scoped ids such as claude-pantheon, codex-pantheon, claude-home, codex-home,
           claude-finalwishes, codex-nexus, and others.
         - Claude Home is the routing owner. Codex Pantheon is an independent Pantheon review/build lane.
@@ -1360,7 +1411,7 @@ final class SirsiEngine: ObservableObject {
         if let name = projectName { lines.append("Current project: \(name)") }
 
         if let board = routerBoard {
-            lines.append("Router pending total: \(board.totalPending ?? 0)")
+            lines.append("Ra pending total: \(board.totalPending ?? 0)")
             lines.append("Live thread count: \(board.liveThreadCount ?? threadsTotal)")
             let pending = (board.pendingByAgent ?? [:])
                 .filter { !$0.value.isEmpty }
@@ -1397,7 +1448,7 @@ final class SirsiEngine: ObservableObject {
         KNOWLEDGE SURFACES TO MENTION WHEN RELEVANT
         CLI: sirsi, ctr, router, thread, workstream, setup, seba, hapi, thoth, seshat, maat, anubis, ka.
         TUI: terminal-guided Sirsi operation when no IDE/app surface is active.
-        Menubar: local Mac operator surface for health, router fabric, owner actions, cleanup, Ask Sirsi, and thread visibility.
+        Menubar: local Mac operator surface for health, Ra fabric, owner actions, cleanup, Ask Sirsi, and thread visibility.
         Local model: Gemma/MLX is the Tier-0 reasoning engine; cloud/frontier agents bind or review where needed.
         Acceleration doctrine: ANE + MLX/GPU + Metal + multithreaded CPU are AND lanes, governed by Hapi admission.
         """)
@@ -1417,7 +1468,7 @@ final class SirsiEngine: ObservableObject {
             "User: Cylton Collymore, founder/operator of Sirsi.",
         ]
         if let board = routerBoard {
-            lines.append("Live router pending total: \(board.totalPending ?? 0); live threads: \(board.liveThreadCount ?? threadsTotal).")
+            lines.append("Live Ra pending total: \(board.totalPending ?? 0); live threads: \(board.liveThreadCount ?? threadsTotal).")
         }
         return lines.joined(separator: "\n")
     }
@@ -1465,38 +1516,82 @@ final class SirsiEngine: ObservableObject {
         ]
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
         do {
-            let (data, _) = try await URLSession.shared.data(for: req)
-            struct Resp: Decodable {
-                struct Choice: Decodable {
-                    struct Msg: Decodable { let content: String?; let reasoning: String? }
-                    let message: Msg?
-                    let finishReason: String?
-                    enum CodingKeys: String, CodingKey {
-                        case message
-                        case finishReason = "finish_reason"
-                    }
-                }
-                let choices: [Choice]?
+            let (data, response) = try await URLSession.shared.data(for: req)
+            let parsed = Self.parseLocalAIResponse(data)
+            if case let .answer(content) = parsed,
+               let http = response as? HTTPURLResponse,
+               (200...299).contains(http.statusCode) {
+                return content
             }
-            guard let resp = try? JSONDecoder().decode(Resp.self, from: data),
-                  let choice = resp.choices?.first,
-                  let msg = choice.message else {
-                return "Local AI answered in a shape Sirsi didn't recognize."
-            }
-            let content = (msg.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !content.isEmpty { return content }
+            // The full live/canon pack is deliberately rich. Some small local
+            // backends reject it at their context boundary or return an error
+            // envelope rather than a choices array. Retry exactly once with the
+            // compact state pack before presenting the real provider failure.
             if includeCanon {
                 return await askLocalAI(question, includeCanon: false)
             }
-            if choice.finishReason == "length" {
-                return "Local AI used its answer budget before producing final text — ask a narrower question."
+            switch parsed {
+            case .answer:
+                return "Local AI returned an answer with an unsuccessful HTTP response."
+            case let .failure(message):
+                return "Local AI couldn't answer: \(message)"
+            case .empty:
+                return "Local AI returned no final answer. It did not expose hidden reasoning."
             }
-            return "Local AI returned no final answer. It did not expose hidden reasoning."
         } catch let e as URLError where e.code == .timedOut {
             return "Local AI is busy loading a model — try again shortly."
         } catch {
             return "Couldn't reach Local AI: \(error.localizedDescription)"
         }
+    }
+
+    private enum LocalAIResponse {
+        case answer(String)
+        case failure(String)
+        case empty
+    }
+
+    // parseLocalAIResponse understands both OpenAI's normal chat envelope and
+    // the error envelope emitted by compatible local servers. It intentionally
+    // ignores reasoning fields: Pantheon displays only a completed answer.
+    nonisolated private static func parseLocalAIResponse(_ data: Data) -> LocalAIResponse {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return .failure("the local service returned invalid JSON")
+        }
+        if let error = root["error"] {
+            if let text = error as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return .failure(text.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+            if let object = error as? [String: Any], let text = object["message"] as? String,
+               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return .failure(text.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+            return .failure("the local service returned an unspecified error")
+        }
+        if let choices = root["choices"] as? [[String: Any]], let first = choices.first,
+           let message = first["message"] as? [String: Any] {
+            if let text = message["content"] as? String,
+               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return .answer(text.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+            // A few compatible servers encode content as typed text parts.
+            if let parts = message["content"] as? [[String: Any]] {
+                let text = parts.compactMap { $0["text"] as? String }.joined()
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !text.isEmpty { return .answer(text) }
+            }
+            if first["finish_reason"] as? String == "length" {
+                return .failure("the answer reached its response limit")
+            }
+            return .empty
+        }
+        // Lightweight local servers sometimes return a direct text projection.
+        for key in ["response", "text", "content"] {
+            if let text = root[key] as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return .answer(text.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+        }
+        return .failure("the local service returned no answer field")
     }
 
     // askAboutThreads answers an NL question about the live fabric using the
@@ -1505,7 +1600,7 @@ final class SirsiEngine: ObservableObject {
         let ctx = threadRoster.map { a in
             "\(a.agent): \(a.live) live, \(a.idle) idle, \(a.staleN) stale; freshest seen \(Int(a.freshestIdle))s ago; surfaces \(a.surfaces.joined(separator: "/"))"
         }.joined(separator: "\n")
-        let system = "You answer questions about the Sirsi router thread fabric concisely (2-4 sentences), using ONLY the live state provided. If the state doesn't contain the answer, say so plainly."
+        let system = "You answer questions about the Sirsi Ra work fabric concisely (2-4 sentences), using ONLY the live state provided. If the state doesn't contain the answer, say so plainly."
         let prompt = "Live thread fabric (\(threadsTotal) live threads across \(threadRoster.count) agents):\n\(ctx.isEmpty ? "(no agents)" : ctx)\n\nQuestion: \(question)"
         return await Self.runGemma(prompt: prompt, system: system)
     }

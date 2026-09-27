@@ -108,9 +108,7 @@ func init() {
 	maatDecisionsCmd.Flags().StringVar(&decHost, "host", "", "filter by host (exact, case-insensitive)")
 	maatDecisionsCmd.Flags().StringVar(&decSince, "since", "", "only decisions within this duration (e.g. 24h)")
 	maatDecisionsCmd.Flags().IntVar(&decLimit, "limit", 50, "max rows (0 = unlimited)")
-	maatDecisionsCmd.Flags().BoolVar(&maatJSON, "json", false, "JSON output")
 	maatDecisionsShowCmd.Flags().BoolVar(&maatJSON, "json", false, "JSON output")
 
 	maatDecisionsCmd.AddCommand(maatDecisionsShowCmd)
-	maatCmd.AddCommand(maatDecisionsCmd)
 }

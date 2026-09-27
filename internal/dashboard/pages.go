@@ -30,6 +30,7 @@ func pageShell(title, activePage, bodyContent string, port int) string {
 		{"scan", "𓁢", "Scan"},
 		{"ghosts", "𓂓", "Ghosts"},
 		{"guard", "🛡", "Guard"},
+		{"maat", "𓆄", "Ma'at"},
 		{"notifications", "🔔", "Notifications"},
 		{"horus", "𓂀", "Horus"},
 		{"vault", "🏛", "Vault"},
@@ -238,7 +239,7 @@ window.switchView=function(view){
   n.classList.toggle('active',n.dataset.view===view)});
  clear();
  var loader={home:viewHome,fleet:viewFleet,scan:viewScan,ghosts:viewGhosts,guard:viewGuard,
-  notifications:viewNotifications,horus:viewHorus,vault:viewVault,ra:viewRa};
+  maat:viewMaat,notifications:viewNotifications,horus:viewHorus,vault:viewVault,ra:viewRa};
  (loader[view]||viewHome)();
 };
 
@@ -411,6 +412,32 @@ function viewFleet(){
    cts.textContent=parts.join(' · ');
    row.appendChild(ag);row.appendChild(st);row.appendChild(cts);T.appendChild(row)});
  }).catch(function(e){out('  fleet board unavailable: '+e.message,'t-err')});
+}
+
+function viewMaat(){
+ out('𓆄 Ma’at — Local System One','t-gold');
+ out('  Searchable, evidence-linked cases projected from Ma’at’s recorded decisions. Read-only: it explains decisions; it never makes them.','t-dim');
+ fetch('/api/maat/casebook?limit=50').then(function(r){
+  if(!r.ok)return r.json().then(function(e){throw new Error(e.error||('HTTP '+r.status))});
+  return r.json()
+ }).then(function(view){
+  const rows=view.cases||[], summary=view.summary||{};
+  if(!rows.length){out('');out('  No Ma’at cases have been recorded on this node yet.','t-dim');return}
+  out('');out('  '+summary.total+' cases · '+summary.open+' open · '+summary.urgent+' urgent · '+summary.high+' high · '+summary.resolved+' resolved','t-head');sep();
+  rows.forEach(function(d){
+   const row=document.createElement('div');row.className='t-line t-row';
+   const at=document.createElement('span');at.className='t-col';at.style.width='110px';at.style.color='var(--dim)';at.textContent=ago(d.time)||d.time;
+   const verdict=document.createElement('span');verdict.className='t-col';verdict.style.width='82px';
+   verdict.style.color=(d.priority==='urgent')?'var(--danger)':(d.priority==='high'?'var(--gold)':'var(--ok)');verdict.textContent=(d.priority||'normal').toUpperCase();
+   const subject=document.createElement('span');subject.className='t-col';subject.style.flex='1';subject.textContent=(d.category||'assessment')+' · '+(d.resource||'—')+' · '+(d.why||'no reason recorded');
+   row.appendChild(at);row.appendChild(verdict);row.appendChild(subject);T.appendChild(row);
+   const detail=document.createElement('div');detail.className='t-line t-dim';detail.style.paddingLeft='202px';
+   let bits=['status: '+(d.status||'open'),'decision: '+(d.kind||'unknown')+' → '+(d.determination||'unknown'),'assessment: '+(d.assessed||'unknown')];
+   if(d.affected)bits.push('affected: '+d.affected);
+   if(d.evidence)bits.push('evidence: '+d.evidence);
+   detail.textContent=bits.join(' · ');T.appendChild(detail);
+  });
+ }).catch(function(e){out('  Ma’at casebook unavailable: '+e.message,'t-err')});
 }
 
 function viewGhosts(){

@@ -17,23 +17,23 @@ import (
 	"os"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/decision"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/spf13/cobra"
 )
 
-// recordDecision appends to the live decision ledger (`sirsi maat decisions`).
-// Logged best-effort: a decision that already happened (the reservation grant
-// itself) must not fail because the ledger write did — the caller has already
-// acted on it.
-func recordDecision(kind, requester, resource, assessed, affected, determination, why, evidence string) {
-	_ = decision.Append("", decision.New(kind, requester, resource, assessed, affected, determination, why, evidence))
-}
-
 // admissionRefusedExit mirrors maat-repro-lint's exit 97: a harness that calls
 // `reserve` and is refused stops with this code instead of touching the cable.
 const admissionRefusedExit = 97
+
+// recordDecision appends the human-readable outcome to Ma'at's host-local
+// decision ledger. The reservation ledger remains the scheduling authority;
+// this is an explanatory projection for `sirsi maat decisions`.
+func recordDecision(kind, requester, resource, assessed, affected, determination, why, evidence string) {
+	_ = decision.Append("", decision.New(kind, requester, resource, assessed, affected, determination, why, evidence))
+}
 
 func maatLedger() (*schedule.Ledger, error) {
 	st, err := routerstore.Resolve()
@@ -41,6 +41,57 @@ func maatLedger() (*schedule.Ledger, error) {
 		return nil, fmt.Errorf("resolve router store: %w", err)
 	}
 	return schedule.NewLedger(st), nil
+}
+
+var newMaatDecisionJournal = func() (maat.DecisionJournal, error) {
+	return maat.NewDefaultDecisionJournal()
+}
+
+// recordReservationDecision gives every native reserve outcome the same
+// explanatory shape that the dashboard, CLI, and future Ra projection read.
+// The reservation store remains the scheduler authority; this is an append-only
+// explanation of the decision, never a second reservation registry.
+func recordReservationDecision(req schedule.Reservation, result schedule.ReserveResult) error {
+	journal, err := newMaatDecisionJournal()
+	if err != nil {
+		return err
+	}
+	decision := maat.Decision{
+		Kind:          "reservation grant",
+		Requester:     req.Holder,
+		Resource:      req.Resource,
+		Assessed:      "no conflicting active reservation",
+		Determination: "grant",
+		Why:           "requested window is available",
+	}
+	switch {
+	case result.Granted:
+		if result.Reservation != nil {
+			decision.Evidence = "reservation:" + result.Reservation.ID
+		}
+	case result.Queued:
+		decision.Kind = "reservation queue"
+		decision.Assessed = "conflicting active reservation"
+		decision.Determination = "queue"
+		decision.Why = "request queued behind current holder"
+		if result.Conflict != nil {
+			decision.Affected = result.Conflict.Holder
+			decision.Evidence = "reservation:" + result.Conflict.ID
+		}
+	default:
+		decision.Kind = "reservation refusal"
+		decision.Assessed = "conflicting active reservation"
+		decision.Determination = "refuse"
+		decision.Why = "requested window overlaps a live foreign reservation"
+		if result.Conflict != nil {
+			decision.Affected = result.Conflict.Holder
+			decision.Evidence = "reservation:" + result.Conflict.ID
+		}
+	}
+	if err := journal.Append(decision); err != nil {
+		return fmt.Errorf("append Ma'at reservation decision: %w", err)
+	}
+	return nil
 }
 
 func emitJSON(v any) error {
@@ -87,15 +138,11 @@ A harness calls this before touching a cable; it is the rails.lock replacement.`
 		if err != nil {
 			return err
 		}
-		assessed := fmt.Sprintf("window %s → %s, regime %s", req.Start, orNow(req.EstEnd), req.Regime)
-		if res.Granted {
-			recordDecision("reservation grant", req.Holder, req.Resource, assessed, req.Resource, "granted", req.Work, res.Reservation.ID)
-		} else if res.Queued {
-			recordDecision("reservation queue", req.Holder, req.Resource, assessed, req.Resource,
-				"queued", fmt.Sprintf("held by %s until %s", res.Conflict.Holder, orNow(res.Conflict.EstEnd)), req.ID)
-		} else {
-			recordDecision("reservation refuse", req.Holder, req.Resource, assessed, req.Resource,
-				"refused", fmt.Sprintf("held by %s until %s (work %q)", res.Conflict.Holder, orNow(res.Conflict.EstEnd), res.Conflict.Work), res.Conflict.ID)
+		if err := recordReservationDecision(req, res); err != nil {
+			// The scheduler state is already durable. Return the append failure
+			// explicitly so a caller never mistakes an unprojected decision for a
+			// complete, drillable outcome.
+			return err
 		}
 		if maatJSON {
 			_ = emitJSON(res)
@@ -376,10 +423,10 @@ func init() {
 	maatCoverageCmd.Flags().IntVar(&covHorizon, "horizon", 24, "horizon hours")
 	maatConflictCheckCmd.Flags().StringVar(&conflictMachine, "machine", "", "machine to probe (default: the resource)")
 
-	for _, c := range []*cobra.Command{maatStatusCmd, maatWhoCmd, maatHeartbeatCmd, maatReleaseCmd, maatCoverageCmd, maatShouldDeferCmd, maatConflictCheckCmd, maatExtendCmd} {
+	for _, c := range []*cobra.Command{maatStatusCmd, maatDecisionsCmd, maatWhoCmd, maatHeartbeatCmd, maatReleaseCmd, maatCoverageCmd, maatShouldDeferCmd, maatConflictCheckCmd, maatExtendCmd} {
 		c.Flags().BoolVar(&maatJSON, "json", false, "JSON output")
 	}
 
-	maatCmd.AddCommand(maatReserveCmd, maatStatusCmd, maatWhoCmd, maatHeartbeatCmd, maatExtendCmd,
+	maatCmd.AddCommand(maatReserveCmd, maatStatusCmd, maatDecisionsCmd, maatWhoCmd, maatHeartbeatCmd, maatExtendCmd,
 		maatReleaseCmd, maatCoverageCmd, maatShouldDeferCmd, maatConflictCheckCmd)
 }

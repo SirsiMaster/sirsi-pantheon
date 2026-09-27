@@ -40,9 +40,10 @@ branch, or one operator's memory does not exist for the fabric.
 it is on `origin/main` of its owning lane's repository at
 `contracts/stacklab/<lane>-wing-v1.json`. A record that lives only as a local commit, an
 unpushed commit, an unmerged branch, a control-plane copy, or a host-local file is
-**stranded** and does not exist. (The router's own record is `sirsi-pantheon`
-`docs/router-service/stacklab/router-wing-ra-v1.json`, byte-pinned to the SNE fixture per
-`WING.md`; that pinning rule is unchanged.)
+**stranded** and does not exist. (The router's own canonical record is
+`sirsi-pantheon/contracts/stacklab/ra-horus-fabric-wing-v1.json`; the older
+`docs/router-service/stacklab/router-wing-ra-v1.json` remains compatibility provenance
+only and is not consumed by the doctor.)
 
 **2. One registry.** `SirsiMaster/sirsi-stacklab` is the **authoritative universal registry**.
 It does not author wings. For each lane it **pins** the lane's origin record by SHA-256
@@ -79,7 +80,7 @@ lane's wing, but Decisions 1–4 do not depend on it. Routed to SHA on return (2
 
 | wing | owner | state 2026-09-16 | to become canonical |
 |---|---|---|---|
-| `m1-ra` | ra | canonical (origin + pinned, `f0345682…`) | — |
+| `ra-horus-fabric` | ra | canonical source record; registry pin refresh required | pin the exact contract bytes |
 | `io-connect` | claude-io | origin record in PR #197 (OPEN, CLEAN); pinned | merge #197 |
 | `sne-engine` | codex-inference | draft | land on `sirsi-inference` `origin/main`; pin |
 | `hardware-estate` | SHA (acting claude-io) | draft | land on `SirsiNexusApp` `origin/main`; pin |

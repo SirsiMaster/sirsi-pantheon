@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/casebook"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/stele"
 )
@@ -21,6 +23,91 @@ func testServer(t *testing.T, cfg Config) *httptest.Server {
 	t.Helper()
 	s := New(cfg)
 	return httptest.NewServer(s.srv.Handler)
+}
+
+func TestMaatCasebook_ProjectionAndFilters(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t, Config{MaatCasebookFn: func(q casebook.Query) (casebook.View, error) {
+		if q.Status != casebook.StatusOpen || q.Kind != "allocation" || q.Text != "m5" || q.Limit != 3 {
+			t.Fatalf("query = %+v", q)
+		}
+		return casebook.View{Cases: []casebook.Case{{ID: "maat-case-1", Status: casebook.StatusOpen}}, Summary: casebook.Summary{Total: 1, Open: 1}}, nil
+	}})
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/maat/casebook?q=m5&kind=allocation&status=open&limit=3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/maat/casebook = %d, want 200", resp.StatusCode)
+	}
+	var got casebook.View
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Summary.Open != 1 || len(got.Cases) != 1 {
+		t.Fatalf("casebook = %+v", got)
+	}
+}
+
+func TestMaatCasebook_RejectsUnknownStatus(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t, Config{MaatCasebookFn: func(casebook.Query) (casebook.View, error) { return casebook.View{}, nil }})
+	defer ts.Close()
+	resp, err := http.Get(ts.URL + "/api/maat/casebook?status=unknown")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("GET /api/maat/casebook?status=unknown = %d, want 400", resp.StatusCode)
+	}
+}
+
+func TestMaatDecisions_Projection(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t, Config{MaatDecisionsFn: func(limit int) ([]maat.Decision, error) {
+		if limit != 3 {
+			t.Errorf("limit = %d, want 3", limit)
+		}
+		return []maat.Decision{{
+			Time: "2026-09-26T10:00:00Z", Host: "m5", Kind: "reservation grant", Requester: "codex-pantheon", Resource: "m5",
+			Assessed: "free", Determination: "grant", Why: "no overlap",
+		}}, nil
+	}})
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/maat/decisions?limit=3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/maat/decisions = %d, want 200", resp.StatusCode)
+	}
+	var got []maat.Decision
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Determination != "grant" || got[0].Why != "no overlap" {
+		t.Fatalf("projection = %+v", got)
+	}
+}
+
+func TestMaatDecisions_UnavailableIsHonest(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t, Config{})
+	defer ts.Close()
+	resp, err := http.Get(ts.URL + "/api/maat/decisions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("GET /api/maat/decisions without producer = %d, want 503", resp.StatusCode)
+	}
 }
 
 func openTestNotifyStore(t *testing.T) *notify.Store {
