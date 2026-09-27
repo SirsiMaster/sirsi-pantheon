@@ -1,5 +1,5 @@
 // Package casebook turns Ma'at's factual decision feed into a local System One
-// view: searchable, classified, prioritised cases with explicit evidence and
+// view: searchable, classified, prioritized cases with explicit evidence and
 // actor/resource relationships. It never recomputes or overrides Ma'at policy.
 package casebook
 

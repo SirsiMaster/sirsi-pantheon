@@ -32,8 +32,8 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := json.Unmarshal(raw, &recipe); err != nil {
-		t.Fatal(err)
+	if unmarshalErr := json.Unmarshal(raw, &recipe); unmarshalErr != nil {
+		t.Fatal(unmarshalErr)
 	}
 	if recipe.Schema != "sirsi.stacklab.recipe.v1" || recipe.ID != "stacklab.recipe.maat-system-one" || recipe.Wing != "stacklab.wing.maat" {
 		t.Fatalf("recipe identity = %+v", recipe)
@@ -50,8 +50,8 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 			t.Fatalf("component %q is not independently upgradeable: %+v", component.ID, component)
 		}
 		for _, listed := range append(append([]string{}, component.Source...), component.Tests...) {
-			if _, err := os.Stat(filepath.Join("..", "..", listed)); err != nil {
-				t.Fatalf("component %q references missing path %q: %v", component.ID, listed, err)
+			if _, statErr := os.Stat(filepath.Join("..", "..", listed)); statErr != nil {
+				t.Fatalf("component %q references missing path %q: %v", component.ID, listed, statErr)
 			}
 		}
 	}
