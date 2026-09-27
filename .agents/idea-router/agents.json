@@ -48,30 +48,6 @@
         "prompt": "You are {{agent}}. Work your inbox as a LOOP, not a one-shot: 1) `sirsi router pull {{agent}}` to list your open router items; 2) read each item FULLY before acting; 3) claim it; 4) execute it to completion; 5) close it WITH EVIDENCE \u2014 `sirsi router close <id> --result @<file>` for informational items, or `~/.local/bin/sirsi-respond.sh <id> <file>` when the item owes its sender a reply. Never a bare ack; 6) reconcile your task registry against verified reality (`sirsi router task list {{agent}}`, `sirsi router task update` where a record is stale or mislabeled); 7) work open LEDGER items even when the inbox is empty (`sirsi router ledger {{agent}}`); 8) pull again. AN EMPTY INBOX ALONE IS NOT COMPLETION \u2014 always check the task registry and the ledger before you stop. Router root is {{router_root}}. Do not start work outside your inbox and ledger."
       }
     },
-    "claude-finalwishes": {
-      "id": "claude-finalwishes",
-      "type": "claude",
-      "command": [
-        "claude",
-        "--print",
-        "--permission-mode",
-        "auto"
-      ],
-      "cwd": "/Users/thekryptodragon/Development/FinalWishes",
-      "workstream": "finalwishes",
-      "wake": {
-        "mechanism": "launchagent"
-      },
-      "consumer": {
-        "command": [
-          "claude",
-          "--print",
-          "--permission-mode",
-          "auto"
-        ],
-        "prompt": "You are {{agent}}. Work your inbox as a LOOP, not a one-shot: 1) `sirsi router pull {{agent}}` to list your open router items; 2) read each item FULLY before acting; 3) claim it; 4) execute it to completion; 5) close it WITH EVIDENCE \u2014 `sirsi router close <id> --result @<file>` for informational items, or `~/.local/bin/sirsi-respond.sh <id> <file>` when the item owes its sender a reply. Never a bare ack; 6) reconcile your task registry against verified reality (`sirsi router task list {{agent}}`, `sirsi router task update` where a record is stale or mislabeled); 7) work open LEDGER items even when the inbox is empty (`sirsi router ledger {{agent}}`); 8) pull again. AN EMPTY INBOX ALONE IS NOT COMPLETION \u2014 always check the task registry and the ledger before you stop. Router root is {{router_root}}. Do not start work outside your inbox and ledger."
-      }
-    },
     "claude-finalwishes-web": {
       "id": "claude-finalwishes-web",
       "type": "claude",
@@ -916,8 +892,8 @@
       },
       "repo": "/Users/thekryptodragon/Development/sirsi-inference-claude-m5"
     },
-    "claude-finalwishes-helper": {
-      "id": "claude-finalwishes-helper",
+    "claude-finalwishes-m1": {
+      "id": "claude-finalwishes-m1",
       "type": "claude",
       "command": [
         "claude",
@@ -925,7 +901,7 @@
         "--permission-mode",
         "auto"
       ],
-      "cwd": "/Users/thekryptodragon/Development/FinalWishes",
+      "cwd": "/Users/sirsimasterdev/Development/FinalWishes",
       "workstream": "finalwishes",
       "wake": {
         "mechanism": "none"
@@ -939,10 +915,11 @@
         ],
         "prompt": "You are {{agent}}. Work your inbox as a LOOP, not a one-shot: 1) `sirsi router pull {{agent}}` to list your open router items; 2) read each item FULLY before acting; 3) claim it; 4) execute it to completion; 5) close it WITH EVIDENCE — `sirsi router close <id> --result @<file>` for informational items, or `~/.local/bin/sirsi-respond.sh <id> <file>` when the item owes its sender a reply. Never a bare ack; 6) reconcile your task registry against verified reality (`sirsi router task list {{agent}}`, `sirsi router task update` where a record is stale or mislabeled); 7) work open LEDGER items even when the inbox is empty (`sirsi router ledger {{agent}}`); 8) pull again. AN EMPTY INBOX ALONE IS NOT COMPLETION — always check the task registry and the ledger before you stop. Router root is {{router_root}}. Do not start work outside your inbox and ledger."
       },
-      "repo": "/Users/thekryptodragon/Development/FinalWishes"
+      "repo": "/Users/thekryptodragon/Development/FinalWishes",
+      "note": "Attended Claude Code session on M1 (owner-directed rename from claude-finalwishes, 2026-09-26). wake none: never auto-spawned."
     },
-    "claude-fw": {
-      "id": "claude-fw",
+    "claude-finalwishes-m5": {
+      "id": "claude-finalwishes-m5",
       "type": "claude",
       "command": [
         "claude",
@@ -964,7 +941,8 @@
         ],
         "prompt": "You are {{agent}}. Work your inbox as a LOOP, not a one-shot: 1) `sirsi router pull {{agent}}` to list your open router items; 2) read each item FULLY before acting; 3) claim it; 4) execute it to completion; 5) close it WITH EVIDENCE — `sirsi router close <id> --result @<file>` for informational items, or `~/.local/bin/sirsi-respond.sh <id> <file>` when the item owes its sender a reply. Never a bare ack; 6) reconcile your task registry against verified reality (`sirsi router task list {{agent}}`, `sirsi router task update` where a record is stale or mislabeled); 7) work open LEDGER items even when the inbox is empty (`sirsi router ledger {{agent}}`); 8) pull again. AN EMPTY INBOX ALONE IS NOT COMPLETION — always check the task registry and the ledger before you stop. Router root is {{router_root}}. Do not start work outside your inbox and ledger."
       },
-      "repo": "/Users/thekryptodragon/Development/FinalWishes"
+      "repo": "/Users/thekryptodragon/Development/FinalWishes",
+      "note": "Attended \"FinalWishes continuation\" Claude Code session on M5 (owner-directed rename from claude-finalwishes, 2026-09-26). wake none: never auto-spawned."
     },
     "cylton-apollo": {
       "id": "cylton-apollo",
