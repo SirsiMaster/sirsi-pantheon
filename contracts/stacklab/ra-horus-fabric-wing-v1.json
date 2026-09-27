@@ -5,7 +5,7 @@
   "project_id": "sirsi-pantheon",
   "router_namespace": "ra-horus-fabric",
   "class": "control-plane",
-  "scope": "Ra unifies independently operated Horus instances into one durable work fabric and owns router behavior. Horus is the local Pantheon system instance on the Mac in front of the operator. Hermes is the authenticated information-interconnect protocol between Horus instances. Photon is the hardware transfer device, not a Horus alias or a control-plane owner. Apollo is the inference engine used by local LLM workloads; Apollo Flash is its speculative execution profile. Ma'at evaluates evidence, decisions, quality, and resource contention across the fabric. No individual machine is globally canonical: every Horus instance retains local authority while Ra reconciles shared work and evidence.",
+  "scope": "M1 Ra is the Ra fabric authority: it unifies independently operated Horus instances into one durable work fabric and owns router behavior. Horus is the local Pantheon system instance on the Mac in front of the operator; each Horus retains local system authority but does not supersede M1 Ra for routing or shared-fabric decisions. Hermes is the authenticated information-interconnect protocol between Horus instances. Photon is the hardware transfer device, not a Horus alias or a control-plane owner. Apollo is the inference engine used by local LLM workloads; Apollo Flash is its speculative execution profile. Ma'at evaluates evidence, decisions, quality, and resource contention across the fabric.",
   "status": "active",
   "first_gate": "RA-HORUS-FABRIC-001.G1",
   "workspace": {
@@ -43,5 +43,5 @@
     "desktop": "current",
     "workspace": "current"
   },
-  "next_action": "RA-HORUS-FABRIC-001.G1 delivers the native Ra Fabric workspace: visible live work, blocker repair, agent wake actions, and typed durable handoff. Follow-on work replaces remaining compatibility CLI-only actions with typed native flows without creating a second router store."
+  "next_action": "RA-HORUS-FABRIC-001.G1 delivers the native Ra Fabric workspace: visible live work, blocker repair, agent wake actions, and typed durable handoff. M1 Ra reviews cross-instance semantics; follow-on work replaces remaining compatibility CLI-only actions with typed native flows without creating a second router store."
 }
