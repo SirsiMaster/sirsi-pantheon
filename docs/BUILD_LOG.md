@@ -6,7 +6,7 @@
 [![Tests](https://img.shields.io/badge/tests-1450%20passing-brightgreen?style=flat)](.github/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat)](LICENSE)
 
-## 2026-09-27 — RELEASE CANDIDATE v0.24.2: Ra identity-bound handoff
+## 2026-09-27 — RELEASE CANDIDATE v0.24.3: Ra identity-bound handoff
 
 **Built:** the native Ra handoff binds the sender to the declared local
 `horus` identity. The UI no longer accepts a caller-selected `--from` value or
