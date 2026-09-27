@@ -2,7 +2,7 @@
 
 How to build distributable packages for each platform.
 
-## macOS (DMG)
+## macOS (DMG and PKG)
 
 Produces a drag-and-drop DMG installer containing `Pantheon.app` with both the menu bar app and the CLI binary.
 
@@ -14,7 +14,19 @@ scripts/build-dmg.sh --version 0.17.0 --arch arm64
 
 Output: `bin/SirsiPantheon-VERSION-ARCH.dmg`
 
-Requirements: macOS (hdiutil), Go toolchain. Ad-hoc signed; real distribution requires an Apple Developer certificate.
+Build the installer package from that exact same application bundle:
+
+```bash
+make pkg
+# Or after building the DMG/app bundle:
+scripts/build-pkg.sh --version 0.23.9-beta --app Pantheon.app
+```
+
+Output: `bin/SirsiPantheon-VERSION-arm64.pkg`
+
+Requirements: macOS (hdiutil/pkgbuild), Go toolchain. A distributable DMG
+requires a Developer ID Application identity and notarization credentials; a
+distributable PKG additionally requires a Developer ID Installer identity.
 
 ## Linux (deb / rpm)
 
