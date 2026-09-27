@@ -31,9 +31,11 @@
   },
   "provenance": {
     "lifecycle_task_id": "ra-horus-fabric-wing-v1",
-    "component_catalog": "macapp/Sources/SirsiMenubar/Views.swift",
+    "component_catalog": "docs/stacklab/RA_HORUS_FABRIC_COMPONENT_CATALOG.md",
     "receipt_links": [
       "sirsi-stacklab:canon/contracts/stacklab/ra-horus-fabric-wing-v1.json",
+      "sirsi-stacklab:canon/contracts/stacklab/ra-horus-fabric-recipe-v1.json",
+      "sirsi-stacklab:canon/docs/stacklab/RA_HORUS_FABRIC_TRACEABILITY_MATRIX.md",
       "sirsi-stacklab:canon/cmd/sirsi/routercmd.go",
       "sirsi-stacklab:canon/cmd/sirsi/ra.go"
     ]
