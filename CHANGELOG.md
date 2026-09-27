@@ -15,6 +15,14 @@ Fixes the four fail-open boundary defects SSA found in the shipped A2A fabric (d
 - **Ordered-release honored on drain** (`routerstore/spool.go`, SSA #794.1) — `drainOutbox` continued past a still-unreachable held request, so a later reachable request could be forwarded before an earlier held one. It now stops at the first non-delivery frontier; `serveOnce` drains per-lane through it.
 - **Held record removed only on confirmed delivery** (`routerstore/spool.go`, SSA #794.2) — `retryOutboxOne` deleted the durable outbox record for any non-hold result, discarding a record on a post-send `OUTCOME UNKNOWN`. It now has three outcomes: delivered → remove; never-reached → re-hold in order; unknown → park in `failed/` for audit (never re-forwarded, never dropped).
 - **`neverReachedService` requires the dial phase** (`routerstore/spool.go`, SSA #794.3) — a bare or post-connect `ECONNREFUSED` was classified as never-sent and auto-retried, risking a double-commit. Classification now requires a dial/connection-establishment-phase `net.OpError`; read/write-phase errors stay `OUTCOME UNKNOWN`.
+## [0.24.6] — 2026-09-27 — Ma’at audit coverage closure
+**Commercial patch release.** The full Ma’at audit now exercises the previously under-covered machine identity, diagnostic reasoning, runner, and router-board paths:
+- machine identity probe/cache and cross-host matching behavior;
+- diagnostic policy/registry, observation tools, and restart-verdict branches;
+- hermetic runner installation/status contracts; and
+- router-board polling, projection, transition, and malformed-payload handling.
+
+The live full audit reports 95/100 with zero failures; remaining warnings are packages without coverage data or non-blocking sub-threshold tiers.
 
 ## [0.24.5] — 2026-09-27 — Willing cessation for shared resources
 **Commercial patch release.** Ma’at now supports explicit, non-preemptive resource handoff:
