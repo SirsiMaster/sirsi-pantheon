@@ -163,7 +163,7 @@ release:
     ```
 
     ### macOS Gatekeeper Note
-    Pantheon.app is ad-hoc signed. On first launch, macOS may show "cannot be opened because the developer cannot be verified." Right-click the app → Open → Open. This only happens once. Notarized signing is coming with our Apple Developer enrollment.
+    Pantheon.app release artifacts are Developer-ID signed, notarized, and stapled by the release workflow.
 
   footer: |
     ---

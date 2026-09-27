@@ -11,8 +11,12 @@ permissions:
 
 jobs:
   release:
-    name: Build & Release (CLI + Deities)
-    runs-on: ubuntu-latest
+    name: Validate & Release macOS product
+    # Pantheon.app, its native menu bar surface, and its lifecycle contracts are
+    # macOS products.  The release authority therefore validates the complete
+    # clean-client suite on the actual product platform rather than pretending a
+    # CGO-disabled Linux subset is equivalent.
+    runs-on: [self-hosted, macOS, ARM64]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -23,11 +27,42 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+          cache: false
 
-      - name: Run tests (skip CGO-dependent packages on Linux)
+      - name: Run complete macOS product suite in a clean client profile
+        run: |
+          set -euo pipefail
+          export HOME="$RUNNER_TEMP/pantheon-test-home"
+          export GOCACHE="$RUNNER_TEMP/pantheon-gocache"
+          mkdir -p "$HOME" "$GOCACHE"
+          env -u SIRSI_ROUTER_URL -u SIRSI_ROUTER_TOKEN -u SIRSI_ROUTER_STORE_WAKE \
+            go test ./...
+
+      # A public Pantheon release is a signed, notarized product. Check every
+      # external input before GoReleaser creates a GitHub release so unavailable
+      # credentials fail cleanly rather than publishing ad-hoc artifacts.
+      - name: Verify commercial signing and publishing inputs
         env:
-          CGO_ENABLED: "0"
-        run: go test -short $(go list ./... | grep -v '/seba$\|/brain$\|/mcp$\|/ka$\|/tests/')
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+          KEYCHAIN_PWD: ${{ secrets.KEYCHAIN_PWD }}
+          DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
+          DEVELOPER_ID_INSTALLER: ${{ secrets.DEVELOPER_ID_INSTALLER }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          for name in \
+            MACOS_CERTIFICATE MACOS_CERTIFICATE_PWD KEYCHAIN_PWD \
+            DEVELOPER_ID_APPLICATION DEVELOPER_ID_INSTALLER \
+            APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD HOMEBREW_TAP_TOKEN; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Commercial release input $name is unavailable."
+              exit 1
+            fi
+          done
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
@@ -66,7 +101,6 @@ jobs:
           echo "VERSION=${TAG_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Import signing certificate
-        if: env.MACOS_CERTIFICATE != ''
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}

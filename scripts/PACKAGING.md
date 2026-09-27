@@ -19,7 +19,7 @@ Build the installer package from that exact same application bundle:
 ```bash
 make pkg
 # Or after building the DMG/app bundle:
-scripts/build-pkg.sh --version 0.24.1 --app Pantheon.app
+scripts/build-pkg.sh --version 0.24.2 --app Pantheon.app
 ```
 
 Output: `bin/SirsiPantheon-VERSION-arm64.pkg`

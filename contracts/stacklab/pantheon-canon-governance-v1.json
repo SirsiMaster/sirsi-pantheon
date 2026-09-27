@@ -1,0 +1,47 @@
+{
+  "schema": "sirsi.stacklab.canon.v1",
+  "id": "stacklab.canon.pantheon",
+  "version": 1,
+  "owner": "Pantheon product team",
+  "purpose": "Make Stack Lab the required engineering method for Pantheon: canonical decisions, recipes, source components, release evidence, and upgrade boundaries are declared before a release is published.",
+  "canonical_documents": {
+    "adr_registry": "docs/ADR-INDEX.md",
+    "adr_source_glob": "docs/ADR-[0-9]*.md",
+    "contract_root": "contracts/stacklab",
+    "product_catalogs": [
+      "docs/qa/MAAT_SYSTEM_ONE_CATALOG.md",
+      "contracts/stacklab/maat-system-one-recipe-v1.json",
+      "contracts/stacklab/ra-horus-fabric-wing-v1.json"
+    ]
+  },
+  "release_recipe": {
+    "version_source": "VERSION",
+    "native_app": "macapp/Package.swift",
+    "cli": "cmd/sirsi",
+    "dmg_builder": "scripts/build-dmg.sh",
+    "pkg_builder": "scripts/build-pkg.sh",
+    "release_workflow": ".github/workflows/release.yml",
+    "required_artifacts": [
+      "Pantheon.app",
+      "SirsiPantheon-<version>-arm64.dmg",
+      "SirsiPantheon-<version>-arm64.pkg"
+    ]
+  },
+  "method": {
+    "before_change": [
+      "bind the affected Stack Lab recipe or create one",
+      "identify canonical ADR and contract inputs",
+      "declare an independently upgradeable component boundary"
+    ],
+    "before_release": [
+      "validate canonical documents and recipe paths",
+      "test the native app, CLI, menubar, and release builders",
+      "produce identical-bundle DMG and PKG artifacts",
+      "publish an immutable tag and retain release evidence"
+    ],
+    "after_release": [
+      "use the exact tagged commit as the next release baseline",
+      "record any release failure as a new bounded recipe correction"
+    ]
+  }
+}
