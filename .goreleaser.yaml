@@ -136,7 +136,11 @@ release:
     name: sirsi-pantheon
   name_template: "v{{.Version}}"
   prerelease: auto
-  draft: false
+  # GoReleaser creates the release only after the complete product suite passes,
+  # but the signed DMG/PKG and cask follow in the macOS job. Keep it private
+  # until those artifacts have succeeded; the workflow publishes it explicitly
+  # as its final action.
+  draft: true
   header: |
     ## Sirsi Pantheon {{.Version}}
 
