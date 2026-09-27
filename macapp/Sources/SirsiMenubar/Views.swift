@@ -500,7 +500,7 @@ struct CommandDeckView: View {
                     : (engine.safeBytes >= SirsiEngine.wasteThreshold ? .anubis : .osiris)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 132), spacing: 8)], spacing: 8) {
                     CommandDeckMetric(state: computeState, fill: tileFill, destinationName: DeckRoute.horus.surfaceName) { HorusView(engine: engine) }
-                    CommandDeckMetric(state: routerState, fill: tileFill, destinationName: DeckRoute.routerFabric.surfaceName) { RouterView(engine: engine) }
+                    CommandDeckMetric(state: routerState, fill: tileFill, destinationName: DeckRoute.routerFabric.surfaceName) { RaFabricView(engine: engine) }
                     CommandDeckMetric(state: contextState, fill: tileFill, destinationName: ctxRoute.surfaceName) {
                         DeckRouteView(route: ctxRoute, engine: engine)
                     }
@@ -537,8 +537,8 @@ struct CommandDeckView: View {
                 CommandDeckNav(title: "Ask", symbol: "sparkles", fill: panelFill) {
                     AskSirsiView(engine: engine)
                 }
-                CommandDeckNav(title: "Router", symbol: "point.3.connected.trianglepath.dotted", fill: panelFill) {
-                    RouterView(engine: engine)
+                CommandDeckNav(title: "Ra fabric", symbol: "point.3.connected.trianglepath.dotted", fill: panelFill) {
+                    RaFabricView(engine: engine)
                 }
                 CommandDeckNav(title: "Ops", symbol: "waveform.path.ecg", fill: panelFill) {
                     HorusView(engine: engine)
@@ -599,7 +599,7 @@ struct DeckRouteView: View {
     var body: some View {
         switch route {
         case .horus: HorusView(engine: engine)
-        case .routerFabric: RouterView(engine: engine)
+        case .routerFabric: RaFabricView(engine: engine)
         case .ownerActions: OwnerActionsListView(engine: engine)
         case .threads: ThreadsView(engine: engine)
         case .anubis: AnubisView(engine: engine)
@@ -1457,9 +1457,13 @@ func openTerminal() {
     try? p.run()
 }
 
-struct RouterView: View {
+// RaFabricView is the operator's native work surface. Ra owns the router
+// function; “router” remains the compatibility CLI/store name underneath, not
+// a second product surface.
+struct RaFabricView: View {
     @ObservedObject var engine: SirsiEngine
     @State private var resultLine: String?
+    @State private var showingHandoff = false
     @Environment(\.snapshotMode) private var snapshotMode
 
     // ImageRenderer draws ScrollView viewports EMPTY — swap for a plain stack
@@ -1474,9 +1478,33 @@ struct RouterView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            BackBar(title: "Router — Fabric")
+            BackBar(title: "Ra — Fabric")
             maybeScrollRouter {
                 VStack(alignment: .leading, spacing: 14) {
+
+                    HStack(spacing: 8) {
+                        Button {
+                            showingHandoff = true
+                        } label: {
+                            Label("Hand off work", systemImage: "arrowshape.turn.up.right.fill")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(gold)
+                        .disabled(engine.busy)
+
+                        NavLink {
+                            ThreadsView(engine: engine)
+                        } label: {
+                            Label("Live work", systemImage: "circle.dotted")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    Text("Ra keeps Horus instances on one durable work fabric. Handoffs, decisions, and recovery stay visible here instead of ending in a terminal transcript.")
+                        .sirsiFont(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
 
                     // ── Honest empty state: never a false "healthy" ─────────
                     if engine.routerBoard == nil {
@@ -1508,15 +1536,39 @@ struct RouterView: View {
                             Spacer()
                         }
                         let pending = (board.pendingByAgent ?? [:]).filter { !$0.value.isEmpty }
-                        if !pending.isEmpty {
+                        let activeRecipients = pending.keys.sorted {
+                            let left = pending[$0]?.count ?? 0
+                            let right = pending[$1]?.count ?? 0
+                            return left == right ? $0 < $1 : left > right
+                        }
+                        if !activeRecipients.isEmpty {
                             VStack(spacing: 0) {
-                                ForEach(pending.keys.sorted(), id: \.self) { agent in
+                                ForEach(Array(activeRecipients.prefix(4).enumerated()), id: \.element) { index, agent in
                                     HStack {
                                         Text(agent).sirsiFont(.caption)
                                         Spacer()
                                         Text("\(pending[agent]?.count ?? 0) open").sirsiFont(.caption, design: .monospaced).foregroundStyle(.secondary)
-                                    }.padding(.vertical, 6)
-                                    if agent != pending.keys.sorted().last { Divider() }
+                                    }
+                                    .padding(.vertical, 6)
+                                    if index < min(activeRecipients.count, 4) - 1 { Divider() }
+                                }
+                                if activeRecipients.count > 4 {
+                                    Divider()
+                                    NavLink {
+                                        ThreadsView(engine: engine)
+                                    } label: {
+                                        HStack {
+                                            Text("View \(activeRecipients.count - 4) more active recipients")
+                                                .sirsiFont(.caption, weight: .semibold)
+                                            Spacer()
+                                            Image(systemName: "chevron.right")
+                                                .sirsiFont(.caption2)
+                                                .foregroundStyle(.tertiary)
+                                        }
+                                        .padding(.vertical, 8)
+                                        .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
                                 }
                             }
                             .padding(.horizontal, 12)
@@ -1554,24 +1606,31 @@ struct RouterView: View {
                         Text("These agents have work waiting but no armed session watching. Arm a wake channel so their inbox is pulled automatically.")
                             .sirsiFont(.caption).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
-                        ForEach(engine.routerStranded) { s in
+                        ForEach(Array(engine.routerStranded.prefix(3))) { s in
                             NavLink {
                                 StrandedAgentView(engine: engine, agent: s)
                             } label: {
-                                HStack(spacing: 10) {
-                                    Text("📥").sirsiFont(16).frame(width: 24)
-                                    VStack(alignment: .leading, spacing: 1) {
-                                        Text(s.agentId).sirsiFont(13, weight: .medium)
-                                        Text("\(s.openItems) item\(s.openItems == 1 ? "" : "s") waiting")
-                                            .sirsiFont(.caption).foregroundStyle(.secondary)
-                                    }
+                                RaStrandedInboxRow(stranded: s)
+                            }.buttonStyle(.plain)
+                        }
+                        if engine.routerStranded.count > 3 {
+                            NavLink {
+                                RaStrandedInboxesView(engine: engine)
+                            } label: {
+                                HStack {
+                                    Text("View all \(engine.routerStranded.count) stranded inboxes")
+                                        .sirsiFont(.caption, weight: .semibold)
                                     Spacer()
-                                    Image(systemName: "chevron.right").sirsiFont(.caption2).foregroundStyle(.tertiary)
+                                    Image(systemName: "chevron.right")
+                                        .sirsiFont(.caption2)
+                                        .foregroundStyle(.tertiary)
                                 }
-                                .padding(.vertical, 8).padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 10)
                                 .contentShape(Rectangle())
                                 .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.04)))
-                            }.buttonStyle(.plain)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
 
@@ -1607,6 +1666,210 @@ struct RouterView: View {
             if engine.busy {
                 HStack { ProgressView().controlSize(.small); Text("Working…").sirsiFont(.caption).foregroundStyle(.secondary); Spacer() }
                     .padding(.horizontal, 16).padding(.bottom, 8)
+            }
+        }
+        .task { await engine.loadRouterBoard() }
+        .sheet(isPresented: $showingHandoff) {
+            RaHandoffView(engine: engine, isPresented: $showingHandoff)
+        }
+    }
+}
+
+// RaHandoffView replaces the former “copy a router command and hope” dead end
+// with a typed, durable handoff. It never executes arbitrary shell input: the
+// only mutation is the canonical router send command with its instruction body
+// passed as the router's required @file argument.
+struct RaHandoffView: View {
+    @ObservedObject var engine: SirsiEngine
+    @Binding var isPresented: Bool
+    @State private var sender = "horus-local"
+    @State private var recipient = ""
+    @State private var title = ""
+    @State private var kind = "proposal"
+    @State private var instructions = ""
+    @State private var result: SirsiEngine.FabricHandoffOutcome?
+    @State private var sending = false
+
+    private var knownRecipients: [String] {
+        let pending = engine.routerBoard?.pendingByAgent?.keys.map { $0 } ?? []
+        let active = engine.threadRoster.map(\.agent)
+        return Array(Set(pending + active)).sorted()
+    }
+
+    private var canSend: Bool {
+        !sender.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            !recipient.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            !instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            !sending
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Hand off work")
+                        .sirsiFont(18, weight: .bold)
+                    Text("Create one durable Ra work item.")
+                        .sirsiFont(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Cancel") { isPresented = false }
+                    .disabled(sending)
+            }
+            .padding(16)
+
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    field("FROM", text: $sender, prompt: "This Horus instance")
+                    field("TO", text: $recipient, prompt: "Horus or agent id")
+
+                    if !knownRecipients.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("ON THE FABRIC")
+                                .sirsiFont(.caption2, weight: .semibold)
+                                .foregroundStyle(.secondary)
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 6) {
+                                    ForEach(knownRecipients, id: \.self) { agent in
+                                        Button(agent) { recipient = agent }
+                                            .buttonStyle(.bordered)
+                                            .tint(recipient == agent ? gold : .gray)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    field("TITLE", text: $title, prompt: "What needs to happen?")
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("KIND")
+                            .sirsiFont(.caption2, weight: .semibold)
+                            .foregroundStyle(.secondary)
+                        Picker("Kind", selection: $kind) {
+                            Text("Proposal").tag("proposal")
+                            Text("Review").tag("review")
+                            Text("Decision").tag("decision")
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("THE WORK")
+                            .sirsiFont(.caption2, weight: .semibold)
+                            .foregroundStyle(.secondary)
+                        TextEditor(text: $instructions)
+                            .font(.system(size: 13))
+                            .frame(minHeight: 132)
+                            .padding(7)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.055)))
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.10), lineWidth: 1))
+                    }
+
+                    if let result {
+                        Label(result.text, systemImage: result.succeeded ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                            .sirsiFont(.caption)
+                            .foregroundStyle(result.succeeded ? .green : .red)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .padding(16)
+            }
+            Divider()
+            Button {
+                sending = true
+                Task {
+                    result = await engine.sendFabricWork(from: sender, to: recipient, title: title, type: kind, instructions: instructions)
+                    sending = false
+                }
+            } label: {
+                HStack {
+                    if sending { ProgressView().controlSize(.small) }
+                    Text(sending ? "Sending…" : "Send to Ra fabric")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(gold)
+            .disabled(!canSend)
+            .padding(16)
+        }
+        .frame(minWidth: 460, minHeight: 560)
+    }
+
+    private func field(_ label: String, text: Binding<String>, prompt: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .sirsiFont(.caption2, weight: .semibold)
+                .foregroundStyle(.secondary)
+            TextField(prompt, text: text)
+                .textFieldStyle(.roundedBorder)
+                .sirsiFont(13)
+        }
+    }
+}
+
+private struct RaStrandedInboxRow: View {
+    let stranded: RBStranded
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "tray.and.arrow.down.fill")
+                .foregroundStyle(.orange)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(stranded.agentId).sirsiFont(13, weight: .medium)
+                Text("\(stranded.openItems) item\(stranded.openItems == 1 ? "" : "s") waiting")
+                    .sirsiFont(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right").sirsiFont(.caption2).foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .contentShape(Rectangle())
+        .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.04)))
+    }
+}
+
+// The fabric overview intentionally stays short. This companion screen keeps
+// every stranded inbox actionable without burying the Ra summary and handoff.
+struct RaStrandedInboxesView: View {
+    @ObservedObject var engine: SirsiEngine
+
+    var body: some View {
+        VStack(spacing: 0) {
+            BackBar(title: "Ra — Stranded inboxes")
+            if engine.routerStranded.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "tray").sirsiFont(.title).foregroundStyle(.tertiary)
+                    Text("No stranded inboxes").sirsiFont(.callout).foregroundStyle(.secondary)
+                    Text("Every open work queue has a watcher.")
+                        .sirsiFont(.caption).foregroundStyle(.tertiary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(28)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("These queues have work waiting but no armed watcher. Open one to inspect it and arm its wake channel.")
+                            .sirsiFont(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        ForEach(engine.routerStranded) { stranded in
+                            NavLink {
+                                StrandedAgentView(engine: engine, agent: stranded)
+                            } label: {
+                                RaStrandedInboxRow(stranded: stranded)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(16)
+                }
             }
         }
         .task { await engine.loadRouterBoard() }

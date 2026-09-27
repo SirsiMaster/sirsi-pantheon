@@ -1,0 +1,47 @@
+{
+  "schema": "sirsi.stacklab.wing.v1",
+  "id": "stacklab.wing.ra-horus-fabric",
+  "owner": "Ra — Horus Fabric Sovereign (steward: owner)",
+  "project_id": "sirsi-pantheon",
+  "router_namespace": "ra-horus-fabric",
+  "class": "control-plane",
+  "scope": "Ra unifies independently operated Horus instances into one durable work fabric and owns router behavior. Horus is the local Pantheon system instance on the Mac in front of the operator. Hermes is the authenticated information-interconnect protocol between Horus instances. Photon is the hardware transfer device, not a Horus alias or a control-plane owner. Apollo is the inference engine used by local LLM workloads; Apollo Flash is its speculative execution profile. Ma'at evaluates evidence, decisions, quality, and resource contention across the fabric. No individual machine is globally canonical: every Horus instance retains local authority while Ra reconciles shared work and evidence.",
+  "status": "active",
+  "first_gate": "RA-HORUS-FABRIC-001.G1",
+  "workspace": {
+    "repository_root": "/Users/thekryptodragon/Development/sirsi-pantheon",
+    "writable_roots": [
+      "/Users/thekryptodragon/Development/sirsi-pantheon/cmd/sirsi",
+      "/Users/thekryptodragon/Development/sirsi-pantheon/internal/ra",
+      "/Users/thekryptodragon/Development/sirsi-pantheon/internal/routerstore",
+      "/Users/thekryptodragon/Development/sirsi-pantheon/macapp/Sources/SirsiMenubar"
+    ],
+    "evidence_root": "/Users/thekryptodragon/Development/sirsi-pantheon/docs/evidence/ra-horus-fabric",
+    "shared_payload_access": "read-only-by-identity",
+    "boundary_policy": "default-deny"
+  },
+  "handoffs": {
+    "inbound": "router-receipt-only",
+    "outbound": "router-receipt-only",
+    "allowed_peer_wings": [
+      "stacklab.wing.maat",
+      "stacklab.wing.sne-engine",
+      "stacklab.wing.hardware-estate"
+    ]
+  },
+  "provenance": {
+    "lifecycle_task_id": "ra-horus-fabric-wing-v1",
+    "component_catalog": "macapp/Sources/SirsiMenubar/Views.swift",
+    "receipt_links": [
+      "sirsi-stacklab:canon/contracts/stacklab/ra-horus-fabric-wing-v1.json",
+      "sirsi-stacklab:canon/cmd/sirsi/routercmd.go",
+      "sirsi-stacklab:canon/cmd/sirsi/ra.go"
+    ]
+  },
+  "mirrors": {
+    "repository": "current",
+    "desktop": "current",
+    "workspace": "current"
+  },
+  "next_action": "RA-HORUS-FABRIC-001.G1 delivers the native Ra Fabric workspace: visible live work, blocker repair, agent wake actions, and typed durable handoff. Follow-on work replaces remaining compatibility CLI-only actions with typed native flows without creating a second router store."
+}

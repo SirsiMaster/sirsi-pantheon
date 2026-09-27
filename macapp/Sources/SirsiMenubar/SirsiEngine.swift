@@ -389,6 +389,11 @@ struct ActivityEntry: Codable, Identifiable {
 // this type only reads the persisted scan and runs the CLI.
 @MainActor
 final class SirsiEngine: ObservableObject {
+    struct FabricHandoffOutcome {
+        let text: String
+        let succeeded: Bool
+    }
+
     @Published var findings: [Finding] = []
     @Published var totalSize: Int64 = 0
     @Published var scannedAt: String = ""
@@ -737,6 +742,47 @@ final class SirsiEngine: ObservableObject {
         recordActivity(title: "Owner action — decision sent", command: "respond \(id)", result: line)
         await loadRouterBoard()
         return line
+    }
+
+    // sendFabricWork is the menubar's native Ra handoff. The form owns the
+    // interaction; the durable Ra router remains the only writer of a work
+    // record. The instruction body is staged in a private temporary file
+    // because the router deliberately requires prose bodies through @file,
+    // rather than trusting shell-interpreted inline text.
+    func sendFabricWork(from: String, to: String, title: String, type: String, instructions: String) async -> FabricHandoffOutcome {
+        let sender = from.trimmingCharacters(in: .whitespacesAndNewlines)
+        let recipient = to.trimmingCharacters(in: .whitespacesAndNewlines)
+        let subject = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !sender.isEmpty, !recipient.isEmpty, !subject.isEmpty, !body.isEmpty else {
+            return FabricHandoffOutcome(text: "Add a sender, recipient, title, and the work to hand off.", succeeded: false)
+        }
+
+        busy = true
+        defer { busy = false }
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sirsi-ra-handoff-\(UUID().uuidString).md")
+        do {
+            try Data(body.utf8).write(to: file, options: .atomic)
+        } catch {
+            return FabricHandoffOutcome(text: "Couldn't prepare the handoff: \(error.localizedDescription)", succeeded: false)
+        }
+        defer { try? FileManager.default.removeItem(at: file) }
+
+        var args = ["router", "send", "--from", sender, "--to", recipient,
+                    "--title", subject, "--instructions", "@\(file.path)"]
+        if !type.isEmpty { args += ["--type", type] }
+        let out = await Self.run(args: args, stdin: nil)
+        let line = Self.firstMeaningful(out)
+        let succeeded = Self.resultOK(out)
+        if succeeded {
+            recordActivity(title: "Ra handoff — \(subject)",
+                           command: "ra handoff \(sender) → \(recipient)",
+                           result: line)
+            await loadRouterBoard()
+            await loadThreads()
+        }
+        return FabricHandoffOutcome(text: line, succeeded: succeeded)
     }
 
     // installWake shells `sirsi router wake-install <agent>` to arm a stranded

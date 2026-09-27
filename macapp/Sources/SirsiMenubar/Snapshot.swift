@@ -19,7 +19,7 @@ extension EnvironmentValues {
 //
 // How: the harness first runs the SAME CLI calls the live views make
 // (`sirsi maat audit --json`, `sirsi net status --json`) and injects the decoded
-// CommandResult into the real ResultView, then draws with SwiftUI's
+// CommandResult into the remaining real ResultViews, then draws with SwiftUI's
 // ImageRenderer. Injection is required because ImageRenderer renders
 // synchronously and never runs .task — a self-loading view would render as an
 // eternal spinner. (NSHostingView + cacheDisplay was tried first and cannot
@@ -39,7 +39,6 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380, appearance: ColorSche
         let maatCasebook = await MaatCasebookView.fetch()
         let net = await SirsiEngine.runResult(args: ["net", "status"])
         let rtk = await SirsiEngine.runResult(args: ["rtk", "stats"])
-        let ra = await SirsiEngine.runResult(args: ["ra", "status"])
         let maatKnowledge = await MaatKnowledgeView.fetch()
         let vault = await SirsiEngine.runResult(args: ["vault", "stats"])
         await engine.diagnose()
@@ -77,9 +76,7 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380, appearance: ColorSche
             // back to it and reads the local casebook projection.
             ("maat-workspace", AnyView(MaatWorkspaceView(engine: engine, preloadedCasebook: maatCasebook ?? .snapshotPreview, preloadedKnowledge: maatKnowledge ?? .snapshotPreview))),
             ("thoth-memory", AnyView(ThothMemoryInfoView(engine: engine))),
-            ("ra-agent-fleet", AnyView(ResultView(engine: engine, title: "Ra — Agent Fleet",
-                                                  args: ["ra", "status"], preloaded: ra))),
-            ("router-fabric", AnyView(RouterView(engine: engine))),
+            ("ra-fabric", AnyView(RaFabricView(engine: engine))),
             ("threads-heartbeat", AnyView(ThreadsView(engine: engine))),
             ("risk", AnyView(RiskView(engine: engine))),
             ("net-plan", AnyView(ResultView(engine: engine, title: "Net — Plan",
@@ -107,7 +104,7 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380, appearance: ColorSche
             // its headless evidence enough canvas to capture every section from
             // the title onward instead of centering and clipping its first rows.
             let height: CGFloat = switch shot.name {
-            case "ask-sirsi", "maat-workspace": 960
+            case "ask-sirsi", "maat-workspace", "ra-fabric": 960
             case "all-tools": 1_040
             default: 520
             }
