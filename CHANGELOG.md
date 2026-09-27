@@ -7,13 +7,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ---
 
 ## [Unreleased]
+- **feat(maat): live, drillable decision ledger — `sirsi maat decisions`** (claude-pantheon, 2026-09-26; router item `20260926-143533`). Owner ask via claude-io: Ma'at's grants/refusals/other work should be live and drillable to what it assessed, who it affected, what determination was made and why. `internal/maat/decision` is a schema-tolerant JSONL reader/writer over `~/.sirsi/maat/decisions.jsonl` (the file other hosts' writers — m5go, the `maat-window-gate` hook, `maat-run-guard` — already append to); `sirsi maat decisions` lists (filterable by `--kind`/`--host`/`--since`), `sirsi maat decisions show <id>` drills into one record by a stable content-derived short id. `sirsi maat reserve|release|conflict-check` now write their own decision records natively (closing the gap the ask named). Host-local by design for now — cross-host aggregation is the follow-up pending Ra's canonical-ledger-location answer; each host's ledger is self-contained and drillable today. Refs: PANTHEON_RULES.md A26; internal/maat/decision/README.md; docs/user-guides/maat.md; Changelog: Unreleased
 
-## [0.24.4] — 2026-09-27 — Router delivery-boundary hardening (SSA #792/#794)
+## [0.24.6] — 2026-09-27 — Router delivery-boundary hardening (SSA #792/#794)
 Fixes the four fail-open boundary defects SSA found in the shipped A2A fabric (deploy of #792/#794 was held/rejected pending these). Each fix fails **closed**; each is covered by a regression test verified against the old code (negative control red, fixed code green — A35).
 - **Keystone fails closed on home-resolution failure** (`routerstore/resolve.go`, SSA #792) — `cutOverMarker` returned `("", nil)` when `os.UserHomeDir()` failed, letting `Resolve()` fall through and open the local ledger without proving the cut-over marker absent (the exact split-brain the keystone prevents). It now returns an error so `Resolve()` refuses the local file.
 - **Ordered-release honored on drain** (`routerstore/spool.go`, SSA #794.1) — `drainOutbox` continued past a still-unreachable held request, so a later reachable request could be forwarded before an earlier held one. It now stops at the first non-delivery frontier; `serveOnce` drains per-lane through it.
 - **Held record removed only on confirmed delivery** (`routerstore/spool.go`, SSA #794.2) — `retryOutboxOne` deleted the durable outbox record for any non-hold result, discarding a record on a post-send `OUTCOME UNKNOWN`. It now has three outcomes: delivered → remove; never-reached → re-hold in order; unknown → park in `failed/` for audit (never re-forwarded, never dropped).
 - **`neverReachedService` requires the dial phase** (`routerstore/spool.go`, SSA #794.3) — a bare or post-connect `ECONNREFUSED` was classified as never-sent and auto-retried, risking a double-commit. Classification now requires a dial/connection-establishment-phase `net.OpError`; read/write-phase errors stay `OUTCOME UNKNOWN`.
+
+## [0.24.5] — 2026-09-27 — Willing cessation for shared resources
+**Commercial patch release.** Ma’at now supports explicit, non-preemptive resource handoff:
+- lanes may request, grant, counter, decline, or withdraw a cede for a machine or bounded core share;
+- only the named holder may answer a request, and unanswered requests remain pending;
+- scheduler reservations are never silently revoked and running work is never killed by Ma’at;
+- `sirsi maat status` exposes pending cedes without changing the reservation JSON contract.
+
+## [0.24.4] — 2026-09-27 — Ma'at decision ledger
+**Commercial patch release.** Ma'at reservation outcomes are now directly visible and drillable from the Pantheon CLI:
+- `sirsi maat decisions` lists grants, queues, refusals, releases, and conflict checks with filters.
+- `sirsi maat decisions show <id>` renders the complete decision record.
+- Native reservation, release, and conflict-check paths publish explanatory records without changing scheduler authority.
+- Host-local ledger scope is explicit; cross-host aggregation remains a separately tracked follow-up.
 
 ## [0.24.0] — 2026-09-27 — Router A2A Fabric
 **First tagged, packaged, published release.** The router agent-to-agent (A2A) fabric ships end-to-end and is the canonical baseline for the next build:
@@ -513,27 +528,6 @@ Merged to `origin/main`, deployed to M1 & M5 CLIs + both relays, verified live (
 - Path containment check in the (removed) `submit-existing` verb used `filepath.EvalSymlinks` so tempdir tests worked on macOS; same pattern carries forward to `workRoot()`.
 
 ---
-
-## [0.23.0-beta] — 2026-05-19
-
-### Claude Router Inbox Hooks
-
-- Added repo-local Claude Code hooks for router inbox awareness at session start and user prompt submit.
-- Added `.claude/hooks/router_inbox_check.py` to read the Idea Router state and stay silent unless the registered Claude agent has pending work.
-
-### Ra/Horus CTR Hypervisor Canon Completion
-
-#### Code Surface
-- `sirsi router node-status` — Horus local-node status command showing router home, registered agents, pending work by agent, work-queue item statuses, daemon health, configured binary, and recent dispatch failures
-- `internal/router/nodestatus.go` — `CollectNodeStatus()` aggregation with `LaunchctlChecker` injectable for testability
-- `internal/router/nodestatus_test.go` — 5 tests covering basic fields, pending-by-agent, sorted agents, daemon-not-installed, and work-queue summary with failures
-- `internal/router/executor_test.go` — added non-Claude/non-Codex webhook registration and API wake dispatch coverage for universal agent wake proof
-
-#### Documentation
-- Case study indexed: `docs/case-studies/ra-horus-ctr-hypervisor.md`
-- Rule D6 in DEITY_REGISTRY.md updated with Horus per-desktop node split
-- PANTHEON_HIERARCHY.md §VII CTR Hypervisor boundary table verified
-- ADR-017 propagated to ARCHITECTURE_DESIGN.md §2.8
 
 ## [0.22.0-beta] — 2026-05-18
 
@@ -1356,7 +1350,6 @@ v0.8.0-beta is the first credible public release of Pantheon. All metrics are ve
   - Runs gofmt + go vet + golangci-lint + go build before every push
   - Prevents lint issues from ever reaching the pipeline
 - **Maat proposed** — pipeline purifier module (CI monitoring + auto-remediation)
-
 
 ## [0.2.0-alpha] — 2026-03-25 (Ship Week Day 5)
 ### Added (Day 5: Neural Brain Downloader)

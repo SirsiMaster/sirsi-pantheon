@@ -15,9 +15,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/decision"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/spf13/cobra"
@@ -26,6 +28,13 @@ import (
 // admissionRefusedExit mirrors maat-repro-lint's exit 97: a harness that calls
 // `reserve` and is refused stops with this code instead of touching the cable.
 const admissionRefusedExit = 97
+
+// recordDecision appends the human-readable outcome to Ma'at's host-local
+// decision ledger. The reservation ledger remains the scheduling authority;
+// this is an explanatory projection for `sirsi maat decisions`.
+func recordDecision(kind, requester, resource, assessed, affected, determination, why, evidence string) {
+	_ = decision.Append("", decision.New(kind, requester, resource, assessed, affected, determination, why, evidence))
+}
 
 func maatLedger() (*schedule.Ledger, error) {
 	st, err := routerstore.Resolve()
@@ -102,11 +111,13 @@ var (
 
 var maatReserveCmd = &cobra.Command{
 	Use:   "reserve <resource>",
-	Short: "Reserve a machine or rail for a measurement window (enforced admission)",
+	Short: "Reserve a machine or rail for a measurement window (enforced admission, never a lockout)",
 	Long: `Reserve a resource (a machine id like m1/m5, or a rail like rail-a,
-ci-runners@m5) for a time window. If a live foreign reservation overlaps, the
-grant is REFUSED and the process exits ` + fmt.Sprint(admissionRefusedExit) + ` (unless --queue).
-A harness calls this before touching a cable; it is the rails.lock replacement.`,
+ci-runners@m5) for a time window. Ma'at never locks a lane out (owner
+directive 2026-09-26): a live foreign reservation, or an unanswered cede
+request addressed to you, grants a bounded FLOOR share instead of refusing —
+only --queue waits for the full window. A harness calls this before touching
+a cable; it is the rails.lock replacement.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		l, err := maatLedger()
@@ -130,26 +141,66 @@ A harness calls this before touching a cable; it is the rails.lock replacement.`
 		if err != nil {
 			return err
 		}
+		if res.Granted && res.Reservation.Share == schedule.ShareFloor {
+			conflictHolder := ""
+			if res.Conflict != nil {
+				conflictHolder = res.Conflict.Holder
+			}
+			logFloorGrant(l, req.Holder, req.Resource, res.Reservation, conflictHolder)
+		}
 		if err := recordReservationDecision(req, res); err != nil {
 			// The scheduler state is already durable. Return the append failure
 			// explicitly so a caller never mistakes an unprojected decision for a
 			// complete, drillable outcome.
 			return err
 		}
-		if maatJSON {
+		switch {
+		case maatJSON:
 			_ = emitJSON(res)
-		} else if res.Granted {
-			fmt.Printf("𓆄 reserved %s for %s until %s  (id %s)\n", req.Resource, req.Holder, orNow(req.EstEnd), res.Reservation.ID)
-		} else if res.Queued {
+		case res.Queued:
 			fmt.Printf("𓆄 QUEUED behind %s on %s (held until %s)\n", res.Conflict.Holder, req.Resource, orNow(res.Conflict.EstEnd))
-		} else {
-			fmt.Printf("𓆄 REFUSED — %s is held by %s until %s (work %q)\n", req.Resource, res.Conflict.Holder, orNow(res.Conflict.EstEnd), res.Conflict.Work)
-		}
-		if !res.Granted && !res.Queued {
-			os.Exit(admissionRefusedExit)
+		case res.Reservation.Share == schedule.ShareFloor:
+			printFloorGrant(res.Reservation)
+		default:
+			fmt.Printf("𓆄 reserved %s for %s until %s  (id %s)\n", req.Resource, req.Holder, orNow(req.EstEnd), res.Reservation.ID)
 		}
 		return nil
 	},
+}
+
+// printFloorGrant prints a bounded floor-share grant: a grant, not a
+// refusal, so it exits 0 (owner directive 2026-09-26: never a lockout).
+func printFloorGrant(r *schedule.Reservation) {
+	fmt.Printf("𓆄 granted FLOOR: %d cores on %s (%s)\n", r.Cores, r.Resource, r.Reason)
+	if len(r.PendingCedes) > 0 {
+		fmt.Println("    open cede requests — answer to get more than the floor:")
+		for _, id := range r.PendingCedes {
+			fmt.Printf("      sirsi maat cede grant|counter|decline %s --reason \"...\"\n", id)
+		}
+	}
+}
+
+// logFloorGrant appends the decision-ledger line for a floor-share grant
+// (best-effort, via logCedeDecision). affected is the conflicting holder's
+// name when the floor came from a live conflict, and/or the requesters of
+// any open cede that also capped the grant.
+func logFloorGrant(l *schedule.Ledger, holder, resource string, r *schedule.Reservation, conflictHolder string) {
+	affected := conflictHolder
+	evidence := r.ID
+	if len(r.PendingCedes) > 0 {
+		cedes, _ := l.ListCedes(schedule.CedeFilter{Holder: holder, PendingOnly: true})
+		requesters := make([]string, 0, len(cedes))
+		for _, c := range cedes {
+			requesters = append(requesters, c.Requester)
+		}
+		if affected != "" {
+			affected += ","
+		}
+		affected += strings.Join(requesters, ",")
+		evidence += "," + strings.Join(r.PendingCedes, ",")
+	}
+	assessed := fmt.Sprintf("reserve %s (floor %d cores)", resource, r.Cores)
+	logCedeDecision("reserve", "grant-floor", holder, resource, assessed, affected, r.Reason, evidence)
 }
 
 var maatStatusCmd = &cobra.Command{
@@ -181,38 +232,11 @@ var maatStatusCmd = &cobra.Command{
 			fmt.Printf("  %-14s %-9s %-7s %-12s %s → %s  %s\n",
 				r.Resource, r.Status, r.Regime, r.Holder, short(r.Start), short(r.EstEnd), r.Work)
 		}
-		return nil
-	},
-}
-
-var maatDecisionsCmd = &cobra.Command{
-	Use:   "decisions",
-	Short: "Show recent Ma'at grants, refusals, queues, and assessment reasons",
-	Args:  cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		journal, err := newMaatDecisionJournal()
-		if err != nil {
-			return err
-		}
-		rows, err := journal.Recent(50)
-		if err != nil {
-			return err
-		}
-		if maatJSON {
-			return emitJSON(rows)
-		}
-		if len(rows) == 0 {
-			fmt.Println("𓆄 no Ma'at decisions recorded")
-			return nil
-		}
-		fmt.Printf("𓆄 Ma'at decisions (%d)\n", len(rows))
-		for _, d := range rows {
-			affected := ""
-			if d.Affected != "" {
-				affected = " affects " + d.Affected
+		if cedes, err := l.ListCedes(schedule.CedeFilter{Resource: resource, PendingOnly: true}); err == nil && len(cedes) > 0 {
+			fmt.Printf("𓆄 pending cede requests (%d) — never auto-granted\n", len(cedes))
+			for _, c := range cedes {
+				fmt.Printf("  %-8s %-14s %s→%s  %s (%d min)  %q\n", c.Status, c.Resource, c.Requester, c.Holder, c.Ask, c.Minutes, c.Reason)
 			}
-			fmt.Printf("  %-7s %-10s %-12s %-14s %s%s\n",
-				short(d.Time), d.Determination, d.Resource, d.Requester, d.Why, affected)
 		}
 		return nil
 	},
@@ -276,10 +300,17 @@ var maatExtendCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		if r.Share == schedule.ShareFloor && len(r.PendingCedes) > 0 {
+			logFloorGrant(l, r.Holder, r.Resource, r, "")
+		}
 		if maatJSON {
 			return emitJSON(r)
 		}
-		fmt.Printf("𓆄 extended %s until %s\n", r.ID, r.EstEnd)
+		if r.Share == schedule.ShareFloor {
+			fmt.Printf("𓆄 extended %s until %s — kept at FLOOR (%d cores): %s\n", r.ID, r.EstEnd, r.Cores, r.Reason)
+		} else {
+			fmt.Printf("𓆄 extended %s until %s\n", r.ID, r.EstEnd)
+		}
 		return nil
 	},
 }
@@ -295,6 +326,7 @@ var maatReleaseCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		recordDecision("reservation release", r.Holder, r.Resource, fmt.Sprintf("held %s → %s", r.Start, orNow(r.EstEnd)), r.Resource, "released", r.Work, r.ID)
 		if maatJSON {
 			return emitJSON(r)
 		}
@@ -378,10 +410,18 @@ var maatConflictCheckCmd = &cobra.Command{
 			}
 			notifyIntruders(rep)
 		}
+		determination := "clean"
+		if !rep.Clean {
+			determination = "conflict"
+		}
+		recordDecision("conflict-check", rep.Holder, rep.Resource, fmt.Sprintf("live activity on %s", machine), rep.Holder, determination, rep.Summary, rep.Reservation)
 		if maatJSON {
 			_ = emitJSON(rep)
 		} else if rep.Clean {
 			fmt.Printf("𓆄 clean — %s\n", rep.Summary)
+			for _, s := range rep.Shared {
+				fmt.Printf("    %s\n", s)
+			}
 		} else {
 			fmt.Printf("𓆄 CONFLICT — %s\n  block %s INVALIDATED\n", rep.Summary, rep.Reservation)
 		}
