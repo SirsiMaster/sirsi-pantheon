@@ -149,7 +149,7 @@ func ContentSHA256(raw []byte) string {
 // byte-for-byte copy of the owning lane's origin wing record (see
 // wings/pinned/PINNED.md), NOT a small pointer file — and its filename does
 // not reliably derive from the lane (wings/pinned/router-wing-ra-v1.json
-// pins stacklab.wing.m1-ra). So pins are matched to a roster wing id by
+// pins a legacy router wing record). So pins are matched to a roster wing id by
 // content (this field), never by filename.
 func pinWingID(raw []byte) (string, error) {
 	var p struct {

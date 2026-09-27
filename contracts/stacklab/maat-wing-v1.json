@@ -22,7 +22,7 @@
     "inbound": "router-receipt-only",
     "outbound": "router-receipt-only",
     "allowed_peer_wings": [
-      "stacklab.wing.m1-ra",
+      "stacklab.wing.ra-horus-fabric",
       "stacklab.wing.io-connect",
       "stacklab.wing.sne-engine",
       "stacklab.wing.hardware-estate"

@@ -22,7 +22,7 @@ const RegistryRepo = "SirsiMaster/sirsi-stacklab"
 // pin is a byte-for-byte copy of the owning lane's origin record (confirmed
 // live against the real registry 2026-09-16, see wings/pinned/PINNED.md), so
 // pins are matched to a wing id by their own "id" field, never by filename:
-// wings/pinned/router-wing-ra-v1.json pins stacklab.wing.m1-ra, which a
+// wings/pinned/router-wing-ra-v1.json is a legacy router pin, which a
 // lane-derived filename guess would miss.
 const RegistryPinsDir = "wings/pinned"
 
@@ -39,7 +39,8 @@ var LaneRepoMap = map[string]string{
 	//   in this session (memory names the *project* "Sirsi Inference Engine"
 	//   but not its GitHub repo).
 	// TODO(ADR-066 §6): pantheon.pt-wing-001 — sirsi-pantheon already carries
-	//   a different wing (stacklab.wing.m1-ra, docs/router-service/stacklab/)
+	//   a legacy router record (docs/router-service/stacklab/), while the
+	//   canonical current record lives under contracts/stacklab/.
 	//   at a non-canonical path, and the live registry additionally pins a
 	//   THIRD record, pantheon-pt-wing-001.catalog.json (id
 	//   stacklab.wing.pantheon-pt-wing-001.catalog) that is itself
