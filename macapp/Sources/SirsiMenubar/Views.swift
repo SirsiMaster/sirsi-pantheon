@@ -1682,7 +1682,6 @@ struct RaFabricView: View {
 struct RaHandoffView: View {
     @ObservedObject var engine: SirsiEngine
     @Binding var isPresented: Bool
-    @State private var sender = "horus-local"
     @State private var recipient = ""
     @State private var title = ""
     @State private var kind = "proposal"
@@ -1697,8 +1696,7 @@ struct RaHandoffView: View {
     }
 
     private var canSend: Bool {
-        !sender.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-            !recipient.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !recipient.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
             !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
             !instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
             !sending
@@ -1723,7 +1721,17 @@ struct RaHandoffView: View {
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    field("FROM", text: $sender, prompt: "This Horus instance")
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("FROM")
+                            .sirsiFont(.caption2, weight: .semibold)
+                            .foregroundStyle(.secondary)
+                        Text("horus")
+                            .sirsiFont(13, weight: .medium)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(8)
+                            .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.055)))
+                            .accessibilityLabel("Sending as Horus")
+                    }
                     field("TO", text: $recipient, prompt: "Horus or agent id")
 
                     if !knownRecipients.isEmpty {
@@ -1782,7 +1790,7 @@ struct RaHandoffView: View {
             Button {
                 sending = true
                 Task {
-                    result = await engine.sendFabricWork(from: sender, to: recipient, title: title, type: kind, instructions: instructions)
+                    result = await engine.sendFabricWork(to: recipient, title: title, type: kind, instructions: instructions)
                     sending = false
                 }
             } label: {

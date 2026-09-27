@@ -749,8 +749,12 @@ final class SirsiEngine: ObservableObject {
     // record. The instruction body is staged in a private temporary file
     // because the router deliberately requires prose bodies through @file,
     // rather than trusting shell-interpreted inline text.
-    func sendFabricWork(from: String, to: String, title: String, type: String, instructions: String) async -> FabricHandoffOutcome {
-        let sender = from.trimmingCharacters(in: .whitespacesAndNewlines)
+    func sendFabricWork(to: String, title: String, type: String, instructions: String) async -> FabricHandoffOutcome {
+        // The native surface is the local Horus operator. Do not accept a
+        // caller-selected --from identity: the router validates declaration,
+        // but declaration alone is not proof that this surface owns another
+        // agent's identity.
+        let sender = "horus"
         let recipient = to.trimmingCharacters(in: .whitespacesAndNewlines)
         let subject = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let body = instructions.trimmingCharacters(in: .whitespacesAndNewlines)
