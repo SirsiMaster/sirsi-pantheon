@@ -80,6 +80,13 @@ cp "${BUILD_DIR}/sirsi"         "${BUNDLE_DIR}/Contents/MacOS/sirsi"
 cp "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/Info.plist" "${BUNDLE_DIR}/Contents/Info.plist"
 cp "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/PkgInfo"    "${BUNDLE_DIR}/Contents/PkgInfo"
 cp "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" "${BUNDLE_DIR}/Contents/Resources/ai.sirsi.pantheon.plist"
+# Stack Lab is a shipped, inspectable recipe surface rather than build-only
+# documentation.  Keep its contracts alongside the app they describe.
+cp -R "${PROJECT_ROOT}/contracts/stacklab" "${BUNDLE_DIR}/Contents/Resources/StackLab"
+# Never ship the historical template version from the source plist.  The
+# package and both executables are built from the requested release version.
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "${BUNDLE_DIR}/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${VERSION}" "${BUNDLE_DIR}/Contents/Info.plist"
 
 # --- Code signing ---
 if [ -n "${DEVELOPER_ID_APPLICATION:-}" ]; then
