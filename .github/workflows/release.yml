@@ -170,6 +170,24 @@ jobs:
           tar -czf "$ARCHIVE" -C dist/menubar sirsi-menubar
           gh release upload "$TAG_NAME" "$ARCHIVE"
 
+      - name: Restore login keychain as default (always)
+        if: always()
+        run: |
+          # 2026-09-27: this job runs on self-hosted macOS runners (m1-pantheon,
+          # M5). The "Import signing certificate" step sets build.keychain as the
+          # DEFAULT keychain and nothing restored it, so after every release the
+          # runner's default stayed build.keychain — a temporary, locked keychain.
+          # Any later process touching the default keychain (a watch loop, the git
+          # credential helper, assistantd) then re-prompted endlessly for a locked
+          # keychain on the developer's own Mac. Always restore the login keychain
+          # as default and drop the temp keychain — on success, failure, or skip.
+          LOGIN="$HOME/Library/Keychains/login.keychain-db"
+          if [ -f "$LOGIN" ]; then
+            security default-keychain -s "$LOGIN" 2>/dev/null || true
+            security list-keychains -d user -s "$LOGIN" "/Library/Keychains/System.keychain" 2>/dev/null || true
+          fi
+          security delete-keychain build.keychain 2>/dev/null || true
+
   windows-installer:
     name: Build Windows Installer
     # Mac-first platform roadmap (ADR-032): Windows is deferred 3–6mo, demand-gated.
