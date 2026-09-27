@@ -36,7 +36,7 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380, appearance: ColorSche
 
         // The real fetches — repo-scoped verbs honor the configured projectRoot
         // exactly as they do when the popover runs them.
-        let maat = await SirsiEngine.runResult(args: ["maat", "audit"])
+        let maatCasebook = await MaatCasebookView.fetch()
         let net = await SirsiEngine.runResult(args: ["net", "status"])
         let rtk = await SirsiEngine.runResult(args: ["rtk", "stats"])
         let ra = await SirsiEngine.runResult(args: ["ra", "status"])
@@ -71,8 +71,11 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380, appearance: ColorSche
             ("insight", AnyView(InsightView(engine: engine, preloaded: insight))),
             ("anubis-hygiene", AnyView(AnubisView(engine: engine))),
             ("horus-ops", AnyView(HorusView(engine: engine))),
-            ("maat-quality", AnyView(ResultView(engine: engine, title: "Ma'at — Quality",
-                                                args: ["maat", "audit"], preloaded: maat))),
+            // The locally installed CLI can lag this checkout during source
+            // development. Keep the visual regression screen complete with a
+            // deterministic fixture in that case; live menubar use never falls
+            // back to it and reads the local casebook projection.
+            ("maat-casebook", AnyView(MaatCasebookView(engine: engine, preloaded: maatCasebook ?? .snapshotPreview))),
             ("thoth-memory", AnyView(ThothMemoryInfoView(engine: engine))),
             ("ra-agent-fleet", AnyView(ResultView(engine: engine, title: "Ra — Agent Fleet",
                                                   args: ["ra", "status"], preloaded: ra))),
@@ -106,7 +109,7 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380, appearance: ColorSche
             // its headless evidence enough canvas to capture every section from
             // the title onward instead of centering and clipping its first rows.
             let height: CGFloat = switch shot.name {
-            case "ask-sirsi": 960
+            case "ask-sirsi", "maat-casebook": 960
             case "all-tools": 1_040
             default: 520
             }
