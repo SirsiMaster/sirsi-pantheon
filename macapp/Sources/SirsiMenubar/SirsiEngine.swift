@@ -1465,38 +1465,82 @@ final class SirsiEngine: ObservableObject {
         ]
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
         do {
-            let (data, _) = try await URLSession.shared.data(for: req)
-            struct Resp: Decodable {
-                struct Choice: Decodable {
-                    struct Msg: Decodable { let content: String?; let reasoning: String? }
-                    let message: Msg?
-                    let finishReason: String?
-                    enum CodingKeys: String, CodingKey {
-                        case message
-                        case finishReason = "finish_reason"
-                    }
-                }
-                let choices: [Choice]?
+            let (data, response) = try await URLSession.shared.data(for: req)
+            let parsed = Self.parseLocalAIResponse(data)
+            if case let .answer(content) = parsed,
+               let http = response as? HTTPURLResponse,
+               (200...299).contains(http.statusCode) {
+                return content
             }
-            guard let resp = try? JSONDecoder().decode(Resp.self, from: data),
-                  let choice = resp.choices?.first,
-                  let msg = choice.message else {
-                return "Local AI answered in a shape Sirsi didn't recognize."
-            }
-            let content = (msg.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !content.isEmpty { return content }
+            // The full live/canon pack is deliberately rich. Some small local
+            // backends reject it at their context boundary or return an error
+            // envelope rather than a choices array. Retry exactly once with the
+            // compact state pack before presenting the real provider failure.
             if includeCanon {
                 return await askLocalAI(question, includeCanon: false)
             }
-            if choice.finishReason == "length" {
-                return "Local AI used its answer budget before producing final text — ask a narrower question."
+            switch parsed {
+            case .answer:
+                return "Local AI returned an answer with an unsuccessful HTTP response."
+            case let .failure(message):
+                return "Local AI couldn't answer: \(message)"
+            case .empty:
+                return "Local AI returned no final answer. It did not expose hidden reasoning."
             }
-            return "Local AI returned no final answer. It did not expose hidden reasoning."
         } catch let e as URLError where e.code == .timedOut {
             return "Local AI is busy loading a model — try again shortly."
         } catch {
             return "Couldn't reach Local AI: \(error.localizedDescription)"
         }
+    }
+
+    private enum LocalAIResponse {
+        case answer(String)
+        case failure(String)
+        case empty
+    }
+
+    // parseLocalAIResponse understands both OpenAI's normal chat envelope and
+    // the error envelope emitted by compatible local servers. It intentionally
+    // ignores reasoning fields: Pantheon displays only a completed answer.
+    nonisolated private static func parseLocalAIResponse(_ data: Data) -> LocalAIResponse {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return .failure("the local service returned invalid JSON")
+        }
+        if let error = root["error"] {
+            if let text = error as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return .failure(text.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+            if let object = error as? [String: Any], let text = object["message"] as? String,
+               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return .failure(text.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+            return .failure("the local service returned an unspecified error")
+        }
+        if let choices = root["choices"] as? [[String: Any]], let first = choices.first,
+           let message = first["message"] as? [String: Any] {
+            if let text = message["content"] as? String,
+               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return .answer(text.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+            // A few compatible servers encode content as typed text parts.
+            if let parts = message["content"] as? [[String: Any]] {
+                let text = parts.compactMap { $0["text"] as? String }.joined()
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !text.isEmpty { return .answer(text) }
+            }
+            if first["finish_reason"] as? String == "length" {
+                return .failure("the answer reached its response limit")
+            }
+            return .empty
+        }
+        // Lightweight local servers sometimes return a direct text projection.
+        for key in ["response", "text", "content"] {
+            if let text = root[key] as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return .answer(text.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+        }
+        return .failure("the local service returned no answer field")
     }
 
     // askAboutThreads answers an NL question about the live fabric using the
