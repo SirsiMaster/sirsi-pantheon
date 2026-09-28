@@ -6,15 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
-## [0.24.28] — 2026-09-28 — DMG-first commercial release route
-**Commercial patch release.** The tagged macOS release now always publishes the
-signed, notarized, stapled Pantheon DMG when the Developer ID Application and
-Apple notarization credentials are present. A signed/notarized PKG remains an
-additive artifact when the separately managed Developer ID Installer identity
-is configured; its absence no longer prevents the complete DMG release or its
-canonical Homebrew cask publication. The route records that distinction
-explicitly in Stack Lab instead of leaving a successful product artifact
-stranded behind an unavailable installer credential.
+## [0.24.28] — 2026-09-28 — Full native release qualification route
+**Release qualification correction.** A commercial tag requires the signed,
+notarized, stapled Pantheon DMG and the same-payload signed, notarized, stapled
+PKG. Missing Developer ID Installer credentials now fail before a release
+record, cask publication, or commercial claim is made. The route records that
+requirement explicitly in Stack Lab.
 
 ---
 
