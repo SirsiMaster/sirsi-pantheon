@@ -44,12 +44,12 @@
     },
     {
       "id": "canonical-cask-publication",
-      "source": ["internal/caskrelease/cask.go", "cmd/sirsi/cask_release.go", ".github/workflows/release.yml"],
-      "tests": ["internal/caskrelease/cask_test.go", "scripts/verify-commercial-release-contract.sh"],
+      "source": ["internal/caskrelease/cask.go", "cmd/sirsi/cask_release.go", ".github/workflows/release.yml", "scripts/install.sh"],
+      "tests": ["internal/caskrelease/cask_test.go", "scripts/install.test.sh", "scripts/verify-commercial-release-contract.sh"],
       "inputs": ["exact release version", "SHA-256 of the uploaded signed DMG", "current Homebrew tap blob identity"],
-      "outputs": ["one canonical Casks/sirsi-pantheon.rb byte stream", "post-publication exact-byte verification"],
+      "outputs": ["one canonical Casks/sirsi-pantheon.rb byte stream", "Cask-linked bundled sirsi CLI", "post-publication exact-byte verification"],
       "writes": ["Homebrew tap cask record only in the credentialed tagged-release workflow"],
-      "upgrade_recipe": ["render and verify the cask as exact bytes", "publish through one workflow route", "read back the remote cask and re-verify its release tuple", "never derive a cask from a development artifact"]
+      "upgrade_recipe": ["render and verify the cask as exact bytes", "publish through one workflow route", "read back the remote cask and re-verify its release tuple", "link the CLI from the installed Pantheon.app rather than publishing a separate archive", "never derive a cask from a development artifact"]
     }
   ]
 }

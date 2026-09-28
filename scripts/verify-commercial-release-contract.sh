@@ -18,8 +18,10 @@ cask_package="$root/internal/caskrelease/cask.go"
 package_inventory="$root/internal/packageinventory/inventory.go"
 package_inventory_cmd="$root/cmd/sirsi/packageinventorycmd.go"
 package_inventory_adapter="$root/internal/packageinventorycmd/verify.go"
+bootstrap="$root/scripts/install.sh"
+bootstrap_test="$root/scripts/install.test.sh"
 
-for file in "$dmg" "$pkg" "$workflow" "$makefile" "$recipe" "$cask_cmd" "$cask_package" "$package_inventory" "$package_inventory_cmd" "$package_inventory_adapter"; do
+for file in "$dmg" "$pkg" "$workflow" "$makefile" "$recipe" "$cask_cmd" "$cask_package" "$package_inventory" "$package_inventory_cmd" "$package_inventory_adapter" "$bootstrap" "$bootstrap_test"; do
     [[ -f "$file" ]] || { echo "missing release-contract source: $file" >&2; exit 1; }
 done
 
@@ -114,6 +116,17 @@ fi
     exit 1
 }
 
+/usr/bin/jq -e '
+  [.components[] | select(.id == "canonical-cask-publication")][0] |
+  (.source | index("scripts/install.sh")) != null and
+  (.tests | index("scripts/install.test.sh")) != null and
+  (.outputs | index("Cask-linked bundled sirsi CLI")) != null and
+  (.upgrade_recipe | index("link the CLI from the installed Pantheon.app rather than publishing a separate archive")) != null
+' "$recipe" >/dev/null || {
+    echo "Stack Lab Cask component does not bind the supported bootstrap route" >&2
+    exit 1
+}
+
 # The cask is rendered and verified by one typed source route after the signed
 # DMG has been uploaded. Two independent workflow mutations can race and leave
 # Homebrew with an unverified version/hash pair.
@@ -126,6 +139,20 @@ fi
 /usr/bin/grep -Fq 'cask-release verify' "$workflow" || {
     echo "release workflow does not read back and verify published cask bytes" >&2; exit 1;
 }
+/usr/bin/grep -Fq 'binary "#{appdir}/Pantheon.app/Contents/MacOS/sirsi", target: "sirsi"' "$cask_package" || {
+    echo "canonical Cask does not link the CLI from Pantheon.app" >&2; exit 1;
+}
+for required in 'brew install --cask' 'brew upgrade --cask' 'sirsimaster/tools/sirsi-pantheon' 'Homebrew installed the Cask but did not expose its bundled CLI'; do
+    /usr/bin/grep -Fq -- "$required" "$bootstrap" || {
+        echo "supported bootstrap is missing: $required" >&2; exit 1;
+    }
+done
+for forbidden in 'goreleaser' 'sirsi-menubar_' 'sirsi-pantheon_${LATEST#v}' 'go install "github.com/${REPO}/cmd/sirsi@latest"'; do
+    if /usr/bin/grep -Fq -- "$forbidden" "$bootstrap"; then
+        echo "bootstrap retains an unsupported separate artifact route: $forbidden" >&2
+        exit 1
+    fi
+done
 if /usr/bin/grep -Fq 'Bump Homebrew Cask in tap' "$workflow" || \
    /usr/bin/grep -Fq 'perl -0pi' "$workflow" || \
    /usr/bin/grep -Fq 'git clone --depth 1' "$workflow"; then

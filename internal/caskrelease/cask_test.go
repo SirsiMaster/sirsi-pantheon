@@ -16,6 +16,9 @@ func TestRenderAndVerifyCanonicalCask(t *testing.T) {
 	if !strings.Contains(string(bytes), `version "0.24.14-beta.1"`) || !strings.Contains(string(bytes), `sha256 "`+testSHA+`"`) {
 		t.Fatalf("rendered cask did not bind release tuple:\n%s", bytes)
 	}
+	if !strings.Contains(string(bytes), `binary "#{appdir}/Pantheon.app/Contents/MacOS/sirsi", target: "sirsi"`) {
+		t.Fatalf("rendered cask does not expose the CLI from the packaged Pantheon.app:\n%s", bytes)
+	}
 	if err := Verify(bytes, in); err != nil {
 		t.Fatalf("Verify() rejected canonical bytes: %v", err)
 	}

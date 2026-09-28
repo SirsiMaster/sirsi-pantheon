@@ -53,6 +53,7 @@ func Render(in Input) ([]byte, error) {
   homepage "https://github.com/SirsiMaster/sirsi-pantheon"
 
   app "Pantheon.app"
+  binary "#{appdir}/Pantheon.app/Contents/MacOS/sirsi", target: "sirsi"
 
   uninstall quit:      "ai.sirsi.pantheon",
             launchctl: "ai.sirsi.pantheon"
