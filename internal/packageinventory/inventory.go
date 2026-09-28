@@ -149,7 +149,7 @@ func scanDirOwned(fd int, parent string, snapshot *scanSnapshot, closeFD bool) e
 			return fmt.Errorf("package inventory: symlink rejected at %q", rel)
 		}
 		wantType, ok := allowed[rel]
-		if !ok || statType(before.Mode) != wantType {
+		if !ok || statType(uint32(before.Mode)) != wantType {
 			return fmt.Errorf("package inventory: type mismatch at %q", rel)
 		}
 		flags := unix.O_RDONLY | unix.O_NOFOLLOW | unix.O_CLOEXEC
@@ -241,7 +241,7 @@ func rescanDir(fd int, parent string, snapshot *scanSnapshot) error {
 		if st.Mode&unix.S_IFMT == unix.S_IFLNK {
 			return fmt.Errorf("package inventory: late symlink at %q", rel)
 		}
-		wantType := statType(st.Mode)
+		wantType := statType(uint32(st.Mode))
 		if wantType != allowed[rel] {
 			return fmt.Errorf("package inventory: rescan type mismatch at %q", rel)
 		}
@@ -437,7 +437,7 @@ func digest(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func statType(mode uint16) string {
+func statType(mode uint32) string {
 	switch mode & unix.S_IFMT {
 	case unix.S_IFDIR:
 		return "directory"
