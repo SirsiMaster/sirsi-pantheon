@@ -97,8 +97,8 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: |
-          scripts/build-dmg.sh --version "$BUILD_VERSION" --arch arm64
-          scripts/build-pkg.sh --version "$BUILD_VERSION" --app Pantheon.app
+          scripts/build-dmg.sh --release --version "$BUILD_VERSION" --arch arm64
+          scripts/build-pkg.sh --release --version "$BUILD_VERSION" --arch arm64 --app Pantheon.app
 
       - name: Upload DMG and PKG to release
         env:

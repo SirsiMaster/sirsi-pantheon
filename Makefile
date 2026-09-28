@@ -17,7 +17,7 @@ GO_FLAGS ?= -ldflags="$(GO_LDFLAGS)"
 # docs/APPLE-NOTARIZATION-CHECKLIST.md.
 SIGN_ID ?= -
 
-.PHONY: all clean build build-debug install uninstall build-agent build-menubar bundle dmg publish test test-proof ios ios-framework android-aar brain-train brain-install
+.PHONY: all clean build build-debug install uninstall build-agent build-menubar bundle bundle-dev dmg dmg-dev pkg pkg-dev release-dmg release-pkg publish test test-proof ios ios-framework android-aar brain-train brain-install
 
 all: build
 
@@ -74,34 +74,59 @@ build-agent:
 build-menubar:
 	go build $(GO_FLAGS) -o $(BUILD_DIR)/sirsi-menubar ./cmd/sirsi-menubar/
 
-# --- macOS .app Bundle ---
+# --- macOS development .app Bundle ---
 # Creates Pantheon.app suitable for /Applications. The menu-bar surface resolves
 # its operational engine as a sibling, so both executables are one package unit.
-bundle: build build-menubar
-	@echo "📦 Building Pantheon.app bundle..."
+# This is deliberately not a commercial output: use release-dmg/release-pkg
+# for Developer-ID signed, notarized, stapled artifacts.
+bundle: bundle-dev
+
+bundle-dev: build
+	@echo "📦 Building Pantheon.app development bundle..."
 	@rm -rf Pantheon.app
 	@mkdir -p Pantheon.app/Contents/MacOS
 	@mkdir -p Pantheon.app/Contents/Resources
 	@cp $(BUILD_DIR)/sirsi Pantheon.app/Contents/MacOS/sirsi
-	@cp $(BUILD_DIR)/sirsi-menubar Pantheon.app/Contents/MacOS/sirsi-menubar
+	@if [ -f macapp/Package.swift ]; then \
+		(cd macapp && swift build -c release); \
+		cp macapp/.build/release/SirsiMenubar Pantheon.app/Contents/MacOS/sirsi-menubar; \
+	else \
+		$(MAKE) build-menubar; \
+		cp $(BUILD_DIR)/sirsi-menubar Pantheon.app/Contents/MacOS/sirsi-menubar; \
+	fi
 	@cp cmd/sirsi-menubar/bundle/Info.plist Pantheon.app/Contents/Info.plist
 	@cp cmd/sirsi-menubar/bundle/PkgInfo Pantheon.app/Contents/PkgInfo
-	@codesign --force --deep --sign "$(SIGN_ID)" Pantheon.app
+	@cp cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist Pantheon.app/Contents/Resources/ai.sirsi.pantheon.plist
+	@cp -R contracts/stacklab Pantheon.app/Contents/Resources/StackLab
+	@codesign --force --deep --sign - Pantheon.app
 	@test -x Pantheon.app/Contents/MacOS/sirsi
 	@test -x Pantheon.app/Contents/MacOS/sirsi-menubar
-	@echo "✅ Pantheon.app created (ad-hoc signed) — install with: cp -R Pantheon.app /Applications/"
+	@echo "✅ Pantheon.app development bundle created (ad-hoc signed; not for distribution)"
 
 # --- macOS DMG Installer ---
-dmg: bundle
-	@echo "📦 Creating DMG installer..."
-	scripts/build-dmg.sh --version $(VERSION) --arch $(shell uname -m)
+dmg: dmg-dev
+
+dmg-dev:
+	@echo "📦 Creating development DMG..."
+	scripts/build-dmg.sh --development --version $(VERSION) --arch $(shell uname -m)
+
+release-dmg:
+	@echo "📦 Creating commercial release DMG..."
+	scripts/build-dmg.sh --release --version $(VERSION) --arch $(shell uname -m)
 
 # --- macOS PKG Installer ---
 # Produces an installer from the same assembled Pantheon.app as the DMG.
-pkg:
-	@echo "📦 Creating PKG installer..."
-	scripts/build-dmg.sh --version $(VERSION) --arch $(shell uname -m)
-	scripts/build-pkg.sh --version $(VERSION) --app Pantheon.app
+pkg: pkg-dev
+
+pkg-dev:
+	@echo "📦 Creating development PKG..."
+	scripts/build-dmg.sh --development --version $(VERSION) --arch $(shell uname -m)
+	scripts/build-pkg.sh --development --version $(VERSION) --arch $(shell uname -m) --app Pantheon.app
+
+release-pkg:
+	@echo "📦 Creating commercial release PKG..."
+	scripts/build-dmg.sh --release --version $(VERSION) --arch $(shell uname -m)
+	scripts/build-pkg.sh --release --version $(VERSION) --arch $(shell uname -m) --app Pantheon.app
 
 # --- Horus Auto-Publish ---
 # Generates docs/build-log.html and docs/case-studies.html
