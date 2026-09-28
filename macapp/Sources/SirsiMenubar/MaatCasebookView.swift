@@ -651,6 +651,15 @@ private struct MaatSystemOneView: View {
             Text("Team \(preflight.teamID) · \(preflight.developerIdentities.count) required Developer ID identities observed")
                 .sirsiFont(.caption)
                 .foregroundStyle(.secondary)
+            if !preflight.observedNonDeveloperIdentityTypes.isEmpty {
+                Label(
+                    "Observed: \(preflight.observedNonDeveloperIdentityTypes.joined(separator: ", ")). This is not a Developer ID signing substitute.",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .sirsiFont(.caption, weight: .semibold)
+                .foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
+            }
             ForEach(preflight.verdict.floor.checks, id: \.name) { check in
                 Label(check.detail, systemImage: check.passed ? "checkmark.circle.fill" : "xmark.octagon.fill")
                     .sirsiFont(.caption)
@@ -2056,10 +2065,11 @@ private struct MaatReleaseContractPreflight: Decodable {
 // receipt. It projects public local Developer ID certificate metadata and the
 // explicit protected-workflow requirement for notarization; it never models a
 // private key or secret as UI data.
-private struct MaatReleaseCredentialPreflight: Decodable {
+struct MaatReleaseCredentialPreflight: Decodable {
     let teamID: String
     let fingerprint: String
     let developerIdentities: [MaatReleaseSigningIdentity]
+    let observedNonDeveloperIdentityTypes: [String]
     let notarizationObserved: Bool
     let verdict: MaatSystemOneVerdict
     let decisionEvidence: String
@@ -2068,9 +2078,21 @@ private struct MaatReleaseCredentialPreflight: Decodable {
         case teamID = "team_id"
         case fingerprint
         case developerIdentities = "developer_identities"
+        case observedNonDeveloperIdentityTypes = "observed_non_developer_identity_types"
         case notarizationObserved = "notarization_observed"
         case verdict
         case decisionEvidence = "decision_evidence"
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        teamID = try values.decode(String.self, forKey: .teamID)
+        fingerprint = try values.decode(String.self, forKey: .fingerprint)
+        developerIdentities = try values.decodeIfPresent([MaatReleaseSigningIdentity].self, forKey: .developerIdentities) ?? []
+        observedNonDeveloperIdentityTypes = try values.decodeIfPresent([String].self, forKey: .observedNonDeveloperIdentityTypes) ?? []
+        notarizationObserved = try values.decodeIfPresent(Bool.self, forKey: .notarizationObserved) ?? false
+        verdict = try values.decode(MaatSystemOneVerdict.self, forKey: .verdict)
+        decisionEvidence = try values.decodeIfPresent(String.self, forKey: .decisionEvidence) ?? ""
     }
 
     static func decode(_ raw: String) -> MaatReleaseCredentialPreflight? {
@@ -2079,7 +2101,7 @@ private struct MaatReleaseCredentialPreflight: Decodable {
     }
 }
 
-private struct MaatReleaseSigningIdentity: Decodable, Identifiable {
+struct MaatReleaseSigningIdentity: Decodable, Identifiable {
     let kind: String
     let name: String
     let fingerprint: String
