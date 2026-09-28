@@ -76,11 +76,14 @@ trap cleanup_payload_root EXIT
 PAYLOAD_APP_DIR="$PAYLOAD_ROOT/Applications"
 PKG_PATH="$BUILD_DIR/$PKG_NAME"
 mkdir -p "$PAYLOAD_APP_DIR"
-# The payload staging tree is generated for this package only.  Do not carry
-# Finder/resource-fork metadata across volumes: pkgbuild otherwise serializes
-# it as visible AppleDouble `._*` files in the installer payload.
+# The payload staging tree is generated for this package only.  `ditto` with
+# COPYFILE_DISABLE prevents Finder/resource-fork metadata from crossing the
+# package boundary. Do not broadly clear xattrs here: macOS may attach
+# protected provenance metadata that is unrelated to the payload and cannot
+# safely be mutated by a package build. The pre- and post-pkgbuild AppleDouble
+# scans below are the fail-closed proof that no transport metadata entered the
+# installer payload.
 COPYFILE_DISABLE=1 /usr/bin/ditto "$APP_PATH" "$PAYLOAD_APP_DIR/Pantheon.app"
-/usr/bin/xattr -cr "$PAYLOAD_ROOT"
 if /usr/bin/find "$PAYLOAD_ROOT" -type f -name '._*' -print -quit | /usr/bin/grep -q .; then
     echo "ERROR: refusing PKG payload containing AppleDouble metadata." >&2
     exit 1
