@@ -81,8 +81,14 @@ struct PantheonControlCenterView: View {
             engine.loadRunReport()
             await engine.diagnose()
             await engine.loadRouterBoard()
-            await engine.fetchVitals()
-            await engine.fetchAutonomous()
+            // Keep the panel's first actionable state lean. These two probes
+            // each start a CLI child, but neither value appears on Home: Apollo
+            // owns live estate telemetry and the autonomous control owns its
+            // own current mode. Starting them on every panel open made a simple
+            // click queue unrelated work behind health/router evidence and
+            // created needless process and memory churn. Their destination
+            // screens load the same canonical values when the operator opens
+            // them, so no state is hidden or silently assumed here.
         }
     }
 
