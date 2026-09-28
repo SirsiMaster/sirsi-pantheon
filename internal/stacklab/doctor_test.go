@@ -237,6 +237,32 @@ func TestRun_Undeclared(t *testing.T) {
 	}
 }
 
+func TestRun_SelfPinIsNotAnUndeclaredPeer(t *testing.T) {
+	r := newMockReader()
+	self := "stacklab.wing.ra-horus-fabric"
+	content := validWingJSON(self)
+	r.putFile("SirsiMaster/sirsi-pantheon", "main", wingPath("ra-horus-fabric"), content)
+	r.putFile(RegistryRepo, "main", "wings/pinned/ra-horus-fabric-wing-v1.json", content)
+	r.putDir(RegistryRepo, "main", "wings/pinned", []string{"ra-horus-fabric-wing-v1.json"})
+
+	rep := Run(r, nil, map[string]string{"ra-horus-fabric": "SirsiMaster/sirsi-pantheon"}, self)
+	if !rep.Clean() {
+		t.Fatalf("a validated router wing's exact origin/pin record is not an undeclared peer: findings=%+v unknown=%v", rep.Findings, rep.Unknown)
+	}
+}
+
+func TestRun_SelfWingStillRequiresAPin(t *testing.T) {
+	r := newMockReader()
+	self := "stacklab.wing.ra-horus-fabric"
+	r.putFile("SirsiMaster/sirsi-pantheon", "main", wingPath("ra-horus-fabric"), validWingJSON(self))
+	r.putDir(RegistryRepo, "main", "wings/pinned", nil)
+
+	rep := Run(r, nil, map[string]string{"ra-horus-fabric": "SirsiMaster/sirsi-pantheon"}, self)
+	if len(rep.Findings) != 1 || rep.Findings[0].WingID != self || rep.Findings[0].Kind != KindUnpinned {
+		t.Fatalf("a local authority wing must require its registry pin, got findings=%+v unknown=%v", rep.Findings, rep.Unknown)
+	}
+}
+
 func TestRun_UnknownMapping_IsStrandedUnbuilt(t *testing.T) {
 	r := newMockReader()
 	r.putDir(RegistryRepo, "main", "wings/pinned", nil)

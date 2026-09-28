@@ -34,24 +34,17 @@ const RegistryPinsDir = "wings/pinned"
 // to do with the lane. Doctor reports an unmapped lane as stranded/unbuilt
 // with a "mapping unknown" detail rather than fabricating a repo.
 var LaneRepoMap = map[string]string{
-	// io-connect split 2026-09-26: SirsiMaster/sirsi-io-connect renamed to
-	// sirsi-hermes (GitHub redirects the old URL); the new sirsi-photon repo
-	// carries the hardware/NIC stack split out of the same lane.
-	"io-connect": "SirsiMaster/sirsi-hermes",
-	"photon":     "SirsiMaster/sirsi-photon",
-	// TODO(ADR-066 §6): sne-engine — inference-engine repo name not confirmed
-	//   in this session (memory names the *project* "Sirsi Inference Engine"
-	//   but not its GitHub repo).
-	// TODO(ADR-066 §6): pantheon.pt-wing-001 — sirsi-pantheon already carries
-	//   a legacy router record (docs/router-service/stacklab/), while the
-	//   canonical current record lives under contracts/stacklab/.
-	//   at a non-canonical path, and the live registry additionally pins a
-	//   THIRD record, pantheon-pt-wing-001.catalog.json (id
-	//   stacklab.wing.pantheon-pt-wing-001.catalog) that is itself
-	//   undeclared in today's roster — confirm the intended id/repo pairing
-	//   against ADR-066 §6 before mapping this lane.
-	// TODO(ADR-066 §6): hardware-estate — owning repo unknown (task's own
-	//   mapping table marks it "?").
+	// Current names and owning origins were read from their origin/main wing
+	// records on 2026-09-28. `io-connect` was superseded by the distinct
+	// Hermes transport and Photon hardware wings; retaining the retired name
+	// here would turn a schema-invalid historical record into the doctor’s
+	// authority.
+	"hermes":               "SirsiMaster/sirsi-hermes",
+	"photon":               "SirsiMaster/sirsi-photon",
+	"hardware-estate":      "SirsiMaster/SirsiNexusApp",
+	"maat":                 "SirsiMaster/sirsi-pantheon",
+	"pantheon.pt-wing-001": "SirsiMaster/sirsi-pantheon",
+	"sne-engine":           "SirsiMaster/sirsi-inference",
 }
 
 // Finding is one ADR-066 taxonomy violation for one declared peer wing (or,
@@ -134,10 +127,20 @@ func loadRegistryPins(reader RemoteReader) (map[string]registryPin, []string) {
 // record (schema-valid, per laneRepoMap), a matching registry pin, and
 // roster membership both ways. reader must never be given a working tree or
 // mirror — every call reads a ref (A35).
-func Run(reader RemoteReader, roster []string, laneRepoMap map[string]string) Report {
+// Run evaluates the supplied peer roster. selfWingIDs are local authority
+// records rather than peers: they are checked for the same origin/pin
+// authority as a peer, but their matching pin must not be misclassified as
+// undeclared. Keeping this variadic preserves the pure three-argument API
+// used by focused tests while the command supplies its validated router-wing
+// identity.
+func Run(reader RemoteReader, roster []string, laneRepoMap map[string]string, selfWingIDs ...string) Report {
 	rosterSet := make(map[string]bool, len(roster))
 	for _, id := range roster {
 		rosterSet[id] = true
+	}
+	selfSet := make(map[string]bool, len(selfWingIDs))
+	for _, id := range selfWingIDs {
+		selfSet[id] = true
 	}
 
 	sortedRoster := append([]string(nil), roster...)
@@ -148,7 +151,24 @@ func Run(reader RemoteReader, roster []string, laneRepoMap map[string]string) Re
 	pins, pinsUnknown := loadRegistryPins(reader)
 	rep.Unknown = append(rep.Unknown, pinsUnknown...)
 
-	for _, wingID := range sortedRoster {
+	// Check declared peers plus the local authority record. A self record is
+	// intentionally absent from Report.Roster — the roster remains a peer
+	// projection — but it cannot be allowed to bypass ADR-066 origin/pin
+	// verification merely because it is the roster source.
+	checkSet := make(map[string]bool, len(rosterSet)+len(selfSet))
+	for id := range rosterSet {
+		checkSet[id] = true
+	}
+	for id := range selfSet {
+		checkSet[id] = true
+	}
+	checkIDs := make([]string, 0, len(checkSet))
+	for id := range checkSet {
+		checkIDs = append(checkIDs, id)
+	}
+	sort.Strings(checkIDs)
+
+	for _, wingID := range checkIDs {
 		// A35 hardening: a malformed roster entry must never become an API
 		// path segment (contracts/stacklab/<lane>-wing-v1.json,
 		// wings/pinned/<lane>...). Reject it before laneOf/wingPath ever run.
@@ -197,7 +217,7 @@ func Run(reader RemoteReader, roster []string, laneRepoMap map[string]string) Re
 	}
 
 	for wingID, pin := range pins {
-		if rosterSet[wingID] {
+		if rosterSet[wingID] || selfSet[wingID] {
 			continue
 		}
 		rep.Findings = append(rep.Findings, Finding{wingID, KindUndeclared,
