@@ -109,6 +109,34 @@ func TestBuildGivesFailedSystemOneFloorAThreeLevelRecoveryRoute(t *testing.T) {
 	}
 }
 
+func TestBuildRoutesKnownSystemOneRepairThroughClosedMaatAction(t *testing.T) {
+	verdict, err := maat.Screen(maat.SystemOneScreen{
+		Subject:       maat.VerdictSubject{Kind: "host", Repo: "m5", Ref: "diagnostic", HeadSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		FeatherWeight: 72, Confidence: 1,
+		Floor: maat.FloorResult{Passed: true, Checks: []maat.FloorCheck{{Name: "diagnostic observation", Passed: true}}},
+		Findings: []maat.ScreenFinding{{
+			ID: "disabled-managed-labels", Severity: "block", Category: "host-health", Claim: "managed labels disabled", Evidence: "diagnostic:sha256=host:disabled", Confidence: 1,
+			RepairID: maat.SystemOneRepairLaunchdDisabled,
+		}},
+		Model: maat.ModelStamp{Provider: "maat-local:deterministic", Version: "v1", Local: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const evidence = "maat-system-one:sha256=host-disabled"
+	view := Build([]maat.Decision{{
+		Time: "2026-09-28T04:00:00Z", Host: "m5", Kind: "system one screen", Requester: "sirsi maat triage",
+		Assessed: "host diagnostic", Determination: string(verdict.Gate), Why: "managed labels disabled", Evidence: evidence, SystemOne: &verdict,
+	}})
+	if len(view.Cases) != 1 || view.Cases[0].NextAction == nil {
+		t.Fatalf("System One repair projection = %+v", view)
+	}
+	action := view.Cases[0].NextAction
+	if action.Kind != "maat_repair" || action.ActionID != maat.SystemOneRepairLaunchdDisabled || action.Evidence != evidence || !action.RequiresConfirmation || len(action.Steps) != 3 {
+		t.Fatalf("closed repair action = %+v", action)
+	}
+}
+
 func TestBuildProjectsCalibrationAsCompletedEvidenceWithBothLinks(t *testing.T) {
 	verdict, err := maat.Screen(maat.SystemOneScreen{
 		Subject:       maat.VerdictSubject{Kind: "commit", Repo: "SirsiMaster/sirsi-pantheon", Ref: "main", HeadSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},

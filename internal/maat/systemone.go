@@ -33,6 +33,12 @@ const (
 	GateEscalate GateDecision = "escalate"
 )
 
+// SystemOneRepairLaunchdDisabled is a closed reference to Ma'at's one
+// currently implemented bounded host repair. It is deliberately an identifier,
+// not a command: Casebook consumers can offer the known workflow, but never
+// execute a producer-supplied string.
+const SystemOneRepairLaunchdDisabled = "launchd-disabled"
+
 // VerdictSubject pins a screen to the immutable change it assessed. A result
 // cannot be reused after its head changes.
 type VerdictSubject struct {
@@ -55,6 +61,10 @@ type ScreenFinding struct {
 	Evidence   string  `json:"evidence"`
 	Confidence float64 `json:"confidence"`
 	FixHint    string  `json:"fix_hint,omitempty"`
+	// RepairID is optional and closed. It allows a System One host screen to
+	// route a finding to a Ma'at-owned bounded repair without making FixHint or
+	// any imported screen content executable input.
+	RepairID string `json:"repair_id,omitempty"`
 }
 
 // FloorCheck is deterministic evidence. A screen is never allowed to turn a
@@ -497,6 +507,9 @@ func validateFinding(finding ScreenFinding) error {
 	}
 	if finding.Line < 0 {
 		return fmt.Errorf("maat system one: finding line cannot be negative")
+	}
+	if !oneOf(finding.RepairID, "", SystemOneRepairLaunchdDisabled) {
+		return fmt.Errorf("maat system one: unsupported closed repair id %q", finding.RepairID)
 	}
 	return validateConfidence("finding", finding.Confidence)
 }

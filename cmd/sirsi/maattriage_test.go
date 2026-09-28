@@ -34,6 +34,27 @@ func TestMaatHostSystemOneScreenMapsLiveDiagnosticsToClosedEvidence(t *testing.T
 	}
 }
 
+func TestMaatHostSystemOneScreenMapsOnlyKnownDisabledOverrideToClosedRepair(t *testing.T) {
+	report := &guard.DoctorReport{Timestamp: time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC), Score: 63, Findings: []guard.DiagnosticFinding{
+		{Check: maatRepairLaunchdDisabledCheck, Severity: guard.SeverityCritical, Message: "managed labels are disabled", Fix: "bounded native recovery"},
+		{Check: "Disk Space", Severity: guard.SeverityCritical, Message: "disk is full", Fix: "sirsi clean --include-caution"},
+	}}
+	screen, _, err := maatHostSystemOneScreen(report, "m5", 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repairs := map[string]string{}
+	for _, finding := range screen.Findings {
+		repairs[finding.Claim] = finding.RepairID
+	}
+	if repairs["managed labels are disabled"] != maat.SystemOneRepairLaunchdDisabled {
+		t.Fatalf("disabled override repair = %q, want closed Ma'at repair", repairs["managed labels are disabled"])
+	}
+	if repairs["disk is full"] != "" {
+		t.Fatalf("generic doctor Fix became executable repair id %q", repairs["disk is full"])
+	}
+}
+
 func TestMaatHostSystemOneScreenRejectsMissingAuthority(t *testing.T) {
 	if _, _, err := maatHostSystemOneScreen(nil, "m5", 0); err == nil {
 		t.Fatal("nil diagnostic report accepted")

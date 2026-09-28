@@ -74,4 +74,23 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertEqual(read.telemetry?.tokensPerSec, 31.5)
         XCTAssertEqual(read.telemetry?.estates.map(\.id), ["gpu", "neural-engine"])
     }
+
+    func testMaatClosedRepairActionDecodesWithoutAcceptingACommand() throws {
+        let raw = #"""
+        {
+          "kind": "maat_repair",
+          "action_id": "launchd-disabled",
+          "title": "Restore the managed launchd labels",
+          "detail": "bounded repair",
+          "evidence": "maat-system-one:sha256=fixture",
+          "requires_confirmation": true
+        }
+        """#.data(using: .utf8)!
+
+        let action = try JSONDecoder().decode(MaatCaseNextAction.self, from: raw)
+
+        XCTAssertEqual(action.kind, "maat_repair")
+        XCTAssertEqual(action.actionID, "launchd-disabled")
+        XCTAssertFalse(action.detail.contains("launchctl"))
+    }
 }

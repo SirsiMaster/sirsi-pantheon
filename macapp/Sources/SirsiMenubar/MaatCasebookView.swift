@@ -1420,6 +1420,7 @@ private struct MaatCaseDetailView: View {
 
     private var confirmationTitle: String {
         switch entry.nextAction?.kind {
+        case "maat_repair": return "Apply Ma'at's bounded recovery?"
         case "owner_acceptance": return "Record this owner acceptance?"
         case "system_one_floor_recovery": return "Record this recovery review?"
         default: return "Create an owner review?"
@@ -1428,6 +1429,7 @@ private struct MaatCaseDetailView: View {
 
     private var confirmationButton: String {
         switch entry.nextAction?.kind {
+        case "maat_repair": return "Apply bounded recovery"
         case "owner_acceptance": return "Record owner acceptance"
         case "system_one_floor_recovery": return "Record recovery review"
         default: return "Create owner review"
@@ -1435,7 +1437,9 @@ private struct MaatCaseDetailView: View {
     }
 
     private var confirmationMessage: String {
-        entry.nextAction?.kind == "owner_acceptance"
+        entry.nextAction?.kind == "maat_repair"
+            ? "Ma'at will re-check the exact managed disabled labels, change only the bounded verified set, re-check the same diagnostic, and retain the outcome. It will not touch unrelated services."
+            : entry.nextAction?.kind == "owner_acceptance"
             ? "This records an owner conclusion for the exact retained evidence. It does not change or claim to repair the system."
             : entry.nextAction?.kind == "system_one_floor_recovery"
                 ? "This records the evidence-bound recovery review after you complete the stated correction. It does not run a repair; the case remains open until the new evidence is accepted."
@@ -1461,13 +1465,13 @@ private struct MaatCaseDetailView: View {
             Button {
                 confirmAction = true
             } label: {
-                Label(confirmationButton, systemImage: action.kind == "owner_acceptance" ? "checkmark.circle.fill" : "arrow.triangle.branch")
+                Label(confirmationButton, systemImage: action.kind == "maat_repair" ? "wrench.and.screwdriver.fill" : action.kind == "owner_acceptance" ? "checkmark.circle.fill" : "arrow.triangle.branch")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .tint(gold)
             .disabled(actionInFlight || (action.kind == "owner_acceptance" && conclusion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
-            .accessibilityHint("Records an evidence-bound owner decision; it does not repair the system.")
+            .accessibilityHint(action.kind == "maat_repair" ? "Runs only Ma'at's named bounded recovery after confirmation, then retains its post-repair evidence." : "Records an evidence-bound owner decision; it does not repair the system.")
             if let actionResult {
                 Label(actionResult.summary, systemImage: actionResult.ok ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                     .sirsiFont(.caption)
@@ -1527,7 +1531,14 @@ private struct MaatCaseDetailView: View {
         guard let action = entry.nextAction else { return }
         actionInFlight = true
         actionError = nil
-        if action.kind == "owner_acceptance" {
+        if action.kind == "maat_repair" {
+            guard action.actionID == "launchd-disabled" else {
+                actionError = "Ma'at refused an unknown repair reference. No system state changed."
+                actionInFlight = false
+                return
+            }
+            actionResult = await SirsiEngine.runResult(args: ["maat", "repair", "launchd-disabled", "--confirm"])
+        } else if action.kind == "owner_acceptance" {
             actionResult = await SirsiEngine.runResult(args: ["maat", "accept-resolution", "--evidence", action.evidence, "--note", conclusion.trimmingCharacters(in: .whitespacesAndNewlines), "--confirm"])
         } else {
             let check = entry.resource.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? entry.kind : entry.resource
@@ -1908,6 +1919,7 @@ private struct MaatReleaseContractPreflight: Decodable {
 
 struct MaatCaseNextAction: Decodable {
     let kind: String
+    let actionID: String
     let title: String
     let detail: String
     let evidence: String
@@ -1916,11 +1928,13 @@ struct MaatCaseNextAction: Decodable {
 
     enum CodingKeys: String, CodingKey {
         case kind, title, detail, evidence, steps
+        case actionID = "action_id"
         case requiresConfirmation = "requires_confirmation"
     }
 
-    init(kind: String, title: String, detail: String, evidence: String, requiresConfirmation: Bool, steps: [MaatResolutionStep] = []) {
+    init(kind: String, actionID: String = "", title: String, detail: String, evidence: String, requiresConfirmation: Bool, steps: [MaatResolutionStep] = []) {
         self.kind = kind
+        self.actionID = actionID
         self.title = title
         self.detail = detail
         self.evidence = evidence
@@ -1931,6 +1945,7 @@ struct MaatCaseNextAction: Decodable {
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         kind = try values.decodeIfPresent(String.self, forKey: .kind) ?? "owner_review"
+        actionID = try values.decodeIfPresent(String.self, forKey: .actionID) ?? ""
         title = try values.decodeIfPresent(String.self, forKey: .title) ?? "Review the retained evidence"
         detail = try values.decodeIfPresent(String.self, forKey: .detail) ?? "Record a new evidence-bound owner decision."
         evidence = try values.decodeIfPresent(String.self, forKey: .evidence) ?? ""

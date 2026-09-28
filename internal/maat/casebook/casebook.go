@@ -27,11 +27,15 @@ const (
 	PriorityNormal Priority = "normal"
 )
 
-// ResolutionPath is the non-authorizing route that prevents an open Ma'at
-// case from becoming a passive status. It can request a new producing decision
-// or a deliberately confirmed owner conclusion, but never performs a repair.
+// ResolutionPath is the controlled route that prevents an open Ma'at case from
+// becoming a passive status. It can request a new producing decision, a
+// deliberately confirmed owner conclusion, or a named closed repair registry
+// entry; it never carries an executable command.
 type ResolutionPath struct {
-	Kind                 string           `json:"kind"`
+	Kind string `json:"kind"`
+	// ActionID is a closed Ma'at action identifier, never a command. Native
+	// surfaces may map it only to a matching in-process or CLI registry entry.
+	ActionID             string           `json:"action_id,omitempty"`
 	Title                string           `json:"title"`
 	Detail               string           `json:"detail"`
 	Evidence             string           `json:"evidence,omitempty"`
@@ -257,11 +261,44 @@ func resolutionPath(c Case) *ResolutionPath {
 			Evidence: c.Evidence,
 		}
 	}
+	if repair, ok := systemOneRepair(c.SystemOne, c.Evidence); ok {
+		return repair
+	}
 	return &ResolutionPath{
 		Kind: "owner_review", Title: "Create an evidence-bound owner review",
 		Detail:   "Record the exact evidence and owner review before accepting a conclusion. Ma'at does not close an open case by assumption.",
 		Evidence: c.Evidence,
 	}
+}
+
+// systemOneRepair projects only a singular, closed Ma'at repair reference. A
+// screen with no repair, a mismatched reference, or multiple independent
+// repairs still receives the evidence-bound review route above; Casebook never
+// turns a producer hint into an executable command.
+func systemOneRepair(verdict *maat.MaatVerdict, evidence string) (*ResolutionPath, bool) {
+	if verdict == nil {
+		return nil, false
+	}
+	ids := map[string]bool{}
+	for _, finding := range verdict.Findings {
+		if finding.RepairID != "" {
+			ids[finding.RepairID] = true
+		}
+	}
+	if len(ids) != 1 || !ids[maat.SystemOneRepairLaunchdDisabled] {
+		return nil, false
+	}
+	return &ResolutionPath{
+		Kind: "maat_repair", ActionID: maat.SystemOneRepairLaunchdDisabled,
+		Title: "Restore the managed launchd labels", Evidence: evidence,
+		Detail:               "Ma'at will re-read the currently disabled Sirsi labels, restore only the verified managed set, re-check the same diagnostic, and retain the outcome. Then create a fresh System One screen.",
+		RequiresConfirmation: true,
+		Steps: []ResolutionStep{
+			{Level: 1, Title: "Review the retained finding", Detail: "Confirm this screen describes the disabled managed LaunchAgent state.", RequiresConfirmation: true},
+			{Level: 2, Title: "Apply Ma'at's bounded recovery", Detail: "Enable and bootstrap only labels that are both managed and disabled at preflight.", RequiresConfirmation: true},
+			{Level: 3, Title: "Re-screen the Mac", Detail: "Inspect the recorded recovery receipt, then create a new System One screen so the original observation is not treated as current."},
+		},
+	}, true
 }
 
 func failedFloorRecovery(c Case) *ResolutionPath {

@@ -115,6 +115,17 @@ func TestSystemOneRejectsMalformedInputAndForgedEscalation(t *testing.T) {
 	}
 }
 
+func TestSystemOneRejectsUnknownClosedRepairID(t *testing.T) {
+	input := validSystemOneInput()
+	input.Findings = []ScreenFinding{{
+		ID: "host-health", Severity: "major", Category: "host-health", Claim: "fixture", Evidence: "fixture:sha256=1", Confidence: 1,
+		RepairID: "run-anything",
+	}}
+	if _, err := Screen(input); err == nil {
+		t.Fatal("accepted unknown repair id")
+	}
+}
+
 func TestSystemOneCanonicalizesInputOrderAndRejectsDuplicateFindingIDs(t *testing.T) {
 	input := validSystemOneInput()
 	input.Floor.Checks = []FloorCheck{{Name: "go vet", Passed: true}, {Name: "gofmt", Passed: true}}
