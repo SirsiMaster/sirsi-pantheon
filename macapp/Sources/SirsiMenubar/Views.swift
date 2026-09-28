@@ -993,14 +993,26 @@ struct HorusView: View {
                 }
             }
             Divider()
-            HStack {
-                Button { Task { await engine.diagnose(force: true) } } label: {
-                    Label("Re-check", systemImage: "arrow.clockwise")
-                }.disabled(engine.healthLoading)
-                if engine.healthLoading { ProgressView().controlSize(.small).padding(.leading, 4) }
-                Spacer()
+            if engine.healthLoading {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Rechecking this Mac…")
+                        .sirsiFont(.caption, weight: .semibold)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+            } else {
+                SnapshotActionButton {
+                    Task { await engine.diagnose(force: true) }
+                } label: {
+                    Label("Recheck this Mac", systemImage: "arrow.clockwise")
+                }
+                .accessibilityHint("Runs a fresh local Horus health observation. It does not repair, terminate, or install anything.")
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
             }
-            .padding(.horizontal, 14).padding(.vertical, 10)
         }
         .navigationTitle("Horus — Ops")
     }
