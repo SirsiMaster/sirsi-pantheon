@@ -52,7 +52,7 @@ name** at all times.
 - **project** — the product or domain the thread serves. **Every** thread carries
   one, including infrastructure lanes (owner decision 2026-09-28): `router`,
   `finalwishes`, `pantheon`, `hermes`, `photon`, `apollo`, `nexus`, `deck`,
-  `fabric` (home/overseer), `governance` (SSA), `maat`, …
+  `home` (fabric/overseer, e.g. claude-home), `governance` (SSA), `maat`, …
 - **machine** — the host, **gleaned by the router from the machine's designated
   name** (owner decision 2026-09-28): the hostname prefix before the first `.`,
   lowercased. `M1.local` → `m1`, `M5.local` → `m5`; future machines self-name on
@@ -61,7 +61,7 @@ name** at all times.
 - **task** — optional. A specific workstream when one lane runs parallel tasks
   (`fw-r02`, `hermes-releases`). Absent for a lane's single default thread.
 
-Examples: `ra-router-m1`, `claude-home-fabric-m1`, `sirsi-governance-m5`,
+Examples: `ra-router-m1`, `claude-home-m1`, `sirsi-governance-m5`,
 `codex-finalwishes-m5`, `claude-finalwishes-m1-fw-r02`, `hermes-photon-m5`.
 
 ### 2. The hierarchy behind the name (router-maintained)
@@ -123,7 +123,7 @@ preserved). Illustrative:
 | current id | → canonical name |
 |---|---|
 | `ra` | `ra-router-m1` |
-| `claude-home` | `claude-home-fabric-m1` |
+| `claude-home` (both machines) | `claude-home-m1` + `claude-home-m5` (agent=claude, project=home; dev-root seats) |
 | `sirsi-software-admin` | `sirsi-governance-m5` |
 | `claude-finalwishes-m1` | `claude-finalwishes-m1` (already close; formalized) |
 | `claude-finalwishes-m5` | `claude-finalwishes-m5` |
@@ -177,7 +177,7 @@ flowchart TD
 | Question | Options | Recommendation |
 |---|---|---|
 | Who authors the name? | (a) lane self-names, router validates; (b) router constructs from components | **(b)** — owner directive; a lane cannot self-name into non-conformance |
-| Do infra lanes get a project slot? | (a) bare singletons; (b) project slot for all | **(b)** — owner decision; `ra-router-m1`, `claude-home-fabric-m1`, `sirsi-governance-m5` |
+| Do infra lanes get a project slot? | (a) bare singletons; (b) project slot for all | **(b)** — owner decision; `ra-router-m1`, `claude-home-m1`, `sirsi-governance-m5` |
 | Machine slot source | (a) owner allowlist; (b) gleaned from host designated name, bound to machine-id | **(b)** — owner decision; `M1.local`→`m1`, verified against ADR-067 machine-id |
 | Enforcement rollout | (a) hard-reject day one; (b) hand out conformant names + doctor-flag, then refuse post-migration | **(b)** — owner: mandate registration to a handed-out conformant name; migrate, then refuse |
 | Rename semantics | (a) new id (strands old); (b) relabel same thread-id | **(b)** — thread-id durable; mail never strands (the whole point) |
