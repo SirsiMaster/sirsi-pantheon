@@ -41,7 +41,7 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 	want := []string{
 		"maat-canon", "maat-casebook", "maat-cli", "maat-confirmed-diagnostic-repair", "maat-core", "maat-coverage",
 		"maat-decision-journal", "maat-guided-managed-repair", "maat-horus-surface", "maat-knowledge-surface", "maat-mcp-surface", "maat-native-resolution-surface", "maat-pipeline", "maat-pulse-proof-platform",
-		"maat-host-health-screen", "maat-release-contract-preflight", "maat-scheduler", "maat-system-one-screen", "maat-terminal-console-surface", "maat-wing-contract", "stacklab-apollo-run-planner",
+		"maat-host-health-screen", "maat-release-contract-preflight", "maat-release-credential-preflight", "maat-scheduler", "maat-system-one-screen", "maat-terminal-console-surface", "maat-wing-contract", "stacklab-apollo-run-planner",
 	}
 	got := make([]string, 0, len(recipe.Components))
 	for _, component := range recipe.Components {
@@ -101,6 +101,21 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 	}
 	if !contains(horus.Inputs, "MaatKnowledgeProducer") || !contains(horus.Outputs, "GET /api/maat/knowledge with the same sensitivity-filtered local view as CLI and MCP") {
 		t.Fatalf("Ma'at Horus recipe omits the shared knowledge projection: %+v", horus)
+	}
+	credentials, ok := componentsByID["maat-release-credential-preflight"]
+	if !ok {
+		t.Fatal("Ma'at release credential preflight component is missing")
+	}
+	for _, path := range []string{
+		"internal/maat/credentialpreflight.go",
+		"cmd/sirsi/maatpreflight.go",
+		"macapp/Sources/SirsiMenubar/MaatCasebookView.swift",
+		"internal/maat/credentialpreflight_test.go",
+		"scripts/verify-maat-credential-preflight-contract.sh",
+	} {
+		if !contains(append(append([]string{}, credentials.Source...), credentials.Tests...), path) {
+			t.Fatalf("Ma'at credential recipe omits canonical surface %q: %+v", path, credentials)
+		}
 	}
 	wingRaw, err := os.ReadFile(filepath.Join("..", "..", "contracts", "stacklab", "maat-wing-v1.json"))
 	if err != nil {
