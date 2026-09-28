@@ -38,9 +38,26 @@ for needle in \
   '["stacklab", "catalog", "--json"]' \
   'StackLabCatalog' \
   'Replaceable product recipes' \
-  'Local source contracts · remote authority remains in Doctor'; do
+  'Local source contracts · remote authority remains in Doctor' \
+  'stacklab.recipe.pantheon-release-artifact' \
+  'Preflight this release contract' \
+  'Open Ma'\''at release preflight' \
+  'opensReleasePreflight: true' \
+  'Pantheon opens the exact preflight control' \
+  'It does not build, package, sign, notarize, publish, or authorize a release.'; do
   /usr/bin/grep -Fq "$needle" "$catalog_view" || {
     echo "Stack Lab native catalog contract missing: $needle" >&2
+    exit 1
+  }
+done
+
+for needle in \
+  'ScrollViewReader' \
+  'maat-release-preflight' \
+  'opensReleasePreflight' \
+  'didOpenReleasePreflight'; do
+  /usr/bin/grep -Fq "$needle" "$root/macapp/Sources/SirsiMenubar/MaatCasebookView.swift" || {
+    echo "Ma'at release-preflight focus contract missing: $needle" >&2
     exit 1
   }
 done

@@ -44,4 +44,20 @@ func TestNativeStackLabSurfaceRecipeIsComplete(t *testing.T) {
 			t.Fatalf("recipe references missing path %q: %v", listed, statErr)
 		}
 	}
+	nativeCatalog := recipe.Components[1]
+	if !containsNativeRecipeText(nativeCatalog.Outputs, "typed native handoff from the Pantheon release recipe to Ma'at's exact selected-project source-only release-contract preflight control") {
+		t.Fatalf("catalog does not declare the bounded release-preflight handoff: %+v", nativeCatalog.Outputs)
+	}
+	if !containsNativeRecipeText(nativeCatalog.UpgradeRecipe, "route the known Pantheon release recipe directly to Ma'at's exact bounded preflight control; never execute recipe strings in Swift") {
+		t.Fatalf("catalog does not preserve typed release handoff authority: %+v", nativeCatalog.UpgradeRecipe)
+	}
+}
+
+func containsNativeRecipeText(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

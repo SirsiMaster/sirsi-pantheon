@@ -11,12 +11,15 @@ struct MaatWorkspaceView: View {
     @State private var section: MaatWorkspaceSection = .systemOne
     let preloadedCasebook: MaatCasebookProjection?
     let preloadedKnowledge: MaatKnowledgeProjection?
+    let opensReleasePreflight: Bool
 
     init(engine: SirsiEngine, preloadedCasebook: MaatCasebookProjection? = nil,
-         preloadedKnowledge: MaatKnowledgeProjection? = nil) {
+         preloadedKnowledge: MaatKnowledgeProjection? = nil,
+         opensReleasePreflight: Bool = false) {
         self.engine = engine
         self.preloadedCasebook = preloadedCasebook
         self.preloadedKnowledge = preloadedKnowledge
+        self.opensReleasePreflight = opensReleasePreflight
     }
 
     var body: some View {
@@ -50,7 +53,8 @@ struct MaatWorkspaceView: View {
 
             switch section {
             case .systemOne:
-                MaatSystemOneView(engine: engine, section: $section, preloaded: preloadedCasebook)
+                MaatSystemOneView(engine: engine, section: $section, preloaded: preloadedCasebook,
+                                  opensReleasePreflight: opensReleasePreflight)
             case .decisions:
                 MaatCasebookView(engine: engine, preloaded: preloadedCasebook, showsBackBar: false)
             case .knowledge:
@@ -87,6 +91,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
 private struct MaatSystemOneView: View {
     @ObservedObject var engine: SirsiEngine
     @Binding var section: MaatWorkspaceSection
+    @Environment(\.snapshotMode) private var snapshotMode
     @State private var casebook: MaatCasebookProjection?
     @State private var loading: Bool
     @State private var loadError: String?
@@ -110,12 +115,16 @@ private struct MaatSystemOneView: View {
     @State private var hostTriageInFlight = false
     @State private var hostTriageResult: CommandResult?
     @State private var hostTriageError: String?
+    @State private var didOpenReleasePreflight = false
+    let opensReleasePreflight: Bool
 
-    init(engine: SirsiEngine, section: Binding<MaatWorkspaceSection>, preloaded: MaatCasebookProjection? = nil) {
+    init(engine: SirsiEngine, section: Binding<MaatWorkspaceSection>, preloaded: MaatCasebookProjection? = nil,
+         opensReleasePreflight: Bool = false) {
         self.engine = engine
         _section = section
         _casebook = State(initialValue: preloaded)
         _loading = State(initialValue: preloaded == nil)
+        self.opensReleasePreflight = opensReleasePreflight
     }
 
     var body: some View {
@@ -214,36 +223,48 @@ private struct MaatSystemOneView: View {
     private func systemOneBody(_ casebook: MaatCasebookProjection) -> some View {
         let screens = casebook.cases.filter { $0.systemOne != nil }
         let calibrations = casebook.cases.filter { $0.systemOneCalibration != nil }
-        return VStack(spacing: 0) {
-            MaybeScroll {
-                VStack(alignment: .leading, spacing: 16) {
-                    summary(screens: screens, calibrations: calibrations)
-                    resolutionLane(screens)
-                    hostTriageControl
-                    releasePreflightControl
-                    screenImportControl
-                    if screens.isEmpty {
-                        emptyState
-                    } else {
-                        screenList(screens)
+        return ScrollViewReader { proxy in
+            VStack(spacing: 0) {
+                MaybeScroll {
+                    VStack(alignment: .leading, spacing: 16) {
+                        summary(screens: screens, calibrations: calibrations)
+                        resolutionLane(screens)
+                        hostTriageControl
+                        releasePreflightControl
+                            .id("maat-release-preflight")
+                        screenImportControl
+                        if screens.isEmpty {
+                            emptyState
+                        } else {
+                            screenList(screens)
+                        }
+                    }
+                    .padding(16)
+                }
+                Divider()
+                HStack {
+                    Text("Retained local evidence · screens never grant execution authority")
+                        .sirsiFont(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button { Task { await load() } } label: {
+                        Label("Refresh", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(loading)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 11)
+            }
+            .onAppear {
+                guard opensReleasePreflight, !snapshotMode, !didOpenReleasePreflight else { return }
+                didOpenReleasePreflight = true
+                DispatchQueue.main.async {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        proxy.scrollTo("maat-release-preflight", anchor: .top)
                     }
                 }
-                .padding(16)
             }
-            Divider()
-            HStack {
-                Text("Retained local evidence · screens never grant execution authority")
-                    .sirsiFont(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button { Task { await load() } } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
-                }
-                .buttonStyle(.borderless)
-                .disabled(loading)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 11)
         }
     }
 

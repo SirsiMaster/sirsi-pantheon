@@ -255,6 +255,9 @@ private struct StackLabContractDetail: View {
                     if entry.components.contains(where: { $0.id == "maat-host-health-screen" }) {
                         maatHealthRecipeHandoff
                     }
+                    if entry.id == "stacklab.recipe.pantheon-release-artifact" {
+                        releaseRecipeHandoff
+                    }
                     ForEach(entry.components) { component in
                         StackLabComponentCard(component: component)
                     }
@@ -302,6 +305,31 @@ private struct StackLabContractDetail: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(gold)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+    }
+
+    // The release recipe is intentionally a typed navigation destination, not
+    // executable recipe text. Ma'at owns the source-only preflight and the
+    // later credential-readiness observation; this catalog only keeps the
+    // operator connected to that complete, bounded path.
+    private var releaseRecipeHandoff: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Preflight this release contract", systemImage: "checkmark.seal")
+                .sirsiFont(.headline)
+            Text("Inspect the selected project's release contract in Ma'at before a credentialed release. Pantheon opens the exact preflight control and explains the next evidence route. It does not build, package, sign, notarize, publish, or authorize a release.")
+                .sirsiFont(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            NavLink { MaatWorkspaceView(engine: engine, opensReleasePreflight: true) } label: {
+                Label("Open Ma'at release preflight", systemImage: "arrow.right.circle.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(gold)
+            .accessibilityHint("Opens Ma'at System One, where you can inspect and record a source-only release-contract preflight for the selected project.")
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
