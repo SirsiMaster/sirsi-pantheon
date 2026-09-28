@@ -3,28 +3,15 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
-	"github.com/SirsiMaster/sirsi-pantheon/internal/seshat"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/knowledge"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 )
-
-// maatKnowledgeItem is Ma'at's read-only projection of the retained local
-// knowledge cache. Seshat remains the ingestion compatibility layer for now,
-// but Ma'at is the single operator authority for inspecting the evidence and
-// knowledge that informs decisions.
-type maatKnowledgeItem struct {
-	Title      string               `json:"title"`
-	Summary    string               `json:"summary"`
-	References []seshat.KIReference `json:"references"`
-}
-
-type maatKnowledgeView struct {
-	Items    []maatKnowledgeItem `json:"items"`
-	Total    int                 `json:"total"`
-	Withheld int                 `json:"withheld"`
-}
 
 var maatKnowledgeCmd = &cobra.Command{
 	Use:   "knowledge [text]",
@@ -36,21 +23,14 @@ the local cache. The legacy 'seshat' commands remain available for ingestion
 compatibility while Ma'at is the canonical operator surface.`,
 	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		items, err := loadLatestKnowledgeItems()
+		home, err := os.UserHomeDir()
 		if err != nil {
-			// An absent local cache is an honest empty library, not an error.
-			items = []seshat.KnowledgeItem{}
+			return fmt.Errorf("locate Ma'at knowledge home: %w", err)
 		}
-		needle := strings.ToLower(strings.TrimSpace(strings.Join(args, " ")))
-		items, withheld := safeMaatKnowledgeItems(items)
-		view := maatKnowledgeView{Items: make([]maatKnowledgeItem, 0, len(items)), Withheld: withheld}
-		for _, item := range items {
-			if needle != "" && !strings.Contains(strings.ToLower(strings.Join([]string{item.Title, item.Summary, referencesText(item.References)}, "\n")), needle) {
-				continue
-			}
-			view.Items = append(view.Items, maatKnowledgeItem{Title: item.Title, Summary: item.Summary, References: item.References})
+		view, err := knowledge.Load(home, strings.Join(args, " "))
+		if err != nil {
+			return err
 		}
-		view.Total = len(view.Items)
 
 		if JsonOutput {
 			return json.NewEncoder(cmd.OutOrStdout()).Encode(view)
@@ -67,33 +47,69 @@ compatibility while Ma'at is the canonical operator surface.`,
 	},
 }
 
-func referencesText(refs []seshat.KIReference) string {
-	parts := make([]string, 0, len(refs))
-	for _, ref := range refs {
-		parts = append(parts, ref.Type+":"+ref.Value)
-	}
-	return strings.Join(parts, "\n")
+// maatKnowledgeRefreshCmd is the public write path for refreshing the local
+// knowledge cache. Its implementation deliberately delegates to the retained
+// Seshat ingestion adapter rather than duplicating source adapters or their
+// filtering semantics. It exposes only refresh-scoped inputs: exports stay
+// outside Ma'at's local knowledge refresh contract.
+var maatKnowledgeRefreshCmd = &cobra.Command{
+	Use:   "refresh",
+	Short: "Refresh Ma'at's local knowledge from configured sources",
+	Long: `Refresh Ma'at's retained local knowledge through the compatibility ingestion adapter.
+
+This can read configured local sources and update the local cache. It does not
+export knowledge, open a browser, authorize work, or make a remote decision.`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		started := time.Now()
+		// The legacy adapter owns source parsing and cache writes. Copy only the
+		// explicit, bounded refresh flags into that adapter; `--export` is not
+		// exposed here, so a Ma'at refresh cannot become an external transfer.
+		for _, name := range []string{"source", "since", "profile", "all-profiles"} {
+			flag := cmd.Flags().Lookup(name)
+			if flag == nil {
+				return fmt.Errorf("Ma'at knowledge refresh: missing %s flag contract", name)
+			}
+			if err := seshatIngestCmd.Flags().Set(name, flag.Value.String()); err != nil {
+				return fmt.Errorf("Ma'at knowledge refresh: set %s: %w", name, err)
+			}
+		}
+		if err := maatKnowledgeRefreshDelegate(seshatIngestCmd, args); err != nil {
+			return err
+		}
+		maatKnowledgeRefreshResult(time.Since(started)).Render()
+		return nil
+	},
 }
 
-// safeMaatKnowledgeItems makes the operator view fail closed for a legacy
-// cache. Old Seshat ingestions may predate source filtering, so Ma'at never
-// renders an item with a secret match in title, summary, or reference metadata.
-// The cache is not mutated: repair and re-ingestion remain an explicit action.
-func safeMaatKnowledgeItems(items []seshat.KnowledgeItem) ([]seshat.KnowledgeItem, int) {
-	filter := seshat.DefaultFilter()
-	safe := make([]seshat.KnowledgeItem, 0, len(items))
-	withheld := 0
-	for _, item := range items {
-		content := item.Title + "\n" + item.Summary + "\n" + referencesText(item.References)
-		if len(filter.Scan(content)) > 0 {
-			withheld++
-			continue
-		}
-		safe = append(safe, item)
+// maatKnowledgeRefreshDelegate is deliberately narrow: the legacy adapter is
+// still the sole parser and cache writer, while Ma'at owns the user-facing
+// completion receipt. Keeping this seam lets the native surface distinguish a
+// completed refresh from an unstructured adapter transcript.
+var maatKnowledgeRefreshDelegate = func(cmd *cobra.Command, args []string) error {
+	return seshatIngestCmd.RunE(cmd, args)
+}
+
+func maatKnowledgeRefreshResult(elapsed time.Duration) *output.CommandResult {
+	return &output.CommandResult{
+		Command:    "sirsi maat knowledge refresh",
+		BriefTitle: "Ma'at knowledge refresh",
+		Summary:    "Ma'at refreshed the local knowledge cache. Review the retained items before using them in a decision.",
+		Status:     "ok",
+		Duration:   elapsed,
+		NextActions: []output.NextAction{{
+			Label:       "Open Ma'at knowledge",
+			Command:     "sirsi maat knowledge --json",
+			Description: "Inspect the retained, sensitivity-filtered knowledge projection.",
+		}},
 	}
-	return safe, withheld
 }
 
 func init() {
+	maatKnowledgeRefreshCmd.Flags().String("source", "", "Specific local source adapter to refresh")
+	maatKnowledgeRefreshCmd.Flags().String("since", "", "Refresh items since a duration or YYYY-MM-DD date")
+	maatKnowledgeRefreshCmd.Flags().String("profile", "", "Chrome profile name or display name")
+	maatKnowledgeRefreshCmd.Flags().Bool("all-profiles", false, "Refresh Chrome history from every local profile")
+	maatKnowledgeCmd.AddCommand(maatKnowledgeRefreshCmd)
 	maatCmd.AddCommand(maatKnowledgeCmd)
 }

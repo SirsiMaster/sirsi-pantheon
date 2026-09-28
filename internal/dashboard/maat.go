@@ -6,6 +6,7 @@ import (
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/casebook"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/knowledge"
 )
 
 // apiMaatDecisions exposes recorded Ma'at assessments for the dashboard's
@@ -58,6 +59,29 @@ func (s *Server) apiMaatCasebook(w http.ResponseWriter, r *http.Request) {
 	}
 	if view.Cases == nil {
 		view.Cases = []casebook.Case{}
+	}
+	writeJSON(w, view)
+}
+
+// apiMaatKnowledge projects the same sensitivity-filtered Ma'at local
+// knowledge view through the dashboard. It is a GET-only presentation route:
+// source ingestion, raw-cache access, and export stay outside this surface.
+func (s *Server) apiMaatKnowledge(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.cfg.MaatKnowledgeFn == nil {
+		writeError(w, "Ma'at knowledge projection not available", http.StatusServiceUnavailable)
+		return
+	}
+	view, err := s.cfg.MaatKnowledgeFn(r.URL.Query().Get("q"))
+	if err != nil {
+		writeError(w, "Ma'at knowledge projection failed", http.StatusInternalServerError)
+		return
+	}
+	if view.Items == nil {
+		view.Items = []knowledge.Item{}
 	}
 	writeJSON(w, view)
 }

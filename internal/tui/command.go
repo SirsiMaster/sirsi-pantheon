@@ -45,6 +45,10 @@ const (
 	CmdClean   CommandID = "clean"   // c — clean (destructive; confirm-gated)
 	CmdFix     CommandID = "fix"     // f — apply a finding's one-key fix (Health)
 	CmdDiag    CommandID = "diagnose"
+	// CmdMaatCasebook switches Activity between the workstation operation ledger
+	// and Ma'at's evidence-bound System One casebook. It is a view switch, never
+	// a shortcut around the explicit owner-review/acceptance confirmation flow.
+	CmdMaatCasebook CommandID = "maat.casebook"
 )
 
 // Command is a single wired action. Key is the zero-keystroke binding shown in
@@ -152,6 +156,7 @@ func DefaultRegistry() (*Registry, error) {
 		{ID: CmdClean, Title: "Clean selected", Key: "c", Hint: "clean", Destructive: true},
 		{ID: CmdFix, Title: "Apply fix", Key: "f", Hint: "fix"},
 		{ID: CmdDiag, Title: "Re-run diagnostics", Key: "d", Hint: "diagnose"},
+		{ID: CmdMaatCasebook, Title: "Ma'at System One casebook", Key: "m", Hint: "Ma'at"},
 		// Relieve is the Pulse hero beat, bound to r (proof §3.2: "r relieve").
 		{ID: CmdRelieve, Title: "Relieve memory pressure", Key: "r", Hint: "relieve"},
 	}

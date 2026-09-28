@@ -1,16 +1,14 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # build-dmg.sh — Build a signed, notarized macOS DMG for Sirsi Pantheon.
-# Usage: scripts/build-dmg.sh [--version VERSION] [--arch ARCH]
+# Usage: scripts/build-dmg.sh (--development | --release) [--version VERSION] [--arch ARCH]
 # Requires macOS (hdiutil/codesign/notarytool are macOS-specific).
 #
 # Signing & notarization (the clean-install / no-FDA-churn contract):
-#   - With a Developer ID Application identity in the keychain, the bundle is
-#     signed with the HARDENED RUNTIME + a secure timestamp, then the DMG is
-#     notarized and stapled. A stable Developer ID = stable TCC identity, so
-#     `brew upgrade` keeps the user's Full Disk Access grant (no re-grant, no
-#     new FDA row) — the whole reason this pipeline exists.
-#   - With no identity, it falls back to ad-hoc (dev-only; Gatekeeper warns,
-#     and FDA WILL churn on upgrade — never ship an ad-hoc build to users).
+#   - --release requires Developer ID Application signing, a notarization
+#     credential set, stapling, and validation. It is the only mode allowed to
+#     create a commercial-release filename.
+#   - --development deliberately creates a -dev artifact and signs ad-hoc. It
+#     is useful for local package work, but must never be presented as a release.
 #
 # Required environment / CI secrets for a real release:
 #   DEVELOPER_ID_APPLICATION  e.g. "Developer ID Application: Sirsi … (TEAMID)"
@@ -23,10 +21,17 @@
 
 set -euo pipefail
 
+# Build artifacts must not depend on a caller's shell search path. In
+# particular, a project-local PATH can shadow or hide the compiler, package,
+# and macOS signing tools. These are the standard macOS/Homebrew locations;
+# no current-directory or caller-provided directory is inherited.
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
 # --- Defaults ---
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VERSION="$(tr -d '\n' < "${PROJECT_ROOT}/VERSION")"
 ARCH="arm64"
+MODE=""
 BUILD_DIR="${PROJECT_ROOT}/bin"
 APP_NAME="Pantheon.app"
 BUNDLE_DIR="${PROJECT_ROOT}/${APP_NAME}"
@@ -36,17 +41,33 @@ GO_LDFLAGS="-s -w -X github.com/SirsiMaster/sirsi-pantheon/internal/version.Vers
 # --- Parse flags ---
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --development)
+            [[ -z "$MODE" ]] || { echo "ERROR: choose exactly one of --development or --release" >&2; exit 2; }
+            MODE="development"; shift ;;
+        --release)
+            [[ -z "$MODE" ]] || { echo "ERROR: choose exactly one of --development or --release" >&2; exit 2; }
+            MODE="release"; shift ;;
         --version) VERSION="$2"; GO_LDFLAGS="-s -w -X github.com/SirsiMaster/sirsi-pantheon/internal/version.Version=v${VERSION}"; shift 2 ;;
         --arch)    ARCH="$2"; shift 2 ;;
-        *) echo "Unknown flag: $1"; echo "Usage: $0 [--version VERSION] [--arch ARCH]"; exit 1 ;;
+        *) echo "Unknown flag: $1"; echo "Usage: $0 (--development | --release) [--version VERSION] [--arch ARCH]"; exit 2 ;;
     esac
 done
 
-DMG_NAME="SirsiPantheon-${VERSION}-${ARCH}.dmg"
+[[ -n "$MODE" ]] || { echo "ERROR: choose --development or --release explicitly" >&2; exit 2; }
+if [[ "$MODE" == "release" ]]; then
+    for required in DEVELOPER_ID_APPLICATION APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD; do
+        [[ -n "${!required:-}" ]] || { echo "ERROR: --release requires ${required}" >&2; exit 2; }
+    done
+    DMG_NAME="SirsiPantheon-${VERSION}-${ARCH}.dmg"
+    ARTIFACT_LABEL="Commercial release"
+else
+    DMG_NAME="SirsiPantheon-${VERSION}-dev-${ARCH}.dmg"
+    ARTIFACT_LABEL="Development"
+fi
 DMG_PATH="${BUILD_DIR}/${DMG_NAME}"
 STAGING_DIR="${BUILD_DIR}/dmg-staging"
 
-echo "Building Sirsi Pantheon DMG  (version ${VERSION}, arch ${ARCH})"
+echo "Building Sirsi Pantheon ${MODE} DMG  (version ${VERSION}, arch ${ARCH})"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
     echo "ERROR: DMG creation requires macOS."; exit 1
@@ -97,7 +118,7 @@ if /usr/bin/find "${BUNDLE_DIR}" -type f -name '._*' -print -quit | /usr/bin/gre
 fi
 
 # --- Code signing ---
-if [ -n "${DEVELOPER_ID_APPLICATION:-}" ]; then
+if [[ "$MODE" == "release" ]]; then
     echo "Signing with Developer ID: ${DEVELOPER_ID_APPLICATION}"
     # Sign inner executables first (inside-out), then the bundle — more robust for
     # notarization than a single --deep pass. Hardened runtime + secure timestamp.
@@ -106,26 +127,45 @@ if [ -n "${DEVELOPER_ID_APPLICATION:-}" ]; then
     done
     codesign --force --options runtime --timestamp --sign "${DEVELOPER_ID_APPLICATION}" "${BUNDLE_DIR}"
     codesign --verify --deep --strict --verbose=2 "${BUNDLE_DIR}"
-    SIGNED_FOR_RELEASE=1
 else
-    echo "Signing ad-hoc (no Developer ID — DEV ONLY; do not distribute)."
+    echo "Signing ad-hoc development bundle (not distributable)."
     codesign --force --deep --sign - "${BUNDLE_DIR}"
-    SIGNED_FOR_RELEASE=0
 fi
+
+# Verify the final assembled payload through the canonical Go engine before it
+# can cross a DMG boundary. This is non-executing inventory only: it retains
+# descriptor-relative bundle reads, rejects unexpected entries, and binds the
+# canonical PkgInfo and LaunchAgent source bytes.
+echo "Verifying assembled Pantheon.app payload..."
+"${BUILD_DIR}/sirsi" package-inventory \
+    --app "${BUNDLE_DIR}" \
+    --version "${VERSION}" \
+    --build "${VERSION}" \
+    --info-plist "${BUNDLE_DIR}/Contents/Info.plist" \
+    --pkg-info "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/PkgInfo" \
+    --launch-agent "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" \
+    --require-code-signature
 
 # --- Stage + create the DMG ---
 echo "Creating DMG..."
 rm -rf "${STAGING_DIR}"; mkdir -p "${STAGING_DIR}"
 cp -R "${BUNDLE_DIR}" "${STAGING_DIR}/"
 ln -s /Applications "${STAGING_DIR}/Applications"
-cat > "${STAGING_DIR}/README.txt" <<'READMEEOF'
+if [[ "$MODE" == "release" ]]; then
+    BUILD_CLASS="Commercial release: Developer ID signed, notarized, and stapled."
+else
+    BUILD_CLASS="Development build: ad-hoc signed and not for distribution."
+fi
+cat > "${STAGING_DIR}/README.txt" <<READMEEOF
 Sirsi Pantheon — Unified DevOps Intelligence Platform
+
+${BUILD_CLASS}
 
 INSTALL
   1. Drag Pantheon.app into Applications.
   2. Launch it; grant Full Disk Access when prompted (one time).
 
-The bundle includes the menu bar app and the `sirsi` CLI
+The bundle includes the menu bar app and the sirsi CLI
 (/Applications/Pantheon.app/Contents/MacOS/sirsi). To use the CLI in a terminal:
   alias sirsi="/Applications/Pantheon.app/Contents/MacOS/sirsi"
 or: brew install sirsimaster/tools/sirsi-pantheon
@@ -138,27 +178,23 @@ hdiutil create -volname "${DMG_VOLUME}" -srcfolder "${STAGING_DIR}" -ov -format 
 rm -rf "${STAGING_DIR}"
 
 # --- Sign + notarize + staple the DMG (release builds only, AFTER it exists) ---
-if [ "${SIGNED_FOR_RELEASE}" = "1" ]; then
+if [[ "$MODE" == "release" ]]; then
     codesign --force --timestamp --sign "${DEVELOPER_ID_APPLICATION}" "${DMG_PATH}"
-    if [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ] && [ -n "${APPLE_APP_PASSWORD:-}" ]; then
-        echo "Notarizing ${DMG_NAME} (this can take a few minutes)..."
-        # --timeout bounds the --wait poll so a stuck Apple-notary submission (or
-        # a bad credential that never resolves) fails the step instead of hanging;
-        # the release.yml job-level timeout-minutes is the outer backstop.
-        xcrun notarytool submit "${DMG_PATH}" \
-            --apple-id "${APPLE_ID}" \
-            --team-id "${APPLE_TEAM_ID}" \
-            --password "${APPLE_APP_PASSWORD}" \
-            --timeout 20m \
-            --wait
-        echo "Stapling notarization ticket..."
-        xcrun stapler staple "${DMG_PATH}"
-        xcrun stapler validate "${DMG_PATH}"
-    else
-        echo "WARNING: signed but NOT notarized (APPLE_ID/APPLE_TEAM_ID/APPLE_APP_PASSWORD not all set)."
-    fi
+    echo "Notarizing ${DMG_NAME} (this can take a few minutes)..."
+    # --timeout bounds the --wait poll so a stuck Apple-notary submission (or
+    # a bad credential that never resolves) fails the step instead of hanging;
+    # the release.yml job-level timeout-minutes is the outer backstop.
+    xcrun notarytool submit "${DMG_PATH}" \
+        --apple-id "${APPLE_ID}" \
+        --team-id "${APPLE_TEAM_ID}" \
+        --password "${APPLE_APP_PASSWORD}" \
+        --timeout 20m \
+        --wait
+    echo "Stapling notarization ticket..."
+    xcrun stapler staple "${DMG_PATH}"
+    xcrun stapler validate "${DMG_PATH}"
 fi
 
 echo ""
-echo "DMG created: ${DMG_PATH}"
+echo "${ARTIFACT_LABEL} DMG created: ${DMG_PATH}"
 ls -lh "${DMG_PATH}"

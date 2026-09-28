@@ -14,10 +14,14 @@ import (
 // GET /api/actions and invokes it via the typed POST /api/run — no surface
 // hardcodes its own command semantics.
 type ActionSpec struct {
-	Key         string   `json:"key"`          // canonical action key, e.g. "scan", "ra/kill"
-	Label       string   `json:"label"`        // human-readable label
-	Glyph       string   `json:"glyph"`        // deity/brand glyph
-	Args        []string `json:"-"`            // base CLI args (server-internal; never client-supplied)
+	Key   string `json:"key"`   // canonical action key, e.g. "scan", "ra/kill"
+	Label string `json:"label"` // human-readable label
+	Glyph string `json:"glyph"` // deity/brand glyph
+	// Args are the fixed, server-owned base CLI arguments. They are exposed so
+	// every client can render the exact action it is asking the server to run;
+	// dispatchRun still composes execution from this registry and never accepts
+	// a replacement base command from a client.
+	Args        []string `json:"args"`
 	Destructive bool     `json:"destructive"`  // true => POST /api/run requires the confirm token flow
 	AcceptsArgs bool     `json:"accepts_args"` // true => ActionRequest.Args is appended (e.g. dedup path)
 }
@@ -43,7 +47,11 @@ func actionSpecs() []ActionSpec {
 		{Key: "hardware", Label: "Hardware", Glyph: "⚡", Args: []string{"hardware"}},
 		{Key: "dedup", Label: "Find Duplicates", Glyph: "🔍", Args: []string{"duplicates"}, AcceptsArgs: true},
 		{Key: "thoth/sync", Label: "Thoth Sync", Glyph: "𓁟", Args: []string{"thoth", "sync"}},
-		{Key: "seshat/ingest", Label: "Seshat Ingest", Glyph: "𓄿", Args: []string{"seshat", "ingest"}, AcceptsArgs: true},
+		// Ma'at owns the operator-facing knowledge and decision surface. The
+		// retained Seshat implementation remains the compatibility adapter
+		// beneath Ma'at's public command until its ingestion engine is migrated;
+		// dashboard callers never need to address that legacy deity directly.
+		{Key: "maat/knowledge/refresh", Label: "Refresh Ma'at knowledge", Glyph: "𓆄", Args: []string{"maat", "knowledge", "refresh"}, AcceptsArgs: true},
 		{Key: "net/align", Label: "Net Align", Glyph: "𓁯", Args: []string{"net", "align"}},
 		{Key: "ra/collect", Label: "Ra Collect", Glyph: "𓇶", Args: []string{"ra", "collect"}},
 

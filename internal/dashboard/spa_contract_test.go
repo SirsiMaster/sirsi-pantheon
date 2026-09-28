@@ -43,7 +43,7 @@ func fetchSPA(t *testing.T) string {
 func TestGuardView_ReadsDoctorJSONKeysNotGoFieldNames(t *testing.T) {
 	raw, err := json.Marshal(guard.DoctorReport{
 		Score:    91,
-		Findings: []guard.DiagnosticFinding{{Check: "RAM Pressure", Message: "healthy", Severity: 0}},
+		Findings: []guard.DiagnosticFinding{{Check: "RAM Pressure", Message: "healthy", Severity: 0, Resolution: guard.ResolutionInfo}},
 	})
 	if err != nil {
 		t.Fatalf("marshal report: %v", err)
@@ -69,7 +69,7 @@ func TestGuardView_ReadsDoctorJSONKeysNotGoFieldNames(t *testing.T) {
 		t.Fatalf("expected one marshaled finding, got %d", len(findings))
 	}
 	finding, _ := findings[0].(map[string]any)
-	for _, key := range []string{"check", "message", "severity"} {
+	for _, key := range []string{"check", "message", "severity", "resolution"} {
 		if _, ok := finding[key]; !ok {
 			t.Fatalf("guard.DiagnosticFinding no longer marshals a %q key — update the Guard view to match", key)
 		}
@@ -104,5 +104,33 @@ func TestHomeView_CommandsAreClickable(t *testing.T) {
 	}
 	if !strings.Contains(page, "input.focus()") {
 		t.Error("command input is never focused — the first keystroke goes nowhere")
+	}
+}
+
+// TestMaatView_ProjectsSystemOneEvidence ensures that a System One screen is
+// visible with its decision basis and next safe action. A casebook entry may
+// be advisory, but it must never leave the operator at an unexplained status.
+func TestMaatView_ProjectsSystemOneEvidence(t *testing.T) {
+	page := fetchSPA(t)
+
+	for _, token := range []string{
+		"renderMaatKnowledge",
+		"/api/maat/knowledge",
+		"withheld for safety",
+		"d.system_one",
+		"screen.feather_weight",
+		"screen.subject.head_sha",
+		"screen.model.provider",
+		"screen.floor.checks",
+		"d.next_action.steps",
+		"screen.escalation.reason",
+		"screen.findings",
+		"finding.fix_hint",
+		"d.system_one_calibration",
+		"calibration.frontier_evidence",
+	} {
+		if !strings.Contains(page, token) {
+			t.Errorf("Ma'at view does not project System One evidence token %q", token)
+		}
 	}
 }

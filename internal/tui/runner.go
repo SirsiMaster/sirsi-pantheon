@@ -15,8 +15,9 @@ import (
 // Every screen reads live workstation state through ONE injectable seam: it
 // runs `sirsi <verb> --json` and decodes the contract. Tests swap the runner
 // for a canned-JSON stub so the model is exercised deterministically without
-// ever shelling out. The TUI is a projection of these four merged --json
-// contracts (vitals, scan, ghosts, activity, diagnose) — Go stays the brain.
+// ever shelling out. The TUI is a projection of canonical --json contracts
+// (vitals, scan, ghosts, activity, diagnose, and Ma'at's casebook) — Go stays
+// the brain.
 //
 // Concurrency (Rule A21): the package-level default runner is guarded by a
 // RWMutex and swapped only through setRunner/getRunner. Tests that swap it MUST

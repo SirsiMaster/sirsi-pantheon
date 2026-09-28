@@ -1,0 +1,55 @@
+{
+  "schema": "sirsi.stacklab.recipe.v1",
+  "id": "stacklab.recipe.pantheon-release-artifact",
+  "wing": "stacklab.wing.pantheon-pt",
+  "product": "sirsi-pantheon",
+  "version": 1,
+  "purpose": "Make Pantheon's commercial release boundary inspectable and replaceable: local development packages are explicitly named and non-distributable; only a Developer-ID signed, notarized, stapled, validated route may create the commercial DMG and PKG names.",
+  "authority": {
+    "source_owner": "Pantheon release engineering",
+    "commercial_release_owner": "tagged release workflow plus Developer ID and Apple notarization evidence",
+    "prohibited": [
+      "an unsigned or ad-hoc package cannot use a commercial release filename",
+      "a development artifact cannot be uploaded, tagged, or described as released",
+      "source/static success cannot claim that signing, notarization, publication, cask lifecycle, or installation occurred"
+    ]
+  },
+  "components": [
+    {
+      "id": "release-artifact-class-contract",
+      "source": ["scripts/build-dmg.sh", "scripts/build-pkg.sh", "Makefile", "scripts/PACKAGING.md"],
+      "tests": ["scripts/verify-commercial-release-contract.sh"],
+      "inputs": ["explicit --development or --release selection", "VERSION", "target architecture"],
+      "outputs": ["-dev DMG/PKG names for local package work", "commercial DMG/PKG names only in --release mode", "truthful mode-specific operator messaging"],
+      "writes": ["transaction-local Pantheon.app, DMG, or PKG only when an explicitly selected build mode is executed"],
+      "upgrade_recipe": ["keep modes mutually exclusive and explicit", "reserve commercial names for --release", "keep local artifacts visibly non-distributable", "update the static contract when a packaging entry point changes"]
+    },
+    {
+      "id": "release-native-payload-composition",
+      "source": ["scripts/build-dmg.sh", "Makefile", "macapp/Package.swift", "cmd/sirsi/"],
+      "tests": ["internal/packageinventory/inventory_test.go", "internal/packageinventorycmd/verify_test.go", "internal/stacklab/package_contract_test.go", "scripts/verify-commercial-release-contract.sh"],
+      "inputs": ["canonical sirsi CLI source", "native Swift menubar source", "LaunchAgent plist", "Stack Lab contracts"],
+      "outputs": ["one Pantheon.app payload containing CLI, native menubar, LaunchAgent resource, and Stack Lab contracts"],
+      "writes": ["build-root Pantheon.app and package staging only"],
+      "upgrade_recipe": ["bind every product surface to the same canonical engine", "keep Stack Lab resources in the app payload", "verify package identity before broad distribution work", "do not execute a candidate payload merely to inventory it"]
+    },
+    {
+      "id": "commercial-sign-notary-publication-route",
+      "source": [".github/workflows/release.yml", "scripts/build-dmg.sh", "scripts/build-pkg.sh", "docs/RELEASE_SIGNING.md"],
+      "tests": ["scripts/verify-commercial-release-contract.sh"],
+      "inputs": ["Developer ID Application identity", "Developer ID Installer identity", "Apple notarization credentials", "tagged exact source"],
+      "outputs": ["signed, notarized, stapled, validated DMG", "signed, notarized, stapled, validated PKG", "release workflow artifact names suitable for GitHub and cask binding"],
+      "writes": ["signed package bytes and remote release/cask records only under separately authorized credentialed execution"],
+      "upgrade_recipe": ["fail before commercial artifact creation when any required credential is absent", "verify signing before notarization", "staple and validate every commercial payload", "treat remote publication and cask lifecycle as separate evidence nodes"]
+    },
+    {
+      "id": "canonical-cask-publication",
+      "source": ["internal/caskrelease/cask.go", "cmd/sirsi/cask_release.go", ".github/workflows/release.yml"],
+      "tests": ["internal/caskrelease/cask_test.go", "scripts/verify-commercial-release-contract.sh"],
+      "inputs": ["exact release version", "SHA-256 of the uploaded signed DMG", "current Homebrew tap blob identity"],
+      "outputs": ["one canonical Casks/sirsi-pantheon.rb byte stream", "post-publication exact-byte verification"],
+      "writes": ["Homebrew tap cask record only in the credentialed tagged-release workflow"],
+      "upgrade_recipe": ["render and verify the cask as exact bytes", "publish through one workflow route", "read back the remote cask and re-verify its release tuple", "never derive a cask from a development artifact"]
+    }
+  ]
+}

@@ -153,7 +153,7 @@ func TestToolsList(t *testing.T) {
 		}
 	}
 
-	for _, expected := range []string{"scan_workspace", "ghost_report", "health_check", "thoth_read_memory", "thoth_sync", "detect_hardware"} {
+	for _, expected := range []string{"maat_casebook", "apollo_session_telemetry", "scan_workspace", "ghost_report", "health_check", "thoth_read_memory", "thoth_sync", "detect_hardware"} {
 		if !toolNames[expected] {
 			t.Errorf("Missing expected tool: %s", expected)
 		}

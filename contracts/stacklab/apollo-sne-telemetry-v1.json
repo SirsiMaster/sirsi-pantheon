@@ -1,0 +1,82 @@
+{
+  "schema": "sirsi.stacklab.apollo-sne-telemetry.v1",
+  "id": "stacklab.contract.apollo-sne-telemetry",
+  "product": "sirsi-pantheon",
+  "purpose": "One local, SNE-owned inference-session telemetry publication consumed by Stack Lab, Apollo, Ma'at, CLI, native app, dashboard, TUI, and MCP without a parallel observer or fabricated metric.",
+  "ownership": {
+    "publisher": "SNE",
+    "capacity_authority": "SNE-qualified local hardware and inference admission",
+    "consumer": "Pantheon Apollo",
+    "evidence_interpreter": "Ma'at",
+    "prohibitions": [
+      "Pantheon must not invent a model, machine, chip estate, throughput, bandwidth, residency, or remote capacity",
+      "a Stack Lab plan must not be treated as an inference admission or launch receipt",
+      "a missing session sample must be rendered as awaiting_session, never as zero activity or healthy completion",
+      "Pantheon must not modify, start, stop, or reconfigure SNE while reading telemetry"
+    ]
+  },
+  "capability_catalog": {
+    "schema_version": "apollo-catalog/v2",
+    "machine": ["id", "name", "cpu_cores", "memory_bytes", "chip_estates", "estates"],
+    "machines": "selectable typed capacity receipts; `machine` is retained only for v1-compatible consumers",
+    "engine": ["id", "machine_id", "name", "provider", "resident_model", "endpoint", "state"],
+    "chip_estate": ["id", "name", "available", "description"],
+    "selection": ["machine_id", "engine_id", "cpu_cores", "memory_bytes", "swap_bytes", "chip_estates", "unavailable_chip_estates"],
+    "selection_rules": [
+      "all limits are explicit typed quantities",
+      "the selected machine must be present in `machines` with its own typed capacity receipt; Pantheon never borrows this Mac's limits for a named peer",
+      "a machine-specific estates array is authoritative when present; the legacy chip_estates id list must agree with it when both are present",
+      "the engine must be configured and machine_id-bound to the selected machine",
+      "every selected estate must be detected and enumerated by the selected machine receipt",
+      "a selected estate that is not currently available remains explicit in unavailable_chip_estates; it is user-selectable but SNE must qualify and admit it before inference can start",
+      "swap is a request ceiling; SNE admission checks live pressure independently"
+    ]
+  },
+  "session_telemetry": {
+    "schema_version": "apollo-session-telemetry/v1",
+    "path": "~/.sirsi/apollo/session-telemetry.json",
+    "publisher_requirements": [
+      "publish a complete regular non-symlink file atomically after an SNE-admitted session starts",
+      "replace, never append, each session sample",
+      "write only measured values; omit any metric SNE did not measure",
+      "remove or publish a terminal non-active sample when the session ends",
+      "preserve publisher provenance outside Pantheon; Pantheon is a read-only consumer"
+    ],
+    "required": ["schema_version", "session_id", "engine_id", "emitted_at", "chip_estates"],
+    "machine_identity": "machine_id is optional only for the legacy single-device this-mac route. Any plan for another selected machine requires a matching non-empty machine_id before Pantheon can render the session as active.",
+    "optional_metrics": [
+      "tokens_per_second",
+      "bandwidth_bytes_per_second",
+      "memory_bytes",
+      "network_saturation_percent",
+      "cpu_residency_percent",
+      "gpu_residency_percent"
+    ],
+    "per_estate": ["id", "residency_percent", "utilization_percent", "memory_bytes"],
+    "validity_rules": [
+      "all rates and byte counts are non-negative",
+      "all percentages are finite and between 0 and 100 inclusive",
+      "chip-estate ids are nonempty and unique",
+      "a nonempty machine_id must be a non-whitespace Horus machine identity",
+      "unknown properties reject the complete sample",
+      "Pantheon opens the telemetry leaf with no-follow semantics and requires descriptor/path identity continuity before and after two byte-identical reads",
+      "absence is unavailable, not zero"
+    ]
+  },
+  "consumer_states": {
+    "awaiting_session": "No valid SNE sample exists. Keep the selected plan available, show the SNE admission route, and allow refresh or plan adjustment.",
+    "active": "A complete valid session sample exists. Render every measured metric with its unit and label omitted metrics unavailable.",
+    "invalid": "A sample exists but is unsafe or malformed. Reject it, retain no false active state, surface the exact validation issue, and route to Ma'at evidence."
+  },
+  "evidence": {
+    "Pantheon": ["typed source catalog", "typed plan", "strict telemetry decode outcome", "GET /api/apollo/telemetry verbatim dashboard projection", "apollo_session_telemetry read-only MCP projection"],
+    "Ma'at": ["read scope", "sample identity/version", "validation outcome", "operator-visible recovery route"],
+    "SNE": ["model and engine provenance", "admission decision", "measurement source and interval", "terminal session outcome"]
+  },
+  "upgrade_recipe": [
+    "add a schema revision rather than widening v2 ambiguously",
+    "add positive, omitted-metric, duplicate-estate, bad-percentage, unknown-field, atomic-replacement, and terminal-session fixtures",
+    "obtain SNE source and runtime qualification before publishing telemetry from a new engine",
+    "verify identical semantics in CLI, native app, dashboard, TUI, MCP, and Ma'at before release"
+  ]
+}

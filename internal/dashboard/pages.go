@@ -33,6 +33,7 @@ func pageShell(title, activePage, bodyContent string, port int) string {
 		{"maat", "𓆄", "Ma'at"},
 		{"notifications", "🔔", "Notifications"},
 		{"horus", "𓂀", "Horus"},
+		{"apollo", "A", "Apollo"},
 		{"vault", "🏛", "Vault"},
 		{"ra", "𓇶", "Ra"},
 	}
@@ -68,17 +69,17 @@ display:flex;min-height:100vh;overflow:hidden}
 .sidebar{width:180px;min-height:100vh;background:rgba(6,6,15,.96);border-right:1px solid %s;
 display:flex;flex-direction:column;position:fixed;left:0;top:0;bottom:0;z-index:10}
 .sidebar-brand{padding:16px 16px 12px;border-bottom:1px solid %s}
-.sidebar-brand h1{font-family:Inter,-apple-system,system-ui,sans-serif;font-size:13px;font-weight:600;
+.sidebar-brand h1{font-family:'Avenir Next',Avenir,-apple-system,system-ui,sans-serif;font-size:13px;font-weight:600;
 color:%s;letter-spacing:2px;text-transform:uppercase}
 .sidebar-nav{flex:1;padding:8px 0}
 .nav-item{display:flex;align-items:center;padding:8px 16px;color:%s;text-decoration:none;
 font-size:12px;letter-spacing:.3px;transition:all .15s;border-left:2px solid transparent;cursor:pointer;
-font-family:Inter,-apple-system,system-ui,sans-serif}
+font-family:'Avenir Next',Avenir,-apple-system,system-ui,sans-serif}
 .nav-item:hover{background:color-mix(in srgb, var(--gold) 6%%, transparent);color:%s}
 .nav-item.active{background:color-mix(in srgb, var(--gold) 8%%, transparent);color:%s;border-left-color:%s}
 .nav-glyph{width:20px;font-size:14px;margin-right:8px;text-align:center}
 .sidebar-footer{padding:12px 16px;border-top:1px solid %s;font-size:8px;color:var(--line);letter-spacing:1px;
-font-family:Inter,-apple-system,system-ui,sans-serif}
+font-family:'Avenir Next',Avenir,-apple-system,system-ui,sans-serif}
 
 /* Main — content is capped at 1400px and centered in the space right of the
    fixed sidebar so ultra-wide viewports don't strand everything top-left. */
@@ -90,7 +91,7 @@ border-left:1px solid color-mix(in srgb, var(--gold) 6%%, transparent);border-ri
 .stats-bar{display:flex;gap:1px;background:color-mix(in srgb, var(--gold) 6%%, transparent);border-bottom:1px solid %s;flex-shrink:0}
 .stat{flex:1;padding:12px 16px;background:%s}
 .stat-label{font-size:9px;color:%s;letter-spacing:1.5px;text-transform:uppercase;
-font-family:Inter,-apple-system,system-ui,sans-serif;margin-bottom:4px}
+font-family:'Avenir Next',Avenir,-apple-system,system-ui,sans-serif;margin-bottom:4px}
 .stat-value{font-size:16px;color:%s;font-weight:400}
 .stat-sub{font-size:10px;color:var(--dim);margin-top:2px}
 /* Only tiles that actually go somewhere get a pointer and a chevron. A readout
@@ -116,7 +117,7 @@ font-family:Inter,-apple-system,system-ui,sans-serif;margin-bottom:4px}
 font-family:inherit;outline:none}
 .term-input::placeholder{color:var(--dim)}
 .term-view-label{color:var(--dim);font-size:10px;padding-right:16px;letter-spacing:1px;text-transform:uppercase;
-font-family:Inter,-apple-system,system-ui,sans-serif;flex-shrink:0}
+font-family:'Avenir Next',Avenir,-apple-system,system-ui,sans-serif;flex-shrink:0}
 .terminal{flex:1;overflow-y:auto;padding:12px 16px;background:rgba(3,3,8,.95);line-height:1.6;font-size:12px}
 .t-line{margin:0;white-space:pre-wrap;word-break:break-all}
 .t-dim{color:var(--dim)}
@@ -239,7 +240,7 @@ window.switchView=function(view){
   n.classList.toggle('active',n.dataset.view===view)});
  clear();
  var loader={home:viewHome,fleet:viewFleet,scan:viewScan,ghosts:viewGhosts,guard:viewGuard,
-  maat:viewMaat,notifications:viewNotifications,horus:viewHorus,vault:viewVault,ra:viewRa};
+  maat:viewMaat,notifications:viewNotifications,horus:viewHorus,apollo:viewApollo,vault:viewVault,ra:viewRa};
  (loader[view]||viewHome)();
 };
 
@@ -414,9 +415,28 @@ function viewFleet(){
  }).catch(function(e){out('  fleet board unavailable: '+e.message,'t-err')});
 }
 
+function renderMaatKnowledge(){
+ fetch('/api/maat/knowledge').then(function(r){
+  if(!r.ok)return r.json().then(function(e){throw new Error(e.error||('HTTP '+r.status))});
+  return r.json()
+ }).then(function(view){
+  const items=view.items||[];
+  out('');out('  Local knowledge · '+(view.total||0)+' retained'+(view.withheld ? ' · '+view.withheld+' withheld for safety' : ''),'t-head');
+  if(!items.length){out('  No retained local knowledge yet. Use the Ma’at knowledge refresh action to read configured local sources.','t-dim');return}
+  items.slice(0,6).forEach(function(item){
+   const row=document.createElement('div');row.className='t-line t-row';
+   const title=document.createElement('span');title.className='t-col';title.style.width='220px';title.style.color='var(--ink2)';title.textContent=item.title||'Untitled knowledge';
+   const summary=document.createElement('span');summary.className='t-col';summary.style.flex='1';summary.style.color='var(--dim)';summary.textContent=item.summary||'No summary retained.';
+   row.appendChild(title);row.appendChild(summary);T.appendChild(row);
+  });
+  if(items.length>6)out('  '+(items.length-6)+' more retained item(s) are available through Ma’at knowledge.','t-dim');
+ }).catch(function(e){out('  Ma’at knowledge unavailable: '+e.message,'t-err')});
+}
+
 function viewMaat(){
  out('𓆄 Ma’at — Local System One','t-gold');
  out('  Searchable, evidence-linked cases projected from Ma’at’s recorded decisions. Read-only: it explains decisions; it never makes them.','t-dim');
+ renderMaatKnowledge();
  fetch('/api/maat/casebook?limit=50').then(function(r){
   if(!r.ok)return r.json().then(function(e){throw new Error(e.error||('HTTP '+r.status))});
   return r.json()
@@ -435,6 +455,31 @@ function viewMaat(){
    let bits=['status: '+(d.status||'open'),'decision: '+(d.kind||'unknown')+' → '+(d.determination||'unknown'),'assessment: '+(d.assessed||'unknown')];
    if(d.affected)bits.push('affected: '+d.affected);
    if(d.evidence)bits.push('evidence: '+d.evidence);
+   if(d.next_action){
+    bits.push('next: '+(d.next_action.title||'review the retained evidence')+(d.next_action.detail?' — '+d.next_action.detail:''));
+    if(Array.isArray(d.next_action.steps))d.next_action.steps.forEach(function(step){bits.push('recovery level '+(step.level||'?')+': '+(step.title||'unnamed')+(step.detail?' — '+step.detail:''));});
+   }
+   if(d.system_one){
+    const screen=d.system_one, confidence=Math.round((screen.confidence||0)*100);
+    bits.push('system one: '+(screen.gate||'unknown')+' · '+confidence+'% confidence · feather '+(screen.feather_weight??'unknown')+'/100');
+   if(screen.subject)bits.push('screen subject: '+(screen.subject.kind||'unknown')+' '+(screen.subject.ref||'unknown')+' · '+(screen.subject.head_sha||'unknown'));
+    if(screen.model)bits.push('screen model: '+(screen.model.provider||'unknown')+' '+(screen.model.version||'unknown')+' · '+(screen.model.local ? 'local' : 'external')+' · '+(screen.model.latency_ms??'unknown')+'ms');
+    if(screen.floor){
+     bits.push('deterministic floor: '+(screen.floor.passed?'passed':'failed'));
+     if(Array.isArray(screen.floor.checks))screen.floor.checks.forEach(function(check){bits.push('floor check: '+(check.name||'unnamed')+' · '+(check.passed?'passed':'failed')+(check.detail?' · '+check.detail:''));});
+    }
+    if(screen.escalation&&screen.escalation.reason)bits.push('required review: '+screen.escalation.reason);
+    if(Array.isArray(screen.findings))screen.findings.forEach(function(finding){
+     bits.push('finding: '+(finding.severity||'information')+' · '+(finding.category||'finding')+' · '+(finding.claim||'no claim recorded'));
+     if(finding.fix_hint)bits.push('prescribed next step: '+finding.fix_hint);
+    });
+   }
+   if(d.system_one_calibration){
+    const calibration=d.system_one_calibration;
+    bits.push('system one calibration: '+(calibration.screen_gate||'unknown')+' → '+(calibration.frontier_gate||'unknown'));
+    if(calibration.screen_evidence)bits.push('screen evidence: '+calibration.screen_evidence);
+    if(calibration.frontier_evidence)bits.push('independent evidence: '+calibration.frontier_evidence);
+   }
    detail.textContent=bits.join(' · ');T.appendChild(detail);
   });
  }).catch(function(e){out('  Ma’at casebook unavailable: '+e.message,'t-err')});
@@ -482,7 +527,18 @@ function viewGuard(){
   if(!fs.length){out('  No diagnostics returned.','t-dim')}
   fs.forEach(function(f){
    const icon=({0:'✅',1:'ℹ️',2:'⚠️',3:'🔴'}[f.severity]||'⚪');
-   out('  '+icon+' '+f.check+' — '+f.message)});
+   out('  '+icon+' '+f.check+' — '+f.message);
+   /* Every live alarm carries an explicit next step. A missing safe repair is
+      not rendered as a dead-end: it is an evidence-bound Ma'at review route.
+      The dashboard remains read-only here; the native/TUI surfaces perform the
+      confirmation-gated action, while this terminal surface names the exact
+      route without silently mutating the host. */
+   if(f.severity>=2){
+    const route=f.resolution||(f.fix?'repair':'maat_review');
+    if(route==='repair'&&f.fix)out('      next: '+f.fix,'t-gold');
+    else if(route==='maat_review')out('      resolution: Ma\'at review — retain the exact observation, inspect it in Casebook, then record an explicit owner conclusion.','t-gold');
+   }
+  });
   sep();out('');
   out('Process Slayer — type: kill node | kill electron | kill docker | kill lsp | kill build | kill ai','t-dim');
   out('Deprioritize — type: deprioritize (safe, reversible — lowers background process priority)','t-dim');
@@ -505,6 +561,58 @@ function viewHorus(){
  out('');out('Type a symbol name to search, or "horus scan" to analyze the project.','t-dim');
 }
 
+/* Apollo is deliberately a read-only projection. SNE owns session creation,
+   execution, and capacity; Horus only makes an admitted sample inspectable.
+   This prevents a dashboard refresh from silently starting an inference job. */
+function viewApollo(){
+ out('Apollo — Inference Session','t-gold');
+ out('  Live data is published by SNE after an admitted local session starts. Horus never fabricates a session or modifies the engine.','t-dim');
+ const refresh=document.createElement('button');
+ refresh.className='t-action';refresh.type='button';refresh.textContent='[refresh telemetry]';
+ refresh.style.cssText='background:none;border:0;font:inherit;margin:8px 0;padding:0';
+ refresh.addEventListener('click',viewApollo);T.appendChild(refresh);
+ fetch('/api/apollo/telemetry').then(function(r){
+  if(!r.ok)return r.json().then(function(e){throw new Error(e.error||('HTTP '+r.status))});
+  return r.json()
+ }).then(function(read){
+  const t=read.telemetry||{};
+  if(read.state==='awaiting_session'){
+   out('');out('  No SNE session sample is available on this Mac yet.','t-head');
+   out('  Next: open Stack Lab in the Sirsi app, select the local machine and resident engine, create a plan, then start the admitted SNE session.','t-dim');
+   out('  When SNE publishes its sample, use [refresh telemetry]. Nothing is stuck here: no session has been started from this screen.','t-dim');
+   return;
+  }
+  if(read.state!=='active'){
+   out('');out('  Telemetry state: '+(read.state||'unknown'),'t-err');
+   out('  Refresh after SNE records a valid session sample. If this persists, inspect the Ma’at casebook for its retained evidence.','t-dim');
+   return;
+  }
+  out('');
+  out('  '+(t.session_id||'unnamed session')+' · '+(t.engine_id||'unknown engine'),'t-head');
+  out('  Sampled '+(t.emitted_at||'at an unknown time'),'t-dim');sep();
+  const pct=function(v){return typeof v==='number'?v.toFixed(1)+'%':'not reported'};
+  const rate=function(v,unit){return typeof v==='number'?v.toFixed(2)+' '+unit:'not reported'};
+  out('  TOKENS / SECOND       '+rate(t.tokens_per_second,'tok/s'));
+  out('  BANDWIDTH             '+rate(t.bandwidth_bytes_per_second,'B/s'));
+  out('  MEMORY                '+(typeof t.memory_bytes==='number'?fmtSize(t.memory_bytes):'not reported'));
+  out('  NETWORK SATURATION    '+pct(t.network_saturation_percent));
+  out('  CPU RESIDENCY         '+pct(t.cpu_residency_percent));
+  out('  GPU RESIDENCY         '+pct(t.gpu_residency_percent));
+  const estates=t.chip_estates||[];
+  if(estates.length){
+   sep();out('  CHIP ESTATES','t-head');
+   estates.forEach(function(e){
+    out('  '+(e.id||'unnamed')+' · residency '+pct(e.residency_percent)+' · utilization '+pct(e.utilization_percent)+' · memory '+(typeof e.memory_bytes==='number'?fmtSize(e.memory_bytes):'not reported'));
+   });
+  } else {
+   out('  CHIP ESTATES         no selected-estate sample reported','t-dim');
+  }
+ }).catch(function(e){
+  out('');out('  Apollo telemetry is unavailable: '+e.message,'t-err');
+  out('  Try [refresh telemetry]. If it continues, open Ma’at to inspect the recorded evidence. This dashboard did not start or change SNE.','t-dim');
+ });
+}
+
 function viewVault(){
  out('🏛 Vault — Context Sandbox','t-gold');
  fetch('/api/vault/stats').then(r=>r.json()).then(function(s){
@@ -514,19 +622,47 @@ function viewVault(){
  }).catch(function(){out('Vault not available.','t-dim')});
 }
 
-/* Ra fleet orchestration has no backend yet — say so plainly instead of
-   dead-ending on fetches that can never succeed. Plain info, no alarm
-   styling: nothing here is fixable by the user, so nothing may alarm. */
 function viewRa(){
  out('𓇶 Ra — Fleet Orchestration','t-gold');
- out('');
- out('  Fleet orchestration — coming with the Ra backend.','t-out');
- out('');
- out('  Ra will balance work across your machines: each node reports its','t-dim');
- out('  capacity (RAM, GPU, pressure) and Ra deploys builds where they fit.','t-dim');
- out('');
- out('  This tab will light up when the backend ships. Nothing to configure','t-dim');
- out('  or fix here today.','t-dim');
+ out('  Read-only deployment status and available scopes from the local Ra authority.','t-dim');
+ Promise.all([
+  fetch('/api/ra/status').then(function(r){if(!r.ok)throw new Error('status HTTP '+r.status);return r.json()}),
+  fetch('/api/ra/scopes').then(function(r){if(!r.ok)throw new Error('scopes HTTP '+r.status);return r.json()})
+ ]).then(function(result){
+  const status=result[0]||{},scopes=result[1]||[];
+  out('');
+  if(!status.deployed){
+   out('  No Ra deployment is currently recorded on this Mac.','t-head');
+   out('  This is an idle state, not an error. Review active work and capacity in Fleet before creating or approving a new orchestration scope.','t-dim');
+   const fleet=document.createElement('button');fleet.className='t-action';fleet.type='button';fleet.textContent='[open Fleet]';
+   fleet.style.cssText='background:none;border:0;font:inherit;margin:8px 0;padding:0';
+   fleet.addEventListener('click',function(){switchView('fleet')});T.appendChild(fleet);
+  }else{
+   out('  Deployment started '+(status.started_at||'at an unknown time')+(status.all_done?' · complete':' · in progress'),'t-head');
+   const windows=status.windows||[];
+   if(!windows.length)out('  No deployment windows were reported.','t-dim');
+   windows.forEach(function(w){
+    const state=(w.state||'unknown').toUpperCase();
+    const row=document.createElement('div');row.className='t-line t-row';
+    const name=document.createElement('span');name.className='t-col';name.style.width='220px';name.textContent=w.name||'unnamed window';
+    const detail=document.createElement('span');detail.className='t-col';detail.style.flex='1';detail.textContent=state+' · PID '+(w.pid||'—')+' · '+(w.duration||'duration unavailable')+(typeof w.exit_code==='number'?' · exit '+w.exit_code:'');
+    row.appendChild(name);row.appendChild(detail);T.appendChild(row);
+    if(w.log_tail){const tail=document.createElement('div');tail.className='t-line t-dim';tail.style.paddingLeft='16px';tail.textContent=w.log_tail;T.appendChild(tail)}
+   });
+  }
+  sep();out('  AVAILABLE SCOPES','t-head');
+  if(!scopes.length){
+   out('  No scope configurations are loaded for this checkout. Use Fleet to inspect the current work queue.','t-dim');
+  }else{
+   scopes.forEach(function(s){
+    out('  '+(s.display_name||s.name||'unnamed')+' · '+(s.priority||'priority unavailable')+' · '+(s.sprints||0)+' sprint'+((s.sprints||0)===1?'':'s')+(s.deadline?' · deadline '+s.deadline:''));
+    if(s.repo_path)out('    '+s.repo_path,'t-dim');
+   });
+  }
+ }).catch(function(e){
+  out('');out('  Ra status is unavailable: '+e.message,'t-err');
+  out('  Open Fleet to inspect active lanes. If the local Ra record is expected, refresh this view after its producer is available.','t-dim');
+ });
 }
 
 /* ── Command input ────────────────────────────────────── */
@@ -546,8 +682,8 @@ function exec(raw){
  if(raw==='home'){switchView('home');return}
 
  /* View switches */
- const viewMap={scan:'scan',ghosts:'ghosts',guard:'guard',doctor:'guard',
-  notifications:'notifications',horus:'horus',vault:'vault',ra:'ra',deploy:'ra'};
+ const viewMap={fleet:'fleet',scan:'scan',ghosts:'ghosts',guard:'guard',doctor:'guard',
+  notifications:'notifications',horus:'horus',apollo:'apollo',telemetry:'apollo',vault:'vault',ra:'ra',deploy:'ra'};
  if(viewMap[raw]){switchView(viewMap[raw]);return}
 
  /* Kill commands */

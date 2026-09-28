@@ -17,6 +17,11 @@ import (
 
 func testFacade(t *testing.T) *Facade {
 	t.Helper()
+	// Every facade fixture owns a local SQLite store and file root. An ambient
+	// router-service URL would intentionally force production into store-only
+	// cutover mode, but it would make this isolated pre-cutover fixture test the
+	// host configuration instead of the requested branch.
+	t.Setenv("SIRSI_ROUTER_URL", "")
 	store, err := routerstore.OpenPath(filepath.Join(t.TempDir(), "router.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -550,6 +555,12 @@ func TestClosePreFacadeItemStillWorks(t *testing.T) {
 // parent directory instead of failing SQLITE_CANTOPEN (the CI-only
 // TestRouterPullModelRoundtrip failure this reproduces).
 func TestOpenCreatesStoreDirOnFreshHome(t *testing.T) {
+	// This fixture proves the explicit local-store override. The developer
+	// workstation can legitimately be enrolled in the Ra router service, but a
+	// test that is constructing a disposable SIRSI_ROUTER_DB must not inherit
+	// that service endpoint and send its audit export to another process.
+	t.Setenv("SIRSI_ROUTER_URL", "")
+	t.Setenv("SIRSI_ROUTER_TOKEN", "")
 	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(t.TempDir(), "nested", "never-made", "router.db"))
 	f, err := Open(t.TempDir())
 	if err != nil {

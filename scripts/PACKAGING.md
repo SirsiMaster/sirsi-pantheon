@@ -1,32 +1,45 @@
 # Sirsi Pantheon — Packaging Guide
 
-How to build distributable packages for each platform.
+Development and commercial outputs are deliberately distinct: an ad-hoc local
+artifact must never occupy a commercial-release name or be uploaded as one.
 
-## macOS (DMG and PKG)
+## macOS development artifacts
 
-Produces a drag-and-drop DMG installer containing `Pantheon.app` with both the menu bar app and the CLI binary.
+Build a local DMG containing `Pantheon.app`, the native menu bar app, and the
+canonical `sirsi` CLI:
 
 ```bash
-make dmg
+make dmg-dev
 # Or directly:
-scripts/build-dmg.sh --version 0.17.0 --arch arm64
+scripts/build-dmg.sh --development --version 0.24.14 --arch arm64
 ```
 
-Output: `bin/SirsiPantheon-VERSION-ARCH.dmg`
+Output: `bin/SirsiPantheon-VERSION-dev-ARCH.dmg`
 
-Build the installer package from that exact same application bundle:
+Build an installer from that exact application bundle:
 
 ```bash
-make pkg
+make pkg-dev
 # Or after building the DMG/app bundle:
-scripts/build-pkg.sh --version 0.24.1 --app Pantheon.app
+scripts/build-pkg.sh --development --version 0.24.14 --arch arm64 --app Pantheon.app
 ```
 
-Output: `bin/SirsiPantheon-VERSION-arm64.pkg`
+Output: `bin/SirsiPantheon-VERSION-dev-ARCH.pkg`
 
-Requirements: macOS (hdiutil/pkgbuild), Go toolchain. A distributable DMG
-requires a Developer ID Application identity and notarization credentials; a
-distributable PKG additionally requires a Developer ID Installer identity.
+Development artifacts are ad-hoc/unsigned local package work. They are not
+commercial releases or release candidates.
+
+## macOS commercial release artifacts
+
+```bash
+make release-dmg
+make release-pkg
+```
+
+Only these targets produce `bin/SirsiPantheon-VERSION-ARCH.{dmg,pkg}`. They
+require macOS, the Go toolchain, a Developer ID Application identity, a
+Developer ID Installer identity for PKG, and complete Apple notarization
+credentials. Both outputs are signed, notarized, stapled, and validated.
 
 ## Linux (deb / rpm)
 

@@ -10,10 +10,12 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/apollo"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dashboard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/casebook"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/knowledge"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
@@ -69,6 +71,14 @@ func runDashboard(cmd *cobra.Command, args []string) {
 		FabricFn:        collectDashboardFabric,
 		MaatDecisionsFn: collectDashboardMaatDecisions,
 		MaatCasebookFn:  collectDashboardMaatCasebook,
+		MaatKnowledgeFn: collectDashboardMaatKnowledge,
+		ApolloTelemetryFn: func() (apollo.TelemetryRead, error) {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return apollo.TelemetryRead{}, err
+			}
+			return apollo.ReadTelemetry(home)
+		},
 	})
 
 	if err := srv.Start(); err != nil {
@@ -120,6 +130,14 @@ func collectDashboardMaatCasebook(query casebook.Query) (casebook.View, error) {
 		return casebook.View{}, err
 	}
 	return casebook.Search(rows, query), nil
+}
+
+func collectDashboardMaatKnowledge(query string) (knowledge.View, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return knowledge.View{}, fmt.Errorf("locate Ma'at knowledge home: %w", err)
+	}
+	return knowledge.Load(home, query)
 }
 
 func collectDashboardFabric() (ledger.FabricBoard, error) {

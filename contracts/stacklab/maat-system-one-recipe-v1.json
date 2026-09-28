@@ -55,6 +55,33 @@
       "upgrade_recipe": ["add parser fixtures before new category rules", "run only through the explicit audit assessor recipe", "record report through RecordReport"]
     },
     {
+      "id": "maat-system-one-screen",
+      "source": ["internal/maat/systemone.go", "internal/maat/decisions.go", "cmd/sirsi/maatscreen.go", "cmd/sirsi/maatcalibrate.go"],
+      "tests": ["internal/maat/systemone_test.go", "cmd/sirsi/maatscreen_test.go", "cmd/sirsi/maatcalibrate_test.go"],
+      "inputs": ["closed typed local screen JSON", "deterministic floor checks", "model/provider provenance", "one distinct independent review outcome for a recorded local auto-pass"],
+      "outputs": ["canonical evidence-bound System One verdict", "complete model/provider/version/locality/latency provenance and deterministic-floor projection", "bounded evidence-linked findings and prescribed recovery steps", "escalation route for sensitive or uncertain screens", "durable auto-pass calibration and overturn-rate projection"],
+      "writes": ["only a validated Ma'at decision journal record"],
+      "upgrade_recipe": ["preserve closed schema validation", "canonicalize floor checks by name and findings by identity before policy and hashing", "reject duplicate finding identities and noncanonical verdict replay", "never let a caller select the screen gate", "require --confirm immediately before every decision-journal write", "retain deterministic floor precedence", "treat each prescribed recovery step as evidence, never executable input", "treat a screen as advisory evidence, never operation authority", "bind calibration only to one recorded local auto-pass and distinct independent evidence", "reject replayed or ambiguous calibration links", "add positive and adversarial fixtures before widening a subject, boundary, finding, or independent outcome class"]
+    },
+    {
+      "id": "maat-host-health-screen",
+      "source": ["cmd/sirsi/maattriage.go", "internal/guard/doctor.go", "internal/maat/systemone.go", "macapp/Sources/SirsiMenubar/MaatCasebookView.swift", "macapp/Sources/SirsiMenubar/StackLabCatalogView.swift"],
+      "tests": ["cmd/sirsi/maattriage_test.go", "internal/maat/systemone_test.go", "scripts/verify-maat-native-resolution-contract.sh"],
+      "inputs": ["one complete local Doctor report", "local host identity", "explicit native or CLI confirmation"],
+      "outputs": ["hash-bound host-health System One screen", "deterministic pass/changes/block/escalate Casebook record", "native outcome treatment that distinguishes recorded evidence from a healthy gate", "Stack Lab component-to-native System One handoff without recipe-string execution", "three-level repair/review/owner-resolution guidance for each active health finding"],
+      "writes": ["only one confirmed Ma'at decision journal record after the local report is hashed and screened"],
+      "upgrade_recipe": ["retain one diagnostic observation and hash its full typed report before screening", "never accept caller-supplied host-health findings, commands, or gate values", "retain host identity and report digest as the screen subject", "treat a successful Casebook append as distinct from a pass gate", "route the Stack Lab component only into the named native owner surface; never execute a recipe field", "do not repair, kill, install, or invoke an LLM while observing", "add preview-without-write, confirmation, warning, blocking, native outcome, and Stack Lab handoff fixtures before widening the observation contract"]
+    },
+    {
+      "id": "maat-release-contract-preflight",
+      "source": ["internal/maat/releasepreflight.go", "cmd/sirsi/maatpreflight.go", "contracts/stacklab/pantheon-release-artifact-recipe-v1.json"],
+      "tests": ["internal/maat/releasepreflight_test.go", "scripts/verify-maat-release-preflight-contract.sh", "scripts/verify-commercial-release-contract.sh"],
+      "inputs": ["explicit checkout root", "regular non-symlink release-contract sources"],
+      "outputs": ["hash-bound non-executing release-contract observation", "delivery-bound System One verdict", "evidence-linked repair hints for every failed source floor"],
+      "writes": ["only one confirmed Ma'at decision journal record through sirsi maat preflight release --confirm"],
+      "upgrade_recipe": ["keep source observation in-process and non-executing", "retain regular-file and before/after identity checks", "hash every observed input into the subject fingerprint", "keep a green source floor distinct from credentialed release proof", "require explicit confirmation immediately before Casebook persistence", "add positive, missing-contract, and symlink adversarial fixtures before widening the contract"]
+    },
+    {
       "id": "maat-pulse-proof-platform",
       "source": ["internal/maat/pulse.go", "internal/maat/proof.go", "internal/maat/platform.go"],
       "tests": ["internal/maat/pulse_test.go", "internal/maat/proof_test.go", "internal/maat/platform_test.go"],
@@ -65,21 +92,39 @@
     },
     {
       "id": "maat-decision-journal",
-      "source": ["internal/maat/decisions.go"],
-      "tests": ["internal/maat/decisions_test.go"],
-      "inputs": ["Ma'at decisions and reports"],
-      "outputs": ["ordered decision records"],
+      "source": ["internal/maat/decisions.go", "internal/maat/diagnostic_resolution.go"],
+      "tests": ["internal/maat/decisions_test.go", "internal/maat/diagnostic_resolution_test.go"],
+      "inputs": ["Ma'at decisions and reports", "explicit owner review and acceptance"],
+      "outputs": ["ordered decision records", "evidence-bound owner resolution links"],
       "writes": ["~/.sirsi/maat/decisions.jsonl"],
-      "upgrade_recipe": ["retain JSONL compatibility", "append and fsync records", "reject malformed records", "never turn local evidence into remote proof"]
+      "upgrade_recipe": ["retain JSONL compatibility", "append and fsync records", "reject malformed records", "require an explicit confirmation before owner-review or owner-acceptance writes", "bind acceptance to one recorded review", "never turn local evidence into remote proof"]
     },
     {
       "id": "maat-casebook",
       "source": ["internal/maat/casebook/casebook.go"],
       "tests": ["internal/maat/casebook/casebook_test.go"],
       "inputs": ["DecisionJournal records"],
-      "outputs": ["classified cases", "priority summary", "actor/resource/evidence graph"],
+      "outputs": ["classified cases", "priority summary", "actor/resource/evidence graph", "truthful next step for every open case", "complete System One model and deterministic-floor provenance", "three-level recovery route for every failed deterministic floor", "prescribed recovery guidance for every System One finding"],
       "writes": [],
-      "upgrade_recipe": ["keep classification descriptive", "add deterministic source fixtures", "never add policy or execution authority"]
+      "upgrade_recipe": ["keep classification descriptive", "surface an evidence-bound owner route for each open case", "for a failed System One deterministic floor, project inspect/correct/re-screen recovery levels before owner confirmation", "preserve each System One finding and recovery hint without creating command authority", "add deterministic source fixtures", "never add policy or execution authority"]
+    },
+    {
+      "id": "maat-guided-managed-repair",
+      "source": ["cmd/sirsi/maatrepair.go", "internal/maat/diagnostic_repair.go", "internal/guard/doctor.go", "internal/router/launchdkickstart.go", "macapp/Sources/SirsiMenubar/Views.swift"],
+      "tests": ["cmd/sirsi/maatrepair_test.go", "internal/maat/diagnostic_repair_test.go", "scripts/verify-maat-guided-repair-contract.sh"],
+      "inputs": ["canonical guard diagnostic finding", "fixed managed-label recovery implementation", "explicit native confirmation"],
+      "outputs": ["preflight-bound managed LaunchAgent recovery", "post-repair recheck of the same diagnostic", "one Ma'at verified-recovery or incomplete-repair receipt", "native resolution that never reports raw success without verification"],
+      "writes": ["only the established managed LaunchAgent state and one local Ma'at decision journal record after the repair outcome is observed"],
+      "upgrade_recipe": ["keep the repair registry closed", "never accept a caller-supplied command, plist, or label", "require preflight confirmation and a same-check post-repair observation", "record incomplete outcomes as open cases", "add source and runtime fixtures before admitting any new repair" ]
+    },
+    {
+      "id": "maat-knowledge-surface",
+      "source": ["internal/maat/knowledge/knowledge.go", "cmd/sirsi/maatknowledge.go", "internal/dashboard/actions.go", "internal/dashboard/maat.go", "internal/dashboard/server.go", "cmd/sirsi/dashboard.go", "internal/mcp/tools.go", "macapp/Sources/SirsiMenubar/MaatCasebookView.swift", "internal/seshat"],
+      "tests": ["internal/maat/knowledge/knowledge_test.go", "cmd/sirsi/maatknowledge_test.go", "internal/mcp/maat_test.go", "internal/dashboard/dashboard_test.go", "internal/dashboard/actions_test.go", "scripts/verify-maat-knowledge-surface-contract.sh"],
+      "inputs": ["retained local knowledge cache", "bounded optional text query", "explicit confirmed Ma'at knowledge refresh request"],
+      "outputs": ["one sensitivity-filtered Ma'at knowledge projection shared by CLI, MCP, Horus dashboard, and native app", "Ma'at-named dashboard, CLI, and native confirmed knowledge refresh action", "withheld sensitive legacy records", "visible refresh outcome and retry path that preserves the current cache on failure"],
+      "writes": ["only the legacy ingestion adapter's existing local cache writes through sirsi maat knowledge refresh"],
+      "upgrade_recipe": ["keep Ma'at as the only user-facing knowledge and decision authority", "route every read-only consumer through internal/maat/knowledge rather than adding a parallel cache parser", "treat Seshat ingestion as a compatibility adapter until its engine migrates", "keep refresh source-scoped and do not expose external export through it", "withhold secret-bearing legacy records without mutating them", "keep MCP and Horus knowledge projections GET-only and query-bounded", "never expose the legacy deity as a dashboard action key or label", "add CLI, MCP, dashboard, native, action-registry, and knowledge-filter fixtures before widening sources"]
     },
     {
       "id": "maat-scheduler",
@@ -92,21 +137,57 @@
     },
     {
       "id": "maat-cli",
-      "source": ["cmd/sirsi/maat.go", "cmd/sirsi/maatschedule.go", "cmd/sirsi/maatcasebook.go"],
-      "tests": ["cmd/sirsi/maatschedule_decisions_test.go"],
+      "source": ["cmd/sirsi/maat.go", "cmd/sirsi/maatschedule.go", "cmd/sirsi/maatcasebook.go", "cmd/sirsi/maatresolution.go", "cmd/sirsi/maatscreen.go", "cmd/sirsi/maatpreflight.go", "cmd/sirsi/maatcalibrate.go", "cmd/sirsi/maatknowledge.go"],
+      "tests": ["cmd/sirsi/maatschedule_decisions_test.go", "cmd/sirsi/maatresolution_test.go", "cmd/sirsi/maatscreen_test.go", "cmd/sirsi/maatcalibrate_test.go", "cmd/sirsi/maatknowledge_test.go", "internal/maat/releasepreflight_test.go"],
       "inputs": ["local operator command"],
-      "outputs": ["human and JSON views"],
-      "writes": ["only explicit audit and reservation decision records"],
-      "upgrade_recipe": ["keep JSON and human output derived from shared types", "add command tests for each new flag"]
+      "outputs": ["human and JSON views with System One model/deterministic-floor provenance, three-level failed-floor recovery, and read-only prescribed recovery guidance"],
+      "writes": ["only explicit audit, reservation, and confirmed owner-resolution decision records"],
+      "upgrade_recipe": ["keep JSON and human output derived from shared types", "render recovery guidance without dispatching producer-supplied text", "require confirmation for every write", "add command tests for each new flag"]
     },
     {
       "id": "maat-horus-surface",
       "source": ["internal/dashboard/maat.go", "internal/dashboard/server.go", "internal/dashboard/pages.go", "cmd/sirsi/dashboard.go"],
       "tests": ["internal/dashboard/dashboard_test.go"],
-      "inputs": ["MaatDecisionProducer", "MaatCasebookProducer"],
-      "outputs": ["GET /api/maat/decisions", "GET /api/maat/casebook", "Horus Ma'at view"],
+      "inputs": ["MaatDecisionProducer", "MaatCasebookProducer", "MaatKnowledgeProducer"],
+      "outputs": ["GET /api/maat/decisions", "GET /api/maat/casebook with complete System One model/floor/finding/three-level-recovery evidence", "GET /api/maat/knowledge with the same sensitivity-filtered local view as CLI and MCP", "Horus Ma'at view with visible deterministic provenance, retained knowledge, and read-only prescribed next steps"],
       "writes": [],
       "upgrade_recipe": ["keep endpoints GET-only", "reject invalid filters", "return 503 rather than a fabricated empty projection"]
+    },
+    {
+      "id": "maat-mcp-surface",
+      "source": ["internal/mcp/tools.go"],
+      "tests": ["internal/mcp/maat_test.go"],
+      "inputs": ["shared Ma'at decision journal", "shared sensitivity-filtered Ma'at knowledge projection", "bounded query filters"],
+      "outputs": ["read-only maat_casebook MCP JSON projection with System One model/floor, finding, three-level recovery, and calibration evidence", "read-only maat_knowledge MCP JSON projection equivalent to the CLI and Horus knowledge view"],
+      "writes": [],
+      "upgrade_recipe": ["keep the journal as the sole local Ma'at store", "reject malformed filters before reading", "never add write, review, repair, or authorization authority", "test projection of calibration links, recovery hints, and rejected filters"]
+    },
+    {
+      "id": "maat-terminal-console-surface",
+      "source": ["internal/tui/command.go", "internal/tui/contracts.go", "internal/tui/screen_activity.go", "internal/tui/runner.go"],
+      "tests": ["internal/tui/command_test.go", "internal/tui/console_test.go"],
+      "inputs": ["canonical sirsi maat casebook JSON", "canonical activity ledger JSON"],
+      "outputs": ["five-screen Horus console Activity ledger", "Ma'at System One casebook mode", "visible model and deterministic-floor provenance", "three-level failed-floor recovery", "evidence, prescribed recovery, and guided resolution detail"],
+      "writes": [],
+      "upgrade_recipe": ["retain the five-screen console architecture", "use only the canonical sirsi executable runner", "keep Casebook read-only in the terminal", "make every visible key registry-backed and testable", "show an evidence-bound next step for every open case", "show System One prescribed recovery steps as read-only evidence", "keep explicit owner confirmation in the native app or confirmed CLI path"]
+    },
+    {
+      "id": "maat-native-resolution-surface",
+      "source": ["macapp/Sources/SirsiMenubar/Views.swift", "macapp/Sources/SirsiMenubar/MaatCasebookView.swift", "macapp/Sources/SirsiMenubar/SirsiEngine.swift"],
+      "tests": ["scripts/verify-maat-native-resolution-contract.sh"],
+      "inputs": ["canonical diagnostic finding", "explicit operator confirmation", "canonical Ma'at casebook projection", "explicitly selected closed System One JSON from a qualified producer", "explicit selected repository root for release-contract preflight"],
+      "outputs": ["guided owner-review entry point for every alarm without a safe automatic repair", "native evidence and acceptance path", "first-class System One gate and calibration projection", "native System One model/floor/finding, three-level recovery, evidence, and prescribed recovery projection", "confirmed native closed-screen validation and record route", "non-executing native release-contract preflight with visible failed checks and repair hints"],
+      "writes": ["only a confirmed Ma'at owner review or owner acceptance through the canonical CLI", "one validated System One decision journal record through the canonical CLI", "one explicitly confirmed release-contract preflight through the canonical CLI"],
+      "upgrade_recipe": ["never label an alarm informational solely because automation is unsafe", "require an explicit confirmation before recording a review or a selected System One screen", "preserve the distinction between owner conclusion and system repair", "continue successful review to the shared Casebook acceptance surface", "render System One only from the canonical Casebook projection", "show producer recovery guidance as copyable evidence, never auto-executable input", "never portray an empty history as a pass; offer only qualified local observation or a closed typed producer screen", "never execute an assessed payload while validating its selected screen JSON", "bind release-contract observation to the explicitly selected project root and never invoke a release command", "show every failed floor check with its repair hint before confirmation", "run the native resolution contract and Swift syntax validation"]
+    },
+    {
+      "id": "maat-confirmed-diagnostic-repair",
+      "source": ["internal/guard/doctor.go", "internal/router/launchdkickstart.go", "cmd/sirsi/livenesswatchcmd.go", "macapp/Sources/SirsiMenubar/Views.swift"],
+      "tests": ["internal/guard/doctor_test.go", "internal/guard/remediation_enforcement_test.go", "internal/router/launchdkickstart_test.go", "scripts/verify-maat-native-resolution-contract.sh"],
+      "inputs": ["critical diagnostic finding", "managed regular non-symlink LaunchAgent plist", "launchd disabled-override state", "explicit native or CLI confirmation"],
+      "outputs": ["confirmed, bounded disabled-override recovery", "separate enabled and bootstrapped label evidence", "post-action diagnostic recheck"],
+      "writes": ["only launchd state for labels in the captured disabled-override snapshot and backed by a regular non-symlink managed plist"],
+      "upgrade_recipe": ["preserve the managed filename allowlist and regular non-symlink plist requirement", "bind a confirmed repair to its captured disabled-label snapshot; do not broaden it into a supervisor sweep", "enable disabled overrides before deciding whether a loaded label needs bootstrap", "never revive quarantined Gemma labels or a fabric-wide quarantine", "require explicit confirmation in every operator surface", "retain separate enabled versus bootstrapped evidence", "add loaded-disabled, unloaded-disabled, unrelated-unloaded, symlink, error-isolation, and quarantine fixtures before widening scope"]
     },
     {
       "id": "maat-wing-contract",
@@ -116,6 +197,15 @@
       "outputs": ["wing authority record", "upgrade recipes"],
       "writes": ["source contract only"],
       "upgrade_recipe": ["validate schema locally", "merge to origin/main", "obtain universal registry byte pin before calling the wing canonical"]
+    },
+    {
+      "id": "stacklab-apollo-run-planner",
+      "source": ["internal/apollo/catalog.go", "internal/apollo/telemetry.go", "cmd/sirsi/apollo.go", "macapp/Sources/SirsiMenubar/ApolloRunPlannerView.swift", "macapp/Sources/SirsiMenubar/StackLabView.swift", "contracts/stacklab/apollo-sne-telemetry-v1.json"],
+      "tests": ["internal/apollo/catalog_test.go", "internal/apollo/telemetry_test.go", "scripts/verify-stacklab-apollo-contract.sh", "scripts/verify-apollo-sne-telemetry-contract.sh"],
+      "inputs": ["typed Seba hardware profile", "configured local SNE provider route", "Sirsi Vitals", "conduit local-model state", "bounded SNE-owned Apollo session telemetry"],
+      "outputs": ["explicit typed-capacity machine and resident-engine selector", "machine-bound CPU, unified-memory, swap, and chip-estate plan", "non-mutating typed Apollo plan", "closed, bounded session telemetry contract for tokens, bandwidth, memory, network, CPU/GPU, and selected chip estates"],
+      "writes": ["none while composing a plan; SNE admission owns later inference execution"],
+      "upgrade_recipe": ["preserve Seba and SNE as the only capacity and engine authorities", "bind each selectable machine, engine route, and chip-estate list to the same typed capacity receipt", "keep every enumerated resource limit typed and bounded", "never turn a plan into an inference start without SNE admission", "render missing session telemetry as unavailable, not zero", "add source and injected-conduit fixtures before widening engine, machine, or telemetry schemas"]
     }
   ]
 }

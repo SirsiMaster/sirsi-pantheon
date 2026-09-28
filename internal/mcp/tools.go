@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/apollo"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/brain"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/horus"
@@ -17,6 +19,9 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal/rules"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ka"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/casebook"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/knowledge"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/rtk"
@@ -28,6 +33,40 @@ import (
 // registerTools adds Pantheon tools to the MCP server.
 // Only tools that provide real, distinct value are exposed.
 func registerTools(s *Server) {
+	s.RegisterTool(Tool{
+		Name:        "maat_casebook",
+		Description: "Read Ma'at's local evidence-linked casebook. Returns recorded System One screens, independent calibration links, and truthful resolution routes. Read-only: it never creates a decision, review, repair, or authorization.",
+		InputSchema: InputSchema{
+			Type: "object",
+			Properties: map[string]SchemaField{
+				"query":  {Type: "string", Description: "Optional text filter across recorded case and evidence fields."},
+				"kind":   {Type: "string", Description: "Optional decision kind or category filter."},
+				"status": {Type: "string", Description: "Optional status filter: open or resolved."},
+				"limit":  {Type: "number", Description: "Maximum returned cases, from 1 through 100; defaults to 50."},
+			},
+		},
+	}, handleMaatCasebook)
+
+	s.RegisterTool(Tool{
+		Name:        "maat_knowledge",
+		Description: "Read Ma'at's sensitivity-filtered local knowledge projection. It is the same retained view shown by the Ma'at knowledge command, not a Seshat ingestion endpoint. Read-only: it cannot ingest, export, change, or disclose withheld records.",
+		InputSchema: InputSchema{
+			Type: "object",
+			Properties: map[string]SchemaField{
+				"query": {Type: "string", Description: "Optional text filter across safe title, summary, and reference metadata."},
+			},
+		},
+	}, handleMaatKnowledge)
+
+	s.RegisterTool(Tool{
+		Name:        "apollo_session_telemetry",
+		Description: "Read the latest SNE-owned Apollo session sample for this Mac. Returns awaiting_session when no admitted session has published data, or measured tokens/s, bandwidth, memory, network, CPU/GPU residency, and selected chip-estate metrics. Read-only: it cannot start, stop, configure, or infer an SNE session.",
+		InputSchema: InputSchema{
+			Type:       "object",
+			Properties: map[string]SchemaField{},
+		},
+	}, handleApolloSessionTelemetry)
+
 	s.RegisterTool(Tool{
 		Name:        "scan_workspace",
 		Description: "Scan a directory for infrastructure waste — stale caches, orphaned build artifacts, unused dependencies. Read-only, never deletes anything. Returns findings with sizes.",
@@ -442,6 +481,126 @@ func registerTools(s *Server) {
 	}, handleRouterLedger)
 }
 
+var openMaatCasebookJournal = func() (maat.DecisionJournal, error) {
+	return maat.NewDefaultDecisionJournal()
+}
+
+var maatKnowledgeHome = os.UserHomeDir
+
+// handleMaatCasebook exposes the one local Ma'at projection to MCP clients.
+// It deliberately reads the shared append-only journal rather than rebuilding
+// policy or hosting a second agent-facing store.
+func handleMaatCasebook(args map[string]interface{}) (*ToolResult, error) {
+	query, err := parseMaatCasebookQuery(args)
+	if err != nil {
+		return textResult("Error: "+err.Error(), true), nil
+	}
+	journal, err := openMaatCasebookJournal()
+	if err != nil {
+		return textResult(fmt.Sprintf("Ma'at casebook unavailable: %v", err), true), nil
+	}
+	rows, err := journal.Recent(1000)
+	if err != nil {
+		return textResult(fmt.Sprintf("Ma'at decision journal unavailable: %v", err), true), nil
+	}
+	view := casebook.Search(rows, query)
+	raw, err := json.Marshal(view)
+	if err != nil {
+		return nil, fmt.Errorf("encode Ma'at casebook: %w", err)
+	}
+	return textResult(string(raw), false), nil
+}
+
+// handleMaatKnowledge is the agent-facing projection of the same filtered
+// local knowledge view used by Ma'at's CLI and native surface. It never exposes
+// a raw Seshat cache or offers ingestion mutation through MCP.
+func handleMaatKnowledge(args map[string]interface{}) (*ToolResult, error) {
+	query := ""
+	if value, exists := args["query"]; exists {
+		text, ok := value.(string)
+		if !ok {
+			return textResult("Error: query must be a string", true), nil
+		}
+		query = text
+	}
+	home, err := maatKnowledgeHome()
+	if err != nil {
+		return textResult(fmt.Sprintf("Ma'at knowledge unavailable: determine home directory: %v", err), true), nil
+	}
+	view, err := knowledge.Load(home, query)
+	if err != nil {
+		return textResult(fmt.Sprintf("Ma'at knowledge unavailable: %v", err), true), nil
+	}
+	raw, err := json.Marshal(view)
+	if err != nil {
+		return nil, fmt.Errorf("encode Ma'at knowledge: %w", err)
+	}
+	return &ToolResult{Content: []ContentBlock{{Type: "text", MimeType: "application/json", Text: string(raw)}}}, nil
+}
+
+// handleApolloSessionTelemetry exposes the SNE-owned local session record to
+// MCP clients without creating a second observer, cache, or execution route.
+func handleApolloSessionTelemetry(_ map[string]interface{}) (*ToolResult, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return textResult(fmt.Sprintf("Apollo telemetry unavailable: determine home directory: %v", err), true), nil
+	}
+	return readApolloSessionTelemetry(home)
+}
+
+func readApolloSessionTelemetry(home string) (*ToolResult, error) {
+	read, err := apollo.ReadTelemetry(home)
+	if err != nil {
+		return textResult(fmt.Sprintf("Apollo telemetry rejected: %v", err), true), nil
+	}
+	raw, err := json.Marshal(read)
+	if err != nil {
+		return nil, fmt.Errorf("encode Apollo telemetry: %w", err)
+	}
+	return &ToolResult{Content: []ContentBlock{{Type: "text", MimeType: "application/json", Text: string(raw)}}}, nil
+}
+
+func parseMaatCasebookQuery(args map[string]interface{}) (casebook.Query, error) {
+	query := casebook.Query{Limit: 50}
+	if text, exists := args["query"]; exists {
+		value, ok := text.(string)
+		if !ok {
+			return casebook.Query{}, errors.New("query must be a string")
+		}
+		query.Text = value
+	}
+	if kind, exists := args["kind"]; exists {
+		value, ok := kind.(string)
+		if !ok {
+			return casebook.Query{}, errors.New("kind must be a string")
+		}
+		query.Kind = value
+	}
+	if status, exists := args["status"]; exists {
+		value, ok := status.(string)
+		if !ok {
+			return casebook.Query{}, errors.New("status must be a string")
+		}
+		switch casebook.Status(strings.ToLower(strings.TrimSpace(value))) {
+		case "":
+		case casebook.StatusOpen:
+			query.Status = casebook.StatusOpen
+		case casebook.StatusResolved:
+			query.Status = casebook.StatusResolved
+		default:
+			return casebook.Query{}, errors.New("status must be open or resolved")
+		}
+	}
+	if limit, exists := args["limit"]; exists {
+		value, ok := limit.(float64)
+		if !ok || value != float64(int(value)) || value < 1 || value > 100 {
+			return casebook.Query{}, errors.New("limit must be a whole number from 1 through 100")
+		}
+		query.Limit = int(value)
+	}
+	return query, nil
+}
+
 // handleScanWorkspace runs the Jackal scan engine on a workspace.
 func handleScanWorkspace(args map[string]interface{}) (*ToolResult, error) {
 	// Parse path argument
@@ -475,6 +634,10 @@ func handleScanWorkspace(args map[string]interface{}) (*ToolResult, error) {
 
 	result, err := engine.Scan(ctx, jackal.ScanOptions{
 		Categories: categories,
+		// The caller-selected workspace is the scan root as well as the label
+		// rendered in the result. Without this, a bounded MCP request could say
+		// it scanned one project while rules silently walked the ambient home.
+		HomeDir: scanPath,
 	})
 	if err != nil {
 		return textResult(fmt.Sprintf("Scan failed: %v", err), true), nil

@@ -111,6 +111,112 @@ type activityReport struct {
 	Entries []activityEntry `json:"entries"`
 }
 
+// --- sirsi maat casebook --json (internal/maat/casebook View) ---
+//
+// The terminal console intentionally consumes Ma'at's projected evidence
+// journal rather than deriving its own diagnoses. Keep this contract read-only:
+// resolution/acceptance remains a separately confirmed action in the native
+// Pantheon app or the explicit CLI commands.
+
+type maatResolutionPath struct {
+	Kind                 string               `json:"kind"`
+	Title                string               `json:"title"`
+	Detail               string               `json:"detail"`
+	Evidence             string               `json:"evidence"`
+	RequiresConfirmation bool                 `json:"requires_confirmation"`
+	Steps                []maatResolutionStep `json:"steps"`
+}
+
+type maatResolutionStep struct {
+	Level                int    `json:"level"`
+	Title                string `json:"title"`
+	Detail               string `json:"detail"`
+	Evidence             string `json:"evidence"`
+	RequiresConfirmation bool   `json:"requires_confirmation"`
+}
+
+type maatSystemOneSubject struct {
+	Kind    string `json:"kind"`
+	Ref     string `json:"ref"`
+	HeadSHA string `json:"head_sha"`
+}
+
+type maatSystemOneEscalation struct {
+	Reason string `json:"reason"`
+}
+
+type maatSystemOneFloorCheck struct {
+	Name   string `json:"name"`
+	Passed bool   `json:"passed"`
+	Detail string `json:"detail"`
+}
+
+type maatSystemOneFloor struct {
+	Passed bool                      `json:"passed"`
+	Checks []maatSystemOneFloorCheck `json:"checks"`
+}
+
+type maatSystemOneModel struct {
+	Provider  string `json:"provider"`
+	Version   string `json:"version"`
+	Local     bool   `json:"local"`
+	LatencyMS int    `json:"latency_ms"`
+}
+
+type maatSystemOneFinding struct {
+	ID       string `json:"id"`
+	Severity string `json:"severity"`
+	Category string `json:"category"`
+	File     string `json:"file"`
+	Line     int    `json:"line"`
+	Claim    string `json:"claim"`
+	Evidence string `json:"evidence"`
+	FixHint  string `json:"fix_hint"`
+}
+
+type maatSystemOneVerdict struct {
+	Gate          string                   `json:"gate"`
+	Confidence    float64                  `json:"confidence"`
+	FeatherWeight int                      `json:"feather_weight"`
+	Subject       maatSystemOneSubject     `json:"subject"`
+	Escalation    *maatSystemOneEscalation `json:"escalation"`
+	Floor         maatSystemOneFloor       `json:"floor"`
+	Model         maatSystemOneModel       `json:"model"`
+	Findings      []maatSystemOneFinding   `json:"findings"`
+}
+
+type maatCase struct {
+	ID            string                `json:"id"`
+	Time          string                `json:"time"`
+	Kind          string                `json:"kind"`
+	Category      string                `json:"category"`
+	Status        string                `json:"status"`
+	Priority      string                `json:"priority"`
+	Requester     string                `json:"requester"`
+	Resource      string                `json:"resource"`
+	Affected      string                `json:"affected"`
+	Determination string                `json:"determination"`
+	Assessed      string                `json:"assessed"`
+	Why           string                `json:"why"`
+	Evidence      string                `json:"evidence"`
+	Resolution    string                `json:"resolution"`
+	NextAction    *maatResolutionPath   `json:"next_action"`
+	SystemOne     *maatSystemOneVerdict `json:"system_one"`
+}
+
+type maatCasebookSummary struct {
+	Total    int `json:"total"`
+	Open     int `json:"open"`
+	Urgent   int `json:"urgent"`
+	High     int `json:"high"`
+	Resolved int `json:"resolved"`
+}
+
+type maatCasebookReport struct {
+	Cases   []maatCase          `json:"cases"`
+	Summary maatCasebookSummary `json:"summary"`
+}
+
 // --- sirsi diagnose --json (internal/guard DiagnosticReport) ---
 
 type diagFinding struct {
@@ -121,7 +227,8 @@ type diagFinding struct {
 	Trend      bool   `json:"trend,omitempty"`
 	ActiveDays int    `json:"activeDays,omitempty"`
 	Fix        string `json:"fix,omitempty"`
-	FixKind    string `json:"fixKind,omitempty"` // instant | relief | guidance
+	FixKind    string `json:"fixKind,omitempty"`    // instant | relief | guidance
+	Resolution string `json:"resolution,omitempty"` // repair | maat_review | information
 }
 
 type diagReport struct {

@@ -14,6 +14,7 @@ package router
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,6 +36,16 @@ type launchdDeps struct {
 	// generalization of isQuarantined (which only ever covered quarantinedLabels).
 	// nil is treated as "not quarantined" so existing callers/tests are unaffected.
 	isFabricQuarantined func() bool
+}
+
+// ManagedLaunchdRecovery is the factual result of one bounded recovery pass.
+// Enabled labels may already be loaded; Bootstrapped labels were absent from
+// launchd and were loaded from an exact managed plist. Keeping those outcomes
+// separate prevents the UI and activity journal from calling an enable-only
+// repair a process restart.
+type ManagedLaunchdRecovery struct {
+	Enabled      []string
+	Bootstrapped []string
 }
 
 // quarantinedLabels are launchd labels this duty must never revive while the
@@ -127,28 +138,30 @@ func labelForPlist(name string) string {
 	return strings.TrimSuffix(name, ".plist")
 }
 
-// KickstartDeadLabels bootstraps every managed plist on disk whose label is
-// missing from launchd. If a label is also disabled in the override DB, it
-// calls `launchctl enable` first — kickstart cannot recover a disabled+unloaded
-// label (2026-07-31 fabric-loss post-mortem). Returns revived labels.
-func KickstartDeadLabels(agentsDir string, deps launchdDeps) ([]string, error) {
+// recoverManagedLaunchd restores managed, on-disk plists in two explicit
+// stages: clear a disabled override first, even if the label remains loaded;
+// then bootstrap only labels absent from launchd. When targets is non-nil it
+// is an exact label allowlist, so a user-confirmed repair cannot incidentally
+// revive another managed service. It never revives quarantined Gemma labels or
+// anything outside the managed filename allowlist.
+func recoverManagedLaunchd(agentsDir string, deps launchdDeps, targets map[string]bool) (ManagedLaunchdRecovery, error) {
 	entries, err := os.ReadDir(agentsDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return ManagedLaunchdRecovery{}, nil
 		}
-		return nil, err
+		return ManagedLaunchdRecovery{}, err
 	}
 	// Fabric-wide stand-down (R7/G6): honored BEFORE touching launchd at all,
 	// so a quarantined fabric reads as zero revivals rather than "everything
 	// except the labels this duty happens to know about."
 	if deps.isFabricQuarantined != nil && deps.isFabricQuarantined() {
-		return nil, nil
+		return ManagedLaunchdRecovery{}, nil
 	}
 
 	loaded, err := deps.listLabels()
 	if err != nil {
-		return nil, fmt.Errorf("launchctl list: %w", err)
+		return ManagedLaunchdRecovery{}, fmt.Errorf("launchctl list: %w", err)
 	}
 	// Read the override DB once; disabled labels require enable before bootstrap.
 	// Fail-open: nil fn (e.g. tests that don't stub it) or exec error both yield
@@ -159,20 +172,38 @@ func KickstartDeadLabels(agentsDir string, deps launchdDeps) ([]string, error) {
 		disabled, _ = deps.disabledLabels()
 	}
 
-	uid := deps.uid()
+	// Recovery is also used by descriptor/symlink safety checks whose test seam
+	// does not need a synthetic uid. Keep that path safe instead of panicking
+	// before it can reject an unsafe managed plist.
+	uid := os.Getuid()
+	if deps.uid != nil {
+		uid = deps.uid()
+	}
 	domain := fmt.Sprintf("gui/%d", uid)
 
 	quarantined := deps.isQuarantined != nil && deps.isQuarantined()
 
-	var revived []string
+	var recovery ManagedLaunchdRecovery
 	var firstErr error
 	for _, e := range entries {
 		name := e.Name()
 		if e.IsDir() || !managedPlist(name) {
 			continue
 		}
+		plistPath := filepath.Join(agentsDir, name)
+		info, statErr := os.Lstat(plistPath)
+		if statErr != nil || info.Mode()&fs.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			if firstErr == nil {
+				if statErr != nil {
+					firstErr = fmt.Errorf("inspect managed plist %s: %w", name, statErr)
+				} else {
+					firstErr = fmt.Errorf("managed plist %s is not a regular non-symlink file", name)
+				}
+			}
+			continue
+		}
 		label := labelForPlist(name)
-		if loaded[label] {
+		if targets != nil && !targets[label] {
 			continue
 		}
 		if quarantined && quarantinedLabels[label] {
@@ -188,16 +219,54 @@ func KickstartDeadLabels(agentsDir string, deps launchdDeps) ([]string, error) {
 				}
 				continue
 			}
+			recovery.Enabled = append(recovery.Enabled, label)
 		}
-		if err := deps.bootstrapPlist(filepath.Join(agentsDir, name)); err != nil {
+		if loaded[label] {
+			continue // enabled above if needed; its own launchd policy owns its process
+		}
+		if err := deps.bootstrapPlist(plistPath); err != nil {
 			if firstErr == nil {
 				firstErr = err
 			}
 			continue
 		}
-		revived = append(revived, label)
+		recovery.Bootstrapped = append(recovery.Bootstrapped, label)
 	}
-	return revived, firstErr
+	return recovery, firstErr
+}
+
+// KickstartDeadLabels is the supervisor-compatible wrapper. Its return value
+// remains limited to labels that were absent and bootstrapped, so historical
+// callers cannot mistake clearing a disabled override on a loaded process for
+// a reload.
+func KickstartDeadLabels(agentsDir string, deps launchdDeps) ([]string, error) {
+	recovery, err := recoverManagedLaunchd(agentsDir, deps, nil)
+	return recovery.Bootstrapped, err
+}
+
+// RestoreDisabledManagedLaunchAgents is the explicit, operator-confirmed
+// repair used by `sirsi liveness-watch restore-disabled`. It snapshots the
+// disabled override labels and applies the shared managed-plist recovery only
+// to that allowlist. Unlike the resident supervisor sweep, it never uses this
+// UI action as authority to revive a different unloaded service.
+func RestoreDisabledManagedLaunchAgents() (ManagedLaunchdRecovery, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ManagedLaunchdRecovery{}, err
+	}
+	if launchdOS.disabledLabels == nil {
+		return ManagedLaunchdRecovery{}, fmt.Errorf("read disabled launchd overrides: unavailable")
+	}
+	disabled, err := launchdOS.disabledLabels()
+	if err != nil {
+		return ManagedLaunchdRecovery{}, fmt.Errorf("read disabled launchd overrides: %w", err)
+	}
+	// Preserve the snapshot through the recovery pass. The live state can only
+	// become less actionable after a concurrent enable; the fixed target set
+	// prevents a newly-disabled unrelated label from expanding this repair.
+	deps := launchdOS
+	deps.disabledLabels = func() (map[string]bool, error) { return disabled, nil }
+	return recoverManagedLaunchd(filepath.Join(home, "Library", "LaunchAgents"), deps, disabled)
 }
 
 // Kickstart wiring follows the gemma-liveness seam pattern (Rule A16/A21):

@@ -6,8 +6,16 @@ import (
 	"testing"
 )
 
+// Production service routing intentionally wins when configured. These unit
+// tests exercise the local env/marker contract, so isolate that ambient route.
+func isolateStoreWake(t *testing.T) {
+	t.Helper()
+	t.Setenv("SIRSI_ROUTER_URL", "")
+}
+
 // Env always wins, in both directions.
 func TestStoreWakeEnvWins(t *testing.T) {
+	isolateStoreWake(t)
 	t.Setenv("HOME", t.TempDir()) // no marker
 	t.Setenv("SIRSI_ROUTER_URL", "spool:///router")
 	t.Setenv(StoreWakeEnv, "1")
@@ -22,6 +30,7 @@ func TestStoreWakeEnvWins(t *testing.T) {
 
 // A genuinely absent marker is the ONE case that means "not cut over".
 func TestStoreWakeAbsentMarkerIsOff(t *testing.T) {
+	isolateStoreWake(t)
 	t.Setenv("HOME", t.TempDir())
 	os.Unsetenv(StoreWakeEnv)
 	if StoreWake() {
@@ -30,6 +39,7 @@ func TestStoreWakeAbsentMarkerIsOff(t *testing.T) {
 }
 
 func TestStoreWakePresentMarkerIsOn(t *testing.T) {
+	isolateStoreWake(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	os.Unsetenv(StoreWakeEnv)
@@ -51,6 +61,7 @@ func TestStoreWakePresentMarkerIsOn(t *testing.T) {
 // branch and attempted a legacy write ("create temp threads.json: … operation
 // not permitted"). It surfaced only because the sandbox ALSO denied the write.
 func TestStoreWakeUnreadableMarkerDoesNotDowngrade(t *testing.T) {
+	isolateStoreWake(t)
 	if os.Geteuid() == 0 {
 		t.Skip("root ignores directory permissions, so the denial cannot be staged")
 	}
@@ -81,6 +92,7 @@ func TestStoreWakeUnreadableMarkerDoesNotDowngrade(t *testing.T) {
 
 // $HOME unknown is the same unknown and takes the same direction.
 func TestStoreWakeNoHomeDoesNotDowngrade(t *testing.T) {
+	isolateStoreWake(t)
 	t.Setenv("HOME", "")
 	os.Unsetenv(StoreWakeEnv)
 	if MarkerPath() != "" {

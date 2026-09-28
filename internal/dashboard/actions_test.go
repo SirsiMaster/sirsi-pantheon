@@ -53,10 +53,20 @@ func TestApiActions_ListsRegistry(t *testing.T) {
 		t.Error("scan must be present and non-destructive")
 	}
 	// E1: every gap-list action reachable.
-	for _, k := range []string{"audit", "maat", "risk", "network/fix", "thoth/sync", "seshat/ingest", "net/align", "ra/deploy", "ra/collect"} {
+	for _, k := range []string{"audit", "maat", "risk", "network/fix", "thoth/sync", "maat/knowledge/refresh", "net/align", "ra/deploy", "ra/collect"} {
 		if _, ok := byKey[k]; !ok {
 			t.Errorf("action %q missing from registry", k)
 		}
+	}
+	if _, legacy := byKey["seshat/ingest"]; legacy {
+		t.Error("legacy Seshat ingestion must not remain a dashboard action key")
+	}
+	knowledge := byKey["maat/knowledge/refresh"]
+	if knowledge.Label != "Refresh Ma'at knowledge" || knowledge.Glyph != "𓆄" || !knowledge.AcceptsArgs {
+		t.Errorf("Ma'at knowledge action presentation = %+v", knowledge)
+	}
+	if len(knowledge.Args) != 3 || knowledge.Args[0] != "maat" || knowledge.Args[1] != "knowledge" || knowledge.Args[2] != "refresh" {
+		t.Errorf("Ma'at knowledge action must invoke the public Ma'at refresh command exactly, got %q", knowledge.Args)
 	}
 }
 

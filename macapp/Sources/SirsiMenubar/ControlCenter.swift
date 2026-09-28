@@ -104,15 +104,17 @@ struct PantheonControlCenterView: View {
     }
 
     private var primaryAction: some View {
-        NavLink { AskSirsiView(engine: engine) } label: {
+        NavLink { MaatWorkspaceView(engine: engine) } label: {
             HStack(spacing: 12) {
-                Image(systemName: "sparkles")
+                Image(systemName: "checkmark.seal.fill")
                     .sirsiFont(.title3, weight: .semibold)
                     .frame(width: 24)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Ask Sirsi")
+                    Text(hasAttention ? "Resolve with Ma'at" : "Open Ma'at evidence")
                         .sirsiFont(.headline)
-                    Text(engine.localLLM?.healthy == true ? "Start with local intelligence" : "Check local intelligence")
+                    Text(hasAttention
+                        ? "Inspect evidence, follow the guided recovery, and confirm the result."
+                        : "Review this Mac's local evidence and keep its next decision grounded.")
                         .sirsiFont(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -122,11 +124,11 @@ struct PantheonControlCenterView: View {
             }
             .foregroundStyle(.primary)
             .padding(14)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color.accentColor.opacity(0.14)))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.accentColor.opacity(0.35), lineWidth: 1))
+            .background(RoundedRectangle(cornerRadius: 10).fill(gold.opacity(0.14)))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(gold.opacity(0.42), lineWidth: 1))
             .contentShape(RoundedRectangle(cornerRadius: 10))
         }
-        .accessibilityLabel("Ask Sirsi — open local intelligence")
+        .accessibilityLabel("Ma'at — open local evidence and guided recovery")
     }
 
     private var attention: some View {
@@ -260,6 +262,7 @@ struct PantheonLibraryView: View {
                     }
                     librarySection("INTELLIGENCE") {
                         libraryLink("Ma'at", symbol: "checkmark.seal") { MaatWorkspaceView(engine: engine) }
+                        libraryLink("Stack Lab", symbol: "square.3.layers.3d") { StackLabView(engine: engine) }
                         libraryLink("Thoth", symbol: "books.vertical") { ThothMemoryInfoView(engine: engine) }
                         libraryLink("Net", symbol: "arrow.triangle.branch") { ResultView(engine: engine, title: "Net — Plan", args: ["net", "status"]) }
                         libraryLink("Vault", symbol: "archivebox") { ResultView(engine: engine, title: "Vault — Context", args: ["vault", "stats"]) }

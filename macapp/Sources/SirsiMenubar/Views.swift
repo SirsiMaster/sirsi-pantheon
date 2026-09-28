@@ -9,7 +9,10 @@ import os
 // /tmp file. Used to diagnose a failed apply (FDA / cancel / 0-cleaned).
 private let applyLog = Logger(subsystem: "ai.sirsi.pantheon", category: "apply")
 
-private let gold = Color(red: 0.78, green: 0.66, blue: 0.32)
+// Shared product accent. Keep the palette module-visible so every native
+// Pantheon surface uses the same green/gold language rather than inventing a
+// parallel accent per view.
+let gold = Color(red: 0.78, green: 0.66, blue: 0.32)
 
 // openSystemURL opens a System Settings / file URL (e.g. the Full Disk Access
 // pane). macOS cannot self-grant FDA — this is the one click that gets the user
@@ -265,6 +268,41 @@ struct MaybeScroll<Content: View>: View {
             content.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         } else {
             ScrollView { content }
+        }
+    }
+}
+
+// ImageRenderer cannot draw AppKit-backed prominent buttons: it substitutes a
+// blank amber control with a prohibition glyph. SnapshotActionButton keeps the
+// live control entirely native while giving visual QA a truthful, labelled
+// representation of the same action. It never changes a live interaction.
+struct SnapshotActionButton<Label: View>: View {
+    @Environment(\.snapshotMode) private var snapshotMode
+    let action: () -> Void
+    let disabled: Bool
+    @ViewBuilder let label: () -> Label
+
+    init(disabled: Bool = false, action: @escaping () -> Void,
+         @ViewBuilder label: @escaping () -> Label) {
+        self.action = action
+        self.disabled = disabled
+        self.label = label
+    }
+
+    var body: some View {
+        if snapshotMode {
+            label()
+                .foregroundStyle(Color.black)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(RoundedRectangle(cornerRadius: 8).fill(gold))
+                .opacity(disabled ? 0.5 : 1)
+        } else {
+            Button(action: action, label: label)
+                .buttonStyle(.borderedProminent)
+                .tint(gold)
+                .disabled(disabled)
         }
     }
 }
@@ -1087,7 +1125,10 @@ struct HealthRow: View {
     let finding: DiagFinding
 
     private var hasFix: Bool { !(finding.fix ?? "").isEmpty }
-    private var navigable: Bool { hasFix || !(finding.detail ?? "").isEmpty }
+    private var requiresMaatReview: Bool {
+        finding.resolution == "maat_review" || (finding.resolution == nil && finding.severity >= 2 && !hasFix)
+    }
+    private var navigable: Bool { hasFix || requiresMaatReview || !(finding.detail ?? "").isEmpty }
 
     var body: some View {
         if navigable {
@@ -1120,8 +1161,8 @@ struct HealthRow: View {
 
 // FindingView is the resolution surface for one health finding — "health → cause
 // → fix" made real. It explains the finding and, when a safe remediation exists,
-// offers a one-click "Fix it" that runs it. No finding dead-ends at "here's a
-// problem" with no way to act.
+// offers a direct repair or a confirmation-gated repair. No finding dead-ends
+// at "here's a problem" with no way to act.
 // FindingDetailEntry is one parsed row of a pipe-separated finding detail —
 // "Name (SIZE) | Name (SIZE) | …" (the Top Memory Consumers shape) or
 // "name 45% | name 12%" (the Spotlight shape, no parenthesised value).
@@ -1161,6 +1202,12 @@ struct FindingView: View {
     // "instant fix" costume. See guard.FixKind (instant | relief | guidance).
     private var kind: String { finding.fixKind ?? "" }
     @State private var copied = false
+    @State private var maatReviewResult: CommandResult?
+    @State private var maatReviewError: String?
+    @State private var maatReviewInFlight = false
+    @State private var confirmMaatReview = false
+    @State private var confirmFix = false
+    @State private var showConfirmedFix = false
 
     // recommendedCommand pulls a `sirsi …` command the finding names in its
     // message/detail (backtick-quoted) so guidance findings become actionable.
@@ -1176,8 +1223,12 @@ struct FindingView: View {
     }
 
     // Warn (2) and Critical (3) are alarms (guard.DiagnosticSeverity). An alarm
-    // without a fix must say so honestly — never "Informational".
+    // without a direct repair must route into Ma'at review — never "Informational".
     private var isAlarm: Bool { finding.severity >= 2 }
+
+    private var requiresMaatReview: Bool {
+        finding.resolution == "maat_review" || (finding.resolution == nil && isAlarm && (finding.fix ?? "").isEmpty)
+    }
 
     private var fixIcon: String {
         switch kind {
@@ -1194,11 +1245,36 @@ struct FindingView: View {
         }
     }
     private var fixButtonLabel: String {
+        if finding.check == "launchd Disabled Override" {
+            return "Restore managed services"
+        }
         switch kind {
         case "relief": return "Relieve the live cause"
         case "guidance": return "Show how to address"
         default: return "Fix it"
         }
+    }
+    // A fix that already carries --confirm is a state-changing operation. The
+    // native surface must obtain the same explicit operator confirmation rather
+    // than starting it merely because a person opened the finding detail.
+    private var fixRequiresConfirmation: Bool {
+        finding.fix?.split(separator: " ").contains(where: { String($0) == "--confirm" }) ?? false
+    }
+
+    // A managed launchd override is the first repair Ma'at can attest end to
+    // end. The Health finding remains the factual source, but this native route
+    // moves the confirm → bounded repair → re-check → durable outcome loop into
+    // Ma'at instead of leaving a successful repair as a transient sheet.
+    private var repairArgs: [String] {
+        if finding.check == "launchd Disabled Override",
+           finding.fix == "sirsi liveness-watch restore-disabled --confirm" {
+            return ["maat", "repair", "launchd-disabled", "--confirm"]
+        }
+        return sirsiArgs(finding.fix ?? "")
+    }
+
+    private var repairCommand: String {
+        "sirsi " + repairArgs.joined(separator: " ")
     }
     // The expectation set BEFORE the click — the heart of the honesty fix.
     private var fixExpectation: String? {
@@ -1273,27 +1349,24 @@ struct FindingView: View {
                             .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
                         }
                         Text(fixSectionLabel).sirsiFont(.caption2, weight: .semibold).foregroundStyle(.secondary)
-                        NavLink {
-                            ResultView(engine: engine, title: finding.check, args: sirsiArgs(fix),
-                                       reverifyCheck: finding.check, reverifyKind: finding.fixKind)
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: fixIcon)
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(fixButtonLabel).sirsiFont(12, weight: .semibold)
-                                    Text(fix).sirsiFont(.caption2, design: .monospaced)
-                                        .foregroundStyle(Color.white.opacity(0.85))
-                                }
-                                Spacer()
-                            }.frame(maxWidth: .infinity).padding(.vertical, 2)
-                        }.buttonStyle(.borderedProminent).tint(gold)
-                    } else if isAlarm {
-                        // An alarm without a lever must SAY so — calling a warn
-                        // or critical finding "Informational" was the dead-end
-                        // the owner flagged (ADR-033: alarm ⇒ way to act).
-                        Text("This needs attention but has no one-click fix yet.")
-                            .sirsiFont(.callout).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                        if fixRequiresConfirmation {
+                            Button { confirmFix = true } label: { fixButtonContents(fix) }
+                                .buttonStyle(.borderedProminent).tint(gold)
+                        } else {
+                            NavLink {
+                                ResultView(engine: engine, title: finding.check, args: repairArgs,
+                                           reverifyCheck: finding.check, reverifyKind: finding.fixKind)
+                            } label: { fixButtonContents(fix) }
+                            .buttonStyle(.borderedProminent).tint(gold)
+                        }
+                    } else if requiresMaatReview {
+                        // A high-severity finding without a safe automatic
+                        // mutation still gets a complete resolution path. Ma'at
+                        // records the exact observed finding only after the
+                        // operator confirms; its Casebook then owns the next,
+                        // explicit acceptance step. This never paints a manual
+                        // conclusion as a completed repair.
+                        maatResolutionPath
                     } else if let cmd = recommendedCommand {
                         // Guidance-tier (e.g. caution items cleared deliberately
                         // in Terminal): the command it names must be actionable,
@@ -1318,6 +1391,108 @@ struct FindingView: View {
                 }.padding(16)
             }
         }
+        .confirmationDialog("Record a Ma'at owner review?", isPresented: $confirmMaatReview, titleVisibility: .visible) {
+            Button("Record owner review") { Task { await recordMaatReview() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Ma'at will retain this exact diagnostic finding for review. It will not change the system or claim that the issue is repaired.")
+        }
+        .confirmationDialog("Apply this system repair?", isPresented: $confirmFix, titleVisibility: .visible) {
+            Button(fixButtonLabel) { showConfirmedFix = true }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            if finding.check == "launchd Disabled Override" {
+                Text("Ma'at will re-check the exact managed disabled labels, restore only that bounded set, verify the same diagnostic afterward, and retain either a verified recovery receipt or an explicit incomplete outcome.")
+            } else {
+                Text("Pantheon will run the exact managed repair shown here and then re-check this finding. It will not broaden the command or touch unrelated services.")
+            }
+        }
+        .sheet(isPresented: $showConfirmedFix) {
+            ResultView(engine: engine, title: finding.check, args: repairArgs,
+                       reverifyCheck: finding.check, reverifyKind: finding.fixKind)
+        }
+    }
+
+    private func fixButtonContents(_ fix: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: fixIcon)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(fixButtonLabel).sirsiFont(12, weight: .semibold)
+                Text(repairCommand).sirsiFont(.caption2, design: .monospaced)
+                    .foregroundStyle(Color.white.opacity(0.85))
+            }
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 2)
+    }
+
+    @ViewBuilder private var maatResolutionPath: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Ma'at can guide this to an explicit resolution", systemImage: "scale.3d")
+                .sirsiFont(.callout, weight: .semibold)
+                .foregroundStyle(gold)
+            Text("Record this exact finding as an owner review, then use Ma'at Casebook to inspect the retained evidence and explicitly accept a documented conclusion. Recording or accepting a conclusion does not repair the system.")
+                .sirsiFont(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                confirmMaatReview = true
+            } label: {
+                Label("Record Ma'at review", systemImage: "arrow.triangle.branch")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(gold)
+            .disabled(maatReviewInFlight)
+            .accessibilityHint("Requires confirmation and records evidence only; it does not repair the system.")
+
+            if maatReviewInFlight {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Recording the evidence-bound review…")
+                }
+                .sirsiFont(.caption)
+                .foregroundStyle(.secondary)
+            }
+            if let result = maatReviewResult {
+                Label(result.summary, systemImage: result.ok ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(result.ok ? .green : .orange)
+                if result.ok {
+                    NavLink { MaatCasebookView(engine: engine) } label: {
+                        Label("Continue in Ma'at Casebook", systemImage: "book.closed")
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityHint("Inspect the recorded evidence and explicitly accept an owner conclusion when appropriate.")
+                }
+            }
+            if let error = maatReviewError {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+    }
+
+    @MainActor private func recordMaatReview() async {
+        guard !maatReviewInFlight else { return }
+        maatReviewInFlight = true
+        maatReviewError = nil
+        var args = ["maat", "record-resolution", "--check", finding.check, "--message", finding.message]
+        if let detail = finding.detail?.trimmingCharacters(in: .whitespacesAndNewlines), !detail.isEmpty {
+            args += ["--detail", detail]
+        }
+        args.append("--confirm")
+        maatReviewResult = await SirsiEngine.runResult(args: args)
+        if maatReviewResult == nil {
+            maatReviewError = "Ma'at could not record the review. The original finding remains open and no system state changed. Try again or inspect the local decision journal."
+        }
+        maatReviewInFlight = false
     }
 }
 
@@ -3203,11 +3378,47 @@ struct ResultView: View {
     }
 
     private var rawBody: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if raw.hasPrefix("Pantheon stopped waiting after 30 seconds.") {
+                Label("This action needs a state check", systemImage: "clock.badge.exclamationmark")
+                    .sirsiFont(.headline)
+                    .foregroundStyle(.orange)
+                Text("Pantheon ended its wait to keep the app responsive. It does not assume the operation failed or succeeded. Review the captured output, then use Back to inspect the originating finding before choosing another action.")
+                    .sirsiFont(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Label("This result needs a guided follow-up", systemImage: "arrow.triangle.branch")
+                .sirsiFont(.headline)
+                .foregroundStyle(gold)
+            Text("Pantheon preserved the exact output below but could not turn it into a structured result. It is not treated as a completed repair or release decision. Retry the same check, inspect Ma'at’s local evidence, or review the governing Stack Lab recipe before taking another action.")
+                .sirsiFont(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             Text(raw.isEmpty ? "No output." : raw)
                 .sirsiFont(11.5, design: .monospaced)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(14)
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+            VStack(alignment: .leading, spacing: 8) {
+                Button { Task { await load() } } label: {
+                    Label("Retry this check", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(gold)
+                .disabled(loading || applying)
+                NavLink { MaatWorkspaceView(engine: engine) } label: {
+                    Label("Inspect Ma'at evidence", systemImage: "checkmark.seal")
+                }
+                .buttonStyle(.bordered)
+                NavLink { StackLabView(engine: engine) } label: {
+                    Label("Inspect Stack Lab authority", systemImage: "cube.transparent")
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(14)
     }
 
     private func load() async {

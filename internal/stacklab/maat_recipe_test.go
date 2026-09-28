@@ -39,9 +39,9 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 		t.Fatalf("recipe identity = %+v", recipe)
 	}
 	want := []string{
-		"maat-canon", "maat-casebook", "maat-cli", "maat-core", "maat-coverage",
-		"maat-decision-journal", "maat-horus-surface", "maat-pipeline", "maat-pulse-proof-platform",
-		"maat-scheduler", "maat-wing-contract",
+		"maat-canon", "maat-casebook", "maat-cli", "maat-confirmed-diagnostic-repair", "maat-core", "maat-coverage",
+		"maat-decision-journal", "maat-guided-managed-repair", "maat-horus-surface", "maat-knowledge-surface", "maat-mcp-surface", "maat-native-resolution-surface", "maat-pipeline", "maat-pulse-proof-platform",
+		"maat-host-health-screen", "maat-release-contract-preflight", "maat-scheduler", "maat-system-one-screen", "maat-terminal-console-surface", "maat-wing-contract", "stacklab-apollo-run-planner",
 	}
 	got := make([]string, 0, len(recipe.Components))
 	for _, component := range recipe.Components {
@@ -56,6 +56,7 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 		}
 	}
 	sort.Strings(got)
+	sort.Strings(want)
 	if len(got) != len(want) {
 		t.Fatalf("component ids = %v, want %v", got, want)
 	}
@@ -63,6 +64,43 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("component ids = %v, want %v", got, want)
 		}
+	}
+	componentsByID := make(map[string]component, len(recipe.Components))
+	for _, component := range recipe.Components {
+		componentsByID[component.ID] = component
+	}
+	knowledge, ok := componentsByID["maat-knowledge-surface"]
+	if !ok {
+		t.Fatal("Ma'at knowledge component is missing")
+	}
+	for _, path := range []string{
+		"internal/maat/knowledge/knowledge.go",
+		"cmd/sirsi/maatknowledge.go",
+		"internal/mcp/tools.go",
+		"internal/dashboard/maat.go",
+		"cmd/sirsi/dashboard.go",
+		"macapp/Sources/SirsiMenubar/MaatCasebookView.swift",
+		"internal/maat/knowledge/knowledge_test.go",
+		"internal/mcp/maat_test.go",
+		"internal/dashboard/dashboard_test.go",
+	} {
+		if !contains(append(append([]string{}, knowledge.Source...), knowledge.Tests...), path) {
+			t.Fatalf("Ma'at knowledge recipe omits canonical surface %q: %+v", path, knowledge)
+		}
+	}
+	mcp, ok := componentsByID["maat-mcp-surface"]
+	if !ok {
+		t.Fatal("Ma'at MCP component is missing")
+	}
+	if !contains(mcp.Outputs, "read-only maat_knowledge MCP JSON projection equivalent to the CLI and Horus knowledge view") {
+		t.Fatalf("Ma'at MCP recipe omits the shared knowledge projection: %+v", mcp.Outputs)
+	}
+	horus, ok := componentsByID["maat-horus-surface"]
+	if !ok {
+		t.Fatal("Ma'at Horus component is missing")
+	}
+	if !contains(horus.Inputs, "MaatKnowledgeProducer") || !contains(horus.Outputs, "GET /api/maat/knowledge with the same sensitivity-filtered local view as CLI and MCP") {
+		t.Fatalf("Ma'at Horus recipe omits the shared knowledge projection: %+v", horus)
 	}
 	wingRaw, err := os.ReadFile(filepath.Join("..", "..", "contracts", "stacklab", "maat-wing-v1.json"))
 	if err != nil {
@@ -78,4 +116,13 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 	if _, err := os.Stat(filepath.Join("..", "..", wing.Provenance.ComponentCatalog)); err != nil {
 		t.Fatalf("component catalog unavailable: %v", err)
 	}
+}
+
+func contains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

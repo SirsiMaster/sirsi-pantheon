@@ -179,6 +179,8 @@ const (
 
 	fxActivity = `{"command":"sirsi activity","log_path":"/tmp/ops.log","count":2,"entries":[{"time":"2026-07-01T22:04:00","action":"purge","target":"/Users/x/Development/node_modules","bytes":100,"source":"oplog"},{"time":"2026-06-29T19:54:21","action":"clean","target":"/Users/x/.cache/firebase","bytes":512,"source":"oplog"}]}`
 
+	fxMaatCasebook = `{"cases":[{"id":"maat-case-system-one","time":"2026-09-27T18:00:00Z","kind":"system one screen","category":"governance","status":"open","priority":"urgent","requester":"sirsi maat screen","resource":"release","affected":"Pantheon","determination":"block","assessed":"release evidence has a missing receipt","why":"The release needs an evidence-backed decision.","evidence":"screen:sha256=abc","next_action":{"kind":"system_one_review","title":"Open an evidence-bound review","detail":"Record a review for the exact screen evidence before accepting a conclusion.","evidence":"screen:sha256=abc","requires_confirmation":false},"system_one":{"gate":"escalate","confidence":0.74,"feather_weight":82,"subject":{"kind":"release","ref":"v0.24.14","head_sha":"deadbeef"},"model":{"provider":"maat-local","version":"v1","local":true,"latency_ms":2},"floor":{"passed":true,"checks":[{"name":"evidence schema","passed":true,"detail":"evidence is structurally valid"}]},"escalation":{"reason":"independent review required"},"findings":[{"id":"receipt-missing","severity":"block","category":"provenance","file":"docs/evidence/release.json","line":4,"claim":"release receipt is missing","evidence":"receipt:missing","fix_hint":"Create and independently review the exact release receipt."}]}},{"id":"maat-case-accepted","time":"2026-09-26T18:00:00Z","kind":"diagnostic owner review","category":"assessment","status":"resolved","priority":"normal","requester":"sirsi maat","resource":"launchd","affected":"Pantheon","determination":"accepted","assessed":"service configuration reviewed","why":"The owner accepted the recorded conclusion.","evidence":"diagnostic:sha256=def","resolution":"owner accepted the recorded conclusion"}],"summary":{"total":2,"open":1,"urgent":1,"high":0,"resolved":1},"graph":{"nodes":[],"edges":[]}}`
+
 	fxDiag = `{"timestamp":"2026-07-01T22:39:38","duration":"1.171s","findings":[{"check":"RAM Pressure","severity":0,"message":"RAM healthy at 34%"},{"check":"binary-drift","severity":2,"message":"Sirsi binary drift detected","detail":"PATH binary differs","fix":"sirsi self-update","fixKind":"instant"},{"check":"Jetsam Events (7d)","severity":1,"message":"7 Jetsam memory kills","trend":true,"activeDays":7,"fix":"sirsi relieve --memory","fixKind":"relief"}]}`
 )
 
@@ -188,6 +190,7 @@ func fullStub() stubRunner {
 		"scan":     fxScan,
 		"ghosts":   fxGhosts,
 		"activity": fxActivity,
+		"maat":     fxMaatCasebook,
 		"diagnose": fxDiag,
 	}
 }
@@ -294,6 +297,44 @@ func TestGoldenActivity(t *testing.T) {
 			if !strings.Contains(frame, want) {
 				t.Errorf("Activity frame missing %q\n---\n%s", want, frame)
 			}
+		}
+	})
+}
+
+func TestActivityMaatCasebookIsWiredAndGuidesResolution(t *testing.T) {
+	withStub(t, fullStub(), func() {
+		app := newTestApp(t)
+		app.focus(4)
+		loadScreen(app)
+
+		m, _ := app.handleKey("m")
+		app = m.(*App)
+		frame := strings.Join(app.render(), "\n")
+		for _, want := range []string{"Ma'at System One", "evidence-bound casebook", "urgent", "governance", "m operations"} {
+			if !strings.Contains(strings.ToLower(frame), strings.ToLower(want)) {
+				t.Errorf("Ma'at casebook frame missing %q\n---\n%s", want, frame)
+			}
+		}
+
+		// Drive the same resolved command that the Bubble Tea key path delivers.
+		// Calling the screen command directly keeps the assertion focused on the
+		// Ma'at detail transition rather than key-string normalization.
+		inspect, ok := app.reg.ResolveKey("enter")
+		if !ok {
+			t.Fatal("enter must resolve to inspect")
+		}
+		drive(app, keyMsg{cmd: inspect})
+		frame = strings.Join(app.render(), "\n")
+		for _, want := range []string{"next step", "Open an evidence-bound review", "screen model", "maat-local v1", "deterministic floor", "evidence schema", "independent review required", "prescribed next step", "Create and independently review the exact release receipt."} {
+			if !strings.Contains(frame, want) {
+				t.Errorf("Ma'at detail missing %q\n---\n%s", want, frame)
+			}
+		}
+
+		m, _ = app.handleKey("m")
+		app = m.(*App)
+		if !strings.Contains(strings.Join(app.render(), "\n"), "audit ledger") {
+			t.Error("m did not return to the Activity ledger")
 		}
 	})
 }
@@ -443,6 +484,27 @@ func TestGuidanceFixNotOffered(t *testing.T) {
 	}
 	if hasOfferableFix(diagFinding{Fix: "", FixKind: ""}) {
 		t.Error("a finding with no fix is not offerable")
+	}
+}
+
+func TestMaatReviewRouteIsOfferableWithoutPretendingToRepair(t *testing.T) {
+	review := diagFinding{Check: "Kernel Panics (7d)", Severity: 3, Resolution: "maat_review"}
+	if !hasMaatReview(review) {
+		t.Fatal("Ma'at review route was not offered for an alarm without a safe automatic repair")
+	}
+	if hasOfferableFix(review) {
+		t.Fatal("evidence review must not masquerade as a direct repair")
+	}
+
+	hs := newHealthScreen()
+	hs.state = stateReady
+	hs.report = diagReport{Findings: []diagFinding{review}}
+	if _, cmd := hs.handleCmd(Command{ID: CmdFix}); cmd != nil || !hs.confirmMaatReview {
+		t.Fatal("f did not arm the separate Ma'at review confirmation")
+	}
+	frame := strings.Join(hs.confirmLines(testCaps()), "\n")
+	if !strings.Contains(frame, "CONFIRM MA'AT REVIEW") || !strings.Contains(frame, "does not repair") {
+		t.Fatalf("Ma'at review confirmation overclaimed or was absent:\n%s", frame)
 	}
 }
 
@@ -912,6 +974,7 @@ func TestFixPlanFlagsPerVerb(t *testing.T) {
 		{"sirsi clean", "clean", []string{"--confirm", "--yes"}, true},
 		{"sirsi reclaim-snapshots", "reclaim-snapshots", []string{"--confirm"}, true},
 		{"sirsi relieve --memory", "relieve", []string{"--memory", "--confirm"}, false},
+		{"sirsi liveness-watch restore-disabled --confirm", "liveness-watch", []string{"restore-disabled", "--confirm"}, true},
 		{"sirsi self-update", "self-update", nil, false},
 		{"sirsi spotlight-exclude ~/Development", "spotlight-exclude", []string{"~/Development"}, false},
 	}

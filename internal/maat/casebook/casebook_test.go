@@ -33,3 +33,137 @@ func TestSearchFiltersCategoryAndDoesNotInventMatches(t *testing.T) {
 		t.Fatalf("unmatched filter returned %+v", got)
 	}
 }
+
+func TestBuildRoutesOpenCasesAndResolvesOnlyAcceptedOwnerReview(t *testing.T) {
+	const reviewEvidence = "diagnostic-finding:sha256=review"
+	decisions := []maat.Decision{
+		{Time: "2026-09-27T09:00:00Z", Host: "m5", Kind: "guard", Requester: "pantheon", Resource: "release", Assessed: "release readiness", Determination: "block", Why: "missing signed evidence", Evidence: "receipt:sha256=blocked"},
+		{Time: "2026-09-27T09:01:00Z", Host: "m5", Kind: "diagnostic owner review", Requester: "pantheon", Resource: "release", Assessed: "diagnostic finding", Determination: "owner_review_required", Why: "owner review required", Evidence: reviewEvidence, OriginEvidence: "receipt:sha256=blocked"},
+		{Time: "2026-09-27T09:02:00Z", Host: "m5", Kind: "diagnostic owner acceptance", Requester: "pantheon", Resource: "release", Assessed: "owner-reviewed diagnostic finding", Determination: "accepted", Why: "accepted plan", Evidence: "diagnostic-acceptance:sha256=accepted", ResolutionFor: reviewEvidence},
+	}
+	view := Build(decisions)
+	if len(view.Cases) != 2 {
+		t.Fatalf("cases = %+v, want source case plus resolved review", view.Cases)
+	}
+	for _, c := range view.Cases {
+		switch c.Evidence {
+		case "receipt:sha256=blocked":
+			if c.NextAction == nil || c.NextAction.Kind != "owner_review" {
+				t.Fatalf("source case next action = %+v", c.NextAction)
+			}
+		case reviewEvidence:
+			if c.Status != StatusResolved || c.Resolution != "accepted plan" || c.NextAction != nil {
+				t.Fatalf("review case = %+v", c)
+			}
+		}
+	}
+}
+
+func TestBuildGivesEscalatedSystemOneScreensAnEvidenceBoundReviewRoute(t *testing.T) {
+	verdict, err := maat.Screen(maat.SystemOneScreen{
+		Subject:       maat.VerdictSubject{Kind: "commit", Repo: "SirsiMaster/sirsi-pantheon", Ref: "release/v0.24.4", HeadSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Boundary: "delivery"},
+		FeatherWeight: 90, Confidence: 0.99,
+		Floor: maat.FloorResult{Passed: true, Checks: []maat.FloorCheck{{Name: "gofmt", Passed: true}}},
+		Model: maat.ModelStamp{Provider: "local:deterministic", Version: "v1", Local: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	view := Build([]maat.Decision{{
+		Time: "2026-09-27T09:00:00Z", Host: "m5", Kind: "system one screen", Requester: "sirsi maat screen",
+		Resource: "SirsiMaster/sirsi-pantheon", Assessed: "commit release/v0.24.4", Affected: verdict.Subject.HeadSHA,
+		Determination: string(verdict.Gate), Why: "sensitive boundary requires frontier review", Evidence: "maat-system-one:sha256=fixture", SystemOne: &verdict,
+	}})
+	if len(view.Cases) != 1 || view.Cases[0].Category != "governance" || view.Cases[0].NextAction == nil || view.Cases[0].NextAction.Kind != "system_one_review" {
+		t.Fatalf("System One casebook projection = %+v", view)
+	}
+}
+
+func TestBuildGivesFailedSystemOneFloorAThreeLevelRecoveryRoute(t *testing.T) {
+	verdict, err := maat.Screen(maat.SystemOneScreen{
+		Subject:       maat.VerdictSubject{Kind: "commit", Repo: "SirsiMaster/sirsi-pantheon", Ref: "main", HeadSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		FeatherWeight: 91, Confidence: 0.98,
+		Floor: maat.FloorResult{Passed: false, Checks: []maat.FloorCheck{{Name: "receipt schema", Passed: false, Detail: "the release receipt is malformed"}}},
+		Findings: []maat.ScreenFinding{{
+			ID: "receipt-schema", Severity: "block", Category: "provenance", Claim: "release receipt is malformed", Evidence: "receipt:invalid", Confidence: 0.99,
+			FixHint: "Regenerate the exact release receipt from the committed object, then independently review it.",
+		}},
+		Model: maat.ModelStamp{Provider: "local:deterministic", Version: "v1", Local: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	view := Build([]maat.Decision{{
+		Time: "2026-09-28T04:00:00Z", Host: "m5", Kind: "system one screen", Requester: "sirsi maat screen",
+		Assessed: "commit main", Determination: string(verdict.Gate), Why: "receipt schema failed", Evidence: "maat-system-one:sha256=failed-floor", SystemOne: &verdict,
+	}})
+	if len(view.Cases) != 1 || view.Cases[0].NextAction == nil {
+		t.Fatalf("System One failed-floor casebook projection = %+v", view)
+	}
+	action := view.Cases[0].NextAction
+	if action.Kind != "system_one_floor_recovery" || !action.RequiresConfirmation || len(action.Steps) != 3 {
+		t.Fatalf("failed-floor recovery route = %+v", action)
+	}
+	if action.Steps[0].Level != 1 || action.Steps[0].Detail != "receipt schema: the release receipt is malformed" || action.Steps[1].Detail != "Regenerate the exact release receipt from the committed object, then independently review it." || action.Steps[2].Level != 3 || !action.Steps[2].RequiresConfirmation {
+		t.Fatalf("failed-floor recovery steps = %+v", action.Steps)
+	}
+}
+
+func TestBuildRoutesKnownSystemOneRepairThroughClosedMaatAction(t *testing.T) {
+	verdict, err := maat.Screen(maat.SystemOneScreen{
+		Subject:       maat.VerdictSubject{Kind: "host", Repo: "m5", Ref: "diagnostic", HeadSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		FeatherWeight: 72, Confidence: 1,
+		Floor: maat.FloorResult{Passed: true, Checks: []maat.FloorCheck{{Name: "diagnostic observation", Passed: true}}},
+		Findings: []maat.ScreenFinding{{
+			ID: "disabled-managed-labels", Severity: "block", Category: "host-health", Claim: "managed labels disabled", Evidence: "diagnostic:sha256=host:disabled", Confidence: 1,
+			RepairID: maat.SystemOneRepairLaunchdDisabled,
+		}},
+		Model: maat.ModelStamp{Provider: "maat-local:deterministic", Version: "v1", Local: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const evidence = "maat-system-one:sha256=host-disabled"
+	view := Build([]maat.Decision{{
+		Time: "2026-09-28T04:00:00Z", Host: "m5", Kind: "system one screen", Requester: "sirsi maat triage",
+		Assessed: "host diagnostic", Determination: string(verdict.Gate), Why: "managed labels disabled", Evidence: evidence, SystemOne: &verdict,
+	}})
+	if len(view.Cases) != 1 || view.Cases[0].NextAction == nil {
+		t.Fatalf("System One repair projection = %+v", view)
+	}
+	action := view.Cases[0].NextAction
+	if action.Kind != "maat_repair" || action.ActionID != maat.SystemOneRepairLaunchdDisabled || action.Evidence != evidence || !action.RequiresConfirmation || len(action.Steps) != 3 {
+		t.Fatalf("closed repair action = %+v", action)
+	}
+}
+
+func TestBuildProjectsCalibrationAsCompletedEvidenceWithBothLinks(t *testing.T) {
+	verdict, err := maat.Screen(maat.SystemOneScreen{
+		Subject:       maat.VerdictSubject{Kind: "commit", Repo: "SirsiMaster/sirsi-pantheon", Ref: "main", HeadSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		FeatherWeight: 92, Confidence: 0.96,
+		Floor: maat.FloorResult{Passed: true, Checks: []maat.FloorCheck{{Name: "gofmt", Passed: true}}},
+		Model: maat.ModelStamp{Provider: "local:deterministic", Version: "v1", Local: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const screenEvidence = "maat-system-one:sha256=screen"
+	const frontierEvidence = "review:sha256=independent"
+	view := Build([]maat.Decision{
+		{Time: "2026-09-27T09:00:00Z", Host: "m5", Kind: "system one screen", Requester: "sirsi maat screen", Assessed: "commit main", Determination: string(verdict.Gate), Why: "local pass", Evidence: screenEvidence, SystemOne: &verdict},
+		{Time: "2026-09-27T09:01:00Z", Host: "m5", Kind: "system one calibration", Requester: "sirsi maat calibrate", Assessed: "System One auto-pass calibration", Determination: "block", Why: "independent review overturned a local System One auto-pass", Evidence: "maat-system-one-calibration:sha256=record", SystemOneCalibration: &maat.CalibrationRecord{SchemaVersion: maat.SystemOneSchemaVersion, ScreenEvidence: screenEvidence, FrontierEvidence: frontierEvidence, ScreenGate: maat.GatePass, FrontierGate: maat.GateBlock}},
+	})
+	if len(view.Cases) != 2 {
+		t.Fatalf("cases = %+v", view.Cases)
+	}
+	calibration := view.Cases[0]
+	if calibration.Kind != "system one calibration" || calibration.Status != StatusResolved || calibration.Priority != PriorityNormal || calibration.NextAction != nil || calibration.SystemOneCalibration == nil {
+		t.Fatalf("calibration case = %+v", calibration)
+	}
+	if calibration.SystemOneCalibration.ScreenEvidence != screenEvidence || calibration.SystemOneCalibration.FrontierEvidence != frontierEvidence {
+		t.Fatalf("calibration links = %+v", calibration.SystemOneCalibration)
+	}
+	if got := Search([]maat.Decision{{Time: "2026-09-27T09:01:00Z", Host: "m5", Kind: "system one calibration", Requester: "sirsi maat calibrate", Assessed: "System One auto-pass calibration", Determination: "block", Why: "independent review", Evidence: "maat-system-one-calibration:sha256=record", SystemOneCalibration: calibration.SystemOneCalibration}}, Query{Text: frontierEvidence}); len(got.Cases) != 1 {
+		t.Fatalf("calibration evidence search = %+v", got)
+	}
+}

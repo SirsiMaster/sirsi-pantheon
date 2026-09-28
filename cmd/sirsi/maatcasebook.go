@@ -59,9 +59,52 @@ resolved to narrow the view.`,
 				fmt.Printf(" · evidence: %s", c.Evidence)
 			}
 			fmt.Println()
+			if c.NextAction != nil {
+				fmt.Printf("          next step: %s · %s\n", c.NextAction.Title, c.NextAction.Detail)
+				for _, step := range c.NextAction.Steps {
+					fmt.Printf("          recovery level %d: %s · %s\n", step.Level, step.Title, step.Detail)
+				}
+			}
+			if c.SystemOne != nil {
+				fmt.Printf("          screen model: %s %s · %s · %dms\n", c.SystemOne.Model.Provider, c.SystemOne.Model.Version, localModelLabel(c.SystemOne.Model.Local), c.SystemOne.Model.LatencyMS)
+				fmt.Printf("          deterministic floor: %s\n", floorLabel(c.SystemOne.Floor.Passed))
+				for _, check := range c.SystemOne.Floor.Checks {
+					fmt.Printf("          floor check [%s]: %s", check.Name, floorLabel(check.Passed))
+					if check.Detail != "" {
+						fmt.Printf(" · %s", check.Detail)
+					}
+					fmt.Println()
+				}
+				for _, finding := range c.SystemOne.Findings {
+					fmt.Printf("          finding [%s · %s]: %s\n", finding.Severity, finding.Category, finding.Claim)
+					if finding.FixHint != "" {
+						// A fix hint is retained producer evidence, not a command
+						// dispatcher. Present the same recovery step every surface
+						// sees, but never execute it merely by rendering Casebook.
+						fmt.Printf("          prescribed next step: %s\n", finding.FixHint)
+					}
+				}
+			}
+			if c.Resolution != "" {
+				fmt.Printf("          owner acceptance: %s · system repair: not claimed\n", c.Resolution)
+			}
 		}
 		return nil
 	},
+}
+
+func floorLabel(passed bool) string {
+	if passed {
+		return "passed"
+	}
+	return "failed"
+}
+
+func localModelLabel(local bool) string {
+	if local {
+		return "local"
+	}
+	return "external"
 }
 
 func init() {

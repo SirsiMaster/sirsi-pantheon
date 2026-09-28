@@ -166,6 +166,9 @@ func TestHandleScanWorkspace_DefaultPath(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping live workspace scan in short mode")
 	}
+	// The default is the caller's current workspace. Keep the test bounded and
+	// deterministic rather than accidentally walking the developer's real home.
+	t.Chdir(t.TempDir())
 	result, err := handleScanWorkspace(map[string]interface{}{})
 	if err != nil {
 		t.Fatalf("handleScanWorkspace: %v", err)
@@ -197,6 +200,7 @@ func TestHandleScanWorkspace_ValidCategory(t *testing.T) {
 	}
 	result, err := handleScanWorkspace(map[string]interface{}{
 		"category": "dev",
+		"path":     t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("handleScanWorkspace: %v", err)

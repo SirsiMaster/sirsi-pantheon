@@ -72,15 +72,33 @@ type DiagnosticFinding struct {
 	// that saw at least one event.
 	Trend      bool `json:"trend,omitempty"`
 	ActiveDays int  `json:"activeDays,omitempty"`
-	// Fix is the safe CLI command that resolves this finding (empty = informational,
-	// no one-click fix). Carried on the finding so EVERY surface (menubar Horus,
-	// SessionStart, dashboard) can offer resolution — not just the Insight panel.
+	// Fix is the safe CLI command that resolves this finding when a bounded
+	// repair exists. A missing Fix never means a user is stranded: Resolution
+	// tells every surface whether to guide the user through Ma'at review or to
+	// render the finding as informational.
 	Fix string `json:"fix,omitempty"`
 	// FixKind tells a surface how HONEST to be about the Fix button — so it never
 	// promises an instant cure for a historical record (the "I clicked Fix and the
 	// status stayed the same" trap). See the FixKind constants.
 	FixKind FixKind `json:"fixKind,omitempty"`
+	// Resolution is the complete user-facing route for this observation. Every
+	// warning and critical finding is either repairable or can be carried through
+	// Ma'at's evidence-bound review and owner-conclusion path. Consumers must not
+	// replace a missing Fix with a dead-end status message.
+	Resolution ResolutionRoute `json:"resolution,omitempty"`
 }
+
+// ResolutionRoute is the next safe action a Pantheon surface must offer for a
+// diagnostic finding. It is intentionally independent from FixKind: a relief
+// can be honest without being an immediate cure, while a Ma'at review can reach
+// an explicit conclusion without claiming a system repair.
+type ResolutionRoute string
+
+const (
+	ResolutionRepair     ResolutionRoute = "repair"
+	ResolutionMaatReview ResolutionRoute = "maat_review"
+	ResolutionInfo       ResolutionRoute = "information"
+)
 
 // FixKind classifies what running a finding's Fix actually does, so surfaces can
 // label the action truthfully instead of always saying "Fix it":
@@ -124,6 +142,8 @@ func remediationKind(f DiagnosticFinding) FixKind {
 		return FixRelief // eases the live cause; trend counts decay, not drop
 	case "Runaway Executor":
 		return FixRelief // quarantine stops the spawner; artifacts drain via the hourly sweep
+	case "launchd Disabled Override":
+		return FixInstant // exact managed overrides are re-enabled and unloaded labels bootstrapped
 	}
 	return ""
 }
@@ -205,8 +225,27 @@ func remediationCommand(f DiagnosticFinding) string {
 			// claude build-worker LaunchAgents; wake-loops/supervisor untouched.
 			return "sirsi router quarantine-worker"
 		}
+	case "launchd Disabled Override":
+		if warn {
+			// Bounded to managed, on-disk labels and quarantine-aware. The native
+			// surface requires an explicit confirmation before this command runs.
+			return "sirsi liveness-watch restore-disabled --confirm"
+		}
 	}
 	return ""
+}
+
+// resolutionRoute prevents an alarming observation from becoming an inert
+// status. Safe repairs remain first choice; conditions that cannot be changed
+// safely by a one-click command receive Ma'at's retained-evidence review path.
+func resolutionRoute(f DiagnosticFinding) ResolutionRoute {
+	if f.Severity < SeverityWarn {
+		return ResolutionInfo
+	}
+	if remediationCommand(f) != "" {
+		return ResolutionRepair
+	}
+	return ResolutionMaatReview
 }
 
 // DoctorReport is the complete health diagnostic.
@@ -439,6 +478,7 @@ func DoctorWithOpts(p platform.Platform, opts DoctorOpts) (*DoctorReport, error)
 		} else {
 			report.Findings[i].FixKind = remediationKind(report.Findings[i])
 		}
+		report.Findings[i].Resolution = resolutionRoute(report.Findings[i])
 	}
 	report.Duration = time.Since(start).Round(time.Millisecond).String()
 
@@ -1478,8 +1518,15 @@ func calculateScore(findings []DiagnosticFinding) int {
 // an answer (ADR-033).
 func RemediationFor(f DiagnosticFinding) string { return remediationCommand(f) }
 
-// checkLaunchdDisabled reads launchctl print-disabled and reports any
-// ai.sirsi.* or actions.runner.* label marked disabled in the override DB.
+// ResolutionFor exposes the complete next-step route to callers that render
+// diagnostics outside the native app. In particular, CLI, dashboard, TUI, MCP,
+// and plugin consumers can provide Ma'at review when a direct repair is unsafe.
+func ResolutionFor(f DiagnosticFinding) ResolutionRoute { return resolutionRoute(f) }
+
+// checkLaunchdDisabled reads launchctl print-disabled and reports each
+// recoverable ai.sirsi.* or actions.runner.* label marked disabled in the
+// override DB. Retired labels with no current regular plist are described as
+// harmless override residue rather than an impossible service repair.
 //
 // A disabled label keeps running until the next reboot — after which launchd
 // will not restart it. This is the "green surface over a dead thing with a
@@ -1497,12 +1544,29 @@ func checkLaunchdDisabled(p platform.Platform, report *DoctorReport) {
 		// can't run it (CI, Linux, older macOS in tests).
 		return
 	}
-	disabled := parseLaunchdDisabled(string(out))
+	// An override can outlive the plist it once controlled. A retired label is
+	// not a live service failure: there is nothing safe to bootstrap and a
+	// "repair" button would be a promise the product cannot keep. Keep the
+	// finding scoped to exact managed labels with a current regular plist — the
+	// same bounded scope RestoreDisabledManagedLaunchAgents can actually repair.
+	var disabled, retired []string
+	for _, label := range parseLaunchdDisabled(string(out)) {
+		if managedLaunchdRecoveryEligible(label) {
+			disabled = append(disabled, label)
+		} else {
+			retired = append(retired, label)
+		}
+	}
 	if len(disabled) == 0 {
+		detail := ""
+		if len(retired) > 0 {
+			detail = "Ignored retired labels with no current regular managed plist: " + strings.Join(retired, ", ")
+		}
 		report.Findings = append(report.Findings, DiagnosticFinding{
 			Check:    "launchd Disabled Override",
 			Severity: SeverityOK,
-			Message:  "No Sirsi/runner labels disabled in launchd override DB",
+			Message:  "No recoverable Sirsi/runner labels disabled in launchd override DB",
+			Detail:   detail,
 		})
 		return
 	}
@@ -1525,6 +1589,10 @@ func checkLaunchdDisabled(p platform.Platform, report *DoctorReport) {
 	if len(down) > 0 {
 		downLine = fmt.Sprintf("Already unloaded (not running now): %s\n", strings.Join(down, ", "))
 	}
+	retiredLine := ""
+	if len(retired) > 0 {
+		retiredLine = "\nRetired override records ignored (no current plist): " + strings.Join(retired, ", ")
+	}
 	report.Findings = append(report.Findings, DiagnosticFinding{
 		Check:    "launchd Disabled Override",
 		Severity: SeverityCritical,
@@ -1532,11 +1600,27 @@ func checkLaunchdDisabled(p platform.Platform, report *DoctorReport) {
 		Detail: fmt.Sprintf(
 			"Disabled: %s\n"+
 				"%s"+
-				"Fix (per label): launchctl enable gui/%d/<label> && launchctl bootstrap gui/%d ~/Library/LaunchAgents/<label>.plist\n"+
-				"Or run: sirsi liveness-watch run (the supervisor duty re-enables+bootstraps on its next pass)",
-			strings.Join(disabled, ", "), downLine, uid, uid,
+				"Repair: confirm the bounded native recovery below. It enables only these managed labels and bootstraps only those currently unloaded.%s",
+			strings.Join(disabled, ", "), downLine, retiredLine,
 		),
 	})
+}
+
+// managedLaunchdRecoveryEligible is a seam because doctor checks use a mock
+// platform while recovery intentionally inspects the real managed namespace.
+// Production accepts only the exact per-user plist that the native repair can
+// enable/bootstrap; symlinks, directories, and retired suffixes never create
+// a misleading actionable finding.
+var managedLaunchdRecoveryEligible = func(label string) bool {
+	if !platform.ManagedLabel(label) {
+		return false
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	info, err := os.Lstat(filepath.Join(home, "Library", "LaunchAgents", label+".plist"))
+	return err == nil && info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0
 }
 
 // pauseLedgerPath is where scripts/quiet.sh (sirsi-inference) records the

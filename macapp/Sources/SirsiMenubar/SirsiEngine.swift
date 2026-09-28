@@ -50,8 +50,11 @@ struct DiagFinding: Decodable, Identifiable {
     let trend: Bool?
     let fix: String?   // safe CLI command that resolves this finding (nil = informational)
     let fixKind: String?  // "instant" | "relief" | "guidance" — how honest to be about the fix
+    // "repair" | "maat_review" | "information". Older installed CLIs omit
+    // this field, so the native view preserves a safe severity-based fallback.
+    let resolution: String?
 
-    enum CodingKeys: String, CodingKey { case check, severity, message, detail, trend, fix, fixKind }
+    enum CodingKeys: String, CodingKey { case check, severity, message, detail, trend, fix, fixKind, resolution }
 }
 
 // DiagReport carries the findings plus the CANONICAL roll-up `status`
@@ -828,7 +831,7 @@ final class SirsiEngine: ObservableObject {
     // project root. Everything else stays pinned to $HOME. "thoth" joins so the
     // Thoth — Memory surface reads/syncs the SELECTED project's .thoth/memory.yaml
     // (owner, 2026-07-10: make Thoth project-aware like Ma'at/Net).
-    nonisolated static let repoScopedVerbs: Set<String> = ["maat", "net", "risk", "osiris", "thoth"]
+    nonisolated static let repoScopedVerbs: Set<String> = ["maat", "net", "risk", "osiris", "thoth", "stacklab"]
 
     // Validated project root (or nil), mirrored for the views.
     @Published var projectRoot: String?
@@ -1180,9 +1183,14 @@ final class SirsiEngine: ObservableObject {
                 // whatsoever"). The verb side is fixed to be fast, but the
                 // SURFACE enforces its own bound — defense in depth, same
                 // shape as the supervisor's duty timeout.
-                let deadline = DispatchTime.now() + .seconds(120)
+                let deadline = DispatchTime.now() + .seconds(30)
+                let timeoutLock = NSLock()
+                var timedOut = false
                 let timeoutWork = DispatchWorkItem {
+                    timeoutLock.lock()
+                    defer { timeoutLock.unlock() }
                     if p.isRunning {
+						timedOut = true
                         p.terminate()
                     }
                 }
@@ -1191,8 +1199,11 @@ final class SirsiEngine: ObservableObject {
                 p.waitUntilExit()
                 timeoutWork.cancel()
                 var text = stripANSI(String(data: data, encoding: .utf8) ?? "")
-                if p.terminationReason == .uncaughtSignal {
-                    text = "Stopped after 2 minutes — this action is taking too long for the menubar. Run `sirsi \(args.joined(separator: " "))` in a terminal to let it finish.\n" + text
+                timeoutLock.lock()
+                let enforcedTimeout = timedOut
+                timeoutLock.unlock()
+                if enforcedTimeout {
+                    text = "Pantheon stopped waiting after 30 seconds. The command may have produced a partial result, so this screen will not call it complete. Refresh only after reviewing the current evidence and choosing the next safe action.\n" + text
                 }
                 cont.resume(returning: text)
             }
@@ -1200,7 +1211,7 @@ final class SirsiEngine: ObservableObject {
     }
 
     // runProgram runs an arbitrary local executable (e.g. sirsi-respond.sh)
-    // with the same $HOME cwd, output capture, and 120s bound as run().
+    // with the same $HOME cwd, output capture, and 30-second UI bound as run().
     nonisolated static func runProgram(_ path: String, args: [String]) async -> String {
         await withCheckedContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
@@ -1215,7 +1226,7 @@ final class SirsiEngine: ObservableObject {
                     cont.resume(returning: "error: \(error.localizedDescription)")
                     return
                 }
-                let deadline = DispatchTime.now() + .seconds(120)
+                let deadline = DispatchTime.now() + .seconds(30)
                 let timeoutWork = DispatchWorkItem { if p.isRunning { p.terminate() } }
                 DispatchQueue.global().asyncAfter(deadline: deadline, execute: timeoutWork)
                 let data = outPipe.fileHandleForReading.readDataToEndOfFile()
@@ -1356,7 +1367,7 @@ final class SirsiEngine: ObservableObject {
         ("Pantheon unification", "docs/ADR-005-PANTHEON-UNIFICATION.md", 550),
         ("Local model doctrine", "docs/ADR-034-ORCHESTRATION-BRAIN.md", 650),
         ("Knowledge substrate", "docs/ADR-019-KNOWLEDGE-SUBSTRATE.md", 600),
-        ("Seshat specification", "docs/SESHAT_SPECIFICATION.md", 450),
+        ("Ma'at knowledge adapter specification", "docs/SESHAT_SPECIFICATION.md", 450),
         ("Thoth specification", "docs/THOTH_SPECIFICATION.md", 450),
         ("Thoth memory", ".thoth/memory.yaml", 450),
     ]
@@ -1446,7 +1457,7 @@ final class SirsiEngine: ObservableObject {
 
         lines.append("""
         KNOWLEDGE SURFACES TO MENTION WHEN RELEVANT
-        CLI: sirsi, ctr, router, thread, workstream, setup, seba, hapi, thoth, seshat, maat, anubis, ka.
+        CLI: sirsi, ctr, router, thread, workstream, setup, seba, hapi, thoth, maat, anubis, ka.
         TUI: terminal-guided Sirsi operation when no IDE/app surface is active.
         Menubar: local Mac operator surface for health, Ra fabric, owner actions, cleanup, Ask Sirsi, and thread visibility.
         Local model: Gemma/MLX is the Tier-0 reasoning engine; cloud/frontier agents bind or review where needed.
@@ -1462,7 +1473,7 @@ final class SirsiEngine: ObservableObject {
             "SHORT SIRSI CONTEXT",
             "You are Ask Sirsi, the local on-device assistant for Sirsi Pantheon.",
             "Pantheon includes the Mac menubar, CLI, TUI, CTR/router fabric, cleanup, health, memory, and knowledge surfaces.",
-            "Ra routes work; Horus sees the workstation; Thoth preserves memory; Ma'at governs quality; Seshat moves knowledge; Hapi/Seba govern compute pressure and hardware visibility.",
+            "Ra routes work; Horus sees the workstation; Thoth preserves memory; Ma'at governs quality, decisions, and local knowledge; Hapi/Seba govern compute pressure and hardware visibility.",
             "Hypergraph/Sirsi IO connect routed events, local knowledge, Hedera HCS direction, portfolio context, and agent coordination.",
             "Portfolio: Sirsi Nexus, Pantheon, FinalWishes, Assiduous, Ask Eliot, Porch and Alley, and the Sirsi deck.",
             "User: Cylton Collymore, founder/operator of Sirsi.",

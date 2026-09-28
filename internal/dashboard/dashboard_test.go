@@ -13,6 +13,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/casebook"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/knowledge"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/stele"
 )
@@ -63,6 +64,47 @@ func TestMaatCasebook_RejectsUnknownStatus(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("GET /api/maat/casebook?status=unknown = %d, want 400", resp.StatusCode)
+	}
+}
+
+func TestMaatKnowledge_ProjectionAndFilter(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t, Config{MaatKnowledgeFn: func(query string) (knowledge.View, error) {
+		if query != "receipt" {
+			t.Fatalf("query = %q, want receipt", query)
+		}
+		return knowledge.View{Items: []knowledge.Item{{Title: "Release receipt"}}, Total: 1, Withheld: 2}, nil
+	}})
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/maat/knowledge?q=receipt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/maat/knowledge = %d, want 200", resp.StatusCode)
+	}
+	var got knowledge.View
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Total != 1 || got.Withheld != 2 || len(got.Items) != 1 || got.Items[0].Title != "Release receipt" {
+		t.Fatalf("knowledge = %+v", got)
+	}
+}
+
+func TestMaatKnowledge_UnavailableIsHonest(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t, Config{})
+	defer ts.Close()
+	resp, err := http.Get(ts.URL + "/api/maat/knowledge")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("GET /api/maat/knowledge without producer = %d, want 503", resp.StatusCode)
 	}
 }
 

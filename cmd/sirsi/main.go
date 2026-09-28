@@ -41,7 +41,9 @@ var versionCmd = &cobra.Command{
 			{"Memory", "thoth"},
 			{"Quality", "maat"},
 			{"Health", "isis"},
-			{"Knowledge", "seshat"},
+			// Seshat remains the retained cache/adapter version key, while Ma'at
+			// is the single operator-facing knowledge authority.
+			{"Ma'at knowledge", "seshat"},
 			{"Cleanup", "anubis"},
 			{"Hardware", "seba"},
 			{"Recovery", "osiris"},
@@ -797,7 +799,6 @@ func init() {
 	// ── Power-user deity modules (hidden from default help, still work) ──
 	anubisCmd.Hidden = true
 	isisCmd.Hidden = true
-	maatCmd.Hidden = true
 	osirisCmd.Hidden = true
 	sebaCmd.Hidden = true
 	seshatCmd.Hidden = true
@@ -807,6 +808,7 @@ func init() {
 	horusCmd.Hidden = true
 	rootCmd.AddCommand(anubisCmd, sebaCmd, osirisCmd)
 	rootCmd.AddCommand(brandCmd)      // 𓂀 canonical Pantheon palette + token emitter (ADR-038)
+	rootCmd.AddCommand(apolloCmd)     // local inference planning; SNE owns execution and telemetry
 	rootCmd.AddCommand(gemmaCmd)      // human-facing 'sirsi gemma "<prompt>"' → local on-device model
 	rootCmd.AddCommand(brainCmd)      // 𓁟 Orchestration Brain control plane (A29, ADR-034): tiered/pluggable LLM spectrum over the EXISTING router+wake substrate
 	rootCmd.AddCommand(autonomousCmd) // 𓁟 master ACTION switch: observe-only vs. self-managing, orthogonal to the LLM Level (deterministic Tier-0 loop)
@@ -827,6 +829,7 @@ func init() {
 	rootCmd.AddCommand(guardCmd, judgeCmd, qualityCmd, mcpCmd, benchmarkCmd)
 	rootCmd.AddCommand(rtkCmd, vaultCmd, horusCmd)
 	rootCmd.AddCommand(notificationsCmd, dashboardCmd, ccdCmd)
+	rootCmd.AddCommand(caskReleaseCmd)
 
 	// Note: `sirsi dashboard` is branded as Horus (ADR-015).
 	// `sirsi horus` remains the code graph subcommand for backward compat.
