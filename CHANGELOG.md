@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.29] — 2026-09-28 — Menubar startup probe deferral
+**Commercial patch release.** The menubar Home panel no longer launches
+`sirsi vitals --json` or `sirsi autonomous status --json` while opening Home
+when neither result is rendered there. Apollo and Autonomous Control remain
+the data owners and load their canonical values when their surfaces open,
+reducing startup process churn without removing either workflow.
+
 ## [0.24.28] — 2026-09-28 — Full native release qualification route
 **Release qualification correction.** A commercial tag requires the signed,
 notarized, stapled Pantheon DMG and the same-payload signed, notarized, stapled
