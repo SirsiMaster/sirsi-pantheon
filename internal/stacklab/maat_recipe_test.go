@@ -117,6 +117,15 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 			t.Fatalf("Ma'at credential recipe omits canonical surface %q: %+v", path, credentials)
 		}
 	}
+	maatCLI, ok := componentsByID["maat-cli"]
+	if !ok {
+		t.Fatal("Ma'at CLI component is missing")
+	}
+	if !contains(maatCLI.Tests, "cmd/sirsi/maat_scales_test.go") ||
+		!contains(maatCLI.Outputs, "post-heal observation failures retain a same-policy read-only recheck and Casebook resolution path") ||
+		!contains(maatCLI.UpgradeRecipe, "never repeat a mutation after an unverified post-heal observation; offer re-observation plus retained evidence") {
+		t.Fatalf("Ma'at CLI recipe omits post-heal recovery contract: %+v", maatCLI)
+	}
 	pulse, ok := componentsByID["maat-pulse-proof-platform"]
 	if !ok {
 		t.Fatal("Ma'at pulse component is missing")

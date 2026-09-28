@@ -147,11 +147,11 @@
     {
       "id": "maat-cli",
       "source": ["cmd/sirsi/maat.go", "cmd/sirsi/maatschedule.go", "cmd/sirsi/maatcasebook.go", "cmd/sirsi/maatresolution.go", "cmd/sirsi/maatscreen.go", "cmd/sirsi/maatpreflight.go", "cmd/sirsi/maatcalibrate.go", "cmd/sirsi/maatknowledge.go"],
-      "tests": ["cmd/sirsi/maatschedule_decisions_test.go", "cmd/sirsi/maatresolution_test.go", "cmd/sirsi/maatscreen_test.go", "cmd/sirsi/maatcalibrate_test.go", "cmd/sirsi/maatknowledge_test.go", "internal/maat/releasepreflight_test.go", "internal/maat/credentialpreflight_test.go"],
+      "tests": ["cmd/sirsi/maatschedule_decisions_test.go", "cmd/sirsi/maatresolution_test.go", "cmd/sirsi/maatscreen_test.go", "cmd/sirsi/maatcalibrate_test.go", "cmd/sirsi/maatknowledge_test.go", "cmd/sirsi/maat_scales_test.go", "internal/maat/releasepreflight_test.go", "internal/maat/credentialpreflight_test.go"],
       "inputs": ["local operator command"],
-      "outputs": ["human and JSON views with System One model/deterministic-floor provenance, three-level failed-floor recovery, and read-only prescribed recovery guidance"],
+      "outputs": ["human and JSON views with System One model/deterministic-floor provenance, three-level failed-floor recovery, and read-only prescribed recovery guidance", "post-heal observation failures retain a same-policy read-only recheck and Casebook resolution path"],
       "writes": ["only explicit audit, reservation, and confirmed owner-resolution decision records"],
-      "upgrade_recipe": ["keep JSON and human output derived from shared types", "render recovery guidance without dispatching producer-supplied text", "require confirmation for every write", "add command tests for each new flag"]
+      "upgrade_recipe": ["keep JSON and human output derived from shared types", "render recovery guidance without dispatching producer-supplied text", "require confirmation for every write", "never repeat a mutation after an unverified post-heal observation; offer re-observation plus retained evidence", "add command tests for each new flag"]
     },
     {
       "id": "maat-horus-surface",
