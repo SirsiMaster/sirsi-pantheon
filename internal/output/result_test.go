@@ -1,9 +1,27 @@
 package output
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 )
+
+func TestCommandResultJSONDurationUsesMilliseconds(t *testing.T) {
+	r := CommandResult{Command: "sirsi maat audit", Duration: 1375*time.Millisecond + 900*time.Microsecond}
+	raw, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	var decoded struct {
+		Duration int64 `json:"duration_ms"`
+	}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if decoded.Duration != 1375 {
+		t.Fatalf("duration_ms = %d, want 1375; payload=%s", decoded.Duration, raw)
+	}
+}
 
 func TestCommandResult_AddEvidence(t *testing.T) {
 	r := &CommandResult{Command: "sirsi scan"}
