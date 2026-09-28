@@ -260,12 +260,12 @@ private struct MaatSystemOneView: View {
     @ViewBuilder private func resolutionLane(_ screens: [MaatCase]) -> some View {
         let unresolved = screens.filter {
             $0.status != "resolved" && ["changes", "block", "escalate"].contains($0.systemOne?.gate ?? "")
-        }.sorted { lhs, rhs in
+        }.sorted(by: { (lhs: MaatCase, rhs: MaatCase) -> Bool in
             let left = gateRank(lhs.systemOne?.gate ?? "")
             let right = gateRank(rhs.systemOne?.gate ?? "")
             if left != right { return left < right }
             return lhs.priority.rank > rhs.priority.rank
-        }
+        })
 
         if let next = unresolved.first, let verdict = next.systemOne {
             VStack(alignment: .leading, spacing: 8) {
@@ -486,7 +486,7 @@ private struct MaatSystemOneView: View {
             ForEach(preflight.verdict.floor.checks, id: \.name) { check in
                 Label(check.detail, systemImage: check.passed ? "checkmark.circle.fill" : "xmark.octagon.fill")
                     .sirsiFont(.caption)
-                    .foregroundStyle(check.passed ? .secondary : .orange)
+                    .foregroundStyle(check.passed ? Color.secondary : Color.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
             ForEach(preflight.verdict.findings) { finding in
@@ -858,6 +858,10 @@ struct MaatKnowledgeView: View {
     @State private var query = ""
     @State private var loading = true
     @State private var loadError: String?
+    @State private var confirmKnowledgeRefresh = false
+    @State private var knowledgeRefreshInFlight = false
+    @State private var knowledgeRefreshResult: String?
+    @State private var knowledgeRefreshError: String?
 
     init(engine: SirsiEngine, preloaded: MaatKnowledgeProjection? = nil, showsBackBar: Bool = true) {
         self.engine = engine
@@ -1247,7 +1251,7 @@ private struct MaatCaseDetailView: View {
                         if action.requiresConfirmation {
                             Label("Requires explicit confirmation", systemImage: "checkmark.shield")
                                 .sirsiFont(.caption, weight: .semibold)
-                                .foregroundStyle(sirsiGold)
+                                .foregroundStyle(gold)
                         }
                     }
                     if !entry.resolution.isEmpty {
@@ -1316,7 +1320,7 @@ private struct MaatCaseDetailView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .tint(sirsiGold)
+            .tint(gold)
             .disabled(actionInFlight || (action.kind == "owner_acceptance" && conclusion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
             .accessibilityHint("Records an evidence-bound owner decision; it does not repair the system.")
             if let actionResult {
@@ -1351,7 +1355,7 @@ private struct MaatCaseDetailView: View {
                             .sirsiFont(.caption, weight: .bold)
                             .foregroundStyle(.black)
                             .frame(width: 20, height: 20)
-                            .background(Circle().fill(sirsiGold))
+                            .background(Circle().fill(gold))
                         VStack(alignment: .leading, spacing: 2) {
                             Text(step.title)
                                 .sirsiFont(.subheadline, weight: .semibold)
@@ -1822,6 +1826,14 @@ enum MaatCasePriority: String, Decodable {
         case .urgent: return .red
         case .high: return .orange
         case .normal: return .blue
+        }
+    }
+
+    var rank: Int {
+        switch self {
+        case .urgent: return 3
+        case .high: return 2
+        case .normal: return 1
         }
     }
 }

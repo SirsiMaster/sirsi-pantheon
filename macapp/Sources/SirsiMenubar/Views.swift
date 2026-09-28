@@ -9,7 +9,10 @@ import os
 // /tmp file. Used to diagnose a failed apply (FDA / cancel / 0-cleaned).
 private let applyLog = Logger(subsystem: "ai.sirsi.pantheon", category: "apply")
 
-private let gold = Color(red: 0.78, green: 0.66, blue: 0.32)
+// Shared product accent. Keep the palette module-visible so every native
+// Pantheon surface uses the same green/gold language rather than inventing a
+// parallel accent per view.
+let gold = Color(red: 0.78, green: 0.66, blue: 0.32)
 
 // openSystemURL opens a System Settings / file URL (e.g. the Full Disk Access
 // pane). macOS cannot self-grant FDA — this is the one click that gets the user

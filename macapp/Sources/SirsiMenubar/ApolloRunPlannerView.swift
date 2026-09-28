@@ -105,7 +105,7 @@ struct ApolloRunPlannerView: View {
             if let engine = catalog.engines.first(where: { $0.id == selectedEngine }) {
                 Text(engine.state == "configured" ? engineDetail(engine) : "This route is not configured on this Mac. Configure an SNE local endpoint, then refresh this screen.")
                     .sirsiFont(.subheadline)
-                    .foregroundStyle(engine.state == "configured" ? .secondary : .orange)
+                    .foregroundStyle(engine.state == "configured" ? Color.secondary : Color.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
