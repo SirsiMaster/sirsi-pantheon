@@ -117,6 +117,16 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 			t.Fatalf("Ma'at credential recipe omits canonical surface %q: %+v", path, credentials)
 		}
 	}
+	terminal, ok := componentsByID["maat-terminal-console-surface"]
+	if !ok {
+		t.Fatal("Ma'at terminal console component is missing")
+	}
+	if !contains(terminal.Source, "internal/tui/screen_health.go") {
+		t.Fatalf("Ma'at terminal recipe omits the Health resolution surface: %+v", terminal.Source)
+	}
+	if !contains(terminal.Outputs, "confirmation-gated Ma'at evidence review for every guidance-only health finding") {
+		t.Fatalf("Ma'at terminal recipe omits guidance resolution behavior: %+v", terminal.Outputs)
+	}
 	wingRaw, err := os.ReadFile(filepath.Join("..", "..", "contracts", "stacklab", "maat-wing-v1.json"))
 	if err != nil {
 		t.Fatal(err)
