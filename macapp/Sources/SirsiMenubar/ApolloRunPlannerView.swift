@@ -89,6 +89,7 @@ struct ApolloRunPlannerView: View {
         MaybeScroll {
             VStack(alignment: .leading, spacing: 16) {
                 header(catalog)
+                availableRoutes(catalog)
                 machinePicker(catalog)
                 enginePicker(catalog)
                 resourceEnvelope(catalog)
@@ -113,6 +114,57 @@ struct ApolloRunPlannerView: View {
                 fact("Machine", machine.name)
                 fact("CPU", "\(machine.cpuCores) cores")
                 fact("Memory", byteLabel(machine.memoryBytes))
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.05)))
+    }
+
+    // Keep the fabric's measured choices in view before an operator opens a
+    // picker. A catalog may contain several Horus instances, but every row is
+    // still only a capacity receipt until SNE admits a session for its route.
+    private func availableRoutes(_ catalog: ApolloCatalog) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Measured choices", systemImage: "square.stack.3d.up")
+                .sirsiFont(.headline)
+            Text("Pick from these exact resident routes and measured machines. A route stays visible when it needs configuration; it is never replaced with a guessed model or peer capacity.")
+                .sirsiFont(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            ForEach(catalog.machineOptions) { machine in
+                let routes = catalog.residentModelOptions(for: machine.id)
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Circle()
+                            .fill(machine.id == selectedMachine ? gold : Color.secondary.opacity(0.45))
+                            .frame(width: 8, height: 8)
+                        Text(machine.name)
+                            .sirsiFont(.subheadline, weight: .semibold)
+                        Spacer(minLength: 6)
+                        Text("\(machine.cpuCores) cores · \(byteLabel(machine.memoryBytes))")
+                            .sirsiFont(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text(routes.isEmpty ? "No typed Apollo route published" : routes.map(routeLabel).joined(separator: " · "))
+                        .sirsiFont(.caption)
+                        .foregroundStyle(routes.contains { $0.state == "configured" } ? Color.secondary : Color.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !snapshotMode {
+                        Button(machine.id == selectedMachine ? "Selected" : "Use this machine") {
+                            guard machine.id != selectedMachine else { return }
+                            selectedMachine = machine.id
+                            resetSelections(catalog)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(machine.id == selectedMachine ? gold : .secondary)
+                        .disabled(machine.id == selectedMachine)
+                    }
+                }
+                .padding(.vertical, 7)
+                if machine.id != catalog.machineOptions.last?.id {
+                    Divider()
+                }
             }
         }
         .padding(14)
