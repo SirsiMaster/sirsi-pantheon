@@ -91,6 +91,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
 private struct MaatSystemOneView: View {
     @ObservedObject var engine: SirsiEngine
     @Binding var section: MaatWorkspaceSection
+    @Environment(\.snapshotMode) private var snapshotMode
     @State private var casebook: MaatCasebookProjection?
     @State private var loading: Bool
     @State private var loadError: String?
