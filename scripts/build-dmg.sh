@@ -145,7 +145,7 @@ INSTALL
   1. Drag Pantheon.app into Applications.
   2. Launch it; grant Full Disk Access when prompted (one time).
 
-The bundle includes the menu bar app and the `sirsi` CLI
+The bundle includes the menu bar app and the sirsi CLI
 (/Applications/Pantheon.app/Contents/MacOS/sirsi). To use the CLI in a terminal:
   alias sirsi="/Applications/Pantheon.app/Contents/MacOS/sirsi"
 or: brew install sirsimaster/tools/sirsi-pantheon

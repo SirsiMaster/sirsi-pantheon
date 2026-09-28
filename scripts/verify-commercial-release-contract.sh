@@ -56,4 +56,14 @@ done
   ]
 ' "$recipe" >/dev/null || { echo "Stack Lab release-artifact recipe is incomplete" >&2; exit 1; }
 
+# README is emitted through an expanding heredoc. Command-substitution markup
+# in user-facing copy would execute during packaging and silently corrupt the
+# staged artifact, so keep the CLI name literal and assert the safe wording.
+/usr/bin/grep -Fq 'The bundle includes the menu bar app and the sirsi CLI' "$dmg" || {
+    echo "DMG README does not name the bundled sirsi CLI safely" >&2; exit 1;
+}
+if /usr/bin/grep -Fq '`sirsi`' "$dmg"; then
+    echo "DMG README contains executable command-substitution markup" >&2; exit 1
+fi
+
 echo "commercial release contract: pass"
