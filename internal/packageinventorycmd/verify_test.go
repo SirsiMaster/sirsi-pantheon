@@ -15,6 +15,37 @@ func TestVerifyRejectsDeclaredVersionBuildMismatch(t *testing.T) {
 	}
 }
 
+func TestValidateInfoPlistAcceptsTypedOptionalValues(t *testing.T) {
+	info := []byte(`<?xml version="1.0"?><plist><dict>
+	<key>CFBundleIdentifier</key>
+	<string>ai.sirsi.pantheon</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.24.14</string>
+	<key>CFBundleVersion</key>
+	<string>0.24.14</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	</dict></plist>`)
+	if err := validateInfoPlist(info, "0.24.14", "0.24.14"); err != nil {
+		t.Fatalf("typed optional plist values rejected: %v", err)
+	}
+}
+
+func TestValidateInfoPlistRejectsDuplicateOptionalKey(t *testing.T) {
+	info := []byte(`<?xml version="1.0"?><plist><dict>
+	<key>CFBundleIdentifier</key><string>ai.sirsi.pantheon</string>
+	<key>CFBundleShortVersionString</key><string>0.24.14</string>
+	<key>CFBundleVersion</key><string>0.24.14</string>
+	<key>LSUIElement</key><true/>
+	<key>LSUIElement</key><false/>
+	</dict></plist>`)
+	if err := validateInfoPlist(info, "0.24.14", "0.24.14"); err == nil || !strings.Contains(err.Error(), "duplicate") {
+		t.Fatalf("duplicate optional plist key accepted: %v", err)
+	}
+}
+
 func TestReadCanonicalFileRejectsSymlinkedAncestor(t *testing.T) {
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {

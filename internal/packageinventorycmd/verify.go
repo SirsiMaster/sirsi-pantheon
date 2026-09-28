@@ -144,6 +144,12 @@ func openParent(path string) (int, string, error) {
 func validateInfoPlist(data []byte, version, build string) error {
 	decoder := xml.NewDecoder(strings.NewReader(string(data)))
 	values := make(map[string]string)
+	seen := make(map[string]struct{})
+	required := map[string]struct{}{
+		"CFBundleIdentifier":         {},
+		"CFBundleShortVersionString": {},
+		"CFBundleVersion":            {},
+	}
 	var key string
 	for {
 		token, err := decoder.Token()
@@ -160,20 +166,26 @@ func validateInfoPlist(data []byte, version, build string) error {
 		if err := decoder.DecodeElement(&key, &start); err != nil || key == "" {
 			return errors.New("Info.plist contains an invalid key")
 		}
-		valueToken, err := decoder.Token()
-		if err != nil {
-			return errors.New("Info.plist key has no value")
+		if _, exists := seen[key]; exists {
+			return errors.New("Info.plist contains duplicate keys")
 		}
-		valueStart, ok := valueToken.(xml.StartElement)
-		if !ok || valueStart.Name.Local != "string" {
-			return errors.New("Info.plist value is not a string")
+		seen[key] = struct{}{}
+		valueStart, err := nextPlistValueStart(decoder)
+		if err != nil {
+			return err
+		}
+		if valueStart.Name.Local != "string" {
+			if _, needed := required[key]; needed {
+				return errors.New("Info.plist required identity value is not a string")
+			}
+			if err := decoder.Skip(); err != nil {
+				return errors.New("Info.plist contains an invalid typed value")
+			}
+			continue
 		}
 		var value string
 		if err := decoder.DecodeElement(&value, &valueStart); err != nil {
 			return errors.New("Info.plist contains an invalid string")
-		}
-		if _, exists := values[key]; exists {
-			return errors.New("Info.plist contains duplicate keys")
 		}
 		values[key] = value
 	}
@@ -187,6 +199,30 @@ func validateInfoPlist(data []byte, version, build string) error {
 		return errors.New("Info.plist build does not match --build")
 	}
 	return nil
+}
+
+// nextPlistValueStart permits XML formatting whitespace between a plist key
+// and its value but refuses any other unstructured data. macOS writes
+// human-readable plists this way; accepting arbitrary character data here
+// would make a malformed dictionary look canonical.
+func nextPlistValueStart(decoder *xml.Decoder) (xml.StartElement, error) {
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			return xml.StartElement{}, errors.New("Info.plist key has no value")
+		}
+		switch value := token.(type) {
+		case xml.CharData:
+			if strings.TrimSpace(string(value)) == "" {
+				continue
+			}
+			return xml.StartElement{}, errors.New("Info.plist key has an invalid value")
+		case xml.StartElement:
+			return value, nil
+		default:
+			return xml.StartElement{}, errors.New("Info.plist key has an invalid value")
+		}
+	}
 }
 
 func sameIdentity(a, b unix.Stat_t) bool {

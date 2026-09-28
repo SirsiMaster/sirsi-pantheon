@@ -15,7 +15,7 @@ func TestRunEmitsNonExecutingInventory(t *testing.T) {
 		t.Fatal(err)
 	}
 	app := filepath.Join(root, "Pantheon.app")
-	for _, dir := range []string{"Contents/MacOS", "Contents/Resources"} {
+	for _, dir := range []string{"Contents/MacOS", "Contents/Resources/StackLab/v2"} {
 		if err := os.MkdirAll(filepath.Join(app, dir), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -24,11 +24,20 @@ func TestRunEmitsNonExecutingInventory(t *testing.T) {
 	pkgInfo := []byte("APPL????")
 	launchAgent := []byte("Label=ai.sirsi.pantheon\n")
 	files := map[string][]byte{
-		"Contents/Info.plist":                        info,
-		"Contents/PkgInfo":                           pkgInfo,
-		"Contents/MacOS/sirsi":                       []byte("cli bytes"),
-		"Contents/MacOS/sirsi-menubar":               []byte("menubar bytes"),
-		"Contents/Resources/ai.sirsi.pantheon.plist": launchAgent,
+		"Contents/Info.plist":                                                  info,
+		"Contents/PkgInfo":                                                     pkgInfo,
+		"Contents/MacOS/sirsi":                                                 []byte("cli bytes"),
+		"Contents/MacOS/sirsi-menubar":                                         []byte("menubar bytes"),
+		"Contents/Resources/ai.sirsi.pantheon.plist":                           launchAgent,
+		"Contents/Resources/StackLab/apollo-sne-telemetry-v1.json":             []byte(`{"schema":"sirsi.stacklab.apollo-telemetry.v1"}`),
+		"Contents/Resources/StackLab/maat-system-one-recipe-v1.json":           []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
+		"Contents/Resources/StackLab/maat-wing-v1.json":                        []byte(`{"schema":"sirsi.stacklab.wing.v1"}`),
+		"Contents/Resources/StackLab/native-stacklab-surface-recipe-v1.json":   []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
+		"Contents/Resources/StackLab/pantheon-release-artifact-recipe-v1.json": []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
+		"Contents/Resources/StackLab/ra-horus-fabric-recipe-v1.json":           []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
+		"Contents/Resources/StackLab/ra-horus-fabric-wing-v1.json":             []byte(`{"schema":"sirsi.stacklab.wing.v1"}`),
+		"Contents/Resources/StackLab/v2/PROVENANCE.md":                         []byte("Stack Lab provenance\n"),
+		"Contents/Resources/StackLab/v2/wing.schema.json":                      []byte(`{"$schema":"https://json-schema.org/draft/2020-12/schema"}`),
 	}
 	for rel, data := range files {
 		if err := os.WriteFile(filepath.Join(app, filepath.FromSlash(rel)), data, 0o644); err != nil {

@@ -5,7 +5,9 @@
 package packageinventory
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"debug/macho"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -58,8 +60,22 @@ var allowed = map[string]string{
 	"Contents/MacOS/sirsi-menubar":               "regular",
 	"Contents/Resources":                         "directory",
 	"Contents/Resources/ai.sirsi.pantheon.plist": "regular",
-	"Contents/_CodeSignature":                    "directory",
-	"Contents/_CodeSignature/CodeResources":      "regular",
+	// Stack Lab is shipped inside the app as the versioned, inspectable
+	// methodology contract. Keep this allowlist exact: a new recipe is a
+	// deliberate payload and verifier change, never ambient bundle content.
+	"Contents/Resources/StackLab":                                          "directory",
+	"Contents/Resources/StackLab/apollo-sne-telemetry-v1.json":             "regular",
+	"Contents/Resources/StackLab/maat-system-one-recipe-v1.json":           "regular",
+	"Contents/Resources/StackLab/maat-wing-v1.json":                        "regular",
+	"Contents/Resources/StackLab/native-stacklab-surface-recipe-v1.json":   "regular",
+	"Contents/Resources/StackLab/pantheon-release-artifact-recipe-v1.json": "regular",
+	"Contents/Resources/StackLab/ra-horus-fabric-recipe-v1.json":           "regular",
+	"Contents/Resources/StackLab/ra-horus-fabric-wing-v1.json":             "regular",
+	"Contents/Resources/StackLab/v2":                                       "directory",
+	"Contents/Resources/StackLab/v2/PROVENANCE.md":                         "regular",
+	"Contents/Resources/StackLab/v2/wing.schema.json":                      "regular",
+	"Contents/_CodeSignature":                                              "directory",
+	"Contents/_CodeSignature/CodeResources":                                "regular",
 }
 
 // Verify returns a deterministic, non-executing inventory. The bundle root,
@@ -366,8 +382,10 @@ func validateReport(report Report, contents map[string][]byte, expected Expectat
 		if strings.Contains(strings.ToLower(entry.Path), "python") || strings.Contains(strings.ToLower(entry.Path), ".py") {
 			return fmt.Errorf("package inventory: Python payload rejected at %q", entry.Path)
 		}
-		if data, ok := contents[entry.Path]; ok && (strings.Contains(strings.ToLower(string(data)), "libpython") || strings.Contains(strings.ToLower(string(data)), "python.framework")) {
-			return fmt.Errorf("package inventory: Python linkage rejected at %q", entry.Path)
+		if data, ok := contents[entry.Path]; ok && expected.RequireCodeSignature && (entry.Path == "Contents/MacOS/sirsi" || entry.Path == "Contents/MacOS/sirsi-menubar") {
+			if err := validateMachOLinkage(entry.Path, data); err != nil {
+				return err
+			}
 		}
 	}
 	for required := range allowed {
@@ -376,6 +394,30 @@ func validateReport(report Report, contents map[string][]byte, expected Expectat
 		}
 		if _, ok := seen[required]; !ok {
 			return fmt.Errorf("package inventory: missing required entry %q", required)
+		}
+	}
+	return nil
+}
+
+// validateMachOLinkage checks actual Mach-O load commands. A production Go
+// binary naturally contains words such as "python" in user-facing help and
+// diagnostics; those bytes are not a linked interpreter. The release
+// invariant is about shipped frameworks and dynamic dependencies, which are
+// represented by LC_LOAD_DYLIB records.
+func validateMachOLinkage(path string, data []byte) error {
+	file, err := macho.NewFile(bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("package inventory: expected Mach-O executable at %q: %w", path, err)
+	}
+	defer file.Close()
+	for _, load := range file.Loads {
+		dylib, ok := load.(*macho.Dylib)
+		if !ok {
+			continue
+		}
+		name := strings.ToLower(dylib.Name)
+		if strings.Contains(name, "libpython") || strings.Contains(name, "python.framework") {
+			return fmt.Errorf("package inventory: Python linkage rejected at %q", path)
 		}
 	}
 	return nil

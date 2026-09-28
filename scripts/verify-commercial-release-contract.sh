@@ -15,8 +15,11 @@ makefile="$root/Makefile"
 recipe="$root/contracts/stacklab/pantheon-release-artifact-recipe-v1.json"
 cask_cmd="$root/cmd/sirsi/cask_release.go"
 cask_package="$root/internal/caskrelease/cask.go"
+package_inventory="$root/internal/packageinventory/inventory.go"
+package_inventory_cmd="$root/cmd/sirsi/packageinventorycmd.go"
+package_inventory_adapter="$root/internal/packageinventorycmd/verify.go"
 
-for file in "$dmg" "$pkg" "$workflow" "$makefile" "$recipe" "$cask_cmd" "$cask_package"; do
+for file in "$dmg" "$pkg" "$workflow" "$makefile" "$recipe" "$cask_cmd" "$cask_package" "$package_inventory" "$package_inventory_cmd" "$package_inventory_adapter"; do
     [[ -f "$file" ]] || { echo "missing release-contract source: $file" >&2; exit 1; }
 done
 
@@ -60,6 +63,13 @@ if /usr/bin/grep -Eq '^\s*go build \./\.\.\.\s*$' "$workflow"; then
     echo "release workflow tries to compile macOS-only GUI packages on Linux" >&2
     exit 1
 fi
+
+for file in "$dmg" "$pkg"; do
+    /usr/bin/grep -Fq 'package-inventory' "$file" || {
+        echo "package builder does not invoke canonical payload inventory: $file" >&2
+        exit 1
+    }
+done
 for target in dmg-dev pkg-dev release-dmg release-pkg; do
     /usr/bin/grep -Eq "^${target}:" "$makefile" || { echo "Makefile target missing: $target" >&2; exit 1; }
 done

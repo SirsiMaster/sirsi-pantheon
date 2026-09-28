@@ -132,6 +132,20 @@ else
     codesign --force --deep --sign - "${BUNDLE_DIR}"
 fi
 
+# Verify the final assembled payload through the canonical Go engine before it
+# can cross a DMG boundary. This is non-executing inventory only: it retains
+# descriptor-relative bundle reads, rejects unexpected entries, and binds the
+# canonical PkgInfo and LaunchAgent source bytes.
+echo "Verifying assembled Pantheon.app payload..."
+"${BUILD_DIR}/sirsi" package-inventory \
+    --app "${BUNDLE_DIR}" \
+    --version "${VERSION}" \
+    --build "${VERSION}" \
+    --info-plist "${BUNDLE_DIR}/Contents/Info.plist" \
+    --pkg-info "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/PkgInfo" \
+    --launch-agent "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" \
+    --require-code-signature
+
 # --- Stage + create the DMG ---
 echo "Creating DMG..."
 rm -rf "${STAGING_DIR}"; mkdir -p "${STAGING_DIR}"

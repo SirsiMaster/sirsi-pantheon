@@ -114,6 +114,18 @@ if [[ ! -f "$EXPANDED_ROOT/Payload/Applications/Pantheon.app/Contents/Resources/
     echo "ERROR: expanded PKG payload is missing the Ra Stack Lab contract." >&2
     exit 1
 fi
+# Inspect the exact archive payload with the canonical Go verifier. The
+# verifier is invoked from the source-built CLI, never from the candidate
+# payload, and opens the expanded app descriptor-relatively without executing
+# an entry inside it.
+"${PROJECT_ROOT}/bin/sirsi" package-inventory \
+    --app "$EXPANDED_ROOT/Payload/Applications/Pantheon.app" \
+    --version "$VERSION" \
+    --build "$VERSION" \
+    --info-plist "$EXPANDED_ROOT/Payload/Applications/Pantheon.app/Contents/Info.plist" \
+    --pkg-info "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/PkgInfo" \
+    --launch-agent "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" \
+    --require-code-signature
 
 # pkgutil intentionally exits nonzero for an unsigned package. That is useful
 # local-development evidence. In commercial release mode signature,
