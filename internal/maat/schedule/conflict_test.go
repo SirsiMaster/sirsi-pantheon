@@ -52,6 +52,41 @@ func TestProbeProcesses_AllowsLocalMachineCaseInsensitive(t *testing.T) {
 	}
 }
 
+func TestCheckConflicts_ExemptPIDCoversItsOwnDescendants(t *testing.T) {
+	l := fixedLedger("2026-09-24T10:00:00Z")
+	req := mkReq("m1", "claude-io", "2026-09-24T09:00:00Z", "2026-09-24T11:00:00Z", RegimeQuiet)
+	req.ExemptPID = 100 // the reservation's own guarded-run process (e.g. maat-run-guard)
+	if _, err := l.Reserve(req, false); err != nil {
+		t.Fatal(err)
+	}
+	// 100 (exempt root) -> 200 (some wrapper) -> 300 (the ssh launcher that
+	// carries a remote bench tool's name in its argv, same shape as the
+	// 2026-09-28 hermes false positive) plus an unrelated PID 999 that must
+	// still be reported.
+	SetProcessAncestryFn(func() (map[int]int, error) {
+		return map[int]int{200: 100, 300: 200, 999: 1}, nil
+	})
+	defer SetProcessAncestryFn(nil)
+	SetActivityProbe(func(machine string) ([]Actor, error) {
+		return []Actor{
+			{Kind: "bench", Detail: "ssh ... tbraw-bench ...", PID: 300},
+			{Kind: "bench", Detail: "iperf", PID: 999},
+		}, nil
+	})
+	defer SetActivityProbe(probeProcesses)
+
+	rep, err := l.CheckConflicts("m1", "m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Clean {
+		t.Fatal("PID 999 is a genuine intruder — the report must not read clean")
+	}
+	if len(rep.Intruders) != 1 || rep.Intruders[0].PID != 999 {
+		t.Fatalf("want only PID 999 reported (PID 300 is a descendant of ExemptPID 100), got %+v", rep.Intruders)
+	}
+}
+
 func TestCheckConflicts_BuildRegimeSkipsPressureRead(t *testing.T) {
 	l := fixedLedger("2026-09-24T10:00:00Z")
 	if _, err := l.Reserve(mkReq("m1", "claude-io", "2026-09-24T09:00:00Z", "2026-09-24T11:00:00Z", RegimeBuild), false); err != nil {
