@@ -1200,6 +1200,9 @@ struct FindingView: View {
         }
     }
     private var fixButtonLabel: String {
+        if finding.check == "launchd Disabled Override" {
+            return "Restore managed services"
+        }
         switch kind {
         case "relief": return "Relieve the live cause"
         case "guidance": return "Show how to address"
@@ -1211,6 +1214,22 @@ struct FindingView: View {
     // than starting it merely because a person opened the finding detail.
     private var fixRequiresConfirmation: Bool {
         finding.fix?.split(separator: " ").contains(where: { String($0) == "--confirm" }) ?? false
+    }
+
+    // A managed launchd override is the first repair Ma'at can attest end to
+    // end. The Health finding remains the factual source, but this native route
+    // moves the confirm → bounded repair → re-check → durable outcome loop into
+    // Ma'at instead of leaving a successful repair as a transient sheet.
+    private var repairArgs: [String] {
+        if finding.check == "launchd Disabled Override",
+           finding.fix == "sirsi liveness-watch restore-disabled --confirm" {
+            return ["maat", "repair", "launchd-disabled", "--confirm"]
+        }
+        return sirsiArgs(finding.fix ?? "")
+    }
+
+    private var repairCommand: String {
+        "sirsi " + repairArgs.joined(separator: " ")
     }
     // The expectation set BEFORE the click — the heart of the honesty fix.
     private var fixExpectation: String? {
@@ -1290,7 +1309,7 @@ struct FindingView: View {
                                 .buttonStyle(.borderedProminent).tint(gold)
                         } else {
                             NavLink {
-                                ResultView(engine: engine, title: finding.check, args: sirsiArgs(fix),
+                                ResultView(engine: engine, title: finding.check, args: repairArgs,
                                            reverifyCheck: finding.check, reverifyKind: finding.fixKind)
                             } label: { fixButtonContents(fix) }
                             .buttonStyle(.borderedProminent).tint(gold)
@@ -1337,10 +1356,14 @@ struct FindingView: View {
             Button(fixButtonLabel) { showConfirmedFix = true }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Pantheon will run the exact managed repair shown here and then re-check this finding. It will not broaden the command or touch unrelated services.")
+            if finding.check == "launchd Disabled Override" {
+                Text("Ma'at will re-check the exact managed disabled labels, restore only that bounded set, verify the same diagnostic afterward, and retain either a verified recovery receipt or an explicit incomplete outcome.")
+            } else {
+                Text("Pantheon will run the exact managed repair shown here and then re-check this finding. It will not broaden the command or touch unrelated services.")
+            }
         }
         .sheet(isPresented: $showConfirmedFix) {
-            ResultView(engine: engine, title: finding.check, args: sirsiArgs(finding.fix ?? ""),
+            ResultView(engine: engine, title: finding.check, args: repairArgs,
                        reverifyCheck: finding.check, reverifyKind: finding.fixKind)
         }
     }
@@ -1350,7 +1373,7 @@ struct FindingView: View {
             Image(systemName: fixIcon)
             VStack(alignment: .leading, spacing: 1) {
                 Text(fixButtonLabel).sirsiFont(12, weight: .semibold)
-                Text(fix).sirsiFont(.caption2, design: .monospaced)
+                Text(repairCommand).sirsiFont(.caption2, design: .monospaced)
                     .foregroundStyle(Color.white.opacity(0.85))
             }
             Spacer()

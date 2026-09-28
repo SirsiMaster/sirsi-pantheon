@@ -100,6 +100,15 @@
       "upgrade_recipe": ["keep classification descriptive", "surface an evidence-bound owner route for each open case", "for a failed System One deterministic floor, project inspect/correct/re-screen recovery levels before owner confirmation", "preserve each System One finding and recovery hint without creating command authority", "add deterministic source fixtures", "never add policy or execution authority"]
     },
     {
+      "id": "maat-guided-managed-repair",
+      "source": ["cmd/sirsi/maatrepair.go", "internal/maat/diagnostic_repair.go", "internal/guard/doctor.go", "internal/router/launchdkickstart.go", "macapp/Sources/SirsiMenubar/Views.swift"],
+      "tests": ["cmd/sirsi/maatrepair_test.go", "internal/maat/diagnostic_repair_test.go", "scripts/verify-maat-guided-repair-contract.sh"],
+      "inputs": ["canonical guard diagnostic finding", "fixed managed-label recovery implementation", "explicit native confirmation"],
+      "outputs": ["preflight-bound managed LaunchAgent recovery", "post-repair recheck of the same diagnostic", "one Ma'at verified-recovery or incomplete-repair receipt", "native resolution that never reports raw success without verification"],
+      "writes": ["only the established managed LaunchAgent state and one local Ma'at decision journal record after the repair outcome is observed"],
+      "upgrade_recipe": ["keep the repair registry closed", "never accept a caller-supplied command, plist, or label", "require preflight confirmation and a same-check post-repair observation", "record incomplete outcomes as open cases", "add source and runtime fixtures before admitting any new repair" ]
+    },
+    {
       "id": "maat-knowledge-surface",
       "source": ["cmd/sirsi/maatknowledge.go", "internal/dashboard/actions.go", "macapp/Sources/SirsiMenubar/MaatCasebookView.swift", "internal/seshat"],
       "tests": ["cmd/sirsi/maatknowledge_test.go", "internal/dashboard/actions_test.go", "scripts/verify-maat-knowledge-surface-contract.sh"],
