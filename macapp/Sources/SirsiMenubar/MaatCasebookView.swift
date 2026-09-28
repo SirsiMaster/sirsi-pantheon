@@ -1758,8 +1758,22 @@ struct MaatCase: Decodable, Identifiable {
     }
 
     var searchText: String {
-        [time, kind, category, status, requester, resource, affected,
-         determination, assessed, why, evidence, resolution, nextAction?.title ?? "", nextAction?.detail ?? "", nextAction?.steps.map { $0.title + " " + $0.detail }.joined(separator: " ") ?? "", systemOne?.gate ?? "", systemOne?.subject.headSHA ?? "", systemOneCalibration?.screenEvidence ?? "", systemOneCalibration?.frontierEvidence ?? ""].joined(separator: " ")
+        let caseFields = [
+            time, kind, category, status, requester, resource, affected,
+            determination, assessed, why, evidence, resolution,
+        ]
+        let nextActionFields = [
+            nextAction?.title ?? "",
+            nextAction?.detail ?? "",
+            nextAction?.steps.map { $0.title + " " + $0.detail }.joined(separator: " ") ?? "",
+        ]
+        let systemOneFields = [
+            systemOne?.gate ?? "",
+            systemOne?.subject.headSHA ?? "",
+            systemOneCalibration?.screenEvidence ?? "",
+            systemOneCalibration?.frontierEvidence ?? "",
+        ]
+        return (caseFields + nextActionFields + systemOneFields).joined(separator: " ")
     }
 }
 
