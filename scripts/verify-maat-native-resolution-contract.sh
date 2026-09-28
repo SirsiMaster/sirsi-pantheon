@@ -13,6 +13,8 @@ screencli="$root/cmd/sirsi/maatscreen.go"
 casebookcli="$root/cmd/sirsi/maatcasebook.go"
 tui="$root/internal/tui/screen_activity.go"
 dashboard="$root/internal/dashboard/pages.go"
+recipe="$root/contracts/stacklab/maat-system-one-recipe-v1.json"
+catalog="$root/docs/qa/MAAT_SYSTEM_ONE_CATALOG.md"
 
 [ -f "$view" ] || { echo "missing native views" >&2; exit 1; }
 [ -f "$casebook" ] || { echo "missing native Ma'at casebook" >&2; exit 1; }
@@ -21,6 +23,8 @@ dashboard="$root/internal/dashboard/pages.go"
 [ -f "$casebookcli" ] || { echo "missing Ma'at Casebook CLI" >&2; exit 1; }
 [ -f "$tui" ] || { echo "missing Ma'at Casebook TUI" >&2; exit 1; }
 [ -f "$dashboard" ] || { echo "missing Ma'at Casebook dashboard" >&2; exit 1; }
+[ -f "$recipe" ] || { echo "missing Ma'at System One Stack Lab recipe" >&2; exit 1; }
+[ -f "$catalog" ] || { echo "missing Ma'at System One catalog" >&2; exit 1; }
 
 if /usr/bin/grep -Fq 'This needs attention but has no one-click fix yet.' "$view"; then
   echo "native finding dead-end text remains" >&2
@@ -58,6 +62,13 @@ done
 	echo "native Ma'at System One model provenance missing" >&2
 	exit 1
 }
+
+for target in "$recipe" "$catalog"; do
+	/usr/bin/grep -Fq 'deterministic-floor' "$target" || {
+		echo "Stack Lab Ma'at floor provenance canon missing: $target" >&2
+		exit 1
+	}
+done
 
 for needle in \
   'confirmFix' \

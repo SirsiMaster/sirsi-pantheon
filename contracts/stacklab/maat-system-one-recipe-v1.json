@@ -59,7 +59,7 @@
       "source": ["internal/maat/systemone.go", "internal/maat/decisions.go", "cmd/sirsi/maatscreen.go", "cmd/sirsi/maatcalibrate.go"],
       "tests": ["internal/maat/systemone_test.go", "cmd/sirsi/maatscreen_test.go", "cmd/sirsi/maatcalibrate_test.go"],
       "inputs": ["closed typed local screen JSON", "deterministic floor checks", "model/provider provenance", "one distinct independent review outcome for a recorded local auto-pass"],
-      "outputs": ["evidence-bound System One verdict", "bounded evidence-linked findings and prescribed recovery steps", "escalation route for sensitive or uncertain screens", "durable auto-pass calibration and overturn-rate projection"],
+      "outputs": ["evidence-bound System One verdict", "complete model/provider/version/locality/latency provenance and deterministic-floor projection", "bounded evidence-linked findings and prescribed recovery steps", "escalation route for sensitive or uncertain screens", "durable auto-pass calibration and overturn-rate projection"],
       "writes": ["only a validated Ma'at decision journal record"],
       "upgrade_recipe": ["preserve closed schema validation", "never let a caller select the screen gate", "require --confirm immediately before every decision-journal write", "retain deterministic floor precedence", "treat each prescribed recovery step as evidence, never executable input", "treat a screen as advisory evidence, never operation authority", "bind calibration only to one recorded local auto-pass and distinct independent evidence", "reject replayed or ambiguous calibration links", "add positive and adversarial fixtures before widening a subject, boundary, finding, or independent outcome class"]
     },
@@ -86,7 +86,7 @@
       "source": ["internal/maat/casebook/casebook.go"],
       "tests": ["internal/maat/casebook/casebook_test.go"],
       "inputs": ["DecisionJournal records"],
-      "outputs": ["classified cases", "priority summary", "actor/resource/evidence graph", "truthful next step for every open case", "prescribed recovery guidance for every System One finding"],
+      "outputs": ["classified cases", "priority summary", "actor/resource/evidence graph", "truthful next step for every open case", "complete System One model and deterministic-floor provenance", "prescribed recovery guidance for every System One finding"],
       "writes": [],
       "upgrade_recipe": ["keep classification descriptive", "surface an evidence-bound owner route for each open case", "preserve each System One finding and recovery hint without creating command authority", "add deterministic source fixtures", "never add policy or execution authority"]
     },
@@ -104,7 +104,7 @@
       "source": ["cmd/sirsi/maat.go", "cmd/sirsi/maatschedule.go", "cmd/sirsi/maatcasebook.go", "cmd/sirsi/maatresolution.go", "cmd/sirsi/maatscreen.go", "cmd/sirsi/maatcalibrate.go"],
       "tests": ["cmd/sirsi/maatschedule_decisions_test.go", "cmd/sirsi/maatresolution_test.go", "cmd/sirsi/maatscreen_test.go", "cmd/sirsi/maatcalibrate_test.go"],
       "inputs": ["local operator command"],
-      "outputs": ["human and JSON views with read-only prescribed recovery guidance"],
+      "outputs": ["human and JSON views with System One model/deterministic-floor provenance and read-only prescribed recovery guidance"],
       "writes": ["only explicit audit, reservation, and confirmed owner-resolution decision records"],
       "upgrade_recipe": ["keep JSON and human output derived from shared types", "render recovery guidance without dispatching producer-supplied text", "require confirmation for every write", "add command tests for each new flag"]
     },
@@ -113,7 +113,7 @@
       "source": ["internal/dashboard/maat.go", "internal/dashboard/server.go", "internal/dashboard/pages.go", "cmd/sirsi/dashboard.go"],
       "tests": ["internal/dashboard/dashboard_test.go"],
       "inputs": ["MaatDecisionProducer", "MaatCasebookProducer"],
-      "outputs": ["GET /api/maat/decisions", "GET /api/maat/casebook with System One finding and recovery evidence", "Horus Ma'at view with read-only prescribed next steps"],
+      "outputs": ["GET /api/maat/decisions", "GET /api/maat/casebook with complete System One model/floor/finding/recovery evidence", "Horus Ma'at view with visible deterministic provenance and read-only prescribed next steps"],
       "writes": [],
       "upgrade_recipe": ["keep endpoints GET-only", "reject invalid filters", "return 503 rather than a fabricated empty projection"]
     },
@@ -122,7 +122,7 @@
       "source": ["internal/mcp/tools.go"],
       "tests": ["internal/mcp/maat_test.go"],
       "inputs": ["shared Ma'at decision journal", "bounded query filters"],
-      "outputs": ["read-only maat_casebook MCP JSON projection with System One, finding, recovery, and calibration evidence"],
+      "outputs": ["read-only maat_casebook MCP JSON projection with System One model/floor, finding, recovery, and calibration evidence"],
       "writes": [],
       "upgrade_recipe": ["keep the journal as the sole local Ma'at store", "reject malformed filters before reading", "never add write, review, repair, or authorization authority", "test projection of calibration links, recovery hints, and rejected filters"]
     },
@@ -131,7 +131,7 @@
       "source": ["internal/tui/command.go", "internal/tui/contracts.go", "internal/tui/screen_activity.go", "internal/tui/runner.go"],
       "tests": ["internal/tui/command_test.go", "internal/tui/console_test.go"],
       "inputs": ["canonical sirsi maat casebook JSON", "canonical activity ledger JSON"],
-      "outputs": ["five-screen Horus console Activity ledger", "Ma'at System One casebook mode", "evidence, prescribed recovery, and guided resolution detail"],
+      "outputs": ["five-screen Horus console Activity ledger", "Ma'at System One casebook mode", "visible model and deterministic-floor provenance", "evidence, prescribed recovery, and guided resolution detail"],
       "writes": [],
       "upgrade_recipe": ["retain the five-screen console architecture", "use only the canonical sirsi executable runner", "keep Casebook read-only in the terminal", "make every visible key registry-backed and testable", "show an evidence-bound next step for every open case", "show System One prescribed recovery steps as read-only evidence", "keep explicit owner confirmation in the native app or confirmed CLI path"]
     },
@@ -140,7 +140,7 @@
       "source": ["macapp/Sources/SirsiMenubar/Views.swift", "macapp/Sources/SirsiMenubar/MaatCasebookView.swift", "macapp/Sources/SirsiMenubar/SirsiEngine.swift"],
       "tests": ["scripts/verify-maat-native-resolution-contract.sh"],
       "inputs": ["canonical diagnostic finding", "explicit operator confirmation", "canonical Ma'at casebook projection", "explicitly selected closed System One JSON from a qualified producer"],
-      "outputs": ["guided owner-review entry point for every alarm without a safe automatic repair", "native evidence and acceptance path", "first-class System One gate and calibration projection", "native System One finding, evidence, and prescribed recovery projection", "confirmed native closed-screen validation and record route"],
+      "outputs": ["guided owner-review entry point for every alarm without a safe automatic repair", "native evidence and acceptance path", "first-class System One gate and calibration projection", "native System One model/floor/finding, evidence, and prescribed recovery projection", "confirmed native closed-screen validation and record route"],
       "writes": ["only a confirmed Ma'at owner review or owner acceptance through the canonical CLI", "one validated System One decision journal record through the canonical CLI"],
       "upgrade_recipe": ["never label an alarm informational solely because automation is unsafe", "require an explicit confirmation before recording a review or a selected System One screen", "preserve the distinction between owner conclusion and system repair", "continue successful review to the shared Casebook acceptance surface", "render System One only from the canonical Casebook projection", "show producer recovery guidance as copyable evidence, never auto-executable input", "never render an empty history as a pass or manufacture a screen from ambient state", "never execute an assessed payload while validating its selected screen JSON", "run the native resolution contract and Swift syntax validation"]
     },

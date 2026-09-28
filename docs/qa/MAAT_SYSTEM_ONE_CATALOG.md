@@ -80,7 +80,10 @@ claim a local record is a remote attestation.
   transport, not a copied policy store.
 - **Inspectable:** `sirsi maat casebook [text] [--kind ...] [--status ...]`,
   `GET /api/maat/casebook`, the `maat_casebook` MCP tool, the Activity screen's
-  `m` Casebook mode, and the native Casebook expose the same projection.
+  `m` Casebook mode, and the native Casebook expose the same projection. For
+  every System One case that projection includes the model provider, version,
+  locality, latency, deterministic-floor outcome, and each floor-check detail;
+  a verdict can never be presented as opaque automated authority.
 - **Resolvable:** every open case exposes its retained evidence and a truthful
   next step. System One finding claims, locations, evidence, and prescribed
   recovery steps are projected unchanged through CLI, MCP, Horus, terminal,
