@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -106,6 +107,14 @@ func (l *Ledger) CheckConflicts(resource, machine string) (ConflictReport, error
 	if err != nil {
 		return ConflictReport{}, err
 	}
+	var ancestry map[int]int
+	if cur.ExemptPID != 0 {
+		// Only walk the process tree when a reservation actually named an
+		// exempt PID (ponytail: no extra `ps` call on the common path). A
+		// lookup failure here just means the exemption doesn't apply this
+		// round — fail toward reporting, not toward silently clearing load.
+		ancestry, _ = getProcessAncestryFn()()
+	}
 	sharedSeen := map[string]bool{}
 	for _, a := range actors {
 		if a.Owner != "" {
@@ -119,6 +128,9 @@ func (l *Ledger) CheckConflicts(resource, machine string) (ConflictReport, error
 		}
 		if a.Kind == "other" {
 			continue // benign background, not a measurement contaminant
+		}
+		if ancestry != nil && a.PID != 0 && isDescendant(a.PID, cur.ExemptPID, ancestry) {
+			continue // the reservation's own run (e.g. its ssh launcher), not foreign load
 		}
 		rep.Intruders = append(rep.Intruders, a)
 	}
@@ -230,11 +242,17 @@ func probeProcesses(machine string) ([]Actor, error) {
 		if line == "" {
 			continue
 		}
-		kind := classifyProc(line)
+		pidStr, cmd, ok := strings.Cut(line, " ")
+		if !ok {
+			continue
+		}
+		cmd = strings.TrimSpace(cmd)
+		kind := classifyProc(cmd)
 		if kind == "" {
 			continue
 		}
-		actors = append(actors, Actor{Kind: kind, Detail: firstFields(line, 6)})
+		pid, _ := strconv.Atoi(pidStr) // 0 on parse failure: exemption lookups simply never match it
+		actors = append(actors, Actor{Kind: kind, Detail: firstFields(cmd, 6), PID: pid})
 	}
 	return actors, nil
 }
@@ -260,6 +278,73 @@ func classifyProc(cmd string) string {
 		return "model"
 	}
 	return ""
+}
+
+// ProcessAncestryFn returns pid -> ppid for every process this host can see.
+// Injectable (A21: guarded, not a bare package var) so tests drive ancestry
+// deterministically without shelling out to `ps`.
+type ProcessAncestryFn func() (map[int]int, error)
+
+var (
+	ancestryMu sync.RWMutex
+	ancestryFn ProcessAncestryFn = processAncestry
+)
+
+// SetProcessAncestryFn installs a process-ancestry resolver (tests).
+func SetProcessAncestryFn(fn ProcessAncestryFn) {
+	ancestryMu.Lock()
+	defer ancestryMu.Unlock()
+	if fn == nil {
+		fn = processAncestry
+	}
+	ancestryFn = fn
+}
+
+func getProcessAncestryFn() ProcessAncestryFn {
+	ancestryMu.RLock()
+	defer ancestryMu.RUnlock()
+	return ancestryFn
+}
+
+// processAncestry walks `ps` once for pid/ppid pairs across every process
+// this host can see — the same process table probeProcesses already reads,
+// just with ppid instead of command.
+func processAncestry() (map[int]int, error) {
+	out, err := exec.Command("ps", "-axo", "pid=,ppid=").Output()
+	if err != nil {
+		return nil, err
+	}
+	parents := make(map[int]int)
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			continue
+		}
+		pid, err1 := strconv.Atoi(fields[0])
+		ppid, err2 := strconv.Atoi(fields[1])
+		if err1 != nil || err2 != nil {
+			continue
+		}
+		parents[pid] = ppid
+	}
+	return parents, nil
+}
+
+// isDescendant reports whether pid is ancestor, or a descendant of ancestor,
+// by walking parents up to the root. Bounded so a cyclic or self-referential
+// ppid entry (a stale/reused PID) can never spin forever.
+func isDescendant(pid, ancestor int, parents map[int]int) bool {
+	for steps := 0; pid != 0 && steps < 4096; steps++ {
+		if pid == ancestor {
+			return true
+		}
+		next, ok := parents[pid]
+		if !ok || next == pid {
+			return false
+		}
+		pid = next
+	}
+	return false
 }
 
 func containsAny(s string, subs ...string) bool {
