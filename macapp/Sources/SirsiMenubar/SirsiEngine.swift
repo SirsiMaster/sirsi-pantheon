@@ -951,14 +951,15 @@ final class SirsiEngine: ObservableObject {
     }
 
     // cleanSelected trashes ONLY the given paths, via the Go `--only` flag (one
-    // per path). The flag is intersection-only in Go — it can never widen scope
-    // beyond the safe set the scanner already approved — so a user-curated subset
-    // is safe by construction. Empty selection is treated as a no-op by the
-    // caller (the button is disabled), never as "clean everything."
-    func cleanSelected(paths: [String]) async -> String {
+    // per path). Caution scope is opt-in at this exact call site; the Swift UI
+    // never selects it by default and requires a separate confirmation before
+    // passing --include-caution. The Go intersection gate remains authoritative,
+    // so a user-curated subset can never become "clean everything."
+    func cleanSelected(paths: [String], includeCaution: Bool = false) async -> String {
         guard !paths.isEmpty else { return "Nothing selected." }
         busy = true; lastError = nil
         var args = ["anubis", "clean", "--dry-run=false"]
+        if includeCaution { args.append("--include-caution") }
         for p in paths { args.append("--only"); args.append(p) }
         let out = await Self.run(args: args, stdin: "y\n")
         busy = false
