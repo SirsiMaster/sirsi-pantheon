@@ -59,6 +59,12 @@ resolved to narrow the view.`,
 				fmt.Printf(" · evidence: %s", c.Evidence)
 			}
 			fmt.Println()
+			if c.NextAction != nil {
+				fmt.Printf("          next step: %s · %s\n", c.NextAction.Title, c.NextAction.Detail)
+			}
+			if c.Resolution != "" {
+				fmt.Printf("          owner acceptance: %s · system repair: not claimed\n", c.Resolution)
+			}
 		}
 		return nil
 	},

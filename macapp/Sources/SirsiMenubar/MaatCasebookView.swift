@@ -234,7 +234,7 @@ struct MaatCasebookView: View {
         } else {
             VStack(spacing: 1) {
                 ForEach(cases) { entry in
-                    NavLink { MaatCaseDetailView(entry: entry) } label: {
+                    NavLink { MaatCaseDetailView(engine: engine, entry: entry) } label: {
                         MaatCaseRow(entry: entry)
                     }
                     if entry.id != cases.last?.id { Divider().padding(.leading, 14) }
@@ -546,7 +546,14 @@ private struct MaatCaseRow: View {
 }
 
 private struct MaatCaseDetailView: View {
+    @ObservedObject var engine: SirsiEngine
     let entry: MaatCase
+    @State private var conclusion = ""
+    @State private var actionResult: CommandResult?
+    @State private var actionError: String?
+    @State private var actionInFlight = false
+    @State private var confirmAction = false
+    @State private var evidenceCopied = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -568,10 +575,111 @@ private struct MaatCaseDetailView: View {
                     if !entry.affected.isEmpty { detailSection("Affected", entry.affected) }
                     if !entry.requester.isEmpty { detailSection("Requested by", entry.requester) }
                     if !entry.evidence.isEmpty { detailSection("Evidence", entry.evidence) }
+                    if let action = entry.nextAction {
+                        detailSection("Next step", action.title)
+                        Text(action.detail)
+                            .sirsiFont(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if action.requiresConfirmation {
+                            Label("Requires explicit confirmation", systemImage: "checkmark.shield")
+                                .sirsiFont(.caption, weight: .semibold)
+                                .foregroundStyle(sirsiGold)
+                        }
+                    }
+                    if !entry.resolution.isEmpty {
+                        detailSection("Owner acceptance", entry.resolution)
+                        Text("This records an owner conclusion. It does not claim that Pantheon repaired the diagnosed system.")
+                            .sirsiFont(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if let action = entry.nextAction, entry.status != "resolved" { resolutionAction(action) }
                 }
                 .padding(16)
             }
         }
+        .confirmationDialog(confirmationTitle, isPresented: $confirmAction, titleVisibility: .visible) {
+            Button(confirmationButton) { Task { await performResolution() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(confirmationMessage)
+        }
+    }
+
+    private var confirmationTitle: String {
+        entry.nextAction?.kind == "owner_acceptance" ? "Record this owner acceptance?" : "Create an owner review?"
+    }
+
+    private var confirmationButton: String {
+        entry.nextAction?.kind == "owner_acceptance" ? "Record owner acceptance" : "Create owner review"
+    }
+
+    private var confirmationMessage: String {
+        entry.nextAction?.kind == "owner_acceptance"
+            ? "This records an owner conclusion for the exact retained evidence. It does not change or claim to repair the system."
+            : "This records an evidence-bound owner review for this exact case. It does not change the system. A conclusion must be accepted explicitly later."
+    }
+
+    @ViewBuilder private func resolutionAction(_ action: MaatCaseNextAction) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            if !action.evidence.isEmpty {
+                Button {
+                    copyToClipboard(action.evidence)
+                    evidenceCopied = true
+                } label: {
+                    Label(evidenceCopied ? "Evidence copied" : "Copy evidence reference", systemImage: evidenceCopied ? "checkmark" : "doc.on.doc")
+                }
+                .buttonStyle(.bordered)
+            }
+            if action.kind == "owner_acceptance" {
+                TextField("Accepted owner conclusion", text: $conclusion, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(2...4)
+            }
+            Button {
+                confirmAction = true
+            } label: {
+                Label(confirmationButton, systemImage: action.kind == "owner_acceptance" ? "checkmark.circle.fill" : "arrow.triangle.branch")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(sirsiGold)
+            .disabled(actionInFlight || (action.kind == "owner_acceptance" && conclusion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
+            .accessibilityHint("Records an evidence-bound owner decision; it does not repair the system.")
+            if let actionResult {
+                Label(actionResult.summary, systemImage: actionResult.ok ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(actionResult.ok ? .green : .orange)
+                if actionResult.ok {
+                    Text("Refresh the casebook to read the updated evidence projection.")
+                        .sirsiFont(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if let actionError {
+                Label(actionError, systemImage: "exclamationmark.triangle.fill")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(.orange)
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+    }
+
+    @MainActor private func performResolution() async {
+        guard let action = entry.nextAction else { return }
+        actionInFlight = true
+        actionError = nil
+        if action.kind == "owner_acceptance" {
+            actionResult = await SirsiEngine.runResult(args: ["maat", "accept-resolution", "--evidence", action.evidence, "--note", conclusion.trimmingCharacters(in: .whitespacesAndNewlines), "--confirm"])
+        } else {
+            let check = entry.resource.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? entry.kind : entry.resource
+            actionResult = await SirsiEngine.runResult(args: ["maat", "record-resolution", "--check", check, "--message", entry.why.isEmpty ? entry.determination : entry.why, "--origin-evidence", entry.evidence, "--confirm"])
+        }
+        if actionResult == nil {
+            actionError = "Ma'at could not record the decision. The original case remains open and no system state changed."
+        }
+        actionInFlight = false
     }
 
     private func detailSection(_ title: String, _ value: String) -> some View {
@@ -626,11 +734,13 @@ struct MaatCase: Decodable, Identifiable {
     let assessed: String
     let why: String
     let evidence: String
+	let resolution: String
+	let nextAction: MaatCaseNextAction?
 
     init(id: String, time: String, kind: String, category: String, status: String,
          priority: MaatCasePriority, requester: String, resource: String,
          affected: String, determination: String, assessed: String, why: String,
-         evidence: String) {
+         evidence: String, resolution: String = "", nextAction: MaatCaseNextAction? = nil) {
         self.id = id
         self.time = time
         self.kind = kind
@@ -644,11 +754,14 @@ struct MaatCase: Decodable, Identifiable {
         self.assessed = assessed
         self.why = why
         self.evidence = evidence
+		self.resolution = resolution
+		self.nextAction = nextAction
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, time, kind, category, status, priority, requester, resource
-        case affected, determination, assessed, why, evidence
+        case affected, determination, assessed, why, evidence, resolution
+        case nextAction = "next_action"
     }
 
     init(from decoder: Decoder) throws {
@@ -666,11 +779,43 @@ struct MaatCase: Decodable, Identifiable {
         assessed = try values.decodeIfPresent(String.self, forKey: .assessed) ?? ""
         why = try values.decodeIfPresent(String.self, forKey: .why) ?? ""
         evidence = try values.decodeIfPresent(String.self, forKey: .evidence) ?? ""
+		resolution = try values.decodeIfPresent(String.self, forKey: .resolution) ?? ""
+		nextAction = try values.decodeIfPresent(MaatCaseNextAction.self, forKey: .nextAction)
     }
 
     var searchText: String {
         [time, kind, category, status, requester, resource, affected,
-         determination, assessed, why, evidence].joined(separator: " ")
+         determination, assessed, why, evidence, resolution, nextAction?.title ?? "", nextAction?.detail ?? ""].joined(separator: " ")
+    }
+}
+
+struct MaatCaseNextAction: Decodable {
+    let kind: String
+    let title: String
+    let detail: String
+    let evidence: String
+    let requiresConfirmation: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case kind, title, detail, evidence
+        case requiresConfirmation = "requires_confirmation"
+    }
+
+    init(kind: String, title: String, detail: String, evidence: String, requiresConfirmation: Bool) {
+        self.kind = kind
+        self.title = title
+        self.detail = detail
+        self.evidence = evidence
+        self.requiresConfirmation = requiresConfirmation
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try values.decodeIfPresent(String.self, forKey: .kind) ?? "owner_review"
+        title = try values.decodeIfPresent(String.self, forKey: .title) ?? "Review the retained evidence"
+        detail = try values.decodeIfPresent(String.self, forKey: .detail) ?? "Record a new evidence-bound owner decision."
+        evidence = try values.decodeIfPresent(String.self, forKey: .evidence) ?? ""
+        requiresConfirmation = try values.decodeIfPresent(Bool.self, forKey: .requiresConfirmation) ?? false
     }
 }
 

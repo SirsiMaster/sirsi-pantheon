@@ -435,6 +435,7 @@ function viewMaat(){
    let bits=['status: '+(d.status||'open'),'decision: '+(d.kind||'unknown')+' → '+(d.determination||'unknown'),'assessment: '+(d.assessed||'unknown')];
    if(d.affected)bits.push('affected: '+d.affected);
    if(d.evidence)bits.push('evidence: '+d.evidence);
+	   if(d.next_action){bits.push('next: '+(d.next_action.title||'review the retained evidence')+(d.next_action.detail?' — '+d.next_action.detail:''));}
    detail.textContent=bits.join(' · ');T.appendChild(detail);
   });
  }).catch(function(e){out('  Ma’at casebook unavailable: '+e.message,'t-err')});

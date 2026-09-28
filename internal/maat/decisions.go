@@ -31,6 +31,11 @@ type Decision struct {
 	Determination string `json:"determination"`
 	Why           string `json:"why"`
 	Evidence      string `json:"evidence,omitempty"`
+	// OriginEvidence binds an owner review to the existing case that requested
+	// it. ResolutionFor binds an explicit owner acceptance to that review. Both
+	// are factual links, not claims that a subsystem was repaired.
+	OriginEvidence string `json:"origin_evidence,omitempty"`
+	ResolutionFor  string `json:"resolution_for,omitempty"`
 }
 
 // DecisionJournal persists the local decision projection. Implementations may
@@ -210,6 +215,9 @@ func validateDecision(decision Decision) error {
 	}
 	if _, err := time.Parse(time.RFC3339Nano, decision.Time); err != nil {
 		return fmt.Errorf("maat decision journal: invalid time: %w", err)
+	}
+	if len(decision.OriginEvidence) > 512 || len(decision.ResolutionFor) > 512 {
+		return fmt.Errorf("maat decision journal: resolution evidence exceeds bounded record size")
 	}
 	return nil
 }

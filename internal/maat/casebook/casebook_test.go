@@ -33,3 +33,28 @@ func TestSearchFiltersCategoryAndDoesNotInventMatches(t *testing.T) {
 		t.Fatalf("unmatched filter returned %+v", got)
 	}
 }
+
+func TestBuildRoutesOpenCasesAndResolvesOnlyAcceptedOwnerReview(t *testing.T) {
+	const reviewEvidence = "diagnostic-finding:sha256=review"
+	decisions := []maat.Decision{
+		{Time: "2026-09-27T09:00:00Z", Host: "m5", Kind: "guard", Requester: "pantheon", Resource: "release", Assessed: "release readiness", Determination: "block", Why: "missing signed evidence", Evidence: "receipt:sha256=blocked"},
+		{Time: "2026-09-27T09:01:00Z", Host: "m5", Kind: "diagnostic owner review", Requester: "pantheon", Resource: "release", Assessed: "diagnostic finding", Determination: "owner_review_required", Why: "owner review required", Evidence: reviewEvidence, OriginEvidence: "receipt:sha256=blocked"},
+		{Time: "2026-09-27T09:02:00Z", Host: "m5", Kind: "diagnostic owner acceptance", Requester: "pantheon", Resource: "release", Assessed: "owner-reviewed diagnostic finding", Determination: "accepted", Why: "accepted plan", Evidence: "diagnostic-acceptance:sha256=accepted", ResolutionFor: reviewEvidence},
+	}
+	view := Build(decisions)
+	if len(view.Cases) != 2 {
+		t.Fatalf("cases = %+v, want source case plus resolved review", view.Cases)
+	}
+	for _, c := range view.Cases {
+		switch c.Evidence {
+		case "receipt:sha256=blocked":
+			if c.NextAction == nil || c.NextAction.Kind != "owner_review" {
+				t.Fatalf("source case next action = %+v", c.NextAction)
+			}
+		case reviewEvidence:
+			if c.Status != StatusResolved || c.Resolution != "accepted plan" || c.NextAction != nil {
+				t.Fatalf("review case = %+v", c)
+			}
+		}
+	}
+}

@@ -65,21 +65,21 @@
     },
     {
       "id": "maat-decision-journal",
-      "source": ["internal/maat/decisions.go"],
-      "tests": ["internal/maat/decisions_test.go"],
-      "inputs": ["Ma'at decisions and reports"],
-      "outputs": ["ordered decision records"],
+      "source": ["internal/maat/decisions.go", "internal/maat/diagnostic_resolution.go"],
+      "tests": ["internal/maat/decisions_test.go", "internal/maat/diagnostic_resolution_test.go"],
+      "inputs": ["Ma'at decisions and reports", "explicit owner review and acceptance"],
+      "outputs": ["ordered decision records", "evidence-bound owner resolution links"],
       "writes": ["~/.sirsi/maat/decisions.jsonl"],
-      "upgrade_recipe": ["retain JSONL compatibility", "append and fsync records", "reject malformed records", "never turn local evidence into remote proof"]
+      "upgrade_recipe": ["retain JSONL compatibility", "append and fsync records", "reject malformed records", "require an explicit confirmation before owner-review or owner-acceptance writes", "bind acceptance to one recorded review", "never turn local evidence into remote proof"]
     },
     {
       "id": "maat-casebook",
       "source": ["internal/maat/casebook/casebook.go"],
       "tests": ["internal/maat/casebook/casebook_test.go"],
       "inputs": ["DecisionJournal records"],
-      "outputs": ["classified cases", "priority summary", "actor/resource/evidence graph"],
+      "outputs": ["classified cases", "priority summary", "actor/resource/evidence graph", "truthful next step for every open case"],
       "writes": [],
-      "upgrade_recipe": ["keep classification descriptive", "add deterministic source fixtures", "never add policy or execution authority"]
+      "upgrade_recipe": ["keep classification descriptive", "surface an evidence-bound owner route for each open case", "add deterministic source fixtures", "never add policy or execution authority"]
     },
     {
       "id": "maat-scheduler",
@@ -92,12 +92,12 @@
     },
     {
       "id": "maat-cli",
-      "source": ["cmd/sirsi/maat.go", "cmd/sirsi/maatschedule.go", "cmd/sirsi/maatcasebook.go"],
-      "tests": ["cmd/sirsi/maatschedule_decisions_test.go"],
+      "source": ["cmd/sirsi/maat.go", "cmd/sirsi/maatschedule.go", "cmd/sirsi/maatcasebook.go", "cmd/sirsi/maatresolution.go"],
+      "tests": ["cmd/sirsi/maatschedule_decisions_test.go", "cmd/sirsi/maatresolution_test.go"],
       "inputs": ["local operator command"],
       "outputs": ["human and JSON views"],
-      "writes": ["only explicit audit and reservation decision records"],
-      "upgrade_recipe": ["keep JSON and human output derived from shared types", "add command tests for each new flag"]
+      "writes": ["only explicit audit, reservation, and confirmed owner-resolution decision records"],
+      "upgrade_recipe": ["keep JSON and human output derived from shared types", "require confirmation for every write", "add command tests for each new flag"]
     },
     {
       "id": "maat-horus-surface",

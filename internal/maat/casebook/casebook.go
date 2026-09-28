@@ -27,23 +27,36 @@ const (
 	PriorityNormal Priority = "normal"
 )
 
+// ResolutionPath is the non-authorizing route that prevents an open Ma'at
+// case from becoming a passive status. It can request a new producing decision
+// or a deliberately confirmed owner conclusion, but never performs a repair.
+type ResolutionPath struct {
+	Kind                 string `json:"kind"`
+	Title                string `json:"title"`
+	Detail               string `json:"detail"`
+	Evidence             string `json:"evidence,omitempty"`
+	RequiresConfirmation bool   `json:"requires_confirmation"`
+}
+
 // Case is a stable, operator-readable projection of exactly one recorded
 // Ma'at decision. It has no independent lifecycle or write authority.
 type Case struct {
-	ID            string   `json:"id"`
-	Time          string   `json:"time"`
-	Host          string   `json:"host"`
-	Kind          string   `json:"kind"`
-	Category      string   `json:"category"`
-	Status        Status   `json:"status"`
-	Priority      Priority `json:"priority"`
-	Requester     string   `json:"requester"`
-	Resource      string   `json:"resource,omitempty"`
-	Affected      string   `json:"affected,omitempty"`
-	Determination string   `json:"determination"`
-	Assessed      string   `json:"assessed"`
-	Why           string   `json:"why"`
-	Evidence      string   `json:"evidence,omitempty"`
+	ID            string          `json:"id"`
+	Time          string          `json:"time"`
+	Host          string          `json:"host"`
+	Kind          string          `json:"kind"`
+	Category      string          `json:"category"`
+	Status        Status          `json:"status"`
+	Priority      Priority        `json:"priority"`
+	Requester     string          `json:"requester"`
+	Resource      string          `json:"resource,omitempty"`
+	Affected      string          `json:"affected,omitempty"`
+	Determination string          `json:"determination"`
+	Assessed      string          `json:"assessed"`
+	Why           string          `json:"why"`
+	Evidence      string          `json:"evidence,omitempty"`
+	Resolution    string          `json:"resolution,omitempty"`
+	NextAction    *ResolutionPath `json:"next_action,omitempty"`
 }
 
 // Node and Edge form a deliberately small evidence graph. The dashboard can
@@ -89,12 +102,40 @@ type Query struct {
 // Build faithfully projects decisions; classification is descriptive and is
 // never used to change the source decision's determination.
 func Build(decisions []maat.Decision) View {
+	acceptances := make(map[string]maat.Decision)
+	for _, decision := range decisions {
+		if decision.Kind == "diagnostic owner acceptance" && decision.ResolutionFor != "" {
+			if previous, found := acceptances[decision.ResolutionFor]; !found || decision.Time > previous.Time {
+				acceptances[decision.ResolutionFor] = decision
+			}
+		}
+	}
 	cases := make([]Case, 0, len(decisions))
 	for _, decision := range decisions {
-		cases = append(cases, project(decision))
+		if decision.Kind == "diagnostic owner acceptance" && decision.ResolutionFor != "" {
+			if hasOwnerReview(decisions, decision.ResolutionFor) {
+				continue
+			}
+		}
+		c := project(decision)
+		if acceptance, accepted := acceptances[decision.Evidence]; accepted {
+			c.Status = StatusResolved
+			c.Resolution = acceptance.Why
+		}
+		c.NextAction = resolutionPath(c)
+		cases = append(cases, c)
 	}
 	sort.SliceStable(cases, func(i, j int) bool { return cases[i].Time > cases[j].Time })
 	return viewFor(cases)
+}
+
+func hasOwnerReview(decisions []maat.Decision, evidence string) bool {
+	for _, decision := range decisions {
+		if decision.Kind == "diagnostic owner review" && decision.Evidence == evidence {
+			return true
+		}
+	}
+	return false
 }
 
 func Search(decisions []maat.Decision, query Query) View {
@@ -153,7 +194,7 @@ func classify(d maat.Decision) string {
 
 func statusFor(determination string) Status {
 	switch determination {
-	case "grant", "granted", "release", "released", "pass", "passed", "resolved", "complete", "completed":
+	case "grant", "granted", "release", "released", "pass", "passed", "resolved", "complete", "completed", "accepted":
 		return StatusResolved
 	default:
 		return StatusOpen
@@ -171,11 +212,36 @@ func priorityFor(determination string) Priority {
 	}
 }
 
+func resolutionPath(c Case) *ResolutionPath {
+	if c.Status == StatusResolved {
+		return nil
+	}
+	if c.Kind == "diagnostic owner review" && c.Evidence != "" {
+		return &ResolutionPath{
+			Kind: "owner_acceptance", Title: "Record an owner acceptance",
+			Detail:   "Review the exact diagnostic evidence, document the owner conclusion, and confirm it. This records a conclusion; it does not claim a system repair.",
+			Evidence: c.Evidence, RequiresConfirmation: true,
+		}
+	}
+	return &ResolutionPath{
+		Kind: "owner_review", Title: "Create an evidence-bound owner review",
+		Detail:   "Record the exact evidence and owner review before accepting a conclusion. Ma'at does not close an open case by assumption.",
+		Evidence: c.Evidence,
+	}
+}
+
 func matches(c Case, needle string) bool {
 	return strings.Contains(strings.ToLower(strings.Join([]string{
 		c.Time, c.Host, c.Kind, c.Category, c.Requester, c.Resource,
-		c.Affected, c.Determination, c.Assessed, c.Why, c.Evidence,
+		c.Affected, c.Determination, c.Assessed, c.Why, c.Evidence, c.Resolution, resolutionText(c.NextAction),
 	}, "\n")), needle)
+}
+
+func resolutionText(action *ResolutionPath) string {
+	if action == nil {
+		return ""
+	}
+	return action.Kind + "\n" + action.Title + "\n" + action.Detail + "\n" + action.Evidence
 }
 
 func viewFor(cases []Case) View {
