@@ -317,6 +317,8 @@ struct ApolloTelemetryView: View {
     let plan: ApolloPlan
     @State private var session: ApolloTelemetryRead?
     @State private var telemetryError: String?
+    @State private var isRefreshing = false
+    private static let telemetryRefreshIntervalNanoseconds: UInt64 = 5_000_000_000
 
     var body: some View {
         VStack(spacing: 0) {
@@ -331,7 +333,22 @@ struct ApolloTelemetryView: View {
                 .padding(16)
             }
         }
-        .task { await refresh() }
+        // This page is a live instrument, not a snapshot with a decorative
+        // Refresh button. The task is automatically cancelled when the view
+        // leaves the navigation stack; it does no router work and uses a
+        // deliberately bounded cadence to avoid becoming another pressure source.
+        .task {
+            await refresh()
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: Self.telemetryRefreshIntervalNanoseconds)
+                } catch {
+                    return
+                }
+                guard !Task.isCancelled else { return }
+                await refresh()
+            }
+        }
         .navigationTitle("Apollo telemetry")
     }
 
@@ -343,8 +360,16 @@ struct ApolloTelemetryView: View {
             Text(sessionDetail)
                 .sirsiFont(.subheadline).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Button("Refresh telemetry") { Task { await refresh() } }
+            Button {
+                Task { await refresh() }
+            } label: {
+                Label(isRefreshing ? "Refreshing telemetry…" : "Refresh telemetry", systemImage: "arrow.clockwise")
+            }
                 .buttonStyle(.bordered).tint(gold)
+                .disabled(isRefreshing)
+            Text("Live refresh every 5 seconds while this page is open.")
+                .sirsiFont(.caption)
+                .foregroundStyle(.secondary)
             if sessionMatchesPlan == false {
                 NavLink { ApolloRunPlannerView(engine: engine) } label: {
                     Label("Return to selected Apollo plan", systemImage: "slider.horizontal.3")
@@ -436,12 +461,14 @@ struct ApolloTelemetryView: View {
     }
     private func byteLabel(_ bytes: Int64) -> String { bytes == 0 ? "0 GiB" : String(format: "%.1f GiB", Double(bytes) / 1_073_741_824) }
     @MainActor private func refresh() async {
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
         telemetryError = nil
         async let a: Void = engine.fetchVitals()
-        async let b: Void = engine.loadRouterBoard()
         async let telemetryData = SirsiEngine.runJSON(args: ["apollo", "telemetry", "--json"])
         let data = await telemetryData
-        _ = await (a, b)
+        _ = await a
         if let read = try? JSONDecoder().decode(ApolloTelemetryRead.self, from: data) {
             session = read
         } else {

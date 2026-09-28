@@ -6,6 +6,7 @@ contract="$root/contracts/stacklab/apollo-sne-telemetry-v1.json"
 consumer="$root/internal/apollo/telemetry.go"
 dashboard="$root/internal/dashboard/apollo.go"
 dashboard_ui="$root/internal/dashboard/pages.go"
+native_ui="$root/macapp/Sources/SirsiMenubar/ApolloRunPlannerView.swift"
 
 jq -e '
   .schema == "sirsi.stacklab.apollo-sne-telemetry.v1" and
@@ -35,4 +36,6 @@ grep -Fq 'refresh telemetry' "$dashboard_ui"
 grep -Fq 'No SNE session sample is available' "$dashboard_ui"
 grep -Fq 'apollo_session_telemetry' "$root/internal/mcp/tools.go"
 grep -Fq 'readApolloSessionTelemetry' "$root/internal/mcp/tools.go"
+grep -Fq 'telemetryRefreshIntervalNanoseconds' "$native_ui"
+grep -Fq 'Live refresh every 5 seconds while this page is open.' "$native_ui"
 echo "Apollo SNE telemetry contract: PASS"
