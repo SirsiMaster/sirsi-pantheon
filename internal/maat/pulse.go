@@ -54,6 +54,12 @@ type PulseMetrics struct {
 	TestsFailed  int     `json:"tests_failed"`
 	TestsSkipped int     `json:"tests_skipped"`
 	Coverage     float64 `json:"coverage"`
+	// TestsMeasured and CoverageMeasured distinguish an omitted measurement
+	// from a genuine zero result. Coverage is meaningful only when
+	// CoverageMeasured is true.
+	TestsMeasured    bool   `json:"tests_measured"`
+	CoverageMeasured bool   `json:"coverage_measured"`
+	TestMeasurement  string `json:"test_measurement"`
 
 	// Codebase
 	SourceLines   int `json:"source_lines"`
@@ -112,21 +118,27 @@ func Pulse(cfg *PulseConfig) (*PulseMetrics, error) {
 	start := time.Now()
 
 	m := &PulseMetrics{
-		GOOS:         runtime.GOOS,
-		GOARCH:       runtime.GOARCH,
-		GoVersion:    runtime.Version(),
-		Version:      cfg.Version,
-		PulseVersion: "1.0.0",
-		Timestamp:    time.Now().UTC().Format(time.RFC3339),
+		GOOS:            runtime.GOOS,
+		GOARCH:          runtime.GOARCH,
+		GoVersion:       runtime.Version(),
+		Version:         cfg.Version,
+		PulseVersion:    "1.0.0",
+		Timestamp:       time.Now().UTC().Format(time.RFC3339),
+		TestMeasurement: "unavailable",
 	}
 
 	// ── 1. Tests & Coverage ──────────────────────────────────────
-	if !cfg.SkipTests {
+	if cfg.SkipTests {
+		m.TestMeasurement = "skipped"
+	} else {
 		if cfg.TestRunner != nil {
 			output, err := cfg.TestRunner(cfg.ProjectRoot)
+			m.TestsMeasured = true
+			m.TestMeasurement = "measured"
 			if err != nil {
 				// Tests may fail but still produce output — parse what we have
 				m.TestsFailed = -1 // Signal partial failure
+				m.TestMeasurement = "partial"
 			}
 			passed, failed, skipped := parseTestCounts(output)
 			m.Tests = passed + failed + skipped
@@ -134,6 +146,7 @@ func Pulse(cfg *PulseConfig) (*PulseMetrics, error) {
 			m.TestsFailed = failed
 			m.TestsSkipped = skipped
 			m.Coverage = parseTotalCoverage(output)
+			m.CoverageMeasured = coveragePctRegex.MatchString(output)
 			_ = err // Swallow — partial results are still valuable
 		}
 	}
@@ -171,11 +184,16 @@ func Pulse(cfg *PulseConfig) (*PulseMetrics, error) {
 		}
 	}
 
+	coverage := "unmeasured"
+	if m.CoverageMeasured {
+		coverage = fmt.Sprintf("%.1f", m.Coverage)
+	}
 	stele.Inscribe("maat", stele.TypeMaatPulse, "", map[string]string{
-		"tests":    fmt.Sprintf("%d", m.Tests),
-		"coverage": fmt.Sprintf("%.1f", m.Coverage),
-		"lines":    fmt.Sprintf("%d", m.SourceLines),
-		"elapsed":  fmt.Sprintf("%dms", m.ElapsedMs),
+		"tests":            fmt.Sprintf("%d", m.Tests),
+		"coverage":         coverage,
+		"test_measurement": m.TestMeasurement,
+		"lines":            fmt.Sprintf("%d", m.SourceLines),
+		"elapsed":          fmt.Sprintf("%dms", m.ElapsedMs),
 	})
 	return m, nil
 }

@@ -993,14 +993,26 @@ struct HorusView: View {
                 }
             }
             Divider()
-            HStack {
-                Button { Task { await engine.diagnose(force: true) } } label: {
-                    Label("Re-check", systemImage: "arrow.clockwise")
-                }.disabled(engine.healthLoading)
-                if engine.healthLoading { ProgressView().controlSize(.small).padding(.leading, 4) }
-                Spacer()
+            if engine.healthLoading {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Rechecking this Mac…")
+                        .sirsiFont(.caption, weight: .semibold)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+            } else {
+                SnapshotActionButton {
+                    Task { await engine.diagnose(force: true) }
+                } label: {
+                    Label("Recheck this Mac", systemImage: "arrow.clockwise")
+                }
+                .accessibilityHint("Runs a fresh local Horus health observation. It does not repair, terminate, or install anything.")
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
             }
-            .padding(.horizontal, 14).padding(.vertical, 10)
         }
         .navigationTitle("Horus — Ops")
     }
@@ -1683,12 +1695,33 @@ struct RaFabricView: View {
 
                     // ── Honest empty state: never a false "healthy" ─────────
                     if engine.routerBoard == nil {
-                        HStack(spacing: 8) {
-                            Circle().fill(.gray).frame(width: 8, height: 8)
-                            Text(engine.routerLoading ? "Reading the fabric…" : "No fabric data yet — the board hasn't been generated on this machine.")
-                                .sirsiFont(13, weight: .medium)
-                                .fixedSize(horizontal: false, vertical: true)
-                            Spacer()
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(spacing: 8) {
+                                Circle().fill(.gray).frame(width: 8, height: 8)
+                                Text(engine.routerLoading ? "Reading the fabric…" : "No fabric data yet on this Mac.")
+                                    .sirsiFont(13, weight: .medium)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Spacer()
+                            }
+                            if !engine.routerLoading {
+                                Text("Refresh to read the current Ra board. If it remains unavailable, open Ma'at to retain the observation and choose the next safe action.")
+                                    .sirsiFont(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                HStack(spacing: 8) {
+                                    Button {
+                                        Task { await engine.loadRouterBoard() }
+                                    } label: {
+                                        Label("Refresh fabric", systemImage: "arrow.clockwise")
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .tint(gold)
+                                    NavLink { MaatWorkspaceView(engine: engine) } label: {
+                                        Label("Open Ma'at", systemImage: "checkmark.seal")
+                                    }
+                                    .buttonStyle(.bordered)
+                                }
+                            }
                         }
                         .padding(12)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -2076,6 +2109,8 @@ struct SectionLabel: View {
 struct AuthBlockerCard: View {
     @ObservedObject var engine: SirsiEngine
     let health: RBAgentHealth
+    @State private var rechecking = false
+    @State private var recheckResult: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -2088,7 +2123,7 @@ struct AuthBlockerCard: View {
                 }
                 Spacer()
             }
-            Text("Sirsi never signs in for you. Open Terminal, run \(health.agentType), then /login.")
+            Text("Sirsi never signs in for you. Open Terminal, run \(health.agentType), then /login. Return here when you are done and Pantheon will recheck the live fabric.")
                 .sirsiFont(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
@@ -2102,6 +2137,31 @@ struct AuthBlockerCard: View {
                 } label: {
                     Label("Copy command", systemImage: "doc.on.doc").frame(maxWidth: .infinity)
                 }.buttonStyle(.bordered)
+            }
+            Button {
+                rechecking = true
+                recheckResult = nil
+                Task {
+                    await engine.loadRouterBoard()
+                    let stillBlocked = engine.routerAuthBlockers.contains { $0.id == health.id }
+                    recheckResult = stillBlocked
+                        ? "Still waiting for \(health.agentType) to finish signing in. You can return to Terminal and try /login again."
+                        : "Rechecked the live fabric — this sign-in blocker is cleared."
+                    rechecking = false
+                }
+            } label: {
+                Label(rechecking ? "Checking fabric…" : "I've signed in — recheck", systemImage: "arrow.clockwise")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(gold)
+            .disabled(rechecking)
+            if let recheckResult {
+                Label(recheckResult, systemImage: recheckResult.hasPrefix("Rechecked") ? "checkmark.circle.fill" : "arrow.triangle.2.circlepath")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(recheckResult.hasPrefix("Rechecked") ? .green : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(12)
@@ -2464,10 +2524,14 @@ struct ScanCleanView: View {
     @State private var selected: Set<String> = []
     @State private var resultLine: String?
     @State private var showCaution = false
+    @State private var confirmCautionClean = false
     @State private var didInit = false
 
     private var selectedSafe: [Finding] { engine.safe.filter { selected.contains($0.path) } }
-    private var selectedBytes: Int64 { selectedSafe.reduce(0) { $0 + $1.sizeBytes } }
+    private var selectedCaution: [Finding] { engine.caution.filter { selected.contains($0.path) } }
+    private var selectedFindings: [Finding] { selectedSafe + selectedCaution }
+    private var selectedBytes: Int64 { selectedFindings.reduce(0) { $0 + $1.sizeBytes } }
+    private var includesCaution: Bool { !selectedCaution.isEmpty }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -2483,7 +2547,7 @@ struct ScanCleanView: View {
             resultState(resultLine)
         } else if engine.busy {
             progressState
-        } else if engine.safe.isEmpty {
+        } else if engine.safe.isEmpty && engine.caution.isEmpty {
             emptyState
         } else {
             reviewList
@@ -2502,7 +2566,7 @@ struct ScanCleanView: View {
         .frame(maxWidth: .infinity).padding(.top, 60)
     }
 
-    // Empty — no scan yet, or nothing safe to clean. Always offers the next step.
+    // Empty — no scan yet, or nothing reclaimable. Always offers the next step.
     private var emptyState: some View {
         VStack(spacing: 14) {
             Text(engine.scannedAt.isEmpty ? "🔍" : "✓")
@@ -2510,7 +2574,7 @@ struct ScanCleanView: View {
                 .foregroundStyle(engine.scannedAt.isEmpty ? Color.secondary : .green)
             Text(engine.scannedAt.isEmpty
                  ? "Scan your Mac to find reclaimable waste."
-                 : "Nothing safe to clean right now.")
+                 : "Nothing reclaimable to review right now.")
                 .sirsiFont(.callout).multilineTextAlignment(.center)
             Button { Task { await engine.rescan(); syncSelection() } } label: {
                 Label("Scan now", systemImage: "magnifyingglass").frame(maxWidth: .infinity)
@@ -2539,7 +2603,7 @@ struct ScanCleanView: View {
                     itemRow(f, toggleable: true)
                 }
             } header: {
-                Text("REVIEW — \(selected.count) of \(engine.safe.count) selected · \(SirsiEngine.human(selectedBytes))")
+                Text("SAFE TO MOVE — \(selectedSafe.count) of \(engine.safe.count) selected · \(SirsiEngine.human(selectedBytes))")
             } footer: {
                 Text("Regenerable caches, node_modules and build artifacts. Protected system paths are never touched. Tap a row for details.")
             }
@@ -2547,20 +2611,20 @@ struct ScanCleanView: View {
             if !engine.caution.isEmpty {
                 Section {
                     DisclosureGroup(isExpanded: $showCaution) {
-                        ForEach(engine.caution) { f in itemRow(f, toggleable: false) }
+                        ForEach(engine.caution) { f in itemRow(f, toggleable: true) }
                     } label: {
-                        Text("Held back — \(engine.caution.count) caution items · \(SirsiEngine.human(engine.cautionBytes))")
+                        Text("REQUIRES REVIEW — \(engine.caution.count) caution items · \(SirsiEngine.human(engine.cautionBytes))")
                             .sirsiFont(.callout, weight: .semibold)
                     }
                 } footer: {
-                    Text("Not cleaned with one click — these take longer to rebuild. Tap any item to see what it is; clean deliberately in Terminal with `sirsi anubis clean --include-caution --confirm`.")
+                    Text("Caution items are never selected automatically. Review each item, choose only what you accept rebuilding, then confirm the scoped Trash move here.")
                 }
             }
         }
         .listStyle(.inset)
     }
 
-    // One row: an optional checkbox (safe items only) + a drillable label that
+    // One row: an optional checkbox + a drillable label that
     // says what it is and whose it is, plus its size.
     private func itemRow(_ f: Finding, toggleable: Bool) -> some View {
         HStack(spacing: 8) {
@@ -2585,7 +2649,7 @@ struct ScanCleanView: View {
                     Spacer(minLength: 6)
                     Text(SirsiEngine.human(f.sizeBytes))
                         .sirsiFont(.caption, design: .monospaced)
-                        .foregroundStyle(toggleable ? gold : .secondary)
+                        .foregroundStyle(f.severity == "caution" ? .orange : gold)
                     Image(systemName: "chevron.right").sirsiFont(.caption2).foregroundStyle(.tertiary)
                 }
                 .contentShape(Rectangle())
@@ -2596,14 +2660,20 @@ struct ScanCleanView: View {
 
     private var bottomBar: some View {
         HStack(spacing: 10) {
-            Button(selected.count == engine.safe.count ? "Select none" : "Select all") {
-                if selected.count == engine.safe.count { selected.removeAll() }
+            Button(selectedSafe.count == engine.safe.count ? "Clear safe" : "Select all safe") {
+                if selectedSafe.count == engine.safe.count {
+                    selected.subtract(engine.safe.map(\.path))
+                }
                 else { syncSelection() }
             }
             .sirsiFont(.caption).buttonStyle(.plain).foregroundStyle(gold)
             Spacer()
             Button {
-                Task { resultLine = await engine.cleanSelected(paths: selectedSafe.map { $0.path }) }
+                if includesCaution {
+                    confirmCautionClean = true
+                } else {
+                    Task { resultLine = await engine.cleanSelected(paths: selectedFindings.map(\.path)) }
+                }
             } label: {
                 Text("Move \(selected.count) (\(SirsiEngine.human(selectedBytes))) to Trash")
             }
@@ -2611,6 +2681,18 @@ struct ScanCleanView: View {
             .disabled(selected.isEmpty)
         }
         .padding(12)
+        .confirmationDialog("Move selected caution items to Trash?", isPresented: $confirmCautionClean, titleVisibility: .visible) {
+            Button("Move \(selectedCaution.count) caution item\(selectedCaution.count == 1 ? "" : "s") to Trash") {
+                Task {
+                    resultLine = await engine.cleanSelected(
+                        paths: selectedFindings.map(\.path), includeCaution: true
+                    )
+                }
+            }
+            Button("Keep reviewing", role: .cancel) {}
+        } message: {
+            Text("These items are recoverable in Trash, but may take time or network bandwidth to rebuild. Pantheon will move only the \(selected.count) item\(selected.count == 1 ? "" : "s") you selected.")
+        }
     }
 
     private func toggle(_ path: String) {
@@ -2647,8 +2729,10 @@ struct ItemDetailView: View {
     let finding: Finding
     @EnvironmentObject private var nav: Nav
     @State private var resultLine: String?
+    @State private var confirmCautionClean = false
 
     private var isSafe: Bool { finding.severity == "safe" }
+    private var isCaution: Bool { finding.severity == "caution" }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -2666,6 +2750,9 @@ struct ItemDetailView: View {
                     }
                     if let adv = finding.advisory, !adv.isEmpty {
                         DetailRow(label: "What happens if removed", value: adv)
+                    }
+                    if let remediation = finding.remediation, !remediation.isEmpty {
+                        DetailRow(label: "Resolution", value: remediation)
                     }
 
                     Button {
@@ -2698,11 +2785,32 @@ struct ItemDetailView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent).tint(gold).disabled(engine.busy).padding(12)
+            } else if isCaution {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("This item needs your explicit approval because rebuilding it may take time or network bandwidth. Pantheon will move only this item to Trash.")
+                        .sirsiFont(.caption).foregroundStyle(.secondary)
+                    Button {
+                        confirmCautionClean = true
+                    } label: {
+                        Text("Review and move this item to Trash…")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent).tint(gold).disabled(engine.busy)
+                }
+                .padding(12)
             } else {
-                Text("Held back from one-click cleaning — rebuild it deliberately.")
+                Text("This item is not eligible for cleanup. Its detail above explains why; reveal it in Finder or return to Ma'at for a recorded resolution.")
                     .sirsiFont(.caption).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity).padding(12)
             }
+        }
+        .confirmationDialog("Move this caution item to Trash?", isPresented: $confirmCautionClean, titleVisibility: .visible) {
+            Button("Move to Trash") {
+                Task { resultLine = await engine.cleanSelected(paths: [finding.path], includeCaution: true) }
+            }
+            Button("Keep reviewing", role: .cancel) {}
+        } message: {
+            Text("The item remains recoverable in Trash. Pantheon will not clean any other caution item.")
         }
         .navigationTitle("Item")
     }
@@ -3111,6 +3219,7 @@ struct CommandView: View {
 //   defaults write ai.sirsi.pantheon projectRoot -string ~/Development/<repo>
 struct ProjectBar: View {
     @ObservedObject var engine: SirsiEngine
+    @Environment(\.snapshotMode) private var snapshotMode
     var onChange: () -> Void   // re-runs the command after the project changes
     @State private var candidates: [String] = []
 
@@ -3129,33 +3238,43 @@ struct ProjectBar: View {
                 }
             }
             Spacer()
-            Menu {
-                ForEach(candidates, id: \.self) { path in
-                    Button {
-                        engine.setProjectRoot(path)
-                        onChange()
-                    } label: {
-                        let name = (path as NSString).lastPathComponent
-                        if path == engine.projectRoot {
-                            Label(name, systemImage: "checkmark")
-                        } else {
-                            Text(name)
+            if snapshotMode {
+                Label(
+                    engine.projectRoot == nil ? "Choose a project in the live app" : "Change project in the live app",
+                    systemImage: "folder"
+                )
+                .sirsiFont(.caption)
+                .foregroundStyle(gold)
+                .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Menu {
+                    ForEach(candidates, id: \.self) { path in
+                        Button {
+                            engine.setProjectRoot(path)
+                            onChange()
+                        } label: {
+                            let name = (path as NSString).lastPathComponent
+                            if path == engine.projectRoot {
+                                Label(name, systemImage: "checkmark")
+                            } else {
+                                Text(name)
+                            }
                         }
                     }
-                }
-                if engine.projectRoot != nil {
-                    Divider()
-                    Button("None — stop weighing a project") {
-                        engine.setProjectRoot(nil)
-                        onChange()
+                    if engine.projectRoot != nil {
+                        Divider()
+                        Button("None — stop weighing a project") {
+                            engine.setProjectRoot(nil)
+                            onChange()
+                        }
                     }
+                } label: {
+                    Text(engine.projectRoot == nil ? "Choose…" : "Change…")
+                        .sirsiFont(.caption)
                 }
-            } label: {
-                Text(engine.projectRoot == nil ? "Choose…" : "Change…")
-                    .sirsiFont(.caption)
+                .menuStyle(.borderlessButton)
+                .fixedSize()
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
         }
         .padding(.horizontal, 12).padding(.vertical, 7)
         .background(Color.primary.opacity(0.03))

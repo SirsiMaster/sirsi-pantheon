@@ -9,9 +9,23 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/seshat"
+)
+
+// System One is the public knowledge boundary.  The compatibility filter
+// catches known credentials; these additional conservative rules prevent a
+// local account/claim identifier or a standalone high-entropy credential from
+// becoming visible simply because an older source adapter did not label it.
+// A false positive withholds one item and leaves the retained cache untouched;
+// a false negative would disclose local data to every Ma'at consumer.
+var (
+	longNumericIdentifier = regexp.MustCompile(`\b[0-9]{12,19}\b`)
+	labeledIdentifier     = regexp.MustCompile(`(?i)\b(?:account|service|claim|policy|routing|member|customer|tax)\s*(?:number|no\.?|id|#)?\s*[:#]?\s*[0-9][0-9 -]{5,}[0-9]`)
+	graphicToken          = regexp.MustCompile(`[[:graph:]]+`)
 )
 
 // Item is the sensitivity-filtered public portion of a retained knowledge
@@ -61,7 +75,7 @@ func Project(items []seshat.KnowledgeItem, query string) View {
 	view := View{Items: make([]Item, 0, len(items))}
 	for _, item := range items {
 		content := item.Title + "\n" + item.Summary + "\n" + referencesText(item.References)
-		if len(filter.Scan(content)) > 0 {
+		if len(filter.Scan(content)) > 0 || hasSystemOneSensitiveContent(content) {
 			view.Withheld++
 			continue
 		}
@@ -76,6 +90,38 @@ func Project(items []seshat.KnowledgeItem, query string) View {
 	}
 	view.Total = len(view.Items)
 	return view
+}
+
+func hasSystemOneSensitiveContent(content string) bool {
+	if longNumericIdentifier.MatchString(content) || labeledIdentifier.MatchString(content) {
+		return true
+	}
+	for _, token := range graphicToken.FindAllString(content, -1) {
+		if looksLikeStandaloneCredential(token) {
+			return true
+		}
+	}
+	return false
+}
+
+func looksLikeStandaloneCredential(token string) bool {
+	if len(token) < 12 || len(token) > 128 || strings.Contains(token, "://") {
+		return false
+	}
+	var upper, lower, digit, symbol bool
+	for _, r := range token {
+		switch {
+		case unicode.IsUpper(r):
+			upper = true
+		case unicode.IsLower(r):
+			lower = true
+		case unicode.IsDigit(r):
+			digit = true
+		case unicode.IsPunct(r) || unicode.IsSymbol(r):
+			symbol = true
+		}
+	}
+	return upper && lower && digit && symbol
 }
 
 func emptyView() View {

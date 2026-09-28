@@ -1,7 +1,9 @@
-# 𓁆 Seshat — Universal Knowledge Grafting Engine
-**Version:** 2.0.0 (Architecture Redesign)  
-**Date:** April 2, 2026  
-**Status:** Specification — replaces v1.0.0 Gemini Bridge scope
+# 𓁆 Seshat — Legacy Knowledge Ingestion Adapter
+**Version:** 2.1.0 (Ma'at System One alignment)
+**Date:** September 28, 2026
+**Status:** Compatibility specification — supersedes Seshat as a user-facing knowledge plane
+
+> **Canonical ownership:** Ma'at owns every user-facing knowledge projection, Casebook entry, assessment, recovery route, and decision record. Seshat may retain existing ingestion adapters and local-cache maintenance behind the `sirsi maat knowledge` boundary only. It does not own a dashboard action, native-app screen, MCP surface, router authority, independent store, or direct user workflow.
 
 ---
 
@@ -9,31 +11,30 @@
 
 **Seshat** — Goddess of writing, wisdom, and measurement. The keeper of records and inventor of writing itself.
 
-In the Pantheon, Seshat is the **universal knowledge grafting layer** — she ingests, reconciles, and distributes knowledge across every source and target in the Sirsi ecosystem.
+In the Pantheon, Seshat is a **legacy ingestion compatibility layer**. It can ingest and normalize approved local sources for Ma'at; Ma'at filters, classifies, records, and projects the resulting knowledge through the one System One surface.
 
 ### Position in the Pantheon
 
 | Deity | Relationship to Seshat |
 |-------|----------------------|
-| **Sirsi** (creator deity) | Seshat is Sirsi's scribe — she records and reconciles all knowledge that flows through the ecosystem |
-| **Thoth** 𓁟 | Project-level memory keeper. Seshat feeds Thoth with reconciled knowledge; Thoth persists it per-project |
-| **Ma'at** 𓆄 | Governs quality of Seshat's reconciled output (no hallucinated references, no stale data) |
-| **Ra** 𓇶 | Enterprise orchestrator — will use Seshat for fleet-wide knowledge distribution |
-| **Osiris** 𓋹 | Session checkpoint guardian — Seshat can recover knowledge from Osiris snapshots |
+| **Ma'at** 𓆄 | Sole user-facing owner: validates, filters, classifies, records, and projects knowledge via System One and Casebook |
+| **Thoth** 𓁟 | Project memory consumer; receives only Ma'at-approved, provenance-bound material |
+| **Ra** 𓇶 | Routes receipts and work; does not grant Seshat a parallel knowledge authority |
+| **Osiris** 𓋹 | May provide recovery inputs subject to Ma'at validation |
 
 ---
 
 ## 2. Mission
 
-Seshat solves one problem: **knowledge is scattered.**
+Seshat solves one bounded compatibility problem: **approved legacy knowledge inputs need a migration path into Ma'at.**
 
 People search Google, ask Siri, converse with Claude, Gemini, and ChatGPT, take notes in Apple Notes, organize in Notion, research in NotebookLM — and none of it talks to each other. When an AI assistant needs context, it starts from zero every session.
 
-Seshat collects, reconciles, and distributes that knowledge so:
-- AI assistants have full context (not just the current session)
-- On-prem sovereign pods can be hydrated from years of cloud intelligence
-- Business applications (FinalWishes, Assiduous) can reconcile records from disparate sources
-- Users own their intelligence across every platform
+Seshat can collect and normalize permitted inputs so Ma'at can:
+- present one evidence-bound, sensitivity-filtered knowledge surface
+- preserve user control over local data and refresh scope
+- attach repair, review, and owner-resolution paths to every actionable finding
+- prevent a second cache, dashboard, or decision authority from emerging
 
 ---
 
@@ -54,12 +55,16 @@ graph TD
         DB[Structured Data / APIs]
     end
 
-    subgraph Seshat ["𓁆 Seshat Core"]
+    subgraph Seshat ["𓁆 Seshat Compatibility Adapter"]
         IN[Ingest Layer]
         NM[Normalize → Knowledge Items]
-        RC[Reconcile & Deduplicate]
-        IX[Index & Tag]
-        GR[Knowledge Graph]
+        RC[Legacy Reconcile & Deduplicate]
+    end
+
+    subgraph Maat ["𓆄 Ma'at System One"]
+        IX[Filter, Index & Classify]
+        GR[Casebook Knowledge Projection]
+        RR[Repair, Review & Owner Resolution]
     end
 
     subgraph Targets ["Distribution Targets"]
@@ -86,6 +91,7 @@ graph TD
     NM --> RC
     RC --> IX
     IX --> GR
+    GR --> RR
 
     GR --> NL
     GR --> NO
@@ -103,15 +109,15 @@ graph TD
 2. **Normalize** — Convert to a universal Knowledge Item (KI) schema with provenance tracking
 3. **Reconcile** — Deduplicate, merge, and resolve conflicts across sources (same topic discussed in Claude and Gemini → one reconciled KI)
 4. **Index** — Tag with topics, entities, timestamps, and source provenance
-5. **Graph** — Build a queryable knowledge graph connecting related KIs
-6. **Distribute** — Push reconciled knowledge to target systems via target-specific adapters
+5. **Ma'at classify** — Filter, index, and attach evidence and sensitivity policy in the shared System One model
+6. **Ma'at project** — Present one knowledge projection and a bounded repair, review, or owner-resolution route; adapters never distribute directly to a user surface
 
 ### 3.3 Key Design Principles
 
 - **Source adapters are plugins** — adding a new source (e.g., Perplexity) means writing one adapter, not changing the core
 - **Target adapters are plugins** — same pattern for distribution targets
 - **Provenance is mandatory** — every KI tracks where it came from, when, and how it was reconciled
-- **Reconciliation is the hard part** — this is where Seshat's real value lives. Same question asked to Claude and Gemini produces two answers; Seshat reconciles them into one KI with both perspectives
+- **Ma'at is the authority boundary** — Seshat may prepare compatibility inputs, but Ma'at owns classification, user-visible projection, decision journaling, and all recovery guidance
 - **Privacy by default** — knowledge stays local unless explicitly distributed. Zero telemetry.
 
 ---

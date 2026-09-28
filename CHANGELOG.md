@@ -28,6 +28,25 @@ is configured; its absence no longer prevents the complete DMG release or its
 canonical Homebrew cask publication. The route records that distinction
 explicitly in Stack Lab instead of leaving a successful product artifact
 stranded behind an unavailable installer credential.
+## [0.24.30] — 2026-09-28 — Bounded caution cleanup
+**Commercial patch release.** Caution-tier cleanup now requires an explicit
+selection and confirmation, then moves only the selected recoverable items to
+Trash. The native and Go cleanup paths share the same exact scope, and CI
+rejects terminal-only deletion or unconfirmed caution cleanup.
+
+## [0.24.29] — 2026-09-28 — Menubar startup probe deferral
+**Commercial patch release.** The menubar Home panel no longer launches
+`sirsi vitals --json` or `sirsi autonomous status --json` while opening Home
+when neither result is rendered there. Apollo and Autonomous Control remain
+the data owners and load their canonical values when their surfaces open,
+reducing startup process churn without removing either workflow.
+
+## [0.24.28] — 2026-09-28 — Full native release qualification route
+**Release qualification correction.** A commercial tag requires the signed,
+notarized, stapled Pantheon DMG and the same-payload signed, notarized, stapled
+PKG. Missing Developer ID Installer credentials now fail before a release
+record, cask publication, or commercial claim is made. The route records that
+requirement explicitly in Stack Lab.
 
 ---
 

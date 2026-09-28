@@ -56,6 +56,16 @@ var releaseContractRequirements = []releaseContractRequirement{
 		Hint:    "Route tag publication only through --release packaging mode, then re-run this Ma'at preflight.",
 	},
 	{
+		ID: "installer-identity-keychain-preflight", Path: ".github/workflows/release.yml",
+		Needles: []string{
+			"Preflight imported Developer ID Installer identity",
+			"DEVELOPER_ID_INSTALLER is required for the commercial Pantheon PKG",
+			"Temporary signing keychain does not contain a usable Team 9D382WV988 Developer ID Installer identity",
+			"Configured Developer ID Installer identity does not match the identity imported into the temporary signing keychain",
+		},
+		Hint: "Provide the matching Team 9D382WV988 Developer ID Installer identity in the protected signing certificate bundle, then re-run this Ma'at preflight.",
+	},
+	{
 		ID: "canonical-cask-publication-workflow", Path: ".github/workflows/release.yml",
 		Needles: []string{"Publish canonical Homebrew Cask", "cask-release render", "cask-release verify"},
 		Forbidden: []string{

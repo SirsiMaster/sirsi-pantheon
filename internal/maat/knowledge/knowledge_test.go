@@ -3,6 +3,7 @@ package knowledge
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/seshat"
@@ -18,6 +19,30 @@ func TestProjectWithholdsLegacySecretsBeforeSearching(t *testing.T) {
 
 	if view.Withheld != 2 || view.Total != 1 || len(view.Items) != 1 || view.Items[0].Title != "Architecture" {
 		t.Fatalf("projection = %#v", view)
+	}
+}
+
+func TestProjectWithholdsStandaloneCredentialsAndLocalIdentifiers(t *testing.T) {
+	credential := "A" + "b3" + strings.Repeat("!", 10)
+	identifier := strings.Repeat("2", 16)
+	view := Project([]seshat.KnowledgeItem{
+		{Title: credential, Summary: "unlabeled legacy note"},
+		{Title: "Utility account", Summary: "Account number: " + identifier},
+		{Title: "Safe architecture note", Summary: "Ma'at projects only evidence-safe local knowledge."},
+	}, "")
+
+	if view.Withheld != 2 || view.Total != 1 || len(view.Items) != 1 || view.Items[0].Title != "Safe architecture note" {
+		t.Fatalf("projection did not withhold sensitive compatibility records: withheld=%d total=%d", view.Withheld, view.Total)
+	}
+}
+
+func TestProjectKeepsOrdinaryVersionText(t *testing.T) {
+	view := Project([]seshat.KnowledgeItem{{
+		Title:   "Pantheon release notes",
+		Summary: "Version 0.24.28 is ready for a signed package after the release checks.",
+	}}, "")
+	if view.Withheld != 0 || view.Total != 1 {
+		t.Fatalf("ordinary product text was withheld: %#v", view)
 	}
 }
 

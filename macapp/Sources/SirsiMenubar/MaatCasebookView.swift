@@ -188,11 +188,16 @@ private struct MaatSystemOneView: View {
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Button("Try again") { Task { await load() } }
-                .buttonStyle(.borderedProminent)
-                .tint(gold)
-            Button("Open decisions") { section = .decisions }
-                .buttonStyle(.bordered)
+            SnapshotActionButton {
+                Task { await load() }
+            } label: {
+                Label("Read retained evidence again", systemImage: "arrow.clockwise")
+            }
+            SnapshotActionButton {
+                section = .decisions
+            } label: {
+                Label("Open decisions", systemImage: "checkmark.seal")
+            }
             NavLink { StackLabView(engine: engine) } label: {
                 Label("Inspect Stack Lab authority", systemImage: "cube.transparent")
             }
@@ -390,8 +395,11 @@ private struct MaatSystemOneView: View {
                 .sirsiFont(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Button("Open decisions") { section = .decisions }
-                .buttonStyle(.bordered)
+            SnapshotActionButton {
+                section = .decisions
+            } label: {
+                Label("Open decisions", systemImage: "checkmark.seal")
+            }
             NavLink { StackLabView(engine: engine) } label: {
                 Label("Inspect Stack Lab recipes", systemImage: "cube.transparent")
             }
@@ -525,30 +533,39 @@ private struct MaatSystemOneView: View {
                     .sirsiFont(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Button {
-                    Task { await inspectReleasePreflight() }
-                } label: {
-                    Label("Inspect release contract", systemImage: "checklist")
-                        .frame(maxWidth: .infinity)
+                if releasePreflightInFlight {
+                    operationState(
+                        "Inspecting source contract…",
+                        detail: "Ma'at is reading the selected project's retained source contract. This check has not started a build or release.",
+                        symbol: "clock.arrow.circlepath",
+                        tint: gold
+                    )
+                } else {
+                    SnapshotActionButton {
+                        Task { await inspectReleasePreflight() }
+                    } label: {
+                        Label("Inspect release contract", systemImage: "checklist")
+                            .frame(maxWidth: .infinity)
+                    }
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(gold)
-                .disabled(releasePreflightInFlight)
             }
             credentialPreflightControl
-            if releasePreflightInFlight {
-                ProgressView("Inspecting source contract…")
-                    .sirsiFont(.caption)
-            }
             if let releasePreflight {
                 releasePreflightSummary(releasePreflight)
-                Button {
-                    confirmReleasePreflight = true
-                } label: {
-                    Label(releasePreflightRecorded ? "Recorded in Ma'at Casebook" : "Record in Ma'at Casebook", systemImage: releasePreflightRecorded ? "checkmark.seal.fill" : "checkmark.shield")
+                if releasePreflightRecorded {
+                    operationState(
+                        "Recorded in Ma'at Casebook",
+                        detail: "This exact observation is retained. Review the decision below or start a fresh inspection after the source changes.",
+                        symbol: "checkmark.seal.fill",
+                        tint: .green
+                    )
+                } else {
+                    SnapshotActionButton {
+                        confirmReleasePreflight = true
+                    } label: {
+                        Label("Record in Ma'at Casebook", systemImage: "checkmark.shield")
+                    }
                 }
-                .buttonStyle(.bordered)
-                .disabled(releasePreflightInFlight || releasePreflightRecorded)
                 Text(releasePreflightRecorded
                      ? "The Casebook was refreshed from this exact retained preflight. The delivery boundary still requires separate credentialed release proof."
                      : "Review the checks below, then explicitly record this exact observation so it appears in the shared Ma'at Casebook.")
@@ -561,9 +578,10 @@ private struct MaatSystemOneView: View {
                     .sirsiFont(.caption)
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
-                Button("Try inspection again") { Task { await inspectReleasePreflight() } }
-                    .buttonStyle(.bordered)
-                    .disabled(releasePreflightInFlight || engine.projectRoot == nil)
+                if engine.projectRoot != nil && !releasePreflightInFlight {
+                    Button("Try inspection again") { Task { await inspectReleasePreflight() } }
+                        .buttonStyle(.bordered)
+                }
             }
         }
         .padding(14)
@@ -580,38 +598,63 @@ private struct MaatSystemOneView: View {
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Button {
-                Task { await inspectCredentialPreflight() }
-            } label: {
-                Label("Check local Developer ID readiness", systemImage: "checkmark.shield")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-            .disabled(credentialPreflightInFlight)
             if credentialPreflightInFlight {
-                ProgressView("Checking public certificate metadata…")
-                    .sirsiFont(.caption)
+                operationState(
+                    "Checking public certificate metadata…",
+                    detail: "Ma'at is reading public local signing identity metadata only. It cannot read private keys or notarization credentials here.",
+                    symbol: "clock.arrow.circlepath",
+                    tint: gold
+                )
+            } else {
+                SnapshotActionButton {
+                    Task { await inspectCredentialPreflight() }
+                } label: {
+                    Label("Check local Developer ID readiness", systemImage: "checkmark.shield")
+                        .frame(maxWidth: .infinity)
+                }
             }
             if let credentialPreflight {
                 credentialPreflightSummary(credentialPreflight)
-                Button {
-                    confirmCredentialPreflight = true
-                } label: {
-                    Label(credentialPreflightRecorded ? "Recorded in Ma'at Casebook" : "Record readiness evidence", systemImage: credentialPreflightRecorded ? "checkmark.seal.fill" : "checkmark.shield")
+                if credentialPreflightRecorded {
+                    operationState(
+                        "Readiness evidence recorded",
+                        detail: "The public metadata result is retained in Casebook. It is not a signing or notarization authorization.",
+                        symbol: "checkmark.seal.fill",
+                        tint: .green
+                    )
+                } else {
+                    SnapshotActionButton {
+                        confirmCredentialPreflight = true
+                    } label: {
+                        Label("Record readiness evidence", systemImage: "checkmark.shield")
+                    }
                 }
-                .buttonStyle(.bordered)
-                .disabled(credentialPreflightInFlight || credentialPreflightRecorded)
             }
             if let credentialPreflightError {
                 Label(credentialPreflightError, systemImage: "exclamationmark.triangle.fill")
                     .sirsiFont(.caption)
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
-                Button("Try readiness check again") { Task { await inspectCredentialPreflight() } }
-                    .buttonStyle(.bordered)
-                    .disabled(credentialPreflightInFlight)
+                if !credentialPreflightInFlight {
+                    Button("Try readiness check again") { Task { await inspectCredentialPreflight() } }
+                        .buttonStyle(.bordered)
+                }
             }
         }
+    }
+
+    private func operationState(_ title: String, detail: String, symbol: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label(title, systemImage: symbol)
+                .sirsiFont(.subheadline, weight: .semibold)
+                .foregroundStyle(tint)
+            Text(detail)
+                .sirsiFont(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.vertical, 3)
+        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder private func releasePreflightSummary(_ preflight: MaatReleaseContractPreflight) -> some View {

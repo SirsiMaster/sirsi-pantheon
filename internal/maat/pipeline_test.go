@@ -2,6 +2,7 @@ package maat
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -20,6 +21,24 @@ func TestParseRunListBasic(t *testing.T) {
 	}
 	if runs[1].ID != "67890" || runs[1].Status != RunStatusFailure {
 		t.Errorf("run 1: id=%q status=%v", runs[1].ID, runs[1].Status)
+	}
+}
+
+func TestParseRunListGitHubJSON(t *testing.T) {
+	input := `[
+  {"databaseId": 36443993343, "status": "completed", "conclusion": "failure", "name": "Release — Build & Publish", "headBranch": "main", "headSha": "81d2b025"},
+  {"databaseId": 36443975674, "status": "in_progress", "conclusion": null, "name": "CI — Sirsi Pantheon", "headBranch": "main", "headSha": "81d2b025"}
+]`
+
+	runs := ParseRunList(input)
+	if len(runs) != 2 {
+		t.Fatalf("got %d runs, want 2", len(runs))
+	}
+	if got := runs[0]; got.ID != "36443993343" || got.Status != RunStatusFailure || got.Name != "Release — Build & Publish" || got.Branch != "main" || got.HeadSHA != "81d2b025" {
+		t.Fatalf("first JSON run = %#v", got)
+	}
+	if got := runs[1]; got.ID != "36443975674" || got.Status != RunStatusInProgress || got.Conclusion != "" {
+		t.Fatalf("second JSON run = %#v", got)
 	}
 }
 
@@ -148,6 +167,41 @@ func TestPipelineAssessorAllGreen(t *testing.T) {
 	// Summary should pass.
 	if assessments[1].Verdict != VerdictPass {
 		t.Errorf("summary verdict = %v, want pass", assessments[1].Verdict)
+	}
+}
+
+func TestPipelineAssessorReadsGitHubJSONContract(t *testing.T) {
+	pa := &PipelineAssessor{
+		RunCount: 2,
+		RunListRunner: func(count int) (string, error) {
+			if count != 2 {
+				t.Fatalf("run count = %d, want 2", count)
+			}
+			return `[
+  {"databaseId": 36443993343, "status": "completed", "conclusion": "failure", "name": "Release — Build & Publish", "headBranch": "main", "headSha": "81d2b025"},
+  {"databaseId": 36443104498, "status": "completed", "conclusion": "success", "name": "CI — Sirsi Pantheon", "headBranch": "main", "headSha": "81d2b025"}
+]`, nil
+		},
+		RunLogRunner: func(runID string) (string, error) {
+			if runID != "36443993343" {
+				t.Fatalf("failure log requested for %q", runID)
+			}
+			return "DEVELOPER_ID_INSTALLER is required for the commercial Pantheon PKG", nil
+		},
+	}
+
+	assessments, err := pa.Assess()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(assessments) != 2 {
+		t.Fatalf("got %d assessments, want 2", len(assessments))
+	}
+	if got := assessments[0]; got.Verdict != VerdictFail || got.Subject != "run 36443993343 (main)" || !strings.Contains(got.Message, "DEVELOPER_ID_INSTALLER") {
+		t.Fatalf("latest GitHub assessment = %#v", got)
+	}
+	if got := assessments[1]; got.Verdict != VerdictFail || !strings.Contains(got.Message, "1/2 recent runs failed") {
+		t.Fatalf("GitHub health summary = %#v", got)
 	}
 }
 

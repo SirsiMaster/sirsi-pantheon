@@ -85,7 +85,7 @@ func makeReleaseContractFixture(t *testing.T, broken bool) string {
 	files := map[string]string{
 		"scripts/build-dmg.sh":          "--development --release DEVELOPER_ID_APPLICATION APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD SirsiPantheon-${VERSION}-dev-${ARCH}.dmg xcrun notarytool submit xcrun stapler validate",
 		"scripts/build-pkg.sh":          "--development --release DEVELOPER_ID_INSTALLER APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD SirsiPantheon-${VERSION}-dev-${ARCH}.pkg xcrun notarytool submit xcrun stapler validate",
-		".github/workflows/release.yml": "scripts/build-dmg.sh --release scripts/build-pkg.sh --release Publish canonical Homebrew Cask cask-release render cask-release verify",
+		".github/workflows/release.yml": "scripts/build-dmg.sh --release scripts/build-pkg.sh --release Preflight imported Developer ID Installer identity DEVELOPER_ID_INSTALLER is required for the commercial Pantheon PKG Temporary signing keychain does not contain a usable Team 9D382WV988 Developer ID Installer identity Configured Developer ID Installer identity does not match the identity imported into the temporary signing keychain Publish canonical Homebrew Cask cask-release render cask-release verify",
 		"Makefile":                      "dmg-dev:\npkg-dev:\nrelease-dmg:\nrelease-pkg:\nmacapp/Package.swift\nStackLab",
 		"contracts/stacklab/pantheon-release-artifact-recipe-v1.json": "stacklab.recipe.pantheon-release-artifact release-artifact-class-contract release-native-payload-composition commercial-sign-notary-publication-route canonical-cask-publication",
 		"internal/caskrelease/cask.go":                                "func Render func Verify exact canonical rendering",

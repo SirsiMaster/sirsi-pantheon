@@ -95,9 +95,9 @@
       "source": ["internal/maat/pulse.go", "internal/maat/proof.go", "internal/maat/platform.go"],
       "tests": ["internal/maat/pulse_test.go", "internal/maat/proof_test.go", "internal/maat/platform_test.go"],
       "inputs": ["bounded local measurements"],
-      "outputs": ["metrics", "hardening proof", "platform integrity result"],
+      "outputs": ["metrics with explicit measured, partial, skipped, or unavailable test scope", "hardening proof", "platform integrity result"],
       "writes": [".pantheon/metrics.json"],
-      "upgrade_recipe": ["make each collector injectable", "bound every generated metric to its measurement scope"]
+      "upgrade_recipe": ["make each collector injectable", "bound every generated metric to its measurement scope", "never serialize skipped or unavailable coverage as a real zero measurement"]
     },
     {
       "id": "maat-decision-journal",

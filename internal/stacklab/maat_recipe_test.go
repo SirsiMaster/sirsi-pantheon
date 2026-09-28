@@ -117,6 +117,14 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 			t.Fatalf("Ma'at credential recipe omits canonical surface %q: %+v", path, credentials)
 		}
 	}
+	pulse, ok := componentsByID["maat-pulse-proof-platform"]
+	if !ok {
+		t.Fatal("Ma'at pulse component is missing")
+	}
+	if !contains(pulse.Outputs, "metrics with explicit measured, partial, skipped, or unavailable test scope") ||
+		!contains(pulse.UpgradeRecipe, "never serialize skipped or unavailable coverage as a real zero measurement") {
+		t.Fatalf("Ma'at pulse recipe omits measurement-availability truthfulness: %+v", pulse)
+	}
 	terminal, ok := componentsByID["maat-terminal-console-surface"]
 	if !ok {
 		t.Fatal("Ma'at terminal console component is missing")

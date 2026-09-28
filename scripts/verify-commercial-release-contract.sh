@@ -58,11 +58,28 @@ for needle in \
 done
 
 /usr/bin/grep -Fq 'scripts/build-dmg.sh --release' "$workflow" || { echo "release workflow does not request release DMG mode" >&2; exit 1; }
-/usr/bin/grep -Fq 'scripts/build-pkg.sh --release' "$workflow" || { echo "release workflow has no credentialed PKG path" >&2; exit 1; }
-/usr/bin/grep -Fq 'PKG omitted: DEVELOPER_ID_INSTALLER is not configured' "$workflow" || {
-    echo "release workflow does not declare the DMG-only fallback when installer signing is unavailable" >&2
+/usr/bin/grep -Fq 'scripts/build-pkg.sh --release' "$workflow" || { echo "release workflow does not request release PKG mode" >&2; exit 1; }
+/usr/bin/grep -Fq 'DEVELOPER_ID_INSTALLER is required for the commercial Pantheon PKG' "$workflow" || {
+    echo "release workflow does not fail closed when installer signing is unavailable" >&2
     exit 1
 }
+/usr/bin/grep -Fq 'Preflight imported Developer ID Installer identity' "$workflow" || {
+    echo "release workflow does not preflight the protected Installer identity before packaging" >&2
+    exit 1
+}
+/usr/bin/grep -Fq 'Temporary signing keychain does not contain a usable Team 9D382WV988 Developer ID Installer identity' "$workflow" || {
+    echo "release workflow does not verify Installer identity availability in its temporary keychain" >&2
+    exit 1
+}
+for required in \
+    'test -f "bin/SirsiPantheon-${BUILD_VERSION}-arm64.dmg"' \
+    'test -f "bin/SirsiPantheon-${BUILD_VERSION}-arm64.pkg"' \
+    'gh release upload "$TAG_NAME"'; do
+    /usr/bin/grep -Fq -- "$required" "$workflow" || {
+        echo "release workflow does not require both native release artifacts: $required" >&2
+        exit 1
+    }
+done
 /usr/bin/grep -Fq 'go build ./cmd/sirsi' "$workflow" || { echo "release workflow does not compile the portable sirsi target" >&2; exit 1; }
 /usr/bin/grep -Fq 'go build ./cmd/sirsi-agent' "$workflow" || { echo "release workflow does not compile the portable sirsi-agent target" >&2; exit 1; }
 if /usr/bin/grep -Eq '^\s*go build \./\.\.\.\s*$' "$workflow"; then
@@ -113,7 +130,7 @@ fi
 /usr/bin/jq -e '
   [.components[] | select(.id == "commercial-sign-notary-publication-route")][0] |
   (.upgrade_recipe | index("ship the tagged commercial route as one macOS payload contract; reject variable-gated Windows installer jobs until a separate platform release contract exists")) != null and
-  (.upgrade_recipe | index("create or revalidate the exact GitHub release record only after successful commercial DMG construction; include a PKG only when its separate installer identity is available")) != null and
+  (.upgrade_recipe | index("create or revalidate the exact GitHub release record only after successful commercial DMG and PKG construction")) != null and
   (.outputs | index("one exact GitHub release record and the same-payload assets suitable for cask binding")) != null
 ' "$recipe" >/dev/null || {
     echo "Stack Lab release route must record the macOS-only tag-artifact boundary" >&2
@@ -165,8 +182,7 @@ if /usr/bin/grep -Fq 'Bump Homebrew Cask in tap' "$workflow" || \
 fi
 
 # Pantheon ships one supported commercial macOS payload: the signed native
-# Pantheon.app in its DMG. A signed/notarized PKG is additive when the separate
-# installer identity is available. A dormant Windows tag job silently widens a
+# Pantheon.app in its DMG and PKG. A dormant Windows tag job silently widens a
 # release into a second, unaudited installer product. Platform expansion must
 # arrive as a separately designed and reviewed release contract, never via a
 # repository variable that changes a macOS tag at runtime.
@@ -180,7 +196,7 @@ done
 # The source runner can validate portable Go packages, but it must never mint a
 # partial release. The release record and every published product asset are
 # created only after the macOS job has successfully built the commercial DMG
-# from the same Pantheon.app bundle; the optional PKG follows the same bundle.
+# and PKG from the same Pantheon.app bundle.
 /usr/bin/grep -Fq 'Create or verify the exact GitHub release record' "$workflow" || {
     echo "release workflow does not create the release record after native packaging" >&2; exit 1;
 }
