@@ -1,5 +1,19 @@
 # 𓁢 Building Pantheon in Public
 
+## 2026-09-28 — RELEASE CANDIDATE v0.24.27: canonical Swift menubar packaging
+
+PR #850 makes the native Swift menubar mandatory in every macOS package route.
+`build-menubar`, `bundle-dev`, and `scripts/build-dmg.sh` now fail closed when
+`macapp/Package.swift` is absent and never substitute the retired Go/systray
+surface. The Stack Lab release recipe and package contract tests record the
+same canonical payload boundary.
+
+The exact merged source is `dfee2de4`; the PR head was
+`25ae5e9435063b3492b87266373e5ffd604e0008`. Independent source/static review,
+protected CI, Bash syntax, commercial-contract verification, and focused Go
+tests passed. Signing, notarization, cask publication, and installed-host
+qualification remain workflow-owned evidence.
+
 > A transparent record of how Sirsi Anubis was designed, built, tested, broken, fixed, and shipped. No cherry-picking — the mistakes stay in.
 
 [![Version](https://img.shields.io/badge/version-v1.0.0--rc1-C8A951?style=flat)](CHANGELOG.md)

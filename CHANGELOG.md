@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.27] — 2026-09-28 — Canonical Swift menubar packaging
+**Commercial patch release.** Pantheon packaging now fails closed unless the
+canonical Swift menubar source is present and builds that surface in both the
+Makefile and DMG routes. The retired Go/systray menubar is no longer an
+alternate package payload, preventing a release from silently changing its
+native interaction surface.
+
 ## [0.24.26] — 2026-09-28 — Router cutover override correctness
 **Commercial patch release.** An explicit `SIRSI_ROUTER_STORE_WAKE` value now
 overrides the service URL, as documented. This makes `SIRSI_ROUTER_STORE_WAKE=0`
