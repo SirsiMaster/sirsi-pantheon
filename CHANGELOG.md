@@ -6,6 +6,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [Unreleased] — relay re-dials half-open pooled connections (rs-30)
+**Fix.** The router relay's forward path now re-dials ONCE on a fresh
+connection when the first attempt provably never reached the Cloud Run service
+(a dial/DNS-phase failure — the shape a dropped half-open pooled connection
+surfaces), instead of parking a network-less codex sandbox's request in the
+outbox for a full retry cycle. The re-dial is gated on `neverReachedService`,
+so a post-send failure stays OUTCOME UNKNOWN and is never auto-retried (no
+double-commit). The forward transport also documents its no-pool guarantee
+(`DisableKeepAlives`) plus defensive idle bounds. Refs: rs-30; ADR-062 relay
+trust boundary.
+
+---
+
 ## [0.24.28] — 2026-09-28 — DMG-first commercial release route
 **Commercial patch release.** The tagged macOS release now always publishes the
 signed, notarized, stapled Pantheon DMG when the Developer ID Application and

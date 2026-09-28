@@ -517,7 +517,23 @@ func newRelayHTTPClient() *http.Client {
 	// next forward to the timeout while a fresh dial succeeds. Dialing fresh per
 	// forward prevents that reuse; the relay's volume is low.
 	tr := http.DefaultTransport.(*http.Transport).Clone()
+	// PRIMARY guarantee against the half-open wedge: do not pool at all. With
+	// keep-alives disabled there is no idle connection to survive a macOS
+	// idle/sleep and go half-open, so the "hang awaiting response headers" case
+	// (rs-30) cannot arise from a reused connection — every forward dials fresh.
+	// The relay's volume is low, so a handshake per forward is cheap; correctness
+	// beats reuse here.
 	tr.DisableKeepAlives = true
+	// Belt-and-suspenders in case a future change re-enables keep-alives: bound
+	// how long an idle pooled connection may linger before it is a half-open
+	// risk, and keep the pool per-host tiny. These are moot while
+	// DisableKeepAlives is true (no idle conns exist), but they make the intent
+	// explicit and keep the transport safe if the flag above is ever flipped.
+	tr.IdleConnTimeout = 30 * time.Second
+	tr.MaxIdleConnsPerHost = 2
+	// ResponseHeaderTimeout bounds the wait for the first response byte below the
+	// overall Client.Timeout, so a dead peer fails fast instead of stalling the
+	// lane's whole budget. It stays UNDER Timeout deliberately.
 	tr.ResponseHeaderTimeout = 20 * time.Second
 	return &http.Client{Timeout: 25 * time.Second, Transport: tr}
 }
@@ -997,16 +1013,26 @@ func (rl *Relay) forward(agent, id, path string) spoolResponse {
 		rl.Log.Warn("relay: refused token method", "agent", agent, "method", req.Method, "id", id)
 		return fail(http.StatusForbidden, "relay: "+req.Method+" is never forwarded (token management stays on the service host)")
 	}
-	httpReq, err := http.NewRequest(http.MethodPost, strings.TrimRight(rl.Base, "/")+"/v1/call/"+req.Method, bytes.NewReader(req.Body))
+	// buildReq is called once per attempt: each attempt needs its own body
+	// reader (a bytes.Reader is consumed once) and its own *http.Request, so a
+	// safe re-dial below re-sends the identical bytes on a fresh request.
+	buildReq := func() (*http.Request, error) {
+		hr, herr := http.NewRequest(http.MethodPost, strings.TrimRight(rl.Base, "/")+"/v1/call/"+req.Method, bytes.NewReader(req.Body))
+		if herr != nil {
+			return nil, herr
+		}
+		hr.Header.Set("Content-Type", "application/json")
+		hr.Header.Set("Authorization", "Bearer "+rl.Token)
+		for k, v := range req.Headers {
+			if strings.HasPrefix(k, "X-Sirsi-") {
+				hr.Header.Set(k, v)
+			}
+		}
+		return hr, nil
+	}
+	httpReq, err := buildReq()
 	if err != nil {
 		return fail(http.StatusBadRequest, "relay: "+err.Error())
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+rl.Token)
-	for k, v := range req.Headers {
-		if strings.HasPrefix(k, "X-Sirsi-") {
-			httpReq.Header.Set(k, v)
-		}
 	}
 	// From here on the request has left this process: any failure is an
 	// UNCERTAIN outcome for the caller (the service may have committed), and is
@@ -1016,6 +1042,25 @@ func (rl *Relay) forward(agent, id, path string) spoolResponse {
 		return fail(http.StatusBadGateway, fmt.Sprintf("relay: %s id %s: OUTCOME UNKNOWN — %s; re-query before retrying a mutation", req.Method, id, cause))
 	}
 	resp, err := rl.Client.Do(httpReq)
+	// rs-30 SAFE re-dial (ADR-062 relay trust boundary): if the first attempt
+	// PROVABLY never reached the service (neverReachedService — a dial/DNS-phase
+	// failure, the shape a dropped half-open connection surfaces once it is
+	// re-dialed), the request was not committed, so ONE retry on a fresh
+	// connection cannot double-commit. Drop any idle pooled connection first
+	// (CloseIdleConnections) so the retry never reuses a possibly half-open one,
+	// then re-send once. This turns a transient dial blip (Cloud Run instance
+	// rotation, a momentarily half-open peer) into an immediate success instead
+	// of a 30s+ outbox round-trip that would strand a network-less codex sandbox.
+	// CRITICAL: the retry is gated on neverReachedService — a post-send failure
+	// (response lost mid-flight) is NEVER retried here; it falls through to the
+	// OUTCOME-UNKNOWN branch below, the exact discipline the durable outbox uses.
+	if err != nil && neverReachedService(err) {
+		rl.Client.CloseIdleConnections()
+		if hr2, berr := buildReq(); berr == nil {
+			rl.Log.Warn("relay: forward never reached service, re-dialing once on a fresh connection", "agent", agent, "method", req.Method, "id", id, "err", err.Error())
+			resp, err = rl.Client.Do(hr2)
+		}
+	}
 	if err != nil {
 		if neverReachedService(err) {
 			// Provably never reached the service → NOT committed → hold for
