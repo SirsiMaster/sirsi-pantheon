@@ -191,8 +191,8 @@
     },
     {
       "id": "stacklab-apollo-run-planner",
-      "source": ["internal/apollo/catalog.go", "internal/apollo/telemetry.go", "cmd/sirsi/apollo.go", "macapp/Sources/SirsiMenubar/ApolloRunPlannerView.swift", "macapp/Sources/SirsiMenubar/StackLabView.swift"],
-      "tests": ["internal/apollo/catalog_test.go", "internal/apollo/telemetry_test.go", "scripts/verify-stacklab-apollo-contract.sh"],
+      "source": ["internal/apollo/catalog.go", "internal/apollo/telemetry.go", "cmd/sirsi/apollo.go", "macapp/Sources/SirsiMenubar/ApolloRunPlannerView.swift", "macapp/Sources/SirsiMenubar/StackLabView.swift", "contracts/stacklab/apollo-sne-telemetry-v1.json"],
+      "tests": ["internal/apollo/catalog_test.go", "internal/apollo/telemetry_test.go", "scripts/verify-stacklab-apollo-contract.sh", "scripts/verify-apollo-sne-telemetry-contract.sh"],
       "inputs": ["typed Seba hardware profile", "configured local SNE provider route", "Sirsi Vitals", "conduit local-model state", "bounded SNE-owned Apollo session telemetry"],
       "outputs": ["explicit local machine and resident-engine selector", "bounded CPU, unified-memory, swap, and chip-estate plan", "non-mutating typed Apollo plan", "closed, bounded session telemetry contract for tokens, bandwidth, memory, network, CPU/GPU, and selected chip estates"],
       "writes": ["none while composing a plan; SNE admission owns later inference execution"],
