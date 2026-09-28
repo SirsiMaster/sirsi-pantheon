@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/seshat"
 )
@@ -19,6 +20,16 @@ func TestSafeMaatKnowledgeItemsWithholdsSensitiveLegacyRecords(t *testing.T) {
 	}
 	if len(safe) != 1 || safe[0].Title != "Safe" {
 		t.Fatalf("safe items = %#v, want only Safe", safe)
+	}
+}
+
+func TestMaatKnowledgeRefreshResultIsTypedAndReturnsToCanonicalProjection(t *testing.T) {
+	result := maatKnowledgeRefreshResult(1500 * time.Millisecond)
+	if result.Command != "sirsi maat knowledge refresh" || result.Status != "ok" {
+		t.Fatalf("refresh result = %+v", result)
+	}
+	if len(result.NextActions) != 1 || result.NextActions[0].Command != "sirsi maat knowledge --json" {
+		t.Fatalf("refresh next action = %#v", result.NextActions)
 	}
 }
 

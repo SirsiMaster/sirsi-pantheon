@@ -1236,14 +1236,13 @@ struct MaatKnowledgeView: View {
         knowledgeRefreshInFlight = true
         knowledgeRefreshResult = nil
         knowledgeRefreshError = nil
-        let raw = await SirsiEngine.run(args: ["maat", "knowledge", "refresh"], stdin: nil)
-        let cleaned = CommandView.stripBanner(raw)
-        let summary = SirsiEngine.firstMeaningful(cleaned)
-        if SirsiEngine.resultOK(cleaned) {
-            knowledgeRefreshResult = summary.isEmpty ? "Ma'at refreshed the local knowledge cache." : summary
+        let result = await SirsiEngine.runResult(args: ["maat", "knowledge", "refresh"])
+        if let result, result.ok {
+            knowledgeRefreshResult = result.summary
             await load()
         } else {
-            knowledgeRefreshError = "Ma'at could not refresh local knowledge. The current cache remains available. Check the reported source issue, then retry this confirmed refresh. \(summary)"
+            let detail = result?.errors.first ?? "No typed completion receipt was returned."
+            knowledgeRefreshError = "Ma'at could not refresh local knowledge. The current cache remains available. Check the reported source issue, then retry this confirmed refresh. \(detail)"
         }
         knowledgeRefreshInFlight = false
     }

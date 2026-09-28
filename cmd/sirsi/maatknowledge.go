@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/seshat"
 )
 
@@ -81,6 +83,7 @@ This can read configured local sources and update the local cache. It does not
 export knowledge, open a browser, authorize work, or make a remote decision.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		started := time.Now()
 		// The legacy adapter owns source parsing and cache writes. Copy only the
 		// explicit, bounded refresh flags into that adapter; `--export` is not
 		// exposed here, so a Ma'at refresh cannot become an external transfer.
@@ -93,8 +96,35 @@ export knowledge, open a browser, authorize work, or make a remote decision.`,
 				return fmt.Errorf("Ma'at knowledge refresh: set %s: %w", name, err)
 			}
 		}
-		return seshatIngestCmd.RunE(seshatIngestCmd, args)
+		if err := maatKnowledgeRefreshDelegate(seshatIngestCmd, args); err != nil {
+			return err
+		}
+		maatKnowledgeRefreshResult(time.Since(started)).Render()
+		return nil
 	},
+}
+
+// maatKnowledgeRefreshDelegate is deliberately narrow: the legacy adapter is
+// still the sole parser and cache writer, while Ma'at owns the user-facing
+// completion receipt. Keeping this seam lets the native surface distinguish a
+// completed refresh from an unstructured adapter transcript.
+var maatKnowledgeRefreshDelegate = func(cmd *cobra.Command, args []string) error {
+	return seshatIngestCmd.RunE(cmd, args)
+}
+
+func maatKnowledgeRefreshResult(elapsed time.Duration) *output.CommandResult {
+	return &output.CommandResult{
+		Command:    "sirsi maat knowledge refresh",
+		BriefTitle: "Ma'at knowledge refresh",
+		Summary:    "Ma'at refreshed the local knowledge cache. Review the retained items before using them in a decision.",
+		Status:     "ok",
+		Duration:   elapsed,
+		NextActions: []output.NextAction{{
+			Label:       "Open Ma'at knowledge",
+			Command:     "sirsi maat knowledge --json",
+			Description: "Inspect the retained, sensitivity-filtered knowledge projection.",
+		}},
+	}
 }
 
 func referencesText(refs []seshat.KIReference) string {
