@@ -12,9 +12,9 @@
 | **Ra** | 𓇶 | Supreme Overseer & CTR Hypervisor | Multi-repo orchestration, CTR Hypervisor (ADR-017), Idea Router ownership, agent registry, work queue, dispatch protocol, relay verification, super-agent mandates, portfolio authority, window management, sprint governance | `𓂀` (ProtectGlyph — Ra's exclusive authority to mark windows as immune to KillAll) |
 | **Net** | 𓁯 | Scope Weaver | Task definition, scope assembly, tiled context rendering, canon alignment, drift detection, development plan ownership | |
 | **Thoth** | 𓁟 | Session Memory | Context compression, session persistence, memory sync, journal, router continuity snapshots | |
-| **Ma'at** | 𓆄 | Quality Gate | QA governance, quality gates, pre-push hooks, coverage audits, Feather Weight scoring, router governance validation | All pre-push gates across all repos are Ma'at's domain |
+| **Ma'at** | 𓆄 | Quality & System One | QA governance, quality gates, pre-push hooks, coverage audits, Feather Weight scoring, router governance validation, and the sole user-facing knowledge, case, resolution, and evidence surface | All pre-push gates and user-facing System One decisions across all repos are Ma'at's domain |
 | **Isis** | 𓁐 | Health & Remediation | Doctor, network security, process guard, remediation engine, auto-fix lint/vet/coverage/canon drift, watchdog daemon, CPU/RAM monitoring, ANE hardening | |
-| **Seshat** | 𓁆 | Knowledge Bridge | Knowledge grafting, ingestion/export, Gemini Bridge, NotebookLM sync, cross-platform knowledge | |
+| **Seshat** | 𓁆 | Legacy Knowledge Ingestion | Compatibility ingestion adapters and existing local-cache maintenance, projected only through Ma'at | Never a user-facing command, dashboard action, casebook, or decision authority |
 | **Anubis** | 𓃣 | Hygiene Engine | Infrastructure hygiene, waste scanning, policy enforcement, ghost app detection, residual hunting, file deduplication, semantic ranking, **mailbox hygiene** (poison-message detection, archive-only cleanup, sender census — ADR-071) | Jackal head (profile), NOT full-body jackal |
 | **Seba** | 𓇽 | Infra & Hardware | Architecture mapping, topology visualization, dependency graphs, fleet discovery, subnet scanning, container audit, hardware detection, GPU/ANE/CUDA profiling | Absorbs Hapi (v2.0.0) |
 | **Horus** | 𓂀 | Local Workstation Lord | Per-desktop runtime node: daemon health, local agent/window visibility, repo status, operator dashboard, code graph (AST symbols), file watching | Ra orchestrates across machines; Horus sees everything on ONE machine (ADR-017) |
@@ -31,8 +31,8 @@ A deity's function is the same in every repo. Ma'at governs quality everywhere. 
 ### Rule D2: Glyphs Are Identity
 Each deity's glyph is their identity marker. Using the wrong glyph for a deity misrepresents the system. When displaying deity attribution in CLI output, hooks, or documentation, use the correct glyph from this registry.
 
-### Rule D3: Ma'at Owns All Quality Gates
-Every pre-push hook, CI gate, coverage check, and quality assessment across the entire Sirsi portfolio is Ma'at's domain. The output must be branded `𓆄 Ma'at` with the repo name in brackets: `𓆄 Ma'at pre-push gate... [RepoName]`. No other deity may be attributed for quality gate functions.
+### Rule D3: Ma'at Owns Quality and System One
+Every pre-push hook, CI gate, coverage check, quality assessment, user-facing knowledge projection, case, resolution, and evidence-backed repair route across the Sirsi portfolio is Ma'at's domain. The output must be branded `𓆄 Ma'at` with the repo name in brackets: `𓆄 Ma'at pre-push gate... [RepoName]`. Seshat may ingest or refresh compatibility data behind Ma'at, but it may not create a competing user surface, decision store, or action route.
 
 ### Rule D4: The ProtectGlyph Is Ra's Authority
 `𓂀` (Eye of Horus), when used as a Terminal.app window title marker, is Ra's exclusive ProtectGlyph. It means one thing: "this window is immune to KillAll during Ra deploy." Windows bearing `𓂀` in their custom title survive between sprints, redeploys, and kill-all operations. No other deity may use `𓂀` for window protection purposes.
@@ -50,7 +50,7 @@ Ra (Supreme Overseer)
         ├── Code Gods: Thoth, Ma'at, Isis, Seshat
         └── Machine Gods: Anubis, Seba, Osiris
 ```
-Ra supervises. Net aligns. Ma'at weighs. Isis heals. This cycle governs all work across all repos.
+Ra supervises. Net aligns. Ma'at weighs, records, and guides recovery. Isis heals. Seshat is an adapter behind Ma'at, not a peer control plane. This cycle governs all work across all repos.
 
 ### Rule D8: No Repo-Specific Deity Aliases
 A deity is never renamed for a specific repo. "Osiris (FinalWishes)" is wrong — Osiris is Osiris everywhere. Repos are identified by name in brackets, not by deity reassignment. Correct: `𓆄 Ma'at pre-push gate... [FinalWishes]`. Wrong: `𓁹 Osiris (FinalWishes) pre-push gate...`.
@@ -61,8 +61,8 @@ A deity is never renamed for a specific repo. "Osiris (FinalWishes)" is wrong �
 
 This registry applies to:
 - **sirsi-pantheon** — Source of truth. All deity implementations live here.
-- **FinalWishes** — Consumes Ma'at (quality gates), Thoth (memory), Seshat (knowledge).
-- **Assiduous** — Consumes Ma'at (quality gates), Thoth (memory), Seshat (knowledge).
+- **FinalWishes** — Consumes Ma'at (quality, System One knowledge, and resolution), Thoth (memory).
+- **Assiduous** — Consumes Ma'at (quality, System One knowledge, and resolution), Thoth (memory).
 - **SirsiNexusApp** — Consumes Ma'at (quality gates). Hosts shared infrastructure (Sirsi Sign, UCS).
 
 Every `CLAUDE.md`, pre-push hook, CLI output, and Ra scope prompt must reference deities consistently with this registry.
