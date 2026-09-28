@@ -123,21 +123,21 @@ struct ApolloRunPlannerView: View {
 
     private func enginePicker(_ catalog: ApolloCatalog) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Resident model & inference engine", systemImage: "cpu")
+            Label("Resident LLM & inference engine", systemImage: "cpu")
                 .sirsiFont(.headline)
             if snapshotMode {
-                snapshotSelection("Inference engine", value: engineOptions(catalog).first(where: { $0.id == selectedEngine })?.name ?? "No qualified route")
+                snapshotSelection("Resident route", value: engineOptions(catalog).first(where: { $0.id == selectedEngine }).map(routeLabel) ?? "No qualified route")
             } else {
-                Picker("Inference engine", selection: $selectedEngine) {
+                Picker("Resident LLM and inference engine", selection: $selectedEngine) {
                     ForEach(engineOptions(catalog)) { option in
-                        Text(option.name).tag(option.id)
+                        Text(routeLabel(option)).tag(option.id)
                     }
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)
             }
             if let engine = engineOptions(catalog).first(where: { $0.id == selectedEngine }) {
-                Text(engine.state == "configured" ? engineDetail(engine) : "This route is not configured on the selected machine. Configure its SNE endpoint, then refresh this screen.")
+                Text(engine.state == "configured" ? engineDetail(engine) : "This route has no configured resident model on the selected machine. Configure its SNE endpoint, then refresh this screen.")
                     .sirsiFont(.subheadline)
                     .foregroundStyle(engine.state == "configured" ? Color.secondary : Color.orange)
                     .fixedSize(horizontal: false, vertical: true)
@@ -255,7 +255,7 @@ struct ApolloRunPlannerView: View {
         return VStack(alignment: .leading, spacing: 9) {
             Label("Selection at a glance", systemImage: "list.bullet.rectangle")
                 .sirsiFont(.headline)
-            previewLine("Model", route?.residentModel?.isEmpty == false ? (route?.residentModel ?? "") : "Reported by SNE when a session starts")
+            previewLine("Model", route?.residentModel?.isEmpty == false ? (route?.residentModel ?? "") : "No configured resident model")
             previewLine("Engine", route.map { "\($0.name) · \($0.provider)" } ?? "Choose an inference engine")
             previewLine("Machine", "\(machine.name) · \(machine.cpuCores) cores · \(byteLabel(machine.memoryBytes))")
             previewLine("Requested", "\(selectedCores) cores · \(selectedMemoryGiB) GiB memory · \(selectedSwapGiB) GiB swap")
@@ -366,16 +366,21 @@ struct ApolloRunPlannerView: View {
     }
 
     private func engineDetail(_ engine: ApolloEngineOption) -> String {
-        let model = engine.residentModel?.isEmpty == false ? engine.residentModel! : "model reported by SNE at session start"
         let route = engine.endpoint?.isEmpty == false ? " · \(engine.endpoint!)" : ""
-        return "\(engine.provider) · \(model)\(route)"
+        return "\(engine.name) · \(engine.provider)\(route)"
+    }
+
+    private func routeLabel(_ engine: ApolloEngineOption) -> String {
+        let model = engine.residentModel?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = (model?.isEmpty == false) ? model! : "No resident model"
+        return "\(name) · \(engine.name)"
     }
 
     private func selectedMachineDescriptor(_ catalog: ApolloCatalog) -> ApolloMachine {
         catalog.machineOptions.first(where: { $0.id == selectedMachine }) ?? catalog.machine
     }
     private func engineOptions(_ catalog: ApolloCatalog) -> [ApolloEngineOption] {
-        catalog.engines.filter { $0.machineID == nil || $0.machineID == selectedMachine }
+        catalog.residentModelOptions(for: selectedMachine)
     }
     private func estateOptions(_ catalog: ApolloCatalog) -> [ApolloChipEstate] {
         let machineEstates = Set(selectedMachineDescriptor(catalog).chipEstates ?? [])
@@ -640,10 +645,26 @@ struct ApolloCatalog: Decodable {
 	let machines: [ApolloMachine]?
     let engines: [ApolloEngineOption]
     let estates: [ApolloChipEstate]
+
+	// The Go contract intentionally calls this chip_estates. Keep the native
+	// projection explicit so a valid live catalog cannot silently fall back to
+	// the preview or fail before the selector becomes usable.
+	enum CodingKeys: String, CodingKey {
+		case machine, machines, engines
+		case estates = "chip_estates"
+	}
 	var machineOptions: [ApolloMachine] { machines?.isEmpty == false ? machines! : [machine] }
 }
 
 extension ApolloCatalog {
+    // A resident model is never selected independently from its SNE engine:
+    // the pair is the executable route. Listing routes this way lets Stack Lab
+    // show every typed local LLM choice without allowing a model string to be
+    // paired with a different engine or machine by the UI.
+    func residentModelOptions(for machineID: String) -> [ApolloEngineOption] {
+        engines.filter { $0.machineID == nil || $0.machineID == machineID }
+    }
+
     // Used only when an installed CLI predates the source checkout running the
     // native visual walk. This preview has no route, credential, or telemetry
     // authority; the live planner always requires a typed CLI catalog.

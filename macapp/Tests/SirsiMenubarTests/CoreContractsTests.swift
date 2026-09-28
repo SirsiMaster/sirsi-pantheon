@@ -29,6 +29,30 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertTrue(catalog.estates.contains { $0.id == "neural-engine" && !$0.available })
     }
 
+    func testApolloCatalogKeepsResidentModelChoicesBoundToTheirEngineAndMachine() throws {
+        let raw = #"""
+        {
+          "machine": {"id":"m1","name":"M1","cpu_cores":8,"memory_bytes":17179869184},
+          "machines": [
+            {"id":"m1","name":"M1","cpu_cores":8,"memory_bytes":17179869184},
+            {"id":"m2","name":"M2","cpu_cores":12,"memory_bytes":34359738368}
+          ],
+          "engines": [
+            {"id":"apollo-m1","machine_id":"m1","name":"Apollo MLX","provider":"SNE","resident_model":"Apollo Plain","state":"configured"},
+            {"id":"apollo-m2","machine_id":"m2","name":"Apollo Flash","provider":"SNE","resident_model":"Apollo Flash","state":"configured"}
+          ],
+          "chip_estates": []
+        }
+        """#.data(using: .utf8)!
+
+        let catalog = try JSONDecoder().decode(ApolloCatalog.self, from: raw)
+
+        XCTAssertEqual(catalog.residentModelOptions(for: "m1").map(\.id), ["apollo-m1"])
+        XCTAssertEqual(catalog.residentModelOptions(for: "m1").map(\.residentModel), ["Apollo Plain"])
+        XCTAssertEqual(catalog.residentModelOptions(for: "m2").map(\.id), ["apollo-m2"])
+        XCTAssertEqual(catalog.residentModelOptions(for: "m2").map(\.residentModel), ["Apollo Flash"])
+    }
+
     func testApolloPlanPreservesRequestedUnqualifiedEstate() throws {
         let raw = #"""
         {
