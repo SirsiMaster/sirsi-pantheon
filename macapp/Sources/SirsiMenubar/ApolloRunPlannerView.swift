@@ -286,6 +286,8 @@ struct ApolloRunPlannerView: View {
 struct ApolloTelemetryView: View {
     @ObservedObject var engine: SirsiEngine
     let plan: ApolloPlan
+    @State private var session: ApolloTelemetryRead?
+    @State private var telemetryError: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -306,14 +308,18 @@ struct ApolloTelemetryView: View {
 
     private var sessionSummary: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(engine.localLLM?.healthy == true ? "Apollo local route is online" : "No active Apollo session")
+            Text(session?.state == "active" ? "Apollo session is active" : (engine.localLLM?.healthy == true ? "Apollo local route is online" : "No active Apollo session"))
                 .sirsiFont(.title3, weight: .bold)
-                .foregroundStyle(engine.localLLM?.healthy == true ? .green : .orange)
-            Text(engine.localLLM?.healthy == true ? "The local SNE conduit is reachable. Metrics below update when Apollo publishes a session sample." : "The selected plan is saved in this screen only. Ask SNE to admit a run, then return here for live session telemetry.")
+                .foregroundStyle(session?.state == "active" || engine.localLLM?.healthy == true ? .green : .orange)
+            Text(session?.state == "active" ? "SNE published a bounded session sample for this screen." : (engine.localLLM?.healthy == true ? "The local SNE conduit is reachable. Metrics below update when Apollo publishes a session sample." : "The selected plan is saved in this screen only. Ask SNE to admit a run, then return here for live session telemetry."))
                 .sirsiFont(.subheadline).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Button("Refresh telemetry") { Task { await refresh() } }
                 .buttonStyle(.bordered).tint(gold)
+            if let telemetryError {
+                Text(telemetryError).sirsiFont(.caption, weight: .semibold).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(14).frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.05)))
@@ -324,12 +330,12 @@ struct ApolloTelemetryView: View {
             Label("Live estate telemetry", systemImage: "waveform.path.ecg")
                 .sirsiFont(.headline)
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                telemetry("Tokens / second", unavailable)
-                telemetry("Bandwidth", unavailable)
+                telemetry("Tokens / second", tokensTelemetry)
+                telemetry("Bandwidth", bandwidthTelemetry)
                 telemetry("Memory", memoryTelemetry)
-                telemetry("Network saturation", unavailable)
-                telemetry("GPU residency", unavailable)
-                telemetry("CPU residency", unavailable)
+                telemetry("Network saturation", networkTelemetry)
+                telemetry("GPU residency", gpuTelemetry)
+                telemetry("CPU residency", cpuTelemetry)
             }
         }
     }
@@ -338,8 +344,13 @@ struct ApolloTelemetryView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Selected chip estates", systemImage: "square.grid.2x2")
                 .sirsiFont(.headline)
-            Text(plan.chipEstates.joined(separator: " · "))
-                .sirsiFont(.subheadline, weight: .semibold)
+            ForEach(plan.chipEstates, id: \.self) { estate in
+                HStack {
+                    Text(estate.replacingOccurrences(of: "-", with: " ").capitalized).sirsiFont(.subheadline, weight: .semibold)
+                    Spacer()
+                    Text(estateTelemetry(estate)).sirsiFont(.caption).foregroundStyle(.secondary)
+                }
+            }
             Text("Requested: \(plan.cpuCores) cores · \(byteLabel(plan.memoryBytes)) memory · \(byteLabel(plan.swapBytes)) swap ceiling")
                 .sirsiFont(.caption).foregroundStyle(.secondary)
         }
@@ -354,7 +365,16 @@ struct ApolloTelemetryView: View {
     }
 
     private var unavailable: String { "Awaiting session" }
+    private var tokensTelemetry: String { metric(session?.telemetry?.tokensPerSec, suffix: " tok/s", precision: 1) }
+    private var bandwidthTelemetry: String {
+        guard let bytes = session?.telemetry?.bandwidthBps else { return unavailable }
+        return "\(byteLabel(bytes))/s"
+    }
+    private var networkTelemetry: String { metric(session?.telemetry?.networkPct, suffix: "%", precision: 1) }
+    private var gpuTelemetry: String { metric(session?.telemetry?.gpuResidency, suffix: "%", precision: 1) }
+    private var cpuTelemetry: String { metric(session?.telemetry?.cpuResidency, suffix: "%", precision: 1) }
     private var memoryTelemetry: String {
+        if let bytes = session?.telemetry?.memoryBytes { return byteLabel(bytes) + " session" }
         guard let vitals = engine.vitals else { return unavailable }
         return "\(byteLabel(vitals.usedBytes)) used · \(byteLabel(vitals.swapUsedBytes)) swap"
     }
@@ -366,8 +386,33 @@ struct ApolloTelemetryView: View {
         .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
         .padding(10).background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
     }
+    private func metric(_ value: Double?, suffix: String, precision: Int) -> String {
+        guard let value else { return unavailable }
+        return String(format: "%.*f%@", precision, value, suffix)
+    }
+    private func estateTelemetry(_ id: String) -> String {
+        guard let estate = session?.telemetry?.estates.first(where: { $0.id == id }) else { return unavailable }
+        var parts: [String] = []
+        if let utilization = estate.utilizationPct { parts.append(String(format: "%.1f%% util", utilization)) }
+        if let residency = estate.residencyPct { parts.append(String(format: "%.1f%% resident", residency)) }
+        if let memory = estate.memoryBytes { parts.append(byteLabel(memory)) }
+        return parts.isEmpty ? unavailable : parts.joined(separator: " · ")
+    }
     private func byteLabel(_ bytes: Int64) -> String { bytes == 0 ? "0 GiB" : String(format: "%.1f GiB", Double(bytes) / 1_073_741_824) }
-    private func refresh() async { async let a: Void = engine.fetchVitals(); async let b: Void = engine.loadRouterBoard(); _ = await (a, b) }
+    @MainActor private func refresh() async {
+        telemetryError = nil
+        async let a: Void = engine.fetchVitals()
+        async let b: Void = engine.loadRouterBoard()
+        async let telemetryData = SirsiEngine.runJSON(args: ["apollo", "telemetry", "--json"])
+        let data = await telemetryData
+        _ = await (a, b)
+        if let read = try? JSONDecoder().decode(ApolloTelemetryRead.self, from: data) {
+            session = read
+        } else {
+            session = nil
+            telemetryError = "Pantheon could not decode an Apollo session sample. It was not treated as active telemetry."
+        }
+    }
 }
 
 private struct ApolloCatalog: Decodable {
@@ -379,3 +424,6 @@ private struct ApolloMachine: Decodable { let id: String; let name: String; let 
 private struct ApolloEngineOption: Decodable, Identifiable { let id: String; let name: String; let provider: String; let residentModel: String?; let endpoint: String?; let state: String; enum CodingKeys: String, CodingKey { case id, name, provider, endpoint, state; case residentModel = "resident_model" } }
 private struct ApolloChipEstate: Decodable, Identifiable { let id: String; let name: String; let available: Bool; let description: String }
 struct ApolloPlan: Decodable { let cpuCores: Int; let memoryBytes: Int64; let swapBytes: Int64; let chipEstates: [String]; enum CodingKeys: String, CodingKey { case cpuCores = "cpu_cores"; case memoryBytes = "memory_bytes"; case swapBytes = "swap_bytes"; case chipEstates = "chip_estates" } }
+private struct ApolloTelemetryRead: Decodable { let state: String; let telemetry: ApolloSessionTelemetry?; let reason: String? }
+private struct ApolloSessionTelemetry: Decodable { let tokensPerSec: Double?; let bandwidthBps: Int64?; let memoryBytes: Int64?; let networkPct: Double?; let cpuResidency: Double?; let gpuResidency: Double?; let estates: [ApolloEstateTelemetry]; enum CodingKeys: String, CodingKey { case tokensPerSec = "tokens_per_second"; case bandwidthBps = "bandwidth_bytes_per_second"; case memoryBytes = "memory_bytes"; case networkPct = "network_saturation_percent"; case cpuResidency = "cpu_residency_percent"; case gpuResidency = "gpu_residency_percent"; case estates = "chip_estates" } }
+private struct ApolloEstateTelemetry: Decodable { let id: String; let residencyPct: Double?; let memoryBytes: Int64?; let utilizationPct: Double?; enum CodingKeys: String, CodingKey { case id; case residencyPct = "residency_percent"; case memoryBytes = "memory_bytes"; case utilizationPct = "utilization_percent" } }

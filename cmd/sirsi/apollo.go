@@ -63,6 +63,22 @@ var apolloPlanCmd = &cobra.Command{
 	},
 }
 
+var apolloTelemetryCmd = &cobra.Command{
+	Use:   "telemetry",
+	Short: "Read the latest SNE-owned Apollo session telemetry",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("locate home directory: %w", err)
+		}
+		read, err := apollo.ReadTelemetry(home)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(read)
+	},
+}
+
 func splitApolloEstates(raw string) []string {
 	var out []string
 	for _, value := range strings.Split(raw, ",") {
@@ -79,5 +95,5 @@ func init() {
 	apolloPlanCmd.Flags().Int64Var(&apolloMemory, "memory-gib", 0, "Requested unified-memory envelope in GiB")
 	apolloPlanCmd.Flags().Int64Var(&apolloSwap, "swap-gib", 0, "Requested swap ceiling in GiB (admission checks live pressure separately)")
 	apolloPlanCmd.Flags().StringVar(&apolloEstates, "estates", "", "Comma-separated detected chip estate ids")
-	apolloCmd.AddCommand(apolloCatalogCmd, apolloPlanCmd)
+	apolloCmd.AddCommand(apolloCatalogCmd, apolloPlanCmd, apolloTelemetryCmd)
 }

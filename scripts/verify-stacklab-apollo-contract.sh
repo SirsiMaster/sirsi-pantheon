@@ -20,6 +20,8 @@ grep -Fq 'ApolloRunPlannerView' "$surface"
 grep -Fq 'ApolloTelemetryView' "$surface"
 grep -Fq 'Tokens / second' "$surface"
 grep -Fq 'Awaiting session' "$surface"
+grep -Fq 'apollo", "telemetry"' "$surface"
+grep -Fq 'apollo-session-telemetry/v1' "$root/internal/apollo/telemetry.go"
 grep -Fq 'Plan an Apollo run' "$stacklab"
 
 if grep -Eq 'exec\.Command|Process\(' "$catalog" "$command" "$surface"; then
