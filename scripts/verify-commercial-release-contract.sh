@@ -13,8 +13,10 @@ pkg="$root/scripts/build-pkg.sh"
 workflow="$root/.github/workflows/release.yml"
 makefile="$root/Makefile"
 recipe="$root/contracts/stacklab/pantheon-release-artifact-recipe-v1.json"
+cask_cmd="$root/cmd/sirsi/cask_release.go"
+cask_package="$root/internal/caskrelease/cask.go"
 
-for file in "$dmg" "$pkg" "$workflow" "$makefile" "$recipe"; do
+for file in "$dmg" "$pkg" "$workflow" "$makefile" "$recipe" "$cask_cmd" "$cask_package"; do
     [[ -f "$file" ]] || { echo "missing release-contract source: $file" >&2; exit 1; }
 done
 
@@ -58,11 +60,31 @@ done
   .schema == "sirsi.stacklab.recipe.v1" and
   .id == "stacklab.recipe.pantheon-release-artifact" and
   ([.components[].id] | sort) == [
+    "canonical-cask-publication",
     "commercial-sign-notary-publication-route",
     "release-artifact-class-contract",
     "release-native-payload-composition"
   ]
 ' "$recipe" >/dev/null || { echo "Stack Lab release-artifact recipe is incomplete" >&2; exit 1; }
+
+# The cask is rendered and verified by one typed source route after the signed
+# DMG has been uploaded. Two independent workflow mutations can race and leave
+# Homebrew with an unverified version/hash pair.
+[[ $(/usr/bin/grep -Ec '^  bump-cask:$' "$workflow") -eq 1 ]] || {
+    echo "release workflow must contain exactly one cask publication job" >&2; exit 1;
+}
+/usr/bin/grep -Fq 'cask-release render' "$workflow" || {
+    echo "release workflow does not use the canonical cask renderer" >&2; exit 1;
+}
+/usr/bin/grep -Fq 'cask-release verify' "$workflow" || {
+    echo "release workflow does not read back and verify published cask bytes" >&2; exit 1;
+}
+if /usr/bin/grep -Fq 'Bump Homebrew Cask in tap' "$workflow" || \
+   /usr/bin/grep -Fq 'perl -0pi' "$workflow" || \
+   /usr/bin/grep -Fq 'git clone --depth 1' "$workflow"; then
+    echo "release workflow retains a duplicate or mutable cask update route" >&2
+    exit 1
+fi
 
 # README is emitted through an expanding heredoc. Command-substitution markup
 # in user-facing copy would execute during packaging and silently corrupt the

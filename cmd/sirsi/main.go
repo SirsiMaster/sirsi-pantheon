@@ -829,6 +829,7 @@ func init() {
 	rootCmd.AddCommand(guardCmd, judgeCmd, qualityCmd, mcpCmd, benchmarkCmd)
 	rootCmd.AddCommand(rtkCmd, vaultCmd, horusCmd)
 	rootCmd.AddCommand(notificationsCmd, dashboardCmd, ccdCmd)
+	rootCmd.AddCommand(caskReleaseCmd)
 
 	// Note: `sirsi dashboard` is branded as Horus (ADR-015).
 	// `sirsi horus` remains the code graph subcommand for backward compat.
