@@ -7,6 +7,7 @@ set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
 view="$root/macapp/Sources/SirsiMenubar/Views.swift"
+engine="$root/macapp/Sources/SirsiMenubar/SirsiEngine.swift"
 casebook="$root/macapp/Sources/SirsiMenubar/MaatCasebookView.swift"
 launchd="$root/internal/router/launchdkickstart.go"
 screencli="$root/cmd/sirsi/maatscreen.go"
@@ -18,6 +19,7 @@ recipe="$root/contracts/stacklab/maat-system-one-recipe-v1.json"
 catalog="$root/docs/qa/MAAT_SYSTEM_ONE_CATALOG.md"
 
 [ -f "$view" ] || { echo "missing native views" >&2; exit 1; }
+[ -f "$engine" ] || { echo "missing native engine" >&2; exit 1; }
 [ -f "$casebook" ] || { echo "missing native Ma'at casebook" >&2; exit 1; }
 [ -f "$launchd" ] || { echo "missing managed launchd recovery" >&2; exit 1; }
 [ -f "$screencli" ] || { echo "missing Ma'at System One command" >&2; exit 1; }
@@ -32,6 +34,38 @@ if /usr/bin/grep -Fq 'This needs attention but has no one-click fix yet.' "$view
   echo "native finding dead-end text remains" >&2
   exit 1
 fi
+
+# Caution-tier hygiene is deliberately not auto-selected, but it is not allowed
+# to strand an operator in a Terminal-only workflow. The native route must keep
+# its inspect → explicit select → scoped confirmation → trash-first resolution,
+# and the Go engine must receive the opt-in scope only at that confirmed call.
+for stranded in \
+  'Not cleaned with one click' \
+  'clean deliberately in Terminal' \
+  'Held back from one-click cleaning'; do
+  if /usr/bin/grep -Fq "$stranded" "$view"; then
+    echo "native caution cleanup dead-end remains: $stranded" >&2
+    exit 1
+  fi
+done
+
+for needle in \
+  'Caution items are never selected automatically.' \
+  'Move selected caution items to Trash?' \
+  'Move this caution item to Trash?' \
+  'includeCaution: Bool = false' \
+  'if includeCaution { args.append("--include-caution") }' \
+  'engine.cleanSelected(paths: [finding.path], includeCaution: true)' \
+  'Go intersection gate remains authoritative'; do
+  target="$view"
+  case "$needle" in
+    'includeCaution: Bool = false'|'if includeCaution { args.append("--include-caution") }'|'Go intersection gate remains authoritative') target="$engine" ;;
+  esac
+  /usr/bin/grep -Fq "$needle" "$target" || {
+    echo "native caution cleanup resolution missing: $needle" >&2
+    exit 1
+  }
+done
 
 for needle in \
   'Record Ma'\''at review' \

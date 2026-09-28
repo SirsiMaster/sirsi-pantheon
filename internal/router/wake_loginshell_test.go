@@ -40,7 +40,17 @@ func TestDispatchConsumerRunsThroughLoginShellSoStartupFilesApply(t *testing.T) 
 	case <-time.After(30 * time.Second):
 		t.Fatal("consumer did not complete")
 	}
+	// cmd.Wait can complete a few scheduler turns before the independent pipe
+	// drainer has recorded the child's final bytes.  `done` deliberately tracks
+	// process lifetime, not pipe lifetime (a grandchild may retain the fd), so
+	// wait only for the bounded output this assertion needs instead of changing
+	// production dispatch semantics.
+	deadline := time.Now().Add(2 * time.Second)
 	got := run.tail.String()
+	for !strings.Contains(got, marker) && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+		got = run.tail.String()
+	}
 	if !strings.Contains(got, marker) {
 		t.Fatalf("startup file did not run — consumer was exec'd directly.\n want %q in: %q", marker, got)
 	}
