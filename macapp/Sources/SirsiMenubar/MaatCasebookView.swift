@@ -977,6 +977,7 @@ private struct MaatCaseDetailView: View {
     @State private var actionInFlight = false
     @State private var confirmAction = false
     @State private var evidenceCopied = false
+    @State private var copiedFindingID: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1001,6 +1002,7 @@ private struct MaatCaseDetailView: View {
 					if let systemOne = entry.systemOne {
 						detailSection("System One gate", "\(systemOne.gate.capitalized) · \(Int(systemOne.confidence * 100))% confidence · feather \(systemOne.featherWeight)/100")
 						detailSection("Screen subject", "\(systemOne.subject.kind) \(systemOne.subject.ref) · \(systemOne.subject.headSHA)")
+						systemOneFindings(systemOne.findings)
 						if let escalation = systemOne.escalation {
 							detailSection("Required review", escalation.reason)
 						}
@@ -1134,6 +1136,77 @@ private struct MaatCaseDetailView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
+
+    // A qualified producer may describe a bounded remediation in a System One
+    // finding. Treat it as evidence and an operator aid, never as executable
+    // input: the app shows and copies it, while the exact owner-review path
+    // remains responsible for acknowledgement or a separately safe repair.
+    @ViewBuilder private func systemOneFindings(_ findings: [MaatSystemOneFinding]) -> some View {
+        if !findings.isEmpty {
+            VStack(alignment: .leading, spacing: 9) {
+                Text(findings.count == 1 ? "Screen finding" : "Screen findings")
+                    .sirsiFont(.caption, weight: .bold)
+                    .foregroundStyle(.secondary)
+                ForEach(findings) { finding in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(alignment: .firstTextBaseline, spacing: 7) {
+                            Text(finding.severity.capitalized)
+                                .sirsiFont(.caption, weight: .semibold)
+                                .foregroundStyle(findingTint(finding.severity))
+                            Text(finding.category)
+                                .sirsiFont(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer(minLength: 6)
+                            if !finding.location.isEmpty {
+                                Text(finding.location)
+                                    .sirsiFont(.caption2, design: .monospaced)
+                                    .foregroundStyle(.tertiary)
+                                    .lineLimit(1)
+                            }
+                        }
+                        Text(finding.claim)
+                            .sirsiFont(.body)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if !finding.fixHint.isEmpty {
+                            Text("PRESCRIBED NEXT STEP")
+                                .sirsiFont(.caption2, weight: .semibold)
+                                .foregroundStyle(.secondary)
+                            Text(finding.fixHint)
+                                .sirsiFont(.callout)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .textSelection(.enabled)
+                            Button {
+                                copyToClipboard(finding.fixHint)
+                                copiedFindingID = finding.id
+                            } label: {
+                                Label(copiedFindingID == finding.id ? "Next step copied" : "Copy next step", systemImage: copiedFindingID == finding.id ? "checkmark" : "doc.on.doc")
+                            }
+                            .buttonStyle(.bordered)
+                            .accessibilityHint("Copies the producer-supplied recovery step for review; it does not run it.")
+                        }
+                        if !finding.evidence.isEmpty {
+                            Text("Evidence: \(finding.evidence)")
+                                .sirsiFont(.caption2, design: .monospaced)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .textSelection(.enabled)
+                        }
+                    }
+                    .padding(11)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.045)))
+                }
+            }
+        }
+    }
+
+    private func findingTint(_ severity: String) -> Color {
+        switch severity.lowercased() {
+        case "block", "critical", "error": return .red
+        case "changes", "warn", "warning": return .orange
+        default: return .secondary
+        }
+    }
 }
 
 struct MaatCasebookProjection: Decodable {
@@ -1246,9 +1319,57 @@ struct MaatSystemOneVerdict: Decodable {
     let subject: MaatSystemOneSubject
     let floor: MaatSystemOneFloor
     let escalation: MaatSystemOneEscalation?
+    let findings: [MaatSystemOneFinding]
 
     enum CodingKeys: String, CodingKey {
-        case featherWeight = "feather_weight", gate, confidence, subject, floor, escalation
+        case featherWeight = "feather_weight", gate, confidence, subject, floor, escalation, findings
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        featherWeight = try values.decode(Int.self, forKey: .featherWeight)
+        gate = try values.decode(String.self, forKey: .gate)
+        confidence = try values.decode(Double.self, forKey: .confidence)
+        subject = try values.decode(MaatSystemOneSubject.self, forKey: .subject)
+        floor = try values.decode(MaatSystemOneFloor.self, forKey: .floor)
+        escalation = try values.decodeIfPresent(MaatSystemOneEscalation.self, forKey: .escalation)
+        findings = try values.decodeIfPresent([MaatSystemOneFinding].self, forKey: .findings) ?? []
+    }
+}
+
+struct MaatSystemOneFinding: Decodable, Identifiable {
+    let id: String
+    let severity: String
+    let category: String
+    let file: String
+    let line: Int
+    let claim: String
+    let evidence: String
+    let fixHint: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, severity, category, file, line, claim, evidence
+        case fixHint = "fix_hint"
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        // System One's closed producer schema requires a stable finding ID;
+        // do not mint a local random substitute that would make copied
+        // evidence rows non-repeatable across refreshes.
+        id = try values.decode(String.self, forKey: .id)
+        severity = try values.decodeIfPresent(String.self, forKey: .severity) ?? "information"
+        category = try values.decodeIfPresent(String.self, forKey: .category) ?? "finding"
+        file = try values.decodeIfPresent(String.self, forKey: .file) ?? ""
+        line = try values.decodeIfPresent(Int.self, forKey: .line) ?? 0
+        claim = try values.decodeIfPresent(String.self, forKey: .claim) ?? "No claim was supplied."
+        evidence = try values.decodeIfPresent(String.self, forKey: .evidence) ?? ""
+        fixHint = try values.decodeIfPresent(String.self, forKey: .fixHint) ?? ""
+    }
+
+    var location: String {
+        guard !file.isEmpty else { return "" }
+        return line > 0 ? "\(file):\(line)" : file
     }
 }
 
