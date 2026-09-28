@@ -32,10 +32,11 @@ type ObservedSourceFile struct {
 }
 
 type releaseContractRequirement struct {
-	ID      string
-	Path    string
-	Needles []string
-	Hint    string
+	ID        string
+	Path      string
+	Needles   []string
+	Forbidden []string
+	Hint      string
 }
 
 var releaseContractRequirements = []releaseContractRequirement{
@@ -55,14 +56,34 @@ var releaseContractRequirements = []releaseContractRequirement{
 		Hint:    "Route tag publication only through --release packaging mode, then re-run this Ma'at preflight.",
 	},
 	{
+		ID: "canonical-cask-publication-workflow", Path: ".github/workflows/release.yml",
+		Needles: []string{"Publish canonical Homebrew Cask", "cask-release render", "cask-release verify"},
+		Forbidden: []string{
+			"Bump Homebrew Cask in tap",
+			"perl -0pi",
+			"git clone --depth 1",
+		},
+		Hint: "Publish the cask through the one canonical render, readback, and verify route; remove every mutable duplicate publisher.",
+	},
+	{
 		ID: "make-target-separation", Path: "Makefile",
 		Needles: []string{"dmg-dev:", "pkg-dev:", "release-dmg:", "release-pkg:", "macapp/Package.swift", "StackLab"},
 		Hint:    "Keep local and commercial targets separate while composing the native menubar, CLI, and Stack Lab payload together.",
 	},
 	{
 		ID: "stacklab-release-recipe", Path: "contracts/stacklab/pantheon-release-artifact-recipe-v1.json",
-		Needles: []string{"stacklab.recipe.pantheon-release-artifact", "release-artifact-class-contract", "release-native-payload-composition", "commercial-sign-notary-publication-route"},
+		Needles: []string{"stacklab.recipe.pantheon-release-artifact", "release-artifact-class-contract", "release-native-payload-composition", "commercial-sign-notary-publication-route", "canonical-cask-publication"},
 		Hint:    "Restore the Stack Lab release-artifact recipe so the release boundary remains inspectable and replaceable.",
+	},
+	{
+		ID: "canonical-cask-renderer", Path: "internal/caskrelease/cask.go",
+		Needles: []string{"func Render", "func Verify", "exact canonical rendering"},
+		Hint:    "Restore the side-effect-free canonical cask renderer and exact-byte verifier before re-running this Ma'at preflight.",
+	},
+	{
+		ID: "canonical-cask-command", Path: "cmd/sirsi/cask_release.go",
+		Needles: []string{"cask-release", "caskrelease.Render", "caskrelease.Verify"},
+		Hint:    "Restore the typed cask render/verify command used by the tagged release workflow.",
 	},
 	{
 		ID: "static-contract-verifier", Path: "scripts/verify-commercial-release-contract.sh",
@@ -105,6 +126,13 @@ func PreflightReleaseContract(root string) (ReleaseContractPreflight, error) {
 		missing := missingReleaseNeedles(string(snapshot.Raw), requirement.Needles)
 		if len(missing) > 0 {
 			detail := "missing required source contract: " + strings.Join(missing, ", ")
+			checks = append(checks, FloorCheck{Name: requirement.ID, Passed: false, Detail: detail})
+			findings = append(findings, releaseContractFinding(requirement, detail, file.SHA256))
+			continue
+		}
+		forbidden := presentReleaseForbidden(string(snapshot.Raw), requirement.Forbidden)
+		if len(forbidden) > 0 {
+			detail := "forbidden source contract present: " + strings.Join(forbidden, ", ")
 			checks = append(checks, FloorCheck{Name: requirement.ID, Passed: false, Detail: detail})
 			findings = append(findings, releaseContractFinding(requirement, detail, file.SHA256))
 			continue
@@ -187,6 +215,16 @@ func missingReleaseNeedles(raw string, needles []string) []string {
 		}
 	}
 	return missing
+}
+
+func presentReleaseForbidden(raw string, forbidden []string) []string {
+	present := make([]string, 0)
+	for _, needle := range forbidden {
+		if strings.Contains(raw, needle) {
+			present = append(present, needle)
+		}
+	}
+	return present
 }
 
 func releaseContractFinding(requirement releaseContractRequirement, claim, observedHash string) ScreenFinding {

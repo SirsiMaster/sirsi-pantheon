@@ -58,15 +58,38 @@ func TestPreflightReleaseContractRejectsSymlinkedContractInput(t *testing.T) {
 	}
 }
 
+func TestPreflightReleaseContractBlocksDuplicateCaskPublisher(t *testing.T) {
+	root := makeReleaseContractFixture(t, false)
+	workflow := filepath.Join(root, ".github", "workflows", "release.yml")
+	if err := os.WriteFile(workflow, []byte("scripts/build-dmg.sh --release scripts/build-pkg.sh --release Publish canonical Homebrew Cask cask-release render cask-release verify perl -0pi"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	preflight, err := PreflightReleaseContract(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preflight.Verdict.Gate != GateBlock || preflight.Verdict.Floor.Passed {
+		t.Fatalf("preflight = %+v", preflight)
+	}
+	for _, finding := range preflight.Verdict.Findings {
+		if finding.ID == "canonical-cask-publication-workflow" && strings.Contains(finding.Claim, "perl -0pi") && finding.FixHint != "" {
+			return
+		}
+	}
+	t.Fatalf("cask publication finding = %+v", preflight.Verdict.Findings)
+}
+
 func makeReleaseContractFixture(t *testing.T, broken bool) string {
 	t.Helper()
 	root := t.TempDir()
 	files := map[string]string{
 		"scripts/build-dmg.sh":          "--development --release DEVELOPER_ID_APPLICATION APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD SirsiPantheon-${VERSION}-dev-${ARCH}.dmg xcrun notarytool submit xcrun stapler validate",
 		"scripts/build-pkg.sh":          "--development --release DEVELOPER_ID_INSTALLER APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD SirsiPantheon-${VERSION}-dev-${ARCH}.pkg xcrun notarytool submit xcrun stapler validate",
-		".github/workflows/release.yml": "scripts/build-dmg.sh --release scripts/build-pkg.sh --release",
+		".github/workflows/release.yml": "scripts/build-dmg.sh --release scripts/build-pkg.sh --release Publish canonical Homebrew Cask cask-release render cask-release verify",
 		"Makefile":                      "dmg-dev:\npkg-dev:\nrelease-dmg:\nrelease-pkg:\nmacapp/Package.swift\nStackLab",
-		"contracts/stacklab/pantheon-release-artifact-recipe-v1.json": "stacklab.recipe.pantheon-release-artifact release-artifact-class-contract release-native-payload-composition commercial-sign-notary-publication-route",
+		"contracts/stacklab/pantheon-release-artifact-recipe-v1.json": "stacklab.recipe.pantheon-release-artifact release-artifact-class-contract release-native-payload-composition commercial-sign-notary-publication-route canonical-cask-publication",
+		"internal/caskrelease/cask.go":                                "func Render func Verify exact canonical rendering",
+		"cmd/sirsi/cask_release.go":                                   "cask-release caskrelease.Render caskrelease.Verify",
 		"scripts/verify-commercial-release-contract.sh":               "commercial release contract: pass pantheon-release-artifact-recipe-v1.json",
 	}
 	if broken {
