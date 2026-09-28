@@ -3,6 +3,7 @@
 | Requirement | Source | Verification/evidence | State |
 |---|---|---|---|
 | One engine across supported surfaces | `cmd/sirsi`, `internal/*`, native sources | identity and package-inventory evidence | source-bound; runtime proof required |
+| Project-scoped native workflows remain repairable | `macapp/Sources/SirsiMenubar/{Views,SirsiEngine}.swift` | Finder selection validates a Git root/worktree and preserves the current root on error | source-bound; native test verifies worktree admission |
 | Bounded native I/O | runner and native output-bound tests | focused normal/race evidence | source lineage accepted; execution evidence separate |
 | Python-free product path | package inventory and plugin wiring | copied-package inventory | open until independently run |
 | Deterministic cask bytes | `internal/caskrelease/cask.go`, `cmd/sirsi/cask_release.go`, release workflow | exact renderer and remote-tap readback receipt | source-bound; lifecycle proof open |

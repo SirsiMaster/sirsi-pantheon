@@ -205,4 +205,17 @@ final class CoreContractsTests: XCTestCase {
         first = nil
         XCTAssertNotNil(MenubarInstanceLease.acquire(at: path))
     }
+
+    func testProjectRootAdmissionAcceptsGitWorktreesAndRejectsPlainFolders() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("sirsi-project-root-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        XCTAssertNil(SirsiEngine.projectRootPath(root.path))
+
+        // A linked worktree represents .git as a file rather than a directory.
+        try "gitdir: /tmp/fixture".write(to: root.appendingPathComponent(".git"), atomically: true, encoding: .utf8)
+        XCTAssertEqual(SirsiEngine.projectRootPath(root.path), root.path)
+    }
 }
