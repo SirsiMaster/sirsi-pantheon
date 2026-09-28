@@ -173,6 +173,35 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertEqual(preflight.observedNonDeveloperIdentityTypes, ["Apple Distribution"])
     }
 
+    func testCredentialPreflightAlwaysProvidesAProtectedRecoveryPlan() throws {
+        let raw = #"""
+        {
+          "team_id": "9D382WV988",
+          "fingerprint": "sha256=fixture",
+          "developer_identities": [],
+          "notarization_observed": false,
+          "verdict": {
+            "schema_version": "maat-system-one/v1",
+            "feather_weight": 0,
+            "gate": "block",
+            "confidence": 1,
+            "subject": {"kind": "host", "ref": "release-credentials", "head_sha": "fixture"},
+            "floor": {"passed": false, "checks": []},
+            "model": {"provider": "local:test", "version": "v1", "local": true, "latency_ms": 0},
+            "findings": []
+          }
+        }
+        """#.data(using: .utf8)!
+
+        let preflight = try JSONDecoder().decode(MaatReleaseCredentialPreflight.self, from: raw)
+        let steps = protectedReleaseRecoverySteps(for: preflight)
+
+        XCTAssertTrue(steps.contains { $0.contains("Developer ID Application") && $0.contains("9D382WV988") })
+        XCTAssertTrue(steps.contains { $0.contains("Developer ID Installer") && $0.contains("9D382WV988") })
+        XCTAssertTrue(steps.contains { $0.contains("notarization credential") })
+        XCTAssertTrue(steps.last?.contains("Recheck readiness") == true)
+    }
+
     func testMaatClosedRepairActionDecodesWithoutAcceptingACommand() throws {
         let raw = #"""
         {

@@ -687,8 +687,9 @@ private struct MaatSystemOneView: View {
     }
 
     @ViewBuilder private func credentialPreflightSummary(_ preflight: MaatReleaseCredentialPreflight) -> some View {
+        let recoverySteps = protectedReleaseRecoverySteps(for: preflight)
         VStack(alignment: .leading, spacing: 7) {
-            Label("Release credentials still need a protected proof", systemImage: "key.horizontal")
+            Label("Complete the protected release handoff", systemImage: "key.horizontal")
                 .sirsiFont(.subheadline, weight: .semibold)
                 .foregroundStyle(.orange)
             Text("Team \(preflight.teamID) · \(preflight.developerIdentities.count) required Developer ID identities observed")
@@ -713,9 +714,29 @@ private struct MaatSystemOneView: View {
                 if !finding.fixHint.isEmpty {
                     Text("Next: \(finding.fixHint)")
                         .sirsiFont(.caption)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Resolution plan")
+                    .sirsiFont(.caption, weight: .semibold)
+                ForEach(Array(recoverySteps.enumerated()), id: \.offset) { index, step in
+                    Label("\(index + 1). \(step)", systemImage: "checklist")
+                        .sirsiFont(.caption)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            .padding(.top, 2)
+            SnapshotActionButton {
+                Task { await inspectCredentialPreflight() }
+            } label: {
+                Label("Recheck after the protected update", systemImage: "arrow.clockwise")
+            }
+            .disabled(credentialPreflightInFlight)
+            NavLink { StackLabView(engine: engine) } label: {
+                Label("Inspect release evidence and runbook", systemImage: "cube.transparent")
+            }
+            .buttonStyle(.bordered)
             Text("Fingerprint: \(preflight.fingerprint)")
                 .sirsiFont(.caption2, design: .monospaced)
                 .foregroundStyle(.secondary)
@@ -2142,6 +2163,26 @@ struct MaatReleaseCredentialPreflight: Decodable {
         guard let start = raw.firstIndex(of: "{") else { return nil }
         return try? JSONDecoder().decode(MaatReleaseCredentialPreflight.self, from: Data(raw[start...].utf8))
     }
+}
+
+// protectedReleaseRecoverySteps gives the native surface a closed, honest
+// recovery path for every credential outcome. It intentionally stops before
+// secret/key access: only the protected release workflow may perform that work.
+func protectedReleaseRecoverySteps(for preflight: MaatReleaseCredentialPreflight) -> [String] {
+    let observedKinds = Set(preflight.developerIdentities.map(\.kind))
+    var steps: [String] = []
+
+    if !observedKinds.contains("application") {
+        steps.append("Make one usable Team \(preflight.teamID) Developer ID Application identity available through the protected release workflow.")
+    }
+    if !observedKinds.contains("installer") {
+        steps.append("Make one usable Team \(preflight.teamID) Developer ID Installer identity available through the protected release workflow.")
+    }
+    if !preflight.notarizationObserved {
+        steps.append("Have the protected release workflow validate one complete notarization credential set without exposing its secrets to Ma'at.")
+    }
+    steps.append("Recheck readiness here, then run the signed, notarized DMG and PKG workflow only after every required proof is present.")
+    return steps
 }
 
 struct MaatReleaseSigningIdentity: Decodable, Identifiable {
