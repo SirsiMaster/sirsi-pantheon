@@ -139,6 +139,12 @@ func testLaneRepoMap() map[string]string {
 	return map[string]string{testLane: testRepo}
 }
 
+func TestLaneRepoMap_MapsCanonicalRaHorusFabricToPantheon(t *testing.T) {
+	if got := LaneRepoMap["ra-horus-fabric"]; got != "SirsiMaster/sirsi-pantheon" {
+		t.Fatalf("ra-horus-fabric owner = %q, want Pantheon origin", got)
+	}
+}
+
 func TestRun_Clean(t *testing.T) {
 	r := newMockReader()
 	content := validWingJSON(testWingID)
