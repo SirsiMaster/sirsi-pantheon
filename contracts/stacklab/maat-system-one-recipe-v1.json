@@ -55,6 +55,15 @@
       "upgrade_recipe": ["add parser fixtures before new category rules", "run only through the explicit audit assessor recipe", "record report through RecordReport"]
     },
     {
+      "id": "maat-system-one-screen",
+      "source": ["internal/maat/systemone.go", "cmd/sirsi/maatscreen.go"],
+      "tests": ["internal/maat/systemone_test.go", "cmd/sirsi/maatscreen_test.go"],
+      "inputs": ["closed typed local screen JSON", "deterministic floor checks", "model/provider provenance"],
+      "outputs": ["evidence-bound System One verdict", "escalation route for sensitive or uncertain screens"],
+      "writes": ["only a validated Ma'at decision journal record"],
+      "upgrade_recipe": ["preserve closed schema validation", "never let a caller select the gate", "retain deterministic floor precedence", "treat a screen as advisory evidence, never operation authority", "add positive and adversarial fixtures before widening a subject, boundary, or finding class"]
+    },
+    {
       "id": "maat-pulse-proof-platform",
       "source": ["internal/maat/pulse.go", "internal/maat/proof.go", "internal/maat/platform.go"],
       "tests": ["internal/maat/pulse_test.go", "internal/maat/proof_test.go", "internal/maat/platform_test.go"],
@@ -92,8 +101,8 @@
     },
     {
       "id": "maat-cli",
-      "source": ["cmd/sirsi/maat.go", "cmd/sirsi/maatschedule.go", "cmd/sirsi/maatcasebook.go", "cmd/sirsi/maatresolution.go"],
-      "tests": ["cmd/sirsi/maatschedule_decisions_test.go", "cmd/sirsi/maatresolution_test.go"],
+      "source": ["cmd/sirsi/maat.go", "cmd/sirsi/maatschedule.go", "cmd/sirsi/maatcasebook.go", "cmd/sirsi/maatresolution.go", "cmd/sirsi/maatscreen.go"],
+      "tests": ["cmd/sirsi/maatschedule_decisions_test.go", "cmd/sirsi/maatresolution_test.go", "cmd/sirsi/maatscreen_test.go"],
       "inputs": ["local operator command"],
       "outputs": ["human and JSON views"],
       "writes": ["only explicit audit, reservation, and confirmed owner-resolution decision records"],

@@ -53,6 +53,7 @@ not get silently co-upgraded because they share a deity name.
 | Coverage | audit assessment with threshold and remediation | `CoverageAssessor` through audit report | `assessment` cases, failed cases are urgent |
 | Pipeline/CI | audit assessment with the current CI run/log classification | `PipelineAssessor` through `sirsi maat audit` | `governance` or `assessment` cases, never synthetic success |
 | Stack Lab guard/review | decision with a receipt reference | Ma'at/approved caller through the decision journal | `governance` cases linked to the receipt |
+| System One screen | closed typed local observation, deterministic floor, confidence, model provenance, and subject identity | `sirsi maat screen --input <system-one-screen.json>` via `maat.Screen` | `governance` case with `pass`, `changes`, `block`, or `escalate`; escalation routes to evidence-bound review and never authorizes the assessed operation |
 | Shared host, rail, and device capacity | reservation grant/refusal/queue/release | `sirsi maat reserve` | `allocation` cases tied to resource and holder |
 | Cede, handback, or counter-request | explicit router-derived decision record | authorized Ma'at producer | `allocation` cases; pending is high priority, never inferred as granted |
 | Contention and incidents | explicit decision with evidence | approved Ma'at producer | `contention` cases; blocked/refused/failed is urgent |

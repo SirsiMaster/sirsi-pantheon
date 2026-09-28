@@ -41,22 +41,23 @@ type ResolutionPath struct {
 // Case is a stable, operator-readable projection of exactly one recorded
 // Ma'at decision. It has no independent lifecycle or write authority.
 type Case struct {
-	ID            string          `json:"id"`
-	Time          string          `json:"time"`
-	Host          string          `json:"host"`
-	Kind          string          `json:"kind"`
-	Category      string          `json:"category"`
-	Status        Status          `json:"status"`
-	Priority      Priority        `json:"priority"`
-	Requester     string          `json:"requester"`
-	Resource      string          `json:"resource,omitempty"`
-	Affected      string          `json:"affected,omitempty"`
-	Determination string          `json:"determination"`
-	Assessed      string          `json:"assessed"`
-	Why           string          `json:"why"`
-	Evidence      string          `json:"evidence,omitempty"`
-	Resolution    string          `json:"resolution,omitempty"`
-	NextAction    *ResolutionPath `json:"next_action,omitempty"`
+	ID            string            `json:"id"`
+	Time          string            `json:"time"`
+	Host          string            `json:"host"`
+	Kind          string            `json:"kind"`
+	Category      string            `json:"category"`
+	Status        Status            `json:"status"`
+	Priority      Priority          `json:"priority"`
+	Requester     string            `json:"requester"`
+	Resource      string            `json:"resource,omitempty"`
+	Affected      string            `json:"affected,omitempty"`
+	Determination string            `json:"determination"`
+	Assessed      string            `json:"assessed"`
+	Why           string            `json:"why"`
+	Evidence      string            `json:"evidence,omitempty"`
+	Resolution    string            `json:"resolution,omitempty"`
+	NextAction    *ResolutionPath   `json:"next_action,omitempty"`
+	SystemOne     *maat.MaatVerdict `json:"system_one,omitempty"`
 }
 
 // Node and Edge form a deliberately small evidence graph. The dashboard can
@@ -168,7 +169,7 @@ func project(d maat.Decision) Case {
 	c := Case{
 		Time: d.Time, Host: d.Host, Kind: d.Kind, Category: classify(d),
 		Requester: d.Requester, Resource: d.Resource, Affected: d.Affected,
-		Determination: d.Determination, Assessed: d.Assessed, Why: d.Why, Evidence: d.Evidence,
+		Determination: d.Determination, Assessed: d.Assessed, Why: d.Why, Evidence: d.Evidence, SystemOne: d.SystemOne,
 		Status: statusFor(determination), Priority: priorityFor(determination),
 	}
 	sum := sha256.Sum256([]byte(strings.Join([]string{d.Time, d.Host, d.Kind, d.Requester, d.Resource, d.Determination, d.Evidence}, "\x00")))
@@ -179,6 +180,8 @@ func project(d maat.Decision) Case {
 func classify(d maat.Decision) string {
 	kind := strings.ToLower(d.Kind)
 	switch {
+	case strings.Contains(kind, "system one"):
+		return "governance"
 	case strings.Contains(kind, "cede"):
 		return "allocation"
 	case strings.Contains(kind, "reservation"):
@@ -221,6 +224,13 @@ func resolutionPath(c Case) *ResolutionPath {
 			Kind: "owner_acceptance", Title: "Record an owner acceptance",
 			Detail:   "Review the exact diagnostic evidence, document the owner conclusion, and confirm it. This records a conclusion; it does not claim a system repair.",
 			Evidence: c.Evidence, RequiresConfirmation: true,
+		}
+	}
+	if c.SystemOne != nil && c.SystemOne.Gate == maat.GateEscalate {
+		return &ResolutionPath{
+			Kind: "system_one_review", Title: "Open an evidence-bound review",
+			Detail:   "This System One screen cannot bind a sensitive or uncertain result. Record a review for the exact screen evidence, then explicitly accept its documented conclusion.",
+			Evidence: c.Evidence,
 		}
 	}
 	return &ResolutionPath{

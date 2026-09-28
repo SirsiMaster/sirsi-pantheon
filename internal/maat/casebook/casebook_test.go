@@ -58,3 +58,23 @@ func TestBuildRoutesOpenCasesAndResolvesOnlyAcceptedOwnerReview(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildGivesEscalatedSystemOneScreensAnEvidenceBoundReviewRoute(t *testing.T) {
+	verdict, err := maat.Screen(maat.SystemOneScreen{
+		Subject:       maat.VerdictSubject{Kind: "commit", Repo: "SirsiMaster/sirsi-pantheon", Ref: "release/v0.24.4", HeadSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Boundary: "delivery"},
+		FeatherWeight: 90, Confidence: 0.99,
+		Floor: maat.FloorResult{Passed: true, Checks: []maat.FloorCheck{{Name: "gofmt", Passed: true}}},
+		Model: maat.ModelStamp{Provider: "local:deterministic", Version: "v1", Local: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	view := Build([]maat.Decision{{
+		Time: "2026-09-27T09:00:00Z", Host: "m5", Kind: "system one screen", Requester: "sirsi maat screen",
+		Resource: "SirsiMaster/sirsi-pantheon", Assessed: "commit release/v0.24.4", Affected: verdict.Subject.HeadSHA,
+		Determination: string(verdict.Gate), Why: "sensitive boundary requires frontier review", Evidence: "maat-system-one:sha256=fixture", SystemOne: &verdict,
+	}})
+	if len(view.Cases) != 1 || view.Cases[0].Category != "governance" || view.Cases[0].NextAction == nil || view.Cases[0].NextAction.Kind != "system_one_review" {
+		t.Fatalf("System One casebook projection = %+v", view)
+	}
+}

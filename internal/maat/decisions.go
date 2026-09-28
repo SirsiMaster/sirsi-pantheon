@@ -36,6 +36,9 @@ type Decision struct {
 	// are factual links, not claims that a subsystem was repaired.
 	OriginEvidence string `json:"origin_evidence,omitempty"`
 	ResolutionFor  string `json:"resolution_for,omitempty"`
+	// SystemOne is Ma'at's strict local screen. It is advisory evidence only;
+	// the recorded screen does not become mutation or release authority.
+	SystemOne *MaatVerdict `json:"system_one,omitempty"`
 }
 
 // DecisionJournal persists the local decision projection. Implementations may
@@ -218,6 +221,14 @@ func validateDecision(decision Decision) error {
 	}
 	if len(decision.OriginEvidence) > 512 || len(decision.ResolutionFor) > 512 {
 		return fmt.Errorf("maat decision journal: resolution evidence exceeds bounded record size")
+	}
+	if decision.SystemOne != nil {
+		if err := ValidateMaatVerdict(*decision.SystemOne); err != nil {
+			return fmt.Errorf("maat decision journal: invalid System One verdict: %w", err)
+		}
+		if decision.Kind != "system one screen" {
+			return fmt.Errorf("maat decision journal: System One verdict is valid only for system one screen")
+		}
 	}
 	return nil
 }

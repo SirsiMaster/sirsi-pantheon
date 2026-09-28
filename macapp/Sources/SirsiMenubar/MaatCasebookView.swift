@@ -575,6 +575,17 @@ private struct MaatCaseDetailView: View {
                     if !entry.affected.isEmpty { detailSection("Affected", entry.affected) }
                     if !entry.requester.isEmpty { detailSection("Requested by", entry.requester) }
                     if !entry.evidence.isEmpty { detailSection("Evidence", entry.evidence) }
+					if let systemOne = entry.systemOne {
+						detailSection("System One gate", "\(systemOne.gate.capitalized) · \(Int(systemOne.confidence * 100))% confidence · feather \(systemOne.featherWeight)/100")
+						detailSection("Screen subject", "\(systemOne.subject.kind) \(systemOne.subject.ref) · \(systemOne.subject.headSHA)")
+						if let escalation = systemOne.escalation {
+							detailSection("Required review", escalation.reason)
+						}
+						if !systemOne.floor.passed {
+							let failed = systemOne.floor.checks.filter { !$0.passed }.map(\.name).joined(separator: ", ")
+							detailSection("Deterministic floor", failed.isEmpty ? "failed" : "failed: \(failed)")
+						}
+					}
                     if let action = entry.nextAction {
                         detailSection("Next step", action.title)
                         Text(action.detail)
@@ -736,11 +747,12 @@ struct MaatCase: Decodable, Identifiable {
     let evidence: String
 	let resolution: String
 	let nextAction: MaatCaseNextAction?
+	let systemOne: MaatSystemOneVerdict?
 
     init(id: String, time: String, kind: String, category: String, status: String,
          priority: MaatCasePriority, requester: String, resource: String,
          affected: String, determination: String, assessed: String, why: String,
-         evidence: String, resolution: String = "", nextAction: MaatCaseNextAction? = nil) {
+         evidence: String, resolution: String = "", nextAction: MaatCaseNextAction? = nil, systemOne: MaatSystemOneVerdict? = nil) {
         self.id = id
         self.time = time
         self.kind = kind
@@ -756,12 +768,14 @@ struct MaatCase: Decodable, Identifiable {
         self.evidence = evidence
 		self.resolution = resolution
 		self.nextAction = nextAction
+		self.systemOne = systemOne
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, time, kind, category, status, priority, requester, resource
         case affected, determination, assessed, why, evidence, resolution
         case nextAction = "next_action"
+		case systemOne = "system_one"
     }
 
     init(from decoder: Decoder) throws {
@@ -781,12 +795,49 @@ struct MaatCase: Decodable, Identifiable {
         evidence = try values.decodeIfPresent(String.self, forKey: .evidence) ?? ""
 		resolution = try values.decodeIfPresent(String.self, forKey: .resolution) ?? ""
 		nextAction = try values.decodeIfPresent(MaatCaseNextAction.self, forKey: .nextAction)
+		systemOne = try values.decodeIfPresent(MaatSystemOneVerdict.self, forKey: .systemOne)
     }
 
     var searchText: String {
         [time, kind, category, status, requester, resource, affected,
-         determination, assessed, why, evidence, resolution, nextAction?.title ?? "", nextAction?.detail ?? ""].joined(separator: " ")
+         determination, assessed, why, evidence, resolution, nextAction?.title ?? "", nextAction?.detail ?? "", systemOne?.gate ?? "", systemOne?.subject.headSHA ?? ""].joined(separator: " ")
     }
+}
+
+struct MaatSystemOneVerdict: Decodable {
+    let featherWeight: Int
+    let gate: String
+    let confidence: Double
+    let subject: MaatSystemOneSubject
+    let floor: MaatSystemOneFloor
+    let escalation: MaatSystemOneEscalation?
+
+    enum CodingKeys: String, CodingKey {
+        case featherWeight = "feather_weight", gate, confidence, subject, floor, escalation
+    }
+}
+
+struct MaatSystemOneSubject: Decodable {
+    let kind: String
+    let ref: String
+    let headSHA: String
+    enum CodingKeys: String, CodingKey { case kind, ref; case headSHA = "head_sha" }
+}
+
+struct MaatSystemOneFloor: Decodable {
+    let passed: Bool
+    let checks: [MaatSystemOneFloorCheck]
+}
+
+struct MaatSystemOneFloorCheck: Decodable {
+    let name: String
+    let passed: Bool
+}
+
+struct MaatSystemOneEscalation: Decodable {
+    let reason: String
+    let reviewTier: String
+    enum CodingKeys: String, CodingKey { case reason; case reviewTier = "review_tier" }
 }
 
 struct MaatCaseNextAction: Decodable {
