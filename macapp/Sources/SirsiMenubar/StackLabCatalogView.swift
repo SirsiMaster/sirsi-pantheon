@@ -56,18 +56,47 @@ struct StackLabCatalogView: View {
             Image(systemName: "exclamationmark.triangle.fill")
                 .sirsiFont(24, weight: .semibold)
                 .foregroundStyle(.orange)
-            Text("Stack Lab catalog needs a fresh read")
+            Text("Stack Lab needs your next step")
                 .sirsiFont(.headline)
             Text(message)
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Button("Try again") { Task { await load() } }
-                .buttonStyle(.borderedProminent)
-                .tint(gold)
+            VStack(alignment: .leading, spacing: 6) {
+                recoveryStep("1", "Refresh this selected project if its files were just updated.")
+                recoveryStep("2", "Use Change above if this is not the repository you meant to inspect.")
+                recoveryStep("3", "Run Stack Lab Doctor to identify the exact record and continue its Ma'at evidence route when source repair needs review.")
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.orange.opacity(0.08)))
+            HStack(spacing: 10) {
+                Button("Refresh selected project") { Task { await load() } }
+                    .buttonStyle(.borderedProminent)
+                    .tint(gold)
+                    .accessibilityHint("Reads the currently selected project's Stack Lab catalog again without changing it.")
+                NavLink { StackLabView(engine: engine) } label: {
+                    Label("Open Stack Lab Doctor", systemImage: "stethoscope")
+                }
+                .buttonStyle(.bordered)
+                .accessibilityHint("Checks the selected project's canonical Stack Lab records and routes unresolved findings to Ma'at evidence.")
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .padding(20)
+    }
+
+    private func recoveryStep(_ number: String, _ detail: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(number)
+                .sirsiFont(.caption, weight: .bold)
+                .foregroundStyle(gold)
+                .frame(width: 16, height: 16)
+                .background(Circle().fill(gold.opacity(0.14)))
+            Text(detail)
+                .sirsiFont(.subheadline)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private func catalogBody(_ catalog: StackLabCatalog) -> some View {
