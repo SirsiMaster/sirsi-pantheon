@@ -272,6 +272,41 @@ struct MaybeScroll<Content: View>: View {
     }
 }
 
+// ImageRenderer cannot draw AppKit-backed prominent buttons: it substitutes a
+// blank amber control with a prohibition glyph. SnapshotActionButton keeps the
+// live control entirely native while giving visual QA a truthful, labelled
+// representation of the same action. It never changes a live interaction.
+struct SnapshotActionButton<Label: View>: View {
+    @Environment(\.snapshotMode) private var snapshotMode
+    let action: () -> Void
+    let disabled: Bool
+    @ViewBuilder let label: () -> Label
+
+    init(disabled: Bool = false, action: @escaping () -> Void,
+         @ViewBuilder label: @escaping () -> Label) {
+        self.action = action
+        self.disabled = disabled
+        self.label = label
+    }
+
+    var body: some View {
+        if snapshotMode {
+            label()
+                .foregroundStyle(Color.black)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(RoundedRectangle(cornerRadius: 8).fill(gold))
+                .opacity(disabled ? 0.5 : 1)
+        } else {
+            Button(action: action, label: label)
+                .buttonStyle(.borderedProminent)
+                .tint(gold)
+                .disabled(disabled)
+        }
+    }
+}
+
 struct NavLink<Label: View, Destination: View>: View {
     @EnvironmentObject private var nav: Nav
     private let destination: () -> Destination

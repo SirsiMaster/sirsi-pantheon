@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 // evidence, classifications, and decisions.
 struct MaatWorkspaceView: View {
     @ObservedObject var engine: SirsiEngine
+    @Environment(\.snapshotMode) private var snapshotMode
     @State private var section: MaatWorkspaceSection = .systemOne
     let preloadedCasebook: MaatCasebookProjection?
     let preloadedKnowledge: MaatKnowledgeProjection?
@@ -21,12 +22,29 @@ struct MaatWorkspaceView: View {
     var body: some View {
         VStack(spacing: 0) {
             BackBar(title: "Ma'at")
-            Picker("Ma'at workspace", selection: $section) {
-                ForEach(MaatWorkspaceSection.allCases) { option in
-                    Label(option.title, systemImage: option.symbol).tag(option)
+            Group {
+                if snapshotMode {
+                    HStack(spacing: 6) {
+                        ForEach(MaatWorkspaceSection.allCases) { option in
+                            Label(option.title, systemImage: option.symbol)
+                                .sirsiFont(.caption, weight: .semibold)
+                                .foregroundStyle(option == section ? Color.black : Color.primary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 7)
+                                .background(RoundedRectangle(cornerRadius: 7).fill(option == section ? gold : Color.primary.opacity(0.07)))
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Ma'at workspace: \(section.title)")
+                } else {
+                    Picker("Ma'at workspace", selection: $section) {
+                        ForEach(MaatWorkspaceSection.allCases) { option in
+                            Label(option.title, systemImage: option.symbol).tag(option)
+                        }
+                    }
+                    .pickerStyle(.segmented)
                 }
             }
-            .pickerStyle(.segmented)
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
 
@@ -382,15 +400,12 @@ private struct MaatSystemOneView: View {
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Button {
+            SnapshotActionButton(disabled: hostTriageInFlight) {
                 confirmHostTriage = true
             } label: {
                 Label("Observe and record", systemImage: "waveform.path.ecg")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(gold)
-            .disabled(hostTriageInFlight)
             .accessibilityHint("Runs one local diagnostic and records its exact hashed System One result after confirmation. It does not repair the Mac.")
             if hostTriageInFlight {
                 ProgressView("Observing this Mac…")
@@ -432,15 +447,12 @@ private struct MaatSystemOneView: View {
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Button {
+            SnapshotActionButton(disabled: screenImportInFlight) {
                 showScreenPicker = true
             } label: {
                 Label("Choose System One JSON", systemImage: "doc.badge.plus")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(gold)
-            .disabled(screenImportInFlight)
             if let selectedScreenURL {
                 Text("Selected: \(selectedScreenURL.lastPathComponent)")
                     .sirsiFont(.caption, design: .monospaced)

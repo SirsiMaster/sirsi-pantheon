@@ -7,6 +7,7 @@ import Foundation
 // non-mutating: SNE separately admits execution against live pressure.
 struct ApolloRunPlannerView: View {
     @ObservedObject var engine: SirsiEngine
+    @Environment(\.snapshotMode) private var snapshotMode
     @State private var catalog: ApolloCatalog?
     @State private var loading = true
     @State private var error: String?
@@ -19,6 +20,14 @@ struct ApolloRunPlannerView: View {
     @State private var plan: ApolloPlan?
     @State private var planning = false
     @State private var planError: String?
+    let preloadedCatalog: ApolloCatalog?
+
+    init(engine: SirsiEngine, preloadedCatalog: ApolloCatalog? = nil) {
+        self.engine = engine
+        self.preloadedCatalog = preloadedCatalog
+        _catalog = State(initialValue: preloadedCatalog)
+        _loading = State(initialValue: preloadedCatalog == nil)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -34,7 +43,10 @@ struct ApolloRunPlannerView: View {
                 }
             }
         }
-        .task { await load() }
+        .task {
+            guard catalog == nil else { return }
+            await load()
+        }
         .navigationTitle("Stack Lab — Apollo")
     }
 
@@ -96,13 +108,17 @@ struct ApolloRunPlannerView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Resident inference route", systemImage: "cpu")
                 .sirsiFont(.headline)
-            Picker("Inference engine", selection: $selectedEngine) {
-                ForEach(engineOptions(catalog)) { option in
-                    Text(option.name).tag(option.id)
+            if snapshotMode {
+                snapshotSelection("Inference engine", value: engineOptions(catalog).first(where: { $0.id == selectedEngine })?.name ?? "No qualified route")
+            } else {
+                Picker("Inference engine", selection: $selectedEngine) {
+                    ForEach(engineOptions(catalog)) { option in
+                        Text(option.name).tag(option.id)
+                    }
                 }
+                .labelsHidden()
+                .pickerStyle(.menu)
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
             if let engine = engineOptions(catalog).first(where: { $0.id == selectedEngine }) {
                 Text(engine.state == "configured" ? engineDetail(engine) : "This route is not configured on the selected machine. Configure its SNE endpoint, then refresh this screen.")
                     .sirsiFont(.subheadline)
@@ -123,15 +139,20 @@ struct ApolloRunPlannerView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Machine", systemImage: "laptopcomputer")
                 .sirsiFont(.headline)
-            Picker("Machine", selection: $selectedMachine) {
-                ForEach(catalog.machineOptions) { machine in
-                    Text("\(machine.name) · \(machine.cpuCores) cores · \(byteLabel(machine.memoryBytes))")
-                        .tag(machine.id)
+            if snapshotMode {
+                let machine = selectedMachineDescriptor(catalog)
+                snapshotSelection("Machine", value: "\(machine.name) · \(machine.cpuCores) cores · \(byteLabel(machine.memoryBytes))")
+            } else {
+                Picker("Machine", selection: $selectedMachine) {
+                    ForEach(catalog.machineOptions) { machine in
+                        Text("\(machine.name) · \(machine.cpuCores) cores · \(byteLabel(machine.memoryBytes))")
+                            .tag(machine.id)
+                    }
                 }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .onChange(of: selectedMachine) { _ in resetSelections(catalog) }
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .onChange(of: selectedMachine) { _ in resetSelections(catalog) }
             Text("Each selectable entry has a typed capacity receipt. Ra/Hermes peers appear only after they publish the same record; Pantheon will not invent remote capacity.")
                 .sirsiFont(.subheadline).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -146,14 +167,20 @@ struct ApolloRunPlannerView: View {
         return VStack(alignment: .leading, spacing: 10) {
             Label("Resource envelope", systemImage: "slider.horizontal.3")
                 .sirsiFont(.headline)
-            Stepper(value: $selectedCores, in: 1...max(1, machine.cpuCores)) {
+            if snapshotMode {
                 resourceLine("CPU allocation", "\(selectedCores) of \(machine.cpuCores) cores")
-            }
-            Stepper(value: $selectedMemoryGiB, in: 1...memoryCapacityGiB(machine)) {
                 resourceLine("Unified memory", "\(selectedMemoryGiB) GiB of \(memoryCapacityGiB(machine)) GiB installed")
-            }
-            Stepper(value: $selectedSwapGiB, in: 0...memoryCapacityGiB(machine)) {
                 resourceLine("Swap ceiling", "\(selectedSwapGiB) GiB requested")
+            } else {
+                Stepper(value: $selectedCores, in: 1...max(1, machine.cpuCores)) {
+                    resourceLine("CPU allocation", "\(selectedCores) of \(machine.cpuCores) cores")
+                }
+                Stepper(value: $selectedMemoryGiB, in: 1...memoryCapacityGiB(machine)) {
+                    resourceLine("Unified memory", "\(selectedMemoryGiB) GiB of \(memoryCapacityGiB(machine)) GiB installed")
+                }
+                Stepper(value: $selectedSwapGiB, in: 0...memoryCapacityGiB(machine)) {
+                    resourceLine("Swap ceiling", "\(selectedSwapGiB) GiB requested")
+                }
             }
             Text("A swap ceiling is a request, not reserved capacity. Apollo rechecks current pressure and swap before it starts inference.")
                 .sirsiFont(.caption).foregroundStyle(.secondary)
@@ -171,15 +198,27 @@ struct ApolloRunPlannerView: View {
             Text("Select every estate Apollo may observe and use. Unavailable estates stay visible and cannot be selected.")
                 .sirsiFont(.subheadline).foregroundStyle(.secondary)
             ForEach(estateOptions(catalog)) { estate in
-                Toggle(isOn: binding(for: estate)) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(estate.name).sirsiFont(.subheadline, weight: .semibold)
-                        Text(estate.description).sirsiFont(.caption).foregroundStyle(.secondary)
+                if snapshotMode {
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: selectedEstates.contains(estate.id) ? "checkmark.square.fill" : "square")
+                            .foregroundStyle(estate.available ? gold : .secondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(estate.name).sirsiFont(.subheadline, weight: .semibold)
+                            Text(estate.description).sirsiFont(.caption).foregroundStyle(.secondary)
+                        }
                     }
+                    .opacity(estate.available ? 1 : 0.55)
+                } else {
+                    Toggle(isOn: binding(for: estate)) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(estate.name).sirsiFont(.subheadline, weight: .semibold)
+                            Text(estate.description).sirsiFont(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    .toggleStyle(.checkbox)
+                    .disabled(!estate.available)
+                    .opacity(estate.available ? 1 : 0.55)
                 }
-                .toggleStyle(.checkbox)
-                .disabled(!estate.available)
-                .opacity(estate.available ? 1 : 0.55)
             }
         }
         .padding(14)
@@ -189,13 +228,11 @@ struct ApolloRunPlannerView: View {
 
     private func planAction(_ catalog: ApolloCatalog) -> some View {
         VStack(alignment: .leading, spacing: 9) {
-            Button {
+            SnapshotActionButton(disabled: planning || selectedEstates.isEmpty || selectedEngine.isEmpty) {
                 Task { await createPlan(catalog) }
             } label: {
                 Label(planning ? "Validating plan…" : "Create Apollo run plan", systemImage: "checkmark.circle")
             }
-            .buttonStyle(.borderedProminent).tint(gold)
-            .disabled(planning || selectedEstates.isEmpty || selectedEngine.isEmpty)
             if selectedEstates.isEmpty {
                 Text("Choose at least one available chip estate to continue.")
                     .sirsiFont(.caption, weight: .semibold).foregroundStyle(.orange)
@@ -243,6 +280,18 @@ struct ApolloRunPlannerView: View {
 
     private func resourceLine(_ title: String, _ detail: String) -> some View {
         HStack { Text(title).sirsiFont(.subheadline, weight: .semibold); Spacer(); Text(detail).sirsiFont(.caption).foregroundStyle(.secondary) }
+    }
+
+    private func snapshotSelection(_ label: String, value: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(label).sirsiFont(.caption, weight: .semibold).foregroundStyle(.secondary)
+            Text(value).sirsiFont(.subheadline, weight: .semibold)
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.up.chevron.down").sirsiFont(.caption).foregroundStyle(gold)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.07)))
     }
 
     private func engineDetail(_ engine: ApolloEngineOption) -> String {
@@ -502,16 +551,16 @@ struct ApolloTelemetryView: View {
     }
 }
 
-private struct ApolloCatalog: Decodable {
+struct ApolloCatalog: Decodable {
     let machine: ApolloMachine
 	let machines: [ApolloMachine]?
     let engines: [ApolloEngineOption]
     let estates: [ApolloChipEstate]
 	var machineOptions: [ApolloMachine] { machines?.isEmpty == false ? machines! : [machine] }
 }
-private struct ApolloMachine: Decodable, Identifiable { let id: String; let name: String; let cpuCores: Int; let memoryBytes: Int64; let chipEstates: [String]?; enum CodingKeys: String, CodingKey { case id, name; case cpuCores = "cpu_cores"; case memoryBytes = "memory_bytes"; case chipEstates = "chip_estates" } }
-private struct ApolloEngineOption: Decodable, Identifiable { let id: String; let machineID: String?; let name: String; let provider: String; let residentModel: String?; let endpoint: String?; let state: String; enum CodingKeys: String, CodingKey { case id, name, provider, endpoint, state; case machineID = "machine_id"; case residentModel = "resident_model" } }
-private struct ApolloChipEstate: Decodable, Identifiable { let id: String; let name: String; let available: Bool; let description: String }
+struct ApolloMachine: Decodable, Identifiable { let id: String; let name: String; let cpuCores: Int; let memoryBytes: Int64; let chipEstates: [String]?; enum CodingKeys: String, CodingKey { case id, name; case cpuCores = "cpu_cores"; case memoryBytes = "memory_bytes"; case chipEstates = "chip_estates" } }
+struct ApolloEngineOption: Decodable, Identifiable { let id: String; let machineID: String?; let name: String; let provider: String; let residentModel: String?; let endpoint: String?; let state: String; enum CodingKeys: String, CodingKey { case id, name, provider, endpoint, state; case machineID = "machine_id"; case residentModel = "resident_model" } }
+struct ApolloChipEstate: Decodable, Identifiable { let id: String; let name: String; let available: Bool; let description: String }
 struct ApolloPlan: Decodable {
     let machineID: String
     let engineID: String

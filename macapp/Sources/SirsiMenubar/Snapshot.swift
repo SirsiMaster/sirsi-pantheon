@@ -40,6 +40,8 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380, appearance: ColorSche
         let net = await SirsiEngine.runResult(args: ["net", "status"])
         let rtk = await SirsiEngine.runResult(args: ["rtk", "stats"])
         let maatKnowledge = await MaatKnowledgeView.fetch()
+        let apolloCatalogData = await SirsiEngine.runJSON(args: ["apollo", "catalog", "--json"])
+        let apolloCatalog = try? JSONDecoder().decode(ApolloCatalog.self, from: apolloCatalogData)
         let vault = await SirsiEngine.runResult(args: ["vault", "stats"])
         await engine.diagnose()
         engine.refresh()
@@ -75,6 +77,7 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380, appearance: ColorSche
             // deterministic fixture in that case; live menubar use never falls
             // back to it and reads the local casebook projection.
             ("maat-workspace", AnyView(MaatWorkspaceView(engine: engine, preloadedCasebook: maatCasebook ?? .snapshotPreview, preloadedKnowledge: maatKnowledge ?? .snapshotPreview))),
+            ("apollo-run-planner", AnyView(ApolloRunPlannerView(engine: engine, preloadedCatalog: apolloCatalog))),
             ("thoth-memory", AnyView(ThothMemoryInfoView(engine: engine))),
             ("ra-fabric", AnyView(RaFabricView(engine: engine))),
             ("threads-heartbeat", AnyView(ThreadsView(engine: engine))),
