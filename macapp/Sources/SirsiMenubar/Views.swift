@@ -1137,10 +1137,11 @@ struct HealthRow: View {
     let finding: DiagFinding
 
     private var hasFix: Bool { !(finding.fix ?? "").isEmpty }
-    private var requiresMaatReview: Bool {
-        finding.resolution == "maat_review" || (finding.resolution == nil && finding.severity >= 2 && !hasFix)
-    }
-    private var navigable: Bool { hasFix || requiresMaatReview || !(finding.detail ?? "").isEmpty }
+    // Every diagnostic is a place an operator can understand the observed
+    // evidence and its outcome. A healthy or informational result is a
+    // completed observation, not an inert row; a warning or critical result
+    // without a safe repair routes to Ma'at rather than becoming a dead end.
+    private var navigable: Bool { true }
 
     var body: some View {
         if navigable {
@@ -1234,13 +1235,17 @@ struct FindingView: View {
         return nil
     }
 
-    // Warn (2) and Critical (3) are alarms (guard.DiagnosticSeverity). An alarm
-    // without a direct repair must route into Ma'at review — never "Informational".
-    private var isAlarm: Bool { finding.severity >= 2 }
-
-    private var requiresMaatReview: Bool {
-        finding.resolution == "maat_review" || (finding.resolution == nil && isAlarm && (finding.fix ?? "").isEmpty)
+    private var resolutionRoute: DiagnosticResolutionRoute {
+        diagnosticResolutionRoute(
+            resolution: finding.resolution,
+            severity: finding.severity,
+            hasFix: !(finding.fix ?? "").isEmpty,
+            hasRecommendedCommand: recommendedCommand != nil
+        )
     }
+
+    private var requiresMaatReview: Bool { resolutionRoute == .maatReview }
+    private var isAcceptedObservation: Bool { resolutionRoute == .accepted }
 
     private var fixIcon: String {
         switch kind {
@@ -1395,9 +1400,14 @@ struct FindingView: View {
                             } label: { Label(copied ? "Copied" : "Copy command", systemImage: copied ? "checkmark" : "doc.on.doc") }
                             Button { openTerminal() } label: { Label("Open Terminal", systemImage: "terminal") }
                         }.sirsiFont(.caption)
+                    } else if isAcceptedObservation {
+                        acceptedObservation
                     } else {
-                        Text("Informational — nothing to act on.")
-                            .sirsiFont(.callout).foregroundStyle(.secondary)
+                        // The route function is deliberately exhaustive, but
+                        // preserve a visible recovery route if a future CLI
+                        // resolution value arrives before this native surface
+                        // knows its dedicated action.
+                        maatResolutionPath
                     }
                     Spacer()
                 }.padding(16)
@@ -1489,6 +1499,26 @@ struct FindingView: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+    }
+
+    private var acceptedObservation: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Label("No change required", systemImage: "checkmark.seal.fill")
+                .sirsiFont(.callout, weight: .semibold)
+                .foregroundStyle(.green)
+            Text("Ma'at has classified this observation as complete. The evidence remains available for review; Pantheon will not invent a repair where none is needed.")
+                .sirsiFont(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            NavLink { MaatCasebookView(engine: engine) } label: {
+                Label("Review Ma'at evidence", systemImage: "book.closed")
+            }
+            .buttonStyle(.bordered)
+            .accessibilityHint("Open the local Ma'at evidence and decision history for this completed observation.")
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.green.opacity(0.08)))
     }
 
     @MainActor private func recordMaatReview() async {

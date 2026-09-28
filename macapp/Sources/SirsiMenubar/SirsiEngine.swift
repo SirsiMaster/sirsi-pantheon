@@ -57,6 +57,34 @@ struct DiagFinding: Decodable, Identifiable {
     enum CodingKeys: String, CodingKey { case check, severity, message, detail, trend, fix, fixKind, resolution }
 }
 
+// DiagnosticResolutionRoute is the native product's closed answer to "what can
+// I do next?" A diagnostic may be completed evidence, a safe repair, a
+// documented command, or a Ma'at review. There is intentionally no
+// "informational dead end" state.
+enum DiagnosticResolutionRoute: Equatable {
+    case repair
+    case command
+    case maatReview
+    case accepted
+}
+
+func diagnosticResolutionRoute(
+    resolution: String?,
+    severity: Int,
+    hasFix: Bool,
+    hasRecommendedCommand: Bool
+) -> DiagnosticResolutionRoute {
+    if hasFix { return .repair }
+    if hasRecommendedCommand { return .command }
+    if resolution == "information" || (resolution == nil && severity <= 1) {
+        return .accepted
+    }
+    // Explicit Ma'at review, unknown future resolution values, and every
+    // unresolved warning/critical must all receive a visible evidence-bound
+    // resolution route rather than leaving the operator with raw status text.
+    return .maatReview
+}
+
 // DiagReport carries the findings plus the CANONICAL roll-up `status`
 // (green/amber/red) the surface must show — never re-derive it from severities.
 struct DiagReport: Decodable {

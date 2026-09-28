@@ -2,6 +2,33 @@ import XCTest
 @testable import SirsiMenubar
 
 final class CoreContractsTests: XCTestCase {
+    func testEveryDiagnosticHasAClosedNativeResolutionRoute() {
+        XCTAssertEqual(
+            diagnosticResolutionRoute(resolution: nil, severity: 0, hasFix: false, hasRecommendedCommand: false),
+            .accepted
+        )
+        XCTAssertEqual(
+            diagnosticResolutionRoute(resolution: "information", severity: 1, hasFix: false, hasRecommendedCommand: false),
+            .accepted
+        )
+        XCTAssertEqual(
+            diagnosticResolutionRoute(resolution: nil, severity: 2, hasFix: false, hasRecommendedCommand: false),
+            .maatReview
+        )
+        XCTAssertEqual(
+            diagnosticResolutionRoute(resolution: "maat_review", severity: 3, hasFix: false, hasRecommendedCommand: false),
+            .maatReview
+        )
+        XCTAssertEqual(
+            diagnosticResolutionRoute(resolution: nil, severity: 3, hasFix: true, hasRecommendedCommand: false),
+            .repair
+        )
+        XCTAssertEqual(
+            diagnosticResolutionRoute(resolution: nil, severity: 1, hasFix: false, hasRecommendedCommand: true),
+            .command
+        )
+    }
+
     func testDiagnosticFindingDecodesExplicitMaatReviewRoute() throws {
         let raw = #"""
         {
