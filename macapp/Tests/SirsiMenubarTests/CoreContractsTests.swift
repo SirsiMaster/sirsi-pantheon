@@ -120,6 +120,32 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertFalse(ambiguousLegacy.matches(plan: plan))
     }
 
+    func testMaatCredentialPreflightDecodesObservedNonDeveloperIdentityTypes() throws {
+        let raw = #"""
+        {
+          "team_id": "9D382WV988",
+          "fingerprint": "sha256=fixture",
+          "developer_identities": [],
+          "observed_non_developer_identity_types": ["Apple Distribution"],
+          "notarization_observed": false,
+          "verdict": {
+            "schema_version": "maat-system-one/v1",
+            "feather_weight": 0,
+            "gate": "block",
+            "confidence": 1,
+            "subject": {"kind": "host", "ref": "release-credentials", "head_sha": "fixture"},
+            "floor": {"passed": false, "checks": []},
+            "model": {"provider": "local:test", "version": "v1", "local": true, "latency_ms": 0},
+            "findings": []
+          }
+        }
+        """#.data(using: .utf8)!
+
+        let preflight = try JSONDecoder().decode(MaatReleaseCredentialPreflight.self, from: raw)
+
+        XCTAssertEqual(preflight.observedNonDeveloperIdentityTypes, ["Apple Distribution"])
+    }
+
     func testMaatClosedRepairActionDecodesWithoutAcceptingACommand() throws {
         let raw = #"""
         {
