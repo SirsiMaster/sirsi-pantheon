@@ -243,6 +243,21 @@ struct StackLabView: View {
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
                     }
+                    HStack(spacing: 8) {
+                        NavLink { MaatWorkspaceView(engine: engine) } label: {
+                            Label("Inspect Ma'at evidence", systemImage: "checkmark.seal")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(gold)
+                        NavLink { StackLabCatalogView(engine: engine) } label: {
+                            Label("Browse recipes", systemImage: "cube.transparent")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    Text("After correcting the source or connection, use Refresh below to re-read the same canonical records.")
+                        .sirsiFont(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(13)
                 .frame(maxWidth: .infinity, alignment: .leading)
