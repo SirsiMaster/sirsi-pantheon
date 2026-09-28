@@ -6,6 +6,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.34] — 2026-09-28 — conflict-check self-exemption
+`sirsi maat reserve --exempt-pid` names the PID of a reservation's own
+guarded-run process tree; `conflict-check` walks process ancestry and never
+reports a descendant of that PID as an intruder (e.g. the guarded run's own
+ssh launcher, whose argv can carry a remote bench tool's name). Fixes a false
+FOREIGN LOAD verdict reported by hermes during the Hermes v1.1.1 release gate
+(router 20260928-220311).
+
+---
+
 ## [0.24.33] — 2026-09-28 — Closed native diagnostic resolution
 **Source release candidate.** Every native menu-bar diagnostic now has an
 explicit resolution route, including actionable repair guidance and a
