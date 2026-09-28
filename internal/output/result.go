@@ -28,6 +28,38 @@ type CommandResult struct {
 	NextActions []NextAction  `json:"next_actions,omitempty"`
 }
 
+// MarshalJSON keeps the public duration_ms field truthful. time.Duration is
+// stored internally as nanoseconds, while this cross-surface contract promises
+// milliseconds to CLI, dashboard, MCP, and native consumers.
+func (r CommandResult) MarshalJSON() ([]byte, error) {
+	type commandResultJSON struct {
+		Command     string       `json:"command"`
+		Summary     string       `json:"summary"`
+		Duration    int64        `json:"duration_ms"`
+		BriefTitle  string       `json:"brief_title,omitempty"`
+		Status      string       `json:"status,omitempty"`
+		Confidence  string       `json:"confidence,omitempty"`
+		Priority    []string     `json:"priority,omitempty"`
+		Evidence    []Evidence   `json:"evidence,omitempty"`
+		Warnings    []string     `json:"warnings,omitempty"`
+		Errors      []string     `json:"errors,omitempty"`
+		NextActions []NextAction `json:"next_actions,omitempty"`
+	}
+	return json.Marshal(commandResultJSON{
+		Command:     r.Command,
+		Summary:     r.Summary,
+		Duration:    r.Duration.Milliseconds(),
+		BriefTitle:  r.BriefTitle,
+		Status:      r.Status,
+		Confidence:  r.Confidence,
+		Priority:    r.Priority,
+		Evidence:    r.Evidence,
+		Warnings:    r.Warnings,
+		Errors:      r.Errors,
+		NextActions: r.NextActions,
+	})
+}
+
 // Evidence is a single data point from the command result.
 type Evidence struct {
 	Label string `json:"label"`
