@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.25] — 2026-09-28 — SNE consumer authority pointer
+**Commercial patch release.** The legacy `codex-sne-runtime` and
+`claude-inference` consumer prompts now point SNE source, recipe, runtime,
+benchmark, qualification, and promotion work to the authoritative
+`codex-inference` lane under `SNE_SOURCE_OWNERSHIP_AND_CHANGE_POLICY.md`.
+This release changes routing guidance only; it does not mutate SNE source,
+runtime, model, host, or qualification state.
+
 ## [0.24.24] — 2026-09-28 — Router blocked-by contract clarity
 **Commercial patch release.** `sirsi router` now describes `--blocked-by` as
 an external-block reason rather than a dependency-task identifier, matching the
