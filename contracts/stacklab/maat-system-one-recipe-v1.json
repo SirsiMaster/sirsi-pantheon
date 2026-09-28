@@ -119,12 +119,12 @@
     },
     {
       "id": "maat-knowledge-surface",
-      "source": ["cmd/sirsi/maatknowledge.go", "internal/dashboard/actions.go", "macapp/Sources/SirsiMenubar/MaatCasebookView.swift", "internal/seshat"],
-      "tests": ["cmd/sirsi/maatknowledge_test.go", "internal/dashboard/actions_test.go", "scripts/verify-maat-knowledge-surface-contract.sh"],
-      "inputs": ["retained local knowledge cache", "explicit dashboard refresh request"],
-      "outputs": ["Ma'at-owned safe knowledge projection", "Ma'at-named dashboard, CLI, and native confirmed knowledge refresh action", "withheld sensitive legacy records", "visible refresh outcome and retry path that preserves the current cache on failure"],
+      "source": ["internal/maat/knowledge/knowledge.go", "cmd/sirsi/maatknowledge.go", "internal/dashboard/actions.go", "internal/dashboard/maat.go", "internal/dashboard/server.go", "cmd/sirsi/dashboard.go", "internal/mcp/tools.go", "macapp/Sources/SirsiMenubar/MaatCasebookView.swift", "internal/seshat"],
+      "tests": ["internal/maat/knowledge/knowledge_test.go", "cmd/sirsi/maatknowledge_test.go", "internal/mcp/maat_test.go", "internal/dashboard/dashboard_test.go", "internal/dashboard/actions_test.go", "scripts/verify-maat-knowledge-surface-contract.sh"],
+      "inputs": ["retained local knowledge cache", "bounded optional text query", "explicit confirmed Ma'at knowledge refresh request"],
+      "outputs": ["one sensitivity-filtered Ma'at knowledge projection shared by CLI, MCP, Horus dashboard, and native app", "Ma'at-named dashboard, CLI, and native confirmed knowledge refresh action", "withheld sensitive legacy records", "visible refresh outcome and retry path that preserves the current cache on failure"],
       "writes": ["only the legacy ingestion adapter's existing local cache writes through sirsi maat knowledge refresh"],
-      "upgrade_recipe": ["keep Ma'at as the only user-facing knowledge and decision authority", "treat Seshat ingestion as a compatibility adapter until its engine migrates", "keep refresh source-scoped and do not expose external export through it", "withhold secret-bearing legacy records without mutating them", "never expose the legacy deity as a dashboard action key or label", "add action-registry and knowledge-filter fixtures before widening sources"]
+      "upgrade_recipe": ["keep Ma'at as the only user-facing knowledge and decision authority", "route every read-only consumer through internal/maat/knowledge rather than adding a parallel cache parser", "treat Seshat ingestion as a compatibility adapter until its engine migrates", "keep refresh source-scoped and do not expose external export through it", "withhold secret-bearing legacy records without mutating them", "keep MCP and Horus knowledge projections GET-only and query-bounded", "never expose the legacy deity as a dashboard action key or label", "add CLI, MCP, dashboard, native, action-registry, and knowledge-filter fixtures before widening sources"]
     },
     {
       "id": "maat-scheduler",
@@ -148,8 +148,8 @@
       "id": "maat-horus-surface",
       "source": ["internal/dashboard/maat.go", "internal/dashboard/server.go", "internal/dashboard/pages.go", "cmd/sirsi/dashboard.go"],
       "tests": ["internal/dashboard/dashboard_test.go"],
-      "inputs": ["MaatDecisionProducer", "MaatCasebookProducer"],
-      "outputs": ["GET /api/maat/decisions", "GET /api/maat/casebook with complete System One model/floor/finding/three-level-recovery evidence", "Horus Ma'at view with visible deterministic provenance and read-only prescribed next steps"],
+      "inputs": ["MaatDecisionProducer", "MaatCasebookProducer", "MaatKnowledgeProducer"],
+      "outputs": ["GET /api/maat/decisions", "GET /api/maat/casebook with complete System One model/floor/finding/three-level-recovery evidence", "GET /api/maat/knowledge with the same sensitivity-filtered local view as CLI and MCP", "Horus Ma'at view with visible deterministic provenance, retained knowledge, and read-only prescribed next steps"],
       "writes": [],
       "upgrade_recipe": ["keep endpoints GET-only", "reject invalid filters", "return 503 rather than a fabricated empty projection"]
     },
@@ -157,8 +157,8 @@
       "id": "maat-mcp-surface",
       "source": ["internal/mcp/tools.go"],
       "tests": ["internal/mcp/maat_test.go"],
-      "inputs": ["shared Ma'at decision journal", "bounded query filters"],
-      "outputs": ["read-only maat_casebook MCP JSON projection with System One model/floor, finding, three-level recovery, and calibration evidence"],
+      "inputs": ["shared Ma'at decision journal", "shared sensitivity-filtered Ma'at knowledge projection", "bounded query filters"],
+      "outputs": ["read-only maat_casebook MCP JSON projection with System One model/floor, finding, three-level recovery, and calibration evidence", "read-only maat_knowledge MCP JSON projection equivalent to the CLI and Horus knowledge view"],
       "writes": [],
       "upgrade_recipe": ["keep the journal as the sole local Ma'at store", "reject malformed filters before reading", "never add write, review, repair, or authorization authority", "test projection of calibration links, recovery hints, and rejected filters"]
     },

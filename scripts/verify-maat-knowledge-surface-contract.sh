@@ -6,10 +6,13 @@ set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
 actions="$root/internal/dashboard/actions.go"
 knowledge="$root/cmd/sirsi/maatknowledge.go"
+projection="$root/internal/maat/knowledge/knowledge.go"
+mcp="$root/internal/mcp/tools.go"
+dashboard="$root/internal/dashboard/maat.go"
 native="$root/macapp/Sources/SirsiMenubar/MaatCasebookView.swift"
 recipe="$root/contracts/stacklab/maat-system-one-recipe-v1.json"
 
-for target in "$actions" "$knowledge" "$native" "$recipe"; do
+for target in "$actions" "$knowledge" "$projection" "$mcp" "$dashboard" "$native" "$recipe"; do
   [ -f "$target" ] || { echo "missing Ma'at knowledge contract input: $target" >&2; exit 1; }
 done
 
@@ -43,12 +46,35 @@ for needle in \
 done
 
 for needle in \
-  'Ma'\''at is the single operator authority' \
-  'safeMaatKnowledgeItems' \
-  'secret match' \
-  'does not ingest, export, rescore, or change'; do
-  /usr/bin/grep -Fq "$needle" "$knowledge" || {
-    echo "Ma'at knowledge projection contract missing: $needle" >&2
+  'Package knowledge projects the retained local knowledge cache through Ma'\''at.' \
+  'func Load(home, query string) (View, error)' \
+  'func Project(items []seshat.KnowledgeItem, query string) View' \
+  'seshat.DefaultFilter()' \
+  'view.Withheld++'; do
+  /usr/bin/grep -Fq "$needle" "$projection" || {
+    echo "Ma'at shared knowledge projection contract missing: $needle" >&2
+    exit 1
+  }
+done
+
+for needle in \
+  'Name:        "maat_knowledge"' \
+  'func handleMaatKnowledge' \
+  'knowledge.Load(home, query)' \
+  'Read-only: it cannot ingest, export, change, or disclose withheld records.'; do
+  /usr/bin/grep -Fq "$needle" "$mcp" || {
+    echo "Ma'at MCP knowledge contract missing: $needle" >&2
+    exit 1
+  }
+done
+
+for needle in \
+  'func (s *Server) apiMaatKnowledge' \
+  'MaatKnowledgeFn == nil' \
+  'Ma'\''at knowledge projection not available' \
+  'writeJSON(w, view)'; do
+  /usr/bin/grep -Fq "$needle" "$dashboard" || {
+    echo "Ma'at Horus knowledge contract missing: $needle" >&2
     exit 1
   }
 done
@@ -75,5 +101,16 @@ done
   echo "Stack Lab Ma'at knowledge component is missing" >&2
   exit 1
 }
+
+for needle in \
+  '"internal/maat/knowledge/knowledge.go"' \
+  '"internal/mcp/tools.go"' \
+  '"internal/dashboard/maat.go"' \
+  '"one sensitivity-filtered Ma'\''at knowledge projection shared by CLI, MCP, Horus dashboard, and native app"'; do
+  /usr/bin/grep -Fq "$needle" "$recipe" || {
+    echo "Stack Lab Ma'at knowledge inventory is incomplete: $needle" >&2
+    exit 1
+  }
+done
 
 echo "Ma'at knowledge surface contract: pass"
