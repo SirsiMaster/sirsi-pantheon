@@ -134,6 +134,8 @@ fi
   (.source | index("internal/updater/install.go")) != null and
   (.source | index("cmd/sirsi/update.go")) != null and
   (.outputs | index("only a complete same-version Pantheon DMG and PKG pair is update-eligible")) != null and
+  (.outputs | index("an explicit update request preserves the installed product and offers a recheck recovery when no complete payload exists")) != null and
+  (.upgrade_recipe | index("keep every no-complete-release state non-destructive and actionable")) != null and
   (.upgrade_recipe | index("do not restore a standalone binary replacement route that can drift from the app payload")) != null
 ' "$recipe" >/dev/null || {
     echo "Stack Lab release route must bind complete commercial update eligibility" >&2; exit 1;

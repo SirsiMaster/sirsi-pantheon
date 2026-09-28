@@ -91,7 +91,7 @@ func makeReleaseContractFixture(t *testing.T, broken bool) string {
 		"internal/caskrelease/cask.go":                                "func Render func Verify exact canonical rendering",
 		"cmd/sirsi/cask_release.go":                                   "cask-release caskrelease.Render caskrelease.Verify",
 		"internal/updater/updater.go":                                 "ErrNoCompleteCommercialRelease IsCompleteCommercialRelease assetless or partial record",
-		"cmd/sirsi/update.go":                                         "Commercial Pantheon updates ship one app payload unified app installer complete arm64 Pantheon app payload",
+		"cmd/sirsi/update.go":                                         "Commercial Pantheon updates ship one app payload unified app installer complete arm64 Pantheon app payload installed version remains active Recovery: recheck later",
 		"scripts/verify-commercial-release-contract.sh":               "commercial release contract: pass pantheon-release-artifact-recipe-v1.json",
 	}
 	if broken {

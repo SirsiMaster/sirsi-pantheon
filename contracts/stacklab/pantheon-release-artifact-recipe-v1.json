@@ -56,9 +56,9 @@
       "source": ["internal/updater/updater.go", "internal/updater/install.go", "cmd/sirsi/update.go"],
       "tests": ["internal/updater/updater_test.go", "internal/updater/updater_failure_test.go", "internal/updater/install_test.go", "scripts/verify-commercial-release-contract.sh"],
       "inputs": ["public GitHub release records", "exact tag version", "tag-bound arm64 Pantheon DMG and PKG asset metadata"],
-      "outputs": ["only a complete same-version Pantheon DMG and PKG pair is update-eligible", "assetless, partial, malformed, and duplicate payload records are not installable", "one unified app-update handoff for CLI and menubar users"],
+      "outputs": ["only a complete same-version Pantheon DMG and PKG pair is update-eligible", "assetless, partial, malformed, and duplicate payload records are not installable", "one unified app-update handoff for CLI and menubar users", "an explicit update request preserves the installed product and offers a recheck recovery when no complete payload exists"],
       "writes": ["a user-selected DMG download only after an explicit update command"],
-      "upgrade_recipe": ["keep release eligibility independent of GitHub tag ordering", "require exactly one nonempty and downloadable DMG and PKG for the same tag", "keep check-only no-release states non-destructive and actionable", "do not restore a standalone binary replacement route that can drift from the app payload"]
+      "upgrade_recipe": ["keep release eligibility independent of GitHub tag ordering", "require exactly one nonempty and downloadable DMG and PKG for the same tag", "keep every no-complete-release state non-destructive and actionable", "do not restore a standalone binary replacement route that can drift from the app payload"]
     }
   ]
 }

@@ -102,7 +102,7 @@ var releaseContractRequirements = []releaseContractRequirement{
 	},
 	{
 		ID: "unified-update-install-handoff", Path: "cmd/sirsi/update.go",
-		Needles:   []string{"Commercial Pantheon updates ship one app payload", "unified app installer", "complete arm64 Pantheon app payload"},
+		Needles:   []string{"Commercial Pantheon updates ship one app payload", "unified app installer", "complete arm64 Pantheon app payload", "installed version remains active", "Recovery: recheck later"},
 		Forbidden: []string{"installCLIRelease", "schemaCompatibilityGate("},
 		Hint:      "Restore the one unified app-update handoff; do not advertise a standalone CLI replacement outside the commercial payload.",
 	},

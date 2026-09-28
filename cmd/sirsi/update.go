@@ -17,6 +17,7 @@ import (
 var (
 	updateInstallCLI bool
 	updateInstallApp bool
+	newUpdateClient  = updater.NewClient
 )
 
 var updateCmd = &cobra.Command{
@@ -39,12 +40,12 @@ func runUpdate(_ *cobra.Command, _ []string) error {
 	// An explicit `sirsi update` tolerates a slower call than the 3s background
 	// version-check, whose tight timeout trips on the full releases list. Use a
 	// generous client for both the check and the release fetch.
-	c := updater.NewClient()
+	c := newUpdateClient()
 	c.HTTPClient = &http.Client{Timeout: 20 * time.Second}
 
 	res := c.Check(version)
 	if res.Error != nil {
-		if !updateInstallCLI && !updateInstallApp && errors.Is(res.Error, updater.ErrNoCompleteCommercialRelease) {
+		if errors.Is(res.Error, updater.ErrNoCompleteCommercialRelease) {
 			fmt.Println("  𓁢 No complete commercial Pantheon update is published yet; your installed version remains active.")
 			fmt.Println("     Recovery: recheck later. A usable update requires the matching signed Pantheon DMG and PKG pair.")
 			return nil
