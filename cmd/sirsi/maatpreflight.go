@@ -142,6 +142,9 @@ separate protected-workflow proof.`,
 		for _, finding := range preflight.Verdict.Findings {
 			result.AddEvidence("Finding: "+finding.ID, finding.Claim)
 		}
+		for index, step := range preflight.RecoveryPlan {
+			result.AddEvidence(fmt.Sprintf("Recovery step %d", index+1), step)
+		}
 		result.Render()
 		return nil
 	},

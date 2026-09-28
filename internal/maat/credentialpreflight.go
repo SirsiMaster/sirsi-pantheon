@@ -25,6 +25,7 @@ type ReleaseCredentialPreflight struct {
 	DeveloperIdentities               []ReleaseSigningIdentity `json:"developer_identities"`
 	ObservedNonDeveloperIdentityTypes []string                 `json:"observed_non_developer_identity_types"`
 	NotarizationObserved              bool                     `json:"notarization_observed"`
+	RecoveryPlan                      []string                 `json:"recovery_plan"`
 	Verdict                           MaatVerdict              `json:"verdict"`
 }
 
@@ -83,6 +84,7 @@ func PreflightReleaseCredentials() (ReleaseCredentialPreflight, error) {
 	}
 
 	fingerprint := credentialFingerprint(identities, observedNonDeveloperTypes, runErr)
+	recoveryPlan := ProtectedReleaseRecoveryPlan(PantheonDeveloperTeamID, identities, false)
 	floorPassed := true
 	for _, check := range checks {
 		floorPassed = floorPassed && check.Passed
@@ -98,7 +100,27 @@ func PreflightReleaseCredentials() (ReleaseCredentialPreflight, error) {
 	if err != nil {
 		return ReleaseCredentialPreflight{}, fmt.Errorf("maat credential preflight: construct verdict: %w", err)
 	}
-	return ReleaseCredentialPreflight{SchemaVersion: SystemOneSchemaVersion, TeamID: PantheonDeveloperTeamID, Fingerprint: "sha256=" + fingerprint, DeveloperIdentities: identities, ObservedNonDeveloperIdentityTypes: observedNonDeveloperTypes, NotarizationObserved: false, Verdict: verdict}, nil
+	return ReleaseCredentialPreflight{SchemaVersion: SystemOneSchemaVersion, TeamID: PantheonDeveloperTeamID, Fingerprint: "sha256=" + fingerprint, DeveloperIdentities: identities, ObservedNonDeveloperIdentityTypes: observedNonDeveloperTypes, NotarizationObserved: false, RecoveryPlan: recoveryPlan, Verdict: verdict}, nil
+}
+
+// ProtectedReleaseRecoveryPlan is the canonical non-secret recovery contract
+// for all Ma'at surfaces. It names every missing public prerequisite, then
+// ends with a local recheck. It never offers an in-process credential action:
+// the protected release workflow is the only owner of key and notarization
+// material.
+func ProtectedReleaseRecoveryPlan(teamID string, identities []ReleaseSigningIdentity, notarizationObserved bool) []string {
+	steps := make([]string, 0, 4)
+	if !hasIdentity(identities, "application") {
+		steps = append(steps, "Make one usable Team "+teamID+" Developer ID Application identity available through the protected release workflow.")
+	}
+	if !hasIdentity(identities, "installer") {
+		steps = append(steps, "Make one usable Team "+teamID+" Developer ID Installer identity available through the protected release workflow.")
+	}
+	if !notarizationObserved {
+		steps = append(steps, "Have the protected release workflow validate one complete notarization credential set without exposing its secrets to Ma'at.")
+	}
+	steps = append(steps, "Recheck readiness, then run the signed, notarized DMG and PKG workflow only after every required proof is present.")
+	return steps
 }
 
 func parseDeveloperIDIdentities(raw, teamID string) []ReleaseSigningIdentity {
