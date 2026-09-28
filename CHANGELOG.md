@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.30] — 2026-09-28 — Bounded caution cleanup
+**Commercial patch release.** Caution-tier cleanup now requires an explicit
+selection and confirmation, then moves only the selected recoverable items to
+Trash. The native and Go cleanup paths share the same exact scope, and CI
+rejects terminal-only deletion or unconfirmed caution cleanup.
+
 ## [0.24.29] — 2026-09-28 — Menubar startup probe deferral
 **Commercial patch release.** The menubar Home panel no longer launches
 `sirsi vitals --json` or `sirsi autonomous status --json` while opening Home
