@@ -35,7 +35,7 @@ jobs:
           go build ./cmd/sirsi-agent
 
   menubar:
-    name: Build Menu Bar (macOS DMG)
+    name: Build Pantheon (macOS DMG + PKG)
     runs-on: [self-hosted, macOS, ARM64]  # M5 local frame (ADR-042)
     needs: release
     # Fail fast instead of burning the 6h GitHub-Actions ceiling: if the signing
@@ -61,13 +61,16 @@ jobs:
           TAG_NAME="${GITHUB_REF_NAME}"
           echo "VERSION=${TAG_NAME#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Import signing certificate
-        if: env.MACOS_CERTIFICATE != ''
+      - name: Import Developer ID signing identities
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
           KEYCHAIN_PWD: ${{ secrets.KEYCHAIN_PWD }}
         run: |
+          set -euo pipefail
+          : "${MACOS_CERTIFICATE:?MACOS_CERTIFICATE is required and must contain the Team 9D382WV988 Developer ID Application and Developer ID Installer identities}"
+          : "${MACOS_CERTIFICATE_PWD:?MACOS_CERTIFICATE_PWD is required}"
+          : "${KEYCHAIN_PWD:?KEYCHAIN_PWD is required}"
           echo "$MACOS_CERTIFICATE" | base64 --decode > certificate.p12
           security create-keychain -p "$KEYCHAIN_PWD" build.keychain
           security default-keychain -s build.keychain
@@ -88,9 +91,9 @@ jobs:
           test -f "$HOME/Library/Keychains/build.keychain-db" \
             || { echo "Temporary signing keychain was not created" >&2; exit 1; }
           ID=$(security find-identity -v -p codesigning build.keychain \
-            | awk -F '"' '/Developer ID Application/{print $2; exit}')
+            | awk -F '"' '/Developer ID Application:.*\\(9D382WV988\\)/{print $2; exit}')
           if [ -z "$ID" ]; then
-            echo "No Developer ID Application identity was imported into build.keychain" >&2
+            echo "Temporary signing keychain does not contain a usable Team 9D382WV988 Developer ID Application identity" >&2
             exit 1
           fi
           echo "DEVELOPER_ID_APPLICATION=$ID" >> "$GITHUB_ENV"
