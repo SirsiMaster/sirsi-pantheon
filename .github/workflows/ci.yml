@@ -152,7 +152,9 @@ jobs:
           path: metrics.json
 
   build:
-    name: Build
+    # Keep the published branch-protection context truthful while the runner
+    # migration is in progress; this job currently executes on hosted macOS.
+    name: Build (self-hosted, macOS, ARM64, 1.25)
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
