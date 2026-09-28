@@ -87,6 +87,65 @@ after reviewing the evidence to retain the same result in Ma'at's Casebook.`,
 	},
 }
 
+var maatPreflightCredentialsCmd = &cobra.Command{
+	Use:   "credentials",
+	Short: "Check local Developer ID readiness without reading secrets",
+	Long: `Observe public local Developer ID certificate metadata without reading private keys,
+keychain passwords, notarization credentials, or contacting Apple.
+
+This check names the exact missing release prerequisite. It never signs, packages,
+notarizes, publishes, or authorizes a release. Notarization readiness remains a
+separate protected-workflow proof.`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		preflight, err := maat.PreflightReleaseCredentials()
+		if err != nil {
+			return err
+		}
+		decisionEvidence := ""
+		if maatPreflightConfirm {
+			journal, journalErr := newMaatDecisionJournal()
+			if journalErr != nil {
+				return fmt.Errorf("open Ma'at decision journal: %w", journalErr)
+			}
+			decision, recordErr := maat.RecordSystemOne(journal, "sirsi maat preflight credentials", preflight.Verdict)
+			if recordErr != nil {
+				return recordErr
+			}
+			decisionEvidence = decision.Evidence
+		}
+		if JsonOutput || maatJSON {
+			return emitJSON(struct {
+				maat.ReleaseCredentialPreflight
+				DecisionEvidence string `json:"decision_evidence,omitempty"`
+			}{ReleaseCredentialPreflight: preflight, DecisionEvidence: decisionEvidence})
+		}
+
+		result := &output.CommandResult{
+			Command: "sirsi maat preflight credentials", BriefTitle: "Ma'at release credential readiness",
+			Status: string(preflight.Verdict.Gate), Summary: systemOneSummary(preflight.Verdict),
+			Evidence: []output.Evidence{
+				{Label: "Observation fingerprint", Value: preflight.Fingerprint},
+				{Label: "Developer ID identities", Value: fmt.Sprintf("%d", len(preflight.DeveloperIdentities))},
+				{Label: "Notarization material", Value: "not inspected"},
+			},
+		}
+		if decisionEvidence == "" {
+			result.NextActions = append(result.NextActions, output.NextAction{
+				Label: "Record in Ma'at Casebook", Command: "sirsi maat preflight credentials --confirm",
+				Description: "After reviewing the public local identity evidence, explicitly retain this readiness result in Ma'at's Casebook.",
+			})
+		} else {
+			result.Evidence = append(result.Evidence, output.Evidence{Label: "Casebook evidence", Value: decisionEvidence})
+		}
+		for _, finding := range preflight.Verdict.Findings {
+			result.AddEvidence("Finding: "+finding.ID, finding.Claim)
+		}
+		result.Render()
+		return nil
+	},
+}
+
 func shellQuote(value string) string {
 	if value == "" {
 		return "."
@@ -98,6 +157,8 @@ func init() {
 	maatPreflightReleaseCmd.Flags().StringVar(&maatPreflightRoot, "root", ".", "Pantheon checkout root to inspect")
 	maatPreflightReleaseCmd.Flags().BoolVar(&maatPreflightConfirm, "confirm", false, "confirm recording this typed preflight in Ma'at's Casebook")
 	maatPreflightReleaseCmd.Flags().BoolVar(&maatJSON, "json", false, "JSON output")
-	maatPreflightCmd.AddCommand(maatPreflightReleaseCmd)
+	maatPreflightCredentialsCmd.Flags().BoolVar(&maatPreflightConfirm, "confirm", false, "confirm recording this typed readiness result in Ma'at's Casebook")
+	maatPreflightCredentialsCmd.Flags().BoolVar(&maatJSON, "json", false, "JSON output")
+	maatPreflightCmd.AddCommand(maatPreflightReleaseCmd, maatPreflightCredentialsCmd)
 	maatCmd.AddCommand(maatPreflightCmd)
 }
