@@ -55,9 +55,14 @@ func TestPackageBuildersUseOneCanonicalInventory(t *testing.T) {
 		"pkgutil --expand-full",
 		"${PROJECT_ROOT}/bin/sirsi\" package-inventory",
 		"Payload/Applications/Pantheon.app",
+		"COPYFILE_DISABLE=1 /usr/bin/ditto",
+		"AppleDouble metadata",
 	} {
 		if !strings.Contains(string(pkg), required) {
 			t.Fatalf("PKG builder does not verify its exact archive payload through %q", required)
 		}
+	}
+	if strings.Contains(string(pkg), "/usr/bin/xattr -cr") {
+		t.Fatal("PKG builder must not broadly erase protected macOS metadata; AppleDouble scans are the transport-metadata authority")
 	}
 }
