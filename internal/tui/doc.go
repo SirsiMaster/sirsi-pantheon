@@ -11,9 +11,10 @@
 //   - Waste    — scan → per-item review with toggles + drill-in → tier-honest
 //     clean, with a freed-space proof (scan, clean).
 //   - Ghosts   — per-app residuals of uninstalled apps → clean (ghosts, clean).
-//   - Health   — diagnose findings, each with its HONEST one-key fix classified
+//   - Health   — diagnose findings, each with its HONEST one-key repair classified
 //     by FixKind (instant/relief/guidance); a guidance no-op is never offered as
-//     a fix (ADR-033) (diagnose).
+//     a repair, and instead enters Ma'at's evidence-and-owner-resolution route
+//     (ADR-033) (diagnose).
 //   - Activity — read-only provenance ledger of what sirsi actually changed
 //     (activity).
 //
