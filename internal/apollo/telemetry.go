@@ -18,17 +18,22 @@ const maxTelemetryBytes = 64 * 1024
 // values are deliberately pointers: absent data remains absent rather than
 // becoming an appealing but false zero in a product surface.
 type Telemetry struct {
-	SchemaVersion string            `json:"schema_version"`
-	SessionID     string            `json:"session_id"`
-	EngineID      string            `json:"engine_id"`
-	EmittedAt     time.Time         `json:"emitted_at"`
-	TokensPerSec  *float64          `json:"tokens_per_second,omitempty"`
-	BandwidthBps  *int64            `json:"bandwidth_bytes_per_second,omitempty"`
-	MemoryBytes   *int64            `json:"memory_bytes,omitempty"`
-	NetworkPct    *float64          `json:"network_saturation_percent,omitempty"`
-	CPUResidency  *float64          `json:"cpu_residency_percent,omitempty"`
-	GPUResidency  *float64          `json:"gpu_residency_percent,omitempty"`
-	Estates       []EstateTelemetry `json:"chip_estates"`
+	SchemaVersion string `json:"schema_version"`
+	SessionID     string `json:"session_id"`
+	EngineID      string `json:"engine_id"`
+	// MachineID binds a session sample to the Horus instance that admitted it.
+	// It is optional only for the existing single-device "this-mac" route;
+	// any future selected peer must publish it before Pantheon renders the
+	// sample for that plan.
+	MachineID    string            `json:"machine_id,omitempty"`
+	EmittedAt    time.Time         `json:"emitted_at"`
+	TokensPerSec *float64          `json:"tokens_per_second,omitempty"`
+	BandwidthBps *int64            `json:"bandwidth_bytes_per_second,omitempty"`
+	MemoryBytes  *int64            `json:"memory_bytes,omitempty"`
+	NetworkPct   *float64          `json:"network_saturation_percent,omitempty"`
+	CPUResidency *float64          `json:"cpu_residency_percent,omitempty"`
+	GPUResidency *float64          `json:"gpu_residency_percent,omitempty"`
+	Estates      []EstateTelemetry `json:"chip_estates"`
 }
 
 type EstateTelemetry struct {
@@ -151,6 +156,9 @@ func validateTelemetry(t Telemetry) error {
 	}
 	if strings.TrimSpace(t.SessionID) == "" || strings.TrimSpace(t.EngineID) == "" || t.EmittedAt.IsZero() {
 		return fmt.Errorf("Apollo telemetry is missing session identity")
+	}
+	if t.MachineID != "" && strings.TrimSpace(t.MachineID) == "" {
+		return fmt.Errorf("Apollo telemetry has an invalid machine identity")
 	}
 	if err := nonNegativeFinite("tokens_per_second", t.TokensPerSec); err != nil {
 		return err

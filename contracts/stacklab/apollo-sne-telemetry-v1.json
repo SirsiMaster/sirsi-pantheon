@@ -42,6 +42,7 @@
       "preserve publisher provenance outside Pantheon; Pantheon is a read-only consumer"
     ],
     "required": ["schema_version", "session_id", "engine_id", "emitted_at", "chip_estates"],
+    "machine_identity": "machine_id is optional only for the legacy single-device this-mac route. Any plan for another selected machine requires a matching non-empty machine_id before Pantheon can render the session as active.",
     "optional_metrics": [
       "tokens_per_second",
       "bandwidth_bytes_per_second",
@@ -55,6 +56,7 @@
       "all rates and byte counts are non-negative",
       "all percentages are finite and between 0 and 100 inclusive",
       "chip-estate ids are nonempty and unique",
+      "a nonempty machine_id must be a non-whitespace Horus machine identity",
       "unknown properties reject the complete sample",
       "Pantheon opens the telemetry leaf with no-follow semantics and requires descriptor/path identity continuity before and after two byte-identical reads",
       "absence is unavailable, not zero"

@@ -1,7 +1,7 @@
 import SwiftUI
 import Foundation
 
-// ApolloRunPlannerView is Stack Lab's local inference selector. It consumes
+// ApolloRunPlannerView is Stack Lab's inference selector. It consumes
 // typed Go observations; it does not discover models with a shell transcript or
 // manufacture performance figures. Creating a plan is intentionally
 // non-mutating: SNE separately admits execution against live pressure.
@@ -45,7 +45,7 @@ struct ApolloRunPlannerView: View {
             BackBar(title: "Apollo plan")
             Group {
                 if loading {
-                    ProgressView("Reading this Mac’s local capacity…")
+                    ProgressView("Reading the selected device capacity…")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let error {
                     recovery(error)
@@ -105,9 +105,9 @@ struct ApolloRunPlannerView: View {
     private func header(_ catalog: ApolloCatalog) -> some View {
 		let machine = selectedMachineDescriptor(catalog)
         return VStack(alignment: .leading, spacing: 7) {
-            Text("Plan a local Apollo run")
+            Text("Plan an Apollo run")
                 .sirsiFont(.title3, weight: .bold)
-            Text("Choose the resident route and the resource envelope before SNE is asked to admit inference. Stack Lab writes no device state at this stage.")
+            Text("Choose the resident route, machine, and resource envelope before SNE is asked to admit inference. Stack Lab writes no device state at this stage.")
                 .sirsiFont(.subheadline).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 7) {
@@ -170,7 +170,7 @@ struct ApolloRunPlannerView: View {
                 .pickerStyle(.menu)
                 .onChange(of: selectedMachine) { _ in resetSelections(catalog) }
             }
-            Text("Each selectable entry has a typed capacity receipt. Ra/Hermes peers appear only after they publish the same record; Pantheon will not invent remote capacity.")
+            Text("Each selectable entry has a typed capacity receipt. This device is immediately available; another Horus instance appears only after it publishes the same record through Ra/Hermes. Pantheon never guesses peer capacity.")
                 .sirsiFont(.subheadline).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -694,7 +694,7 @@ struct ApolloTelemetryView: View {
 
     private var sessionMatchesPlan: Bool? {
         guard session?.state == "active", let telemetry = session?.telemetry else { return nil }
-        return telemetry.engineID == plan.engineID
+        return telemetry.matches(plan: plan)
     }
 
     private var selectedTelemetry: ApolloSessionTelemetry? {
@@ -709,8 +709,9 @@ struct ApolloTelemetryView: View {
 
     private var sessionDetail: String {
         if sessionMatchesPlan == true { return "SNE published a bounded session sample for the engine selected in this plan." }
-        if let observed = session?.telemetry?.engineID, sessionMatchesPlan == false {
-            return "The active SNE sample belongs to \(observed), not this plan’s \(plan.engineID). Its metrics are withheld; return to the plan to choose the matching route or wait for SNE to publish the selected session."
+        if let observed = session?.telemetry, sessionMatchesPlan == false {
+            let observedMachine = observed.machineID ?? "legacy this-mac"
+            return "The active SNE sample belongs to \(observed.engineID) on \(observedMachine), not \(plan.engineID) on \(plan.machineID). Its metrics are withheld; return to the plan to choose the matching route or wait for SNE to publish the selected session."
         }
         if engine.localLLM?.healthy == true { return "The local SNE conduit is reachable. Metrics below update when SNE publishes a sample for this selected engine." }
         return "The selected plan is ready for SNE admission. Return to the plan to recheck its resource envelope, then refresh after SNE publishes a selected-engine session sample."
@@ -802,6 +803,7 @@ struct ApolloPlan: Decodable {
 struct ApolloTelemetryRead: Decodable { let state: String; let telemetry: ApolloSessionTelemetry?; let reason: String? }
 struct ApolloSessionTelemetry: Decodable {
     let engineID: String
+    let machineID: String?
     let tokensPerSec: Double?
     let bandwidthBps: Int64?
     let memoryBytes: Int64?
@@ -812,6 +814,7 @@ struct ApolloSessionTelemetry: Decodable {
 
     enum CodingKeys: String, CodingKey {
         case engineID = "engine_id"
+        case machineID = "machine_id"
         case tokensPerSec = "tokens_per_second"
         case bandwidthBps = "bandwidth_bytes_per_second"
         case memoryBytes = "memory_bytes"
@@ -819,6 +822,18 @@ struct ApolloSessionTelemetry: Decodable {
         case cpuResidency = "cpu_residency_percent"
         case gpuResidency = "gpu_residency_percent"
         case estates = "chip_estates"
+    }
+}
+extension ApolloSessionTelemetry {
+    // An engine name alone is not a session identity once Stack Lab can select
+    // another Horus instance. Existing local SNE publishers predate machine_id,
+    // so their samples remain compatible only with this-mac plans.
+    func matches(plan: ApolloPlan) -> Bool {
+        guard engineID == plan.engineID else { return false }
+        guard plan.machineID != "this-mac" else {
+            return machineID == nil || machineID == plan.machineID
+        }
+        return machineID == plan.machineID
     }
 }
 struct ApolloEstateTelemetry: Decodable { let id: String; let residencyPct: Double?; let memoryBytes: Int64?; let utilizationPct: Double?; enum CodingKeys: String, CodingKey { case id; case residencyPct = "residency_percent"; case memoryBytes = "memory_bytes"; case utilizationPct = "utilization_percent" } }

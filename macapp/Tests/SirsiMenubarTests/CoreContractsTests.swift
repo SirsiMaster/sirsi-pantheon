@@ -103,6 +103,21 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertEqual(read.telemetry?.estates.map(\.id), ["gpu", "neural-engine"])
     }
 
+    func testApolloTelemetryRequiresMachineMatchForASelectedPeer() throws {
+        let plan = try JSONDecoder().decode(ApolloPlan.self, from: #"""
+        {"machine_id":"horus-m1","engine_id":"apollo-m1","cpu_cores":4,"memory_bytes":8589934592,"swap_bytes":0,"chip_estates":["cpu"]}
+        """#.data(using: .utf8)!)
+        let matching = try JSONDecoder().decode(ApolloSessionTelemetry.self, from: #"""
+        {"engine_id":"apollo-m1","machine_id":"horus-m1","chip_estates":[]}
+        """#.data(using: .utf8)!)
+        let ambiguousLegacy = try JSONDecoder().decode(ApolloSessionTelemetry.self, from: #"""
+        {"engine_id":"apollo-m1","chip_estates":[]}
+        """#.data(using: .utf8)!)
+
+        XCTAssertTrue(matching.matches(plan: plan))
+        XCTAssertFalse(ambiguousLegacy.matches(plan: plan))
+    }
+
     func testMaatClosedRepairActionDecodesWithoutAcceptingACommand() throws {
         let raw = #"""
         {
