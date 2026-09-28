@@ -1367,7 +1367,7 @@ final class SirsiEngine: ObservableObject {
         ("Pantheon unification", "docs/ADR-005-PANTHEON-UNIFICATION.md", 550),
         ("Local model doctrine", "docs/ADR-034-ORCHESTRATION-BRAIN.md", 650),
         ("Knowledge substrate", "docs/ADR-019-KNOWLEDGE-SUBSTRATE.md", 600),
-        ("Seshat specification", "docs/SESHAT_SPECIFICATION.md", 450),
+        ("Ma'at knowledge adapter specification", "docs/SESHAT_SPECIFICATION.md", 450),
         ("Thoth specification", "docs/THOTH_SPECIFICATION.md", 450),
         ("Thoth memory", ".thoth/memory.yaml", 450),
     ]
@@ -1457,7 +1457,7 @@ final class SirsiEngine: ObservableObject {
 
         lines.append("""
         KNOWLEDGE SURFACES TO MENTION WHEN RELEVANT
-        CLI: sirsi, ctr, router, thread, workstream, setup, seba, hapi, thoth, seshat, maat, anubis, ka.
+        CLI: sirsi, ctr, router, thread, workstream, setup, seba, hapi, thoth, maat, anubis, ka.
         TUI: terminal-guided Sirsi operation when no IDE/app surface is active.
         Menubar: local Mac operator surface for health, Ra fabric, owner actions, cleanup, Ask Sirsi, and thread visibility.
         Local model: Gemma/MLX is the Tier-0 reasoning engine; cloud/frontier agents bind or review where needed.
@@ -1473,7 +1473,7 @@ final class SirsiEngine: ObservableObject {
             "SHORT SIRSI CONTEXT",
             "You are Ask Sirsi, the local on-device assistant for Sirsi Pantheon.",
             "Pantheon includes the Mac menubar, CLI, TUI, CTR/router fabric, cleanup, health, memory, and knowledge surfaces.",
-            "Ra routes work; Horus sees the workstation; Thoth preserves memory; Ma'at governs quality; Seshat moves knowledge; Hapi/Seba govern compute pressure and hardware visibility.",
+            "Ra routes work; Horus sees the workstation; Thoth preserves memory; Ma'at governs quality, decisions, and local knowledge; Hapi/Seba govern compute pressure and hardware visibility.",
             "Hypergraph/Sirsi IO connect routed events, local knowledge, Hedera HCS direction, portfolio context, and agent coordination.",
             "Portfolio: Sirsi Nexus, Pantheon, FinalWishes, Assiduous, Ask Eliot, Porch and Alley, and the Sirsi deck.",
             "User: Cylton Collymore, founder/operator of Sirsi.",

@@ -22,12 +22,16 @@ var seshatDocs bool
 
 var seshatCmd = &cobra.Command{
 	Use:   "seshat",
-	Short: "𓁆 Seshat — Universal Knowledge Grafting Engine",
-	Long: `𓁆 Seshat — Goddess of writing, wisdom, and measurement.
+	Short: "Legacy Ma'at knowledge-ingestion adapter (compatibility)",
+	Long: `This hidden compatibility command preserves existing Seshat automation.
 
-Seshat is the universal knowledge grafting layer. She ingests knowledge
-from multiple sources (Chrome, Gemini, Claude, Apple Notes, Google Workspace),
-reconciles it, and distributes to targets (Thoth, NotebookLM, Apple Notes).
+Ma'at is Pantheon's operator-facing knowledge and decision authority. Use
+sirsi maat knowledge to inspect the retained, filtered library and
+sirsi maat knowledge refresh to update it from configured local sources.
+
+The legacy adapter below retains historical ingestion, export, profile, and
+MCP verbs for scripts that already depend on them. It does not create a second
+user-facing knowledge authority.
 
   sirsi seshat ingest                 Ingest knowledge from all sources
   sirsi seshat ingest --source        Ingest from a specific source
@@ -43,7 +47,7 @@ reconciles it, and distributes to targets (Thoth, NotebookLM, Apple Notes).
   sirsi seshat mcp                    Start the MCP context server`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if seshatDocs {
-			output.Info("Opening Seshat docs...")
+			output.Info("Opening Ma'at knowledge adapter docs...")
 			return help.OpenDocs("seshat")
 		}
 		return cmd.Help()

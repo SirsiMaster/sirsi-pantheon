@@ -135,7 +135,8 @@ func runOrchestrator(subcmd string, extraArgs ...string) error {
 }
 
 // runOrchestratorWithPipeline executes the orchestrator through the Ra pipeline,
-// automatically feeding results to Seshat for ingestion and Thoth for persistence.
+// automatically feeding results into Ma'at's knowledge authority through the
+// retained compatibility adapter, then Thoth for persistence.
 func runOrchestratorWithPipeline(subcmd, scriptPath string, extraArgs ...string) error {
 	repoRoot, err := findRepoRoot()
 	if err != nil {
@@ -162,7 +163,7 @@ func runOrchestratorWithPipeline(subcmd, scriptPath string, extraArgs ...string)
 	if !result.ThothSynced {
 		thothStatus = "skipped (no .thoth/memory.yaml)"
 	}
-	fmt.Fprintf(os.Stderr, "\n  %s Ra complete -> %s Seshat ingested %d items -> %s Thoth %s\n",
+	fmt.Fprintf(os.Stderr, "\n  %s Ra complete -> %s Ma'at recorded %d knowledge item(s) -> %s Thoth %s\n",
 		"\u2600\uFE0F", "\U000130C6", result.ItemsIngested, "\U0001305F", thothStatus)
 
 	output.Footer(result.Duration)
@@ -350,7 +351,8 @@ var raPipelineCmd = &cobra.Command{
 			output.Warn("Thoth not synced in last pipeline run")
 		}
 
-		// Show Seshat artifacts count.
+		// The retained on-disk adapter location is historical, but all operator
+		// reporting describes the data as Ma'at knowledge.
 		seshatDir := filepath.Join(repoRoot, ".thoth", "seshat")
 		if entries, err := os.ReadDir(seshatDir); err == nil {
 			count := 0
@@ -359,7 +361,7 @@ var raPipelineCmd = &cobra.Command{
 					count++
 				}
 			}
-			output.Info("Seshat store: %d artifacts in .thoth/seshat/", count)
+			output.Info("Ma'at knowledge cache: %d artifact(s) in .thoth/seshat/", count)
 		}
 
 		fmt.Println()
@@ -471,7 +473,7 @@ var raCollectCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Printf("\n  𓇶 Ra → 𓁆 Seshat ingested %d items → 𓁟 Thoth %s\n\n",
+		fmt.Printf("\n  𓇶 Ra → 𓆄 Ma'at recorded %d knowledge item(s) → 𓁟 Thoth %s\n\n",
 			pr.ItemsIngested, func() string {
 				if pr.ThothSynced {
 					return "synced ✅"
@@ -489,7 +491,7 @@ var raWatchCmd = &cobra.Command{
 	Short: "𓇶 Ra Command Center — live sprint monitoring TUI",
 	Long: `Launch the Ra Command Center, a full-screen terminal UI that shows:
   - Live sprint progress per scope (Sprint 2/5, running, etc.)
-  - Governance loop status (Ma'at QA, Thoth compact, Seshat scribe)
+  - Governance loop status (Ma'at quality and knowledge, Thoth compact)
   - Agent activity (last tool call, log tail)
   - Post-sprint acceptance flow
 
@@ -502,12 +504,12 @@ var raWatchCmd = &cobra.Command{
 
 func init() {
 	raCmd.PersistentFlags().BoolVar(&raDocs, "docs", false, "Open Ra web documentation")
-	raCmd.PersistentFlags().BoolVar(&raRecord, "record", false, "Record results through the Seshat/Thoth knowledge pipeline")
+	raCmd.PersistentFlags().BoolVar(&raRecord, "record", false, "Record results through the Ma'at knowledge and Thoth memory pipeline")
 
 	raDeployCmd.Flags().StringSliceVar(&raDeployScopes, "scope", nil, "Deploy specific scope(s) only (repeatable)")
 	raDeployCmd.Flags().BoolVar(&raDeployITerm2, "iterm2", false, "Use iTerm2 instead of Terminal.app")
 	raDeployCmd.Flags().BoolVar(&raDeployWait, "wait", false, "Block until all windows complete")
-	raDeployCmd.Flags().BoolVar(&raDeployRecord, "record", false, "Run Seshat/Thoth pipeline after completion")
+	raDeployCmd.Flags().BoolVar(&raDeployRecord, "record", false, "Record completion through Ma'at knowledge and Thoth memory")
 	raDeployCmd.Flags().BoolVar(&raDeployDryRun, "dry-run", false, "Show assembled prompts without spawning")
 
 	raCmd.AddCommand(raHealthCmd)

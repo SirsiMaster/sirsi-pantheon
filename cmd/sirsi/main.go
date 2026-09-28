@@ -41,7 +41,9 @@ var versionCmd = &cobra.Command{
 			{"Memory", "thoth"},
 			{"Quality", "maat"},
 			{"Health", "isis"},
-			{"Knowledge", "seshat"},
+			// Seshat remains the retained cache/adapter version key, while Ma'at
+			// is the single operator-facing knowledge authority.
+			{"Ma'at knowledge", "seshat"},
 			{"Cleanup", "anubis"},
 			{"Hardware", "seba"},
 			{"Recovery", "osiris"},

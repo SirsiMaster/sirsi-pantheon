@@ -1,11 +1,21 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/seshat"
 )
+
+func TestSeshatCompatibilityCommandDefersOperatorAuthorityToMaat(t *testing.T) {
+	if !seshatCmd.Hidden {
+		t.Fatal("legacy seshat adapter must remain hidden from the default operator surface")
+	}
+	if !strings.Contains(seshatCmd.Short, "Ma'at") || !strings.Contains(seshatCmd.Long, "sirsi maat knowledge") {
+		t.Fatalf("legacy seshat help does not direct operators to Ma'at knowledge: short=%q long=%q", seshatCmd.Short, seshatCmd.Long)
+	}
+}
 
 func TestSafeMaatKnowledgeItemsWithholdsSensitiveLegacyRecords(t *testing.T) {
 	sensitive := "pass" + "word" + "=" + "example" + "value"
