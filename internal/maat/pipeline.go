@@ -1,9 +1,11 @@
 package maat
 
 import (
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -209,6 +211,32 @@ func ParseRunList(output string) []PipelineRun {
 		return nil
 	}
 
+	// gh run list is invoked with --json. The original parser only understood
+	// the legacy tab-separated fixture format, which made a healthy, configured
+	// GitHub CLI look like it had returned no runs at all. Keep the fallback for
+	// injected and older callers, but treat GitHub's declared JSON contract as
+	// the primary input shape.
+	if strings.HasPrefix(output, "[") {
+		var githubRuns []struct {
+			DatabaseID int64  `json:"databaseId"`
+			Status     string `json:"status"`
+			Conclusion string `json:"conclusion"`
+			Name       string `json:"name"`
+			HeadBranch string `json:"headBranch"`
+			HeadSHA    string `json:"headSha"`
+		}
+		if err := json.Unmarshal([]byte(output), &githubRuns); err == nil {
+			runs := make([]PipelineRun, 0, len(githubRuns))
+			for _, run := range githubRuns {
+				runs = append(runs, newPipelineRun(
+					strconv.FormatInt(run.DatabaseID, 10), run.Status, run.Conclusion,
+					run.Name, run.HeadBranch, run.HeadSHA,
+				))
+			}
+			return runs
+		}
+	}
+
 	// Parse simple tab-separated format:
 	// ID\tSTATUS\tCONCLUSION\tNAME\tBRANCH\tSHA
 	var runs []PipelineRun
@@ -220,43 +248,43 @@ func ParseRunList(output string) []PipelineRun {
 
 		fields := strings.Split(line, "\t")
 		if len(fields) >= 4 {
-			run := PipelineRun{
-				ID:   fields[0],
-				Name: fields[3],
-			}
+			branch, sha := "", ""
 			if len(fields) >= 5 {
-				run.Branch = fields[4]
+				branch = fields[4]
 			}
 			if len(fields) >= 6 {
-				run.HeadSHA = fields[5]
+				sha = fields[5]
 			}
-
-			// Parse status
-			status := strings.ToLower(fields[1])
-			conclusion := ""
-			if len(fields) >= 3 {
-				conclusion = strings.ToLower(fields[2])
-			}
-			run.Conclusion = conclusion
-
-			switch {
-			case status == "completed" && conclusion == "success":
-				run.Status = RunStatusSuccess
-			case status == "completed" && conclusion == "failure":
-				run.Status = RunStatusFailure
-			case status == "completed" && conclusion == "canceled":
-				run.Status = RunStatusCanceled
-			case status == "in_progress":
-				run.Status = RunStatusInProgress
-			default:
-				run.Status = RunStatusUnknown
-			}
-
-			runs = append(runs, run)
+			runs = append(runs, newPipelineRun(fields[0], fields[1], fields[2], fields[3], branch, sha))
 		}
 	}
 
 	return runs
+}
+
+func newPipelineRun(id, status, conclusion, name, branch, headSHA string) PipelineRun {
+	status = strings.ToLower(status)
+	conclusion = strings.ToLower(conclusion)
+	run := PipelineRun{
+		ID:         id,
+		Name:       name,
+		Branch:     branch,
+		HeadSHA:    headSHA,
+		Conclusion: conclusion,
+	}
+	switch {
+	case status == "completed" && conclusion == "success":
+		run.Status = RunStatusSuccess
+	case status == "completed" && conclusion == "failure":
+		run.Status = RunStatusFailure
+	case status == "completed" && conclusion == "canceled":
+		run.Status = RunStatusCanceled
+	case status == "in_progress":
+		run.Status = RunStatusInProgress
+	default:
+		run.Status = RunStatusUnknown
+	}
+	return run
 }
 
 // categorizeFailure fetches failure logs and categorizes the failure.

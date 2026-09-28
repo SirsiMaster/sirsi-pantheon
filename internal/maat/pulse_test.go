@@ -62,6 +62,9 @@ func TestPulse_WithMockRunners(t *testing.T) {
 	if m.Coverage == 0 {
 		t.Error("expected non-zero coverage")
 	}
+	if !m.TestsMeasured || !m.CoverageMeasured || m.TestMeasurement != "measured" {
+		t.Errorf("expected measured test and coverage metrics, got tests=%t coverage=%t state=%q", m.TestsMeasured, m.CoverageMeasured, m.TestMeasurement)
+	}
 	if m.SourceLines != 32825 {
 		t.Errorf("expected source lines 32825, got %d", m.SourceLines)
 	}
@@ -135,6 +138,9 @@ func TestPulse_SkipTests(t *testing.T) {
 	if m.Tests != 0 {
 		t.Errorf("expected 0 tests when skipped, got %d", m.Tests)
 	}
+	if m.TestsMeasured || m.CoverageMeasured || m.TestMeasurement != "skipped" {
+		t.Errorf("skipped tests must remain explicitly unmeasured, got tests=%t coverage=%t state=%q", m.TestsMeasured, m.CoverageMeasured, m.TestMeasurement)
+	}
 	if m.SourceLines != 100 {
 		t.Errorf("expected 100 source lines, got %d", m.SourceLines)
 	}
@@ -184,6 +190,26 @@ func TestParseTotalCoverage(t *testing.T) {
 	cov := parseTotalCoverage(sampleTestOutput)
 	if cov < 50 || cov > 100 {
 		t.Errorf("expected coverage between 50-100%%, got %.1f%%", cov)
+	}
+}
+
+func TestPulse_NoCoverageOutputRemainsUnmeasured(t *testing.T) {
+	t.Parallel()
+
+	cfg := &PulseConfig{
+		ProjectRoot: t.TempDir(),
+		OutputPath:  filepath.Join(t.TempDir(), "metrics.json"),
+		TestRunner: func(string) (string, error) {
+			return "=== RUN   TestExample\n--- PASS: TestExample (0.00s)\nPASS\n", nil
+		},
+	}
+
+	m, err := Pulse(cfg)
+	if err != nil {
+		t.Fatalf("Pulse() error: %v", err)
+	}
+	if !m.TestsMeasured || m.CoverageMeasured || m.Coverage != 0 || m.TestMeasurement != "measured" {
+		t.Errorf("coverage without a coverage record must be unmeasured, got tests=%t coverage=%t value=%.1f state=%q", m.TestsMeasured, m.CoverageMeasured, m.Coverage, m.TestMeasurement)
 	}
 }
 
