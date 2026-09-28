@@ -1683,12 +1683,33 @@ struct RaFabricView: View {
 
                     // ── Honest empty state: never a false "healthy" ─────────
                     if engine.routerBoard == nil {
-                        HStack(spacing: 8) {
-                            Circle().fill(.gray).frame(width: 8, height: 8)
-                            Text(engine.routerLoading ? "Reading the fabric…" : "No fabric data yet — the board hasn't been generated on this machine.")
-                                .sirsiFont(13, weight: .medium)
-                                .fixedSize(horizontal: false, vertical: true)
-                            Spacer()
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(spacing: 8) {
+                                Circle().fill(.gray).frame(width: 8, height: 8)
+                                Text(engine.routerLoading ? "Reading the fabric…" : "No fabric data yet on this Mac.")
+                                    .sirsiFont(13, weight: .medium)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Spacer()
+                            }
+                            if !engine.routerLoading {
+                                Text("Refresh to read the current Ra board. If it remains unavailable, open Ma'at to retain the observation and choose the next safe action.")
+                                    .sirsiFont(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                HStack(spacing: 8) {
+                                    Button {
+                                        Task { await engine.loadRouterBoard() }
+                                    } label: {
+                                        Label("Refresh fabric", systemImage: "arrow.clockwise")
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .tint(gold)
+                                    NavLink { MaatWorkspaceView(engine: engine) } label: {
+                                        Label("Open Ma'at", systemImage: "checkmark.seal")
+                                    }
+                                    .buttonStyle(.bordered)
+                                }
+                            }
                         }
                         .padding(12)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -2076,6 +2097,8 @@ struct SectionLabel: View {
 struct AuthBlockerCard: View {
     @ObservedObject var engine: SirsiEngine
     let health: RBAgentHealth
+    @State private var rechecking = false
+    @State private var recheckResult: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -2088,7 +2111,7 @@ struct AuthBlockerCard: View {
                 }
                 Spacer()
             }
-            Text("Sirsi never signs in for you. Open Terminal, run \(health.agentType), then /login.")
+            Text("Sirsi never signs in for you. Open Terminal, run \(health.agentType), then /login. Return here when you are done and Pantheon will recheck the live fabric.")
                 .sirsiFont(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
@@ -2102,6 +2125,31 @@ struct AuthBlockerCard: View {
                 } label: {
                     Label("Copy command", systemImage: "doc.on.doc").frame(maxWidth: .infinity)
                 }.buttonStyle(.bordered)
+            }
+            Button {
+                rechecking = true
+                recheckResult = nil
+                Task {
+                    await engine.loadRouterBoard()
+                    let stillBlocked = engine.routerAuthBlockers.contains { $0.id == health.id }
+                    recheckResult = stillBlocked
+                        ? "Still waiting for \(health.agentType) to finish signing in. You can return to Terminal and try /login again."
+                        : "Rechecked the live fabric — this sign-in blocker is cleared."
+                    rechecking = false
+                }
+            } label: {
+                Label(rechecking ? "Checking fabric…" : "I've signed in — recheck", systemImage: "arrow.clockwise")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(gold)
+            .disabled(rechecking)
+            if let recheckResult {
+                Label(recheckResult, systemImage: recheckResult.hasPrefix("Rechecked") ? "checkmark.circle.fill" : "arrow.triangle.2.circlepath")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(recheckResult.hasPrefix("Rechecked") ? .green : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(12)
