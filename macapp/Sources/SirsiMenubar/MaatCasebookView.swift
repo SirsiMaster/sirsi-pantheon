@@ -159,6 +159,7 @@ private struct MaatSystemOneView: View {
             MaybeScroll {
                 VStack(alignment: .leading, spacing: 16) {
                     summary(screens: screens, calibrations: calibrations)
+                    resolutionLane(screens)
                     screenImportControl
                     if screens.isEmpty {
                         emptyState
@@ -193,16 +194,42 @@ private struct MaatSystemOneView: View {
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 8) {
-                systemMetric("Screens", screens.count, .secondary)
-                systemMetric("Changes", screens.filter { $0.systemOne?.gate == "changes" }.count, .orange)
-                systemMetric("Blocked", screens.filter { $0.systemOne?.gate == "block" }.count, .red)
-                systemMetric("Escalated", screens.filter { $0.systemOne?.gate == "escalate" }.count, gold)
-                systemMetric("Calibrated", calibrations.count, .green)
-            }
+            systemMetrics(screens: screens, calibrations: calibrations)
         }
         .padding(14)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+    }
+
+    @ViewBuilder private func systemMetrics(screens: [MaatCase], calibrations: [MaatCase]) -> some View {
+        let screensMetric = systemMetric("Screens", screens.count, .secondary)
+        let changesMetric = systemMetric("Changes", screens.filter { $0.systemOne?.gate == "changes" }.count, .orange)
+        let blockedMetric = systemMetric("Blocked", screens.filter { $0.systemOne?.gate == "block" }.count, .red)
+        let escalatedMetric = systemMetric("Escalated", screens.filter { $0.systemOne?.gate == "escalate" }.count, gold)
+        let calibratedMetric = systemMetric("Calibrated", calibrations.count, .green)
+
+        // A single metric row becomes unreadable at accessibility text sizes.
+        // Keep the same facts, but let SwiftUI select a two-line layout when
+        // the operator's window or text size needs it.
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                screensMetric
+                changesMetric
+                blockedMetric
+                escalatedMetric
+                calibratedMetric
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    screensMetric
+                    changesMetric
+                    blockedMetric
+                }
+                HStack(spacing: 8) {
+                    escalatedMetric
+                    calibratedMetric
+                }
+            }
+        }
     }
 
     private func systemMetric(_ title: String, _ value: Int, _ tint: Color) -> some View {
@@ -212,6 +239,87 @@ private struct MaatSystemOneView: View {
             .padding(.vertical, 5)
             .background(Capsule().fill(tint.opacity(0.12)))
             .foregroundStyle(tint)
+    }
+
+    // System One must lead people to the next accountable step, rather than
+    // presenting an undifferentiated archive of red and amber rows. This is a
+    // navigation aid only: the detail view preserves the exact evidence and
+    // owns any confirmation-gated owner review or acceptance.
+    @ViewBuilder private func resolutionLane(_ screens: [MaatCase]) -> some View {
+        let unresolved = screens.filter {
+            $0.status != "resolved" && ["changes", "block", "escalate"].contains($0.systemOne?.gate ?? "")
+        }.sorted { lhs, rhs in
+            let left = gateRank(lhs.systemOne?.gate ?? "")
+            let right = gateRank(rhs.systemOne?.gate ?? "")
+            if left != right { return left < right }
+            return lhs.priority.rank > rhs.priority.rank
+        }
+
+        if let next = unresolved.first, let verdict = next.systemOne {
+            VStack(alignment: .leading, spacing: 8) {
+                Label(resolutionTitle(for: verdict.gate), systemImage: resolutionSymbol(for: verdict.gate))
+                    .sirsiFont(.headline)
+                    .foregroundStyle(gateTint(verdict.gate))
+                Text(resolutionDetail(for: next, gate: verdict.gate))
+                    .sirsiFont(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                NavLink { MaatCaseDetailView(engine: engine, entry: next) } label: {
+                    Label("Open next resolution", systemImage: "arrow.right.circle.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(gold)
+                .accessibilityHint("Shows the retained evidence and the exact confirmation-gated resolution path.")
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 10).fill(gateTint(verdict.gate).opacity(0.10)))
+        } else if !screens.isEmpty {
+            Label("No unresolved System One action is waiting", systemImage: "checkmark.seal.fill")
+                .sirsiFont(.subheadline, weight: .semibold)
+                .foregroundStyle(.green)
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.green.opacity(0.08)))
+        }
+    }
+
+    private func gateRank(_ gate: String) -> Int {
+        switch gate {
+        case "escalate": return 0
+        case "block": return 1
+        case "changes": return 2
+        default: return 3
+        }
+    }
+
+    private func resolutionTitle(for gate: String) -> String {
+        switch gate {
+        case "escalate": return "Independent review is required"
+        case "block": return "A blocking decision needs resolution"
+        default: return "Changes need an accountable decision"
+        }
+    }
+
+    private func resolutionSymbol(for gate: String) -> String {
+        switch gate {
+        case "escalate": return "arrow.triangle.branch"
+        case "block": return "hand.raised.fill"
+        default: return "checkmark.circle.badge.questionmark"
+        }
+    }
+
+    private func resolutionDetail(for entry: MaatCase, gate: String) -> String {
+        let subject = entry.assessed.isEmpty ? entry.resource : entry.assessed
+        switch gate {
+        case "escalate":
+            return "\(subject) is held at the independent-review boundary. Open the retained evidence to record the required review; this screen does not grant execution authority."
+        case "block":
+            return "\(subject) is blocked. Open the retained evidence to follow the prescribed remedy or record an accountable owner decision."
+        default:
+            return "\(subject) needs changes. Open the retained evidence to review the exact findings and record the next accountable step."
+        }
     }
 
     private var emptyState: some View {
