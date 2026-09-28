@@ -5,13 +5,19 @@ package updater
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
 )
+
+// ErrNoCompleteCommercialRelease means GitHub returned release records but none
+// carries the exact unified Pantheon DMG and PKG pair. Callers can keep the
+// installed product active and offer a recheck instead of treating a bare tag
+// as an update or a fatal product failure.
+var ErrNoCompleteCommercialRelease = errors.New("no complete commercial release available")
 
 const (
 	// GitHubReleasesAPI is the endpoint for listing all releases.
@@ -108,8 +114,11 @@ func (c *Client) Check(currentVersion string) *UpdateResult {
 		result.UpdateAvailable = true
 	}
 
-	// Find platform-specific download
-	result.DownloadURL = findPlatformAsset(release.Assets)
+	// A commercial Pantheon update is one unified macOS payload. The release
+	// selector below admits only an exact DMG+PKG pair, never a tag alone.
+	if dmg := CommercialDMGAsset(release); dmg != nil {
+		result.DownloadURL = dmg.BrowserDownloadURL
+	}
 
 	// Check advisories
 	advisories, _ := c.fetchAdvisories(currentVersion)
@@ -118,9 +127,11 @@ func (c *Client) Check(currentVersion string) *UpdateResult {
 	return result
 }
 
-// fetchNewestRelease fetches all releases and returns the one with the highest
-// semver version. This correctly handles pre-releases (which GitHub's /latest
-// endpoint skips), preventing false "downgrade" notifications.
+// fetchNewestRelease fetches all releases and returns the highest-version
+// complete commercial payload. GitHub tags and manually created release records
+// are not installable proof: each selected release must expose exactly one
+// tag-bound arm64 DMG and PKG with nonempty download URLs and positive sizes.
+// This keeps an assetless or partial record from becoming a user-visible update.
 func (c *Client) fetchNewestRelease() (*Release, error) {
 	resp, err := c.HTTPClient.Get(c.ReleasesURL)
 	if err != nil {
@@ -141,15 +152,24 @@ func (c *Client) fetchNewestRelease() (*Release, error) {
 		return nil, fmt.Errorf("no releases found")
 	}
 
-	// Find the release with the highest version.
-	best := &releases[0]
-	for i := 1; i < len(releases); i++ {
+	var best *Release
+	for i := range releases {
 		r := &releases[i]
+		if !IsCompleteCommercialRelease(r) {
+			continue
+		}
+		if best == nil {
+			best = r
+			continue
+		}
 		rVer := strings.TrimPrefix(r.TagName, "v")
 		bVer := strings.TrimPrefix(best.TagName, "v")
 		if compareVersions(rVer, bVer) > 0 {
 			best = r
 		}
+	}
+	if best == nil {
+		return nil, fmt.Errorf("%w: a release requires the exact tag-bound Pantheon DMG and PKG pair", ErrNoCompleteCommercialRelease)
 	}
 
 	return best, nil
@@ -188,22 +208,6 @@ func (c *Client) fetchAdvisories(currentVersion string) ([]Advisory, error) {
 	}
 
 	return relevant, nil
-}
-
-// findPlatformAsset returns the download URL for the current OS/arch.
-func findPlatformAsset(assets []Asset) string {
-	os := runtime.GOOS
-	arch := runtime.GOARCH
-
-	// Match pattern: sirsi-pantheon_*_darwin_arm64.tar.gz
-	target := fmt.Sprintf("%s_%s", os, arch)
-
-	for _, a := range assets {
-		if strings.Contains(a.Name, target) && strings.HasSuffix(a.Name, ".tar.gz") {
-			return a.BrowserDownloadURL
-		}
-	}
-	return ""
 }
 
 // FormatUpdateNotice returns a styled string for CLI display.

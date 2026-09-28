@@ -27,14 +27,11 @@ func TestAppDMGAsset(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("DMG asset is darwin-only")
 	}
-	rel := &Release{Assets: []Asset{
-		{Name: "sirsi-pantheon_0.23.2_darwin_" + runtime.GOARCH + ".tar.gz"},
-		{Name: "SirsiPantheon-0.23.2-windows-setup.zip"},
-		{Name: "SirsiPantheon-0.23.2-" + runtime.GOARCH + ".dmg", BrowserDownloadURL: "https://x/dmg"},
-	}}
+	release := commercialRelease("v0.23.2")
+	rel := &release
 	got := AppDMGAsset(rel)
-	if got == nil || got.BrowserDownloadURL != "https://x/dmg" {
-		t.Fatalf("AppDMGAsset = %v, want the %s dmg", got, runtime.GOARCH)
+	if got == nil || got.BrowserDownloadURL != "https://dl/0.23.2.dmg" {
+		t.Fatalf("AppDMGAsset = %v, want the commercial %s dmg", got, runtime.GOARCH)
 	}
 }
 

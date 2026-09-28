@@ -2,10 +2,10 @@ package updater
 
 // install.go extends the version checker with the ability to actually fetch
 // and stage a release artifact. Rule A11 still holds: we only read public
-// GitHub release assets — no telemetry. The CLI binary is staged here; the
-// caller performs the AMFI-safe in-place replace. The macOS .app is delivered
-// as the notarized DMG so its Developer-ID signature (and therefore the user's
-// Full Disk Access grant) survives the update — ad-hoc local rebuilds cannot.
+// GitHub release assets — no telemetry. The commercial updater hands off the
+// notarized macOS .app DMG, whose Developer-ID signature (and therefore the
+// user's Full Disk Access grant) survives the update — ad-hoc local rebuilds
+// and standalone-binary replacement cannot provide that payload guarantee.
 
 import (
 	"archive/tar"
@@ -39,10 +39,54 @@ var maxDownloadSize int64 = 1 << 30 // 1 GB
 // var (not const) so tests can shrink it without a multi-hundred-MB fixture.
 var maxCLIBinarySize int64 = 512 << 20 // 512 MB
 
-// NewestRelease exposes the newest release (highest semver, pre-releases
-// included) for callers that need its assets, not just the version compare.
+// NewestRelease exposes the newest complete commercial release for callers that
+// need the same unified DMG and PKG payload as the version check.
 func (c *Client) NewestRelease() (*Release, error) {
 	return c.fetchNewestRelease()
+}
+
+// CommercialDMGAsset returns the one exact tag-bound arm64 Pantheon DMG. It
+// rejects a duplicate, zero-byte, or URL-less record rather than guessing which
+// asset a user should install.
+func CommercialDMGAsset(rel *Release) *Asset {
+	return commercialPayloadAsset(rel, ".dmg")
+}
+
+// CommercialPKGAsset returns the one exact tag-bound arm64 Pantheon PKG. It is
+// part of release eligibility even though the updater hands users the DMG: both
+// install routes must describe the same published product increment.
+func CommercialPKGAsset(rel *Release) *Asset {
+	return commercialPayloadAsset(rel, ".pkg")
+}
+
+// IsCompleteCommercialRelease is the common eligibility rule for checks and
+// install commands. A tag alone, or a DMG alone, never represents a usable
+// Pantheon release.
+func IsCompleteCommercialRelease(rel *Release) bool {
+	return CommercialDMGAsset(rel) != nil && CommercialPKGAsset(rel) != nil
+}
+
+func commercialPayloadAsset(rel *Release, extension string) *Asset {
+	if rel == nil {
+		return nil
+	}
+	version := strings.TrimPrefix(strings.TrimSpace(rel.TagName), "v")
+	if version == "" {
+		return nil
+	}
+	want := "SirsiPantheon-" + version + "-arm64" + extension
+	var match *Asset
+	for i := range rel.Assets {
+		asset := &rel.Assets[i]
+		if asset.Name != want {
+			continue
+		}
+		if match != nil || asset.Size <= 0 || strings.TrimSpace(asset.BrowserDownloadURL) == "" {
+			return nil
+		}
+		match = asset
+	}
+	return match
 }
 
 // CLITarballAsset returns the darwin/arch sirsi CLI tarball for this release.
@@ -62,17 +106,10 @@ func CLITarballAsset(rel *Release) *Asset {
 // DMG carries the notarized Developer-ID signature, so installing from it keeps
 // the app's identity (and TCC/Full-Disk-Access grant) stable across updates.
 func AppDMGAsset(rel *Release) *Asset {
-	if runtime.GOOS != "darwin" {
+	if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
 		return nil
 	}
-	suffix := "-" + runtime.GOARCH + ".dmg" // -arm64.dmg
-	for i := range rel.Assets {
-		a := &rel.Assets[i]
-		if strings.HasPrefix(a.Name, "SirsiPantheon-") && strings.HasSuffix(a.Name, suffix) {
-			return a
-		}
-	}
-	return nil
+	return CommercialDMGAsset(rel)
 }
 
 // Download streams url to destPath (created/truncated), returning the bytes
