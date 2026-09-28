@@ -36,10 +36,15 @@ func TestPackageBuildersUseOneCanonicalInventory(t *testing.T) {
 	for _, required := range []string{
 		"cp -R \"${PROJECT_ROOT}/contracts/stacklab\"",
 		"${BUILD_DIR}/sirsi\" package-inventory",
+		"macapp/Package.swift",
+		"swift build -c release",
 	} {
 		if !strings.Contains(string(dmg), required) {
 			t.Fatalf("DMG builder does not retain the canonical payload route through %q", required)
 		}
+	}
+	if strings.Contains(string(dmg), "go build -ldflags=\"${GO_LDFLAGS}\" -o \"${BUILD_DIR}/sirsi-menubar\"") {
+		t.Fatal("DMG builder retains a Go menubar fallback instead of failing closed on the canonical Swift payload")
 	}
 
 	pkg, err := os.ReadFile(filepath.Join(root, "scripts", "build-pkg.sh"))

@@ -97,7 +97,11 @@ fi
     "commercial-sign-notary-publication-route",
     "release-artifact-class-contract",
     "release-native-payload-composition"
-  ]
+  ] and
+  ([.components[] | select(.id == "release-native-payload-composition")][0] |
+    (.inputs | index("macapp/Package.swift and native Swift menubar source")) != null and
+    (.outputs | index("one Pantheon.app payload containing CLI, the canonical Swift menubar, LaunchAgent resource, and Stack Lab contracts")) != null and
+    (.upgrade_recipe | index("require macapp/Package.swift and fail packaging instead of substituting the retired Go menubar")) != null)
 ' "$recipe" >/dev/null || { echo "Stack Lab release-artifact recipe is incomplete" >&2; exit 1; }
 
 # The cask is rendered and verified by one typed source route after the signed

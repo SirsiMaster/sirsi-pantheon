@@ -28,10 +28,10 @@
       "id": "release-native-payload-composition",
       "source": ["scripts/build-dmg.sh", "Makefile", "macapp/Package.swift", "cmd/sirsi/"],
       "tests": ["internal/packageinventory/inventory_test.go", "internal/packageinventorycmd/verify_test.go", "internal/stacklab/package_contract_test.go", "scripts/verify-commercial-release-contract.sh"],
-      "inputs": ["canonical sirsi CLI source", "native Swift menubar source", "LaunchAgent plist", "Stack Lab contracts"],
-      "outputs": ["one Pantheon.app payload containing CLI, native menubar, LaunchAgent resource, and Stack Lab contracts"],
+      "inputs": ["canonical sirsi CLI source", "macapp/Package.swift and native Swift menubar source", "LaunchAgent plist", "Stack Lab contracts"],
+      "outputs": ["one Pantheon.app payload containing CLI, the canonical Swift menubar, LaunchAgent resource, and Stack Lab contracts"],
       "writes": ["build-root Pantheon.app and package staging only"],
-      "upgrade_recipe": ["bind every product surface to the same canonical engine", "keep Stack Lab resources in the app payload", "verify package identity before broad distribution work", "do not execute a candidate payload merely to inventory it"]
+      "upgrade_recipe": ["bind every product surface to the same canonical engine", "require macapp/Package.swift and fail packaging instead of substituting the retired Go menubar", "keep Stack Lab resources in the app payload", "verify package identity before broad distribution work", "do not execute a candidate payload merely to inventory it"]
     },
     {
       "id": "commercial-sign-notary-publication-route",
