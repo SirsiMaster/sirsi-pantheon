@@ -648,13 +648,23 @@ struct ApolloTelemetryView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Live estate telemetry", systemImage: "waveform.path.ecg")
                 .sirsiFont(.headline)
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                telemetry("Tokens / second", tokensTelemetry)
-                telemetry("Bandwidth", bandwidthTelemetry)
-                telemetry("Memory", memoryTelemetry)
-                telemetry("Network saturation", networkTelemetry)
-                telemetry("GPU residency", gpuTelemetry)
-                telemetry("CPU residency", cpuTelemetry)
+            ViewThatFits(in: .horizontal) {
+                LazyVGrid(columns: [GridItem(.flexible(minimum: 156)), GridItem(.flexible(minimum: 156))], spacing: 8) {
+                    telemetry("Tokens / second", tokensTelemetry)
+                    telemetry("Bandwidth", bandwidthTelemetry)
+                    telemetry("Memory", memoryTelemetry)
+                    telemetry("Network saturation", networkTelemetry)
+                    telemetry("GPU residency", gpuTelemetry)
+                    telemetry("CPU residency", cpuTelemetry)
+                }
+                VStack(spacing: 8) {
+                    telemetry("Tokens / second", tokensTelemetry)
+                    telemetry("Bandwidth", bandwidthTelemetry)
+                    telemetry("Memory", memoryTelemetry)
+                    telemetry("Network saturation", networkTelemetry)
+                    telemetry("GPU residency", gpuTelemetry)
+                    telemetry("CPU residency", cpuTelemetry)
+                }
             }
         }
     }
