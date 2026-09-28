@@ -69,6 +69,12 @@ assessed facts, determination, explanation, and optional affected/resource/
 evidence links. The evidence reference is preserved verbatim; Casebook does not
 claim a local record is a remote attestation.
 
+System One normalizes deterministic floor checks by name and findings by their
+unique identity before it applies policy or computes the verdict receipt. An
+equivalent observation therefore yields one stable evidence hash; duplicate
+finding identities and noncanonical verdict replay reject rather than creating
+ambiguous case history.
+
 ## Product contract
 
 - **Free and local:** no external JEV service, telemetry, model endpoint, or

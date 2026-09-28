@@ -115,6 +115,54 @@ func TestSystemOneRejectsMalformedInputAndForgedEscalation(t *testing.T) {
 	}
 }
 
+func TestSystemOneCanonicalizesInputOrderAndRejectsDuplicateFindingIDs(t *testing.T) {
+	input := validSystemOneInput()
+	input.Floor.Checks = []FloorCheck{{Name: "go vet", Passed: true}, {Name: "gofmt", Passed: true}}
+	input.Findings = []ScreenFinding{
+		{ID: "zeta", Severity: "minor", Category: "quality", Claim: "zeta", Evidence: "evidence:zeta", Confidence: 0.92},
+		{ID: "alpha", Severity: "minor", Category: "quality", Claim: "alpha", Evidence: "evidence:alpha", Confidence: 0.92},
+	}
+	verdict, err := Screen(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verdict.Floor.Checks[0].Name != "go vet" || verdict.Floor.Checks[1].Name != "gofmt" || verdict.Findings[0].ID != "alpha" || verdict.Findings[1].ID != "zeta" {
+		t.Fatalf("canonical verdict = %+v", verdict)
+	}
+	journal := &systemOneJournal{}
+	first, err := RecordSystemOne(journal, "sirsi maat screen", verdict)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reversed := validSystemOneInput()
+	reversed.Floor.Checks = []FloorCheck{{Name: "gofmt", Passed: true}, {Name: "go vet", Passed: true}}
+	reversed.Findings = []ScreenFinding{input.Findings[1], input.Findings[0]}
+	canonical, err := Screen(reversed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := RecordSystemOne(&systemOneJournal{}, "sirsi maat screen", canonical)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Evidence != second.Evidence {
+		t.Fatalf("equivalent input evidence differs: %q != %q", first.Evidence, second.Evidence)
+	}
+
+	duplicate := validSystemOneInput()
+	duplicate.Findings = []ScreenFinding{
+		{ID: "same", Severity: "minor", Category: "quality", Claim: "first", Evidence: "evidence:first", Confidence: 0.92},
+		{ID: "same", Severity: "minor", Category: "quality", Claim: "second", Evidence: "evidence:second", Confidence: 0.92},
+	}
+	if _, err := Screen(duplicate); err == nil {
+		t.Fatal("accepted duplicate finding identity")
+	}
+	verdict.Floor.Checks[0], verdict.Floor.Checks[1] = verdict.Floor.Checks[1], verdict.Floor.Checks[0]
+	if err := ValidateMaatVerdict(verdict); err == nil {
+		t.Fatal("accepted a noncanonical verdict ordering")
+	}
+}
+
 func TestRecordSystemOneProjectsAnEvidenceBoundDecision(t *testing.T) {
 	verdict, err := Screen(validSystemOneInput())
 	if err != nil {

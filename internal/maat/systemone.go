@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 )
 
@@ -116,6 +117,7 @@ type SystemOneScreen struct {
 // Screen applies the closed local policy to a type-safe screen input. It runs
 // no subprocess, invokes no model, and performs no mutation.
 func Screen(input SystemOneScreen) (MaatVerdict, error) {
+	input = canonicalSystemOneInput(input)
 	if err := validateScreenInput(input); err != nil {
 		return MaatVerdict{}, err
 	}
@@ -342,12 +344,16 @@ func ValidateMaatVerdict(verdict MaatVerdict) error {
 	if verdict.SchemaVersion != SystemOneSchemaVersion {
 		return fmt.Errorf("maat system one: unsupported schema version %d", verdict.SchemaVersion)
 	}
-	if err := validateScreenInput(SystemOneScreen{
+	input := SystemOneScreen{
 		Subject: verdict.Subject, FeatherWeight: verdict.FeatherWeight,
 		Confidence: verdict.Confidence, Findings: verdict.Findings,
 		Floor: verdict.Floor, Model: verdict.Model,
-	}); err != nil {
+	}
+	if err := validateScreenInput(input); err != nil {
 		return err
+	}
+	if !sameCanonicalSystemOneInput(input, canonicalSystemOneInput(input)) {
+		return fmt.Errorf("maat system one: verdict findings and deterministic floor checks must use canonical order")
 	}
 	expected := verdict
 	applyScreenPolicy(&expected)
@@ -416,12 +422,50 @@ func validateScreenInput(input SystemOneScreen) error {
 	if err := validateModel(input.Model); err != nil {
 		return err
 	}
+	seenFindings := map[string]bool{}
 	for _, finding := range input.Findings {
 		if err := validateFinding(finding); err != nil {
 			return err
 		}
+		if seenFindings[finding.ID] {
+			return fmt.Errorf("maat system one: duplicate finding id %q", finding.ID)
+		}
+		seenFindings[finding.ID] = true
 	}
 	return nil
+}
+
+// canonicalSystemOneInput makes equivalent local observations yield the same
+// ordered verdict and therefore the same recorded evidence hash. It does not
+// infer, rewrite, or execute any observation; it only normalizes independent
+// finding and deterministic-floor collection order.
+func canonicalSystemOneInput(input SystemOneScreen) SystemOneScreen {
+	input.Floor.Checks = append([]FloorCheck(nil), input.Floor.Checks...)
+	sort.Slice(input.Floor.Checks, func(i, j int) bool {
+		return input.Floor.Checks[i].Name < input.Floor.Checks[j].Name
+	})
+	input.Findings = append([]ScreenFinding(nil), input.Findings...)
+	sort.Slice(input.Findings, func(i, j int) bool {
+		return input.Findings[i].ID < input.Findings[j].ID
+	})
+	return input
+}
+
+func sameCanonicalSystemOneInput(a, b SystemOneScreen) bool {
+	if len(a.Floor.Checks) != len(b.Floor.Checks) || len(a.Findings) != len(b.Findings) {
+		return false
+	}
+	for i := range a.Floor.Checks {
+		if a.Floor.Checks[i] != b.Floor.Checks[i] {
+			return false
+		}
+	}
+	for i := range a.Findings {
+		if a.Findings[i] != b.Findings[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func validateSubject(subject VerdictSubject) error {
