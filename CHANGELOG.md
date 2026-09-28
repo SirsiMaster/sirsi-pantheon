@@ -41,6 +41,14 @@ hardware repository, while preserving the stable `io-connect` wing id. The
 local router identity hook follows the same repository split.
 
 ## [Unreleased]
+
+## [0.24.16] — 2026-09-28 — Ma’at failure-memory contract
+**Commercial patch release.** Publishes the canonical Pantheon Ma’at
+failure-memory and operational-preflight contract, with the superseded draft
+retained as an explicit pointer. This release changes documentation and
+contract authority only; executable enforcement and installed qualification
+remain separate follow-up work.
+
 - **fix(maat): refuse remote-scope conflict probes** (2026-09-28; PR #831). Ma'at now
   refuses to probe a requested machine unless it is the local host, preventing a
   local process scan from being mislabeled as remote evidence. Version assigned at
