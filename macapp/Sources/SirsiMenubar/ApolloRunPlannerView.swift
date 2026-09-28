@@ -356,9 +356,8 @@ struct ApolloRunPlannerView: View {
         loading = true; error = nil; plan = nil
         async let catalogData = SirsiEngine.runJSON(args: ["apollo", "catalog", "--json"])
         async let vitals: Void = engine.fetchVitals()
-        async let board: Void = engine.loadRouterBoard()
         let data = await catalogData
-        _ = await (vitals, board)
+        _ = await vitals
         guard let decoded = try? JSONDecoder().decode(ApolloCatalog.self, from: data) else {
             error = "Pantheon could not read a typed Apollo capacity catalog. No engine, machine, or resource limits were inferred. Retry the read or inspect Ma'at evidence."
             loading = false; return
