@@ -1,7 +1,7 @@
 {
   "schema": "sirsi.stacklab.recipe.v1",
   "id": "stacklab.recipe.pantheon-release-artifact",
-  "wing": "stacklab.wing.pantheon-pt",
+  "wing": "stacklab.wing.pantheon.pt-wing-001",
   "product": "sirsi-pantheon",
   "version": 1,
   "purpose": "Make Pantheon's commercial release boundary inspectable and replaceable: local development packages are explicitly named and non-distributable; only a Developer-ID signed, notarized, stapled, validated route may create the commercial DMG and PKG names.",

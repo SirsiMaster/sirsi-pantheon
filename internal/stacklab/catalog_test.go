@@ -47,3 +47,23 @@ func TestLoadLocalCatalogDoesNotSilentlyOmitMalformedContract(t *testing.T) {
 		t.Fatalf("catalog = %+v", catalog)
 	}
 }
+
+func TestLoadLocalCatalogRejectsRecipeWithMissingLocalWing(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "contracts", "stacklab")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	recipe := `{"schema":"sirsi.stacklab.recipe.v1","id":"stacklab.recipe.orphan","wing":"stacklab.wing.retired","product":"pantheon","version":1,"purpose":"example","authority":{},"components":[{"id":"component","source":["a"],"tests":["b"],"inputs":["c"],"outputs":["d"],"upgrade_recipe":["e"]}]}`
+	if err := os.WriteFile(filepath.Join(dir, "orphan-recipe-v1.json"), []byte(recipe), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	catalog, err := LoadLocalCatalog(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if catalog.Complete() || len(catalog.Entries) != 0 || len(catalog.Unknown) != 1 {
+		t.Fatalf("catalog = %+v", catalog)
+	}
+}

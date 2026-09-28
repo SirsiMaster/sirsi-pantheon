@@ -121,6 +121,31 @@ func LoadLocalCatalog(repoRoot string) (Catalog, error) {
 		catalog.Entries = append(catalog.Entries, projected)
 	}
 
+	// A recipe is only independently upgradeable when its declared owning wing
+	// is present in the same source catalog. Without this join, a stale recipe
+	// can remain structurally well-formed while pointing at a retired or
+	// misspelled wing — exactly the Pantheon release-recipe drift Stack Lab is
+	// meant to make impossible to miss. Keep the malformed reference out of
+	// Entries and render it as Unknown rather than projecting a false-complete
+	// catalog.
+	wings := make(map[string]struct{})
+	for _, entry := range catalog.Entries {
+		if entry.Kind == "wing" {
+			wings[entry.ID] = struct{}{}
+		}
+	}
+	resolvedEntries := catalog.Entries[:0]
+	for _, entry := range catalog.Entries {
+		if entry.Kind == "recipe" {
+			if _, ok := wings[entry.Wing]; !ok {
+				catalog.Unknown = append(catalog.Unknown, fmt.Sprintf("%s: recipe references missing local wing %q", entry.SourcePath, entry.Wing))
+				continue
+			}
+		}
+		resolvedEntries = append(resolvedEntries, entry)
+	}
+	catalog.Entries = resolvedEntries
+
 	sort.Slice(catalog.Entries, func(i, j int) bool {
 		if catalog.Entries[i].Kind != catalog.Entries[j].Kind {
 			return catalog.Entries[i].Kind < catalog.Entries[j].Kind

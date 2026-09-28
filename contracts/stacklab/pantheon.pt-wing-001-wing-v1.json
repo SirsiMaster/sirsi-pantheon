@@ -1,0 +1,52 @@
+{
+  "schema": "sirsi.stacklab.wing.v1",
+  "id": "stacklab.wing.pantheon.pt-wing-001",
+  "owner": "Pantheon release engineering",
+  "project_id": "sirsi-pantheon",
+  "router_namespace": "pantheon",
+  "class": "application",
+  "scope": "Pantheon's canonical macOS product: the Go engine and CLI, native Swift menubar and desktop surfaces, Stack Lab and Ma'at projections, release packaging, cask lifecycle evidence, and the commercial release boundary. This wing consumes qualified Apollo/SNE telemetry and fabric receipts but does not own inference engines, transport, hardware, signing credentials, or remote release authority.",
+  "status": "active",
+  "first_gate": "PANTHEON-PT-WING-001.G1: exact source, package, and release-boundary evidence",
+  "workspace": {
+    "repository_root": "/Users/thekryptodragon/Development/sirsi-pantheon",
+    "writable_roots": [
+      "/Users/thekryptodragon/Development/sirsi-pantheon/cmd/sirsi",
+      "/Users/thekryptodragon/Development/sirsi-pantheon/internal",
+      "/Users/thekryptodragon/Development/sirsi-pantheon/macapp",
+      "/Users/thekryptodragon/Development/sirsi-pantheon/contracts/stacklab",
+      "/Users/thekryptodragon/Development/sirsi-pantheon/docs"
+    ],
+    "evidence_root": "/Users/thekryptodragon/Development/sirsi-pantheon/docs/evidence",
+    "shared_payload_access": "read-only-by-identity",
+    "boundary_policy": "default-deny"
+  },
+  "handoffs": {
+    "inbound": "router-receipt-only",
+    "outbound": "router-receipt-only",
+    "allowed_peer_wings": [
+      "stacklab.wing.ra-horus-fabric",
+      "stacklab.wing.maat",
+      "stacklab.wing.hermes",
+      "stacklab.wing.photon",
+      "stacklab.wing.sne-engine",
+      "stacklab.wing.hardware-estate"
+    ]
+  },
+  "provenance": {
+    "lifecycle_task_id": "pantheon-pt-wing-001",
+    "component_catalog": "docs/stacklab/pantheon-pt/canon/COMPONENT_CATALOG.md",
+    "receipt_links": [
+      "contracts/stacklab/pantheon-release-artifact-recipe-v1.json",
+      "docs/stacklab/pantheon-pt/canon/TRACEABILITY_MATRIX.md",
+      "docs/RELEASE_SIGNING.md",
+      "scripts/verify-commercial-release-contract.sh"
+    ]
+  },
+  "mirrors": {
+    "repository": "current",
+    "desktop": "current",
+    "workspace": "current"
+  },
+  "next_action": "Publish this exact origin/main record to the SirsiMaster/sirsi-stacklab registry as a byte-identical pin, then use Ma'at and the release recipe to distinguish source qualification from the separately owner-provisioned Developer ID Installer and notarization route."
+}
