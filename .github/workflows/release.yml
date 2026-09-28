@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   release:
-    name: Build & Release (CLI + Deities)
+    name: Verify Source for Native macOS Release
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -24,26 +24,15 @@ jobs:
         with:
           go-version: '1.25'
 
-      - name: Verify portable release binaries compile
-        # This Ubuntu job must validate exactly the two CGO-free targets that
-        # GoReleaser publishes. An all-package build also selects the macOS-only
-        # webview and systray surfaces, making a Linux release fail before the
-        # actual release build begins. The native app is built and verified by
-        # the separate macOS menubar job below.
+      - name: Verify portable engine sources compile
+        # This is source verification only. The commercial product is assembled,
+        # signed, and published by the macOS job below as one Pantheon.app DMG
+        # and PKG payload. Do not create a partial CLI release from this runner.
         env:
           CGO_ENABLED: "0"
         run: |
           go build ./cmd/sirsi
           go build ./cmd/sirsi-agent
-
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          version: latest
-          args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
   menubar:
     name: Build Menu Bar (macOS DMG)
@@ -118,6 +107,28 @@ jobs:
           scripts/build-dmg.sh --release --version "$BUILD_VERSION" --arch arm64
           scripts/build-pkg.sh --release --version "$BUILD_VERSION" --arch arm64 --app Pantheon.app
 
+      - name: Create or verify the exact GitHub release record
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+          BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          set -euo pipefail
+          EXPECTED_COMMIT="$(git rev-parse "${GITHUB_SHA}^{commit}")"
+          if gh release view "$TAG_NAME" --repo SirsiMaster/sirsi-pantheon >/dev/null 2>&1; then
+            ACTUAL_COMMIT="$(gh release view "$TAG_NAME" --repo SirsiMaster/sirsi-pantheon --json targetCommitish --jq '.targetCommitish')"
+            [[ "$ACTUAL_COMMIT" == "$EXPECTED_COMMIT" ]] || {
+              echo "existing release $TAG_NAME targets $ACTUAL_COMMIT, expected $EXPECTED_COMMIT" >&2
+              exit 1
+            }
+          else
+            gh release create "$TAG_NAME" \
+              --repo SirsiMaster/sirsi-pantheon \
+              --target "$EXPECTED_COMMIT" \
+              --title "Sirsi Pantheon $BUILD_VERSION" \
+              --generate-notes
+          fi
+
       - name: Upload DMG and PKG to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -127,30 +138,6 @@ jobs:
           gh release upload "$TAG_NAME" \
             "bin/SirsiPantheon-${BUILD_VERSION}-arm64.dmg" \
             "bin/SirsiPantheon-${BUILD_VERSION}-arm64.pkg"
-
-      # The native SwiftUI menu bar app is part of Pantheon.app.  This archive
-      # serves terminal-first installs using the exact same native executable,
-      # rather than rebuilding the retired Go/systray surface.
-      - name: Build and upload standalone sirsi-menubar (arm64)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ github.ref_name }}
-          BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
-          DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
-        run: |
-          set -euo pipefail
-          mkdir -p dist/menubar
-          (cd macapp && swift build -c release)
-          cp macapp/.build/release/SirsiMenubar dist/menubar/sirsi-menubar
-          if [ -n "${DEVELOPER_ID_APPLICATION:-}" ]; then
-            codesign --force --options runtime \
-              --sign "$DEVELOPER_ID_APPLICATION" dist/menubar/sirsi-menubar
-          else
-            codesign --force --sign - dist/menubar/sirsi-menubar || true
-          fi
-          ARCHIVE="sirsi-menubar_${BUILD_VERSION}_darwin_arm64.tar.gz"
-          tar -czf "$ARCHIVE" -C dist/menubar sirsi-menubar
-          gh release upload "$TAG_NAME" "$ARCHIVE"
 
       - name: Restore login keychain as default (always)
         if: always()
@@ -169,64 +156,6 @@ jobs:
             security list-keychains -d user -s "$LOGIN" "/Library/Keychains/System.keychain" 2>/dev/null || true
           fi
           security delete-keychain build.keychain 2>/dev/null || true
-
-  windows-installer:
-    name: Build Windows Installer
-    # Mac-first platform roadmap (ADR-032): Windows is deferred 3–6mo, demand-gated.
-    # Gated OFF so a tag release never fails on Windows; set the repo variable
-    # ENABLE_WINDOWS_BUILD=true to re-enable when the platform phase arrives.
-    if: ${{ vars.ENABLE_WINDOWS_BUILD == 'true' }}
-    runs-on: windows-latest
-    needs: release
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
-
-      - name: Install NSIS
-        run: choco install nsis -y
-
-      - name: Extract version from tag
-        id: version
-        shell: bash
-        run: |
-          TAG_NAME="${GITHUB_REF_NAME}"
-          echo "VERSION=${TAG_NAME#v}" >> "$GITHUB_OUTPUT"
-
-      - name: Build Windows binaries
-        shell: bash
-        env:
-          BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
-        run: |
-          GO_LDFLAGS="-s -w -X github.com/SirsiMaster/sirsi-pantheon/internal/version.Version=v${BUILD_VERSION}"
-          mkdir -p bin/windows
-          # Standalone deity binaries removed 2026-06-06 — redundant with `sirsi`
-          # subcommands (see .goreleaser.yaml note). Ship sirsi + sirsi-agent only.
-          for cmd in sirsi sirsi-agent; do
-            CGO_ENABLED=0 go build -ldflags="$GO_LDFLAGS" -o "bin/windows/${cmd}.exe" "./cmd/${cmd}/"
-          done
-
-      - name: Build NSIS installer
-        shell: cmd
-        env:
-          BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
-        run: |
-          set "PATH=%PATH%;C:\Program Files (x86)\NSIS;C:\Program Files\NSIS"
-          makensis /DVERSION=%BUILD_VERSION% scripts\windows-installer.nsi
-
-      - name: Upload installer to release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ github.ref_name }}
-          BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
-        run: |
-          gh release upload "$TAG_NAME" \
-            "bin/SirsiPantheon-${BUILD_VERSION}-windows-setup.exe"
 
   bump-cask:
     name: Publish canonical Homebrew Cask (DMG SHA256)

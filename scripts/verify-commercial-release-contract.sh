@@ -104,6 +104,16 @@ fi
     (.upgrade_recipe | index("require macapp/Package.swift and fail packaging instead of substituting the retired Go menubar")) != null)
 ' "$recipe" >/dev/null || { echo "Stack Lab release-artifact recipe is incomplete" >&2; exit 1; }
 
+/usr/bin/jq -e '
+  [.components[] | select(.id == "commercial-sign-notary-publication-route")][0] |
+  (.upgrade_recipe | index("ship the tagged commercial route as one macOS payload contract; reject variable-gated Windows installer jobs until a separate platform release contract exists")) != null and
+  (.upgrade_recipe | index("create or revalidate the exact GitHub release record only after successful commercial DMG and PKG construction")) != null and
+  (.outputs | index("one exact GitHub release record and the same-payload assets suitable for cask binding")) != null
+' "$recipe" >/dev/null || {
+    echo "Stack Lab release route must record the macOS-only tag-artifact boundary" >&2
+    exit 1
+}
+
 # The cask is rendered and verified by one typed source route after the signed
 # DMG has been uploaded. Two independent workflow mutations can race and leave
 # Homebrew with an unverified version/hash pair.
@@ -122,6 +132,35 @@ if /usr/bin/grep -Fq 'Bump Homebrew Cask in tap' "$workflow" || \
     echo "release workflow retains a duplicate or mutable cask update route" >&2
     exit 1
 fi
+
+# Pantheon ships one supported commercial macOS payload: the signed native
+# Pantheon.app in its DMG and PKG. A dormant Windows tag job silently widens a
+# release into a second, unaudited installer product. Platform expansion must
+# arrive as a separately designed and reviewed release contract, never via a
+# repository variable that changes a macOS tag at runtime.
+for forbidden in 'windows-installer:' 'windows-latest' 'ENABLE_WINDOWS_BUILD' 'makensis' 'windows-setup.exe'; do
+    if /usr/bin/grep -Fq -- "$forbidden" "$workflow"; then
+        echo "release workflow retains an unsupported Windows tag artifact: $forbidden" >&2
+        exit 1
+    fi
+done
+
+# The source runner can validate portable Go packages, but it must never mint a
+# partial release. The release record and every published product asset are
+# created only after the macOS job has successfully built the commercial DMG
+# and PKG from the same Pantheon.app bundle.
+/usr/bin/grep -Fq 'Create or verify the exact GitHub release record' "$workflow" || {
+    echo "release workflow does not create the release record after native packaging" >&2; exit 1;
+}
+/usr/bin/grep -Fq -- '--target "$EXPECTED_COMMIT"' "$workflow" || {
+    echo "release workflow does not bind the release record to the checked-out tag commit" >&2; exit 1;
+}
+for forbidden in 'goreleaser-action' 'Run GoReleaser' 'sirsi-menubar_${BUILD_VERSION}_darwin_arm64.tar.gz'; do
+    if /usr/bin/grep -Fq -- "$forbidden" "$workflow"; then
+        echo "release workflow retains a partial or duplicate release publisher: $forbidden" >&2
+        exit 1
+    fi
+done
 
 # README is emitted through an expanding heredoc. Command-substitution markup
 # in user-facing copy would execute during packaging and silently corrupt the
