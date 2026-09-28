@@ -95,6 +95,33 @@ func (s Schema) Allows(n Name) error {
 	return nil
 }
 
+// SchemaReader reads a file at a git ref from a repo. The router injects an
+// origin/main reader (e.g. a GitHub reader); a working-tree reader is NEVER used
+// to authorize an identity (ADR-072 C2). Signature mirrors the stacklab reader.
+type SchemaReader interface {
+	ReadFile(repo, path, ref string) (content []byte, exists bool, err error)
+}
+
+// SchemaPath is the canonical origin path of the C2 registry schema.
+const SchemaPath = "contracts/naming/registry-schema-v1.json"
+
+// LoadSchemaFromOrigin reads the registry schema from origin/main of repo via
+// reader and loads it (ADR-072 C2). The router authorizes a constructed name
+// against THIS schema — never a working-tree copy — so a stale/partial local
+// checkout can never skew or bypass the allowed sets. A missing file on origin
+// is an error (the roster/schema source must exist on origin, A37), never a
+// permissive empty default.
+func LoadSchemaFromOrigin(reader SchemaReader, repo string) (Schema, error) {
+	raw, exists, err := reader.ReadFile(repo, SchemaPath, "main")
+	if err != nil {
+		return Schema{}, fmt.Errorf("namespec: read registry schema from origin/main of %s: %w", repo, err)
+	}
+	if !exists {
+		return Schema{}, fmt.Errorf("namespec: registry schema %s is not on origin/main of %s (ADR-072 C2/A37)", SchemaPath, repo)
+	}
+	return LoadSchema(raw)
+}
+
 // AssignWith is the router's name-authority core (ADR-072 P2): given a lane's
 // COMPONENTS {agent, project, task} plus the machine the router gleaned, it
 // constructs the canonical name and validates it against the grammar AND the

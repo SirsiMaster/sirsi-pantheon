@@ -106,3 +106,37 @@ func TestAssignWith(t *testing.T) {
 		}
 	}
 }
+
+// fakeReader is a SchemaReader stub for the C2 origin-read.
+type fakeReader struct {
+	raw    []byte
+	exists bool
+	err    error
+}
+
+func (f fakeReader) ReadFile(repo, path, ref string) ([]byte, bool, error) {
+	return f.raw, f.exists, f.err
+}
+
+// TestLoadSchemaFromOrigin: the router loads the schema from origin (C2); a
+// missing-on-origin or read error is refused, never a permissive default (A35).
+func TestLoadSchemaFromOrigin(t *testing.T) {
+	real, _ := os.ReadFile(filepath.Join("..", "..", "contracts", "naming", "registry-schema-v1.json"))
+	if _, err := LoadSchemaFromOrigin(fakeReader{raw: real, exists: true}, "SirsiMaster/sirsi-pantheon"); err != nil {
+		t.Errorf("origin read of the real schema should load: %v", err)
+	}
+	if _, err := LoadSchemaFromOrigin(fakeReader{exists: false}, "r"); err == nil {
+		t.Errorf("missing-on-origin must error (C2/A37), got nil")
+	}
+	if _, err := LoadSchemaFromOrigin(fakeReader{err: errFake}, "r"); err == nil {
+		t.Errorf("read error must propagate, got nil")
+	}
+}
+
+var errFake = fmtErr("boom")
+
+func fmtErr(s string) error { return &simpleErr{s} }
+
+type simpleErr struct{ s string }
+
+func (e *simpleErr) Error() string { return e.s }
