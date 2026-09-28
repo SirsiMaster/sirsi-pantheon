@@ -17,7 +17,9 @@ import (
 //	relief   → the fix eases a live cause; a (7d) historical count won't drop
 //	           retroactively (label "Relieve", honest).
 //	guidance → the fix only acts if the condition is live; otherwise it prints
-//	           guidance and is a no-op — NOT offered as a one-key fix (ADR-033).
+//	           guidance and is a no-op — never offered as a one-key repair.
+//	           Instead, f enters Ma'at's confirmation-gated evidence and
+//	           owner-resolution route (ADR-033).
 //
 // `f` applies the selected finding's exact Fix command, or—when automatic
 // mutation is unsafe—opens a confirmation to retain the observation in Ma'at
@@ -304,7 +306,7 @@ func (s *healthScreen) fixHintForSelection() string {
 	case f.FixKind == "relief":
 		return "f relieves the live cause (history won't drop) · " + f.Fix
 	case f.FixKind == "guidance":
-		return "no one-key fix — f only acts if the condition is live now"
+		return "f records Ma'at review after confirmation · enter inspects evidence"
 	default:
 		return "f runs · " + f.Fix
 	}
@@ -354,14 +356,14 @@ func (s *healthScreen) detailLines(caps Capabilities) []string {
 	if f.Trend && f.ActiveDays > 0 {
 		out = append(out, "  "+Paint("trend:  ", TokDim, caps)+fmt.Sprintf("recurred on %d of the last 7 days", f.ActiveDays))
 	}
-	if f.Fix != "" {
-		out = append(out, "  "+Paint("fix:    ", TokDim, caps)+f.Fix+"  "+Paint("("+fixKindLabel(f.FixKind)+")", TokDim, caps))
-	} else if hasMaatReview(f) {
+	if hasMaatReview(f) {
 		out = append(out,
 			"  "+Paint("route:  ", TokDim, caps)+Paint("Ma'at evidence review", TokAccent, caps),
 			"  retain the exact observation, inspect it in Casebook, then accept a documented owner conclusion if appropriate.",
 			"  "+Paint("action: ", TokDim, caps)+Paint("press f, then enter to record the review", TokBrand, caps),
 		)
+	} else if f.Fix != "" {
+		out = append(out, "  "+Paint("fix:    ", TokDim, caps)+f.Fix+"  "+Paint("("+fixKindLabel(f.FixKind)+")", TokDim, caps))
 	} else {
 		out = append(out, "  "+Paint("fix:    ", TokDim, caps)+Paint("none needed — informational", TokDim, caps))
 	}
@@ -376,7 +378,13 @@ func hasOfferableFix(f diagFinding) bool {
 }
 
 func hasMaatReview(f diagFinding) bool {
-	return f.Resolution == "maat_review" || (f.Resolution == "" && f.Severity >= 2 && f.Fix == "")
+	// Guidance commands are intentionally never launched as a one-key repair:
+	// they may be a no-op after the live condition has passed. They still need a
+	// complete outcome path, so route them through Ma'at's retained-evidence and
+	// explicit owner-conclusion flow rather than leaving a terminal user with a
+	// warning that cannot be resolved. A producer's explicit maat_review route
+	// remains authoritative for all other severities and fix kinds.
+	return f.Resolution == "maat_review" || f.FixKind == "guidance" || (f.Resolution == "" && f.Severity >= 2 && f.Fix == "")
 }
 
 // fixKindLabel is the honest human label for a FixKind.

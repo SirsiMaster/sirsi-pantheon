@@ -473,8 +473,21 @@ func TestCleanRequiresSecondConfirmation(t *testing.T) {
 // --- fixKind honesty (ADR-033): a guidance fix is never offered as a one-key fix ---
 
 func TestGuidanceFixNotOffered(t *testing.T) {
-	if hasOfferableFix(diagFinding{Fix: "sirsi spotlight", FixKind: "guidance"}) {
+	guidance := diagFinding{Check: "Spotlight state", Severity: 1, Fix: "sirsi spotlight", FixKind: "guidance"}
+	if hasOfferableFix(guidance) {
 		t.Error("a guidance-kind fix must NOT be offerable as a one-key fix (ADR-033)")
+	}
+	if !hasMaatReview(guidance) {
+		t.Fatal("a guidance-only finding must enter Ma'at's evidence resolution route")
+	}
+	hs := newHealthScreen()
+	hs.state = stateReady
+	hs.report = diagReport{Findings: []diagFinding{guidance}}
+	if _, cmd := hs.handleCmd(Command{ID: CmdFix}); cmd != nil || !hs.confirmMaatReview {
+		t.Fatal("guidance finding did not arm Ma'at review instead of a no-op repair")
+	}
+	if hint := hs.fixHintForSelection(); !strings.Contains(hint, "Ma'at review") {
+		t.Fatalf("guidance hint = %q, want accountable Ma'at route", hint)
 	}
 	if !hasOfferableFix(diagFinding{Fix: "sirsi self-update", FixKind: "instant"}) {
 		t.Error("an instant fix must be offerable")
