@@ -250,6 +250,10 @@ func dirExists(p string) bool {
 
 func writeLivenessTestAgents(t *testing.T, root string) {
 	t.Helper()
+	// Liveness fixtures exercise their explicit StoreWake setting against an
+	// isolated router DB. Do not let a developer's live router-service URL
+	// silently force a different authority branch.
+	t.Setenv("SIRSI_ROUTER_URL", "")
 	registry := `{
 		"agents": {
 			"horus": {"id":"horus","type":"service","repo":"/tmp","workstream":"pantheon","wake":{"mechanism":"none"}},

@@ -35,11 +35,11 @@ func TestNativeStackLabSurfaceRecipeIsComplete(t *testing.T) {
 	if len(recipe.Components) != 2 || recipe.Components[0].ID != "stacklab-native-doctor" || recipe.Components[1].ID != "stacklab-native-catalog" {
 		t.Fatalf("recipe components = %+v", recipe.Components)
 	}
-	component := recipe.Components[0]
-	if len(component.Source) == 0 || len(component.Tests) == 0 || len(component.Inputs) == 0 || len(component.Outputs) == 0 || len(component.UpgradeRecipe) == 0 {
-		t.Fatalf("component is not independently upgradeable: %+v", component)
+	nativeDoctor := recipe.Components[0]
+	if len(nativeDoctor.Source) == 0 || len(nativeDoctor.Tests) == 0 || len(nativeDoctor.Inputs) == 0 || len(nativeDoctor.Outputs) == 0 || len(nativeDoctor.UpgradeRecipe) == 0 {
+		t.Fatalf("component is not independently upgradeable: %+v", nativeDoctor)
 	}
-	for _, listed := range append(append([]string{}, component.Source...), component.Tests...) {
+	for _, listed := range append(append([]string{}, nativeDoctor.Source...), nativeDoctor.Tests...) {
 		if _, statErr := os.Stat(filepath.Join("..", "..", listed)); statErr != nil {
 			t.Fatalf("recipe references missing path %q: %v", listed, statErr)
 		}

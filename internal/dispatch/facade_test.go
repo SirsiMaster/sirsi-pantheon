@@ -17,6 +17,11 @@ import (
 
 func testFacade(t *testing.T) *Facade {
 	t.Helper()
+	// Every facade fixture owns a local SQLite store and file root. An ambient
+	// router-service URL would intentionally force production into store-only
+	// cutover mode, but it would make this isolated pre-cutover fixture test the
+	// host configuration instead of the requested branch.
+	t.Setenv("SIRSI_ROUTER_URL", "")
 	store, err := routerstore.OpenPath(filepath.Join(t.TempDir(), "router.db"))
 	if err != nil {
 		t.Fatal(err)

@@ -316,8 +316,14 @@ func TestActivityMaatCasebookIsWiredAndGuidesResolution(t *testing.T) {
 			}
 		}
 
-		m, _ = app.handleKey("enter")
-		app = m.(*App)
+		// Drive the same resolved command that the Bubble Tea key path delivers.
+		// Calling the screen command directly keeps the assertion focused on the
+		// Ma'at detail transition rather than key-string normalization.
+		inspect, ok := app.reg.ResolveKey("enter")
+		if !ok {
+			t.Fatal("enter must resolve to inspect")
+		}
+		drive(app, keyMsg{cmd: inspect})
 		frame = strings.Join(app.render(), "\n")
 		for _, want := range []string{"next step", "Open an evidence-bound review", "screen model", "maat-local v1", "deterministic floor", "evidence schema", "independent review required", "prescribed next step", "Create and independently review the exact release receipt."} {
 			if !strings.Contains(frame, want) {

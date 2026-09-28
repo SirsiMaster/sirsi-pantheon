@@ -37,7 +37,10 @@ type activityScreen struct {
 
 func newActivityScreen() *activityScreen {
 	home, _ := os.UserHomeDir()
-	return &activityScreen{state: stateIdle, home: home, detail: -1}
+	// Both drill-downs begin closed. Leaving maatDetail at Go's zero value makes
+	// the first selected case look open, so Enter hides it instead of showing the
+	// case's prescribed resolution.
+	return &activityScreen{state: stateIdle, home: home, detail: -1, maatDetail: -1}
 }
 
 func (s *activityScreen) Name() string     { return "Activity" }

@@ -40,8 +40,8 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 	}
 	want := []string{
 		"maat-canon", "maat-casebook", "maat-cli", "maat-confirmed-diagnostic-repair", "maat-core", "maat-coverage",
-		"maat-decision-journal", "maat-horus-surface", "maat-mcp-surface", "maat-pipeline", "maat-pulse-proof-platform",
-		"maat-knowledge-surface", "maat-native-resolution-surface", "maat-release-contract-preflight", "maat-scheduler", "maat-system-one-screen", "maat-terminal-console-surface", "maat-wing-contract",
+		"maat-decision-journal", "maat-guided-managed-repair", "maat-horus-surface", "maat-knowledge-surface", "maat-mcp-surface", "maat-native-resolution-surface", "maat-pipeline", "maat-pulse-proof-platform",
+		"maat-release-contract-preflight", "maat-scheduler", "maat-system-one-screen", "maat-terminal-console-surface", "maat-wing-contract", "stacklab-apollo-run-planner",
 	}
 	got := make([]string, 0, len(recipe.Components))
 	for _, component := range recipe.Components {
@@ -56,6 +56,7 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 		}
 	}
 	sort.Strings(got)
+	sort.Strings(want)
 	if len(got) != len(want) {
 		t.Fatalf("component ids = %v, want %v", got, want)
 	}

@@ -172,7 +172,13 @@ func recoverManagedLaunchd(agentsDir string, deps launchdDeps, targets map[strin
 		disabled, _ = deps.disabledLabels()
 	}
 
-	uid := deps.uid()
+	// Recovery is also used by descriptor/symlink safety checks whose test seam
+	// does not need a synthetic uid. Keep that path safe instead of panicking
+	// before it can reject an unsafe managed plist.
+	uid := os.Getuid()
+	if deps.uid != nil {
+		uid = deps.uid()
+	}
 	domain := fmt.Sprintf("gui/%d", uid)
 
 	quarantined := deps.isQuarantined != nil && deps.isQuarantined()

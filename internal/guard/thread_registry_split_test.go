@@ -15,6 +15,7 @@ import (
 // host state.
 func cutoverRoot(t *testing.T) string {
 	t.Helper()
+	t.Setenv("SIRSI_ROUTER_URL", "")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	// Env wins over the marker, so set it explicitly rather than relying on a

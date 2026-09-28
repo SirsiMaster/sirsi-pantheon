@@ -67,6 +67,9 @@ func clearGitEnv(t *testing.T) {
 func setupRouterRepoRoot(t *testing.T) string {
 	t.Helper()
 	clearGitEnv(t)
+	// This suite exercises the local, throwaway router fixture. A developer's
+	// service-router endpoint must never redirect it to the live inbox.
+	t.Setenv("SIRSI_ROUTER_URL", "")
 	// Sandbox the dispatch store too: without this a test send would write a
 	// row into the LIVE ~/.sirsi/router.db (the test-side-effects storm class).
 	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(t.TempDir(), "router.db"))
