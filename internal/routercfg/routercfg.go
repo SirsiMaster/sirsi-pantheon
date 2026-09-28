@@ -65,6 +65,14 @@ func MarkerPath() string {
 // marker read while permitting the write would have produced a second registry
 // in silence, and the lane would have reported success.
 func StoreWake() bool {
+	// An explicit switch is the narrowest and most useful override, including
+	// for hermetic tests and one-off recovery commands. It must be consulted
+	// before the service URL: otherwise SIRSI_ROUTER_STORE_WAKE=0 cannot
+	// disable cutover on a host whose normal runtime points at the router
+	// service, contradicting the documented "env wins" contract.
+	if v, ok := os.LookupEnv(StoreWakeEnv); ok {
+		return v == "1"
+	}
 	// ADR-062: a node pointed at the router service has NO local files of
 	// record — the service is the cutover authority whatever this host's
 	// marker says. Found 2026-09-02 (rs-11 e2e): a node whose $HOME lacked the
@@ -73,9 +81,6 @@ func StoreWake() bool {
 	// a revoked node reporting stale counts as if nothing had happened.
 	if strings.TrimSpace(os.Getenv("SIRSI_ROUTER_URL")) != "" {
 		return true
-	}
-	if v, ok := os.LookupEnv(StoreWakeEnv); ok {
-		return v == "1"
 	}
 	p := MarkerPath()
 	if p == "" {
