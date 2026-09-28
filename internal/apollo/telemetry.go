@@ -53,30 +53,44 @@ func TelemetryPath(home string) string {
 // error and must not be rendered as active telemetry.
 func ReadTelemetry(home string) (TelemetryRead, error) {
 	path := TelemetryPath(home)
-	info, err := os.Lstat(path)
+	f, err := openTelemetryFile(path)
 	if os.IsNotExist(err) {
 		return TelemetryRead{State: "awaiting_session", Reason: "SNE has not published an Apollo session sample"}, nil
 	}
 	if err != nil {
-		return TelemetryRead{}, fmt.Errorf("stat Apollo telemetry: %w", err)
+		return TelemetryRead{}, fmt.Errorf("open Apollo telemetry: %w", err)
 	}
-	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return TelemetryRead{}, fmt.Errorf("stat opened Apollo telemetry: %w", err)
+	}
+	if !validTelemetryFile(info) {
 		return TelemetryRead{}, fmt.Errorf("Apollo telemetry must be a regular non-symlink file")
 	}
 	if info.Size() < 1 || info.Size() > maxTelemetryBytes {
 		return TelemetryRead{}, fmt.Errorf("Apollo telemetry size is outside the allowed range")
 	}
-	f, err := os.Open(path)
+	data, err := readTelemetryBytes(f, info.Size())
 	if err != nil {
-		return TelemetryRead{}, fmt.Errorf("open Apollo telemetry: %w", err)
+		return TelemetryRead{}, err
 	}
-	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, maxTelemetryBytes+1))
+	if err := revalidateTelemetryPath(path, f, info); err != nil {
+		return TelemetryRead{}, err
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return TelemetryRead{}, fmt.Errorf("rewind Apollo telemetry: %w", err)
+	}
+	confirm, err := readTelemetryBytes(f, info.Size())
 	if err != nil {
-		return TelemetryRead{}, fmt.Errorf("read Apollo telemetry: %w", err)
+		return TelemetryRead{}, err
 	}
-	if int64(len(data)) != info.Size() || len(data) > maxTelemetryBytes {
+	if !bytes.Equal(data, confirm) {
 		return TelemetryRead{}, fmt.Errorf("Apollo telemetry changed while it was read")
+	}
+	if err := revalidateTelemetryPath(path, f, info); err != nil {
+		return TelemetryRead{}, err
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
@@ -92,6 +106,43 @@ func ReadTelemetry(home string) (TelemetryRead, error) {
 		return TelemetryRead{}, err
 	}
 	return TelemetryRead{State: "active", Telemetry: &telemetry}, nil
+}
+
+func validTelemetryFile(info os.FileInfo) bool {
+	return info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0
+}
+
+func readTelemetryBytes(f *os.File, expectedSize int64) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(f, maxTelemetryBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read Apollo telemetry: %w", err)
+	}
+	if int64(len(data)) != expectedSize || len(data) > maxTelemetryBytes {
+		return nil, fmt.Errorf("Apollo telemetry changed while it was read")
+	}
+	return data, nil
+}
+
+// revalidateTelemetryPath ensures the named input remains the exact regular
+// object originally opened with no-follow semantics. Two matching reads make
+// in-place mutation during decoding fail closed rather than rendering a torn
+// or substituted sample.
+func revalidateTelemetryPath(path string, f *os.File, expected os.FileInfo) error {
+	opened, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("restat opened Apollo telemetry: %w", err)
+	}
+	if !validTelemetryFile(opened) || !os.SameFile(expected, opened) || expected.Size() != opened.Size() {
+		return fmt.Errorf("Apollo telemetry descriptor changed while it was read")
+	}
+	current, err := os.Lstat(path)
+	if err != nil {
+		return fmt.Errorf("restat Apollo telemetry path: %w", err)
+	}
+	if !validTelemetryFile(current) || !os.SameFile(expected, current) || expected.Size() != current.Size() {
+		return fmt.Errorf("Apollo telemetry path changed while it was read")
+	}
+	return nil
 }
 
 func validateTelemetry(t Telemetry) error {

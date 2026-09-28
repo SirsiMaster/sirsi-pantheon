@@ -53,6 +53,7 @@
       "all percentages are finite and between 0 and 100 inclusive",
       "chip-estate ids are nonempty and unique",
       "unknown properties reject the complete sample",
+      "Pantheon opens the telemetry leaf with no-follow semantics and requires descriptor/path identity continuity before and after two byte-identical reads",
       "absence is unavailable, not zero"
     ]
   },
