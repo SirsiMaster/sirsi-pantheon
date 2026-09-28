@@ -114,6 +114,9 @@ func TestMaatView_ProjectsSystemOneEvidence(t *testing.T) {
 	page := fetchSPA(t)
 
 	for _, token := range []string{
+		"renderMaatKnowledge",
+		"/api/maat/knowledge",
+		"withheld for safety",
 		"d.system_one",
 		"screen.feather_weight",
 		"screen.subject.head_sha",

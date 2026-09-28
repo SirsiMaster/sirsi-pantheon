@@ -415,9 +415,28 @@ function viewFleet(){
  }).catch(function(e){out('  fleet board unavailable: '+e.message,'t-err')});
 }
 
+function renderMaatKnowledge(){
+ fetch('/api/maat/knowledge').then(function(r){
+  if(!r.ok)return r.json().then(function(e){throw new Error(e.error||('HTTP '+r.status))});
+  return r.json()
+ }).then(function(view){
+  const items=view.items||[];
+  out('');out('  Local knowledge · '+(view.total||0)+' retained'+(view.withheld ? ' · '+view.withheld+' withheld for safety' : ''),'t-head');
+  if(!items.length){out('  No retained local knowledge yet. Use the Ma’at knowledge refresh action to read configured local sources.','t-dim');return}
+  items.slice(0,6).forEach(function(item){
+   const row=document.createElement('div');row.className='t-line t-row';
+   const title=document.createElement('span');title.className='t-col';title.style.width='220px';title.style.color='var(--ink2)';title.textContent=item.title||'Untitled knowledge';
+   const summary=document.createElement('span');summary.className='t-col';summary.style.flex='1';summary.style.color='var(--dim)';summary.textContent=item.summary||'No summary retained.';
+   row.appendChild(title);row.appendChild(summary);T.appendChild(row);
+  });
+  if(items.length>6)out('  '+(items.length-6)+' more retained item(s) are available through Ma’at knowledge.','t-dim');
+ }).catch(function(e){out('  Ma’at knowledge unavailable: '+e.message,'t-err')});
+}
+
 function viewMaat(){
  out('𓆄 Ma’at — Local System One','t-gold');
  out('  Searchable, evidence-linked cases projected from Ma’at’s recorded decisions. Read-only: it explains decisions; it never makes them.','t-dim');
+ renderMaatKnowledge();
  fetch('/api/maat/casebook?limit=50').then(function(r){
   if(!r.ok)return r.json().then(function(e){throw new Error(e.error||('HTTP '+r.status))});
   return r.json()
