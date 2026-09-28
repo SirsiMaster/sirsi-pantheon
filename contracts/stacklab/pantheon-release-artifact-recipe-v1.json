@@ -38,9 +38,9 @@
       "source": [".github/workflows/release.yml", "scripts/build-dmg.sh", "scripts/build-pkg.sh", "docs/RELEASE_SIGNING.md"],
       "tests": ["scripts/verify-commercial-release-contract.sh"],
       "inputs": ["Developer ID Application identity", "Developer ID Installer identity", "Apple notarization credentials", "tagged exact source"],
-      "outputs": ["signed, notarized, stapled, validated DMG", "signed, notarized, stapled, validated PKG", "release workflow artifact names suitable for GitHub and cask binding"],
+      "outputs": ["signed, notarized, stapled, validated DMG", "signed, notarized, stapled, validated PKG", "one exact GitHub release record and the same-payload assets suitable for cask binding"],
       "writes": ["signed package bytes and remote release/cask records only under separately authorized credentialed execution"],
-      "upgrade_recipe": ["fail before commercial artifact creation when any required credential is absent", "verify signing before notarization", "staple and validate every commercial payload", "treat remote publication and cask lifecycle as separate evidence nodes"]
+      "upgrade_recipe": ["fail before commercial artifact creation when any required credential is absent", "verify signing before notarization", "staple and validate every commercial payload", "create or revalidate the exact GitHub release record only after successful commercial DMG and PKG construction", "publish only the same Pantheon.app DMG and PKG payloads", "treat remote publication and cask lifecycle as separate evidence nodes", "ship the tagged commercial route as one macOS payload contract; reject variable-gated Windows installer jobs until a separate platform release contract exists"]
     },
     {
       "id": "canonical-cask-publication",
