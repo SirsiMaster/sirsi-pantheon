@@ -52,6 +52,7 @@ struct PantheonControlCenterView: View {
                     primaryAction
                     attention
                     controls
+                    planning
                     library
                 }
                 .padding(16)
@@ -204,6 +205,38 @@ struct PantheonControlCenterView: View {
         }
         .foregroundStyle(.primary)
         .accessibilityLabel("All Pantheon tools")
+    }
+
+    // Stack Lab and Apollo are primary operator workflows, not buried utilities:
+    // Stack Lab selects and verifies a recipe; Apollo turns its measured machine,
+    // resident-model, and resource declaration into a live-session view. Neither
+    // link starts inference or invents capacity outside the qualified SNE route.
+    private var planning: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("PLAN")
+                .sirsiFont(.caption, weight: .bold)
+                .foregroundStyle(.secondary)
+            VStack(spacing: 1) {
+                NavLink { StackLabView(engine: engine) } label: {
+                    ControlCenterRow(
+                        symbol: "square.3.layers.3d",
+                        title: "Stack Lab",
+                        detail: "Inspect recipes, evidence, and release readiness",
+                        tint: gold
+                    )
+                }
+                Divider().padding(.leading, 38)
+                NavLink { ApolloRunPlannerView(engine: engine) } label: {
+                    ControlCenterRow(
+                        symbol: "cpu",
+                        title: "Apollo",
+                        detail: "Choose a resident model, machine, and resource envelope",
+                        tint: gold
+                    )
+                }
+            }
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.045)))
+        }
     }
 }
 
