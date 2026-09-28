@@ -111,6 +111,71 @@ type activityReport struct {
 	Entries []activityEntry `json:"entries"`
 }
 
+// --- sirsi maat casebook --json (internal/maat/casebook View) ---
+//
+// The terminal console intentionally consumes Ma'at's projected evidence
+// journal rather than deriving its own diagnoses. Keep this contract read-only:
+// resolution/acceptance remains a separately confirmed action in the native
+// Pantheon app or the explicit CLI commands.
+
+type maatResolutionPath struct {
+	Kind                 string `json:"kind"`
+	Title                string `json:"title"`
+	Detail               string `json:"detail"`
+	Evidence             string `json:"evidence"`
+	RequiresConfirmation bool   `json:"requires_confirmation"`
+}
+
+type maatSystemOneSubject struct {
+	Kind    string `json:"kind"`
+	Ref     string `json:"ref"`
+	HeadSHA string `json:"head_sha"`
+}
+
+type maatSystemOneEscalation struct {
+	Reason string `json:"reason"`
+}
+
+type maatSystemOneVerdict struct {
+	Gate          string                   `json:"gate"`
+	Confidence    float64                  `json:"confidence"`
+	FeatherWeight int                      `json:"feather_weight"`
+	Subject       maatSystemOneSubject     `json:"subject"`
+	Escalation    *maatSystemOneEscalation `json:"escalation"`
+}
+
+type maatCase struct {
+	ID            string                `json:"id"`
+	Time          string                `json:"time"`
+	Kind          string                `json:"kind"`
+	Category      string                `json:"category"`
+	Status        string                `json:"status"`
+	Priority      string                `json:"priority"`
+	Requester     string                `json:"requester"`
+	Resource      string                `json:"resource"`
+	Affected      string                `json:"affected"`
+	Determination string                `json:"determination"`
+	Assessed      string                `json:"assessed"`
+	Why           string                `json:"why"`
+	Evidence      string                `json:"evidence"`
+	Resolution    string                `json:"resolution"`
+	NextAction    *maatResolutionPath   `json:"next_action"`
+	SystemOne     *maatSystemOneVerdict `json:"system_one"`
+}
+
+type maatCasebookSummary struct {
+	Total    int `json:"total"`
+	Open     int `json:"open"`
+	Urgent   int `json:"urgent"`
+	High     int `json:"high"`
+	Resolved int `json:"resolved"`
+}
+
+type maatCasebookReport struct {
+	Cases   []maatCase          `json:"cases"`
+	Summary maatCasebookSummary `json:"summary"`
+}
+
 // --- sirsi diagnose --json (internal/guard DiagnosticReport) ---
 
 type diagFinding struct {

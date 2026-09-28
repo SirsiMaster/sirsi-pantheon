@@ -14,7 +14,7 @@ never required for search, classification, prioritisation, or evidence links.
 ## Canonical local flow
 
 ```
-observe -> assess -> append Ma'at decision -> Casebook -> CLI / MCP / Horus / native app
+observe -> assess -> append Ma'at decision -> Casebook -> CLI / MCP / Horus / terminal console / native app
 ```
 
 `internal/maat` owns assessment semantics. `internal/maat/casebook` owns only
@@ -32,14 +32,16 @@ safe independent upgrade recipe in this wing:
 2. Canon linkage assessor
 3. Coverage assessor and bounded cache
 4. Pipeline/CI assessor and failure classifier
-5. Pulse, proof, and platform integrity collectors
-6. Append-only decision journal and report recorder
-7. Deterministic local Casebook
-8. Shared-machine and rail scheduler/conflict detector
-9. CLI surfaces for audit, scheduling, screens, calibration, and search
-10. Horus API and visible caseboard
-11. Read-only MCP Casebook projection for agent clients
-12. The Stack Lab wing and recipe contracts themselves
+5. Strict local System One screen and calibration record
+6. Pulse, proof, and platform integrity collectors
+7. Append-only decision journal and report recorder
+8. Deterministic local Casebook
+9. Shared-machine and rail scheduler/conflict detector
+10. CLI surfaces for audit, scheduling, screens, calibration, and search
+11. Horus API and visible caseboard
+12. Read-only MCP Casebook projection for agent clients
+13. Five-screen terminal console Activity/Casebook mode
+14. The Stack Lab wing and recipe contracts themselves
 
 An upgrade begins at one manifest component, follows that component's listed
 tests and boundary, then updates the receipt/canonical contract. Components do
@@ -74,8 +76,13 @@ claim a local record is a remote attestation.
 - **Portable:** each installation owns its local Casebook. A device contributes
   only records it can evidence; the router remains the cross-device handoff
   transport, not a copied policy store.
-- **Inspectable:** `sirsi maat casebook [text] [--kind ...] [--status ...]`
-  and `GET /api/maat/casebook` expose the same projection.
+- **Inspectable:** `sirsi maat casebook [text] [--kind ...] [--status ...]`,
+  `GET /api/maat/casebook`, the `maat_casebook` MCP tool, the Activity screen's
+  `m` Casebook mode, and the native Casebook expose the same projection.
+- **Resolvable:** every open case exposes its retained evidence and a truthful
+  next step. The native Casebook and explicit confirmed CLI commands can record
+  owner review/acceptance; the terminal console stays read-only so it never
+  turns a keystroke into an unreviewed conclusion or a claimed repair.
 - **Fail honest:** unavailable journal input returns an error/503. Unknown case
   status is rejected. Missing evidence stays missing; it is never invented.
 

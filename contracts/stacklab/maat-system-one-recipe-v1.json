@@ -127,6 +127,15 @@
       "upgrade_recipe": ["keep the journal as the sole local Ma'at store", "reject malformed filters before reading", "never add write, review, repair, or authorization authority", "test projection of calibration links and rejected filters"]
     },
     {
+      "id": "maat-terminal-console-surface",
+      "source": ["internal/tui/command.go", "internal/tui/contracts.go", "internal/tui/screen_activity.go", "internal/tui/runner.go"],
+      "tests": ["internal/tui/command_test.go", "internal/tui/console_test.go"],
+      "inputs": ["canonical sirsi maat casebook JSON", "canonical activity ledger JSON"],
+      "outputs": ["five-screen Horus console Activity ledger", "Ma'at System One casebook mode", "evidence and guided resolution detail"],
+      "writes": [],
+      "upgrade_recipe": ["retain the five-screen console architecture", "use only the canonical sirsi executable runner", "keep Casebook read-only in the terminal", "make every visible key registry-backed and testable", "show an evidence-bound next step for every open case", "keep explicit owner confirmation in the native app or confirmed CLI path"]
+    },
+    {
       "id": "maat-wing-contract",
       "source": ["contracts/stacklab/maat-wing-v1.json", "contracts/stacklab/maat-system-one-recipe-v1.json", "docs/qa/MAAT_SYSTEM_ONE_CATALOG.md"],
       "tests": ["internal/stacklab/doctor_test.go", "internal/stacklab/maat_recipe_test.go"],
