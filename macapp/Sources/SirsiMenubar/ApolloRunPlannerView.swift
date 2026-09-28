@@ -97,16 +97,20 @@ struct ApolloRunPlannerView: View {
             Label("Resident inference route", systemImage: "cpu")
                 .sirsiFont(.headline)
             Picker("Inference engine", selection: $selectedEngine) {
-                ForEach(catalog.engines) { option in
+                ForEach(engineOptions(catalog)) { option in
                     Text(option.name).tag(option.id)
                 }
             }
             .labelsHidden()
             .pickerStyle(.menu)
-            if let engine = catalog.engines.first(where: { $0.id == selectedEngine }) {
-                Text(engine.state == "configured" ? engineDetail(engine) : "This route is not configured on this Mac. Configure an SNE local endpoint, then refresh this screen.")
+            if let engine = engineOptions(catalog).first(where: { $0.id == selectedEngine }) {
+                Text(engine.state == "configured" ? engineDetail(engine) : "This route is not configured on the selected machine. Configure its SNE endpoint, then refresh this screen.")
                     .sirsiFont(.subheadline)
                     .foregroundStyle(engine.state == "configured" ? Color.secondary : Color.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("No resident inference route has a typed receipt for this machine. Choose another measured machine or add an SNE-qualified route.")
+                    .sirsiFont(.subheadline).foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -127,7 +131,7 @@ struct ApolloRunPlannerView: View {
             }
             .labelsHidden()
             .pickerStyle(.menu)
-            .onChange(of: selectedMachine) { _ in resetEnvelope(catalog) }
+            .onChange(of: selectedMachine) { _ in resetSelections(catalog) }
             Text("Each selectable entry has a typed capacity receipt. Ra/Hermes peers appear only after they publish the same record; Pantheon will not invent remote capacity.")
                 .sirsiFont(.subheadline).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -166,7 +170,7 @@ struct ApolloRunPlannerView: View {
                 .sirsiFont(.headline)
             Text("Select every estate Apollo may observe and use. Unavailable estates stay visible and cannot be selected.")
                 .sirsiFont(.subheadline).foregroundStyle(.secondary)
-            ForEach(catalog.estates) { estate in
+            ForEach(estateOptions(catalog)) { estate in
                 Toggle(isOn: binding(for: estate)) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(estate.name).sirsiFont(.subheadline, weight: .semibold)
@@ -250,6 +254,18 @@ struct ApolloRunPlannerView: View {
     private func selectedMachineDescriptor(_ catalog: ApolloCatalog) -> ApolloMachine {
         catalog.machineOptions.first(where: { $0.id == selectedMachine }) ?? catalog.machine
     }
+    private func engineOptions(_ catalog: ApolloCatalog) -> [ApolloEngineOption] {
+        catalog.engines.filter { $0.machineID == nil || $0.machineID == selectedMachine }
+    }
+    private func estateOptions(_ catalog: ApolloCatalog) -> [ApolloChipEstate] {
+        let machineEstates = Set(selectedMachineDescriptor(catalog).chipEstates ?? [])
+        return catalog.estates.filter { machineEstates.isEmpty || machineEstates.contains($0.id) }
+    }
+    private func resetSelections(_ catalog: ApolloCatalog) {
+        selectedEngine = engineOptions(catalog).first(where: { $0.state == "configured" })?.id ?? engineOptions(catalog).first?.id ?? ""
+        selectedEstates = Set(estateOptions(catalog).filter(\.available).map(\.id))
+        resetEnvelope(catalog)
+    }
     private func resetEnvelope(_ catalog: ApolloCatalog) {
         let machine = selectedMachineDescriptor(catalog)
         selectedCores = max(1, min(machine.cpuCores, max(1, machine.cpuCores / 2)))
@@ -274,10 +290,8 @@ struct ApolloRunPlannerView: View {
         }
         catalog = decoded
         selectedMachine = decoded.machineOptions.first?.id ?? decoded.machine.id
-        selectedEngine = decoded.engines.first(where: { $0.state == "configured" })?.id ?? decoded.engines.first?.id ?? ""
-        resetEnvelope(decoded)
+        resetSelections(decoded)
         selectedSwapGiB = 0
-        selectedEstates = Set(decoded.estates.filter(\.available).map(\.id))
         loading = false
     }
 
@@ -437,8 +451,8 @@ private struct ApolloCatalog: Decodable {
     let estates: [ApolloChipEstate]
 	var machineOptions: [ApolloMachine] { machines?.isEmpty == false ? machines! : [machine] }
 }
-private struct ApolloMachine: Decodable, Identifiable { let id: String; let name: String; let cpuCores: Int; let memoryBytes: Int64; enum CodingKeys: String, CodingKey { case id, name; case cpuCores = "cpu_cores"; case memoryBytes = "memory_bytes" } }
-private struct ApolloEngineOption: Decodable, Identifiable { let id: String; let name: String; let provider: String; let residentModel: String?; let endpoint: String?; let state: String; enum CodingKeys: String, CodingKey { case id, name, provider, endpoint, state; case residentModel = "resident_model" } }
+private struct ApolloMachine: Decodable, Identifiable { let id: String; let name: String; let cpuCores: Int; let memoryBytes: Int64; let chipEstates: [String]?; enum CodingKeys: String, CodingKey { case id, name; case cpuCores = "cpu_cores"; case memoryBytes = "memory_bytes"; case chipEstates = "chip_estates" } }
+private struct ApolloEngineOption: Decodable, Identifiable { let id: String; let machineID: String?; let name: String; let provider: String; let residentModel: String?; let endpoint: String?; let state: String; enum CodingKeys: String, CodingKey { case id, name, provider, endpoint, state; case machineID = "machine_id"; case residentModel = "resident_model" } }
 private struct ApolloChipEstate: Decodable, Identifiable { let id: String; let name: String; let available: Bool; let description: String }
 struct ApolloPlan: Decodable { let cpuCores: Int; let memoryBytes: Int64; let swapBytes: Int64; let chipEstates: [String]; enum CodingKeys: String, CodingKey { case cpuCores = "cpu_cores"; case memoryBytes = "memory_bytes"; case swapBytes = "swap_bytes"; case chipEstates = "chip_estates" } }
 private struct ApolloTelemetryRead: Decodable { let state: String; let telemetry: ApolloSessionTelemetry?; let reason: String? }

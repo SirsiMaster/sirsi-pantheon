@@ -33,10 +33,15 @@ type Machine struct {
 	Name        string `json:"name"`
 	CPUCores    int    `json:"cpu_cores"`
 	MemoryBytes int64  `json:"memory_bytes"`
+	// ChipEstates binds selectable estates to this capacity receipt. Empty is
+	// accepted only for the legacy single-machine projection, where Catalog's
+	// top-level estate list remains authoritative.
+	ChipEstates []string `json:"chip_estates,omitempty"`
 }
 
 type Engine struct {
 	ID            string `json:"id"`
+	MachineID     string `json:"machine_id,omitempty"`
 	Name          string `json:"name"`
 	Provider      string `json:"provider"`
 	ResidentModel string `json:"resident_model,omitempty"`
@@ -80,7 +85,7 @@ func Collect(home string) (Catalog, error) {
 	}
 	conf := provider.LoadConf(home)
 	local := provider.Local(home, conf)
-	engine := Engine{ID: "apollo-local-sne", Name: "Apollo local inference", Provider: "SNE", State: "unconfigured"}
+	engine := Engine{ID: "apollo-local-sne", MachineID: "this-mac", Name: "Apollo local inference", Provider: "SNE", State: "unconfigured"}
 	if local != nil {
 		engine.State = "configured"
 		engine.ResidentModel = strings.TrimSpace(local.Model)
@@ -92,7 +97,7 @@ func Collect(home string) (Catalog, error) {
 		{ID: "gpu", Name: "GPU", Available: hw.GPU.Type != seba.GPUNone && hw.GPU.Name != "", Description: nonEmpty(hw.GPU.Name, "No detected GPU")},
 		{ID: "neural-engine", Name: "Neural Engine", Available: hw.NeuralEngine, Description: ternary(hw.NeuralEngine, "Detected on this Mac", "Not detected")},
 	}
-	machine := Machine{ID: "this-mac", Name: machineName, CPUCores: hw.CPUCores, MemoryBytes: hw.TotalRAM}
+	machine := Machine{ID: "this-mac", Name: machineName, CPUCores: hw.CPUCores, MemoryBytes: hw.TotalRAM, ChipEstates: estateIDs(estates)}
 	return Catalog{SchemaVersion: "apollo-catalog/v2", Machine: machine, Machines: []Machine{machine}, Engines: []Engine{engine}, Estates: estates}, nil
 }
 
@@ -126,6 +131,9 @@ func BuildPlanForMachine(c Catalog, machineID, engineID string, cores int, memor
 	if engine == nil || engine.State != "configured" {
 		return Plan{}, fmt.Errorf("the selected Apollo engine is not configured on this Mac")
 	}
+	if engine.MachineID != "" && engine.MachineID != machine.ID {
+		return Plan{}, fmt.Errorf("the selected Apollo engine has no configured route on %s", machine.Name)
+	}
 	if cores < 1 || cores > machine.CPUCores {
 		return Plan{}, fmt.Errorf("CPU cores must be between 1 and %d", machine.CPUCores)
 	}
@@ -135,9 +143,13 @@ func BuildPlanForMachine(c Catalog, machineID, engineID string, cores int, memor
 	if swapBytes < 0 || swapBytes > machine.MemoryBytes {
 		return Plan{}, fmt.Errorf("swap target must be between 0 and %s", seba.FormatBytes(machine.MemoryBytes))
 	}
+	allowedEstates := map[string]bool{}
+	for _, id := range machine.ChipEstates {
+		allowedEstates[id] = true
+	}
 	available := map[string]bool{}
 	for _, estate := range c.Estates {
-		if estate.Available {
+		if estate.Available && (len(allowedEstates) == 0 || allowedEstates[estate.ID]) {
 			available[estate.ID] = true
 		}
 	}
@@ -155,6 +167,16 @@ func BuildPlanForMachine(c Catalog, machineID, engineID string, cores int, memor
 		return Plan{}, fmt.Errorf("choose at least one available chip estate")
 	}
 	return Plan{SchemaVersion: "apollo-plan/v1", MachineID: machine.ID, EngineID: engine.ID, ResidentModel: engine.ResidentModel, CPUCores: cores, MemoryBytes: memoryBytes, SwapBytes: swapBytes, ChipEstates: estates, Execution: "planned; SNE admission is required before inference starts"}, nil
+}
+
+func estateIDs(estates []ChipEstate) []string {
+	ids := make([]string, 0, len(estates))
+	for _, estate := range estates {
+		if estate.Available {
+			ids = append(ids, estate.ID)
+		}
+	}
+	return ids
 }
 
 func (c Catalog) machineByID(id string) (Machine, bool) {

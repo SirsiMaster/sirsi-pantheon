@@ -16,15 +16,17 @@
     ]
   },
   "capability_catalog": {
-    "schema_version": "apollo-catalog/v1",
-    "machine": ["id", "name", "cpu_cores", "memory_bytes"],
-    "engine": ["id", "name", "provider", "resident_model", "endpoint", "state"],
+    "schema_version": "apollo-catalog/v2",
+    "machine": ["id", "name", "cpu_cores", "memory_bytes", "chip_estates"],
+    "machines": "selectable typed capacity receipts; `machine` is retained only for v1-compatible consumers",
+    "engine": ["id", "machine_id", "name", "provider", "resident_model", "endpoint", "state"],
     "chip_estate": ["id", "name", "available", "description"],
     "selection": ["machine_id", "engine_id", "cpu_cores", "memory_bytes", "swap_bytes", "chip_estates"],
     "selection_rules": [
       "all limits are explicit typed quantities",
-      "the engine must be configured on the selected machine",
-      "every selected estate must be detected and available",
+      "the selected machine must be present in `machines` with its own typed capacity receipt; Pantheon never borrows this Mac's limits for a named peer",
+      "the engine must be configured and machine_id-bound to the selected machine",
+      "every selected estate must be detected, available, and enumerated by the selected machine receipt",
       "swap is a request ceiling; SNE admission checks live pressure independently"
     ]
   },
@@ -68,7 +70,7 @@
     "SNE": ["model and engine provenance", "admission decision", "measurement source and interval", "terminal session outcome"]
   },
   "upgrade_recipe": [
-    "add a schema revision rather than widening v1 ambiguously",
+    "add a schema revision rather than widening v2 ambiguously",
     "add positive, omitted-metric, duplicate-estate, bad-percentage, unknown-field, atomic-replacement, and terminal-session fixtures",
     "obtain SNE source and runtime qualification before publishing telemetry from a new engine",
     "verify identical semantics in CLI, native app, dashboard, TUI, MCP, and Ma'at before release"

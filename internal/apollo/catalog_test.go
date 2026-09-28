@@ -42,3 +42,24 @@ func TestBuildPlanForMachineRejectsAnUnmeasuredMachine(t *testing.T) {
 		t.Fatal("BuildPlanForMachine() accepted an unmeasured machine")
 	}
 }
+
+func TestBuildPlanForMachineBindsRouteAndEstatesToSelectedReceipt(t *testing.T) {
+	catalog := Catalog{
+		Machine: Machine{ID: "this-mac", CPUCores: 8, MemoryBytes: 16 * gib, ChipEstates: []string{"cpu"}},
+		Machines: []Machine{
+			{ID: "this-mac", Name: "This Mac", CPUCores: 8, MemoryBytes: 16 * gib, ChipEstates: []string{"cpu"}},
+			{ID: "measured-peer", Name: "Measured peer", CPUCores: 12, MemoryBytes: 32 * gib, ChipEstates: []string{"gpu"}},
+		},
+		Engines: []Engine{{ID: "local", MachineID: "this-mac", State: "configured"}, {ID: "peer", MachineID: "measured-peer", State: "configured"}},
+		Estates: []ChipEstate{{ID: "cpu", Available: true}, {ID: "gpu", Available: true}},
+	}
+	if _, err := BuildPlanForMachine(catalog, "measured-peer", "local", 4, 8*gib, 0, []string{"gpu"}); err == nil {
+		t.Fatal("BuildPlanForMachine() accepted a route bound to another machine")
+	}
+	if _, err := BuildPlanForMachine(catalog, "measured-peer", "peer", 4, 8*gib, 0, []string{"cpu"}); err == nil {
+		t.Fatal("BuildPlanForMachine() accepted an estate outside the selected receipt")
+	}
+	if _, err := BuildPlanForMachine(catalog, "measured-peer", "peer", 4, 8*gib, 0, []string{"gpu"}); err != nil {
+		t.Fatalf("BuildPlanForMachine() rejected the selected receipt: %v", err)
+	}
+}

@@ -11,6 +11,10 @@ jq -e '
   .schema == "sirsi.stacklab.apollo-sne-telemetry.v1" and
   .ownership.publisher == "SNE" and
   .ownership.consumer == "Pantheon Apollo" and
+  .capability_catalog.schema_version == "apollo-catalog/v2" and
+  (.capability_catalog.machine | index("chip_estates")) and
+  (.capability_catalog.engine | index("machine_id")) and
+  (.capability_catalog.selection_rules | any(contains("typed capacity receipt"))) and
   .session_telemetry.schema_version == "apollo-session-telemetry/v1" and
   (.session_telemetry.optional_metrics | index("tokens_per_second")) and
   (.session_telemetry.optional_metrics | index("gpu_residency_percent")) and
