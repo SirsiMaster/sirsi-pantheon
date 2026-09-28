@@ -375,6 +375,10 @@ private struct MaatSystemOneView: View {
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            Text("System One does not invent a screen: until a bounded observation is hashed and validated, Ma'at shows no result and grants no authority.")
+                .sirsiFont(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             Button("Open decisions") { section = .decisions }
                 .buttonStyle(.bordered)
             NavLink { StackLabView(engine: engine) } label: {
