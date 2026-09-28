@@ -1,14 +1,12 @@
 # 𓁢 Building Pantheon in Public
 
-## 2026-09-28 — RELEASE CANDIDATE v0.24.28: DMG-first commercial route
+## 2026-09-28 — RELEASE CANDIDATE v0.24.28: full native artifact route
 
 The v0.24.27 tagged build produced and notarized the canonical Pantheon DMG,
-then stopped before publication because the optional Developer ID Installer
-identity was not configured for the PKG path. v0.24.28 makes the commercial
-boundary truthful: the signed/notarized/stapled DMG is the baseline release
-artifact and canonical cask input; the PKG is published only when its separate
-installer identity is available. The exact release record is still created
-only after the DMG completes and the source runner remains verification-only.
+then stopped because the Developer ID Installer identity was not configured for
+the required PKG path. v0.24.28 keeps that boundary truthful: a commercial
+release record and canonical cask update require both the signed/notarized/
+stapled DMG and the matching PKG. The source runner remains verification-only.
 
 ## 2026-09-28 — RELEASE CANDIDATE v0.24.27: canonical Swift menubar packaging
 
