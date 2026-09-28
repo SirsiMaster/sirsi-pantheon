@@ -104,7 +104,7 @@
       "source": ["cmd/sirsi/maatknowledge.go", "internal/dashboard/actions.go", "macapp/Sources/SirsiMenubar/MaatCasebookView.swift", "internal/seshat"],
       "tests": ["cmd/sirsi/maatknowledge_test.go", "internal/dashboard/actions_test.go", "scripts/verify-maat-knowledge-surface-contract.sh"],
       "inputs": ["retained local knowledge cache", "explicit dashboard refresh request"],
-      "outputs": ["Ma'at-owned safe knowledge projection", "Ma'at-named dashboard and CLI knowledge refresh action", "withheld sensitive legacy records"],
+      "outputs": ["Ma'at-owned safe knowledge projection", "Ma'at-named dashboard, CLI, and native confirmed knowledge refresh action", "withheld sensitive legacy records", "visible refresh outcome and retry path that preserves the current cache on failure"],
       "writes": ["only the legacy ingestion adapter's existing local cache writes through sirsi maat knowledge refresh"],
       "upgrade_recipe": ["keep Ma'at as the only user-facing knowledge and decision authority", "treat Seshat ingestion as a compatibility adapter until its engine migrates", "keep refresh source-scoped and do not expose external export through it", "withhold secret-bearing legacy records without mutating them", "never expose the legacy deity as a dashboard action key or label", "add action-registry and knowledge-filter fixtures before widening sources"]
     },

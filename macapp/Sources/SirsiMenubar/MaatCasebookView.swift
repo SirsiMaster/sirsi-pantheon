@@ -627,6 +627,10 @@ struct MaatCasebookView: View {
     @State private var query = ""
     @State private var loading = true
     @State private var loadError: String?
+    @State private var confirmKnowledgeRefresh = false
+    @State private var knowledgeRefreshInFlight = false
+    @State private var knowledgeRefreshResult: String?
+    @State private var knowledgeRefreshError: String?
 
     init(engine: SirsiEngine, preloaded: MaatCasebookProjection? = nil, showsBackBar: Bool = true) {
         self.engine = engine
@@ -883,6 +887,12 @@ struct MaatKnowledgeView: View {
             guard knowledge == nil else { return }
             await load()
         }
+        .confirmationDialog("Refresh Ma'at knowledge?", isPresented: $confirmKnowledgeRefresh, titleVisibility: .visible) {
+            Button("Refresh local knowledge") { Task { await refreshKnowledge() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Ma'at will read configured local sources and update its local knowledge cache. It will not export knowledge, open a browser, authorize work, or make a remote decision.")
+        }
     }
 
     private func failureState(_ message: String) -> some View {
@@ -919,6 +929,7 @@ struct MaatKnowledgeView: View {
                                 .foregroundStyle(.orange)
                         }
                     }
+                    knowledgeRefreshControl
                     searchField
                     knowledgeList(filtered(knowledge.items))
                 }
@@ -926,7 +937,7 @@ struct MaatKnowledgeView: View {
             }
             Divider()
             HStack {
-                Text("Local knowledge cache · read only")
+                Text("Local cache · refresh requires confirmation")
                     .sirsiFont(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -959,6 +970,48 @@ struct MaatKnowledgeView: View {
         .padding(.horizontal, 11)
         .padding(.vertical, 9)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.07)))
+    }
+
+    private var knowledgeRefreshControl: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Keep local knowledge current")
+                .sirsiFont(.headline)
+            Text("Refresh reads the configured local sources into Ma'at's cache. Review the scope before confirming; Ma'at does not export, open a browser, or make a remote decision from this screen.")
+                .sirsiFont(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                confirmKnowledgeRefresh = true
+            } label: {
+                Label("Refresh local knowledge", systemImage: "arrow.triangle.2.circlepath")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(gold)
+            .disabled(knowledgeRefreshInFlight)
+            if knowledgeRefreshInFlight {
+                ProgressView("Refreshing configured local sources…")
+                    .sirsiFont(.caption)
+            }
+            if let knowledgeRefreshResult {
+                Label(knowledgeRefreshResult, systemImage: "checkmark.seal.fill")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(.green)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let knowledgeRefreshError {
+                Label(knowledgeRefreshError, systemImage: "exclamationmark.triangle.fill")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Try refresh again") { confirmKnowledgeRefresh = true }
+                    .buttonStyle(.bordered)
+                    .disabled(knowledgeRefreshInFlight)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
     }
 
     @ViewBuilder private func knowledgeList(_ items: [MaatKnowledgeItem]) -> some View {
@@ -1027,6 +1080,22 @@ struct MaatKnowledgeView: View {
             loadError = "Pantheon could not read Ma'at's local knowledge projection. Check the project and try again."
         }
         loading = false
+    }
+
+    @MainActor private func refreshKnowledge() async {
+        knowledgeRefreshInFlight = true
+        knowledgeRefreshResult = nil
+        knowledgeRefreshError = nil
+        let raw = await SirsiEngine.run(args: ["maat", "knowledge", "refresh"], stdin: nil)
+        let cleaned = CommandView.stripBanner(raw)
+        let summary = SirsiEngine.firstMeaningful(cleaned)
+        if SirsiEngine.resultOK(cleaned) {
+            knowledgeRefreshResult = summary.isEmpty ? "Ma'at refreshed the local knowledge cache." : summary
+            await load()
+        } else {
+            knowledgeRefreshError = "Ma'at could not refresh local knowledge. The current cache remains available. Check the reported source issue, then retry this confirmed refresh. \(summary)"
+        }
+        knowledgeRefreshInFlight = false
     }
 
     nonisolated static func fetch() async -> MaatKnowledgeProjection? {

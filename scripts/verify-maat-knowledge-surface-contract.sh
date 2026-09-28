@@ -58,6 +58,19 @@ done
   exit 1
 }
 
+for needle in \
+  'Refresh Ma'\''at knowledge?' \
+  'Refresh local knowledge' \
+  '"maat", "knowledge", "refresh"' \
+  'It will not export knowledge, open a browser, authorize work, or make a remote decision.' \
+  'The current cache remains available.' \
+  'Local cache · refresh requires confirmation'; do
+  /usr/bin/grep -Fq "$needle" "$native" || {
+    echo "native Ma'at knowledge refresh contract missing: $needle" >&2
+    exit 1
+  }
+done
+
 /usr/bin/grep -Fq '"id": "maat-knowledge-surface"' "$recipe" || {
   echo "Stack Lab Ma'at knowledge component is missing" >&2
   exit 1
