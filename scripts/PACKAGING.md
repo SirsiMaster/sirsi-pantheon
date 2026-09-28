@@ -41,27 +41,22 @@ require macOS, the Go toolchain, a Developer ID Application identity, a
 Developer ID Installer identity for PKG, and complete Apple notarization
 credentials. Both outputs are signed, notarized, stapled, and validated.
 
-## Linux (deb / rpm)
+## Supported installation and upgrades
 
-Uses goreleaser's `nfpms` section to produce `.deb` and `.rpm` packages for the CLI binaries (no menubar — that is macOS-only).
+The commercial release publishes one macOS Apple-silicon `Pantheon.app`
+payload. Homebrew installs that same application, links the bundled `sirsi`
+CLI, and owns upgrades and removal:
 
 ```bash
-goreleaser release --snapshot --clean
-# Or for local testing:
-goreleaser build --snapshot --clean
+brew install --cask sirsimaster/tools/sirsi-pantheon
+brew upgrade --cask sirsimaster/tools/sirsi-pantheon
+brew uninstall --cask sirsimaster/tools/sirsi-pantheon
 ```
 
-Output: `dist/sirsi-pantheon_VERSION_amd64.deb`, `dist/sirsi-pantheon_VERSION_amd64.rpm`
-
-## Windows (zip)
-
-Currently produces a zip with CLI binaries. MSIX/WiX installers are planned.
-
-```powershell
-.\scripts\build-windows.ps1 -Version "0.17.0" -Arch "amd64"
-```
-
-Output: `bin/SirsiPantheon-VERSION-windows-ARCH.zip`
+The bootstrap script follows this exact Cask route. It does not download a
+separate CLI archive, produce Linux packages, or create a Windows installer.
+Those platform products require separate release contracts and are not part of
+the Pantheon commercial route.
 
 ## iOS (xcframework)
 
