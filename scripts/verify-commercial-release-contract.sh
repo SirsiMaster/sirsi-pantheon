@@ -118,6 +118,7 @@ fi
   ([.components[].id] | sort) == [
     "canonical-cask-publication",
     "commercial-sign-notary-publication-route",
+    "commercial-update-payload-eligibility",
     "release-artifact-class-contract",
     "release-native-payload-composition"
   ] and
@@ -126,6 +127,17 @@ fi
     (.outputs | index("one Pantheon.app payload containing CLI, the canonical Swift menubar, LaunchAgent resource, and Stack Lab contracts")) != null and
     (.upgrade_recipe | index("require macapp/Package.swift and fail packaging instead of substituting the retired Go menubar")) != null)
 ' "$recipe" >/dev/null || { echo "Stack Lab release-artifact recipe is incomplete" >&2; exit 1; }
+
+/usr/bin/jq -e '
+  [.components[] | select(.id == "commercial-update-payload-eligibility")][0] |
+  (.source | index("internal/updater/updater.go")) != null and
+  (.source | index("internal/updater/install.go")) != null and
+  (.source | index("cmd/sirsi/update.go")) != null and
+  (.outputs | index("only a complete same-version Pantheon DMG and PKG pair is update-eligible")) != null and
+  (.upgrade_recipe | index("do not restore a standalone binary replacement route that can drift from the app payload")) != null
+' "$recipe" >/dev/null || {
+    echo "Stack Lab release route must bind complete commercial update eligibility" >&2; exit 1;
+}
 
 /usr/bin/jq -e '
   [.components[] | select(.id == "commercial-sign-notary-publication-route")][0] |
