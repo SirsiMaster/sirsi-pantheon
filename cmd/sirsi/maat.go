@@ -454,10 +454,14 @@ func runMaatPulse(cmd *cobra.Command, args []string) error {
 		return enc.Encode(metrics)
 	}
 
+	coverage := "Not measured"
+	if metrics.CoverageMeasured {
+		coverage = fmt.Sprintf("%.1f%%", metrics.Coverage)
+	}
 	// ── Beautiful dashboard output ──────────────────────────────
 	output.Dashboard(map[string]string{
-		"Tests":     fmt.Sprintf("%d passed / %d failed / %d skipped", metrics.TestsPassed, metrics.TestsFailed, metrics.TestsSkipped),
-		"Coverage":  fmt.Sprintf("%.1f%%", metrics.Coverage),
+		"Tests":     fmt.Sprintf("%d passed / %d failed / %d skipped (%s)", metrics.TestsPassed, metrics.TestsFailed, metrics.TestsSkipped, metrics.TestMeasurement),
+		"Coverage":  coverage,
 		"Source":    fmt.Sprintf("%d lines (%d files)", metrics.SourceLines, metrics.SourceFiles),
 		"Go Source": fmt.Sprintf("%d lines", metrics.GoSourceLines),
 		"Binary":    metrics.BinarySizeHuman,
