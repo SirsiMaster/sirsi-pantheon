@@ -20,6 +20,14 @@ for file in "$dmg" "$pkg" "$workflow" "$makefile" "$recipe" "$cask_cmd" "$cask_p
     [[ -f "$file" ]] || { echo "missing release-contract source: $file" >&2; exit 1; }
 done
 
+# Casks are owned by the release workflow's remote-tap transaction. A tracked
+# local mirror becomes an unreviewed second publication source and can mislead
+# operators into installing stale development-era bytes.
+[[ ! -e "$root/homebrew/Casks/sirsi-pantheon.rb" ]] || {
+    echo "stale local cask mirror must not coexist with the canonical remote-tap route" >&2
+    exit 1
+}
+
 for needle in \
     '#!/bin/bash' \
     'export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"' \

@@ -44,7 +44,7 @@
     },
     {
       "id": "canonical-cask-publication",
-      "source": ["internal/caskrelease/cask.go", "cmd/sirsi/cask_release.go", ".github/workflows/release.yml", "homebrew/Casks/sirsi-pantheon.rb"],
+      "source": ["internal/caskrelease/cask.go", "cmd/sirsi/cask_release.go", ".github/workflows/release.yml"],
       "tests": ["internal/caskrelease/cask_test.go", "scripts/verify-commercial-release-contract.sh"],
       "inputs": ["exact release version", "SHA-256 of the uploaded signed DMG", "current Homebrew tap blob identity"],
       "outputs": ["one canonical Casks/sirsi-pantheon.rb byte stream", "post-publication exact-byte verification"],
