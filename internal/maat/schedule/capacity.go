@@ -97,18 +97,16 @@ func (l *Ledger) FloorShare(resource string) (int, error) {
 	return floor, nil
 }
 
-// memCapacityStateKey holds the fleet's per-resource RAM capacity in GB, same
+// memCapacityStateKey holds the fleet's per-resource RAM capacity in GiB, same
 // shape as capacityStateKey but its own key/map: core contention and memory
 // pressure are different signals, so a resource's core and memory capacity
 // are tracked independently.
 const memCapacityStateKey = "maat:capacity-mem-gb"
 
 // defaultMemCapacityGB applies when the state key is absent or a resource has
-// no explicit entry in it.
-//
-// TODO(owner): real per-machine RAM GB, not guessed here — capacity.go's
-// defaultCapacity (m1=10, m5=18 cores) was an owner-provided number; this
-// needs the same for GB before it ships.
+// no explicit entry in it. Memory is deliberately unconfigured by default:
+// Pantheon must not invent a peer machine's RAM. A local/remote capacity
+// receipt or an explicit operator configuration is the authority.
 var defaultMemCapacityGB = map[string]int{}
 
 func (l *Ledger) capacityMemGB(resource string) (int, error) {
@@ -133,7 +131,14 @@ func (l *Ledger) capacityMemGB(resource string) (int, error) {
 	return capacities[resource], nil
 }
 
-// SetCapacityMemGB records resource's RAM capacity in GB, overriding the default.
+// MemoryCapacityGB returns resource's explicitly configured RAM capacity in
+// GiB, or zero when no capacity receipt/configuration exists. Callers that
+// need a guaranteed scheduling floor use FloorShareMemGB instead.
+func (l *Ledger) MemoryCapacityGB(resource string) (int, error) {
+	return l.capacityMemGB(resource)
+}
+
+// SetCapacityMemGB records resource's RAM capacity in GiB, overriding the default.
 func (l *Ledger) SetCapacityMemGB(resource string, gb int) error {
 	if !resourceRe.MatchString(resource) {
 		return fmt.Errorf("maat: resource %q invalid (want a lowercase slug like m1, rail-a, ci-runners@m5)", resource)
@@ -166,7 +171,7 @@ func (l *Ledger) SetCapacityMemGB(resource string, gb int) error {
 	return l.store.SetState(memCapacityStateKey, string(b))
 }
 
-// FloorShareMemGB returns the guaranteed minimum RAM (GB) for resource: its
+// FloorShareMemGB returns the guaranteed minimum RAM (GiB) for resource: its
 // mem capacity divided by FairShareLanes, never below 1 — FloorShare's twin
 // for memory instead of cores.
 func (l *Ledger) FloorShareMemGB(resource string) (int, error) {
