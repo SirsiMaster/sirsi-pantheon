@@ -1,6 +1,6 @@
 module github.com/SirsiMaster/sirsi-pantheon
 
-go 1.26.0
+go 1.25.0
 
 require (
 	charm.land/bubbletea/v2 v2.0.7
