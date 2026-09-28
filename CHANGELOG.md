@@ -16,6 +16,28 @@ publication remain separate credentialed operations.
 
 ---
 
+## [Unreleased] — relay re-dials half-open pooled connections (rs-30)
+**Fix.** The router relay's forward path now re-dials ONCE on a fresh
+connection when the first attempt provably never reached the Cloud Run service
+(a dial/DNS-phase failure — the shape a dropped half-open pooled connection
+surfaces), instead of parking a network-less codex sandbox's request in the
+outbox for a full retry cycle. The re-dial is gated on `neverReachedService`,
+so a post-send failure stays OUTCOME UNKNOWN and is never auto-retried (no
+double-commit). The forward transport also documents its no-pool guarantee
+(`DisableKeepAlives`) plus defensive idle bounds. Refs: rs-30; ADR-062 relay
+trust boundary.
+
+---
+
+## [0.24.28] — 2026-09-28 — DMG-first commercial release route
+**Commercial patch release.** The tagged macOS release now always publishes the
+signed, notarized, stapled Pantheon DMG when the Developer ID Application and
+Apple notarization credentials are present. A signed/notarized PKG remains an
+additive artifact when the separately managed Developer ID Installer identity
+is configured; its absence no longer prevents the complete DMG release or its
+canonical Homebrew cask publication. The route records that distinction
+explicitly in Stack Lab instead of leaving a successful product artifact
+stranded behind an unavailable installer credential.
 ## [0.24.30] — 2026-09-28 — Bounded caution cleanup
 **Commercial patch release.** Caution-tier cleanup now requires an explicit
 selection and confirmation, then moves only the selected recoverable items to
