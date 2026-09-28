@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"net/http/httptest"
 	"regexp"
 	"strings"
 	"testing"
@@ -25,5 +26,25 @@ func TestPageShellDerivesFromBrand(t *testing.T) {
 	}
 	if !strings.Contains(html, "var(--gold)") {
 		t.Error("expected classes to reference var(--gold)")
+	}
+}
+
+func TestRaViewUsesLiveStatusAndScopes(t *testing.T) {
+	s := New(Config{})
+	rr := httptest.NewRecorder()
+	s.handleOverview(rr, httptest.NewRequest("GET", "/", nil))
+	page := rr.Body.String()
+	for _, want := range []string{
+		"function viewRa()",
+		"/api/ra/status",
+		"/api/ra/scopes",
+		"[open Fleet]",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("Ra dashboard view missing %q", want)
+		}
+	}
+	if strings.Contains(page, "coming with the Ra backend") {
+		t.Error("Ra dashboard view regressed to placeholder copy")
 	}
 }

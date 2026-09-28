@@ -592,19 +592,47 @@ function viewVault(){
  }).catch(function(){out('Vault not available.','t-dim')});
 }
 
-/* Ra fleet orchestration has no backend yet — say so plainly instead of
-   dead-ending on fetches that can never succeed. Plain info, no alarm
-   styling: nothing here is fixable by the user, so nothing may alarm. */
 function viewRa(){
  out('𓇶 Ra — Fleet Orchestration','t-gold');
- out('');
- out('  Fleet orchestration — coming with the Ra backend.','t-out');
- out('');
- out('  Ra will balance work across your machines: each node reports its','t-dim');
- out('  capacity (RAM, GPU, pressure) and Ra deploys builds where they fit.','t-dim');
- out('');
- out('  This tab will light up when the backend ships. Nothing to configure','t-dim');
- out('  or fix here today.','t-dim');
+ out('  Read-only deployment status and available scopes from the local Ra authority.','t-dim');
+ Promise.all([
+  fetch('/api/ra/status').then(function(r){if(!r.ok)throw new Error('status HTTP '+r.status);return r.json()}),
+  fetch('/api/ra/scopes').then(function(r){if(!r.ok)throw new Error('scopes HTTP '+r.status);return r.json()})
+ ]).then(function(result){
+  const status=result[0]||{},scopes=result[1]||[];
+  out('');
+  if(!status.deployed){
+   out('  No Ra deployment is currently recorded on this Mac.','t-head');
+   out('  This is an idle state, not an error. Review active work and capacity in Fleet before creating or approving a new orchestration scope.','t-dim');
+   const fleet=document.createElement('button');fleet.className='t-action';fleet.type='button';fleet.textContent='[open Fleet]';
+   fleet.style.cssText='background:none;border:0;font:inherit;margin:8px 0;padding:0';
+   fleet.addEventListener('click',function(){switchView('fleet')});T.appendChild(fleet);
+  }else{
+   out('  Deployment started '+(status.started_at||'at an unknown time')+(status.all_done?' · complete':' · in progress'),'t-head');
+   const windows=status.windows||[];
+   if(!windows.length)out('  No deployment windows were reported.','t-dim');
+   windows.forEach(function(w){
+    const state=(w.state||'unknown').toUpperCase();
+    const row=document.createElement('div');row.className='t-line t-row';
+    const name=document.createElement('span');name.className='t-col';name.style.width='220px';name.textContent=w.name||'unnamed window';
+    const detail=document.createElement('span');detail.className='t-col';detail.style.flex='1';detail.textContent=state+' · PID '+(w.pid||'—')+' · '+(w.duration||'duration unavailable')+(typeof w.exit_code==='number'?' · exit '+w.exit_code:'');
+    row.appendChild(name);row.appendChild(detail);T.appendChild(row);
+    if(w.log_tail){const tail=document.createElement('div');tail.className='t-line t-dim';tail.style.paddingLeft='16px';tail.textContent=w.log_tail;T.appendChild(tail)}
+   });
+  }
+  sep();out('  AVAILABLE SCOPES','t-head');
+  if(!scopes.length){
+   out('  No scope configurations are loaded for this checkout. Use Fleet to inspect the current work queue.','t-dim');
+  }else{
+   scopes.forEach(function(s){
+    out('  '+(s.display_name||s.name||'unnamed')+' · '+(s.priority||'priority unavailable')+' · '+(s.sprints||0)+' sprint'+((s.sprints||0)===1?'':'s')+(s.deadline?' · deadline '+s.deadline:''));
+    if(s.repo_path)out('    '+s.repo_path,'t-dim');
+   });
+  }
+ }).catch(function(e){
+  out('');out('  Ra status is unavailable: '+e.message,'t-err');
+  out('  Open Fleet to inspect active lanes. If the local Ra record is expected, refresh this view after its producer is available.','t-dim');
+ });
 }
 
 /* ── Command input ────────────────────────────────────── */
@@ -624,7 +652,7 @@ function exec(raw){
  if(raw==='home'){switchView('home');return}
 
  /* View switches */
- const viewMap={scan:'scan',ghosts:'ghosts',guard:'guard',doctor:'guard',
+ const viewMap={fleet:'fleet',scan:'scan',ghosts:'ghosts',guard:'guard',doctor:'guard',
   notifications:'notifications',horus:'horus',apollo:'apollo',telemetry:'apollo',vault:'vault',ra:'ra',deploy:'ra'};
  if(viewMap[raw]){switchView(viewMap[raw]);return}
 
