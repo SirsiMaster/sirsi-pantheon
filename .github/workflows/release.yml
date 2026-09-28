@@ -88,10 +88,22 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PWD" build.keychain
           rm certificate.p12
 
+      - name: Resolve imported Developer ID identity
+        if: env.MACOS_CERTIFICATE != ''
+        run: |
+          set -euo pipefail
+          ID=$(security find-identity -v -p codesigning build.keychain \
+            | awk -F '"' '/Developer ID Application/{print $2; exit}')
+          if [ -z "$ID" ]; then
+            echo "No Developer ID Application identity was imported into build.keychain" >&2
+            exit 1
+          fi
+          echo "DEVELOPER_ID_APPLICATION=$ID" >> "$GITHUB_ENV"
+          echo "Resolved the imported Developer ID Application identity for signing."
+
       - name: Build + sign + notarize DMG and PKG (arm64 — Intel Macs use Rosetta)
         env:
           BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
-          DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
           DEVELOPER_ID_INSTALLER: ${{ secrets.DEVELOPER_ID_INSTALLER }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
