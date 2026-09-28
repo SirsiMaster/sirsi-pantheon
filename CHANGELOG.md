@@ -6,6 +6,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.23] — 2026-09-28 — Stack Lab doctor origin roster provenance
+**Commercial patch release.** `sirsi stacklab doctor` now reads the Stack Lab
+wing roster from the canonical `sirsi-pantheon` `origin/main` source through
+the authenticated remote reader, rather than depending on a stale local
+working-tree roster. Peer resolution uses the same canonical reader. This
+release changes provenance for the diagnostic surface only; it does not claim
+router migration, deployment, or installed-host qualification.
+
+---
+
 ## [0.24.14] — 2026-09-27 — Hermes M5 seat registry alias
 **Commercial patch release.** The canonical router registry now includes the
 `cylton-hermes` software identity for the Hermes M5 seat and its
