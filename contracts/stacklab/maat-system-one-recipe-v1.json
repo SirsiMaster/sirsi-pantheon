@@ -139,10 +139,10 @@
       "id": "maat-native-resolution-surface",
       "source": ["macapp/Sources/SirsiMenubar/Views.swift", "macapp/Sources/SirsiMenubar/MaatCasebookView.swift", "macapp/Sources/SirsiMenubar/SirsiEngine.swift"],
       "tests": ["scripts/verify-maat-native-resolution-contract.sh"],
-      "inputs": ["canonical diagnostic finding", "explicit operator confirmation", "canonical Ma'at casebook projection"],
-      "outputs": ["guided owner-review entry point for every alarm without a safe automatic repair", "native evidence and acceptance path", "first-class System One gate and calibration projection"],
-      "writes": ["only a confirmed Ma'at owner review or owner acceptance through the canonical CLI"],
-      "upgrade_recipe": ["never label an alarm informational solely because automation is unsafe", "require an explicit confirmation before recording a review", "preserve the distinction between owner conclusion and system repair", "continue successful review to the shared Casebook acceptance surface", "render System One only from the canonical Casebook projection", "never render an empty history as a pass or manufacture a screen from ambient state", "run the native resolution contract and Swift syntax validation"]
+      "inputs": ["canonical diagnostic finding", "explicit operator confirmation", "canonical Ma'at casebook projection", "explicitly selected closed System One JSON from a qualified producer"],
+      "outputs": ["guided owner-review entry point for every alarm without a safe automatic repair", "native evidence and acceptance path", "first-class System One gate and calibration projection", "confirmed native closed-screen validation and record route"],
+      "writes": ["only a confirmed Ma'at owner review or owner acceptance through the canonical CLI", "one validated System One decision journal record through the canonical CLI"],
+      "upgrade_recipe": ["never label an alarm informational solely because automation is unsafe", "require an explicit confirmation before recording a review or a selected System One screen", "preserve the distinction between owner conclusion and system repair", "continue successful review to the shared Casebook acceptance surface", "render System One only from the canonical Casebook projection", "never render an empty history as a pass or manufacture a screen from ambient state", "never execute an assessed payload while validating its selected screen JSON", "run the native resolution contract and Swift syntax validation"]
     },
     {
       "id": "maat-confirmed-diagnostic-repair",

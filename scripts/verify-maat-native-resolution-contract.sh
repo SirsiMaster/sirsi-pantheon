@@ -58,7 +58,12 @@ for needle in \
   'System One evidence is unavailable' \
   'No System One evidence yet' \
   'System One does not invent a screen' \
-  'screens never grant execution authority'; do
+  'screens never grant execution authority' \
+  'Choose System One JSON' \
+  'Record this System One screen?' \
+  'Validate and record' \
+  'It will not execute the assessed payload' \
+  '"maat", "screen", "--input"'; do
   /usr/bin/grep -Fq "$needle" "$casebook" || {
     echo "native Ma'at System One surface missing: $needle" >&2
     exit 1

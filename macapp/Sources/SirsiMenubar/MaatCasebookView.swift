@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MaatWorkspaceView joins decision quality and retained local knowledge under
 // one operator authority. Seshat's ingestion compatibility commands are not a
@@ -71,6 +72,12 @@ private struct MaatSystemOneView: View {
     @State private var casebook: MaatCasebookProjection?
     @State private var loading: Bool
     @State private var loadError: String?
+    @State private var showScreenPicker = false
+    @State private var selectedScreenURL: URL?
+    @State private var confirmScreenImport = false
+    @State private var screenImportInFlight = false
+    @State private var screenImportResult: CommandResult?
+    @State private var screenImportError: String?
 
     init(engine: SirsiEngine, section: Binding<MaatWorkspaceSection>, preloaded: MaatCasebookProjection? = nil) {
         self.engine = engine
@@ -100,6 +107,23 @@ private struct MaatSystemOneView: View {
         .task {
             guard casebook == nil else { return }
             await load()
+        }
+        .fileImporter(isPresented: $showScreenPicker, allowedContentTypes: [.json], allowsMultipleSelection: false) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                selectedScreenURL = url
+                screenImportError = nil
+                confirmScreenImport = true
+            case .failure(let error):
+                screenImportError = "Pantheon did not open the selected evidence file: \(error.localizedDescription)"
+            }
+        }
+        .confirmationDialog("Record this System One screen?", isPresented: $confirmScreenImport, titleVisibility: .visible) {
+            Button("Validate and record") { Task { await importScreen() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Ma'at will validate the exact selected JSON and record an evidence-bound local gate. It will not execute the assessed payload, authorize work, or treat this as a release decision.")
         }
     }
 
@@ -135,6 +159,7 @@ private struct MaatSystemOneView: View {
             MaybeScroll {
                 VStack(alignment: .leading, spacing: 16) {
                     summary(screens: screens, calibrations: calibrations)
+                    screenImportControl
                     if screens.isEmpty {
                         emptyState
                     } else {
@@ -198,12 +223,60 @@ private struct MaatSystemOneView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Button("Open decisions") { section = .decisions }
-                .buttonStyle(.borderedProminent)
-                .tint(gold)
+                .buttonStyle(.bordered)
             NavLink { StackLabView(engine: engine) } label: {
                 Label("Inspect Stack Lab recipes", systemImage: "cube.transparent")
             }
             .buttonStyle(.bordered)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+    }
+
+    private var screenImportControl: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Record a closed screen")
+                .sirsiFont(.headline)
+            Text("Choose a qualified producer's System One JSON. Ma'at validates the closed schema and deterministic floor before it writes one evidence-bound Casebook record.")
+                .sirsiFont(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                showScreenPicker = true
+            } label: {
+                Label("Choose System One JSON", systemImage: "doc.badge.plus")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(gold)
+            .disabled(screenImportInFlight)
+            if let selectedScreenURL {
+                Text("Selected: \(selectedScreenURL.lastPathComponent)")
+                    .sirsiFont(.caption, design: .monospaced)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            if screenImportInFlight {
+                ProgressView("Validating and recording…")
+                    .sirsiFont(.caption)
+            }
+            if let result = screenImportResult {
+                Label(result.summary, systemImage: result.ok ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(result.ok ? .green : .orange)
+                if result.ok {
+                    Text("The Casebook was refreshed from the recorded evidence.")
+                        .sirsiFont(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if let screenImportError {
+                Label(screenImportError, systemImage: "exclamationmark.triangle.fill")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -261,6 +334,19 @@ private struct MaatSystemOneView: View {
         case "escalate": return gold
         default: return .secondary
         }
+    }
+
+    @MainActor private func importScreen() async {
+        guard let selectedScreenURL else { return }
+        screenImportInFlight = true
+        screenImportError = nil
+        screenImportResult = await SirsiEngine.runResult(args: ["maat", "screen", "--input", selectedScreenURL.path])
+        if screenImportResult == nil {
+            screenImportError = "Ma'at could not validate or record this screen. The input remains unchanged and no System One result was inferred. Choose a valid closed evidence JSON or inspect the producer's receipt."
+        } else if screenImportResult?.ok == true {
+            await load()
+        }
+        screenImportInFlight = false
     }
 
     @MainActor private func load() async {
