@@ -2,7 +2,11 @@
 
 **Lane:** `stacklab.wing.ra-horus-fabric`  
 **Last reviewed:** 2026-09-27  
-**Status:** v0.24.3 released; DMG signed/notarized/stapled, CLI artifacts published, PKG remains unsigned and is not a commercial installer.
+**Status:** The historical v0.24.3 Ra/Horus artifact set has a signed/notarized/
+stapled DMG and published CLI artifacts, but its PKG is unsigned. It is therefore
+**not a commercial Pantheon product release** under the canonical DMG+PKG release
+contract; the evidence remains traceable below while the complete replacement
+release route is open.
 
 This is the single lane-level index for the required product documents. Each
 row names the authoritative artifact, implementation surface, and proof still
@@ -23,7 +27,7 @@ has not been proven.
 | Native sender identity | `macapp/Sources/SirsiMenubar/SirsiEngine.swift` | sender fixed to `horus`; caller cannot choose `--from` | ACCEPTED SOURCE | release build and runtime handoff proof |
 | One router authority | `internal/routerstore`, `docs/runbooks/router-service-tokens-and-rollback.md` | service env refusal of local fallback | ACCEPTED SOURCE | verify both installed Macs after cut-over |
 | Release readiness | `.github/workflows/release.yml`, `.goreleaser.yaml` | protected run `36328430291` at merge `0a95a045`; DMG `e846c682…`, notarization accepted/stapled; PKG `e6ad20ca…` explicitly unsigned | CONDITIONAL | provision `DEVELOPER_ID_INSTALLER` and rerun the protected workflow before calling the PKG commercial-ready |
-| Homebrew cask lifecycle | `homebrew-tools/Casks/sirsi-pantheon.rb` | cask v0.24.3, SHA256 `e846c682…`, matches release DMG | ACCEPTED SOURCE/RELEASE | execute isolated install/upgrade/rollback/uninstall rehearsal |
+| Homebrew cask lifecycle | `homebrew-tools/Casks/sirsi-pantheon.rb` | historical cask v0.24.3, SHA256 `e846c682…`, matches the historical DMG | HISTORICAL / NONCOMMERCIAL | bind only a full signed DMG+PKG release, then execute isolated install/upgrade/rollback/uninstall rehearsal |
 | Stack Lab registry authority | `contracts/stacklab/ra-horus-fabric-wing-v1.json`, `contracts/stacklab/v2/PROVENANCE.md` | doctor now consumes the canonical Ra/Horus record; registry byte pin still external | OPEN | publish the exact canonical contract bytes to the universal registry |
 
 ## Definition of done
