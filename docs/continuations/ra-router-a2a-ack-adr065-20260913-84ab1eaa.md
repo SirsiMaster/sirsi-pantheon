@@ -24,9 +24,16 @@ Resume from THIS file only if you are `ra` on this workstream. Identity reuses t
   SSA is at `397eb638` with no network; bundles live in `~/.sirsi/handoff/` — cut a fresh one from
   `397eb638..1995046` for anything they must read.
 
+## 2026-09-14 addendum (verified)
+
+- **Both Macs rebooted ~09:21–09:29Z**: M1 kernel panic in `AppleMobileDispT600X-DCP` (Apple display driver; `panicmedic-auxkc-present false`); M5 unclean reset, no panic file, IOSurface errors + AWDL churn just before. Everything came back on its own (M1 relay pid 303; M5 nine lanes + relay pid 351; ledger reachable). Tailscale sysext ghosts on the M1 survived the reboot — owner gate.
+- **Inbox drained**: all 19 open `ra` items (2026-09-12 backlog) answered with evidence and closed 2026-09-14 ~09:55Z; bodies in this session's scratchpad, results on the store. Key ruling: `blocked_by` is a task id OR an external reason by design; clearing it needs no lease (rs-39 → help-text fix PR #759, not a store change). io-density-pr305 corrected live for codex-deck.
+- **Open PRs needing an owner word (not in the waived rollout)**: #758 (SNE source-authority sentence in two consumer prompts, requested by codex-inference, CI green), #759 (`--blocked-by` help text, CI pending). Merge → reply on 20260912-063651 with the sha → clear codex-inference task `ra-sne-consumer-authority-convergence-20260912`; fenced-complete rs-39.
+- **Owner decision cards outstanding**: OOB/anchor admission design (SHA 183845 — Ra recommends LAN-only signed anchor daemon, Apple Configurator as the documented floor); Tailscale sysext reset; M1 remote-control PTY login (credentials — owner only); ADR-065 verdict still awaited from SHA + SSA (rs-37).
+
 ## On resume — in order
 
-1. `sirsi router pull ra` — SHA/SSA replies on #755, ADR-065 verdicts.
+1. `sirsi router pull ra` — 10 SHA items landed 2026-09-14T20:18Z..2026-09-15T03:24Z (unread): post-repair profile refresh; M5 recovery admission / SSH-key correction; Hermes phase-B marshal gate; collapse eleven Hermes duplicates; DEFECT claude-io wake loop green while consumer idle; DEFECT CTR/node-status hang leaves Hermes worker falsely active; Ma'at rail-profile gate executable; ownerless recovery model APPROVED (signed LAN anchor + physical); M5 Xcode CLI license. Work the two router DEFECTS first (Ra-owned).
 2. If SHA + SSA accept ADR-065 → start rs-37 per the ADR's cut-over order (informer up → verified push
    receipt → retire ONE lane's plist, negative control first). Decision 4 closes rs-36.
 3. Roll the M1 client to `1995046` at the next M1-touching change (recipe §4 step 4: build → `.new` →
