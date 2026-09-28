@@ -18,9 +18,7 @@ import (
 // signature and that it returns non-nil metrics when the system is available.
 
 func TestCollectMetrics_Runs(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping live scan in short mode")
-	}
+	requireLiveHostTests(t)
 	// CollectMetrics runs real scans — just verify it doesn't panic
 	// and returns a valid structure or a reasonable error.
 	metrics, err := CollectMetrics()
@@ -45,9 +43,7 @@ func TestCollectMetrics_Runs(t *testing.T) {
 // ─── Enforce ──────────────────────────────────────────────────────────────
 
 func TestEnforce_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping live enforcement in short mode")
-	}
+	requireLiveHostTests(t)
 	policy := DefaultPolicy().Policies[0]
 	result, err := Enforce(policy)
 	if err != nil {
@@ -62,6 +58,16 @@ func TestEnforce_Integration(t *testing.T) {
 	}
 	if len(result.Verdicts) != len(policy.Rules) {
 		t.Errorf("got %d verdicts, want %d", len(result.Verdicts), len(policy.Rules))
+	}
+}
+
+// requireLiveHostTests keeps the normal product suite deterministic. These
+// cases inspect live launchd state and a user's entire home directory; they
+// are useful only in an explicitly admitted host-qualification run.
+func requireLiveHostTests(t *testing.T) {
+	t.Helper()
+	if testing.Short() || os.Getenv("SIRSI_LIVE_HOST_TESTS") != "1" {
+		t.Skip("set SIRSI_LIVE_HOST_TESTS=1 to run live host qualification")
 	}
 }
 

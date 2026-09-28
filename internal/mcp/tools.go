@@ -593,6 +593,10 @@ func handleScanWorkspace(args map[string]interface{}) (*ToolResult, error) {
 
 	result, err := engine.Scan(ctx, jackal.ScanOptions{
 		Categories: categories,
+		// The caller-selected workspace is the scan root as well as the label
+		// rendered in the result. Without this, a bounded MCP request could say
+		// it scanned one project while rules silently walked the ambient home.
+		HomeDir: scanPath,
 	})
 	if err != nil {
 		return textResult(fmt.Sprintf("Scan failed: %v", err), true), nil
