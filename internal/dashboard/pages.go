@@ -441,6 +441,10 @@ function viewMaat(){
     bits.push('system one: '+(screen.gate||'unknown')+' · '+confidence+'% confidence · feather '+(screen.feather_weight??'unknown')+'/100');
     if(screen.subject)bits.push('screen subject: '+(screen.subject.kind||'unknown')+' '+(screen.subject.ref||'unknown')+' · '+(screen.subject.head_sha||'unknown'));
     if(screen.escalation&&screen.escalation.reason)bits.push('required review: '+screen.escalation.reason);
+    if(Array.isArray(screen.findings))screen.findings.forEach(function(finding){
+     bits.push('finding: '+(finding.severity||'information')+' · '+(finding.category||'finding')+' · '+(finding.claim||'no claim recorded'));
+     if(finding.fix_hint)bits.push('prescribed next step: '+finding.fix_hint);
+    });
    }
    if(d.system_one_calibration){
     const calibration=d.system_one_calibration;

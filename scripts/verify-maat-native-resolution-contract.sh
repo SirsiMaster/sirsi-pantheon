@@ -10,11 +10,17 @@ view="$root/macapp/Sources/SirsiMenubar/Views.swift"
 casebook="$root/macapp/Sources/SirsiMenubar/MaatCasebookView.swift"
 launchd="$root/internal/router/launchdkickstart.go"
 screencli="$root/cmd/sirsi/maatscreen.go"
+casebookcli="$root/cmd/sirsi/maatcasebook.go"
+tui="$root/internal/tui/screen_activity.go"
+dashboard="$root/internal/dashboard/pages.go"
 
 [ -f "$view" ] || { echo "missing native views" >&2; exit 1; }
 [ -f "$casebook" ] || { echo "missing native Ma'at casebook" >&2; exit 1; }
 [ -f "$launchd" ] || { echo "missing managed launchd recovery" >&2; exit 1; }
 [ -f "$screencli" ] || { echo "missing Ma'at System One command" >&2; exit 1; }
+[ -f "$casebookcli" ] || { echo "missing Ma'at Casebook CLI" >&2; exit 1; }
+[ -f "$tui" ] || { echo "missing Ma'at Casebook TUI" >&2; exit 1; }
+[ -f "$dashboard" ] || { echo "missing Ma'at Casebook dashboard" >&2; exit 1; }
 
 if /usr/bin/grep -Fq 'This needs attention but has no one-click fix yet.' "$view"; then
   echo "native finding dead-end text remains" >&2
@@ -32,6 +38,13 @@ for needle in \
     echo "native Ma'at resolution path missing: $needle" >&2
     exit 1
   }
+done
+
+for target in "$casebookcli" "$tui" "$dashboard"; do
+	/usr/bin/grep -Fq 'prescribed next step' "$target" || {
+		echo "Ma'at recovery guidance projection missing: $target" >&2
+		exit 1
+	}
 done
 
 for needle in \

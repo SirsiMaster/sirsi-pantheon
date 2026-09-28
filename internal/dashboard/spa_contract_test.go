@@ -118,6 +118,8 @@ func TestMaatView_ProjectsSystemOneEvidence(t *testing.T) {
 		"screen.feather_weight",
 		"screen.subject.head_sha",
 		"screen.escalation.reason",
+		"screen.findings",
+		"finding.fix_hint",
 		"d.system_one_calibration",
 		"calibration.frontier_evidence",
 	} {

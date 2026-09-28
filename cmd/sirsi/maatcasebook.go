@@ -62,6 +62,17 @@ resolved to narrow the view.`,
 			if c.NextAction != nil {
 				fmt.Printf("          next step: %s · %s\n", c.NextAction.Title, c.NextAction.Detail)
 			}
+			if c.SystemOne != nil {
+				for _, finding := range c.SystemOne.Findings {
+					fmt.Printf("          finding [%s · %s]: %s\n", finding.Severity, finding.Category, finding.Claim)
+					if finding.FixHint != "" {
+						// A fix hint is retained producer evidence, not a command
+						// dispatcher. Present the same recovery step every surface
+						// sees, but never execute it merely by rendering Casebook.
+						fmt.Printf("          prescribed next step: %s\n", finding.FixHint)
+					}
+				}
+			}
 			if c.Resolution != "" {
 				fmt.Printf("          owner acceptance: %s · system repair: not claimed\n", c.Resolution)
 			}

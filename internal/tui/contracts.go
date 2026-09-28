@@ -136,12 +136,24 @@ type maatSystemOneEscalation struct {
 	Reason string `json:"reason"`
 }
 
+type maatSystemOneFinding struct {
+	ID       string `json:"id"`
+	Severity string `json:"severity"`
+	Category string `json:"category"`
+	File     string `json:"file"`
+	Line     int    `json:"line"`
+	Claim    string `json:"claim"`
+	Evidence string `json:"evidence"`
+	FixHint  string `json:"fix_hint"`
+}
+
 type maatSystemOneVerdict struct {
 	Gate          string                   `json:"gate"`
 	Confidence    float64                  `json:"confidence"`
 	FeatherWeight int                      `json:"feather_weight"`
 	Subject       maatSystemOneSubject     `json:"subject"`
 	Escalation    *maatSystemOneEscalation `json:"escalation"`
+	Findings      []maatSystemOneFinding   `json:"findings"`
 }
 
 type maatCase struct {

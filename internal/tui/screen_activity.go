@@ -295,6 +295,13 @@ func (s *activityScreen) maatView(height int, caps Capabilities) []string {
 			if c.SystemOne.Escalation != nil && c.SystemOne.Escalation.Reason != "" {
 				tail = append(tail, "  "+Paint("required review: ", TokDim, caps)+c.SystemOne.Escalation.Reason)
 			}
+			for _, finding := range c.SystemOne.Findings {
+				heading := finding.Severity + " · " + finding.Category
+				tail = append(tail, "  "+Paint("finding ("+heading+"): ", TokDim, caps)+finding.Claim)
+				if finding.FixHint != "" {
+					tail = append(tail, "  "+Paint("prescribed next step: ", TokAccent, caps)+finding.FixHint)
+				}
+			}
 		}
 		if c.NextAction != nil {
 			tail = append(tail, "  "+Paint("next step: ", TokDim, caps)+c.NextAction.Title)
