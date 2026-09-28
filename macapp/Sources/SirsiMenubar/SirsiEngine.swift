@@ -50,8 +50,11 @@ struct DiagFinding: Decodable, Identifiable {
     let trend: Bool?
     let fix: String?   // safe CLI command that resolves this finding (nil = informational)
     let fixKind: String?  // "instant" | "relief" | "guidance" — how honest to be about the fix
+    // "repair" | "maat_review" | "information". Older installed CLIs omit
+    // this field, so the native view preserves a safe severity-based fallback.
+    let resolution: String?
 
-    enum CodingKeys: String, CodingKey { case check, severity, message, detail, trend, fix, fixKind }
+    enum CodingKeys: String, CodingKey { case check, severity, message, detail, trend, fix, fixKind, resolution }
 }
 
 // DiagReport carries the findings plus the CANONICAL roll-up `status`

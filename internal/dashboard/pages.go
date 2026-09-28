@@ -508,7 +508,18 @@ function viewGuard(){
   if(!fs.length){out('  No diagnostics returned.','t-dim')}
   fs.forEach(function(f){
    const icon=({0:'✅',1:'ℹ️',2:'⚠️',3:'🔴'}[f.severity]||'⚪');
-   out('  '+icon+' '+f.check+' — '+f.message)});
+   out('  '+icon+' '+f.check+' — '+f.message);
+   /* Every live alarm carries an explicit next step. A missing safe repair is
+      not rendered as a dead-end: it is an evidence-bound Ma'at review route.
+      The dashboard remains read-only here; the native/TUI surfaces perform the
+      confirmation-gated action, while this terminal surface names the exact
+      route without silently mutating the host. */
+   if(f.severity>=2){
+    const route=f.resolution||(f.fix?'repair':'maat_review');
+    if(route==='repair'&&f.fix)out('      next: '+f.fix,'t-gold');
+    else if(route==='maat_review')out('      resolution: Ma\'at review — retain the exact observation, inspect it in Casebook, then record an explicit owner conclusion.','t-gold');
+   }
+  });
   sep();out('');
   out('Process Slayer — type: kill node | kill electron | kill docker | kill lsp | kill build | kill ai','t-dim');
   out('Deprioritize — type: deprioritize (safe, reversible — lowers background process priority)','t-dim');

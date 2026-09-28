@@ -1125,7 +1125,10 @@ struct HealthRow: View {
     let finding: DiagFinding
 
     private var hasFix: Bool { !(finding.fix ?? "").isEmpty }
-    private var navigable: Bool { hasFix || !(finding.detail ?? "").isEmpty }
+    private var requiresMaatReview: Bool {
+        finding.resolution == "maat_review" || (finding.resolution == nil && finding.severity >= 2 && !hasFix)
+    }
+    private var navigable: Bool { hasFix || requiresMaatReview || !(finding.detail ?? "").isEmpty }
 
     var body: some View {
         if navigable {
@@ -1220,8 +1223,12 @@ struct FindingView: View {
     }
 
     // Warn (2) and Critical (3) are alarms (guard.DiagnosticSeverity). An alarm
-    // without a fix must say so honestly — never "Informational".
+    // without a direct repair must route into Ma'at review — never "Informational".
     private var isAlarm: Bool { finding.severity >= 2 }
+
+    private var requiresMaatReview: Bool {
+        finding.resolution == "maat_review" || (finding.resolution == nil && isAlarm && (finding.fix ?? "").isEmpty)
+    }
 
     private var fixIcon: String {
         switch kind {
@@ -1352,7 +1359,7 @@ struct FindingView: View {
                             } label: { fixButtonContents(fix) }
                             .buttonStyle(.borderedProminent).tint(gold)
                         }
-                    } else if isAlarm {
+                    } else if requiresMaatReview {
                         // A high-severity finding without a safe automatic
                         // mutation still gets a complete resolution path. Ma'at
                         // records the exact observed finding only after the

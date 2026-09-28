@@ -43,7 +43,7 @@ func fetchSPA(t *testing.T) string {
 func TestGuardView_ReadsDoctorJSONKeysNotGoFieldNames(t *testing.T) {
 	raw, err := json.Marshal(guard.DoctorReport{
 		Score:    91,
-		Findings: []guard.DiagnosticFinding{{Check: "RAM Pressure", Message: "healthy", Severity: 0}},
+		Findings: []guard.DiagnosticFinding{{Check: "RAM Pressure", Message: "healthy", Severity: 0, Resolution: guard.ResolutionInfo}},
 	})
 	if err != nil {
 		t.Fatalf("marshal report: %v", err)
@@ -69,7 +69,7 @@ func TestGuardView_ReadsDoctorJSONKeysNotGoFieldNames(t *testing.T) {
 		t.Fatalf("expected one marshaled finding, got %d", len(findings))
 	}
 	finding, _ := findings[0].(map[string]any)
-	for _, key := range []string{"check", "message", "severity"} {
+	for _, key := range []string{"check", "message", "severity", "resolution"} {
 		if _, ok := finding[key]; !ok {
 			t.Fatalf("guard.DiagnosticFinding no longer marshals a %q key — update the Guard view to match", key)
 		}

@@ -23,10 +23,10 @@ var bannedFixCommands = map[string]bool{
 	"diagnose": true, "scan": true, "watch": true,
 }
 
-// noLeverRequired findings legitimately have no required one-click lever — either
-// GUIDANCE-only (name the cause + manual steps) or INFO-only (never alarms). An
-// empty remediationCommand is correct for them. Anything NOT here that can alarm
-// MUST have a real lever.
+// noLeverRequired findings deliberately have no automatic mutation. Alarm-level
+// instances must still surface ResolutionMaatReview, so a user can retain the
+// evidence and reach an explicit, truthful owner conclusion rather than being
+// left at a status screen.
 var noLeverRequired = map[string]bool{
 	"Kernel Panics (7d)": true, // guidance: hardware/driver — nothing safe to auto-do
 	"Sirsi Processes":    true, // info
@@ -78,18 +78,53 @@ func TestRemediationNeverAMonitor(t *testing.T) {
 	}
 }
 
-// TestEveryAlarmingCheckHasLeverOrGuidance: a finding that can reach Warn+ must
-// offer a real lever, unless it is explicitly guidance-only. No silent dead-ends.
-// "Top Memory Consumers" is deliberately NOT exempt: a warn-level memory hog gets
-// `sirsi relieve --memory` (the #124 lever), never "Informational".
-func TestEveryAlarmingCheckHasLeverOrGuidance(t *testing.T) {
+// TestEveryAlarmingCheckHasResolution: a finding that can reach Warn+ must offer
+// either a real bounded lever or Ma'at's evidence-bound review route. No silent
+// dead ends, including checks where automatic mutation would be unsafe.
+func TestEveryAlarmingCheckHasResolution(t *testing.T) {
 	for _, check := range FindingChecks() {
-		if noLeverRequired[check] {
-			continue
-		}
 		f := DiagnosticFinding{Check: check, Severity: SeverityCritical}
-		if remediationCommand(f) == "" {
-			t.Errorf("%q can alarm but has no lever AND isn't guidance/info-only — every alarming finding needs a real action (ADR-033)", check)
+		route := resolutionRoute(f)
+		if route != ResolutionRepair && route != ResolutionMaatReview {
+			t.Errorf("%q can alarm but resolution route is %q — every alarming finding needs repair or Ma'at review", check, route)
+		}
+		if !noLeverRequired[check] && route != ResolutionRepair {
+			t.Errorf("%q has a safe remediation contract but did not publish a repair route", check)
+		}
+	}
+}
+
+func TestResolutionRouteKeepsUsersOutOfDeadEnds(t *testing.T) {
+	cases := []struct {
+		name string
+		f    DiagnosticFinding
+		want ResolutionRoute
+	}{
+		{"direct repair", DiagnosticFinding{Check: "Disk Space", Severity: SeverityCritical}, ResolutionRepair},
+		{"unsafe automatic change", DiagnosticFinding{Check: "Kernel Panics (7d)", Severity: SeverityCritical}, ResolutionMaatReview},
+		{"informational observation", DiagnosticFinding{Check: "Sirsi Processes", Severity: SeverityInfo}, ResolutionInfo},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := resolutionRoute(tc.f); got != tc.want {
+				t.Fatalf("resolutionRoute(%#v) = %q, want %q", tc.f, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestDoctorPublishesResolutionForEveryFinding(t *testing.T) {
+	report, err := DoctorWith(healthyMock())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Findings) == 0 {
+		t.Fatal("doctor emitted no findings")
+	}
+	for _, finding := range report.Findings {
+		want := resolutionRoute(finding)
+		if finding.Resolution != want {
+			t.Errorf("%q resolution = %q, want %q", finding.Check, finding.Resolution, want)
 		}
 	}
 }

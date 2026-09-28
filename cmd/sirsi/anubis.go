@@ -1177,6 +1177,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 			f.Fix = "sirsi self-update"  // appended after the doctor post-pass; set its remediation here
 			f.FixKind = guard.FixInstant // self-update replaces the drifted binary → resolves now
 		}
+		f.Resolution = guard.ResolutionFor(f)
 		report.Findings = append(report.Findings, f)
 	}
 
@@ -1196,6 +1197,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 			lw.Fix = "sirsi liveness-watch install"
 			lw.FixKind = guard.FixInstant
 		}
+		lw.Resolution = guard.ResolutionFor(lw)
 		report.Findings = append(report.Findings, lw)
 	}
 
@@ -1219,6 +1221,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 			ls.Fix = "sirsi reap-sessions --apply"
 			ls.FixKind = guard.FixInstant
 		}
+		ls.Resolution = guard.ResolutionFor(ls)
 		report.Findings = append(report.Findings, ls)
 	}
 

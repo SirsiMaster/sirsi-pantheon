@@ -487,6 +487,27 @@ func TestGuidanceFixNotOffered(t *testing.T) {
 	}
 }
 
+func TestMaatReviewRouteIsOfferableWithoutPretendingToRepair(t *testing.T) {
+	review := diagFinding{Check: "Kernel Panics (7d)", Severity: 3, Resolution: "maat_review"}
+	if !hasMaatReview(review) {
+		t.Fatal("Ma'at review route was not offered for an alarm without a safe automatic repair")
+	}
+	if hasOfferableFix(review) {
+		t.Fatal("evidence review must not masquerade as a direct repair")
+	}
+
+	hs := newHealthScreen()
+	hs.state = stateReady
+	hs.report = diagReport{Findings: []diagFinding{review}}
+	if _, cmd := hs.handleCmd(Command{ID: CmdFix}); cmd != nil || !hs.confirmMaatReview {
+		t.Fatal("f did not arm the separate Ma'at review confirmation")
+	}
+	frame := strings.Join(hs.confirmLines(testCaps()), "\n")
+	if !strings.Contains(frame, "CONFIRM MA'AT REVIEW") || !strings.Contains(frame, "does not repair") {
+		t.Fatalf("Ma'at review confirmation overclaimed or was absent:\n%s", frame)
+	}
+}
+
 func TestFixKindLabelHonesty(t *testing.T) {
 	cases := map[string]string{"instant": "fixes now", "relief": "relieves live cause", "guidance": "guidance only"}
 	for kind, want := range cases {

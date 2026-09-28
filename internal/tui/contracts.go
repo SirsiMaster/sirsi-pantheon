@@ -227,7 +227,8 @@ type diagFinding struct {
 	Trend      bool   `json:"trend,omitempty"`
 	ActiveDays int    `json:"activeDays,omitempty"`
 	Fix        string `json:"fix,omitempty"`
-	FixKind    string `json:"fixKind,omitempty"` // instant | relief | guidance
+	FixKind    string `json:"fixKind,omitempty"`    // instant | relief | guidance
+	Resolution string `json:"resolution,omitempty"` // repair | maat_review | information
 }
 
 type diagReport struct {

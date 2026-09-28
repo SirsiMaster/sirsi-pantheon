@@ -19,7 +19,9 @@ import (
 //	guidance → the fix only acts if the condition is live; otherwise it prints
 //	           guidance and is a no-op — NOT offered as a one-key fix (ADR-033).
 //
-// `f` applies the selected finding's fix by dispatching its exact Fix command.
+// `f` applies the selected finding's exact Fix command, or—when automatic
+// mutation is unsafe—opens a confirmation to retain the observation in Ma'at
+// Casebook for its explicit review and owner-conclusion route.
 
 type healthScreen struct {
 	state    loadState
@@ -38,6 +40,9 @@ type healthScreen struct {
 	// bypass the modal — but every applied fix carries the flags that make it
 	// actually APPLY, never a preview no-op (ADR-033).
 	confirm bool
+	// confirmMaatReview is separate from a system repair: it retains evidence
+	// only, never reports a repair, and opens the Casebook route after success.
+	confirmMaatReview bool
 }
 
 func newHealthScreen() *healthScreen { return &healthScreen{state: stateIdle, detail: -1} }
@@ -100,7 +105,7 @@ func (s *healthScreen) Update(msg tea.Msg, caps Capabilities) (Screen, tea.Cmd) 
 		return s, nil
 
 	case dispatchDone:
-		if m.kind != "fix" {
+		if m.kind != "fix" && m.kind != "maat-review" {
 			return s, nil
 		}
 		s.fixing = false
@@ -108,7 +113,9 @@ func (s *healthScreen) Update(msg tea.Msg, caps Capabilities) (Screen, tea.Cmd) 
 			s.fixErr = m.err
 			return s, nil
 		}
-		if rep, ok := m.report.(cleanReport); ok && rep.Summary != "" {
+		if m.kind == "maat-review" {
+			s.fixMsg = "Ma'at review recorded — open Casebook for the next evidence-bound step"
+		} else if rep, ok := m.report.(cleanReport); ok && rep.Summary != "" {
 			s.fixMsg = rep.Summary
 		} else {
 			s.fixMsg = "fix applied"
@@ -125,13 +132,18 @@ func (s *healthScreen) handleCmd(cmd Command) (Screen, tea.Cmd) {
 	n := len(s.report.Findings)
 	// A pending confirm captures the next decision for a DESTRUCTIVE fix (Rule A1:
 	// a Trash-deleting fix never fires from one key).
-	if s.confirm {
+	if s.confirm || s.confirmMaatReview {
 		switch cmd.ID {
 		case CmdFix, CmdInspect: // f again, or enter = deliberate second confirmation
+			if s.confirmMaatReview {
+				s.confirmMaatReview = false
+				return s, s.dispatchMaatReview(s.report.Findings[s.selected])
+			}
 			s.confirm = false
 			return s, s.dispatchFix(s.report.Findings[s.selected])
 		case CmdBack:
 			s.confirm = false
+			s.confirmMaatReview = false
 		}
 		return s, nil
 	}
@@ -159,8 +171,13 @@ func (s *healthScreen) handleCmd(cmd Command) (Screen, tea.Cmd) {
 			return s, nil
 		}
 		f := s.report.Findings[s.selected]
+		if hasMaatReview(f) {
+			s.confirmMaatReview = true
+			s.fixErr = nil
+			return s, nil
+		}
 		if !hasOfferableFix(f) {
-			s.fixErr = fmt.Errorf("no one-key fix for %q — see detail for guidance", f.Check)
+			s.fixErr = fmt.Errorf("%q has no applicable action at its current state — inspect the evidence", f.Check)
 			return s, nil
 		}
 		// Destructive storage fixes and confirmation-gated service repairs route
@@ -190,6 +207,23 @@ func (s *healthScreen) dispatchFix(f diagFinding) tea.Cmd {
 		var r cleanReport
 		err := decode(plan.verb, &r, plan.args...)
 		return r, err
+	})
+}
+
+// dispatchMaatReview records the exact currently-selected observation after the
+// operator's second confirmation. It is not a repair: Casebook owns the next
+// bounded review and explicit owner-conclusion step.
+func (s *healthScreen) dispatchMaatReview(f diagFinding) tea.Cmd {
+	s.fixing = true
+	s.fixErr = nil
+	args := []string{"record-resolution", "--check", f.Check, "--message", f.Message, "--confirm"}
+	if strings.TrimSpace(f.Detail) != "" {
+		args = append(args, "--detail", f.Detail)
+	}
+	return runCmd("maat-review", func() (any, error) {
+		var result map[string]any
+		err := decode("maat", &result, args...)
+		return result, err
 	})
 }
 
@@ -259,6 +293,9 @@ func (s *healthScreen) fixHintForSelection() string {
 	f := s.report.Findings[s.selected]
 	switch {
 	case f.Fix == "":
+		if hasMaatReview(f) {
+			return "f records Ma'at review after confirmation · enter inspects evidence"
+		}
 		return "no fix needed — enter for detail"
 	case fixPlan(f.Fix).destructive:
 		return "f applies this after confirmation · " + f.Fix
@@ -277,6 +314,19 @@ func (s *healthScreen) fixHintForSelection() string {
 // exact command that will run so the operator sees precisely what applies.
 func (s *healthScreen) confirmLines(caps Capabilities) []string {
 	f := s.report.Findings[s.selected]
+	if s.confirmMaatReview {
+		return []string{
+			"",
+			"  " + Paint("CONFIRM MA'AT REVIEW", TokWarn, caps),
+			"",
+			fmt.Sprintf("  Record the exact observation for %q in Ma'at Casebook.", f.Check),
+			"  This does not repair the system or accept a conclusion.",
+			"  The next step is evidence review and an explicit owner conclusion.",
+			"",
+			"  " + Paint("enter", TokBrand, caps) + Paint("  record evidence", TokDim, caps),
+			"  " + Paint("esc", TokBrand, caps) + Paint("    cancel — nothing changes", TokDim, caps),
+		}
+	}
 	return []string{
 		"",
 		"  " + Paint("CONFIRM FIX", TokWarn, caps),
@@ -306,6 +356,12 @@ func (s *healthScreen) detailLines(caps Capabilities) []string {
 	}
 	if f.Fix != "" {
 		out = append(out, "  "+Paint("fix:    ", TokDim, caps)+f.Fix+"  "+Paint("("+fixKindLabel(f.FixKind)+")", TokDim, caps))
+	} else if hasMaatReview(f) {
+		out = append(out,
+			"  "+Paint("route:  ", TokDim, caps)+Paint("Ma'at evidence review", TokAccent, caps),
+			"  retain the exact observation, inspect it in Casebook, then accept a documented owner conclusion if appropriate.",
+			"  "+Paint("action: ", TokDim, caps)+Paint("press f, then enter to record the review", TokBrand, caps),
+		)
 	} else {
 		out = append(out, "  "+Paint("fix:    ", TokDim, caps)+Paint("none needed — informational", TokDim, caps))
 	}
@@ -317,6 +373,10 @@ func (s *healthScreen) detailLines(caps Capabilities) []string {
 // not masquerade as a fix); instant and relief are.
 func hasOfferableFix(f diagFinding) bool {
 	return f.Fix != "" && f.FixKind != "guidance"
+}
+
+func hasMaatReview(f diagFinding) bool {
+	return f.Resolution == "maat_review" || (f.Resolution == "" && f.Severity >= 2 && f.Fix == "")
 }
 
 // fixKindLabel is the honest human label for a FixKind.

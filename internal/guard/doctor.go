@@ -72,15 +72,33 @@ type DiagnosticFinding struct {
 	// that saw at least one event.
 	Trend      bool `json:"trend,omitempty"`
 	ActiveDays int  `json:"activeDays,omitempty"`
-	// Fix is the safe CLI command that resolves this finding (empty = informational,
-	// no one-click fix). Carried on the finding so EVERY surface (menubar Horus,
-	// SessionStart, dashboard) can offer resolution — not just the Insight panel.
+	// Fix is the safe CLI command that resolves this finding when a bounded
+	// repair exists. A missing Fix never means a user is stranded: Resolution
+	// tells every surface whether to guide the user through Ma'at review or to
+	// render the finding as informational.
 	Fix string `json:"fix,omitempty"`
 	// FixKind tells a surface how HONEST to be about the Fix button — so it never
 	// promises an instant cure for a historical record (the "I clicked Fix and the
 	// status stayed the same" trap). See the FixKind constants.
 	FixKind FixKind `json:"fixKind,omitempty"`
+	// Resolution is the complete user-facing route for this observation. Every
+	// warning and critical finding is either repairable or can be carried through
+	// Ma'at's evidence-bound review and owner-conclusion path. Consumers must not
+	// replace a missing Fix with a dead-end status message.
+	Resolution ResolutionRoute `json:"resolution,omitempty"`
 }
+
+// ResolutionRoute is the next safe action a Pantheon surface must offer for a
+// diagnostic finding. It is intentionally independent from FixKind: a relief
+// can be honest without being an immediate cure, while a Ma'at review can reach
+// an explicit conclusion without claiming a system repair.
+type ResolutionRoute string
+
+const (
+	ResolutionRepair     ResolutionRoute = "repair"
+	ResolutionMaatReview ResolutionRoute = "maat_review"
+	ResolutionInfo       ResolutionRoute = "information"
+)
 
 // FixKind classifies what running a finding's Fix actually does, so surfaces can
 // label the action truthfully instead of always saying "Fix it":
@@ -215,6 +233,19 @@ func remediationCommand(f DiagnosticFinding) string {
 		}
 	}
 	return ""
+}
+
+// resolutionRoute prevents an alarming observation from becoming an inert
+// status. Safe repairs remain first choice; conditions that cannot be changed
+// safely by a one-click command receive Ma'at's retained-evidence review path.
+func resolutionRoute(f DiagnosticFinding) ResolutionRoute {
+	if f.Severity < SeverityWarn {
+		return ResolutionInfo
+	}
+	if remediationCommand(f) != "" {
+		return ResolutionRepair
+	}
+	return ResolutionMaatReview
 }
 
 // DoctorReport is the complete health diagnostic.
@@ -447,6 +478,7 @@ func DoctorWithOpts(p platform.Platform, opts DoctorOpts) (*DoctorReport, error)
 		} else {
 			report.Findings[i].FixKind = remediationKind(report.Findings[i])
 		}
+		report.Findings[i].Resolution = resolutionRoute(report.Findings[i])
 	}
 	report.Duration = time.Since(start).Round(time.Millisecond).String()
 
@@ -1485,6 +1517,11 @@ func calculateScore(findings []DiagnosticFinding) int {
 // and not just a diagnosis — a measured problem with no offered remedy is half
 // an answer (ADR-033).
 func RemediationFor(f DiagnosticFinding) string { return remediationCommand(f) }
+
+// ResolutionFor exposes the complete next-step route to callers that render
+// diagnostics outside the native app. In particular, CLI, dashboard, TUI, MCP,
+// and plugin consumers can provide Ma'at review when a direct repair is unsafe.
+func ResolutionFor(f DiagnosticFinding) ResolutionRoute { return resolutionRoute(f) }
 
 // checkLaunchdDisabled reads launchctl print-disabled and reports each
 // recoverable ai.sirsi.* or actions.runner.* label marked disabled in the
