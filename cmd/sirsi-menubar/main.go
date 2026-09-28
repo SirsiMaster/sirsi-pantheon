@@ -47,7 +47,10 @@ func main() {
 		return
 	}
 
-	unlock, err := platform.TryLock("menubar")
+	// Coordinate with the shipped SwiftUI menubar, not the historical Go
+	// surface's separate /tmp socket.  This exits before systray can add a
+	// second status item when Pantheon.app is already running.
+	unlock, err := platform.TryLockMenubarSurface()
 	if err != nil {
 		fmt.Printf("☥ Sirsi Menubar is already running. Exiting.\n")
 		os.Exit(0)

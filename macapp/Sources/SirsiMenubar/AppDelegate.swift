@@ -33,15 +33,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // bundle id specifically so a bundled .app and a raw-binary run can see each
     // other; keying on the full path would let those two coexist again, because
     // Contents/MacOS/SirsiMenubar and .build/release/SirsiMenubar are genuinely
-    // different files. Anything running our executable name IS us.
+    // different files. The historical Go menubar was named `sirsi-menubar`; it
+    // shares the lease in new builds, and recognizing it here retires an older
+    // copy during an upgrade rather than leaving two icons behind.
+    private static let pantheonMenubarExecutables: Set<String> = ["SirsiMenubar", "sirsi-menubar"]
+
     private func peerInstances() -> [NSRunningApplication] {
         let me = NSRunningApplication.current
-        let myName = me.executableURL?.lastPathComponent
         let bundleID = Bundle.main.bundleIdentifier
         return NSWorkspace.shared.runningApplications.filter { peer in
             guard peer.processIdentifier != me.processIdentifier else { return false }
             if let bundleID, peer.bundleIdentifier == bundleID { return true }
-            if let myName, peer.executableURL?.lastPathComponent == myName { return true }
+            if let name = peer.executableURL?.lastPathComponent,
+               Self.pantheonMenubarExecutables.contains(name) { return true }
             return false
         }
     }
@@ -53,7 +57,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let myLaunch = me.launchDate ?? Date()
         for peer in peers {
             let peerLaunch = peer.launchDate ?? .distantPast
-            guard peerLaunch <= myLaunch else { continue }  // never retire a newer peer
+            // A newer modern peer is allowed to finish its own lease hand-off.
+            // The retired Go binary cannot share that hand-off, however, so it
+            // must always yield to the native product if it appears later.
+            let isLegacyGoPeer = peer.executableURL?.lastPathComponent == "sirsi-menubar"
+            guard isLegacyGoPeer || peerLaunch <= myLaunch else { continue }
             peer.terminate()
             let deadline = Date().addingTimeInterval(3)
             DispatchQueue.global().async {
