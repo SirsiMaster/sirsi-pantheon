@@ -185,6 +185,7 @@ func gemmaAwaitWarm(home string) error {
 		if gemmaServerPing(base) {
 			fmt.Printf("✓ SNE is WARM at %s.\n", base)
 			liveness.SyncGemmaPidFile(home)
+			_ = os.WriteFile(gemmaPortPath(home), []byte(strconv.Itoa(gemmaServePort)), 0o644)
 			return nil
 		}
 	}

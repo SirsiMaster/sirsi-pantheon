@@ -2,6 +2,8 @@ package main
 
 import (
 	"errors"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -31,6 +33,46 @@ func TestGemmaNeverAgainInvariants(t *testing.T) {
 		t.Errorf("native SNE port = %d, want 8477", gemmaServerDefaultPort)
 	}
 
+}
+
+// TestGemmaAwaitWarmRestoresPortFile guards against a regression where
+// `sirsi gemma serve --stop` deletes gemma-server.port (gemmaServerStop) but a
+// subsequent `sirsi gemma serve` never wrote it back — leaving every later
+// `--status` call, and the liveness watch itself, reading a missing port file
+// and reporting a healthy broker as permanently down/wedged.
+func TestGemmaAwaitWarmRestoresPortFile(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".sirsi"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/models", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	go http.Serve(ln, mux)
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	oldPort := gemmaServePort
+	gemmaServePort = port
+	t.Cleanup(func() { gemmaServePort = oldPort })
+
+	if err := gemmaAwaitWarm(home); err != nil {
+		t.Fatalf("gemmaAwaitWarm() = %v, want nil", err)
+	}
+
+	got, err := os.ReadFile(gemmaPortPath(home))
+	if err != nil {
+		t.Fatalf("reading restored port file: %v", err)
+	}
+	if strings.TrimSpace(string(got)) != strconv.Itoa(port) {
+		t.Fatalf("gemma-server.port = %q, want %q", got, strconv.Itoa(port))
+	}
 }
 
 func TestGemmaBrokerQuarantineSurvivesSelfHealing(t *testing.T) {
