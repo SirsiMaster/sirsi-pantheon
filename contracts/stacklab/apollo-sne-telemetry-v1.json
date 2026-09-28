@@ -63,7 +63,7 @@
     "invalid": "A sample exists but is unsafe or malformed. Reject it, retain no false active state, surface the exact validation issue, and route to Ma'at evidence."
   },
   "evidence": {
-    "Pantheon": ["typed source catalog", "typed plan", "strict telemetry decode outcome", "GET /api/apollo/telemetry verbatim dashboard projection"],
+    "Pantheon": ["typed source catalog", "typed plan", "strict telemetry decode outcome", "GET /api/apollo/telemetry verbatim dashboard projection", "apollo_session_telemetry read-only MCP projection"],
     "Ma'at": ["read scope", "sample identity/version", "validation outcome", "operator-visible recovery route"],
     "SNE": ["model and engine provenance", "admission decision", "measurement source and interval", "terminal session outcome"]
   },

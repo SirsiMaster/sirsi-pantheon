@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/apollo"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/brain"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/horus"
@@ -43,6 +45,15 @@ func registerTools(s *Server) {
 			},
 		},
 	}, handleMaatCasebook)
+
+	s.RegisterTool(Tool{
+		Name:        "apollo_session_telemetry",
+		Description: "Read the latest SNE-owned Apollo session sample for this Mac. Returns awaiting_session when no admitted session has published data, or measured tokens/s, bandwidth, memory, network, CPU/GPU residency, and selected chip-estate metrics. Read-only: it cannot start, stop, configure, or infer an SNE session.",
+		InputSchema: InputSchema{
+			Type:       "object",
+			Properties: map[string]SchemaField{},
+		},
+	}, handleApolloSessionTelemetry)
 
 	s.RegisterTool(Tool{
 		Name:        "scan_workspace",
@@ -486,26 +497,48 @@ func handleMaatCasebook(args map[string]interface{}) (*ToolResult, error) {
 	return textResult(string(raw), false), nil
 }
 
+// handleApolloSessionTelemetry exposes the SNE-owned local session record to
+// MCP clients without creating a second observer, cache, or execution route.
+func handleApolloSessionTelemetry(_ map[string]interface{}) (*ToolResult, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return textResult(fmt.Sprintf("Apollo telemetry unavailable: determine home directory: %v", err), true), nil
+	}
+	return readApolloSessionTelemetry(home)
+}
+
+func readApolloSessionTelemetry(home string) (*ToolResult, error) {
+	read, err := apollo.ReadTelemetry(home)
+	if err != nil {
+		return textResult(fmt.Sprintf("Apollo telemetry rejected: %v", err), true), nil
+	}
+	raw, err := json.Marshal(read)
+	if err != nil {
+		return nil, fmt.Errorf("encode Apollo telemetry: %w", err)
+	}
+	return &ToolResult{Content: []ContentBlock{{Type: "text", MimeType: "application/json", Text: string(raw)}}}, nil
+}
+
 func parseMaatCasebookQuery(args map[string]interface{}) (casebook.Query, error) {
 	query := casebook.Query{Limit: 50}
 	if text, exists := args["query"]; exists {
 		value, ok := text.(string)
 		if !ok {
-			return casebook.Query{}, "query must be a string"
+			return casebook.Query{}, errors.New("query must be a string")
 		}
 		query.Text = value
 	}
 	if kind, exists := args["kind"]; exists {
 		value, ok := kind.(string)
 		if !ok {
-			return casebook.Query{}, "kind must be a string"
+			return casebook.Query{}, errors.New("kind must be a string")
 		}
 		query.Kind = value
 	}
 	if status, exists := args["status"]; exists {
 		value, ok := status.(string)
 		if !ok {
-			return casebook.Query{}, "status must be a string"
+			return casebook.Query{}, errors.New("status must be a string")
 		}
 		switch casebook.Status(strings.ToLower(strings.TrimSpace(value))) {
 		case "":
@@ -514,13 +547,13 @@ func parseMaatCasebookQuery(args map[string]interface{}) (casebook.Query, error)
 		case casebook.StatusResolved:
 			query.Status = casebook.StatusResolved
 		default:
-			return casebook.Query{}, "status must be open or resolved"
+			return casebook.Query{}, errors.New("status must be open or resolved")
 		}
 	}
 	if limit, exists := args["limit"]; exists {
 		value, ok := limit.(float64)
 		if !ok || value != float64(int(value)) || value < 1 || value > 100 {
-			return casebook.Query{}, "limit must be a whole number from 1 through 100"
+			return casebook.Query{}, errors.New("limit must be a whole number from 1 through 100")
 		}
 		query.Limit = int(value)
 	}
