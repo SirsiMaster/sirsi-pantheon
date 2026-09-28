@@ -2,6 +2,7 @@ package schedule
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -157,11 +158,68 @@ func primaryHolder(holders []Reservation) Reservation {
 	return holders[0]
 }
 
+var (
+	localLabelMu sync.RWMutex
+	localLabelFn = defaultLocalMachineLabel
+)
+
+// SetLocalMachineLabelFn installs a local-machine-label resolver (tests; A21:
+// guarded by a mutex, not a bare package var).
+func SetLocalMachineLabelFn(fn func() (string, error)) {
+	localLabelMu.Lock()
+	defer localLabelMu.Unlock()
+	if fn == nil {
+		fn = defaultLocalMachineLabel
+	}
+	localLabelFn = fn
+}
+
+func getLocalMachineLabelFn() func() (string, error) {
+	localLabelMu.RLock()
+	defer localLabelMu.RUnlock()
+	return localLabelFn
+}
+
+// defaultLocalMachineLabel reads what this host calls itself — the macOS
+// ComputerName (which is how the m1/m5 resource labels are actually set on
+// these machines), falling back to os.Hostname. It never guesses a mapping.
+func defaultLocalMachineLabel() (string, error) {
+	if out, err := exec.Command("scutil", "--get", "ComputerName").Output(); err == nil {
+		if name := strings.ToLower(strings.TrimSpace(string(out))); name != "" {
+			return name, nil
+		}
+	}
+	host, err := os.Hostname()
+	if err != nil {
+		return "", fmt.Errorf("resolve local machine label: %w", err)
+	}
+	host = strings.ToLower(strings.TrimSuffix(host, ".local"))
+	if host == "" {
+		return "", fmt.Errorf("resolve local machine label: empty hostname")
+	}
+	return host, nil
+}
+
 // probeProcesses is the default ActivityProbe: it classifies the currently
 // running processes that contaminate Thunderbolt/measurement work. Owner
 // attribution is best-effort (left "" when a PID cannot be tied to an agent);
 // an unattributed intruder is still reported and named by its argv.
+//
+// It can only ever see THIS host's process table — there is no cross-host
+// probe. Passing a machine that isn't this one used to silently scan local ps
+// and report it as the named machine's activity (2026-09-27, three failed
+// Hermes signing attempts: an M1 conflict-check run against "m5" reported the
+// M1's own idle runner as an M5 intruder). Refuse instead of mislabeling.
 func probeProcesses(machine string) ([]Actor, error) {
+	if machine != "" {
+		local, err := getLocalMachineLabelFn()()
+		if err != nil {
+			return nil, fmt.Errorf("probe %s: %w", machine, err)
+		}
+		if !strings.EqualFold(machine, local) {
+			return nil, fmt.Errorf("probe %s: this host is %q — no cross-host process probe exists; run conflict-check on %s itself", machine, local, machine)
+		}
+	}
 	out, err := exec.Command("ps", "-axo", "pid=,command=").Output()
 	if err != nil {
 		return nil, err
