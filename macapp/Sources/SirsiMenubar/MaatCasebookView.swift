@@ -2135,6 +2135,7 @@ struct MaatReleaseCredentialPreflight: Decodable {
     let developerIdentities: [MaatReleaseSigningIdentity]
     let observedNonDeveloperIdentityTypes: [String]
     let notarizationObserved: Bool
+	let recoveryPlan: [String]
     let verdict: MaatSystemOneVerdict
     let decisionEvidence: String
 
@@ -2144,6 +2145,7 @@ struct MaatReleaseCredentialPreflight: Decodable {
         case developerIdentities = "developer_identities"
         case observedNonDeveloperIdentityTypes = "observed_non_developer_identity_types"
         case notarizationObserved = "notarization_observed"
+        case recoveryPlan = "recovery_plan"
         case verdict
         case decisionEvidence = "decision_evidence"
     }
@@ -2155,6 +2157,7 @@ struct MaatReleaseCredentialPreflight: Decodable {
         developerIdentities = try values.decodeIfPresent([MaatReleaseSigningIdentity].self, forKey: .developerIdentities) ?? []
         observedNonDeveloperIdentityTypes = try values.decodeIfPresent([String].self, forKey: .observedNonDeveloperIdentityTypes) ?? []
         notarizationObserved = try values.decodeIfPresent(Bool.self, forKey: .notarizationObserved) ?? false
+        recoveryPlan = try values.decodeIfPresent([String].self, forKey: .recoveryPlan) ?? []
         verdict = try values.decode(MaatSystemOneVerdict.self, forKey: .verdict)
         decisionEvidence = try values.decodeIfPresent(String.self, forKey: .decisionEvidence) ?? ""
     }
@@ -2169,7 +2172,8 @@ struct MaatReleaseCredentialPreflight: Decodable {
 // recovery path for every credential outcome. It intentionally stops before
 // secret/key access: only the protected release workflow may perform that work.
 func protectedReleaseRecoverySteps(for preflight: MaatReleaseCredentialPreflight) -> [String] {
-    let observedKinds = Set(preflight.developerIdentities.map(\.kind))
+	if !preflight.recoveryPlan.isEmpty { return preflight.recoveryPlan }
+	let observedKinds = Set(preflight.developerIdentities.map(\.kind))
     var steps: [String] = []
 
     if !observedKinds.contains("application") {

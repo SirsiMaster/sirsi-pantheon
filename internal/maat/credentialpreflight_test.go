@@ -31,6 +31,12 @@ func TestPreflightReleaseCredentialsBindsRequiredDeveloperIDIdentities(t *testin
 	if !strings.HasPrefix(preflight.Fingerprint, "sha256=") {
 		t.Fatalf("fingerprint = %q", preflight.Fingerprint)
 	}
+	if got, want := preflight.RecoveryPlan, []string{
+		"Have the protected release workflow validate one complete notarization credential set without exposing its secrets to Ma'at.",
+		"Recheck readiness, then run the signed, notarized DMG and PKG workflow only after every required proof is present.",
+	}; !sameStrings(got, want) {
+		t.Fatalf("recovery plan = %q, want %q", got, want)
+	}
 }
 
 func TestPreflightReleaseCredentialsRejectsWrongTeamAndUnrelatedIdentity(t *testing.T) {
@@ -57,6 +63,22 @@ func TestPreflightReleaseCredentialsRejectsWrongTeamAndUnrelatedIdentity(t *test
 	}
 	if !strings.Contains(claims, "Apple Distribution") || !strings.Contains(claims, "cannot substitute") {
 		t.Fatalf("identity type mismatch was not actionable: %+v", preflight.Verdict.Findings)
+	}
+	steps := strings.Join(preflight.RecoveryPlan, "\n")
+	if !strings.Contains(steps, "Developer ID Application") || !strings.Contains(steps, "Developer ID Installer") || !strings.Contains(steps, "notarization credential") {
+		t.Fatalf("recovery plan = %q", preflight.RecoveryPlan)
+	}
+}
+
+func TestProtectedReleaseRecoveryPlanDoesNotRequestSecretsWhenCredentialsAreObserved(t *testing.T) {
+	identities := []ReleaseSigningIdentity{
+		{Kind: "application", Name: "Developer ID Application: Sirsi Technologies Inc. (9D382WV988)"},
+		{Kind: "installer", Name: "Developer ID Installer: Sirsi Technologies Inc. (9D382WV988)"},
+	}
+	got := ProtectedReleaseRecoveryPlan(PantheonDeveloperTeamID, identities, true)
+	want := []string{"Recheck readiness, then run the signed, notarized DMG and PKG workflow only after every required proof is present."}
+	if !sameStrings(got, want) {
+		t.Fatalf("recovery plan = %q, want %q", got, want)
 	}
 }
 
