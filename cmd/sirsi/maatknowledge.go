@@ -67,6 +67,36 @@ compatibility while Ma'at is the canonical operator surface.`,
 	},
 }
 
+// maatKnowledgeRefreshCmd is the public write path for refreshing the local
+// knowledge cache. Its implementation deliberately delegates to the retained
+// Seshat ingestion adapter rather than duplicating source adapters or their
+// filtering semantics. It exposes only refresh-scoped inputs: exports stay
+// outside Ma'at's local knowledge refresh contract.
+var maatKnowledgeRefreshCmd = &cobra.Command{
+	Use:   "refresh",
+	Short: "Refresh Ma'at's local knowledge from configured sources",
+	Long: `Refresh Ma'at's retained local knowledge through the compatibility ingestion adapter.
+
+This can read configured local sources and update the local cache. It does not
+export knowledge, open a browser, authorize work, or make a remote decision.`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// The legacy adapter owns source parsing and cache writes. Copy only the
+		// explicit, bounded refresh flags into that adapter; `--export` is not
+		// exposed here, so a Ma'at refresh cannot become an external transfer.
+		for _, name := range []string{"source", "since", "profile", "all-profiles"} {
+			flag := cmd.Flags().Lookup(name)
+			if flag == nil {
+				return fmt.Errorf("Ma'at knowledge refresh: missing %s flag contract", name)
+			}
+			if err := seshatIngestCmd.Flags().Set(name, flag.Value.String()); err != nil {
+				return fmt.Errorf("Ma'at knowledge refresh: set %s: %w", name, err)
+			}
+		}
+		return seshatIngestCmd.RunE(seshatIngestCmd, args)
+	},
+}
+
 func referencesText(refs []seshat.KIReference) string {
 	parts := make([]string, 0, len(refs))
 	for _, ref := range refs {
@@ -95,5 +125,10 @@ func safeMaatKnowledgeItems(items []seshat.KnowledgeItem) ([]seshat.KnowledgeIte
 }
 
 func init() {
+	maatKnowledgeRefreshCmd.Flags().String("source", "", "Specific local source adapter to refresh")
+	maatKnowledgeRefreshCmd.Flags().String("since", "", "Refresh items since a duration or YYYY-MM-DD date")
+	maatKnowledgeRefreshCmd.Flags().String("profile", "", "Chrome profile name or display name")
+	maatKnowledgeRefreshCmd.Flags().Bool("all-profiles", false, "Refresh Chrome history from every local profile")
+	maatKnowledgeCmd.AddCommand(maatKnowledgeRefreshCmd)
 	maatCmd.AddCommand(maatKnowledgeCmd)
 }

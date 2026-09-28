@@ -44,10 +44,10 @@ func actionSpecs() []ActionSpec {
 		{Key: "dedup", Label: "Find Duplicates", Glyph: "🔍", Args: []string{"duplicates"}, AcceptsArgs: true},
 		{Key: "thoth/sync", Label: "Thoth Sync", Glyph: "𓁟", Args: []string{"thoth", "sync"}},
 		// Ma'at owns the operator-facing knowledge and decision surface. The
-		// retained `seshat ingest` implementation remains the compatibility
-		// adapter beneath this action until its ingestion engine is migrated;
+		// retained Seshat implementation remains the compatibility adapter
+		// beneath Ma'at's public command until its ingestion engine is migrated;
 		// dashboard callers never need to address that legacy deity directly.
-		{Key: "maat/knowledge/refresh", Label: "Refresh Ma'at knowledge", Glyph: "𓆄", Args: []string{"seshat", "ingest"}, AcceptsArgs: true},
+		{Key: "maat/knowledge/refresh", Label: "Refresh Ma'at knowledge", Glyph: "𓆄", Args: []string{"maat", "knowledge", "refresh"}, AcceptsArgs: true},
 		{Key: "net/align", Label: "Net Align", Glyph: "𓁯", Args: []string{"net", "align"}},
 		{Key: "ra/collect", Label: "Ra Collect", Glyph: "𓇶", Args: []string{"ra", "collect"}},
 

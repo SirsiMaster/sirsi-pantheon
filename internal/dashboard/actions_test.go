@@ -65,8 +65,8 @@ func TestApiActions_ListsRegistry(t *testing.T) {
 	if knowledge.Label != "Refresh Ma'at knowledge" || knowledge.Glyph != "𓆄" || !knowledge.AcceptsArgs {
 		t.Errorf("Ma'at knowledge action presentation = %+v", knowledge)
 	}
-	if len(knowledge.Args) != 2 || knowledge.Args[0] != "seshat" || knowledge.Args[1] != "ingest" {
-		t.Errorf("Ma'at knowledge action must retain the compatibility adapter exactly, got %q", knowledge.Args)
+	if len(knowledge.Args) != 3 || knowledge.Args[0] != "maat" || knowledge.Args[1] != "knowledge" || knowledge.Args[2] != "refresh" {
+		t.Errorf("Ma'at knowledge action must invoke the public Ma'at refresh command exactly, got %q", knowledge.Args)
 	}
 }
 

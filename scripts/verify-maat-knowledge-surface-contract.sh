@@ -21,10 +21,23 @@ fi
 for needle in \
   'Key: "maat/knowledge/refresh"' \
   'Label: "Refresh Ma'\''at knowledge"' \
-  'Args: []string{"seshat", "ingest"}' \
+  'Args: []string{"maat", "knowledge", "refresh"}' \
   'dashboard callers never need to address that legacy deity directly.'; do
   /usr/bin/grep -Fq "$needle" "$actions" || {
     echo "Ma'at knowledge dashboard route missing: $needle" >&2
+    exit 1
+  }
+done
+
+for needle in \
+  'Use:   "refresh"' \
+  'Refresh Ma'\''at'\''s local knowledge from configured sources' \
+  'seshatIngestCmd.RunE' \
+  '"source", "since", "profile", "all-profiles"' \
+  '`--export` is not' \
+  'maatKnowledgeCmd.AddCommand(maatKnowledgeRefreshCmd)'; do
+  /usr/bin/grep -Fq "$needle" "$knowledge" || {
+    echo "Ma'at public knowledge refresh contract missing: $needle" >&2
     exit 1
   }
 done
