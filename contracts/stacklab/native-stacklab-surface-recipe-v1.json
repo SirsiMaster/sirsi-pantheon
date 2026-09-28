@@ -1,0 +1,29 @@
+{
+  "schema": "sirsi.stacklab.recipe.v1",
+  "id": "stacklab.recipe.native-stacklab-surface",
+  "wing": "stacklab.wing.ra-horus-fabric",
+  "product": "sirsi-pantheon",
+  "version": 1,
+  "purpose": "Native, inspectable Stack Lab authority surface for the Pantheon macOS app. It projects the canonical Go doctor report and routes incomplete authority into Ma'at evidence without creating a second registry or shell transcript.",
+  "authority": {
+    "doctor_owner": "internal/stacklab via sirsi stacklab doctor --json",
+    "native_projection_owner": "macapp/Sources/SirsiMenubar/StackLabView.swift",
+    "resolution_owner": "Ma'at Casebook with explicit confirmation",
+    "prohibited": [
+      "Swift cannot recreate registry or origin authority",
+      "Swift cannot treat unreadable remote state as clean",
+      "the native surface cannot mutate a wing, pin, roster, release, or remote registry"
+    ]
+  },
+  "components": [
+    {
+      "id": "stacklab-native-doctor",
+      "source": ["macapp/Sources/SirsiMenubar/StackLabView.swift", "macapp/Sources/SirsiMenubar/ControlCenter.swift", "macapp/Sources/SirsiMenubar/SirsiEngine.swift", "cmd/sirsi/stacklabcmd.go", "internal/stacklab/doctor.go"],
+      "tests": ["scripts/verify-stacklab-native-surface-contract.sh", "internal/stacklab/native_stacklab_recipe_test.go"],
+      "inputs": ["canonical sirsi stacklab doctor JSON report", "declared wing roster", "origin and registry read outcomes"],
+      "outputs": ["native Stack Lab authority summary", "typed wing finding cards", "retry guidance for unreadable state", "Ma'at evidence route for unresolved findings"],
+      "writes": [],
+      "upgrade_recipe": ["change the Go report before its Swift projection", "preserve typed roster/findings/unknown decoding", "show unknown as incomplete rather than clean", "keep every incomplete finding connected to Ma'at evidence", "run the native contract and Swift syntax validation before admitted app tests"]
+    }
+  ]
+}

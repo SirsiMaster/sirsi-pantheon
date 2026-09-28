@@ -260,6 +260,7 @@ struct PantheonLibraryView: View {
                     }
                     librarySection("INTELLIGENCE") {
                         libraryLink("Ma'at", symbol: "checkmark.seal") { MaatWorkspaceView(engine: engine) }
+                        libraryLink("Stack Lab", symbol: "square.3.layers.3d") { StackLabView(engine: engine) }
                         libraryLink("Thoth", symbol: "books.vertical") { ThothMemoryInfoView(engine: engine) }
                         libraryLink("Net", symbol: "arrow.triangle.branch") { ResultView(engine: engine, title: "Net — Plan", args: ["net", "status"]) }
                         libraryLink("Vault", symbol: "archivebox") { ResultView(engine: engine, title: "Vault — Context", args: ["vault", "stats"]) }
