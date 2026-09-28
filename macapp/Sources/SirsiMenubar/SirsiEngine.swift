@@ -1180,9 +1180,14 @@ final class SirsiEngine: ObservableObject {
                 // whatsoever"). The verb side is fixed to be fast, but the
                 // SURFACE enforces its own bound — defense in depth, same
                 // shape as the supervisor's duty timeout.
-                let deadline = DispatchTime.now() + .seconds(120)
+                let deadline = DispatchTime.now() + .seconds(30)
+                let timeoutLock = NSLock()
+                var timedOut = false
                 let timeoutWork = DispatchWorkItem {
+                    timeoutLock.lock()
+                    defer { timeoutLock.unlock() }
                     if p.isRunning {
+						timedOut = true
                         p.terminate()
                     }
                 }
@@ -1191,8 +1196,11 @@ final class SirsiEngine: ObservableObject {
                 p.waitUntilExit()
                 timeoutWork.cancel()
                 var text = stripANSI(String(data: data, encoding: .utf8) ?? "")
-                if p.terminationReason == .uncaughtSignal {
-                    text = "Stopped after 2 minutes — this action is taking too long for the menubar. Run `sirsi \(args.joined(separator: " "))` in a terminal to let it finish.\n" + text
+                timeoutLock.lock()
+                let enforcedTimeout = timedOut
+                timeoutLock.unlock()
+                if enforcedTimeout {
+                    text = "Pantheon stopped waiting after 30 seconds. The command may have produced a partial result, so this screen will not call it complete. Refresh only after reviewing the current evidence and choosing the next safe action.\n" + text
                 }
                 cont.resume(returning: text)
             }
@@ -1200,7 +1208,7 @@ final class SirsiEngine: ObservableObject {
     }
 
     // runProgram runs an arbitrary local executable (e.g. sirsi-respond.sh)
-    // with the same $HOME cwd, output capture, and 120s bound as run().
+    // with the same $HOME cwd, output capture, and 30-second UI bound as run().
     nonisolated static func runProgram(_ path: String, args: [String]) async -> String {
         await withCheckedContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
@@ -1215,7 +1223,7 @@ final class SirsiEngine: ObservableObject {
                     cont.resume(returning: "error: \(error.localizedDescription)")
                     return
                 }
-                let deadline = DispatchTime.now() + .seconds(120)
+                let deadline = DispatchTime.now() + .seconds(30)
                 let timeoutWork = DispatchWorkItem { if p.isRunning { p.terminate() } }
                 DispatchQueue.global().asyncAfter(deadline: deadline, execute: timeoutWork)
                 let data = outPipe.fileHandleForReading.readDataToEndOfFile()

@@ -3336,11 +3336,22 @@ struct ResultView: View {
     }
 
     private var rawBody: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if raw.hasPrefix("Pantheon stopped waiting after 30 seconds.") {
+                Label("This action needs a state check", systemImage: "clock.badge.exclamationmark")
+                    .sirsiFont(.headline)
+                    .foregroundStyle(.orange)
+                Text("Pantheon ended its wait to keep the app responsive. It does not assume the operation failed or succeeded. Review the captured output, then use Back to inspect the originating finding before choosing another action.")
+                    .sirsiFont(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Text(raw.isEmpty ? "No output." : raw)
                 .sirsiFont(11.5, design: .monospaced)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(14)
+        }
+        .padding(14)
     }
 
     private func load() async {
