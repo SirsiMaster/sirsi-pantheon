@@ -17,6 +17,8 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal/rules"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ka"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/casebook"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/rtk"
@@ -28,6 +30,20 @@ import (
 // registerTools adds Pantheon tools to the MCP server.
 // Only tools that provide real, distinct value are exposed.
 func registerTools(s *Server) {
+	s.RegisterTool(Tool{
+		Name:        "maat_casebook",
+		Description: "Read Ma'at's local evidence-linked casebook. Returns recorded System One screens, independent calibration links, and truthful resolution routes. Read-only: it never creates a decision, review, repair, or authorization.",
+		InputSchema: InputSchema{
+			Type: "object",
+			Properties: map[string]SchemaField{
+				"query":  {Type: "string", Description: "Optional text filter across recorded case and evidence fields."},
+				"kind":   {Type: "string", Description: "Optional decision kind or category filter."},
+				"status": {Type: "string", Description: "Optional status filter: open or resolved."},
+				"limit":  {Type: "number", Description: "Maximum returned cases, from 1 through 100; defaults to 50."},
+			},
+		},
+	}, handleMaatCasebook)
+
 	s.RegisterTool(Tool{
 		Name:        "scan_workspace",
 		Description: "Scan a directory for infrastructure waste — stale caches, orphaned build artifacts, unused dependencies. Read-only, never deletes anything. Returns findings with sizes.",
@@ -440,6 +456,75 @@ func registerTools(s *Server) {
 			},
 		},
 	}, handleRouterLedger)
+}
+
+var openMaatCasebookJournal = func() (maat.DecisionJournal, error) {
+	return maat.NewDefaultDecisionJournal()
+}
+
+// handleMaatCasebook exposes the one local Ma'at projection to MCP clients.
+// It deliberately reads the shared append-only journal rather than rebuilding
+// policy or hosting a second agent-facing store.
+func handleMaatCasebook(args map[string]interface{}) (*ToolResult, error) {
+	query, err := parseMaatCasebookQuery(args)
+	if err != nil {
+		return textResult("Error: "+err.Error(), true), nil
+	}
+	journal, err := openMaatCasebookJournal()
+	if err != nil {
+		return textResult(fmt.Sprintf("Ma'at casebook unavailable: %v", err), true), nil
+	}
+	rows, err := journal.Recent(1000)
+	if err != nil {
+		return textResult(fmt.Sprintf("Ma'at decision journal unavailable: %v", err), true), nil
+	}
+	view := casebook.Search(rows, query)
+	raw, err := json.Marshal(view)
+	if err != nil {
+		return nil, fmt.Errorf("encode Ma'at casebook: %w", err)
+	}
+	return textResult(string(raw), false), nil
+}
+
+func parseMaatCasebookQuery(args map[string]interface{}) (casebook.Query, error) {
+	query := casebook.Query{Limit: 50}
+	if text, exists := args["query"]; exists {
+		value, ok := text.(string)
+		if !ok {
+			return casebook.Query{}, "query must be a string"
+		}
+		query.Text = value
+	}
+	if kind, exists := args["kind"]; exists {
+		value, ok := kind.(string)
+		if !ok {
+			return casebook.Query{}, "kind must be a string"
+		}
+		query.Kind = value
+	}
+	if status, exists := args["status"]; exists {
+		value, ok := status.(string)
+		if !ok {
+			return casebook.Query{}, "status must be a string"
+		}
+		switch casebook.Status(strings.ToLower(strings.TrimSpace(value))) {
+		case "":
+		case casebook.StatusOpen:
+			query.Status = casebook.StatusOpen
+		case casebook.StatusResolved:
+			query.Status = casebook.StatusResolved
+		default:
+			return casebook.Query{}, "status must be open or resolved"
+		}
+	}
+	if limit, exists := args["limit"]; exists {
+		value, ok := limit.(float64)
+		if !ok || value != float64(int(value)) || value < 1 || value > 100 {
+			return casebook.Query{}, "limit must be a whole number from 1 through 100"
+		}
+		query.Limit = int(value)
+	}
+	return query, nil
 }
 
 // handleScanWorkspace runs the Jackal scan engine on a workspace.

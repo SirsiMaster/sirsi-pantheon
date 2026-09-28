@@ -101,8 +101,8 @@
     },
     {
       "id": "maat-cli",
-      "source": ["cmd/sirsi/maat.go", "cmd/sirsi/maatschedule.go", "cmd/sirsi/maatcasebook.go", "cmd/sirsi/maatresolution.go", "cmd/sirsi/maatscreen.go"],
-      "tests": ["cmd/sirsi/maatschedule_decisions_test.go", "cmd/sirsi/maatresolution_test.go", "cmd/sirsi/maatscreen_test.go"],
+      "source": ["cmd/sirsi/maat.go", "cmd/sirsi/maatschedule.go", "cmd/sirsi/maatcasebook.go", "cmd/sirsi/maatresolution.go", "cmd/sirsi/maatscreen.go", "cmd/sirsi/maatcalibrate.go"],
+      "tests": ["cmd/sirsi/maatschedule_decisions_test.go", "cmd/sirsi/maatresolution_test.go", "cmd/sirsi/maatscreen_test.go", "cmd/sirsi/maatcalibrate_test.go"],
       "inputs": ["local operator command"],
       "outputs": ["human and JSON views"],
       "writes": ["only explicit audit, reservation, and confirmed owner-resolution decision records"],
@@ -116,6 +116,15 @@
       "outputs": ["GET /api/maat/decisions", "GET /api/maat/casebook", "Horus Ma'at view"],
       "writes": [],
       "upgrade_recipe": ["keep endpoints GET-only", "reject invalid filters", "return 503 rather than a fabricated empty projection"]
+    },
+    {
+      "id": "maat-mcp-surface",
+      "source": ["internal/mcp/tools.go"],
+      "tests": ["internal/mcp/maat_test.go"],
+      "inputs": ["shared Ma'at decision journal", "bounded query filters"],
+      "outputs": ["read-only maat_casebook MCP JSON projection with System One and calibration evidence"],
+      "writes": [],
+      "upgrade_recipe": ["keep the journal as the sole local Ma'at store", "reject malformed filters before reading", "never add write, review, repair, or authorization authority", "test projection of calibration links and rejected filters"]
     },
     {
       "id": "maat-wing-contract",

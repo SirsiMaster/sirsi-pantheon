@@ -40,7 +40,7 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 	}
 	want := []string{
 		"maat-canon", "maat-casebook", "maat-cli", "maat-core", "maat-coverage",
-		"maat-decision-journal", "maat-horus-surface", "maat-pipeline", "maat-pulse-proof-platform",
+		"maat-decision-journal", "maat-horus-surface", "maat-mcp-surface", "maat-pipeline", "maat-pulse-proof-platform",
 		"maat-scheduler", "maat-system-one-screen", "maat-wing-contract",
 	}
 	got := make([]string, 0, len(recipe.Components))

@@ -14,7 +14,7 @@ never required for search, classification, prioritisation, or evidence links.
 ## Canonical local flow
 
 ```
-observe -> assess -> append Ma'at decision -> Casebook -> CLI / Horus API
+observe -> assess -> append Ma'at decision -> Casebook -> CLI / MCP / Horus / native app
 ```
 
 `internal/maat` owns assessment semantics. `internal/maat/casebook` owns only
@@ -36,9 +36,10 @@ safe independent upgrade recipe in this wing:
 6. Append-only decision journal and report recorder
 7. Deterministic local Casebook
 8. Shared-machine and rail scheduler/conflict detector
-9. CLI surfaces for audit, scheduling, and search
+9. CLI surfaces for audit, scheduling, screens, calibration, and search
 10. Horus API and visible caseboard
-11. The Stack Lab wing and recipe contracts themselves
+11. Read-only MCP Casebook projection for agent clients
+12. The Stack Lab wing and recipe contracts themselves
 
 An upgrade begins at one manifest component, follows that component's listed
 tests and boundary, then updates the receipt/canonical contract. Components do
