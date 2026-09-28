@@ -49,6 +49,9 @@ func Parse(s string) (Name, error) {
 	}
 	n := Name{Agent: parts[0], Project: parts[1], Machine: parts[2]}
 	if len(parts) == 4 {
+		if parts[3] == "" {
+			return Name{}, fmt.Errorf("namespec: %q has a trailing hyphen / empty task", s)
+		}
 		n.Task = parts[3]
 	}
 	if err := n.Validate(); err != nil {
