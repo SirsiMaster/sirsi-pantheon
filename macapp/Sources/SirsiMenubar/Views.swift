@@ -3242,16 +3242,17 @@ struct CommandView: View {
 // ── ProjectBar — which project a repo-scoped deity is weighing ────────────────
 // Ma'at and Net measure a code project, but the app runs `sirsi` from the home
 // folder, where they honestly say "unmeasured." This bar names the project being
-// weighed and offers an in-popover picker (git projects one level under
-// ~/Development). A modal file dialog would close the transient popover, so the
-// picker is a Menu. "None" returns to the honest unmeasured default. The same
-// setting is scriptable:
+// weighed and offers known projects plus a native Finder chooser. Discovery is
+// intentionally cheap (one level under ~/Development), but selection is never
+// restricted to that convenience list. "None" returns to the honest
+// unmeasured default. The same setting is scriptable:
 //   defaults write ai.sirsi.pantheon projectRoot -string ~/Development/<repo>
 struct ProjectBar: View {
     @ObservedObject var engine: SirsiEngine
     @Environment(\.snapshotMode) private var snapshotMode
     var onChange: () -> Void   // re-runs the command after the project changes
     @State private var candidates: [String] = []
+    @State private var selectionError: String?
 
     var body: some View {
         HStack(spacing: 8) {
@@ -3278,6 +3279,10 @@ struct ProjectBar: View {
                 .fixedSize(horizontal: false, vertical: true)
             } else {
                 Menu {
+                    Button("Choose another Git project…") {
+                        chooseProject()
+                    }
+                    Divider()
                     ForEach(candidates, id: \.self) { path in
                         Button {
                             engine.setProjectRoot(path)
@@ -3310,13 +3315,46 @@ struct ProjectBar: View {
         .background(Color.primary.opacity(0.03))
         .task {
             engine.loadProjectRoot()
-            candidates = SirsiEngine.discoverProjectRoots()
-            // Keep a valid root configured outside ~/Development choosable too.
-            if let root = engine.projectRoot, !candidates.contains(root) {
-                candidates.insert(root, at: 0)
-            }
+            refreshCandidates()
+        }
+        .alert("Choose a Git project", isPresented: Binding(
+            get: { selectionError != nil },
+            set: { if !$0 { selectionError = nil } }
+        )) {
+            Button("Choose again") { chooseProject() }
+            Button("Keep current project", role: .cancel) { selectionError = nil }
+        } message: {
+            Text(selectionError ?? "")
         }
         Divider()
+    }
+
+    private func chooseProject() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose a Git project"
+        panel.message = "Pantheon runs project-scoped Ma'at and Stack Lab checks only from the Git project you select."
+        panel.prompt = "Choose project"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = false
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard engine.setProjectRoot(url.path) else {
+            selectionError = "\(url.lastPathComponent) is not a Git project. Choose the folder that contains its .git directory or worktree file."
+            return
+        }
+        refreshCandidates()
+        onChange()
+    }
+
+    private func refreshCandidates() {
+        candidates = SirsiEngine.discoverProjectRoots()
+        // Keep an explicitly chosen repository outside ~/Development visible
+        // in the same selector for a reversible, coherent workflow.
+        if let root = engine.projectRoot, !candidates.contains(root) {
+            candidates.insert(root, at: 0)
+        }
     }
 
     private var abbreviatedRoot: String {

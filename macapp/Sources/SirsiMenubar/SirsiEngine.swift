@@ -867,13 +867,21 @@ final class SirsiEngine: ObservableObject {
 
     func loadProjectRoot() { projectRoot = Self.validatedProjectRoot() }
 
-    func setProjectRoot(_ path: String?) {
-        if let path, !path.isEmpty {
-            UserDefaults.standard.set(path, forKey: Self.projectRootKey)
-        } else {
+    @discardableResult
+    func setProjectRoot(_ path: String?) -> Bool {
+        guard let path, !path.isEmpty else {
             UserDefaults.standard.removeObject(forKey: Self.projectRootKey)
+            loadProjectRoot()
+            return true
         }
-        loadProjectRoot()
+
+        // Never replace a known-good selection with a stale Finder result or a
+        // directory that merely resembles a repository. The caller can show a
+        // recovery action while the current project remains usable.
+        guard let validated = Self.projectRootPath(path) else { return false }
+        UserDefaults.standard.set(validated, forKey: Self.projectRootKey)
+        projectRoot = validated
+        return true
     }
 
     // validatedProjectRoot returns the configured root only when it is an
@@ -882,6 +890,13 @@ final class SirsiEngine: ObservableObject {
     nonisolated static func validatedProjectRoot() -> String? {
         guard let raw = UserDefaults.standard.string(forKey: projectRootKey), !raw.isEmpty
         else { return nil }
+        return projectRootPath(raw)
+    }
+
+    // projectRootPath accepts a repository directory or a linked Git worktree
+    // (.git may be a file). It deliberately has no side effects so native
+    // selection, defaults migration, and tests share one admission rule.
+    nonisolated static func projectRootPath(_ raw: String) -> String? {
         let path = (raw as NSString).expandingTildeInPath
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue,
