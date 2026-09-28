@@ -42,3 +42,34 @@ func TestMaatHostSystemOneScreenRejectsMissingAuthority(t *testing.T) {
 		t.Fatal("empty host accepted")
 	}
 }
+
+func TestMaatTriageRecordsOnlyAfterConfirmation(t *testing.T) {
+	oldFactory, oldRead, oldHost, oldConfirm, oldJSON, oldMaatJSON := newMaatDecisionJournal, maatTriageReadDiagnosis, maatTriageHostname, maatTriageConfirm, JsonOutput, maatJSON
+	t.Cleanup(func() {
+		newMaatDecisionJournal, maatTriageReadDiagnosis, maatTriageHostname = oldFactory, oldRead, oldHost
+		maatTriageConfirm, JsonOutput, maatJSON = oldConfirm, oldJSON, oldMaatJSON
+	})
+	journal := &maatTestJournal{}
+	newMaatDecisionJournal = func() (maat.DecisionJournal, error) { return journal, nil }
+	maatTriageReadDiagnosis = func() (*guard.DoctorReport, error) {
+		return &guard.DoctorReport{Timestamp: time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC), Score: 91, Findings: []guard.DiagnosticFinding{{Check: "RAM Pressure", Severity: guard.SeverityOK, Message: "healthy"}}}, nil
+	}
+	maatTriageHostname = func() (string, error) { return "m5", nil }
+	JsonOutput, maatJSON = false, false
+
+	maatTriageConfirm = false
+	if err := maatTriageCmd.RunE(maatTriageCmd, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(journal.decisions) != 0 {
+		t.Fatalf("preview wrote decisions: %#v", journal.decisions)
+	}
+
+	maatTriageConfirm = true
+	if err := maatTriageCmd.RunE(maatTriageCmd, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(journal.decisions) != 1 || journal.decisions[0].SystemOne == nil || journal.decisions[0].SystemOne.Subject.Kind != "host" {
+		t.Fatalf("recorded decisions = %#v", journal.decisions)
+	}
+}

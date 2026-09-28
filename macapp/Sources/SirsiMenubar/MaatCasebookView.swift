@@ -397,12 +397,17 @@ private struct MaatSystemOneView: View {
                     .sirsiFont(.caption)
             }
             if let result = hostTriageResult {
-                Label(result.summary, systemImage: result.ok ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                let gate = hostTriageGate(result)
+                Label(result.summary, systemImage: hostTriageSymbol(gate: gate, result: result))
                     .sirsiFont(.caption)
-                    .foregroundStyle(result.ok ? .green : .orange)
+                    .foregroundStyle(hostTriageTint(gate: gate, result: result))
                     .fixedSize(horizontal: false, vertical: true)
-                if result.ok {
+                if result.ok, gate == "pass" {
                     Text("The Casebook was refreshed from this exact local observation.")
+                        .sirsiFont(.caption)
+                        .foregroundStyle(.secondary)
+                } else if result.ok {
+                    Text("The observation was retained. Open the Casebook to follow its repair, review, or owner-resolution route.")
                         .sirsiFont(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -644,6 +649,36 @@ private struct MaatSystemOneView: View {
             await load()
         }
         hostTriageInFlight = false
+    }
+
+    // A Casebook append succeeding is not synonymous with a healthy result.
+    // The command carries the deterministic System One gate as evidence, and
+    // this native projection preserves it instead of showing a green success
+    // treatment for a recorded block or escalation.
+    private func hostTriageGate(_ result: CommandResult) -> String {
+        result.evidence.first(where: { $0.label == "Deterministic gate" })?.value.lowercased() ?? ""
+    }
+
+    private func hostTriageSymbol(gate: String, result: CommandResult) -> String {
+        guard result.ok else { return "exclamationmark.triangle.fill" }
+        switch gate {
+        case "pass": return "checkmark.seal.fill"
+        case "changes": return "exclamationmark.circle.fill"
+        case "block": return "hand.raised.fill"
+        case "escalate": return "arrow.triangle.branch"
+        default: return "checkmark.circle.fill"
+        }
+    }
+
+    private func hostTriageTint(gate: String, result: CommandResult) -> Color {
+        guard result.ok else { return .orange }
+        switch gate {
+        case "pass": return .green
+        case "changes": return .orange
+        case "block": return .red
+        case "escalate": return gold
+        default: return .secondary
+        }
     }
 
     @MainActor private func inspectReleasePreflight() async {
