@@ -31,6 +31,8 @@ var stacklabCmd = &cobra.Command{
 var stacklabDoctorJSON bool
 var stacklabCatalogJSON bool
 
+var stacklabCatalogGetwd = os.Getwd
+
 var stacklabDoctorCmd = &cobra.Command{
 	Use:   "doctor",
 	Short: "Enforce ADR-066: every declared peer wing must be built, pushed, pinned, declared and schema-valid",
@@ -82,9 +84,14 @@ This is a local source catalog, not a claim that a wing is canonical, released,
 or remotely pinned. Unreadable or malformed contract records are emitted in
 unknown and never silently omitted.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		repoRoot, err := router.FindRepoRoot()
+		// Catalog is a source-worktree operation, unlike `stacklab doctor`,
+		// which deliberately reads Ra's shared router authority. Using
+		// FindRepoRoot here redirected a user in a linked worktree to the main
+		// checkout and silently projected the wrong recipes. Resolve the nearest
+		// checkout carrying this command's own contract directory instead.
+		repoRoot, err := findStacklabCatalogRoot()
 		if err != nil {
-			return fmt.Errorf("locate repo root: %w", err)
+			return fmt.Errorf("locate selected Stack Lab checkout: %w", err)
 		}
 		catalog, err := stacklab.LoadLocalCatalog(repoRoot)
 		if err != nil {
@@ -104,6 +111,32 @@ unknown and never silently omitted.`,
 		}
 		return nil
 	},
+}
+
+// findStacklabCatalogRoot resolves the nearest source checkout containing both
+// the repository module marker and the catalog's contract directory. It never
+// consults the shared router root: the catalog must describe the checkout the
+// operator selected, including an isolated worktree under review.
+func findStacklabCatalogRoot() (string, error) {
+	dir, err := stacklabCatalogGetwd()
+	if err != nil {
+		return "", err
+	}
+	if resolved, evalErr := filepath.EvalSymlinks(dir); evalErr == nil {
+		dir = resolved
+	}
+	for {
+		module, moduleErr := os.Stat(filepath.Join(dir, "go.mod"))
+		contracts, contractsErr := os.Stat(filepath.Join(dir, "contracts", "stacklab"))
+		if moduleErr == nil && !module.IsDir() && contractsErr == nil && contracts.IsDir() {
+			return dir, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", fmt.Errorf("no checkout with go.mod and contracts/stacklab found from current directory")
+		}
+		dir = parent
+	}
 }
 
 func printStacklabReport(out interface{ Write([]byte) (int, error) }, rep stacklab.Report) {
