@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
@@ -46,6 +47,51 @@ func TestHandleMaatCasebookProjectsSharedCalibrationEvidence(t *testing.T) {
 	}
 	if len(view.Cases) != 1 || view.Cases[0].Status != "resolved" || view.Cases[0].Calibration == nil || view.Cases[0].Calibration.FrontierEvidence != "review:sha256=independent" {
 		t.Fatalf("Maat MCP projection = %+v", view)
+	}
+}
+
+// MCP is an equal Casebook projection, not a summary-only agent endpoint.
+// Pin the exact recovery hint so an agent client receives the same evidence
+// the CLI, TUI, dashboard, and native app present—without getting execution
+// authority over producer-supplied text.
+func TestHandleMaatCasebookProjectsSystemOneRecoveryHint(t *testing.T) {
+	oldOpen := openMaatCasebookJournal
+	t.Cleanup(func() { openMaatCasebookJournal = oldOpen })
+	verdict, err := maat.Screen(maat.SystemOneScreen{
+		Subject:       maat.VerdictSubject{Kind: "commit", Repo: "SirsiMaster/sirsi-pantheon", Ref: "main", HeadSHA: strings.Repeat("a", 40)},
+		FeatherWeight: 91,
+		Confidence:    0.97,
+		Findings: []maat.ScreenFinding{{
+			ID: "receipt-missing", Severity: "block", Category: "provenance", File: "docs/evidence/release.json", Line: 4,
+			Claim: "release receipt is missing", Evidence: "receipt:missing", Confidence: 0.98,
+			FixHint: "Create and independently review the exact release receipt.",
+		}},
+		Floor: maat.FloorResult{Passed: true, Checks: []maat.FloorCheck{{Name: "gofmt", Passed: true}}},
+		Model: maat.ModelStamp{Provider: "local:deterministic", Version: "v1", Local: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal := &maatCasebookJournal{rows: []maat.Decision{{
+		Time: "2026-09-28T03:00:00Z", Host: "m5", Kind: "system one screen", Requester: "sirsi maat screen",
+		Assessed: "commit main", Determination: string(verdict.Gate), Why: "release receipt missing", Evidence: "maat-system-one:sha256=screen", SystemOne: &verdict,
+	}}}
+	openMaatCasebookJournal = func() (maat.DecisionJournal, error) { return journal, nil }
+
+	result, err := handleMaatCasebook(map[string]interface{}{"limit": float64(5)})
+	if err != nil || result.IsError || len(result.Content) != 1 {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	var view struct {
+		Cases []struct {
+			SystemOne *maat.MaatVerdict `json:"system_one"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &view); err != nil {
+		t.Fatal(err)
+	}
+	if len(view.Cases) != 1 || view.Cases[0].SystemOne == nil || len(view.Cases[0].SystemOne.Findings) != 1 || view.Cases[0].SystemOne.Findings[0].FixHint != "Create and independently review the exact release receipt." {
+		t.Fatalf("Maat MCP recovery projection = %+v", view)
 	}
 }
 
