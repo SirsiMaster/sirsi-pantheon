@@ -64,6 +64,15 @@
       "upgrade_recipe": ["preserve closed schema validation", "canonicalize floor checks by name and findings by identity before policy and hashing", "reject duplicate finding identities and noncanonical verdict replay", "never let a caller select the screen gate", "require --confirm immediately before every decision-journal write", "retain deterministic floor precedence", "treat each prescribed recovery step as evidence, never executable input", "treat a screen as advisory evidence, never operation authority", "bind calibration only to one recorded local auto-pass and distinct independent evidence", "reject replayed or ambiguous calibration links", "add positive and adversarial fixtures before widening a subject, boundary, finding, or independent outcome class"]
     },
     {
+      "id": "maat-release-contract-preflight",
+      "source": ["internal/maat/releasepreflight.go", "cmd/sirsi/maatpreflight.go", "contracts/stacklab/pantheon-release-artifact-recipe-v1.json"],
+      "tests": ["internal/maat/releasepreflight_test.go", "scripts/verify-maat-release-preflight-contract.sh", "scripts/verify-commercial-release-contract.sh"],
+      "inputs": ["explicit checkout root", "regular non-symlink release-contract sources"],
+      "outputs": ["hash-bound non-executing release-contract observation", "delivery-bound System One verdict", "evidence-linked repair hints for every failed source floor"],
+      "writes": ["only one confirmed Ma'at decision journal record through sirsi maat preflight release --confirm"],
+      "upgrade_recipe": ["keep source observation in-process and non-executing", "retain regular-file and before/after identity checks", "hash every observed input into the subject fingerprint", "keep a green source floor distinct from credentialed release proof", "require explicit confirmation immediately before Casebook persistence", "add positive, missing-contract, and symlink adversarial fixtures before widening the contract"]
+    },
+    {
       "id": "maat-pulse-proof-platform",
       "source": ["internal/maat/pulse.go", "internal/maat/proof.go", "internal/maat/platform.go"],
       "tests": ["internal/maat/pulse_test.go", "internal/maat/proof_test.go", "internal/maat/platform_test.go"],
@@ -101,8 +110,8 @@
     },
     {
       "id": "maat-cli",
-      "source": ["cmd/sirsi/maat.go", "cmd/sirsi/maatschedule.go", "cmd/sirsi/maatcasebook.go", "cmd/sirsi/maatresolution.go", "cmd/sirsi/maatscreen.go", "cmd/sirsi/maatcalibrate.go"],
-      "tests": ["cmd/sirsi/maatschedule_decisions_test.go", "cmd/sirsi/maatresolution_test.go", "cmd/sirsi/maatscreen_test.go", "cmd/sirsi/maatcalibrate_test.go"],
+      "source": ["cmd/sirsi/maat.go", "cmd/sirsi/maatschedule.go", "cmd/sirsi/maatcasebook.go", "cmd/sirsi/maatresolution.go", "cmd/sirsi/maatscreen.go", "cmd/sirsi/maatpreflight.go", "cmd/sirsi/maatcalibrate.go"],
+      "tests": ["cmd/sirsi/maatschedule_decisions_test.go", "cmd/sirsi/maatresolution_test.go", "cmd/sirsi/maatscreen_test.go", "cmd/sirsi/maatcalibrate_test.go", "internal/maat/releasepreflight_test.go"],
       "inputs": ["local operator command"],
       "outputs": ["human and JSON views with System One model/deterministic-floor provenance, three-level failed-floor recovery, and read-only prescribed recovery guidance"],
       "writes": ["only explicit audit, reservation, and confirmed owner-resolution decision records"],
