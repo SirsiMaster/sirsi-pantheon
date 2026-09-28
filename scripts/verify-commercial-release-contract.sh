@@ -74,6 +74,21 @@ for target in dmg-dev pkg-dev release-dmg release-pkg; do
     /usr/bin/grep -Eq "^${target}:" "$makefile" || { echo "Makefile target missing: $target" >&2; exit 1; }
 done
 
+# Packaging is required to ship the native SwiftUI application.  The retained
+# Go/systray source is compatibility history, not an alternate product payload.
+/usr/bin/grep -Fq 'swift build -c release' "$dmg" || {
+    echo "DMG build does not compile the canonical Swift menubar" >&2
+    exit 1
+}
+if /usr/bin/grep -Fq 'go build -ldflags="${GO_LDFLAGS}" -o "${BUILD_DIR}/sirsi-menubar"' "$dmg"; then
+    echo "DMG build retains the retired Go menubar fallback" >&2
+    exit 1
+fi
+/usr/bin/grep -A5 '^build-menubar:' "$makefile" | /usr/bin/grep -Fq 'swift build -c release' || {
+    echo "Makefile build-menubar does not compile the canonical Swift surface" >&2
+    exit 1
+}
+
 /usr/bin/jq -e '
   .schema == "sirsi.stacklab.recipe.v1" and
   .id == "stacklab.recipe.pantheon-release-artifact" and
