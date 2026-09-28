@@ -18,7 +18,11 @@ grep -Fq 'maatRepairReadDiagnosis' "$REPAIR"
 grep -Fq 'maatRepairRestoreLaunchAgents' "$REPAIR"
 grep -Fq 'no actionable managed disabled-override finding exists; no launchd state changed' "$REPAIR"
 grep -Fq 'post-repair diagnostic still reports an actionable managed disabled override' "$REPAIR"
-grep -Fq 'Determination: "resolved"' "$REPAIR"
+# A repair starts as failed and may become resolved only after the same
+# diagnostic has been re-observed cleanly. Do not regress this into a brittle
+# initializer-literal check: the post-observation assignment is the actual
+# safety contract.
+grep -Fq 'outcome.Determination = "resolved"' "$REPAIR"
 grep -Fq 'RecordDiagnosticRepair' "$REPAIR"
 grep -Fq 'diagnostic-repair:sha256=' "$RECEIPT"
 grep -Fq 'determination must be resolved or failed' "$RECEIPT"
