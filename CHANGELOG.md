@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.24] — 2026-09-28 — Router blocked-by contract clarity
+**Commercial patch release.** `sirsi router` now describes `--blocked-by` as
+an external-block reason rather than a dependency-task identifier, matching the
+store and live task records. This release is documentation and operator-help
+clarity only; it makes no router migration, deployment, or installed-host
+qualification claim.
+
 ## [0.24.23] — 2026-09-28 — Stack Lab doctor origin roster provenance
 **Commercial patch release.** `sirsi stacklab doctor` now reads the Stack Lab
 wing roster from the canonical `sirsi-pantheon` `origin/main` source through
