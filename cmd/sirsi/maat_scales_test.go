@@ -63,6 +63,22 @@ func TestMaatScalesPostHealCollectionFailureSurfaces(t *testing.T) {
 	}
 }
 
+func TestMaatScalesPostHealRecoveryActionsRetainPolicyAndStayReadOnly(t *testing.T) {
+	actions := scalesPostHealRecoveryActions("/tmp/policy with space's.yaml")
+	if len(actions) != 2 {
+		t.Fatalf("actions = %#v, want re-observation and casebook actions", actions)
+	}
+	if got, want := actions[0].Command, "sirsi maat scales --policy '/tmp/policy with space'\\''s.yaml'"; got != want {
+		t.Errorf("re-observation command = %q, want %q", got, want)
+	}
+	if strings.Contains(actions[0].Command, "--fix") {
+		t.Errorf("re-observation must not repeat the repair: %q", actions[0].Command)
+	}
+	if got, want := actions[1].Command, "sirsi maat casebook"; got != want {
+		t.Errorf("casebook command = %q, want %q", got, want)
+	}
+}
+
 // Positive: after a successful heal, the rendered state is the RE-WEIGH
 // (clean), not the pre-heal breach.
 func TestMaatScalesPostHealStateReplacesPreHeal(t *testing.T) {

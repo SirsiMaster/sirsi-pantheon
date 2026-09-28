@@ -320,6 +320,7 @@ func runMaatScales(cmd *cobra.Command, args []string) error {
 			res.Evidence = nil
 			res.AddEvidence("Healed lanes", healed)
 			res.AddEvidence("Post-heal state", "unavailable: "+err.Error())
+			res.NextActions = scalesPostHealRecoveryActions(maatPolicyFile)
 			res.Status = "fail"
 			res.Summary = "Lanes were healed, but the post-heal verification could not be collected."
 			res.Duration = time.Since(start)
@@ -372,6 +373,30 @@ func runMaatScales(cmd *cobra.Command, args []string) error {
 	res.Duration = time.Since(start)
 	res.Render()
 	return nil
+}
+
+// scalesPostHealRecoveryActions gives an operator a safe path forward when a
+// bounded lane repair completed but the required post-repair observation could
+// not. Re-observation is deliberately read-only: Ma'at must not repeat a
+// system mutation while it cannot establish the state resulting from the first
+// one. The original custom policy remains bound to the suggested command.
+func scalesPostHealRecoveryActions(policyPath string) []output.NextAction {
+	command := "sirsi maat scales"
+	if policyPath != "" {
+		command += " --policy " + shellQuote(policyPath)
+	}
+	return []output.NextAction{
+		{
+			Label:       "Re-observe Ma'at Scales",
+			Command:     command,
+			Description: "Read the current lane state again without changing system settings.",
+		},
+		{
+			Label:       "Inspect Ma'at evidence",
+			Command:     "sirsi maat casebook",
+			Description: "Review the retained incomplete outcome before attempting another repair.",
+		},
+	}
 }
 
 func runMaatHeal(cmd *cobra.Command, args []string) error {
