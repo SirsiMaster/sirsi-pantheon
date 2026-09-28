@@ -17,17 +17,45 @@ func TestBuildPlanAcceptsConfiguredLocalEngineAndDetectedEstates(t *testing.T) {
 	}
 }
 
-func TestBuildPlanRejectsUnavailableOrDuplicateEstate(t *testing.T) {
+func TestBuildPlanRetainsUnqualifiedOrRejectsDuplicateEstate(t *testing.T) {
 	catalog := Catalog{
 		Machine: Machine{ID: "this-mac", CPUCores: 8, MemoryBytes: 16 * gib},
 		Engines: []Engine{{ID: "apollo-local-sne", State: "configured"}},
 		Estates: []ChipEstate{{ID: "cpu", Available: true}, {ID: "gpu", Available: false}},
 	}
-	if _, err := BuildPlan(catalog, "apollo-local-sne", 4, 8*gib, 0, []string{"gpu"}); err == nil {
-		t.Fatal("BuildPlan() accepted an unavailable estate")
+	plan, err := BuildPlan(catalog, "apollo-local-sne", 4, 8*gib, 0, []string{"gpu"})
+	if err != nil {
+		t.Fatalf("BuildPlan() rejected an enumerated unqualified estate: %v", err)
+	}
+	if got, want := plan.UnavailableEstates, []string{"gpu"}; len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("unavailable estates = %#v, want %#v", got, want)
+	}
+	if plan.Execution != "planned with requested estates awaiting SNE qualification; inference cannot start until SNE admits them" {
+		t.Fatalf("execution = %q", plan.Execution)
 	}
 	if _, err := BuildPlan(catalog, "apollo-local-sne", 4, 8*gib, 0, []string{"cpu", "cpu"}); err == nil {
 		t.Fatal("BuildPlan() accepted a duplicate estate")
+	}
+}
+
+func TestBuildPlanRejectsEstateOutsideSelectedMachineReceipt(t *testing.T) {
+	catalog := Catalog{
+		Machine: Machine{ID: "this-mac", Name: "This Mac", CPUCores: 8, MemoryBytes: 16 * gib, ChipEstates: []string{"cpu"}},
+		Engines: []Engine{{ID: "apollo-local-sne", State: "configured"}},
+		Estates: []ChipEstate{{ID: "cpu", Available: true}, {ID: "gpu", Available: false}},
+	}
+	if _, err := BuildPlan(catalog, "apollo-local-sne", 4, 8*gib, 0, []string{"gpu"}); err == nil {
+		t.Fatal("BuildPlan() accepted an estate outside the selected machine receipt")
+	}
+}
+
+func TestEstateIDsRetainsDetectedUnqualifiedEstate(t *testing.T) {
+	got := estateIDs([]ChipEstate{
+		{ID: "cpu", Available: true},
+		{ID: "neural-engine", Available: false},
+	})
+	if len(got) != 2 || got[0] != "cpu" || got[1] != "neural-engine" {
+		t.Fatalf("estateIDs() = %#v, want detected estates including unqualified neural engine", got)
 	}
 }
 

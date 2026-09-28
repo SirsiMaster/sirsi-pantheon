@@ -202,33 +202,14 @@ struct ApolloRunPlannerView: View {
     }
 
     private func estatePicker(_ catalog: ApolloCatalog) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
+        let estates = estateOptions(catalog)
+        return VStack(alignment: .leading, spacing: 9) {
             Label("Chip estates", systemImage: "square.grid.2x2")
                 .sirsiFont(.headline)
-            Text("Select every estate Apollo may observe and use. Unavailable estates stay visible and cannot be selected.")
+            Text("Select every detected estate Apollo should observe or request. An estate that is not currently qualified remains selectable and is carried to SNE as an explicit pending request.")
                 .sirsiFont(.subheadline).foregroundStyle(.secondary)
-            ForEach(estateOptions(catalog)) { estate in
-                if snapshotMode {
-                    HStack(alignment: .top, spacing: 8) {
-                        Image(systemName: selectedEstates.contains(estate.id) ? "checkmark.square.fill" : "square")
-                            .foregroundStyle(estate.available ? gold : .secondary)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(estate.name).sirsiFont(.subheadline, weight: .semibold)
-                            Text(estate.description).sirsiFont(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    .opacity(estate.available ? 1 : 0.55)
-                } else {
-                    Toggle(isOn: binding(for: estate)) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(estate.name).sirsiFont(.subheadline, weight: .semibold)
-                            Text(estate.description).sirsiFont(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    .toggleStyle(.checkbox)
-                    .disabled(!estate.available)
-                    .opacity(estate.available ? 1 : 0.55)
-                }
+            SwiftUI.ForEach(estates, id: \.id) { estate in
+                estateRow(estate)
             }
         }
         .padding(14)
@@ -244,7 +225,7 @@ struct ApolloRunPlannerView: View {
                 Label(planning ? "Validating plan…" : "Create Apollo run plan", systemImage: "checkmark.circle")
             }
             if selectedEstates.isEmpty {
-                Text("Choose at least one available chip estate to continue.")
+                Text("Choose at least one detected chip estate to continue.")
                     .sirsiFont(.caption, weight: .semibold).foregroundStyle(.orange)
             }
             if let planError {
@@ -263,6 +244,16 @@ struct ApolloRunPlannerView: View {
             Text("SNE must still admit execution against current system pressure. Opening Apollo now shows live telemetry when a session is active.")
                 .sirsiFont(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            if !plan.unqualifiedEstates.isEmpty {
+                Label("Awaiting SNE qualification: \(plan.unqualifiedEstates.joined(separator: ", "))", systemImage: "exclamationmark.triangle.fill")
+                    .sirsiFont(.caption, weight: .semibold)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Pantheon retained your requested estate selection, but it cannot start inference or present it as admitted until SNE qualifies it.")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             NavLink { ApolloTelemetryView(engine: engine, plan: plan) } label: {
                 Label("Open Apollo telemetry", systemImage: "waveform.path.ecg")
             }
@@ -290,6 +281,31 @@ struct ApolloRunPlannerView: View {
 
     private func resourceLine(_ title: String, _ detail: String) -> some View {
         HStack { Text(title).sirsiFont(.subheadline, weight: .semibold); Spacer(); Text(detail).sirsiFont(.caption).foregroundStyle(.secondary) }
+    }
+
+    @ViewBuilder private func estateRow(_ estate: ApolloChipEstate) -> some View {
+        if snapshotMode {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: selectedEstates.contains(estate.id) ? "checkmark.square.fill" : "square")
+                    .foregroundStyle(estate.available ? gold : .orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(estate.name).sirsiFont(.subheadline, weight: .semibold)
+                    Text(estateDetail(estate)).sirsiFont(.caption).foregroundStyle(estate.available ? Color.secondary : .orange)
+                }
+            }
+        } else {
+            Toggle(isOn: binding(for: estate)) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(estate.name).sirsiFont(.subheadline, weight: .semibold)
+                    Text(estateDetail(estate)).sirsiFont(.caption).foregroundStyle(estate.available ? Color.secondary : .orange)
+                }
+            }
+            .toggleStyle(.checkbox)
+        }
+    }
+
+    private func estateDetail(_ estate: ApolloChipEstate) -> String {
+        estate.available ? estate.description : "Not currently SNE-qualified · \(estate.description)"
     }
 
     private func snapshotSelection(_ label: String, value: String) -> some View {
@@ -602,6 +618,7 @@ struct ApolloPlan: Decodable {
     let memoryBytes: Int64
     let swapBytes: Int64
     let chipEstates: [String]
+    let unavailableEstates: [String]?
 
     enum CodingKeys: String, CodingKey {
         case machineID = "machine_id"
@@ -610,7 +627,12 @@ struct ApolloPlan: Decodable {
         case memoryBytes = "memory_bytes"
         case swapBytes = "swap_bytes"
         case chipEstates = "chip_estates"
+        case unavailableEstates = "unavailable_chip_estates"
     }
+
+    // Older local CLI binaries did not emit this optional planning disclosure.
+    // Treat its absence as no unqualified selection, never as a decode failure.
+    var unqualifiedEstates: [String] { unavailableEstates ?? [] }
 }
 private struct ApolloTelemetryRead: Decodable { let state: String; let telemetry: ApolloSessionTelemetry?; let reason: String? }
 private struct ApolloSessionTelemetry: Decodable {

@@ -33,7 +33,10 @@ type Machine struct {
 	Name        string `json:"name"`
 	CPUCores    int    `json:"cpu_cores"`
 	MemoryBytes int64  `json:"memory_bytes"`
-	// ChipEstates binds selectable estates to this capacity receipt. Empty is
+	// ChipEstates binds detected, selectable estates to this capacity receipt. An
+	// estate can be selectable before it is currently SNE-qualified; Plan makes
+	// that qualification gap explicit rather than silently hiding the estate.
+	// Empty is
 	// accepted only for the legacy single-machine projection, where Catalog's
 	// top-level estate list remains authoritative.
 	ChipEstates []string `json:"chip_estates,omitempty"`
@@ -68,7 +71,10 @@ type Plan struct {
 	MemoryBytes   int64    `json:"memory_bytes"`
 	SwapBytes     int64    `json:"swap_bytes"`
 	ChipEstates   []string `json:"chip_estates"`
-	Execution     string   `json:"execution"`
+	// UnavailableEstates is a subset of ChipEstates whose selection is retained
+	// for operator intent, but which SNE must qualify before it can admit work.
+	UnavailableEstates []string `json:"unavailable_chip_estates,omitempty"`
+	Execution          string   `json:"execution"`
 }
 
 // Collect returns the current machine and the one configured local SNE route.
@@ -147,32 +153,41 @@ func BuildPlanForMachine(c Catalog, machineID, engineID string, cores int, memor
 	for _, id := range machine.ChipEstates {
 		allowedEstates[id] = true
 	}
-	available := map[string]bool{}
+	enumerated := map[string]ChipEstate{}
 	for _, estate := range c.Estates {
-		if estate.Available && (len(allowedEstates) == 0 || allowedEstates[estate.ID]) {
-			available[estate.ID] = true
+		if len(allowedEstates) == 0 || allowedEstates[estate.ID] {
+			enumerated[estate.ID] = estate
 		}
 	}
 	seen := map[string]bool{}
+	unavailable := make([]string, 0)
 	for _, estate := range estates {
-		if !available[estate] {
-			return Plan{}, fmt.Errorf("%q is not an available chip estate on this Mac", estate)
+		observed, ok := enumerated[estate]
+		if !ok {
+			return Plan{}, fmt.Errorf("%q is not a detected chip estate on %s", estate, machine.Name)
 		}
 		if seen[estate] {
 			return Plan{}, fmt.Errorf("chip estate %q was selected more than once", estate)
 		}
 		seen[estate] = true
+		if !observed.Available {
+			unavailable = append(unavailable, estate)
+		}
 	}
 	if len(estates) == 0 {
-		return Plan{}, fmt.Errorf("choose at least one available chip estate")
+		return Plan{}, fmt.Errorf("choose at least one detected chip estate")
 	}
-	return Plan{SchemaVersion: "apollo-plan/v1", MachineID: machine.ID, EngineID: engine.ID, ResidentModel: engine.ResidentModel, CPUCores: cores, MemoryBytes: memoryBytes, SwapBytes: swapBytes, ChipEstates: estates, Execution: "planned; SNE admission is required before inference starts"}, nil
+	execution := "planned; SNE admission is required before inference starts"
+	if len(unavailable) > 0 {
+		execution = "planned with requested estates awaiting SNE qualification; inference cannot start until SNE admits them"
+	}
+	return Plan{SchemaVersion: "apollo-plan/v1", MachineID: machine.ID, EngineID: engine.ID, ResidentModel: engine.ResidentModel, CPUCores: cores, MemoryBytes: memoryBytes, SwapBytes: swapBytes, ChipEstates: estates, UnavailableEstates: unavailable, Execution: execution}, nil
 }
 
 func estateIDs(estates []ChipEstate) []string {
 	ids := make([]string, 0, len(estates))
 	for _, estate := range estates {
-		if estate.Available {
+		if strings.TrimSpace(estate.ID) != "" {
 			ids = append(ids, estate.ID)
 		}
 	}
