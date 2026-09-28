@@ -1,0 +1,154 @@
+// Package apollo describes the local inference capacity Pantheon can plan
+// against. It deliberately observes and validates; model execution remains the
+// SNE runtime's responsibility.
+package apollo
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/provider"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/seba"
+)
+
+const gib = int64(1024 * 1024 * 1024)
+
+// Catalog is the typed source used by Stack Lab. It has no candidate model
+// guessing: every listed engine is configured on this Mac and every estate is
+// detected by Seba.
+type Catalog struct {
+	SchemaVersion string       `json:"schema_version"`
+	Machine       Machine      `json:"machine"`
+	Engines       []Engine     `json:"engines"`
+	Estates       []ChipEstate `json:"chip_estates"`
+}
+
+type Machine struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	CPUCores    int    `json:"cpu_cores"`
+	MemoryBytes int64  `json:"memory_bytes"`
+}
+
+type Engine struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Provider      string `json:"provider"`
+	ResidentModel string `json:"resident_model,omitempty"`
+	Endpoint      string `json:"endpoint,omitempty"`
+	State         string `json:"state"` // configured|unconfigured
+}
+
+type ChipEstate struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Available   bool   `json:"available"`
+	Description string `json:"description"`
+}
+
+// Plan is a non-mutating, validated declaration of a requested Apollo run.
+// It is intentionally not an execution receipt: SNE must separately accept a
+// plan before a model can reserve local compute.
+type Plan struct {
+	SchemaVersion string   `json:"schema_version"`
+	MachineID     string   `json:"machine_id"`
+	EngineID      string   `json:"engine_id"`
+	ResidentModel string   `json:"resident_model,omitempty"`
+	CPUCores      int      `json:"cpu_cores"`
+	MemoryBytes   int64    `json:"memory_bytes"`
+	SwapBytes     int64    `json:"swap_bytes"`
+	ChipEstates   []string `json:"chip_estates"`
+	Execution     string   `json:"execution"`
+}
+
+// Collect returns the current machine and the one configured local SNE route.
+// A missing route remains visible as unconfigured; Stack Lab never displays a
+// plausible model that is not configured on the local device.
+func Collect(home string) (Catalog, error) {
+	hw, err := seba.DetectHardware()
+	if err != nil {
+		return Catalog{}, fmt.Errorf("detect local hardware: %w", err)
+	}
+	machineName := strings.TrimSpace(hw.CPUModel)
+	if machineName == "" {
+		machineName = "This Mac"
+	}
+	conf := provider.LoadConf(home)
+	local := provider.Local(home, conf)
+	engine := Engine{ID: "apollo-local-sne", Name: "Apollo local inference", Provider: "SNE", State: "unconfigured"}
+	if local != nil {
+		engine.State = "configured"
+		engine.ResidentModel = strings.TrimSpace(local.Model)
+		engine.Endpoint = strings.TrimSpace(local.Endpoint)
+	}
+	estates := []ChipEstate{
+		{ID: "cpu", Name: "CPU", Available: hw.CPUCores > 0, Description: fmt.Sprintf("%d logical cores", hw.CPUCores)},
+		{ID: "unified-memory", Name: "Unified memory", Available: hw.TotalRAM > 0, Description: seba.FormatBytes(hw.TotalRAM)},
+		{ID: "gpu", Name: "GPU", Available: hw.GPU.Type != seba.GPUNone && hw.GPU.Name != "", Description: nonEmpty(hw.GPU.Name, "No detected GPU")},
+		{ID: "neural-engine", Name: "Neural Engine", Available: hw.NeuralEngine, Description: ternary(hw.NeuralEngine, "Detected on this Mac", "Not detected")},
+	}
+	return Catalog{SchemaVersion: "apollo-catalog/v1", Machine: Machine{ID: "this-mac", Name: machineName, CPUCores: hw.CPUCores, MemoryBytes: hw.TotalRAM}, Engines: []Engine{engine}, Estates: estates}, nil
+}
+
+// BuildPlan validates a user-selected resource envelope without reserving
+// memory, starting a process, or changing the active inference service.
+func BuildPlan(c Catalog, engineID string, cores int, memoryBytes, swapBytes int64, estates []string) (Plan, error) {
+	if c.Machine.CPUCores < 1 || c.Machine.MemoryBytes < gib {
+		return Plan{}, fmt.Errorf("this Mac did not report a usable CPU and memory capacity")
+	}
+	if engineID == "" {
+		return Plan{}, fmt.Errorf("choose a configured Apollo inference engine")
+	}
+	var engine *Engine
+	for i := range c.Engines {
+		if c.Engines[i].ID == engineID {
+			engine = &c.Engines[i]
+			break
+		}
+	}
+	if engine == nil || engine.State != "configured" {
+		return Plan{}, fmt.Errorf("the selected Apollo engine is not configured on this Mac")
+	}
+	if cores < 1 || cores > c.Machine.CPUCores {
+		return Plan{}, fmt.Errorf("CPU cores must be between 1 and %d", c.Machine.CPUCores)
+	}
+	if memoryBytes < gib || memoryBytes > c.Machine.MemoryBytes {
+		return Plan{}, fmt.Errorf("memory must be between 1 GiB and %s", seba.FormatBytes(c.Machine.MemoryBytes))
+	}
+	if swapBytes < 0 || swapBytes > c.Machine.MemoryBytes {
+		return Plan{}, fmt.Errorf("swap target must be between 0 and %s", seba.FormatBytes(c.Machine.MemoryBytes))
+	}
+	available := map[string]bool{}
+	for _, estate := range c.Estates {
+		if estate.Available {
+			available[estate.ID] = true
+		}
+	}
+	seen := map[string]bool{}
+	for _, estate := range estates {
+		if !available[estate] {
+			return Plan{}, fmt.Errorf("%q is not an available chip estate on this Mac", estate)
+		}
+		if seen[estate] {
+			return Plan{}, fmt.Errorf("chip estate %q was selected more than once", estate)
+		}
+		seen[estate] = true
+	}
+	if len(estates) == 0 {
+		return Plan{}, fmt.Errorf("choose at least one available chip estate")
+	}
+	return Plan{SchemaVersion: "apollo-plan/v1", MachineID: c.Machine.ID, EngineID: engine.ID, ResidentModel: engine.ResidentModel, CPUCores: cores, MemoryBytes: memoryBytes, SwapBytes: swapBytes, ChipEstates: estates, Execution: "planned; SNE admission is required before inference starts"}, nil
+}
+
+func nonEmpty(value, fallback string) string {
+	if strings.TrimSpace(value) != "" {
+		return value
+	}
+	return fallback
+}
+func ternary(ok bool, yes, no string) string {
+	if ok {
+		return yes
+	}
+	return no
+}

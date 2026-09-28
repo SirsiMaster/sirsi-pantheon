@@ -807,6 +807,7 @@ func init() {
 	horusCmd.Hidden = true
 	rootCmd.AddCommand(anubisCmd, sebaCmd, osirisCmd)
 	rootCmd.AddCommand(brandCmd)      // 𓂀 canonical Pantheon palette + token emitter (ADR-038)
+	rootCmd.AddCommand(apolloCmd)     // local inference planning; SNE owns execution and telemetry
 	rootCmd.AddCommand(gemmaCmd)      // human-facing 'sirsi gemma "<prompt>"' → local on-device model
 	rootCmd.AddCommand(brainCmd)      // 𓁟 Orchestration Brain control plane (A29, ADR-034): tiered/pluggable LLM spectrum over the EXISTING router+wake substrate
 	rootCmd.AddCommand(autonomousCmd) // 𓁟 master ACTION switch: observe-only vs. self-managing, orthogonal to the LLM Level (deterministic Tier-0 loop)

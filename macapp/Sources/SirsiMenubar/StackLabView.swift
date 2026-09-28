@@ -96,6 +96,7 @@ struct StackLabView: View {
             MaybeScroll {
                 VStack(alignment: .leading, spacing: 16) {
                     summary(report)
+                    apolloHandoff
                     releaseContractHandoff
                     if report.clean {
                         cleanState(report)
@@ -160,6 +161,25 @@ struct StackLabView: View {
                 .sirsiFont(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+    }
+
+    private var apolloHandoff: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Apollo run planning", systemImage: "cpu")
+                .sirsiFont(.headline)
+            Text("Preview the resident local inference route, detected machine estates, and explicit CPU, memory, and swap envelope. Stack Lab validates a plan first; Apollo/SNE separately admits execution against live pressure.")
+                .sirsiFont(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            NavLink { ApolloRunPlannerView(engine: engine) } label: {
+                Label("Plan an Apollo run", systemImage: "slider.horizontal.3")
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(gold)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
