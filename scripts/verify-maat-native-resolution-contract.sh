@@ -9,10 +9,12 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
 view="$root/macapp/Sources/SirsiMenubar/Views.swift"
 casebook="$root/macapp/Sources/SirsiMenubar/MaatCasebookView.swift"
 launchd="$root/internal/router/launchdkickstart.go"
+screencli="$root/cmd/sirsi/maatscreen.go"
 
 [ -f "$view" ] || { echo "missing native views" >&2; exit 1; }
 [ -f "$casebook" ] || { echo "missing native Ma'at casebook" >&2; exit 1; }
 [ -f "$launchd" ] || { echo "missing managed launchd recovery" >&2; exit 1; }
+[ -f "$screencli" ] || { echo "missing Ma'at System One command" >&2; exit 1; }
 
 if /usr/bin/grep -Fq 'This needs attention but has no one-click fix yet.' "$view"; then
   echo "native finding dead-end text remains" >&2
@@ -63,9 +65,20 @@ for needle in \
   'Record this System One screen?' \
   'Validate and record' \
   'It will not execute the assessed payload' \
-  '"maat", "screen", "--input"'; do
+  '"maat", "screen", "--input"' \
+  '"--confirm"'; do
   /usr/bin/grep -Fq "$needle" "$casebook" || {
     echo "native Ma'at System One surface missing: $needle" >&2
+    exit 1
+  }
+done
+
+for needle in \
+  'maatScreenConfirm' \
+  'rerun with --confirm' \
+  'confirm recording the validated Ma'\''at System One screen'; do
+  /usr/bin/grep -Fq "$needle" "$screencli" || {
+    echo "Ma'at System One confirmation contract missing: $needle" >&2
     exit 1
   }
 done

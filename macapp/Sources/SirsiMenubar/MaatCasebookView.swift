@@ -340,7 +340,7 @@ private struct MaatSystemOneView: View {
         guard let selectedScreenURL else { return }
         screenImportInFlight = true
         screenImportError = nil
-        screenImportResult = await SirsiEngine.runResult(args: ["maat", "screen", "--input", selectedScreenURL.path])
+        screenImportResult = await SirsiEngine.runResult(args: ["maat", "screen", "--input", selectedScreenURL.path, "--confirm"])
         if screenImportResult == nil {
             screenImportError = "Ma'at could not validate or record this screen. The input remains unchanged and no System One result was inferred. Choose a valid closed evidence JSON or inspect the producer's receipt."
         } else if screenImportResult?.ok == true {

@@ -61,7 +61,7 @@
       "inputs": ["closed typed local screen JSON", "deterministic floor checks", "model/provider provenance", "one distinct independent review outcome for a recorded local auto-pass"],
       "outputs": ["evidence-bound System One verdict", "escalation route for sensitive or uncertain screens", "durable auto-pass calibration and overturn-rate projection"],
       "writes": ["only a validated Ma'at decision journal record"],
-      "upgrade_recipe": ["preserve closed schema validation", "never let a caller select the screen gate", "retain deterministic floor precedence", "treat a screen as advisory evidence, never operation authority", "bind calibration only to one recorded local auto-pass and distinct independent evidence", "reject replayed or ambiguous calibration links", "add positive and adversarial fixtures before widening a subject, boundary, finding, or independent outcome class"]
+      "upgrade_recipe": ["preserve closed schema validation", "never let a caller select the screen gate", "require --confirm immediately before every decision-journal write", "retain deterministic floor precedence", "treat a screen as advisory evidence, never operation authority", "bind calibration only to one recorded local auto-pass and distinct independent evidence", "reject replayed or ambiguous calibration links", "add positive and adversarial fixtures before widening a subject, boundary, finding, or independent outcome class"]
     },
     {
       "id": "maat-pulse-proof-platform",

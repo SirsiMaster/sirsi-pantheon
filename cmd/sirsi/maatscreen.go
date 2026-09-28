@@ -14,7 +14,10 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 )
 
-var maatScreenInput string
+var (
+	maatScreenInput   string
+	maatScreenConfirm bool
+)
 
 // maatScreenCmd turns a closed, typed local observation into Ma'at's
 // JEV-like System One verdict. It is deliberately provider-neutral: the
@@ -53,6 +56,13 @@ release, router work, signing, installation, or a final owner decision.`,
 		verdict, err := maat.Screen(input)
 		if err != nil {
 			return err
+		}
+		// A valid screen is still a durable journal write. Validate the closed
+		// packet first so an operator gets useful feedback, then require the same
+		// explicit confirmation used by Ma'at owner review and acceptance before
+		// opening the decision writer.
+		if !maatScreenConfirm {
+			return fmt.Errorf("recording a Ma'at System One screen writes the decision journal; rerun with --confirm after reviewing the deterministic gate")
 		}
 		journal, err := newMaatDecisionJournal()
 		if err != nil {
@@ -108,6 +118,7 @@ func systemOneSummary(verdict maat.MaatVerdict) string {
 
 func init() {
 	maatScreenCmd.Flags().StringVar(&maatScreenInput, "input", "", "closed Ma'at System One screen JSON")
+	maatScreenCmd.Flags().BoolVar(&maatScreenConfirm, "confirm", false, "confirm recording the validated Ma'at System One screen")
 	maatScreenCmd.Flags().BoolVar(&maatJSON, "json", false, "JSON output")
 	maatCmd.AddCommand(maatScreenCmd)
 }
