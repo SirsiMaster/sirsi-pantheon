@@ -5,6 +5,20 @@ import (
 	"testing"
 )
 
+type systemOneJournal struct{ decisions []Decision }
+
+func (j *systemOneJournal) Append(decision Decision) error {
+	j.decisions = append(j.decisions, decision)
+	return nil
+}
+
+func (j *systemOneJournal) Recent(limit int) ([]Decision, error) {
+	if limit <= 0 || limit > len(j.decisions) {
+		limit = len(j.decisions)
+	}
+	return append([]Decision(nil), j.decisions[len(j.decisions)-limit:]...), nil
+}
+
 func validSystemOneInput() SystemOneScreen {
 	return SystemOneScreen{
 		Subject:       VerdictSubject{Kind: "commit", Repo: "SirsiMaster/sirsi-pantheon", Ref: "main", HeadSHA: strings.Repeat("a", 40)},
@@ -106,7 +120,7 @@ func TestRecordSystemOneProjectsAnEvidenceBoundDecision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	journal := &captureJournal{}
+	journal := &systemOneJournal{}
 	decision, err := RecordSystemOne(journal, "sirsi maat screen", verdict)
 	if err != nil {
 		t.Fatal(err)
@@ -133,5 +147,65 @@ func TestSystemOneCalibrationMeasuresAutoPassOverturns(t *testing.T) {
 	}
 	if calibration.Samples != 2 || calibration.AutoPasses != 2 || calibration.AutoPassOverturn != 1 || calibration.OverturnRate != 0.5 {
 		t.Fatalf("calibration = %+v", calibration)
+	}
+}
+
+func TestRecordSystemOneCalibrationBindsARecordedAutoPassOnce(t *testing.T) {
+	verdict, err := Screen(validSystemOneInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal := &systemOneJournal{}
+	screen, err := RecordSystemOne(journal, "sirsi maat screen", verdict)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision, calibration, err := RecordSystemOneCalibration(journal, "independent reviewer", screen.Evidence, "review:sha256=frontier", GateBlock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decision.SystemOneCalibration == nil || calibration.AutoPasses != 1 || calibration.AutoPassOverturn != 1 || calibration.OverturnRate != 1 {
+		t.Fatalf("calibration decision=%+v calibration=%+v", decision, calibration)
+	}
+	if _, _, err := RecordSystemOneCalibration(journal, "independent reviewer", screen.Evidence, "review:sha256=frontier", GateBlock); err == nil {
+		t.Fatal("accepted replayed calibration pair")
+	}
+}
+
+func TestRecordSystemOneCalibrationRejectsMissingAndNonPassScreens(t *testing.T) {
+	journal := &systemOneJournal{}
+	if _, _, err := RecordSystemOneCalibration(journal, "independent reviewer", "maat-system-one:sha256=missing", "review:sha256=frontier", GatePass); err == nil {
+		t.Fatal("accepted calibration without a recorded screen")
+	}
+	input := validSystemOneInput()
+	input.Subject.Boundary = "delivery"
+	verdict, err := Screen(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	screen, err := RecordSystemOne(journal, "sirsi maat screen", verdict)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := RecordSystemOneCalibration(journal, "independent reviewer", screen.Evidence, "review:sha256=frontier", GatePass); err == nil {
+		t.Fatal("accepted calibration for a non-auto-pass screen")
+	}
+}
+
+func TestCalibrationFromDecisionsRejectsUnboundAndDuplicatePairs(t *testing.T) {
+	verdict, err := Screen(validSystemOneInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := CalibrationRecord{SchemaVersion: SystemOneSchemaVersion, ScreenEvidence: "maat-system-one:sha256=screen", FrontierEvidence: "review:sha256=frontier", ScreenGate: GatePass, FrontierGate: GatePass}
+	if _, err := CalibrationFromDecisions([]Decision{{SystemOneCalibration: &record}}); err == nil {
+		t.Fatal("accepted calibration without the recorded screen")
+	}
+	screen := Decision{Kind: "system one screen", Evidence: record.ScreenEvidence, SystemOne: &verdict}
+	if _, err := CalibrationFromDecisions([]Decision{screen, Decision{SystemOneCalibration: &record}, Decision{SystemOneCalibration: &record}}); err == nil {
+		t.Fatal("accepted duplicate durable calibration pair")
+	}
+	if _, err := CalibrationFromDecisions([]Decision{screen, Decision{SystemOneCalibration: &record}}); err != nil {
+		t.Fatalf("rejected calibration bound to recorded local auto-pass: %v", err)
 	}
 }

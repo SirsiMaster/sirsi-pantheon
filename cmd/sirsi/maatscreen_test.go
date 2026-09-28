@@ -25,7 +25,7 @@ func TestMaatScreenRecordsClosedTypedVerdict(t *testing.T) {
 	t.Cleanup(func() {
 		newMaatDecisionJournal, maatScreenInput, JsonOutput, maatJSON = oldFactory, oldInput, oldJSON, oldMaatJSON
 	})
-	journal := &preflightJournal{}
+	journal := &maatTestJournal{}
 	newMaatDecisionJournal = func() (maat.DecisionJournal, error) { return journal, nil }
 	maatScreenInput, JsonOutput, maatJSON = input, true, false
 	if err := maatScreenCmd.RunE(maatScreenCmd, nil); err != nil {

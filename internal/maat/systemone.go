@@ -183,6 +183,17 @@ type CalibrationSample struct {
 	Frontier GateDecision `json:"frontier_gate"`
 }
 
+// CalibrationRecord binds one recorded local auto-pass to one distinct final
+// outcome from an independent reviewer. Ma'at records the evidence link but
+// does not claim to authenticate an external receipt or grant any authority.
+type CalibrationRecord struct {
+	SchemaVersion    int          `json:"schema_version"`
+	ScreenEvidence   string       `json:"screen_evidence"`
+	FrontierEvidence string       `json:"frontier_evidence"`
+	ScreenGate       GateDecision `json:"screen_gate"`
+	FrontierGate     GateDecision `json:"frontier_gate"`
+}
+
 func Calibrate(samples []CalibrationSample) (Calibration, error) {
 	calibration := Calibration{Samples: len(samples)}
 	for _, sample := range samples {
@@ -197,6 +208,124 @@ func Calibrate(samples []CalibrationSample) (Calibration, error) {
 		}
 		calibration.AutoPasses++
 		if sample.Frontier == GateBlock || sample.Frontier == GateEscalate {
+			calibration.AutoPassOverturn++
+		}
+	}
+	if calibration.AutoPasses > 0 {
+		calibration.OverturnRate = float64(calibration.AutoPassOverturn) / float64(calibration.AutoPasses)
+	}
+	return calibration, nil
+}
+
+// RecordSystemOneCalibration records calibration only for one existing local
+// auto-pass and one distinct final reviewer outcome. Replay, ambiguity, and
+// non-pass screens fail closed so favorable history cannot be manufactured.
+func RecordSystemOneCalibration(j DecisionJournal, requester, screenEvidence, frontierEvidence string, frontierGate GateDecision) (Decision, Calibration, error) {
+	if j == nil {
+		return Decision{}, Calibration{}, fmt.Errorf("maat system one: nil decision journal")
+	}
+	requester = strings.TrimSpace(requester)
+	screenEvidence = strings.TrimSpace(screenEvidence)
+	frontierEvidence = strings.TrimSpace(frontierEvidence)
+	if requester == "" || screenEvidence == "" || frontierEvidence == "" {
+		return Decision{}, Calibration{}, fmt.Errorf("maat system one: requester, screen evidence, and frontier evidence are required")
+	}
+	if len(screenEvidence) > 512 || len(frontierEvidence) > 512 {
+		return Decision{}, Calibration{}, fmt.Errorf("maat system one: calibration evidence exceeds bounded record size")
+	}
+	if screenEvidence == frontierEvidence {
+		return Decision{}, Calibration{}, fmt.Errorf("maat system one: frontier evidence must be distinct from screen evidence")
+	}
+	if !validFinalFrontierGate(frontierGate) {
+		return Decision{}, Calibration{}, fmt.Errorf("maat system one: unsupported final frontier gate %q", frontierGate)
+	}
+	rows, err := j.Recent(1000)
+	if err != nil {
+		return Decision{}, Calibration{}, fmt.Errorf("maat system one: read calibration history: %w", err)
+	}
+	var screen *Decision
+	screenMatches := 0
+	for index := range rows {
+		row := rows[index]
+		if row.SystemOneCalibration != nil && row.SystemOneCalibration.ScreenEvidence == screenEvidence && row.SystemOneCalibration.FrontierEvidence == frontierEvidence {
+			return Decision{}, Calibration{}, fmt.Errorf("maat system one: this screen/frontier calibration pair is already recorded")
+		}
+		if row.Evidence == screenEvidence && row.Kind == "system one screen" && row.SystemOne != nil {
+			screen = &row
+			screenMatches++
+		}
+	}
+	if screen == nil {
+		return Decision{}, Calibration{}, fmt.Errorf("maat system one: no matching recorded System One screen")
+	}
+	if screenMatches != 1 {
+		return Decision{}, Calibration{}, fmt.Errorf("maat system one: ambiguous recorded System One screen evidence")
+	}
+	if screen.SystemOne.Gate != GatePass {
+		return Decision{}, Calibration{}, fmt.Errorf("maat system one: calibration records only local auto-pass screens, got %q", screen.SystemOne.Gate)
+	}
+	record := CalibrationRecord{SchemaVersion: SystemOneSchemaVersion, ScreenEvidence: screenEvidence, FrontierEvidence: frontierEvidence, ScreenGate: GatePass, FrontierGate: frontierGate}
+	if err := validateCalibrationRecord(record); err != nil {
+		return Decision{}, Calibration{}, err
+	}
+	raw, err := json.Marshal(record)
+	if err != nil {
+		return Decision{}, Calibration{}, fmt.Errorf("maat system one: encode calibration: %w", err)
+	}
+	sum := sha256.Sum256(raw)
+	decision := Decision{
+		Kind: "system one calibration", Requester: requester, Resource: screen.Resource,
+		Assessed: "System One auto-pass calibration", Affected: screen.Affected,
+		Determination: string(frontierGate), Why: calibrationReason(record),
+		Evidence: "maat-system-one-calibration:sha256=" + hex.EncodeToString(sum[:]), SystemOneCalibration: &record,
+	}
+	calibration, err := CalibrationFromDecisions(append(rows, decision))
+	if err != nil {
+		return Decision{}, Calibration{}, err
+	}
+	if err := j.Append(decision); err != nil {
+		return Decision{}, Calibration{}, fmt.Errorf("maat system one: append calibration: %w", err)
+	}
+	return decision, calibration, nil
+}
+
+// CalibrationFromDecisions derives calibration from the durable decision
+// history. Invalid, replayed, or unbound records are errors rather than data.
+func CalibrationFromDecisions(rows []Decision) (Calibration, error) {
+	calibration := Calibration{}
+	seen := map[string]bool{}
+	screens := make(map[string]GateDecision)
+	for _, row := range rows {
+		if row.Kind != "system one screen" || row.SystemOne == nil {
+			continue
+		}
+		if err := ValidateMaatVerdict(*row.SystemOne); err != nil {
+			return Calibration{}, fmt.Errorf("maat system one: invalid recorded screen: %w", err)
+		}
+		if previous, exists := screens[row.Evidence]; exists && previous != row.SystemOne.Gate {
+			return Calibration{}, fmt.Errorf("maat system one: conflicting recorded screen evidence")
+		}
+		screens[row.Evidence] = row.SystemOne.Gate
+	}
+	for _, row := range rows {
+		record := row.SystemOneCalibration
+		if record == nil {
+			continue
+		}
+		if err := validateCalibrationRecord(*record); err != nil {
+			return Calibration{}, err
+		}
+		key := record.ScreenEvidence + "\x00" + record.FrontierEvidence
+		if seen[key] {
+			return Calibration{}, fmt.Errorf("maat system one: duplicate durable calibration pair")
+		}
+		if screens[record.ScreenEvidence] != GatePass {
+			return Calibration{}, fmt.Errorf("maat system one: calibration has no matching recorded local auto-pass screen")
+		}
+		seen[key] = true
+		calibration.Samples++
+		calibration.AutoPasses++
+		if record.FrontierGate == GateBlock {
 			calibration.AutoPassOverturn++
 		}
 	}
@@ -407,6 +536,39 @@ func sameEscalation(a, b *Escalation) bool {
 		return a == nil && b == nil
 	}
 	return a.Reason == b.Reason && a.ReviewTier == b.ReviewTier && a.MissedConf == b.MissedConf
+}
+
+func validateCalibrationRecord(record CalibrationRecord) error {
+	if record.SchemaVersion != SystemOneSchemaVersion {
+		return fmt.Errorf("maat system one: unsupported calibration schema version %d", record.SchemaVersion)
+	}
+	if strings.TrimSpace(record.ScreenEvidence) == "" || strings.TrimSpace(record.FrontierEvidence) == "" {
+		return fmt.Errorf("maat system one: calibration evidence is required")
+	}
+	if len(record.ScreenEvidence) > 512 || len(record.FrontierEvidence) > 512 {
+		return fmt.Errorf("maat system one: calibration evidence exceeds bounded record size")
+	}
+	if record.ScreenEvidence == record.FrontierEvidence {
+		return fmt.Errorf("maat system one: calibration evidence references must be distinct")
+	}
+	if record.ScreenGate != GatePass {
+		return fmt.Errorf("maat system one: calibration screen gate must be pass, got %q", record.ScreenGate)
+	}
+	if !validFinalFrontierGate(record.FrontierGate) {
+		return fmt.Errorf("maat system one: unsupported final frontier gate %q", record.FrontierGate)
+	}
+	return nil
+}
+
+func validFinalFrontierGate(gate GateDecision) bool {
+	return gate == GatePass || gate == GateChanges || gate == GateBlock
+}
+
+func calibrationReason(record CalibrationRecord) string {
+	if record.FrontierGate == GateBlock {
+		return "independent review overturned a local System One auto-pass"
+	}
+	return "independent review confirmed or refined a local System One auto-pass"
 }
 
 func validGate(gate GateDecision) bool {

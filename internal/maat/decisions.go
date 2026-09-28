@@ -39,6 +39,9 @@ type Decision struct {
 	// SystemOne is Ma'at's strict local screen. It is advisory evidence only;
 	// the recorded screen does not become mutation or release authority.
 	SystemOne *MaatVerdict `json:"system_one,omitempty"`
+	// SystemOneCalibration binds one recorded local auto-pass to a distinct
+	// independent outcome. It is audit evidence only, never a local grant.
+	SystemOneCalibration *CalibrationRecord `json:"system_one_calibration,omitempty"`
 }
 
 // DecisionJournal persists the local decision projection. Implementations may
@@ -229,6 +232,17 @@ func validateDecision(decision Decision) error {
 		if decision.Kind != "system one screen" {
 			return fmt.Errorf("maat decision journal: System One verdict is valid only for system one screen")
 		}
+	}
+	if decision.SystemOneCalibration != nil {
+		if err := validateCalibrationRecord(*decision.SystemOneCalibration); err != nil {
+			return fmt.Errorf("maat decision journal: invalid System One calibration: %w", err)
+		}
+		if decision.Kind != "system one calibration" {
+			return fmt.Errorf("maat decision journal: System One calibration is valid only for system one calibration")
+		}
+	}
+	if decision.SystemOne != nil && decision.SystemOneCalibration != nil {
+		return fmt.Errorf("maat decision journal: screen and calibration records cannot coexist")
 	}
 	return nil
 }
