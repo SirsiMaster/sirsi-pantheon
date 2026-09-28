@@ -61,6 +61,9 @@ resolved to narrow the view.`,
 			fmt.Println()
 			if c.NextAction != nil {
 				fmt.Printf("          next step: %s · %s\n", c.NextAction.Title, c.NextAction.Detail)
+				for _, step := range c.NextAction.Steps {
+					fmt.Printf("          recovery level %d: %s · %s\n", step.Level, step.Title, step.Detail)
+				}
 			}
 			if c.SystemOne != nil {
 				fmt.Printf("          screen model: %s %s · %s · %dms\n", c.SystemOne.Model.Provider, c.SystemOne.Model.Version, localModelLabel(c.SystemOne.Model.Local), c.SystemOne.Model.LatencyMS)

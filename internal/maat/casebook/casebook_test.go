@@ -79,6 +79,36 @@ func TestBuildGivesEscalatedSystemOneScreensAnEvidenceBoundReviewRoute(t *testin
 	}
 }
 
+func TestBuildGivesFailedSystemOneFloorAThreeLevelRecoveryRoute(t *testing.T) {
+	verdict, err := maat.Screen(maat.SystemOneScreen{
+		Subject:       maat.VerdictSubject{Kind: "commit", Repo: "SirsiMaster/sirsi-pantheon", Ref: "main", HeadSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		FeatherWeight: 91, Confidence: 0.98,
+		Floor: maat.FloorResult{Passed: false, Checks: []maat.FloorCheck{{Name: "receipt schema", Passed: false, Detail: "the release receipt is malformed"}}},
+		Findings: []maat.ScreenFinding{{
+			ID: "receipt-schema", Severity: "block", Category: "provenance", Claim: "release receipt is malformed", Evidence: "receipt:invalid", Confidence: 0.99,
+			FixHint: "Regenerate the exact release receipt from the committed object, then independently review it.",
+		}},
+		Model: maat.ModelStamp{Provider: "local:deterministic", Version: "v1", Local: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	view := Build([]maat.Decision{{
+		Time: "2026-09-28T04:00:00Z", Host: "m5", Kind: "system one screen", Requester: "sirsi maat screen",
+		Assessed: "commit main", Determination: string(verdict.Gate), Why: "receipt schema failed", Evidence: "maat-system-one:sha256=failed-floor", SystemOne: &verdict,
+	}})
+	if len(view.Cases) != 1 || view.Cases[0].NextAction == nil {
+		t.Fatalf("System One failed-floor casebook projection = %+v", view)
+	}
+	action := view.Cases[0].NextAction
+	if action.Kind != "system_one_floor_recovery" || !action.RequiresConfirmation || len(action.Steps) != 3 {
+		t.Fatalf("failed-floor recovery route = %+v", action)
+	}
+	if action.Steps[0].Level != 1 || action.Steps[0].Detail != "receipt schema: the release receipt is malformed" || action.Steps[1].Detail != "Regenerate the exact release receipt from the committed object, then independently review it." || action.Steps[2].Level != 3 || !action.Steps[2].RequiresConfirmation {
+		t.Fatalf("failed-floor recovery steps = %+v", action.Steps)
+	}
+}
+
 func TestBuildProjectsCalibrationAsCompletedEvidenceWithBothLinks(t *testing.T) {
 	verdict, err := maat.Screen(maat.SystemOneScreen{
 		Subject:       maat.VerdictSubject{Kind: "commit", Repo: "SirsiMaster/sirsi-pantheon", Ref: "main", HeadSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},

@@ -1027,6 +1027,7 @@ private struct MaatCaseDetailView: View {
                             .sirsiFont(.subheadline)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
+                        resolutionSteps(action.steps)
                         if action.requiresConfirmation {
                             Label("Requires explicit confirmation", systemImage: "checkmark.shield")
                                 .sirsiFont(.caption, weight: .semibold)
@@ -1053,17 +1054,27 @@ private struct MaatCaseDetailView: View {
     }
 
     private var confirmationTitle: String {
-        entry.nextAction?.kind == "owner_acceptance" ? "Record this owner acceptance?" : "Create an owner review?"
+        switch entry.nextAction?.kind {
+        case "owner_acceptance": return "Record this owner acceptance?"
+        case "system_one_floor_recovery": return "Record this recovery review?"
+        default: return "Create an owner review?"
+        }
     }
 
     private var confirmationButton: String {
-        entry.nextAction?.kind == "owner_acceptance" ? "Record owner acceptance" : "Create owner review"
+        switch entry.nextAction?.kind {
+        case "owner_acceptance": return "Record owner acceptance"
+        case "system_one_floor_recovery": return "Record recovery review"
+        default: return "Create owner review"
+        }
     }
 
     private var confirmationMessage: String {
         entry.nextAction?.kind == "owner_acceptance"
             ? "This records an owner conclusion for the exact retained evidence. It does not change or claim to repair the system."
-            : "This records an evidence-bound owner review for this exact case. It does not change the system. A conclusion must be accepted explicitly later."
+            : entry.nextAction?.kind == "system_one_floor_recovery"
+                ? "This records the evidence-bound recovery review after you complete the stated correction. It does not run a repair; the case remains open until the new evidence is accepted."
+                : "This records an evidence-bound owner review for this exact case. It does not change the system. A conclusion must be accepted explicitly later."
     }
 
     @ViewBuilder private func resolutionAction(_ action: MaatCaseNextAction) -> some View {
@@ -1110,6 +1121,41 @@ private struct MaatCaseDetailView: View {
         }
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+    }
+
+    @ViewBuilder private func resolutionSteps(_ steps: [MaatResolutionStep]) -> some View {
+        if !steps.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Resolution path")
+                    .sirsiFont(.caption, weight: .bold)
+                    .foregroundStyle(.secondary)
+                ForEach(steps) { step in
+                    HStack(alignment: .top, spacing: 9) {
+                        Text("\(step.level)")
+                            .sirsiFont(.caption, weight: .bold)
+                            .foregroundStyle(.black)
+                            .frame(width: 20, height: 20)
+                            .background(Circle().fill(sirsiGold))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(step.title)
+                                .sirsiFont(.subheadline, weight: .semibold)
+                            Text(step.detail)
+                                .sirsiFont(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            if step.requiresConfirmation {
+                                Text("Requires explicit confirmation")
+                                    .sirsiFont(.caption2, weight: .semibold)
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(11)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.045)))
+        }
     }
 
     @MainActor private func performResolution() async {
@@ -1337,7 +1383,7 @@ struct MaatCase: Decodable, Identifiable {
 
     var searchText: String {
         [time, kind, category, status, requester, resource, affected,
-         determination, assessed, why, evidence, resolution, nextAction?.title ?? "", nextAction?.detail ?? "", systemOne?.gate ?? "", systemOne?.subject.headSHA ?? "", systemOneCalibration?.screenEvidence ?? "", systemOneCalibration?.frontierEvidence ?? ""].joined(separator: " ")
+         determination, assessed, why, evidence, resolution, nextAction?.title ?? "", nextAction?.detail ?? "", nextAction?.steps.map { $0.title + " " + $0.detail }.joined(separator: " ") ?? "", systemOne?.gate ?? "", systemOne?.subject.headSHA ?? "", systemOneCalibration?.screenEvidence ?? "", systemOneCalibration?.frontierEvidence ?? ""].joined(separator: " ")
     }
 }
 
@@ -1472,18 +1518,20 @@ struct MaatCaseNextAction: Decodable {
     let detail: String
     let evidence: String
     let requiresConfirmation: Bool
+    let steps: [MaatResolutionStep]
 
     enum CodingKeys: String, CodingKey {
-        case kind, title, detail, evidence
+        case kind, title, detail, evidence, steps
         case requiresConfirmation = "requires_confirmation"
     }
 
-    init(kind: String, title: String, detail: String, evidence: String, requiresConfirmation: Bool) {
+    init(kind: String, title: String, detail: String, evidence: String, requiresConfirmation: Bool, steps: [MaatResolutionStep] = []) {
         self.kind = kind
         self.title = title
         self.detail = detail
         self.evidence = evidence
         self.requiresConfirmation = requiresConfirmation
+        self.steps = steps
     }
 
     init(from decoder: Decoder) throws {
@@ -1491,6 +1539,31 @@ struct MaatCaseNextAction: Decodable {
         kind = try values.decodeIfPresent(String.self, forKey: .kind) ?? "owner_review"
         title = try values.decodeIfPresent(String.self, forKey: .title) ?? "Review the retained evidence"
         detail = try values.decodeIfPresent(String.self, forKey: .detail) ?? "Record a new evidence-bound owner decision."
+        evidence = try values.decodeIfPresent(String.self, forKey: .evidence) ?? ""
+        requiresConfirmation = try values.decodeIfPresent(Bool.self, forKey: .requiresConfirmation) ?? false
+        steps = try values.decodeIfPresent([MaatResolutionStep].self, forKey: .steps) ?? []
+    }
+}
+
+struct MaatResolutionStep: Decodable, Identifiable {
+    let level: Int
+    let title: String
+    let detail: String
+    let evidence: String
+    let requiresConfirmation: Bool
+
+    var id: String { "\(level)-\(title)-\(evidence)" }
+
+    enum CodingKeys: String, CodingKey {
+        case level, title, detail, evidence
+        case requiresConfirmation = "requires_confirmation"
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        level = try values.decodeIfPresent(Int.self, forKey: .level) ?? 0
+        title = try values.decodeIfPresent(String.self, forKey: .title) ?? "Recovery step"
+        detail = try values.decodeIfPresent(String.self, forKey: .detail) ?? "Review the retained evidence."
         evidence = try values.decodeIfPresent(String.self, forKey: .evidence) ?? ""
         requiresConfirmation = try values.decodeIfPresent(Bool.self, forKey: .requiresConfirmation) ?? false
     }

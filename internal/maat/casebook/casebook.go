@@ -31,7 +31,19 @@ const (
 // case from becoming a passive status. It can request a new producing decision
 // or a deliberately confirmed owner conclusion, but never performs a repair.
 type ResolutionPath struct {
-	Kind                 string `json:"kind"`
+	Kind                 string           `json:"kind"`
+	Title                string           `json:"title"`
+	Detail               string           `json:"detail"`
+	Evidence             string           `json:"evidence,omitempty"`
+	RequiresConfirmation bool             `json:"requires_confirmation"`
+	Steps                []ResolutionStep `json:"steps,omitempty"`
+}
+
+// ResolutionStep is one visible, non-authorizing part of a recovery route.
+// A Casebook consumer may guide an operator through these levels, but it must
+// never interpret a producer hint as permission to execute a command.
+type ResolutionStep struct {
+	Level                int    `json:"level"`
 	Title                string `json:"title"`
 	Detail               string `json:"detail"`
 	Evidence             string `json:"evidence,omitempty"`
@@ -235,6 +247,9 @@ func resolutionPath(c Case) *ResolutionPath {
 			Evidence: c.Evidence, RequiresConfirmation: true,
 		}
 	}
+	if c.SystemOne != nil && !c.SystemOne.Floor.Passed {
+		return failedFloorRecovery(c)
+	}
 	if c.SystemOne != nil && c.SystemOne.Gate == maat.GateEscalate {
 		return &ResolutionPath{
 			Kind: "system_one_review", Title: "Open an evidence-bound review",
@@ -246,6 +261,38 @@ func resolutionPath(c Case) *ResolutionPath {
 		Kind: "owner_review", Title: "Create an evidence-bound owner review",
 		Detail:   "Record the exact evidence and owner review before accepting a conclusion. Ma'at does not close an open case by assumption.",
 		Evidence: c.Evidence,
+	}
+}
+
+func failedFloorRecovery(c Case) *ResolutionPath {
+	failed := make([]string, 0, len(c.SystemOne.Floor.Checks))
+	for _, check := range c.SystemOne.Floor.Checks {
+		if check.Passed {
+			continue
+		}
+		item := check.Name
+		if detail := strings.TrimSpace(check.Detail); detail != "" {
+			item += ": " + detail
+		}
+		failed = append(failed, item)
+	}
+	sort.Strings(failed)
+	correction := "Use the retained floor-check detail to make the bounded correction; Ma'at will not execute a producer-supplied command."
+	for _, finding := range c.SystemOne.Findings {
+		if hint := strings.TrimSpace(finding.FixHint); hint != "" {
+			correction = hint
+			break
+		}
+	}
+	return &ResolutionPath{
+		Kind: "system_one_floor_recovery", Title: "Resolve failed deterministic checks",
+		Detail:   "Follow the three recovery levels against the retained evidence, then record the result. The original screen remains open until a new evidence-bound decision is recorded.",
+		Evidence: c.Evidence, RequiresConfirmation: true,
+		Steps: []ResolutionStep{
+			{Level: 1, Title: "Inspect the failed evidence", Detail: strings.Join(failed, "; "), Evidence: c.Evidence},
+			{Level: 2, Title: "Apply the bounded correction", Detail: correction, Evidence: c.Evidence},
+			{Level: 3, Title: "Re-screen and record review", Detail: "Re-run the exact System One screen after the correction, inspect the new evidence, then explicitly record an owner review or acceptance.", Evidence: c.Evidence, RequiresConfirmation: true},
+		},
 	}
 }
 
@@ -268,7 +315,11 @@ func resolutionText(action *ResolutionPath) string {
 	if action == nil {
 		return ""
 	}
-	return action.Kind + "\n" + action.Title + "\n" + action.Detail + "\n" + action.Evidence
+	parts := []string{action.Kind, action.Title, action.Detail, action.Evidence}
+	for _, step := range action.Steps {
+		parts = append(parts, step.Title, step.Detail, step.Evidence)
+	}
+	return strings.Join(parts, "\n")
 }
 
 func viewFor(cases []Case) View {

@@ -90,7 +90,10 @@ claim a local record is a remote attestation.
   and native Casebook surfaces. The native Casebook and explicit confirmed CLI
   commands can record owner review/acceptance; the terminal console stays
   read-only so it never turns a keystroke into an unreviewed conclusion or a
-  claimed repair. A producer-supplied recovery step is never auto-executed.
+  claimed repair. A failed deterministic floor has a canonical three-level
+  route: inspect the exact failed evidence, apply the bounded producer
+  correction, then re-screen and explicitly record the result. A
+  producer-supplied recovery step is never auto-executed.
 - **No stranded alarms:** when a native diagnostic alarm has no safe automatic
   repair, the finding view offers a confirmed Ma'at review, then connects to the
   shared Casebook acceptance flow. A conclusion is visibly distinct from a

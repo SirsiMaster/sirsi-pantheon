@@ -327,6 +327,9 @@ func (s *activityScreen) maatView(height int, caps Capabilities) []string {
 		if c.NextAction != nil {
 			tail = append(tail, "  "+Paint("next step: ", TokDim, caps)+c.NextAction.Title)
 			tail = append(tail, "  "+Paint(c.NextAction.Detail, TokDim, caps))
+			for _, step := range c.NextAction.Steps {
+				tail = append(tail, "  "+Paint(fmt.Sprintf("recovery level %d · %s: ", step.Level, step.Title), TokAccent, caps)+step.Detail)
+			}
 			if c.NextAction.RequiresConfirmation {
 				tail = append(tail, "  "+Paint("requires explicit owner confirmation · native Pantheon Casebook can record it", TokWarn, caps))
 			}

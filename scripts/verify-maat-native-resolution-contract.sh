@@ -56,10 +56,27 @@ for target in "$casebookcli" "$tui" "$dashboard"; do
 		echo "Ma'at System One floor projection missing: $target" >&2
 		exit 1
 	}
+	done
+
+for target in "$casebookcli" "$tui" "$dashboard"; do
+	/usr/bin/grep -Fq 'recovery level' "$target" || {
+		echo "Ma'at three-level recovery projection missing: $target" >&2
+		exit 1
+	}
 done
 
 /usr/bin/grep -Fq 'Screen model' "$casebook" || {
 	echo "native Ma'at System One model provenance missing" >&2
+	exit 1
+}
+
+/usr/bin/grep -Fq 'Resolution path' "$casebook" || {
+	echo "native Ma'at three-level recovery path missing" >&2
+	exit 1
+}
+
+/usr/bin/grep -Fq 'system_one_floor_recovery' "$casebook" || {
+	echo "native Ma'at failed-floor recovery route missing" >&2
 	exit 1
 }
 

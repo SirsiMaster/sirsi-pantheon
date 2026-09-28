@@ -119,7 +119,16 @@ type activityReport struct {
 // Pantheon app or the explicit CLI commands.
 
 type maatResolutionPath struct {
-	Kind                 string `json:"kind"`
+	Kind                 string               `json:"kind"`
+	Title                string               `json:"title"`
+	Detail               string               `json:"detail"`
+	Evidence             string               `json:"evidence"`
+	RequiresConfirmation bool                 `json:"requires_confirmation"`
+	Steps                []maatResolutionStep `json:"steps"`
+}
+
+type maatResolutionStep struct {
+	Level                int    `json:"level"`
 	Title                string `json:"title"`
 	Detail               string `json:"detail"`
 	Evidence             string `json:"evidence"`

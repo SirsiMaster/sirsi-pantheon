@@ -435,7 +435,10 @@ function viewMaat(){
    let bits=['status: '+(d.status||'open'),'decision: '+(d.kind||'unknown')+' → '+(d.determination||'unknown'),'assessment: '+(d.assessed||'unknown')];
    if(d.affected)bits.push('affected: '+d.affected);
    if(d.evidence)bits.push('evidence: '+d.evidence);
-   if(d.next_action){bits.push('next: '+(d.next_action.title||'review the retained evidence')+(d.next_action.detail?' — '+d.next_action.detail:''));}
+   if(d.next_action){
+    bits.push('next: '+(d.next_action.title||'review the retained evidence')+(d.next_action.detail?' — '+d.next_action.detail:''));
+    if(Array.isArray(d.next_action.steps))d.next_action.steps.forEach(function(step){bits.push('recovery level '+(step.level||'?')+': '+(step.title||'unnamed')+(step.detail?' — '+step.detail:''));});
+   }
    if(d.system_one){
     const screen=d.system_one, confidence=Math.round((screen.confidence||0)*100);
     bits.push('system one: '+(screen.gate||'unknown')+' · '+confidence+'% confidence · feather '+(screen.feather_weight??'unknown')+'/100');

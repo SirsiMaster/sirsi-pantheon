@@ -95,6 +95,45 @@ func TestHandleMaatCasebookProjectsSystemOneRecoveryHint(t *testing.T) {
 	}
 }
 
+func TestHandleMaatCasebookProjectsFailedFloorRecoverySteps(t *testing.T) {
+	oldOpen := openMaatCasebookJournal
+	t.Cleanup(func() { openMaatCasebookJournal = oldOpen })
+	verdict, err := maat.Screen(maat.SystemOneScreen{
+		Subject:       maat.VerdictSubject{Kind: "commit", Repo: "SirsiMaster/sirsi-pantheon", Ref: "main", HeadSHA: strings.Repeat("a", 40)},
+		FeatherWeight: 91, Confidence: 0.98,
+		Floor:    maat.FloorResult{Passed: false, Checks: []maat.FloorCheck{{Name: "receipt schema", Passed: false, Detail: "the receipt is malformed"}}},
+		Findings: []maat.ScreenFinding{{ID: "receipt-schema", Severity: "block", Category: "provenance", Claim: "release receipt is malformed", Evidence: "receipt:invalid", Confidence: 0.99, FixHint: "Regenerate the exact release receipt."}},
+		Model:    maat.ModelStamp{Provider: "local:deterministic", Version: "v1", Local: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal := &maatCasebookJournal{rows: []maat.Decision{{Time: "2026-09-28T04:00:00Z", Host: "m5", Kind: "system one screen", Requester: "sirsi maat screen", Assessed: "commit main", Determination: string(verdict.Gate), Why: "receipt schema failed", Evidence: "maat-system-one:sha256=failed-floor", SystemOne: &verdict}}}
+	openMaatCasebookJournal = func() (maat.DecisionJournal, error) { return journal, nil }
+
+	result, err := handleMaatCasebook(map[string]interface{}{"limit": float64(5)})
+	if err != nil || result.IsError || len(result.Content) != 1 {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	var view struct {
+		Cases []struct {
+			NextAction struct {
+				Kind  string `json:"kind"`
+				Steps []struct {
+					Level int    `json:"level"`
+					Title string `json:"title"`
+				} `json:"steps"`
+			} `json:"next_action"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &view); err != nil {
+		t.Fatal(err)
+	}
+	if len(view.Cases) != 1 || view.Cases[0].NextAction.Kind != "system_one_floor_recovery" || len(view.Cases[0].NextAction.Steps) != 3 || view.Cases[0].NextAction.Steps[2].Level != 3 || view.Cases[0].NextAction.Steps[2].Title != "Re-screen and record review" {
+		t.Fatalf("Maat MCP failed-floor recovery projection = %+v", view)
+	}
+}
+
 func TestHandleMaatCasebookRejectsMalformedFilters(t *testing.T) {
 	for _, args := range []map[string]interface{}{
 		{"status": "blocked"},
