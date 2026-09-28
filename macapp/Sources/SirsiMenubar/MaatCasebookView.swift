@@ -78,6 +78,11 @@ private struct MaatSystemOneView: View {
     @State private var screenImportInFlight = false
     @State private var screenImportResult: CommandResult?
     @State private var screenImportError: String?
+    @State private var releasePreflight: MaatReleaseContractPreflight?
+    @State private var releasePreflightInFlight = false
+    @State private var releasePreflightError: String?
+    @State private var confirmReleasePreflight = false
+    @State private var releasePreflightRecorded = false
 
     init(engine: SirsiEngine, section: Binding<MaatWorkspaceSection>, preloaded: MaatCasebookProjection? = nil) {
         self.engine = engine
@@ -125,6 +130,12 @@ private struct MaatSystemOneView: View {
         } message: {
             Text("Ma'at will validate the exact selected JSON and record an evidence-bound local gate. It will not execute the assessed payload, authorize work, or treat this as a release decision.")
         }
+        .confirmationDialog("Record this release-contract preflight?", isPresented: $confirmReleasePreflight, titleVisibility: .visible) {
+            Button("Record in Ma'at Casebook") { Task { await recordReleasePreflight() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This records the exact non-executing source observation in the local Casebook. It does not build, package, sign, notarize, publish, or authorize a release.")
+        }
     }
 
     private func unavailableState(_ message: String) -> some View {
@@ -160,6 +171,7 @@ private struct MaatSystemOneView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     summary(screens: screens, calibrations: calibrations)
                     resolutionLane(screens)
+                    releasePreflightControl
                     screenImportControl
                     if screens.isEmpty {
                         emptyState
@@ -391,6 +403,105 @@ private struct MaatSystemOneView: View {
         .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
     }
 
+    private var releasePreflightControl: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text("Preflight the release contract")
+                .sirsiFont(.headline)
+            if let root = engine.projectRoot {
+                Text("Inspect the selected project only: \(root)")
+                    .sirsiFont(.caption, design: .monospaced)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            } else {
+                Text("Choose a project below before preflighting. Ma'at will not guess a checkout or inspect an ambient directory.")
+                    .sirsiFont(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                ProjectBar(engine: engine) {
+                    releasePreflight = nil
+                    releasePreflightError = nil
+                    releasePreflightRecorded = false
+                }
+            }
+            if engine.projectRoot != nil {
+                Text("This reads and hashes the release-source contract in-process. It never runs a build, package, signing, notarization, network, or release command.")
+                    .sirsiFont(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    Task { await inspectReleasePreflight() }
+                } label: {
+                    Label("Inspect release contract", systemImage: "checklist")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(gold)
+                .disabled(releasePreflightInFlight)
+            }
+            if releasePreflightInFlight {
+                ProgressView("Inspecting source contract…")
+                    .sirsiFont(.caption)
+            }
+            if let releasePreflight {
+                releasePreflightSummary(releasePreflight)
+                Button {
+                    confirmReleasePreflight = true
+                } label: {
+                    Label(releasePreflightRecorded ? "Recorded in Ma'at Casebook" : "Record in Ma'at Casebook", systemImage: releasePreflightRecorded ? "checkmark.seal.fill" : "checkmark.shield")
+                }
+                .buttonStyle(.bordered)
+                .disabled(releasePreflightInFlight || releasePreflightRecorded)
+                Text(releasePreflightRecorded
+                     ? "The Casebook was refreshed from this exact retained preflight. The delivery boundary still requires separate credentialed release proof."
+                     : "Review the checks below, then explicitly record this exact observation so it appears in the shared Ma'at Casebook.")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let releasePreflightError {
+                Label(releasePreflightError, systemImage: "exclamationmark.triangle.fill")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Try inspection again") { Task { await inspectReleasePreflight() } }
+                    .buttonStyle(.bordered)
+                    .disabled(releasePreflightInFlight || engine.projectRoot == nil)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+    }
+
+    @ViewBuilder private func releasePreflightSummary(_ preflight: MaatReleaseContractPreflight) -> some View {
+        let passed = preflight.verdict.floor.passed
+        VStack(alignment: .leading, spacing: 7) {
+            Label(passed ? "Source contract floor passed" : "Source contract needs repair", systemImage: passed ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                .sirsiFont(.subheadline, weight: .semibold)
+                .foregroundStyle(passed ? .green : .orange)
+            Text("Fingerprint: \(preflight.fingerprint)")
+                .sirsiFont(.caption2, design: .monospaced)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            ForEach(preflight.verdict.floor.checks, id: \.name) { check in
+                Label(check.detail, systemImage: check.passed ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(check.passed ? .secondary : .orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(preflight.verdict.findings) { finding in
+                if !finding.fixHint.isEmpty {
+                    Text("Fix: \(finding.fixHint)")
+                        .sirsiFont(.caption)
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 8).fill((passed ? Color.green : Color.orange).opacity(0.09)))
+    }
+
     @ViewBuilder private func screenList(_ screens: [MaatCase]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Recorded screens")
@@ -455,6 +566,42 @@ private struct MaatSystemOneView: View {
             await load()
         }
         screenImportInFlight = false
+    }
+
+    @MainActor private func inspectReleasePreflight() async {
+        guard let root = engine.projectRoot else { return }
+        releasePreflightInFlight = true
+        releasePreflightError = nil
+        releasePreflightRecorded = false
+        let raw = await SirsiEngine.run(args: ["maat", "preflight", "release", "--root", root, "--json"], stdin: nil)
+        guard let result = MaatReleaseContractPreflight.decode(raw) else {
+            releasePreflight = nil
+            releasePreflightError = "Ma'at could not read a typed release-contract result. Nothing was recorded or executed. Check the selected project, then retry this exact inspection. \(SirsiEngine.firstMeaningful(raw))"
+            releasePreflightInFlight = false
+            return
+        }
+        releasePreflight = result
+        releasePreflightInFlight = false
+    }
+
+    @MainActor private func recordReleasePreflight() async {
+        guard let root = engine.projectRoot else { return }
+        releasePreflightInFlight = true
+        releasePreflightError = nil
+        let raw = await SirsiEngine.run(args: ["maat", "preflight", "release", "--root", root, "--confirm", "--json"], stdin: nil)
+        guard let result = MaatReleaseContractPreflight.decode(raw) else {
+            releasePreflightError = "Ma'at could not record this release-contract observation. The project was not changed and no release action ran. Retry the inspection, then confirm only after reviewing the typed checks. \(SirsiEngine.firstMeaningful(raw))"
+            releasePreflightInFlight = false
+            return
+        }
+        releasePreflight = result
+        releasePreflightRecorded = !result.decisionEvidence.isEmpty
+        if releasePreflightRecorded {
+            await load()
+        } else {
+            releasePreflightError = "Ma'at returned the observation but did not confirm a Casebook evidence record. Nothing was treated as accepted; inspect the result and retry confirmation."
+        }
+        releasePreflightInFlight = false
     }
 
     @MainActor private func load() async {
@@ -1509,6 +1656,35 @@ struct MaatSystemOneCalibration: Decodable {
         case frontierEvidence = "frontier_evidence"
         case screenGate = "screen_gate"
         case frontierGate = "frontier_gate"
+    }
+}
+
+// MaatReleaseContractPreflight is the native projection of the typed local
+// release source observation. It deliberately is not CommandResult: the
+// preflight's file identities and deterministic floor are the evidence the
+// operator must inspect before opting into one Casebook record.
+private struct MaatReleaseContractPreflight: Decodable {
+    let root: String
+    let fingerprint: String
+    let verdict: MaatSystemOneVerdict
+    let decisionEvidence: String
+
+    enum CodingKeys: String, CodingKey {
+        case root, fingerprint, verdict
+        case decisionEvidence = "decision_evidence"
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        root = try values.decode(String.self, forKey: .root)
+        fingerprint = try values.decode(String.self, forKey: .fingerprint)
+        verdict = try values.decode(MaatSystemOneVerdict.self, forKey: .verdict)
+        decisionEvidence = try values.decodeIfPresent(String.self, forKey: .decisionEvidence) ?? ""
+    }
+
+    static func decode(_ raw: String) -> MaatReleaseContractPreflight? {
+        guard let start = raw.firstIndex(of: "{") else { return nil }
+        return try? JSONDecoder().decode(MaatReleaseContractPreflight.self, from: Data(raw[start...].utf8))
     }
 }
 

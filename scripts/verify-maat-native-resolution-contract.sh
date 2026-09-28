@@ -136,6 +136,22 @@ for needle in \
 done
 
 for needle in \
+  'Preflight the release contract' \
+  'Inspect release contract' \
+  'Record this release-contract preflight?' \
+  'Record in Ma'\''at Casebook' \
+  'It never runs a build, package, signing, notarization, network, or release command.' \
+  '"maat", "preflight", "release", "--root"' \
+  'MaatReleaseContractPreflight' \
+  'Fix: \(finding.fixHint)' \
+  'Choose a project below before preflighting'; do
+  /usr/bin/grep -Fq "$needle" "$casebook" || {
+    echo "native Ma'at release-contract preflight surface missing: $needle" >&2
+    exit 1
+  }
+done
+
+for needle in \
   'maatScreenConfirm' \
   'rerun with --confirm' \
   'confirm recording the validated Ma'\''at System One screen'; do
