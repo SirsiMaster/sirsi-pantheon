@@ -4,6 +4,8 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd -P)
 contract="$root/contracts/stacklab/apollo-sne-telemetry-v1.json"
 consumer="$root/internal/apollo/telemetry.go"
+dashboard="$root/internal/dashboard/apollo.go"
+dashboard_ui="$root/internal/dashboard/pages.go"
 
 jq -e '
   .schema == "sirsi.stacklab.apollo-sne-telemetry.v1" and
@@ -19,4 +21,10 @@ grep -Fq 'apollo-session-telemetry/v1' "$consumer"
 grep -Fq 'awaiting_session' "$consumer"
 grep -Fq 'DisallowUnknownFields' "$consumer"
 grep -Fq 'network_saturation_percent' "$consumer"
+grep -Fq '/api/apollo/telemetry' "$root/internal/dashboard/server.go"
+grep -Fq 'ApolloTelemetryFn' "$dashboard"
+grep -Fq 'writeJSON(w, read)' "$dashboard"
+grep -Fq 'function viewApollo()' "$dashboard_ui"
+grep -Fq 'refresh telemetry' "$dashboard_ui"
+grep -Fq 'No SNE session sample is available' "$dashboard_ui"
 echo "Apollo SNE telemetry contract: PASS"

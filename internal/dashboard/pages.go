@@ -33,6 +33,7 @@ func pageShell(title, activePage, bodyContent string, port int) string {
 		{"maat", "𓆄", "Ma'at"},
 		{"notifications", "🔔", "Notifications"},
 		{"horus", "𓂀", "Horus"},
+		{"apollo", "A", "Apollo"},
 		{"vault", "🏛", "Vault"},
 		{"ra", "𓇶", "Ra"},
 	}
@@ -68,17 +69,17 @@ display:flex;min-height:100vh;overflow:hidden}
 .sidebar{width:180px;min-height:100vh;background:rgba(6,6,15,.96);border-right:1px solid %s;
 display:flex;flex-direction:column;position:fixed;left:0;top:0;bottom:0;z-index:10}
 .sidebar-brand{padding:16px 16px 12px;border-bottom:1px solid %s}
-.sidebar-brand h1{font-family:Inter,-apple-system,system-ui,sans-serif;font-size:13px;font-weight:600;
+.sidebar-brand h1{font-family:'Avenir Next',Avenir,-apple-system,system-ui,sans-serif;font-size:13px;font-weight:600;
 color:%s;letter-spacing:2px;text-transform:uppercase}
 .sidebar-nav{flex:1;padding:8px 0}
 .nav-item{display:flex;align-items:center;padding:8px 16px;color:%s;text-decoration:none;
 font-size:12px;letter-spacing:.3px;transition:all .15s;border-left:2px solid transparent;cursor:pointer;
-font-family:Inter,-apple-system,system-ui,sans-serif}
+font-family:'Avenir Next',Avenir,-apple-system,system-ui,sans-serif}
 .nav-item:hover{background:color-mix(in srgb, var(--gold) 6%%, transparent);color:%s}
 .nav-item.active{background:color-mix(in srgb, var(--gold) 8%%, transparent);color:%s;border-left-color:%s}
 .nav-glyph{width:20px;font-size:14px;margin-right:8px;text-align:center}
 .sidebar-footer{padding:12px 16px;border-top:1px solid %s;font-size:8px;color:var(--line);letter-spacing:1px;
-font-family:Inter,-apple-system,system-ui,sans-serif}
+font-family:'Avenir Next',Avenir,-apple-system,system-ui,sans-serif}
 
 /* Main — content is capped at 1400px and centered in the space right of the
    fixed sidebar so ultra-wide viewports don't strand everything top-left. */
@@ -90,7 +91,7 @@ border-left:1px solid color-mix(in srgb, var(--gold) 6%%, transparent);border-ri
 .stats-bar{display:flex;gap:1px;background:color-mix(in srgb, var(--gold) 6%%, transparent);border-bottom:1px solid %s;flex-shrink:0}
 .stat{flex:1;padding:12px 16px;background:%s}
 .stat-label{font-size:9px;color:%s;letter-spacing:1.5px;text-transform:uppercase;
-font-family:Inter,-apple-system,system-ui,sans-serif;margin-bottom:4px}
+font-family:'Avenir Next',Avenir,-apple-system,system-ui,sans-serif;margin-bottom:4px}
 .stat-value{font-size:16px;color:%s;font-weight:400}
 .stat-sub{font-size:10px;color:var(--dim);margin-top:2px}
 /* Only tiles that actually go somewhere get a pointer and a chevron. A readout
@@ -116,7 +117,7 @@ font-family:Inter,-apple-system,system-ui,sans-serif;margin-bottom:4px}
 font-family:inherit;outline:none}
 .term-input::placeholder{color:var(--dim)}
 .term-view-label{color:var(--dim);font-size:10px;padding-right:16px;letter-spacing:1px;text-transform:uppercase;
-font-family:Inter,-apple-system,system-ui,sans-serif;flex-shrink:0}
+font-family:'Avenir Next',Avenir,-apple-system,system-ui,sans-serif;flex-shrink:0}
 .terminal{flex:1;overflow-y:auto;padding:12px 16px;background:rgba(3,3,8,.95);line-height:1.6;font-size:12px}
 .t-line{margin:0;white-space:pre-wrap;word-break:break-all}
 .t-dim{color:var(--dim)}
@@ -239,7 +240,7 @@ window.switchView=function(view){
   n.classList.toggle('active',n.dataset.view===view)});
  clear();
  var loader={home:viewHome,fleet:viewFleet,scan:viewScan,ghosts:viewGhosts,guard:viewGuard,
-  maat:viewMaat,notifications:viewNotifications,horus:viewHorus,vault:viewVault,ra:viewRa};
+  maat:viewMaat,notifications:viewNotifications,horus:viewHorus,apollo:viewApollo,vault:viewVault,ra:viewRa};
  (loader[view]||viewHome)();
 };
 
@@ -530,6 +531,58 @@ function viewHorus(){
  out('');out('Type a symbol name to search, or "horus scan" to analyze the project.','t-dim');
 }
 
+/* Apollo is deliberately a read-only projection. SNE owns session creation,
+   execution, and capacity; Horus only makes an admitted sample inspectable.
+   This prevents a dashboard refresh from silently starting an inference job. */
+function viewApollo(){
+ out('Apollo — Inference Session','t-gold');
+ out('  Live data is published by SNE after an admitted local session starts. Horus never fabricates a session or modifies the engine.','t-dim');
+ const refresh=document.createElement('button');
+ refresh.className='t-action';refresh.type='button';refresh.textContent='[refresh telemetry]';
+ refresh.style.cssText='background:none;border:0;font:inherit;margin:8px 0;padding:0';
+ refresh.addEventListener('click',viewApollo);T.appendChild(refresh);
+ fetch('/api/apollo/telemetry').then(function(r){
+  if(!r.ok)return r.json().then(function(e){throw new Error(e.error||('HTTP '+r.status))});
+  return r.json()
+ }).then(function(read){
+  const t=read.telemetry||{};
+  if(read.state==='awaiting_session'){
+   out('');out('  No SNE session sample is available on this Mac yet.','t-head');
+   out('  Next: open Stack Lab in the Sirsi app, select the local machine and resident engine, create a plan, then start the admitted SNE session.','t-dim');
+   out('  When SNE publishes its sample, use [refresh telemetry]. Nothing is stuck here: no session has been started from this screen.','t-dim');
+   return;
+  }
+  if(read.state!=='active'){
+   out('');out('  Telemetry state: '+(read.state||'unknown'),'t-err');
+   out('  Refresh after SNE records a valid session sample. If this persists, inspect the Ma’at casebook for its retained evidence.','t-dim');
+   return;
+  }
+  out('');
+  out('  '+(t.session_id||'unnamed session')+' · '+(t.engine_id||'unknown engine'),'t-head');
+  out('  Sampled '+(t.emitted_at||'at an unknown time'),'t-dim');sep();
+  const pct=function(v){return typeof v==='number'?v.toFixed(1)+'%':'not reported'};
+  const rate=function(v,unit){return typeof v==='number'?v.toFixed(2)+' '+unit:'not reported'};
+  out('  TOKENS / SECOND       '+rate(t.tokens_per_second,'tok/s'));
+  out('  BANDWIDTH             '+rate(t.bandwidth_bytes_per_second,'B/s'));
+  out('  MEMORY                '+(typeof t.memory_bytes==='number'?fmtSize(t.memory_bytes):'not reported'));
+  out('  NETWORK SATURATION    '+pct(t.network_saturation_percent));
+  out('  CPU RESIDENCY         '+pct(t.cpu_residency_percent));
+  out('  GPU RESIDENCY         '+pct(t.gpu_residency_percent));
+  const estates=t.chip_estates||[];
+  if(estates.length){
+   sep();out('  CHIP ESTATES','t-head');
+   estates.forEach(function(e){
+    out('  '+(e.id||'unnamed')+' · residency '+pct(e.residency_percent)+' · utilization '+pct(e.utilization_percent)+' · memory '+(typeof e.memory_bytes==='number'?fmtSize(e.memory_bytes):'not reported'));
+   });
+  } else {
+   out('  CHIP ESTATES         no selected-estate sample reported','t-dim');
+  }
+ }).catch(function(e){
+  out('');out('  Apollo telemetry is unavailable: '+e.message,'t-err');
+  out('  Try [refresh telemetry]. If it continues, open Ma’at to inspect the recorded evidence. This dashboard did not start or change SNE.','t-dim');
+ });
+}
+
 function viewVault(){
  out('🏛 Vault — Context Sandbox','t-gold');
  fetch('/api/vault/stats').then(r=>r.json()).then(function(s){
@@ -572,7 +625,7 @@ function exec(raw){
 
  /* View switches */
  const viewMap={scan:'scan',ghosts:'ghosts',guard:'guard',doctor:'guard',
-  notifications:'notifications',horus:'horus',vault:'vault',ra:'ra',deploy:'ra'};
+  notifications:'notifications',horus:'horus',apollo:'apollo',telemetry:'apollo',vault:'vault',ra:'ra',deploy:'ra'};
  if(viewMap[raw]){switchView(viewMap[raw]);return}
 
  /* Kill commands */

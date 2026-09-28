@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/apollo"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dashboard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
@@ -69,6 +70,13 @@ func runDashboard(cmd *cobra.Command, args []string) {
 		FabricFn:        collectDashboardFabric,
 		MaatDecisionsFn: collectDashboardMaatDecisions,
 		MaatCasebookFn:  collectDashboardMaatCasebook,
+		ApolloTelemetryFn: func() (apollo.TelemetryRead, error) {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return apollo.TelemetryRead{}, err
+			}
+			return apollo.ReadTelemetry(home)
+		},
 	})
 
 	if err := srv.Start(); err != nil {
