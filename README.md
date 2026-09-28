@@ -34,7 +34,7 @@ sirsi setup          # first-run wizard: dependencies + Full Disk Access
 sirsi scan           # find the waste
 ```
 
-Prefer the menu bar app? `brew install --cask sirsi-pantheon`. Or grab a [release](https://github.com/SirsiMaster/sirsi-pantheon/releases), or `go build ./cmd/sirsi/`.
+Prefer the menu bar app? Install a published commercial release with `brew install --cask sirsi-pantheon`, or use a matching asset from [GitHub Releases](https://github.com/SirsiMaster/sirsi-pantheon/releases). A source checkout or locally built artifact is not a release; commercial artifacts are Developer-ID signed, notarized, stapled, and bound to the canonical cask.
 
 ### The 30-second tour
 
@@ -53,7 +53,7 @@ Every command supports `--json` for scripting and ends with a plain-English summ
 <p align="center"><img src="assets/screenshot-cli.png" alt="Pantheon CLI — a sirsi scan render" width="720"></p>
 
 - **CLI** — the primary surface. Every command works standalone and scripts cleanly with `--json`. Findings come with evidence counts, warnings when they matter, and a "what's next" suggestion after every run.
-- **Menu bar (macOS)** — 𓋹 an ankh in your menu bar with live status: clean, reclaimable waste, or RAM pressure. One click scans, cleans (with per-item toggles), and opens the dashboard. Ships as a notarized DMG.
+- **Menu bar (macOS)** — 𓋹 an ankh in your menu bar with live status: clean, reclaimable waste, or RAM pressure. One click scans, cleans (with per-item toggles), and opens the dashboard. Commercial releases ship as a Developer-ID signed, notarized, stapled DMG; source and development builds are not represented as releases.
 - **Dashboard** — `sirsi dashboard` opens Horus at `localhost:9119`: a local web view of system health with live updates. No server, no account — it's your machine talking to your browser.
 
 **MCP server** — `sirsi mcp` exposes scans, diagnostics, and project memory to any MCP client, so your AI IDE can ask "what's eating this machine?" and act on the answer.
