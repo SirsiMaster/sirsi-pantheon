@@ -3159,6 +3159,7 @@ struct CommandView: View {
 //   defaults write ai.sirsi.pantheon projectRoot -string ~/Development/<repo>
 struct ProjectBar: View {
     @ObservedObject var engine: SirsiEngine
+    @Environment(\.snapshotMode) private var snapshotMode
     var onChange: () -> Void   // re-runs the command after the project changes
     @State private var candidates: [String] = []
 
@@ -3177,33 +3178,43 @@ struct ProjectBar: View {
                 }
             }
             Spacer()
-            Menu {
-                ForEach(candidates, id: \.self) { path in
-                    Button {
-                        engine.setProjectRoot(path)
-                        onChange()
-                    } label: {
-                        let name = (path as NSString).lastPathComponent
-                        if path == engine.projectRoot {
-                            Label(name, systemImage: "checkmark")
-                        } else {
-                            Text(name)
+            if snapshotMode {
+                Label(
+                    engine.projectRoot == nil ? "Choose a project in the live app" : "Change project in the live app",
+                    systemImage: "folder"
+                )
+                .sirsiFont(.caption)
+                .foregroundStyle(gold)
+                .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Menu {
+                    ForEach(candidates, id: \.self) { path in
+                        Button {
+                            engine.setProjectRoot(path)
+                            onChange()
+                        } label: {
+                            let name = (path as NSString).lastPathComponent
+                            if path == engine.projectRoot {
+                                Label(name, systemImage: "checkmark")
+                            } else {
+                                Text(name)
+                            }
                         }
                     }
-                }
-                if engine.projectRoot != nil {
-                    Divider()
-                    Button("None — stop weighing a project") {
-                        engine.setProjectRoot(nil)
-                        onChange()
+                    if engine.projectRoot != nil {
+                        Divider()
+                        Button("None — stop weighing a project") {
+                            engine.setProjectRoot(nil)
+                            onChange()
+                        }
                     }
+                } label: {
+                    Text(engine.projectRoot == nil ? "Choose…" : "Change…")
+                        .sirsiFont(.caption)
                 }
-            } label: {
-                Text(engine.projectRoot == nil ? "Choose…" : "Change…")
-                    .sirsiFont(.caption)
+                .menuStyle(.borderlessButton)
+                .fixedSize()
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
         }
         .padding(.horizontal, 12).padding(.vertical, 7)
         .background(Color.primary.opacity(0.03))
