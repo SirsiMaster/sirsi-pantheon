@@ -74,16 +74,17 @@ struct ApolloRunPlannerView: View {
     }
 
     private func header(_ catalog: ApolloCatalog) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
+		let machine = selectedMachineDescriptor(catalog)
+        return VStack(alignment: .leading, spacing: 7) {
             Text("Plan a local Apollo run")
                 .sirsiFont(.title3, weight: .bold)
             Text("Choose the resident route and the resource envelope before SNE is asked to admit inference. Stack Lab writes no device state at this stage.")
                 .sirsiFont(.subheadline).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 7) {
-                fact("Machine", catalog.machine.name)
-                fact("CPU", "\(catalog.machine.cpuCores) cores")
-                fact("Memory", byteLabel(catalog.machine.memoryBytes))
+                fact("Machine", machine.name)
+                fact("CPU", "\(machine.cpuCores) cores")
+                fact("Memory", byteLabel(machine.memoryBytes))
             }
         }
         .padding(14)
@@ -119,12 +120,15 @@ struct ApolloRunPlannerView: View {
             Label("Machine", systemImage: "laptopcomputer")
                 .sirsiFont(.headline)
             Picker("Machine", selection: $selectedMachine) {
-                Text(catalog.machine.name).tag(catalog.machine.id)
+                ForEach(catalog.machineOptions) { machine in
+                    Text("\(machine.name) · \(machine.cpuCores) cores · \(byteLabel(machine.memoryBytes))")
+                        .tag(machine.id)
+                }
             }
             .labelsHidden()
             .pickerStyle(.menu)
-            .disabled(true)
-            Text("This Mac is the only machine with a measured Apollo capability receipt. Ra/Hermes machines appear here only after they publish the same typed capacity record; Pantheon will not invent remote capacity.")
+            .onChange(of: selectedMachine) { _ in resetEnvelope(catalog) }
+            Text("Each selectable entry has a typed capacity receipt. Ra/Hermes peers appear only after they publish the same record; Pantheon will not invent remote capacity.")
                 .sirsiFont(.subheadline).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -134,16 +138,17 @@ struct ApolloRunPlannerView: View {
     }
 
     private func resourceEnvelope(_ catalog: ApolloCatalog) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+		let machine = selectedMachineDescriptor(catalog)
+        return VStack(alignment: .leading, spacing: 10) {
             Label("Resource envelope", systemImage: "slider.horizontal.3")
                 .sirsiFont(.headline)
-            Stepper(value: $selectedCores, in: 1...max(1, catalog.machine.cpuCores)) {
-                resourceLine("CPU allocation", "\(selectedCores) of \(catalog.machine.cpuCores) cores")
+            Stepper(value: $selectedCores, in: 1...max(1, machine.cpuCores)) {
+                resourceLine("CPU allocation", "\(selectedCores) of \(machine.cpuCores) cores")
             }
-            Stepper(value: $selectedMemoryGiB, in: 1...memoryCapacityGiB(catalog)) {
-                resourceLine("Unified memory", "\(selectedMemoryGiB) GiB of \(memoryCapacityGiB(catalog)) GiB installed")
+            Stepper(value: $selectedMemoryGiB, in: 1...memoryCapacityGiB(machine)) {
+                resourceLine("Unified memory", "\(selectedMemoryGiB) GiB of \(memoryCapacityGiB(machine)) GiB installed")
             }
-            Stepper(value: $selectedSwapGiB, in: 0...memoryCapacityGiB(catalog)) {
+            Stepper(value: $selectedSwapGiB, in: 0...memoryCapacityGiB(machine)) {
                 resourceLine("Swap ceiling", "\(selectedSwapGiB) GiB requested")
             }
             Text("A swap ceiling is a request, not reserved capacity. Apollo rechecks current pressure and swap before it starts inference.")
@@ -242,7 +247,18 @@ struct ApolloRunPlannerView: View {
         return "\(engine.provider) · \(model)\(route)"
     }
 
-    private func memoryCapacityGiB(_ catalog: ApolloCatalog) -> Int { max(1, Int(catalog.machine.memoryBytes / 1_073_741_824)) }
+    private func selectedMachineDescriptor(_ catalog: ApolloCatalog) -> ApolloMachine {
+        catalog.machineOptions.first(where: { $0.id == selectedMachine }) ?? catalog.machine
+    }
+    private func resetEnvelope(_ catalog: ApolloCatalog) {
+        let machine = selectedMachineDescriptor(catalog)
+        selectedCores = max(1, min(machine.cpuCores, max(1, machine.cpuCores / 2)))
+        selectedMemoryGiB = max(1, min(memoryCapacityGiB(machine), max(1, memoryCapacityGiB(machine) / 2)))
+        selectedSwapGiB = 0
+        plan = nil
+        planError = nil
+    }
+    private func memoryCapacityGiB(_ machine: ApolloMachine) -> Int { max(1, Int(machine.memoryBytes / 1_073_741_824)) }
     private func byteLabel(_ bytes: Int64) -> String { bytes == 0 ? "0 GiB" : String(format: "%.0f GiB", Double(bytes) / 1_073_741_824) }
 
     @MainActor private func load() async {
@@ -257,10 +273,9 @@ struct ApolloRunPlannerView: View {
             loading = false; return
         }
         catalog = decoded
-        selectedMachine = decoded.machine.id
+        selectedMachine = decoded.machineOptions.first?.id ?? decoded.machine.id
         selectedEngine = decoded.engines.first(where: { $0.state == "configured" })?.id ?? decoded.engines.first?.id ?? ""
-        selectedCores = max(1, min(decoded.machine.cpuCores, max(1, decoded.machine.cpuCores / 2)))
-        selectedMemoryGiB = max(1, min(memoryCapacityGiB(decoded), max(1, memoryCapacityGiB(decoded) / 2)))
+        resetEnvelope(decoded)
         selectedSwapGiB = 0
         selectedEstates = Set(decoded.estates.filter(\.available).map(\.id))
         loading = false
@@ -269,7 +284,7 @@ struct ApolloRunPlannerView: View {
     @MainActor private func createPlan(_ catalog: ApolloCatalog) async {
         planning = true; planError = nil; plan = nil
         let estates = selectedEstates.sorted().joined(separator: ",")
-        let data = await SirsiEngine.runJSON(args: ["apollo", "plan", "--engine", selectedEngine, "--cores", "\(selectedCores)", "--memory-gib", "\(selectedMemoryGiB)", "--swap-gib", "\(selectedSwapGiB)", "--estates", estates, "--json"])
+        let data = await SirsiEngine.runJSON(args: ["apollo", "plan", "--machine", selectedMachine, "--engine", selectedEngine, "--cores", "\(selectedCores)", "--memory-gib", "\(selectedMemoryGiB)", "--swap-gib", "\(selectedSwapGiB)", "--estates", estates, "--json"])
         if let decoded = try? JSONDecoder().decode(ApolloPlan.self, from: data) {
             plan = decoded
         } else {
@@ -417,10 +432,12 @@ struct ApolloTelemetryView: View {
 
 private struct ApolloCatalog: Decodable {
     let machine: ApolloMachine
+	let machines: [ApolloMachine]?
     let engines: [ApolloEngineOption]
     let estates: [ApolloChipEstate]
+	var machineOptions: [ApolloMachine] { machines?.isEmpty == false ? machines! : [machine] }
 }
-private struct ApolloMachine: Decodable { let id: String; let name: String; let cpuCores: Int; let memoryBytes: Int64; enum CodingKeys: String, CodingKey { case id, name; case cpuCores = "cpu_cores"; case memoryBytes = "memory_bytes" } }
+private struct ApolloMachine: Decodable, Identifiable { let id: String; let name: String; let cpuCores: Int; let memoryBytes: Int64; enum CodingKeys: String, CodingKey { case id, name; case cpuCores = "cpu_cores"; case memoryBytes = "memory_bytes" } }
 private struct ApolloEngineOption: Decodable, Identifiable { let id: String; let name: String; let provider: String; let residentModel: String?; let endpoint: String?; let state: String; enum CodingKeys: String, CodingKey { case id, name, provider, endpoint, state; case residentModel = "resident_model" } }
 private struct ApolloChipEstate: Decodable, Identifiable { let id: String; let name: String; let available: Bool; let description: String }
 struct ApolloPlan: Decodable { let cpuCores: Int; let memoryBytes: Int64; let swapBytes: Int64; let chipEstates: [String]; enum CodingKeys: String, CodingKey { case cpuCores = "cpu_cores"; case memoryBytes = "memory_bytes"; case swapBytes = "swap_bytes"; case chipEstates = "chip_estates" } }

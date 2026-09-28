@@ -12,6 +12,7 @@ import (
 
 var (
 	apolloEngine  string
+	apolloMachine string
 	apolloCores   int
 	apolloMemory  int64
 	apolloSwap    int64
@@ -55,7 +56,7 @@ var apolloPlanCmd = &cobra.Command{
 			return err
 		}
 		estates := splitApolloEstates(apolloEstates)
-		plan, err := apollo.BuildPlan(catalog, apolloEngine, apolloCores, apolloMemory*1024*1024*1024, apolloSwap*1024*1024*1024, estates)
+		plan, err := apollo.BuildPlanForMachine(catalog, apolloMachine, apolloEngine, apolloCores, apolloMemory*1024*1024*1024, apolloSwap*1024*1024*1024, estates)
 		if err != nil {
 			return err
 		}
@@ -91,6 +92,7 @@ func splitApolloEstates(raw string) []string {
 
 func init() {
 	apolloPlanCmd.Flags().StringVar(&apolloEngine, "engine", "", "Configured Apollo engine id")
+	apolloPlanCmd.Flags().StringVar(&apolloMachine, "machine", "this-mac", "Machine id from the typed Apollo capacity catalog")
 	apolloPlanCmd.Flags().IntVar(&apolloCores, "cores", 0, "Requested logical CPU cores")
 	apolloPlanCmd.Flags().Int64Var(&apolloMemory, "memory-gib", 0, "Requested unified-memory envelope in GiB")
 	apolloPlanCmd.Flags().Int64Var(&apolloSwap, "swap-gib", 0, "Requested swap ceiling in GiB (admission checks live pressure separately)")

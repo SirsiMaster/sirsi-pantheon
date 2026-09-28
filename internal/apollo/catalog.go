@@ -13,14 +13,19 @@ import (
 
 const gib = int64(1024 * 1024 * 1024)
 
-// Catalog is the typed source used by Stack Lab. It has no candidate model
-// guessing: every listed engine is configured on this Mac and every estate is
-// detected by Seba.
+// Catalog is the typed source used by Stack Lab. It has no candidate model or
+// machine guessing: configured routes are explicit, unavailable routes remain
+// visibly unconfigured, and every estate is detected by Seba.
 type Catalog struct {
-	SchemaVersion string       `json:"schema_version"`
-	Machine       Machine      `json:"machine"`
-	Engines       []Engine     `json:"engines"`
-	Estates       []ChipEstate `json:"chip_estates"`
+	SchemaVersion string `json:"schema_version"`
+	// Machine remains the current local capacity projection for older consumers.
+	// Machines is the selectable list consumed by Stack Lab. It contains only
+	// typed capacity receipts; Pantheon never turns a discovered peer name into
+	// a usable compute target.
+	Machine  Machine      `json:"machine"`
+	Machines []Machine    `json:"machines"`
+	Engines  []Engine     `json:"engines"`
+	Estates  []ChipEstate `json:"chip_estates"`
 }
 
 type Machine struct {
@@ -87,14 +92,26 @@ func Collect(home string) (Catalog, error) {
 		{ID: "gpu", Name: "GPU", Available: hw.GPU.Type != seba.GPUNone && hw.GPU.Name != "", Description: nonEmpty(hw.GPU.Name, "No detected GPU")},
 		{ID: "neural-engine", Name: "Neural Engine", Available: hw.NeuralEngine, Description: ternary(hw.NeuralEngine, "Detected on this Mac", "Not detected")},
 	}
-	return Catalog{SchemaVersion: "apollo-catalog/v1", Machine: Machine{ID: "this-mac", Name: machineName, CPUCores: hw.CPUCores, MemoryBytes: hw.TotalRAM}, Engines: []Engine{engine}, Estates: estates}, nil
+	machine := Machine{ID: "this-mac", Name: machineName, CPUCores: hw.CPUCores, MemoryBytes: hw.TotalRAM}
+	return Catalog{SchemaVersion: "apollo-catalog/v2", Machine: machine, Machines: []Machine{machine}, Engines: []Engine{engine}, Estates: estates}, nil
 }
 
 // BuildPlan validates a user-selected resource envelope without reserving
 // memory, starting a process, or changing the active inference service.
 func BuildPlan(c Catalog, engineID string, cores int, memoryBytes, swapBytes int64, estates []string) (Plan, error) {
-	if c.Machine.CPUCores < 1 || c.Machine.MemoryBytes < gib {
-		return Plan{}, fmt.Errorf("this Mac did not report a usable CPU and memory capacity")
+	return BuildPlanForMachine(c, c.Machine.ID, engineID, cores, memoryBytes, swapBytes, estates)
+}
+
+// BuildPlanForMachine validates the exact resource envelope against a selected
+// capacity receipt. A peer becomes selectable only when it is present in
+// Catalog.Machines; an ambient Ra/Hermes name cannot borrow this Mac's limits.
+func BuildPlanForMachine(c Catalog, machineID, engineID string, cores int, memoryBytes, swapBytes int64, estates []string) (Plan, error) {
+	machine, ok := c.machineByID(machineID)
+	if !ok {
+		return Plan{}, fmt.Errorf("the selected machine has no typed Apollo capacity receipt")
+	}
+	if machine.CPUCores < 1 || machine.MemoryBytes < gib {
+		return Plan{}, fmt.Errorf("the selected machine did not report a usable CPU and memory capacity")
 	}
 	if engineID == "" {
 		return Plan{}, fmt.Errorf("choose a configured Apollo inference engine")
@@ -109,14 +126,14 @@ func BuildPlan(c Catalog, engineID string, cores int, memoryBytes, swapBytes int
 	if engine == nil || engine.State != "configured" {
 		return Plan{}, fmt.Errorf("the selected Apollo engine is not configured on this Mac")
 	}
-	if cores < 1 || cores > c.Machine.CPUCores {
-		return Plan{}, fmt.Errorf("CPU cores must be between 1 and %d", c.Machine.CPUCores)
+	if cores < 1 || cores > machine.CPUCores {
+		return Plan{}, fmt.Errorf("CPU cores must be between 1 and %d", machine.CPUCores)
 	}
-	if memoryBytes < gib || memoryBytes > c.Machine.MemoryBytes {
-		return Plan{}, fmt.Errorf("memory must be between 1 GiB and %s", seba.FormatBytes(c.Machine.MemoryBytes))
+	if memoryBytes < gib || memoryBytes > machine.MemoryBytes {
+		return Plan{}, fmt.Errorf("memory must be between 1 GiB and %s", seba.FormatBytes(machine.MemoryBytes))
 	}
-	if swapBytes < 0 || swapBytes > c.Machine.MemoryBytes {
-		return Plan{}, fmt.Errorf("swap target must be between 0 and %s", seba.FormatBytes(c.Machine.MemoryBytes))
+	if swapBytes < 0 || swapBytes > machine.MemoryBytes {
+		return Plan{}, fmt.Errorf("swap target must be between 0 and %s", seba.FormatBytes(machine.MemoryBytes))
 	}
 	available := map[string]bool{}
 	for _, estate := range c.Estates {
@@ -137,7 +154,23 @@ func BuildPlan(c Catalog, engineID string, cores int, memoryBytes, swapBytes int
 	if len(estates) == 0 {
 		return Plan{}, fmt.Errorf("choose at least one available chip estate")
 	}
-	return Plan{SchemaVersion: "apollo-plan/v1", MachineID: c.Machine.ID, EngineID: engine.ID, ResidentModel: engine.ResidentModel, CPUCores: cores, MemoryBytes: memoryBytes, SwapBytes: swapBytes, ChipEstates: estates, Execution: "planned; SNE admission is required before inference starts"}, nil
+	return Plan{SchemaVersion: "apollo-plan/v1", MachineID: machine.ID, EngineID: engine.ID, ResidentModel: engine.ResidentModel, CPUCores: cores, MemoryBytes: memoryBytes, SwapBytes: swapBytes, ChipEstates: estates, Execution: "planned; SNE admission is required before inference starts"}, nil
+}
+
+func (c Catalog) machineByID(id string) (Machine, bool) {
+	if id == "" {
+		return Machine{}, false
+	}
+	machines := c.Machines
+	if len(machines) == 0 {
+		machines = []Machine{c.Machine}
+	}
+	for _, machine := range machines {
+		if machine.ID == id {
+			return machine, true
+		}
+	}
+	return Machine{}, false
 }
 
 func nonEmpty(value, fallback string) string {

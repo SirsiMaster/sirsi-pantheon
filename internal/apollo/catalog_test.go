@@ -30,3 +30,15 @@ func TestBuildPlanRejectsUnavailableOrDuplicateEstate(t *testing.T) {
 		t.Fatal("BuildPlan() accepted a duplicate estate")
 	}
 }
+
+func TestBuildPlanForMachineRejectsAnUnmeasuredMachine(t *testing.T) {
+	catalog := Catalog{
+		Machine:  Machine{ID: "this-mac", CPUCores: 8, MemoryBytes: 16 * gib},
+		Machines: []Machine{{ID: "this-mac", CPUCores: 8, MemoryBytes: 16 * gib}},
+		Engines:  []Engine{{ID: "apollo-local-sne", State: "configured"}},
+		Estates:  []ChipEstate{{ID: "cpu", Available: true}},
+	}
+	if _, err := BuildPlanForMachine(catalog, "peer-without-receipt", "apollo-local-sne", 4, 8*gib, 0, []string{"cpu"}); err == nil {
+		t.Fatal("BuildPlanForMachine() accepted an unmeasured machine")
+	}
+}
