@@ -76,7 +76,7 @@ struct StackLabCatalogView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     summary(catalog)
                     ForEach(catalog.entries) { entry in
-                        NavLink { StackLabContractDetail(entry: entry) } label: {
+                        NavLink { StackLabContractDetail(engine: engine, entry: entry) } label: {
                             StackLabCatalogRow(entry: entry)
                         }
                         .buttonStyle(.plain)
@@ -201,6 +201,7 @@ private struct StackLabCatalogRow: View {
 }
 
 private struct StackLabContractDetail: View {
+    @ObservedObject var engine: SirsiEngine
     let entry: StackLabCatalogEntry
 
     var body: some View {
@@ -219,6 +220,9 @@ private struct StackLabContractDetail: View {
                     if !entry.product.isEmpty { contractFact("Product", entry.product) }
                     if entry.version > 0 { contractFact("Version", String(entry.version)) }
                     if !entry.nextAction.isEmpty { contractFact("Next action", entry.nextAction) }
+                    if entry.components.contains(where: { $0.id == "stacklab-apollo-run-planner" }) {
+                        apolloRecipeHandoff
+                    }
                     ForEach(entry.components) { component in
                         StackLabComponentCard(component: component)
                     }
@@ -226,6 +230,26 @@ private struct StackLabContractDetail: View {
                 .padding(16)
             }
         }
+    }
+
+    private var apolloRecipeHandoff: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Fill the Apollo resource recipe", systemImage: "slider.horizontal.3")
+                .sirsiFont(.headline)
+            Text("Choose the resident inference route, the measured machine, explicit CPU cores, unified memory, swap ceiling, and chip estates. Creating this plan does not start inference; Apollo opens the live telemetry surface after SNE admits a session.")
+                .sirsiFont(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            NavLink { ApolloRunPlannerView(engine: engine) } label: {
+                Label("Open Apollo recipe", systemImage: "arrow.right.circle.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(gold)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
     }
 
     private func contractFact(_ label: String, _ value: String) -> some View {
