@@ -42,6 +42,13 @@ local router identity hook follows the same repository split.
 
 ## [Unreleased]
 
+## [0.24.17] — 2026-09-28 — Engine-neutral streaming integrity
+**Commercial feature release.** Adds the engine-neutral connector ABI and
+OpenAI-compatible streaming transport with fail-closed premature-EOF,
+served-model, and request-value validation. The release also carries the
+portable menubar command-guard hardening. Two-Mac transport qualification and
+RDMA/JACCL remain separate follow-up work.
+
 ## [0.24.16] — 2026-09-28 — Ma’at failure-memory contract
 **Commercial patch release.** Publishes the canonical Pantheon Ma’at
 failure-memory and operational-preflight contract, with the superseded draft
