@@ -477,13 +477,21 @@ struct ApolloTelemetryView: View {
 
     private var estateSummary: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Selected chip estates", systemImage: "square.grid.2x2")
+            Label("Chip estate telemetry", systemImage: "square.grid.2x2")
                 .sirsiFont(.headline)
-            ForEach(plan.chipEstates, id: \.self) { estate in
-                HStack {
-                    Text(estate.replacingOccurrences(of: "-", with: " ").capitalized).sirsiFont(.subheadline, weight: .semibold)
-                    Spacer()
-                    Text(estateTelemetry(estate)).sirsiFont(.caption).foregroundStyle(.secondary)
+            Text("Every selected estate remains visible. When an active Apollo session reports additional estates, they are shown here too rather than being silently hidden.")
+                .sirsiFont(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            ForEach(displayedEstateIDs, id: \.self) { estate in
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack {
+                        Text(estate.replacingOccurrences(of: "-", with: " ").capitalized).sirsiFont(.subheadline, weight: .semibold)
+                        Spacer()
+                        Text(estateTelemetry(estate)).sirsiFont(.caption).foregroundStyle(.secondary)
+                    }
+                    Text(plan.chipEstates.contains(estate) ? "Selected for this run plan" : "Reported by the active session; not selected in this plan")
+                        .sirsiFont(.caption)
+                        .foregroundStyle(plan.chipEstates.contains(estate) ? Color.secondary : .orange)
                 }
             }
             Text("Requested: \(plan.cpuCores) cores · \(byteLabel(plan.memoryBytes)) memory · \(byteLabel(plan.swapBytes)) swap ceiling")
@@ -532,6 +540,11 @@ struct ApolloTelemetryView: View {
         if let residency = estate.residencyPct { parts.append(String(format: "%.1f%% resident", residency)) }
         if let memory = estate.memoryBytes { parts.append(byteLabel(memory)) }
         return parts.isEmpty ? unavailable : parts.joined(separator: " · ")
+    }
+    private var displayedEstateIDs: [String] {
+        var seen = Set<String>()
+        let reported = session?.telemetry?.estates.map(\.id) ?? []
+        return (plan.chipEstates + reported).filter { seen.insert($0).inserted }
     }
     private func byteLabel(_ bytes: Int64) -> String { bytes == 0 ? "0 GiB" : String(format: "%.1f GiB", Double(bytes) / 1_073_741_824) }
     @MainActor private func refresh() async {
@@ -633,8 +646,8 @@ struct ApolloPlan: Decodable {
     // Treat its absence as no unqualified selection, never as a decode failure.
     var unqualifiedEstates: [String] { unavailableEstates ?? [] }
 }
-private struct ApolloTelemetryRead: Decodable { let state: String; let telemetry: ApolloSessionTelemetry?; let reason: String? }
-private struct ApolloSessionTelemetry: Decodable {
+struct ApolloTelemetryRead: Decodable { let state: String; let telemetry: ApolloSessionTelemetry?; let reason: String? }
+struct ApolloSessionTelemetry: Decodable {
     let engineID: String
     let tokensPerSec: Double?
     let bandwidthBps: Int64?
@@ -655,4 +668,4 @@ private struct ApolloSessionTelemetry: Decodable {
         case estates = "chip_estates"
     }
 }
-private struct ApolloEstateTelemetry: Decodable { let id: String; let residencyPct: Double?; let memoryBytes: Int64?; let utilizationPct: Double?; enum CodingKeys: String, CodingKey { case id; case residencyPct = "residency_percent"; case memoryBytes = "memory_bytes"; case utilizationPct = "utilization_percent" } }
+struct ApolloEstateTelemetry: Decodable { let id: String; let residencyPct: Double?; let memoryBytes: Int64?; let utilizationPct: Double?; enum CodingKeys: String, CodingKey { case id; case residencyPct = "residency_percent"; case memoryBytes = "memory_bytes"; case utilizationPct = "utilization_percent" } }

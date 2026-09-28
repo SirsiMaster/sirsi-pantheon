@@ -47,4 +47,31 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertEqual(plan.chipEstates, ["cpu", "neural-engine"])
         XCTAssertEqual(plan.unqualifiedEstates, ["neural-engine"])
     }
+
+    func testApolloTelemetryDecodesSelectedAndAdditionalReportedEstates() throws {
+        let raw = #"""
+        {
+          "state": "active",
+          "telemetry": {
+            "engine_id": "apollo-local",
+            "tokens_per_second": 31.5,
+            "bandwidth_bytes_per_second": 1048576,
+            "memory_bytes": 8589934592,
+            "network_saturation_percent": 12.5,
+            "cpu_residency_percent": 43.0,
+            "gpu_residency_percent": 66.0,
+            "chip_estates": [
+              {"id": "gpu", "residency_percent": 66.0, "utilization_percent": 51.0, "memory_bytes": 4294967296},
+              {"id": "neural-engine", "residency_percent": 8.0, "utilization_percent": 5.0, "memory_bytes": 0}
+            ]
+          }
+        }
+        """#.data(using: .utf8)!
+
+        let read = try JSONDecoder().decode(ApolloTelemetryRead.self, from: raw)
+
+        XCTAssertEqual(read.state, "active")
+        XCTAssertEqual(read.telemetry?.tokensPerSec, 31.5)
+        XCTAssertEqual(read.telemetry?.estates.map(\.id), ["gpu", "neural-engine"])
+    }
 }
