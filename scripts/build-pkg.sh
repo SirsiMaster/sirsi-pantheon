@@ -1,10 +1,14 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # build-pkg.sh — Package the already-built Pantheon.app as a macOS installer.
 #
 # The DMG builder is the single bundle producer.  This script deliberately
 # consumes that bundle, so the drag-and-drop and installer artifacts cannot
 # silently contain different engines, Stack Lab contracts, or version bytes.
 set -euo pipefail
+
+# See build-dmg.sh: a package must not depend on ambient project PATH entries
+# for compiler or macOS packaging tool resolution.
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 VERSION=""
 ARCH="arm64"

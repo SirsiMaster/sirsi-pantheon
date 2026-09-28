@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # build-dmg.sh — Build a signed, notarized macOS DMG for Sirsi Pantheon.
 # Usage: scripts/build-dmg.sh (--development | --release) [--version VERSION] [--arch ARCH]
 # Requires macOS (hdiutil/codesign/notarytool are macOS-specific).
@@ -20,6 +20,12 @@
 # this script runs (MACOS_CERTIFICATE / MACOS_CERTIFICATE_PWD).
 
 set -euo pipefail
+
+# Build artifacts must not depend on a caller's shell search path. In
+# particular, a project-local PATH can shadow or hide the compiler, package,
+# and macOS signing tools. These are the standard macOS/Homebrew locations;
+# no current-directory or caller-provided directory is inherited.
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 # --- Defaults ---
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"

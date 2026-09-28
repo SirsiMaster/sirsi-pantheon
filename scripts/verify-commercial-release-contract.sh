@@ -1,7 +1,11 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Static source contract: a commercial artifact must never share a name or
 # execution route with an ad-hoc development package.
 set -euo pipefail
+
+# Keep the source verifier reproducible when it is invoked from a restricted
+# project shell. It never inherits a caller-provided executable directory.
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 dmg="$root/scripts/build-dmg.sh"
@@ -15,6 +19,8 @@ for file in "$dmg" "$pkg" "$workflow" "$makefile" "$recipe"; do
 done
 
 for needle in \
+    '#!/bin/bash' \
+    'export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"' \
     '--development' \
     '--release' \
     'DEVELOPER_ID_APPLICATION APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD' \
@@ -25,6 +31,8 @@ for needle in \
 done
 
 for needle in \
+    '#!/bin/bash' \
+    'export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"' \
     '--development' \
     '--release' \
     'DEVELOPER_ID_INSTALLER APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD' \
