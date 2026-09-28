@@ -2,11 +2,53 @@ package mcp
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 )
+
+func TestHandleMaatKnowledgeProjectsSameFilteredLocalView(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, ".config", "seshat", "store", "latest.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	data := []byte("[{\"title\":\"Safe evidence\",\"summary\":\"Ma'at tracks the package receipt.\",\"references\":[{\"type\":\"file\",\"value\":\"docs/evidence/receipt.json\"}]},{\"title\":\"Withheld\",\"summary\":\"token=examplevalue\",\"references\":[]}]")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	oldHome := maatKnowledgeHome
+	t.Cleanup(func() { maatKnowledgeHome = oldHome })
+	maatKnowledgeHome = func() (string, error) { return home, nil }
+
+	result, err := handleMaatKnowledge(map[string]interface{}{"query": "receipt"})
+	if err != nil || result.IsError || len(result.Content) != 1 {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	var view struct {
+		Items []struct {
+			Title string `json:"title"`
+		} `json:"items"`
+		Total    int `json:"total"`
+		Withheld int `json:"withheld"`
+	}
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &view); err != nil {
+		t.Fatal(err)
+	}
+	if view.Total != 1 || view.Withheld != 1 || len(view.Items) != 1 || view.Items[0].Title != "Safe evidence" {
+		t.Fatalf("Ma'at knowledge MCP projection = %+v", view)
+	}
+}
+
+func TestHandleMaatKnowledgeRejectsMalformedQuery(t *testing.T) {
+	result, err := handleMaatKnowledge(map[string]interface{}{"query": float64(1)})
+	if err != nil || !result.IsError {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
 
 type maatCasebookJournal struct{ rows []maat.Decision }
 

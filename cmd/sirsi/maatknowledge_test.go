@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/knowledge"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/seshat"
 )
 
@@ -24,12 +25,12 @@ func TestSafeMaatKnowledgeItemsWithholdsSensitiveLegacyRecords(t *testing.T) {
 		{Title: "Legacy", Summary: sensitive},
 	}
 
-	safe, withheld := safeMaatKnowledgeItems(items)
-	if withheld != 1 {
-		t.Fatalf("withheld = %d, want 1", withheld)
+	view := knowledge.Project(items, "")
+	if view.Withheld != 1 {
+		t.Fatalf("withheld = %d, want 1", view.Withheld)
 	}
-	if len(safe) != 1 || safe[0].Title != "Safe" {
-		t.Fatalf("safe items = %#v, want only Safe", safe)
+	if len(view.Items) != 1 || view.Items[0].Title != "Safe" {
+		t.Fatalf("safe items = %#v, want only Safe", view.Items)
 	}
 }
 
@@ -50,8 +51,8 @@ func TestSafeMaatKnowledgeItemsWithholdsSensitiveReference(t *testing.T) {
 		References: []seshat.KIReference{{Type: "source", Value: secretRef}},
 	}}
 
-	safe, withheld := safeMaatKnowledgeItems(items)
-	if withheld != 1 || len(safe) != 0 {
-		t.Fatalf("safe=%#v withheld=%d, want no records and one withheld", safe, withheld)
+	view := knowledge.Project(items, "")
+	if view.Withheld != 1 || len(view.Items) != 0 {
+		t.Fatalf("view=%#v, want no records and one withheld", view)
 	}
 }

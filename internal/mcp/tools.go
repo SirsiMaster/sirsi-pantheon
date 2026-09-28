@@ -21,6 +21,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/casebook"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/knowledge"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/rtk"
@@ -45,6 +46,17 @@ func registerTools(s *Server) {
 			},
 		},
 	}, handleMaatCasebook)
+
+	s.RegisterTool(Tool{
+		Name:        "maat_knowledge",
+		Description: "Read Ma'at's sensitivity-filtered local knowledge projection. It is the same retained view shown by the Ma'at knowledge command, not a Seshat ingestion endpoint. Read-only: it cannot ingest, export, change, or disclose withheld records.",
+		InputSchema: InputSchema{
+			Type: "object",
+			Properties: map[string]SchemaField{
+				"query": {Type: "string", Description: "Optional text filter across safe title, summary, and reference metadata."},
+			},
+		},
+	}, handleMaatKnowledge)
 
 	s.RegisterTool(Tool{
 		Name:        "apollo_session_telemetry",
@@ -473,6 +485,8 @@ var openMaatCasebookJournal = func() (maat.DecisionJournal, error) {
 	return maat.NewDefaultDecisionJournal()
 }
 
+var maatKnowledgeHome = os.UserHomeDir
+
 // handleMaatCasebook exposes the one local Ma'at projection to MCP clients.
 // It deliberately reads the shared append-only journal rather than rebuilding
 // policy or hosting a second agent-facing store.
@@ -495,6 +509,33 @@ func handleMaatCasebook(args map[string]interface{}) (*ToolResult, error) {
 		return nil, fmt.Errorf("encode Ma'at casebook: %w", err)
 	}
 	return textResult(string(raw), false), nil
+}
+
+// handleMaatKnowledge is the agent-facing projection of the same filtered
+// local knowledge view used by Ma'at's CLI and native surface. It never exposes
+// a raw Seshat cache or offers ingestion mutation through MCP.
+func handleMaatKnowledge(args map[string]interface{}) (*ToolResult, error) {
+	query := ""
+	if value, exists := args["query"]; exists {
+		text, ok := value.(string)
+		if !ok {
+			return textResult("Error: query must be a string", true), nil
+		}
+		query = text
+	}
+	home, err := maatKnowledgeHome()
+	if err != nil {
+		return textResult(fmt.Sprintf("Ma'at knowledge unavailable: determine home directory: %v", err), true), nil
+	}
+	view, err := knowledge.Load(home, query)
+	if err != nil {
+		return textResult(fmt.Sprintf("Ma'at knowledge unavailable: %v", err), true), nil
+	}
+	raw, err := json.Marshal(view)
+	if err != nil {
+		return nil, fmt.Errorf("encode Ma'at knowledge: %w", err)
+	}
+	return &ToolResult{Content: []ContentBlock{{Type: "text", MimeType: "application/json", Text: string(raw)}}}, nil
 }
 
 // handleApolloSessionTelemetry exposes the SNE-owned local session record to
