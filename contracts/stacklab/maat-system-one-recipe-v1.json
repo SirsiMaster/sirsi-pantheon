@@ -82,6 +82,15 @@
       "upgrade_recipe": ["keep source observation in-process and non-executing", "retain regular-file and before/after identity checks", "hash every observed input into the subject fingerprint", "keep a green source floor distinct from credentialed release proof", "require explicit confirmation immediately before Casebook persistence", "add positive, missing-contract, and symlink adversarial fixtures before widening the contract"]
     },
     {
+      "id": "maat-release-credential-preflight",
+      "source": ["internal/maat/credentialpreflight.go", "cmd/sirsi/maatpreflight.go", "macapp/Sources/SirsiMenubar/MaatCasebookView.swift"],
+      "tests": ["internal/maat/credentialpreflight_test.go", "internal/stacklab/maat_recipe_test.go", "scripts/verify-maat-credential-preflight-contract.sh"],
+      "inputs": ["public local macOS Developer ID identity metadata", "Pantheon Team ID", "explicit native or CLI confirmation"],
+      "outputs": ["hash-bound non-secret Developer ID readiness screen", "explicit protected-workflow route for notarization proof", "evidence-linked repair hints for every missing prerequisite", "one shared Casebook projection after explicit confirmation"],
+      "writes": ["only one confirmed Ma'at decision journal record through sirsi maat preflight credentials --confirm"],
+      "upgrade_recipe": ["observe only public certificate names and fingerprints through the exact macOS security tool path", "never read private keys, passwords, notarization credentials, or contact Apple", "require exact Team and Developer ID kind matching", "keep a successful public identity observation distinct from notarization proof", "require explicit confirmation immediately before Casebook persistence", "project the confirmed record through the shared Casebook rather than adding a second readiness store", "add valid identity, wrong-team, command-error, native guidance, and Stack Lab contract fixtures before widening the observation"]
+    },
+    {
       "id": "maat-pulse-proof-platform",
       "source": ["internal/maat/pulse.go", "internal/maat/proof.go", "internal/maat/platform.go"],
       "tests": ["internal/maat/pulse_test.go", "internal/maat/proof_test.go", "internal/maat/platform_test.go"],
@@ -138,7 +147,7 @@
     {
       "id": "maat-cli",
       "source": ["cmd/sirsi/maat.go", "cmd/sirsi/maatschedule.go", "cmd/sirsi/maatcasebook.go", "cmd/sirsi/maatresolution.go", "cmd/sirsi/maatscreen.go", "cmd/sirsi/maatpreflight.go", "cmd/sirsi/maatcalibrate.go", "cmd/sirsi/maatknowledge.go"],
-      "tests": ["cmd/sirsi/maatschedule_decisions_test.go", "cmd/sirsi/maatresolution_test.go", "cmd/sirsi/maatscreen_test.go", "cmd/sirsi/maatcalibrate_test.go", "cmd/sirsi/maatknowledge_test.go", "internal/maat/releasepreflight_test.go"],
+      "tests": ["cmd/sirsi/maatschedule_decisions_test.go", "cmd/sirsi/maatresolution_test.go", "cmd/sirsi/maatscreen_test.go", "cmd/sirsi/maatcalibrate_test.go", "cmd/sirsi/maatknowledge_test.go", "internal/maat/releasepreflight_test.go", "internal/maat/credentialpreflight_test.go"],
       "inputs": ["local operator command"],
       "outputs": ["human and JSON views with System One model/deterministic-floor provenance, three-level failed-floor recovery, and read-only prescribed recovery guidance"],
       "writes": ["only explicit audit, reservation, and confirmed owner-resolution decision records"],
@@ -176,9 +185,9 @@
       "source": ["macapp/Sources/SirsiMenubar/Views.swift", "macapp/Sources/SirsiMenubar/MaatCasebookView.swift", "macapp/Sources/SirsiMenubar/SirsiEngine.swift"],
       "tests": ["scripts/verify-maat-native-resolution-contract.sh"],
       "inputs": ["canonical diagnostic finding", "explicit operator confirmation", "canonical Ma'at casebook projection", "explicitly selected closed System One JSON from a qualified producer", "explicit selected repository root for release-contract preflight"],
-      "outputs": ["guided owner-review entry point for every alarm without a safe automatic repair", "native evidence and acceptance path", "first-class System One gate and calibration projection", "native System One model/floor/finding, three-level recovery, evidence, and prescribed recovery projection", "confirmed native closed-screen validation and record route", "non-executing native release-contract preflight with visible failed checks and repair hints"],
-      "writes": ["only a confirmed Ma'at owner review or owner acceptance through the canonical CLI", "one validated System One decision journal record through the canonical CLI", "one explicitly confirmed release-contract preflight through the canonical CLI"],
-      "upgrade_recipe": ["never label an alarm informational solely because automation is unsafe", "require an explicit confirmation before recording a review or a selected System One screen", "preserve the distinction between owner conclusion and system repair", "continue successful review to the shared Casebook acceptance surface", "render System One only from the canonical Casebook projection", "show producer recovery guidance as copyable evidence, never auto-executable input", "never portray an empty history as a pass; offer only qualified local observation or a closed typed producer screen", "never execute an assessed payload while validating its selected screen JSON", "bind release-contract observation to the explicitly selected project root and never invoke a release command", "show every failed floor check with its repair hint before confirmation", "run the native resolution contract and Swift syntax validation"]
+      "outputs": ["guided owner-review entry point for every alarm without a safe automatic repair", "native evidence and acceptance path", "first-class System One gate and calibration projection", "native System One model/floor/finding, three-level recovery, evidence, and prescribed recovery projection", "confirmed native closed-screen validation and record route", "non-executing native release-contract preflight with visible failed checks and repair hints", "non-secret native Developer ID readiness observation with a protected notarization-proof route"],
+      "writes": ["only a confirmed Ma'at owner review or owner acceptance through the canonical CLI", "one validated System One decision journal record through the canonical CLI", "one explicitly confirmed release-contract preflight through the canonical CLI", "one explicitly confirmed release-credential preflight through the canonical CLI"],
+      "upgrade_recipe": ["never label an alarm informational solely because automation is unsafe", "require an explicit confirmation before recording a review or a selected System One screen", "preserve the distinction between owner conclusion and system repair", "continue successful review to the shared Casebook acceptance surface", "render System One only from the canonical Casebook projection", "show producer recovery guidance as copyable evidence, never auto-executable input", "never portray an empty history as a pass; offer only qualified local observation or a closed typed producer screen", "never execute an assessed payload while validating its selected screen JSON", "bind release-contract observation to the explicitly selected project root and never invoke a release command", "show every failed floor check with its repair hint before confirmation", "show only public identity metadata and never request secret notarization material", "run the native resolution contract and Swift syntax validation"]
     },
     {
       "id": "maat-confirmed-diagnostic-repair",

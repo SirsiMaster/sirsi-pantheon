@@ -35,17 +35,18 @@ safe independent upgrade recipe in this wing:
 5. Strict local System One screen and calibration record
 6. Local host-health observation and screen writer
 7. Non-executing, hash-bound commercial-release source preflight
-8. Pulse, proof, and platform integrity collectors
-9. Append-only decision journal and report recorder
-10. Deterministic local Casebook
-11. Shared-machine and rail scheduler/conflict detector
-12. CLI surfaces for audit, scheduling, screens, calibration, and search
-13. Horus API and visible caseboard
-14. Read-only MCP Casebook projection for agent clients
-15. Five-screen terminal console Activity/Casebook mode
-16. Native finding-to-review-to-acceptance resolution flow
-17. Confirmed managed LaunchAgent disabled-override recovery and post-action recheck
-18. The Stack Lab wing and recipe contracts themselves
+8. Non-secret Developer ID credential readiness and protected-notarization route
+9. Pulse, proof, and platform integrity collectors
+10. Append-only decision journal and report recorder
+11. Deterministic local Casebook
+12. Shared-machine and rail scheduler/conflict detector
+13. CLI surfaces for audit, scheduling, screens, calibration, and search
+14. Horus API and visible caseboard
+15. Read-only MCP Casebook projection for agent clients
+16. Five-screen terminal console Activity/Casebook mode
+17. Native finding-to-review-to-acceptance resolution flow
+18. Confirmed managed LaunchAgent disabled-override recovery and post-action recheck
+19. The Stack Lab wing and recipe contracts themselves
 
 An upgrade begins at one manifest component, follows that component's listed
 tests and boundary, then updates the receipt/canonical contract. Components do
@@ -64,6 +65,7 @@ not get silently co-upgraded because they share a deity name.
 | Host-health System One screen | one complete local Doctor report and resolved local host identity, hashed before classification | `sirsi maat triage [--confirm]`, native **Observe this Mac**, or the named Stack Lab component handoff into the same native System One surface | `host-health` System One case with the exact diagnostic digest, active warning/critical findings, and a visible distinction between a recorded Casebook result and a healthy pass; the Stack Lab handoff never interprets recipe text as a command, and observation alone never repairs, kills, installs, or invokes an LLM |
 | System One calibration | one recorded local auto-pass and a distinct independent final review outcome | `sirsi maat calibrate --screen-evidence <ref> --frontier-evidence <ref> --frontier-gate <pass|changes|block>` | durable calibration evidence and overturn-rate history; replay, missing screen, non-pass, and ambiguous links reject |
 | Release-contract preflight | regular non-symlink local packaging/workflow/Stack Lab sources, captured and hashed in-process | `sirsi maat preflight release --root <checkout> [--confirm]` via `maat.PreflightReleaseContract`, including the native Ma'at System One inspect-then-confirm flow | delivery-bound System One evidence that never runs a build/package/signing command; source-floor failures retain a bounded repair hint, and a green source floor remains distinct from credentialed release proof |
+| Release credential readiness | public local Developer ID certificate names and fingerprints for Team `9D382WV988`; no key or secret material | `sirsi maat preflight credentials [--confirm]` or the native Ma'at **Check signing readiness** flow | a hash-bound readiness screen with one exact protected-workflow route for missing Developer ID Application, Developer ID Installer, or notarization proof; a confirmed observation is projected through the same Casebook and never itself signs, packages, notarizes, publishes, or authorizes a release |
 | Knowledge refresh | retained local knowledge cache through the legacy ingestion adapter | `sirsi maat knowledge refresh [--source … --since … --profile … --all-profiles]` and dashboard action `maat/knowledge/refresh`, presented as **Refresh Ma'at knowledge** | Ma'at remains the user-facing knowledge/decision authority; the compatibility adapter is not surfaced as a second operator product, and refresh cannot export knowledge or open a browser |
 | Shared host, rail, and device capacity | reservation grant/refusal/queue/release | `sirsi maat reserve` | `allocation` cases tied to resource and holder |
 | Cede, handback, or counter-request | explicit router-derived decision record | authorized Ma'at producer | `allocation` cases; pending is high priority, never inferred as granted |
@@ -110,6 +112,11 @@ ambiguous case history.
   check and its repair hint, and requires a separate confirmation before it
   records one Casebook evidence row. The inspection is source-only: it never
   starts a build, package, signing, notarization, network, or release action.
+- **Credential guidance:** Ma'at can inspect public Developer ID identity
+  metadata for the exact Pantheon team without opening private keys or secrets.
+  It names the precise protected-workflow prerequisite still missing and, after
+  confirmation, projects that evidence through the same Casebook. A green
+  public-identity floor is never substituted for notarization proof.
 - **No stranded alarms:** when a native diagnostic alarm has no safe automatic
   repair, the finding view offers a confirmed Ma'at review, then connects to the
   shared Casebook acceptance flow. A conclusion is visibly distinct from a

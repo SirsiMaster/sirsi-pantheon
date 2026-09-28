@@ -55,6 +55,18 @@ done
   exit 1
 }
 
+for needle in \
+  'title: "Stack Lab"' \
+  'title: "Apollo"' \
+  'StackLabView(engine: engine)' \
+  'ApolloRunPlannerView(engine: engine)' \
+  'Choose a resident model, machine, and resource envelope'; do
+  /usr/bin/grep -Fq "$needle" "$library" || {
+    echo "Stack Lab and Apollo are not directly reachable from the control center: $needle" >&2
+    exit 1
+  }
+done
+
 /usr/bin/grep -Fq '"stacklab"' "$engine" || {
   echo "Stack Lab is not repository-scoped in the native command engine" >&2
   exit 1
