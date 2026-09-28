@@ -11,10 +11,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 
-	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/stacklab"
 	"github.com/spf13/cobra"
 )
@@ -22,6 +20,12 @@ import (
 // routerWingPath is this repo's own router wing record — the roster of
 // declared peers lives in its handoffs.allowed_peer_wings (ADR-066 §3).
 const routerWingPath = "contracts/stacklab/ra-horus-fabric-wing-v1.json"
+
+// pantheonRepo owns the router wing (the roster source). The doctor reads it from
+// origin/main, never the working tree — a partial/stale local checkout must never
+// block or skew the roster (A35/A37; 2026-09-28: a lane's stale checkout missing
+// this path hard-exited the doctor before it evaluated any peer wing).
+const pantheonRepo = "SirsiMaster/sirsi-pantheon"
 
 var stacklabCmd = &cobra.Command{
 	Use:   "stacklab",
@@ -42,21 +46,23 @@ A35) for a schema-valid wing record, and the sirsi-stacklab registry for a
 matching SHA-256 pin. Findings: stranded/unbuilt, unpushed/stranded,
 unpinned, undeclared, invalid. Clean only when every peer clears all five.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		repoRoot, err := router.FindRepoRoot()
+		reader := stacklab.NewGHRemoteReader()
+		// Read the router wing (roster source) from origin/main, not the working
+		// tree — origin is truth (A35/A37), same as every peer record below.
+		raw, exists, err := reader.ReadFile(pantheonRepo, routerWingPath, "main")
 		if err != nil {
-			return fmt.Errorf("locate repo root: %w", err)
+			return fmt.Errorf("read router wing %s from origin/main of %s: %w", routerWingPath, pantheonRepo, err)
 		}
-		raw, err := os.ReadFile(filepath.Join(repoRoot, routerWingPath))
-		if err != nil {
-			return fmt.Errorf("read router wing %s: %w", routerWingPath, err)
+		if !exists {
+			return fmt.Errorf("router wing %s is not on origin/main of %s — the roster source must exist on origin (A37)", routerWingPath, pantheonRepo)
 		}
 		routerWing, err := stacklab.ValidateWing(raw)
 		if err != nil {
-			return fmt.Errorf("router wing %s is itself schema-invalid: %w", routerWingPath, err)
+			return fmt.Errorf("router wing %s is schema-invalid on origin/main: %w", routerWingPath, err)
 		}
 		roster := routerWing.Handoffs.AllowedPeerWings
 
-		rep := stacklab.Run(stacklab.NewGHRemoteReader(), roster, stacklab.LaneRepoMap)
+		rep := stacklab.Run(reader, roster, stacklab.LaneRepoMap)
 
 		out := cmd.OutOrStdout()
 		if stacklabDoctorJSON {

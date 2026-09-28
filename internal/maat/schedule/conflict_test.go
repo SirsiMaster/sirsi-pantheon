@@ -32,6 +32,26 @@ func TestCheckConflicts_ReportsPressureAlongsideCleanReport(t *testing.T) {
 	}
 }
 
+func TestProbeProcesses_RefusesRemoteMachine(t *testing.T) {
+	SetLocalMachineLabelFn(func() (string, error) { return "m1", nil })
+	defer SetLocalMachineLabelFn(nil)
+
+	if _, err := probeProcesses("m5"); err == nil {
+		t.Fatal("probing a machine that isn't this host must error, never silently scan local ps and mislabel it")
+	} else if !strings.Contains(err.Error(), "m1") || !strings.Contains(err.Error(), "m5") {
+		t.Fatalf("error should name both this host and the requested machine, got %q", err)
+	}
+}
+
+func TestProbeProcesses_AllowsLocalMachineCaseInsensitive(t *testing.T) {
+	SetLocalMachineLabelFn(func() (string, error) { return "m1", nil })
+	defer SetLocalMachineLabelFn(nil)
+
+	if _, err := probeProcesses("M1"); err != nil {
+		t.Fatalf("probing this host (case-insensitive) must succeed, got %v", err)
+	}
+}
+
 func TestCheckConflicts_BuildRegimeSkipsPressureRead(t *testing.T) {
 	l := fixedLedger("2026-09-24T10:00:00Z")
 	if _, err := l.Reserve(mkReq("m1", "claude-io", "2026-09-24T09:00:00Z", "2026-09-24T11:00:00Z", RegimeBuild), false); err != nil {
