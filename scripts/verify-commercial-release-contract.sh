@@ -63,6 +63,14 @@ done
     echo "release workflow does not fail closed when installer signing is unavailable" >&2
     exit 1
 }
+/usr/bin/grep -Fq 'Preflight imported Developer ID Installer identity' "$workflow" || {
+    echo "release workflow does not preflight the protected Installer identity before packaging" >&2
+    exit 1
+}
+/usr/bin/grep -Fq 'Temporary signing keychain does not contain a usable Team 9D382WV988 Developer ID Installer identity' "$workflow" || {
+    echo "release workflow does not verify Installer identity availability in its temporary keychain" >&2
+    exit 1
+}
 for required in \
     'test -f "bin/SirsiPantheon-${BUILD_VERSION}-arm64.dmg"' \
     'test -f "bin/SirsiPantheon-${BUILD_VERSION}-arm64.pkg"' \
