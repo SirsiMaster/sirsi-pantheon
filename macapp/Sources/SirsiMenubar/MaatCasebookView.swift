@@ -158,6 +158,10 @@ private struct MaatSystemOneView: View {
                 Label("Inspect Stack Lab authority", systemImage: "cube.transparent")
             }
             .buttonStyle(.bordered)
+            NavLink { ResultView(engine: engine, title: "Ma'at — Quality", args: ["maat", "audit"]) } label: {
+                Label("Run a fresh Ma'at audit", systemImage: "checkmark.seal")
+            }
+            .buttonStyle(.bordered)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .padding(20)
@@ -681,6 +685,15 @@ struct MaatCasebookView: View {
                 .fixedSize(horizontal: false, vertical: true)
             Button("Try again") { Task { await load() } }
                 .buttonStyle(.borderedProminent)
+                .tint(gold)
+            NavLink { StackLabView(engine: engine) } label: {
+                Label("Inspect Stack Lab authority", systemImage: "cube.transparent")
+            }
+            .buttonStyle(.bordered)
+            NavLink { ResultView(engine: engine, title: "Ma'at — Quality", args: ["maat", "audit"]) } label: {
+                Label("Run a fresh Ma'at audit", systemImage: "checkmark.seal")
+            }
+            .buttonStyle(.bordered)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .padding(20)
@@ -912,6 +925,14 @@ struct MaatKnowledgeView: View {
                 .fixedSize(horizontal: false, vertical: true)
             Button("Try again") { Task { await load() } }
                 .buttonStyle(.borderedProminent)
+                .tint(gold)
+            Button("Refresh local knowledge") { confirmKnowledgeRefresh = true }
+                .buttonStyle(.bordered)
+                .disabled(knowledgeRefreshInFlight)
+            NavLink { StackLabView(engine: engine) } label: {
+                Label("Inspect Stack Lab authority", systemImage: "cube.transparent")
+            }
+            .buttonStyle(.bordered)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .padding(20)
