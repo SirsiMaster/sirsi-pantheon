@@ -6,7 +6,7 @@ import SwiftUI
 // evidence, classifications, and decisions.
 struct MaatWorkspaceView: View {
     @ObservedObject var engine: SirsiEngine
-    @State private var section: MaatWorkspaceSection = .decisions
+    @State private var section: MaatWorkspaceSection = .systemOne
     let preloadedCasebook: MaatCasebookProjection?
     let preloadedKnowledge: MaatKnowledgeProjection?
 
@@ -30,6 +30,8 @@ struct MaatWorkspaceView: View {
             .padding(.vertical, 12)
 
             switch section {
+            case .systemOne:
+                MaatSystemOneView(engine: engine, section: $section, preloaded: preloadedCasebook)
             case .decisions:
                 MaatCasebookView(engine: engine, preloaded: preloadedCasebook, showsBackBar: false)
             case .knowledge:
@@ -40,11 +42,238 @@ struct MaatWorkspaceView: View {
 }
 
 private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
-    case decisions, knowledge
+    case systemOne, decisions, knowledge
 
     var id: String { rawValue }
-    var title: String { self == .decisions ? "Decisions" : "Knowledge" }
-    var symbol: String { self == .decisions ? "checkmark.seal" : "books.vertical" }
+    var title: String {
+        switch self {
+        case .systemOne: return "System One"
+        case .decisions: return "Decisions"
+        case .knowledge: return "Knowledge"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .systemOne: return "scalemass"
+        case .decisions: return "checkmark.seal"
+        case .knowledge: return "books.vertical"
+        }
+    }
+}
+
+// MaatSystemOneView makes the local JEV-like system visible as an operational
+// surface, not a hidden field in an individual case. It projects only the
+// canonical Casebook: no ambient state is classified here and no local screen
+// becomes mutation or release authority merely because it is rendered.
+private struct MaatSystemOneView: View {
+    @ObservedObject var engine: SirsiEngine
+    @Binding var section: MaatWorkspaceSection
+    @State private var casebook: MaatCasebookProjection?
+    @State private var loading: Bool
+    @State private var loadError: String?
+
+    init(engine: SirsiEngine, section: Binding<MaatWorkspaceSection>, preloaded: MaatCasebookProjection? = nil) {
+        self.engine = engine
+        _section = section
+        _casebook = State(initialValue: preloaded)
+        _loading = State(initialValue: preloaded == nil)
+    }
+
+    var body: some View {
+        Group {
+            if loading {
+                VStack(spacing: 10) {
+                    ProgressView()
+                    Text("Opening retained System One evidence…")
+                        .sirsiFont(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let loadError {
+                unavailableState(loadError)
+            } else if let casebook {
+                systemOneBody(casebook)
+            } else {
+                unavailableState("Pantheon did not receive a Ma'at Casebook projection. No System One result was inferred.")
+            }
+        }
+        .task {
+            guard casebook == nil else { return }
+            await load()
+        }
+    }
+
+    private func unavailableState(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .sirsiFont(24, weight: .semibold)
+                .foregroundStyle(.orange)
+            Text("System One evidence is unavailable")
+                .sirsiFont(.headline)
+            Text(message)
+                .sirsiFont(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Try again") { Task { await load() } }
+                .buttonStyle(.borderedProminent)
+                .tint(gold)
+            Button("Open decisions") { section = .decisions }
+                .buttonStyle(.bordered)
+            NavLink { StackLabView(engine: engine) } label: {
+                Label("Inspect Stack Lab authority", systemImage: "cube.transparent")
+            }
+            .buttonStyle(.bordered)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .padding(20)
+    }
+
+    private func systemOneBody(_ casebook: MaatCasebookProjection) -> some View {
+        let screens = casebook.cases.filter { $0.systemOne != nil }
+        let calibrations = casebook.cases.filter { $0.systemOneCalibration != nil }
+        return VStack(spacing: 0) {
+            MaybeScroll {
+                VStack(alignment: .leading, spacing: 16) {
+                    summary(screens: screens, calibrations: calibrations)
+                    if screens.isEmpty {
+                        emptyState
+                    } else {
+                        screenList(screens)
+                    }
+                }
+                .padding(16)
+            }
+            Divider()
+            HStack {
+                Text("Retained local evidence · screens never grant execution authority")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button { Task { await load() } } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.borderless)
+                .disabled(loading)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 11)
+        }
+    }
+
+    private func summary(screens: [MaatCase], calibrations: [MaatCase]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Ma'at System One")
+                .sirsiFont(.title3, weight: .bold)
+            Text("Local deterministic screens are retained, evidence-bound, and calibrated only against distinct independent review outcomes.")
+                .sirsiFont(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                systemMetric("Screens", screens.count, .secondary)
+                systemMetric("Changes", screens.filter { $0.systemOne?.gate == "changes" }.count, .orange)
+                systemMetric("Blocked", screens.filter { $0.systemOne?.gate == "block" }.count, .red)
+                systemMetric("Escalated", screens.filter { $0.systemOne?.gate == "escalate" }.count, gold)
+                systemMetric("Calibrated", calibrations.count, .green)
+            }
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+    }
+
+    private func systemMetric(_ title: String, _ value: Int, _ tint: Color) -> some View {
+        Text("\(value) \(title)")
+            .sirsiFont(.caption, weight: .semibold)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(Capsule().fill(tint.opacity(0.12)))
+            .foregroundStyle(tint)
+    }
+
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("No System One evidence yet", systemImage: "checkmark.seal")
+                .sirsiFont(.headline)
+            Text("This is an empty evidence history, not a pass or a failure. System One does not invent a screen from ambient state: a qualified Pantheon producer supplies a closed, typed evidence packet, then Ma'at records the deterministic gate here.")
+                .sirsiFont(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Open decisions") { section = .decisions }
+                .buttonStyle(.borderedProminent)
+                .tint(gold)
+            NavLink { StackLabView(engine: engine) } label: {
+                Label("Inspect Stack Lab recipes", systemImage: "cube.transparent")
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+    }
+
+    @ViewBuilder private func screenList(_ screens: [MaatCase]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Recorded screens")
+                .sirsiFont(.headline)
+            ForEach(screens) { entry in
+                NavLink { MaatCaseDetailView(engine: engine, entry: entry) } label: {
+                    HStack(alignment: .top, spacing: 10) {
+                        Circle().fill(gateTint(entry.systemOne?.gate ?? "")).frame(width: 9, height: 9).padding(.top, 4)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(entry.assessed.isEmpty ? entry.resource : entry.assessed)
+                                .sirsiFont(.headline)
+                            Text(screenDetail(entry))
+                                .sirsiFont(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            if !entry.evidence.isEmpty {
+                                Text(entry.evidence)
+                                    .sirsiFont(.caption2, design: .monospaced)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                        }
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.right")
+                            .sirsiFont(.caption, weight: .semibold)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(13)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func screenDetail(_ entry: MaatCase) -> String {
+        guard let verdict = entry.systemOne else { return entry.why }
+        var detail = "\(verdict.gate.capitalized) · \(Int(verdict.confidence * 100))% confidence · feather \(verdict.featherWeight)/100"
+        if let escalation = verdict.escalation { detail += " · \(escalation.reason)" }
+        return detail
+    }
+
+    private func gateTint(_ gate: String) -> Color {
+        switch gate {
+        case "pass": return .green
+        case "changes": return .orange
+        case "block": return .red
+        case "escalate": return gold
+        default: return .secondary
+        }
+    }
+
+    @MainActor private func load() async {
+        loading = true
+        loadError = nil
+        let result = await MaatCasebookView.fetch()
+        if let result {
+            casebook = result
+        } else {
+            loadError = "Pantheon could not read the local Ma'at decision journal. No System One gate was inferred. Retry the exact read, inspect decisions, or inspect Stack Lab authority."
+        }
+        loading = false
+    }
 }
 
 // MaatCasebookView is the native operator surface for Ma'at's recorded

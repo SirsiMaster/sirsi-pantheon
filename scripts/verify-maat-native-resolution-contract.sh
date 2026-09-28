@@ -54,6 +54,18 @@ for needle in \
 done
 
 for needle in \
+  'MaatSystemOneView' \
+  'System One evidence is unavailable' \
+  'No System One evidence yet' \
+  'System One does not invent a screen' \
+  'screens never grant execution authority'; do
+  /usr/bin/grep -Fq "$needle" "$casebook" || {
+    echo "native Ma'at System One surface missing: $needle" >&2
+    exit 1
+  }
+done
+
+for needle in \
   'RestoreDisabledManagedLaunchAgents' \
   'targets map[string]bool' \
   'targets != nil && !targets[label]' \

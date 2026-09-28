@@ -140,9 +140,9 @@
       "source": ["macapp/Sources/SirsiMenubar/Views.swift", "macapp/Sources/SirsiMenubar/MaatCasebookView.swift", "macapp/Sources/SirsiMenubar/SirsiEngine.swift"],
       "tests": ["scripts/verify-maat-native-resolution-contract.sh"],
       "inputs": ["canonical diagnostic finding", "explicit operator confirmation", "canonical Ma'at casebook projection"],
-      "outputs": ["guided owner-review entry point for every alarm without a safe automatic repair", "native evidence and acceptance path"],
+      "outputs": ["guided owner-review entry point for every alarm without a safe automatic repair", "native evidence and acceptance path", "first-class System One gate and calibration projection"],
       "writes": ["only a confirmed Ma'at owner review or owner acceptance through the canonical CLI"],
-      "upgrade_recipe": ["never label an alarm informational solely because automation is unsafe", "require an explicit confirmation before recording a review", "preserve the distinction between owner conclusion and system repair", "continue successful review to the shared Casebook acceptance surface", "run the native resolution contract and Swift syntax validation"]
+      "upgrade_recipe": ["never label an alarm informational solely because automation is unsafe", "require an explicit confirmation before recording a review", "preserve the distinction between owner conclusion and system repair", "continue successful review to the shared Casebook acceptance surface", "render System One only from the canonical Casebook projection", "never render an empty history as a pass or manufacture a screen from ambient state", "run the native resolution contract and Swift syntax validation"]
     },
     {
       "id": "maat-confirmed-diagnostic-repair",
