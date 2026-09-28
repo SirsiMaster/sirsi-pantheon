@@ -45,8 +45,14 @@ name** at all times.
 <agent>-<project>-<machine>[-<task>]
 ```
 
-- Lowercase, hyphen-delimited, each slot `[a-z0-9]+` (no internal hyphens inside a
-  slot; the hyphen is the delimiter).
+- Lowercase, hyphen-delimited. **Grammar (SSA #1, resolved):** the first three
+  slots — agent, project, machine — are each `[a-z0-9]+` (no internal hyphens; the
+  hyphen is their delimiter). The **task is the remainder after the third hyphen**
+  and MAY contain hyphens: `[a-z0-9]+(-[a-z0-9]+)*`. The validator splits on the
+  first three hyphens only, so `claude-finalwishes-m1-fw-r02` parses as
+  agent=`claude`, project=`finalwishes`, machine=`m1`, task=`fw-r02`, and
+  `hermes-hermes-m5-hermes-releases` → task=`hermes-releases`. This one encoding is
+  applied identically in the grammar, examples, migration records, and validators.
 - **agent** — the agent/lane identity family: `claude`, `codex`, `ra`, `hermes`,
   `gemma`, `sirsi` (governance/admin), … A fixed, router-known set.
 - **project** — the product or domain the thread serves. **Every** thread carries
@@ -134,6 +140,56 @@ preserved). Illustrative:
 Retired ids (`codex-inference`, bare `claude-finalwishes`, `claude-fw`,
 `claude-finalwishes-helper`, `manual-pantheon`, `cylton-hermes`) are already drained
 and stay retired; their names become reusable under the grammar.
+
+## 6. Implementation constraints (SSA review conditions 2–6, 2026-09-28)
+
+**C2 — Versioned, origin-pinned registry schema.** The allowed agent values,
+project values, and machine aliases live in ONE versioned schema on origin at a
+canonical path (`contracts/naming/registry-schema-vN.json`), carrying an explicit
+`schema_version` and an immutable content hash. The router validates a
+registration against the **origin-pinned schema hash**, never a working-tree copy
+(A37). Adding an agent/project value or a machine alias is a **promotion** —
+an owner/SSA-bound change to the schema on origin that bumps the version + hash;
+a lane cannot introduce a value by self-declaring. A working-tree divergence is
+detected (hash mismatch) and refused, never used to authorize an identity.
+
+**C3 — Machine proof from the authenticated session, not hostname text.** The
+`machine` alias is not trusted from any client-supplied string. The router derives
+the host from the **authenticated router session/service** and the **credentialed
+machine-id** (ADR-067), then verifies the canonical alias maps to that machine-id.
+Hostname text alone carries no authority; a session on m5 cannot register a `-m1`
+name. The alias↔machine-id binding is part of the schema (C2).
+
+**C4 — Atomic mapping, crash-safe rename, recovery.** The mapping
+`name → thread-id → machine-id → task-id` is written in a **single transaction**.
+Invariants are enforced as store constraints, not application checks: a **partial
+unique index on live rows** gives exactly one live name per thread and one live
+thread per name; a unique `(machine-id, session)` ownership constraint prevents a
+duplicate live claim. **Rename** is one transaction that relabels the same
+thread-id, guarded by an **idempotency key** so a retried/interrupted rename is a
+no-op, not a double-apply. **Migration** writes a **rollback/resume receipt**
+(idempotency key + prior state) so an interrupted rename/migration resumes or
+rolls back cleanly; a crash mid-rename never leaves a thread nameless or a name
+dangling. Collisions are **rejected**, never silently overwritten.
+
+**C5 — Alias draining during flag-then-refuse (no silent stranding).** During the
+migration window, an old (pre-rename) name **resolves to the same durable
+thread-id** via an alias mapping, so mail addressed to it is delivered, never
+stranded. Once a thread is retired (or the refuse-cutover completes), the old name
+returns a **machine-actionable structured response** — `{status: renamed, to:
+<new-name>}` or `{status: retired, successor?: <name>}` — so a sender re-routes
+programmatically. No old alias silently drops a message at any point. Alias
+mappings are time-bounded to the migration window and removed at cutover.
+
+**C6 — Adversarial + divergence fixtures (required before the impl bind).** The
+implementation ships fixtures that fail without the guard and pass with it (A35):
+cross-host spoofing (a `-m1` name from an m5 session — refused via C3),
+stale/working-tree registry divergence (schema-hash mismatch — refused via C2),
+duplicate live claim (two sessions, one name — refused via C4's partial unique
+index), rename race (concurrent renames of one thread — serialized by C4's
+idempotency key), crash midway through rename/migration (resume/rollback via C4's
+receipt), retired-name reuse (a name re-bound only after retirement), and
+old-alias delivery (mail to a pre-rename name reaches the durable thread via C5).
 
 ## Neith's Triad (A22)
 
