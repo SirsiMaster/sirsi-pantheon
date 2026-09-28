@@ -96,6 +96,31 @@ jobs:
           echo "DEVELOPER_ID_APPLICATION=$ID" >> "$GITHUB_ENV"
           echo "Resolved the imported Developer ID Application identity for signing."
 
+      - name: Preflight imported Developer ID Installer identity
+        env:
+          DEVELOPER_ID_INSTALLER: ${{ secrets.DEVELOPER_ID_INSTALLER }}
+        run: |
+          set -euo pipefail
+          : "${DEVELOPER_ID_INSTALLER:?DEVELOPER_ID_INSTALLER is required for the commercial Pantheon PKG}"
+          case "$DEVELOPER_ID_INSTALLER" in
+            "Developer ID Installer: "*"(9D382WV988)") ;;
+            *)
+              echo "DEVELOPER_ID_INSTALLER must name a Team 9D382WV988 Developer ID Installer identity" >&2
+              exit 1
+              ;;
+          esac
+          IMPORTED_INSTALLER="$(security find-identity -v build.keychain \
+            | awk -F '\"' '/Developer ID Installer:.*\\(9D382WV988\\)/{print $2; exit}')"
+          if [ -z "$IMPORTED_INSTALLER" ]; then
+            echo "Temporary signing keychain does not contain a usable Team 9D382WV988 Developer ID Installer identity" >&2
+            exit 1
+          fi
+          if [ "$IMPORTED_INSTALLER" != "$DEVELOPER_ID_INSTALLER" ]; then
+            echo "Configured Developer ID Installer identity does not match the identity imported into the temporary signing keychain" >&2
+            exit 1
+          fi
+          echo "Developer ID Installer identity preflight passed."
+
       - name: Build + sign + notarize DMG and PKG (arm64 — Intel Macs use Rosetta)
         env:
           BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
