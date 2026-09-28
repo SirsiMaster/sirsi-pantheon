@@ -319,11 +319,11 @@ private struct StackLabContractDetail: View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Preflight this release contract", systemImage: "checkmark.seal")
                 .sirsiFont(.headline)
-            Text("Inspect the selected project's release contract in Ma'at before a credentialed release. It checks the local source boundary and explains the next evidence route. It does not build, package, sign, notarize, publish, or authorize a release.")
+            Text("Inspect the selected project's release contract in Ma'at before a credentialed release. Pantheon opens the exact preflight control and explains the next evidence route. It does not build, package, sign, notarize, publish, or authorize a release.")
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            NavLink { MaatWorkspaceView(engine: engine) } label: {
+            NavLink { MaatWorkspaceView(engine: engine, opensReleasePreflight: true) } label: {
                 Label("Open Ma'at release preflight", systemImage: "arrow.right.circle.fill")
                     .frame(maxWidth: .infinity)
             }

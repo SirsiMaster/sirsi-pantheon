@@ -45,10 +45,10 @@ func TestNativeStackLabSurfaceRecipeIsComplete(t *testing.T) {
 		}
 	}
 	nativeCatalog := recipe.Components[1]
-	if !containsNativeRecipeText(nativeCatalog.Outputs, "typed native handoff from the Pantheon release recipe to Ma'at's selected-project source-only release-contract preflight") {
+	if !containsNativeRecipeText(nativeCatalog.Outputs, "typed native handoff from the Pantheon release recipe to Ma'at's exact selected-project source-only release-contract preflight control") {
 		t.Fatalf("catalog does not declare the bounded release-preflight handoff: %+v", nativeCatalog.Outputs)
 	}
-	if !containsNativeRecipeText(nativeCatalog.UpgradeRecipe, "route the known Pantheon release recipe only to Ma'at's bounded preflight; never execute recipe strings in Swift") {
+	if !containsNativeRecipeText(nativeCatalog.UpgradeRecipe, "route the known Pantheon release recipe directly to Ma'at's exact bounded preflight control; never execute recipe strings in Swift") {
 		t.Fatalf("catalog does not preserve typed release handoff authority: %+v", nativeCatalog.UpgradeRecipe)
 	}
 }
