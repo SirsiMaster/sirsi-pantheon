@@ -555,6 +555,12 @@ func TestClosePreFacadeItemStillWorks(t *testing.T) {
 // parent directory instead of failing SQLITE_CANTOPEN (the CI-only
 // TestRouterPullModelRoundtrip failure this reproduces).
 func TestOpenCreatesStoreDirOnFreshHome(t *testing.T) {
+	// This fixture proves the explicit local-store override. The developer
+	// workstation can legitimately be enrolled in the Ra router service, but a
+	// test that is constructing a disposable SIRSI_ROUTER_DB must not inherit
+	// that service endpoint and send its audit export to another process.
+	t.Setenv("SIRSI_ROUTER_URL", "")
+	t.Setenv("SIRSI_ROUTER_TOKEN", "")
 	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(t.TempDir(), "nested", "never-made", "router.db"))
 	f, err := Open(t.TempDir())
 	if err != nil {
