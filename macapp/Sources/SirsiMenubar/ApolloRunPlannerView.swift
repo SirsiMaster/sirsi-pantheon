@@ -31,8 +31,7 @@ struct ApolloRunPlannerView: View {
         let machine = preloadedCatalog?.machineOptions.first ?? preloadedCatalog?.machine
         let machineID = machine?.id ?? "this-mac"
         let engines = preloadedCatalog?.engines.filter { $0.machineID == nil || $0.machineID == machineID } ?? []
-        let estatesForMachine = Set(machine?.chipEstates ?? [])
-        let estates = preloadedCatalog?.estates.filter { estatesForMachine.isEmpty || estatesForMachine.contains($0.id) } ?? []
+        let estates = preloadedCatalog?.estateOptions(for: machineID) ?? []
         _selectedMachine = State(initialValue: machineID)
         _selectedEngine = State(initialValue: engines.first(where: { $0.state == "configured" })?.id ?? engines.first?.id ?? "")
         _selectedCores = State(initialValue: max(1, (machine?.cpuCores ?? 1) / 2))
@@ -444,8 +443,7 @@ struct ApolloRunPlannerView: View {
         return nil
     }
     private func estateOptions(_ catalog: ApolloCatalog) -> [ApolloChipEstate] {
-        let machineEstates = Set(selectedMachineDescriptor(catalog).chipEstates ?? [])
-        return catalog.estates.filter { machineEstates.isEmpty || machineEstates.contains($0.id) }
+        catalog.estateOptions(for: selectedMachine)
     }
     private func recipeCommand(_ catalog: ApolloCatalog) -> String {
         let estates = estateOptions(catalog)
@@ -750,13 +748,24 @@ extension ApolloCatalog {
         residentModelOptions(for: machineID).first { $0.id == engineID }
     }
 
+    // A selected Horus instance owns its estate details. Fall back only for a
+    // legacy catalog whose single top-level estate list predates per-machine
+    // records; never render this Mac's labels or availability for a peer with
+    // a typed estate receipt of its own.
+    func estateOptions(for machineID: String) -> [ApolloChipEstate] {
+        let selected = machineOptions.first(where: { $0.id == machineID }) ?? machine
+        if let estates = selected.estates, !estates.isEmpty { return estates }
+        let ids = Set(selected.chipEstates ?? [])
+        return estates.filter { ids.isEmpty || ids.contains($0.id) }
+    }
+
     // Used only when an installed CLI predates the source checkout running the
     // native visual walk. This preview has no route, credential, or telemetry
     // authority; the live planner always requires a typed CLI catalog.
     static let snapshotPreview = ApolloCatalog(
         machine: ApolloMachine(id: "this-mac", name: "This Mac", cpuCores: 12,
                                memoryBytes: 32 * 1_073_741_824,
-                               chipEstates: ["cpu", "gpu", "neural-engine"]),
+                               chipEstates: ["cpu", "gpu", "neural-engine"], estates: nil),
         machines: nil,
         engines: [ApolloEngineOption(id: "apollo-local", machineID: "this-mac",
                                      name: "Apollo local", provider: "Apollo",
@@ -772,7 +781,7 @@ extension ApolloCatalog {
         ]
     )
 }
-struct ApolloMachine: Decodable, Identifiable { let id: String; let name: String; let cpuCores: Int; let memoryBytes: Int64; let chipEstates: [String]?; enum CodingKeys: String, CodingKey { case id, name; case cpuCores = "cpu_cores"; case memoryBytes = "memory_bytes"; case chipEstates = "chip_estates" } }
+struct ApolloMachine: Decodable, Identifiable { let id: String; let name: String; let cpuCores: Int; let memoryBytes: Int64; let chipEstates: [String]?; let estates: [ApolloChipEstate]?; enum CodingKeys: String, CodingKey { case id, name, estates; case cpuCores = "cpu_cores"; case memoryBytes = "memory_bytes"; case chipEstates = "chip_estates" } }
 struct ApolloEngineOption: Decodable, Identifiable { let id: String; let machineID: String?; let name: String; let provider: String; let residentModel: String?; let endpoint: String?; let state: String; enum CodingKeys: String, CodingKey { case id, name, provider, endpoint, state; case machineID = "machine_id"; case residentModel = "resident_model" } }
 struct ApolloChipEstate: Decodable, Identifiable { let id: String; let name: String; let available: Bool; let description: String }
 struct ApolloPlan: Decodable {

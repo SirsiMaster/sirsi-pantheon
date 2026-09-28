@@ -6,7 +6,7 @@ func TestBuildPlanAcceptsConfiguredLocalEngineAndDetectedEstates(t *testing.T) {
 	catalog := Catalog{
 		Machine: Machine{ID: "this-mac", CPUCores: 10, MemoryBytes: 32 * gib},
 		Engines: []Engine{{ID: "apollo-local-sne", State: "configured", ResidentModel: "resident-model"}},
-		Estates: []ChipEstate{{ID: "cpu", Available: true}, {ID: "unified-memory", Available: true}, {ID: "gpu", Available: true}},
+		Estates: []ChipEstate{{ID: "cpu", Name: "CPU", Available: true}, {ID: "unified-memory", Name: "Unified memory", Available: true}, {ID: "gpu", Name: "GPU", Available: true}},
 	}
 	plan, err := BuildPlan(catalog, "apollo-local-sne", 6, 16*gib, 0, []string{"cpu", "gpu"})
 	if err != nil {
@@ -21,7 +21,7 @@ func TestBuildPlanRetainsUnqualifiedOrRejectsDuplicateEstate(t *testing.T) {
 	catalog := Catalog{
 		Machine: Machine{ID: "this-mac", CPUCores: 8, MemoryBytes: 16 * gib},
 		Engines: []Engine{{ID: "apollo-local-sne", State: "configured"}},
-		Estates: []ChipEstate{{ID: "cpu", Available: true}, {ID: "gpu", Available: false}},
+		Estates: []ChipEstate{{ID: "cpu", Name: "CPU", Available: true}, {ID: "gpu", Name: "GPU", Available: false}},
 	}
 	plan, err := BuildPlan(catalog, "apollo-local-sne", 4, 8*gib, 0, []string{"gpu"})
 	if err != nil {
@@ -42,7 +42,7 @@ func TestBuildPlanRejectsEstateOutsideSelectedMachineReceipt(t *testing.T) {
 	catalog := Catalog{
 		Machine: Machine{ID: "this-mac", Name: "This Mac", CPUCores: 8, MemoryBytes: 16 * gib, ChipEstates: []string{"cpu"}},
 		Engines: []Engine{{ID: "apollo-local-sne", State: "configured"}},
-		Estates: []ChipEstate{{ID: "cpu", Available: true}, {ID: "gpu", Available: false}},
+		Estates: []ChipEstate{{ID: "cpu", Name: "CPU", Available: true}, {ID: "gpu", Name: "GPU", Available: false}},
 	}
 	if _, err := BuildPlan(catalog, "apollo-local-sne", 4, 8*gib, 0, []string{"gpu"}); err == nil {
 		t.Fatal("BuildPlan() accepted an estate outside the selected machine receipt")
@@ -64,7 +64,7 @@ func TestBuildPlanForMachineRejectsAnUnmeasuredMachine(t *testing.T) {
 		Machine:  Machine{ID: "this-mac", CPUCores: 8, MemoryBytes: 16 * gib},
 		Machines: []Machine{{ID: "this-mac", CPUCores: 8, MemoryBytes: 16 * gib}},
 		Engines:  []Engine{{ID: "apollo-local-sne", State: "configured"}},
-		Estates:  []ChipEstate{{ID: "cpu", Available: true}},
+		Estates:  []ChipEstate{{ID: "cpu", Name: "CPU", Available: true}},
 	}
 	if _, err := BuildPlanForMachine(catalog, "peer-without-receipt", "apollo-local-sne", 4, 8*gib, 0, []string{"cpu"}); err == nil {
 		t.Fatal("BuildPlanForMachine() accepted an unmeasured machine")
@@ -76,10 +76,12 @@ func TestBuildPlanForMachineBindsRouteAndEstatesToSelectedReceipt(t *testing.T) 
 		Machine: Machine{ID: "this-mac", CPUCores: 8, MemoryBytes: 16 * gib, ChipEstates: []string{"cpu"}},
 		Machines: []Machine{
 			{ID: "this-mac", Name: "This Mac", CPUCores: 8, MemoryBytes: 16 * gib, ChipEstates: []string{"cpu"}},
-			{ID: "measured-peer", Name: "Measured peer", CPUCores: 12, MemoryBytes: 32 * gib, ChipEstates: []string{"gpu"}},
+			{ID: "measured-peer", Name: "Measured peer", CPUCores: 12, MemoryBytes: 32 * gib, ChipEstates: []string{"gpu"}, Estates: []ChipEstate{{ID: "gpu", Name: "Peer GPU", Available: true}}},
 		},
 		Engines: []Engine{{ID: "local", MachineID: "this-mac", State: "configured"}, {ID: "peer", MachineID: "measured-peer", State: "configured"}},
-		Estates: []ChipEstate{{ID: "cpu", Available: true}, {ID: "gpu", Available: true}},
+		// The catalog-level GPU is deliberately unavailable. The peer's own
+		// typed receipt must remain authoritative when it is selected.
+		Estates: []ChipEstate{{ID: "cpu", Name: "CPU", Available: true}, {ID: "gpu", Name: "Local GPU", Available: false}},
 	}
 	if _, err := BuildPlanForMachine(catalog, "measured-peer", "local", 4, 8*gib, 0, []string{"gpu"}); err == nil {
 		t.Fatal("BuildPlanForMachine() accepted a route bound to another machine")
@@ -89,5 +91,17 @@ func TestBuildPlanForMachineBindsRouteAndEstatesToSelectedReceipt(t *testing.T) 
 	}
 	if _, err := BuildPlanForMachine(catalog, "measured-peer", "peer", 4, 8*gib, 0, []string{"gpu"}); err != nil {
 		t.Fatalf("BuildPlanForMachine() rejected the selected receipt: %v", err)
+	}
+}
+
+func TestBuildPlanRejectsConflictingMachineEstateEncodings(t *testing.T) {
+	catalog := Catalog{
+		Machine:  Machine{ID: "this-mac", CPUCores: 8, MemoryBytes: 16 * gib},
+		Machines: []Machine{{ID: "peer", Name: "Peer", CPUCores: 8, MemoryBytes: 16 * gib, ChipEstates: []string{"gpu"}, Estates: []ChipEstate{{ID: "cpu", Name: "CPU", Available: true}}}},
+		Engines:  []Engine{{ID: "peer", MachineID: "peer", State: "configured"}},
+		Estates:  []ChipEstate{{ID: "cpu", Name: "CPU", Available: true}},
+	}
+	if _, err := BuildPlanForMachine(catalog, "peer", "peer", 4, 8*gib, 0, []string{"cpu"}); err == nil {
+		t.Fatal("BuildPlanForMachine() accepted conflicting machine estate receipts")
 	}
 }

@@ -40,6 +40,11 @@ type Machine struct {
 	// accepted only for the legacy single-machine projection, where Catalog's
 	// top-level estate list remains authoritative.
 	ChipEstates []string `json:"chip_estates,omitempty"`
+	// Estates is the machine-specific typed estate receipt. It lets a selected
+	// Horus instance describe its own CPU, GPU, memory and Neural Engine state
+	// instead of inheriting details observed on this device. ChipEstates remains
+	// for v2-compatible consumers and must agree when both are present.
+	Estates []ChipEstate `json:"estates,omitempty"`
 }
 
 type Engine struct {
@@ -103,7 +108,7 @@ func Collect(home string) (Catalog, error) {
 		{ID: "gpu", Name: "GPU", Available: hw.GPU.Type != seba.GPUNone && hw.GPU.Name != "", Description: nonEmpty(hw.GPU.Name, "No detected GPU")},
 		{ID: "neural-engine", Name: "Neural Engine", Available: hw.NeuralEngine, Description: ternary(hw.NeuralEngine, "Detected on this Mac", "Not detected")},
 	}
-	machine := Machine{ID: "this-mac", Name: machineName, CPUCores: hw.CPUCores, MemoryBytes: hw.TotalRAM, ChipEstates: estateIDs(estates)}
+	machine := Machine{ID: "this-mac", Name: machineName, CPUCores: hw.CPUCores, MemoryBytes: hw.TotalRAM, ChipEstates: estateIDs(estates), Estates: estates}
 	return Catalog{SchemaVersion: "apollo-catalog/v2", Machine: machine, Machines: []Machine{machine}, Engines: []Engine{engine}, Estates: estates}, nil
 }
 
@@ -149,15 +154,9 @@ func BuildPlanForMachine(c Catalog, machineID, engineID string, cores int, memor
 	if swapBytes < 0 || swapBytes > machine.MemoryBytes {
 		return Plan{}, fmt.Errorf("swap target must be between 0 and %s", seba.FormatBytes(machine.MemoryBytes))
 	}
-	allowedEstates := map[string]bool{}
-	for _, id := range machine.ChipEstates {
-		allowedEstates[id] = true
-	}
-	enumerated := map[string]ChipEstate{}
-	for _, estate := range c.Estates {
-		if len(allowedEstates) == 0 || allowedEstates[estate.ID] {
-			enumerated[estate.ID] = estate
-		}
+	enumerated, err := estatesForMachine(machine, c.Estates)
+	if err != nil {
+		return Plan{}, err
 	}
 	seen := map[string]bool{}
 	unavailable := make([]string, 0)
@@ -182,6 +181,58 @@ func BuildPlanForMachine(c Catalog, machineID, engineID string, cores int, memor
 		execution = "planned with requested estates awaiting SNE qualification; inference cannot start until SNE admits them"
 	}
 	return Plan{SchemaVersion: "apollo-plan/v1", MachineID: machine.ID, EngineID: engine.ID, ResidentModel: engine.ResidentModel, CPUCores: cores, MemoryBytes: memoryBytes, SwapBytes: swapBytes, ChipEstates: estates, UnavailableEstates: unavailable, Execution: execution}, nil
+}
+
+// estatesForMachine returns the exact chip-estate receipt for one machine.
+// New multi-Horus catalogs carry an owned estate record on Machine; the
+// top-level list remains a legacy local compatibility projection. When both
+// encodings occur they must describe the same set, otherwise planning fails
+// rather than borrowing an estate from another device.
+func estatesForMachine(machine Machine, fallback []ChipEstate) (map[string]ChipEstate, error) {
+	fromMachine := machine.Estates
+	if len(fromMachine) == 0 {
+		allowed := map[string]bool{}
+		for _, id := range machine.ChipEstates {
+			if strings.TrimSpace(id) == "" {
+				return nil, fmt.Errorf("the selected machine has an invalid chip estate identity")
+			}
+			if allowed[id] {
+				return nil, fmt.Errorf("the selected machine repeats chip estate %q", id)
+			}
+			allowed[id] = true
+		}
+		fromMachine = make([]ChipEstate, 0, len(fallback))
+		for _, estate := range fallback {
+			if len(allowed) == 0 || allowed[estate.ID] {
+				fromMachine = append(fromMachine, estate)
+			}
+		}
+	}
+
+	enumerated := make(map[string]ChipEstate, len(fromMachine))
+	for _, estate := range fromMachine {
+		if strings.TrimSpace(estate.ID) == "" || strings.TrimSpace(estate.Name) == "" {
+			return nil, fmt.Errorf("the selected machine has an incomplete chip estate receipt")
+		}
+		if _, duplicate := enumerated[estate.ID]; duplicate {
+			return nil, fmt.Errorf("the selected machine repeats chip estate %q", estate.ID)
+		}
+		enumerated[estate.ID] = estate
+	}
+	if len(enumerated) == 0 {
+		return nil, fmt.Errorf("the selected machine did not enumerate chip estates")
+	}
+	if len(machine.Estates) > 0 && len(machine.ChipEstates) > 0 {
+		if len(machine.ChipEstates) != len(enumerated) {
+			return nil, fmt.Errorf("the selected machine has conflicting chip estate receipts")
+		}
+		for _, id := range machine.ChipEstates {
+			if _, ok := enumerated[id]; !ok {
+				return nil, fmt.Errorf("the selected machine has conflicting chip estate receipts")
+			}
+		}
+	}
+	return enumerated, nil
 }
 
 func estateIDs(estates []ChipEstate) []string {

@@ -17,7 +17,7 @@
   },
   "capability_catalog": {
     "schema_version": "apollo-catalog/v2",
-    "machine": ["id", "name", "cpu_cores", "memory_bytes", "chip_estates"],
+    "machine": ["id", "name", "cpu_cores", "memory_bytes", "chip_estates", "estates"],
     "machines": "selectable typed capacity receipts; `machine` is retained only for v1-compatible consumers",
     "engine": ["id", "machine_id", "name", "provider", "resident_model", "endpoint", "state"],
     "chip_estate": ["id", "name", "available", "description"],
@@ -25,6 +25,7 @@
     "selection_rules": [
       "all limits are explicit typed quantities",
       "the selected machine must be present in `machines` with its own typed capacity receipt; Pantheon never borrows this Mac's limits for a named peer",
+      "a machine-specific estates array is authoritative when present; the legacy chip_estates id list must agree with it when both are present",
       "the engine must be configured and machine_id-bound to the selected machine",
       "every selected estate must be detected and enumerated by the selected machine receipt",
       "a selected estate that is not currently available remains explicit in unavailable_chip_estates; it is user-selectable but SNE must qualify and admit it before inference can start",

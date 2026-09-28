@@ -34,14 +34,14 @@ final class CoreContractsTests: XCTestCase {
         {
           "machine": {"id":"m1","name":"M1","cpu_cores":8,"memory_bytes":17179869184},
           "machines": [
-            {"id":"m1","name":"M1","cpu_cores":8,"memory_bytes":17179869184},
-            {"id":"m2","name":"M2","cpu_cores":12,"memory_bytes":34359738368}
+            {"id":"m1","name":"M1","cpu_cores":8,"memory_bytes":17179869184,"estates":[{"id":"cpu","name":"M1 CPU","available":true,"description":"8 cores"}]},
+            {"id":"m2","name":"M2","cpu_cores":12,"memory_bytes":34359738368,"estates":[{"id":"gpu","name":"M2 GPU","available":true,"description":"12 cores"}]}
           ],
           "engines": [
             {"id":"apollo-m1","machine_id":"m1","name":"Apollo MLX","provider":"SNE","resident_model":"Apollo Plain","state":"configured"},
             {"id":"apollo-m2","machine_id":"m2","name":"Apollo Flash","provider":"SNE","resident_model":"Apollo Flash","state":"configured"}
           ],
-          "chip_estates": []
+          "chip_estates": [{"id":"cpu","name":"Local CPU","available":false,"description":"local only"}]
         }
         """#.data(using: .utf8)!
 
@@ -53,6 +53,8 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertEqual(catalog.residentModelOptions(for: "m2").map(\.residentModel), ["Apollo Flash"])
         XCTAssertEqual(catalog.route(machineID: "m1", engineID: "apollo-m1")?.residentModel, "Apollo Plain")
         XCTAssertNil(catalog.route(machineID: "m1", engineID: "apollo-m2"))
+        XCTAssertEqual(catalog.estateOptions(for: "m1").map(\.name), ["M1 CPU"])
+        XCTAssertEqual(catalog.estateOptions(for: "m2").map(\.name), ["M2 GPU"])
     }
 
     func testApolloPlanPreservesRequestedUnqualifiedEstate() throws {
