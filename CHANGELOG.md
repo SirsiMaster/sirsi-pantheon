@@ -6,6 +6,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.31] — 2026-09-28 — Relay and Ma'at evidence correctness
+**Source release candidate.** The relay keeps half-open connection recovery
+fail-closed by retrying only before-send dial failures, while Ma'at parses
+declared GitHub pipeline evidence and distinguishes measured, partial, skipped,
+and unavailable coverage. Command-result JSON now reports `duration_ms` in
+milliseconds as documented. Commercial signing, notarization, and release
+publication remain separate credentialed operations.
+
+---
+
 ## [Unreleased] — relay re-dials half-open pooled connections (rs-30)
 **Fix.** The router relay's forward path now re-dials ONCE on a fresh
 connection when the first attempt provably never reached the Cloud Run service
