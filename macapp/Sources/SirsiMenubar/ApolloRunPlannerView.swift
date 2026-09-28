@@ -573,6 +573,16 @@ struct ApolloTelemetryView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(gold)
             }
+            if sessionMatchesPlan != true {
+                NavLink { MaatWorkspaceView(engine: engine) } label: {
+                    Label("Check Apollo readiness in Ma'at", systemImage: "checklist")
+                }
+                .buttonStyle(.bordered)
+                Text("Ma'at reweighs the actual local route, capacity, and evidence before recommending the next repair or admission step. It does not fabricate a running session.")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if let telemetryError {
                 Text(telemetryError).sirsiFont(.caption, weight: .semibold).foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
