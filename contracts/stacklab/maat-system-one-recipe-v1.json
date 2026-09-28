@@ -137,12 +137,12 @@
     },
     {
       "id": "maat-scheduler",
-      "source": ["internal/maat/schedule/reservation.go", "internal/maat/schedule/conflict.go", "internal/maat/schedule/plan.go"],
+      "source": ["cmd/sirsi/maatcapacity.go", "internal/maat/schedule/capacity.go", "internal/maat/schedule/reservation.go", "internal/maat/schedule/conflict.go", "internal/maat/schedule/plan.go"],
       "tests": ["internal/maat/schedule/reservation_test.go"],
       "inputs": ["router state", "activity probe", "time"],
-      "outputs": ["reservation grants/refusals/queues", "conflict and coverage reports"],
+      "outputs": ["explicit per-resource core and memory capacity/floor-share control plane", "reservation grants/refusals/queues", "conflict and coverage reports"],
       "writes": ["shared router reservation state", "decision journal via CLI"],
-      "upgrade_recipe": ["retain foreign-overlap refusal", "test lease expiry and collision paths", "record each user-visible outcome"]
+      "upgrade_recipe": ["retain foreign-overlap refusal", "keep unknown peer memory explicitly unconfigured; never guess a machine capacity", "test lease expiry and collision paths", "record each user-visible outcome"]
     },
     {
       "id": "maat-cli",

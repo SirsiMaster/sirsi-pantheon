@@ -117,6 +117,19 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 			t.Fatalf("Ma'at credential recipe omits canonical surface %q: %+v", path, credentials)
 		}
 	}
+	scheduler, ok := componentsByID["maat-scheduler"]
+	if !ok {
+		t.Fatal("Ma'at scheduler component is missing")
+	}
+	for _, path := range []string{"cmd/sirsi/maatcapacity.go", "internal/maat/schedule/capacity.go"} {
+		if !contains(scheduler.Source, path) {
+			t.Fatalf("Ma'at scheduler recipe omits capacity surface %q: %+v", path, scheduler.Source)
+		}
+	}
+	if !contains(scheduler.Outputs, "explicit per-resource core and memory capacity/floor-share control plane") ||
+		!contains(scheduler.UpgradeRecipe, "keep unknown peer memory explicitly unconfigured; never guess a machine capacity") {
+		t.Fatalf("Ma'at scheduler recipe omits explicit memory-capacity contract: %+v", scheduler)
+	}
 	maatCLI, ok := componentsByID["maat-cli"]
 	if !ok {
 		t.Fatal("Ma'at CLI component is missing")

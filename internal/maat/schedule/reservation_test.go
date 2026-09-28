@@ -376,6 +376,10 @@ func TestFloorShareMemGB_DefaultsToOneUntilConfigured(t *testing.T) {
 	l := fixedLedger("2026-09-26T10:00:00Z")
 	// No owner-provided defaultMemCapacityGB yet — every resource floors to 1,
 	// never 0 (an unbounded ask is the exact failure mode this closes).
+	memoryBefore, err := l.MemoryCapacityGB("m1")
+	if err != nil || memoryBefore != 0 {
+		t.Fatalf("want unconfigured memory capacity 0, got %d %v", memoryBefore, err)
+	}
 	floorM1, err := l.FloorShareMemGB("m1")
 	if err != nil || floorM1 != 1 {
 		t.Fatalf("want unconfigured mem floor 1, got %d %v", floorM1, err)
@@ -383,6 +387,10 @@ func TestFloorShareMemGB_DefaultsToOneUntilConfigured(t *testing.T) {
 
 	if err = l.SetCapacityMemGB("m1", 32); err != nil {
 		t.Fatal(err)
+	}
+	memory, err := l.MemoryCapacityGB("m1")
+	if err != nil || memory != 32 {
+		t.Fatalf("want explicit memory capacity 32 GiB, got %d %v", memory, err)
 	}
 	floorAfter, err := l.FloorShareMemGB("m1")
 	if err != nil || floorAfter != 8 {
