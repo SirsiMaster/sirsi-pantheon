@@ -136,6 +136,24 @@ type maatSystemOneEscalation struct {
 	Reason string `json:"reason"`
 }
 
+type maatSystemOneFloorCheck struct {
+	Name   string `json:"name"`
+	Passed bool   `json:"passed"`
+	Detail string `json:"detail"`
+}
+
+type maatSystemOneFloor struct {
+	Passed bool                      `json:"passed"`
+	Checks []maatSystemOneFloorCheck `json:"checks"`
+}
+
+type maatSystemOneModel struct {
+	Provider  string `json:"provider"`
+	Version   string `json:"version"`
+	Local     bool   `json:"local"`
+	LatencyMS int    `json:"latency_ms"`
+}
+
 type maatSystemOneFinding struct {
 	ID       string `json:"id"`
 	Severity string `json:"severity"`
@@ -153,6 +171,8 @@ type maatSystemOneVerdict struct {
 	FeatherWeight int                      `json:"feather_weight"`
 	Subject       maatSystemOneSubject     `json:"subject"`
 	Escalation    *maatSystemOneEscalation `json:"escalation"`
+	Floor         maatSystemOneFloor       `json:"floor"`
+	Model         maatSystemOneModel       `json:"model"`
 	Findings      []maatSystemOneFinding   `json:"findings"`
 }
 

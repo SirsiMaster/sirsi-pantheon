@@ -117,6 +117,8 @@ func TestMaatView_ProjectsSystemOneEvidence(t *testing.T) {
 		"d.system_one",
 		"screen.feather_weight",
 		"screen.subject.head_sha",
+		"screen.model.provider",
+		"screen.floor.checks",
 		"screen.escalation.reason",
 		"screen.findings",
 		"finding.fix_hint",

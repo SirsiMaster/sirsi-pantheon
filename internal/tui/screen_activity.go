@@ -292,6 +292,27 @@ func (s *activityScreen) maatView(height int, caps Capabilities) []string {
 		}
 		if c.SystemOne != nil {
 			tail = append(tail, "  "+Paint("System One: ", TokDim, caps)+fmt.Sprintf("%s · %.0f%% confidence · feather %d/100", c.SystemOne.Gate, c.SystemOne.Confidence*100, c.SystemOne.FeatherWeight))
+			modelScope := "external"
+			if c.SystemOne.Model.Local {
+				modelScope = "local"
+			}
+			tail = append(tail, "  "+Paint("screen model: ", TokDim, caps)+fmt.Sprintf("%s %s · %s · %dms", c.SystemOne.Model.Provider, c.SystemOne.Model.Version, modelScope, c.SystemOne.Model.LatencyMS))
+			floorState := "failed"
+			if c.SystemOne.Floor.Passed {
+				floorState = "passed"
+			}
+			tail = append(tail, "  "+Paint("deterministic floor: ", TokDim, caps)+floorState)
+			for _, check := range c.SystemOne.Floor.Checks {
+				state := "failed"
+				if check.Passed {
+					state = "passed"
+				}
+				line := "  " + Paint("floor check ["+check.Name+"]: ", TokDim, caps) + state
+				if check.Detail != "" {
+					line += " · " + check.Detail
+				}
+				tail = append(tail, line)
+			}
 			if c.SystemOne.Escalation != nil && c.SystemOne.Escalation.Reason != "" {
 				tail = append(tail, "  "+Paint("required review: ", TokDim, caps)+c.SystemOne.Escalation.Reason)
 			}

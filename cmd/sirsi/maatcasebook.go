@@ -63,6 +63,15 @@ resolved to narrow the view.`,
 				fmt.Printf("          next step: %s · %s\n", c.NextAction.Title, c.NextAction.Detail)
 			}
 			if c.SystemOne != nil {
+				fmt.Printf("          screen model: %s %s · %s · %dms\n", c.SystemOne.Model.Provider, c.SystemOne.Model.Version, localModelLabel(c.SystemOne.Model.Local), c.SystemOne.Model.LatencyMS)
+				fmt.Printf("          deterministic floor: %s\n", floorLabel(c.SystemOne.Floor.Passed))
+				for _, check := range c.SystemOne.Floor.Checks {
+					fmt.Printf("          floor check [%s]: %s", check.Name, floorLabel(check.Passed))
+					if check.Detail != "" {
+						fmt.Printf(" · %s", check.Detail)
+					}
+					fmt.Println()
+				}
 				for _, finding := range c.SystemOne.Findings {
 					fmt.Printf("          finding [%s · %s]: %s\n", finding.Severity, finding.Category, finding.Claim)
 					if finding.FixHint != "" {
@@ -79,6 +88,20 @@ resolved to narrow the view.`,
 		}
 		return nil
 	},
+}
+
+func floorLabel(passed bool) string {
+	if passed {
+		return "passed"
+	}
+	return "failed"
+}
+
+func localModelLabel(local bool) string {
+	if local {
+		return "local"
+	}
+	return "external"
 }
 
 func init() {

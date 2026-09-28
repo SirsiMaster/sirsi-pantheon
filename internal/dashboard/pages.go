@@ -439,7 +439,12 @@ function viewMaat(){
    if(d.system_one){
     const screen=d.system_one, confidence=Math.round((screen.confidence||0)*100);
     bits.push('system one: '+(screen.gate||'unknown')+' · '+confidence+'% confidence · feather '+(screen.feather_weight??'unknown')+'/100');
-    if(screen.subject)bits.push('screen subject: '+(screen.subject.kind||'unknown')+' '+(screen.subject.ref||'unknown')+' · '+(screen.subject.head_sha||'unknown'));
+   if(screen.subject)bits.push('screen subject: '+(screen.subject.kind||'unknown')+' '+(screen.subject.ref||'unknown')+' · '+(screen.subject.head_sha||'unknown'));
+    if(screen.model)bits.push('screen model: '+(screen.model.provider||'unknown')+' '+(screen.model.version||'unknown')+' · '+(screen.model.local ? 'local' : 'external')+' · '+(screen.model.latency_ms??'unknown')+'ms');
+    if(screen.floor){
+     bits.push('deterministic floor: '+(screen.floor.passed?'passed':'failed'));
+     if(Array.isArray(screen.floor.checks))screen.floor.checks.forEach(function(check){bits.push('floor check: '+(check.name||'unnamed')+' · '+(check.passed?'passed':'failed')+(check.detail?' · '+check.detail:''));});
+    }
     if(screen.escalation&&screen.escalation.reason)bits.push('required review: '+screen.escalation.reason);
     if(Array.isArray(screen.findings))screen.findings.forEach(function(finding){
      bits.push('finding: '+(finding.severity||'information')+' · '+(finding.category||'finding')+' · '+(finding.claim||'no claim recorded'));

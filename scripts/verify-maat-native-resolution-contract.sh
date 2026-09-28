@@ -47,6 +47,18 @@ for target in "$casebookcli" "$tui" "$dashboard"; do
 	}
 done
 
+for target in "$casebookcli" "$tui" "$dashboard"; do
+	/usr/bin/grep -Fq 'deterministic floor' "$target" || {
+		echo "Ma'at System One floor projection missing: $target" >&2
+		exit 1
+	}
+done
+
+/usr/bin/grep -Fq 'Screen model' "$casebook" || {
+	echo "native Ma'at System One model provenance missing" >&2
+	exit 1
+}
+
 for needle in \
   'confirmFix' \
   'Apply this system repair?' \

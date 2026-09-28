@@ -1002,6 +1002,8 @@ private struct MaatCaseDetailView: View {
 					if let systemOne = entry.systemOne {
 						detailSection("System One gate", "\(systemOne.gate.capitalized) · \(Int(systemOne.confidence * 100))% confidence · feather \(systemOne.featherWeight)/100")
 						detailSection("Screen subject", "\(systemOne.subject.kind) \(systemOne.subject.ref) · \(systemOne.subject.headSHA)")
+						detailSection("Screen model", systemOne.model.detail)
+						systemOneFloor(systemOne.floor)
 						systemOneFindings(systemOne.findings)
 						if let escalation = systemOne.escalation {
 							detailSection("Required review", escalation.reason)
@@ -1207,6 +1209,33 @@ private struct MaatCaseDetailView: View {
         default: return .secondary
         }
     }
+
+    @ViewBuilder private func systemOneFloor(_ floor: MaatSystemOneFloor) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("Deterministic floor")
+                .sirsiFont(.caption, weight: .bold)
+                .foregroundStyle(.secondary)
+            Label(floor.passed ? "All required floor checks passed" : "One or more required floor checks failed", systemImage: floor.passed ? "checkmark.seal.fill" : "xmark.seal.fill")
+                .sirsiFont(.subheadline, weight: .semibold)
+                .foregroundStyle(floor.passed ? .green : .red)
+            ForEach(Array(floor.checks.enumerated()), id: \.offset) { _, check in
+                VStack(alignment: .leading, spacing: 2) {
+                    Label(check.name, systemImage: check.passed ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                        .sirsiFont(.caption, weight: .semibold)
+                        .foregroundStyle(check.passed ? .green : .red)
+                    if !check.detail.isEmpty {
+                        Text(check.detail)
+                            .sirsiFont(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+        .padding(11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.045)))
+    }
 }
 
 struct MaatCasebookProjection: Decodable {
@@ -1319,10 +1348,11 @@ struct MaatSystemOneVerdict: Decodable {
     let subject: MaatSystemOneSubject
     let floor: MaatSystemOneFloor
     let escalation: MaatSystemOneEscalation?
+    let model: MaatSystemOneModel
     let findings: [MaatSystemOneFinding]
 
     enum CodingKeys: String, CodingKey {
-        case featherWeight = "feather_weight", gate, confidence, subject, floor, escalation, findings
+        case featherWeight = "feather_weight", gate, confidence, subject, floor, escalation, model, findings
     }
 
     init(from decoder: Decoder) throws {
@@ -1333,6 +1363,7 @@ struct MaatSystemOneVerdict: Decodable {
         subject = try values.decode(MaatSystemOneSubject.self, forKey: .subject)
         floor = try values.decode(MaatSystemOneFloor.self, forKey: .floor)
         escalation = try values.decodeIfPresent(MaatSystemOneEscalation.self, forKey: .escalation)
+        model = try values.decode(MaatSystemOneModel.self, forKey: .model)
         findings = try values.decodeIfPresent([MaatSystemOneFinding].self, forKey: .findings) ?? []
     }
 }
@@ -1388,6 +1419,31 @@ struct MaatSystemOneFloor: Decodable {
 struct MaatSystemOneFloorCheck: Decodable {
     let name: String
     let passed: Bool
+    let detail: String
+
+    enum CodingKeys: String, CodingKey { case name, passed, detail }
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        name = try values.decode(String.self, forKey: .name)
+        passed = try values.decode(Bool.self, forKey: .passed)
+        detail = try values.decodeIfPresent(String.self, forKey: .detail) ?? ""
+    }
+}
+
+struct MaatSystemOneModel: Decodable {
+    let provider: String
+    let version: String
+    let local: Bool
+    let latencyMS: Int
+
+    enum CodingKeys: String, CodingKey {
+        case provider, version, local
+        case latencyMS = "latency_ms"
+    }
+
+    var detail: String {
+        "\(provider) \(version) · \(local ? "local" : "external") · \(latencyMS)ms"
+    }
 }
 
 struct MaatSystemOneEscalation: Decodable {
