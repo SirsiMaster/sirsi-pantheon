@@ -171,12 +171,12 @@ struct StackLabView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Apollo run planning", systemImage: "cpu")
                 .sirsiFont(.headline)
-            Text("Preview the resident local inference route, detected machine estates, and explicit CPU, memory, and swap envelope. Stack Lab validates a plan first; Apollo/SNE separately admits execution against live pressure.")
+            Text("Choose a resident LLM and inference engine on a measured machine, set explicit CPU, memory, swap, and chip-estate requests, then review one run sheet before Apollo receives it. Stack Lab validates the plan first; Apollo/SNE separately admits execution against live pressure.")
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             NavLink { ApolloRunPlannerView(engine: engine) } label: {
-                Label("Plan an Apollo run", systemImage: "slider.horizontal.3")
+                Label("Choose model, machine & resources", systemImage: "slider.horizontal.3")
             }
             .buttonStyle(.borderedProminent)
             .tint(gold)

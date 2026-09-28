@@ -51,6 +51,8 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertEqual(catalog.residentModelOptions(for: "m1").map(\.residentModel), ["Apollo Plain"])
         XCTAssertEqual(catalog.residentModelOptions(for: "m2").map(\.id), ["apollo-m2"])
         XCTAssertEqual(catalog.residentModelOptions(for: "m2").map(\.residentModel), ["Apollo Flash"])
+        XCTAssertEqual(catalog.route(machineID: "m1", engineID: "apollo-m1")?.residentModel, "Apollo Plain")
+        XCTAssertNil(catalog.route(machineID: "m1", engineID: "apollo-m2"))
     }
 
     func testApolloPlanPreservesRequestedUnqualifiedEstate() throws {

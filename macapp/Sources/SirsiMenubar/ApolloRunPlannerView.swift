@@ -136,7 +136,7 @@ struct ApolloRunPlannerView: View {
                 .labelsHidden()
                 .pickerStyle(.menu)
             }
-            if let engine = engineOptions(catalog).first(where: { $0.id == selectedEngine }) {
+            if let engine = selectedRoute(catalog) {
                 Text(engine.state == "configured" ? engineDetail(engine) : "This route has no configured resident model on the selected machine. Configure its SNE endpoint, then refresh this screen.")
                     .sirsiFont(.subheadline)
                     .foregroundStyle(engine.state == "configured" ? Color.secondary : Color.orange)
@@ -243,7 +243,7 @@ struct ApolloRunPlannerView: View {
 
     private func planAction(_ catalog: ApolloCatalog) -> some View {
         VStack(alignment: .leading, spacing: 9) {
-            SnapshotActionButton(disabled: planning || selectedEstates.isEmpty || selectedEngine.isEmpty) {
+            SnapshotActionButton(disabled: planning || planBlocker(catalog) != nil) {
                 Task { await createPlan(catalog) }
             } label: {
                 Label(planning ? "Running selected recipe…" : "Run recipe & open Apollo", systemImage: "play.circle")
@@ -252,9 +252,10 @@ struct ApolloRunPlannerView: View {
                 .sirsiFont(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            if selectedEstates.isEmpty {
-                Text("Choose at least one detected chip estate to continue.")
+            if let blocker = planBlocker(catalog) {
+                Text(blocker)
                     .sirsiFont(.caption, weight: .semibold).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             if let planError {
                 Text(planError).sirsiFont(.caption, weight: .semibold).foregroundStyle(.red)
@@ -268,7 +269,7 @@ struct ApolloRunPlannerView: View {
     // place before Pantheon calls the typed plan command.
     private func selectionPreview(_ catalog: ApolloCatalog) -> some View {
         let machine = selectedMachineDescriptor(catalog)
-        let route = engineOptions(catalog).first(where: { $0.id == selectedEngine })
+        let route = selectedRoute(catalog)
         let selectedNames = estateOptions(catalog)
             .filter { selectedEstates.contains($0.id) }
             .map(\.name)
@@ -276,7 +277,7 @@ struct ApolloRunPlannerView: View {
         return VStack(alignment: .leading, spacing: 9) {
             Label("Selection at a glance", systemImage: "list.bullet.rectangle")
                 .sirsiFont(.headline)
-            previewLine("Model", route?.residentModel?.isEmpty == false ? (route?.residentModel ?? "") : "No configured resident model")
+            previewLine("Resident LLM", route?.residentModel?.isEmpty == false ? (route?.residentModel ?? "") : "Choose a configured resident model")
             previewLine("Engine", route.map { "\($0.name) · \($0.provider)" } ?? "Choose an inference engine")
             previewLine("Machine", "\(machine.name) · \(machine.cpuCores) cores · \(byteLabel(machine.memoryBytes))")
             previewLine("Requested", "\(selectedCores) cores · \(selectedMemoryGiB) GiB memory · \(selectedSwapGiB) GiB swap")
@@ -423,6 +424,24 @@ struct ApolloRunPlannerView: View {
     }
     private func engineOptions(_ catalog: ApolloCatalog) -> [ApolloEngineOption] {
         catalog.residentModelOptions(for: selectedMachine)
+    }
+    private func selectedRoute(_ catalog: ApolloCatalog) -> ApolloEngineOption? {
+        catalog.route(machineID: selectedMachine, engineID: selectedEngine)
+    }
+    private func planBlocker(_ catalog: ApolloCatalog) -> String? {
+        guard !selectedEstates.isEmpty else {
+            return "Choose at least one detected chip estate to continue."
+        }
+        guard let route = selectedRoute(catalog) else {
+            return "Choose an Apollo inference route for the selected machine."
+        }
+        guard route.state == "configured" else {
+            return "This route is visible but not configured. Choose a configured resident model route, then run the recipe."
+        }
+        guard route.residentModel?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
+            return "This route has no declared resident LLM. Refresh after SNE publishes its configured model."
+        }
+        return nil
     }
     private func estateOptions(_ catalog: ApolloCatalog) -> [ApolloChipEstate] {
         let machineEstates = Set(selectedMachineDescriptor(catalog).chipEstates ?? [])
@@ -721,6 +740,13 @@ extension ApolloCatalog {
     // paired with a different engine or machine by the UI.
     func residentModelOptions(for machineID: String) -> [ApolloEngineOption] {
         engines.filter { $0.machineID == nil || $0.machineID == machineID }
+    }
+
+    // A route is the indivisible resident-model/engine/machine choice. Keeping
+    // this lookup in the typed catalog prevents a stale UI selection from
+    // presenting another machine's engine as executable on the current one.
+    func route(machineID: String, engineID: String) -> ApolloEngineOption? {
+        residentModelOptions(for: machineID).first { $0.id == engineID }
     }
 
     // Used only when an installed CLI predates the source checkout running the

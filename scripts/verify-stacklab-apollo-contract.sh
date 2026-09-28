@@ -31,7 +31,7 @@ grep -Fq 'estateOptions' "$surface"
 grep -Fq 'typed capacity receipt' "$surface"
 grep -Fq 'apollo", "telemetry"' "$surface"
 grep -Fq 'apollo-session-telemetry/v1' "$root/internal/apollo/telemetry.go"
-grep -Fq 'Plan an Apollo run' "$stacklab"
+grep -Fq 'Choose model, machine & resources' "$stacklab"
 
 if grep -Eq 'exec\.Command|Process\(' "$catalog" "$command" "$surface"; then
   echo "Apollo planning surface must not introduce execution authority" >&2
