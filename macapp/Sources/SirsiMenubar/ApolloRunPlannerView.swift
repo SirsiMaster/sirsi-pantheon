@@ -211,7 +211,7 @@ struct ApolloRunPlannerView: View {
         VStack(alignment: .leading, spacing: 9) {
             Label("Run plan is ready", systemImage: "checkmark.seal.fill")
                 .sirsiFont(.headline).foregroundStyle(.green)
-            Text("\(plan.cpuCores) cores · \(byteLabel(plan.memoryBytes)) memory · \(byteLabel(plan.swapBytes)) swap ceiling")
+            Text("\(plan.machineID) · \(plan.engineID) · \(plan.cpuCores) cores · \(byteLabel(plan.memoryBytes)) memory · \(byteLabel(plan.swapBytes)) swap ceiling")
                 .sirsiFont(.subheadline).foregroundStyle(.secondary)
             Text("SNE must still admit execution against current system pressure. Opening Apollo now shows live telemetry when a session is active.")
                 .sirsiFont(.caption).foregroundStyle(.secondary)
@@ -337,14 +337,21 @@ struct ApolloTelemetryView: View {
 
     private var sessionSummary: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(session?.state == "active" ? "Apollo session is active" : (engine.localLLM?.healthy == true ? "Apollo local route is online" : "No active Apollo session"))
+            Text(sessionTitle)
                 .sirsiFont(.title3, weight: .bold)
-                .foregroundStyle(session?.state == "active" || engine.localLLM?.healthy == true ? .green : .orange)
-            Text(session?.state == "active" ? "SNE published a bounded session sample for this screen." : (engine.localLLM?.healthy == true ? "The local SNE conduit is reachable. Metrics below update when Apollo publishes a session sample." : "The selected plan is saved in this screen only. Ask SNE to admit a run, then return here for live session telemetry."))
+                .foregroundStyle(sessionMatchesPlan == true || (session?.state != "active" && engine.localLLM?.healthy == true) ? .green : .orange)
+            Text(sessionDetail)
                 .sirsiFont(.subheadline).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Button("Refresh telemetry") { Task { await refresh() } }
                 .buttonStyle(.bordered).tint(gold)
+            if sessionMatchesPlan == false {
+                NavLink { ApolloRunPlannerView(engine: engine) } label: {
+                    Label("Return to selected Apollo plan", systemImage: "slider.horizontal.3")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(gold)
+            }
             if let telemetryError {
                 Text(telemetryError).sirsiFont(.caption, weight: .semibold).foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
@@ -394,16 +401,16 @@ struct ApolloTelemetryView: View {
     }
 
     private var unavailable: String { "Awaiting session" }
-    private var tokensTelemetry: String { metric(session?.telemetry?.tokensPerSec, suffix: " tok/s", precision: 1) }
+    private var tokensTelemetry: String { metric(selectedTelemetry?.tokensPerSec, suffix: " tok/s", precision: 1) }
     private var bandwidthTelemetry: String {
-        guard let bytes = session?.telemetry?.bandwidthBps else { return unavailable }
+        guard let bytes = selectedTelemetry?.bandwidthBps else { return unavailable }
         return "\(byteLabel(bytes))/s"
     }
-    private var networkTelemetry: String { metric(session?.telemetry?.networkPct, suffix: "%", precision: 1) }
-    private var gpuTelemetry: String { metric(session?.telemetry?.gpuResidency, suffix: "%", precision: 1) }
-    private var cpuTelemetry: String { metric(session?.telemetry?.cpuResidency, suffix: "%", precision: 1) }
+    private var networkTelemetry: String { metric(selectedTelemetry?.networkPct, suffix: "%", precision: 1) }
+    private var gpuTelemetry: String { metric(selectedTelemetry?.gpuResidency, suffix: "%", precision: 1) }
+    private var cpuTelemetry: String { metric(selectedTelemetry?.cpuResidency, suffix: "%", precision: 1) }
     private var memoryTelemetry: String {
-        if let bytes = session?.telemetry?.memoryBytes { return byteLabel(bytes) + " session" }
+        if let bytes = selectedTelemetry?.memoryBytes { return byteLabel(bytes) + " session" }
         guard let vitals = engine.vitals else { return unavailable }
         return "\(byteLabel(vitals.usedBytes)) used · \(byteLabel(vitals.swapUsedBytes)) swap"
     }
@@ -420,7 +427,7 @@ struct ApolloTelemetryView: View {
         return String(format: "%.*f%@", precision, value, suffix)
     }
     private func estateTelemetry(_ id: String) -> String {
-        guard let estate = session?.telemetry?.estates.first(where: { $0.id == id }) else { return unavailable }
+        guard let estate = selectedTelemetry?.estates.first(where: { $0.id == id }) else { return unavailable }
         var parts: [String] = []
         if let utilization = estate.utilizationPct { parts.append(String(format: "%.1f%% util", utilization)) }
         if let residency = estate.residencyPct { parts.append(String(format: "%.1f%% resident", residency)) }
@@ -442,6 +449,30 @@ struct ApolloTelemetryView: View {
             telemetryError = "Pantheon could not decode an Apollo session sample. It was not treated as active telemetry."
         }
     }
+
+    private var sessionMatchesPlan: Bool? {
+        guard session?.state == "active", let telemetry = session?.telemetry else { return nil }
+        return telemetry.engineID == plan.engineID
+    }
+
+    private var selectedTelemetry: ApolloSessionTelemetry? {
+        sessionMatchesPlan == true ? session?.telemetry : nil
+    }
+
+    private var sessionTitle: String {
+        if sessionMatchesPlan == true { return "Apollo session is active" }
+        if sessionMatchesPlan == false { return "A different Apollo session is active" }
+        return engine.localLLM?.healthy == true ? "Apollo local route is online" : "No active Apollo session"
+    }
+
+    private var sessionDetail: String {
+        if sessionMatchesPlan == true { return "SNE published a bounded session sample for the engine selected in this plan." }
+        if let observed = session?.telemetry?.engineID, sessionMatchesPlan == false {
+            return "The active SNE sample belongs to \(observed), not this plan’s \(plan.engineID). Its metrics are withheld; return to the plan to choose the matching route or wait for SNE to publish the selected session."
+        }
+        if engine.localLLM?.healthy == true { return "The local SNE conduit is reachable. Metrics below update when SNE publishes a sample for this selected engine." }
+        return "The selected plan is ready for SNE admission. Return to the plan to recheck its resource envelope, then refresh after SNE publishes a selected-engine session sample."
+    }
 }
 
 private struct ApolloCatalog: Decodable {
@@ -454,7 +485,43 @@ private struct ApolloCatalog: Decodable {
 private struct ApolloMachine: Decodable, Identifiable { let id: String; let name: String; let cpuCores: Int; let memoryBytes: Int64; let chipEstates: [String]?; enum CodingKeys: String, CodingKey { case id, name; case cpuCores = "cpu_cores"; case memoryBytes = "memory_bytes"; case chipEstates = "chip_estates" } }
 private struct ApolloEngineOption: Decodable, Identifiable { let id: String; let machineID: String?; let name: String; let provider: String; let residentModel: String?; let endpoint: String?; let state: String; enum CodingKeys: String, CodingKey { case id, name, provider, endpoint, state; case machineID = "machine_id"; case residentModel = "resident_model" } }
 private struct ApolloChipEstate: Decodable, Identifiable { let id: String; let name: String; let available: Bool; let description: String }
-struct ApolloPlan: Decodable { let cpuCores: Int; let memoryBytes: Int64; let swapBytes: Int64; let chipEstates: [String]; enum CodingKeys: String, CodingKey { case cpuCores = "cpu_cores"; case memoryBytes = "memory_bytes"; case swapBytes = "swap_bytes"; case chipEstates = "chip_estates" } }
+struct ApolloPlan: Decodable {
+    let machineID: String
+    let engineID: String
+    let cpuCores: Int
+    let memoryBytes: Int64
+    let swapBytes: Int64
+    let chipEstates: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case machineID = "machine_id"
+        case engineID = "engine_id"
+        case cpuCores = "cpu_cores"
+        case memoryBytes = "memory_bytes"
+        case swapBytes = "swap_bytes"
+        case chipEstates = "chip_estates"
+    }
+}
 private struct ApolloTelemetryRead: Decodable { let state: String; let telemetry: ApolloSessionTelemetry?; let reason: String? }
-private struct ApolloSessionTelemetry: Decodable { let tokensPerSec: Double?; let bandwidthBps: Int64?; let memoryBytes: Int64?; let networkPct: Double?; let cpuResidency: Double?; let gpuResidency: Double?; let estates: [ApolloEstateTelemetry]; enum CodingKeys: String, CodingKey { case tokensPerSec = "tokens_per_second"; case bandwidthBps = "bandwidth_bytes_per_second"; case memoryBytes = "memory_bytes"; case networkPct = "network_saturation_percent"; case cpuResidency = "cpu_residency_percent"; case gpuResidency = "gpu_residency_percent"; case estates = "chip_estates" } }
+private struct ApolloSessionTelemetry: Decodable {
+    let engineID: String
+    let tokensPerSec: Double?
+    let bandwidthBps: Int64?
+    let memoryBytes: Int64?
+    let networkPct: Double?
+    let cpuResidency: Double?
+    let gpuResidency: Double?
+    let estates: [ApolloEstateTelemetry]
+
+    enum CodingKeys: String, CodingKey {
+        case engineID = "engine_id"
+        case tokensPerSec = "tokens_per_second"
+        case bandwidthBps = "bandwidth_bytes_per_second"
+        case memoryBytes = "memory_bytes"
+        case networkPct = "network_saturation_percent"
+        case cpuResidency = "cpu_residency_percent"
+        case gpuResidency = "gpu_residency_percent"
+        case estates = "chip_estates"
+    }
+}
 private struct ApolloEstateTelemetry: Decodable { let id: String; let residencyPct: Double?; let memoryBytes: Int64?; let utilizationPct: Double?; enum CodingKeys: String, CodingKey { case id; case residencyPct = "residency_percent"; case memoryBytes = "memory_bytes"; case utilizationPct = "utilization_percent" } }
