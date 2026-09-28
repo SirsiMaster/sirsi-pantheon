@@ -86,6 +86,12 @@ jobs:
           security unlock-keychain -p "$KEYCHAIN_PWD" build.keychain
           security import certificate.p12 -k build.keychain -P "$MACOS_CERTIFICATE_PWD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PWD" build.keychain
+          # `security find-identity build.keychain` can inspect the imported
+          # certificate explicitly, but codesign searches the user's keychain
+          # list. Keep the temporary keychain visible to every signing command.
+          security list-keychains -d user -s build.keychain \
+            "$HOME/Library/Keychains/login.keychain-db" \
+            /Library/Keychains/System.keychain
           rm certificate.p12
 
       - name: Resolve imported Developer ID identity
