@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -58,9 +59,7 @@ func TestFetchNewestRelease_MalformedJSON(t *testing.T) {
 func TestCheck_DevVersionNeverUpdates(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" || bytesContains(r.URL.Path, "releases") {
-			_ = json.NewEncoder(w).Encode([]Release{
-				{TagName: "v9.9.9", Assets: []Asset{{Name: "sirsi-pantheon_9.9.9_darwin_arm64.tar.gz", BrowserDownloadURL: "https://example/x"}}},
-			})
+			_ = json.NewEncoder(w).Encode([]Release{commercialRelease("v9.9.9")})
 			return
 		}
 		_ = json.NewEncoder(w).Encode(AdvisoryFile{})
@@ -73,6 +72,54 @@ func TestCheck_DevVersionNeverUpdates(t *testing.T) {
 	}
 	if res.UpdateAvailable {
 		t.Fatal("a 'dev' build must never report UpdateAvailable=true")
+	}
+}
+
+func TestFetchNewestRelease_SkipsAssetlessHigherTag(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode([]Release{
+			{TagName: "v9.9.9"},
+			commercialRelease("v9.9.8"),
+		})
+	}))
+	defer srv.Close()
+	release, err := clientFor(srv.URL).fetchNewestRelease()
+	if err != nil {
+		t.Fatalf("fetch newest complete release: %v", err)
+	}
+	if release.TagName != "v9.9.8" {
+		t.Fatalf("release = %s, want highest complete v9.9.8", release.TagName)
+	}
+}
+
+func TestFetchNewestRelease_RejectsPartialDuplicateAndMalformedPayloads(t *testing.T) {
+	valid := commercialRelease("v1.0.0")
+	duplicate := commercialRelease("v2.0.0")
+	duplicate.Assets = append(duplicate.Assets, duplicate.Assets[0])
+	partial := commercialRelease("v3.0.0")
+	partial.Assets = partial.Assets[:1]
+	malformed := commercialRelease("v4.0.0")
+	malformed.Assets[0].Size = 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode([]Release{malformed, partial, duplicate, valid})
+	}))
+	defer srv.Close()
+	release, err := clientFor(srv.URL).fetchNewestRelease()
+	if err != nil {
+		t.Fatalf("fetch newest complete release: %v", err)
+	}
+	if release.TagName != "v1.0.0" {
+		t.Fatalf("release = %s, want only complete v1.0.0", release.TagName)
+	}
+}
+
+func TestFetchNewestRelease_ReportsNoCompleteCommercialRelease(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode([]Release{{TagName: "v9.9.9"}})
+	}))
+	defer srv.Close()
+	if _, err := clientFor(srv.URL).fetchNewestRelease(); !errors.Is(err, ErrNoCompleteCommercialRelease) {
+		t.Fatalf("error = %v, want ErrNoCompleteCommercialRelease", err)
 	}
 }
 

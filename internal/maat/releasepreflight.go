@@ -96,6 +96,17 @@ var releaseContractRequirements = []releaseContractRequirement{
 		Hint:    "Restore the typed cask render/verify command used by the tagged release workflow.",
 	},
 	{
+		ID: "commercial-update-payload-eligibility", Path: "internal/updater/updater.go",
+		Needles: []string{"ErrNoCompleteCommercialRelease", "IsCompleteCommercialRelease", "assetless or partial record"},
+		Hint:    "Restore complete commercial-payload eligibility so a bare or partial GitHub release record cannot become an update.",
+	},
+	{
+		ID: "unified-update-install-handoff", Path: "cmd/sirsi/update.go",
+		Needles:   []string{"Commercial Pantheon updates ship one app payload", "unified app installer", "complete arm64 Pantheon app payload", "installed version remains active", "Recovery: recheck later"},
+		Forbidden: []string{"installCLIRelease", "schemaCompatibilityGate("},
+		Hint:      "Restore the one unified app-update handoff; do not advertise a standalone CLI replacement outside the commercial payload.",
+	},
+	{
 		ID: "static-contract-verifier", Path: "scripts/verify-commercial-release-contract.sh",
 		Needles: []string{"commercial release contract: pass", "pantheon-release-artifact-recipe-v1.json"},
 		Hint:    "Restore the release contract verifier and its Stack Lab recipe binding, then re-run this Ma'at preflight.",

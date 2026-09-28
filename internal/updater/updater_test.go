@@ -8,29 +8,25 @@ import (
 	"testing"
 )
 
+func commercialRelease(tag string) Release {
+	version := strings.TrimPrefix(tag, "v")
+	return Release{
+		TagName: tag,
+		Assets: []Asset{
+			{Name: "SirsiPantheon-" + version + "-arm64.dmg", BrowserDownloadURL: "https://dl/" + version + ".dmg", Size: 1024},
+			{Name: "SirsiPantheon-" + version + "-arm64.pkg", BrowserDownloadURL: "https://dl/" + version + ".pkg", Size: 1024},
+		},
+	}
+}
+
 func TestClient_Check(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "releases") {
 			// Return an array of releases — fetchNewestRelease expects a list.
 			json.NewEncoder(w).Encode([]Release{
-				{
-					TagName: "v0.3.0-alpha",
-					Assets: []Asset{
-						{Name: "sirsi-pantheon_0.3.0-alpha_darwin_arm64.tar.gz", BrowserDownloadURL: "https://dl/old"},
-					},
-				},
-				{
-					TagName: "v0.5.0",
-					Assets: []Asset{
-						{Name: "sirsi-pantheon_0.5.0_darwin_arm64.tar.gz", BrowserDownloadURL: "https://dl"},
-					},
-				},
-				{
-					TagName: "v0.2.0-alpha",
-					Assets: []Asset{
-						{Name: "sirsi-pantheon_0.2.0-alpha_darwin_arm64.tar.gz", BrowserDownloadURL: "https://dl/oldest"},
-					},
-				},
+				commercialRelease("v0.3.0-alpha"),
+				commercialRelease("v0.5.0"),
+				commercialRelease("v0.2.0-alpha"),
 			})
 		} else {
 			json.NewEncoder(w).Encode(AdvisoryFile{
@@ -63,9 +59,7 @@ func TestClient_Check(t *testing.T) {
 func TestClient_Check_NoUpdate(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "releases") {
-			json.NewEncoder(w).Encode([]Release{
-				{TagName: "v0.4.0-alpha"},
-			})
+			json.NewEncoder(w).Encode([]Release{commercialRelease("v0.4.0-alpha")})
 		} else {
 			json.NewEncoder(w).Encode(AdvisoryFile{})
 		}
@@ -89,9 +83,7 @@ func TestClient_Check_OlderRelease(t *testing.T) {
 	// because pre-releases are skipped. The updater should NOT suggest a downgrade.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "releases") {
-			json.NewEncoder(w).Encode([]Release{
-				{TagName: "v0.2.0-alpha"},
-			})
+			json.NewEncoder(w).Encode([]Release{commercialRelease("v0.2.0-alpha")})
 		} else {
 			json.NewEncoder(w).Encode(AdvisoryFile{})
 		}
@@ -161,21 +153,16 @@ func TestCompareVersions(t *testing.T) {
 	}
 }
 
-func TestFindPlatformAsset(t *testing.T) {
-	assets := []Asset{
-		{Name: "sirsi-pantheon_0.3.0_darwin_arm64.tar.gz", BrowserDownloadURL: "https://dl/mac-arm64"},
-		{Name: "sirsi-pantheon_0.3.0_darwin_amd64.tar.gz", BrowserDownloadURL: "https://dl/mac-amd64"},
-		{Name: "sirsi-pantheon_0.3.0_linux_arm64.tar.gz", BrowserDownloadURL: "https://dl/linux-arm64"},
-		{Name: "sirsi-pantheon_0.3.0_linux_amd64.tar.gz", BrowserDownloadURL: "https://dl/linux-amd64"},
+func TestCompleteCommercialReleaseAssets(t *testing.T) {
+	rel := commercialRelease("v0.3.0")
+	if !IsCompleteCommercialRelease(&rel) {
+		t.Fatal("exact DMG and PKG pair must be a complete commercial release")
 	}
-
-	url := findPlatformAsset(assets)
-	if url == "" {
-		t.Log("Testing on platform not in mockup list (windows?)")
-	} else {
-		if !strings.HasPrefix(url, "https://dl/") {
-			t.Errorf("Unexpected download URL: %q", url)
-		}
+	if dmg := CommercialDMGAsset(&rel); dmg == nil || dmg.Name != "SirsiPantheon-0.3.0-arm64.dmg" {
+		t.Fatalf("CommercialDMGAsset = %+v", dmg)
+	}
+	if pkg := CommercialPKGAsset(&rel); pkg == nil || pkg.Name != "SirsiPantheon-0.3.0-arm64.pkg" {
+		t.Fatalf("CommercialPKGAsset = %+v", pkg)
 	}
 }
 
