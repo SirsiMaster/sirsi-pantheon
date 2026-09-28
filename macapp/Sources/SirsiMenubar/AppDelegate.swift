@@ -191,12 +191,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Periodic refresh so the Eye tracks reality at a glance: cheap waste re-read
         // + a health diagnose (≥60s — never a tight tick; A27 forbids flooding).
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 90, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.engine.refresh()
-                await self?.engine.diagnose()
-                await self?.checkOwnerGated()
-            }
+        // Selector delivery stays on the main run loop. Avoid capturing weak
+        // AppDelegate state from Timer's concurrently-executing closure: Swift
+        // 6 correctly rejects that on current hosted macOS toolchains.
+        refreshTimer = Timer.scheduledTimer(
+            timeInterval: 90,
+            target: self,
+            selector: #selector(handleRefreshTimer(_:)),
+            userInfo: nil,
+            repeats: true
+        )
+    }
+
+    @objc private func handleRefreshTimer(_ timer: Timer) {
+        engine.refresh()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await engine.diagnose()
+            await checkOwnerGated()
         }
     }
 
@@ -213,9 +225,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             content.title = String(item.title.prefix(64))
             content.body = item.why ?? "An item needs your decision."
             content.userInfo = ["id": item.id]
-            UNUserNotificationCenter.current().add(
-                UNNotificationRequest(identifier: item.id, content: content, trigger: nil),
-                withCompletionHandler: nil)
+            // Keep the original best-effort notification semantics while using
+            // the concurrency-safe API required by current Swift toolchains.
+            try? await UNUserNotificationCenter.current().add(
+                UNNotificationRequest(identifier: item.id, content: content, trigger: nil))
         }
     }
 
@@ -329,9 +342,13 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
                                             didReceive response: UNNotificationResponse,
                                             withCompletionHandler completionHandler: @escaping () -> Void) {
         let id = response.notification.request.content.userInfo["id"] as? String
-        Task { @MainActor in
-            if let id { self.openOwnerItem(id: id) }
-            completionHandler()
+        // The delegate completion is nonisolated. Acknowledge it before
+        // hopping to the main actor so Swift 6 does not capture a non-Sendable
+        // callback across actor isolation.
+        completionHandler()
+        Task { @MainActor [weak self] in
+            guard let self, let id else { return }
+            self.openOwnerItem(id: id)
         }
     }
 

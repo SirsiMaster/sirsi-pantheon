@@ -75,6 +75,11 @@ type Request struct {
 	System    string
 	Prompt    string
 	MaxTokens int
+	// Sampling controls are optional so a caller can preserve a deliberate
+	// generation contract across buffered and streaming transports.
+	Temperature *float64
+	TopP        *float64
+	Seed        *int64
 	// Tools offered this turn. A provider without Caps.Tools must ignore these
 	// and the caller must notice — see Response.ToolsHonored.
 	Tools []ToolSpec
@@ -117,6 +122,22 @@ type Response struct {
 	FinishReason string
 	PromptTokens int
 	OutputTokens int
+}
+
+// StreamChunk is the provider-neutral incremental response. It is an
+// optional extension: existing providers remain valid buffered providers, and
+// callers must type-assert StreamingProvider before promising live tokens.
+type StreamChunk struct {
+	Text         string
+	Model        string
+	FinishReason string
+	Done         bool
+	Err          error
+}
+
+type StreamingProvider interface {
+	Provider
+	Stream(context.Context, Request) (<-chan StreamChunk, error)
 }
 
 // Provider is one swappable backend.

@@ -103,6 +103,22 @@ func TestLocalDeclaresNoToolCalling(t *testing.T) {
 	if l.Caps().Tools {
 		t.Error("local provider claims tool-calling; mlx_lm.server has none")
 	}
+	if !l.Caps().Streaming {
+		t.Error("local provider failed to declare its supported SSE transport")
+	}
+}
+
+func TestRemoteStreamingRequiresExplicitDeclaration(t *testing.T) {
+	t.Setenv("SIRSI_REMOTE_API_KEY", "test-key")
+	t.Setenv("SIRSI_REMOTE_ENDPOINT", "https://example.test/v1")
+	t.Setenv("SIRSI_REMOTE_STREAMING", "")
+	if got := remoteFromEnv(Conf{}); got == nil || got.Caps().Streaming {
+		t.Fatal("remote streaming was advertised without an explicit declaration")
+	}
+	t.Setenv("SIRSI_REMOTE_STREAMING", "true")
+	if got := remoteFromEnv(Conf{}); got == nil || !got.Caps().Streaming {
+		t.Fatal("declared remote streaming was not advertised")
+	}
 }
 
 func TestRemoteConfigIsNeverClassifiedAsLocal(t *testing.T) {
