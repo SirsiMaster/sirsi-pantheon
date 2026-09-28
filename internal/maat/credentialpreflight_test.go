@@ -22,6 +22,9 @@ func TestPreflightReleaseCredentialsBindsRequiredDeveloperIDIdentities(t *testin
 	if len(preflight.DeveloperIdentities) != 2 || !hasIdentity(preflight.DeveloperIdentities, "application") || !hasIdentity(preflight.DeveloperIdentities, "installer") {
 		t.Fatalf("identities = %+v", preflight.DeveloperIdentities)
 	}
+	if len(preflight.ObservedNonDeveloperIdentityTypes) != 0 {
+		t.Fatalf("unexpected non-Developer ID types: %+v", preflight.ObservedNonDeveloperIdentityTypes)
+	}
 	if preflight.NotarizationObserved || preflight.Verdict.Floor.Passed || preflight.Verdict.Gate != GateBlock {
 		t.Fatalf("preflight = %+v", preflight)
 	}
@@ -45,9 +48,15 @@ func TestPreflightReleaseCredentialsRejectsWrongTeamAndUnrelatedIdentity(t *test
 	if len(preflight.DeveloperIdentities) != 0 || preflight.Verdict.Floor.Passed {
 		t.Fatalf("preflight = %+v", preflight)
 	}
+	if got, want := preflight.ObservedNonDeveloperIdentityTypes, []string{"Apple Distribution"}; !sameStrings(got, want) {
+		t.Fatalf("observed non-Developer ID types = %v, want %v", got, want)
+	}
 	claims := strings.Join(findingClaims(preflight.Verdict.Findings), "\n")
 	if !strings.Contains(claims, "Developer ID Application") || !strings.Contains(claims, "Developer ID Installer") {
 		t.Fatalf("findings = %+v", preflight.Verdict.Findings)
+	}
+	if !strings.Contains(claims, "Apple Distribution") || !strings.Contains(claims, "cannot substitute") {
+		t.Fatalf("identity type mismatch was not actionable: %+v", preflight.Verdict.Findings)
 	}
 }
 
@@ -74,4 +83,16 @@ func findingClaims(findings []ScreenFinding) []string {
 		claims = append(claims, finding.Claim)
 	}
 	return claims
+}
+
+func sameStrings(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
 }

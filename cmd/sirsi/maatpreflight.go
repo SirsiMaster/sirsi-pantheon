@@ -127,6 +127,7 @@ separate protected-workflow proof.`,
 			Evidence: []output.Evidence{
 				{Label: "Observation fingerprint", Value: preflight.Fingerprint},
 				{Label: "Developer ID identities", Value: fmt.Sprintf("%d", len(preflight.DeveloperIdentities))},
+				{Label: "Observed non-Developer ID types", Value: observedCredentialIdentityTypes(preflight.ObservedNonDeveloperIdentityTypes)},
 				{Label: "Notarization material", Value: "not inspected"},
 			},
 		}
@@ -144,6 +145,13 @@ separate protected-workflow proof.`,
 		result.Render()
 		return nil
 	},
+}
+
+func observedCredentialIdentityTypes(types []string) string {
+	if len(types) == 0 {
+		return "none"
+	}
+	return strings.Join(types, ", ")
 }
 
 func shellQuote(value string) string {

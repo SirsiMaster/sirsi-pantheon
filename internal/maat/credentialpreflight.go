@@ -19,12 +19,13 @@ const PantheonDeveloperTeamID = "9D382WV988"
 // are usable, but it never reads a private key, a keychain password, or an
 // Apple-notarization credential, and it never contacts Apple.
 type ReleaseCredentialPreflight struct {
-	SchemaVersion        int                      `json:"schema_version"`
-	TeamID               string                   `json:"team_id"`
-	Fingerprint          string                   `json:"fingerprint"`
-	DeveloperIdentities  []ReleaseSigningIdentity `json:"developer_identities"`
-	NotarizationObserved bool                     `json:"notarization_observed"`
-	Verdict              MaatVerdict              `json:"verdict"`
+	SchemaVersion                     int                      `json:"schema_version"`
+	TeamID                            string                   `json:"team_id"`
+	Fingerprint                       string                   `json:"fingerprint"`
+	DeveloperIdentities               []ReleaseSigningIdentity `json:"developer_identities"`
+	ObservedNonDeveloperIdentityTypes []string                 `json:"observed_non_developer_identity_types"`
+	NotarizationObserved              bool                     `json:"notarization_observed"`
+	Verdict                           MaatVerdict              `json:"verdict"`
 }
 
 // ReleaseSigningIdentity is public certificate metadata emitted by macOS's
@@ -50,6 +51,7 @@ var securityIdentityLine = regexp.MustCompile(`^\s*\d+\)\s+([0-9A-F]{40})\s+"([^
 func PreflightReleaseCredentials() (ReleaseCredentialPreflight, error) {
 	raw, runErr := securityFindIdentity()
 	identities := parseDeveloperIDIdentities(string(raw), PantheonDeveloperTeamID)
+	observedNonDeveloperTypes := parseNonDeveloperIdentityTypes(string(raw), PantheonDeveloperTeamID)
 	checks := []FloorCheck{
 		{Name: "developer-id-application", Passed: hasIdentity(identities, "application"), Detail: "one usable Team " + PantheonDeveloperTeamID + " Developer ID Application identity"},
 		{Name: "developer-id-installer", Passed: hasIdentity(identities, "installer"), Detail: "one usable Team " + PantheonDeveloperTeamID + " Developer ID Installer identity"},
@@ -61,7 +63,14 @@ func PreflightReleaseCredentials() (ReleaseCredentialPreflight, error) {
 		checks[0].Detail = "macOS security identity observation failed"
 		checks[1].Detail = "macOS security identity observation failed"
 	}
-	findings := make([]ScreenFinding, 0, 3)
+	findings := make([]ScreenFinding, 0, 4)
+	if len(observedNonDeveloperTypes) > 0 {
+		findings = append(findings, credentialFinding(
+			"non-developer-identity-observed",
+			"Public local identity metadata includes "+strings.Join(observedNonDeveloperTypes, ", ")+" for Team "+PantheonDeveloperTeamID+". It cannot substitute for Developer ID Application or Developer ID Installer signing.",
+			"Keep the observed identity separate and make one usable Team "+PantheonDeveloperTeamID+" Developer ID Application identity and one Developer ID Installer identity available through the protected release workflow.",
+		))
+	}
 	if !checks[0].Passed {
 		findings = append(findings, credentialFinding("developer-id-application", "A usable Team "+PantheonDeveloperTeamID+" Developer ID Application identity was not observed.", "Make one usable Team "+PantheonDeveloperTeamID+" Developer ID Application identity available through the protected release workflow."))
 	}
@@ -73,7 +82,7 @@ func PreflightReleaseCredentials() (ReleaseCredentialPreflight, error) {
 		findings = append(findings, credentialFinding("security-identity-observation", "macOS could not complete the public identity observation.", "Unlock the release keychain/session, then re-run this readiness check. No identity was inferred."))
 	}
 
-	fingerprint := credentialFingerprint(identities, runErr)
+	fingerprint := credentialFingerprint(identities, observedNonDeveloperTypes, runErr)
 	floorPassed := true
 	for _, check := range checks {
 		floorPassed = floorPassed && check.Passed
@@ -89,7 +98,7 @@ func PreflightReleaseCredentials() (ReleaseCredentialPreflight, error) {
 	if err != nil {
 		return ReleaseCredentialPreflight{}, fmt.Errorf("maat credential preflight: construct verdict: %w", err)
 	}
-	return ReleaseCredentialPreflight{SchemaVersion: SystemOneSchemaVersion, TeamID: PantheonDeveloperTeamID, Fingerprint: "sha256=" + fingerprint, DeveloperIdentities: identities, NotarizationObserved: false, Verdict: verdict}, nil
+	return ReleaseCredentialPreflight{SchemaVersion: SystemOneSchemaVersion, TeamID: PantheonDeveloperTeamID, Fingerprint: "sha256=" + fingerprint, DeveloperIdentities: identities, ObservedNonDeveloperIdentityTypes: observedNonDeveloperTypes, NotarizationObserved: false, Verdict: verdict}, nil
 }
 
 func parseDeveloperIDIdentities(raw, teamID string) []ReleaseSigningIdentity {
@@ -120,6 +129,38 @@ func parseDeveloperIDIdentities(raw, teamID string) []ReleaseSigningIdentity {
 	return identities
 }
 
+// parseNonDeveloperIdentityTypes retains only public, Team-bound certificate
+// types that cannot satisfy the Developer ID release contract. Names and
+// fingerprints stay out of this diagnostic field: their exact values are not
+// needed to explain why the gate remains blocked. Keeping the type in the
+// signed System One input avoids the misleading situation where an Apple
+// Distribution identity is silently discarded and the operator only sees a
+// generic missing-identity finding.
+func parseNonDeveloperIdentityTypes(raw, teamID string) []string {
+	types := make(map[string]struct{})
+	for _, line := range strings.Split(raw, "\n") {
+		match := securityIdentityLine.FindStringSubmatch(line)
+		if len(match) != 3 || !strings.HasSuffix(match[2], "("+teamID+")") {
+			continue
+		}
+		if strings.HasPrefix(match[2], "Developer ID Application: ") || strings.HasPrefix(match[2], "Developer ID Installer: ") {
+			continue
+		}
+		identityType, _, found := strings.Cut(match[2], ":")
+		identityType = strings.TrimSpace(identityType)
+		if !found || identityType == "" {
+			continue
+		}
+		types[identityType] = struct{}{}
+	}
+	result := make([]string, 0, len(types))
+	for identityType := range types {
+		result = append(result, identityType)
+	}
+	sort.Strings(result)
+	return result
+}
+
 func hasIdentity(identities []ReleaseSigningIdentity, kind string) bool {
 	return anyIdentity(identities, kind)
 }
@@ -133,10 +174,13 @@ func anyIdentity(identities []ReleaseSigningIdentity, kind string) bool {
 	return false
 }
 
-func credentialFingerprint(identities []ReleaseSigningIdentity, runErr error) string {
+func credentialFingerprint(identities []ReleaseSigningIdentity, observedNonDeveloperTypes []string, runErr error) string {
 	hash := sha256.New()
 	for _, identity := range identities {
 		fmt.Fprintf(hash, "%s\x00%s\x00%s\n", identity.Kind, identity.Name, identity.Fingerprint)
+	}
+	for _, identityType := range observedNonDeveloperTypes {
+		fmt.Fprintf(hash, "non-developer-type\x00%s\n", identityType)
 	}
 	if runErr != nil {
 		fmt.Fprint(hash, "security-observation-error\n")
