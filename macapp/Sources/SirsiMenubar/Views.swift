@@ -3346,10 +3346,35 @@ struct ResultView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            Label("This result needs a guided follow-up", systemImage: "arrow.triangle.branch")
+                .sirsiFont(.headline)
+                .foregroundStyle(gold)
+            Text("Pantheon preserved the exact output below but could not turn it into a structured result. It is not treated as a completed repair or release decision. Retry the same check, inspect Ma'at’s local evidence, or review the governing Stack Lab recipe before taking another action.")
+                .sirsiFont(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             Text(raw.isEmpty ? "No output." : raw)
                 .sirsiFont(11.5, design: .monospaced)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+            VStack(alignment: .leading, spacing: 8) {
+                Button { Task { await load() } } label: {
+                    Label("Retry this check", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(gold)
+                .disabled(loading || applying)
+                NavLink { MaatWorkspaceView(engine: engine) } label: {
+                    Label("Inspect Ma'at evidence", systemImage: "checkmark.seal")
+                }
+                .buttonStyle(.bordered)
+                NavLink { StackLabView(engine: engine) } label: {
+                    Label("Inspect Stack Lab authority", systemImage: "cube.transparent")
+                }
+                .buttonStyle(.bordered)
+            }
         }
         .padding(14)
     }
