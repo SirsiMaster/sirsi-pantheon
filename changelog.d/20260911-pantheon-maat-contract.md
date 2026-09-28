@@ -1,0 +1,1 @@
+- Document Pantheon's Ma'at failure-memory contract and eight-domain operational preflight integration plan. Preserve SNE exclusive engineering authority, immutable evidence and scoped deterministic guards. Executable integration and three-home publication remain pending. Refs: ADR-004; docs/contracts/PANTHEON_MAAT_FAILURE_MEMORY_CONTRACT.md; PANTHEON_RULES.md A17/A35.
