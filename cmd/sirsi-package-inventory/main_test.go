@@ -33,6 +33,7 @@ func TestRunEmitsNonExecutingInventory(t *testing.T) {
 		"Contents/Resources/StackLab/maat-system-one-recipe-v1.json":           []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
 		"Contents/Resources/StackLab/maat-wing-v1.json":                        []byte(`{"schema":"sirsi.stacklab.wing.v1"}`),
 		"Contents/Resources/StackLab/native-stacklab-surface-recipe-v1.json":   []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
+		"Contents/Resources/StackLab/pantheon.pt-wing-001-wing-v1.json":        []byte(`{"schema":"sirsi.stacklab.wing.v1"}`),
 		"Contents/Resources/StackLab/pantheon-release-artifact-recipe-v1.json": []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
 		"Contents/Resources/StackLab/ra-horus-fabric-recipe-v1.json":           []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
 		"Contents/Resources/StackLab/ra-horus-fabric-wing-v1.json":             []byte(`{"schema":"sirsi.stacklab.wing.v1"}`),

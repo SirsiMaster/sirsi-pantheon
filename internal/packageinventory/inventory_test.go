@@ -19,7 +19,7 @@ func TestVerifyBuildsDeterministicPythonFreeInventory(t *testing.T) {
 	if report.Schema != Schema || !report.PythonFree || report.EngineCount != 2 {
 		t.Fatalf("unexpected report: %+v", report)
 	}
-	if len(report.Entries) != 19 {
+	if len(report.Entries) != 20 {
 		t.Fatalf("entry count = %d, want unsigned payload including Stack Lab contracts", len(report.Entries))
 	}
 	for i := 1; i < len(report.Entries); i++ {
@@ -206,6 +206,7 @@ func makeBundle(t *testing.T) (string, Expectations) {
 		"Contents/Resources/StackLab/maat-system-one-recipe-v1.json":           []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
 		"Contents/Resources/StackLab/maat-wing-v1.json":                        []byte(`{"schema":"sirsi.stacklab.wing.v1"}`),
 		"Contents/Resources/StackLab/native-stacklab-surface-recipe-v1.json":   []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
+		"Contents/Resources/StackLab/pantheon.pt-wing-001-wing-v1.json":        []byte(`{"schema":"sirsi.stacklab.wing.v1"}`),
 		"Contents/Resources/StackLab/pantheon-release-artifact-recipe-v1.json": []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
 		"Contents/Resources/StackLab/ra-horus-fabric-recipe-v1.json":           []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
 		"Contents/Resources/StackLab/ra-horus-fabric-wing-v1.json":             []byte(`{"schema":"sirsi.stacklab.wing.v1"}`),
