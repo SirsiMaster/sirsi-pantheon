@@ -13,6 +13,7 @@ screencli="$root/cmd/sirsi/maatscreen.go"
 casebookcli="$root/cmd/sirsi/maatcasebook.go"
 tui="$root/internal/tui/screen_activity.go"
 dashboard="$root/internal/dashboard/pages.go"
+controlcenter="$root/macapp/Sources/SirsiMenubar/ControlCenter.swift"
 recipe="$root/contracts/stacklab/maat-system-one-recipe-v1.json"
 catalog="$root/docs/qa/MAAT_SYSTEM_ONE_CATALOG.md"
 
@@ -23,6 +24,7 @@ catalog="$root/docs/qa/MAAT_SYSTEM_ONE_CATALOG.md"
 [ -f "$casebookcli" ] || { echo "missing Ma'at Casebook CLI" >&2; exit 1; }
 [ -f "$tui" ] || { echo "missing Ma'at Casebook TUI" >&2; exit 1; }
 [ -f "$dashboard" ] || { echo "missing Ma'at Casebook dashboard" >&2; exit 1; }
+[ -f "$controlcenter" ] || { echo "missing Pantheon control center" >&2; exit 1; }
 [ -f "$recipe" ] || { echo "missing Ma'at System One Stack Lab recipe" >&2; exit 1; }
 [ -f "$catalog" ] || { echo "missing Ma'at System One catalog" >&2; exit 1; }
 
@@ -79,6 +81,13 @@ done
 	echo "native Ma'at failed-floor recovery route missing" >&2
 	exit 1
 }
+
+for needle in 'Resolve with Ma'\''at' 'Open Ma'\''at evidence' 'MaatWorkspaceView(engine: engine)'; do
+  /usr/bin/grep -Fq "$needle" "$controlcenter" || {
+    echo "Ma'at must remain the native control-center primary action: $needle" >&2
+    exit 1
+  }
+done
 
 for target in "$recipe" "$catalog"; do
 	/usr/bin/grep -Fq 'deterministic-floor' "$target" || {
