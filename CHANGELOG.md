@@ -42,6 +42,13 @@ local router identity hook follows the same repository split.
 
 ## [Unreleased]
 
+## [0.24.18] — 2026-09-28 — Governed mail hygiene operations
+**Commercial feature release.** Adds a dry-run-by-default mail hygiene surface
+for poison-message detection, sender census, and archive-only cleanup with
+local receipts. Gmail OAuth remains explicitly operator-configured; live
+mailbox qualification, Outlook log watching, and token-expiry remediation are
+separate follow-up work.
+
 ## [0.24.17] — 2026-09-28 — Engine-neutral streaming integrity
 **Commercial feature release.** Adds the engine-neutral connector ABI and
 OpenAI-compatible streaming transport with fail-closed premature-EOF,
