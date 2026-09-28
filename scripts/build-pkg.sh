@@ -49,6 +49,26 @@ fi
 
 mkdir -p "$BUILD_DIR"
 PAYLOAD_ROOT="$(mktemp -d /private/tmp/pantheon-pkg-payload.XXXXXX)"
+PAYLOAD_ROOT_ID="$(/usr/bin/stat -f '%d:%i' "$PAYLOAD_ROOT")"
+
+# The staging tree is this invocation's only mutable namespace. Retain its
+# device/inode so an unrelated path substituted at the predictable temp name
+# can never be removed by the EXIT handler. The cleanup deliberately uses
+# find's no-follow default; symlinks are unlinked rather than traversed.
+cleanup_payload_root() {
+    local current_id=""
+    if [[ -n "${PAYLOAD_ROOT:-}" && -n "${PAYLOAD_ROOT_ID:-}" && -d "$PAYLOAD_ROOT" ]]; then
+        current_id="$(/usr/bin/stat -f '%d:%i' "$PAYLOAD_ROOT" 2>/dev/null || true)"
+        if [[ "$current_id" == "$PAYLOAD_ROOT_ID" ]]; then
+            /usr/bin/find "$PAYLOAD_ROOT" -depth -delete || \
+                echo "WARNING: retained package staging cleanup debt at $PAYLOAD_ROOT" >&2
+        else
+            echo "WARNING: refusing to remove substituted package staging path $PAYLOAD_ROOT" >&2
+        fi
+    fi
+}
+trap cleanup_payload_root EXIT
+
 PAYLOAD_APP_DIR="$PAYLOAD_ROOT/Applications"
 PKG_PATH="$BUILD_DIR/$PKG_NAME"
 mkdir -p "$PAYLOAD_APP_DIR"
