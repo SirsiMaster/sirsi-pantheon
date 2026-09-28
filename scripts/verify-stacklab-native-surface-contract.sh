@@ -7,13 +7,18 @@ set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
 view="$root/macapp/Sources/SirsiMenubar/StackLabView.swift"
 library="$root/macapp/Sources/SirsiMenubar/ControlCenter.swift"
+engine="$root/macapp/Sources/SirsiMenubar/SirsiEngine.swift"
 
 [ -f "$view" ] || { echo "missing Stack Lab native view" >&2; exit 1; }
 [ -f "$library" ] || { echo "missing native control center" >&2; exit 1; }
+[ -f "$engine" ] || { echo "missing native command engine" >&2; exit 1; }
 
 for needle in \
   '["stacklab", "doctor", "--json"]' \
   'StackLabReport' \
+  'ProjectBar(engine: engine)' \
+  'Choose the Pantheon project' \
+  'No registry result has been inferred yet.' \
   'No authority result was inferred.' \
   'not treated as clean' \
   'Review evidence in Ma'\''at'; do
@@ -25,6 +30,11 @@ done
 
 /usr/bin/grep -Fq 'libraryLink("Stack Lab"' "$library" || {
   echo "Stack Lab is not reachable from the Pantheon library" >&2
+  exit 1
+}
+
+/usr/bin/grep -Fq '"stacklab"' "$engine" || {
+  echo "Stack Lab is not repository-scoped in the native command engine" >&2
   exit 1
 }
 

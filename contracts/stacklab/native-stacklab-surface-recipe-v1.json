@@ -20,10 +20,10 @@
       "id": "stacklab-native-doctor",
       "source": ["macapp/Sources/SirsiMenubar/StackLabView.swift", "macapp/Sources/SirsiMenubar/ControlCenter.swift", "macapp/Sources/SirsiMenubar/SirsiEngine.swift", "cmd/sirsi/stacklabcmd.go", "internal/stacklab/doctor.go"],
       "tests": ["scripts/verify-stacklab-native-surface-contract.sh", "internal/stacklab/native_stacklab_recipe_test.go"],
-      "inputs": ["canonical sirsi stacklab doctor JSON report", "declared wing roster", "origin and registry read outcomes"],
-      "outputs": ["native Stack Lab authority summary", "typed wing finding cards", "retry guidance for unreadable state", "Ma'at evidence route for unresolved findings"],
+      "inputs": ["explicitly selected repository root", "canonical sirsi stacklab doctor JSON report", "declared wing roster", "origin and registry read outcomes"],
+      "outputs": ["native Stack Lab authority summary", "typed wing finding cards", "in-context project selection before any repository read", "retry guidance for unreadable state", "Ma'at evidence route for unresolved findings"],
       "writes": [],
-      "upgrade_recipe": ["change the Go report before its Swift projection", "preserve typed roster/findings/unknown decoding", "show unknown as incomplete rather than clean", "keep every incomplete finding connected to Ma'at evidence", "run the native contract and Swift syntax validation before admitted app tests"]
+      "upgrade_recipe": ["change the Go report before its Swift projection", "preserve typed roster/findings/unknown decoding", "require an explicit repository root before a Stack Lab read", "run stacklab from the selected repository instead of the app home directory", "show unknown as incomplete rather than clean", "keep every incomplete finding connected to Ma'at evidence", "run the native contract and Swift syntax validation before admitted app tests"]
     }
   ]
 }

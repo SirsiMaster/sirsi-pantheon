@@ -14,8 +14,11 @@ struct StackLabView: View {
     var body: some View {
         VStack(spacing: 0) {
             BackBar(title: "Stack Lab")
+            ProjectBar(engine: engine) { Task { await load() } }
             Group {
-                if loading {
+                if engine.projectRoot == nil {
+                    projectRequiredState
+                } else if loading {
                     loadingState
                 } else if let error = loadError {
                     failureState(error)
@@ -26,7 +29,33 @@ struct StackLabView: View {
                 }
             }
         }
-        .task { await load() }
+        .task {
+            engine.loadProjectRoot()
+            await load()
+        }
+    }
+
+    // Stack Lab's doctor reads the selected repository's declared wing record.
+    // Do not execute it from $HOME and turn a missing repository into an opaque
+    // decode failure. The shared ProjectBar supplies a real next action and
+    // reruns the read when the operator chooses a repository.
+    private var projectRequiredState: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Image(systemName: "shippingbox.fill")
+                .sirsiFont(24, weight: .semibold)
+                .foregroundStyle(gold)
+            Text("Choose the Pantheon project")
+                .sirsiFont(.headline)
+            Text("Stack Lab checks the selected repository’s declared wing and its canonical origin and registry records. Choose the project above, then Pantheon will run the same typed doctor used by the CLI.")
+                .sirsiFont(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("No registry result has been inferred yet.")
+                .sirsiFont(.caption, weight: .semibold)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .padding(20)
     }
 
     private var loadingState: some View {
@@ -175,6 +204,12 @@ struct StackLabView: View {
     }
 
     @MainActor private func load() async {
+        guard engine.projectRoot != nil else {
+            report = nil
+            loadError = nil
+            loading = false
+            return
+        }
         loading = true
         loadError = nil
         let data = await SirsiEngine.runJSON(args: ["stacklab", "doctor", "--json"])
