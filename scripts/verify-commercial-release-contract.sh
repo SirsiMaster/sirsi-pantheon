@@ -139,6 +139,17 @@ fi
     echo "Stack Lab release route must bind complete commercial update eligibility" >&2; exit 1;
 }
 
+for required in 'ErrNoCompleteCommercialRelease' 'IsCompleteCommercialRelease' 'CommercialDMGAsset' 'CommercialPKGAsset'; do
+    /usr/bin/grep -Fq -- "$required" "$root/internal/updater/updater.go" "$root/internal/updater/install.go" || {
+        echo "commercial update eligibility is missing: $required" >&2; exit 1;
+    }
+done
+for forbidden in 'installCLIRelease' 'schemaCompatibilityGate('; do
+    if /usr/bin/grep -Fq -- "$forbidden" "$root/cmd/sirsi/update.go"; then
+        echo "commercial updater retains standalone CLI replacement route: $forbidden" >&2; exit 1;
+    fi
+done
+
 /usr/bin/jq -e '
   [.components[] | select(.id == "commercial-sign-notary-publication-route")][0] |
   (.upgrade_recipe | index("ship the tagged commercial route as one macOS payload contract; reject variable-gated Windows installer jobs until a separate platform release contract exists")) != null and

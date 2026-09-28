@@ -152,22 +152,3 @@ func TestSchemaGateV14OverV15IncidentCase(t *testing.T) {
 		t.Fatalf("v14-over-v15 incident case must be rejected, got %v", err)
 	}
 }
-
-// TestUpdateCLIPathGateDelegatesSchemaCompatibility confirms that the sirsi
-// update --cli install path goes through schemaCompatibilityGate before any
-// binary replacement. The gate logic is shared with self-update; this test
-// exercises the update path's wiring specifically — a gate that exists but is
-// never called provides no protection.
-func TestUpdateCLIPathGateDelegatesSchemaCompatibility(t *testing.T) {
-	path, live := liveStoreAt(t)
-	t.Setenv("SIRSI_ROUTER_DB", path)
-
-	// A candidate claiming ceiling below live must fail.
-	if err := schemaCompatibilityGate(candidate(live - 1)); !errors.Is(err, selfupdate.ErrSchemaIncompatible) {
-		t.Fatalf("update-path gate: ceiling below live must be rejected, got %v", err)
-	}
-	// A candidate claiming ceiling == live must pass.
-	if err := schemaCompatibilityGate(candidate(live)); err != nil {
-		t.Fatalf("update-path gate: ceiling == live must pass, got %v", err)
-	}
-}
