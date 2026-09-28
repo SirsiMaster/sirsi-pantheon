@@ -26,8 +26,9 @@ jobs:
 
       - name: Verify portable engine sources compile
         # This is source verification only. The commercial product is assembled,
-        # signed, and published by the macOS job below as one Pantheon.app DMG
-        # and PKG payload. Do not create a partial CLI release from this runner.
+        # signed, and published by the macOS job below as one Pantheon.app DMG;
+        # a PKG is added when the separately managed installer identity exists.
+        # Do not create a partial CLI release from this runner.
         env:
           CGO_ENABLED: "0"
         run: |
@@ -96,7 +97,7 @@ jobs:
           echo "DEVELOPER_ID_APPLICATION=$ID" >> "$GITHUB_ENV"
           echo "Resolved the imported Developer ID Application identity for signing."
 
-      - name: Build + sign + notarize DMG and PKG (arm64 — Intel Macs use Rosetta)
+      - name: Build + sign + notarize DMG and optional PKG (arm64 — Intel Macs use Rosetta)
         env:
           BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
           DEVELOPER_ID_INSTALLER: ${{ secrets.DEVELOPER_ID_INSTALLER }}
@@ -104,8 +105,13 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: |
+          set -euo pipefail
           scripts/build-dmg.sh --release --version "$BUILD_VERSION" --arch arm64
-          scripts/build-pkg.sh --release --version "$BUILD_VERSION" --arch arm64 --app Pantheon.app
+          if [[ -n "${DEVELOPER_ID_INSTALLER:-}" ]]; then
+            scripts/build-pkg.sh --release --version "$BUILD_VERSION" --arch arm64 --app Pantheon.app
+          else
+            echo "PKG omitted: DEVELOPER_ID_INSTALLER is not configured; the signed/notarized DMG remains the commercial macOS artifact."
+          fi
 
       - name: Create or verify the exact GitHub release record
         env:
@@ -129,15 +135,18 @@ jobs:
               --generate-notes
           fi
 
-      - name: Upload DMG and PKG to release
+      - name: Upload native release artifacts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ github.ref_name }}
           BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
-          gh release upload "$TAG_NAME" \
-            "bin/SirsiPantheon-${BUILD_VERSION}-arm64.dmg" \
-            "bin/SirsiPantheon-${BUILD_VERSION}-arm64.pkg"
+          set -euo pipefail
+          assets=("bin/SirsiPantheon-${BUILD_VERSION}-arm64.dmg")
+          if [[ -f "bin/SirsiPantheon-${BUILD_VERSION}-arm64.pkg" ]]; then
+            assets+=("bin/SirsiPantheon-${BUILD_VERSION}-arm64.pkg")
+          fi
+          gh release upload "$TAG_NAME" "${assets[@]}"
 
       - name: Restore login keychain as default (always)
         if: always()
