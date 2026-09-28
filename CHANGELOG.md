@@ -6,6 +6,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.31] — 2026-09-28 — Relay and Ma'at evidence correctness
+**Source release candidate.** The relay keeps half-open connection recovery
+fail-closed by retrying only before-send dial failures, while Ma'at parses
+declared GitHub pipeline evidence and distinguishes measured, partial, skipped,
+and unavailable coverage. Command-result JSON now reports `duration_ms` in
+milliseconds as documented. Commercial signing, notarization, and release
+publication remain separate credentialed operations.
+
+---
+
 ## [0.24.30] — 2026-09-28 — Bounded caution cleanup
 **Commercial patch release.** Caution-tier cleanup now requires an explicit
 selection and confirmation, then moves only the selected recoverable items to
