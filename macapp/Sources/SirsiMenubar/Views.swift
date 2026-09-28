@@ -1161,6 +1161,10 @@ struct FindingView: View {
     // "instant fix" costume. See guard.FixKind (instant | relief | guidance).
     private var kind: String { finding.fixKind ?? "" }
     @State private var copied = false
+    @State private var maatReviewResult: CommandResult?
+    @State private var maatReviewError: String?
+    @State private var maatReviewInFlight = false
+    @State private var confirmMaatReview = false
 
     // recommendedCommand pulls a `sirsi …` command the finding names in its
     // message/detail (backtick-quoted) so guidance findings become actionable.
@@ -1288,12 +1292,13 @@ struct FindingView: View {
                             }.frame(maxWidth: .infinity).padding(.vertical, 2)
                         }.buttonStyle(.borderedProminent).tint(gold)
                     } else if isAlarm {
-                        // An alarm without a lever must SAY so — calling a warn
-                        // or critical finding "Informational" was the dead-end
-                        // the owner flagged (ADR-033: alarm ⇒ way to act).
-                        Text("This needs attention but has no one-click fix yet.")
-                            .sirsiFont(.callout).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                        // A high-severity finding without a safe automatic
+                        // mutation still gets a complete resolution path. Ma'at
+                        // records the exact observed finding only after the
+                        // operator confirms; its Casebook then owns the next,
+                        // explicit acceptance step. This never paints a manual
+                        // conclusion as a completed repair.
+                        maatResolutionPath
                     } else if let cmd = recommendedCommand {
                         // Guidance-tier (e.g. caution items cleared deliberately
                         // in Terminal): the command it names must be actionable,
@@ -1318,6 +1323,80 @@ struct FindingView: View {
                 }.padding(16)
             }
         }
+        .confirmationDialog("Record a Ma'at owner review?", isPresented: $confirmMaatReview, titleVisibility: .visible) {
+            Button("Record owner review") { Task { await recordMaatReview() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Ma'at will retain this exact diagnostic finding for review. It will not change the system or claim that the issue is repaired.")
+        }
+    }
+
+    @ViewBuilder private var maatResolutionPath: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Ma'at can guide this to an explicit resolution", systemImage: "scale.3d")
+                .sirsiFont(.callout, weight: .semibold)
+                .foregroundStyle(gold)
+            Text("Record this exact finding as an owner review, then use Ma'at Casebook to inspect the retained evidence and explicitly accept a documented conclusion. Recording or accepting a conclusion does not repair the system.")
+                .sirsiFont(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                confirmMaatReview = true
+            } label: {
+                Label("Record Ma'at review", systemImage: "arrow.triangle.branch")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(gold)
+            .disabled(maatReviewInFlight)
+            .accessibilityHint("Requires confirmation and records evidence only; it does not repair the system.")
+
+            if maatReviewInFlight {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Recording the evidence-bound review…")
+                }
+                .sirsiFont(.caption)
+                .foregroundStyle(.secondary)
+            }
+            if let result = maatReviewResult {
+                Label(result.summary, systemImage: result.ok ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(result.ok ? .green : .orange)
+                if result.ok {
+                    NavLink { MaatCasebookView(engine: engine) } label: {
+                        Label("Continue in Ma'at Casebook", systemImage: "book.closed")
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityHint("Inspect the recorded evidence and explicitly accept an owner conclusion when appropriate.")
+                }
+            }
+            if let error = maatReviewError {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+    }
+
+    @MainActor private func recordMaatReview() async {
+        guard !maatReviewInFlight else { return }
+        maatReviewInFlight = true
+        maatReviewError = nil
+        var args = ["maat", "record-resolution", "--check", finding.check, "--message", finding.message]
+        if let detail = finding.detail?.trimmingCharacters(in: .whitespacesAndNewlines), !detail.isEmpty {
+            args += ["--detail", detail]
+        }
+        args.append("--confirm")
+        maatReviewResult = await SirsiEngine.runResult(args: args)
+        if maatReviewResult == nil {
+            maatReviewError = "Ma'at could not record the review. The original finding remains open and no system state changed. Try again or inspect the local decision journal."
+        }
+        maatReviewInFlight = false
     }
 }
 

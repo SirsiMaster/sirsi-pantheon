@@ -41,7 +41,8 @@ safe independent upgrade recipe in this wing:
 11. Horus API and visible caseboard
 12. Read-only MCP Casebook projection for agent clients
 13. Five-screen terminal console Activity/Casebook mode
-14. The Stack Lab wing and recipe contracts themselves
+14. Native finding-to-review-to-acceptance resolution flow
+15. The Stack Lab wing and recipe contracts themselves
 
 An upgrade begins at one manifest component, follows that component's listed
 tests and boundary, then updates the receipt/canonical contract. Components do
@@ -83,6 +84,11 @@ claim a local record is a remote attestation.
   next step. The native Casebook and explicit confirmed CLI commands can record
   owner review/acceptance; the terminal console stays read-only so it never
   turns a keystroke into an unreviewed conclusion or a claimed repair.
+- **No stranded alarms:** when a native diagnostic alarm has no safe automatic
+  repair, the finding view offers a confirmed Ma'at review, then connects to the
+  shared Casebook acceptance flow. A conclusion is visibly distinct from a
+  repair and an unsuccessful write leaves the original finding open with retry
+  guidance.
 - **Fail honest:** unavailable journal input returns an error/503. Unknown case
   status is rejected. Missing evidence stays missing; it is never invented.
 

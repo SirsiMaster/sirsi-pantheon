@@ -136,6 +136,15 @@
       "upgrade_recipe": ["retain the five-screen console architecture", "use only the canonical sirsi executable runner", "keep Casebook read-only in the terminal", "make every visible key registry-backed and testable", "show an evidence-bound next step for every open case", "keep explicit owner confirmation in the native app or confirmed CLI path"]
     },
     {
+      "id": "maat-native-resolution-surface",
+      "source": ["macapp/Sources/SirsiMenubar/Views.swift", "macapp/Sources/SirsiMenubar/MaatCasebookView.swift", "macapp/Sources/SirsiMenubar/SirsiEngine.swift"],
+      "tests": ["scripts/verify-maat-native-resolution-contract.sh"],
+      "inputs": ["canonical diagnostic finding", "explicit operator confirmation", "canonical Ma'at casebook projection"],
+      "outputs": ["guided owner-review entry point for every alarm without a safe automatic repair", "native evidence and acceptance path"],
+      "writes": ["only a confirmed Ma'at owner review or owner acceptance through the canonical CLI"],
+      "upgrade_recipe": ["never label an alarm informational solely because automation is unsafe", "require an explicit confirmation before recording a review", "preserve the distinction between owner conclusion and system repair", "continue successful review to the shared Casebook acceptance surface", "run the native resolution contract and Swift syntax validation"]
+    },
+    {
       "id": "maat-wing-contract",
       "source": ["contracts/stacklab/maat-wing-v1.json", "contracts/stacklab/maat-system-one-recipe-v1.json", "docs/qa/MAAT_SYSTEM_ONE_CATALOG.md"],
       "tests": ["internal/stacklab/doctor_test.go", "internal/stacklab/maat_recipe_test.go"],
