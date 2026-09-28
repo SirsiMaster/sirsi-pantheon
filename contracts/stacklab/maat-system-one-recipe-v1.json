@@ -64,6 +64,15 @@
       "upgrade_recipe": ["preserve closed schema validation", "canonicalize floor checks by name and findings by identity before policy and hashing", "reject duplicate finding identities and noncanonical verdict replay", "never let a caller select the screen gate", "require --confirm immediately before every decision-journal write", "retain deterministic floor precedence", "treat each prescribed recovery step as evidence, never executable input", "treat a screen as advisory evidence, never operation authority", "bind calibration only to one recorded local auto-pass and distinct independent evidence", "reject replayed or ambiguous calibration links", "add positive and adversarial fixtures before widening a subject, boundary, finding, or independent outcome class"]
     },
     {
+      "id": "maat-host-health-screen",
+      "source": ["cmd/sirsi/maattriage.go", "internal/guard/doctor.go", "internal/maat/systemone.go", "macapp/Sources/SirsiMenubar/MaatCasebookView.swift"],
+      "tests": ["cmd/sirsi/maattriage_test.go", "internal/maat/systemone_test.go", "scripts/verify-maat-native-resolution-contract.sh"],
+      "inputs": ["one complete local Doctor report", "local host identity", "explicit native or CLI confirmation"],
+      "outputs": ["hash-bound host-health System One screen", "deterministic pass/changes/block/escalate Casebook record", "native outcome treatment that distinguishes recorded evidence from a healthy gate", "three-level repair/review/owner-resolution guidance for each active health finding"],
+      "writes": ["only one confirmed Ma'at decision journal record after the local report is hashed and screened"],
+      "upgrade_recipe": ["retain one diagnostic observation and hash its full typed report before screening", "never accept caller-supplied host-health findings, commands, or gate values", "retain host identity and report digest as the screen subject", "treat a successful Casebook append as distinct from a pass gate", "do not repair, kill, install, or invoke an LLM while observing", "add preview-without-write, confirmation, warning, blocking, and native outcome fixtures before widening the observation contract"]
+    },
+    {
       "id": "maat-release-contract-preflight",
       "source": ["internal/maat/releasepreflight.go", "cmd/sirsi/maatpreflight.go", "contracts/stacklab/pantheon-release-artifact-recipe-v1.json"],
       "tests": ["internal/maat/releasepreflight_test.go", "scripts/verify-maat-release-preflight-contract.sh", "scripts/verify-commercial-release-contract.sh"],

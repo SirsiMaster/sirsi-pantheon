@@ -33,18 +33,19 @@ safe independent upgrade recipe in this wing:
 3. Coverage assessor and bounded cache
 4. Pipeline/CI assessor and failure classifier
 5. Strict local System One screen and calibration record
-6. Non-executing, hash-bound commercial-release source preflight
-7. Pulse, proof, and platform integrity collectors
-8. Append-only decision journal and report recorder
-9. Deterministic local Casebook
-10. Shared-machine and rail scheduler/conflict detector
-11. CLI surfaces for audit, scheduling, screens, calibration, and search
-12. Horus API and visible caseboard
-13. Read-only MCP Casebook projection for agent clients
-14. Five-screen terminal console Activity/Casebook mode
-15. Native finding-to-review-to-acceptance resolution flow
-16. Confirmed managed LaunchAgent disabled-override recovery and post-action recheck
-17. The Stack Lab wing and recipe contracts themselves
+6. Local host-health observation and screen writer
+7. Non-executing, hash-bound commercial-release source preflight
+8. Pulse, proof, and platform integrity collectors
+9. Append-only decision journal and report recorder
+10. Deterministic local Casebook
+11. Shared-machine and rail scheduler/conflict detector
+12. CLI surfaces for audit, scheduling, screens, calibration, and search
+13. Horus API and visible caseboard
+14. Read-only MCP Casebook projection for agent clients
+15. Five-screen terminal console Activity/Casebook mode
+16. Native finding-to-review-to-acceptance resolution flow
+17. Confirmed managed LaunchAgent disabled-override recovery and post-action recheck
+18. The Stack Lab wing and recipe contracts themselves
 
 An upgrade begins at one manifest component, follows that component's listed
 tests and boundary, then updates the receipt/canonical contract. Components do
@@ -60,6 +61,7 @@ not get silently co-upgraded because they share a deity name.
 | Pipeline/CI | audit assessment with the current CI run/log classification | `PipelineAssessor` through `sirsi maat audit` | `governance` or `assessment` cases, never synthetic success |
 | Stack Lab guard/review | decision with a receipt reference | Ma'at/approved caller through the decision journal | `governance` cases linked to the receipt |
 | System One screen | closed typed local observation, deterministic floor, confidence, model provenance, subject identity, and bounded evidence-linked findings | `sirsi maat screen --input <system-one-screen.json> --confirm` via `maat.Screen` | `governance` case with `pass`, `changes`, `block`, or `escalate`; each finding retains a prescribed recovery step as evidence, escalation routes to evidence-bound review, and no screen authorizes the assessed operation |
+| Host-health System One screen | one complete local Doctor report and resolved local host identity, hashed before classification | `sirsi maat triage [--confirm]` and native **Observe this Mac** through `maatHostSystemOneScreen` | `host-health` System One case with the exact diagnostic digest, active warning/critical findings, and a visible distinction between a recorded Casebook result and a healthy pass; observation alone never repairs, kills, installs, or invokes an LLM |
 | System One calibration | one recorded local auto-pass and a distinct independent final review outcome | `sirsi maat calibrate --screen-evidence <ref> --frontier-evidence <ref> --frontier-gate <pass|changes|block>` | durable calibration evidence and overturn-rate history; replay, missing screen, non-pass, and ambiguous links reject |
 | Release-contract preflight | regular non-symlink local packaging/workflow/Stack Lab sources, captured and hashed in-process | `sirsi maat preflight release --root <checkout> [--confirm]` via `maat.PreflightReleaseContract`, including the native Ma'at System One inspect-then-confirm flow | delivery-bound System One evidence that never runs a build/package/signing command; source-floor failures retain a bounded repair hint, and a green source floor remains distinct from credentialed release proof |
 | Knowledge refresh | retained local knowledge cache through the legacy ingestion adapter | `sirsi maat knowledge refresh [--source … --since … --profile … --all-profiles]` and dashboard action `maat/knowledge/refresh`, presented as **Refresh Ma'at knowledge** | Ma'at remains the user-facing knowledge/decision authority; the compatibility adapter is not surfaced as a second operator product, and refresh cannot export knowledge or open a browser |
