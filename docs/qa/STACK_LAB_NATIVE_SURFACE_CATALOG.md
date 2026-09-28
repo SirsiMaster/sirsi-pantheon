@@ -1,6 +1,6 @@
 # Stack Lab Native Surface Catalog
 
-**Recipe:** `stacklab.recipe.native-stacklab-surface`  
+**Recipe:** `stacklab.recipe.native-stacklab-surface`
 **Product:** Sirsi Pantheon macOS app
 
 The native Stack Lab view is a functional projection of `sirsi stacklab doctor
