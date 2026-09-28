@@ -58,6 +58,7 @@ final class CoreContractsTests: XCTestCase {
         {
           "machine_id": "this-mac",
           "engine_id": "apollo-local",
+          "resident_model": "Apollo Plain",
           "cpu_cores": 4,
           "memory_bytes": 8589934592,
           "swap_bytes": 0,
@@ -70,6 +71,7 @@ final class CoreContractsTests: XCTestCase {
 
         XCTAssertEqual(plan.chipEstates, ["cpu", "neural-engine"])
         XCTAssertEqual(plan.unqualifiedEstates, ["neural-engine"])
+        XCTAssertEqual(plan.residentModel, "Apollo Plain")
     }
 
     func testApolloTelemetryDecodesSelectedAndAdditionalReportedEstates() throws {

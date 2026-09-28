@@ -184,6 +184,11 @@ struct ApolloRunPlannerView: View {
         return VStack(alignment: .leading, spacing: 10) {
             Label("Resource envelope", systemImage: "slider.horizontal.3")
                 .sirsiFont(.headline)
+            HStack(spacing: 8) {
+                capacityFact("Available CPU", "\(machine.cpuCores) cores")
+                capacityFact("Available memory", byteLabel(machine.memoryBytes))
+                capacityFact("Requested swap", "\(selectedSwapGiB) GiB")
+            }
             if snapshotMode {
                 resourceLine("CPU allocation", "\(selectedCores) of \(machine.cpuCores) cores")
                 resourceLine("Unified memory", "\(selectedMemoryGiB) GiB of \(memoryCapacityGiB(machine)) GiB installed")
@@ -215,6 +220,18 @@ struct ApolloRunPlannerView: View {
                 .sirsiFont(.headline)
             Text("Select every detected estate Apollo should observe or request. An estate that is not currently qualified remains selectable and is carried to SNE as an explicit pending request.")
                 .sirsiFont(.subheadline).foregroundStyle(.secondary)
+            if !snapshotMode && !estates.isEmpty {
+                HStack(spacing: 8) {
+                    Button("Select all detected") {
+                        selectedEstates = Set(estates.map(\.id))
+                    }
+                    .buttonStyle(.bordered)
+                    Button("Clear selection") {
+                        selectedEstates.removeAll()
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
             SwiftUI.ForEach(estates, id: \.id) { estate in
                 estateRow(estate)
             }
@@ -229,8 +246,12 @@ struct ApolloRunPlannerView: View {
             SnapshotActionButton(disabled: planning || selectedEstates.isEmpty || selectedEngine.isEmpty) {
                 Task { await createPlan(catalog) }
             } label: {
-                Label(planning ? "Validating selection…" : "Validate & open Apollo", systemImage: "play.circle")
+                Label(planning ? "Running selected recipe…" : "Run recipe & open Apollo", systemImage: "play.circle")
             }
+            Text("Runs the exact typed Stack Lab plan below, then transfers this same declaration to Apollo telemetry. It does not start a model; Apollo/SNE separately admits inference against live capacity.")
+                .sirsiFont(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             if selectedEstates.isEmpty {
                 Text("Choose at least one detected chip estate to continue.")
                     .sirsiFont(.caption, weight: .semibold).foregroundStyle(.orange)
@@ -260,7 +281,13 @@ struct ApolloRunPlannerView: View {
             previewLine("Machine", "\(machine.name) · \(machine.cpuCores) cores · \(byteLabel(machine.memoryBytes))")
             previewLine("Requested", "\(selectedCores) cores · \(selectedMemoryGiB) GiB memory · \(selectedSwapGiB) GiB swap")
             previewLine("Chip estates", selectedNames.isEmpty ? "Choose at least one detected estate" : selectedNames.joined(separator: ", "))
-            Text("Validate this declaration to hand it directly to Apollo telemetry. SNE remains the authority that can admit an inference session against current pressure.")
+            Text(recipeCommand(catalog))
+                .sirsiFont(.caption, design: .monospaced)
+                .textSelection(.enabled)
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.06)))
+            Text("Run this declaration to hand it directly to Apollo telemetry. SNE remains the authority that can admit an inference session against current pressure.")
                 .sirsiFont(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -274,7 +301,7 @@ struct ApolloRunPlannerView: View {
         VStack(alignment: .leading, spacing: 9) {
             Label("Run plan is ready", systemImage: "checkmark.seal.fill")
                 .sirsiFont(.headline).foregroundStyle(.green)
-            Text("\(plan.machineID) · \(plan.engineID) · \(plan.cpuCores) cores · \(byteLabel(plan.memoryBytes)) memory · \(byteLabel(plan.swapBytes)) swap ceiling")
+            Text(planSummary(plan))
                 .sirsiFont(.subheadline).foregroundStyle(.secondary)
             Text("SNE must still admit execution against current system pressure. Opening Apollo now shows live telemetry when a session is active.")
                 .sirsiFont(.caption).foregroundStyle(.secondary)
@@ -299,6 +326,11 @@ struct ApolloRunPlannerView: View {
         .background(RoundedRectangle(cornerRadius: 12).fill(Color.green.opacity(0.08)))
     }
 
+    private func planSummary(_ plan: ApolloPlan) -> String {
+        let model = plan.residentModel ?? "Configured resident model"
+        return "\(model) · \(plan.machineID) · \(plan.engineID) · \(plan.cpuCores) cores · \(byteLabel(plan.memoryBytes)) memory · \(byteLabel(plan.swapBytes)) swap ceiling"
+    }
+
     private func binding(for estate: ApolloChipEstate) -> Binding<Bool> {
         Binding(get: { selectedEstates.contains(estate.id) }, set: { selected in
             if selected { selectedEstates.insert(estate.id) } else { selectedEstates.remove(estate.id) }
@@ -316,6 +348,16 @@ struct ApolloRunPlannerView: View {
 
     private func resourceLine(_ title: String, _ detail: String) -> some View {
         HStack { Text(title).sirsiFont(.subheadline, weight: .semibold); Spacer(); Text(detail).sirsiFont(.caption).foregroundStyle(.secondary) }
+    }
+
+    private func capacityFact(_ title: String, _ detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).sirsiFont(.caption).foregroundStyle(.secondary)
+            Text(detail).sirsiFont(.caption, weight: .semibold).lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
     }
 
     private func previewLine(_ label: String, _ value: String) -> some View {
@@ -385,6 +427,14 @@ struct ApolloRunPlannerView: View {
     private func estateOptions(_ catalog: ApolloCatalog) -> [ApolloChipEstate] {
         let machineEstates = Set(selectedMachineDescriptor(catalog).chipEstates ?? [])
         return catalog.estates.filter { machineEstates.isEmpty || machineEstates.contains($0.id) }
+    }
+    private func recipeCommand(_ catalog: ApolloCatalog) -> String {
+        let estates = estateOptions(catalog)
+            .filter { selectedEstates.contains($0.id) }
+            .map(\.id)
+            .sorted()
+            .joined(separator: ",")
+        return "sirsi apollo plan --machine \(selectedMachine) --engine \(selectedEngine) --cores \(selectedCores) --memory-gib \(selectedMemoryGiB) --swap-gib \(selectedSwapGiB) --estates \(estates) --json"
     }
     private func resetSelections(_ catalog: ApolloCatalog) {
         selectedEngine = engineOptions(catalog).first(where: { $0.state == "configured" })?.id ?? engineOptions(catalog).first?.id ?? ""
@@ -485,6 +535,10 @@ struct ApolloTelemetryView: View {
             Text(sessionDetail)
                 .sirsiFont(.subheadline).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            Label("Selected: \(planSelectionLabel)", systemImage: "slider.horizontal.3")
+                .sirsiFont(.caption, weight: .semibold)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             Button {
                 Task { await refresh() }
             } label: {
@@ -559,6 +613,10 @@ struct ApolloTelemetryView: View {
     }
 
     private var unavailable: String { "Awaiting session" }
+    private var planSelectionLabel: String {
+        let model = plan.residentModel ?? "configured resident model"
+        return "\(model) · \(plan.engineID) · \(plan.machineID)"
+    }
     private var tokensTelemetry: String { metric(selectedTelemetry?.tokensPerSec, suffix: " tok/s", precision: 1) }
     private var bandwidthTelemetry: String {
         guard let bytes = selectedTelemetry?.bandwidthBps else { return unavailable }
@@ -693,6 +751,7 @@ struct ApolloChipEstate: Decodable, Identifiable { let id: String; let name: Str
 struct ApolloPlan: Decodable {
     let machineID: String
     let engineID: String
+    let residentModel: String?
     let cpuCores: Int
     let memoryBytes: Int64
     let swapBytes: Int64
@@ -702,6 +761,7 @@ struct ApolloPlan: Decodable {
     enum CodingKeys: String, CodingKey {
         case machineID = "machine_id"
         case engineID = "engine_id"
+        case residentModel = "resident_model"
         case cpuCores = "cpu_cores"
         case memoryBytes = "memory_bytes"
         case swapBytes = "swap_bytes"
