@@ -184,7 +184,7 @@ struct MaatCasebookView: View {
     private func summaryDetail(_ summary: MaatCasebookSummary) -> String {
         guard summary.total > 0 else { return "No decisions match this view" }
         if summary.urgent > 0 { return "Start with the decisions that need a response." }
-        if summary.open > 0 { return "(summary.open) decision\(summary.open == 1 ? "" : "s") still needs attention." }
+        if summary.open > 0 { return "\(summary.open) decision\(summary.open == 1 ? "" : "s") still needs attention." }
         return "All recorded decisions are resolved."
     }
 
@@ -586,6 +586,14 @@ private struct MaatCaseDetailView: View {
 							detailSection("Deterministic floor", failed.isEmpty ? "failed" : "failed: \(failed)")
 						}
 					}
+					if let calibration = entry.systemOneCalibration {
+						detailSection("System One calibration", "Local \(calibration.screenGate) → independent \(calibration.frontierGate)")
+						detailSection("Screen evidence", calibration.screenEvidence)
+						detailSection("Independent evidence", calibration.frontierEvidence)
+						Text("This is a completed evidence comparison, not a new authorization or unresolved repair.")
+							.sirsiFont(.caption)
+							.foregroundStyle(.secondary)
+					}
                     if let action = entry.nextAction {
                         detailSection("Next step", action.title)
                         Text(action.detail)
@@ -748,11 +756,12 @@ struct MaatCase: Decodable, Identifiable {
 	let resolution: String
 	let nextAction: MaatCaseNextAction?
 	let systemOne: MaatSystemOneVerdict?
+	let systemOneCalibration: MaatSystemOneCalibration?
 
     init(id: String, time: String, kind: String, category: String, status: String,
          priority: MaatCasePriority, requester: String, resource: String,
          affected: String, determination: String, assessed: String, why: String,
-         evidence: String, resolution: String = "", nextAction: MaatCaseNextAction? = nil, systemOne: MaatSystemOneVerdict? = nil) {
+         evidence: String, resolution: String = "", nextAction: MaatCaseNextAction? = nil, systemOne: MaatSystemOneVerdict? = nil, systemOneCalibration: MaatSystemOneCalibration? = nil) {
         self.id = id
         self.time = time
         self.kind = kind
@@ -769,6 +778,7 @@ struct MaatCase: Decodable, Identifiable {
 		self.resolution = resolution
 		self.nextAction = nextAction
 		self.systemOne = systemOne
+		self.systemOneCalibration = systemOneCalibration
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -776,6 +786,7 @@ struct MaatCase: Decodable, Identifiable {
         case affected, determination, assessed, why, evidence, resolution
         case nextAction = "next_action"
 		case systemOne = "system_one"
+		case systemOneCalibration = "system_one_calibration"
     }
 
     init(from decoder: Decoder) throws {
@@ -796,11 +807,12 @@ struct MaatCase: Decodable, Identifiable {
 		resolution = try values.decodeIfPresent(String.self, forKey: .resolution) ?? ""
 		nextAction = try values.decodeIfPresent(MaatCaseNextAction.self, forKey: .nextAction)
 		systemOne = try values.decodeIfPresent(MaatSystemOneVerdict.self, forKey: .systemOne)
+		systemOneCalibration = try values.decodeIfPresent(MaatSystemOneCalibration.self, forKey: .systemOneCalibration)
     }
 
     var searchText: String {
         [time, kind, category, status, requester, resource, affected,
-         determination, assessed, why, evidence, resolution, nextAction?.title ?? "", nextAction?.detail ?? "", systemOne?.gate ?? "", systemOne?.subject.headSHA ?? ""].joined(separator: " ")
+         determination, assessed, why, evidence, resolution, nextAction?.title ?? "", nextAction?.detail ?? "", systemOne?.gate ?? "", systemOne?.subject.headSHA ?? "", systemOneCalibration?.screenEvidence ?? "", systemOneCalibration?.frontierEvidence ?? ""].joined(separator: " ")
     }
 }
 
@@ -838,6 +850,20 @@ struct MaatSystemOneEscalation: Decodable {
     let reason: String
     let reviewTier: String
     enum CodingKeys: String, CodingKey { case reason; case reviewTier = "review_tier" }
+}
+
+struct MaatSystemOneCalibration: Decodable {
+    let screenEvidence: String
+    let frontierEvidence: String
+    let screenGate: String
+    let frontierGate: String
+
+    enum CodingKeys: String, CodingKey {
+        case screenEvidence = "screen_evidence"
+        case frontierEvidence = "frontier_evidence"
+        case screenGate = "screen_gate"
+        case frontierGate = "frontier_gate"
+    }
 }
 
 struct MaatCaseNextAction: Decodable {

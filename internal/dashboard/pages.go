@@ -442,6 +442,12 @@ function viewMaat(){
     if(screen.subject)bits.push('screen subject: '+(screen.subject.kind||'unknown')+' '+(screen.subject.ref||'unknown')+' · '+(screen.subject.head_sha||'unknown'));
     if(screen.escalation&&screen.escalation.reason)bits.push('required review: '+screen.escalation.reason);
    }
+   if(d.system_one_calibration){
+    const calibration=d.system_one_calibration;
+    bits.push('system one calibration: '+(calibration.screen_gate||'unknown')+' → '+(calibration.frontier_gate||'unknown'));
+    if(calibration.screen_evidence)bits.push('screen evidence: '+calibration.screen_evidence);
+    if(calibration.frontier_evidence)bits.push('independent evidence: '+calibration.frontier_evidence);
+   }
    detail.textContent=bits.join(' · ');T.appendChild(detail);
   });
  }).catch(function(e){out('  Ma’at casebook unavailable: '+e.message,'t-err')});

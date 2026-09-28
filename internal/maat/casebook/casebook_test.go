@@ -78,3 +78,34 @@ func TestBuildGivesEscalatedSystemOneScreensAnEvidenceBoundReviewRoute(t *testin
 		t.Fatalf("System One casebook projection = %+v", view)
 	}
 }
+
+func TestBuildProjectsCalibrationAsCompletedEvidenceWithBothLinks(t *testing.T) {
+	verdict, err := maat.Screen(maat.SystemOneScreen{
+		Subject:       maat.VerdictSubject{Kind: "commit", Repo: "SirsiMaster/sirsi-pantheon", Ref: "main", HeadSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		FeatherWeight: 92, Confidence: 0.96,
+		Floor: maat.FloorResult{Passed: true, Checks: []maat.FloorCheck{{Name: "gofmt", Passed: true}}},
+		Model: maat.ModelStamp{Provider: "local:deterministic", Version: "v1", Local: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const screenEvidence = "maat-system-one:sha256=screen"
+	const frontierEvidence = "review:sha256=independent"
+	view := Build([]maat.Decision{
+		{Time: "2026-09-27T09:00:00Z", Host: "m5", Kind: "system one screen", Requester: "sirsi maat screen", Assessed: "commit main", Determination: string(verdict.Gate), Why: "local pass", Evidence: screenEvidence, SystemOne: &verdict},
+		{Time: "2026-09-27T09:01:00Z", Host: "m5", Kind: "system one calibration", Requester: "sirsi maat calibrate", Assessed: "System One auto-pass calibration", Determination: "block", Why: "independent review overturned a local System One auto-pass", Evidence: "maat-system-one-calibration:sha256=record", SystemOneCalibration: &maat.CalibrationRecord{SchemaVersion: maat.SystemOneSchemaVersion, ScreenEvidence: screenEvidence, FrontierEvidence: frontierEvidence, ScreenGate: maat.GatePass, FrontierGate: maat.GateBlock}},
+	})
+	if len(view.Cases) != 2 {
+		t.Fatalf("cases = %+v", view.Cases)
+	}
+	calibration := view.Cases[0]
+	if calibration.Kind != "system one calibration" || calibration.Status != StatusResolved || calibration.Priority != PriorityNormal || calibration.NextAction != nil || calibration.SystemOneCalibration == nil {
+		t.Fatalf("calibration case = %+v", calibration)
+	}
+	if calibration.SystemOneCalibration.ScreenEvidence != screenEvidence || calibration.SystemOneCalibration.FrontierEvidence != frontierEvidence {
+		t.Fatalf("calibration links = %+v", calibration.SystemOneCalibration)
+	}
+	if got := Search([]maat.Decision{{Time: "2026-09-27T09:01:00Z", Host: "m5", Kind: "system one calibration", Requester: "sirsi maat calibrate", Assessed: "System One auto-pass calibration", Determination: "block", Why: "independent review", Evidence: "maat-system-one-calibration:sha256=record", SystemOneCalibration: calibration.SystemOneCalibration}}, Query{Text: frontierEvidence}); len(got.Cases) != 1 {
+		t.Fatalf("calibration evidence search = %+v", got)
+	}
+}

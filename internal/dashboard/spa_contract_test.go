@@ -118,6 +118,8 @@ func TestMaatView_ProjectsSystemOneEvidence(t *testing.T) {
 		"screen.feather_weight",
 		"screen.subject.head_sha",
 		"screen.escalation.reason",
+		"d.system_one_calibration",
+		"calibration.frontier_evidence",
 	} {
 		if !strings.Contains(page, token) {
 			t.Errorf("Ma'at view does not project System One evidence token %q", token)

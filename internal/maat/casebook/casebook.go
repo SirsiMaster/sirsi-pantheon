@@ -41,23 +41,24 @@ type ResolutionPath struct {
 // Case is a stable, operator-readable projection of exactly one recorded
 // Ma'at decision. It has no independent lifecycle or write authority.
 type Case struct {
-	ID            string            `json:"id"`
-	Time          string            `json:"time"`
-	Host          string            `json:"host"`
-	Kind          string            `json:"kind"`
-	Category      string            `json:"category"`
-	Status        Status            `json:"status"`
-	Priority      Priority          `json:"priority"`
-	Requester     string            `json:"requester"`
-	Resource      string            `json:"resource,omitempty"`
-	Affected      string            `json:"affected,omitempty"`
-	Determination string            `json:"determination"`
-	Assessed      string            `json:"assessed"`
-	Why           string            `json:"why"`
-	Evidence      string            `json:"evidence,omitempty"`
-	Resolution    string            `json:"resolution,omitempty"`
-	NextAction    *ResolutionPath   `json:"next_action,omitempty"`
-	SystemOne     *maat.MaatVerdict `json:"system_one,omitempty"`
+	ID                   string                  `json:"id"`
+	Time                 string                  `json:"time"`
+	Host                 string                  `json:"host"`
+	Kind                 string                  `json:"kind"`
+	Category             string                  `json:"category"`
+	Status               Status                  `json:"status"`
+	Priority             Priority                `json:"priority"`
+	Requester            string                  `json:"requester"`
+	Resource             string                  `json:"resource,omitempty"`
+	Affected             string                  `json:"affected,omitempty"`
+	Determination        string                  `json:"determination"`
+	Assessed             string                  `json:"assessed"`
+	Why                  string                  `json:"why"`
+	Evidence             string                  `json:"evidence,omitempty"`
+	Resolution           string                  `json:"resolution,omitempty"`
+	NextAction           *ResolutionPath         `json:"next_action,omitempty"`
+	SystemOne            *maat.MaatVerdict       `json:"system_one,omitempty"`
+	SystemOneCalibration *maat.CalibrationRecord `json:"system_one_calibration,omitempty"`
 }
 
 // Node and Edge form a deliberately small evidence graph. The dashboard can
@@ -169,8 +170,16 @@ func project(d maat.Decision) Case {
 	c := Case{
 		Time: d.Time, Host: d.Host, Kind: d.Kind, Category: classify(d),
 		Requester: d.Requester, Resource: d.Resource, Affected: d.Affected,
-		Determination: d.Determination, Assessed: d.Assessed, Why: d.Why, Evidence: d.Evidence, SystemOne: d.SystemOne,
+		Determination: d.Determination, Assessed: d.Assessed, Why: d.Why, Evidence: d.Evidence,
+		SystemOne: d.SystemOne, SystemOneCalibration: d.SystemOneCalibration,
 		Status: statusFor(determination), Priority: priorityFor(determination),
+	}
+	// A calibration is a completed historical comparison between an existing
+	// auto-pass and an independent outcome. A block can be urgent in the
+	// original screen's case; it is not an unresolved action on this receipt.
+	if d.SystemOneCalibration != nil {
+		c.Status = StatusResolved
+		c.Priority = PriorityNormal
 	}
 	sum := sha256.Sum256([]byte(strings.Join([]string{d.Time, d.Host, d.Kind, d.Requester, d.Resource, d.Determination, d.Evidence}, "\x00")))
 	c.ID = "maat-case-" + hex.EncodeToString(sum[:8])
@@ -244,7 +253,15 @@ func matches(c Case, needle string) bool {
 	return strings.Contains(strings.ToLower(strings.Join([]string{
 		c.Time, c.Host, c.Kind, c.Category, c.Requester, c.Resource,
 		c.Affected, c.Determination, c.Assessed, c.Why, c.Evidence, c.Resolution, resolutionText(c.NextAction),
+		calibrationText(c.SystemOneCalibration),
 	}, "\n")), needle)
+}
+
+func calibrationText(record *maat.CalibrationRecord) string {
+	if record == nil {
+		return ""
+	}
+	return strings.Join([]string{record.ScreenEvidence, record.FrontierEvidence, string(record.ScreenGate), string(record.FrontierGate)}, "\n")
 }
 
 func resolutionText(action *ResolutionPath) string {
@@ -297,6 +314,16 @@ func graphFor(cases []Case) Graph {
 			kind := strings.TrimSuffix(relation.prefix, ":")
 			add(to, kind, relation.label)
 			edges = append(edges, Edge{From: caseID, To: to, Kind: relation.kind})
+		}
+		if calibration := c.SystemOneCalibration; calibration != nil {
+			for _, evidence := range []string{calibration.ScreenEvidence, calibration.FrontierEvidence} {
+				if evidence == "" {
+					continue
+				}
+				to := "evidence:" + evidence
+				add(to, "evidence", evidence)
+				edges = append(edges, Edge{From: caseID, To: to, Kind: "calibrated_against"})
+			}
 		}
 	}
 	keys := make([]string, 0, len(nodes))
