@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.32] — 2026-09-28 — Canonical Stack Lab wing integrity
+**Source release candidate.** The Pantheon release recipe now resolves through
+the canonical `stacklab.wing.pantheon.pt-wing-001` wing, Stack Lab validates
+that a recipe's local wing exists before projection, and the router roster
+uses the current Hermes and Photon identities. The source-qualified release
+remains separate from Developer ID signing, notarization, and commercial
+publication credentials.
+
 ## [0.24.31] — 2026-09-28 — Relay and Ma'at evidence correctness
 **Source release candidate.** The relay keeps half-open connection recovery
 fail-closed by retrying only before-send dial failures, while Ma'at parses
