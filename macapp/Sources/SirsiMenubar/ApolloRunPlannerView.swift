@@ -89,6 +89,7 @@ struct ApolloRunPlannerView: View {
         MaybeScroll {
             VStack(alignment: .leading, spacing: 16) {
                 header(catalog)
+                runPath
                 availableRoutes(catalog)
                 machinePicker(catalog)
                 enginePicker(catalog)
@@ -119,6 +120,41 @@ struct ApolloRunPlannerView: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.05)))
+    }
+
+    // Keep the transition from a Stack Lab declaration to a live Apollo
+    // instrument explicit. A plan requests capacity; it is never presented as
+    // a started model session before SNE publishes an authenticated sample.
+    private var runPath: some View {
+        HStack(alignment: .top, spacing: 10) {
+            runStep("1", title: "Choose", detail: "route, machine, and estates")
+            Image(systemName: "arrow.right")
+                .sirsiFont(.caption, weight: .semibold)
+                .foregroundStyle(gold)
+                .padding(.top, 5)
+            runStep("2", title: "Build", detail: "the typed Stack Lab recipe")
+            Image(systemName: "arrow.right")
+                .sirsiFont(.caption, weight: .semibold)
+                .foregroundStyle(gold)
+                .padding(.top, 5)
+            runStep("3", title: "Observe", detail: "Apollo after SNE admission")
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Run path: choose a measured route and machine, build the Stack Lab recipe, then observe live Apollo telemetry after SNE admission.")
+        .padding(.horizontal, 4)
+    }
+
+    private func runStep(_ ordinal: String, title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(ordinal + " · " + title)
+                .sirsiFont(.caption, weight: .semibold)
+                .foregroundStyle(gold)
+            Text(detail)
+                .sirsiFont(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // Keep the fabric's measured choices in view before an operator opens a
@@ -326,9 +362,9 @@ struct ApolloRunPlannerView: View {
             SnapshotActionButton(disabled: planning || planBlocker(catalog) != nil) {
                 Task { await createPlan(catalog) }
             } label: {
-                Label(planning ? "Validating selected recipe…" : "Validate recipe & open Apollo", systemImage: "play.circle")
+                Label(planning ? "Building selected recipe…" : "Build recipe & open Apollo", systemImage: "play.circle")
             }
-            Text("Validates the exact typed Stack Lab plan below, then transfers the same declaration to Apollo telemetry. SNE separately admits and starts inference against live capacity.")
+            Text("Builds the exact typed Stack Lab recipe below, then transfers that same declaration to Apollo. SNE separately admits and starts inference against live capacity.")
                 .sirsiFont(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -368,7 +404,7 @@ struct ApolloRunPlannerView: View {
                 .padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.06)))
-            Text("Validate this declaration to hand it directly to Apollo telemetry. SNE remains the authority that can admit an inference session against current pressure.")
+            Text("Build this declaration to hand it directly to Apollo telemetry. SNE remains the authority that can admit an inference session against current pressure.")
                 .sirsiFont(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -398,7 +434,7 @@ struct ApolloRunPlannerView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             NavLink { ApolloTelemetryView(engine: engine, plan: plan) } label: {
-                Label("Open Apollo telemetry", systemImage: "waveform.path.ecg")
+                Label("Open live Apollo telemetry", systemImage: "waveform.path.ecg")
             }
             .buttonStyle(.borderedProminent).tint(gold)
         }
