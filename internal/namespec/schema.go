@@ -95,6 +95,34 @@ func (s Schema) Allows(n Name) error {
 	return nil
 }
 
+// AssignWith is the router's name-authority core (ADR-072 P2): given a lane's
+// COMPONENTS {agent, project, task} plus the machine the router gleaned, it
+// constructs the canonical name and validates it against the grammar AND the
+// schema's allowed sets. A lane never supplies the name string — it presents
+// components and the router returns the one canonical name — so a lane cannot
+// self-name into non-conformance. This is pure: the origin READ of the schema,
+// the credentialed machine-id binding (C3), and the durable name→thread-id
+// mapping (C4) are the router-side I/O that wraps this.
+func AssignWith(agent, project, task, machine string, schema Schema) (Name, error) {
+	n, err := Construct(agent, project, machine, task)
+	if err != nil {
+		return Name{}, err
+	}
+	if err := schema.Allows(n); err != nil {
+		return Name{}, err
+	}
+	return n, nil
+}
+
+// Assign is AssignWith with the machine gleaned from this host's designated name.
+func Assign(agent, project, task string, schema Schema) (Name, error) {
+	machine, err := GleanMachine()
+	if err != nil {
+		return Name{}, err
+	}
+	return AssignWith(agent, project, task, machine, schema)
+}
+
 func contains(xs []string, v string) bool {
 	for _, x := range xs {
 		if x == v {

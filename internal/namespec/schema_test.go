@@ -71,3 +71,38 @@ func TestLoadSchemaRejections(t *testing.T) {
 		}
 	}
 }
+
+// TestAssignWith covers the router name-authority core: components -> the one
+// canonical name, refusing out-of-schema components (A35, both directions).
+func TestAssignWith(t *testing.T) {
+	raw, _ := os.ReadFile(filepath.Join("..", "..", "contracts", "naming", "registry-schema-v1.json"))
+	s, err := LoadSchema(raw)
+	if err != nil {
+		t.Fatalf("LoadSchema: %v", err)
+	}
+	// valid: components construct the canonical name
+	n, err := AssignWith("claude", "finalwishes", "fw-r02", "m1", s)
+	if err != nil {
+		t.Fatalf("AssignWith valid: %v", err)
+	}
+	if n.String() != "claude-finalwishes-m1-fw-r02" {
+		t.Errorf("AssignWith name = %q", n.String())
+	}
+	// no task
+	if n2, _ := AssignWith("ra", "router", "", "m1", s); n2.String() != "ra-router-m1" {
+		t.Errorf("AssignWith no-task = %q", n2.String())
+	}
+	// refusals: out-of-schema agent/project/machine, malformed component
+	bad := [][4]string{
+		{"nobody", "router", "", "m1"},           // agent not in schema
+		{"claude", "notaproject", "", "m1"},      // project not in schema
+		{"ra", "router", "", "m9"},               // machine not in schema
+		{"claude", "final_wishes", "", "m1"},     // malformed project
+		{"claude", "finalwishes", "bad_t", "m1"}, // malformed task
+	}
+	for _, b := range bad {
+		if _, err := AssignWith(b[0], b[1], b[2], b[3], s); err == nil {
+			t.Errorf("AssignWith(%v) should be refused, got nil", b)
+		}
+	}
+}
