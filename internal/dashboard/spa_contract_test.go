@@ -106,3 +106,21 @@ func TestHomeView_CommandsAreClickable(t *testing.T) {
 		t.Error("command input is never focused — the first keystroke goes nowhere")
 	}
 }
+
+// TestMaatView_ProjectsSystemOneEvidence ensures that a System One screen is
+// visible with its decision basis and next safe action. A casebook entry may
+// be advisory, but it must never leave the operator at an unexplained status.
+func TestMaatView_ProjectsSystemOneEvidence(t *testing.T) {
+	page := fetchSPA(t)
+
+	for _, token := range []string{
+		"d.system_one",
+		"screen.feather_weight",
+		"screen.subject.head_sha",
+		"screen.escalation.reason",
+	} {
+		if !strings.Contains(page, token) {
+			t.Errorf("Ma'at view does not project System One evidence token %q", token)
+		}
+	}
+}

@@ -435,7 +435,13 @@ function viewMaat(){
    let bits=['status: '+(d.status||'open'),'decision: '+(d.kind||'unknown')+' → '+(d.determination||'unknown'),'assessment: '+(d.assessed||'unknown')];
    if(d.affected)bits.push('affected: '+d.affected);
    if(d.evidence)bits.push('evidence: '+d.evidence);
-	   if(d.next_action){bits.push('next: '+(d.next_action.title||'review the retained evidence')+(d.next_action.detail?' — '+d.next_action.detail:''));}
+   if(d.next_action){bits.push('next: '+(d.next_action.title||'review the retained evidence')+(d.next_action.detail?' — '+d.next_action.detail:''));}
+   if(d.system_one){
+    const screen=d.system_one, confidence=Math.round((screen.confidence||0)*100);
+    bits.push('system one: '+(screen.gate||'unknown')+' · '+confidence+'% confidence · feather '+(screen.feather_weight??'unknown')+'/100');
+    if(screen.subject)bits.push('screen subject: '+(screen.subject.kind||'unknown')+' '+(screen.subject.ref||'unknown')+' · '+(screen.subject.head_sha||'unknown'));
+    if(screen.escalation&&screen.escalation.reason)bits.push('required review: '+screen.escalation.reason);
+   }
    detail.textContent=bits.join(' · ');T.appendChild(detail);
   });
  }).catch(function(e){out('  Ma’at casebook unavailable: '+e.message,'t-err')});
