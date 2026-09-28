@@ -83,6 +83,10 @@ private struct MaatSystemOneView: View {
     @State private var releasePreflightError: String?
     @State private var confirmReleasePreflight = false
     @State private var releasePreflightRecorded = false
+    @State private var confirmHostTriage = false
+    @State private var hostTriageInFlight = false
+    @State private var hostTriageResult: CommandResult?
+    @State private var hostTriageError: String?
 
     init(engine: SirsiEngine, section: Binding<MaatWorkspaceSection>, preloaded: MaatCasebookProjection? = nil) {
         self.engine = engine
@@ -136,6 +140,12 @@ private struct MaatSystemOneView: View {
         } message: {
             Text("This records the exact non-executing source observation in the local Casebook. It does not build, package, sign, notarize, publish, or authorize a release.")
         }
+        .confirmationDialog("Observe this Mac for Ma'at System One?", isPresented: $confirmHostTriage, titleVisibility: .visible) {
+            Button("Observe and record") { Task { await recordHostTriage() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Ma'at will run one local health observation, hash that exact report, and record its deterministic result in Casebook. It will not repair services, kill processes, install software, or authorize other work.")
+        }
     }
 
     private func unavailableState(_ message: String) -> some View {
@@ -175,6 +185,7 @@ private struct MaatSystemOneView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     summary(screens: screens, calibrations: calibrations)
                     resolutionLane(screens)
+                    hostTriageControl
                     releasePreflightControl
                     screenImportControl
                     if screens.isEmpty {
@@ -352,6 +363,56 @@ private struct MaatSystemOneView: View {
                 Label("Inspect Stack Lab recipes", systemImage: "cube.transparent")
             }
             .buttonStyle(.bordered)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+    }
+
+    // This is the local System One entry point: Ma'at owns the observation,
+    // normalizes and hashes it, then records the exact evidence only after an
+    // explicit confirmation. It replaces the previous "bring your own JSON"
+    // dead-end for ordinary workstation health without making a health screen
+    // an implicit repair or execution authority.
+    private var hostTriageControl: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text("Observe this Mac")
+                .sirsiFont(.headline)
+            Text("Create one local, evidence-bound System One health screen. Ma'at will show every active finding with its bounded repair, review, and owner-resolution route in Casebook.")
+                .sirsiFont(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                confirmHostTriage = true
+            } label: {
+                Label("Observe and record", systemImage: "waveform.path.ecg")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(gold)
+            .disabled(hostTriageInFlight)
+            .accessibilityHint("Runs one local diagnostic and records its exact hashed System One result after confirmation. It does not repair the Mac.")
+            if hostTriageInFlight {
+                ProgressView("Observing this Mac…")
+                    .sirsiFont(.caption)
+            }
+            if let result = hostTriageResult {
+                Label(result.summary, systemImage: result.ok ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(result.ok ? .green : .orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                if result.ok {
+                    Text("The Casebook was refreshed from this exact local observation.")
+                        .sirsiFont(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if let hostTriageError {
+                Label(hostTriageError, systemImage: "exclamationmark.triangle.fill")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -570,6 +631,19 @@ private struct MaatSystemOneView: View {
             await load()
         }
         screenImportInFlight = false
+    }
+
+    @MainActor private func recordHostTriage() async {
+        guard !hostTriageInFlight else { return }
+        hostTriageInFlight = true
+        hostTriageError = nil
+        hostTriageResult = await SirsiEngine.runResult(args: ["maat", "triage", "--confirm"])
+        if hostTriageResult == nil {
+            hostTriageError = "Ma'at could not record the local observation. No System One outcome was inferred or accepted. Try again, then inspect the local Casebook if the problem persists."
+        } else if hostTriageResult?.ok == true {
+            await load()
+        }
+        hostTriageInFlight = false
     }
 
     @MainActor private func inspectReleasePreflight() async {

@@ -469,7 +469,10 @@ func sameCanonicalSystemOneInput(a, b SystemOneScreen) bool {
 }
 
 func validateSubject(subject VerdictSubject) error {
-	if !oneOf(subject.Kind, "pr", "diff", "file", "commit") {
+	// A System One subject is an immutable observation, not exclusively a source
+	// change. A local host diagnostic is likewise a bounded, hashed observation
+	// that Ma'at must be able to retain and resolve through the same Casebook.
+	if !oneOf(subject.Kind, "pr", "diff", "file", "commit", "host") {
 		return fmt.Errorf("maat system one: unsupported subject kind %q", subject.Kind)
 	}
 	for name, value := range map[string]string{"repo": subject.Repo, "ref": subject.Ref, "head_sha": subject.HeadSHA} {
