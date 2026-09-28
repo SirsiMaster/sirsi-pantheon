@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.26] — 2026-09-28 — Router cutover override correctness
+**Commercial patch release.** An explicit `SIRSI_ROUTER_STORE_WAKE` value now
+overrides the service URL, as documented. This makes `SIRSI_ROUTER_STORE_WAKE=0`
+a reliable emergency/test override even on hosts normally pointed at the router
+service, preventing unexpected store-cutover behavior.
+
 ## [0.24.25] — 2026-09-28 — SNE consumer authority pointer
 **Commercial patch release.** The legacy `codex-sne-runtime` and
 `claude-inference` consumer prompts now point SNE source, recipe, runtime,

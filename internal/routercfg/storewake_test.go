@@ -9,13 +9,14 @@ import (
 // Env always wins, in both directions.
 func TestStoreWakeEnvWins(t *testing.T) {
 	t.Setenv("HOME", t.TempDir()) // no marker
+	t.Setenv("SIRSI_ROUTER_URL", "spool:///router")
 	t.Setenv(StoreWakeEnv, "1")
 	if !StoreWake() {
-		t.Error("env=1 with no marker must be ON")
+		t.Error("env=1 must be ON even when a router service URL is configured")
 	}
 	t.Setenv(StoreWakeEnv, "0")
 	if StoreWake() {
-		t.Error("env=0 must be OFF even if a marker exists")
+		t.Error("env=0 must be OFF even when a router service URL is configured")
 	}
 }
 
