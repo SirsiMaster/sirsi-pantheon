@@ -77,7 +77,7 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380, appearance: ColorSche
             // deterministic fixture in that case; live menubar use never falls
             // back to it and reads the local casebook projection.
             ("maat-workspace", AnyView(MaatWorkspaceView(engine: engine, preloadedCasebook: maatCasebook ?? .snapshotPreview, preloadedKnowledge: maatKnowledge ?? .snapshotPreview))),
-            ("apollo-run-planner", AnyView(ApolloRunPlannerView(engine: engine, preloadedCatalog: apolloCatalog))),
+            ("apollo-run-planner", AnyView(ApolloRunPlannerView(engine: engine, preloadedCatalog: apolloCatalog ?? .snapshotPreview))),
             ("thoth-memory", AnyView(ThothMemoryInfoView(engine: engine))),
             ("ra-fabric", AnyView(RaFabricView(engine: engine))),
             ("threads-heartbeat", AnyView(ThreadsView(engine: engine))),
@@ -108,6 +108,7 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380, appearance: ColorSche
             // the title onward instead of centering and clipping its first rows.
             let height: CGFloat = switch shot.name {
             case "ask-sirsi", "maat-workspace", "ra-fabric": 960
+            case "apollo-run-planner": 1_180
             case "all-tools": 1_040
             default: 520
             }

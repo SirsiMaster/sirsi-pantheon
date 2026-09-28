@@ -27,6 +27,16 @@ struct ApolloRunPlannerView: View {
         self.preloadedCatalog = preloadedCatalog
         _catalog = State(initialValue: preloadedCatalog)
         _loading = State(initialValue: preloadedCatalog == nil)
+        let machine = preloadedCatalog?.machineOptions.first ?? preloadedCatalog?.machine
+        let machineID = machine?.id ?? "this-mac"
+        let engines = preloadedCatalog?.engines.filter { $0.machineID == nil || $0.machineID == machineID } ?? []
+        let estatesForMachine = Set(machine?.chipEstates ?? [])
+        let estates = preloadedCatalog?.estates.filter { estatesForMachine.isEmpty || estatesForMachine.contains($0.id) } ?? []
+        _selectedMachine = State(initialValue: machineID)
+        _selectedEngine = State(initialValue: engines.first(where: { $0.state == "configured" })?.id ?? engines.first?.id ?? "")
+        _selectedCores = State(initialValue: max(1, (machine?.cpuCores ?? 1) / 2))
+        _selectedMemoryGiB = State(initialValue: max(1, Int((machine?.memoryBytes ?? 1_073_741_824) / 1_073_741_824) / 2))
+        _selectedEstates = State(initialValue: Set(estates.filter(\.available).map(\.id)))
     }
 
     var body: some View {
@@ -557,6 +567,30 @@ struct ApolloCatalog: Decodable {
     let engines: [ApolloEngineOption]
     let estates: [ApolloChipEstate]
 	var machineOptions: [ApolloMachine] { machines?.isEmpty == false ? machines! : [machine] }
+}
+
+extension ApolloCatalog {
+    // Used only when an installed CLI predates the source checkout running the
+    // native visual walk. This preview has no route, credential, or telemetry
+    // authority; the live planner always requires a typed CLI catalog.
+    static let snapshotPreview = ApolloCatalog(
+        machine: ApolloMachine(id: "this-mac", name: "This Mac", cpuCores: 12,
+                               memoryBytes: 32 * 1_073_741_824,
+                               chipEstates: ["cpu", "gpu", "neural-engine"]),
+        machines: nil,
+        engines: [ApolloEngineOption(id: "apollo-local", machineID: "this-mac",
+                                     name: "Apollo local", provider: "Apollo",
+                                     residentModel: "qualified resident model",
+                                     endpoint: nil, state: "configured")],
+        estates: [
+            ApolloChipEstate(id: "cpu", name: "CPU", available: true,
+                             description: "General-purpose local compute."),
+            ApolloChipEstate(id: "gpu", name: "GPU", available: true,
+                             description: "Apple GPU estate when SNE qualifies it."),
+            ApolloChipEstate(id: "neural-engine", name: "Neural Engine", available: false,
+                             description: "Visible until a local SNE receipt makes it available."),
+        ]
+    )
 }
 struct ApolloMachine: Decodable, Identifiable { let id: String; let name: String; let cpuCores: Int; let memoryBytes: Int64; let chipEstates: [String]?; enum CodingKeys: String, CodingKey { case id, name; case cpuCores = "cpu_cores"; case memoryBytes = "memory_bytes"; case chipEstates = "chip_estates" } }
 struct ApolloEngineOption: Decodable, Identifiable { let id: String; let machineID: String?; let name: String; let provider: String; let residentModel: String?; let endpoint: String?; let state: String; enum CodingKeys: String, CodingKey { case id, name, provider, endpoint, state; case machineID = "machine_id"; case residentModel = "resident_model" } }
