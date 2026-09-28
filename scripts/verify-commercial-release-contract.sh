@@ -36,6 +36,12 @@ done
 
 /usr/bin/grep -Fq 'scripts/build-dmg.sh --release' "$workflow" || { echo "release workflow does not request release DMG mode" >&2; exit 1; }
 /usr/bin/grep -Fq 'scripts/build-pkg.sh --release' "$workflow" || { echo "release workflow does not request release PKG mode" >&2; exit 1; }
+/usr/bin/grep -Fq 'go build ./cmd/sirsi' "$workflow" || { echo "release workflow does not compile the portable sirsi target" >&2; exit 1; }
+/usr/bin/grep -Fq 'go build ./cmd/sirsi-agent' "$workflow" || { echo "release workflow does not compile the portable sirsi-agent target" >&2; exit 1; }
+if /usr/bin/grep -Eq '^\s*go build \./\.\.\.\s*$' "$workflow"; then
+    echo "release workflow tries to compile macOS-only GUI packages on Linux" >&2
+    exit 1
+fi
 for target in dmg-dev pkg-dev release-dmg release-pkg; do
     /usr/bin/grep -Eq "^${target}:" "$makefile" || { echo "Makefile target missing: $target" >&2; exit 1; }
 done

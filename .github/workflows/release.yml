@@ -24,18 +24,17 @@ jobs:
         with:
           go-version: '1.25'
 
-      - name: Verify release build compiles (static, all packages)
-        # The PR gate (self-hosted macOS) runs the full `-race` suite before merge, and a
-        # tag is cut from tested main — so the release job BUILDS + PUBLISHES, it does not
-        # re-test. Re-running the suite here on ubuntu FAILS on Mac/env-specific tests
-        # (Thunderbolt tb_lane_drift, GH-runner health, login-shell, wake-loop timing) that
-        # cannot pass on Linux, and it never exercised the STATIC build — the exact defect
-        # class a release must catch (the CGO_ENABLED=0 `vitals` break, #806, which the
-        # CGO-on PR gate missed). Verify the static compile instead; goreleaser then
-        # cross-builds every target (darwin/linux × arm64/amd64) as the real release gate.
+      - name: Verify portable release binaries compile
+        # This Ubuntu job must validate exactly the two CGO-free targets that
+        # GoReleaser publishes. An all-package build also selects the macOS-only
+        # webview and systray surfaces, making a Linux release fail before the
+        # actual release build begins. The native app is built and verified by
+        # the separate macOS menubar job below.
         env:
           CGO_ENABLED: "0"
-        run: go build ./...
+        run: |
+          go build ./cmd/sirsi
+          go build ./cmd/sirsi-agent
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
