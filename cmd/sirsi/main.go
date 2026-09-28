@@ -797,7 +797,6 @@ func init() {
 	// ── Power-user deity modules (hidden from default help, still work) ──
 	anubisCmd.Hidden = true
 	isisCmd.Hidden = true
-	maatCmd.Hidden = true
 	osirisCmd.Hidden = true
 	sebaCmd.Hidden = true
 	seshatCmd.Hidden = true

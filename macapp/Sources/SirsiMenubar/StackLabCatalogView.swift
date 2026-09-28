@@ -223,6 +223,9 @@ private struct StackLabContractDetail: View {
                     if entry.components.contains(where: { $0.id == "stacklab-apollo-run-planner" }) {
                         apolloRecipeHandoff
                     }
+                    if entry.components.contains(where: { $0.id == "maat-host-health-screen" }) {
+                        maatHealthRecipeHandoff
+                    }
                     ForEach(entry.components) { component in
                         StackLabComponentCard(component: component)
                     }
@@ -242,6 +245,30 @@ private struct StackLabContractDetail: View {
                 .fixedSize(horizontal: false, vertical: true)
             NavLink { ApolloRunPlannerView(engine: engine) } label: {
                 Label("Open Apollo recipe", systemImage: "arrow.right.circle.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(gold)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+    }
+
+    // Stack Lab records component metadata, but it is not a shell launcher.
+    // Each runnable product route is deliberately named here and routes into
+    // the native owner surface. That keeps a recipe's explanatory strings from
+    // becoming executable input while still giving an operator a complete path.
+    private var maatHealthRecipeHandoff: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Observe this Mac with Ma'at", systemImage: "waveform.path.ecg")
+                .sirsiFont(.headline)
+            Text("Run one local System One health observation, inspect every finding, then choose its bounded repair, review, or owner-resolution route. Recording the evidence requires confirmation; observation never repairs or changes this Mac.")
+                .sirsiFont(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            NavLink { MaatWorkspaceView(engine: engine) } label: {
+                Label("Open Ma'at System One", systemImage: "arrow.right.circle.fill")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)

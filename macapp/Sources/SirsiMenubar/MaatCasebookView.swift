@@ -353,7 +353,7 @@ private struct MaatSystemOneView: View {
         VStack(alignment: .leading, spacing: 10) {
             Label("No System One evidence yet", systemImage: "checkmark.seal")
                 .sirsiFont(.headline)
-            Text("This is an empty evidence history, not a pass or a failure. System One does not invent a screen from ambient state: a qualified Pantheon producer supplies a closed, typed evidence packet, then Ma'at records the deterministic gate here.")
+            Text("This is an empty evidence history, not a pass or a failure. Choose Observe this Mac to create one qualified local health screen, or record a closed typed screen from another qualified Pantheon producer. Ma'at always shows the deterministic gate before retaining it here.")
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
