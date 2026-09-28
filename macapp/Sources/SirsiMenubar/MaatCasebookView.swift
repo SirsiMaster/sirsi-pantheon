@@ -101,6 +101,11 @@ private struct MaatSystemOneView: View {
     @State private var releasePreflightError: String?
     @State private var confirmReleasePreflight = false
     @State private var releasePreflightRecorded = false
+    @State private var credentialPreflight: MaatReleaseCredentialPreflight?
+    @State private var credentialPreflightInFlight = false
+    @State private var credentialPreflightError: String?
+    @State private var confirmCredentialPreflight = false
+    @State private var credentialPreflightRecorded = false
     @State private var confirmHostTriage = false
     @State private var hostTriageInFlight = false
     @State private var hostTriageResult: CommandResult?
@@ -157,6 +162,12 @@ private struct MaatSystemOneView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This records the exact non-executing source observation in the local Casebook. It does not build, package, sign, notarize, publish, or authorize a release.")
+        }
+        .confirmationDialog("Record this release credential readiness check?", isPresented: $confirmCredentialPreflight, titleVisibility: .visible) {
+            Button("Record in Ma'at Casebook") { Task { await recordCredentialPreflight() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This retains public certificate-name and fingerprint evidence only. It does not read private keys, passwords, notarization material, or contact Apple.")
         }
         .confirmationDialog("Observe this Mac for Ma'at System One?", isPresented: $confirmHostTriage, titleVisibility: .visible) {
             Button("Observe and record") { Task { await recordHostTriage() } }
@@ -524,6 +535,7 @@ private struct MaatSystemOneView: View {
                 .tint(gold)
                 .disabled(releasePreflightInFlight)
             }
+            credentialPreflightControl
             if releasePreflightInFlight {
                 ProgressView("Inspecting source contract…")
                     .sirsiFont(.caption)
@@ -559,6 +571,49 @@ private struct MaatSystemOneView: View {
         .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
     }
 
+    private var credentialPreflightControl: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Divider()
+            Text("Check signing readiness")
+                .sirsiFont(.headline)
+            Text("Read public local Developer ID certificate metadata only. Ma'at never reads a private key, password, or notarization secret here, and it never contacts Apple or starts a release.")
+                .sirsiFont(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                Task { await inspectCredentialPreflight() }
+            } label: {
+                Label("Check local Developer ID readiness", systemImage: "checkmark.shield")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .disabled(credentialPreflightInFlight)
+            if credentialPreflightInFlight {
+                ProgressView("Checking public certificate metadata…")
+                    .sirsiFont(.caption)
+            }
+            if let credentialPreflight {
+                credentialPreflightSummary(credentialPreflight)
+                Button {
+                    confirmCredentialPreflight = true
+                } label: {
+                    Label(credentialPreflightRecorded ? "Recorded in Ma'at Casebook" : "Record readiness evidence", systemImage: credentialPreflightRecorded ? "checkmark.seal.fill" : "checkmark.shield")
+                }
+                .buttonStyle(.bordered)
+                .disabled(credentialPreflightInFlight || credentialPreflightRecorded)
+            }
+            if let credentialPreflightError {
+                Label(credentialPreflightError, systemImage: "exclamationmark.triangle.fill")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Try readiness check again") { Task { await inspectCredentialPreflight() } }
+                    .buttonStyle(.bordered)
+                    .disabled(credentialPreflightInFlight)
+            }
+        }
+    }
+
     @ViewBuilder private func releasePreflightSummary(_ preflight: MaatReleaseContractPreflight) -> some View {
         let passed = preflight.verdict.floor.passed
         VStack(alignment: .leading, spacing: 7) {
@@ -586,6 +641,36 @@ private struct MaatSystemOneView: View {
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 8).fill((passed ? Color.green : Color.orange).opacity(0.09)))
+    }
+
+    @ViewBuilder private func credentialPreflightSummary(_ preflight: MaatReleaseCredentialPreflight) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Label("Release credentials still need a protected proof", systemImage: "key.horizontal")
+                .sirsiFont(.subheadline, weight: .semibold)
+                .foregroundStyle(.orange)
+            Text("Team \(preflight.teamID) · \(preflight.developerIdentities.count) required Developer ID identities observed")
+                .sirsiFont(.caption)
+                .foregroundStyle(.secondary)
+            ForEach(preflight.verdict.floor.checks, id: \.name) { check in
+                Label(check.detail, systemImage: check.passed ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(check.passed ? Color.secondary : Color.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(preflight.verdict.findings) { finding in
+                if !finding.fixHint.isEmpty {
+                    Text("Next: \(finding.fixHint)")
+                        .sirsiFont(.caption)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Text("Fingerprint: \(preflight.fingerprint)")
+                .sirsiFont(.caption2, design: .monospaced)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.09)))
     }
 
     @ViewBuilder private func screenList(_ screens: [MaatCase]) -> some View {
@@ -731,6 +816,42 @@ private struct MaatSystemOneView: View {
             releasePreflightError = "Ma'at returned the observation but did not confirm a Casebook evidence record. Nothing was treated as accepted; inspect the result and retry confirmation."
         }
         releasePreflightInFlight = false
+    }
+
+    @MainActor private func inspectCredentialPreflight() async {
+        guard !credentialPreflightInFlight else { return }
+        credentialPreflightInFlight = true
+        credentialPreflightError = nil
+        credentialPreflightRecorded = false
+        let raw = await SirsiEngine.run(args: ["maat", "preflight", "credentials", "--json"], stdin: nil)
+        guard let result = MaatReleaseCredentialPreflight.decode(raw) else {
+            credentialPreflight = nil
+            credentialPreflightError = "Ma'at could not read a typed local credential readiness result. Nothing was recorded, signed, or released. Unlock the release keychain/session if needed, then retry. \(SirsiEngine.firstMeaningful(raw))"
+            credentialPreflightInFlight = false
+            return
+        }
+        credentialPreflight = result
+        credentialPreflightInFlight = false
+    }
+
+    @MainActor private func recordCredentialPreflight() async {
+        guard !credentialPreflightInFlight else { return }
+        credentialPreflightInFlight = true
+        credentialPreflightError = nil
+        let raw = await SirsiEngine.run(args: ["maat", "preflight", "credentials", "--confirm", "--json"], stdin: nil)
+        guard let result = MaatReleaseCredentialPreflight.decode(raw) else {
+            credentialPreflightError = "Ma'at could not record this credential readiness evidence. No release action ran. Retry the check, then confirm only after reviewing the public metadata. \(SirsiEngine.firstMeaningful(raw))"
+            credentialPreflightInFlight = false
+            return
+        }
+        credentialPreflight = result
+        credentialPreflightRecorded = !result.decisionEvidence.isEmpty
+        if credentialPreflightRecorded {
+            await load()
+        } else {
+            credentialPreflightError = "Ma'at returned the readiness check but did not confirm a Casebook evidence record. Nothing was treated as accepted."
+        }
+        credentialPreflightInFlight = false
     }
 
     @MainActor private func load() async {
@@ -1929,6 +2050,40 @@ private struct MaatReleaseContractPreflight: Decodable {
         guard let start = raw.firstIndex(of: "{") else { return nil }
         return try? JSONDecoder().decode(MaatReleaseContractPreflight.self, from: Data(raw[start...].utf8))
     }
+}
+
+// MaatReleaseCredentialPreflight is intentionally narrower than a release
+// receipt. It projects public local Developer ID certificate metadata and the
+// explicit protected-workflow requirement for notarization; it never models a
+// private key or secret as UI data.
+private struct MaatReleaseCredentialPreflight: Decodable {
+    let teamID: String
+    let fingerprint: String
+    let developerIdentities: [MaatReleaseSigningIdentity]
+    let notarizationObserved: Bool
+    let verdict: MaatSystemOneVerdict
+    let decisionEvidence: String
+
+    enum CodingKeys: String, CodingKey {
+        case teamID = "team_id"
+        case fingerprint
+        case developerIdentities = "developer_identities"
+        case notarizationObserved = "notarization_observed"
+        case verdict
+        case decisionEvidence = "decision_evidence"
+    }
+
+    static func decode(_ raw: String) -> MaatReleaseCredentialPreflight? {
+        guard let start = raw.firstIndex(of: "{") else { return nil }
+        return try? JSONDecoder().decode(MaatReleaseCredentialPreflight.self, from: Data(raw[start...].utf8))
+    }
+}
+
+private struct MaatReleaseSigningIdentity: Decodable, Identifiable {
+    let kind: String
+    let name: String
+    let fingerprint: String
+    var id: String { "\(kind):\(fingerprint)" }
 }
 
 struct MaatCaseNextAction: Decodable {
