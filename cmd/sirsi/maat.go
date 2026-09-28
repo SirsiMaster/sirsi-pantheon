@@ -469,7 +469,7 @@ func runMaatPulse(cmd *cobra.Command, args []string) error {
 		"Modules":   fmt.Sprintf("%d", metrics.Modules),
 	})
 
-	output.Success("Metrics written to .sirsi/metrics.json")
+	output.Success("Metrics written to .pantheon/metrics.json")
 	output.Footer(time.Since(start))
 	actions := suggest.After(suggest.Context{Deity: "maat", Subcommand: "pulse"})
 	var steps [][]string
