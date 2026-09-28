@@ -58,7 +58,7 @@ not get silently co-upgraded because they share a deity name.
 | Coverage | audit assessment with threshold and remediation | `CoverageAssessor` through audit report | `assessment` cases, failed cases are urgent |
 | Pipeline/CI | audit assessment with the current CI run/log classification | `PipelineAssessor` through `sirsi maat audit` | `governance` or `assessment` cases, never synthetic success |
 | Stack Lab guard/review | decision with a receipt reference | Ma'at/approved caller through the decision journal | `governance` cases linked to the receipt |
-| System One screen | closed typed local observation, deterministic floor, confidence, model provenance, and subject identity | `sirsi maat screen --input <system-one-screen.json> --confirm` via `maat.Screen` | `governance` case with `pass`, `changes`, `block`, or `escalate`; escalation routes to evidence-bound review and never authorizes the assessed operation |
+| System One screen | closed typed local observation, deterministic floor, confidence, model provenance, subject identity, and bounded evidence-linked findings | `sirsi maat screen --input <system-one-screen.json> --confirm` via `maat.Screen` | `governance` case with `pass`, `changes`, `block`, or `escalate`; each finding retains a prescribed recovery step as evidence, escalation routes to evidence-bound review, and no screen authorizes the assessed operation |
 | System One calibration | one recorded local auto-pass and a distinct independent final review outcome | `sirsi maat calibrate --screen-evidence <ref> --frontier-evidence <ref> --frontier-gate <pass|changes|block>` | durable calibration evidence and overturn-rate history; replay, missing screen, non-pass, and ambiguous links reject |
 | Shared host, rail, and device capacity | reservation grant/refusal/queue/release | `sirsi maat reserve` | `allocation` cases tied to resource and holder |
 | Cede, handback, or counter-request | explicit router-derived decision record | authorized Ma'at producer | `allocation` cases; pending is high priority, never inferred as granted |
@@ -82,9 +82,12 @@ claim a local record is a remote attestation.
   `GET /api/maat/casebook`, the `maat_casebook` MCP tool, the Activity screen's
   `m` Casebook mode, and the native Casebook expose the same projection.
 - **Resolvable:** every open case exposes its retained evidence and a truthful
-  next step. The native Casebook and explicit confirmed CLI commands can record
-  owner review/acceptance; the terminal console stays read-only so it never
-  turns a keystroke into an unreviewed conclusion or a claimed repair.
+  next step. System One finding claims, locations, evidence, and prescribed
+  recovery steps are projected unchanged through CLI, MCP, Horus, terminal,
+  and native Casebook surfaces. The native Casebook and explicit confirmed CLI
+  commands can record owner review/acceptance; the terminal console stays
+  read-only so it never turns a keystroke into an unreviewed conclusion or a
+  claimed repair. A producer-supplied recovery step is never auto-executed.
 - **No stranded alarms:** when a native diagnostic alarm has no safe automatic
   repair, the finding view offers a confirmed Ma'at review, then connects to the
   shared Casebook acceptance flow. A conclusion is visibly distinct from a
