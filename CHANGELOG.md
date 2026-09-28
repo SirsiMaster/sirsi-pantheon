@@ -6,6 +6,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.28] — 2026-09-28 — DMG-first commercial release route
+**Commercial patch release.** The tagged macOS release now always publishes the
+signed, notarized, stapled Pantheon DMG when the Developer ID Application and
+Apple notarization credentials are present. A signed/notarized PKG remains an
+additive artifact when the separately managed Developer ID Installer identity
+is configured; its absence no longer prevents the complete DMG release or its
+canonical Homebrew cask publication. The route records that distinction
+explicitly in Stack Lab instead of leaving a successful product artifact
+stranded behind an unavailable installer credential.
+
+---
+
 ## [0.24.27] — 2026-09-28 — Canonical Swift menubar packaging
 **Commercial patch release.** Pantheon packaging now fails closed unless the
 canonical Swift menubar source is present and builds that surface in both the

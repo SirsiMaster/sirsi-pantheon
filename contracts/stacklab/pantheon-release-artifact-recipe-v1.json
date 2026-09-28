@@ -4,7 +4,7 @@
   "wing": "stacklab.wing.pantheon-pt",
   "product": "sirsi-pantheon",
   "version": 1,
-  "purpose": "Make Pantheon's commercial release boundary inspectable and replaceable: local development packages are explicitly named and non-distributable; only a Developer-ID signed, notarized, stapled, validated route may create the commercial DMG and PKG names.",
+  "purpose": "Make Pantheon's commercial release boundary inspectable and replaceable: local development packages are explicitly named and non-distributable; the Developer-ID signed, notarized, stapled, validated DMG is the commercial macOS baseline, with a PKG added only when its separate installer identity is available.",
   "authority": {
     "source_owner": "Pantheon release engineering",
     "commercial_release_owner": "tagged release workflow plus Developer ID and Apple notarization evidence",
@@ -20,7 +20,7 @@
       "source": ["scripts/build-dmg.sh", "scripts/build-pkg.sh", "Makefile", "scripts/PACKAGING.md"],
       "tests": ["scripts/verify-commercial-release-contract.sh"],
       "inputs": ["explicit --development or --release selection", "VERSION", "target architecture"],
-      "outputs": ["-dev DMG/PKG names for local package work", "commercial DMG/PKG names only in --release mode", "truthful mode-specific operator messaging"],
+      "outputs": ["-dev DMG/PKG names for local package work", "commercial DMG in --release mode and a PKG when its installer identity is available", "truthful mode-specific operator messaging"],
       "writes": ["transaction-local Pantheon.app, DMG, or PKG only when an explicitly selected build mode is executed"],
       "upgrade_recipe": ["keep modes mutually exclusive and explicit", "reserve commercial names for --release", "keep local artifacts visibly non-distributable", "update the static contract when a packaging entry point changes"]
     },
@@ -37,10 +37,10 @@
       "id": "commercial-sign-notary-publication-route",
       "source": [".github/workflows/release.yml", "scripts/build-dmg.sh", "scripts/build-pkg.sh", "docs/RELEASE_SIGNING.md"],
       "tests": ["scripts/verify-commercial-release-contract.sh"],
-      "inputs": ["Developer ID Application identity", "Developer ID Installer identity", "Apple notarization credentials", "tagged exact source"],
-      "outputs": ["signed, notarized, stapled, validated DMG", "signed, notarized, stapled, validated PKG", "one exact GitHub release record and the same-payload assets suitable for cask binding"],
+      "inputs": ["Developer ID Application identity", "optional Developer ID Installer identity", "Apple notarization credentials", "tagged exact source"],
+      "outputs": ["signed, notarized, stapled, validated DMG", "signed, notarized, stapled, validated PKG when the installer identity is available", "one exact GitHub release record and the same-payload assets suitable for cask binding"],
       "writes": ["signed package bytes and remote release/cask records only under separately authorized credentialed execution"],
-      "upgrade_recipe": ["fail before commercial artifact creation when any required credential is absent", "verify signing before notarization", "staple and validate every commercial payload", "create or revalidate the exact GitHub release record only after successful commercial DMG and PKG construction", "publish only the same Pantheon.app DMG and PKG payloads", "treat remote publication and cask lifecycle as separate evidence nodes", "ship the tagged commercial route as one macOS payload contract; reject variable-gated Windows installer jobs until a separate platform release contract exists"]
+      "upgrade_recipe": ["fail before commercial DMG creation when its application or notarization credential is absent; omit the PKG when its separate installer identity is absent", "verify signing before notarization", "staple and validate every commercial payload", "create or revalidate the exact GitHub release record only after successful commercial DMG construction; include a PKG only when its separate installer identity is available", "publish only the same Pantheon.app DMG and any same-payload PKG", "treat remote publication and cask lifecycle as separate evidence nodes", "ship the tagged commercial route as one macOS payload contract; reject variable-gated Windows installer jobs until a separate platform release contract exists"]
     },
     {
       "id": "canonical-cask-publication",
