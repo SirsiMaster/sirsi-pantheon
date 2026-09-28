@@ -6,6 +6,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.33] — 2026-09-28 — Closed native diagnostic resolution
+**Source release candidate.** Every native menu-bar diagnostic now has an
+explicit resolution route, including actionable repair guidance and a
+documented closed-repair path. The Ma'at System One handoff remains
+schema-versioned and subject-head bound; commercial signing, notarization,
+and installer publication remain separately credentialed.
+
+---
+
 ## [0.24.32] — 2026-09-28 — Canonical Stack Lab wing integrity
 **Source release candidate.** The Pantheon release recipe now resolves through
 the canonical `stacklab.wing.pantheon.pt-wing-001` wing, Stack Lab validates
