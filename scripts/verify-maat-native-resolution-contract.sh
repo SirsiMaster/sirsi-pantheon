@@ -8,9 +8,11 @@ set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
 view="$root/macapp/Sources/SirsiMenubar/Views.swift"
 casebook="$root/macapp/Sources/SirsiMenubar/MaatCasebookView.swift"
+launchd="$root/internal/router/launchdkickstart.go"
 
 [ -f "$view" ] || { echo "missing native views" >&2; exit 1; }
 [ -f "$casebook" ] || { echo "missing native Ma'at casebook" >&2; exit 1; }
+[ -f "$launchd" ] || { echo "missing managed launchd recovery" >&2; exit 1; }
 
 if /usr/bin/grep -Fq 'This needs attention but has no one-click fix yet.' "$view"; then
   echo "native finding dead-end text remains" >&2
@@ -47,6 +49,18 @@ for needle in \
   'does not repair the system'; do
   /usr/bin/grep -Fq "$needle" "$casebook" || {
     echo "native Ma'at acceptance path missing: $needle" >&2
+    exit 1
+  }
+done
+
+for needle in \
+  'RestoreDisabledManagedLaunchAgents' \
+  'targets map[string]bool' \
+  'targets != nil && !targets[label]' \
+  'snapshots the' \
+  'disabled override labels'; do
+  /usr/bin/grep -Fq "$needle" "$launchd" || {
+    echo "confirmed recovery scope missing: $needle" >&2
     exit 1
   }
 done

@@ -92,9 +92,11 @@ claim a local record is a remote attestation.
   guidance.
 - **Confirmed recovery:** when the diagnostic has an exact safe repair, the
   native surface presents the precise command and requires confirmation before
-  it changes state. The disabled-launchd recovery is bounded to managed labels
-  with a regular non-symlink LaunchAgent plist, honors existing quarantine markers,
-  separates enable-only from bootstrap outcomes, and reruns the diagnostic.
+  it changes state. The disabled-launchd recovery is bounded to the captured
+  disabled-label snapshot and to managed labels with a regular non-symlink
+  LaunchAgent plist; it honors existing quarantine markers, never treats a
+  confirmation as permission to revive an unrelated unloaded service, separates
+  enable-only from bootstrap outcomes, and reruns the diagnostic.
 - **Fail honest:** unavailable journal input returns an error/503. Unknown case
   status is rejected. Missing evidence stays missing; it is never invented.
 

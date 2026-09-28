@@ -150,8 +150,8 @@
       "tests": ["internal/guard/doctor_test.go", "internal/guard/remediation_enforcement_test.go", "internal/router/launchdkickstart_test.go", "scripts/verify-maat-native-resolution-contract.sh"],
       "inputs": ["critical diagnostic finding", "managed regular non-symlink LaunchAgent plist", "launchd disabled-override state", "explicit native or CLI confirmation"],
       "outputs": ["confirmed, bounded disabled-override recovery", "separate enabled and bootstrapped label evidence", "post-action diagnostic recheck"],
-      "writes": ["only launchd state for managed labels backed by a regular non-symlink plist"],
-      "upgrade_recipe": ["preserve the managed filename allowlist and regular non-symlink plist requirement", "enable disabled overrides before deciding whether a loaded label needs bootstrap", "never revive quarantined Gemma labels or a fabric-wide quarantine", "require explicit confirmation in every operator surface", "retain separate enabled versus bootstrapped evidence", "add loaded-disabled, unloaded-disabled, symlink, error-isolation, and quarantine fixtures before widening scope"]
+      "writes": ["only launchd state for labels in the captured disabled-override snapshot and backed by a regular non-symlink managed plist"],
+      "upgrade_recipe": ["preserve the managed filename allowlist and regular non-symlink plist requirement", "bind a confirmed repair to its captured disabled-label snapshot; do not broaden it into a supervisor sweep", "enable disabled overrides before deciding whether a loaded label needs bootstrap", "never revive quarantined Gemma labels or a fabric-wide quarantine", "require explicit confirmation in every operator surface", "retain separate enabled versus bootstrapped evidence", "add loaded-disabled, unloaded-disabled, unrelated-unloaded, symlink, error-isolation, and quarantine fixtures before widening scope"]
     },
     {
       "id": "maat-wing-contract",

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -162,6 +163,44 @@ func TestKickstartReenablesDisabledLoadedLabelWithoutBootstrap(t *testing.T) {
 	}
 	if len(bootstrapped) != 0 {
 		t.Fatalf("loaded label must not be bootstrapped: %v", bootstrapped)
+	}
+}
+
+// The explicit UI/CLI recovery is deliberately narrower than the resident
+// supervisor duty. A confirmation to repair a disabled override must not
+// become authority to bootstrap every unrelated managed plist on disk.
+func TestRecoverManagedLaunchdTargetsOnlyDisabledLabels(t *testing.T) {
+	dir := t.TempDir()
+	writeAgentPlist(t, dir, "ai.sirsi.disabled.plist")
+	writeAgentPlist(t, dir, "ai.sirsi.unrelated.plist")
+
+	var enabled, bootstrapped []string
+	recovery, err := recoverManagedLaunchd(dir, launchdDeps{
+		listLabels: func() (map[string]bool, error) { return map[string]bool{}, nil },
+		disabledLabels: func() (map[string]bool, error) {
+			return map[string]bool{"ai.sirsi.disabled": true}, nil
+		},
+		enableLabel: func(_ string, label string) error {
+			enabled = append(enabled, label)
+			return nil
+		},
+		bootstrapPlist: func(path string) error {
+			bootstrapped = append(bootstrapped, filepath.Base(path))
+			return nil
+		},
+		uid: func() int { return 501 },
+	}, map[string]bool{"ai.sirsi.disabled": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := enabled, []string{"ai.sirsi.disabled"}; !slices.Equal(got, want) {
+		t.Fatalf("enabled = %v, want %v", got, want)
+	}
+	if got, want := bootstrapped, []string{"ai.sirsi.disabled.plist"}; !slices.Equal(got, want) {
+		t.Fatalf("bootstrapped = %v, want %v", got, want)
+	}
+	if got, want := recovery.Bootstrapped, []string{"ai.sirsi.disabled"}; !slices.Equal(got, want) {
+		t.Fatalf("recovery bootstrapped = %v, want %v", got, want)
 	}
 }
 

@@ -106,7 +106,7 @@ from launchd. Quarantined services remain untouched. Requires --confirm.`,
 		if !livenessRestoreDisabledConfirm {
 			return fmt.Errorf("restore-disabled changes launchd state; rerun with --confirm after reviewing the managed labels")
 		}
-		recovery, err := router.RestoreManagedLaunchAgents()
+		recovery, err := router.RestoreDisabledManagedLaunchAgents()
 		result := &output.CommandResult{
 			Command:    "sirsi liveness-watch restore-disabled",
 			BriefTitle: "LaunchAgent recovery",

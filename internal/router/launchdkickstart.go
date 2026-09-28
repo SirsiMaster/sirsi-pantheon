@@ -138,11 +138,13 @@ func labelForPlist(name string) string {
 	return strings.TrimSuffix(name, ".plist")
 }
 
-// recoverManagedLaunchd restores each managed, on-disk plist in two explicit
+// recoverManagedLaunchd restores managed, on-disk plists in two explicit
 // stages: clear a disabled override first, even if the label remains loaded;
-// then bootstrap only labels absent from launchd. It never revives quarantined
-// Gemma labels or anything outside the managed filename allowlist.
-func recoverManagedLaunchd(agentsDir string, deps launchdDeps) (ManagedLaunchdRecovery, error) {
+// then bootstrap only labels absent from launchd. When targets is non-nil it
+// is an exact label allowlist, so a user-confirmed repair cannot incidentally
+// revive another managed service. It never revives quarantined Gemma labels or
+// anything outside the managed filename allowlist.
+func recoverManagedLaunchd(agentsDir string, deps launchdDeps, targets map[string]bool) (ManagedLaunchdRecovery, error) {
 	entries, err := os.ReadDir(agentsDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -195,6 +197,9 @@ func recoverManagedLaunchd(agentsDir string, deps launchdDeps) (ManagedLaunchdRe
 			continue
 		}
 		label := labelForPlist(name)
+		if targets != nil && !targets[label] {
+			continue
+		}
 		if quarantined && quarantinedLabels[label] {
 			continue // deliberate operator stop — never silently revive
 		}
@@ -229,20 +234,33 @@ func recoverManagedLaunchd(agentsDir string, deps launchdDeps) (ManagedLaunchdRe
 // callers cannot mistake clearing a disabled override on a loaded process for
 // a reload.
 func KickstartDeadLabels(agentsDir string, deps launchdDeps) ([]string, error) {
-	recovery, err := recoverManagedLaunchd(agentsDir, deps)
+	recovery, err := recoverManagedLaunchd(agentsDir, deps, nil)
 	return recovery.Bootstrapped, err
 }
 
-// RestoreManagedLaunchAgents is the explicit, operator-confirmed repair used
-// by `sirsi liveness-watch restore-disabled`. It shares exactly the same
-// managed-plist, quarantine, enable-before-bootstrap rules as the resident
-// supervisor; it adds no broad launchctl authority.
-func RestoreManagedLaunchAgents() (ManagedLaunchdRecovery, error) {
+// RestoreDisabledManagedLaunchAgents is the explicit, operator-confirmed
+// repair used by `sirsi liveness-watch restore-disabled`. It snapshots the
+// disabled override labels and applies the shared managed-plist recovery only
+// to that allowlist. Unlike the resident supervisor sweep, it never uses this
+// UI action as authority to revive a different unloaded service.
+func RestoreDisabledManagedLaunchAgents() (ManagedLaunchdRecovery, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ManagedLaunchdRecovery{}, err
 	}
-	return recoverManagedLaunchd(filepath.Join(home, "Library", "LaunchAgents"), launchdOS)
+	if launchdOS.disabledLabels == nil {
+		return ManagedLaunchdRecovery{}, fmt.Errorf("read disabled launchd overrides: unavailable")
+	}
+	disabled, err := launchdOS.disabledLabels()
+	if err != nil {
+		return ManagedLaunchdRecovery{}, fmt.Errorf("read disabled launchd overrides: %w", err)
+	}
+	// Preserve the snapshot through the recovery pass. The live state can only
+	// become less actionable after a concurrent enable; the fixed target set
+	// prevents a newly-disabled unrelated label from expanding this repair.
+	deps := launchdOS
+	deps.disabledLabels = func() (map[string]bool, error) { return disabled, nil }
+	return recoverManagedLaunchd(filepath.Join(home, "Library", "LaunchAgents"), deps, disabled)
 }
 
 // Kickstart wiring follows the gemma-liveness seam pattern (Rule A16/A21):

@@ -1511,7 +1511,7 @@ func checkLaunchdDisabled(p platform.Platform, report *DoctorReport) {
 	// not a live service failure: there is nothing safe to bootstrap and a
 	// "repair" button would be a promise the product cannot keep. Keep the
 	// finding scoped to exact managed labels with a current regular plist — the
-	// same bounded scope RestoreManagedLaunchAgents can actually repair.
+	// same bounded scope RestoreDisabledManagedLaunchAgents can actually repair.
 	var disabled, retired []string
 	for _, label := range parseLaunchdDisabled(string(out)) {
 		if managedLaunchdRecoveryEligible(label) {
