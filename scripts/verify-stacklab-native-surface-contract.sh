@@ -23,7 +23,11 @@ for needle in \
   'No registry result has been inferred yet.' \
   'No authority result was inferred.' \
   'not treated as clean' \
-  'Review evidence in Ma'\''at'; do
+  'Review evidence in Ma'\''at' \
+  'Release-contract evidence' \
+  'Open release-contract preflight' \
+  'The inspection is local and source-only' \
+  'Ma'\''at shows the typed checks and repair guidance first'; do
   /usr/bin/grep -Fq "$needle" "$view" || {
     echo "Stack Lab native contract missing: $needle" >&2
     exit 1

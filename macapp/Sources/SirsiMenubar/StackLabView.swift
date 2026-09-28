@@ -96,6 +96,7 @@ struct StackLabView: View {
             MaybeScroll {
                 VStack(alignment: .leading, spacing: 16) {
                     summary(report)
+                    releaseContractHandoff
                     if report.clean {
                         cleanState(report)
                     } else {
@@ -139,6 +140,29 @@ struct StackLabView: View {
             }
         }
         .padding(14)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+    }
+
+    private var releaseContractHandoff: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Release-contract evidence", systemImage: "checkmark.shield")
+                .sirsiFont(.headline)
+            Text("Inspect the selected checkout’s release-source contract in Ma'at before handing it toward commercial release proof. The inspection is local and source-only; it does not build, package, sign, notarize, or publish.")
+                .sirsiFont(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            NavLink { MaatWorkspaceView(engine: engine) } label: {
+                Label("Open release-contract preflight", systemImage: "checklist")
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(gold)
+            Text("Ma'at shows the typed checks and repair guidance first; recording a Casebook result always requires separate confirmation.")
+                .sirsiFont(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
     }
 
