@@ -21,15 +21,16 @@ var (
 
 var apolloCmd = &cobra.Command{
 	Use:   "apollo",
-	Short: "Plan local Apollo inference against this Mac's detected capacity",
-	Long: `Apollo is Pantheon's local inference planning surface. It lists the configured
-SNE route and detected chip estates, then validates a resource plan without
-starting a model or reserving device memory. SNE remains the execution authority.`,
+	Short: "Plan Apollo inference against a selected measured machine",
+	Long: `Apollo is Pantheon's inference planning surface. It lists configured SNE
+routes and detected chip estates for each typed machine-capacity receipt, then
+validates a resource plan without starting a model or reserving device memory.
+SNE remains the execution authority.`,
 }
 
 var apolloCatalogCmd = &cobra.Command{
 	Use:   "catalog",
-	Short: "Show this Mac's selectable Apollo engines and chip estates",
+	Short: "Show selectable Apollo machines, engines, and chip estates",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -45,7 +46,7 @@ var apolloCatalogCmd = &cobra.Command{
 
 var apolloPlanCmd = &cobra.Command{
 	Use:   "plan",
-	Short: "Validate a local Apollo run plan without starting inference",
+	Short: "Validate an Apollo run plan without starting inference",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		home, err := os.UserHomeDir()
 		if err != nil {

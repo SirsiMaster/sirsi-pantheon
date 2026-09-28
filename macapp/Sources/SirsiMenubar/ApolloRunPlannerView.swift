@@ -245,9 +245,9 @@ struct ApolloRunPlannerView: View {
             SnapshotActionButton(disabled: planning || planBlocker(catalog) != nil) {
                 Task { await createPlan(catalog) }
             } label: {
-                Label(planning ? "Running selected recipe…" : "Run recipe & open Apollo", systemImage: "play.circle")
+                Label(planning ? "Validating selected recipe…" : "Validate recipe & open Apollo", systemImage: "play.circle")
             }
-            Text("Runs the exact typed Stack Lab plan below, then transfers this same declaration to Apollo telemetry. It does not start a model; Apollo/SNE separately admits inference against live capacity.")
+            Text("Validates the exact typed Stack Lab plan below, then transfers the same declaration to Apollo telemetry. SNE separately admits and starts inference against live capacity.")
                 .sirsiFont(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -287,7 +287,7 @@ struct ApolloRunPlannerView: View {
                 .padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.06)))
-            Text("Run this declaration to hand it directly to Apollo telemetry. SNE remains the authority that can admit an inference session against current pressure.")
+            Text("Validate this declaration to hand it directly to Apollo telemetry. SNE remains the authority that can admit an inference session against current pressure.")
                 .sirsiFont(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
