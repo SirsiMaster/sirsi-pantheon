@@ -213,9 +213,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             content.title = String(item.title.prefix(64))
             content.body = item.why ?? "An item needs your decision."
             content.userInfo = ["id": item.id]
-            UNUserNotificationCenter.current().add(
-                UNNotificationRequest(identifier: item.id, content: content, trigger: nil),
-                withCompletionHandler: nil)
+            let request = UNNotificationRequest(identifier: item.id, content: content, trigger: nil)
+            // This view already runs in an async refresh path. Use the native
+            // async API so a build does not carry a deprecated callback bridge.
+            try? await UNUserNotificationCenter.current().add(request)
         }
     }
 
