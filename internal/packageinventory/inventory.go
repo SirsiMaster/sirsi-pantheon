@@ -316,19 +316,19 @@ func directoryNames(fd int, parent string) ([]string, error) {
 }
 
 func readStable(fd int, opened unix.Stat_t, rel string) ([]byte, string, error) {
-	first, err := readOnce(fd, opened.Size)
-	if err != nil {
-		return nil, "", fmt.Errorf("package inventory: read %q: %w", rel, err)
+	first, readErr := readOnce(fd, opened.Size)
+	if readErr != nil {
+		return nil, "", fmt.Errorf("package inventory: read %q: %w", rel, readErr)
 	}
-	if _, err := unix.Seek(fd, 0, 0); err != nil {
-		return nil, "", fmt.Errorf("package inventory: rewind %q: %w", rel, err)
+	if _, seekErr := unix.Seek(fd, 0, 0); seekErr != nil {
+		return nil, "", fmt.Errorf("package inventory: rewind %q: %w", rel, seekErr)
 	}
-	second, err := readOnce(fd, opened.Size)
-	if err != nil || string(first) != string(second) {
+	second, confirmErr := readOnce(fd, opened.Size)
+	if confirmErr != nil || string(first) != string(second) {
 		return nil, "", fmt.Errorf("package inventory: content changed during read %q", rel)
 	}
 	var after unix.Stat_t
-	if err := unix.Fstat(fd, &after); err != nil || !sameIdentity(opened, after) {
+	if statErr := unix.Fstat(fd, &after); statErr != nil || !sameIdentity(opened, after) {
 		return nil, "", fmt.Errorf("package inventory: identity changed during read %q", rel)
 	}
 	sum := sha256.Sum256(first)

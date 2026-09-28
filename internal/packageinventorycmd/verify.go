@@ -30,20 +30,20 @@ func Verify(inputs Inputs) (packageinventory.Report, error) {
 	if inputs.App == "" || inputs.Version == "" || inputs.Build == "" || inputs.InfoPlist == "" || inputs.PkgInfo == "" || inputs.LaunchAgent == "" {
 		return packageinventory.Report{}, errors.New("app, version, build, info-plist, pkg-info, and launch-agent are required")
 	}
-	info, err := ReadCanonicalFile(inputs.InfoPlist)
-	if err != nil {
-		return packageinventory.Report{}, err
+	info, infoErr := ReadCanonicalFile(inputs.InfoPlist)
+	if infoErr != nil {
+		return packageinventory.Report{}, infoErr
 	}
-	if err := validateInfoPlist(info, inputs.Version, inputs.Build); err != nil {
-		return packageinventory.Report{}, err
+	if validateErr := validateInfoPlist(info, inputs.Version, inputs.Build); validateErr != nil {
+		return packageinventory.Report{}, validateErr
 	}
-	pkgInfo, err := ReadCanonicalFile(inputs.PkgInfo)
-	if err != nil {
-		return packageinventory.Report{}, err
+	pkgInfo, pkgInfoErr := ReadCanonicalFile(inputs.PkgInfo)
+	if pkgInfoErr != nil {
+		return packageinventory.Report{}, pkgInfoErr
 	}
-	launchAgent, err := ReadCanonicalFile(inputs.LaunchAgent)
-	if err != nil {
-		return packageinventory.Report{}, err
+	launchAgent, launchAgentErr := ReadCanonicalFile(inputs.LaunchAgent)
+	if launchAgentErr != nil {
+		return packageinventory.Report{}, launchAgentErr
 	}
 	return packageinventory.Verify(inputs.App, packageinventory.Expectations{
 		Version: inputs.Version, Build: inputs.Build, InfoPlist: info,
@@ -56,18 +56,18 @@ func ReadCanonicalFile(path string) ([]byte, error) {
 	if path == "" {
 		return nil, errors.New("path is required")
 	}
-	parentFD, leaf, err := openParent(path)
-	if err != nil {
-		return nil, err
+	parentFD, leaf, openErr := openParent(path)
+	if openErr != nil {
+		return nil, openErr
 	}
 	defer unix.Close(parentFD)
 	var parentBefore unix.Stat_t
-	if err := unix.Fstat(parentFD, &parentBefore); err != nil {
-		return nil, err
+	if parentStatErr := unix.Fstat(parentFD, &parentBefore); parentStatErr != nil {
+		return nil, parentStatErr
 	}
-	fd, err := unix.Openat(parentFD, leaf, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
-	if err != nil {
-		return nil, err
+	fd, fileOpenErr := unix.Openat(parentFD, leaf, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if fileOpenErr != nil {
+		return nil, fileOpenErr
 	}
 	file := os.NewFile(uintptr(fd), path)
 	if file == nil {
@@ -76,32 +76,32 @@ func ReadCanonicalFile(path string) ([]byte, error) {
 	}
 	defer file.Close()
 	var before unix.Stat_t
-	if err := unix.Fstat(fd, &before); err != nil {
-		return nil, err
+	if fileStatErr := unix.Fstat(fd, &before); fileStatErr != nil {
+		return nil, fileStatErr
 	}
 	if before.Mode&unix.S_IFMT != unix.S_IFREG || before.Nlink != 1 || before.Size < 0 || before.Size > maxCanonicalInput {
 		return nil, errors.New("expected a regular nlink=1 file within the size limit")
 	}
-	data, err := io.ReadAll(io.LimitReader(file, maxCanonicalInput+1))
-	if err != nil {
-		return nil, err
+	data, readErr := io.ReadAll(io.LimitReader(file, maxCanonicalInput+1))
+	if readErr != nil {
+		return nil, readErr
 	}
 	if int64(len(data)) != before.Size {
 		return nil, errors.New("file changed size during read")
 	}
 	var after unix.Stat_t
-	if err := unix.Fstat(fd, &after); err != nil {
-		return nil, err
+	if afterStatErr := unix.Fstat(fd, &after); afterStatErr != nil {
+		return nil, afterStatErr
 	}
 	if !sameIdentity(before, after) {
 		return nil, errors.New("file identity changed during read")
 	}
 	var nameAfter unix.Stat_t
-	if err := unix.Fstatat(parentFD, leaf, &nameAfter, unix.AT_SYMLINK_NOFOLLOW); err != nil || !sameIdentity(before, nameAfter) {
+	if nameStatErr := unix.Fstatat(parentFD, leaf, &nameAfter, unix.AT_SYMLINK_NOFOLLOW); nameStatErr != nil || !sameIdentity(before, nameAfter) {
 		return nil, errors.New("file name identity changed during read")
 	}
 	var parentAfter unix.Stat_t
-	if err := unix.Fstat(parentFD, &parentAfter); err != nil || !sameIdentity(parentBefore, parentAfter) {
+	if parentAfterErr := unix.Fstat(parentFD, &parentAfter); parentAfterErr != nil || !sameIdentity(parentBefore, parentAfter) {
 		return nil, errors.New("file parent identity changed during read")
 	}
 	return data, nil
@@ -152,39 +152,39 @@ func validateInfoPlist(data []byte, version, build string) error {
 	}
 	var key string
 	for {
-		token, err := decoder.Token()
-		if err == io.EOF {
+		token, tokenErr := decoder.Token()
+		if tokenErr == io.EOF {
 			break
 		}
-		if err != nil {
+		if tokenErr != nil {
 			return errors.New("Info.plist is not valid XML")
 		}
 		start, ok := token.(xml.StartElement)
 		if !ok || start.Name.Local != "key" {
 			continue
 		}
-		if err := decoder.DecodeElement(&key, &start); err != nil || key == "" {
+		if keyErr := decoder.DecodeElement(&key, &start); keyErr != nil || key == "" {
 			return errors.New("Info.plist contains an invalid key")
 		}
 		if _, exists := seen[key]; exists {
 			return errors.New("Info.plist contains duplicate keys")
 		}
 		seen[key] = struct{}{}
-		valueStart, err := nextPlistValueStart(decoder)
-		if err != nil {
-			return err
+		valueStart, valueStartErr := nextPlistValueStart(decoder)
+		if valueStartErr != nil {
+			return valueStartErr
 		}
 		if valueStart.Name.Local != "string" {
 			if _, needed := required[key]; needed {
 				return errors.New("Info.plist required identity value is not a string")
 			}
-			if err := decoder.Skip(); err != nil {
+			if skipErr := decoder.Skip(); skipErr != nil {
 				return errors.New("Info.plist contains an invalid typed value")
 			}
 			continue
 		}
 		var value string
-		if err := decoder.DecodeElement(&value, &valueStart); err != nil {
+		if valueErr := decoder.DecodeElement(&value, &valueStart); valueErr != nil {
 			return errors.New("Info.plist contains an invalid string")
 		}
 		values[key] = value
@@ -207,8 +207,8 @@ func validateInfoPlist(data []byte, version, build string) error {
 // would make a malformed dictionary look canonical.
 func nextPlistValueStart(decoder *xml.Decoder) (xml.StartElement, error) {
 	for {
-		token, err := decoder.Token()
-		if err != nil {
+		token, tokenErr := decoder.Token()
+		if tokenErr != nil {
 			return xml.StartElement{}, errors.New("Info.plist key has no value")
 		}
 		switch value := token.(type) {

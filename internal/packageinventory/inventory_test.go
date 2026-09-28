@@ -109,14 +109,14 @@ func TestFinalNamespaceRescanRejectsLateAllowedEntry(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(app, "Contents", "_CodeSignature"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	rootFD, err := unix.Open(app, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
-	if err != nil {
-		t.Fatal(err)
+	rootFD, openErr := unix.Open(app, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if openErr != nil {
+		t.Fatal(openErr)
 	}
 	defer unix.Close(rootFD)
 	snapshot := &scanSnapshot{entries: make(map[string]Entry), bytes: make(map[string][]byte)}
-	if err := scanDir(rootFD, "", snapshot); err != nil {
-		t.Fatal(err)
+	if scanErr := scanDir(rootFD, "", snapshot); scanErr != nil {
+		t.Fatal(scanErr)
 	}
 	if err := os.WriteFile(filepath.Join(app, "Contents", "_CodeSignature", "CodeResources"), []byte("late"), 0o644); err != nil {
 		t.Fatal(err)
@@ -139,16 +139,16 @@ func TestFinalNamespaceRescanRejectsSameContentDifferentInode(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(app, "Contents", "PkgInfo")
-	original, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
+	original, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatal(readErr)
 	}
 	backup := filepath.Join(t.TempDir(), "PkgInfo.old")
-	if err := os.Rename(path, backup); err != nil {
-		t.Fatal(err)
+	if renameErr := os.Rename(path, backup); renameErr != nil {
+		t.Fatal(renameErr)
 	}
-	if err := os.WriteFile(path, original, 0o755); err != nil {
-		t.Fatal(err)
+	if writeErr := os.WriteFile(path, original, 0o755); writeErr != nil {
+		t.Fatal(writeErr)
 	}
 	if err := finalNamespaceRescan(rootFD, snapshot); err == nil || !strings.Contains(err.Error(), "entry identity changed") {
 		t.Fatalf("same-content replacement was accepted: %v", err)

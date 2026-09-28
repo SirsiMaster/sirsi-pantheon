@@ -28,8 +28,8 @@ func TestMaatOwnerResolutionCommandsRecordThenAcceptExactlyOneCase(t *testing.T)
 		t.Fatalf("owner review rows = %+v, err = %v", rows, err)
 	}
 	maatAcceptanceEvidence, maatAcceptanceNote, maatAcceptanceConfirm = rows[0].Evidence, "Owner accepted the documented next step.", true
-	if err := maatAcceptResolutionCmd.RunE(maatAcceptResolutionCmd, nil); err != nil {
-		t.Fatal(err)
+	if acceptErr := maatAcceptResolutionCmd.RunE(maatAcceptResolutionCmd, nil); acceptErr != nil {
+		t.Fatal(acceptErr)
 	}
 	rows, err = journal.Recent(10)
 	if err != nil || len(rows) != 2 || rows[0].ResolutionFor != maatAcceptanceEvidence {

@@ -58,18 +58,18 @@ func TelemetryPath(home string) string {
 // error and must not be rendered as active telemetry.
 func ReadTelemetry(home string) (TelemetryRead, error) {
 	path := TelemetryPath(home)
-	f, err := openTelemetryFile(path)
-	if os.IsNotExist(err) {
+	f, openErr := openTelemetryFile(path)
+	if os.IsNotExist(openErr) {
 		return TelemetryRead{State: "awaiting_session", Reason: "SNE has not published an Apollo session sample"}, nil
 	}
-	if err != nil {
-		return TelemetryRead{}, fmt.Errorf("open Apollo telemetry: %w", err)
+	if openErr != nil {
+		return TelemetryRead{}, fmt.Errorf("open Apollo telemetry: %w", openErr)
 	}
 	defer f.Close()
 
-	info, err := f.Stat()
-	if err != nil {
-		return TelemetryRead{}, fmt.Errorf("stat opened Apollo telemetry: %w", err)
+	info, statErr := f.Stat()
+	if statErr != nil {
+		return TelemetryRead{}, fmt.Errorf("stat opened Apollo telemetry: %w", statErr)
 	}
 	if !validTelemetryFile(info) {
 		return TelemetryRead{}, fmt.Errorf("Apollo telemetry must be a regular non-symlink file")
@@ -77,38 +77,38 @@ func ReadTelemetry(home string) (TelemetryRead, error) {
 	if info.Size() < 1 || info.Size() > maxTelemetryBytes {
 		return TelemetryRead{}, fmt.Errorf("Apollo telemetry size is outside the allowed range")
 	}
-	data, err := readTelemetryBytes(f, info.Size())
-	if err != nil {
-		return TelemetryRead{}, err
+	data, readErr := readTelemetryBytes(f, info.Size())
+	if readErr != nil {
+		return TelemetryRead{}, readErr
 	}
-	if err := revalidateTelemetryPath(path, f, info); err != nil {
-		return TelemetryRead{}, err
+	if revalidateErr := revalidateTelemetryPath(path, f, info); revalidateErr != nil {
+		return TelemetryRead{}, revalidateErr
 	}
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		return TelemetryRead{}, fmt.Errorf("rewind Apollo telemetry: %w", err)
+	if _, seekErr := f.Seek(0, io.SeekStart); seekErr != nil {
+		return TelemetryRead{}, fmt.Errorf("rewind Apollo telemetry: %w", seekErr)
 	}
-	confirm, err := readTelemetryBytes(f, info.Size())
-	if err != nil {
-		return TelemetryRead{}, err
+	confirm, confirmErr := readTelemetryBytes(f, info.Size())
+	if confirmErr != nil {
+		return TelemetryRead{}, confirmErr
 	}
 	if !bytes.Equal(data, confirm) {
 		return TelemetryRead{}, fmt.Errorf("Apollo telemetry changed while it was read")
 	}
-	if err := revalidateTelemetryPath(path, f, info); err != nil {
-		return TelemetryRead{}, err
+	if revalidateErr := revalidateTelemetryPath(path, f, info); revalidateErr != nil {
+		return TelemetryRead{}, revalidateErr
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	var telemetry Telemetry
-	if err := decoder.Decode(&telemetry); err != nil {
-		return TelemetryRead{}, fmt.Errorf("decode Apollo telemetry: %w", err)
+	if decodeErr := decoder.Decode(&telemetry); decodeErr != nil {
+		return TelemetryRead{}, fmt.Errorf("decode Apollo telemetry: %w", decodeErr)
 	}
 	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
+	if trailingErr := decoder.Decode(&extra); trailingErr != io.EOF {
 		return TelemetryRead{}, fmt.Errorf("Apollo telemetry contains trailing JSON values")
 	}
-	if err := validateTelemetry(telemetry); err != nil {
-		return TelemetryRead{}, err
+	if validationErr := validateTelemetry(telemetry); validationErr != nil {
+		return TelemetryRead{}, validationErr
 	}
 	return TelemetryRead{State: "active", Telemetry: &telemetry}, nil
 }

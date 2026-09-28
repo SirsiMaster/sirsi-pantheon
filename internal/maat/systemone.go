@@ -251,9 +251,9 @@ func RecordSystemOneCalibration(j DecisionJournal, requester, screenEvidence, fr
 	if !validFinalFrontierGate(frontierGate) {
 		return Decision{}, Calibration{}, fmt.Errorf("maat system one: unsupported final frontier gate %q", frontierGate)
 	}
-	rows, err := j.Recent(1000)
-	if err != nil {
-		return Decision{}, Calibration{}, fmt.Errorf("maat system one: read calibration history: %w", err)
+	rows, historyErr := j.Recent(1000)
+	if historyErr != nil {
+		return Decision{}, Calibration{}, fmt.Errorf("maat system one: read calibration history: %w", historyErr)
 	}
 	var screen *Decision
 	screenMatches := 0
@@ -277,12 +277,12 @@ func RecordSystemOneCalibration(j DecisionJournal, requester, screenEvidence, fr
 		return Decision{}, Calibration{}, fmt.Errorf("maat system one: calibration records only local auto-pass screens, got %q", screen.SystemOne.Gate)
 	}
 	record := CalibrationRecord{SchemaVersion: SystemOneSchemaVersion, ScreenEvidence: screenEvidence, FrontierEvidence: frontierEvidence, ScreenGate: GatePass, FrontierGate: frontierGate}
-	if err := validateCalibrationRecord(record); err != nil {
-		return Decision{}, Calibration{}, err
+	if validationErr := validateCalibrationRecord(record); validationErr != nil {
+		return Decision{}, Calibration{}, validationErr
 	}
-	raw, err := json.Marshal(record)
-	if err != nil {
-		return Decision{}, Calibration{}, fmt.Errorf("maat system one: encode calibration: %w", err)
+	raw, marshalErr := json.Marshal(record)
+	if marshalErr != nil {
+		return Decision{}, Calibration{}, fmt.Errorf("maat system one: encode calibration: %w", marshalErr)
 	}
 	sum := sha256.Sum256(raw)
 	decision := Decision{
@@ -291,12 +291,12 @@ func RecordSystemOneCalibration(j DecisionJournal, requester, screenEvidence, fr
 		Determination: string(frontierGate), Why: calibrationReason(record),
 		Evidence: "maat-system-one-calibration:sha256=" + hex.EncodeToString(sum[:]), SystemOneCalibration: &record,
 	}
-	calibration, err := CalibrationFromDecisions(append(rows, decision))
-	if err != nil {
-		return Decision{}, Calibration{}, err
+	calibration, calibrationErr := CalibrationFromDecisions(append(rows, decision))
+	if calibrationErr != nil {
+		return Decision{}, Calibration{}, calibrationErr
 	}
-	if err := j.Append(decision); err != nil {
-		return Decision{}, Calibration{}, fmt.Errorf("maat system one: append calibration: %w", err)
+	if appendErr := j.Append(decision); appendErr != nil {
+		return Decision{}, Calibration{}, fmt.Errorf("maat system one: append calibration: %w", appendErr)
 	}
 	return decision, calibration, nil
 }

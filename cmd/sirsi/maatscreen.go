@@ -43,15 +43,15 @@ release, router work, signing, installation, or a final owner decision.`,
 		decoder := json.NewDecoder(bytes.NewReader(raw))
 		decoder.DisallowUnknownFields()
 		var input maat.SystemOneScreen
-		if err := decoder.Decode(&input); err != nil {
-			return fmt.Errorf("decode Ma'at System One input: %w", err)
+		if decodeErr := decoder.Decode(&input); decodeErr != nil {
+			return fmt.Errorf("decode Ma'at System One input: %w", decodeErr)
 		}
 		var trailing any
-		if err := decoder.Decode(&trailing); err != io.EOF {
-			if err == nil {
+		if trailingErr := decoder.Decode(&trailing); trailingErr != io.EOF {
+			if trailingErr == nil {
 				return fmt.Errorf("decode Ma'at System One input: multiple JSON values")
 			}
-			return fmt.Errorf("decode Ma'at System One input: trailing JSON: %w", err)
+			return fmt.Errorf("decode Ma'at System One input: trailing JSON: %w", trailingErr)
 		}
 		verdict, err := maat.Screen(input)
 		if err != nil {

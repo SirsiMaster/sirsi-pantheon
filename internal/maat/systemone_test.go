@@ -261,10 +261,10 @@ func TestCalibrationFromDecisionsRejectsUnboundAndDuplicatePairs(t *testing.T) {
 		t.Fatal("accepted calibration without the recorded screen")
 	}
 	screen := Decision{Kind: "system one screen", Evidence: record.ScreenEvidence, SystemOne: &verdict}
-	if _, err := CalibrationFromDecisions([]Decision{screen, Decision{SystemOneCalibration: &record}, Decision{SystemOneCalibration: &record}}); err == nil {
+	if _, err := CalibrationFromDecisions([]Decision{screen, {SystemOneCalibration: &record}, {SystemOneCalibration: &record}}); err == nil {
 		t.Fatal("accepted duplicate durable calibration pair")
 	}
-	if _, err := CalibrationFromDecisions([]Decision{screen, Decision{SystemOneCalibration: &record}}); err != nil {
+	if _, err := CalibrationFromDecisions([]Decision{screen, {SystemOneCalibration: &record}}); err != nil {
 		t.Fatalf("rejected calibration bound to recorded local auto-pass: %v", err)
 	}
 }
