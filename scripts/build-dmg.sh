@@ -74,18 +74,17 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
 fi
 mkdir -p "${BUILD_DIR}"
 
-# --- Build the menu bar app ---
-# Prefer the native SwiftUI surface (macapp/, ADR-030) when present; fall back to
-# the legacy fyne systray binary otherwise. Either way the executable lands at
-# Contents/MacOS/sirsi-menubar so the Info.plist (CFBundleExecutable) is stable.
-if [[ -f "${PROJECT_ROOT}/macapp/Package.swift" ]]; then
-    echo "Compiling native menu bar app (macapp/, SwiftUI)..."
-    ( cd "${PROJECT_ROOT}/macapp" && swift build -c release )
-    cp "${PROJECT_ROOT}/macapp/.build/release/SirsiMenubar" "${BUILD_DIR}/sirsi-menubar"
-else
-    echo "Compiling legacy menu bar app (cmd/sirsi-menubar/)..."
-    CGO_ENABLED=1 GOARCH="${ARCH}" go build -ldflags="${GO_LDFLAGS}" -o "${BUILD_DIR}/sirsi-menubar" ./cmd/sirsi-menubar/
-fi
+# --- Build the one canonical menu bar app ---
+# The package must carry the native SwiftUI surface.  Falling back to the
+# retired Go/systray implementation would create a different product with
+# different workflows, so an absent Swift source is a build error.
+[[ -f "${PROJECT_ROOT}/macapp/Package.swift" ]] || {
+    echo "ERROR: canonical Swift menubar source is missing" >&2
+    exit 1
+}
+echo "Compiling native menu bar app (macapp/, SwiftUI)..."
+( cd "${PROJECT_ROOT}/macapp" && swift build -c release )
+cp "${PROJECT_ROOT}/macapp/.build/release/SirsiMenubar" "${BUILD_DIR}/sirsi-menubar"
 
 echo "Compiling sirsi CLI..."
 # The macOS CLI links the native vitals surface; disabling CGO here produces a

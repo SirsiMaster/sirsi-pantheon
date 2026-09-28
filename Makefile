@@ -70,9 +70,15 @@ clean:
 build-agent:
 	CGO_ENABLED=0 go build $(GO_FLAGS) -o $(BUILD_DIR)/sirsi-agent ./cmd/sirsi-agent/
 
-# --- Menu Bar App (stripped, ADR-010) ---
+# --- Native Swift menu bar app ---
+# Pantheon has one shipped macOS interface.  Do not fall back to the retired
+# Go/systray implementation when the canonical Swift app is unavailable: a
+# package that silently changes its interaction model is not a valid build.
 build-menubar:
-	go build $(GO_FLAGS) -o $(BUILD_DIR)/sirsi-menubar ./cmd/sirsi-menubar/
+	@test -f macapp/Package.swift || (echo "ERROR: canonical Swift menubar source is missing" >&2; exit 1)
+	@(cd macapp && swift build -c release)
+	@mkdir -p $(BUILD_DIR)
+	@cp macapp/.build/release/SirsiMenubar $(BUILD_DIR)/sirsi-menubar
 
 # --- macOS development .app Bundle ---
 # Creates Pantheon.app suitable for /Applications. The menu-bar surface resolves
@@ -81,19 +87,13 @@ build-menubar:
 # for Developer-ID signed, notarized, stapled artifacts.
 bundle: bundle-dev
 
-bundle-dev: build
+bundle-dev: build build-menubar
 	@echo "📦 Building Pantheon.app development bundle..."
 	@rm -rf Pantheon.app
 	@mkdir -p Pantheon.app/Contents/MacOS
 	@mkdir -p Pantheon.app/Contents/Resources
 	@cp $(BUILD_DIR)/sirsi Pantheon.app/Contents/MacOS/sirsi
-	@if [ -f macapp/Package.swift ]; then \
-		(cd macapp && swift build -c release); \
-		cp macapp/.build/release/SirsiMenubar Pantheon.app/Contents/MacOS/sirsi-menubar; \
-	else \
-		$(MAKE) build-menubar; \
-		cp $(BUILD_DIR)/sirsi-menubar Pantheon.app/Contents/MacOS/sirsi-menubar; \
-	fi
+	@cp $(BUILD_DIR)/sirsi-menubar Pantheon.app/Contents/MacOS/sirsi-menubar
 	@cp cmd/sirsi-menubar/bundle/Info.plist Pantheon.app/Contents/Info.plist
 	@cp cmd/sirsi-menubar/bundle/PkgInfo Pantheon.app/Contents/PkgInfo
 	@cp cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist Pantheon.app/Contents/Resources/ai.sirsi.pantheon.plist
