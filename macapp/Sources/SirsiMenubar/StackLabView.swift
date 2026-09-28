@@ -110,6 +110,10 @@ struct StackLabView: View {
                     .sirsiFont(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
+                NavLink { StackLabCatalogView(engine: engine) } label: {
+                    Label("Recipes", systemImage: "cube.transparent")
+                }
+                .buttonStyle(.borderless)
                 Button { Task { await load() } } label: {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }

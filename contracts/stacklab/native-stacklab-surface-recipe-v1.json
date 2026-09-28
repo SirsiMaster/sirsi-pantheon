@@ -24,6 +24,15 @@
       "outputs": ["native Stack Lab authority summary", "typed wing finding cards", "in-context project selection before any repository read", "retry guidance for unreadable state", "Ma'at evidence route for unresolved findings"],
       "writes": [],
       "upgrade_recipe": ["change the Go report before its Swift projection", "preserve typed roster/findings/unknown decoding", "require an explicit repository root before a Stack Lab read", "run stacklab from the selected repository instead of the app home directory", "show unknown as incomplete rather than clean", "keep every incomplete finding connected to Ma'at evidence", "run the native contract and Swift syntax validation before admitted app tests"]
+    },
+    {
+      "id": "stacklab-native-catalog",
+      "source": ["internal/stacklab/catalog.go", "cmd/sirsi/stacklabcmd.go", "macapp/Sources/SirsiMenubar/StackLabCatalogView.swift", "macapp/Sources/SirsiMenubar/StackLabView.swift"],
+      "tests": ["internal/stacklab/catalog_test.go", "scripts/verify-stacklab-native-surface-contract.sh"],
+      "inputs": ["selected repository root", "direct versioned local Stack Lab recipes and wings"],
+      "outputs": ["typed local recipe and wing inventory", "inspectable components with source, tests, outputs, writes, and upgrade steps", "explicit unreadable or malformed contract evidence"],
+      "writes": [],
+      "upgrade_recipe": ["keep local source catalog distinct from remote canonicality", "reject and report malformed or non-regular contract records rather than omitting them", "add a typed component fixture before extending recipe fields", "make every catalog card navigable to its component detail", "run catalog tests and the native contract before admitted app tests"]
     }
   ]
 }

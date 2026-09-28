@@ -29,6 +29,7 @@ var stacklabCmd = &cobra.Command{
 }
 
 var stacklabDoctorJSON bool
+var stacklabCatalogJSON bool
 
 var stacklabDoctorCmd = &cobra.Command{
 	Use:   "doctor",
@@ -73,6 +74,38 @@ unpinned, undeclared, invalid. Clean only when every peer clears all five.`,
 	},
 }
 
+var stacklabCatalogCmd = &cobra.Command{
+	Use:   "catalog",
+	Short: "Project local Stack Lab recipes and wing contracts",
+	Long: `Reads the selected checkout's direct versioned Stack Lab recipes and wings.
+This is a local source catalog, not a claim that a wing is canonical, released,
+or remotely pinned. Unreadable or malformed contract records are emitted in
+unknown and never silently omitted.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repoRoot, err := router.FindRepoRoot()
+		if err != nil {
+			return fmt.Errorf("locate repo root: %w", err)
+		}
+		catalog, err := stacklab.LoadLocalCatalog(repoRoot)
+		if err != nil {
+			return err
+		}
+		if stacklabCatalogJSON {
+			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(catalog); err != nil {
+				return err
+			}
+		} else {
+			printStacklabCatalog(cmd.OutOrStdout(), catalog)
+		}
+		if !catalog.Complete() {
+			return fmt.Errorf("Stack Lab catalog is incomplete")
+		}
+		return nil
+	},
+}
+
 func printStacklabReport(out interface{ Write([]byte) (int, error) }, rep stacklab.Report) {
 	fmt.Fprintf(out, "𓋹 Stack Lab Doctor (ADR-066) — %d declared peer(s)\n\n", len(rep.Roster))
 
@@ -108,6 +141,25 @@ func printStacklabReport(out interface{ Write([]byte) (int, error) }, rep stackl
 	fmt.Fprintf(out, "Found %d finding(s). Exit non-zero — see PANTHEON_RULES A37.\n", len(rep.Findings)+boolToInt(len(rep.Unknown) > 0))
 }
 
+func printStacklabCatalog(out interface{ Write([]byte) (int, error) }, catalog stacklab.Catalog) {
+	fmt.Fprintf(out, "𓋹 Stack Lab Local Catalog — %d contract(s)\n\n", len(catalog.Entries))
+	for _, entry := range catalog.Entries {
+		fmt.Fprintf(out, "%s · %s\n  %s\n", entry.Kind, entry.ID, entry.SourcePath)
+		if entry.Purpose != "" {
+			fmt.Fprintf(out, "  %s\n", entry.Purpose)
+		}
+		for _, component := range entry.Components {
+			fmt.Fprintf(out, "  component %s\n", component.ID)
+		}
+	}
+	if len(catalog.Unknown) > 0 {
+		fmt.Fprintln(out, "\nUnreadable or malformed contract(s) — not complete:")
+		for _, unknown := range catalog.Unknown {
+			fmt.Fprintf(out, "  %s\n", unknown)
+		}
+	}
+}
+
 func boolToInt(b bool) int {
 	if b {
 		return 1
@@ -117,6 +169,8 @@ func boolToInt(b bool) int {
 
 func init() {
 	stacklabDoctorCmd.Flags().BoolVar(&stacklabDoctorJSON, "json", false, "machine-readable findings array")
+	stacklabCatalogCmd.Flags().BoolVar(&stacklabCatalogJSON, "json", false, "machine-readable local recipe and wing catalog")
 	stacklabCmd.AddCommand(stacklabDoctorCmd)
+	stacklabCmd.AddCommand(stacklabCatalogCmd)
 	rootCmd.AddCommand(stacklabCmd)
 }

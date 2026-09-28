@@ -32,7 +32,7 @@ func TestNativeStackLabSurfaceRecipeIsComplete(t *testing.T) {
 	if recipe.Schema != "sirsi.stacklab.recipe.v1" || recipe.ID != "stacklab.recipe.native-stacklab-surface" || recipe.Wing != "stacklab.wing.ra-horus-fabric" {
 		t.Fatalf("recipe identity = %+v", recipe)
 	}
-	if len(recipe.Components) != 1 || recipe.Components[0].ID != "stacklab-native-doctor" {
+	if len(recipe.Components) != 2 || recipe.Components[0].ID != "stacklab-native-doctor" || recipe.Components[1].ID != "stacklab-native-catalog" {
 		t.Fatalf("recipe components = %+v", recipe.Components)
 	}
 	component := recipe.Components[0]
