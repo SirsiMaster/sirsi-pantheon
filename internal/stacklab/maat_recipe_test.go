@@ -39,7 +39,7 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 		t.Fatalf("recipe identity = %+v", recipe)
 	}
 	want := []string{
-		"maat-canon", "maat-casebook", "maat-cli", "maat-core", "maat-coverage",
+		"maat-canon", "maat-casebook", "maat-cli", "maat-confirmed-diagnostic-repair", "maat-core", "maat-coverage",
 		"maat-decision-journal", "maat-horus-surface", "maat-mcp-surface", "maat-pipeline", "maat-pulse-proof-platform",
 		"maat-native-resolution-surface", "maat-scheduler", "maat-system-one-screen", "maat-terminal-console-surface", "maat-wing-contract",
 	}

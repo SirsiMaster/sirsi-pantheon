@@ -145,6 +145,15 @@
       "upgrade_recipe": ["never label an alarm informational solely because automation is unsafe", "require an explicit confirmation before recording a review", "preserve the distinction between owner conclusion and system repair", "continue successful review to the shared Casebook acceptance surface", "run the native resolution contract and Swift syntax validation"]
     },
     {
+      "id": "maat-confirmed-diagnostic-repair",
+      "source": ["internal/guard/doctor.go", "internal/router/launchdkickstart.go", "cmd/sirsi/livenesswatchcmd.go", "macapp/Sources/SirsiMenubar/Views.swift"],
+      "tests": ["internal/guard/doctor_test.go", "internal/guard/remediation_enforcement_test.go", "internal/router/launchdkickstart_test.go", "scripts/verify-maat-native-resolution-contract.sh"],
+      "inputs": ["critical diagnostic finding", "managed regular non-symlink LaunchAgent plist", "launchd disabled-override state", "explicit native or CLI confirmation"],
+      "outputs": ["confirmed, bounded disabled-override recovery", "separate enabled and bootstrapped label evidence", "post-action diagnostic recheck"],
+      "writes": ["only launchd state for managed labels backed by a regular non-symlink plist"],
+      "upgrade_recipe": ["preserve the managed filename allowlist and regular non-symlink plist requirement", "enable disabled overrides before deciding whether a loaded label needs bootstrap", "never revive quarantined Gemma labels or a fabric-wide quarantine", "require explicit confirmation in every operator surface", "retain separate enabled versus bootstrapped evidence", "add loaded-disabled, unloaded-disabled, symlink, error-isolation, and quarantine fixtures before widening scope"]
+    },
+    {
       "id": "maat-wing-contract",
       "source": ["contracts/stacklab/maat-wing-v1.json", "contracts/stacklab/maat-system-one-recipe-v1.json", "docs/qa/MAAT_SYSTEM_ONE_CATALOG.md"],
       "tests": ["internal/stacklab/doctor_test.go", "internal/stacklab/maat_recipe_test.go"],

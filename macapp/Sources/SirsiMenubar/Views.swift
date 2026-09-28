@@ -1120,8 +1120,8 @@ struct HealthRow: View {
 
 // FindingView is the resolution surface for one health finding — "health → cause
 // → fix" made real. It explains the finding and, when a safe remediation exists,
-// offers a one-click "Fix it" that runs it. No finding dead-ends at "here's a
-// problem" with no way to act.
+// offers a direct repair or a confirmation-gated repair. No finding dead-ends
+// at "here's a problem" with no way to act.
 // FindingDetailEntry is one parsed row of a pipe-separated finding detail —
 // "Name (SIZE) | Name (SIZE) | …" (the Top Memory Consumers shape) or
 // "name 45% | name 12%" (the Spotlight shape, no parenthesised value).
@@ -1165,6 +1165,8 @@ struct FindingView: View {
     @State private var maatReviewError: String?
     @State private var maatReviewInFlight = false
     @State private var confirmMaatReview = false
+    @State private var confirmFix = false
+    @State private var showConfirmedFix = false
 
     // recommendedCommand pulls a `sirsi …` command the finding names in its
     // message/detail (backtick-quoted) so guidance findings become actionable.
@@ -1203,6 +1205,12 @@ struct FindingView: View {
         case "guidance": return "Show how to address"
         default: return "Fix it"
         }
+    }
+    // A fix that already carries --confirm is a state-changing operation. The
+    // native surface must obtain the same explicit operator confirmation rather
+    // than starting it merely because a person opened the finding detail.
+    private var fixRequiresConfirmation: Bool {
+        finding.fix?.split(separator: " ").contains(where: { String($0) == "--confirm" }) ?? false
     }
     // The expectation set BEFORE the click — the heart of the honesty fix.
     private var fixExpectation: String? {
@@ -1277,20 +1285,16 @@ struct FindingView: View {
                             .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
                         }
                         Text(fixSectionLabel).sirsiFont(.caption2, weight: .semibold).foregroundStyle(.secondary)
-                        NavLink {
-                            ResultView(engine: engine, title: finding.check, args: sirsiArgs(fix),
-                                       reverifyCheck: finding.check, reverifyKind: finding.fixKind)
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: fixIcon)
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(fixButtonLabel).sirsiFont(12, weight: .semibold)
-                                    Text(fix).sirsiFont(.caption2, design: .monospaced)
-                                        .foregroundStyle(Color.white.opacity(0.85))
-                                }
-                                Spacer()
-                            }.frame(maxWidth: .infinity).padding(.vertical, 2)
-                        }.buttonStyle(.borderedProminent).tint(gold)
+                        if fixRequiresConfirmation {
+                            Button { confirmFix = true } label: { fixButtonContents(fix) }
+                                .buttonStyle(.borderedProminent).tint(gold)
+                        } else {
+                            NavLink {
+                                ResultView(engine: engine, title: finding.check, args: sirsiArgs(fix),
+                                           reverifyCheck: finding.check, reverifyKind: finding.fixKind)
+                            } label: { fixButtonContents(fix) }
+                            .buttonStyle(.borderedProminent).tint(gold)
+                        }
                     } else if isAlarm {
                         // A high-severity finding without a safe automatic
                         // mutation still gets a complete resolution path. Ma'at
@@ -1329,6 +1333,30 @@ struct FindingView: View {
         } message: {
             Text("Ma'at will retain this exact diagnostic finding for review. It will not change the system or claim that the issue is repaired.")
         }
+        .confirmationDialog("Apply this system repair?", isPresented: $confirmFix, titleVisibility: .visible) {
+            Button(fixButtonLabel) { showConfirmedFix = true }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Pantheon will run the exact managed repair shown here and then re-check this finding. It will not broaden the command or touch unrelated services.")
+        }
+        .sheet(isPresented: $showConfirmedFix) {
+            ResultView(engine: engine, title: finding.check, args: sirsiArgs(finding.fix ?? ""),
+                       reverifyCheck: finding.check, reverifyKind: finding.fixKind)
+        }
+    }
+
+    private func fixButtonContents(_ fix: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: fixIcon)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(fixButtonLabel).sirsiFont(12, weight: .semibold)
+                Text(fix).sirsiFont(.caption2, design: .monospaced)
+                    .foregroundStyle(Color.white.opacity(0.85))
+            }
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 2)
     }
 
     @ViewBuilder private var maatResolutionPath: some View {

@@ -31,6 +31,17 @@ for needle in \
 done
 
 for needle in \
+  'confirmFix' \
+  'Apply this system repair?' \
+  'showConfirmedFix' \
+  'will not broaden the command or touch unrelated services'; do
+  /usr/bin/grep -Fq "$needle" "$view" || {
+    echo "native confirmed repair contract missing: $needle" >&2
+    exit 1
+  }
+done
+
+for needle in \
   'accept-resolution' \
   'Requires explicit confirmation' \
   'does not repair the system'; do

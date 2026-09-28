@@ -10,10 +10,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/liveness"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
 )
@@ -88,7 +90,55 @@ var livenessStatusCmd = &cobra.Command{
 	},
 }
 
+var livenessRestoreDisabledConfirm bool
+
+// livenessRestoreDisabledCmd is the bounded operator repair for a disabled
+// launchd override. It deliberately delegates to router's managed-plist
+// recovery rather than accepting a caller-supplied label or launchctl command.
+var livenessRestoreDisabledCmd = &cobra.Command{
+	Use:   "restore-disabled",
+	Short: "Re-enable and bootstrap eligible managed LaunchAgents",
+	Long: `Clears disabled launchd overrides only for managed Sirsi/runner labels
+that still have an exact LaunchAgent plist, then bootstraps only labels absent
+from launchd. Quarantined services remain untouched. Requires --confirm.`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if !livenessRestoreDisabledConfirm {
+			return fmt.Errorf("restore-disabled changes launchd state; rerun with --confirm after reviewing the managed labels")
+		}
+		recovery, err := router.RestoreManagedLaunchAgents()
+		result := &output.CommandResult{
+			Command:    "sirsi liveness-watch restore-disabled",
+			BriefTitle: "LaunchAgent recovery",
+			Status:     "ok",
+			Summary:    "Managed LaunchAgent recovery completed. Re-run Diagnose to verify the disabled-override finding.",
+			Evidence: []output.Evidence{
+				{Label: "Overrides enabled", Value: joinedLabels(recovery.Enabled)},
+				{Label: "Services bootstrapped", Value: joinedLabels(recovery.Bootstrapped)},
+			},
+			NextActions: []output.NextAction{{Label: "Verify health", Command: "sirsi diagnose --json", Description: "Confirm no managed labels remain disabled in the launchd override database."}},
+		}
+		if err != nil {
+			result.Status = "error"
+			result.Summary = "LaunchAgent recovery completed only in part; inspect the exact error before retrying."
+			result.Errors = []string{err.Error()}
+			result.Render()
+			return err
+		}
+		result.Render()
+		return nil
+	},
+}
+
+func joinedLabels(labels []string) string {
+	if len(labels) == 0 {
+		return "none"
+	}
+	return strings.Join(labels, ", ")
+}
+
 func init() {
-	livenessWatchCmd.AddCommand(livenessRunCmd, livenessInstallCmd, livenessUninstallCmd, livenessStatusCmd)
+	livenessRestoreDisabledCmd.Flags().BoolVar(&livenessRestoreDisabledConfirm, "confirm", false, "confirm managed LaunchAgent recovery")
+	livenessWatchCmd.AddCommand(livenessRunCmd, livenessInstallCmd, livenessUninstallCmd, livenessStatusCmd, livenessRestoreDisabledCmd)
 	rootCmd.AddCommand(livenessWatchCmd)
 }

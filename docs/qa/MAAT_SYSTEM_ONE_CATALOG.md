@@ -42,7 +42,8 @@ safe independent upgrade recipe in this wing:
 12. Read-only MCP Casebook projection for agent clients
 13. Five-screen terminal console Activity/Casebook mode
 14. Native finding-to-review-to-acceptance resolution flow
-15. The Stack Lab wing and recipe contracts themselves
+15. Confirmed managed LaunchAgent disabled-override recovery and post-action recheck
+16. The Stack Lab wing and recipe contracts themselves
 
 An upgrade begins at one manifest component, follows that component's listed
 tests and boundary, then updates the receipt/canonical contract. Components do
@@ -89,6 +90,11 @@ claim a local record is a remote attestation.
   shared Casebook acceptance flow. A conclusion is visibly distinct from a
   repair and an unsuccessful write leaves the original finding open with retry
   guidance.
+- **Confirmed recovery:** when the diagnostic has an exact safe repair, the
+  native surface presents the precise command and requires confirmation before
+  it changes state. The disabled-launchd recovery is bounded to managed labels
+  with a regular non-symlink LaunchAgent plist, honors existing quarantine markers,
+  separates enable-only from bootstrap outcomes, and reruns the diagnostic.
 - **Fail honest:** unavailable journal input returns an error/503. Unknown case
   status is rejected. Missing evidence stays missing; it is never invented.
 

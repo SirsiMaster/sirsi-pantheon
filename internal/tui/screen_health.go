@@ -163,8 +163,9 @@ func (s *healthScreen) handleCmd(cmd Command) (Screen, tea.Cmd) {
 			s.fixErr = fmt.Errorf("no one-key fix for %q — see detail for guidance", f.Check)
 			return s, nil
 		}
-		// Destructive fixes (clean / reclaim-snapshots) route through the confirm
-		// modal; f only arms it. Non-destructive fixes apply immediately.
+		// Destructive storage fixes and confirmation-gated service repairs route
+		// through the confirm modal; f only arms it. Other bounded fixes apply
+		// immediately.
 		if plan := fixPlan(f.Fix); plan.destructive {
 			s.confirm = true
 			s.fixErr = nil
@@ -178,8 +179,9 @@ func (s *healthScreen) handleCmd(cmd Command) (Screen, tea.Cmd) {
 // dispatchFix runs the finding's fix with the flags that make it actually APPLY
 // (never a preview no-op — the ADR-033 trap). The plan encodes, per verb, exactly
 // which apply flags the CLI accepts: clean gets --confirm --yes, reclaim-snapshots
-// and relieve get --confirm (they reject --yes), self-update and spotlight-exclude
-// run verbatim. Dispatch flows through the injectable runner seam.
+// and relieve get --confirm (they reject --yes), restore-disabled arrives with
+// its own required confirmation, and self-update and spotlight-exclude run
+// verbatim. Dispatch flows through the injectable runner seam.
 func (s *healthScreen) dispatchFix(f diagFinding) tea.Cmd {
 	s.fixing = true
 	s.fixErr = nil
@@ -259,7 +261,7 @@ func (s *healthScreen) fixHintForSelection() string {
 	case f.Fix == "":
 		return "no fix needed — enter for detail"
 	case fixPlan(f.Fix).destructive:
-		return "f cleans this (confirm first) · " + f.Fix
+		return "f applies this after confirmation · " + f.Fix
 	case f.FixKind == "instant":
 		return "f fixes this now · " + f.Fix
 	case f.FixKind == "relief":
@@ -365,10 +367,10 @@ type healthFixPlan struct {
 //	spotlight-exclude → verbatim          (config change; the fix string has no --json).
 //	anything else     → verbatim.
 //
-// Only clean and reclaim-snapshots (Trash / disk deletion) are flagged
-// destructive, so only they gate on the confirm modal (Rule A1). --confirm/--yes
-// are appended by verb allow-list, never blindly, because relieve and
-// reclaim-snapshots REJECT --yes and would error on an unknown flag.
+// Clean and reclaim-snapshots (Trash / disk deletion) plus restore-disabled
+// (launchd state) are confirmation-gated. --confirm/--yes are appended by verb
+// allow-list, never blindly, because relieve and reclaim-snapshots REJECT
+// --yes and would error on an unknown flag.
 func fixPlan(fix string) healthFixPlan {
 	verb, args := splitFixCommand(fix)
 	switch verb {
@@ -378,6 +380,8 @@ func fixPlan(fix string) healthFixPlan {
 		return healthFixPlan{verb: verb, args: append(args, "--confirm"), destructive: true}
 	case "relieve":
 		return healthFixPlan{verb: verb, args: append(args, "--confirm"), destructive: false}
+	case "liveness-watch":
+		return healthFixPlan{verb: verb, args: args, destructive: true}
 	default:
 		// self-update, spotlight-exclude, and any other verb apply verbatim.
 		return healthFixPlan{verb: verb, args: args, destructive: false}

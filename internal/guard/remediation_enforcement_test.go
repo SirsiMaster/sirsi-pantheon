@@ -28,10 +28,9 @@ var bannedFixCommands = map[string]bool{
 // empty remediationCommand is correct for them. Anything NOT here that can alarm
 // MUST have a real lever.
 var noLeverRequired = map[string]bool{
-	"Kernel Panics (7d)":        true, // guidance: hardware/driver — nothing safe to auto-do
-	"Sirsi Processes":           true, // info
-	"Local Snapshots":           true, // info: always SeverityInfo; carries an OPTIONAL reclaim, never alarms
-	"launchd Disabled Override": true, // guidance: fix requires per-label launchctl enable+bootstrap; Detail carries the steps
+	"Kernel Panics (7d)": true, // guidance: hardware/driver — nothing safe to auto-do
+	"Sirsi Processes":    true, // info
+	"Local Snapshots":    true, // info: always SeverityInfo; carries an OPTIONAL reclaim, never alarms
 	// guidance: the resume lever lives in sirsi-inference (scripts/quiet.sh),
 	// not in this binary, so there is no `sirsi` command to map. Detail carries
 	// both the resume command and the archive fallback. Deliberately NOT

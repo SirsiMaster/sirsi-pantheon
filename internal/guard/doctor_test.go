@@ -1240,6 +1240,11 @@ func TestMemoryRemediationDoesNotSayQuit(t *testing.T) {
 func TestCheckLaunchdDisabled(t *testing.T) {
 	// Build the command key with the real UID (checkLaunchdDisabled uses os.Getuid()).
 	uidKey := fmt.Sprintf("launchctl print-disabled gui/%d", os.Getuid())
+	originalEligible := managedLaunchdRecoveryEligible
+	managedLaunchdRecoveryEligible = func(label string) bool {
+		return label == "ai.sirsi.pantheon" || label == "actions.runner.SirsiMaster-m5-sirsi"
+	}
+	t.Cleanup(func() { managedLaunchdRecoveryEligible = originalEligible })
 
 	t.Run("no disabled labels → OK", func(t *testing.T) {
 		m := &platform.Mock{
@@ -1281,6 +1286,35 @@ func TestCheckLaunchdDisabled(t *testing.T) {
 		}
 		if strings.Contains(f.Detail, "com.other.thing") {
 			t.Error("Detail must not include non-sirsi label")
+		}
+		// DoctorWithOpts attaches remediations after all checks complete; this
+		// direct unit test exercises the check in isolation, so assert the same
+		// command contract explicitly instead of depending on that outer loop.
+		if got := remediationCommand(*f); got != "sirsi liveness-watch restore-disabled --confirm" {
+			t.Errorf("disabled override remediation = %q, want confirmed managed recovery", got)
+		}
+		if got := remediationKind(*f); got != FixInstant {
+			t.Errorf("disabled override remediation kind = %q, want %q", got, FixInstant)
+		}
+	})
+
+	t.Run("retired disabled labels are informational, not a dead-end repair", func(t *testing.T) {
+		managedLaunchdRecoveryEligible = func(string) bool { return false }
+		t.Cleanup(func() { managedLaunchdRecoveryEligible = originalEligible })
+		m := &platform.Mock{
+			NameStr: "mock",
+			CommandResults: map[string]string{
+				uidKey: "{\n\t\"ai.sirsi.retired\" => disabled\n}",
+			},
+		}
+		report := &DoctorReport{}
+		checkLaunchdDisabled(m, report)
+		f := findByCheck(report.Findings, "launchd Disabled Override")
+		if f == nil || f.Severity != SeverityOK || f.Fix != "" {
+			t.Fatalf("retired label finding = %#v, want non-actionable OK", f)
+		}
+		if !strings.Contains(f.Detail, "ai.sirsi.retired") {
+			t.Errorf("detail = %q, want retired label", f.Detail)
 		}
 	})
 

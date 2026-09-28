@@ -126,6 +126,70 @@ func TestKickstartDisabledPlusUnloaded(t *testing.T) {
 	}
 }
 
+// A disabled override is a reboot-time failure even when launchd still has a
+// current process. The recovery must clear that override instead of skipping
+// it just because the label appears in `launchctl list`.
+func TestKickstartReenablesDisabledLoadedLabelWithoutBootstrap(t *testing.T) {
+	dir := t.TempDir()
+	writeAgentPlist(t, dir, "ai.sirsi.loaded-disabled.plist")
+
+	var enabled, bootstrapped []string
+	revived, err := KickstartDeadLabels(dir, launchdDeps{
+		listLabels: func() (map[string]bool, error) {
+			return map[string]bool{"ai.sirsi.loaded-disabled": true}, nil
+		},
+		disabledLabels: func() (map[string]bool, error) {
+			return map[string]bool{"ai.sirsi.loaded-disabled": true}, nil
+		},
+		enableLabel: func(_ string, label string) error {
+			enabled = append(enabled, label)
+			return nil
+		},
+		bootstrapPlist: func(path string) error {
+			bootstrapped = append(bootstrapped, filepath.Base(path))
+			return nil
+		},
+		uid: func() int { return 501 },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(revived) != 0 {
+		t.Fatalf("loaded label must not be reported as bootstrapped: %v", revived)
+	}
+	if len(enabled) != 1 || enabled[0] != "ai.sirsi.loaded-disabled" {
+		t.Fatalf("enabled = %v", enabled)
+	}
+	if len(bootstrapped) != 0 {
+		t.Fatalf("loaded label must not be bootstrapped: %v", bootstrapped)
+	}
+}
+
+func TestKickstartRejectsManagedSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.plist")
+	if err := os.WriteFile(target, []byte("<plist/>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(dir, "ai.sirsi.symlinked.plist")); err != nil {
+		t.Fatal(err)
+	}
+	var bootstrapped []string
+	revived, err := KickstartDeadLabels(dir, launchdDeps{
+		listLabels: func() (map[string]bool, error) { return map[string]bool{}, nil },
+		bootstrapPlist: func(path string) error {
+			bootstrapped = append(bootstrapped, path)
+			return nil
+		},
+	})
+	if err == nil {
+		t.Fatal("expected symlink refusal")
+	}
+	if len(revived) != 0 || len(bootstrapped) != 0 {
+		t.Fatalf("symlink must not be revived or bootstrapped: revived=%v bootstrapped=%v", revived, bootstrapped)
+	}
+}
+
 // TestKickstartHonorsGemmaQuarantine verifies the codex-inference-flagged gap
 // against PR #611: RunGemmaLivenessDuty checking the quarantine marker was not
 // enough, because this duty can still revive the broker's plist directly from

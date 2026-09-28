@@ -947,6 +947,7 @@ func TestFixPlanFlagsPerVerb(t *testing.T) {
 		{"sirsi clean", "clean", []string{"--confirm", "--yes"}, true},
 		{"sirsi reclaim-snapshots", "reclaim-snapshots", []string{"--confirm"}, true},
 		{"sirsi relieve --memory", "relieve", []string{"--memory", "--confirm"}, false},
+		{"sirsi liveness-watch restore-disabled --confirm", "liveness-watch", []string{"restore-disabled", "--confirm"}, true},
 		{"sirsi self-update", "self-update", nil, false},
 		{"sirsi spotlight-exclude ~/Development", "spotlight-exclude", []string{"~/Development"}, false},
 	}
