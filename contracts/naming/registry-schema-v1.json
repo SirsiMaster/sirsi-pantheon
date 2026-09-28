@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "adr": "ADR-072",
+  "description": "Origin-pinned, versioned set of allowed agent and project values and machine aliases for the universal thread naming convention <agent>-<project>-<machine>[-<task>]. The router validates a registration's router-constructed name against THIS schema read from origin/main of sirsi-pantheon; a working-tree copy never authorizes an identity (SSA C2). Adding or removing a value is a PROMOTION: a reviewed, owner/SSA-bound change to this file that bumps schema_version. The machine alias binds to the credentialed machine-id at runtime (SSA C3, ADR-067) and is never trusted from client-supplied hostname text.",
+  "agents": ["claude", "codex", "ra", "hermes", "gemma", "sirsi"],
+  "projects": ["router", "finalwishes", "pantheon", "hermes", "photon", "apollo", "nexus", "deck", "home", "governance", "maat", "inference"],
+  "machines": {
+    "m1": { "designated_name_prefix": "m1", "note": "M1.local; alias bound to the credentialed machine-id at runtime (ADR-067)" },
+    "m5": { "designated_name_prefix": "m5", "note": "M5.local; alias bound to the credentialed machine-id at runtime (ADR-067)" }
+  },
+  "task": {
+    "grammar": "[a-z0-9]+(-[a-z0-9]+)*",
+    "note": "Optional; the remainder after the third hyphen (SSA C1). Free-form within the grammar; not enumerated here."
+  },
+  "promotion_authority": "owner + SSA bind. A value is added only by a reviewed change to this file that bumps schema_version. The router reads this file from origin/main, never a working tree; a schema-hash mismatch is refused, never used to authorize an identity."
+}
