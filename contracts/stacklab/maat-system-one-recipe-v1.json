@@ -65,12 +65,12 @@
     },
     {
       "id": "maat-host-health-screen",
-      "source": ["cmd/sirsi/maattriage.go", "internal/guard/doctor.go", "internal/maat/systemone.go", "macapp/Sources/SirsiMenubar/MaatCasebookView.swift"],
+      "source": ["cmd/sirsi/maattriage.go", "internal/guard/doctor.go", "internal/maat/systemone.go", "macapp/Sources/SirsiMenubar/MaatCasebookView.swift", "macapp/Sources/SirsiMenubar/StackLabCatalogView.swift"],
       "tests": ["cmd/sirsi/maattriage_test.go", "internal/maat/systemone_test.go", "scripts/verify-maat-native-resolution-contract.sh"],
       "inputs": ["one complete local Doctor report", "local host identity", "explicit native or CLI confirmation"],
-      "outputs": ["hash-bound host-health System One screen", "deterministic pass/changes/block/escalate Casebook record", "native outcome treatment that distinguishes recorded evidence from a healthy gate", "three-level repair/review/owner-resolution guidance for each active health finding"],
+      "outputs": ["hash-bound host-health System One screen", "deterministic pass/changes/block/escalate Casebook record", "native outcome treatment that distinguishes recorded evidence from a healthy gate", "Stack Lab component-to-native System One handoff without recipe-string execution", "three-level repair/review/owner-resolution guidance for each active health finding"],
       "writes": ["only one confirmed Ma'at decision journal record after the local report is hashed and screened"],
-      "upgrade_recipe": ["retain one diagnostic observation and hash its full typed report before screening", "never accept caller-supplied host-health findings, commands, or gate values", "retain host identity and report digest as the screen subject", "treat a successful Casebook append as distinct from a pass gate", "do not repair, kill, install, or invoke an LLM while observing", "add preview-without-write, confirmation, warning, blocking, and native outcome fixtures before widening the observation contract"]
+      "upgrade_recipe": ["retain one diagnostic observation and hash its full typed report before screening", "never accept caller-supplied host-health findings, commands, or gate values", "retain host identity and report digest as the screen subject", "treat a successful Casebook append as distinct from a pass gate", "route the Stack Lab component only into the named native owner surface; never execute a recipe field", "do not repair, kill, install, or invoke an LLM while observing", "add preview-without-write, confirmation, warning, blocking, native outcome, and Stack Lab handoff fixtures before widening the observation contract"]
     },
     {
       "id": "maat-release-contract-preflight",
