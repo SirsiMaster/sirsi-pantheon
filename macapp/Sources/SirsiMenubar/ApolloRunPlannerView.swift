@@ -20,6 +20,7 @@ struct ApolloRunPlannerView: View {
     @State private var plan: ApolloPlan?
     @State private var planning = false
     @State private var planError: String?
+    @State private var openTelemetry = false
     let preloadedCatalog: ApolloCatalog?
 
     init(engine: SirsiEngine, preloadedCatalog: ApolloCatalog? = nil) {
@@ -58,6 +59,11 @@ struct ApolloRunPlannerView: View {
             await load()
         }
         .navigationTitle("Stack Lab — Apollo")
+        .navigationDestination(isPresented: $openTelemetry) {
+            if let plan {
+                ApolloTelemetryView(engine: engine, plan: plan)
+            }
+        }
     }
 
     @ViewBuilder private func recovery(_ message: String) -> some View {
@@ -88,6 +94,7 @@ struct ApolloRunPlannerView: View {
                 enginePicker(catalog)
                 resourceEnvelope(catalog)
                 estatePicker(catalog)
+                selectionPreview(catalog)
                 planAction(catalog)
                 if let plan { planReady(plan) }
             }
@@ -116,7 +123,7 @@ struct ApolloRunPlannerView: View {
 
     private func enginePicker(_ catalog: ApolloCatalog) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Resident inference route", systemImage: "cpu")
+            Label("Resident model & inference engine", systemImage: "cpu")
                 .sirsiFont(.headline)
             if snapshotMode {
                 snapshotSelection("Inference engine", value: engineOptions(catalog).first(where: { $0.id == selectedEngine })?.name ?? "No qualified route")
@@ -222,7 +229,7 @@ struct ApolloRunPlannerView: View {
             SnapshotActionButton(disabled: planning || selectedEstates.isEmpty || selectedEngine.isEmpty) {
                 Task { await createPlan(catalog) }
             } label: {
-                Label(planning ? "Validating plan…" : "Create Apollo run plan", systemImage: "checkmark.circle")
+                Label(planning ? "Validating selection…" : "Validate & open Apollo", systemImage: "play.circle")
             }
             if selectedEstates.isEmpty {
                 Text("Choose at least one detected chip estate to continue.")
@@ -233,6 +240,34 @@ struct ApolloRunPlannerView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    // This is a reviewable declaration rather than a decorative dashboard.
+    // Everything the operator is about to ask SNE to admit is visible in one
+    // place before Pantheon calls the typed plan command.
+    private func selectionPreview(_ catalog: ApolloCatalog) -> some View {
+        let machine = selectedMachineDescriptor(catalog)
+        let route = engineOptions(catalog).first(where: { $0.id == selectedEngine })
+        let selectedNames = estateOptions(catalog)
+            .filter { selectedEstates.contains($0.id) }
+            .map(\.name)
+            .sorted()
+        return VStack(alignment: .leading, spacing: 9) {
+            Label("Selection at a glance", systemImage: "list.bullet.rectangle")
+                .sirsiFont(.headline)
+            previewLine("Model", route?.residentModel?.isEmpty == false ? (route?.residentModel ?? "") : "Reported by SNE when a session starts")
+            previewLine("Engine", route.map { "\($0.name) · \($0.provider)" } ?? "Choose an inference engine")
+            previewLine("Machine", "\(machine.name) · \(machine.cpuCores) cores · \(byteLabel(machine.memoryBytes))")
+            previewLine("Requested", "\(selectedCores) cores · \(selectedMemoryGiB) GiB memory · \(selectedSwapGiB) GiB swap")
+            previewLine("Chip estates", selectedNames.isEmpty ? "Choose at least one detected estate" : selectedNames.joined(separator: ", "))
+            Text("Validate this declaration to hand it directly to Apollo telemetry. SNE remains the authority that can admit an inference session against current pressure.")
+                .sirsiFont(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 12).fill(gold.opacity(0.09)))
     }
 
     private func planReady(_ plan: ApolloPlan) -> some View {
@@ -281,6 +316,16 @@ struct ApolloRunPlannerView: View {
 
     private func resourceLine(_ title: String, _ detail: String) -> some View {
         HStack { Text(title).sirsiFont(.subheadline, weight: .semibold); Spacer(); Text(detail).sirsiFont(.caption).foregroundStyle(.secondary) }
+    }
+
+    private func previewLine(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label).sirsiFont(.caption, weight: .semibold).foregroundStyle(.secondary)
+                .frame(width: 76, alignment: .leading)
+            Text(value).sirsiFont(.subheadline, weight: .semibold)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
     }
 
     @ViewBuilder private func estateRow(_ estate: ApolloChipEstate) -> some View {
@@ -375,6 +420,7 @@ struct ApolloRunPlannerView: View {
         let data = await SirsiEngine.runJSON(args: ["apollo", "plan", "--machine", selectedMachine, "--engine", selectedEngine, "--cores", "\(selectedCores)", "--memory-gib", "\(selectedMemoryGiB)", "--swap-gib", "\(selectedSwapGiB)", "--estates", estates, "--json"])
         if let decoded = try? JSONDecoder().decode(ApolloPlan.self, from: data) {
             plan = decoded
+            openTelemetry = true
         } else {
             planError = SirsiEngine.firstMeaningful(String(data: data, encoding: .utf8) ?? "")
             if planError?.isEmpty != false { planError = "Apollo rejected the selected plan. Adjust the resource envelope and retry." }
