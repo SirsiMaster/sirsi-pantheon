@@ -192,15 +192,44 @@ struct ApolloRunPlannerView: View {
                     .sirsiFont(.subheadline)
                     .foregroundStyle(engine.state == "configured" ? Color.secondary : Color.orange)
                     .fixedSize(horizontal: false, vertical: true)
+                if engine.state != "configured" && !snapshotMode {
+                    readinessResolution(
+                        "Review Apollo route readiness in Ma'at",
+                        detail: "Ma'at will inspect the selected route's typed evidence and guide you through the next bounded resolution. It does not invent a resident model or start inference."
+                    )
+                }
             } else {
                 Text("No resident inference route has a typed receipt for this machine. Choose another measured machine or add an SNE-qualified route.")
                     .sirsiFont(.subheadline).foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
+                if !snapshotMode {
+                    readinessResolution(
+                        "Resolve missing Apollo route in Ma'at",
+                        detail: "Ma'at records the missing route as evidence, distinguishes configuration from capacity, and keeps the selected machine available for re-check once SNE publishes a qualified route."
+                    )
+                }
             }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.05)))
+    }
+
+    // An unavailable route is not a terminal screen. The planner keeps the
+    // operator's selected machine visible, then takes them to Ma'at's native
+    // evidence and resolution surface instead of exposing an opaque command.
+    private func readinessResolution(_ title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            NavLink { MaatWorkspaceView(engine: engine) } label: {
+                Label(title, systemImage: "checklist")
+            }
+            .buttonStyle(.bordered)
+            Text(detail)
+                .sirsiFont(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.top, 2)
     }
 
     private func machinePicker(_ catalog: ApolloCatalog) -> some View {
