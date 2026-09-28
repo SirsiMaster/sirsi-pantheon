@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: NSPanel!
     private let engine = SirsiEngine()
     private var refreshTimer: Timer?
+    private var instanceLease: MenubarInstanceLease?
 
     // retireOlderInstances terminates every OTHER running process with our bundle
     // identifier that launched before us. Uses launchDate (not PID magnitude —
@@ -119,6 +120,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // A second modern instance activates the current product surface and
+        // exits before it can add another status item. Older binaries did not
+        // hold the lease; after this app obtains it, the legacy peer pass below
+        // still converges that transitional case to one process.
+        guard let lease = MenubarInstanceLease.acquire() else {
+            peerInstances().first?.activate(options: [.activateAllWindows])
+            NSApplication.shared.terminate(nil)
+            return
+        }
+        instanceLease = lease
+
         // Single-instance guard: a relaunch RETIRES the older instance instead of
         // stacking a second eye in the menu bar (the 2026-07-02 double-icon bug:
         // the LaunchAgent-managed app + a manually-opened copy both ran). Newest

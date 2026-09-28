@@ -93,4 +93,18 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertEqual(action.actionID, "launchd-disabled")
         XCTAssertFalse(action.detail.contains("launchctl"))
     }
+
+    func testMenubarLeaseAllowsOneLocalProcessAtATime() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("sirsi-menubar-lease-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let path = root.appendingPathComponent("menubar.instance.lock").path
+
+        var first: MenubarInstanceLease? = MenubarInstanceLease.acquire(at: path)
+        XCTAssertNotNil(first)
+        XCTAssertNil(MenubarInstanceLease.acquire(at: path))
+        first = nil
+        XCTAssertNotNil(MenubarInstanceLease.acquire(at: path))
+    }
 }
