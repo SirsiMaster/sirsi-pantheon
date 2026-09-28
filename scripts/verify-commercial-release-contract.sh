@@ -8,8 +8,9 @@ dmg="$root/scripts/build-dmg.sh"
 pkg="$root/scripts/build-pkg.sh"
 workflow="$root/.github/workflows/release.yml"
 makefile="$root/Makefile"
+recipe="$root/contracts/stacklab/pantheon-release-artifact-recipe-v1.json"
 
-for file in "$dmg" "$pkg" "$workflow" "$makefile"; do
+for file in "$dmg" "$pkg" "$workflow" "$makefile" "$recipe"; do
     [[ -f "$file" ]] || { echo "missing release-contract source: $file" >&2; exit 1; }
 done
 
@@ -38,5 +39,15 @@ done
 for target in dmg-dev pkg-dev release-dmg release-pkg; do
     /usr/bin/grep -Eq "^${target}:" "$makefile" || { echo "Makefile target missing: $target" >&2; exit 1; }
 done
+
+/usr/bin/jq -e '
+  .schema == "sirsi.stacklab.recipe.v1" and
+  .id == "stacklab.recipe.pantheon-release-artifact" and
+  ([.components[].id] | sort) == [
+    "commercial-sign-notary-publication-route",
+    "release-artifact-class-contract",
+    "release-native-payload-composition"
+  ]
+' "$recipe" >/dev/null || { echo "Stack Lab release-artifact recipe is incomplete" >&2; exit 1; }
 
 echo "commercial release contract: pass"

@@ -6,6 +6,6 @@
 | Native surfaces | `macapp/`, menubar/TUI packages | bounded child processes | output/identity evidence |
 | Package | `.goreleaser.yaml`, package inventory | create-only build roots | unsigned inventory evidence |
 | Cask | `homebrew/Casks/sirsi-pantheon.rb`, release scripts | create-only publication | canonical bytes and lifecycle proof |
-| Release boundary | `.github/workflows/release.yml`, release docs | remote release/tag authority | signing/notary and remote receipts |
+| Release boundary | `.github/workflows/release.yml`, `contracts/stacklab/pantheon-release-artifact-recipe-v1.json`, release scripts | explicit development/commercial artifact selection and remote release/tag authority | static mode contract, then signing/notary and remote receipts |
 
 Owner: Pantheon PT lane. Release state: source lineage is cataloged; signing, cask lifecycle, and installed-host evidence remain open.

@@ -1,3 +1,3 @@
 # Design — Pantheon PT
 
-Source authority flows from the Go engine to product surfaces, then to deterministic package and cask renderers. Release evidence is a composed DAG: source -> tests/build -> unsigned package -> retained release inputs -> canonical cask bytes -> signing/notary -> remote release -> installed lifecycle. A missing node leaves the release state open.
+Source authority flows from the Go engine to product surfaces, then to deterministic package and cask renderers. Release evidence is a composed DAG: source -> tests/build -> explicitly labelled development package or commercial signed package -> retained release inputs -> canonical cask bytes -> signing/notary -> remote release -> installed lifecycle. Development artifacts use `-dev` names and never satisfy a release node. Commercial filenames are available only after the release route requires Developer ID, notarization, stapling, and validation. A missing node leaves the release state open.
