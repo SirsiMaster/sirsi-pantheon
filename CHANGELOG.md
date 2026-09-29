@@ -6,6 +6,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.46] — 2026-09-29 — Declared-agent resolution release
+**Source release.** Acting-agent resolution now rejects inferred session markers
+and sole-live-thread candidates unless the candidate is declared in the agent
+registry. This prevents stale or undeclared identities from becoming active
+router agents while preserving explicit agent selection.
+
+Commercial signing, notarization, package publication, and installed-host
+evidence remain separately credentialed operations.
+
+---
+
 ## [0.24.44] — 2026-09-29 — Developer ID release identity matching correction
 **Source release.** Promotes the corrected Team `9D382WV988` Developer ID
 identity matching workflow from PR #904 as the canonical starting point for
