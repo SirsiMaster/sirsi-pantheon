@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.54] — 2026-09-29 — On-demand Firebase Hosting provisioning
+
+- Provision the `sirsi-pantheon` Hosting site idempotently before automated docs
+  deploys, covering Firebase's October 15, 2026 change for newly created
+  projects.
+- Preserve the existing service-account deployment identity, live-channel
+  concurrency, and post-deploy smoke check.
+
 ## [0.24.53] — 2026-09-29 — Non-interactive Installer signing
 
 - Grant the temporary release keychain access to `pkgbuild` and `productsign`
