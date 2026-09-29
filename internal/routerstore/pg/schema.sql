@@ -500,6 +500,23 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA router TO router_se
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA router TO router_service;
 ALTER DEFAULT PRIVILEGES IN SCHEMA router GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO router_service;
 
+-- ── read-only board consumers (rs-44): an ALLOWLIST, fail-closed ─────────────
+-- Never GRANT ... ON ALL TABLES and never default privileges here: sessions
+-- holds plaintext secrets, host_tokens holds token hashes, lease_sessions holds
+-- lease session ids, and a future table must stay unreadable until listed.
+-- Residual: items/tasks/wake_events carry lease_token fencing values; they are
+-- only usable through the service with an authenticated session, which this
+-- role cannot read or mint.
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'router_reader') THEN
+    GRANT USAGE ON SCHEMA router TO router_reader;
+    REVOKE ALL ON ALL TABLES IN SCHEMA router FROM router_reader;
+    GRANT SELECT ON agents, audience_log, breakers, counters, identifiers, items,
+      requirements, schema_version, send_quota, state, tasks, threads, wake_events
+      TO router_reader;
+  END IF;
+END $$;
+
 -- ── version — last, so a partial apply never publishes a version it does not have ──
 INSERT INTO schema_version(version, applied_at) VALUES (23, router.now_rfc3339())
   ON CONFLICT (singleton) DO UPDATE SET version = 23, applied_at = router.now_rfc3339()
