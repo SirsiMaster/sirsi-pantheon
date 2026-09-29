@@ -95,6 +95,11 @@ jobs:
             security list-keychains -d user -s "$LOGIN_KEYCHAIN" /Library/Keychains/System.keychain
             echo "PANTHEON_SIGNING_KEYCHAIN=$LOGIN_KEYCHAIN" >> "$GITHUB_ENV"
             echo "PANTHEON_SIGNING_MODE=enrolled-login-keychain" >> "$GITHUB_ENV"
+            SIGN_CLIENT="$(command -v sirsi-sign || true)"
+            test -n "$SIGN_CLIENT" && test -x "$SIGN_CLIENT" \
+              || { echo "Enrolled signing fallback requires the canonized sirsi-sign client" >&2; exit 1; }
+            echo "PANTHEON_SIGNING_EXECUTION=remote-service" >> "$GITHUB_ENV"
+            echo "PANTHEON_SIGN_CLIENT=$SIGN_CLIENT" >> "$GITHUB_ENV"
             echo "Using the enrolled login keychain; no certificate material was imported."
           fi
 
