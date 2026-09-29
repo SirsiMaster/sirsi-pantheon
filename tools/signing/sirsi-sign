@@ -1,0 +1,42 @@
+#!/bin/zsh
+# sirsi-sign — submit an artifact to the enrolled Sirsi signing service.
+# This client never handles private keys or certificate exports. The service
+# runs on the owner-approved signing Macs and returns only verified artifacts.
+set -eu
+f=${1:?usage: sirsi-sign <file> [codesign|bin|app|pkg|dmg]}; [ -e "$f" ] || { echo "no such file: $f" >&2; exit 2; }
+k=${2:-}; [ -z "$k" ] && case "$f" in *.pkg) k=pkg;; *.dmg) k=dmg;; *.app|*.app/) k=app;; *) k=bin;; esac
+case $k in codesign|bin|app|pkg|dmg) ;; *) echo "sirsi-sign: bad kind '$k'" >&2; exit 2;; esac
+T=${SIRSI_SIGN_TIMEOUT:-1800}
+HOSTS=(${=SIRSI_SIGN_HOSTS:-thekryptodragon@192.168.1.155 sirsimasterdev@192.168.1.180})
+H=""
+for h in $HOSTS; do
+  ssh -o ConnectTimeout=6 -o BatchMode=yes -o StrictHostKeyChecking=accept-new "$h" 'test -x ~/sirsi-sign/bin/sirsi-signd.sh && launchctl print gui/$(id -u)/ai.sirsi.signd >/dev/null 2>&1' 2>/dev/null && { H=$h; break; }
+done
+[ -n "$H" ] || { echo "sirsi-sign: no signing host reachable/enrolled" >&2; exit 4; }
+echo "sirsi-sign: signing host ${H#*@}"
+id=$(uuidgen | tr A-Z a-z); n=${f:t}; n=${n%/}; n=${n//[^A-Za-z0-9._-]/_}
+L=$(mktemp -d); trap 'rm -rf "$L"' EXIT
+print -r -- $k > "$L/kind"; print -r -- "$(id -un)@$(hostname -s)" > "$L/caller"
+ssh -o ConnectTimeout=10 "$H" "mkdir -p ~/sirsi-sign/inbox/.$id"
+if [ -d "$f" ]; then rsync -a "$f/" "${H}:sirsi-sign/inbox/.$id/$n/"; else scp -q "$f" "${H}:sirsi-sign/inbox/.$id/$n"; fi
+scp -q "$L/kind" "$L/caller" "${H}:sirsi-sign/inbox/.$id/" && ssh "$H" "mv ~/sirsi-sign/inbox/.$id ~/sirsi-sign/inbox/$id"
+echo "sirsi-sign: job $id queued on the signing Mac"
+end=$(( $(date +%s) + T ))
+until ssh "$H" "test -e ~/sirsi-sign/outbox/$id/done -o -e ~/sirsi-sign/outbox/$id/failed"; do
+  [ $(date +%s) -gt $end ] && { echo "sirsi-sign: timed out; job $id remains on the signing Mac" >&2; exit 3; }; sleep 15
+done
+d=${f:h}; o=$(ssh "$H" "ls ~/sirsi-sign/outbox/$id | grep -vE '^(done|failed|receipt.txt)$' | head -1")
+V=$(mktemp -d); rsync -a "${H}:sirsi-sign/outbox/$id/$o" "$V/"; scp -q "${H}:sirsi-sign/outbox/$id/receipt.txt" "$d/signed-$o.receipt.txt"
+TEAM=9D382WV988; vok=1
+if [ $k = pkg ]; then
+  pkgutil --check-signature "$V/$o" | grep -q "Developer ID Installer: Sirsi Technologies Inc. ($TEAM)" || vok=0
+  pkgutil --check-signature "$V/$o" | grep -q "signed by a developer certificate issued by Apple" || vok=0
+else
+  codesign --verify --strict --deep "$V/$o" 2>/dev/null || vok=0
+  codesign -dvv "$V/$o" 2>&1 | grep -q "^TeamIdentifier=$TEAM$" || vok=0
+  codesign -dvv "$V/$o" 2>&1 | grep -q "^Authority=Developer ID Application: Sirsi Technologies Inc. ($TEAM)$" || vok=0
+fi
+[ $vok = 1 ] || { rm -rf "$V"; echo "sirsi-sign: returned artifact failed Team verification" >&2; exit 5; }
+rm -rf "$d/signed-$o"; mv "$V/$o" "$d/signed-$o"; rm -rf "$V"
+cat "$d/signed-$o.receipt.txt" | sed -n '/--- verification/,$p'
+ssh "$H" "test -e ~/sirsi-sign/outbox/$id/done" && { echo "sirsi-sign: verified artifact at $d/signed-$o"; ssh "$H" "rm -rf ~/sirsi-sign/outbox/$id"; } || { echo "sirsi-sign: FAILED — see $d/signed-$o.receipt.txt" >&2; exit 1; }
