@@ -477,7 +477,7 @@ func init() {
 	maatReserveCmd.Flags().IntVar(&resPriority, "priority", 0, "priority (higher wins the queue)")
 	maatReserveCmd.Flags().IntVar(&resLeaseTTL, "lease-ttl", 120, "lease TTL seconds (expires without heartbeat)")
 	maatReserveCmd.Flags().BoolVar(&resQueue, "queue", false, "queue behind the holder instead of refusing")
-	maatReserveCmd.Flags().IntVar(&resExemptPID, "exempt-pid", 0, "PID of this reservation's own guarded-run process tree (e.g. the run-guard script); conflict-check never treats its descendants as intruders")
+	maatReserveCmd.Flags().IntVar(&resExemptPID, "exempt-pid", 0, "PID of this reservation's own guarded-run process tree (e.g. the run-guard script); conflict-check never treats its ancestors or descendants as intruders")
 	maatReserveCmd.Flags().BoolVar(&maatJSON, "json", false, "JSON output")
 
 	maatExtendCmd.Flags().StringVar(&resEstEnd, "est-end", "", "new estimated end RFC3339")

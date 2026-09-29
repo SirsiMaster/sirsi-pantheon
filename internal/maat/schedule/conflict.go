@@ -129,8 +129,11 @@ func (l *Ledger) CheckConflicts(resource, machine string) (ConflictReport, error
 		if a.Kind == "other" {
 			continue // benign background, not a measurement contaminant
 		}
-		if ancestry != nil && a.PID != 0 && isDescendant(a.PID, cur.ExemptPID, ancestry) {
-			continue // the reservation's own run (e.g. its ssh launcher), not foreign load
+		if ancestry != nil && a.PID != 0 &&
+			(isDescendant(a.PID, cur.ExemptPID, ancestry) || isDescendant(cur.ExemptPID, a.PID, ancestry)) {
+			continue // the reservation's own run: a descendant (e.g. its ssh launcher)
+			// or an ancestor (e.g. the parent shell that exec'd the run-guard
+			// script) — not foreign load
 		}
 		rep.Intruders = append(rep.Intruders, a)
 	}
