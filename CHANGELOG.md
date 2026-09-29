@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.40] — 2026-09-29 — Stack Lab naming-canon compatibility
+The Stack Lab wing validator now accepts the optional `naming_canon` map
+published by the hardware wing, while retaining strict rejection of unknown
+fields and requiring non-empty string values. This keeps the canonical wing
+schema and doctor aligned with the current cross-lane registry records.
+
 ## [0.24.39] — 2026-09-29 — Ma'at conflict-check ancestor exemption
 `maat reserve --exempt-pid` conflict checks now exclude ANCESTORS of the
 reservation's own process tree (e.g. the parent shell that launched

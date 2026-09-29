@@ -14,7 +14,7 @@ import (
 // never a separately editable contract. A future schema change requires an
 // explicit newly-pinned SNE handoff, which means updating THIS constant in the
 // same change that updates the vendored file — never editing the file alone.
-const pinnedWingSchemaHash = "a69e0094b8ec4596c30b316fc8bd6ce5f806f5a801b5c80c10a972e3d86338ad"
+const pinnedWingSchemaHash = "e2120a81160d0e9a5093ae5c78463ad4ef3ccc924f32f5bd3bb7f30bedba03bb"
 
 // TestVendoredWingSchemaMatchesPinnedHash fails closed (per SNE's explicit
 // instruction) if the vendored contract goes missing or its bytes drift from
