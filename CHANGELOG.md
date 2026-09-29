@@ -6,6 +6,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.42] — 2026-09-29 — Router reader and relay recovery
+**Source release.** This release adds the least-privilege `router_reader` role for
+board consumers and repairs one-shot relay recovery for connections that fail
+before reaching the service. Commercial signing, notarization, and installer
+publication remain separately credentialed operations.
+
+**Security.** New NOLOGIN `router_reader` group role (roles.sql) with SELECT on
+an explicit allowlist of the 13 board tables (schema.sql), re-asserted fail-closed
+on every schema apply (`REVOKE ALL` then grant the list). `sessions` (plaintext
+secrets), `host_tokens` and `lease_sessions` are never granted; no default
+privileges, so a future table stays unreadable until listed. Verified against a
+scratch Postgres 16: 13/13 allow, 7/7 deny (secret reads + DML + DDL), a leaked
+grant is detected, and re-apply revokes it. Residual `lease_token` fencing
+columns are readable but unusable without an authenticated session.
+
+**Relay.** The forward path re-dials once on a fresh connection when the first
+attempt provably never reached the Cloud Run service, while post-send failures
+remain outcome-unknown and are never auto-retried. The transport documents its
+no-pool guarantee and defensive idle bounds.
+
+## [Unreleased]
+
 ## [0.24.41] — 2026-09-29 — Router repository-root test compatibility
 The repository-root discovery tests now restore their injected Git hook through
 an explicit deferred closure, clearing the Go staticcheck SA9010 failure while
@@ -60,28 +82,6 @@ milliseconds as documented. Commercial signing, notarization, and release
 publication remain separate credentialed operations.
 
 ---
-
-## [Unreleased] — read-only `router_reader` role for board consumers (rs-44)
-**Security.** New NOLOGIN `router_reader` group role (roles.sql) with SELECT on
-an explicit allowlist of the 13 board tables (schema.sql), re-asserted fail-closed
-on every schema apply (`REVOKE ALL` then grant the list). `sessions` (plaintext
-secrets), `host_tokens` and `lease_sessions` are never granted; no default
-privileges, so a future table stays unreadable until listed. Verified against a
-scratch Postgres 16: 13/13 allow, 7/7 deny (secret reads + DML + DDL), a leaked
-grant is detected, and re-apply revokes it. Residual: `lease_token` fencing
-columns on items/tasks/wake_events are readable; unusable without an
-authenticated session, which this role cannot read or mint.
-
-## [Unreleased] — relay re-dials half-open pooled connections (rs-30)
-**Fix.** The router relay's forward path now re-dials ONCE on a fresh
-connection when the first attempt provably never reached the Cloud Run service
-(a dial/DNS-phase failure — the shape a dropped half-open pooled connection
-surfaces), instead of parking a network-less codex sandbox's request in the
-outbox for a full retry cycle. The re-dial is gated on `neverReachedService`,
-so a post-send failure stays OUTCOME UNKNOWN and is never auto-retried (no
-double-commit). The forward transport also documents its no-pool guarantee
-(`DisableKeepAlives`) plus defensive idle bounds. Refs: rs-30; ADR-062 relay
-trust boundary.
 
 ---
 
