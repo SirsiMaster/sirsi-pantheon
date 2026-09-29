@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.44] — 2026-09-29 — Developer ID release identity matching correction
+**Source release.** Promotes the corrected Team `9D382WV988` Developer ID
+identity matching workflow from PR #904 as the canonical starting point for
+the next build. The release workflow now reaches the identity preflight with
+the intended application and installer match expressions; commercial signing,
+notarization, package publication, and installed-host evidence remain
+credential-dependent and are not inferred from this source release.
+
 ## [0.24.43] — 2026-09-29 — Developer ID release identity resolution
 **Source release.** Correct the release workflow's Developer ID Application and
 Installer identity match so the imported Team `9D382WV988` certificates are
