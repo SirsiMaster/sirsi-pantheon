@@ -55,7 +55,13 @@ jobs:
             exit 1
           fi
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-sa.json"
+          chmod 600 "$RUNNER_TEMP/firebase-sa.json"
           echo "Service-account key written."
+
+      - name: Ensure Firebase Hosting site exists
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+        run: bash scripts/ensure-firebase-hosting-site.sh sirsi-nexus-live sirsi-pantheon
 
       - name: Deploy to Firebase Hosting (live channel)
         env:
