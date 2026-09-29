@@ -101,6 +101,13 @@ type Reservation struct {
 	LeaseTTLSec   int      `json:"lease_ttl_sec"`           // reservation void if heartbeat older than this
 	Status        Status   `json:"status"`
 	InvalidatedBy string   `json:"invalidated_by,omitempty"` // intruder description
+	// ExemptPID is the PID of the process tree that runs this reservation's own
+	// guarded work (e.g. the run-guard script that later spawns a same-run ssh
+	// launcher). CheckConflicts never counts a descendant of this PID as an
+	// intruder — it is the holder's own work, just not attributable to an
+	// Actor.Owner the way router-registered agents are. 0 means "not set": no
+	// exemption, same behavior as before this field existed.
+	ExemptPID int `json:"exempt_pid,omitempty"`
 }
 
 // ShareFull and ShareFloor are the two values Reservation.Share takes.
