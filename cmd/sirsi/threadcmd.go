@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
@@ -700,6 +701,13 @@ var (
 //
 // Returns "" with a helpful reason when it cannot be resolved unambiguously, so
 // the caller can tell the operator to pass --agent rather than guessing.
+//
+// Rungs 3 and 4 are INFERENCES, so each must name an agent declared in
+// agents.json right now (the same check dispatch enforces). A marker outlives
+// the declaration it was written under — a verification agent stubbed in,
+// registered from a live session, then reverted leaves that session resolving
+// as a ghost every dispatch refuses. An undeclared inference is skipped, never
+// returned. Rungs 1 and 2 are explicit and stay as given; dispatch judges them.
 func resolveCurrentAgent(routerRoot, override string) (string, string) {
 	if a := strings.TrimSpace(override); a != "" {
 		return a, "flag"
@@ -707,8 +715,15 @@ func resolveCurrentAgent(routerRoot, override string) (string, string) {
 	if a := strings.TrimSpace(os.Getenv("SIRSI_AGENT_ID")); a != "" {
 		return a, "env SIRSI_AGENT_ID"
 	}
+	declared := func(a string) bool {
+		return dispatch.New(routerRoot, nil).ValidateAgent("agent", a) == nil
+	}
+	skipped := ""
 	if a := router.ReadSessionAgentMarker(router.CurrentSessionID()); a != "" {
-		return a, "session marker"
+		if declared(a) {
+			return a, "session marker"
+		}
+		skipped = fmt.Sprintf("; ignored session marker %q (not declared in agents.json)", a)
 	}
 	// Sole-live-thread fallback: unambiguous only when exactly one non-terminal
 	// thread is registered on this host.
@@ -725,14 +740,16 @@ func resolveCurrentAgent(routerRoot, override string) (string, string) {
 			}
 			if !seen[t.AgentID] {
 				seen[t.AgentID] = true
-				candidates = append(candidates, t.AgentID)
+				if declared(t.AgentID) {
+					candidates = append(candidates, t.AgentID)
+				}
 			}
 		}
 		if len(candidates) == 1 {
 			return candidates[0], "sole live thread"
 		}
 	}
-	return "", "could not resolve the current agent — pass --agent <id> (no $SIRSI_AGENT_ID, no session marker, and not a sole live thread)"
+	return "", "could not resolve the current agent — pass --agent <id> (no $SIRSI_AGENT_ID, no declared session marker, and not a sole live declared thread)" + skipped
 }
 
 // threadWatchCmd is the thread-scoped, self-resolving alias over the existing
