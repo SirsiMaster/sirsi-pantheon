@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.38] — 2026-09-29 — Ma'at conflict-check self-exemption
+`maat reserve --exempt-pid` now binds conflict checks to the reservation's own
+process tree and excludes its descendants from foreign-load detection while
+continuing to report genuine intruders. This prevents the guarded run's own
+SSH/bench child from producing a false conflict during release operations.
+
+---
+
 ## [0.24.33] — 2026-09-28 — Closed native diagnostic resolution
 **Source release candidate.** Every native menu-bar diagnostic now has an
 explicit resolution route, including actionable repair guidance and a
