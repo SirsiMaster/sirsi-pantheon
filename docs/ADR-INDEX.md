@@ -2,7 +2,7 @@
 
 This index tracks **all** architectural decisions for the Sirsi Pantheon ecosystem.
 
-**Total ADRs: 70 (+ ADR-031-A/B/C sub-decisions, + the ADR-054 companion contracts)** | **Next available: ADR-074**
+**Total ADRs: 71 (+ ADR-031-A/B/C sub-decisions, + the ADR-054 companion contracts)** | **Next available: ADR-075**
 
 ---
 
@@ -11,6 +11,7 @@ This index tracks **all** architectural decisions for the Sirsi Pantheon ecosyst
 | ID | Title | Status | Date |
 |----|-------|--------|------|
 | [ADR-073](ADR-073-ENROLLED-SIGNING-FRAME-FALLBACK.md) | Enrolled signing-frame fallback — self-hosted login-keychain path when the CI certificate bundle is absent; exact Team `9D382WV988` Developer ID Application and Installer preflight; no agent key-material handling | Proposed | 2026-09-29 |
+| [ADR-074](ADR-074-SESSION-SAFE-SIGNING-SERVICE.md) | Session-safe signing service — enrolled fallback routes app, DMG, and PKG through the owner-session `sirsi-sign` service instead of direct runner keychain access | Proposed | 2026-09-29 |
 | [ADR-001](ADR-001-FOUNDING-ARCHITECTURE.md) | Founding Architecture — Go, cobra, agent-controller, module codenames | Accepted | 2026-03-20 |
 | [ADR-002](ADR-002-KA-GHOST-DETECTION.md) | Ka Ghost Detection — 5-step algorithm, 17 residual locations, bundle ID matching | Accepted | 2026-03-20 |
 | [ADR-003](ADR-003-BUILD-IN-PUBLIC.md) | Build-in-Public as Canonical Process — required release artifacts, transparency rules, dual-audience docs | Accepted | 2026-03-22 |

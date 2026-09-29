@@ -67,6 +67,15 @@ fi
 DMG_PATH="${BUILD_DIR}/${DMG_NAME}"
 STAGING_DIR="${BUILD_DIR}/dmg-staging"
 
+REMOTE_SIGNING=false
+if [[ "$MODE" == "release" && "${PANTHEON_SIGNING_EXECUTION:-}" == "remote-service" ]]; then
+    [[ -x "${PANTHEON_SIGN_CLIENT:-}" ]] || {
+        echo "ERROR: remote signing service client is unavailable" >&2
+        exit 1
+    }
+    REMOTE_SIGNING=true
+fi
+
 echo "Building Sirsi Pantheon ${MODE} DMG  (version ${VERSION}, arch ${ARCH})"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
@@ -119,13 +128,20 @@ fi
 # --- Code signing ---
 if [[ "$MODE" == "release" ]]; then
     echo "Signing with Developer ID: ${DEVELOPER_ID_APPLICATION}"
-    # Sign inner executables first (inside-out), then the bundle — more robust for
-    # notarization than a single --deep pass. Hardened runtime + secure timestamp.
-    for inner in "${BUNDLE_DIR}/Contents/MacOS/sirsi" "${BUNDLE_DIR}/Contents/MacOS/sirsi-menubar"; do
-        codesign --force --options runtime --timestamp --sign "${DEVELOPER_ID_APPLICATION}" "${inner}"
-    done
-    codesign --force --options runtime --timestamp --sign "${DEVELOPER_ID_APPLICATION}" "${BUNDLE_DIR}"
-    codesign --verify --deep --strict --verbose=2 "${BUNDLE_DIR}"
+    if [[ "$REMOTE_SIGNING" == true ]]; then
+        "${PANTHEON_SIGN_CLIENT}" "${BUNDLE_DIR}" app
+        SIGNED_APP="$(dirname "${BUNDLE_DIR}")/signed-$(basename "${BUNDLE_DIR}")"
+        [[ -d "$SIGNED_APP" ]] || { echo "ERROR: signing service returned no signed app" >&2; exit 1; }
+        rm -rf "${BUNDLE_DIR}"
+        mv "${SIGNED_APP}" "${BUNDLE_DIR}"
+    else
+        # Sign inner executables first (inside-out), then the bundle.
+        for inner in "${BUNDLE_DIR}/Contents/MacOS/sirsi" "${BUNDLE_DIR}/Contents/MacOS/sirsi-menubar"; do
+            codesign --force --options runtime --timestamp --sign "${DEVELOPER_ID_APPLICATION}" "${inner}"
+        done
+        codesign --force --options runtime --timestamp --sign "${DEVELOPER_ID_APPLICATION}" "${BUNDLE_DIR}"
+        codesign --verify --deep --strict --verbose=2 "${BUNDLE_DIR}"
+    fi
 else
     echo "Signing ad-hoc development bundle (not distributable)."
     codesign --force --deep --sign - "${BUNDLE_DIR}"
@@ -178,20 +194,27 @@ rm -rf "${STAGING_DIR}"
 
 # --- Sign + notarize + staple the DMG (release builds only, AFTER it exists) ---
 if [[ "$MODE" == "release" ]]; then
-    codesign --force --timestamp --sign "${DEVELOPER_ID_APPLICATION}" "${DMG_PATH}"
-    echo "Notarizing ${DMG_NAME} (this can take a few minutes)..."
-    # --timeout bounds the --wait poll so a stuck Apple-notary submission (or
-    # a bad credential that never resolves) fails the step instead of hanging;
-    # the release.yml job-level timeout-minutes is the outer backstop.
-    xcrun notarytool submit "${DMG_PATH}" \
-        --apple-id "${APPLE_ID}" \
-        --team-id "${APPLE_TEAM_ID}" \
-        --password "${APPLE_APP_PASSWORD}" \
-        --timeout 20m \
-        --wait
-    echo "Stapling notarization ticket..."
-    xcrun stapler staple "${DMG_PATH}"
-    xcrun stapler validate "${DMG_PATH}"
+    if [[ "$REMOTE_SIGNING" == true ]]; then
+        "${PANTHEON_SIGN_CLIENT}" "${DMG_PATH}" dmg
+        SIGNED_DMG="$(dirname "${DMG_PATH}")/signed-$(basename "${DMG_PATH}")"
+        [[ -f "$SIGNED_DMG" ]] || { echo "ERROR: signing service returned no signed DMG" >&2; exit 1; }
+        rm -f "${DMG_PATH}"
+        mv "${SIGNED_DMG}" "${DMG_PATH}"
+    else
+        codesign --force --timestamp --sign "${DEVELOPER_ID_APPLICATION}" "${DMG_PATH}"
+        echo "Notarizing ${DMG_NAME} (this can take a few minutes)..."
+        # --timeout bounds the --wait poll so a stuck Apple-notary submission
+        # fails the step instead of hanging.
+        xcrun notarytool submit "${DMG_PATH}" \
+            --apple-id "${APPLE_ID}" \
+            --team-id "${APPLE_TEAM_ID}" \
+            --password "${APPLE_APP_PASSWORD}" \
+            --timeout 20m \
+            --wait
+        echo "Stapling notarization ticket..."
+        xcrun stapler staple "${DMG_PATH}"
+        xcrun stapler validate "${DMG_PATH}"
+    fi
 fi
 
 echo ""

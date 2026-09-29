@@ -51,6 +51,15 @@ else
     ARTIFACT_LABEL="Development"
 fi
 
+REMOTE_SIGNING=false
+if [[ "$MODE" == "release" && "${PANTHEON_SIGNING_EXECUTION:-}" == "remote-service" ]]; then
+    [[ -x "${PANTHEON_SIGN_CLIENT:-}" ]] || {
+        echo "ERROR: remote signing service client is unavailable" >&2
+        exit 1
+    }
+    REMOTE_SIGNING=true
+fi
+
 mkdir -p "$BUILD_DIR"
 PAYLOAD_ROOT="$(mktemp -d /private/tmp/pantheon-pkg-payload.XXXXXX)"
 PAYLOAD_ROOT_ID="$(/usr/bin/stat -f '%d:%i' "$PAYLOAD_ROOT")"
@@ -96,7 +105,9 @@ PKGBUILD_ARGS=(
     --version "$VERSION"
 )
 if [[ "$MODE" == "release" ]]; then
-    PKGBUILD_ARGS+=(--sign "$DEVELOPER_ID_INSTALLER")
+    if [[ "$REMOTE_SIGNING" != true ]]; then
+        PKGBUILD_ARGS+=(--sign "$DEVELOPER_ID_INSTALLER")
+    fi
 else
     echo "Creating unsigned development PKG (not distributable)." >&2
 fi
@@ -134,15 +145,23 @@ fi
 # local-development evidence. In commercial release mode signature,
 # notarization, and stapling are all mandatory and any failure is fatal.
 if [[ "$MODE" == "release" ]]; then
-    /usr/sbin/pkgutil --check-signature "$PKG_PATH"
-    xcrun notarytool submit "$PKG_PATH" \
-        --apple-id "${APPLE_ID}" \
-        --team-id "${APPLE_TEAM_ID}" \
-        --password "${APPLE_APP_PASSWORD}" \
-        --timeout 20m \
-        --wait
-    xcrun stapler staple "$PKG_PATH"
-    xcrun stapler validate "$PKG_PATH"
+    if [[ "$REMOTE_SIGNING" == true ]]; then
+        "${PANTHEON_SIGN_CLIENT}" "${PKG_PATH}" pkg
+        SIGNED_PKG="$(dirname "${PKG_PATH}")/signed-$(basename "${PKG_PATH}")"
+        [[ -f "$SIGNED_PKG" ]] || { echo "ERROR: signing service returned no signed PKG" >&2; exit 1; }
+        rm -f "${PKG_PATH}"
+        mv "${SIGNED_PKG}" "${PKG_PATH}"
+    else
+        /usr/sbin/pkgutil --check-signature "$PKG_PATH"
+        xcrun notarytool submit "$PKG_PATH" \
+            --apple-id "${APPLE_ID}" \
+            --team-id "${APPLE_TEAM_ID}" \
+            --password "${APPLE_APP_PASSWORD}" \
+            --timeout 20m \
+            --wait
+        xcrun stapler staple "$PKG_PATH"
+        xcrun stapler validate "$PKG_PATH"
+    fi
 else
     set +e
     SIGNATURE_REPORT="$(/usr/sbin/pkgutil --check-signature "$PKG_PATH" 2>&1)"
