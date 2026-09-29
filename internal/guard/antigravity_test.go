@@ -149,6 +149,7 @@ func TestDefaultBridgeConfig(t *testing.T) {
 func TestStartBridge_LifecycleWithAlerts(t *testing.T) {
 	// Mock the sampler to produce high-CPU alerts
 	old := getSampleFn()
+	defer setSampleFn(old)
 	setSampleFn(func(topN int) ([]ProcessInfo, error) {
 		return []ProcessInfo{
 			{PID: 42, Name: "Plugin Host", CPUPercent: 103.9, RSS: 512 * 1024 * 1024},
@@ -176,11 +177,26 @@ func TestStartBridge_LifecycleWithAlerts(t *testing.T) {
 		},
 	})
 
-	// Wait for some alerts to flow through
-	time.Sleep(400 * time.Millisecond)
+	// Wait for the first alert rather than assuming a fixed scheduler startup
+	// latency. The bridge is deliberately exercised under host contention in CI;
+	// a fixed 400ms sleep made this test report a false failure when the
+	// watchdog goroutine had not yet received its first tick.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		current, _ := bridge.Ring().Stats()
+		mu.Lock()
+		rcvCount := len(received)
+		mu.Unlock()
+		if current > 0 && rcvCount > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for bridge alert (ring=%d callback=%d)", current, rcvCount)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
 	cancel()
 	time.Sleep(100 * time.Millisecond) // drain goroutines before restoring
-	setSampleFn(old)
 
 	// Verify ring buffer has alerts
 	current, _ := bridge.Ring().Stats()
@@ -199,6 +215,7 @@ func TestStartBridge_LifecycleWithAlerts(t *testing.T) {
 
 func TestStartBridge_CriticalSeverity(t *testing.T) {
 	old := getSampleFn()
+	defer setSampleFn(old)
 	setSampleFn(func(topN int) ([]ProcessInfo, error) {
 		return []ProcessInfo{
 			{PID: 99, Name: "runaway", CPUPercent: 200.0, RSS: 1024 * 1024},
@@ -228,10 +245,21 @@ func TestStartBridge_CriticalSeverity(t *testing.T) {
 		},
 	})
 
-	time.Sleep(400 * time.Millisecond)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		mu.Lock()
+		seen := gotCritical
+		mu.Unlock()
+		if seen {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for critical bridge alert")
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
 	cancel()
 	time.Sleep(100 * time.Millisecond) // drain goroutines before restoring
-	setSampleFn(old)
 
 	mu.Lock()
 	if !gotCritical {
