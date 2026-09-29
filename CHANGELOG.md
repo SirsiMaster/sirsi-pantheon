@@ -6,6 +6,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.52] — 2026-09-29 — M1 executive mailbox lane registry
+
+- Register the owner-requested `claude-mail` Claude lane on the M1 router with
+  its canonical Pantheon working directory, executive-mail workstream, and
+  explicit wake label.
+- Keep the existing `codex-mail` record unchanged and leave the wake
+  LaunchAgent unarmed until separately enabled by the owner.
+- Mailbox send, reply, forward, trash, and spam actions remain hard-denied in
+  the consumer configuration.
+- Keep the commercial-release contract self-check aligned with the workflow's
+  exact selected-keychain Installer identity failure message.
+
 ## [0.24.51] — 2026-09-29 — Enrolled signature metadata compatibility
 
 - Accept the complete signed-bundle layout emitted by the enrolled signing
