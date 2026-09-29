@@ -6,6 +6,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.50] — 2026-09-29 — Signed bundle inventory layout compatibility
+
+- Accept the two macOS `CodeResources` locations emitted by the enrolled
+  signing service: `Contents/_CodeSignature/CodeResources` and
+  `Contents/CodeResources`.
+- Require exactly one signature layout for signed payloads and reject duplicate
+  or missing signature metadata. The descriptor-rooted, Python-free package
+  inventory remains fail-closed for every other unexpected entry.
+
 ## [0.24.49] — 2026-09-29 — Self-contained signing-service release client
 
 - The macOS release workflow now supports the owner-approved enrolled login
