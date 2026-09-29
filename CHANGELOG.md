@@ -6,6 +6,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.41] — 2026-09-29 — Router repository-root test compatibility
+The repository-root discovery tests now restore their injected Git hook through
+an explicit deferred closure, clearing the Go staticcheck SA9010 failure while
+preserving the existing test behavior.
+
 ## [0.24.40] — 2026-09-29 — Stack Lab naming-canon compatibility
 The Stack Lab wing validator now accepts the optional `naming_canon` map
 published by the hardware wing, while retaining strict rejection of unknown
