@@ -61,6 +61,18 @@ publication remain separate credentialed operations.
 
 ---
 
+## [Unreleased] — acting-agent resolution never returns an undeclared agent
+**Fix.** `resolveCurrentAgent` (close/respond/acknowledge/heartbeat/thread watch)
+now accepts its two INFERRED sources — the session→agent marker and the
+sole-live-thread fallback — only when the agent is declared in agents.json now,
+via the same `dispatch.ValidateAgent` check dispatch enforces. A marker outlives
+the declaration it was written under: a verification agent stubbed in,
+registered from a live session and reverted left the Ra session resolving as
+`verify-m1-1790459290`, and every `router close` was refused. An undeclared
+inference is skipped and named in the error; `--agent` and `$SIRSI_AGENT_ID`
+stay explicit. Test `TestResolveCurrentAgentIgnoresUndeclaredMarker` (both
+directions; negative control run: the pre-fix body reproduces the live bug).
+
 ## [Unreleased] — read-only `router_reader` role for board consumers (rs-44)
 **Security.** New NOLOGIN `router_reader` group role (roles.sql) with SELECT on
 an explicit allowlist of the 13 board tables (schema.sql), re-asserted fail-closed
