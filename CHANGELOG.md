@@ -6,7 +6,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
-## [0.24.48] — 2026-09-29 — Session-safe signing-service release fallback
+## [0.24.49] — 2026-09-29 — Self-contained signing-service release client
 
 - The macOS release workflow now supports the owner-approved enrolled login
   keychain on self-hosted release runners when the CI certificate bundle is
@@ -15,7 +15,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
   Application and Installer identity preflight.
 - The fallback never exports, imports, copies, or exposes signing key material
   to agents. Because a CI runner is not the owner's GUI keychain session, it
-  uses the canonized `sirsi-sign` service client for app, DMG, and PKG signing,
+  uses the exact Stack Lab `sirsi-sign` service client carried in the Pantheon
+  source for app, DMG, and PKG signing,
   notarization, and stapling. It fails closed when the client or exact
   identity is unavailable. No unsigned commercial release is claimed by this
   source change.

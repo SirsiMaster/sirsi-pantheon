@@ -19,9 +19,10 @@ stapling in its unlocked owner session and returns artifacts that the client
 verifies for Team `9D382WV988` before replacing the build output. The build
 scripts retain direct local signing for the imported-secret path.
 
-The workflow fails closed if the client is missing. No private key, certificate
-export, password, or keychain content is transferred to the runner or an
-agent.
+The release source carries the exact Stack Lab client used by the workflow and
+the workflow verifies that executable before starting. It fails closed if the
+client is missing. No private key, certificate export, password, or keychain
+content is transferred to the runner or an agent.
 
 ## Verification and rollback
 
