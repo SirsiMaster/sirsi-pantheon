@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.43] — 2026-09-29 — Developer ID release identity resolution
+**Source release.** Correct the release workflow's Developer ID Application and
+Installer identity match so the imported Team `9D382WV988` certificates are
+recognized by the self-hosted signing path. Signing/notarization/package and
+installed-host evidence are established only by the tagged workflow run.
+
 ## [0.24.42] — 2026-09-29 — Router reader and relay recovery
 **Source release.** This release adds the least-privilege `router_reader` role for
 board consumers and repairs one-shot relay recovery for connections that fail
