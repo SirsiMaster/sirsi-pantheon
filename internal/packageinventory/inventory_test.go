@@ -82,6 +82,24 @@ func TestVerifyAcceptsContentsCodeResourcesSignatureLayout(t *testing.T) {
 	}
 }
 
+func TestVerifyAcceptsBothCodeResourcesSignatureLayouts(t *testing.T) {
+	app, expected := makeBundle(t)
+	if err := os.Mkdir(filepath.Join(app, "Contents", "_CodeSignature"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{
+		filepath.Join(app, "Contents", "_CodeSignature", "CodeResources"),
+		filepath.Join(app, "Contents", "CodeResources"),
+	} {
+		if err := os.WriteFile(path, []byte("signature"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := Verify(app, expected); err != nil {
+		t.Fatalf("dual CodeResources layout was rejected: %v", err)
+	}
+}
+
 func machoWithDylib(name string) []byte {
 	const headerSize = 32
 	const dylibHeaderSize = 24

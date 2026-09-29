@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.51] — 2026-09-29 — Enrolled signature metadata compatibility
+
+- Accept the complete signed-bundle layout emitted by the enrolled signing
+  service, including both `Contents/_CodeSignature/CodeResources` and
+  `Contents/CodeResources` when present.
+- Signed inventory still fails closed when no `CodeResources` metadata exists;
+  all unrelated or unexpected bundle entries remain rejected.
+
 ## [0.24.50] — 2026-09-29 — Signed bundle inventory layout compatibility
 
 - Accept the two macOS `CodeResources` locations emitted by the enrolled

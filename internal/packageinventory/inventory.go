@@ -77,9 +77,9 @@ var allowed = map[string]string{
 	"Contents/Resources/StackLab/v2/wing.schema.json":                      "regular",
 	"Contents/_CodeSignature":                                              "directory",
 	"Contents/_CodeSignature/CodeResources":                                "regular",
-	// macOS can emit CodeResources directly under Contents when the bundle is
-	// re-signed by the enrolled signing service. Both layouts are legitimate,
-	// but the verifier still requires exactly one complete signature layout.
+	// macOS can emit CodeResources directly under Contents as well as under
+	// _CodeSignature when the bundle is re-signed by the enrolled service. Both
+	// locations are legitimate and are retained in the signed bundle.
 	"Contents/CodeResources": "regular",
 }
 
@@ -400,11 +400,9 @@ func validateReport(report Report, contents map[string][]byte, expected Expectat
 		}
 	}
 	if expected.RequireCodeSignature {
-		if signatureLayouts != 1 {
-			return fmt.Errorf("package inventory: expected exactly one CodeResources signature layout, found %d", signatureLayouts)
+		if signatureLayouts == 0 {
+			return errors.New("package inventory: missing CodeResources signature layout")
 		}
-	} else if signatureLayouts > 1 {
-		return errors.New("package inventory: duplicate CodeResources signature layouts")
 	}
 	for required := range allowed {
 		if strings.HasPrefix(required, "Contents/_CodeSignature") || required == "Contents/CodeResources" {
