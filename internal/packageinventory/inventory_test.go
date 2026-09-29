@@ -72,6 +72,16 @@ func TestVerifyRejectsPythonMachOLinkageInSignedPayload(t *testing.T) {
 	}
 }
 
+func TestVerifyAcceptsContentsCodeResourcesSignatureLayout(t *testing.T) {
+	app, expected := makeBundle(t)
+	if err := os.WriteFile(filepath.Join(app, "Contents", "CodeResources"), []byte("signature"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(app, expected); err != nil {
+		t.Fatalf("Contents/CodeResources layout was rejected: %v", err)
+	}
+}
+
 func machoWithDylib(name string) []byte {
 	const headerSize = 32
 	const dylibHeaderSize = 24
