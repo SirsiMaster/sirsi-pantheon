@@ -91,7 +91,7 @@ jobs:
           test -f "$HOME/Library/Keychains/build.keychain-db" \
             || { echo "Temporary signing keychain was not created" >&2; exit 1; }
           ID=$(security find-identity -v -p codesigning build.keychain \
-            | awk -F '"' '/Developer ID Application:.*\\(9D382WV988\\)/{print $2; exit}')
+            | awk -F '"' '/Developer ID Application:.*\(9D382WV988\)/{print $2; exit}')
           if [ -z "$ID" ]; then
             echo "Temporary signing keychain does not contain a usable Team 9D382WV988 Developer ID Application identity" >&2
             exit 1
@@ -113,7 +113,7 @@ jobs:
               ;;
           esac
           IMPORTED_INSTALLER="$(security find-identity -v build.keychain \
-            | awk -F '\"' '/Developer ID Installer:.*\\(9D382WV988\\)/{print $2; exit}')"
+            | awk -F '\"' '/Developer ID Installer:.*\(9D382WV988\)/{print $2; exit}')"
           if [ -z "$IMPORTED_INSTALLER" ]; then
             echo "Temporary signing keychain does not contain a usable Team 9D382WV988 Developer ID Installer identity" >&2
             exit 1
