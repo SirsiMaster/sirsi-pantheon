@@ -6,6 +6,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.47] — 2026-09-29 — Enrolled signing-frame release fallback
+
+- The macOS release workflow now supports the owner-approved enrolled login
+  keychain on self-hosted release runners when the CI certificate bundle is
+  absent. It still supports the existing imported-secret path when the bundle
+  is present, and both paths require exact Team `9D382WV988` Developer ID
+  Application and Installer identity preflight.
+- The fallback never exports, imports, copies, or exposes signing key material
+  to agents. It fails closed when the enrolled keychain or either exact
+  identity is unavailable. No unsigned commercial release is claimed by this
+  source change.
+
 ## [0.24.46] — 2026-09-29 — Declared-agent resolution release
 **Source release.** Acting-agent resolution now rejects inferred session markers
 and sole-live-thread candidates unless the candidate is declared in the agent
