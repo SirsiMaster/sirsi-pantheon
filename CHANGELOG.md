@@ -6,6 +6,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.39] — 2026-09-29 — Ma'at conflict-check ancestor exemption
+`maat reserve --exempt-pid` conflict checks now exclude ANCESTORS of the
+reservation's own process tree (e.g. the parent shell that launched
+`maat-run-guard.sh`), not just descendants. Addendum to router
+`20260928-220311`: the guard's own parent shells were reported as intruders,
+failing two otherwise-clean 2026-09-28 MLX A/B runs at 98.
+
+---
+
 ## [0.24.38] — 2026-09-29 — Ma'at conflict-check self-exemption
 `maat reserve --exempt-pid` now binds conflict checks to the reservation's own
 process tree and excludes its descendants from foreign-load detection while
