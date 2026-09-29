@@ -42,6 +42,15 @@ no-pool guarantee and defensive idle bounds.
 
 ## [Unreleased]
 
+## [0.24.45] — 2026-09-29 — Declared-agent resolution hardening
+**Source release.** Acting-agent resolution now rejects inferred session markers
+and sole-live-thread candidates unless the candidate is declared in the agent
+registry. This prevents stale or undeclared identities from becoming active
+router agents while preserving the existing explicit-agent path.
+
+Commercial signing, notarization, package publication, and installed-host
+evidence remain separately credentialed operations.
+
 ## [0.24.41] — 2026-09-29 — Router repository-root test compatibility
 The repository-root discovery tests now restore their injected Git hook through
 an explicit deferred closure, clearing the Go staticcheck SA9010 failure while
