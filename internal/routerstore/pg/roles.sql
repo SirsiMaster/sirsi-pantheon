@@ -9,6 +9,10 @@
 --                     (schema.sql, future migrations, `sirsi router migrate`).
 --   router_service  — what `sirsi router serve` connects as: DML on
 --                     router.* only, no DDL, no superuser, no other schemas.
+--   router_reader   — NOLOGIN group role for read-only board consumers (rs-44):
+--                     SELECT on an allowlist of board tables (schema.sql), never
+--                     the credential tables. A consumer's IAM DB user is granted
+--                     this role; the role itself cannot log in.
 
 DO $$
 BEGIN
@@ -17,6 +21,9 @@ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'router_service') THEN
     CREATE ROLE router_service LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'router_reader') THEN
+    CREATE ROLE router_reader NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;
   END IF;
 END $$;
 

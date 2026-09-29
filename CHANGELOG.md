@@ -61,6 +61,17 @@ publication remain separate credentialed operations.
 
 ---
 
+## [Unreleased] — read-only `router_reader` role for board consumers (rs-44)
+**Security.** New NOLOGIN `router_reader` group role (roles.sql) with SELECT on
+an explicit allowlist of the 13 board tables (schema.sql), re-asserted fail-closed
+on every schema apply (`REVOKE ALL` then grant the list). `sessions` (plaintext
+secrets), `host_tokens` and `lease_sessions` are never granted; no default
+privileges, so a future table stays unreadable until listed. Verified against a
+scratch Postgres 16: 13/13 allow, 7/7 deny (secret reads + DML + DDL), a leaked
+grant is detected, and re-apply revokes it. Residual: `lease_token` fencing
+columns on items/tasks/wake_events are readable; unusable without an
+authenticated session, which this role cannot read or mint.
+
 ## [Unreleased] — relay re-dials half-open pooled connections (rs-30)
 **Fix.** The router relay's forward path now re-dials ONCE on a fresh
 connection when the first attempt provably never reached the Cloud Run service
