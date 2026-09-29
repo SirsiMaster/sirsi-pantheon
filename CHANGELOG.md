@@ -6,6 +6,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.53] — 2026-09-29 — Non-interactive Installer signing
+
+- Grant the temporary release keychain access to `pkgbuild` and `productsign`
+  in addition to `codesign`, and include the `productbuild` partition label.
+- This closes the non-interactive Developer ID Installer key-use failure seen
+  after the application/DMG signing path succeeded.
+- The release workflow still fails closed on missing or mismatched signing
+  identities; no credential material is exposed by this change.
+
 ## [0.24.52] — 2026-09-29 — M1 executive mailbox lane registry
 
 - Register the owner-requested `claude-mail` Claude lane on the M1 router with
