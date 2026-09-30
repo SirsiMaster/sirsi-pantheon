@@ -6,6 +6,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.55] — 2026-09-30 — Router aliases and reassign
+
+- Retired lane names now deliver to their successor: `agents.json` carries an
+  `"aliases"` map and every send resolves it (ADR-072 C5), so an old name in a
+  sender's notes can no longer strand mail.
+- `sirsi router reassign <id> --to <agent>` hands one open item to another
+  lane, and `sirsi router drain-aliases` empties retired mailboxes; both keep
+  the item id so replies still thread.
+- Retires `claude-inference-cylton`, `cylton-apollo`, `codex-sne-runtime` and
+  `cylton-hermes`. Router service revision `sirsi-router-00015-gc7`; 123 stranded
+  items moved on 2026-09-30.
+
 ## [0.24.54] — 2026-09-29 — On-demand Firebase Hosting provisioning
 
 - Provision the `sirsi-pantheon` Hosting site idempotently before automated docs
