@@ -794,6 +794,40 @@ func fabricDispatchOverloaded(agentID string, depth int) bool {
 	return true
 }
 
+// railsLockPath is the Ma'at measurement-window marker a benchmark lane holds
+// for its run: ~/libsirsimpi/rails.lock, or $MAAT_RAILS_LOCK. The owner's
+// maat-window-gate hook reads the same file, so one definition of "window open"
+// governs interactive sessions and wake loops alike.
+func railsLockPath() string {
+	if p := strings.TrimSpace(os.Getenv("MAAT_RAILS_LOCK")); p != "" {
+		return p
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, "libsirsimpi", "rails.lock")
+}
+
+// measurementWindowOpen reports (and records) whether a hardware measurement
+// window is open on this host, in which case dispatch holds: a consumer started
+// mid-window loads the CPU and invalidates the run (2026-09-30: the 19:12
+// cablepull quiet reservation on m1 was invalidated by a Claude shell). The
+// session already running is left alone; only new dispatches wait.
+func measurementWindowOpen(agentID string, depth int) bool {
+	p := railsLockPath()
+	if p == "" {
+		return false
+	}
+	holder, err := os.ReadFile(p)
+	if err != nil {
+		return false // no lock (or unreadable) — no window
+	}
+	log.Printf("wake-loop %s: dispatch held — measurement window open (rails.lock held by %q; inbox depth %d)",
+		agentID, strings.TrimSpace(string(holder)), depth)
+	return true
+}
+
 // loginShellArgv wraps argv so the consumer runs through the operator's login
 // shell instead of being exec'd directly.
 //
@@ -1160,7 +1194,8 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 			}
 		} else if consumer != nil && !consumer.Resident && lerr == nil && depth > 0 && !run.running() &&
 			time.Now().After(nextDispatchAllowed) &&
-			!fabricDispatchQuarantined(agentID, depth) && !fabricDispatchOverloaded(agentID, depth) {
+			!fabricDispatchQuarantined(agentID, depth) && !fabricDispatchOverloaded(agentID, depth) &&
+			!measurementWindowOpen(agentID, depth) {
 
 			// #636 C3 — hard hourly ceiling, enforced independently of everything
 			// above. This is what bounds a future variant whose gate logic is wrong.

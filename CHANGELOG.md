@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [Unreleased] — wake loops hold dispatch during a Ma'at measurement window
+
+- The wake loop no longer starts a consumer while `~/libsirsimpi/rails.lock`
+  (or `$MAAT_RAILS_LOCK`) exists — the same marker the owner's
+  maat-window-gate hook honors. On 2026-09-30 a quiet cablepull reservation on
+  the M1 was invalidated by a Claude shell; unattended consumers must wait for
+  the window instead. A session already running is not interrupted.
+
 ## [Unreleased] — Codex consumers can reach the router through the spool relay again
 
 - Every Codex lane's consumer now passes `--add-dir /var/sirsipantheon/relay`.
