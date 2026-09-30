@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [Unreleased] — Codex consumers can reach the router through the spool relay again
+
+- Every Codex lane's consumer now passes `--add-dir /var/sirsipantheon/relay`.
+  `~/.sirsi/relay` is a symlink there (since 2026-09-12), and Codex's
+  workspace-write sandbox refused writes through it, so every Codex consumer on
+  the M5 failed with `spool: 64 requests in flight … relay stalled?` and did no
+  work. Verified live: the same `codex exec` reads its inbox with the path added.
+
 ## [Unreleased] — lane registry: wake Apollo + FinalWishes M1, fold idle codex lanes (owner 2026-09-30)
 
 - `codex-apollo`, `claude-inference` (the M1 Claude Apollo lane; paths now M1)
