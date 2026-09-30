@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
@@ -103,5 +104,58 @@ func TestCedeDecisionLedger_RequestThenGrant(t *testing.T) {
 	// The pending request must never itself appear as a grant.
 	if req.Determination == "grant" {
 		t.Fatal("a pending request line must never read as a grant")
+	}
+}
+
+// TestCedeDecisionLedger_ProjectionFailureIsReported forces the decision
+// ledger append to fail after the scheduler transition already committed,
+// and asserts the CLI surfaces a clear error (naming the committed id)
+// instead of reporting a durable success. SSA review 20260927-143128
+// rejected the prior best-effort swallow on cmd/sirsi/maatcede.go.
+func TestCedeDecisionLedger_ProjectionFailureIsReported(t *testing.T) {
+	t.Setenv("SIRSI_ROUTER_URL", "")
+	db := filepath.Join(t.TempDir(), "router.db")
+	t.Setenv("SIRSI_ROUTER_DB", db)
+
+	oldRequester, oldHolder, oldAsk, oldMinutes, oldEarliest, oldReason :=
+		cedeRequester, cedeHolder, cedeAsk, cedeMinutes, cedeEarliest, cedeReason
+	oldJSON := maatJSON
+	oldAppend := appendCedeDecision
+	t.Cleanup(func() {
+		cedeRequester, cedeHolder, cedeAsk, cedeMinutes, cedeEarliest, cedeReason =
+			oldRequester, oldHolder, oldAsk, oldMinutes, oldEarliest, oldReason
+		maatJSON = oldJSON
+		appendCedeDecision = oldAppend
+	})
+	maatJSON = false
+	appendCedeDecision = func(cedeDecisionRecord) error {
+		return os.ErrPermission
+	}
+
+	cedeRequester, cedeHolder, cedeAsk, cedeMinutes, cedeEarliest, cedeReason =
+		"claude-io", "sne", "machine", 10, "", "projection failure regression"
+	err := maatCedeRequestCmd.RunE(maatCedeRequestCmd, []string{"m1"})
+	if err == nil {
+		t.Fatal("want an error when the decision ledger append fails, got nil (false success)")
+	}
+
+	// The scheduler transition must still have committed — the cede request
+	// really exists — and the error must name it so a caller never retries
+	// (retrying would double-apply the already-committed request).
+	st, openErr := routerstore.OpenPath(db)
+	if openErr != nil {
+		t.Fatal(openErr)
+	}
+	defer st.Close()
+	l := schedule.NewLedger(st)
+	pending, listErr := l.ListCedes(schedule.CedeFilter{Resource: "m1", PendingOnly: true})
+	if listErr != nil {
+		t.Fatal(listErr)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("want the cede request to have committed despite the projection failure, got %d pending", len(pending))
+	}
+	if got := pending[0].ID; got == "" || !strings.Contains(err.Error(), got) {
+		t.Fatalf("error %q must name the committed cede id %q so a caller never retries it", err, got)
 	}
 }
