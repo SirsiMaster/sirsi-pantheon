@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [Unreleased] — lane registry: wake Apollo + FinalWishes M1, fold idle codex lanes (owner 2026-09-30)
+
+- `codex-apollo`, `claude-inference` (the M1 Claude Apollo lane; paths now M1)
+  and `claude-finalwishes-m1` wake on mail (`launchagent`).
+- `codex-io` → `claude-io`, `codex-nexus` → `claude-nexus`, `codex-home` →
+  `claude-home` become aliases; their mail drains to the Claude lane.
+- `hermes-m5` is recorded as subordinate to `hermes` (the M1 Claude Hermes lane).
+
 ## [0.24.55] — 2026-09-30 — Router aliases and reassign
 
 - Retired lane names now deliver to their successor: `agents.json` carries an
