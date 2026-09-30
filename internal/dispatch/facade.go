@@ -165,7 +165,13 @@ func (f *Facade) Send(from, to, title, msgType, instructions string) (SendResult
 	if err := f.ValidateAgent("sender", from); err != nil {
 		return SendResult{}, err
 	}
-	if err := f.ValidateAgent("recipient", to); err != nil {
+	// A retired name delivers to its successor (ADR-072 C5): senders still
+	// holding an old name must not refill a mailbox nobody watches.
+	to, err := f.resolveRecipient(to)
+	if err != nil {
+		return SendResult{}, err
+	}
+	if err = f.ValidateAgent("recipient", to); err != nil {
 		return SendResult{}, err
 	}
 	id, deduped, err := f.store.SendGuarded(routerstore.SendReq{

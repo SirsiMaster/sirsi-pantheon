@@ -289,6 +289,9 @@ func (rs *RemoteStore) SendGuarded(r SendReq) (string, bool, error) {
 	err := rs.call("SendGuarded", []any{r}, &o0, &o1)
 	return o0, o1, err
 }
+func (rs *RemoteStore) ReassignItem(id, from, to, note string) error {
+	return rs.call("ReassignItem", []any{id, from, to, note})
+}
 func (rs *RemoteStore) SetBlockedBy(id, blockedBy string) error {
 	return rs.call("SetBlockedBy", []any{id, blockedBy})
 }

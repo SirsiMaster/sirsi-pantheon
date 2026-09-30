@@ -253,19 +253,39 @@ Thoth is part of the router loop. Before context compaction or session handoff, 
 
 Every router item must be addressed to exactly one repo-scoped agent unless a written super-agent mandate exists.
 
-Use this addressing formula:
+Use this addressing formula (ADR-072):
 
 ```text
-<agent-family>-<repo-or-workstream>
+<agent>-<project>-<machine>[-<task>]
 ```
 
 Examples:
 
-- FinalWishes repo review for Claude: `claude-finalwishes`
-- FinalWishes repo review for Codex: `codex-finalwishes`
+- FinalWishes work for Claude on the M1: `claude-finalwishes-m1`
+- FinalWishes work for Claude on the M5: `claude-finalwishes-m5`
 - Pantheon router/CLI work for Claude: `claude-pantheon`
 - Sirsi Nexus work for Codex: `codex-nexus`
-- Assiduous work for Claude: `claude-assiduous`
+
+Older two-part ids stay valid until they are renamed. Address the name that is
+declared in `agents.json` today; `sirsi router pull <agent>` fails for anything
+that is not.
+
+### Retired names (aliases) and reassigning mail
+
+A renamed or retired lane is listed under `"aliases"` in `agents.json`
+(retired name → declared successor). The router resolves it for you: a send to
+an alias is delivered to the successor, so an old name in a sender's notes
+can't strand mail again. An alias may not also be a declared agent, and its
+successor must be declared; a broken map stops sends rather than misroute them.
+
+- `sirsi router drain-aliases [--dry-run]` moves mail that reached an alias
+  before it was declared to the successor.
+- `sirsi router reassign <id> --to <agent>` hands one open, unclaimed item to
+  another declared agent. Only the current recipient may hand off; alias mail
+  moves only to its declared successor.
+
+Both keep the item's id, sender and body, and append a note recording who
+moved it, so replies still thread.
 
 Do not address FinalWishes work to `claude-pantheon` just because the router lives in Pantheon. Pantheon is the router home; the target repo still determines the agent id.
 
