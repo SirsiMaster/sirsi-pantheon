@@ -112,6 +112,24 @@ attempt provably never reached the Cloud Run service, while post-send failures
 remain outcome-unknown and are never auto-retried. The transport documents its
 no-pool guarantee and defensive idle bounds.
 
+## [Unreleased] — router aliases + reassign: retired names deliver to their successor (ADR-072 C5)
+**Feature.** `agents.json` gains an `"aliases"` map (retired name → declared
+successor). `Send` resolves an alias to its successor, so senders still using
+an old name stop refilling mailboxes nobody watches (on 2026-09-30
+codex-finalwishes sent 22 items to the retired `claude-finalwishes-helper` in
+two hours). New `sirsi router reassign <id> --to <agent>` hands an open,
+unclaimed item to another declared agent keeping its id, sender and body (only
+the recipient may hand off; alias mail moves only to its declared successor),
+and `sirsi router drain-aliases [--dry-run]` empties each alias into its
+successor. Store: `ReassignItem`, guarded on recipient/open/unleased, served by
+the existing reflective server (no schema change). Registry: retires
+`claude-inference-cylton`, `cylton-apollo`, `codex-sne-runtime`, `cylton-hermes`
+and maps nine retired names per the owner's 2026-09-30 decisions. The Router
+Addressing Law in the router README now uses ADR-072 names and no longer tells
+senders to use `claude-finalwishes`. Live dry run from the new registry: 120
+items across 6 aliases. Tests both directions; negative control: Send without
+alias resolution refuses the alias exactly as live senders are refused today.
+
 ## [Unreleased]
 
 ## [0.24.45] — 2026-09-29 — Declared-agent resolution hardening

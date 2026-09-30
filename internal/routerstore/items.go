@@ -121,6 +121,38 @@ func (s *SQLiteStore) SetBlockedBy(id, blockedBy string) error {
 	return nil
 }
 
+// ReassignItem moves an unclaimed open item from one recipient to another,
+// keeping its id, sender and history (ADR-072 C5: a retired name's mail drains
+// to its successor, never re-sent under a new id that replies can't follow).
+// The UPDATE is guarded on the current recipient, status and an empty lease, so
+// a concurrent claim, close or reassign can never be overwritten; zero rows is
+// disambiguated by a Get. note is appended to the instructions so the new
+// recipient sees where the item came from. Who may reassign is decided one
+// layer up in dispatch.Facade.Reassign; the store is identity-agnostic.
+func (s *SQLiteStore) ReassignItem(id, from, to, note string) error {
+	id, from, to = strings.TrimSpace(id), strings.TrimSpace(from), strings.TrimSpace(to)
+	if id == "" || from == "" || to == "" {
+		return fmt.Errorf("routerstore: ReassignItem: id, from and to are required")
+	}
+	if from == to {
+		return fmt.Errorf("routerstore: ReassignItem %q: already addressed to %q", id, to)
+	}
+	res, err := s.exec(`UPDATE items SET to_agent = ?, instructions = instructions || ?, wake_status = '', wake_error = ''
+		WHERE id = ? AND to_agent = ? AND status = 'open' AND lease_token = '';`, to, note, id, from)
+	if err != nil {
+		return fmt.Errorf("routerstore: ReassignItem %q: %w", id, err)
+	}
+	if n, _ := res.RowsAffected(); n == 1 {
+		return nil
+	}
+	it, gerr := s.Get(id)
+	if gerr != nil {
+		return gerr
+	}
+	return fmt.Errorf("routerstore: ReassignItem %q: not reassignable (to=%s status=%s; want to=%s, open and unclaimed)",
+		id, it.To, it.Status, from)
+}
+
 // Send creates a new open item from→to and returns its id. The id follows the
 // same convention as internal/work.SendTyped (timestamp-from-to-slug) so the
 // store and the filesystem agree on ids; callers that already have a file id

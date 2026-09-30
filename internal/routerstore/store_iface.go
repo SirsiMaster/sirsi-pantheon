@@ -96,6 +96,9 @@ type Store interface {
 	Satisfy(reqID string) error
 	Send(from, to, title, msgType, instructions string) (string, error)
 	SendGuarded(r SendReq) (string, bool, error)
+	// ReassignItem moves an unclaimed open item to another recipient, keeping its
+	// id and history (ADR-072 C5 alias draining). Authorization is dispatch's.
+	ReassignItem(id, from, to, note string) error
 	SetBlockedBy(id, blockedBy string) error
 	SetState(key, value string) error
 	SetWake(id, status, attemptedAt, adapter, wakeErr string) error
