@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.58] — 2026-10-01
+
+- **Release identity correction:** publish the merged Pantheon menubar outbox
+  reachability work with matching source `VERSION`, embedded binary identity,
+  and tag after v0.24.57 was created from a stale pre-merge commit.
+
 ## [0.24.57] — 2026-10-01
 
 - **Menubar:** surface readable queued-for-retry and unreadable router spool
