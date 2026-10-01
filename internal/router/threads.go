@@ -142,6 +142,14 @@ type Thread struct {
 	// consumer); worker loops set it only when a consumer resolved.
 	ConsumerCapable bool `json:"consumer_capable,omitempty"`
 
+	// Lane is the honest, self-reported state of the worker behind this thread:
+	// what its last consumer run did, any hold on dispatch, and when it last made
+	// progress. It exists so a SENDER can ask "can this lane actually work right
+	// now" (router ping) from a fresh record instead of inferring it from an
+	// installed launch job and a live heartbeat — the two facts that read "armed"
+	// for a lane that cannot log in, has no consumer, or cannot reach the relay.
+	Lane *LaneState `json:"lane,omitempty"`
+
 	// SessionID is the stable conversation identity for app-hosted surfaces that
 	// have no durable OS PID (e.g. CLAUDE_CODE_SESSION_ID for Claude Code desktop
 	// sessions). When set, the mint key is (session_id, surface) instead of
@@ -758,6 +766,8 @@ type HeartbeatUpdate struct {
 	Status      ThreadStatus
 	CurrentItem *string
 	LastError   *string
+	// Lane, when non-nil, REPLACES the thread's published lane state.
+	Lane *LaneState
 }
 
 // Heartbeat updates a thread's last_seen_at and optional fields.
@@ -796,6 +806,11 @@ func Heartbeat(routerRoot, threadID string, upd HeartbeatUpdate) (*Thread, error
 	}
 	if upd.LastError != nil {
 		t.LastError = *upd.LastError
+	}
+	if upd.Lane != nil {
+		l := *upd.Lane
+		l.PublishedAt = t.LastSeenAt
+		t.Lane = &l
 	}
 	if err := SaveThreadRegistry(routerRoot, reg); err != nil {
 		return nil, err
