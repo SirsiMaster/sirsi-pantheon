@@ -2,6 +2,7 @@ package routerstore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -342,5 +343,32 @@ func TestServerListAllDeadlineEndsAnInFlightRead(t *testing.T) {
 	}
 	if len(items) != 3 {
 		t.Fatalf("post-cancellation ListAll returned %d items, want 3 (backend state must be intact too)", len(items))
+	}
+}
+
+// TestCachedSessionSurvivesThreadlessInvocation: a worker that claimed with a
+// thread-bound session must complete with the SAME session even when the later
+// invocation cannot resolve its thread (sandbox denies /bin/ps). A different
+// resolved thread must NOT reuse it. Both directions.
+func TestCachedSessionSurvivesThreadlessInvocation(t *testing.T) {
+	dir := t.TempDir()
+	rs := NewRemoteStore("http://127.0.0.1:1", "t0k") // unreachable: any mint fails
+	rs.sessionDir, rs.agent = dir, "codex-x"
+	cached := Session{ID: "s1", Secret: "sec", RuntimeHash: rs.runtime, ThreadID: "thr-claim"}
+	b, _ := json.Marshal(cached)
+	if err := os.WriteFile(rs.sessionPath(), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	rs.threadID = "" // thread unresolved on this invocation
+	got, err := rs.ensureSession(context.Background())
+	if err != nil || got.ID != "s1" {
+		t.Fatalf("threadless caller must reuse the claim's session: %+v err=%v", got, err)
+	}
+
+	rs2 := NewRemoteStore("http://127.0.0.1:1", "t0k")
+	rs2.sessionDir, rs2.agent, rs2.threadID = dir, "codex-x", "thr-other"
+	if got, err := rs2.ensureSession(context.Background()); err == nil {
+		t.Fatalf("a different thread must not borrow the cached session, got %+v", got)
 	}
 }
