@@ -56,3 +56,28 @@ func TestFabricDispatchOverloadedRecordsHeal(t *testing.T) {
 		t.Fatalf("expected exactly one recorded heal, got %v", heals)
 	}
 }
+
+// TestShouldDeferDispatchThreshold pins the saturation edge: effective load at
+// 95% of cores defers, at 50% does not (low-priority background work that
+// inflates load average but leaves idle CPU must not starve lanes).
+func TestShouldDeferDispatchThreshold(t *testing.T) {
+	defer SetLoadAvgFn(nil)
+	c := float64(runtime.NumCPU())
+	for _, tc := range []struct {
+		load float64
+		want bool
+	}{{c * 0.95, true}, {c * 0.5, false}} {
+		SetLoadAvgFn(func() (float64, bool) { return tc.load, true })
+		if hold, _, _ := shouldDeferDispatch(); hold != tc.want {
+			t.Fatalf("load %.1f of %.0f cores: hold=%v want %v", tc.load, c, hold, tc.want)
+		}
+	}
+}
+
+// TestDefaultLoadReaderReads: the real reader must produce a non-negative value
+// on this host (top or sysctl fallback).
+func TestDefaultLoadReaderReads(t *testing.T) {
+	if v, ok := defaultLoadAvg1m(); !ok || v < 0 {
+		t.Fatalf("default reader gave %v, %v", v, ok)
+	}
+}

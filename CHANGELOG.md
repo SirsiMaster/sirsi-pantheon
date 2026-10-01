@@ -22,6 +22,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased] — staff the unstaffed lanes; workers acknowledge and are linked to their lane
 
+- **Dispatch gate reads idle CPU, not load average.** Load average counts Spotlight and Photos analysis, which only take cores nothing else wants; the M1 sat at load 13-17 on 10 cores with 36% idle and deferred every lane. The gate now defers only when idle CPU falls below 10% (falls back to half the load average if `top` is unreadable).
+
 - **Lanes staffed:** `hermes`, `claude-io` (now on the M1, directory `sirsi-io-connect`),
   `claude-home` and `ra` (M1; Ra's headless worker uses its own worktree) get a wake
   loop with a working Claude consumer; `sirsi-hardware-admin` and `codex-finalwishes-web`

@@ -787,7 +787,7 @@ func fabricDispatchOverloaded(agentID string, depth int) bool {
 	if !hold {
 		return false
 	}
-	msg := fmt.Sprintf("wake-loop %s: dispatch deferred — load average %.2f >= %d cores (inbox depth %d)",
+	msg := fmt.Sprintf("wake-loop %s: dispatch deferred — CPU load %.2f of %d cores (inbox depth %d)",
 		agentID, load, cores, depth)
 	log.Print(msg)
 	RecordHeal(msg)
