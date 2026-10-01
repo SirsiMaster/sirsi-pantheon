@@ -266,6 +266,44 @@ func (s *SQLiteStore) fenceErrTx(tx *txHandle, id, token string, now time.Time) 
 // leaseFence is the shared SQL predicate every fenced mutation embeds.
 const leaseFence = ` AND lease_token = ? AND lease_expires > ? AND status IN ('claimed','working')`
 
+// VerifyLease reports whether (id, token) is a live, current lease — read-
+// only, no mutation. It exists so a caller holding a lease can confirm it is
+// still current before acting on stale local state (router item
+// 20261001-031502, Ra ACCEPTED 2026-10-01: fences the MCP server's
+// router_close against the durable lease instead of a process-local map that
+// never expires).
+//
+// false, nil covers every fencing failure uniformly — unknown item, wrong
+// token, expired lease, reassigned lease, terminal item — so a caller has
+// ONE refusal branch ("not safe to act on this") rather than needing to
+// special-case ErrNotFound/ErrTerminal/ErrLeaseInvalid identically anyway.
+// A non-nil error is reserved for an actual read failure (a database
+// problem), which the caller should treat as "cannot verify" and fail
+// closed, never as permission to proceed unfenced.
+func (s *SQLiteStore) VerifyLease(id, token string) (bool, error) {
+	now := s.clock()
+	var status, curToken, expires string
+	err := s.db.QueryRow(`SELECT status, lease_token, lease_expires FROM items WHERE id = ?;`, id).
+		Scan(&status, &curToken, &expires)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("routerstore: VerifyLease read %q: %w", id, err)
+	}
+	if IsTerminal(status) {
+		return false, nil
+	}
+	if curToken == "" || curToken != token {
+		return false, nil
+	}
+	exp, perr := time.Parse(time.RFC3339, expires)
+	if perr != nil || !exp.After(now) {
+		return false, nil
+	}
+	return true, nil
+}
+
 // RenewLease extends a live lease's expiry (token-fenced).
 func (s *SQLiteStore) RenewLease(id, token string, ttl time.Duration) error {
 	var err error

@@ -33,6 +33,14 @@ const heartbeatInterval = 90 * time.Second
 // the item for another consumer after this.
 const claimTTL = 15 * time.Minute
 
+// claimRecord is one local instance's record of a claim: the durable lease
+// token it was issued and that lease's own expiry (never a locally-invented
+// TTL — it mirrors ClaimNext's Lease.Expires exactly).
+type claimRecord struct {
+	token   string
+	expires time.Time
+}
+
 // registration is the resident surface="mcp" thread this server holds. Set once
 // at startup, then read by the heartbeat loop and the mutate gate. Guarded by a
 // mutex because the heartbeat goroutine reads it concurrently with startup
@@ -41,11 +49,13 @@ type registration struct {
 	mu       sync.RWMutex
 	threadID string
 	agent    string
-	claimed  map[string]bool // item ids THIS instance claimed (session-ownership)
-	err      error           // why registration failed; surfaced by mutate tools
+	claimed  map[string]claimRecord // item ids THIS instance claimed (session-ownership) → lease token + expiry
+	err      error                  // why registration failed; surfaced by mutate tools
 }
 
-var reg = &registration{claimed: map[string]bool{}}
+func newRegistration() *registration { return &registration{claimed: map[string]claimRecord{}} }
+
+var reg = newRegistration()
 
 func (r *registration) set(threadID, agent string) {
 	r.mu.Lock()
@@ -74,16 +84,44 @@ func (r *registration) gate() (string, error) {
 	return r.agent, nil
 }
 
-func (r *registration) recordClaim(itemID string) {
+func (r *registration) recordClaim(itemID, token string, expires time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.claimed[itemID] = true
+	r.claimed[itemID] = claimRecord{token: token, expires: expires}
 }
 
+// ownsClaim reports whether this instance still holds a non-evicted LOCAL
+// record of claiming itemID. An entry past its own recorded expiry is
+// evicted here unconditionally (point 3 of the accepted proposal, router item
+// 20261001-031502): the local clock already knows, independent of whatever a
+// round trip to VerifyLease would additionally confirm. This is a necessary
+// local check, not a sufficient liveness one — router_close separately calls
+// VerifyLease against the durable store before acting, because a clean local
+// clock cannot see that another instance already reclaimed the item.
 func (r *registration) ownsClaim(itemID string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	rec, ok := r.claimed[itemID]
+	if !ok {
+		return false
+	}
+	if time.Now().After(rec.expires) {
+		delete(r.claimed, itemID)
+		return false
+	}
+	return true
+}
+
+// claimToken returns the lease token this instance recorded for itemID, so
+// router_close can pass it to Store.VerifyLease. Shares ownsClaim's eviction
+// so a token is never returned for an entry that just expired.
+func (r *registration) claimToken(itemID string) (string, bool) {
+	if !r.ownsClaim(itemID) {
+		return "", false
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.claimed[itemID]
+	return r.claimed[itemID].token, true
 }
 
 // registerSurface registers this process as a surface="mcp" resident thread and
@@ -272,7 +310,7 @@ func handleClaim(_ map[string]interface{}) (*mcp.ToolResult, error) {
 	if lease == nil {
 		return textResult("No open item to claim. Inbox is clear."), nil
 	}
-	reg.recordClaim(lease.ItemID)
+	reg.recordClaim(lease.ItemID, lease.Token, lease.Expires)
 	return textResult(fmt.Sprintf("Claimed %s (lease expires %s). Work it, then router_close it with a result.",
 		lease.ItemID, lease.Expires.Format(time.RFC3339))), nil
 }
@@ -287,7 +325,8 @@ func handleClose(args map[string]interface{}) (*mcp.ToolResult, error) {
 		return errResult("router_close: id is required"), nil
 	}
 	// Session-ownership (ADR-068): this instance may only close work it claimed.
-	if !reg.ownsClaim(id) {
+	token, ok := reg.claimToken(id)
+	if !ok {
 		return errResult(fmt.Sprintf("router_close: %s was not claimed by this session — claim it with router_claim first (a developer can only complete work its own instance claimed)", id)), nil
 	}
 	f, closeF, err := openFacade()
@@ -295,6 +334,23 @@ func handleClose(args map[string]interface{}) (*mcp.ToolResult, error) {
 		return errResult(err.Error()), nil
 	}
 	defer closeF()
+	// Fence against the DURABLE lease (router item 20261001-031502, Ra
+	// ACCEPTED): the local claimToken above only proves this instance ONCE
+	// held the claim and its own record hasn't locally expired — it cannot
+	// see that the lease was reclaimed by another instance after expiry. An
+	// error here (including an old deployed service that predates this
+	// method) is treated as "cannot verify" and refuses — never falls back to
+	// an unfenced close.
+	live, verr := f.Store().VerifyLease(id, token)
+	if verr != nil {
+		if strings.Contains(verr.Error(), "no such store method") {
+			return errResult(fmt.Sprintf("router_close: %s — the router service predates lease verification; refusing rather than closing unfenced", id)), nil
+		}
+		return errResult(fmt.Sprintf("router_close: %s — could not verify claim is still live, refusing: %v", id, verr)), nil
+	}
+	if !live {
+		return errResult(fmt.Sprintf("router_close: %s — your claim expired or moved to another instance; re-claim with router_claim before closing", id)), nil
+	}
 	if err := f.CloseItem(agent, id, stringArg(args, "result")); err != nil {
 		return errResult(fmt.Sprintf("close: %v", err)), nil
 	}

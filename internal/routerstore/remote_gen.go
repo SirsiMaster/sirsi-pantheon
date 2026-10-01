@@ -336,6 +336,11 @@ func (rs *RemoteStore) VerifyCompletion(agent string) (CompletionReport, error) 
 	err := rs.call("VerifyCompletion", []any{agent}, &o0)
 	return o0, err
 }
+func (rs *RemoteStore) VerifyLease(id, token string) (bool, error) {
+	var o0 bool
+	err := rs.call("VerifyLease", []any{id, token}, &o0)
+	return o0, err
+}
 func (rs *RemoteStore) Waive(reqID, reason, ownerDecisionRef string) error {
 	return rs.call("Waive", []any{reqID, reason, ownerDecisionRef})
 }

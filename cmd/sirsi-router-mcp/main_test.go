@@ -4,19 +4,20 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // The mutate gate must fail closed: no registered thread → a clear, actionable
 // error, never a silent success (ADR-068 §3). A registered thread → the agent.
 func TestRegistrationGate(t *testing.T) {
 	t.Run("unregistered, no error → actionable message", func(t *testing.T) {
-		r := &registration{claimed: map[string]bool{}}
+		r := newRegistration()
 		if _, err := r.gate(); err == nil {
 			t.Fatal("want error when unregistered, got nil (mutate would silently proceed)")
 		}
 	})
 	t.Run("unregistered with recorded error → wraps it", func(t *testing.T) {
-		r := &registration{claimed: map[string]bool{}}
+		r := newRegistration()
 		r.setErr(errors.New("SIRSI_AGENT_ID is unset"))
 		_, err := r.gate()
 		if err == nil || err.Error() == "" {
@@ -24,7 +25,7 @@ func TestRegistrationGate(t *testing.T) {
 		}
 	})
 	t.Run("registered → returns agent", func(t *testing.T) {
-		r := &registration{claimed: map[string]bool{}}
+		r := newRegistration()
 		r.set("thr-abc", "ra")
 		got, err := r.gate()
 		if err != nil || got != "ra" {
@@ -36,16 +37,46 @@ func TestRegistrationGate(t *testing.T) {
 // router_close is session-ownership bound: an item is closable only after THIS
 // instance claimed it (ADR-068).
 func TestClaimOwnership(t *testing.T) {
-	r := &registration{claimed: map[string]bool{}}
+	r := newRegistration()
 	if r.ownsClaim("item-1") {
 		t.Fatal("un-claimed item must not be owned")
 	}
-	r.recordClaim("item-1")
+	r.recordClaim("item-1", "tok-1", time.Now().Add(time.Hour))
 	if !r.ownsClaim("item-1") {
 		t.Fatal("claimed item must be owned")
 	}
 	if r.ownsClaim("item-2") {
 		t.Fatal("a different item must not be owned")
+	}
+}
+
+// claimToken returns the token recordClaim stored, so router_close can pass it
+// to VerifyLease — the whole point of promoting the map beyond a bare bool
+// (router item 20261001-031502, Ra ACCEPTED).
+func TestClaimToken(t *testing.T) {
+	r := newRegistration()
+	if _, ok := r.claimToken("item-1"); ok {
+		t.Fatal("un-claimed item must have no token")
+	}
+	r.recordClaim("item-1", "tok-1", time.Now().Add(time.Hour))
+	tok, ok := r.claimToken("item-1")
+	if !ok || tok != "tok-1" {
+		t.Fatalf("claimToken = (%q,%v), want (tok-1,true)", tok, ok)
+	}
+}
+
+// Local TTL eviction (point 3 of the accepted proposal): an entry past its
+// OWN recorded expiry is evicted on read regardless of what VerifyLease would
+// say — belt-and-suspenders, since a local clock already knows without a
+// round trip. This is independent of (and in addition to) VerifyLease.
+func TestClaimOwnershipEvictsPastExpiry(t *testing.T) {
+	r := newRegistration()
+	r.recordClaim("item-1", "tok-1", time.Now().Add(-time.Minute))
+	if r.ownsClaim("item-1") {
+		t.Fatal("an entry past its recorded expiry must be evicted, not owned")
+	}
+	if _, ok := r.claimToken("item-1"); ok {
+		t.Fatal("eviction must also clear the token lookup")
 	}
 }
 
