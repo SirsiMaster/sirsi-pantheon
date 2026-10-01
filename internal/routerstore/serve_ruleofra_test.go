@@ -178,7 +178,7 @@ func TestMintSessionForThreadReusesLiveSessionForSameThread(t *testing.T) {
 
 	// Once the session is revoked, the next mint for that thread must mint a
 	// fresh one rather than resurrecting the revoked session.
-	if err := backend.RevokeSession(first.ID); err != nil {
+	if err = backend.RevokeSession(first.ID); err != nil {
 		t.Fatal(err)
 	}
 	fresh, err := backend.MintSessionForThread("h", "a", "rt", "thr-x")
