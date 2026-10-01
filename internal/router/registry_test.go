@@ -247,6 +247,77 @@ func TestUnknownFieldPreservedRoundTrip(t *testing.T) {
 	}
 }
 
+// TestSaveRegistry_PreservesNestedConsumerField is the regression test for
+// the claude-m5-compasspoint bug report: AgentConfig's extra-field
+// preservation only protects unknown keys AT THE AgentConfig LEVEL. Once
+// "consumer" became a typed field, a key nested inside it (Ra's "relay",
+// ADR-062) had no field of its own to land in and was silently dropped on
+// every RegisterAgent call that re-saved the whole file. Also asserts the
+// unrelated regression it travelled with: an agent that declares no consumer
+// must not pick up a spurious "consumer": {} on round-trip (struct-valued
+// fields are never considered empty by encoding/json's `omitempty`).
+func TestSaveRegistry_PreservesNestedConsumerField(t *testing.T) {
+	tmp := t.TempDir()
+	input := []byte(`{
+		"agents": {
+			"ra": {
+				"id": "ra",
+				"type": "codex",
+				"command": ["codex"],
+				"cwd": "/tmp",
+				"consumer": {
+					"command": ["codex", "exec"],
+					"prompt": "work your inbox",
+					"relay": "ADR-062 20a.5: no network, no token in the lane"
+				}
+			},
+			"claude-m5-compasspoint": {
+				"id": "claude-m5-compasspoint",
+				"type": "claude",
+				"command": ["claude"],
+				"cwd": "/tmp"
+			}
+		}
+	}`)
+	if err := os.WriteFile(filepath.Join(tmp, "agents.json"), input, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	// RegisterAgent round-trips the whole registry, exactly as `sirsi agent
+	// register` does — it must not corrupt unrelated agents' entries.
+	if err := RegisterAgent(tmp, AgentConfig{ID: "test-x", Type: "claude", Command: []string{"claude"}, Cwd: "/tmp", Workstream: "pantheon"}); err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+
+	saved, err := os.ReadFile(filepath.Join(tmp, "agents.json"))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	var out struct {
+		Agents map[string]map[string]any `json:"agents"`
+	}
+	if err := json.Unmarshal(saved, &out); err != nil {
+		t.Fatalf("unmarshal saved: %v", err)
+	}
+
+	ra, ok := out.Agents["ra"]
+	if !ok {
+		t.Fatal("ra entry missing after RegisterAgent round-trip")
+	}
+	consumer, _ := ra["consumer"].(map[string]any)
+	if consumer == nil {
+		t.Fatal("ra.consumer block was erased")
+	}
+	if got := consumer["relay"]; got != "ADR-062 20a.5: no network, no token in the lane" {
+		t.Errorf("ra.consumer.relay = %v, want the ADR-062 relay note — nested unknown field was dropped", got)
+	}
+
+	deck := out.Agents["claude-m5-compasspoint"]
+	if _, hasConsumer := deck["consumer"]; hasConsumer {
+		t.Errorf("claude-m5-compasspoint picked up a spurious consumer block: %v", deck["consumer"])
+	}
+}
+
 // TestSaveRegistry_PreservesUnknownKeys is the regression test for the lossy
 // round-trip defect: every SaveRegistry call via json.MarshalIndent(reg)
 // silently dropped keys the Go struct has never modeled (e.g. "consumer" and

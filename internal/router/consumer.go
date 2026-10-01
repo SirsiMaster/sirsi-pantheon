@@ -23,6 +23,7 @@ package router
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -156,6 +157,76 @@ type ConsumerConfig struct {
 	// HealthCheck is required for resident consumers. It proves the external
 	// worker surface exists without spawning another copy of it.
 	HealthCheck []string `json:"health_check,omitempty"`
+
+	// extra preserves JSON fields not known to this version of ConsumerConfig
+	// (e.g. "relay") so a LoadRegistry→SaveRegistry round-trip never silently
+	// erases nested metadata the struct does not model. Mirrors AgentConfig's
+	// extra field one level up — without this, any field nested under
+	// "consumer" is dropped the moment AgentConfig's own extra preservation
+	// stops protecting it (i.e. as soon as "consumer" is itself a typed field).
+	extra map[string]json.RawMessage
+}
+
+// IsZero reports whether cfg has no declared consumer and no preserved
+// unknown fields. Used by AgentConfig.MarshalJSON to omit an empty "consumer"
+// key — encoding/json's `omitempty` never does this for struct-valued fields.
+func (cfg ConsumerConfig) IsZero() bool {
+	return cfg.Mode == "" && len(cfg.Command) == 0 && cfg.Prompt == "" &&
+		!cfg.Interactive && len(cfg.HealthCheck) == 0 && len(cfg.extra) == 0
+}
+
+// UnmarshalJSON decodes known fields and captures everything else in extra so
+// it survives a round-trip through AgentConfig even though ConsumerConfig
+// itself has no dedicated field for it (e.g. Ra's "relay" key).
+func (cfg *ConsumerConfig) UnmarshalJSON(b []byte) error {
+	var all map[string]json.RawMessage
+	if err := json.Unmarshal(b, &all); err != nil {
+		return err
+	}
+	type plain ConsumerConfig
+	var p plain
+	if err := json.Unmarshal(b, &p); err != nil {
+		return err
+	}
+	*cfg = ConsumerConfig(p)
+
+	knownJSON, err := json.Marshal(p)
+	if err != nil {
+		return err
+	}
+	var known map[string]json.RawMessage
+	if err := json.Unmarshal(knownJSON, &known); err != nil {
+		return err
+	}
+	for k := range known {
+		delete(all, k)
+	}
+	if len(all) > 0 {
+		cfg.extra = all
+	}
+	return nil
+}
+
+// MarshalJSON emits the typed fields followed by any extras captured on load.
+func (cfg ConsumerConfig) MarshalJSON() ([]byte, error) {
+	type plain ConsumerConfig
+	knownJSON, err := json.Marshal(plain(cfg))
+	if err != nil {
+		return nil, err
+	}
+	if len(cfg.extra) == 0 {
+		return knownJSON, nil
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(knownJSON, &m); err != nil {
+		return nil, err
+	}
+	for k, v := range cfg.extra {
+		if _, ok := m[k]; !ok {
+			m[k] = v
+		}
+	}
+	return json.Marshal(m)
 }
 
 // ResolvedConsumer is a validated, ready-to-dispatch draining invocation.

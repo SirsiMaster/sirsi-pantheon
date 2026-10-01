@@ -29,7 +29,7 @@ type AgentConfig struct {
 
 	// Command is the launch command as an array (never shell strings).
 	// The work prompt is appended as the final argument by the executor.
-	Command []string `json:"command"`
+	Command []string `json:"command,omitempty"`
 
 	// Cwd is the working directory for the agent.
 	Cwd string `json:"cwd"`
@@ -130,7 +130,7 @@ func (cfg AgentConfig) MarshalJSON() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(cfg.extra) == 0 {
+	if len(cfg.extra) == 0 && !cfg.Consumer.IsZero() {
 		return knownJSON, nil
 	}
 	var m map[string]json.RawMessage
@@ -141,6 +141,13 @@ func (cfg AgentConfig) MarshalJSON() ([]byte, error) {
 		if _, ok := m[k]; !ok { // never let an extra shadow a typed field
 			m[k] = v
 		}
+	}
+	// `omitempty` never omits a zero-value struct field (encoding/json only
+	// treats false/0/""/nil/empty-slice/empty-map as empty), so an unset
+	// Consumer would otherwise round-trip as a spurious "consumer": {} on
+	// every agent that never declared one.
+	if cfg.Consumer.IsZero() {
+		delete(m, "consumer")
 	}
 	return json.Marshal(m)
 

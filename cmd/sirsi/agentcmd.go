@@ -20,18 +20,19 @@ var agentCmd = &cobra.Command{
 }
 
 var (
-	agentRegisterID        string
-	agentRegisterCLI       string
-	agentRegisterCWD       string
-	agentRegisterURL       string
-	agentRegisterAPIKey    string
-	agentRegisterMechanism string
-	agentRegisterMCPServer string
-	agentCommand           []string
-	agentForce             bool
-	agentTimeout           time.Duration
-	agentMaxOutputBytes    int
-	agentMaxOutputLines    int
+	agentRegisterID         string
+	agentRegisterCLI        string
+	agentRegisterCWD        string
+	agentRegisterURL        string
+	agentRegisterAPIKey     string
+	agentRegisterMechanism  string
+	agentRegisterMCPServer  string
+	agentRegisterWorkstream string
+	agentCommand            []string
+	agentForce              bool
+	agentTimeout            time.Duration
+	agentMaxOutputBytes     int
+	agentMaxOutputLines     int
 )
 
 var agentRegisterCmd = &cobra.Command{
@@ -61,13 +62,17 @@ Examples:
 		if id == "" {
 			id = agentType + "-pantheon"
 		}
+		workstream := agentRegisterWorkstream
+		if workstream == "" {
+			workstream = "pantheon"
+		}
 
 		cfg := router.AgentConfig{
 			ID:         id,
 			Type:       agentType,
 			Cwd:        cwd,
 			Repo:       cwd,
-			Workstream: "pantheon",
+			Workstream: workstream,
 		}
 		mechanism := agentRegisterMechanism
 		if mechanism == "" {
@@ -224,6 +229,7 @@ func init() {
 	agentRegisterCmd.Flags().StringVar(&agentRegisterAPIKey, "api-key", "", "API auth token or env:VARIABLE reference")
 	agentRegisterCmd.Flags().StringVar(&agentRegisterMechanism, "mechanism", "", "Wake mechanism: cli-spawn, api-call, mcp-notification")
 	agentRegisterCmd.Flags().StringVar(&agentRegisterMCPServer, "mcp-server", "", "MCP server name for mcp-notification wake")
+	agentRegisterCmd.Flags().StringVar(&agentRegisterWorkstream, "workstream", "", "Workstream name (default: pantheon)")
 	agentPreflightCmd.Flags().StringSliceVar(&agentCommand, "command", nil, "Command and arguments to assess")
 	agentSafeRunCmd.Flags().BoolVar(&agentForce, "force", false, "Run even when preflight blocks")
 	agentSafeRunCmd.Flags().DurationVar(&agentTimeout, "timeout", 2*time.Minute, "Maximum command runtime")
