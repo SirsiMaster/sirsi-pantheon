@@ -249,7 +249,7 @@ func (rs *RemoteStore) ensureSession(ctx context.Context) (Session, error) {
 	if rs.sessionDir != "" {
 		if b, err := os.ReadFile(rs.sessionPath()); err == nil {
 			var cached Session
-			if json.Unmarshal(b, &cached) == nil && cached.ID != "" && cached.Secret != "" && cached.RuntimeHash == rs.runtime && cached.ThreadID == rs.threadID {
+			if json.Unmarshal(b, &cached) == nil && cached.ID != "" && cached.Secret != "" && cached.RuntimeHash == rs.runtime && cachedThreadFits(cached.ThreadID, rs.threadID) {
 				rs.session = cached
 				return cached, nil
 			}
@@ -271,6 +271,16 @@ func (rs *RemoteStore) ensureSession(ctx context.Context) (Session, error) {
 		}
 	}
 	return minted, nil
+}
+
+// cachedThreadFits reports whether a cached session may serve a caller that
+// resolved want. A caller that resolved NO thread must reuse the cached
+// session: a sandboxed worker (codex: fork/exec /bin/ps denied) loses its
+// thread marker on a later invocation, and minting a threadless session then
+// strands the lease its own claim took (ErrNotOwner on complete, 2026-10-01).
+// A caller that resolved a different thread must still mint its own.
+func cachedThreadFits(cached, want string) bool {
+	return want == "" || cached == want
 }
 
 func (rs *RemoteStore) sessionPath() string {
