@@ -10,6 +10,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,9 +92,23 @@ func logCedeDecision(kind, determination, requester, resource, assessed, affecte
 	})
 }
 
-// appendCedeDecision does the actual marshal/mkdir/open/write; injected as a
-// variable per A16 so tests can force each failure mode deterministically.
-var appendCedeDecision = func(rec cedeDecisionRecord) error {
+// cedeDecisionFileOpener opens the decision ledger file for append.
+// Injectable (A16) so a close-time failure — which a bare *os.File cannot be
+// made to produce deterministically (e.g. a deferred NFS/network flush
+// surfacing only on Close) — can be exercised in tests.
+var cedeDecisionFileOpener = func(path string) (io.WriteCloser, error) {
+	return os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+}
+
+// appendCedeDecision does the actual marshal/mkdir/open/write/close; injected
+// as a variable per A16 so tests can force each failure mode deterministically.
+// A write error takes priority over a close error (the write error is the
+// more informative, closer-to-cause failure); a close-only failure — the data
+// may or may not actually be durable — is still reported, never swallowed via
+// a bare `defer f.Close()` (codex-pantheon review of PR #929, item
+// 20261001-001503: that pattern can report success on a close-time I/O
+// failure).
+var appendCedeDecision = func(rec cedeDecisionRecord) (err error) {
 	b, err := json.Marshal(rec)
 	if err != nil {
 		return fmt.Errorf("decision ledger marshal failed: %w", err)
@@ -102,15 +117,19 @@ var appendCedeDecision = func(rec cedeDecisionRecord) error {
 	if mkdirErr := os.MkdirAll(filepath.Dir(path), 0o755); mkdirErr != nil {
 		return fmt.Errorf("decision ledger mkdir failed: %w", mkdirErr)
 	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	f, err := cedeDecisionFileOpener(path)
 	if err != nil {
 		return fmt.Errorf("decision ledger open failed: %w", err)
 	}
-	defer f.Close()
-	if _, err := f.Write(append(b, '\n')); err != nil {
-		return fmt.Errorf("decision ledger write failed: %w", err)
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil && err == nil {
+			err = fmt.Errorf("decision ledger close failed: %w", closeErr)
+		}
+	}()
+	if _, writeErr := f.Write(append(b, '\n')); writeErr != nil {
+		err = fmt.Errorf("decision ledger write failed: %w", writeErr)
 	}
-	return nil
+	return err
 }
 
 // cedeProjectionErr wraps a logCedeDecision failure with the fact that the
