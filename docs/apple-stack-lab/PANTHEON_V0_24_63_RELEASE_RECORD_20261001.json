@@ -1,0 +1,44 @@
+{
+  "schema": "sirsi.stacklab.release-record.v1",
+  "product": "Sirsi Pantheon",
+  "release": "v0.24.63",
+  "release_kind": "public-arm64",
+  "canonical_starting_point": {
+    "repository": "SirsiMaster/sirsi-pantheon",
+    "tag": "v0.24.63",
+    "commit": "0da6399cf0bb2edb6b731c20f7d7841fa562d234",
+    "tag_target_verified": true
+  },
+  "stacklab": {
+    "wing": "stacklab.wing.pantheon.pt-wing-001",
+    "hardware_name": "Photon",
+    "engine_names": ["Apollo", "Apollo Flash"],
+    "recipe_reference": "docs/apple-stack-lab/pantheon-pt-r06-release-boundary.recipe.json",
+    "catalog_state": "released"
+  },
+  "artifacts": [
+    {
+      "name": "SirsiPantheon-0.24.63-arm64.dmg",
+      "sha256": "651a17847c8772f3ccd4e685890fdd2d74226473af5dcb30c9b31a70fa0c034d",
+      "size": 15326335,
+      "source": "https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v0.24.63/SirsiPantheon-0.24.63-arm64.dmg"
+    },
+    {
+      "name": "SirsiPantheon-0.24.63-arm64.pkg",
+      "sha256": "494ee288d0e746c705cf9c127edf59b2eef816079ddc4ae8d67511aeba9545be",
+      "size": 13649212,
+      "source": "https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v0.24.63/SirsiPantheon-0.24.63-arm64.pkg"
+    }
+  ],
+  "verification": {
+    "release_published_at": "2026-10-01T12:33:57Z",
+    "ci_runs": ["36860106048", "36860106043", "36860106171", "36862297478"],
+    "local_asset_readback": "sha256 verified against GitHub release digests",
+    "status": "released"
+  },
+  "non_claims": [
+    "Developer ID credential ownership",
+    "notarization credential ownership",
+    "installed-host lifecycle qualification beyond published release evidence"
+  ]
+}
