@@ -528,6 +528,59 @@ func (f *Facade) CloseItem(actor, id, result string) error {
 	return f.closeRaw(id, result)
 }
 
+// CompleteItem finishes a CLAIMED item (status claimed/working) under its
+// live lease token, in both worlds. Unlike CloseItem (which guards on
+// status='open' and is for items closed without ever being claimed),
+// CompleteItem is the counterpart for the claim→work→finish lifecycle: it
+// carries the same owner-recipient and delegated-close authorization as
+// CloseItem, then performs the mutation as ONE atomic token-fenced UPDATE
+// (routerstore.Store.Complete's leaseFence: lease_token, lease_expires,
+// status IN ('claimed','working')) rather than a separate verify-then-close
+// pair, which is a TOCTOU window — a reclaim can land between the two calls
+// (router item 20261001-131036, codex-pantheon CHANGES REQUIRED PR944).
+func (f *Facade) CompleteItem(actor, id, token, result string) error {
+	if err := f.ValidateAgent("acting agent", actor); err != nil {
+		return err
+	}
+	item, err := f.Get(id)
+	if err != nil {
+		return err
+	}
+	if work.IsOwnerRecipient(item.To) {
+		return fmt.Errorf("dispatch: item %s is addressed to the owner (%q) and cannot be completed by an agent", id, item.To)
+	}
+	if item.To != actor {
+		allowed, capabilityErr := f.agentHasCapability(actor, "close:any")
+		if capabilityErr != nil {
+			return fmt.Errorf("dispatch: verify delegated-close authority: %w", capabilityErr)
+		}
+		if !allowed {
+			return fmt.Errorf("dispatch: acting agent %q cannot complete item %s addressed to %q without capability close:any", actor, id, item.To)
+		}
+		result = fmt.Sprintf("Closed by declared actor %s on behalf of recipient %s.\n\n%s", actor, item.To, result)
+	}
+	return f.completeRaw(id, token, result)
+}
+
+// completeRaw is CompleteItem's mechanics twin to closeRaw, but ORDERED THE
+// OTHER WAY DELIBERATELY: the token-fenced store mutation runs FIRST, and the
+// best-effort file mirror only runs once it succeeds. closeRaw mirrors the
+// file before its store call, which is exactly how codex-pantheon's PR944
+// review caught a split file/store outcome (a store refusal left a file
+// already marked closed); fencing here must not reproduce that for a stale
+// or reclaimed token.
+func (f *Facade) completeRaw(id, token, result string) error {
+	if err := f.store.Complete(id, token, result); err != nil {
+		return fmt.Errorf("dispatch: item %s complete failed: %w", id, err)
+	}
+	if _, statErr := os.Stat(filepath.Join(f.root, "items", id+".md")); statErr == nil {
+		if err := work.Close(f.root, id, result); err != nil && !errors.Is(err, work.ErrAlreadyClosed) {
+			return fmt.Errorf("dispatch: item %s completed in the store but file mirror failed: %w", id, err)
+		}
+	}
+	return nil
+}
+
 // AckItem records the recipient's first acknowledgement that an item's body
 // was read — A2A property 6, the one gap in
 // docs/router-service/A2A_CONTRACT_ASSESSMENT.md — exactly as scoped by

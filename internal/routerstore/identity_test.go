@@ -151,6 +151,63 @@ func TestIdentityLeaseOwnershipIsPerSession(t *testing.T) {
 	}
 }
 
+// TestIdentityStaleReclaimPreservesNewerResult is the authenticated-session
+// counterpart to TestIdentityLeaseOwnershipIsPerSession: that test proves a
+// DIFFERENT session's stolen-but-still-live token is refused; this one
+// proves that once session A's lease actually EXPIRES and session B reclaims
+// it through the authenticated ClaimNext path, A's now-stale token is
+// refused and B's completion is the one durably preserved — the full
+// RemoteStore -> Handler -> checkItemOwner chain, not direct store access
+// (codex-pantheon's PR944 retained-gap request, item 20261001-140902/145640:
+// authenticated two-instance coverage on both backends, not just OpenPath).
+// Runs on whichever backend openBackendStore resolved to (SQLite by default,
+// Postgres when SIRSI_TEST_PG_DSN is set).
+func TestIdentityStaleReclaimPreservesNewerResult(t *testing.T) {
+	h := newIdentityHarness(t)
+	a := h.client("claude-a")
+	b := h.client("claude-b")
+
+	id, _, err := a.SendGuarded(SendReq{From: "x", To: "claude-a", Title: "t", Type: "proposal", Instructions: "i"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaseA, err := a.ClaimNext("claude-a", time.Nanosecond)
+	if err != nil || leaseA == nil {
+		t.Fatalf("instance A claim: %v, %v", leaseA, err)
+	}
+	time.Sleep(time.Millisecond) // past A's lease expiry
+	leaseB, err := b.ClaimNext("claude-a", time.Minute)
+	if err != nil || leaseB == nil {
+		t.Fatalf("instance B reclaim: %v, %v", leaseB, err)
+	}
+	if leaseB.Token == leaseA.Token {
+		t.Fatal("instance B must mint a fresh token on reclaim, not reuse A's stale token")
+	}
+	// A, unaware of the reclaim, completes with its stale token through its
+	// OWN authenticated session — refused by the same ownership fence proven
+	// above, now exercised against an expired-then-reclaimed lease rather
+	// than a merely-stolen live one.
+	if staleErr := a.Complete(id, leaseA.Token, "stale result from A"); !errors.Is(staleErr, ErrNotOwner) && !errors.Is(staleErr, ErrLeaseInvalid) {
+		t.Fatalf("A's stale authenticated Complete = %v, want ErrNotOwner or ErrLeaseInvalid", staleErr)
+	}
+	if completeErr := b.Complete(id, leaseB.Token, "result from B"); completeErr != nil {
+		t.Fatalf("B's authenticated Complete with the live reclaimed token: %v", completeErr)
+	}
+	// Read back through a THIRD independent authenticated session to prove
+	// the preserved result is durable, not local to B's connection.
+	c := h.client("claude-c-reader")
+	got, err := c.Get(id)
+	if err != nil {
+		t.Fatalf("instance C authenticated read: %v", err)
+	}
+	if got.Result != "result from B" {
+		t.Fatalf("preserved result = %q, want B's result", got.Result)
+	}
+	if got.Status != "completed" {
+		t.Fatalf("status = %q, want completed", got.Status)
+	}
+}
+
 func TestIdentityServerOnlyMethodsAreNotServed(t *testing.T) {
 	h := newIdentityHarness(t)
 	rs := h.client("claude-a")

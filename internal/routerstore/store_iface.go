@@ -113,6 +113,7 @@ type Store interface {
 	UpsertThreadCAS(r ThreadRecord) (bool, error)
 	UpsertThreads(records []ThreadRecord) error
 	VerifyCompletion(agent string) (CompletionReport, error)
+	VerifyLease(id, token string) (bool, error)
 	Wait(ctx context.Context, agent string, timeout time.Duration) (bool, error)
 	Waive(reqID, reason, ownerDecisionRef string) error
 	WithdrawIdentifier(namespace string, number int) error
