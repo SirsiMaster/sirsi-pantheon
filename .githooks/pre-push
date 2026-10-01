@@ -254,17 +254,18 @@ SCRUB_SIRSI=$(env | sed -n 's/^\(SIRSI_[A-Za-z0-9_]*\)=.*/-u \1/p' | tr '\n' ' '
 if [ "$DEPTH" = "deep" ]; then
     # Deep: full test suite under CI's exact flags (-race -short; A28 parity)
     echo "  🧪 Running full test suite..."
-    if ! env $SCRUB_SIRSI go test -race -short ./... -count=1 -timeout 300s 2>/dev/null; then
+    if ! env $SCRUB_SIRSI go test -race -short ./... -count=1 -timeout 600s 2>/dev/null; then
         echo "  ❌ Tests failed — fix before pushing."
         exit 1
     fi
 elif [ -n "$CHANGED_PKGS" ]; then
-    # Fast/Standard: only test changed packages. 300s (not 180s) to match the
-    # deep tier and CI's own untimed (10m default) `go test ./...` — a single
-    # growing package (routerstore: 184s under -race as of 2026-09-19) must
-    # not fail a gate CI itself would pass (A28: local gate parity with CI).
+    # Fast/Standard: only test changed packages. 600s (not 300s) to match
+    # CI's own untimed (10m default) `go test ./...` — a single growing
+    # package (routerstore: 184s under -race on 2026-09-19, 572s on
+    # 2026-10-01) must not fail a gate CI itself would pass (A28: local gate
+    # parity with CI). Re-measure and raise again if routerstore keeps growing.
     echo "  🧪 Testing changed packages: $(echo $CHANGED_PKGS | wc -w | tr -d ' ') pkg(s)"
-    if ! env $SCRUB_SIRSI go test -race -short $CHANGED_PKGS -count=1 -timeout 300s 2>/dev/null; then
+    if ! env $SCRUB_SIRSI go test -race -short $CHANGED_PKGS -count=1 -timeout 600s 2>/dev/null; then
         echo "  ❌ Tests failed in changed packages — fix before pushing."
         exit 1
     fi
