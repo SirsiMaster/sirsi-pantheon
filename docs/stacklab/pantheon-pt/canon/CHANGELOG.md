@@ -1,5 +1,11 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-01 — v0.24.65 release candidate
+
+- Records the PR947/PR949/PR950 lineage from the exact tested mainline: lease
+  ownership across session remint and threadless invocation, and a fail-closed
+  PostgreSQL CI leg.
+
 ## 2026-10-01 — v0.24.64 release candidate
 
 - Records the PR944 router-completion release lineage from the exact tested
