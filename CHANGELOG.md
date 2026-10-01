@@ -4,6 +4,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 **Building in public** — see [docs/BUILD_LOG.md](docs/BUILD_LOG.md) for the full narrative.
 
+## [0.24.65] — 2026-10-01
+
+- **Router leases:** a worker keeps its own lease across a session remint
+  (same agent and thread, #947) and across an invocation that cannot resolve
+  its thread, such as a sandboxed codex worker (#950).
+- **CI:** the PostgreSQL leg fails closed instead of silently skipping (#949).
+- **Lanes:** `claude-apollo-m5-rail` (M5-Apollo-Rail) registered; its aliases
+  no longer resolve to the M1 `claude-inference` lane.
+
 ## [0.24.64] — 2026-10-01
 
 - **Router completion:** replace verify-then-close with atomic, token-fenced
