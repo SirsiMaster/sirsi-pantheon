@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -63,6 +64,26 @@ func TestMaatAuditAssessorRecipeCoversQualityCanonAndPipeline(t *testing.T) {
 }
 
 func (j *capturedDecisionJournal) Recent(int) ([]maat.Decision, error) { return j.decisions, nil }
+
+// TestLogFloorGrant_ProjectionFailureIsReported: the floor-share grant path
+// (reserve/extend landing on ShareFloor) must also fail when the decision
+// ledger projection fails, naming the committed reservation id — the fourth
+// of the four mutation paths codex-pantheon's PR #929 review required
+// coverage for (item 20261001-001503).
+func TestLogFloorGrant_ProjectionFailureIsReported(t *testing.T) {
+	oldAppend := appendCedeDecision
+	t.Cleanup(func() { appendCedeDecision = oldAppend })
+	appendCedeDecision = func(cedeDecisionRecord) error { return os.ErrPermission }
+
+	r := &schedule.Reservation{ID: "resv-1", Holder: "sne", Resource: "m1", Cores: 2, Reason: "floor share"}
+	err := logFloorGrant(nil, "sne", "m1", r, "")
+	if err == nil {
+		t.Fatal("want an error when the decision ledger append fails on a floor grant, got nil (false success)")
+	}
+	if !strings.Contains(err.Error(), "resv-1") {
+		t.Fatalf("error %q must name the committed reservation id %q", err, "resv-1")
+	}
+}
 
 func TestRecordReservationDecisionExplainsGrantAndRefusal(t *testing.T) {
 	oldFactory := newMaatDecisionJournal
