@@ -72,3 +72,41 @@ func TestSpoolOutboxHealth_MissingSpoolRootErrors(t *testing.T) {
 		t.Fatal("want an error for a missing spool root, got nil (a silent empty reads as all-clear)")
 	}
 }
+
+// TestSpoolOutboxHealth_UnreadableOutboxIsNotSilentlyEmpty: codex-pantheon
+// review of PR #931 (item 20261001-010622) reproduced filepath.Glob silently
+// swallowing a permission-denied outbox directory as zero held items — an
+// unreadable queue must render as unknown/error, never as quiet. Root runs
+// bypass directory permission bits, so this test is meaningless (and would
+// false-fail) under root; skip there rather than report a false pass/fail.
+func TestSpoolOutboxHealth_UnreadableOutboxIsNotSilentlyEmpty(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory permission bits")
+	}
+	spool := t.TempDir()
+	outbox := filepath.Join(spool, "agent-a", "outbox")
+	if err := os.MkdirAll(outbox, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outbox, "1.json"), []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(outbox, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(outbox, 0o755) }) // let t.TempDir() clean up
+
+	got, err := SpoolOutboxHealth(spool)
+	if err != nil {
+		t.Fatalf("SpoolOutboxHealth: %v", err)
+	}
+	if len(got) != 1 || got[0].Agent != "agent-a" {
+		t.Fatalf("want 1 entry for agent-a, got %+v", got)
+	}
+	if !got[0].Unreadable || got[0].Error == "" {
+		t.Fatalf("want agent-a reported as Unreadable with an error, got %+v (a silent empty reads as all-clear)", got[0])
+	}
+	if got[0].QueuedForRetry != 0 {
+		t.Fatalf("an unreadable outbox has an unknown count, not a confident 0: got %+v", got[0])
+	}
+}

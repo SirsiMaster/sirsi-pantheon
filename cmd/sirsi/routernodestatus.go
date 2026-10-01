@@ -141,6 +141,10 @@ func renderNodeStatus(ns *router.NodeStatus) {
 	} else if len(ns.Outbox) > 0 {
 		fmt.Println("  Spool outbox (held, queued for retry):")
 		for _, o := range ns.Outbox {
+			if o.Unreadable {
+				fmt.Printf("    %s: ⚠ UNKNOWN — outbox unreadable: %s\n", o.Agent, o.Error)
+				continue
+			}
 			fmt.Printf("    %s: %d queued for retry\n", o.Agent, o.QueuedForRetry)
 		}
 		fmt.Println()
