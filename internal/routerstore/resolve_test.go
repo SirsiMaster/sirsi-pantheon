@@ -133,3 +133,55 @@ func TestResolveFailsClosedWhenMarkerHasNoURL(t *testing.T) {
 		t.Fatalf("Resolve err = %v, want it to name SIRSI_ROUTER_URL", err)
 	}
 }
+
+// ADR-069 keystone (cutOverMarker, 2026-09-26): SIRSI_ROUTER_DB is meant to
+// name a deliberate sandbox, so cutOverMarker lets it bypass the cut-over
+// check — EXCEPT when the path it names is the very canonical ledger the
+// service replaced. A future caller (a dashboard, a native menubar/Ra
+// integration, anything that did not grow up inside this package) only has
+// to type the obvious thing — point SIRSI_ROUTER_DB at ~/.sirsi/router.db,
+// the path every piece of documentation and every pre-cutover build used —
+// to recreate the exact split-brain ADR-069 exists to prevent (M5: 44
+// messages to `ra` written to a local ledger the service never saw). This is
+// the negative control: that "obvious" bypass must still be refused/self-
+// healed, not honored as a sandbox override.
+func TestResolveRefusesExplicitSIRSIRouterDBWhenItNamesTheCanonicalLedgerOnACutOverHost(t *testing.T) {
+	p := setHomeWithMarker(t, "export SIRSI_ROUTER_URL='spool:///var/sirsipantheon/relay'\n")
+	home := filepath.Dir(filepath.Dir(p)) // p is <home>/.sirsi/router-service.env
+	canon := filepath.Join(home, ".sirsi", "router.db")
+	t.Setenv("SIRSI_ROUTER_DB", canon)
+
+	s, err := Resolve()
+	if err != nil {
+		t.Fatalf("Resolve: want self-heal to the service despite SIRSI_ROUTER_DB naming the canonical path, got err=%v", err)
+	}
+	defer func() { _ = s.Close() }()
+	if _, ok := s.(*RemoteStore); !ok {
+		t.Fatalf("Resolve: want *RemoteStore (self-healed), got %T — SIRSI_ROUTER_DB naming the canonical ledger bypassed the cut-over check", s)
+	}
+	if _, err := os.Stat(canon); err == nil {
+		t.Fatalf("Resolve created/opened the canonical local ledger (%s) on a cut-over host — the split-brain ADR-069 exists to prevent", canon)
+	}
+}
+
+// Positive control for the test above: a SIRSI_ROUTER_DB naming a genuinely
+// different path (a real sandbox) must still bypass the cut-over check and
+// open that file directly, exactly as before — the keystone narrows the
+// bypass to the one path that matters, it does not remove it.
+func TestResolveStillHonorsSIRSIRouterDBForAGenuinelyDifferentPathOnACutOverHost(t *testing.T) {
+	setHomeWithMarker(t, "export SIRSI_ROUTER_URL='spool:///var/sirsipantheon/relay'\n")
+	sandbox := filepath.Join(t.TempDir(), "sandbox-router.db")
+	t.Setenv("SIRSI_ROUTER_DB", sandbox)
+
+	s, err := Resolve()
+	if err != nil {
+		t.Fatalf("Resolve: want the sandbox path honored, got err=%v", err)
+	}
+	defer func() { _ = s.Close() }()
+	if _, ok := s.(*SQLiteStore); !ok {
+		t.Fatalf("Resolve: want *SQLiteStore for a genuinely different SIRSI_ROUTER_DB, got %T", s)
+	}
+	if _, err := os.Stat(sandbox); err != nil {
+		t.Fatalf("Resolve did not open the sandbox path: %v", err)
+	}
+}
