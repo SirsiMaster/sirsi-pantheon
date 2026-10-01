@@ -889,13 +889,28 @@
         "relay": "ADR-062 20a.5: no network, no token in the lane; ~/.sirsi contains the spool; Codex Apollo receives as codex-apollo"
       },
       "repo": "/Users/thekryptodragon/Development/sirsi-inference-claude-m5"
+    },
+    "claude-apollo-m5-rail": {
+      "id": "claude-apollo-m5-rail",
+      "type": "claude",
+      "command": [
+        "claude",
+        "--print",
+        "--permission-mode",
+        "auto"
+      ],
+      "cwd": "/Users/thekryptodragon/Development/sirsi-inference",
+      "workstream": "apollo-rail",
+      "wake": {
+        "mechanism": "launchagent"
+      }
     }
   },
   "aliases": {
     "claude-finalwishes": "claude-finalwishes-m1",
     "claude-finalwishes-helper": "claude-finalwishes-m1",
-    "claude-inference-cylton": "claude-inference",
-    "cylton-apollo": "claude-inference",
+    "claude-inference-cylton": "claude-apollo-m5-rail",
+    "cylton-apollo": "claude-apollo-m5-rail",
     "claude-io-cylton": "hermes-m5",
     "cylton-hermes": "hermes-m5",
     "m5-hermes": "hermes-m5",
@@ -904,6 +919,7 @@
     "codex-io": "claude-io",
     "codex-nexus": "claude-nexus",
     "codex-home": "claude-home",
-    "ssa": "sirsi-software-admin"
+    "ssa": "sirsi-software-admin",
+    "m5-apollo-rail": "claude-apollo-m5-rail"
   }
 }

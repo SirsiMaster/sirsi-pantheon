@@ -52,6 +52,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
   stale PG14 references in `scripts/ci-postgres.sh` and
   `internal/routerstore/pg/README.md` to PG16, and the README's stale
   table-count/schema-version figures to the current live values.
+- **A worker that loses its thread between claim and complete keeps its lease.** The session cache is keyed by (agent, runtime, thread); a sandboxed worker (codex: `fork/exec /bin/ps` denied) resolved no thread on its second invocation, minted a fresh threadless session, and was refused `ErrNotOwner` on its own lease. A caller that resolves no thread now reuses the cached session; a caller that resolves a different thread still mints its own. Complements #947, which only matched sessions sharing a non-empty thread.
+- **Lane `claude-apollo-m5-rail` (M5-Apollo-Rail).** The M5 inference rail was reachable only through the aliases `claude-inference-cylton` / `cylton-apollo`, which pointed at the M1 `claude-inference` lane. It now has its own registry entry; both aliases and `m5-apollo-rail` resolve to it.
 
 - **Dispatch gate reads idle CPU, not load average.** Load average counts Spotlight and Photos analysis, which only take cores nothing else wants; the M1 sat at load 13-17 on 10 cores with 36% idle and deferred every lane. The gate now defers only when idle CPU falls below 10% (falls back to half the load average if `top` is unreadable).
 
