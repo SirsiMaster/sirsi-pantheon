@@ -1032,7 +1032,7 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 	} else {
 		// The consumer inherits this loop's registered thread (Rule of Ra):
 		// the service binds its session to that thread at mint.
-		rc.Env = setEnv(rc.Env, "SIRSI_THREAD_ID", thr.ThreadID)
+		bindConsumerThread(rc, thr.ThreadID)
 		consumer = rc
 	}
 

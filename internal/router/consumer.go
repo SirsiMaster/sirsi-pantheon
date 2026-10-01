@@ -35,6 +35,12 @@ import (
 const (
 	consumerAgentPlaceholder = "{{agent}}"
 	consumerRootPlaceholder  = "{{router_root}}"
+	// consumerThreadPlaceholder is replaced with the wake loop's registered thread id
+	// once that thread exists (bindConsumerThread). The env var SIRSI_THREAD_ID alone
+	// is not enough: a sandboxed consumer (codex) can have its environment stripped,
+	// and a worker that cannot see its thread id cannot link its claims to its lane
+	// (SSA reported thread=unset, 2026-10-01).
+	consumerThreadPlaceholder = "{{thread}}"
 )
 
 // Env vars every dispatched consumer receives. A consumer that prefers reading
@@ -377,4 +383,15 @@ func runConsumerHealthCheck(argv []string) error {
 func HasConsumerCapability(cfg AgentConfig, routerRoot string) bool {
 	rc, _ := ResolveConsumer(cfg, routerRoot)
 	return rc != nil
+}
+
+// bindConsumerThread links a resolved consumer to its loop's registered thread:
+// it sets SIRSI_THREAD_ID (inherited by the service session) AND substitutes the
+// {{thread}} placeholder in the argv/prompt, so the worker is told its thread id
+// in words even when the sandbox hides the environment.
+func bindConsumerThread(rc *ResolvedConsumer, threadID string) {
+	rc.Env = setEnv(rc.Env, "SIRSI_THREAD_ID", threadID)
+	for i, a := range rc.Argv {
+		rc.Argv[i] = strings.ReplaceAll(a, consumerThreadPlaceholder, threadID)
+	}
 }
