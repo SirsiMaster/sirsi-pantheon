@@ -508,13 +508,13 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 
 	// 6. ownership — before the call, against the session bound at claim time.
 	if idx, ok := itemOwnership[name]; ok && idx < len(in) {
-		if err := s.checkItemOwner(in[idx].String(), sess.ID); err != nil {
+		if err := s.checkItemOwner(in[idx].String(), sess); err != nil {
 			s.writeCallErr(w, name, err)
 			return
 		}
 	}
 	if idx, ok := taskOwnership[name]; ok && idx[1] < len(in) {
-		if err := s.checkTaskOwner(in[idx[0]].String(), in[idx[1]].String(), sess.ID); err != nil {
+		if err := s.checkTaskOwner(in[idx[0]].String(), in[idx[1]].String(), sess); err != nil {
 			s.writeCallErr(w, name, err)
 			return
 		}
@@ -623,26 +623,55 @@ func (s *server) checkNonce(sid, nonce string) error {
 	return nil
 }
 
-func (s *server) checkItemOwner(id, sid string) error {
+func (s *server) checkItemOwner(id string, caller Session) error {
 	owner, err := s.store.ItemSession(id)
 	if err != nil {
 		return err
 	}
-	if owner != "" && owner != sid {
-		return ErrNotOwner
+	if owner == "" || owner == caller.ID {
+		return nil
 	}
-	return nil
+	if s.sameWorkerAcrossRemint(owner, caller) {
+		return nil
+	}
+	return ErrNotOwner
 }
 
-func (s *server) checkTaskOwner(agent, taskID, sid string) error {
+// sameWorkerAcrossRemint answers whether the session recorded as owner and
+// caller are the SAME logical worker whose session id changed — the exact
+// shape of the session-cache-remint bug (router item 20261001-144907): the
+// on-disk session cache is keyed on (agent, runtime_hash, thread_id) and is
+// dropped + re-minted whenever any of those change (e.g. a binary rebuild
+// between claim and complete), issuing a brand new session id for a worker
+// that never actually changed identity. Equivalence requires a REGISTERED
+// thread on both sides (an empty thread_id never matches — collapsing
+// unregistered sessions into a shared owner would let unrelated callers
+// steal each other's leases) and the same agent. A resolution failure (owner
+// session gone/revoked) fails closed: no equivalence, same as before this
+// fallback existed.
+func (s *server) sameWorkerAcrossRemint(ownerSessionID string, caller Session) bool {
+	if caller.ThreadID == "" {
+		return false
+	}
+	ownerSess, err := s.store.GetSession(ownerSessionID)
+	if err != nil {
+		return false
+	}
+	return ownerSess.ThreadID != "" && ownerSess.ThreadID == caller.ThreadID && ownerSess.Agent == caller.Agent
+}
+
+func (s *server) checkTaskOwner(agent, taskID string, caller Session) error {
 	owner, err := s.store.TaskSession(agent, taskID)
 	if err != nil {
 		return err
 	}
-	if owner != "" && owner != sid {
-		return ErrNotOwner
+	if owner == "" || owner == caller.ID {
+		return nil
 	}
-	return nil
+	if s.sameWorkerAcrossRemint(owner, caller) {
+		return nil
+	}
+	return ErrNotOwner
 }
 
 func (s *server) bindAfterClaim(name string, results []reflect.Value, sid string) {

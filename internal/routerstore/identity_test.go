@@ -208,6 +208,128 @@ func TestIdentityStaleReclaimPreservesNewerResult(t *testing.T) {
 	}
 }
 
+// TestIdentityItemOwnershipSurvivesSessionRemintSameAgentThread reproduces
+// and fixes the deadlock reported in router item 20261001-144907: the
+// on-disk session cache (~/.sirsi/sessions/<agent>.json) is keyed on
+// (agent, runtime_hash, thread_id) and drops + re-mints whenever any of
+// those changes (e.g. the sirsi binary gets rebuilt between claim and
+// complete). Before this fix, ownership was bound to the raw session id, so
+// a remint orphaned the lease: the SAME logical worker's future Complete
+// calls failed with ErrNotOwner forever, with no CLI escape hatch. The fix
+// (sameWorkerAcrossRemint in serve.go) treats two DIFFERENT session ids as
+// the same owner when they share a non-empty thread_id and agent.
+func TestIdentityItemOwnershipSurvivesSessionRemintSameAgentThread(t *testing.T) {
+	h := newIdentityHarness(t)
+	const thread = "thr-remint-fixed"
+
+	first := h.client("claude-remint")
+	first.threadID = thread
+	id, _, err := first.SendGuarded(SendReq{From: "x", To: "claude-remint", Title: "t", Type: "proposal", Instructions: "i"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := first.ClaimNext("claude-remint", time.Minute)
+	if err != nil || lease == nil {
+		t.Fatalf("claim: %v, %v", lease, err)
+	}
+
+	// Simulate the remint: a brand new RemoteStore (fresh session cache) for
+	// the SAME agent and SAME registered thread — exactly what a binary
+	// rebuild produces, not a different logical worker.
+	second := h.client("claude-remint")
+	second.threadID = thread
+
+	// Before the fix: ErrNotOwner, forever.
+	if err := second.Complete(id, lease.Token, "completed after remint"); err != nil {
+		t.Fatalf("Complete from the reminted session = %v, want success", err)
+	}
+}
+
+// TestIdentityTaskOwnershipSurvivesSessionRemintSameAgentThread is the
+// task-ledger twin — the exact shape claude-home reported (task complete /
+// release deadlocking on a session remint), proven through the real
+// ClaimNextTask -> CompleteTaskLease authenticated path.
+func TestIdentityTaskOwnershipSurvivesSessionRemintSameAgentThread(t *testing.T) {
+	h := newIdentityHarness(t)
+	const thread = "thr-remint-fixed-task"
+
+	first := h.client("claude-remint-task")
+	first.threadID = thread
+	if err := first.AddTask(Task{Agent: "claude-remint-task", TaskID: "remint-task", Subject: "s"}); err != nil {
+		t.Fatalf("AddTask: %v", err)
+	}
+	lease, err := first.ClaimNextTask("claude-remint-task", "worker", thread, time.Minute)
+	if err != nil || lease == nil {
+		t.Fatalf("claim: %v, %v", lease, err)
+	}
+
+	second := h.client("claude-remint-task")
+	second.threadID = thread
+
+	// Before the fix: ErrNotOwner, forever — the exact deadlock reported.
+	if err := second.CompleteTaskLease("claude-remint-task", "remint-task", lease.Token, "done"); err != nil {
+		t.Fatalf("CompleteTaskLease from the reminted session = %v, want success", err)
+	}
+}
+
+// TestIdentityOwnershipRemintFallbackRequiresSameAgent is the negative
+// control: a shared thread_id alone must never bridge two DIFFERENT agents.
+// Equivalence requires agent AND thread_id to both match — otherwise the
+// remint fallback would become a cross-agent lease-theft vector.
+func TestIdentityOwnershipRemintFallbackRequiresSameAgent(t *testing.T) {
+	h := newIdentityHarness(t)
+	const thread = "thr-shared-by-mistake"
+
+	owner := h.client("claude-owner")
+	owner.threadID = thread
+	id, _, err := owner.SendGuarded(SendReq{From: "x", To: "claude-owner", Title: "t", Type: "proposal", Instructions: "i"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := owner.ClaimNext("claude-owner", time.Minute)
+	if err != nil || lease == nil {
+		t.Fatalf("claim: %v, %v", lease, err)
+	}
+
+	impostor := h.client("claude-different-agent")
+	impostor.threadID = thread // same thread id, DIFFERENT agent
+	if err := impostor.Complete(id, lease.Token, "stolen via shared thread id"); !errors.Is(err, ErrNotOwner) {
+		t.Fatalf("cross-agent Complete sharing a thread id = %v, want ErrNotOwner", err)
+	}
+	// Positive control: the real owner still completes fine.
+	if err := owner.Complete(id, lease.Token, "mine"); err != nil {
+		t.Fatalf("owner completing its own lease: %v", err)
+	}
+}
+
+// TestIdentityOwnershipRemintFallbackRequiresRegisteredThread is the second
+// negative control: an EMPTY thread_id on both sides must never match —
+// collapsing unregistered/legacy sessions into a shared owner would let any
+// two threadless sessions for the same agent steal each other's leases.
+func TestIdentityOwnershipRemintFallbackRequiresRegisteredThread(t *testing.T) {
+	h := newIdentityHarness(t)
+
+	first := h.client("claude-threadless")
+	first.threadID = "" // explicitly unregistered
+	id, _, err := first.SendGuarded(SendReq{From: "x", To: "claude-threadless", Title: "t", Type: "proposal", Instructions: "i"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := first.ClaimNext("claude-threadless", time.Minute)
+	if err != nil || lease == nil {
+		t.Fatalf("claim: %v, %v", lease, err)
+	}
+
+	second := h.client("claude-threadless")
+	second.threadID = "" // also unregistered — must NOT be treated as equivalent
+	if err := second.Complete(id, lease.Token, "stolen via empty thread id"); !errors.Is(err, ErrNotOwner) {
+		t.Fatalf("Complete from a second threadless session = %v, want ErrNotOwner", err)
+	}
+	if err := first.Complete(id, lease.Token, "mine"); err != nil {
+		t.Fatalf("original threadless session completing its own lease: %v", err)
+	}
+}
+
 func TestIdentityServerOnlyMethodsAreNotServed(t *testing.T) {
 	h := newIdentityHarness(t)
 	rs := h.client("claude-a")
