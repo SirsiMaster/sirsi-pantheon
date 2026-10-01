@@ -2,10 +2,44 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestCanonicalRepo(t *testing.T) {
+	cases := []struct {
+		name    string
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{"already canonical", "sirsimaster/sirsi-hermes", "sirsimaster/sirsi-hermes", false},
+		{"mixed case folds to canonical", "SirsiMaster/SIRSI-HERMES", "sirsimaster/sirsi-hermes", false},
+		{"missing slash", "sirsi-hermes", "", true},
+		{"empty owner", "/sirsi-hermes", "", true},
+		{"empty name", "sirsimaster/", "", true},
+		{"extra slash", "sirsimaster/sirsi/hermes", "", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := canonicalRepo(c.in)
+			if c.wantErr {
+				if err == nil {
+					t.Fatalf("expected error for %q, got nil", c.in)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != c.want {
+				t.Errorf("canonicalRepo(%q) = %q, want %q", c.in, got, c.want)
+			}
+		})
+	}
+}
 
 func TestCheckSubmitPolicy(t *testing.T) {
 	cases := []struct {
@@ -15,10 +49,10 @@ func TestCheckSubmitPolicy(t *testing.T) {
 		wantDeterm    string
 		wantWhyHasAny string
 	}{
-		{"policy match", "SirsiMaster/sirsi-hermes", "hermes", "grant", "matches repo policy"},
-		{"policy mismatch", "SirsiMaster/sirsi-hermes", "claude-pantheon", "refuse", "not in repo policy"},
-		{"photon policy match", "SirsiMaster/sirsi-photon", "hermes", "grant", "matches repo policy"},
-		{"unlisted repo", "SirsiMaster/sirsi-pantheon", "claude-pantheon", "grant", "no policy defined"},
+		{"policy match", "sirsimaster/sirsi-hermes", "hermes", "grant", "matches repo policy"},
+		{"policy mismatch", "sirsimaster/sirsi-hermes", "claude-pantheon", "refuse", "not in repo policy"},
+		{"photon policy match", "sirsimaster/sirsi-photon", "hermes", "grant", "matches repo policy"},
+		{"unlisted repo", "sirsimaster/sirsi-pantheon", "claude-pantheon", "grant", "no policy defined"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -30,6 +64,20 @@ func TestCheckSubmitPolicy(t *testing.T) {
 				t.Errorf("why = %q, want substring %q", why, c.wantWhyHasAny)
 			}
 		})
+	}
+}
+
+// caseFoldedRepoCannotBypassPolicy is the end-to-end version of
+// codex-pantheon finding 2 (item 20260930-231226): mixed-case input for a
+// protected repo must land on the same policy row as the canonical form.
+func TestCaseFoldedRepoCannotBypassPolicy(t *testing.T) {
+	repo, err := canonicalRepo("sirsiMASTER/SIRSI-hermes")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	determ, _ := checkSubmitPolicy(repo, "claude-pantheon")
+	if determ != "refuse" {
+		t.Fatalf("case-folded protected repo should still refuse a non-hermes requester, got %q", determ)
 	}
 }
 
@@ -51,16 +99,21 @@ func TestResolveSubmitRequester(t *testing.T) {
 		}
 	})
 
-	t.Run("registered session resolves", func(t *testing.T) {
-		const sid = "sid-registered"
-		t.Setenv("CLAUDE_CODE_SESSION_ID", sid)
+	writeMarker := func(t *testing.T, sid, agent string) {
+		t.Helper()
 		dir := filepath.Join(home, ".claude", "run", "agent-by-session")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, sid), []byte("hermes\n"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, sid), []byte(agent+"\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
+	}
+
+	t.Run("registered session resolves", func(t *testing.T) {
+		const sid = "sid-registered"
+		t.Setenv("CLAUDE_CODE_SESSION_ID", sid)
+		writeMarker(t, sid, "hermes")
 		got, err := resolveSubmitRequester()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -69,4 +122,107 @@ func TestResolveSubmitRequester(t *testing.T) {
 			t.Errorf("requester = %q, want %q", got, "hermes")
 		}
 	})
+
+	// codex-pantheon finding 3 (item 20260930-231226): a marker naming an
+	// agent id that isn't in the declared registry must refuse, not be
+	// trusted as an arbitrary self-declared string.
+	t.Run("marker naming unregistered agent id refuses", func(t *testing.T) {
+		const sid = "sid-forged"
+		t.Setenv("CLAUDE_CODE_SESSION_ID", sid)
+		writeMarker(t, sid, "totally-not-a-real-agent")
+		if _, err := resolveSubmitRequester(); err == nil {
+			t.Fatal("expected error for marker naming an unregistered agent id, got nil")
+		}
+	})
+}
+
+// TestSubmitCommandExitCode is codex-pantheon finding 1 (item
+// 20260930-231226): the maatJSON branch returned before the refusal
+// os.Exit(97), so a denied request encoded as --json exited 0. This drives
+// the actual command as a subprocess (os.Exit can't be caught in-process)
+// in both text and --json mode, for both a granted and a refused caller.
+func TestSubmitCommandExitCode(t *testing.T) {
+	if os.Getenv("MAAT_SUBMIT_HELPER") == "1" {
+		runSubmitHelper()
+		return
+	}
+
+	// Manual MkdirTemp + best-effort cleanup, not t.TempDir(): each subtest
+	// below spawns this binary as a real OS subprocess, and on this host that
+	// occasionally leaves module-cache-adjacent files transiently locked
+	// (Gatekeeper/mds on a freshly-exec'd binary), which turns t.TempDir()'s
+	// strict RemoveAll-must-succeed cleanup into a spurious fatal failure
+	// unrelated to the assertions below.
+	home, err := os.MkdirTemp("", "maat-submit-exit-code-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(home) }()
+	const sid = "sid-exit-code-test"
+	dir := filepath.Join(home, ".claude", "run", "agent-by-session")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name         string
+		agent        string
+		repo         string
+		json         bool
+		wantExitCode int
+	}{
+		{"text grant", "hermes", "sirsimaster/sirsi-hermes", false, 0},
+		{"text refuse", "claude-pantheon", "sirsimaster/sirsi-hermes", false, admissionRefusedExit},
+		{"json grant", "hermes", "sirsimaster/sirsi-hermes", true, 0},
+		{"json refuse", "claude-pantheon", "sirsimaster/sirsi-hermes", true, admissionRefusedExit},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if err := os.WriteFile(filepath.Join(dir, sid), []byte(c.agent+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			args := []string{"-test.run=TestSubmitCommandExitCode", "-test.v"}
+			cmd := exec.Command(os.Args[0], args...)
+			cmd.Env = append(os.Environ(),
+				"MAAT_SUBMIT_HELPER=1",
+				"HOME="+home,
+				"CLAUDE_CODE_SESSION_ID="+sid,
+				"MAAT_SUBMIT_HELPER_REPO="+c.repo,
+				"MAAT_SUBMIT_HELPER_JSON="+boolToStr(c.json),
+				"SIRSI_MAAT_DECISIONS_PATH="+filepath.Join(home, "decisions.jsonl"),
+			)
+			out, err := cmd.CombinedOutput()
+			exitCode := 0
+			if err != nil {
+				if exitErr, ok := err.(*exec.ExitError); ok {
+					exitCode = exitErr.ExitCode()
+				} else {
+					t.Fatalf("failed to run helper process: %v, output: %s", err, out)
+				}
+			}
+			if exitCode != c.wantExitCode {
+				t.Errorf("exit code = %d, want %d (output: %s)", exitCode, c.wantExitCode, out)
+			}
+		})
+	}
+}
+
+func boolToStr(b bool) string {
+	if b {
+		return "1"
+	}
+	return "0"
+}
+
+// runSubmitHelper re-executes maatSubmitCmd in a subprocess so the real
+// os.Exit(97) path can be observed from outside.
+func runSubmitHelper() {
+	submitRepo = os.Getenv("MAAT_SUBMIT_HELPER_REPO")
+	submitKind = "release"
+	submitRef = "v1.0.0"
+	maatJSON = os.Getenv("MAAT_SUBMIT_HELPER_JSON") == "1"
+	if err := maatSubmitCmd.RunE(maatSubmitCmd, nil); err != nil {
+		os.Stderr.WriteString(err.Error() + "\n")
+		os.Exit(1)
+	}
 }

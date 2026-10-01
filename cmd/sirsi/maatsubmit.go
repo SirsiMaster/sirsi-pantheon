@@ -6,10 +6,18 @@ package main
 // agent pushes to GitHub as the one SirsiMaster account, so GitHub itself
 // cannot tell lanes apart; this is the layer that can. The requester is
 // derived from the caller's registered session→agent marker
-// (internal/router.ReadSessionAgentMarker), never a flag or self-declared
-// name — an unregistered session is refused, not guessed at (Truth Vector
-// A23). The decision is written to the existing host-local Ma'at decision
-// ledger (internal/maat/decision) so `sirsi maat decisions` shows it.
+// (internal/router.ReadSessionAgentMarker), then checked against the
+// declared agent registry (dispatch.ValidateAgent, ADR-054) — never a flag
+// or self-declared name.
+//
+// Scope honestly (codex-pantheon review 20260930-231226, item
+// 20260930-230911): this is registry-declaration eligibility, the same
+// boundary dispatch.ValidateAgent enforces everywhere else in this codebase
+// — NOT live-thread/session authentication. A forged local marker file
+// naming a real registered agent id still passes. Phase 1 is attribution
+// against local host state, not a cryptographic identity proof; strengthen
+// this later only alongside the rest of the router's session-binding work,
+// not invented ad hoc here.
 //
 // Phase 1 scope only: admission + attribution. No watcher, no automatic
 // release/tag mutation — those are explicitly deferred to a later phase with
@@ -20,6 +28,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/decision"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/spf13/cobra"
 )
@@ -30,23 +40,42 @@ var (
 	submitRef  string
 )
 
-// submitRepoPolicy is the Phase 1 allowlist: repo -> the only agent ids
-// permitted to submit tag/release/release-edit/merge admissions for it.
-// Repos not listed here have no restriction defined yet and are admitted
-// with a recorded decision rather than refused — Phase 1 does not invent
-// policy the owner hasn't stated (see router item 20260930-225059).
+// submitRepoPolicy is the Phase 1 allowlist: canonical lowercase "owner/repo"
+// -> the only agent ids permitted to submit tag/release/release-edit/merge
+// admissions for it. Repos not listed here have no restriction defined yet
+// and are admitted with a recorded decision rather than refused — Phase 1
+// does not invent policy the owner hasn't stated (see router item
+// 20260930-225059).
 var submitRepoPolicy = map[string][]string{
-	"SirsiMaster/sirsi-hermes": {"hermes"},
-	"SirsiMaster/sirsi-photon": {"hermes"},
+	"sirsimaster/sirsi-hermes": {"hermes"},
+	"sirsimaster/sirsi-photon": {"hermes"},
 }
 
 var submitValidKinds = map[string]bool{
 	"tag": true, "release": true, "release-edit": true, "merge": true,
 }
 
+// canonicalRepo lowercases "OWNER/REPO" so GitHub's case-insensitive naming
+// can't be used to slip past a case-sensitive policy lookup (codex-pantheon
+// finding 2, item 20260930-231226: "sirsimaster/SIRSI-HERMES" must match the
+// same policy row as "SirsiMaster/sirsi-hermes"). Also validates the shape.
+func canonicalRepo(repo string) (string, error) {
+	repo = strings.TrimSpace(repo)
+	owner, name, ok := strings.Cut(repo, "/")
+	owner = strings.TrimSpace(owner)
+	name = strings.TrimSpace(name)
+	if !ok || owner == "" || name == "" || strings.Contains(name, "/") {
+		return "", fmt.Errorf("--repo must be OWNER/REPO, got %q", repo)
+	}
+	return strings.ToLower(owner) + "/" + strings.ToLower(name), nil
+}
+
 // resolveSubmitRequester derives the caller's identity from its registered
-// Claude session marker. It never falls back to a flag, an env var, or a
-// guessed PID — an unregistered session is a refusal, not a guess.
+// Claude session marker, then confirms that identity is a declared agent in
+// the repo's agent registry (dispatch.ValidateAgent, ADR-054) — the same
+// eligibility boundary used everywhere else in this codebase. It never
+// falls back to a flag, an env var, or a guessed PID; an unregistered
+// session or an unregistered agent id is a refusal, not a guess.
 func resolveSubmitRequester() (string, error) {
 	sid := router.CurrentSessionID()
 	if sid == "" {
@@ -56,12 +85,25 @@ func resolveSubmitRequester() (string, error) {
 	if agent == "" {
 		return "", fmt.Errorf("session %s has no registered agent marker (sirsi thread register); refusing to guess requester identity", sid)
 	}
+	repoRoot, err := router.FindRepoRoot()
+	if err != nil {
+		return "", fmt.Errorf("resolve router repo root: %w", err)
+	}
+	f, err := dispatch.Open(repoRoot)
+	if err != nil {
+		return "", fmt.Errorf("open router facade: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	if err := f.ValidateAgent("requester", agent); err != nil {
+		return "", fmt.Errorf("session %s marker names %q, which is not a declared agent: %w", sid, agent, err)
+	}
 	return agent, nil
 }
 
-// checkSubmitPolicy evaluates submitRepoPolicy for repo/requester. A repo
-// with no entry is granted (Phase 1 doesn't invent policy the owner hasn't
-// stated); a repo with an entry grants only a listed requester.
+// checkSubmitPolicy evaluates submitRepoPolicy for repo/requester. repo must
+// already be canonicalRepo-normalized. A repo with no entry is granted
+// (Phase 1 doesn't invent policy the owner hasn't stated); a repo with an
+// entry grants only a listed requester.
 func checkSubmitPolicy(repo, requester string) (determination, why string) {
 	allowed, policyDefined := submitRepoPolicy[repo]
 	if !policyDefined {
@@ -75,6 +117,14 @@ func checkSubmitPolicy(repo, requester string) (determination, why string) {
 	return "refuse", fmt.Sprintf("requester %q not in repo policy %v", requester, allowed)
 }
 
+// appendSubmitDecision writes the outcome to the Ma'at decision ledger and
+// returns any write failure instead of swallowing it (codex-pantheon finding
+// 4, item 20260930-231226): a ledger append failure must not be reported
+// alongside a successful grant.
+func appendSubmitDecision(requester, resource, repo, kind, determination, why string) error {
+	return decision.Append("", decision.New("submit-admission", requester, resource, repo, kind, determination, why, ""))
+}
+
 var maatSubmitCmd = &cobra.Command{
 	Use:   "submit",
 	Short: "𓆄 Ma'at admission for a GitHub tag/release/merge submission (Phase 1: attribution only)",
@@ -85,49 +135,58 @@ cannot distinguish which lane tagged, released, or merged something. This
 records who actually did it and checks it against any per-repo policy.
 
 Phase 1 is admission and attribution only: it derives the requester from your
-registered session, checks policy, and writes a decision record. It does not
-watch GitHub and does not mutate any tag, release, or PR.`,
+registered session, confirms that identity is a declared agent (registry
+eligibility, not live-session authentication — see dispatch.ValidateAgent),
+checks repo policy, and writes a decision record. It does not watch GitHub
+and does not mutate any tag, release, or PR.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		kind := strings.ToLower(strings.TrimSpace(submitKind))
-		repo := strings.TrimSpace(submitRepo)
 		ref := strings.TrimSpace(submitRef)
 
 		if !submitValidKinds[kind] {
 			return fmt.Errorf("--kind must be one of tag|release|release-edit|merge, got %q", submitKind)
 		}
-		if repo == "" {
-			return fmt.Errorf("--repo is required (OWNER/REPO)")
-		}
 		if ref == "" {
 			return fmt.Errorf("--ref is required")
+		}
+		repo, err := canonicalRepo(submitRepo)
+		if err != nil {
+			return err
 		}
 
 		resource := fmt.Sprintf("%s#%s@%s", repo, kind, ref)
 
 		requester, err := resolveSubmitRequester()
 		if err != nil {
-			recordDecision("submit-admission", "unknown", resource, repo, kind, "refuse", err.Error(), "")
+			_ = appendSubmitDecision("unknown", resource, repo, kind, "refuse", err.Error())
 			if maatJSON {
 				_ = emitJSON(map[string]any{"determination": "refuse", "why": err.Error()})
+			} else {
+				fmt.Printf("𓆄 refuse: %s\n", err.Error())
 			}
 			os.Exit(admissionRefusedExit)
-			return nil
 		}
 
 		determination, why := checkSubmitPolicy(repo, requester)
-		recordDecision("submit-admission", requester, resource, repo, kind, determination, why, "")
+		if err := appendSubmitDecision(requester, resource, repo, kind, determination, why); err != nil {
+			return fmt.Errorf("append decision ledger (determination was %q): %w", determination, err)
+		}
 
 		if maatJSON {
-			return emitJSON(map[string]any{
+			if err := emitJSON(map[string]any{
 				"requester":     requester,
 				"repo":          repo,
 				"kind":          kind,
 				"ref":           ref,
 				"determination": determination,
 				"why":           why,
-			})
+			}); err != nil {
+				return err
+			}
+		} else {
+			fmt.Printf("𓆄 %s: %s %s %s@%s — %s\n", determination, requester, repo, kind, ref, why)
 		}
-		fmt.Printf("𓆄 %s: %s %s %s@%s — %s\n", determination, requester, repo, kind, ref, why)
+
 		if determination == "refuse" {
 			os.Exit(admissionRefusedExit)
 		}
