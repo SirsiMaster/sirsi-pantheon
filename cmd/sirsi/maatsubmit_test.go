@@ -207,6 +207,99 @@ func TestSubmitCommandExitCode(t *testing.T) {
 	}
 }
 
+// TestSubmitCommandLedgerFailureVisibility is codex-pantheon finding (router
+// item 20261001-041706): the identity-refusal branch discarded the ledger-
+// append error while the policy branch correctly propagated it, so "every
+// grant/refusal is written" was false specifically for unregistered-session
+// refusals. A denied operation stays denied either way; what must change is
+// that the ledger failure becomes VISIBLE rather than silently coexisting
+// with a clean-looking refusal. Reproduces codex's exact technique: point
+// SIRSI_MAAT_DECISIONS_PATH at an existing DIRECTORY so the ledger write
+// fails with a real I/O error, not a mock.
+func TestSubmitCommandLedgerFailureVisibility(t *testing.T) {
+	home, err := os.MkdirTemp("", "maat-submit-ledger-failure-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(home) }()
+	badLedgerPath := filepath.Join(home, "ledger-is-a-directory")
+	if err := os.MkdirAll(badLedgerPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	runHelper := func(t *testing.T, env ...string) (exitCode int, out string) {
+		t.Helper()
+		cmd := exec.Command(os.Args[0], "-test.run=TestSubmitCommandExitCode", "-test.v")
+		cmd.Env = append(append([]string{}, os.Environ()...), env...)
+		cmd.Env = append(cmd.Env, "MAAT_SUBMIT_HELPER=1", "SIRSI_MAAT_DECISIONS_PATH="+badLedgerPath)
+		raw, runErr := cmd.CombinedOutput()
+		exitCode = 0
+		if runErr != nil {
+			if exitErr, ok := runErr.(*exec.ExitError); ok {
+				exitCode = exitErr.ExitCode()
+			} else {
+				t.Fatalf("failed to run helper process: %v, output: %s", runErr, raw)
+			}
+		}
+		return exitCode, string(raw)
+	}
+
+	t.Run("identity refusal with unwritable ledger stays refused and names the problem", func(t *testing.T) {
+		const sid = "sid-unregistered-ledger-fail"
+		exitCode, out := runHelper(t,
+			"HOME="+home,
+			"CLAUDE_CODE_SESSION_ID="+sid, // no marker file written → unregistered
+			"MAAT_SUBMIT_HELPER_REPO=sirsimaster/sirsi-hermes",
+			"MAAT_SUBMIT_HELPER_JSON=0",
+		)
+		if exitCode != admissionRefusedExit {
+			t.Errorf("exit code = %d, want %d (a denied operation must stay denied even when the ledger write also fails): %s", exitCode, admissionRefusedExit, out)
+		}
+		if !strings.Contains(out, "ledger") {
+			t.Errorf("output does not name the ledger failure: %s", out)
+		}
+	})
+
+	t.Run("identity refusal with unwritable ledger, JSON mode, names the problem", func(t *testing.T) {
+		const sid = "sid-unregistered-ledger-fail-json"
+		exitCode, out := runHelper(t,
+			"HOME="+home,
+			"CLAUDE_CODE_SESSION_ID="+sid,
+			"MAAT_SUBMIT_HELPER_REPO=sirsimaster/sirsi-hermes",
+			"MAAT_SUBMIT_HELPER_JSON=1",
+		)
+		if exitCode != admissionRefusedExit {
+			t.Errorf("exit code = %d, want %d: %s", exitCode, admissionRefusedExit, out)
+		}
+		if !strings.Contains(out, "ledger_error") {
+			t.Errorf("JSON output does not surface ledger_error: %s", out)
+		}
+	})
+
+	t.Run("policy grant with unwritable ledger refuses to report success and names the problem", func(t *testing.T) {
+		const sid = "sid-hermes-ledger-fail"
+		dir := filepath.Join(home, ".claude", "run", "agent-by-session")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, sid), []byte("hermes\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		exitCode, out := runHelper(t,
+			"HOME="+home,
+			"CLAUDE_CODE_SESSION_ID="+sid,
+			"MAAT_SUBMIT_HELPER_REPO=sirsimaster/sirsi-hermes",
+			"MAAT_SUBMIT_HELPER_JSON=0",
+		)
+		if exitCode == 0 {
+			t.Errorf("exit code = 0, want nonzero — a ledger append failure must never be reported as a clean grant: %s", out)
+		}
+		if !strings.Contains(out, "append decision ledger") {
+			t.Errorf("output does not name the ledger failure: %s", out)
+		}
+	})
+}
+
 func boolToStr(b bool) string {
 	if b {
 		return "1"
