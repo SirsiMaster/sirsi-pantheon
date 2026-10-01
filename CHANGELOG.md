@@ -193,6 +193,7 @@ items across 6 aliases. Tests both directions; negative control: Send without
 alias resolution refuses the alias exactly as live senders are refused today.
 
 ## [Unreleased]
+- **feat(maat): attribute GitHub submission admission to the registered agent session** (2026-10-01, PR #927). Adds `sirsi maat submit` Phase 1 admission for tag, release, release-edit, and merge submissions. Requester identity is resolved from the registered session marker, policy decisions are written to the existing Ma'at ledger, and unregistered sessions fail closed. Automatic watcher/release mutation remains explicitly out of scope. Refs: PR #927; ADR-062; PANTHEON_RULES.md A1/A7/A16/A32/A35
 
 ## [0.24.45] — 2026-09-29 — Declared-agent resolution hardening
 **Source release.** Acting-agent resolution now rejects inferred session markers
