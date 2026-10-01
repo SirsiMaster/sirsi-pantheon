@@ -3,13 +3,19 @@ package routerstore
 // Independent-instance coverage for Complete (router item 20261001-140902,
 // codex-pantheon review of PR944 20236ff8). The review asked for two
 // independently authenticated instances exercising the actual completion
-// path against both SQLite and PostgreSQL backends; this codebase ships no
-// PostgreSQL store (grep confirms — routerstore has exactly one backend,
-// SQLiteStore), so "independent instance" here is the real multi-process
-// shape this backend supports: two separate *SQLiteStore handles opened via
-// OpenPath against the SAME on-disk file, exactly as two agent processes on
-// one machine share ~/.sirsi/router.db. TestOpenAndMigrateIdempotent already
-// establishes this is a supported, tested configuration.
+// path against both SQLite and PostgreSQL backends. Correction (20261001,
+// router item 20261001-145610): an earlier version of this file claimed the
+// codebase ships no PostgreSQL store — false; internal/routerstore/open_postgres.go
+// is what `sirsi router serve` runs on in production, and pgtest_test.go
+// already wires a dual-driver harness (rs-07) via SIRSI_TEST_PG_DSN. These
+// tests use that harness: instance A opens through openBackendStore (which
+// resets the schema when SIRSI_TEST_PG_DSN is set), and every subsequent
+// instance opens through openSecondHandle, which targets the SAME backend
+// without resetting it — the real multi-process shape both backends support,
+// one on-disk SQLite file or one Postgres database shared across handles.
+// Unset SIRSI_TEST_PG_DSN -> SQLite only (CI default). Set it against a
+// reachable Postgres (see internal/routerstore/pg/README.md) to run the same
+// three tests against the Postgres backend.
 
 import (
 	"errors"
@@ -17,6 +23,25 @@ import (
 	"testing"
 	"time"
 )
+
+// openSecondHandle opens another handle at the same target as a prior
+// openBackendStore(t, path) call, WITHOUT resetting the schema — simulating
+// a second process attaching to a ledger a first process already created.
+func openSecondHandle(t *testing.T, path string) *SQLiteStore {
+	t.Helper()
+	if dsn := pgTestDSN(); dsn != "" {
+		s, err := OpenPostgres(dsn)
+		if err != nil {
+			t.Fatalf("openSecondHandle: OpenPostgres: %v", err)
+		}
+		return s
+	}
+	s, err := OpenPath(path)
+	if err != nil {
+		t.Fatalf("openSecondHandle: OpenPath: %v", err)
+	}
+	return s
+}
 
 // Two independent store handles on the same file: the holder that loses its
 // lease to expiry/reclaim (stale) is refused, and the reclaiming instance's
@@ -26,10 +51,7 @@ func TestCompleteTwoIndependentInstancesStaleClaimantRefusedNewerResultPreserved
 	dir := t.TempDir()
 	path := filepath.Join(dir, "router.db")
 
-	a, err := OpenPath(path)
-	if err != nil {
-		t.Fatalf("open instance A: %v", err)
-	}
+	a := openBackendStore(t, path)
 	t.Cleanup(func() { _ = a.Close() })
 
 	start := time.Date(2026, 7, 2, 15, 4, 5, 0, time.UTC)
@@ -45,11 +67,8 @@ func TestCompleteTwoIndependentInstancesStaleClaimantRefusedNewerResultPreserved
 		t.Fatalf("instance A claim: %v", err)
 	}
 
-	// Instance B: a second, independent handle on the SAME file.
-	b, err := OpenPath(path)
-	if err != nil {
-		t.Fatalf("open instance B: %v", err)
-	}
+	// Instance B: a second, independent handle on the SAME backend target.
+	b := openSecondHandle(t, path)
 	t.Cleanup(func() { _ = b.Close() })
 	past := start.Add(2 * time.Hour) // past A's lease expiry
 	b.now = func() time.Time { return past }
@@ -81,10 +100,7 @@ func TestCompleteTwoIndependentInstancesStaleClaimantRefusedNewerResultPreserved
 	// The preserved result is B's, never A's stale write — read back through
 	// a THIRD independent handle to prove the mutation is durable on disk,
 	// not an artifact of one connection's local state.
-	c, err := OpenPath(path)
-	if err != nil {
-		t.Fatalf("open instance C (reader): %v", err)
-	}
+	c := openSecondHandle(t, path)
 	t.Cleanup(func() { _ = c.Close() })
 	row, err := c.Get(leaseA.ItemID)
 	if err != nil {
@@ -112,10 +128,7 @@ func TestCompleteUnavailableStoreFailsClosed(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "router.db")
 
-	s, err := OpenPath(path)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
+	s := openBackendStore(t, path)
 	if _, sendErr := s.Send("owner", "codex-home", "item", "review", "x"); sendErr != nil {
 		t.Fatalf("send: %v", sendErr)
 	}
@@ -135,10 +148,7 @@ func TestCompleteUnavailableStoreFailsClosed(t *testing.T) {
 
 	// Verify via a fresh handle that nothing was written: the item is still
 	// claimed, not completed with the above result.
-	r, err := OpenPath(path)
-	if err != nil {
-		t.Fatalf("reopen: %v", err)
-	}
+	r := openSecondHandle(t, path)
 	t.Cleanup(func() { _ = r.Close() })
 	row, err := r.Get(lease.ItemID)
 	if err != nil {
