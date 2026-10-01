@@ -1826,6 +1826,9 @@ struct RaFabricView: View {
                                               broken: engine.routerDaemonBlockers,
                                               onResult: { resultLine = $0 })
                         }
+                        if !engine.routerOutboxBlockers.isEmpty {
+                            OutboxBlockerCard(blocked: engine.routerOutboxBlockers)
+                        }
                     } else if engine.routerBoard != nil {
                         HStack(spacing: 8) {
                             Circle().fill(.green).frame(width: 8, height: 8)
@@ -1836,6 +1839,11 @@ struct RaFabricView: View {
                         .padding(12)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(RoundedRectangle(cornerRadius: 9).fill(Color.green.opacity(0.10)))
+                    }
+
+                    // ── Held for retry (nonblocking, but must stay visible) ──
+                    if !engine.routerRetryOutbox.isEmpty {
+                        OutboxRetryCard(held: engine.routerRetryOutbox)
                     }
 
                     // ── Stranded inboxes (work-to-do, not an alarm) ─────────
@@ -2239,6 +2247,71 @@ struct DaemonBlockerCard: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 9).fill(Color.red.opacity(0.10)))
+    }
+}
+
+// OutboxBlockerCard surfaces an unreadable spool relay outbox (ADR-069). No
+// one-click fix: the underlying cause is a directory permission/filesystem
+// condition on the relay host, which the operator must clear by hand — the
+// card's job is only to make the condition VISIBLE, since the whole point of
+// PR #931 was that this state used to read as a silent, confident zero.
+struct OutboxBlockerCard: View {
+    let blocked: [RBOutbox]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text("📪").sirsiFont(18)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("\(blocked.count) relay outbox\(blocked.count == 1 ? "" : "es") unreadable")
+                        .sirsiFont(13, weight: .semibold)
+                    Text("Queue depth is unknown, not zero — check the directory by hand.")
+                        .sirsiFont(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            ForEach(blocked) { o in
+                Text("• \(o.agent): \(o.error ?? "unreadable")")
+                    .sirsiFont(.caption, design: .monospaced).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 9).fill(Color.red.opacity(0.10)))
+    }
+}
+
+// OutboxRetryCard surfaces readable outboxes holding queued-for-retry
+// messages (ADR-069). Nonblocking — unlike OutboxBlockerCard, this is
+// expected transient state, not a fixable error — but it must still be
+// operator-visible read-only (codex-pantheon review, router item
+// 20261001-024344): rendering only the unreadable subset let a healthy-looking
+// board hide a real held queue.
+struct OutboxRetryCard: View {
+    let held: [RBOutbox]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text("⏳").sirsiFont(18)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("\(held.count) relay outbox\(held.count == 1 ? "" : "es") holding retries")
+                        .sirsiFont(13, weight: .semibold)
+                    Text("Nonblocking — messages are queued and will redeliver.")
+                        .sirsiFont(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            ForEach(held) { o in
+                Text("• \(o.agent): \(o.queuedForRetry ?? 0) held")
+                    .sirsiFont(.caption, design: .monospaced).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.05)))
     }
 }
 

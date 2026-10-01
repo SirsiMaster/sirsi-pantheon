@@ -212,6 +212,26 @@ struct RBStranded: Decodable, Identifiable {
     }
 }
 
+// RBOutbox mirrors one entry of node-status's outbox[] (ADR-069,
+// routerstore.SpoolAgentOutbox) — a relay host's held-for-retry queue depth
+// per agent. unreadable (with error set) means the outbox directory exists
+// but could not be listed; this is NOT "zero queued" and must render as a
+// blocker, never silently dropped (the same false-quiet class PR #931 fixed
+// on the CLI side — a decoder that models this field but never surfaces it
+// would reintroduce the identical bug one layer up).
+struct RBOutbox: Decodable, Identifiable {
+    var id: String { agent }
+    let agent: String
+    let queuedForRetry: Int?
+    let unreadable: Bool?
+    let error: String?
+    enum CodingKeys: String, CodingKey {
+        case agent
+        case queuedForRetry = "queued_for_retry"
+        case unreadable, error
+    }
+}
+
 // RouterBoard is the decoded fabric view. Only the fields the surface renders are
 // modeled; unknown fields are ignored (additive-tolerant, ADR-026).
 // MemoryVitals decodes `sirsi vitals --json` — the memory-first read.
@@ -320,6 +340,9 @@ struct RouterBoard: Decodable {
     // agent id → open item ids: the fabric's actual work map.
     let pendingByAgent: [String: [String]]?
     let ownerGated: [OwnerGated]?
+    // Spool relay outbox health (ADR-069) — absent on any host that isn't
+    // running the relay (routerstore.SpoolDir == ""), per-agent otherwise.
+    let outbox: [RBOutbox]?
     // On-device model state (board 1.2.0) — feeds the Ask Sirsi panel. `var`
     // because loadRouterBoard grafts it onto a live node-status read (which
     // does not carry local_llm) when the board file has gone stale.
@@ -333,6 +356,7 @@ struct RouterBoard: Decodable {
         case strandedInbox = "stranded_inbox"
         case pendingByAgent = "pending_by_agent"
         case ownerGated = "owner_gated"
+        case outbox
         case localLLM = "local_llm"
     }
 }
@@ -626,7 +650,26 @@ final class SirsiEngine: ObservableObject {
     var routerStranded: [RBStranded] {
         (routerBoard?.strandedInbox ?? []).sorted { $0.openItems > $1.openItems }
     }
-    var routerHasBlockers: Bool { !routerAuthBlockers.isEmpty || !routerDaemonBlockers.isEmpty }
+    // Unreadable outboxes are a current, fixable I/O condition (permission,
+    // not-a-directory, ...) — a blocker, same class as routerDaemonBlockers.
+    // A merely non-empty queue (queuedForRetry > 0 with unreadable == false)
+    // is expected transient state, not a blocker.
+    var routerOutboxBlockers: [RBOutbox] {
+        (routerBoard?.outbox ?? []).filter { $0.unreadable ?? false }
+    }
+    // Readable held-for-retry outboxes (codex-pantheon review, router item
+    // 20261001-024344): queuedForRetry > 0 and NOT unreadable is nonblocking
+    // (see routerOutboxBlockers above) but Ra's original decision requires it
+    // stay operator-VISIBLE read-only — distinct from the unreadable blocker
+    // case and from the empty/unknown case. Surfaced regardless of
+    // routerHasBlockers, since "no blockers" must not also mean "no held
+    // messages are shown".
+    var routerRetryOutbox: [RBOutbox] {
+        (routerBoard?.outbox ?? []).filter { !($0.unreadable ?? false) && ($0.queuedForRetry ?? 0) > 0 }
+    }
+    var routerHasBlockers: Bool {
+        !routerAuthBlockers.isEmpty || !routerDaemonBlockers.isEmpty || !routerOutboxBlockers.isEmpty
+    }
     // Home-row status: red for a real blocker, amber while items WAIT on agents
     // (pending work is not "all good" — a green dot beside "48 pending" is the
     // exact contradiction the owner flagged 2026-07-22), green when idle.
@@ -643,7 +686,7 @@ final class SirsiEngine: ObservableObject {
         // rendered a false-green "healthy".
         guard routerBoard != nil else { return "no data yet" }
         if routerHasBlockers {
-            let n = routerAuthBlockers.count + routerDaemonBlockers.count
+            let n = routerAuthBlockers.count + routerDaemonBlockers.count + routerOutboxBlockers.count
             return "\(n) blocker\(n == 1 ? "" : "s")"
         }
         let pending = routerBoard?.totalPending ?? 0
