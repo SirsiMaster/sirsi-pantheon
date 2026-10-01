@@ -74,6 +74,13 @@ jobs:
           bash scripts/gemma/model-resolver-ranking.test.sh
           bash scripts/gemma/model-resolver-cache.test.sh
 
+      # A35: a required-check guard never shown both red and green is
+      # untested. Proves ci-postgres.sh fails closed (exit 1, ::error::) when
+      # its prerequisites are missing, instead of the silent exit 0 that let
+      # the PostgreSQL leg report green without ever running.
+      - name: ci-postgres.sh fail-closed guard
+        run: bash scripts/ci-postgres-fail-closed.test.sh
+
   test:
     name: Test
     runs-on: macos-14
@@ -102,9 +109,27 @@ jobs:
           # hosted or self-hosted, so this needs no host-specific path.
           TMPDIR: ${{ runner.temp }}
 
+      # check-pg-schema.sh's router_migrator/router_service negative control
+      # depends on PostgreSQL 16's ALTER ROLE ADMIN OPTION enforcement
+      # (pg/roles.sql, pg/README.md) — PostgreSQL 14 does not enforce it, so
+      # the negative control silently fails to observe a refusal on 14.
+      # Verified locally: identical ci-postgres.sh run against postgresql@14
+      # fails this negative control; against postgresql@16 it passes
+      # end-to-end (schema + role checks + the full routerstore suite).
+      # The hosted macos-14 image ships multiple Postgres versions via
+      # Homebrew but does NOT link any onto PATH by default. Link 16
+      # explicitly so initdb/pg_ctl/psql are on PATH for the next step —
+      # required, not best-effort: a missing tool now fails ci-postgres.sh
+      # loudly (A35) instead of a silent skip reported as green.
+      - name: Provision PostgreSQL on PATH
+        run: |
+          brew list postgresql@16 >/dev/null 2>&1 || brew install postgresql@16
+          echo "$(brew --prefix postgresql@16)/bin" >> "$GITHUB_PATH"
+
       # ADR-062 rs-07b: the same routerstore suite on PostgreSQL (the Ra backend),
       # plus pg/schema.sql structure/behaviour/least-privilege checks with their
-      # negative controls. It skips loudly when initdb is unavailable.
+      # negative controls. REQUIRED: a missing prerequisite now fails this step
+      # instead of skipping silently (A35 — CI green must mean this ran).
       - name: Router store on PostgreSQL (ADR-062)
         run: bash scripts/ci-postgres.sh
 

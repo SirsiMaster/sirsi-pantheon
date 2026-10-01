@@ -22,6 +22,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased] — staff the unstaffed lanes; workers acknowledge and are linked to their lane
 
+- **CI's PostgreSQL leg now fails closed instead of silently skipping.**
+  `scripts/ci-postgres.sh` exited 0 and printed a one-line `SKIP:` when
+  `initdb`/`pg_ctl`/`psql` were missing — on the hosted `macos-14` runner,
+  which does not link any Postgres version onto `PATH` by default, this
+  meant the required "Router store on PostgreSQL (ADR-062)" CI step had been
+  reporting green without ever running the PostgreSQL leg (A35). The step
+  now provisions `postgresql@16` onto `PATH` explicitly and the script fails
+  loudly (`::error::`, exit 1) if the prerequisite is still missing, proven
+  by a checked-in negative-control test (`scripts/ci-postgres-fail-closed.test.sh`,
+  wired into the Lint job) that fails against the old silent-skip script and
+  passes against the new one. Also fixed a real version mismatch found while
+  verifying this: `check-pg-schema.sh`'s `router_migrator`/`router_service`
+  ADMIN OPTION negative control depends on PostgreSQL 16's `ALTER ROLE`
+  enforcement — PostgreSQL 14 does not enforce it, so the same negative
+  control silently passed-when-it-shouldn't on 14 (verified locally: fails
+  on `postgresql@14`, passes end-to-end on `postgresql@16`). Corrected the
+  stale PG14 references in `scripts/ci-postgres.sh` and
+  `internal/routerstore/pg/README.md` to PG16, and the README's stale
+  table-count/schema-version figures to the current live values.
+
 - **Dispatch gate reads idle CPU, not load average.** Load average counts Spotlight and Photos analysis, which only take cores nothing else wants; the M1 sat at load 13-17 on 10 cores with 36% idle and deferred every lane. The gate now defers only when idle CPU falls below 10% (falls back to half the load average if `top` is unreadable).
 
 - **Lanes staffed:** `hermes`, `claude-io` (now on the M1, directory `sirsi-io-connect`),
