@@ -4,6 +4,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 **Building in public** — see [docs/BUILD_LOG.md](docs/BUILD_LOG.md) for the full narrative.
 
+## [0.24.64] — 2026-10-01
+
+- **Router completion:** replace verify-then-close with atomic, token-fenced
+  `CompleteItem`, closing the completion TOCTOU window.
+- **Router coverage:** add authenticated two-session and dual-backend completion
+  coverage, including the MCP `router_close` route.
+- **Worker operations:** staff unstaffed lanes, bind consumers to registered
+  threads, acknowledge work explicitly, and dispatch runnable ledger tasks.
+- **Observability and recovery:** add truthful lane-state heartbeats,
+  `sirsi router ping`, and auditable `sirsi router reopen` recovery.
+
 ---
 
 ## [0.24.58] — 2026-10-01

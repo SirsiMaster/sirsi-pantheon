@@ -1,5 +1,14 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-01 — v0.24.64 release candidate
+
+- Records the PR944 router-completion release lineage from the exact tested
+  mainline, including token-fenced completion, authenticated dual-backend
+  coverage, truthful lane-state observability, and reversible router closure.
+- The tag and published artifacts become the canonical starting point for the
+  next Pantheon build; signing, notarization, cask, and installed-host receipts
+  are recorded only after their corresponding release jobs complete.
+
 ## 2026-09-28 — v0.24.23 release candidate
 
 - Records the exact tested mainline Stack Lab doctor roster-provenance change
