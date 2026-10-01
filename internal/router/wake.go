@@ -815,17 +815,28 @@ func railsLockPath() string {
 // cablepull quiet reservation on m1 was invalidated by a Claude shell). The
 // session already running is left alone; only new dispatches wait.
 func measurementWindowOpen(agentID string, depth int) bool {
+	holder, open := railsLockHolder()
+	if !open {
+		return false
+	}
+	log.Printf("wake-loop %s: dispatch held — measurement window open (rails.lock held by %q; inbox depth %d)",
+		agentID, holder, depth)
+	return true
+}
+
+// railsLockHolder reports, without logging, whether a measurement window is open
+// and who holds it. Used by the lane-state publisher so a sender can see a hold
+// without the loop spamming its log every tick.
+func railsLockHolder() (string, bool) {
 	p := railsLockPath()
 	if p == "" {
-		return false
+		return "", false
 	}
 	holder, err := os.ReadFile(p)
 	if err != nil {
-		return false // no lock (or unreadable) — no window
+		return "", false // no lock (or unreadable) — no window
 	}
-	log.Printf("wake-loop %s: dispatch held — measurement window open (rails.lock held by %q; inbox depth %d)",
-		agentID, strings.TrimSpace(string(holder)), depth)
-	return true
+	return strings.TrimSpace(string(holder)), true
 }
 
 // loginShellArgv wraps argv so the consumer runs through the operator's login
@@ -1050,11 +1061,16 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 		}
 	}
 
+	// Honest, self-reported lane state published on every heartbeat (router ping).
+	lane := LaneState{ConsumerDeclared: capable}
+
 	tick := time.NewTicker(interval)
 	defer tick.Stop()
 	log.Printf("wake-loop %s: started (thread=%s pid=%d interval=%s consumer=%v)",
 		agentID, thr.ThreadID, os.Getpid(), interval, consumer != nil)
 	lastDepth := -1
+	lastTasks := 0
+	taskReadLogged := false
 	lastBeat := time.Now()
 	// The in-flight consumer, or nil. Completion — not elapsed time — is what
 	// authorizes the next dispatch.
@@ -1094,7 +1110,26 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 		// This was a call site #315 missed while claiming every observer had been
 		// routed through the cutover-aware entry point.
 		items, lerr := OpenItems(routerRoot, agentID)
-		status, depth, lastError := wakeLoopInboxState(len(items), lerr)
+		// Ledger tasks count toward the dispatch trigger as well as inbox items:
+		// the router places work on the lane's queue, and a loop that counts only
+		// the inbox starts nobody for it. A failed task read is logged once and
+		// treated as no tasks (the previous behavior), never as a blocked lane.
+		tload, terr := LaneTaskLoad(routerRoot, agentID)
+		if terr != nil {
+			if !taskReadLogged {
+				taskReadLogged = true
+				log.Printf("wake-loop %s: ledger task read failed (counting inbox only): %v", agentID, terr)
+			}
+			tload = TaskLoad{}
+		} else {
+			taskReadLogged = false
+		}
+		if tload.Dispatchable != lastTasks {
+			log.Printf("wake-loop %s: %d dispatchable ledger task(s) now count toward dispatch (was %d; %d leased, %d actionable)",
+				agentID, tload.Dispatchable, lastTasks, tload.Leased, tload.Actionable)
+			lastTasks = tload.Dispatchable
+		}
+		status, depth, lastError := wakeLoopInboxState(dispatchDepth(len(items), tload), lerr)
 		if lerr != nil {
 			// An unreadable inbox is a technical blocker, not an empty inbox. Publish
 			// that truth into the durable thread record: logs alone are not supervision
@@ -1148,7 +1183,7 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 		// same durable queue. The queue is the truth; the replacement re-pulls it
 		// and assumes nothing about what the stale consumer did.
 		if run != nil && lerr == nil && run.running() {
-			mark := inboxMark(items)
+			mark := inboxMark(items) + taskMark(tload)
 			switch {
 			case run.progressAt.IsZero() || mark != run.progressMark:
 				run.progressMark, run.progressAt = mark, now
@@ -1168,9 +1203,23 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 		// "exited instantly having done nothing", and only the second one loops.
 		if run != nil && !run.running() && !scored {
 			scored = true
+			tailText := ""
+			if run.tail != nil {
+				tailText = run.tail.String()
+			}
 			if madeProgress(run.depthAtDispatch, depth) {
 				fruitless = 0
+				lane.LastOutcome, lane.LastOutcomeAt, lane.LastProgressAt, lane.LastDetail = OutcomeOK, time.Now().UTC(), time.Now().UTC(), ""
 			} else {
+				switch k := KnownFailure(tailText); {
+				case k != "":
+					lane.LastOutcome = k
+				case run.err != nil:
+					lane.LastOutcome = OutcomeExitedError
+				default:
+					lane.LastOutcome = OutcomeNoProgress
+				}
+				lane.LastOutcomeAt, lane.LastDetail = time.Now().UTC(), strings.TrimSpace(tailText)
 				fruitless++
 				wait := wakeLoopBackoff(fruitless, interval)
 				nextDispatchAllowed = time.Now().Add(wait)
@@ -1221,6 +1270,7 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 					// process to observe.
 					run = &consumerRun{done: closedChan(), err: derr, depthAtDispatch: -1}
 					scored = true // a failed START is not a fruitless RUN; do not score it
+					lane.LastOutcome, lane.LastOutcomeAt, lane.LastDetail = OutcomeStartFailed, time.Now().UTC(), derr.Error()
 					log.Printf("wake-loop %s: dispatch FAILED (depth %d): %v", agentID, depth, derr)
 					select {
 					case <-ctx.Done():
@@ -1252,9 +1302,11 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 
 		// Always write last_error, including the empty value after a successful
 		// read, so a recovered loop cannot remain falsely blocked by stale evidence.
+		lane.Hold, lane.HoldUntil = currentHold(agentID, fruitless, nextDispatchAllowed)
 		_, _ = Heartbeat(routerRoot, thr.ThreadID, HeartbeatUpdate{
 			Status:    status,
 			LastError: &lastError,
+			Lane:      &lane,
 		})
 
 		select {

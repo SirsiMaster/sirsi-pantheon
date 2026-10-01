@@ -20,6 +20,41 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 - **Release identity:** align the source `VERSION`, embedded binary version,
   and release tag after the stale embedded version in v0.24.56.
 
+## [Unreleased] — wake loops start a worker for ledger tasks, not only inbox items
+
+- A wake loop decided whether to start a worker from the inbox alone, so work the
+  router placed on a lane's task ledger started nobody (2026-10-01: 22 requests
+  moved to tasks; the quiet lanes behind them stayed pending while busy lanes
+  progressed only because other mail kept their consumer running). The loop now
+  counts **dispatchable ledger tasks** with inbox items. Dispatchable = claimable
+  and the lane's own to do (responsible party `self`, empty or the lane itself):
+  owner-assigned, other-party, blocked and leased tasks do NOT start a worker.
+- New `RunnableState.DispatchableLedgerTasks` (shared `RunnableFor` predicate, no
+  retyped SQL). The progress/stall fingerprint includes the task counts, so a
+  consumer that claims or finishes tasks is not killed as stalled.
+- Rollout: deploy the router service first (the count is computed server-side);
+  an older service returns 0, which is the previous behavior, so nothing can
+  regress before then.
+
+## [Unreleased] — `sirsi router ping`: can this lane actually work right now?
+
+- Wake loops now publish an honest **lane state** on every heartbeat (inside the
+  existing thread payload — no schema change): whether a working consumer is
+  declared, the last consumer outcome (`ok`, `no_progress`, `auth_required`,
+  `relay_unreach`, `start_failed`, `exited_error`), any hold on dispatch (Ma'at
+  measurement window, host load, no-progress back-off with its expiry, quarantine,
+  spawn ceiling) and when the lane last made progress.
+- New `sirsi router ping <lane>` / `--all` turns that into one verdict: `LIVE`,
+  `WAKEABLE`, `HELD`, `AUTH_REQUIRED`, `WATCH_ONLY`, `UNSTAFFED` or `UNREACHABLE`.
+  It reads state only (no model call, no spawn). A retired name resolves to its
+  successor. `send` prints the recipient's verdict on **stderr** after sending
+  (stdout, which callers parse for the item id, is unchanged).
+- Why: `node-status` reported SSA and claude-io as "armed (heartbeat-fresh)" while
+  both were watch-only and could not work anything, and items to lanes with no
+  worker waited silently (2026-10-01). A launch job installed plus a fresh
+  heartbeat is not readiness. A worker still running an older binary reports
+  WAKEABLE "declared, not proven" until it publishes lane state.
+
 ## [Unreleased] — `sirsi router reopen`: the undo for close
 
 - New `sirsi router reopen <id> --reason <text|@file>` returns a closed item to

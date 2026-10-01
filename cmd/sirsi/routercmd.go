@@ -305,6 +305,7 @@ cutover live the store row IS the record.
 			fmt.Printf("  Deduped %s → %s: %s (same logical send this window — nothing appended)\n", sendFrom, sendTo, res.ID)
 		} else {
 			fmt.Printf("  Sent %s → %s: %s\n", sendFrom, sendTo, res.ID)
+			printSendVerdict(f, repoRoot, sendTo)
 		}
 		return nil
 	},
