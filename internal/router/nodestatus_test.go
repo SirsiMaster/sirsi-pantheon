@@ -80,6 +80,50 @@ func TestCollectNodeStatus_PendingFromServiceStore(t *testing.T) {
 	}
 }
 
+// TestCollectNodeStatus_OutboxHealthOnSpoolHost: on a host whose
+// SIRSI_ROUTER_URL is a spool:// relay, CollectNodeStatus reports held
+// (queued-for-retry) outbox items from that spool root — read-only, the same
+// ADR-069 outbox a Ra-side health panel must show honestly.
+func TestCollectNodeStatus_OutboxHealthOnSpoolHost(t *testing.T) {
+	repoRoot := setupNodeTestRouter(t)
+	spool := t.TempDir()
+	outbox := filepath.Join(spool, "claude-nexus", "outbox")
+	if err := os.MkdirAll(outbox, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outbox, "1.json"), []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SIRSI_ROUTER_URL", "spool://"+spool)
+
+	ns, err := CollectNodeStatus(repoRoot, nil, mockAuthProbe(true, false, ""))
+	if err != nil {
+		t.Fatalf("CollectNodeStatus: %v", err)
+	}
+	if ns.OutboxHealthError != "" {
+		t.Fatalf("unexpected outbox health error: %s", ns.OutboxHealthError)
+	}
+	if len(ns.Outbox) != 1 || ns.Outbox[0].Agent != "claude-nexus" || ns.Outbox[0].QueuedForRetry != 1 {
+		t.Fatalf("want 1 held outbox entry for claude-nexus, got %+v", ns.Outbox)
+	}
+}
+
+// TestCollectNodeStatus_OutboxHealthAbsentOffSpoolHost: a host not pointed at
+// a spool relay must report no outbox section at all — never a fabricated
+// empty/clear reading for a surface this host cannot actually see.
+func TestCollectNodeStatus_OutboxHealthAbsentOffSpoolHost(t *testing.T) {
+	repoRoot := setupNodeTestRouter(t)
+	t.Setenv("SIRSI_ROUTER_URL", "")
+
+	ns, err := CollectNodeStatus(repoRoot, nil, mockAuthProbe(true, false, ""))
+	if err != nil {
+		t.Fatalf("CollectNodeStatus: %v", err)
+	}
+	if len(ns.Outbox) != 0 || ns.OutboxHealthError != "" {
+		t.Fatalf("want no outbox data off a spool host, got outbox=%+v err=%q", ns.Outbox, ns.OutboxHealthError)
+	}
+}
+
 // TestCollectNodeStatus_ServiceResolveFailureIsSurfaced: under store-wake, a
 // store-resolution failure must be returned, not swallowed into an empty inbox
 // that reads as "Router is clear" over an unread backlog (SSA #739 P1).

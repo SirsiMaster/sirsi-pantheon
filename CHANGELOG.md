@@ -13,6 +13,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
   maat-window-gate hook honors. On 2026-09-30 a quiet cablepull reservation on
   the M1 was invalidated by a Claude shell; unattended consumers must wait for
   the window instead. A session already running is not interrupted.
+## [Unreleased] — Ma'at cede/reservation decision ledger reports append failures instead of swallowing them
+
+- `cmd/sirsi/maatcede.go` `logCedeDecision` and `cmd/sirsi/maatschedule.go`
+  `logFloorGrant` used to warn on stderr and return success when the
+  decision-ledger append (mkdir/open/write) failed, so a cede
+  request/grant/counter/decline/withdraw or a floor-share reservation grant
+  could report a durable success with no drillable record. Both now return
+  the append error; every call site returns it from `RunE` naming the
+  scheduler transition that already committed, so a caller sees a clear
+  failure and knows not to retry (retrying would double-apply an
+  already-applied cede/reservation). Rejected by SSA review 20260927-143128;
+  confirmed still present on main and fixed here.
 
 ## [Unreleased] — Codex consumers can reach the router through the spool relay again
 
