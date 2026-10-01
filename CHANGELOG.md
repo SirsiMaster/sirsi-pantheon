@@ -20,6 +20,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 - **Release identity:** align the source `VERSION`, embedded binary version,
   and release tag after the stale embedded version in v0.24.56.
 
+## [Unreleased] — staff the unstaffed lanes; workers acknowledge and are linked to their lane
+
+- **Dispatch gate reads idle CPU, not load average.** Load average counts Spotlight and Photos analysis, which only take cores nothing else wants; the M1 sat at load 13-17 on 10 cores with 36% idle and deferred every lane. The gate now defers only when idle CPU falls below 10% (falls back to half the load average if `top` is unreadable).
+
+- **Lanes staffed:** `hermes`, `claude-io` (now on the M1, directory `sirsi-io-connect`),
+  `claude-home` and `ra` (M1; Ra's headless worker uses its own worktree) get a wake
+  loop with a working Claude consumer; `sirsi-hardware-admin` and `codex-finalwishes-web`
+  get a Codex consumer (M5); SSA's consumer is restored from origin and its sandbox
+  reaches the real relay directory (`/var/sirsipantheon/relay`).
+- **Workers acknowledge:** the standard worker prompt (28 lanes) now tells the worker
+  to `sirsi router acknowledge <id>` as soon as it has read an item, and to claim tasks
+  with `--worker <lane> --thread <thread>` so the lease links the task to its worker.
+- **Linked to the thread:** a `{{thread}}` placeholder in the consumer prompt/argv is
+  replaced with the wake loop's registered thread id (`bindConsumerThread`), in addition
+  to `SIRSI_THREAD_ID` in the environment. A sandboxed consumer can have its environment
+  stripped (SSA reported `thread=unset`); the prompt now carries the id in words.
+- **`router ping` judges the best worker:** a lane with a working loop on one host and a
+  newer-heartbeating watch-only loop on another is WAKEABLE, not WATCH_ONLY.
+- Verified live 2026-10-01 with a link-check item per lane: hermes, sirsi-hardware-admin
+  and codex-finalwishes-web acknowledged, closed, and reported a thread id matching their
+  loop's registered thread.
+
 ## [Unreleased] — wake loops start a worker for ledger tasks, not only inbox items
 
 - A wake loop decided whether to start a worker from the inbox alone, so work the

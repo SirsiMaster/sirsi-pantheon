@@ -117,7 +117,7 @@ func PingLane(reg *ThreadRegistry, cfg AgentConfig, agentID string, now time.Tim
 		}
 		if attendedSurface(t.Surface) {
 			attended = t
-		} else if worker == nil || t.LastSeenAt.After(worker.LastSeenAt) {
+		} else if worker == nil || betterWorker(t, worker) {
 			worker = t
 		}
 	}
@@ -226,4 +226,15 @@ func currentHold(agentID string, fruitless int, nextDispatchAllowed time.Time) (
 		return HoldCeiling, time.Time{}
 	}
 	return "", time.Time{}
+}
+
+// betterWorker orders two fresh worker threads for the same lane: one that can
+// actually consume beats one that only watches, then the most recent heartbeat.
+// Without this a lane with a working loop on one host and an old watch-only loop
+// on another flips between WAKEABLE and WATCH_ONLY depending on who beat last.
+func betterWorker(a, b *Thread) bool {
+	if a.ConsumerCapable != b.ConsumerCapable {
+		return a.ConsumerCapable
+	}
+	return a.LastSeenAt.After(b.LastSeenAt)
 }

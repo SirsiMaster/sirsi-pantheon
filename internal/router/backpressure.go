@@ -18,6 +18,7 @@ package router
 
 import (
 	"os/exec"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -31,19 +32,35 @@ var (
 	loadAvgFn = defaultLoadAvg1m
 )
 
-// defaultLoadAvg1m shells `sysctl -n vm.loadavg` (macOS; ADR-032) and returns
-// the 1-minute figure. A read failure returns 0, false — callers must treat
-// "unknown" as "don't gate", the same fail-open stance ResolveConsumer takes
-// on an unreadable cwd is NOT appropriate here (that fails closed on purpose);
-// an unreadable load average is not evidence of an overloaded host.
+// saturationIdlePct is the CPU idle share below which the host counts as
+// saturated. Load average counts every runnable thread — Spotlight and Photos
+// analysis included — which run at the lowest priority and only take cores
+// nothing else wants; on 2026-10-01 the M1 showed load 13-17 on 10 cores at 36%
+// idle and the gate starved every lane. Idle CPU is what a new consumer
+// actually competes for.
+const saturationIdlePct = 10.0
+
+var cpuIdleRe = regexp.MustCompile(`([0-9.]+)% idle`)
+
+// defaultLoadAvg1m returns the host's effective load in core-equivalents: busy
+// CPU share x cores, from the second `top` sample (the first is since boot).
+// If top is unreadable it falls back to half the 1-minute load average (the
+// old gate tripped at 2x). A read failure returns 0, false — an unreadable
+// host is not evidence of an overloaded host, so callers must not gate.
 func defaultLoadAvg1m() (float64, bool) {
+	if out, err := exec.Command("top", "-l", "2", "-n", "0", "-s", "1").Output(); err == nil {
+		if m := cpuIdleRe.FindAllStringSubmatch(string(out), -1); len(m) > 0 {
+			if idle, err := strconv.ParseFloat(m[len(m)-1][1], 64); err == nil {
+				return float64(runtime.NumCPU()) * (100 - idle) / 100, true
+			}
+		}
+	}
 	out, err := exec.Command("sysctl", "-n", "vm.loadavg").Output()
 	if err != nil {
 		return 0, false
 	}
 	// Output: "{ 1.23 4.56 7.89 }"
-	raw := strings.Trim(strings.TrimSpace(string(out)), "{}")
-	fields := strings.Fields(raw)
+	fields := strings.Fields(strings.Trim(strings.TrimSpace(string(out)), "{}"))
 	if len(fields) < 1 {
 		return 0, false
 	}
@@ -51,7 +68,7 @@ func defaultLoadAvg1m() (float64, bool) {
 	if err != nil {
 		return 0, false
 	}
-	return v, true
+	return v / 2, true
 }
 
 // SetLoadAvgFn installs a test double for the load-average reader. Passing
@@ -72,8 +89,8 @@ func getLoadAvgFn() func() (float64, bool) {
 	return loadAvgFn
 }
 
-// shouldDeferDispatch reports whether load average is at or above the core
-// count and dispatch should be skipped this pass. An unknown load average
+// shouldDeferDispatch reports whether effective load (see defaultLoadAvg1m) is
+// within saturationIdlePct of every core and dispatch should be skipped this pass. An unknown load average
 // never defers — a read failure must not itself become a fabric-wide stall.
 func shouldDeferDispatch() (hold bool, load float64, cores int) {
 	load, ok := getLoadAvgFn()()
@@ -81,5 +98,5 @@ func shouldDeferDispatch() (hold bool, load float64, cores int) {
 	if !ok {
 		return false, load, cores
 	}
-	return load >= float64(cores), load, cores
+	return load >= float64(cores)*(1-saturationIdlePct/100), load, cores
 }

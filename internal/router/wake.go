@@ -787,7 +787,7 @@ func fabricDispatchOverloaded(agentID string, depth int) bool {
 	if !hold {
 		return false
 	}
-	msg := fmt.Sprintf("wake-loop %s: dispatch deferred — load average %.2f >= %d cores (inbox depth %d)",
+	msg := fmt.Sprintf("wake-loop %s: dispatch deferred — CPU load %.2f of %d cores (inbox depth %d)",
 		agentID, load, cores, depth)
 	log.Print(msg)
 	RecordHeal(msg)
@@ -1032,7 +1032,7 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 	} else {
 		// The consumer inherits this loop's registered thread (Rule of Ra):
 		// the service binds its session to that thread at mint.
-		rc.Env = setEnv(rc.Env, "SIRSI_THREAD_ID", thr.ThreadID)
+		bindConsumerThread(rc, thr.ThreadID)
 		consumer = rc
 	}
 

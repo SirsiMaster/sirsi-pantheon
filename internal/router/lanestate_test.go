@@ -147,3 +147,39 @@ func TestHeartbeatPublishesLaneState(t *testing.T) {
 		t.Fatal("a heartbeat with no lane update erased the published lane state")
 	}
 }
+
+// TestPingLaneJudgesTheBestWorker: a lane with a working loop on one host and a
+// NEWER-heartbeating watch-only loop on another is WAKEABLE, not WATCH_ONLY.
+func TestPingLaneJudgesTheBestWorker(t *testing.T) {
+	good := worker("a", true, &LaneState{ConsumerDeclared: true, LastOutcome: OutcomeOK}, 2*time.Minute)
+	watchOnly := worker("a", false, &LaneState{}, 5*time.Second) // newer heartbeat
+	for _, reg := range []*ThreadRegistry{regWith(good, watchOnly), regWith(watchOnly, good)} {
+		if got := PingLane(reg, AgentConfig{}, "a", pingNow); got.Verdict != VerdictWakeable {
+			t.Fatalf("a working worker must outrank a newer watch-only one: %+v", got)
+		}
+	}
+	// And with ONLY the watch-only loop the verdict is still WATCH_ONLY.
+	if got := PingLane(regWith(watchOnly), AgentConfig{}, "a", pingNow); got.Verdict != VerdictWatchOnly {
+		t.Fatalf("watch-only alone: %+v", got)
+	}
+}
+
+// TestBindConsumerThread: the worker is told its thread id in the argv/prompt as
+// well as the environment, so a sandbox that strips env vars cannot unlink it.
+func TestBindConsumerThread(t *testing.T) {
+	rc := &ResolvedConsumer{Argv: []string{"codex", "exec", "You are a. Claim with --thread {{thread}} and report thread {{thread}}."}}
+	bindConsumerThread(rc, "thr-abc123")
+	got := strings.Join(rc.Argv, " ")
+	if strings.Contains(got, "{{thread}}") || strings.Count(got, "thr-abc123") != 2 {
+		t.Fatalf("placeholder not substituted everywhere: %q", got)
+	}
+	found := false
+	for _, e := range rc.Env {
+		if e == "SIRSI_THREAD_ID=thr-abc123" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("SIRSI_THREAD_ID not set in env: %v", rc.Env)
+	}
+}
