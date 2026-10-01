@@ -20,6 +20,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 - **Release identity:** align the source `VERSION`, embedded binary version,
   and release tag after the stale embedded version in v0.24.56.
 
+## [Unreleased] — wake loops start a worker for ledger tasks, not only inbox items
+
+- A wake loop decided whether to start a worker from the inbox alone, so work the
+  router placed on a lane's task ledger started nobody (2026-10-01: 22 requests
+  moved to tasks; the quiet lanes behind them stayed pending while busy lanes
+  progressed only because other mail kept their consumer running). The loop now
+  counts **dispatchable ledger tasks** with inbox items. Dispatchable = claimable
+  and the lane's own to do (responsible party `self`, empty or the lane itself):
+  owner-assigned, other-party, blocked and leased tasks do NOT start a worker.
+- New `RunnableState.DispatchableLedgerTasks` (shared `RunnableFor` predicate, no
+  retyped SQL). The progress/stall fingerprint includes the task counts, so a
+  consumer that claims or finishes tasks is not killed as stalled.
+- Rollout: deploy the router service first (the count is computed server-side);
+  an older service returns 0, which is the previous behaviour, so nothing can
+  regress before then.
+
 ## [Unreleased] — `sirsi router ping`: can this lane actually work right now?
 
 - Wake loops now publish an honest **lane state** on every heartbeat (inside the

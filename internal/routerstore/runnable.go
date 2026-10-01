@@ -39,6 +39,16 @@ func claimableTaskPredicate(alias string) string {
 	return fmt.Sprintf(`%s AND %s.lease_token=''`, actionableTaskPredicate(alias), alias)
 }
 
+// dispatchableTaskPredicate is what a wake loop may START A WORKER for: a task
+// that is claimable AND is the lane's own to do. Work assigned to the owner (an
+// escrow step, a decision) or to another party cannot be done by this lane's
+// consumer, so counting it would spawn a worker every cycle that can only
+// achieve "no progress". claimableTaskPredicate stays the claim/backfill
+// definition; this one only gates dispatch.
+func dispatchableTaskPredicate(alias string) string {
+	return fmt.Sprintf(`%[1]s AND (%[2]s.responsible_party IN ('','self') OR %[2]s.responsible_party=%[2]s.agent)`, claimableTaskPredicate(alias), alias)
+}
+
 const requirementAuditPrefix = "requirements:audit:"
 
 // postEnforcementTaskPredicate scopes evidence admission to tasks updated on or
@@ -82,14 +92,19 @@ func (s *SQLiteStore) OperationalAgents() ([]string, error) {
 // can report which store makes the lane runnable without reimplementing the
 // predicate (and drifting from it).
 type RunnableState struct {
-	Agent                  string `json:"agent"`
-	OpenRouterItems        int    `json:"open_router_items"`
-	ActionableLedgerTasks  int    `json:"actionable_ledger_tasks"`
-	ClaimableLedgerTasks   int    `json:"claimable_ledger_tasks"`
-	LeasedLedgerTasks      int    `json:"leased_ledger_tasks"`
-	UnmetRequirements      int    `json:"unmet_requirements"`
-	RequirementAuditNeeded bool   `json:"requirement_audit_needed"`
-	Runnable               bool   `json:"runnable"`
+	Agent                 string `json:"agent"`
+	OpenRouterItems       int    `json:"open_router_items"`
+	ActionableLedgerTasks int    `json:"actionable_ledger_tasks"`
+	ClaimableLedgerTasks  int    `json:"claimable_ledger_tasks"`
+	// DispatchableLedgerTasks is the subset of claimable tasks the lane itself
+	// can work (see dispatchableTaskPredicate): the wake loop's task trigger.
+	// Added 2026-10-01; an older service returns 0 here, which reads as "no task
+	// trigger" (the previous behaviour), never as spurious work.
+	DispatchableLedgerTasks int  `json:"dispatchable_ledger_tasks"`
+	LeasedLedgerTasks       int  `json:"leased_ledger_tasks"`
+	UnmetRequirements       int  `json:"unmet_requirements"`
+	RequirementAuditNeeded  bool `json:"requirement_audit_needed"`
+	Runnable                bool `json:"runnable"`
 }
 
 // MarkRequirementAudit records that canon was enumerated for agent. The audit
@@ -154,6 +169,10 @@ func (s *SQLiteStore) RunnableFor(agent string) (RunnableState, error) {
 		return RunnableState{}, fmt.Errorf("routerstore: runnable claimable ledger tasks: %w", err)
 	}
 	state.LeasedLedgerTasks = state.ActionableLedgerTasks - state.ClaimableLedgerTasks
+	if err = tx.QueryRow(`SELECT COUNT(*) FROM tasks t WHERE t.agent=? AND `+dispatchableTaskPredicate("t")+`;`, agent).
+		Scan(&state.DispatchableLedgerTasks); err != nil {
+		return RunnableState{}, fmt.Errorf("routerstore: runnable dispatchable ledger tasks: %w", err)
+	}
 
 	if err = tx.QueryRow(`SELECT COUNT(*) FROM requirements
 		WHERE owner=? AND status NOT IN ('satisfied','waived');`, agent).

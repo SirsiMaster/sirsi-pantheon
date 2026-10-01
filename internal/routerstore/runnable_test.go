@@ -156,3 +156,49 @@ func TestRequirementAuditRequiresEvidence(t *testing.T) {
 		t.Fatal("empty audit evidence must be refused")
 	}
 }
+
+// TestRunnableForDispatchableTasks: only a task the lane itself can work starts a
+// worker. Owner-assigned, other-party, blocked, leased and done tasks do not —
+// each would otherwise spawn a consumer that can only make "no progress".
+func TestRunnableForDispatchableTasks(t *testing.T) {
+	s := newTestStore(t)
+	agent := "claude-home"
+	if err := s.MarkRequirementAudit(agent, "audit://empty"); err != nil {
+		t.Fatal(err)
+	}
+	add := func(id, party, blockedBy string) {
+		t.Helper()
+		if err := s.AddTask(Task{Agent: agent, TaskID: id, Subject: id, ResponsibleParty: party, BlockedBy: blockedBy}); err != nil {
+			t.Fatalf("add %s: %v", id, err)
+		}
+	}
+	add("mine", "self", "")
+	add("own-id", agent, "")
+	add("owner-step", "owner", "")           // only the owner can do it
+	add("other-party", "codex-pantheon", "") // another party's work
+	add("blocked", "self", "waiting-on-owner-decision")
+	if err := s.AddTask(Task{Agent: agent, TaskID: "finished", Subject: "finished", Status: "done", ResponsibleParty: "self"}); err != nil {
+		t.Fatalf("add finished: %v", err)
+	}
+
+	st, err := s.RunnableFor(agent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// claimable counts everything actionable and unleased; dispatchable only what the lane owns.
+	if st.DispatchableLedgerTasks != 2 {
+		t.Fatalf("dispatchable = %d, want 2 (mine, own-id); state=%+v", st.DispatchableLedgerTasks, st)
+	}
+	if st.ClaimableLedgerTasks <= st.DispatchableLedgerTasks {
+		t.Fatalf("claimable (%d) must exceed dispatchable (%d): owner-step and other-party are claimable but not the lane's own", st.ClaimableLedgerTasks, st.DispatchableLedgerTasks)
+	}
+
+	// A leased task is someone's work in flight: it stops counting.
+	if _, err = s.ClaimTask(agent, "mine", "w", "thr-test", time.Minute); err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	st, _ = s.RunnableFor(agent)
+	if st.DispatchableLedgerTasks != 1 {
+		t.Fatalf("after claiming one, dispatchable = %d, want 1", st.DispatchableLedgerTasks)
+	}
+}

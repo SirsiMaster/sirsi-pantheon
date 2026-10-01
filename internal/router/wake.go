@@ -1069,6 +1069,8 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 	log.Printf("wake-loop %s: started (thread=%s pid=%d interval=%s consumer=%v)",
 		agentID, thr.ThreadID, os.Getpid(), interval, consumer != nil)
 	lastDepth := -1
+	lastTasks := 0
+	taskReadLogged := false
 	lastBeat := time.Now()
 	// The in-flight consumer, or nil. Completion — not elapsed time — is what
 	// authorizes the next dispatch.
@@ -1108,7 +1110,26 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 		// This was a call site #315 missed while claiming every observer had been
 		// routed through the cutover-aware entry point.
 		items, lerr := OpenItems(routerRoot, agentID)
-		status, depth, lastError := wakeLoopInboxState(len(items), lerr)
+		// Ledger tasks count toward the dispatch trigger as well as inbox items:
+		// the router places work on the lane's queue, and a loop that counts only
+		// the inbox starts nobody for it. A failed task read is logged once and
+		// treated as no tasks (the previous behaviour), never as a blocked lane.
+		tload, terr := LaneTaskLoad(routerRoot, agentID)
+		if terr != nil {
+			if !taskReadLogged {
+				taskReadLogged = true
+				log.Printf("wake-loop %s: ledger task read failed (counting inbox only): %v", agentID, terr)
+			}
+			tload = TaskLoad{}
+		} else {
+			taskReadLogged = false
+		}
+		if tload.Dispatchable != lastTasks {
+			log.Printf("wake-loop %s: %d dispatchable ledger task(s) now count toward dispatch (was %d; %d leased, %d actionable)",
+				agentID, tload.Dispatchable, lastTasks, tload.Leased, tload.Actionable)
+			lastTasks = tload.Dispatchable
+		}
+		status, depth, lastError := wakeLoopInboxState(dispatchDepth(len(items), tload), lerr)
 		if lerr != nil {
 			// An unreadable inbox is a technical blocker, not an empty inbox. Publish
 			// that truth into the durable thread record: logs alone are not supervision
@@ -1162,7 +1183,7 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 		// same durable queue. The queue is the truth; the replacement re-pulls it
 		// and assumes nothing about what the stale consumer did.
 		if run != nil && lerr == nil && run.running() {
-			mark := inboxMark(items)
+			mark := inboxMark(items) + taskMark(tload)
 			switch {
 			case run.progressAt.IsZero() || mark != run.progressMark:
 				run.progressMark, run.progressAt = mark, now
