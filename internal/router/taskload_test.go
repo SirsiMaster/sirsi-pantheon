@@ -40,7 +40,7 @@ func TestDispatchDepthAndTaskMark(t *testing.T) {
 }
 
 // TestLaneTaskLoadReadsTheLedger: store mode counts the lane's own claimable tasks
-// and nothing else; legacy mode (no durable ledger) keeps the old behaviour.
+// and nothing else; legacy mode (no durable ledger) keeps the old behavior.
 func TestLaneTaskLoadReadsTheLedger(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv(routercfg.StoreWakeEnv, "1")

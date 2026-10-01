@@ -86,8 +86,8 @@ func TestKnownFailure(t *testing.T) {
 			t.Errorf("KnownFailure(%q) = %q, want %q", tail, got, want)
 		}
 	}
-	if ClassifyConsumerFailure("unrecognised") != OutcomeExitedError {
-		t.Error("an unrecognised failure must classify as exited_error")
+	if ClassifyConsumerFailure("unrecognized") != OutcomeExitedError {
+		t.Error("an unrecognized failure must classify as exited_error")
 	}
 }
 

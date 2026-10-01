@@ -99,7 +99,7 @@ type RunnableState struct {
 	// DispatchableLedgerTasks is the subset of claimable tasks the lane itself
 	// can work (see dispatchableTaskPredicate): the wake loop's task trigger.
 	// Added 2026-10-01; an older service returns 0 here, which reads as "no task
-	// trigger" (the previous behaviour), never as spurious work.
+	// trigger" (the previous behavior), never as spurious work.
 	DispatchableLedgerTasks int  `json:"dispatchable_ledger_tasks"`
 	LeasedLedgerTasks       int  `json:"leased_ledger_tasks"`
 	UnmetRequirements       int  `json:"unmet_requirements"`

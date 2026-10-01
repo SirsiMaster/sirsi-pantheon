@@ -22,7 +22,7 @@ type TaskLoad struct {
 // LaneTaskLoad reads agent's task load from the durable store through the shared
 // RunnableFor predicate (never a retyped subset). It is zero when the host is not
 // cut over to the store (legacy file mode has no durable ledger), so every
-// store-less path keeps its previous behaviour.
+// store-less path keeps its previous behavior.
 func LaneTaskLoad(routerRoot, agent string) (TaskLoad, error) {
 	if !routercfg.StoreWake() {
 		return TaskLoad{}, nil

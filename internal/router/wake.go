@@ -1113,7 +1113,7 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 		// Ledger tasks count toward the dispatch trigger as well as inbox items:
 		// the router places work on the lane's queue, and a loop that counts only
 		// the inbox starts nobody for it. A failed task read is logged once and
-		// treated as no tasks (the previous behaviour), never as a blocked lane.
+		// treated as no tasks (the previous behavior), never as a blocked lane.
 		tload, terr := LaneTaskLoad(routerRoot, agentID)
 		if terr != nil {
 			if !taskReadLogged {

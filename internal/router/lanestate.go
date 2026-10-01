@@ -44,7 +44,7 @@ func ClassifyConsumerFailure(tail string) string {
 	return OutcomeExitedError
 }
 
-// KnownFailure returns the outcome for a recognised failure phrase in a
+// KnownFailure returns the outcome for a recognized failure phrase in a
 // consumer's tail output, or "" when nothing matches (so the caller can fall
 // back to no_progress / exited_error from the process facts).
 func KnownFailure(tail string) string {

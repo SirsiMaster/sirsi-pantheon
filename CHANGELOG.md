@@ -33,7 +33,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
   retyped SQL). The progress/stall fingerprint includes the task counts, so a
   consumer that claims or finishes tasks is not killed as stalled.
 - Rollout: deploy the router service first (the count is computed server-side);
-  an older service returns 0, which is the previous behaviour, so nothing can
+  an older service returns 0, which is the previous behavior, so nothing can
   regress before then.
 
 ## [Unreleased] — `sirsi router ping`: can this lane actually work right now?
