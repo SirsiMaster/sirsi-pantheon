@@ -1841,6 +1841,11 @@ struct RaFabricView: View {
                         .background(RoundedRectangle(cornerRadius: 9).fill(Color.green.opacity(0.10)))
                     }
 
+                    // ── Held for retry (nonblocking, but must stay visible) ──
+                    if !engine.routerRetryOutbox.isEmpty {
+                        OutboxRetryCard(held: engine.routerRetryOutbox)
+                    }
+
                     // ── Stranded inboxes (work-to-do, not an alarm) ─────────
                     if !engine.routerStranded.isEmpty {
                         SectionLabel("STRANDED INBOXES — OPEN ITEMS, NO WATCHER")
@@ -2274,6 +2279,39 @@ struct OutboxBlockerCard: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 9).fill(Color.red.opacity(0.10)))
+    }
+}
+
+// OutboxRetryCard surfaces readable outboxes holding queued-for-retry
+// messages (ADR-069). Nonblocking — unlike OutboxBlockerCard, this is
+// expected transient state, not a fixable error — but it must still be
+// operator-visible read-only (codex-pantheon review, router item
+// 20261001-024344): rendering only the unreadable subset let a healthy-looking
+// board hide a real held queue.
+struct OutboxRetryCard: View {
+    let held: [RBOutbox]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text("⏳").sirsiFont(18)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("\(held.count) relay outbox\(held.count == 1 ? "" : "es") holding retries")
+                        .sirsiFont(13, weight: .semibold)
+                    Text("Nonblocking — messages are queued and will redeliver.")
+                        .sirsiFont(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            ForEach(held) { o in
+                Text("• \(o.agent): \(o.queuedForRetry ?? 0) held")
+                    .sirsiFont(.caption, design: .monospaced).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.05)))
     }
 }
 

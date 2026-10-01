@@ -657,6 +657,16 @@ final class SirsiEngine: ObservableObject {
     var routerOutboxBlockers: [RBOutbox] {
         (routerBoard?.outbox ?? []).filter { $0.unreadable ?? false }
     }
+    // Readable held-for-retry outboxes (codex-pantheon review, router item
+    // 20261001-024344): queuedForRetry > 0 and NOT unreadable is nonblocking
+    // (see routerOutboxBlockers above) but Ra's original decision requires it
+    // stay operator-VISIBLE read-only — distinct from the unreadable blocker
+    // case and from the empty/unknown case. Surfaced regardless of
+    // routerHasBlockers, since "no blockers" must not also mean "no held
+    // messages are shown".
+    var routerRetryOutbox: [RBOutbox] {
+        (routerBoard?.outbox ?? []).filter { !($0.unreadable ?? false) && ($0.queuedForRetry ?? 0) > 0 }
+    }
     var routerHasBlockers: Bool {
         !routerAuthBlockers.isEmpty || !routerDaemonBlockers.isEmpty || !routerOutboxBlockers.isEmpty
     }
