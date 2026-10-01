@@ -18,6 +18,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
   failure and knows not to retry (retrying would double-apply an
   already-applied cede/reservation). Rejected by SSA review 20260927-143128;
   confirmed still present on main and fixed here.
+## [Unreleased] — `thread register` resolves the authoritative router independently of --repo
+
+- `cmd/sirsi/threadcmd.go` `thread register` derived the router filesystem
+  root directly from `--repo` (`Join(--repo, .agents, idea-router)`), so a
+  surface correctly registering with `--repo` pointed at a portfolio repo
+  that has no router of its own (FinalWishes, sirsi-io, ...) was rejected.
+  Every other `thread` subcommand (heartbeat, close, watch, list) already
+  resolves the router root through `router.FindRepoRoot()` (the canonical
+  git-common-dir/cwd-walk-up/marker resolver); `register` now does the same,
+  while `--repo` continues to be recorded as-is in the registered thread's
+  `Repo` metadata. No new router home, no filesystem fork.
 
 ## [Unreleased] — Codex consumers can reach the router through the spool relay again
 

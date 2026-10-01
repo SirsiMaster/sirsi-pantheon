@@ -111,22 +111,29 @@ var threadRegisterCmd = &cobra.Command{
 	Use:   "register",
 	Short: "Register the current thread/session with CTR",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// repo is registered metadata only (thr.Repo below) — it is NOT where the
+		// router filesystem lives. A registering surface's --repo may correctly be
+		// a portfolio repo (FinalWishes, sirsi-io, ...) that has no .agents/idea-router
+		// of its own; it shares Pantheon's router. routerRoot is therefore always
+		// resolved through the same canonical workspace resolver every other thread
+		// subcommand uses (router.FindRepoRoot — git-common-dir/cwd walk-up), never
+		// derived from --repo. No new router home, no filesystem fork.
 		repo := threadRegRepo
+		authRepoRoot, rrErr := router.FindRepoRoot()
 		if repo == "" {
-			rr, err := router.FindRepoRoot()
-			if err != nil {
-				return fmt.Errorf("no idea-router found and --repo not provided: %w", err)
+			if rrErr != nil {
+				return fmt.Errorf("no idea-router found and --repo not provided: %w", rrErr)
 			}
-			repo = rr
+			repo = authRepoRoot
+		} else {
+			if absRepo, err := filepath.Abs(repo); err == nil {
+				repo = absRepo
+			}
+			if rrErr != nil {
+				return fmt.Errorf("no authoritative router found via workspace resolution for --repo %s: %w", repo, rrErr)
+			}
 		}
-		absRepo, err := filepath.Abs(repo)
-		if err == nil {
-			repo = absRepo
-		}
-		routerRoot := filepath.Join(repo, ".agents", "idea-router")
-		if _, statErr := os.Stat(routerRoot); statErr != nil {
-			return fmt.Errorf("router directory not found at %s", routerRoot)
-		}
+		routerRoot := filepath.Join(authRepoRoot, ".agents", "idea-router")
 
 		if threadRegAgent == "" {
 			return fmt.Errorf("--agent is required")
@@ -139,6 +146,7 @@ var threadRegisterCmd = &cobra.Command{
 		// thread immediately after register exits.
 		anchor := threadRegAnchorPID
 		if anchor <= 0 {
+			var err error
 			anchor, err = resolveAnchorPID(threadRegSurface)
 			if err != nil {
 				return fmt.Errorf("resolve durable thread anchor: %w; pass --anchor-pid for resident surfaces without a recognizable runtime", err)
