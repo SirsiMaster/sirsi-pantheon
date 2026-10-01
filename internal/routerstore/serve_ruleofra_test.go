@@ -131,6 +131,65 @@ func TestSessionCarriesThreadAcrossTheWireAndSurvivesMigration(t *testing.T) {
 	}
 }
 
+// TestMintSessionForThreadReusesLiveSessionForSameThread covers
+// sandboxed-consumer-session-binding: a sandboxed consumer (fork/exec denied,
+// so it cannot run `ps`) re-invokes the CLI as a brand new OS process for
+// every verb — claim, then complete, then release — and its client-side
+// session cache can go missing between any two of those processes. Every
+// such process must still converge on the SAME session for the same
+// registered thread, or a lease bound at claim time can never be completed
+// or released by a later process. A re-mint for a thread with no live
+// session (the thread wasn't registered yet, or its session was revoked)
+// must still mint fresh.
+func TestMintSessionForThreadReusesLiveSessionForSameThread(t *testing.T) {
+	backend := newDst(t)
+
+	first, err := backend.MintSessionForThread("h", "a", "rt", "thr-x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := backend.MintSessionForThread("h", "a", "rt", "thr-x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.ID != first.ID || second.Secret != first.Secret {
+		t.Fatalf("re-mint for the same registered thread must reuse the session: first=%+v second=%+v", first, second)
+	}
+
+	// A different thread, or no thread at all, must never collide with it.
+	otherThread, err := backend.MintSessionForThread("h", "a", "rt", "thr-y")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if otherThread.ID == first.ID {
+		t.Fatalf("a different registered thread must not reuse another thread's session")
+	}
+	legacyA, err := backend.MintSessionForThread("h", "a", "rt", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyB, err := backend.MintSessionForThread("h", "a", "rt", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacyA.ID == legacyB.ID {
+		t.Fatalf("a threadless (legacy) mint must keep minting fresh, not reuse by host/agent/runtime alone")
+	}
+
+	// Once the session is revoked, the next mint for that thread must mint a
+	// fresh one rather than resurrecting the revoked session.
+	if err := backend.RevokeSession(first.ID); err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := backend.MintSessionForThread("h", "a", "rt", "thr-x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fresh.ID == first.ID {
+		t.Fatalf("a revoked session must not be reused")
+	}
+}
+
 func fmtSprintf(f string, a ...any) string { return strings.TrimSpace(fmt.Sprintf(f, a...)) }
 
 // SSA 2026-09-10 (PR #724 P1): an unregistered caller must not be able to

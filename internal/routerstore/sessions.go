@@ -55,9 +55,30 @@ func (s *SQLiteStore) MintSession(host, agent, runtimeHash string) (Session, err
 // MintSessionForThread mints a session bound to a registered thread (the Rule
 // of Ra, ADR-062 20b.1). threadID may be empty for legacy callers; the service
 // then treats every mutation from that session as unregistered.
+//
+// When threadID is non-empty, an existing live session already bound to the
+// exact same (host, agent, runtimeHash, threadID) is reused instead of
+// minting a fresh one. A sandboxed consumer (fork/exec denied, so it cannot
+// run `ps`) re-invokes the CLI as a brand new OS process for every verb —
+// claim, then complete, then release — and each process's client-side
+// session cache can go missing independently (sandboxed-consumer-session-
+// binding, ra ledger 2026-10-01). Without reuse, every such process mints a
+// distinct session id/secret, so the session a task was claimed under can
+// never match the session attempting to complete or release it, and every
+// fenced mutation fails with ErrNotOwner even though it is the same
+// registered thread throughout. Reuse makes the registered thread — not the
+// client's local cache — the source of session identity.
 func (s *SQLiteStore) MintSessionForThread(host, agent, runtimeHash, threadID string) (Session, error) {
 	if host == "" || agent == "" || runtimeHash == "" {
 		return Session{}, errors.New("routerstore: MintSession: host, agent and runtime hash are all required")
+	}
+	if threadID != "" {
+		if existing, ok, err := s.liveSessionForThread(host, agent, runtimeHash, threadID); err != nil {
+			return Session{}, fmt.Errorf("routerstore: MintSession: %w", err)
+		} else if ok {
+			_ = s.TouchSession(existing.ID)
+			return existing, nil
+		}
 	}
 	id, err := randomHex(16)
 	if err != nil {
@@ -73,6 +94,27 @@ func (s *SQLiteStore) MintSessionForThread(host, agent, runtimeHash, threadID st
 		return Session{}, fmt.Errorf("routerstore: MintSession: %w", err)
 	}
 	return Session{ID: id, Secret: secret, Host: host, Agent: agent, RuntimeHash: runtimeHash, ThreadID: threadID, Created: now, LastSeen: now}, nil
+}
+
+// liveSessionForThread returns the most recent non-revoked session already
+// minted for the exact (host, agent, runtimeHash, threadID) tuple, including
+// its secret, so MintSessionForThread can hand the caller back the same
+// session it (or an earlier process acting as the same registered thread)
+// already holds. ok is false when none exists.
+func (s *SQLiteStore) liveSessionForThread(host, agent, runtimeHash, threadID string) (Session, bool, error) {
+	var sess Session
+	err := s.db.QueryRow(`SELECT session_id,secret,host,agent,runtime_hash,thread_id,created,last_seen
+		FROM sessions
+		WHERE host=? AND agent=? AND runtime_hash=? AND thread_id=? AND revoked=''
+		ORDER BY created DESC LIMIT 1`, host, agent, runtimeHash, threadID).
+		Scan(&sess.ID, &sess.Secret, &sess.Host, &sess.Agent, &sess.RuntimeHash, &sess.ThreadID, &sess.Created, &sess.LastSeen)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Session{}, false, nil
+	}
+	if err != nil {
+		return Session{}, false, err
+	}
+	return sess, true, nil
 }
 
 // GetSession returns the session including its secret (server-side use only:

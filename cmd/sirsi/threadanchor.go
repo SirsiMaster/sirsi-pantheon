@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,11 +33,29 @@ type anchorChildLookup func(parentPID int) ([]anchorChild, error)
 // but doomed CTR records. Known interactive surfaces are resolved by executable
 // identity; other resident surfaces must provide an explicit --anchor-pid.
 func resolveAnchorPID(surface string) (int, error) {
-	anchor, err := resolveDurableAnchor(os.Getppid(), surface, lookupAnchorProcess)
+	start := os.Getppid()
+	anchor, err := resolveDurableAnchor(start, surface, lookupAnchorProcess)
 	if err != nil {
+		if isExecPermissionDenied(err) {
+			// Sandboxed consumer (e.g. Codex with fork/exec denied): `ps` cannot
+			// run at all, so the ancestry walk can never answer. Default to the
+			// immediate parent as a resident anchor rather than refusing to
+			// register outright — an unregistered thread is strictly worse than
+			// an anchor one hop shallower than the ideal durable runtime.
+			// (sandboxed-consumer-session-binding, ra ledger 2026-10-01)
+			return start, nil
+		}
 		return 0, err
 	}
 	return refineDesktopAnchor(anchor, surface, os.Getenv("CODEX_INTERNAL_ORIGINATOR_OVERRIDE"), lookupAnchorChildren)
+}
+
+// isExecPermissionDenied reports whether err is the sandbox's refusal to
+// fork/exec at all (as opposed to `ps` being merely absent, or the pid being
+// gone), by checking for the permission errno every failed os.StartProcess
+// wraps. syscall.Errno.Is maps EACCES/EPERM to fs.ErrPermission.
+func isExecPermissionDenied(err error) bool {
+	return errors.Is(err, fs.ErrPermission)
 }
 
 var lookupAnchorProcess anchorProcessLookup = func(pid int) (anchorProcess, error) {

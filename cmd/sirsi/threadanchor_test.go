@@ -2,6 +2,9 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"syscall"
 	"testing"
 )
 
@@ -134,6 +137,43 @@ func TestResolveDurableAnchorFailsOnAmbiguousOrBrokenAncestry(t *testing.T) {
 			t.Fatal("expected lookup error")
 		}
 	})
+}
+
+// TestResolveAnchorPIDFallsBackToResidentAnchorWhenPsIsSandboxDenied covers
+// sandboxed-consumer-session-binding: a Codex-style sandbox refuses fork/exec
+// of `ps` entirely (EPERM), so the ancestry walk can never answer. Thread
+// registration must still succeed, anchored at the immediate parent, rather
+// than refusing to register at all.
+func TestResolveAnchorPIDFallsBackToResidentAnchorWhenPsIsSandboxDenied(t *testing.T) {
+	original := lookupAnchorProcess
+	lookupAnchorProcess = func(pid int) (anchorProcess, error) {
+		return anchorProcess{}, &exec.Error{Name: "ps", Err: &os.SyscallError{Syscall: "fork/exec", Err: syscall.EPERM}}
+	}
+	t.Cleanup(func() { lookupAnchorProcess = original })
+
+	got, err := resolveAnchorPID("codex")
+	if err != nil {
+		t.Fatalf("resolveAnchorPID: unexpected error %v", err)
+	}
+	if want := os.Getppid(); got != want {
+		t.Fatalf("anchor=%d, want resident fallback to parent pid %d", got, want)
+	}
+}
+
+// TestResolveAnchorPIDStillFailsClosedOnNonPermissionErrors confirms the
+// sandbox fallback is scoped to permission denial only — an ordinary lookup
+// failure (pid gone, ambiguous ancestry, etc.) must still fail closed rather
+// than silently anchoring somewhere unproven.
+func TestResolveAnchorPIDStillFailsClosedOnNonPermissionErrors(t *testing.T) {
+	original := lookupAnchorProcess
+	lookupAnchorProcess = func(pid int) (anchorProcess, error) {
+		return anchorProcess{}, fmt.Errorf("inspect pid %d: no such process", pid)
+	}
+	t.Cleanup(func() { lookupAnchorProcess = original })
+
+	if got, err := resolveAnchorPID("codex"); err == nil {
+		t.Fatalf("anchor=%d, want error for a non-permission lookup failure", got)
+	}
 }
 
 func TestDurableRuntimeForSurfaceRejectsHelpersAndCrossSurfaceMatches(t *testing.T) {
