@@ -6,6 +6,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [Unreleased] — Node status reports spool outbox health honestly (read-only)
+
+- `router.NodeStatus` (`sirsi router node-status --json`, GET /api/node-status)
+  gains `outbox` (per-agent held/queued-for-retry spool relay items, ADR-069)
+  and `outbox_health_error`. Collection is strictly read-only — it only globs
+  `<spool>/<agent>/outbox/*.json`, never drains or retries anything — and is
+  populated only on a host whose `SIRSI_ROUTER_URL` is a `spool://` relay; a
+  non-spool host reports neither field rather than a fabricated all-clear.
+  New `internal/routerstore.SpoolOutboxHealth`. Foundational piece of the Ra
+  native fabric read-only health panel (item 20260930-230149); the Swift UI
+  surface and the still-unmerged Ra fabric candidate are separate follow-up
+  work, not bundled here.
+
 ## [Unreleased] — Codex consumers can reach the router through the spool relay again
 
 - Every Codex lane's consumer now passes `--add-dir /var/sirsipantheon/relay`.

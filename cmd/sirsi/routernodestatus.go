@@ -136,6 +136,15 @@ func renderNodeStatus(ns *router.NodeStatus) {
 		}
 		fmt.Println()
 	}
+	if ns.OutboxHealthError != "" {
+		fmt.Printf("  ⚠ Spool outbox health unreadable: %s\n\n", ns.OutboxHealthError)
+	} else if len(ns.Outbox) > 0 {
+		fmt.Println("  Spool outbox (held, queued for retry):")
+		for _, o := range ns.Outbox {
+			fmt.Printf("    %s: %d queued for retry\n", o.Agent, o.QueuedForRetry)
+		}
+		fmt.Println()
+	}
 	if len(ns.LaunchAgents) > 0 {
 		fmt.Println("  Router/App helpers:")
 		for _, h := range ns.LaunchAgents {

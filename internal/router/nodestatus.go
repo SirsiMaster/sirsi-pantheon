@@ -84,6 +84,15 @@ type NodeStatus struct {
 	LiveThreads     []ThreadSummary `json:"live_threads,omitempty"`
 	StaleThreads    []ThreadSummary `json:"stale_threads,omitempty"`
 	LiveThreadCount int             `json:"live_thread_count"`
+
+	// Outbox: per-agent held (queued-for-retry) spool relay items (ADR-069),
+	// read-only — collecting this NEVER drains, retries, or deletes anything.
+	// Populated only on a host that actually runs the relay
+	// (SIRSI_ROUTER_URL is spool://); empty elsewhere, never faked.
+	// OutboxHealthError reports an honest failure to read the spool root
+	// instead of silently rendering an empty, all-clear outbox.
+	Outbox            []routerstore.SpoolAgentOutbox `json:"outbox,omitempty"`
+	OutboxHealthError string                         `json:"outbox_health_error,omitempty"`
 }
 
 // ThreadSummary is the operator-visible projection of a Thread record.
@@ -417,6 +426,15 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 				ns.PendingByAgent[agent] = ids
 				ns.TotalPending += len(ids)
 			}
+		}
+	}
+
+	// --- Spool outbox health (ADR-069, read-only — never drains) ---
+	if spoolDir := routerstore.SpoolDir(strings.TrimSpace(os.Getenv("SIRSI_ROUTER_URL"))); spoolDir != "" {
+		if outbox, oErr := routerstore.SpoolOutboxHealth(spoolDir); oErr != nil {
+			ns.OutboxHealthError = oErr.Error()
+		} else {
+			ns.Outbox = outbox
 		}
 	}
 
