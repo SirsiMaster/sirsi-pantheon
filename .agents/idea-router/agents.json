@@ -883,7 +883,7 @@
   },
   "aliases": {
     "claude-finalwishes": "claude-finalwishes-m1",
-    "claude-finalwishes-helper": "claude-finalwishes-m5",
+    "claude-finalwishes-helper": "claude-finalwishes-m1",
     "claude-inference-cylton": "claude-inference",
     "cylton-apollo": "claude-inference",
     "claude-io-cylton": "hermes-m5",
@@ -893,6 +893,7 @@
     "codex-sne-runtime": "codex-apollo",
     "codex-io": "claude-io",
     "codex-nexus": "claude-nexus",
-    "codex-home": "claude-home"
+    "codex-home": "claude-home",
+    "ssa": "sirsi-software-admin"
   }
 }
