@@ -147,7 +147,9 @@ a cable; it is the rails.lock replacement.`,
 			if res.Conflict != nil {
 				conflictHolder = res.Conflict.Holder
 			}
-			logFloorGrant(l, req.Holder, req.Resource, res.Reservation, conflictHolder)
+			if err := logFloorGrant(l, req.Holder, req.Resource, res.Reservation, conflictHolder); err != nil {
+				return err
+			}
 		}
 		if err := recordReservationDecision(req, res); err != nil {
 			// The scheduler state is already durable. Return the append failure
@@ -181,11 +183,11 @@ func printFloorGrant(r *schedule.Reservation) {
 	}
 }
 
-// logFloorGrant appends the decision-ledger line for a floor-share grant
-// (best-effort, via logCedeDecision). affected is the conflicting holder's
-// name when the floor came from a live conflict, and/or the requesters of
-// any open cede that also capped the grant.
-func logFloorGrant(l *schedule.Ledger, holder, resource string, r *schedule.Reservation, conflictHolder string) {
+// logFloorGrant appends the decision-ledger line for a floor-share grant via
+// logCedeDecision and returns its append error. affected is the conflicting
+// holder's name when the floor came from a live conflict, and/or the
+// requesters of any open cede that also capped the grant.
+func logFloorGrant(l *schedule.Ledger, holder, resource string, r *schedule.Reservation, conflictHolder string) error {
 	affected := conflictHolder
 	evidence := r.ID
 	if len(r.PendingCedes) > 0 {
@@ -201,7 +203,10 @@ func logFloorGrant(l *schedule.Ledger, holder, resource string, r *schedule.Rese
 		evidence += "," + strings.Join(r.PendingCedes, ",")
 	}
 	assessed := fmt.Sprintf("reserve %s (floor %d cores)", resource, r.Cores)
-	logCedeDecision("reserve", "grant-floor", holder, resource, assessed, affected, r.Reason, evidence)
+	if err := logCedeDecision("reserve", "grant-floor", holder, resource, assessed, affected, r.Reason, evidence); err != nil {
+		return cedeProjectionErr("grant-floor", r.ID, err)
+	}
+	return nil
 }
 
 var maatStatusCmd = &cobra.Command{
@@ -302,7 +307,9 @@ var maatExtendCmd = &cobra.Command{
 			return err
 		}
 		if r.Share == schedule.ShareFloor && len(r.PendingCedes) > 0 {
-			logFloorGrant(l, r.Holder, r.Resource, r, "")
+			if err := logFloorGrant(l, r.Holder, r.Resource, r, ""); err != nil {
+				return err
+			}
 		}
 		if maatJSON {
 			return emitJSON(r)

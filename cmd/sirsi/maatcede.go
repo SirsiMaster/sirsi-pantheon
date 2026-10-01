@@ -77,33 +77,48 @@ func shortHostname() string {
 	return h
 }
 
-// logCedeDecision appends one JSON line to the decision ledger. Best-effort:
-// a write failure never fails the cede operation, only warns on stderr.
-func logCedeDecision(kind, determination, requester, resource, assessed, affected, why, evidence string) {
-	rec := cedeDecisionRecord{
+// logCedeDecision appends one JSON line to the decision ledger and returns
+// the append error (mkdir/open/write) to the caller instead of swallowing
+// it. The scheduler transition this projects has already committed by the
+// time this runs, so a failure here is reported, never silently dropped —
+// the CLI must not claim a durable cede success when the ledger record
+// never landed.
+func logCedeDecision(kind, determination, requester, resource, assessed, affected, why, evidence string) error {
+	return appendCedeDecision(cedeDecisionRecord{
 		TS: time.Now().Format(time.RFC3339), Host: shortHostname(),
 		Kind: kind, Determination: determination, Requester: requester, Resource: resource,
 		Assessed: assessed, Affected: affected, Why: why, Evidence: evidence,
-	}
+	})
+}
+
+// appendCedeDecision does the actual marshal/mkdir/open/write; injected as a
+// variable per A16 so tests can force each failure mode deterministically.
+var appendCedeDecision = func(rec cedeDecisionRecord) error {
 	b, err := json.Marshal(rec)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "𓆄 warning: decision ledger marshal failed: %v\n", err)
-		return
+		return fmt.Errorf("decision ledger marshal failed: %w", err)
 	}
 	path := decisionsPath()
 	if mkdirErr := os.MkdirAll(filepath.Dir(path), 0o755); mkdirErr != nil {
-		fmt.Fprintf(os.Stderr, "𓆄 warning: decision ledger mkdir failed: %v\n", mkdirErr)
-		return
+		return fmt.Errorf("decision ledger mkdir failed: %w", mkdirErr)
 	}
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "𓆄 warning: decision ledger open failed: %v\n", err)
-		return
+		return fmt.Errorf("decision ledger open failed: %w", err)
 	}
 	defer f.Close()
 	if _, err := f.Write(append(b, '\n')); err != nil {
-		fmt.Fprintf(os.Stderr, "𓆄 warning: decision ledger write failed: %v\n", err)
+		return fmt.Errorf("decision ledger write failed: %w", err)
 	}
+	return nil
+}
+
+// cedeProjectionErr wraps a logCedeDecision failure with the fact that the
+// scheduler transition already committed under id — so the CLI reports a
+// clear failure instead of a false success, and a caller must not retry the
+// same request (it would double-apply an already-committed transition).
+func cedeProjectionErr(op, id string, err error) error {
+	return fmt.Errorf("cede %s committed (id %s) but decision ledger projection failed — do not retry, the transition already applied: %w", op, id, err)
 }
 
 // cedeAssessed renders the "assessed" field, e.g. "cede machine 25 min on m1
@@ -146,7 +161,9 @@ var maatCedeRequestCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		logCedeDecision("cede-request", "pending", c.Requester, c.Resource, cedeAssessed(c), c.Holder, c.Reason, c.ID)
+		if err := logCedeDecision("cede-request", "pending", c.Requester, c.Resource, cedeAssessed(c), c.Holder, c.Reason, c.ID); err != nil {
+			return cedeProjectionErr("request", c.ID, err)
+		}
 		if maatJSON {
 			return emitJSON(c)
 		}
@@ -179,7 +196,9 @@ func respondCedeCmd(use, short string, status schedule.CedeStatus) *cobra.Comman
 					why = fmt.Sprintf("%s — counter: %s", why, c.Decision.Counter)
 				}
 			}
-			logCedeDecision(info.Kind, info.Determination, by, c.Resource, cedeAssessed(c), c.Requester, why, c.ID)
+			if err := logCedeDecision(info.Kind, info.Determination, by, c.Resource, cedeAssessed(c), c.Requester, why, c.ID); err != nil {
+				return cedeProjectionErr(info.Determination, c.ID, err)
+			}
 			if maatJSON {
 				return emitJSON(c)
 			}
@@ -207,7 +226,9 @@ var maatCedeWithdrawCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		logCedeDecision("cede-withdraw", "withdraw", by, c.Resource, cedeAssessed(c), c.Holder, c.Reason, c.ID)
+		if err := logCedeDecision("cede-withdraw", "withdraw", by, c.Resource, cedeAssessed(c), c.Holder, c.Reason, c.ID); err != nil {
+			return cedeProjectionErr("withdraw", c.ID, err)
+		}
 		if maatJSON {
 			return emitJSON(c)
 		}
