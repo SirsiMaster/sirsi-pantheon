@@ -158,11 +158,27 @@ and does not mutate any tag, release, or PR.`,
 
 		requester, err := resolveSubmitRequester()
 		if err != nil {
-			_ = appendSubmitDecision("unknown", resource, repo, kind, "refuse", err.Error())
+			// codex-pantheon review (router item 20261001-041706): this branch
+			// discarded the ledger-append error while the policy branch below
+			// correctly propagates it, making the documented "every grant/
+			// refusal is written" contract false specifically for identity
+			// refusals. The determination itself stays refuse either way (a
+			// denied operation stays denied) — but an append failure must be
+			// VISIBLE, not silently coexist with a clean-looking refusal.
+			appendErr := appendSubmitDecision("unknown", resource, repo, kind, "refuse", err.Error())
 			if maatJSON {
-				_ = emitJSON(map[string]any{"determination": "refuse", "why": err.Error()})
+				payload := map[string]any{"determination": "refuse", "why": err.Error()}
+				if appendErr != nil {
+					payload["ledger_error"] = appendErr.Error()
+				}
+				if jsonErr := emitJSON(payload); jsonErr != nil {
+					fmt.Fprintf(os.Stderr, "𓆄 WARNING: failed to emit JSON result: %s\n", jsonErr.Error())
+				}
 			} else {
 				fmt.Printf("𓆄 refuse: %s\n", err.Error())
+				if appendErr != nil {
+					fmt.Printf("𓆄 WARNING: decision ledger append failed, this refusal was NOT recorded: %s\n", appendErr.Error())
+				}
 			}
 			os.Exit(admissionRefusedExit)
 		}
