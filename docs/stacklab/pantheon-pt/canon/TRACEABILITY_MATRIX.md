@@ -2,6 +2,8 @@
 
 | Requirement | Source | Verification/evidence | State |
 |---|---|---|---|
+| Token-fenced router completion | `internal/routerstore`, `internal/router`, `internal/mcp` | PR944 mainline CI: backend-aware tests and MCP route coverage | candidate-bound; release CI receipt required |
+| Truthful lane dispatch and recovery | `internal/router`, `internal/routerboard`, `cmd/sirsi` | `router ping`, worker acknowledgement, ledger dispatch, and `router reopen` tests | candidate-bound; runtime receipt required |
 | One engine across supported surfaces | `cmd/sirsi`, `internal/*`, native sources | identity and package-inventory evidence | source-bound; runtime proof required |
 | Project-scoped native workflows remain repairable | `macapp/Sources/SirsiMenubar/{Views,SirsiEngine}.swift` | Finder selection validates a Git root/worktree and preserves the current root on error | source-bound; native test verifies worktree admission |
 | Bounded native I/O | runner and native output-bound tests | focused normal/race evidence | source lineage accepted; execution evidence separate |
