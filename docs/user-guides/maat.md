@@ -48,6 +48,29 @@ pause/resume Ma'at makes is recorded to `~/.sirsi/maat/decisions.jsonl` (one
 host's file — see `internal/maat/decision/README.md` for the cross-host
 follow-up). `sirsi maat reserve|release|conflict-check` write here natively.
 
+### GitHub submission attribution (Phase 1)
+```bash
+sirsi maat submit --kind release --repo OWNER/REPO --ref v1.2.3
+sirsi maat submit --kind merge --repo OWNER/REPO --ref <sha> --json
+```
+
+Every Sirsi agent pushes to GitHub as the one SirsiMaster account, so GitHub
+itself can't tell which lane tagged, released, or merged something. `maat
+submit` records who actually did it: the requester is derived from your
+registered session marker (`sirsi thread register`) and checked against the
+declared agent registry — never a flag or a self-declared name. Phase 1
+enforces a hardcoded per-repo allowlist (currently: only `hermes` may submit
+for `sirsi-hermes`/`sirsi-photon`); repos with no policy defined are admitted
+with attribution. Every grant or refusal is written to the decision ledger
+above. Exits `97` on refusal (same convention as `reserve`/`conflict-check`).
+
+This is registry-declaration eligibility (the same boundary
+`dispatch.ValidateAgent` enforces elsewhere), not live-session cryptographic
+authentication — a compromised local account can still forge its own marker
+file. Phase 1 is attribution, not a security perimeter. It does not watch
+GitHub and does not mutate any tag, release, or PR; that's an explicitly
+separate, independently-reviewed later phase.
+
 ## Pre-Push Gate
 
 Ma'at runs automatically on every `git push` via the pre-push hook:
