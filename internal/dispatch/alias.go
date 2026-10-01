@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
 
 // Aliases returns agents.json's retired-name map (ADR-072 C5): a retired
@@ -125,4 +127,46 @@ func (f *Facade) DrainAliases(actor string, dryRun bool) ([]DrainResult, error) 
 		}
 	}
 	return out, nil
+}
+
+// Reopen returns a closed item to open, preserving its close result. It is the
+// undo for CloseItem and carries the same authority: the item's recipient, or an
+// actor holding close:any. An item addressed to the owner can be reopened only by
+// the owner (an agent must not put work back on the owner's board). A reason is
+// required so every reopen is explained in the item's own body.
+func (f *Facade) Reopen(actor, id, reason string) error {
+	if err := f.ValidateAgent("acting agent", actor); err != nil {
+		return err
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return fmt.Errorf("dispatch: reopen %s: a reason is required", id)
+	}
+	it, err := f.store.Get(id)
+	if err != nil {
+		return err
+	}
+	if it.Status != "closed" {
+		return fmt.Errorf("dispatch: reopen %s: item is %q, not closed", id, it.Status)
+	}
+	if work.IsOwnerRecipient(it.To) {
+		if !work.IsOwnerRecipient(actor) {
+			return fmt.Errorf("dispatch: item %s is addressed to the owner (%q); only the owner can reopen it", id, it.To)
+		}
+	} else if it.To != actor {
+		allowed, cerr := f.agentHasCapability(actor, "close:any")
+		if cerr != nil {
+			return fmt.Errorf("dispatch: verify delegated-reopen authority: %w", cerr)
+		}
+		if !allowed {
+			return fmt.Errorf("dispatch: %s cannot reopen item %s addressed to %q without capability close:any", actor, id, it.To)
+		}
+	}
+	note := fmt.Sprintf("\n\n---\n_Router: reopened by %s at %s. Reason: %s. The previous close result follows._\n\n",
+		actor, time.Now().UTC().Format(time.RFC3339), reason)
+	if err := f.store.ReopenItem(id, note); err != nil {
+		return err
+	}
+	f.store.NotifyAgent(it.To)
+	return nil
 }

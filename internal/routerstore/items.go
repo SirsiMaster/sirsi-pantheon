@@ -109,6 +109,32 @@ func (s *SQLiteStore) AckItem(id string) error {
 	return nil // already acknowledged — the first timestamp stands
 }
 
+// ReopenItem is the exact inverse of CloseItem: a closed item goes back to open,
+// its close result is preserved (appended to the body with note, never lost),
+// and the closed timestamp is cleared. The UPDATE is guarded on status='closed',
+// so a repeat or a race matches no row; zero rows is disambiguated by a Get.
+// Who may reopen is decided one layer up in dispatch.Facade.Reopen; the store is
+// identity-agnostic, like CloseItem.
+func (s *SQLiteStore) ReopenItem(id, note string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("routerstore: ReopenItem: id is required")
+	}
+	res, err := s.exec(`UPDATE items SET status='open', closed='', instructions = instructions || ? || result, result='',
+		wake_status='', wake_error='' WHERE id = ? AND status = 'closed';`, note, id)
+	if err != nil {
+		return fmt.Errorf("routerstore: ReopenItem %q: %w", id, err)
+	}
+	if n, _ := res.RowsAffected(); n == 1 {
+		return nil
+	}
+	it, gerr := s.Get(id)
+	if gerr != nil {
+		return gerr
+	}
+	return fmt.Errorf("routerstore: ReopenItem %q: item is %q, not closed", id, it.Status)
+}
+
 // SetBlockedBy replaces an item's optional dependency edge.
 func (s *SQLiteStore) SetBlockedBy(id, blockedBy string) error {
 	res, err := s.exec(`UPDATE items SET blocked_by=? WHERE id=?;`, strings.TrimSpace(blockedBy), id)
