@@ -22,6 +22,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased] — staff the unstaffed lanes; workers acknowledge and are linked to their lane
 
+- **Sandboxed consumers register and keep one session per claim→release.** A
+  consumer with `/bin/ps` fork/exec denied (Codex-style sandbox) could never
+  register a thread, because the durable-anchor ancestry walk requires `ps`
+  and failed closed on any lookup error; `resolveAnchorPID` now falls back to
+  the immediate parent pid when the walk fails specifically on permission
+  denial, while still failing closed on every other lookup error. Separately,
+  a re-invoked CLI process (one per verb: claim, complete, release) could
+  mint a brand-new session each time its local cache was unavailable, so the
+  session a task was claimed under never matched the session completing or
+  releasing it; `MintSessionForThread` now reuses the existing live session
+  for the same `(host, agent, runtimeHash, threadID)` tuple instead of
+  minting fresh, so a fenced `complete`/`release` succeeds across separate
+  processes acting as the same registered thread.
+
 - **Dispatch gate reads idle CPU, not load average.** Load average counts Spotlight and Photos analysis, which only take cores nothing else wants; the M1 sat at load 13-17 on 10 cores with 36% idle and deferred every lane. The gate now defers only when idle CPU falls below 10% (falls back to half the load average if `top` is unreadable).
 
 - **Lanes staffed:** `hermes`, `claude-io` (now on the M1, directory `sirsi-io-connect`),
