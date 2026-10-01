@@ -36,6 +36,17 @@ var repoRoot string
 var testStoreDB string
 
 func TestMain(m *testing.M) {
+	// TestSubmitCommandExitCode (maatsubmit_test.go) re-executes this same
+	// compiled test binary as a subprocess to observe a real os.Exit, via
+	// MAAT_SUBMIT_HELPER=1 — it calls maatSubmitCmd.RunE in-process and never
+	// touches testBinary below. Running the full `go build ./cmd/sirsi/` for
+	// each of those subprocess invocations was pure waste (up to 4x per test
+	// run) and, under concurrent build load, a source of spurious timeouts
+	// unrelated to the helper's own logic. Skip straight to m.Run().
+	if os.Getenv("MAAT_SUBMIT_HELPER") == "1" {
+		os.Exit(m.Run())
+	}
+
 	// Determine the repo root (two levels up from cmd/sirsi/).
 	wd, err := os.Getwd()
 	if err != nil {
