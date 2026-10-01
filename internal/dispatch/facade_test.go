@@ -255,6 +255,107 @@ func TestCloseItemRefusesOwnerRecipient(t *testing.T) {
 	}
 }
 
+// TestCompleteItemClosesALiveClaim reproduces the exact producer/claim/
+// complete chain codex-pantheon's independent review used to reject PR944
+// (router item 20261001-131036): Send → ClaimNext → the MCP router_close
+// path. Before the fix, router_close called CloseItem (guarded on
+// status='open') against an item ClaimNext had already moved to 'claimed',
+// so a legitimately live claim could never close. CompleteItem must succeed
+// on the SAME lease that CloseItem would refuse. Forced store-only
+// (StoreWakeEnv=1) to match the real MCP server's post-cutover path codex
+// tested — pre-cutover dual-write would let CloseItem's file-world mutation
+// mask the store result this test exists to pin.
+func TestCompleteItemClosesALiveClaim(t *testing.T) {
+	t.Setenv(routercfg.StoreWakeEnv, "1")
+	f := testFacade(t)
+	res, err := f.Send("a", "b", "claimed work", "review", "body")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := f.Store().ClaimNext("b", time.Minute)
+	if err != nil || lease == nil {
+		t.Fatalf("ClaimNext() = %v, %v", lease, err)
+	}
+	// The defect this guards: CloseItem's status='open' guard rejects the
+	// claimed item outright, independent of any token.
+	if closeErr := f.CloseItem("b", res.ID, "wrong verb"); closeErr == nil {
+		t.Fatalf("CloseItem on a claimed item unexpectedly succeeded — guard regressed")
+	}
+	if completeErr := f.CompleteItem("b", res.ID, lease.Token, "done"); completeErr != nil {
+		t.Fatalf("CompleteItem() on a live claim = %v, want success", completeErr)
+	}
+	item, err := f.Get(res.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.Status != "completed" || item.Result != "done" {
+		t.Fatalf("item after CompleteItem = %+v, want status=completed result=done", item)
+	}
+}
+
+// TestCompleteItemRefusesStaleTokenAfterReclaim is the negative control: once
+// a lease expires and ClaimNext hands it to a second claimant, the FIRST
+// claimant's token must no longer complete it — the single atomic UPDATE
+// (token+expiry+status) is what makes this safe without a separate
+// verify-then-act window.
+func TestCompleteItemRefusesStaleTokenAfterReclaim(t *testing.T) {
+	t.Setenv(routercfg.StoreWakeEnv, "1")
+	f := testFacade(t)
+	res, err := f.Send("a", "b", "reclaimed work", "review", "body")
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstLease, err := f.Store().ClaimNext("b", time.Nanosecond)
+	if err != nil || firstLease == nil {
+		t.Fatalf("first ClaimNext() = %v, %v", firstLease, err)
+	}
+	time.Sleep(time.Millisecond)
+	secondLease, err := f.Store().ClaimNext("b", time.Minute)
+	if err != nil || secondLease == nil {
+		t.Fatalf("reclaim ClaimNext() = %v, %v", secondLease, err)
+	}
+	if firstLease.Token == secondLease.Token {
+		t.Fatalf("reclaim minted the same token; test cannot distinguish stale from live")
+	}
+	if completeErr := f.CompleteItem("b", res.ID, firstLease.Token, "stale"); !errors.Is(completeErr, routerstore.ErrLeaseInvalid) {
+		t.Fatalf("CompleteItem with the superseded token = %v, want ErrLeaseInvalid", completeErr)
+	}
+	if completeErr := f.CompleteItem("b", res.ID, secondLease.Token, "fresh"); completeErr != nil {
+		t.Fatalf("CompleteItem with the live reclaimed token = %v, want success", completeErr)
+	}
+}
+
+// TestCompleteItemStaleTokenNeverTouchesTheFile is the pre-cutover mirror of
+// the split-outcome defect codex-pantheon's PR944 review caught in CloseItem
+// (store refusal, but the file had already been marked closed): a stale or
+// superseded token must fail BEFORE any file mutation, not after.
+func TestCompleteItemStaleTokenNeverTouchesTheFile(t *testing.T) {
+	t.Setenv(routercfg.StoreWakeEnv, "0") // pre-cutover: dual-write, file exists
+	f := testFacade(t)
+	res, err := f.Send("a", "b", "stale token", "review", "body")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := f.Store().ClaimNext("b", time.Nanosecond)
+	if err != nil || lease == nil {
+		t.Fatalf("ClaimNext() = %v, %v", lease, err)
+	}
+	time.Sleep(time.Millisecond)
+	if _, reclaimErr := f.Store().ClaimNext("b", time.Minute); reclaimErr != nil {
+		t.Fatalf("reclaim ClaimNext() = %v", reclaimErr)
+	}
+	if completeErr := f.CompleteItem("b", res.ID, lease.Token, "stale"); !errors.Is(completeErr, routerstore.ErrLeaseInvalid) {
+		t.Fatalf("CompleteItem with the superseded token = %v, want ErrLeaseInvalid", completeErr)
+	}
+	before, err := work.Get(f.root, res.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before.Status == "closed" {
+		t.Fatalf("file was closed by a refused store completion: %+v", before)
+	}
+}
+
 // TestDismissOwnerItem covers the follow-up claude-home raised against
 // TestCloseItemRefusesOwnerRecipient: with CloseItem's owner guard
 // unconditional and the owner alias absent from agents.json (so

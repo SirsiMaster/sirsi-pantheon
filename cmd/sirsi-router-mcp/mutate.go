@@ -11,6 +11,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -23,6 +24,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/machineid"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/mcp"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
 
 // heartbeatInterval is bounded and ≥60s (A27) — inside the 10-min Rule-of-Ra
@@ -334,24 +336,25 @@ func handleClose(args map[string]interface{}) (*mcp.ToolResult, error) {
 		return errResult(err.Error()), nil
 	}
 	defer closeF()
-	// Fence against the DURABLE lease (router item 20261001-031502, Ra
-	// ACCEPTED): the local claimToken above only proves this instance ONCE
-	// held the claim and its own record hasn't locally expired — it cannot
-	// see that the lease was reclaimed by another instance after expiry. An
-	// error here (including an old deployed service that predates this
-	// method) is treated as "cannot verify" and refuses — never falls back to
-	// an unfenced close.
-	live, verr := f.Store().VerifyLease(id, token)
-	if verr != nil {
-		if strings.Contains(verr.Error(), "no such store method") {
-			return errResult(fmt.Sprintf("router_close: %s — the router service predates lease verification; refusing rather than closing unfenced", id)), nil
+	// Complete against the DURABLE lease (router item 20261001-031502 Ra
+	// ACCEPTED, corrected 20261001-131036 codex-pantheon CHANGES REQUIRED
+	// PR944): the local claimToken above only proves this instance ONCE held
+	// the claim and its own record hasn't locally expired — it cannot see
+	// that the lease was reclaimed by another instance after expiry, and a
+	// separate VerifyLease-then-CloseItem pair leaves a TOCTOU window where a
+	// reclaim lands between the two calls AND CloseItem itself guards on
+	// status='open', which a claimed item never is. CompleteItem fences
+	// token+expiry+status in the SAME atomic UPDATE as the mutation. An error
+	// here (including an old deployed service that predates Complete) is
+	// treated as "cannot verify" and refuses — never falls back to an
+	// unfenced close.
+	if err := f.CompleteItem(agent, id, token, stringArg(args, "result")); err != nil {
+		if strings.Contains(err.Error(), "no such store method") {
+			return errResult(fmt.Sprintf("router_close: %s — the router service predates lease-fenced completion; refusing rather than closing unfenced", id)), nil
 		}
-		return errResult(fmt.Sprintf("router_close: %s — could not verify claim is still live, refusing: %v", id, verr)), nil
-	}
-	if !live {
-		return errResult(fmt.Sprintf("router_close: %s — your claim expired or moved to another instance; re-claim with router_claim before closing", id)), nil
-	}
-	if err := f.CloseItem(agent, id, stringArg(args, "result")); err != nil {
+		if errors.Is(err, routerstore.ErrLeaseInvalid) {
+			return errResult(fmt.Sprintf("router_close: %s — your claim expired or moved to another instance; re-claim with router_claim before closing", id)), nil
+		}
 		return errResult(fmt.Sprintf("close: %v", err)), nil
 	}
 	return textResult(fmt.Sprintf("Closed %s", id)), nil
