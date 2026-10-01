@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [0.24.57] — 2026-10-01
+
+- **Menubar:** surface readable queued-for-retry and unreadable router spool
+  outbox state as a read-only operator projection, with Swift reachability
+  coverage (PR #933, ADR-069).
+- **Release identity:** align the source `VERSION`, embedded binary version,
+  and release tag after the stale embedded version in v0.24.56.
+
 ## [Unreleased] — Ma'at cede/reservation decision ledger reports append failures instead of swallowing them
 
 - `cmd/sirsi/maatcede.go` `logCedeDecision` and `cmd/sirsi/maatschedule.go`
