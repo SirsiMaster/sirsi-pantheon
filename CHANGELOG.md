@@ -20,6 +20,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 - **Release identity:** align the source `VERSION`, embedded binary version,
   and release tag after the stale embedded version in v0.24.56.
 
+## [Unreleased] — `sirsi router reopen`: the undo for close
+
+- New `sirsi router reopen <id> --reason <text|@file>` returns a closed item to
+  open, keeping its close result in the body with who, when and why. Same
+  authority as close (the recipient, or an actor with `close:any`); an
+  owner-addressed item can only be reopened by the owner. A reason is required.
+  On 2026-10-01 a live request was closed by a bad id and there was no way back;
+  this is step 1 of the local router reconciler (ledger ra/router-local-reconciler),
+  so every automatic close can be reversed. Store `ReopenItem` is served by the
+  existing reflective server (no schema change).
+
 ## [Unreleased] — alias fixes: claude-finalwishes-helper → claude-finalwishes-m1, ssa → sirsi-software-admin
 
 - `claude-finalwishes-helper` is the M1 FinalWishes Claude lane, not the M5 one

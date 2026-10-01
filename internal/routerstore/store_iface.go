@@ -96,6 +96,9 @@ type Store interface {
 	Satisfy(reqID string) error
 	Send(from, to, title, msgType, instructions string) (string, error)
 	SendGuarded(r SendReq) (string, bool, error)
+	// ReopenItem returns a closed item to open, preserving its close result in the
+	// body (inverse of CloseItem). Authorization is dispatch's.
+	ReopenItem(id, note string) error
 	// ReassignItem moves an unclaimed open item to another recipient, keeping its
 	// id and history (ADR-072 C5 alias draining). Authorization is dispatch's.
 	ReassignItem(id, from, to, note string) error
