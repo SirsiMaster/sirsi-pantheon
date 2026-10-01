@@ -302,6 +302,78 @@ func TestIdentityOwnershipRemintFallbackRequiresSameAgent(t *testing.T) {
 	}
 }
 
+// TestIdentityOwnershipRemintFallbackRequiresSameHostItem is the fix for
+// codex-pantheon's CHANGES REQUIRED on the first version of this fallback
+// (router item 20261001-154515, PR947): agent+thread_id alone is not
+// sufficient, because MintSessionForThread accepts a caller-supplied
+// agent/thread with no registration check of its own (the Rule of Ra gate
+// defaults to "log", not "enforce"). A second, genuinely different host can
+// mint its OWN correctly-authenticated session claiming the SAME agent and
+// thread_id strings as the real owner, then — without this host check —
+// complete the owner's lease with a copied token. Mirrors codex's
+// reproduction shape (two distinct hosts, real Handler, separate signed
+// sessions, same agent/thread strings) but through the package's existing
+// RemoteStore/httptest harness rather than a custom RoundTripper.
+func TestIdentityOwnershipRemintFallbackRequiresSameHostItem(t *testing.T) {
+	h := newIdentityHarness(t)
+	const thread = "thr-cross-host"
+
+	owner := h.client("claude-cross-host")
+	owner.host = "host-a"
+	owner.threadID = thread
+	id, _, err := owner.SendGuarded(SendReq{From: "x", To: "claude-cross-host", Title: "t", Type: "proposal", Instructions: "i"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := owner.ClaimNext("claude-cross-host", time.Minute)
+	if err != nil || lease == nil {
+		t.Fatalf("claim: %v, %v", lease, err)
+	}
+
+	// A second, DIFFERENT host, same agent and thread_id strings, its own
+	// independently minted and signed session — the exact cross-host
+	// reproduction, not a copied credential.
+	impostor := h.client("claude-cross-host")
+	impostor.host = "host-b"
+	impostor.threadID = thread
+	if err := impostor.Complete(id, lease.Token, "stolen via cross-host remint"); !errors.Is(err, ErrNotOwner) {
+		t.Fatalf("cross-host Complete with matching agent+thread = %v, want ErrNotOwner", err)
+	}
+	// Positive control: the real owner, same host, still completes fine.
+	if err := owner.Complete(id, lease.Token, "mine"); err != nil {
+		t.Fatalf("owner completing its own lease: %v", err)
+	}
+}
+
+// TestIdentityOwnershipRemintFallbackRequiresSameHostTask is the task-ledger
+// twin of the cross-host item test — the same vector against
+// checkTaskOwner/ClaimNextTask/CompleteTaskLease.
+func TestIdentityOwnershipRemintFallbackRequiresSameHostTask(t *testing.T) {
+	h := newIdentityHarness(t)
+	const thread = "thr-cross-host-task"
+
+	owner := h.client("claude-cross-host-task")
+	owner.host = "host-a"
+	owner.threadID = thread
+	if err := owner.AddTask(Task{Agent: "claude-cross-host-task", TaskID: "cross-host-task", Subject: "s"}); err != nil {
+		t.Fatalf("AddTask: %v", err)
+	}
+	lease, err := owner.ClaimNextTask("claude-cross-host-task", "worker", thread, time.Minute)
+	if err != nil || lease == nil {
+		t.Fatalf("claim: %v, %v", lease, err)
+	}
+
+	impostor := h.client("claude-cross-host-task")
+	impostor.host = "host-b"
+	impostor.threadID = thread
+	if err := impostor.CompleteTaskLease("claude-cross-host-task", "cross-host-task", lease.Token, "stolen via cross-host remint"); !errors.Is(err, ErrNotOwner) {
+		t.Fatalf("cross-host CompleteTaskLease with matching agent+thread = %v, want ErrNotOwner", err)
+	}
+	if err := owner.CompleteTaskLease("claude-cross-host-task", "cross-host-task", lease.Token, "mine"); err != nil {
+		t.Fatalf("owner completing its own task lease: %v", err)
+	}
+}
+
 // TestIdentityOwnershipRemintFallbackRequiresRegisteredThread is the second
 // negative control: an EMPTY thread_id on both sides must never match —
 // collapsing unregistered/legacy sessions into a shared owner would let any

@@ -643,21 +643,45 @@ func (s *server) checkItemOwner(id string, caller Session) error {
 // on-disk session cache is keyed on (agent, runtime_hash, thread_id) and is
 // dropped + re-minted whenever any of those change (e.g. a binary rebuild
 // between claim and complete), issuing a brand new session id for a worker
-// that never actually changed identity. Equivalence requires a REGISTERED
-// thread on both sides (an empty thread_id never matches — collapsing
-// unregistered sessions into a shared owner would let unrelated callers
-// steal each other's leases) and the same agent. A resolution failure (owner
-// session gone/revoked) fails closed: no equivalence, same as before this
-// fallback existed.
+// that never actually changed identity.
+//
+// Equivalence requires ALL of: a REGISTERED thread on both sides (an empty
+// thread_id never matches — collapsing unregistered sessions into a shared
+// owner would let unrelated callers steal each other's leases), the same
+// agent, and — critically — the same HOST, resolved through HostIdentity
+// (ADR-067 §3.3) so a hostname/machine-id alias doesn't defeat the check.
+// Host equivalence is NOT optional: MintSessionForThread accepts a
+// caller-supplied agent/thread with no registration check of its own (the
+// Rule of Ra gate that WOULD catch an unregistered thread defaults to "log",
+// not "enforce"), so agent+thread alone can be reproduced by a second,
+// unrelated, correctly-authenticated session on a DIFFERENT host — exactly
+// the cross-host lease theft codex-pantheon's adversarial review proved
+// against the agent+thread-only version of this check (router item
+// 20261001-154515, PR947 CHANGES REQUIRED): a second host mints its own
+// session claiming the owner's agent/thread strings, then completes the
+// owner's lease with a copied token. A resolution failure (owner session
+// gone/revoked, or HostIdentity itself erroring) fails closed: no
+// equivalence, same as before this fallback existed.
 func (s *server) sameWorkerAcrossRemint(ownerSessionID string, caller Session) bool {
-	if caller.ThreadID == "" {
+	if caller.ThreadID == "" || caller.Host == "" {
 		return false
 	}
 	ownerSess, err := s.store.GetSession(ownerSessionID)
 	if err != nil {
 		return false
 	}
-	return ownerSess.ThreadID != "" && ownerSess.ThreadID == caller.ThreadID && ownerSess.Agent == caller.Agent
+	if ownerSess.ThreadID == "" || ownerSess.ThreadID != caller.ThreadID || ownerSess.Agent != caller.Agent || ownerSess.Host == "" {
+		return false
+	}
+	ownerHost, err := s.store.HostIdentity(ownerSess.Host)
+	if err != nil {
+		return false
+	}
+	callerHost, err := s.store.HostIdentity(caller.Host)
+	if err != nil {
+		return false
+	}
+	return ownerHost != "" && ownerHost == callerHost
 }
 
 func (s *server) checkTaskOwner(agent, taskID string, caller Session) error {
