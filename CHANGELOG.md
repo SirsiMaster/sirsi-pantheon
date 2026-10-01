@@ -20,6 +20,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 - **Release identity:** align the source `VERSION`, embedded binary version,
   and release tag after the stale embedded version in v0.24.56.
 
+## [Unreleased] — alias fixes: claude-finalwishes-helper → claude-finalwishes-m1, ssa → sirsi-software-admin
+
+- `claude-finalwishes-helper` is the M1 FinalWishes Claude lane, not the M5 one
+  (owner correction 2026-10-01); the alias now points at `claude-finalwishes-m1`.
+- `ssa` resolves to `sirsi-software-admin`: `codex-pantheon`'s source reviews fell
+  through to the owner because the short name was undeclared.
+
 ## [Unreleased] — wake loops hold dispatch during a Ma'at measurement window
 
 - The wake loop no longer starts a consumer while `~/libsirsimpi/rails.lock`
