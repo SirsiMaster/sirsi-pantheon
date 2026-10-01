@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
 # ci-postgres.sh — the Postgres leg of the router store suite (ADR-062 rs-07b).
 #
-# CLAIM (A35): on this runner, a fresh PostgreSQL 14 cluster accepts
+# CLAIM (A35): on this runner, a fresh PostgreSQL 16 cluster accepts
 # pg/roles.sql + pg/schema.sql as router_migrator (structure, trigger
 # behaviour, router_service least privilege — scripts/check-pg-schema.sh, which
 # includes its own negative controls), and the entire internal/routerstore
-# suite passes against it under SIRSI_TEST_PG_DSN. Runs on the self-hosted
-# macOS runners, which have Homebrew postgresql@14/@16 and no Docker.
+# suite passes against it under SIRSI_TEST_PG_DSN. PostgreSQL 16 specifically:
+# check-pg-schema.sh's ADMIN OPTION negative control relies on PostgreSQL 16's
+# ALTER ROLE enforcement (pg/roles.sql) — PostgreSQL 14 does not enforce it,
+# so the same negative control silently fails to observe a refusal on 14.
+# Runs on the hosted macos-14 GitHub Actions runner (ci.yml provisions
+# postgresql@16 onto PATH beforehand). PostgreSQL tools must be on PATH;
+# missing tools fail this required leg instead of reporting unexecuted tests
+# as green.
 #
 # Usage: bash scripts/ci-postgres.sh          (start → checks → tests → stop)
 set -euo pipefail
@@ -19,7 +25,10 @@ SOCK=/tmp
 export PGHOST=127.0.0.1 PGPORT="$PORT" PGUSER=sirsi
 
 for bin in initdb pg_ctl psql; do
-  command -v "$bin" >/dev/null || { echo "SKIP: $bin not on PATH (install postgresql@14); Postgres leg not run" >&2; exit 0; }
+  command -v "$bin" >/dev/null || {
+    echo "::error title=PostgreSQL CI prerequisite missing::$bin is not on PATH; required PostgreSQL tests did not run. Provision PostgreSQL before this step." >&2
+    exit 1
+  }
 done
 
 cleanup() { pg_ctl -D "$DATA" -m fast stop >/dev/null 2>&1 || true; rm -rf "$DATA"; }
@@ -38,3 +47,4 @@ bash "$ROOT/scripts/check-pg-schema.sh"
 psql -d postgres -qtAc "CREATE DATABASE routerstore_test ENCODING 'UTF8' TEMPLATE template0" >/dev/null
 ( cd "$ROOT" && SIRSI_TEST_PG_DSN="postgres://sirsi@127.0.0.1:$PORT/routerstore_test" go test ./internal/routerstore/ -count=1 )
 echo "OK: routerstore suite green on PostgreSQL"
+

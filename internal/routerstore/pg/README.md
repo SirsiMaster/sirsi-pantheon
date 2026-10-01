@@ -39,12 +39,20 @@ carries `host`, `user_id`, `session`, `runtime_hash`.
 
 **Verification.** `scripts/check-pg-schema.sh` creates a throwaway database,
 applies both files as the roles they will run as in production, and asserts:
-15 tables, 12 distinct triggers, ≥5 partial indexes, version 17; an item insert
+16 tables, 12 distinct triggers, ≥5 partial indexes, version 23 (verified
+2026-10-01, superseding the stale 15-table/version-17 figures previously
+here — schema_version advances as migrations land; re-verify against a live
+run rather than trusting this number indefinitely); an item insert
 emits exactly one wake event and a duplicate `event_key` is ignored; a claim
 acks the leased wake event; `router_service` cannot `CREATE TABLE`. Negative
 control (2026-09-02): deleting one trigger from `schema.sql` makes it fail with
-"expected 12 triggers, got 11". Local scratch server: PG 14 on `127.0.0.1:54329`,
-user `sirsi`, see `docs/ROUTER_SERVICE_GOAL.md`.
+"expected 12 triggers, got 11". The router_migrator/router_service ADMIN
+OPTION negative control requires **PostgreSQL 16** — PostgreSQL 14 does not
+enforce `ALTER ROLE`'s ADMIN OPTION requirement, so that control silently
+fails to observe a refusal on 14 (verified 2026-10-01: identical schema/role
+apply passes on PG 16, fails this one control on PG 14). Local scratch
+server: PG 16 on `127.0.0.1:54329`, user `sirsi`, see
+`docs/ROUTER_SERVICE_GOAL.md`.
 
 **Dialect layer (rs-06).** `../dialect.go` applies the translation table above at
 one seam (`dbHandle`/`txHandle`); `../open_postgres.go` opens a ledger over pgx.
