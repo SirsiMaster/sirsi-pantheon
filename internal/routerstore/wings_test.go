@@ -261,3 +261,31 @@ func TestRegisterWingIgnoresAllowedPeerWings(t *testing.T) {
 		t.Fatalf("unrelated allowed_peer_wings entry: want admission, got %v", err)
 	}
 }
+
+func TestRegisterWingRejectionWritesNoRow(t *testing.T) {
+	// A rejected RegisterWing (containment failure here, but the same
+	// defer-tx.Rollback() path covers every rejection reason) must leave no
+	// row behind: a corrected retry with the same wing id is admitted fresh,
+	// not treated as a conflict against a partial prior write.
+	s := newTestStore(t)
+	grantedRoot := t.TempDir()
+	foreignRoot := t.TempDir()
+	grantFor(t, s, "ra", "sirsi-pantheon", "router", grantedRoot)
+	bad := wingFixture(t, "stacklab.wing.rs31-test", "sirsi-pantheon", "router", foreignRoot)
+	if _, err := s.RegisterWing("ra", bad); !errors.Is(err, ErrWingRootNotContained) {
+		t.Fatalf("foreign root: want ErrWingRootNotContained, got %v", err)
+	}
+
+	var count int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM wings WHERE wing_id=?`, "stacklab.wing.rs31-test").Scan(&count); err != nil {
+		t.Fatalf("count rows: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("rejected registration left %d row(s) behind, want 0", count)
+	}
+
+	good := wingFixture(t, "stacklab.wing.rs31-test", "sirsi-pantheon", "router", grantedRoot)
+	if _, err := s.RegisterWing("ra", good); err != nil {
+		t.Fatalf("corrected retry after rejection: want admission, got %v", err)
+	}
+}

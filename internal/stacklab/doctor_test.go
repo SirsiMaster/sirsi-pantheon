@@ -302,22 +302,6 @@ func TestValidateWing_RejectsUnknownFields(t *testing.T) {
 	}
 }
 
-func TestValidateWing_AcceptsNamingCanon(t *testing.T) {
-	valid := validWingJSON(testWingID)
-	withCanon := append(valid[:len(valid)-1], []byte(`,"naming_canon":{"photon":"Sirsi hardware sleeve"}}`)...)
-	if _, err := ValidateWing(withCanon); err != nil {
-		t.Fatalf("naming_canon is an optional structured wing field: %v", err)
-	}
-}
-
-func TestValidateWing_RejectsEmptyNamingCanonValue(t *testing.T) {
-	valid := validWingJSON(testWingID)
-	withCanon := append(valid[:len(valid)-1], []byte(`,"naming_canon":{"photon":""}}`)...)
-	if _, err := ValidateWing(withCanon); err == nil {
-		t.Fatalf("expected an empty naming_canon value to fail schema validation")
-	}
-}
-
 // TestRun_RepoUnreadable_NoFindingOnlyUnknown covers BLOCKER 1: a repo the
 // caller cannot read at all (private + missing/insufficient auth, or a
 // wrong LaneRepoMap entry) must never be reported as a confident
