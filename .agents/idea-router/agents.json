@@ -696,7 +696,7 @@
           "--sandbox",
           "workspace-write",
           "-c",
-          "sandbox_workspace_write.writable_roots=[\"/Users/thekryptodragon/.sirsi/relay\",\"/var/sirsipantheon/relay\"]",
+          "sandbox_workspace_write.writable_roots=[\"/var/sirsipantheon/relay\"]",
           "--skip-git-repo-check",
           "-C",
           "/Users/thekryptodragon"

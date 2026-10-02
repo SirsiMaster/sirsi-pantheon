@@ -824,6 +824,42 @@ func measurementWindowOpen(agentID string, depth int) bool {
 	return true
 }
 
+// attendedLiveFn is the injectable attended-session probe (Rule A16/A21).
+var (
+	attendedMu     sync.RWMutex
+	attendedLiveFn = AttendedSessionLive
+)
+
+func getAttendedLiveFn() func(routerRoot, agentID string) bool {
+	attendedMu.RLock()
+	defer attendedMu.RUnlock()
+	return attendedLiveFn
+}
+
+// setAttendedLiveFn installs a probe for tests.
+func setAttendedLiveFn(fn func(routerRoot, agentID string) bool) {
+	attendedMu.Lock()
+	defer attendedMu.Unlock()
+	if fn == nil {
+		fn = AttendedSessionLive
+	}
+	attendedLiveFn = fn
+}
+
+// attendedSessionOwnsInbox reports whether a live, armed attended session
+// (interactive claude/codex) is already consuming this lane's inbox. Dispatching
+// a headless consumer on top of it makes two writers act as one lane id — the
+// claude-finalwishes-m5 collision, 2026-10-02: a worker acknowledged and worked
+// PR #893 while the owner's interactive session never saw it. The attended
+// session wins; the worker resumes as soon as it is gone.
+func attendedSessionOwnsInbox(routerRoot, agentID string, depth int) bool {
+	if !getAttendedLiveFn()(routerRoot, agentID) {
+		return false
+	}
+	log.Printf("wake-loop %s: dispatch held — an attended session is live on this lane (inbox depth %d)", agentID, depth)
+	return true
+}
+
 // railsLockHolder reports, without logging, whether a measurement window is open
 // and who holds it. Used by the lane-state publisher so a sender can see a hold
 // without the loop spamming its log every tick.
@@ -1244,7 +1280,7 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 		} else if consumer != nil && !consumer.Resident && lerr == nil && depth > 0 && !run.running() &&
 			time.Now().After(nextDispatchAllowed) &&
 			!fabricDispatchQuarantined(agentID, depth) && !fabricDispatchOverloaded(agentID, depth) &&
-			!measurementWindowOpen(agentID, depth) {
+			!measurementWindowOpen(agentID, depth) && !attendedSessionOwnsInbox(routerRoot, agentID, depth) {
 
 			// #636 C3 — hard hourly ceiling, enforced independently of everything
 			// above. This is what bounds a future variant whose gate logic is wrong.
@@ -1302,7 +1338,7 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 
 		// Always write last_error, including the empty value after a successful
 		// read, so a recovered loop cannot remain falsely blocked by stale evidence.
-		lane.Hold, lane.HoldUntil = currentHold(agentID, fruitless, nextDispatchAllowed)
+		lane.Hold, lane.HoldUntil = currentHold(routerRoot, agentID, fruitless, nextDispatchAllowed)
 		_, _ = Heartbeat(routerRoot, thr.ThreadID, HeartbeatUpdate{
 			Status:    status,
 			LastError: &lastError,

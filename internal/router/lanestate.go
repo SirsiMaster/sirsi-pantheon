@@ -17,6 +17,7 @@ const (
 	OutcomeNoneYet      = ""              // no consumer has run since this loop started
 	HoldWindow          = "window"        // a Ma'at measurement window is open
 	HoldLoad            = "load"          // host load is at or above the core count
+	HoldAttended        = "attended"      // an attended session is live on this lane and owns its inbox
 	HoldBackoff         = "backoff"       // waiting out a no-progress back-off
 	HoldQuarantine      = "quarantine"    // fabric or lane quarantined: needs a human
 	HoldCeiling         = "ceiling"       // hourly spawn ceiling reached
@@ -206,7 +207,7 @@ func ago(now, t time.Time) string {
 
 // currentHold reports, without logging or side effects, what (if anything) is
 // holding this lane's dispatch right now. Order mirrors the dispatch gate.
-func currentHold(agentID string, fruitless int, nextDispatchAllowed time.Time) (string, time.Time) {
+func currentHold(routerRoot, agentID string, fruitless int, nextDispatchAllowed time.Time) (string, time.Time) {
 	if fruitless >= wakeLoopFruitlessQuarantine {
 		return HoldQuarantine, time.Time{}
 	}
@@ -218,6 +219,9 @@ func currentHold(agentID string, fruitless int, nextDispatchAllowed time.Time) (
 	}
 	if hold, _, _ := shouldDeferDispatch(); hold {
 		return HoldLoad, time.Time{}
+	}
+	if getAttendedLiveFn()(routerRoot, agentID) {
+		return HoldAttended, time.Time{}
 	}
 	if time.Now().Before(nextDispatchAllowed) {
 		return HoldBackoff, nextDispatchAllowed
