@@ -26,6 +26,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
   name, matching the rename already carried by the deck, data room, and
   Stack Lab. Pure copy change — no behaviour change, no ADR required. The
   internal code comment at the top of `viewApollo()` is unchanged.
+## [0.24.67] — 2026-10-02
+
+- **Router alias `mercury` → `hermes`.** Owner rename 2026-10-02 (Hermes is now Mercury): `mercury` resolves to the existing `hermes` lane (same inbox, same worker) so mail addressed either way arrives; the canonical lane id stays `hermes` until the coordinated migration. With #966, `sirsi-mercury` inherits the Hermes release policy before the GitHub repo is renamed.
+
 ## [0.24.66] — 2026-10-02
 
 - **SSA's headless consumer works again.** Its sandbox listed `~/.sirsi/relay` (a symlink to `/var/sirsipantheon/relay`) as a writable root and the codex executor now refuses a root containing a symlink component, so every command failed, every dispatch made no progress, and the lane was quarantined three times (9/20, 9/22, 10/1). Only the real path is listed now.
