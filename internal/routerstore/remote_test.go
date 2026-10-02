@@ -407,3 +407,24 @@ func TestSessionCacheIsPerThreadForSharedAgentID(t *testing.T) {
 		t.Fatalf("an unseen thread must mint its own, got %+v", got)
 	}
 }
+
+// A dispatched consumer without SIRSI_AGENT_ID authenticates as the lane the wake
+// loop named in SIRSI_ROUTER_AGENT, not as the hostname; an explicit SIRSI_AGENT_ID
+// still wins; with neither, the hostname fallback is unchanged.
+func TestAgentIDFallsBackToDispatchContract(t *testing.T) {
+	t.Setenv("SIRSI_AGENT_ID", "")
+	t.Setenv("SIRSI_ROUTER_AGENT", "codex-lane")
+	if got := NewRemoteStore("http://127.0.0.1:1", "t").agent; got != "codex-lane" {
+		t.Fatalf("dispatch contract ignored: agent=%q", got)
+	}
+	t.Setenv("SIRSI_AGENT_ID", "explicit-lane")
+	if got := NewRemoteStore("http://127.0.0.1:1", "t").agent; got != "explicit-lane" {
+		t.Fatalf("explicit SIRSI_AGENT_ID must win: agent=%q", got)
+	}
+	t.Setenv("SIRSI_AGENT_ID", "")
+	t.Setenv("SIRSI_ROUTER_AGENT", "")
+	host, _ := os.Hostname()
+	if got := NewRemoteStore("http://127.0.0.1:1", "t").agent; got != host {
+		t.Fatalf("neither set: want hostname %q, got %q", host, got)
+	}
+}

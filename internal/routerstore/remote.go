@@ -174,6 +174,13 @@ func NewRemoteStore(base, token string) *RemoteStore {
 		}
 	}
 	if agent == "" {
+		// A dispatched consumer's lane is named by the wake loop's contract
+		// (SIRSI_ROUTER_AGENT). Without this a consumer that has no SIRSI_AGENT_ID
+		// and no session marker authenticated as the hostname, and every such actor
+		// on the host shared one identity (claude-pantheon / codex-pantheon, 2026-10-02).
+		agent = strings.TrimSpace(os.Getenv("SIRSI_ROUTER_AGENT"))
+	}
+	if agent == "" {
 		agent = displayHost // readable ("Mac", "M1.local"), not the UUID auth claim
 	}
 	dir := ""
