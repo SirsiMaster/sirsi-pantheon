@@ -189,9 +189,14 @@ func TestIdentityHookFillsAgentAndThreadWhenEnvUnset(t *testing.T) {
 	}
 
 	// no hook installed → env-only, host fallback for agent, empty thread.
+	// SIRSI_ROUTER_AGENT must be cleared too: NewRemoteStore falls back to it
+	// before the hostname (the dispatch-contract fallback, TestAgentIDFallsBackToDispatchContract),
+	// so a real dispatched worker's own exported SIRSI_ROUTER_AGENT leaks into
+	// this "neither set" case otherwise and this assertion flakes outside CI.
 	IdentityHook = nil
 	t.Setenv("SIRSI_AGENT_ID", "")
 	t.Setenv("SIRSI_THREAD_ID", "")
+	t.Setenv("SIRSI_ROUTER_AGENT", "")
 	rs = NewRemoteStore("https://x", "t")
 	host, _ := os.Hostname()
 	if rs.agent != host || rs.threadID != "" {
