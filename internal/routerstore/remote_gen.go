@@ -247,6 +247,11 @@ func (rs *RemoteStore) RecordEvidence(reqID string, ev Evidence) error {
 func (rs *RemoteStore) RegisterAgent(id string, pid int) error {
 	return rs.call("RegisterAgent", []any{id, pid})
 }
+func (rs *RemoteStore) RegisterWing(raw []byte) (WingReceipt, error) {
+	var o0 WingReceipt
+	err := rs.call("RegisterWing", []any{raw}, &o0)
+	return o0, err
+}
 func (rs *RemoteStore) ReleaseTaskLease(agent, taskID, token, reason string) error {
 	return rs.call("ReleaseTaskLease", []any{agent, taskID, token, reason})
 }

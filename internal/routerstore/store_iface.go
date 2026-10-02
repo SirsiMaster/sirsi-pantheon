@@ -88,6 +88,10 @@ type Store interface {
 	ReconcileOperationalState(agent string, wakeRoutable bool) (ReconcileReport, error)
 	RecordEvidence(reqID string, ev Evidence) error
 	RegisterAgent(id string, pid int) error
+	// RegisterWing schema-validates and atomically persists a Stack Lab wing
+	// record (rs-31a). Idempotent on identical bytes; ErrWingConflict on a
+	// conflicting identity.
+	RegisterWing(raw []byte) (WingReceipt, error)
 	ReleaseTaskLease(agent, taskID, token, reason string) error
 	Render(id string) (string, error)
 	RenewLease(id, token string, ttl time.Duration) error

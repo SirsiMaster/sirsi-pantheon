@@ -125,8 +125,8 @@ func TestSessionCarriesThreadAcrossTheWireAndSurvivesMigration(t *testing.T) {
 			_ = v.Scan(&ver)
 		}
 		_ = v.Close()
-		if ver != 23 {
-			t.Fatalf("schema version %d, want 23", ver)
+		if ver != 24 {
+			t.Fatalf("schema version %d, want 24", ver)
 		}
 	}
 }

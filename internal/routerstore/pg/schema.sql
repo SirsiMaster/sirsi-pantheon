@@ -315,6 +315,22 @@ ALTER TABLE host_tokens ADD COLUMN IF NOT EXISTS machine_id TEXT NOT NULL DEFAUL
 CREATE UNIQUE INDEX IF NOT EXISTS idx_host_tokens_machine_id
     ON host_tokens(machine_id) WHERE machine_id <> '' AND revoked = '';
 
+-- ── v24 — Stack Lab wing admission, persistence layer (rs-31a) ─────────────
+-- One row per admitted wing id; content_hash decides idempotent-return vs
+-- conflict (RegisterWing). Caller-authority binding (rs-31b) and canonical-path
+-- containment enforcement (rs-31c) are separate sub-builds layered on top.
+
+CREATE TABLE IF NOT EXISTS wings (
+    wing_id          TEXT PRIMARY KEY,
+    project_id       TEXT NOT NULL,
+    router_namespace TEXT NOT NULL,
+    owner            TEXT NOT NULL,
+    content_hash     TEXT NOT NULL,
+    record_json      TEXT NOT NULL,
+    created          TEXT NOT NULL,
+    updated          TEXT NOT NULL
+);
+
 -- ── wake-event triggers (final state after migrations 10..15) ─────────────
 -- Each is one function + one trigger. A wake event is emitted in the SAME
 -- transaction as the source mutation, exactly as in SQLite, so a writer
@@ -518,6 +534,6 @@ DO $$ BEGIN
 END $$;
 
 -- ── version — last, so a partial apply never publishes a version it does not have ──
-INSERT INTO schema_version(version, applied_at) VALUES (23, router.now_rfc3339())
-  ON CONFLICT (singleton) DO UPDATE SET version = 23, applied_at = router.now_rfc3339()
-  WHERE schema_version.version < 23;
+INSERT INTO schema_version(version, applied_at) VALUES (24, router.now_rfc3339())
+  ON CONFLICT (singleton) DO UPDATE SET version = 24, applied_at = router.now_rfc3339()
+  WHERE schema_version.version < 24;

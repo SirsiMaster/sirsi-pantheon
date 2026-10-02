@@ -755,6 +755,25 @@ ALTER TABLE host_tokens ADD COLUMN machine_id TEXT NOT NULL DEFAULT '';
 CREATE UNIQUE INDEX IF NOT EXISTS idx_host_tokens_machine_id
     ON host_tokens(machine_id) WHERE machine_id != '' AND revoked = '';
 `},
+	// v24 — Stack Lab wing admission, persistence layer (rs-31a, ADR-066 SNE
+	// design confirmed 2026-09-12, item 015930). One row per admitted wing id,
+	// keyed so RegisterWing can enforce idempotency-on-identical-bytes and
+	// reject a conflicting identity (wing_id PRIMARY KEY; content_hash decides
+	// idempotent-return vs conflict). Caller-authority binding (rs-31b) and
+	// canonical-path containment enforcement (rs-31c) are separate sub-builds
+	// layered on top of this table — not added here.
+	{24, `
+CREATE TABLE IF NOT EXISTS wings (
+    wing_id          TEXT PRIMARY KEY,
+    project_id       TEXT NOT NULL,
+    router_namespace TEXT NOT NULL,
+    owner            TEXT NOT NULL,
+    content_hash     TEXT NOT NULL,
+    record_json      TEXT NOT NULL,
+    created          TEXT NOT NULL,
+    updated          TEXT NOT NULL
+);
+`},
 }
 
 // migrate applies any pending numbered migrations, tracked via the SQLite
