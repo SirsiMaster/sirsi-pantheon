@@ -929,6 +929,7 @@
     "codex-nexus": "claude-nexus",
     "codex-home": "claude-home",
     "ssa": "sirsi-software-admin",
-    "m5-apollo-rail": "claude-apollo-m5-rail"
+    "m5-apollo-rail": "claude-apollo-m5-rail",
+    "mercury": "hermes"
   }
 }
