@@ -174,6 +174,13 @@ func NewRemoteStore(base, token string) *RemoteStore {
 		}
 	}
 	if agent == "" {
+		// A dispatched consumer's lane is named by the wake loop's contract
+		// (SIRSI_ROUTER_AGENT). Without this a consumer that has no SIRSI_AGENT_ID
+		// and no session marker authenticated as the hostname, and every such actor
+		// on the host shared one identity (claude-pantheon / codex-pantheon, 2026-10-02).
+		agent = strings.TrimSpace(os.Getenv("SIRSI_ROUTER_AGENT"))
+	}
+	if agent == "" {
 		agent = displayHost // readable ("Mac", "M1.local"), not the UUID auth claim
 	}
 	dir := ""
@@ -247,11 +254,13 @@ func (rs *RemoteStore) ensureSession(ctx context.Context) (Session, error) {
 		return rs.session, nil
 	}
 	if rs.sessionDir != "" {
-		if b, err := os.ReadFile(rs.sessionPath()); err == nil {
-			var cached Session
-			if json.Unmarshal(b, &cached) == nil && cached.ID != "" && cached.Secret != "" && cached.RuntimeHash == rs.runtime && cachedThreadFits(cached.ThreadID, rs.threadID) {
-				rs.session = cached
-				return cached, nil
+		for _, path := range rs.sessionPaths() {
+			if b, err := os.ReadFile(path); err == nil {
+				var cached Session
+				if json.Unmarshal(b, &cached) == nil && cached.ID != "" && cached.Secret != "" && cached.RuntimeHash == rs.runtime && cachedThreadFits(cached.ThreadID, rs.threadID) {
+					rs.session = cached
+					return cached, nil
+				}
 			}
 		}
 	}
@@ -267,7 +276,9 @@ func (rs *RemoteStore) ensureSession(ctx context.Context) (Session, error) {
 	if rs.sessionDir != "" {
 		if err := os.MkdirAll(rs.sessionDir, 0o700); err == nil {
 			b, _ := json.Marshal(minted)
-			_ = os.WriteFile(rs.sessionPath(), b, 0o600)
+			for _, path := range rs.sessionPaths() {
+				_ = os.WriteFile(path, b, 0o600)
+			}
 		}
 	}
 	return minted, nil
@@ -287,13 +298,30 @@ func (rs *RemoteStore) sessionPath() string {
 	return filepath.Join(rs.sessionDir, strings.ReplaceAll(rs.agent, "/", "_")+".json")
 }
 
+// sessionPaths lists where this caller's session is cached, most specific first.
+// Actors that cannot resolve their own agent id all fall back to the hostname as
+// agent ("Mac"), and one cache file per agent made them overwrite each other's
+// session, so a lease claimed under one session was completed under another
+// (claude-pantheon vs codex-pantheon, 2026-10-02). A caller with a thread gets a
+// per-thread file; the per-agent file stays the latest-session cache a thread-less
+// caller reuses.
+func (rs *RemoteStore) sessionPaths() []string {
+	if rs.threadID == "" {
+		return []string{rs.sessionPath()}
+	}
+	per := strings.TrimSuffix(rs.sessionPath(), ".json") + "." + strings.ReplaceAll(rs.threadID, "/", "_") + ".json"
+	return []string{per, rs.sessionPath()}
+}
+
 // dropSession forgets the session so the next call mints a fresh one
 // (used when the service reports it unknown or revoked).
 func (rs *RemoteStore) dropSession() {
 	rs.mu.Lock()
 	rs.session = Session{}
 	if rs.sessionDir != "" {
-		_ = os.Remove(rs.sessionPath())
+		for _, path := range rs.sessionPaths() {
+			_ = os.Remove(path)
+		}
 	}
 	rs.mu.Unlock()
 }

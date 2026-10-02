@@ -372,3 +372,59 @@ func TestCachedSessionSurvivesThreadlessInvocation(t *testing.T) {
 		t.Fatalf("a different thread must not borrow the cached session, got %+v", got)
 	}
 }
+
+// Two actors that both fell back to the hostname as agent id must not overwrite
+// each other's cached session: a thread keeps ITS session across invocations
+// even after another thread used the same agent id in between (both directions).
+func TestSessionCacheIsPerThreadForSharedAgentID(t *testing.T) {
+	dir := t.TempDir()
+	mk := func(thread string) *RemoteStore {
+		rs := NewRemoteStore("http://127.0.0.1:1", "t0k")
+		rs.sessionDir, rs.agent, rs.threadID = dir, "Mac", thread
+		return rs
+	}
+	seed := func(rs *RemoteStore, id string) {
+		b, _ := json.Marshal(Session{ID: id, Secret: "s", RuntimeHash: rs.runtime, ThreadID: rs.threadID})
+		for _, p := range rs.sessionPaths() {
+			if err := os.WriteFile(p, b, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	a, b := mk("thr-aaa"), mk("thr-bbb")
+	seed(a, "sess-a")
+	seed(b, "sess-b") // b overwrites the shared per-agent file
+
+	got, err := mk("thr-aaa").ensureSession(context.Background())
+	if err != nil || got.ID != "sess-a" {
+		t.Fatalf("thread aaa lost its session to thread bbb: %+v err=%v", got, err)
+	}
+	got, err = mk("thr-bbb").ensureSession(context.Background())
+	if err != nil || got.ID != "sess-b" {
+		t.Fatalf("thread bbb session wrong: %+v err=%v", got, err)
+	}
+	if got, err := mk("thr-ccc").ensureSession(context.Background()); err == nil {
+		t.Fatalf("an unseen thread must mint its own, got %+v", got)
+	}
+}
+
+// A dispatched consumer without SIRSI_AGENT_ID authenticates as the lane the wake
+// loop named in SIRSI_ROUTER_AGENT, not as the hostname; an explicit SIRSI_AGENT_ID
+// still wins; with neither, the hostname fallback is unchanged.
+func TestAgentIDFallsBackToDispatchContract(t *testing.T) {
+	t.Setenv("SIRSI_AGENT_ID", "")
+	t.Setenv("SIRSI_ROUTER_AGENT", "codex-lane")
+	if got := NewRemoteStore("http://127.0.0.1:1", "t").agent; got != "codex-lane" {
+		t.Fatalf("dispatch contract ignored: agent=%q", got)
+	}
+	t.Setenv("SIRSI_AGENT_ID", "explicit-lane")
+	if got := NewRemoteStore("http://127.0.0.1:1", "t").agent; got != "explicit-lane" {
+		t.Fatalf("explicit SIRSI_AGENT_ID must win: agent=%q", got)
+	}
+	t.Setenv("SIRSI_AGENT_ID", "")
+	t.Setenv("SIRSI_ROUTER_AGENT", "")
+	host, _ := os.Hostname()
+	if got := NewRemoteStore("http://127.0.0.1:1", "t").agent; got != host {
+		t.Fatalf("neither set: want hostname %q, got %q", host, got)
+	}
+}

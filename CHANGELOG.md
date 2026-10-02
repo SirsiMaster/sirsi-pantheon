@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased] — Apollo view: retire the last user-facing "SNE" copy
 
+- **A dispatched consumer authenticates as its lane, not the hostname.** With no `SIRSI_AGENT_ID` and no session marker the router client fell back to the hostname, so every such consumer on a host shared one identity ("Mac"); the wake loop already names the lane in `SIRSI_ROUTER_AGENT`. That variable now fills the gap before the hostname fallback; an explicit `SIRSI_AGENT_ID` still wins.
+
+- **Two actors with the same fallback agent id no longer swap sessions.** Callers that cannot resolve their agent id (sandboxed claude-pantheon and codex-pantheon sessions) both fall back to the hostname, and one cache file per agent made them overwrite each other's session, so a lease claimed under one session was completed under another and refused. A caller with a thread now gets its own per-thread session file; the per-agent file stays the latest-session cache for thread-less callers.
+
 - **Dashboard copy:** `viewApollo()`'s six user-visible strings (session
   awaiting/active/error copy) now say "Apollo" instead of the retired "SNE"
   name, matching the rename already carried by the deck, data room, and
