@@ -33,11 +33,26 @@ ALLOW_LOCALPATH='^(cmd/sirsi/schemacheckcmd\.go|cmd/sirsi/selfupdate\.go):'
 
 scan() {
   local rc=0
+  # The claim is scoped to THIS repo's tracked Go sources (A35) — scanning the
+  # raw filesystem instead picks up gitignored debris (stray worktrees under
+  # .claude/worktrees/, build output, etc.) that was never part of the claim.
+  # Fall back to a plain find when ROOT isn't a git worktree (--self-test).
+  local files=()
+  if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    while IFS= read -r f; do
+      files+=("./$f")
+    done < <(git -C "$ROOT" ls-files -- '*.go' | grep -v '_test\.go$')
+  else
+    while IFS= read -r f; do
+      files+=("$f")
+    done < <(find . -name '*.go' ! -name '*_test.go')
+  fi
+
   # grep -E -n: file:line:text; exclude tests and the package itself.
   local hits
   # cmd/sirsi/routerservecmd.go is the service itself — the one process that
   # may open a backend directly (ADR-062 §2). Nothing else is allowlisted.
-  hits=$(grep -rEn --include='*.go' --exclude='*_test.go' --exclude-dir=.git "$FORBIDDEN" . \
+  hits=$(grep -En "$FORBIDDEN" "${files[@]}" 2>/dev/null \
          | grep -v '^\./internal/routerstore/' | grep -v '^\./cmd/sirsi/routerservecmd\.go:' || true)
   if [ -n "$hits" ]; then
     echo "ERROR: router store opened outside routerstore.Resolve() (ADR-062 §1):"
@@ -45,7 +60,7 @@ scan() {
     rc=1
   fi
   local lp
-  lp=$(grep -rEn --include='*.go' --exclude='*_test.go' --exclude-dir=.git 'routerstore\.LocalPath\(' . \
+  lp=$(grep -En 'routerstore\.LocalPath\(' "${files[@]}" 2>/dev/null \
        | grep -v '^\./internal/routerstore/' | sed 's#^\./##' | grep -vE "$ALLOW_LOCALPATH" || true)
   if [ -n "$lp" ]; then
     echo "ERROR: routerstore.LocalPath() is read-only diagnostics only; not allowed here:"
