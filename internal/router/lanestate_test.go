@@ -96,21 +96,21 @@ func TestCurrentHold(t *testing.T) {
 	lock := filepath.Join(t.TempDir(), "rails.lock")
 	t.Setenv("MAAT_RAILS_LOCK", lock)
 	t.Setenv("HOME", t.TempDir()) // no fabric-quarantine marker
-	if h, _ := currentHold("a", 0, time.Time{}); h == HoldWindow {
+	if h, _ := currentHold("", "a", 0, time.Time{}); h == HoldWindow {
 		t.Fatalf("no lock: hold must not be window, got %q", h)
 	}
 	if err := os.WriteFile(lock, []byte("hermes\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if h, _ := currentHold("a", 0, time.Time{}); h != HoldWindow {
+	if h, _ := currentHold("", "a", 0, time.Time{}); h != HoldWindow {
 		t.Fatalf("lock present: hold = %q, want window", h)
 	}
 	_ = os.Remove(lock)
 	until := time.Now().Add(time.Hour)
-	if h, u := currentHold("a", 1, until); h != HoldBackoff && h != HoldLoad || (h == HoldBackoff && !u.Equal(until)) {
+	if h, u := currentHold("", "a", 1, until); h != HoldBackoff && h != HoldLoad || (h == HoldBackoff && !u.Equal(until)) {
 		t.Fatalf("backoff: hold=%q until=%v", h, u)
 	}
-	if h, _ := currentHold("a", wakeLoopFruitlessQuarantine, time.Time{}); h != HoldQuarantine {
+	if h, _ := currentHold("", "a", wakeLoopFruitlessQuarantine, time.Time{}); h != HoldQuarantine {
 		t.Fatalf("fruitless quarantine: hold = %q", h)
 	}
 }
@@ -181,5 +181,28 @@ func TestBindConsumerThread(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("SIRSI_THREAD_ID not set in env: %v", rc.Env)
+	}
+}
+
+// A live attended session on the lane holds the headless worker; with none, the
+// lane dispatches (both directions).
+func TestAttendedSessionHoldsHeadlessDispatch(t *testing.T) {
+	t.Setenv("MAAT_RAILS_LOCK", filepath.Join(t.TempDir(), "none"))
+	SetLoadAvgFn(func() (float64, bool) { return 0.1, true })
+	defer SetLoadAvgFn(nil)
+	defer setAttendedLiveFn(nil)
+
+	setAttendedLiveFn(func(_, agent string) bool { return agent == "lane-a" })
+	if !attendedSessionOwnsInbox("root", "lane-a", 3) {
+		t.Fatal("attended session live: dispatch must be held")
+	}
+	if h, _ := currentHold("root", "lane-a", 0, time.Time{}); h != HoldAttended {
+		t.Fatalf("lane state hold = %q, want %q", h, HoldAttended)
+	}
+	if attendedSessionOwnsInbox("root", "lane-b", 3) {
+		t.Fatal("no attended session on lane-b: it must dispatch")
+	}
+	if h, _ := currentHold("root", "lane-b", 0, time.Time{}); h == HoldAttended {
+		t.Fatal("lane-b wrongly reported attended")
 	}
 }

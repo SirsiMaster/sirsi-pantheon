@@ -6,6 +6,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased] — Apollo view: retire the last user-facing "SNE" copy
 
+- **A headless worker stands down while an attended session owns the lane.** The wake loop dispatched a `claude --print` consumer on a lane whose owner was working it interactively, so two writers acted as one id (the worker acknowledged and worked PR #893 on `claude-finalwishes-m5` while the owner's session never saw it). Dispatch now holds (`hold: attended` in the lane state) while a live, armed attended session is on the lane, and resumes as soon as it is gone.
+
 - **A dispatched consumer authenticates as its lane, not the hostname.** With no `SIRSI_AGENT_ID` and no session marker the router client fell back to the hostname, so every such consumer on a host shared one identity ("Mac"); the wake loop already names the lane in `SIRSI_ROUTER_AGENT`. That variable now fills the gap before the hostname fallback; an explicit `SIRSI_AGENT_ID` still wins.
 
 - **Two actors with the same fallback agent id no longer swap sessions.** Callers that cannot resolve their agent id (sandboxed claude-pantheon and codex-pantheon sessions) both fall back to the hostname, and one cache file per agent made them overwrite each other's session, so a lease claimed under one session was completed under another and refused. A caller with a thread now gets its own per-thread session file; the per-agent file stays the latest-session cache for thread-less callers.
