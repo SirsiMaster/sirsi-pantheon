@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,8 +33,15 @@ type anchorChildLookup func(parentPID int) ([]anchorChild, error)
 // but doomed CTR records. Known interactive surfaces are resolved by executable
 // identity; other resident surfaces must provide an explicit --anchor-pid.
 func resolveAnchorPID(surface string) (int, error) {
-	anchor, err := resolveDurableAnchor(os.Getppid(), surface, lookupAnchorProcess)
+	start := os.Getppid()
+	anchor, err := resolveDurableAnchor(start, surface, lookupAnchorProcess)
 	if err != nil {
+		if errors.Is(err, fs.ErrPermission) {
+			// Neither ps nor the kernel lookup is allowed (strict sandbox): anchor to the
+			// immediate parent rather than refuse registration. One hop shallower than the
+			// ideal durable runtime still beats an unregistered thread.
+			return start, nil
+		}
 		return 0, err
 	}
 	return refineDesktopAnchor(anchor, surface, os.Getenv("CODEX_INTERNAL_ORIGINATOR_OVERRIDE"), lookupAnchorChildren)
