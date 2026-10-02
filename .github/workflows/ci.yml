@@ -86,8 +86,8 @@ jobs:
 
       - name: bind A34 guards (GitHub + router rejection)
         run: |
-          # binding-hold-selection.test.sh needs ripgrep, absent on hosted runners
-          for t in a34-fail-closed bind-event-selection repo-resolution router-rejection; do bash "scripts/bind/$t.test.sh"; done
+          # pure-jq guards only: the other bind tests need ripgrep or a GitHub-resolvable checkout
+          for t in a34-fail-closed router-rejection; do bash "scripts/bind/$t.test.sh"; done
 
   test:
     name: Test
