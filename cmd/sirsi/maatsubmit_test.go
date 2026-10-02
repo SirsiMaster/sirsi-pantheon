@@ -52,6 +52,8 @@ func TestCheckSubmitPolicy(t *testing.T) {
 		{"policy match", "sirsimaster/sirsi-hermes", "hermes", "grant", "matches repo policy"},
 		{"policy mismatch", "sirsimaster/sirsi-hermes", "claude-pantheon", "refuse", "not in repo policy"},
 		{"photon policy match", "sirsimaster/sirsi-photon", "hermes", "grant", "matches repo policy"},
+		{"mercury (renamed hermes) policy match", "sirsimaster/sirsi-mercury", "hermes", "grant", "matches repo policy"},
+		{"mercury refuses other lanes", "sirsimaster/sirsi-mercury", "claude-pantheon", "refuse", "not in repo policy"},
 		{"unlisted repo", "sirsimaster/sirsi-pantheon", "claude-pantheon", "grant", "no policy defined"},
 	}
 	for _, c := range cases {
