@@ -780,7 +780,7 @@
       "cwd": "/Users/thekryptodragon/Development/sirsi-io-connect",
       "workstream": "hermes",
       "wake": {
-        "mechanism": "none"
+        "mechanism": "launchagent"
       },
       "consumer": {
         "command": [
