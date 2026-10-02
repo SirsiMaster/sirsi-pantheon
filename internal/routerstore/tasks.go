@@ -50,6 +50,7 @@ type Task struct {
 	Stage            string          `json:"stage"`
 	TokensConsumed   int64           `json:"tokens_consumed"`
 	DurationSeconds  int64           `json:"duration_seconds"`
+	ResultRef        string          `json:"result_ref,omitempty"`
 }
 
 var ErrTaskExists = errors.New("routerstore: task already exists")
@@ -358,13 +359,13 @@ func (s *SQLiteStore) UpdateTask(agent, taskID string, u TaskUpdate) (Task, erro
 	return s.GetTask(agent, taskID)
 }
 
-const taskSelect = `SELECT agent,task_id,subject,status,phase,responsible_party,blocked_by,created,updated,charter,commissioned_at,commissioned_by,outline,timeline,links,test_state,stage,tokens_consumed,duration_seconds FROM tasks`
+const taskSelect = `SELECT agent,task_id,subject,status,phase,responsible_party,blocked_by,created,updated,charter,commissioned_at,commissioned_by,outline,timeline,links,test_state,stage,tokens_consumed,duration_seconds,result_ref FROM tasks`
 
 func scanTask(scanner interface{ Scan(...any) error }) (Task, error) {
 	var t Task
 	var charter, outline sql.NullString
 	var timeline, links string
-	err := scanner.Scan(&t.Agent, &t.TaskID, &t.Subject, &t.Status, &t.Phase, &t.ResponsibleParty, &t.BlockedBy, &t.Created, &t.Updated, &charter, &t.CommissionedAt, &t.CommissionedBy, &outline, &timeline, &links, &t.TestState, &t.Stage, &t.TokensConsumed, &t.DurationSeconds)
+	err := scanner.Scan(&t.Agent, &t.TaskID, &t.Subject, &t.Status, &t.Phase, &t.ResponsibleParty, &t.BlockedBy, &t.Created, &t.Updated, &charter, &t.CommissionedAt, &t.CommissionedBy, &outline, &timeline, &links, &t.TestState, &t.Stage, &t.TokensConsumed, &t.DurationSeconds, &t.ResultRef)
 	if err != nil {
 		return Task{}, err
 	}

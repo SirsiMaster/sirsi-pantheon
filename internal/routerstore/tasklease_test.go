@@ -35,6 +35,9 @@ func TestTaskLeaseClaimRenewComplete(t *testing.T) {
 	if err != nil || got.Status != "done" {
 		t.Fatalf("task not completed: %+v err=%v", got, err)
 	}
+	if got.ResultRef != "proof://R1" {
+		t.Fatalf("task result reference = %q, want proof://R1", got.ResultRef)
+	}
 }
 
 func TestTaskLeaseExpiryReclaimsAndFencesOldWorker(t *testing.T) {

@@ -11,6 +11,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
   name, matching the rename already carried by the deck, data room, and
   Stack Lab. Pure copy change — no behaviour change, no ADR required. The
   internal code comment at the top of `viewApollo()` is unchanged.
+## [Unreleased] — routerstore: Task now surfaces result_ref
+
+- **Router tasks:** `CompleteTaskLease` persists `result_ref` into the
+  `tasks` table (used by the done-without-proof report and reconcile
+  checks), but `Task` never had a corresponding field — `GetTask`/
+  `ListTasks` could never read completion evidence back. Added
+  `ResultRef` to `Task`, `taskSelect`, and `scanTask`.
 
 ## [0.24.65] — 2026-10-01
 
