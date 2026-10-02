@@ -226,6 +226,8 @@ var routerDoctorCmd = &cobra.Command{
 		// because a body that says DONE is a signal, not a verdict.
 		issues += checkLedgerRot()
 
+		reportNameGrammar(reg)
+
 		// REGISTRY DRIFT — the router reads the WORKING TREE, so a registry fix
 		// that merged to main has not necessarily reached the live registry. That
 		// landmine armed three times in six days and every remedy was a copy;
