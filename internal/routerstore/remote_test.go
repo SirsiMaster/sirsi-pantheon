@@ -196,7 +196,7 @@ func TestIdentityHookFillsAgentAndThreadWhenEnvUnset(t *testing.T) {
 	IdentityHook = nil
 	t.Setenv("SIRSI_AGENT_ID", "")
 	t.Setenv("SIRSI_THREAD_ID", "")
-	t.Setenv("SIRSI_ROUTER_AGENT", "")
+	t.Setenv("SIRSI_ROUTER_AGENT", "") // ambient wake-loop env must not leak into this host-fallback assertion
 	rs = NewRemoteStore("https://x", "t")
 	host, _ := os.Hostname()
 	if rs.agent != host || rs.threadID != "" {
