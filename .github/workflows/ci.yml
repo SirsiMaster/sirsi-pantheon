@@ -84,6 +84,11 @@ jobs:
       - name: pre-push measurement-window guard
         run: bash scripts/pre-push-window.test.sh
 
+      - name: bind A34 guards (GitHub + router rejection)
+        run: |
+          # pure-jq guards only: the other bind tests need ripgrep or a GitHub-resolvable checkout
+          for t in a34-fail-closed router-rejection; do bash "scripts/bind/$t.test.sh"; done
+
   test:
     name: Test
     runs-on: macos-14
