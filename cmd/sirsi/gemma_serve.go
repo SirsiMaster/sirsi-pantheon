@@ -213,20 +213,23 @@ func gemmaServerStop(home string) error {
 }
 
 func gemmaServerBase(home string) string {
-	b, err := os.ReadFile(gemmaPortPath(home))
-	if err != nil {
-		return ""
+	// The launchd-owned SNE (ADR-040 successor) does not write the old broker's
+	// port file, so a missing or stale file falls through to the default port.
+	if b, err := os.ReadFile(gemmaPortPath(home)); err == nil {
+		if port, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && port != 0 {
+			if base := fmt.Sprintf("http://127.0.0.1:%d", port); gemmaServerPingFn(base) {
+				return base
+			}
+		}
 	}
-	port, err := strconv.Atoi(strings.TrimSpace(string(b)))
-	if err != nil || port == 0 {
-		return ""
-	}
-	base := fmt.Sprintf("http://127.0.0.1:%d", port)
-	if gemmaServerPing(base) {
+	if base := fmt.Sprintf("http://127.0.0.1:%d", gemmaServerDefaultPort); gemmaServerPingFn(base) {
 		return base
 	}
 	return ""
 }
+
+// gemmaServerPingFn is the injectable liveness probe (Rule A16).
+var gemmaServerPingFn = gemmaServerPing
 
 func gemmaServerPing(base string) bool {
 	cl := &http.Client{Timeout: 2 * time.Second}
