@@ -115,6 +115,37 @@ func readMergedRegistry(repoRoot string) ([]byte, error) {
 	return out, nil
 }
 
+// DeclaredOnOrigin reports whether agentID is declared in origin/main's
+// agents.json, read independent of whatever branch the local working tree
+// happens to have checked out.
+//
+// WHY THIS EXISTS: identity resolution (resolveCurrentAgent) validates a
+// candidate agent id against the WORKING TREE's agents.json via
+// dispatch.ValidateAgent. In a shared sirsi-pantheon checkout, another lane
+// can leave a branch checked out that lacks an agent declared on main, so
+// registration/send against that (real, main-declared) identity spuriously
+// fails "not fully declared" — root-caused by claude-inference, closing its
+// item 20260926-144839. This is a FALLBACK read, not a copy: it never writes
+// the working tree, so it cannot re-arm the drift this file's comment
+// documents (three copies in six days). dir may be any directory inside the
+// repo — git resolves the registry path from the repo root regardless.
+func DeclaredOnOrigin(dir, agentID string) bool {
+	raw, err := readMergedRegistry(dir)
+	if err != nil {
+		return false
+	}
+	return agentDeclared(raw, agentID)
+}
+
+func agentDeclared(raw []byte, agentID string) bool {
+	agents, err := agentsByID(raw)
+	if err != nil {
+		return false
+	}
+	_, ok := agents[agentID]
+	return ok
+}
+
 // agentsByID parses either registry shape — a bare list, or an object with an
 // "agents" key — into id → entry. Tolerating both matters because a check that
 // only understands today's shape fails silently the day the shape changes.
