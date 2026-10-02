@@ -971,8 +971,8 @@ func TestConnEstablishRetriesReadonlyContention(t *testing.T) {
 // ceiling — 22 since the v22 read-ack column). Values stay empty —
 // derivation/backfill is rs-32b.
 func TestSchemaV21AddsScopeColumns(t *testing.T) {
-	if MaxSupportedSchemaVersion() != 24 {
-		t.Fatalf("MaxSupportedSchemaVersion = %d, want 24", MaxSupportedSchemaVersion())
+	if MaxSupportedSchemaVersion() != 25 {
+		t.Fatalf("MaxSupportedSchemaVersion = %d, want 25", MaxSupportedSchemaVersion())
 	}
 	path := filepath.Join(t.TempDir(), "v21.db")
 	s, err := OpenPath(path)
@@ -980,8 +980,8 @@ func TestSchemaV21AddsScopeColumns(t *testing.T) {
 		t.Fatalf("open (v21 migration must apply cleanly): %v", err)
 	}
 	defer s.Close()
-	if v, err := ReadSchemaVersion(path); err != nil || v != 24 {
-		t.Fatalf("fresh store version = %d (err %v), want 24", v, err)
+	if v, err := ReadSchemaVersion(path); err != nil || v != 25 {
+		t.Fatalf("fresh store version = %d (err %v), want 25", v, err)
 	}
 	// Columns must exist and be usable (WHERE 1=0 touches no rows but binds them).
 	if _, e := s.exec(`UPDATE items SET project_id='p', router_namespace='n' WHERE 1=0;`); e != nil {
@@ -1034,8 +1034,8 @@ func TestV20ToV21UpgradeWithExistingRows(t *testing.T) {
 		t.Fatalf("v20 to v21 upgrade must apply cleanly: %v", err)
 	}
 	defer s2.Close()
-	if v, e := ReadSchemaVersion(path); e != nil || v != 24 {
-		t.Fatalf("post-upgrade version = %d (err %v), want 24 (v20 upgrades through v21 to the current ceiling)", v, e)
+	if v, e := ReadSchemaVersion(path); e != nil || v != 25 {
+		t.Fatalf("post-upgrade version = %d (err %v), want 25 (v20 upgrades through v21 to the current ceiling)", v, e)
 	}
 	// Existing rows survive with default-empty scope values (no backfill guess).
 	var proj, ns string

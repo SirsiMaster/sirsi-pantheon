@@ -51,6 +51,10 @@ var notServed = map[string]bool{
 	"GetSession": true, "RevokeSession": true, "TouchSession": true,
 	"BindItemSession": true, "ItemSession": true, "BindTaskSession": true, "TaskSession": true,
 	"MintHostToken": true, "LookupHostToken": true, "RevokeHostToken": true, "ListHostTokens": true,
+	// GrantWingAuthority/RevokeWingAuthority (rs-31b): wing-authority grants are
+	// issued by direct backend access on the service host only — never over the
+	// wire — mirroring MintHostToken/RevokeHostToken above.
+	"GrantWingAuthority": true, "RevokeWingAuthority": true,
 	"Close": true, "RecordAudience": true,
 	// HostIdentity is the ADR-067 identity resolver: read by threadAuthority and
 	// the mint host-check, never a node-reachable RPC (it takes no credential).

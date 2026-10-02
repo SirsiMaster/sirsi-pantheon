@@ -6,15 +6,19 @@ package main
 // authority. This verb schema-validates the file and persists it atomically
 // via routerstore.RegisterWing, returning the admitted receipt.
 //
-// Caller-authority binding (rs-31b: binding the caller to an INDEPENDENTLY
-// established project/repo authority) and canonical-path containment
-// enforcement (rs-31c) are separate, explicitly named sub-builds layered on
-// top of this verb — not added here.
+// Caller-authority binding (rs-31b) and canonical-path containment
+// enforcement (rs-31c) are enforced by RegisterWing itself: the acting
+// principal is resolved the same way AckItem/respond resolve it
+// (resolveCurrentAgent — env/declared-thread identity, never a flag that
+// lets a caller assert someone else's name) and must hold an active
+// wing-authority grant; see routerwingauthoritycmd.go for issuing grants.
 
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/spf13/cobra"
 )
 
@@ -23,11 +27,16 @@ var routerWingCmd = &cobra.Command{
 	Short: "Stack Lab wing admission (ADR-066)",
 }
 
+var routerWingRegisterAgent string
+
 var routerWingRegisterCmd = &cobra.Command{
 	Use:   "register <file>",
 	Short: "Schema-validate and admit a Stack Lab wing record",
 	Long: `Reads <file>, schema-validates it against contracts/stacklab/v2/wing.schema.json,
-and persists it atomically keyed by wing id.
+and persists it atomically keyed by wing id — provided the acting principal
+holds an active wing-authority grant (see 'sirsi router wing authority grant')
+covering every workspace root the record claims. The record's own "owner"
+field is metadata only; it never establishes authority.
 
 Idempotent on identical bytes: registering the same wing id with the same
 content hash returns the existing receipt. A conflicting identity (same id,
@@ -38,13 +47,21 @@ different bytes) is rejected — no silent overwrite.`,
 		if err != nil {
 			return fmt.Errorf("read %s: %w", args[0], err)
 		}
+		repoRoot, err := router.FindRepoRoot()
+		if err != nil {
+			return fmt.Errorf("no .agents/idea-router/ found: %w", err)
+		}
+		principal, reason := resolveCurrentAgent(filepath.Join(repoRoot, ".agents", "idea-router"), routerWingRegisterAgent)
+		if principal == "" {
+			return fmt.Errorf("resolve acting agent: %s", reason)
+		}
 		store, err := openRouterStore()
 		if err != nil {
 			return err
 		}
 		defer store.Close()
 
-		receipt, err := store.RegisterWing(raw)
+		receipt, err := store.RegisterWing(principal, raw)
 		if err != nil {
 			return err
 		}
@@ -55,6 +72,7 @@ different bytes) is rejected — no silent overwrite.`,
 }
 
 func init() {
+	routerWingRegisterCmd.Flags().StringVar(&routerWingRegisterAgent, "agent", "", "Acting agent id (otherwise resolved from the current session)")
 	routerWingCmd.AddCommand(routerWingRegisterCmd)
 	routerCmd.AddCommand(routerWingCmd)
 }

@@ -49,10 +49,10 @@ version=$(psqlq -d "$DB" -c "SELECT version FROM router.schema_version;")
 # information_schema.triggers lists one row per (trigger, event); count distinct names.
 trigger_names=$(psqlq -d "$DB" -c "SELECT count(DISTINCT trigger_name) FROM information_schema.triggers WHERE trigger_schema='router';")
 
-[ "$tables" = 17 ]        || { echo "FAIL: expected 17 tables (16 + schema_version), got $tables"; exit 1; }
+[ "$tables" = 18 ]        || { echo "FAIL: expected 18 tables (17 + schema_version), got $tables"; exit 1; }
 [ "$trigger_names" = 12 ] || { echo "FAIL: expected 12 triggers, got $trigger_names"; exit 1; }
 [ "$partial" -ge 5 ]      || { echo "FAIL: expected >=5 partial indexes, got $partial"; exit 1; }
-[ "$version" = 24 ]       || { echo "FAIL: schema_version should pair with SQLite v24, got $version"; exit 1; }
+[ "$version" = 25 ]       || { echo "FAIL: schema_version should pair with SQLite v25, got $version"; exit 1; }
 
 # Behaviour: an open item emits exactly one wake event (trigger), as
 # router_service, and a duplicate event_key is ignored (ON CONFLICT DO NOTHING).

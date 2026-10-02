@@ -331,6 +331,27 @@ CREATE TABLE IF NOT EXISTS wings (
     updated          TEXT NOT NULL
 );
 
+-- ── v25 — Stack Lab wing admission, authority binding + path containment ──
+-- (rs-31b/c). One row per grant; see store.go migration 25 for the full
+-- rationale. Deliberately absent from the router_reader GRANT list above —
+-- a future table must stay unreadable until listed, same as sessions/
+-- host_tokens.
+
+CREATE TABLE IF NOT EXISTS wing_authority_grants (
+    grant_id          TEXT PRIMARY KEY,
+    principal         TEXT NOT NULL,
+    issuer            TEXT NOT NULL,
+    project_id        TEXT NOT NULL,
+    router_namespace  TEXT NOT NULL,
+    repository_root   TEXT NOT NULL,
+    evidence_roots_json TEXT NOT NULL,
+    status            TEXT NOT NULL,
+    created           TEXT NOT NULL,
+    revoked           TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_wing_authority_grants_lookup
+    ON wing_authority_grants(principal, project_id, router_namespace, status);
+
 -- ── wake-event triggers (final state after migrations 10..15) ─────────────
 -- Each is one function + one trigger. A wake event is emitted in the SAME
 -- transaction as the source mutation, exactly as in SQLite, so a writer
@@ -534,6 +555,6 @@ DO $$ BEGIN
 END $$;
 
 -- ── version — last, so a partial apply never publishes a version it does not have ──
-INSERT INTO schema_version(version, applied_at) VALUES (24, router.now_rfc3339())
-  ON CONFLICT (singleton) DO UPDATE SET version = 24, applied_at = router.now_rfc3339()
-  WHERE schema_version.version < 24;
+INSERT INTO schema_version(version, applied_at) VALUES (25, router.now_rfc3339())
+  ON CONFLICT (singleton) DO UPDATE SET version = 25, applied_at = router.now_rfc3339()
+  WHERE schema_version.version < 25;
