@@ -62,6 +62,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 ## [Unreleased] — staff the unstaffed lanes; workers acknowledge and are linked to their lane
 
 - **Thread registration works where `ps` is denied.** A sandboxed worker (codex: `fork/exec /bin/ps` not permitted) could not resolve its durable anchor, so native registration failed and its claims and completions ran under unbound sessions. The ancestry lookup now falls back to a kernel `sysctl` read (macOS) when `ps` fails; `ps` stays the first choice because it reports the full executable name.
+- **The local pre-push test timeout matches CI.** `go test` for changed packages timed out at 300s while `routerstore` now takes 572s under `-race`, so the gate could fail a push CI itself would pass. Raised to 600s for both tiers (A28 parity).
+
+- **The pre-push gate holds pushes and tags while a Ma'at measurement window is open.** A push starts CI on the local runners and a tag starts the release build, so either contaminated a run while `rails.lock` existed (PR #928 CI began 6 seconds after hermes opened the lock). The hook now refuses until the lock clears; `MAAT_WINDOW_OVERRIDE=1` is the deliberate bypass. Tested both directions in `scripts/pre-push-window.test.sh`, wired into the Lint job.
 
 - **CI's PostgreSQL leg now fails closed instead of silently skipping.**
   `scripts/ci-postgres.sh` exited 0 and printed a one-line `SKIP:` when

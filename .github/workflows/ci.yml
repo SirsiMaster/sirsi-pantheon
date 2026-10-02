@@ -81,6 +81,9 @@ jobs:
       - name: ci-postgres.sh fail-closed guard
         run: bash scripts/ci-postgres-fail-closed.test.sh
 
+      - name: pre-push measurement-window guard
+        run: bash scripts/pre-push-window.test.sh
+
   test:
     name: Test
     runs-on: macos-14
