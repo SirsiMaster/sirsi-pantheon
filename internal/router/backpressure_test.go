@@ -1,8 +1,11 @@
 package router
 
 import (
+	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 )
 
 // TestShouldDeferDispatchHighLoadHolds is the "must fail red" direction (A35):
@@ -79,5 +82,34 @@ func TestShouldDeferDispatchThreshold(t *testing.T) {
 func TestDefaultLoadReaderReads(t *testing.T) {
 	if v, ok := defaultLoadAvg1m(); !ok || v < 0 {
 		t.Fatalf("default reader gave %v, %v", v, ok)
+	}
+}
+
+// TestSharedBusyCoresMeasuresOncePerTTL: many callers within the TTL share one measurement (the wake loops used to
+// run top each, every pass); a stale reading is re-measured once; a held lock serves the previous reading.
+func TestSharedBusyCoresMeasuresOncePerTTL(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "busy.json")
+	clock := time.Unix(1_000_000, 0)
+	now := func() time.Time { return clock }
+	calls := 0
+	measure := func() (float64, bool) { calls++; return float64(calls), true }
+	for i := 0; i < 50; i++ {
+		if v, ok := sharedBusyCores(path, 15*time.Second, now, measure); !ok || v != 1 {
+			t.Fatalf("call %d: got %v,%v want 1,true", i, v, ok)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("50 callers inside the TTL measured %d times, want 1", calls)
+	}
+	clock = clock.Add(16 * time.Second)
+	if v, _ := sharedBusyCores(path, 15*time.Second, now, measure); v != 2 || calls != 2 {
+		t.Fatalf("stale reading: got %v after %d measures, want 2 after 2", v, calls)
+	}
+	clock = clock.Add(16 * time.Second)
+	if err := os.WriteFile(path+".lock", nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := sharedBusyCores(path, 15*time.Second, now, measure); v != 2 || calls != 2 {
+		t.Fatalf("refresh in progress elsewhere: got %v after %d measures, want the previous 2 and no new measure", v, calls)
 	}
 }
