@@ -1,5 +1,9 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-02 — v0.24.66 release candidate
+
+- Records the lease/session-identity fixes (per-thread session cache, dispatch-contract agent id), the ps-free thread anchor, the pre-push window gate, the bind router-rejection check, the gemma status default port, who-is-on live activity, the ADR-070 revision and the doctor name-conformance report from the exact tested mainline.
+
 ## 2026-10-01 — v0.24.65 release candidate
 
 - Records the PR947/PR949/PR950 lineage from the exact tested mainline: lease

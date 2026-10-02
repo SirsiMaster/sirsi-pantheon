@@ -24,6 +24,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
   name, matching the rename already carried by the deck, data room, and
   Stack Lab. Pure copy change — no behaviour change, no ADR required. The
   internal code comment at the top of `viewApollo()` is unchanged.
+## [0.24.66] — 2026-10-02
+
+- **SSA's headless consumer works again.** Its sandbox listed `~/.sirsi/relay` (a symlink to `/var/sirsipantheon/relay`) as a writable root and the codex executor now refuses a root containing a symlink component, so every command failed, every dispatch made no progress, and the lane was quarantined three times (9/20, 9/22, 10/1). Only the real path is listed now.
+
+- **A headless worker stands down while an attended session owns the lane.** The wake loop dispatched a `claude --print` consumer on a lane whose owner was working it interactively, so two writers acted as one id (the worker acknowledged and worked PR #893 on `claude-finalwishes-m5` while the owner's session never saw it). Dispatch now holds (`hold: attended` in the lane state) while a live, armed attended session is on the lane, and resumes as soon as it is gone.
+
+- **A dispatched consumer authenticates as its lane, not the hostname.** With no `SIRSI_AGENT_ID` and no session marker the router client fell back to the hostname, so every such consumer on a host shared one identity ("Mac"); the wake loop already names the lane in `SIRSI_ROUTER_AGENT`. That variable now fills the gap before the hostname fallback; an explicit `SIRSI_AGENT_ID` still wins.
+
+- **Two actors with the same fallback agent id no longer swap sessions.** Callers that cannot resolve their agent id (sandboxed claude-pantheon and codex-pantheon sessions) both fall back to the hostname, and one cache file per agent made them overwrite each other's session, so a lease claimed under one session was completed under another and refused. A caller with a thread now gets its own per-thread session file; the per-agent file stays the latest-session cache for thread-less callers.
+
+- **The bind refuses to approve a PR the router has rejected.** `sirsi-bind.sh` consulted GitHub reviews only, so a router-only rejection did not stop PR #927 from merging (A34 gap, 2026-10-01). It now reads the router's latest verdict item naming the PR and refuses APPROVE while that is a rejection; a newer ACCEPT/PASS item or the explicit owner override clears it, and an unreadable router fails closed. The bind tests (`scripts/bind/*.test.sh`, including the new router-rejection test with both directions) now run in the Lint job.
+
+- **The bind refuses to approve a PR the router has rejected.** `sirsi-bind.sh` consulted GitHub reviews only, so a router-only rejection did not stop PR #927 from merging (A34 gap, 2026-10-01). It now reads the router's latest verdict item naming the PR and refuses APPROVE while that is a rejection; a newer ACCEPT/PASS item or the explicit owner override clears it, and an unreadable router fails closed. Two pure-jq bind tests, including the new router-rejection test (both directions), now run in the Lint job.
+
+- **ADR-070 revised for re-review.** Applies codex-pantheon's five required amendments: the boundary test runs first and independent of findings; one exhaustive verdict precedence (R0-R8) rejects invalid or non-finite input; a screen pass never supplies the binding approval; calibration samples auto-passes and fails closed when unqualified, with provisional thresholds and no unmeasured "90%" claim; provenance adds an evidence-set digest and calibration identity. No code changes; the current deterministic gate stays until the corrected schema is independently accepted.
+
+- **`sirsi router doctor` reports ADR-072 name conformance.** Lists the registered ids that are not in `<agent>-<project>-<machine>[-<task>]` form (23 of 33 today) with the ADR's migration-map suggestion where one exists. Informational and report-only: the rename verb is not built, so it adds no issue count and renames nothing.
+
+- **`sirsi maat who-is-on` no longer says "free" over live work, and shells are not load.** The reservation ledger only knows who asked; `who-is-on` now also lists the contaminating processes running on this host right now. The process probe also stops classifying a `zsh -c "<script>"` wrapper as bench/build load because its script text mentions "go build" or "tbraw" (it flagged every agent's own shell); the real child process is still classified. Closes the (a) and (b) halves of the codex-apollo admission repro.
+
+- **Dashboard copy:** `viewApollo()`'s six user-visible strings (session
+  awaiting/active/error copy) now say "Apollo" instead of the retired "SNE"
+  name, matching the rename already carried by the deck, data room, and
+  Stack Lab. Pure copy change — no behaviour change, no ADR required. The
+  internal code comment at the top of `viewApollo()` is unchanged.
+
 ## [Unreleased] — routerstore: Task now surfaces result_ref
 
 - **Router tasks:** `CompleteTaskLease` persists `result_ref` into the
