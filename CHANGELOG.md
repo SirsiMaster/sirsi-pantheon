@@ -6,6 +6,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased] — Apollo view: retire the last user-facing "SNE" copy
 
+- **SSA's headless consumer works again.** Its sandbox listed `~/.sirsi/relay` (a symlink to `/var/sirsipantheon/relay`) as a writable root and the codex executor now refuses a root containing a symlink component, so every command failed, every dispatch made no progress, and the lane was quarantined three times (9/20, 9/22, 10/1). Only the real path is listed now.
+
 - **A headless worker stands down while an attended session owns the lane.** The wake loop dispatched a `claude --print` consumer on a lane whose owner was working it interactively, so two writers acted as one id (the worker acknowledged and worked PR #893 on `claude-finalwishes-m5` while the owner's session never saw it). Dispatch now holds (`hold: attended` in the lane state) while a live, armed attended session is on the lane, and resumes as soon as it is gone.
 
 - **A dispatched consumer authenticates as its lane, not the hostname.** With no `SIRSI_AGENT_ID` and no session marker the router client fell back to the hostname, so every such consumer on a host shared one identity ("Mac"); the wake loop already names the lane in `SIRSI_ROUTER_AGENT`. That variable now fills the gap before the hostname fallback; an explicit `SIRSI_AGENT_ID` still wins.
