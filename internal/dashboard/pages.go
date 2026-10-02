@@ -566,7 +566,7 @@ function viewHorus(){
    This prevents a dashboard refresh from silently starting an inference job. */
 function viewApollo(){
  out('Apollo — Inference Session','t-gold');
- out('  Live data is published by SNE after an admitted local session starts. Horus never fabricates a session or modifies the engine.','t-dim');
+ out('  Live data is published by Apollo after an admitted local session starts. Horus never fabricates a session or modifies the engine.','t-dim');
  const refresh=document.createElement('button');
  refresh.className='t-action';refresh.type='button';refresh.textContent='[refresh telemetry]';
  refresh.style.cssText='background:none;border:0;font:inherit;margin:8px 0;padding:0';
@@ -577,14 +577,14 @@ function viewApollo(){
  }).then(function(read){
   const t=read.telemetry||{};
   if(read.state==='awaiting_session'){
-   out('');out('  No SNE session sample is available on this Mac yet.','t-head');
-   out('  Next: open Stack Lab in the Sirsi app, select the local machine and resident engine, create a plan, then start the admitted SNE session.','t-dim');
-   out('  When SNE publishes its sample, use [refresh telemetry]. Nothing is stuck here: no session has been started from this screen.','t-dim');
+   out('');out('  No Apollo session sample is available on this Mac yet.','t-head');
+   out('  Next: open Stack Lab in the Sirsi app, select the local machine and resident engine, create a plan, then start the admitted Apollo session.','t-dim');
+   out('  When Apollo publishes its sample, use [refresh telemetry]. Nothing is stuck here: no session has been started from this screen.','t-dim');
    return;
   }
   if(read.state!=='active'){
    out('');out('  Telemetry state: '+(read.state||'unknown'),'t-err');
-   out('  Refresh after SNE records a valid session sample. If this persists, inspect the Ma’at casebook for its retained evidence.','t-dim');
+   out('  Refresh after Apollo records a valid session sample. If this persists, inspect the Ma’at casebook for its retained evidence.','t-dim');
    return;
   }
   out('');
@@ -609,7 +609,7 @@ function viewApollo(){
   }
  }).catch(function(e){
   out('');out('  Apollo telemetry is unavailable: '+e.message,'t-err');
-  out('  Try [refresh telemetry]. If it continues, open Ma’at to inspect the recorded evidence. This dashboard did not start or change SNE.','t-dim');
+  out('  Try [refresh telemetry]. If it continues, open Ma’at to inspect the recorded evidence. This dashboard did not start or change Apollo.','t-dim');
  });
 }
 

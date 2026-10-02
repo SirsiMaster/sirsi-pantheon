@@ -4,6 +4,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 **Building in public** — see [docs/BUILD_LOG.md](docs/BUILD_LOG.md) for the full narrative.
 
+## [Unreleased] — Apollo view: retire the last user-facing "SNE" copy
+
+- **Dashboard copy:** `viewApollo()`'s six user-visible strings (session
+  awaiting/active/error copy) now say "Apollo" instead of the retired "SNE"
+  name, matching the rename already carried by the deck, data room, and
+  Stack Lab. Pure copy change — no behaviour change, no ADR required. The
+  internal code comment at the top of `viewApollo()` is unchanged.
+
 ## [0.24.65] — 2026-10-01
 
 - **Router leases:** a worker keeps its own lease across a session remint
