@@ -17,12 +17,17 @@
 package router
 
 import (
+	"encoding/json"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
+	"time"
 )
 
 // loadAvgMu guards the injected seam (Rule A16/A21): tests substitute a fixed
@@ -48,6 +53,91 @@ var cpuIdleRe = regexp.MustCompile(`([0-9.]+)% idle`)
 // old gate tripped at 2x). A read failure returns 0, false — an unreadable
 // host is not evidence of an overloaded host, so callers must not gate.
 func defaultLoadAvg1m() (float64, bool) {
+	return sharedBusyCores(loadCachePath(), loadCacheTTL, time.Now, measureBusyCores)
+}
+
+// The probe below costs about a second of CPU per call (top runs for two samples) and every wake loop called it
+// before each dispatch pass — one loop per lane, so a stream of root `top` processes kept the M1's efficiency
+// cores busy (owner 2026-10-02: the loops must never take precedence over work). One reading now serves every
+// loop on the host for loadCacheTTL: the first loop to find it stale takes a lock file, measures, and writes it;
+// the others read it, or use the previous reading while a refresh is running.
+const loadCacheTTL = 15 * time.Second
+
+// loadCachePath is in a private per-user directory (0700), never a shared temp directory: the loops can run as
+// root, and a planted symlink or reading in /tmp could redirect the write or fake the load (security review of #969).
+func loadCachePath() string {
+	base, err := os.UserCacheDir()
+	if err != nil {
+		return ""
+	}
+	dir := filepath.Join(base, "sirsi", "router")
+	if os.MkdirAll(dir, 0o700) != nil {
+		return ""
+	}
+	return filepath.Join(dir, "busy-cores.json")
+}
+
+// ownRegularFile reports whether path is a regular file (not a symlink) owned by this process's user.
+func ownRegularFile(path string) bool {
+	st, err := os.Lstat(path)
+	if err != nil || !st.Mode().IsRegular() {
+		return false
+	}
+	if sys, ok := st.Sys().(*syscall.Stat_t); ok && int(sys.Uid) != os.Getuid() {
+		return false
+	}
+	return true
+}
+
+type busyReading struct {
+	At    int64   `json:"at"` // unix seconds
+	Cores float64 `json:"cores"`
+}
+
+func sharedBusyCores(path string, ttl time.Duration, now func() time.Time, measure func() (float64, bool)) (float64, bool) {
+	if path == "" {
+		return measure()
+	}
+	var last busyReading
+	if !ownRegularFile(path) {
+		_ = os.Remove(path) // a symlink or someone else's file: never trust it
+	} else if b, err := os.ReadFile(path); err == nil && json.Unmarshal(b, &last) == nil && last.At > 0 {
+		if now().Sub(time.Unix(last.At, 0)) < ttl {
+			return last.Cores, true
+		}
+	}
+	lock := path + ".lock"
+	f, err := os.OpenFile(lock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil { // another loop is measuring right now
+		if st, e := os.Stat(lock); e == nil && now().Sub(st.ModTime()) > 4*ttl {
+			_ = os.Remove(lock) // a holder that died mid-measure
+		}
+		if last.At > 0 {
+			return last.Cores, true
+		}
+		return measure()
+	}
+	f.Close()
+	defer os.Remove(lock)
+	v, ok := measure()
+	if ok {
+		if b, err := json.Marshal(busyReading{At: now().Unix(), Cores: v}); err == nil {
+			if f, err := os.CreateTemp(filepath.Dir(path), ".busy-*"); err == nil { // fresh 0600 file: no planted target
+				_, werr := f.Write(b)
+				f.Close()
+				if werr == nil {
+					_ = os.Rename(f.Name(), path)
+				} else {
+					_ = os.Remove(f.Name())
+				}
+			}
+		}
+	}
+	return v, ok
+}
+
+// measureBusyCores is the expensive reading (top's two samples, else half the load average).
+func measureBusyCores() (float64, bool) {
 	if out, err := exec.Command("top", "-l", "2", "-n", "0", "-s", "1").Output(); err == nil {
 		if m := cpuIdleRe.FindAllStringSubmatch(string(out), -1); len(m) > 0 {
 			if idle, err := strconv.ParseFloat(m[len(m)-1][1], 64); err == nil {
