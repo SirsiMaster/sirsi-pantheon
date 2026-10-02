@@ -96,26 +96,29 @@ func (s *SQLiteStore) ListenNotify(ctx context.Context, agent string) (<-chan st
 	events := make(chan struct{}, 1)
 	go func() {
 		defer close(events)
+		// Explicit O_NONBLOCK (not os.OpenFile's default blocking open) is
+		// required for the runtime poller to register this FIFO, which is
+		// what makes SetReadDeadline work below. Without it, Close() from
+		// another goroutine does not reliably interrupt a blocked Read on
+		// darwin — the reader leaks past ctx cancellation, holding the fd
+		// open forever (observed: a single leaked reader starves every
+		// other *sql.DB in the process under -race).
+		fdNum, err := syscall.Open(path, syscall.O_RDWR|syscall.O_NONBLOCK, 0)
+		if err != nil {
+			return
+		}
+		fd := os.NewFile(uintptr(fdNum), path)
+		defer fd.Close()
 		buf := make([]byte, 16)
 		for ctx.Err() == nil {
-			// O_RDONLY blocks until a writer pokes. RDWR keeps the read side
-			// open across pokes so writers never race a closing reader.
-			fd, err := os.OpenFile(path, os.O_RDWR, 0)
-			if err != nil {
-				return
+			_ = fd.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+			if _, err := fd.Read(buf); err != nil {
+				continue // timeout (recheck ctx) or a transient read error
 			}
-			done := make(chan struct{})
-			go func() { <-ctx.Done(); _ = fd.Close(); close(done) }()
-			for {
-				if _, err := fd.Read(buf); err != nil {
-					break
-				}
-				select {
-				case events <- struct{}{}:
-				default: // a pending wake already queued — coalesce
-				}
+			select {
+			case events <- struct{}{}:
+			default: // a pending wake already queued — coalesce
 			}
-			<-done
 		}
 	}()
 	return events, nil
