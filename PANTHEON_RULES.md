@@ -559,36 +559,37 @@ These documents are the source of truth for this repo:
 2.  `docs/PROJECT_SCOPE.md` **(NOT YET WRITTEN)**
 3.  `CONTRIBUTING.md`
 
-### 🏗 Architecture & Design (4)
+### 🏗 Architecture & Design (5)
 4.  `docs/ARCHITECTURE_DESIGN.md`
 5.  `docs/TECHNICAL_DESIGN.md` **(NOT YET WRITTEN)**
 6.  `docs/SAFETY_DESIGN.md`
 7.  `docs/SCAN_RULE_GUIDE.md`
+8.  `docs/DIAGRAM_INDEX.md` — SL-DIAGRAM-001 process diagram traceability matrix (standing Stack Lab rubric; adopted 2026-10-02, Phase 1 inventory, coverage audit ongoing)
 
 ### ⚖️ Compliance & Security (3)
-8.  `SECURITY.md`
-9.  `docs/SECURITY_COMPLIANCE.md` **(NOT YET WRITTEN)**
-10. `docs/RISK_MANAGEMENT.md` **(NOT YET WRITTEN)**
+9.  `SECURITY.md`
+10. `docs/SECURITY_COMPLIANCE.md` **(NOT YET WRITTEN)**
+11. `docs/RISK_MANAGEMENT.md` **(NOT YET WRITTEN)**
 
 ### 🚀 Operations (3)
-11. `docs/DEPLOYMENT_GUIDE.md` **(NOT YET WRITTEN)**
-12. `docs/QA_PLAN.md`
-13. `docs/VERSIONING_STANDARD.md` **(NOT YET WRITTEN)**
+12. `docs/DEPLOYMENT_GUIDE.md` **(NOT YET WRITTEN)**
+13. `docs/QA_PLAN.md`
+14. `docs/VERSIONING_STANDARD.md` **(NOT YET WRITTEN)**
 
 ### 🧠 Knowledge & Decisions (4)
-14. `docs/ADR-INDEX.md`
-15. `docs/ADR-TEMPLATE.md`
-16. `CHANGELOG.md`
-17. `VERSION`
+15. `docs/ADR-INDEX.md`
+16. `docs/ADR-TEMPLATE.md`
+17. `CHANGELOG.md`
+18. `VERSION`
 
 ### 🔧 CI/CD (2)
-18. `.github/workflows/ci.yml`
-19. `.github/workflows/release.yml`
+19. `.github/workflows/ci.yml`
+20. `.github/workflows/release.yml`
 
 ### 📦 Configuration (3)
-20. `configs/default_rules.yaml`
-21. `configs/example_policy.yaml`
-22. `configs/network_example.yaml` **(NOT YET WRITTEN)**
+21. `configs/default_rules.yaml`
+22. `configs/example_policy.yaml`
+23. `configs/network_example.yaml` **(NOT YET WRITTEN)**
 
 ---
 
