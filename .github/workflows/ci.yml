@@ -84,6 +84,10 @@ jobs:
       - name: pre-push measurement-window guard
         run: bash scripts/pre-push-window.test.sh
 
+      - name: bind A34 guards (GitHub + router rejection)
+        run: |
+          for t in scripts/bind/*.test.sh; do bash "$t"; done
+
   test:
     name: Test
     runs-on: macos-14
