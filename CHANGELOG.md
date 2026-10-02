@@ -65,6 +65,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 - **The local pre-push test timeout matches CI.** `go test` for changed packages timed out at 300s while `routerstore` now takes 572s under `-race`, so the gate could fail a push CI itself would pass. Raised to 600s for both tiers (A28 parity).
 
 - **The pre-push gate holds pushes and tags while a Ma'at measurement window is open.** A push starts CI on the local runners and a tag starts the release build, so either contaminated a run while `rails.lock` existed (PR #928 CI began 6 seconds after hermes opened the lock). The hook now refuses until the lock clears; `MAAT_WINDOW_OVERRIDE=1` is the deliberate bypass. Tested both directions in `scripts/pre-push-window.test.sh`, wired into the Lint job.
+- **`sirsi gemma serve --status` finds the launchd-owned SNE.** It read only the old broker's port file, so a healthy SNE on 127.0.0.1:8477 reported "unavailable" (and `ctr`/`insight` skipped the warm local model). A missing or stale port file now falls back to the default port.
 
 - **CI's PostgreSQL leg now fails closed instead of silently skipping.**
   `scripts/ci-postgres.sh` exited 0 and printed a one-line `SKIP:` when
