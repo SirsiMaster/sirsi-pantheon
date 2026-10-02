@@ -144,3 +144,44 @@ func TestCheckConflicts_BuildRegimeSkipsPressureRead(t *testing.T) {
 		t.Fatalf("build-regime report must not carry a pressure reading, got %+v", rep)
 	}
 }
+
+// LiveActivity must surface what the process probe sees even when no reservation
+// exists, and report nothing when the host is quiet (both directions).
+func TestLiveActivityReportsRunningWorkWithoutAReservation(t *testing.T) {
+	defer SetActivityProbe(probeProcesses)
+	SetActivityProbe(func(string) ([]Actor, error) {
+		return []Actor{{Kind: "build", Detail: "Runner.Worker", PID: 42}}, nil
+	})
+	got, err := LiveActivity("m5")
+	if err != nil || len(got) != 1 || got[0].Kind != "build" {
+		t.Fatalf("busy host: %+v err=%v", got, err)
+	}
+	SetActivityProbe(func(string) ([]Actor, error) { return nil, nil })
+	if got, err := LiveActivity("m5"); err != nil || len(got) != 0 {
+		t.Fatalf("quiet host must report nothing: %+v err=%v", got, err)
+	}
+}
+
+// A shell whose script text merely mentions a build/bench word is not load; the
+// real child process is (both directions).
+func TestClassifyProcIgnoresShellWrappers(t *testing.T) {
+	for _, c := range []string{
+		`/bin/zsh -c source /Users/x/.claude/shell-snapshots/s.sh && go build ./... && tbraw-bench`,
+		`bash -lc go test ./transport/tbraw`,
+		`/bin/sh -c "xcodebuild -scheme X"`,
+	} {
+		if got := classifyProc(c); got != "" {
+			t.Errorf("shell wrapper %q classified as %q", c, got)
+		}
+	}
+	for c, want := range map[string]string{
+		`go test ./transport/tbraw -run Skeleton -count=1`: "bench",
+		`/usr/bin/xcodebuild -scheme X`:                    "build",
+		`/Users/x/actions-runner/bin/Runner.Worker spawn`:  "build",
+		`/bin/zsh ./run-bench.sh tbraw-bench`:              "bench", // a script, not -c: still classified
+	} {
+		if got := classifyProc(c); got != want {
+			t.Errorf("classifyProc(%q) = %q, want %q", c, got, want)
+		}
+	}
+}

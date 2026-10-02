@@ -265,7 +265,18 @@ var maatWhoCmd = &cobra.Command{
 			return emitJSON(who)
 		}
 		if who == nil {
-			fmt.Printf("𓆄 %s is free\n", args[0])
+			fmt.Printf("𓆄 %s has no reservation\n", args[0])
+			// A35: the ledger only knows who asked. Say what is actually running.
+			if actors, aerr := schedule.LiveActivity(args[0]); aerr == nil && len(actors) > 0 {
+				fmt.Printf("⚠ but %d live actor(s) on this host — not free:\n", len(actors))
+				for i, a := range actors {
+					if i == 5 {
+						fmt.Printf("    … %d more\n", len(actors)-5)
+						break
+					}
+					fmt.Printf("    %s: %s\n", a.Kind, a.Detail)
+				}
+			}
 			return nil
 		}
 		fmt.Printf("𓆄 %s: %s (%s, %s) until %s\n", args[0], who.Holder, who.Regime, who.Work, orNow(who.EstEnd))
