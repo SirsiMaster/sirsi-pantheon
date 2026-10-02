@@ -48,7 +48,11 @@ var (
 // 20260930-225059).
 var submitRepoPolicy = map[string][]string{
 	"sirsimaster/sirsi-hermes": {"hermes"},
-	"sirsimaster/sirsi-photon": {"hermes"},
+	// Hermes is now Mercury (owner 2026-10-02): the repo is being renamed sirsi-hermes -> sirsi-mercury. The new name
+	// must carry the same policy BEFORE the rename, or an unlisted repo is admitted for any lane. "mercury" is the
+	// lane's router id once the registry adds it; until then the lane submits as "hermes".
+	"sirsimaster/sirsi-mercury": {"hermes", "mercury"},
+	"sirsimaster/sirsi-photon":  {"hermes"},
 }
 
 var submitValidKinds = map[string]bool{

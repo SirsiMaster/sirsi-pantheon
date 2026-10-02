@@ -39,7 +39,10 @@ var LaneRepoMap = map[string]string{
 	// Hermes transport and Photon hardware wings; retaining the retired name
 	// here would turn a schema-invalid historical record into the doctor’s
 	// authority.
-	"hermes":               "SirsiMaster/sirsi-hermes",
+	"hermes": "SirsiMaster/sirsi-hermes",
+	// stacklab.wing.mercury (Hermes renamed 2026-10-02). GitHub redirects the old repo name after the rename, so
+	// this stays correct before and after it.
+	"mercury":              "SirsiMaster/sirsi-hermes",
 	"photon":               "SirsiMaster/sirsi-photon",
 	"hardware-estate":      "SirsiMaster/SirsiNexusApp",
 	"maat":                 "SirsiMaster/sirsi-pantheon",
