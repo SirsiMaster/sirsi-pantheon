@@ -15,6 +15,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
   name, matching the rename already carried by the deck, data room, and
   Stack Lab. Pure copy change — no behaviour change, no ADR required. The
   internal code comment at the top of `viewApollo()` is unchanged.
+## [Unreleased] — routerstore: ListenNotify no longer leaks a blocking reader past ctx cancellation
+
+- **Router dispatch:** `SQLiteStore.ListenNotify`'s FIFO reader opened the
+  notify pipe with a plain blocking `os.OpenFile(O_RDWR)` and relied on a
+  second goroutine's `fd.Close()` to interrupt an in-flight `Read` when the
+  context was cancelled. On darwin that close does not reliably unblock the
+  reader, so the goroutine (and its fd) leaked past `ctx.Done()` — confirmed
+  live under `-race -short`: a goroutine dump showed a reader still blocked
+  in `syscall.Read` at this call site 8 minutes after its owning test had
+  finished, and with enough tests accumulating these it starved every other
+  `*sql.DB` in the process. Switched to an explicit non-blocking
+  (`O_NONBLOCK`) open with a 200ms `SetReadDeadline` poll that rechecks
+  `ctx.Err()` each cycle, so the goroutine exits promptly on cancellation
+  instead of waiting on a close that may never land.
+
 ## [Unreleased] — routerstore: Task now surfaces result_ref
 
 - **Router tasks:** `CompleteTaskLease` persists `result_ref` into the
