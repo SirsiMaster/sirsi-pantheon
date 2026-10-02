@@ -6,6 +6,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased] — Apollo view: retire the last user-facing "SNE" copy
 
+- **Two actors with the same fallback agent id no longer swap sessions.** Callers that cannot resolve their agent id (sandboxed claude-pantheon and codex-pantheon sessions) both fall back to the hostname, and one cache file per agent made them overwrite each other's session, so a lease claimed under one session was completed under another and refused. A caller with a thread now gets its own per-thread session file; the per-agent file stays the latest-session cache for thread-less callers.
+
 - **Dashboard copy:** `viewApollo()`'s six user-visible strings (session
   awaiting/active/error copy) now say "Apollo" instead of the retired "SNE"
   name, matching the rename already carried by the deck, data room, and
