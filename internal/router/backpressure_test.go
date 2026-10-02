@@ -113,3 +113,24 @@ func TestSharedBusyCoresMeasuresOncePerTTL(t *testing.T) {
 		t.Fatalf("refresh in progress elsewhere: got %v after %d measures, want the previous 2 and no new measure", v, calls)
 	}
 }
+
+// TestSharedBusyCoresIgnoresPlantedSymlink: a symlink at the cache path is never read or written through.
+func TestSharedBusyCoresIgnoresPlantedSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "victim")
+	if err := os.WriteFile(target, []byte(`{"at":9999999999,"cores":0}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "busy.json")
+	if err := os.Symlink(target, path); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	v, ok := sharedBusyCores(path, 15*time.Second, time.Now, func() (float64, bool) { calls++; return 7, true })
+	if !ok || v != 7 || calls != 1 {
+		t.Fatalf("planted reading was trusted: got %v,%v after %d measures, want 7,true after 1", v, ok, calls)
+	}
+	if b, _ := os.ReadFile(target); string(b) != `{"at":9999999999,"cores":0}` {
+		t.Fatalf("the symlink target was written through: %s", b)
+	}
+}
