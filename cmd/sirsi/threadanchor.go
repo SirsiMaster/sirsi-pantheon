@@ -39,6 +39,17 @@ func resolveAnchorPID(surface string) (int, error) {
 }
 
 var lookupAnchorProcess anchorProcessLookup = func(pid int) (anchorProcess, error) {
+	p, err := psAnchorProcess(pid)
+	if err != nil {
+		// ps can be denied (sandboxed codex worker); the kernel lookup needs no fork.
+		if k, kerr := kinfoAnchorProcess(pid); kerr == nil {
+			return k, nil
+		}
+	}
+	return p, err
+}
+
+func psAnchorProcess(pid int) (anchorProcess, error) {
 	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "ppid=,comm=").Output()
 	if err != nil {
 		return anchorProcess{}, fmt.Errorf("inspect pid %d: %w", pid, err)

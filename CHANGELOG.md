@@ -61,6 +61,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased] — staff the unstaffed lanes; workers acknowledge and are linked to their lane
 
+- **Thread registration works where `ps` is denied.** A sandboxed worker (codex: `fork/exec /bin/ps` not permitted) could not resolve its durable anchor, so native registration failed and its claims and completions ran under unbound sessions. The ancestry lookup now falls back to a kernel `sysctl` read (macOS) when `ps` fails; `ps` stays the first choice because it reports the full executable name.
+
 - **CI's PostgreSQL leg now fails closed instead of silently skipping.**
   `scripts/ci-postgres.sh` exited 0 and printed a one-line `SKIP:` when
   `initdb`/`pg_ctl`/`psql` were missing — on the hosted `macos-14` runner,
