@@ -724,7 +724,14 @@ func resolveCurrentAgent(routerRoot, override string) (string, string) {
 		return a, "env SIRSI_AGENT_ID"
 	}
 	declared := func(a string) bool {
-		return dispatch.New(routerRoot, nil).ValidateAgent("agent", a) == nil
+		if dispatch.New(routerRoot, nil).ValidateAgent("agent", a) == nil {
+			return true
+		}
+		// Fallback, not a replacement: a shared checkout can have a branch out
+		// that lacks an agent declared on origin/main (claude-inference
+		// 20260926-144839; A37). This never writes the working tree, so it
+		// cannot re-arm the drift registrydrift.go documents.
+		return router.DeclaredOnOrigin(routerRoot, a)
 	}
 	skipped := ""
 	if a := router.ReadSessionAgentMarker(router.CurrentSessionID()); a != "" {

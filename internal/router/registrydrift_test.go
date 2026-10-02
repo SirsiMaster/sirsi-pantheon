@@ -169,3 +169,25 @@ func TestMapKeyWinsOverAContradictoryInnerID(t *testing.T) {
 			d.LostFields[0].AgentID)
 	}
 }
+
+// DeclaredOnOrigin backs identity resolution's fallback for a shared checkout
+// whose working tree lacks an agent declared on origin/main (claude-inference
+// 20260926-144839). agentDeclared is the pure half (git I/O is in
+// readMergedRegistry, deliberately untested here, same as the rest of this file).
+func TestAgentDeclaredFindsAnIDPresentInTheRegistry(t *testing.T) {
+	if !agentDeclared([]byte(upstream), "claude-io") {
+		t.Fatal("claude-io is in the fixture registry; must be declared")
+	}
+}
+
+func TestAgentDeclaredRefusesAnUnknownID(t *testing.T) {
+	if agentDeclared([]byte(upstream), "no-such-agent") {
+		t.Fatal("an id absent from the registry must not read as declared")
+	}
+}
+
+func TestAgentDeclaredIsFalseOnUnparseableInput(t *testing.T) {
+	if agentDeclared([]byte(`not json`), "claude-io") {
+		t.Fatal("unparseable input must not be mistaken for a declared agent")
+	}
+}
