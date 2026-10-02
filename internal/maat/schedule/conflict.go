@@ -272,6 +272,12 @@ func probeProcesses(machine string) ([]Actor, error) {
 // router item 20260926-171755). Only Runner.Worker — spawned per job — is load.
 func classifyProc(cmd string) string {
 	lc := strings.ToLower(cmd)
+	// A shell wrapper (`zsh -c "<script text>"`) carries its whole script in argv, so
+	// words like "go build" or "tbraw " inside it matched as if the shell were the
+	// load. The real work is a child process and is classified on its own.
+	if isShellWrapper(lc) {
+		return ""
+	}
 	switch {
 	case containsAny(lc, "tbraw-bench", "tcp-bench", "tbraw ", "rail-bench", "hermes-bench", "iperf"):
 		return "bench"
@@ -281,6 +287,35 @@ func classifyProc(cmd string) string {
 		return "model"
 	}
 	return ""
+}
+
+// LiveActivity reports the contaminating actors on this host right now,
+// independent of any reservation. `who-is-on` uses it so "free" never reads as
+// "idle": a reservation ledger only knows who asked, not who is running
+// (codex-apollo repro 2026-09-26, FinalWishes work running while the ledger said free).
+func LiveActivity(machine string) ([]Actor, error) {
+	return getActivityProbe()(machine)
+}
+
+// isShellWrapper reports whether cmd is a shell started with -c.
+func isShellWrapper(lc string) bool {
+	fields := strings.Fields(lc)
+	if len(fields) < 2 {
+		return false
+	}
+	base := fields[0][strings.LastIndex(fields[0], "/")+1:]
+	if base != "zsh" && base != "bash" && base != "sh" {
+		return false
+	}
+	for _, f := range fields[1:] {
+		if f == "-c" || f == "-lc" || f == "-ic" || f == "-lic" {
+			return true
+		}
+		if !strings.HasPrefix(f, "-") {
+			return false
+		}
+	}
+	return false
 }
 
 // ProcessAncestryFn returns pid -> ppid for every process this host can see.
