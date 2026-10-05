@@ -116,6 +116,28 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertEqual(route.contextCheck, "Current finding B")
     }
 
+    func testRaFabricHandoffHeaderUsesSnapshotSafeActionButton() throws {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let viewsURL = testFile.deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/SirsiMenubar/Views.swift")
+        let source = try String(contentsOf: viewsURL, encoding: .utf8)
+        let viewStart = try XCTUnwrap(source.range(of: "struct RaFabricView: View {"))
+        let headerStart = try XCTUnwrap(source.range(of: "HStack(spacing: 8) {",
+                                                     range: viewStart.upperBound..<source.endIndex))
+        let headerEnd = try XCTUnwrap(source.range(of: "Text(\"Ra keeps Horus instances",
+                                                   range: headerStart.upperBound..<source.endIndex))
+        let header = String(source[headerStart.lowerBound..<headerEnd.lowerBound])
+
+        XCTAssertTrue(header.contains("SnapshotActionButton(disabled: engine.busy)"))
+        XCTAssertTrue(header.contains("showingHandoff = true"))
+        XCTAssertTrue(header.contains("Label(\"Hand off work\""))
+        XCTAssertTrue(header.contains("Label(\"Live work\""))
+        XCTAssertFalse(header.contains("Button {"))
+        XCTAssertFalse(header.contains(".buttonStyle(.borderedProminent)"))
+    }
+
     func testVerifiedOutcomeIsHiddenAfterFindingOrObservationChanges() throws {
         let verified = try decodeFinding(#"{"check":"Disk Pressure","severity":0,"message":"Clear"}"#)
         let changed = try decodeFinding(#"{"check":"Disk Pressure","severity":3,"message":"Critical again","fix":"sirsi clean --confirm"}"#)

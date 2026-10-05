@@ -2015,15 +2015,12 @@ struct RaFabricView: View {
                 VStack(alignment: .leading, spacing: 14) {
 
                     HStack(spacing: 8) {
-                        Button {
+                        SnapshotActionButton(disabled: engine.busy) {
                             showingHandoff = true
                         } label: {
                             Label("Hand off work", systemImage: "arrowshape.turn.up.right.fill")
                                 .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(gold)
-                        .disabled(engine.busy)
 
                         NavLink {
                             ThreadsView(engine: engine)
