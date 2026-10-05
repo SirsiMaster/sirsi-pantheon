@@ -1255,9 +1255,11 @@ struct FindingView: View {
     }
 
     // A generic health observation cannot safely choose or widen a cleanup
-    // scope. Older CLIs that omitted their typed `fix` therefore land in the
-    // app's own itemized Scan & Clean review, where the exact selected paths
-    // are shown and confirmed before anything moves to Trash.
+    // scope. Older CLIs that omitted their typed `fix` therefore enter the
+    // app's guided cleanup route: scan, explain every candidate, select the
+    // exact bounded scope, confirm the Trash move, then receive the outcome in
+    // Pantheon. This is deliberately a resolution flow, not a Terminal handoff
+    // or a fake one-click repair.
     private var requiresNativeCleanupReview: Bool {
         guard finding.fix?.isEmpty != false, finding.severity >= 2 else { return false }
         return finding.check == "App Crashes (7d)" || finding.check == "Disk Space"
@@ -1498,13 +1500,15 @@ struct FindingView: View {
 
     @ViewBuilder private var nativeCleanupReview: some View {
         VStack(alignment: .leading, spacing: 9) {
-            Text("REVIEW THE EXACT CLEANUP SCOPE").sirsiFont(.caption2, weight: .semibold).foregroundStyle(.secondary)
-            Text("Pantheon will not turn this broad diagnostic into a hidden cleanup. Review the itemized candidates, select the exact paths you accept rebuilding, then confirm the scoped Trash move in the app.")
+            Label("Pantheon has a guided resolution", systemImage: "wand.and.stars")
+                .sirsiFont(.callout, weight: .semibold)
+                .foregroundStyle(gold)
+            Text("First, Pantheon scans and explains every candidate. Next, you choose the exact items you accept rebuilding. Finally, Pantheon confirms the scoped Trash move and shows the outcome here. Nothing is sent to Terminal and nothing outside your selection is touched.")
                 .sirsiFont(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             NavLink {
                 AnubisView(engine: engine)
             } label: {
-                Label("Review in Scan & Clean", systemImage: "tray.full.fill")
+                Label("Start guided cleanup", systemImage: "arrow.right.circle.fill")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent).tint(gold)
