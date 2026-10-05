@@ -47,12 +47,8 @@ var (
 // does not invent policy the owner hasn't stated (see router item
 // 20260930-225059).
 var submitRepoPolicy = map[string][]string{
-	"sirsimaster/sirsi-hermes": {"hermes"},
-	// Hermes is now Mercury (owner 2026-10-02): the repo is being renamed sirsi-hermes -> sirsi-mercury. The new name
-	// must carry the same policy BEFORE the rename, or an unlisted repo is admitted for any lane. "mercury" is the
-	// lane's router id once the registry adds it; until then the lane submits as "hermes".
-	"sirsimaster/sirsi-mercury": {"hermes", "mercury"},
-	"sirsimaster/sirsi-photon":  {"hermes"},
+	"sirsimaster/sirsi-mercury": {"mercury"},
+	"sirsimaster/sirsi-photon":  {"mercury"},
 }
 
 var submitValidKinds = map[string]bool{
@@ -61,8 +57,8 @@ var submitValidKinds = map[string]bool{
 
 // canonicalRepo lowercases "OWNER/REPO" so GitHub's case-insensitive naming
 // can't be used to slip past a case-sensitive policy lookup (codex-pantheon
-// finding 2, item 20260930-231226: "sirsimaster/SIRSI-HERMES" must match the
-// same policy row as "SirsiMaster/sirsi-hermes"). Also validates the shape.
+// finding 2, item 20260930-231226: "sirsimaster/SIRSI-MERCURY" must match the
+// same policy row as "SirsiMaster/sirsi-mercury"). Also validates the shape.
 func canonicalRepo(repo string) (string, error) {
 	repo = strings.TrimSpace(repo)
 	owner, name, ok := strings.Cut(repo, "/")

@@ -286,7 +286,7 @@ struct ApolloRunPlannerView: View {
                 .pickerStyle(.menu)
                 .onChange(of: selectedMachine) { _ in resetSelections(catalog) }
             }
-            Text("Each selectable entry has a typed capacity receipt. This device is immediately available; another Horus instance appears only after it publishes the same record through Ra/Hermes. Pantheon never guesses peer capacity.")
+            Text("Each selectable entry has a typed capacity receipt. This device is immediately available; another Horus instance appears only after it publishes the same record through Ra/Mercury. Pantheon never guesses peer capacity.")
                 .sirsiFont(.subheadline).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }

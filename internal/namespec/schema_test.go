@@ -23,7 +23,7 @@ func TestLoadRealSchema(t *testing.T) {
 	allow := []string{
 		"ra-router-m1", "claude-finalwishes-m1", "claude-finalwishes-m5",
 		"claude-home-m1", "claude-home-m5", "codex-finalwishes-m5",
-		"sirsi-governance-m5", "hermes-hermes-m5", "codex-apollo-m5",
+		"sirsi-governance-m5", "mercury-mercury-m5", "codex-apollo-m5",
 		"claude-finalwishes-m1-fw-r02",
 	}
 	for _, in := range allow {

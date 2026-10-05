@@ -23,7 +23,7 @@ security boundary, operational runbook, and traceability row must resolve.
 
 - Ra owns routing and durable handoff semantics; Horus owns the local system
   view; Ma’at judges evidence and contention; Photon is hardware only; Apollo
-  and Apollo Flash are inference profiles; Hermes is the transport protocol.
+  and Apollo Flash are inference profiles; Mercury is the transport protocol.
 - The lane has one router authority. Local SQLite/router files are not a
   second live store after service cut-over.
 - Cross-lane communication is receipt-only. No lane receives arbitrary

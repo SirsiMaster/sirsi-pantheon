@@ -5,7 +5,7 @@
   "project_id": "sirsi-pantheon",
   "router_namespace": "ra-horus-fabric",
   "class": "control-plane",
-  "scope": "M1 Ra is the Ra fabric authority: it unifies independently operated Horus instances into one durable work fabric and owns router behavior. Horus is the local Pantheon system instance on the Mac in front of the operator; each Horus retains local system authority but does not supersede M1 Ra for routing or shared-fabric decisions. Hermes is the authenticated information-interconnect protocol between Horus instances. Photon is the hardware transfer device, not a Horus alias or a control-plane owner. Apollo is the inference engine used by local LLM workloads; Apollo Flash is its speculative execution profile. Ma'at evaluates evidence, decisions, quality, and resource contention across the fabric.",
+  "scope": "M1 Ra is the Ra fabric authority: it unifies independently operated Horus instances into one durable work fabric and owns router behavior. Horus is the local Pantheon system instance on the Mac in front of the operator; each Horus retains local system authority but does not supersede M1 Ra for routing or shared-fabric decisions. Mercury is the authenticated information-interconnect protocol between Horus instances. Photon is the hardware transfer device, not a Horus alias or a control-plane owner. Apollo is the inference engine used by local LLM workloads; Apollo Flash is its speculative execution profile. Ma'at evaluates evidence, decisions, quality, and resource contention across the fabric.",
   "status": "active",
   "first_gate": "RA-HORUS-FABRIC-001.G1",
   "workspace": {
@@ -27,7 +27,7 @@
       "stacklab.wing.maat",
       "stacklab.wing.sne-engine",
       "stacklab.wing.pantheon.pt-wing-001",
-      "stacklab.wing.hermes",
+      "stacklab.wing.mercury",
       "stacklab.wing.photon",
       "stacklab.wing.hardware-estate"
     ]

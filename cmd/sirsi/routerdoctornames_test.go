@@ -12,10 +12,10 @@ import (
 func TestNonconformantNames(t *testing.T) {
 	reg := &router.Registry{Agents: map[string]router.AgentConfig{
 		"ra-router-m1": {}, "claude-finalwishes-m1": {}, "claude-finalwishes-m1-fw-r02": {},
-		"ra": {}, "hermes-m5": {}, "Claude-Home-M1": {},
+		"ra": {}, "mercury-m5": {}, "Claude-Home-M1": {},
 	}}
 	got := nonconformantNames(reg)
-	want := []string{"Claude-Home-M1", "hermes-m5", "ra"}
+	want := []string{"Claude-Home-M1", "mercury-m5", "ra"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("nonconformant = %v, want %v", got, want)
 	}

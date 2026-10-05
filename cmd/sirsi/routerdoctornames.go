@@ -15,8 +15,8 @@ var nameMigrationMap = map[string]string{
 	"claude-home":          "claude-home-m1",
 	"sirsi-software-admin": "sirsi-governance-m5",
 	"codex-apollo":         "codex-apollo-m5",
-	"hermes":               "hermes-hermes-m1",
-	"hermes-m5":            "hermes-hermes-m5",
+	"mercury":              "mercury-mercury-m1",
+	"mercury-m5":           "mercury-mercury-m5",
 	"codex-pantheon":       "codex-pantheon-m1",
 }
 

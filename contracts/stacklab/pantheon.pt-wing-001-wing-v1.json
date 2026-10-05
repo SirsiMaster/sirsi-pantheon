@@ -27,7 +27,7 @@
     "allowed_peer_wings": [
       "stacklab.wing.ra-horus-fabric",
       "stacklab.wing.maat",
-      "stacklab.wing.hermes",
+      "stacklab.wing.mercury",
       "stacklab.wing.photon",
       "stacklab.wing.apollo-engine",
       "stacklab.wing.hardware-estate"

@@ -1388,7 +1388,7 @@ final class SirsiEngine: ObservableObject {
         - Sirsi is Cylton Collymore's system for local-first AI, agent routing, infrastructure hygiene,
           project memory, and portfolio orchestration.
         - Pantheon is the local Mac application, CLI, TUI, menubar, Ra fabric, and deity-governed operations layer.
-        - Horus is the local Pantheon system instance; Ra unifies Horus instances and owns their router behavior. Hermes is the information interconnect between Horus instances. Photon is the hardware transfer device. Apollo runs local inference workloads.
+        - Horus is the local Pantheon system instance; Ra unifies Horus instances and owns their router behavior. Mercury is the information interconnect between Horus instances. Photon is the hardware transfer device. Apollo runs local inference workloads.
         - Ra owns routing/orchestration. Horus owns workstation visibility. Thoth preserves memory.
           Ma'at governs quality, decisions, and the user-facing knowledge surface. Seshat is legacy ingestion compatibility only. Hapi governs pressure/admission.
           Seba maps hardware and architecture. Anubis/Ka handle scan, cleanup, and app remnants.
