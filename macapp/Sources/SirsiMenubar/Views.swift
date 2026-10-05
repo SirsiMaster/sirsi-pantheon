@@ -3100,7 +3100,9 @@ struct RiskView: View {
                 MaybeList {
                     Section {
                         HStack {
-                            Text(riskGlyph(r.risk)).sirsiFont(18)
+                            Image(systemName: riskPresentation(r.risk).symbol)
+                                .sirsiFont(18, weight: .semibold)
+                                .foregroundStyle(riskPresentation(r.risk).tint)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text("\(r.uncommittedFiles) file\(r.uncommittedFiles == 1 ? "" : "s") not checkpointed")
                                     .sirsiFont(13, weight: .semibold)
@@ -3188,13 +3190,13 @@ struct RiskView: View {
         .task { await load() }
     }
 
-    private func riskGlyph(_ risk: String) -> String {
+    private func riskPresentation(_ risk: String) -> (symbol: String, tint: Color) {
         switch risk.lowercased() {
-        case "none", "clean", "": return "🟢" // resolved — never a red alarm
-        case "low": return "🟢"
-        case "medium", "moderate": return "🟡"
-        case "high", "critical": return "🔴"
-        default: return "🟢" // unknown/clean states must not fabricate an alarm
+        case "none", "clean", "": return ("checkmark.circle.fill", .green)
+        case "low": return ("checkmark.circle.fill", .green)
+        case "medium", "moderate": return ("exclamationmark.circle.fill", gold)
+        case "high", "critical": return ("exclamationmark.triangle.fill", .red)
+        default: return ("questionmark.circle.fill", .secondary)
         }
     }
 
