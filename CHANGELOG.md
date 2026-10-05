@@ -6,6 +6,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased] — Apollo view: retire the last user-facing "SNE" copy
 
+- **Two things that were hand work are now verbs.** `sirsi router registry sync --install` re-pins a host to origin/main every hour through launchd (no resident process), so registry drift cannot return by omission. `scripts/release-train.sh <version> [--deploy-service]` is the whole release in one command with a hard stop at every step: changelog PR, one CI run, merge, optional router-service deploy before the client ships, tag, publish, upgrade on the M1 and M5, restart every loop. CI checks its syntax, dry-run and refusal of a bad version.
+
 - **Horus closes its own "lane needs you" alerts when the lane recovers.** The escalation pass only ever opened them (deduped by title) and nothing closed them, so every recovered lane left a stale card on the owner board (six were dismissed by hand on 2026-10-02 for lanes that were already wakeable). Each pass now closes the Horus-sent alerts for lanes it no longer escalates, including when nothing is escalated; a still-true alert and cards from anyone else are never touched.
 
 - **Host-wide cap on concurrent headless consumers.** Wake loops are nearly free when idle (a two-minute probe cost 0.05 CPU-seconds); the CPU on a busy Mac is the consumers they spawn, each a full agent session, and the lane gates were per-lane so six lanes could each run one at once. A lane now holds (`hold: slots`, retried next tick, nothing lost) while the host already runs `SIRSI_MAX_CONSUMERS` consumers; the default is one per five cores (2 on a 10-core Mac, 3 on the M5).
