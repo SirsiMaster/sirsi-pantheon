@@ -347,3 +347,8 @@ func (rs *RemoteStore) Waive(reqID, reason, ownerDecisionRef string) error {
 func (rs *RemoteStore) WithdrawIdentifier(namespace string, number int) error {
 	return rs.call("WithdrawIdentifier", []any{namespace, number})
 }
+func (rs *RemoteStore) TaskEligibility(agent, taskID string) (TaskEligibility, error) {
+	var o0 TaskEligibility
+	err := rs.call("TaskEligibility", []any{agent, taskID}, &o0)
+	return o0, err
+}
