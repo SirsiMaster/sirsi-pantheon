@@ -54,7 +54,10 @@ result into Ma'at's existing Casebook decision journal.`,
 			if err := maat.ProjectFailureMemoryPreflight(journal, receipt); err != nil {
 				return err
 			}
-			decisionEvidence = "maat-failure-memory:" + receipt.RegistrySnapshotSHA256
+			decisionEvidence, err = receipt.EvidenceReference()
+			if err != nil {
+				return fmt.Errorf("bind Ma'at failure-memory receipt evidence: %w", err)
+			}
 		}
 		if JsonOutput || maatJSON {
 			return emitJSON(struct {

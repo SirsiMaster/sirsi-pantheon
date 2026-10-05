@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -312,7 +313,11 @@ func TestProjectFailureMemoryPreflightUsesExistingDecisionJournal(t *testing.T) 
 	if err := ProjectFailureMemoryPreflight(journal, receipt); err != nil {
 		t.Fatal(err)
 	}
-	if len(journal.decisions) != 1 || journal.decisions[0].Kind != "failure memory preflight" || journal.decisions[0].Determination != string(PreflightReject) || journal.decisions[0].Evidence != "maat-failure-memory:"+receipt.RegistrySnapshotSHA256 {
+	evidence, err := receipt.EvidenceReference()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(journal.decisions) != 1 || journal.decisions[0].Kind != "failure memory preflight" || journal.decisions[0].Determination != string(PreflightReject) || journal.decisions[0].Evidence != evidence || !strings.Contains(evidence, "receipt-sha256=") || !strings.Contains(evidence, "action-sha256="+receipt.ActionManifestSHA256) || !strings.Contains(evidence, "registry-sha256="+receipt.RegistrySnapshotSHA256) {
 		t.Fatalf("preflight must be a one-way factual projection: %#v", journal.decisions)
 	}
 }

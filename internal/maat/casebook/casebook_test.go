@@ -1,6 +1,7 @@
 package casebook
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
@@ -55,6 +56,32 @@ func TestBuildRoutesOpenCasesAndResolvesOnlyAcceptedOwnerReview(t *testing.T) {
 			if c.Status != StatusResolved || c.Resolution != "accepted plan" || c.NextAction != nil {
 				t.Fatalf("review case = %+v", c)
 			}
+		}
+	}
+}
+
+func TestBuildGivesFailureMemoryRejectAThreeLevelRecheckRoute(t *testing.T) {
+	const evidence = "maat-failure-memory:receipt-sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa;action-sha256=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb;registry-sha256=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+	view := Build([]maat.Decision{{
+		Time: "2026-10-05T12:50:00Z", Host: "m5", Kind: "failure memory preflight", Requester: "maat",
+		Resource: "router", Affected: "macos-local", Assessed: "service-repair", Determination: "reject",
+		Why: "one measured record; one recovery action", Evidence: evidence,
+	}})
+	if len(view.Cases) != 1 || view.Cases[0].NextAction == nil {
+		t.Fatalf("failure-memory casebook projection = %+v", view)
+	}
+	action := view.Cases[0].NextAction
+	if action.Kind != "failure_memory_recheck" || !action.RequiresConfirmation || action.Evidence != evidence || len(action.Steps) != 3 {
+		t.Fatalf("failure-memory recovery route = %+v", action)
+	}
+	for index, step := range action.Steps {
+		if step.Level != index+1 || step.Evidence != evidence {
+			t.Fatalf("recovery step %d = %+v", index, step)
+		}
+	}
+	for _, identity := range []string{"receipt-sha256=", "action-sha256=", "registry-sha256="} {
+		if !strings.Contains(action.Evidence, identity) {
+			t.Fatalf("resolution route lost bound failure-memory provenance %q: %+v", identity, action)
 		}
 	}
 }

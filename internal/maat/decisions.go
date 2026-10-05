@@ -59,11 +59,12 @@ func ProjectFailureMemoryPreflight(j DecisionJournal, receipt PreflightReceipt) 
 	if j == nil {
 		return fmt.Errorf("maat failure memory projection: nil decision journal")
 	}
-	if err := receipt.Action.validate(); err != nil || !validDigest(receipt.ActionManifestSHA256) || !validDigest(receipt.RegistrySnapshotSHA256) || receipt.EvaluatedAtUTC.IsZero() {
+	if err := receipt.validate(); err != nil {
 		return fmt.Errorf("maat failure memory projection: invalid preflight receipt")
 	}
-	if receipt.Decision != PreflightPass && receipt.Decision != PreflightReject && receipt.Decision != PreflightUnverifiable {
-		return fmt.Errorf("maat failure memory projection: invalid decision")
+	evidence, err := receipt.EvidenceReference()
+	if err != nil {
+		return fmt.Errorf("maat failure memory projection: bind receipt evidence: %w", err)
 	}
 	why := fmt.Sprintf("%d measured records; %d recovery actions", len(receipt.MeasuredChecks), len(receipt.RecoveryActions))
 	if receipt.RecoveryReference != "" {
@@ -78,7 +79,7 @@ func ProjectFailureMemoryPreflight(j DecisionJournal, receipt PreflightReceipt) 
 		Affected:      receipt.Action.Profile,
 		Determination: string(receipt.Decision),
 		Why:           why,
-		Evidence:      "maat-failure-memory:" + receipt.RegistrySnapshotSHA256,
+		Evidence:      evidence,
 	})
 }
 

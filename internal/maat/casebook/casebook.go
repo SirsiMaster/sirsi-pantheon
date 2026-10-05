@@ -244,6 +244,19 @@ func resolutionPath(c Case) *ResolutionPath {
 	if c.Status == StatusResolved {
 		return nil
 	}
+	if c.Kind == "failure memory preflight" && c.Evidence != "" {
+		return &ResolutionPath{
+			Kind: "failure_memory_recheck", Title: "Resolve the retained failure-memory finding",
+			Detail:               "Use the exact retained preflight receipt and its guidance. Ma'at does not execute a producer-supplied repair or treat a historical observation as current.",
+			Evidence:             c.Evidence,
+			RequiresConfirmation: true,
+			Steps: []ResolutionStep{
+				{Level: 1, Title: "Inspect the retained evidence", Detail: "Open the exact failure-memory receipt and confirm its component, profile, operation, incident identity, and recovery guidance.", Evidence: c.Evidence},
+				{Level: 2, Title: "Use the authorized bounded recovery", Detail: "Choose the approved recovery path for this operation; recovery guidance is evidence, not an executable command or blanket permission.", Evidence: c.Evidence, RequiresConfirmation: true},
+				{Level: 3, Title: "Run a fresh exact-scope preflight", Detail: "Re-run the same failure-memory preflight after the bounded recovery and explicitly retain the new factual result in Casebook.", Evidence: c.Evidence, RequiresConfirmation: true},
+			},
+		}
+	}
 	if c.Kind == "diagnostic owner review" && c.Evidence != "" {
 		return &ResolutionPath{
 			Kind: "owner_acceptance", Title: "Record an owner acceptance",

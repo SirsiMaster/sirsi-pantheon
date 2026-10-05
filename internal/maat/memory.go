@@ -266,6 +266,50 @@ type PreflightReceipt struct {
 type GuardEvaluation struct{ ID, Version, SHA256 string }
 type CheckOutcome struct{ IncidentKey, EvidenceSHA256, Status, Outcome string }
 
+// Digest binds every field rendered or projected from a preflight, including
+// its action identity, registry snapshot, measured outcomes, and observation
+// time. Consumers must retain this digest alongside the two primary inputs so
+// Casebook never turns a partial receipt reference into a complete claim.
+func (r PreflightReceipt) Digest() (string, error) {
+	if err := r.validate(); err != nil {
+		return "", err
+	}
+	b, err := json.Marshal(r)
+	if err != nil {
+		return "", fmt.Errorf("maat memory: marshal preflight receipt: %w", err)
+	}
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+func (r PreflightReceipt) EvidenceReference() (string, error) {
+	digest, err := r.Digest()
+	if err != nil {
+		return "", err
+	}
+	return "maat-failure-memory:receipt-sha256=" + digest + ";action-sha256=" + r.ActionManifestSHA256 + ";registry-sha256=" + r.RegistrySnapshotSHA256, nil
+}
+
+func (r PreflightReceipt) validate() error {
+	if r.Schema != MemorySchema || r.Action.validate() != nil || !validDigest(r.ActionManifestSHA256) || !validDigest(r.RegistrySnapshotSHA256) || r.EvaluatedAtUTC.IsZero() {
+		return errors.New("maat memory: invalid preflight receipt")
+	}
+	if r.Decision != PreflightPass && r.Decision != PreflightReject && r.Decision != PreflightUnverifiable {
+		return errors.New("maat memory: invalid preflight decision")
+	}
+	for _, guard := range r.EvaluatedGuards {
+		if strings.TrimSpace(guard.ID) == "" || strings.TrimSpace(guard.Version) == "" || !validDigest(guard.SHA256) {
+			return errors.New("maat memory: invalid evaluated guard")
+		}
+	}
+	for _, check := range r.MeasuredChecks {
+		if !validDigest(check.IncidentKey) || !validDigest(check.EvidenceSHA256) || strings.TrimSpace(check.Status) == "" || strings.TrimSpace(check.Outcome) == "" {
+			return errors.New("maat memory: invalid measured check")
+		}
+	}
+	return nil
+}
+
 // Store holds retained no-follow descriptors for the root and its two
 // append-only namespaces. It never follows evidence or incident leaf links.
 type Store struct {
