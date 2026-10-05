@@ -9,9 +9,17 @@ struct PantheonControlCenterView: View {
     @ObservedObject var engine: SirsiEngine
     @Environment(\.snapshotMode) private var snapshotMode
 
+    private var healthIsReady: Bool {
+        isConfirmedHealthy(status: engine.healthStatus, observation: engine.healthObservationState)
+    }
+    private var healthNeedsAttention: Bool { !healthIsReady }
+    private var healthTint: Color {
+        engine.healthObservationState == .current ? statusColor(engine.healthStatus) : gold
+    }
+
     private var hasAttention: Bool {
         !engine.ownerGatedItems.isEmpty ||
-            engine.healthStatus != "green" ||
+            healthNeedsAttention ||
             engine.routerStatus != "green" ||
             engine.safeBytes >= SirsiEngine.wasteThreshold ||
             !engine.hasFDA
@@ -22,7 +30,7 @@ struct PantheonControlCenterView: View {
         if !engine.ownerGatedItems.isEmpty {
             return "\(engine.ownerGatedItems.count) decision\(engine.ownerGatedItems.count == 1 ? "" : "s") waiting for you"
         }
-        if engine.healthStatus != "green" { return engine.healthLoading ? "Checking system health" : engine.healthSummary }
+        if healthNeedsAttention { return engine.healthLoading ? "Checking system health" : engine.healthSummary }
         if engine.routerStatus != "green" { return engine.routerSummary }
         if engine.safeBytes >= SirsiEngine.wasteThreshold { return "\(engine.safe.count) cleanup item\(engine.safe.count == 1 ? "" : "s") ready" }
         if !engine.hasFDA { return "Full Disk Access needs your approval" }
@@ -31,7 +39,7 @@ struct PantheonControlCenterView: View {
 
     private var overallSymbol: String {
         if !engine.ownerGatedItems.isEmpty { return "person.badge.key" }
-        if engine.healthStatus != "green" { return "exclamationmark.triangle.fill" }
+        if healthNeedsAttention { return "exclamationmark.triangle.fill" }
         if engine.routerStatus != "green" { return "point.3.connected.trianglepath.dotted" }
         if engine.safeBytes >= SirsiEngine.wasteThreshold { return "trash" }
         if !engine.hasFDA { return "lock.trianglebadge.exclamationmark" }
@@ -40,7 +48,7 @@ struct PantheonControlCenterView: View {
 
     private var overallTint: Color {
         if !engine.ownerGatedItems.isEmpty || engine.safeBytes >= SirsiEngine.wasteThreshold || !engine.hasFDA { return .orange }
-        if engine.healthStatus != "green" { return statusColor(engine.healthStatus) }
+        if healthNeedsAttention { return healthTint }
         return statusColor(engine.routerStatus)
     }
 
@@ -152,7 +160,7 @@ struct PantheonControlCenterView: View {
     @ViewBuilder private var priorityLink: some View {
         if !engine.ownerGatedItems.isEmpty {
             NavLink { OwnerActionsListView(engine: engine) } label: { priorityRow }
-        } else if engine.healthStatus != "green" {
+        } else if healthNeedsAttention {
             NavLink { HorusView(engine: engine) } label: { priorityRow }
         } else if engine.routerStatus != "green" {
             NavLink { RaFabricView(engine: engine) } label: { priorityRow }
@@ -180,7 +188,7 @@ struct PantheonControlCenterView: View {
                 }
                 Divider().padding(.leading, 38)
                 NavLink { HorusView(engine: engine) } label: {
-                    ControlCenterRow(symbol: "waveform.path.ecg", title: "System health", detail: engine.healthLoading ? "Checking" : engine.healthSummary, tint: statusColor(engine.healthStatus))
+                    ControlCenterRow(symbol: "waveform.path.ecg", title: "System health", detail: engine.healthLoading ? "Checking" : engine.healthSummary, tint: healthTint)
                 }
                 Divider().padding(.leading, 38)
                 NavLink { ThreadsView(engine: engine) } label: {

@@ -4,6 +4,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 **Building in public** — see [docs/BUILD_LOG.md](docs/BUILD_LOG.md) for the full narrative.
 
+## [Unreleased] — Menubar recovery evidence corrections
+
+- Health resolution remains reachable after an empty initial read, and Home only shows ready for a current green observation. Finding details follow the latest current finding or mark cleared findings as historical and hide superseded actions. Spotlight Storm opens native Spotlight Privacy guidance. ResultView retains stdout, stderr, launch failure, timeout, and exit status from the executed process.
+
 ## [Unreleased] — Apollo view: retire the last user-facing "SNE" copy
 
 - **Sirsi Menubar uses one evidence-backed Ma'at recovery flow.** Health and finding details present bounded local action, guided recovery with an explicit recheck, and contextual Casebook review. Unknown/stale readings remain visible, the status window keeps its open destination, and unreadable action output is preserved without rerunning the command. Focused Swift contracts cover outcome truth, health freshness, and navigation persistence.

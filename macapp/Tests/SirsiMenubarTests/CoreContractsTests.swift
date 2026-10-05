@@ -53,6 +53,79 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertEqual(healthObservationAfterRead(status: "green", hasPreviousObservation: true), .current)
     }
 
+    func testHealthResolutionRouteSurvivesAnEmptyFailedInitialRead() {
+        let state = healthObservationAfterRead(status: nil, hasPreviousObservation: false)
+        XCTAssertEqual(state, .unknown)
+        XCTAssertTrue(shouldOfferHealthResolutionEntry(observation: state, isLoading: false))
+        XCTAssertFalse(shouldOfferHealthResolutionEntry(observation: state, isLoading: true))
+        XCTAssertTrue(shouldOfferHealthResolutionEntry(observation: .stale, isLoading: true))
+        XCTAssertFalse(shouldOfferHealthResolutionEntry(observation: .current, isLoading: true))
+        XCTAssertTrue(shouldOfferHealthResolutionEntry(observation: .current, isLoading: false))
+    }
+
+    func testGreenHealthIsReadyOnlyForCurrentObservation() {
+        XCTAssertTrue(isConfirmedHealthy(status: "green", observation: .current))
+        XCTAssertFalse(isConfirmedHealthy(status: "green", observation: .stale))
+        XCTAssertFalse(isConfirmedHealthy(status: "green", observation: .unknown))
+        XCTAssertFalse(isConfirmedHealthy(status: "amber", observation: .current))
+        XCTAssertFalse(isConfirmedHealthy(status: "red", observation: .current))
+    }
+
+    func testFindingUsesLatestCurrentActionAndDisablesHistoricalActions() throws {
+        let old = try decodeFinding(#"{"check":"Disk Pressure","severity":3,"message":"Old","fix":"sirsi old-fix","fixKind":"instant"}"#)
+        let latest = try decodeFinding(#"{"check":"Disk Pressure","severity":2,"message":"Latest","fix":"sirsi new-fix","fixKind":"relief"}"#)
+        let current = currentDiagnosticFinding(check: old.check, findings: [latest], observation: .current)
+
+        XCTAssertEqual(current?.message, "Latest")
+        XCTAssertEqual(current?.fix, "sirsi new-fix")
+        XCTAssertTrue(canUseDiagnosticAction(observation: .current, findingIsCurrent: current != nil,
+                                             hasAction: current?.fix != nil))
+        XCTAssertNil(currentDiagnosticFinding(check: old.check, findings: [], observation: .current))
+        XCTAssertFalse(canUseDiagnosticAction(observation: .current, findingIsCurrent: false, hasAction: true))
+        XCTAssertNil(currentDiagnosticFinding(check: old.check, findings: [latest], observation: .stale))
+        XCTAssertFalse(canUseDiagnosticAction(observation: .unknown, findingIsCurrent: true, hasAction: true))
+    }
+
+    func testSpotlightGuidanceUsesNativePrivacyRecoveryRoute() {
+        XCTAssertEqual(diagnosticRecoveryGuidance(check: "Spotlight Storm"), .spotlightPrivacy)
+        XCTAssertEqual(diagnosticRecoveryGuidance(check: "RAM Pressure"), .command)
+    }
+
+    func testCommandExecutionPreservesStreamsAndDoesNotInferSuccessFromEmptyOutput() {
+        let captured = CommandExecution(stdout: "partial output", stderr: "permission denied", exitCode: 2,
+                                       launchError: nil, timedOut: false)
+        XCTAssertTrue(captured.displayText.contains("STDOUT:\npartial output"))
+        XCTAssertTrue(captured.displayText.contains("STDERR:\npermission denied"))
+        XCTAssertTrue(captured.displayText.contains("Exit status: 2"))
+        XCTAssertEqual(captured.outcome, .failed)
+        let stderrOnly = CommandExecution(stdout: "", stderr: "failed to run", exitCode: 1,
+                                          launchError: nil, timedOut: false)
+        XCTAssertTrue(stderrOnly.displayText.contains("STDERR:\nfailed to run"))
+        XCTAssertEqual(stderrOnly.outcome, .failed)
+        let launchFailure = CommandExecution(stdout: "", stderr: "", exitCode: nil,
+                                             launchError: "permission denied", timedOut: false)
+        XCTAssertTrue(launchFailure.displayText.contains("Launch failure: permission denied"))
+        XCTAssertEqual(launchFailure.outcome, .launchFailed)
+        let empty = CommandExecution(stdout: "", stderr: "", exitCode: 0,
+                                     launchError: nil, timedOut: false)
+        XCTAssertTrue(empty.displayText.contains("STDOUT:\n(empty)"))
+        XCTAssertEqual(empty.outcome, .unverified)
+        XCTAssertEqual(commandExecutionOutcome(exitCode: nil, launchError: nil, timedOut: false,
+                                               hasOutput: false), .unverified)
+        XCTAssertEqual(commandExecutionOutcome(exitCode: 0, launchError: "not executable",
+                                               timedOut: false, hasOutput: true), .launchFailed)
+        XCTAssertEqual(commandExecutionOutcome(exitCode: 143, launchError: nil,
+                                               timedOut: true, hasOutput: true), .timedOut)
+        XCTAssertEqual(commandExecutionOutcome(exitCode: 1, launchError: nil,
+                                               timedOut: false, hasOutput: true), .failed)
+        XCTAssertEqual(commandExecutionOutcome(exitCode: 0, launchError: nil,
+                                               timedOut: false, hasOutput: true), .succeeded)
+    }
+
+    private func decodeFinding(_ json: String) throws -> DiagFinding {
+        try JSONDecoder().decode(DiagFinding.self, from: Data(json.utf8))
+    }
+
     func testNavigationStackSurvivesWindowReopen() {
         let navigation = Nav()
         navigation.push(Text("Evidence-backed resolution"))

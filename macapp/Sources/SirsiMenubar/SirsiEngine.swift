@@ -74,6 +74,71 @@ enum HealthObservationState: Equatable {
     case stale
 }
 
+func currentDiagnosticFinding(check: String, findings: [DiagFinding], observation: HealthObservationState) -> DiagFinding? {
+    guard observation == .current else { return nil }
+    return findings.first { $0.check == check }
+}
+
+func canUseDiagnosticAction(observation: HealthObservationState, findingIsCurrent: Bool, hasAction: Bool) -> Bool {
+    observation == .current && findingIsCurrent && hasAction
+}
+
+enum DiagnosticRecoveryGuidance: Equatable {
+    case spotlightPrivacy
+    case command
+}
+
+func diagnosticRecoveryGuidance(check: String) -> DiagnosticRecoveryGuidance {
+    check == "Spotlight Storm" ? .spotlightPrivacy : .command
+}
+
+struct CommandExecution: Equatable {
+    let stdout: String
+    let stderr: String
+    let exitCode: Int32?
+    let launchError: String?
+    let timedOut: Bool
+
+    var outcome: CommandExecutionOutcome {
+        commandExecutionOutcome(exitCode: exitCode, launchError: launchError, timedOut: timedOut,
+                                hasOutput: !stdout.isEmpty || !stderr.isEmpty)
+    }
+
+    var displayText: String {
+        var sections: [String] = []
+        if let launchError { sections.append("Launch failure: \(launchError)") }
+        sections.append("STDOUT:\n\(stdout.isEmpty ? "(empty)" : stdout)")
+        sections.append("STDERR:\n\(stderr.isEmpty ? "(empty)" : stderr)")
+        sections.append("Exit status: \(exitCode.map(String.init) ?? "unavailable")")
+        if timedOut { sections.append("Timed out: Pantheon stopped waiting after 30 seconds.") }
+        return sections.joined(separator: "\n\n")
+    }
+}
+
+enum CommandExecutionOutcome: Equatable {
+    case succeeded
+    case failed
+    case launchFailed
+    case timedOut
+    case unverified
+}
+
+func commandExecutionOutcome(exitCode: Int32?, launchError: String?, timedOut: Bool, hasOutput: Bool) -> CommandExecutionOutcome {
+    if launchError != nil { return .launchFailed }
+    if timedOut { return .timedOut }
+    guard hasOutput else { return .unverified }
+    guard let exitCode else { return .unverified }
+    return exitCode == 0 ? .succeeded : .failed
+}
+
+func isConfirmedHealthy(status: String, observation: HealthObservationState) -> Bool {
+    observation == .current && status == "green"
+}
+
+func shouldOfferHealthResolutionEntry(observation: HealthObservationState, isLoading: Bool) -> Bool {
+    observation == .stale || !isLoading
+}
+
 func healthObservationAfterRead(status: String?, hasPreviousObservation: Bool) -> HealthObservationState {
     guard let status, ["green", "amber", "red"].contains(status) else {
         return hasPreviousObservation ? .stale : .unknown
@@ -1306,6 +1371,76 @@ final class SirsiEngine: ObservableObject {
     // reliably answers an interactive `[y/N]` prompt (e.g. `clean --confirm`);
     // writing before launch can leave the child's stdin empty/closed, silently
     // cancelling the apply. Pass `stdin: "y\n"` to auto-confirm, nil otherwise.
+    nonisolated static func runCaptured(args: [String], stdin: String? = nil) async -> CommandExecution {
+        await withCheckedContinuation { cont in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let process = Process()
+                process.currentDirectoryURL = workingDirectory(for: args)
+                process.executableURL = URL(fileURLWithPath: sirsiBinary())
+                process.arguments = args
+                let stdoutPipe = Pipe()
+                let stderrPipe = Pipe()
+                process.standardOutput = stdoutPipe
+                process.standardError = stderrPipe
+                let inputPipe = Pipe()
+                if stdin != nil { process.standardInput = inputPipe }
+                do {
+                    try process.run()
+                } catch {
+                    cont.resume(returning: CommandExecution(stdout: "", stderr: "", exitCode: nil,
+                                                            launchError: error.localizedDescription, timedOut: false))
+                    return
+                }
+
+                let lock = NSLock()
+                var stdoutData = Data()
+                var stderrData = Data()
+                let readers = DispatchGroup()
+                readers.enter()
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+                    lock.lock(); stdoutData = data; lock.unlock()
+                    readers.leave()
+                }
+                readers.enter()
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let data = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+                    lock.lock(); stderrData = data; lock.unlock()
+                    readers.leave()
+                }
+                if let stdin, let data = stdin.data(using: .utf8) {
+                    inputPipe.fileHandleForWriting.write(data)
+                    inputPipe.fileHandleForWriting.closeFile()
+                }
+
+                let timeoutLock = NSLock()
+                var timedOut = false
+                let timeout = DispatchWorkItem {
+                    timeoutLock.lock()
+                    defer { timeoutLock.unlock() }
+                    if process.isRunning {
+                        timedOut = true
+                        process.terminate()
+                    }
+                }
+                DispatchQueue.global().asyncAfter(deadline: .now() + .seconds(30), execute: timeout)
+                process.waitUntilExit()
+                timeout.cancel()
+                readers.wait()
+                lock.lock()
+                let stdout = stripANSI(String(data: stdoutData, encoding: .utf8) ?? "")
+                let stderr = stripANSI(String(data: stderrData, encoding: .utf8) ?? "")
+                lock.unlock()
+                timeoutLock.lock()
+                let didTimeOut = timedOut
+                timeoutLock.unlock()
+                cont.resume(returning: CommandExecution(stdout: stdout, stderr: stderr,
+                                                        exitCode: process.terminationStatus,
+                                                        launchError: nil, timedOut: didTimeOut))
+            }
+        }
+    }
+
     nonisolated static func run(args: [String], stdin: String?) async -> String {
         await withCheckedContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
