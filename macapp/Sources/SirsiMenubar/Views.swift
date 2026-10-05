@@ -2236,7 +2236,9 @@ struct AuthBlockerCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Text("🔑").sirsiFont(18)
+                Image(systemName: "key.fill")
+                    .sirsiFont(16)
+                    .foregroundStyle(gold)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("\(health.agentType) needs re-login")
                         .sirsiFont(13, weight: .semibold)
@@ -2267,7 +2269,7 @@ struct AuthBlockerCard: View {
                     await engine.loadRouterBoard()
                     let stillBlocked = engine.routerAuthBlockers.contains { $0.id == health.id }
                     recheckResult = stillBlocked
-                        ? "Still waiting for \(health.agentType) to finish signing in. You can return to Terminal and try /login again."
+                        ? "\(health.agentType) is still waiting for its sign-in to finish. Complete the sign-in in the app Pantheon opened, then recheck this fabric here."
                         : "Rechecked the live fabric — this sign-in blocker is cleared."
                     rechecking = false
                 }
@@ -3091,6 +3093,7 @@ struct RiskView: View {
     var body: some View {
         VStack(spacing: 0) {
             BackBar(title: "Osiris — Checkpoints")
+            ProjectBar(engine: engine) { Task { await load() } }
             if loading {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).padding(.top, 60)
             } else if let r = report {
@@ -3153,12 +3156,23 @@ struct RiskView: View {
                 }
                 .listStyle(.inset)
             } else {
-                ScrollView {
-                    let msg = (rawFallback?.isEmpty == false) ? rawFallback! : "Couldn't read checkpoint risk."
-                    Text(msg)
-                        .sirsiFont(.caption, design: .monospaced)
-                        .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                VStack(alignment: .leading, spacing: 12) {
+                    Label("Choose a project to resolve checkpoint status", systemImage: "folder.badge.questionmark")
+                        .sirsiFont(.callout, weight: .semibold)
+                        .foregroundStyle(gold)
+                    Text(rawFallback?.isEmpty == false
+                         ? rawFallback!
+                         : "Pantheon could not read checkpoint risk yet.")
+                        .sirsiFont(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Use the project selector above to choose the Git project you want Pantheon to protect. It will recheck automatically and offer an in-app checkpoint when there is work at risk.")
+                        .sirsiFont(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
             }
             Divider()
             HStack {
@@ -3214,7 +3228,7 @@ struct RiskView: View {
         // an empty stdout became Text("") — transparent nothing, 2026-07-09).
         let combined = await SirsiEngine.run(args: ["risk"], stdin: nil)
         let cleaned = CommandView.stripBanner(combined).trimmingCharacters(in: .whitespacesAndNewlines)
-        rawFallback = cleaned.isEmpty ? "Couldn't read checkpoint risk here. Set a project in a repo folder, or run `sirsi risk` in a terminal." : cleaned
+        rawFallback = cleaned.isEmpty ? "Choose a Git project above so Pantheon can measure its checkpoint risk." : cleaned
         loading = false
     }
 }
