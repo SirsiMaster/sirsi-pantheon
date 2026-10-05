@@ -8,6 +8,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ### Fixed
 
+- **The owner inbox is no longer reported as a stranded queue.** Only the literal lane `user` was exempt, so `owner` (also mechanism `owner-surface`) showed in the Command Center as "work waiting but no armed watcher". Every owner-surface lane is now excluded, driven by the registry.
+
+
+### Fixed
+
 - **Wake loops work on every host without per-host registry edits.** The shared registry holds absolute paths (`/Users/thekryptodragon/...`), so the same lane read WATCH_ONLY ("consumer cwd is not usable") on the other Mac. The consumer resolver now rebases another machine's home prefix onto the local home — cwd, argv and env — only when that home does not exist locally. `claude-deck`, `claude-pantheon` and `claude-nexus` now have reactive wake loops on the M1; `mercury-m5` and `claude-apollo-m5-rail` on the M5.
 
 
