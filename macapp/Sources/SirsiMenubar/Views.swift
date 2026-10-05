@@ -4337,20 +4337,106 @@ struct ActivityView: View {
                 }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(28)
             } else {
                 List(engine.activity) { e in
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack {
-                            Text(e.title).sirsiFont(12, weight: .semibold)
-                            Spacer()
-                            Text(e.when).sirsiFont(.caption2).foregroundStyle(.tertiary)
-                        }
-                        Text(e.command).sirsiFont(.caption, design: .monospaced).foregroundStyle(gold)
-                        if !e.result.isEmpty {
-                            Text(e.result).sirsiFont(.caption2).foregroundStyle(.secondary).lineLimit(2)
-                        }
-                    }.padding(.vertical, 2)
+                    NavLink { ActivityDetailView(entry: e, engine: engine) } label: {
+                        ActivityRow(entry: e)
+                    }
                 }.listStyle(.inset)
             }
         }.task { engine.loadActivity() }
+    }
+}
+
+private struct ActivityRow: View {
+    let entry: ActivityEntry
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: entry.resolution.symbol)
+                .sirsiFont(14, weight: .semibold)
+                .foregroundStyle(entry.resolution == .resolved ? .green : gold)
+                .frame(width: 18, alignment: .center)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(entry.title).sirsiFont(12, weight: .semibold)
+                    Spacer(minLength: 8)
+                    Text(entry.when).sirsiFont(.caption2).foregroundStyle(.tertiary)
+                }
+                Text(entry.resolution.title)
+                    .sirsiFont(.caption, weight: .medium)
+                    .foregroundStyle(entry.resolution == .resolved ? .secondary : gold)
+                Text(entry.resolution.summary)
+                    .sirsiFont(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(.vertical, 5)
+        .contentShape(Rectangle())
+        .accessibilityLabel("\(entry.title), \(entry.resolution.title). Open activity details")
+    }
+}
+
+private struct ActivityDetailView: View {
+    let entry: ActivityEntry
+    @ObservedObject var engine: SirsiEngine
+
+    var body: some View {
+        VStack(spacing: 0) {
+            BackBar(title: "Activity detail")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: entry.resolution.symbol)
+                            .sirsiFont(.title2, weight: .semibold)
+                            .foregroundStyle(entry.resolution == .resolved ? .green : gold)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(entry.title).sirsiFont(18, weight: .bold)
+                            Text(entry.when).sirsiFont(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Text(entry.resolution.title.uppercased())
+                        .sirsiFont(.caption, weight: .semibold)
+                        .foregroundStyle(entry.resolution == .resolved ? .secondary : gold)
+                    Text(entry.resolution.summary)
+                        .sirsiFont(.callout)
+                        .foregroundStyle(.primary)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Recorded outcome").sirsiFont(.caption, weight: .semibold).foregroundStyle(.secondary)
+                        Text(entry.result.isEmpty ? "No readable result was retained." : entry.result)
+                            .sirsiFont(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+
+                    if entry.resolution != .resolved {
+                        NavLink { MaatWorkspaceView(engine: engine) } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "sparkles")
+                                Text("Open Ma’at guided review").sirsiFont(13, weight: .semibold)
+                                Spacer()
+                                Image(systemName: "chevron.right").sirsiFont(.caption, weight: .semibold)
+                            }
+                            .foregroundStyle(.black)
+                            .padding(.horizontal, 14).padding(.vertical, 12)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(gold))
+                        }
+                        .accessibilityLabel("Open Ma’at guided review for this activity")
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Technical evidence").sirsiFont(.caption, weight: .semibold).foregroundStyle(.secondary)
+                        Text("sirsi \(entry.command)")
+                            .sirsiFont(.caption2, design: .monospaced)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(20)
+            }
+        }
     }
 }
 

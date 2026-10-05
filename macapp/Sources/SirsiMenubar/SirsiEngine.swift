@@ -437,6 +437,59 @@ struct ActivityEntry: Codable, Identifiable {
     let when: String
     let result: String
     enum CodingKeys: String, CodingKey { case title, command, when, result }
+
+    var resolution: ActivityResolution { activityResolution(for: result) }
+}
+
+// Activity is a user-facing ledger, not a terminal transcript.  An entry must
+// say whether Pantheon can attest completion and, when it cannot, route the
+// person back into Ma'at instead of leaving them with an opaque command result.
+enum ActivityResolution: Equatable {
+    case resolved
+    case maatReview
+    case evidenceOnly
+
+    var title: String {
+        switch self {
+        case .resolved: return "Completed"
+        case .maatReview: return "Needs review"
+        case .evidenceOnly: return "Evidence needs verification"
+        }
+    }
+
+    var summary: String {
+        switch self {
+        case .resolved:
+            return "Pantheon retained a completed outcome for this action."
+        case .maatReview:
+            return "This action did not produce an accepted completion. Ma’at can re-assess it and guide the next safe step."
+        case .evidenceOnly:
+            return "Pantheon retained the action, but could not attest its result. Ma’at can re-check the evidence and offer the next step."
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .resolved: return "checkmark.seal.fill"
+        case .maatReview: return "exclamationmark.triangle.fill"
+        case .evidenceOnly: return "doc.text.magnifyingglass"
+        }
+    }
+}
+
+func activityResolution(for result: String) -> ActivityResolution {
+    let normalized = result.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if normalized.isEmpty || normalized == "done" ||
+        normalized.contains("no readable structured result") ||
+        normalized.contains("no repair is claimed") {
+        return .evidenceOnly
+    }
+    if normalized.contains("error") || normalized.contains("exit status") ||
+        normalized.contains("failed") || normalized.contains("denied") ||
+        normalized.contains("cannot ") || normalized.contains("not found") {
+        return .maatReview
+    }
+    return .resolved
 }
 
 // SirsiEngine is the observable model behind every view. All deletion happens in

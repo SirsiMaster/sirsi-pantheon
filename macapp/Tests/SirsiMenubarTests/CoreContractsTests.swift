@@ -2,6 +2,13 @@ import XCTest
 @testable import SirsiMenubar
 
 final class CoreContractsTests: XCTestCase {
+    func testActivityResolutionAlwaysClosesAnAmbiguousOrFailedOutcome() {
+        XCTAssertEqual(activityResolution(for: "applied"), .resolved)
+        XCTAssertEqual(activityResolution(for: "The command exited successfully, but returned no readable structured result. No repair is claimed."), .evidenceOnly)
+        XCTAssertEqual(activityResolution(for: "registry-police: exit status 1"), .maatReview)
+        XCTAssertEqual(activityResolution(for: "Error: evidence unavailable"), .maatReview)
+    }
+
     func testEveryDiagnosticHasAClosedNativeResolutionRoute() {
         XCTAssertEqual(
             diagnosticResolutionRoute(resolution: nil, severity: 0, hasFix: false, hasRecommendedCommand: false),
