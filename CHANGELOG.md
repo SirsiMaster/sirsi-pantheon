@@ -6,6 +6,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased] — Apollo view: retire the last user-facing "SNE" copy
 
+### Fixed
+
+- **Wake loops work on every host without per-host registry edits.** The shared registry holds absolute paths (`/Users/thekryptodragon/...`), so the same lane read WATCH_ONLY ("consumer cwd is not usable") on the other Mac. The consumer resolver now rebases another machine's home prefix onto the local home — cwd, argv and env — only when that home does not exist locally. `claude-deck`, `claude-pantheon` and `claude-nexus` now have reactive wake loops on the M1; `mercury-m5` and `claude-apollo-m5-rail` on the M5.
+
+
 - **Dashboard: a Router view that shows everything built, and fixes to Fleet.** `GET /api/router` and a new Router tab show the installed version, lane verdicts (the same as `sirsi router ping --all`), the open queue, the consumer cap in use, whether the registry is pinned, the known-failure catalog with each fix's release and guard, the swap-hygiene receipt, and what each release added (read from CHANGELOG). A producer error is a 5xx, never an empty panel. Fleet now shows a loading line instead of a blank screen for the ~3 seconds the board takes, and no longer lists retired aliases (such as `claude-finalwishes-helper`) as lanes. The dashboard is now a component of the Ra/Horus fabric Stack Lab recipe, component catalog and traceability matrix, together with the known-failure catalog, registry pin, swap hygiene and claim-eligibility components.
 - **The work board and insight stop reading the whole item history.** `router workboard` and the platform "Router — Collaboration" signal called ListAll (13,000+ rows, 6-20 seconds on the service) on every refresh, and those calls were the repeated multi-second reads seen in the service logs alongside the 30-second spool timeouts. The board needs only open work plus the last week's closures (new `ListSince` store method / `RecentItems`) and the insight signal needs only open items (`ListActive`). The service is deployed before the client ships.
 
