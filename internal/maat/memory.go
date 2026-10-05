@@ -313,6 +313,13 @@ func (s *Store) Append(incident Incident) error {
 	if err := incident.validate(); err != nil {
 		return err
 	}
+	// Introduction records are the only records accepted by this primitive.
+	// A terminal status needs a predecessor-bound event written by the dedicated
+	// transition path; accepting one here would let an arbitrary caller hide an
+	// active incident merely by supplying a digest-shaped successor string.
+	if incident.Status != IncidentActive {
+		return errors.New("maat memory: status transitions require a predecessor-bound transition record")
+	}
 	if err := s.lock(unix.LOCK_EX); err != nil {
 		return err
 	}

@@ -186,3 +186,24 @@ func TestStoreRefusesSymlinkedLock(t *testing.T) {
 		t.Fatal("store must refuse a symlinked registry lock")
 	}
 }
+
+func TestStoreRefusesCallerSuppliedClosedIncident(t *testing.T) {
+	store, err := OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	digest, err := store.PutEvidence([]byte("evidence"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	incident, err := NewIncident(testSignature(), digest, testScope(), "guard", "v1", testActions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	incident.Status = IncidentRetired
+	incident.SuccessorKey = digest
+	if err := store.Append(incident); err == nil {
+		t.Fatal("caller-supplied closed incident must be refused")
+	}
+}
