@@ -492,6 +492,28 @@ func activityResolution(for result: String) -> ActivityResolution {
     return .resolved
 }
 
+// An activity row is evidence, not executable input.  When its completion is
+// ambiguous, Ma'at receives the retained command and outcome as quoted facts so
+// it can create the canonical review case.  The app never replays the command
+// that produced the entry.
+func activityMaatReviewArgs(for entry: ActivityEntry) -> [String] {
+    let outcome = entry.result.trimmingCharacters(in: .whitespacesAndNewlines)
+    let message = outcome.isEmpty
+        ? "Pantheon retained this activity without a readable outcome."
+        : outcome
+    let command = entry.command.trimmingCharacters(in: .whitespacesAndNewlines)
+    let detail = command.isEmpty
+        ? "Pantheon activity has no retained command text."
+        : "Retained Pantheon activity command: sirsi \(command)"
+    return [
+        "maat", "record-resolution",
+        "--check", "Pantheon activity: \(entry.title)",
+        "--message", message,
+        "--detail", detail,
+        "--confirm",
+    ]
+}
+
 // SirsiEngine is the observable model behind every view. All deletion happens in
 // the Go `sirsi` binary (safety-gated, trash-first, protected paths hardcoded);
 // this type only reads the persisted scan and runs the CLI.

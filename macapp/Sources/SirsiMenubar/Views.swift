@@ -4379,6 +4379,10 @@ private struct ActivityRow: View {
 private struct ActivityDetailView: View {
     let entry: ActivityEntry
     @ObservedObject var engine: SirsiEngine
+    @State private var confirmMaatReview = false
+    @State private var maatReviewInFlight = false
+    @State private var maatReviewResult: CommandResult?
+    @State private var maatReviewError: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -4411,18 +4415,63 @@ private struct ActivityDetailView: View {
                     }
 
                     if entry.resolution != .resolved {
-                        NavLink { MaatWorkspaceView(engine: engine) } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: "sparkles")
-                                Text("Open Ma’at guided review").sirsiFont(13, weight: .semibold)
-                                Spacer()
-                                Image(systemName: "chevron.right").sirsiFont(.caption, weight: .semibold)
+                        VStack(alignment: .leading, spacing: 10) {
+                    Text("MA’AT RESOLUTION")
+                                .sirsiFont(.caption, weight: .semibold)
+                                .foregroundStyle(.secondary)
+                            Text("Ma'at will retain this exact command and outcome, classify what is still open, and create the next bounded action in Casebook. It will not replay the command or change your Mac during review.")
+                                .sirsiFont(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Button { confirmMaatReview = true } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "sparkles")
+                                    Text("Review this outcome in Ma'at").sirsiFont(13, weight: .semibold)
+                                    Spacer()
+                                    Image(systemName: "arrow.right.circle.fill").sirsiFont(.caption, weight: .semibold)
+                                }
+                                .foregroundStyle(.black)
+                                .padding(.horizontal, 14).padding(.vertical, 12)
+                                .background(RoundedRectangle(cornerRadius: 12).fill(gold))
                             }
-                            .foregroundStyle(.black)
-                            .padding(.horizontal, 14).padding(.vertical, 12)
-                            .background(RoundedRectangle(cornerRadius: 12).fill(gold))
+                            .buttonStyle(.plain)
+                            .disabled(maatReviewInFlight)
+                            .accessibilityLabel("Review this activity outcome in Ma'at")
+                            .accessibilityHint("Records the retained command and outcome for Ma'at to classify. It does not replay the command or change the Mac.")
+
+                            if maatReviewInFlight {
+                                HStack(spacing: 8) {
+                                    ProgressView().controlSize(.small)
+                                    Text("Ma'at is recording the evidence-bound review…")
+                                        .sirsiFont(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+
+                            if let result = maatReviewResult {
+                                Label(result.summary, systemImage: result.ok ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                                    .sirsiFont(.caption)
+                                    .foregroundStyle(result.ok ? .green : .orange)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                if result.ok {
+                                    NavLink { MaatCasebookView(engine: engine) } label: {
+                                        Label("Open Ma'at Casebook", systemImage: "book.closed")
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .accessibilityHint("Open the newly recorded Ma'at case and its next bounded action.")
+                                }
+                            }
+
+                            if let error = maatReviewError {
+                                Label(error, systemImage: "exclamationmark.triangle.fill")
+                                    .sirsiFont(.caption)
+                                    .foregroundStyle(.orange)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
-                        .accessibilityLabel("Open Ma’at guided review for this activity")
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.05)))
                     }
 
                     VStack(alignment: .leading, spacing: 6) {
@@ -4437,6 +4486,23 @@ private struct ActivityDetailView: View {
                 .padding(20)
             }
         }
+        .confirmationDialog("Review this activity outcome in Ma'at?", isPresented: $confirmMaatReview, titleVisibility: .visible) {
+            Button("Record Ma'at review") { Task { await recordMaatReview() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Ma'at will retain the exact command and outcome as evidence, classify the remaining work, and expose the next safe action in Casebook. It will not replay the command or change your Mac.")
+        }
+    }
+
+    @MainActor private func recordMaatReview() async {
+        guard !maatReviewInFlight else { return }
+        maatReviewInFlight = true
+        maatReviewError = nil
+        maatReviewResult = await SirsiEngine.runResult(args: activityMaatReviewArgs(for: entry))
+        if maatReviewResult == nil {
+            maatReviewError = "Ma'at could not record the review. This activity remains open; retry here to preserve the same retained evidence."
+        }
+        maatReviewInFlight = false
     }
 }
 

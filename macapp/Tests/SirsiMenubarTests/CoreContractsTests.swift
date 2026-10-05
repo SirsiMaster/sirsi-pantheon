@@ -9,6 +9,26 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertEqual(activityResolution(for: "Error: evidence unavailable"), .maatReview)
     }
 
+    func testActivityMaatReviewCarriesEvidenceButNeverReplaysTheActivityCommand() {
+        let entry = ActivityEntry(
+            title: "LaunchAgent restore",
+            command: "liveness-watch restore-disabled --confirm",
+            when: "2026-10-05T20:00:00Z",
+            result: "exit status 1: verification is incomplete"
+        )
+
+        XCTAssertEqual(
+            activityMaatReviewArgs(for: entry),
+            [
+                "maat", "record-resolution",
+                "--check", "Pantheon activity: LaunchAgent restore",
+                "--message", "exit status 1: verification is incomplete",
+                "--detail", "Retained Pantheon activity command: sirsi liveness-watch restore-disabled --confirm",
+                "--confirm",
+            ]
+        )
+    }
+
     func testEveryDiagnosticHasAClosedNativeResolutionRoute() {
         XCTAssertEqual(
             diagnosticResolutionRoute(resolution: nil, severity: 0, hasFix: false, hasRecommendedCommand: false),
