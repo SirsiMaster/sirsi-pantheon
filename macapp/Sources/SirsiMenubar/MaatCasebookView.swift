@@ -59,13 +59,15 @@ struct MaatWorkspaceView: View {
                 MaatCasebookView(engine: engine, preloaded: preloadedCasebook, showsBackBar: false)
             case .knowledge:
                 MaatKnowledgeView(engine: engine, preloaded: preloadedKnowledge, showsBackBar: false)
+            case .proposals:
+                MaatKnownFailureProposalsView(engine: engine, showsBackBar: false)
             }
         }
     }
 }
 
 private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
-    case systemOne, decisions, knowledge
+    case systemOne, decisions, knowledge, proposals
 
     var id: String { rawValue }
     var title: String {
@@ -73,6 +75,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
         case .systemOne: return "System One"
         case .decisions: return "Decisions"
         case .knowledge: return "Knowledge"
+        case .proposals: return "Proposals"
         }
     }
     var symbol: String {
@@ -80,6 +83,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
         case .systemOne: return "scalemass"
         case .decisions: return "checkmark.seal"
         case .knowledge: return "books.vertical"
+        case .proposals: return "lightbulb.max"
         }
     }
 }
@@ -99,7 +103,7 @@ private struct MaatSystemOneView: View {
     @State private var selectedScreenURL: URL?
     @State private var confirmScreenImport = false
     @State private var screenImportInFlight = false
-    @State private var screenImportResult: CommandResult?
+    @State private var screenImportResult: MaatSystemOneCommandResult?
     @State private var screenImportError: String?
     @State private var releasePreflight: MaatReleaseContractPreflight?
     @State private var releasePreflightInFlight = false
@@ -113,7 +117,7 @@ private struct MaatSystemOneView: View {
     @State private var credentialPreflightRecorded = false
     @State private var confirmHostTriage = false
     @State private var hostTriageInFlight = false
-    @State private var hostTriageResult: CommandResult?
+    @State private var hostTriageResult: MaatSystemOneCommandResult?
     @State private var hostTriageError: String?
     @State private var didOpenReleasePreflight = false
     let opensReleasePreflight: Bool
@@ -228,6 +232,9 @@ private struct MaatSystemOneView: View {
                 MaybeScroll {
                     VStack(alignment: .leading, spacing: 16) {
                         summary(screens: screens, calibrations: calibrations)
+                        if casebook.journalIntegrity.invalidCount > 0 {
+                            MaatJournalIntegrityCard(engine: engine, integrity: casebook.journalIntegrity)
+                        }
                         resolutionLane(screens)
                         hostTriageControl
                         releasePreflightControl
@@ -456,16 +463,16 @@ private struct MaatSystemOneView: View {
                     .sirsiFont(.caption)
             }
             if let result = hostTriageResult {
-                let gate = hostTriageGate(result)
-                Label(result.summary, systemImage: hostTriageSymbol(gate: gate, result: result))
+                let gate = result.verdict.gate
+                Label(result.summary, systemImage: hostTriageSymbol(gate: gate))
                     .sirsiFont(.caption)
-                    .foregroundStyle(hostTriageTint(gate: gate, result: result))
+                    .foregroundStyle(hostTriageTint(gate: gate))
                     .fixedSize(horizontal: false, vertical: true)
-                if result.ok, gate == "pass" {
+                if gate == "pass" {
                     Text("The Casebook was refreshed from this exact local observation.")
                         .sirsiFont(.caption)
                         .foregroundStyle(.secondary)
-                } else if result.ok {
+                } else {
                     Text("The observation was retained. Open the Casebook to follow its repair, review, or owner-resolution route.")
                         .sirsiFont(.caption)
                         .foregroundStyle(.secondary)
@@ -508,14 +515,12 @@ private struct MaatSystemOneView: View {
                     .sirsiFont(.caption)
             }
             if let result = screenImportResult {
-                Label(result.summary, systemImage: result.ok ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                Label(result.summary, systemImage: result.verdict.gate == "pass" ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                     .sirsiFont(.caption)
-                    .foregroundStyle(result.ok ? .green : .orange)
-                if result.ok {
-                    Text("The Casebook was refreshed from the recorded evidence.")
-                        .sirsiFont(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                    .foregroundStyle(result.verdict.gate == "pass" ? .green : .orange)
+                Text("The Casebook was refreshed from the recorded evidence.")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(.secondary)
             }
             if let screenImportError {
                 Label(screenImportError, systemImage: "exclamationmark.triangle.fill")
@@ -824,10 +829,11 @@ private struct MaatSystemOneView: View {
         guard let selectedScreenURL else { return }
         screenImportInFlight = true
         screenImportError = nil
-        screenImportResult = await SirsiEngine.runResult(args: ["maat", "screen", "--input", selectedScreenURL.path, "--confirm"])
+        let raw = await SirsiEngine.run(args: ["maat", "screen", "--input", selectedScreenURL.path, "--confirm", "--json"], stdin: nil)
+        screenImportResult = MaatSystemOneCommandResult.decode(raw)
         if screenImportResult == nil {
             screenImportError = "Ma'at could not validate or record this screen. The input remains unchanged and no System One result was inferred. Choose a valid closed evidence JSON or inspect the producer's receipt."
-        } else if screenImportResult?.ok == true {
+        } else {
             await load()
         }
         screenImportInFlight = false
@@ -837,10 +843,11 @@ private struct MaatSystemOneView: View {
         guard !hostTriageInFlight else { return }
         hostTriageInFlight = true
         hostTriageError = nil
-        hostTriageResult = await SirsiEngine.runResult(args: ["maat", "triage", "--confirm"])
+        let raw = await SirsiEngine.run(args: ["maat", "triage", "--confirm", "--json"], stdin: nil)
+        hostTriageResult = MaatSystemOneCommandResult.decode(raw)
         if hostTriageResult == nil {
             hostTriageError = "Ma'at could not record the local observation. No System One outcome was inferred or accepted. Try again, then inspect the local Casebook if the problem persists."
-        } else if hostTriageResult?.ok == true {
+        } else {
             await load()
         }
         hostTriageInFlight = false
@@ -850,12 +857,7 @@ private struct MaatSystemOneView: View {
     // The command carries the deterministic System One gate as evidence, and
     // this native projection preserves it instead of showing a green success
     // treatment for a recorded block or escalation.
-    private func hostTriageGate(_ result: CommandResult) -> String {
-        result.evidence.first(where: { $0.label == "Deterministic gate" })?.value.lowercased() ?? ""
-    }
-
-    private func hostTriageSymbol(gate: String, result: CommandResult) -> String {
-        guard result.ok else { return "exclamationmark.triangle.fill" }
+    private func hostTriageSymbol(gate: String) -> String {
         switch gate {
         case "pass": return "checkmark.seal.fill"
         case "changes": return "exclamationmark.circle.fill"
@@ -865,8 +867,7 @@ private struct MaatSystemOneView: View {
         }
     }
 
-    private func hostTriageTint(gate: String, result: CommandResult) -> Color {
-        guard result.ok else { return .orange }
+    private func hostTriageTint(gate: String) -> Color {
         switch gate {
         case "pass": return .green
         case "changes": return .orange
@@ -958,6 +959,275 @@ private struct MaatSystemOneView: View {
             loadError = "Pantheon could not read the local Ma'at decision journal. No System One gate was inferred. Retry the exact read, inspect decisions, or inspect Stack Lab authority."
         }
         loading = false
+    }
+}
+
+// MaatKnownFailureProposalsView makes the local intake for recurring failures
+// visible in the product. A proposal is evidence for Stack Lab review, not a
+// hidden source edit and not a new recognition rule. It therefore gives an
+// operator a complete next step without making an unreviewed report affect
+// other Pantheon installations.
+struct MaatKnownFailureProposalsView: View {
+    @ObservedObject var engine: SirsiEngine
+    let showsBackBar: Bool
+    @State private var proposals: [MaatKnownFailureProposal] = []
+    @State private var loading = true
+    @State private var loadError: String?
+    @State private var showRecorder = false
+    @State private var confirmRecord = false
+    @State private var recording = false
+    @State private var recordError: String?
+    @State private var proposalID = ""
+    @State private var proposalTitle = ""
+    @State private var proposalSignature = ""
+    @State private var proposalCause = ""
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if showsBackBar { BackBar(title: "Ma'at proposals") }
+            if loading {
+                VStack(spacing: 10) {
+                    ProgressView()
+                    Text("Opening local Ma'at proposals…")
+                        .sirsiFont(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let loadError {
+                unavailableState(loadError)
+            } else {
+                proposalBody
+            }
+        }
+        .task { await load() }
+        .sheet(isPresented: $showRecorder) { proposalRecorder }
+        .confirmationDialog("Record this local proposal?", isPresented: $confirmRecord, titleVisibility: .visible) {
+            Button("Record local proposal") { Task { await recordProposal() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Ma'at will create a durable local proposal for Stack Lab review. It will not change source, enable recognition across the fabric, run a repair, or contact a remote service.")
+        }
+    }
+
+    private var proposalBody: some View {
+        VStack(spacing: 0) {
+            MaybeScroll {
+                VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Known-failure proposals", systemImage: "lightbulb.max")
+                            .sirsiFont(.title3, weight: .bold)
+                        Text("Capture a recurring failure once, then route it through Stack Lab review. Local proposals never become fabric-wide recognition rules until they are reviewed and promoted.")
+                            .sirsiFont(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        SnapshotActionButton(disabled: recording) {
+                            resetRecorder()
+                            showRecorder = true
+                        } label: {
+                            Label("Record an observation", systemImage: "plus.circle.fill")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .accessibilityHint("Creates a local Ma'at proposal for Stack Lab review. It does not alter a shared failure catalog.")
+                    }
+                    .padding(14)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+
+                    if proposals.isEmpty {
+                        VStack(alignment: .leading, spacing: 7) {
+                            Text("No local proposals")
+                                .sirsiFont(.headline)
+                            Text("This is an empty local review queue, not confirmation that recurring failures are resolved. Record an observation when a failure has a stable signature and a clear cause.")
+                                .sirsiFont(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.045)))
+                    } else {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Ready for Stack Lab review")
+                                .sirsiFont(.headline)
+                            Text("Review each proposal against the current catalog before promoting it into a release recipe.")
+                                .sirsiFont(.subheadline)
+                                .foregroundStyle(.secondary)
+                            ForEach(proposals) { proposal in
+                                proposalRow(proposal)
+                            }
+                        }
+                    }
+
+                    NavLink { StackLabView(engine: engine) } label: {
+                        Label("Open Stack Lab review", systemImage: "cube.transparent")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding(16)
+            }
+            Divider()
+            HStack {
+                Text("Local evidence · no shared catalog mutation")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button { Task { await load() } } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.borderless)
+                .disabled(loading || recording)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 11)
+        }
+    }
+
+    private func proposalRow(_ proposal: MaatKnownFailureProposal) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(proposal.titleOrID)
+                    .sirsiFont(.subheadline, weight: .semibold)
+                Spacer()
+                Text(proposal.status.capitalized)
+                    .sirsiFont(.caption, weight: .semibold)
+                    .foregroundStyle(gold)
+            }
+            Text(proposal.cause)
+                .sirsiFont(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Signature: \(proposal.signature)")
+                .sirsiFont(.caption, design: .monospaced)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+            Text("Recorded \(proposal.createdAtUTC)")
+                .sirsiFont(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.045)))
+    }
+
+    private func unavailableState(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .sirsiFont(24, weight: .semibold)
+                .foregroundStyle(.orange)
+            Text("Local proposal evidence is unavailable")
+                .sirsiFont(.headline)
+            Text(message)
+                .sirsiFont(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Try again") { Task { await load() } }
+                .buttonStyle(.borderedProminent)
+                .tint(gold)
+            NavLink { StackLabView(engine: engine) } label: {
+                Label("Inspect Stack Lab authority", systemImage: "cube.transparent")
+            }
+            .buttonStyle(.bordered)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .padding(20)
+    }
+
+    private var proposalRecorder: some View {
+        NavigationStack {
+            Form {
+                Section("Recurring failure") {
+                    TextField("Stable id (for example, package-input-reopen)", text: $proposalID)
+                    TextField("Short title", text: $proposalTitle)
+                    TextField("Failure signature (regular expression)", text: $proposalSignature, axis: .vertical)
+                        .lineLimit(2...4)
+                    TextField("Cause", text: $proposalCause, axis: .vertical)
+                        .lineLimit(2...4)
+                }
+                Section("What happens next") {
+                    Text("Pantheon stores this as a local Ma'at proposal. Stack Lab review decides whether it should become a shipped recognition rule. Nothing is repaired or changed automatically.")
+                        .sirsiFont(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                if let recordError {
+                    Section("Needs attention") {
+                        Text(recordError)
+                            .sirsiFont(.footnote)
+                            .foregroundStyle(.orange)
+                    }
+                }
+            }
+            .navigationTitle("Record observation")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showRecorder = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Continue") {
+                        showRecorder = false
+                        confirmRecord = true
+                    }
+                    .disabled(!canRecord || recording)
+                }
+            }
+        }
+        .frame(minWidth: 520, minHeight: 410)
+    }
+
+    private var canRecord: Bool {
+        !proposalID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !proposalSignature.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !proposalCause.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func resetRecorder() {
+        proposalID = ""
+        proposalTitle = ""
+        proposalSignature = ""
+        proposalCause = ""
+        recordError = nil
+    }
+
+    @MainActor private func load() async {
+        loading = true
+        loadError = nil
+        let raw = await SirsiEngine.run(args: ["maat", "known-failures", "proposals", "--json"], stdin: nil)
+        guard let result = Self.decode(raw) else {
+            loadError = "Pantheon could not read the typed local Ma'at proposal queue. No proposal was treated as reviewed or promoted. \(SirsiEngine.firstMeaningful(raw))"
+            loading = false
+            return
+        }
+        proposals = result
+        loading = false
+    }
+
+    @MainActor private func recordProposal() async {
+        guard canRecord, !recording else { return }
+        recording = true
+        recordError = nil
+        var args = ["maat", "known-failures", "register", proposalID.trimmingCharacters(in: .whitespacesAndNewlines), "--signature", proposalSignature.trimmingCharacters(in: .whitespacesAndNewlines), "--cause", proposalCause.trimmingCharacters(in: .whitespacesAndNewlines)]
+        if !proposalTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            args += ["--title", proposalTitle.trimmingCharacters(in: .whitespacesAndNewlines)]
+        }
+        args.append("--json")
+        let raw = await SirsiEngine.run(args: args, stdin: nil)
+        guard Self.decodeProposal(raw) != nil else {
+            recordError = "Pantheon did not create a verified local proposal. Nothing was promoted. \(SirsiEngine.firstMeaningful(raw))"
+            recording = false
+            showRecorder = true
+            return
+        }
+        recording = false
+        await load()
+    }
+
+    nonisolated static func decode(_ raw: String) -> [MaatKnownFailureProposal]? {
+        guard let start = raw.firstIndex(of: "[") else { return nil }
+        return try? JSONDecoder().decode([MaatKnownFailureProposal].self, from: Data(raw[start...].utf8))
+    }
+
+    nonisolated static func decodeProposal(_ raw: String) -> MaatKnownFailureProposal? {
+        guard let start = raw.firstIndex(of: "{") else { return nil }
+        return try? JSONDecoder().decode(MaatKnownFailureProposal.self, from: Data(raw[start...].utf8))
     }
 }
 
@@ -1067,6 +1337,9 @@ struct MaatCasebookView: View {
             MaybeScroll {
                 VStack(alignment: .leading, spacing: 16) {
                     summary(casebook.summary)
+                    if casebook.journalIntegrity.invalidCount > 0 {
+                        MaatJournalIntegrityCard(engine: engine, integrity: casebook.journalIntegrity)
+                    }
                     searchField
                     caseList(for: filtered(casebook.cases))
                 }
@@ -1747,12 +2020,12 @@ private struct MaatCaseDetailView: View {
         actionInFlight = true
         actionError = nil
         if action.kind == "maat_repair" {
-            guard action.actionID == "launchd-disabled" else {
+            guard let args = maatCasebookRepairArguments(actionID: action.actionID) else {
                 actionError = "Ma'at refused an unknown repair reference. No system state changed."
                 actionInFlight = false
                 return
             }
-            actionResult = await SirsiEngine.runResult(args: ["maat", "repair", "launchd-disabled", "--confirm"])
+            actionResult = await SirsiEngine.runResult(args: args)
         } else if action.kind == "owner_acceptance" {
             actionResult = await SirsiEngine.runResult(args: ["maat", "accept-resolution", "--evidence", action.evidence, "--note", conclusion.trimmingCharacters(in: .whitespacesAndNewlines), "--confirm"])
         } else {
@@ -1875,9 +2148,213 @@ private struct MaatCaseDetailView: View {
     }
 }
 
+// Casebook executes only repair identifiers which are closed, native Ma'at
+// operations. Keeping this mapping here — rather than accepting producer text
+// or a command string from evidence — lets a System One screen offer a real
+// recovery without becoming a shell-launch surface.
+func maatCasebookRepairArguments(actionID: String) -> [String]? {
+    switch actionID {
+    case "launchd-disabled":
+        return ["maat", "repair", "launchd-disabled", "--confirm"]
+    case "liveness-watch":
+        return ["maat", "repair", "liveness-watch", "--confirm"]
+    default:
+        return nil
+    }
+}
+
+// MaatJournalRepairView owns the one confirmation-gated data recovery action
+// for a damaged local Casebook projection. It never asks the operator to
+// assemble a command or locate a file manually: the underlying engine
+// preserves the original journal, verifies the active projection, and returns
+// the exact retained evidence path.
+struct MaatJournalRepairView: View {
+    @ObservedObject var engine: SirsiEngine
+    let integrity: MaatJournalIntegrity
+    @State private var confirmRepair = false
+    @State private var repairing = false
+    @State private var result: MaatJournalRepairResult?
+    @State private var error: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            BackBar(title: "Repair Ma'at casebook")
+            MaybeScroll {
+                VStack(alignment: .leading, spacing: 16) {
+                    Label("Preserve and recover the casebook", systemImage: "shield.lefthalf.filled")
+                        .sirsiFont(.title3, weight: .bold)
+                    Text("Ma'at found \(integrity.invalidCount) record\(integrity.invalidCount == 1 ? "" : "s") that cannot satisfy the current local journal contract. This repair does not invent or overwrite those decisions. It first preserves the full original journal, then rebuilds the active Casebook only from records that pass strict verification.")
+                        .sirsiFont(.body)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !integrity.issues.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Affected records")
+                                .sirsiFont(.headline)
+                            ForEach(integrity.issues) { issue in
+                                Text("Line \(issue.line) · \(issue.reason) · \(issue.digest)")
+                                    .sirsiFont(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                            }
+                            if integrity.invalidCount > integrity.issues.count {
+                                Text("\(integrity.invalidCount - integrity.issues.count) additional record\(integrity.invalidCount - integrity.issues.count == 1 ? "" : "s") are retained without being expanded here.")
+                                    .sirsiFont(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.05)))
+                    }
+                    if let result {
+                        VStack(alignment: .leading, spacing: 7) {
+                            Label("Casebook recovered", systemImage: "checkmark.seal.fill")
+                                .sirsiFont(.headline)
+                                .foregroundStyle(.green)
+                            Text("Preserved original: \(result.repair.backupPath)")
+                                .sirsiFont(.caption)
+                                .textSelection(.enabled)
+                            Text("Removed \(result.repair.removedCount) invalid record\(result.repair.removedCount == 1 ? "" : "s") from the active projection; \(result.repair.retainedCount) verified record\(result.repair.retainedCount == 1 ? "" : "s") remain.")
+                                .sirsiFont(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 9).fill(Color.green.opacity(0.10)))
+                    } else if let error {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Label("Recovery did not complete", systemImage: "exclamationmark.triangle.fill")
+                                .sirsiFont(.headline)
+                                .foregroundStyle(.orange)
+                            Text(error)
+                                .sirsiFont(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 9).fill(Color.orange.opacity(0.10)))
+                    }
+                    Button {
+                        confirmRepair = true
+                    } label: {
+                        if repairing {
+                            ProgressView().controlSize(.small)
+                            Text("Preserving and verifying…")
+                        } else {
+                            Label("Preserve and repair casebook", systemImage: "wrench.and.screwdriver")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(gold)
+                    .disabled(repairing || result != nil)
+                }
+                .padding(20)
+            }
+        }
+        .confirmationDialog("Preserve and repair the Ma'at casebook?", isPresented: $confirmRepair, titleVisibility: .visible) {
+            Button("Preserve original and repair", role: .destructive) {
+                Task { await repair() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Pantheon will save the original local journal before rebuilding only the active Casebook projection from strictly verified records.")
+        }
+    }
+
+    @MainActor private func repair() async {
+        repairing = true
+        error = nil
+        let raw = await SirsiEngine.run(args: ["maat", "casebook", "repair", "--confirm", "--json"], stdin: nil)
+        if let decoded = MaatJournalRepairResult.decode(raw), decoded.status == "ok" {
+            result = decoded
+        } else {
+            error = SirsiEngine.firstMeaningful(raw)
+        }
+        repairing = false
+    }
+}
+
+struct MaatJournalRepairResult: Decodable {
+    let status: String
+    let summary: String
+    let repair: Repair
+
+    struct Repair: Decodable {
+        let backupPath: String
+        let originalDigest: String
+        let removedCount: Int
+        let retainedCount: Int
+
+        enum CodingKeys: String, CodingKey {
+            case backupPath = "backup_path"
+            case originalDigest = "original_digest"
+            case removedCount = "removed_count"
+            case retainedCount = "retained_count"
+        }
+    }
+
+    static func decode(_ raw: String) -> MaatJournalRepairResult? {
+        guard let start = raw.firstIndex(of: "{") else { return nil }
+        return try? JSONDecoder().decode(MaatJournalRepairResult.self, from: Data(raw[start...].utf8))
+    }
+}
+
+// This card deliberately appears beside healthy Casebook content instead of
+// replacing it with a generic failure state. Ma'at identifies the damaged
+// records without rendering their raw contents and routes the operator to the
+// confirmation-gated preservation repair.
+struct MaatJournalIntegrityCard: View {
+    @ObservedObject var engine: SirsiEngine
+    let integrity: MaatJournalIntegrity
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Label("Casebook integrity needs resolution", systemImage: "exclamationmark.shield.fill")
+                .sirsiFont(.headline)
+                .foregroundStyle(.orange)
+            Text("\(integrity.invalidCount) legacy or damaged decision record\(integrity.invalidCount == 1 ? "" : "s") could not satisfy Ma'at’s journal contract. Valid cases remain visible. Pantheon can preserve the original journal, remove only invalid records from the active view, and verify the recovered casebook.")
+                .sirsiFont(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            NavLink {
+                MaatJournalRepairView(engine: engine, integrity: integrity)
+            } label: {
+                Label("Review and preserve invalid records", systemImage: "wrench.and.screwdriver")
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(gold)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.orange.opacity(0.10)))
+    }
+}
+
 struct MaatCasebookProjection: Decodable {
     let cases: [MaatCase]
     let summary: MaatCasebookSummary
+    let journalIntegrity: MaatJournalIntegrity
+
+    enum CodingKeys: String, CodingKey {
+        case cases
+        case summary
+        case journalIntegrity = "journal_integrity"
+    }
+
+    init(cases: [MaatCase], summary: MaatCasebookSummary, journalIntegrity: MaatJournalIntegrity = .clean) {
+        self.cases = cases
+        self.summary = summary
+        self.journalIntegrity = journalIntegrity
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        cases = try values.decode([MaatCase].self, forKey: .cases)
+        summary = try values.decode(MaatCasebookSummary.self, forKey: .summary)
+        journalIntegrity = try values.decodeIfPresent(MaatJournalIntegrity.self, forKey: .journalIntegrity) ?? .clean
+    }
 
     // Snapshot mode must render a complete, deterministic operator state even
     // when a developer machine's installed CLI predates `maat casebook`. This
@@ -1891,6 +2368,59 @@ struct MaatCasebookProjection: Decodable {
         ],
         summary: MaatCasebookSummary(total: 3, open: 2, urgent: 1, high: 1, resolved: 1)
     )
+}
+
+struct MaatKnownFailureProposal: Decodable, Identifiable {
+    let schema: String
+    let id: String
+    let title: String?
+    let signature: String
+    let cause: String
+    let status: String
+    let createdAtUTC: String
+    let catalogSHA256: String
+
+    enum CodingKeys: String, CodingKey {
+        case schema, id, title, signature, cause, status
+        case createdAtUTC = "created_at_utc"
+        case catalogSHA256 = "catalog_sha256"
+    }
+
+    var titleOrID: String {
+        let normalized = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return normalized.isEmpty ? id : normalized
+    }
+}
+
+struct MaatJournalIntegrity: Decodable {
+    let invalidCount: Int
+    let issues: [MaatJournalIssue]
+
+    enum CodingKeys: String, CodingKey {
+        case invalidCount = "invalid_count"
+        case issues
+    }
+
+    static let clean = MaatJournalIntegrity(invalidCount: 0, issues: [])
+
+    init(invalidCount: Int, issues: [MaatJournalIssue]) {
+        self.invalidCount = invalidCount
+        self.issues = issues
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        invalidCount = try values.decodeIfPresent(Int.self, forKey: .invalidCount) ?? 0
+        issues = try values.decodeIfPresent([MaatJournalIssue].self, forKey: .issues) ?? []
+    }
+}
+
+struct MaatJournalIssue: Decodable, Identifiable {
+    let line: Int
+    let digest: String
+    let reason: String
+
+    var id: String { "\(line):\(digest)" }
 }
 
 struct MaatCasebookSummary: Decodable {
@@ -2019,6 +2549,50 @@ struct MaatSystemOneVerdict: Decodable {
     }
 }
 
+// Both `sirsi maat triage --confirm --json` and `sirsi maat screen --confirm
+// --json` intentionally project the closed System One verdict directly rather
+// than wrapping it in the generic CommandResult envelope. Triage additionally
+// binds the snapshot and Casebook decision evidence. Decode the shared verdict
+// once so a successful local write can refresh the native Casebook instead of
+// being displayed as a false failure.
+struct MaatSystemOneCommandResult: Decodable {
+    let verdict: MaatSystemOneVerdict
+    let snapshotEvidence: String
+    let decisionEvidence: String
+
+    enum CodingKeys: String, CodingKey {
+        case snapshotEvidence = "snapshot_evidence"
+        case decisionEvidence = "decision_evidence"
+    }
+
+    init(from decoder: Decoder) throws {
+        verdict = try MaatSystemOneVerdict(from: decoder)
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        snapshotEvidence = try values.decodeIfPresent(String.self, forKey: .snapshotEvidence) ?? ""
+        decisionEvidence = try values.decodeIfPresent(String.self, forKey: .decisionEvidence) ?? ""
+    }
+
+    var summary: String {
+        switch verdict.gate {
+        case "pass":
+            return "Ma'at recorded this observation. No issue exceeded the configured threshold."
+        case "changes":
+            return "Ma'at recorded this observation with bounded changes to address."
+        case "block":
+            return "Ma'at recorded this observation and blocked it on deterministic or high-confidence evidence."
+        case "escalate":
+            return "Ma'at recorded this observation and requires an explicit owner review."
+        default:
+            return "Ma'at recorded this observation with an unrecognized System One gate."
+        }
+    }
+
+    static func decode(_ raw: String) -> MaatSystemOneCommandResult? {
+        guard let start = raw.firstIndex(of: "{") else { return nil }
+        return try? JSONDecoder().decode(MaatSystemOneCommandResult.self, from: Data(raw[start...].utf8))
+    }
+}
+
 struct MaatSystemOneFinding: Decodable, Identifiable {
     let id: String
     let severity: String
@@ -2121,7 +2695,7 @@ struct MaatSystemOneCalibration: Decodable {
 // release source observation. It deliberately is not CommandResult: the
 // preflight's file identities and deterministic floor are the evidence the
 // operator must inspect before opting into one Casebook record.
-private struct MaatReleaseContractPreflight: Decodable {
+struct MaatReleaseContractPreflight: Decodable {
     let root: String
     let fingerprint: String
     let verdict: MaatSystemOneVerdict

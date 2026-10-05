@@ -231,10 +231,29 @@ func BuildReport(self version.Info, siblings []Sibling, pathBin string) *DriftRe
 		}
 	}
 	if pathBin != "" && self.Path != "" {
-		if filepath.Clean(pathBin) != filepath.Clean(self.Path) {
+		// Homebrew deliberately links /opt/homebrew/bin/sirsi to the binary
+		// inside Pantheon.app. Comparing those two *names* made every healthy
+		// Cask installation look drifted and sent the native app to a needless
+		// self-repair screen. Prefer filesystem identity when both paths exist;
+		// retain the conservative textual comparison for unavailable paths.
+		if !sameExecutable(pathBin, self.Path) {
 			r.D3PathBin = filepath.Clean(pathBin)
 		}
 	}
 	r.Healthy = len(r.D2Mismatch) == 0 && r.D3PathBin == ""
 	return r
+}
+
+// sameExecutable recognizes two names for the same executable object. os.Stat
+// follows the Cask's intentional symlink, and os.SameFile compares the
+// platform identity rather than string paths. If either path cannot be
+// inspected, only an exact clean spelling is considered equal: missing or
+// ambiguous binaries must continue to surface as drift.
+func sameExecutable(left, right string) bool {
+	if filepath.Clean(left) == filepath.Clean(right) {
+		return true
+	}
+	leftInfo, leftErr := os.Stat(left)
+	rightInfo, rightErr := os.Stat(right)
+	return leftErr == nil && rightErr == nil && os.SameFile(leftInfo, rightInfo)
 }

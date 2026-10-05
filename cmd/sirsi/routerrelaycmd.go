@@ -23,6 +23,7 @@ import (
 )
 
 var relaySpool string
+var relayRepairAgent string
 
 var routerRelayCmd = &cobra.Command{
 	Use:   "relay",
@@ -94,9 +95,38 @@ var routerRelayInstallCmd = &cobra.Command{
 	},
 }
 
+var routerRelayRepairOutboxCmd = &cobra.Command{
+	Use:   "repair-outbox --agent AGENT",
+	Short: "Restore one locally-owned unreadable relay outbox through retained no-follow descriptors",
+	Long: `Repairs only the exact local <spool>/<agent>/outbox directory when it is
+owned by the current user and can be opened without following any link. It sets
+that retained directory to mode 0700, persists the change, and never drains,
+replays, deletes, or changes queued messages. Any ownership, type, link, or
+persistence ambiguity is refused without a pathname-based fallback.`,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		spool := relaySpool
+		if spool == "" {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return fmt.Errorf("router relay repair-outbox: determine home directory: %w", err)
+			}
+			spool = filepath.Join(home, ".sirsi", "relay")
+		}
+		repair, err := routerstore.RepairSpoolOutbox(spool, relayRepairAgent)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "relay outbox repaired: agent %s mode %s → %s at %s; queued messages were not changed\n", repair.Agent, repair.PreviousMode, repair.RepairedMode, repair.CanonicalSpool)
+		return nil
+	},
+}
+
 func init() {
 	routerRelayServeCmd.Flags().StringVar(&relaySpool, "spool", "", "spool directory (default ~/.sirsi/relay)")
 	routerRelayInstallCmd.Flags().StringVar(&relaySpool, "spool", "", "spool directory (default ~/.sirsi/relay)")
-	routerRelayCmd.AddCommand(routerRelayServeCmd, routerRelayInstallCmd)
+	routerRelayRepairOutboxCmd.Flags().StringVar(&relaySpool, "spool", "", "spool directory (default ~/.sirsi/relay)")
+	routerRelayRepairOutboxCmd.Flags().StringVar(&relayRepairAgent, "agent", "", "relay agent whose unreadable outbox should be repaired")
+	_ = routerRelayRepairOutboxCmd.MarkFlagRequired("agent")
+	routerRelayCmd.AddCommand(routerRelayServeCmd, routerRelayInstallCmd, routerRelayRepairOutboxCmd)
 	routerCmd.AddCommand(routerRelayCmd)
 }

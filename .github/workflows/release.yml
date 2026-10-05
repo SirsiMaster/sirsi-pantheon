@@ -170,9 +170,13 @@ jobs:
           set -euo pipefail
           EXPECTED_COMMIT="$(git rev-parse "${GITHUB_SHA}^{commit}")"
           if gh release view "$TAG_NAME" --repo SirsiMaster/sirsi-pantheon >/dev/null 2>&1; then
-            ACTUAL_COMMIT="$(gh release view "$TAG_NAME" --repo SirsiMaster/sirsi-pantheon --json targetCommitish --jq '.targetCommitish')"
+            # GitHub may report a release's targetCommitish as the default
+            # branch name even when the release was created from this exact
+            # annotated tag. The tag's peeled commit is the immutable release
+            # identity, so verify that instead of a mutable UI projection.
+            ACTUAL_COMMIT="$(git ls-remote --exit-code origin "refs/tags/${TAG_NAME}^{}" | awk '{print $1}')"
             [[ "$ACTUAL_COMMIT" == "$EXPECTED_COMMIT" ]] || {
-              echo "existing release $TAG_NAME targets $ACTUAL_COMMIT, expected $EXPECTED_COMMIT" >&2
+              echo "existing release tag $TAG_NAME peels to $ACTUAL_COMMIT, expected $EXPECTED_COMMIT" >&2
               exit 1
             }
           else
@@ -192,7 +196,10 @@ jobs:
           set -euo pipefail
           test -f "bin/SirsiPantheon-${BUILD_VERSION}-arm64.dmg"
           test -f "bin/SirsiPantheon-${BUILD_VERSION}-arm64.pkg"
-          gh release upload "$TAG_NAME" \
+          # A runner retry may reach this step after the release service has
+          # already accepted the exact files. Replace only same-named assets so
+          # the canonical cask readback can still complete.
+          gh release upload "$TAG_NAME" --clobber \
             "bin/SirsiPantheon-${BUILD_VERSION}-arm64.dmg" \
             "bin/SirsiPantheon-${BUILD_VERSION}-arm64.pkg"
 

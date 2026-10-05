@@ -467,16 +467,22 @@ type deityTest struct {
 func TestVersion(t *testing.T) {
 	t.Parallel()
 
-	stdout, _, err := runSirsi(t, 10*time.Second, "version")
-	if err != nil {
-		t.Fatalf("sirsi version failed: %v", err)
-	}
+	for _, test := range []struct {
+		args     []string
+		contains string
+	}{
+		{args: []string{"version"}, contains: "Sirsi Pantheon"},
+		{args: []string{"--version"}, contains: "sirsi version"},
+	} {
+		stdout, _, err := runSirsi(t, 10*time.Second, test.args...)
+		if err != nil {
+			t.Fatalf("sirsi %s failed: %v", strings.Join(test.args, " "), err)
+		}
 
-	combined := stdout
-	// Version is stamped via ldflags (internal/version), not a frozen literal,
-	// so assert the banner renders rather than a specific number (ADR-023).
-	if !strings.Contains(combined, "Sirsi Pantheon") {
-		t.Errorf("version output missing 'Sirsi Pantheon' banner, got:\n%s", combined)
+		// Version is stamped via ldflags (internal/version), not a frozen literal.
+		if !strings.Contains(stdout, test.contains) {
+			t.Errorf("sirsi %s output missing %q, got:\n%s", strings.Join(test.args, " "), test.contains, stdout)
+		}
 	}
 }
 

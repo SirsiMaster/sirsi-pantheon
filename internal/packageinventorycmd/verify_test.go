@@ -8,8 +8,8 @@ import (
 )
 
 func TestVerifyRejectsDeclaredVersionBuildMismatch(t *testing.T) {
-	app, info, pkgInfo, launchAgent := makeCommandBundle(t)
-	_, err := Verify(Inputs{App: app, Version: "0.23.9-beta", Build: "wrong", InfoPlist: info, PkgInfo: pkgInfo, LaunchAgent: launchAgent})
+	app, info, pkgInfo, launchAgent, brandLogo := makeCommandBundle(t)
+	_, err := Verify(Inputs{App: app, Version: "0.23.9-beta", Build: "wrong", InfoPlist: info, PkgInfo: pkgInfo, LaunchAgent: launchAgent, BrandLogo: brandLogo})
 	if err == nil || !strings.Contains(err.Error(), "build") {
 		t.Fatalf("mismatched build accepted: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestReadCanonicalFileRejectsSymlinkedAncestor(t *testing.T) {
 	}
 }
 
-func makeCommandBundle(t *testing.T) (string, string, string, string) {
+func makeCommandBundle(t *testing.T) (string, string, string, string, string) {
 	t.Helper()
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -83,6 +83,7 @@ func makeCommandBundle(t *testing.T) (string, string, string, string) {
 	info := filepath.Join(root, "Info.plist")
 	pkgInfo := filepath.Join(root, "PkgInfo")
 	launchAgent := filepath.Join(root, "LaunchAgent.plist")
+	brandLogo := filepath.Join(root, "sirsi-logo-white.png")
 	infoBytes := []byte(`<?xml version="1.0"?><plist><dict><key>CFBundleIdentifier</key><string>ai.sirsi.pantheon</string><key>CFBundleShortVersionString</key><string>0.23.9-beta</string><key>CFBundleVersion</key><string>20260908</string></dict></plist>`)
 	if err := os.WriteFile(info, infoBytes, 0o644); err != nil {
 		t.Fatal(err)
@@ -93,16 +94,20 @@ func makeCommandBundle(t *testing.T) (string, string, string, string) {
 	if err := os.WriteFile(launchAgent, []byte("Label=ai.sirsi.pantheon\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(brandLogo, []byte("canonical Sirsi application-mark bytes\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	for rel, data := range map[string][]byte{
 		"Contents/Info.plist":                        infoBytes,
 		"Contents/PkgInfo":                           []byte("APPL????"),
 		"Contents/MacOS/sirsi":                       []byte("cli"),
 		"Contents/MacOS/sirsi-menubar":               []byte("menu"),
 		"Contents/Resources/ai.sirsi.pantheon.plist": []byte("Label=ai.sirsi.pantheon\n"),
+		"Contents/Resources/sirsi-logo-white.png":    []byte("canonical Sirsi application-mark bytes\n"),
 	} {
 		if err := os.WriteFile(filepath.Join(app, filepath.FromSlash(rel)), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	return app, info, pkgInfo, launchAgent
+	return app, info, pkgInfo, launchAgent, brandLogo
 }

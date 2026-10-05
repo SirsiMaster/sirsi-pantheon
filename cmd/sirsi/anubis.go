@@ -175,9 +175,8 @@ func runWeigh(ctx context.Context) error {
 	if ghostErr != nil {
 		output.Warn("Ghost scan error: %v", ghostErr)
 	}
-	var ghostWaste int64
+	ghostFindings := 0
 	for _, g := range ghosts {
-		ghostWaste += g.TotalSize
 		// Add ghost findings to the scan result so they appear in persisted output.
 		for _, r := range g.Residuals {
 			// Caches and logs are safe to delete. Preferences and app data need review.
@@ -196,17 +195,16 @@ func runWeigh(ctx context.Context) error {
 				Severity:    sev,
 				IsDir:       true,
 			})
+			ghostFindings++
 		}
-		res.TotalSize += g.TotalSize
 	}
-	if len(ghosts) > 0 {
+	if ghostFindings > 0 {
 		res.RulesWithFindings++
-		cat := res.ByCategory[jackal.CategoryGeneral]
-		cat.Category = jackal.CategoryGeneral
-		cat.Findings += len(ghosts)
-		cat.TotalSize += ghostWaste
-		res.ByCategory[jackal.CategoryGeneral] = cat
 	}
+	// Ghost scan runs after the rule engine. Normalize once all producers have
+	// contributed so the same physical path cannot inflate the cleanup total or
+	// appear twice with competing actions.
+	jackal.NormalizeFindings(res)
 
 	// Enrich every finding with advisory intelligence.
 	jackal.EnrichAdvisory(res)
@@ -237,12 +235,13 @@ func runWeigh(ctx context.Context) error {
 
 	// Terminal output — summary table + top findings.
 	dashMap := map[string]string{
-		"Waste Found": jackal.FormatSize(res.TotalSize),
-		"Pillars Ran": fmt.Sprintf("%d", res.RulesRan),
-		"Findings":    fmt.Sprintf("%d", len(res.Findings)),
+		"Ready for Review":   jackal.FormatSize(res.ReclaimableSize),
+		"Inventory Reviewed": jackal.FormatSize(res.TotalSize),
+		"Pillars Ran":        fmt.Sprintf("%d", res.RulesRan),
+		"Findings":           fmt.Sprintf("%d", len(res.Findings)),
 	}
 	if len(ghosts) > 0 {
-		dashMap["Ghosts"] = fmt.Sprintf("%d (%s)", len(ghosts), jackal.FormatSize(ghostWaste))
+		dashMap["Ghosts"] = fmt.Sprintf("%d", len(ghosts))
 	}
 	output.Dashboard(dashMap)
 
@@ -291,14 +290,15 @@ func runWeigh(ctx context.Context) error {
 	// Structured result contract
 	result := &output.CommandResult{
 		Command:  "sirsi scan",
-		Summary:  fmt.Sprintf("Found %s of reclaimable waste across %d findings", jackal.FormatSize(res.TotalSize), len(res.Findings)),
+		Summary:  fmt.Sprintf("Found %s ready for review across %d findings", jackal.FormatSize(res.ReclaimableSize), len(res.Findings)),
 		Duration: elapsed,
 	}
-	result.AddEvidence("Waste found", jackal.FormatSize(res.TotalSize))
+	result.AddEvidence("Ready for review", jackal.FormatSize(res.ReclaimableSize))
+	result.AddEvidence("Inventory reviewed", jackal.FormatSize(res.TotalSize))
 	result.AddEvidence("Rules ran", fmt.Sprintf("%d", res.RulesRan))
 	result.AddEvidence("Findings", fmt.Sprintf("%d", len(res.Findings)))
 	if len(ghosts) > 0 {
-		result.AddEvidence("Ghost apps", fmt.Sprintf("%d (%s)", len(ghosts), jackal.FormatSize(ghostWaste)))
+		result.AddEvidence("Ghost apps", fmt.Sprintf("%d", len(ghosts)))
 	}
 	if scanErr != nil {
 		result.AddWarning("Scan completed with errors: %v", scanErr)
@@ -1160,70 +1160,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("doctor failed: %w", err)
 	}
 
-	// Binary-drift check (ADR-023): local, no network. Surfaces the CTR
-	// deploy-drift class — a stale sibling binary (e.g. sirsi-menubar) running
-	// old internal/router code while source is fixed. Flows into the
-	// SessionStart health line via the standard findings surface.
-	if drift, derr := selfupdate.ScanHost(); derr == nil {
-		f := guard.DiagnosticFinding{
-			Check:    "binary-drift",
-			Severity: guard.SeverityOK,
-			Message:  "Sirsi binaries " + drift.Summary(),
-		}
-		if !drift.Healthy {
-			f.Severity = guard.SeverityWarn
-			f.Message = "Sirsi binary drift detected"
-			f.Detail = drift.Summary() + " → run `brew upgrade sirsi-pantheon` to update the Sirsi binaries"
-			f.Fix = "sirsi self-update"  // appended after the doctor post-pass; set its remediation here
-			f.FixKind = guard.FixInstant // self-update replaces the drifted binary → resolves now
-		}
-		f.Resolution = guard.ResolutionFor(f)
-		report.Findings = append(report.Findings, f)
-	}
-
-	// Liveness-watch lever (A32 durability): the launchd safety net must be
-	// installed so the gemma/menubar/memory-death watch survives a reboot with no
-	// Claude app. Not-installed is a Warn with an instant fix; installed is OK.
-	{
-		lw := guard.DiagnosticFinding{
-			Check:    "liveness-watch",
-			Severity: guard.SeverityOK,
-			Message:  "launchd liveness watch installed",
-		}
-		if !liveness.Installed() {
-			lw.Severity = guard.SeverityWarn
-			lw.Message = "launchd liveness watch not installed"
-			lw.Detail = "the OS-level gemma/menubar/memory-death safety net is absent — a reboot without the Claude app leaves the load-bearing surfaces unwatched"
-			lw.Fix = "sirsi liveness-watch install"
-			lw.FixKind = guard.FixInstant
-		}
-		lw.Resolution = guard.ResolutionFor(lw)
-		report.Findings = append(report.Findings, lw)
-	}
-
-	// Leaked-session pileup (A32 leak source): count leaked claude-desktop
-	// runners (read-only; the caller's own ancestry is never counted) and surface
-	// the reap lever when the pileup is large or memory is already dying. The reap
-	// is owner/doctor-invoked only — never auto-run from a headless task (no safe
-	// signature to distinguish the owner's live session).
-	if plan, perr := reaper.Plan(reaper.Options{}, reaper.RealDeps()); perr == nil {
-		n := len(plan.Candidates)
-		md := guard.SampleMemoryDeath()
-		ls := guard.DiagnosticFinding{
-			Check:    "leaked-sessions",
-			Severity: guard.SeverityOK,
-			Message:  fmt.Sprintf("no leaked claude-desktop session pileup (%d reclaimable)", n),
-		}
-		if n >= 8 || (n > 0 && md.Dying) {
-			ls.Severity = guard.SeverityWarn
-			ls.Message = fmt.Sprintf("%d leaked claude-desktop sessions (~%d MB reclaimable)", n, plan.ReclaimMBEst)
-			ls.Detail = "scheduled-task/wakeup runs leave resident sessions that drive swap-death — reclaim them (your live session is protected)"
-			ls.Fix = "sirsi reap-sessions --apply"
-			ls.FixKind = guard.FixInstant
-		}
-		ls.Resolution = guard.ResolutionFor(ls)
-		report.Findings = append(report.Findings, ls)
-	}
+	applyPantheonDoctorPostChecks(report)
 
 	if JsonOutput {
 		enc := json.NewEncoder(os.Stdout)
@@ -1292,6 +1229,87 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	}
 	result.Render()
 	return nil
+}
+
+// pantheonDoctor is the complete local diagnostic projection. It deliberately
+// adds Pantheon-owned observations after guard.Doctor so every surface —
+// Diagnose, Ma'at System One, Casebook repair preflight, the Swift app, and the
+// menubar — reasons over the exact same finding set.
+func pantheonDoctor() (*guard.DoctorReport, error) {
+	report, err := guard.Doctor()
+	if err != nil {
+		return nil, fmt.Errorf("doctor failed: %w", err)
+	}
+	applyPantheonDoctorPostChecks(report)
+	return report, nil
+}
+
+func applyPantheonDoctorPostChecks(report *guard.DoctorReport) {
+	// Binary-drift check (ADR-023): local, no network. Surfaces the CTR
+	// deploy-drift class — a stale sibling binary (e.g. sirsi-menubar) running
+	// old internal/router code while source is fixed. Flows into the
+	// SessionStart health line via the standard findings surface.
+	if drift, derr := selfupdate.ScanHost(); derr == nil {
+		f := guard.DiagnosticFinding{
+			Check:    "binary-drift",
+			Severity: guard.SeverityOK,
+			Message:  "Sirsi binaries " + drift.Summary(),
+		}
+		if !drift.Healthy {
+			f.Severity = guard.SeverityWarn
+			f.Message = "Sirsi binary drift detected"
+			f.Detail = drift.Summary() + " → run `brew upgrade sirsi-pantheon` to update the Sirsi binaries"
+			f.Fix = "sirsi self-update"  // appended after the doctor post-pass; set its remediation here
+			f.FixKind = guard.FixInstant // self-update replaces the drifted binary → resolves now
+		}
+		f.Resolution = guard.ResolutionFor(f)
+		report.Findings = append(report.Findings, f)
+	}
+
+	// Liveness-watch lever (A32 durability): the launchd safety net must be
+	// installed so the gemma/menubar/memory-death watch survives a reboot with no
+	// Claude app. Not-installed is a Warn with an instant fix; installed is OK.
+	{
+		lw := guard.DiagnosticFinding{
+			Check:    "liveness-watch",
+			Severity: guard.SeverityOK,
+			Message:  "launchd liveness watch installed",
+		}
+		if !liveness.Installed() {
+			lw.Severity = guard.SeverityWarn
+			lw.Message = "launchd liveness watch not installed"
+			lw.Detail = "the OS-level gemma/menubar/memory-death safety net is absent — a reboot without the Claude app leaves the load-bearing surfaces unwatched"
+			lw.Fix = "sirsi liveness-watch install"
+			lw.FixKind = guard.FixInstant
+		}
+		lw.Resolution = guard.ResolutionFor(lw)
+		report.Findings = append(report.Findings, lw)
+	}
+
+	// Leaked-session pileup (A32 leak source): count leaked claude-desktop
+	// runners (read-only; the caller's own ancestry is never counted) and surface
+	// the reap lever when the pileup is large or memory is already dying. The reap
+	// is owner/doctor-invoked only — never auto-run from a headless task (no safe
+	// signature to distinguish the owner's live session).
+	if plan, perr := reaper.Plan(reaper.Options{}, reaper.RealDeps()); perr == nil {
+		n := len(plan.Candidates)
+		md := guard.SampleMemoryDeath()
+		ls := guard.DiagnosticFinding{
+			Check:    "leaked-sessions",
+			Severity: guard.SeverityOK,
+			Message:  fmt.Sprintf("no leaked claude-desktop session pileup (%d reclaimable)", n),
+		}
+		if n >= 8 || (n > 0 && md.Dying) {
+			ls.Severity = guard.SeverityWarn
+			ls.Message = fmt.Sprintf("%d leaked claude-desktop sessions (~%d MB reclaimable)", n, plan.ReclaimMBEst)
+			ls.Detail = "scheduled-task/wakeup runs leave resident sessions that drive swap-death — reclaim them (your live session is protected)"
+			ls.Fix = "sirsi reap-sessions --apply"
+			ls.FixKind = guard.FixInstant
+		}
+		ls.Resolution = guard.ResolutionFor(ls)
+		report.Findings = append(report.Findings, ls)
+	}
+
 }
 
 // remediationFor maps a diagnostic check to a concrete, runnable remediation

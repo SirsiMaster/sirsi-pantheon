@@ -244,6 +244,19 @@ func resolutionPath(c Case) *ResolutionPath {
 	if c.Status == StatusResolved {
 		return nil
 	}
+	if c.Kind == "failure memory preflight" && c.Evidence != "" {
+		return &ResolutionPath{
+			Kind: "failure_memory_recheck", Title: "Resolve the retained failure-memory finding",
+			Detail:               "Use the exact retained preflight receipt and its guidance. Ma'at does not execute a producer-supplied repair or treat a historical observation as current.",
+			Evidence:             c.Evidence,
+			RequiresConfirmation: true,
+			Steps: []ResolutionStep{
+				{Level: 1, Title: "Inspect the retained evidence", Detail: "Open the exact failure-memory receipt and confirm its component, profile, operation, incident identity, and recovery guidance.", Evidence: c.Evidence},
+				{Level: 2, Title: "Use the authorized bounded recovery", Detail: "Choose the approved recovery path for this operation; recovery guidance is evidence, not an executable command or blanket permission.", Evidence: c.Evidence, RequiresConfirmation: true},
+				{Level: 3, Title: "Run a fresh exact-scope preflight", Detail: "Re-run the same failure-memory preflight after the bounded recovery and explicitly retain the new factual result in Casebook.", Evidence: c.Evidence, RequiresConfirmation: true},
+			},
+		}
+	}
 	if c.Kind == "diagnostic owner review" && c.Evidence != "" {
 		return &ResolutionPath{
 			Kind: "owner_acceptance", Title: "Record an owner acceptance",
@@ -285,20 +298,36 @@ func systemOneRepair(verdict *maat.MaatVerdict, evidence string) (*ResolutionPat
 			ids[finding.RepairID] = true
 		}
 	}
-	if len(ids) != 1 || !ids[maat.SystemOneRepairLaunchdDisabled] {
+	if len(ids) != 1 {
 		return nil, false
 	}
-	return &ResolutionPath{
-		Kind: "maat_repair", ActionID: maat.SystemOneRepairLaunchdDisabled,
-		Title: "Restore the managed launchd labels", Evidence: evidence,
-		Detail:               "Ma'at will re-read the currently disabled Sirsi labels, restore only the verified managed set, re-check the same diagnostic, and retain the outcome. Then create a fresh System One screen.",
-		RequiresConfirmation: true,
-		Steps: []ResolutionStep{
-			{Level: 1, Title: "Review the retained finding", Detail: "Confirm this screen describes the disabled managed LaunchAgent state.", RequiresConfirmation: true},
-			{Level: 2, Title: "Apply Ma'at's bounded recovery", Detail: "Enable and bootstrap only labels that are both managed and disabled at preflight.", RequiresConfirmation: true},
-			{Level: 3, Title: "Re-screen the Mac", Detail: "Inspect the recorded recovery receipt, then create a new System One screen so the original observation is not treated as current."},
-		},
-	}, true
+	if ids[maat.SystemOneRepairLaunchdDisabled] {
+		return &ResolutionPath{
+			Kind: "maat_repair", ActionID: maat.SystemOneRepairLaunchdDisabled,
+			Title: "Restore the managed launchd labels", Evidence: evidence,
+			Detail:               "Ma'at will re-read the currently disabled Sirsi labels, restore only the verified managed set, re-check the same diagnostic, and retain the outcome. Then create a fresh System One screen.",
+			RequiresConfirmation: true,
+			Steps: []ResolutionStep{
+				{Level: 1, Title: "Review the retained finding", Detail: "Confirm this screen describes the disabled managed LaunchAgent state.", RequiresConfirmation: true},
+				{Level: 2, Title: "Apply Ma'at's bounded recovery", Detail: "Enable and bootstrap only labels that are both managed and disabled at preflight.", RequiresConfirmation: true},
+				{Level: 3, Title: "Re-screen the Mac", Detail: "Inspect the recorded recovery receipt, then create a new System One screen so the original observation is not treated as current."},
+			},
+		}, true
+	}
+	if ids[maat.SystemOneRepairLivenessWatch] {
+		return &ResolutionPath{
+			Kind: "maat_repair", ActionID: maat.SystemOneRepairLivenessWatch,
+			Title: "Install the local liveness watch", Evidence: evidence,
+			Detail:               "Ma'at will confirm the watch is absent, install the bounded per-user LaunchAgent from Pantheon's canonical executable, re-check the same diagnostic, and retain the outcome.",
+			RequiresConfirmation: true,
+			Steps: []ResolutionStep{
+				{Level: 1, Title: "Review the retained finding", Detail: "Confirm this screen describes an absent local liveness watch.", RequiresConfirmation: true},
+				{Level: 2, Title: "Install Ma'at's safety watch", Detail: "Install only Pantheon's managed per-user liveness LaunchAgent; no model, service, or unrelated login item is changed.", RequiresConfirmation: true},
+				{Level: 3, Title: "Re-screen the Mac", Detail: "Inspect the recorded installation receipt, then create a new System One screen so the original observation is not treated as current."},
+			},
+		}, true
+	}
+	return nil, false
 }
 
 func failedFloorRecovery(c Case) *ResolutionPath {

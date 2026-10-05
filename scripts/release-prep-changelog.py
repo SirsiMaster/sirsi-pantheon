@@ -12,7 +12,7 @@ def bullets(b):
             cur=[line]
         elif cur and (line.startswith('  ') or line.strip()==''):
             cur.append(line)
-        elif line.startswith('## ') : 
+        elif line.startswith('## '):
             if cur: out.append('\n'.join(cur)); cur=[]
     if cur: out.append('\n'.join(cur))
     return [b.rstrip() for b in out]

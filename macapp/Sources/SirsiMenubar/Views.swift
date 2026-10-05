@@ -9,10 +9,51 @@ import os
 // /tmp file. Used to diagnose a failed apply (FDA / cancel / 0-cleaned).
 private let applyLog = Logger(subsystem: "ai.sirsi.pantheon", category: "apply")
 
-// Shared product accent. Keep the palette module-visible so every native
-// Pantheon surface uses the same green/gold language rather than inventing a
-// parallel accent per view.
-let gold = Color(red: 0.78, green: 0.66, blue: 0.32)
+// Pantheon is deliberately a black, emerald, and gold product. Black owns the
+// interface. Emerald is reserved for live/healthy state and one clear action;
+// gold is reserved for the brand and consequential commitment. The result is a
+// quiet operational surface, not a green dashboard.
+enum PantheonTheme {
+    static let canvas = Color(red: 0.018, green: 0.024, blue: 0.021)
+    static let sidebar = Color(red: 0.027, green: 0.036, blue: 0.031)
+    static let panel = Color(red: 0.045, green: 0.057, blue: 0.049)
+    static let panelRaised = Color(red: 0.060, green: 0.075, blue: 0.065)
+    static let emerald = Color(red: 0.18, green: 0.84, blue: 0.50)
+    static let emeraldMuted = Color(red: 0.075, green: 0.22, blue: 0.14)
+    static let gold = Color(red: 0.90, green: 0.72, blue: 0.31)
+    static let goldMuted = Color(red: 0.50, green: 0.37, blue: 0.12)
+    static let mutedText = Color(red: 0.66, green: 0.74, blue: 0.69)
+}
+
+let gold = PantheonTheme.gold
+let emerald = PantheonTheme.emerald
+
+// Use the canonical Sirsi application mark in identity positions rather than an
+// SF Symbol. The fallback is present only for development targets built without
+// resources; release packaging binds the PNG byte-for-byte in package inventory.
+struct PantheonBrandMark: View {
+    let size: CGFloat
+
+    var body: some View {
+        Group {
+            if let url = Bundle.main.url(forResource: "sirsi-logo-white", withExtension: "png"),
+               let image = NSImage(contentsOf: url) {
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+            } else {
+                Image(systemName: "eye.fill")
+                    .resizable()
+                    .scaledToFit()
+                    .padding(size * 0.22)
+                    .foregroundStyle(gold)
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityLabel("Sirsi logo")
+    }
+}
 
 // openSystemURL opens a System Settings / file URL (e.g. the Full Disk Access
 // pane). macOS cannot self-grant FDA — this is the one click that gets the user
@@ -802,7 +843,12 @@ struct BackBar: View {
     let title: String
     var body: some View {
         HStack(spacing: 6) {
-            Button { nav.pop() } label: {
+            if nav.atRoot {
+                Spacer()
+                Text(title).sirsiFont(12, weight: .semibold).foregroundStyle(.secondary)
+                Spacer()
+            } else {
+                Button { nav.pop() } label: {
                 // The LABEL is the hit area for a .plain button — the bare
                 // chevron+text was a ~40×16pt target the owner had to "click
                 // around a few times to actuate" (2026-07-09). Pad it to a
@@ -815,18 +861,19 @@ struct BackBar: View {
                 .padding(.leading, 12)
                 .padding(.trailing, 24)
                 .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).foregroundStyle(gold)
+                Spacer()
+                Text(title).sirsiFont(12, weight: .semibold).foregroundStyle(.secondary)
+                Spacer()
+                // invisible spacer mirroring the back button keeps the title centered
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left").sirsiFont(12)
+                    Text("Back").sirsiFont(12)
+                }
+                .padding(.leading, 12).padding(.trailing, 24)
+                .opacity(0)
             }
-            .buttonStyle(.plain).foregroundStyle(gold)
-            Spacer()
-            Text(title).sirsiFont(12, weight: .semibold).foregroundStyle(.secondary)
-            Spacer()
-            // invisible spacer mirroring the back button keeps the title centered
-            HStack(spacing: 4) {
-                Image(systemName: "chevron.left").sirsiFont(12)
-                Text("Back").sirsiFont(12)
-            }
-            .padding(.leading, 12).padding(.trailing, 24)
-            .opacity(0)
         }
         .padding(.vertical, 0)
         .contentShape(Rectangle())
@@ -1207,6 +1254,19 @@ private func parseFindingDetailList(_ detail: String) -> [FindingDetailEntry]? {
     }
 }
 
+// Health checks remain stable machine-facing identifiers so that Ma'at can
+// bind findings and receipts across every Pantheon surface. The title at the
+// top of a native screen, however, should tell a person what Pantheon can do
+// next—not expose an implementation detail as the task they have to solve.
+func findingDisplayTitle(check: String) -> String {
+    switch check {
+    case "launchd Disabled Override":
+        return "Restore managed services"
+    default:
+        return check
+    }
+}
+
 struct FindingView: View {
     @ObservedObject var engine: SirsiEngine
     let finding: DiagFinding
@@ -1214,25 +1274,50 @@ struct FindingView: View {
     // The honesty class drives EVERY label so a 7-day history never wears an
     // "instant fix" costume. See guard.FixKind (instant | relief | guidance).
     private var kind: String { finding.fixKind ?? "" }
-    @State private var copied = false
+    private var displayTitle: String { findingDisplayTitle(check: finding.check) }
     @State private var maatReviewResult: CommandResult?
     @State private var maatReviewError: String?
     @State private var maatReviewInFlight = false
     @State private var confirmMaatReview = false
     @State private var confirmFix = false
     @State private var showConfirmedFix = false
+    @State private var confirmLegacyRepair = false
+    @State private var showLegacyRepair = false
 
-    // recommendedCommand pulls a `sirsi …` command the finding names in its
-    // message/detail (backtick-quoted) so guidance findings become actionable.
-    private var recommendedCommand: String? {
-        for text in [finding.message, finding.detail ?? ""] {
-            // Prefer a backtick-quoted command.
-            if let open = text.range(of: "`sirsi "), let close = text.range(of: "`", range: open.upperBound..<text.endIndex) {
-                let cmd = String(text[open.upperBound..<close.lowerBound])
-                if !cmd.isEmpty { return "sirsi " + cmd.replacingOccurrences(of: "sirsi ", with: "") }
-            }
+    // Older installed CLIs can omit `fix` and leave only prose or a backticked
+    // command. Never turn that text into executable authority and never send a
+    // person to Terminal. This closed compatibility registry supplies only the
+    // bounded repairs Pantheon itself can run, based on the typed check name
+    // and current severity. Everything else stays in the native Ma'at route.
+    private var legacyNativeRepairArgs: [String]? {
+        guard finding.fix?.isEmpty != false else { return nil }
+        switch finding.check {
+        case "binary-drift":
+            return ["self-update"]
+        case "App Hangs (7d)", "Process Footprint", "Thread Leaks":
+            return finding.severity >= 2 ? ["relieve"] : nil
+        case "RAM Pressure", "Top Memory Consumers", "Jetsam Events (7d)", "Memory Death Spiral", "Swap Usage":
+            return finding.severity >= 2 ? ["relieve", "--memory"] : nil
+        case "Duplicate Model Brokers":
+            return finding.severity >= 2 ? ["gemma", "reap-orphans"] : nil
+        case "Local Snapshots":
+            return ["reclaim-snapshots"]
+        case "Runaway Executor":
+            return finding.severity >= 2 ? ["router", "quarantine-worker"] : nil
+        default:
+            return nil
         }
-        return nil
+    }
+
+    // A generic health observation cannot safely choose or widen a cleanup
+    // scope. Older CLIs that omitted their typed `fix` therefore enter the
+    // app's guided cleanup route: scan, explain every candidate, select the
+    // exact bounded scope, confirm the Trash move, then receive the outcome in
+    // Pantheon. This is deliberately a resolution flow, not a Terminal handoff
+    // or a fake one-click repair.
+    private var requiresNativeCleanupReview: Bool {
+        guard finding.fix?.isEmpty != false, finding.severity >= 2 else { return false }
+        return finding.check == "App Crashes (7d)" || finding.check == "Disk Space"
     }
 
     private var resolutionRoute: DiagnosticResolutionRoute {
@@ -1240,7 +1325,7 @@ struct FindingView: View {
             resolution: finding.resolution,
             severity: finding.severity,
             hasFix: !(finding.fix ?? "").isEmpty,
-            hasRecommendedCommand: recommendedCommand != nil
+            hasRecommendedCommand: legacyNativeRepairArgs != nil || requiresNativeCleanupReview
         )
     }
 
@@ -1255,6 +1340,9 @@ struct FindingView: View {
         }
     }
     private var fixSectionLabel: String {
+        if finding.check == "launchd Disabled Override" {
+            return "RESTORE MANAGED SERVICES"
+        }
         switch kind {
         case "relief": return "RELIEVE THE LIVE CAUSE"
         case "guidance": return "HOW TO ADDRESS"
@@ -1287,6 +1375,10 @@ struct FindingView: View {
            finding.fix == "sirsi liveness-watch restore-disabled --confirm" {
             return ["maat", "repair", "launchd-disabled", "--confirm"]
         }
+		if finding.check == "liveness-watch",
+		   finding.fix == "sirsi liveness-watch install" {
+			return ["maat", "repair", "liveness-watch", "--confirm"]
+		}
         return sirsiArgs(finding.fix ?? "")
     }
 
@@ -1312,9 +1404,21 @@ struct FindingView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            BackBar(title: finding.check)
+            BackBar(title: displayTitle)
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
+                    if finding.check == "launchd Disabled Override" {
+                        Label("Pantheon can restore these managed services", systemImage: "wrench.and.screwdriver.fill")
+                            .sirsiFont(.callout, weight: .semibold)
+                            .foregroundStyle(gold)
+                        Text("Review the affected labels below. When you confirm, Ma'at re-checks the exact managed set, restores only that set, and records a verified result here.")
+                            .sirsiFont(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(PantheonTheme.panel))
+                    }
                     HStack(alignment: .top, spacing: 8) {
                         Circle().fill(findingColor(finding)).frame(width: 10, height: 10).padding(.top, 4)
                         Text(finding.message).sirsiFont(14, weight: .semibold)
@@ -1376,6 +1480,10 @@ struct FindingView: View {
                             } label: { fixButtonContents(fix) }
                             .buttonStyle(.borderedProminent).tint(gold)
                         }
+                    } else if requiresNativeCleanupReview {
+                        nativeCleanupReview
+                    } else if legacyNativeRepairArgs != nil {
+                        legacyNativeRepair
                     } else if requiresMaatReview {
                         // A high-severity finding without a safe automatic
                         // mutation still gets a complete resolution path. Ma'at
@@ -1384,22 +1492,6 @@ struct FindingView: View {
                         // explicit acceptance step. This never paints a manual
                         // conclusion as a completed repair.
                         maatResolutionPath
-                    } else if let cmd = recommendedCommand {
-                        // Guidance-tier (e.g. caution items cleared deliberately
-                        // in Terminal): the command it names must be actionable,
-                        // not buried in prose ending at "Informational."
-                        Text("RECOMMENDED — RUN IN TERMINAL").sirsiFont(.caption2, weight: .semibold).foregroundStyle(.secondary)
-                        Text(cmd).sirsiFont(.caption, design: .monospaced).foregroundStyle(gold)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(10)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.06)))
-                        HStack(spacing: 8) {
-                            Button {
-                                copyToClipboard(cmd)
-                                copied = true
-                            } label: { Label(copied ? "Copied" : "Copy command", systemImage: copied ? "checkmark" : "doc.on.doc") }
-                            Button { openTerminal() } label: { Label("Open Terminal", systemImage: "terminal") }
-                        }.sirsiFont(.caption)
                     } else if isAcceptedObservation {
                         acceptedObservation
                     } else {
@@ -1433,6 +1525,20 @@ struct FindingView: View {
             ResultView(engine: engine, title: finding.check, args: repairArgs,
                        reverifyCheck: finding.check, reverifyKind: finding.fixKind)
         }
+        .confirmationDialog("Run this bounded repair in Pantheon?", isPresented: $confirmLegacyRepair, titleVisibility: .visible) {
+            Button("Run repair") { showLegacyRepair = true }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Pantheon will run only the repair registered for this diagnostic, then re-check the finding. It will not execute text imported from the diagnostic message.")
+        }
+        .sheet(isPresented: $showLegacyRepair) {
+            if let args = legacyNativeRepairArgs {
+                ResultView(engine: engine, title: finding.check, args: args,
+                           reverifyCheck: finding.check, reverifyKind: finding.fixKind)
+            } else {
+                EmptyView()
+            }
+        }
     }
 
     private func fixButtonContents(_ fix: String) -> some View {
@@ -1447,6 +1553,42 @@ struct FindingView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 2)
+    }
+
+    @ViewBuilder private var legacyNativeRepair: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text("PANTHEON CAN REPAIR THIS").sirsiFont(.caption2, weight: .semibold).foregroundStyle(.secondary)
+            Text("This diagnostic came from an older local contract. Pantheon matched it to a bounded built-in repair, not message text. Review, confirm, and Pantheon will verify the outcome here.")
+                .sirsiFont(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Button {
+                confirmLegacyRepair = true
+            } label: {
+                Label("Resolve in Pantheon", systemImage: "wrench.and.screwdriver.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent).tint(gold)
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+    }
+
+    @ViewBuilder private var nativeCleanupReview: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Label("Pantheon has a guided resolution", systemImage: "wand.and.stars")
+                .sirsiFont(.callout, weight: .semibold)
+                .foregroundStyle(gold)
+            Text("First, Pantheon scans and explains every candidate. Next, you choose the exact items you accept rebuilding. Finally, Pantheon confirms the scoped Trash move and shows the outcome here. Nothing is sent to Terminal and nothing outside your selection is touched.")
+                .sirsiFont(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            NavLink {
+                AnubisView(engine: engine)
+            } label: {
+                Label("Start guided cleanup", systemImage: "arrow.right.circle.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent).tint(gold)
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
     }
 
     @ViewBuilder private var maatResolutionPath: some View {
@@ -1559,22 +1701,6 @@ extension View {
 struct FleetView: View {
     @ObservedObject var engine: SirsiEngine
 
-    private func stateColor(_ st: String) -> Color {
-        switch st {
-        case "working": return .green
-        case "blocked": return .orange
-        default: return .secondary
-        }
-    }
-
-    private func stateLabel(_ st: String) -> String {
-        switch st {
-        case "working": return "WORKING"
-        case "blocked": return "blocked"
-        default: return "stopped — no open work"
-        }
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             BackBar(title: "Fleet")
@@ -1606,8 +1732,8 @@ struct FleetView: View {
                                 Text(l.agent).sirsiFont(12, weight: .medium)
                                     .sirsiFrame(width: 150).frame(alignment: .leading)
                                     .lineLimit(1)
-                                Text(stateLabel(l.state)).sirsiFont(11)
-                                    .foregroundColor(stateColor(l.state))
+                                Text(FleetStatePresentation.label(l.state)).sirsiFont(11)
+                                    .foregroundColor(FleetStatePresentation.color(l.state))
                                     .sirsiFrame(width: 130).frame(alignment: .leading)
                                     .lineLimit(1)
                                 Text(laneCounts(l)).sirsiFont(11)
@@ -1657,21 +1783,34 @@ struct FleetTile: View {
 // alarm — nothing the user clicks would clear it, so it must not read red
 // (feedback_surfaces_current_actionable_only). A healthy fabric reads calm green.
 
-// copyToClipboard puts a string on the general pasteboard (for the re-auth
-// command — we never authenticate programmatically, we hand the operator the
-// exact command to run themselves).
-func copyToClipboard(_ s: String) {
-    NSPasteboard.general.clearContents()
-    NSPasteboard.general.setString(s, forType: .string)
+// openAgentSignIn launches an installed, interactive agent application rather
+// than ejecting an operator into Terminal. Authentication stays user-owned, but
+// Pantheon owns the recovery path: it opens the right app and verifies the
+// fabric again when the person returns.
+@MainActor
+func openAgentSignIn(_ agentType: String) -> Bool {
+    let type = agentType.lowercased()
+    let bundleID: String?
+    if type.contains("claude") {
+        bundleID = "com.anthropic.claudefordesktop"
+    } else if type.contains("codex") || type.contains("openai") {
+        bundleID = "com.openai.codex"
+    } else {
+        bundleID = nil
+    }
+    guard let bundleID, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+        return false
+    }
+    NSWorkspace.shared.open(url)
+    return true
 }
 
-// openTerminal launches Terminal.app so the operator can re-auth by hand. We open
-// the app (not a command) — authentication is the user's action, never ours.
-func openTerminal() {
-    let p = Process()
-    p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-    p.arguments = ["-a", "Terminal"]
-    try? p.run()
+// Some evidence views expose a copy affordance for immutable references. This
+// is separate from the retired Terminal workflow: the user remains in the app
+// and can paste a receipt or identifier wherever they choose.
+func copyToClipboard(_ text: String) {
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(text, forType: .string)
 }
 
 // RaFabricView is the operator's native work surface. Ra owns the router
@@ -1827,7 +1966,7 @@ struct RaFabricView: View {
                                               onResult: { resultLine = $0 })
                         }
                         if !engine.routerOutboxBlockers.isEmpty {
-                            OutboxBlockerCard(blocked: engine.routerOutboxBlockers)
+                            OutboxBlockerCard(engine: engine, blocked: engine.routerOutboxBlockers)
                         }
                     } else if engine.routerBoard != nil {
                         HStack(spacing: 8) {
@@ -2141,19 +2280,23 @@ struct SectionLabel: View {
     }
 }
 
-// AuthBlockerCard surfaces a REAL logout (needs_login) with a re-auth affordance.
-// We never authenticate programmatically — we open Terminal and hand the operator
-// the exact command to run, and offer to copy it.
+// AuthBlockerCard surfaces a REAL logout (needs_login) with an in-app recovery
+// route. Pantheon opens the installed interactive agent, then verifies the Ra
+// fabric when the operator returns; it never turns the problem into a shell
+// command the user must reconstruct.
 struct AuthBlockerCard: View {
     @ObservedObject var engine: SirsiEngine
     let health: RBAgentHealth
     @State private var rechecking = false
     @State private var recheckResult: String?
+    @State private var agentLaunchResult: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Text("🔑").sirsiFont(18)
+                Image(systemName: "key.fill")
+                    .sirsiFont(16)
+                    .foregroundStyle(gold)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("\(health.agentType) needs re-login")
                         .sirsiFont(13, weight: .semibold)
@@ -2161,19 +2304,20 @@ struct AuthBlockerCard: View {
                 }
                 Spacer()
             }
-            Text("Sirsi never signs in for you. Open Terminal, run \(health.agentType), then /login. Return here when you are done and Pantheon will recheck the live fabric.")
+            Text("Pantheon can open the installed \(health.agentType) app for sign-in. Complete sign-in there, return here, and Pantheon will verify the live fabric.")
                 .sirsiFont(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
                 Button {
-                    openTerminal()
+                    agentLaunchResult = openAgentSignIn(health.agentType)
+                        ? "Opened \(health.agentType). Finish its sign-in, then recheck this fabric."
+                        : "Pantheon could not locate a compatible installed \(health.agentType) app. Open Ma'at for a guided local resolution instead."
                 } label: {
-                    Label("Open Terminal", systemImage: "terminal").frame(maxWidth: .infinity)
+                    Label("Open \(health.agentType)", systemImage: "arrow.up.forward.app").frame(maxWidth: .infinity)
                 }.buttonStyle(.borderedProminent).tint(gold)
-                Button {
-                    copyToClipboard(health.agentType)
-                } label: {
-                    Label("Copy command", systemImage: "doc.on.doc").frame(maxWidth: .infinity)
+                NavLink { MaatWorkspaceView(engine: engine) } label: {
+                    Label("Guided resolution", systemImage: "checkmark.seal")
+                        .frame(maxWidth: .infinity)
                 }.buttonStyle(.bordered)
             }
             Button {
@@ -2183,7 +2327,7 @@ struct AuthBlockerCard: View {
                     await engine.loadRouterBoard()
                     let stillBlocked = engine.routerAuthBlockers.contains { $0.id == health.id }
                     recheckResult = stillBlocked
-                        ? "Still waiting for \(health.agentType) to finish signing in. You can return to Terminal and try /login again."
+                        ? "\(health.agentType) is still waiting for its sign-in to finish. Complete the sign-in in the app Pantheon opened, then recheck this fabric here."
                         : "Rechecked the live fabric — this sign-in blocker is cleared."
                     rechecking = false
                 }
@@ -2194,6 +2338,13 @@ struct AuthBlockerCard: View {
             .buttonStyle(.borderedProminent)
             .tint(gold)
             .disabled(rechecking)
+            if let agentLaunchResult {
+                Label(agentLaunchResult, systemImage: agentLaunchResult.hasPrefix("Opened") ? "arrow.up.forward.app.fill" : "checkmark.seal")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(agentLaunchResult.hasPrefix("Opened") ? Color.secondary : Color.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             if let recheckResult {
                 Label(recheckResult, systemImage: recheckResult.hasPrefix("Rechecked") ? "checkmark.circle.fill" : "arrow.triangle.2.circlepath")
                     .sirsiFont(.caption)
@@ -2250,13 +2401,14 @@ struct DaemonBlockerCard: View {
     }
 }
 
-// OutboxBlockerCard surfaces an unreadable spool relay outbox (ADR-069). No
-// one-click fix: the underlying cause is a directory permission/filesystem
-// condition on the relay host, which the operator must clear by hand — the
-// card's job is only to make the condition VISIBLE, since the whole point of
-// PR #931 was that this state used to read as a silent, confident zero.
+// OutboxBlockerCard surfaces an unreadable spool relay outbox (ADR-069). It
+// offers the bounded local repair only after explicit confirmation; the repair
+// is descriptor-relative, same-user only, and never touches held messages.
 struct OutboxBlockerCard: View {
+    @ObservedObject var engine: SirsiEngine
     let blocked: [RBOutbox]
+    @State private var repairTarget: RBOutbox?
+    @State private var result: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -2265,20 +2417,47 @@ struct OutboxBlockerCard: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("\(blocked.count) relay outbox\(blocked.count == 1 ? "" : "es") unreadable")
                         .sirsiFont(13, weight: .semibold)
-                    Text("Queue depth is unknown, not zero — check the directory by hand.")
+                    Text("Queue depth is unknown, not zero. Pantheon can safely restore a locally-owned relay outbox, then recheck Ra.")
                         .sirsiFont(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
             }
             ForEach(blocked) { o in
-                Text("• \(o.agent): \(o.error ?? "unreadable")")
-                    .sirsiFont(.caption, design: .monospaced).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("\(o.agent): \(o.error ?? "unreadable")")
+                        .sirsiFont(.caption, design: .monospaced).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    HStack(spacing: 8) {
+                        Button("Repair this outbox") { repairTarget = o }
+                            .buttonStyle(.borderedProminent).tint(gold).disabled(engine.busy)
+                        NavLink { MaatWorkspaceView(engine: engine) } label: {
+                            Label("Guided resolution", systemImage: "checkmark.seal")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+            }
+            if let result {
+                Text(result).sirsiFont(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 9).fill(Color.red.opacity(0.10)))
+        .confirmationDialog("Repair relay outbox?", isPresented: Binding(
+            get: { repairTarget != nil },
+            set: { if !$0 { repairTarget = nil } }
+        ), titleVisibility: .visible) {
+            Button("Repair \(repairTarget?.agent ?? "outbox")") {
+                guard let target = repairTarget else { return }
+                Task { result = await engine.repairRelayOutbox(agent: target.agent) }
+                repairTarget = nil
+            }
+        } message: {
+            Text("Pantheon will restore this local, current-user relay outbox to private mode through a retained no-follow descriptor. It will not remove, replay, or change queued messages.")
+        }
     }
 }
 
@@ -2399,8 +2578,15 @@ struct AnubisView: View {
                     // with visible progress → review every item → clean the ones
                     // you pick. ScanCleanView owns the whole workflow.
                     NavLink { ScanCleanView(engine: engine) } label: {
-                        ActionCard(glyph: "🧹", title: "Scan & Clean Waste",
-                                   sub: "Find waste, review every item, move what you choose to Trash")
+                        ActionCard(
+                            glyph: "🧹",
+                            title: engine.safe.isEmpty
+                                ? "Scan & Clean Waste"
+                                : "Review \(SirsiEngine.human(engine.safeBytes)) ready to reclaim",
+                            sub: engine.safe.isEmpty
+                                ? "Find waste, review every item, move what you choose to Trash"
+                                : "Pantheon can move the regenerable items to Trash here; choose review-required items individually."
+                        )
                     }.buttonStyle(.plain)
 
                     // A real structured screen — the list of leftover apps and what
@@ -2604,7 +2790,7 @@ struct ExclusionNote: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(SirsiEngine.human(bytes)) held back for now")
                     .sirsiFont(.callout, weight: .semibold)
-                Text("\(count) caution-tier items (things like package caches and app remnants) aren't cleaned with one click, because they take longer to rebuild. Open Scan & Clean to review them.")
+                Text("\(count) review-required items (such as package caches and app remnants) need your selection because they take longer to rebuild. Open Scan & Clean to choose them; Pantheon performs the scoped Trash move here, not in Terminal.")
                     .sirsiFont(.footnote).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -2629,6 +2815,12 @@ struct ScanCleanView: View {
     @State private var showCaution = false
     @State private var confirmCautionClean = false
     @State private var didInit = false
+    // Engine-wide refreshes (health, router, and project evidence) must never
+    // impersonate a destructive cleanup here. This screen owns its own visible
+    // operation state so an unrelated background read cannot trap someone on
+    // “Moving selected items to Trash…”.
+    @State private var isScanning = false
+    @State private var isCleaning = false
 
     private var selectedSafe: [Finding] { engine.safe.filter { selected.contains($0.path) } }
     private var selectedCaution: [Finding] { engine.caution.filter { selected.contains($0.path) } }
@@ -2648,7 +2840,7 @@ struct ScanCleanView: View {
     @ViewBuilder private var content: some View {
         if let resultLine {
             resultState(resultLine)
-        } else if engine.busy {
+        } else if isScanning || isCleaning {
             progressState
         } else if engine.safe.isEmpty && engine.caution.isEmpty {
             emptyState
@@ -2663,7 +2855,7 @@ struct ScanCleanView: View {
     private var progressState: some View {
         VStack(spacing: 12) {
             ProgressView()
-            Text(engine.safe.isEmpty ? "Scanning your Mac for waste…" : "Moving selected items to Trash…")
+            Text(isCleaning ? "Moving selected items to Trash…" : "Scanning your Mac for waste…")
                 .sirsiFont(.callout).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity).padding(.top, 60)
@@ -2679,7 +2871,14 @@ struct ScanCleanView: View {
                  ? "Scan your Mac to find reclaimable waste."
                  : "Nothing reclaimable to review right now.")
                 .sirsiFont(.callout).multilineTextAlignment(.center)
-            Button { Task { await engine.rescan(); syncSelection() } } label: {
+            Button {
+                Task {
+                    isScanning = true
+                    await engine.rescan()
+                    syncSelection()
+                    isScanning = false
+                }
+            } label: {
                 Label("Scan now", systemImage: "magnifyingglass").frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent).tint(gold)
@@ -2775,7 +2974,7 @@ struct ScanCleanView: View {
                 if includesCaution {
                     confirmCautionClean = true
                 } else {
-                    Task { resultLine = await engine.cleanSelected(paths: selectedFindings.map(\.path)) }
+                    Task { await cleanSelection() }
                 }
             } label: {
                 Text("Move \(selected.count) (\(SirsiEngine.human(selectedBytes))) to Trash")
@@ -2786,11 +2985,7 @@ struct ScanCleanView: View {
         .padding(12)
         .confirmationDialog("Move selected caution items to Trash?", isPresented: $confirmCautionClean, titleVisibility: .visible) {
             Button("Move \(selectedCaution.count) caution item\(selectedCaution.count == 1 ? "" : "s") to Trash") {
-                Task {
-                    resultLine = await engine.cleanSelected(
-                        paths: selectedFindings.map(\.path), includeCaution: true
-                    )
-                }
+                Task { await cleanSelection(includeCaution: true) }
             }
             Button("Keep reviewing", role: .cancel) {}
         } message: {
@@ -2800,6 +2995,14 @@ struct ScanCleanView: View {
 
     private func toggle(_ path: String) {
         if selected.contains(path) { selected.remove(path) } else { selected.insert(path) }
+    }
+
+    private func cleanSelection(includeCaution: Bool = false) async {
+        isCleaning = true
+        resultLine = await engine.cleanSelected(
+            paths: selectedFindings.map(\.path), includeCaution: includeCaution
+        )
+        isCleaning = false
     }
 
     // Default selection = every safe item (opt-out curation). Re-synced after a
@@ -2965,13 +3168,16 @@ struct RiskView: View {
     var body: some View {
         VStack(spacing: 0) {
             BackBar(title: "Osiris — Checkpoints")
+            ProjectBar(engine: engine) { Task { await load() } }
             if loading {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).padding(.top, 60)
             } else if let r = report {
                 MaybeList {
                     Section {
                         HStack {
-                            Text(riskGlyph(r.risk)).sirsiFont(18)
+                            Image(systemName: riskPresentation(r.risk).symbol)
+                                .sirsiFont(18, weight: .semibold)
+                                .foregroundStyle(riskPresentation(r.risk).tint)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text("\(r.uncommittedFiles) file\(r.uncommittedFiles == 1 ? "" : "s") not checkpointed")
                                     .sirsiFont(13, weight: .semibold)
@@ -3027,12 +3233,23 @@ struct RiskView: View {
                 }
                 .listStyle(.inset)
             } else {
-                ScrollView {
-                    let msg = (rawFallback?.isEmpty == false) ? rawFallback! : "Couldn't read checkpoint risk."
-                    Text(msg)
-                        .sirsiFont(.caption, design: .monospaced)
-                        .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                VStack(alignment: .leading, spacing: 12) {
+                    Label("Choose a project to resolve checkpoint status", systemImage: "folder.badge.questionmark")
+                        .sirsiFont(.callout, weight: .semibold)
+                        .foregroundStyle(gold)
+                    Text(rawFallback?.isEmpty == false
+                         ? rawFallback!
+                         : "Pantheon could not read checkpoint risk yet.")
+                        .sirsiFont(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Use the project selector above to choose the Git project you want Pantheon to protect. It will recheck automatically and offer an in-app checkpoint when there is work at risk.")
+                        .sirsiFont(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
             }
             Divider()
             HStack {
@@ -3048,13 +3265,13 @@ struct RiskView: View {
         .task { await load() }
     }
 
-    private func riskGlyph(_ risk: String) -> String {
+    private func riskPresentation(_ risk: String) -> (symbol: String, tint: Color) {
         switch risk.lowercased() {
-        case "none", "clean", "": return "🟢" // resolved — never a red alarm
-        case "low": return "🟢"
-        case "medium", "moderate": return "🟡"
-        case "high", "critical": return "🔴"
-        default: return "🟢" // unknown/clean states must not fabricate an alarm
+        case "none", "clean", "": return ("checkmark.circle.fill", .green)
+        case "low": return ("checkmark.circle.fill", .green)
+        case "medium", "moderate": return ("exclamationmark.circle.fill", gold)
+        case "high", "critical": return ("exclamationmark.triangle.fill", .red)
+        default: return ("questionmark.circle.fill", .secondary)
         }
     }
 
@@ -3088,7 +3305,7 @@ struct RiskView: View {
         // an empty stdout became Text("") — transparent nothing, 2026-07-09).
         let combined = await SirsiEngine.run(args: ["risk"], stdin: nil)
         let cleaned = CommandView.stripBanner(combined).trimmingCharacters(in: .whitespacesAndNewlines)
-        rawFallback = cleaned.isEmpty ? "Couldn't read checkpoint risk here. Set a project in a repo folder, or run `sirsi risk` in a terminal." : cleaned
+        rawFallback = cleaned.isEmpty ? "Choose a Git project above so Pantheon can measure its checkpoint risk." : cleaned
         loading = false
     }
 }
@@ -4133,20 +4350,172 @@ struct ActivityView: View {
                 }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(28)
             } else {
                 List(engine.activity) { e in
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack {
-                            Text(e.title).sirsiFont(12, weight: .semibold)
-                            Spacer()
-                            Text(e.when).sirsiFont(.caption2).foregroundStyle(.tertiary)
-                        }
-                        Text(e.command).sirsiFont(.caption, design: .monospaced).foregroundStyle(gold)
-                        if !e.result.isEmpty {
-                            Text(e.result).sirsiFont(.caption2).foregroundStyle(.secondary).lineLimit(2)
-                        }
-                    }.padding(.vertical, 2)
+                    NavLink { ActivityDetailView(entry: e, engine: engine) } label: {
+                        ActivityRow(entry: e)
+                    }
                 }.listStyle(.inset)
             }
         }.task { engine.loadActivity() }
+    }
+}
+
+private struct ActivityRow: View {
+    let entry: ActivityEntry
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: entry.resolution.symbol)
+                .sirsiFont(14, weight: .semibold)
+                .foregroundStyle(entry.resolution == .resolved ? .green : gold)
+                .frame(width: 18, alignment: .center)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(entry.title).sirsiFont(12, weight: .semibold)
+                    Spacer(minLength: 8)
+                    Text(entry.when).sirsiFont(.caption2).foregroundStyle(.tertiary)
+                }
+                Text(entry.resolution.title)
+                    .sirsiFont(.caption, weight: .medium)
+                    .foregroundStyle(entry.resolution == .resolved ? .secondary : gold)
+                Text(entry.resolution.summary)
+                    .sirsiFont(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(.vertical, 5)
+        .contentShape(Rectangle())
+        .accessibilityLabel("\(entry.title), \(entry.resolution.title). Open activity details")
+    }
+}
+
+private struct ActivityDetailView: View {
+    let entry: ActivityEntry
+    @ObservedObject var engine: SirsiEngine
+    @State private var confirmMaatReview = false
+    @State private var maatReviewInFlight = false
+    @State private var maatReviewResult: CommandResult?
+    @State private var maatReviewError: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            BackBar(title: "Activity detail")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: entry.resolution.symbol)
+                            .sirsiFont(.title2, weight: .semibold)
+                            .foregroundStyle(entry.resolution == .resolved ? .green : gold)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(entry.title).sirsiFont(18, weight: .bold)
+                            Text(entry.when).sirsiFont(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Text(entry.resolution.title.uppercased())
+                        .sirsiFont(.caption, weight: .semibold)
+                        .foregroundStyle(entry.resolution == .resolved ? .secondary : gold)
+                    Text(entry.resolution.summary)
+                        .sirsiFont(.callout)
+                        .foregroundStyle(.primary)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Recorded outcome").sirsiFont(.caption, weight: .semibold).foregroundStyle(.secondary)
+                        Text(entry.result.isEmpty ? "No readable result was retained." : entry.result)
+                            .sirsiFont(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+
+                    if entry.resolution != .resolved {
+                        VStack(alignment: .leading, spacing: 10) {
+                    Text("MA’AT RESOLUTION")
+                                .sirsiFont(.caption, weight: .semibold)
+                                .foregroundStyle(.secondary)
+                            Text("Ma'at will retain this exact command and outcome, classify what is still open, and create the next bounded action in Casebook. It will not replay the command or change your Mac during review.")
+                                .sirsiFont(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Button { confirmMaatReview = true } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "sparkles")
+                                    Text("Review this outcome in Ma'at").sirsiFont(13, weight: .semibold)
+                                    Spacer()
+                                    Image(systemName: "arrow.right.circle.fill").sirsiFont(.caption, weight: .semibold)
+                                }
+                                .foregroundStyle(.black)
+                                .padding(.horizontal, 14).padding(.vertical, 12)
+                                .background(RoundedRectangle(cornerRadius: 12).fill(gold))
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(maatReviewInFlight)
+                            .accessibilityLabel("Review this activity outcome in Ma'at")
+                            .accessibilityHint("Records the retained command and outcome for Ma'at to classify. It does not replay the command or change the Mac.")
+
+                            if maatReviewInFlight {
+                                HStack(spacing: 8) {
+                                    ProgressView().controlSize(.small)
+                                    Text("Ma'at is recording the evidence-bound review…")
+                                        .sirsiFont(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+
+                            if let result = maatReviewResult {
+                                Label(result.summary, systemImage: result.ok ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                                    .sirsiFont(.caption)
+                                    .foregroundStyle(result.ok ? .green : .orange)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                if result.ok {
+                                    NavLink { MaatCasebookView(engine: engine) } label: {
+                                        Label("Open Ma'at Casebook", systemImage: "book.closed")
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .accessibilityHint("Open the newly recorded Ma'at case and its next bounded action.")
+                                }
+                            }
+
+                            if let error = maatReviewError {
+                                Label(error, systemImage: "exclamationmark.triangle.fill")
+                                    .sirsiFont(.caption)
+                                    .foregroundStyle(.orange)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.05)))
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Technical evidence").sirsiFont(.caption, weight: .semibold).foregroundStyle(.secondary)
+                        Text("sirsi \(entry.command)")
+                            .sirsiFont(.caption2, design: .monospaced)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(20)
+            }
+        }
+        .confirmationDialog("Review this activity outcome in Ma'at?", isPresented: $confirmMaatReview, titleVisibility: .visible) {
+            Button("Record Ma'at review") { Task { await recordMaatReview() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Ma'at will retain the exact command and outcome as evidence, classify the remaining work, and expose the next safe action in Casebook. It will not replay the command or change your Mac.")
+        }
+    }
+
+    @MainActor private func recordMaatReview() async {
+        guard !maatReviewInFlight else { return }
+        maatReviewInFlight = true
+        maatReviewError = nil
+        maatReviewResult = await SirsiEngine.runResult(args: activityMaatReviewArgs(for: entry))
+        if maatReviewResult == nil {
+            maatReviewError = "Ma'at could not record the review. This activity remains open; retry here to preserve the same retained evidence."
+        }
+        maatReviewInFlight = false
     }
 }
 

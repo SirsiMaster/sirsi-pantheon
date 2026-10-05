@@ -34,9 +34,10 @@ func TestMaatHostSystemOneScreenMapsLiveDiagnosticsToClosedEvidence(t *testing.T
 	}
 }
 
-func TestMaatHostSystemOneScreenMapsOnlyKnownDisabledOverrideToClosedRepair(t *testing.T) {
+func TestMaatHostSystemOneScreenMapsKnownHostRepairsToClosedActions(t *testing.T) {
 	report := &guard.DoctorReport{Timestamp: time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC), Score: 63, Findings: []guard.DiagnosticFinding{
 		{Check: maatRepairLaunchdDisabledCheck, Severity: guard.SeverityCritical, Message: "managed labels are disabled", Fix: "bounded native recovery"},
+		{Check: maatRepairLivenessWatchCheck, Severity: guard.SeverityWarn, Message: "liveness watch is absent", Fix: "sirsi liveness-watch install"},
 		{Check: "Disk Space", Severity: guard.SeverityCritical, Message: "disk is full", Fix: "sirsi clean --include-caution"},
 	}}
 	screen, _, err := maatHostSystemOneScreen(report, "m5", 7)
@@ -49,6 +50,9 @@ func TestMaatHostSystemOneScreenMapsOnlyKnownDisabledOverrideToClosedRepair(t *t
 	}
 	if repairs["managed labels are disabled"] != maat.SystemOneRepairLaunchdDisabled {
 		t.Fatalf("disabled override repair = %q, want closed Ma'at repair", repairs["managed labels are disabled"])
+	}
+	if repairs["liveness watch is absent"] != maat.SystemOneRepairLivenessWatch {
+		t.Fatalf("liveness repair = %q, want closed Ma'at repair", repairs["liveness watch is absent"])
 	}
 	if repairs["disk is full"] != "" {
 		t.Fatalf("generic doctor Fix became executable repair id %q", repairs["disk is full"])

@@ -6,6 +6,65 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased] — Apollo view: retire the last user-facing "SNE" copy
 
+- **v0.24.89 — native System One observation now reads the canonical Ma’at
+  result.** Host observation and imported System One evidence both decode the
+  typed verdict the CLI actually emits. A successful retained Casebook screen
+  now refreshes the native surface instead of being presented as a false
+  failure because it was not wrapped in a generic command-result envelope.
+
+- **v0.24.88 — guided service restoration leads with the outcome.** The
+  native Health detail for managed launchd overrides now says what Pantheon
+  can do—restore managed services—before showing the retained technical
+  finding. The exact managed-label list remains visible, and the existing
+  confirmation, bounded Ma'at repair, re-check, and receipt path are unchanged.
+
+- **v0.24.87 — Casebook completes the declared Ma’at liveness recovery.**
+  System One can now invoke its closed, native `liveness-watch` repair from
+  the macOS Casebook as well as the managed launchd repair. The UI accepts
+  only those two explicit Ma’at repair identifiers; evidence and command-like
+  text can never become executable input.
+
+- **v0.24.86 — Fleet reads Ra directly instead of starting a dashboard server.**
+  The native Fleet now requests the canonical one-shot `router fleet --json`
+  producer with a bounded 20-second read. It no longer starts `board-serve`
+  just to render one frame, so a healthy fabric cannot become an empty Fleet
+  screen while dashboard startup waits on unrelated initialization.
+
+- **v0.24.85 — Fleet now renders Ra's full supervision vocabulary.** The native
+  view recognizes WORKING, ASSIGNED, IDLE WITH WORK, BLOCKED, UNROUTABLE, and
+  COMPLETE exactly as Ra produces them. Unknown future values are shown as an
+  explicit review state; Pantheon no longer mislabels a live lane as stopped.
+
+- **v0.24.84 — native Ma'at now owns the entire known-failure intake.** The
+  app has a first-class Proposals workspace: people can inspect every local
+  recurring-failure report, record a typed observation with a confirmation,
+  retry a failed read, and open the Stack Lab review route. The bundled CLI
+  now exposes the same proposal objects as clean JSON for creation and listing.
+  Local evidence still cannot silently edit source or become a fabric-wide
+  matcher until it is reviewed and promoted.
+
+- **v0.24.83 — Ma’at known-failure intake no longer depends on a source checkout.**
+  `sirsi maat known-failures register` now writes a create-only, read-back
+  verified, catalog-hash-bound local proposal under Ma’at’s protected local
+  evidence root. A missing or dirty checkout can no longer turn a new failure
+  report into a dead end. Local proposals stay out of automatic recognition
+  until Stack Lab review promotes them; the former checked-out catalog mutation
+  path is retained only behind explicit `--source-catalog` intent.
+
+- **v0.24.82 — every retained activity has a guided Ma’at resolution.** Failed,
+  ambiguous, and evidence-pending Activity records now offer a native
+  resolution card that explains what happened, records the precise retained
+  outcome in Ma’at’s casebook, and opens the resulting case. It never replays
+  a retained command, so evidence cannot become an accidental action. The
+  detail view now has a visible completion route instead of leaving an operator
+  with raw status text and a dead end.
+
+- **v0.24.81 release candidate — enrolled signing Mac releases without credential export.** The commercial DMG and PKG builders now accept an existing `notarytool` keychain profile on an enrolled signing Mac. Direct release signing still requires the exact Developer ID Application or Installer identity, but Apple credentials never have to be copied into environment variables, logs, source, or a receipt. The existing remote signing-service and CI credential routes remain intact.
+
+- **v0.24.80 release candidate — Activity resolves instead of dumping terminal remnants.** Activity now classifies every retained outcome as completed, needing review, or requiring evidence verification. Ambiguous and failed records open a native Ma’at guided-review route; the exact command is retained as technical evidence in the detail view rather than being the user-facing workflow. This preserves provenance without making people decode shell output to find a next step.
+
+- **v0.24.79 release candidate — Command Center treats optional access truthfully.** Full Disk Access remains available for broader disk visibility, but its absence no longer promotes an otherwise healthy Mac into Pantheon’s global “Needs attention” state or routes the operator into a false repair flow. Actual diagnostics retain their bounded Ma’at repair, re-verification, and receipt path.
+
 ### Fixed
 
 - **Wake loops work on every host without per-host registry edits.** The shared registry holds absolute paths (`/Users/thekryptodragon/...`), so the same lane read WATCH_ONLY ("consumer cwd is not usable") on the other Mac. The consumer resolver now rebases another machine's home prefix onto the local home — cwd, argv and env — only when that home does not exist locally. `claude-deck`, `claude-pantheon` and `claude-nexus` now have reactive wake loops on the M1; `mercury-m5` and `claude-apollo-m5-rail` on the M5.

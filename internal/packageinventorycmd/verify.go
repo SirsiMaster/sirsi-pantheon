@@ -23,12 +23,13 @@ type Inputs struct {
 	InfoPlist            string
 	PkgInfo              string
 	LaunchAgent          string
+	BrandLogo            string
 	RequireCodeSignature bool
 }
 
 func Verify(inputs Inputs) (packageinventory.Report, error) {
-	if inputs.App == "" || inputs.Version == "" || inputs.Build == "" || inputs.InfoPlist == "" || inputs.PkgInfo == "" || inputs.LaunchAgent == "" {
-		return packageinventory.Report{}, errors.New("app, version, build, info-plist, pkg-info, and launch-agent are required")
+	if inputs.App == "" || inputs.Version == "" || inputs.Build == "" || inputs.InfoPlist == "" || inputs.PkgInfo == "" || inputs.LaunchAgent == "" || inputs.BrandLogo == "" {
+		return packageinventory.Report{}, errors.New("app, version, build, info-plist, pkg-info, launch-agent, and brand-logo are required")
 	}
 	info, infoErr := ReadCanonicalFile(inputs.InfoPlist)
 	if infoErr != nil {
@@ -45,9 +46,13 @@ func Verify(inputs Inputs) (packageinventory.Report, error) {
 	if launchAgentErr != nil {
 		return packageinventory.Report{}, launchAgentErr
 	}
+	brandLogo, brandLogoErr := ReadCanonicalFile(inputs.BrandLogo)
+	if brandLogoErr != nil {
+		return packageinventory.Report{}, brandLogoErr
+	}
 	return packageinventory.Verify(inputs.App, packageinventory.Expectations{
 		Version: inputs.Version, Build: inputs.Build, InfoPlist: info,
-		PkgInfo: pkgInfo, LaunchAgent: launchAgent,
+		PkgInfo: pkgInfo, LaunchAgent: launchAgent, BrandLogo: brandLogo,
 		RequireCodeSignature: inputs.RequireCodeSignature,
 	})
 }

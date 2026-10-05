@@ -437,6 +437,81 @@ struct ActivityEntry: Codable, Identifiable {
     let when: String
     let result: String
     enum CodingKeys: String, CodingKey { case title, command, when, result }
+
+    var resolution: ActivityResolution { activityResolution(for: result) }
+}
+
+// Activity is a user-facing ledger, not a terminal transcript.  An entry must
+// say whether Pantheon can attest completion and, when it cannot, route the
+// person back into Ma'at instead of leaving them with an opaque command result.
+enum ActivityResolution: Equatable {
+    case resolved
+    case maatReview
+    case evidenceOnly
+
+    var title: String {
+        switch self {
+        case .resolved: return "Completed"
+        case .maatReview: return "Needs review"
+        case .evidenceOnly: return "Evidence needs verification"
+        }
+    }
+
+    var summary: String {
+        switch self {
+        case .resolved:
+            return "Pantheon retained a completed outcome for this action."
+        case .maatReview:
+            return "This action did not produce an accepted completion. Ma’at can re-assess it and guide the next safe step."
+        case .evidenceOnly:
+            return "Pantheon retained the action, but could not attest its result. Ma’at can re-check the evidence and offer the next step."
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .resolved: return "checkmark.seal.fill"
+        case .maatReview: return "exclamationmark.triangle.fill"
+        case .evidenceOnly: return "doc.text.magnifyingglass"
+        }
+    }
+}
+
+func activityResolution(for result: String) -> ActivityResolution {
+    let normalized = result.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if normalized.isEmpty || normalized == "done" ||
+        normalized.contains("no readable structured result") ||
+        normalized.contains("no repair is claimed") {
+        return .evidenceOnly
+    }
+    if normalized.contains("error") || normalized.contains("exit status") ||
+        normalized.contains("failed") || normalized.contains("denied") ||
+        normalized.contains("cannot ") || normalized.contains("not found") {
+        return .maatReview
+    }
+    return .resolved
+}
+
+// An activity row is evidence, not executable input.  When its completion is
+// ambiguous, Ma'at receives the retained command and outcome as quoted facts so
+// it can create the canonical review case.  The app never replays the command
+// that produced the entry.
+func activityMaatReviewArgs(for entry: ActivityEntry) -> [String] {
+    let outcome = entry.result.trimmingCharacters(in: .whitespacesAndNewlines)
+    let message = outcome.isEmpty
+        ? "Pantheon retained this activity without a readable outcome."
+        : outcome
+    let command = entry.command.trimmingCharacters(in: .whitespacesAndNewlines)
+    let detail = command.isEmpty
+        ? "Pantheon activity has no retained command text."
+        : "Retained Pantheon activity command: sirsi \(command)"
+    return [
+        "maat", "record-resolution",
+        "--check", "Pantheon activity: \(entry.title)",
+        "--message", message,
+        "--detail", detail,
+        "--confirm",
+    ]
 }
 
 // SirsiEngine is the observable model behind every view. All deletion happens in
@@ -444,6 +519,11 @@ struct ActivityEntry: Codable, Identifiable {
 // this type only reads the persisted scan and runs the CLI.
 @MainActor
 final class SirsiEngine: ObservableObject {
+    // One bounded, direct Ra read for the native Fleet surface.  Keep this
+    // data rather than a prose convention so a later refactor cannot quietly
+    // reintroduce `board-serve --once` and its server-start latency.
+    nonisolated static let fleetReadArgs = ["router", "fleet", "--json"]
+    nonisolated static let fleetReadTimeoutSeconds = 20
     struct FabricHandoffOutcome {
         let text: String
         let succeeded: Bool
@@ -697,21 +777,20 @@ final class SirsiEngine: ObservableObject {
     // loadRouterBoard reads ~/.sirsi/router-board.json; if absent, shells
     // `sirsi router node-status --json` (same contract). Never blocks the UI.
 
-    // loadFleetBoard reads the shared producer. No local aggregation: the whole
-    // point is that this surface renders what Horus renders.
+    // loadFleetBoard reads Ra's canonical one-shot fleet projection. No local
+    // aggregation: the native surface renders exactly the router's supervised
+    // lanes rather than starting the long-lived dashboard server merely to ask
+    // for one frame. The latter can spend tens of seconds initializing board
+    // dependencies and leave a usable Fleet screen with no data.
     func loadFleetBoard() async {
         fleetLoading = true
         defer { fleetLoading = false }
-        // Read the ROUTER BOARD's own output, not a parallel aggregation.
-        //
-        // This used to call `router fleet --json`, whose summary counts
-        // differently from the board's BoardSummary (the board treats blocked as
-        // a SUBSET of active; fleet reports them as separate tallies). Two
-        // careful aggregations still disagree, and on 2026-08-05 the owner was
-        // shown three surfaces reporting three different numbers under
-        // interchangeable labels. `board-serve --once` runs the SAME code the
-        // served board runs, so parity is structural rather than maintained.
-        let out = await Self.runJSON(args: ["board-serve", "--once", "--shape", "fleet"])
+        // `router fleet --json` is the canonical Ra consumer contract. It
+        // constructs the one-shot view directly; it does not boot an HTTP board
+        // plus its long-lived poller to produce one read. A 20-second bound is
+        // long enough for a real router ledger but still gives the user a clear
+        // recovery surface instead of an endless spinner.
+        let out = await Self.runJSON(args: Self.fleetReadArgs, timeoutSeconds: Self.fleetReadTimeoutSeconds)
         if let board = try? JSONDecoder().decode(FleetBoard.self, from: out) {
             fleetBoard = board
             fleetError = nil
@@ -886,6 +965,19 @@ final class SirsiEngine: ObservableObject {
         return line
     }
 
+    // repairRelayOutbox invokes the closed, local relay repair primitive. The
+    // command can only restore a same-user outbox through retained no-follow
+    // descriptors; it cannot delete or replay messages, and it refuses remote
+    // or substituted state instead of attempting a pathname repair.
+    func repairRelayOutbox(agent: String) async -> String {
+        busy = true; defer { busy = false }
+        let out = await Self.run(args: ["router", "relay", "repair-outbox", "--agent", agent], stdin: nil)
+        let line = Self.firstMeaningful(out)
+        recordActivity(title: "Repair relay outbox — \(agent)", command: "router relay repair-outbox \(agent)", result: line)
+        await loadRouterBoard()
+        return line
+    }
+
     // ── project root (repo-scoped verbs) ─────────────────────────────────────
     //
     // Ma'at and Net weigh a CODE REPOSITORY, but the app shells `sirsi` from
@@ -1007,9 +1099,11 @@ final class SirsiEngine: ObservableObject {
 
     // The menubar glyph is the OVERALL at-a-glance light: the worse of system
     // health (the green/amber/red rubric) and whether there is MEANINGFUL
-    // reclaimable waste. The waste figure is shown only when it's worth a click.
+    // reclaimable disk data. The label must name its action: an unqualified
+    // "40 GB" beside a system-health glyph is easily and reasonably read as
+    // memory pressure rather than disk space that Anubis can review.
     func titleLabel() -> String {
-        return safeBytes >= Self.wasteThreshold ? Self.human(safeBytes) : ""
+        return safeBytes >= Self.wasteThreshold ? "Clean \(Self.human(safeBytes))" : ""
     }
 
     // titleStatus is the health band the menu-bar Eye is TINTED with — that tint
@@ -1237,6 +1331,10 @@ final class SirsiEngine: ObservableObject {
     nonisolated static func run(args: [String], stdin: String?) async -> String {
         await withCheckedContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
+				guard let binary = sirsiBinary() else {
+					cont.resume(returning: "error: Pantheon's bundled CLI is missing, linked, or not executable. This app will not fall back to an ambient command. Reinstall or repair this Pantheon bundle from Stack Lab.")
+					return
+				}
                 let p = Process()
                 // Repo-scoped verbs (maat, net) run from the configured project
                 // root so they weigh a real repository; everything else runs
@@ -1244,7 +1342,7 @@ final class SirsiEngine: ObservableObject {
                 // path-scoped `sirsi scan` walks the entire disk (the
                 // 2026-07-02 infinite-spinner bug).
                 p.currentDirectoryURL = workingDirectory(for: args)
-                p.executableURL = URL(fileURLWithPath: sirsiBinary())
+                p.executableURL = URL(fileURLWithPath: binary)
                 p.arguments = args
                 let outPipe = Pipe()
                 p.standardOutput = outPipe
@@ -1329,13 +1427,16 @@ final class SirsiEngine: ObservableObject {
     // local inference every time, never a cloud model. The native app calls the
     // Go `sirsi gemma` client directly; the retired ~/.local/bin/gemma Python
     // helper is not part of the application or inference path.
-    nonisolated static func gemmaBinary() -> String {
+    nonisolated static func gemmaBinary() -> String? {
         sirsiBinary()
     }
     nonisolated static func runGemma(prompt: String, system: String) async -> String {
         await withCheckedContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
-                let bin = gemmaBinary()
+                guard let bin = gemmaBinary() else {
+					cont.resume(returning: "Pantheon's bundled inference bridge is unavailable. This query was not sent to an ambient or cloud fallback.")
+					return
+				}
                 guard FileManager.default.isExecutableFile(atPath: bin) else {
                     cont.resume(returning: "Sirsi's on-device model isn't set up yet. This query stays on-device — never cloud.")
                     return
@@ -1704,15 +1805,21 @@ final class SirsiEngine: ObservableObject {
     }
 
     // runJSON shells `sirsi` capturing STDOUT ONLY (stderr discarded) so JSON
-    // output is never corrupted by a styled banner written to stderr.
-    nonisolated static func runJSON(args: [String]) async -> Data {
+    // output is never corrupted by a styled banner written to stderr. JSON is
+    // used to drive native controls, so it has a shorter hard bound than an
+    // attended repair: an empty response makes the view render its recovery
+    // state instead of keeping an invisible child and spinner alive.
+    nonisolated static func runJSON(args: [String], timeoutSeconds: Int = 12) async -> Data {
         await withCheckedContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
+				guard let binary = sirsiBinary() else {
+					cont.resume(returning: Data()); return
+				}
                 let p = Process()
                 // Repo-scoped verbs (maat, net) run from the configured project
                 // root; everything else from $HOME — see run() above.
                 p.currentDirectoryURL = workingDirectory(for: args)
-                p.executableURL = URL(fileURLWithPath: sirsiBinary())
+                p.executableURL = URL(fileURLWithPath: binary)
                 p.arguments = args
                 let outPipe = Pipe()
                 p.standardOutput = outPipe
@@ -1720,20 +1827,67 @@ final class SirsiEngine: ObservableObject {
                 do { try p.run() } catch {
                     cont.resume(returning: Data()); return
                 }
+                let timeoutLock = NSLock()
+                var timedOut = false
+                let timeoutWork = DispatchWorkItem {
+                    timeoutLock.lock()
+                    defer { timeoutLock.unlock() }
+                    if p.isRunning {
+                        timedOut = true
+                        p.terminate()
+                    }
+                }
+                DispatchQueue.global().asyncAfter(
+                    deadline: .now() + .seconds(max(1, timeoutSeconds)),
+                    execute: timeoutWork
+                )
                 let data = outPipe.fileHandleForReading.readDataToEndOfFile()
                 p.waitUntilExit()
+                timeoutWork.cancel()
+                timeoutLock.lock()
+                let enforcedTimeout = timedOut
+                timeoutLock.unlock()
+                if enforcedTimeout {
+                    cont.resume(returning: Data())
+                    return
+                }
                 cont.resume(returning: data)
             }
         }
     }
 
-    nonisolated static func sirsiBinary() -> String {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
+    nonisolated static func sirsiBinary(bundleExecutableURL: URL? = Bundle.main.executableURL,
+                                        homeDirectory: String? = nil) -> String? {
+		// The desktop product and CLI ship as one signed payload. Prefer the
+		// executable sibling inside this exact bundle so the Swift surface never
+		// delegates to an older Homebrew, PATH, or developer-copy CLI with a
+		// different Ma'at schema and recovery contract. The fallback list exists
+		// only for unit-test and development-host execution outside a bundle.
+        if let executable = bundleExecutableURL, isPantheonBundleExecutable(executable) {
+			let bundled = executable.deletingLastPathComponent().appendingPathComponent("sirsi")
+			return isTrustedBundledCLI(bundled) ? bundled.path : nil
+        }
+        let home = homeDirectory ?? FileManager.default.homeDirectoryForCurrentUser.path
         for c in ["\(home)/.local/bin/sirsi", "/opt/homebrew/bin/sirsi", "/usr/local/bin/sirsi"] {
             if FileManager.default.isExecutableFile(atPath: c) { return c }
         }
-        return "sirsi"
+		return nil
     }
+
+	// A production bundle has a fixed sibling topology. Treat any missing,
+	// linked, non-regular, or non-executable sibling as a failed product
+	// integrity check rather than borrowing a Homebrew/PATH binary with an
+	// unrelated version and authority surface.
+	nonisolated static func isPantheonBundleExecutable(_ executable: URL) -> Bool {
+		executable.pathComponents.contains { $0.hasSuffix(".app") }
+	}
+
+	nonisolated static func isTrustedBundledCLI(_ candidate: URL) -> Bool {
+		guard let values = try? candidate.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
+			  values.isRegularFile == true,
+			  values.isSymbolicLink != true else { return false }
+		return FileManager.default.isExecutableFile(atPath: candidate.path)
+	}
 
     nonisolated static func stripANSI(_ s: String) -> String {
         guard let re = try? NSRegularExpression(pattern: "\\x1B\\[[0-9;]*[A-Za-z]") else { return s }

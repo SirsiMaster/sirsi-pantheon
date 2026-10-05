@@ -15,6 +15,9 @@
 #   APPLE_ID                  the Apple ID email used for notarization
 #   APPLE_TEAM_ID             the 10-char Apple Developer Team ID
 #   APPLE_APP_PASSWORD        an app-specific password for that Apple ID
+# Or, on an enrolled signing Mac, APPLE_NOTARY_PROFILE names the existing
+# notarytool keychain profile. That path keeps notarization credentials out of
+# the environment and never exports them into CI logs or a build receipt.
 #                             (appleid.apple.com → Sign-In & Security → App-Specific Passwords)
 # The cert itself is imported into the build keychain by the CI workflow before
 # this script runs (MACOS_CERTIFICATE / MACOS_CERTIFICATE_PWD).
@@ -54,19 +57,6 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "$MODE" ]] || { echo "ERROR: choose --development or --release explicitly" >&2; exit 2; }
-if [[ "$MODE" == "release" ]]; then
-    for required in DEVELOPER_ID_APPLICATION APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD; do
-        [[ -n "${!required:-}" ]] || { echo "ERROR: --release requires ${required}" >&2; exit 2; }
-    done
-    DMG_NAME="SirsiPantheon-${VERSION}-${ARCH}.dmg"
-    ARTIFACT_LABEL="Commercial release"
-else
-    DMG_NAME="SirsiPantheon-${VERSION}-dev-${ARCH}.dmg"
-    ARTIFACT_LABEL="Development"
-fi
-DMG_PATH="${BUILD_DIR}/${DMG_NAME}"
-STAGING_DIR="${BUILD_DIR}/dmg-staging"
-
 REMOTE_SIGNING=false
 if [[ "$MODE" == "release" && "${PANTHEON_SIGNING_EXECUTION:-}" == "remote-service" ]]; then
     [[ -x "${PANTHEON_SIGN_CLIENT:-}" ]] || {
@@ -75,6 +65,27 @@ if [[ "$MODE" == "release" && "${PANTHEON_SIGNING_EXECUTION:-}" == "remote-servi
     }
     REMOTE_SIGNING=true
 fi
+if [[ "$MODE" == "release" ]]; then
+    # The enrolled signing service is the canonical secretless route. Only a
+    # direct local signing run requires Apple credential variables here.
+    if [[ "$REMOTE_SIGNING" != true ]]; then
+        for required in DEVELOPER_ID_APPLICATION; do
+            [[ -n "${!required:-}" ]] || { echo "ERROR: direct --release requires ${required}" >&2; exit 2; }
+        done
+        if [[ -z "${APPLE_NOTARY_PROFILE:-}" ]]; then
+            for required in APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD; do
+                [[ -n "${!required:-}" ]] || { echo "ERROR: direct --release requires ${required} or APPLE_NOTARY_PROFILE" >&2; exit 2; }
+            done
+        fi
+    fi
+    DMG_NAME="SirsiPantheon-${VERSION}-${ARCH}.dmg"
+    ARTIFACT_LABEL="Commercial release"
+else
+    DMG_NAME="SirsiPantheon-${VERSION}-dev-${ARCH}.dmg"
+    ARTIFACT_LABEL="Development"
+fi
+DMG_PATH="${BUILD_DIR}/${DMG_NAME}"
+STAGING_DIR="${BUILD_DIR}/dmg-staging"
 
 echo "Building Sirsi Pantheon ${MODE} DMG  (version ${VERSION}, arch ${ARCH})"
 
@@ -109,6 +120,7 @@ cp "${BUILD_DIR}/sirsi"         "${BUNDLE_DIR}/Contents/MacOS/sirsi"
 cp "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/Info.plist" "${BUNDLE_DIR}/Contents/Info.plist"
 cp "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/PkgInfo"    "${BUNDLE_DIR}/Contents/PkgInfo"
 cp "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" "${BUNDLE_DIR}/Contents/Resources/ai.sirsi.pantheon.plist"
+cp "${PROJECT_ROOT}/docs/assets/sirsi-logo-white.png" "${BUNDLE_DIR}/Contents/Resources/sirsi-logo-white.png"
 # Stack Lab is a shipped, inspectable recipe surface rather than build-only
 # documentation.  Keep its contracts alongside the app they describe.
 cp -R "${PROJECT_ROOT}/contracts/stacklab" "${BUNDLE_DIR}/Contents/Resources/StackLab"
@@ -127,14 +139,15 @@ fi
 
 # --- Code signing ---
 if [[ "$MODE" == "release" ]]; then
-    echo "Signing with Developer ID: ${DEVELOPER_ID_APPLICATION}"
     if [[ "$REMOTE_SIGNING" == true ]]; then
+        echo "Signing through the enrolled Sirsi signing service."
         "${PANTHEON_SIGN_CLIENT}" "${BUNDLE_DIR}" app
         SIGNED_APP="$(dirname "${BUNDLE_DIR}")/signed-$(basename "${BUNDLE_DIR}")"
         [[ -d "$SIGNED_APP" ]] || { echo "ERROR: signing service returned no signed app" >&2; exit 1; }
         rm -rf "${BUNDLE_DIR}"
         mv "${SIGNED_APP}" "${BUNDLE_DIR}"
     else
+        echo "Signing with Developer ID: ${DEVELOPER_ID_APPLICATION}"
         # Sign inner executables first (inside-out), then the bundle.
         for inner in "${BUNDLE_DIR}/Contents/MacOS/sirsi" "${BUNDLE_DIR}/Contents/MacOS/sirsi-menubar"; do
             codesign --force --options runtime --timestamp --sign "${DEVELOPER_ID_APPLICATION}" "${inner}"
@@ -159,6 +172,7 @@ echo "Verifying assembled Pantheon.app payload..."
     --info-plist "${BUNDLE_DIR}/Contents/Info.plist" \
     --pkg-info "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/PkgInfo" \
     --launch-agent "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" \
+    --brand-logo "${PROJECT_ROOT}/docs/assets/sirsi-logo-white.png" \
     --require-code-signature
 
 # --- Stage + create the DMG ---
@@ -205,12 +219,19 @@ if [[ "$MODE" == "release" ]]; then
         echo "Notarizing ${DMG_NAME} (this can take a few minutes)..."
         # --timeout bounds the --wait poll so a stuck Apple-notary submission
         # fails the step instead of hanging.
-        xcrun notarytool submit "${DMG_PATH}" \
-            --apple-id "${APPLE_ID}" \
-            --team-id "${APPLE_TEAM_ID}" \
-            --password "${APPLE_APP_PASSWORD}" \
-            --timeout 20m \
-            --wait
+        if [[ -n "${APPLE_NOTARY_PROFILE:-}" ]]; then
+            xcrun notarytool submit "${DMG_PATH}" \
+                --keychain-profile "${APPLE_NOTARY_PROFILE}" \
+                --timeout 20m \
+                --wait
+        else
+            xcrun notarytool submit "${DMG_PATH}" \
+                --apple-id "${APPLE_ID}" \
+                --team-id "${APPLE_TEAM_ID}" \
+                --password "${APPLE_APP_PASSWORD}" \
+                --timeout 20m \
+                --wait
+        fi
         echo "Stapling notarization ticket..."
         xcrun stapler staple "${DMG_PATH}"
         xcrun stapler validate "${DMG_PATH}"
