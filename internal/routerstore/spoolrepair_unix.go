@@ -18,21 +18,21 @@ import (
 // identity-checked. A service-owned or ambiguous object is refused rather
 // than guessed at.
 func RepairSpoolOutbox(spoolRoot, agent string) (SpoolOutboxRepair, error) {
-	return repairSpoolOutbox(spoolRoot, agent, nil)
+	return repairSpoolOutbox(spoolRoot, agent, nil, nil)
 }
 
-// repairSpoolOutbox has a narrowly-scoped test seam immediately before the
-// retained root is opened. Production always passes nil. The seam proves that
-// the root actually opened is itself validated through the retained parent;
-// a path checked earlier can never bless a replacement at that namespace leaf.
-func repairSpoolOutbox(spoolRoot, agent string, beforeRootOpen func()) (SpoolOutboxRepair, error) {
+// repairSpoolOutbox has narrowly-scoped test seams immediately before the
+// retained parent and root are opened. Production always passes nil. The seams
+// prove that the objects actually opened are validated descriptor-by-descriptor;
+// a path checked earlier can never bless a replacement namespace leaf.
+func repairSpoolOutbox(spoolRoot, agent string, beforeParentOpen, beforeRootOpen func()) (SpoolOutboxRepair, error) {
 	if !validSpoolAgentName(agent) {
 		return SpoolOutboxRepair{}, fmt.Errorf("outbox repair: invalid agent name %q", agent)
 	}
 	if strings.TrimSpace(spoolRoot) == "" || !filepath.IsAbs(spoolRoot) || filepath.Clean(spoolRoot) != spoolRoot {
 		return SpoolOutboxRepair{}, fmt.Errorf("outbox repair: spool root must be an absolute, clean path")
 	}
-	canonical, parentFD, rootFD, err := openRepairSpoolRoot(spoolRoot, beforeRootOpen)
+	canonical, parentFD, rootFD, err := openRepairSpoolRoot(spoolRoot, beforeParentOpen, beforeRootOpen)
 	if err != nil {
 		return SpoolOutboxRepair{}, err
 	}
@@ -95,18 +95,16 @@ func repairSpoolOutbox(spoolRoot, agent string, beforeRootOpen func()) (SpoolOut
 // that helper is correct for bootstrap convergence, but it validates by path
 // and may create or chmod a root. A user-requested outbox repair must neither
 // create nor bless a root by a separate pathname check. The exact descriptor
+
 // that subsequent Openat/Fstatat operations use is validated here instead.
-func openRepairSpoolRoot(spoolRoot string, beforeRootOpen func()) (string, int, int, error) {
-	parentPath, err := filepath.EvalSymlinks(filepath.Dir(spoolRoot))
-	if err != nil {
-		return "", -1, -1, fmt.Errorf("outbox repair: resolve spool parent: %w", err)
+func openRepairSpoolRoot(spoolRoot string, beforeParentOpen, beforeRootOpen func()) (string, int, int, error) {
+	parentPath := filepath.Dir(spoolRoot)
+	if beforeParentOpen != nil {
+		beforeParentOpen()
 	}
-	if !filepath.IsAbs(parentPath) || filepath.Clean(parentPath) != parentPath {
-		return "", -1, -1, fmt.Errorf("outbox repair: canonical spool parent is not an absolute, clean path")
-	}
-	parentFD, err := unix.Open(parentPath, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	parentFD, err := openAbsoluteDirectoryNoFollow(parentPath)
 	if err != nil {
-		return "", -1, -1, fmt.Errorf("outbox repair: open spool parent without following links: %w", err)
+		return "", -1, -1, fmt.Errorf("outbox repair: open canonical spool parent without following links: %w", err)
 	}
 	closeParent := true
 	defer func() {
@@ -125,8 +123,8 @@ func openRepairSpoolRoot(spoolRoot string, beforeRootOpen func()) (string, int, 
 	if int(parent.Uid) != os.Getuid() && parent.Uid != 0 {
 		return "", -1, -1, fmt.Errorf("outbox repair: retained spool parent is owned by uid %d, not this user or root; refusing", parent.Uid)
 	}
-	if parent.Mode&0o002 != 0 && parent.Mode&unix.S_ISVTX == 0 {
-		return "", -1, -1, fmt.Errorf("outbox repair: retained spool parent is writable by others; refusing")
+	if parent.Mode&0o022 != 0 {
+		return "", -1, -1, fmt.Errorf("outbox repair: retained spool parent is group- or other-writable; refusing")
 	}
 
 	if beforeRootOpen != nil {
@@ -167,6 +165,35 @@ func openRepairSpoolRoot(spoolRoot string, beforeRootOpen func()) (string, int, 
 	closeParent = false
 	closeRoot = false
 	return filepath.Join(parentPath, rootName), parentFD, rootFD, nil
+}
+
+// openAbsoluteDirectoryNoFollow opens every component of an already-canonical
+// absolute directory path relative to a retained descriptor for /. O_NOFOLLOW
+// on a single final pathname leaf is insufficient: an intermediate parent can
+// otherwise be replaced with a symlink between path resolution and open. This
+// routine refuses all such components rather than trying to normalize them by
+// pathname. Callers therefore provide canonical paths (for example /private,
+// not Darwin's /var alias) before requesting a repair.
+func openAbsoluteDirectoryNoFollow(path string) (int, error) {
+	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+		return -1, fmt.Errorf("path must be absolute and clean")
+	}
+	fd, err := unix.Open("/", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return -1, err
+	}
+	for _, component := range strings.Split(strings.TrimPrefix(path, "/"), "/") {
+		if component == "" {
+			continue
+		}
+		next, openErr := unix.Openat(fd, component, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		_ = unix.Close(fd)
+		if openErr != nil {
+			return -1, openErr
+		}
+		fd = next
+	}
+	return fd, nil
 }
 
 func validSpoolAgentName(agent string) bool {

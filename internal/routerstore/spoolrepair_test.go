@@ -9,7 +9,7 @@ import (
 )
 
 func TestRepairSpoolOutboxRestoresLocalPrivateDirectoryWithoutTouchingMessages(t *testing.T) {
-	spool := filepath.Join(t.TempDir(), "relay")
+	spool := filepath.Join(repairTempDir(t), "relay")
 	outbox := filepath.Join(spool, "agent-a", "outbox")
 	if err := os.MkdirAll(outbox, 0o700); err != nil {
 		t.Fatal(err)
@@ -43,8 +43,8 @@ func TestRepairSpoolOutboxRestoresLocalPrivateDirectoryWithoutTouchingMessages(t
 }
 
 func TestRepairSpoolOutboxRejectsSymlinkLeaf(t *testing.T) {
-	spool := filepath.Join(t.TempDir(), "relay")
-	realOutbox := filepath.Join(t.TempDir(), "real-outbox")
+	spool := filepath.Join(repairTempDir(t), "relay")
+	realOutbox := filepath.Join(repairTempDir(t), "real-outbox")
 	if err := os.MkdirAll(filepath.Join(spool, "agent-a"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestRepairSpoolOutboxRejectsSymlinkLeaf(t *testing.T) {
 }
 
 func TestRepairSpoolOutboxRejectsRootSymlinkToMovedOriginalBeforeMutation(t *testing.T) {
-	base := t.TempDir()
+	base := repairTempDir(t)
 	spool := filepath.Join(base, "relay")
 	moved := filepath.Join(base, "relay-original")
 	if err := os.MkdirAll(filepath.Join(spool, "agent-a", "outbox"), 0o700); err != nil {
@@ -71,7 +71,7 @@ func TestRepairSpoolOutboxRejectsRootSymlinkToMovedOriginalBeforeMutation(t *tes
 	}
 	t.Cleanup(func() { _ = os.Chmod(filepath.Join(moved, "agent-a", "outbox"), 0o700) })
 
-	_, err := repairSpoolOutbox(spool, "agent-a", func() {
+	_, err := repairSpoolOutbox(spool, "agent-a", nil, func() {
 		if renameErr := os.Rename(spool, moved); renameErr != nil {
 			t.Fatalf("move checked root: %v", renameErr)
 		}
@@ -92,7 +92,7 @@ func TestRepairSpoolOutboxRejectsRootSymlinkToMovedOriginalBeforeMutation(t *tes
 }
 
 func TestRepairSpoolOutboxRejectsSubstitutedLooseRootBeforeMutation(t *testing.T) {
-	base := t.TempDir()
+	base := repairTempDir(t)
 	spool := filepath.Join(base, "relay")
 	replacement := filepath.Join(base, "relay-replacement")
 	if err := os.MkdirAll(filepath.Join(spool, "agent-a", "outbox"), 0o700); err != nil {
@@ -109,7 +109,7 @@ func TestRepairSpoolOutboxRejectsSubstitutedLooseRootBeforeMutation(t *testing.T
 	}
 	t.Cleanup(func() { _ = os.Chmod(filepath.Join(replacement, "agent-a", "outbox"), 0o700) })
 
-	_, err := repairSpoolOutbox(spool, "agent-a", func() {
+	_, err := repairSpoolOutbox(spool, "agent-a", nil, func() {
 		if renameErr := os.Rename(spool, filepath.Join(base, "relay-original")); renameErr != nil {
 			t.Fatalf("move checked root: %v", renameErr)
 		}
@@ -127,6 +127,78 @@ func TestRepairSpoolOutboxRejectsSubstitutedLooseRootBeforeMutation(t *testing.T
 	if got := st.Mode().Perm(); got != 0o000 {
 		t.Fatalf("replacement outbox was mutated after root substitution: mode=%04o", got)
 	}
+}
+
+func TestRepairSpoolOutboxRejectsParentSymlinkToMovedOriginalBeforeMutation(t *testing.T) {
+	base := repairTempDir(t)
+	parent := filepath.Join(base, "spool-parent")
+	movedParent := filepath.Join(base, "spool-parent-original")
+	spool := filepath.Join(parent, "relay")
+	if err := os.MkdirAll(filepath.Join(spool, "agent-a", "outbox"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(spool, "agent-a", "outbox"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(filepath.Join(movedParent, "relay", "agent-a", "outbox"), 0o700) })
+
+	_, err := repairSpoolOutbox(spool, "agent-a", func() {
+		if renameErr := os.Rename(parent, movedParent); renameErr != nil {
+			t.Fatalf("move checked parent: %v", renameErr)
+		}
+		if linkErr := os.Symlink(movedParent, parent); linkErr != nil {
+			t.Fatalf("replace parent with symlink to original: %v", linkErr)
+		}
+	}, nil)
+	if err == nil {
+		t.Fatal("expected symlink-backed parent replacement to be refused")
+	}
+	st, statErr := os.Stat(filepath.Join(movedParent, "relay", "agent-a", "outbox"))
+	if statErr != nil {
+		t.Fatal(statErr)
+	}
+	if got := st.Mode().Perm(); got != 0o000 {
+		t.Fatalf("original outbox was mutated after rejected parent substitution: mode=%04o", got)
+	}
+}
+
+func TestRepairSpoolOutboxRejectsGroupWritableParentBeforeMutation(t *testing.T) {
+	base := repairTempDir(t)
+	parent := filepath.Join(base, "spool-parent")
+	spool := filepath.Join(parent, "relay")
+	if err := os.MkdirAll(filepath.Join(spool, "agent-a", "outbox"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(spool, "agent-a", "outbox"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(parent, 0o720); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(parent, 0o700)
+		_ = os.Chmod(filepath.Join(spool, "agent-a", "outbox"), 0o700)
+	})
+
+	if _, err := RepairSpoolOutbox(spool, "agent-a"); err == nil {
+		t.Fatal("expected group-writable parent to be refused")
+	}
+	st, err := os.Stat(filepath.Join(spool, "agent-a", "outbox"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := st.Mode().Perm(); got != 0o000 {
+		t.Fatalf("outbox was mutated under group-writable parent: mode=%04o", got)
+	}
+}
+
+func repairTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("canonicalize temporary directory: %v", err)
+	}
+	return dir
 }
 
 func TestRepairSpoolOutboxRejectsTraversalAgent(t *testing.T) {
