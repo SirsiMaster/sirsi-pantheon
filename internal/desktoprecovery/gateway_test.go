@@ -78,6 +78,9 @@ func TestGatewayRequiresAdmissionStore(t *testing.T) {
 
 func TestFileAdmissionStoreSurvivesRestartAndRefusesSymlinkRoot(t *testing.T) {
 	root := t.TempDir()
+	if err := os.Chmod(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	first, err := NewFileAdmissionStore(root)
 	if err != nil {
 		t.Fatal(err)

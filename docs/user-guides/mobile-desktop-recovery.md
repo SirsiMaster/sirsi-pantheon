@@ -47,7 +47,10 @@ separately authenticated Pantheon authority and never belongs in this file.
 }
 ```
 
-`admission_claim_dir` must already be an operator-owned absolute directory.
+`admission_claim_dir` must already be an absolute directory owned by the user
+running the bridge, with permissions 0700 (access for that user only). Startup
+and each new admission check these permissions. A changed owner or mode denies
+new admissions; the bridge never repairs permissions or deletes replay records.
 The bridge opens it without following a symlink and only creates opaque,
 create-once claim records. It never receives a signing key or an RFB password.
 
@@ -99,3 +102,17 @@ the old SNE supervisor; resource HOLD does not remove desktop recovery access.
 
 The bridge remains a development candidate pending ADR-075 security acceptance
 and real M1 phone/M5 alternate-anchor qualification.
+
+## Existing Universal Control peer reconnect
+
+For an already authorized and discoverable Mac peer, open System Settings on
+the controlling Mac, then Displays → Add → Link keyboard and mouse to, and
+select the existing peer. Confirm the displays appear and verify actual mouse
+and keyboard input on both Macs. Discovery or a “Connection Ready” log alone
+does not prove input works.
+
+This procedure restored M5-to-M1 control in the owner-reported 2026-10-05
+incident. It does not diagnose the recurrent wireless/sync errors, establish a
+permanent repair, or qualify phone recovery. If it recurs, preserve timestamped
+discovery, connected-session and actual-input outcomes separately before
+changing host settings.
