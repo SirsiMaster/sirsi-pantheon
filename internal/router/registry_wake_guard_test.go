@@ -185,3 +185,31 @@ func TestConsumerPromptCarriesThePermanentLoopContract(t *testing.T) {
 		}
 	}
 }
+
+// TestRegistryConsumersAvoidSymlinkedRelayRoot is the regression guard for the
+// known failure "codex-symlinked-writable-root": the codex executor rejects a
+// writable root whose last component is a symlink, and ~/.sirsi/relay is one (to
+// /var/sirsipantheon/relay). A consumer that lists it as a writable root or
+// --add-dir fails every command, makes no progress, and quarantines. The router URL
+// (SIRSI_ROUTER_URL=spool://...) legitimately names the path and is exempt.
+func TestRegistryConsumersAvoidSymlinkedRelayRoot(t *testing.T) {
+	raw, err := os.ReadFile("../../.agents/idea-router/agents.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reg Registry
+	if err := json.Unmarshal(raw, &reg); err != nil {
+		t.Fatal(err)
+	}
+	for id, cfg := range reg.Agents {
+		rc := cfg.Consumer.Command
+		for _, arg := range rc {
+			if strings.HasPrefix(arg, "SIRSI_ROUTER_URL=") {
+				continue
+			}
+			if strings.Contains(arg, "/.sirsi/relay") {
+				t.Errorf("%s: consumer argument %q names the symlinked ~/.sirsi/relay; list /var/sirsipantheon/relay instead (known failure codex-symlinked-writable-root)", id, arg)
+			}
+		}
+	}
+}

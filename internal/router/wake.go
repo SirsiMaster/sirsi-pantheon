@@ -26,6 +26,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/knownfail"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/version"
 	"io"
 	"log"
 	"net/http"
@@ -1256,6 +1258,13 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 					lane.LastOutcome = OutcomeNoProgress
 				}
 				lane.LastOutcomeAt, lane.LastDetail = time.Now().UTC(), strings.TrimSpace(tailText)
+				// A recurring failure is recognized, not rediscovered: the catalog says what
+				// it is and what the fix is, so the lane and the operator read the answer
+				// instead of waiting for a person to diagnose it again.
+				if ms := knownfail.Match(tailText); len(ms) > 0 {
+					lane.LastDetail = ms[0].Summary(version.Version)
+					log.Printf("wake-loop %s: %s", agentID, lane.LastDetail)
+				}
 				fruitless++
 				wait := wakeLoopBackoff(fruitless, interval)
 				nextDispatchAllowed = time.Now().Add(wait)

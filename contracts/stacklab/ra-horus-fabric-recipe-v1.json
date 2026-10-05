@@ -20,39 +20,136 @@
   "components": [
     {
       "id": "fabric-board",
-      "source": ["internal/ra", "internal/routerstore", "internal/ledger"],
-      "tests": ["internal/ra", "internal/routerstore", "internal/ledger"],
-      "inputs": ["router receipts", "ledger tasks", "lane state"],
-      "outputs": ["FabricBoard"],
+      "source": [
+        "internal/ra",
+        "internal/routerstore",
+        "internal/ledger"
+      ],
+      "tests": [
+        "internal/ra",
+        "internal/routerstore",
+        "internal/ledger"
+      ],
+      "inputs": [
+        "router receipts",
+        "ledger tasks",
+        "lane state"
+      ],
+      "outputs": [
+        "FabricBoard"
+      ],
       "writes": [],
-      "upgrade_recipe": ["preserve stream-separated counts", "add fixture before changing classification", "run focused and race tests"]
+      "upgrade_recipe": [
+        "preserve stream-separated counts",
+        "add fixture before changing classification",
+        "run focused and race tests"
+      ]
     },
     {
       "id": "native-handoff",
-      "source": ["macapp/Sources/SirsiMenubar/SirsiEngine.swift", "macapp/Sources/SirsiMenubar/Views.swift"],
-      "tests": ["macapp tests", "macapp/check-cli-flags.sh"],
-      "inputs": ["typed destination and payload"],
-      "outputs": ["authenticated handoff"],
-      "writes": ["canonical router service"],
-      "upgrade_recipe": ["retain fixed Horus sender", "rebuild before release", "prove runtime identity"]
+      "source": [
+        "macapp/Sources/SirsiMenubar/SirsiEngine.swift",
+        "macapp/Sources/SirsiMenubar/Views.swift"
+      ],
+      "tests": [
+        "macapp tests",
+        "macapp/check-cli-flags.sh"
+      ],
+      "inputs": [
+        "typed destination and payload"
+      ],
+      "outputs": [
+        "authenticated handoff"
+      ],
+      "writes": [
+        "canonical router service"
+      ],
+      "upgrade_recipe": [
+        "retain fixed Horus sender",
+        "rebuild before release",
+        "prove runtime identity"
+      ]
     },
     {
       "id": "router-service",
-      "source": ["internal/router", "internal/routerstore", "cmd/sirsi/routercmd.go"],
-      "tests": ["internal/router tests", "router rollback fixtures"],
-      "inputs": ["host-bound token", "session", "lease"],
-      "outputs": ["leases", "wake events", "receipts"],
-      "writes": ["canonical service backend"],
-      "upgrade_recipe": ["preserve TTL and revocation fencing", "rehearse outage and rollback", "never reopen local fallback"]
+      "source": [
+        "internal/router",
+        "internal/routerstore",
+        "cmd/sirsi/routercmd.go"
+      ],
+      "tests": [
+        "internal/router tests",
+        "router rollback fixtures"
+      ],
+      "inputs": [
+        "host-bound token",
+        "session",
+        "lease"
+      ],
+      "outputs": [
+        "leases",
+        "wake events",
+        "receipts"
+      ],
+      "writes": [
+        "canonical service backend"
+      ],
+      "upgrade_recipe": [
+        "preserve TTL and revocation fencing",
+        "rehearse outage and rollback",
+        "never reopen local fallback"
+      ]
     },
     {
       "id": "stacklab-contract",
-      "source": ["contracts/stacklab/ra-horus-fabric-wing-v1.json", "docs/stacklab/RA_HORUS_FABRIC_COMPONENT_CATALOG.md", "docs/stacklab/RA_HORUS_FABRIC_TRACEABILITY_MATRIX.md"],
-      "tests": ["sirsi stacklab doctor", "schema validation"],
-      "inputs": ["committed source and durable receipts"],
-      "outputs": ["registry provenance"],
-      "writes": ["contract files only"],
-      "upgrade_recipe": ["validate locally", "review exact bytes", "pin on origin/main"]
+      "source": [
+        "contracts/stacklab/ra-horus-fabric-wing-v1.json",
+        "docs/stacklab/RA_HORUS_FABRIC_COMPONENT_CATALOG.md",
+        "docs/stacklab/RA_HORUS_FABRIC_TRACEABILITY_MATRIX.md"
+      ],
+      "tests": [
+        "sirsi stacklab doctor",
+        "schema validation"
+      ],
+      "inputs": [
+        "committed source and durable receipts"
+      ],
+      "outputs": [
+        "registry provenance"
+      ],
+      "writes": [
+        "contract files only"
+      ],
+      "upgrade_recipe": [
+        "validate locally",
+        "review exact bytes",
+        "pin on origin/main"
+      ]
+    },
+    {
+      "id": "known-failure-catalog",
+      "source": [
+        "internal/maat/knownfail"
+      ],
+      "tests": [
+        "internal/maat/knownfail"
+      ],
+      "inputs": [
+        "recurring failure signatures",
+        "fix versions",
+        "regression guard test names"
+      ],
+      "outputs": [
+        "recognized failure class with its fix",
+        "guard-exists check"
+      ],
+      "writes": [],
+      "upgrade_recipe": [
+        "register the problem with its signature and cause",
+        "record the fix with fixed_in and a regression guard test that exists",
+        "a resolved entry without a guard is rejected by the catalog loader",
+        "run the guard-exists test"
+      ]
     }
   ]
 }
