@@ -164,6 +164,33 @@ func TestBuildRoutesKnownSystemOneRepairThroughClosedMaatAction(t *testing.T) {
 	}
 }
 
+func TestBuildRoutesLivenessWatchThroughClosedMaatAction(t *testing.T) {
+	verdict, err := maat.Screen(maat.SystemOneScreen{
+		Subject:       maat.VerdictSubject{Kind: "host", Repo: "m5", Ref: "diagnostic", HeadSHA: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+		FeatherWeight: 72, Confidence: 1,
+		Floor: maat.FloorResult{Passed: true, Checks: []maat.FloorCheck{{Name: "diagnostic observation", Passed: true}}},
+		Findings: []maat.ScreenFinding{{
+			ID: "liveness-watch", Severity: "major", Category: "host-health", Claim: "liveness watch absent", Evidence: "diagnostic:sha256=host:liveness", Confidence: 1,
+			RepairID: maat.SystemOneRepairLivenessWatch,
+		}},
+		Model: maat.ModelStamp{Provider: "maat-local:deterministic", Version: "v1", Local: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	view := Build([]maat.Decision{{
+		Time: "2026-10-05T04:00:00Z", Host: "m5", Kind: "system one screen", Requester: "sirsi maat triage",
+		Assessed: "host diagnostic", Determination: string(verdict.Gate), Why: "liveness watch absent", Evidence: "maat-system-one:sha256=liveness", SystemOne: &verdict,
+	}})
+	if len(view.Cases) != 1 || view.Cases[0].NextAction == nil {
+		t.Fatalf("System One liveness repair projection = %+v", view)
+	}
+	action := view.Cases[0].NextAction
+	if action.Kind != "maat_repair" || action.ActionID != maat.SystemOneRepairLivenessWatch || !action.RequiresConfirmation || len(action.Steps) != 3 {
+		t.Fatalf("liveness repair action = %+v", action)
+	}
+}
+
 func TestBuildProjectsCalibrationAsCompletedEvidenceWithBothLinks(t *testing.T) {
 	verdict, err := maat.Screen(maat.SystemOneScreen{
 		Subject:       maat.VerdictSubject{Kind: "commit", Repo: "SirsiMaster/sirsi-pantheon", Ref: "main", HeadSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},

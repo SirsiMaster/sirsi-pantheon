@@ -1358,6 +1358,10 @@ struct FindingView: View {
            finding.fix == "sirsi liveness-watch restore-disabled --confirm" {
             return ["maat", "repair", "launchd-disabled", "--confirm"]
         }
+		if finding.check == "liveness-watch",
+		   finding.fix == "sirsi liveness-watch install" {
+			return ["maat", "repair", "liveness-watch", "--confirm"]
+		}
         return sirsiArgs(finding.fix ?? "")
     }
 

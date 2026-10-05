@@ -242,6 +242,15 @@ func resolutionRoute(f DiagnosticFinding) ResolutionRoute {
 	if f.Severity < SeverityWarn {
 		return ResolutionInfo
 	}
+	// Some observations are produced after the main diagnostic pass (for
+	// example the reboot-proof liveness watch). Those producers already attach
+	// a closed, locally-owned repair command. Treating them as Ma'at-review-only
+	// makes the native app advertise a fix while Casebook strands the same case
+	// in review. A non-empty Fix is emitted only by Pantheon's own diagnostic
+	// producers; imported evidence never becomes executable here.
+	if strings.TrimSpace(f.Fix) != "" {
+		return ResolutionRepair
+	}
 	if remediationCommand(f) != "" {
 		return ResolutionRepair
 	}

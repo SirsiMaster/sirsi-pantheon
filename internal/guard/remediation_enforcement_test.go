@@ -101,6 +101,7 @@ func TestResolutionRouteKeepsUsersOutOfDeadEnds(t *testing.T) {
 		want ResolutionRoute
 	}{
 		{"direct repair", DiagnosticFinding{Check: "Disk Space", Severity: SeverityCritical}, ResolutionRepair},
+		{"producer-owned repair", DiagnosticFinding{Check: "liveness-watch", Severity: SeverityWarn, Fix: "sirsi liveness-watch install"}, ResolutionRepair},
 		{"unsafe automatic change", DiagnosticFinding{Check: "Kernel Panics (7d)", Severity: SeverityCritical}, ResolutionMaatReview},
 		{"informational observation", DiagnosticFinding{Check: "Sirsi Processes", Severity: SeverityInfo}, ResolutionInfo},
 	}

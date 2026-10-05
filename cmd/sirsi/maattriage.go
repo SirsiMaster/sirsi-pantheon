@@ -18,7 +18,7 @@ import (
 
 var (
 	maatTriageConfirm       bool
-	maatTriageReadDiagnosis = guard.Doctor
+	maatTriageReadDiagnosis = pantheonDoctor
 	maatTriageHostname      = os.Hostname
 )
 
@@ -132,11 +132,16 @@ func maatHostSystemOneScreen(report *guard.DoctorReport, host string, latencyMS 
 			fixHint = "Level 1: " + finding.Fix + ". Level 2: record a Ma'at owner review if the bounded repair cannot resolve it. Level 3: accept an evidence-bound owner conclusion in Casebook."
 		}
 		repairID := ""
-		// This maps one exact doctor finding to one exact Ma'at-owned recovery.
-		// It does not make doctor.Fix executable and it does not expose a generic
+		// This maps exact doctor findings to exact Ma'at-owned recoveries. It
+		// does not make doctor.Fix executable and it does not expose a generic
 		// repair field to imported System One evidence.
-		if finding.Check == maatRepairLaunchdDisabledCheck && guard.ResolutionFor(finding) == guard.ResolutionRepair {
-			repairID = maat.SystemOneRepairLaunchdDisabled
+		if guard.ResolutionFor(finding) == guard.ResolutionRepair {
+			switch finding.Check {
+			case maatRepairLaunchdDisabledCheck:
+				repairID = maat.SystemOneRepairLaunchdDisabled
+			case maatRepairLivenessWatchCheck:
+				repairID = maat.SystemOneRepairLivenessWatch
+			}
 		}
 		findings = append(findings, maat.ScreenFinding{
 			ID: "host-health-" + stableMaatFindingID(finding.Check), Severity: severity, Category: "host-health",

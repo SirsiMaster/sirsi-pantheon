@@ -13,14 +13,16 @@ import (
 )
 
 const maatRepairLaunchdDisabledCheck = "launchd Disabled Override"
+const maatRepairLivenessWatchCheck = "liveness-watch"
 
 var (
 	maatRepairConfirm bool
 	// Seams keep command tests wholly local: no test should inspect a live
 	// launchd database or mutate a real LaunchAgent while proving the receipt
 	// contract.
-	maatRepairReadDiagnosis       = guard.Doctor
-	maatRepairRestoreLaunchAgents = router.RestoreDisabledManagedLaunchAgents
+	maatRepairReadDiagnosis        = pantheonDoctor
+	maatRepairRestoreLaunchAgents  = router.RestoreDisabledManagedLaunchAgents
+	maatRepairInstallLivenessWatch = installLivenessWatch
 )
 
 // maatRepairCmd is deliberately a closed repair registry. Ma'at never accepts
@@ -112,6 +114,82 @@ var maatRepairLaunchdDisabledCmd = &cobra.Command{
 	},
 }
 
+// maatRepairLivenessWatchCmd is the closed Ma'at resolution for an absent
+// reboot-proof liveness watch. It never accepts a label, binary, plist, or
+// arbitrary command from its caller: preflight and re-observation are both the
+// same doctor check that created the case, and installation resolves the exact
+// running Pantheon executable through installLivenessWatch.
+var maatRepairLivenessWatchCmd = &cobra.Command{
+	Use:   "liveness-watch",
+	Short: "Install and verify Pantheon's managed local liveness watch",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if !maatRepairConfirm {
+			return fmt.Errorf("Ma'at liveness-watch installation changes a managed LaunchAgent; rerun with --confirm after reviewing the exact finding")
+		}
+		beforeReport, err := maatRepairReadDiagnosis()
+		if err != nil {
+			return fmt.Errorf("Ma'at liveness-watch preflight: read diagnostic state: %w", err)
+		}
+		before, found := activeMaatRepairFinding(beforeReport, maatRepairLivenessWatchCheck)
+		if !found {
+			return fmt.Errorf("Ma'at liveness-watch preflight: no actionable absent-watch finding exists; no launchd state changed")
+		}
+
+		installMessage, repairErr := maatRepairInstallLivenessWatch()
+		afterReport, observationErr := maatRepairReadDiagnosis()
+		after, cleared := "post-repair diagnostic unavailable", false
+		if observationErr == nil {
+			after, cleared = maatRepairFindingState(afterReport, maatRepairLivenessWatchCheck)
+		}
+
+		journal, journalErr := newMaatDecisionJournal()
+		if journalErr != nil {
+			return fmt.Errorf("Ma'at liveness-watch: open outcome journal after managed repair: %w", journalErr)
+		}
+		outcome := maat.DiagnosticRepair{
+			Check: maatRepairLivenessWatchCheck, Operation: "install Pantheon's managed per-user liveness LaunchAgent from the canonical Sirsi executable", Before: before, After: after,
+			Determination: "failed",
+		}
+		if repairErr != nil {
+			outcome.Detail = "bounded installation returned an error: " + repairErr.Error()
+		} else if observationErr != nil {
+			outcome.Detail = "post-repair diagnostic could not be read: " + observationErr.Error()
+		} else if !cleared {
+			outcome.Detail = "post-repair diagnostic still reports that the liveness watch is absent"
+		} else {
+			outcome.Determination = "resolved"
+			outcome.Detail = installMessage
+		}
+		decision, recordErr := maat.RecordDiagnosticRepair(journal, "sirsi maat repair liveness-watch", outcome)
+		if recordErr != nil {
+			return fmt.Errorf("Ma'at liveness-watch: retain verified outcome: %w", recordErr)
+		}
+
+		result := &output.CommandResult{
+			Command: "sirsi maat repair liveness-watch", BriefTitle: "Ma'at local liveness watch",
+			Status: "ok", Summary: "Pantheon's liveness watch was installed, verified, and recorded by Ma'at.",
+			Evidence:    []output.Evidence{{Label: "Preflight", Value: before}, {Label: "Post-repair", Value: after}, {Label: "Ma'at receipt", Value: decision.Evidence}},
+			NextActions: []output.NextAction{{Label: "Review Ma'at casebook", Command: "sirsi maat casebook", Description: "Inspect the retained repair receipt and its verification evidence."}},
+		}
+		if outcome.Determination != "resolved" {
+			result.Status = "error"
+			result.Summary = "The liveness watch did not verify as installed. Ma'at retained the incomplete outcome; retry only after resolving the stated error."
+			result.Errors = []string{outcome.Detail}
+			result.Render()
+			if repairErr != nil {
+				return fmt.Errorf("Ma'at liveness-watch installation incomplete: %w", repairErr)
+			}
+			if observationErr != nil {
+				return fmt.Errorf("Ma'at liveness-watch could not verify: %w", observationErr)
+			}
+			return fmt.Errorf("Ma'at liveness-watch installation did not clear the absent-watch finding")
+		}
+		result.Render()
+		return nil
+	},
+}
+
 func activeMaatRepairFinding(report *guard.DoctorReport, check string) (string, bool) {
 	if report == nil {
 		return "", false
@@ -150,6 +228,8 @@ func maatRepairFindingDescription(finding guard.DiagnosticFinding) string {
 
 func init() {
 	maatRepairLaunchdDisabledCmd.Flags().BoolVar(&maatRepairConfirm, "confirm", false, "confirm bounded managed LaunchAgent recovery")
+	maatRepairLivenessWatchCmd.Flags().BoolVar(&maatRepairConfirm, "confirm", false, "confirm bounded liveness-watch installation")
 	maatRepairCmd.AddCommand(maatRepairLaunchdDisabledCmd)
+	maatRepairCmd.AddCommand(maatRepairLivenessWatchCmd)
 	maatCmd.AddCommand(maatRepairCmd)
 }
