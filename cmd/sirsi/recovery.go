@@ -77,6 +77,7 @@ or launchd. Those are separately qualified host operations.`,
 		if err != nil {
 			return err
 		}
+		defer gateway.Close()
 		listener, err := net.Listen("tcp", recoveryListenAddr)
 		if err != nil {
 			return fmt.Errorf("recovery serve: listen: %w", err)

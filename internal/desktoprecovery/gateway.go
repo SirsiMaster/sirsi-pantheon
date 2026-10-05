@@ -279,6 +279,7 @@ type session struct {
 	principal string
 	expiresAt time.Time
 	active    bool
+	cancel    context.CancelFunc
 }
 
 // Gateway serves an embedded, pinned noVNC client and a narrow authenticated
@@ -435,9 +436,47 @@ func (g *Gateway) handleNode(w http.ResponseWriter, r *http.Request) {
 		g.client(w, r, node)
 	case "ws":
 		g.websocket(node).ServeHTTP(w, r)
+	case "disconnect":
+		g.disconnect(w, r, node)
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+// Close releases all bridge sessions, including hijacked WebSockets which an
+// HTTP server shutdown does not close itself.
+func (g *Gateway) Close() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	for hash, s := range g.sessions {
+		if s.cancel != nil {
+			s.cancel()
+		}
+		delete(g.sessions, hash)
+	}
+}
+
+func (g *Gateway) disconnect(w http.ResponseWriter, r *http.Request, node Node) {
+	if r.Method != http.MethodPost || !originAllowed(r.Header.Get("Origin"), node) || r.URL.RawQuery != "" {
+		http.Error(w, "same-origin POST required", http.StatusForbidden)
+		return
+	}
+	hash, ok := sessionHash(r)
+	g.mu.Lock()
+	s, exists := g.sessions[hash]
+	if !ok || !exists || s.nodeID != node.ID || !g.now().Before(s.expiresAt) {
+		g.mu.Unlock()
+		http.Error(w, "active recovery admission required", http.StatusUnauthorized)
+		return
+	}
+	delete(g.sessions, hash)
+	if s.cancel != nil {
+		s.cancel()
+	}
+	g.mu.Unlock()
+	http.SetCookie(w, &http.Cookie{Name: cookieName, Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: -1})
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (g *Gateway) admit(w http.ResponseWriter, r *http.Request, node Node) {
@@ -539,7 +578,7 @@ func (g *Gateway) client(w http.ResponseWriter, r *http.Request, node Node) {
 		http.Redirect(w, r, "/recovery/v1/nodes/"+node.ID+"/entry", http.StatusFound)
 		return
 	}
-	q := url.Values{"autoconnect": {"true"}, "reconnect": {"false"}, "path": {"recovery/v1/nodes/" + node.ID + "/ws"}}
+	q := url.Values{"autoconnect": {"true"}, "reconnect": {"false"}, "view_only": {"true"}, "path": {"recovery/v1/nodes/" + node.ID + "/ws"}}
 	http.Redirect(w, r, "/recovery/novnc/vnc.html?"+q.Encode(), http.StatusFound)
 }
 
@@ -602,7 +641,10 @@ func (g *Gateway) proxy(node Node, ws *websocket.Conn) {
 		g.mu.Unlock()
 		return
 	}
+	ctx, cancel := context.WithDeadline(request.Context(), s.expiresAt)
+	defer cancel()
 	s.active = true
+	s.cancel = cancel
 	g.sessions[hash] = s
 	g.mu.Unlock()
 	defer func() {
@@ -611,8 +653,6 @@ func (g *Gateway) proxy(node Node, ws *websocket.Conn) {
 		g.mu.Unlock()
 	}()
 
-	ctx, cancel := context.WithDeadline(request.Context(), s.expiresAt)
-	defer cancel()
 	rfb, err := g.dial(ctx, "tcp", node.Address)
 	if err != nil {
 		return

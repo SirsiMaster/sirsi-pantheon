@@ -85,3 +85,25 @@ standard browser prompt. Pantheon does not broker, save, put in a URL, or log
 those RFB credentials. They exist transiently in the browser/RFB handshake;
 use a trusted device and decline browser password persistence for a recovery
 session.
+
+## Disconnect and hardware holds
+
+Use noVNC's Disconnect action to close the desktop transport. An authorized
+same-origin client may also POST `/recovery/v1/nodes/<node>/disconnect` using
+its session cookie; the bridge cancels that session and clears the cookie.
+Stopping the bridge cancels all sessions, including open WebSockets. Apple input
+release and preservation of local control require live qualification.
+
+To enroll Apollo compute admission in SHA observation checks, add these fields
+under `sne` in its existing supervisor profile:
+
+```yaml
+hardware_observation: /absolute/operator-owned/hardware-observation.json
+hardware_node_id: M1
+hardware_collector_sha256: <exact approved collector SHA-256>
+```
+
+Publish the collector's v2 receipt atomically and refresh it within five minutes
+of each launch. A missing, stale, wrong-node, HOLD or UNKNOWN receipt holds
+compute launch; it does not remove desktop access. Existing live memory checks
+still run. Do not change SIP, FileVault or reboot to clear an observation hold.

@@ -23,17 +23,20 @@ type SupervisorProfile struct {
 	SchemaVersion string `yaml:"schema_version"`
 	Product       string `yaml:"product"`
 	SNE           struct {
-		Profile               string `yaml:"profile"`
-		Endpoint              string `yaml:"endpoint"`
-		HealthPath            string `yaml:"health_path"`
-		ModelsPath            string `yaml:"models_path"`
-		RestartPolicy         string `yaml:"restart_policy"`
-		MemoryCeilingBytes    uint64 `yaml:"memory_ceiling_bytes"`
-		MaxConcurrentRequests int    `yaml:"max_concurrent_requests"`
-		MaxQueuedRequests     int    `yaml:"max_queued_requests"`
-		QueueDiscipline       string `yaml:"queue_discipline"`
-		RequestTimeoutMS      int64  `yaml:"request_timeout_ms"`
-		YieldToForeground     bool   `yaml:"yield_to_foreground"`
+		Profile                 string `yaml:"profile"`
+		Endpoint                string `yaml:"endpoint"`
+		HealthPath              string `yaml:"health_path"`
+		ModelsPath              string `yaml:"models_path"`
+		RestartPolicy           string `yaml:"restart_policy"`
+		MemoryCeilingBytes      uint64 `yaml:"memory_ceiling_bytes"`
+		MaxConcurrentRequests   int    `yaml:"max_concurrent_requests"`
+		MaxQueuedRequests       int    `yaml:"max_queued_requests"`
+		QueueDiscipline         string `yaml:"queue_discipline"`
+		RequestTimeoutMS        int64  `yaml:"request_timeout_ms"`
+		YieldToForeground       bool   `yaml:"yield_to_foreground"`
+		HardwareObservation     string `yaml:"hardware_observation"`
+		HardwareNodeID          string `yaml:"hardware_node_id"`
+		HardwareCollectorSHA256 string `yaml:"hardware_collector_sha256"`
 	} `yaml:"sne"`
 }
 
@@ -213,6 +216,9 @@ func (s *Supervisor) start(parent context.Context) error {
 }
 
 func (s *Supervisor) startLocked(ctx context.Context, lifecycleRestart bool) error {
+	if err := checkHardwareObservation(s.profile, time.Now(), os.ReadFile); err != nil {
+		return err
+	}
 	if s.launch.RequiredMemoryBytes > 0 {
 		var resource ResourceAdmission
 		var err error
