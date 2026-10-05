@@ -33,11 +33,6 @@ var (
 	recoveryListenAddr string
 )
 
-var recoveryCmd = &cobra.Command{
-	Use:   "recovery",
-	Short: "Authenticated browser recovery for approved private Mac desktops",
-}
-
 var recoveryServeCmd = &cobra.Command{
 	Use:   "serve",
 	Short: "Serve the loopback-only noVNC recovery bridge behind Tailscale Serve",
@@ -141,5 +136,4 @@ func init() {
 	recoveryServeCmd.Flags().StringVar(&recoveryConfigPath, "config", "", "approved recovery node/operator JSON config")
 	recoveryServeCmd.Flags().StringVar(&recoveryListenAddr, "listen", "127.0.0.1:9188", "literal loopback address to listen on")
 	recoveryCmd.AddCommand(recoveryServeCmd)
-	rootCmd.AddCommand(recoveryCmd)
 }
