@@ -70,7 +70,7 @@ func withJournalMutationLock(path string, fn func() error) error {
 	if err := unix.Flock(lockFD, unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		return fmt.Errorf("maat decision journal: another local write or repair is in progress; retry after it finishes")
 	}
-	defer unix.Flock(lockFD, unix.LOCK_UN)
+	defer func() { _ = unix.Flock(lockFD, unix.LOCK_UN) }()
 	return fn()
 }
 

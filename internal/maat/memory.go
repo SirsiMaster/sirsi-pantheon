@@ -76,7 +76,7 @@ func (s FailureSignature) Digest() (string, error) {
 }
 
 // Scope is intentionally exact. Empty strings are not wildcards: a record with
-// indeterminate scope is rejected at write time rather than overblocking or
+// indeterminate scope is rejected at write time rather than blocking too much or
 // silently permitting a different action.
 type Scope struct {
 	Component string `json:"component"`
