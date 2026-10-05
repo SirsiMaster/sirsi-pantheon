@@ -1,6 +1,7 @@
 package desktoprecovery
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -41,8 +42,12 @@ func testGateway(t *testing.T, address string) *Gateway {
 }
 
 func signedCapability(t *testing.T, private ed25519.PrivateKey, nodeID, origin string) string {
+	return signedCapabilityAt(t, private, nodeID, origin, "single-use-test", time.Now().Add(time.Minute))
+}
+
+func signedCapabilityAt(t *testing.T, private ed25519.PrivateKey, nodeID, origin, nonce string, expiresAt time.Time) string {
 	t.Helper()
-	payload, err := json.Marshal(CapabilityClaims{KeyID: "test", Login: "owner@example.test", NodeID: nodeID, Origin: origin, Purpose: "pantheon.desktop-recovery", ExpiresAt: time.Now().Add(time.Minute).Unix(), Nonce: "single-use-test"})
+	payload, err := json.Marshal(CapabilityClaims{KeyID: "test", Login: "owner@example.test", NodeID: nodeID, Origin: origin, Purpose: "pantheon.desktop-recovery", ExpiresAt: expiresAt.Unix(), Nonce: nonce})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,6 +82,38 @@ func TestCapabilityAuthorizerRejectsForgedTailnetHeader(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+signedCapability(t, private, "m1", "https://m5.example.ts.net"))
 	if _, err := a.AuthorizeRecovery(context.Background(), req, Node{ID: "m1"}); err != nil {
 		t.Fatalf("rejected valid signed recovery capability: %v", err)
+	}
+}
+
+func TestCapabilityAuthorizerRejectsEquivalentNonCanonicalBase64Signature(t *testing.T) {
+	public, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capability := signedCapability(t, private, "m1", "https://m5.example.ts.net")
+	parts := strings.Split(capability, ".")
+	decoded, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var nonCanonical string
+	for _, candidate := range "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_" {
+		altered := parts[1][:len(parts[1])-1] + string(candidate)
+		value, decodeErr := base64.RawURLEncoding.DecodeString(altered)
+		if decodeErr == nil && altered != parts[1] && bytes.Equal(value, decoded) {
+			nonCanonical = altered
+			break
+		}
+	}
+	if nonCanonical == "" {
+		t.Fatal("could not construct an equivalent noncanonical base64url signature")
+	}
+	a := CapabilityAuthorizer{PublicKeys: map[string]ed25519.PublicKey{"test": public}}
+	req := httptest.NewRequest(http.MethodPost, "https://m5.example.ts.net/recovery", nil)
+	req.Header.Set("Origin", "https://m5.example.ts.net")
+	req.Header.Set("Authorization", "Bearer "+parts[0]+"."+nonCanonical)
+	if _, err := a.AuthorizeRecovery(context.Background(), req, Node{ID: "m1"}); err == nil {
+		t.Fatal("accepted equivalent noncanonical base64url signature")
 	}
 }
 
@@ -128,8 +165,18 @@ func TestFreshClientEntryGuidesOperatorAndFormAdmission(t *testing.T) {
 		t.Fatalf("fresh recovery client entry = %v, %v", resp, err)
 	}
 	resp, err = noRedirect.Get(ts.URL + "/recovery/v1/nodes/m1/entry")
-	if err != nil || resp.StatusCode != http.StatusOK || !strings.Contains(readBody(t, resp), "Recovery admission") {
+	body := readBody(t, resp)
+	if err != nil || resp.StatusCode != http.StatusOK || !strings.Contains(body, "Recovery admission") || !strings.Contains(body, "Need a resolution?") || !strings.Contains(body, "Sirsi <span>Pantheon</span>") {
 		t.Fatalf("entry page = %v, %v", resp, err)
+	}
+	invalid := url.Values{"capability": {"not-a-capability"}}.Encode()
+	invalidRequest, _ := http.NewRequest(http.MethodPost, ts.URL+"/recovery/v1/nodes/m1/sessions", strings.NewReader(invalid))
+	invalidRequest.Header.Set("Origin", "https://m5.example.ts.net")
+	invalidRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	invalidRequest.Header.Set("Accept", "text/html")
+	invalidResponse, invalidErr := noRedirect.Do(invalidRequest)
+	if invalidErr != nil || invalidResponse.StatusCode != http.StatusUnauthorized || !strings.Contains(readBody(t, invalidResponse), "Recovery needs a fresh admission.") {
+		t.Fatalf("invalid form guidance = %v, %v", invalidResponse, invalidErr)
 	}
 	form := url.Values{"capability": {testCapability(t)}}.Encode()
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/recovery/v1/nodes/m1/sessions", strings.NewReader(form))
@@ -139,6 +186,83 @@ func TestFreshClientEntryGuidesOperatorAndFormAdmission(t *testing.T) {
 	resp, err = noRedirect.Do(req)
 	if err != nil || resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/recovery/v1/nodes/m1/client" || len(resp.Cookies()) != 1 {
 		t.Fatalf("form admission = %v, %v", resp, err)
+	}
+}
+
+func TestAdmissionReplayRetainedThroughSignedExpiryAndSessionDeadlineCapped(t *testing.T) {
+	public, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	capabilityExpires := now.Add(20 * time.Second)
+	g, err := New(Config{
+		Nodes:      []Node{{ID: "m1", Address: "100.88.242.95:5900", Origins: []string{"https://m5.example.ts.net"}}},
+		Authorizer: CapabilityAuthorizer{PublicKeys: map[string]ed25519.PublicKey{"test": public}, Now: func() time.Time { return now }},
+		SessionTTL: time.Minute,
+		Now:        func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	capability := signedCapabilityAt(t, private, "m1", "https://m5.example.ts.net", "ttl-bound-nonce", capabilityExpires)
+	ts := httptest.NewServer(g.Handler())
+	defer ts.Close()
+	admit := func() *http.Response {
+		req, _ := http.NewRequest(http.MethodPost, ts.URL+"/recovery/v1/nodes/m1/sessions", nil)
+		req.Header.Set("Origin", "https://m5.example.ts.net")
+		req.Header.Set("Authorization", "Bearer "+capability)
+		resp, requestErr := http.DefaultClient.Do(req)
+		if requestErr != nil {
+			t.Fatal(requestErr)
+		}
+		return resp
+	}
+	first := admit()
+	if first.StatusCode != http.StatusCreated || len(first.Cookies()) != 1 || !first.Cookies()[0].Expires.Equal(capabilityExpires) {
+		t.Fatalf("signed expiry did not cap session: status=%d cookies=%#v", first.StatusCode, first.Cookies())
+	}
+	first.Body.Close()
+	now = now.Add(3 * time.Second)
+	replay := admit()
+	defer replay.Body.Close()
+	if replay.StatusCode != http.StatusConflict {
+		t.Fatalf("replay after shorter session TTL = %d, want %d", replay.StatusCode, http.StatusConflict)
+	}
+}
+
+func TestCapabilityLifetimeAndDuplicateTransportsAreRejected(t *testing.T) {
+	public, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	a := CapabilityAuthorizer{PublicKeys: map[string]ed25519.PublicKey{"test": public}, Now: func() time.Time { return now }}
+	req := httptest.NewRequest(http.MethodPost, "https://m5.example.ts.net/recovery", strings.NewReader("capability=duplicate"))
+	req.Header.Set("Origin", "https://m5.example.ts.net")
+	req.Header.Set("Authorization", "Bearer "+signedCapabilityAt(t, private, "m1", "https://m5.example.ts.net", "long-lived", now.Add(maxCapabilityTTL+time.Second)))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if _, err := admissionRequest(req); err == nil {
+		t.Fatal("accepted duplicate recovery credential transports")
+	}
+	req = httptest.NewRequest(http.MethodPost, "https://m5.example.ts.net/recovery", nil)
+	req.Header.Set("Origin", "https://m5.example.ts.net")
+	req.Header.Set("Authorization", "Bearer "+signedCapabilityAt(t, private, "m1", "https://m5.example.ts.net", "long-lived", now.Add(maxCapabilityTTL+time.Second)))
+	if _, err := a.AuthorizeRecovery(context.Background(), req, Node{ID: "m1"}); err == nil {
+		t.Fatal("accepted capability beyond maximum lifetime")
+	}
+}
+
+func TestNodeIDRejectsHTMLAndRouteDelimiters(t *testing.T) {
+	for _, id := range []string{`m1"><script>`, "m1/entry", "-m1", "m1-", strings.Repeat("m", 65)} {
+		if validNodeID(id) {
+			t.Fatalf("unsafe node id accepted: %q", id)
+		}
+	}
+	for _, id := range []string{"m1", "m1-recovery", "m5a"} {
+		if !validNodeID(id) {
+			t.Fatalf("safe node id rejected: %q", id)
+		}
 	}
 }
 

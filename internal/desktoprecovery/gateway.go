@@ -1,10 +1,12 @@
 // Package desktoprecovery provides Pantheon's narrow browser-to-RFB recovery
 // bridge. It is deliberately not a general TCP proxy: every destination is a
 // configured private node, every browser session is short lived, and the
-// bridge trusts identity headers only from a loopback Tailscale Serve proxy.
+// bridge accepts only a configured signed admission; it does not trust proxy
+// identity headers as operator authority.
 package desktoprecovery
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -34,6 +36,7 @@ const (
 	cookieName        = "__Host-pantheon-recovery"
 	defaultSessionTTL = 10 * time.Minute
 	maxSessionTTL     = 30 * time.Minute
+	maxCapabilityTTL  = 30 * time.Minute
 )
 
 //go:embed novnc
@@ -48,9 +51,14 @@ type Node struct {
 	Origins []string `json:"origins"`
 }
 
-// Principal identifies the already-authenticated tailnet operator. It carries
-// no secret and is used only to bind an ephemeral recovery session.
-type Principal struct{ Login string }
+// Principal identifies the already-authenticated operator. The admission
+// identity and expiry are verified authority, not request-text conveniences:
+// the gateway uses them to enforce one use through the signed expiry.
+type Principal struct {
+	Login              string
+	admissionID        [sha256.Size]byte
+	admissionExpiresAt time.Time
+}
 
 // Authorizer is the Pantheon admission seam. Production uses a signed
 // capability; tests inject a deterministic authorizer. There is intentionally
@@ -87,10 +95,12 @@ func (a CapabilityAuthorizer) AuthorizeRecovery(_ context.Context, r *http.Reque
 	if err != nil {
 		return Principal{}, err
 	}
-	if claims.Purpose != "pantheon.desktop-recovery" || claims.NodeID != node.ID || claims.Origin != r.Header.Get("Origin") || !a.Now().Before(time.Unix(claims.ExpiresAt, 0)) {
+	now := a.Now().UTC()
+	expiresAt := time.Unix(claims.ExpiresAt, 0).UTC()
+	if claims.Purpose != "pantheon.desktop-recovery" || claims.NodeID != node.ID || claims.Origin != r.Header.Get("Origin") || !now.Before(expiresAt) || expiresAt.After(now.Add(maxCapabilityTTL)) {
 		return Principal{}, errors.New("desktop recovery capability is not valid for this admission")
 	}
-	return Principal{Login: claims.Login}, nil
+	return Principal{Login: claims.Login, admissionID: sha256.Sum256([]byte(claims.KeyID + "\x00" + claims.Nonce)), admissionExpiresAt: expiresAt}, nil
 }
 
 func (a CapabilityAuthorizer) claims(r *http.Request) (CapabilityClaims, error) {
@@ -103,16 +113,16 @@ func (a CapabilityAuthorizer) claims(r *http.Request) (CapabilityClaims, error) 
 	if len(parts) != 2 || len(compact) > 4096 {
 		return CapabilityClaims{}, errors.New("desktop recovery capability is malformed")
 	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[0])
+	payload, err := canonicalBase64URL(parts[0])
 	if err != nil || len(payload) == 0 || len(payload) > 2048 {
 		return CapabilityClaims{}, errors.New("desktop recovery capability payload is malformed")
 	}
-	signature, err := base64.RawURLEncoding.DecodeString(parts[1])
+	signature, err := canonicalBase64URL(parts[1])
 	if err != nil || len(signature) != ed25519.SignatureSize {
 		return CapabilityClaims{}, errors.New("desktop recovery capability signature is malformed")
 	}
 	var claims CapabilityClaims
-	dec := json.NewDecoder(strings.NewReader(string(payload)))
+	dec := json.NewDecoder(bytes.NewReader(payload))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&claims); err != nil || claims.KeyID == "" || claims.Login == "" || claims.NodeID == "" || claims.Origin == "" || claims.Nonce == "" || claims.ExpiresAt <= 0 {
 		return CapabilityClaims{}, errors.New("desktop recovery capability claims are malformed")
@@ -126,6 +136,14 @@ func (a CapabilityAuthorizer) claims(r *http.Request) (CapabilityClaims, error) 
 		return CapabilityClaims{}, errors.New("desktop recovery capability signature is not accepted")
 	}
 	return claims, nil
+}
+
+func canonicalBase64URL(value string) ([]byte, error) {
+	decoded, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil || base64.RawURLEncoding.EncodeToString(decoded) != value {
+		return nil, errors.New("desktop recovery base64url value is not canonical")
+	}
+	return decoded, nil
 }
 
 // Config supplies the sole source of node and operator authority. A caller
@@ -200,7 +218,7 @@ func New(cfg Config) (*Gateway, error) {
 }
 
 func validateNode(node Node) error {
-	if node.ID == "" || strings.ContainsAny(node.ID, "/?&#") {
+	if !validNodeID(node.ID) {
 		return fmt.Errorf("desktop recovery: invalid node id %q", node.ID)
 	}
 	host, port, err := net.SplitHostPort(node.Address)
@@ -221,6 +239,23 @@ func validateNode(node Node) error {
 		}
 	}
 	return nil
+}
+
+func validNodeID(id string) bool {
+	if len(id) == 0 || len(id) > 64 {
+		return false
+	}
+	for i := range id {
+		c := id[i]
+		alphanumeric := c >= 'a' && c <= 'z' || c >= '0' && c <= '9'
+		if !alphanumeric && c != '-' {
+			return false
+		}
+		if (i == 0 || i == len(id)-1) && !alphanumeric {
+			return false
+		}
+	}
+	return true
 }
 
 func isPrivateRFBAddress(ip netip.Addr) bool {
@@ -292,17 +327,17 @@ func (g *Gateway) admit(w http.ResponseWriter, r *http.Request, node Node) {
 		return
 	}
 	if !originAllowed(r.Header.Get("Origin"), node) {
-		http.Error(w, "recovery origin denied", http.StatusForbidden)
+		g.admissionError(w, r, node, http.StatusForbidden, "Open recovery from the approved Pantheon address for this Mac.")
 		return
 	}
 	admission, err := admissionRequest(r)
 	if err != nil {
-		http.Error(w, "recovery admission denied", http.StatusUnauthorized)
+		g.admissionError(w, r, node, http.StatusUnauthorized, "This admission is incomplete. Request a fresh recovery admission, then try again.")
 		return
 	}
 	principal, err := g.auth.AuthorizeRecovery(r.Context(), admission, node)
 	if err != nil {
-		http.Error(w, "recovery admission denied", http.StatusUnauthorized)
+		g.admissionError(w, r, node, http.StatusUnauthorized, "This admission was not accepted. Request a fresh recovery admission and try again.")
 		return
 	}
 	raw := make([]byte, 32)
@@ -311,18 +346,24 @@ func (g *Gateway) admit(w http.ResponseWriter, r *http.Request, node Node) {
 		return
 	}
 	now := g.now().UTC()
+	if principal.admissionExpiresAt.IsZero() || !now.Before(principal.admissionExpiresAt) {
+		g.admissionError(w, r, node, http.StatusUnauthorized, "This admission has expired. Request a fresh recovery admission and try again.")
+		return
+	}
 	expires := now.Add(g.ttl)
+	if expires.After(principal.admissionExpiresAt) {
+		expires = principal.admissionExpiresAt
+	}
 	hash := sha256.Sum256(raw)
-	capabilityHash := sha256.Sum256([]byte(admission.Header.Get("Authorization")))
 	g.mu.Lock()
 	g.gcLocked(now)
-	if _, exists := g.admitted[capabilityHash]; exists {
+	if _, exists := g.admitted[principal.admissionID]; exists {
 		g.mu.Unlock()
 		http.Error(w, "recovery admission already used", http.StatusConflict)
 		return
 	}
 	g.sessions[hash] = session{nodeID: node.ID, principal: principal.Login, expiresAt: expires}
-	g.admitted[capabilityHash] = expires
+	g.admitted[principal.admissionID] = principal.admissionExpiresAt
 	g.mu.Unlock()
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: hex.EncodeToString(raw), Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode, Expires: expires})
 	if strings.Contains(r.Header.Get("Accept"), "text/html") {
@@ -337,12 +378,34 @@ func (g *Gateway) entry(w http.ResponseWriter, r *http.Request, node Node) {
 		http.Error(w, "recovery entry requires GET without query", http.StatusMethodNotAllowed)
 		return
 	}
+	g.renderEntry(w, node, http.StatusOK, "")
+}
+
+func (g *Gateway) admissionError(w http.ResponseWriter, r *http.Request, node Node, status int, message string) {
+	if strings.Contains(r.Header.Get("Accept"), "text/html") || strings.HasPrefix(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
+		g.renderEntry(w, node, status, message)
+		return
+	}
+	http.Error(w, "recovery admission denied", status)
+}
+
+func (g *Gateway) renderEntry(w http.ResponseWriter, node Node, status int, message string) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = fmt.Fprintf(w, "<!doctype html><html><head><meta charset=utf-8><title>Pantheon recovery</title></head><body><main><h1>Open approved desktop recovery</h1><p>Enter a short-lived Pantheon recovery admission for %s. It is used once and is not placed in a URL or retained.</p><form method=post action=\"/recovery/v1/nodes/%s/sessions\"><label>Recovery admission <input name=capability type=password autocomplete=off required></label><button type=submit>Continue</button></form></main></body></html>", node.ID, node.ID)
+	w.WriteHeader(status)
+	state := ""
+	if message != "" {
+		state = `<div class="notice" role="alert"><strong>Recovery needs a fresh admission.</strong><span>` + message + `</span></div>`
+	}
+	_, _ = fmt.Fprintf(w, entryPage, node.ID, node.ID, state)
 }
+
+const entryPage = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="dark"><title>Pantheon recovery</title><style>
+:root{color-scheme:dark;--bg:#111513;--panel:#1a201c;--line:#36443a;--ink:#f2f4ee;--muted:#b9c1b9;--green:#67c783;--gold:#d7b757;--danger:#ff8585}*{box-sizing:border-box}body{margin:0;min-width:320px;background:var(--bg);color:var(--ink);font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}main{width:min(100%%,42rem);min-height:100svh;margin:auto;padding:clamp(2rem,8vw,5rem)1.25rem;display:grid;align-content:center;gap:2rem}.brand{font-weight:700;color:var(--gold);letter-spacing:.01em}.brand span{color:var(--green)}h1{max-width:16ch;margin:0;font-size:clamp(2rem,7vw,3.25rem);line-height:1.08;letter-spacing:-.035em}p{max-width:62ch;margin:0;color:var(--muted)}form,.notice{border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:1.25rem}.notice{display:grid;gap:.25rem;border-color:#7e4545;color:#ffe6e6}.notice strong{color:var(--danger)}label{display:grid;gap:.5rem;font-weight:650}input{width:100%%;min-height:3rem;border:1px solid #607064;border-radius:8px;background:#0c100e;color:var(--ink);padding:.6rem .75rem;font:inherit}input:focus-visible,button:focus-visible{outline:3px solid var(--gold);outline-offset:3px}button{width:100%%;min-height:3rem;margin-top:1rem;border:0;border-radius:8px;background:var(--green);color:#092311;font:700 1rem/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer;transition:filter 180ms ease}button:hover{filter:brightness(1.08)}button:active{filter:brightness(.92)}.help{display:grid;gap:.65rem;font-size:.9375rem}.help strong{color:var(--ink)}.help ul{margin:0;padding-left:1.25rem;color:var(--muted)}.privacy{font-size:.8125rem;color:var(--muted)}::selection{background:var(--gold);color:#1f1904}@media (prefers-reduced-motion:reduce){button{transition:none}}</style></head>
+<body><main><div class="brand">Sirsi <span>Pantheon</span></div><div><h1>Open approved desktop recovery</h1><p>Use a short-lived recovery admission for <strong>%s</strong>. It can be used once, is never added to a URL, and is not retained by Pantheon.</p></div>%s<form method="post" action="/recovery/v1/nodes/%s/sessions"><label for="capability">Recovery admission</label><input id="capability" name="capability" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" required aria-describedby="admission-help"><button type="submit">Continue to desktop</button><p id="admission-help" class="privacy">After admission, Apple Screen Sharing may ask for that Mac’s credentials. Those credentials stay in the browser-to-Mac connection; Pantheon does not store or log them.</p></form><section class="help" aria-label="Recovery help"><strong>Need a resolution?</strong><ul><li>Request a fresh recovery admission from your Pantheon operator.</li><li>Open this page from the approved Pantheon address for this Mac.</li><li>Use the newest admission once; a used or expired admission cannot be reused.</li></ul></section></main></body></html>`
 
 func (g *Gateway) client(w http.ResponseWriter, r *http.Request, node Node) {
 	if r.Method != http.MethodGet {
@@ -363,6 +426,9 @@ func admissionRequest(r *http.Request) (*http.Request, error) {
 		return nil, errors.New("recovery admission capability must not be in a URL")
 	}
 	if len(r.Header.Values("Authorization")) != 0 {
+		if strings.HasPrefix(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") || r.ContentLength > 0 {
+			return nil, errors.New("recovery admission must use exactly one credential transport")
+		}
 		return r, nil
 	}
 	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
