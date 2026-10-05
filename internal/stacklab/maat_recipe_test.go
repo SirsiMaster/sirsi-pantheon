@@ -82,6 +82,24 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 		!contains(memory.UpgradeRecipe, "make every recovery instruction presentation data rather than executable input") {
 		t.Fatalf("Ma'at failure-memory recipe omits its fail-closed recovery contract: %+v", memory)
 	}
+	journal, ok := componentsByID["maat-decision-journal"]
+	if !ok {
+		t.Fatal("Ma'at decision-journal component is missing")
+	}
+	for _, path := range []string{
+		"internal/maat/journalrepair_unix.go",
+		"internal/maat/journalrepair_unix_test.go",
+		"cmd/sirsi/maatcasebook.go",
+		"macapp/Sources/SirsiMenubar/MaatCasebookView.swift",
+	} {
+		if !contains(append(append([]string{}, journal.Source...), journal.Tests...), path) {
+			t.Fatalf("Ma'at decision journal recipe omits integrity-recovery surface %q: %+v", path, journal)
+		}
+	}
+	if !contains(journal.Outputs, "confirmation-gated preservation repair with a retained original and strict active-projection verification") ||
+		!contains(journal.UpgradeRecipe, "retain parent and source descriptor identity through repair, reread source bytes before install, and refuse substitution") {
+		t.Fatalf("Ma'at decision journal recipe omits retained repair contract: %+v", journal)
+	}
 	knowledge, ok := componentsByID["maat-knowledge-surface"]
 	if !ok {
 		t.Fatal("Ma'at knowledge component is missing")

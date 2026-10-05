@@ -101,12 +101,12 @@
     },
     {
       "id": "maat-decision-journal",
-      "source": ["internal/maat/decisions.go", "internal/maat/diagnostic_resolution.go"],
-      "tests": ["internal/maat/decisions_test.go", "internal/maat/diagnostic_resolution_test.go"],
-      "inputs": ["Ma'at decisions and reports", "explicit owner review and acceptance"],
-      "outputs": ["ordered decision records", "evidence-bound owner resolution links"],
-      "writes": ["~/.sirsi/maat/decisions.jsonl"],
-      "upgrade_recipe": ["retain JSONL compatibility", "append and fsync records", "reject malformed records", "require an explicit confirmation before owner-review or owner-acceptance writes", "bind acceptance to one recorded review", "never turn local evidence into remote proof"]
+      "source": ["internal/maat/decisions.go", "internal/maat/journalrepair_unix.go", "internal/maat/journalrepair_windows.go", "internal/maat/diagnostic_resolution.go", "cmd/sirsi/maatcasebook.go", "macapp/Sources/SirsiMenubar/MaatCasebookView.swift", "macapp/Sources/SirsiMenubar/SirsiEngine.swift"],
+      "tests": ["internal/maat/decisions_test.go", "internal/maat/journalrepair_unix_test.go", "internal/maat/diagnostic_resolution_test.go", "cmd/sirsi/maatschedule_decisions_test.go", "macapp/Tests/SirsiMenubarTests/CoreContractsTests.swift"],
+      "inputs": ["Ma'at decisions and reports", "explicit owner review and acceptance", "local journal integrity projection"],
+      "outputs": ["ordered decision records", "evidence-bound owner resolution links", "read-only tolerant Casebook projection with bounded line/digest/reason diagnostics", "confirmation-gated preservation repair with a retained original and strict active-projection verification", "native bundled-engine Casebook route that never silently uses an ambient CLI"],
+      "writes": ["~/.sirsi/maat/decisions.jsonl only after explicit native or CLI confirmation", "create-only preserved journal backup and descriptor-relative replacement only during confirmed integrity repair"],
+      "upgrade_recipe": ["retain JSONL compatibility", "append and fsync records", "keep strict Recent as the policy read path and tolerant reads projection-only", "reject malformed records", "retain parent and source descriptor identity through repair, reread source bytes before install, and refuse substitution", "preserve the original journal before replacing an active projection", "require an explicit confirmation before owner-review, owner-acceptance, or Casebook repair writes", "bind acceptance to one recorded review", "never turn local evidence into remote proof", "add malformed-record, same-inode mutation, pathname-substitution, and native issue-identity fixtures before widening repair behavior"]
     },
     {
       "id": "maat-failure-memory",
