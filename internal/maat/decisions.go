@@ -51,6 +51,37 @@ type DecisionJournal interface {
 	Recent(limit int) ([]Decision, error)
 }
 
+// ProjectFailureMemoryPreflight records a completed failure-memory screen in
+// Ma'at's existing decision journal.  This is intentionally one-way: the
+// journal is an inspectable projection for Casebook and surfaces, never an
+// input that can alter a failure-memory decision or authorize remediation.
+func ProjectFailureMemoryPreflight(j DecisionJournal, receipt PreflightReceipt) error {
+	if j == nil {
+		return fmt.Errorf("maat failure memory projection: nil decision journal")
+	}
+	if err := receipt.Action.validate(); err != nil || !validDigest(receipt.ActionManifestSHA256) || !validDigest(receipt.RegistrySnapshotSHA256) || receipt.EvaluatedAtUTC.IsZero() {
+		return fmt.Errorf("maat failure memory projection: invalid preflight receipt")
+	}
+	if receipt.Decision != PreflightPass && receipt.Decision != PreflightReject && receipt.Decision != PreflightUnverifiable {
+		return fmt.Errorf("maat failure memory projection: invalid decision")
+	}
+	why := fmt.Sprintf("%d measured records; %d recovery actions", len(receipt.MeasuredChecks), len(receipt.RecoveryActions))
+	if receipt.RecoveryReference != "" {
+		why += "; recovery reference: " + receipt.RecoveryReference
+	}
+	return j.Append(Decision{
+		Time:          receipt.EvaluatedAtUTC.UTC().Format(time.RFC3339Nano),
+		Kind:          "failure memory preflight",
+		Requester:     "maat",
+		Resource:      receipt.Action.Component,
+		Assessed:      receipt.Action.Operation,
+		Affected:      receipt.Action.Profile,
+		Determination: string(receipt.Decision),
+		Why:           why,
+		Evidence:      "maat-failure-memory:" + receipt.RegistrySnapshotSHA256,
+	})
+}
+
 // RecordReport projects a completed Ma'at report into the same append-only
 // decision journal used by reservations and cede outcomes. It makes local
 // quality, canon, pipeline, and future Stack Lab assessments inspectable by

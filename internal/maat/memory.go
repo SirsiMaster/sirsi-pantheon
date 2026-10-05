@@ -138,6 +138,64 @@ type Incident struct {
 	RecoveryActions []RecoveryAction `json:"recovery_actions"`
 }
 
+// IncidentTransition is the only way an active incident can stop blocking a
+// matching preflight.  It is a separate create-only fact rather than a rewrite
+// of the incident: the predecessor, copied identity fields, and terminal
+// status are all included in its digest.  A root may have exactly one terminal
+// transition, so a caller cannot fork or silently reopen its history.
+type IncidentTransition struct {
+	Schema         string           `json:"schema"`
+	Key            string           `json:"key"`
+	PredecessorKey string           `json:"predecessor_key"`
+	Signature      FailureSignature `json:"signature"`
+	EvidenceSHA256 string           `json:"evidence_sha256"`
+	Scope          Scope            `json:"scope"`
+	GuardID        string           `json:"guard_id"`
+	GuardVersion   string           `json:"guard_version"`
+	Status         IncidentStatus   `json:"status"`
+}
+
+type incidentTransitionDigest struct {
+	Schema         string           `json:"schema"`
+	PredecessorKey string           `json:"predecessor_key"`
+	Signature      FailureSignature `json:"signature"`
+	EvidenceSHA256 string           `json:"evidence_sha256"`
+	Scope          Scope            `json:"scope"`
+	GuardID        string           `json:"guard_id"`
+	GuardVersion   string           `json:"guard_version"`
+	Status         IncidentStatus   `json:"status"`
+}
+
+func newIncidentTransition(predecessor Incident, status IncidentStatus) (IncidentTransition, error) {
+	if err := predecessor.validate(); err != nil || predecessor.Status != IncidentActive {
+		return IncidentTransition{}, errors.New("maat memory: transition predecessor must be an active valid incident")
+	}
+	if status != IncidentSuperseded && status != IncidentRetired {
+		return IncidentTransition{}, errors.New("maat memory: transition status must be terminal")
+	}
+	d := incidentTransitionDigest{Schema: MemorySchema, PredecessorKey: predecessor.Key, Signature: predecessor.Signature, EvidenceSHA256: predecessor.EvidenceSHA256, Scope: predecessor.Scope, GuardID: predecessor.GuardID, GuardVersion: predecessor.GuardVersion, Status: status}
+	b, err := json.Marshal(d)
+	if err != nil {
+		return IncidentTransition{}, fmt.Errorf("maat memory: marshal transition digest: %w", err)
+	}
+	sum := sha256.Sum256(b)
+	return IncidentTransition{Schema: d.Schema, Key: hex.EncodeToString(sum[:]), PredecessorKey: d.PredecessorKey, Signature: d.Signature, EvidenceSHA256: d.EvidenceSHA256, Scope: d.Scope, GuardID: d.GuardID, GuardVersion: d.GuardVersion, Status: d.Status}, nil
+}
+
+func (t IncidentTransition) validateAgainst(predecessor Incident) error {
+	if predecessor.Status != IncidentActive || t.Schema != MemorySchema || !validDigest(t.Key) || !validDigest(t.PredecessorKey) || t.PredecessorKey != predecessor.Key {
+		return errors.New("maat memory: invalid transition envelope")
+	}
+	if t.Status != IncidentSuperseded && t.Status != IncidentRetired {
+		return errors.New("maat memory: invalid transition status")
+	}
+	expected, err := newIncidentTransition(predecessor, t.Status)
+	if err != nil || expected != t {
+		return errors.New("maat memory: transition does not bind its predecessor")
+	}
+	return nil
+}
+
 func NewIncident(signature FailureSignature, evidenceSHA256 string, scope Scope, guardID, guardVersion string, actions []RecoveryAction) (Incident, error) {
 	key, err := signature.Digest()
 	if err != nil {
@@ -211,10 +269,11 @@ type CheckOutcome struct{ IncidentKey, EvidenceSHA256, Status, Outcome string }
 // Store holds retained no-follow descriptors for the root and its two
 // append-only namespaces. It never follows evidence or incident leaf links.
 type Store struct {
-	rootFD     int
-	evidenceFD int
-	incidentFD int
-	lockFD     int
+	rootFD       int
+	evidenceFD   int
+	incidentFD   int
+	transitionFD int
+	lockFD       int
 }
 
 func OpenStore(root string) (*Store, error) {
@@ -254,6 +313,16 @@ func OpenStore(root string) (*Store, error) {
 			_ = unix.Close(incidentFD)
 		}
 	}()
+	transitionFD, err := openOrCreateDirectory(rootFD, "transitions")
+	if err != nil {
+		return nil, err
+	}
+	closeTransition := true
+	defer func() {
+		if closeTransition {
+			_ = unix.Close(transitionFD)
+		}
+	}()
 	lockFD, err := unix.Openat(rootFD, ".lock", unix.O_RDWR|unix.O_CREAT|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("maat memory: open registry lock: %w", err)
@@ -270,8 +339,8 @@ func OpenStore(root string) (*Store, error) {
 	if err := unix.Fsync(rootFD); err != nil {
 		return nil, fmt.Errorf("maat memory: fsync lock directory: %w", err)
 	}
-	closeRoot, closeEvidence, closeIncident, closeLock = false, false, false, false
-	return &Store{rootFD: rootFD, evidenceFD: evidenceFD, incidentFD: incidentFD, lockFD: lockFD}, nil
+	closeRoot, closeEvidence, closeIncident, closeTransition, closeLock = false, false, false, false, false
+	return &Store{rootFD: rootFD, evidenceFD: evidenceFD, incidentFD: incidentFD, transitionFD: transitionFD, lockFD: lockFD}, nil
 }
 
 func (s *Store) Close() error {
@@ -279,7 +348,7 @@ func (s *Store) Close() error {
 		return nil
 	}
 	var first error
-	for _, fd := range []*int{&s.lockFD, &s.incidentFD, &s.evidenceFD, &s.rootFD} {
+	for _, fd := range []*int{&s.lockFD, &s.transitionFD, &s.incidentFD, &s.evidenceFD, &s.rootFD} {
 		if *fd >= 0 {
 			if err := unix.Close(*fd); err != nil && first == nil {
 				first = err
@@ -337,6 +406,68 @@ func (s *Store) Append(incident Incident) error {
 	return nil
 }
 
+// Transition records a terminal outcome for an existing incident.  It is
+// deliberately narrow: terminal events cannot be supplied directly, cannot
+// fork, and cannot be applied to a substituted or unverifiable predecessor.
+func (s *Store) Transition(predecessorKey string, status IncidentStatus) (IncidentTransition, error) {
+	if s == nil || s.incidentFD < 0 || s.transitionFD < 0 {
+		return IncidentTransition{}, errors.New("maat memory: store is closed")
+	}
+	if !validDigest(predecessorKey) {
+		return IncidentTransition{}, errors.New("maat memory: invalid predecessor key")
+	}
+	if err := s.lock(unix.LOCK_EX); err != nil {
+		return IncidentTransition{}, err
+	}
+	defer s.unlock()
+	data, err := readExact(s.incidentFD, predecessorKey+".json")
+	if err != nil {
+		return IncidentTransition{}, fmt.Errorf("maat memory: read transition predecessor: %w", err)
+	}
+	var predecessor Incident
+	if err := json.Unmarshal(data, &predecessor); err != nil || predecessor.validate() != nil || predecessor.Key != predecessorKey || predecessor.Status != IncidentActive {
+		return IncidentTransition{}, errors.New("maat memory: transition predecessor is invalid")
+	}
+	if err := s.verifyEvidence(predecessor.EvidenceSHA256); err != nil {
+		return IncidentTransition{}, fmt.Errorf("maat memory: transition evidence unavailable: %w", err)
+	}
+	names, err := readDirectoryNames(s.transitionFD)
+	if err != nil {
+		return IncidentTransition{}, err
+	}
+	for _, name := range names {
+		if !strings.HasSuffix(name, ".json") || !validDigest(strings.TrimSuffix(name, ".json")) {
+			return IncidentTransition{}, errors.New("maat memory: malformed transition namespace")
+		}
+		priorBytes, err := readExact(s.transitionFD, name)
+		if err != nil {
+			return IncidentTransition{}, err
+		}
+		var prior IncidentTransition
+		if err := json.Unmarshal(priorBytes, &prior); err != nil || prior.Key+".json" != name {
+			return IncidentTransition{}, errors.New("maat memory: invalid transition record")
+		}
+		if prior.PredecessorKey == predecessorKey {
+			if err := prior.validateAgainst(predecessor); err != nil {
+				return IncidentTransition{}, err
+			}
+			return IncidentTransition{}, errors.New("maat memory: incident already has a terminal transition")
+		}
+	}
+	transition, err := newIncidentTransition(predecessor, status)
+	if err != nil {
+		return IncidentTransition{}, err
+	}
+	encoded, err := json.Marshal(transition)
+	if err != nil {
+		return IncidentTransition{}, fmt.Errorf("maat memory: marshal transition: %w", err)
+	}
+	if err := createOrVerify(s.transitionFD, transition.Key+".json", encoded); err != nil {
+		return IncidentTransition{}, fmt.Errorf("maat memory: append transition: %w", err)
+	}
+	return transition, nil
+}
+
 func (s *Store) Preflight(action Scope) (PreflightReceipt, error) {
 	if s == nil || s.incidentFD < 0 {
 		return PreflightReceipt{}, errors.New("maat memory: store is closed")
@@ -357,7 +488,7 @@ func (s *Store) Preflight(action Scope) (PreflightReceipt, error) {
 	receipt := PreflightReceipt{Schema: MemorySchema, Action: action, ActionManifestSHA256: hex.EncodeToString(actionDigest[:]), Decision: PreflightPass, EvaluatedAtUTC: time.Now().UTC()}
 	snapshot := sha256.New()
 	_, _ = snapshot.Write([]byte(MemorySchema + "\n"))
-	seenGuards := map[string]bool{}
+	incidents := make(map[string]Incident, len(names))
 	for _, name := range names {
 		if !strings.HasSuffix(name, ".json") || !validDigest(strings.TrimSuffix(name, ".json")) {
 			receipt.Decision = PreflightUnverifiable
@@ -378,21 +509,67 @@ func (s *Store) Preflight(action Scope) (PreflightReceipt, error) {
 			return receipt, fmt.Errorf("maat memory: incident evidence unavailable: %w", err)
 		}
 		fileDigest := sha256.Sum256(data)
-		_, _ = snapshot.Write([]byte(name + "\x00" + hex.EncodeToString(fileDigest[:]) + "\n"))
+		_, _ = snapshot.Write([]byte("incidents/" + name + "\x00" + hex.EncodeToString(fileDigest[:]) + "\n"))
+		incidents[incident.Key] = incident
+	}
+	transitionNames, err := readDirectoryNames(s.transitionFD)
+	if err != nil {
+		receipt.Decision = PreflightUnverifiable
+		return receipt, err
+	}
+	terminal := make(map[string]IncidentTransition, len(transitionNames))
+	for _, name := range transitionNames {
+		if !strings.HasSuffix(name, ".json") || !validDigest(strings.TrimSuffix(name, ".json")) {
+			receipt.Decision = PreflightUnverifiable
+			return receipt, errors.New("maat memory: malformed transition namespace")
+		}
+		data, err := readExact(s.transitionFD, name)
+		if err != nil {
+			receipt.Decision = PreflightUnverifiable
+			return receipt, err
+		}
+		var transition IncidentTransition
+		if err := json.Unmarshal(data, &transition); err != nil {
+			receipt.Decision = PreflightUnverifiable
+			return receipt, errors.New("maat memory: invalid transition record")
+		}
+		predecessor, ok := incidents[transition.PredecessorKey]
+		if !ok || transition.Key+".json" != name || transition.validateAgainst(predecessor) != nil {
+			receipt.Decision = PreflightUnverifiable
+			return receipt, errors.New("maat memory: invalid transition record")
+		}
+		if _, duplicate := terminal[transition.PredecessorKey]; duplicate {
+			receipt.Decision = PreflightUnverifiable
+			return receipt, errors.New("maat memory: incident has multiple terminal transitions")
+		}
+		terminal[transition.PredecessorKey] = transition
+		fileDigest := sha256.Sum256(data)
+		_, _ = snapshot.Write([]byte("transitions/" + name + "\x00" + hex.EncodeToString(fileDigest[:]) + "\n"))
+	}
+	seenGuards := map[string]bool{}
+	for _, key := range sortedIncidentKeys(incidents) {
+		incident := incidents[key]
 		guardKey := incident.GuardID + "\x00" + incident.GuardVersion
 		if !seenGuards[guardKey] {
 			guardDigest := sha256.Sum256([]byte(guardKey))
 			receipt.EvaluatedGuards = append(receipt.EvaluatedGuards, GuardEvaluation{ID: incident.GuardID, Version: incident.GuardVersion, SHA256: hex.EncodeToString(guardDigest[:])})
 			seenGuards[guardKey] = true
 		}
+		status := incident.Status
+		if transition, ok := terminal[incident.Key]; ok {
+			status = transition.Status
+		}
 		outcome := "out-of-scope"
-		if incident.Status == IncidentActive && incident.Scope.matches(action) {
+		if status == IncidentActive && incident.Scope.matches(action) {
 			outcome = "active-incident-matched"
 			receipt.Decision = PreflightReject
 			receipt.IncidentKeys = append(receipt.IncidentKeys, incident.Key)
 			receipt.RecoveryActions = append(receipt.RecoveryActions, incident.RecoveryActions...)
 		}
-		receipt.MeasuredChecks = append(receipt.MeasuredChecks, CheckOutcome{IncidentKey: incident.Key, EvidenceSHA256: incident.EvidenceSHA256, Status: string(incident.Status), Outcome: outcome})
+		if status != IncidentActive {
+			outcome = "terminal-transition"
+		}
+		receipt.MeasuredChecks = append(receipt.MeasuredChecks, CheckOutcome{IncidentKey: incident.Key, EvidenceSHA256: incident.EvidenceSHA256, Status: string(status), Outcome: outcome})
 	}
 	sort.Strings(receipt.IncidentKeys)
 	sort.Slice(receipt.EvaluatedGuards, func(i, j int) bool {
@@ -406,6 +583,15 @@ func (s *Store) Preflight(action Scope) (PreflightReceipt, error) {
 		receipt.RecoveryReference = "maat-recovery:" + hex.EncodeToString(recoveryDigest[:])
 	}
 	return receipt, nil
+}
+
+func sortedIncidentKeys(incidents map[string]Incident) []string {
+	keys := make([]string, 0, len(incidents))
+	for key := range incidents {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func (s *Store) verifyEvidence(expectedDigest string) error {

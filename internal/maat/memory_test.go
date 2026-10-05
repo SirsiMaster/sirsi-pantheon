@@ -3,10 +3,20 @@ package maat
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+type recordingDecisionJournal struct{ decisions []Decision }
+
+func (j *recordingDecisionJournal) Append(d Decision) error {
+	j.decisions = append(j.decisions, d)
+	return nil
+}
+
+func (j *recordingDecisionJournal) Recent(int) ([]Decision, error) { return j.decisions, nil }
 
 func testSignature() FailureSignature {
 	return FailureSignature{
@@ -205,5 +215,104 @@ func TestStoreRefusesCallerSuppliedClosedIncident(t *testing.T) {
 	incident.SuccessorKey = digest
 	if err := store.Append(incident); err == nil {
 		t.Fatal("caller-supplied closed incident must be refused")
+	}
+}
+
+func TestTerminalTransitionIsPredecessorBoundAndPreventsBranches(t *testing.T) {
+	store, err := OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	digest, err := store.PutEvidence([]byte("evidence"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	incident, err := NewIncident(testSignature(), digest, testScope(), "guard", "v1", testActions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Append(incident); err != nil {
+		t.Fatal(err)
+	}
+	transition, err := store.Transition(incident.Key, IncidentRetired)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if transition.PredecessorKey != incident.Key || transition.Status != IncidentRetired {
+		t.Fatalf("unexpected terminal transition: %#v", transition)
+	}
+	if _, err := store.Transition(incident.Key, IncidentSuperseded); err == nil {
+		t.Fatal("a second terminal transition must be rejected")
+	}
+	receipt, err := store.Preflight(testScope())
+	if err != nil || receipt.Decision != PreflightPass || len(receipt.MeasuredChecks) != 1 || receipt.MeasuredChecks[0].Status != string(IncidentRetired) {
+		t.Fatalf("terminal transition must close the exact predecessor: %#v %v", receipt, err)
+	}
+}
+
+func TestPreflightRejectsForgedTransitionContinuity(t *testing.T) {
+	root := t.TempDir()
+	store, err := OpenStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	digest, err := store.PutEvidence([]byte("evidence"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	incident, err := NewIncident(testSignature(), digest, testScope(), "guard", "v1", testActions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Append(incident); err != nil {
+		t.Fatal(err)
+	}
+	forged, err := newIncidentTransition(incident, IncidentRetired)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forged.GuardVersion = "forged"
+	bytes, err := json.Marshal(forged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "transitions", forged.Key+".json"), bytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := store.Preflight(testScope())
+	if err == nil || receipt.Decision != PreflightUnverifiable {
+		t.Fatalf("forged transition must fail closed: %#v %v", receipt, err)
+	}
+}
+
+func TestProjectFailureMemoryPreflightUsesExistingDecisionJournal(t *testing.T) {
+	store, err := OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	digest, err := store.PutEvidence([]byte("evidence"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	incident, err := NewIncident(testSignature(), digest, testScope(), "guard", "v1", testActions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Append(incident); err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := store.Preflight(testScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal := &recordingDecisionJournal{}
+	if err := ProjectFailureMemoryPreflight(journal, receipt); err != nil {
+		t.Fatal(err)
+	}
+	if len(journal.decisions) != 1 || journal.decisions[0].Kind != "failure memory preflight" || journal.decisions[0].Determination != string(PreflightReject) || journal.decisions[0].Evidence != "maat-failure-memory:"+receipt.RegistrySnapshotSHA256 {
+		t.Fatalf("preflight must be a one-way factual projection: %#v", journal.decisions)
 	}
 }
