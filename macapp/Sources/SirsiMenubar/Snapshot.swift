@@ -40,6 +40,7 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380, appearance: ColorSche
         let net = await SirsiEngine.runResult(args: ["net", "status"])
         let rtk = await SirsiEngine.runResult(args: ["rtk", "stats"])
         let maatKnowledge = await MaatKnowledgeView.fetch()
+        let stackLabReport = await StackLabView.fetchReport()
         let apolloCatalogData = await SirsiEngine.runJSON(args: ["apollo", "catalog", "--json"])
         let apolloCatalog = try? JSONDecoder().decode(ApolloCatalog.self, from: apolloCatalogData)
         let vault = await SirsiEngine.runResult(args: ["vault", "stats"])
@@ -77,6 +78,7 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380, appearance: ColorSche
             // deterministic fixture in that case; live menubar use never falls
             // back to it and reads the local casebook projection.
             ("maat-workspace", AnyView(MaatWorkspaceView(engine: engine, preloadedCasebook: maatCasebook ?? .snapshotPreview, preloadedKnowledge: maatKnowledge ?? .snapshotPreview))),
+            ("stack-lab", AnyView(StackLabView(engine: engine, preloadedReport: stackLabReport))),
             ("apollo-run-planner", AnyView(ApolloRunPlannerView(engine: engine, preloadedCatalog: apolloCatalog ?? .snapshotPreview))),
             ("thoth-memory", AnyView(ThothMemoryInfoView(engine: engine))),
             ("ra-fabric", AnyView(RaFabricView(engine: engine))),
@@ -107,7 +109,7 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380, appearance: ColorSche
             // its headless evidence enough canvas to capture every section from
             // the title onward instead of centering and clipping its first rows.
             let height: CGFloat = switch shot.name {
-            case "ask-sirsi", "maat-workspace", "ra-fabric": 960
+            case "ask-sirsi", "maat-workspace", "ra-fabric", "stack-lab": 960
             case "apollo-run-planner": 1_180
             case "all-tools": 1_040
             default: 520

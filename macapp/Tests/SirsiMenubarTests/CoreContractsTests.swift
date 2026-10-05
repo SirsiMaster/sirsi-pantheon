@@ -402,6 +402,14 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertTrue(catalog.estates.contains { $0.id == "neural-engine" && !$0.available })
     }
 
+    func testSnapshotCoverageIncludesStackLabPrimaryWorkflow() throws {
+        let source = try String(contentsOfFile: "Sources/SirsiMenubar/Snapshot.swift", encoding: .utf8)
+        XCTAssertTrue(source.contains("(\"stack-lab\", AnyView(StackLabView"),
+                      "The visual gate must render Stack Lab itself, not only its Apollo drill-in.")
+        XCTAssertTrue(source.contains("StackLabView.fetchReport()"),
+                      "Stack Lab must receive the same typed report in the visual gate rather than an inert loading shell.")
+    }
+
     func testApolloCatalogKeepsResidentModelChoicesBoundToTheirEngineAndMachine() throws {
         let raw = #"""
         {

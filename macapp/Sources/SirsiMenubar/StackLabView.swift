@@ -11,6 +11,15 @@ struct StackLabView: View {
     @State private var loadError: String?
     @State private var loading = true
 
+    // Snapshot and accessibility QA need to render the exact same typed doctor
+    // report an operator sees, rather than a perpetual loading shell. The live
+    // view still performs its own project-scoped read when no result is given.
+    init(engine: SirsiEngine, preloadedReport: StackLabReport? = nil) {
+        self.engine = engine
+        _report = State(initialValue: preloadedReport)
+        _loading = State(initialValue: preloadedReport == nil)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             BackBar(title: "Stack Lab")
@@ -30,6 +39,7 @@ struct StackLabView: View {
             }
         }
         .task {
+            guard report == nil else { return }
             engine.loadProjectRoot()
             await load()
         }
@@ -284,6 +294,14 @@ struct StackLabView: View {
         }
         loading = false
     }
+
+    // This is deliberately the same typed command used by `load()`. It exists
+    // only so the visual gate can preload a real report before ImageRenderer
+    // draws; it does not add a second Stack Lab authority in Swift.
+    static func fetchReport() async -> StackLabReport? {
+        let data = await SirsiEngine.runJSON(args: ["stacklab", "doctor", "--json"])
+        return try? JSONDecoder().decode(StackLabReport.self, from: data)
+    }
 }
 
 private struct StackLabFindingCard: View {
@@ -332,7 +350,7 @@ private struct StackLabFindingCard: View {
     }
 }
 
-private struct StackLabReport: Decodable {
+struct StackLabReport: Decodable {
     let roster: [String]
     let findings: [StackLabFinding]
     let unknown: [String]
@@ -349,7 +367,7 @@ private struct StackLabReport: Decodable {
     var clean: Bool { findings.isEmpty && unknown.isEmpty }
 }
 
-private struct StackLabFinding: Decodable, Identifiable {
+struct StackLabFinding: Decodable, Identifiable {
     let wingID: String
     let finding: String
     let detail: String
