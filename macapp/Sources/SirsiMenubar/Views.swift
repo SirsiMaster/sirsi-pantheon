@@ -2457,8 +2457,15 @@ struct AnubisView: View {
                     // with visible progress → review every item → clean the ones
                     // you pick. ScanCleanView owns the whole workflow.
                     NavLink { ScanCleanView(engine: engine) } label: {
-                        ActionCard(glyph: "🧹", title: "Scan & Clean Waste",
-                                   sub: "Find waste, review every item, move what you choose to Trash")
+                        ActionCard(
+                            glyph: "🧹",
+                            title: engine.safe.isEmpty
+                                ? "Scan & Clean Waste"
+                                : "Review \(SirsiEngine.human(engine.safeBytes)) ready to reclaim",
+                            sub: engine.safe.isEmpty
+                                ? "Find waste, review every item, move what you choose to Trash"
+                                : "Pantheon can move the regenerable items to Trash here; choose review-required items individually."
+                        )
                     }.buttonStyle(.plain)
 
                     // A real structured screen — the list of leftover apps and what
@@ -2662,7 +2669,7 @@ struct ExclusionNote: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(SirsiEngine.human(bytes)) held back for now")
                     .sirsiFont(.callout, weight: .semibold)
-                Text("\(count) caution-tier items (things like package caches and app remnants) aren't cleaned with one click, because they take longer to rebuild. Open Scan & Clean to review them.")
+                Text("\(count) review-required items (such as package caches and app remnants) need your selection because they take longer to rebuild. Open Scan & Clean to choose them; Pantheon performs the scoped Trash move here, not in Terminal.")
                     .sirsiFont(.footnote).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
