@@ -802,7 +802,12 @@ struct BackBar: View {
     let title: String
     var body: some View {
         HStack(spacing: 6) {
-            Button { nav.pop() } label: {
+            if nav.atRoot {
+                Spacer()
+                Text(title).sirsiFont(12, weight: .semibold).foregroundStyle(.secondary)
+                Spacer()
+            } else {
+                Button { nav.pop() } label: {
                 // The LABEL is the hit area for a .plain button — the bare
                 // chevron+text was a ~40×16pt target the owner had to "click
                 // around a few times to actuate" (2026-07-09). Pad it to a
@@ -815,18 +820,19 @@ struct BackBar: View {
                 .padding(.leading, 12)
                 .padding(.trailing, 24)
                 .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).foregroundStyle(gold)
+                Spacer()
+                Text(title).sirsiFont(12, weight: .semibold).foregroundStyle(.secondary)
+                Spacer()
+                // invisible spacer mirroring the back button keeps the title centered
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left").sirsiFont(12)
+                    Text("Back").sirsiFont(12)
+                }
+                .padding(.leading, 12).padding(.trailing, 24)
+                .opacity(0)
             }
-            .buttonStyle(.plain).foregroundStyle(gold)
-            Spacer()
-            Text(title).sirsiFont(12, weight: .semibold).foregroundStyle(.secondary)
-            Spacer()
-            // invisible spacer mirroring the back button keeps the title centered
-            HStack(spacing: 4) {
-                Image(systemName: "chevron.left").sirsiFont(12)
-                Text("Back").sirsiFont(12)
-            }
-            .padding(.leading, 12).padding(.trailing, 24)
-            .opacity(0)
         }
         .padding(.vertical, 0)
         .contentShape(Rectangle())

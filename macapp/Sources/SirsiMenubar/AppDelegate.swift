@@ -10,11 +10,11 @@ import UserNotifications
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
-    // The surface is a real, movable, RESIZABLE floating panel — not a locked
-    // NSPopover. An NSPopover cannot be moved or resized by the user, which is
-    // wrong for a 20-screen app (owner, 2026-07-09). The panel remembers its
-    // frame (position + size) across opens via setFrameAutosaveName.
-    private var panel: NSPanel!
+    // Pantheon is a full desktop application. The Eye is only a companion
+    // affordance; both open this same normal, movable, resizable NSWindow.
+    // Keeping one window means no second, reduced menu-bar-only workflow can
+    // drift away from the application the user is actually operating.
+    private var window: NSWindow!
     private let engine = SirsiEngine()
     private var refreshTimer: Timer?
     private var instanceLease: MenubarInstanceLease?
@@ -182,7 +182,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             button.target = self
         }
 
-        buildPanel()
+        buildMainWindow()
 
         engine.onTitle = { [weak self] label in
             guard let self = self, let button = self.statusItem.button else { return }
@@ -221,6 +221,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             userInfo: nil,
             repeats: true
         )
+
+        // A Pantheon launch opens its actual application workspace. The status
+        // item remains available after the window is closed, but it is never
+        // the sole route into the product.
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     @objc private func handleRefreshTimer(_ timer: Timer) {
@@ -252,12 +258,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    // buildPanel constructs the movable, resizable floating panel once. Titled +
-    // closable + resizable gives the user a drag handle (transparent title bar,
-    // isMovableByWindowBackground) and standard resize edges; the frame is
-    // autosaved so position + size persist across opens and relaunches.
-    private func buildPanel() {
-        let hosting = NSHostingView(rootView: RootView(engine: engine))
+    // buildMainWindow constructs Pantheon's primary workspace. It deliberately
+    // uses ordinary macOS window semantics: users can switch to it from the
+    // Dock, resize it for dense operational work, and close it without losing
+    // the menu-bar companion.
+    private func buildMainWindow() {
+        let hosting = NSHostingView(rootView: PantheonDesktopView(engine: engine))
         // CRITICAL for resize: NSHostingView otherwise pins Auto Layout
         // constraints to its content's intrinsic (fitting) size, which locks the
         // window at a fixed size no matter the .resizable mask. Clearing
@@ -267,64 +273,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hosting.translatesAutoresizingMaskIntoConstraints = true
         hosting.autoresizingMask = [.width, .height]
 
-        let p = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 400, height: 560),
+        let w = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1180, height: 780),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered, defer: false)
-        p.title = "Sirsi Pantheon"
-        p.titleVisibility = .hidden
-        p.titlebarAppearsTransparent = true
-        p.isMovableByWindowBackground = true          // drag from anywhere
-        // ORDINARY window behaviour (owner, 2026-07-24: "so rigid and always has
-        // focus unlike every other kind of window"). It used to be a
-        // .nonactivatingPanel at .floating level, which puts it above every
-        // window of every app permanently — you could never click it behind
-        // anything. #224 tried to soften that by hiding the panel whenever it
-        // resigned key, which just traded "always in front" for "vanishes the
-        // moment you look away" — neither is how a Mac window behaves.
-        // At .normal level it simply takes its place in the window order: click
-        // another app and it goes behind, click the Eye and it comes forward.
-        p.isFloatingPanel = false
-        p.level = .normal
-        p.hidesOnDeactivate = false
-        // Follow the user to whatever Space they're on rather than tiling itself
-        // onto all of them — .canJoinAllSpaces is floating-utility behaviour.
-        p.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 560))
+        w.title = "Sirsi Pantheon"
+        w.titlebarAppearsTransparent = false
+        w.isMovableByWindowBackground = false
+        w.level = .normal
+        w.hidesOnDeactivate = false
+        w.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        w.toolbarStyle = .unifiedCompact
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 1180, height: 780))
         hosting.frame = container.bounds
         container.addSubview(hosting)
-        p.contentView = container
-        p.minSize = NSSize(width: 360, height: 420)   // resizable, with a sane floor
-        p.maxSize = NSSize(width: 900, height: 1400)
-        p.isReleasedWhenClosed = false
-        p.setFrameAutosaveName("SirsiPantheonPanel")  // persist position + size
-        panel = p
+        w.contentView = container
+        w.minSize = NSSize(width: 900, height: 620)
+        w.setFrameAutosaveName("SirsiPantheonWorkspace")
+        w.isReleasedWhenClosed = false
+        window = w
     }
 
     @objc private func togglePopover(_ sender: Any?) {
-        guard panel != nil else { return }
-        // Now that the panel lives at .normal level it can be OPEN BUT BEHIND
-        // another app's window. Toggling on isVisible alone would hide a panel
-        // the user could not even see; the menu-bar affordance has to bring it
-        // forward instead. Only a panel that is already front-and-key toggles off.
-        if panel.isVisible && panel.isKeyWindow {
-            panel.orderOut(sender)
-            return
-        }
+        guard window != nil else { return }
         engine.refresh()
-        engine.reopenTick += 1   // RootView pops to a fresh Home (no stale screens)
-        // First open with no saved frame: anchor under the status item. After
-        // that, respect wherever the user moved/sized it (autosaved frame).
-        if panel.frameAutosaveName.isEmpty || !panel.setFrameUsingName("SirsiPantheonPanel") {
-            positionUnderStatusItem()
-        } else if let button = statusItem.button, button.window == nil {
-            positionUnderStatusItem()
-        }
-        // If the saved frame would place it off-screen (display changed), recenter.
-        if let screen = NSScreen.main, !screen.visibleFrame.intersects(panel.frame) {
-            positionUnderStatusItem()
-        }
-        panel.makeKeyAndOrderFront(sender)
+        window.makeKeyAndOrderFront(sender)
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -332,25 +305,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // action screen for this item id (engine.pendingOwnerItemID is observed).
     func openOwnerItem(id: String) {
         engine.pendingOwnerItemID = id
-        if panel?.isVisible != true { togglePopover(nil) }
+        if window?.isVisible != true { togglePopover(nil) }
     }
 
-    // positionUnderStatusItem places the panel just below the menu-bar icon,
-    // right-aligned to it (the natural first-open location).
-    private func positionUnderStatusItem() {
-        guard let button = statusItem.button, let bwin = button.window else {
-            if let screen = NSScreen.main { panel.center(); _ = screen } // fallback
-            return
-        }
-        let btnRectScreen = bwin.convertToScreen(button.convert(button.bounds, to: nil))
-        var f = panel.frame
-        f.origin.x = btnRectScreen.maxX - f.width
-        f.origin.y = btnRectScreen.minY - f.height - 6
-        if let vis = NSScreen.main?.visibleFrame {
-            f.origin.x = min(max(f.origin.x, vis.minX + 8), vis.maxX - f.width - 8)
-            f.origin.y = min(max(f.origin.y, vis.minY + 8), vis.maxY - f.height - 8)
-        }
-        panel.setFrame(f, display: false)
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag { togglePopover(nil) }
+        return true
     }
 }
 
