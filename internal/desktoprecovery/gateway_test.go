@@ -275,3 +275,59 @@ func TestCapabilityReplayUsesVerifiedNonceUntilExpiry(t *testing.T) {
 		t.Fatalf("expired capability: %d", got)
 	}
 }
+
+func TestCapabilityLifetimeAndCredentialBounds(t *testing.T) {
+	public, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().Truncate(time.Second)
+	for _, tc := range []struct {
+		name     string
+		lifetime time.Duration
+		status   int
+	}{
+		{"shorter than cookie", 30 * time.Second, http.StatusCreated},
+		{"maximum", maxSessionTTL, http.StatusCreated},
+		{"too long", maxSessionTTL + time.Second, http.StatusUnauthorized},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			claims := CapabilityClaims{KeyID: "test", Login: "owner@example.test", NodeID: "m1", Origin: "https://m5.example.ts.net", Purpose: "pantheon.desktop-recovery", Nonce: tc.name, ExpiresAt: now.Add(tc.lifetime).Unix()}
+			payload, _ := json.Marshal(claims)
+			token := base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(ed25519.Sign(private, payload))
+			g, err := New(Config{Nodes: []Node{{ID: "m1", Address: "100.88.242.95:5900", Origins: []string{claims.Origin}}}, Authorizer: CapabilityAuthorizer{PublicKeys: map[string]ed25519.PublicKey{"test": public}, Now: func() time.Time { return now }}, Now: func() time.Time { return now }})
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest(http.MethodPost, "https://m5.example.ts.net/recovery/v1/nodes/m1/sessions", nil)
+			req.Header.Set("Origin", claims.Origin)
+			req.Header.Set("Authorization", "Bearer "+token)
+			w := httptest.NewRecorder()
+			g.Handler().ServeHTTP(w, req)
+			if w.Code != tc.status {
+				t.Fatalf("admission=%d", w.Code)
+			}
+			for _, cookie := range w.Result().Cookies() {
+				if cookie.Expires.After(time.Unix(claims.ExpiresAt, 0)) {
+					t.Fatal("cookie outlives signed authority")
+				}
+			}
+		})
+	}
+	for _, tc := range []struct{ name, body, header, query string }{
+		{"header and form", "capability=second", "Bearer first", ""},
+		{"duplicate form", "capability=first&capability=second", "", ""},
+		{"query credential", "capability=first", "", "?capability=second"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "https://m5.example.ts.net/recovery"+tc.query, strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			if tc.header != "" {
+				req.Header.Set("Authorization", tc.header)
+			}
+			if _, err := admissionRequest(req); err == nil {
+				t.Fatal("ambiguous or URL credential accepted")
+			}
+		})
+	}
+}

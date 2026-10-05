@@ -7,7 +7,8 @@ Candidate a991c42d hashes raw Authorization text after accepting non-strict
 base64url. Alternate unused bits can represent the same Ed25519 signature and
 bypass consumption. Require strict decoding and exact canonical re-encoding.
 Consume the verified key-id/nonce pair atomically until its signed expiry,
-not until cookie expiry. Cap cookie lifetime at capability expiry. A signer
+not until cookie expiry. Cap cookie lifetime at capability expiry. Reject signed authority with more than
+30 minutes remaining and reject simultaneous header/body credentials. A signer
 must issue a unique nonce for every admission; differently serialized claims
 with the same signer and nonce remain the same consumed authority.
 

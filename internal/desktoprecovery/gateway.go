@@ -91,7 +91,11 @@ func (a CapabilityAuthorizer) AuthorizeRecovery(_ context.Context, r *http.Reque
 	if err != nil {
 		return Principal{}, err
 	}
-	if claims.Purpose != "pantheon.desktop-recovery" || claims.NodeID != node.ID || claims.Origin != r.Header.Get("Origin") || !a.Now().Before(time.Unix(claims.ExpiresAt, 0)) {
+	now := a.Now()
+	if time.Unix(claims.ExpiresAt, 0).After(now.Add(maxSessionTTL)) {
+		return Principal{}, errors.New("desktop recovery capability exceeds maximum lifetime")
+	}
+	if claims.Purpose != "pantheon.desktop-recovery" || claims.NodeID != node.ID || claims.Origin != r.Header.Get("Origin") || !now.Before(time.Unix(claims.ExpiresAt, 0)) {
 		return Principal{}, errors.New("desktop recovery capability is not valid for this admission")
 	}
 	identity, _ := json.Marshal([]string{claims.KeyID, claims.Nonce})
@@ -375,6 +379,12 @@ func admissionRequest(r *http.Request) (*http.Request, error) {
 		return nil, errors.New("recovery admission capability must not be in a URL")
 	}
 	if len(r.Header.Values("Authorization")) != 0 {
+		if r.Body != nil {
+			body, err := io.ReadAll(io.LimitReader(r.Body, 1))
+			if err != nil || len(body) != 0 {
+				return nil, errors.New("recovery admission credentials are ambiguous")
+			}
+		}
 		return r, nil
 	}
 	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
