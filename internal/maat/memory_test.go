@@ -316,3 +316,53 @@ func TestProjectFailureMemoryPreflightUsesExistingDecisionJournal(t *testing.T) 
 		t.Fatalf("preflight must be a one-way factual projection: %#v", journal.decisions)
 	}
 }
+
+func TestPreparedWriteFailsClosedButExactRetryResolvesIt(t *testing.T) {
+	store, err := OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	data := []byte("durable evidence")
+	intent, err := newWriteIntent("evidence", mustDigestLeaf(t, data), data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intentBytes, err := json.Marshal(intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := createOrVerifyRaw(store.writesFD, intent.Key+".prepared.json", intentBytes); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Preflight(testScope()); err == nil {
+		t.Fatal("an unresolved prepared write must make the registry unverifiable")
+	}
+	if _, err := store.PutEvidence(data); err != nil {
+		t.Fatalf("only the exact prepared write may be resumed: %v", err)
+	}
+	if _, err := store.verifyWriteJournal(); err != nil {
+		t.Fatalf("completed retry must close its write-ahead record: %v", err)
+	}
+	other := []byte("other evidence")
+	otherIntent, err := newWriteIntent("evidence", mustDigestLeaf(t, other), other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherBytes, err := json.Marshal(otherIntent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := createOrVerifyRaw(store.writesFD, otherIntent.Key+".prepared.json", otherBytes); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.PutEvidence([]byte("third evidence")); err == nil {
+		t.Fatal("a different unresolved write must block later mutations")
+	}
+}
+
+func mustDigestLeaf(t *testing.T, data []byte) string {
+	t.Helper()
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}

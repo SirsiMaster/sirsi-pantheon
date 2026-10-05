@@ -67,11 +67,15 @@ projection may index hashes, but it is rebuildable from those events and cannot
 rewrite their evidence. This extends existing Ma'at governance; it does not create
 another router home or a second SNE registry.
 
-Evidence is stored create-only by computed digest. Readers verify bytes before
-use. Catalogs derive artifact digests from regular-file identities; manually
+Evidence is stored create-only by computed digest. Before a governed evidence,
+incident, or transition leaf is created, Ma'at persists a hash-bound write-ahead
+intent; only a separate create-only commit record makes that leaf eligible for
+preflight. A prepared-but-uncommitted intent is durable recovery debt: preflight
+fails closed, unrelated writes stop, and only a retry of the exact
+target-and-bytes tuple may complete it. Readers verify bytes before use. Catalogs derive artifact digests from regular-file identities; manually
 transcribed artifact digests are not canonical catalog inputs. A same-key repeat
 is idempotent, while changed evidence creates a new event and retains the prior
-receipt. Failed append or unreadable selected evidence prevents attestation.
+receipt. Failed append, unresolved write intent, or unreadable selected evidence prevents attestation.
 Concurrent writers must commit event and index updates transactionally. Recovery
 must distinguish a missing registry from a verified empty registry.
 

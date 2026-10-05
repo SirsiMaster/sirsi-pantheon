@@ -273,7 +273,69 @@ type Store struct {
 	evidenceFD   int
 	incidentFD   int
 	transitionFD int
+	writesFD     int
 	lockFD       int
+}
+
+// writeIntent is a tiny, create-only write-ahead record.  It is durable before
+// the governed leaf is created; a crash or persistence error therefore leaves
+// an explicit unresolved record instead of a plausible clean registry.
+type writeIntent struct {
+	Schema     string `json:"schema"`
+	Key        string `json:"key"`
+	Namespace  string `json:"namespace"`
+	Leaf       string `json:"leaf"`
+	SHA256     string `json:"sha256"`
+	ByteLength int    `json:"byte_length"`
+}
+
+type writeIntentDigest struct {
+	Schema     string `json:"schema"`
+	Namespace  string `json:"namespace"`
+	Leaf       string `json:"leaf"`
+	SHA256     string `json:"sha256"`
+	ByteLength int    `json:"byte_length"`
+}
+
+type writeCommit struct {
+	Schema    string `json:"schema"`
+	IntentKey string `json:"intent_key"`
+}
+
+func newWriteIntent(namespace, leaf string, expected []byte) (writeIntent, error) {
+	if namespace != "evidence" && namespace != "incidents" && namespace != "transitions" {
+		return writeIntent{}, errors.New("maat memory: invalid write namespace")
+	}
+	if leaf == "" || filepath.Base(leaf) != leaf || len(expected) == 0 || len(expected) > maxMemoryObjectBytes {
+		return writeIntent{}, errors.New("maat memory: invalid write intent")
+	}
+	sum := sha256.Sum256(expected)
+	d := writeIntentDigest{Schema: MemorySchema, Namespace: namespace, Leaf: leaf, SHA256: hex.EncodeToString(sum[:]), ByteLength: len(expected)}
+	b, err := json.Marshal(d)
+	if err != nil {
+		return writeIntent{}, err
+	}
+	key := sha256.Sum256(b)
+	return writeIntent{Schema: d.Schema, Key: hex.EncodeToString(key[:]), Namespace: d.Namespace, Leaf: d.Leaf, SHA256: d.SHA256, ByteLength: d.ByteLength}, nil
+}
+
+func (i writeIntent) validate() error {
+	if i.Schema != MemorySchema || !validDigest(i.Key) || !validDigest(i.SHA256) || i.ByteLength <= 0 || i.ByteLength > maxMemoryObjectBytes {
+		return errors.New("maat memory: invalid write intent envelope")
+	}
+	if (i.Namespace != "evidence" && i.Namespace != "incidents" && i.Namespace != "transitions") || i.Leaf == "" || filepath.Base(i.Leaf) != i.Leaf {
+		return errors.New("maat memory: invalid write intent target")
+	}
+	d := writeIntentDigest{Schema: i.Schema, Namespace: i.Namespace, Leaf: i.Leaf, SHA256: i.SHA256, ByteLength: i.ByteLength}
+	b, err := json.Marshal(d)
+	if err != nil {
+		return err
+	}
+	sum := sha256.Sum256(b)
+	if hex.EncodeToString(sum[:]) != i.Key {
+		return errors.New("maat memory: write intent key does not bind target")
+	}
+	return nil
 }
 
 func OpenStore(root string) (*Store, error) {
@@ -323,6 +385,16 @@ func OpenStore(root string) (*Store, error) {
 			_ = unix.Close(transitionFD)
 		}
 	}()
+	writesFD, err := openOrCreateDirectory(rootFD, "writes")
+	if err != nil {
+		return nil, err
+	}
+	closeWrites := true
+	defer func() {
+		if closeWrites {
+			_ = unix.Close(writesFD)
+		}
+	}()
 	lockFD, err := unix.Openat(rootFD, ".lock", unix.O_RDWR|unix.O_CREAT|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("maat memory: open registry lock: %w", err)
@@ -339,8 +411,8 @@ func OpenStore(root string) (*Store, error) {
 	if err := unix.Fsync(rootFD); err != nil {
 		return nil, fmt.Errorf("maat memory: fsync lock directory: %w", err)
 	}
-	closeRoot, closeEvidence, closeIncident, closeTransition, closeLock = false, false, false, false, false
-	return &Store{rootFD: rootFD, evidenceFD: evidenceFD, incidentFD: incidentFD, transitionFD: transitionFD, lockFD: lockFD}, nil
+	closeRoot, closeEvidence, closeIncident, closeTransition, closeWrites, closeLock = false, false, false, false, false, false
+	return &Store{rootFD: rootFD, evidenceFD: evidenceFD, incidentFD: incidentFD, transitionFD: transitionFD, writesFD: writesFD, lockFD: lockFD}, nil
 }
 
 func (s *Store) Close() error {
@@ -348,7 +420,7 @@ func (s *Store) Close() error {
 		return nil
 	}
 	var first error
-	for _, fd := range []*int{&s.lockFD, &s.transitionFD, &s.incidentFD, &s.evidenceFD, &s.rootFD} {
+	for _, fd := range []*int{&s.lockFD, &s.writesFD, &s.transitionFD, &s.incidentFD, &s.evidenceFD, &s.rootFD} {
 		if *fd >= 0 {
 			if err := unix.Close(*fd); err != nil && first == nil {
 				first = err
@@ -369,7 +441,7 @@ func (s *Store) PutEvidence(data []byte) (string, error) {
 		return "", err
 	}
 	defer s.unlock()
-	if err := createOrVerify(s.evidenceFD, digest, data); err != nil {
+	if err := s.createOrVerify("evidence", s.evidenceFD, digest, data); err != nil {
 		return "", fmt.Errorf("maat memory: store evidence: %w", err)
 	}
 	return digest, nil
@@ -400,7 +472,7 @@ func (s *Store) Append(incident Incident) error {
 	if err != nil {
 		return fmt.Errorf("maat memory: marshal incident: %w", err)
 	}
-	if err := createOrVerify(s.incidentFD, incident.Key+".json", data); err != nil {
+	if err := s.createOrVerify("incidents", s.incidentFD, incident.Key+".json", data); err != nil {
 		return fmt.Errorf("maat memory: append incident: %w", err)
 	}
 	return nil
@@ -462,7 +534,7 @@ func (s *Store) Transition(predecessorKey string, status IncidentStatus) (Incide
 	if err != nil {
 		return IncidentTransition{}, fmt.Errorf("maat memory: marshal transition: %w", err)
 	}
-	if err := createOrVerify(s.transitionFD, transition.Key+".json", encoded); err != nil {
+	if err := s.createOrVerify("transitions", s.transitionFD, transition.Key+".json", encoded); err != nil {
 		return IncidentTransition{}, fmt.Errorf("maat memory: append transition: %w", err)
 	}
 	return transition, nil
@@ -479,6 +551,10 @@ func (s *Store) Preflight(action Scope) (PreflightReceipt, error) {
 		return PreflightReceipt{}, err
 	}
 	defer s.unlock()
+	journalLines, err := s.verifyWriteJournal()
+	if err != nil {
+		return PreflightReceipt{Schema: MemorySchema, Action: action, Decision: PreflightUnverifiable, EvaluatedAtUTC: time.Now().UTC()}, err
+	}
 	names, err := readDirectoryNames(s.incidentFD)
 	if err != nil {
 		return PreflightReceipt{}, err
@@ -488,6 +564,9 @@ func (s *Store) Preflight(action Scope) (PreflightReceipt, error) {
 	receipt := PreflightReceipt{Schema: MemorySchema, Action: action, ActionManifestSHA256: hex.EncodeToString(actionDigest[:]), Decision: PreflightPass, EvaluatedAtUTC: time.Now().UTC()}
 	snapshot := sha256.New()
 	_, _ = snapshot.Write([]byte(MemorySchema + "\n"))
+	for _, line := range journalLines {
+		_, _ = snapshot.Write([]byte(line + "\n"))
+	}
 	incidents := make(map[string]Incident, len(names))
 	for _, name := range names {
 		if !strings.HasSuffix(name, ".json") || !validDigest(strings.TrimSuffix(name, ".json")) {
@@ -663,7 +742,10 @@ func (s *Store) unlock() {
 	}
 }
 
-func createOrVerify(parentFD int, name string, expected []byte) error {
+// createOrVerifyRaw is only used for the write journal's own create-only
+// records. Every governed evidence, incident, and transition leaf goes through
+// Store.createOrVerify so an intent survives a crash before the leaf exists.
+func createOrVerifyRaw(parentFD int, name string, expected []byte) error {
 	fd, err := unix.Openat(parentFD, name, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
 	if errors.Is(err, unix.EEXIST) {
 		actual, readErr := readExact(parentFD, name)
@@ -719,6 +801,139 @@ func createOrVerify(parentFD int, name string, expected []byte) error {
 		return errors.New("created object readback differs")
 	}
 	return nil
+}
+
+func (s *Store) createOrVerify(namespace string, parentFD int, name string, expected []byte) error {
+	if s == nil || s.writesFD < 0 {
+		return errors.New("maat memory: store is closed")
+	}
+	intent, err := newWriteIntent(namespace, name, expected)
+	if err != nil {
+		return err
+	}
+	if _, err := s.verifyWriteJournalAllow(intent.Key); err != nil {
+		return err
+	}
+	intentBytes, err := json.Marshal(intent)
+	if err != nil {
+		return fmt.Errorf("maat memory: marshal write intent: %w", err)
+	}
+	if err := createOrVerifyRaw(s.writesFD, intent.Key+".prepared.json", intentBytes); err != nil {
+		return fmt.Errorf("maat memory: persist write intent: %w", err)
+	}
+	if err := createOrVerifyRaw(parentFD, name, expected); err != nil {
+		// The durable prepared record is the recovery debt.  It binds the only
+		// permitted target and expected bytes, and prevents this registry from
+		// being accepted until a retry proves completion or an explicit resolver
+		// handles the residue.
+		return fmt.Errorf("maat memory: governed write remains prepared: %w", err)
+	}
+	commitBytes, err := json.Marshal(writeCommit{Schema: MemorySchema, IntentKey: intent.Key})
+	if err != nil {
+		return fmt.Errorf("maat memory: marshal write commit: %w", err)
+	}
+	if err := createOrVerifyRaw(s.writesFD, intent.Key+".committed.json", commitBytes); err != nil {
+		return fmt.Errorf("maat memory: governed write commit remains prepared: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) verifyWriteJournal() ([]string, error) {
+	return s.verifyWriteJournalAllow("")
+}
+
+// verifyWriteJournalAllow is used only by a retry of the exact prepared
+// intent.  It never permits a different pending write to be bypassed.
+func (s *Store) verifyWriteJournalAllow(allowedPreparedKey string) ([]string, error) {
+	if s == nil || s.writesFD < 0 {
+		return nil, errors.New("maat memory: store is closed")
+	}
+	names, err := readDirectoryNames(s.writesFD)
+	if err != nil {
+		return nil, err
+	}
+	prepared := make(map[string]writeIntent)
+	committed := make(map[string]bool)
+	lines := make([]string, 0, len(names))
+	for _, name := range names {
+		var key string
+		switch {
+		case strings.HasSuffix(name, ".prepared.json"):
+			key = strings.TrimSuffix(name, ".prepared.json")
+			if !validDigest(key) {
+				return nil, errors.New("maat memory: malformed prepared write record")
+			}
+			data, err := readExact(s.writesFD, name)
+			if err != nil {
+				return nil, err
+			}
+			var intent writeIntent
+			if err := json.Unmarshal(data, &intent); err != nil || intent.Key != key || intent.validate() != nil {
+				return nil, errors.New("maat memory: invalid prepared write record")
+			}
+			prepared[key] = intent
+			digest := sha256.Sum256(data)
+			lines = append(lines, "writes/"+name+"\x00"+hex.EncodeToString(digest[:]))
+		case strings.HasSuffix(name, ".committed.json"):
+			key = strings.TrimSuffix(name, ".committed.json")
+			if !validDigest(key) {
+				return nil, errors.New("maat memory: malformed committed write record")
+			}
+			data, err := readExact(s.writesFD, name)
+			if err != nil {
+				return nil, err
+			}
+			var commit writeCommit
+			if err := json.Unmarshal(data, &commit); err != nil || commit.Schema != MemorySchema || commit.IntentKey != key {
+				return nil, errors.New("maat memory: invalid committed write record")
+			}
+			committed[key] = true
+			digest := sha256.Sum256(data)
+			lines = append(lines, "writes/"+name+"\x00"+hex.EncodeToString(digest[:]))
+		default:
+			return nil, errors.New("maat memory: unrecognized write journal record")
+		}
+	}
+	for key, intent := range prepared {
+		if !committed[key] {
+			if key == allowedPreparedKey {
+				continue
+			}
+			return nil, fmt.Errorf("maat memory: unresolved prepared write %s", key)
+		}
+		fd, err := s.namespaceFD(intent.Namespace)
+		if err != nil {
+			return nil, err
+		}
+		data, err := readExact(fd, intent.Leaf)
+		if err != nil {
+			return nil, fmt.Errorf("maat memory: committed target unreadable: %w", err)
+		}
+		sum := sha256.Sum256(data)
+		if len(data) != intent.ByteLength || hex.EncodeToString(sum[:]) != intent.SHA256 {
+			return nil, errors.New("maat memory: committed target differs from intent")
+		}
+	}
+	for key := range committed {
+		if _, ok := prepared[key]; !ok {
+			return nil, errors.New("maat memory: write commit has no intent")
+		}
+	}
+	sort.Strings(lines)
+	return lines, nil
+}
+
+func (s *Store) namespaceFD(namespace string) (int, error) {
+	switch namespace {
+	case "evidence":
+		return s.evidenceFD, nil
+	case "incidents":
+		return s.incidentFD, nil
+	case "transitions":
+		return s.transitionFD, nil
+	default:
+		return -1, errors.New("maat memory: unknown write namespace")
+	}
 }
 
 func readExact(parentFD int, name string) ([]byte, error) {
