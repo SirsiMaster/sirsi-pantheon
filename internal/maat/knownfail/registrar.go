@@ -59,8 +59,21 @@ func testExists(repoDir, name string) bool {
 	if !testNameRe.MatchString(name) {
 		return false
 	}
-	out, err := exec.Command("git", "-C", repoDir, "grep", "--untracked", "-l", "func "+name+"(", "--", "*_test.go").Output()
+	out, err := gitCmd(repoDir, "grep", "--untracked", "-l", "func "+name+"(", "--", "*_test.go").Output()
 	return err == nil && strings.TrimSpace(string(out)) != ""
+}
+
+// gitCmd runs git in dir with the GIT_* environment removed: inside a git hook
+// GIT_DIR/GIT_INDEX_FILE point at the pushing repository and would silently redirect
+// the query.
+func gitCmd(dir string, args ...string) *exec.Cmd {
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "GIT_") {
+			cmd.Env = append(cmd.Env, kv)
+		}
+	}
+	return cmd
 }
 
 func mutate(path string, fn func(*Catalog) error) error {

@@ -25,7 +25,7 @@ func TestEveryGuardTestExistsInTheRepo(t *testing.T) {
 		if e.Status != "resolved" {
 			continue
 		}
-		out, err := exec.Command("git", "-C", repoRoot(t), "grep", "--untracked", "-l", "func "+e.Guard.Ref+"(", "--", "*_test.go").Output()
+		out, err := gitCmd(repoRoot(t), "grep", "--untracked", "-l", "func "+e.Guard.Ref+"(", "--", "*_test.go").Output()
 		if err != nil || strings.TrimSpace(string(out)) == "" {
 			t.Errorf("known failure %q names guard %s, which is not a test in the repo", e.ID, e.Guard.Ref)
 		}
@@ -34,7 +34,7 @@ func TestEveryGuardTestExistsInTheRepo(t *testing.T) {
 
 func repoRoot(t *testing.T) string {
 	t.Helper()
-	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	out, err := gitCmd(".", "rev-parse", "--show-toplevel").Output()
 	if err != nil {
 		wd, _ := os.Getwd()
 		return wd
