@@ -76,11 +76,11 @@ func TestHomeServesTheDashboardAndItsAssets(t *testing.T) {
 	if code != 200 || !strings.Contains(css, "--emerald:") || !strings.Contains(css, "prefers-color-scheme: dark") {
 		t.Fatalf("tokens.css not derived from the brand palette: %d %q", code, css)
 	}
-	if _, _, code := body("/assets/nope.css"); code != 404 {
-		t.Fatalf("unknown asset = %d, want 404", code)
+	if _, _, code2 := body("/assets/nope.css"); code2 != 404 {
+		t.Fatalf("unknown asset = %d, want 404", code2)
 	}
-	if _, _, code := body("/missing"); code != 404 {
-		t.Fatalf("unknown path = %d, want 404 (the home handler must not swallow every route)", code)
+	if _, _, code3 := body("/missing"); code3 != 404 {
+		t.Fatalf("unknown path = %d, want 404 (the home handler must not swallow every route)", code3)
 	}
 	classic, _, code := body("/classic")
 	if code != 200 || !strings.Contains(classic, "Horus") {
