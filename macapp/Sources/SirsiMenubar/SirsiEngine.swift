@@ -870,7 +870,8 @@ final class SirsiEngine: ObservableObject {
         }
     }
 
-    func loadRouterBoard() async {
+    @discardableResult
+    func loadRouterBoard() async -> Bool {
         routerLoading = true
         defer { routerLoading = false }
         // Freshness gate: the producer-written board is trusted only while
@@ -883,7 +884,7 @@ final class SirsiEngine: ObservableObject {
             .flatMap { try? JSONDecoder().decode(RouterBoard.self, from: $0) }
         if fresh, let board = fileBoard {
             routerBoard = board
-            return
+            return true
         }
         // Stale or missing board — read the live fabric directly (runJSON
         // captures stdout only so a banner can't corrupt the JSON). node-status
@@ -894,7 +895,9 @@ final class SirsiEngine: ObservableObject {
         if var board = try? JSONDecoder().decode(RouterBoard.self, from: out) {
             if board.localLLM == nil { board.localLLM = fileBoard?.localLLM }
             routerBoard = board
+            return true
         }
+        return false
     }
 
     // ── owner-gated items (board schema 1.1.0) ───────────────────────────────

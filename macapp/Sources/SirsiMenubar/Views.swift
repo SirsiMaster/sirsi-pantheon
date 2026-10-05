@@ -1995,6 +1995,7 @@ func openTerminal() {
 struct RaFabricView: View {
     @ObservedObject var engine: SirsiEngine
     @State private var resultLine: String?
+    @State private var outboxRecheckMessage: String?
     @State private var showingHandoff = false
     @Environment(\.snapshotMode) private var snapshotMode
 
@@ -2139,7 +2140,12 @@ struct RaFabricView: View {
                                               onResult: { resultLine = $0 })
                         }
                         if !engine.routerOutboxBlockers.isEmpty {
-                            OutboxBlockerCard(blocked: engine.routerOutboxBlockers)
+                            OutboxBlockerCard(
+                                engine: engine,
+                                blocked: engine.routerOutboxBlockers,
+                                onHandoff: { showingHandoff = true },
+                                onRecheckResult: { outboxRecheckMessage = $0 }
+                            )
                         }
                     } else if engine.routerBoard != nil {
                         HStack(spacing: 8) {
@@ -2215,6 +2221,13 @@ struct RaFabricView: View {
                     if let line = resultLine {
                         Text(line).sirsiFont(.caption, design: .monospaced).foregroundStyle(.secondary)
                             .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    if let outboxRecheckMessage {
+                        Text(outboxRecheckMessage)
+                            .sirsiFont(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
@@ -2562,13 +2575,14 @@ struct DaemonBlockerCard: View {
     }
 }
 
-// OutboxBlockerCard surfaces an unreadable spool relay outbox (ADR-069). No
-// one-click fix: the underlying cause is a directory permission/filesystem
-// condition on the relay host, which the operator must clear by hand — the
-// card's job is only to make the condition VISIBLE, since the whole point of
-// PR #931 was that this state used to read as a silent, confident zero.
+// An unreadable outbox has unknown depth (ADR-069). Recovery stays with the
+// relay host owner; Ra offers a fresh read, a typed handoff, and case review.
 struct OutboxBlockerCard: View {
+    @ObservedObject var engine: SirsiEngine
     let blocked: [RBOutbox]
+    let onHandoff: () -> Void
+    let onRecheckResult: (String) -> Void
+    @State private var rechecking = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -2577,7 +2591,7 @@ struct OutboxBlockerCard: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("\(blocked.count) relay outbox\(blocked.count == 1 ? "" : "es") unreadable")
                         .sirsiFont(13, weight: .semibold)
-                    Text("Queue depth is unknown, not zero — check the directory by hand.")
+                    Text("Queue depth is unknown, not zero.")
                         .sirsiFont(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -2587,11 +2601,63 @@ struct OutboxBlockerCard: View {
                     .sirsiFont(.caption, design: .monospaced).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+
+            resolutionLevel(1, "Recheck the fabric", "Read the current Ra board again. This checks whether the unreadable status remains; it does not repair the outbox or verify queued delivery.") {
+                SnapshotActionButton(disabled: rechecking || engine.busy) {
+                    Task {
+                        rechecking = true
+                        let readSucceeded = await engine.loadRouterBoard()
+                        let message = outboxRecheckMessage(
+                            readSucceeded: readSucceeded,
+                            scopedAgents: Set(blocked.map(\.agent)),
+                            currentUnreadableAgents: Set(engine.routerOutboxBlockers.map(\.agent))
+                        )
+                        onRecheckResult(message)
+                        rechecking = false
+                    }
+                } label: {
+                    Label(rechecking ? "Rechecking…" : "Recheck outboxes", systemImage: "arrow.clockwise")
+                        .frame(maxWidth: .infinity)
+                }
+            }
+
+            resolutionLevel(2, "Guided host recovery", "Ask the relay host owner to inspect this outbox and correct access through the host’s approved process. This view does not change filesystem permissions or ownership.") {
+                SnapshotActionButton(disabled: engine.busy, action: onHandoff) {
+                    Label("Open typed Ra handoff", systemImage: "arrowshape.turn.up.right.fill")
+                        .frame(maxWidth: .infinity)
+                }
+            }
+
+            resolutionLevel(3, "Ma’at Casebook review", "Open the local casebook with this unreadable outbox and its affected agents as the review context.") {
+                NavLink {
+                    MaatCasebookView(engine: engine, contextCheck: outboxCasebookContext(agents: blocked.map(\.agent)))
+                } label: {
+                    Label("Review in Ma’at Casebook", systemImage: "checkmark.seal")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+            }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 9).fill(Color.red.opacity(0.10)))
     }
+}
+
+func outboxRecheckMessage(readSucceeded: Bool, scopedAgents: Set<String>,
+                          currentUnreadableAgents: Set<String>) -> String {
+    guard readSucceeded else {
+        return "Recheck could not confirm a fresh fabric read. The last known status is retained; queue depth remains unknown."
+    }
+    let remaining = scopedAgents.intersection(currentUnreadableAgents).sorted()
+    guard remaining.isEmpty else {
+        return "Fresh fabric read still reports unreadable outboxes for \(remaining.joined(separator: ", ")). Queue depth remains unknown."
+    }
+    return "Fresh fabric read no longer reports these outboxes as unreadable. This confirms blocker status only; queue depth and delivery remain unverified."
+}
+
+func outboxCasebookContext(agents: [String]) -> String {
+    "Unreadable Ra relay outbox — agents: \(Array(Set(agents)).sorted().joined(separator: ", "))"
 }
 
 // OutboxRetryCard surfaces readable outboxes holding queued-for-retry

@@ -138,6 +138,55 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertFalse(header.contains(".buttonStyle(.borderedProminent)"))
     }
 
+    func testOutboxRecheckOutcomeRequiresFreshReadAndPreservesUnknownDepth() {
+        let failed = outboxRecheckMessage(readSucceeded: false,
+                                          scopedAgents: ["claude-pantheon"],
+                                          currentUnreadableAgents: [])
+        XCTAssertTrue(failed.contains("could not confirm a fresh fabric read"))
+        XCTAssertTrue(failed.contains("queue depth remains unknown"))
+
+        let stillBlocked = outboxRecheckMessage(readSucceeded: true,
+                                                scopedAgents: ["claude-pantheon", "codex-pantheon"],
+                                                currentUnreadableAgents: ["claude-pantheon"])
+        XCTAssertTrue(stillBlocked.contains("still reports unreadable outboxes for claude-pantheon"))
+        XCTAssertTrue(stillBlocked.contains("Queue depth remains unknown"))
+
+        let cleared = outboxRecheckMessage(readSucceeded: true,
+                                           scopedAgents: ["codex-pantheon"],
+                                           currentUnreadableAgents: [])
+        XCTAssertTrue(cleared.contains("no longer reports these outboxes as unreadable"))
+        XCTAssertTrue(cleared.contains("queue depth and delivery remain unverified"))
+    }
+
+    func testOutboxCasebookContextNamesAffectedAgentsDeterministically() {
+        XCTAssertEqual(outboxCasebookContext(agents: ["claude-pantheon", "codex-pantheon", "claude-pantheon"]),
+                       "Unreadable Ra relay outbox — agents: claude-pantheon, codex-pantheon")
+    }
+
+    func testUnreadableOutboxCardHasThreeSafeResolutionRoutes() throws {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let viewsURL = testFile.deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/SirsiMenubar/Views.swift")
+        let source = try String(contentsOf: viewsURL, encoding: .utf8)
+        let cardStart = try XCTUnwrap(source.range(of: "struct OutboxBlockerCard: View {"))
+        let cardEnd = try XCTUnwrap(source.range(of: "struct OutboxRetryCard: View {", range: cardStart.upperBound..<source.endIndex))
+        let card = String(source[cardStart.lowerBound..<cardEnd.lowerBound])
+
+        XCTAssertTrue(card.contains("Queue depth is unknown, not zero."))
+        XCTAssertFalse(card.contains("check the directory by hand"))
+        XCTAssertTrue(card.contains("await engine.loadRouterBoard()"))
+        XCTAssertTrue(card.contains("onHandoff"))
+        XCTAssertTrue(card.contains("resolutionLevel(1, \"Recheck the fabric\""))
+        XCTAssertTrue(card.contains("resolutionLevel(2, \"Guided host recovery\""))
+        XCTAssertTrue(card.contains("resolutionLevel(3, \"Ma’at Casebook review\""))
+        XCTAssertTrue(card.contains("MaatCasebookView(engine: engine, contextCheck: outboxCasebookContext"))
+        XCTAssertTrue(card.contains("filesystem permissions or ownership"))
+        XCTAssertTrue(source.contains("onHandoff: { showingHandoff = true }"))
+        XCTAssertTrue(source.contains("RaHandoffView(engine: engine, isPresented: $showingHandoff)"))
+    }
+
     func testVerifiedOutcomeIsHiddenAfterFindingOrObservationChanges() throws {
         let verified = try decodeFinding(#"{"check":"Disk Pressure","severity":0,"message":"Clear"}"#)
         let changed = try decodeFinding(#"{"check":"Disk Pressure","severity":3,"message":"Critical again","fix":"sirsi clean --confirm"}"#)
