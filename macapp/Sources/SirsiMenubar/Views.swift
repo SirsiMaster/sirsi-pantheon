@@ -1996,6 +1996,10 @@ struct RaFabricView: View {
     @ObservedObject var engine: SirsiEngine
     @State private var resultLine: String?
     @State private var outboxRecheckMessage: String?
+    // A force-live read can be incomplete (for example, an old relay omits a
+    // former agent). Keep the last affected scope actionable until the same
+    // live read supplies explicit readable evidence for every affected agent.
+    @State private var retainedOutboxBlockers: [RBOutbox] = []
     @State private var showingHandoff = false
     @Environment(\.snapshotMode) private var snapshotMode
 
@@ -2007,6 +2011,18 @@ struct RaFabricView: View {
         } else {
             ScrollView { content() }
         }
+    }
+
+    private var visibleOutboxBlockers: [RBOutbox] {
+        var byAgent = Dictionary(uniqueKeysWithValues: retainedOutboxBlockers.map { ($0.agent, $0) })
+        for blocker in engine.routerOutboxBlockers {
+            byAgent[blocker.agent] = blocker
+        }
+        return byAgent.values.sorted { $0.agent < $1.agent }
+    }
+
+    private var hasVisibleBlockers: Bool {
+        engine.routerHasBlockers || !visibleOutboxBlockers.isEmpty
     }
 
     var body: some View {
@@ -2128,7 +2144,7 @@ struct RaFabricView: View {
                     }
 
                     // ── Blockers (current + fixable ONLY) ───────────────────
-                    if engine.routerBoard != nil && engine.routerHasBlockers {
+                    if engine.routerBoard != nil && hasVisibleBlockers {
                         SectionLabel("BLOCKERS — FIX TO UNSTRAND WORK", tint: .red)
 
                         ForEach(engine.routerAuthBlockers) { h in
@@ -2139,12 +2155,15 @@ struct RaFabricView: View {
                                               broken: engine.routerDaemonBlockers,
                                               onResult: { resultLine = $0 })
                         }
-                        if !engine.routerOutboxBlockers.isEmpty {
+                        if !visibleOutboxBlockers.isEmpty {
                             OutboxBlockerCard(
                                 engine: engine,
-                                blocked: engine.routerOutboxBlockers,
+                                blocked: visibleOutboxBlockers,
                                 onHandoff: { showingHandoff = true },
-                                onRecheckResult: { outboxRecheckMessage = $0 }
+                                onRecheckResult: { outcome in
+                                    outboxRecheckMessage = outcome.message
+                                    retainedOutboxBlockers = outcome.requiresRecovery ? visibleOutboxBlockers : []
+                                }
                             )
                         }
                     } else if engine.routerBoard != nil {
@@ -2581,7 +2600,7 @@ struct OutboxBlockerCard: View {
     @ObservedObject var engine: SirsiEngine
     let blocked: [RBOutbox]
     let onHandoff: () -> Void
-    let onRecheckResult: (String) -> Void
+    let onRecheckResult: (OutboxRecheckOutcome) -> Void
     @State private var rechecking = false
 
     var body: some View {
@@ -2607,12 +2626,12 @@ struct OutboxBlockerCard: View {
                     Task {
                         rechecking = true
                         let readSucceeded = await engine.loadRouterBoard(forceLive: true)
-                        let message = outboxRecheckMessage(
+                        let outcome = outboxRecheckOutcome(
                             readSucceeded: readSucceeded,
                             scopedAgents: Set(blocked.map(\.agent)),
                             currentOutboxes: engine.routerBoard?.outbox
                         )
-                        onRecheckResult(message)
+                        onRecheckResult(outcome)
                         rechecking = false
                     }
                 } label: {
@@ -2644,36 +2663,55 @@ struct OutboxBlockerCard: View {
     }
 }
 
-func outboxRecheckMessage(readSucceeded: Bool, scopedAgents: Set<String>,
-                          currentOutboxes: [RBOutbox]?) -> String {
+struct OutboxRecheckOutcome: Equatable {
+    let message: String
+    let requiresRecovery: Bool
+}
+
+func outboxRecheckOutcome(readSucceeded: Bool, scopedAgents: Set<String>,
+                          currentOutboxes: [RBOutbox]?) -> OutboxRecheckOutcome {
     guard readSucceeded else {
-        return "Recheck could not confirm a fresh live fabric read. The last known status is retained; queue depth remains unknown."
+        return OutboxRecheckOutcome(
+            message: "Recheck could not confirm a fresh live fabric read. The last known status is retained; queue depth remains unknown.",
+            requiresRecovery: true
+        )
     }
     guard !scopedAgents.isEmpty else {
-        return "Fresh live fabric read completed, but no affected-agent scope is available to confirm blocker clearance. Queue depth remains unknown."
+        return OutboxRecheckOutcome(
+            message: "Fresh live fabric read completed, but no affected-agent scope is available to confirm blocker clearance. Queue depth remains unknown.",
+            requiresRecovery: true
+        )
     }
     let recordsByAgent = Dictionary(grouping: currentOutboxes ?? [], by: \.agent)
+    guard currentOutboxes != nil else {
+        return OutboxRecheckOutcome(
+            message: "Fresh live fabric read did not include outbox telemetry. Blocker clearance is unverified; queue depth remains unknown.",
+            requiresRecovery: true
+        )
+    }
     let unreadable = scopedAgents.filter { agent in
         recordsByAgent[agent]?.contains(where: { $0.unreadable == true }) ?? false
     }.sorted()
-    let unverified = scopedAgents.filter { agent in
-        guard let records = recordsByAgent[agent], !records.isEmpty else { return true }
-        return records.contains(where: { $0.unreadable == nil })
-    }.sorted()
-
-    var messages: [String] = []
     if !unreadable.isEmpty {
-        messages.append("Fresh live board still reports unreadable outboxes for \(unreadable.joined(separator: ", ")).")
+        return OutboxRecheckOutcome(
+            message: "Fresh live board still reports unreadable outboxes for \(unreadable.joined(separator: ", ")). Queue depth remains unknown.",
+            requiresRecovery: true
+        )
     }
+    let unverified = scopedAgents.filter { agent in
+        guard let records = recordsByAgent[agent], records.count == 1, let record = records.first else { return true }
+        return record.observed != true || record.readable != true || record.unreadable != false
+    }.sorted()
     if !unverified.isEmpty {
-        let scope = currentOutboxes == nil ? "Outbox telemetry is missing" : "No explicit readable outbox record exists"
-        messages.append("\(scope) for \(unverified.joined(separator: ", ")); blocker clearance is unverified.")
+        return OutboxRecheckOutcome(
+            message: "No explicit readable outbox record exists for \(unverified.joined(separator: ", ")); blocker clearance is unverified. Queue depth remains unknown.",
+            requiresRecovery: true
+        )
     }
-    guard messages.isEmpty else {
-        messages.append("Queue depth remains unknown.")
-        return messages.joined(separator: " ")
-    }
-    return "Fresh live board includes explicit readable records for each affected agent and no longer marks their outboxes unreadable. Queue depth and delivery remain unverified."
+    return OutboxRecheckOutcome(
+        message: "Fresh live board includes explicit readable records for each affected agent and no longer marks their outboxes unreadable. Queue depth and delivery remain unverified.",
+        requiresRecovery: false
+    )
 }
 
 // OutboxRetryCard surfaces readable outboxes holding queued-for-retry

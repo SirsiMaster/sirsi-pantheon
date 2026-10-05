@@ -366,13 +366,18 @@ struct RBStranded: Decodable, Identifiable {
 struct RBOutbox: Decodable, Identifiable {
     var id: String { agent }
     let agent: String
+    // All three fields are required by the current spool producer. They stay
+    // optional here so an older board decodes, but missing fields are never
+    // enough evidence to clear a previously unreadable outbox.
+    let observed: Bool?
+    let readable: Bool?
     let queuedForRetry: Int?
     let unreadable: Bool?
     let error: String?
     enum CodingKeys: String, CodingKey {
         case agent
         case queuedForRetry = "queued_for_retry"
-        case unreadable, error
+        case observed, readable, unreadable, error
     }
 }
 

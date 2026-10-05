@@ -14,7 +14,7 @@ final class OutboxReachabilityTests: XCTestCase {
 
     func testUnreadableOutboxIsNotSilentlyEmpty() {
         let board = decode("""
-        {"outbox": [{"agent": "codex-pantheon", "unreadable": true, "error": "permission denied"}]}
+        {"outbox": [{"agent": "codex-pantheon", "observed": true, "readable": false, "queued_for_retry": 0, "unreadable": true, "error": "permission denied"}]}
         """)
         let engine = SirsiEngine()
         engine.routerBoard = board
@@ -26,7 +26,7 @@ final class OutboxReachabilityTests: XCTestCase {
 
     func testQueuedButReadableOutboxIsNotABlocker() {
         let board = decode("""
-        {"outbox": [{"agent": "codex-pantheon", "queued_for_retry": 3}]}
+        {"outbox": [{"agent": "codex-pantheon", "observed": true, "readable": true, "queued_for_retry": 3, "unreadable": false}]}
         """)
         let engine = SirsiEngine()
         engine.routerBoard = board
@@ -42,7 +42,7 @@ final class OutboxReachabilityTests: XCTestCase {
     // "not a blocker".
     func testQueuedForRetryReachesReadOnlyVisibilityEvenWhenHealthy() {
         let board = decode("""
-        {"outbox": [{"agent": "codex-pantheon", "queued_for_retry": 3}]}
+        {"outbox": [{"agent": "codex-pantheon", "observed": true, "readable": true, "queued_for_retry": 3, "unreadable": false}]}
         """)
         let engine = SirsiEngine()
         engine.routerBoard = board
@@ -57,7 +57,7 @@ final class OutboxReachabilityTests: XCTestCase {
     // must not ALSO double up in the nonblocking retry projection.
     func testUnreadableOutboxIsExcludedFromRetryProjection() {
         let board = decode("""
-        {"outbox": [{"agent": "codex-pantheon", "unreadable": true, "error": "permission denied"}]}
+        {"outbox": [{"agent": "codex-pantheon", "observed": true, "readable": false, "queued_for_retry": 0, "unreadable": true, "error": "permission denied"}]}
         """)
         let engine = SirsiEngine()
         engine.routerBoard = board

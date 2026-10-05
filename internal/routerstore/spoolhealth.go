@@ -22,19 +22,20 @@ import (
 // nil/nil — zero held items, indistinguishable from genuinely empty).
 type SpoolAgentOutbox struct {
 	Agent          string `json:"agent"`
-	QueuedForRetry int    `json:"queued_for_retry,omitempty"`
-	Unreadable     bool   `json:"unreadable,omitempty"`
+	Observed       bool   `json:"observed"`
+	Readable       bool   `json:"readable"`
+	QueuedForRetry int    `json:"queued_for_retry"`
+	Unreadable     bool   `json:"unreadable"`
 	Error          string `json:"error,omitempty"`
 }
 
-// SpoolOutboxHealth lists every agent under spoolRoot that has a held outbox
-// item OR an unreadable outbox directory, sorted by agent id. It only reads
-// <spoolRoot>/<agent>/outbox/ — it never drains, retries, or deletes
-// anything. An absent outbox directory is legitimately quiet (no entry); any
-// other read failure (permission denied, not a directory, ...) is reported
-// as Unreadable, never silently counted as zero. Call it only on a host that
-// actually runs the relay (routerstore.SpoolDir(SIRSI_ROUTER_URL) != "");
-// elsewhere spoolRoot will not exist and this returns that error honestly.
+// SpoolOutboxHealth reports every observed agent directory under spoolRoot,
+// sorted by agent id. Only a listed outbox directory has Readable=true; a
+// missing directory remains an explicit observation with Readable=false so a
+// consumer cannot mistake absence for an empty readable queue. This only reads
+// the filesystem; it never drains, retries, or deletes anything. Call it only
+// on a host that actually runs the relay (routerstore.SpoolDir(SIRSI_ROUTER_URL)
+// != ""); elsewhere no outbox observation is emitted.
 func SpoolOutboxHealth(spoolRoot string) ([]SpoolAgentOutbox, error) {
 	entries, err := os.ReadDir(spoolRoot)
 	if err != nil {
@@ -48,9 +49,16 @@ func SpoolOutboxHealth(spoolRoot string) ([]SpoolAgentOutbox, error) {
 		files, rErr := os.ReadDir(filepath.Join(spoolRoot, e.Name(), "outbox"))
 		if rErr != nil {
 			if errors.Is(rErr, os.ErrNotExist) {
-				continue // no outbox at all — legitimately quiet
+				out = append(out, SpoolAgentOutbox{
+					Agent: e.Name(), Observed: true, Readable: false,
+					Error: "outbox directory is missing",
+				})
+				continue
 			}
-			out = append(out, SpoolAgentOutbox{Agent: e.Name(), Unreadable: true, Error: rErr.Error()})
+			out = append(out, SpoolAgentOutbox{
+				Agent: e.Name(), Observed: true, Readable: false,
+				Unreadable: true, Error: rErr.Error(),
+			})
 			continue
 		}
 		count := 0
@@ -59,10 +67,9 @@ func SpoolOutboxHealth(spoolRoot string) ([]SpoolAgentOutbox, error) {
 				count++
 			}
 		}
-		if count == 0 {
-			continue
-		}
-		out = append(out, SpoolAgentOutbox{Agent: e.Name(), QueuedForRetry: count})
+		out = append(out, SpoolAgentOutbox{
+			Agent: e.Name(), Observed: true, Readable: true, QueuedForRetry: count,
+		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Agent < out[j].Agent })
 	return out, nil

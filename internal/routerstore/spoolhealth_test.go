@@ -1,6 +1,7 @@
 package routerstore
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -20,14 +21,15 @@ func TestSpoolOutboxHealth(t *testing.T) {
 		}
 	}
 
-	// agent-b: outbox dir exists but is empty — must NOT appear in the result
-	// (a quiet lane reads as quiet, not as a zero-count row).
+	// agent-b: outbox dir exists and is readable but empty — this explicit zero
+	// is the evidence a consumer needs to clear a previously unreadable agent.
 	bOutbox := filepath.Join(spool, "agent-b", "outbox")
 	if err := os.MkdirAll(bOutbox, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	// agent-c: no outbox dir at all — same as agent-b, absent from the result.
+	// agent-c: observed agent directory but missing outbox dir is not readable
+	// evidence and must not be confused with agent-b's explicit empty queue.
 	if err := os.MkdirAll(filepath.Join(spool, "agent-c"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -36,11 +38,31 @@ func TestSpoolOutboxHealth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SpoolOutboxHealth: %v", err)
 	}
-	if len(got) != 1 {
-		t.Fatalf("want 1 agent with held items, got %d: %+v", len(got), got)
+	if len(got) != 3 {
+		t.Fatalf("want all 3 observed agent directories, got %d: %+v", len(got), got)
 	}
-	if got[0].Agent != "agent-a" || got[0].QueuedForRetry != 2 {
+	if got[0].Agent != "agent-a" || got[0].QueuedForRetry != 2 || !got[0].Observed || !got[0].Readable {
 		t.Fatalf("want agent-a with 2 queued, got %+v", got[0])
+	}
+	if got[1].Agent != "agent-b" || !got[1].Observed || !got[1].Readable || got[1].QueuedForRetry != 0 || got[1].Unreadable {
+		t.Fatalf("want agent-b explicitly readable and empty, got %+v", got[1])
+	}
+	if got[2].Agent != "agent-c" || !got[2].Observed || got[2].Readable || got[2].Unreadable || got[2].Error == "" {
+		t.Fatalf("want agent-c observed but unverified because its outbox directory is missing, got %+v", got[2])
+	}
+
+	wire, err := json.Marshal(got[1])
+	if err != nil {
+		t.Fatalf("marshal readable empty outbox: %v", err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(wire, &fields); err != nil {
+		t.Fatalf("decode readable empty outbox JSON: %v", err)
+	}
+	for key, want := range map[string]any{"observed": true, "readable": true, "queued_for_retry": float64(0), "unreadable": false} {
+		if fields[key] != want {
+			t.Errorf("wire %s = %v, want %v in %s", key, fields[key], want, wire)
+		}
 	}
 }
 
@@ -103,7 +125,7 @@ func TestSpoolOutboxHealth_UnreadableOutboxIsNotSilentlyEmpty(t *testing.T) {
 	if len(got) != 1 || got[0].Agent != "agent-a" {
 		t.Fatalf("want 1 entry for agent-a, got %+v", got)
 	}
-	if !got[0].Unreadable || got[0].Error == "" {
+	if !got[0].Observed || got[0].Readable || !got[0].Unreadable || got[0].Error == "" {
 		t.Fatalf("want agent-a reported as Unreadable with an error, got %+v (a silent empty reads as all-clear)", got[0])
 	}
 	if got[0].QueuedForRetry != 0 {

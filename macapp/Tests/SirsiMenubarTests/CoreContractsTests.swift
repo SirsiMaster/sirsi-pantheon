@@ -139,46 +139,53 @@ final class CoreContractsTests: XCTestCase {
     }
 
     func testOutboxRecheckOutcomeRequiresFreshReadAndPreservesUnknownDepth() {
-        let failed = outboxRecheckMessage(readSucceeded: false,
+        let failed = outboxRecheckOutcome(readSucceeded: false,
                                           scopedAgents: ["claude-pantheon"],
                                           currentOutboxes: [])
-        XCTAssertTrue(failed.contains("could not confirm a fresh live fabric read"))
-        XCTAssertTrue(failed.contains("queue depth remains unknown"))
+        XCTAssertTrue(failed.message.contains("could not confirm a fresh live fabric read"))
+        XCTAssertTrue(failed.message.contains("queue depth remains unknown"))
+        XCTAssertTrue(failed.requiresRecovery)
 
-        let unreadable = RBOutbox(agent: "claude-pantheon", queuedForRetry: nil, unreadable: true, error: "permission denied")
-        let stillBlocked = outboxRecheckMessage(readSucceeded: true,
+        let unreadable = RBOutbox(agent: "claude-pantheon", observed: true, readable: false,
+                                  queuedForRetry: 0, unreadable: true, error: "permission denied")
+        let stillBlocked = outboxRecheckOutcome(readSucceeded: true,
                                                 scopedAgents: ["claude-pantheon", "codex-pantheon"],
                                                 currentOutboxes: [unreadable])
-        XCTAssertTrue(stillBlocked.contains("still reports unreadable outboxes for claude-pantheon"))
-        XCTAssertTrue(stillBlocked.contains("blocker clearance is unverified"))
-        XCTAssertTrue(stillBlocked.contains("Queue depth remains unknown"))
+        XCTAssertTrue(stillBlocked.message.contains("still reports unreadable outboxes for claude-pantheon"))
+        XCTAssertTrue(stillBlocked.message.contains("Queue depth remains unknown"))
+        XCTAssertTrue(stillBlocked.requiresRecovery)
 
-        let readable = RBOutbox(agent: "codex-pantheon", queuedForRetry: 0, unreadable: false, error: nil)
-        let cleared = outboxRecheckMessage(readSucceeded: true,
+        let readable = RBOutbox(agent: "codex-pantheon", observed: true, readable: true,
+                                 queuedForRetry: 0, unreadable: false, error: nil)
+        let cleared = outboxRecheckOutcome(readSucceeded: true,
                                            scopedAgents: ["codex-pantheon"],
                                            currentOutboxes: [readable])
-        XCTAssertTrue(cleared.contains("explicit readable records for each affected agent"))
-        XCTAssertTrue(cleared.contains("Queue depth and delivery remain unverified"))
+        XCTAssertTrue(cleared.message.contains("explicit readable records for each affected agent"))
+        XCTAssertTrue(cleared.message.contains("Queue depth and delivery remain unverified"))
+        XCTAssertFalse(cleared.requiresRecovery)
     }
 
     func testMissingOutboxTelemetryOrAffectedAgentRecordCannotConfirmClearance() {
         let scope: Set<String> = ["claude-pantheon", "codex-pantheon"]
-        let missingTelemetry = outboxRecheckMessage(readSucceeded: true, scopedAgents: scope, currentOutboxes: nil)
-        XCTAssertTrue(missingTelemetry.contains("Outbox telemetry is missing"))
-        XCTAssertTrue(missingTelemetry.contains("blocker clearance is unverified"))
-        XCTAssertFalse(missingTelemetry.contains("explicit readable records"))
+        let missingTelemetry = outboxRecheckOutcome(readSucceeded: true, scopedAgents: scope, currentOutboxes: nil)
+        XCTAssertTrue(missingTelemetry.message.contains("did not include outbox telemetry"))
+        XCTAssertTrue(missingTelemetry.message.localizedCaseInsensitiveContains("blocker clearance is unverified"))
+        XCTAssertTrue(missingTelemetry.requiresRecovery)
 
-        let onlyOneReadable = RBOutbox(agent: "codex-pantheon", queuedForRetry: 1, unreadable: false, error: nil)
-        let missingEntry = outboxRecheckMessage(readSucceeded: true, scopedAgents: scope,
+        let onlyOneReadable = RBOutbox(agent: "codex-pantheon", observed: true, readable: true,
+                                       queuedForRetry: 1, unreadable: false, error: nil)
+        let missingEntry = outboxRecheckOutcome(readSucceeded: true, scopedAgents: scope,
                                                 currentOutboxes: [onlyOneReadable])
-        XCTAssertTrue(missingEntry.contains("No explicit readable outbox record exists for claude-pantheon"))
-        XCTAssertTrue(missingEntry.contains("blocker clearance is unverified"))
-        XCTAssertFalse(missingEntry.contains("explicit readable records for each affected agent"))
+        XCTAssertTrue(missingEntry.message.contains("No explicit readable outbox record exists for claude-pantheon"))
+        XCTAssertTrue(missingEntry.message.contains("blocker clearance is unverified"))
+        XCTAssertTrue(missingEntry.requiresRecovery)
 
-        let unknownStatus = RBOutbox(agent: "claude-pantheon", queuedForRetry: 0, unreadable: nil, error: nil)
-        let unknown = outboxRecheckMessage(readSucceeded: true, scopedAgents: ["claude-pantheon"],
-                                           currentOutboxes: [unknownStatus])
-        XCTAssertTrue(unknown.contains("blocker clearance is unverified"))
+        let legacyUnknown = RBOutbox(agent: "claude-pantheon", observed: nil, readable: nil,
+                                     queuedForRetry: 0, unreadable: nil, error: nil)
+        let unknown = outboxRecheckOutcome(readSucceeded: true, scopedAgents: ["claude-pantheon"],
+                                           currentOutboxes: [legacyUnknown])
+        XCTAssertTrue(unknown.message.contains("blocker clearance is unverified"))
+        XCTAssertTrue(unknown.requiresRecovery)
     }
 
     func testRouterBoardRecheckCanBypassFreshCache() throws {
@@ -220,6 +227,8 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertTrue(card.contains("filesystem permissions or ownership"))
         XCTAssertTrue(source.contains("onHandoff: { showingHandoff = true }"))
         XCTAssertTrue(source.contains("RaHandoffView(engine: engine, isPresented: $showingHandoff)"))
+        XCTAssertTrue(source.contains("@State private var retainedOutboxBlockers"))
+        XCTAssertTrue(source.contains("engine.routerHasBlockers || !visibleOutboxBlockers.isEmpty"))
     }
 
     func testCasebookRouteDoesNotSeedItsLiteralSearchFilter() throws {
