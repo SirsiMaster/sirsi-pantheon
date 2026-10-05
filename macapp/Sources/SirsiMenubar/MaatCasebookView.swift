@@ -103,7 +103,7 @@ private struct MaatSystemOneView: View {
     @State private var selectedScreenURL: URL?
     @State private var confirmScreenImport = false
     @State private var screenImportInFlight = false
-    @State private var screenImportResult: CommandResult?
+    @State private var screenImportResult: MaatSystemOneCommandResult?
     @State private var screenImportError: String?
     @State private var releasePreflight: MaatReleaseContractPreflight?
     @State private var releasePreflightInFlight = false
@@ -117,7 +117,7 @@ private struct MaatSystemOneView: View {
     @State private var credentialPreflightRecorded = false
     @State private var confirmHostTriage = false
     @State private var hostTriageInFlight = false
-    @State private var hostTriageResult: CommandResult?
+    @State private var hostTriageResult: MaatSystemOneCommandResult?
     @State private var hostTriageError: String?
     @State private var didOpenReleasePreflight = false
     let opensReleasePreflight: Bool
@@ -463,16 +463,16 @@ private struct MaatSystemOneView: View {
                     .sirsiFont(.caption)
             }
             if let result = hostTriageResult {
-                let gate = hostTriageGate(result)
-                Label(result.summary, systemImage: hostTriageSymbol(gate: gate, result: result))
+                let gate = result.verdict.gate
+                Label(result.summary, systemImage: hostTriageSymbol(gate: gate))
                     .sirsiFont(.caption)
-                    .foregroundStyle(hostTriageTint(gate: gate, result: result))
+                    .foregroundStyle(hostTriageTint(gate: gate))
                     .fixedSize(horizontal: false, vertical: true)
-                if result.ok, gate == "pass" {
+                if gate == "pass" {
                     Text("The Casebook was refreshed from this exact local observation.")
                         .sirsiFont(.caption)
                         .foregroundStyle(.secondary)
-                } else if result.ok {
+                } else {
                     Text("The observation was retained. Open the Casebook to follow its repair, review, or owner-resolution route.")
                         .sirsiFont(.caption)
                         .foregroundStyle(.secondary)
@@ -515,14 +515,12 @@ private struct MaatSystemOneView: View {
                     .sirsiFont(.caption)
             }
             if let result = screenImportResult {
-                Label(result.summary, systemImage: result.ok ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                Label(result.summary, systemImage: result.verdict.gate == "pass" ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                     .sirsiFont(.caption)
-                    .foregroundStyle(result.ok ? .green : .orange)
-                if result.ok {
-                    Text("The Casebook was refreshed from the recorded evidence.")
-                        .sirsiFont(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                    .foregroundStyle(result.verdict.gate == "pass" ? .green : .orange)
+                Text("The Casebook was refreshed from the recorded evidence.")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(.secondary)
             }
             if let screenImportError {
                 Label(screenImportError, systemImage: "exclamationmark.triangle.fill")
@@ -831,10 +829,11 @@ private struct MaatSystemOneView: View {
         guard let selectedScreenURL else { return }
         screenImportInFlight = true
         screenImportError = nil
-        screenImportResult = await SirsiEngine.runResult(args: ["maat", "screen", "--input", selectedScreenURL.path, "--confirm"])
+        let raw = await SirsiEngine.run(args: ["maat", "screen", "--input", selectedScreenURL.path, "--confirm", "--json"], stdin: nil)
+        screenImportResult = MaatSystemOneCommandResult.decode(raw)
         if screenImportResult == nil {
             screenImportError = "Ma'at could not validate or record this screen. The input remains unchanged and no System One result was inferred. Choose a valid closed evidence JSON or inspect the producer's receipt."
-        } else if screenImportResult?.ok == true {
+        } else {
             await load()
         }
         screenImportInFlight = false
@@ -844,10 +843,11 @@ private struct MaatSystemOneView: View {
         guard !hostTriageInFlight else { return }
         hostTriageInFlight = true
         hostTriageError = nil
-        hostTriageResult = await SirsiEngine.runResult(args: ["maat", "triage", "--confirm"])
+        let raw = await SirsiEngine.run(args: ["maat", "triage", "--confirm", "--json"], stdin: nil)
+        hostTriageResult = MaatSystemOneCommandResult.decode(raw)
         if hostTriageResult == nil {
             hostTriageError = "Ma'at could not record the local observation. No System One outcome was inferred or accepted. Try again, then inspect the local Casebook if the problem persists."
-        } else if hostTriageResult?.ok == true {
+        } else {
             await load()
         }
         hostTriageInFlight = false
@@ -857,12 +857,7 @@ private struct MaatSystemOneView: View {
     // The command carries the deterministic System One gate as evidence, and
     // this native projection preserves it instead of showing a green success
     // treatment for a recorded block or escalation.
-    private func hostTriageGate(_ result: CommandResult) -> String {
-        result.evidence.first(where: { $0.label == "Deterministic gate" })?.value.lowercased() ?? ""
-    }
-
-    private func hostTriageSymbol(gate: String, result: CommandResult) -> String {
-        guard result.ok else { return "exclamationmark.triangle.fill" }
+    private func hostTriageSymbol(gate: String) -> String {
         switch gate {
         case "pass": return "checkmark.seal.fill"
         case "changes": return "exclamationmark.circle.fill"
@@ -872,8 +867,7 @@ private struct MaatSystemOneView: View {
         }
     }
 
-    private func hostTriageTint(gate: String, result: CommandResult) -> Color {
-        guard result.ok else { return .orange }
+    private func hostTriageTint(gate: String) -> Color {
         switch gate {
         case "pass": return .green
         case "changes": return .orange
@@ -2552,6 +2546,50 @@ struct MaatSystemOneVerdict: Decodable {
         escalation = try values.decodeIfPresent(MaatSystemOneEscalation.self, forKey: .escalation)
         model = try values.decode(MaatSystemOneModel.self, forKey: .model)
         findings = try values.decodeIfPresent([MaatSystemOneFinding].self, forKey: .findings) ?? []
+    }
+}
+
+// Both `sirsi maat triage --confirm --json` and `sirsi maat screen --confirm
+// --json` intentionally project the closed System One verdict directly rather
+// than wrapping it in the generic CommandResult envelope. Triage additionally
+// binds the snapshot and Casebook decision evidence. Decode the shared verdict
+// once so a successful local write can refresh the native Casebook instead of
+// being displayed as a false failure.
+struct MaatSystemOneCommandResult: Decodable {
+    let verdict: MaatSystemOneVerdict
+    let snapshotEvidence: String
+    let decisionEvidence: String
+
+    enum CodingKeys: String, CodingKey {
+        case snapshotEvidence = "snapshot_evidence"
+        case decisionEvidence = "decision_evidence"
+    }
+
+    init(from decoder: Decoder) throws {
+        verdict = try MaatSystemOneVerdict(from: decoder)
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        snapshotEvidence = try values.decodeIfPresent(String.self, forKey: .snapshotEvidence) ?? ""
+        decisionEvidence = try values.decodeIfPresent(String.self, forKey: .decisionEvidence) ?? ""
+    }
+
+    var summary: String {
+        switch verdict.gate {
+        case "pass":
+            return "Ma'at recorded this observation. No issue exceeded the configured threshold."
+        case "changes":
+            return "Ma'at recorded this observation with bounded changes to address."
+        case "block":
+            return "Ma'at recorded this observation and blocked it on deterministic or high-confidence evidence."
+        case "escalate":
+            return "Ma'at recorded this observation and requires an explicit owner review."
+        default:
+            return "Ma'at recorded this observation with an unrecognized System One gate."
+        }
+    }
+
+    static func decode(_ raw: String) -> MaatSystemOneCommandResult? {
+        guard let start = raw.firstIndex(of: "{") else { return nil }
+        return try? JSONDecoder().decode(MaatSystemOneCommandResult.self, from: Data(raw[start...].utf8))
     }
 }
 

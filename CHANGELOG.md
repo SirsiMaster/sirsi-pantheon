@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased] — Apollo view: retire the last user-facing "SNE" copy
 
+- **v0.24.89 — native System One observation now reads the canonical Ma’at
+  result.** Host observation and imported System One evidence both decode the
+  typed verdict the CLI actually emits. A successful retained Casebook screen
+  now refreshes the native surface instead of being presented as a false
+  failure because it was not wrapped in a generic command-result envelope.
+
 - **v0.24.88 — guided service restoration leads with the outcome.** The
   native Health detail for managed launchd overrides now says what Pantheon
   can do—restore managed services—before showing the retained technical

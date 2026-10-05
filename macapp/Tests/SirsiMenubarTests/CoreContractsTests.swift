@@ -108,6 +108,41 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertEqual(findingDisplayTitle(check: "Swap Usage"), "Swap Usage")
     }
 
+    func testMaatSystemOneCommandResultDecodesBothTypedTriageAndScreenShapes() {
+        let triage = MaatSystemOneCommandResult.decode(#"""
+        {
+          "schema_version": 1,
+          "feather_weight": 42,
+          "gate": "changes",
+          "confidence": 0.91,
+          "subject": {"kind": "host", "ref": "M5", "head_sha": ""},
+          "floor": {"passed": true, "checks": []},
+          "model": {"provider": "Ma'at", "version": "1", "local": true, "latency_ms": 3},
+          "findings": [],
+          "snapshot_evidence": "diagnostic:sha256=abc",
+          "decision_evidence": "decision:sha256=def"
+        }
+        """#)
+        XCTAssertEqual(triage?.verdict.gate, "changes")
+        XCTAssertEqual(triage?.snapshotEvidence, "diagnostic:sha256=abc")
+        XCTAssertEqual(triage?.decisionEvidence, "decision:sha256=def")
+
+        let screen = MaatSystemOneCommandResult.decode(#"""
+        {
+          "schema_version": 1,
+          "feather_weight": 100,
+          "gate": "pass",
+          "confidence": 0.99,
+          "subject": {"kind": "recipe", "ref": "stack-lab", "head_sha": "abc"},
+          "floor": {"passed": true, "checks": []},
+          "model": {"provider": "Ma'at", "version": "1", "local": true, "latency_ms": 1},
+          "findings": []
+        }
+        """#)
+        XCTAssertEqual(screen?.verdict.gate, "pass")
+        XCTAssertEqual(screen?.decisionEvidence, "")
+    }
+
     func testDiagnosticFindingDecodesExplicitMaatReviewRoute() throws {
         let raw = #"""
         {
