@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -191,12 +192,21 @@ func (i Incident) validate() error {
 }
 
 type PreflightReceipt struct {
-	Schema          string            `json:"schema"`
-	Action          Scope             `json:"action"`
-	Decision        PreflightDecision `json:"decision"`
-	IncidentKeys    []string          `json:"incident_keys"`
-	RecoveryActions []RecoveryAction  `json:"recovery_actions"`
+	Schema                 string            `json:"schema"`
+	Action                 Scope             `json:"action"`
+	ActionManifestSHA256   string            `json:"action_manifest_sha256"`
+	RegistrySnapshotSHA256 string            `json:"registry_snapshot_sha256"`
+	EvaluatedGuards        []GuardEvaluation `json:"evaluated_guards"`
+	MeasuredChecks         []CheckOutcome    `json:"measured_checks"`
+	Decision               PreflightDecision `json:"decision"`
+	IncidentKeys           []string          `json:"incident_keys"`
+	RecoveryActions        []RecoveryAction  `json:"recovery_actions"`
+	RecoveryReference      string            `json:"recovery_reference"`
+	EvaluatedAtUTC         time.Time         `json:"evaluated_at_utc"`
 }
+
+type GuardEvaluation struct{ ID, Version, SHA256 string }
+type CheckOutcome struct{ IncidentKey, EvidenceSHA256, Status, Outcome string }
 
 // Store holds retained no-follow descriptors for the root and its two
 // append-only namespaces. It never follows evidence or incident leaf links.
@@ -335,29 +345,59 @@ func (s *Store) Preflight(action Scope) (PreflightReceipt, error) {
 	if err != nil {
 		return PreflightReceipt{}, err
 	}
-	receipt := PreflightReceipt{Schema: MemorySchema, Action: action, Decision: PreflightPass}
+	actionBytes, _ := json.Marshal(action)
+	actionDigest := sha256.Sum256(actionBytes)
+	receipt := PreflightReceipt{Schema: MemorySchema, Action: action, ActionManifestSHA256: hex.EncodeToString(actionDigest[:]), Decision: PreflightPass, EvaluatedAtUTC: time.Now().UTC()}
+	snapshot := sha256.New()
+	_, _ = snapshot.Write([]byte(MemorySchema + "\n"))
+	seenGuards := map[string]bool{}
 	for _, name := range names {
 		if !strings.HasSuffix(name, ".json") || !validDigest(strings.TrimSuffix(name, ".json")) {
-			return PreflightReceipt{Schema: MemorySchema, Action: action, Decision: PreflightUnverifiable}, errors.New("maat memory: malformed incident namespace")
+			receipt.Decision = PreflightUnverifiable
+			return receipt, errors.New("maat memory: malformed incident namespace")
 		}
 		data, err := readExact(s.incidentFD, name)
 		if err != nil {
-			return PreflightReceipt{Schema: MemorySchema, Action: action, Decision: PreflightUnverifiable}, err
+			receipt.Decision = PreflightUnverifiable
+			return receipt, err
 		}
 		var incident Incident
 		if err := json.Unmarshal(data, &incident); err != nil || incident.validate() != nil || name != incident.Key+".json" {
-			return PreflightReceipt{Schema: MemorySchema, Action: action, Decision: PreflightUnverifiable}, errors.New("maat memory: invalid incident record")
+			receipt.Decision = PreflightUnverifiable
+			return receipt, errors.New("maat memory: invalid incident record")
 		}
 		if err := s.verifyEvidence(incident.EvidenceSHA256); err != nil {
-			return PreflightReceipt{Schema: MemorySchema, Action: action, Decision: PreflightUnverifiable}, fmt.Errorf("maat memory: incident evidence unavailable: %w", err)
+			receipt.Decision = PreflightUnverifiable
+			return receipt, fmt.Errorf("maat memory: incident evidence unavailable: %w", err)
 		}
+		fileDigest := sha256.Sum256(data)
+		_, _ = snapshot.Write([]byte(name + "\x00" + hex.EncodeToString(fileDigest[:]) + "\n"))
+		guardKey := incident.GuardID + "\x00" + incident.GuardVersion
+		if !seenGuards[guardKey] {
+			guardDigest := sha256.Sum256([]byte(guardKey))
+			receipt.EvaluatedGuards = append(receipt.EvaluatedGuards, GuardEvaluation{ID: incident.GuardID, Version: incident.GuardVersion, SHA256: hex.EncodeToString(guardDigest[:])})
+			seenGuards[guardKey] = true
+		}
+		outcome := "out-of-scope"
 		if incident.Status == IncidentActive && incident.Scope.matches(action) {
+			outcome = "active-incident-matched"
 			receipt.Decision = PreflightReject
 			receipt.IncidentKeys = append(receipt.IncidentKeys, incident.Key)
 			receipt.RecoveryActions = append(receipt.RecoveryActions, incident.RecoveryActions...)
 		}
+		receipt.MeasuredChecks = append(receipt.MeasuredChecks, CheckOutcome{IncidentKey: incident.Key, EvidenceSHA256: incident.EvidenceSHA256, Status: string(incident.Status), Outcome: outcome})
 	}
 	sort.Strings(receipt.IncidentKeys)
+	sort.Slice(receipt.EvaluatedGuards, func(i, j int) bool {
+		return receipt.EvaluatedGuards[i].ID+receipt.EvaluatedGuards[i].Version < receipt.EvaluatedGuards[j].ID+receipt.EvaluatedGuards[j].Version
+	})
+	snapshotDigest := snapshot.Sum(nil)
+	receipt.RegistrySnapshotSHA256 = hex.EncodeToString(snapshotDigest)
+	if len(receipt.RecoveryActions) > 0 {
+		actions, _ := json.Marshal(receipt.RecoveryActions)
+		recoveryDigest := sha256.Sum256(actions)
+		receipt.RecoveryReference = "maat-recovery:" + hex.EncodeToString(recoveryDigest[:])
+	}
 	return receipt, nil
 }
 

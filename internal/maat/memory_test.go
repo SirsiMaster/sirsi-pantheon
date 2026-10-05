@@ -74,6 +74,9 @@ func TestStoreEvidenceAppendAndExactScopePreflight(t *testing.T) {
 	if receipt.Decision != PreflightReject || len(receipt.IncidentKeys) != 1 || len(receipt.RecoveryActions) != 1 {
 		t.Fatalf("unexpected reject receipt: %#v", receipt)
 	}
+	if !validDigest(receipt.ActionManifestSHA256) || !validDigest(receipt.RegistrySnapshotSHA256) || len(receipt.EvaluatedGuards) != 1 || len(receipt.MeasuredChecks) != 1 || receipt.RecoveryReference == "" || receipt.EvaluatedAtUTC.IsZero() {
+		t.Fatalf("receipt is not evidence-bound: %#v", receipt)
+	}
 	nonMatching := testScope()
 	nonMatching.Profile = "macos-remote"
 	pass, err := store.Preflight(nonMatching)
