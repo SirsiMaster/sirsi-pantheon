@@ -3,6 +3,7 @@ package jackal
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"sync"
@@ -194,25 +195,8 @@ func (e *Engine) Scan(ctx context.Context, opts ScanOptions) (*ScanResult, error
 		if len(rr.findings) > 0 {
 			result.RulesWithFindings++
 			result.Findings = append(result.Findings, rr.findings...)
-
 			for _, f := range rr.findings {
-				result.TotalSize += f.SizeBytes
-				// ReclaimableSize is the casual "waste" headline — it EXCLUDES
-				// (a) warning-tier (data/config that may break) and (b) AI model
-				// weights (CategoryAI: HuggingFace/Ollama/MLX/… — caution-tier and
-				// expensive to regenerate, the cleaner never one-click-removes them).
-				// Without this, a scan put 67 GB of cold Gemma weights in the menubar
-				// "waste" title (the "76 GB waste" false alarm) the user can't act on.
-				if f.Severity != SeverityWarning && f.Category != CategoryAI {
-					result.ReclaimableSize += f.SizeBytes
-				}
 				ruleSize += f.SizeBytes
-
-				cat := result.ByCategory[f.Category]
-				cat.Category = f.Category
-				cat.Findings++
-				cat.TotalSize += f.SizeBytes
-				result.ByCategory[f.Category] = cat
 			}
 		}
 		if opts.OnProgress != nil {
@@ -220,12 +204,115 @@ func (e *Engine) Scan(ctx context.Context, opts ScanOptions) (*ScanResult, error
 		}
 	}
 
-	// Sort findings by size (largest first)
-	sort.Slice(result.Findings, func(i, j int) bool {
-		return result.Findings[i].SizeBytes > result.Findings[j].SizeBytes
-	})
+	NormalizeFindings(result)
 
 	return result, nil
+}
+
+// NormalizeFindings removes duplicate, byte-identical findings and rebuilds
+// aggregate totals from the resulting actionable inventory. Callers that add
+// findings after Engine.Scan (for example the ghost-residual scanner) must call
+// this before persisting or presenting a result.
+//
+// A duplicate is only coalesced when it names the same cleaned path and reports
+// the same object shape and size. Disagreements remain visible rather than being
+// silently hidden. When Ka's contextual ghost scanner duplicates a primary scan
+// rule, the primary rule remains the cleanup owner so a user never sees the same
+// object twice or receives a different cleanup action solely from scan order.
+func NormalizeFindings(result *ScanResult) {
+	if result == nil {
+		return
+	}
+
+	result.Findings = coalesceFindings(result.Findings)
+	result.TotalSize = 0
+	result.ReclaimableSize = 0
+	result.ByCategory = make(map[Category]CategorySummary)
+
+	for _, f := range result.Findings {
+		result.TotalSize += f.SizeBytes
+		// ReclaimableSize is the user-facing waste headline. It excludes warning
+		// findings and AI model weights, neither of which is eligible for a
+		// one-click clean.
+		if f.Severity != SeverityWarning && f.Category != CategoryAI {
+			result.ReclaimableSize += f.SizeBytes
+		}
+
+		cat := result.ByCategory[f.Category]
+		cat.Category = f.Category
+		cat.Findings++
+		cat.TotalSize += f.SizeBytes
+		result.ByCategory[f.Category] = cat
+	}
+
+	// Stable ordering keeps persisted scans and the UI reproducible even though
+	// rules execute concurrently.
+	sort.Slice(result.Findings, func(i, j int) bool {
+		if result.Findings[i].SizeBytes != result.Findings[j].SizeBytes {
+			return result.Findings[i].SizeBytes > result.Findings[j].SizeBytes
+		}
+		if result.Findings[i].Path != result.Findings[j].Path {
+			return result.Findings[i].Path < result.Findings[j].Path
+		}
+		return result.Findings[i].RuleName < result.Findings[j].RuleName
+	})
+}
+
+func coalesceFindings(findings []Finding) []Finding {
+	unique := make(map[string]int, len(findings))
+	result := make([]Finding, 0, len(findings))
+	for _, finding := range findings {
+		cleanPath := filepath.Clean(finding.Path)
+		// A missing path cannot safely be deduplicated. Keep it as a separate
+		// diagnostic finding instead of merging unrelated scan failures.
+		if finding.Path == "" || cleanPath == "." {
+			result = append(result, finding)
+			continue
+		}
+		finding.Path = cleanPath
+		key := fmt.Sprintf("%s\x00%d\x00%d\x00%t", cleanPath, finding.SizeBytes, finding.FileCount, finding.IsDir)
+		if existingIndex, ok := unique[key]; ok {
+			result[existingIndex] = preferredFinding(result[existingIndex], finding)
+			continue
+		}
+		unique[key] = len(result)
+		result = append(result, finding)
+	}
+	return result
+}
+
+func preferredFinding(current, candidate Finding) Finding {
+	// Ka supplies an additional explanation for a path. A primary rule owns the
+	// remediation because it was registered for that exact artifact class.
+	if current.RuleName == "ka_ghost" && candidate.RuleName != "ka_ghost" {
+		return candidate
+	}
+	if candidate.RuleName == "ka_ghost" && current.RuleName != "ka_ghost" {
+		return current
+	}
+
+	// Concurrent collection must not decide UI ownership. Prefer the most
+	// restrictive severity, then a lexical rule name as a deterministic tie-break.
+	if severityRank(candidate.Severity) > severityRank(current.Severity) {
+		return candidate
+	}
+	if severityRank(candidate.Severity) == severityRank(current.Severity) && candidate.RuleName < current.RuleName {
+		return candidate
+	}
+	return current
+}
+
+func severityRank(severity Severity) int {
+	switch severity {
+	case SeverityWarning:
+		return 3
+	case SeverityCaution:
+		return 2
+	case SeveritySafe:
+		return 1
+	default:
+		return 0
+	}
 }
 
 // Clean executes the clean phase for a set of findings.

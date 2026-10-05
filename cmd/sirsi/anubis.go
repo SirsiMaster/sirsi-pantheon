@@ -175,9 +175,8 @@ func runWeigh(ctx context.Context) error {
 	if ghostErr != nil {
 		output.Warn("Ghost scan error: %v", ghostErr)
 	}
-	var ghostWaste int64
+	ghostFindings := 0
 	for _, g := range ghosts {
-		ghostWaste += g.TotalSize
 		// Add ghost findings to the scan result so they appear in persisted output.
 		for _, r := range g.Residuals {
 			// Caches and logs are safe to delete. Preferences and app data need review.
@@ -196,17 +195,16 @@ func runWeigh(ctx context.Context) error {
 				Severity:    sev,
 				IsDir:       true,
 			})
+			ghostFindings++
 		}
-		res.TotalSize += g.TotalSize
 	}
-	if len(ghosts) > 0 {
+	if ghostFindings > 0 {
 		res.RulesWithFindings++
-		cat := res.ByCategory[jackal.CategoryGeneral]
-		cat.Category = jackal.CategoryGeneral
-		cat.Findings += len(ghosts)
-		cat.TotalSize += ghostWaste
-		res.ByCategory[jackal.CategoryGeneral] = cat
 	}
+	// Ghost scan runs after the rule engine. Normalize once all producers have
+	// contributed so the same physical path cannot inflate the cleanup total or
+	// appear twice with competing actions.
+	jackal.NormalizeFindings(res)
 
 	// Enrich every finding with advisory intelligence.
 	jackal.EnrichAdvisory(res)
@@ -237,12 +235,13 @@ func runWeigh(ctx context.Context) error {
 
 	// Terminal output — summary table + top findings.
 	dashMap := map[string]string{
-		"Waste Found": jackal.FormatSize(res.TotalSize),
-		"Pillars Ran": fmt.Sprintf("%d", res.RulesRan),
-		"Findings":    fmt.Sprintf("%d", len(res.Findings)),
+		"Ready for Review":   jackal.FormatSize(res.ReclaimableSize),
+		"Inventory Reviewed": jackal.FormatSize(res.TotalSize),
+		"Pillars Ran":        fmt.Sprintf("%d", res.RulesRan),
+		"Findings":           fmt.Sprintf("%d", len(res.Findings)),
 	}
 	if len(ghosts) > 0 {
-		dashMap["Ghosts"] = fmt.Sprintf("%d (%s)", len(ghosts), jackal.FormatSize(ghostWaste))
+		dashMap["Ghosts"] = fmt.Sprintf("%d", len(ghosts))
 	}
 	output.Dashboard(dashMap)
 
@@ -291,14 +290,15 @@ func runWeigh(ctx context.Context) error {
 	// Structured result contract
 	result := &output.CommandResult{
 		Command:  "sirsi scan",
-		Summary:  fmt.Sprintf("Found %s of reclaimable waste across %d findings", jackal.FormatSize(res.TotalSize), len(res.Findings)),
+		Summary:  fmt.Sprintf("Found %s ready for review across %d findings", jackal.FormatSize(res.ReclaimableSize), len(res.Findings)),
 		Duration: elapsed,
 	}
-	result.AddEvidence("Waste found", jackal.FormatSize(res.TotalSize))
+	result.AddEvidence("Ready for review", jackal.FormatSize(res.ReclaimableSize))
+	result.AddEvidence("Inventory reviewed", jackal.FormatSize(res.TotalSize))
 	result.AddEvidence("Rules ran", fmt.Sprintf("%d", res.RulesRan))
 	result.AddEvidence("Findings", fmt.Sprintf("%d", len(res.Findings)))
 	if len(ghosts) > 0 {
-		result.AddEvidence("Ghost apps", fmt.Sprintf("%d (%s)", len(ghosts), jackal.FormatSize(ghostWaste)))
+		result.AddEvidence("Ghost apps", fmt.Sprintf("%d", len(ghosts)))
 	}
 	if scanErr != nil {
 		result.AddWarning("Scan completed with errors: %v", scanErr)
