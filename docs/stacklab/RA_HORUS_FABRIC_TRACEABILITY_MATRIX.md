@@ -30,6 +30,11 @@ has not been proven.
 | Homebrew cask lifecycle | `homebrew-tools/Casks/sirsi-pantheon.rb` | historical cask v0.24.3, SHA256 `e846c682…`, matches the historical DMG | HISTORICAL / NONCOMMERCIAL | bind only a full signed DMG+PKG release, then execute isolated install/upgrade/rollback/uninstall rehearsal |
 | Stack Lab registry authority | `contracts/stacklab/ra-horus-fabric-wing-v1.json`, `contracts/stacklab/v2/PROVENANCE.md` | doctor now consumes the canonical Ra/Horus record; registry byte pin still external | OPEN | publish the exact canonical contract bytes to the universal registry |
 
+| Recurring failures stop recurring (Ma'at registrar, Stack Lab) | `internal/maat/knownfail/catalog.json`, `contracts/stacklab/ra-horus-fabric-recipe-v1.json` | six seeded classes each with a fix release and an existing guard test; wake-loop recognition | ACCEPTED SOURCE | register each new recurring failure with `sirsi maat known-failures register`, resolve with a real guard |
+| Router dashboard shows everything built (Router view) | `internal/dashboard/router.go`, `cmd/sirsi/dashboardrouter.go` | `GET /api/router`; SPA view test; changelog parser test | ACCEPTED SOURCE | verify the view against the installed release |
+| Registry identity from origin (A37) | `internal/router/registrysnapshot.go` | snapshot read, refused write, stale ignore | ACCEPTED SOURCE | run `registry sync --install` on every host |
+| Swap hygiene (owner priority) | `internal/swaphygiene` | allocation vs paging verdicts, receipts | ACCEPTED SOURCE | accrue receipts from the scheduled runs |
+
 ## Definition of done
 
 The lane is clear only when every row is either `ACCEPTED` with a durable

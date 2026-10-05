@@ -84,6 +84,12 @@ jobs:
       - name: pre-push measurement-window guard
         run: bash scripts/pre-push-window.test.sh
 
+      - name: release train script (syntax, dry-run, bad-version refusal)
+        run: |
+          bash -n scripts/release-train.sh
+          bash scripts/release-train.sh 9.9.9 --dry-run | grep -q "dry-run complete"
+          ! bash scripts/release-train.sh bad >/dev/null 2>&1
+
       - name: bind A34 guards (GitHub + router rejection)
         run: |
           # pure-jq guards only: the other bind tests need ripgrep or a GitHub-resolvable checkout

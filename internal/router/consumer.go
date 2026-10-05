@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -202,8 +203,9 @@ func ResolveConsumer(cfg AgentConfig, routerRoot string) (*ResolvedConsumer, str
 
 	subst := func(s string) string {
 		s = strings.ReplaceAll(s, consumerAgentPlaceholder, cfg.ID)
-		return strings.ReplaceAll(s, consumerRootPlaceholder, routerRoot)
+		return rebaseForeignHome(strings.ReplaceAll(s, consumerRootPlaceholder, routerRoot))
 	}
+	cfg.Cwd = rebaseForeignHome(cfg.Cwd)
 
 	argv := make([]string, 0, len(c.Command)+1)
 	for _, a := range c.Command {
@@ -234,7 +236,7 @@ func ResolveConsumer(cfg AgentConfig, routerRoot string) (*ResolvedConsumer, str
 		EnvConsumerRoot+"="+routerRoot,
 	)
 	for k, v := range cfg.Env {
-		env = setEnv(env, k, v)
+		env = setEnv(env, k, rebaseForeignHome(v))
 	}
 	env = capGOMAXPROCS(env, cfg.Env)
 
@@ -394,4 +396,28 @@ func bindConsumerThread(rc *ResolvedConsumer, threadID string) {
 	for i, a := range rc.Argv {
 		rc.Argv[i] = strings.ReplaceAll(a, consumerThreadPlaceholder, threadID)
 	}
+}
+
+var foreignHomeRE = regexp.MustCompile(`/Users/[^/\s"']+`)
+
+// rebaseForeignHome rewrites another machine's home prefix to this machine's.
+// The registry is one file shared by every host, and its paths are absolute
+// (/Users/thekryptodragon/... on the M5); without this each lane needed a
+// per-host hand edit that the origin-pinned registry would then revert, and a
+// lane read WATCH_ONLY with "cwd is not usable". A prefix is rewritten only
+// when that home does not exist here, so a real second user is never touched.
+func rebaseForeignHome(s string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" || !strings.Contains(s, "/Users/") {
+		return s
+	}
+	return foreignHomeRE.ReplaceAllStringFunc(s, func(m string) string {
+		if m == home {
+			return m
+		}
+		if _, err := os.Stat(m); err == nil {
+			return m
+		}
+		return home
+	})
 }

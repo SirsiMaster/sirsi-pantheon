@@ -62,3 +62,40 @@ func TestListActiveExcludesUnrelatedHistoryKeepsDependencies(t *testing.T) {
 		t.Fatalf("CountClosed %d disagrees with ListAll %d", n, closedInAll)
 	}
 }
+
+// ListSince returns open work and recent closures but not old history, and a
+// recently closed item is present exactly when its closed time is within the window.
+func TestListSinceBoundsHistoryByClosedTime(t *testing.T) {
+	s := newTestStore(t)
+	mk := func(to string) string {
+		id, err := s.Send("sender", to, "t-"+to, "proposal", "body")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	openID, recent := mk("a"), mk("b")
+	if err := s.CloseItem(recent, "done"); err != nil {
+		t.Fatal(err)
+	}
+	future := "2999-01-01T00:00:00Z"
+	got, err := s.ListSince(context.Background(), "2000-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	have := map[string]bool{}
+	for _, it := range got {
+		have[it.ID] = true
+	}
+	if !have[openID] || !have[recent] {
+		t.Fatalf("open and recently closed must both be returned: %v", have)
+	}
+	got, _ = s.ListSince(context.Background(), future)
+	have = map[string]bool{}
+	for _, it := range got {
+		have[it.ID] = true
+	}
+	if !have[openID] || have[recent] {
+		t.Fatalf("a window after the closure must drop the closed item but keep open work: %v", have)
+	}
+}

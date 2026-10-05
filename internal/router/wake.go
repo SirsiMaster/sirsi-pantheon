@@ -119,6 +119,21 @@ func OpenItems(routerRoot, agent string) ([]work.Item, error) {
 	return inboxUnion(routerRoot, agent)
 }
 
+// RecentItems is AllItems bounded to open work plus items closed within `window`:
+// the work board's pace and turnaround only look back a week, so reading the whole
+// history (13k+ rows, 6-20 s per call on the service) every refresh was pure cost.
+func RecentItems(routerRoot string, window time.Duration) ([]work.Item, error) {
+	if !routercfg.StoreWake() {
+		return work.ListAll(routerRoot)
+	}
+	f, err := dispatch.OpenRoot(routerRoot)
+	if err != nil {
+		return nil, fmt.Errorf("router: store unavailable and the cutover makes it the sole authority (refusing to read frozen legacy files): %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	return f.ListRecent(time.Now().Add(-window))
+}
+
 // AllItems is OpenItems for whole-corpus readers (the work board's pace and
 // turnaround stats), which need closed items too.
 func AllItems(routerRoot string) ([]work.Item, error) {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/apollo"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dashboard"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/casebook"
@@ -67,6 +68,7 @@ func runDashboard(cmd *cobra.Command, args []string) {
 		NodeStatusFn:    collectDashboardNodeStatus,
 		LedgerFn:        collectDashboardLedger,
 		FleetFn:         collectDashboardFleet,
+		RouterFn:        collectDashboardRouter,
 		Unroutable:      dashboardUnroutable(),
 		FabricFn:        collectDashboardFabric,
 		MaatDecisionsFn: collectDashboardMaatDecisions,
@@ -182,7 +184,25 @@ func collectDashboardFleet() (ledger.Snapshot, error) {
 	if err != nil {
 		return ledger.Snapshot{}, fmt.Errorf("locate repo root: %w", err)
 	}
-	return ledger.Build(repoRoot, "", time.Now().UTC(), ledger.DefaultStaleAfter)
+	snap, err := ledger.Build(repoRoot, "", time.Now().UTC(), ledger.DefaultStaleAfter)
+	if err != nil {
+		return snap, err
+	}
+	// A retired name (an alias) is not a lane: its mail drains to the successor, so
+	// listing it shows ghost lanes next to the real ones.
+	if f, ferr := dispatch.Open(repoRoot); ferr == nil {
+		defer func() { _ = f.Close() }()
+		if aliases, aerr := f.Aliases(); aerr == nil {
+			kept := snap.Agents[:0]
+			for _, a := range snap.Agents {
+				if _, retired := aliases[a.AgentID]; !retired {
+					kept = append(kept, a)
+				}
+			}
+			snap.Agents = kept
+		}
+	}
+	return snap, nil
 }
 
 // collectDashboardNodeStatus wires GET /api/node-status (ADR-026) to the

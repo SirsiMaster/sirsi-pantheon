@@ -32,7 +32,7 @@ func TestPageShellDerivesFromBrand(t *testing.T) {
 func TestRaViewUsesLiveStatusAndScopes(t *testing.T) {
 	s := New(Config{})
 	rr := httptest.NewRecorder()
-	s.handleOverview(rr, httptest.NewRequest("GET", "/", nil))
+	s.handleOverview(rr, httptest.NewRequest("GET", "/classic", nil))
 	page := rr.Body.String()
 	for _, want := range []string{
 		"function viewRa()",

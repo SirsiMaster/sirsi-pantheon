@@ -213,7 +213,7 @@ func (p *Platform) addRouter(repoRoot string) {
 		return
 	}
 	defer func() { _ = f.Close() }()
-	all, err := f.ListAll()
+	all, _, err := f.ListActive()
 	if err != nil {
 		return
 	}

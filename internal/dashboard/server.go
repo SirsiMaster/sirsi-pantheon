@@ -69,6 +69,11 @@ type Config struct {
 	// their state from this producer). If nil, the endpoint returns 503
 	// rather than a misleading zero-valued payload.
 	FabricFn FabricProducer
+	// RouterFn produces GET /api/router: lane verdicts, queue, consumer cap,
+	// registry pin, known-failure catalog, swap-hygiene receipt and what each
+	// release added. Wired by the caller, which owns registry/store access.
+	// If nil the endpoint returns 503 rather than an empty panel.
+	RouterFn RouterProducer
 	// MaatDecisionsFn supplies the shared, read-only decision projection. The
 	// dashboard never recalculates a Ma'at determination from reservations or
 	// host facts; it renders the producer's recorded assessment verbatim.
@@ -134,7 +139,9 @@ func New(cfg Config) *Server {
 	mux := http.NewServeMux()
 
 	// HTML pages
-	mux.HandleFunc("/", s.handleOverview)
+	mux.HandleFunc("/", s.handleHome)
+	mux.HandleFunc("/assets/", s.handleUIAsset)
+	mux.HandleFunc("/classic", s.handleOverview)
 	mux.HandleFunc("/scan", s.handleScan)
 	mux.HandleFunc("/ghosts", s.handleGhosts)
 	mux.HandleFunc("/guard", s.handleGuard)
@@ -172,6 +179,7 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("/api/node-status", s.apiNodeStatus) // ADR-026 Horus ops-view read endpoint
 	mux.HandleFunc("/api/fleet", s.apiFleet)            // A32 owner-reporting board (replaces server.py)
 	mux.HandleFunc("/api/ledger", s.apiLedger)          // A26 Nexus board seam — ledger.BoardSummary
+	mux.HandleFunc("/api/router", s.apiRouter)          // router panel: lanes, queue, known failures, swap, releases
 	mux.HandleFunc("/api/fabric", s.apiFabric)          // unified work/message/lane contract
 	mux.HandleFunc("/api/maat/decisions", s.apiMaatDecisions)
 	mux.HandleFunc("/api/maat/casebook", s.apiMaatCasebook)
