@@ -27,6 +27,16 @@ type SpoolAgentOutbox struct {
 	Error          string `json:"error,omitempty"`
 }
 
+// SpoolOutboxRepair is the bounded outcome of restoring a locally-owned relay
+// outbox to its private, readable mode. It deliberately contains no queue
+// contents: repairing visibility must never drain, replay, or discard work.
+type SpoolOutboxRepair struct {
+	Agent          string `json:"agent"`
+	CanonicalSpool string `json:"canonical_spool"`
+	PreviousMode   string `json:"previous_mode"`
+	RepairedMode   string `json:"repaired_mode"`
+}
+
 // SpoolOutboxHealth lists every agent under spoolRoot that has a held outbox
 // item OR an unreadable outbox directory, sorted by agent id. It only reads
 // <spoolRoot>/<agent>/outbox/ — it never drains, retries, or deletes

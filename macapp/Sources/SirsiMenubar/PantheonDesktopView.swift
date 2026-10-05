@@ -11,30 +11,20 @@ struct PantheonDesktopView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(selection: $section) {
-                Section("Operate") {
-                    workspaceRow(.command)
-                    workspaceRow(.maat)
-                    workspaceRow(.ra)
-                    workspaceRow(.activity)
-                }
-                Section("Build") {
-                    workspaceRow(.stackLab)
-                    workspaceRow(.apollo)
-                    workspaceRow(.threads)
-                }
-                Section("Protect") {
-                    workspaceRow(.horus)
-                    workspaceRow(.anubis)
-                    workspaceRow(.osiris)
-                }
-                Section("Explore") {
-                    workspaceRow(.fleet)
-                    workspaceRow(.library)
+            VStack(spacing: 0) {
+                sidebarIdentity
+                Divider()
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 18) {
+                        sidebarSection("Operate", [.command, .maat, .ra, .activity])
+                        sidebarSection("Build", [.stackLab, .apollo, .threads])
+                        sidebarSection("Protect", [.horus, .anubis, .osiris])
+                        sidebarSection("Explore", [.fleet, .library])
+                    }
+                    .padding(12)
                 }
             }
-            .listStyle(.sidebar)
-            .navigationTitle("Sirsi Pantheon")
+            .background(Color(nsColor: .windowBackgroundColor))
             .frame(minWidth: 218)
         } detail: {
             VStack(spacing: 0) {
@@ -91,10 +81,73 @@ struct PantheonDesktopView: View {
         .padding(.vertical, 16)
     }
 
-    private func workspaceRow(_ workspace: PantheonWorkspace) -> some View {
-        Label(workspace.title, systemImage: workspace.symbol)
-            .tag(workspace)
-            .accessibilityLabel("Open \(workspace.title): \(workspace.detail)")
+    private var sidebarIdentity: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "circle.hexagongrid.fill")
+                .sirsiFont(20, weight: .semibold)
+                .foregroundStyle(gold)
+                .frame(width: 30, height: 30)
+                .background(Circle().fill(gold.opacity(0.15)))
+            VStack(alignment: .leading, spacing: 1) {
+                Text("SIRSI")
+                    .sirsiFont(.caption, weight: .bold)
+                    .tracking(1.2)
+                    .foregroundStyle(gold)
+                Text("Pantheon")
+                    .sirsiFont(.headline, weight: .bold)
+                    .foregroundStyle(Color.primary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+    }
+
+    private func sidebarSection(_ title: String, _ workspaces: [PantheonWorkspace]) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title.uppercased())
+                .sirsiFont(10, weight: .bold)
+                .tracking(0.9)
+                .foregroundStyle(Color.secondary)
+                .padding(.horizontal, 8)
+            ForEach(workspaces) { workspace in
+                workspaceButton(workspace)
+            }
+        }
+    }
+
+    private func workspaceButton(_ workspace: PantheonWorkspace) -> some View {
+        let selected = workspace == section
+        return Button {
+            section = workspace
+            nav.popToRoot()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: workspace.symbol)
+                    .sirsiFont(14, weight: .semibold)
+                    .frame(width: 20)
+                    .foregroundStyle(selected ? gold : Color.secondary)
+                Text(workspace.title)
+                    .sirsiFont(13, weight: selected ? .semibold : .regular)
+                    .foregroundStyle(Color.primary)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(selected ? gold.opacity(0.18) : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(selected ? gold.opacity(0.45) : Color.clear, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .accessibilityLabel("Open \(workspace.title): \(workspace.detail)")
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     @ViewBuilder private func workspaceView(_ workspace: PantheonWorkspace) -> some View {

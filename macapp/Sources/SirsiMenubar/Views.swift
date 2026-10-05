@@ -1721,21 +1721,34 @@ struct FleetTile: View {
 // alarm — nothing the user clicks would clear it, so it must not read red
 // (feedback_surfaces_current_actionable_only). A healthy fabric reads calm green.
 
-// copyToClipboard puts a string on the general pasteboard (for the re-auth
-// command — we never authenticate programmatically, we hand the operator the
-// exact command to run themselves).
-func copyToClipboard(_ s: String) {
-    NSPasteboard.general.clearContents()
-    NSPasteboard.general.setString(s, forType: .string)
+// openAgentSignIn launches an installed, interactive agent application rather
+// than ejecting an operator into Terminal. Authentication stays user-owned, but
+// Pantheon owns the recovery path: it opens the right app and verifies the
+// fabric again when the person returns.
+@MainActor
+func openAgentSignIn(_ agentType: String) -> Bool {
+    let type = agentType.lowercased()
+    let bundleID: String?
+    if type.contains("claude") {
+        bundleID = "com.anthropic.claudefordesktop"
+    } else if type.contains("codex") || type.contains("openai") {
+        bundleID = "com.openai.codex"
+    } else {
+        bundleID = nil
+    }
+    guard let bundleID, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+        return false
+    }
+    NSWorkspace.shared.open(url)
+    return true
 }
 
-// openTerminal launches Terminal.app so the operator can re-auth by hand. We open
-// the app (not a command) — authentication is the user's action, never ours.
-func openTerminal() {
-    let p = Process()
-    p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-    p.arguments = ["-a", "Terminal"]
-    try? p.run()
+// Some evidence views expose a copy affordance for immutable references. This
+// is separate from the retired Terminal workflow: the user remains in the app
+// and can paste a receipt or identifier wherever they choose.
+func copyToClipboard(_ text: String) {
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(text, forType: .string)
 }
 
 // RaFabricView is the operator's native work surface. Ra owns the router
@@ -1891,7 +1904,7 @@ struct RaFabricView: View {
                                               onResult: { resultLine = $0 })
                         }
                         if !engine.routerOutboxBlockers.isEmpty {
-                            OutboxBlockerCard(blocked: engine.routerOutboxBlockers)
+                            OutboxBlockerCard(engine: engine, blocked: engine.routerOutboxBlockers)
                         }
                     } else if engine.routerBoard != nil {
                         HStack(spacing: 8) {
@@ -2205,14 +2218,16 @@ struct SectionLabel: View {
     }
 }
 
-// AuthBlockerCard surfaces a REAL logout (needs_login) with a re-auth affordance.
-// We never authenticate programmatically — we open Terminal and hand the operator
-// the exact command to run, and offer to copy it.
+// AuthBlockerCard surfaces a REAL logout (needs_login) with an in-app recovery
+// route. Pantheon opens the installed interactive agent, then verifies the Ra
+// fabric when the operator returns; it never turns the problem into a shell
+// command the user must reconstruct.
 struct AuthBlockerCard: View {
     @ObservedObject var engine: SirsiEngine
     let health: RBAgentHealth
     @State private var rechecking = false
     @State private var recheckResult: String?
+    @State private var agentLaunchResult: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -2225,19 +2240,20 @@ struct AuthBlockerCard: View {
                 }
                 Spacer()
             }
-            Text("Sirsi never signs in for you. Open Terminal, run \(health.agentType), then /login. Return here when you are done and Pantheon will recheck the live fabric.")
+            Text("Pantheon can open the installed \(health.agentType) app for sign-in. Complete sign-in there, return here, and Pantheon will verify the live fabric.")
                 .sirsiFont(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
                 Button {
-                    openTerminal()
+                    agentLaunchResult = openAgentSignIn(health.agentType)
+                        ? "Opened \(health.agentType). Finish its sign-in, then recheck this fabric."
+                        : "Pantheon could not locate a compatible installed \(health.agentType) app. Open Ma'at for a guided local resolution instead."
                 } label: {
-                    Label("Open Terminal", systemImage: "terminal").frame(maxWidth: .infinity)
+                    Label("Open \(health.agentType)", systemImage: "arrow.up.forward.app").frame(maxWidth: .infinity)
                 }.buttonStyle(.borderedProminent).tint(gold)
-                Button {
-                    copyToClipboard(health.agentType)
-                } label: {
-                    Label("Copy command", systemImage: "doc.on.doc").frame(maxWidth: .infinity)
+                NavLink { MaatWorkspaceView(engine: engine) } label: {
+                    Label("Guided resolution", systemImage: "checkmark.seal")
+                        .frame(maxWidth: .infinity)
                 }.buttonStyle(.bordered)
             }
             Button {
@@ -2258,6 +2274,13 @@ struct AuthBlockerCard: View {
             .buttonStyle(.borderedProminent)
             .tint(gold)
             .disabled(rechecking)
+            if let agentLaunchResult {
+                Label(agentLaunchResult, systemImage: agentLaunchResult.hasPrefix("Opened") ? "arrow.up.forward.app.fill" : "checkmark.seal")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(agentLaunchResult.hasPrefix("Opened") ? Color.secondary : Color.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             if let recheckResult {
                 Label(recheckResult, systemImage: recheckResult.hasPrefix("Rechecked") ? "checkmark.circle.fill" : "arrow.triangle.2.circlepath")
                     .sirsiFont(.caption)
@@ -2314,13 +2337,14 @@ struct DaemonBlockerCard: View {
     }
 }
 
-// OutboxBlockerCard surfaces an unreadable spool relay outbox (ADR-069). No
-// one-click fix: the underlying cause is a directory permission/filesystem
-// condition on the relay host, which the operator must clear by hand — the
-// card's job is only to make the condition VISIBLE, since the whole point of
-// PR #931 was that this state used to read as a silent, confident zero.
+// OutboxBlockerCard surfaces an unreadable spool relay outbox (ADR-069). It
+// offers the bounded local repair only after explicit confirmation; the repair
+// is descriptor-relative, same-user only, and never touches held messages.
 struct OutboxBlockerCard: View {
+    @ObservedObject var engine: SirsiEngine
     let blocked: [RBOutbox]
+    @State private var repairTarget: RBOutbox?
+    @State private var result: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -2329,20 +2353,47 @@ struct OutboxBlockerCard: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("\(blocked.count) relay outbox\(blocked.count == 1 ? "" : "es") unreadable")
                         .sirsiFont(13, weight: .semibold)
-                    Text("Queue depth is unknown, not zero — check the directory by hand.")
+                    Text("Queue depth is unknown, not zero. Pantheon can safely restore a locally-owned relay outbox, then recheck Ra.")
                         .sirsiFont(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
             }
             ForEach(blocked) { o in
-                Text("• \(o.agent): \(o.error ?? "unreadable")")
-                    .sirsiFont(.caption, design: .monospaced).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("\(o.agent): \(o.error ?? "unreadable")")
+                        .sirsiFont(.caption, design: .monospaced).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    HStack(spacing: 8) {
+                        Button("Repair this outbox") { repairTarget = o }
+                            .buttonStyle(.borderedProminent).tint(gold).disabled(engine.busy)
+                        NavLink { MaatWorkspaceView(engine: engine) } label: {
+                            Label("Guided resolution", systemImage: "checkmark.seal")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+            }
+            if let result {
+                Text(result).sirsiFont(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 9).fill(Color.red.opacity(0.10)))
+        .confirmationDialog("Repair relay outbox?", isPresented: Binding(
+            get: { repairTarget != nil },
+            set: { if !$0 { repairTarget = nil } }
+        ), titleVisibility: .visible) {
+            Button("Repair \(repairTarget?.agent ?? "outbox")") {
+                guard let target = repairTarget else { return }
+                Task { result = await engine.repairRelayOutbox(agent: target.agent) }
+                repairTarget = nil
+            }
+        } message: {
+            Text("Pantheon will restore this local, current-user relay outbox to private mode through a retained no-follow descriptor. It will not remove, replay, or change queued messages.")
+        }
     }
 }
 

@@ -886,6 +886,19 @@ final class SirsiEngine: ObservableObject {
         return line
     }
 
+    // repairRelayOutbox invokes the closed, local relay repair primitive. The
+    // command can only restore a same-user outbox through retained no-follow
+    // descriptors; it cannot delete or replay messages, and it refuses remote
+    // or substituted state instead of attempting a pathname repair.
+    func repairRelayOutbox(agent: String) async -> String {
+        busy = true; defer { busy = false }
+        let out = await Self.run(args: ["router", "relay", "repair-outbox", "--agent", agent], stdin: nil)
+        let line = Self.firstMeaningful(out)
+        recordActivity(title: "Repair relay outbox — \(agent)", command: "router relay repair-outbox \(agent)", result: line)
+        await loadRouterBoard()
+        return line
+    }
+
     // ── project root (repo-scoped verbs) ─────────────────────────────────────
     //
     // Ma'at and Net weigh a CODE REPOSITORY, but the app shells `sirsi` from
