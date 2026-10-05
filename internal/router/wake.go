@@ -26,8 +26,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/knownfail"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/version"
 	"io"
 	"log"
 	"net/http"
@@ -44,6 +42,9 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/knownfail"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/version"
 )
 
 // Wake status values recorded on an item's wake_status frontmatter field.

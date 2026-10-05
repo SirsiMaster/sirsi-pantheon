@@ -69,17 +69,17 @@ func mutate(path string, fn func(*Catalog) error) error {
 		return err
 	}
 	var c Catalog
-	if err := json.Unmarshal(b, &c); err != nil {
+	if err = json.Unmarshal(b, &c); err != nil {
 		return err
 	}
-	if err := fn(&c); err != nil {
+	if err = fn(&c); err != nil {
 		return err
 	}
 	out, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
 	}
-	if _, err := parse(out); err != nil { // never write a catalog the loader would reject
+	if _, err = parse(out); err != nil { // never write a catalog the loader would reject
 		return err
 	}
 	return os.WriteFile(path, append(out, '\n'), 0o644)
