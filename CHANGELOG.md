@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased] — Apollo view: retire the last user-facing "SNE" copy
 
+- **v0.24.83 — Ma’at known-failure intake no longer depends on a source checkout.**
+  `sirsi maat known-failures register` now writes a create-only, read-back
+  verified, catalog-hash-bound local proposal under Ma’at’s protected local
+  evidence root. A missing or dirty checkout can no longer turn a new failure
+  report into a dead end. Local proposals stay out of automatic recognition
+  until Stack Lab review promotes them; the former checked-out catalog mutation
+  path is retained only behind explicit `--source-catalog` intent.
+
 - **v0.24.82 — every retained activity has a guided Ma’at resolution.** Failed,
   ambiguous, and evidence-pending Activity records now offer a native
   resolution card that explains what happened, records the precise retained
