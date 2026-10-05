@@ -335,7 +335,7 @@ func (f *Facade) Inbox(agent string) ([]work.Item, error) {
 // ListActive is ListAll for summaries that only need open work: the non-terminal
 // items (plus the terminal items they name in blocked_by) and the closed total.
 // Post-cutover it reads just those rows from the store; before the cutover it is
-// ListAll filtered, so behaviour is unchanged there. The full ledger is 13k+ rows
+// ListAll filtered, so behavior is unchanged there. The full ledger is 13k+ rows
 // and 6-20 s per call on the service, which under concurrency became the 30 s
 // spool timeouts every lane reported.
 func (f *Facade) ListActive() (items []work.Item, closed int, err error) {

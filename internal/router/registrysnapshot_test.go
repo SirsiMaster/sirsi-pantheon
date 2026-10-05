@@ -44,7 +44,7 @@ func fakeGit(show string) GitRunner {
 	}
 }
 
-// Before a sync the working tree is the source (unchanged behaviour); after one the
+// Before a sync the working tree is the source (unchanged behavior); after one the
 // origin snapshot wins over a working-tree edit and writes are refused; unpinning
 // restores the working tree (both directions).
 func TestRegistryReadsOriginSnapshotOnceSynced(t *testing.T) {

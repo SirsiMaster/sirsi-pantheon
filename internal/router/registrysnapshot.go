@@ -76,7 +76,7 @@ func snapshotPaths() (data, meta string) {
 var staleLogged sync.Once
 
 // registrySource says which agents.json this host reads: the origin snapshot when
-// one exists and is fresh, else the working tree (the pre-pinning behaviour).
+// one exists and is fresh, else the working tree (the pre-pinning behavior).
 func registrySource(routerRoot string) (path string, pinned bool) {
 	working := filepath.Join(routerRoot, "agents.json")
 	dp, mp := snapshotPaths()
