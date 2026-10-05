@@ -79,3 +79,30 @@ func TestFileDecisionJournalRepairRefusesSameInodeSameSizeMutationBeforeInstall(
 		t.Fatalf("mutated active journal was overwritten: %q", got)
 	}
 }
+
+func TestFileDecisionJournalRepairTightensOwnedLegacyPermissionsBeforeRebuild(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "decisions.jsonl")
+	valid := `{"time":"2026-09-26T10:01:00Z","host":"m5","kind":"reservation","requester":"alpha","assessed":"free","determination":"grant","why":"no overlap"}`
+	legacy := `{"time":"2026-09-26T10:02:00Z","host":"m5","kind":"assessment","assessed":"legacy","determination":"warn","why":"missing requester"}`
+	if err := os.WriteFile(path, []byte(valid+"\n"+legacy+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	receipt, err := (&FileDecisionJournal{Path: path}).RepairInvalidRecords()
+	if err != nil {
+		t.Fatalf("repair owned legacy journal: %v", err)
+	}
+	if receipt.RemovedCount != 1 || receipt.RetainedCount != 1 {
+		t.Fatalf("repair receipt = %+v, want one removed and one retained", receipt)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("repaired mode = %o, want 600", got)
+	}
+	if _, err := os.Stat(receipt.BackupPath); err != nil {
+		t.Fatalf("preserved backup missing: %v", err)
+	}
+}

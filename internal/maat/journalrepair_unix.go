@@ -31,6 +31,7 @@ var journalRepairBeforeSourceRevalidation = func() {}
 type journalObjectIdentity struct {
 	dev   uint64
 	ino   uint64
+	uid   uint32
 	mode  uint32
 	nlink uint64
 	size  int64
@@ -38,17 +39,21 @@ type journalObjectIdentity struct {
 
 func journalIdentity(stat *unix.Stat_t) journalObjectIdentity {
 	return journalObjectIdentity{
-		dev: uint64(stat.Dev), ino: stat.Ino, mode: uint32(stat.Mode),
+		dev: uint64(stat.Dev), ino: stat.Ino, uid: stat.Uid, mode: uint32(stat.Mode),
 		nlink: uint64(stat.Nlink), size: stat.Size,
 	}
 }
 
 func (identity journalObjectIdentity) same(other journalObjectIdentity) bool {
-	return identity.dev == other.dev && identity.ino == other.ino && identity.mode == other.mode && identity.nlink == other.nlink && identity.size == other.size
+	return identity.dev == other.dev && identity.ino == other.ino && identity.uid == other.uid && identity.mode == other.mode && identity.nlink == other.nlink && identity.size == other.size
 }
 
 func isPrivateRegular(identity journalObjectIdentity) bool {
 	return identity.mode&unix.S_IFMT == unix.S_IFREG && identity.nlink == 1 && identity.mode&0o077 == 0
+}
+
+func isOwnedRegular(identity journalObjectIdentity) bool {
+	return identity.mode&unix.S_IFMT == unix.S_IFREG && identity.nlink == 1 && identity.uid == uint32(os.Geteuid())
 }
 
 func withJournalMutationLock(path string, fn func() error) error {
@@ -101,6 +106,25 @@ func repairInvalidRecordsLocked(j *FileDecisionJournal) (JournalRepairReceipt, e
 	beforeStat, err := fstatJournal(sourceFD)
 	if err != nil {
 		return JournalRepairReceipt{}, err
+	}
+	// A confirmed repair may tighten an owned, singly-linked regular legacy
+	// journal through its retained descriptor. This is the only pre-rebuild
+	// mutation: it never follows a pathname, never widens permissions, and
+	// refuses a different owner, symlink, hard link, or non-regular object.
+	if !isOwnedRegular(beforeStat) {
+		return JournalRepairReceipt{}, fmt.Errorf("maat decision journal: repair source is not an owned singly-linked regular file")
+	}
+	if beforeStat.mode&0o077 != 0 {
+		if err := unix.Fchmod(sourceFD, 0o600); err != nil {
+			return JournalRepairReceipt{}, fmt.Errorf("maat decision journal: tighten legacy journal permissions: %w", err)
+		}
+		if err := unix.Fsync(sourceFD); err != nil {
+			return JournalRepairReceipt{}, fmt.Errorf("maat decision journal: sync tightened legacy journal permissions: %w", err)
+		}
+		beforeStat, err = fstatJournal(sourceFD)
+		if err != nil {
+			return JournalRepairReceipt{}, err
+		}
 	}
 	if !isPrivateRegular(beforeStat) {
 		return JournalRepairReceipt{}, fmt.Errorf("maat decision journal: repair source is not a private singly-linked regular file")
