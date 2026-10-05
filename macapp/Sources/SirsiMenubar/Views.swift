@@ -1233,8 +1233,6 @@ struct FindingView: View {
         switch finding.check {
         case "binary-drift":
             return ["self-update"]
-        case "App Crashes (7d)", "Disk Space":
-            return finding.severity >= 2 ? ["clean", "--include-caution"] : nil
         case "App Hangs (7d)", "Process Footprint", "Thread Leaks":
             return finding.severity >= 2 ? ["relieve"] : nil
         case "RAM Pressure", "Top Memory Consumers", "Jetsam Events (7d)", "Memory Death Spiral", "Swap Usage":
@@ -1250,12 +1248,21 @@ struct FindingView: View {
         }
     }
 
+    // A generic health observation cannot safely choose or widen a cleanup
+    // scope. Older CLIs that omitted their typed `fix` therefore land in the
+    // app's own itemized Scan & Clean review, where the exact selected paths
+    // are shown and confirmed before anything moves to Trash.
+    private var requiresNativeCleanupReview: Bool {
+        guard finding.fix?.isEmpty != false, finding.severity >= 2 else { return false }
+        return finding.check == "App Crashes (7d)" || finding.check == "Disk Space"
+    }
+
     private var resolutionRoute: DiagnosticResolutionRoute {
         diagnosticResolutionRoute(
             resolution: finding.resolution,
             severity: finding.severity,
             hasFix: !(finding.fix ?? "").isEmpty,
-            hasRecommendedCommand: legacyNativeRepairArgs != nil
+            hasRecommendedCommand: legacyNativeRepairArgs != nil || requiresNativeCleanupReview
         )
     }
 
@@ -1391,6 +1398,8 @@ struct FindingView: View {
                             } label: { fixButtonContents(fix) }
                             .buttonStyle(.borderedProminent).tint(gold)
                         }
+                    } else if requiresNativeCleanupReview {
+                        nativeCleanupReview
                     } else if legacyNativeRepairArgs != nil {
                         legacyNativeRepair
                     } else if requiresMaatReview {
@@ -1473,6 +1482,23 @@ struct FindingView: View {
                 confirmLegacyRepair = true
             } label: {
                 Label("Resolve in Pantheon", systemImage: "wrench.and.screwdriver.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent).tint(gold)
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+    }
+
+    @ViewBuilder private var nativeCleanupReview: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text("REVIEW THE EXACT CLEANUP SCOPE").sirsiFont(.caption2, weight: .semibold).foregroundStyle(.secondary)
+            Text("Pantheon will not turn this broad diagnostic into a hidden cleanup. Review the itemized candidates, select the exact paths you accept rebuilding, then confirm the scoped Trash move in the app.")
+                .sirsiFont(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            NavLink {
+                AnubisView(engine: engine)
+            } label: {
+                Label("Review in Scan & Clean", systemImage: "tray.full.fill")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent).tint(gold)
