@@ -188,6 +188,17 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertTrue(unknown.requiresRecovery)
     }
 
+    func testUnverifiedRefreshRetainsPreRefreshOutboxScope() {
+        let captured = [RBOutbox(agent: "codex-pantheon", observed: true, readable: false,
+                                 queuedForRetry: 0, unreadable: true, error: "permission denied")]
+        let unresolved = OutboxRecheckOutcome(message: "still unknown", requiresRecovery: true)
+        XCTAssertEqual(retainedOutboxScope(outcome: unresolved, capturedScope: captured).map(\.agent),
+                       ["codex-pantheon"])
+
+        let cleared = OutboxRecheckOutcome(message: "readable", requiresRecovery: false)
+        XCTAssertTrue(retainedOutboxScope(outcome: cleared, capturedScope: captured).isEmpty)
+    }
+
     func testRouterBoardRecheckCanBypassFreshCache() throws {
         XCTAssertTrue(SirsiEngine.routerBoardCacheIsUsable(forceLive: false, isFresh: true, hasDecodedBoard: true))
         XCTAssertFalse(SirsiEngine.routerBoardCacheIsUsable(forceLive: true, isFresh: true, hasDecodedBoard: true))
@@ -229,6 +240,8 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertTrue(source.contains("RaHandoffView(engine: engine, isPresented: $showingHandoff)"))
         XCTAssertTrue(source.contains("@State private var retainedOutboxBlockers"))
         XCTAssertTrue(source.contains("engine.routerHasBlockers || !visibleOutboxBlockers.isEmpty"))
+        XCTAssertTrue(card.contains("let capturedScope = blocked"))
+        XCTAssertTrue(card.contains("onRecheckResult(outcome, capturedScope)"))
     }
 
     func testCasebookRouteDoesNotSeedItsLiteralSearchFilter() throws {

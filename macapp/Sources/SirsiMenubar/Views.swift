@@ -2160,9 +2160,9 @@ struct RaFabricView: View {
                                 engine: engine,
                                 blocked: visibleOutboxBlockers,
                                 onHandoff: { showingHandoff = true },
-                                onRecheckResult: { outcome in
+                                onRecheckResult: { outcome, capturedScope in
                                     outboxRecheckMessage = outcome.message
-                                    retainedOutboxBlockers = outcome.requiresRecovery ? visibleOutboxBlockers : []
+                                    retainedOutboxBlockers = retainedOutboxScope(outcome: outcome, capturedScope: capturedScope)
                                 }
                             )
                         }
@@ -2600,7 +2600,7 @@ struct OutboxBlockerCard: View {
     @ObservedObject var engine: SirsiEngine
     let blocked: [RBOutbox]
     let onHandoff: () -> Void
-    let onRecheckResult: (OutboxRecheckOutcome) -> Void
+    let onRecheckResult: (OutboxRecheckOutcome, [RBOutbox]) -> Void
     @State private var rechecking = false
 
     var body: some View {
@@ -2623,6 +2623,10 @@ struct OutboxBlockerCard: View {
 
             resolutionLevel(1, "Recheck the fabric", "Read the current Ra board again. This checks whether the unreadable status remains; it does not repair the outbox or verify queued delivery.") {
                 SnapshotActionButton(disabled: rechecking || engine.busy) {
+                    // The refresh replaces routerBoard. Capture the proven
+                    // pre-read scope before awaiting it so missing telemetry
+                    // cannot erase the recovery path we need to retain.
+                    let capturedScope = blocked
                     Task {
                         rechecking = true
                         let readSucceeded = await engine.loadRouterBoard(forceLive: true)
@@ -2631,7 +2635,7 @@ struct OutboxBlockerCard: View {
                             scopedAgents: Set(blocked.map(\.agent)),
                             currentOutboxes: engine.routerBoard?.outbox
                         )
-                        onRecheckResult(outcome)
+                        onRecheckResult(outcome, capturedScope)
                         rechecking = false
                     }
                 } label: {
@@ -2666,6 +2670,10 @@ struct OutboxBlockerCard: View {
 struct OutboxRecheckOutcome: Equatable {
     let message: String
     let requiresRecovery: Bool
+}
+
+func retainedOutboxScope(outcome: OutboxRecheckOutcome, capturedScope: [RBOutbox]) -> [RBOutbox] {
+    outcome.requiresRecovery ? capturedScope : []
 }
 
 func outboxRecheckOutcome(readSucceeded: Bool, scopedAgents: Set<String>,
