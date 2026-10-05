@@ -50,7 +50,11 @@ type Node struct {
 
 // Principal identifies the already-authenticated tailnet operator. It carries
 // no secret and is used only to bind an ephemeral recovery session.
-type Principal struct{ Login string }
+type Principal struct {
+	Login              string
+	AdmissionID        [sha256.Size]byte
+	AdmissionExpiresAt time.Time
+}
 
 // Authorizer is the Pantheon admission seam. Production uses a signed
 // capability; tests inject a deterministic authorizer. There is intentionally
@@ -90,7 +94,8 @@ func (a CapabilityAuthorizer) AuthorizeRecovery(_ context.Context, r *http.Reque
 	if claims.Purpose != "pantheon.desktop-recovery" || claims.NodeID != node.ID || claims.Origin != r.Header.Get("Origin") || !a.Now().Before(time.Unix(claims.ExpiresAt, 0)) {
 		return Principal{}, errors.New("desktop recovery capability is not valid for this admission")
 	}
-	return Principal{Login: claims.Login}, nil
+	identity, _ := json.Marshal([]string{claims.KeyID, claims.Nonce})
+	return Principal{Login: claims.Login, AdmissionID: sha256.Sum256(identity), AdmissionExpiresAt: time.Unix(claims.ExpiresAt, 0)}, nil
 }
 
 func (a CapabilityAuthorizer) claims(r *http.Request) (CapabilityClaims, error) {
@@ -103,12 +108,12 @@ func (a CapabilityAuthorizer) claims(r *http.Request) (CapabilityClaims, error) 
 	if len(parts) != 2 || len(compact) > 4096 {
 		return CapabilityClaims{}, errors.New("desktop recovery capability is malformed")
 	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[0])
-	if err != nil || len(payload) == 0 || len(payload) > 2048 {
+	payload, err := base64.RawURLEncoding.Strict().DecodeString(parts[0])
+	if err != nil || len(payload) == 0 || len(payload) > 2048 || base64.RawURLEncoding.EncodeToString(payload) != parts[0] {
 		return CapabilityClaims{}, errors.New("desktop recovery capability payload is malformed")
 	}
-	signature, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil || len(signature) != ed25519.SignatureSize {
+	signature, err := base64.RawURLEncoding.Strict().DecodeString(parts[1])
+	if err != nil || len(signature) != ed25519.SignatureSize || base64.RawURLEncoding.EncodeToString(signature) != parts[1] {
 		return CapabilityClaims{}, errors.New("desktop recovery capability signature is malformed")
 	}
 	var claims CapabilityClaims
@@ -305,15 +310,22 @@ func (g *Gateway) admit(w http.ResponseWriter, r *http.Request, node Node) {
 		http.Error(w, "recovery admission denied", http.StatusUnauthorized)
 		return
 	}
+	now := g.now().UTC()
+	if principal.AdmissionID == ([sha256.Size]byte{}) || !now.Before(principal.AdmissionExpiresAt) {
+		http.Error(w, "recovery admission denied", http.StatusUnauthorized)
+		return
+	}
 	raw := make([]byte, 32)
 	if n, err := g.rand(raw); err != nil || n != len(raw) {
 		http.Error(w, "recovery session unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	now := g.now().UTC()
 	expires := now.Add(g.ttl)
+	if principal.AdmissionExpiresAt.Before(expires) {
+		expires = principal.AdmissionExpiresAt
+	}
 	hash := sha256.Sum256(raw)
-	capabilityHash := sha256.Sum256([]byte(admission.Header.Get("Authorization")))
+	capabilityHash := principal.AdmissionID
 	g.mu.Lock()
 	g.gcLocked(now)
 	if _, exists := g.admitted[capabilityHash]; exists {
@@ -322,7 +334,7 @@ func (g *Gateway) admit(w http.ResponseWriter, r *http.Request, node Node) {
 		return
 	}
 	g.sessions[hash] = session{nodeID: node.ID, principal: principal.Login, expiresAt: expires}
-	g.admitted[capabilityHash] = expires
+	g.admitted[capabilityHash] = principal.AdmissionExpiresAt
 	g.mu.Unlock()
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: hex.EncodeToString(raw), Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode, Expires: expires})
 	if strings.Contains(r.Header.Get("Accept"), "text/html") {

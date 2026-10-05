@@ -78,3 +78,11 @@ standard browser prompt. Pantheon does not broker, save, put in a URL, or log
 those RFB credentials. They exist transiently in the browser/RFB handshake;
 use a trusted device and decline browser password persistence for a recovery
 session.
+
+## Admission replay boundary
+
+A signed admission can be consumed once per running bridge until its signed
+expiry, including after a disconnect or cookie expiry. Use a fresh nonce for
+new admission. The current source uses a process-local consumed-nonce map;
+restart or multiple bridges do not preserve one-time use. Live release remains
+blocked pending a reviewed durable authority contract and real-device proof.

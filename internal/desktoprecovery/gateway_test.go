@@ -211,3 +211,67 @@ func TestGatewayProxiesOnlyAdmittedNodeAndCleansSessionOnDisconnect(t *testing.T
 	}
 	t.Fatal("recovery session survived disconnect")
 }
+
+func TestCapabilityReplayUsesVerifiedNonceUntilExpiry(t *testing.T) {
+	public, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().Truncate(time.Second)
+	claims := CapabilityClaims{KeyID: "test", Login: "owner@example.test", NodeID: "m1", Origin: "https://m5.example.ts.net", Purpose: "pantheon.desktop-recovery", ExpiresAt: now.Add(10 * time.Minute).Unix(), Nonce: "nonce-one"}
+	payload, err := json.Marshal(claims)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sign := func(payload []byte) string {
+		return base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(ed25519.Sign(private, payload))
+	}
+	token := sign(payload)
+	g, err := New(Config{Nodes: []Node{{ID: "m1", Address: "100.88.242.95:5900", Origins: []string{claims.Origin}}}, Authorizer: CapabilityAuthorizer{PublicKeys: map[string]ed25519.PublicKey{"test": public}, Now: func() time.Time { return now }}, Now: func() time.Time { return now }, SessionTTL: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	admit := func(token string) int {
+		r := httptest.NewRequest(http.MethodPost, "https://m5.example.ts.net/recovery/v1/nodes/m1/sessions", nil)
+		r.Header.Set("Origin", claims.Origin)
+		r.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		g.Handler().ServeHTTP(w, r)
+		return w.Code
+	}
+	if got := admit(token); got != http.StatusCreated {
+		t.Fatalf("first admission: %d", got)
+	}
+	alphabet := "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+	last := strings.IndexByte(alphabet, token[len(token)-1])
+	alternate := token[:len(token)-1] + string(alphabet[last+1])
+	parts := strings.Split(token, ".")
+	altParts := strings.Split(alternate, ".")
+	canonicalBytes, _ := base64.RawURLEncoding.DecodeString(parts[1])
+	alternateBytes, _ := base64.RawURLEncoding.DecodeString(altParts[1])
+	if string(canonicalBytes) != string(alternateBytes) {
+		t.Fatal("fixture must preserve signature bytes")
+	}
+	if got := admit(alternate); got != http.StatusUnauthorized {
+		t.Fatalf("noncanonical signature admission: %d", got)
+	}
+	if got := admit(parts[0] + ".\n" + parts[1]); got != http.StatusUnauthorized {
+		t.Fatalf("newline encoding admission: %d", got)
+	}
+	// A second valid signature over differently formatted JSON is the same nonce.
+	if got := admit(sign(append([]byte(" "), payload...))); got != http.StatusConflict {
+		t.Fatalf("semantic nonce replay: %d", got)
+	}
+	// Disconnect and cookie expiry must not clear the capability replay fence.
+	g.mu.Lock()
+	clear(g.sessions)
+	g.mu.Unlock()
+	now = now.Add(2 * time.Minute)
+	if got := admit(token); got != http.StatusConflict {
+		t.Fatalf("replay after session expiry/disconnect: %d", got)
+	}
+	now = now.Add(8 * time.Minute)
+	if got := admit(token); got != http.StatusUnauthorized {
+		t.Fatalf("expired capability: %d", got)
+	}
+}
