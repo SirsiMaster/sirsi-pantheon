@@ -279,6 +279,22 @@ func (s *SQLiteStore) ListActive(ctx context.Context) ([]Item, error) {
 	return scanItems(rows)
 }
 
+// ListSince returns the active items (and their blocked_by targets) plus every item
+// closed at or after since (an RFC3339 timestamp). It is what pace and turnaround
+// surfaces need (closed in the last N days) without reading the whole history.
+func (s *SQLiteStore) ListSince(ctx context.Context, since string) ([]Item, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+itemCols+` FROM items
+		WHERE status NOT IN ('closed','completed','dead_letter')
+		   OR (closed<>'' AND closed >= ?)
+		   OR id IN (SELECT blocked_by FROM items WHERE blocked_by<>'' AND status NOT IN ('closed','completed','dead_letter'))
+		ORDER BY id ASC;`, since)
+	if err != nil {
+		return nil, fmt.Errorf("routerstore: ListSince: %w", err)
+	}
+	defer rows.Close()
+	return scanItems(rows)
+}
+
 // CountClosed returns how many items are closed (status 'closed'), so a summary
 // can print totals without reading the rows.
 func (s *SQLiteStore) CountClosed(ctx context.Context) (int, error) {

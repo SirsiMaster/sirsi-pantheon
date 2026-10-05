@@ -27,6 +27,7 @@ func pageShell(title, activePage, bodyContent string, port int) string {
 	}{
 		{"home", "☥", "Home"},
 		{"fleet", "⚑", "Fleet"},
+		{"router", "⚙", "Router"},
 		{"scan", "𓁢", "Scan"},
 		{"ghosts", "𓂓", "Ghosts"},
 		{"guard", "🛡", "Guard"},
@@ -162,7 +163,7 @@ font-family:'Avenir Next',Avenir,-apple-system,system-ui,sans-serif;flex-shrink:
 // ── SPA Entry Point ───────────────────────────────────────────────────
 
 func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
+	if r.URL.Path != "/classic" {
 		http.NotFound(w, r)
 		return
 	}
@@ -239,7 +240,7 @@ window.switchView=function(view){
  document.querySelectorAll('.nav-item').forEach(function(n){
   n.classList.toggle('active',n.dataset.view===view)});
  clear();
- var loader={home:viewHome,fleet:viewFleet,scan:viewScan,ghosts:viewGhosts,guard:viewGuard,
+ var loader={home:viewHome,fleet:viewFleet,router:viewRouter,scan:viewScan,ghosts:viewGhosts,guard:viewGuard,
   maat:viewMaat,notifications:viewNotifications,horus:viewHorus,apollo:viewApollo,vault:viewVault,ra:viewRa};
  (loader[view]||viewHome)();
 };
@@ -360,7 +361,9 @@ function cleanIdx(el,idx){
 
 function viewFleet(){
  out('⚑ Fleet — every lane, live','t-gold');
+ var fleetLoading=document.createElement('div');fleetLoading.className='t-line t-dim';fleetLoading.textContent='  loading the fleet board…';T.appendChild(fleetLoading);
  fetch('/api/fleet').then(function(r){
+  if(fleetLoading.parentNode)fleetLoading.parentNode.removeChild(fleetLoading);
   if(!r.ok)return r.json().then(function(e){throw new Error(e.error||('HTTP '+r.status))});
   return r.json()}).then(function(d){
   const s=d.summary||{};
@@ -620,6 +623,46 @@ function viewVault(){
    Object.keys(s.tagCounts||{}).length+' tags','t-dim');
   sep();out('');out('Type a search query to find content in the vault.','t-dim');
  }).catch(function(){out('Vault not available.','t-dim')});
+}
+
+function viewRouter(){
+ out('⚙ Router — what is built, what is wrong, what is fixed','t-gold');
+ var ld=document.createElement('div');ld.className='t-line t-dim';ld.textContent='  loading the router panel…';T.appendChild(ld);
+ fetch('/api/router').then(function(r){
+  if(!r.ok)return r.json().then(function(e){throw new Error(e.error||('HTTP '+r.status))});
+  return r.json()}).then(function(d){
+  if(ld.parentNode)ld.parentNode.removeChild(ld);
+  out('');
+  out('  INSTALLED     '+d.version+'    generated '+d.generated_at,'t-head');
+  var c=(d.lanes&&d.lanes.counts)||{};
+  var order=['LIVE','WAKEABLE','HELD','AUTH_REQUIRED','WATCH_ONLY','UNREACHABLE','UNSTAFFED'];
+  var parts=order.filter(function(k){return c[k]}).map(function(k){return k+' '+c[k]});
+  out('  LANES         '+(parts.join(' · ')||'none'),'t-head');
+  out('  CONSUMERS     '+d.consumers.running+' running / cap '+d.consumers.max+' on this host','t-head');
+  out('  REGISTRY      '+(d.registry.pinned?('pinned to origin/main '+(d.registry.commit||'').slice(0,12)+' (fetched '+(d.registry.fetched_at||'?')+')'):'reading the working tree — not pinned (sirsi router registry sync)'),d.registry.pinned?'t-head':'t-err');
+  if(d.swap){var w=d.swap;out('  SWAP          '+w.verdict+' · '+Math.round(w.used_mib)+' of '+Math.round(w.total_mib)+' MiB · free memory '+w.free_pct+'% · paging delta '+(w.delta_pages<0?'n/a':w.delta_pages)+' pages · correctness-only '+(w.correctness_only_ok?'yes':'no')+' · release timing '+(w.release_timing_ok?'yes':'no')+(w.restart_proposed?' · RESTART PROPOSED':''),w.verdict==='pressure'?'t-err':'t-head')}
+  else out('  SWAP          no receipt yet (sirsi swap-hygiene)','t-dim');
+  sep();
+  out('WHAT EACH RELEASE ADDED','t-gold');
+  (d.releases||[]).forEach(function(r){
+   out('');out('  '+r.version+(r.date?'  ·  '+r.date:'  (not yet released)'),'t-head');
+   (r.items||[]).forEach(function(it){out('    • '+it,'t-out')});
+   if(!(r.items||[]).length)out('    (no entries)','t-dim')});
+  sep();
+  out('KNOWN FAILURES — registered once, fixed with a guard, recognized on recurrence','t-gold');
+  (d.known_failures||[]).forEach(function(k){
+   out('  '+(k.status==='resolved'?'✓':'○')+' '+k.id+'  fixed in '+(k.fixed_in||'—')+'  guard '+(k.guard||'—'),k.status==='resolved'?'t-ok':'t-err');
+   out('      '+k.title,'t-dim')});
+  sep();
+  out('LANES — the same verdict as sirsi router ping --all','t-gold');
+  (d.lanes.list||[]).forEach(function(l){
+   var cls=(l.verdict==='LIVE'||l.verdict==='WAKEABLE')?'t-ok':(l.verdict==='HELD'?'t-out':'t-err');
+   out('  '+(l.agent+'                              ').slice(0,30)+' '+(l.verdict+'              ').slice(0,14)+' '+(l.detail||'').slice(0,90),cls)});
+  sep();
+  out('QUEUE — open items by recipient','t-gold');
+  (d.queue||[]).forEach(function(q){out('  '+(q.agent+'                              ').slice(0,30)+' '+q.open,'t-out')});
+  if(!(d.queue||[]).length)out('  empty','t-ok');
+ }).catch(function(e){if(ld.parentNode)ld.parentNode.removeChild(ld);out('  router panel unavailable: '+e.message,'t-err')});
 }
 
 function viewRa(){

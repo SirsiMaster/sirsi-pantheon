@@ -74,3 +74,9 @@ func hostConsumerSlotsFull(routerRoot, agentID string, depth int) bool {
 		agentID, runningConsumersExcept(routerRoot, agentID), maxConcurrentConsumers(), depth)
 	return true
 }
+
+// ConsumerSlotUsage reports how many consumers run on this host (all lanes) and the
+// cap, for status surfaces.
+func ConsumerSlotUsage(routerRoot string) (running, max int) {
+	return runningConsumersExcept(routerRoot, ""), maxConcurrentConsumers()
+}
