@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased] — Apollo view: retire the last user-facing "SNE" copy
 
+- **v0.24.82 — every retained activity has a guided Ma’at resolution.** Failed,
+  ambiguous, and evidence-pending Activity records now offer a native
+  resolution card that explains what happened, records the precise retained
+  outcome in Ma’at’s casebook, and opens the resulting case. It never replays
+  a retained command, so evidence cannot become an accidental action. The
+  detail view now has a visible completion route instead of leaving an operator
+  with raw status text and a dead end.
+
 - **v0.24.81 release candidate — enrolled signing Mac releases without credential export.** The commercial DMG and PKG builders now accept an existing `notarytool` keychain profile on an enrolled signing Mac. Direct release signing still requires the exact Developer ID Application or Installer identity, but Apple credentials never have to be copied into environment variables, logs, source, or a receipt. The existing remote signing-service and CI credential routes remain intact.
 
 - **v0.24.80 release candidate — Activity resolves instead of dumping terminal remnants.** Activity now classifies every retained outcome as completed, needing review, or requiring evidence verification. Ambiguous and failed records open a native Ma’at guided-review route; the exact command is retained as technical evidence in the detail view rather than being the user-facing workflow. This preserves provenance without making people decode shell output to find a next step.
