@@ -45,3 +45,37 @@ func TestFileDecisionJournalRepairRefusesNameSubstitutionBeforeInstall(t *testin
 		t.Fatalf("original source should remain preserved after refused repair: %v", err)
 	}
 }
+
+func TestFileDecisionJournalRepairRefusesSameInodeSameSizeMutationBeforeInstall(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "decisions.jsonl")
+	valid := `{"time":"2026-09-26T10:01:00Z","host":"m5","kind":"reservation","requester":"alpha","assessed":"free","determination":"grant","why":"no overlap"}`
+	legacy := `{"time":"2026-09-26T10:02:00Z","host":"m5","kind":"assessment","assessed":"legacy","determination":"warn","why":"missing requester"}`
+	original := valid + "\n" + legacy + "\n"
+	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mutated := strings.Replace(original, `"alpha"`, `"bravo"`, 1)
+	if len(mutated) != len(original) {
+		t.Fatal("fixture must preserve exact journal size")
+	}
+
+	oldHook := journalRepairBeforeSourceRevalidation
+	t.Cleanup(func() { journalRepairBeforeSourceRevalidation = oldHook })
+	journalRepairBeforeSourceRevalidation = func() {
+		if err := os.WriteFile(path, []byte(mutated), 0o600); err != nil {
+			t.Fatalf("mutate retained source inode: %v", err)
+		}
+	}
+
+	_, err := (&FileDecisionJournal{Path: path}).RepairInvalidRecords()
+	if err == nil || !strings.Contains(err.Error(), "source changed during repair") {
+		t.Fatalf("repair same-inode mutation error = %v, want source-change refusal", err)
+	}
+	got, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(got) != mutated {
+		t.Fatalf("mutated active journal was overwritten: %q", got)
+	}
+}

@@ -23,6 +23,11 @@ import (
 // descriptor-relative rename.
 var journalRepairBeforeInstall = func() {}
 
+// journalRepairBeforeSourceRevalidation lets the adversarial tests mutate the
+// same open inode after the first read. The subsequent retained-descriptor
+// reread must refuse that case even when size and pathname are unchanged.
+var journalRepairBeforeSourceRevalidation = func() {}
+
 type journalObjectIdentity struct {
 	dev   uint64
 	ino   uint64
@@ -157,6 +162,7 @@ func repairInvalidRecordsLocked(j *FileDecisionJournal) (JournalRepairReceipt, e
 	// Re-read through the retained source descriptor. This catches same-inode,
 	// same-size content edits after the first read, while the mutation lock
 	// serializes current Pantheon appenders through the final rename.
+	journalRepairBeforeSourceRevalidation()
 	if _, err := source.Seek(0, io.SeekStart); err != nil {
 		return JournalRepairReceipt{}, fmt.Errorf("maat decision journal: rewind source before install: %w", err)
 	}
