@@ -106,6 +106,8 @@ type Store interface {
 	SetState(key, value string) error
 	SetWake(id, status, attemptedAt, adapter, wakeErr string) error
 	StartWork(id, token string) error
+	// TaskEligibility is the read-only "why would a claim be refused" diagnosis.
+	TaskEligibility(agent, taskID string) (TaskEligibility, error)
 	TaskSession(agent, taskID string) (string, error)
 	TouchSession(id string) error
 	UnmetRequirements(owner string) ([]Requirement, error)

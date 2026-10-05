@@ -257,6 +257,44 @@ so undoing exhaustion undoes it too. A row genuinely blocked on a dependency
 	},
 }
 
+var taskWhyJSON bool
+
+var routerTaskWhyCmd = &cobra.Command{
+	Use: "why <agent> <task-id>", Args: cobra.ExactArgs(2),
+	Short: "Read-only: why a claim of this task would be refused (holder, lease expiry, attempts, dependency)",
+	Long: `Reports the fields the task list omits — claimed_by, thread, lease expiry, attempts
+against the ceiling, failure reason, and the blocked_by dependency's own state —
+and names every cause that blocks a claim. Never changes anything and never prints
+the lease token. Use it instead of probing with claim attempts.
+
+  sirsi router task why codex-finalwishes FW-RELEASE-ACCEPTANCE-WIRING-20261002`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		f, err := openTaskFacade()
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		e, err := f.Store().TaskEligibility(args[0], args[1])
+		if err != nil {
+			return err
+		}
+		if taskWhyJSON {
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(e)
+		}
+		verdict := "NOT claimable"
+		if e.Claimable {
+			verdict = "claimable"
+		}
+		fmt.Printf("%s/%s — %s (status %s, attempts %d/%d)\n", e.Agent, e.TaskID, verdict, e.Status, e.Attempts, e.MaxAttempts)
+		for _, r := range e.Reasons {
+			fmt.Printf("  • %s\n", r)
+		}
+		return nil
+	},
+}
+
 var routerTaskAddCmd = &cobra.Command{
 	Use: "add <agent> <task-id>", Args: cobra.ExactArgs(2), Short: "Add a task",
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -428,6 +466,7 @@ func init() {
 	routerTaskReleaseCmd.Flags().StringVar(&taskLeaseReason, "reason", "", "Recoverable failure reason")
 	routerTaskReclaimExpiredCmd.Flags().BoolVar(&taskReclaimDryRun, "dry-run", false, "Report what would be reclaimed without writing")
 	routerTaskReclaimExpiredCmd.Flags().BoolVar(&ledgerJSON, "json", false, "Emit JSON")
-	routerTaskCmd.AddCommand(routerTaskAddCmd, routerTaskUpdateCmd, routerTaskListCmd, routerTaskClaimCmd, routerTaskClaimIDCmd, routerTaskRenewCmd, routerTaskCompleteCmd, routerTaskReleaseCmd, routerTaskReclaimExpiredCmd, routerTaskResetAttemptsCmd)
+	routerTaskWhyCmd.Flags().BoolVar(&taskWhyJSON, "json", false, "Emit JSON")
+	routerTaskCmd.AddCommand(routerTaskAddCmd, routerTaskUpdateCmd, routerTaskListCmd, routerTaskClaimCmd, routerTaskClaimIDCmd, routerTaskRenewCmd, routerTaskCompleteCmd, routerTaskReleaseCmd, routerTaskReclaimExpiredCmd, routerTaskResetAttemptsCmd, routerTaskWhyCmd)
 	routerCmd.AddCommand(routerLedgerCmd, routerTaskCmd, routerDependCmd)
 }
