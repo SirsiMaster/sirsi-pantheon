@@ -521,7 +521,7 @@ func (g *Gateway) renderEntry(w http.ResponseWriter, node Node, status int, mess
 	if message != "" {
 		state = `<div class="notice" role="alert"><strong>Recovery needs a fresh admission.</strong><span>` + message + `</span></div>`
 	}
-	_, _ = fmt.Fprintf(w, entryPage, node.ID, node.ID, state)
+	_, _ = fmt.Fprintf(w, entryPage, node.ID, state, node.ID)
 }
 
 const entryPage = `<!doctype html>
