@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased] — Apollo view: retire the last user-facing "SNE" copy
 
+- **v0.24.84 — native Ma'at now owns the entire known-failure intake.** The
+  app has a first-class Proposals workspace: people can inspect every local
+  recurring-failure report, record a typed observation with a confirmation,
+  retry a failed read, and open the Stack Lab review route. The bundled CLI
+  now exposes the same proposal objects as clean JSON for creation and listing.
+  Local evidence still cannot silently edit source or become a fabric-wide
+  matcher until it is reviewed and promoted.
+
 - **v0.24.83 — Ma’at known-failure intake no longer depends on a source checkout.**
   `sirsi maat known-failures register` now writes a create-only, read-back
   verified, catalog-hash-bound local proposal under Ma’at’s protected local
