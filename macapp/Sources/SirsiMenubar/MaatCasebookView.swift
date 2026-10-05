@@ -976,11 +976,13 @@ struct MaatCasebookView: View {
     @State private var knowledgeRefreshResult: String?
     @State private var knowledgeRefreshError: String?
 
-    init(engine: SirsiEngine, preloaded: MaatCasebookProjection? = nil, showsBackBar: Bool = true) {
+    init(engine: SirsiEngine, preloaded: MaatCasebookProjection? = nil, showsBackBar: Bool = true,
+         contextCheck: String? = nil) {
         self.engine = engine
         self.showsBackBar = showsBackBar
         _casebook = State(initialValue: preloaded)
         _loading = State(initialValue: preloaded == nil)
+        _query = State(initialValue: contextCheck ?? "")
     }
 
     var body: some View {

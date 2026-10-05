@@ -228,9 +228,11 @@ extension View {
 final class Nav: ObservableObject {
     struct Frame: Identifiable { let id = UUID(); let view: AnyView }
     @Published var stack: [Frame] = []
+    @Published private(set) var reopenCount = 0
     func push<V: View>(_ v: V) { stack.append(Frame(view: AnyView(v))) }
     func pop() { if !stack.isEmpty { stack.removeLast() } }
     func popToRoot() { stack.removeAll() }
+    func windowDidReopen() { reopenCount += 1 }
     var atRoot: Bool { stack.isEmpty }
 }
 
@@ -356,10 +358,10 @@ struct RootView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .environment(\.sirsiTypeScale, typeScale(forWidth: geo.size.width))
         }
-        // Every panel (re)open starts at a fresh Home. Pushed screens load their
-        // command output once (.task) and would otherwise show it forever — the
-        // RTK screen kept rendering output from a since-replaced binary.
-        .onChange(of: engine.reopenTick) { _ in nav.popToRoot() }
+        // The status panel is a window, not a disposable menu. Keep the operator
+        // on the evidence or resolution they opened when the panel is hidden and
+        // shown again; drilled-in screens expose explicit refresh controls.
+        .onChange(of: engine.reopenTick) { _ in nav.windowDidReopen() }
         // Toast deep-link: a clicked owner-gated notification lands directly on
         // that item's action screen (set by AppDelegate.openOwnerItem).
         .onChange(of: engine.pendingOwnerItemID) { id in
@@ -736,7 +738,8 @@ func statusColor(_ status: String) -> Color {
     switch status {
     case "red": return .red
     case "amber": return .yellow
-    default: return .green
+    case "green": return .green
+    default: return gold
     }
 }
 
@@ -921,14 +924,23 @@ struct HorusView: View {
     private var quietFindings: [DiagFinding] { engine.health.filter { $0.severity < 2 } }
 
     private var statusTitle: String {
+        switch engine.healthObservationState {
+        case .unknown: return "Health not confirmed"
+        case .stale: return "Last reading is stale"
+        case .current: break
+        }
         switch engine.healthStatus {
         case "red": return "System needs attention"
         case "amber": return "Worth a look"
-        default: return "Your Mac looks good"
+        case "green": return "Your Mac looks good"
+        default: return "Health status unavailable"
         }
     }
 
     private var statusDetail: String {
+        if engine.healthObservationState != .current {
+            return engine.healthObservationError ?? "Run a fresh local check to confirm this Mac's health."
+        }
         let n = engine.healthIssueCount
         if n == 0 { return "No active issues. Horus is watching quietly." }
         let count = "\(n) check\(n == 1 ? "" : "s") need attention."
@@ -947,8 +959,15 @@ struct HorusView: View {
             } else {
                 MaybeScroll {
                     VStack(alignment: .leading, spacing: 14) {
-                        HorusStatusCard(status: engine.healthStatus, title: statusTitle,
-                                        detail: statusDetail, issueCount: engine.healthIssueCount)
+                        NavLink { HealthResolutionView(engine: engine) } label: {
+                            HorusStatusCard(status: engine.healthStatus,
+                                            observation: engine.healthObservationState,
+                                            title: statusTitle,
+                                            detail: statusDetail,
+                                            issueCount: engine.healthIssueCount)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Open the health evidence and Ma'at resolution steps.")
 
                         if !memoryIssues.isEmpty {
                             SectionLabel("WHAT'S HAPPENING")
@@ -1023,29 +1042,42 @@ struct HorusView: View {
 // alarm text; the explanation carries the meaning for accessibility.
 private struct HorusStatusCard: View {
     let status: String
+    let observation: HealthObservationState
     let title: String
     let detail: String
     let issueCount: Int
 
     private var label: String {
-        switch status { case "red": return "Critical"; case "amber": return "Attention"; default: return "Healthy" }
+        switch observation {
+        case .unknown: return "Unknown"
+        case .stale: return "Stale"
+        case .current:
+            switch status {
+            case "red": return "Critical"
+            case "amber": return "Attention"
+            case "green": return "Healthy"
+            default: return "Unknown"
+            }
+        }
     }
+
+    private var tint: Color { observation == .current ? statusColor(status) : gold }
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             ZStack {
-                Circle().fill(statusColor(status).opacity(0.16)).frame(width: 38, height: 38)
-                Image(systemName: status == "green" ? "checkmark" : "waveform.path.ecg")
-                    .sirsiFont(15, weight: .semibold).foregroundStyle(statusColor(status))
+                Circle().fill(tint.opacity(0.16)).frame(width: 38, height: 38)
+                Image(systemName: label == "Healthy" ? "checkmark" : "waveform.path.ecg")
+                    .sirsiFont(15, weight: .semibold).foregroundStyle(tint)
             }
             VStack(alignment: .leading, spacing: 5) {
                 HStack(alignment: .firstTextBaseline) {
                     Text(title).sirsiFont(16, weight: .semibold)
                     Spacer(minLength: 8)
                     Text(label.uppercased()).sirsiFont(.caption2, weight: .bold)
-                        .foregroundStyle(statusColor(status))
+                        .foregroundStyle(tint)
                         .padding(.horizontal, 7).padding(.vertical, 3)
-                        .background(Capsule().fill(statusColor(status).opacity(0.12)))
+                        .background(Capsule().fill(tint.opacity(0.12)))
                 }
                 Text(detail).sirsiFont(.callout).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1057,6 +1089,152 @@ private struct HorusStatusCard: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(issueCount == 0 ? "\(label). \(detail)" : "\(label). \(issueCount) checks need attention. \(detail)")
     }
+}
+
+private struct HealthResolutionView: View {
+    @ObservedObject var engine: SirsiEngine
+    @State private var confirmHealthReview = false
+    @State private var isRecordingHealthReview = false
+    @State private var healthReviewResult: CommandResult?
+    @State private var healthReviewError: String?
+    @State private var healthReviewUnverified = false
+
+    private var currentFindings: [DiagFinding] { engine.health }
+    private var observationDetail: String {
+        if let error = engine.healthObservationError { return error }
+        switch engine.healthObservationState {
+        case .unknown: return "No successful Horus health observation is available yet."
+        case .stale: return "The last reading is stale. Its findings are preserved until a fresh check succeeds."
+        case .current: return "This is the latest local Horus observation."
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            BackBar(title: "Health resolution")
+            MaybeScroll {
+                VStack(alignment: .leading, spacing: 14) {
+                    HorusStatusCard(
+                        status: engine.healthStatus,
+                        observation: engine.healthObservationState,
+                        title: engine.healthSummary,
+                        detail: observationDetail,
+                        issueCount: engine.healthIssueCount
+                    )
+                    resolutionLevel(1, "Confirm locally", "Run a fresh Horus observation. A completed read confirms the reported status; it does not repair the system.") {
+                        Button {
+                            Task { await engine.diagnose(force: true) }
+                        } label: {
+                            Label(engine.healthLoading ? "Checking" : "Recheck this Mac", systemImage: "arrow.clockwise")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(gold)
+                        .disabled(engine.healthLoading)
+                    }
+                    resolutionLevel(2, "Follow a finding", "Open any finding below for its bounded action, clear recovery steps, and an explicit return-and-recheck.") {
+                        if currentFindings.isEmpty {
+                            Text(engine.healthObservationState == .current
+                                 ? "No individual findings were returned by this observation."
+                                 : "No findings are available to interpret until a health check succeeds.")
+                                .sirsiFont(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            VStack(spacing: 0) {
+                                ForEach(currentFindings) { finding in
+                                    HealthRow(engine: engine, finding: finding)
+                                        .padding(.vertical, 5)
+                                    if finding.id != currentFindings.last?.id { Divider() }
+                                }
+                            }
+                        }
+                    }
+                    resolutionLevel(3, "Create a Ma'at Casebook review", "Record this exact health status and finding context, then inspect the retained evidence in Casebook.") {
+                        if healthReviewResult?.ok == true {
+                            Label(healthReviewResult?.summary ?? "Review recorded", systemImage: "checkmark.seal.fill")
+                                .sirsiFont(.caption).foregroundStyle(.green)
+                            NavLink { MaatCasebookView(engine: engine, contextCheck: "Horus health") } label: {
+                                Label("Open this health review", systemImage: "book.closed")
+                            }
+                            .buttonStyle(.bordered)
+                        } else {
+                            Button { confirmHealthReview = true } label: {
+                                Label(isRecordingHealthReview ? "Recording review" : "Record health review",
+                                      systemImage: "checkmark.seal")
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(isRecordingHealthReview || healthReviewUnverified)
+                            if healthReviewUnverified {
+                                NavLink { MaatCasebookView(engine: engine, contextCheck: "Horus health") } label: {
+                                    Label("Inspect Casebook before retrying", systemImage: "book.closed")
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        }
+                        if let healthReviewError {
+                            Text(healthReviewError).sirsiFont(.caption).foregroundStyle(.orange)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                .padding(16)
+            }
+        }
+        .confirmationDialog("Record this Horus observation in Ma'at?", isPresented: $confirmHealthReview,
+                            titleVisibility: .visible) {
+            Button("Record local health evidence") { Task { await recordHealthReview() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Ma'at will preserve the reported status and finding context for review. Recording a case does not change or repair system state.")
+        }
+    }
+
+    @MainActor private func recordHealthReview() async {
+        guard !isRecordingHealthReview else { return }
+        isRecordingHealthReview = true
+        healthReviewError = nil
+        let findings = currentFindings.map { finding in
+            "\(finding.check) [severity \(finding.severity)]: \(finding.message)\(finding.detail.map { " — \($0)" } ?? "")"
+        }.joined(separator: "\n")
+        let detail = String((findings.isEmpty ? "No individual findings were reported." : findings).prefix(16_000))
+        let state = engine.healthObservationState == .current ? "current" : (engine.healthObservationState == .stale ? "stale" : "unknown")
+        let args = ["maat", "record-resolution", "--check", "Horus health",
+                    "--message", "Local health observation: \(engine.healthStatus) (\(state))",
+                    "--detail", detail, "--confirm"]
+        healthReviewResult = await SirsiEngine.runResult(args: args)
+        if healthReviewResult == nil {
+            healthReviewUnverified = true
+            healthReviewError = "Ma'at's reply could not be read. The record may have been written; inspect Casebook before retrying."
+        } else if healthReviewResult?.ok != true {
+            healthReviewError = "Ma'at did not confirm that the health review was recorded. No health status changed; retry or review the preserved observation."
+        }
+        isRecordingHealthReview = false
+    }
+}
+
+@ViewBuilder private func resolutionLevel<Content: View>(
+    _ number: Int,
+    _ title: String,
+    _ detail: String,
+    @ViewBuilder content: () -> Content
+) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+        HStack(alignment: .top, spacing: 9) {
+            Text("\(number)")
+                .sirsiFont(.caption, weight: .bold)
+                .foregroundStyle(.black)
+                .frame(width: 22, height: 22)
+                .background(Circle().fill(gold))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).sirsiFont(.subheadline, weight: .semibold)
+                Text(detail).sirsiFont(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        content().padding(.leading, 31)
+    }
+    .padding(11)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.045)))
 }
 
 // Memory findings are intentionally different measurements (live usage, peak
@@ -1153,11 +1331,14 @@ struct HealthRow: View {
     }
 
     private var row: some View {
-        HStack(spacing: 8) {
-            Circle().fill(findingColor(finding)).frame(width: 8, height: 8)
+        let tint = engine.healthObservationState == .current ? findingColor(finding) : gold
+        return HStack(spacing: 8) {
+            Circle().fill(tint).frame(width: 8, height: 8)
             VStack(alignment: .leading, spacing: 2) {
                 Text(finding.check).sirsiFont(12, weight: .semibold)
-                Text(finding.message).sirsiFont(.caption).foregroundStyle(.secondary)
+                Text(engine.healthObservationState == .current
+                     ? finding.message : "Last known · \(finding.message)")
+                    .sirsiFont(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
@@ -1214,13 +1395,15 @@ struct FindingView: View {
     // The honesty class drives EVERY label so a 7-day history never wears an
     // "instant fix" costume. See guard.FixKind (instant | relief | guidance).
     private var kind: String { finding.fixKind ?? "" }
-    @State private var copied = false
     @State private var maatReviewResult: CommandResult?
     @State private var maatReviewError: String?
+    @State private var maatReviewUnverified = false
     @State private var maatReviewInFlight = false
     @State private var confirmMaatReview = false
     @State private var confirmFix = false
     @State private var showConfirmedFix = false
+    @State private var isRechecking = false
+    @State private var recheckOutcome: ResolutionOutcome?
 
     // recommendedCommand pulls a `sirsi …` command the finding names in its
     // message/detail (backtick-quoted) so guidance findings become actionable.
@@ -1240,25 +1423,24 @@ struct FindingView: View {
             resolution: finding.resolution,
             severity: finding.severity,
             hasFix: !(finding.fix ?? "").isEmpty,
-            hasRecommendedCommand: recommendedCommand != nil
+            hasRecommendedCommand: recommendedCommand != nil,
+            fixKind: finding.fixKind
         )
     }
 
-    private var requiresMaatReview: Bool { resolutionRoute == .maatReview }
-    private var isAcceptedObservation: Bool { resolutionRoute == .accepted }
+    private var isAcceptedObservation: Bool {
+        resolutionRoute == .accepted && engine.healthObservationState == .current
+    }
+    private var canRunSafeAction: Bool {
+        engine.healthObservationState == .current &&
+            !(finding.fix ?? "").isEmpty && kind != "guidance"
+    }
 
     private var fixIcon: String {
         switch kind {
         case "relief": return "gauge.with.dots.needle.bottom.50percent"
         case "guidance": return "info.circle.fill"
         default: return "wrench.and.screwdriver.fill"
-        }
-    }
-    private var fixSectionLabel: String {
-        switch kind {
-        case "relief": return "RELIEVE THE LIVE CAUSE"
-        case "guidance": return "HOW TO ADDRESS"
-        default: return "RESOLVE"
         }
     }
     private var fixButtonLabel: String {
@@ -1312,13 +1494,19 @@ struct FindingView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            BackBar(title: finding.check)
+                    BackBar(title: finding.check)
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .top, spacing: 8) {
-                        Circle().fill(findingColor(finding)).frame(width: 10, height: 10).padding(.top, 4)
+                        Circle().fill(engine.healthObservationState == .current ? findingColor(finding) : gold)
+                            .frame(width: 10, height: 10).padding(.top, 4)
                         Text(finding.message).sirsiFont(14, weight: .semibold)
                             .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if engine.healthObservationState != .current {
+                        Label("Last known finding — recheck before acting", systemImage: "clock.badge.exclamationmark")
+                            .sirsiFont(.caption, weight: .semibold).foregroundStyle(gold)
+                            .accessibilityLabel("This finding is from a stale or unconfirmed health reading. Recheck before acting.")
                     }
                     if let d = finding.detail, !d.isEmpty {
                         // Live data is never tiny or greyed: a pipe-separated
@@ -1350,65 +1538,7 @@ struct FindingView: View {
                                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
                         }
                     }
-                    if let fix = finding.fix, !fix.isEmpty {
-                        // Honest framing BEFORE the click: a 7-day history must never
-                        // look like an instant cure — that's the "I clicked Fix and
-                        // nothing changed" trap. The banner sets the true expectation.
-                        if let note = fixExpectation {
-                            HStack(alignment: .top, spacing: 6) {
-                                Image(systemName: fixIcon).sirsiFont(.caption)
-                                    .foregroundStyle(.secondary).padding(.top, 1)
-                                Text(note).sirsiFont(.caption).foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            .padding(10)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
-                        }
-                        Text(fixSectionLabel).sirsiFont(.caption2, weight: .semibold).foregroundStyle(.secondary)
-                        if fixRequiresConfirmation {
-                            Button { confirmFix = true } label: { fixButtonContents(fix) }
-                                .buttonStyle(.borderedProminent).tint(gold)
-                        } else {
-                            NavLink {
-                                ResultView(engine: engine, title: finding.check, args: repairArgs,
-                                           reverifyCheck: finding.check, reverifyKind: finding.fixKind)
-                            } label: { fixButtonContents(fix) }
-                            .buttonStyle(.borderedProminent).tint(gold)
-                        }
-                    } else if requiresMaatReview {
-                        // A high-severity finding without a safe automatic
-                        // mutation still gets a complete resolution path. Ma'at
-                        // records the exact observed finding only after the
-                        // operator confirms; its Casebook then owns the next,
-                        // explicit acceptance step. This never paints a manual
-                        // conclusion as a completed repair.
-                        maatResolutionPath
-                    } else if let cmd = recommendedCommand {
-                        // Guidance-tier (e.g. caution items cleared deliberately
-                        // in Terminal): the command it names must be actionable,
-                        // not buried in prose ending at "Informational."
-                        Text("RECOMMENDED — RUN IN TERMINAL").sirsiFont(.caption2, weight: .semibold).foregroundStyle(.secondary)
-                        Text(cmd).sirsiFont(.caption, design: .monospaced).foregroundStyle(gold)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(10)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.06)))
-                        HStack(spacing: 8) {
-                            Button {
-                                copyToClipboard(cmd)
-                                copied = true
-                            } label: { Label(copied ? "Copied" : "Copy command", systemImage: copied ? "checkmark" : "doc.on.doc") }
-                            Button { openTerminal() } label: { Label("Open Terminal", systemImage: "terminal") }
-                        }.sirsiFont(.caption)
-                    } else if isAcceptedObservation {
-                        acceptedObservation
-                    } else {
-                        // The route function is deliberately exhaustive, but
-                        // preserve a visible recovery route if a future CLI
-                        // resolution value arrives before this native surface
-                        // knows its dedicated action.
-                        maatResolutionPath
-                    }
+                    resolutionFlow
                     Spacer()
                 }.padding(16)
             }
@@ -1432,6 +1562,112 @@ struct FindingView: View {
         .sheet(isPresented: $showConfirmedFix) {
             ResultView(engine: engine, title: finding.check, args: repairArgs,
                        reverifyCheck: finding.check, reverifyKind: finding.fixKind)
+        }
+    }
+
+    private var resolutionFlow: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            resolutionLevel(1, "Safe local action", "Pantheon only offers an existing bounded action when this finding authorizes one.") {
+                if canRunSafeAction, let fix = finding.fix {
+                    if let note = fixExpectation {
+                        Text(note).sirsiFont(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if fixRequiresConfirmation {
+                        Button { confirmFix = true } label: { fixButtonContents(fix) }
+                            .buttonStyle(.borderedProminent).tint(gold)
+                    } else {
+                        NavLink {
+                            ResultView(engine: engine, title: finding.check, args: repairArgs,
+                                       reverifyCheck: finding.check, reverifyKind: finding.fixKind)
+                        } label: { fixButtonContents(fix) }
+                        .buttonStyle(.borderedProminent).tint(gold)
+                    }
+                } else {
+                    Text(engine.healthObservationState != .current
+                         ? "This health reading is not current. Recheck before acting on the preserved finding."
+                         : (isAcceptedObservation
+                         ? "This observation is currently informational; no repair is recommended."
+                         : "No safe automatic action is available for this finding."))
+                        .sirsiFont(.caption).foregroundStyle(.secondary)
+                }
+            }
+
+            resolutionLevel(2, "Guided recovery and recheck", "Follow the finding-specific guidance, return here, and run a fresh local observation.") {
+                if engine.healthObservationState != .current {
+                    Text("The preserved finding is not from a current health observation. Recheck this Mac before following an action based on it.")
+                        .sirsiFont(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if kind == "guidance", let fix = finding.fix, !fix.isEmpty {
+                    NavLink {
+                        ResultView(engine: engine, title: finding.check, args: repairArgs,
+                                   reverifyCheck: finding.check, reverifyKind: finding.fixKind)
+                    } label: {
+                        Label("Open guided local action", systemImage: "info.circle")
+                    }
+                    .buttonStyle(.bordered)
+                    Text(fix).sirsiFont(.caption2, design: .monospaced)
+                        .foregroundStyle(.secondary).textSelection(.enabled)
+                } else if let command = recommendedCommand {
+                    NavLink {
+                        ResultView(engine: engine, title: finding.check, args: sirsiArgs(command),
+                                   reverifyCheck: finding.check, reverifyKind: finding.fixKind)
+                    } label: {
+                        Label("Open guided local check", systemImage: "arrow.right.circle")
+                    }
+                    .buttonStyle(.bordered)
+                    Text("Pantheon will run this check in the app and preserve its result here.")
+                        .sirsiFont(.caption).foregroundStyle(.secondary)
+                } else {
+                    Text(finding.detail ?? finding.message)
+                        .sirsiFont(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Button {
+                    Task { await recheckFinding() }
+                } label: {
+                    Label(isRechecking ? "Rechecking" : "I completed the steps — recheck",
+                          systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+                .disabled(isRechecking)
+                if let recheckOutcome {
+                    Label(outcomeDescription(recheckOutcome),
+                          systemImage: recheckOutcome == .verified ? "checkmark.seal" : "info.circle")
+                        .sirsiFont(.caption)
+                        .foregroundStyle(recheckOutcome == .verified ? .green : gold)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            resolutionLevel(3, "Ma'at Casebook review", "Create an evidence-bound review or open the casebook filtered to this exact check.") {
+                if isAcceptedObservation {
+                    acceptedObservation
+                } else {
+                    maatResolutionPath
+                }
+            }
+        }
+    }
+
+    @MainActor private func recheckFinding() async {
+        isRechecking = true
+        await engine.diagnose(force: true)
+        let current = engine.health.first { $0.check == finding.check }
+        recheckOutcome = resolutionOutcome(
+            observation: engine.healthObservationState,
+            severity: current?.severity
+        )
+        isRechecking = false
+    }
+
+    private func outcomeDescription(_ outcome: ResolutionOutcome) -> String {
+        switch outcome {
+        case .verified: return "Verified: the fresh observation no longer reports an active issue."
+        case .partial: return "The fresh observation still reports this issue. Your action may have helped; it is not resolved yet."
+        case .failed: return "The action failed. No repair is claimed."
+        case .cancelled: return "The action was cancelled. No change is claimed."
+        case .unverified: return "The recheck did not return a current, readable result. Status remains unverified."
         }
     }
 
@@ -1466,7 +1702,7 @@ struct FindingView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(gold)
-            .disabled(maatReviewInFlight)
+            .disabled(maatReviewInFlight || maatReviewUnverified)
             .accessibilityHint("Requires confirmation and records evidence only; it does not repair the system.")
 
             if maatReviewInFlight {
@@ -1482,11 +1718,8 @@ struct FindingView: View {
                     .sirsiFont(.caption)
                     .foregroundStyle(result.ok ? .green : .orange)
                 if result.ok {
-                    NavLink { MaatCasebookView(engine: engine) } label: {
-                        Label("Continue in Ma'at Casebook", systemImage: "book.closed")
-                    }
-                    .buttonStyle(.bordered)
-                    .accessibilityHint("Inspect the recorded evidence and explicitly accept an owner conclusion when appropriate.")
+                    Text("This confirms that the review was recorded. It does not mean the system issue was repaired.")
+                        .sirsiFont(.caption).foregroundStyle(.secondary)
                 }
             }
             if let error = maatReviewError {
@@ -1495,6 +1728,11 @@ struct FindingView: View {
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            NavLink { MaatCasebookView(engine: engine, contextCheck: finding.check) } label: {
+                Label("Open this finding in Ma'at Casebook", systemImage: "book.closed")
+            }
+            .buttonStyle(.bordered)
+            .accessibilityHint("Filter the local casebook to this finding's check.")
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1510,7 +1748,7 @@ struct FindingView: View {
                 .sirsiFont(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            NavLink { MaatCasebookView(engine: engine) } label: {
+            NavLink { MaatCasebookView(engine: engine, contextCheck: finding.check) } label: {
                 Label("Review Ma'at evidence", systemImage: "book.closed")
             }
             .buttonStyle(.bordered)
@@ -1532,7 +1770,10 @@ struct FindingView: View {
         args.append("--confirm")
         maatReviewResult = await SirsiEngine.runResult(args: args)
         if maatReviewResult == nil {
-            maatReviewError = "Ma'at could not record the review. The original finding remains open and no system state changed. Try again or inspect the local decision journal."
+            maatReviewUnverified = true
+            maatReviewError = "Ma'at's reply could not be read. The review may have been recorded; inspect Casebook before retrying. No system repair is claimed."
+        } else if maatReviewResult?.ok != true {
+            maatReviewError = "Ma'at did not confirm the review. The finding remains open and no system state changed."
         }
         maatReviewInFlight = false
     }
@@ -3461,6 +3702,8 @@ struct ResultView: View {
     @State private var toastOK = true      // did the toasted action succeed? drives icon/color
     @State private var postFix: String?   // honest verdict after re-verify
     @State private var didReverify = false // re-verify fires once (across load/apply paths)
+    @State private var hasExecuted = false
+    @State private var completedActionIDs: Set<UUID> = []
 
     init(engine: SirsiEngine, title: String, args: [String],
          reverifyCheck: String? = nil, reverifyKind: String? = nil,
@@ -3487,7 +3730,10 @@ struct ResultView: View {
         VStack(spacing: 0) {
             BackBar(title: title)
             if isRepoScoped {
-                ProjectBar(engine: engine) { Task { await load() } }
+                ProjectBar(engine: engine) {
+                    hasExecuted = false
+                    Task { await load() }
+                }
             }
             Group {
                 if loading && result == nil && raw.isEmpty {
@@ -3510,8 +3756,8 @@ struct ResultView: View {
             if let pf = postFix {
                 Divider()
                 HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: pf.hasPrefix("✓") ? "checkmark.seal.fill" : "info.circle.fill")
-                        .foregroundStyle(pf.hasPrefix("✓") ? .green : .secondary).padding(.top, 1)
+                    Image(systemName: pf.hasPrefix("Verified") ? "checkmark.seal.fill" : "info.circle.fill")
+                        .foregroundStyle(pf.hasPrefix("Verified") ? .green : .secondary).padding(.top, 1)
                     Text(pf).sirsiFont(.caption).foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
@@ -3520,12 +3766,22 @@ struct ResultView: View {
             }
             Divider()
             HStack {
-                Button { Task { await load() } } label: { Label("Refresh", systemImage: "arrow.clockwise") }
+                if reverifyCheck != nil {
+                    Button { Task { await recheck() } } label: {
+                        Label("Recheck finding", systemImage: "arrow.clockwise")
+                    }
                     .disabled(loading || applying)
+                } else {
+                    Button {
+                        hasExecuted = false
+                        Task { await load() }
+                    } label: { Label("Run again", systemImage: "arrow.clockwise") }
+                    .disabled(loading || applying)
+                }
                 Spacer()
             }.padding(.horizontal, 14).padding(.vertical, 10)
         }
-        .task { if result == nil && raw.isEmpty { await load() } }   // preloaded → already have it
+        .task { if !hasExecuted && result == nil && raw.isEmpty { await load() } }
         .confirmationDialog(
             "Apply this fix?",
             isPresented: Binding(get: { pendingApply != nil }, set: { if !$0 { pendingApply = nil } }),
@@ -3603,11 +3859,18 @@ struct ResultView: View {
 
     @ViewBuilder private func actionButton(_ a: CRAction) -> some View {
         if a.isApply {
-            Button { pendingApply = a } label: { actionLabel(a, prominent: true) }
-                .buttonStyle(.borderedProminent).tint(gold).disabled(applying)
+            Button {
+                guard !completedActionIDs.contains(a.id) else { return }
+                pendingApply = a
+            } label: { actionLabel(a, prominent: true) }
+                .buttonStyle(.borderedProminent).tint(gold)
+                .disabled(applying || completedActionIDs.contains(a.id))
         } else {
-            Button { Task { await runFollow(a) } } label: { actionLabel(a, prominent: false) }
-                .buttonStyle(.bordered).disabled(applying)
+            Button {
+                guard completedActionIDs.insert(a.id).inserted else { return }
+                Task { await runFollow(a) }
+            } label: { actionLabel(a, prominent: false) }
+                .buttonStyle(.bordered).disabled(applying || completedActionIDs.contains(a.id))
         }
     }
 
@@ -3651,7 +3914,9 @@ struct ResultView: View {
             Label("This result needs a guided follow-up", systemImage: "arrow.triangle.branch")
                 .sirsiFont(.headline)
                 .foregroundStyle(gold)
-            Text("Pantheon preserved the exact output below but could not turn it into a structured result. It is not treated as a completed repair or release decision. Retry the same check, inspect Ma'at’s local evidence, or review the governing Stack Lab recipe before taking another action.")
+            Text(reverifyCheck == nil
+                 ? "Pantheon preserved the exact output below but could not turn it into a structured result. It is not treated as a completed repair or release decision. Review the output before you explicitly run this command again."
+                 : "Pantheon preserved the exact output below. The command ran once and was not treated as a completed repair. Recheck the finding to inspect current health without repeating the command.")
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -3662,12 +3927,24 @@ struct ResultView: View {
                 .padding(10)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
             VStack(alignment: .leading, spacing: 8) {
-                Button { Task { await load() } } label: {
-                    Label("Retry this check", systemImage: "arrow.clockwise")
+                if reverifyCheck != nil {
+                    Button { Task { await recheck() } } label: {
+                        Label("Recheck finding", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(gold)
+                    .disabled(loading || applying)
+                } else {
+                    Button {
+                        hasExecuted = false
+                        Task { await load() }
+                    } label: {
+                        Label("Run again", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(gold)
+                    .disabled(loading || applying)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(gold)
-                .disabled(loading || applying)
                 NavLink { MaatWorkspaceView(engine: engine) } label: {
                     Label("Inspect Ma'at evidence", systemImage: "checkmark.seal")
                 }
@@ -3682,18 +3959,29 @@ struct ResultView: View {
     }
 
     private func load() async {
+        guard !hasExecuted else { return }
         loading = true
-        if let r = await SirsiEngine.runResult(args: args) {
-            result = r; raw = ""
+        hasExecuted = true
+        var commandArgs = args
+        if !commandArgs.contains("--json") { commandArgs.append("--json") }
+        let output = await SirsiEngine.runJSON(args: commandArgs)
+        if let r = SirsiEngine.decodeCommandResult(output), !r.summary.isEmpty {
+            result = r
+            raw = ""
+            if !r.ok {
+                postFix = "The action reported a failure. Pantheon does not claim the finding was repaired."
+            }
         } else {
-            let out = await SirsiEngine.run(args: args, stdin: nil)
-            raw = CommandView.stripBanner(out); result = nil
+            raw = CommandView.stripBanner(String(data: output, encoding: .utf8) ?? "")
+            result = nil
+            if reverifyCheck != nil {
+                postFix = "The action ran once, but its result could not be read. The finding remains unverified; use Recheck finding to inspect current state."
+            }
         }
         loading = false
-        // If the command completed in one step (no Apply to follow — e.g. a relief
-        // or guidance command, not a clean preview), re-verify now. clean-family
-        // results carry next_actions, so we wait for apply() to mutate first.
-        if reverifyCheck != nil, (result?.nextActions.isEmpty ?? true) {
+        // Decode failure never re-runs a command. Only a readable successful
+        // result can trigger the one post-action observation.
+        if reverifyCheck != nil, result?.ok == true, result?.nextActions.isEmpty == true {
             await reverify()
         }
     }
@@ -3701,24 +3989,41 @@ struct ResultView: View {
     // reverify re-runs diagnose after a fix has actually run and reports the REAL
     // status of this finding — resolved, or an honest reason it persists (a 7-day
     // history cannot drop retroactively; guidance only bites a live issue).
-    private func reverify() async {
+    private func reverify(actionSucceeded: Bool? = true, cancelled: Bool = false) async {
         guard let check = reverifyCheck, !didReverify else { return }
         didReverify = true
         await engine.diagnose(force: true)
         let still = engine.health.first { $0.check == check }
-        let now = Self.statusWord(engine.healthStatus)
-        if still == nil || still!.severity <= 1 {
-            postFix = "✓ Resolved — “\(check)” cleared. Overall health is now \(now)."
-        } else {
+        let outcome = resolutionOutcome(
+            observation: engine.healthObservationState,
+            severity: still?.severity,
+            actionSucceeded: actionSucceeded,
+            cancelled: cancelled
+        )
+        switch outcome {
+        case .verified:
+            postFix = "Verified — the fresh observation no longer reports an active “\(check)” issue."
+        case .partial:
             switch reverifyKind {
             case "relief":
-                postFix = "Relief applied. “\(check)” is a 7-day history — it decays as clean days pass, so it won't clear the instant you click. Overall health: \(now)."
+                postFix = "Partial — relief ran, but “\(check)” remains in the fresh observation. Historical counts may take time to decay."
             case "guidance":
-                postFix = "“\(check)” only clears when it's happening live. Nothing to undo this moment — the guidance above prevents it recurring. Overall health: \(now)."
+                postFix = "Partial — “\(check)” is still present in the fresh observation. Follow the guidance and recheck again."
             default:
-                postFix = "Ran. “\(check)” is still present — overall health: \(now)."
+                postFix = "Partial — “\(check)” remains in the fresh observation. It is not resolved yet."
             }
+        case .failed:
+            postFix = "Failed — the action reported an error. No repair is claimed."
+        case .cancelled:
+            postFix = "Cancelled — no change is claimed."
+        case .unverified:
+            postFix = "Unverified — Pantheon could not read a current health observation. The previous status is preserved."
         }
+    }
+
+    private func recheck() async {
+        didReverify = false
+        await reverify(actionSucceeded: nil)
     }
 
     private static func statusWord(_ s: String) -> String {
@@ -3736,6 +4041,7 @@ struct ResultView: View {
     // provenance ledger report what ACTUALLY happened, never an unconditional
     // "Applied" (the old lie when the clean had silently canceled).
     private func apply(_ a: CRAction) async {
+        guard completedActionIDs.insert(a.id).inserted else { return }
         applying = true
         let out = await SirsiEngine.run(args: sirsiArgs(a.command), stdin: "y\n")
         // Diagnostic: the exact apply outcome goes to the unified log so a failed
@@ -3746,19 +4052,26 @@ struct ResultView: View {
         let canceled = lc.contains("cancel")
         let didApply = !canceled && (lc.contains("cleaned") || lc.contains("reclaimed")
                                      || lc.contains("healed") || lc.contains("applied"))
+        let reportedFailure = lc.contains("error") || lc.contains("failed") || lc.contains("permission denied")
         let headline = Self.applyHeadline(out)
         engine.recordActivity(title: "\(title) — \(a.label)", command: a.command,
                               result: canceled ? "Canceled" : headline)
         // Refresh findings so stale pre-apply numbers and the tray title update.
         _ = await SirsiEngine.run(args: ["scan"], stdin: nil)
-        toast = canceled ? "Canceled — nothing changed"
-                         : (didApply ? "Done — \(headline)" : "Ran \(a.label)")
+        toast = canceled ? "Cancelled — nothing changed"
+                         : (didApply ? "Action completed; checking current status…" : "Action outcome needs review")
+        toastOK = false
         applying = false
-        await load()
+        result = nil
+        raw = CommandView.stripBanner(out)
         engine.refresh()
-        // The mutation just landed — re-verify the finding's REAL status so the
-        // user sees what actually changed, not an unconditional "fixed."
-        if reverifyCheck != nil { await reverify() }
+        if reverifyCheck != nil {
+            await reverify(actionSucceeded: reportedFailure ? false : (didApply ? true : nil), cancelled: canceled)
+        } else {
+            postFix = canceled ? "Cancelled — no change is claimed."
+                : (reportedFailure ? "Failed — inspect the preserved output. No success is claimed."
+                   : (didApply ? "Action completed. Its system effect has not been verified." : "Unverified — inspect the preserved action output."))
+        }
     }
 
     // applyHeadline pulls the human result line ("Cleaned 8 items. Reclaimed
@@ -3773,7 +4086,8 @@ struct ResultView: View {
         return "applied"
     }
 
-    // runFollow runs a non-destructive next action (e.g. scan) and reloads.
+    // runFollow runs a non-destructive next action (e.g. scan) and preserves its
+    // result. Re-running the originating command here could repeat a repair.
     private func runFollow(_ a: CRAction) async {
         applying = true
         // The follow-up command's OUTPUT is the whole point — discarding it and
@@ -3790,7 +4104,6 @@ struct ResultView: View {
         toastOK = SirsiEngine.resultOK(out)
         toast = summary.isEmpty ? (toastOK ? "\(a.label): done." : "\(a.label): failed.") : summary
         applying = false
-        await load()
         engine.refresh()
     }
 }

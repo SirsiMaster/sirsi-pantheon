@@ -114,17 +114,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return img
     }
 
-    // tint maps the health band to the Eye's DRAWN colour: red (live-critical),
-    // amber (warnings / 7-day trends), else labelColor (adaptive white-on-dark).
+    // tint maps confirmed health to the Eye's drawn colour. Unknown and stale
+    // readings stay gold rather than borrowing green or the healthy label color.
     static func tint(for status: String) -> NSColor {
         switch status {
         case "red":   return .systemRed
         case "amber": return .systemYellow
+        case "unknown", "stale": return .systemYellow
+        case "green": break
         // Explicit adaptive color (NOT nil) — a status-bar button with a template
         // image and contentTintColor=nil renders the image's literal black, which
         // vanishes on a dark menu bar. labelColor is white on dark, black on light.
         default:      return .labelColor
         }
+        return .labelColor
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -180,12 +183,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             button.imagePosition = .imageOnly  // becomes .imageLeading when a waste figure rides beside it
             button.action = #selector(togglePopover(_:))
             button.target = self
+            button.setAccessibilityLabel(engine.healthAccessibilityLabel)
         }
 
         buildPanel()
 
         engine.onTitle = { [weak self] label in
             guard let self = self, let button = self.statusItem.button else { return }
+            button.setAccessibilityLabel(self.engine.healthAccessibilityLabel)
             // The Eye is always the icon; the waste figure (≥1 GB) rides beside it.
             button.title = label.isEmpty ? "" : " \(label)"
             button.imagePosition = label.isEmpty ? .imageOnly : .imageLeading

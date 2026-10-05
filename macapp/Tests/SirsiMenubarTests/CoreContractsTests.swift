@@ -1,4 +1,5 @@
 import XCTest
+import SwiftUI
 @testable import SirsiMenubar
 
 final class CoreContractsTests: XCTestCase {
@@ -27,6 +28,40 @@ final class CoreContractsTests: XCTestCase {
             diagnosticResolutionRoute(resolution: nil, severity: 1, hasFix: false, hasRecommendedCommand: true),
             .command
         )
+        XCTAssertEqual(
+            diagnosticResolutionRoute(resolution: nil, severity: 2, hasFix: true,
+                                      hasRecommendedCommand: false, fixKind: "guidance"),
+            .command
+        )
+    }
+
+    func testResolutionOutcomesRequireCurrentEvidence() {
+        XCTAssertEqual(resolutionOutcome(observation: .current, severity: nil), .verified)
+        XCTAssertEqual(resolutionOutcome(observation: .current, severity: 1), .verified)
+        XCTAssertEqual(resolutionOutcome(observation: .current, severity: 3), .partial)
+        XCTAssertEqual(resolutionOutcome(observation: .stale, severity: nil), .unverified)
+        XCTAssertEqual(resolutionOutcome(observation: .unknown, severity: 3), .unverified)
+        XCTAssertEqual(resolutionOutcome(observation: .current, severity: nil, actionSucceeded: false), .failed)
+        XCTAssertEqual(resolutionOutcome(observation: .current, severity: 3, cancelled: true), .cancelled)
+    }
+
+    func testDiagnosisDecodeFailurePreservesUnknownOrStaleState() {
+        XCTAssertEqual(healthObservationAfterRead(status: nil, hasPreviousObservation: false), .unknown)
+        XCTAssertEqual(healthObservationAfterRead(status: nil, hasPreviousObservation: true), .stale)
+        XCTAssertEqual(healthObservationAfterRead(status: "invalid", hasPreviousObservation: false), .unknown)
+        XCTAssertEqual(healthObservationAfterRead(status: "invalid", hasPreviousObservation: true), .stale)
+        XCTAssertEqual(healthObservationAfterRead(status: "green", hasPreviousObservation: true), .current)
+    }
+
+    func testNavigationStackSurvivesWindowReopen() {
+        let navigation = Nav()
+        navigation.push(Text("Evidence-backed resolution"))
+
+        navigation.windowDidReopen()
+
+        XCTAssertEqual(navigation.stack.count, 1)
+        XCTAssertEqual(navigation.reopenCount, 1)
+        XCTAssertFalse(navigation.atRoot)
     }
 
     func testDiagnosticFindingDecodesExplicitMaatReviewRoute() throws {

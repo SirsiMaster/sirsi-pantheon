@@ -12,6 +12,16 @@ sirsi diagnose --json         # JSON output
 
 Checks: RAM pressure, swap usage, disk space, top memory consumers, kernel panics, Jetsam events, and Pantheon background process health.
 
+### Native Sirsi Menubar recovery
+
+In **Sirsi Menubar**, open **System health** and choose a health card or finding to see its evidence and Ma'at-guided resolution:
+
+1. Use the bounded local action when the finding explicitly provides one.
+2. Follow the finding's guidance in the app, then choose **Recheck** to read current health.
+3. Record an evidence-bound Ma'at review and open the Casebook filtered to that finding when it needs an owner decision.
+
+The menubar keeps the opened screen when its window is hidden and shown again. Unknown and stale observations stay labeled as such, and only a fresh readable observation can verify that a finding cleared. If an action result cannot be read, Pantheon preserves its output and does not run the action a second time automatically.
+
 ### Network security audit
 ```bash
 sirsi isis network            # Read-only security posture audit

@@ -68,14 +68,49 @@ enum DiagnosticResolutionRoute: Equatable {
     case accepted
 }
 
+enum HealthObservationState: Equatable {
+    case unknown
+    case current
+    case stale
+}
+
+func healthObservationAfterRead(status: String?, hasPreviousObservation: Bool) -> HealthObservationState {
+    guard let status, ["green", "amber", "red"].contains(status) else {
+        return hasPreviousObservation ? .stale : .unknown
+    }
+    return .current
+}
+
+enum ResolutionOutcome: Equatable {
+    case verified
+    case partial
+    case failed
+    case cancelled
+    case unverified
+}
+
+func resolutionOutcome(
+    observation: HealthObservationState,
+    severity: Int?,
+    actionSucceeded: Bool? = nil,
+    cancelled: Bool = false
+) -> ResolutionOutcome {
+    if cancelled { return .cancelled }
+    if actionSucceeded == false { return .failed }
+    guard observation == .current else { return .unverified }
+    guard let severity else { return .verified }
+    return severity <= 1 ? .verified : .partial
+}
+
 func diagnosticResolutionRoute(
     resolution: String?,
     severity: Int,
     hasFix: Bool,
-    hasRecommendedCommand: Bool
+    hasRecommendedCommand: Bool,
+    fixKind: String? = nil
 ) -> DiagnosticResolutionRoute {
-    if hasFix { return .repair }
-    if hasRecommendedCommand { return .command }
+    if hasFix && fixKind != "guidance" { return .repair }
+    if hasRecommendedCommand || (hasFix && fixKind == "guidance") { return .command }
     if resolution == "information" || (resolution == nil && severity <= 1) {
         return .accepted
     }
@@ -516,13 +551,17 @@ final class SirsiEngine: ObservableObject {
     // Health (Horus — Ops): findings from `sirsi diagnose`.
     @Published var health: [DiagFinding] = []
     @Published var healthLoading = false
+    @Published var healthObservationState: HealthObservationState = .unknown
+    @Published var healthObservationError: String?
     // Canonical green/amber/red roll-up from diagnose --json `status` — the surface
     // shows THIS, never a re-derived worst-severity (which made trends read red).
-    @Published var healthStatus: String = "green"
+    @Published var healthStatus: String = "unknown"
     // Issues = Warn (2) or Critical (3) in the Go severity scale; Info (1) is not.
     var healthIssueCount: Int { health.filter { $0.severity >= 2 }.count }
     var healthSummary: String {
-        if health.isEmpty { return "tap to check" }
+        if healthObservationState == .unknown { return "health not confirmed" }
+        if healthObservationState == .stale { return "last health reading is stale" }
+        if health.isEmpty { return "no findings reported" }
         let n = healthIssueCount
         return n == 0 ? "all healthy" : "\(n) issue\(n == 1 ? "" : "s")"
     }
@@ -1015,8 +1054,30 @@ final class SirsiEngine: ObservableObject {
     // titleStatus is the health band the menu-bar Eye is TINTED with — that tint
     // (set in AppDelegate) carries green/amber/red, so the icon is a branded mark
     // (Horus, the watchful protector) and NOT a bare colored dot. Defaults to
-    // healthy until the first diagnose populates healthStatus.
-    var titleStatus: String { healthStatus.isEmpty ? "green" : healthStatus }
+    // Unknown and stale observations remain visibly distinct from healthy.
+    var titleStatus: String {
+        switch healthObservationState {
+        case .unknown: return "unknown"
+        case .stale: return "stale"
+        case .current: return healthStatus
+        }
+    }
+
+    var healthAccessibilityLabel: String {
+        switch healthObservationState {
+        case .unknown:
+            return "Pantheon health status unknown. Run a fresh local check."
+        case .stale:
+            return "Pantheon health reading stale. Previous status \(healthStatus) is preserved."
+        case .current:
+            switch healthStatus {
+            case "green": return "Pantheon health confirmed healthy."
+            case "amber": return "Pantheon health needs attention."
+            case "red": return "Pantheon health critical."
+            default: return "Pantheon health status unavailable."
+            }
+        }
+    }
 
     // rescan runs a fresh `sirsi scan`, then reloads.
     func rescan() async {
@@ -1107,12 +1168,19 @@ final class SirsiEngine: ObservableObject {
         lastDiagnoseAt = Date()
         healthLoading = true
         let data = await Self.runJSON(args: ["diagnose", "--json"])
-        if let rep = try? JSONDecoder().decode(DiagReport.self, from: data) {
+        if let rep = try? JSONDecoder().decode(DiagReport.self, from: data),
+           healthObservationAfterRead(status: rep.status, hasPreviousObservation: healthObservationState != .unknown) == .current,
+           let status = rep.status {
             health = rep.findings
-            healthStatus = rep.status ?? "green"
-            onTitle?(titleLabel())   // health now drives the glyph, not just waste
+            healthStatus = status
+            healthObservationState = .current
+            healthObservationError = nil
+        } else {
+            healthObservationState = healthObservationAfterRead(status: nil, hasPreviousObservation: healthObservationState != .unknown)
+            healthObservationError = "Pantheon could not confirm a current health reading. The previous findings are preserved; refresh to try again."
         }
         healthLoading = false
+        onTitle?(titleLabel())
     }
 
     // runResult runs `sirsi <args> --json` and decodes the uniform CommandResult,
@@ -1122,11 +1190,15 @@ final class SirsiEngine: ObservableObject {
         var a = args
         if !a.contains("--json") { a.append("--json") }
         let data = await runJSON(args: a)
-        guard let s = String(data: data, encoding: .utf8),
-              let i = s.firstIndex(of: "{") else { return nil }
-        let cr = try? JSONDecoder().decode(CommandResult.self, from: Data(String(s[i...]).utf8))
+        let cr = decodeCommandResult(data)
         guard let cr, !cr.summary.isEmpty else { return nil }
         return cr
+    }
+
+    nonisolated static func decodeCommandResult(_ data: Data) -> CommandResult? {
+        guard let s = String(data: data, encoding: .utf8),
+              let i = s.firstIndex(of: "{") else { return nil }
+        return try? JSONDecoder().decode(CommandResult.self, from: Data(String(s[i...]).utf8))
     }
 
     // ── provenance ledger ──────────────────────────────────────────────────────
