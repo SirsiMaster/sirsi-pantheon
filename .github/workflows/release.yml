@@ -192,7 +192,10 @@ jobs:
           set -euo pipefail
           test -f "bin/SirsiPantheon-${BUILD_VERSION}-arm64.dmg"
           test -f "bin/SirsiPantheon-${BUILD_VERSION}-arm64.pkg"
-          gh release upload "$TAG_NAME" \
+          # A runner retry may reach this step after the release service has
+          # already accepted the exact files. Replace only same-named assets so
+          # the canonical cask readback can still complete.
+          gh release upload "$TAG_NAME" --clobber \
             "bin/SirsiPantheon-${BUILD_VERSION}-arm64.dmg" \
             "bin/SirsiPantheon-${BUILD_VERSION}-arm64.pkg"
 
