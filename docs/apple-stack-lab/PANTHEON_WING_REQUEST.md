@@ -3,7 +3,7 @@
 **Request ID:** `PT-WING-001`
 **Requested:** 2026-09-11
 **Requester:** `claude-pantheon`
-**Proposed Stack Lab owners:** `codex-inference` (engine-contract review) and `claude-io` (Stack Lab topology/recipe review)
+**Proposed Stack Lab owners:** `codex-apollo` (engine-contract review) and `claude-io` (Stack Lab topology/recipe review)
 **Repo authority:** Sirsi Pantheon
 
 ## Request

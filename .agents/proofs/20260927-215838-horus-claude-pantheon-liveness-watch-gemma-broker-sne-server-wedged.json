@@ -1,0 +1,94 @@
+{
+  "work_item_id": "20260927-215838-horus-claude-pantheon-liveness-watch-gemma-broker-sne-server-wedged",
+  "agent_id": "claude-pantheon",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "internal-tool",
+  "canon_read": [
+    {
+      "path": "PANTHEON_RULES.md",
+      "role": "agent-law",
+      "read_at": "2026-09-27T22:10:00+00:00",
+      "notes": "A32 (Do No Harm To The Running Host): recognized the broker as load-bearing Tier-0 infra; right-sized/restored, never SIGKILLed."
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-09-27T22:10:00+00:00",
+      "notes": "no manifesto-level requirement names the gemma-broker/sne-server liveness watch; this is a router-scoped host-infra restore, not a manifesto-tracked product feature"
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-09-27T22:10:00+00:00",
+      "notes": "confirms sirsi-pantheon owns the local SNE inference broker and the router/gemma-liveness self-healing surfaces this item touches"
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-09-27T22:10:00+00:00",
+      "notes": "not release-blocking -- the local model broker is dev/fleet Tier-0 infra, not part of the v1 star-grade release surface"
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-09-27T22:10:00+00:00",
+      "notes": "no roadmap item tracks this specific liveness incident; it is reactive infra triage, not a roadmap feature"
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-09-27T22:10:00+00:00",
+      "notes": "covers sirsi-inference benchmark reproduction methodology, not applicable to this launchd-state restore; verification here is launchctl/curl/CLI status checks recorded above"
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "PANTHEON_RULES.md",
+      "section": "A32 / ADR-040 load-bearing recognition",
+      "claim": "Broker restored to warm/responding state via launchd reload, not by killing or reinstalling anything",
+      "files_changed": [
+        "~/Library/LaunchAgents/ai.sirsi.gemma-broker.plist (launchctl load -- host state, not a repo file)",
+        "~/.sirsi/gemma-server.port (recreated -- host state, not a repo file)"
+      ],
+      "evidence": [
+        "no repo source changes -- this is a host-state (launchd) restore, not a code change"
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "N/A -- host infrastructure restore, no product surface changed",
+    "design": "N/A",
+    "technical": "Root cause: ai.sirsi.gemma-broker launchd job was not bootstrapped (launchctl print returned 'could not find service'); `sirsi gemma serve` only kickstarts an already-loaded job (exit 113 when absent), so it could not self-heal. Not the quarantine marker (.plist.quarantined absent), not RAM (22GB free/48GB total), not missing weights (HF cache present).",
+    "operational": "Fixed via `launchctl load ~/Library/LaunchAgents/ai.sirsi.gemma-broker.plist` (job now state=running) and restoring ~/.sirsi/gemma-server.port (8477), which an earlier `sirsi gemma serve --stop` in this same triage had deleted, causing a false 'unavailable' status read.",
+    "narrative": "Alert was accurate (broker down); action taken matches the item's own instructions (right-size/restore, never kill-by-name) since the process at the label is sne-server (Go/mlx), not the retired Python gemma path."
+  },
+  "verification": [
+    {
+      "name": "launchd job state",
+      "command": "launchctl print gui/501/ai.sirsi.gemma-broker",
+      "status": "pass",
+      "evidence": "state = running"
+    },
+    {
+      "name": "HTTP liveness",
+      "command": "curl -m 20 http://127.0.0.1:8477/v1/models",
+      "status": "pass",
+      "evidence": "{\"data\":[{\"id\":\"gemma-4-12B-it-8bit\",\"object\":\"model\",\"owned_by\":\"sirsi\"}],\"object\":\"list\"}"
+    },
+    {
+      "name": "CLI status",
+      "command": "sirsi gemma serve --status",
+      "status": "pass",
+      "evidence": "SNE local inference: WARM at http://127.0.0.1:8477."
+    }
+  ],
+  "working_status": {
+    "environment": "macOS, sirsi-pantheon working directory, live host action (not a code branch)",
+    "how_verified": "launchctl print, curl to the SNE OpenAI-compatible endpoint, and the sirsi CLI's own status check, all after the restore",
+    "observed_result": "broker running and responding with real model data",
+    "verified_at": "2026-09-27T22:10:00Z"
+  },
+  "handoffs": [],
+  "blockers": []
+}

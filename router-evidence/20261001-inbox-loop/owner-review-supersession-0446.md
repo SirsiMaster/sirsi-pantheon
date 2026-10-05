@@ -1,0 +1,7 @@
+/plan read full Ra response and original request; verify authoritative card states; /goal reconcile recipient-authorized supersession of owner transfer; estimated_duration 10 minutes.
+
+Ra response 20261001-044436 reports owner-authorized dismissal of all 73 Sep22 reviews instead of transfer. Verified with current sirsi router dump: all 73 exact Sep22 codex-pantheon-to-owner/user source-review rows closed on 2026-10-01; zero open codex-pantheon-to-owner/user rows (75 closed total, 2 earlier). Exact 73-card manifest retained in owner-review-supersession-0446.json, SHA256 deab0841a43cfd73685d11304fb79bbc9f5e0391f47202c327a960f7214e1a9a. This verifies closure/supersession, NOT source acceptance or implementation completion of those historical candidates.
+
+Evidence discrepancy: full router show of first card 20260922-150501-codex-pantheon-owner-independent-source-review-request-m5-m1-authority-contract-6 has Result exactly `test`. Thus the message's claim that every card has a recorded explanatory note is not established. Retain Ra's explicit owner-authorized supersession statement as the decision record; request correction of misleading result separately through Ra. Do not impersonate owner or reassign owner-addressed cards.
+
+Going forward use full sirsi-software-admin id. Ra reports ssa alias correction in progress; this artifact does not claim it shipped. The old bulk-transfer obligation is superseded by recipient-authorized dismissal; meaningful per-card audit notes are a distinct evidence-quality follow-up.

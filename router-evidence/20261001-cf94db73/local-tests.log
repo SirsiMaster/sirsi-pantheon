@@ -1,0 +1,32 @@
+--- FAIL: TestThreadAuthorityBridgesAdoptedIdentity (0.05s)
+panic: httptest: failed to listen on a port: listen tcp6 [::1]:0: bind: operation not permitted [recovered, repanicked]
+
+goroutine 67 [running]:
+testing.tRunner.func1.2({0x1058af4b8, 0x471471bea950})
+	/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2123 +0x1a0
+testing.tRunner.func1()
+	/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2126 +0x2c8
+panic({0x1058af4b8?, 0x471471bea950?})
+	/opt/homebrew/Cellar/go/1.27.1/libexec/src/runtime/panic.go:859 +0x120
+net/http/httptest.newLocalListener()
+	/opt/homebrew/Cellar/go/1.27.1/libexec/src/net/http/httptest/server.go:226 +0xd4
+net/http/httptest.NewUnstartedServer(...)
+	/opt/homebrew/Cellar/go/1.27.1/libexec/src/net/http/httptest/server.go:284
+net/http/httptest.NewServer({0x105956160, 0x471471ac4180})
+	/opt/homebrew/Cellar/go/1.27.1/libexec/src/net/http/httptest/server.go:267 +0x28
+github.com/SirsiMaster/sirsi-pantheon/internal/routerstore.ruleHarnessOn(0x471471af6fc8, {0x105021aae, 0x7}, 0x471471b132e0, {0x105960c70, 0x471471a74ba0})
+	/private/tmp/pantheon-review-cf94db73/internal/routerstore/serve_ruleofra_test.go:29 +0x1a0
+github.com/SirsiMaster/sirsi-pantheon/internal/routerstore.ruleHarness(0x471471af6fc8, {0x105021aae, 0x7}, 0x471471b132e0)
+	/private/tmp/pantheon-review-cf94db73/internal/routerstore/serve_ruleofra_test.go:18 +0x58
+github.com/SirsiMaster/sirsi-pantheon/internal/routerstore.TestThreadAuthorityBridgesAdoptedIdentity(0x471471af6fc8)
+	/private/tmp/pantheon-review-cf94db73/internal/routerstore/adopt_machineid_test.go:132 +0xd4
+testing.tRunner(0x471471af6fc8, 0x1059623e0)
+	/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2193 +0xc4
+created by testing.(*T).Run in goroutine 1
+	/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2258 +0x3b8
+FAIL	github.com/SirsiMaster/sirsi-pantheon/internal/routerstore	0.490s
+# github.com/SirsiMaster/sirsi-pantheon/cmd/sirsi-router-mcp.test
+ld: warning: ignoring duplicate libraries: '-lobjc'
+ok  	github.com/SirsiMaster/sirsi-pantheon/internal/dispatch	4.122s
+ok  	github.com/SirsiMaster/sirsi-pantheon/cmd/sirsi-router-mcp	0.235s
+FAIL

@@ -145,17 +145,22 @@ func TestLoopbackEndpointRecognition(t *testing.T) {
 	tests := []struct {
 		endpoint string
 		want     bool
+		tier     Tier
 	}{
-		{"http://127.0.0.1:8765/v1", true},
-		{"http://[::1]:8765/v1", true},
-		{"http://localhost:8765/v1", true},
-		{"https://api.example.test/v1", false},
-		{"not a URL", false},
+		{"http://127.0.0.1:8765/v1", true, TierLocal},
+		{"http://[::1]:8765/v1", true, TierLocal},
+		{"http://localhost:8765/v1", true, TierLocal},
+		{"https://api.example.test/v1", false, TierRemote},
+		{"http://modelbox.lan/v1", false, TierRemote},
+		{"not a URL", false, TierRemote},
 	}
 	for _, tt := range tests {
 		t.Run(tt.endpoint, func(t *testing.T) {
 			if got := isLoopbackEndpoint(tt.endpoint); got != tt.want {
 				t.Fatalf("isLoopbackEndpoint(%q) = %v, want %v", tt.endpoint, got, tt.want)
+			}
+			if got := EndpointTier(tt.endpoint); got != tt.tier {
+				t.Fatalf("EndpointTier(%q) = %v, want %v", tt.endpoint, got, tt.tier)
 			}
 		})
 	}

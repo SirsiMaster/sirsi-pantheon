@@ -68,6 +68,34 @@ func TestCleanCompletion(t *testing.T) {
 	}
 }
 
+func TestParseSelectionRequiresUnambiguousClosedJSON(t *testing.T) {
+	for _, raw := range []string{
+		`{"findings":[0],"findings":[1],"summary":"answer"}`,
+		`{"findings":[],"Summary":"answer"}`,
+		`{"summary":"answer"}`,
+		`{"findings":null,"summary":"answer"}`,
+		`{"findings":[],"summary":null}`,
+		`{"findings":"0","summary":"answer"}`,
+		`{"findings":[],"summary":"answer","extra":true}`,
+		`{"findings":[],"summary":"answer"}{"findings":[0]}`,
+		`{"findings":[0,0],"summary":"answer"}`,
+		`{"findings":[0,1,2,3,4],"summary":"answer"}`,
+		`{"findings":[-1],"summary":"answer"}`,
+	} {
+		if _, err := parseSelection(raw); err == nil {
+			t.Errorf("parseSelection(%q) accepted ambiguous or out-of-contract selection", raw)
+		}
+	}
+
+	got, err := parseSelection("Answer: ```json\n{\"findings\":[2],\"summary\":\"looks healthy\"}\n```")
+	if err != nil {
+		t.Fatalf("parseSelection rejected valid response with surrounding prose/fence: %v", err)
+	}
+	if len(got.Findings) != 1 || got.Findings[0] != 2 || got.Summary != "looks healthy" {
+		t.Fatalf("parseSelection returned %+v", got)
+	}
+}
+
 // The integrity rule: anything factual-looking in the model's one free-text
 // field must appear verbatim in the grounding, or the sentence is withheld.
 // This is the check that would have caught "action.runner" for a report that

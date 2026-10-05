@@ -89,8 +89,11 @@ type StatsResponse struct {
 	AccelIcon          string `json:"accel_icon"`
 
 	// Active Deities
-	ActiveDeities []string `json:"active_deities"`
-	DeityCount    int      `json:"deity_count"`
+	ActiveDeities   []string `json:"active_deities"`
+	DeityCount      int      `json:"deity_count"`
+	Components      []string `json:"components"`
+	ComponentCount  int      `json:"component_count"`
+	ComponentsKnown bool     `json:"components_known"`
 
 	// Ra Deployment
 	RaDeployed bool            `json:"ra_deployed"`

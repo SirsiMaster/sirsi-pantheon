@@ -1,0 +1,14 @@
+{
+  "work_item_id": "20260930-224029-codex-finalwishes-sirsi-software-admin-append58-known-issue-erratum-staleestate-contacts-exactrevie",
+  "agent_id": "sirsi-software-admin",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "platform-foundation",
+  "canon_read": [{"path":"/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md","role":"requirements","read_at":"2026-09-30T23:10:00Z","notes":"read"},{"path":"AGENTS.md","role":"agent-law","read_at":"2026-09-30T23:10:00Z","notes":"read"},{"path":"README.md","role":"scope","read_at":"2026-09-30T23:10:00Z","notes":"read"},{"path":"docs/prd/RELEASE_V1_STAR_GRADE.md","role":"release-plan","read_at":"2026-09-30T23:10:00Z","notes":"read"},{"path":"docs/PANTHEON_ROADMAP.md","role":"requirements","read_at":"2026-09-30T23:10:00Z","notes":"read"},{"path":"docs/REPRODUCTION.md","role":"test-plan","read_at":"2026-09-30T23:10:00Z","notes":"read"}],
+  "requirements_trace": [{"doc":"README.md","section":"stale estate contacts","claim":"The finding is corrected, not waived.","files_changed":["FinalWishes:web/src/lib/firestore.ts","FinalWishes:web/src/lib/firestore.test.ts"],"evidence":["main 196249f","run 36788371856","release .59"]}],
+  "closure_evidence": {"product":"Correction deployed","design":"Estate scope unchanged","technical":"Retired query callbacks suppressed","operational":"14/14 protected jobs passed","narrative":"Known issue is recorded as fixed"},
+  "verification": [{"name":"protected pipeline","command":"GitHub Actions 36788371856","status":"pass","evidence":"SUCCESS"},{"name":"completion gate","command":"agent_completion_gate validate","status":"pass","evidence":"This proof"}],
+  "working_status": {"environment":"FinalWishes production","how_verified":"Exact release and read-only smoke","observed_result":"Cloud Run finalwishes-api-00698-8ks healthy","verified_at":"2026-09-30T23:05:00Z"},
+  "handoffs": [],
+  "blockers": []
+}

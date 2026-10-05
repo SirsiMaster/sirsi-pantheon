@@ -122,7 +122,10 @@ func NewSupervisor(profile SupervisorProfile, launch LaunchConfig) (*Supervisor,
 		return nil, fmt.Errorf("complete SNE launch identity is required")
 	}
 	if strings.TrimSpace(launch.ExpectedAPIContract) == "" {
-		launch.ExpectedAPIContract = "sne.openai-chat.v2"
+		launch.ExpectedAPIContract = OpenAIChatContractV3
+	}
+	if launch.ExpectedAPIContract != OpenAIChatContractV3 {
+		return nil, fmt.Errorf("SNE supervisor only admits API contract %q", OpenAIChatContractV3)
 	}
 	if len(launch.Environment) > 0 && !launch.allowTestEnvironment {
 		return nil, fmt.Errorf("custom SNE child environment is prohibited")
@@ -485,8 +488,11 @@ func (s *Supervisor) admitReadinessGeneration(generation uint64) bool {
 }
 
 func (s *Supervisor) validateReadinessIdentity(identity ServiceReadinessIdentity) error {
-	if identity.Status != "ready" || strings.TrimSpace(identity.ServiceVersion) == "" || identity.APIVersion != "v0" || identity.APIContract != s.launch.ExpectedAPIContract {
+	if strings.TrimSpace(identity.ServiceVersion) == "" || identity.APIVersion != "v0" || identity.APIContract != s.launch.ExpectedAPIContract {
 		return fmt.Errorf("SNE readiness identity has unsupported status/version/API")
+	}
+	if err := identity.ValidateContract(); err != nil {
+		return fmt.Errorf("SNE readiness contract is invalid: %w", err)
 	}
 	if identity.Profile != s.profile.SNE.Profile {
 		return fmt.Errorf("SNE readiness profile mismatch: got %q want %q", identity.Profile, s.profile.SNE.Profile)
@@ -506,7 +512,7 @@ func (s *Supervisor) validateReadinessIdentity(identity ServiceReadinessIdentity
 	if len(identity.Models) != 1 || identity.Models[0].ID != s.launch.ExpectedModelID || identity.Models[0].ManifestSHA256 != s.launch.ModelManifestSHA256 {
 		return fmt.Errorf("SNE readiness advertised-model identity mismatch")
 	}
-	if identity.ReadyProfile != "" || identity.ReadyRuntimeSHA256 != "" || identity.ReadyNativeRuntimeSHA256 != "" || identity.ReadyModelID != "" || identity.ReadyManifestSHA256 != "" || identity.ReadyAPIContract != "" {
+	if identity.ReadyProfile != "" || identity.ReadyRuntimeSHA256 != "" || identity.ReadyNativeRuntimeSHA256 != "" || identity.ReadyModelID != "" || identity.ReadyManifestSHA256 != "" {
 		if identity.ReadyProfile != identity.Profile || identity.ReadyRuntimeSHA256 != identity.RuntimeSHA256 || identity.ReadyNativeRuntimeSHA256 != identity.NativeRuntimeSHA256 || identity.ReadyModelID != identity.LoadedModel || identity.ReadyManifestSHA256 != s.launch.ModelManifestSHA256 || identity.ReadyAPIContract != identity.APIContract || identity.ReadyMaxConcurrentRequests != identity.MaxConcurrentRequests || identity.ReadyMaxQueuedRequests != identity.MaxQueuedRequests || identity.ReadyQueueDiscipline != identity.QueueDiscipline || identity.ReadyRequestTimeoutMS != identity.RequestTimeoutMS {
 			return fmt.Errorf("SNE readiness endpoint identity disagrees with status/models")
 		}

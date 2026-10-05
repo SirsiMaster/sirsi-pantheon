@@ -1,0 +1,94 @@
+{
+  "work_item_id": "20260929-015127-hermes-claude-deck-response-shipped-one-hop-at-any-size-pr-538-a-number-to-reco",
+  "agent_id": "claude-deck",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "internal-tool",
+  "canon_read": [
+    {
+      "path": "/Users/thekryptodragon/Development/SirsiNexusApp/docs/DECK_CLAIM_TRACEABILITY.md",
+      "role": "requirements",
+      "read_at": "2026-09-29T02:20:00Z",
+      "notes": "Grepped for the retracted 28.3x-at-64 torus figure; not present."
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SirsiNexusApp/packages/sirsi-portal-app/public/deck-tight-embed.html",
+      "role": "shipped-artifact",
+      "read_at": "2026-09-29T02:20:00Z",
+      "notes": "Live sleeve/scaling slide — the only place in the deck carrying the 4-Mac and 16-Mac speed-up bars this reconciliation concerns."
+    },
+    {
+      "path": ".agents/proofs/20260929-015127-hermes-claude-deck-response-shipped-one-hop-at-any-size-pr-538-a-number-to-reco.json",
+      "role": "governing-canon",
+      "read_at": "2026-09-29T02:20:00Z",
+      "notes": "This proof file — requirements_trace below cites it as the doc for the reconciliation claim it verifies."
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-09-29T02:20:00Z",
+      "notes": "Router closure requirement"
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-09-29T02:20:00Z",
+      "notes": ""
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-09-29T02:20:00Z",
+      "notes": "Deck reconciliation check has no scope impact on the v1 star-grade release plan"
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "roadmap",
+      "read_at": "2026-09-29T02:20:00Z",
+      "notes": "Verification-only task, no roadmap deviation"
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "reproduction-standard",
+      "read_at": "2026-09-29T02:20:00Z",
+      "notes": "Grep command recorded in verification[] satisfies the reproduction standard"
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": ".agents/proofs/20260929-015127-hermes-claude-deck-response-shipped-one-hop-at-any-size-pr-538-a-number-to-reco.json",
+      "section": "Reconciliation: 16-Mac cabled figure is 14.5x (grid-of-cliques, fair-competitor), not 28.3x (torus, wrong regime at 64 Macs)",
+      "claim": "The shipped deck must not carry the retracted 28.3x figure and must use the fair-competitor 14.5x at 16 Macs.",
+      "files_changed": [
+        ".agents/proofs/20260929-015127-hermes-claude-deck-response-shipped-one-hop-at-any-size-pr-538-a-number-to-reco.json"
+      ],
+      "evidence": [
+        "SirsiNexusApp/packages/sirsi-portal-app/public/deck-tight-embed.html line 1347: 16-Mac 'best cabled cluster' bar reads 14.5x — matches Hermes's grid-of-cliques figure used by PR #539",
+        "SirsiNexusApp/packages/sirsi-portal-app/public/deck-tight-embed.html: 4-Mac cabled bar reads 3.9x — matches Hermes's confirmation that a full mesh is direct-cabled at 4 Macs",
+        "grep -n '28.3|torus|clique' across SirsiNexusApp/docs/DECK_CLAIM_TRACEABILITY.md and deck-tight-embed.html returned no hits for the retracted figure"
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "No deck change required — the shipped slide already carries the correct, reconciled numbers.",
+    "design": "N/A — no visual or copy change.",
+    "technical": "Verified via grep against the live deck HTML and the claim traceability doc; no code changed.",
+    "operational": "No push required. Router item closed with verification result.",
+    "narrative": "Confirms Hermes's source-of-truth reconciliation is already reflected downstream in the deck; no drift to fix."
+  },
+  "verification": [
+    {
+      "name": "grep for retracted figure",
+      "command": "grep -n '28.3|14.5x|14.7x|10.9x|torus|clique' SirsiNexusApp/packages/sirsi-portal-app/public/deck-tight-embed.html",
+      "status": "pass",
+      "evidence": "Only 14.5x present (line 1347), no torus/28.3x contamination"
+    }
+  ],
+  "working_status": {
+    "environment": "/Users/thekryptodragon/Development/SirsiNexusApp/marketing (working tree, no changes made)",
+    "how_verified": "grep against shipped deck artifact and claim traceability doc",
+    "observed_result": "Deck numbers already match Hermes's reconciled source of truth",
+    "verified_at": "2026-09-29T02:20:00Z"
+  },
+  "blockers": []
+}

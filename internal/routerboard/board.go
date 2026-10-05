@@ -129,10 +129,10 @@ type Payload struct {
 	SchemaBanner     string       `json:"schema_banner,omitempty"`
 }
 
-// EvidenceRef is the canonical, normalized projection of a task's evidence
-// link. It is intentionally derived from the same ledger read as Tasks, so a
-// remote client never has to interpret raw task JSON or maintain a second
-// evidence index.
+// EvidenceRef is the canonical, normalized projection of task result
+// references and evidence links. It is intentionally derived from the same
+// ledger read as Tasks, so a remote client never has to interpret raw task JSON
+// or maintain a second evidence index.
 type EvidenceRef struct {
 	TaskID  string `json:"task_id"`
 	Agent   string `json:"agent"`

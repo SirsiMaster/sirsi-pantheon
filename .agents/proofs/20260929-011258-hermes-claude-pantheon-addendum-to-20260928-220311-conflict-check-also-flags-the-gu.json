@@ -1,0 +1,142 @@
+{
+  "work_item_id": "20260929-011258-hermes-claude-pantheon-addendum-to-20260928-220311-conflict-check-also-flags-the-gu",
+  "agent_id": "claude-pantheon",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "internal-tool",
+  "canon_read": [
+    {
+      "path": "PANTHEON_RULES.md",
+      "role": "governing-canon",
+      "read_at": "2026-09-29T02:00:00Z",
+      "notes": "Rule A17 (Ma'at QA Sovereign), A21 (concurrency-safe injectable mocks) govern the schedule package this fix touches; A35 (Scope The Check To The Claim) governs closing the loop on both reported false positives, not just one."
+    },
+    {
+      "path": ".agents/proofs/20260928-220311-hermes-claude-pantheon-ma-at-conflict-check-false-positives-idle-runner-listener-th.json",
+      "role": "parent-item-proof",
+      "read_at": "2026-09-29T02:00:00Z",
+      "notes": "This addendum extends the parent item's PR #898 (fix/maat-conflict-check-false-positives) rather than opening a new branch."
+    },
+    {
+      "path": "CHANGELOG.md",
+      "role": "release-record",
+      "read_at": "2026-09-29T02:00:00Z",
+      "notes": "Bumped to v0.24.39 in the same worktree/branch as PR #898."
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-09-29T02:00:00Z",
+      "notes": "Router closure requirement"
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-09-29T02:00:00Z",
+      "notes": ""
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-09-29T02:00:00Z",
+      "notes": "Internal-tool scheduling-guard bug fix; no scope impact on the v1 star-grade release plan"
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "roadmap",
+      "read_at": "2026-09-29T02:00:00Z",
+      "notes": "Fix is within existing Ma'at scheduling/guard scope, no roadmap deviation"
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "reproduction-standard",
+      "read_at": "2026-09-29T02:00:00Z",
+      "notes": "Verification commands (go build/test/vet/gofmt) recorded in the verification[] section below satisfy the reproduction standard"
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": ".agents/proofs/20260928-220311-hermes-claude-pantheon-ma-at-conflict-check-false-positives-idle-runner-listener-th.json",
+      "section": "Ask: exempt the reservation holder's ancestors, not just descendants",
+      "claim": "conflict-check must not report a process that is an ANCESTOR of the guarded run's ExemptPID (e.g. the parent shell that launched maat-run-guard.sh) as an intruder",
+      "files_changed": [
+        "internal/maat/schedule/conflict.go",
+        "internal/maat/schedule/reservation.go",
+        "cmd/sirsi/maatschedule.go",
+        "internal/maat/schedule/conflict_test.go",
+        "VERSION",
+        "CHANGELOG.md"
+      ],
+      "evidence": [
+        "CheckConflicts now checks isDescendant(a.PID, cur.ExemptPID, ancestry) || isDescendant(cur.ExemptPID, a.PID, ancestry) — both directions",
+        "TestCheckConflicts_ExemptPIDCoversItsOwnAncestors reproduces the exact reported shape (parent zsh -> mlx-wait-run.sh -> maat-run-guard root) and asserts only the genuine unrelated intruder is reported"
+      ]
+    },
+    {
+      "doc": ".agents/proofs/20260928-220311-hermes-claude-pantheon-ma-at-conflict-check-false-positives-idle-runner-listener-th.json",
+      "section": "Ask: scan each resource on its own host (the m5-attribution defect)",
+      "claim": "an m5 conflict-check must not silently scan the local (M1) process table and report it as m5's activity",
+      "files_changed": [
+        "internal/maat/schedule/conflict.go"
+      ],
+      "evidence": [
+        "internal/maat/schedule/conflict.go probeProcesses already refuses cross-host probes (commit 19d77af1, 2026-09-27), confirmed on origin/main via git merge-base --is-ancestor 19d77af1 origin/main",
+        "The reported m5 run listing M1 PIDs predates that fix (stale local binary), same root-cause pattern as the idle-runner misclassification in the parent item"
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "No user-facing product change; internal Ma'at scheduling guard correctness fix.",
+    "design": "N/A — extends the existing --exempt-pid CLI flag description only.",
+    "technical": "internal/maat/schedule/conflict.go: CheckConflicts's ancestry check now covers both directions (descendant OR ancestor of ExemptPID). The cross-host scan refusal was already live on main separately. Reconciled PR #898's branch (which had diverged from an older main) forward onto current main via a merge commit (ff5598a5) — no force-push, no history rewrite.",
+    "operational": "Branch fix/maat-conflict-check-false-positives pushed to origin (16e3659c..ff5598a5); PR #898 (open, https://github.com/SirsiMaster/sirsi-pantheon/pull/898) now carries both fixes. VERSION bumped 0.24.38 -> 0.24.39, CHANGELOG entry added, stale duplicate 0.24.34 entry removed during reconciliation.",
+    "narrative": "Both false positives in hermes's addendum are resolved: the ancestor-exemption gap is newly fixed and tested; the m5-attribution gap was already fixed on main days earlier and the reported instance was a stale-binary artifact, not a live defect."
+  },
+  "verification": [
+    {
+      "name": "build",
+      "command": "go build ./...",
+      "status": "pass",
+      "evidence": "Clean build in worktree /private/tmp/claude-work/pantheon-conflict-check-fix (branch fix/maat-conflict-check-false-positives, head ff5598a5)"
+    },
+    {
+      "name": "unit tests",
+      "command": "go test ./internal/maat/schedule/...",
+      "status": "pass",
+      "evidence": "ok github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule 8.938s, including new TestCheckConflicts_ExemptPIDCoversItsOwnAncestors"
+    },
+    {
+      "name": "formatting",
+      "command": "gofmt -l internal/maat/schedule/ cmd/sirsi/maatschedule.go",
+      "status": "pass",
+      "evidence": "No output (clean)"
+    },
+    {
+      "name": "vet",
+      "command": "go vet ./internal/maat/schedule/... ./cmd/sirsi/...",
+      "status": "pass",
+      "evidence": "No output (clean)"
+    },
+    {
+      "name": "full suite (Ma'at pre-push gate, deep)",
+      "command": "go test ./... (invoked by .githooks/pre-push on git push)",
+      "status": "pass",
+      "evidence": "All ~90 packages ok, gitleaks 0 issues, Ma'at quality assessment completed, push accepted (16e3659c..ff5598a5)"
+    },
+    {
+      "name": "m5-attribution fix already on main",
+      "command": "git merge-base --is-ancestor 19d77af1 origin/main",
+      "status": "pass",
+      "evidence": "Exit 0 — the cross-host probe refusal commit is an ancestor of origin/main"
+    }
+  ],
+  "working_status": {
+    "environment": "worktree /private/tmp/claude-work/pantheon-conflict-check-fix, branch fix/maat-conflict-check-false-positives, head ff5598a5 (rebased onto and merged forward from origin/main)",
+    "how_verified": "go build, go test, gofmt, go vet run directly; full go test ./... and gitleaks run by the Ma'at pre-push gate on push; all passed",
+    "observed_result": "Branch pushed to origin (fast-forward-compatible merge, no force-push), PR #898 updated to ff5598a5, not yet merged",
+    "verified_at": "2026-09-29T02:10:00Z"
+  },
+  "blockers": [
+    "PR #898 awaiting merge (not owner-gated, no security/privacy concern — routine review/merge)"
+  ]
+}

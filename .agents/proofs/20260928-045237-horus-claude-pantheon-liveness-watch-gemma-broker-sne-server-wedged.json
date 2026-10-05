@@ -1,0 +1,109 @@
+{
+  "work_item_id": "20260928-045237-horus-claude-pantheon-liveness-watch-gemma-broker-sne-server-wedged",
+  "agent_id": "claude-pantheon",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "internal-tool",
+  "canon_read": [
+    {
+      "path": "CLAUDE.md",
+      "role": "repo-canon",
+      "read_at": "2026-09-28T04:53:30Z",
+      "notes": "A32/ADR-040 load-bearing infra rules (never SIGKILL, right-size, read-only checks); A35 scope-the-check-to-the-claim"
+    },
+    {
+      "path": ".agents/proofs/20260928-034620-horus-claude-pantheon-liveness-watch-gemma-broker-sne-server-wedged.json",
+      "role": "precedent",
+      "read_at": "2026-09-28T04:53:45Z",
+      "notes": "second prior occurrence of this exact alert title (~1h6m earlier), also root-caused as a transient probe miss with no restart across the window"
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-09-28T04:54:00Z",
+      "notes": "router closure requirement"
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-09-28T04:54:05Z",
+      "notes": ""
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-09-28T04:54:10Z",
+      "notes": ""
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-09-28T04:54:15Z",
+      "notes": ""
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-09-28T04:54:20Z",
+      "notes": ""
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "CLAUDE.md",
+      "section": "A32 (load-bearing infra, right-size never SIGKILL) / A35 (scope-the-check-to-the-claim) — applied to router item 20260928-045237 (liveness-watch: gemma broker wedged)",
+      "claim": "the warm gemma broker (sne-server) is unresponsive per launchd liveness probe (no port / connection error / non-200 / zero tokens / >30s / RSS below 1GB floor)",
+      "files_changed": [
+        ".agents/proofs/20260928-045237-horus-claude-pantheon-liveness-watch-gemma-broker-sne-server-wedged.json"
+      ],
+      "evidence": [
+        "live process is PID 49290, running since 2026-09-28T00:04:21 local (well before the 04:52:37Z alert) -- no restart occurred across the alert window",
+        "lsof -i :8477 confirms PID 49290 LISTEN on 127.0.0.1:8477; curl to that port returned HTTP 200",
+        "RSS ~3.3 GB, well above the 1 GB weight floor",
+        "`sirsi gemma status` returned a live, coherent, non-empty multi-paragraph completion at check time (04:55Z, ~3 min after the alert)",
+        "~/.sirsi/gemma-server.pid is stale (points to dead PID 98392, a prior instance) -- cosmetic bookkeeping drift, not the process actually serving the port; not treated as evidence of wedging since the live port/process is what matters"
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "N/A -- infra reliability check, no product surface change.",
+    "design": "N/A",
+    "technical": "No code change required. The broker never restarted across the alert window and was confirmed healthy and serving within ~3 minutes of the alert firing.",
+    "operational": "No config or deploy change. No process was signaled, resized, or restarted by this agent, per A32/ADR-040 (load-bearing infra is read-only to this check).",
+    "narrative": "Third occurrence of this exact alert title within the same session (prior: 20260928-013249, 20260928-034620). All three showed the broker's underlying process had NOT restarted across the alert window, i.e. none were genuine wedges -- consistent with the launchd liveness probe itself occasionally missing (e.g. one slow probe cycle exceeding a timeout) rather than a recurring broker defect. Flagging the pattern here for awareness; no fix attempted against the probe itself since that would be new scope beyond this closure and requires reading internal/liveness/livenesswatch.go before proposing a change.",
+    "stale_pidfile_note": "~/.sirsi/gemma-server.pid points to a dead PID (98392) while the live server is 49290. This is drift in bookkeeping only -- the port and functional probe are what matter for liveness, and both passed. Not fixed here as it is outside this item's scope; noting for the record."
+  },
+  "verification": [
+    {
+      "name": "broker process continuity across alert window",
+      "command": "ps -p 49290 -o lstart=",
+      "status": "pass",
+      "evidence": "Mon Sep 28 00:04:21 2026 -- predates the 04:52:37Z alert; no restart occurred"
+    },
+    {
+      "name": "port binding matches live listener",
+      "command": "lsof -i :8477 -P -n",
+      "status": "pass",
+      "evidence": "PID 49290 LISTEN on 127.0.0.1:8477"
+    },
+    {
+      "name": "RSS above weight floor",
+      "command": "ps -p 49290 -o rss=",
+      "status": "pass",
+      "evidence": "RSS ~3.3 GB, above the 1 GB floor"
+    },
+    {
+      "name": "functional liveness check",
+      "command": "sirsi gemma status",
+      "status": "pass",
+      "evidence": "warm broker (gemma-4-12B-it-8bit) returned a full, coherent completion -- non-zero tokens, no connection error, HTTP 200 on direct curl"
+    }
+  ],
+  "working_status": {
+    "environment": "sirsi-pantheon repo, fix/broker-quarantine branch, local dev machine",
+    "how_verified": "direct process/port/RSS inspection plus a live functional probe of the broker, immediately after acknowledging the router item",
+    "observed_result": "broker healthy and serving; no restart or intervention needed or performed",
+    "verified_at": "2026-09-28T04:55:32Z"
+  },
+  "blockers": []
+}

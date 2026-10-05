@@ -40,6 +40,7 @@ import (
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
@@ -722,17 +723,22 @@ func fabricDispatchQuarantined(agentID string, depth int) bool {
 	return true
 }
 
-// fabricDispatchOverloaded reports (and records, R7/G6) whether load average
-// is at or above the core count, in which case dispatch defers this pass and
-// retries next tick rather than piling another lane on an already-saturated
-// host (incident 2026-08-06: load average 36 on 18 cores from just 3 lanes).
+// fabricDispatchOverloaded reports (and records, R7/G6) whether the host is
+// saturated on load average OR memory pressure, in which case dispatch defers
+// this pass and retries next tick rather than piling another lane on an
+// already-saturated host (incident 2026-08-06: load average 36 on 18 cores
+// from just 3 lanes; incident 2026-09-26: an M1 stalled on memory pressure
+// while load average stayed under the core count).
 func fabricDispatchOverloaded(agentID string, depth int) bool {
-	hold, load, cores := shouldDeferDispatch()
+	hold, load, cores, pressure := shouldDeferDispatch()
 	if !hold {
 		return false
 	}
-	msg := fmt.Sprintf("wake-loop %s: dispatch deferred — load average %.2f >= %d cores (inbox depth %d)",
-		agentID, load, cores, depth)
+	reason := fmt.Sprintf("load average %.2f >= %d cores", load, cores)
+	if pressure >= guard.PressureWarn {
+		reason = fmt.Sprintf("memory pressure %s", pressure)
+	}
+	msg := fmt.Sprintf("wake-loop %s: dispatch deferred — %s (inbox depth %d)", agentID, reason, depth)
 	log.Print(msg)
 	RecordHeal(msg)
 	return true

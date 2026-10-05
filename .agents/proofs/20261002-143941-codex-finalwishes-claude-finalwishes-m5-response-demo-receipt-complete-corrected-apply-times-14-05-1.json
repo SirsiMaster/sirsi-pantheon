@@ -1,0 +1,121 @@
+{
+  "work_item_id": "20261002-143941-codex-finalwishes-claude-finalwishes-m5-response-demo-receipt-complete-corrected-apply-times-14-05-1",
+  "agent_id": "claude-finalwishes-m5",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "internal-tool",
+  "canon_read": [
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-10-02T14:52:00Z",
+      "notes": "Portfolio doctrine; FinalWishes is an outside-party client application, not Sirsi-owned property (§3)"
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-10-02T14:52:00Z",
+      "notes": "Pantheon repo scope/surfaces"
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-10-02T14:52:00Z",
+      "notes": "v1.0.0-rc1 Star-Grade sprint PRD; not applicable to this FinalWishes evidence-reconciliation item"
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-10-02T14:52:00Z",
+      "notes": "Current phase: Phase 5 v1.0.0-rc1 Star-Grade sprint"
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-10-02T14:52:00Z",
+      "notes": "sirsi-inference measurement reproduction doc; not applicable to this FinalWishes evidence-reconciliation item"
+    },
+    {
+      "path": "/Users/thekryptodragon/.sirsi/evidence/finalwishes/thr-4e9f7277decb5741/loop-1435/demo-receipt.md",
+      "role": "sender-receipt",
+      "read_at": "2026-10-02T14:45:00Z",
+      "notes": "Source receipt body matches router item instructions verbatim"
+    },
+    {
+      "path": "/Users/thekryptodragon/.sirsi/evidence/finalwishes/thr-4e9f7277decb5741/loop-1435/demo-artifact-readback.json",
+      "role": "evidence",
+      "read_at": "2026-10-02T14:45:00Z",
+      "notes": "21 writes #910, 22 documents #912, sender-attributed mtimes only"
+    },
+    {
+      "path": "/Users/thekryptodragon/.sirsi/evidence/finalwishes/thr-4e9f7277decb5741/loop-1435/public-pages.json",
+      "role": "evidence",
+      "read_at": "2026-10-02T14:45:00Z",
+      "notes": "Headless-Chromium render evidence, not Profile 15 executor identity"
+    },
+    {
+      "path": "/Users/thekryptodragon/.sirsi/evidence/finalwishes/thr-4e9f7277decb5741/loop-1435/demo-ellie.json",
+      "role": "evidence",
+      "read_at": "2026-10-02T14:45:00Z",
+      "notes": "Two Ellie memoir portrait 404s confirmed present"
+    },
+    {
+      "path": "/Users/thekryptodragon/.sirsi/evidence/finalwishes/thr-4e9f7277decb5741/loop-1435/demo-journeys2.json",
+      "role": "evidence",
+      "read_at": "2026-10-02T14:45:00Z",
+      "notes": "Empty Dana obituary h1 at 393 viewport confirmed present"
+    },
+    {
+      "path": "/Users/thekryptodragon/.sirsi/evidence/finalwishes/thr-4e9f7277decb5741/loop-1435/m5-secondary-receipt.md",
+      "role": "cross-session-note",
+      "read_at": "2026-10-02T14:45:00Z",
+      "notes": "Secondary M5 session (thr-1594ceda57249643) already reconciled a duplicate-handling concern on this same item chain; this closure does not re-duplicate that work"
+    }
+  ],
+  "requirements_trace": [{
+    "doc": "/Users/thekryptodragon/.sirsi/evidence/finalwishes/thr-4e9f7277decb5741/loop-1435/demo-receipt.md",
+    "section": "RESPONSE reconciliation plan",
+    "claim": "Read supplied logs/JSON, preserve source copies and hashes, reconcile seed/public coverage records, return discrepancies",
+    "files_changed": [
+      "/Users/thekryptodragon/.sirsi/evidence/finalwishes/thr-ed9e7d8f1f10ac0c/demo-receipt-reconcile-20261002/SHA256SUMS.txt",
+      "/Users/thekryptodragon/.sirsi/evidence/finalwishes/thr-ed9e7d8f1f10ac0c/demo-receipt-reconcile-20261002/m5-reconciliation-result.md"
+    ],
+    "evidence": [
+      "/Users/thekryptodragon/.sirsi/evidence/finalwishes/thr-ed9e7d8f1f10ac0c/demo-receipt-reconcile-20261002/SHA256SUMS.txt",
+      "/Users/thekryptodragon/.sirsi/evidence/finalwishes/thr-ed9e7d8f1f10ac0c/demo-receipt-reconcile-20261002/m5-reconciliation-result.md"
+    ]
+  }],
+  "closure_evidence": {
+    "product": "No product change; this is an evidence-paperwork reconciliation of a prior demo-receipt exchange.",
+    "design": "No UX changed.",
+    "technical": "Independently read and hashed all six supplied artifacts (2 logs, 4 JSON) plus sender's demo-receipt.md and the secondary M5 session's receipt; copies and SHA256 manifest preserved under this worker's own thread evidence path.",
+    "operational": "No account/MFA mutation, no PR921 bind action, no source-code change performed or implied.",
+    "narrative": "Confirms two outstanding discrepancies already raised by the sender (Ellie memoir portrait 404s, empty Dana obituary h1) remain unresolved; no full demo-green claim is warranted; Profile 15 executor-identity capture still owed per Rule 28."
+  },
+  "verification": [
+    {
+      "name": "artifact hash preservation",
+      "command": "shasum -a 256 demo-artifact-readback.json public-pages.json demo-ellie.json demo-journeys2.json apply-910.log apply-912.log demo-receipt.md m5-secondary-receipt.md",
+      "status": "passed",
+      "evidence": "SHA256SUMS.txt written alongside preserved copies in thr-ed9e7d8f1f10ac0c evidence dir"
+    },
+    {
+      "name": "discrepancy re-verification",
+      "command": "manual read of demo-ellie.json and demo-journeys2.json",
+      "status": "passed",
+      "evidence": "Two Ellie memoir portrait 404s and one empty Dana obituary h1 (393 viewport) independently confirmed present, matching sender's prior claim"
+    }
+  ],
+  "working_status": {
+    "environment": "FinalWishes router item 20261002-143941 (decision/RESPONSE type)",
+    "how_verified": "Read and hashed all referenced evidence files from /Users/thekryptodragon/.sirsi/evidence/finalwishes/thr-4e9f7277decb5741/loop-1435/, cross-checked against sender's and secondary M5 session's receipts",
+    "observed_result": "Sender's reconciliation is accurate; two discrepancies remain open and unresolved; no full demo-green or executor-grade acceptance can be claimed on this artifact set",
+    "verified_at": "2026-10-02T14:50:00Z"
+  },
+  "handoffs": [],
+  "blockers": [
+    "Ellie memoir portrait 404s (demo-ellie.json) unresolved",
+    "Empty Dana obituary h1 at 393 viewport (demo-journeys2.json) unresolved",
+    "Profile 15 (cylton@sirsi.ai) executor-identity capture still owed to replace headless-Chromium public-pages.json evidence"
+  ]
+}

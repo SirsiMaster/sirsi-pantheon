@@ -61,6 +61,9 @@ func init() {
 }
 
 func runRouterBoard(_ *cobra.Command, _ []string) error {
+	if !boardServeOnce && boardServePoll <= 0 {
+		return fmt.Errorf("--poll must be greater than zero when serving, got %s", boardServePoll)
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("resolve home: %w", err)
@@ -121,7 +124,12 @@ func runRouterBoard(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	go b.Run(ctx, boardServePoll)
+	go func() {
+		if err := b.Run(ctx, boardServePoll); err != nil {
+			fmt.Fprintf(os.Stderr, "board-serve: %v\n", err)
+			cancel()
+		}
+	}()
 
 	mux := http.NewServeMux()
 	routerboard.NewHandlerWithControlAuth(b, dir, controlToken, true).Register(mux)

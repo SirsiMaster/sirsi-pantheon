@@ -1,0 +1,372 @@
+[
+  {
+    "task": "inbox-20260927-134144-11a1",
+    "command": [
+      "sirsi",
+      "router",
+      "task",
+      "claim-id",
+      "codex-pantheon",
+      "inbox-20260927-134144-11a1",
+      "--worker",
+      "codex-pantheon",
+      "--thread",
+      "thr-b9302c79c6136524",
+      "--json"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "inbox-20260927-134144-11a1",
+    "command": [
+      "sirsi",
+      "router",
+      "task",
+      "update",
+      "codex-pantheon",
+      "inbox-20260927-134144-11a1",
+      "--status",
+      "blocked",
+      "--phase",
+      "13:02Z reconciliation: existing dependency remains unmet; fenced completion/status recovery required"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: remote UpdateTask: HTTP 500: UpdateTask: routerstore: executable task transition \"in-progress\" -> \"blocked\" requires a fenced task lease\u001b[m\n"
+  },
+  {
+    "task": "inbox-20261001-054159-2e49",
+    "command": [
+      "sirsi",
+      "router",
+      "task",
+      "claim-id",
+      "codex-pantheon",
+      "inbox-20261001-054159-2e49",
+      "--worker",
+      "codex-pantheon",
+      "--thread",
+      "thr-b9302c79c6136524",
+      "--json"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "inbox-20261001-054159-2e49",
+    "command": [
+      "sirsi",
+      "router",
+      "task",
+      "update",
+      "codex-pantheon",
+      "inbox-20261001-054159-2e49",
+      "--status",
+      "blocked",
+      "--phase",
+      "13:02Z reconciliation: existing dependency remains unmet; fenced completion/status recovery required"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: remote UpdateTask: HTTP 500: UpdateTask: routerstore: executable task transition \"in-progress\" -> \"blocked\" requires a fenced task lease\u001b[m\n"
+  },
+  {
+    "task": "fw-fencing-report-063653",
+    "command": [
+      "sirsi",
+      "router",
+      "task",
+      "claim-id",
+      "codex-pantheon",
+      "fw-fencing-report-063653",
+      "--worker",
+      "codex-pantheon",
+      "--thread",
+      "thr-b9302c79c6136524",
+      "--json"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "fw-fencing-report-063653",
+    "command": [
+      "sirsi",
+      "router",
+      "task",
+      "update",
+      "codex-pantheon",
+      "fw-fencing-report-063653",
+      "--status",
+      "blocked",
+      "--phase",
+      "13:02Z reconciliation: existing dependency remains unmet; fenced completion/status recovery required"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: remote UpdateTask: HTTP 500: UpdateTask: routerstore: executable task transition \"in-progress\" -> \"blocked\" requires a fenced task lease\u001b[m\n"
+  },
+  {
+    "task": "fw-lead-overlap-094238",
+    "command": [
+      "sirsi",
+      "router",
+      "task",
+      "claim-id",
+      "codex-pantheon",
+      "fw-lead-overlap-094238",
+      "--worker",
+      "codex-pantheon",
+      "--thread",
+      "thr-b9302c79c6136524",
+      "--json"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "fw-lead-overlap-094238",
+    "command": [
+      "sirsi",
+      "router",
+      "task",
+      "update",
+      "codex-pantheon",
+      "fw-lead-overlap-094238",
+      "--status",
+      "blocked",
+      "--phase",
+      "13:02Z reconciliation: existing dependency remains unmet; fenced completion/status recovery required"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: remote UpdateTask: HTTP 500: UpdateTask: routerstore: executable task transition \"in-progress\" -> \"blocked\" requires a fenced task lease\u001b[m\n"
+  },
+  {
+    "task": "ssa-qualification-094329",
+    "command": [
+      "sirsi",
+      "router",
+      "task",
+      "claim-id",
+      "codex-pantheon",
+      "ssa-qualification-094329",
+      "--worker",
+      "codex-pantheon",
+      "--thread",
+      "thr-b9302c79c6136524",
+      "--json"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "ssa-qualification-094329",
+    "command": [
+      "sirsi",
+      "router",
+      "task",
+      "update",
+      "codex-pantheon",
+      "ssa-qualification-094329",
+      "--status",
+      "blocked",
+      "--phase",
+      "13:02Z reconciliation: existing dependency remains unmet; fenced completion/status recovery required"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: remote UpdateTask: HTTP 500: UpdateTask: routerstore: executable task transition \"in-progress\" -> \"blocked\" requires a fenced task lease\u001b[m\n"
+  },
+  {
+    "task": "fw-claimability-095614",
+    "command": [
+      "sirsi",
+      "router",
+      "task",
+      "claim-id",
+      "codex-pantheon",
+      "fw-claimability-095614",
+      "--worker",
+      "codex-pantheon",
+      "--thread",
+      "thr-b9302c79c6136524",
+      "--json"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "fw-claimability-095614",
+    "command": [
+      "sirsi",
+      "router",
+      "task",
+      "update",
+      "codex-pantheon",
+      "fw-claimability-095614",
+      "--status",
+      "blocked",
+      "--phase",
+      "13:02Z reconciliation: existing dependency remains unmet; fenced completion/status recovery required"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: remote UpdateTask: HTTP 500: UpdateTask: routerstore: executable task transition \"in-progress\" -> \"blocked\" requires a fenced task lease\u001b[m\n"
+  },
+  {
+    "task": "fw-public-lease-report-100915",
+    "command": [
+      "sirsi",
+      "router",
+      "task",
+      "claim-id",
+      "codex-pantheon",
+      "fw-public-lease-report-100915",
+      "--worker",
+      "codex-pantheon",
+      "--thread",
+      "thr-b9302c79c6136524",
+      "--json"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "fw-public-lease-report-100915",
+    "command": [
+      "sirsi",
+      "router",
+      "task",
+      "update",
+      "codex-pantheon",
+      "fw-public-lease-report-100915",
+      "--status",
+      "blocked",
+      "--phase",
+      "13:02Z reconciliation: existing dependency remains unmet; fenced completion/status recovery required"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: remote UpdateTask: HTTP 500: UpdateTask: routerstore: executable task transition \"in-progress\" -> \"blocked\" requires a fenced task lease\u001b[m\n"
+  },
+  {
+    "task": "fw-lease-report-104643",
+    "command": [
+      "sirsi",
+      "router",
+      "task",
+      "claim-id",
+      "codex-pantheon",
+      "fw-lease-report-104643",
+      "--worker",
+      "codex-pantheon",
+      "--thread",
+      "thr-b9302c79c6136524",
+      "--json"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "fw-lease-report-104643",
+    "command": [
+      "sirsi",
+      "router",
+      "task",
+      "update",
+      "codex-pantheon",
+      "fw-lease-report-104643",
+      "--status",
+      "blocked",
+      "--phase",
+      "13:02Z reconciliation: existing dependency remains unmet; fenced completion/status recovery required"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: remote UpdateTask: HTTP 500: UpdateTask: routerstore: executable task transition \"in-progress\" -> \"blocked\" requires a fenced task lease\u001b[m\n"
+  },
+  {
+    "task": "fw-actual-binding-111421",
+    "command": [
+      "sirsi",
+      "router",
+      "task",
+      "claim-id",
+      "codex-pantheon",
+      "fw-actual-binding-111421",
+      "--worker",
+      "codex-pantheon",
+      "--thread",
+      "thr-b9302c79c6136524",
+      "--json"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "fw-actual-binding-111421",
+    "command": [
+      "sirsi",
+      "router",
+      "task",
+      "update",
+      "codex-pantheon",
+      "fw-actual-binding-111421",
+      "--status",
+      "blocked",
+      "--phase",
+      "13:02Z reconciliation: existing dependency remains unmet; fenced completion/status recovery required"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: remote UpdateTask: HTTP 500: UpdateTask: routerstore: executable task transition \"in-progress\" -> \"blocked\" requires a fenced task lease\u001b[m\n"
+  },
+  {
+    "task": "fw-lease-report-115417",
+    "command": [
+      "sirsi",
+      "router",
+      "task",
+      "claim-id",
+      "codex-pantheon",
+      "fw-lease-report-115417",
+      "--worker",
+      "codex-pantheon",
+      "--thread",
+      "thr-b9302c79c6136524",
+      "--json"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "fw-lease-report-115417",
+    "command": [
+      "sirsi",
+      "router",
+      "task",
+      "update",
+      "codex-pantheon",
+      "fw-lease-report-115417",
+      "--status",
+      "blocked",
+      "--phase",
+      "13:02Z reconciliation: existing dependency remains unmet; fenced completion/status recovery required"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: remote UpdateTask: HTTP 500: UpdateTask: routerstore: executable task transition \"in-progress\" -> \"blocked\" requires a fenced task lease\u001b[m\n"
+  }
+]

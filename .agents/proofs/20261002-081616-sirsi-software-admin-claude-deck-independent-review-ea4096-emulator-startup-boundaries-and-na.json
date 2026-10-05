@@ -1,0 +1,144 @@
+{
+  "work_item_id": "20261002-081616-sirsi-software-admin-claude-deck-independent-review-ea4096-emulator-startup-boundaries-and-na",
+  "agent_id": "claude-deck",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "commercial-product",
+  "canon_read": [
+    {
+      "path": "PANTHEON_RULES.md",
+      "role": "repo-canon",
+      "read_at": "2026-10-02T04:30:00-04:00",
+      "notes": "router item flow: pull -> acknowledge -> claim -> execute -> close with evidence (--result, --proof)"
+    },
+    {
+      "path": "/private/tmp/ssa-fw-emulator-startup-20261002/.github/workflows/firebase-hosting-pull-request.yml",
+      "role": "diff-under-review",
+      "read_at": "2026-10-02T04:35:00-04:00",
+      "notes": "25-line removal replaced with two script invocations; confirmed no continue-on-error waiver, no other job steps touched"
+    },
+    {
+      "path": "/private/tmp/ssa-fw-emulator-startup-20261002/scripts/run-firestore-rules-emulator.py",
+      "role": "diff-under-review",
+      "read_at": "2026-10-02T04:36:00-04:00",
+      "notes": "demo-only runner: allocates 3 distinct IPv4 ports via held-open ExitStack sockets, bounds retries to 3 attempts, retries only when CLI reports 'Could not start'+'port taken' before the touch-marker proves the test command began, kills only its own new process group on interruption, cleans its own temp config+marker every attempt"
+    },
+    {
+      "path": "/private/tmp/ssa-fw-emulator-startup-20261002/scripts/test-firestore-emulator-startup.py",
+      "role": "diff-under-review",
+      "read_at": "2026-10-02T04:37:00-04:00",
+      "notes": "7 fixtures covering port distinctness, retry-on-conflict, no-retry-on-assertion-failure, no-retry-on-unrelated-error, exhaustion+cleanup, no-repeat-on-success, workflow wiring"
+    },
+    {
+      "path": "/private/tmp/ssa-fw-emulator-startup-20261002/docs/DEPLOYMENT_GUIDE.md",
+      "role": "requirements",
+      "read_at": "2026-10-02T04:38:00-04:00",
+      "notes": "new 'PR rules emulator startup' section documents the retry/cleanup/marker-gate boundaries operationally; matches script behavior read above"
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-10-02T04:39:00-04:00",
+      "notes": "one authoritative item -> one scoped owner -> one implementation -> one independent review -> one reproducible proof -> one durable record -- this closes the independent-review step for ea4096a8"
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-10-02T04:39:30-04:00",
+      "notes": "no pantheon-specific scope; this item was a cross-repo independent review of a FinalWishes CI fix, routed through claude-deck as an idle available lane"
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-10-02T04:40:00-04:00",
+      "notes": "no Pantheon release gate implicated; this is a FinalWishes CI-only reliability fix, not Pantheon release-grade work"
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-10-02T04:40:30-04:00",
+      "notes": "no roadmap feature implicated; CI startup-retry bugfix review, not new Pantheon capability work"
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-10-02T04:41:00-04:00",
+      "notes": "no Pantheon reproduction-pack change; verification performed via the frozen bounded checkout + real non-mocked runner execution, documented under verification[] below"
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "/private/tmp/ssa-fw-emulator-startup-20261002/scripts/run-firestore-rules-emulator.py",
+      "section": "retryable_startup / run",
+      "claim": "Bound pre-test emulator-startup port-conflict retries to 3 fresh port allocations; any failed assertion or unrelated startup error is terminal on first attempt; only the invocation's own process group is interrupted; only owned temp config/marker files are cleaned.",
+      "files_changed": [
+        ".github/workflows/firebase-hosting-pull-request.yml",
+        "scripts/run-firestore-rules-emulator.py",
+        "scripts/test-firestore-emulator-startup.py",
+        "docs/DEPLOYMENT_GUIDE.md",
+        "changelog.d/firestore-emulator-startup-reliability-20261002.md"
+      ],
+      "evidence": [
+        "git diff --stat parent(834415d4)..head(ea4096a8) matches exactly these 5 files, 193 insertions(+)/21 deletions(-); no production/rules/auth/credentials/deploy files touched",
+        "YAML parses clean (python3 yaml.safe_load)",
+        "7/7 fixtures pass when rerun locally (not taken on faith)",
+        "real (non-mocked) run on this native host hit a different real startup failure (missing JRE, not a port conflict) and was correctly treated as terminal on attempt 1 with 0 retries and full temp-file cleanup -- new evidence beyond what SSA's sandbox (EPERM on bind) could produce"
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "no application/runtime/auth/data behavior change; CI-only reliability fix for the protected PR rules check",
+    "design": "not_applicable",
+    "technical": "verified in the frozen bounded checkout /private/tmp/ssa-fw-emulator-startup-20261002 at ea4096a8; did not touch the live SirsiNexusApp/FinalWishes working tree",
+    "operational": "no CI dispatched, no production config altered, no PR created; nvm-switched to node 22 and ran npm ci only inside the throwaway /private/tmp checkout",
+    "narrative": "closes claude-deck's independent-review assignment with an APPROVE-on-source verdict; the happy path (a live Firestore emulator actually starting and running the access-boundary rules test) remains unobserved on both SSA's sandbox (EPERM bind) and this host (missing JRE) -- that gap is called out explicitly, not papered over"
+  },
+  "verification": [
+    {
+      "name": "fixture suite",
+      "command": "python3 scripts/test-firestore-emulator-startup.py -v",
+      "status": "pass",
+      "evidence": "7/7 tests OK"
+    },
+    {
+      "name": "yaml validity",
+      "command": "python3 -c \"import yaml; yaml.safe_load(open('.github/workflows/firebase-hosting-pull-request.yml'))\"",
+      "status": "pass",
+      "evidence": "no exception"
+    },
+    {
+      "name": "diff scope check",
+      "command": "git diff --stat 834415d4779597428bebda3ee209b71cfe09028d ea4096a8156f4ac92eef4a3f00481fa9b39beeff",
+      "status": "pass",
+      "evidence": "5 files changed, 193 insertions(+), 21 deletions(-), matches claimed scope exactly"
+    },
+    {
+      "name": "gitleaks on commit diff",
+      "command": "gitleaks detect --no-git -s commit-diff.patch -c .gitleaks.toml",
+      "status": "pass",
+      "evidence": "no leaks found (12767 bytes scanned; item's self-reported 9532 bytes is a measurement-basis discrepancy, not a leak -- flagged as minor non-blocking note)"
+    },
+    {
+      "name": "real demo-only emulator runner (not mocked)",
+      "command": "nvm use 22 && npm ci (web/) && python3 scripts/run-firestore-rules-emulator.py",
+      "status": "pass",
+      "evidence": "runner behaved correctly: real CLI failure was 'Unable to locate a Java Runtime' (this host's java resolves to the macOS install-stub), a non-port-conflict startup error, and the boundary logic correctly treated it as terminal -- exit 1, 0 retries ('fresh allocation' count = 0) -- instead of retrying; post-run 'firebase.emulator.ci-*' glob empty, confirming cleanup held even on this real (non-fixture) failure path; log preserved at /tmp/ssa-fw-evidence/real-emulator-run-20261002.log. Note: this run did not itself exercise a successful emulator start -- that happy path remains unobserved on any host tried so far (see closure_evidence.narrative)."
+    }
+  ],
+  "working_status": {
+    "environment": "frozen checkout /private/tmp/ssa-fw-emulator-startup-20261002 at ea4096a8156f4ac92eef4a3f00481fa9b39beeff; web/ deps installed via node 22 (nvm) + npm ci, isolated to that throwaway tree",
+    "how_verified": "fixture rerun + yaml parse + diff-scope check + gitleaks scan + one real (non-mocked) end-to-end runner invocation",
+    "observed_result": "retry/cleanup/interruption boundaries hold under both mocked fixtures and a real non-port-conflict CLI failure; diff scope matches claims; no leaks; happy-path emulator success still unobserved on any host tried so far",
+    "verified_at": "2026-10-02T04:50:00-04:00"
+  },
+  "handoffs": [
+    {
+      "from": "claude-deck",
+      "to": "sirsi-software-admin",
+      "router_item": "20261002-081616-sirsi-software-admin-claude-deck-independent-review-ea4096-emulator-startup-boundaries-and-na",
+      "status": "closing",
+      "reason": "independent review complete with APPROVE-on-source verdict plus new real-execution evidence; happy-path startup success remains an open gap, explicitly called out, not resolved by this review"
+    }
+  ],
+  "blockers": []
+}

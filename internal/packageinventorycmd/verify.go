@@ -3,11 +3,11 @@
 package packageinventorycmd
 
 import (
+	"bytes"
 	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -31,115 +31,477 @@ func Verify(inputs Inputs) (packageinventory.Report, error) {
 	if inputs.App == "" || inputs.Version == "" || inputs.Build == "" || inputs.InfoPlist == "" || inputs.PkgInfo == "" || inputs.LaunchAgent == "" {
 		return packageinventory.Report{}, errors.New("app, version, build, info-plist, pkg-info, and launch-agent are required")
 	}
-	info, err := ReadCanonicalFile(inputs.InfoPlist)
+	infoFile, err := captureCanonicalFile(inputs.InfoPlist)
 	if err != nil {
 		return packageinventory.Report{}, err
 	}
-	if err := validateInfoPlist(info, inputs.Version, inputs.Build); err != nil {
+	defer infoFile.close()
+	if err := validateInfoPlist(infoFile.data, inputs.Version, inputs.Build); err != nil {
 		return packageinventory.Report{}, err
 	}
-	pkgInfo, err := ReadCanonicalFile(inputs.PkgInfo)
+	pkgInfoFile, err := captureCanonicalFile(inputs.PkgInfo)
 	if err != nil {
 		return packageinventory.Report{}, err
 	}
-	launchAgent, err := ReadCanonicalFile(inputs.LaunchAgent)
+	defer pkgInfoFile.close()
+	if err := validatePkgInfo(pkgInfoFile.data); err != nil {
+		return packageinventory.Report{}, err
+	}
+	launchAgentFile, err := captureCanonicalFile(inputs.LaunchAgent)
 	if err != nil {
 		return packageinventory.Report{}, err
 	}
-	return packageinventory.Verify(inputs.App, packageinventory.Expectations{
-		Version: inputs.Version, Build: inputs.Build, InfoPlist: info,
-		PkgInfo: pkgInfo, LaunchAgent: launchAgent,
+	defer launchAgentFile.close()
+	if err := validateLaunchAgent(launchAgentFile.data); err != nil {
+		return packageinventory.Report{}, err
+	}
+	return packageinventory.VerifyWithFinalCheck(inputs.App, packageinventory.Expectations{
+		Version: inputs.Version, Build: inputs.Build, InfoPlist: infoFile.data,
+		PkgInfo: pkgInfoFile.data, LaunchAgent: launchAgentFile.data,
 		RequireCodeSignature: inputs.RequireCodeSignature,
+	}, func() error {
+		for _, file := range []*canonicalFile{infoFile, pkgInfoFile, launchAgentFile} {
+			if err := file.revalidate(); err != nil {
+				return fmt.Errorf("canonical input %s: %w", file.path, err)
+			}
+		}
+		return nil
 	})
 }
 
-func ReadCanonicalFile(path string) ([]byte, error) {
-	if path == "" {
-		return nil, errors.New("path is required")
+func validatePkgInfo(data []byte) error {
+	if string(data) != "APPL????\n" {
+		return errors.New("PkgInfo must contain the canonical Pantheon APPL signature")
 	}
-	parentFD, leaf, err := openParent(path)
+	return nil
+}
+
+func validateLaunchAgent(data []byte) error {
+	decoder := xml.NewDecoder(strings.NewReader(string(data)))
+	rootToken, err := nextSignificantToken(decoder)
+	if err != nil {
+		return errors.New("LaunchAgent plist root is missing")
+	}
+	root, ok := rootToken.(xml.StartElement)
+	if !ok || root.Name.Local != "plist" || !hasPlistAttributes(root, map[string]string{"version": "1.0"}) {
+		return errors.New("LaunchAgent root must be plist")
+	}
+	dictToken, err := nextSignificantToken(decoder)
+	if err != nil {
+		return errors.New("LaunchAgent dictionary is missing")
+	}
+	dict, ok := dictToken.(xml.StartElement)
+	if !ok || dict.Name.Local != "dict" || !hasPlistAttributes(dict, nil) {
+		return errors.New("LaunchAgent root must contain one dictionary")
+	}
+	values := make(map[string]any, 5)
+	for {
+		token, err := nextSignificantToken(decoder)
+		if err != nil {
+			return errors.New("LaunchAgent dictionary is incomplete")
+		}
+		if end, ok := token.(xml.EndElement); ok {
+			if end.Name.Local != "dict" {
+				return errors.New("LaunchAgent dictionary has an invalid end tag")
+			}
+			break
+		}
+		keyStart, ok := token.(xml.StartElement)
+		if !ok || keyStart.Name.Local != "key" || !hasPlistAttributes(keyStart, nil) {
+			return errors.New("LaunchAgent dictionary contains a non-key entry")
+		}
+		key, err := decodePlistString(decoder, keyStart)
+		if err != nil || strings.TrimSpace(key) == "" {
+			return errors.New("LaunchAgent contains an invalid key")
+		}
+		if _, duplicate := values[key]; duplicate {
+			return fmt.Errorf("LaunchAgent contains duplicate key %q", key)
+		}
+		valueToken, err := nextSignificantToken(decoder)
+		if err != nil {
+			return fmt.Errorf("LaunchAgent key %q has no value", key)
+		}
+		valueStart, ok := valueToken.(xml.StartElement)
+		if !ok || !hasPlistAttributes(valueStart, nil) {
+			return fmt.Errorf("LaunchAgent key %q has an invalid value", key)
+		}
+		switch key {
+		case "Label", "ProcessType":
+			if valueStart.Name.Local != "string" {
+				return fmt.Errorf("LaunchAgent key %q must be a string", key)
+			}
+			value, err := decodePlistString(decoder, valueStart)
+			if err != nil {
+				return fmt.Errorf("LaunchAgent key %q has an invalid string", key)
+			}
+			values[key] = value
+		case "ProgramArguments":
+			if valueStart.Name.Local != "array" {
+				return errors.New("LaunchAgent ProgramArguments must be an array")
+			}
+			arguments, err := decodeLaunchAgentArguments(decoder)
+			if err != nil {
+				return err
+			}
+			values[key] = arguments
+		case "KeepAlive", "RunAtLoad":
+			if valueStart.Name.Local != "true" {
+				return fmt.Errorf("LaunchAgent key %q must be true", key)
+			}
+			if err := consumeEmptyPlistElement(decoder, valueStart); err != nil {
+				return fmt.Errorf("LaunchAgent key %q must be an empty true element", key)
+			}
+			values[key] = true
+		default:
+			return fmt.Errorf("LaunchAgent contains unexpected key %q", key)
+		}
+	}
+	rootEnd, err := nextSignificantToken(decoder)
+	if err != nil {
+		return errors.New("LaunchAgent plist root is incomplete")
+	}
+	end, ok := rootEnd.(xml.EndElement)
+	if !ok || end.Name.Local != "plist" {
+		return errors.New("LaunchAgent plist root is malformed")
+	}
+	if _, err := nextSignificantToken(decoder); err != io.EOF {
+		return errors.New("LaunchAgent contains trailing content")
+	}
+	if len(values) != 5 || values["Label"] != "ai.sirsi.pantheon" || values["ProcessType"] != "Interactive" || values["KeepAlive"] != true || values["RunAtLoad"] != true {
+		return errors.New("LaunchAgent does not match the canonical Pantheon service contract")
+	}
+	arguments, ok := values["ProgramArguments"].([]string)
+	if !ok || len(arguments) != 1 || arguments[0] != "/Applications/Pantheon.app/Contents/MacOS/sirsi-menubar" {
+		return errors.New("LaunchAgent ProgramArguments do not target the canonical menu-bar executable")
+	}
+	return nil
+}
+
+func decodeLaunchAgentArguments(decoder *xml.Decoder) ([]string, error) {
+	token, err := nextSignificantToken(decoder)
+	if err != nil {
+		return nil, errors.New("LaunchAgent ProgramArguments is incomplete")
+	}
+	argument, ok := token.(xml.StartElement)
+	if !ok || argument.Name.Local != "string" || !hasPlistAttributes(argument, nil) {
+		return nil, errors.New("LaunchAgent must declare exactly one executable argument")
+	}
+	value, err := decodePlistString(decoder, argument)
+	if err != nil {
+		return nil, errors.New("LaunchAgent executable argument is malformed")
+	}
+	endToken, err := nextSignificantToken(decoder)
+	if err != nil {
+		return nil, errors.New("LaunchAgent ProgramArguments is incomplete")
+	}
+	end, ok := endToken.(xml.EndElement)
+	if !ok || end.Name.Local != "array" {
+		return nil, errors.New("LaunchAgent must declare exactly one executable argument")
+	}
+	return []string{value}, nil
+}
+
+func decodePlistString(decoder *xml.Decoder, start xml.StartElement) (string, error) {
+	if !hasPlistAttributes(start, nil) {
+		return "", errors.New("attributes or namespace in plist string")
+	}
+	var value strings.Builder
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			return "", err
+		}
+		switch item := token.(type) {
+		case xml.CharData:
+			value.Write(item)
+		case xml.EndElement:
+			if item.Name != start.Name {
+				return "", errors.New("mismatched plist string end tag")
+			}
+			return value.String(), nil
+		default:
+			return "", errors.New("nested markup in plist string")
+		}
+	}
+}
+
+func hasPlistAttributes(start xml.StartElement, expected map[string]string) bool {
+	if start.Name.Space != "" || len(start.Attr) != len(expected) {
+		return false
+	}
+	for _, attr := range start.Attr {
+		if attr.Name.Space != "" || expected[attr.Name.Local] != attr.Value {
+			return false
+		}
+	}
+	return true
+}
+
+func consumeEmptyPlistElement(decoder *xml.Decoder, start xml.StartElement) error {
+	if !hasPlistAttributes(start, nil) {
+		return errors.New("attributes or namespace in plist boolean")
+	}
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	end, ok := token.(xml.EndElement)
+	if !ok || end.Name != start.Name {
+		return errors.New("non-empty plist element")
+	}
+	return nil
+}
+
+func ReadCanonicalFile(path string) ([]byte, error) {
+	file, err := captureCanonicalFile(path)
 	if err != nil {
 		return nil, err
 	}
-	defer unix.Close(parentFD)
-	var parentBefore unix.Stat_t
-	if err := unix.Fstat(parentFD, &parentBefore); err != nil {
+	defer file.close()
+	if err := file.revalidate(); err != nil {
 		return nil, err
+	}
+	return append([]byte(nil), file.data...), nil
+}
+
+type directoryEdge struct {
+	parentIndex int
+	name        string
+	identity    unix.Stat_t
+}
+
+type canonicalParent struct {
+	fds        []int
+	identities []unix.Stat_t
+	edges      []directoryEdge
+}
+
+type canonicalFile struct {
+	path     string
+	leaf     string
+	fd       int
+	identity unix.Stat_t
+	data     []byte
+	parent   *canonicalParent
+}
+
+func captureCanonicalFile(path string) (*canonicalFile, error) {
+	return captureCanonicalFileWithHook(path, nil)
+}
+
+func captureCanonicalFileWithHook(path string, beforeLeafOpen func()) (*canonicalFile, error) {
+	if path == "" || !filepath.IsAbs(path) {
+		return nil, errors.New("canonical input path must be absolute")
+	}
+	clean := filepath.Clean(path)
+	if clean != path {
+		return nil, errors.New("canonical input path must be normalized")
+	}
+	leaf := filepath.Base(clean)
+	if leaf == "." || leaf == string(filepath.Separator) || leaf == ".." {
+		return nil, errors.New("canonical input path has an unsafe leaf")
+	}
+	parent, err := openDirectoryChain(filepath.Dir(clean))
+	if err != nil {
+		return nil, err
+	}
+	file := &canonicalFile{path: clean, leaf: leaf, fd: -1, parent: parent}
+	cleanup := func(err error) (*canonicalFile, error) {
+		file.close()
+		return nil, err
+	}
+	parentFD := parent.fds[len(parent.fds)-1]
+	if beforeLeafOpen != nil {
+		beforeLeafOpen()
 	}
 	fd, err := unix.Openat(parentFD, leaf, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if err != nil {
-		return nil, err
+		return cleanup(fmt.Errorf("open canonical input %s: %w", clean, err))
 	}
-	file := os.NewFile(uintptr(fd), path)
-	if file == nil {
-		unix.Close(fd)
-		return nil, errors.New("cannot retain descriptor")
-	}
-	defer file.Close()
-	var before unix.Stat_t
+	file.fd = fd
+	var before, named unix.Stat_t
 	if err := unix.Fstat(fd, &before); err != nil {
-		return nil, err
+		return cleanup(fmt.Errorf("stat canonical input %s: %w", clean, err))
 	}
 	if before.Mode&unix.S_IFMT != unix.S_IFREG || before.Nlink != 1 || before.Size < 0 || before.Size > maxCanonicalInput {
-		return nil, errors.New("expected a regular nlink=1 file within the size limit")
+		return cleanup(errors.New("expected a regular nlink=1 file within the size limit"))
 	}
-	data, err := io.ReadAll(io.LimitReader(file, maxCanonicalInput+1))
+	if err := unix.Fstatat(parentFD, leaf, &named, unix.AT_SYMLINK_NOFOLLOW); err != nil || !sameIdentity(before, named) {
+		return cleanup(errors.New("canonical input name changed while opening"))
+	}
+	if err := parent.revalidate(); err != nil {
+		return cleanup(fmt.Errorf("canonical input parent: %w", err))
+	}
+	data, err := readStableDescriptor(fd, before.Size)
 	if err != nil {
-		return nil, err
-	}
-	if int64(len(data)) != before.Size {
-		return nil, errors.New("file changed size during read")
+		return cleanup(fmt.Errorf("read canonical input %s: %w", clean, err))
 	}
 	var after unix.Stat_t
-	if err := unix.Fstat(fd, &after); err != nil {
-		return nil, err
+	if err := unix.Fstat(fd, &after); err != nil || !sameIdentity(before, after) {
+		return cleanup(errors.New("canonical input identity changed during read"))
 	}
-	if !sameIdentity(before, after) {
-		return nil, errors.New("file identity changed during read")
+	file.identity = before
+	file.data = data
+	if err := file.revalidate(); err != nil {
+		return cleanup(err)
 	}
-	var nameAfter unix.Stat_t
-	if err := unix.Fstatat(parentFD, leaf, &nameAfter, unix.AT_SYMLINK_NOFOLLOW); err != nil || !sameIdentity(before, nameAfter) {
-		return nil, errors.New("file name identity changed during read")
-	}
-	var parentAfter unix.Stat_t
-	if err := unix.Fstat(parentFD, &parentAfter); err != nil || !sameIdentity(parentBefore, parentAfter) {
-		return nil, errors.New("file parent identity changed during read")
-	}
-	return data, nil
+	return file, nil
 }
 
-func openParent(path string) (int, string, error) {
-	if !filepath.IsAbs(path) {
-		return -1, "", errors.New("canonical input path must be absolute")
-	}
-	clean := filepath.Clean(path)
-	parts := strings.Split(strings.TrimPrefix(clean, string(filepath.Separator)), string(filepath.Separator))
-	if len(parts) < 2 || parts[0] == "" {
-		return -1, "", errors.New("canonical input path must name a file below a directory")
+func openDirectoryChain(dir string) (*canonicalParent, error) {
+	if !filepath.IsAbs(dir) || filepath.Clean(dir) != dir {
+		return nil, errors.New("canonical input parent must be an absolute normalized path")
 	}
 	fd, err := unix.Open(string(filepath.Separator), unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if err != nil {
-		return -1, "", err
+		return nil, err
 	}
-	for _, component := range parts[:len(parts)-1] {
+	var rootIdentity unix.Stat_t
+	if err := unix.Fstat(fd, &rootIdentity); err != nil {
+		unix.Close(fd)
+		return nil, err
+	}
+	parent := &canonicalParent{fds: []int{fd}, identities: []unix.Stat_t{rootIdentity}}
+	cleanup := func(err error) (*canonicalParent, error) {
+		parent.close()
+		return nil, err
+	}
+	parts := strings.Split(strings.TrimPrefix(dir, string(filepath.Separator)), string(filepath.Separator))
+	if dir == string(filepath.Separator) {
+		parts = nil
+	}
+	for _, component := range parts {
 		if component == "" || component == "." || component == ".." {
-			unix.Close(fd)
-			return -1, "", errors.New("canonical input path contains an unsafe component")
+			return cleanup(errors.New("canonical input parent contains an unsafe component"))
 		}
-		next, err := unix.Openat(fd, component, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		parentIndex := len(parent.fds) - 1
+		parentFD := parent.fds[parentIndex]
+		var before unix.Stat_t
+		if err := unix.Fstatat(parentFD, component, &before, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+			return cleanup(fmt.Errorf("stat canonical input parent %q: %w", component, err))
+		}
+		if before.Mode&unix.S_IFMT != unix.S_IFDIR {
+			return cleanup(fmt.Errorf("canonical input parent is not a real directory: %q", component))
+		}
+		next, err := unix.Openat(parentFD, component, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 		if err != nil {
-			unix.Close(fd)
-			return -1, "", err
+			return cleanup(fmt.Errorf("open canonical input parent %q: %w", component, err))
 		}
-		unix.Close(fd)
-		fd = next
+		var opened unix.Stat_t
+		if err := unix.Fstat(next, &opened); err != nil || !sameDirectoryIdentity(before, opened) {
+			unix.Close(next)
+			if err != nil {
+				return cleanup(fmt.Errorf("fstat canonical input parent %q: %w", component, err))
+			}
+			return cleanup(fmt.Errorf("canonical input parent substitution at %q", component))
+		}
+		parent.edges = append(parent.edges, directoryEdge{parentIndex: parentIndex, name: component, identity: opened})
+		parent.fds = append(parent.fds, next)
+		parent.identities = append(parent.identities, opened)
 	}
-	leaf := parts[len(parts)-1]
-	if leaf == "" || leaf == "." || leaf == ".." {
-		unix.Close(fd)
-		return -1, "", errors.New("canonical input path has an unsafe leaf")
+	return parent, nil
+}
+
+func (p *canonicalParent) revalidate() error {
+	for i, fd := range p.fds {
+		var opened unix.Stat_t
+		if err := unix.Fstat(fd, &opened); err != nil || !sameDirectoryIdentity(p.identities[i], opened) {
+			return errors.New("retained canonical input parent identity changed")
+		}
 	}
-	return fd, leaf, nil
+	for _, edge := range p.edges {
+		var named unix.Stat_t
+		if err := unix.Fstatat(p.fds[edge.parentIndex], edge.name, &named, unix.AT_SYMLINK_NOFOLLOW); err != nil || !sameDirectoryIdentity(edge.identity, named) {
+			return fmt.Errorf("canonical input parent path continuity failed at %q", edge.name)
+		}
+	}
+	return nil
+}
+
+func (p *canonicalParent) close() {
+	for i := len(p.fds) - 1; i >= 0; i-- {
+		_ = unix.Close(p.fds[i])
+	}
+	p.fds = nil
+}
+
+func (f *canonicalFile) revalidate() error {
+	if f.fd < 0 {
+		return errors.New("canonical input descriptor is closed")
+	}
+	if err := f.parent.revalidate(); err != nil {
+		return err
+	}
+	var opened, named unix.Stat_t
+	if err := unix.Fstat(f.fd, &opened); err != nil || !sameIdentity(f.identity, opened) {
+		return errors.New("canonical input descriptor identity changed")
+	}
+	if err := unix.Fstatat(f.parent.fds[len(f.parent.fds)-1], f.leaf, &named, unix.AT_SYMLINK_NOFOLLOW); err != nil || !sameIdentity(f.identity, named) {
+		return errors.New("canonical input name identity changed")
+	}
+	data, err := readStableDescriptor(f.fd, f.identity.Size)
+	if err != nil || !bytes.Equal(data, f.data) {
+		return errors.New("canonical input bytes changed after capture")
+	}
+	var after unix.Stat_t
+	if err := unix.Fstat(f.fd, &after); err != nil || !sameIdentity(f.identity, after) {
+		return errors.New("canonical input identity changed during revalidation")
+	}
+	if err := f.parent.revalidate(); err != nil {
+		return err
+	}
+	if err := unix.Fstatat(f.parent.fds[len(f.parent.fds)-1], f.leaf, &named, unix.AT_SYMLINK_NOFOLLOW); err != nil || !sameIdentity(f.identity, named) {
+		return errors.New("canonical input name changed during revalidation")
+	}
+	return nil
+}
+
+func (f *canonicalFile) close() {
+	if f.fd >= 0 {
+		_ = unix.Close(f.fd)
+		f.fd = -1
+	}
+	if f.parent != nil {
+		f.parent.close()
+		f.parent = nil
+	}
+}
+
+func readStableDescriptor(fd int, size int64) ([]byte, error) {
+	if size < 0 || size > maxCanonicalInput {
+		return nil, errors.New("canonical input size is outside the limit")
+	}
+	read := func() ([]byte, error) {
+		data := make([]byte, int(size))
+		for offset := 0; offset < len(data); {
+			n, err := unix.Pread(fd, data[offset:], int64(offset))
+			if err != nil {
+				return nil, err
+			}
+			if n == 0 {
+				return nil, io.ErrUnexpectedEOF
+			}
+			offset += n
+		}
+		var extra [1]byte
+		n, err := unix.Pread(fd, extra[:], size)
+		if err != nil {
+			return nil, err
+		}
+		if n != 0 {
+			return nil, errors.New("canonical input grew during read")
+		}
+		return data, nil
+	}
+	first, err := read()
+	if err != nil {
+		return nil, err
+	}
+	second, err := read()
+	if err != nil || !bytes.Equal(first, second) {
+		return nil, errors.New("canonical input changed during read")
+	}
+	return first, nil
 }
 
 func validateInfoPlist(data []byte, version, build string) error {
@@ -269,4 +631,10 @@ func nextSignificantToken(decoder *xml.Decoder) (xml.Token, error) {
 
 func sameIdentity(a, b unix.Stat_t) bool {
 	return a.Dev == b.Dev && a.Ino == b.Ino && a.Mode == b.Mode && a.Nlink == b.Nlink && a.Size == b.Size
+}
+
+// Retained directory authority is stable across unrelated child additions;
+// governed file identity and bytes are checked separately and exactly.
+func sameDirectoryIdentity(a, b unix.Stat_t) bool {
+	return a.Dev == b.Dev && a.Ino == b.Ino && a.Mode == b.Mode && a.Mode&unix.S_IFMT == unix.S_IFDIR && b.Mode&unix.S_IFMT == unix.S_IFDIR
 }

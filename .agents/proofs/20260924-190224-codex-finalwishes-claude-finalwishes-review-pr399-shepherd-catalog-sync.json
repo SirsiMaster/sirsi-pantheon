@@ -1,0 +1,105 @@
+{
+  "work_item_id": "20260924-190224-codex-finalwishes-claude-finalwishes-review-pr399-shepherd-catalog-sync",
+  "agent_id": "claude-finalwishes",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "internal-tool",
+  "canon_read": [
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-09-24T19:10:00Z",
+      "notes": "no item-specific requirement beyond the standing one-item/one-owner/one-review/one-proof discipline this closure follows."
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-09-24T19:10:00Z",
+      "notes": "pantheon router root; no item-specific scope beyond routing this review to claude-finalwishes."
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-09-24T19:10:00Z",
+      "notes": "standing release-gate pattern followed; this documentation-sync item is not itself tracked in this doc."
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-09-24T19:10:00Z",
+      "notes": "no item-specific roadmap entry; this is a single-repo (FinalWishes) CI gate fix, not a pantheon roadmap item."
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-09-24T19:10:00Z",
+      "notes": "not applicable (scan-finding reproduction methodology); this closure's own reproducibility is the gh/git/node commands recorded under verification[]."
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/FinalWishes/scripts/build-shepherd-guide-catalog.mjs",
+      "role": "repo-canon",
+      "read_at": "2026-09-24T19:10:00Z",
+      "notes": "confirmed the --check mode regenerates product_guides.json summaries from docs/user-guides/*.md and diffs against the committed file; PR claims to be exactly this regeneration."
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/FinalWishes/scripts/verify-feature-docs.sh",
+      "role": "test-plan",
+      "read_at": "2026-09-24T19:10:00Z",
+      "notes": "the Documentation - Feature Coverage CI gate this PR repairs; ran it directly against the PR's exact commit rather than trusting the PR body's reported pass."
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "/Users/thekryptodragon/Development/FinalWishes/scripts/build-shepherd-guide-catalog.mjs",
+      "section": "obituary guide summary field regeneration",
+      "claim": "PR #399 (exact head 831c7bd9678a63e74ac60f5f6fe243c683867a22) changes only one product_guides.json summary field and one CHANGELOG.md line, regenerating the Shepherd catalog to match docs/user-guides/obituary.md after the memorial gallery redesign (PR #338/531e).",
+      "files_changed": [".agents/proofs/20260924-190224-codex-finalwishes-claude-finalwishes-review-pr399-shepherd-catalog-sync.json"],
+      "evidence": [
+        "gh pr view 399 --json files showed exactly 2 files changed: CHANGELOG.md (+1/-0) and api/internal/guidance/product_guides.json (+1/-1).",
+        "gh pr view 399 --json headRefOid confirmed 831c7bd9678a63e74ac60f5f6fe243c683867a22, matching the router item's stated exact head.",
+        "Checked out the exact commit into an isolated git worktree (/tmp/pr399-review) and independently reran node scripts/build-shepherd-guide-catalog.mjs --check -> 'Shepherd guide catalog is current (50 guides)', and scripts/verify-feature-docs.sh -> all sub-checks passed (ADR index, data-model, canonical consistency, commit traceability, Shepherd catalog, feature docs).",
+        "Diffed docs/user-guides/obituary.md against main inside the worktree and confirmed the new JSON summary text matches the current guide content verbatim -- a correct regeneration, not a hand edit."
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "N/A -- generated documentation/Shepherd-knowledge sync only, no product UI change.",
+    "design": "N/A -- no design surface touched.",
+    "technical": "Independently reproduced both CI gates the PR claims to pass (catalog --check and verify-feature-docs.sh) against the exact PR commit in an isolated worktree, not just trusted the PR body's reported results.",
+    "operational": "No deploy/runtime surface touched; PR-branch CI (lint/test/secrets scan) was green at review time, remaining jobs (API Build & Test, Documentation - Feature Coverage x2, Functions Test, Web Lint/Typecheck, Web Test) were still pending.",
+    "narrative": "This closes PR #398/main run 36044471296's Documentation - Feature Coverage failure by regenerating the Shepherd catalog entry that drifted after the memorial gallery redesign landed. Posted review findings as a PR comment (https://github.com/SirsiMaster/FinalWishes/pull/399#issuecomment-5820427268) rather than a formal gh pr review --approve, since GitHub blocks self-approval under the shared SirsiMaster identity."
+  },
+  "verification": [
+    {
+      "name": "PR #399 diff scope",
+      "command": "gh pr view 399 --json files,headRefOid",
+      "status": "pass",
+      "evidence": "headRefOid=831c7bd9678a63e74ac60f5f6fe243c683867a22; files=[CHANGELOG.md (+1/-0), api/internal/guidance/product_guides.json (+1/-1)] only."
+    },
+    {
+      "name": "Shepherd catalog regeneration check",
+      "command": "node scripts/build-shepherd-guide-catalog.mjs --check (worktree pinned to 831c7bd9)",
+      "status": "pass",
+      "evidence": "Shepherd guide catalog is current (50 guides)."
+    },
+    {
+      "name": "Feature documentation verifier",
+      "command": "scripts/verify-feature-docs.sh (worktree pinned to 831c7bd9)",
+      "status": "pass",
+      "evidence": "ADR index, data-model, canonical consistency, commit traceability, Shepherd catalog, and feature documentation checks all passed."
+    },
+    {
+      "name": "Review findings posted",
+      "command": "gh pr comment 399 --body ...",
+      "status": "pass",
+      "evidence": "https://github.com/SirsiMaster/FinalWishes/pull/399#issuecomment-5820427268 -- gh pr review --approve was blocked (GraphQL: Review Can not approve your own pull request, PR author and reviewer share the SirsiMaster GitHub identity), so findings were posted as a PR comment instead."
+    }
+  ],
+  "working_status": {
+    "environment": "FinalWishes repo, read-only review via isolated git worktree at /tmp/pr399-review (removed after use), no code changes made by this item",
+    "how_verified": "gh pr inspection, isolated worktree pinned to exact PR head, independent rerun of both CI gates",
+    "observed_result": "PR #399 is a clean, correctly-regenerated documentation sync; LGTM, safe to merge once pending CI finishes",
+    "verified_at": "2026-09-24T19:20:00Z"
+  },
+  "blockers": []
+}

@@ -1,0 +1,5 @@
+--- FAIL: TestPR944VerifiedLiveClaimCanCloseThroughFacade (0.04s)
+    pr944_review_test.go:18: PR944 normal MCP close path refuses its valid live claim: dispatch: item 20261001-130828-a-b-claimed-work closed but store mirror failed: routerstore: Close "20261001-130828-a-b-claimed-work": item is "claimed", not open
+FAIL
+FAIL	github.com/SirsiMaster/sirsi-pantheon/internal/dispatch	0.192s
+FAIL

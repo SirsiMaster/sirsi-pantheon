@@ -1,0 +1,92 @@
+{
+  "work_item_id": "20260925-172857-codex-finalwishes-claude-finalwishes-pr432-traceability-metadata-correction-needed",
+  "agent_id": "claude-finalwishes",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "internal-tool",
+  "canon_read": [
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-09-25T18:00:00Z",
+      "notes": "no item-specific requirement beyond the standing one-item/one-owner/one-review/one-proof discipline this closure follows."
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-09-25T18:00:00Z",
+      "notes": "pantheon router root; no item-specific scope beyond routing this notification to claude-finalwishes."
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-09-25T18:00:00Z",
+      "notes": "standing release-gate pattern followed; this is a CI/traceability-format notification, not itself a release-plan item."
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-09-25T18:00:00Z",
+      "notes": "no item-specific roadmap entry."
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-09-25T18:00:00Z",
+      "notes": "not applicable (scan-finding reproduction methodology); this closure's own reproducibility is the gh run / regex / isolated vitest commands recorded under verification[]."
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/FinalWishes/scripts/verify-commit-traceability.sh",
+      "role": "repo-canon",
+      "read_at": "2026-09-25T18:00:00Z",
+      "notes": "read the ADR-footer regex at line 87 ('not required .+', a literal space required) and confirmed 1c3240d8's 'ADR: not required; test coverage only' footer (semicolon, no space) does not match -- the claimed root cause is real."
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "/Users/thekryptodragon/Development/FinalWishes/scripts/verify-commit-traceability.sh",
+      "section": "ADR footer regex (line 87)",
+      "claim": "CI failed on 1c3240d8 because of the ADR footer format (semicolon instead of required space before the reason); codex-finalwishes will correct the commit metadata with the exact lease after the active push ends, preserve the code, then rerun -- no validator exemption or prod bypass.",
+      "files_changed": [".agents/proofs/20260925-172857-codex-finalwishes-claude-finalwishes-pr432-traceability-metadata-correction-needed.json"],
+      "evidence": [
+        "Read scripts/verify-commit-traceability.sh:87 -- regex requires 'not required' followed by a space then more text; 1c3240d8's footer has 'not required;' (semicolon, no space) and correctly fails.",
+        "gh run view 36167002678 --json jobs confirmed 'Documentation - Feature Coverage' = failure on SHA 1c3240d8, corroborating the claim.",
+        "Also found a second failing job on the same CI run ('Web - Test (Vitest)': 1 file failed, MemorialTributeReviewPanel.test.tsx) unrelated to 1c3240d8's diff -- verified the same test passes 6/6 in isolation in a disposable worktree, indicating pre-existing cross-test pollution/flake rather than a regression from this commit. Flagged in the review result for visibility; no action required from codex-finalwishes as part of this item."
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "N/A -- CI/process notification only, no product surface changed.",
+    "design": "N/A.",
+    "technical": "Confirmed the exact regex mismatch causing the traceability-verifier failure, and separately identified an unrelated flaky test on the same CI run so it isn't mistaken for a consequence of this fix.",
+    "operational": "No deploy triggered; codex-finalwishes's stated remediation plan (fix metadata after its active push lease ends, preserve code, rerun, no validator exemption/prod bypass) is correct and required no intervention.",
+    "narrative": "codex-finalwishes self-reported a CI failure caused by an ADR-footer format typo in commit 1c3240d8 and proposed a specific, safe remediation. Verified the regex mismatch is real, confirmed the CI failure via gh, and additionally caught a second, unrelated flaky-test failure on the same CI run that the notification didn't mention -- confirmed it's not part of the diff and passes in isolation, so it doesn't change the remediation plan but is worth tracking separately."
+  },
+  "verification": [
+    {
+      "name": "ADR footer regex mismatch",
+      "command": "grep -n 'not required' scripts/verify-commit-traceability.sh; git log 1c3240d8 -1 --format=%B",
+      "status": "pass",
+      "evidence": "Regex requires a space after 'not required'; commit footer has a semicolon -- confirmed mismatch."
+    },
+    {
+      "name": "CI failure confirmation",
+      "command": "gh run list --branch codex/finalwishes-four-edition-goal-and-demo-share-20260925 --json databaseId,conclusion,name,headSha",
+      "status": "pass",
+      "evidence": "Documentation - Feature Coverage: failure on SHA 1c3240d8; prior head ae370b61 was all green."
+    },
+    {
+      "name": "Unrelated flaky-test check",
+      "command": "npx vitest run src/components/estate/MemorialTributeReviewPanel.test.tsx (isolated worktree)",
+      "status": "pass",
+      "evidence": "6/6 passed in isolation; file not touched by 1c3240d8 -- corroborates flake theory, not a regression from this commit."
+    }
+  ],
+  "working_status": {
+    "environment": "Read-only review: gh CLI inspection plus a disposable git worktree for the isolated test rerun (removed after use); no changes made by this item; no deploy",
+    "how_verified": "Regex/commit-footer diff read, gh run inspection, isolated test rerun for the second failure",
+    "observed_result": "codex-finalwishes's root-cause diagnosis and remediation plan are correct; additionally surfaced an unrelated pre-existing flaky test on the same CI run for visibility",
+    "verified_at": "2026-09-25T18:05:00Z"
+  },
+  "blockers": []
+}

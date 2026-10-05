@@ -1,0 +1,8 @@
+rule-of-ra: WOULD REFUSE SendGuarded from same-agent@owner-host (session 701fc06f thread "copied-thread-id"): routerstore: no audience — this session is not bound to an active registered thread of its own agent on its own host; run `sirsi thread register --agent <id>` and start the process with SIRSI_THREAD_ID=<thread id> (thread copied-thread-id is not registered; method SendGuarded)
+rule-of-ra: WOULD REFUSE ClaimNext from same-agent@owner-host (session 701fc06f thread "copied-thread-id"): routerstore: no audience — this session is not bound to an active registered thread of its own agent on its own host; run `sirsi thread register --agent <id>` and start the process with SIRSI_THREAD_ID=<thread id> (thread copied-thread-id is not registered; method ClaimNext)
+rule-of-ra: WOULD REFUSE Complete from same-agent@other-host (session 1eea671e thread "copied-thread-id"): routerstore: no audience — this session is not bound to an active registered thread of its own agent on its own host; run `sirsi thread register --agent <id>` and start the process with SIRSI_THREAD_ID=<thread id> (thread copied-thread-id is not registered; method Complete)
+--- FAIL: TestReviewRemintMustNotCrossHost (0.05s)
+    review_crosshost_test.go:15: cross-host caller copying agent/thread: want ErrNotOwner, got <nil>
+FAIL
+FAIL	github.com/SirsiMaster/sirsi-pantheon/internal/routerstore	0.244s
+FAIL

@@ -5,10 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
@@ -214,14 +216,26 @@ func TestAuthenticatedControlActionsUseCanonicalStoreAndLeaseFence(t *testing.T)
 	}
 
 	var claimed ControlActionResponse
-	claimedResponse := postControlAction(t, mux, "test-token", ControlActionRequest{
+	claimRequest := ControlActionRequest{
 		Verb: "claim", Agent: "codex-pantheon", TaskID: "task-1", Worker: "m1-worker", ThreadID: "thread-1", TTLSeconds: 60,
-	})
+	}
+	claimedResponse := postControlAction(t, mux, "test-token", claimRequest)
 	if claimedResponse.Code != http.StatusOK {
 		t.Fatalf("claim status = %d: %s", claimedResponse.Code, claimedResponse.Body.String())
 	}
 	if err := json.Unmarshal(claimedResponse.Body.Bytes(), &claimed); err != nil || claimed.Lease == nil || claimed.Lease.Token == "" {
 		t.Fatalf("claim response = %s, err=%v", claimedResponse.Body.String(), err)
+	}
+	retriedClaimResponse := postControlAction(t, mux, "test-token", claimRequest)
+	if retriedClaimResponse.Code != http.StatusOK {
+		t.Fatalf("retried claim status = %d: %s", retriedClaimResponse.Code, retriedClaimResponse.Body.String())
+	}
+	var retriedClaim ControlActionResponse
+	if err := json.Unmarshal(retriedClaimResponse.Body.Bytes(), &retriedClaim); err != nil || retriedClaim.Lease == nil {
+		t.Fatalf("retried claim response = %s, err=%v", retriedClaimResponse.Body.String(), err)
+	}
+	if retriedClaim.Lease.Token != claimed.Lease.Token || retriedClaim.Lease.TaskID != claimed.Lease.TaskID || retriedClaim.Lease.Attempt != claimed.Lease.Attempt || !retriedClaim.Lease.Expires.Equal(claimed.Lease.Expires) {
+		t.Fatalf("retry did not return the committed lease: first=%+v retry=%+v", claimed.Lease, retriedClaim.Lease)
 	}
 
 	completed := postControlAction(t, mux, "test-token", ControlActionRequest{
@@ -301,13 +315,51 @@ func TestControlActionRejectsUnknownFieldsAndMissingAuthorization(t *testing.T) 
 		t.Fatalf("duplicate field response = %d %s", response.Code, response.Body.String())
 	}
 
+	caseAlias := httptest.NewRequest(http.MethodPost, "/api/control/action", bytes.NewBufferString(`{"verb":"delegate","Agent":"other","agent":"a","task_id":"t","subject":"s"}`))
+	caseAlias.Header.Set("Authorization", "Bearer test-token")
+	caseAlias.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	mux.ServeHTTP(response, caseAlias)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("case-variant action field status = %d, want 400: %s", response.Code, response.Body.String())
+	}
+
+	invalidUTF8 := append([]byte(`{"verb":"delegate","agent":"a","task_id":"invalid-utf8","subject":"`), 0xff)
+	invalidUTF8 = append(invalidUTF8, []byte(`"}`)...)
+	invalidRequest := httptest.NewRequest(http.MethodPost, "/api/control/action", bytes.NewReader(invalidUTF8))
+	invalidRequest.Header.Set("Authorization", "Bearer test-token")
+	invalidRequest.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	mux.ServeHTTP(response, invalidRequest)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("invalid UTF-8 action status = %d, want 400: %s", response.Code, response.Body.String())
+	}
+	if _, err := store.GetTask("a", "invalid-utf8"); err == nil {
+		t.Fatal("invalid UTF-8 action mutated the canonical task store")
+	}
+
 	semantic := httptest.NewRequest(http.MethodPost, "/api/control/action", bytes.NewBufferString(`{"verb":"message","from":"a","to":"b","title":"hello","task_id":"not-a-message-field"}`))
 	semantic.Header.Set("Authorization", "Bearer test-token")
 	semantic.Header.Set("Content-Type", "application/json")
 	response = httptest.NewRecorder()
 	mux.ServeHTTP(response, semantic)
-	if response.Code != http.StatusConflict || !bytes.Contains(response.Body.Bytes(), []byte("does not accept task_id")) {
+	if response.Code != http.StatusBadRequest || !bytes.Contains(response.Body.Bytes(), []byte("does not accept task_id")) {
 		t.Fatalf("cross-verb field response = %d %s", response.Code, response.Body.String())
+	}
+
+	conflictingReviewType := httptest.NewRequest(http.MethodPost, "/api/control/action", bytes.NewBufferString(`{"verb":"review_request","from":"a","to":"b","title":"review","type":"message"}`))
+	conflictingReviewType.Header.Set("Authorization", "Bearer test-token")
+	conflictingReviewType.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	mux.ServeHTTP(response, conflictingReviewType)
+	if response.Code != http.StatusBadRequest || !bytes.Contains(response.Body.Bytes(), []byte("only supports type")) {
+		t.Fatalf("conflicting review type status/body = %d %s", response.Code, response.Body.String())
+	}
+	if inbox, err := store.Inbox("b"); err != nil || len(inbox) != 0 {
+		t.Fatalf("conflicting review type mutated the canonical store: inbox=%+v err=%v", inbox, err)
+	}
+	if _, err := DecodeControlActionRequest([]byte(`{"verb":"review_request","from":"a","to":"b","title":"review","type":"review"}`)); err != nil {
+		t.Fatalf("fixed review type was rejected: %v", err)
 	}
 
 	noToken := NewHandlerWithInjectedControlStore(New("/bin/false", "", "test-build"), t.TempDir(), store, "")
@@ -316,6 +368,90 @@ func TestControlActionRejectsUnknownFieldsAndMissingAuthorization(t *testing.T) 
 	response = postControlAction(t, noTokenMux, "", ControlActionRequest{Verb: "delegate", Agent: "a", TaskID: "t", Subject: "s"})
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("missing configured token status = %d, want 503", response.Code)
+	}
+}
+
+func TestControlActionBodyReadErrorsFailBeforeStoreMutation(t *testing.T) {
+	store, err := routerstore.Open(t.TempDir() + "/router.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	h := NewHandlerWithInjectedControlStore(New("/bin/false", "", "test-build"), t.TempDir(), store, "test-token")
+	mux := http.NewServeMux()
+	h.Register(mux)
+
+	oversized := []byte(`{"verb":"delegate","agent":"a","task_id":"oversized","subject":"` + strings.Repeat("x", ControlActionBodyLimit) + `"}`)
+	oversizedRequest := httptest.NewRequest(http.MethodPost, "/api/control/action", bytes.NewReader(oversized))
+	oversizedRequest.Header.Set("Authorization", "Bearer test-token")
+	oversizedRequest.Header.Set("Content-Type", "application/json")
+	oversizedResponse := httptest.NewRecorder()
+	mux.ServeHTTP(oversizedResponse, oversizedRequest)
+	if oversizedResponse.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized action status = %d, want 413: %s", oversizedResponse.Code, oversizedResponse.Body.String())
+	}
+	if _, err := store.GetTask("a", "oversized"); err == nil {
+		t.Fatal("oversized action mutated the canonical task store")
+	}
+
+	readErrorRequest := httptest.NewRequest(http.MethodPost, "/api/control/action", nil)
+	readErrorRequest.Body = controlActionFailingBody{}
+	readErrorRequest.Header.Set("Authorization", "Bearer test-token")
+	readErrorRequest.Header.Set("Content-Type", "application/json")
+	readErrorResponse := httptest.NewRecorder()
+	mux.ServeHTTP(readErrorResponse, readErrorRequest)
+	if readErrorResponse.Code != http.StatusBadRequest || !strings.Contains(readErrorResponse.Body.String(), "could not read control action body") {
+		t.Fatalf("unreadable action status/body = %d %s", readErrorResponse.Code, readErrorResponse.Body.String())
+	}
+}
+
+type controlActionFailingBody struct{}
+
+func (controlActionFailingBody) Read([]byte) (int, error) {
+	return 0, errors.New("injected body read failure")
+}
+func (controlActionFailingBody) Close() error { return nil }
+
+func TestDecodeControlActionRejectsInvalidUTF8(t *testing.T) {
+	body := append([]byte(`{"verb":"message","title":"`), 0xff)
+	body = append(body, []byte(`"}`)...)
+	if _, err := DecodeControlActionRequest(body); err == nil {
+		t.Fatal("DecodeControlActionRequest accepted invalid UTF-8")
+	}
+}
+
+func TestDecodeControlActionRejectsNullInsteadOfOmittedFields(t *testing.T) {
+	tests := []struct {
+		name  string
+		body  string
+		field string
+	}{
+		{
+			name:  "optional string",
+			body:  `{"verb":"message","from":"m1","to":"m5","title":"status","instructions":null}`,
+			field: "instructions",
+		},
+		{
+			name:  "optional number",
+			body:  `{"verb":"claim","agent":"codex","worker":"m1","thread_id":"thread-1","ttl_seconds":null}`,
+			field: "ttl_seconds",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := DecodeControlActionRequest([]byte(test.body))
+			if err == nil || !strings.Contains(err.Error(), `field "`+test.field+`" must be omitted instead of null`) {
+				t.Fatalf("DecodeControlActionRequest error = %v, want explicit null rejection for %s", err, test.field)
+			}
+		})
+	}
+}
+
+func TestValidateJSONNoDuplicateKeysRejectsInvalidUTF8(t *testing.T) {
+	body := append([]byte(`{"value":"`), 0xff)
+	body = append(body, []byte(`"}`)...)
+	if err := ValidateJSONNoDuplicateKeys(body); err == nil || !strings.Contains(err.Error(), "not valid UTF-8") {
+		t.Fatalf("invalid UTF-8 JSON error = %v", err)
 	}
 }
 
@@ -412,6 +548,9 @@ func TestControlActionReceiptBindsExactRequestAndResponse(t *testing.T) {
 	if err := response.VerifyControlActionResponse(request); err != nil {
 		t.Fatalf("verify receipt: %v", err)
 	}
+	if err := response.VerifyControlActionResponseForRequest(request); err != nil {
+		t.Fatalf("verify action-specific outcome: %v", err)
+	}
 	if err := response.VerifyControlActionResponse([]byte(`{"verb":"message","from":"m1","to":"m5","title":"tampered"}`)); err == nil {
 		t.Fatal("tampered request accepted by receipt")
 	}
@@ -420,6 +559,90 @@ func TestControlActionReceiptBindsExactRequestAndResponse(t *testing.T) {
 	tampered.ItemID = "item-2"
 	if err := tampered.VerifyControlActionResponse(request); err == nil {
 		t.Fatal("tampered response accepted by receipt")
+	}
+}
+
+func TestControlActionReceiptRequiresRequestBoundOutcome(t *testing.T) {
+	tests := []struct {
+		name     string
+		request  string
+		response ControlActionResponse
+	}{
+		{
+			name:    "message requires item identity",
+			request: `{"verb":"message","from":"m1","to":"m5","title":"inspect"}`,
+			response: ControlActionResponse{
+				Schema: ControlSchema, Authority: "canonical-routerstore", Verb: "message",
+			},
+		},
+		{
+			name:    "task result must match requested task",
+			request: `{"verb":"delegate","agent":"worker","task_id":"task-1","subject":"review"}`,
+			response: ControlActionResponse{
+				Schema: ControlSchema, Authority: "canonical-routerstore", Verb: "delegate", TaskID: "task-2",
+			},
+		},
+		{
+			name:    "claim lease must match worker identity",
+			request: `{"verb":"claim","agent":"worker","worker":"m1","thread_id":"thread-1"}`,
+			response: ControlActionResponse{
+				Schema: ControlSchema, Authority: "canonical-routerstore", Verb: "claim", TaskID: "task-1",
+				Lease: &routerstore.TaskLease{
+					TaskID: "task-1", Agent: "worker", Worker: "different-worker", ThreadID: "thread-1",
+					Token: "lease-token", Expires: time.Now().Add(time.Minute), Attempt: 1,
+				},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			requestBody := []byte(test.request)
+			if err := test.response.SealControlActionResponse(requestBody); err != nil {
+				t.Fatalf("seal response: %v", err)
+			}
+			if err := test.response.VerifyControlActionResponseForRequest(requestBody); err == nil {
+				t.Fatal("request-detached outcome was accepted")
+			}
+		})
+	}
+}
+
+func TestControlActionClaimReceiptRequiresExactLeaseIdentity(t *testing.T) {
+	requestBody := []byte(`{"verb":"claim","agent":"worker","worker":"m1","thread_id":"thread-1","task_id":"task-1"}`)
+	valid := ControlActionResponse{
+		Schema: ControlSchema, Authority: "canonical-routerstore", Verb: "claim", TaskID: "task-1",
+		Lease: &routerstore.TaskLease{
+			Agent: "worker", TaskID: "task-1", Worker: "m1", ThreadID: "thread-1",
+			Token: "lease-token", Expires: time.Now().Add(time.Minute), Attempt: 1,
+		},
+	}
+	tests := []struct {
+		name   string
+		mutate func(*ControlActionResponse)
+	}{
+		{name: "missing lease", mutate: func(r *ControlActionResponse) { r.Lease = nil }},
+		{name: "missing lease token", mutate: func(r *ControlActionResponse) { r.Lease.Token = " " }},
+		{name: "agent mismatch", mutate: func(r *ControlActionResponse) { r.Lease.Agent = "other-agent" }},
+		{name: "worker mismatch", mutate: func(r *ControlActionResponse) { r.Lease.Worker = "other-worker" }},
+		{name: "thread mismatch", mutate: func(r *ControlActionResponse) { r.Lease.ThreadID = "other-thread" }},
+		{name: "requested task mismatch", mutate: func(r *ControlActionResponse) { r.Lease.TaskID = "other-task" }},
+		{name: "response task detached from lease", mutate: func(r *ControlActionResponse) { r.TaskID = "other-task" }},
+		{name: "zero expiry", mutate: func(r *ControlActionResponse) { r.Lease.Expires = time.Time{} }},
+		{name: "zero attempt", mutate: func(r *ControlActionResponse) { r.Lease.Attempt = 0 }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response := valid
+			lease := *valid.Lease
+			response.Lease = &lease
+			test.mutate(&response)
+			if err := response.SealControlActionResponse(requestBody); err != nil {
+				t.Fatalf("seal response: %v", err)
+			}
+			if err := response.VerifyControlActionResponseForRequest(requestBody); err == nil {
+				t.Fatal("claim response with detached or incomplete lease proof was accepted")
+			}
+		})
 	}
 }
 

@@ -1,0 +1,4 @@
+ok  	github.com/SirsiMaster/sirsi-pantheon/internal/routerstore	6.233s
+# github.com/SirsiMaster/sirsi-pantheon/cmd/sirsi-router-mcp.test
+ld: warning: ignoring duplicate libraries: '-lobjc'
+ok  	github.com/SirsiMaster/sirsi-pantheon/cmd/sirsi-router-mcp	1.396s

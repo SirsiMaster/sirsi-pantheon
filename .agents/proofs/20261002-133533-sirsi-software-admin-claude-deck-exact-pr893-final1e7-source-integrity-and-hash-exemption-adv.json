@@ -1,0 +1,134 @@
+{
+  "work_item_id": "20261002-133533-sirsi-software-admin-claude-deck-exact-pr893-final1e7-source-integrity-and-hash-exemption-adv",
+  "agent_id": "claude-deck",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "commercial-product",
+  "canon_read": [
+    {
+      "path": "/private/tmp/ssa-pr893-final1e7-review-20261002/functions/index.test.js",
+      "role": "diff-under-review",
+      "read_at": "2026-10-02T13:50:00-04:00",
+      "notes": "verified the restored block (runFallback helper + 'notifies a selected public professional' test + 4-case test.each 'refuses the inbox fallback') is intact at lines 1395-1444; only the broken duplicate copy was removed"
+    },
+    {
+      "path": "/private/tmp/ssa-pr893-final1e7-review-20261002/scripts/traceability-historical-exemptions.txt",
+      "role": "diff-under-review",
+      "read_at": "2026-10-02T13:52:00-04:00",
+      "notes": "8 hashes added for PR893 footer-gap commits; each resolved via git cat-file/log and matched to its one-line description; found a cosmetic 'eight' vs 'five' wording mismatch in the surrounding comment (8 hashes actually listed, no functional effect)"
+    },
+    {
+      "path": "/private/tmp/ssa-pr893-final1e7-review-20261002/scripts/verify-commit-traceability.sh",
+      "role": "requirements",
+      "read_at": "2026-10-02T13:53:00-04:00",
+      "notes": "confirmed the CI gate matches exemption entries by 40-hex-char regex against the hash list only, not by parsing prose counts -- the 'eight'/'five' comment typo cannot affect gate behavior"
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-10-02T13:54:00-04:00",
+      "notes": "one authoritative item -> one scoped owner -> one implementation -> one independent review -> one reproducible proof -> one durable record -- this closes the independent-review step for PR893 final1e7"
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-10-02T13:54:30-04:00",
+      "notes": "no pantheon-specific scope; this item was a cross-repo independent review of a FinalWishes PR, routed through claude-deck as an idle available lane"
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-10-02T13:55:00-04:00",
+      "notes": "no Pantheon release gate implicated; this is a FinalWishes PR source-integrity review, not Pantheon release-grade work"
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-10-02T13:55:30-04:00",
+      "notes": "no roadmap feature implicated; test-dedup + governance-metadata adversarial review, not new Pantheon capability work"
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-10-02T13:56:00-04:00",
+      "notes": "no Pantheon reproduction-pack change; verification performed via the frozen detached checkout + real local jest run + github CLI readback, documented under verification[] below"
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "/private/tmp/ssa-pr893-final1e7-review-20261002/functions/index.test.js",
+      "section": "Functions test repair + traceability exemptions",
+      "claim": "No assertion loss from Jest dedup; exemptions are legitimate hash-bound historical objects, not quota-semantics waivers; final head functions/index.test.js matches main byte-for-byte; CI green at exact head; no source modified; no merge performed.",
+      "files_changed": [
+        "functions/index.test.js",
+        "scripts/traceability-historical-exemptions.txt",
+        "changelog.d/media-quota-functions-test-merge-corruption.md",
+        "changelog.d/2026-10-02-pr893-traceability-exemptions.md"
+      ],
+      "evidence": [
+        "diff <(git show b2c1d8af:functions/index.test.js) <(git show 1e7f4d40:functions/index.test.js) -> IDENTICAL",
+        "npx jest functions/index.test.js -> 168/168 passed",
+        "all 8 exemption hashes resolve via git cat-file -t / git log -1 and match their stated descriptions",
+        "git diff --stat 63232a7d..1e7f4d40 touches only the 4 files above; no api/internal/service/estate or tiergate quota-logic files touched",
+        "gh pr view 893: state OPEN, mergeable MERGEABLE, mergeStateStatus CLEAN, headRefOid == 1e7f4d40..., reviews []",
+        "gh run view 37012276015 / 37012274954: both completed/success at headSha 1e7f4d40...",
+        "gh pr checks 893: 16 pass, 5 skipping (all Deploy-*/production-smoke jobs, correctly gated off pre-merge)"
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "no application/runtime behavior change; test-dedup + governance-metadata commits only",
+    "design": "not_applicable",
+    "technical": "verified in detached clone /private/tmp/ssa-pr893-final1e7-review-20261002 at 1e7f4d40cdc4c3718813a2833ef591a2b040adf4; did not touch the live FinalWishes working tree",
+    "operational": "read-only review; no CI dispatched, no source modified, no merge/publish performed",
+    "narrative": "APPROVE verdict on the exact final two commits; one cosmetic doc wording mismatch (eight vs five) flagged as non-blocking follow-up, not fixed here per do-not-modify-source instruction; runtime/full-application remains unproven per the Commercialization Gate note, consistent with the request"
+  },
+  "verification": [
+    {
+      "name": "functions/index.test.js byte-equality vs main",
+      "command": "diff <(git show b2c1d8af:functions/index.test.js) <(git show 1e7f4d40:functions/index.test.js)",
+      "status": "pass",
+      "evidence": "no output -- identical"
+    },
+    {
+      "name": "Jest suite",
+      "command": "npx jest functions/index.test.js",
+      "status": "pass",
+      "evidence": "Tests: 168 passed, 168 total"
+    },
+    {
+      "name": "exemption hash resolution",
+      "command": "git cat-file -t <hash> && git log -1 --format='%H %s' <hash> for all 8 listed hashes",
+      "status": "pass",
+      "evidence": "all 8 resolve to real commits whose subjects match the exemption file's per-hash descriptions"
+    },
+    {
+      "name": "final-two-commit diff scope",
+      "command": "git diff --stat 63232a7d..1e7f4d40",
+      "status": "pass",
+      "evidence": "4 files changed, 72 insertions(+), 15 deletions(-); no quota-semantics source files touched"
+    },
+    {
+      "name": "PR/CI readback",
+      "command": "gh pr view 893; gh run view 37012276015; gh run view 37012274954; gh pr checks 893",
+      "status": "pass",
+      "evidence": "OPEN/MERGEABLE/CLEAN at exact head; both runs success; 16 pass + 5 correctly-skipped checks"
+    }
+  ],
+  "working_status": {
+    "environment": "detached clone /private/tmp/ssa-pr893-final1e7-review-20261002 at 1e7f4d40cdc4c3718813a2833ef591a2b040adf4; read-only, no live-tree changes",
+    "how_verified": "git diff/show inspection + local jest run + github CLI readback of PR/run/check state",
+    "observed_result": "all claims in the request confirmed accurate; one non-blocking cosmetic comment-count typo found",
+    "verified_at": "2026-10-02T13:58:00-04:00"
+  },
+  "handoffs": [
+    {
+      "from": "claude-deck",
+      "to": "sirsi-software-admin",
+      "router_item": "20261002-133533-sirsi-software-admin-claude-deck-exact-pr893-final1e7-source-integrity-and-hash-exemption-adv",
+      "status": "closing",
+      "reason": "independent adversarial review complete with PASS verdict; one cosmetic doc-wording finding flagged for an eventual follow-up, no blockers"
+    }
+  ],
+  "blockers": []
+}

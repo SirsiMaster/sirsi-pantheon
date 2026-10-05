@@ -1,0 +1,119 @@
+{
+  "work_item_id": "20260925-172457-codex-finalwishes-claude-finalwishes-review-living-status-publication-5829943a",
+  "agent_id": "claude-finalwishes",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "internal-tool",
+  "canon_read": [
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-09-25T17:40:00Z",
+      "notes": "no item-specific requirement beyond the standing one-item/one-owner/one-review/one-proof discipline this closure follows."
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-09-25T17:40:00Z",
+      "notes": "pantheon router root; no item-specific scope beyond routing this review to claude-finalwishes."
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-09-25T17:40:00Z",
+      "notes": "standing release-gate pattern followed; this local, unpushed commit review is not itself tracked in this doc."
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-09-25T17:40:00Z",
+      "notes": "no item-specific roadmap entry; this is a single-repo (FinalWishes) feature/security-rule review, not a pantheon roadmap item."
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-09-25T17:40:00Z",
+      "notes": "not applicable (scan-finding reproduction methodology); this closure's own reproducibility is the frozen worktree/npm ci/vitest/tsc/eslint commands recorded under verification[]."
+    },
+    {
+      "path": "/private/tmp/finalwishes-living-status-ae370b61/docs/DATA_MODEL.md",
+      "role": "repo-canon",
+      "read_at": "2026-09-25T17:40:00Z",
+      "notes": "confirmed the new livingStatus field is documented (public_memorials schema, optional, principal-published only) matching the firestore.rules and component behavior."
+    },
+    {
+      "path": "/private/tmp/finalwishes-living-status-ae370b61/docs/ADR-041-PUBLIC-MEMORIAL-PUBLICATION.md",
+      "role": "repo-canon",
+      "read_at": "2026-09-25T17:40:00Z",
+      "notes": "confirmed the commit's cited ADR exists (Refs target); commit correctly claims no new ADR is required since publication authority is unchanged."
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/FinalWishes/CLAUDE.md",
+      "role": "repo-canon",
+      "read_at": "2026-09-25T17:40:00Z",
+      "notes": "Rule 25/26 (Secure Shroud, PII siloing) considered: livingStatus is a deliberately public field on the public_memorials snapshot, not PII/HIPAA data, and is gated by isEstatePrincipal + the new hasValidPublicMemorialLivingStatus() rule, consistent with existing public-memorial publication authority."
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "/private/tmp/finalwishes-living-status-ae370b61/docs/DATA_MODEL.md",
+      "section": "public_memorials/{memorialId} schema — livingStatus",
+      "claim": "Commit 5829943a resolves the estate's explicit living/deceased status from loaded intake+estate records in both public-memorial writers (ShareMemorial.tsx, estates.$estateId.obituary.lazy.tsx), gates it in firestore.rules, and public renderers honor the explicit status while preserving legacy-snapshot compatibility. Includes rules/tests; no deploy.",
+      "files_changed": [".agents/proofs/20260925-172457-codex-finalwishes-claude-finalwishes-review-living-status-publication-5829943a.json"],
+      "evidence": [
+        "git show 5829943a reviewed in full: firestore.rules, ShareMemorial.tsx, PublicMemorialView.tsx, ArthurRemembrance.tsx, estates.$estateId.obituary.lazy.tsx, DATA_MODEL.md, CHANGELOG.md, and both test files.",
+        "hasValidPublicMemorialLivingStatus() in firestore.rules matches exactly what the new emulator test case (access-boundary-rules.emulator.test.ts) and firestore-rules-contract.test.ts assert.",
+        "npm ci + npx vitest run src/components/estate/ShareMemorial.test.tsx src/components/memorial/PublicMemorialView.test.tsx src/lib/firestore-rules-contract.test.ts in the frozen worktree -> 3 files, 74/74 passed, matching the reported '74 focused PASS'.",
+        "java -version confirmed 'Unable to locate a Java Runtime' on this host, corroborating the reported '38 emulator cases SKIPPED (Java unavailable)' rather than a disguised failure.",
+        "npx tsc --noEmit -> 0 errors; npx eslint on the four changed component/route files -> clean.",
+        "CHANGELOG.md diff carries the full Rule 29 traceability footer (Refs/Version/Diagrams/ADR)."
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "Public tribute/memorial pages now show an explicit, principal-verified living-vs-deceased status instead of inferring it from a missing death date or the selected visual style, fixing a truthfulness gap in a family-facing public page.",
+    "design": "Copy changes are status-driven, not style-driven ('A life still unfolding' / 'A living tribute' vs 'In remembrance' / 'A life beautifully lived'), and legacy snapshots without the field keep their existing inference-based rendering.",
+    "technical": "New Firestore rule function fails closed on invalid livingStatus values while remaining backward compatible with omission; both writers independently re-verify the estate's situation server-side-adjacent (Firestore reads) rather than trusting client state at publish time.",
+    "operational": "No deploy triggered; codex-finalwishes is integrating this locally with no prod change. Reviewed entirely in a frozen, disposable worktree (/private/tmp/finalwishes-living-status-ae370b61) with no modification to the working repo.",
+    "narrative": "codex-finalwishes reported commit 5829943a fixes public memorial/tribute pages showing the wrong living-vs-deceased framing by re-reading the estate's real situation at publish time and carrying an explicit, rules-validated status into the public snapshot. Independently verified the diff, reran the exact reported test files, and confirmed the Java-unavailable reason for the skipped emulator suite rather than accepting the claim on trust."
+  },
+  "verification": [
+    {
+      "name": "Focused unit/component tests",
+      "command": "npx vitest run src/components/estate/ShareMemorial.test.tsx src/components/memorial/PublicMemorialView.test.tsx src/lib/firestore-rules-contract.test.ts",
+      "status": "pass",
+      "evidence": "3 test files, 74/74 passed."
+    },
+    {
+      "name": "Emulator suite skip reason check",
+      "command": "java -version",
+      "status": "pass",
+      "evidence": "Unable to locate a Java Runtime -- confirms the reported '38 emulator cases SKIPPED (Java unavailable)' is accurate, not a masked failure."
+    },
+    {
+      "name": "Typecheck",
+      "command": "npx tsc --noEmit -p tsconfig.json",
+      "status": "pass",
+      "evidence": "0 errors."
+    },
+    {
+      "name": "Lint (changed files)",
+      "command": "npx eslint src/components/estate/ShareMemorial.tsx src/components/memorial/PublicMemorialView.tsx src/components/memorial/ArthurRemembrance.tsx src/routes/estates.$estateId.obituary.lazy.tsx",
+      "status": "pass",
+      "evidence": "No lint errors or warnings."
+    },
+    {
+      "name": "Traceability check",
+      "command": "git show 5829943a -- CHANGELOG.md",
+      "status": "pass",
+      "evidence": "Entry present with Refs/Version/Diagrams/ADR footer per Rule 29."
+    }
+  ],
+  "working_status": {
+    "environment": "Read-only review in the frozen worktree /private/tmp/finalwishes-living-status-ae370b61 (created and pinned by codex-finalwishes at commit 5829943a); no changes made by this item; no deploy",
+    "how_verified": "Full diff read, npm ci + focused vitest rerun of exact reported test files, tsc/eslint rerun, java-availability check for the skip claim, CHANGELOG traceability check",
+    "observed_result": "Commit 5829943a is correct and the reported test evidence (74 focused PASS, 38 emulator SKIPPED for a real, confirmed reason) is accurate; LGTM, no action needed beyond this confirmation",
+    "verified_at": "2026-09-25T17:50:00Z"
+  },
+  "blockers": []
+}

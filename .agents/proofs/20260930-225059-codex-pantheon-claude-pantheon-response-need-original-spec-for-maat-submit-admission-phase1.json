@@ -1,0 +1,133 @@
+{
+  "work_item_id": "20260930-225059-codex-pantheon-claude-pantheon-response-need-original-spec-for-maat-submit-admission-phase1",
+  "agent_id": "claude-pantheon",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "internal-tool",
+  "canon_read": [
+    {
+      "path": "PANTHEON_RULES.md",
+      "role": "agent-law",
+      "read_at": "2026-09-30T23:00:00+00:00",
+      "notes": "Rule A34 (bind directives cannot supersede a live rejection) and Rule A23 (Truth Vector — ask, don't guess) governed treatment of this security-adjacent surface."
+    },
+    {
+      "path": "docs/ADR-004-MAAT-QA-GOVERNANCE.md",
+      "role": "architecture",
+      "read_at": "2026-09-30T23:00:00+00:00",
+      "notes": ""
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-09-30T23:00:00+00:00",
+      "notes": ""
+    },
+    {
+      "path": "AGENTS.md",
+      "role": "agent-law",
+      "read_at": "2026-09-30T23:00:00+00:00",
+      "notes": ""
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-09-30T23:00:00+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "role": "architecture",
+      "read_at": "2026-09-30T23:00:00+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-09-30T23:00:00+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-09-30T23:00:00+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-09-30T23:00:00+00:00",
+      "notes": ""
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "PANTHEON_RULES.md",
+      "section": "router item 20260930-225059 (recovered original 20260928-021707) — Proposal for Ma'at, item 1 (admission command)",
+      "claim": "sirsi maat submit admits a GitHub tag/release/release-edit/merge submission, binding the requester to the caller's registered router thread/session, checking per-repo policy, and writing the decision to the ledger.",
+      "files_changed": ["cmd/sirsi/maatsubmit.go", "cmd/sirsi/maatsubmit_test.go"],
+      "evidence": ["go test ./cmd/sirsi/ -run 'TestCheckSubmitPolicy|TestResolveSubmitRequester'", "manual CLI runs recorded in PR #927 description"]
+    }
+  ],
+  "closure_evidence": {
+    "product": "Attribution layer so GitHub submissions (single SirsiMaster account) can be traced to the actual lane/agent that made them.",
+    "design": "CLI-only surface (`sirsi maat submit`), consistent with existing `sirsi maat decisions`/`reserve` output conventions (text + --json).",
+    "technical": "Identity derived solely from internal/router.ReadSessionAgentMarker keyed on $CLAUDE_CODE_SESSION_ID — never a flag/env/guessed PID. Unregistered session refuses (exit 97). Policy checked against a hardcoded Phase 1 allowlist (hermes-only for sirsi-hermes/sirsi-photon); unlisted repos grant with attribution. Every decision appended to the existing internal/maat/decision ledger.",
+    "operational": "No new service, no watcher, no daemon. Phase 1 is a synchronous CLI check only.",
+    "narrative": "PR #927 body explains scope, boundary (no watcher/auto-mutation), and verification for an independent reviewer."
+  },
+  "verification": [
+    {
+      "name": "go build",
+      "command": "go build ./cmd/sirsi/ ./cmd/sirsi-agent/",
+      "status": "pass",
+      "evidence": "clean build"
+    },
+    {
+      "name": "go vet",
+      "command": "go vet ./...",
+      "status": "pass",
+      "evidence": "no issues"
+    },
+    {
+      "name": "golangci-lint",
+      "command": "golangci-lint run ./cmd/sirsi/...",
+      "status": "pass",
+      "evidence": "0 issues"
+    },
+    {
+      "name": "unit tests",
+      "command": "go test ./cmd/sirsi/ -run 'TestCheckSubmitPolicy|TestResolveSubmitRequester'",
+      "status": "pass",
+      "evidence": "all subtests pass (policy match/mismatch/unlisted-repo; no-session/unregistered-session/registered-session identity resolution)"
+    },
+    {
+      "name": "manual CLI verification",
+      "command": "sirsi maat submit --kind release --repo SirsiMaster/sirsi-hermes --ref v1.0.3 (and variants)",
+      "status": "pass",
+      "evidence": "no-session refuse (exit 97), policy-match grant, policy-mismatch refuse (exit 97), unlisted-repo grant — all four recorded correctly in decisions.jsonl"
+    },
+    {
+      "name": "Ma'at pre-push gate",
+      "command": "git push (repo's .githooks/pre-push)",
+      "status": "pass",
+      "evidence": "gitleaks 0 issues; changed-package tests pass"
+    }
+  ],
+  "working_status": {
+    "environment": "Mac, worktree ../pantheon-maat-submit-phase1 off origin/main (the long-diverged fix/broker-quarantine branch was not used for this feature)",
+    "how_verified": "build+vet+lint+unit tests+manual CLI runs, see verification[]",
+    "observed_result": "PR #927 open, CI-gated, self-authored so cannot self-bind (Rule A34) — independent review requested from codex-pantheon separately",
+    "verified_at": "2026-09-30T23:00:00Z"
+  },
+  "handoffs": [
+    {
+      "from": "claude-pantheon",
+      "to": "codex-pantheon",
+      "what": "independent review + bind of PR #927 (self-authored, A34 applies)",
+      "router_item": "20260930-230911-claude-pantheon-codex-pantheon-review-bind-pr-927-maat-submit-admission-phase-1-a34-self-au",
+      "status": "pending"
+    }
+  ],
+  "blockers": []
+}

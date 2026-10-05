@@ -1,0 +1,107 @@
+{
+  "work_item_id": "20260928-163927-codex-finalwishes-sirsi-software-admin-pr559-obsolete-pr555-true-merge",
+  "agent_id": "sirsi-software-admin",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "platform-foundation",
+  "canon_read": [
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-09-28T16:44:26.618341+00:00",
+      "notes": ""
+    },
+    {
+      "path": "AGENTS.md",
+      "role": "agent-law",
+      "read_at": "2026-09-28T16:44:26.618341+00:00",
+      "notes": ""
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-09-28T16:44:26.618341+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "role": "architecture",
+      "read_at": "2026-09-28T16:44:26.618341+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-09-28T16:44:26.618341+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-09-28T16:44:26.618341+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-09-28T16:44:26.618341+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/RELEASE_SIGNING.md",
+      "role": "operational-release",
+      "read_at": "2026-09-28T16:44:26.618341+00:00",
+      "notes": ""
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "README.md",
+      "section": "Governance review disposition",
+      "claim": "Stale PR #559/#554 candidates are superseded by the true PR #555 merge and must not drive tagging.",
+      "files_changed": [".agents/proofs/20260928-163927-codex-finalwishes-sirsi-software-admin-pr559-obsolete-pr555-true-merge.json"],
+      "evidence": ["PR #555 true merge 619a23804452907b0c8e31d7bf0272ef808b3388 has two parents", "Rule29 over 986..619 passed (9 checked, 2 historical)", "current main readback is 82285dffeb9f48d5dafe74a9e66c9cacccadb5ce"]
+    }
+  ],
+  "closure_evidence": {
+    "product": "No product source change; stale governance candidates are superseded.",
+    "design": "No design change.",
+    "technical": "Verified merge identity 619a23804452907b0c8e31d7bf0272ef808b3388 and Rule29 result.",
+    "operational": "No tag or deploy performed; current-main CI remains pending.",
+    "narrative": "Release tagging must use the current main identity, not obsolete PR candidates."
+  },
+  "verification": [
+    {
+      "name": "remote merge identity",
+      "command": "gh api repos/SirsiMaster/FinalWishes/commits/main",
+      "status": "passed",
+      "evidence": "Current main readback is 82285dffeb9f48d5dafe74a9e66c9cacccadb5ce; no source mutation."
+    },
+    {
+      "name": "PR #555 protected checks",
+      "command": "gh run view 36449547844",
+      "status": "passed",
+      "evidence": "Required checks passed; preview was non-blocking."
+    },
+    {
+      "name": "Rule29 traceability",
+      "command": "scripts/verify-commit-traceability.sh",
+      "status": "passed",
+      "evidence": "Rule29 over 986..619 passed (9 checked, 2 historical)."
+    },
+    {
+      "name": "router disposition",
+      "command": "sirsi router close",
+      "status": "passed",
+      "evidence": "This proof is the exact completion record for the stale PR disposition."
+    }
+  ],
+  "working_status": {
+    "environment": "SirsiMaster/FinalWishes remote repository",
+    "how_verified": "GitHub API/CLI and router item inspection",
+    "observed_result": "PR #555 is true-merged; #559/#554 are stale candidates and no tag/deploy was performed.",
+    "verified_at": "2026-09-28T16:45:00-04:00"
+  },
+  "handoffs": [],
+  "blockers": []
+}

@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -137,10 +136,14 @@ func buildDashboardConnectorVariant(kind engine.Kind, prefix string, fixedVarian
 	var backend provider.Provider
 	switch kind {
 	case engine.KindMLX, engine.KindOMLX:
+		streaming, err := dashboardStreamingCapability(prefix)
+		if err != nil {
+			return nil, false, err
+		}
 		backend = &provider.OpenAICompat{
 			ProviderName: strings.ToLower(string(kind)), Endpoint: endpoint, Model: modelID,
-			TierValue: provider.TierLocal, HTTP: http.DefaultClient,
-			SupportsStreaming:      true,
+			TierValue:              provider.EndpointTier(endpoint),
+			SupportsStreaming:      streaming,
 			UseRealCompletionProbe: true,
 		}
 	case engine.KindSNE:
@@ -153,6 +156,8 @@ func buildDashboardConnectorVariant(kind engine.Kind, prefix string, fixedVarian
 			RuntimeSHA256:       os.Getenv(prefix + "_RUNTIME_SHA256"),
 			NativeRuntimeSHA256: os.Getenv(prefix + "_NATIVE_RUNTIME_SHA256"),
 			ManifestSHA256:      os.Getenv(prefix + "_MANIFEST_SHA256"),
+			ExecutionMode:       sneExecutionMode(identity.EffectiveVariant()),
+			Assistant:           sneAssistantIdentity(identity.Assistant),
 		})
 		if err != nil {
 			return nil, false, err
@@ -161,17 +166,39 @@ func buildDashboardConnectorVariant(kind engine.Kind, prefix string, fixedVarian
 		return nil, false, fmt.Errorf("unsupported dashboard engine %q", kind)
 	}
 	backendCaps := backend.Caps()
-	caps := engine.Capabilities{
-		Sessions: true, Cancellation: true, Receipts: true,
-		Tools: backendCaps.Tools, Temperature: backendCaps.Temperature,
-		TopP: backendCaps.TopP, Seed: backendCaps.Seed,
-	}
-	caps.Streaming = backendCaps.Streaming
+	caps := dashboardEngineCapabilities(backendCaps)
 	connector, err := engine.NewProviderConnector(backend, kind, identity, caps)
 	if err != nil {
 		return nil, false, fmt.Errorf("%s connector: %w", prefix, err)
 	}
+	if kind == engine.KindSNE {
+		connector.RequestBoundary = provider.EndpointTier(endpoint).String()
+	}
 	return connector, true, nil
+}
+
+func dashboardStreamingCapability(prefix string) (bool, error) {
+	name := prefix + "_STREAMING"
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return false, nil
+	}
+	streaming, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, fmt.Errorf("%s must be boolean: %w", name, err)
+	}
+	return streaming, nil
+}
+
+func dashboardEngineCapabilities(backend provider.Caps) engine.Capabilities {
+	return engine.Capabilities{
+		Sessions: true, Receipts: true,
+		Tools: backend.Tools, Temperature: backend.Temperature,
+		TopP: backend.TopP, Seed: backend.Seed,
+		Streaming: backend.Streaming, Cancellation: backend.Cancellation,
+		Prefill: backend.Prefill, Decode: backend.Decode,
+		MTP: backend.MTP, KVState: backend.KVState, Telemetry: backend.Telemetry,
+	}
 }
 
 func dashboardEngineIdentity(kind engine.Kind, prefix string) (engine.Identity, string, error) {
@@ -192,35 +219,68 @@ func dashboardEngineIdentityVariant(kind engine.Kind, prefix string, fixedVarian
 		}
 		variant = fixedVariant
 	}
-	values := map[string]string{
-		"model":            strings.TrimSpace(os.Getenv(prefix + "_MODEL")),
-		"engine_version":   strings.TrimSpace(os.Getenv(prefix + "_ENGINE_VERSION")),
-		"model_sha256":     strings.TrimSpace(os.Getenv(prefix + "_MODEL_SHA256")),
-		"tokenizer_id":     strings.TrimSpace(os.Getenv(prefix + "_TOKENIZER_ID")),
-		"tokenizer_sha256": strings.TrimSpace(os.Getenv(prefix + "_TOKENIZER_SHA256")),
-		"precision":        strings.TrimSpace(os.Getenv(prefix + "_PRECISION")),
-		"cache_namespace":  strings.TrimSpace(os.Getenv(prefix + "_CACHE_NAMESPACE")),
+	values := struct {
+		model, engineVersion, modelSHA, tokenizerID, tokenizerSHA, precision, cacheNamespace string
+	}{
+		model:          strings.TrimSpace(os.Getenv(prefix + "_MODEL")),
+		engineVersion:  strings.TrimSpace(os.Getenv(prefix + "_ENGINE_VERSION")),
+		modelSHA:       strings.TrimSpace(os.Getenv(prefix + "_MODEL_SHA256")),
+		tokenizerID:    strings.TrimSpace(os.Getenv(prefix + "_TOKENIZER_ID")),
+		tokenizerSHA:   strings.TrimSpace(os.Getenv(prefix + "_TOKENIZER_SHA256")),
+		precision:      strings.TrimSpace(os.Getenv(prefix + "_PRECISION")),
+		cacheNamespace: strings.TrimSpace(os.Getenv(prefix + "_CACHE_NAMESPACE")),
 	}
-	for name, value := range values {
-		if value == "" {
-			return engine.Identity{}, "", fmt.Errorf("%s is configured but %s identity is missing", prefix, name)
+	for _, field := range []struct{ name, value string }{
+		{"model", values.model}, {"engine_version", values.engineVersion},
+		{"model_sha256", values.modelSHA}, {"tokenizer_id", values.tokenizerID},
+		{"tokenizer_sha256", values.tokenizerSHA}, {"precision", values.precision},
+		{"cache_namespace", values.cacheNamespace},
+	} {
+		if field.value == "" {
+			return engine.Identity{}, "", fmt.Errorf("%s is configured but %s identity is missing", prefix, field.name)
 		}
 	}
 	identity := engine.Identity{
 		Engine:          kind,
 		Variant:         variant,
-		EngineVersion:   values["engine_version"],
-		ModelID:         values["model"],
-		ModelSHA256:     values["model_sha256"],
-		TokenizerID:     values["tokenizer_id"],
-		TokenizerSHA256: values["tokenizer_sha256"],
-		Precision:       values["precision"],
-		CacheNamespace:  values["cache_namespace"],
+		EngineVersion:   values.engineVersion,
+		ModelID:         values.model,
+		ModelSHA256:     values.modelSHA,
+		TokenizerID:     values.tokenizerID,
+		TokenizerSHA256: values.tokenizerSHA,
+		Precision:       values.precision,
+		CacheNamespace:  values.cacheNamespace,
+	}
+	if variant == engine.VariantSNEMTP {
+		assistant := &engine.AssistantIdentity{
+			ModelID:          strings.TrimSpace(os.Getenv(prefix + "_ASSISTANT_MODEL_ID")),
+			Revision:         strings.TrimSpace(os.Getenv(prefix + "_ASSISTANT_REVISION")),
+			CheckpointSHA256: strings.TrimSpace(os.Getenv(prefix + "_ASSISTANT_CHECKPOINT_SHA256")),
+			Precision:        strings.TrimSpace(os.Getenv(prefix + "_ASSISTANT_PRECISION")),
+		}
+		identity.Assistant = assistant
 	}
 	if err := identity.Validate(); err != nil {
 		return engine.Identity{}, "", fmt.Errorf("%s identity: %w", prefix, err)
 	}
-	return identity, values["model"], nil
+	return identity, values.model, nil
+}
+
+func sneExecutionMode(variant engine.BackendVariant) string {
+	if variant == engine.VariantSNEMTP {
+		return sne.ExecutionModeMTP
+	}
+	return sne.ExecutionModePlain
+}
+
+func sneAssistantIdentity(identity *engine.AssistantIdentity) *sne.AssistantIdentity {
+	if identity == nil {
+		return nil
+	}
+	return &sne.AssistantIdentity{
+		ModelID: identity.ModelID, Revision: identity.Revision,
+		CheckpointSHA256: identity.CheckpointSHA256, Precision: identity.Precision,
+	}
 }
 
 func dashboardConfiguredVariant(kind engine.Kind, prefix string) (engine.BackendVariant, error) {

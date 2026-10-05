@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -24,8 +26,8 @@ var dashboardNoBrowser bool
 
 var dashboardCmd = &cobra.Command{
 	Use:   "dashboard",
-	Short: "𓂀 Launch the Horus workstation monitor in your browser",
-	Long: `𓂀 Horus — Local Workstation Monitor
+	Short: "Open the Sirsi Pantheon local dashboard",
+	Long: `Sirsi Pantheon — Local Workstation Dashboard
 
 Starts a local HTTP server and opens the dashboard in your default browser.
 All data stays on your machine — zero telemetry (Rule A11).
@@ -42,7 +44,7 @@ func init() {
 }
 
 func runDashboard(cmd *cobra.Command, args []string) {
-	output.Header("Workstation Monitor")
+	output.Header("Sirsi Pantheon Dashboard")
 
 	nStore, err := notify.Open(notify.DefaultPath())
 	if err != nil {
@@ -70,6 +72,25 @@ func runDashboard(cmd *cobra.Command, args []string) {
 		output.Warn("Engine selection unavailable: %v", engineErr)
 	}
 
+	controlEndpoint := firstNonEmptyControlEndpoint(os.Getenv("SIRSI_CONTROL_ENDPOINT"))
+	controlToken := os.Getenv("SIRSI_CONTROL_TOKEN")
+	controlClientOnly := controlClientOnlyEnv(os.Getenv("SIRSI_CONTROL_CLIENT_ONLY"))
+	controlSnapshotFn := dashboardControlSnapshotProducer(controlEndpoint, controlToken, controlClientOnly)
+	controlActionFn := dashboardControlActionProducer(controlEndpoint, controlToken, controlClientOnly)
+	var fleetFn dashboard.FleetProducer
+	var ledgerFn dashboard.LedgerSummarizer
+	var fabricFn dashboard.FabricProducer
+	var unroutable map[string]bool
+	if controlSnapshotFn == nil {
+		// Local producers are used only on the explicitly local/default surface.
+		// A configured M5 endpoint or client-only mode must not consult an M1
+		// registry, even if the authenticated canonical source is unavailable.
+		fleetFn = collectDashboardFleet
+		ledgerFn = collectDashboardLedger
+		fabricFn = collectDashboardFabric
+		unroutable = dashboardUnroutable()
+	}
+
 	srv := dashboard.New(dashboard.Config{
 		Port:     dashboardPort,
 		NotifyDB: nStore,
@@ -80,10 +101,12 @@ func runDashboard(cmd *cobra.Command, args []string) {
 			return json.Marshal(snap)
 		},
 		NodeStatusFn:            collectDashboardNodeStatus,
-		LedgerFn:                collectDashboardLedger,
-		FleetFn:                 collectDashboardFleet,
-		Unroutable:              dashboardUnroutable(),
-		FabricFn:                collectDashboardFabric,
+		LedgerFn:                ledgerFn,
+		FleetFn:                 fleetFn,
+		ControlSnapshotFn:       controlSnapshotFn,
+		ControlActionFn:         controlActionFn,
+		Unroutable:              unroutable,
+		FabricFn:                fabricFn,
 		EngineSelection:         engineSelection,
 		SNEInstall:              dashboard.DefaultSNEInstallConfig(),
 		SNELifecycle:            dashboard.DefaultSNELifecycleConfig(),
@@ -117,6 +140,30 @@ func runDashboard(cmd *cobra.Command, args []string) {
 	_ = srv.Stop()
 	if nStore != nil {
 		nStore.Close()
+	}
+}
+
+func dashboardControlSnapshotProducer(endpoint, token string, clientOnly bool) dashboard.ControlSnapshotProducer {
+	if strings.TrimSpace(endpoint) == "" && !clientOnly {
+		return nil
+	}
+	return func(ctx context.Context) ([]byte, error) {
+		if strings.TrimSpace(endpoint) == "" {
+			return nil, fmt.Errorf("M1 control client requires an authenticated M5 endpoint via SIRSI_CONTROL_ENDPOINT")
+		}
+		return fetchRemoteControl(ctx, endpoint, token)
+	}
+}
+
+func dashboardControlActionProducer(endpoint, token string, clientOnly bool) dashboard.ControlActionProducer {
+	if strings.TrimSpace(endpoint) == "" && !clientOnly {
+		return nil
+	}
+	return func(ctx context.Context, body []byte) ([]byte, error) {
+		if strings.TrimSpace(endpoint) == "" {
+			return nil, fmt.Errorf("M1 control client requires an authenticated M5 endpoint via SIRSI_CONTROL_ENDPOINT")
+		}
+		return sendRemoteControlAction(ctx, endpoint, token, body)
 	}
 }
 
@@ -199,6 +246,7 @@ func collectDashboardStats() map[string]interface{} {
 		"accel_icon":          "💻",
 		"active_deities":      []string{},
 		"deity_count":         0,
+		"components_known":    false,
 		"ra_deployed":         false,
 		"ra_scopes":           []interface{}{},
 		"ra_icon":             "⚫",
@@ -207,7 +255,7 @@ func collectDashboardStats() map[string]interface{} {
 	collectDashRAM(stats)
 	collectDashGit(stats)
 	collectDashAccelerator(stats)
-	collectDashDeities(stats)
+	collectDashComponents(stats)
 
 	return stats
 }

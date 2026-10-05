@@ -100,3 +100,39 @@ func TestCollectDashRAM_UnknownHardwareStaysHonest(t *testing.T) {
 		t.Errorf("used_ram = %v, want unset/0 when hardware is unknown", v)
 	}
 }
+
+func TestDashboardComponentsMatchExactExecutableBasenames(t *testing.T) {
+	got := dashboardComponentsFromProcessOutput(`COMMAND
+/Applications/Pantheon.app/Contents/MacOS/sirsi-menubar
+/usr/local/bin/guard-backup
+my-sirsi-wrapper
+/opt/anubis
+/opt/anubis
+/usr/local/bin/pantheon-agent`)
+	want := []string{"☥ Sirsi Menubar", "𓃣 Anubis", "🤖 Agent"}
+	if len(got) != len(want) {
+		t.Fatalf("components = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("components = %#v, want %#v", got, want)
+		}
+	}
+}
+
+func TestDashboardComponentInventoryDistinguishesUnknownFromEmpty(t *testing.T) {
+	failed := map[string]interface{}{"active_deities": []string{}, "deity_count": 0}
+	applyDashComponents(failed, "", false)
+	if failed["components_known"] != false {
+		t.Fatalf("failed inventory known = %v, want false", failed["components_known"])
+	}
+	if _, exists := failed["component_count"]; exists {
+		t.Fatal("failed process enumeration retained a fabricated zero count")
+	}
+
+	empty := map[string]interface{}{}
+	applyDashComponents(empty, "COMMAND\nhelper\n", true)
+	if empty["components_known"] != true || empty["component_count"] != 0 {
+		t.Fatalf("successful empty inventory = %#v, want known zero", empty)
+	}
+}

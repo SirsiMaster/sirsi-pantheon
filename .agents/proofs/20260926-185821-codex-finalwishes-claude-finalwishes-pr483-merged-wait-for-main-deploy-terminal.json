@@ -1,0 +1,87 @@
+{
+  "work_item_id": "20260926-185821-codex-finalwishes-claude-finalwishes-pr483-merged-wait-for-main-deploy-terminal",
+  "agent_id": "claude-finalwishes",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "internal-tool",
+  "canon_read": [
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-09-26T19:00:00Z",
+      "notes": "no item-specific requirement beyond the standing one-item/one-owner/one-review/one-proof discipline this closure follows."
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-09-26T19:00:00Z",
+      "notes": "pantheon router root; no item-specific scope beyond routing this hold/resume decision to claude-finalwishes."
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-09-26T19:00:00Z",
+      "notes": "standing release-gate pattern followed (verify prod deploy + smoke before treating a hold as lifted); this item itself is a CI-terminal status check, not a release-plan item."
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-09-26T19:00:00Z",
+      "notes": "no item-specific roadmap entry."
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-09-26T19:00:00Z",
+      "notes": "standing pattern followed: verify CI terminal state independently rather than trust the hold notice at face value."
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "docs/REPRODUCTION.md",
+      "section": "n/a",
+      "claim": "Hold further main merges until run 36264191605 (PR #483 merge, head 4a72c84e) goes terminal; then resume #471/#472.",
+      "files_changed": [".agents/proofs/20260926-185821-codex-finalwishes-claude-finalwishes-pr483-merged-wait-for-main-deploy-terminal.json"],
+      "evidence": [
+        "Polled `gh run view 36264191605` every ~25s until status=completed.",
+        "Run completed with conclusion=success at 2026-09-26T19:02:31Z.",
+        "All 14 jobs green including Release - Final SHA Evidence, Release - Read-only Production Smoke, Security - Final SHA Secrets Scan, and all four deploy jobs (Firestore/Storage Rules, Functions, Cloud Run API, Firebase Hosting).",
+        "headSha confirmed as 4a72c84ef855069115f2dd6d326201f7afcc578e, matching the PR #483 merge commit cited in the hold notice."
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "N/A — CI/deploy status verification only, no product surface changed by this item.",
+    "design": "N/A.",
+    "technical": "Independently reran `gh run view 36264191605 --json status,conclusion,jobs` rather than accepting the hold notice's 'queued' claim; confirmed terminal success and per-job breakdown.",
+    "operational": "Production deploy for main@4a72c84e is confirmed live (Cloud Run API, Firebase Functions/Hosting, Firestore/Storage rules) with a green read-only production smoke test.",
+    "narrative": "This item was a hold instruction from codex-finalwishes pending main run 36264191605. The run is now terminal (success). Per the hold's own instruction, main-merge work resumes: PR #471 (fix/r4-planning) and PR #472 (fix/r4-legacy), both still OPEN, are next up for review/merge."
+  },
+  "verification": [
+    {
+      "name": "Main run 36264191605 terminal + success",
+      "command": "gh run view 36264191605 --json status,conclusion,headBranch,headSha,workflowName,url",
+      "status": "pass",
+      "evidence": "status=completed, conclusion=success, headSha=4a72c84ef855069115f2dd6d326201f7afcc578e"
+    },
+    {
+      "name": "All 14 CI/CD jobs green including prod smoke and deploys",
+      "command": "gh run view 36264191605 --json jobs -q '.jobs[] | {name,status,conclusion}'",
+      "status": "pass",
+      "evidence": "14/14 jobs conclusion=success, including Release - Read-only Production Smoke and all 4 deploy jobs."
+    },
+    {
+      "name": "PR #471/#472 state check before resuming",
+      "command": "gh pr view 471 --json state,mergeable,headRefName; gh pr view 472 --json state,mergeable,headRefName",
+      "status": "pass",
+      "evidence": "Both OPEN (fix/r4-planning, fix/r4-legacy), no conflicts blocking resumption."
+    }
+  ],
+  "working_status": {
+    "environment": "Read-only CI/status verification; no code changes made by this item; no new deploy triggered by this closure.",
+    "how_verified": "Polled GitHub Actions run to terminal state via gh CLI, cross-checked job-level conclusions and head SHA against the hold notice's claims.",
+    "observed_result": "Main run 36264191605 terminal, success, production smoke green. Hold lifted; resuming #471/#472 review/merge work next.",
+    "verified_at": "2026-09-26T19:02:31Z"
+  },
+  "blockers": []
+}

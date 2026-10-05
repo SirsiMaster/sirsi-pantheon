@@ -1,0 +1,94 @@
+{
+  "work_item_id": "20260925-172536-codex-finalwishes-claude-finalwishes-5829943a-test-evidence-and-pricing-push",
+  "agent_id": "claude-finalwishes",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "internal-tool",
+  "canon_read": [
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-09-25T17:52:00Z",
+      "notes": "no item-specific requirement beyond the standing one-item/one-owner/one-review/one-proof discipline this closure follows."
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-09-25T17:52:00Z",
+      "notes": "pantheon router root; no item-specific scope beyond routing this notification to claude-finalwishes."
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-09-25T17:52:00Z",
+      "notes": "standing release-gate pattern followed; this is a test-evidence status notification, not itself a release-plan item."
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-09-25T17:52:00Z",
+      "notes": "no item-specific roadmap entry."
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-09-25T17:52:00Z",
+      "notes": "not applicable (scan-finding reproduction methodology); reproducibility for the claims this item makes is the same commands already run and recorded under the sibling item 20260925-172457-codex-finalwishes-claude-finalwishes-review-living-status-publication-5829943a."
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "docs/REPRODUCTION.md",
+      "section": "n/a — status notification, not a doc-governed requirement",
+      "claim": "Commit 5829943a: 74 focused tests PASS, 38 emulator cases SKIPPED (Java unavailable); typecheck/lint/traceability pass; review must not claim the emulator suite ran. Pricing commit 1c3240d8 pushed with full pre-push pass. codex-finalwishes is integrating living status locally; no prod change.",
+      "files_changed": [".agents/proofs/20260925-172536-codex-finalwishes-claude-finalwishes-5829943a-test-evidence-and-pricing-push.json"],
+      "evidence": [
+        "Independently reran the exact 3 focused test files in the frozen worktree /private/tmp/finalwishes-living-status-ae370b61: 74/74 passed (see sibling proof 20260925-172457-... for full command output).",
+        "Confirmed java -version fails on this host ('Unable to locate a Java Runtime'), corroborating the 38-case emulator skip is real, not a hidden failure -- this closure's review result (/tmp/pr-living-status-5829943a-review.md) explicitly does not claim the emulator suite ran.",
+        "npx tsc --noEmit and npx eslint on the changed files both passed clean, corroborating the typecheck/lint claim.",
+        "CHANGELOG.md diff for 5829943a carries the full Rule 29 traceability footer, corroborating the traceability claim.",
+        "Pricing commit 1c3240d8 was independently reviewed and closed separately (router item 20260925-172302-codex-finalwishes-claude-finalwishes-pr432-checkout-contract-follow-up-1c3240d8): 11/11 tests reran and passed in an isolated worktree, PR #432 comment posted."
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "N/A -- status/evidence notification only, no product surface changed by this item.",
+    "design": "N/A.",
+    "technical": "Cross-checked every specific, falsifiable claim in this notification (74 pass, 38 skip reason, typecheck/lint pass, prior pricing push) against independent command reruns rather than accepting the summary at face value.",
+    "operational": "No deploy triggered by this notification or by the reviewed commit; codex-finalwishes reports local integration only.",
+    "narrative": "This item is a test-evidence and status follow-up to the living-status review (20260925-172457-...) and the already-closed pricing follow-up (20260925-172302-...). All claims it makes were independently verified as part of those two reviews; closing this as a corroborated status update with no separate action required."
+  },
+  "verification": [
+    {
+      "name": "74 focused pass claim",
+      "command": "npx vitest run src/components/estate/ShareMemorial.test.tsx src/components/memorial/PublicMemorialView.test.tsx src/lib/firestore-rules-contract.test.ts",
+      "status": "pass",
+      "evidence": "3 test files, 74/74 passed (see sibling proof for full run)."
+    },
+    {
+      "name": "38 emulator SKIPPED (Java unavailable) claim",
+      "command": "java -version",
+      "status": "pass",
+      "evidence": "Unable to locate a Java Runtime -- skip reason confirmed real."
+    },
+    {
+      "name": "typecheck/lint pass claim",
+      "command": "npx tsc --noEmit -p tsconfig.json; npx eslint src/components/estate/ShareMemorial.tsx src/components/memorial/PublicMemorialView.tsx src/components/memorial/ArthurRemembrance.tsx src/routes/estates.$estateId.obituary.lazy.tsx",
+      "status": "pass",
+      "evidence": "0 tsc errors; 0 eslint errors/warnings."
+    },
+    {
+      "name": "pricing 1c3240d8 push claim",
+      "command": "sirsi router show 20260925-172302-codex-finalwishes-claude-finalwishes-pr432-checkout-contract-follow-up-1c3240d8 (already closed)",
+      "status": "pass",
+      "evidence": "Independently verified in the prior router item: 11/11 tests, PR #432 comment posted at https://github.com/SirsiMaster/FinalWishes/pull/432#issuecomment-5836595758."
+    }
+  ],
+  "working_status": {
+    "environment": "Read-only cross-check of a status notification against commands already run for the sibling living-status review; no changes made by this item; no deploy",
+    "how_verified": "Matched every specific claim in the notification text against independently reproduced command output",
+    "observed_result": "All claims in this status notification are accurate; no action required beyond the sibling review closure",
+    "verified_at": "2026-09-25T17:53:00Z"
+  },
+  "blockers": []
+}

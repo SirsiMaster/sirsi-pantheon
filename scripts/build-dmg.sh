@@ -142,6 +142,22 @@ fi
 "${PROJECT_ROOT}/scripts/verify-pantheon-package-identity.sh" \
     "${BUNDLE_DIR}" "${VERSION}" "${BUNDLE_BUILD_NUMBER}" "${SIGNING_MODE}"
 
+# Inventory the final signed payload with the source-built canonical Go engine.
+# The verifier runs outside Pantheon.app and inspects it descriptor-relatively;
+# it never executes either packaged engine merely to establish inventory.
+PACKAGE_INVENTORY_ENGINE="${BUILD_WORK_DIR}/sirsi-package-inventory"
+PACKAGE_INVENTORY_GOARCH="$(go env GOHOSTARCH)"
+CGO_ENABLED=1 GOOS=darwin GOARCH="${PACKAGE_INVENTORY_GOARCH}" \
+    go build -ldflags="${GO_LDFLAGS}" -o "${PACKAGE_INVENTORY_ENGINE}" ./cmd/sirsi/
+"${PACKAGE_INVENTORY_ENGINE}" package-inventory \
+    --app "${BUNDLE_DIR}" \
+    --version "${VERSION}" \
+    --build "${BUNDLE_BUILD_NUMBER}" \
+    --info-plist "${BUNDLE_DIR}/Contents/Info.plist" \
+    --pkg-info "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/PkgInfo" \
+    --launch-agent "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" \
+    --require-code-signature
+
 # --- Stage + create the DMG ---
 echo "Creating DMG..."
 DMG_VOLUME="${DMG_VOLUME:-Sirsi Pantheon}"

@@ -1,0 +1,119 @@
+{
+  "work_item_id": "20260923-180215-m5-hermes-claude-io-rail-silence-tests-traced-extra-rail-healthy-sibling-rail-2-",
+  "agent_id": "claude-io",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "platform-foundation",
+  "canon_read": [
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-09-23T18:20:00Z",
+      "notes": "'one authoritative item -> one scoped owner -> one implementation -> one independent review -> one reproducible proof -> one durable record' -- this item explicitly deferred the (a) vs (b) decision to claude-io as rail owner; this closure supplies that decision plus the reproducible measurement backing it"
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-09-23T18:20:00Z",
+      "notes": "pantheon router root; no item-specific scope beyond routing the decision"
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-09-23T18:20:00Z",
+      "notes": "standing release-gate pattern followed; this test-flake item is not itself tracked in this doc"
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-09-23T18:20:00Z",
+      "notes": "no item-specific roadmap entry; dead-rail-silence test flakiness is IO-Connect/Hermes transport-internal work"
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-09-23T18:20:00Z",
+      "notes": "not applicable (scan-finding reproduction methodology); this closure's own reproducibility is the go test commands recorded under verification[]"
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/sirsi-io-connect/README.md",
+      "role": "repo-canon",
+      "read_at": "2026-09-23T18:20:00Z",
+      "notes": "connector/transport scope; go test -race ./... must pass -- this item's finding is exactly a class of flake that discipline is meant to catch"
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/sirsi-io-connect/docs/ADR-001-CONNECTOR-BOUNDARY.md",
+      "role": "repo-canon",
+      "read_at": "2026-09-23T18:20:00Z",
+      "notes": "confirms checkDeadRailSilence sits inside the hot-path Go transport this ADR gates; a conviction-rule change needs the canary/negative-control discipline the metal three-arm rerun supplies, not a unit-test-only fix"
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/sirsi-io-connect/docs/specs/H5.2-rail-state-machine.md",
+      "role": "spec-under-review",
+      "read_at": "2026-09-23T18:20:00Z",
+      "notes": "the loaded false-retirement class and its (a)/(b) options are this spec's checkDeadRailSilence conviction rule; read to confirm option (b) (dark persistence) is a change to this spec's retire loop, not a new mechanism"
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "/Users/thekryptodragon/Development/sirsi-io-connect/docs/specs/H5.2-rail-state-machine.md",
+      "section": "loaded false-retirement class (item 172855/180215): two options left open, (a) test-scale, (b) rule hardening (dark persistence)",
+      "claim": "Decision made and reproducibly measured: (a) alone insufficient on this host, choosing (b), routed the build+metal-verify back to m5-hermes.",
+      "files_changed": ["docs/evidence/repro/review-20260923-railsilence-decision.md"],
+      "evidence": [
+        "Applied the item's own (a) proposal (S=20ms, RetryBudget 80ms) exactly as left uncommitted in the working tree; measured 11/20 (55%) failures of TestDeadRailResetsRetryBudget alone, -count=20, no artificial CPU load, ambient load average 3.4-4.0",
+        "Full TestDeadRail* suite at the ORIGINAL committed (unmodified) thresholds also fails broadly (8 of ~10 tests) on this host right now -- confirms the flakiness source is this fabric-oversubscribed host's ambient scheduling jitter, not specific to the (a) edit",
+        "Reverted the uncommitted (a) attempt (git checkout -- transport/tbraw/rail_dead_silence_test.go) rather than commit a still-~50%-flaky test",
+        "PR #278 (the evidence this item reports) state=MERGED (efdab1d/b2acc4a on main, 2026-09-23T18:22:31Z)"
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "N/A -- decision/review task on transport-internal test and detection logic, no product surface change.",
+    "design": "N/A -- no design surface.",
+    "technical": "Reproduced the item's own reported false-retirement class locally: with the (a) test-scale fix applied (S=20ms, RetryBudget 80ms, exactly as left in the uncommitted working tree), TestDeadRailResetsRetryBudget alone failed 11/20 (55%) with no artificial load beyond this host's ambient 3.4-4.0 load average -- worse than m5-hermes's own 10/50 (20%) at S=5ms under a deliberate load=9.0 CPU-spinner rig. Also ran the full TestDeadRail* suite at the unmodified, currently-committed thresholds and found 8 of ~10 tests failing the same way, confirming this specific host cannot currently give a clean pass/fail signal for this suite's wall-clock-timing assumptions at all (consistent with the standing reference_m5_fabric_oversubscription_permanent finding that this fabric host is permanently oversubscribed). Concluded option (a) is not a fix, only margin, and reverted the uncommitted attempt. Chose option (b) -- dark persistence (require the peer's dark mark on two consecutive NACK masks before a silence conviction, in the retire loop at reliable.go:3521) -- as the correctness fix, since fakeRail's lack of FIONREAD reader-behind immunity is a real gap m5-hermes already identified that could extend to any future non-fd rail. Did not build (b) myself: checkDeadRailSilence is an 8+-round metal-tuned state machine (H5.1 -> H5.1b -> H5.2 rounds 2-8) and a conviction-rule change needs the same three-arm metal rerun m5-hermes's harness already produces -- not reproducible or safely hand-built from this seat blind to that tuning history.",
+    "operational": "No merge action was required or taken on PR #278 -- it was already MERGED before this item arrived in the claude-io inbox (evidence-only PR, no code changes). This closure adds the (a)-vs-(b) decision the item explicitly left open, as a new evidence commit (PR pending review), and routes the actual (b) implementation + metal verification back to m5-hermes rather than claiming it done.",
+    "narrative": "This item was framed as 'your call' with two unbuilt options. Rather than pick blind, spent the review cycle actually running the cheaper option (a) first to see whether it closed the gap -- it measurably did not, on this specific shared host, which is itself useful signal (this host is not a reliable place to validate this suite's tunings at all while the agent fabric is live on it, per standing canon). The harder, correct fix (b) is handed back to the metal-rig owner rather than half-built here without the three-arm verification discipline every prior round of this state machine has required."
+  },
+  "verification": [
+    {
+      "name": "PR #278 merge state",
+      "command": "gh pr view 278 --json state,mergedAt",
+      "status": "pass",
+      "evidence": "state=MERGED, mergedAt=2026-09-23T18:22:31Z"
+    },
+    {
+      "name": "option (a) flake rate, isolated",
+      "command": "cd transport/tbraw && go test -run 'TestDeadRailResetsRetryBudget' -count=20 .",
+      "status": "pass",
+      "evidence": "verification goal was to measure the flake rate, not to get a clean test pass: 11/20 (55%) of the underlying test runs failed -- RailsFailedOver=2 (healthy sibling convicted) or context deadline exceeded; confirms option (a) alone is insufficient on this host"
+    },
+    {
+      "name": "unmodified suite at committed thresholds",
+      "command": "cd transport/tbraw && go test -run 'TestDeadRail' -v .",
+      "status": "pass",
+      "evidence": "verification goal was to isolate whether the (a) edit itself caused the flake: 8 of ~10 tests in the underlying suite failed the same way at the original, unmodified S values -- confirms the flake source is host ambient load, not the (a) edit"
+    },
+    {
+      "name": "ambient load at measurement time",
+      "command": "uptime",
+      "status": "pass",
+      "evidence": "load averages: 3.40 3.59 3.97 -- no artificial CPU spinners running"
+    },
+    {
+      "name": "reverted the insufficient (a) attempt",
+      "command": "git checkout -- transport/tbraw/rail_dead_silence_test.go && git status",
+      "status": "pass",
+      "evidence": "working tree clean of the (a) edit; not shipping a known-~50%-flaky test"
+    }
+  ],
+  "working_status": {
+    "environment": "sirsi-io-connect repo, main + review branch, test-only investigation (no production code changed; test-file edit tried then reverted)",
+    "how_verified": "gh pr view on #278, repeated go test runs of the affected suite both with and without the (a) tuning, uptime for ambient load context",
+    "observed_result": "Option (a) (test-scale) is insufficient in isolation on this host (55% flake); the unmodified suite is also unstable here; decided on option (b) (rule hardening) and routed its build + metal verification back to m5-hermes",
+    "verified_at": "2026-09-23T18:30:00Z"
+  },
+  "blockers": [
+    "Option (b) (dark persistence) implementation and three-arm metal rerun is unbuilt -- routed to m5-hermes, not resolved by this closure."
+  ]
+}

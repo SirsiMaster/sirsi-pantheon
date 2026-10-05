@@ -29,6 +29,8 @@ import (
 	"path/filepath"
 	"sync/atomic"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/seba"
 )
 
 // PressureEvent is one observed kernel memory-pressure transition.
@@ -151,4 +153,13 @@ func effectivePressure(freeRAM, totalRAM int64) (PressureLevel, string) {
 // hardware/agent sampling it performs.
 func EffectivePressure(freeRAM, totalRAM int64) (PressureLevel, string) {
 	return effectivePressure(freeRAM, totalRAM)
+}
+
+// CurrentPressure is the cheap, sample-only pressure read: total RAM (one
+// sysctl) + free RAM (one vm_stat parse), no process enumeration. For callers
+// that need just the level at high frequency — e.g. the dispatch backpressure
+// gate — where SampleNodeCapacity's full hardware + top-by-RSS sampling would
+// be needless overhead.
+func CurrentPressure() (PressureLevel, string) {
+	return effectivePressure(hapiFreeRAMBytes(), seba.TotalRAMBytes())
 }

@@ -3,14 +3,16 @@ package dashboard
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
-	"os"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/engine"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
@@ -23,44 +25,15 @@ import (
 // keywords and answered anything else with "Unknown command", which is a
 // surface promising an affordance it does not have.
 //
-// Two rules shape this, and they are the whole design:
-//
-//  1. NEVER answer from the model's own knowledge. The engine is handed this
-//     machine's live doctor findings and told to answer from them or say it
-//     cannot. A confident wrong answer about which process is eating RAM is
-//     worse than no answer — it is the same failure as a green badge over a
-//     dead service, just phrased in English.
-//  2. NEVER leave the machine. The endpoint is hardcoded to loopback and the
-//     port comes from the local SNE contract file. Pantheon has zero telemetry
-//     (A11); routing operator questions about their own workstation to a cloud
-//     model would break that quietly and completely.
+// The model is handed this machine's live doctor findings and can only select
+// among them. The prompt goes through the configured Engine ABI connector,
+// which may be local or remote; callers must use the returned route receipt
+// rather than assuming locality.
 
-// askTimeout bounds a single completion. A local 12B model answering a short
-// grounded question is a few seconds; past this the operator is better served
-// by a loud failure than a spinner.
+// askTimeout bounds a single completion. Past this the operator is better
+// served by a loud failure than an indefinite spinner.
 const askTimeout = 45 * time.Second
-
-// sneDefaultPort is the fallback when the contract file is missing. Prefer the
-// file — a hardcoded port is exactly what made the fabric watchdog kill a
-// healthy broker for hours after serving moved off 8765.
-const sneDefaultPort = 8477
-
-// snePort reads the port the local engine is actually serving on.
-func snePort() int {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return sneDefaultPort
-	}
-	b, err := os.ReadFile(filepath.Join(home, ".sirsi", "gemma-server.port"))
-	if err != nil {
-		return sneDefaultPort
-	}
-	p, err := strconv.Atoi(strings.TrimSpace(string(b)))
-	if err != nil || p <= 0 || p > 65535 {
-		return sneDefaultPort
-	}
-	return p
-}
+const maxAskRequestBody = 32 << 10
 
 type askRequest struct {
 	Question string `json:"question"`
@@ -119,7 +92,7 @@ func groundingFromDoctor(rpt *guard.DoctorReport) string {
 // The model SELECTS; the server RENDERS. Asking for prose and hoping it stays
 // faithful is what produced "action.runner…" for a finding that says
 // "actions.runner…". Indices cannot be misspelled.
-const askSystemPrompt = `You are Horus, the local workstation monitor for Sirsi Pantheon.
+const askSystemPrompt = `You are Sirsi Pantheon's local machine-diagnostics assistant.
 
 Below is a numbered list of live diagnostic findings for this machine.
 
@@ -136,25 +109,6 @@ Reply with ONLY a JSON object, no other text:
 If nothing in the list answers the question, use an empty findings array and say
 so in the summary.`
 
-type chatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type chatRequest struct {
-	Model       string        `json:"model"`
-	Messages    []chatMessage `json:"messages"`
-	MaxTokens   int           `json:"max_tokens"`
-	Temperature float64       `json:"temperature"`
-}
-
-type chatResponse struct {
-	Model   string `json:"model"`
-	Choices []struct {
-		Message chatMessage `json:"message"`
-	} `json:"choices"`
-}
-
 // apiAsk answers a natural-language question about this workstation.
 // POST /api/ask  {"question": "..."}
 func (s *Server) apiAsk(w http.ResponseWriter, r *http.Request) {
@@ -162,9 +116,29 @@ func (s *Server) apiAsk(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "POST required", http.StatusMethodNotAllowed)
 		return
 	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxAskRequestBody))
+	if err != nil {
+		var limitErr *http.MaxBytesError
+		if errors.As(err, &limitErr) {
+			writeError(w, "request body exceeds the 32 KiB limit", http.StatusRequestEntityTooLarge)
+		} else {
+			writeError(w, "could not read request body", http.StatusBadRequest)
+		}
+		return
+	}
+	if err := validateAskJSON(body); err != nil {
+		writeError(w, "invalid request JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := validateAskObjectKeys(body, "question"); err != nil {
+		writeError(w, "invalid request JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
 	var req askRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "bad request body", http.StatusBadRequest)
+	if err := decoder.Decode(&req); err != nil {
+		writeError(w, "invalid request JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 	req.Question = strings.TrimSpace(req.Question)
@@ -177,6 +151,11 @@ func (s *Server) apiAsk(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "canonical engine selection and receipt controller is not configured", http.StatusServiceUnavailable)
 		return
 	}
+	var acceptedPolicy *engine.RoutePolicy
+	if policyExecutor, ok := executor.(EnginePromptPolicyExecutor); ok {
+		policy := policyExecutor.Policy()
+		acceptedPolicy = &policy
+	}
 
 	report, err := guard.Doctor()
 	if err != nil {
@@ -187,7 +166,7 @@ func (s *Server) apiAsk(w http.ResponseWriter, r *http.Request) {
 	grounding := groundingFromDoctor(report)
 	var sel modelSelection
 	var model string
-	sel, model, receipt, err := askSelectedEngine(r.Context(), executor, req.Question, grounding)
+	sel, model, receipt, err := askSelectedEngineWithPolicy(r.Context(), executor, req.Question, grounding, acceptedPolicy)
 	if err != nil {
 		// Fail loud. A degraded answer here would be indistinguishable from a
 		// real one, which is the failure mode this whole surface exists to avoid.
@@ -235,19 +214,139 @@ func (s *Server) apiAsk(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, resp)
 }
 
+// validateAskJSON rejects duplicate object members and trailing JSON values
+// before decoding the public prompt request. encoding/json otherwise accepts
+// duplicate names and silently lets the last one win.
+func validateAskJSON(body []byte) error {
+	if !utf8.Valid(body) {
+		return fmt.Errorf("request JSON is not valid UTF-8")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	if err := walkAskJSONValue(decoder); err != nil {
+		return err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("multiple JSON values")
+		}
+		return fmt.Errorf("trailing JSON: %w", err)
+	}
+	return nil
+}
+
+func validateAskObjectKeys(body []byte, allowed ...string) error {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(body, &object); err != nil {
+		return err
+	}
+	if object == nil {
+		return fmt.Errorf("JSON value must be an object")
+	}
+	allowedKeys := make(map[string]struct{}, len(allowed))
+	for _, key := range allowed {
+		allowedKeys[key] = struct{}{}
+	}
+	for key := range object {
+		if _, ok := allowedKeys[key]; !ok {
+			return fmt.Errorf("unexpected JSON key %q", key)
+		}
+	}
+	return nil
+}
+
+func walkAskJSONValue(decoder *json.Decoder) error {
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	delim, ok := token.(json.Delim)
+	if !ok {
+		return nil
+	}
+	switch delim {
+	case '{':
+		seen := make(map[string]struct{})
+		for decoder.More() {
+			key, err := decoder.Token()
+			if err != nil {
+				return err
+			}
+			name, ok := key.(string)
+			if !ok {
+				return fmt.Errorf("object key is not a string")
+			}
+			if _, exists := seen[name]; exists {
+				return fmt.Errorf("duplicate object key %q", name)
+			}
+			seen[name] = struct{}{}
+			if err := walkAskJSONValue(decoder); err != nil {
+				return err
+			}
+		}
+		end, err := decoder.Token()
+		if err != nil || end != json.Delim('}') {
+			return fmt.Errorf("request object did not terminate")
+		}
+	case '[':
+		for decoder.More() {
+			if err := walkAskJSONValue(decoder); err != nil {
+				return err
+			}
+		}
+		end, err := decoder.Token()
+		if err != nil || end != json.Delim(']') {
+			return fmt.Errorf("request array did not terminate")
+		}
+	default:
+		return fmt.Errorf("unexpected JSON delimiter %q", delim)
+	}
+	return nil
+}
+
 // askSelectedEngine keeps the existing grounded-diagnostics contract while
 // making the dashboard's selected engine authoritative. The model still only
 // selects finding indices; Pantheon renders the findings from Doctor data.
 func askSelectedEngine(ctx context.Context, executor EnginePromptExecutor, question, grounding string) (modelSelection, string, *engine.Receipt, error) {
+	return askSelectedEngineWithPolicy(ctx, executor, question, grounding, nil)
+}
+
+func askSelectedEngineWithPolicy(ctx context.Context, executor EnginePromptExecutor, question, grounding string, policy *engine.RoutePolicy) (modelSelection, string, *engine.Receipt, error) {
 	ctx, cancel := context.WithTimeout(ctx, askTimeout)
 	defer cancel()
-	completion, receipt, err := executor.CompletePrompt(ctx, engine.PromptRequest{
+	request := engine.PromptRequest{
 		System:    askSystemPrompt + "\n\n--- LIVE DIAGNOSTIC REPORT ---\n" + grounding,
 		Prompt:    question,
 		MaxTokens: 400,
-	})
+	}
+	var completion engine.Completion
+	var receipt engine.Receipt
+	var err error
+	if policy != nil {
+		policyExecutor, ok := executor.(EnginePromptPolicyExecutor)
+		if !ok {
+			return modelSelection{}, "", nil, fmt.Errorf("selected engine cannot honor the accepted route policy")
+		}
+		completion, receipt, err = policyExecutor.CompletePromptWithPolicy(ctx, request, *policy)
+	} else {
+		completion, receipt, err = executor.CompletePrompt(ctx, request)
+	}
 	if err != nil {
 		return modelSelection{}, "", nil, fmt.Errorf("selected engine unavailable: %w", err)
+	}
+	if receipt.SessionID == "" || receipt.Identity.ModelID == "" || receipt.Route == nil {
+		return modelSelection{}, "", nil, fmt.Errorf("selected engine returned no verifiable route receipt")
+	}
+	if completion.Model != receipt.Identity.ModelID {
+		return modelSelection{}, "", nil, fmt.Errorf("selected engine returned model %q without matching receipt identity", completion.Model)
+	}
+	session := engine.Session{ID: receipt.SessionID, Identity: receipt.Identity, CreatedAt: receipt.StartedAt}
+	if err := receipt.Validate(session); err != nil {
+		return modelSelection{}, "", nil, fmt.Errorf("selected engine returned an invalid route receipt: %w", err)
+	}
+	completionSum := sha256.Sum256([]byte(completion.Text))
+	if receipt.CompletionSHA256 != hex.EncodeToString(completionSum[:]) {
+		return modelSelection{}, "", nil, fmt.Errorf("selected engine completion does not match its route receipt digest")
 	}
 	raw, err := cleanCompletion(completion.Text)
 	if err != nil {
@@ -263,64 +362,6 @@ func askSelectedEngine(ctx context.Context, executor EnginePromptExecutor, quest
 	return sel, completion.Model, &receipt, nil
 }
 
-// askLocalEngine sends one grounded completion to the loopback SNE server.
-func askLocalEngine(ctx context.Context, question, grounding string) (modelSelection, string, error) {
-	port := snePort()
-	url := fmt.Sprintf("http://127.0.0.1:%d/v1/chat/completions", port)
-
-	body, err := json.Marshal(chatRequest{
-		Model: "local",
-		Messages: []chatMessage{
-			{Role: "system", Content: askSystemPrompt + "\n\n--- LIVE DIAGNOSTIC REPORT ---\n" + grounding},
-			{Role: "user", Content: question},
-		},
-		MaxTokens:   400,
-		Temperature: 0.2,
-	})
-	if err != nil {
-		return modelSelection{}, "", fmt.Errorf("build request: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, askTimeout)
-	defer cancel()
-
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return modelSelection{}, "", fmt.Errorf("build request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(httpReq)
-	if err != nil {
-		return modelSelection{}, "", fmt.Errorf("local engine not reachable on 127.0.0.1:%d — is ai.sirsi.gemma-broker running? (%v)", port, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return modelSelection{}, "", fmt.Errorf("local engine returned %s", resp.Status)
-	}
-
-	var out chatResponse
-	if decErr := json.NewDecoder(resp.Body).Decode(&out); decErr != nil {
-		return modelSelection{}, "", fmt.Errorf("local engine sent an unreadable response: %w", decErr)
-	}
-	if len(out.Choices) == 0 {
-		return modelSelection{}, "", fmt.Errorf("local engine returned no choices")
-	}
-	raw, err := cleanCompletion(out.Choices[0].Message.Content)
-	if err != nil {
-		return modelSelection{}, "", err
-	}
-	if raw == "" {
-		return modelSelection{}, "", fmt.Errorf("local engine returned an empty answer")
-	}
-	sel, err := parseSelection(raw)
-	if err != nil {
-		return modelSelection{}, "", err
-	}
-	return sel, out.Model, nil
-}
-
 // parseSelection extracts the JSON object the model was asked for. Models
 // wrap JSON in prose or fences often enough that locating the outermost braces
 // is worth more than a strict decode that fails on a stray "Here you go:".
@@ -328,11 +369,46 @@ func parseSelection(raw string) (modelSelection, error) {
 	start := strings.Index(raw, "{")
 	end := strings.LastIndex(raw, "}")
 	if start < 0 || end <= start {
-		return modelSelection{}, fmt.Errorf("local engine did not return a finding selection")
+		return modelSelection{}, fmt.Errorf("selected engine did not return a finding selection")
+	}
+	object := []byte(raw[start : end+1])
+	if err := validateAskJSON(object); err != nil {
+		return modelSelection{}, fmt.Errorf("selected engine returned an ambiguous selection: %w", err)
+	}
+	if err := validateAskObjectKeys(object, "findings", "summary"); err != nil {
+		return modelSelection{}, fmt.Errorf("selected engine returned an invalid selection schema: %w", err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(object, &fields); err != nil {
+		return modelSelection{}, fmt.Errorf("selected engine returned an invalid selection object: %w", err)
+	}
+	findingsJSON, ok := fields["findings"]
+	if !ok || bytes.Equal(bytes.TrimSpace(findingsJSON), []byte("null")) {
+		return modelSelection{}, fmt.Errorf("selected engine selection requires findings as an array")
 	}
 	var sel modelSelection
-	if err := json.Unmarshal([]byte(raw[start:end+1]), &sel); err != nil {
-		return modelSelection{}, fmt.Errorf("local engine returned an unparseable selection: %w", err)
+	if err := json.Unmarshal(findingsJSON, &sel.Findings); err != nil {
+		return modelSelection{}, fmt.Errorf("selected engine findings must be an integer array: %w", err)
+	}
+	summaryJSON, ok := fields["summary"]
+	if !ok || bytes.Equal(bytes.TrimSpace(summaryJSON), []byte("null")) {
+		return modelSelection{}, fmt.Errorf("selected engine selection requires summary as a string")
+	}
+	if err := json.Unmarshal(summaryJSON, &sel.Summary); err != nil {
+		return modelSelection{}, fmt.Errorf("selected engine summary must be a string: %w", err)
+	}
+	if len(sel.Findings) > 4 {
+		return modelSelection{}, fmt.Errorf("selected engine returned %d findings; at most 4 are allowed", len(sel.Findings))
+	}
+	seen := make(map[int]struct{}, len(sel.Findings))
+	for _, index := range sel.Findings {
+		if index < 0 {
+			return modelSelection{}, fmt.Errorf("selected engine returned negative finding index %d", index)
+		}
+		if _, exists := seen[index]; exists {
+			return modelSelection{}, fmt.Errorf("selected engine repeated finding index %d", index)
+		}
+		seen[index] = struct{}{}
 	}
 	return sel, nil
 }

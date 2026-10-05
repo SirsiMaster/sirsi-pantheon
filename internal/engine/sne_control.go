@@ -185,11 +185,12 @@ func (c *SNEControl) readiness(identity sne.ServiceReadinessIdentity) SNEReadine
 	if servedModel == "" {
 		servedModel = strings.TrimSpace(identity.LoadedModel)
 	}
+	consistent := identity.ValidateEndpointConsistency() == nil
 	return SNEReadiness{
 		ObservedAt:  c.clock().UTC(),
 		Identity:    identity,
 		ServedModel: servedModel,
-		Ready:       c.identityMatches(identity) && strings.EqualFold(strings.TrimSpace(identity.Status), "ready") && servedModel == c.modelID,
+		Ready:       consistent && c.identityMatches(identity) && strings.EqualFold(strings.TrimSpace(identity.Status), "ready") && servedModel == c.modelID,
 	}
 }
 

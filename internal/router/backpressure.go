@@ -1,4 +1,4 @@
-// backpressure.go — load-average dispatch gate (R7/G6).
+// backpressure.go — load-average + memory-pressure dispatch gate (R7/G6).
 //
 // Incident, 2026-08-06: with only three lanes live, unbounded worker build
 // parallelism (each spawned consumer's `go build`/`go test` fanning out to
@@ -8,6 +8,17 @@
 // file addresses the other half: never START a new lane while the host is
 // already saturated, so a burst of inbox depth cannot pile dispatch on top of
 // dispatch.
+//
+// Incident, 2026-09-26 (claude-io, router item ...m1-stall): an M1 (16 GB)
+// went unresponsive (≥32s, all liveness rails dark) with co-tenants — a
+// FinalWishes vitest run, an iOS Simulator, a Codex CLI session, the Hermes
+// receiver — swapping 3.5/4 GB with a 3 GB compressor and 251k swapouts. Load
+// average never crossed the core count; the host still stalled. CORES were
+// never the resource that failed — MEMORY was, and this gate only checked the
+// former. A35 (Scope The Check To The Claim): a gate that claims "don't
+// dispatch onto a saturated host" but only reads CPU is scoped narrower than
+// its claim. Memory pressure (internal/guard, already the ADR-031-B kernel
+// signal Hapi subscribes to) is now a second, independent defer signal.
 //
 // Reuses the same `sysctl -n vm.loadavg` shell-out internal/vitals already
 // uses for the TUI/menubar/dashboard (vitals.go collectLoadAvg) rather than
@@ -22,6 +33,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 )
 
 // loadAvgMu guards the injected seam (Rule A16/A21): tests substitute a fixed
@@ -29,6 +42,9 @@ import (
 var (
 	loadAvgMu sync.RWMutex
 	loadAvgFn = defaultLoadAvg1m
+
+	pressureMu sync.RWMutex
+	pressureFn = guard.CurrentPressure
 )
 
 // defaultLoadAvg1m shells `sysctl -n vm.loadavg` (macOS; ADR-032) and returns
@@ -72,14 +88,39 @@ func getLoadAvgFn() func() (float64, bool) {
 	return loadAvgFn
 }
 
-// shouldDeferDispatch reports whether load average is at or above the core
-// count and dispatch should be skipped this pass. An unknown load average
-// never defers — a read failure must not itself become a fabric-wide stall.
-func shouldDeferDispatch() (hold bool, load float64, cores int) {
+// SetPressureFn installs a test double for the memory-pressure reader.
+// Passing nil restores the real guard.CurrentPressure default.
+func SetPressureFn(fn func() (guard.PressureLevel, string)) {
+	pressureMu.Lock()
+	defer pressureMu.Unlock()
+	if fn != nil {
+		pressureFn = fn
+		return
+	}
+	pressureFn = guard.CurrentPressure
+}
+
+func getPressureFn() func() (guard.PressureLevel, string) {
+	pressureMu.RLock()
+	defer pressureMu.RUnlock()
+	return pressureFn
+}
+
+// shouldDeferDispatch reports whether the host is saturated and dispatch
+// should be skipped this pass — on EITHER of two independent signals: load
+// average at/above core count, or memory pressure at Warn/Critical (the
+// 2026-09-26 M1 stall: load never crossed cores, memory did). An unknown load
+// average never defers on its own — a read failure must not itself become a
+// fabric-wide stall; PressureUnknown is likewise never a defer reason.
+func shouldDeferDispatch() (hold bool, load float64, cores int, pressure guard.PressureLevel) {
 	load, ok := getLoadAvgFn()()
 	cores = runtime.NumCPU()
-	if !ok {
-		return false, load, cores
+	pressure, _ = getPressureFn()()
+	if pressure >= guard.PressureWarn {
+		return true, load, cores, pressure
 	}
-	return load >= float64(cores), load, cores
+	if !ok {
+		return false, load, cores, pressure
+	}
+	return load >= float64(cores), load, cores, pressure
 }

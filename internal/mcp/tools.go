@@ -445,6 +445,21 @@ func registerTools(s *Server) {
 	}, handleRouterClose)
 
 	s.RegisterTool(Tool{
+		Name:        "router_respond",
+		Description: "Atomically respond to a request: notify its sender with a fresh inbound carrying the result, then close the item — through the same facade as `sirsi router respond` (ADR-036). Use this instead of router_close whenever the item owes its sender a reply (a close alone is audit-only and does not wake them).",
+		InputSchema: InputSchema{
+			Type: "object",
+			Properties: map[string]SchemaField{
+				"id":     {Type: "string", Description: "Item ID to respond to and close."},
+				"result": {Type: "string", Description: "Result body — required. Sent back to the requester AND recorded as the close result."},
+				"title":  {Type: "string", Description: "Optional title for the response inbound. Defaults to \"RESPONSE: <original title>\"."},
+				"agent":  {Type: "string", Description: "Acting agent id. Falls back to $SIRSI_AGENT_ID, then a session marker, then the sole live thread."},
+			},
+			Required: []string{"id", "result"},
+		},
+	}, handleRouterRespond)
+
+	s.RegisterTool(Tool{
 		Name:        "router_ledger",
 		Description: "Universal task ledger board: completion %, done/in-review/queued/blocked counts, and blocked-item list. The same board the owner sees in the menubar and TUI. Call without agent for global view.",
 		InputSchema: InputSchema{
@@ -1309,6 +1324,41 @@ func handleRouterClose(args map[string]interface{}) (*ToolResult, error) {
 		return textResult(fmt.Sprintf("Error: %v", err), true), nil
 	}
 	return textResult(fmt.Sprintf("Closed %s", id), false), nil
+}
+
+func handleRouterRespond(args map[string]interface{}) (*ToolResult, error) {
+	id, _ := args["id"].(string)
+	if id == "" {
+		return textResult("Error: id is required.", true), nil
+	}
+	result, _ := args["result"].(string)
+	title, _ := args["title"].(string)
+	agentArg, _ := args["agent"].(string)
+
+	repoRoot, err := router.FindRepoRoot()
+	if err != nil {
+		return textResult(fmt.Sprintf("Error: %v", err), true), nil
+	}
+
+	f, err := dispatch.Open(repoRoot)
+	if err != nil {
+		return textResult(fmt.Sprintf("Error: %v", err), true), nil
+	}
+	defer func() { _ = f.Close() }()
+
+	actor, reason := router.ResolveCurrentAgent(filepath.Join(repoRoot, ".agents", "idea-router"), agentArg)
+	if actor == "" {
+		return textResult(fmt.Sprintf("Error: resolve acting agent: %s", reason), true), nil
+	}
+
+	notifyTo, deduped, notifyID, err := router.RespondToItem(f, actor, id, title, result)
+	if err != nil {
+		return textResult(fmt.Sprintf("Error: %v", err), true), nil
+	}
+	if deduped {
+		return textResult(fmt.Sprintf("Notified %s (response %s already sent this window — deduped, not resent). Closed %s.", notifyTo, notifyID, id), false), nil
+	}
+	return textResult(fmt.Sprintf("Notified %s (fresh inbound %s). Closed %s.", notifyTo, notifyID, id), false), nil
 }
 
 func handleRouterNotify(args map[string]interface{}) (*ToolResult, error) {

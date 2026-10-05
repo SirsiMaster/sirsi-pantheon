@@ -1,0 +1,16 @@
+package routerstore
+import("errors";"testing";"time";"net/http";"net/http/httptest";"path/filepath")
+type reviewTransport struct{h http.Handler}
+func(r reviewTransport)RoundTrip(q *http.Request)(*http.Response,error){w:=httptest.NewRecorder();r.h.ServeHTTP(w,q);return w.Result(),nil}
+func TestReviewRemintMustNotCrossHost(t *testing.T){
+ h:=&identityHarness{now:time.Date(2026,9,2,22,0,0,0,time.UTC)};h.backend=openBackendStore(t,filepath.Join(t.TempDir(),"review.db"));defer h.backend.Close();handler,e:=Handler(h.backend,ServerOptions{Token:"host-token",now:func()time.Time{return h.now}});if e!=nil{t.Fatal(e)}
+ aTok,_,err:=h.backend.MintHostToken("owner-host","");if err!=nil{t.Fatal(err)}
+ bTok,_,err:=h.backend.MintHostToken("other-host","");if err!=nil{t.Fatal(err)}
+ mk:=func(tok,host string)*RemoteStore{r:=NewRemoteStore("http://review.invalid",tok);r.client=&http.Client{Transport:reviewTransport{handler}};r.sessionDir="";r.host=host;r.agent="same-agent";r.threadID="copied-thread-id";r.now=func()time.Time{return h.now};return r}
+ owner:=mk(aTok,"owner-host")
+ id,_,err:=owner.SendGuarded(SendReq{From:"same-agent",To:"same-agent",Title:"test",Type:"proposal",Instructions:"test"});if err!=nil{t.Fatal(err)}
+ lease,err:=owner.ClaimNext("same-agent",time.Minute);if err!=nil||lease==nil{t.Fatalf("claim: %v",err)}
+ other:=mk(bTok,"other-host")
+ err=other.Complete(id,lease.Token,"foreign host completed")
+ if !errors.Is(err,ErrNotOwner){t.Fatalf("cross-host caller copying agent/thread: want ErrNotOwner, got %v",err)}
+}

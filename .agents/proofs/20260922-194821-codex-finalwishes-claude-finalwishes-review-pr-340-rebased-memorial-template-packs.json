@@ -1,0 +1,129 @@
+{
+  "work_item_id": "20260922-194821-codex-finalwishes-claude-finalwishes-review-pr-340-rebased-memorial-template-packs",
+  "agent_id": "claude-finalwishes",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "internal-tool",
+  "canon_read": [
+    {
+      "path": "CLAUDE.md",
+      "role": "repo-canon",
+      "read_at": "2026-09-22T19:50:00Z",
+      "notes": "sirsi-pantheon router root canon"
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-09-22T19:50:00Z",
+      "notes": "router closure requirement"
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-09-22T19:50:00Z",
+      "notes": ""
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-09-22T19:50:00Z",
+      "notes": ""
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-09-22T19:50:00Z",
+      "notes": ""
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-09-22T19:50:00Z",
+      "notes": ""
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "CLAUDE.md",
+      "section": "photo-first public packs",
+      "claim": "Verify photo-first public packs",
+      "files_changed": [
+        "/Users/thekryptodragon/Development/FinalWishes/web/src/lib/memorial-template-packs.ts",
+        "/Users/thekryptodragon/Development/FinalWishes/web/src/routes/memorial.$memorialId.tsx"
+      ],
+      "evidence": [
+        "web/src/lib/memorial-template-packs.ts (previewImage only on free packs)",
+        "web/src/routes/memorial.$memorialId.tsx (hero resolution logic unchanged)"
+      ]
+    },
+    {
+      "doc": "CLAUDE.md",
+      "section": "server-enforced paid selection",
+      "claim": "Verify server-enforced paid selection",
+      "files_changed": [
+        "/Users/thekryptodragon/Development/FinalWishes/firestore.rules"
+      ],
+      "evidence": [
+        "firestore.rules hasPaidMemorialTemplateEntitlement() server-side get() on estates/{estateId}",
+        "firestore.rules hasNoClientBillingFields() + estate update diff block on billing fields"
+      ]
+    },
+    {
+      "doc": "CLAUDE.md",
+      "section": "no generated-person substitution",
+      "claim": "Verify no generated-person substitution",
+      "files_changed": [
+        "/Users/thekryptodragon/Development/FinalWishes/web/src/routes/-memorial.$memorialId.test.tsx"
+      ],
+      "evidence": [
+        "web/src/routes/-memorial.$memorialId.test.tsx new it.each case asserting placeholder renders, no img with person's name",
+        "memorial-template-packs.ts header comment + premium packs carry no previewImage"
+      ]
+    },
+    {
+      "doc": "CLAUDE.md",
+      "section": "no permission regression",
+      "claim": "Verify no permission regression",
+      "files_changed": [
+        "/Users/thekryptodragon/Development/FinalWishes/firestore.rules"
+      ],
+      "evidence": [
+        "firestore.rules estate update rule diff only adds billing-field lock (a tightening); isEstatePrincipal/isExecutorOf/isAdmin/read rules untouched"
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "Reviewed pure PR \u2014 no product change made by this review; verdict is no blocking issues.",
+    "design": "N/A \u2014 review task, no design change.",
+    "technical": "Confirmed exact head 2515a7cc7d7ce101fbf0a8a5ec59c8706ea0a5ba / tree 2a8ac4870b5636513dd371f32dbae23812792ba7 via git cat-file -p. Traced firestore.rules, memorial-template-packs.ts, ShareMemorial.tsx, memorial.$memorialId.tsx diffs across all 4 PR commits (52cb9951..2515a7cc).",
+    "operational": "PR already merged to main; no deploy action taken per instructions (\"No deploy\").",
+    "narrative": "Full review written to /tmp/pr-340-review.md and delivered as router close result: photo-first packs confirmed, paid selection is server-enforced (not just client UI), no generated-person substitution (asserted by new test + code structure), and the estate-rule change is a permission tightening (closes a prior self-upgrade hole on billing fields), not a regression."
+  },
+  "verification": [
+    {
+      "name": "firestore-rules-contract.test.ts",
+      "command": "npx vitest run src/lib/firestore-rules-contract.test.ts",
+      "status": "pass",
+      "evidence": "34/34 tests passed"
+    },
+    {
+      "name": "ShareMemorial + public memorial route tests",
+      "command": "npx vitest run src/components/estate/ShareMemorial.test.tsx \"src/routes/-memorial.$memorialId.test.tsx\"",
+      "status": "pass",
+      "evidence": "29/29 tests passed"
+    },
+    {
+      "name": "verify exact PR head/tree",
+      "command": "git cat-file -p 2515a7cc7d7ce101fbf0a8a5ec59c8706ea0a5ba | head -5",
+      "status": "pass",
+      "evidence": "tree 2a8ac4870b5636513dd371f32dbae23812792ba7 \u2014 matches router item instructions exactly"
+    }
+  ],
+  "working_status": {
+    "environment": "FinalWishes repo, fix/public-memorial-image-error-fallback branch working tree, PR #340 commits inspected via git diff (not checked out)",
+    "how_verified": "git diff across the 4 PR commits, vitest runs of affected test files, manual read of firestore.rules changes",
+    "observed_result": "No blocking issues; all four review criteria confirmed",
+    "verified_at": "2026-09-22T19:58:00Z"
+  },
+  "blockers": []
+}

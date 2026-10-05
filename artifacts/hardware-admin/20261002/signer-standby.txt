@@ -1,0 +1,3 @@
+2026-10-02: ssh -o BatchMode=yes -o ConnectTimeout=5 192.168.1.180 true
+ssh: connect to host 192.168.1.180 port 22: Operation not permitted
+sirsi-sign not found on current PATH.

@@ -202,14 +202,13 @@ var (
 	sendInstructions string
 )
 
-// canonicalInferenceRecipient consolidates the retired SNE worker aliases into
-// the owner-designated inference lane. It applies only to new sends: historical
-// work items retain their recorded recipients and responses preserve their
-// original sender.
+// canonicalInferenceRecipient consolidates retired SNE/inference aliases into
+// the current Apollo lane. It applies only to new sends: historical work items
+// retain their recorded recipients and responses preserve their original sender.
 func canonicalInferenceRecipient(recipient string) string {
 	switch strings.ToLower(strings.TrimSpace(recipient)) {
 	case "sne", "inference", "codex-sne-runtime", "claude-inference":
-		return "codex-inference"
+		return "codex-apollo"
 	default:
 		return recipient
 	}
@@ -542,56 +541,21 @@ var routerRespondCmd = &cobra.Command{
 		}
 		defer func() { _ = f.Close() }()
 
-		item, err := f.Get(args[0])
-		if err != nil {
-			return err
-		}
-		if item.From == "" {
-			return fmt.Errorf("item %s has no from: — cannot notify the requester", args[0])
-		}
 		me, reason := resolveCurrentAgent(filepath.Join(repoRoot, ".agents", "idea-router"), respondAgent)
 		if me == "" {
 			return fmt.Errorf("resolve acting agent: %s", reason)
 		}
-		if actorErr := f.ValidateAgent("acting agent", me); actorErr != nil {
-			return actorErr
-		}
-		// NOTIFY FIRST, then close. There is no cross-row transaction here (the
-		// file era has no transaction at all), so one of the two orders has to
-		// be the survivable one — and only this order is. Closing first can
-		// strand the requester: the request is gone from their queue and the
-		// notification never arrives, with nothing left open to retry from.
-		// Notifying first fails safe — the request stays OPEN until it is
-		// answered, so a retry is always available, and the retry is harmless
-		// because the store's idem_key dedupes an identical resend
-		// (SendGuarded → deduped=true) instead of double-notifying.
-		title := respondTitle
-		if title == "" {
-			t := item.Title
-			if len(t) > 80 {
-				t = t[:80]
-			}
-			title = "RESPONSE: " + t
-		}
-		body := fmt.Sprintf("RESPONSE to your request %q (your item %s, closed with this as the Result).\n\n%s",
-			item.Title, args[0], result)
-		res, err := f.Send(me, item.From, title, "decision", body)
-		if err != nil {
-			return fmt.Errorf("notifying %s FAILED — %s left OPEN, nothing lost, rerun respond: %w",
-				item.From, args[0], err)
-		}
-		if res.Deduped {
-			fmt.Printf("  Notified %s (response %s already sent this window — deduped, not resent)\n", item.From, res.ID)
-		} else {
-			fmt.Printf("  Notified %s (fresh inbound %s)\n", item.From, res.ID)
-		}
 
-		// Close with the Result (audit trail). A respond close is by definition
-		// an acknowledgement — the notification above IS the response — so it
-		// carries --ack semantics past the ADR-037 proof gate.
-		if cerr := f.CloseItem(me, args[0], result); cerr != nil {
-			return fmt.Errorf("%s notified via %s but closing %s FAILED — rerun respond, the resend dedupes: %w",
-				item.From, res.ID, args[0], cerr)
+		// Shared with the MCP router_respond tool (internal/router/respond.go)
+		// so both surfaces behave identically (ADR-036).
+		notifyTo, deduped, notifyID, err := router.RespondToItem(f, me, args[0], respondTitle, result)
+		if err != nil {
+			return err
+		}
+		if deduped {
+			fmt.Printf("  Notified %s (response %s already sent this window — deduped, not resent)\n", notifyTo, notifyID)
+		} else {
+			fmt.Printf("  Notified %s (fresh inbound %s)\n", notifyTo, notifyID)
 		}
 		fmt.Printf("  Closed %s (Result recorded)\n", args[0])
 		return nil

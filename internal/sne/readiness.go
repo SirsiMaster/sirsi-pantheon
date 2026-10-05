@@ -3,7 +3,6 @@ package sne
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 )
@@ -135,17 +134,6 @@ func EvaluateModelReadiness(path string, admission ModelAdmissionRegistry, catal
 		return ModelReadiness{}, fmt.Errorf("SNE catalog entry %q: %w", catalogEntry, err)
 	}
 	return *selected, nil
-}
-
-func ensureJSONEOF(decoder *json.Decoder) error {
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
-		if err == nil {
-			return fmt.Errorf("multiple JSON values")
-		}
-		return err
-	}
-	return nil
 }
 
 func validReadinessPolicy(policy string) bool {

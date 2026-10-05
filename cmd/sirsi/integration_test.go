@@ -9,12 +9,20 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
-// testBinary holds the path to the compiled sirsi binary, built once in TestMain.
+// testBinary is built on demand by ensureTestBinary. Pure in-process tests do
+// not need to build or launch the product CLI.
 var testBinary string
+
+var (
+	testBinaryOnce   sync.Once
+	testBinaryOutput []byte
+	testBinaryErr    error
+)
 
 // repoRoot is the absolute path to the repository root.
 var repoRoot string
@@ -44,7 +52,8 @@ func TestMain(m *testing.M) {
 	}
 	repoRoot = filepath.Join(wd, "..", "..")
 
-	// Build the binary once into a temp directory.
+	// Allocate isolated paths for integration subprocesses. The CLI binary is
+	// built lazily only if a test actually launches it.
 	tmpDir, err := os.MkdirTemp("", "sirsi-integration-*")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cannot create temp dir: %v\n", err)
@@ -53,23 +62,31 @@ func TestMain(m *testing.M) {
 	testBinary = filepath.Join(tmpDir, "sirsi")
 	testStoreDB = filepath.Join(tmpDir, "router.db")
 
-	buildCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-
-	build := exec.CommandContext(buildCtx, "go", "build", "-o", testBinary, "./cmd/sirsi/")
-	build.Dir = repoRoot
-	build.Env = append(os.Environ(), "CGO_ENABLED=1")
-	if out, err := build.CombinedOutput(); err != nil {
-		fmt.Fprintf(os.Stderr, "FATAL: failed to build sirsi binary:\n%s\n%v\n", out, err)
-		os.Exit(1)
-	}
-
 	// os.Exit does not run deferred functions, so tmpDir must be removed
 	// explicitly — a `defer os.RemoveAll(tmpDir)` here never fires and leaks the
 	// build directory and the router store on every run.
 	code := m.Run()
 	os.RemoveAll(tmpDir)
 	os.Exit(code)
+}
+
+// ensureTestBinary builds the CLI once for tests that exercise subprocess
+// behavior. The rest of this package can run focused in-process tests without
+// triggering a product build.
+func ensureTestBinary(t *testing.T) {
+	t.Helper()
+	testBinaryOnce.Do(func() {
+		buildCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+
+		build := exec.CommandContext(buildCtx, "go", "build", "-o", testBinary, "./cmd/sirsi/")
+		build.Dir = repoRoot
+		build.Env = append(os.Environ(), "CGO_ENABLED=1")
+		testBinaryOutput, testBinaryErr = build.CombinedOutput()
+	})
+	if testBinaryErr != nil {
+		t.Fatalf("failed to build sirsi binary:\n%s\n%v", testBinaryOutput, testBinaryErr)
+	}
 }
 
 // sirsiTestEnv returns the parent environment with every GIT_* variable removed,
@@ -170,6 +187,7 @@ func runSirsi(t *testing.T, timeout time.Duration, args ...string) (stdout, stde
 
 func runSirsiWithEnv(t *testing.T, timeout time.Duration, env []string, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
+	ensureTestBinary(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -256,6 +274,7 @@ func isolatedHomeEnv(t *testing.T) []string {
 // directory (a t.TempDir()), because every call sharing a dir shares a store.
 func runSirsiInDir(t *testing.T, dir string, timeout time.Duration, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
+	ensureTestBinary(t)
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, testBinary, args...)
@@ -895,6 +914,7 @@ func TestNextStepsPresent(t *testing.T) {
 // TestBinaryExists verifies the test binary was built successfully.
 func TestBinaryExists(t *testing.T) {
 	t.Parallel()
+	ensureTestBinary(t)
 
 	info, err := os.Stat(testBinary)
 	if err != nil {
@@ -916,6 +936,7 @@ func TestUXContract_JSONClean(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping UX contract tests in short mode")
 	}
+	ensureTestBinary(t)
 
 	tests := []struct {
 		name string

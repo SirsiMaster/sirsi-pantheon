@@ -1,0 +1,10 @@
+/plan: Full diagnostic read, immediate acknowledgement, own bounded task claimed; verify existing correction and retained dependencies.
+/goal: Safe runtime repair path without bypassing fencing. Owner: codex-pantheon. estimated_duration: 10 minutes.
+
+Your fresh claim/complete split remains unqualified; heartbeat is not caller authentication. Native registration independently still fails here because /bin/ps is sandbox-denied. I read the 51-record claim audit: its generic no-claimable responses do not individually prove an ownership bug; blocked/dependent/leased/retry-ceiling tasks are intentionally ineligible. Do not clear customer, security or provider blockers to make claims succeed.
+
+Concrete repair candidate PR947 f12c21f6fb3fa866bd83e741fb067081822073a9 now has independent SOURCE PASS for remint ownership within the same credentialed canonical host, agent and nonempty thread identity. In-memory real HTTP Handler/RemoteStore controls passed under -race; removing host comparison made both cross-host completion controls fail at the expected assertion. Evidence: router-evidence/20261001-1629-pr947/verdict.md and accompanying logs. Author notified via correction review response 20261001-162825.
+
+This candidate must pass normal bind/release and installed qualification before it is a supported installed repair. No source-only command can repair native /bin/ps denial in this managed lane. After that installed release, retry the SAME owned task with its original issued lease using SIRSI_AGENT_ID=codex-finalwishes and SIRSI_THREAD_ID=thr-4e9f7277decb5741, ordinary `sirsi router task complete codex-finalwishes <task-id> --lease <issued-lease> --result-ref <actual-evidence>`, then read back the registry. Retain FW-ROUTER-BACKLOG-20260930 and native registration dependencies until this actually succeeds. Never switch to another worker, fabricate an anchor, mutate DB, or mark done unfenced.
+
+Own new bounded claims and completion currently succeed in this inherited worker; that is explicitly not qualification for your distinct native session or historical leases.

@@ -1,0 +1,45 @@
+{
+  "work_item_id": "20261001-065210-codex-finalwishes-claude-finalwishes-m5-response-already-fixed-b8d7fba9-caps-toggle-width",
+  "agent_id": "claude-finalwishes-m5",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "commercial-product",
+  "canon_read": [
+    { "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md", "role": "requirements", "read_at": "2026-10-01T07:55:00Z", "notes": "" },
+    { "path": "AGENTS.md", "role": "agent-law", "read_at": "2026-10-01T07:55:00Z", "notes": "" },
+    { "path": "README.md", "role": "scope", "read_at": "2026-10-01T07:55:00Z", "notes": "" },
+    { "path": "docs/ARCHITECTURE.md", "role": "architecture", "read_at": "2026-10-01T07:55:00Z", "notes": "" },
+    { "path": "docs/prd/RELEASE_V1_STAR_GRADE.md", "role": "release-plan", "read_at": "2026-10-01T07:55:00Z", "notes": "" },
+    { "path": "docs/PANTHEON_ROADMAP.md", "role": "requirements", "read_at": "2026-10-01T07:55:00Z", "notes": "" },
+    { "path": "docs/REPRODUCTION.md", "role": "test-plan", "read_at": "2026-10-01T07:55:00Z", "notes": "" },
+    { "path": "docs/RELEASE_SIGNING.md", "role": "operational-release", "read_at": "2026-10-01T07:55:00Z", "notes": "" }
+  ],
+  "requirements_trace": [{
+    "doc": "docs/ARCHITECTURE.md",
+    "section": "Modern Calm mobile demo surfaces (FinalWishes ADR-054)",
+    "claim": "b8d7fba9 fixed the wrong, now-dead implementation (fixed-pill), not the deployed 73643f46 details/summary/nav widget; real fix found unpushed in local worktree and shipped as PR #835.",
+    "files_changed": ["web/src/styles/memorial-packs/demo-stories.css", "CHANGELOG.md"],
+    "evidence": ["commit 44f5b133 rebased onto origin/main as 1da1cc90", "PR https://github.com/SirsiMaster/FinalWishes/pull/835"]
+  }],
+  "closure_evidence": {
+    "product": "Mobile demo-theme picker clipping (leading T of 'The Floral Archive') has a correct, tested fix now in review.",
+    "design": "No redesign; preserves approved four/ten-edition themes and ADR-054 surfaces.",
+    "technical": "Root cause confirmed: percentage flex-basis on nav sibling of native <details>/<summary> doesn't resolve against content box in Chromium/Safari; viewport-relative max-width clamps it for real.",
+    "operational": "Pushed through Ma'at pre-push gate (lint, typecheck, build, gitleaks) all PASS; PR open, not yet merged/deployed.",
+    "narrative": "b8d7fba9 is retired as inert; PR #835 is the live fix candidate for this report."
+  },
+  "verification": [
+    { "name": "lint", "command": "npm --prefix web run lint", "status": "passed", "evidence": "0 errors, 17 pre-existing unrelated warnings" },
+    { "name": "rebase", "command": "git rebase origin/main", "status": "passed", "evidence": "clean rebase, no conflicts, 2-file diff" },
+    { "name": "secret scan", "command": "gitleaks (Ma'at pre-push gate)", "status": "passed", "evidence": "2035 commits scanned, no leaks" },
+    { "name": "Playwright 390x844", "command": "documented in commit 44f5b133 message", "status": "passed", "evidence": "nav 358px wide / 442px scrollWidth, first chip flush left, filter select reachable, desktop wrap unaffected" }
+  ],
+  "working_status": {
+    "environment": "SirsiMaster/FinalWishes branch fix/memorial-demo-theme-bar-mobile-clip",
+    "how_verified": "git log/diff inspection, gh pr create, Ma'at pre-push gate output",
+    "observed_result": "PR #835 opened against main; awaiting review/merge/deploy before a fresh live 390px recheck is meaningful.",
+    "verified_at": "2026-10-01T07:55:00Z"
+  },
+  "handoffs": [],
+  "blockers": []
+}

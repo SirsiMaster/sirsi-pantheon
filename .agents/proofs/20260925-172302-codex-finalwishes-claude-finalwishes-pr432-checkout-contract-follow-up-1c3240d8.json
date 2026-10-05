@@ -1,0 +1,99 @@
+{
+  "work_item_id": "20260925-172302-codex-finalwishes-claude-finalwishes-pr432-checkout-contract-follow-up-1c3240d8",
+  "agent_id": "claude-finalwishes",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "internal-tool",
+  "canon_read": [
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-09-25T17:30:00Z",
+      "notes": "no item-specific requirement beyond the standing one-item/one-owner/one-review/one-proof discipline this closure follows."
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-09-25T17:30:00Z",
+      "notes": "pantheon router root; no item-specific scope beyond routing this review to claude-finalwishes."
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-09-25T17:30:00Z",
+      "notes": "standing release-gate pattern followed; this test-coverage follow-up is not itself tracked in this doc."
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-09-25T17:30:00Z",
+      "notes": "no item-specific roadmap entry; this is a single-repo (FinalWishes) test regression fix, not a pantheon roadmap item."
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-09-25T17:30:00Z",
+      "notes": "not applicable (scan-finding reproduction methodology); this closure's own reproducibility is the git worktree/npm ci/vitest commands recorded under verification[]."
+    },
+    {
+      "path": "/tmp/pr432-verify/web/src/lib/pricing-catalog.ts",
+      "role": "repo-canon",
+      "read_at": "2026-09-25T17:30:00Z",
+      "notes": "isolated verification worktree pinned to commit 1c3240d8 (git worktree add /tmp/pr432-verify 1c3240d8); this file is not present at the repo's current checked-out HEAD (925a0da0, an unrelated commit). Confirmed checkoutAvailable?: boolean type and all fail-closed throw sites ('pricing catalog response was invalid') match what the new tests assert."
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/FinalWishes/docs/user-guides/pricing.md",
+      "role": "test-plan",
+      "read_at": "2026-09-25T17:30:00Z",
+      "notes": "Refs target of the commit; checkout-availability fail-closed contract this test guards is documented here."
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "/tmp/pr432-verify/web/src/lib/pricing-catalog.ts",
+      "section": "fetchPricingCatalog checkoutAvailable validation",
+      "claim": "Commit 1c3240d8 corrects the shared-module type assertion (moved to pricing-catalog.ts post-extraction) and adds regression coverage for missing/false/non-boolean checkout-availability responses; 11 tests pass.",
+      "files_changed": [".agents/proofs/20260925-172302-codex-finalwishes-claude-finalwishes-pr432-checkout-contract-follow-up-1c3240d8.json"],
+      "evidence": [
+        "git show 1c3240d8 reviewed: CHANGELOG.md, web/src/lib/pricing-catalog.test.ts, web/src/routes/-pricing-billing-contract.test.ts.",
+        "git show 1c3240d8:web/src/lib/pricing-catalog.ts confirmed checkoutAvailable?: boolean on line 16 and matching throw sites (lines 30/32/38/50/84) for the new test assertions.",
+        "Checked out 1c3240d8 into an isolated git worktree (/tmp/pr432-verify, removed after use), ran npm ci, then npx vitest run src/lib/pricing-catalog.test.ts src/routes/-pricing-billing-contract.test.ts -> 2 test files, 11/11 passed, matching the reported count.",
+        "Posted review findings as a PR comment: https://github.com/SirsiMaster/FinalWishes/pull/432#issuecomment-5836595758"
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "N/A -- test-only follow-up, no product surface changed.",
+    "design": "N/A -- no design surface touched.",
+    "technical": "Independently reproduced the reported test run against the exact commit in an isolated worktree rather than trusting the router item's reported pass count.",
+    "operational": "PR432 remains draft; no deployment triggered by this review. PR's currently pushed head (ae370b61) has all CI checks green.",
+    "narrative": "codex-finalwishes reported that commit 1c3240d8 fixed an obsolete type-location assertion and added missing/false/non-boolean checkout-availability regression cases on PR432, with 11 tests passing. Verified the diff logically matches current source and independently reran the exact test files against the exact commit in an isolated worktree, confirming 11/11 pass."
+  },
+  "verification": [
+    {
+      "name": "Diff review",
+      "command": "git show 1c3240d8",
+      "status": "pass",
+      "evidence": "Scoped to CHANGELOG.md + 2 test files; assertions verified against git show 1c3240d8:web/src/lib/pricing-catalog.ts."
+    },
+    {
+      "name": "Independent test rerun",
+      "command": "git worktree add /tmp/pr432-verify 1c3240d8 && npm ci && npx vitest run src/lib/pricing-catalog.test.ts src/routes/-pricing-billing-contract.test.ts",
+      "status": "pass",
+      "evidence": "2 test files, 11/11 passed."
+    },
+    {
+      "name": "Review findings posted",
+      "command": "gh pr comment 432 --body ...",
+      "status": "pass",
+      "evidence": "https://github.com/SirsiMaster/FinalWishes/pull/432#issuecomment-5836595758"
+    }
+  ],
+  "working_status": {
+    "environment": "FinalWishes repo, read-only review via isolated git worktree at /tmp/pr432-verify (removed after use), no code changes made by this item",
+    "how_verified": "git show diff read, cross-check against source at that commit, independent worktree test rerun of the exact files",
+    "observed_result": "Commit 1c3240d8's follow-up test fix is correct and the reported 11/11 pass count is verified accurate; PR432 remains draft, no deployment triggered",
+    "verified_at": "2026-09-25T17:35:00Z"
+  },
+  "blockers": []
+}

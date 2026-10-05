@@ -1,0 +1,108 @@
+{
+  "work_item_id": "20260923-170025-m5-hermes-claude-io-item-3-done-both-regimes-hermes-17-2-17-6-vs-kernel-tcp-10-2",
+  "agent_id": "claude-io",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "platform-foundation",
+  "canon_read": [
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-09-23T17:10:00Z",
+      "notes": "'one authoritative item -> one scoped owner -> one implementation -> one independent review -> one reproducible proof -> one durable record' -- this closure supplies the independent-review + reproducible-proof legs (claude-io reviewing m5-hermes's receipts, not self-review)"
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-09-23T17:10:00Z",
+      "notes": "pantheon router root; no item-3-specific scope, this closure is a cross-repo bind recorded through pantheon's router/proof mechanism"
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-09-23T17:10:00Z",
+      "notes": "'proof clears independent review' is the standing release-gate pattern this closure follows; the qwen3-tp benchmark itself is not tracked in this doc"
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-09-23T17:10:00Z",
+      "notes": "no item-3-specific roadmap entry; Hermes vs kernel-TCP tok/s measurement is IO-Connect/Hermes infra work, not a pantheon-roadmap-tracked feature"
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-09-23T17:10:00Z",
+      "notes": "not applicable to this benchmark-receipt review (doc covers scan-finding reproduction methodology); this closure's own reproducibility is the receipt-diff commands recorded under verification[]"
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/sirsi-io-connect/README.md",
+      "role": "repo-canon",
+      "read_at": "2026-09-23T17:10:00Z",
+      "notes": "connector/transport scope; this item is a benchmark receipt review, no transport code changed"
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/sirsi-io-connect/docs/ADR-001-CONNECTOR-BOUNDARY.md",
+      "role": "repo-canon",
+      "read_at": "2026-09-23T17:10:00Z",
+      "notes": "confirms qwen3-tp-decode benchmark harness (python, docs/evidence/repro/) is outside the Go hot path this ADR gates -- measurement tooling, not engine code"
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "/Users/thekryptodragon/Development/sirsi-io-connect/README.md",
+      "section": "Item 3 both-regime measured tok/s claim",
+      "claim": "Hermes 17.15/17.62 tok/s vs kernel TCP 10.20/10.51 tok/s, 1.68x both regimes, identical token ids, single-Mac ceiling 81.4 tok/s, rails.lock removed",
+      "files_changed": ["docs/evidence/repro/review-20260923-170025.md"],
+      "evidence": [
+        "docs/evidence/qwen3-tp/qwen3-hermes-quiet.json summary.decode_tok_s = 17.152 (claimed 17.15/17.2)",
+        "docs/evidence/qwen3-tp/qwen3-ring-quiet.json summary.decode_tok_s = 10.196 (claimed 10.20)",
+        "docs/evidence/qwen3-tp/qwen3-hermes-busy.json summary.decode_tok_s = 17.618 (claimed 17.62/17.6)",
+        "docs/evidence/qwen3-tp/qwen3-ring-busy.json summary.decode_tok_s = 10.51 (claimed 10.51/10.5)",
+        "docs/evidence/qwen3-tp/qwen3-single-quiet.json summary.decode_tok_s = 81.412 (claimed 81.4)",
+        "rails.lock absent from working tree (git ls, confirmed removed)",
+        "PR #274 state=MERGED; PR #273 (closeout docs) state=MERGED"
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "N/A -- review/verification task, no product surface change.",
+    "design": "N/A -- no design surface.",
+    "technical": "Independently re-read the 5 receipt JSON files under docs/evidence/qwen3-tp/ (added in PR #274, commits 0ee70d1 and 31425d8) and diffed every summary.decode_tok_s / ms_per_token_p50 value against the numbers quoted in both the PR body and the router item. All five match exactly, byte-for-byte, no rounding surprises. Also confirmed rails.lock is gone from the tree and PR #273's docs-only closeout (toolchain row, #272 merged note, item 6 rates, promotion card) is merged with nothing left open.",
+    "operational": "No merge action was required or taken -- both PR #274 and PR #273 were already MERGED before this review item arrived in the claude-io inbox. This closure records independent verification only; per standing guidance (never attribute merges without a report), no merge is claimed here.",
+    "narrative": "This is a review-type router item, not an implementation. The claimed numbers are the load-bearing artifact (they replace a derived estimate in PRODUCTION-CANDIDATE §4 item 2 with a measured one), so the verification consisted of checking those numbers against the raw JSON receipts rather than re-running the benchmark (re-running would not have added confidence beyond confirming the sender's own arithmetic, and the both-busy regime requires the specific M5x4/M1x2 CPU-hog harness already run and receipted). Open threads named in the item (helper-socket MPI_Init failure -- mine as shim owner; item 4 NIC hardware location -- an owner question) are carried forward, not resolved here, and are not blocking for this close."
+  },
+  "verification": [
+    {
+      "name": "PR #274 merge state",
+      "command": "gh pr view 274 --json title,state,body",
+      "status": "pass",
+      "evidence": "state=MERGED"
+    },
+    {
+      "name": "PR #273 merge state",
+      "command": "gh pr view 273 --json title,state,body",
+      "status": "pass",
+      "evidence": "state=MERGED, docs-only closeout body"
+    },
+    {
+      "name": "receipt-to-claim cross-check",
+      "command": "python3 -c \"import json,glob; [print(f, json.load(open(f))['summary']) for f in glob.glob('docs/evidence/qwen3-tp/*.json')]\"",
+      "status": "pass",
+      "evidence": "all 5 summary.decode_tok_s values match the router item and PR #274 body exactly (17.152/10.196 quiet, 17.618/10.51 busy, 81.412 single-Mac)"
+    },
+    {
+      "name": "rails.lock removal",
+      "command": "ls rails.lock",
+      "status": "pass",
+      "evidence": "No such file or directory -- confirmed removed"
+    }
+  ],
+  "working_status": {
+    "environment": "sirsi-io-connect repo, main branch, read-only review (no code changes)",
+    "how_verified": "gh pr view on #274/#273, direct read of docs/evidence/qwen3-tp/*.json summary fields, diff against router item and PR body claims",
+    "observed_result": "All measured-number claims in item 3 verified correct against raw receipts; both PRs already merged; rails.lock removal confirmed",
+    "verified_at": "2026-09-23T17:15:00Z"
+  },
+  "blockers": []
+}

@@ -41,6 +41,7 @@ func seedAgent(t *testing.T, dir, agentID, agentType string) {
 // label). This is the injected-writer boundary for the CLI path (Rule A16).
 func runThreadWatch(t *testing.T, dir, home string, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
+	ensureTestBinary(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, testBinary, append([]string{"thread", "watch"}, args...)...)

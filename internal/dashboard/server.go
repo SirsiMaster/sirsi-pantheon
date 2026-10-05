@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os/exec"
 	"sync"
@@ -18,7 +19,7 @@ import (
 
 const IdentitySchema = "pantheon.dashboard-identity/v1"
 
-// IdentityResponse is the read-only process identity used by demo preflight.
+// IdentityResponse is the read-only process identity exposed by the dashboard.
 // A dashboard URL is not proof that the expected checkout is serving it; the
 // caller must compare this response with the candidate it intends to show.
 type IdentityResponse struct {
@@ -64,6 +65,13 @@ type Config struct {
 	// returns 503 (graceful degrade) rather than an empty board, which would
 	// read as "the fleet has no work".
 	FleetFn FleetProducer
+	// ControlSnapshotFn supplies the exact authenticated canonical worker
+	// envelope for a client node. When configured, /api/fleet serves only this
+	// source and never falls back to the client's local ledger.
+	ControlSnapshotFn ControlSnapshotProducer
+	// ControlActionFn forwards a closed, request-bound worker action to the
+	// canonical M5 authority. The browser never receives the M5 credential.
+	ControlActionFn ControlActionProducer
 	// Unroutable is the set of agent ids with no automated wake path, read from
 	// the registry by the caller (which owns registry access; the dashboard
 	// deliberately does not import it). Empty or nil means every lane is
@@ -88,7 +96,7 @@ type Config struct {
 	// surfaces. Nil disables selection rather than inventing a default engine.
 	EngineSelection EngineSelection
 	// BuildIdentity is the immutable build identity exposed by the read-only
-	// demo preflight endpoint. Zero value is filled from the running process.
+	// dashboard identity endpoint. Zero value is filled from the running process.
 	BuildIdentity buildversion.Info
 	// SNEInstall configures Pantheon's asynchronous, integrity-gated model
 	// acquisition bridge. Nil keeps model install controls honestly disabled.
@@ -105,12 +113,21 @@ type Config struct {
 // transition feed.
 type FleetProducer func() (ledger.Snapshot, error)
 
+// ControlSnapshotProducer fetches the current canonical M5 worker envelope.
+type ControlSnapshotProducer func(context.Context) ([]byte, error)
+
+// ControlActionProducer sends one validated worker action to canonical M5 and
+// returns its request-bound receipt.
+type ControlActionProducer func(context.Context, []byte) ([]byte, error)
+
 // Server is the Pantheon local dashboard HTTP server.
 type Server struct {
 	cfg           Config
 	handler       http.Handler
 	alt           []*http.Server
 	srv           *http.Server
+	lock          func(string) (func(), error)
+	listen        func(string, string) (net.Listener, error)
 	unlock        func()
 	mu            sync.RWMutex
 	running       bool
@@ -133,7 +150,11 @@ func New(cfg Config) *Server {
 		cfg.BuildIdentity = buildversion.Current("sirsi")
 	}
 
-	s := &Server{cfg: cfg, confirm: NewConfirmGuard(), fleet: NewFleetTracker(cfg.Unroutable), appRecovery: cfg.AppRecovery, sneAccess: newSNELocalAccess(cfg.SNELocalAccessToken), sneAccessPath: cfg.SNELocalAccessTokenPath}
+	s := &Server{
+		cfg: cfg, confirm: NewConfirmGuard(), fleet: NewFleetTracker(cfg.Unroutable),
+		appRecovery: cfg.AppRecovery, sneAccess: newSNELocalAccess(cfg.SNELocalAccessToken),
+		sneAccessPath: cfg.SNELocalAccessTokenPath, lock: platform.TryLock, listen: net.Listen,
+	}
 	if cfg.SNEInstall != nil {
 		s.sneJobs = NewSNEInstallManager(*cfg.SNEInstall)
 	}
@@ -173,7 +194,7 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("/api/ghosts", s.apiGhosts)
 	mux.HandleFunc("/api/ghosts/clean", s.apiGhostClean)
 	mux.HandleFunc("/api/doctor", s.apiDoctor)
-	mux.HandleFunc("/api/ask", s.apiAsk)
+	mux.HandleFunc("/api/ask", s.secureSNERoute(true, s.apiAsk)) // capability-protected diagnostics-to-model prompt
 	mux.HandleFunc("/api/slay", s.apiSlay)
 	mux.HandleFunc("/api/guard/stats", s.apiGuardStats)
 	mux.HandleFunc("/api/guard/renice", s.apiRenice)
@@ -185,10 +206,12 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("/api/vault/prune", s.apiVaultPrune)
 	mux.HandleFunc("/api/ra/status", s.apiRaStatus)
 	mux.HandleFunc("/api/ra/scopes", s.apiRaScopes)
-	mux.HandleFunc("/api/node-status", s.apiNodeStatus) // ADR-026 Horus ops-view read endpoint
-	mux.HandleFunc("/api/fleet", s.apiFleet)            // A32 owner-reporting board (replaces server.py)
-	mux.HandleFunc("/api/ledger", s.apiLedger)          // A26 Nexus board seam — ledger.BoardSummary
-	mux.HandleFunc("/api/fabric", s.apiFabric)          // unified work/message/lane contract
+	mux.HandleFunc("/api/node-status", s.apiNodeStatus)                               // ADR-026 Horus ops-view read endpoint
+	mux.HandleFunc("/api/fleet", s.apiFleet)                                          // A32 owner-reporting board (replaces server.py)
+	mux.HandleFunc("/api/control", s.secureSNERoute(true, s.apiControl))              // capability-protected proxy for canonical worker state
+	mux.HandleFunc("/api/control/action", s.secureSNERoute(true, s.apiControlAction)) // capability-protected canonical worker mutations
+	mux.HandleFunc("/api/ledger", s.apiLedger)                                        // A26 Nexus board seam — ledger.BoardSummary
+	mux.HandleFunc("/api/fabric", s.apiFabric)                                        // unified work/message/lane contract
 	mux.HandleFunc("/api/engine", s.apiEngine)
 	mux.HandleFunc("/api/identity", s.apiIdentity)
 	mux.HandleFunc("/api/engine/select", s.secureSNERoute(true, s.apiEngineSelect))
@@ -237,14 +260,20 @@ func (s *Server) Start() error {
 		return nil
 	}
 
-	unlock, err := platform.TryLock("dashboard")
+	unlock, err := s.lock("dashboard")
 	if err != nil {
 		return fmt.Errorf("dashboard: %w", err)
 	}
 	s.unlock = unlock
+	listener, err := s.listen("tcp", s.srv.Addr)
+	if err != nil {
+		s.unlock()
+		s.unlock = nil
+		return fmt.Errorf("dashboard: listen %s: %w", s.srv.Addr, err)
+	}
 
 	go func() {
-		if err := s.srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := s.srv.Serve(listener); err != nil && err != http.ErrServerClosed {
 			fmt.Printf("dashboard: server error: %v\n", err)
 		}
 	}()

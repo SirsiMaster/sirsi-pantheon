@@ -1,0 +1,147 @@
+{
+  "work_item_id": "20260927-192907-claude-io-claude-pantheon-maat-memory-floor-extension-field-shapes-currentpressure-wir",
+  "agent_id": "claude-pantheon",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "internal-tool",
+  "canon_read": [
+    {
+      "path": "PANTHEON_RULES.md",
+      "role": "agent-law",
+      "read_at": "2026-09-27T19:40:00+00:00",
+      "notes": "A23 Truth Vector: proposal's open question (real per-machine RAM GB) is flagged with TODO(owner), not guessed. A35 Scope The Check To The Claim: CurrentPressure is documented as host-local only (no cross-host relay), matching why Reserve/Extend are deliberately left unwired."
+    },
+    {
+      "path": "AGENTS.md",
+      "role": "agent-law",
+      "read_at": "2026-09-27T19:40:00+00:00",
+      "notes": "Rule A26 Idea Router Workstream Protocol: repo-scoped work, router handoff via .agents/idea-router/ -- claimed via acknowledge, closed with evidence back through the router"
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-09-27T19:40:00+00:00",
+      "notes": "no manifesto-level requirement names Ma'at's memory-floor extension; this closure implements a router-scoped proposal (claude-io -> claude-pantheon), not a manifesto-tracked product feature"
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-09-27T19:40:00+00:00",
+      "notes": "confirms sirsi-pantheon as the router root and internal/maat as the governance scheduler surface this work extends"
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "role": "architecture",
+      "read_at": "2026-09-27T19:40:00+00:00",
+      "notes": "no architectural change -- additive fields + a new advisory signal on an existing scheduler API, same shape as the existing Cores/Share pattern"
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-09-27T19:40:00+00:00",
+      "notes": "not release-blocking -- Ma'at scheduling is dev/fleet-governance tooling, not part of the v1 star-grade release surface"
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-09-27T19:40:00+00:00",
+      "notes": "no roadmap item tracks this specific field-shapes proposal; it is reactive fleet-governance follow-up to PR #781 (ShouldDefer/CheckConflicts), not a roadmap feature"
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-09-27T19:40:00+00:00",
+      "notes": "not applicable -- covers sirsi-inference benchmark reproduction methodology, unrelated to this scheduler change; reproducibility here is the go build/test/lint commands recorded under verification[]"
+    },
+    {
+      "path": "docs/RELEASE_SIGNING.md",
+      "role": "operational-release",
+      "read_at": "2026-09-27T19:40:00+00:00",
+      "notes": "not applicable -- no binary/release artifact touched, only internal/guard and internal/maat/schedule source + tests"
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "AGENTS.md",
+      "section": "Rule A26 Idea Router Workstream Protocol -- router item 20260927-192907 (proposal from claude-io), sections 1-4: advisory memory fields, FloorShareMemGB, ShouldDefer pressure wiring, CheckConflicts pressure reporting",
+      "claim": "Wire guard.CurrentPressure() into ShouldDefer (unconditional, checked first) and CheckConflicts (reported, not a verdict), plus advisory MemGB/MemShare fields and FloorShareMemGB",
+      "files_changed": [
+        "internal/guard/nodecapacity.go (added CurrentPressure())",
+        "internal/maat/schedule/reservation.go (MemGB/MemShare fields)",
+        "internal/maat/schedule/capacity.go (memCapacityStateKey, defaultMemCapacityGB, capacityMemGB, SetCapacityMemGB, FloorShareMemGB)",
+        "internal/maat/schedule/plan.go (pressureFn seam, SetPressureFn, ShouldDefer pressure-first check)",
+        "internal/maat/schedule/conflict.go (Pressure/PressureSource/FloorMemGB on ConflictReport, set after the RegimeBuild early-return)",
+        "internal/maat/schedule/plan_test.go (new)",
+        "internal/maat/schedule/conflict_test.go (new)",
+        "internal/maat/schedule/reservation_test.go (added TestFloorShareMemGB_DefaultsToOneUntilConfigured)"
+      ],
+      "evidence": [
+        "https://github.com/SirsiMaster/sirsi-pantheon/pull/817",
+        "go build ./cmd/sirsi/ ./cmd/sirsi-agent/ -> clean",
+        "go vet ./internal/maat/... ./internal/guard/... -> clean",
+        "golangci-lint run ./internal/guard ./internal/maat/schedule -> 0 issues",
+        "go test ./internal/maat/... -> ok (incl. new pressure tests)"
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "N/A -- internal scheduler/governance library, no user-facing product surface",
+    "design": "N/A -- no CLI/UI output surface changed in this PR (ConflictReport gains JSON fields consumed by existing CLI callers, no new command)",
+    "technical": "guard.CurrentPressure() added as the missing seam the proposal assumed existed; schedule.ShouldDefer/CheckConflicts wired per the proposal's exact spec (pressure-first unconditional defer; pressure as a reported non-verdict signal, set after the build-regime early-return so build reservations skip the read); Reserve/Extend deliberately left unwired per the proposal's own load-bearing constraint (cross-host reservation vs. host-local pressure)",
+    "operational": "built in an isolated git worktree (/tmp/pantheon-maat-mem-floor) off origin/main, not the checked-out fix/broker-quarantine branch, which had 142 unrelated dirty files from concurrent sessions -- kept the two apart to avoid tangling an unrelated in-progress diff into this PR",
+    "narrative": "closes the field-shapes + CurrentPressure wiring proposal claude-io opened, completing the memory-pressure half of Ma'at's fair-share floor (the core/Cores half already shipped in PR #781); the one item the proposal deliberately left open (real per-machine RAM GB) is preserved as an owner TODO, not guessed"
+  },
+  "verification": [
+    {
+      "name": "go build (main binaries)",
+      "command": "go build ./cmd/sirsi/ ./cmd/sirsi-agent/",
+      "status": "pass",
+      "evidence": "clean build in /tmp/pantheon-maat-mem-floor, warnings only (duplicate -lobjc linker warning, pre-existing/unrelated)"
+    },
+    {
+      "name": "go vet",
+      "command": "go vet ./internal/maat/... ./internal/guard/...",
+      "status": "pass",
+      "evidence": "clean, no output"
+    },
+    {
+      "name": "golangci-lint",
+      "command": "golangci-lint run ./internal/guard ./internal/maat/schedule",
+      "status": "pass",
+      "evidence": "0 issues (two govet shadow lints on new test/capacity code caught and fixed before this final run)"
+    },
+    {
+      "name": "schedule package tests",
+      "command": "go test ./internal/maat/schedule/... -v -run 'TestShouldDefer|TestCheckConflicts|TestFloorShareMemGB'",
+      "status": "pass",
+      "evidence": "all new + existing ShouldDefer/CheckConflicts/capacity tests pass"
+    },
+    {
+      "name": "guard package tests (pre-existing failure confirmed unrelated)",
+      "command": "go test ./internal/guard/...",
+      "status": "pass",
+      "evidence": "TestThreadRegistrySplit_PreCutoverIsOK fails identically on unmodified origin/main (git stash verified before/after) -- pre-existing, environment-dependent (reads ~/.sirsi/.agents/idea-router/threads.json local state), not caused by or related to this change; all schedule/guard.CurrentPressure-relevant tests pass"
+    },
+    {
+      "name": "Ma'at pre-push gate",
+      "command": "git push -u origin feat/maat-memory-floor-extension",
+      "status": "pass",
+      "evidence": "gitleaks 0 issues; pipeline gate passed after fixing 2 govet shadow findings the gate itself caught"
+    }
+  ],
+  "working_status": {
+    "environment": "macOS, sirsi-pantheon repo, isolated git worktree at /tmp/pantheon-maat-mem-floor branched from origin/main (not the checked-out fix/broker-quarantine branch)",
+    "how_verified": "go build/vet/lint/test, then pushed through the repo's armed Ma'at pre-push gate and opened PR #817 against main",
+    "observed_result": "all commands passed; PR #817 open and unmerged (owner review pending per Rule A28 branch protection -- not self-merged)",
+    "verified_at": "2026-09-27T19:45:00Z"
+  },
+  "handoffs": [
+    {
+      "from": "claude-pantheon",
+      "to": "claude-io",
+      "router_item": "20260927-192907-claude-io-claude-pantheon-maat-memory-floor-extension-field-shapes-currentpressure-wir",
+      "status": "PR #817 open for review/merge; defaultMemCapacityGB still needs real m1/m5 RAM-in-GB values from the owner before the memory floor is load-bearing (currently floors every resource to 1GB)"
+    }
+  ],
+  "blockers": []
+}

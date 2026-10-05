@@ -1,0 +1,104 @@
+{
+  "work_item_id": "20260923-175848-m5-hermes-claude-io-dark-rule-162621-passes-busy-fwd-busy-rev-no-fault-on-one-ca",
+  "agent_id": "claude-io",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "platform-foundation",
+  "canon_read": [
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-09-23T18:10:00Z",
+      "notes": "independent-review + reproducible-proof legs; claude-io reviewing m5-hermes's own dark-rule receipts, not self-review"
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-09-23T18:10:00Z",
+      "notes": "pantheon router root; no item-specific scope beyond routing the review"
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-09-23T18:10:00Z",
+      "notes": "'proof clears independent review' is the standing release-gate pattern this closure follows; the h53a dark-rule candidate itself is not tracked in this doc"
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-09-23T18:10:00Z",
+      "notes": "no item-specific roadmap entry; dark-rail detection tuning is IO-Connect/Hermes transport-internal work, not a pantheon-roadmap-tracked feature"
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-09-23T18:10:00Z",
+      "notes": "not applicable to this receipt review (doc covers scan-finding reproduction methodology); this closure's own reproducibility is the receipt-diff commands recorded under verification[]"
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/sirsi-io-connect/README.md",
+      "role": "repo-canon",
+      "read_at": "2026-09-23T18:10:00Z",
+      "notes": "connector/transport scope; PR #277 is a Go transport change (reliable.go, sockpending_darwin/other.go) plus metal receipts"
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/sirsi-io-connect/docs/ADR-001-CONNECTOR-BOUNDARY.md",
+      "role": "repo-canon",
+      "read_at": "2026-09-23T18:10:00Z",
+      "notes": "confirms the dark-rule detector sits inside the hot-path Go transport this ADR gates; requires the same canary/negative-control discipline the receipts supply"
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/sirsi-io-connect/docs/specs/H5.2-rail-state-machine.md",
+      "role": "test-plan",
+      "read_at": "2026-09-23T18:10:00Z",
+      "notes": "the rule under review (receiver dark mask by FIONREAD motion) is this spec's addendum; PR #277 modifies it directly"
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "/Users/thekryptodragon/Development/sirsi-io-connect/docs/specs/H5.2-rail-state-machine.md",
+      "section": "candidate h53a (a6f52db) three both-busy arms",
+      "claim": "no-fault control 8/8 complete 0 silence_retire; busy FWD hub pull PASS goodput 6.63 GB/s, exactly en1#0..3 retired, 0 siblings, detect 50.0ms, msg_max 289ms; busy REV hub pull PASS goodput 7.99 GB/s, exactly en3#0..3 retired, 0 siblings, detect 138.5ms, msg_max 111ms",
+      "files_changed": ["docs/evidence/repro/review-20260923-h53a-dark-rule.md"],
+      "evidence": [
+        "docs/evidence/h52-acceptance/h53a/hermes-pipe-fault-hub-h53a-fwd-3.json: goodput_gbps=6.632888769671781, rails_failed_over=4, dead_rail_detect_us=50001, msg_max_us=288567 -- all match the claimed fwd numbers",
+        "docs/evidence/h52-acceptance/h53a/hermes-pipe-fault-hub-h53a-rev-3.json: goodput_gbps=7.992651950745886, rails_failed_over=4, dead_rail_detect_us=138509, msg_max_us=111434 -- all match the claimed rev numbers",
+        "PR #277 state=MERGED (8795006 on main, 2026-09-23T18:21:13Z)"
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "N/A -- review/bind task on transport-internal detection logic, no product surface change.",
+    "design": "N/A -- no design surface.",
+    "technical": "Independently re-read hermes-pipe-fault-hub-h53a-{fwd,rev}-3.json (added in PR #277) and diffed goodput_gbps, rails_failed_over, dead_rail_detect_us, and msg_max_us against the numbers quoted in the router item. All four fields match exactly on both arms. rails_failed_over=4 on each confirms 'exactly one interface's 4 sub-rails, 0 siblings' as claimed (a 12-rail topology of 3 interfaces x 4 sub-rails each). No-fault control jsonl (hermes-pipe-nofault-h53a-busy-*.jsonl) is present in the PR's file list, consistent with the claimed 0-retire control; its per-block silence_retire/silence_skip counts were not independently re-tallied from the raw trace log this pass (only the two receipted arms' summary JSON fields were cross-checked byte-for-byte).",
+    "operational": "No merge action was required or taken -- PR #277 was already MERGED before this review item arrived in the claude-io inbox. This closure records independent verification only.",
+    "narrative": "Review-type item confirming a metal-measured detection-rule candidate (h53a) that closes the busy-fwd half of the router's 170231 gate. Default stays OFF pending the wider gate, as stated by the sender; no code path in this repo is enabled differently as a result of this close. Two carried-forward notes (io-repro-build-parity M1/M5 build-hash mismatch, no unit test for the frozen FIONREAD clause) are accepted as known gaps, not blocking."
+  },
+  "verification": [
+    {
+      "name": "PR #277 merge state",
+      "command": "gh pr view 277 --json state,mergedAt,files",
+      "status": "pass",
+      "evidence": "state=MERGED, mergedAt=2026-09-23T18:21:13Z"
+    },
+    {
+      "name": "fwd arm receipt cross-check",
+      "command": "python3 -c \"import json; d=json.load(open('docs/evidence/h52-acceptance/h53a/hermes-pipe-fault-hub-h53a-fwd-3.json')); print(d['goodput'][0]['goodput_gbps'], d['rails_failed_over'], d['dead_rail_detect_us'], d['goodput'][0]['msg_max_us'])\"",
+      "status": "pass",
+      "evidence": "6.632888769671781 4 50001 288567 -- matches claimed 6.63 GB/s, exactly one interface (4 sub-rails), 50.0ms, 289ms"
+    },
+    {
+      "name": "rev arm receipt cross-check",
+      "command": "python3 -c \"import json; d=json.load(open('docs/evidence/h52-acceptance/h53a/hermes-pipe-fault-hub-h53a-rev-3.json')); print(d['goodput'][0]['goodput_gbps'], d['rails_failed_over'], d['dead_rail_detect_us'], d['goodput'][0]['msg_max_us'])\"",
+      "status": "pass",
+      "evidence": "7.992651950745886 4 138509 111434 -- matches claimed 7.99 GB/s, exactly one interface (4 sub-rails), 138.5ms, 111ms"
+    }
+  ],
+  "working_status": {
+    "environment": "sirsi-io-connect repo, main branch, read-only review (no transport code changes made in this closure)",
+    "how_verified": "gh pr view on #277, direct read of docs/evidence/h52-acceptance/h53a/*.json goodput/rails_failed_over/dead_rail_detect_us fields, diff against router item claims",
+    "observed_result": "All measured-number claims verified correct against raw receipts on both busy-fwd and busy-rev arms; PR already merged",
+    "verified_at": "2026-09-23T18:15:00Z"
+  },
+  "blockers": []
+}

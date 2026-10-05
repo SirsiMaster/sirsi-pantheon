@@ -1,0 +1,367 @@
+[
+  {
+    "id": "20260922-150501-codex-pantheon-owner-independent-source-review-request-m5-m1-authority-contract-6",
+    "status": "closed",
+    "closed": "2026-10-01T04:41:52Z"
+  },
+  {
+    "id": "20260922-151114-codex-pantheon-owner-independent-source-review-agentconfig-public-identity-compil",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:13Z"
+  },
+  {
+    "id": "20260922-151740-codex-pantheon-owner-independent-source-review-unified-router-readiness-681885d0",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:14Z"
+  },
+  {
+    "id": "20260922-151823-codex-pantheon-owner-independent-source-review-apollo-display-metadata-selection-",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:14Z"
+  },
+  {
+    "id": "20260922-152254-codex-pantheon-owner-independent-source-review-cli-engine-selection-regression-45",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:15Z"
+  },
+  {
+    "id": "20260922-153649-codex-pantheon-owner-independent-source-review-engine-selection-and-worker-plane-",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:16Z"
+  },
+  {
+    "id": "20260922-153941-codex-pantheon-owner-independent-source-review-named-engine-dashboard-ui-91daf8bb",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:17Z"
+  },
+  {
+    "id": "20260922-154433-codex-pantheon-owner-independent-source-review-m5-m1-plane-bound-action-receipts-",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:17Z"
+  },
+  {
+    "id": "20260922-154950-codex-pantheon-owner-pantheon-engine-selection-variant-ui-851bdebc-source-review",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:18Z"
+  },
+  {
+    "id": "20260922-155453-codex-pantheon-owner-pantheon-dashboard-route-truth-4589bee-source-review",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:19Z"
+  },
+  {
+    "id": "20260922-160443-codex-pantheon-owner-pantheon-cask-authority-74b6d434-source-review",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:19Z"
+  },
+  {
+    "id": "20260922-160626-codex-pantheon-owner-pantheon-cask-authority-v2-08b41fb1-source-review",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:20Z"
+  },
+  {
+    "id": "20260922-160803-codex-pantheon-owner-pantheon-v2-engine-selection-focused-evidence-supplement",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:21Z"
+  },
+  {
+    "id": "20260922-160929-codex-pantheon-owner-pantheon-v2-m5-m1-control-plane-focused-evidence",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:22Z"
+  },
+  {
+    "id": "20260922-161051-codex-pantheon-owner-pantheon-v2-unsigned-package-source-evidence",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:22Z"
+  },
+  {
+    "id": "20260922-161234-codex-pantheon-owner-pantheon-v2-resource-accessibility-focused-evidence",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:23Z"
+  },
+  {
+    "id": "20260922-161658-codex-pantheon-owner-pantheon-v2-control-command-binding-audit",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:24Z"
+  },
+  {
+    "id": "20260922-161950-codex-pantheon-owner-pantheon-control-command-registration-test-successor",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:25Z"
+  },
+  {
+    "id": "20260922-162152-codex-pantheon-owner-pantheon-control-plane-cli-boundary-successor",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:26Z"
+  },
+  {
+    "id": "20260922-162359-codex-pantheon-owner-pantheon-control-plane-focused-evidence-supplement",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:27Z"
+  },
+  {
+    "id": "20260922-162800-codex-pantheon-owner-pantheon-review-request-schema-successor",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:27Z"
+  },
+  {
+    "id": "20260922-163055-codex-pantheon-owner-pantheon-engine-selection-cli-validation-successor",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:28Z"
+  },
+  {
+    "id": "20260922-163314-codex-pantheon-owner-pantheon-explicit-engine-variant-selection-successor",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:28Z"
+  },
+  {
+    "id": "20260922-163458-codex-pantheon-owner-pantheon-explicit-engine-prompt-successor",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:29Z"
+  },
+  {
+    "id": "20260922-164232-codex-pantheon-owner-pantheon-dashboard-brand-token-successor-3abea435",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:30Z"
+  },
+  {
+    "id": "20260922-165114-codex-pantheon-owner-supplemental-evidence-for-existing-pantheon-dashboard-review",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:31Z"
+  },
+  {
+    "id": "20260922-165538-codex-pantheon-owner-pantheon-explicit-engine-selection-guide-e93f8926",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:31Z"
+  },
+  {
+    "id": "20260922-170118-codex-pantheon-owner-pantheon-explicit-engine-cli-binding-b94fafc4",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:32Z"
+  },
+  {
+    "id": "20260922-170318-codex-pantheon-owner-pantheon-explicit-engine-cli-binding-32459906",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:33Z"
+  },
+  {
+    "id": "20260922-170512-codex-pantheon-owner-pantheon-stack-lab-photon-apollo-hermes-vocabulary-41ed915e",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:34Z"
+  },
+  {
+    "id": "20260922-171104-codex-pantheon-owner-pantheon-m5-control-envelope-canonical-engine-route-7a9b9d21",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:35Z"
+  },
+  {
+    "id": "20260922-171444-codex-pantheon-owner-pantheon-local-and-board-control-route-parity-c86336f5",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:35Z"
+  },
+  {
+    "id": "20260922-172007-codex-pantheon-owner-pantheon-cask-source-v3-exact-one-record-contract",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:36Z"
+  },
+  {
+    "id": "20260922-172324-codex-pantheon-owner-pantheon-cask-publication-v4-artifact-identity-guards",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:36Z"
+  },
+  {
+    "id": "20260922-172524-codex-pantheon-owner-pantheon-cask-publication-v5-generated-byte-validation",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:37Z"
+  },
+  {
+    "id": "20260922-173054-codex-pantheon-owner-pantheon-m5-control-envelope-connector-integrity",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:37Z"
+  },
+  {
+    "id": "20260922-173601-codex-pantheon-owner-pantheon-worker-control-typed-message-action-matrix",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:38Z"
+  },
+  {
+    "id": "20260922-173908-codex-pantheon-owner-pantheon-worker-control-message-type-closure",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:39Z"
+  },
+  {
+    "id": "20260922-174447-codex-pantheon-owner-pantheon-engine-selection-abi-coverage",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:40Z"
+  },
+  {
+    "id": "20260922-175205-codex-pantheon-owner-pantheon-capability-schema-closure",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:41Z"
+  },
+  {
+    "id": "20260922-175514-codex-pantheon-owner-pantheon-capability-closure-test-addendum",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:42Z"
+  },
+  {
+    "id": "20260922-175836-codex-pantheon-owner-pantheon-capability-closure-serialized-cmd-suite",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:42Z"
+  },
+  {
+    "id": "20260922-180539-codex-pantheon-owner-pantheon-request-capability-schema-closure",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:43Z"
+  },
+  {
+    "id": "20260922-181033-codex-pantheon-owner-pantheon-horus-responsive-dashboard-correction",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:44Z"
+  },
+  {
+    "id": "20260922-181313-codex-pantheon-owner-pantheon-horus-fleet-unavailable-state",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:44Z"
+  },
+  {
+    "id": "20260922-181626-codex-pantheon-owner-pantheon-horus-guard-severity-summary",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:45Z"
+  },
+  {
+    "id": "20260922-182010-codex-pantheon-owner-pantheon-home-engine-selection-discoverability",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:45Z"
+  },
+  {
+    "id": "20260922-182325-codex-pantheon-owner-pantheon-home-demo-route-rail",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:46Z"
+  },
+  {
+    "id": "20260922-182507-codex-pantheon-owner-pantheon-home-engine-action-routing-correction",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:47Z"
+  },
+  {
+    "id": "20260922-182924-codex-pantheon-owner-pantheon-cli-engine-workflow",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:48Z"
+  },
+  {
+    "id": "20260922-183139-codex-pantheon-owner-pantheon-sequoia-investor-demo-runbook",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:49Z"
+  },
+  {
+    "id": "20260922-183311-codex-pantheon-owner-pantheon-dashboard-cli-engine-demo-route-verification",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:50Z"
+  },
+  {
+    "id": "20260922-183436-codex-pantheon-owner-pantheon-engine-abi-dashboard-verification",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:51Z"
+  },
+  {
+    "id": "20260922-183947-codex-pantheon-owner-pantheon-ra-canonical-fleet-bridge",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:52Z"
+  },
+  {
+    "id": "20260922-184401-codex-pantheon-owner-pantheon-home-investor-demo-path",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:53Z"
+  },
+  {
+    "id": "20260922-184740-codex-pantheon-owner-pantheon-m1-m5-control-plane-demo-proof",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:53Z"
+  },
+  {
+    "id": "20260922-185232-codex-pantheon-owner-pantheon-demo-engine-and-m1-m5-control-verification",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:54Z"
+  },
+  {
+    "id": "20260922-185733-codex-pantheon-owner-pantheon-home-investor-demo-entry-point",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:55Z"
+  },
+  {
+    "id": "20260922-185909-codex-pantheon-owner-pantheon-local-demo-readiness-gate",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:56Z"
+  },
+  {
+    "id": "20260922-190028-codex-pantheon-owner-authorize-pantheon-investor-demo-preview-for-dd0e701b",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:57Z"
+  },
+  {
+    "id": "20260922-190209-codex-pantheon-owner-pantheon-sequoia-investor-demo-brief",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:58Z"
+  },
+  {
+    "id": "20260922-190425-codex-pantheon-owner-pantheon-label-first-navigation",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:58Z"
+  },
+  {
+    "id": "20260922-190807-codex-pantheon-owner-pantheon-dashboard-identity-demo-preflight",
+    "status": "closed",
+    "closed": "2026-10-01T04:42:59Z"
+  },
+  {
+    "id": "20260922-191530-codex-pantheon-owner-pantheon-current-sequoia-demo-preflight",
+    "status": "closed",
+    "closed": "2026-10-01T04:43:00Z"
+  },
+  {
+    "id": "20260922-192631-codex-pantheon-owner-pantheon-sequoia-investor-demo-ux-polish",
+    "status": "closed",
+    "closed": "2026-10-01T04:43:01Z"
+  },
+  {
+    "id": "20260922-193003-codex-pantheon-owner-pantheon-home-action-hierarchy",
+    "status": "closed",
+    "closed": "2026-10-01T04:43:02Z"
+  },
+  {
+    "id": "20260922-193313-codex-pantheon-owner-pantheon-sequoia-candidate-evidence-binding",
+    "status": "closed",
+    "closed": "2026-10-01T04:43:03Z"
+  },
+  {
+    "id": "20260922-193558-codex-pantheon-owner-pantheon-dashboard-accessibility-landmarks",
+    "status": "closed",
+    "closed": "2026-10-01T04:43:04Z"
+  },
+  {
+    "id": "20260922-193844-codex-pantheon-owner-pantheon-investor-demo-brief-candidate-binding-eabcf9a6",
+    "status": "closed",
+    "closed": "2026-10-01T04:43:05Z"
+  },
+  {
+    "id": "20260922-194552-codex-pantheon-owner-pantheon-investor-preview-runbook-correction-fddf7e67",
+    "status": "closed",
+    "closed": "2026-10-01T04:43:05Z"
+  },
+  {
+    "id": "20260922-194651-codex-pantheon-owner-please-route-to-ssa-isolated-sequoia-demo-preview-admission-",
+    "status": "closed",
+    "closed": "2026-10-01T04:43:06Z"
+  },
+  {
+    "id": "20260922-195043-codex-pantheon-owner-routing-correction-forward-existing-pantheon-preview-admissi",
+    "status": "closed",
+    "closed": "2026-10-01T04:43:07Z"
+  },
+  {
+    "id": "20260922-195746-codex-pantheon-owner-ssa-disposition-pantheon-preview-hold-sne-active-5115015a",
+    "status": "closed",
+    "closed": "2026-10-01T04:43:08Z"
+  }
+]

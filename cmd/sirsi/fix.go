@@ -63,7 +63,7 @@ func runFix(cmd *cobra.Command, args []string) error {
 				len(reclaim), jackal.FormatSize(bytes))
 			if fixYes || confirmFix(fmt.Sprintf("Reclaim %s now (moved to Trash, recoverable)?", jackal.FormatSize(bytes))) {
 				if cleanupApplyPaused() {
-					output.Warn("Cleanup execution is paused for demo safety. Preview remains available.")
+					output.Warn("Cleanup apply is disabled by default (set SIRSI_ALLOW_CLEAN_APPLY=1 to enable); the trash-first preview remains available.")
 				} else {
 					res, cerr := engine.Clean(ctx, reclaim, jackal.CleanOptions{DryRun: false, Confirm: true, UseTrash: true})
 					switch {

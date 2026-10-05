@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/dashboard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 )
 
@@ -183,30 +184,32 @@ func collectDashAccelerator(stats map[string]interface{}) {
 	}
 }
 
-// collectDashDeities scans running processes for active deities.
-func collectDashDeities(stats map[string]interface{}) {
+// collectDashComponents scans process command names for known Pantheon
+// components. The wire fields retain their legacy names for compatibility;
+// only exact executable basenames count, so unrelated commands containing a
+// component name cannot inflate the dashboard's live inventory.
+func collectDashComponents(stats map[string]interface{}) {
 	out, err := exec.Command("ps", "-eo", "comm").Output()
-	if err != nil {
+	applyDashComponents(stats, string(out), err == nil)
+}
+
+func applyDashComponents(stats map[string]interface{}, output string, available bool) {
+	stats["components_known"] = available
+	if !available {
+		delete(stats, "components")
+		delete(stats, "component_count")
+		delete(stats, "active_deities")
+		delete(stats, "deity_count")
 		return
 	}
-
-	procs := strings.ToLower(string(out))
-	deities := map[string]string{
-		"sirsi":          "☥ Sirsi",
-		"anubis":         "𓁢 Anubis",
-		"pantheon-agent": "🤖 Agent",
-		"guard":          "🛡 Guard",
-		"maat":           "🪶 Ma'at",
-		"scarab":         "🪲 Scarab",
-		"thoth":          "𓁟 Thoth",
-	}
-
-	var active []string
-	for binary, label := range deities {
-		if strings.Contains(procs, binary) {
-			active = append(active, label)
-		}
-	}
+	active := dashboardComponentsFromProcessOutput(output)
+	stats["components"] = active
+	stats["component_count"] = len(active)
+	// Preserve the legacy fields for older dashboard clients.
 	stats["active_deities"] = active
 	stats["deity_count"] = len(active)
+}
+
+func dashboardComponentsFromProcessOutput(output string) []string {
+	return dashboard.ProcessLabelsFromCommandOutput(output, dashboard.PantheonComponentLabels())
 }

@@ -154,7 +154,7 @@ func TestExplicitInvalidBearerCannotFallBackToEmbeddedSessionCookie(t *testing.T
 
 func TestRegisteredSensitiveRoutesRejectDNSRebinding(t *testing.T) {
 	server := New(Config{SNELocalAccessToken: "abcdefghijklmnopqrstuvwxyz123456"})
-	for _, path := range []string{"/api/sne", "/api/sne/start", "/api/recovery/restart", "/v1/models", "/v1/chat/completions"} {
+	for _, path := range []string{"/api/sne", "/api/sne/start", "/api/recovery/restart", "/api/ask", "/api/control", "/api/control/action", "/v1/models", "/v1/chat/completions"} {
 		t.Run(path, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodPost, "http://attacker.example"+path, nil)
 			request.Host = "attacker.example"

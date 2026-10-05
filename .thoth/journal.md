@@ -3,6 +3,37 @@
 # Each entry is timestamped with context and reasoning.
 # This is the "why" behind every decision.
 
+## 2026-09-30 — Hermes PR #410 exact-candidate handoff
+
+- Validated head `07ec43843ac15d095bcc08bffae3a52441ffaede` / tree
+  `6cd4b749e0955a5092c51ab77268b58672b1d604` in disposable checkout
+  `/private/tmp/hermes-pr410-release`.
+- `go test -race ./transport/tbraw` passed in 336.555s; repository-wide race
+  tests, `go vet ./...`, and `go build ./cmd/sirsi-hermes` also passed.
+- Routed exact evidence to Hermes as item
+  `20260930-091018-sirsi-software-admin-hermes-pr-410-exact-candidate-passed-fresh-race-vet-build-hermes-re`.
+- Built unsigned `1.2.2` package artifacts from the same head: pkg
+  `16a57cebcf4d28df27ebf5b682de96763547bed1d3464402b42df53157f057c2` and tar
+  `875452fb505d73d8495284b93373f86976e0dd6c821a13d37c69f33c6e2ad61b`; routed
+  their exact hashes in item
+  `20260930-091146-sirsi-software-admin-hermes-pr-410-unsigned-1-2-2-package-candidate-ready-exact-hashes`.
+- This lane did not merge, sign, tag, release, or mutate Stack Lab; Hermes owns
+  those release steps under `RELEASING.md`.
+- Routed the required physical two-Mac and host-stall smoke request to Hardware
+  as `20260930-091243-sirsi-software-admin-sirsi-hardware-admin-hermes-pr-410-physical-two-mac-release-smoke-requested`.
+- Posted the exact validation/package handoff on PR #410:
+  https://github.com/SirsiMaster/sirsi-hermes/pull/410#issuecomment-5908041008.
+
+## 2026-09-30 — FinalWishes PR #685 rebase handoff
+
+Rebased PR #685 in disposable checkout `/private/tmp/finalwishes-pr685-rebase.DTDwHh`
+against released main `de7ece5d` and reproduced two documentation conflicts while
+all functional files applied cleanly. The conflict is a real product vocabulary
+choice (`Everyone`/`Only you` on main versus `All beneficiaries`/`Private` in the
+PR), so it must be resolved against the current UI/access implementation before
+CI and release. Routed the exact handoff to `codex-finalwishes` as
+`20260930-091743-sirsi-software-admin-codex-finalwishes-pr-685-release-candidate-needs-semantic-rebase-onto-current-`.
+
 ## 2026-08-23 — Pantheon authenticated SNE artifact lease integration
 
 Implemented the governed lifecycle seam for the previously proven SNE artifact-verification lease. The signed runtime catalog now optionally binds the package-local issuer and SHA256SUMS; lease support is unavailable unless both identities are present and verified. Pantheon creates a prompt-free 0600 HMAC key, issues private model/runtime-scoped leases atomically, passes the complete three-argument identity to sned, and invalidates model leases on checkout/removal. Older packages remain on full hashing. Focused internal/sne and internal/dashboard tests pass. A real host-level isolated lifecycle passed on port 18481 with verification_mode=pantheon-authenticated-lease, artifact set 27341bad..., 9 files, 13,780,879,415 bytes, service e34db906..., native runtime 82779b87..., and clean readiness/shutdown. Installed Pantheon remained disabled and Codex Home/Tailscale were untouched. Next gate: lease-integrated fresh100 and clean-host lifecycle.
@@ -121,458 +152,18 @@ Implemented the governed lifecycle seam for the previously proven SNE artifact-v
 
 ---
 
-## Entry 032 — 2026-04-04 18:21 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- {"session_id":"1b4b4861-83fa-412d-a688-c199b6f4e775","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/1b4b4861-83fa-412d-a688-c199b6f4e775.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"manual","custom_instructions":""}
-
----
-
-## Entry 033 — 2026-04-06 02:11 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- {"session_id":"e3a963d3-b25b-4a85-a05c-c69aecd0145f","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/e3a963d3-b25b-4a85-a05c-c69aecd0145f.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"manual","custom_instructions":""}
-
----
-
-## Entry 034 — 2026-04-18 20:11 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- {"session_id":"73458060-7593-4916-9c32-3885e6708be2","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon-Development-sirsi-pantheon/73458060-7593-4916-9c32-3885e6708be2.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"auto","custom_instructions":null}
-
----
-
-## Entry 035 — 2026-05-19 18:35 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- -
-- Router snapshot:
-- active topics: assiduous-v110-completion, finalwishes-v010-illinois-probate, ra-horus-router-hypervisor-canon, claude-cli-auth-for-router-dispatch
-- completed topics: 25
-- last Codex read: 2026-05-19T10:50:37-04:00
-- last Claude read: 2026-05-19T20:00:00Z
-- pending:
-- claude-assiduous: 20260519-codex-assiduous-google-calendar-implementation
-- claude-finalwishes: 20260518-codex-finalwishes-v010-illinois-probate-review, 20260519-codex-finalwishes-v010-goal-review
-- codex: 20260519-claude-pantheon-horus-wake-complete
-- codex-assiduous: 20260519-claude-assiduous-codex-batch2
-- codex-pantheon: 20260519-claude-pantheon-horus-wake-complete
-- dispatch ledger: 968 bytes, updated 2026-05-19 11:42:04
-
----
-
-## 2026-05-21/22 — Router Collapse + Caffeinate Contract + Verification
-
-**Session goal:** strip overengineered push-model router infrastructure; ship a pull-model that works for any agent identity, with native FSEvents wake and thread keep-alive.
-
-### Commits shipped (sirsi-pantheon, all on origin/main)
-
-- `be2f2b7` `fix(router)` — dispatch.sh handles BOTH legacy `state.json:pending[]` AND pull-model `items/*.md` queues
-- `76a43cc` `feat(hooks)` — caffeinate claude threads (auto-register + background heartbeat loop anchored to claude PID)
-- `8c3e359` `docs(agents)` — add Caffeinate Contract (universal 4-step pattern) to sirsi-pantheon AGENTS.md
-- `22ec913` `feat(router)` — `sirsi router ack <agent> <id>` migration helper (authored by codex-pantheon, committed by claude-pantheon)
-- `84f79ca` `docs(agents)` — add §Lean #11 (wake mechanisms should not own delivery semantics — codex-pantheon adoption)
-- `446880d` and 5 sibling commits — Lean Engineering Doctrine appended to AGENTS.md in all 6 repos (assiduous, FinalWishes, homebrew-tools, porch-and-alley, sirsi-pantheon, SirsiNexusApp)
-- Earlier (same arc): `d3a396f` pull-model router (`send/pull/show/close/status`), `1cc3347` deleted 10 legacy push-model verbs (~969 LOC removed), `7af0687` hook surfaces pull-model items
-
-### Architecture state on disk
-
-- **Router CLI:** 6 verbs total — `status`, `send`, `pull`, `show`, `close`, `ack`. Down from 12 push-model verbs at session start. `routercmd.go` 1051 → 198 → 365 lines net (after ack addition).
-- **Storage:** `internal/work` package, file-per-item under `.agents/idea-router/items/<ts>-<from>-<to>-<slug>.md` with YAML frontmatter (`from`, `to`, `status`, `opened`, `closed`, `title`).
-- **Wake:** launchd `com.sirsi.idea-router.plist` with `WatchPaths` on `state.json`, `items/`, `proposals/`. ThrottleInterval=10. Fires `.agents/idea-router/dispatch.sh` on any change. Dispatch reads both queues, spawns `claude --print` per agent, then `sirsi router ack <agent> <ids>` to drain legacy pending. Zero idle process.
-- **Thread keep-alive:** `.claude/hooks/router_inbox_check.py` on SessionStart + UserPromptSubmit. Auto-registers if no fresh active thread, immediate heartbeat, spawns detached bash loop (`while kill -0 <claude_pid>; do sirsi thread heartbeat; sleep 60; done`). Dedup via `/tmp/sirsi-caffeinate-<thread_id>.pid`.
-
-### Verification gaps surfaced (not theoretical — real)
-
-1. **Adoption ≠ notification.** Shipped notice to 5 sibling claude-* agents about new `ack` verb but never verified adoption. Sent 5 follow-up adoption-ack-requests with explicit reply contract (`close --result "adopted"` or variant). Adoption is now async-pending; closes organically as repos get worked.
-2. **8 items in `items/` have empty `to:` field** — direct file writes bypassing `sirsi router send` (which requires `--to`). Senders unknown. Per AGENTS.md §Lean #10 (atomicity at FS boundary), all writes should flow through CLI.
-3. **Orphan CTR threads accumulating.** `sirsi thread list` shows 2 stale claude-pantheon threads from earlier dispatcher spawns whose caffeinators died with host processes. CTR doesn't auto-close on dead-PID. Recommendation: `sirsi thread reaper` that marks dead-PID threads closed on read paths.
-4. **dispatch.sh "agents fired: 1" with no observable claude output.** Child output buffered until exit. Recommend `--output-format stream-json --verbose` per PANTHEON_RULES.md §2.21 (Ra Scope Autonomy).
-5. **Caffeinate Contract verified only on claude-pantheon side.** Codex-side implementation pending; sent question whether Codex.app's automation API allows long-lived background processes.
-
-### Doctrine codified
-
-- `~/Development/AGENTS.md` §Lean Engineering Doctrine — 11 numbered principles, with §Lean #11 attributed to codex-pantheon
-- `~/Development/AGENTS.md` §Thread Registration Law §Caffeinate Contract — 4-step universal pattern
-- Same propagated to all 6 repo `AGENTS.md` files
-- `~/.claude/projects/-Users-thekryptodragon/memory/feedback_lean_ethos.md` — user's "LEAN AF, direct comms, smallest packages" ethos as a memory entry for future sessions
-- `~/.claude/projects/-Users-thekryptodragon/memory/MEMORY.md` — indexed with the LEAN ethos pointer
-
-### CTR state at session end
-
-- Sent + bridged 2 router items to codex-pantheon (ack-verb request, then verification-insights)
-- Sent + bridged 5 router items to sibling claude-* agents (ack-adoption requests)
-- claude-pantheon's session thread (`thr-a441bbff379e62a9`) closed explicitly + caffeinator (PID 95339) killed
-- 2 orphan claude-pantheon threads remain in CTR (other concurrent sessions, not mine)
-- `pending[claude-pantheon]` and `pending[codex-pantheon]` both drained to 0 at session end
-
-### Lessons for next session
-
-- **Question polling before tuning intervals.** Per AGENTS.md §Lean #1 — applied here to replace 1s polling daemon with FSEvents.
-- **Verify before claiming.** Earlier in session I declared "FSEvents wake live and proven" when it was only proving the OLD legacy queue. Codex caught the binary mismatch. Lesson: smoke-test against the NEW model's items, not just the OLD pending[].
-- **Notification ≠ adoption.** Sending a router item is not confirmation it was acted on. Use explicit ack-request items with reply contracts for verification.
-- **Multi-agent collaboration loop works.** Claude → Codex → Claude → Codex round-trip on the binary mismatch + ack verb was peer-to-peer with no human in the loop. Each agent acted from its vantage point.
-
----
-
-## 2026-05-26 — Understand-Anything Plugin Installed + Knowledge Graph Indexed
-
-**Session goal:** install the Understand-Anything Claude Code plugin, index sirsi-pantheon's full polyglot codebase into a semantic knowledge graph, and unify the resulting artifact with Thoth's memory model.
-
-### Plugin install
-
-- `pnpm` 11.3.0 installed via Homebrew (Node 25.6.1 already present, ≥22 requirement met).
-- Plugin marketplace added: `Lum1104/Understand-Anything` → installed `understand-anything` v2.7.5 at `~/.claude/plugins/cache/understand-anything/understand-anything/2.7.5/`.
-- Workspace built with `--config.dangerouslyAllowAllBuilds=true` (pnpm 11 default-denies postinstall scripts; tree-sitter parsers + esbuild need them). 12 tree-sitter language parsers compiled.
-
-### Indexing the repo
-
-Ran `/understand` over the full project (`--scope everything`, 894 git-tracked files + 13 untracked = 907 scanned). Skill pipeline ran all 7 phases:
-
-| Phase | Output |
-|-------|--------|
-| 0 — Pre-flight | Plugin root resolved, core built, repo at `22ec913` |
-| 0.5 — Ignore config | `.understand-anything/.understandignore` generated; nothing excluded (full polyglot pass) |
-| 1 — SCAN | 907 files, 486 code, 19 languages, 2,277 internal import edges resolved by static analysis |
-| 1.5 — BATCH | 56 semantic batches via Louvain community detection (sizes 3–32 files) |
-| 2 — ANALYZE | 56 `file-analyzer` subagent dispatches in parallel (background, sliding 5–10 concurrent). Total 3,354 raw nodes + 6,935 raw edges produced |
-| 3 — ASSEMBLE REVIEW | Merge step + path-convention `tested_by` linker. 14 duplicates collapsed; 17 `step:` → `pipeline:` prefix normalizations applied. 0 dangling edges. |
-| 4 — ARCHITECTURE | 9 architectural layers, all 924 file-level nodes assigned exactly once |
-| 5 — TOUR | 14-step pedagogical tour starting at `cmd/sirsi/main.go`, walking through the deity hierarchy |
-| 6 — REVIEW | Inline deterministic validator: 0 issues, 252 orphan warnings (markdown docs + configs with no edges — expected) |
-| 7 — SAVE | `knowledge-graph.json` (2.9 MB), `meta.json`, and `fingerprints.json` (907 baseline hashes) written under `.understand-anything/` |
-
-### Final graph
-
-- **3,340 nodes** — 496 file, 2,108 function, 308 class, 353 document, 51 config, 23 pipeline, 1 service.
-- **6,947 edges** — 2,433 contains, 2,279 imports, 1,816 exports, 128 tested_by, 126 related, 70 depends_on, 48 calls, 22 documents, 19 configures, 4 deploys, 2 triggers.
-- **9 layers** — cli-entrypoints, core-services, mobile-bindings, editor-extensions, agent-workqueue, documentation, infrastructure-cicd, configuration, testing.
-- **14-step tour** — README → cmd/sirsi/main.go → deity binaries → Jackal rules → Isis/Guard → Thoth/Ma'at → MCP server → Horus dashboard → mobile bindings → VS Code extensions → idea router → build → CI.
-
-### Three-tool clarification (Seba / Thoth / Understand-Anything)
-
-User flagged a naming/role overlap: Seba already holds **architectural mapping sovereignty** per the deity registry. Resolved as a clean three-way split:
-
-- **Thoth** = memory + intent + plans (the *why* and *what next* — this file)
-- **Seba** = architectural map (the canonical *layer/topology* — deity-owned, lives in `internal/seba/`)
-- **Understand-Anything** = semantic verification (the auto-derived *what exists* + *what imports what* — lives in `.understand-anything/`)
-
-Three artifacts, three jobs, no overlap. Understand is the verifier, Seba is the architect, Thoth is the historian.
-
-### Bidirectional sync codified
-
-- Added `## Knowledge Graph (Understand-Anything)` section to `memory.yaml` with artifact pointer, current stats, query commands, and a `sync_protocol` block.
-- This journal entry serves as the first delta record. Future `/understand` runs should append a similar entry summarizing what changed (new packages appeared, layer assignments shifted, edge counts moved).
-- Added rule to global `~/CLAUDE.md` instructing future sessions to maintain the bidirectional sync automatically.
-
-### Verification gaps and notes
-
-- Swift and Kotlin nodes are file-level only — tree-sitter Swift/Kotlin grammars are not bundled in the plugin's structural extractor, so per-function/per-class extraction is missing for iOS and Android code. The graph still captures their file relationships and architectural-layer assignment, but function-level call graphs for those languages are not in scope until upstream adds those parsers.
-- 252 orphan nodes (markdown docs and standalone configs with no incoming or outgoing edges) — these are document-class nodes that the file-analyzers couldn't link to other artifacts. Expected for marketing pages, ADRs, and pure-narrative case studies.
-- The graph was built from `HEAD` (`22ec913`); uncommitted changes in `.agents/idea-router/items/` and `state.json` are NOT reflected. Re-run `/understand` after committing those to refresh.
-
-### Lessons
-
-- **One global pnpm install can unlock dozens of cached plugins.** The `--config.dangerouslyAllowAllBuilds` flag is the right hammer for native-binary plugins; cleaner than per-package `pnpm approve-builds`.
-- **The 5-concurrent guideline in `/understand`'s phase 2 is an artificial floor, not a ceiling.** With background dispatches and notification-driven progression, running 10–12 concurrent worked fine here. The bottleneck was per-batch LLM latency, not parallelism.
-- **The polyglot ratio matters for graph density.** With 367 Go files producing 2,108 function nodes and 281 markdown files producing zero function nodes, the call/import graph is heavily Go-weighted. That matches reality (Go is the core) but means architectural-layer queries dominated by markdown look sparse on edges. Acknowledge in onboarding docs.
-
-
-## 2026-05-26 — "Does It Work" Audit + 3 Silent-Failure Fixes
-
-**Session goal:** verify the architecture shipped 2026-05-21/22 actually works end-to-end. User asked one question: "does it work?". Probe found three real failures, all silent. All three fixed in this turn.
-
-### The four-day gap (May 22 → May 26)
-
-After last session, dispatch.log shows the system was QUIET from 2026-05-22T16:12 to 2026-05-26T11:57. No items routed. No threads heartbeated by the daemon. No errors. The user opened a session today and asked the right question.
-
-### Probes + findings
-
-Sent a real router item, watched dispatch.sh respond. FSEvents fired correctly. dispatch.sh reported `agents fired: 0` even though `sirsi router pull claude-pantheon` clearly returned the item. Root cause: launchd plist had no `WorkingDirectory`, so cwd=`/`, so `router.FindRepoRoot()` walked up from `/` and found nothing → pull returned empty → awk extracted no ids → dispatch silently no-op'd.
-
-### Commits shipped (all on origin/main)
-
-- `f5cd429` `fix(router)` — dispatch.sh `cd $REPO_ROOT` upfront so FindRepoRoot resolves regardless of how the script is invoked. Self-contained beats relying on plist hygiene.
-- `75e68fe` `feat(thread)` — `reapDeadPIDThreads()` in cmd/sirsi/threadcmd.go. Auto-reaps orphan CTR threads whose PIDs no longer exist on this host (syscall.Kill(pid, 0) == ESRCH → mark closed). Hooked into `sirsi thread list` so the read IS the event. No daemon, no polling, no new verb. Per AGENTS.md §Lean #1 + #4. Verified by sweeping 2 real orphans (`thr-4990a8df4cbd1468`, `thr-f582c02ec658042a`) from the 2026-05-21/22 session.
-- `2111423` `fix(router)` — dispatch.sh fails loud on `sirsi router pull` errors. Captures exit code + stderr. Distinguishes "queue empty" from "pull broken" in dispatch.log. Same pattern applicable to any future failure that would otherwise hide as `agents fired: 0`.
-
-### Architectural lesson
-
-**"The loud failure is the gift" only holds if "no work" and "missed work" look different.** dispatch.sh logged identically for both states — 4 days of silent failure. The third commit (`2111423`) is the *generalization* of the first (`f5cd429`): not just fix the bug, fix the mechanism that hid the bug. Recommend Codex's `ctr-thread-wake` automation adopt the same separation — its stay-quiet prompt should explicitly NOT stay quiet on read failures.
-
-### Verification methodology validated
-
-The user's question "does it work" was the single highest-leverage prompt of the session. Three bugs fell out of one probe. Lesson for future sessions: don't trust "tests pass" or "FSEvents fired" as proof of end-to-end function. Send a real item, watch what happens, audit the log. Reality > telemetry summaries.
-
-### Still pending (async by design, not broken)
-
-- 5 sibling adoption-acks (`claude-finalwishes`, `claude-assiduous`, `claude-nexus`, `claude-porch-and-alley`, `claude-homebrew-tools`) still `open` after 4 days. Those repos haven't had a claude session opened. Architecture is sound; cross-repo adoption observability is bottlenecked on session activity.
-- 8 items in `items/` with empty `to:` field — direct file writes bypassing `sirsi router send` validation. Operator-error from senders, not router bug.
-- One open ask to Codex: should plist hygiene fall under Lane A (codex-owned router delivery / queue health), or is workstation config out of router scope? The 4-day silent failure proves we should formalize plist ownership in the lock table.
-
-### CTR state at session end
-
-- 0 active claude-pantheon threads (all 5 historical sessions now closed, 1 reaped by the new reaper)
-- Probe items all closed
-- pending[claude-pantheon] = 0; pending[codex-pantheon] = 1 (the audit insights I just sent)
-- launchd `com.sirsi.idea-router` loaded, idle, waiting for FSEvents
-
-### Lessons indexed for next session
-
-1. Always cd to known location before running sirsi from a script.
-2. Folded periodic cleanup (reaper) into read-paths is the right shape — no daemon needed.
-3. Silent failure separation is a generalizable lean pattern: anywhere a primary check can return "empty" for either legitimate or broken reasons, distinguish them in the log.
-4. Real probes catch what telemetry misses. "Does it work" is the user's most valuable prompt.
-
----
-
-## 2026-05-31 — Agent Work Safety Governor
-
-**Context:** During a Sirsi Nexus assessment, an agent analysis path ballooned to roughly 135 GB of application memory and crashed the working environment. The user correctly called out that this is the exact failure class Pantheon is supposed to prevent.
-
-**Decision:** Unified existing Pantheon safety primitives behind the `sirsi agent` surface:
-
-- `internal/agentguard/` added as the composable governor.
-- `sirsi agent preflight [command...]` checks system/resource state and command policy before work.
-- `sirsi agent safe-run -- <command...>` executes only after preflight, with timeout and RTK output budgets.
-- `docs/AGENT_WORK_SAFETY.md` records the crash lesson and the first policy set.
-
-**What was reused:** `internal/yield` for CPU pressure, `internal/guard` Doctor for RAM/swap/Jetsam/process facts, `internal/rtk` for output filtering, and the existing `sirsi agent` command namespace. Vault/Horus remain adjacent primitives for future large-output storage and structural code inspection.
-
-**Initial policy:** block unbounded `$HOME`/`~/Development` scans, direct `.codex/sessions/*.jsonl` reads via `cat`/`rg`/`grep`/Python, and Python-based repo/transcript-wide analysis without explicit budgets.
-
-**Verification:**
-
-- `go test ./internal/agentguard`
-- `go test ./cmd/sirsi`
-- `go build ./cmd/sirsi`
-- Live smoke: `sirsi --json agent preflight -- cat .../.codex/sessions/...jsonl` returns `verdict: block`.
-- Live smoke: `sirsi --json agent safe-run --force ...` runs with output budget while still reporting current Jetsam blockers.
-
-**Lesson:** Pantheon already had the organs: Guard, Yield, RTK, Vault, Horus. The missing piece was the front door that forces agent work through those organs before the machine is under pressure.
-
----
-
-## 2026-05-31 — Router Thread/Item Relationship Index
-
-**Context:** After the crash recovery, the router needed a clear answer to which Claude thread owns which router item. `sirsi thread list` showed no active registered threads; `threads.json` contained only closed/reaped `claude-pantheon` sessions.
-
-**Decision:** Added `.agents/idea-router/THREAD_ITEM_INDEX.md` as the canonical relationship index. It records:
-
-- current open item ownership by `to` agent
-- `thread_unassigned` for every open Claude repo-agent item until a live thread registers
-- historical Pantheon thread/lane provenance for Lane B, Lane C, ADR-020, and LEAN AF coordinator sessions
-- the rule that thread ownership is established only by an active registered thread heartbeating `current_item=<item-id>`
-
-**Router cleanup:** Reconciled `state.json.pending` to match open item frontmatter for `claude-assiduous`, `claude-finalwishes`, `claude-homebrew-tools`, `claude-nexus`, and `claude-porch-and-alley`; corrected `pending_for_user` to the actual open Development-root decision.
-
-**Verification:** `sirsi router status` reports 20 open / 46 closed, with no `codex-pantheon` inbox items and no blank-recipient bucket.
-
----
-
-## 2026-05-31 — Codex Router Reviews Closed + Dispatch Race Fixed
-
-**Context:** Terminal showed multiple live Claude windows while CTR still showed no registered threads. Claude then routed three `codex-pantheon` items: dispatch race, ADR-020 canon-correction v2, and `sirsi thread discover` Phase 1 review.
-
-**Decision / Work Completed:**
-
-- Patched `.agents/idea-router/dispatch.sh` with per-agent lock directories under `.agents/idea-router/locks/` so WatchPaths bursts cannot spawn sibling workers for the same inbox.
-- Removed the Python legacy-pending reader from `dispatch.sh`; it now uses `jq` when available and otherwise relies on pull-model item frontmatter.
-- Approved ADR-020 canon-correction v2 and made one follow-up line edit in `docs/ADR-020-INTERACTIVE-SURFACE-REOPENED.md` so it no longer says the changelog "needs" correction after the correction landed.
-- Approved `sirsi thread discover` Phase 1. Phase 2 hook scope is approved with the constraint that hooks call `sirsi thread discover --self` and do not enumerate process tables.
-
-**Router Artifacts Closed:**
-
-- `20260531-codex-pantheon-dispatch-concurrency-guard-review.md`
-- `20260531-codex-pantheon-adr020-canon-v2-approval.md`
-- `20260531-codex-pantheon-thread-discover-phase1-approval.md`
-
-**Verification:**
-
-- `bash -n .agents/idea-router/dispatch.sh`
-- `bash -n .agents/idea-router/sweep.sh`
-- `git diff --check -- .agents/idea-router/dispatch.sh docs/ADR-020-INTERACTIVE-SURFACE-REOPENED.md`
-- `go test ./internal/router ./cmd/sirsi`
-- `go test ./internal/agentguard ./internal/router`
-- `go build ./cmd/sirsi`
-- `sirsi router pull codex-pantheon` => no open items
-- `sirsi router status` => 20 open / 50 closed
-
----
-
-## 2026-05-31 — Process Scout Registry
-
-**Context:** User clarified the desired bar: every IDE, terminal, agent, PID, and process should be known to Pantheon automatically. If a process cannot register as a router thread, Pantheon should still scout the machine and know it exists.
-
-**Decision:** Added a read-only process awareness registry separate from CTR thread ownership:
-
-- `internal/router/processes.go` and tests define `ProcessRegistry`, `ProcessRecord`, role classification, and reconciliation preserving `first_seen` while marking missing PIDs `gone`.
-- `sirsi thread scout` records the visible process table into `.agents/idea-router/processes.json`.
-- `.agents/idea-router/sweep.sh` now refreshes both `sirsi thread discover --json` and `sirsi thread scout --json` automatically.
-- Removed the old Python parser from `sweep.sh`; watcher validation uses `jq`.
-
-**Important boundary:** `threads.json` remains for agent sessions that can own router work. `processes.json` is the broader host awareness map for every visible PID. Pantheon observes broadly, but process control remains gated through Guard/Throttle/Slay and explicit safety rules.
-
-**Live smoke:** Escalated host run of `sirsi thread scout --limit 12` saw 831 visible processes on `Mac.lan`: 18 agent, 2 IDE, 30 terminal, 30 system, 751 process. It captured the live Claude/Codex PIDs that the screenshot showed.
-
-## 2026-05-31 — Runtime Restore After OOM + ADR-021 (Deities ≠ Single-Repo)
-
-**Context:** User's Mac crashed from application-memory exhaustion; Pantheon (which they expected running) was gone. No LaunchAgent/login-item ever made it auto-start, so every reboot killed it.
-
-**Restore:** Rebuilt v0.22.0-beta from source (`make build`, `build-menubar`, `bundle`). Found `guard.StartBridge` is embedded in the menubar (`cmd/sirsi-menubar/main.go:388`) — so menubar and the Sekhmet RAM watchdog are ONE process, not two (no separate `guard --watch`; that flag no longer exists in v0.22). Installed fresh `sirsi`+`sirsi-menubar` to all PATH copies (checksums unified), loaded `ai.sirsi.pantheon` LaunchAgent (RunAtLoad+KeepAlive → reboot-persistent), registered `sirsi mcp` user-scope (✓ Connected). Caught a silent regression: first agent launch ran the stale May-11 brew binary because login-shell PATH put /opt/homebrew/bin ahead of ~/.local/bin — fixed by unifying all copies. Menubar verified live via screenshot (🟢 RAM 11%).
-
-**Router:** Registered this thread `thr-7452fa9c16e656c9` (claude-pantheon, lane pantheon-runtime-restore) — had never registered. The two TUI items in the claude-pantheon inbox were MISROUTED (codex filed a MISROUTE NOTICE); closed the notice (the valid item), left the TUI correction for the intended thread.
-
-**ADR-021 (proposed):** The menubar's `osiris assess failed` traced to `stats.go:84` `RepoDir: "."` resolving to launchd cwd `/`. User rejected the shallow "pin a repo" fix: *"Sirsi/Pantheon components are NOT restricted to repo management… recognize we have a design problem."* ADR-021 names the principle — workstation-scoped deities source scope from the CTR registry (`sirsi thread discover`, committed `10a97b7` same day), never cwd; Osiris becomes a workstation-wide risk aggregator; non-git degrades to benign. Routed to codex-pantheon for review; no code before acceptance. Committed `dd36ccf` (ADR + INDEX + CHANGELOG).
-
-## 2026-05-31 — `sirsi thread discover` + codex round-trip (CTR auto-registration, Phase 1)
-
-**Why:** "How many threads registered since reboot?" → zero. Root cause: registration was manual-only, so a reboot reaps every PID and nothing re-enrolls. Compounding it — the live sessions were all launched from `$HOME` (`cwd=/Users/thekryptodragon`, no `CLAUDE_PROJECT_DIR`), so they have no repo identity to register under. That is a real constraint, not a bug: a session in `~` is not a repo agent.
-
-**Design (agreed with codex-pantheon via router, items `…195033` / `…210057`):** two complementary pieces — a SessionStart hook (push at birth, Phase 2) and `sirsi thread discover` (pull/reconcile, Phase 1). Codex confirmed it has no project-local SessionStart equivalent, so `discover` is its only registration path; it accepted the anchor-pid lifecycle (externally-registered threads bind to the discovered PID, reaped by the existing watcher when it exits) and `discover --self` as the shared hook entry point.
-
-**Built (commit `10a97b7`, pushed):** pure `ReconcileDiscovery` in `internal/router/discover.go` — surface-scoped longest-ancestor cwd match; `unmappable` (home) and `ambiguous` (the genuine `codex-homebrew` vs `codex-homebrew-tools` cwd collision) are reported, never guessed (Rule A23). 9 unit tests, no real processes (Rule A16). CLI + bounded enumeration (`pgrep -x`/`lsof`, `--print`/`-p` worker filter to avoid a self-registration loop, `--self`, stable snake_case `--json`) in `cmd/sirsi/threaddiscover.go`. Live: `discovered=6 registered=0 unmappable=5 skip=1` — proved the premise and the already-registered skip path (an externally-registered repo thread was correctly skipped).
-
-**Codex verdict — APPROVED.** Directives: keep the `--print` filter (note a future stricter interactive-session signal); wire `discover` into the sweep report-only (**Phase 1.5**); Phase 2 hook approved (must call `discover --self`, never broad process scans); live-delivery into a running session stays **Phase 3, spike-gated** (the local mechanism is Claude Code remote-control, not the claude.ai `RemoteTrigger` cloud API).
-
-**Deployed + Phase 1.5:** built from the working tree and installed to `~/.local/bin/sirsi` (the install therefore also carries the parallel scout-lane's uncommitted `thread scout`). The hourly `sweep.sh` — already wired by the scout/runtime-restore lane to call `discover` + `scout` — runs PASS. ADR-021 (`dd36ccf`, parallel lane) consumes this primitive: workstation-scoped deities (Osiris et al.) source their repo set from CTR discovery, never `cwd`.
-
-**Open / next:** Phase 2 (SessionStart hook → `discover --self`) approved, not yet wired. Phase 3 spike pending. Coupling to flag: the installed binary includes the scout lane's uncommitted code — that lane should commit `threadscout.go` + `sweep.sh` + friends and own a clean rebuild-install.
-
-## Entry 036 — 2026-06-01 12:28 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- {"session_id":"bafb166f-7d28-44f4-872f-6c2c49b47752","transcript_path":"/Users/thekryptodragon/.claude/projects/-Users-thekryptodragon/bafb166f-7d28-44f4-872f-6c2c49b47752.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","trigger":"manual","custom_instructions":null}
-- Router snapshot:
-- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-- completed topics: 41
-- last Codex read: 2026-06-01T16:24:36Z
-- last Claude read: 2026-06-01T16:12:19Z
-- pending: none
-- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-
----
-
-## 2026-06-02 — ADR-026 Horus ops-dashboard (proposed) + R4 capability inventory
-
-**Lane:** claude-home, Horus ops-view content lane. Boundary ratified 2026-06-01 (items `235419`/`235652`): I own the ops-view content + read contract; claude-pantheon owns the surface chrome (CLI/TUI/menubar/macapp). Horus renders INTO their surfaces, not beside them.
-
-**Finding — the gap is exposure, not computation.** `router.CollectNodeStatus()` (`internal/router/nodestatus.go`) already aggregates the entire operator read-model into one `NodeStatus`: registered agents + wake-health, router queue (pending-by-agent / topics / last reads), work-queue dispatch failures, live+stale threads carrying `os_state` OS-truth liveness (ADR-022), daemon health + binary-drift (ADR-023), and claude/codex CLI auth. It is complete and trapped in Go — **not** in the frozen dashboard contract (matrix row *Router ack → MISSING, no `/api/router/*`*), **no** CLI verb (Rule A27 canon references `router node-status`, which does not exist), **no** surface render (menubar hosts the dashboard server but paints none of it; TUI scaffold has no ops pane).
-
-**ADR-026 decision:** promote `NodeStatus` to a frozen additive contract; serve it at typed `GET /api/node-status` (+ `?view=summary` → `OpsSummary` for the menubar); add `sirsi router node-status [--json]` (makes the A27-referenced verb real, --json shape == HTTP body); define menubar/TUI as read-only *projections* of the one read-model (no re-aggregation — the frozen-action-contract principle applied to reads). Read-only endpoint: zero destructive surface, nothing to confirm-gate.
-
-**Challenged the framing (Rule A23):** the resume said "GET /api/horus," but `/api/horus/*` is already the code-graph namespace (`scan/query/report` → `SymbolGraph`/`WorkstationReport`). Reusing it conflates two Horus meanings, so the ops-view is `/api/node-status` (one name → one meaning). Recommended `/api/node-status`; flagged for claude-pantheon to override if their surface ladder needs `/api/horus`.
-
-**R4 inventory:** `docs/HORUS_OPS_READMODEL_R4_INVENTORY.md` — the human-readable form of `watcherspec.go` ("the R4 capability inventory in code"): Part 1 the per-surface watcher-capability matrix (how each surface stays alive), Part 2 the ops read-model source + exposure ledger (what the operator can see vs. what's still trapped). R-mapping confirmed from ADR-025 status line: R1/R2/R4/R5 = ADR-024, R3 = ADR-025.
-
-**Canon:** ADR-INDEX (+ADR-026 Proposed, 24→25, next 027), CHANGELOG (Unreleased/Added). Routed to claude-pantheon for review (item `20260602-021743`, type=review). Design-phase only — no code in either lane until codex + claude-pantheon bless the contract shape; then I implement steps 1-3 (contract+endpoint+verb), they implement 4-5 (surface render).
-
-**Drift caught live:** the `sirsi` on PATH is v0.21.0 (no `router send --type` flag) while the repo is v0.22.0-beta — the exact ADR-023 binary-drift class. Flagged in the review item for the Decision-5 stale-Homebrew rebuild on claude-pantheon's ADR-024 follow-up plate; not self-fixed (its lane).
-
-## 2026-06-02 — ADR-025 completed: Thoth-gated exit + suspend/resume/reconcile (R3)
-
-**Context:** Core ADR-025 (`414142f`) had landed the `suspended` status and `SuspendThread`/`ResumeThread` lib primitives with 6 tests. This session finished R3 of the always-on supervisor: the CLI verbs, the SessionStart reconciliation gate, the exit hooks, and the 3 remaining acceptance tests.
-
-**Built:**
-- **`ReconcileExits`** (`internal/router/threads.go`) — the authoritative SessionStart gate (ADR-025 §4). Pure, host- and agent-scoped, with an injected `RetroSyncFn` (Rule A16). Stale-active → heal in place to suspended after retro sync; reaped (terminal, never revived per ADR-022) → mint a suspended successor carrying `reaped_from` if memory is recoverable, else a visible `UNRECOVERABLE` warning. Idempotent via `hasSuccessorFor` + a 24h `ReconcileReapedLookback` so SessionStart never re-mints or re-warns forever.
-- **CLI verbs** (`cmd/sirsi/threadsuspend.go`): `thread suspend` (`--self`/`--thread`, `thoth sync` first for a fresh `thoth_ref`, snapshots owned open items from `state.json` Pending + resume prompt, kills the fs-watcher), `thread resume` (restores owned items, prints resume prompt, returns the ADR-024 `WatcherFor` spec to re-arm), `thread reconcile` (`--agent`, reaps dead PIDs first, then `ReconcileExits`; `SIRSI_SUPERVISOR=0` skips the managed action). `bestEffortThothSync` returns (commit-ref, ok) where ok = capture succeeded — the honest signal gating successor-vs-warn.
-- **Hooks** (user-scope `~/.claude/settings.json`, ADR-024 §4 default-on): new `SessionEnd` → `thoth sync` + `thread suspend --self` (best-effort, visible error — SessionEnd cannot block); `SessionStart` 3rd entry → `thread reconcile --agent <id>` (the guaranteed gate). Both gated by `SIRSI_SUPERVISOR=0`.
-
-**Tests:** +3 reconcile acceptance tests (stale-in-place, reaped-successor-then-warn + idempotency, host/agent scoping). 9 ADR-025 tests total, `go test -race ./internal/router` green; `go build ./...` exit 0. Verbs smoke-tested register→suspend→resume→close on a throwaway thread with the freshly-built binary.
-
-**Deviation flagged for codex:** re-`register` matching a suspended record currently mints a *fresh* thread (codified by the shipped core test `TestRegisterThread_BypassesSuspendedFastPath`) rather than auto-adopting via the resume transition as ADR-025 §1 describes. Explicit `sirsi thread resume` is the supported resume path. Left as-is to avoid changing codex-reviewed core behavior; routed to codex-pantheon for a ruling.
-
-**Operational note:** the PATH-installed `sirsi` is killed with exit 137 on a trivial `thread heartbeat` — the freshly-built binary works. Confirms ADR-023 binary drift; the user-scope hooks call PATH `sirsi`, so they only become functional after the rebuild+install follow-up.
-
-## 2026-06-02 — ADR-024 Amendment 1 implemented: worker-lifecycle gate + (pid,start_time) reap-key
-
-**Context:** claude-home CLAIM 024522 assigned claude-pantheon (sole writer) the ADR-024 amendment for CTR registration-hygiene findings (2) worker-lifecycle and (3) reap-key. claude-home APPROVED the design (025217). User directed "keep going until you finish," so implemented the approved design (doer→reviewer; routed implementation to codex). Finding (1)/menubar excluded per ruling 023813.
-
-**(3) Reap-key — the systemic bug.** Bare-PID liveness can't tell a recycled/re-registered PID from the original. `internal/router/liveness.go`: `PIDStateOf(pid, startedAt)` (composite identity) + new `PIDRecycled` state (distinct from `gone` for diagnostics; `DeadByOSTruth` includes it) + injectable `pidStartFn`/`defaultPIDStart` (`ps -o lstart=`, mutex-guarded A21). `""` startedAt → bare-PID fallback (zero regression). `Thread.StartTime` captured at register via `PIDStartTimeOf`; `ReapDeadThreads` + `RegisterThread` fast-path key on the composite. Adopted claude-home note (b): one canonical `PIDStateOf(pid, startedAt)`, not a separate `PIDStateOfWithStart`. **No-false-reap guarantee** tested (the regression that reaped live sessions this session).
-
-**(2) Worker gate.** `cmd/sirsi`: injectable `oneShotProbe` + pure `ephemeralWorkerSkip`; `register` refuses one-shot `--print`/`-p` workers (no-op, not error). Selective-gate test (claude-home note a) proves interactive surfaces still register under the same path.
-
-**Tests:** `internal/router/adr024_amend_test.go` (PIDStateOf composite matrix, recycled-reaped, live-survives, composite fast-path) + `cmd/sirsi/adr024_amend_test.go` (selective gate). `go test -race ./internal/router ./cmd/sirsi` green; `go build ./...` exit 0; start_time capture smoke-verified via real `ps -o lstart`. Doc DRAFT→IMPLEMENTED.
-
-**Routed to codex for review-of-code (doer→reviewer).** Pending codex on this + ADR-025 + binary-unification ruling (024046).
-
-## 2026-06-02 — ADR-026 steps 1-3 shipped (Horus ops-dashboard read endpoint + node-status verb)
-
-**Lane:** claude-home (Horus ops-view content). Design approved by claude-pantheon `20260602-022950` with two caveats both folded; surface chrome (steps 4-5) stays with claude-pantheon per the ratified boundary.
-
-**The pattern that made this small:** the entire operator read-model already existed in `router.CollectNodeStatus()` — agents, queue, dispatch failures, live/stale threads with `os_state` (ADR-022), daemon + binary-drift (ADR-023), agent CLI auth. The gap was exposure, not computation. ADR-026 promised three thin wrappers; the code is exactly that:
-
-- `router.NodeStatus.SchemaVersion = "1.0.0"` — one field + one constant + one stamp line in `CollectNodeStatus`. Surfaces decode tolerantly; bumps only on a breaking shape change.
-- `internal/dashboard/nodestatus.go` — `GET /api/node-status` serves the typed shape directly (consumer→producer; dashboard imports router; no cycle). `?view=summary` returns `OpsSummary` — a **pure reduction** of the same NodeStatus (every field derived, nothing sourced independently — the action-contract principle applied to reads). Bounded to top-N=12 agents by pending+live signal with `more_agents` overflow row for the NSMenu budget (claude-pantheon caveat #2). Drift/auth roll-up sets `worst_icon` (🟢/🟡/🔴) for the menubar's lead row.
-- `cmd/sirsi/routernodestatus.go` — `sirsi router node-status [--json]` wraps `CollectNodeStatus()`. `--json` shape is byte-identical to the HTTP body (one read-model, two transports). Default render is a styled human view (Rule A10). Closes the canon/implementation gap where Rule A27 references this verb but it never existed.
-
-**Smoke-run reality check (live registry):** the verb surfaced **7 phantom `pid=0/os=unknown` claude-pantheon records** sitting "active" 40+ minutes idle — the exact ADR-024 Amendment 1 finding (3) PID-reuse / lost-anchor class. The verb didn't just compile; it's already the operator surface that proves Amendment 1 is needed. Self-validation.
-
-**Race avoided (A21):** caught claude-pantheon mid-flight refactoring `PIDStateOf` to `(pid, startedAt)` in the same files I needed to touch. The `SchemaVersion` field add is in `nodestatus.go` (their lane file) — kept it minimal (1 field, 1 const, 1 stamp line; top of struct, not near their call-site changes). Did all other work in new files (`dashboard/nodestatus.go`, `cmd/sirsi/routernodestatus.go`, `dashboard/nodestatus_test.go`). Their refactor landed independently; my dashboard tests pass green.
-
-**Verification:** 5 tests `internal/dashboard/nodestatus_test.go` `go test -race` green in 1.3s — full-contract serve, summary derivation (drift flag + needs-login projection), bounded truncation, 503 nil-collector, 500 collector-error. `go build ./...` ok. `sirsi router node-status` + `--json` smoke-run produce expected output against live registry.
-
-**Next:** route to codex for arch-verify; notify claude-pantheon their surface chrome (steps 4-5: menubar `OpsSummary` rows + TUI 4th pane) is unblocked. ADR-INDEX flipped Proposed → Accepted with the impl-status note.
-
-## 2026-06-02 — Binary unification (ADR-023) — user-authorized autonomous deploy
-
-User authorized everything for an autonomous loop. Executed the long-gated ADR-023 binary unification: `make build` (v0.22.0-beta, commit a5fc1b4, stamped) → installed the single artifact to all 3 PATH copies (~/.local/bin, ~/go/bin, /opt/homebrew/bin) via atomic mv + ad-hoc codesign. All three now SHA-identical (dc532a39…). Resolves: (1) the broken ~/.local/bin/sirsi that SIGKILLed (exit 137) every bare-`sirsi` watcher workstation-wide — heartbeat via PATH sirsi now exits 0; (2) ADR-023 SHA drift (3 divergent builds → 1); (3) ships ADR-025 R3 + ADR-024 Amendment 1 reap-key/worker-gate + register-no-spawn + `router node-status` to the primary PATH binary. This is the deploy half of the session's code work.
-
-## 2026-06-02 — Autonomous loop (user-authorized "everything until I return") — summary
-
-User granted blanket authorization for an unending claude+codex loop. Drove every gated/approved item to completion:
-- **Binary unification (ADR-023)**: all 3 PATH copies SHA-identical @ a5fc1b4; ~/.local 137 SIGKILL fixed (workstation-wide watcher die-off cleared); ADR-025/Amendment-1/node-status now on primary PATH.
-- **Menubar redeploy + ADR-026 4b live-verify**: /api/node-status?view=summary serving real OpsSummary (17 live/7 suspended/🔴 drift); data path NodeStatus→Summarize→opsLeadRow/opsAgentRows confirmed end-to-end (only literal NSMenu pixels need a human glance).
-- **ADR-025 suspended-retention (6b6b811)**: opt-in PruneStaleSuspended + --suspended-older-than (dogfooded from 7 orphan pid=0 suspends the ops-view surfaced). Live peer thr-fb73 improved the 0-case to a no-op (left for them to commit, A26).
-- **Stranded-work (ADR-024 §6, fef3591)**: challenged claude-home's SessionEnd-stash (repo-global = A26 harm) → ruling ACCEPTED → implemented read-only SessionStart surfacing (reconcile emits ⚠ stranded-uncommitted on fresh reap + dirty tree); A18 is the prevention.
-
-**9 commits.** codex OFFLINE all session (last active 2026-06-01) → 8 review items queued (ADR-025 024046, Amendment-1 032136, retention, stranded-finding+surfacing concurrence, binary FYI). Did NOT start the router daemon (auto-spawn cascade ADR-024 killed). Lesson: testing a mutating cmd (reconcile) on the live shared registry healed 20 stale-actives→suspended (benign, retention-cleanable; 2 live threads safe) — test mutating paths on temp registries, not live shared state. Settled into a disciplined watch-loop: heartbeat + inbox + read-only health-check, resume active work only on codex engagement / new mail / user return. Loop participants: me, codex (offline), live peer thr-fb73 (pro-ux-loop).
-
-## 2026-06-03 — Menubar UX overhaul + mds_stores mitigation (session wrap)
-
-Made the menubar ACT, not just inform (user's #1 complaint). Shipped: in-place actions (a2379ab — safe commands run + report to Recent Activity, no Terminal; destructive keep confirm path), function labels not deity names (39a0ec4), in-app two-click clean (b7040ff/154cb3b — dry-run preview arms a Confirm item, confirm pipes y to anubis clean --confirm), native ~/.Trash move replacing osascript-Finder which the launchd menubar can't get Automation TCC for (2710811), disk-visibility spectrum all/some/none (0f7a6a1 — CheckDiskAccess + menubar applyFDAState + FDA grant action). Live mds_stores write-amplification storm mitigated: excluded ~/Development from Spotlight (.metadata_never_index), pruned CTR registry 209→52 (threads.json 124KB→31KB); mds dropped to ~1.3%. BINARY FROZEN per user — no more rebuild+resign (each resign revokes FDA grants by changing the signature hash); durable fix = Developer-ID signing (Apple enrollment pending). Codex offline all session — reviews owed (ADR-025/Amendment-1/stranded/native-trash A1/menubar UX). Continuation: docs/CONTINUATION-PROMPT.md.
-
-## Entry 037 — 2026-06-04 09:22 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- {"session_id":"019e2256-daa1-7802-bb36-e7a00f0b635c","turn_id":"019e92c9-92fd-70e2-b849-33b23a6d8b83","transcript_path":"/Users/thekryptodragon/.codex/sessions/2026/05/13/rollout-2026-05-13T13-16-17-019e2256-daa1-7802-bb36-e7a00f0b635c.jsonl","cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-5.5","trigger":"auto"}
-- Router snapshot:
-- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-- completed topics: 41
-- last Codex read: 2026-06-04T12:57:35Z
-- last Claude read: 2026-06-04T13:20:40Z
-- pending: none
-- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-
----
-
-## Entry 038 — 2026-06-04 16:36 — Session Compact (COMPACT)
-
-> Persisted via `thoth compact` before context compression.
-
-**Decisions**:
-- sirsi fix heuristic resolver (no LLM) — answers every finding; safe PPID-narrowed orphan-kill (KillTrueOrphans, PPID<=1 only, --yes never kills, 4 regression tests). Funnel diagnose->fix + menubar BLOCKED pending codex re-review (42588a9).
-- Router snapshot:
-- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-- completed topics: 41
-- last Codex read: 2026-06-04T20:35:52Z
-- last Claude read: 2026-06-04T20:36:02Z
-- pending: none
-- dispatch ledger: 2658 bytes, updated 2026-05-21 17:30:56
-
----
+## 2026-09-23 — Pantheon d4a5a175 race verification
+
+- Fresh same-session non-GPU race admission for clean `d4a5a175` / tree
+  `af55c687` was consumed once. `go test -race ./...` exited 0.
+- Race log SHA256 `34e0ac1a39f86760f61aec1c90402132cabf9d450ca1d8d4c8ea9b62688f1082`;
+  zero-residue marker SHA256 `5faba54d647df2a3cc748dce0d342d08573822ace891193c3ee53837035dac2c`;
+  terminal handback SHA256 `95f0b38715eaa0708b35bd3bab9a0512382eae61a1be0aede115f53a49ef4c45`.
+- Isolated cache/evidence roots are absent after cleanup, matching candidate
+  processes are zero, and unrelated SirsiNexusApp processes were untouched.
+  No service/signing/install/remote/model/GPU/SNE/Tailscale/security/M1/M5 or
+  production action occurred. Exact result was routed to the Pantheon source
+  thread.
 
 ## Entry 039 — 2026-06-04 22:54 — Session Compact (COMPACT)
 
@@ -2596,6 +2187,20 @@ performance policy and no longer describes another rerun as pending.
 
 ---
 
+## 2026-09-24 — FinalWishes PR #405 independent review
+
+- Reviewed exact clean head `57b98729b0bfd8be99242918b069384b65043d34` /
+  tree `1e18c7a7b7454bbc929affc57aad36564de3951b` in its dedicated worktree.
+- Verdict ACCEPT. Focused memorial pack and public-route tests passed 61/61;
+  typecheck and production build passed. Three seeded demos rendered with
+  differentiated person-led portraits; seven premium previews rendered in the
+  exact component/route suite, including Quiet Horizon full-bleed treatment.
+  Desktop and 390x844 mobile checks found no horizontal overflow.
+- Durable review receipt:
+  `/private/tmp/finalwishes-pr405-57b98729-independent-review-20260924.json`
+  SHA256 `b1ecd1395beb107ac191016cc5aab650d1fe75b8359c0b150f9f556a83c89632`.
+  No merge or deployment occurred.
+
 ## Entry 046 — 2026-08-17 00:51 — Session Compact (COMPACT)
 
 > Persisted via `thoth compact` before context compression.
@@ -4350,6 +3955,111 @@ Published `docs/ROUTER_REPLICATION_AND_RECOVERY_PLAN.md` and `docs/contracts/sir
 
 **Decisions**:
 - Notified Claude Deck of bounded contrast and print-route repairs to prevent overwrite.
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-06-16T15:30:16Z
+- pending: none
+
+---
+
+## Entry 052 — 2026-09-27 20:05 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- Stack Lab PR #52 merged; lane canon baselines refreshed for Pantheon v0.24.14, Apollo/SNE v1.0.1, Hermes v1.0.0 boundary, FinalWishes .6, and Nexus alpha.2. Remaining boundaries: Pantheon Developer ID credentials, Hermes v1.0.1 stability, SNE qualification/signing, Nexus GA/runtime, FinalWishes mobile/legal/provider evidence.
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-06-16T15:30:16Z
+- pending: none
+
+---
+
+## Entry 053 — 2026-09-27 20:28 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- Hermes v1.0.2 candidate published and Stack Lab registered. Exact release commit f3cd9cf58aba16f73127ec6907cd66cfc24ddb0d; pkg SHA 7968243265c39c96c6b7c4ef4a0c7900c87a5bcfab7a340a35ea94256b2b757f; tar SHA 0f44fcd508130fe17df725146a4ab495542a88b447e0e7570af72586b1d523ef. Stack Lab receipt PR #53 merged 74a1a421; lane canon PR #54 merged adf7c2f7. Candidate remains pre-release because exact M1/M5 host-stall qualification, signing/notarization, EULA, and G1 evidence remain open. Pantheon/FinalWishes/Nexus/Apollo baselines remain current.
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-06-16T15:30:16Z
+- pending: none
+
+---
+
+## Entry 054 — 2026-09-27 20:39 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- Pantheon v0.24.15 candidate published: source 6113fd0224a4c217a5e87e9ec9f4f1593ee7fd65, tag v0.24.15, release workflow 36362749410 GoReleaser/CLI assets pass; macOS DMG/PKG job failed at unavailable Developer ID credentials; release marked prerelease. Stack Lab PR #55 merged 6186f202. Remaining Pantheon gates: Developer ID signing/notary, DMG/PKG, cask, installed-host proof.
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-06-16T15:30:16Z
+- pending: none
+
+---
+
+## Entry 055 — 2026-09-27 20:56 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- FinalWishes release 2026.09.28.1 completed from exact mainline fcfeff04af0c1cd7453cdf11531dbbb3b941bbd6. Workflow 36363450060 SUCCESS: all tests/build/security/docs, Cloud Run finalwishes-api-00560-89s, Firebase Hosting/Functions/Rules deployment, public smoke HTTP 200. Stack Lab PR #56 merged f652ad2d30c144ee7979d595d9aaf7e111596b99. Release URL finalwishes-web-2026.09.28.1. Artifact quota warnings remain non-fatal; mobile-store/legal/provider/row-level evidence open.
+- Router snapshot:
+- active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+- completed topics: 41
+- last Codex read: 2026-06-11T04:28:50Z
+- last Claude read: 2026-06-16T15:30:16Z
+- pending: none
+
+---
+
+## Entry 056 — 2026-09-29 — FinalWishes .17 and Firebase Hosting provisioning
+
+- Mainline FinalWishes workflow `36606921392` completed successfully on merge
+  `ef65df08cb7ec64b4b76a1baed5914708a92c8c7`; Cloud Run deployed
+  `finalwishes-api-00630-jw7`, Hosting deployed, and read-only public smoke
+  returned 200 for web/auth/service-worker/API endpoints.
+- Published `finalwishes-web-2026.09.29.17`; Stack Lab PR #207 merged as
+  `031b30a34` and released as `v0.1.114`. Exact receipt and recipe are in
+  Stack Lab `docs/releases/FINALWISHES-WEB-2026.09.29.17-*`.
+- Firebase's October 15, 2026 Hosting notice requires explicit site creation
+  for newly provisioned projects. Assiduous v1.1.21 already includes the
+  idempotent helper across production, staging, metrics, and promotion paths.
+
+---
+
+## Entry 057 — 2026-09-29 — Pantheon Homebrew cask lifecycle readback
+
+- Homebrew fetched Pantheon v0.24.52 from `sirsimaster/tools`; the retained
+  DMG was 15,284,393 bytes with SHA-256
+  `efd225f24e923131eb4d46bc343c84d63aae9958df44928347d6c51fb3e3ed2e`.
+- The existing M5 install upgraded from v0.24.51 to v0.24.52. The cask and
+  `/opt/homebrew/bin/sirsi` read back correctly, and `sirsi doctor --json`
+  executed successfully. Homebrew's unrelated pkgconf cleanup hit outdated
+  local Command Line Tools after the cask upgrade.
+- Stack Lab PR #208 merged and released as v0.1.115. This is installed-host
+  evidence only; fresh-host Homebrew readback remains open because M1 has no
+  Homebrew.
+
+---
+
+## Entry 058 — 2026-09-30 19:03 — Session Compact (COMPACT)
+
+> Persisted via `thoth compact` before context compression.
+
+**Decisions**:
+- {"session_id":"01a0f47a-d390-72f2-b94e-3a11d5d78274","turn_id":"01a0f47a-ddf3-7f41-9279-5c23c7d28c53","transcript_path":null,"cwd":"/Users/thekryptodragon/Development/sirsi-pantheon","hook_event_name":"PreCompact","model":"gpt-6.1-sol","trigger":"auto"}
 - Router snapshot:
 - active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
 - completed topics: 41

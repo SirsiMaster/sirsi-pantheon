@@ -1,0 +1,98 @@
+{
+  "work_item_id": "20260924-004938-codex-finalwishes-claude-finalwishes-review-pr381-merge-repair",
+  "agent_id": "claude-finalwishes",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "internal-tool",
+  "canon_read": [
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-09-23T21:10:00Z",
+      "notes": "no item-specific requirement beyond the standing one-item/one-owner/one-review/one-proof discipline this closure follows."
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-09-23T21:10:00Z",
+      "notes": "pantheon router root; no item-specific scope beyond routing this review to claude-finalwishes."
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-09-23T21:10:00Z",
+      "notes": "standing release-gate pattern followed; this CI-traceability item is not itself tracked in this doc."
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-09-23T21:10:00Z",
+      "notes": "no item-specific roadmap entry; this is a single-repo (FinalWishes) CI gate fix, not a pantheon roadmap item."
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-09-23T21:10:00Z",
+      "notes": "not applicable (scan-finding reproduction methodology); this closure's own reproducibility is the gh/git/curl commands recorded under verification[]."
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/FinalWishes/scripts/verify-commit-traceability.sh",
+      "role": "repo-canon",
+      "read_at": "2026-09-23T21:10:00Z",
+      "notes": "Rule 29 traceability gate this PR modifies; confirmed the hash-bound exemption pattern and its comment discipline before judging PR #381 sound."
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "/Users/thekryptodragon/Development/FinalWishes/scripts/verify-commit-traceability.sh",
+      "section": "adds exact hash 3fabc664 to historical_exemptions",
+      "claim": "Reviewed the diff, confirmed it adds only the exact GitHub squash SHA of PR #379 (3fabc664ef43489555b2d8837c726c9d349bb983) to scripts/verify-commit-traceability.sh's historical_exemptions, with a hash-bound comment; no other exemption widened.",
+      "files_changed": [".agents/proofs/20260924-004938-codex-finalwishes-claude-finalwishes-review-pr381-merge-repair.json"],
+      "evidence": [
+        "gh pr view 381 --json ... showed the sole commit 5b3ec9d6 modifying scripts/verify-commit-traceability.sh with the exact-hash exemption and full Rule 29 footers (Refs/Changelog/Diagrams/ADR).",
+        "git show origin/main:scripts/verify-commit-traceability.sh confirmed historical_exemptions on main now includes 3fabc664ef43489555b2d8837c726c9d349bb983 with a hash-bound comment matching the PR body's claim exactly.",
+        "PR #381 was already MERGED (by SirsiMaster, commit d0d3ecf8, 2026-09-24T01:05:38Z) before this review started, as a single-parent squash rather than the requested merge commit -- noted, not reverted, since a follow-up hardening PR (#382) landed immediately after and superseded the concern."
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "N/A -- CI/traceability-gate fix, no product surface change.",
+    "design": "N/A -- no design surface.",
+    "technical": "Watched the live main CI/CD Pipeline run for the immediately-following PR #382 commit (head b965e78c, databaseId 35941449474) to completion: all jobs green, including Deploy - Firebase Hosting, Deploy - API to Cloud Run, Deploy - Firebase Functions, Deploy - Firestore & Storage Rules, and Release - Read-only Production Smoke -- proving PR #381's exemption actually unblocked main CI/CD end to end, not just that the PR's own checks passed.",
+    "operational": "Verified the deploy landed live: https://finalwishes-prod.web.app/ returns 200 and serves the real SPA (title 'FINALWISHES | The Estate Operating System'); /memorial route also returns 200. Side finding: the custom domain https://finalwishes.com/ currently serves an unrelated 'Protected Blog' placeholder -- a separate DNS/domain-mapping issue, flagged but out of scope for this item, not actioned.",
+    "narrative": "Item asked to review PR #381, merge via merge commit if sound and green, then verify live memorials. By the time this item was worked, the owner had already merged #381 (as a squash, not the requested merge commit) and a follow-up PR #382 had already landed on top of it. Rather than re-litigate an already-closed merge decision, verified the actual outcome the item cared about -- that the exemption is exactly hash-bound as claimed and that main CI/CD is now green and deploying -- by watching the next real pipeline run through to its deploy and smoke-test jobs, then confirming the live site."
+  },
+  "verification": [
+    {
+      "name": "PR #381 diff scope",
+      "command": "gh pr view 381 --json title,body,commits,statusCheckRollup",
+      "status": "pass",
+      "evidence": "Single commit 5b3ec9d6, adds only the 3fabc664 exemption, full Rule 29 footers present, all PR-branch checks SUCCESS."
+    },
+    {
+      "name": "exemption present on main, hash-exact",
+      "command": "git show origin/main:scripts/verify-commit-traceability.sh | grep 3fabc664",
+      "status": "pass",
+      "evidence": "3fabc664ef43489555b2d8837c726c9d349bb983 present in historical_exemptions with matching hash-bound comment."
+    },
+    {
+      "name": "main CI/CD pipeline green end to end",
+      "command": "gh run view 35941449474 --json status,conclusion,jobs",
+      "status": "pass",
+      "evidence": "status=completed, conclusion=success, all 14 jobs success including 4 Deploy jobs and Release - Read-only Production Smoke."
+    },
+    {
+      "name": "live production site serving the real app",
+      "command": "curl -s https://finalwishes-prod.web.app/",
+      "status": "pass",
+      "evidence": "200, <title>FINALWISHES | The Estate Operating System</title>; /memorial route also 200."
+    }
+  ],
+  "working_status": {
+    "environment": "FinalWishes repo, read-only review (no code changes made by this item)",
+    "how_verified": "gh pr/run inspection, git show against origin/main, live curl checks against finalwishes-prod.web.app",
+    "observed_result": "PR #381 sound and already merged; main CI/CD now green through deploy and smoke test; production SPA live and correct",
+    "verified_at": "2026-09-24T01:10:00Z"
+  },
+  "blockers": []
+}

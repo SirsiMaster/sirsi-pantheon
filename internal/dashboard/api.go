@@ -12,11 +12,9 @@ import (
 )
 
 // apiStats returns the current system stats snapshot as the typed
-// StatsResponse contract (E3). The producer (the menubar's StatsFn) emits bytes
-// with JSON tags identical to StatsResponse, so we decode → re-encode through
-// the contract type to make the boundary typed. If the bytes do not match the
-// contract (forward-incompatible producer), we degrade honestly by passing the
-// original bytes through rather than dropping data silently.
+// StatsResponse contract (E3), including whether component enumeration
+// succeeded. If producer bytes do not match the contract, we pass them through
+// rather than dropping data silently.
 func (s *Server) apiStats(w http.ResponseWriter, r *http.Request) {
 	if s.cfg.StatsFn == nil {
 		writeError(w, "stats not available", http.StatusServiceUnavailable)

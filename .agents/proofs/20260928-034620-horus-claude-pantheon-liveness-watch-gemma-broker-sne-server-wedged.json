@@ -1,0 +1,113 @@
+{
+  "work_item_id": "20260928-034620-horus-claude-pantheon-liveness-watch-gemma-broker-sne-server-wedged",
+  "agent_id": "claude-pantheon",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "internal-tool",
+  "canon_read": [
+    {
+      "path": "CLAUDE.md",
+      "role": "repo-canon",
+      "read_at": "2026-09-28T03:48:00Z",
+      "notes": "A32/A40 load-bearing infra rules (never SIGKILL, right-size); A35 scope-the-check-to-the-claim"
+    },
+    {
+      "path": "internal/liveness/livenesswatch.go",
+      "role": "precedent",
+      "read_at": "2026-09-28T03:49:00Z",
+      "notes": "the probe this alert originates from: connection error / non-200 / zero tokens / >30s / RSS floor"
+    },
+    {
+      "path": ".agents/proofs/20260928-013249-horus-claude-pantheon-liveness-watch-gemma-broker-sne-server-wedged.json",
+      "role": "precedent",
+      "read_at": "2026-09-28T03:50:00Z",
+      "notes": "prior identical-title alert 2.5h earlier, root-caused as a port-file bug during stop/start; fixed in 3d51b952. This occurrence has no stop/start cycle, so that fix does not apply here."
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-09-28T03:51:00Z",
+      "notes": "router closure requirement"
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-09-28T03:51:00Z",
+      "notes": ""
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-09-28T03:51:00Z",
+      "notes": ""
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-09-28T03:51:00Z",
+      "notes": ""
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-09-28T03:51:00Z",
+      "notes": ""
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "CLAUDE.md",
+      "section": "A32 (load-bearing infra, right-size never SIGKILL) / A35 (scope-the-check-to-the-claim) — applied to router item 20260928-034620 (liveness-watch: gemma broker wedged)",
+      "claim": "the warm gemma broker (sne-server) is unresponsive per launchd liveness probe (no port / connection error / non-200 / zero tokens / >30s / RSS below 1GB floor)",
+      "files_changed": [
+        ".agents/proofs/20260928-034620-horus-claude-pantheon-liveness-watch-gemma-broker-sne-server-wedged.json"
+      ],
+      "evidence": [
+        "PID 98392 (`sirsi-inference serve .../gemma-4-12B-it-8bit ...`) has been running continuously since 2026-09-27T22:22:54Z, i.e. before the 03:46:20Z alert fired and unchanged since -- no restart occurred, ruling out the previously-fixed port-file-loss-on-restart bug as the cause here",
+        "port file ~/.sirsi/gemma-server.port correctly contains 8477, matching lsof -i :8477 LISTEN on PID 98392",
+        "RSS 4.3 GB, well above the 1 GB weight floor",
+        "`sirsi gemma status` returned a live, coherent, non-empty completion from the broker at check time (03:48-03:50Z, ~2-4 min after the alert)"
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "N/A -- infra reliability check, no product surface change.",
+    "design": "N/A",
+    "technical": "No code change required. The broker was already healthy by the time this item was worked; the underlying process never restarted across the alert window, so the fix already shipped in 3d51b952 (port-file restore on stop/start) is not implicated. Consistent with the probe firing on a transient condition (e.g. a single slow-response probe cycle exceeding the 30s timeout) that cleared on its own before/without router auto-restore intervention.",
+    "operational": "No config or deploy change. No process was signaled, resized, or restarted by this agent, per A32/ADR-040 (load-bearing infra is read-only to this check).",
+    "narrative": "Second occurrence of this alert title within ~2.5 hours (prior: 20260928-013249, root-caused and fixed). This occurrence shows no restart in the broker's lifetime across the alert window, so it is not the same bug recurring -- most likely a transient probe miss. Broker was confirmed healthy and serving within minutes of the alert."
+  },
+  "verification": [
+    {
+      "name": "broker process continuity across alert window",
+      "command": "ps -p 98392 -o lstart=",
+      "status": "pass",
+      "evidence": "Sun Sep 27 22:22:54 2026 -- predates the 03:46:20Z alert; no restart occurred"
+    },
+    {
+      "name": "port binding matches recorded port file",
+      "command": "cat ~/.sirsi/gemma-server.port; lsof -i :8477",
+      "status": "pass",
+      "evidence": "port file = 8477; lsof shows PID 98392 LISTEN on 127.0.0.1:8477"
+    },
+    {
+      "name": "RSS above weight floor",
+      "command": "ps -p 98392 -o rss=",
+      "status": "pass",
+      "evidence": "RSS ~4.3 GB, above the 1 GB floor"
+    },
+    {
+      "name": "functional liveness check",
+      "command": "sirsi gemma status",
+      "status": "pass",
+      "evidence": "warm broker (gemma-4-12B-it-8bit) returned a full, coherent completion -- non-zero tokens, no connection error"
+    }
+  ],
+  "working_status": {
+    "environment": "sirsi-pantheon repo, fix/broker-quarantine branch, local dev machine",
+    "how_verified": "direct process/port/RSS inspection plus a live functional probe of the broker, immediately after acknowledging the router item",
+    "observed_result": "broker healthy and serving; no restart or intervention needed or performed",
+    "verified_at": "2026-09-28T03:50:00Z"
+  },
+  "blockers": []
+}

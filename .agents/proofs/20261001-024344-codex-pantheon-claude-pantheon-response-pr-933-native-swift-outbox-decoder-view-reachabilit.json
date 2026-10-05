@@ -1,0 +1,108 @@
+{
+  "work_item_id": "20261001-024344-codex-pantheon-claude-pantheon-response-pr-933-native-swift-outbox-decoder-view-reachabilit",
+  "agent_id": "claude-pantheon",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "internal-tool",
+  "canon_read": [
+    {
+      "path": "PANTHEON_RULES.md",
+      "role": "agent-law",
+      "read_at": "2026-10-01T03:00:00Z",
+      "notes": "A34 (bind cannot supersede live rejection), A35 (scope the check to the claim)"
+    },
+    {
+      "path": "macapp/Sources/SirsiMenubar/SirsiEngine.swift",
+      "role": "target-file",
+      "read_at": "2026-10-01T03:00:00Z",
+      "notes": "read routerOutboxBlockers/routerHasBlockers"
+    },
+    {
+      "path": "macapp/Sources/SirsiMenubar/Views.swift",
+      "role": "target-file",
+      "read_at": "2026-10-01T03:00:00Z",
+      "notes": "read OutboxBlockerCard + blocker-gated rendering branch"
+    },
+    {
+      "path": "macapp/Tests/SirsiMenubarTests/OutboxReachabilityTests.swift",
+      "role": "test-plan",
+      "read_at": "2026-10-01T03:00:00Z",
+      "notes": "existing reachability test pattern"
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "portfolio-doctrine",
+      "read_at": "2026-10-01T03:02:00Z",
+      "notes": "read; no conflict — menubar visibility fix is within Pantheon scope"
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-10-01T03:02:00Z",
+      "notes": "read"
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-10-01T03:02:00Z",
+      "notes": "read; menubar #130 honesty/visibility requirement, consistent with this fix"
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-10-01T03:02:00Z",
+      "notes": "read"
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-10-01T03:02:00Z",
+      "notes": "read; not applicable to this Swift-only menubar change"
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "macapp/Sources/SirsiMenubar/SirsiEngine.swift",
+      "section": "Remaining required condition",
+      "claim": "SirsiEngine.swift filters routerOutboxBlockers to unreadable only; Views.swift renders only that subset; with queued_for_retry=3 and otherwise healthy board it displays 'No blockers — fabric is healthy'. Ra's original decision requires the held-message state be visible read-only.",
+      "files_changed": [
+        "macapp/Sources/SirsiMenubar/SirsiEngine.swift",
+        "macapp/Sources/SirsiMenubar/Views.swift",
+        "macapp/Tests/SirsiMenubarTests/OutboxReachabilityTests.swift"
+      ],
+      "evidence": [
+        "commit 852d306a on feat/pr931-swift-outbox-reachability",
+        "new routerRetryOutbox computed property + OutboxRetryCard rendered outside the routerHasBlockers-gated branch"
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "Held queued-for-retry messages are now visible read-only on the menubar even when the board has no blockers",
+    "design": "Nonblocking card distinct from the red blocker card, consistent with existing card patterns",
+    "technical": "routerRetryOutbox filters readable + queuedForRetry>0, excludes already-surfaced unreadable case; rendered unconditionally on routerBoard presence, not gated by routerHasBlockers",
+    "operational": "Ma'at pre-push gate passed on push (gitleaks clean; no Go files changed)",
+    "narrative": "router item 20261001-024344 result"
+  },
+  "verification": [
+    {
+      "name": "swift test",
+      "command": "CLANG_MODULE_CACHE_PATH=/tmp/pantheon-swift-cache2 SWIFTPM_MODULECACHE_OVERRIDE=/tmp/pantheon-swift-cache2 swift test --package-path macapp --disable-sandbox",
+      "status": "pass",
+      "evidence": "Executed 22 tests, with 0 failures (0 unexpected) — up from 20 before this change"
+    },
+    {
+      "name": "Ma'at pre-push gate",
+      "command": "git push origin feat/pr931-swift-outbox-reachability",
+      "status": "pass",
+      "evidence": "gitleaks 0 issues; no Go files changed — skipping tests; gate passed"
+    }
+  ],
+  "working_status": {
+    "environment": "sirsi-pantheon .worktrees/pr931-swift @ 852d306a",
+    "how_verified": "swift test full suite run + git push with Ma'at gate",
+    "observed_result": "PR #933 head advanced to 852d306a122c593740d91bd5bcf9f2270845ea7f on origin",
+    "verified_at": "2026-10-01T03:05:00Z"
+  },
+  "handoffs": [],
+  "blockers": []
+}

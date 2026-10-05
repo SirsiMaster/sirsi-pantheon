@@ -2,12 +2,21 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 var errVariantSelectionRequired = errors.New("engine router: explicit variant selection is required")
+
+const (
+	DataBoundaryOnDevice     = "on-device"
+	DataBoundaryRemote       = "remote"
+	DataBoundaryNotDisclosed = "not-disclosed"
+)
 
 // RoutePolicy is the caller's explicit engine preference. Fallback is never
 // implicit: a caller must opt in, and the returned decision records whether it
@@ -24,8 +33,35 @@ type RouteDecision struct {
 	RequestedVariant BackendVariant `json:"requested_variant,omitempty"`
 	Selected         Kind           `json:"selected"`
 	SelectedVariant  BackendVariant `json:"selected_variant,omitempty"`
-	Fallback         bool           `json:"fallback"`
-	Rationale        string         `json:"rationale"`
+	// DataBoundary is the normalized configured-endpoint classification, not
+	// a runtime trace of proxies or other transport intermediaries.
+	DataBoundary string `json:"data_boundary,omitempty"`
+	Fallback     bool   `json:"fallback"`
+	Rationale    string `json:"rationale"`
+}
+
+func connectorDataBoundary(connector Connector) string {
+	reporter, ok := connector.(interface{ RequestDataBoundary() string })
+	if !ok {
+		return DataBoundaryNotDisclosed
+	}
+	switch strings.TrimSpace(reporter.RequestDataBoundary()) {
+	case DataBoundaryOnDevice:
+		return DataBoundaryOnDevice
+	case DataBoundaryRemote:
+		return DataBoundaryRemote
+	default:
+		return DataBoundaryNotDisclosed
+	}
+}
+
+func bindConnectorDataBoundary(decision RouteDecision, connector Connector) (RouteDecision, error) {
+	actual := connectorDataBoundary(connector)
+	if decision.DataBoundary != "" && decision.DataBoundary != actual {
+		return RouteDecision{}, fmt.Errorf("engine route: data boundary %q does not match admitted connector boundary %q", decision.DataBoundary, actual)
+	}
+	decision.DataBoundary = actual
+	return decision, nil
 }
 
 func (d RouteDecision) validate(selected Kind, selectedVariant BackendVariant) error {
@@ -40,6 +76,9 @@ func (d RouteDecision) validate(selected Kind, selectedVariant BackendVariant) e
 	}
 	if d.Fallback != (d.Requested != d.Selected) {
 		return fmt.Errorf("engine route: fallback flag does not match requested/selected engines")
+	}
+	if d.DataBoundary != "" && d.DataBoundary != DataBoundaryOnDevice && d.DataBoundary != DataBoundaryRemote && d.DataBoundary != DataBoundaryNotDisclosed {
+		return fmt.Errorf("engine route: data boundary %q is invalid", d.DataBoundary)
 	}
 	if strings.TrimSpace(d.Rationale) == "" {
 		return fmt.Errorf("engine route: rationale is required")
@@ -61,6 +100,15 @@ func (d RouteDecision) validate(selected Kind, selectedVariant BackendVariant) e
 		return fmt.Errorf("engine route: selected variant %q does not match requested variant %q", selectedVariant, d.RequestedVariant)
 	}
 	return nil
+}
+
+// Validate binds a public route decision to the identity it claims to have
+// selected. Surface adapters use this before publishing route metadata.
+func (d RouteDecision) Validate(identity Identity) error {
+	if err := identity.Validate(); err != nil {
+		return fmt.Errorf("engine route identity: %w", err)
+	}
+	return d.validate(identity.Engine, identity.EffectiveVariant())
 }
 
 // Router is the one engine-neutral selection authority. Connectors are keyed
@@ -104,6 +152,9 @@ func (r *Router) OpenSession(ctx context.Context, sessionID string, policy Route
 	if r == nil || len(r.connectors) == 0 {
 		return Session{}, RouteDecision{}, fmt.Errorf("engine router: no connectors configured")
 	}
+	if ctx == nil {
+		return Session{}, RouteDecision{}, fmt.Errorf("engine router: context is required")
+	}
 	if err := ctx.Err(); err != nil {
 		return Session{}, RouteDecision{}, fmt.Errorf("engine router: session admission cancelled before routing: %w", err)
 	}
@@ -125,9 +176,13 @@ func (r *Router) OpenSession(ctx context.Context, sessionID string, policy Route
 			}
 		}
 	}
+	if preferredVariant == VariantSNEMTP && policy.AllowFallback {
+		return Session{}, RouteDecision{}, fmt.Errorf("engine router: explicit sne-mtp routes cannot fall back or downgrade execution mode")
+	}
 	order := r.candidateOrder(policy.Preferred, preferredVariant)
 	reasons := make([]string, 0, len(order))
 	capabilityFailures := 0
+	requiredCapabilities := sessionRequiredCapabilities(policy.RequiredCapabilities)
 	for index, kind := range order {
 		if index > 0 && !policy.AllowFallback {
 			break
@@ -139,12 +194,33 @@ func (r *Router) OpenSession(ctx context.Context, sessionID string, policy Route
 			connector, configured = r.connectors[connectorKey{kind: kind, variant: candidateVariant}]
 		}
 		if !configured {
-			reasons = append(reasons, fmt.Sprintf("%s: connector is not configured", kind))
+			reasons = append(reasons, fmt.Sprintf("%s variant %s: connector is not configured", kind, candidateVariant))
 			continue
 		}
-		if err := requireCapabilities(connector.Capabilities(), policy.RequiredCapabilities); err != nil {
+		candidateRequirements := append([]Capability(nil), requiredCapabilities...)
+		for _, capability := range variantRequiredCapabilities(candidateVariant) {
+			candidateRequirements = includeCapability(candidateRequirements, capability)
+		}
+		candidateCapabilities := connector.Capabilities()
+		capabilityErr := requireCapabilities(candidateCapabilities, candidateRequirements)
+		if capabilityErr != nil {
+			resolver, canResolve := connector.(ContextualCapabilityResolver)
+			if canResolve && capabilityRequirementsResolvable(candidateCapabilities, candidateRequirements, resolver) {
+				resolved, resolveErr := resolver.CapabilitiesForContext(ctx)
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					return Session{}, RouteDecision{}, fmt.Errorf("engine router: contextual capability admission cancelled: %w", ctxErr)
+				}
+				if resolveErr != nil {
+					reasons = append(reasons, fmt.Sprintf("%s readiness: %v", kind, resolveErr))
+					continue
+				}
+				candidateCapabilities = resolved
+				capabilityErr = requireCapabilities(candidateCapabilities, candidateRequirements)
+			}
+		}
+		if capabilityErr != nil {
 			capabilityFailures++
-			reasons = append(reasons, fmt.Sprintf("%s: %v", kind, err))
+			reasons = append(reasons, fmt.Sprintf("%s: %v", kind, capabilityErr))
 			continue
 		}
 		variant := connector.Variant()
@@ -172,11 +248,14 @@ func (r *Router) OpenSession(ctx context.Context, sessionID string, policy Route
 		if session.Identity.EffectiveVariant() != variant {
 			return Session{}, RouteDecision{}, fmt.Errorf("engine router: %s connector returned variant %q, want %q", kind, session.Identity.EffectiveVariant(), variant)
 		}
-		decision := RouteDecision{Requested: policy.Preferred, RequestedVariant: policy.PreferredVariant, Selected: kind, SelectedVariant: variant, Fallback: kind != policy.Preferred}
+		decision := RouteDecision{Requested: policy.Preferred, RequestedVariant: policy.PreferredVariant, Selected: kind, SelectedVariant: variant, DataBoundary: connectorDataBoundary(connector), Fallback: kind != policy.Preferred}
 		if kind == policy.Preferred {
 			decision.Rationale = fmt.Sprintf("preferred %s connector admitted", kind)
 		} else {
 			decision.Rationale = fmt.Sprintf("preferred %s unavailable; explicit fallback selected %s", policy.Preferred, kind)
+		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return Session{}, RouteDecision{}, fmt.Errorf("engine router: session admission cancelled before returning %s connector: %w", kind, ctxErr)
 		}
 		return session, decision, nil
 	}
@@ -187,37 +266,97 @@ func (r *Router) OpenSession(ctx context.Context, sessionID string, policy Route
 }
 
 func (r *Router) Complete(ctx context.Context, session Session, request GenerateRequest, decision RouteDecision) (Completion, Receipt, error) {
+	if ctx == nil {
+		return Completion{}, Receipt{}, fmt.Errorf("engine router: context is required")
+	}
+	if request.Stream {
+		return Completion{}, Receipt{}, fmt.Errorf("engine router: Complete requires request stream=false")
+	}
+	snapshot, expectedRequestDigest, err := SnapshotGenerateRequest(request)
+	if err != nil {
+		return Completion{}, Receipt{}, err
+	}
+	request = snapshot
 	connector, err := r.connectorForDecision(session, decision)
+	if err != nil {
+		return Completion{}, Receipt{}, err
+	}
+	decision, err = bindConnectorDataBoundary(decision, connector)
+	if err != nil {
+		return Completion{}, Receipt{}, err
+	}
+	if err := validateRoutedRequest(ctx, connector, session, request); err != nil {
+		return Completion{}, Receipt{}, fmt.Errorf("engine router: request rejected before connector: %w", err)
+	}
+	connectorRequest, _, err := SnapshotGenerateRequest(request)
 	if err != nil {
 		return Completion{}, Receipt{}, err
 	}
 	if err := ctx.Err(); err != nil {
 		return Completion{}, Receipt{}, fmt.Errorf("engine router: completion cancelled before connector: %w", err)
 	}
-	completion, receipt, err := connector.Complete(ctx, session, request)
+	completion, receipt, err := connector.Complete(ctx, session, connectorRequest)
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return Completion{}, Receipt{}, fmt.Errorf("engine router: completion cancelled after connector: %w", ctxErr)
 	}
 	if err != nil {
 		return Completion{}, Receipt{}, err
 	}
+	if completion.Model != session.Identity.ModelID {
+		return Completion{}, Receipt{}, fmt.Errorf("engine router: served model %q does not match admitted model %q", completion.Model, session.Identity.ModelID)
+	}
+	if completion.PromptTokens < 0 || completion.OutputTokens < 0 {
+		return Completion{}, Receipt{}, fmt.Errorf("engine router: completion token counts must be non-negative (prompt=%d output=%d)", completion.PromptTokens, completion.OutputTokens)
+	}
+	if receipt.RequestSHA256 != expectedRequestDigest {
+		return Completion{}, Receipt{}, fmt.Errorf("engine router: completion receipt request hash %q does not match admitted request %q", receipt.RequestSHA256, expectedRequestDigest)
+	}
+	if want := completionDigest(completion.Text); receipt.CompletionSHA256 != want {
+		return Completion{}, Receipt{}, fmt.Errorf("engine router: completion receipt text hash %q does not match returned completion %q", receipt.CompletionSHA256, want)
+	}
 	route := decision
 	receipt.Route = &route
 	if err := receipt.Validate(session); err != nil {
 		return Completion{}, Receipt{}, fmt.Errorf("engine router: completion receipt: %w", err)
 	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return Completion{}, Receipt{}, fmt.Errorf("engine router: completion cancelled before accepting verified result: %w", ctxErr)
+	}
 	return completion, receipt, err
 }
 
 func (r *Router) Stream(ctx context.Context, session Session, request GenerateRequest, decision RouteDecision) (<-chan Event, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("engine router: context is required")
+	}
+	if !request.Stream {
+		return nil, fmt.Errorf("engine router: Stream requires request stream=true")
+	}
+	snapshot, expectedRequestDigest, err := SnapshotGenerateRequest(request)
+	if err != nil {
+		return nil, err
+	}
+	request = snapshot
 	connector, err := r.connectorForDecision(session, decision)
+	if err != nil {
+		return nil, err
+	}
+	decision, err = bindConnectorDataBoundary(decision, connector)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateRoutedRequest(ctx, connector, session, request); err != nil {
+		return nil, fmt.Errorf("engine router: request rejected before connector: %w", err)
+	}
+	connectorRequest, _, err := SnapshotGenerateRequest(request)
 	if err != nil {
 		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("engine router: stream cancelled before connector: %w", err)
 	}
-	events, err := connector.Stream(ctx, session, request)
+	streamStartedAt := time.Now().UTC()
+	events, err := connector.Stream(ctx, session, connectorRequest)
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return nil, fmt.Errorf("engine router: stream cancelled after connector: %w", ctxErr)
 	}
@@ -231,35 +370,242 @@ func (r *Router) Stream(ctx context.Context, session Session, request GenerateRe
 	go func() {
 		defer close(routed)
 		var previous uint64
+		var forwarded strings.Builder
+		sawDelta := false
 		terminal := false
-		for event := range events {
-			if event.Receipt != nil {
-				route := decision
-				event.Receipt.Route = &route
-				if err := event.Receipt.Validate(session); err != nil {
-					routerEmitError(ctx, routed, previous, session.ID, err)
+		for {
+			var event Event
+			var ok bool
+			select {
+			case <-ctx.Done():
+				routerEmitConnectorCancellation(events, routed, previous, session, request, decision, forwarded.String(), streamStartedAt, ctx.Err())
+				return
+			case event, ok = <-events:
+				if !ok {
+					if !terminal {
+						if ctx.Err() != nil {
+							routerEmitConnectorCancellation(events, routed, previous, session, request, decision, forwarded.String(), streamStartedAt, ctx.Err())
+						} else {
+							routerEmitError(ctx, routed, previous, session.ID, fmt.Errorf("stream ended before a terminal event"))
+						}
+					}
 					return
 				}
 			}
+			if event.SessionID != session.ID {
+				if ctx.Err() != nil {
+					routerEmitCancellation(routed, previous, session, request, decision, forwarded.String(), streamStartedAt, ctx.Err())
+				} else {
+					routerEmitError(ctx, routed, previous, session.ID, fmt.Errorf("stream event session %q does not match admitted session %q", event.SessionID, session.ID))
+				}
+				return
+			}
+			if event.Receipt != nil {
+				if event.Receipt.RequestSHA256 != expectedRequestDigest {
+					if ctx.Err() != nil {
+						routerEmitConnectorCancellation(events, routed, previous, session, request, decision, forwarded.String(), streamStartedAt, ctx.Err())
+					} else {
+						routerEmitError(ctx, routed, previous, session.ID, fmt.Errorf("stream receipt request hash %q does not match admitted request %q", event.Receipt.RequestSHA256, expectedRequestDigest))
+					}
+					return
+				}
+				if event.Kind == EventCompleted {
+					if sawDelta && event.Text != forwarded.String() {
+						if ctx.Err() != nil {
+							routerEmitConnectorCancellation(events, routed, previous, session, request, decision, forwarded.String(), streamStartedAt, ctx.Err())
+						} else {
+							routerEmitError(ctx, routed, previous, session.ID, fmt.Errorf("completed stream text does not match forwarded deltas"))
+						}
+						return
+					}
+					if want := completionDigest(event.Text); event.Receipt.CompletionSHA256 != want {
+						if ctx.Err() != nil {
+							routerEmitConnectorCancellation(events, routed, previous, session, request, decision, forwarded.String(), streamStartedAt, ctx.Err())
+						} else {
+							routerEmitError(ctx, routed, previous, session.ID, fmt.Errorf("stream receipt text hash %q does not match completed text %q", event.Receipt.CompletionSHA256, want))
+						}
+						return
+					}
+				}
+				if event.Kind == EventError {
+					if want := completionDigest(forwarded.String()); event.Receipt.CompletionSHA256 != want {
+						if ctx.Err() != nil {
+							routerEmitConnectorCancellation(events, routed, previous, session, request, decision, forwarded.String(), streamStartedAt, ctx.Err())
+						} else {
+							routerEmitError(ctx, routed, previous, session.ID, fmt.Errorf("error stream receipt text hash %q does not match forwarded text %q", event.Receipt.CompletionSHA256, want))
+						}
+						return
+					}
+				}
+				route := decision
+				event.Receipt.Route = &route
+				if err := event.Receipt.Validate(session); err != nil {
+					if ctx.Err() != nil {
+						routerEmitConnectorCancellation(events, routed, previous, session, request, decision, forwarded.String(), streamStartedAt, ctx.Err())
+					} else {
+						routerEmitError(ctx, routed, previous, session.ID, err)
+					}
+					return
+				}
+			}
+			if event.Kind == EventCompleted && event.Model != session.Identity.ModelID {
+				if ctx.Err() != nil {
+					routerEmitCancellation(routed, previous, session, request, decision, forwarded.String(), streamStartedAt, ctx.Err())
+				} else {
+					routerEmitError(ctx, routed, previous, session.ID, fmt.Errorf("stream served model %q does not match admitted model %q", event.Model, session.Identity.ModelID))
+				}
+				return
+			}
 			if err := event.Validate(previous); err != nil {
-				routerEmitError(ctx, routed, previous, session.ID, err)
+				if ctx.Err() != nil {
+					routerEmitConnectorCancellation(events, routed, previous, session, request, decision, forwarded.String(), streamStartedAt, ctx.Err())
+				} else {
+					routerEmitError(ctx, routed, previous, session.ID, err)
+				}
 				return
 			}
 			if event.Kind == EventCompleted || event.Kind == EventError {
 				terminal = true
 			}
-			previous = event.Sequence
+			if ctx.Err() != nil {
+				if routerEventHasCancellationReceipt(event) {
+					routerPublishTerminal(routed, event, func(pending Event) Event {
+						return routerRebaseCancellationForDroppedDelta(event, pending, session, request, decision, forwarded.String(), streamStartedAt)
+					})
+				} else {
+					routerEmitConnectorCancellation(events, routed, previous, session, request, decision, forwarded.String(), streamStartedAt, ctx.Err())
+				}
+				return
+			}
 			select {
 			case routed <- event:
 			case <-ctx.Done():
+				routerEmitConnectorCancellation(events, routed, previous, session, request, decision, forwarded.String(), streamStartedAt, ctx.Err())
+				return
+			}
+			previous = event.Sequence
+			if event.Kind == EventDelta {
+				sawDelta = true
+				forwarded.WriteString(event.Text)
+			}
+			if terminal {
 				return
 			}
 		}
-		if !terminal {
-			routerEmitError(ctx, routed, previous, session.ID, fmt.Errorf("stream ended before a terminal event"))
-		}
 	}()
 	return routed, nil
+}
+
+func completionDigest(text string) string {
+	sum := sha256.Sum256([]byte(text))
+	return hex.EncodeToString(sum[:])
+}
+
+func routerEmitCancellation(events chan Event, previous uint64, session Session, request GenerateRequest, decision RouteDecision, forwarded string, started time.Time, cause error) {
+	message := "stream cancelled"
+	if cause != nil {
+		message = cause.Error()
+	}
+	event := Event{Kind: EventError, SessionID: session.ID, Sequence: previous + 1, ErrorCode: "cancelled", Error: message}
+	finished := time.Now().UTC()
+	if finished.Before(started) {
+		finished = started
+	}
+	receipt, err := streamReceipt(session, request, forwarded, started, finished, true)
+	if err == nil {
+		route := decision
+		receipt.Route = &route
+		if receipt.Validate(session) == nil {
+			event.Receipt = &receipt
+		} else {
+			event.ErrorCode = "cancellation_receipt_invalid"
+			event.Error = "router could not validate its cancellation receipt"
+		}
+	} else {
+		event.ErrorCode = "cancellation_receipt_invalid"
+		event.Error = fmt.Sprintf("router could not create cancellation receipt: %v", err)
+	}
+	routerPublishTerminal(events, event, func(pending Event) Event {
+		return routerRebaseCancellationForDroppedDelta(event, pending, session, request, decision, forwarded, started)
+	})
+}
+
+func routerEmitConnectorCancellation(source <-chan Event, destination chan Event, previous uint64, session Session, request GenerateRequest, decision RouteDecision, forwarded string, started time.Time, cause error) {
+	select {
+	case event, ok := <-source:
+		expectedRequestDigest, digestErr := GenerateRequestDigest(request)
+		if ok && digestErr == nil && event.SessionID == session.ID && routerEventHasCancellationReceipt(event) && event.Receipt.RequestSHA256 == expectedRequestDigest && event.Receipt.CompletionSHA256 == completionDigest(forwarded) {
+			if event.Receipt != nil {
+				route := decision
+				event.Receipt.Route = &route
+			}
+			if event.Validate(previous) == nil && (event.Receipt == nil || event.Receipt.Validate(session) == nil) {
+				routerPublishTerminal(destination, event, func(pending Event) Event {
+					return routerRebaseCancellationForDroppedDelta(event, pending, session, request, decision, forwarded, started)
+				})
+				return
+			}
+		}
+	default:
+	}
+	routerEmitCancellation(destination, previous, session, request, decision, forwarded, started, cause)
+}
+
+func routerEventHasCancellationReceipt(event Event) bool {
+	return event.Kind == EventError && event.ErrorCode == "cancelled" && event.Receipt != nil && event.Receipt.Cancelled
+}
+
+func routerRebaseCancellationForDroppedDelta(event, pending Event, session Session, request GenerateRequest, decision RouteDecision, forwarded string, started time.Time) Event {
+	if !routerEventHasCancellationReceipt(event) || pending.Kind != EventDelta || pending.Text == "" {
+		return event
+	}
+	if !strings.HasSuffix(forwarded, pending.Text) {
+		event.Receipt = nil
+		event.ErrorCode = "cancellation_receipt_invalid"
+		event.Error = "router could not reconcile cancellation receipt with buffered delta"
+		return event
+	}
+	startedAt, err := time.Parse(time.RFC3339Nano, event.Receipt.StartedAt)
+	if err != nil {
+		startedAt = started
+	}
+	delivered := strings.TrimSuffix(forwarded, pending.Text)
+	finishedAt := time.Now().UTC()
+	if finishedAt.Before(startedAt) {
+		finishedAt = startedAt
+	}
+	receipt, err := streamReceipt(session, request, delivered, startedAt, finishedAt, true)
+	if err != nil {
+		event.Receipt = nil
+		event.ErrorCode = "cancellation_receipt_invalid"
+		event.Error = fmt.Sprintf("router could not create reconciled cancellation receipt: %v", err)
+		return event
+	}
+	route := decision
+	receipt.Route = &route
+	event.Receipt = &receipt
+	return event
+}
+
+func routerPublishTerminal(events chan Event, event Event, rebase func(Event) Event) {
+	select {
+	case events <- event:
+		return
+	default:
+	}
+	// Cancellation is terminal. If an unread delta occupies the one-slot
+	// forwarding buffer, replace it so consumers still observe termination.
+	select {
+	case pending := <-events:
+		if rebase != nil {
+			event = rebase(pending)
+		}
+	default:
+	}
+	select {
+	case events <- event:
+	default:
+	}
 }
 
 func (r *Router) connectorForDecision(session Session, decision RouteDecision) (Connector, error) {
@@ -269,7 +615,11 @@ func (r *Router) connectorForDecision(session Session, decision RouteDecision) (
 	if decision.Selected != session.Identity.Engine {
 		return nil, fmt.Errorf("engine router: decision %q does not match session engine %q", decision.Selected, session.Identity.Engine)
 	}
-	connector, ok := r.connectors[connectorKey{kind: decision.Selected, variant: decision.SelectedVariant}]
+	selectedVariant := decision.SelectedVariant
+	if selectedVariant == "" {
+		selectedVariant = DefaultVariant(decision.Selected)
+	}
+	connector, ok := r.connectors[connectorKey{kind: decision.Selected, variant: selectedVariant}]
 	if !ok {
 		return nil, fmt.Errorf("engine router: selected connector %q is not configured", decision.Selected)
 	}
@@ -355,4 +705,55 @@ func requireCapabilities(actual Capabilities, required []Capability) error {
 		}
 	}
 	return nil
+}
+
+func capabilityRequirementsResolvable(actual Capabilities, required []Capability, resolver ContextualCapabilityResolver) bool {
+	if resolver == nil {
+		return false
+	}
+	for _, capability := range required {
+		if !actual.Has(capability) && !resolver.CanResolveCapability(capability) {
+			return false
+		}
+	}
+	return true
+}
+
+func validateRoutedRequest(ctx context.Context, connector Connector, session Session, request GenerateRequest) error {
+	capabilities := connector.Capabilities()
+	if err := request.Validate(session, capabilities); err == nil {
+		return nil
+	} else {
+		variantRequirements := variantRequiredCapabilities(session.Identity.EffectiveVariant())
+		if len(variantRequirements) == 0 || requireCapabilities(capabilities, variantRequirements) == nil {
+			return err
+		}
+		resolver, ok := connector.(ContextualCapabilityResolver)
+		if !ok || !capabilityRequirementsResolvable(capabilities, variantRequirements, resolver) {
+			return err
+		}
+		resolved, resolveErr := resolver.CapabilitiesForContext(ctx)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return fmt.Errorf("contextual capability admission cancelled: %w", ctxErr)
+		}
+		if resolveErr != nil {
+			return fmt.Errorf("contextual capability admission: %w", resolveErr)
+		}
+		return request.Validate(session, resolved)
+	}
+}
+
+// sessionRequiredCapabilities adds the session capability that is intrinsic
+// to Router.OpenSession without changing the caller's explicit request list.
+// It avoids manufacturing a duplicate when callers also declare sessions as
+// a required capability.
+func sessionRequiredCapabilities(required []Capability) []Capability {
+	for _, capability := range required {
+		if capability == CapabilitySessions {
+			return required
+		}
+	}
+	withSessions := make([]Capability, 0, len(required)+1)
+	withSessions = append(withSessions, CapabilitySessions)
+	return append(withSessions, required...)
 }

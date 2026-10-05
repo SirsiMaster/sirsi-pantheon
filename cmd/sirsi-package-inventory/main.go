@@ -23,12 +23,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	flags.SetOutput(stderr)
 	var app, version, build, infoPath, pkgInfoPath, launchAgentPath string
 	var requireCodeSignature bool
-	flags.StringVar(&app, "app", "", "Pantheon.app path")
+	flags.StringVar(&app, "app", "", "canonical absolute Pantheon.app path (no symlinked ancestors)")
 	flags.StringVar(&version, "version", "", "expected CFBundleShortVersionString")
 	flags.StringVar(&build, "build", "", "expected CFBundleVersion")
-	flags.StringVar(&infoPath, "info-plist", "", "canonical Info.plist path")
-	flags.StringVar(&pkgInfoPath, "pkg-info", "", "canonical PkgInfo path")
-	flags.StringVar(&launchAgentPath, "launch-agent", "", "canonical LaunchAgent plist path")
+	flags.StringVar(&infoPath, "info-plist", "", "canonical absolute Info.plist path (no symlinked ancestors)")
+	flags.StringVar(&pkgInfoPath, "pkg-info", "", "canonical absolute PkgInfo path (no symlinked ancestors)")
+	flags.StringVar(&launchAgentPath, "launch-agent", "", "canonical absolute LaunchAgent plist path (no symlinked ancestors)")
 	flags.BoolVar(&requireCodeSignature, "require-code-signature", false, "require the _CodeSignature payload")
 	if err := flags.Parse(args); err != nil {
 		return 2

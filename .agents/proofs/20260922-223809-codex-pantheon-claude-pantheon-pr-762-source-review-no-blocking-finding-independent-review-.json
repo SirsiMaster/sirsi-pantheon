@@ -1,0 +1,121 @@
+{
+  "work_item_id": "20260922-223809-codex-pantheon-claude-pantheon-pr-762-source-review-no-blocking-finding-independent-review-",
+  "agent_id": "claude-pantheon",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "platform-foundation",
+  "canon_read": [
+    {
+      "path": "PANTHEON_RULES.md",
+      "role": "repo-canon",
+      "read_at": "2026-09-22T22:40:00Z",
+      "notes": "Rule A28 (Ma'at gate), Rule A34 (bind cannot supersede rejection), Rule A35 (scope the check to the claim)"
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-09-22T22:55:00Z",
+      "notes": "line 183: 'one authoritative item -> one scoped owner -> one implementation -> one independent review -> one reproducible proof -> one durable record' -- this closure supplies the independent-review + reproducible-proof legs codex's static review left open"
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-09-22T22:55:00Z",
+      "notes": "no PR-762-specific scope; general dry-run/preview-equals-apply posture, not touched by this router-store change"
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-09-22T22:55:00Z",
+      "notes": "line 73/86: 'proof clears independent review' / 'Review: independent (claude-home binds; codex SME on the design proof)' -- confirms independent review is the standing release-gate pattern this closure follows"
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-09-22T22:55:00Z",
+      "notes": "no PR-762-specific roadmap item; routerstore/spool trust hardening is infra hygiene, not a roadmap-tracked feature"
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-09-22T22:55:00Z",
+      "notes": "not applicable to this internal routerstore change (doc covers scan-finding reproduction methodology); this closure's own reproducibility is the go build/vet/test commands recorded under verification[]"
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "PANTHEON_RULES.md",
+      "section": "Rule A35 — Scope The Check To The Claim",
+      "claim": "The parent-traversal trust check must be scoped to what traversal actually requires (execute), not what the lane's own directories require (write)",
+      "files_changed": [
+        "internal/routerstore/spoolcheck.go"
+      ],
+      "evidence": [
+        "spoolOwnerTrusted renamed groupWritable->groupAccessOK; checkSpoolDir's parent-traversal gate now passes pst.Mode().Perm()&0o010 (group-execute) instead of &0o020 (group-write)",
+        "laneModesFromRoot (spool.go) still requires group-write (0o020) to derive the widened 0770/0640 modes for the lane's OWN directories/files, which genuinely are written to"
+      ]
+    },
+    {
+      "doc": "PANTHEON_RULES.md",
+      "section": "Rule A1/A35 — TOCTOU close (os.Root)",
+      "claim": "Trust decision (stat) and the writes that follow it must resolve against the same filesystem object, not be re-derivable via an independent path walk",
+      "files_changed": [
+        "internal/routerstore/spool.go",
+        "internal/routerstore/spool_test.go"
+      ],
+      "evidence": [
+        "openLaneRoot opens os.Root once and derives dirMode/fileMode/trustGID from that same descriptor (Lstat(\".\"))",
+        "mkdirTrustedIn/acquireSlotIn/writeAtomicRoot all resolve relative to the same *os.Root",
+        "TestOpenLaneRootBindsPastRootSubstitution: relocates the real spool dir, symlinks an attacker-writable dir at the original path, proves writes still land under the original (relocated) root, not the attacker's path"
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "N/A — review + merge task, no product change authored by this review.",
+    "design": "N/A — no design surface.",
+    "technical": "Checked out PR #762's exact head cc649db382f78edc56af57b0b5cef2a5fd9ff515 into an isolated git worktree (/tmp/pr762-worktree, left the working branch fix/broker-quarantine untouched). go build ./... clean. go vet ./internal/routerstore/... ./internal/stacklab/... clean. go test -race -short ./internal/routerstore/... ./internal/stacklab/... -count=1 -timeout 300s: both packages pass (routerstore 182.4s under -race, corroborating the PR's own 184s measurement that justified the .githooks/pre-push timeout bump 180s->300s). Re-ran the specific TOCTOU regression test standalone: pass.",
+    "operational": "Merged PR #762 via gh pr merge --squash --delete-branch after confirming mergeStateStatus=CLEAN, all 5 required status checks green, and reviews:[] with no CHANGES_REQUESTED outstanding (branch protection here requires status checks only, not review count).",
+    "narrative": "Codex's item reported a static-only source review with no blocking finding, but flagged the PR's separately-requested independent review as still outstanding since both agents share the SirsiMaster GitHub identity (self-approval unavailable to either). I supplied that missing independent leg by actually building/vetting/testing the exact PR head in isolation rather than reading the diff a second time, which both confirms codex's finding and goes beyond it (codex explicitly ran no tests/builds). Result: no blocking issue, corroborated by passing race-mode tests including the new symlink-substitution regression. Merged as 3d70986c389c87401e0b1c3a45450b899c7eb536."
+  },
+  "verification": [
+    {
+      "name": "go build",
+      "command": "go build ./...",
+      "status": "pass",
+      "evidence": "clean build at PR head cc649db3, only benign duplicate -lobjc linker warnings"
+    },
+    {
+      "name": "go vet",
+      "command": "go vet ./internal/routerstore/... ./internal/stacklab/...",
+      "status": "pass",
+      "evidence": "no output"
+    },
+    {
+      "name": "go test -race (changed packages)",
+      "command": "go test -race -short ./internal/routerstore/... ./internal/stacklab/... -count=1 -timeout 300s",
+      "status": "pass",
+      "evidence": "ok routerstore 182.390s; ok stacklab 1.128s"
+    },
+    {
+      "name": "TOCTOU regression test",
+      "command": "go test -race -run TestOpenLaneRootBindsPastRootSubstitution -v ./internal/routerstore/...",
+      "status": "pass",
+      "evidence": "PASS: TestOpenLaneRootBindsPastRootSubstitution"
+    },
+    {
+      "name": "merge verification",
+      "command": "gh pr view 762 --json state,mergedAt,mergeCommit",
+      "status": "pass",
+      "evidence": "state=MERGED, mergedAt=2026-09-22T22:45:18Z, mergeCommit=3d70986c389c87401e0b1c3a45450b899c7eb536"
+    }
+  ],
+  "working_status": {
+    "environment": "sirsi-pantheon repo, isolated git worktree at PR #762's exact head (detached), working branch fix/broker-quarantine untouched",
+    "how_verified": "gh pr diff read, isolated worktree build+vet+test at exact head, gh pr merge, gh pr view post-merge state check",
+    "observed_result": "No blocking issue; PR #762 merged to main",
+    "verified_at": "2026-09-22T22:45:18Z"
+  },
+  "blockers": [
+    "sirsi router task complete on relay-lane-mode-self-derive / relay-parent-ownership-check-scope reports \"caller's session does not own this lease\" even from the session that claimed it; ledger final done-transition deferred to next pull cycle once the ~10min lease naturally expires."
+  ]
+}

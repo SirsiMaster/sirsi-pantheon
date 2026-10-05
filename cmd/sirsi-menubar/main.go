@@ -148,6 +148,7 @@ func startControlPlane() (*controlPlane, error) {
 
 	dashSrv := dashboard.New(dashboard.Config{
 		Port:                    dashboard.DashboardPort,
+		BuildIdentity:           modversion.Current("sirsi-menubar"),
 		NotifyDB:                nStore,
 		Events:                  eventBuf,
 		SirsiBin:                sirsiBin,

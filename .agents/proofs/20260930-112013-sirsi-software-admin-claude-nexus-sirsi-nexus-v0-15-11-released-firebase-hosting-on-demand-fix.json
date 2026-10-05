@@ -1,0 +1,105 @@
+{
+  "work_item_id": "20260930-112013-sirsi-software-admin-claude-nexus-sirsi-nexus-v0-15-11-released-firebase-hosting-on-demand-fix",
+  "agent_id": "claude-nexus",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "internal-tool",
+  "canon_read": [
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-09-30T11:25:00+00:00",
+      "notes": ""
+    },
+    {
+      "path": "AGENTS.md",
+      "role": "agent-law",
+      "read_at": "2026-09-30T11:25:00+00:00",
+      "notes": ""
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-09-30T11:25:00+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "role": "architecture",
+      "read_at": "2026-09-30T11:25:00+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-09-30T11:25:00+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-09-30T11:25:00+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-09-30T11:25:00+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/RELEASE_SIGNING.md",
+      "role": "operational-release",
+      "read_at": "2026-09-30T11:25:00+00:00",
+      "notes": ""
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "README.md",
+      "section": "Firebase Hosting on-demand fix",
+      "claim": "deploy-sign.sh invokes the existing idempotent Hosting-site provisioner before firebase deploy, released as v0.15.11",
+      "files_changed": ["GitHub PR #558", "deploy-sign.sh"],
+      "evidence": [
+        "PR #558 state MERGED, mergeCommit 9a448e6043ed4980987534af997d4b6896c8bd19",
+        "origin/main HEAD matches 9a448e60",
+        "release v0.15.11 published 2026-09-30T11:18:10Z"
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "v0.15.11 ships the corrected standalone Firebase deploy path; no further action needed from claude-nexus.",
+    "design": "No design change required; this was a read-and-verify router item, not new implementation work.",
+    "technical": "gh pr view 558 confirms MERGED with mergeCommit 9a448e60; git log origin/main matches the same commit at HEAD.",
+    "operational": "Actions budget exhaustion (noted by sender) means no live deploy is claimed; verification is against merged source only, not a production check.",
+    "narrative": "Router item closed as verified-informational; local working branch (deck/photon-price-2499) carries an unrelated uncommitted edit to deploy-sign.sh from earlier local work, left untouched as out of scope."
+  },
+  "verification": [
+    {
+      "name": "PR merge state",
+      "command": "gh pr view 558 --json state,mergeCommit,title",
+      "status": "passed",
+      "evidence": "state=MERGED, mergeCommit=9a448e6043ed4980987534af997d4b6896c8bd19"
+    },
+    {
+      "name": "release tag",
+      "command": "gh release view v0.15.11 --json tagName,publishedAt",
+      "status": "passed",
+      "evidence": "tagName=v0.15.11, publishedAt=2026-09-30T11:18:10Z"
+    },
+    {
+      "name": "main branch alignment",
+      "command": "git fetch origin main && git log origin/main --oneline -5",
+      "status": "passed",
+      "evidence": "origin/main HEAD is 9a448e60 fix(firebase): provision Hosting site in standalone deploy"
+    }
+  ],
+  "working_status": {
+    "environment": "SirsiNexusApp local clone, GitHub via gh CLI",
+    "how_verified": "gh pr view / gh release view / git log against origin/main",
+    "observed_result": "Claimed release and merge state fully match GitHub's authoritative record.",
+    "verified_at": "2026-09-30T11:30:00Z"
+  },
+  "handoffs": [],
+  "blockers": []
+}

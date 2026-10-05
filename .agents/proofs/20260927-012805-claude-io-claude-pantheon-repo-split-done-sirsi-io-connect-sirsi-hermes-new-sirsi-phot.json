@@ -1,0 +1,124 @@
+{
+  "work_item_id": "20260927-012805-claude-io-claude-pantheon-repo-split-done-sirsi-io-connect-sirsi-hermes-new-sirsi-phot",
+  "agent_id": "claude-pantheon",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "internal-tool",
+  "canon_read": [
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-09-27T01:36:08.127322+00:00",
+      "notes": "no manifesto-level requirement names the io-connect/hermes/photon split; this closure is portfolio-router follow-up, not a manifesto-tracked feature"
+    },
+    {
+      "path": "AGENTS.md",
+      "role": "agent-law",
+      "read_at": "2026-09-27T01:36:08.127322+00:00",
+      "notes": "Rule A26 (Idea Router Workstream Protocol): repo-scoped work, router handoff via .agents/idea-router/ -- this closure follows that: claimed via acknowledge, closed with evidence back through the router"
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-09-27T01:36:08.127322+00:00",
+      "notes": "pantheon router root; no io-connect/hermes/photon-specific scope, this closure is a cross-repo identity/config fix requested by claude-io through pantheon's router mechanism"
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "role": "architecture",
+      "read_at": "2026-09-27T01:36:08.127322+00:00",
+      "notes": "not applicable to this narrow fix -- no architectural change, only a lane-to-repo lookup table value and a local session-identity hook"
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-09-27T01:36:08.127322+00:00",
+      "notes": "this fix is not release-blocking; ADR-066 stacklab doctor is dev-tooling, not part of the v1 star-grade release surface"
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-09-27T01:36:08.127322+00:00",
+      "notes": "no roadmap item tracks the io-connect/hermes/photon split; this is reactive maintenance to an external repo-rename decision, not a roadmap feature"
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-09-27T01:36:08.127322+00:00",
+      "notes": "not applicable -- this doc covers sirsi-inference benchmark reproduction methodology, unrelated to this stacklab lane-map fix; this closure's reproducibility is the go build/test commands recorded under verification[]"
+    },
+    {
+      "path": "docs/RELEASE_SIGNING.md",
+      "role": "operational-release",
+      "read_at": "2026-09-27T01:36:08.127322+00:00",
+      "notes": "not applicable -- no binary/release artifact touched, only a lane-repo lookup table and a local (non-repo) session-identity hook script"
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "AGENTS.md",
+      "section": "Rule A26 Idea Router Workstream Protocol",
+      "claim": "claude-io's router item (20260927-012805) asked Pantheon to: (1) map new sirsi-hermes/sirsi-photon cwds to claude-io in identity resolution, (2) update internal/stacklab/doctor.go's LaneRepoMap off the renamed/split repo, (3) audit for other hardcoded old repo/folder references",
+      "files_changed": [
+        "internal/stacklab/doctor.go (PR #803, branch fix/hermes-photon-identity-20260927, off origin/main)",
+        "/Users/thekryptodragon/.claude/hooks/router-inbox-check.sh (local machine config, not repo-tracked)"
+      ],
+      "evidence": [
+        "https://github.com/SirsiMaster/sirsi-pantheon/pull/803",
+        "go build ./... clean (worktree /tmp/pantheon-hermes-photon-fix-20260927)",
+        "go test ./internal/stacklab/... -> ok",
+        "gofmt -l internal/stacklab/doctor.go -> no output (clean)",
+        "go vet ./internal/stacklab/... -> clean",
+        "grep audit of internal/scales/{tblanes,policy}.go: only historical prose comments (issue #173/#174, ai.sirsi.tb-lanes daemon name) remain -- no functional path in Thoth or dashboards hardcodes the old repo name"
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "N/A -- internal dev-tooling fix (ADR-066 stacklab doctor lane map + local session-identity hook), no user-facing product surface",
+    "design": "N/A -- no UI/CLI output surface changed",
+    "technical": "internal/stacklab/doctor.go LaneRepoMap['io-connect'] repointed SirsiMaster/sirsi-io-connect -> SirsiMaster/sirsi-hermes; new 'photon' -> SirsiMaster/sirsi-photon entry added; lane key left as 'io-connect' since it is the roster's wing-id-derived identifier (docs/router-service/stacklab/router-wing-ra-v1.json still declares stacklab.wing.io-connect), independent of the backing repo name -- renaming it is a separate roster migration, out of scope",
+    "operational": "fix built off origin/main in an isolated worktree rather than the checked-out fix/broker-quarantine branch, which is 96 commits behind main (does not carry internal/stacklab/ at all) and already has ~900 lines of unrelated in-flight changes to .agents/idea-router/agents.json from another session -- kept the two apart to avoid tangling an unrelated in-progress diff into this PR",
+    "narrative": "claude-io split sirsi-io-connect into sirsi-hermes (transport, GitHub redirects the old URL) and a new private sirsi-photon (mlx5 NIC hardware) on 2026-09-26; this closes Pantheon's half of that split -- stacklab doctor's lane-to-repo mapping and the local session-identity hook now recognize both new repos/folders"
+  },
+  "verification": [
+    {
+      "name": "go build",
+      "command": "go build ./...",
+      "status": "pass",
+      "evidence": "clean build in /tmp/pantheon-hermes-photon-fix-20260927 (worktree off origin/main), warnings only (duplicate -lobjc linker warning, pre-existing/unrelated)"
+    },
+    {
+      "name": "stacklab package tests",
+      "command": "go test ./internal/stacklab/...",
+      "status": "pass",
+      "evidence": "ok github.com/SirsiMaster/sirsi-pantheon/internal/stacklab 0.088s"
+    },
+    {
+      "name": "gofmt/vet",
+      "command": "gofmt -l internal/stacklab/doctor.go && go vet ./internal/stacklab/...",
+      "status": "pass",
+      "evidence": "no output from gofmt (clean); go vet clean"
+    },
+    {
+      "name": "Ma'at pre-push gate",
+      "command": "git push -u origin fix/hermes-photon-identity-20260927",
+      "status": "pass",
+      "evidence": "gitleaks 0 issues; go test ./internal/stacklab/... ok (1.206s); pipeline gate passed"
+    }
+  ],
+  "working_status": {
+    "environment": "macOS, sirsi-pantheon repo, isolated git worktree at /tmp/pantheon-hermes-photon-fix-20260927 branched from origin/main (not the checked-out fix/broker-quarantine branch)",
+    "how_verified": "go build ./..., go test ./internal/stacklab/..., gofmt/go vet, then pushed through the repo's armed Ma'at pre-push gate (gitleaks + package tests) and opened PR #803 against main",
+    "observed_result": "all commands passed; PR #803 open and unmerged (owner review pending, per Rule A28 branch protection -- not self-merged)",
+    "verified_at": "2026-09-27T01:45:00Z"
+  },
+  "handoffs": [
+    {
+      "from": "claude-pantheon",
+      "to": "claude-io",
+      "router_item": "20260927-012805-claude-io-claude-pantheon-repo-split-done-sirsi-io-connect-sirsi-hermes-new-sirsi-phot",
+      "status": "PR #803 open for review/merge; .agents/idea-router/agents.json (autorouter launcher config) still has stale sirsi-io-connect cwd entries (hermes, m5-hermes, cylton-hermes, claude-io-cylton) -- left untouched since it is live routing config being actively edited by another in-progress session on fix/broker-quarantine; recommend claude-io update those cwd values directly (not via PR) since the file is read live"
+    }
+  ],
+  "blockers": []
+}

@@ -1,0 +1,115 @@
+{
+  "work_item_id": "20261001-162825-codex-pantheon-claude-pantheon-response-pr947-f12c21f6-host-equivalence-required-cross-host",
+  "agent_id": "claude-pantheon",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "internal-tool",
+  "canon_read": [
+    {
+      "path": "PANTHEON_RULES.md",
+      "role": "repo-canon",
+      "read_at": "2026-10-01T16:35:00Z",
+      "notes": "A35 (Scope The Check To The Claim) -- the correction itself is an instance of this rule: a comment claiming 'REGISTERED thread' overstated what the nonempty-thread_id check actually verifies"
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-10-01T16:35:00Z",
+      "notes": "one authoritative item -> one scoped owner -> one implementation -> one independent review -> one reproducible proof -> one durable record -- this closure is the owner's response to the independent review's qualification, not a new item"
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-10-01T16:35:00Z",
+      "notes": "no PR-947-specific scope; general repo orientation, not touched by this comment-only fix"
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-10-01T16:35:00Z",
+      "notes": "confirms independent review is the standing release-gate pattern this closure follows; no PR-947-specific release item"
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-10-01T16:35:00Z",
+      "notes": "no PR-947-specific roadmap item; this is a doc-accuracy correction to an in-flight lease-ownership bugfix, not a new roadmap feature"
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-10-01T16:35:00Z",
+      "notes": "no change to reproduction steps; verification here is go build/vet/test ./internal/routerstore/... as already documented for this package"
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "PANTHEON_RULES.md",
+      "section": "A35 Scope The Check To The Claim (qualification from router item 20261001-162825)",
+      "claim": "codex-pantheon's independent source pass found the host-equivalence fix sound but flagged that the sameWorkerAcrossRemint doc comment calling the thread_id check a REGISTERED-thread check overstates its scope (a nonempty thread_id is not proof of an active registered thread; Rule of Ra gate defaults to log, not enforce).",
+      "files_changed": [
+        "internal/routerstore/serve.go"
+      ],
+      "evidence": [
+        "fix/task-lease-ownership-thread-fallback commit c54d548b010f64178c780e853d401f2380fa439e",
+        "comment reworded: 'a REGISTERED thread on both sides' -> 'a NONEMPTY thread identity on both sides', with explicit sentence that nonempty thread_id is not proof of registration and this is an audience/scope gate, not a registration check",
+        "same-host trust-boundary sentence retained/clarified: processes sharing host credentials and a copied agent/thread/token remain within that host's trust boundary; check does not claim per-process authentication"
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "not_applicable_internal_governance_tooling",
+    "design": "not_applicable",
+    "technical": "comment-only correction in internal/routerstore/serve.go; no behavior change to sameWorkerAcrossRemint logic",
+    "operational": "go build/vet/test ./internal/routerstore/... clean in the fix worktree before push; pushed through armed Ma'at pre-push gate (gitleaks 0 issues, package tests pass, pipeline gate passed)",
+    "narrative": "resolves the wording qualification from codex-pantheon's PASS verdict on f12c21f6 only -- does not re-claim merge/bind; PR #947 head advanced to c54d548b and remains open awaiting re-review per codex-pantheon's note that normal bind/release must re-pin the current head"
+  },
+  "verification": [
+    {
+      "name": "go build routerstore",
+      "command": "go build ./internal/routerstore/...",
+      "status": "pass",
+      "evidence": "clean build in /private/tmp/pantheon-lease-thread-fix worktree"
+    },
+    {
+      "name": "go vet routerstore",
+      "command": "go vet ./internal/routerstore/...",
+      "status": "pass",
+      "evidence": "no findings"
+    },
+    {
+      "name": "go test routerstore",
+      "command": "go test ./internal/routerstore/...",
+      "status": "pass",
+      "evidence": "ok github.com/SirsiMaster/sirsi-pantheon/internal/routerstore 23.871s, includes the 6 remint/host/agent/thread tests"
+    },
+    {
+      "name": "push through Ma'at gate",
+      "command": "git push origin fix/task-lease-ownership-thread-fallback",
+      "status": "pass",
+      "evidence": "gitleaks 0 issues; package test 158.860s pass; pipeline gate passed; f12c21f6..c54d548b fast-forward"
+    },
+    {
+      "name": "gh pr view 947",
+      "command": "gh pr view 947 --json number,state,headRefOid,headRefName,url",
+      "status": "pass",
+      "evidence": "headRefOid c54d548b010f64178c780e853d401f2380fa439e, state OPEN"
+    }
+  ],
+  "working_status": {
+    "environment": "worktree /private/tmp/pantheon-lease-thread-fix on branch fix/task-lease-ownership-thread-fallback",
+    "how_verified": "build/vet/test in worktree, then push through the armed Ma'at pre-push gate, then gh pr view to confirm the new head landed on PR #947",
+    "observed_result": "PR #947 head advanced to c54d548b, state OPEN, wording correction applied, no merge/bind claimed",
+    "verified_at": "2026-10-01T16:40:00Z"
+  },
+  "handoffs": [
+    {
+      "from": "claude-pantheon",
+      "to": "codex-pantheon",
+      "router_item": "20261001-163628-claude-pantheon-codex-pantheon-pr947-c54d548b-wording-correction-applied-re-review-requeste",
+      "status": "open",
+      "reason": "re-review requested on new head c54d548b; normal bind/release still requires re-pinning this head and independently verifying exact-head CI + installed acceptance per codex-pantheon's own qualification"
+    }
+  ],
+  "blockers": []
+}

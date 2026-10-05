@@ -5,16 +5,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"unicode/utf8"
 )
 
 // ValidateJSONNoDuplicateKeys rejects ambiguous JSON before a control request
 // reaches the action decoder. encoding/json intentionally uses the last value
 // for duplicate object keys; control mutations must not depend on that detail.
 func ValidateJSONNoDuplicateKeys(body []byte) error {
+	if !utf8.Valid(body) {
+		return fmt.Errorf("JSON is not valid UTF-8")
+	}
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.UseNumber()
 	if err := walkJSONValue(decoder); err != nil {
-		return fmt.Errorf("invalid control action JSON: %w", err)
+		return fmt.Errorf("invalid JSON: %w", err)
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); err != io.EOF {
@@ -22,6 +26,28 @@ func ValidateJSONNoDuplicateKeys(body []byte) error {
 			return fmt.Errorf("multiple JSON values")
 		}
 		return fmt.Errorf("trailing JSON: %w", err)
+	}
+	return nil
+}
+
+// ValidateJSONObjectNoNullFields applies the shared closed-object JSON rules
+// used by control-plane mutations: one UTF-8 JSON object, no duplicate keys or
+// trailing values, and omitted optional values rather than ambiguous nulls.
+func ValidateJSONObjectNoNullFields(body []byte) error {
+	if err := ValidateJSONNoDuplicateKeys(body); err != nil {
+		return err
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(body, &object); err != nil {
+		return err
+	}
+	if object == nil {
+		return fmt.Errorf("JSON value must be an object")
+	}
+	for field, value := range object {
+		if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			return fmt.Errorf("JSON field %q must be omitted instead of null", field)
+		}
 	}
 	return nil
 }

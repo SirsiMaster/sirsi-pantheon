@@ -57,6 +57,7 @@ func sneFullIdentity(status, model, runtime, native, manifest string) sne.Servic
 		RuntimeSHA256: runtime, ReadyRuntimeSHA256: runtime,
 		NativeRuntimeSHA256: native, ReadyNativeRuntimeSHA256: native,
 		ReadyManifestSHA256: manifest,
+		Models:              []sne.Model{{ID: model, ManifestSHA256: manifest}},
 	}
 }
 
@@ -100,6 +101,89 @@ func TestSNEControlRejectsDriftAndDoesNotMutate(t *testing.T) {
 	}
 	if len(client.loads) != 0 {
 		t.Fatalf("load mutated after drift: %v", client.loads)
+	}
+}
+
+func TestSNEControlRejectsConflictingReadinessAndStatusIdentityBeforeMutation(t *testing.T) {
+	identity := sneFullIdentity("ready", "model-a", "runtime-a", "native-a", "manifest-a")
+	identity.RuntimeSHA256 = "runtime-b"
+	client := &fakeSNEControlClient{identities: []sne.ServiceReadinessIdentity{identity}}
+	control, err := NewSNEControl(client, "model-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := control.Readiness(context.Background()); err == nil {
+		t.Fatal("readiness accepted different runtime identities from status and readiness")
+	}
+	if _, err := control.Apply(context.Background(), SNELoad); err == nil {
+		t.Fatal("load mutated after contradictory ready-state identity")
+	}
+	if len(client.loads) != 0 {
+		t.Fatalf("load calls after contradictory identity: %v", client.loads)
+	}
+}
+
+func TestSNEControlRejectsDuplicateCatalogIdentityBeforeMutation(t *testing.T) {
+	identity := sneFullIdentity("ready", "model-a", "runtime-a", "native-a", "manifest-a")
+	identity.Models = []sne.Model{
+		{ID: "model-a", ManifestSHA256: "manifest-a"},
+		{ID: "model-a", ManifestSHA256: "manifest-a"},
+	}
+	client := &fakeSNEControlClient{identities: []sne.ServiceReadinessIdentity{identity}}
+	control, err := NewSNEControl(client, "model-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := control.Readiness(context.Background()); err == nil {
+		t.Fatal("readiness accepted duplicate catalog entries for its ready model")
+	}
+	if _, err := control.Apply(context.Background(), SNELoad); err == nil {
+		t.Fatal("load mutated after duplicate catalog identity")
+	}
+	if len(client.loads) != 0 {
+		t.Fatalf("load calls after duplicate catalog identity: %v", client.loads)
+	}
+}
+
+func TestSNEControlRejectsDuplicateCatalogFallbackBeforeMutation(t *testing.T) {
+	identity := sneFullIdentity("ready", "model-a", "runtime-a", "native-a", "manifest-a")
+	identity.ReadyManifestSHA256 = ""
+	identity.Models = []sne.Model{
+		{ID: "model-a", ManifestSHA256: "manifest-a"},
+		{ID: "model-a", ManifestSHA256: "manifest-a"},
+	}
+	client := &fakeSNEControlClient{identities: []sne.ServiceReadinessIdentity{identity}}
+	control, err := NewSNEControl(client, "model-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := control.Readiness(context.Background()); err == nil {
+		t.Fatal("readiness accepted duplicate catalog fallback identities")
+	}
+	if _, err := control.Apply(context.Background(), SNELoad); err == nil {
+		t.Fatal("load mutated after duplicate catalog fallback identities")
+	}
+	if len(client.loads) != 0 {
+		t.Fatalf("load calls after duplicate catalog fallback: %v", client.loads)
+	}
+}
+
+func TestSNEControlRejectsMissingCatalogIdentityBeforeMutation(t *testing.T) {
+	identity := sneFullIdentity("ready", "model-a", "runtime-a", "native-a", "manifest-a")
+	identity.Models = nil
+	client := &fakeSNEControlClient{identities: []sne.ServiceReadinessIdentity{identity}}
+	control, err := NewSNEControl(client, "model-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := control.Readiness(context.Background()); err == nil {
+		t.Fatal("readiness accepted a manifest without a matching model catalog entry")
+	}
+	if _, err := control.Apply(context.Background(), SNELoad); err == nil {
+		t.Fatal("load mutated after the model catalog omitted its ready model")
+	}
+	if len(client.loads) != 0 {
+		t.Fatalf("load calls after missing catalog identity: %v", client.loads)
 	}
 }
 

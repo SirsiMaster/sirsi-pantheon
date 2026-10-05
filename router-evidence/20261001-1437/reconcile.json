@@ -1,0 +1,98 @@
+[
+  {
+    "task": "inbox-20260927-134144-11a1",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: remote UpdateTask: HTTP 500: UpdateTask: routerstore: executable task transition \"in-progress\" -> \"blocked\" requires a fenced task lease\u001b[m\n"
+  },
+  {
+    "task": "inbox-20261001-054159-2e49",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: remote UpdateTask: HTTP 500: UpdateTask: routerstore: executable task transition \"in-progress\" -> \"blocked\" requires a fenced task lease\u001b[m\n"
+  },
+  {
+    "task": "fw-fencing-report-063653",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: remote UpdateTask: HTTP 500: UpdateTask: routerstore: executable task transition \"in-progress\" -> \"blocked\" requires a fenced task lease\u001b[m\n"
+  },
+  {
+    "task": "fw-lead-overlap-094238",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: remote UpdateTask: HTTP 500: UpdateTask: routerstore: executable task transition \"in-progress\" -> \"blocked\" requires a fenced task lease\u001b[m\n"
+  },
+  {
+    "task": "ssa-qualification-094329",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: remote UpdateTask: HTTP 500: UpdateTask: routerstore: executable task transition \"in-progress\" -> \"blocked\" requires a fenced task lease\u001b[m\n"
+  },
+  {
+    "task": "fw-claimability-095614",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: remote UpdateTask: HTTP 500: UpdateTask: routerstore: executable task transition \"in-progress\" -> \"blocked\" requires a fenced task lease\u001b[m\n"
+  },
+  {
+    "task": "fw-public-lease-report-100915",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: remote UpdateTask: HTTP 500: UpdateTask: routerstore: executable task transition \"in-progress\" -> \"blocked\" requires a fenced task lease\u001b[m\n"
+  },
+  {
+    "task": "fw-lease-report-104643",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: remote UpdateTask: HTTP 500: UpdateTask: routerstore: executable task transition \"in-progress\" -> \"blocked\" requires a fenced task lease\u001b[m\n"
+  },
+  {
+    "task": "fw-actual-binding-111421",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: remote UpdateTask: HTTP 500: UpdateTask: routerstore: executable task transition \"in-progress\" -> \"blocked\" requires a fenced task lease\u001b[m\n"
+  },
+  {
+    "task": "fw-lease-report-115417",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: remote UpdateTask: HTTP 500: UpdateTask: routerstore: executable task transition \"in-progress\" -> \"blocked\" requires a fenced task lease\u001b[m\n"
+  },
+  {
+    "task": "release-canon-125349",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: remote UpdateTask: HTTP 500: UpdateTask: routerstore: executable task transition \"in-progress\" -> \"blocked\" requires a fenced task lease\u001b[m\n"
+  },
+  {
+    "task": "pr944-review",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: remote UpdateTask: HTTP 500: UpdateTask: routerstore: executable task transition \"in-progress\" -> \"blocked\" requires a fenced task lease\u001b[m\n"
+  },
+  {
+    "task": "hermes-maat-position-130520",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: remote UpdateTask: HTTP 500: UpdateTask: routerstore: executable task transition \"in-progress\" -> \"blocked\" requires a fenced task lease\u001b[m\n"
+  },
+  {
+    "task": "pr944-corrected-20236ff8",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: remote UpdateTask: HTTP 500: UpdateTask: routerstore: executable task transition \"in-progress\" -> \"blocked\" requires a fenced task lease\u001b[m\n"
+  },
+  {
+    "task": "fw-receipts-133938",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: remote UpdateTask: HTTP 500: UpdateTask: routerstore: executable task transition \"in-progress\" -> \"blocked\" requires a fenced task lease\u001b[m\n"
+  },
+  {
+    "task": "deck-recovery-140423",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: remote UpdateTask: HTTP 500: UpdateTask: routerstore: executable task transition \"in-progress\" -> \"blocked\" requires a fenced task lease\u001b[m\n"
+  }
+]

@@ -1,0 +1,110 @@
+{
+  "work_item_id": "20261001-051604-codex-pantheon-claude-pantheon-continue-existing-native-guard-task-closed-health-card-does-",
+  "agent_id": "claude-pantheon",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "internal-tool",
+  "canon_read": [
+    {
+      "path": "PANTHEON_RULES.md",
+      "role": "repo-canon",
+      "read_at": "2026-10-01T05:30:00Z",
+      "notes": "A35 (scope the check to the claim -- verified both directions, canonical path refuses, different path still bypasses); A34 (self-authored PR cannot self-bind, sent to codex-pantheon)"
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-10-01T05:30:00Z",
+      "notes": "one authoritative item -> one scoped owner -> one implementation -> one independent review -> one reproducible proof -> one durable record -- this closure supplies the implementation and reproducible proof, independent review is handed to codex-pantheon"
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-10-01T05:30:00Z",
+      "notes": "no change to scope; this is a test-only addition to existing router-store cut-over behavior"
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-10-01T05:30:00Z",
+      "notes": "proof clears independent review -- confirms independent review is the standing release-gate pattern this closure follows"
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-10-01T05:30:00Z",
+      "notes": "no roadmap item touched; this closes a test-coverage gap on existing ADR-069 cut-over behavior, not a new feature"
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-10-01T05:30:00Z",
+      "notes": "not applicable to this internal routerstore test addition; reproducibility is the go test/go build commands recorded under verification[]"
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "PANTHEON_RULES.md",
+      "section": "canonical-local refusal guard (router item 20261001-051604)",
+      "claim": "A cut-over host must refuse the canonical-local ~/.sirsi/router.db even when a future dashboard/native integration tries to bypass Resolve, using the existing keystone rather than a second store.",
+      "files_changed": [
+        "internal/routerstore/resolve_test.go"
+      ],
+      "evidence": [
+        "PR #939 at https://github.com/SirsiMaster/sirsi-pantheon/pull/939",
+        "TestResolveRefusesExplicitSIRSIRouterDBWhenItNamesTheCanonicalLedgerOnACutOverHost: negative control -- SIRSI_ROUTER_DB explicitly set to ~/.sirsi/router.db on a cut-over host (router-service.env present) still self-heals to *RemoteStore and never opens/creates the canonical local file",
+        "TestResolveStillHonorsSIRSIRouterDBForAGenuinelyDifferentPathOnACutOverHost: positive control -- SIRSI_ROUTER_DB naming a genuinely different path still bypasses the cut-over check and opens *SQLiteStore directly",
+        "No production code changed: reuses internal/routerstore/resolve.go's existing cutOverMarker/samePath keystone (ADR-069), does not introduce a second store abstraction"
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "not_applicable_internal_governance_tooling",
+    "design": "not_applicable",
+    "technical": "Traced codex's 'Resolve'/'keystone' reference to internal/routerstore/resolve.go's cutOverMarker (its own comment names it 'the keystone', ADR-069). That function already special-cases an explicit SIRSI_ROUTER_DB naming the canonical ~/.sirsi/router.db on a cut-over host (must not bypass), but no test exercised that branch -- existing coverage (resolve_cutover_test.go) only ever set SIRSI_ROUTER_DB to a different path. Added the missing negative control paired with a positive control, both calling the real Resolve() entry point.",
+    "operational": "PR #939 opened against main, pushed through the Ma'at pre-push gate (gitleaks clean, go test -race ./internal/routerstore green under host load), CI triggered; sent to codex-pantheon for independent review+bind per A34 since this is self-authored",
+    "narrative": "Closes the test-coverage gap on the ra-fabric-canonical-local-refusal task; the production refusal mechanism already existed and was already correct, this closure proves it with a reproducible negative/positive control pair rather than adding new source"
+  },
+  "verification": [
+    {
+      "name": "go build",
+      "command": "go build ./...",
+      "status": "pass",
+      "evidence": "full repo builds clean from a clean origin/main worktree"
+    },
+    {
+      "name": "go test routerstore",
+      "command": "go test ./internal/routerstore/...",
+      "status": "pass",
+      "evidence": "ok github.com/SirsiMaster/sirsi-pantheon/internal/routerstore (full package, including the two new tests)"
+    },
+    {
+      "name": "gofmt",
+      "command": "gofmt -l internal/routerstore/resolve_test.go",
+      "status": "pass",
+      "evidence": "no output -- already formatted"
+    },
+    {
+      "name": "pre-push gate",
+      "command": "git push -u origin fix/ledger-canonical-local-refusal-test",
+      "status": "pass",
+      "evidence": "gitleaks 0 issues; go test -race -short ./internal/routerstore ok (213.590s under elevated host load); pipeline gate passed"
+    }
+  ],
+  "working_status": {
+    "environment": "isolated git worktree at /tmp/pantheon-canonical-local-test off origin/main (the live fix/broker-quarantine working tree carries ~220 files of unrelated uncommitted WIP and a divergent, pre-ADR-069 routerstore API, so the new test was authored and verified against a clean main checkout instead)",
+    "how_verified": "go build/test/gofmt in the clean worktree, then the repo's own Ma'at pre-push gate on push",
+    "observed_result": "PR #939 opened, CI running, review request sent to codex-pantheon",
+    "verified_at": "2026-10-01T05:40:00Z"
+  },
+  "handoffs": [
+    {
+      "from": "claude-pantheon",
+      "to": "codex-pantheon",
+      "reason": "A34: self-authored PR cannot self-bind -- requesting independent review+bind of PR #939",
+      "router_item": "20261001-054159-claude-pantheon-codex-pantheon-review-bind-pr-939-canonical-local-bypass-negative-control-r",
+      "status": "open"
+    }
+  ],
+  "blockers": []
+}

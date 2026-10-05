@@ -26,6 +26,8 @@ type SNEIdentityExpectation struct {
 	RuntimeSHA256       string
 	NativeRuntimeSHA256 string
 	ManifestSHA256      string
+	ExecutionMode       string
+	Assistant           *sne.AssistantIdentity
 }
 
 // SNEProvider adapts the native SNE client to the engine-neutral provider
@@ -50,13 +52,32 @@ func NewSNEProvider(client SNEClient, expectation SNEIdentityExpectation) (*SNEP
 	if expectation.ModelID == "" {
 		return nil, fmt.Errorf("SNE provider: model is required")
 	}
-	for name, value := range map[string]string{
-		"runtime":        expectation.RuntimeSHA256,
-		"native runtime": expectation.NativeRuntimeSHA256,
-		"manifest":       expectation.ManifestSHA256,
+	if expectation.ExecutionMode != sne.ExecutionModePlain && expectation.ExecutionMode != sne.ExecutionModeMTP {
+		return nil, fmt.Errorf("SNE provider: explicit execution mode plain or mtp is required; got %q", expectation.ExecutionMode)
+	}
+	if expectation.ExecutionMode == sne.ExecutionModeMTP {
+		if expectation.Assistant == nil {
+			return nil, fmt.Errorf("SNE provider: MTP requires an admitted assistant identity")
+		}
+		if err := expectation.Assistant.Validate(); err != nil {
+			return nil, fmt.Errorf("SNE provider: %w", err)
+		}
+		assistant := *expectation.Assistant
+		assistant.ModelID = strings.TrimSpace(assistant.ModelID)
+		assistant.Revision = strings.TrimSpace(assistant.Revision)
+		assistant.CheckpointSHA256 = strings.TrimSpace(assistant.CheckpointSHA256)
+		assistant.Precision = strings.TrimSpace(assistant.Precision)
+		expectation.Assistant = &assistant
+	} else if expectation.Assistant != nil {
+		return nil, fmt.Errorf("SNE provider: assistant identity is only valid for MTP execution")
+	}
+	for _, field := range []struct{ name, value string }{
+		{"runtime", expectation.RuntimeSHA256},
+		{"native runtime", expectation.NativeRuntimeSHA256},
+		{"manifest", expectation.ManifestSHA256},
 	} {
-		if !validSNEHash(value) {
-			return nil, fmt.Errorf("SNE provider: %s identity must be lowercase SHA-256", name)
+		if !validSNEHash(field.value) {
+			return nil, fmt.Errorf("SNE provider: %s identity must be lowercase SHA-256", field.name)
 		}
 	}
 	return &SNEProvider{client: client, expectation: expectation}, nil
@@ -73,21 +94,40 @@ func (p *SNEProvider) Name() string { return "sne" }
 func (p *SNEProvider) Tier() Tier { return TierLocal }
 
 func (p *SNEProvider) Caps() Caps {
-	return Caps{Temperature: true, Streaming: false, Offline: true}
+	return Caps{Temperature: true, Streaming: false, Cancellation: true, Offline: true}
+}
+
+func (p *SNEProvider) CapabilitiesForContext(ctx context.Context) (Caps, error) {
+	identity, err := p.admitReadiness(ctx)
+	if err != nil {
+		return Caps{}, err
+	}
+	caps := p.Caps()
+	caps.MTP = p.expectation.ExecutionMode == sne.ExecutionModeMTP && identity.ReadyCapabilities.SupportsExecutionMode(sne.ExecutionModeMTP)
+	return caps, nil
 }
 
 func (p *SNEProvider) Available(ctx context.Context) bool {
-	return p.readiness(ctx) == nil
+	return p.Readiness(ctx) == nil
+}
+
+func (p *SNEProvider) Readiness(ctx context.Context) error {
+	_, err := p.admitReadiness(ctx)
+	return err
 }
 
 func (p *SNEProvider) Complete(ctx context.Context, req Request) (Response, error) {
+	if ctx == nil {
+		return Response{}, fmt.Errorf("SNE provider: context is required")
+	}
 	if p == nil || p.client == nil {
 		return Response{}, fmt.Errorf("SNE provider: client is required")
 	}
 	if strings.TrimSpace(req.Prompt) == "" {
 		return Response{}, fmt.Errorf("SNE provider: prompt is required")
 	}
-	if err := p.readiness(ctx); err != nil {
+	readiness, err := p.admitReadiness(ctx)
+	if err != nil {
 		return Response{}, err
 	}
 	messages := make([]sne.Message, 0, 2)
@@ -100,11 +140,12 @@ func (p *SNEProvider) Complete(ctx context.Context, req Request) (Response, erro
 		temperature = *req.Temperature
 	}
 	completion, err := p.client.Complete(ctx, sne.CompletionRequest{
-		Model:       p.expectation.ModelID,
-		Messages:    messages,
-		MaxTokens:   req.MaxTokens,
-		Temperature: temperature,
-		Stream:      false,
+		Model:         p.expectation.ModelID,
+		ExecutionMode: p.expectation.ExecutionMode,
+		Messages:      messages,
+		MaxTokens:     req.MaxTokens,
+		Temperature:   temperature,
+		Stream:        false,
 	})
 	if err != nil {
 		return Response{}, fmt.Errorf("SNE provider: completion: %w", err)
@@ -114,6 +155,28 @@ func (p *SNEProvider) Complete(ctx context.Context, req Request) (Response, erro
 	}
 	if completion.Model != p.expectation.ModelID {
 		return Response{}, fmt.Errorf("SNE provider: served model %q does not match admitted model %q", completion.Model, p.expectation.ModelID)
+	}
+	if completion.SNE.Execution.Mode != p.expectation.ExecutionMode {
+		return Response{}, fmt.Errorf("SNE provider: served execution mode %q does not match requested mode %q", completion.SNE.Execution.Mode, p.expectation.ExecutionMode)
+	}
+	if p.expectation.ExecutionMode == sne.ExecutionModeMTP {
+		if completion.SNE.Execution.Assistant == nil || !sameSNEAssistantIdentity(*completion.SNE.Execution.Assistant, *readiness.ReadyCapabilities.Assistant) {
+			return Response{}, fmt.Errorf("SNE provider: served MTP assistant identity does not match readiness")
+		}
+	} else if completion.SNE.Execution.Assistant != nil {
+		return Response{}, fmt.Errorf("SNE provider: plain completion unexpectedly reported an assistant identity")
+	}
+	for _, check := range []struct {
+		name, actual, expected string
+	}{
+		{"runtime", completion.SNE.RuntimeSHA256, p.expectation.RuntimeSHA256},
+		{"native runtime", completion.SNE.NativeRuntimeSHA256, p.expectation.NativeRuntimeSHA256},
+		{"manifest", completion.SNE.ModelManifestSHA256, p.expectation.ManifestSHA256},
+	} {
+		actual := strings.TrimSpace(check.actual)
+		if actual != check.expected {
+			return Response{}, fmt.Errorf("SNE provider: completion %s identity %q does not match admitted identity %q", check.name, actual, check.expected)
+		}
 	}
 	return Response{
 		Text:         completion.Choices[0].Message.Content,
@@ -127,49 +190,57 @@ func (p *SNEProvider) Complete(ctx context.Context, req Request) (Response, erro
 	}, nil
 }
 
-func (p *SNEProvider) readiness(ctx context.Context) error {
+func (p *SNEProvider) admitReadiness(ctx context.Context) (sne.ServiceReadinessIdentity, error) {
+	if ctx == nil {
+		return sne.ServiceReadinessIdentity{}, fmt.Errorf("SNE provider: context is required")
+	}
 	if p == nil || p.client == nil {
-		return fmt.Errorf("SNE provider: client is required")
+		return sne.ServiceReadinessIdentity{}, fmt.Errorf("SNE provider: client is required")
 	}
 	identity, err := p.client.ReadinessIdentity(ctx)
 	if err != nil {
-		return fmt.Errorf("SNE provider: readiness: %w", err)
+		return sne.ServiceReadinessIdentity{}, fmt.Errorf("SNE provider: readiness: %w", err)
 	}
-	if !strings.EqualFold(strings.TrimSpace(identity.Status), "ready") {
-		return fmt.Errorf("SNE provider: service status %q is not ready", identity.Status)
+	if err := identity.ValidateContract(); err != nil {
+		return sne.ServiceReadinessIdentity{}, fmt.Errorf("SNE provider: %w", err)
+	}
+	if !identity.ReadyCapabilities.SupportsExecutionMode(p.expectation.ExecutionMode) {
+		return sne.ServiceReadinessIdentity{}, fmt.Errorf("SNE provider: readiness does not advertise requested execution mode %q", p.expectation.ExecutionMode)
+	}
+	if p.expectation.ExecutionMode == sne.ExecutionModeMTP && !sameSNEAssistantIdentity(*identity.ReadyCapabilities.Assistant, *p.expectation.Assistant) {
+		return sne.ServiceReadinessIdentity{}, fmt.Errorf("SNE provider: ready MTP assistant identity does not match admitted assistant")
 	}
 	servedModel := strings.TrimSpace(identity.ReadyModelID)
-	if servedModel == "" {
-		servedModel = strings.TrimSpace(identity.LoadedModel)
+	loadedModel := strings.TrimSpace(identity.LoadedModel)
+	if servedModel != p.expectation.ModelID || loadedModel != p.expectation.ModelID {
+		return sne.ServiceReadinessIdentity{}, fmt.Errorf("SNE provider: ready/loaded model identities %q/%q do not match admitted model %q", servedModel, loadedModel, p.expectation.ModelID)
 	}
-	if servedModel != p.expectation.ModelID {
-		return fmt.Errorf("SNE provider: ready model %q does not match admitted model %q", servedModel, p.expectation.ModelID)
-	}
-	runtimeSHA256 := strings.TrimSpace(identity.ReadyRuntimeSHA256)
-	if runtimeSHA256 == "" {
-		runtimeSHA256 = strings.TrimSpace(identity.RuntimeSHA256)
-	}
-	if runtimeSHA256 != p.expectation.RuntimeSHA256 {
-		return fmt.Errorf("SNE provider: runtime identity %q does not match admitted runtime %q", runtimeSHA256, p.expectation.RuntimeSHA256)
-	}
-	nativeRuntimeSHA256 := strings.TrimSpace(identity.ReadyNativeRuntimeSHA256)
-	if nativeRuntimeSHA256 == "" {
-		nativeRuntimeSHA256 = strings.TrimSpace(identity.NativeRuntimeSHA256)
-	}
-	if nativeRuntimeSHA256 != p.expectation.NativeRuntimeSHA256 {
-		return fmt.Errorf("SNE provider: native runtime identity %q does not match admitted native runtime %q", nativeRuntimeSHA256, p.expectation.NativeRuntimeSHA256)
-	}
-	manifest := strings.TrimSpace(identity.ReadyManifestSHA256)
-	if manifest == "" {
-		for _, model := range identity.Models {
-			if strings.TrimSpace(model.ID) == servedModel {
-				manifest = strings.TrimSpace(model.ManifestSHA256)
-				break
-			}
+	for _, field := range []struct {
+		name, ready, status, expected string
+	}{
+		{"runtime", strings.TrimSpace(identity.ReadyRuntimeSHA256), strings.TrimSpace(identity.RuntimeSHA256), p.expectation.RuntimeSHA256},
+		{"native runtime", strings.TrimSpace(identity.ReadyNativeRuntimeSHA256), strings.TrimSpace(identity.NativeRuntimeSHA256), p.expectation.NativeRuntimeSHA256},
+	} {
+		if field.ready != field.expected || field.status != field.expected {
+			return sne.ServiceReadinessIdentity{}, fmt.Errorf("SNE provider: ready/status %s identities %q/%q do not match admitted identity %q", field.name, field.ready, field.status, field.expected)
 		}
 	}
-	if manifest != p.expectation.ManifestSHA256 {
-		return fmt.Errorf("SNE provider: manifest identity %q does not match admitted manifest %q", manifest, p.expectation.ManifestSHA256)
+	readyManifest := strings.TrimSpace(identity.ReadyManifestSHA256)
+	matchingModels := 0
+	modelManifest := ""
+	for _, model := range identity.Models {
+		if strings.TrimSpace(model.ID) != servedModel {
+			continue
+		}
+		matchingModels++
+		modelManifest = strings.TrimSpace(model.ManifestSHA256)
 	}
-	return nil
+	if matchingModels != 1 || readyManifest != p.expectation.ManifestSHA256 || modelManifest != p.expectation.ManifestSHA256 {
+		return sne.ServiceReadinessIdentity{}, fmt.Errorf("SNE provider: ready/catalog manifest identities %q/%q for model %q do not match admitted manifest %q", readyManifest, modelManifest, servedModel, p.expectation.ManifestSHA256)
+	}
+	return identity, nil
+}
+
+func sameSNEAssistantIdentity(a, b sne.AssistantIdentity) bool {
+	return a.ModelID == b.ModelID && a.Revision == b.Revision && a.CheckpointSHA256 == b.CheckpointSHA256 && a.Precision == b.Precision
 }

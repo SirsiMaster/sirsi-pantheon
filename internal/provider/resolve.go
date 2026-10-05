@@ -140,6 +140,17 @@ func isLoopbackEndpoint(endpoint string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
+// EndpointTier classifies the configured HTTP-compatible endpoint. Only
+// localhost and literal loopback IPs are classified as local; every other or
+// malformed endpoint is conservatively remote. This is endpoint metadata, not
+// a runtime observation of proxies or other transport intermediaries.
+func EndpointTier(endpoint string) Tier {
+	if isLoopbackEndpoint(endpoint) {
+		return TierLocal
+	}
+	return TierRemote
+}
+
 // Ladder returns the providers to try, cheapest rung first.
 //
 // This is the certainties ladder in code (SIRSI_V2_APPLICATION §2c). The

@@ -33,6 +33,79 @@ func TestClaimTaskSelectsExactIDAndRefusesIneligibleStates(t *testing.T) {
 	}
 }
 
+func TestClaimRetriesReturnTheExistingLiveLease(t *testing.T) {
+	s := newTestStore(t)
+	for _, taskID := range []string{"a-first", "b-next"} {
+		if err := s.AddTask(Task{Agent: "codex-home", TaskID: taskID, Subject: taskID}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	first, err := s.ClaimNextTask("codex-home", "worker", "thread", time.Minute)
+	if err != nil {
+		t.Fatalf("initial ClaimNextTask: %v", err)
+	}
+	if first.TaskID != "a-first" || first.Attempt != 1 {
+		t.Fatalf("initial lease = %+v, want first task attempt 1", first)
+	}
+
+	for _, retry := range []struct {
+		name  string
+		claim func() (*TaskLease, error)
+	}{
+		{name: "next-task retry", claim: func() (*TaskLease, error) {
+			return s.ClaimNextTask("codex-home", "worker", "thread", time.Minute)
+		}},
+		{name: "exact-task retry", claim: func() (*TaskLease, error) {
+			return s.ClaimTask("codex-home", "a-first", "worker", "thread", time.Minute)
+		}},
+	} {
+		t.Run(retry.name, func(t *testing.T) {
+			got, err := retry.claim()
+			if err != nil {
+				t.Fatalf("retry claim: %v", err)
+			}
+			if got.TaskID != first.TaskID || got.Token != first.Token || got.Attempt != first.Attempt || !got.Expires.Equal(first.Expires) {
+				t.Fatalf("retry lease = %+v, want original lease %+v", got, first)
+			}
+		})
+	}
+
+	next, err := s.ClaimNextTask("codex-home", "other-worker", "other-thread", time.Minute)
+	if err != nil {
+		t.Fatalf("claim remaining task: %v", err)
+	}
+	if next.TaskID != "b-next" || next.Attempt != 1 {
+		t.Fatalf("remaining lease = %+v, want b-next attempt 1", next)
+	}
+}
+
+func TestClaimRetryAfterExpiryCreatesANewLeaseAttempt(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Date(2026, 8, 6, 2, 0, 0, 0, time.UTC)
+	s.now = func() time.Time { return now }
+	if err := s.AddTask(Task{Agent: "codex-home", TaskID: "expiring", Subject: "expiring"}); err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := s.ClaimTask("codex-home", "expiring", "worker", "thread", time.Minute)
+	if err != nil {
+		t.Fatalf("initial claim: %v", err)
+	}
+	now = first.Expires.Add(time.Second)
+
+	reclaimed, err := s.ClaimTask("codex-home", "expiring", "worker", "thread", time.Minute)
+	if err != nil {
+		t.Fatalf("claim after expiry: %v", err)
+	}
+	if reclaimed.Token == first.Token || reclaimed.Attempt != first.Attempt+1 || !reclaimed.Expires.After(now) {
+		t.Fatalf("expired lease was reused instead of reclaimed: first=%+v reclaimed=%+v", first, reclaimed)
+	}
+	if err := s.ReleaseTaskLease(first.Agent, first.TaskID, first.Token, "stale owner"); !errors.Is(err, ErrLeaseInvalid) {
+		t.Fatalf("expired owner release = %v, want ErrLeaseInvalid", err)
+	}
+}
+
 func TestClaimTaskContentionHasOneWinner(t *testing.T) {
 	s := newTestStore(t)
 	if err := s.AddTask(Task{Agent: "codex-home", TaskID: "exact", Subject: "exact"}); err != nil {

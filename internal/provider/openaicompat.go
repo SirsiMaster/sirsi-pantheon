@@ -58,6 +58,7 @@ func (o *OpenAICompat) Caps() Caps {
 		TopP:          o.SupportsTopP,
 		Seed:          o.SupportsSeed,
 		Streaming:     o.SupportsStreaming,
+		Cancellation:  true,
 		ContextTokens: o.ContextTokens,
 		Offline:       o.TierValue == TierLocal,
 	}
@@ -65,12 +66,27 @@ func (o *OpenAICompat) Caps() Caps {
 
 func (o *OpenAICompat) client() *http.Client {
 	if o.HTTP != nil {
-		return o.HTTP
+		// Preserve injected transport/test settings without letting a caller's
+		// default redirect policy change the configured endpoint's authority.
+		// A 307/308 can replay a prompt body even when credentials are stripped.
+		client := *o.HTTP
+		client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+		return &client
 	}
 	// Generous: a cold local model pays a full weight-load on first token, and
 	// timing that load as if it were decode is a false-DEGRADED this fabric has
 	// already recorded twice.
-	return &http.Client{Timeout: 180 * time.Second}
+	return &http.Client{
+		Timeout: 180 * time.Second,
+		// A configured endpoint is a route boundary. Following a redirect could
+		// send a prompt or transport credentials to a different authority while
+		// the engine receipt still names the configured endpoint.
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 }
 
 // Available probes liveness. When UseRealCompletionProbe is set (SNE local lane),
@@ -78,6 +94,9 @@ func (o *OpenAICompat) client() *http.Client {
 // is DOWN per MODEL-ROUTER-DESIGN.md. Otherwise it probes /v1/models, which
 // proves a model is loaded but not that inference works.
 func (o *OpenAICompat) Available(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
 	if strings.TrimSpace(o.Endpoint) == "" {
 		return false
 	}
@@ -176,6 +195,33 @@ type modelsResponse struct {
 	} `json:"data"`
 }
 
+const (
+	maxOpenAIJSONResponseBytes = 8 << 20
+	maxOpenAIErrorBodyBytes    = 64 << 10
+)
+
+func decodeOpenAIJSON(reader io.Reader, target any) error {
+	body, err := io.ReadAll(io.LimitReader(reader, maxOpenAIJSONResponseBytes+1))
+	if err != nil {
+		return err
+	}
+	if len(body) > maxOpenAIJSONResponseBytes {
+		return fmt.Errorf("response exceeds %d-byte limit", maxOpenAIJSONResponseBytes)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("response contains trailing JSON")
+		}
+		return err
+	}
+	return nil
+}
+
 // ServedModel RESOLVES the model name to use for a request. It short-circuits to
 // the configured model when one is set, so it is cheap — and therefore it is NOT
 // a liveness probe: with a model configured it never touches the network and
@@ -186,6 +232,9 @@ type modelsResponse struct {
 // model over a dead broker (codex-pantheon, router item 20260729-193639). Use
 // ProbeServedModel when the point is to prove the endpoint is alive.
 func (o *OpenAICompat) ServedModel(ctx context.Context) (string, error) {
+	if ctx == nil {
+		return "", fmt.Errorf("%s: context is required", o.ProviderName)
+	}
 	if strings.TrimSpace(o.Model) != "" {
 		return o.Model, nil
 	}
@@ -198,6 +247,9 @@ func (o *OpenAICompat) ServedModel(ctx context.Context) (string, error) {
 // never be able to satisfy it — that bypass is what let a wedged server read as
 // healthy.
 func (o *OpenAICompat) ProbeServedModel(ctx context.Context) (string, error) {
+	if ctx == nil {
+		return "", fmt.Errorf("%s: context is required", o.ProviderName)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(o.Endpoint, "/")+"/models", nil)
 	if err != nil {
 		return "", err
@@ -212,7 +264,7 @@ func (o *OpenAICompat) ProbeServedModel(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("%s: models: http %d", o.ProviderName, resp.StatusCode)
 	}
 	var models modelsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&models); err != nil {
+	if err := decodeOpenAIJSON(resp.Body, &models); err != nil {
 		return "", fmt.Errorf("%s: decode models: %w", o.ProviderName, err)
 	}
 	if len(models.Data) == 0 || strings.TrimSpace(models.Data[0].ID) == "" {
@@ -238,6 +290,9 @@ func (o *OpenAICompat) validateModel(served string) error {
 }
 
 func (o *OpenAICompat) Complete(ctx context.Context, req Request) (Response, error) {
+	if ctx == nil {
+		return Response{}, fmt.Errorf("%s: context is required", o.ProviderName)
+	}
 	if strings.TrimSpace(o.Endpoint) == "" {
 		return Response{}, fmt.Errorf("%w: %s has no endpoint", ErrUnavailable, o.ProviderName)
 	}
@@ -270,16 +325,23 @@ func (o *OpenAICompat) Complete(ctx context.Context, req Request) (Response, err
 	}
 	defer func() { _ = hresp.Body.Close() }()
 
-	var cc ccResponse
-	if derr := json.NewDecoder(hresp.Body).Decode(&cc); derr != nil {
-		return Response{}, fmt.Errorf("%s: decode: %w", o.ProviderName, derr)
-	}
 	if hresp.StatusCode != http.StatusOK {
 		// Surface the backend's own words. A 404 here once read "cannot find an
 		// appropriate cached snapshot ... HF_HUB_OFFLINE" — which was a wrong
 		// model NAME in the request, not a broken broker. Swallowing it would
 		// have sent an operator hunting the wrong fault.
-		return Response{}, fmt.Errorf("%s: http %d: %v", o.ProviderName, hresp.StatusCode, cc.Error)
+		responseBody, _ := io.ReadAll(io.LimitReader(hresp.Body, maxOpenAIErrorBodyBytes))
+		var envelope struct {
+			Error any `json:"error"`
+		}
+		if json.Unmarshal(responseBody, &envelope) == nil && envelope.Error != nil {
+			return Response{}, fmt.Errorf("%s: http %d: %v", o.ProviderName, hresp.StatusCode, envelope.Error)
+		}
+		return Response{}, fmt.Errorf("%s: http %d: %s", o.ProviderName, hresp.StatusCode, strings.TrimSpace(string(responseBody)))
+	}
+	var cc ccResponse
+	if derr := decodeOpenAIJSON(hresp.Body, &cc); derr != nil {
+		return Response{}, fmt.Errorf("%s: decode: %w", o.ProviderName, derr)
 	}
 	if len(cc.Choices) == 0 {
 		return Response{}, fmt.Errorf("%s: no choices in response", o.ProviderName)
@@ -314,6 +376,9 @@ func (o *OpenAICompat) Complete(ctx context.Context, req Request) (Response, err
 // stream: a backend that lacks this method remains explicitly unsupported at
 // the engine ABI boundary.
 func (o *OpenAICompat) Stream(ctx context.Context, req Request) (<-chan StreamChunk, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("%s: context is required", o.ProviderName)
+	}
 	if strings.TrimSpace(o.Endpoint) == "" {
 		return nil, fmt.Errorf("%w: %s has no endpoint", ErrUnavailable, o.ProviderName)
 	}
@@ -364,7 +429,8 @@ func (o *OpenAICompat) Stream(ctx context.Context, req Request) (<-chan StreamCh
 				return
 			}
 			var chunk struct {
-				Model   string `json:"model"`
+				Model   string          `json:"model"`
+				Error   json.RawMessage `json:"error"`
 				Choices []struct {
 					Delta struct {
 						Content string `json:"content"`
@@ -374,6 +440,21 @@ func (o *OpenAICompat) Stream(ctx context.Context, req Request) (<-chan StreamCh
 			}
 			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 				_ = sendStreamChunk(ctx, out, StreamChunk{Err: fmt.Errorf("%s: decode stream chunk: %w", o.ProviderName, err)})
+				return
+			}
+			if errorBody := bytes.TrimSpace(chunk.Error); len(errorBody) > 0 && !bytes.Equal(errorBody, []byte("null")) {
+				var envelope struct {
+					Message string `json:"message"`
+				}
+				if err := json.Unmarshal(errorBody, &envelope); err != nil || strings.TrimSpace(envelope.Message) == "" {
+					message := "message is missing"
+					if err != nil {
+						message = err.Error()
+					}
+					_ = sendStreamChunk(ctx, out, StreamChunk{Err: fmt.Errorf("%s: invalid stream error event: %s", o.ProviderName, message)})
+					return
+				}
+				_ = sendStreamChunk(ctx, out, StreamChunk{Err: fmt.Errorf("%s: stream error: %s", o.ProviderName, strings.TrimSpace(envelope.Message))})
 				return
 			}
 			if len(chunk.Choices) == 0 {

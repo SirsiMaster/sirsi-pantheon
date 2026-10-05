@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +19,8 @@ var routerControlEndpoint string
 
 var routerControlClientOnly bool
 
+var routerControlLocalAuthority bool
+
 var routerControlActionRequestFile string
 
 var routerControlCmd = &cobra.Command{
@@ -23,15 +28,17 @@ var routerControlCmd = &cobra.Command{
 	Short: "Inspect the canonical worker control plane as one JSON envelope",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if endpoint := firstNonEmptyControlEndpoint(routerControlEndpoint, os.Getenv("SIRSI_CONTROL_ENDPOINT")); endpoint != "" {
+		endpoint := firstNonEmptyControlEndpoint(routerControlEndpoint, os.Getenv("SIRSI_CONTROL_ENDPOINT"))
+		useLocal, err := useLocalControlAuthority(endpoint, routerControlClientOnly || controlClientOnlyEnv(os.Getenv("SIRSI_CONTROL_CLIENT_ONLY")), routerControlLocalAuthority)
+		if err != nil {
+			return err
+		}
+		if !useLocal {
 			body, err := fetchRemoteControl(cmd.Context(), endpoint, os.Getenv("SIRSI_CONTROL_TOKEN"))
 			if err != nil {
 				return err
 			}
-			return printControlJSON(body)
-		}
-		if routerControlClientOnly || controlClientOnlyEnv(os.Getenv("SIRSI_CONTROL_CLIENT_ONLY")) {
-			return fmt.Errorf("M1 control client requires an authenticated M5 endpoint via --endpoint or SIRSI_CONTROL_ENDPOINT")
+			return printControlJSON(cmd.OutOrStdout(), body)
 		}
 		repoRoot, err := router.FindRepoRoot()
 		if err != nil {
@@ -51,17 +58,34 @@ var routerControlCmd = &cobra.Command{
 		if version == 0 || len(body) == 0 {
 			return fmt.Errorf("control snapshot unavailable: canonical router poll did not complete")
 		}
-		return printControlJSON(body)
+		return printControlJSON(cmd.OutOrStdout(), body)
 	},
 }
 
 func init() {
 	routerControlCmd.Flags().StringVar(&routerControlEndpoint, "endpoint", "", "Authenticated M5 control endpoint (or SIRSI_CONTROL_ENDPOINT)")
-	routerControlCmd.Flags().BoolVar(&routerControlClientOnly, "client-only", false, "Refuse local router state; require the authenticated M5 control plane")
+	routerControlCmd.Flags().BoolVar(&routerControlClientOnly, "client-only", false, "Require the authenticated M5 control plane; never use local router state")
+	routerControlCmd.Flags().BoolVar(&routerControlLocalAuthority, "local-authority", false, "Explicitly inspect local canonical router state (use only on its authority host)")
 	routerCmd.AddCommand(routerControlCmd)
 	routerControlActionCmd.Flags().StringVar(&routerControlEndpoint, "endpoint", "", "Authenticated M5 control endpoint (or SIRSI_CONTROL_ENDPOINT)")
 	routerControlActionCmd.Flags().StringVar(&routerControlActionRequestFile, "request-file", "-", "JSON action request file, or - for stdin")
 	routerCmd.AddCommand(routerControlActionCmd)
+}
+
+func useLocalControlAuthority(endpoint string, clientOnly, localAuthority bool) (bool, error) {
+	if endpoint != "" {
+		if localAuthority {
+			return false, fmt.Errorf("--local-authority cannot be combined with a remote control endpoint")
+		}
+		return false, nil
+	}
+	if clientOnly {
+		return false, fmt.Errorf("M1 control client requires an authenticated M5 endpoint via --endpoint or SIRSI_CONTROL_ENDPOINT")
+	}
+	if !localAuthority {
+		return false, fmt.Errorf("control authority is not configured; use --endpoint for M5 or --local-authority only on the canonical router host")
+	}
+	return true, nil
 }
 
 func controlClientOnlyEnv(value string) bool {
@@ -86,10 +110,25 @@ var routerControlActionCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		response, err := sendRemoteControlAction(cmd.Context(), endpoint, os.Getenv("SIRSI_CONTROL_TOKEN"), body)
-		if err != nil {
-			return err
-		}
-		return printControlJSON(response)
+		return sendAndPrintRemoteControlAction(cmd.Context(), endpoint, os.Getenv("SIRSI_CONTROL_TOKEN"), body, cmd.OutOrStdout())
 	},
+}
+
+func sendAndPrintRemoteControlAction(ctx context.Context, endpoint, token string, requestBody []byte, output io.Writer) error {
+	response, err := sendRemoteControlAction(ctx, endpoint, token, requestBody)
+	if err == nil {
+		return printControlJSON(output, response)
+	}
+	var rejection *routerboard.ControlActionFailureError
+	if !errors.As(err, &rejection) || rejection == nil {
+		return err
+	}
+	failureBody, marshalErr := json.Marshal(rejection.Failure)
+	if marshalErr != nil {
+		return fmt.Errorf("encode canonical worker action failure receipt: %w", marshalErr)
+	}
+	if printErr := printControlJSON(output, failureBody); printErr != nil {
+		return fmt.Errorf("write canonical worker action failure receipt: %w", printErr)
+	}
+	return fmt.Errorf("canonical worker action rejected: %w", err)
 }

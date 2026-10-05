@@ -1,7 +1,6 @@
 package routerboard
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -134,29 +133,20 @@ func (h *Handler) controlAction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"control action requires Content-Type: application/json"}`, http.StatusUnsupportedMediaType)
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 64*1024+1)
+	r.Body = http.MaxBytesReader(w, r.Body, ControlActionBodyLimit)
 	raw, readErr := io.ReadAll(r.Body)
-	if readErr != nil || len(raw) > 64*1024 {
-		http.Error(w, `{"error":"invalid control action: request body too large or unreadable"}`, http.StatusBadRequest)
+	if readErr != nil {
+		var limitErr *http.MaxBytesError
+		if errors.As(readErr, &limitErr) {
+			http.Error(w, `{"error":"control action body exceeds the 64 KiB limit"}`, http.StatusRequestEntityTooLarge)
+		} else {
+			http.Error(w, `{"error":"could not read control action body"}`, http.StatusBadRequest)
+		}
 		return
 	}
-	if err := ValidateJSONNoDuplicateKeys(raw); err != nil {
-		h.writeControlActionFailure(w, http.StatusBadRequest, raw, "", err)
-		return
-	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	var request ControlActionRequest
-	if err := decoder.Decode(&request); err != nil {
-		h.writeControlActionFailure(w, http.StatusBadRequest, raw, "", fmt.Errorf("invalid control action: %w", err))
-		return
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err == nil {
-		h.writeControlActionFailure(w, http.StatusBadRequest, raw, request.Verb, errors.New("invalid control action: multiple JSON values"))
-		return
-	} else if err != io.EOF {
-		h.writeControlActionFailure(w, http.StatusBadRequest, raw, request.Verb, fmt.Errorf("invalid control action: trailing data: %w", err))
+	request, decodeErr := DecodeControlActionRequest(raw)
+	if decodeErr != nil {
+		h.writeControlActionFailure(w, http.StatusBadRequest, raw, request.Verb, fmt.Errorf("invalid control action: %w", decodeErr))
 		return
 	}
 	store, owned, err := h.openControlStore()
@@ -343,14 +333,20 @@ func (h *Handler) arm(w http.ResponseWriter, r *http.Request) {
 }
 
 // Run polls until the context is canceled.
-func (b *Board) Run(ctx context.Context, every time.Duration) {
+func (b *Board) Run(ctx context.Context, every time.Duration) error {
+	if every <= 0 {
+		return fmt.Errorf("router board poll interval must be positive, got %s", every)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil
+	}
 	b.Poll(ctx)
 	t := time.NewTicker(every)
 	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return nil
 		case <-t.C:
 			b.Poll(ctx)
 		}

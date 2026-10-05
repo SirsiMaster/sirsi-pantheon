@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/sne"
 )
 
 func TestSNEReadClientUsesCurrentRotatedCapability(t *testing.T) {
@@ -18,13 +20,14 @@ func TestSNEReadClientUsesCurrentRotatedCapability(t *testing.T) {
 		switch r.URL.Path {
 		case "/health/ready":
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"status": "ready", "service_version": "test", "api_version": "v0", "api_contract": "sne.openai-chat.v2",
-				"profile": "interactive", "runtime_sha256": string(make([]byte, 64)), "model_id": "model", "model_manifest_sha256": string(make([]byte, 64)),
+				"status": "ready", "service_version": "test", "api_version": "v0", "api_contract": sne.OpenAIChatContractV3,
+				"capabilities": map[string]any{"execution_modes": []string{sne.ExecutionModePlain}},
+				"profile":      "interactive", "runtime_sha256": string(make([]byte, 64)), "model_id": "model", "model_manifest_sha256": string(make([]byte, 64)),
 				"max_concurrent_requests": 1, "max_queued_requests": 8, "queue_discipline": "fifo", "request_timeout_ms": 120000,
 			})
 		case "/v1/sne/status":
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"profile": "interactive", "runtime_sha256": string(make([]byte, 64)), "loaded_model": "model", "api_contract": "sne.openai-chat.v2",
+				"profile": "interactive", "runtime_sha256": string(make([]byte, 64)), "loaded_model": "model", "api_contract": sne.OpenAIChatContractV3,
 				"max_concurrent_requests": 1, "max_queued_requests": 8, "queue_discipline": "fifo", "request_timeout_ms": 120000,
 			})
 		case "/v1/models":

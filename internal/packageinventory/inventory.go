@@ -41,12 +41,13 @@ type Entry struct {
 }
 
 type Report struct {
-	Schema      string  `json:"schema"`
-	Version     string  `json:"version"`
-	Build       string  `json:"build"`
-	Entries     []Entry `json:"entries"`
-	PythonFree  bool    `json:"python_free"`
-	EngineCount int     `json:"engine_count"`
+	Schema          string  `json:"schema"`
+	Version         string  `json:"version"`
+	Build           string  `json:"build"`
+	Entries         []Entry `json:"entries"`
+	PythonFree      bool    `json:"python_free"`
+	EngineCount     int     `json:"engine_count"`
+	ExecutableCount int     `json:"executable_count"`
 }
 
 var allowed = map[string]string{
@@ -65,23 +66,32 @@ var allowed = map[string]string{
 // Verify returns a deterministic, non-executing inventory. The bundle root,
 // all directories, and all leaves are opened through retained descriptors.
 func Verify(appPath string, expected Expectations) (Report, error) {
-	if strings.TrimSpace(appPath) == "" {
-		return Report{}, errors.New("package inventory: app path is required")
-	}
-	rootFD, err := unix.Open(appPath, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	return VerifyWithFinalCheck(appPath, expected, nil)
+}
+
+// VerifyWithFinalCheck invokes finalCheck after payload validation and before
+// the final app-path continuity check. It lets callers bind external expected
+// inputs to the same acceptance boundary without reopening their pathnames.
+func VerifyWithFinalCheck(appPath string, expected Expectations, finalCheck func() error) (Report, error) {
+	return verifyWithHooks(appPath, expected, nil, finalCheck)
+}
+
+func verifyWithHook(appPath string, expected Expectations, beforeFinalPathCheck func()) (Report, error) {
+	return verifyWithHooks(appPath, expected, beforeFinalPathCheck, nil)
+}
+
+func verifyWithHooks(appPath string, expected Expectations, beforeFinalPathCheck func(), finalCheck func() error) (Report, error) {
+	authority, err := openAppPathAuthority(appPath)
 	if err != nil {
-		return Report{}, fmt.Errorf("package inventory: open app root: %w", err)
+		return Report{}, err
 	}
-	defer unix.Close(rootFD)
+	defer authority.close()
+	rootFD := authority.rootFD
 
 	snapshot := &scanSnapshot{entries: make(map[string]Entry), bytes: make(map[string][]byte)}
 	if err := scanDir(rootFD, "", snapshot); err != nil {
 		return Report{}, err
 	}
-	if err := finalNamespaceRescan(rootFD, snapshot); err != nil {
-		return Report{}, err
-	}
-
 	entries := make([]Entry, 0, len(snapshot.entries))
 	for _, entry := range snapshot.entries {
 		entries = append(entries, entry)
@@ -89,14 +99,182 @@ func Verify(appPath string, expected Expectations) (Report, error) {
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
 	report := Report{Schema: Schema, Version: expected.Version, Build: expected.Build, Entries: entries, PythonFree: true}
 	for _, entry := range entries {
-		if entry.Path == "Contents/MacOS/sirsi" || entry.Path == "Contents/MacOS/sirsi-menubar" {
+		switch entry.Path {
+		case "Contents/MacOS/sirsi":
 			report.EngineCount++
+			report.ExecutableCount++
+		case "Contents/MacOS/sirsi-menubar":
+			report.ExecutableCount++
 		}
 	}
 	if err := validateReport(report, snapshot.bytes, expected); err != nil {
 		return Report{}, err
 	}
+	if beforeFinalPathCheck != nil {
+		beforeFinalPathCheck()
+	}
+	if finalCheck != nil {
+		if err := finalCheck(); err != nil {
+			return Report{}, err
+		}
+	}
+	// Keep the complete package namespace scan after every callback and
+	// caller-supplied-input check. This is the last content-sensitive package
+	// operation before checking that the retained app root is still named by
+	// the same parent entry.
+	if err := finalNamespaceRescan(rootFD, snapshot); err != nil {
+		return Report{}, err
+	}
+	if err := authority.revalidate(); err != nil {
+		return Report{}, err
+	}
 	return report, nil
+}
+
+type directoryEdge struct {
+	parentIndex int
+	name        string
+	identity    unix.Stat_t
+}
+
+// appPathAuthority retains the complete no-follow parent chain and the opened
+// bundle root. Inventory is accepted only while every parent name and the app
+// leaf still identify those exact descriptors.
+type appPathAuthority struct {
+	fds         []int
+	identities  []unix.Stat_t
+	edges       []directoryEdge
+	appName     string
+	appIdentity unix.Stat_t
+	rootFD      int
+}
+
+func openAppPathAuthority(appPath string) (*appPathAuthority, error) {
+	if strings.TrimSpace(appPath) == "" || !path.IsAbs(appPath) {
+		return nil, errors.New("package inventory: absolute app path is required")
+	}
+	clean := path.Clean(appPath)
+	if clean != appPath {
+		return nil, errors.New("package inventory: app path must be canonical")
+	}
+	if clean == "/" {
+		return nil, errors.New("package inventory: app path must name a bundle")
+	}
+	parentPath, appName := path.Split(clean)
+	parentPath = strings.TrimSuffix(parentPath, "/")
+	if parentPath == "" {
+		parentPath = "/"
+	}
+	if appName == "" || appName == "." || appName == ".." {
+		return nil, errors.New("package inventory: invalid app leaf")
+	}
+
+	rootFD, err := unix.Open("/", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, fmt.Errorf("package inventory: open filesystem root: %w", err)
+	}
+	var rootIdentity unix.Stat_t
+	if err := unix.Fstat(rootFD, &rootIdentity); err != nil {
+		unix.Close(rootFD)
+		return nil, fmt.Errorf("package inventory: fstat filesystem root: %w", err)
+	}
+	authority := &appPathAuthority{fds: []int{rootFD}, identities: []unix.Stat_t{rootIdentity}, appName: appName, rootFD: -1}
+	cleanup := func(err error) (*appPathAuthority, error) {
+		authority.close()
+		return nil, err
+	}
+	components := strings.Split(strings.TrimPrefix(parentPath, "/"), "/")
+	if parentPath == "/" {
+		components = nil
+	}
+	for _, component := range components {
+		if component == "" || component == "." || component == ".." {
+			return cleanup(errors.New("package inventory: non-canonical parent path"))
+		}
+		parentIndex := len(authority.fds) - 1
+		parentFD := authority.fds[parentIndex]
+		var before unix.Stat_t
+		if err := unix.Fstatat(parentFD, component, &before, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+			return cleanup(fmt.Errorf("package inventory: stat app parent %q: %w", component, err))
+		}
+		if before.Mode&unix.S_IFMT != unix.S_IFDIR {
+			return cleanup(fmt.Errorf("package inventory: app parent is not a real directory: %q", component))
+		}
+		fd, err := unix.Openat(parentFD, component, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		if err != nil {
+			return cleanup(fmt.Errorf("package inventory: open app parent %q: %w", component, err))
+		}
+		var opened unix.Stat_t
+		if err := unix.Fstat(fd, &opened); err != nil || !sameDirectoryIdentity(before, opened) {
+			unix.Close(fd)
+			if err != nil {
+				return cleanup(fmt.Errorf("package inventory: fstat app parent %q: %w", component, err))
+			}
+			return cleanup(fmt.Errorf("package inventory: app parent substitution at %q", component))
+		}
+		authority.edges = append(authority.edges, directoryEdge{parentIndex: parentIndex, name: component, identity: opened})
+		authority.fds = append(authority.fds, fd)
+		authority.identities = append(authority.identities, opened)
+	}
+
+	parentFD := authority.fds[len(authority.fds)-1]
+	var before unix.Stat_t
+	if err := unix.Fstatat(parentFD, appName, &before, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return cleanup(fmt.Errorf("package inventory: stat app leaf: %w", err))
+	}
+	if before.Mode&unix.S_IFMT != unix.S_IFDIR {
+		return cleanup(errors.New("package inventory: app root is not a real directory"))
+	}
+	rootFD, err = unix.Openat(parentFD, appName, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return cleanup(fmt.Errorf("package inventory: open app root: %w", err))
+	}
+	var opened unix.Stat_t
+	if err := unix.Fstat(rootFD, &opened); err != nil || !sameDirectoryIdentity(before, opened) {
+		unix.Close(rootFD)
+		if err != nil {
+			return cleanup(fmt.Errorf("package inventory: fstat app root: %w", err))
+		}
+		return cleanup(errors.New("package inventory: app root substitution during open"))
+	}
+	authority.rootFD = rootFD
+	authority.appIdentity = opened
+	return authority, nil
+}
+
+func (a *appPathAuthority) revalidate() error {
+	for i, fd := range a.fds {
+		var opened unix.Stat_t
+		if err := unix.Fstat(fd, &opened); err != nil || !sameDirectoryIdentity(a.identities[i], opened) {
+			return fmt.Errorf("package inventory: retained parent identity changed before acceptance")
+		}
+	}
+	for _, edge := range a.edges {
+		parentFD := a.fds[edge.parentIndex]
+		var named unix.Stat_t
+		if err := unix.Fstatat(parentFD, edge.name, &named, unix.AT_SYMLINK_NOFOLLOW); err != nil || !sameDirectoryIdentity(edge.identity, named) {
+			return fmt.Errorf("package inventory: parent path continuity failed before acceptance at %q", edge.name)
+		}
+	}
+	var root, named unix.Stat_t
+	parentFD := a.fds[len(a.fds)-1]
+	if err := unix.Fstat(a.rootFD, &root); err != nil || !sameDirectoryIdentity(a.appIdentity, root) {
+		return errors.New("package inventory: retained app root identity changed before acceptance")
+	}
+	if err := unix.Fstatat(parentFD, a.appName, &named, unix.AT_SYMLINK_NOFOLLOW); err != nil || !sameDirectoryIdentity(a.appIdentity, named) {
+		return errors.New("package inventory: app path identity changed before acceptance")
+	}
+	return nil
+}
+
+func (a *appPathAuthority) close() {
+	for i := len(a.fds) - 1; i >= 0; i-- {
+		_ = unix.Close(a.fds[i])
+	}
+	if a.rootFD >= 0 {
+		_ = unix.Close(a.rootFD)
+		a.rootFD = -1
+	}
 }
 
 type scanSnapshot struct {
@@ -149,9 +327,13 @@ func scanDirOwned(fd int, parent string, snapshot *scanSnapshot, closeFD bool) e
 			unix.Close(childFD)
 			return fmt.Errorf("package inventory: fstat %q: %w", rel, err)
 		}
-		if !sameIdentity(before, opened) {
+		if !sameScannedEntryIdentity(wantType, before, opened) {
 			unix.Close(childFD)
 			return fmt.Errorf("package inventory: substitution detected before visit %q", rel)
+		}
+		if wantType == "regular" && opened.Nlink != 1 {
+			unix.Close(childFD)
+			return fmt.Errorf("package inventory: regular payload must have nlink=1 at %q", rel)
 		}
 
 		entry := Entry{Path: rel, Type: wantType, Dev: uint64(opened.Dev), Ino: uint64(opened.Ino), Mode: uint32(opened.Mode), Nlink: uint64(opened.Nlink), Size: opened.Size}
@@ -171,7 +353,7 @@ func scanDirOwned(fd int, parent string, snapshot *scanSnapshot, closeFD bool) e
 			snapshot.bytes[rel] = content
 		}
 		var after unix.Stat_t
-		if err := unix.Fstatat(fd, name, &after, unix.AT_SYMLINK_NOFOLLOW); err != nil || !sameIdentity(opened, after) {
+		if err := unix.Fstatat(fd, name, &after, unix.AT_SYMLINK_NOFOLLOW); err != nil || !sameScannedEntryIdentity(wantType, opened, after) {
 			if err != nil {
 				return fmt.Errorf("package inventory: parent continuity failed at %q: %w", rel, err)
 			}
@@ -242,9 +424,13 @@ func rescanDir(fd int, parent string, snapshot *scanSnapshot) error {
 			unix.Close(childFD)
 			return fmt.Errorf("package inventory: rescan fstat %q: %w", rel, err)
 		}
-		if !sameIdentity(st, opened) {
+		if !sameScannedEntryIdentity(wantType, st, opened) {
 			unix.Close(childFD)
 			return fmt.Errorf("package inventory: rescan substitution at %q", rel)
+		}
+		if wantType == "regular" && opened.Nlink != 1 {
+			unix.Close(childFD)
+			return fmt.Errorf("package inventory: hard-linked regular payload at %q", rel)
 		}
 		entry := Entry{Path: rel, Type: wantType, Dev: uint64(opened.Dev), Ino: uint64(opened.Ino), Mode: uint32(opened.Mode), Nlink: uint64(opened.Nlink), Size: opened.Size}
 		if wantType == "directory" {
@@ -264,7 +450,7 @@ func rescanDir(fd int, parent string, snapshot *scanSnapshot) error {
 		}
 		snapshot.entries[rel] = entry
 		var after unix.Stat_t
-		if err := unix.Fstatat(fd, name, &after, unix.AT_SYMLINK_NOFOLLOW); err != nil || !sameIdentity(opened, after) {
+		if err := unix.Fstatat(fd, name, &after, unix.AT_SYMLINK_NOFOLLOW); err != nil || !sameScannedEntryIdentity(wantType, opened, after) {
 			if err != nil {
 				return fmt.Errorf("package inventory: rescan parent continuity failed at %q: %w", rel, err)
 			}
@@ -323,24 +509,44 @@ func readOnce(fd int, size int64) ([]byte, error) {
 	if size < 0 || size > 32<<20 {
 		return nil, fmt.Errorf("invalid file size %d", size)
 	}
-	data := make([]byte, 0, size)
-	buf := make([]byte, 32<<10)
-	for {
-		n, err := unix.Read(fd, buf)
-		if n > 0 {
-			data = append(data, buf[:n]...)
-		}
-		if err == io.EOF || n == 0 {
-			return data, nil
+	data := make([]byte, int(size))
+	for offset := 0; offset < len(data); {
+		n, err := unix.Read(fd, data[offset:])
+		if err == unix.EINTR {
+			continue
 		}
 		if err != nil {
+			if err == io.EOF {
+				return nil, io.ErrUnexpectedEOF
+			}
 			return nil, err
 		}
+		if n == 0 {
+			return nil, io.ErrUnexpectedEOF
+		}
+		offset += n
+	}
+	var extra [1]byte
+	for {
+		n, err := unix.Read(fd, extra[:])
+		if err == unix.EINTR {
+			continue
+		}
+		if err != nil {
+			if err == io.EOF {
+				return data, nil
+			}
+			return nil, err
+		}
+		if n > 0 {
+			return nil, errors.New("file grew beyond observed size")
+		}
+		return data, nil
 	}
 }
 
 func validateReport(report Report, contents map[string][]byte, expected Expectations) error {
-	if report.Schema != Schema || !report.PythonFree || report.EngineCount != 2 {
+	if report.Schema != Schema || !report.PythonFree || report.EngineCount != 1 || report.ExecutableCount != 2 {
 		return errors.New("package inventory: malformed report")
 	}
 	if !hasExact(report, "Contents/Info.plist", expected.InfoPlist) || !hasExact(report, "Contents/PkgInfo", expected.PkgInfo) || !hasExact(report, "Contents/Resources/ai.sirsi.pantheon.plist", expected.LaunchAgent) {
@@ -348,6 +554,8 @@ func validateReport(report Report, contents map[string][]byte, expected Expectat
 	}
 	previous := ""
 	seen := make(map[string]struct{}, len(report.Entries))
+	engineCount := 0
+	executableCount := 0
 	for _, entry := range report.Entries {
 		if entry.Path == "" || path.IsAbs(entry.Path) || strings.Contains(entry.Path, "..") || entry.Path <= previous {
 			return errors.New("package inventory: entries are not a deterministic relative sequence")
@@ -360,8 +568,38 @@ func validateReport(report Report, contents map[string][]byte, expected Expectat
 		if expectedType, ok := allowed[entry.Path]; !ok || expectedType != entry.Type {
 			return fmt.Errorf("package inventory: malformed entry %q", entry.Path)
 		}
-		if entry.Type == "regular" && len(entry.SHA256) != 64 {
-			return fmt.Errorf("package inventory: missing digest %q", entry.Path)
+		if entry.Mode > 0xffff || statType(uint16(entry.Mode)) != entry.Type {
+			return fmt.Errorf("package inventory: mode/type mismatch %q", entry.Path)
+		}
+		if entry.Path == "Contents/MacOS/sirsi" {
+			engineCount++
+		}
+		if entry.Type == "regular" {
+			if entry.Nlink != 1 || entry.Size < 0 || entry.Size > 32<<20 {
+				return fmt.Errorf("package inventory: invalid regular-file metadata %q", entry.Path)
+			}
+			executable := entry.Mode&0o111 != 0
+			switch entry.Path {
+			case "Contents/MacOS/sirsi", "Contents/MacOS/sirsi-menubar":
+				if !executable {
+					return fmt.Errorf("package inventory: product executable payload is not executable %q", entry.Path)
+				}
+				executableCount++
+			default:
+				if executable {
+					return fmt.Errorf("package inventory: resource payload has executable mode %q", entry.Path)
+				}
+			}
+			digestBytes, err := hex.DecodeString(entry.SHA256)
+			if err != nil || len(digestBytes) != sha256.Size {
+				return fmt.Errorf("package inventory: invalid digest %q", entry.Path)
+			}
+			data, ok := contents[entry.Path]
+			if !ok || digest(data) != entry.SHA256 {
+				return fmt.Errorf("package inventory: digest does not bind scanned bytes %q", entry.Path)
+			}
+		} else if entry.SHA256 != "" || entry.Size < 0 {
+			return fmt.Errorf("package inventory: invalid directory metadata %q", entry.Path)
 		}
 		if strings.Contains(strings.ToLower(entry.Path), "python") || strings.Contains(strings.ToLower(entry.Path), ".py") {
 			return fmt.Errorf("package inventory: Python payload rejected at %q", entry.Path)
@@ -370,6 +608,12 @@ func validateReport(report Report, contents map[string][]byte, expected Expectat
 			return fmt.Errorf("package inventory: Python linkage rejected at %q", entry.Path)
 		}
 	}
+	if engineCount != report.EngineCount {
+		return errors.New("package inventory: engine count does not match inventory")
+	}
+	if executableCount != report.ExecutableCount {
+		return errors.New("package inventory: executable count does not match inventory")
+	}
 	for required := range allowed {
 		if !expected.RequireCodeSignature && strings.HasPrefix(required, "Contents/_CodeSignature") {
 			continue
@@ -377,6 +621,11 @@ func validateReport(report Report, contents map[string][]byte, expected Expectat
 		if _, ok := seen[required]; !ok {
 			return fmt.Errorf("package inventory: missing required entry %q", required)
 		}
+	}
+	_, codeSignatureDirectory := seen["Contents/_CodeSignature"]
+	_, codeResources := seen["Contents/_CodeSignature/CodeResources"]
+	if codeSignatureDirectory != codeResources {
+		return errors.New("package inventory: incomplete _CodeSignature payload")
 	}
 	return nil
 }
@@ -408,4 +657,18 @@ func statType(mode uint16) string {
 
 func sameIdentity(a, b unix.Stat_t) bool {
 	return a.Dev == b.Dev && a.Ino == b.Ino && a.Mode == b.Mode && a.Nlink == b.Nlink && a.Size == b.Size
+}
+
+// Directory link count and size describe current children, not object
+// identity; unrelated sibling changes must not invalidate a retained path.
+// App-subtree completeness and metadata remain checked by the final rescan.
+func sameDirectoryIdentity(a, b unix.Stat_t) bool {
+	return a.Dev == b.Dev && a.Ino == b.Ino && a.Mode == b.Mode && a.Mode&unix.S_IFMT == unix.S_IFDIR && b.Mode&unix.S_IFMT == unix.S_IFDIR
+}
+
+func sameScannedEntryIdentity(entryType string, a, b unix.Stat_t) bool {
+	if entryType == "directory" {
+		return sameDirectoryIdentity(a, b)
+	}
+	return sameIdentity(a, b)
 }

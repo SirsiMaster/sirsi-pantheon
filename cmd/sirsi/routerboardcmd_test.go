@@ -5,9 +5,25 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerboard"
 )
+
+func TestBoardServeRejectsNonPositiveServingPollBeforeHostAccess(t *testing.T) {
+	oldOnce, oldPoll := boardServeOnce, boardServePoll
+	t.Cleanup(func() {
+		boardServeOnce, boardServePoll = oldOnce, oldPoll
+	})
+	boardServeOnce = false
+	for _, interval := range []time.Duration{0, -time.Second} {
+		boardServePoll = interval
+		err := runRouterBoard(nil, nil)
+		if err == nil || !strings.Contains(err.Error(), "--poll must be greater than zero") {
+			t.Errorf("runRouterBoard with --poll %s error = %v, want validation before environment setup", interval, err)
+		}
+	}
+}
 
 func TestRequiredBoardServeControlTokenFailsClosed(t *testing.T) {
 	t.Setenv("SIRSI_CONTROL_TOKEN", "")

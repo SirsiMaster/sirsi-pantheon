@@ -1685,6 +1685,9 @@ struct RouterView: View {
                                               broken: engine.routerDaemonBlockers,
                                               onResult: { resultLine = $0 })
                         }
+                        if !engine.routerOutboxBlockers.isEmpty {
+                            OutboxBlockerCard(blocked: engine.routerOutboxBlockers)
+                        }
                     } else if engine.routerBoard != nil {
                         HStack(spacing: 8) {
                             Circle().fill(.green).frame(width: 8, height: 8)
@@ -1848,6 +1851,38 @@ struct DaemonBlockerCard: View {
                 Label("Install router daemons", systemImage: "wrench.and.screwdriver.fill")
                     .frame(maxWidth: .infinity)
             }.buttonStyle(.borderedProminent).tint(gold).disabled(engine.busy)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 9).fill(Color.red.opacity(0.10)))
+    }
+}
+
+// OutboxBlockerCard surfaces an unreadable spool relay outbox (ADR-069). No
+// one-click fix: the underlying cause is a directory permission/filesystem
+// condition on the relay host, which the operator must clear by hand — the
+// card's job is only to make the condition VISIBLE, since the whole point of
+// PR #931 was that this state used to read as a silent, confident zero.
+struct OutboxBlockerCard: View {
+    let blocked: [RBOutbox]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text("📪").sirsiFont(18)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("\(blocked.count) relay outbox\(blocked.count == 1 ? "" : "es") unreadable")
+                        .sirsiFont(13, weight: .semibold)
+                    Text("Queue depth is unknown, not zero — check the directory by hand.")
+                        .sirsiFont(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            ForEach(blocked) { o in
+                Text("• \(o.agent): \(o.error ?? "unreadable")")
+                    .sirsiFont(.caption, design: .monospaced).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)

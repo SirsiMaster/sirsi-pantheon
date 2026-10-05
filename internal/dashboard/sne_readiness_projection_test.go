@@ -16,8 +16,9 @@ func TestSNEReadinessProjectionRequiresExactSupervisedTuple(t *testing.T) {
 		RuntimeSHA256: runtimeSHA, NativeRuntimeSHA256: nativeRuntimeSHA, ModelManifestSHA256: manifestSHA,
 	}
 	identity := sne.ServiceReadinessIdentity{
-		Status: "ready", APIVersion: "v0", APIContract: "sne.openai-chat.v2", ReadyAPIContract: "sne.openai-chat.v2",
-		Profile: "interactive", ReadyProfile: "interactive", RuntimeSHA256: runtimeSHA, ReadyRuntimeSHA256: runtimeSHA, NativeRuntimeSHA256: nativeRuntimeSHA, ReadyNativeRuntimeSHA256: nativeRuntimeSHA,
+		Status: "ready", APIVersion: "v0", APIContract: sne.OpenAIChatContractV3, ReadyAPIContract: sne.OpenAIChatContractV3,
+		ReadyCapabilities: sne.ReadinessCapabilities{ExecutionModes: []string{sne.ExecutionModePlain}},
+		Profile:           "interactive", ReadyProfile: "interactive", RuntimeSHA256: runtimeSHA, ReadyRuntimeSHA256: runtimeSHA, NativeRuntimeSHA256: nativeRuntimeSHA, ReadyNativeRuntimeSHA256: nativeRuntimeSHA,
 		LoadedModel: "gemma-test", ReadyModelID: "gemma-test", ReadyManifestSHA256: manifestSHA,
 		Models:                []sne.Model{{ID: "gemma-test", ManifestSHA256: manifestSHA}},
 		MaxConcurrentRequests: 1, ReadyMaxConcurrentRequests: 1,

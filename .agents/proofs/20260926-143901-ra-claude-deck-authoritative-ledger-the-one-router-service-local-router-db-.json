@@ -1,0 +1,88 @@
+{
+  "work_item_id": "20260926-143901-ra-claude-deck-authoritative-ledger-the-one-router-service-local-router-db-",
+  "agent_id": "claude-deck",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "internal-tool",
+  "canon_read": [
+    {
+      "path": "CLAUDE.md",
+      "role": "repo-canon",
+      "read_at": "2026-09-26T00:00:00Z",
+      "notes": "sirsi-pantheon router root canon"
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-09-26T00:00:00Z",
+      "notes": "router closure requirement"
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-09-26T00:00:00Z",
+      "notes": ""
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-09-26T00:00:00Z",
+      "notes": ""
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-09-26T00:00:00Z",
+      "notes": ""
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-09-26T00:00:00Z",
+      "notes": ""
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "CLAUDE.md",
+      "section": "VERIFY NOW",
+      "claim": "SIRSI_ROUTER_DB must be unset and SIRSI_ROUTER_URL must point at the spool relay; sirsi router status must show the fabric total (~560 open across ~30 agents), not a small/local-only number",
+      "files_changed": [
+        ".agents/proofs/20260926-143901-ra-claude-deck-authoritative-ledger-the-one-router-service-local-router-db-.json"
+      ],
+      "evidence": [
+        "echo $SIRSI_ROUTER_DB -> empty",
+        "echo $SIRSI_ROUTER_URL -> spool:///Users/thekryptodragon/.sirsi/relay",
+        "sirsi router status -> 603 open, 8688 closed, across ~30 recipient agents"
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "N/A — verification task, no product change.",
+    "design": "N/A",
+    "technical": "SIRSI_ROUTER_DB unset; SIRSI_ROUTER_URL=spool:///Users/thekryptodragon/.sirsi/relay; sirsi router status returned 603 open items across ~30 recipient agents, consistent with ra's stated fabric total of ~560 across ~30 agents. A stale ~/.sirsi/router.db file exists on disk but is not referenced by any active env var for this lane.",
+    "operational": "No config change required — this lane was already on the spool relay, not a local db.",
+    "narrative": "Verified per ra's directive that claude-deck reads/writes through the authoritative Cloud Run router service via the on-host spool relay, not a stale local router.db."
+  },
+  "verification": [
+    {
+      "name": "router env check",
+      "command": "env | grep -i SIRSI_ROUTER",
+      "status": "pass",
+      "evidence": "SIRSI_ROUTER_URL=spool:///Users/thekryptodragon/.sirsi/relay; SIRSI_ROUTER_ROOT=/Users/thekryptodragon/Development/sirsi-pantheon/.agents/idea-router; SIRSI_ROUTER_AGENT=claude-deck; SIRSI_ROUTER_DB not set"
+    },
+    {
+      "name": "fabric total check",
+      "command": "sirsi router status",
+      "status": "pass",
+      "evidence": "603 open, 8688 closed, across ~30 recipient agents — matches expected fabric scale"
+    }
+  ],
+  "working_status": {
+    "environment": "SirsiNexusApp/marketing repo (claude-deck lane)",
+    "how_verified": "env var inspection + sirsi router status",
+    "observed_result": "Connected to spool relay -> Cloud Run router service, not a local split-brain store",
+    "verified_at": "2026-09-26T00:00:00Z"
+  },
+  "blockers": []
+}

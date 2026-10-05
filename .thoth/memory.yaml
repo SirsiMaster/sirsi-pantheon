@@ -1,3 +1,24 @@
+# 2026-09-30: Hermes PR #410 exact head 07ec43843ac15d095bcc08bffae3a52441ffaede
+# tree 6cd4b749e0955a5092c51ab77268b58672b1d604 passed fresh `go test -race
+# ./transport/tbraw` (336.555s), repository-wide `go test -race ./...`, `go vet
+# ./...`, and `go build ./cmd/sirsi-hermes` in disposable checkout
+# /private/tmp/hermes-pr410-release. Handoff item
+# 20260930-091018-sirsi-software-admin-hermes-pr-410-exact-candidate-passed-fresh-race-vet-build-hermes-re
+# routed to Hermes. Hermes owns merge, signing, Ma'at signed-byte smoke, tag,
+# release, and Stack Lab registration; no release mutation by this lane. Unsigned
+# 1.2.2 packaging also completed: pkg 16a57cebcf4d28df27ebf5b682de96763547bed1d3464402b42df53157f057c2,
+# tar 875452fb505d73d8495284b93373f86976e0dd6c821a13d37c69f33c6e2ad61b; both
+# are non-customer-release artifacts pending Hermes-owned signing/notarization.
+# Physical two-Mac release smoke (including busy/host-stall and zero-corruption
+# evidence) was routed to Hardware as item
+# 20260930-091243-sirsi-software-admin-sirsi-hardware-admin-hermes-pr-410-physical-two-mac-release-smoke-requested;
+# exact signed/staged binary identity remains to be supplied by Hermes/Hardware.
+# FinalWishes PR #685 head c483c58f is green on its historical base but dirty
+# against released main de7ece5d/tree36d2f9b. Disposable rebase reproduced two
+# semantic documentation conflicts (product_guides.json and directives.md):
+# main uses Everyone/Only-you while the PR uses All-beneficiaries/Private.
+# Functional files apply cleanly; exact rebase handoff routed to codex-finalwishes
+# as 20260930-091743-sirsi-software-admin-codex-finalwishes-pr-685-release-candidate-needs-semantic-rebase-onto-current-.
 # 2026-08-27: Cleared stale SNE v17 protected-run reservation with unrestricted
 # read-only evidence. v17 and later v18 summaries are terminal rejected; live
 # executable enumeration found only protected idle Aqua brokers 69092/85269,
@@ -235,18 +256,18 @@
 # Memory/concurrency/yield fields are declared but require enforcement evidence
 # before product admission. SNE remains replaceable behind Runtime API v0.
 # Read this FIRST before any source files.
-# Last updated: 2026-09-10T01:53:22-04:00
+# Last updated: 2026-09-30T09:03:33-04:00
 
 ## Identity
 project: sirsi-pantheon
 repo: github.com/SirsiMaster/sirsi-pantheon
 language: Go 1.25 / TypeScript / Kotlin / Swift
 version: 0.23.8-beta
-binary_count: 18 (pantheon-inbox-receipt-repair, pantheon-inbox-repair, pantheon-inbox-route, sirsi, sirsi-agent, sirsi-gemma, sirsi-gui, sirsi-menubar, sirsi-package-inventory, sirsi-sne-acquire, sirsi-sne-catalog-candidate, sirsi-sne-catalog-portable, sirsi-sne-catalog-sign, sirsi-sne-catalog-store, sirsi-sne-catalog-verify, sirsi-sne-permission-fixture, sirsi-sne-registry-verify, sirsi-sne-supervisor)
-test_count: 18870+
-line_count: ~862,850
-module_count: 72
-command_count: 290
+binary_count: 14 (sirsi, sirsi-agent, sirsi-gemma, sirsi-gui, sirsi-menubar, sirsi-package-inventory, sirsi-sne-acquire, sirsi-sne-catalog-candidate, sirsi-sne-catalog-portable, sirsi-sne-catalog-sign, sirsi-sne-catalog-store, sirsi-sne-catalog-verify, sirsi-sne-registry-verify, sirsi-sne-supervisor)
+test_count: 40201+
+line_count: ~1864,668
+module_count: 73
+command_count: 294
 mcp_tools: 16 (scan_workspace, ghost_report, health_check, classify_files, watchdog_alerts + 10 RTK/Vault/Horus + filter_output)
 mobile_targets: 2 (iOS xcframework, Android AAR)
 mobile_bindings: 29 (Anubis 2, Ka 2, Thoth 4, Seba 2, Seshat 3, RTK 2, Vault 5, Horus 4, Brain 3, Version 1, Categories 1)
@@ -490,46 +511,46 @@ sync_protocol:
 # .agent/workflows/session-start.md — session workflow (includes build-in-public step)
 
 ## Session Decisions
+# 2026-09-30: Router snapshot:
+# 2026-09-30: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-09-30: completed topics: 41
+# 2026-09-30: last Codex read: 2026-06-11T04:28:50Z
+# 2026-09-30: last Claude read: 2026-06-16T15:30:16Z
+# 2026-09-30: pending: none
+# 2026-09-27: FinalWishes release 2026.09.28.1 completed from exact mainline fcfeff04af0c1cd7453cdf11531dbbb3b941bbd6. Workflow 36363450060 SUCCESS: all tests/build/security/docs, Cloud Run finalwishes-api-00560-89s, Firebase Hosting/Functions/Rules deployment, public smoke HTTP 200. Stack Lab PR #56 merged f652ad2d30c144ee7979d595d9aaf7e111596b99. Release URL finalwishes-web-2026.09.28.1. Artifact quota warnings remain non-fatal; mobile-store/legal/provider/row-level evidence open.
+# 2026-09-27: Router snapshot:
+# 2026-09-27: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-09-27: completed topics: 41
+# 2026-09-27: last Codex read: 2026-06-11T04:28:50Z
+# 2026-09-27: last Claude read: 2026-06-16T15:30:16Z
+# 2026-09-27: pending: none
+# 2026-09-27: Pantheon v0.24.15 candidate published: source 6113fd0224a4c217a5e87e9ec9f4f1593ee7fd65, tag v0.24.15, release workflow 36362749410 GoReleaser/CLI assets pass; macOS DMG/PKG job failed at unavailable Developer ID credentials; release marked prerelease. Stack Lab PR #55 merged 6186f202. Remaining Pantheon gates: Developer ID signing/notary, DMG/PKG, cask, installed-host proof.
+# 2026-09-27: Router snapshot:
+# 2026-09-27: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-09-27: completed topics: 41
+# 2026-09-27: last Codex read: 2026-06-11T04:28:50Z
+# 2026-09-27: last Claude read: 2026-06-16T15:30:16Z
+# 2026-09-27: pending: none
+# 2026-09-27: Hermes v1.0.2 candidate published and Stack Lab registered. Exact release commit f3cd9cf58aba16f73127ec6907cd66cfc24ddb0d; pkg SHA 7968243265c39c96c6b7c4ef4a0c7900c87a5bcfab7a340a35ea94256b2b757f; tar SHA 0f44fcd508130fe17df725146a4ab495542a88b447e0e7570af72586b1d523ef. Stack Lab receipt PR #53 merged 74a1a421; lane canon PR #54 merged adf7c2f7. Candidate remains pre-release because exact M1/M5 host-stall qualification, signing/notarization, EULA, and G1 evidence remain open. Pantheon/FinalWishes/Nexus/Apollo baselines remain current.
+# 2026-09-27: Router snapshot:
+# 2026-09-27: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-09-27: completed topics: 41
+# 2026-09-27: last Codex read: 2026-06-11T04:28:50Z
+# 2026-09-27: last Claude read: 2026-06-16T15:30:16Z
+# 2026-09-27: pending: none
+# 2026-09-27: Stack Lab PR #52 merged; lane canon baselines refreshed for Pantheon v0.24.14, Apollo/SNE v1.0.1, Hermes v1.0.0 boundary, FinalWishes .6, and Nexus alpha.2. Remaining boundaries: Pantheon Developer ID credentials, Hermes v1.0.1 stability, SNE qualification/signing, Nexus GA/runtime, FinalWishes mobile/legal/provider evidence.
+# 2026-09-27: Router snapshot:
+# 2026-09-27: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
+# 2026-09-27: completed topics: 41
+# 2026-09-27: last Codex read: 2026-06-11T04:28:50Z
+# 2026-09-27: last Claude read: 2026-06-16T15:30:16Z
+# 2026-09-27: pending: none
 # 2026-09-12: Notified Claude Deck of bounded contrast and print-route repairs to prevent overwrite.
 # 2026-09-12: Router snapshot:
 # 2026-09-12: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
 # 2026-09-12: completed topics: 41
 # 2026-09-12: last Codex read: 2026-06-11T04:28:50Z
 # 2026-09-12: last Claude read: 2026-06-16T15:30:16Z
-# 2026-09-12: pending: none
-# 2026-09-12: Recorded market-materials router continuity and inbox reconciliation for codex-deck.
-# 2026-09-12: Router snapshot:
-# 2026-09-12: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-# 2026-09-12: completed topics: 41
-# 2026-09-12: last Codex read: 2026-06-11T04:28:50Z
-# 2026-09-12: last Claude read: 2026-06-16T15:30:16Z
-# 2026-09-12: pending: none
-# 2026-09-10: Router snapshot:
-# 2026-09-10: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-# 2026-09-10: completed topics: 41
-# 2026-09-10: last Codex read: 2026-06-11T04:28:50Z
-# 2026-09-10: last Claude read: 2026-06-16T15:30:16Z
-# 2026-09-10: pending: none
-# 2026-08-21: Pantheon native menu-bar SNE/Nexus handoff drift fixed. Menubar no longer hardcodes sirsi.ai root fragment; it calls shared dashboard.BuildNexusCapabilityURL with governed https://sirsi.ai/local-ai route, fragment-only capability, no query credential, and missing-capability rejection. Focused cmd/sirsi-menubar test passes. Evidence: docs/evidence/PANTHEON_MENUBAR_NEXUS_GOVERNED_HANDOFF_20260821.md.
-# 2026-08-21: Router snapshot:
-# 2026-08-21: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-# 2026-08-21: completed topics: 41
-# 2026-08-21: last Codex read: 2026-06-11T04:28:50Z
-# 2026-08-21: last Claude read: 2026-06-16T15:30:16Z
-# 2026-08-21: pending: none
-# 2026-08-21: Pantheon SNE install UX: replaced browser confirm license acceptance with explicit keyboard-accessible terms dialog. Dialog identifies exact model, opens governed terms URL, requires unchecked explicit consent before enabling Accept and install, separates cancel, and preserves transactional release-supported backend request. Focused SNE route/license/install API tests pass.
-# 2026-08-21: Router snapshot:
-# 2026-08-21: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-# 2026-08-21: completed topics: 41
-# 2026-08-21: last Codex read: 2026-06-11T04:28:50Z
-# 2026-08-21: last Claude read: 2026-06-16T15:30:16Z
-# 2026-08-21: pending: none
-# 2026-08-17: 2026-08-17: Pantheon SNE lifecycle now supports exact assistant-bound MTP packages. resolveLaunch derives the sole assistant artifact from the admitted manifest and formal checkout, verifies SHA identity, and passes AssistantSafetensors to the supervisor. Plain manifests reject assistants. Runtime catalog v2 now includes formal candidate9 and pins sned, native runtime, MLX dylib, metallib, and JACCL. Unit tests pass outside the sandbox; dashboard candidate b390b005 passed a real Start/serve/Stop using only formal package/model-store roots and returned exact pantheon mtp ready content. SNE formal gate passed but swap contamination prohibits a new performance claim.
-# 2026-08-17: Router snapshot:
-# 2026-08-17: active topics: ra-horus-router-hypervisor-canon, finalwishes-tier1-ga, finalwishes-dependabot-sweep, finalwishes-owner-readiness, finalwishes-lob-google-photos, finalwishes-rag-architecture, finalwishes-mobile-architecture, pantheon-mac-native-cli-pivot, lean-af-cross-repo-cleanup-sweep
-# 2026-08-17: completed topics: 41
-# 2026-08-17: last Codex read: 2026-06-11T04:28:50Z
-# 2026-08-17: last Claude read: 2026-06-16T15:30:16Z
 
 sne_supervision_update_20260815:
   status: source-complete-awaiting-admission
@@ -1539,3 +1560,32 @@ finalwishes_exact_ci_20260827:
 
 # SSA 2026-09-11 0648–0650 Ma’at authority convergence
 # Sender identified concurrent owner contract a2dd423f. Fully read and leased reconciliation, preserved codex-pantheon docs/contracts/PANTHEON_MAAT_FAILURE_MEMORY_CONTRACT.md verbatim in local 7bae1ec40; own architecture draft replaced by supersession pointer. Outcomes pass/reject/unverifiable and owner proposed fields now sole authority; SNE keys remain opaque. Existing Desktop entry carries exact owner body plus current publication header. Reply 065013 and coordination 065015 delivered; fenced convergence task complete. Contract proof remains blocked (review, Workspace); runtime with codex-pantheon. Evidence maat-contract/convergence-verification.json. Earlier 707c27a36 draft is historical only. Continue inbox/ledger only.
+# 2026-09-23: Pantheon d4a5a175 workspace-scan source successor completed a
+# fresh same-session non-GPU race admission. `go test -race ./...` exited 0;
+# exact race log/exit/zero-marker and terminal handback are sealed under
+# /private/tmp, with isolated cache/evidence roots absent after cleanup and no
+# matching candidate processes. Source review and normal full-Go pass remain
+# bound; no service, signing, install, remote, model, GPU, SNE, Tailscale,
+# security, M1, M5, or production action occurred.
+# 2026-09-24: Independently accepted FinalWishes PR #405 exact head
+# 57b98729/tree 1e18c7a7. Exact focused memorial tests passed 61/61; typecheck
+# and production build passed; three seeded demos rendered with differentiated
+# person-led portraits, seven premium previews rendered in route/component
+# coverage, and the mobile demo viewport had no horizontal overflow. Review
+# receipt b1ecd139...c89632 is durable under /private/tmp; no merge/deploy.
+# 2026-09-29 — FinalWishes web 2026.09.29.17 released from exact merge
+# ef65df08cb7ec64b4b76a1baed5914708a92c8c7/tree 94562db1. Main CI/CD
+# 36606921392 passed all 14 jobs, including Cloud Run finalwishes-api-00630-jw7,
+# Hosting, and read-only production smoke. GitHub release tag
+# finalwishes-web-2026.09.29.17 and Stack Lab v0.1.114 (merge 031b30a34) are
+# canonical starting points. Remaining evidence: mobile-store, legal/provider,
+# row-level production, and billing drain/migration.
+# 2026-09-29 — Firebase Hosting on-demand provisioning notice addressed.
+# Assiduous v1.1.21 already publishes idempotent Hosting-site provisioning for
+# production, staging, metrics, and promotion deploy paths.
+# 2026-09-29 — Pantheon v0.24.52 Homebrew lifecycle evidence added.
+# M5 Homebrew fetched the exact cask DMG (15,284,393 bytes, SHA
+# efd225f24e923131eb4d46bc343c84d63aae9958df44928347d6c51fb3e3ed2e), upgraded
+# 0.24.51 to 0.24.52, and sirsi doctor returned healthy output. Stack Lab
+# v0.1.115 records this installed-host readback; fresh-host Homebrew proof
+# remains open because M1 has no Homebrew.

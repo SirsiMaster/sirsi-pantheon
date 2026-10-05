@@ -39,6 +39,9 @@ require_text 'mkdir -p .*Contents/MacOS.*Contents/Resources' "$DMG" resource_par
 require_text 'go build .*\./cmd/sirsi-menubar/' "$DMG" canonical_menubar_build
 require_text 'go build .*\./cmd/sirsi/' "$DMG" canonical_cli_build
 require_text 'verify-pantheon-package-identity\.sh' "$DMG" package_identity_gate
+require_text 'PACKAGE_INVENTORY_ENGINE=.*sirsi-package-inventory' "$DMG" isolated_inventory_engine
+require_text '"\$\{PACKAGE_INVENTORY_ENGINE\}" package-inventory' "$DMG" go_native_payload_inventory
+require_text '\-\-require-code-signature' "$DMG" inventory_requires_signature_payload
 require_text 'REQUIRE_RELEASE_SIGNING' "$DMG" signing_fail_closed
 require_text 'hdiutil create .*srcfolder' "$DMG" isolated_dmg_source
 require_text 'verify-menubar-release-contract\.sh' "$DMG" menubar_contract_gate
@@ -57,4 +60,4 @@ mkdir -p "$fixture_root/scripts/resources"
 printf '%s\n' 'fixture' > "$fixture_root/scripts/resources/Pantheon-DMG-README.txt"
 [[ -s "$fixture_root/scripts/resources/Pantheon-DMG-README.txt" ]] || fail "resource_fixture_write"
 
-echo "pantheon_unsigned_release_source accepted=true isolated_workspace=required canonical_engines=2 signing=external_gate python_payload=forbidden"
+echo "pantheon_unsigned_release_source accepted=true isolated_workspace=required canonical_engines=1 executables=2 signing=external_gate python_payload=forbidden"

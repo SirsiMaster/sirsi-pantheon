@@ -1,0 +1,13 @@
+{
+  "content": "{\"ref\":\"refs/tags/v0.24.63\",\"node_id\":\"REF_kwDORsVejrJyZWZzL3RhZ3MvdjAuMjQuNjM\",\"url\":\"https://api.github.com/repos/SirsiMaster/sirsi-pantheon/git/refs/tags/v0.24.63\",\"object\":{\"sha\":\"a6cdeb204aaa3871b67269a35d83e698f55b3d96\",\"type\":\"tag\",\"url\":\"https://api.github.com/repos/SirsiMaster/sirsi-pantheon/git/tags/a6cdeb204aaa3871b67269a35d83e698f55b3d96\"}}",
+  "title": "v0.24.63",
+  "modified_date": null,
+  "url": "https://api.github.com/repos/SirsiMaster/sirsi-pantheon/git/ref/tags/v0.24.63",
+  "display_url": "https://api.github.com/repos/SirsiMaster/sirsi-pantheon/git/ref/tags/v0.24.63",
+  "display_title": "v0.24.63",
+  "structuredContent": {
+    "title": "v0.24.63",
+    "content": "{\"ref\":\"refs/tags/v0.24.63\",\"node_id\":\"REF_kwDORsVejrJyZWZzL3RhZ3MvdjAuMjQuNjM\",\"url\":\"https://api.github.com/repos/SirsiMaster/sirsi-pantheon/git/refs/tags/v0.24.63\",\"object\":{\"sha\":\"a6cdeb204aaa3871b67269a35d83e698f55b3d96\",\"type\":\"tag\",\"url\":\"https://api.github.com/repos/SirsiMaster/sirsi-pantheon/git/tags/a6cdeb204aaa3871b67269a35d83e698f55b3d96\"}}",
+    "display_url": "https://api.github.com/repos/SirsiMaster/sirsi-pantheon/git/ref/tags/v0.24.63"
+  }
+}

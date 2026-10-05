@@ -110,7 +110,7 @@ func cleanCompletion(s string) (string, error) {
 	if i := strings.LastIndex(s, chanClose); i >= 0 {
 		s = s[i+len(chanClose):]
 	} else if strings.Contains(s, chanOpen) {
-		return "", fmt.Errorf("local engine returned only scratch-channel output")
+		return "", fmt.Errorf("selected engine returned only scratch-channel output")
 	}
 	return strings.TrimSpace(controlToken.ReplaceAllString(s, "")), nil
 }

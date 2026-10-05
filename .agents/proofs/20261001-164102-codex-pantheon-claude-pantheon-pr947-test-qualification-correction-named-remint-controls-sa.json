@@ -1,0 +1,97 @@
+{
+  "work_item_id": "20261001-164102-codex-pantheon-claude-pantheon-pr947-test-qualification-correction-named-remint-controls-sa",
+  "agent_id": "claude-pantheon",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "internal-tool",
+  "canon_read": [
+    {
+      "path": "PANTHEON_RULES.md",
+      "role": "repo-canon",
+      "read_at": "2026-10-01T16:50:00Z",
+      "notes": "A35 (Scope The Check To The Claim) -- codex's re-review flagged that PR947's PUBLIC description (not the source comment already fixed in c54d548b) still claimed agent+thread equivalence without the host leg, and still called the empty-thread negative control a 'registered thread' check"
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-10-01T16:50:00Z",
+      "notes": "no PR-947-specific scope; general repo orientation"
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-10-01T16:50:00Z",
+      "notes": "one authoritative item -> one scoped owner -> one implementation -> one independent review -> one reproducible proof -> one durable record -- this closure is the owner's response to codex's wording qualification, not a new item or a bind claim"
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-10-01T16:50:00Z",
+      "notes": "confirms independent review is the standing release-gate pattern this closure follows; no PR-947-specific release item"
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-10-01T16:50:00Z",
+      "notes": "no PR-947-specific roadmap item; this is a PR-description accuracy correction to an in-flight lease-ownership bugfix, not a new roadmap feature"
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-10-01T16:50:00Z",
+      "notes": "no change to reproduction steps; description edit only reflects the already-passing go build/vet/test suite for internal/routerstore"
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "PANTHEON_RULES.md",
+      "section": "A35 Scope The Check To The Claim (qualification from router item 20261001-164102)",
+      "claim": "codex-pantheon corrected its own prior response: the precisely named six-control run finished after that response was sent and FAILED at httptest listener setup (tcp6 [::1]:0 bind: operation not permitted) in codex's sandbox. The earlier broader regex command exited zero but does not establish the six authored controls. Source comment/host review PASS stands; local six-test runtime verification is environment-blocked, not passing.",
+      "files_changed": [
+        "github:pull-request-description#947 (GitHub PR metadata, not a repo-tracked file; no commit/source change)"
+      ],
+      "evidence": [
+        "gh pr edit 947 --body-file (description only, no commit, head unchanged at c54d548b)",
+        "Test-plan bullet now explicitly distinguishes environment-blocked (sandbox httptest bind denial) from failing, and from the broader non-exact regex run",
+        "No claim of six-test pass in codex sandbox retained anywhere in the PR description"
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "not_applicable_internal_governance_tooling",
+    "design": "not_applicable",
+    "technical": "PR description only; no source or test change; head remains c54d548b",
+    "operational": "gh pr edit 947 applied and confirmed via gh pr view 947 --json body",
+    "narrative": "closes the metadata-correction request from codex-pantheon's source pass; does not claim merge/bind, which remains gated on installed-binary acceptance per the item's own qualification"
+  },
+  "verification": [
+    {
+      "name": "gh pr view 947 (CI status)",
+      "command": "gh pr checks 947",
+      "status": "pass",
+      "evidence": "Build x2, Lint, Secrets Scan, Test, binding-hold all pass at exact head c54d548b (run 36893034362, gitleaks 36893034510, binding-hold 36893034451)"
+    },
+    {
+      "name": "gh pr edit 947",
+      "command": "gh pr edit 947 --body-file /tmp/pr947_body_new.md",
+      "status": "pass",
+      "evidence": "description updated; head unchanged at c54d548b010f64178c780e853d401f2380fa439e"
+    }
+  ],
+  "working_status": {
+    "environment": "/Users/thekryptodragon/Development/sirsi-pantheon on branch fix/broker-quarantine (router/gh operations only, no local build)",
+    "how_verified": "gh pr view/checks before and after edit",
+    "observed_result": "PR #947 description corrected to reflect environment-blocked (not passing) status of the six named remint controls in codex-pantheon sandbox; state OPEN; head c54d548b",
+    "verified_at": "2026-10-01T16:55:00Z"
+  },
+  "handoffs": [
+    {
+      "from": "claude-pantheon",
+      "to": "codex-pantheon",
+      "router_item": "none-yet-pending-send",
+      "status": "pending",
+      "reason": "re-review requested on corrected description; test-qualification wording now matches codex own correction; bind still gated on installed-binary acceptance"
+    }
+  ],
+  "blockers": []
+}

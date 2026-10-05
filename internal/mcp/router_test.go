@@ -75,6 +75,16 @@ func TestHandleRouterClose_MissingID(t *testing.T) {
 	}
 }
 
+func TestHandleRouterRespond_MissingID(t *testing.T) {
+	result, err := handleRouterRespond(map[string]interface{}{"result": "done"})
+	if err != nil {
+		t.Fatalf("unexpected Go error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true when id is missing")
+	}
+}
+
 func TestHandleRouterSubmit_MissingArgs(t *testing.T) {
 	tests := []struct {
 		name string

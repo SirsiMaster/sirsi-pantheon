@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 const ControlFailureSchema = "pantheon.worker-control-failure/v1"
@@ -21,6 +22,19 @@ type ControlActionFailure struct {
 	Error         string `json:"error"`
 	RequestSHA256 string `json:"request_sha256"`
 	ReceiptSHA256 string `json:"receipt_sha256,omitempty"`
+}
+
+// ControlActionFailureError transports a verified canonical rejection across
+// the M1 proxy without collapsing its request-bound receipt into plain text.
+type ControlActionFailureError struct {
+	Failure ControlActionFailure
+}
+
+func (e *ControlActionFailureError) Error() string {
+	if e == nil {
+		return "canonical worker action failed"
+	}
+	return e.Failure.Error
 }
 
 func (f *ControlActionFailure) SealControlActionFailure(requestBody []byte) error {
@@ -116,6 +130,68 @@ func (r ControlActionResponse) VerifyControlActionResponse(requestBody []byte) e
 	actualReceipt := hex.EncodeToString(receiptSum[:])
 	if subtle.ConstantTimeCompare([]byte(expectedReceipt), []byte(actualReceipt)) != 1 {
 		return fmt.Errorf("control action receipt digest mismatch")
+	}
+	return nil
+}
+
+// VerifyControlActionResponseForRequest checks both the receipt digest and the
+// action-specific result proof. All clients use this method so a response that
+// is correctly hashed but detached from the requested operation is never
+// accepted as a successful worker action.
+func (r ControlActionResponse) VerifyControlActionResponseForRequest(requestBody []byte) error {
+	request, err := DecodeControlActionRequest(requestBody)
+	if err != nil {
+		return fmt.Errorf("control action request is invalid: %w", err)
+	}
+	if err := r.VerifyControlActionResponse(requestBody); err != nil {
+		return err
+	}
+	verb := strings.TrimSpace(request.Verb)
+	if r.Verb != verb {
+		return fmt.Errorf("control action response verb %q does not match %q", r.Verb, verb)
+	}
+	switch verb {
+	case "message", "review_request":
+		if strings.TrimSpace(r.ItemID) == "" {
+			return fmt.Errorf("control action response omitted item_id")
+		}
+	case "delegate", "cancel_handback", "result_return":
+		if strings.TrimSpace(r.TaskID) == "" {
+			return fmt.Errorf("control action response omitted task_id")
+		}
+		if strings.TrimSpace(r.TaskID) != strings.TrimSpace(request.TaskID) {
+			return fmt.Errorf("control action response task_id %q does not match requested task_id %q", r.TaskID, request.TaskID)
+		}
+	case "claim":
+		if r.Lease == nil || strings.TrimSpace(r.Lease.Token) == "" || strings.TrimSpace(r.Lease.TaskID) == "" {
+			return fmt.Errorf("control action response omitted lease proof")
+		}
+		lease := r.Lease
+		if strings.TrimSpace(lease.Agent) != strings.TrimSpace(request.Agent) {
+			return fmt.Errorf("control action lease agent %q does not match requested agent %q", lease.Agent, request.Agent)
+		}
+		if strings.TrimSpace(lease.Worker) != strings.TrimSpace(request.Worker) {
+			return fmt.Errorf("control action lease worker %q does not match requested worker %q", lease.Worker, request.Worker)
+		}
+		if strings.TrimSpace(lease.ThreadID) != strings.TrimSpace(request.ThreadID) {
+			return fmt.Errorf("control action lease thread_id %q does not match requested thread_id %q", lease.ThreadID, request.ThreadID)
+		}
+		if requestedTaskID := strings.TrimSpace(request.TaskID); requestedTaskID != "" && strings.TrimSpace(lease.TaskID) != requestedTaskID {
+			return fmt.Errorf("control action lease task_id %q does not match requested task_id %q", lease.TaskID, requestedTaskID)
+		}
+		if strings.TrimSpace(r.TaskID) != strings.TrimSpace(lease.TaskID) || lease.Expires.IsZero() || lease.Attempt <= 0 {
+			return fmt.Errorf("control action lease proof is incomplete or detached from task_id")
+		}
+	default:
+		return fmt.Errorf("control action request omitted or has unsupported verb %q", verb)
+	}
+	if verb == "result_return" {
+		if strings.TrimSpace(r.ResultRef) == "" {
+			return fmt.Errorf("control action response omitted result_ref")
+		}
+		if strings.TrimSpace(r.ResultRef) != strings.TrimSpace(request.ResultRef) {
+			return fmt.Errorf("control action response result_ref does not match requested result_ref")
+		}
 	}
 	return nil
 }

@@ -1,0 +1,112 @@
+{
+  "work_item_id": "20260930-232002-codex-deck-claude-deck-version-catalog-correction-and-reconcile-surviving-branch-ed",
+  "agent_id": "claude-deck",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "internal-tool",
+  "canon_read": [
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-09-30T23:30:00Z",
+      "notes": "read"
+    },
+    {
+      "path": "AGENTS.md",
+      "role": "agent-law",
+      "read_at": "2026-09-30T23:30:00Z",
+      "notes": "read"
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-09-30T23:30:00Z",
+      "notes": "read"
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-09-30T23:30:00Z",
+      "notes": "read"
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-09-30T23:30:00Z",
+      "notes": "read"
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-09-30T23:30:00Z",
+      "notes": "read"
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SirsiNexusApp/marketing/router-evidence/20260930/hash-resolution-verified.json",
+      "role": "evidence",
+      "read_at": "2026-09-30T23:30:00Z",
+      "notes": "read"
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SirsiNexusApp/marketing/router-evidence/20260930/claude-deck-origin-reconciliation.md",
+      "role": "prior-analysis",
+      "read_at": "2026-09-30T23:30:00Z",
+      "notes": "read"
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SirsiNexusApp/docs/apple-stack-lab/deck-wing/deck-wing-001.catalog.json",
+      "role": "target-file",
+      "read_at": "2026-09-30T23:30:00Z",
+      "notes": "read"
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "/Users/thekryptodragon/Development/SirsiNexusApp/marketing/router-evidence/20260930/hash-resolution-verified.json",
+      "section": "Version catalog correction",
+      "claim": "deck.deck-tight-embed's declared hash d117e6ca... is orphaned (no matching commit across git log --all history); corrected pin 4c1e8b1f... matches the HEAD-committed blob.",
+      "files_changed": [
+        "SirsiNexusApp:docs/apple-stack-lab/deck-wing/deck-wing-001.catalog.json"
+      ],
+      "evidence": [
+        "commit 154c62c6 on deck/photon-price-2499",
+        "shasum -a 256 verification against git show HEAD:packages/sirsi-portal-app/public/deck-tight-embed.html"
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "Catalog no longer pins an orphan hash for the investor deck embed source",
+    "design": "n/a",
+    "technical": "Single-file, verified sha256 correction; scoped commit isolated via a disposable git worktree cherry-pick to avoid touching ~130 files of unrelated shared WIP",
+    "operational": "Ma'at pre-push gate (gitleaks + lint) passed on push",
+    "narrative": "marketing/router-evidence/20260930/claude-deck-catalog-correction-versioned.md"
+  },
+  "verification": [
+    {
+      "name": "sha256 verification",
+      "command": "git show HEAD:packages/sirsi-portal-app/public/deck-tight-embed.html | shasum -a 256",
+      "status": "pass",
+      "evidence": "4c1e8b1f40c9712df2226e4fb90268583d23dfca3e44ef2449157bde4f26ca79"
+    },
+    {
+      "name": "Ma'at pre-push gate",
+      "command": "git push origin 154c62c6:refs/heads/deck/photon-price-2499",
+      "status": "pass",
+      "evidence": "gitleaks: no leaks found; eslint: 0 errors, 12 pre-existing warnings; Gate passed"
+    },
+    {
+      "name": "fast-forward push",
+      "command": "git push (from isolated worktree cherry-pick)",
+      "status": "pass",
+      "evidence": "8814df66..154c62c6 deck/photon-price-2499"
+    }
+  ],
+  "working_status": {
+    "environment": "SirsiNexusApp deck/photon-price-2499",
+    "how_verified": "git log/diff readback on both the isolated worktree and the main checkout post-push",
+    "observed_result": "deck/photon-price-2499 @ 154c62c6 on origin, catalog hash corrected, no shared WIP files touched or discarded",
+    "verified_at": "2026-09-30T23:40:00Z"
+  },
+  "handoffs": [],
+  "blockers": []
+}

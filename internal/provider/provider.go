@@ -69,6 +69,12 @@ type Caps struct {
 	TopP          bool // accepts nucleus-sampling control
 	Seed          bool // accepts deterministic seed control
 	Streaming     bool
+	Cancellation  bool // honors context cancellation during provider work
+	Prefill       bool
+	Decode        bool
+	MTP           bool
+	KVState       bool
+	Telemetry     bool
 	ContextTokens int
 	Offline       bool // usable with no network
 }
@@ -151,6 +157,22 @@ type Provider interface {
 	// available", and the ladder must be able to skip a rung without failing.
 	Available(ctx context.Context) bool
 	Complete(ctx context.Context, req Request) (Response, error)
+}
+
+// ReadinessChecker is an optional, error-preserving availability seam for
+// connectors whose admission depends on a versioned external identity
+// contract. The boolean Provider.Available method remains useful to generic
+// callers; the engine router uses this interface when available so a failed
+// readiness contract is not collapsed into an opaque "unavailable" result.
+type ReadinessChecker interface {
+	Readiness(context.Context) error
+}
+
+// ContextualCapabilities resolves capabilities that depend on a live,
+// identity-bound readiness response. Static Caps must remain conservative;
+// the engine router may consult this seam during session admission.
+type ContextualCapabilities interface {
+	CapabilitiesForContext(context.Context) (Caps, error)
 }
 
 // ErrUnavailable is returned when a backend cannot serve. Callers escalate to

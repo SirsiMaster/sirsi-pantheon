@@ -65,10 +65,10 @@ func TestMain(m *testing.M) {
 					}
 				}
 			}
-			_, _ = fmt.Fprintf(w, `{"status":"ready","service_version":"test","api_version":"v0","api_contract":"sne.openai-chat.v2","profile":"interactive","runtime_sha256":%q,"native_runtime_sha256":%q,"model_id":%q,"model_manifest_sha256":%q,"max_concurrent_requests":1,"max_queued_requests":8,"queue_discipline":"fifo","request_timeout_ms":120000}`, runtimeSHA, nativeRuntimeSHA, modelID, manifestSHA)
+			_, _ = fmt.Fprintf(w, `{"status":"ready","service_version":"test","api_version":"v0","api_contract":"sne.openai-chat.v3","capabilities":{"execution_modes":["plain"]},"profile":"interactive","runtime_sha256":%q,"native_runtime_sha256":%q,"model_id":%q,"model_manifest_sha256":%q,"max_concurrent_requests":1,"max_queued_requests":8,"queue_discipline":"fifo","request_timeout_ms":120000}`, runtimeSHA, nativeRuntimeSHA, modelID, manifestSHA)
 		})
 		mux.HandleFunc("/v1/sne/status", func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = fmt.Fprintf(w, `{"profile":"interactive","api_contract":"sne.openai-chat.v2","runtime_sha256":%q,"native_runtime_sha256":%q,"loaded_model":%q,"max_concurrent_requests":1,"max_queued_requests":8,"queue_discipline":"fifo","request_timeout_ms":120000}`, runtimeSHA, nativeRuntimeSHA, modelID)
+			_, _ = fmt.Fprintf(w, `{"profile":"interactive","api_contract":"sne.openai-chat.v3","runtime_sha256":%q,"native_runtime_sha256":%q,"loaded_model":%q,"max_concurrent_requests":1,"max_queued_requests":8,"queue_discipline":"fifo","request_timeout_ms":120000}`, runtimeSHA, nativeRuntimeSHA, modelID)
 		})
 		mux.HandleFunc("/v1/models", func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = fmt.Fprintf(w, `{"data":[{"id":%q,"manifest_sha256":%q}]}`, modelID, manifestSHA)
@@ -263,6 +263,11 @@ func TestNewSupervisorRejectsCustomProductionEnvironment(t *testing.T) {
 	if _, err := NewSupervisor(profile, launch); err == nil || !strings.Contains(err.Error(), "environment is prohibited") {
 		t.Fatalf("custom production environment error = %v", err)
 	}
+	launch.Environment = nil
+	launch.ExpectedAPIContract = "sne.openai-chat.v2"
+	if _, err := NewSupervisor(profile, launch); err == nil || !strings.Contains(err.Error(), "only admits API contract") {
+		t.Fatalf("legacy API contract was not rejected: %v", err)
+	}
 }
 
 func TestNewSupervisorRequiresMLXAndNativeLibraryIdentity(t *testing.T) {
@@ -296,8 +301,9 @@ func TestSupervisorRejectsReadinessIdentityDrift(t *testing.T) {
 		t.Fatal(err)
 	}
 	valid := ServiceReadinessIdentity{
-		Status: "ready", ServiceVersion: "2.4.1", APIVersion: "v0", APIContract: "sne.openai-chat.v2", Profile: "interactive",
-		RuntimeSHA256: launch.RuntimeSHA256, NativeRuntimeSHA256: launch.NativeRuntimeSHA256, LoadedModel: launch.ExpectedModelID,
+		Status: "ready", ServiceVersion: "2.4.1", APIVersion: "v0", APIContract: OpenAIChatContractV3, ReadyAPIContract: OpenAIChatContractV3, Profile: "interactive",
+		ReadyCapabilities: ReadinessCapabilities{ExecutionModes: []string{ExecutionModePlain}},
+		RuntimeSHA256:     launch.RuntimeSHA256, NativeRuntimeSHA256: launch.NativeRuntimeSHA256, LoadedModel: launch.ExpectedModelID,
 		Models:                []Model{{ID: launch.ExpectedModelID, ManifestSHA256: launch.ModelManifestSHA256}},
 		MaxConcurrentRequests: 1, MaxQueuedRequests: 8, QueueDiscipline: "fifo", RequestTimeoutMS: 120000,
 	}
@@ -351,12 +357,13 @@ func TestSupervisorRequiresConfiguredCacheAndSessionCapacity(t *testing.T) {
 		t.Fatal(err)
 	}
 	valid := ServiceReadinessIdentity{
-		Status: "ready", ServiceVersion: "2.5.0", APIVersion: "v0", APIContract: "sne.openai-chat.v2", Profile: "interactive",
+		Status: "ready", ServiceVersion: "2.5.0", APIVersion: "v0", APIContract: OpenAIChatContractV3, Profile: "interactive",
 		RuntimeSHA256: launch.RuntimeSHA256, NativeRuntimeSHA256: launch.NativeRuntimeSHA256, LoadedModel: launch.ExpectedModelID,
 		Models:       []Model{{ID: launch.ExpectedModelID, ManifestSHA256: launch.ModelManifestSHA256}},
 		ReadyProfile: "interactive", ReadyRuntimeSHA256: launch.RuntimeSHA256, ReadyNativeRuntimeSHA256: launch.NativeRuntimeSHA256,
-		ReadyModelID: launch.ExpectedModelID, ReadyManifestSHA256: launch.ModelManifestSHA256, ReadyAPIContract: "sne.openai-chat.v2",
-		CacheTopology: "paged-ring-4096", ServingCacheCapacity: 4096, PrefixSessionsMaximum: 2,
+		ReadyModelID: launch.ExpectedModelID, ReadyManifestSHA256: launch.ModelManifestSHA256, ReadyAPIContract: OpenAIChatContractV3,
+		ReadyCapabilities: ReadinessCapabilities{ExecutionModes: []string{ExecutionModePlain}},
+		CacheTopology:     "paged-ring-4096", ServingCacheCapacity: 4096, PrefixSessionsMaximum: 2,
 		MaxConcurrentRequests: 1, MaxQueuedRequests: 8, QueueDiscipline: "fifo", RequestTimeoutMS: 120000,
 		ReadyMaxConcurrentRequests: 1, ReadyMaxQueuedRequests: 8, ReadyQueueDiscipline: "fifo", ReadyRequestTimeoutMS: 120000,
 	}

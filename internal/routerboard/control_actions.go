@@ -1,12 +1,21 @@
 package routerboard
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
+	"reflect"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
+
+// ControlActionBodyLimit is the shared wire limit used by the M1 client and
+// the canonical M5 action endpoint.
+const ControlActionBodyLimit = 64 << 10
 
 // ControlActionRequest is the closed request shape for the authenticated
 // worker-control mutation endpoint. It deliberately contains values, never a
@@ -31,6 +40,56 @@ type ControlActionRequest struct {
 	TTLSeconds       int64  `json:"ttl_seconds,omitempty"`
 	Reason           string `json:"reason,omitempty"`
 	ResultRef        string `json:"result_ref,omitempty"`
+}
+
+// DecodeControlActionRequest applies the one canonical wire interpretation for
+// both remote clients and the M5 handler. JSON member names must match the
+// documented tags exactly; encoding/json's case-insensitive field matching
+// must not make differently spelled members alias one mutation field.
+func DecodeControlActionRequest(body []byte) (ControlActionRequest, error) {
+	if !utf8.Valid(body) {
+		return ControlActionRequest{}, fmt.Errorf("control action JSON is not valid UTF-8")
+	}
+	if err := ValidateJSONObjectNoNullFields(body); err != nil {
+		return ControlActionRequest{}, err
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(body, &object); err != nil {
+		return ControlActionRequest{}, err
+	}
+	if object == nil {
+		return ControlActionRequest{}, fmt.Errorf("control action must be a JSON object")
+	}
+	allowed := make(map[string]struct{})
+	typeOfRequest := reflect.TypeOf(ControlActionRequest{})
+	for i := 0; i < typeOfRequest.NumField(); i++ {
+		name := strings.Split(typeOfRequest.Field(i).Tag.Get("json"), ",")[0]
+		if name != "" && name != "-" {
+			allowed[name] = struct{}{}
+		}
+	}
+	for key := range object {
+		if _, ok := allowed[key]; !ok {
+			return ControlActionRequest{}, fmt.Errorf("control action has unknown or noncanonical field %q", key)
+		}
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	var request ControlActionRequest
+	if err := decoder.Decode(&request); err != nil {
+		return ControlActionRequest{}, err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return ControlActionRequest{}, fmt.Errorf("control action contains multiple JSON values")
+		}
+		return ControlActionRequest{}, fmt.Errorf("control action contains trailing JSON: %w", err)
+	}
+	if err := request.Validate(); err != nil {
+		return ControlActionRequest{}, err
+	}
+	return request, nil
 }
 
 type ControlActionResponse struct {
@@ -80,6 +139,9 @@ func (r ControlActionRequest) validate() error {
 			return fmt.Errorf("%s requires from, to, and title", r.Verb)
 		}
 		if r.Verb == "review_request" {
+			if requestedType := strings.TrimSpace(r.Type); requestedType != "" && requestedType != "review" {
+				return fmt.Errorf("review_request only supports type %q", "review")
+			}
 			r.Type = "review"
 		}
 	case "delegate":
@@ -143,6 +205,13 @@ func (r ControlActionRequest) validate() error {
 		return fmt.Errorf("ttl_seconds must be between 0 and 86400")
 	}
 	return nil
+}
+
+// Validate checks the closed action schema and verb-specific field contract.
+// Clients use it before sending mutations; the canonical server repeats the
+// same validation before applying the action.
+func (r ControlActionRequest) Validate() error {
+	return r.validate()
 }
 
 func (r ControlActionRequest) normalized() ControlActionRequest {

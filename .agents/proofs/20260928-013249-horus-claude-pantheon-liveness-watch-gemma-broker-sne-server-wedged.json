@@ -1,0 +1,115 @@
+{
+  "work_item_id": "20260928-013249-horus-claude-pantheon-liveness-watch-gemma-broker-sne-server-wedged",
+  "agent_id": "claude-pantheon",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "internal-tool",
+  "canon_read": [
+    {
+      "path": "CLAUDE.md",
+      "role": "repo-canon",
+      "read_at": "2026-09-28T01:40:00Z",
+      "notes": "A32/A40 load-bearing infra rules; A35 scope-the-check-to-the-claim"
+    },
+    {
+      "path": "internal/liveness/pidsync.go",
+      "role": "precedent",
+      "read_at": "2026-09-28T01:45:00Z",
+      "notes": "identical prior bug class (stale pidfile false alert) and its fix pattern"
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-09-28T01:46:00Z",
+      "notes": "router closure requirement"
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-09-28T01:46:00Z",
+      "notes": ""
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-09-28T01:46:00Z",
+      "notes": ""
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-09-28T01:46:00Z",
+      "notes": ""
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-09-28T01:46:00Z",
+      "notes": ""
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "CLAUDE.md",
+      "section": "A32/A40 load-bearing infra + A35 scope-the-check-to-the-claim (router item 20260928-013249 instructions)",
+      "claim": "the liveness-watch fires when the router's gemma-liveness auto-restore (stop && serve) did not stick",
+      "files_changed": [
+        "cmd/sirsi/gemma_serve.go",
+        "cmd/sirsi/gemma_serve_test.go"
+      ],
+      "evidence": [
+        "curl POST /v1/chat/completions on the restarted broker returned a real completion (content: \"ok\") — the broker was never actually down",
+        "sirsi gemma serve --status reported unavailable while the broker was demonstrably serving tokens",
+        "traced to gemmaServerStop deleting ~/.sirsi/gemma-server.port and gemmaAwaitWarm never restoring it",
+        "reproduced: rm ~/.sirsi/gemma-server.port; sirsi gemma serve -> port file stayed missing pre-fix",
+        "post-fix: same repro restores the port file with the correct port and --status reports WARM"
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "N/A — infra reliability fix, no product surface change.",
+    "design": "N/A",
+    "technical": "gemmaAwaitWarm (cmd/sirsi/gemma_serve.go) now writes ~/.sirsi/gemma-server.port on confirmed warm, mirroring the existing SyncGemmaPidFile pattern. Added TestGemmaAwaitWarmRestoresPortFile regression test.",
+    "operational": "No config/deploy change. Fix committed to fix/broker-quarantine (3d51b952), intentionally left unpushed — that branch is 141 commits ahead of origin with substantial unrelated uncommitted work already in the tree; pushing was left to the branch owner rather than done unprompted.",
+    "narrative": "The liveness-watch alert was a false positive caused by a latent bug: any stop/start cycle of the broker (including the watch's own prescribed auto-restore) deleted the port file that both --status and the liveness probes depend on, without ever recreating it. The broker itself was healthy throughout this incident."
+  },
+  "verification": [
+    {
+      "name": "broker actually serving",
+      "command": "curl -X POST http://127.0.0.1:8477/v1/chat/completions -d '{...}'",
+      "status": "pass",
+      "evidence": "{\"choices\":[{\"finish_reason\":\"stop\",...,\"message\":{\"content\":\"ok\",...}}],...}"
+    },
+    {
+      "name": "build",
+      "command": "go build ./cmd/sirsi/",
+      "status": "pass",
+      "evidence": "clean build"
+    },
+    {
+      "name": "targeted tests",
+      "command": "go test ./cmd/sirsi/... -run TestGemma -v",
+      "status": "pass",
+      "evidence": "all TestGemma* pass including new TestGemmaAwaitWarmRestoresPortFile"
+    },
+    {
+      "name": "liveness package tests",
+      "command": "go test ./internal/liveness/...",
+      "status": "pass",
+      "evidence": "ok"
+    },
+    {
+      "name": "end-to-end repro of the fix",
+      "command": "rm ~/.sirsi/gemma-server.port; ./sirsi gemma serve; cat ~/.sirsi/gemma-server.port; ./sirsi gemma serve --status",
+      "status": "pass",
+      "evidence": "port file restored (8477); --status reports WARM at http://127.0.0.1:8477"
+    }
+  ],
+  "working_status": {
+    "environment": "sirsi-pantheon repo, fix/broker-quarantine branch, local dev machine",
+    "how_verified": "direct HTTP probe of the broker + before/after repro of the stop/start cycle with the fixed binary",
+    "observed_result": "broker was healthy throughout; root cause fixed and regression-tested",
+    "verified_at": "2026-09-28T01:50:00Z"
+  },
+  "blockers": []
+}

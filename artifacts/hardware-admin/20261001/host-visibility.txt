@@ -1,0 +1,4 @@
+Thu Oct  1 12:29:18 UTC 2026
+Mac
+zsh:1: operation not permitted: /bin/ps
+sysctl: sysctl fmt -1 1024 1: Operation not permitted

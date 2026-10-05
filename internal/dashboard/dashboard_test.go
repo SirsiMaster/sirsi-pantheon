@@ -2,7 +2,10 @@ package dashboard
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,6 +17,35 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/stele"
 )
+
+func TestStartBindFailureReleasesSingletonLock(t *testing.T) {
+	server := New(Config{})
+	lockReleased := false
+	server.lock = func(name string) (func(), error) {
+		if name != "dashboard" {
+			t.Fatalf("lock name = %q, want dashboard", name)
+		}
+		return func() { lockReleased = true }, nil
+	}
+	listenErr := errors.New("address already in use")
+	server.listen = func(network, address string) (net.Listener, error) {
+		if network != "tcp" || address != "127.0.0.1:9119" {
+			t.Fatalf("listen target = %s %s, want tcp 127.0.0.1:9119", network, address)
+		}
+		return nil, listenErr
+	}
+
+	err := server.Start()
+	if !errors.Is(err, listenErr) {
+		t.Fatalf("Start() error = %v, want wrapped listen error", err)
+	}
+	if !lockReleased {
+		t.Fatal("Start() did not release singleton lock after bind failure")
+	}
+	if server.IsRunning() {
+		t.Fatal("server reports running after bind failure")
+	}
+}
 
 // testServer creates a dashboard Server with the given config and returns
 // an httptest.Server plus a cleanup function.
@@ -101,6 +133,13 @@ func TestScanPage_HTTP200(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Fatalf("GET /scan = %d, want 200", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read /scan response: %v", err)
+	}
+	if !strings.Contains(string(body), `location.replace('/?view=scan')`) {
+		t.Fatal("/scan does not redirect to the selected SPA view")
 	}
 }
 
@@ -216,8 +255,11 @@ func TestAPIStats_ReturnsJSON(t *testing.T) {
 	ts := testServer(t, Config{
 		StatsFn: func() ([]byte, error) {
 			return json.Marshal(map[string]interface{}{
-				"ram_percent": 55.2,
-				"deity_count": 3,
+				"ram_percent":      55.2,
+				"deity_count":      3,
+				"components":       []string{"☥ Sirsi"},
+				"component_count":  1,
+				"components_known": true,
 			})
 		},
 	})
@@ -241,6 +283,13 @@ func TestAPIStats_ReturnsJSON(t *testing.T) {
 	}
 	if body["ram_percent"] != 55.2 {
 		t.Fatalf("ram_percent = %v, want 55.2", body["ram_percent"])
+	}
+	if body["component_count"] != float64(1) || body["components_known"] != true {
+		t.Fatalf("component inventory contract was not preserved: %#v", body)
+	}
+	components, ok := body["components"].([]interface{})
+	if !ok || len(components) != 1 || components[0] != "☥ Sirsi" {
+		t.Fatalf("components = %#v, want the exact process inventory", body["components"])
 	}
 }
 

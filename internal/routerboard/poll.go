@@ -241,6 +241,13 @@ func evidenceDetails(fleet []Lane) []EvidenceRef {
 	out := []EvidenceRef{}
 	for _, lane := range fleet {
 		for _, task := range lane.Tasks {
+			if resultRef := task.str("result_ref"); resultRef != "" {
+				out = append(out, EvidenceRef{
+					TaskID: task.str("task_id"), Agent: lane.Agent,
+					Label: "task result", URL: resultRef,
+					Status: strOr(task["status"], "pending"), Updated: task.str("updated"),
+				})
+			}
 			links, ok := task["links"].([]interface{})
 			if !ok {
 				continue

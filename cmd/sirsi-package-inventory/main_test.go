@@ -36,8 +36,24 @@ func TestRunEmitsNonExecutingInventory(t *testing.T) {
     <string>20260908</string>
   </dict>
 </plist>`)
-	pkgInfo := []byte("APPL????")
-	launchAgent := []byte("Label=ai.sirsi.pantheon\n")
+	readCanonicalReference := func(name string) (string, []byte) {
+		t.Helper()
+		path, err := filepath.Abs(filepath.Join("..", "sirsi-menubar", "bundle", name))
+		if err != nil {
+			t.Fatalf("resolve canonical %s path: %v", name, err)
+		}
+		path, err = filepath.EvalSymlinks(path)
+		if err != nil {
+			t.Fatalf("resolve canonical %s: %v", name, err)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read canonical %s: %v", name, err)
+		}
+		return path, data
+	}
+	pkgInfoPath, pkgInfo := readCanonicalReference("PkgInfo")
+	launchAgentPath, launchAgent := readCanonicalReference("ai.sirsi.pantheon.plist")
 	files := map[string][]byte{
 		"Contents/Info.plist":                        info,
 		"Contents/PkgInfo":                           pkgInfo,
@@ -46,7 +62,11 @@ func TestRunEmitsNonExecutingInventory(t *testing.T) {
 		"Contents/Resources/ai.sirsi.pantheon.plist": launchAgent,
 	}
 	for rel, data := range files {
-		if err := os.WriteFile(filepath.Join(app, filepath.FromSlash(rel)), data, 0o644); err != nil {
+		mode := os.FileMode(0o644)
+		if rel == "Contents/MacOS/sirsi" || rel == "Contents/MacOS/sirsi-menubar" {
+			mode = 0o755
+		}
+		if err := os.WriteFile(filepath.Join(app, filepath.FromSlash(rel)), data, mode); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -54,8 +74,8 @@ func TestRunEmitsNonExecutingInventory(t *testing.T) {
 	code := run([]string{
 		"--app", app, "--version", "0.23.9-beta", "--build", "20260908",
 		"--info-plist", filepath.Join(app, "Contents/Info.plist"),
-		"--pkg-info", filepath.Join(app, "Contents/PkgInfo"),
-		"--launch-agent", filepath.Join(app, "Contents/Resources/ai.sirsi.pantheon.plist"),
+		"--pkg-info", pkgInfoPath,
+		"--launch-agent", launchAgentPath,
 	}, &out, &errOut)
 	if code != 0 {
 		t.Fatalf("run code=%d stderr=%s", code, errOut.String())
@@ -64,7 +84,7 @@ func TestRunEmitsNonExecutingInventory(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &report); err != nil {
 		t.Fatal(err)
 	}
-	if report["python_free"] != true || report["engine_count"] != float64(2) {
+	if report["python_free"] != true || report["engine_count"] != float64(1) || report["executable_count"] != float64(2) {
 		t.Fatalf("unexpected report: %s", out.String())
 	}
 }

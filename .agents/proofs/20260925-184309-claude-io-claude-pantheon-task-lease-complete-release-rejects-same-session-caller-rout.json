@@ -1,0 +1,103 @@
+{
+  "work_item_id": "20260925-184309-claude-io-claude-pantheon-task-lease-complete-release-rejects-same-session-caller-rout",
+  "agent_id": "claude-pantheon",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "internal-tool",
+  "canon_read": [
+    {
+      "path": "PANTHEON_RULES.md",
+      "role": "repo-canon",
+      "read_at": "2026-09-25T18:50:00Z",
+      "notes": "Rule A35 (scope the check to the claim); Rule A7 (commit traceability); Ma'at pre-push gate (A28) is the reason the fix could not be pushed this session"
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-09-25T19:00:00Z",
+      "notes": "no item-specific requirement; portfolio doctrine, not touched by an internal routerstore lease-token trim fix"
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-09-25T19:00:00Z",
+      "notes": "no repo-scope statement bears on internal task-lease fencing; this fix is a store-internal correctness gap, not a documented product surface"
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-09-25T19:00:00Z",
+      "notes": "not a release-plan-tracked item; router task-lease token trimming is infra hygiene, not a Star-Grade requirement"
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-09-25T19:00:00Z",
+      "notes": "not a roadmap-tracked feature; internal store bug fix"
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-09-25T19:00:00Z",
+      "notes": "covers public scan-finding reproduction methodology, not applicable here; this item's own reproducibility is the scratch-repo CLI repro and go test commands recorded under verification[]"
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "PANTHEON_RULES.md",
+      "section": "router item 20260925-184309 — task lease complete/release rejects same-session caller",
+      "claim": "A same-session caller with the exact lease token it was just handed should be able to complete or release that lease",
+      "files_changed": [
+        "internal/routerstore/tasklease.go",
+        "internal/routerstore/tasklease_test.go"
+      ],
+      "evidence": [
+        "taskLeaseUpdate and ReleaseTaskLease now strings.TrimSpace agent/taskID/token before binding into the SQL fence, matching the trim convention already used for every other identity field in this file",
+        "TestTaskLeaseUpdatesTolerateWhitespaceContaminatedToken: claims a lease, appends a trailing newline to the token, asserts Renew/CompleteTaskLease both succeed",
+        "CLI-level repro: built cmd/sirsi at HEAD, confirmed a newline-contaminated --lease token fails release with 'routerstore: lease token invalid, expired, or superseded' before the fix, and completes cleanly after"
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "N/A — internal store bug fix, no product surface.",
+    "design": "N/A.",
+    "technical": "Reproduced the reported symptom against current HEAD in an isolated scratch git repo (not the live router.db): claim-id then complete/release with a clean token succeeds; the identical call with a trailing-newline-contaminated token fails with ErrLeaseInvalid, matching claude-io's reported behavior class. Ruled out the ADR-062 per-session ownership mechanism (ErrNotOwner) as the cause -- that code lives only on an unmerged branch (commit e7af6a04, not an ancestor of main or fix/broker-quarantine) and is not reachable via the CLI path either agent uses (openTaskFacade -> local per-repo SQLite, no session concept). Root-caused to a missing strings.TrimSpace on the token in taskLeaseUpdate (backs RenewTaskLease/CompleteTaskLease) and ReleaseTaskLease's own fenced query -- every other identity field in the file was already trimmed, the token was the one gap. Fixed both call sites; rebuilt cmd/sirsi and reran the CLI repro to confirm resolution end to end.",
+    "operational": "Committed locally as 69fef583 on fix/broker-quarantine (internal/routerstore/tasklease.go, tasklease_test.go, CHANGELOG.md). git push blocked by the Ma'at pre-push gate's gitleaks scan, which flags 4 pre-existing false positives in commits that predate this fix (test fixtures / evidence docs, already present in the branch's 136-commit unpushed backlog before this session). Did not --no-verify past the gate per policy; did not rewrite shared branch history. Filed as a separate blocker for whoever owns unblocking this branch's push queue.",
+    "narrative": "claude-io filed this as informational/no-urgency while reconciling the task registry, describing claim succeeding then an immediate same-process complete/release rejecting the same lease token. Reproduced the exact failure class, identified the root cause as an untrimmed token failing exact SQL match on whitespace contamination (a realistic outcome of extracting lease_id via jq without -r, or any $(...) capture that appends a newline), and fixed it at the two chokepoints all renew/complete/release calls route through. Also flagged, but explicitly did not fix, an unrelated pre-existing uncommitted WIP bug in claimTask's idempotent-retry logic that breaks TestClaimTaskContentionHasOneWinner -- out of scope for this item."
+  },
+  "verification": [
+    {
+      "name": "go build",
+      "command": "go build ./internal/routerstore/... ./cmd/sirsi/...",
+      "status": "pass",
+      "evidence": "clean build, only benign duplicate -lobjc linker warning"
+    },
+    {
+      "name": "go test (task-lease suite)",
+      "command": "go test ./internal/routerstore/... -run TestTaskLease -v",
+      "status": "pass",
+      "evidence": "6/6 pass: TestTaskLeaseClaimRenewComplete, TestTaskLeaseUpdatesTolerateWhitespaceContaminatedToken (new), TestTaskLeaseExpiryReclaimsAndFencesOldWorker, TestTaskLeaseCompletionRequiresEvidence, TestTaskLeaseRetryExhaustionDoesNotForgeDependency, TestTaskLeaseCrashExpiryStopsAtRetryCeiling"
+    },
+    {
+      "name": "CLI end-to-end repro, pre-fix",
+      "command": "sirsi router task release repro-agent t2 --lease \"$LEASE\\n\" --reason test",
+      "status": "pass",
+      "evidence": "reproduced reported symptom: 'routerstore: lease token invalid, expired, or superseded', exit 1"
+    },
+    {
+      "name": "CLI end-to-end repro, post-fix",
+      "command": "sirsi router task complete repro-agent t3 --lease \"$LEASE\\n\" --result-ref evidence-file",
+      "status": "pass",
+      "evidence": "exit 0 after rebuilding with the fix"
+    }
+  ],
+  "working_status": {
+    "environment": "sirsi-pantheon repo, branch fix/broker-quarantine, plus an isolated scratch git repo for reproduction (not the live router.db)",
+    "how_verified": "scratch-repo CLI reproduction pre/post fix, targeted go test run, go build",
+    "observed_result": "Root cause identified and fixed; commit exists locally; push blocked by an unrelated pre-existing gate finding",
+    "verified_at": "2026-09-25T19:05:00Z"
+  },
+  "blockers": [
+    "git push of commit 69fef583 (this fix) is blocked by the Ma'at pre-push gate's gitleaks scan finding 4 pre-existing false positives across fix/broker-quarantine's 136-commit unpushed backlog (predates this session) -- needs .gitleaks.toml entries or backlog cleanup from whoever owns that branch's push queue, not resolved here"
+  ]
+}

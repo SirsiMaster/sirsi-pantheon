@@ -23,6 +23,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/dashboard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/deity"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/vitals"
 )
@@ -49,8 +50,11 @@ type StatsSnapshot struct {
 	AccelIcon          string `json:"accel_icon"`
 
 	// Active Deities
-	ActiveDeities []string `json:"active_deities"`
-	DeityCount    int      `json:"deity_count"`
+	ActiveDeities   []string `json:"active_deities"`
+	DeityCount      int      `json:"deity_count"`
+	Components      []string `json:"components"`
+	ComponentCount  int      `json:"component_count"`
+	ComponentsKnown bool     `json:"components_known"`
 
 	// Ra Deployment
 	RaDeployed bool            `json:"ra_deployed"`
@@ -162,13 +166,11 @@ func collectDeities(snap *StatsSnapshot) {
 		return
 	}
 
-	procs := strings.ToLower(string(out))
-	for binary, label := range knownDeities {
-		if strings.Contains(procs, binary) {
-			snap.ActiveDeities = append(snap.ActiveDeities, label)
-		}
-	}
+	snap.Components = dashboard.ProcessLabelsFromCommandOutput(string(out), dashboard.PantheonComponentLabels())
+	snap.ComponentCount = len(snap.Components)
+	snap.ActiveDeities = dashboard.ProcessLabelsFromCommandOutput(string(out), knownDeities)
 	snap.DeityCount = len(snap.ActiveDeities)
+	snap.ComponentsKnown = true
 
 	// Enrich with TUI deity state (success/failed/hasData indicators)
 	if state, err := deity.LoadState(); err == nil {

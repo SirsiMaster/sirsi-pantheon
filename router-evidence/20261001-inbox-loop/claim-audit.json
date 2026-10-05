@@ -1,0 +1,260 @@
+[
+  {
+    "task_id": "permanent-execution-continuity",
+    "blocked_by": "Current autonomous wake/restart processing, mutation/receipt and installed source R1-R7 acceptance",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "fabric-surface-unification",
+    "blocked_by": "Ra: immutable fabric convergence or supersession map required",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "owner-disabled-service-fence",
+    "blocked_by": "Ra: original disabled-service acceptance record required",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "adr057-thread-api-hardening",
+    "blocked_by": "Ra: original N1/N3 review and resolution record required",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "adr057-thread-prune-tombstone-fence",
+    "blocked_by": "Ra: original N2 concurrency criterion and regression proof required",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "pantheon-installer-experience-v1",
+    "blocked_by": "SSA installed package source/hash and native signature qualification; CLI own registration still /bin/ps denied",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "20260907-164834-sirsi-software-admin-codex-pantheon-ssa-review-streaming-transport-needs-terminal-and-identity-f",
+    "blocked_by": "Focused independent acceptance retained; publication and full integration suite pending",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "20260910-051357-ra-codex-pantheon-reassigned-from-claude-pantheon-review-private-engine-summar",
+    "blocked_by": "Ra: immutable candidate, audit and full resource receipt required",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "20260910-051358-ra-codex-pantheon-reassigned-from-claude-pantheon-repository-transfer-response",
+    "blocked_by": "Ra coordination: recover exact transfer directive and operands",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "20260910-051400-ra-codex-pantheon-reassigned-from-claude-pantheon-liveness-watch-gemma-broker-",
+    "blocked_by": "Ra host coordination: timestamped identity, activity and readiness receipt required",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "pantheon-stacklab-contract-integration",
+    "blocked_by": "Exact published source/lifecycle provenance plus missing full portfolio canon and installed qualification",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "20260911-042243-codex-inference-codex-pantheon-repair-router-migration-with-m1-ra",
+    "blocked_by": "Ra immutable migration provenance and current cross-node canonical service receipts",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "pantheon-stacklab-cleanup-provenance",
+    "blocked_by": "No eligible removal paths proven; Ra transaction and recovery receipt required",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "pantheon-maat-operational-integration",
+    "blocked_by": "Published corrected recovery source, cede journal fix, corrected ADR070 and current authenticated operational receipts",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "pantheon-deck-session-lease-recovery",
+    "blocked_by": "Ra sandboxed-consumer-session-binding and SSA installed qualification",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "recover-io-density-20260912-1535",
+    "blocked_by": "pantheon-deck-session-lease-recovery",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "maat-adr070-correction-20260930",
+    "blocked_by": "Ra adr070-changes-required: corrected ADR and schema negative controls",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "maat-cede-journal-correction-20260930",
+    "blocked_by": "Installed cede journal qualification still required",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "native-ra-fabric-guard-20260930",
+    "blocked_by": "Installed native health proof and Ra native-fabric-acceptance; source guard satisfied",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "mcp-durable-close-ownership-20260930",
+    "blocked_by": "Normal independent bind/release and installed authenticated qualification; PostgreSQL execution receipt retained",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "portfolio-thread-registration-20260930",
+    "blocked_by": "SSA installed qualification and Ra sandboxed-consumer-session-binding; authenticated caller remains unqualified",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "pr927-router-bind-channel-gap",
+    "blocked_by": "Ra bind-path-router-rejections: normal bind correction and independent negative control",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "inbox-20260927-134144-11a1",
+    "blocked_by": "native-ra-fabric-guard-20260930",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "inbox-20261001-054159-2e49",
+    "blocked_by": "Ra sandboxed-consumer-session-binding; bounded review delivered; fenced completion remains",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "fw-fencing-report-063653",
+    "blocked_by": "Ra sandboxed-consumer-session-binding; evidence delivered; fenced completion remains",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "fw-lead-overlap-094238",
+    "blocked_by": "Ra authenticated native lead binding and verified graceful duplicate-consumer handback; own completion rejects caller-session ownership",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "ssa-qualification-094329",
+    "blocked_by": "Ra sandboxed-consumer-session-binding; informational result closed but fenced task completion rejected",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "fw-claimability-095614",
+    "blocked_by": "Ra sandboxed-consumer-session-binding: own fresh claim succeeds but fenced completion rejects session ownership",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "fw-public-lease-report-100915",
+    "blocked_by": "Ra sandboxed-consumer-session-binding; completion rejected caller ownership",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "fw-lease-report-104643",
+    "blocked_by": "Ra sandboxed-consumer-session-binding; own supported claim succeeds but release rejects caller ownership",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "fw-actual-binding-111421",
+    "blocked_by": "Ra sandboxed-consumer-session-binding: actual CODEX_THREAD_ID claim succeeded; completion and blocked transition refused",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "fw-lease-report-115417",
+    "blocked_by": "Ra sandboxed-consumer-session-binding; fenced completion remains after evidence disposition",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "release-canon-125349",
+    "blocked_by": "Ra sandboxed-consumer-session-binding: claim succeeded but same-session completion rejected caller lease ownership",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "pr944-review",
+    "blocked_by": "Review verdict delivered; Ra sandboxed-consumer-session-binding prevents own fenced ledger completion",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "hermes-maat-position-130520",
+    "blocked_by": "Informational disposition delivered; Ra sandboxed-consumer-session-binding prevents own fenced completion",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "pr944-corrected-20236ff8",
+    "blocked_by": "Ra sandboxed-consumer-session-binding: review delivered but own fenced completion refused",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "fw-receipts-133938",
+    "blocked_by": "Ra sandboxed-consumer-session-binding: own inherited-thread lease issued but completion rejects session ownership",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "deck-recovery-140423",
+    "blocked_by": "Ra sandboxed-consumer-session-binding: exact Deck reconciliation recovery and own consumer fenced completion remain",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "fw-binding-report-144841",
+    "blocked_by": "Ra sandboxed-consumer-session-binding: own issued lease cannot complete via actual caller",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "pr944-2c61a5d9-review",
+    "blocked_by": "Ra sandboxed-consumer-session-binding: own fenced review completion rejected caller ownership",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "pr944-postgres-correction-145610",
+    "blocked_by": "Ra sandboxed-consumer-session-binding",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "pr944-cf94db73-review",
+    "blocked_by": "Ra sandboxed-consumer-session-binding: issued exact own-thread lease completion rejected",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task_id": "ci-postgres-required-20261001",
+    "blocked_by": "claude-pantheon publication and independent review; actual PostgreSQL CI receipt",
+    "returncode": 1,
+    "output": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  }
+]

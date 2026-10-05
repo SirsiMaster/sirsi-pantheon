@@ -3,6 +3,7 @@ package routerboard
 import (
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 // uiFields are the payload keys index.html actually reads.
@@ -46,6 +47,28 @@ func TestPayloadCarriesEveryFieldTheUIReads(t *testing.T) {
 		if _, ok := got[f]; !ok {
 			t.Errorf("payload is missing %q — index.html reads it, so that section renders undefined", f)
 		}
+	}
+}
+
+func TestCanonicalEvidenceProjectionIncludesTaskResultReference(t *testing.T) {
+	updated := time.Now().UTC().Format(time.RFC3339)
+	evidence := evidenceDetails([]Lane{{Agent: "worker-a", Tasks: []rawTask{{
+		"task_id": "result-task", "status": "done", "updated": updated,
+		"result_ref": "receipt://worker-a/result-17",
+	}}}})
+	if len(evidence) != 1 || evidence[0].Label != "task result" || evidence[0].URL != "receipt://worker-a/result-17" {
+		t.Fatalf("canonical evidence projection = %+v, want task result reference", evidence)
+	}
+	body, err := json.Marshal(evidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded []EvidenceRef
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded) != 1 || decoded[0].URL != "receipt://worker-a/result-17" {
+		t.Fatalf("serialized evidence omitted task result reference: %s", body)
 	}
 }
 

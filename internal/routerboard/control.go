@@ -1,11 +1,13 @@
 package routerboard
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 )
@@ -37,6 +39,33 @@ type ControlEnvelope struct {
 	StateSHA256  string              `json:"state_sha256"`
 	Capabilities []ControlCapability `json:"capabilities"`
 	State        Payload             `json:"state"`
+}
+
+// DecodeControlEnvelope validates the closed JSON representation used by
+// authenticated worker clients. Duplicate keys, unknown fields, trailing
+// values, and a state digest mismatch all fail before a consumer can render
+// or act on the snapshot.
+func DecodeControlEnvelope(body []byte) (ControlEnvelope, error) {
+	if err := ValidateJSONNoDuplicateKeys(body); err != nil {
+		return ControlEnvelope{}, fmt.Errorf("control envelope JSON is ambiguous: %w", err)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	var envelope ControlEnvelope
+	if err := decoder.Decode(&envelope); err != nil {
+		return ControlEnvelope{}, fmt.Errorf("control envelope is invalid: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return ControlEnvelope{}, errors.New("control envelope contains multiple JSON values")
+		}
+		return ControlEnvelope{}, fmt.Errorf("control envelope has trailing JSON: %w", err)
+	}
+	if err := envelope.Validate(); err != nil {
+		return ControlEnvelope{}, err
+	}
+	return envelope, nil
 }
 
 var controlCapabilities = []ControlCapability{

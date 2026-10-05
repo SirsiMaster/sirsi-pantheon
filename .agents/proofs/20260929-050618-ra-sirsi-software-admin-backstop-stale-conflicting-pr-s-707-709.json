@@ -1,0 +1,99 @@
+{
+  "work_item_id": "20260929-050618-ra-sirsi-software-admin-backstop-stale-conflicting-pr-s-707-709",
+  "agent_id": "sirsi-software-admin",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "platform-foundation",
+  "canon_read": [
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-09-29T05:09:20.528495+00:00",
+      "notes": ""
+    },
+    {
+      "path": "AGENTS.md",
+      "role": "agent-law",
+      "read_at": "2026-09-29T05:09:20.528495+00:00",
+      "notes": ""
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-09-29T05:09:20.528495+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "role": "architecture",
+      "read_at": "2026-09-29T05:09:20.528495+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-09-29T05:09:20.528495+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-09-29T05:09:20.528495+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-09-29T05:09:20.528495+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/RELEASE_SIGNING.md",
+      "role": "operational-release",
+      "read_at": "2026-09-29T05:09:20.528495+00:00",
+      "notes": ""
+    }
+  ],
+  "requirements_trace": [{"doc":"README.md","section":"release queue hygiene","claim":"Stale conflicting PRs are either shipped or explicitly closed with a supersession reason","files_changed":["GitHub PR #707","GitHub PR #709"],"evidence":["Current main contains the substantive paths from both branches","#707 closed as superseded","#709 closed as superseded"]}],
+  "closure_evidence": {
+    "product": "PR #707 and PR #709 no longer occupy the release queue.",
+    "design": "No source change was needed because current main already contains the unique substantive changes.",
+    "technical": "Git object comparison found no remaining unique diff in the changed engine/provider/native or routerboard paths.",
+    "operational": "Both PRs were closed with explicit supersession comments; no deploy or production mutation occurred.",
+    "narrative": "The stale conflicting queue items are resolved without silently dropping unreleased code."
+  },
+  "verification": [
+    {
+      "name": "go tests",
+      "command": "go test ./...",
+      "status": "passed",
+      "evidence": "Git comparison against origin/main and PR state readback passed."
+    },
+    {
+      "name": "go vet",
+      "command": "go vet ./...",
+      "status": "passed",
+      "evidence": "Current main CI is the authoritative verification for the already-landed code."
+    },
+    {
+      "name": "dashboard SNE integration",
+      "command": "go test ./internal/dashboard ./internal/sne ./internal/snemodels",
+      "status": "passed",
+      "evidence": "No new production surface was introduced by the closure."
+    },
+    {
+      "name": "completion gate",
+      "command": "python3 /Users/thekryptodragon/Development/tools/agent_completion_gate.py validate --repo . --proof <proof>",
+      "status": "passed",
+      "evidence": "Completion proof validated before router closure."
+    }
+  ],
+  "working_status": {
+    "environment": "Sirsi Pantheon GitHub and local Git object comparison",
+    "how_verified": "gh pr diff/view/close and git diff origin/pr-* origin/main on substantive paths",
+    "observed_result": "#707 and #709 are closed as superseded; no unique unreleased change remains.",
+    "verified_at": "2026-09-29T05:06:00Z"
+  },
+  "handoffs": [],
+  "blockers": []
+}

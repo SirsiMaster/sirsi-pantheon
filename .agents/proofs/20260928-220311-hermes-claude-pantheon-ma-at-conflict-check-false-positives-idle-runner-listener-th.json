@@ -1,0 +1,131 @@
+{
+  "work_item_id": "20260928-220311-hermes-claude-pantheon-ma-at-conflict-check-false-positives-idle-runner-listener-th",
+  "agent_id": "claude-pantheon",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "internal-tool",
+  "canon_read": [
+    {
+      "path": "PANTHEON_RULES.md",
+      "role": "governing-canon",
+      "read_at": "2026-09-28T22:30:00Z",
+      "notes": "Rule A17 (Ma'at QA Sovereign), A21 (concurrency-safe injectable mocks) govern the schedule package this fix touches."
+    },
+    {
+      "path": "CHANGELOG.md",
+      "role": "release-record",
+      "read_at": "2026-09-28T22:30:00Z",
+      "notes": "internal/maat/schedule/{conflict.go,reservation.go} and cmd/sirsi/maatschedule.go were reviewed in the separate worktree /private/tmp/claude-work/pantheon-conflict-check-fix (branch fix/maat-conflict-check-false-positives, PR #898) \u2014 that package does not exist on this repo checkout's current branch (fix/broker-quarantine), so it cannot be cited as a path from here."
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-09-28T22:30:00Z",
+      "notes": "Router closure requirement"
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-09-28T22:30:00Z",
+      "notes": ""
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-09-28T22:30:00Z",
+      "notes": "Internal-tool scheduling-guard bug fix; no scope impact on the v1 star-grade release plan"
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "roadmap",
+      "read_at": "2026-09-28T22:30:00Z",
+      "notes": "Fix is within existing Ma'at scheduling/guard scope, no roadmap deviation"
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "reproduction-standard",
+      "read_at": "2026-09-28T22:30:00Z",
+      "notes": "Verification commands (go build/test/vet/gofmt) recorded in the verification[] section below satisfy the reproduction standard"
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "CHANGELOG.md",
+      "section": "Ask (1): classify runsvc.sh and Runner.Listener as idle infrastructure",
+      "claim": "conflict-check must count only Runner.Worker (and its children) as build load, not the always-present listener/service scripts",
+      "files_changed": [
+        "internal/maat/schedule/conflict.go"
+      ],
+      "evidence": [
+        "internal/maat/schedule/conflict.go on origin/main (commit b7bbe15f, router 20260926-171755): classifyProc matches only Runner.Worker",
+        "The 2026-09-28 false positive was a stale local sirsi binary predating that fix, not a live defect"
+      ]
+    },
+    {
+      "doc": "CHANGELOG.md",
+      "section": "Ask (2): exempt processes descended from the reservation's own run",
+      "claim": "conflict-check must not report a descendant of the guarded run's own process tree (e.g. its ssh launcher) as an intruder, mirroring maat-run-guard's local self-exemption",
+      "files_changed": [
+        "internal/maat/schedule/conflict.go",
+        "internal/maat/schedule/reservation.go",
+        "cmd/sirsi/maatschedule.go",
+        "internal/maat/schedule/conflict_test.go",
+        "VERSION",
+        "CHANGELOG.md"
+      ],
+      "evidence": [
+        "Reservation.ExemptPID field + --exempt-pid CLI flag",
+        "CheckConflicts walks ps ancestry (processAncestry) and skips actors descending from ExemptPID via isDescendant",
+        "TestCheckConflicts_ExemptPIDCoversItsOwnDescendants: exempt descendant (PID 300) is skipped, unrelated intruder (PID 999) is still reported"
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "No user-facing product change; internal Ma'at scheduling guard correctness fix.",
+    "design": "N/A \u2014 CLI flag addition only (sirsi maat reserve --exempt-pid), consistent with existing reserve flag conventions.",
+    "technical": "internal/maat/schedule/conflict.go: probeProcesses now parses PID per actor; CheckConflicts resolves process ancestry via an injectable ProcessAncestryFn (A21-compliant: mutex-guarded getter/setter) only when Reservation.ExemptPID is set, and skips any actor whose PID descends from ExemptPID via isDescendant (bounded walk, cycle-safe). Ask (1) was independently confirmed already fixed and merged to origin/main.",
+    "operational": "Branch fix/maat-conflict-check-false-positives rebased on origin/main (1370fbf5); PR #898 opened at https://github.com/SirsiMaster/sirsi-pantheon/pull/898. Release bookkeeping (VERSION, CHANGELOG.md) bumped to v0.24.34 in the same branch.",
+    "narrative": "Both hermes-reported false positives in the Ma'at conflict-check guard are resolved: the idle-runner misclassification was already live on main (hermes was running a stale binary), and the guarded run's own process-tree exemption is now implemented, tested, and pushed as PR #898 awaiting merge."
+  },
+  "verification": [
+    {
+      "name": "build",
+      "command": "go build ./...",
+      "status": "pass",
+      "evidence": "Clean build in worktree /private/tmp/claude-work/pantheon-conflict-check-fix (branch fix/maat-conflict-check-false-positives)"
+    },
+    {
+      "name": "unit tests",
+      "command": "go test ./internal/maat/schedule/...",
+      "status": "pass",
+      "evidence": "ok github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule 6.001s, including new TestCheckConflicts_ExemptPIDCoversItsOwnDescendants"
+    },
+    {
+      "name": "formatting",
+      "command": "gofmt -l internal/maat/schedule/ cmd/sirsi/maatschedule.go",
+      "status": "pass",
+      "evidence": "No output (clean)"
+    },
+    {
+      "name": "vet",
+      "command": "go vet ./internal/maat/schedule/... ./cmd/sirsi/...",
+      "status": "pass",
+      "evidence": "No output (clean)"
+    },
+    {
+      "name": "ask (1) already merged",
+      "command": "git merge-base --is-ancestor b7bbe15f origin/main",
+      "status": "pass",
+      "evidence": "classifyProc-only-Runner.Worker fix (router 20260926-171755) confirmed present on origin/main"
+    }
+  ],
+  "working_status": {
+    "environment": "worktree /private/tmp/claude-work/pantheon-conflict-check-fix, branch fix/maat-conflict-check-false-positives, based on origin/main 1370fbf5",
+    "how_verified": "go build, go test, gofmt, go vet all run and passed in the worktree before push",
+    "observed_result": "Branch pushed to origin, PR #898 opened, not yet merged",
+    "verified_at": "2026-09-28T22:45:00Z"
+  },
+  "blockers": [
+    "PR #898 awaiting merge (not owner-gated, no security/privacy concern \u2014 routine review/merge)"
+  ]
+}

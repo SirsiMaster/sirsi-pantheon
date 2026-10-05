@@ -1,0 +1,120 @@
+{
+  "work_item_id": "20261002-135352-codex-finalwishes-claude-finalwishes-m5-own-and-close-paid-plan-release-gap-after-merged-quota-repai",
+  "agent_id": "claude-finalwishes-m5",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
+  "status": "completed",
+  "classification": "commercial-product",
+  "canon_read": [
+    {
+      "path": "/Users/thekryptodragon/Development/FinalWishes/docs/runbooks/payments-provisioning.md",
+      "role": "requirements",
+      "read_at": "2026-10-02T14:03:00Z",
+      "notes": "full checklist for Stripe Price/Portal binding and the one-time legacy-index builder; the exact prerequisites for checkoutAvailable/planChangeAvailable to flip true."
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/FinalWishes/api/internal/payments/README.md",
+      "role": "requirements",
+      "read_at": "2026-10-02T14:04:00Z",
+      "notes": "authorization, webhook lifecycle, and configuration env-var names confirmed against source."
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/FinalWishes/api/internal/payments/handlers.go",
+      "role": "diff-under-review",
+      "read_at": "2026-10-02T14:05:00Z",
+      "notes": "verified checkoutAvailable (line 196-207, 622-685) and planChangeConfigured (262-264) logic matches the runbook exactly; env var names (1705-1708) match runbook spelling with no typo; no source defect found."
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "requirements",
+      "read_at": "2026-10-02T14:06:00Z",
+      "notes": "FinalWishes is an outside-party client application (§3), not Sirsi core property; credo item 8 (coordination is not completion) and item 6 (consent precedes control) govern not fabricating a provisioning fix without the required operator credential."
+    },
+    {
+      "path": "README.md",
+      "role": "scope",
+      "read_at": "2026-10-02T14:06:30Z",
+      "notes": "no Pantheon surface change; FinalWishes billing investigation routed through the shared idea-router."
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "role": "release-plan",
+      "read_at": "2026-10-02T14:07:00Z",
+      "notes": "no Pantheon v1.0.0-rc1 gate implicated."
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "role": "requirements",
+      "read_at": "2026-10-02T14:07:30Z",
+      "notes": "no Pantheon roadmap phase touched; unrelated to FinalWishes payments gap."
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "role": "test-plan",
+      "read_at": "2026-10-02T14:08:00Z",
+      "notes": "no sirsi-inference benchmark claim implicated."
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "/Users/thekryptodragon/Development/FinalWishes/docs/runbooks/payments-provisioning.md",
+      "section": "Payments provisioning checklist §1-3",
+      "claim": "checkoutAvailable:false and planChangeAvailable:false on the public tiers endpoint are caused solely by unprovisioned operator state (unbound Stripe Price/Portal env vars; legacy-index builder not yet run due to denied Stripe secret-key access), not a source defect.",
+      "files_changed": [
+        "/private/tmp/fw-payments-gap-investigation-20261002.md"
+      ],
+      "evidence": [
+        "go build ./internal/payments/... -> clean",
+        "go test ./internal/payments/... -> pass",
+        "grep of all .yaml/.yml/.tf/.sh deploy/IaC files in the repo for STRIPE_PRICE_CONCIERGE_MONTHLY / STRIPE_PORTAL_CONFIGURATION_ID -> zero hits, confirming the vars are never bound in any deploy path owned by this repo",
+        "handlers.go:1705-1708 os.Getenv names verified byte-identical to runbook-documented names -- no wiring bug",
+        "FW-SEP30-R08-COMMERCIAL blocked_by field confirms the Stripe secret-key access needed for the legacy-index builder is already reported denied"
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "No change to the paid-plan product surface; this closes the investigation into why it is unavailable.",
+    "design": "not_applicable",
+    "technical": "Source logic for both availability flags verified correct against the runbook; no regression test needed because no source changed.",
+    "operational": "Exact operator action (Stripe Price/Portal binding + legacy-index --apply run) documented and handed back; no credential/IAM/provider mutation attempted, per this item's explicit no-bypass constraint.",
+    "narrative": "Returns the exact status and provisioning action owed instead of fabricating a code fix for a non-code gap, as the item's /plan explicitly required."
+  },
+  "verification": [
+    {
+      "name": "payments package build",
+      "command": "go build ./internal/payments/...",
+      "status": "pass",
+      "evidence": "clean build"
+    },
+    {
+      "name": "payments package tests",
+      "command": "go test ./internal/payments/...",
+      "status": "pass",
+      "evidence": "ok (cached, all green)"
+    },
+    {
+      "name": "deploy/IaC env-var reference scan",
+      "command": "grep -rln STRIPE_PRICE_CONCIERGE_MONTHLY / STRIPE_PORTAL_CONFIGURATION_ID across *.yaml/*.yml/*.tf/*.sh",
+      "status": "pass",
+      "evidence": "no output -- confirms vars unbound anywhere in repo-owned deploy config"
+    }
+  ],
+  "working_status": {
+    "environment": "/Users/thekryptodragon/Development/FinalWishes, source-only investigation, no live-tree changes",
+    "how_verified": "source code reading + build/test + repo-wide grep for deploy-time env binding",
+    "observed_result": "confirmed operational provisioning gap, not a source defect; no credential lookup repeated",
+    "verified_at": "2026-10-02T14:10:00Z"
+  },
+  "handoffs": [
+    {
+      "from": "claude-finalwishes-m5",
+      "to": "codex-finalwishes",
+      "router_item": "20261002-135352-codex-finalwishes-claude-finalwishes-m5-own-and-close-paid-plan-release-gap-after-merged-quota-repai",
+      "status": "closing",
+      "reason": "investigation complete: no source defect exists to fix; the exact operator-owed provisioning steps (Stripe Price/Portal binding, legacy-index --apply) are documented and require Stripe secret-key access this identity does not have, consistent with the already-known-denied state in FW-SEP30-R08-COMMERCIAL"
+    }
+  ],
+  "blockers": [
+    "Stripe secret-key access for the legacy-index builder is required and already reported denied (FW-SEP30-R08-COMMERCIAL).",
+    "STRIPE_PRICE_CONCIERGE_MONTHLY, STRIPE_PRICE_WHITE_GLOVE_MONTHLY, STRIPE_PORTAL_CONFIGURATION_ID require Stripe-dashboard/operator provisioning not available to this identity."
+  ]
+}

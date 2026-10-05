@@ -1,0 +1,34 @@
+# ./internal/dispatch
+open /Users/thekryptodragon/Library/Caches/go-build/bf/bfd61096e5c89e3af0713430ae89d95d53fb761ffb33be0fde75b5376f694ffc-d: operation not permitted
+FAIL	./internal/dispatch [setup failed]
+# ./cmd/sirsi-router-mcp
+open /Users/thekryptodragon/Library/Caches/go-build/59/596a09688316cb6d05419739de25deb315613a498395a6d9754b2a237451134a-d: operation not permitted
+FAIL	./cmd/sirsi-router-mcp [setup failed]
+--- FAIL: TestThreadAuthorityBridgesAdoptedIdentity (0.55s)
+panic: httptest: failed to listen on a port: listen tcp6 [::1]:0: bind: operation not permitted [recovered, repanicked]
+
+goroutine 69 [running]:
+testing.tRunner.func1.2({0x1062eb5a8, 0xc00004ab40})
+	/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2123 +0x2b8
+testing.tRunner.func1()
+	/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2126 +0x438
+panic({0x1062eb5a8?, 0xc00004ab40?})
+	/opt/homebrew/Cellar/go/1.27.1/libexec/src/runtime/panic.go:859 +0x120
+net/http/httptest.newLocalListener()
+	/opt/homebrew/Cellar/go/1.27.1/libexec/src/net/http/httptest/server.go:226 +0x13c
+net/http/httptest.NewUnstartedServer(...)
+	/opt/homebrew/Cellar/go/1.27.1/libexec/src/net/http/httptest/server.go:284
+net/http/httptest.NewServer({0x1063a8028, 0xc000150000})
+	/opt/homebrew/Cellar/go/1.27.1/libexec/src/net/http/httptest/server.go:267 +0x30
+github.com/SirsiMaster/sirsi-pantheon/internal/routerstore.ruleHarnessOn(0xc0003146c8, {0x1058e969d, 0x7}, 0xc0001c7ca0, {0x1063b2b38, 0xc0000946c0})
+	/private/tmp/pr947-review/internal/routerstore/serve_ruleofra_test.go:29 +0x20c
+github.com/SirsiMaster/sirsi-pantheon/internal/routerstore.ruleHarness(0xc0003146c8, {0x1058e969d, 0x7}, 0xc0001c7ca0)
+	/private/tmp/pr947-review/internal/routerstore/serve_ruleofra_test.go:18 +0x64
+github.com/SirsiMaster/sirsi-pantheon/internal/routerstore.TestThreadAuthorityBridgesAdoptedIdentity(0xc0003146c8)
+	/private/tmp/pr947-review/internal/routerstore/adopt_machineid_test.go:132 +0x110
+testing.tRunner(0xc0003146c8, 0x1063b42d8)
+	/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2193 +0x168
+created by testing.(*T).Run in goroutine 1
+	/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2258 +0x7c0
+FAIL	github.com/SirsiMaster/sirsi-pantheon/internal/routerstore	3.319s
+FAIL

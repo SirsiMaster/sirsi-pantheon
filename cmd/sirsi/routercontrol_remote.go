@@ -18,7 +18,19 @@ import (
 )
 
 const remoteControlBodyLimit = 8 << 20
-const remoteControlActionBodyLimit = 64 << 10
+const remoteControlActionBodyLimit = routerboard.ControlActionBodyLimit
+
+func remoteControlHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: 10 * time.Second,
+		// Control requests carry a bearer credential, and action POSTs mutate
+		// canonical router state. Never let an endpoint redirect either request
+		// to a second authority or replay a mutation under redirect semantics.
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+}
 
 func firstNonEmptyControlEndpoint(values ...string) string {
 	for _, value := range values {
@@ -41,6 +53,9 @@ func controlURL(raw, path string) (string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return "", fmt.Errorf("control endpoint must be an absolute URL: %q", raw)
+	}
+	if parsed.User != nil {
+		return "", fmt.Errorf("control endpoint must not contain embedded credentials")
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return "", fmt.Errorf("control endpoint scheme %q is unsupported", parsed.Scheme)
@@ -87,8 +102,7 @@ func fetchRemoteControl(ctx context.Context, rawEndpoint, token string) ([]byte,
 	if token = strings.TrimSpace(token); token != "" {
 		request.Header.Set("Authorization", "Bearer "+token)
 	}
-	client := &http.Client{Timeout: 10 * time.Second}
-	response, err := client.Do(request)
+	response, err := remoteControlHTTPClient().Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("fetch control snapshot: %w", err)
 	}
@@ -110,23 +124,7 @@ func fetchRemoteControl(ctx context.Context, rawEndpoint, token string) ([]byte,
 }
 
 func validateRemoteControlSnapshot(body []byte) error {
-	if err := routerboard.ValidateJSONNoDuplicateKeys(body); err != nil {
-		return fmt.Errorf("control snapshot JSON is ambiguous: %w", err)
-	}
-	var envelope routerboard.ControlEnvelope
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&envelope); err != nil {
-		return fmt.Errorf("control snapshot is not a valid worker-control envelope: %w", err)
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		if err == nil {
-			return fmt.Errorf("control snapshot contains multiple JSON values")
-		}
-		return fmt.Errorf("control snapshot contains trailing JSON: %w", err)
-	}
-	if err := envelope.Validate(); err != nil {
+	if _, err := routerboard.DecodeControlEnvelope(body); err != nil {
 		return fmt.Errorf("control snapshot envelope: %w", err)
 	}
 	return nil
@@ -152,20 +150,24 @@ func readControlActionRequest(source string) ([]byte, error) {
 	if len(body) > remoteControlActionBodyLimit {
 		return nil, fmt.Errorf("control action request exceeds %d-byte limit", remoteControlActionBodyLimit)
 	}
-	var object map[string]json.RawMessage
-	if err := json.Unmarshal(body, &object); err != nil || object == nil {
-		if err == nil {
-			err = fmt.Errorf("request must be a JSON object")
-		}
+	if err := validateControlActionRequest(body); err != nil {
 		return nil, fmt.Errorf("invalid control action request: %w", err)
-	}
-	if err := routerboard.ValidateJSONNoDuplicateKeys(body); err != nil {
-		return nil, err
 	}
 	return body, nil
 }
 
+func validateControlActionRequest(body []byte) error {
+	if len(body) > remoteControlActionBodyLimit {
+		return fmt.Errorf("request exceeds %d-byte limit", remoteControlActionBodyLimit)
+	}
+	_, err := routerboard.DecodeControlActionRequest(body)
+	return err
+}
+
 func sendRemoteControlAction(ctx context.Context, rawEndpoint, token string, body []byte) ([]byte, error) {
+	if err := validateControlActionRequest(body); err != nil {
+		return nil, fmt.Errorf("send control action: invalid request: %w", err)
+	}
 	if strings.TrimSpace(token) == "" {
 		return nil, fmt.Errorf("send control action: bearer token is required for remote control")
 	}
@@ -181,8 +183,7 @@ func sendRemoteControlAction(ctx context.Context, rawEndpoint, token string, bod
 	if token = strings.TrimSpace(token); token != "" {
 		request.Header.Set("Authorization", "Bearer "+token)
 	}
-	client := &http.Client{Timeout: 10 * time.Second}
-	response, err := client.Do(request)
+	response, err := remoteControlHTTPClient().Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("send control action: %w", err)
 	}
@@ -195,6 +196,9 @@ func sendRemoteControlAction(ctx context.Context, rawEndpoint, token string, bod
 		return nil, fmt.Errorf("control action response exceeds %d-byte limit", remoteControlBodyLimit)
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		if response.StatusCode >= http.StatusMultipleChoices && response.StatusCode < 400 {
+			return nil, fmt.Errorf("control action endpoint returned redirect HTTP %d; redirects are not followed", response.StatusCode)
+		}
 		if err := validateRemoteControlActionFailure(body, result); err != nil {
 			return nil, fmt.Errorf("control action returned HTTP %d with invalid failure receipt: %w", response.StatusCode, err)
 		}
@@ -202,7 +206,7 @@ func sendRemoteControlAction(ctx context.Context, rawEndpoint, token string, bod
 		if err := json.Unmarshal(result, &failure); err != nil {
 			return nil, fmt.Errorf("control action returned HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(result)))
 		}
-		return nil, fmt.Errorf("control action rejected HTTP %d: %s", response.StatusCode, failure.Error)
+		return nil, &routerboard.ControlActionFailureError{Failure: failure}
 	}
 	if err := validateRemoteControlActionResponse(body, result); err != nil {
 		return nil, err
@@ -241,26 +245,9 @@ func validateRemoteControlActionFailure(requestBody, responseBody []byte) error 
 }
 
 func validateRemoteControlActionResponse(requestBody, responseBody []byte) error {
-	if err := routerboard.ValidateJSONNoDuplicateKeys(requestBody); err != nil {
-		return fmt.Errorf("control action request JSON is ambiguous: %w", err)
-	}
 	if err := routerboard.ValidateJSONNoDuplicateKeys(responseBody); err != nil {
 		return fmt.Errorf("control action response JSON is ambiguous: %w", err)
 	}
-	var request routerboard.ControlActionRequest
-	requestDecoder := json.NewDecoder(bytes.NewReader(requestBody))
-	requestDecoder.DisallowUnknownFields()
-	if err := requestDecoder.Decode(&request); err != nil {
-		return fmt.Errorf("control action request is invalid: %w", err)
-	}
-	var requestTrailing any
-	if err := requestDecoder.Decode(&requestTrailing); err != io.EOF {
-		if err == nil {
-			return fmt.Errorf("control action request contains multiple JSON values")
-		}
-		return fmt.Errorf("control action request contains trailing JSON: %w", err)
-	}
-	requestVerb := strings.TrimSpace(request.Verb)
 	var response routerboard.ControlActionResponse
 	responseDecoder := json.NewDecoder(bytes.NewReader(responseBody))
 	responseDecoder.DisallowUnknownFields()
@@ -274,70 +261,18 @@ func validateRemoteControlActionResponse(requestBody, responseBody []byte) error
 		}
 		return fmt.Errorf("control action response contains trailing JSON: %w", err)
 	}
-	if response.Schema != routerboard.ControlSchema {
-		return fmt.Errorf("control action response schema %q is unsupported", response.Schema)
-	}
-	if response.Authority != "canonical-routerstore" {
-		return fmt.Errorf("control action response authority %q is not canonical-routerstore", response.Authority)
-	}
-	if response.Verb != requestVerb {
-		return fmt.Errorf("control action response verb %q does not match %q", response.Verb, requestVerb)
-	}
-	switch requestVerb {
-	case "message", "review_request":
-		if strings.TrimSpace(response.ItemID) == "" {
-			return fmt.Errorf("control action response omitted item_id")
-		}
-	case "delegate", "cancel_handback", "result_return":
-		if strings.TrimSpace(response.TaskID) == "" {
-			return fmt.Errorf("control action response omitted task_id")
-		}
-		if strings.TrimSpace(request.TaskID) == "" || strings.TrimSpace(response.TaskID) != strings.TrimSpace(request.TaskID) {
-			return fmt.Errorf("control action response task_id %q does not match requested task_id %q", response.TaskID, request.TaskID)
-		}
-	case "claim":
-		if response.Lease == nil || strings.TrimSpace(response.Lease.Token) == "" || strings.TrimSpace(response.Lease.TaskID) == "" {
-			return fmt.Errorf("control action response omitted lease proof")
-		}
-		lease := response.Lease
-		if strings.TrimSpace(lease.Agent) != strings.TrimSpace(request.Agent) {
-			return fmt.Errorf("control action lease agent %q does not match requested agent %q", lease.Agent, request.Agent)
-		}
-		if strings.TrimSpace(lease.Worker) != strings.TrimSpace(request.Worker) {
-			return fmt.Errorf("control action lease worker %q does not match requested worker %q", lease.Worker, request.Worker)
-		}
-		if strings.TrimSpace(lease.ThreadID) != strings.TrimSpace(request.ThreadID) {
-			return fmt.Errorf("control action lease thread_id %q does not match requested thread_id %q", lease.ThreadID, request.ThreadID)
-		}
-		if requestedTaskID := strings.TrimSpace(request.TaskID); requestedTaskID != "" && strings.TrimSpace(lease.TaskID) != requestedTaskID {
-			return fmt.Errorf("control action lease task_id %q does not match requested task_id %q", lease.TaskID, requestedTaskID)
-		}
-		if strings.TrimSpace(response.TaskID) != strings.TrimSpace(lease.TaskID) || lease.Expires.IsZero() || lease.Attempt <= 0 {
-			return fmt.Errorf("control action lease proof is incomplete or detached from task_id")
-		}
-	case "":
-		return fmt.Errorf("control action request omitted verb")
-	default:
-		return fmt.Errorf("control action response has unsupported verb %q", requestVerb)
-	}
-	if requestVerb == "result_return" && strings.TrimSpace(response.ResultRef) == "" {
-		return fmt.Errorf("control action response omitted result_ref")
-	}
-	if requestVerb == "result_return" && strings.TrimSpace(response.ResultRef) != strings.TrimSpace(request.ResultRef) {
-		return fmt.Errorf("control action response result_ref does not match requested result_ref")
-	}
-	if err := response.VerifyControlActionResponse(requestBody); err != nil {
+	if err := response.VerifyControlActionResponseForRequest(requestBody); err != nil {
 		return fmt.Errorf("control action response receipt invalid: %w", err)
 	}
 	return nil
 }
 
-func printControlJSON(body []byte) error {
+func printControlJSON(output io.Writer, body []byte) error {
 	var out map[string]json.RawMessage
 	if err := json.Unmarshal(body, &out); err != nil {
 		return fmt.Errorf("validate control snapshot: %w", err)
 	}
-	enc := json.NewEncoder(os.Stdout)
+	enc := json.NewEncoder(output)
 	enc.SetIndent("", "  ")
 	return enc.Encode(out)
 }

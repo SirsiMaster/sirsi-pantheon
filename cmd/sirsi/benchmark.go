@@ -20,17 +20,25 @@ var (
 	benchSize   int
 )
 
+const (
+	maxBenchmarkInputBytes = 64 << 20
+	maxBenchmarkBlocks     = 10_000
+)
+
 var benchmarkCmd = &cobra.Command{
 	Use:   "benchmark",
-	Short: "Run ANE vs Metal vs CPU performance benchmarks",
-	Long: `𓈗 Pantheon Benchmark — Hardware Acceleration Comparison
+	Short: "Benchmark CPU and Metal hashing plus file-classifier throughput",
+	Long: `𓈗 Pantheon Benchmark — Hashing and File Classification
 
-Runs inference and hashing benchmarks across all available compute paths:
-  • ANE (Neural Engine): CoreML file classification via coreml_bridge
-  • Metal GPU: Parallel SHA-256 hashing via Metal compute shaders
-  • CPU: Pure Go stdlib baseline
+Runs CPU and Metal SHA-256 hashing benchmarks and classifies synthetic file
+path strings using the best available classifier. The report names the selected
+classifier backend, but does not measure or verify which hardware unit CoreML
+uses for inference.
 
-Compares timing, throughput, and correctness across backends.
+Compares hashing timing, throughput, and correctness; classifier throughput
+is reported separately and is not a hashing or hardware-dispatch comparison.
+Generated hash input is limited to 64 MiB per run.
+Block count is limited to 10,000 to bound per-block work and allocation overhead.
 
   sirsi benchmark                    Run with defaults (1000 blocks × 4KB)
   sirsi benchmark --blocks 5000      Custom block count
@@ -44,9 +52,12 @@ func init() {
 }
 
 func runBenchmark(_ *cobra.Command, _ []string) error {
+	if err := validateBenchmarkConfig(benchBlocks, benchSize); err != nil {
+		return err
+	}
 	start := time.Now()
 	output.Banner()
-	output.Header("Benchmark — ANE / Metal / CPU")
+	output.Header("Benchmark — CPU / Metal / File classifier")
 
 	// ── Hardware Detection ──────────────────────────────────────────
 	profile := seba.DetectAccelerators()
@@ -58,12 +69,12 @@ func runBenchmark(_ *cobra.Command, _ []string) error {
 	}
 
 	output.Dashboard(map[string]string{
-		"CPU":    cpuModel,
-		"Cores":  fmt.Sprintf("%d", runtime.NumCPU()),
-		"Metal":  fmt.Sprintf("%v (GPU cores: %d)", profile.HasMetal, profile.GPUCores),
-		"ANE":    fmt.Sprintf("%v (cores: %d)", profile.HasANE, profile.ANECores),
-		"Blocks": fmt.Sprintf("%d × %s", benchBlocks, benchFormatSize(benchSize)),
-		"Total":  benchFormatSize(benchBlocks * benchSize),
+		"CPU":           cpuModel,
+		"Cores":         fmt.Sprintf("%d", runtime.NumCPU()),
+		"Metal":         fmt.Sprintf("%v (GPU cores: %d)", profile.HasMetal, profile.GPUCores),
+		"ANE Available": fmt.Sprintf("%v (cores: %d; availability only)", profile.HasANE, profile.ANECores),
+		"Blocks":        fmt.Sprintf("%d × %s", benchBlocks, benchFormatSize(benchSize)),
+		"Total":         benchFormatSize(benchBlocks * benchSize),
 	})
 
 	// ── Generate test data ──────────────────────────────────────────
@@ -139,36 +150,39 @@ func runBenchmark(_ *cobra.Command, _ []string) error {
 		}
 	}
 
-	// ── Benchmark: ANE Inference ────────────────────────────────────
-	output.Info("Running ANE inference benchmark...")
-	aneBackend := "unavailable"
-	aneDur := time.Duration(0)
-	aneClassified := 0
+	// ── Benchmark: file-path classifier throughput ───────────────────
+	output.Info("Classifying synthetic file paths (selected backend; hardware dispatch unverified)...")
+	classifierBackend := "unavailable"
+	classifierDur := time.Duration(0)
+	pathsClassified := 0
 
 	classifier, cerr := brain.GetClassifier()
 	if cerr == nil {
 		_ = classifier.Load("")
-		aneBackend = classifier.Name()
+		classifierBackend = classifier.Name()
 
 		// Classify a set of synthetic file paths
 		testPaths := generateTestPaths(100)
-		aneStart := time.Now()
+		classifierStart := time.Now()
 		for _, p := range testPaths {
 			if _, err := classifier.Classify(p); err == nil {
-				aneClassified++
+				pathsClassified++
 			}
 		}
-		aneDur = time.Since(aneStart)
+		classifierDur = time.Since(classifierStart)
 		_ = classifier.Close()
 	}
 
 	// ── Results Table ───────────────────────────────────────────────
-	throughputSeq := float64(benchBlocks*benchSize) / cpuSeqDur.Seconds() / (1024 * 1024)
-	throughputPar := float64(benchBlocks*benchSize) / cpuParDur.Seconds() / (1024 * 1024)
-	throughputMetal := float64(benchBlocks*benchSize) / metalDur.Seconds() / (1024 * 1024)
+	seqDuration := maxDur(cpuSeqDur)
+	parallelDuration := maxDur(cpuParDur)
+	metalDuration := maxDur(metalDur)
+	throughputSeq := float64(benchBlocks*benchSize) / seqDuration.Seconds() / (1024 * 1024)
+	throughputPar := float64(benchBlocks*benchSize) / parallelDuration.Seconds() / (1024 * 1024)
+	throughputMetal := float64(benchBlocks*benchSize) / metalDuration.Seconds() / (1024 * 1024)
 
-	speedupPar := cpuSeqDur.Seconds() / cpuParDur.Seconds()
-	speedupMetal := cpuSeqDur.Seconds() / metalDur.Seconds()
+	speedupPar := seqDuration.Seconds() / parallelDuration.Seconds()
+	speedupMetal := seqDuration.Seconds() / metalDuration.Seconds()
 
 	hashRows := [][]string{
 		{"CPU Sequential", "go-sha256", cpuSeqDur.Round(time.Microsecond).String(),
@@ -188,18 +202,19 @@ func runBenchmark(_ *cobra.Command, _ []string) error {
 		hashRows,
 	)
 
-	// Inference results
-	inferRows := [][]string{
-		{"ANE/Classifier", aneBackend,
-			aneDur.Round(time.Microsecond).String(),
-			fmt.Sprintf("%d files", aneClassified),
-			fmt.Sprintf("%.1f files/s", float64(aneClassified)/maxDur(aneDur).Seconds()),
-			"—"},
+	// Classifier results use synthetic path strings; they do not establish that
+	// CoreML or the ANE processed real file contents.
+	classifierRows := [][]string{
+		{"File classifier (synthetic paths)", classifierBackend,
+			classifierDur.Round(time.Microsecond).String(),
+			fmt.Sprintf("%d paths", pathsClassified),
+			fmt.Sprintf("%.1f paths/s", float64(pathsClassified)/maxDur(classifierDur).Seconds()),
+			"hardware dispatch unverified"},
 	}
 
 	output.Table(
-		[]string{"Backend", "Engine", "Duration", "Classified", "Rate", "Notes"},
-		inferRows,
+		[]string{"Operation", "Classifier backend", "Duration", "Paths classified", "Rate", "Notes"},
+		classifierRows,
 	)
 
 	output.Footer(time.Since(start))
@@ -218,6 +233,22 @@ func generateTestPaths(n int) []string {
 		paths[i] = fmt.Sprintf("/tmp/bench/file_%04d%s", i, ext)
 	}
 	return paths
+}
+
+func validateBenchmarkConfig(blocks, blockSize int) error {
+	if blocks <= 0 {
+		return fmt.Errorf("benchmark: blocks must be positive")
+	}
+	if blocks > maxBenchmarkBlocks {
+		return fmt.Errorf("benchmark: blocks exceeds %d per-run safety limit", maxBenchmarkBlocks)
+	}
+	if blockSize <= 0 {
+		return fmt.Errorf("benchmark: size must be positive")
+	}
+	if blocks > maxBenchmarkInputBytes/blockSize {
+		return fmt.Errorf("benchmark: total input exceeds %d MiB safety limit", maxBenchmarkInputBytes/(1024*1024))
+	}
+	return nil
 }
 
 func benchFormatSize(bytes int) string {

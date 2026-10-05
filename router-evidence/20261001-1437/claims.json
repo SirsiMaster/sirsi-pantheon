@@ -1,0 +1,230 @@
+[
+  {
+    "task": "permanent-execution-continuity",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "fabric-surface-unification",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "owner-disabled-service-fence",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "adr057-thread-api-hardening",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "adr057-thread-prune-tombstone-fence",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "pantheon-installer-experience-v1",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "20260907-164834-sirsi-software-admin-codex-pantheon-ssa-review-streaming-transport-needs-terminal-and-identity-f",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "20260910-051357-ra-codex-pantheon-reassigned-from-claude-pantheon-review-private-engine-summar",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "20260910-051358-ra-codex-pantheon-reassigned-from-claude-pantheon-repository-transfer-response",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "20260910-051400-ra-codex-pantheon-reassigned-from-claude-pantheon-liveness-watch-gemma-broker-",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "pantheon-stacklab-contract-integration",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "20260911-042243-codex-inference-codex-pantheon-repair-router-migration-with-m1-ra",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "pantheon-stacklab-cleanup-provenance",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "pantheon-maat-operational-integration",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "pantheon-deck-session-lease-recovery",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "recover-io-density-20260912-1535",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "maat-adr070-correction-20260930",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "maat-cede-journal-correction-20260930",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "native-ra-fabric-guard-20260930",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "mcp-durable-close-ownership-20260930",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "portfolio-thread-registration-20260930",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "pr927-router-bind-channel-gap",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "inbox-20260927-134144-11a1",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "inbox-20261001-054159-2e49",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "fw-fencing-report-063653",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "fw-lead-overlap-094238",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "ssa-qualification-094329",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "fw-claimability-095614",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "fw-public-lease-report-100915",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "fw-lease-report-104643",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "fw-actual-binding-111421",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "fw-lease-report-115417",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "release-canon-125349",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "pr944-review",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "hermes-maat-position-130520",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "pr944-corrected-20236ff8",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "fw-receipts-133938",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  },
+  {
+    "task": "deck-recovery-140423",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "  \u001b[1;38;2;242;84;91m\ud80c\udc75\u001b[m \u001b[38;2;230;239;233mrouterstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which \u2014 note this is the TASK ledger, separate from the inbox)\u001b[m\n"
+  }
+]

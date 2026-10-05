@@ -1,0 +1,89 @@
+gui/501/ai.sirsi.signd = {
+	active count = 0
+	path = /Users/thekryptodragon/Library/LaunchAgents/ai.sirsi.signd.plist
+	type = LaunchAgent
+	state = not running
+
+	program = /bin/zsh
+	arguments = {
+		/bin/zsh
+		/Users/thekryptodragon/sirsi-sign/bin/sirsi-signd.sh
+	}
+
+	stdout path = /Users/thekryptodragon/sirsi-sign/signd.log
+	stderr path = /Users/thekryptodragon/sirsi-sign/signd.log
+	inherited environment = {
+		SIRSI_ROUTER_URL => spool:///Users/thekryptodragon/.sirsi/relay
+		SSH_AUTH_SOCK => /var/run/com.apple.launchd.u4CjRPU35S/Listeners
+	}
+
+	default environment = {
+		PATH => /usr/bin:/bin:/usr/sbin:/sbin
+	}
+
+	environment = {
+		OSLogRateLimit => 64
+		XPC_SERVICE_NAME => ai.sirsi.signd
+	}
+
+	domain = gui/501 [100024]
+	asid = 100024
+	minimum runtime = 10
+	exit timeout = 5
+	runs = 3296
+	last exit code = 0
+
+	event triggers = {
+		com.apple.launchd.WatchPaths => {
+			keepalive = 0
+			service = ai.sirsi.signd
+			stream = com.apple.fsevents.matching
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"WatchPaths" => [
+					0 = "/Users/thekryptodragon/sirsi-sign/inbox"
+				]
+			}
+		}
+	}
+
+	event channels = {
+		"com.apple.fsevents.matching" = {
+			port = 0x11a257
+			active = 0
+			managed = 1
+			reset = 0
+			hide = 0
+			watching = 1
+		}
+	}
+
+	resource coalition = {
+		ID = 137397
+		type = resource
+		state = active
+		active count = 1
+		name = ai.sirsi.signd
+	}
+
+	jetsam coalition = {
+		ID = 137398
+		type = jetsam
+		state = active
+		active count = 1
+		name = ai.sirsi.signd
+	}
+
+	spawn type = daemon (3)
+	jetsam priority = 40
+	jetsam memory limit (active) = (unlimited)
+	jetsam memory limit (inactive) = (unlimited)
+	jetsamproperties category = daemon
+	jetsam thread limit = 32
+	cpumon = default
+	run interval = 60 seconds
+	job state = exited
+	sanitizer flags = 0x0
+
+	properties = inferred program
+}

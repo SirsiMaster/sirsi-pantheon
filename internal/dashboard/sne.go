@@ -338,8 +338,7 @@ func sneReadinessMatchesLifecycle(identity sne.ServiceReadinessIdentity, lifecyc
 		len(lifecycle.RuntimeSHA256) != 64 || len(lifecycle.NativeRuntimeSHA256) != 64 || len(lifecycle.ModelManifestSHA256) != 64 {
 		return false
 	}
-	if identity.Status != "ready" || identity.APIVersion != "v0" ||
-		identity.APIContract != "sne.openai-chat.v2" || identity.ReadyAPIContract != identity.APIContract {
+	if identity.APIVersion != "v0" || identity.ValidateContract() != nil {
 		return false
 	}
 	if identity.Profile != lifecycle.Profile || identity.ReadyProfile != lifecycle.Profile ||
