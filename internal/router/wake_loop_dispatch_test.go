@@ -181,7 +181,7 @@ func TestCodexConsumerCarriesStoreAccessAndInboxContract(t *testing.T) {
 	}
 	got := strings.Join(rc.Argv, " ")
 	for _, want := range []string{
-		"--add-dir /Users/thekryptodragon/.sirsi",
+		"--add-dir " + rebaseForeignHome("/Users/thekryptodragon/.sirsi"),
 		"codex-pantheon",
 		root,
 	} {
