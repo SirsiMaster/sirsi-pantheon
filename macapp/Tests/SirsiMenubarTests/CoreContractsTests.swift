@@ -2,6 +2,27 @@ import XCTest
 @testable import SirsiMenubar
 
 final class CoreContractsTests: XCTestCase {
+    func testKnownFailureProposalDecodesTheTypedLocalReviewQueue() throws {
+        let raw = #"""
+        [{
+          "schema":"sirsi.maat.known-failure-proposal.v1",
+          "id":"catalog-root-missing",
+          "title":"Catalog root missing",
+          "signature":"catalog missing",
+          "cause":"an ambient checkout is incomplete",
+          "status":"proposed",
+          "created_at_utc":"2026-10-05T20:00:00Z",
+          "catalog_sha256":"abc123"
+        }]
+        """#
+
+        let proposals = MaatKnownFailureProposalsView.decode(raw)
+
+        XCTAssertEqual(proposals?.count, 1)
+        XCTAssertEqual(proposals?.first?.id, "catalog-root-missing")
+        XCTAssertEqual(proposals?.first?.titleOrID, "Catalog root missing")
+    }
+
     func testActivityResolutionAlwaysClosesAnAmbiguousOrFailedOutcome() {
         XCTAssertEqual(activityResolution(for: "applied"), .resolved)
         XCTAssertEqual(activityResolution(for: "The command exited successfully, but returned no readable structured result. No repair is claimed."), .evidenceOnly)

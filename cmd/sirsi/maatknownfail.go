@@ -89,6 +89,9 @@ var maatKnownFailuresRegisterCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		if JsonOutput || maatJSON {
+			return emitJSON(proposal)
+		}
 		fmt.Printf("recorded %q as a local Ma'at proposal at %s (catalog %s); it is ready for Stack Lab review and does not change fabric-wide recognition yet\n", proposal.ID, path, proposal.CatalogSHA256)
 		return nil
 	},
@@ -100,6 +103,9 @@ var maatKnownFailuresProposalsCmd = &cobra.Command{
 		proposals, err := knownfail.ReadProposals(knownfail.DefaultProposalDir())
 		if err != nil {
 			return err
+		}
+		if JsonOutput || maatJSON {
+			return emitJSON(proposals)
 		}
 		if len(proposals) == 0 {
 			fmt.Println("no local Ma'at known-failure proposals")

@@ -59,13 +59,15 @@ struct MaatWorkspaceView: View {
                 MaatCasebookView(engine: engine, preloaded: preloadedCasebook, showsBackBar: false)
             case .knowledge:
                 MaatKnowledgeView(engine: engine, preloaded: preloadedKnowledge, showsBackBar: false)
+            case .proposals:
+                MaatKnownFailureProposalsView(engine: engine, showsBackBar: false)
             }
         }
     }
 }
 
 private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
-    case systemOne, decisions, knowledge
+    case systemOne, decisions, knowledge, proposals
 
     var id: String { rawValue }
     var title: String {
@@ -73,6 +75,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
         case .systemOne: return "System One"
         case .decisions: return "Decisions"
         case .knowledge: return "Knowledge"
+        case .proposals: return "Proposals"
         }
     }
     var symbol: String {
@@ -80,6 +83,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
         case .systemOne: return "scalemass"
         case .decisions: return "checkmark.seal"
         case .knowledge: return "books.vertical"
+        case .proposals: return "lightbulb.max"
         }
     }
 }
@@ -961,6 +965,275 @@ private struct MaatSystemOneView: View {
             loadError = "Pantheon could not read the local Ma'at decision journal. No System One gate was inferred. Retry the exact read, inspect decisions, or inspect Stack Lab authority."
         }
         loading = false
+    }
+}
+
+// MaatKnownFailureProposalsView makes the local intake for recurring failures
+// visible in the product. A proposal is evidence for Stack Lab review, not a
+// hidden source edit and not a new recognition rule. It therefore gives an
+// operator a complete next step without making an unreviewed report affect
+// other Pantheon installations.
+struct MaatKnownFailureProposalsView: View {
+    @ObservedObject var engine: SirsiEngine
+    let showsBackBar: Bool
+    @State private var proposals: [MaatKnownFailureProposal] = []
+    @State private var loading = true
+    @State private var loadError: String?
+    @State private var showRecorder = false
+    @State private var confirmRecord = false
+    @State private var recording = false
+    @State private var recordError: String?
+    @State private var proposalID = ""
+    @State private var proposalTitle = ""
+    @State private var proposalSignature = ""
+    @State private var proposalCause = ""
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if showsBackBar { BackBar(title: "Ma'at proposals") }
+            if loading {
+                VStack(spacing: 10) {
+                    ProgressView()
+                    Text("Opening local Ma'at proposals…")
+                        .sirsiFont(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let loadError {
+                unavailableState(loadError)
+            } else {
+                proposalBody
+            }
+        }
+        .task { await load() }
+        .sheet(isPresented: $showRecorder) { proposalRecorder }
+        .confirmationDialog("Record this local proposal?", isPresented: $confirmRecord, titleVisibility: .visible) {
+            Button("Record local proposal") { Task { await recordProposal() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Ma'at will create a durable local proposal for Stack Lab review. It will not change source, enable recognition across the fabric, run a repair, or contact a remote service.")
+        }
+    }
+
+    private var proposalBody: some View {
+        VStack(spacing: 0) {
+            MaybeScroll {
+                VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Known-failure proposals", systemImage: "lightbulb.max")
+                            .sirsiFont(.title3, weight: .bold)
+                        Text("Capture a recurring failure once, then route it through Stack Lab review. Local proposals never become fabric-wide recognition rules until they are reviewed and promoted.")
+                            .sirsiFont(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        SnapshotActionButton(disabled: recording) {
+                            resetRecorder()
+                            showRecorder = true
+                        } label: {
+                            Label("Record an observation", systemImage: "plus.circle.fill")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .accessibilityHint("Creates a local Ma'at proposal for Stack Lab review. It does not alter a shared failure catalog.")
+                    }
+                    .padding(14)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+
+                    if proposals.isEmpty {
+                        VStack(alignment: .leading, spacing: 7) {
+                            Text("No local proposals")
+                                .sirsiFont(.headline)
+                            Text("This is an empty local review queue, not confirmation that recurring failures are resolved. Record an observation when a failure has a stable signature and a clear cause.")
+                                .sirsiFont(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.045)))
+                    } else {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Ready for Stack Lab review")
+                                .sirsiFont(.headline)
+                            Text("Review each proposal against the current catalog before promoting it into a release recipe.")
+                                .sirsiFont(.subheadline)
+                                .foregroundStyle(.secondary)
+                            ForEach(proposals) { proposal in
+                                proposalRow(proposal)
+                            }
+                        }
+                    }
+
+                    NavLink { StackLabView(engine: engine) } label: {
+                        Label("Open Stack Lab review", systemImage: "cube.transparent")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding(16)
+            }
+            Divider()
+            HStack {
+                Text("Local evidence · no shared catalog mutation")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button { Task { await load() } } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.borderless)
+                .disabled(loading || recording)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 11)
+        }
+    }
+
+    private func proposalRow(_ proposal: MaatKnownFailureProposal) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(proposal.titleOrID)
+                    .sirsiFont(.subheadline, weight: .semibold)
+                Spacer()
+                Text(proposal.status.capitalized)
+                    .sirsiFont(.caption, weight: .semibold)
+                    .foregroundStyle(gold)
+            }
+            Text(proposal.cause)
+                .sirsiFont(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Signature: \(proposal.signature)")
+                .sirsiFont(.caption, design: .monospaced)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+            Text("Recorded \(proposal.createdAtUTC)")
+                .sirsiFont(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.045)))
+    }
+
+    private func unavailableState(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .sirsiFont(24, weight: .semibold)
+                .foregroundStyle(.orange)
+            Text("Local proposal evidence is unavailable")
+                .sirsiFont(.headline)
+            Text(message)
+                .sirsiFont(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Try again") { Task { await load() } }
+                .buttonStyle(.borderedProminent)
+                .tint(gold)
+            NavLink { StackLabView(engine: engine) } label: {
+                Label("Inspect Stack Lab authority", systemImage: "cube.transparent")
+            }
+            .buttonStyle(.bordered)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .padding(20)
+    }
+
+    private var proposalRecorder: some View {
+        NavigationStack {
+            Form {
+                Section("Recurring failure") {
+                    TextField("Stable id (for example, package-input-reopen)", text: $proposalID)
+                    TextField("Short title", text: $proposalTitle)
+                    TextField("Failure signature (regular expression)", text: $proposalSignature, axis: .vertical)
+                        .lineLimit(2...4)
+                    TextField("Cause", text: $proposalCause, axis: .vertical)
+                        .lineLimit(2...4)
+                }
+                Section("What happens next") {
+                    Text("Pantheon stores this as a local Ma'at proposal. Stack Lab review decides whether it should become a shipped recognition rule. Nothing is repaired or changed automatically.")
+                        .sirsiFont(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                if let recordError {
+                    Section("Needs attention") {
+                        Text(recordError)
+                            .sirsiFont(.footnote)
+                            .foregroundStyle(.orange)
+                    }
+                }
+            }
+            .navigationTitle("Record observation")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showRecorder = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Continue") {
+                        showRecorder = false
+                        confirmRecord = true
+                    }
+                    .disabled(!canRecord || recording)
+                }
+            }
+        }
+        .frame(minWidth: 520, minHeight: 410)
+    }
+
+    private var canRecord: Bool {
+        !proposalID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !proposalSignature.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !proposalCause.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func resetRecorder() {
+        proposalID = ""
+        proposalTitle = ""
+        proposalSignature = ""
+        proposalCause = ""
+        recordError = nil
+    }
+
+    @MainActor private func load() async {
+        loading = true
+        loadError = nil
+        let raw = await SirsiEngine.run(args: ["maat", "known-failures", "proposals", "--json"], stdin: nil)
+        guard let result = Self.decode(raw) else {
+            loadError = "Pantheon could not read the typed local Ma'at proposal queue. No proposal was treated as reviewed or promoted. \(SirsiEngine.firstMeaningful(raw))"
+            loading = false
+            return
+        }
+        proposals = result
+        loading = false
+    }
+
+    @MainActor private func recordProposal() async {
+        guard canRecord, !recording else { return }
+        recording = true
+        recordError = nil
+        var args = ["maat", "known-failures", "register", proposalID.trimmingCharacters(in: .whitespacesAndNewlines), "--signature", proposalSignature.trimmingCharacters(in: .whitespacesAndNewlines), "--cause", proposalCause.trimmingCharacters(in: .whitespacesAndNewlines)]
+        if !proposalTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            args += ["--title", proposalTitle.trimmingCharacters(in: .whitespacesAndNewlines)]
+        }
+        args.append("--json")
+        let raw = await SirsiEngine.run(args: args, stdin: nil)
+        guard Self.decodeProposal(raw) != nil else {
+            recordError = "Pantheon did not create a verified local proposal. Nothing was promoted. \(SirsiEngine.firstMeaningful(raw))"
+            recording = false
+            showRecorder = true
+            return
+        }
+        recording = false
+        await load()
+    }
+
+    nonisolated static func decode(_ raw: String) -> [MaatKnownFailureProposal]? {
+        guard let start = raw.firstIndex(of: "[") else { return nil }
+        return try? JSONDecoder().decode([MaatKnownFailureProposal].self, from: Data(raw[start...].utf8))
+    }
+
+    nonisolated static func decodeProposal(_ raw: String) -> MaatKnownFailureProposal? {
+        guard let start = raw.firstIndex(of: "{") else { return nil }
+        return try? JSONDecoder().decode(MaatKnownFailureProposal.self, from: Data(raw[start...].utf8))
     }
 }
 
@@ -2086,6 +2359,28 @@ struct MaatCasebookProjection: Decodable {
         ],
         summary: MaatCasebookSummary(total: 3, open: 2, urgent: 1, high: 1, resolved: 1)
     )
+}
+
+struct MaatKnownFailureProposal: Decodable, Identifiable {
+    let schema: String
+    let id: String
+    let title: String?
+    let signature: String
+    let cause: String
+    let status: String
+    let createdAtUTC: String
+    let catalogSHA256: String
+
+    enum CodingKeys: String, CodingKey {
+        case schema, id, title, signature, cause, status
+        case createdAtUTC = "created_at_utc"
+        case catalogSHA256 = "catalog_sha256"
+    }
+
+    var titleOrID: String {
+        let normalized = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return normalized.isEmpty ? id : normalized
+    }
 }
 
 struct MaatJournalIntegrity: Decodable {

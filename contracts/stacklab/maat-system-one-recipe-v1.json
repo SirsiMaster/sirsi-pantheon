@@ -118,6 +118,15 @@
       "upgrade_recipe": ["preserve every signature dimension in the digest", "retain no-follow descriptors and verify evidence bytes on every preflight", "keep scope exact; empty fields are never wildcards", "make every recovery instruction presentation data rather than executable input", "add tamper, symlink, collision, concurrency, and scope-isolation fixtures before widening an incident class", "project the same receipt through CLI, MCP, TUI, native app, menu bar, and dashboard before declaring a surface integrated"]
     },
     {
+      "id": "maat-known-failure-proposals",
+      "source": ["internal/maat/knownfail/proposal.go", "cmd/sirsi/maatknownfail.go", "macapp/Sources/SirsiMenubar/MaatCasebookView.swift"],
+      "tests": ["internal/maat/knownfail/proposal_test.go", "macapp/Tests/SirsiMenubarTests/CoreContractsTests.swift"],
+      "inputs": ["explicit operator-entered recurring failure id, regular-expression signature, and cause", "exact built-in known-failure catalog digest"],
+      "outputs": ["typed local proposal queue shared by CLI JSON and native Ma'at", "visible Stack Lab review route", "truthful empty, retry, and creation outcomes"],
+      "writes": ["create-only, readback-verified 0600 local proposal evidence under ~/.sirsi/maat/known-failures/proposals only after explicit native or CLI confirmation"],
+      "upgrade_recipe": ["never let an unreviewed proposal affect matching or fabric-wide recognition", "bind every proposal to the built-in catalog digest", "keep local evidence distinct from a source catalog edit", "show the Stack Lab review route in every operator surface", "add JSON, native decoder, duplicate, malformed, and concurrent-creation fixtures before widening the proposal schema"]
+    },
+    {
       "id": "maat-casebook",
       "source": ["internal/maat/casebook/casebook.go"],
       "tests": ["internal/maat/casebook/casebook_test.go"],
