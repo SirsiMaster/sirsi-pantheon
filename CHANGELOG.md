@@ -6,6 +6,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased] — Apollo view: retire the last user-facing "SNE" copy
 
+### Added
+
+- **Process diagrams for the router wing (SL-DIAGRAM-001).** `docs/stacklab/RA_HORUS_FABRIC_DIAGRAM_INDEX.md` inventories 18 processes and reports coverage against all of them: 4 complete (wake loop, known-failure loop, registry pin, release train), 1 drafted for its owner's confirmation (review and bind), 13 open with a next action. Logical, data, state and recovery views are Mermaid sources, each checked to parse.
+
+
 ### Fixed
 
 - **Wake loops work on every host without per-host registry edits.** The shared registry holds absolute paths (`/Users/thekryptodragon/...`), so the same lane read WATCH_ONLY ("consumer cwd is not usable") on the other Mac. The consumer resolver now rebases another machine's home prefix onto the local home — cwd, argv and env — only when that home does not exist locally. `claude-deck`, `claude-pantheon` and `claude-nexus` now have reactive wake loops on the M1; `mercury-m5` and `claude-apollo-m5-rail` on the M5.
