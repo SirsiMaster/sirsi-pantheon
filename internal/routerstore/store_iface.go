@@ -62,6 +62,8 @@ type Store interface {
 	// ListActive is ListAll without the terminal history (plus blocked_by targets).
 	ListActive(ctx context.Context) ([]Item, error)
 	CountClosed(ctx context.Context) (int, error)
+	// ListSince is ListActive plus items closed at or after since (RFC3339).
+	ListSince(ctx context.Context, since string) ([]Item, error)
 	ListHostTokens() ([]HostToken, error)
 	ListIdentifiers(namespace string) ([]Identifier, error)
 	ListRequirements(owner string) ([]Requirement, error)

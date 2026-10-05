@@ -150,6 +150,39 @@
         "a resolved entry without a guard is rejected by the catalog loader",
         "run the guard-exists test"
       ]
+    },
+    {
+      "id": "router-dashboard",
+      "source": [
+        "internal/dashboard",
+        "cmd/sirsi/dashboard.go",
+        "cmd/sirsi/dashboardrouter.go"
+      ],
+      "tests": [
+        "internal/dashboard",
+        "cmd/sirsi"
+      ],
+      "inputs": [
+        "lane ping verdicts",
+        "open queue by recipient",
+        "consumer slot usage",
+        "registry pin status",
+        "known-failure catalog",
+        "swap-hygiene receipt",
+        "CHANGELOG release sections"
+      ],
+      "outputs": [
+        "GET /api/router",
+        "Router view (what each release added, known failures, lane verdicts, queue)",
+        "Fleet view without retired aliases"
+      ],
+      "writes": [],
+      "upgrade_recipe": [
+        "every new router capability adds its section to RouterSnapshot and the Router view in the same change",
+        "a producer error is a 5xx, never an empty panel",
+        "add a test that the SPA carries the view and its nav entry",
+        "run focused and race tests"
+      ]
     }
   ]
 }

@@ -369,6 +369,25 @@ func (f *Facade) ListActive() (items []work.Item, closed int, err error) {
 	return items, closed, nil
 }
 
+// ListRecent is ListAll bounded to open work plus items closed since `since`: what
+// pace and turnaround surfaces need. Post-cutover it reads only those rows from the
+// store; before the cutover it filters ListAll, so behavior is unchanged there.
+func (f *Facade) ListRecent(since time.Time) ([]work.Item, error) {
+	if routercfg.StoreWake() {
+		rows, err := f.store.ListSince(context.Background(), since.UTC().Format(time.RFC3339))
+		if err != nil {
+			return nil, fmt.Errorf("store list unavailable (store is the cutover authority): %w", err)
+		}
+		items := make([]work.Item, 0, len(rows))
+		for _, r := range rows {
+			items = append(items, itemFromRow(r))
+		}
+		sortItemsByID(items)
+		return items, nil
+	}
+	return f.ListAll()
+}
+
 // ListAll returns every item (open AND closed) as the dual-read union of the
 // file router and the store, deduped by id. This is the read path for whole-
 // fabric summaries (`router status`, the menubar router signal) so they report
