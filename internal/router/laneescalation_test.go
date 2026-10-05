@@ -1,6 +1,8 @@
 package router
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
@@ -31,6 +33,10 @@ func ownerOpenTitles(t *testing.T, root string) map[string]bool {
 func TestRouteLaneEscalationsResolvesClearedAlerts(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv(routercfg.StoreWakeEnv, "1")
+	reg := `{"agents":{"owner":{"id":"owner","type":"claude","repo":"/tmp","workstream":"owner","wake":{"mechanism":"none"}}}}`
+	if err := os.WriteFile(filepath.Join(root, "agents.json"), []byte(reg), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	f, err := dispatch.OpenRoot(root)
 	if err != nil {
 		t.Fatal(err)
@@ -39,11 +45,11 @@ func TestRouteLaneEscalationsResolvesClearedAlerts(t *testing.T) {
 		"Lane needs you: lane-a cannot be reached automatically",
 		"Lane needs you: lane-b cannot be reached automatically",
 	} {
-		if _, err := f.Send("horus", "owner", title, "decision", "why"); err != nil {
+		if _, err := f.Store().Send("horus", "owner", title, "decision", "why"); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := f.Send("claude-pantheon", "owner", "Lane needs you: lane-c cannot be reached automatically", "decision", "a person wrote this"); err != nil {
+	if _, err := f.Store().Send("claude-pantheon", "owner", "Lane needs you: lane-c cannot be reached automatically", "decision", "a person wrote this"); err != nil {
 		t.Fatal(err)
 	}
 	_ = f.Close()
