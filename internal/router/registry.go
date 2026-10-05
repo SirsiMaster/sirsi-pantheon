@@ -142,7 +142,7 @@ type Registry struct {
 
 // LoadRegistry reads agents.json from the router directory.
 func LoadRegistry(routerRoot string) (*Registry, error) {
-	path := filepath.Join(routerRoot, "agents.json")
+	path, _ := registrySource(routerRoot)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -178,6 +178,9 @@ func LoadRegistry(routerRoot string) (*Registry, error) {
 // from output (not restored from disk). Top-level JSON keys the schema has not
 // modeled survive because we seed from the existing file before overwriting.
 func SaveRegistry(routerRoot string, reg *Registry) error {
+	if _, pinned := registrySource(routerRoot); pinned {
+		return ErrRegistryPinned
+	}
 	path := filepath.Join(routerRoot, "agents.json")
 
 	// Preserve any top-level JSON keys the schema hasn't modeled by seeding
