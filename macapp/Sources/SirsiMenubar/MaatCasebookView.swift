@@ -2026,12 +2026,12 @@ private struct MaatCaseDetailView: View {
         actionInFlight = true
         actionError = nil
         if action.kind == "maat_repair" {
-            guard action.actionID == "launchd-disabled" else {
+            guard let args = maatCasebookRepairArguments(actionID: action.actionID) else {
                 actionError = "Ma'at refused an unknown repair reference. No system state changed."
                 actionInFlight = false
                 return
             }
-            actionResult = await SirsiEngine.runResult(args: ["maat", "repair", "launchd-disabled", "--confirm"])
+            actionResult = await SirsiEngine.runResult(args: args)
         } else if action.kind == "owner_acceptance" {
             actionResult = await SirsiEngine.runResult(args: ["maat", "accept-resolution", "--evidence", action.evidence, "--note", conclusion.trimmingCharacters(in: .whitespacesAndNewlines), "--confirm"])
         } else {
@@ -2151,6 +2151,21 @@ private struct MaatCaseDetailView: View {
         .padding(11)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.045)))
+    }
+}
+
+// Casebook executes only repair identifiers which are closed, native Ma'at
+// operations. Keeping this mapping here — rather than accepting producer text
+// or a command string from evidence — lets a System One screen offer a real
+// recovery without becoming a shell-launch surface.
+func maatCasebookRepairArguments(actionID: String) -> [String]? {
+    switch actionID {
+    case "launchd-disabled":
+        return ["maat", "repair", "launchd-disabled", "--confirm"]
+    case "liveness-watch":
+        return ["maat", "repair", "liveness-watch", "--confirm"]
+    default:
+        return nil
     }
 }
 

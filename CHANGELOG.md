@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased] — Apollo view: retire the last user-facing "SNE" copy
 
+- **v0.24.87 — Casebook completes the declared Ma’at liveness recovery.**
+  System One can now invoke its closed, native `liveness-watch` repair from
+  the macOS Casebook as well as the managed launchd repair. The UI accepts
+  only those two explicit Ma’at repair identifiers; evidence and command-like
+  text can never become executable input.
+
 - **v0.24.86 — Fleet reads Ra directly instead of starting a dashboard server.**
   The native Fleet now requests the canonical one-shot `router fleet --json`
   producer with a bounded 20-second read. It no longer starts `board-serve`

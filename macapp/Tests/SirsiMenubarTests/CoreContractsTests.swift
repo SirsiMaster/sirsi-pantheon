@@ -347,6 +347,18 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertFalse(action.detail.contains("launchctl"))
     }
 
+    func testMaatCasebookExecutesOnlyClosedNativeRepairReferences() {
+        XCTAssertEqual(
+            maatCasebookRepairArguments(actionID: "launchd-disabled"),
+            ["maat", "repair", "launchd-disabled", "--confirm"]
+        )
+        XCTAssertEqual(
+            maatCasebookRepairArguments(actionID: "liveness-watch"),
+            ["maat", "repair", "liveness-watch", "--confirm"]
+        )
+        XCTAssertNil(maatCasebookRepairArguments(actionID: "launchctl bootstrap gui/501/untrusted"))
+    }
+
     func testMaatCasebookIntegrityKeepsValidCasesVisibleAndRoutesRepair() throws {
         let raw = #"""
         {
