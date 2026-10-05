@@ -147,6 +147,32 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertFalse(ambiguousLegacy.matches(plan: plan))
     }
 
+    func testApolloTelemetryRecoveryAlwaysClosesAwaitingStates() throws {
+        let awaiting = try JSONDecoder().decode(ApolloTelemetryRead.self, from: #"""
+        {"state":"awaiting_session","reason":"SNE has not published a sample"}
+        """#.data(using: .utf8)!)
+        let different = try JSONDecoder().decode(ApolloTelemetryRead.self, from: #"""
+        {"state":"active","telemetry":{"engine_id":"other-engine","chip_estates":[]}}
+        """#.data(using: .utf8)!)
+
+        XCTAssertEqual(
+            apolloTelemetryResolution(read: awaiting, matchesSelectedPlan: nil, localRouteHealthy: true, telemetryDecodeFailed: false),
+            .awaitingAdmission
+        )
+        XCTAssertEqual(
+            apolloTelemetryResolution(read: awaiting, matchesSelectedPlan: nil, localRouteHealthy: false, telemetryDecodeFailed: false),
+            .routeUnavailable
+        )
+        XCTAssertEqual(
+            apolloTelemetryResolution(read: different, matchesSelectedPlan: false, localRouteHealthy: true, telemetryDecodeFailed: false),
+            .differentSession
+        )
+        XCTAssertEqual(
+            apolloTelemetryResolution(read: nil, matchesSelectedPlan: nil, localRouteHealthy: false, telemetryDecodeFailed: true),
+            .unreadableEvidence
+        )
+    }
+
     func testMaatCredentialPreflightDecodesObservedNonDeveloperIdentityTypes() throws {
         let raw = #"""
         {

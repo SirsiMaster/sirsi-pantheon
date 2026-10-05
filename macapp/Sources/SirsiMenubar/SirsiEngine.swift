@@ -1726,8 +1726,11 @@ final class SirsiEngine: ObservableObject {
     }
 
     // runJSON shells `sirsi` capturing STDOUT ONLY (stderr discarded) so JSON
-    // output is never corrupted by a styled banner written to stderr.
-    nonisolated static func runJSON(args: [String]) async -> Data {
+    // output is never corrupted by a styled banner written to stderr. JSON is
+    // used to drive native controls, so it has a shorter hard bound than an
+    // attended repair: an empty response makes the view render its recovery
+    // state instead of keeping an invisible child and spinner alive.
+    nonisolated static func runJSON(args: [String], timeoutSeconds: Int = 12) async -> Data {
         await withCheckedContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
 				guard let binary = sirsiBinary() else {
@@ -1745,8 +1748,30 @@ final class SirsiEngine: ObservableObject {
                 do { try p.run() } catch {
                     cont.resume(returning: Data()); return
                 }
+                let timeoutLock = NSLock()
+                var timedOut = false
+                let timeoutWork = DispatchWorkItem {
+                    timeoutLock.lock()
+                    defer { timeoutLock.unlock() }
+                    if p.isRunning {
+                        timedOut = true
+                        p.terminate()
+                    }
+                }
+                DispatchQueue.global().asyncAfter(
+                    deadline: .now() + .seconds(max(1, timeoutSeconds)),
+                    execute: timeoutWork
+                )
                 let data = outPipe.fileHandleForReading.readDataToEndOfFile()
                 p.waitUntilExit()
+                timeoutWork.cancel()
+                timeoutLock.lock()
+                let enforcedTimeout = timedOut
+                timeoutLock.unlock()
+                if enforcedTimeout {
+                    cont.resume(returning: Data())
+                    return
+                }
                 cont.resume(returning: data)
             }
         }

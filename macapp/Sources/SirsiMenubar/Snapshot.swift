@@ -42,6 +42,13 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380, appearance: ColorSche
         let maatKnowledge = await MaatKnowledgeView.fetch()
         let apolloCatalogData = await SirsiEngine.runJSON(args: ["apollo", "catalog", "--json"])
         let apolloCatalog = try? JSONDecoder().decode(ApolloCatalog.self, from: apolloCatalogData)
+        let apolloTelemetryData = await SirsiEngine.runJSON(args: ["apollo", "telemetry", "--json"])
+        let apolloTelemetry = try? JSONDecoder().decode(ApolloTelemetryRead.self, from: apolloTelemetryData)
+        let apolloSnapshotPlan = ApolloPlan(
+            machineID: "this-mac", engineID: "apollo-local", residentModel: "Apollo Plain",
+            cpuCores: 4, memoryBytes: 8 * 1_073_741_824, swapBytes: 0,
+            chipEstates: ["cpu", "gpu"], unavailableEstates: nil
+        )
         let vault = await SirsiEngine.runResult(args: ["vault", "stats"])
         await engine.diagnose()
         engine.refresh()
@@ -78,6 +85,7 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380, appearance: ColorSche
             // back to it and reads the local casebook projection.
             ("maat-workspace", AnyView(MaatWorkspaceView(engine: engine, preloadedCasebook: maatCasebook ?? .snapshotPreview, preloadedKnowledge: maatKnowledge ?? .snapshotPreview))),
             ("apollo-run-planner", AnyView(ApolloRunPlannerView(engine: engine, preloadedCatalog: apolloCatalog ?? .snapshotPreview))),
+            ("apollo-telemetry", AnyView(ApolloTelemetryView(engine: engine, plan: apolloSnapshotPlan, preloadedSession: apolloTelemetry))),
             ("thoth-memory", AnyView(ThothMemoryInfoView(engine: engine))),
             ("ra-fabric", AnyView(RaFabricView(engine: engine))),
             ("threads-heartbeat", AnyView(ThreadsView(engine: engine))),
@@ -108,7 +116,7 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380, appearance: ColorSche
             // the title onward instead of centering and clipping its first rows.
             let height: CGFloat = switch shot.name {
             case "ask-sirsi", "maat-workspace", "ra-fabric": 960
-            case "apollo-run-planner": 1_180
+            case "apollo-run-planner", "apollo-telemetry": 1_180
             case "all-tools": 1_040
             default: 520
             }

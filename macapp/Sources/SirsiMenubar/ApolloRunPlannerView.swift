@@ -623,11 +623,18 @@ struct ApolloRunPlannerView: View {
 // session publishes them; a blank measurement is safer than a synthetic zero.
 struct ApolloTelemetryView: View {
     @ObservedObject var engine: SirsiEngine
+    @EnvironmentObject private var nav: Nav
     let plan: ApolloPlan
     @State private var session: ApolloTelemetryRead?
     @State private var telemetryError: String?
     @State private var isRefreshing = false
     private static let telemetryRefreshIntervalNanoseconds: UInt64 = 5_000_000_000
+
+    init(engine: SirsiEngine, plan: ApolloPlan, preloadedSession: ApolloTelemetryRead? = nil) {
+        self.engine = engine
+        self.plan = plan
+        _session = State(initialValue: preloadedSession)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -635,6 +642,7 @@ struct ApolloTelemetryView: View {
             MaybeScroll {
                 VStack(alignment: .leading, spacing: 16) {
                     sessionSummary
+                    resolutionPath
                     telemetryGrid
                     estateSummary
                     evidenceNote
@@ -683,23 +691,6 @@ struct ApolloTelemetryView: View {
             Text("Live refresh every 5 seconds while this page is open.")
                 .sirsiFont(.caption)
                 .foregroundStyle(.secondary)
-            if sessionMatchesPlan == false {
-                NavLink { ApolloRunPlannerView(engine: engine) } label: {
-                    Label("Return to selected Apollo plan", systemImage: "slider.horizontal.3")
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(gold)
-            }
-            if sessionMatchesPlan != true {
-                NavLink { MaatWorkspaceView(engine: engine) } label: {
-                    Label("Check Apollo readiness in Ma'at", systemImage: "checklist")
-                }
-                .buttonStyle(.bordered)
-                Text("Ma'at reweighs the actual local route, capacity, and evidence before recommending the next repair or admission step. It does not fabricate a running session.")
-                    .sirsiFont(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
             if let telemetryError {
                 Text(telemetryError).sirsiFont(.caption, weight: .semibold).foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
@@ -707,6 +698,55 @@ struct ApolloTelemetryView: View {
         }
         .padding(14).frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.05)))
+    }
+
+    // No telemetry condition is a cul-de-sac.  Apollo can safely re-read the
+    // evidence or revise the declaration itself; Ma'at owns the third-level
+    // readiness/repair assessment.  SNE remains the only component that can
+    // turn an admitted plan into a live inference session.
+    @ViewBuilder private var resolutionPath: some View {
+        if resolution != .observing {
+            VStack(alignment: .leading, spacing: 9) {
+                Label(resolution.title, systemImage: resolution.symbol)
+                    .sirsiFont(.headline)
+                Text(resolution.detail)
+                    .sirsiFont(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .top, spacing: 8) {
+                    resolutionStep("1", text: "Recheck live evidence") {
+                        Task { await refresh() }
+                    }
+                    resolutionStep("2", text: resolution.planActionTitle) {
+                        nav.push(ApolloRunPlannerView(engine: engine))
+                    }
+                    resolutionStep("3", text: "Open Ma'at guidance") {
+                        nav.push(MaatWorkspaceView(engine: engine))
+                    }
+                }
+                Text("Step 1 does not start a model. Step 2 only revises this Stack Lab recipe. Step 3 evaluates the actual route, capacity, and evidence before it recommends a repair or an SNE admission.")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.05)))
+        }
+    }
+
+    private func resolutionStep(_ step: String, text: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(step).sirsiFont(.caption, weight: .bold).foregroundStyle(gold)
+                Text(text).sirsiFont(.caption, weight: .semibold).multilineTextAlignment(.leading)
+            }
+            .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
+            .padding(9)
+            .contentShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.bordered)
+        .disabled(step == "1" && isRefreshing)
     }
 
     private var telemetryGrid: some View {
@@ -767,6 +807,14 @@ struct ApolloTelemetryView: View {
     }
 
     private var unavailable: String { "Awaiting session" }
+    private var resolution: ApolloTelemetryResolution {
+        apolloTelemetryResolution(
+            read: session,
+            matchesSelectedPlan: sessionMatchesPlan,
+            localRouteHealthy: engine.localLLM?.healthy == true,
+            telemetryDecodeFailed: telemetryError != nil
+        )
+    }
     private var planSelectionLabel: String {
         let model = plan.residentModel ?? "configured resident model"
         return "\(model) · \(plan.engineID) · \(plan.machineID)"
@@ -836,11 +884,7 @@ struct ApolloTelemetryView: View {
         sessionMatchesPlan == true ? session?.telemetry : nil
     }
 
-    private var sessionTitle: String {
-        if sessionMatchesPlan == true { return "Apollo session is active" }
-        if sessionMatchesPlan == false { return "A different Apollo session is active" }
-        return engine.localLLM?.healthy == true ? "Apollo local route is online" : "No active Apollo session"
-    }
+    private var sessionTitle: String { resolution.title }
 
     private var sessionDetail: String {
         if sessionMatchesPlan == true { return "SNE published a bounded session sample for the engine selected in this plan." }
@@ -851,6 +895,74 @@ struct ApolloTelemetryView: View {
         if engine.localLLM?.healthy == true { return "The local SNE conduit is reachable. Metrics below update when SNE publishes a sample for this selected engine." }
         return "The selected plan is ready for SNE admission. Return to the plan to recheck its resource envelope, then refresh after SNE publishes a selected-engine session sample."
     }
+}
+
+// Keep recovery decisions pure and independently testable.  The Swift view
+// merely renders these closed states; it cannot invent a session or bypass the
+// SNE admission boundary.
+enum ApolloTelemetryResolution: Equatable {
+    case observing
+    case differentSession
+    case awaitingAdmission
+    case routeUnavailable
+    case unreadableEvidence
+
+    var title: String {
+        switch self {
+        case .observing: return "Apollo session is active"
+        case .differentSession: return "A different Apollo session is active"
+        case .awaitingAdmission: return "Apollo route is ready for admission"
+        case .routeUnavailable: return "Apollo route needs attention"
+        case .unreadableEvidence: return "Apollo telemetry needs a safe reread"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .observing:
+            return "SNE published a bounded session sample for the engine selected in this plan."
+        case .differentSession:
+            return "Pantheon withheld the other session's metrics because they do not match this machine and engine selection."
+        case .awaitingAdmission:
+            return "The selected route is reachable, but SNE has not published an admitted session for this recipe yet."
+        case .routeUnavailable:
+            return "Pantheon has no healthy local conduit for this recipe yet. Recheck the measured route before asking SNE to admit work."
+        case .unreadableEvidence:
+            return "Pantheon rejected an unreadable telemetry sample instead of treating it as a running session."
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .observing: return "checkmark.circle.fill"
+        case .differentSession: return "arrow.triangle.2.circlepath"
+        case .awaitingAdmission: return "hourglass"
+        case .routeUnavailable: return "antenna.radiowaves.left.and.right.slash"
+        case .unreadableEvidence: return "exclamationmark.triangle"
+        }
+    }
+
+    var planActionTitle: String {
+        switch self {
+        case .differentSession: return "Choose the matching recipe"
+        case .awaitingAdmission: return "Review resource recipe"
+        case .routeUnavailable: return "Review route and capacity"
+        case .unreadableEvidence: return "Review selected recipe"
+        case .observing: return "View recipe"
+        }
+    }
+}
+
+func apolloTelemetryResolution(
+    read: ApolloTelemetryRead?,
+    matchesSelectedPlan: Bool?,
+    localRouteHealthy: Bool,
+    telemetryDecodeFailed: Bool
+) -> ApolloTelemetryResolution {
+    if telemetryDecodeFailed { return .unreadableEvidence }
+    if matchesSelectedPlan == true { return .observing }
+    if read?.state == "active" || matchesSelectedPlan == false { return .differentSession }
+    return localRouteHealthy ? .awaitingAdmission : .routeUnavailable
 }
 
 struct ApolloCatalog: Decodable {
