@@ -24,7 +24,7 @@ const capacityStateKey = "maat:capacity"
 var defaultCapacity = map[string]int{"m1": 10, "m5": 18}
 
 // FairShareLanes is the number of lanes the fleet is provisioned to share
-// simultaneously on any one machine (Hermes, SNE/Apollo, SHA, FinalWishes —
+// simultaneously on any one machine (Mercury, SNE/Apollo, SHA, FinalWishes —
 // owner directive 2026-09-26). FloorShare divides a resource's capacity by
 // this count.
 const FairShareLanes = 4

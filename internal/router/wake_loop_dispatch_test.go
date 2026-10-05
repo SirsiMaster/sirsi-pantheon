@@ -737,7 +737,7 @@ func TestResidentHealthCheckNeverArmsTheWatcher(t *testing.T) {
 // A RUNNING consumer that never produces a durable router action must not hold
 // the dispatch slot forever. Observed 2026-09-14 (SHA → ra): claude-io's
 // `claude --print` sat blocked on open HTTPS connections for 40+ minutes, the
-// wake-loop stayed green, and 12 Hermes items went unclaimed behind it. The
+// wake-loop stayed green, and 12 Mercury items went unclaimed behind it. The
 // stall gate terminates that consumer ONCE (its whole process group), records
 // the reason, and the ordinary no-progress path dispatches one replacement.
 func TestStalledConsumerIsTerminatedOnceAndReplaced(t *testing.T) {

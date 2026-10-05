@@ -247,7 +247,7 @@ func TestCheckConflicts_ForeignIntruderDuringQuiet(t *testing.T) {
 	SetActivityProbe(func(machine string) ([]Actor, error) {
 		return []Actor{
 			{Kind: "bench", Detail: "tbraw-bench sr-A-fwd", Owner: ""}, // foreign, unattributed
-			{Kind: "bench", Detail: "hermes H6", Owner: "claude-io"},   // the holder's own — expected
+			{Kind: "bench", Detail: "mercury H6", Owner: "claude-io"},  // the holder's own — expected
 		}, nil
 	})
 	defer SetActivityProbe(probeProcesses)
@@ -279,7 +279,7 @@ func TestCheckConflicts_BuildRegimeToleratesForeignLoad(t *testing.T) {
 
 func TestReserve_TwoLanesOnM5_FirstFullSecondFloor(t *testing.T) {
 	l := fixedLedger("2026-09-26T10:00:00Z")
-	first, err := l.Reserve(mkReq("m5", "hermes", "2026-09-26T10:00:00Z", "2026-09-26T10:30:00Z", RegimeQuiet), false)
+	first, err := l.Reserve(mkReq("m5", "mercury", "2026-09-26T10:00:00Z", "2026-09-26T10:30:00Z", RegimeQuiet), false)
 	if err != nil || !first.Granted || first.Reservation.Share != ShareFull {
 		t.Fatalf("first lane must get the full grant, got %v %+v", err, first)
 	}
@@ -290,14 +290,14 @@ func TestReserve_TwoLanesOnM5_FirstFullSecondFloor(t *testing.T) {
 	if second.Reservation.Share != ShareFloor || second.Reservation.Cores != 4 { // m5 default 18/4
 		t.Fatalf("second lane on m5 must get the floor share (4 cores), got %+v", second.Reservation)
 	}
-	if second.Conflict == nil || second.Conflict.Holder != "hermes" {
+	if second.Conflict == nil || second.Conflict.Holder != "mercury" {
 		t.Fatalf("the floor grant must name the first lane, got %+v", second.Conflict)
 	}
 }
 
 func TestCheckConflicts_FloorHolderIsSharedNotInvalidated(t *testing.T) {
 	l := fixedLedger("2026-09-26T10:00:00Z")
-	full, _ := l.Reserve(mkReq("m5", "hermes", "2026-09-26T09:30:00Z", "2026-09-26T11:00:00Z", RegimeQuiet), false)
+	full, _ := l.Reserve(mkReq("m5", "mercury", "2026-09-26T09:30:00Z", "2026-09-26T11:00:00Z", RegimeQuiet), false)
 	floor, _ := l.Reserve(mkReq("m5", "sne", "2026-09-26T09:30:00Z", "2026-09-26T11:00:00Z", RegimeQuiet), false)
 	if full.Reservation.Share != ShareFull || floor.Reservation.Share != ShareFloor {
 		t.Fatalf("setup: want full+floor, got %+v %+v", full.Reservation, floor.Reservation)
@@ -305,8 +305,8 @@ func TestCheckConflicts_FloorHolderIsSharedNotInvalidated(t *testing.T) {
 
 	SetActivityProbe(func(string) ([]Actor, error) {
 		return []Actor{
-			{Kind: "bench", Detail: "hermes H6", Owner: "hermes"}, // the primary holder's own work
-			{Kind: "model", Detail: "sne-runner", Owner: "sne"},   // a lane holding a GRANTED floor share
+			{Kind: "bench", Detail: "mercury H6", Owner: "mercury"}, // the primary holder's own work
+			{Kind: "model", Detail: "sne-runner", Owner: "sne"},     // a lane holding a GRANTED floor share
 		}, nil
 	})
 	defer SetActivityProbe(probeProcesses)

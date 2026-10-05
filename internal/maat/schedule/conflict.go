@@ -223,7 +223,7 @@ func defaultLocalMachineLabel() (string, error) {
 // It can only ever see THIS host's process table — there is no cross-host
 // probe. Passing a machine that isn't this one used to silently scan local ps
 // and report it as the named machine's activity (2026-09-27, three failed
-// Hermes signing attempts: an M1 conflict-check run against "m5" reported the
+// Mercury signing attempts: an M1 conflict-check run against "m5" reported the
 // M1's own idle runner as an M5 intruder). Refuse instead of mislabeling.
 func probeProcesses(machine string) ([]Actor, error) {
 	if machine != "" {
@@ -279,7 +279,7 @@ func classifyProc(cmd string) string {
 		return ""
 	}
 	switch {
-	case containsAny(lc, "tbraw-bench", "tcp-bench", "tbraw ", "rail-bench", "hermes-bench", "iperf"):
+	case containsAny(lc, "tbraw-bench", "tcp-bench", "tbraw ", "rail-bench", "mercury-bench", "iperf"):
 		return "bench"
 	case containsAny(lc, "go build", "vite build", "xcodebuild", "cargo build", "runner.worker"):
 		return "build"

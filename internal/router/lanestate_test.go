@@ -99,7 +99,7 @@ func TestCurrentHold(t *testing.T) {
 	if h, _ := currentHold("", "a", 0, time.Time{}); h == HoldWindow {
 		t.Fatalf("no lock: hold must not be window, got %q", h)
 	}
-	if err := os.WriteFile(lock, []byte("hermes\n"), 0o644); err != nil {
+	if err := os.WriteFile(lock, []byte("mercury\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if h, _ := currentHold("", "a", 0, time.Time{}); h != HoldWindow {

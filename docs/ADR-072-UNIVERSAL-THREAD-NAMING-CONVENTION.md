@@ -9,7 +9,7 @@
 Router identity is a mess, and it costs hours every day. In one session alone the
 fabric carried, for a single logical lane, all of: bare `claude-finalwishes`,
 `claude-finalwishes-m1`, `claude-finalwishes-m5`, `claude-finalwishes-helper`, and
-`claude-fw` — plus `hermes` vs `hermes-m5` vs `claude-io`, and `codex-inference` vs
+`claude-fw` — plus `mercury` vs `mercury-m5` vs `claude-io`, and `codex-inference` vs
 `codex-apollo`. Mail stranded on retired ids that nothing could pull; sends failed
 with "identity not fully declared"; the same name meant different things on M1 and
 M5; a shared checkout on the wrong branch resolved identity wrongly.
@@ -51,13 +51,13 @@ name** at all times.
   and MAY contain hyphens: `[a-z0-9]+(-[a-z0-9]+)*`. The validator splits on the
   first three hyphens only, so `claude-finalwishes-m1-fw-r02` parses as
   agent=`claude`, project=`finalwishes`, machine=`m1`, task=`fw-r02`, and
-  `hermes-hermes-m5-hermes-releases` → task=`hermes-releases`. This one encoding is
+  `mercury-mercury-m5-mercury-releases` → task=`mercury-releases`. This one encoding is
   applied identically in the grammar, examples, migration records, and validators.
-- **agent** — the agent/lane identity family: `claude`, `codex`, `ra`, `hermes`,
+- **agent** — the agent/lane identity family: `claude`, `codex`, `ra`, `mercury`,
   `gemma`, `sirsi` (governance/admin), … A fixed, router-known set.
 - **project** — the product or domain the thread serves. **Every** thread carries
   one, including infrastructure lanes (owner decision 2026-09-28): `router`,
-  `finalwishes`, `pantheon`, `hermes`, `photon`, `apollo`, `nexus`, `deck`,
+  `finalwishes`, `pantheon`, `mercury`, `photon`, `apollo`, `nexus`, `deck`,
   `home` (fabric/overseer, e.g. claude-home), `governance` (SSA), `maat`, …
 - **machine** — the host, **gleaned by the router from the machine's designated
   name** (owner decision 2026-09-28): the hostname prefix before the first `.`,
@@ -65,10 +65,10 @@ name** at all times.
   launch and their prefix becomes the slot. The name slot is bound to the durable
   **machine-id** (ADR-067) behind it, and the router enforces they agree.
 - **task** — optional. A specific workstream when one lane runs parallel tasks
-  (`fw-r02`, `hermes-releases`). Absent for a lane's single default thread.
+  (`fw-r02`, `mercury-releases`). Absent for a lane's single default thread.
 
 Examples: `ra-router-m1`, `claude-home-m1`, `sirsi-governance-m5`,
-`codex-finalwishes-m5`, `claude-finalwishes-m1-fw-r02`, `hermes-photon-m5`.
+`codex-finalwishes-m5`, `claude-finalwishes-m1-fw-r02`, `mercury-photon-m5`.
 
 ### 2. The hierarchy behind the name (router-maintained)
 
@@ -134,11 +134,11 @@ preserved). Illustrative:
 | `claude-finalwishes-m1` | `claude-finalwishes-m1` (already close; formalized) |
 | `claude-finalwishes-m5` | `claude-finalwishes-m5` |
 | `codex-apollo` | `codex-apollo-m5` |
-| `hermes` / `hermes-m5` | `hermes-hermes-m1` / `hermes-hermes-m5` |
+| `mercury` / `mercury-m5` | `mercury-mercury-m1` / `mercury-mercury-m5` |
 | `codex-pantheon` | `codex-pantheon-m1` |
 
 Retired ids (`codex-inference`, bare `claude-finalwishes`, `claude-fw`,
-`claude-finalwishes-helper`, `manual-pantheon`, `cylton-hermes`) are already drained
+`claude-finalwishes-helper`, `manual-pantheon`, `cylton-mercury`) are already drained
 and stay retired; their names become reusable under the grammar.
 
 ## 6. Implementation constraints (SSA review conditions 2–6, 2026-09-28)

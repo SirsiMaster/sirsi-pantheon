@@ -15,12 +15,12 @@ func TestCanonicalRepo(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{"already canonical", "sirsimaster/sirsi-hermes", "sirsimaster/sirsi-hermes", false},
-		{"mixed case folds to canonical", "SirsiMaster/SIRSI-HERMES", "sirsimaster/sirsi-hermes", false},
-		{"missing slash", "sirsi-hermes", "", true},
-		{"empty owner", "/sirsi-hermes", "", true},
+		{"already canonical", "sirsimaster/sirsi-mercury", "sirsimaster/sirsi-mercury", false},
+		{"mixed case folds to canonical", "SirsiMaster/SIRSI-MERCURY", "sirsimaster/sirsi-mercury", false},
+		{"missing slash", "sirsi-mercury", "", true},
+		{"empty owner", "/sirsi-mercury", "", true},
 		{"empty name", "sirsimaster/", "", true},
-		{"extra slash", "sirsimaster/sirsi/hermes", "", true},
+		{"extra slash", "sirsimaster/sirsi/mercury", "", true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -49,10 +49,10 @@ func TestCheckSubmitPolicy(t *testing.T) {
 		wantDeterm    string
 		wantWhyHasAny string
 	}{
-		{"policy match", "sirsimaster/sirsi-hermes", "hermes", "grant", "matches repo policy"},
-		{"policy mismatch", "sirsimaster/sirsi-hermes", "claude-pantheon", "refuse", "not in repo policy"},
-		{"photon policy match", "sirsimaster/sirsi-photon", "hermes", "grant", "matches repo policy"},
-		{"mercury (renamed hermes) policy match", "sirsimaster/sirsi-mercury", "hermes", "grant", "matches repo policy"},
+		{"policy match", "sirsimaster/sirsi-mercury", "mercury", "grant", "matches repo policy"},
+		{"policy mismatch", "sirsimaster/sirsi-mercury", "claude-pantheon", "refuse", "not in repo policy"},
+		{"photon policy match", "sirsimaster/sirsi-photon", "mercury", "grant", "matches repo policy"},
+		{"mercury repo policy match", "sirsimaster/sirsi-mercury", "mercury", "grant", "matches repo policy"},
 		{"mercury refuses other lanes", "sirsimaster/sirsi-mercury", "claude-pantheon", "refuse", "not in repo policy"},
 		{"unlisted repo", "sirsimaster/sirsi-pantheon", "claude-pantheon", "grant", "no policy defined"},
 	}
@@ -73,13 +73,13 @@ func TestCheckSubmitPolicy(t *testing.T) {
 // codex-pantheon finding 2 (item 20260930-231226): mixed-case input for a
 // protected repo must land on the same policy row as the canonical form.
 func TestCaseFoldedRepoCannotBypassPolicy(t *testing.T) {
-	repo, err := canonicalRepo("sirsiMASTER/SIRSI-hermes")
+	repo, err := canonicalRepo("sirsiMASTER/SIRSI-mercury")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	determ, _ := checkSubmitPolicy(repo, "claude-pantheon")
 	if determ != "refuse" {
-		t.Fatalf("case-folded protected repo should still refuse a non-hermes requester, got %q", determ)
+		t.Fatalf("case-folded protected repo should still refuse a non-mercury requester, got %q", determ)
 	}
 }
 
@@ -115,13 +115,13 @@ func TestResolveSubmitRequester(t *testing.T) {
 	t.Run("registered session resolves", func(t *testing.T) {
 		const sid = "sid-registered"
 		t.Setenv("CLAUDE_CODE_SESSION_ID", sid)
-		writeMarker(t, sid, "hermes")
+		writeMarker(t, sid, "mercury")
 		got, err := resolveSubmitRequester()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if got != "hermes" {
-			t.Errorf("requester = %q, want %q", got, "hermes")
+		if got != "mercury" {
+			t.Errorf("requester = %q, want %q", got, "mercury")
 		}
 	})
 
@@ -173,10 +173,10 @@ func TestSubmitCommandExitCode(t *testing.T) {
 		json         bool
 		wantExitCode int
 	}{
-		{"text grant", "hermes", "sirsimaster/sirsi-hermes", false, 0},
-		{"text refuse", "claude-pantheon", "sirsimaster/sirsi-hermes", false, admissionRefusedExit},
-		{"json grant", "hermes", "sirsimaster/sirsi-hermes", true, 0},
-		{"json refuse", "claude-pantheon", "sirsimaster/sirsi-hermes", true, admissionRefusedExit},
+		{"text grant", "mercury", "sirsimaster/sirsi-mercury", false, 0},
+		{"text refuse", "claude-pantheon", "sirsimaster/sirsi-mercury", false, admissionRefusedExit},
+		{"json grant", "mercury", "sirsimaster/sirsi-mercury", true, 0},
+		{"json refuse", "claude-pantheon", "sirsimaster/sirsi-mercury", true, admissionRefusedExit},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -251,7 +251,7 @@ func TestSubmitCommandLedgerFailureVisibility(t *testing.T) {
 		exitCode, out := runHelper(t,
 			"HOME="+home,
 			"CLAUDE_CODE_SESSION_ID="+sid, // no marker file written → unregistered
-			"MAAT_SUBMIT_HELPER_REPO=sirsimaster/sirsi-hermes",
+			"MAAT_SUBMIT_HELPER_REPO=sirsimaster/sirsi-mercury",
 			"MAAT_SUBMIT_HELPER_JSON=0",
 		)
 		if exitCode != admissionRefusedExit {
@@ -267,7 +267,7 @@ func TestSubmitCommandLedgerFailureVisibility(t *testing.T) {
 		exitCode, out := runHelper(t,
 			"HOME="+home,
 			"CLAUDE_CODE_SESSION_ID="+sid,
-			"MAAT_SUBMIT_HELPER_REPO=sirsimaster/sirsi-hermes",
+			"MAAT_SUBMIT_HELPER_REPO=sirsimaster/sirsi-mercury",
 			"MAAT_SUBMIT_HELPER_JSON=1",
 		)
 		if exitCode != admissionRefusedExit {
@@ -279,18 +279,18 @@ func TestSubmitCommandLedgerFailureVisibility(t *testing.T) {
 	})
 
 	t.Run("policy grant with unwritable ledger refuses to report success and names the problem", func(t *testing.T) {
-		const sid = "sid-hermes-ledger-fail"
+		const sid = "sid-mercury-ledger-fail"
 		dir := filepath.Join(home, ".claude", "run", "agent-by-session")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, sid), []byte("hermes\n"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, sid), []byte("mercury\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		exitCode, out := runHelper(t,
 			"HOME="+home,
 			"CLAUDE_CODE_SESSION_ID="+sid,
-			"MAAT_SUBMIT_HELPER_REPO=sirsimaster/sirsi-hermes",
+			"MAAT_SUBMIT_HELPER_REPO=sirsimaster/sirsi-mercury",
 			"MAAT_SUBMIT_HELPER_JSON=0",
 		)
 		if exitCode == 0 {

@@ -59,8 +59,8 @@ itself can't tell which lane tagged, released, or merged something. `maat
 submit` records who actually did it: the requester is derived from your
 registered session marker (`sirsi thread register`) and checked against the
 declared agent registry — never a flag or a self-declared name. Phase 1
-enforces a hardcoded per-repo allowlist (currently: only `hermes` may submit
-for `sirsi-hermes`/`sirsi-photon`); repos with no policy defined are admitted
+enforces a hardcoded per-repo allowlist (currently: only `mercury` may submit
+for `sirsi-mercury`/`sirsi-photon`); repos with no policy defined are admitted
 with attribution. Every grant or refusal is written to the decision ledger
 above. Exits `97` on refusal (same convention as `reserve`/`conflict-check`).
 

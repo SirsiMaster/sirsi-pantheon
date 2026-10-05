@@ -5,7 +5,7 @@ import "testing"
 // TestParse covers the grammar in both directions (A35): well-formed names parse
 // to the right slots, and malformed names are rejected. The task-with-hyphens
 // cases are the SSA C1 fixtures (a grammar that accepted `[a-z0-9]+` slots but
-// showed `fw-r02`/`hermes-releases` task examples was internally inconsistent).
+// showed `fw-r02`/`mercury-releases` task examples was internally inconsistent).
 func TestParse(t *testing.T) {
 	ok := []struct {
 		in   string
@@ -20,7 +20,7 @@ func TestParse(t *testing.T) {
 		{"claude-finalwishes-m1-web", Name{"claude", "finalwishes", "m1", "web"}},
 		// task with internal hyphens (C1): everything after the 3rd hyphen
 		{"claude-finalwishes-m1-fw-r02", Name{"claude", "finalwishes", "m1", "fw-r02"}},
-		{"hermes-hermes-m5-hermes-releases", Name{"hermes", "hermes", "m5", "hermes-releases"}},
+		{"mercury-mercury-m5-mercury-releases", Name{"mercury", "mercury", "m5", "mercury-releases"}},
 		{"codex-finalwishes-m5-fw-r02-hotfix", Name{"codex", "finalwishes", "m5", "fw-r02-hotfix"}},
 	}
 	for _, c := range ok {

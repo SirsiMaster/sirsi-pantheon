@@ -8,8 +8,8 @@ import (
 
 func TestSearchClassifiesPrioritizesAndLinksEvidence(t *testing.T) {
 	decisions := []maat.Decision{
-		{Time: "2026-09-27T09:00:00Z", Host: "m5", Kind: "reservation refusal", Requester: "apollo", Resource: "m5", Affected: "hermes", Assessed: "active reservation", Determination: "refuse", Why: "overlap", Evidence: "reservation:m5-1"},
-		{Time: "2026-09-27T09:01:00Z", Host: "m5", Kind: "cede request", Requester: "apollo", Resource: "m5", Affected: "hermes", Assessed: "shared capacity", Determination: "pending", Why: "needs two cores", Evidence: "cede:m5-1"},
+		{Time: "2026-09-27T09:00:00Z", Host: "m5", Kind: "reservation refusal", Requester: "apollo", Resource: "m5", Affected: "mercury", Assessed: "active reservation", Determination: "refuse", Why: "overlap", Evidence: "reservation:m5-1"},
+		{Time: "2026-09-27T09:01:00Z", Host: "m5", Kind: "cede request", Requester: "apollo", Resource: "m5", Affected: "mercury", Assessed: "shared capacity", Determination: "pending", Why: "needs two cores", Evidence: "cede:m5-1"},
 		{Time: "2026-09-27T09:02:00Z", Host: "m5", Kind: "guard", Requester: "pantheon", Resource: "release", Assessed: "all gates passed", Determination: "pass", Why: "verified", Evidence: "receipt:1"},
 	}
 	got := Search(decisions, Query{Text: "m5", Status: StatusOpen, Limit: 10})

@@ -21,7 +21,7 @@ DEPTH="${MAAT_DEPTH:-fast}"
 # ── Ma'at measurement window ─────────────────────────────────────────
 # A push starts CI on the local self-hosted runners and a tag starts the release
 # build; either contaminates a measurement run while rails.lock exists
-# (2026-09-30: PR #928 CI began 6s after hermes opened the lock).
+# (2026-09-30: PR #928 CI began 6s after mercury opened the lock).
 # MAAT_WINDOW_OVERRIDE=1 is the owner's deliberate bypass.
 RAILS_LOCK="${MAAT_RAILS_LOCK:-$HOME/libsirsimpi/rails.lock}"
 if [ -e "$RAILS_LOCK" ] && [ -z "${MAAT_WINDOW_OVERRIDE:-}" ]; then

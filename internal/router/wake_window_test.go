@@ -16,7 +16,7 @@ func TestMeasurementWindowHoldsDispatch(t *testing.T) {
 	if measurementWindowOpen("claude-inference", 3) {
 		t.Fatal("no rails.lock: window reported open, dispatch would be wrongly held")
 	}
-	if err := os.WriteFile(lock, []byte("hermes\n"), 0o644); err != nil {
+	if err := os.WriteFile(lock, []byte("mercury\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if !measurementWindowOpen("claude-inference", 3) {

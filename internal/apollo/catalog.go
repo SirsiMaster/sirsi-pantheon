@@ -120,7 +120,7 @@ func BuildPlan(c Catalog, engineID string, cores int, memoryBytes, swapBytes int
 
 // BuildPlanForMachine validates the exact resource envelope against a selected
 // capacity receipt. A peer becomes selectable only when it is present in
-// Catalog.Machines; an ambient Ra/Hermes name cannot borrow this Mac's limits.
+// Catalog.Machines; an ambient Ra/Mercury name cannot borrow this Mac's limits.
 func BuildPlanForMachine(c Catalog, machineID, engineID string, cores int, memoryBytes, swapBytes int64, estates []string) (Plan, error) {
 	machine, ok := c.machineByID(machineID)
 	if !ok {

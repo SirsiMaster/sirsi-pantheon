@@ -5,7 +5,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOCK="$(mktemp -u)"; fails=0
 run() { MAAT_RAILS_LOCK="$LOCK" "$@" bash "$ROOT/.githooks/pre-push" origin url </dev/null >/dev/null 2>&1; }
-echo hermes >"$LOCK"
+echo mercury >"$LOCK"
 run env; [ $? -eq 1 ] && echo "ok   — window open: push refused" || { echo "FAIL — push allowed during window"; fails=$((fails+1)); }
 run env MAAT_WINDOW_OVERRIDE=1; [ $? -eq 0 ] && echo "ok   — override passes" || { echo "FAIL — override refused"; fails=$((fails+1)); }
 rm -f "$LOCK"

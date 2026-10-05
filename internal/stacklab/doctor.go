@@ -36,13 +36,10 @@ const RegistryPinsDir = "wings/pinned"
 var LaneRepoMap = map[string]string{
 	// Current names and owning origins were read from their origin/main wing
 	// records on 2026-09-28. `io-connect` was superseded by the distinct
-	// Hermes transport and Photon hardware wings; retaining the retired name
+	// Mercury transport and Photon hardware wings; retaining the retired name
 	// here would turn a schema-invalid historical record into the doctor’s
 	// authority.
-	"hermes": "SirsiMaster/sirsi-hermes",
-	// stacklab.wing.mercury (Hermes renamed 2026-10-02). GitHub redirects the old repo name after the rename, so
-	// this stays correct before and after it.
-	"mercury":              "SirsiMaster/sirsi-hermes",
+	"mercury":              "SirsiMaster/sirsi-mercury",
 	"photon":               "SirsiMaster/sirsi-photon",
 	"hardware-estate":      "SirsiMaster/SirsiNexusApp",
 	"maat":                 "SirsiMaster/sirsi-pantheon",

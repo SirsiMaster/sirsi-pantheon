@@ -61,7 +61,7 @@ func TestCheckConflicts_ExemptPIDCoversItsOwnDescendants(t *testing.T) {
 	}
 	// 100 (exempt root) -> 200 (some wrapper) -> 300 (the ssh launcher that
 	// carries a remote bench tool's name in its argv, same shape as the
-	// 2026-09-28 hermes false positive) plus an unrelated PID 999 that must
+	// 2026-09-28 mercury false positive) plus an unrelated PID 999 that must
 	// still be reported.
 	SetProcessAncestryFn(func() (map[int]int, error) {
 		return map[int]int{200: 100, 300: 200, 999: 1}, nil
@@ -97,7 +97,7 @@ func TestCheckConflicts_ExemptPIDCoversItsOwnAncestors(t *testing.T) {
 	// 1 -> 19610 (parent zsh, launched from a shell snapshot) -> 19614 (the
 	// mlx-wait-run.sh wrapper) -> 100 (exempt root, maat-run-guard). These are
 	// ANCESTORS of ExemptPID, not descendants — same shape as the 2026-09-28
-	// hermes addendum false positive — plus an unrelated PID 999 that must
+	// mercury addendum false positive — plus an unrelated PID 999 that must
 	// still be reported.
 	SetProcessAncestryFn(func() (map[int]int, error) {
 		return map[int]int{100: 19614, 19614: 19610, 19610: 1, 999: 1}, nil
