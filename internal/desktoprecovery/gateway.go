@@ -586,6 +586,8 @@ func (g *Gateway) websocket(node Node) websocket.Server {
 }
 
 func (g *Gateway) proxy(node Node, ws *websocket.Conn) {
+	// RFB is an opaque byte stream; noVNC requires binary WebSocket frames.
+	ws.PayloadType = websocket.BinaryFrame
 	defer ws.Close()
 	request := ws.Request()
 	hash, ok := sessionHash(request)

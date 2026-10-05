@@ -358,9 +358,29 @@ func TestGatewayProxiesOnlyAdmittedNodeAndCleansSessionOnDisconnect(t *testing.T
 	if err != nil {
 		t.Fatalf("websocket admission failed: %v", err)
 	}
-	buf := make([]byte, 12)
-	if _, err := io.ReadFull(ws, buf); err != nil || string(buf) != "RFB 003.889\n" {
+	defer ws.Close()
+	if err := ws.SetDeadline(time.Now().Add(3 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	// Codec receives the opcode parsed from the actual wire frame, unlike
+	// Conn.Read, which hides whether a message arrived as text or binary.
+	binary := websocket.Codec{Unmarshal: func(data []byte, opcode byte, v interface{}) error {
+		if opcode != websocket.BinaryFrame {
+			t.Errorf("RFB wire opcode = %d, want 2 (binary)", opcode)
+		}
+		*v.(*[]byte) = append([]byte(nil), data...)
+		return nil
+	}}
+	var buf []byte
+	if err := binary.Receive(ws, &buf); err != nil || string(buf) != "RFB 003.889\n" {
 		t.Fatalf("RFB banner = %q, %v", buf, err)
+	}
+	payload := []byte{0x00, 0xff, 0xfe, 0x80, 0xc3, 0x28, 0x7f}
+	if err := websocket.Message.Send(ws, payload); err != nil {
+		t.Fatal(err)
+	}
+	if err := binary.Receive(ws, &buf); err != nil || !bytes.Equal(buf, payload) {
+		t.Fatalf("binary RFB roundtrip = %x, want %x; error %v", buf, payload, err)
 	}
 	_ = ws.Close()
 	deadline := time.Now().Add(time.Second)
