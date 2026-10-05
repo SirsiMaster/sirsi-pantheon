@@ -1740,8 +1740,20 @@ final class SirsiEngine: ObservableObject {
         }
     }
 
-    nonisolated static func sirsiBinary() -> String {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
+    nonisolated static func sirsiBinary(bundleExecutableURL: URL? = Bundle.main.executableURL,
+                                        homeDirectory: String? = nil) -> String {
+		// The desktop product and CLI ship as one signed payload. Prefer the
+		// executable sibling inside this exact bundle so the Swift surface never
+		// delegates to an older Homebrew, PATH, or developer-copy CLI with a
+		// different Ma'at schema and recovery contract. The fallback list exists
+		// only for unit-test and development-host execution outside a bundle.
+        if let executable = bundleExecutableURL {
+			let bundled = executable.deletingLastPathComponent().appendingPathComponent("sirsi").path
+			if FileManager.default.isExecutableFile(atPath: bundled) {
+				return bundled
+			}
+		}
+        let home = homeDirectory ?? FileManager.default.homeDirectoryForCurrentUser.path
         for c in ["\(home)/.local/bin/sirsi", "/opt/homebrew/bin/sirsi", "/usr/local/bin/sirsi"] {
             if FileManager.default.isExecutableFile(atPath: c) { return c }
         }

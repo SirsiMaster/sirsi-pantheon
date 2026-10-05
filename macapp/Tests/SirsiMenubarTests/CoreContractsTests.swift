@@ -247,6 +247,43 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertFalse(action.detail.contains("launchctl"))
     }
 
+    func testMaatCasebookIntegrityKeepsValidCasesVisibleAndRoutesRepair() throws {
+        let raw = #"""
+        {
+          "cases": [],
+          "summary": {"total":0,"open":0,"urgent":0,"high":0,"resolved":0},
+          "journal_integrity": {
+            "invalid_count": 1,
+            "issues": [{"line": 14, "digest": "sha256=fixture", "reason": "requester is required"}]
+          }
+        }
+        """#.data(using: .utf8)!
+
+        let projection = try JSONDecoder().decode(MaatCasebookProjection.self, from: raw)
+
+        XCTAssertEqual(projection.cases.count, 0)
+        XCTAssertEqual(projection.journalIntegrity.invalidCount, 1)
+        XCTAssertEqual(projection.journalIntegrity.issues.first?.line, 14)
+        XCTAssertEqual(projection.journalIntegrity.issues.first?.reason, "requester is required")
+    }
+
+    func testDesktopEnginePrefersTheBundledCLIOverAHostInstall() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("sirsi-bundled-cli-\(UUID().uuidString)", isDirectory: true)
+        let macOS = root.appendingPathComponent("Pantheon.app/Contents/MacOS", isDirectory: true)
+        try FileManager.default.createDirectory(at: macOS, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let menubar = macOS.appendingPathComponent("sirsi-menubar")
+        let cli = macOS.appendingPathComponent("sirsi")
+        try Data().write(to: menubar)
+        try Data().write(to: cli)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: cli.path)
+
+        let selected = SirsiEngine.sirsiBinary(bundleExecutableURL: menubar, homeDirectory: "/does-not-exist")
+
+        XCTAssertEqual(selected, cli.path)
+    }
+
     func testMenubarLeaseAllowsOneLocalProcessAtATime() throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("sirsi-menubar-lease-\(UUID().uuidString)", isDirectory: true)

@@ -6,14 +6,35 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/casebook"
 )
 
 var (
-	maatCasebookKind   string
-	maatCasebookStatus string
-	maatCasebookLimit  int
+	maatCasebookKind          string
+	maatCasebookStatus        string
+	maatCasebookLimit         int
+	maatCasebookRepairConfirm bool
 )
+
+// tolerantCasebookJournal is deliberately narrower than DecisionJournal.
+// Casebook is a read-only operator projection, so it may keep healthy
+// decision history visible while reporting a malformed legacy row. Mutation
+// and authorization paths retain the strict DecisionJournal.Recent contract.
+type tolerantCasebookJournal interface {
+	maat.DecisionJournal
+	RecentTolerant(limit int) ([]maat.Decision, maat.JournalIntegrity, error)
+}
+
+type maatCasebookProjection struct {
+	casebook.View
+	JournalIntegrity maat.JournalIntegrity `json:"journal_integrity"`
+}
+
+type repairableCasebookJournal interface {
+	maat.DecisionJournal
+	RepairInvalidRecords() (maat.JournalRepairReceipt, error)
+}
 
 // maatCasebookCmd is a local System One view over Ma'at's recorded decisions.
 // It deliberately does not write, re-score, or authorize anything: Ma'at's
@@ -37,7 +58,13 @@ resolved to narrow the view.`,
 		if err != nil {
 			return err
 		}
-		rows, err := journal.Recent(maatCasebookLimit)
+		var rows []maat.Decision
+		var integrity maat.JournalIntegrity
+		if tolerant, ok := journal.(tolerantCasebookJournal); ok {
+			rows, integrity, err = tolerant.RecentTolerant(maatCasebookLimit)
+		} else {
+			rows, err = journal.Recent(maatCasebookLimit)
+		}
 		if err != nil {
 			return err
 		}
@@ -45,7 +72,10 @@ resolved to narrow the view.`,
 			Text: strings.Join(args, " "), Kind: maatCasebookKind, Status: status, Limit: maatCasebookLimit,
 		})
 		if maatJSON {
-			return emitJSON(view)
+			return emitJSON(maatCasebookProjection{View: view, JournalIntegrity: integrity})
+		}
+		if integrity.InvalidCount > 0 {
+			fmt.Printf("⚠ Ma'at casebook retained %d invalid journal record(s); valid cases remain visible. Open Pantheon to review the guided preservation repair.\n", integrity.InvalidCount)
 		}
 		if len(view.Cases) == 0 {
 			fmt.Println("𓆄 no Ma'at cases match this query")
@@ -93,6 +123,46 @@ resolved to narrow the view.`,
 	},
 }
 
+// maatCasebookRepairCmd is the only mutation path for a legacy Casebook
+// projection. It never accepts a caller-selected path or record list: the
+// active local journal is preserved as a create-only backup, rebuilt from
+// records that pass the existing strict contract, and strictly re-read before
+// the native application can report recovery.
+var maatCasebookRepairCmd = &cobra.Command{
+	Use:   "repair",
+	Short: "Preserve invalid local decision records and rebuild the active Casebook",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if !maatCasebookRepairConfirm {
+			return fmt.Errorf("Ma'at Casebook repair preserves the original journal and replaces the active projection; rerun with --confirm after reviewing the integrity summary")
+		}
+		journal, err := newMaatDecisionJournal()
+		if err != nil {
+			return err
+		}
+		repairable, ok := journal.(repairableCasebookJournal)
+		if !ok {
+			return fmt.Errorf("Ma'at Casebook repair is unavailable for this journal backend; no journal data changed")
+		}
+		receipt, err := repairable.RepairInvalidRecords()
+		if err != nil {
+			return err
+		}
+		result := struct {
+			Status  string                    `json:"status"`
+			Summary string                    `json:"summary"`
+			Repair  maat.JournalRepairReceipt `json:"repair"`
+		}{
+			Status: "ok", Summary: "Ma'at preserved the original decision journal and verified the recovered active Casebook.", Repair: receipt,
+		}
+		if maatJSON {
+			return emitJSON(result)
+		}
+		fmt.Printf("Ma'at Casebook recovered: preserved original at %s · removed %d invalid record(s) · retained %d verified record(s)\n", receipt.BackupPath, receipt.RemovedCount, receipt.RetainedCount)
+		return nil
+	},
+}
+
 func floorLabel(passed bool) string {
 	if passed {
 		return "passed"
@@ -112,5 +182,7 @@ func init() {
 	maatCasebookCmd.Flags().StringVar(&maatCasebookStatus, "status", "", "case status: open or resolved")
 	maatCasebookCmd.Flags().IntVar(&maatCasebookLimit, "limit", 50, "maximum cases to inspect")
 	maatCasebookCmd.Flags().BoolVar(&maatJSON, "json", false, "JSON output")
+	maatCasebookRepairCmd.Flags().BoolVar(&maatCasebookRepairConfirm, "confirm", false, "confirm preservation and active Casebook rebuild")
+	maatCasebookCmd.AddCommand(maatCasebookRepairCmd)
 	maatCmd.AddCommand(maatCasebookCmd)
 }

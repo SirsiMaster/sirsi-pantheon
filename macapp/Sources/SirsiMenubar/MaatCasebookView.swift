@@ -228,6 +228,9 @@ private struct MaatSystemOneView: View {
                 MaybeScroll {
                     VStack(alignment: .leading, spacing: 16) {
                         summary(screens: screens, calibrations: calibrations)
+                        if casebook.journalIntegrity.invalidCount > 0 {
+                            MaatJournalIntegrityCard(engine: engine, integrity: casebook.journalIntegrity)
+                        }
                         resolutionLane(screens)
                         hostTriageControl
                         releasePreflightControl
@@ -1067,6 +1070,9 @@ struct MaatCasebookView: View {
             MaybeScroll {
                 VStack(alignment: .leading, spacing: 16) {
                     summary(casebook.summary)
+                    if casebook.journalIntegrity.invalidCount > 0 {
+                        MaatJournalIntegrityCard(engine: engine, integrity: casebook.journalIntegrity)
+                    }
                     searchField
                     caseList(for: filtered(casebook.cases))
                 }
@@ -1875,9 +1881,198 @@ private struct MaatCaseDetailView: View {
     }
 }
 
+// MaatJournalRepairView owns the one confirmation-gated data recovery action
+// for a damaged local Casebook projection. It never asks the operator to
+// assemble a command or locate a file manually: the underlying engine
+// preserves the original journal, verifies the active projection, and returns
+// the exact retained evidence path.
+struct MaatJournalRepairView: View {
+    @ObservedObject var engine: SirsiEngine
+    let integrity: MaatJournalIntegrity
+    @State private var confirmRepair = false
+    @State private var repairing = false
+    @State private var result: MaatJournalRepairResult?
+    @State private var error: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            BackBar(title: "Repair Ma'at casebook")
+            MaybeScroll {
+                VStack(alignment: .leading, spacing: 16) {
+                    Label("Preserve and recover the casebook", systemImage: "shield.lefthalf.filled")
+                        .sirsiFont(.title3, weight: .bold)
+                    Text("Ma'at found \(integrity.invalidCount) record\(integrity.invalidCount == 1 ? "" : "s") that cannot satisfy the current local journal contract. This repair does not invent or overwrite those decisions. It first preserves the full original journal, then rebuilds the active Casebook only from records that pass strict verification.")
+                        .sirsiFont(.body)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !integrity.issues.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Affected records")
+                                .sirsiFont(.headline)
+                            ForEach(integrity.issues) { issue in
+                                Text("Line \(issue.line) · \(issue.reason) · \(issue.digest)")
+                                    .sirsiFont(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                            }
+                            if integrity.invalidCount > integrity.issues.count {
+                                Text("\(integrity.invalidCount - integrity.issues.count) additional record\(integrity.invalidCount - integrity.issues.count == 1 ? "" : "s") are retained without being expanded here.")
+                                    .sirsiFont(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.05)))
+                    }
+                    if let result {
+                        VStack(alignment: .leading, spacing: 7) {
+                            Label("Casebook recovered", systemImage: "checkmark.seal.fill")
+                                .sirsiFont(.headline)
+                                .foregroundStyle(.green)
+                            Text("Preserved original: \(result.repair.backupPath)")
+                                .sirsiFont(.caption)
+                                .textSelection(.enabled)
+                            Text("Removed \(result.repair.removedCount) invalid record\(result.repair.removedCount == 1 ? "" : "s") from the active projection; \(result.repair.retainedCount) verified record\(result.repair.retainedCount == 1 ? "" : "s") remain.")
+                                .sirsiFont(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 9).fill(Color.green.opacity(0.10)))
+                    } else if let error {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Label("Recovery did not complete", systemImage: "exclamationmark.triangle.fill")
+                                .sirsiFont(.headline)
+                                .foregroundStyle(.orange)
+                            Text(error)
+                                .sirsiFont(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 9).fill(Color.orange.opacity(0.10)))
+                    }
+                    Button {
+                        confirmRepair = true
+                    } label: {
+                        if repairing {
+                            ProgressView().controlSize(.small)
+                            Text("Preserving and verifying…")
+                        } else {
+                            Label("Preserve and repair casebook", systemImage: "wrench.and.screwdriver")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(gold)
+                    .disabled(repairing || result != nil)
+                }
+                .padding(20)
+            }
+        }
+        .confirmationDialog("Preserve and repair the Ma'at casebook?", isPresented: $confirmRepair, titleVisibility: .visible) {
+            Button("Preserve original and repair", role: .destructive) {
+                Task { await repair() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Pantheon will save the original local journal before rebuilding only the active Casebook projection from strictly verified records.")
+        }
+    }
+
+    @MainActor private func repair() async {
+        repairing = true
+        error = nil
+        let raw = await SirsiEngine.run(args: ["maat", "casebook", "repair", "--confirm", "--json"], stdin: nil)
+        if let decoded = MaatJournalRepairResult.decode(raw), decoded.status == "ok" {
+            result = decoded
+        } else {
+            error = SirsiEngine.firstMeaningful(raw)
+        }
+        repairing = false
+    }
+}
+
+struct MaatJournalRepairResult: Decodable {
+    let status: String
+    let summary: String
+    let repair: Repair
+
+    struct Repair: Decodable {
+        let backupPath: String
+        let originalDigest: String
+        let removedCount: Int
+        let retainedCount: Int
+
+        enum CodingKeys: String, CodingKey {
+            case backupPath = "backup_path"
+            case originalDigest = "original_digest"
+            case removedCount = "removed_count"
+            case retainedCount = "retained_count"
+        }
+    }
+
+    static func decode(_ raw: String) -> MaatJournalRepairResult? {
+        guard let start = raw.firstIndex(of: "{") else { return nil }
+        return try? JSONDecoder().decode(MaatJournalRepairResult.self, from: Data(raw[start...].utf8))
+    }
+}
+
+// This card deliberately appears beside healthy Casebook content instead of
+// replacing it with a generic failure state. Ma'at identifies the damaged
+// records without rendering their raw contents and routes the operator to the
+// confirmation-gated preservation repair.
+struct MaatJournalIntegrityCard: View {
+    @ObservedObject var engine: SirsiEngine
+    let integrity: MaatJournalIntegrity
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Label("Casebook integrity needs resolution", systemImage: "exclamationmark.shield.fill")
+                .sirsiFont(.headline)
+                .foregroundStyle(.orange)
+            Text("\(integrity.invalidCount) legacy or damaged decision record\(integrity.invalidCount == 1 ? "" : "s") could not satisfy Ma'at’s journal contract. Valid cases remain visible. Pantheon can preserve the original journal, remove only invalid records from the active view, and verify the recovered casebook.")
+                .sirsiFont(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            NavLink {
+                MaatJournalRepairView(engine: engine, integrity: integrity)
+            } label: {
+                Label("Review and preserve invalid records", systemImage: "wrench.and.screwdriver")
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(gold)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.orange.opacity(0.10)))
+    }
+}
+
 struct MaatCasebookProjection: Decodable {
     let cases: [MaatCase]
     let summary: MaatCasebookSummary
+    let journalIntegrity: MaatJournalIntegrity
+
+    enum CodingKeys: String, CodingKey {
+        case cases
+        case summary
+        case journalIntegrity = "journal_integrity"
+    }
+
+    init(cases: [MaatCase], summary: MaatCasebookSummary, journalIntegrity: MaatJournalIntegrity = .clean) {
+        self.cases = cases
+        self.summary = summary
+        self.journalIntegrity = journalIntegrity
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        cases = try values.decode([MaatCase].self, forKey: .cases)
+        summary = try values.decode(MaatCasebookSummary.self, forKey: .summary)
+        journalIntegrity = try values.decodeIfPresent(MaatJournalIntegrity.self, forKey: .journalIntegrity) ?? .clean
+    }
 
     // Snapshot mode must render a complete, deterministic operator state even
     // when a developer machine's installed CLI predates `maat casebook`. This
@@ -1891,6 +2086,37 @@ struct MaatCasebookProjection: Decodable {
         ],
         summary: MaatCasebookSummary(total: 3, open: 2, urgent: 1, high: 1, resolved: 1)
     )
+}
+
+struct MaatJournalIntegrity: Decodable {
+    let invalidCount: Int
+    let issues: [MaatJournalIssue]
+
+    enum CodingKeys: String, CodingKey {
+        case invalidCount = "invalid_count"
+        case issues
+    }
+
+    static let clean = MaatJournalIntegrity(invalidCount: 0, issues: [])
+
+    init(invalidCount: Int, issues: [MaatJournalIssue]) {
+        self.invalidCount = invalidCount
+        self.issues = issues
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        invalidCount = try values.decodeIfPresent(Int.self, forKey: .invalidCount) ?? 0
+        issues = try values.decodeIfPresent([MaatJournalIssue].self, forKey: .issues) ?? []
+    }
+}
+
+struct MaatJournalIssue: Decodable, Identifiable {
+    let line: Int
+    let digest: String
+    let reason: String
+
+    var id: String { "\\(line):\\(digest)" }
 }
 
 struct MaatCasebookSummary: Decodable {

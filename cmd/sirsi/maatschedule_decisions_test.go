@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -39,6 +40,37 @@ func TestMaatCasebookCommandProjectsJournalWithoutPolicyWrites(t *testing.T) {
 	err := maatCasebookCmd.RunE(maatCasebookCmd, nil)
 	if err == nil || !strings.Contains(err.Error(), "invalid --status") {
 		t.Fatalf("invalid status error = %v", err)
+	}
+}
+
+func TestMaatCasebookRepairRequiresConfirmationAndUsesBoundJournal(t *testing.T) {
+	oldFactory, oldConfirm, oldJSON := newMaatDecisionJournal, maatCasebookRepairConfirm, maatJSON
+	t.Cleanup(func() {
+		newMaatDecisionJournal, maatCasebookRepairConfirm, maatJSON = oldFactory, oldConfirm, oldJSON
+	})
+	path := filepath.Join(t.TempDir(), "decisions.jsonl")
+	valid := `{"time":"2026-09-27T09:00:00Z","host":"m5","kind":"reservation","requester":"codex-pantheon","assessed":"free","determination":"grant","why":"no overlap"}`
+	legacy := `{"time":"2026-09-27T09:01:00Z","host":"m5","kind":"assessment","assessed":"legacy","determination":"warn","why":"missing requester"}`
+	if err := os.WriteFile(path, []byte(valid+"\n"+legacy+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	journal := &maat.FileDecisionJournal{Path: path}
+	newMaatDecisionJournal = func() (maat.DecisionJournal, error) { return journal, nil }
+	maatCasebookRepairConfirm = false
+	if err := maatCasebookRepairCmd.RunE(maatCasebookRepairCmd, nil); err == nil || !strings.Contains(err.Error(), "--confirm") {
+		t.Fatalf("repair without confirmation = %v, want confirmation error", err)
+	}
+	maatCasebookRepairConfirm = true
+	maatJSON = true
+	if err := maatCasebookRepairCmd.RunE(maatCasebookRepairCmd, nil); err != nil {
+		t.Fatalf("confirmed repair: %v", err)
+	}
+	rows, err := journal.Recent(10)
+	if err != nil {
+		t.Fatalf("strict journal after repair: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Requester != "codex-pantheon" {
+		t.Fatalf("rows after repair = %+v", rows)
 	}
 }
 
