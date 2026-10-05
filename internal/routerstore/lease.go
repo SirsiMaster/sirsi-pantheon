@@ -78,7 +78,7 @@ var (
 	// the claim by hand — read this message as "the store will not let me claim",
 	// and escalated to the owner for "router-store repair" that was never needed.
 	// The message names the ledger and the verb so the next agent does not.
-	ErrNoClaimableTask = errors.New("routerstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which — note this is the TASK ledger, separate from the inbox)")
+	ErrNoClaimableTask = errors.New("routerstore: no claimable task in the ledger (rows may be done, blocked on an unfinished dependency, already leased, or at the retry ceiling; `router task list <agent>` shows which — note this is the TASK ledger, separate from the inbox; a row stuck at the retry ceiling is cleared with `router task reset-attempts <agent> <task-id>`, not a store repair)")
 	// ErrLeaseInvalid means the token is missing, expired, or mismatched —
 	// including an expired worker trying to complete newer-leased work.
 	ErrLeaseInvalid = errors.New("routerstore: lease token invalid, expired, or superseded")

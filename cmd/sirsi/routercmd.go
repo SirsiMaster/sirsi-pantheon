@@ -167,13 +167,13 @@ list open items older than N hours (default 24).`,
 			return err
 		}
 		defer func() { _ = f.Close() }()
-		all, err := f.ListAll()
+		all, closedTotal, err := f.ListActive()
 		if err != nil {
 			return err
 		}
 		now := time.Now().UTC()
 		threshold := time.Duration(statusStaleHours) * time.Hour
-		var open, closed int
+		open, closed := 0, closedTotal
 		perAgent := map[string]int{}
 		type openItem struct {
 			it  work.Item

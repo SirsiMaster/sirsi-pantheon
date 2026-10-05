@@ -332,6 +332,43 @@ func (f *Facade) Inbox(agent string) ([]work.Item, error) {
 	return items, nil
 }
 
+// ListActive is ListAll for summaries that only need open work: the non-terminal
+// items (plus the terminal items they name in blocked_by) and the closed total.
+// Post-cutover it reads just those rows from the store; before the cutover it is
+// ListAll filtered, so behavior is unchanged there. The full ledger is 13k+ rows
+// and 6-20 s per call on the service, which under concurrency became the 30 s
+// spool timeouts every lane reported.
+func (f *Facade) ListActive() (items []work.Item, closed int, err error) {
+	if routercfg.StoreWake() {
+		rows, rerr := f.store.ListActive(context.Background())
+		if rerr != nil {
+			return nil, 0, fmt.Errorf("store list unavailable (store is the cutover authority): %w", rerr)
+		}
+		n, cerr := f.store.CountClosed(context.Background())
+		if cerr != nil {
+			return nil, 0, fmt.Errorf("store count unavailable (store is the cutover authority): %w", cerr)
+		}
+		items = make([]work.Item, 0, len(rows))
+		for _, r := range rows {
+			items = append(items, itemFromRow(r))
+		}
+		sortItemsByID(items)
+		return items, n, nil
+	}
+	all, lerr := f.ListAll()
+	if lerr != nil {
+		return nil, 0, lerr
+	}
+	for _, it := range all {
+		if it.Status == "closed" {
+			closed++
+			continue
+		}
+		items = append(items, it)
+	}
+	return items, closed, nil
+}
+
 // ListAll returns every item (open AND closed) as the dual-read union of the
 // file router and the store, deduped by id. This is the read path for whole-
 // fabric summaries (`router status`, the menubar router signal) so they report

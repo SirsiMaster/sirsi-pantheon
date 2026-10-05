@@ -33,6 +33,29 @@ func TestClaimTaskSelectsExactIDAndRefusesIneligibleStates(t *testing.T) {
 	}
 }
 
+// TestClaimTaskAdoptsOrphanedInProgressEmptyLease is the regression guard for
+// rs-23b: a task created/left in-progress with an EMPTY lease (e.g. a crash
+// between AddTask and the first ClaimTask, or a hand-authored ledger row that
+// never went through claim) must stay adoptable through the normal claim
+// path — claim-id must not treat "status=in-progress" alone as "already
+// leased by someone else". claimableTaskPredicate's lease_token=” check
+// already covers this; this test exists so that invariant is never silently
+// narrowed back to excluding in-progress rows outright (A35: a check that
+// has never been shown red is untested).
+func TestClaimTaskAdoptsOrphanedInProgressEmptyLease(t *testing.T) {
+	s := newTestStore(t)
+	if err := s.AddTask(Task{Agent: "ssa", TaskID: "orphan", Subject: "orphan", Status: "in-progress"}); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := s.ClaimTask("ssa", "orphan", "worker", "thread", time.Minute)
+	if err != nil {
+		t.Fatalf("orphaned in-progress task with empty lease must be claimable, got: %v", err)
+	}
+	if lease.TaskID != "orphan" || lease.Attempt != 1 {
+		t.Fatalf("unexpected lease on adopted orphan: %+v", lease)
+	}
+}
+
 func TestClaimTaskContentionHasOneWinner(t *testing.T) {
 	s := newTestStore(t)
 	if err := s.AddTask(Task{Agent: "codex-home", TaskID: "exact", Subject: "exact"}); err != nil {

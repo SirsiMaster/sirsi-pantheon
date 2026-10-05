@@ -2,9 +2,11 @@ package router
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/supervision"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
 
 // RouteLaneEscalations delivers supervision escalations to the owner.
@@ -25,7 +27,7 @@ import (
 // Returns the escalations actually sent (excludes deduped ones) so a caller can
 // report honestly rather than claim every candidate was delivered.
 func RouteLaneEscalations(routerRoot string, escalations []supervision.Escalation) ([]supervision.Escalation, error) {
-	if routerRoot == "" || len(escalations) == 0 {
+	if routerRoot == "" {
 		return nil, nil
 	}
 	f, err := dispatch.OpenRoot(routerRoot)
@@ -45,6 +47,7 @@ func RouteLaneEscalations(routerRoot string, escalations []supervision.Escalatio
 	for _, it := range open {
 		openTitles[it.Title] = true
 	}
+	resolveClearedAlerts(f, open, escalations)
 
 	var sent []supervision.Escalation
 	var firstErr error
@@ -64,4 +67,28 @@ func RouteLaneEscalations(routerRoot string, escalations []supervision.Escalatio
 		sent = append(sent, e)
 	}
 	return sent, firstErr
+}
+
+// resolveClearedAlerts closes Horus's own "lane needs you" alerts once the
+// condition that raised them is gone. The sender only ever opened these (deduped
+// by title) and nothing closed them, so every lane that recovered left a stale
+// card on the owner's board (six such cards were dismissed by hand on 2026-10-02
+// for lanes that were already wakeable). It closes only what Horus itself sent, by
+// title, and only when the current pass no longer escalates that lane; a still-true
+// alert is never touched. Failures are ignored: a stale card is the old behavior,
+// never a reason to skip the escalation pass.
+func resolveClearedAlerts(f *dispatch.Facade, open []work.Item, current []supervision.Escalation) {
+	still := make(map[string]bool, len(current))
+	for _, e := range current {
+		still[e.Title()] = true
+	}
+	for _, it := range open {
+		if it.From != "horus" || still[it.Title] {
+			continue
+		}
+		if !strings.HasPrefix(it.Title, "Lane needs you:") && !strings.HasPrefix(it.Title, "Lanes need you:") {
+			continue
+		}
+		_ = f.Store().CloseItem(it.ID, "Auto-resolved by Horus: the lane is reachable again (no current escalation for it).")
+	}
 }
