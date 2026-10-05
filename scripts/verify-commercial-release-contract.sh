@@ -40,6 +40,8 @@ for needle in \
     '--release' \
     'PANTHEON_SIGNING_EXECUTION:-' \
     'direct --release requires' \
+    'APPLE_NOTARY_PROFILE' \
+    'APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD' \
     'SirsiPantheon-${VERSION}-dev-${ARCH}.dmg' \
     'xcrun notarytool submit' \
     'xcrun stapler validate'; do
@@ -51,7 +53,9 @@ for needle in \
     'export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"' \
     '--development' \
     '--release' \
-    'DEVELOPER_ID_INSTALLER APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD' \
+    'DEVELOPER_ID_INSTALLER;' \
+    'APPLE_NOTARY_PROFILE' \
+    'APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD' \
     'SirsiPantheon-${VERSION}-dev-${ARCH}.pkg' \
     'xcrun notarytool submit' \
     'xcrun stapler validate'; do

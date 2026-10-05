@@ -52,9 +52,14 @@ if [[ "$MODE" == "release" ]]; then
     # The signer keeps notarization credentials on the enrolled signing Mac;
     # direct local signing remains explicitly credential-gated.
     if [[ "$REMOTE_SIGNING" != true ]]; then
-        for required in DEVELOPER_ID_INSTALLER APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD; do
+        for required in DEVELOPER_ID_INSTALLER; do
             [[ -n "${!required:-}" ]] || { echo "ERROR: direct --release requires ${required}" >&2; exit 2; }
         done
+        if [[ -z "${APPLE_NOTARY_PROFILE:-}" ]]; then
+            for required in APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD; do
+                [[ -n "${!required:-}" ]] || { echo "ERROR: direct --release requires ${required} or APPLE_NOTARY_PROFILE" >&2; exit 2; }
+            done
+        fi
     fi
     PKG_NAME="SirsiPantheon-${VERSION}-${ARCH}.pkg"
     ARTIFACT_LABEL="Commercial release"
@@ -157,12 +162,19 @@ if [[ "$MODE" == "release" ]]; then
         mv "${SIGNED_PKG}" "${PKG_PATH}"
     else
         /usr/sbin/pkgutil --check-signature "$PKG_PATH"
-        xcrun notarytool submit "$PKG_PATH" \
-            --apple-id "${APPLE_ID}" \
-            --team-id "${APPLE_TEAM_ID}" \
-            --password "${APPLE_APP_PASSWORD}" \
-            --timeout 20m \
-            --wait
+        if [[ -n "${APPLE_NOTARY_PROFILE:-}" ]]; then
+            xcrun notarytool submit "$PKG_PATH" \
+                --keychain-profile "${APPLE_NOTARY_PROFILE}" \
+                --timeout 20m \
+                --wait
+        else
+            xcrun notarytool submit "$PKG_PATH" \
+                --apple-id "${APPLE_ID}" \
+                --team-id "${APPLE_TEAM_ID}" \
+                --password "${APPLE_APP_PASSWORD}" \
+                --timeout 20m \
+                --wait
+        fi
         xcrun stapler staple "$PKG_PATH"
         xcrun stapler validate "$PKG_PATH"
     fi

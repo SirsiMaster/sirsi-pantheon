@@ -15,6 +15,9 @@
 #   APPLE_ID                  the Apple ID email used for notarization
 #   APPLE_TEAM_ID             the 10-char Apple Developer Team ID
 #   APPLE_APP_PASSWORD        an app-specific password for that Apple ID
+# Or, on an enrolled signing Mac, APPLE_NOTARY_PROFILE names the existing
+# notarytool keychain profile. That path keeps notarization credentials out of
+# the environment and never exports them into CI logs or a build receipt.
 #                             (appleid.apple.com → Sign-In & Security → App-Specific Passwords)
 # The cert itself is imported into the build keychain by the CI workflow before
 # this script runs (MACOS_CERTIFICATE / MACOS_CERTIFICATE_PWD).
@@ -66,9 +69,14 @@ if [[ "$MODE" == "release" ]]; then
     # The enrolled signing service is the canonical secretless route. Only a
     # direct local signing run requires Apple credential variables here.
     if [[ "$REMOTE_SIGNING" != true ]]; then
-        for required in DEVELOPER_ID_APPLICATION APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD; do
+        for required in DEVELOPER_ID_APPLICATION; do
             [[ -n "${!required:-}" ]] || { echo "ERROR: direct --release requires ${required}" >&2; exit 2; }
         done
+        if [[ -z "${APPLE_NOTARY_PROFILE:-}" ]]; then
+            for required in APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD; do
+                [[ -n "${!required:-}" ]] || { echo "ERROR: direct --release requires ${required} or APPLE_NOTARY_PROFILE" >&2; exit 2; }
+            done
+        fi
     fi
     DMG_NAME="SirsiPantheon-${VERSION}-${ARCH}.dmg"
     ARTIFACT_LABEL="Commercial release"
@@ -211,12 +219,19 @@ if [[ "$MODE" == "release" ]]; then
         echo "Notarizing ${DMG_NAME} (this can take a few minutes)..."
         # --timeout bounds the --wait poll so a stuck Apple-notary submission
         # fails the step instead of hanging.
-        xcrun notarytool submit "${DMG_PATH}" \
-            --apple-id "${APPLE_ID}" \
-            --team-id "${APPLE_TEAM_ID}" \
-            --password "${APPLE_APP_PASSWORD}" \
-            --timeout 20m \
-            --wait
+        if [[ -n "${APPLE_NOTARY_PROFILE:-}" ]]; then
+            xcrun notarytool submit "${DMG_PATH}" \
+                --keychain-profile "${APPLE_NOTARY_PROFILE}" \
+                --timeout 20m \
+                --wait
+        else
+            xcrun notarytool submit "${DMG_PATH}" \
+                --apple-id "${APPLE_ID}" \
+                --team-id "${APPLE_TEAM_ID}" \
+                --password "${APPLE_APP_PASSWORD}" \
+                --timeout 20m \
+                --wait
+        fi
         echo "Stapling notarization ticket..."
         xcrun stapler staple "${DMG_PATH}"
         xcrun stapler validate "${DMG_PATH}"
