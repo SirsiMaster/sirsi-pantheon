@@ -198,7 +198,10 @@ private enum PantheonWorkspace: String, CaseIterable, Identifiable {
 
     var detail: String {
         switch self {
-        case .command: return "What needs attention on this Mac now"
+        // Command Center is the place an operator begins whether the Mac needs
+        // recovery or is already healthy. Do not frame every opening as a
+        // problem: the live state and its next in-app action say which it is.
+        case .command: return "Live local state, guided control, and your next action"
         case .maat: return "Evidence, decisions, and guided resolution"
         case .ra: return "Fabric state, claims, handbacks, and messages"
         case .activity: return "Recent work and retained operational evidence"
