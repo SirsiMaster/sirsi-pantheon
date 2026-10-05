@@ -1996,10 +1996,6 @@ struct RaFabricView: View {
     @ObservedObject var engine: SirsiEngine
     @State private var resultLine: String?
     @State private var outboxRecheckMessage: String?
-    // A force-live read can be incomplete (for example, an old relay omits a
-    // former agent). Keep the last affected scope actionable until the same
-    // live read supplies explicit readable evidence for every affected agent.
-    @State private var retainedOutboxBlockers: [RBOutbox] = []
     @State private var showingHandoff = false
     @Environment(\.snapshotMode) private var snapshotMode
 
@@ -2014,11 +2010,7 @@ struct RaFabricView: View {
     }
 
     private var visibleOutboxBlockers: [RBOutbox] {
-        var byAgent = Dictionary(uniqueKeysWithValues: retainedOutboxBlockers.map { ($0.agent, $0) })
-        for blocker in engine.routerOutboxBlockers {
-            byAgent[blocker.agent] = blocker
-        }
-        return byAgent.values.sorted { $0.agent < $1.agent }
+        engine.routerVisibleOutboxBlockers
     }
 
     private var hasVisibleBlockers: Bool {
@@ -2162,7 +2154,8 @@ struct RaFabricView: View {
                                 onHandoff: { showingHandoff = true },
                                 onRecheckResult: { outcome, capturedScope in
                                     outboxRecheckMessage = outcome.message
-                                    retainedOutboxBlockers = retainedOutboxScope(outcome: outcome, capturedScope: capturedScope)
+                                    engine.recordOutboxRecheck(requiresRecovery: outcome.requiresRecovery,
+                                                              capturedScope: capturedScope)
                                 }
                             )
                         }

@@ -803,12 +803,28 @@ final class SirsiEngine: ObservableObject {
     var routerStranded: [RBStranded] {
         (routerBoard?.strandedInbox ?? []).sorted { $0.openItems > $1.openItems }
     }
+    // A live recheck may decode a board that lacks the outbox evidence needed
+    // to clear an earlier blocker. This shared, in-memory scope survives view
+    // navigation and feeds the home status as well as the Ra detail screen.
+    // It clears only after that explicit recheck has positive readable evidence.
+    @Published private(set) var routerOutboxRecoveryScope: [RBOutbox] = []
     // Unreadable outboxes are a current, fixable I/O condition (permission,
     // not-a-directory, ...) — a blocker, same class as routerDaemonBlockers.
     // A merely non-empty queue (queuedForRetry > 0 with unreadable == false)
     // is expected transient state, not a blocker.
     var routerOutboxBlockers: [RBOutbox] {
         (routerBoard?.outbox ?? []).filter { $0.unreadable ?? false }
+    }
+    var routerVisibleOutboxBlockers: [RBOutbox] {
+        var byAgent = Dictionary(uniqueKeysWithValues: routerOutboxRecoveryScope.map { ($0.agent, $0) })
+        for blocker in routerOutboxBlockers {
+            byAgent[blocker.agent] = blocker
+        }
+        return byAgent.values.sorted { $0.agent < $1.agent }
+    }
+
+    func recordOutboxRecheck(requiresRecovery: Bool, capturedScope: [RBOutbox]) {
+        routerOutboxRecoveryScope = requiresRecovery ? capturedScope : []
     }
     // Readable held-for-retry outboxes (codex-pantheon review, router item
     // 20261001-024344): queuedForRetry > 0 and NOT unreadable is nonblocking
@@ -821,7 +837,7 @@ final class SirsiEngine: ObservableObject {
         (routerBoard?.outbox ?? []).filter { !($0.unreadable ?? false) && ($0.queuedForRetry ?? 0) > 0 }
     }
     var routerHasBlockers: Bool {
-        !routerAuthBlockers.isEmpty || !routerDaemonBlockers.isEmpty || !routerOutboxBlockers.isEmpty
+        !routerAuthBlockers.isEmpty || !routerDaemonBlockers.isEmpty || !routerVisibleOutboxBlockers.isEmpty
     }
     // Home-row status: red for a real blocker, amber while items WAIT on agents
     // (pending work is not "all good" — a green dot beside "48 pending" is the
@@ -839,7 +855,7 @@ final class SirsiEngine: ObservableObject {
         // rendered a false-green "healthy".
         guard routerBoard != nil else { return "no data yet" }
         if routerHasBlockers {
-            let n = routerAuthBlockers.count + routerDaemonBlockers.count + routerOutboxBlockers.count
+            let n = routerAuthBlockers.count + routerDaemonBlockers.count + routerVisibleOutboxBlockers.count
             return "\(n) blocker\(n == 1 ? "" : "s")"
         }
         let pending = routerBoard?.totalPending ?? 0

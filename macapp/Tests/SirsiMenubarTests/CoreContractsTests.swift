@@ -199,6 +199,23 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertTrue(retainedOutboxScope(outcome: cleared, capturedScope: captured).isEmpty)
     }
 
+    @MainActor
+    func testUnresolvedOutboxScopeSurvivesNavigationThroughSharedEngineStatus() {
+        let engine = SirsiEngine()
+        engine.routerBoard = try! JSONDecoder().decode(RouterBoard.self, from: Data("{}".utf8))
+        let captured = [RBOutbox(agent: "codex-pantheon", observed: true, readable: false,
+                                 queuedForRetry: 0, unreadable: true, error: "permission denied")]
+        engine.recordOutboxRecheck(requiresRecovery: true, capturedScope: captured)
+        XCTAssertEqual(engine.routerVisibleOutboxBlockers.map(\.agent), ["codex-pantheon"])
+        XCTAssertTrue(engine.routerHasBlockers)
+        XCTAssertEqual(engine.routerStatus, "red")
+        XCTAssertTrue(engine.routerSummary.contains("1 blocker"))
+
+        engine.recordOutboxRecheck(requiresRecovery: false, capturedScope: captured)
+        XCTAssertTrue(engine.routerVisibleOutboxBlockers.isEmpty)
+        XCTAssertFalse(engine.routerHasBlockers)
+    }
+
     func testRouterBoardRecheckCanBypassFreshCache() throws {
         XCTAssertTrue(SirsiEngine.routerBoardCacheIsUsable(forceLive: false, isFresh: true, hasDecodedBoard: true))
         XCTAssertFalse(SirsiEngine.routerBoardCacheIsUsable(forceLive: true, isFresh: true, hasDecodedBoard: true))
@@ -238,10 +255,11 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertTrue(card.contains("filesystem permissions or ownership"))
         XCTAssertTrue(source.contains("onHandoff: { showingHandoff = true }"))
         XCTAssertTrue(source.contains("RaHandoffView(engine: engine, isPresented: $showingHandoff)"))
-        XCTAssertTrue(source.contains("@State private var retainedOutboxBlockers"))
+        XCTAssertTrue(source.contains("engine.routerVisibleOutboxBlockers"))
         XCTAssertTrue(source.contains("engine.routerHasBlockers || !visibleOutboxBlockers.isEmpty"))
         XCTAssertTrue(card.contains("let capturedScope = blocked"))
         XCTAssertTrue(card.contains("onRecheckResult(outcome, capturedScope)"))
+        XCTAssertTrue(source.contains("engine.recordOutboxRecheck(requiresRecovery: outcome.requiresRecovery"))
     }
 
     func testCasebookRouteDoesNotSeedItsLiteralSearchFilter() throws {
