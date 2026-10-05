@@ -2,11 +2,14 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
 )
 
 var routerRegistryCmd = &cobra.Command{
@@ -23,6 +26,9 @@ change is merged. 'registry unpin' goes back to the working tree.`,
 var routerRegistrySyncCmd = &cobra.Command{
 	Use: "sync", Short: "Fetch origin/main and pin this host to its agents.json", Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if routerRegistryInstallSync {
+			return installRegistrySync()
+		}
 		root, err := findRouterRoot()
 		if err != nil {
 			return err
@@ -34,6 +40,66 @@ var routerRegistrySyncCmd = &cobra.Command{
 		fmt.Printf("registry pinned to origin/main %s (sha256 %s…, fetched %s)\n", regShort(m.Commit), regShort(m.SHA256), m.FetchedAt)
 		return nil
 	},
+}
+
+var routerRegistryInstallSync bool
+
+// installRegistrySync schedules `registry sync` hourly through launchd (no resident
+// process) so a host never drifts from origin/main by omission. It pins the host the
+// first time it runs.
+func installRegistrySync() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	bin := setup.BinaryPath()
+	if bin == "" || bin == "sirsi" {
+		return fmt.Errorf("sirsi binary path could not be resolved")
+	}
+	repo, err := router.FindRepoRoot()
+	if err != nil {
+		return err
+	}
+	label := "ai.sirsi.registry-sync"
+	plist := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>%s</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>%s</string>
+		<string>router</string>
+		<string>registry</string>
+		<string>sync</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>%s</string>
+	<key>StartInterval</key>
+	<integer>3600</integer>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>ProcessType</key>
+	<string>Background</string>
+	<key>StandardOutPath</key>
+	<string>%s/.sirsi/logs/registry-sync.log</string>
+	<key>StandardErrorPath</key>
+	<string>%s/.sirsi/logs/registry-sync.log</string>
+</dict>
+</plist>
+`, label, bin, repo, home, home)
+	path := filepath.Join(home, "Library", "LaunchAgents", label+".plist")
+	if err := os.WriteFile(path, []byte(plist), 0o644); err != nil {
+		return err
+	}
+	uid := fmt.Sprintf("gui/%d", os.Getuid())
+	_ = exec.Command("launchctl", "bootout", uid+"/"+label).Run()
+	if out, err := exec.Command("launchctl", "bootstrap", uid, path).CombinedOutput(); err != nil {
+		return fmt.Errorf("launchctl bootstrap: %w (%s)", err, out)
+	}
+	fmt.Printf("installed %s: re-pins this host to origin/main every hour (no resident process)\n", label)
+	return nil
 }
 
 var routerRegistryStatusCmd = &cobra.Command{
@@ -80,6 +146,7 @@ func findRouterRoot() (string, error) {
 }
 
 func init() {
+	routerRegistrySyncCmd.Flags().BoolVar(&routerRegistryInstallSync, "install", false, "Schedule an hourly sync through launchd instead of syncing now")
 	routerRegistryCmd.AddCommand(routerRegistrySyncCmd, routerRegistryStatusCmd, routerRegistryUnpinCmd)
 	routerCmd.AddCommand(routerRegistryCmd)
 }

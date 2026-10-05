@@ -470,6 +470,14 @@ func (rs *RemoteStore) ListActive(ctx context.Context) ([]Item, error) {
 	return out, err
 }
 
+func (rs *RemoteStore) ListSince(ctx context.Context, since string) ([]Item, error) {
+	ctx, cancel := context.WithTimeout(ctx, rs.perCall)
+	defer cancel()
+	var out []Item
+	err := rs.callCtx(ctx, "ListSince", []any{since}, &out)
+	return out, err
+}
+
 func (rs *RemoteStore) CountClosed(ctx context.Context) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, rs.perCall)
 	defer cancel()

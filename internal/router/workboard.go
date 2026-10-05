@@ -46,7 +46,7 @@ type WorkBoard struct {
 
 // ComputeWorkBoard builds the board from the items corpus + thread registry.
 func ComputeWorkBoard(routerRoot string) (*WorkBoard, error) {
-	items, err := AllItems(routerRoot)
+	items, err := RecentItems(routerRoot, 8*24*time.Hour) // pace looks back 7 days; one extra day of margin
 	if err != nil {
 		return nil, err
 	}

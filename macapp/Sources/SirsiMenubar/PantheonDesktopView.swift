@@ -69,9 +69,9 @@ struct PantheonDesktopView: View {
                 .accessibilityLabel("Pantheon is live")
             VStack(alignment: .leading, spacing: 3) {
                 Text(section.title)
-                    .font(.title2.weight(.bold))
+                    .sirsiFont(.title2, weight: .bold)
                 Text(section.detail)
-                    .font(.subheadline)
+                    .sirsiFont(.subheadline)
                     .foregroundStyle(PantheonTheme.mutedText)
                     .lineLimit(1)
             }

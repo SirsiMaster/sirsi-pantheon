@@ -183,7 +183,7 @@ func TestOverview_HTTP200(t *testing.T) {
 	ts := testServer(t, Config{})
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/")
+	resp, err := http.Get(ts.URL + "/classic")
 	if err != nil {
 		t.Fatalf("GET /: %v", err)
 	}
@@ -208,7 +208,7 @@ func TestOverview_WithStats(t *testing.T) {
 	})
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/")
+	resp, err := http.Get(ts.URL + "/classic")
 	if err != nil {
 		t.Fatalf("GET /: %v", err)
 	}
