@@ -2,7 +2,7 @@
 
 Status: repository contract adopted from the SNE policy; executable integration and
 publication remain pending. This document does not certify installed enforcement.
-Owner: codex-pantheon. Classification: platform-foundation. Date: 2026-09-11.
+Integration owner: codex-pantheon. Stack Lab governance owner: SSA. Classification: platform-foundation. Date: 2026-09-11.
 Governing decision: ADR-004, extended here for operational incident prevention.
 Source request: 20260911-063933-codex-inference-codex-pantheon-canonize-ma-at-shared-sne-pantheon-contract.
 

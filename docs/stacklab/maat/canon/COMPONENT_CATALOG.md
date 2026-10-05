@@ -11,6 +11,6 @@
 | Protected release recovery | `internal/maat/credentialpreflight.go` projected through CLI/MCP/TUI/native Ma'at surfaces | public metadata observation and explicit Casebook confirmation only; protected workflow owns credentials | canonical `recovery_plan` names missing Application, Installer, and notarization proof, then recheck; no secret/key access in Ma'at |
 | Terminal Health resolution | `internal/tui/screen_health.go` + canonical console runner | confirmed Ma'at review only; no guidance command is auto-run | every guidance-only finding enters confirmation-gated evidence review, then Casebook/confirmed CLI owns explicit conclusion |
 | CLI/API | `cmd/sirsi`, Horus API | request-scoped outputs | command/API tests |
-| Wing recipe | `contracts/stacklab/maat-*` | source contract only | keep schema and implementation aligned |
+| Stack Lab integration recipe | `contracts/stacklab/maat-*` | source contract only; Stack Lab governance is SSA-owned | keep schema and implementation aligned without claiming platform authority |
 
-Owner: Pantheon Ma'at lane. Release state: source cataloged; installed-runtime evidence remains open.
+Integration owner: Pantheon Ma'at lane. Stack Lab governance owner: SSA. Release state: source cataloged; installed-runtime evidence remains open.
