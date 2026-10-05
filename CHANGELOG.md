@@ -6,6 +6,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased] — Apollo view: retire the last user-facing "SNE" copy
 
+- **Host-wide cap on concurrent headless consumers.** Wake loops are nearly free when idle (a two-minute probe cost 0.05 CPU-seconds); the CPU on a busy Mac is the consumers they spawn, each a full agent session, and the lane gates were per-lane so six lanes could each run one at once. A lane now holds (`hold: slots`, retried next tick, nothing lost) while the host already runs `SIRSI_MAX_CONSUMERS` consumers; the default is one per five cores (2 on a 10-core Mac, 3 on the M5).
+
 - **Router alias `mercury` → `hermes`.** Owner rename 2026-10-02 (Hermes is now Mercury): `mercury` resolves to the existing `hermes` lane (same inbox, same worker) so mail addressed either way arrives; the canonical lane id stays `hermes` until the coordinated migration. With #966, `sirsi-mercury` inherits the Hermes release policy before the GitHub repo is renamed.
 
 - **SSA's headless consumer works again.** Its sandbox listed `~/.sirsi/relay` (a symlink to `/var/sirsipantheon/relay`) as a writable root and the codex executor now refuses a root containing a symlink component, so every command failed, every dispatch made no progress, and the lane was quarantined three times (9/20, 9/22, 10/1). Only the real path is listed now.
