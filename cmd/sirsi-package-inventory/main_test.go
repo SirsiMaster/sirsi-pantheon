@@ -23,14 +23,14 @@ func TestRunEmitsNonExecutingInventory(t *testing.T) {
 	info := []byte(`<?xml version="1.0"?><plist><dict><key>CFBundleIdentifier</key><string>ai.sirsi.pantheon</string><key>CFBundleShortVersionString</key><string>0.23.9-beta</string><key>CFBundleVersion</key><string>20260908</string></dict></plist>`)
 	pkgInfo := []byte("APPL????")
 	launchAgent := []byte("Label=ai.sirsi.pantheon\n")
-	brandLogo := []byte("canonical Pantheon Eye bytes\n")
+	brandLogo := []byte("canonical Sirsi application-mark bytes\n")
 	files := map[string][]byte{
 		"Contents/Info.plist":                                                  info,
 		"Contents/PkgInfo":                                                     pkgInfo,
 		"Contents/MacOS/sirsi":                                                 []byte("cli bytes"),
 		"Contents/MacOS/sirsi-menubar":                                         []byte("menubar bytes"),
 		"Contents/Resources/ai.sirsi.pantheon.plist":                           launchAgent,
-		"Contents/Resources/pantheon-icon.png":                                 brandLogo,
+		"Contents/Resources/sirsi-logo-white.png":                              brandLogo,
 		"Contents/Resources/StackLab/apollo-sne-telemetry-v1.json":             []byte(`{"schema":"sirsi.stacklab.apollo-telemetry.v1"}`),
 		"Contents/Resources/StackLab/maat-system-one-recipe-v1.json":           []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
 		"Contents/Resources/StackLab/maat-wing-v1.json":                        []byte(`{"schema":"sirsi.stacklab.wing.v1"}`),
@@ -53,7 +53,7 @@ func TestRunEmitsNonExecutingInventory(t *testing.T) {
 		"--info-plist", filepath.Join(app, "Contents/Info.plist"),
 		"--pkg-info", filepath.Join(app, "Contents/PkgInfo"),
 		"--launch-agent", filepath.Join(app, "Contents/Resources/ai.sirsi.pantheon.plist"),
-		"--brand-logo", filepath.Join(app, "Contents/Resources/pantheon-icon.png"),
+		"--brand-logo", filepath.Join(app, "Contents/Resources/sirsi-logo-white.png"),
 	}, &out, &errOut)
 	if code != 0 {
 		t.Fatalf("run code=%d stderr=%s", code, errOut.String())

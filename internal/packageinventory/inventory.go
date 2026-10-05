@@ -69,7 +69,7 @@ var allowed = map[string]string{
 	"Contents/MacOS/sirsi-menubar":               "regular",
 	"Contents/Resources":                         "directory",
 	"Contents/Resources/ai.sirsi.pantheon.plist": "regular",
-	"Contents/Resources/pantheon-icon.png":       "regular",
+	"Contents/Resources/sirsi-logo-white.png":    "regular",
 	// Stack Lab is shipped inside the app as the versioned, inspectable
 	// methodology contract. Keep this allowlist exact: a new recipe is a
 	// deliberate payload and verifier change, never ambient bundle content.
@@ -374,7 +374,7 @@ func validateReport(report Report, contents map[string][]byte, expected Expectat
 	if report.Schema != Schema || !report.PythonFree || report.EngineCount != 2 {
 		return errors.New("package inventory: malformed report")
 	}
-	if !hasExact(report, "Contents/Info.plist", expected.InfoPlist) || !hasExact(report, "Contents/PkgInfo", expected.PkgInfo) || !hasExact(report, "Contents/Resources/ai.sirsi.pantheon.plist", expected.LaunchAgent) || !hasExact(report, "Contents/Resources/pantheon-icon.png", expected.BrandLogo) {
+	if !hasExact(report, "Contents/Info.plist", expected.InfoPlist) || !hasExact(report, "Contents/PkgInfo", expected.PkgInfo) || !hasExact(report, "Contents/Resources/ai.sirsi.pantheon.plist", expected.LaunchAgent) || !hasExact(report, "Contents/Resources/sirsi-logo-white.png", expected.BrandLogo) {
 		return errors.New("package inventory: canonical payload bytes mismatch")
 	}
 	previous := ""

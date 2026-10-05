@@ -139,7 +139,7 @@ fi
     --info-plist "$EXPANDED_ROOT/Payload/Applications/Pantheon.app/Contents/Info.plist" \
     --pkg-info "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/PkgInfo" \
     --launch-agent "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" \
-    --brand-logo "${PROJECT_ROOT}/docs/assets/pantheon-icon.png" \
+    --brand-logo "${PROJECT_ROOT}/docs/assets/sirsi-logo-white.png" \
     --require-code-signature
 
 # pkgutil intentionally exits nonzero for an unsigned package. That is useful

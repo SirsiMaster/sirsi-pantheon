@@ -83,7 +83,7 @@ func makeCommandBundle(t *testing.T) (string, string, string, string, string) {
 	info := filepath.Join(root, "Info.plist")
 	pkgInfo := filepath.Join(root, "PkgInfo")
 	launchAgent := filepath.Join(root, "LaunchAgent.plist")
-	brandLogo := filepath.Join(root, "pantheon-icon.png")
+	brandLogo := filepath.Join(root, "sirsi-logo-white.png")
 	infoBytes := []byte(`<?xml version="1.0"?><plist><dict><key>CFBundleIdentifier</key><string>ai.sirsi.pantheon</string><key>CFBundleShortVersionString</key><string>0.23.9-beta</string><key>CFBundleVersion</key><string>20260908</string></dict></plist>`)
 	if err := os.WriteFile(info, infoBytes, 0o644); err != nil {
 		t.Fatal(err)
@@ -94,7 +94,7 @@ func makeCommandBundle(t *testing.T) (string, string, string, string, string) {
 	if err := os.WriteFile(launchAgent, []byte("Label=ai.sirsi.pantheon\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(brandLogo, []byte("canonical Pantheon Eye bytes\n"), 0o644); err != nil {
+	if err := os.WriteFile(brandLogo, []byte("canonical Sirsi application-mark bytes\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	for rel, data := range map[string][]byte{
@@ -103,7 +103,7 @@ func makeCommandBundle(t *testing.T) (string, string, string, string, string) {
 		"Contents/MacOS/sirsi":                       []byte("cli"),
 		"Contents/MacOS/sirsi-menubar":               []byte("menu"),
 		"Contents/Resources/ai.sirsi.pantheon.plist": []byte("Label=ai.sirsi.pantheon\n"),
-		"Contents/Resources/pantheon-icon.png":       []byte("canonical Pantheon Eye bytes\n"),
+		"Contents/Resources/sirsi-logo-white.png":    []byte("canonical Sirsi application-mark bytes\n"),
 	} {
 		if err := os.WriteFile(filepath.Join(app, filepath.FromSlash(rel)), data, 0o644); err != nil {
 			t.Fatal(err)

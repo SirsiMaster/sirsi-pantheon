@@ -28,15 +28,15 @@ enum PantheonTheme {
 let gold = PantheonTheme.gold
 let emerald = PantheonTheme.emerald
 
-// Use the actual Pantheon Eye rather than an SF Symbol in identity positions.
-// The fallback is present only for development targets built without resources;
-// release packaging binds the PNG byte-for-byte in package inventory.
+// Use the canonical Sirsi application mark in identity positions rather than an
+// SF Symbol. The fallback is present only for development targets built without
+// resources; release packaging binds the PNG byte-for-byte in package inventory.
 struct PantheonBrandMark: View {
     let size: CGFloat
 
     var body: some View {
         Group {
-            if let url = Bundle.main.url(forResource: "pantheon-icon", withExtension: "png"),
+            if let url = Bundle.main.url(forResource: "sirsi-logo-white", withExtension: "png"),
                let image = NSImage(contentsOf: url) {
                 Image(nsImage: image)
                     .resizable()
@@ -51,7 +51,7 @@ struct PantheonBrandMark: View {
             }
         }
         .frame(width: size, height: size)
-        .accessibilityLabel("Pantheon Eye")
+        .accessibilityLabel("Sirsi logo")
     }
 }
 

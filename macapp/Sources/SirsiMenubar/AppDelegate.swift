@@ -73,58 +73,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    // The Eye of Horus (wedjat) — the watchful protector, and unmistakably Sirsi's
-    // mark, not a stock eyeball. Drawn as a vector NSBezierPath into a template
-    // NSImage (so contentTintColor drives the health color and it adapts to
-    // light/dark + Retina). All in code → guaranteed to render, no bundled asset.
-    // Authored in a 100×80 design space, uniform-scaled; pupil filled, rest stroked.
-    static func makeEye(_ color: NSColor) -> NSImage {
-        // Drawn in the health COLOR directly (white/amber/red), isTemplate = false.
-        // A template image's tinting would not engage for this runtime-drawn icon —
-        // it rendered literal-black and vanished on a dark menu bar (across both the
-        // drawingHandler and lockFocus forms). Baking the colour in guarantees it
-        // shows; the icon is redrawn whenever health changes. ~18 pt tall.
-        let s: CGFloat = 0.225
-        let img = NSImage(size: NSSize(width: 100 * s, height: 80 * s))
-        img.lockFocus()
-        func P(_ x: CGFloat, _ y: CGFloat) -> NSPoint { NSPoint(x: x * s, y: y * s) }
-        func quad(_ path: NSBezierPath, _ from: NSPoint, _ c: NSPoint, _ to: NSPoint) {
-            let c1 = NSPoint(x: from.x + 2.0 / 3 * (c.x - from.x), y: from.y + 2.0 / 3 * (c.y - from.y))
-            let c2 = NSPoint(x: to.x + 2.0 / 3 * (c.x - to.x), y: to.y + 2.0 / 3 * (c.y - to.y))
-            path.curve(to: to, controlPoint1: c1, controlPoint2: c2)
+    // The status item is a compact crop of the canonical Sirsi application mark.
+    // It is deliberately an actual bundled brand asset—not a hand-drawn stand-in.
+    // The lower half contains the multicolor Sirsi loop, which remains legible at
+    // status-bar scale without trying to squeeze the whole wordmark into 18 points.
+    static func makeSirsiStatusMark() -> NSImage {
+        guard let url = Bundle.main.url(forResource: "sirsi-logo-white", withExtension: "png"),
+              let source = NSImage(contentsOf: url) else {
+            return NSImage(systemSymbolName: "circle.hexagonpath.fill", accessibilityDescription: "Sirsi") ?? NSImage()
         }
-        color.setStroke()
-        color.setFill()
-        let line = NSBezierPath()
-        line.lineWidth = 2.4
-        line.lineCapStyle = .round
-        line.lineJoinStyle = .round
-        line.move(to: P(22, 56)); quad(line, P(22, 56), P(50, 74), P(82, 54))   // eyebrow
-        line.move(to: P(16, 40)); quad(line, P(16, 40), P(46, 56), P(78, 42))   // upper lid
-        line.move(to: P(16, 40)); quad(line, P(16, 40), P(46, 26), P(78, 42))   // lower lid
-        line.move(to: P(78, 42)); line.line(to: P(95, 45))                      // outer corner
-        line.move(to: P(40, 28)); line.line(to: P(30, 5))                       // teardrop
-        line.move(to: P(60, 30)); quad(line, P(60, 30), P(70, 10), P(84, 14)); quad(line, P(84, 14), P(92, 16), P(86, 26)) // curl
-        line.stroke()
-        let r: CGFloat = 6.5 * s
-        let c = P(45, 41)
-        NSBezierPath(ovalIn: NSRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r)).fill()
-        img.unlockFocus()
-        img.isTemplate = false
-        return img
-    }
-
-    // tint maps the health band to the Eye's DRAWN colour: red (live-critical),
-    // amber (warnings / 7-day trends), else labelColor (adaptive white-on-dark).
-    static func tint(for status: String) -> NSColor {
-        switch status {
-        case "red":   return .systemRed
-        case "amber": return .systemYellow
-        // Explicit adaptive color (NOT nil) — a status-bar button with a template
-        // image and contentTintColor=nil renders the image's literal black, which
-        // vanishes on a dark menu bar. labelColor is white on dark, black on light.
-        default:      return .labelColor
-        }
+        let image = NSImage(size: NSSize(width: 27, height: 16))
+        image.lockFocus()
+        source.draw(
+            in: NSRect(x: 0, y: 0, width: 27, height: 16),
+            from: NSRect(x: 0, y: 0, width: source.size.width, height: source.size.height * 0.55),
+            operation: .sourceOver,
+            fraction: 1
+        )
+        image.unlockFocus()
+        image.isTemplate = false
+        return image
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -148,10 +116,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // exactly one, agent-managed instance within a bounce.
         retireOlderInstances()
 
-        // Proactively register with TCC so "Sirsi Menubar" already has a row in
-        // the Full Disk Access list before the user ever clicks the Grant button.
-        // A TCC-denied open() is what puts an app in that list (see Views.swift).
-        registerForFullDiskAccess()
+        // Never probe protected folders just to register a Full Disk Access row.
+        // The user may invoke that explicitly from the guided recovery only.
 
         // Claim a RIGHT-side menu-bar slot from the first launch (owner reports
         // 2026-07-17): macOS hides the LEFTMOST status items when the bar fills,
@@ -172,11 +138,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.autosaveName = "ai.sirsi.pantheon.eye"
         statusItem.isVisible = true
         if let button = statusItem.button {
-            // Branded mark: the Eye of Horus (the watchful protector), drawn in
-            // code in the health colour (makeEye), NOT a template image. Healthy
-            // white at launch; onTitle recolours it amber/red as health changes,
-            // so Pantheon is no longer "just a colored dot." ADR-030.
-            button.image = Self.makeEye(.labelColor)
+            button.image = Self.makeSirsiStatusMark()
             button.imagePosition = .imageOnly  // becomes .imageLeading when a waste figure rides beside it
             button.action = #selector(togglePopover(_:))
             button.target = self
@@ -186,12 +148,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         engine.onTitle = { [weak self] label in
             guard let self = self, let button = self.statusItem.button else { return }
-            // The Eye is always the icon; the waste figure (≥1 GB) rides beside it.
+            // The Sirsi mark is always the icon; a clear cleanup action (≥1 GB)
+            // rides beside it. Never surface a bare, ambiguous byte count.
             button.title = label.isEmpty ? "" : " \(label)"
             button.imagePosition = label.isEmpty ? .imageOnly : .imageLeading
-            // Redraw the Eye in the health colour so it's ALWAYS visible (no
-            // reliance on template tinting, which didn't engage on a dark bar).
-            button.image = Self.makeEye(Self.tint(for: self.engine.titleStatus))
+            button.toolTip = "Pantheon: \(self.engine.titleStatus) system health"
         }
         engine.refresh()
         // Tint the Eye to REAL health immediately — a health glyph that only colors
