@@ -130,6 +130,31 @@ final class CoreContractsTests: XCTestCase {
                                                                                              finding: nil)))
     }
 
+    func testPublishedRecheckOutcomeSurvivesItsMatchingSnapshotCallback() throws {
+        let issue = try decodeFinding(#"{"check":"Disk Pressure","severity":3,"message":"Needs attention"}"#)
+        let cleared = findingObservationSnapshot(observation: .current, finding: nil, healthStatus: "green")
+        var outcome: ResolutionOutcome? = .verified
+        var outcomeSnapshot: FindingObservationSnapshot? = cleared
+
+        if shouldInvalidateResolutionOutcome(outcomeSnapshot: outcomeSnapshot, newSnapshot: cleared) {
+            outcome = nil
+            outcomeSnapshot = nil
+        }
+        XCTAssertEqual(outcome, .verified)
+        XCTAssertTrue(shouldShowResolutionOutcome(outcome, outcomeSnapshot: outcomeSnapshot,
+                                                  currentSnapshot: cleared))
+
+        let laterCritical = findingObservationSnapshot(observation: .current, finding: issue,
+                                                      healthStatus: "red")
+        if shouldInvalidateResolutionOutcome(outcomeSnapshot: outcomeSnapshot, newSnapshot: laterCritical) {
+            outcome = nil
+            outcomeSnapshot = nil
+        }
+        XCTAssertNil(outcome)
+        XCTAssertFalse(shouldShowResolutionOutcome(outcome, outcomeSnapshot: outcomeSnapshot,
+                                                   currentSnapshot: laterCritical))
+    }
+
     func testSpotlightGuidanceUsesNativePrivacyRecoveryRoute() {
         XCTAssertEqual(diagnosticRecoveryGuidance(check: "Spotlight Storm"), .spotlightPrivacy)
         XCTAssertEqual(diagnosticRecoveryGuidance(check: "RAM Pressure"), .command)

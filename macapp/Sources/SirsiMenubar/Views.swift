@@ -1599,7 +1599,9 @@ struct FindingView: View {
             ResultView(engine: engine, title: displayedFinding.check, args: repairArgs,
                        reverifyCheck: displayedFinding.check, reverifyKind: displayedFinding.fixKind)
         }
-        .onChange(of: findingSnapshot) { _ in
+        .onChange(of: findingSnapshot) { newSnapshot in
+            guard shouldInvalidateResolutionOutcome(outcomeSnapshot: recheckOutcomeSnapshot,
+                                                    newSnapshot: newSnapshot) else { return }
             recheckOutcome = nil
             recheckOutcomeSnapshot = nil
         }

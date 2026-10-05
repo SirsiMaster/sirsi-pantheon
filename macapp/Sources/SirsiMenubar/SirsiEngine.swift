@@ -109,6 +109,11 @@ func shouldShowResolutionOutcome(_ outcome: ResolutionOutcome?, outcomeSnapshot:
     outcome != nil && outcomeSnapshot == currentSnapshot
 }
 
+func shouldInvalidateResolutionOutcome(outcomeSnapshot: FindingObservationSnapshot?,
+                                       newSnapshot: FindingObservationSnapshot) -> Bool {
+    outcomeSnapshot != newSnapshot
+}
+
 func maatReviewArguments(for finding: DiagFinding) -> [String] {
     var args = ["maat", "record-resolution", "--check", finding.check, "--message", finding.message]
     if let detail = finding.detail?.trimmingCharacters(in: .whitespacesAndNewlines), !detail.isEmpty {
