@@ -2798,6 +2798,12 @@ struct ScanCleanView: View {
     @State private var showCaution = false
     @State private var confirmCautionClean = false
     @State private var didInit = false
+    // Engine-wide refreshes (health, router, and project evidence) must never
+    // impersonate a destructive cleanup here. This screen owns its own visible
+    // operation state so an unrelated background read cannot trap someone on
+    // “Moving selected items to Trash…”.
+    @State private var isScanning = false
+    @State private var isCleaning = false
 
     private var selectedSafe: [Finding] { engine.safe.filter { selected.contains($0.path) } }
     private var selectedCaution: [Finding] { engine.caution.filter { selected.contains($0.path) } }
@@ -2817,7 +2823,7 @@ struct ScanCleanView: View {
     @ViewBuilder private var content: some View {
         if let resultLine {
             resultState(resultLine)
-        } else if engine.busy {
+        } else if isScanning || isCleaning {
             progressState
         } else if engine.safe.isEmpty && engine.caution.isEmpty {
             emptyState
@@ -2832,7 +2838,7 @@ struct ScanCleanView: View {
     private var progressState: some View {
         VStack(spacing: 12) {
             ProgressView()
-            Text(engine.safe.isEmpty ? "Scanning your Mac for waste…" : "Moving selected items to Trash…")
+            Text(isCleaning ? "Moving selected items to Trash…" : "Scanning your Mac for waste…")
                 .sirsiFont(.callout).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity).padding(.top, 60)
@@ -2848,7 +2854,14 @@ struct ScanCleanView: View {
                  ? "Scan your Mac to find reclaimable waste."
                  : "Nothing reclaimable to review right now.")
                 .sirsiFont(.callout).multilineTextAlignment(.center)
-            Button { Task { await engine.rescan(); syncSelection() } } label: {
+            Button {
+                Task {
+                    isScanning = true
+                    await engine.rescan()
+                    syncSelection()
+                    isScanning = false
+                }
+            } label: {
                 Label("Scan now", systemImage: "magnifyingglass").frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent).tint(gold)
@@ -2944,7 +2957,7 @@ struct ScanCleanView: View {
                 if includesCaution {
                     confirmCautionClean = true
                 } else {
-                    Task { resultLine = await engine.cleanSelected(paths: selectedFindings.map(\.path)) }
+                    Task { await cleanSelection() }
                 }
             } label: {
                 Text("Move \(selected.count) (\(SirsiEngine.human(selectedBytes))) to Trash")
@@ -2955,11 +2968,7 @@ struct ScanCleanView: View {
         .padding(12)
         .confirmationDialog("Move selected caution items to Trash?", isPresented: $confirmCautionClean, titleVisibility: .visible) {
             Button("Move \(selectedCaution.count) caution item\(selectedCaution.count == 1 ? "" : "s") to Trash") {
-                Task {
-                    resultLine = await engine.cleanSelected(
-                        paths: selectedFindings.map(\.path), includeCaution: true
-                    )
-                }
+                Task { await cleanSelection(includeCaution: true) }
             }
             Button("Keep reviewing", role: .cancel) {}
         } message: {
@@ -2969,6 +2978,14 @@ struct ScanCleanView: View {
 
     private func toggle(_ path: String) {
         if selected.contains(path) { selected.remove(path) } else { selected.insert(path) }
+    }
+
+    private func cleanSelection(includeCaution: Bool = false) async {
+        isCleaning = true
+        resultLine = await engine.cleanSelected(
+            paths: selectedFindings.map(\.path), includeCaution: includeCaution
+        )
+        isCleaning = false
     }
 
     // Default selection = every safe item (opt-out curation). Re-synced after a
