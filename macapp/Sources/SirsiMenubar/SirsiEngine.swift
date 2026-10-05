@@ -79,6 +79,44 @@ func currentDiagnosticFinding(check: String, findings: [DiagFinding], observatio
     return findings.first { $0.check == check }
 }
 
+func latestKnownDiagnosticFinding(check: String, findings: [DiagFinding]) -> DiagFinding? {
+    findings.first { $0.check == check }
+}
+
+struct FindingObservationSnapshot: Equatable {
+    let observation: HealthObservationState
+    let healthStatus: String?
+    let check: String?
+    let severity: Int?
+    let message: String?
+    let detail: String?
+    let trend: Bool?
+    let fix: String?
+    let fixKind: String?
+    let resolution: String?
+}
+
+func findingObservationSnapshot(observation: HealthObservationState, finding: DiagFinding?,
+                                healthStatus: String? = nil) -> FindingObservationSnapshot {
+    FindingObservationSnapshot(observation: observation, healthStatus: healthStatus, check: finding?.check,
+                               severity: finding?.severity, message: finding?.message,
+                               detail: finding?.detail, trend: finding?.trend, fix: finding?.fix,
+                               fixKind: finding?.fixKind, resolution: finding?.resolution)
+}
+
+func shouldShowResolutionOutcome(_ outcome: ResolutionOutcome?, outcomeSnapshot: FindingObservationSnapshot?,
+                                 currentSnapshot: FindingObservationSnapshot) -> Bool {
+    outcome != nil && outcomeSnapshot == currentSnapshot
+}
+
+func maatReviewArguments(for finding: DiagFinding) -> [String] {
+    var args = ["maat", "record-resolution", "--check", finding.check, "--message", finding.message]
+    if let detail = finding.detail?.trimmingCharacters(in: .whitespacesAndNewlines), !detail.isEmpty {
+        args += ["--detail", detail]
+    }
+    return args + ["--confirm"]
+}
+
 func canUseDiagnosticAction(observation: HealthObservationState, findingIsCurrent: Bool, hasAction: Bool) -> Bool {
     observation == .current && findingIsCurrent && hasAction
 }
@@ -126,9 +164,10 @@ enum CommandExecutionOutcome: Equatable {
 func commandExecutionOutcome(exitCode: Int32?, launchError: String?, timedOut: Bool, hasOutput: Bool) -> CommandExecutionOutcome {
     if launchError != nil { return .launchFailed }
     if timedOut { return .timedOut }
+    if let exitCode, exitCode != 0 { return .failed }
     guard hasOutput else { return .unverified }
-    guard let exitCode else { return .unverified }
-    return exitCode == 0 ? .succeeded : .failed
+    guard exitCode != nil else { return .unverified }
+    return .succeeded
 }
 
 func isConfirmedHealthy(status: String, observation: HealthObservationState) -> Bool {

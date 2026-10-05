@@ -86,6 +86,50 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertFalse(canUseDiagnosticAction(observation: .unknown, findingIsCurrent: true, hasAction: true))
     }
 
+    func testFailedRefreshKeepsLastKnownFindingButDisablesItsAction() throws {
+        let original = try decodeFinding(#"{"check":"Disk Pressure","severity":1,"message":"Original A"}"#)
+        let latestKnown = try decodeFinding(#"{"check":"Disk Pressure","severity":3,"message":"Latest B","fix":"sirsi clean --confirm"}"#)
+        let retained = latestKnownDiagnosticFinding(check: original.check, findings: [latestKnown])
+
+        XCTAssertEqual(retained?.message, "Latest B")
+        XCTAssertNil(currentDiagnosticFinding(check: original.check, findings: [latestKnown], observation: .stale))
+        XCTAssertFalse(canUseDiagnosticAction(observation: .stale, findingIsCurrent: false,
+                                              hasAction: retained?.fix != nil))
+    }
+
+    func testMaatPayloadCapturesLatestDisplayedFindingEvidence() throws {
+        let original = try decodeFinding(#"{"check":"Disk Pressure","severity":1,"message":"Original A","detail":"old detail"}"#)
+        let latest = try decodeFinding(#"{"check":"Disk Pressure","severity":3,"message":"Latest B","detail":"current detail","fix":"sirsi clean --confirm"}"#)
+
+        XCTAssertNotEqual(maatReviewArguments(for: original), maatReviewArguments(for: latest))
+        XCTAssertEqual(maatReviewArguments(for: latest), [
+            "maat", "record-resolution", "--check", "Disk Pressure", "--message", "Latest B",
+            "--detail", "current detail", "--confirm",
+        ])
+    }
+
+    func testVerifiedOutcomeIsHiddenAfterFindingOrObservationChanges() throws {
+        let verified = try decodeFinding(#"{"check":"Disk Pressure","severity":0,"message":"Clear"}"#)
+        let changed = try decodeFinding(#"{"check":"Disk Pressure","severity":3,"message":"Critical again","fix":"sirsi clean --confirm"}"#)
+        let verifiedSnapshot = findingObservationSnapshot(observation: .current, finding: verified,
+                                                         healthStatus: "green")
+        XCTAssertTrue(shouldShowResolutionOutcome(.verified, outcomeSnapshot: verifiedSnapshot,
+                                                  currentSnapshot: verifiedSnapshot))
+        XCTAssertFalse(shouldShowResolutionOutcome(.verified, outcomeSnapshot: verifiedSnapshot,
+                                                   currentSnapshot: findingObservationSnapshot(observation: .current,
+                                                                                             finding: changed)))
+        XCTAssertFalse(shouldShowResolutionOutcome(.verified, outcomeSnapshot: verifiedSnapshot,
+                                                   currentSnapshot: findingObservationSnapshot(observation: .current,
+                                                                                             finding: verified,
+                                                                                             healthStatus: "red")))
+        XCTAssertFalse(shouldShowResolutionOutcome(.verified, outcomeSnapshot: verifiedSnapshot,
+                                                   currentSnapshot: findingObservationSnapshot(observation: .stale,
+                                                                                             finding: changed)))
+        XCTAssertFalse(shouldShowResolutionOutcome(.verified, outcomeSnapshot: verifiedSnapshot,
+                                                   currentSnapshot: findingObservationSnapshot(observation: .current,
+                                                                                             finding: nil)))
+    }
+
     func testSpotlightGuidanceUsesNativePrivacyRecoveryRoute() {
         XCTAssertEqual(diagnosticRecoveryGuidance(check: "Spotlight Storm"), .spotlightPrivacy)
         XCTAssertEqual(diagnosticRecoveryGuidance(check: "RAM Pressure"), .command)
@@ -118,6 +162,10 @@ final class CoreContractsTests: XCTestCase {
                                                timedOut: true, hasOutput: true), .timedOut)
         XCTAssertEqual(commandExecutionOutcome(exitCode: 1, launchError: nil,
                                                timedOut: false, hasOutput: true), .failed)
+        let silentNonzero = CommandExecution(stdout: "", stderr: "", exitCode: 1,
+                                             launchError: nil, timedOut: false)
+        XCTAssertEqual(silentNonzero.outcome, .failed)
+        XCTAssertTrue(silentNonzero.displayText.contains("Exit status: 1"))
         XCTAssertEqual(commandExecutionOutcome(exitCode: 0, launchError: nil,
                                                timedOut: false, hasOutput: true), .succeeded)
     }

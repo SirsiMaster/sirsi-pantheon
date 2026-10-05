@@ -1404,12 +1404,19 @@ struct FindingView: View {
 
     // Bind an open detail to the latest observation. Once a check disappears,
     // retain its text as history while removing every action based on it.
+    private var latestKnownFinding: DiagFinding? {
+        latestKnownDiagnosticFinding(check: finding.check, findings: engine.health)
+    }
     private var latestFinding: DiagFinding? {
         currentDiagnosticFinding(check: finding.check, findings: engine.health,
                                  observation: engine.healthObservationState)
     }
-    private var displayedFinding: DiagFinding { latestFinding ?? finding }
-    private var isHistorical: Bool { engine.healthObservationState == .current && latestFinding == nil }
+    private var displayedFinding: DiagFinding { latestKnownFinding ?? finding }
+    private var findingSnapshot: FindingObservationSnapshot {
+        findingObservationSnapshot(observation: engine.healthObservationState, finding: latestKnownFinding,
+                                   healthStatus: engine.healthStatus)
+    }
+    private var isHistorical: Bool { engine.healthObservationState == .current && latestKnownFinding == nil }
     // The honesty class drives EVERY label so a 7-day history never wears an
     // "instant fix" costume. See guard.FixKind (instant | relief | guidance).
     private var kind: String { displayedFinding.fixKind ?? "" }
@@ -1422,6 +1429,7 @@ struct FindingView: View {
     @State private var showConfirmedFix = false
     @State private var isRechecking = false
     @State private var recheckOutcome: ResolutionOutcome?
+    @State private var recheckOutcomeSnapshot: FindingObservationSnapshot?
 
     // recommendedCommand pulls a `sirsi …` command the finding names in its
     // message/detail (backtick-quoted) so guidance findings become actionable.
@@ -1569,7 +1577,10 @@ struct FindingView: View {
             }
         }
         .confirmationDialog("Record a Ma'at owner review?", isPresented: $confirmMaatReview, titleVisibility: .visible) {
-            Button("Record owner review") { Task { await recordMaatReview() } }
+            Button("Record owner review") {
+                let evidenceSnapshot = displayedFinding
+                Task { await recordMaatReview(finding: evidenceSnapshot) }
+            }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Ma'at will retain this exact diagnostic finding for review. It will not change the system or claim that the issue is repaired.")
@@ -1587,6 +1598,10 @@ struct FindingView: View {
         .sheet(isPresented: $showConfirmedFix) {
             ResultView(engine: engine, title: displayedFinding.check, args: repairArgs,
                        reverifyCheck: displayedFinding.check, reverifyKind: displayedFinding.fixKind)
+        }
+        .onChange(of: findingSnapshot) { _ in
+            recheckOutcome = nil
+            recheckOutcomeSnapshot = nil
         }
     }
 
@@ -1676,7 +1691,9 @@ struct FindingView: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(isRechecking)
-                if let recheckOutcome {
+                if shouldShowResolutionOutcome(recheckOutcome, outcomeSnapshot: recheckOutcomeSnapshot,
+                                               currentSnapshot: findingSnapshot),
+                   let recheckOutcome {
                     Label(outcomeDescription(recheckOutcome),
                           systemImage: recheckOutcome == .verified ? "checkmark.seal" : "info.circle")
                         .sirsiFont(.caption)
@@ -1697,6 +1714,8 @@ struct FindingView: View {
 
     @MainActor private func recheckFinding() async {
         isRechecking = true
+        recheckOutcome = nil
+        recheckOutcomeSnapshot = nil
         await engine.diagnose(force: true)
         let current = currentDiagnosticFinding(check: finding.check, findings: engine.health,
                                                observation: engine.healthObservationState)
@@ -1704,6 +1723,7 @@ struct FindingView: View {
             observation: engine.healthObservationState,
             severity: current?.severity
         )
+        recheckOutcomeSnapshot = findingSnapshot
         isRechecking = false
     }
 
@@ -1805,15 +1825,11 @@ struct FindingView: View {
         .background(RoundedRectangle(cornerRadius: 10).fill(Color.green.opacity(0.08)))
     }
 
-    @MainActor private func recordMaatReview() async {
+    @MainActor private func recordMaatReview(finding: DiagFinding) async {
         guard !maatReviewInFlight else { return }
         maatReviewInFlight = true
         maatReviewError = nil
-        var args = ["maat", "record-resolution", "--check", finding.check, "--message", finding.message]
-        if let detail = finding.detail?.trimmingCharacters(in: .whitespacesAndNewlines), !detail.isEmpty {
-            args += ["--detail", detail]
-        }
-        args.append("--confirm")
+        let args = maatReviewArguments(for: finding)
         maatReviewResult = await SirsiEngine.runResult(args: args)
         if maatReviewResult == nil {
             maatReviewUnverified = true
