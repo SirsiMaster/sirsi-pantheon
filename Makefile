@@ -98,9 +98,21 @@ bundle-dev: build build-menubar
 	@cp cmd/sirsi-menubar/bundle/PkgInfo Pantheon.app/Contents/PkgInfo
 	@cp cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist Pantheon.app/Contents/Resources/ai.sirsi.pantheon.plist
 	@cp -R contracts/stacklab Pantheon.app/Contents/Resources/StackLab
+	@# The bundle, CLI and eventual DMG/PKG are one product identity. Never let
+	@# the source plist's historical template version survive into a local app.
+	@/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $(VERSION)" Pantheon.app/Contents/Info.plist
+	@/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(VERSION)" Pantheon.app/Contents/Info.plist
 	@codesign --force --deep --sign - Pantheon.app
 	@test -x Pantheon.app/Contents/MacOS/sirsi
 	@test -x Pantheon.app/Contents/MacOS/sirsi-menubar
+	@$(BUILD_DIR)/sirsi package-inventory \
+		--app "$(abspath Pantheon.app)" \
+		--version "$(VERSION)" \
+		--build "$(VERSION)" \
+		--info-plist "$(abspath Pantheon.app/Contents/Info.plist)" \
+		--pkg-info "$(abspath cmd/sirsi-menubar/bundle/PkgInfo)" \
+		--launch-agent "$(abspath cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist)" \
+		--require-code-signature
 	@echo "✅ Pantheon.app development bundle created (ad-hoc signed; not for distribution)"
 
 # --- macOS DMG Installer ---

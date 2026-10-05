@@ -55,6 +55,20 @@ func TestVerifyDoesNotTreatTextAsPythonLinkage(t *testing.T) {
 	}
 }
 
+func TestReadOnceRejectsPayloadOverBoundBeforeAllocation(t *testing.T) {
+	file, err := os.CreateTemp(t.TempDir(), "oversized-payload")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if err := file.Truncate(maxPayloadFileSize + 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readOnce(int(file.Fd()), maxPayloadFileSize+1); err == nil || !strings.Contains(err.Error(), "invalid file size") {
+		t.Fatalf("oversized payload was accepted: %v", err)
+	}
+}
+
 func TestVerifyRejectsPythonMachOLinkageInSignedPayload(t *testing.T) {
 	app, expected := makeBundle(t)
 	if err := os.Mkdir(filepath.Join(app, "Contents", "_CodeSignature"), 0o755); err != nil {
