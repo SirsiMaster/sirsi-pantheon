@@ -519,6 +519,11 @@ func activityMaatReviewArgs(for entry: ActivityEntry) -> [String] {
 // this type only reads the persisted scan and runs the CLI.
 @MainActor
 final class SirsiEngine: ObservableObject {
+    // One bounded, direct Ra read for the native Fleet surface.  Keep this
+    // data rather than a prose convention so a later refactor cannot quietly
+    // reintroduce `board-serve --once` and its server-start latency.
+    nonisolated static let fleetReadArgs = ["router", "fleet", "--json"]
+    nonisolated static let fleetReadTimeoutSeconds = 20
     struct FabricHandoffOutcome {
         let text: String
         let succeeded: Bool
@@ -772,21 +777,20 @@ final class SirsiEngine: ObservableObject {
     // loadRouterBoard reads ~/.sirsi/router-board.json; if absent, shells
     // `sirsi router node-status --json` (same contract). Never blocks the UI.
 
-    // loadFleetBoard reads the shared producer. No local aggregation: the whole
-    // point is that this surface renders what Horus renders.
+    // loadFleetBoard reads Ra's canonical one-shot fleet projection. No local
+    // aggregation: the native surface renders exactly the router's supervised
+    // lanes rather than starting the long-lived dashboard server merely to ask
+    // for one frame. The latter can spend tens of seconds initializing board
+    // dependencies and leave a usable Fleet screen with no data.
     func loadFleetBoard() async {
         fleetLoading = true
         defer { fleetLoading = false }
-        // Read the ROUTER BOARD's own output, not a parallel aggregation.
-        //
-        // This used to call `router fleet --json`, whose summary counts
-        // differently from the board's BoardSummary (the board treats blocked as
-        // a SUBSET of active; fleet reports them as separate tallies). Two
-        // careful aggregations still disagree, and on 2026-08-05 the owner was
-        // shown three surfaces reporting three different numbers under
-        // interchangeable labels. `board-serve --once` runs the SAME code the
-        // served board runs, so parity is structural rather than maintained.
-        let out = await Self.runJSON(args: ["board-serve", "--once", "--shape", "fleet"])
+        // `router fleet --json` is the canonical Ra consumer contract. It
+        // constructs the one-shot view directly; it does not boot an HTTP board
+        // plus its long-lived poller to produce one read. A 20-second bound is
+        // long enough for a real router ledger but still gives the user a clear
+        // recovery surface instead of an endless spinner.
+        let out = await Self.runJSON(args: Self.fleetReadArgs, timeoutSeconds: Self.fleetReadTimeoutSeconds)
         if let board = try? JSONDecoder().decode(FleetBoard.self, from: out) {
             fleetBoard = board
             fleetError = nil

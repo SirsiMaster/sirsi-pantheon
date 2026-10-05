@@ -22,6 +22,12 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertEqual(FleetStatePresentation.label("stopped"), "UNKNOWN — REVIEW")
     }
 
+    func testFleetUsesBoundedDirectRaProducerInsteadOfStartingTheDashboardServer() {
+        XCTAssertEqual(SirsiEngine.fleetReadArgs, ["router", "fleet", "--json"])
+        XCTAssertEqual(SirsiEngine.fleetReadTimeoutSeconds, 20)
+        XCTAssertFalse(SirsiEngine.fleetReadArgs.contains("board-serve"))
+    }
+
     func testKnownFailureProposalDecodesTheTypedLocalReviewQueue() throws {
         let raw = #"""
         [{

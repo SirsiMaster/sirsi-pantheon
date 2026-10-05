@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased] — Apollo view: retire the last user-facing "SNE" copy
 
+- **v0.24.86 — Fleet reads Ra directly instead of starting a dashboard server.**
+  The native Fleet now requests the canonical one-shot `router fleet --json`
+  producer with a bounded 20-second read. It no longer starts `board-serve`
+  just to render one frame, so a healthy fabric cannot become an empty Fleet
+  screen while dashboard startup waits on unrelated initialization.
+
 - **v0.24.85 — Fleet now renders Ra's full supervision vocabulary.** The native
   view recognizes WORKING, ASSIGNED, IDLE WITH WORK, BLOCKED, UNROUTABLE, and
   COMPLETE exactly as Ra produces them. Unknown future values are shown as an
