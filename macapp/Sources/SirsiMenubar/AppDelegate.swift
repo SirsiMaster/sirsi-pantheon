@@ -279,6 +279,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered, defer: false)
         w.title = "Sirsi Pantheon"
         w.titlebarAppearsTransparent = false
+        w.appearance = NSAppearance(named: .darkAqua)
+        w.backgroundColor = NSColor(red: 0.025, green: 0.047, blue: 0.036, alpha: 1)
         w.isMovableByWindowBackground = false
         w.level = .normal
         w.hidesOnDeactivate = false

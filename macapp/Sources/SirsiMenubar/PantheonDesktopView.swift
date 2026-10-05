@@ -17,14 +17,14 @@ struct PantheonDesktopView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 18) {
                         sidebarSection("Operate", [.command, .maat, .ra, .activity])
-                        sidebarSection("Build", [.stackLab, .apollo, .threads])
+                        sidebarSection("Build", [.stackLab, .apollo, .release, .threads])
                         sidebarSection("Protect", [.horus, .anubis, .osiris])
                         sidebarSection("Explore", [.fleet, .library])
                     }
                     .padding(12)
                 }
             }
-            .background(Color(nsColor: .windowBackgroundColor))
+            .background(PantheonTheme.sidebar)
             .frame(minWidth: 218)
         } detail: {
             VStack(spacing: 0) {
@@ -37,9 +37,12 @@ struct PantheonDesktopView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(PantheonTheme.canvas)
             .environmentObject(nav)
         }
         .navigationSplitViewStyle(.balanced)
+        .preferredColorScheme(.dark)
+        .tint(emerald)
         .onChange(of: section) { _ in nav.popToRoot() }
         .onChange(of: engine.pendingOwnerItemID) { id in
             guard let id else { return }
@@ -59,13 +62,17 @@ struct PantheonDesktopView: View {
     }
 
     private var workspaceHeader: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
+        HStack(alignment: .firstTextBaseline, spacing: 14) {
+            Circle()
+                .fill(emerald)
+                .frame(width: 8, height: 8)
+                .accessibilityLabel("Pantheon is live")
             VStack(alignment: .leading, spacing: 3) {
                 Text(section.title)
                     .font(.title2.weight(.bold))
                 Text(section.detail)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(PantheonTheme.mutedText)
                     .lineLimit(1)
             }
             Spacer()
@@ -77,17 +84,14 @@ struct PantheonDesktopView: View {
             .disabled(engine.busy)
             .buttonStyle(.bordered)
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 16)
+        .padding(.horizontal, 26)
+        .padding(.vertical, 18)
+        .background(PantheonTheme.canvas)
     }
 
     private var sidebarIdentity: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "circle.hexagongrid.fill")
-                .sirsiFont(20, weight: .semibold)
-                .foregroundStyle(gold)
-                .frame(width: 30, height: 30)
-                .background(Circle().fill(gold.opacity(0.15)))
+        HStack(spacing: 11) {
+            PantheonBrandMark(size: 38)
             VStack(alignment: .leading, spacing: 1) {
                 Text("SIRSI")
                     .sirsiFont(.caption, weight: .bold)
@@ -99,8 +103,8 @@ struct PantheonDesktopView: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
+        .padding(.horizontal, 17)
+        .padding(.vertical, 16)
     }
 
     private func sidebarSection(_ title: String, _ workspaces: [PantheonWorkspace]) -> some View {
@@ -108,7 +112,7 @@ struct PantheonDesktopView: View {
             Text(title.uppercased())
                 .sirsiFont(10, weight: .bold)
                 .tracking(0.9)
-                .foregroundStyle(Color.secondary)
+                .foregroundStyle(PantheonTheme.mutedText.opacity(0.78))
                 .padding(.horizontal, 8)
             ForEach(workspaces) { workspace in
                 workspaceButton(workspace)
@@ -126,10 +130,10 @@ struct PantheonDesktopView: View {
                 Image(systemName: workspace.symbol)
                     .sirsiFont(14, weight: .semibold)
                     .frame(width: 20)
-                    .foregroundStyle(selected ? gold : Color.secondary)
+                    .foregroundStyle(selected ? emerald : PantheonTheme.mutedText)
                 Text(workspace.title)
                     .sirsiFont(13, weight: selected ? .semibold : .regular)
-                    .foregroundStyle(Color.primary)
+                    .foregroundStyle(selected ? Color.white : PantheonTheme.mutedText)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 9)
@@ -137,11 +141,11 @@ struct PantheonDesktopView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(selected ? gold.opacity(0.18) : Color.clear)
+                    .fill(selected ? Color.white.opacity(0.06) : Color.clear)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(selected ? gold.opacity(0.45) : Color.clear, lineWidth: 1)
+                    .stroke(selected ? PantheonTheme.gold.opacity(0.66) : Color.clear, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -158,6 +162,7 @@ struct PantheonDesktopView: View {
         case .activity: ActivityView(engine: engine)
         case .stackLab: StackLabView(engine: engine)
         case .apollo: ApolloRunPlannerView(engine: engine)
+        case .release: PantheonReleaseWorkspaceView(engine: engine)
         case .threads: ThreadsView(engine: engine)
         case .horus: HorusView(engine: engine)
         case .anubis: AnubisView(engine: engine)
@@ -169,7 +174,7 @@ struct PantheonDesktopView: View {
 }
 
 private enum PantheonWorkspace: String, CaseIterable, Identifiable {
-    case command, maat, ra, activity, stackLab, apollo, threads, horus, anubis, osiris, fleet, library
+    case command, maat, ra, activity, stackLab, apollo, release, threads, horus, anubis, osiris, fleet, library
 
     var id: String { rawValue }
 
@@ -181,6 +186,7 @@ private enum PantheonWorkspace: String, CaseIterable, Identifiable {
         case .activity: return "Activity"
         case .stackLab: return "Stack Lab"
         case .apollo: return "Apollo"
+        case .release: return "Release"
         case .threads: return "Work"
         case .horus: return "Horus"
         case .anubis: return "Anubis"
@@ -198,6 +204,7 @@ private enum PantheonWorkspace: String, CaseIterable, Identifiable {
         case .activity: return "Recent work and retained operational evidence"
         case .stackLab: return "Recipes, components, and release readiness"
         case .apollo: return "Inference routes, resource envelopes, and telemetry"
+        case .release: return "Prepare a signed Pantheon delivery from this app"
         case .threads: return "Active work across Pantheon"
         case .horus: return "System health and capacity"
         case .anubis: return "Guided storage recovery and cleanup"
@@ -215,6 +222,7 @@ private enum PantheonWorkspace: String, CaseIterable, Identifiable {
         case .activity: return "clock.arrow.circlepath"
         case .stackLab: return "square.3.layers.3d"
         case .apollo: return "cpu"
+        case .release: return "shippingbox.fill"
         case .threads: return "circle.dotted"
         case .horus: return "waveform.path.ecg"
         case .anubis: return "trash"

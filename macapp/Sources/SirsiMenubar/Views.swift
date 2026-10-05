@@ -9,10 +9,51 @@ import os
 // /tmp file. Used to diagnose a failed apply (FDA / cancel / 0-cleaned).
 private let applyLog = Logger(subsystem: "ai.sirsi.pantheon", category: "apply")
 
-// Shared product accent. Keep the palette module-visible so every native
-// Pantheon surface uses the same green/gold language rather than inventing a
-// parallel accent per view.
-let gold = Color(red: 0.78, green: 0.66, blue: 0.32)
+// Pantheon is deliberately a black, emerald, and gold product. Black owns the
+// interface. Emerald is reserved for live/healthy state and one clear action;
+// gold is reserved for the brand and consequential commitment. The result is a
+// quiet operational surface, not a green dashboard.
+enum PantheonTheme {
+    static let canvas = Color(red: 0.018, green: 0.024, blue: 0.021)
+    static let sidebar = Color(red: 0.027, green: 0.036, blue: 0.031)
+    static let panel = Color(red: 0.045, green: 0.057, blue: 0.049)
+    static let panelRaised = Color(red: 0.060, green: 0.075, blue: 0.065)
+    static let emerald = Color(red: 0.18, green: 0.84, blue: 0.50)
+    static let emeraldMuted = Color(red: 0.075, green: 0.22, blue: 0.14)
+    static let gold = Color(red: 0.90, green: 0.72, blue: 0.31)
+    static let goldMuted = Color(red: 0.50, green: 0.37, blue: 0.12)
+    static let mutedText = Color(red: 0.66, green: 0.74, blue: 0.69)
+}
+
+let gold = PantheonTheme.gold
+let emerald = PantheonTheme.emerald
+
+// Use the actual Pantheon Eye rather than an SF Symbol in identity positions.
+// The fallback is present only for development targets built without resources;
+// release packaging binds the PNG byte-for-byte in package inventory.
+struct PantheonBrandMark: View {
+    let size: CGFloat
+
+    var body: some View {
+        Group {
+            if let url = Bundle.main.url(forResource: "pantheon-icon", withExtension: "png"),
+               let image = NSImage(contentsOf: url) {
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+            } else {
+                Image(systemName: "eye.fill")
+                    .resizable()
+                    .scaledToFit()
+                    .padding(size * 0.22)
+                    .foregroundStyle(gold)
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityLabel("Pantheon Eye")
+    }
+}
 
 // openSystemURL opens a System Settings / file URL (e.g. the Full Disk Access
 // pane). macOS cannot self-grant FDA — this is the one click that gets the user

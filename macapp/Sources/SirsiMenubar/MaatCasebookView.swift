@@ -2347,7 +2347,7 @@ struct MaatSystemOneCalibration: Decodable {
 // release source observation. It deliberately is not CommandResult: the
 // preflight's file identities and deterministic floor are the evidence the
 // operator must inspect before opting into one Casebook record.
-private struct MaatReleaseContractPreflight: Decodable {
+struct MaatReleaseContractPreflight: Decodable {
     let root: String
     let fingerprint: String
     let verdict: MaatSystemOneVerdict

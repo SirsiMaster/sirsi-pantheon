@@ -109,6 +109,7 @@ cp "${BUILD_DIR}/sirsi"         "${BUNDLE_DIR}/Contents/MacOS/sirsi"
 cp "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/Info.plist" "${BUNDLE_DIR}/Contents/Info.plist"
 cp "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/PkgInfo"    "${BUNDLE_DIR}/Contents/PkgInfo"
 cp "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" "${BUNDLE_DIR}/Contents/Resources/ai.sirsi.pantheon.plist"
+cp "${PROJECT_ROOT}/docs/assets/pantheon-icon.png" "${BUNDLE_DIR}/Contents/Resources/pantheon-icon.png"
 # Stack Lab is a shipped, inspectable recipe surface rather than build-only
 # documentation.  Keep its contracts alongside the app they describe.
 cp -R "${PROJECT_ROOT}/contracts/stacklab" "${BUNDLE_DIR}/Contents/Resources/StackLab"
@@ -159,6 +160,7 @@ echo "Verifying assembled Pantheon.app payload..."
     --info-plist "${BUNDLE_DIR}/Contents/Info.plist" \
     --pkg-info "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/PkgInfo" \
     --launch-agent "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" \
+    --brand-logo "${PROJECT_ROOT}/docs/assets/pantheon-icon.png" \
     --require-code-signature
 
 # --- Stage + create the DMG ---

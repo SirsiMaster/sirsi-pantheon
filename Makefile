@@ -97,6 +97,7 @@ bundle-dev: build build-menubar
 	@cp cmd/sirsi-menubar/bundle/Info.plist Pantheon.app/Contents/Info.plist
 	@cp cmd/sirsi-menubar/bundle/PkgInfo Pantheon.app/Contents/PkgInfo
 	@cp cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist Pantheon.app/Contents/Resources/ai.sirsi.pantheon.plist
+	@cp docs/assets/pantheon-icon.png Pantheon.app/Contents/Resources/pantheon-icon.png
 	@cp -R contracts/stacklab Pantheon.app/Contents/Resources/StackLab
 	@# The bundle, CLI and eventual DMG/PKG are one product identity. Never let
 	@# the source plist's historical template version survive into a local app.
@@ -112,6 +113,7 @@ bundle-dev: build build-menubar
 		--info-plist "$(abspath Pantheon.app/Contents/Info.plist)" \
 		--pkg-info "$(abspath cmd/sirsi-menubar/bundle/PkgInfo)" \
 		--launch-agent "$(abspath cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist)" \
+		--brand-logo "$(abspath docs/assets/pantheon-icon.png)" \
 		--require-code-signature
 	@echo "✅ Pantheon.app development bundle created (ad-hoc signed; not for distribution)"
 

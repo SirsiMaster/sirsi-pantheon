@@ -309,6 +309,18 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertNotNil(MenubarInstanceLease.acquire(at: path))
     }
 
+    @MainActor
+    func testMenubarCleanupLabelNamesTheActionInsteadOfShowingAnAmbiguousByteCount() throws {
+        let finding = try JSONDecoder().decode(Finding.self, from: #"""
+        {"path":"/tmp/reclaimable","size_bytes":43379169689,"severity":"safe","description":"reclaimable data"}
+        """#.data(using: .utf8)!)
+        let engine = SirsiEngine()
+        engine.findings = [finding]
+
+        XCTAssertEqual(engine.titleLabel(), "Clean 40.4 GB")
+        XCTAssertFalse(engine.titleLabel().hasPrefix("40"))
+    }
+
     func testProjectRootAdmissionAcceptsGitWorktreesAndRejectsPlainFolders() throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("sirsi-project-root-\(UUID().uuidString)", isDirectory: true)

@@ -15,6 +15,7 @@ var (
 	packageInventoryInfoPlist            string
 	packageInventoryPkgInfo              string
 	packageInventoryLaunchAgent          string
+	packageInventoryBrandLogo            string
 	packageInventoryRequireCodeSignature bool
 )
 
@@ -30,6 +31,7 @@ var packageInventoryCmd = &cobra.Command{
 			InfoPlist:            packageInventoryInfoPlist,
 			PkgInfo:              packageInventoryPkgInfo,
 			LaunchAgent:          packageInventoryLaunchAgent,
+			BrandLogo:            packageInventoryBrandLogo,
 			RequireCodeSignature: packageInventoryRequireCodeSignature,
 		})
 		if err != nil {
@@ -52,6 +54,7 @@ func init() {
 	packageInventoryCmd.Flags().StringVar(&packageInventoryInfoPlist, "info-plist", "", "canonical Info.plist path")
 	packageInventoryCmd.Flags().StringVar(&packageInventoryPkgInfo, "pkg-info", "", "canonical PkgInfo path")
 	packageInventoryCmd.Flags().StringVar(&packageInventoryLaunchAgent, "launch-agent", "", "canonical LaunchAgent path")
+	packageInventoryCmd.Flags().StringVar(&packageInventoryBrandLogo, "brand-logo", "", "canonical Pantheon Eye PNG path")
 	packageInventoryCmd.Flags().BoolVar(&packageInventoryRequireCodeSignature, "require-code-signature", false, "require the _CodeSignature payload")
 	rootCmd.AddCommand(packageInventoryCmd)
 }

@@ -19,7 +19,7 @@ func TestVerifyBuildsDeterministicPythonFreeInventory(t *testing.T) {
 	if report.Schema != Schema || !report.PythonFree || report.EngineCount != 2 {
 		t.Fatalf("unexpected report: %+v", report)
 	}
-	if len(report.Entries) != 20 {
+	if len(report.Entries) != 21 {
 		t.Fatalf("entry count = %d, want unsigned payload including Stack Lab contracts", len(report.Entries))
 	}
 	for i := 1; i < len(report.Entries); i++ {
@@ -238,12 +238,14 @@ func makeBundle(t *testing.T) (string, Expectations) {
 	info := []byte("CFBundleShortVersionString=0.23.9-beta\nCFBundleVersion=20260908\n")
 	pkgInfo := []byte("APPL????")
 	launchAgent := []byte("Label=ai.sirsi.pantheon\n")
+	brandLogo := []byte("canonical Pantheon Eye bytes\n")
 	files := map[string][]byte{
 		"Contents/Info.plist":                                                  info,
 		"Contents/PkgInfo":                                                     pkgInfo,
 		"Contents/MacOS/sirsi":                                                 []byte("go cli bytes"),
 		"Contents/MacOS/sirsi-menubar":                                         []byte("go menubar bytes"),
 		"Contents/Resources/ai.sirsi.pantheon.plist":                           launchAgent,
+		"Contents/Resources/pantheon-icon.png":                                 brandLogo,
 		"Contents/Resources/StackLab/apollo-sne-telemetry-v1.json":             []byte(`{"schema":"sirsi.stacklab.apollo-telemetry.v1"}`),
 		"Contents/Resources/StackLab/maat-system-one-recipe-v1.json":           []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
 		"Contents/Resources/StackLab/maat-wing-v1.json":                        []byte(`{"schema":"sirsi.stacklab.wing.v1"}`),
@@ -260,5 +262,5 @@ func makeBundle(t *testing.T) (string, Expectations) {
 			t.Fatal(err)
 		}
 	}
-	return app, Expectations{Version: "0.23.9-beta", Build: "20260908", InfoPlist: info, PkgInfo: pkgInfo, LaunchAgent: launchAgent}
+	return app, Expectations{Version: "0.23.9-beta", Build: "20260908", InfoPlist: info, PkgInfo: pkgInfo, LaunchAgent: launchAgent, BrandLogo: brandLogo}
 }

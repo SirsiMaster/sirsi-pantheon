@@ -1020,9 +1020,11 @@ final class SirsiEngine: ObservableObject {
 
     // The menubar glyph is the OVERALL at-a-glance light: the worse of system
     // health (the green/amber/red rubric) and whether there is MEANINGFUL
-    // reclaimable waste. The waste figure is shown only when it's worth a click.
+    // reclaimable disk data. The label must name its action: an unqualified
+    // "40 GB" beside a system-health glyph is easily and reasonably read as
+    // memory pressure rather than disk space that Anubis can review.
     func titleLabel() -> String {
-        return safeBytes >= Self.wasteThreshold ? Self.human(safeBytes) : ""
+        return safeBytes >= Self.wasteThreshold ? "Clean \(Self.human(safeBytes))" : ""
     }
 
     // titleStatus is the health band the menu-bar Eye is TINTED with — that tint
