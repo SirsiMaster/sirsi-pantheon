@@ -18,7 +18,7 @@ func fetchSPA(t *testing.T) string {
 	srv := testServer(t, Config{})
 	defer srv.Close()
 
-	resp, err := http.Get(srv.URL + "/")
+	resp, err := http.Get(srv.URL + "/classic")
 	if err != nil {
 		t.Fatalf("GET /: %v", err)
 	}

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Horus — Router</title>
+<link rel="stylesheet" href="/assets/tokens.css">
+<link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand"><i aria-hidden="true">𓂀</i><span>Horus</span></div>
+    <nav class="nav" aria-label="Views" id="nav"></nav>
+    <div class="side-foot"><span id="foot-ver">—</span><span>Local node · 127.0.0.1</span><a href="/classic">Classic tools</a></div>
+  </aside>
+  <main class="main" id="main" tabindex="-1">
+    <div class="titlebar">
+      <div><h1 id="title">Overview</h1><p class="sub" id="subtitle"></p></div>
+      <div class="tools"><span class="live" id="live" role="status" aria-live="polite"><span class="dot"></span><span id="live-t">Loading…</span></span><button class="btn" id="refresh" type="button">Refresh</button></div>
+    </div>
+    <div id="view"></div>
+  </main>
+</div>
+<script src="/assets/app.js"></script>
+</body>
+</html>

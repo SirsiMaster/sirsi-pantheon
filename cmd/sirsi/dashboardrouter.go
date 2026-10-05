@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -80,6 +81,9 @@ func collectDashboardRouter() (dashboard.RouterSnapshot, error) {
 		return snap.Queue[i].Agent < snap.Queue[j].Agent
 	})
 
+	for i := range snap.Lanes.List {
+		snap.Lanes.List[i].Open = per[snap.Lanes.List[i].Agent]
+	}
 	snap.Consumers.Running, snap.Consumers.Max = router.ConsumerSlotUsage(routerRoot)
 	path, pinned, meta := router.RegistryPinStatus(routerRoot)
 	snap.Registry = dashboard.RouterRegistryPin{Pinned: pinned, Source: path}
@@ -98,7 +102,8 @@ func collectDashboardRouter() (dashboard.RouterSnapshot, error) {
 				FreePct: r.FreePct, DeltaPages: r.DeltaSwapPages, Correctness: r.CorrectnessOnlyOK, Timing: r.ReleaseTimingOK, Restart: r.RestartProposed}
 		}
 	}
-	snap.Releases = readChangelogReleases(filepath.Join(repo, "CHANGELOG.md"), 4)
+	snap.Releases = readChangelogReleases(changelogText(repo), 5)
+	snap.Attention = routerAttention(snap)
 	return snap, nil
 }
 
@@ -106,12 +111,13 @@ var changelogHead = regexp.MustCompile(`^## \[([^\]]+)\](?: — (\d{4}-\d{2}-\d{
 
 // readChangelogReleases returns the Unreleased section and the next n released
 // sections with one line per bullet, so the panel shows what each release added.
-func readChangelogReleases(path string, n int) []dashboard.RouterRelease {
-	b, err := os.ReadFile(path)
-	if err != nil {
+func readChangelogReleases(text string, n int) []dashboard.RouterRelease {
+	if text == "" {
 		return nil
 	}
+	b := []byte(text)
 	var out []dashboard.RouterRelease
+	seenVersion := map[string]int{}
 	var cur *dashboard.RouterRelease
 	var bullet []string
 	flush := func() {
@@ -126,7 +132,12 @@ func readChangelogReleases(path string, n int) []dashboard.RouterRelease {
 			if len(out) > n {
 				break
 			}
+			if idx, dup := seenVersion[m[1]]; dup { // several [Unreleased] headings merge into one
+				cur = &out[idx]
+				continue
+			}
 			out = append(out, dashboard.RouterRelease{Version: m[1], Date: m[2]})
+			seenVersion[m[1]] = len(out) - 1
 			cur = &out[len(out)-1]
 			continue
 		}
@@ -169,4 +180,58 @@ func summarizeBullet(s string) string {
 		s = s[:200] + "…"
 	}
 	return s
+}
+
+// changelogText prefers origin/main's CHANGELOG (the released truth) over whatever
+// branch the shared checkout happens to be on, falling back to the file.
+func changelogText(repo string) string {
+	cmd := exec.Command("git", "-C", repo, "show", "origin/main:CHANGELOG.md")
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "GIT_") {
+			cmd.Env = append(cmd.Env, kv)
+		}
+	}
+	if out, err := cmd.Output(); err == nil && len(out) > 0 {
+		return string(out)
+	}
+	if b, err := os.ReadFile(filepath.Join(repo, "CHANGELOG.md")); err == nil {
+		return string(b)
+	}
+	return ""
+}
+
+// routerAttention derives what needs attention from the snapshot, deterministically,
+// most severe first. It claims only what the data shows.
+func routerAttention(s dashboard.RouterSnapshot) []dashboard.RouterAttention {
+	var out []dashboard.RouterAttention
+	add := func(sev, title, detail, action string) {
+		out = append(out, dashboard.RouterAttention{Severity: sev, Title: title, Detail: detail, Action: action})
+	}
+	if s.Swap != nil && s.Swap.Verdict == "pressure" {
+		add("critical", "Memory pressure with active paging", fmt.Sprintf("swap %d of %d MiB, %d%% free; a coordinated restart is proposed (nothing was restarted)", int(s.Swap.UsedMiB), int(s.Swap.TotalMiB), s.Swap.FreePct), "coordinate a restart with the owner and workload owners")
+	}
+	for _, l := range s.Lanes.List {
+		switch {
+		case l.Verdict == "AUTH_REQUIRED":
+			add("critical", l.Agent+": consumer cannot log in", l.Detail, "re-authenticate that account")
+		case l.Verdict == "HELD" && strings.Contains(l.Detail, "quarantine"):
+			add("critical", l.Agent+": quarantined", l.Detail, "needs a human: see the lane log; known failures are matched automatically")
+		case (l.Verdict == "WATCH_ONLY" || l.Verdict == "UNSTAFFED" || l.Verdict == "UNREACHABLE") && l.Open > 0:
+			add("warn", fmt.Sprintf("%s: %d open item(s), nothing will work them", l.Agent, l.Open), l.Verdict+": "+l.Detail, "staff the lane or register an attended session")
+		}
+	}
+	for _, k := range s.KnownFailures {
+		if k.Status == "open" {
+			add("warn", "Known failure unresolved: "+k.ID, k.Title, "resolve it with a fix and a guard test")
+		}
+	}
+	if !s.Registry.Pinned {
+		add("warn", "Registry is not pinned to origin/main", "this host reads a shared working tree; another session's branch can change who the lanes are", "sirsi router registry sync --install")
+	}
+	if s.Consumers.Max > 0 && s.Consumers.Running >= s.Consumers.Max {
+		add("info", "Consumer cap reached", fmt.Sprintf("%d of %d headless consumers running; further lanes wait their turn", s.Consumers.Running, s.Consumers.Max), "")
+	}
+	rank := map[string]int{"critical": 0, "warn": 1, "info": 2}
+	sort.SliceStable(out, func(i, j int) bool { return rank[out[i].Severity] < rank[out[j].Severity] })
+	return out
 }

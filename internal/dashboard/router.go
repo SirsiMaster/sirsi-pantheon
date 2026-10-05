@@ -18,6 +18,17 @@ type RouterSnapshot struct {
 	KnownFailures []RouterKnownFail `json:"known_failures"`
 	Swap          *RouterSwap       `json:"swap,omitempty"`
 	Releases      []RouterRelease   `json:"releases"`
+	// Attention is computed deterministically from the data above: what needs a
+	// person or a fix now, most severe first. Empty means nothing does.
+	Attention []RouterAttention `json:"attention"`
+}
+
+// RouterAttention is one thing that needs attention. Severity is critical, warn or info.
+type RouterAttention struct {
+	Severity string `json:"severity"`
+	Title    string `json:"title"`
+	Detail   string `json:"detail"`
+	Action   string `json:"action,omitempty"`
 }
 
 type RouterLanes struct {
@@ -31,6 +42,7 @@ type RouterLaneVerdict struct {
 	Agent   string `json:"agent"`
 	Verdict string `json:"verdict"`
 	Detail  string `json:"detail"`
+	Open    int    `json:"open"` // open router items addressed to this lane
 }
 
 type RouterQueueRow struct {

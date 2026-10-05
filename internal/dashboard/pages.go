@@ -163,7 +163,7 @@ font-family:'Avenir Next',Avenir,-apple-system,system-ui,sans-serif;flex-shrink:
 // ── SPA Entry Point ───────────────────────────────────────────────────
 
 func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
+	if r.URL.Path != "/classic" {
 		http.NotFound(w, r)
 		return
 	}

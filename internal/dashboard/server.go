@@ -139,7 +139,9 @@ func New(cfg Config) *Server {
 	mux := http.NewServeMux()
 
 	// HTML pages
-	mux.HandleFunc("/", s.handleOverview)
+	mux.HandleFunc("/", s.handleHome)
+	mux.HandleFunc("/assets/", s.handleUIAsset)
+	mux.HandleFunc("/classic", s.handleOverview)
 	mux.HandleFunc("/scan", s.handleScan)
 	mux.HandleFunc("/ghosts", s.handleGhosts)
 	mux.HandleFunc("/guard", s.handleGuard)

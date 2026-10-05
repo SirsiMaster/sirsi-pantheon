@@ -3,7 +3,9 @@ package dashboard
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -45,30 +47,62 @@ func TestAPIRouterNilFailingAndWired(t *testing.T) {
 	}
 }
 
-// The page must carry the Router view and its nav entry: a panel with no way to
-// reach it would ship invisible.
-func TestRouterViewIsReachableFromTheSPA(t *testing.T) {
+// The home page is the new dashboard: it loads the brand-token stylesheet and the app,
+// and the app reads the router API. A page that cannot reach its data ships blank.
+func TestHomeServesTheDashboardAndItsAssets(t *testing.T) {
 	t.Parallel()
 	ts := testServer(t, Config{})
 	defer ts.Close()
-	resp, err := http.Get(ts.URL + "/")
-	if err != nil {
-		t.Fatal(err)
+	body := func(path string) (string, string, int) {
+		resp, err := http.Get(ts.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return string(b), resp.Header.Get("Content-Type"), resp.StatusCode
 	}
-	defer resp.Body.Close()
-	b := new(strings.Builder)
-	buf := make([]byte, 4096)
-	for {
-		n, rerr := resp.Body.Read(buf)
-		b.Write(buf[:n])
-		if rerr != nil {
-			break
+	home, ct, code := body("/")
+	if code != 200 || !strings.Contains(ct, "text/html") || !strings.Contains(home, "/assets/tokens.css") || !strings.Contains(home, "/assets/app.js") {
+		t.Fatalf("home page wrong: %d %s", code, ct)
+	}
+	js, _, _ := body("/assets/app.js")
+	for _, want := range []string{"/api/router", "/api/fleet", "/api/stats", "Needs attention"} {
+		if !strings.Contains(js, want) {
+			t.Errorf("app.js missing %q", want)
 		}
 	}
-	page := b.String()
-	for _, want := range []string{`data-view="router"`, "function viewRouter", "router:viewRouter", "/api/router", "loading the fleet board"} {
-		if !strings.Contains(page, want) {
-			t.Errorf("SPA missing %q", want)
+	css, _, code := body("/assets/tokens.css")
+	if code != 200 || !strings.Contains(css, "--emerald:") || !strings.Contains(css, "prefers-color-scheme: dark") {
+		t.Fatalf("tokens.css not derived from the brand palette: %d %q", code, css)
+	}
+	if _, _, code := body("/assets/nope.css"); code != 404 {
+		t.Fatalf("unknown asset = %d, want 404", code)
+	}
+	if _, _, code := body("/missing"); code != 404 {
+		t.Fatalf("unknown path = %d, want 404 (the home handler must not swallow every route)", code)
+	}
+	classic, _, code := body("/classic")
+	if code != 200 || !strings.Contains(classic, "Horus") {
+		t.Fatalf("classic tools page missing: %d", code)
+	}
+}
+
+// ADR-038: every color comes from internal/brand. A hex literal in the UI files is
+// a surface that can drift from the CLI, menubar and Swift app.
+func TestUIFilesCarryNoHexColors(t *testing.T) {
+	t.Parallel()
+	re := regexp.MustCompile(`#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b`)
+	for _, f := range []string{"ui/index.html", "ui/app.css", "ui/app.js"} {
+		b, err := uiFS.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range re.FindAllString(string(b), -1) {
+			if m == "#main" || m == "#nav" || m == "#title" || m == "#view" || m == "#live" || m == "#refresh" || m == "#foot" {
+				continue
+			}
+			t.Errorf("%s contains a hex color literal %q: use a brand token", f, m)
 		}
 	}
 }
