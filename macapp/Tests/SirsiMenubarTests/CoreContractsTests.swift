@@ -103,6 +103,11 @@ final class CoreContractsTests: XCTestCase {
         )
     }
 
+    func testFindingDisplayTitleLeadsWithTheManagedRecoveryInsteadOfTheLaunchdImplementationDetail() {
+        XCTAssertEqual(findingDisplayTitle(check: "launchd Disabled Override"), "Restore managed services")
+        XCTAssertEqual(findingDisplayTitle(check: "Swap Usage"), "Swap Usage")
+    }
+
     func testDiagnosticFindingDecodesExplicitMaatReviewRoute() throws {
         let raw = #"""
         {

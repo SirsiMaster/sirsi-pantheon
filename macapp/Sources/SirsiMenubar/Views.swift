@@ -1254,6 +1254,19 @@ private func parseFindingDetailList(_ detail: String) -> [FindingDetailEntry]? {
     }
 }
 
+// Health checks remain stable machine-facing identifiers so that Ma'at can
+// bind findings and receipts across every Pantheon surface. The title at the
+// top of a native screen, however, should tell a person what Pantheon can do
+// next—not expose an implementation detail as the task they have to solve.
+func findingDisplayTitle(check: String) -> String {
+    switch check {
+    case "launchd Disabled Override":
+        return "Restore managed services"
+    default:
+        return check
+    }
+}
+
 struct FindingView: View {
     @ObservedObject var engine: SirsiEngine
     let finding: DiagFinding
@@ -1261,6 +1274,7 @@ struct FindingView: View {
     // The honesty class drives EVERY label so a 7-day history never wears an
     // "instant fix" costume. See guard.FixKind (instant | relief | guidance).
     private var kind: String { finding.fixKind ?? "" }
+    private var displayTitle: String { findingDisplayTitle(check: finding.check) }
     @State private var maatReviewResult: CommandResult?
     @State private var maatReviewError: String?
     @State private var maatReviewInFlight = false
@@ -1326,6 +1340,9 @@ struct FindingView: View {
         }
     }
     private var fixSectionLabel: String {
+        if finding.check == "launchd Disabled Override" {
+            return "RESTORE MANAGED SERVICES"
+        }
         switch kind {
         case "relief": return "RELIEVE THE LIVE CAUSE"
         case "guidance": return "HOW TO ADDRESS"
@@ -1387,9 +1404,21 @@ struct FindingView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            BackBar(title: finding.check)
+            BackBar(title: displayTitle)
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
+                    if finding.check == "launchd Disabled Override" {
+                        Label("Pantheon can restore these managed services", systemImage: "wrench.and.screwdriver.fill")
+                            .sirsiFont(.callout, weight: .semibold)
+                            .foregroundStyle(gold)
+                        Text("Review the affected labels below. When you confirm, Ma'at re-checks the exact managed set, restores only that set, and records a verified result here.")
+                            .sirsiFont(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(PantheonTheme.panel))
+                    }
                     HStack(alignment: .top, spacing: 8) {
                         Circle().fill(findingColor(finding)).frame(width: 10, height: 10).padding(.top, 4)
                         Text(finding.message).sirsiFont(14, weight: .semibold)

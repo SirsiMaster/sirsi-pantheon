@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased] — Apollo view: retire the last user-facing "SNE" copy
 
+- **v0.24.88 — guided service restoration leads with the outcome.** The
+  native Health detail for managed launchd overrides now says what Pantheon
+  can do—restore managed services—before showing the retained technical
+  finding. The exact managed-label list remains visible, and the existing
+  confirmation, bounded Ma'at repair, re-check, and receipt path are unchanged.
+
 - **v0.24.87 — Casebook completes the declared Ma’at liveness recovery.**
   System One can now invoke its closed, native `liveness-watch` repair from
   the macOS Casebook as well as the managed launchd repair. The UI accepts
