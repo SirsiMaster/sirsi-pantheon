@@ -13,8 +13,7 @@ struct PantheonControlCenterView: View {
         !engine.ownerGatedItems.isEmpty ||
             engine.healthStatus != "green" ||
             engine.routerStatus != "green" ||
-            engine.safeBytes >= SirsiEngine.wasteThreshold ||
-            !engine.hasFDA
+            engine.safeBytes >= SirsiEngine.wasteThreshold
     }
 
     private var overallTitle: String { hasAttention ? "Needs attention" : "Ready" }
@@ -25,7 +24,10 @@ struct PantheonControlCenterView: View {
         if engine.healthStatus != "green" { return engine.healthLoading ? "Checking system health" : engine.healthSummary }
         if engine.routerStatus != "green" { return engine.routerSummary }
         if engine.safeBytes >= SirsiEngine.wasteThreshold { return "\(engine.safe.count) cleanup item\(engine.safe.count == 1 ? "" : "s") ready" }
-        if !engine.hasFDA { return "Full Disk Access needs your approval" }
+        // Full Disk Access expands optional observability; Pantheon can still
+        // diagnose, guide repairs, and operate its managed surfaces without
+        // it. Never turn a capability upgrade into a false blocking incident.
+        if !engine.hasFDA { return "Ready — Full Disk Access is optional for broader disk visibility" }
         return "Pantheon is monitoring this Mac"
     }
 
@@ -34,12 +36,11 @@ struct PantheonControlCenterView: View {
         if engine.healthStatus != "green" { return "exclamationmark.triangle.fill" }
         if engine.routerStatus != "green" { return "point.3.connected.trianglepath.dotted" }
         if engine.safeBytes >= SirsiEngine.wasteThreshold { return "trash" }
-        if !engine.hasFDA { return "lock.trianglebadge.exclamationmark" }
         return "checkmark.circle.fill"
     }
 
     private var overallTint: Color {
-        if !engine.ownerGatedItems.isEmpty || engine.safeBytes >= SirsiEngine.wasteThreshold || !engine.hasFDA { return .orange }
+        if !engine.ownerGatedItems.isEmpty || engine.safeBytes >= SirsiEngine.wasteThreshold { return .orange }
         if engine.healthStatus != "green" { return statusColor(engine.healthStatus) }
         return statusColor(engine.routerStatus)
     }
@@ -158,8 +159,6 @@ struct PantheonControlCenterView: View {
             NavLink { RaFabricView(engine: engine) } label: { priorityRow }
         } else if engine.safeBytes >= SirsiEngine.wasteThreshold {
             NavLink { AnubisView(engine: engine) } label: { priorityRow }
-        } else if !engine.hasFDA {
-            NavLink { FDAGuideView() } label: { priorityRow }
         } else {
             NavLink { ActivityView(engine: engine) } label: { priorityRow }
         }
