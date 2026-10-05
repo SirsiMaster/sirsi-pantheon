@@ -1214,25 +1214,40 @@ struct FindingView: View {
     // The honesty class drives EVERY label so a 7-day history never wears an
     // "instant fix" costume. See guard.FixKind (instant | relief | guidance).
     private var kind: String { finding.fixKind ?? "" }
-    @State private var copied = false
     @State private var maatReviewResult: CommandResult?
     @State private var maatReviewError: String?
     @State private var maatReviewInFlight = false
     @State private var confirmMaatReview = false
     @State private var confirmFix = false
     @State private var showConfirmedFix = false
+    @State private var confirmLegacyRepair = false
+    @State private var showLegacyRepair = false
 
-    // recommendedCommand pulls a `sirsi …` command the finding names in its
-    // message/detail (backtick-quoted) so guidance findings become actionable.
-    private var recommendedCommand: String? {
-        for text in [finding.message, finding.detail ?? ""] {
-            // Prefer a backtick-quoted command.
-            if let open = text.range(of: "`sirsi "), let close = text.range(of: "`", range: open.upperBound..<text.endIndex) {
-                let cmd = String(text[open.upperBound..<close.lowerBound])
-                if !cmd.isEmpty { return "sirsi " + cmd.replacingOccurrences(of: "sirsi ", with: "") }
-            }
+    // Older installed CLIs can omit `fix` and leave only prose or a backticked
+    // command. Never turn that text into executable authority and never send a
+    // person to Terminal. This closed compatibility registry supplies only the
+    // bounded repairs Pantheon itself can run, based on the typed check name
+    // and current severity. Everything else stays in the native Ma'at route.
+    private var legacyNativeRepairArgs: [String]? {
+        guard finding.fix?.isEmpty != false else { return nil }
+        switch finding.check {
+        case "binary-drift":
+            return ["self-update"]
+        case "App Crashes (7d)", "Disk Space":
+            return finding.severity >= 2 ? ["clean", "--include-caution"] : nil
+        case "App Hangs (7d)", "Process Footprint", "Thread Leaks":
+            return finding.severity >= 2 ? ["relieve"] : nil
+        case "RAM Pressure", "Top Memory Consumers", "Jetsam Events (7d)", "Memory Death Spiral", "Swap Usage":
+            return finding.severity >= 2 ? ["relieve", "--memory"] : nil
+        case "Duplicate Model Brokers":
+            return finding.severity >= 2 ? ["gemma", "reap-orphans"] : nil
+        case "Local Snapshots":
+            return ["reclaim-snapshots"]
+        case "Runaway Executor":
+            return finding.severity >= 2 ? ["router", "quarantine-worker"] : nil
+        default:
+            return nil
         }
-        return nil
     }
 
     private var resolutionRoute: DiagnosticResolutionRoute {
@@ -1240,7 +1255,7 @@ struct FindingView: View {
             resolution: finding.resolution,
             severity: finding.severity,
             hasFix: !(finding.fix ?? "").isEmpty,
-            hasRecommendedCommand: recommendedCommand != nil
+            hasRecommendedCommand: legacyNativeRepairArgs != nil
         )
     }
 
@@ -1376,6 +1391,8 @@ struct FindingView: View {
                             } label: { fixButtonContents(fix) }
                             .buttonStyle(.borderedProminent).tint(gold)
                         }
+                    } else if legacyNativeRepairArgs != nil {
+                        legacyNativeRepair
                     } else if requiresMaatReview {
                         // A high-severity finding without a safe automatic
                         // mutation still gets a complete resolution path. Ma'at
@@ -1384,22 +1401,6 @@ struct FindingView: View {
                         // explicit acceptance step. This never paints a manual
                         // conclusion as a completed repair.
                         maatResolutionPath
-                    } else if let cmd = recommendedCommand {
-                        // Guidance-tier (e.g. caution items cleared deliberately
-                        // in Terminal): the command it names must be actionable,
-                        // not buried in prose ending at "Informational."
-                        Text("RECOMMENDED — RUN IN TERMINAL").sirsiFont(.caption2, weight: .semibold).foregroundStyle(.secondary)
-                        Text(cmd).sirsiFont(.caption, design: .monospaced).foregroundStyle(gold)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(10)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.06)))
-                        HStack(spacing: 8) {
-                            Button {
-                                copyToClipboard(cmd)
-                                copied = true
-                            } label: { Label(copied ? "Copied" : "Copy command", systemImage: copied ? "checkmark" : "doc.on.doc") }
-                            Button { openTerminal() } label: { Label("Open Terminal", systemImage: "terminal") }
-                        }.sirsiFont(.caption)
                     } else if isAcceptedObservation {
                         acceptedObservation
                     } else {
@@ -1433,6 +1434,20 @@ struct FindingView: View {
             ResultView(engine: engine, title: finding.check, args: repairArgs,
                        reverifyCheck: finding.check, reverifyKind: finding.fixKind)
         }
+        .confirmationDialog("Run this bounded repair in Pantheon?", isPresented: $confirmLegacyRepair, titleVisibility: .visible) {
+            Button("Run repair") { showLegacyRepair = true }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Pantheon will run only the repair registered for this diagnostic, then re-check the finding. It will not execute text imported from the diagnostic message.")
+        }
+        .sheet(isPresented: $showLegacyRepair) {
+            if let args = legacyNativeRepairArgs {
+                ResultView(engine: engine, title: finding.check, args: args,
+                           reverifyCheck: finding.check, reverifyKind: finding.fixKind)
+            } else {
+                EmptyView()
+            }
+        }
     }
 
     private func fixButtonContents(_ fix: String) -> some View {
@@ -1447,6 +1462,23 @@ struct FindingView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 2)
+    }
+
+    @ViewBuilder private var legacyNativeRepair: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text("PANTHEON CAN REPAIR THIS").sirsiFont(.caption2, weight: .semibold).foregroundStyle(.secondary)
+            Text("This diagnostic came from an older local contract. Pantheon matched it to a bounded built-in repair, not message text. Review, confirm, and Pantheon will verify the outcome here.")
+                .sirsiFont(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Button {
+                confirmLegacyRepair = true
+            } label: {
+                Label("Resolve in Pantheon", systemImage: "wrench.and.screwdriver.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent).tint(gold)
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
     }
 
     @ViewBuilder private var maatResolutionPath: some View {
