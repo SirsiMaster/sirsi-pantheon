@@ -10,7 +10,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 - Follow-up: Ma'at review records the displayed finding snapshot, verified outcomes disappear when evidence changes or goes stale, failed refreshes retain the last-known matching finding without enabling its action, and silent nonzero exits remain failures. The recheck observer now keeps outcomes published for the matching snapshot.
 - Finding-level Casebook action uses the exact guided label “Continue in Ma'at Casebook” and stays filtered to the displayed finding; the native contract now checks that filtered route.
 - Ra Fabric’s “Hand off work” control uses the snapshot-safe action wrapper, preserving live behavior while rendering a visible control in dark visual QA snapshots.
-- Unreadable relay outboxes now offer a read-only fabric recheck, typed Ra handoff to the host owner, and a Ma'at Casebook route filtered to the affected agents. Queue depth remains explicitly unknown, including after a successful blocker recheck.
+- Unreadable relay outboxes now offer a forced live recheck, typed Ra handoff to the host owner, and an unfiltered Ma'at Casebook route; affected agents remain listed in Ra. Missing telemetry or agent records cannot confirm clearance, and queue depth remains unknown.
 
 ## [Unreleased] — Apollo view: retire the last user-facing "SNE" copy
 

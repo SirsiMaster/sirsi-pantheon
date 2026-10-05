@@ -141,26 +141,60 @@ final class CoreContractsTests: XCTestCase {
     func testOutboxRecheckOutcomeRequiresFreshReadAndPreservesUnknownDepth() {
         let failed = outboxRecheckMessage(readSucceeded: false,
                                           scopedAgents: ["claude-pantheon"],
-                                          currentUnreadableAgents: [])
-        XCTAssertTrue(failed.contains("could not confirm a fresh fabric read"))
+                                          currentOutboxes: [])
+        XCTAssertTrue(failed.contains("could not confirm a fresh live fabric read"))
         XCTAssertTrue(failed.contains("queue depth remains unknown"))
 
+        let unreadable = RBOutbox(agent: "claude-pantheon", queuedForRetry: nil, unreadable: true, error: "permission denied")
         let stillBlocked = outboxRecheckMessage(readSucceeded: true,
                                                 scopedAgents: ["claude-pantheon", "codex-pantheon"],
-                                                currentUnreadableAgents: ["claude-pantheon"])
+                                                currentOutboxes: [unreadable])
         XCTAssertTrue(stillBlocked.contains("still reports unreadable outboxes for claude-pantheon"))
+        XCTAssertTrue(stillBlocked.contains("blocker clearance is unverified"))
         XCTAssertTrue(stillBlocked.contains("Queue depth remains unknown"))
 
+        let readable = RBOutbox(agent: "codex-pantheon", queuedForRetry: 0, unreadable: false, error: nil)
         let cleared = outboxRecheckMessage(readSucceeded: true,
                                            scopedAgents: ["codex-pantheon"],
-                                           currentUnreadableAgents: [])
-        XCTAssertTrue(cleared.contains("no longer reports these outboxes as unreadable"))
-        XCTAssertTrue(cleared.contains("queue depth and delivery remain unverified"))
+                                           currentOutboxes: [readable])
+        XCTAssertTrue(cleared.contains("explicit readable records for each affected agent"))
+        XCTAssertTrue(cleared.contains("Queue depth and delivery remain unverified"))
     }
 
-    func testOutboxCasebookContextNamesAffectedAgentsDeterministically() {
-        XCTAssertEqual(outboxCasebookContext(agents: ["claude-pantheon", "codex-pantheon", "claude-pantheon"]),
-                       "Unreadable Ra relay outbox — agents: claude-pantheon, codex-pantheon")
+    func testMissingOutboxTelemetryOrAffectedAgentRecordCannotConfirmClearance() {
+        let scope: Set<String> = ["claude-pantheon", "codex-pantheon"]
+        let missingTelemetry = outboxRecheckMessage(readSucceeded: true, scopedAgents: scope, currentOutboxes: nil)
+        XCTAssertTrue(missingTelemetry.contains("Outbox telemetry is missing"))
+        XCTAssertTrue(missingTelemetry.contains("blocker clearance is unverified"))
+        XCTAssertFalse(missingTelemetry.contains("explicit readable records"))
+
+        let onlyOneReadable = RBOutbox(agent: "codex-pantheon", queuedForRetry: 1, unreadable: false, error: nil)
+        let missingEntry = outboxRecheckMessage(readSucceeded: true, scopedAgents: scope,
+                                                currentOutboxes: [onlyOneReadable])
+        XCTAssertTrue(missingEntry.contains("No explicit readable outbox record exists for claude-pantheon"))
+        XCTAssertTrue(missingEntry.contains("blocker clearance is unverified"))
+        XCTAssertFalse(missingEntry.contains("explicit readable records for each affected agent"))
+
+        let unknownStatus = RBOutbox(agent: "claude-pantheon", queuedForRetry: 0, unreadable: nil, error: nil)
+        let unknown = outboxRecheckMessage(readSucceeded: true, scopedAgents: ["claude-pantheon"],
+                                           currentOutboxes: [unknownStatus])
+        XCTAssertTrue(unknown.contains("blocker clearance is unverified"))
+    }
+
+    func testRouterBoardRecheckCanBypassFreshCache() throws {
+        XCTAssertTrue(SirsiEngine.routerBoardCacheIsUsable(forceLive: false, isFresh: true, hasDecodedBoard: true))
+        XCTAssertFalse(SirsiEngine.routerBoardCacheIsUsable(forceLive: true, isFresh: true, hasDecodedBoard: true))
+        XCTAssertFalse(SirsiEngine.routerBoardCacheIsUsable(forceLive: false, isFresh: false, hasDecodedBoard: true))
+        XCTAssertFalse(SirsiEngine.routerBoardCacheIsUsable(forceLive: false, isFresh: true, hasDecodedBoard: false))
+
+        let testFile = URL(fileURLWithPath: #filePath)
+        let engineURL = testFile.deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/SirsiMenubar/SirsiEngine.swift")
+        let source = try String(contentsOf: engineURL, encoding: .utf8)
+        XCTAssertTrue(source.contains("func loadRouterBoard(forceLive: Bool = false) async -> Bool"))
+        XCTAssertTrue(source.contains("Self.routerBoardCacheIsUsable(forceLive: forceLive"))
     }
 
     func testUnreadableOutboxCardHasThreeSafeResolutionRoutes() throws {
@@ -176,15 +210,27 @@ final class CoreContractsTests: XCTestCase {
 
         XCTAssertTrue(card.contains("Queue depth is unknown, not zero."))
         XCTAssertFalse(card.contains("check the directory by hand"))
-        XCTAssertTrue(card.contains("await engine.loadRouterBoard()"))
+        XCTAssertTrue(card.contains("await engine.loadRouterBoard(forceLive: true)"))
         XCTAssertTrue(card.contains("onHandoff"))
         XCTAssertTrue(card.contains("resolutionLevel(1, \"Recheck the fabric\""))
         XCTAssertTrue(card.contains("resolutionLevel(2, \"Guided host recovery\""))
         XCTAssertTrue(card.contains("resolutionLevel(3, \"Ma’at Casebook review\""))
-        XCTAssertTrue(card.contains("MaatCasebookView(engine: engine, contextCheck: outboxCasebookContext"))
+        XCTAssertTrue(card.contains("MaatCasebookView(engine: engine)"))
+        XCTAssertFalse(card.contains("contextCheck"))
         XCTAssertTrue(card.contains("filesystem permissions or ownership"))
         XCTAssertTrue(source.contains("onHandoff: { showingHandoff = true }"))
         XCTAssertTrue(source.contains("RaHandoffView(engine: engine, isPresented: $showingHandoff)"))
+    }
+
+    func testCasebookRouteDoesNotSeedItsLiteralSearchFilter() throws {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let casebookURL = testFile.deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/SirsiMenubar/MaatCasebookView.swift")
+        let source = try String(contentsOf: casebookURL, encoding: .utf8)
+        XCTAssertTrue(source.contains("_query = State(initialValue: contextCheck ?? \"\")"))
+        XCTAssertTrue(source.contains("$0.searchText.localizedCaseInsensitiveContains(term)"))
     }
 
     func testVerifiedOutcomeIsHiddenAfterFindingOrObservationChanges() throws {

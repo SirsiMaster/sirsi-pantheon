@@ -871,7 +871,7 @@ final class SirsiEngine: ObservableObject {
     }
 
     @discardableResult
-    func loadRouterBoard() async -> Bool {
+    func loadRouterBoard(forceLive: Bool = false) async -> Bool {
         routerLoading = true
         defer { routerLoading = false }
         // Freshness gate: the producer-written board is trusted only while
@@ -882,7 +882,8 @@ final class SirsiEngine: ObservableObject {
         let fresh = (attrs?[.modificationDate] as? Date).map { Date().timeIntervalSince($0) < 300 } ?? false
         let fileBoard = FileManager.default.contents(atPath: routerBoardPath)
             .flatMap { try? JSONDecoder().decode(RouterBoard.self, from: $0) }
-        if fresh, let board = fileBoard {
+        if Self.routerBoardCacheIsUsable(forceLive: forceLive, isFresh: fresh, hasDecodedBoard: fileBoard != nil),
+           let board = fileBoard {
             routerBoard = board
             return true
         }
@@ -898,6 +899,10 @@ final class SirsiEngine: ObservableObject {
             return true
         }
         return false
+    }
+
+    nonisolated static func routerBoardCacheIsUsable(forceLive: Bool, isFresh: Bool, hasDecodedBoard: Bool) -> Bool {
+        !forceLive && isFresh && hasDecodedBoard
     }
 
     // ── owner-gated items (board schema 1.1.0) ───────────────────────────────

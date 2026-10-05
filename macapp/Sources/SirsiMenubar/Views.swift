@@ -2606,11 +2606,11 @@ struct OutboxBlockerCard: View {
                 SnapshotActionButton(disabled: rechecking || engine.busy) {
                     Task {
                         rechecking = true
-                        let readSucceeded = await engine.loadRouterBoard()
+                        let readSucceeded = await engine.loadRouterBoard(forceLive: true)
                         let message = outboxRecheckMessage(
                             readSucceeded: readSucceeded,
                             scopedAgents: Set(blocked.map(\.agent)),
-                            currentUnreadableAgents: Set(engine.routerOutboxBlockers.map(\.agent))
+                            currentOutboxes: engine.routerBoard?.outbox
                         )
                         onRecheckResult(message)
                         rechecking = false
@@ -2628,9 +2628,9 @@ struct OutboxBlockerCard: View {
                 }
             }
 
-            resolutionLevel(3, "Ma’at Casebook review", "Open the local casebook with this unreadable outbox and its affected agents as the review context.") {
+            resolutionLevel(3, "Ma’at Casebook review", "Open the local casebook without a prefilled filter. The affected agents remain listed above for reference.") {
                 NavLink {
-                    MaatCasebookView(engine: engine, contextCheck: outboxCasebookContext(agents: blocked.map(\.agent)))
+                    MaatCasebookView(engine: engine)
                 } label: {
                     Label("Review in Ma’at Casebook", systemImage: "checkmark.seal")
                         .frame(maxWidth: .infinity)
@@ -2645,19 +2645,35 @@ struct OutboxBlockerCard: View {
 }
 
 func outboxRecheckMessage(readSucceeded: Bool, scopedAgents: Set<String>,
-                          currentUnreadableAgents: Set<String>) -> String {
+                          currentOutboxes: [RBOutbox]?) -> String {
     guard readSucceeded else {
-        return "Recheck could not confirm a fresh fabric read. The last known status is retained; queue depth remains unknown."
+        return "Recheck could not confirm a fresh live fabric read. The last known status is retained; queue depth remains unknown."
     }
-    let remaining = scopedAgents.intersection(currentUnreadableAgents).sorted()
-    guard remaining.isEmpty else {
-        return "Fresh fabric read still reports unreadable outboxes for \(remaining.joined(separator: ", ")). Queue depth remains unknown."
+    guard !scopedAgents.isEmpty else {
+        return "Fresh live fabric read completed, but no affected-agent scope is available to confirm blocker clearance. Queue depth remains unknown."
     }
-    return "Fresh fabric read no longer reports these outboxes as unreadable. This confirms blocker status only; queue depth and delivery remain unverified."
-}
+    let recordsByAgent = Dictionary(grouping: currentOutboxes ?? [], by: \.agent)
+    let unreadable = scopedAgents.filter { agent in
+        recordsByAgent[agent]?.contains(where: { $0.unreadable == true }) ?? false
+    }.sorted()
+    let unverified = scopedAgents.filter { agent in
+        guard let records = recordsByAgent[agent], !records.isEmpty else { return true }
+        return records.contains(where: { $0.unreadable == nil })
+    }.sorted()
 
-func outboxCasebookContext(agents: [String]) -> String {
-    "Unreadable Ra relay outbox — agents: \(Array(Set(agents)).sorted().joined(separator: ", "))"
+    var messages: [String] = []
+    if !unreadable.isEmpty {
+        messages.append("Fresh live board still reports unreadable outboxes for \(unreadable.joined(separator: ", ")).")
+    }
+    if !unverified.isEmpty {
+        let scope = currentOutboxes == nil ? "Outbox telemetry is missing" : "No explicit readable outbox record exists"
+        messages.append("\(scope) for \(unverified.joined(separator: ", ")); blocker clearance is unverified.")
+    }
+    guard messages.isEmpty else {
+        messages.append("Queue depth remains unknown.")
+        return messages.joined(separator: " ")
+    }
+    return "Fresh live board includes explicit readable records for each affected agent and no longer marks their outboxes unreadable. Queue depth and delivery remain unverified."
 }
 
 // OutboxRetryCard surfaces readable outboxes holding queued-for-retry
