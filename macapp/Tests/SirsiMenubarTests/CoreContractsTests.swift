@@ -2,6 +2,26 @@ import XCTest
 @testable import SirsiMenubar
 
 final class CoreContractsTests: XCTestCase {
+    func testFleetStatePresentationCoversCanonicalSixStatesAndUnknown() {
+        let cases: [(String, String)] = [
+            ("WORKING", "WORKING"),
+            ("ASSIGNED", "ASSIGNED"),
+            ("IDLE_WITH_WORK", "IDLE — WORK WAITING"),
+            ("BLOCKED", "BLOCKED"),
+            ("UNROUTABLE", "UNROUTABLE"),
+            ("COMPLETE", "COMPLETE"),
+            ("new_router_state", "UNKNOWN — REVIEW"),
+        ]
+
+        for (state, expected) in cases {
+            XCTAssertEqual(FleetStatePresentation.label(state), expected, "state \\(state)")
+        }
+        // Older routers remain readable, but the app never maps an unknown
+        // state to the old, incorrect "stopped" label.
+        XCTAssertEqual(FleetStatePresentation.label("working"), "WORKING")
+        XCTAssertEqual(FleetStatePresentation.label("stopped"), "UNKNOWN — REVIEW")
+    }
+
     func testKnownFailureProposalDecodesTheTypedLocalReviewQueue() throws {
         let raw = #"""
         [{

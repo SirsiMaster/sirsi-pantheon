@@ -1672,22 +1672,6 @@ extension View {
 struct FleetView: View {
     @ObservedObject var engine: SirsiEngine
 
-    private func stateColor(_ st: String) -> Color {
-        switch st {
-        case "working": return .green
-        case "blocked": return .orange
-        default: return .secondary
-        }
-    }
-
-    private func stateLabel(_ st: String) -> String {
-        switch st {
-        case "working": return "WORKING"
-        case "blocked": return "blocked"
-        default: return "stopped — no open work"
-        }
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             BackBar(title: "Fleet")
@@ -1719,8 +1703,8 @@ struct FleetView: View {
                                 Text(l.agent).sirsiFont(12, weight: .medium)
                                     .sirsiFrame(width: 150).frame(alignment: .leading)
                                     .lineLimit(1)
-                                Text(stateLabel(l.state)).sirsiFont(11)
-                                    .foregroundColor(stateColor(l.state))
+                                Text(FleetStatePresentation.label(l.state)).sirsiFont(11)
+                                    .foregroundColor(FleetStatePresentation.color(l.state))
                                     .sirsiFrame(width: 130).frame(alignment: .leading)
                                     .lineLimit(1)
                                 Text(laneCounts(l)).sirsiFont(11)

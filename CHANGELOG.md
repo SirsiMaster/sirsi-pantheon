@@ -6,6 +6,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased] — Apollo view: retire the last user-facing "SNE" copy
 
+- **v0.24.85 — Fleet now renders Ra's full supervision vocabulary.** The native
+  view recognizes WORKING, ASSIGNED, IDLE WITH WORK, BLOCKED, UNROUTABLE, and
+  COMPLETE exactly as Ra produces them. Unknown future values are shown as an
+  explicit review state; Pantheon no longer mislabels a live lane as stopped.
+
 - **v0.24.84 — native Ma'at now owns the entire known-failure intake.** The
   app has a first-class Proposals workspace: people can inspect every local
   recurring-failure report, record a typed observation with a confirmation,
