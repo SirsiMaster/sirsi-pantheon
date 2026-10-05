@@ -109,6 +109,15 @@
       "upgrade_recipe": ["retain JSONL compatibility", "append and fsync records", "reject malformed records", "require an explicit confirmation before owner-review or owner-acceptance writes", "bind acceptance to one recorded review", "never turn local evidence into remote proof"]
     },
     {
+      "id": "maat-failure-memory",
+      "source": ["internal/maat/memory.go"],
+      "tests": ["internal/maat/memory_test.go"],
+      "inputs": ["typed local failure signature", "exact evidence bytes", "exact component/profile/operation scope"],
+      "outputs": ["deterministic incident key", "create-only evidence and incident records", "pass/reject/unverifiable preflight receipt", "read-only recovery guidance"],
+      "writes": ["retained no-follow local evidence and incident namespaces only"],
+      "upgrade_recipe": ["preserve every signature dimension in the digest", "retain no-follow descriptors and verify evidence bytes on every preflight", "keep scope exact; empty fields are never wildcards", "make every recovery instruction presentation data rather than executable input", "add tamper, symlink, collision, concurrency, and scope-isolation fixtures before widening an incident class", "project the same receipt through CLI, MCP, TUI, native app, menu bar, and dashboard before declaring a surface integrated"]
+    },
+    {
       "id": "maat-casebook",
       "source": ["internal/maat/casebook/casebook.go"],
       "tests": ["internal/maat/casebook/casebook_test.go"],

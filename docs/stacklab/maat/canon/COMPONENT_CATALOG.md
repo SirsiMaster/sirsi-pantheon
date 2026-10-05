@@ -4,6 +4,7 @@
 |---|---|---|---|
 | Assessors | `internal/maat` | append decision through recorder | focused tests; keep receipt current |
 | Journal | Ma'at recorder | append-only JSONL | readback and integrity tests |
+| Failure memory | `internal/maat/memory.go` | retained-descriptor, create-only evidence and incident namespaces | deterministic signature/hash, exact-scope preflight, tamper, symlink, collision, and race fixtures; no imported action execution |
 | Casebook | `internal/maat/casebook` | none | deterministic projection tests |
 | Host-health System One | `cmd/sirsi/maattriage.go` + native Ma'at workspace + Stack Lab handoff | confirmed local decision-journal append only | hash one complete Doctor report; test preview/confirmation, Stack Lab named-surface handoff, and pass/changes/block UI truthfulness |
 | Native diagnostic resolution | `macapp/Sources/SirsiMenubar/Views.swift` + `SirsiEngine.swift` | safe repair requires explicit confirmation; Ma'at review writes only through its named CLI boundary | every diagnostic has exactly one visible outcome: bounded repair, documented command, Ma'at evidence review, or accepted completion; no informational dead-end |

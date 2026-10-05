@@ -149,8 +149,14 @@ Estimated duration: contract review 1 working session; implementation estimated
    installed identity and observed postconditions separately. Complete the repo
    completion proof only when these obligations actually pass.
 
-Current delivery is the contract and plan. No executable guard, installed
-qualification, benchmark, or release success is asserted by this document.
+Current delivery includes a source-candidate local core at
+`internal/maat/memory.go`: it deterministically hashes typed signatures, stores
+create-only evidence through retained no-follow descriptors, records exact-scope
+incidents, and returns only `pass`, `reject` with recovery guidance, or
+`unverifiable`. It does not yet make the registry the authoritative entry point
+for all eight operational rows or project receipts through CLI, MCP, TUI, native
+Mac, menu bar, and dashboard. No installed qualification, benchmark, or release
+success is asserted by this document.
 
 ## Privacy, publication and recovery ownership
 
