@@ -1398,6 +1398,15 @@ private func parseFindingDetailList(_ detail: String) -> [FindingDetailEntry]? {
     }
 }
 
+struct FindingCasebookRoute: Equatable {
+    let label = "Continue in Ma'at Casebook"
+    let contextCheck: String
+
+    init(finding: DiagFinding) {
+        contextCheck = finding.check
+    }
+}
+
 struct FindingView: View {
     @ObservedObject var engine: SirsiEngine
     let finding: DiagFinding
@@ -1416,6 +1425,7 @@ struct FindingView: View {
         findingObservationSnapshot(observation: engine.healthObservationState, finding: latestKnownFinding,
                                    healthStatus: engine.healthStatus)
     }
+    private var casebookRoute: FindingCasebookRoute { FindingCasebookRoute(finding: displayedFinding) }
     private var isHistorical: Bool { engine.healthObservationState == .current && latestKnownFinding == nil }
     // The honesty class drives EVERY label so a 7-day history never wears an
     // "instant fix" costume. See guard.FixKind (instant | relief | guidance).
@@ -1796,8 +1806,8 @@ struct FindingView: View {
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            NavLink { MaatCasebookView(engine: engine, contextCheck: displayedFinding.check) } label: {
-                Label("Open this finding in Ma'at Casebook", systemImage: "book.closed")
+            NavLink { MaatCasebookView(engine: engine, contextCheck: casebookRoute.contextCheck) } label: {
+                Label(casebookRoute.label, systemImage: "book.closed")
             }
             .buttonStyle(.bordered)
             .accessibilityHint("Filter the local casebook to this finding's check.")

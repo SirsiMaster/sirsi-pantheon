@@ -8,6 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 - Health resolution remains reachable after an empty initial read, and Home only shows ready for a current green observation. Finding details follow the latest current finding or mark cleared findings as historical and hide superseded actions. Spotlight Storm opens native Spotlight Privacy guidance. ResultView retains stdout, stderr, launch failure, timeout, and exit status from the executed process.
 - Follow-up: Ma'at review records the displayed finding snapshot, verified outcomes disappear when evidence changes or goes stale, failed refreshes retain the last-known matching finding without enabling its action, and silent nonzero exits remain failures. The recheck observer now keeps outcomes published for the matching snapshot.
+- Finding-level Casebook action uses the exact guided label “Continue in Ma'at Casebook” and stays filtered to the displayed finding; the native contract now checks that filtered route.
 
 ## [Unreleased] — Apollo view: retire the last user-facing "SNE" copy
 

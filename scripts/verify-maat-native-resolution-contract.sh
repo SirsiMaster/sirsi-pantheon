@@ -73,7 +73,7 @@ for needle in \
   'record-resolution' \
   '"--confirm"' \
   'Continue in Ma'\''at Casebook' \
-  'MaatCasebookView(engine: engine)'; do
+  'MaatCasebookView(engine: engine, contextCheck: casebookRoute.contextCheck)'; do
   /usr/bin/grep -Fq "$needle" "$view" || {
     echo "native Ma'at resolution path missing: $needle" >&2
     exit 1

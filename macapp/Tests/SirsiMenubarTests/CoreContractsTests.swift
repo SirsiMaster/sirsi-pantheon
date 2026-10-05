@@ -108,6 +108,14 @@ final class CoreContractsTests: XCTestCase {
         ])
     }
 
+    func testFindingMaAtCasebookRouteKeepsGuidedLabelAndFiltersCurrentFinding() throws {
+        let displayed = try decodeFinding(#"{"check":"Current finding B","severity":3,"message":"Latest"}"#)
+        let route = FindingCasebookRoute(finding: displayed)
+
+        XCTAssertEqual(route.label, "Continue in Ma'at Casebook")
+        XCTAssertEqual(route.contextCheck, "Current finding B")
+    }
+
     func testVerifiedOutcomeIsHiddenAfterFindingOrObservationChanges() throws {
         let verified = try decodeFinding(#"{"check":"Disk Pressure","severity":0,"message":"Clear"}"#)
         let changed = try decodeFinding(#"{"check":"Disk Pressure","severity":3,"message":"Critical again","fix":"sirsi clean --confirm"}"#)
