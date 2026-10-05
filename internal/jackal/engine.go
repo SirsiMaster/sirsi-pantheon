@@ -214,11 +214,12 @@ func (e *Engine) Scan(ctx context.Context, opts ScanOptions) (*ScanResult, error
 // findings after Engine.Scan (for example the ghost-residual scanner) must call
 // this before persisting or presenting a result.
 //
-// A duplicate is only coalesced when it names the same cleaned path and reports
-// the same object shape and size. Disagreements remain visible rather than being
-// silently hidden. When Ka's contextual ghost scanner duplicates a primary scan
-// rule, the primary rule remains the cleanup owner so a user never sees the same
-// object twice or receives a different cleanup action solely from scan order.
+// A duplicate is only coalesced when it names the same cleaned path, reports the
+// same object shape and size, and has the same cleanup-relevant authority.
+// Disagreements remain visible rather than being silently hidden. When Ka's
+// contextual ghost scanner duplicates a primary scan rule, the primary rule
+// remains the cleanup owner so a user never sees the same object twice or
+// receives a different cleanup action solely from scan order.
 func NormalizeFindings(result *ScanResult) {
 	if result == nil {
 		return
@@ -270,7 +271,17 @@ func coalesceFindings(findings []Finding) []Finding {
 			continue
 		}
 		finding.Path = cleanPath
-		key := fmt.Sprintf("%s\x00%d\x00%d\x00%t", cleanPath, finding.SizeBytes, finding.FileCount, finding.IsDir)
+		key := fmt.Sprintf(
+			"%s\x00%d\x00%d\x00%t\x00%s\x00%t\x00%t\x00%t",
+			cleanPath,
+			finding.SizeBytes,
+			finding.FileCount,
+			finding.IsDir,
+			finding.Category,
+			finding.CanFix,
+			finding.RequiresSudo,
+			finding.Breaking,
+		)
 		if existingIndex, ok := unique[key]; ok {
 			result[existingIndex] = preferredFinding(result[existingIndex], finding)
 			continue

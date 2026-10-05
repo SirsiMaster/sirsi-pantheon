@@ -195,6 +195,38 @@ func TestNormalizeFindingsPreservesDisagreeingObjects(t *testing.T) {
 	}
 }
 
+func TestNormalizeFindingsPreservesCategoryAndCleanupAuthorityConflicts(t *testing.T) {
+	result := &ScanResult{Findings: []Finding{
+		{
+			RuleName: "cache", Category: CategoryGeneral, Path: "/tmp/shared", SizeBytes: 10,
+			FileCount: 1, IsDir: false, Severity: SeveritySafe, CanFix: true,
+		},
+		// Category controls both user meaning and reclaimable accounting: AI model
+		// storage must not silently become general one-click waste.
+		{
+			RuleName: "model", Category: CategoryAI, Path: "/tmp/shared", SizeBytes: 10,
+			FileCount: 1, IsDir: false, Severity: SeveritySafe, CanFix: true,
+		},
+		// A non-actionable observation cannot silently become actionable merely
+		// because another rule found the same path.
+		{
+			RuleName: "protected", Category: CategoryGeneral, Path: "/tmp/shared", SizeBytes: 10,
+			FileCount: 1, IsDir: false, Severity: SeveritySafe, CanFix: false,
+		},
+	}}
+
+	NormalizeFindings(result)
+	if len(result.Findings) != 3 {
+		t.Fatalf("len(Findings) = %d, want 3 for category/action conflicts", len(result.Findings))
+	}
+	if result.TotalSize != 30 {
+		t.Errorf("TotalSize = %d, want 30", result.TotalSize)
+	}
+	if result.ReclaimableSize != 20 {
+		t.Errorf("ReclaimableSize = %d, want 20 with AI excluded", result.ReclaimableSize)
+	}
+}
+
 func TestEngine_ScanWithErrors(t *testing.T) {
 	e := NewEngine()
 	e.Register(&mockRule{
