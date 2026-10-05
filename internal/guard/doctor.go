@@ -1405,7 +1405,14 @@ func checkSirsiProcesses(p platform.Platform, report *DoctorReport) {
 		}
 		finding.Detail = strings.Join(details, " | ")
 
-		if totalSize > 500*1024*1024 {
+		// A normal Pantheon installation intentionally runs several coordinated
+		// components (menubar, Ra listener/worker, Hermes rail, and optionally
+		// Apollo). Their combined footprint around half a gigabyte is ordinary
+		// operational state, not a user problem. Escalate only when the local
+		// estate itself is materially large enough to warrant Ma'at's owned
+		// review and resolution flow; individual runaway processes remain caught
+		// by Process Footprint above.
+		if totalSize > 2*1024*1024*1024 {
 			finding.Severity = SeverityWarn
 			finding.Message = fmt.Sprintf("%d Sirsi process(es) using %s total", len(pantheonProcs), FormatBytes(totalSize))
 		} else {

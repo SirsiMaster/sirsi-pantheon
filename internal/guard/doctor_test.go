@@ -675,6 +675,24 @@ func TestDoctorWith_SirsiProcesses(t *testing.T) {
 	}
 }
 
+func TestDoctorWith_SirsiProcessesWarnOnlyForMaterialEstateFootprint(t *testing.T) {
+	m := healthyMock()
+	m.CommandResults["ps -axo pid,rss,vsz,%cpu,user,comm"] = `  PID   RSS    VSZ  %CPU USER     COMM
+  999999  3145728  4194304   0.1 user     /usr/local/bin/sirsi-inference`
+
+	report, err := DoctorWith(m)
+	if err != nil {
+		t.Fatalf("DoctorWith() error = %v", err)
+	}
+	finding := findByCheck(report.Findings, "Sirsi Processes")
+	if finding == nil {
+		t.Fatal("missing Sirsi Processes finding")
+	}
+	if finding.Severity != SeverityWarn {
+		t.Fatalf("Sirsi severity = %v, want Warn for a >2 GiB estate", finding.Severity)
+	}
+}
+
 // ── TestDoctorWith_WarnRAM ───────────────────────────────────────────────
 
 func TestDoctorWith_WarnRAM(t *testing.T) {
