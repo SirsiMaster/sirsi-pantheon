@@ -2,10 +2,16 @@ package desktoprecovery
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -21,11 +27,31 @@ func (allowAuth) AuthorizeRecovery(_ context.Context, _ *http.Request, _ Node) (
 
 func testGateway(t *testing.T, address string) *Gateway {
 	t.Helper()
-	g, err := New(Config{Nodes: []Node{{ID: "m1", Address: address, Origins: []string{"https://m5.example.ts.net"}}}, Authorizer: allowAuth{}, SessionTTL: time.Minute})
+	_, private, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
+	g, err := New(Config{Nodes: []Node{{ID: "m1", Address: address, Origins: []string{"https://m5.example.ts.net"}}}, Authorizer: CapabilityAuthorizer{PublicKeys: map[string]ed25519.PublicKey{"test": private.Public().(ed25519.PublicKey)}}, SessionTTL: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {})
+	t.Setenv("PANTHEON_TEST_RECOVERY_CAPABILITY", signedCapability(t, private, "m1", "https://m5.example.ts.net"))
 	return g
+}
+
+func signedCapability(t *testing.T, private ed25519.PrivateKey, nodeID, origin string) string {
+	t.Helper()
+	payload, err := json.Marshal(CapabilityClaims{KeyID: "test", Login: "owner@example.test", NodeID: nodeID, Origin: origin, Purpose: "pantheon.desktop-recovery", ExpiresAt: time.Now().Add(time.Minute).Unix(), Nonce: "single-use-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(ed25519.Sign(private, payload))
+}
+
+func testCapability(t *testing.T) string {
+	t.Helper()
+	return os.Getenv("PANTHEON_TEST_RECOVERY_CAPABILITY")
 }
 
 func TestGatewayRejectsUnboundedDestinations(t *testing.T) {
@@ -36,17 +62,21 @@ func TestGatewayRejectsUnboundedDestinations(t *testing.T) {
 	}
 }
 
-func TestTailnetHeaderAuthorizerRequiresLoopbackAndAllowlist(t *testing.T) {
-	a := TailnetHeaderAuthorizer{AllowedLogins: map[string]struct{}{"owner@example.test": {}}}
-	req := httptest.NewRequest(http.MethodPost, "https://m5.example.ts.net/recovery", nil)
-	req.RemoteAddr = "100.88.242.1:443"
-	req.Header.Set("Tailscale-User-Login", "owner@example.test")
-	if _, err := a.AuthorizeRecovery(context.Background(), req, Node{}); err == nil {
-		t.Fatal("accepted spoofable non-loopback identity header")
+func TestCapabilityAuthorizerRejectsForgedTailnetHeader(t *testing.T) {
+	public, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
 	}
-	req.RemoteAddr = "127.0.0.1:12345"
-	if _, err := a.AuthorizeRecovery(context.Background(), req, Node{}); err != nil {
-		t.Fatalf("rejected loopback allowlisted identity: %v", err)
+	a := CapabilityAuthorizer{PublicKeys: map[string]ed25519.PublicKey{"test": public}}
+	req := httptest.NewRequest(http.MethodPost, "https://m5.example.ts.net/recovery", nil)
+	req.Header.Set("Origin", "https://m5.example.ts.net")
+	req.Header.Set("Tailscale-User-Login", "owner@example.test")
+	if _, err := a.AuthorizeRecovery(context.Background(), req, Node{ID: "m1"}); err == nil {
+		t.Fatal("accepted a forged Tailscale identity header without a signed capability")
+	}
+	req.Header.Set("Authorization", "Bearer "+signedCapability(t, private, "m1", "https://m5.example.ts.net"))
+	if _, err := a.AuthorizeRecovery(context.Background(), req, Node{ID: "m1"}); err != nil {
+		t.Fatalf("rejected valid signed recovery capability: %v", err)
 	}
 }
 
@@ -56,15 +86,24 @@ func TestAdmissionRequiresExactOriginAndUsesCookieNotURLSecret(t *testing.T) {
 	defer ts.Close()
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/recovery/v1/nodes/m1/sessions", nil)
 	req.Header.Set("Origin", "https://attacker.example")
+	req.Header.Set("Authorization", "Bearer "+testCapability(t))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil || resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("wrong-origin admission = %v, %v", resp, err)
 	}
 	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/recovery/v1/nodes/m1/sessions", nil)
 	req.Header.Set("Origin", "https://m5.example.ts.net")
+	req.Header.Set("Authorization", "Bearer "+testCapability(t))
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil || resp.StatusCode != http.StatusCreated {
 		t.Fatalf("admission = %v, %v", resp, err)
+	}
+	replay, _ := http.NewRequest(http.MethodPost, ts.URL+"/recovery/v1/nodes/m1/sessions", nil)
+	replay.Header.Set("Origin", "https://m5.example.ts.net")
+	replay.Header.Set("Authorization", "Bearer "+testCapability(t))
+	replayResponse, replayErr := http.DefaultClient.Do(replay)
+	if replayErr != nil || replayResponse.StatusCode != http.StatusConflict {
+		t.Fatalf("replayed capability = %v, %v", replayResponse, replayErr)
 	}
 	cookies := resp.Cookies()
 	if len(cookies) != 1 || !cookies[0].HttpOnly || !cookies[0].Secure || strings.Contains(resp.Request.URL.RawQuery, cookies[0].Value) {
@@ -77,6 +116,40 @@ func TestAdmissionRequiresExactOriginAndUsesCookieNotURLSecret(t *testing.T) {
 	if err != nil || resp.StatusCode != http.StatusFound || strings.Contains(resp.Header.Get("Location"), cookies[0].Value) {
 		t.Fatalf("client redirect leaked cookie or failed: %v, %v", resp, err)
 	}
+}
+
+func TestFreshClientEntryGuidesOperatorAndFormAdmission(t *testing.T) {
+	g := testGateway(t, "100.88.242.95:5900")
+	ts := httptest.NewServer(g.Handler())
+	defer ts.Close()
+	noRedirect := &http.Client{CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err := noRedirect.Get(ts.URL + "/recovery/v1/nodes/m1/client")
+	if err != nil || resp.StatusCode != http.StatusFound || resp.Header.Get("Location") != "/recovery/v1/nodes/m1/entry" {
+		t.Fatalf("fresh recovery client entry = %v, %v", resp, err)
+	}
+	resp, err = noRedirect.Get(ts.URL + "/recovery/v1/nodes/m1/entry")
+	if err != nil || resp.StatusCode != http.StatusOK || !strings.Contains(readBody(t, resp), "Recovery admission") {
+		t.Fatalf("entry page = %v, %v", resp, err)
+	}
+	form := url.Values{"capability": {testCapability(t)}}.Encode()
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/recovery/v1/nodes/m1/sessions", strings.NewReader(form))
+	req.Header.Set("Origin", "https://m5.example.ts.net")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "text/html")
+	resp, err = noRedirect.Do(req)
+	if err != nil || resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/recovery/v1/nodes/m1/client" || len(resp.Cookies()) != 1 {
+		t.Fatalf("form admission = %v, %v", resp, err)
+	}
+}
+
+func readBody(t *testing.T, resp *http.Response) string {
+	t.Helper()
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }
 
 func TestGatewayProxiesOnlyAdmittedNodeAndCleansSessionOnDisconnect(t *testing.T) {
@@ -105,6 +178,7 @@ func TestGatewayProxiesOnlyAdmittedNodeAndCleansSessionOnDisconnect(t *testing.T
 	defer ts.Close()
 	admit, _ := http.NewRequest(http.MethodPost, ts.URL+"/recovery/v1/nodes/m1/sessions", nil)
 	admit.Header.Set("Origin", "https://m5.example.ts.net")
+	admit.Header.Set("Authorization", "Bearer "+testCapability(t))
 	resp, err := http.DefaultClient.Do(admit)
 	if err != nil {
 		t.Fatal(err)

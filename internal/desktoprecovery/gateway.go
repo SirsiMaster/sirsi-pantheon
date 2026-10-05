@@ -6,9 +6,11 @@ package desktoprecovery
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
 	"embed"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -50,36 +52,80 @@ type Node struct {
 // no secret and is used only to bind an ephemeral recovery session.
 type Principal struct{ Login string }
 
-// Authorizer is the Pantheon admission seam. Production uses
-// TailnetHeaderAuthorizer behind a loopback-only Tailscale Serve proxy; tests
-// inject a deterministic authorizer. There is intentionally no anonymous or
-// static-token fallback.
+// Authorizer is the Pantheon admission seam. Production uses a signed
+// capability; tests inject a deterministic authorizer. There is intentionally
+// no anonymous, static-token, or identity-header fallback.
 type Authorizer interface {
 	AuthorizeRecovery(context.Context, *http.Request, Node) (Principal, error)
 }
 
-// TailnetHeaderAuthorizer admits only explicitly configured Tailscale login
-// names, and only when the immediate peer is loopback. Tailscale Serve strips
-// spoofed identity headers before forwarding a tailnet request; binding the
-// backend to loopback prevents a LAN/tailnet client from forging those headers.
-type TailnetHeaderAuthorizer struct {
-	AllowedLogins map[string]struct{}
+// CapabilityClaims is a signed, short-lived, single-node operator admission.
+// Its opaque compact encoding is allowed only in a POST body or Authorization
+// header: it is never a route, query, or cookie value.
+type CapabilityClaims struct {
+	KeyID     string `json:"key_id"`
+	Login     string `json:"login"`
+	NodeID    string `json:"node_id"`
+	Origin    string `json:"origin"`
+	Purpose   string `json:"purpose"`
+	ExpiresAt int64  `json:"expires_at_unix"`
+	Nonce     string `json:"nonce"`
 }
 
-func (a TailnetHeaderAuthorizer) AuthorizeRecovery(_ context.Context, r *http.Request, _ Node) (Principal, error) {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	addr, parseErr := netip.ParseAddr(host)
-	if err != nil || parseErr != nil || !addr.IsLoopback() {
-		return Principal{}, errors.New("desktop recovery requires loopback Tailscale Serve proxy")
+// CapabilityAuthorizer stores public keys only. An ordinary same-host process
+// cannot turn a forged Tailscale identity header into an allowlisted operator.
+type CapabilityAuthorizer struct {
+	PublicKeys map[string]ed25519.PublicKey
+	Now        func() time.Time
+}
+
+func (a CapabilityAuthorizer) AuthorizeRecovery(_ context.Context, r *http.Request, node Node) (Principal, error) {
+	if a.Now == nil {
+		a.Now = time.Now
 	}
-	login := strings.TrimSpace(r.Header.Get("Tailscale-User-Login"))
-	if login == "" {
-		return Principal{}, errors.New("desktop recovery requires Tailscale user identity")
+	claims, err := a.claims(r)
+	if err != nil {
+		return Principal{}, err
 	}
-	if _, ok := a.AllowedLogins[login]; !ok {
-		return Principal{}, errors.New("desktop recovery operator is not allowlisted")
+	if claims.Purpose != "pantheon.desktop-recovery" || claims.NodeID != node.ID || claims.Origin != r.Header.Get("Origin") || !a.Now().Before(time.Unix(claims.ExpiresAt, 0)) {
+		return Principal{}, errors.New("desktop recovery capability is not valid for this admission")
 	}
-	return Principal{Login: login}, nil
+	return Principal{Login: claims.Login}, nil
+}
+
+func (a CapabilityAuthorizer) claims(r *http.Request) (CapabilityClaims, error) {
+	values := r.Header.Values("Authorization")
+	if len(values) != 1 || !strings.HasPrefix(values[0], "Bearer ") {
+		return CapabilityClaims{}, errors.New("desktop recovery requires one signed admission capability")
+	}
+	compact := strings.TrimPrefix(values[0], "Bearer ")
+	parts := strings.Split(compact, ".")
+	if len(parts) != 2 || len(compact) > 4096 {
+		return CapabilityClaims{}, errors.New("desktop recovery capability is malformed")
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil || len(payload) == 0 || len(payload) > 2048 {
+		return CapabilityClaims{}, errors.New("desktop recovery capability payload is malformed")
+	}
+	signature, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil || len(signature) != ed25519.SignatureSize {
+		return CapabilityClaims{}, errors.New("desktop recovery capability signature is malformed")
+	}
+	var claims CapabilityClaims
+	dec := json.NewDecoder(strings.NewReader(string(payload)))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&claims); err != nil || claims.KeyID == "" || claims.Login == "" || claims.NodeID == "" || claims.Origin == "" || claims.Nonce == "" || claims.ExpiresAt <= 0 {
+		return CapabilityClaims{}, errors.New("desktop recovery capability claims are malformed")
+	}
+	var extra any
+	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+		return CapabilityClaims{}, errors.New("desktop recovery capability has trailing JSON")
+	}
+	key, ok := a.PublicKeys[claims.KeyID]
+	if !ok || len(key) != ed25519.PublicKeySize || !ed25519.Verify(key, payload, signature) {
+		return CapabilityClaims{}, errors.New("desktop recovery capability signature is not accepted")
+	}
+	return claims, nil
 }
 
 // Config supplies the sole source of node and operator authority. A caller
@@ -113,6 +159,7 @@ type Gateway struct {
 
 	mu       sync.Mutex
 	sessions map[[sha256.Size]byte]session
+	admitted map[[sha256.Size]byte]time.Time
 }
 
 func New(cfg Config) (*Gateway, error) {
@@ -149,7 +196,7 @@ func New(cfg Config) (*Gateway, error) {
 	if len(nodes) == 0 {
 		return nil, errors.New("desktop recovery: at least one approved node is required")
 	}
-	return &Gateway{nodes: nodes, auth: cfg.Authorizer, ttl: cfg.SessionTTL, now: cfg.Now, rand: cfg.Rand, dial: cfg.DialContext, sessions: make(map[[sha256.Size]byte]session)}, nil
+	return &Gateway{nodes: nodes, auth: cfg.Authorizer, ttl: cfg.SessionTTL, now: cfg.Now, rand: cfg.Rand, dial: cfg.DialContext, sessions: make(map[[sha256.Size]byte]session), admitted: make(map[[sha256.Size]byte]time.Time)}, nil
 }
 
 func validateNode(node Node) error {
@@ -227,6 +274,8 @@ func (g *Gateway) handleNode(w http.ResponseWriter, r *http.Request) {
 	switch parts[1] {
 	case "sessions":
 		g.admit(w, r, node)
+	case "entry":
+		g.entry(w, r, node)
 	case "client":
 		g.client(w, r, node)
 	case "ws":
@@ -246,7 +295,12 @@ func (g *Gateway) admit(w http.ResponseWriter, r *http.Request, node Node) {
 		http.Error(w, "recovery origin denied", http.StatusForbidden)
 		return
 	}
-	principal, err := g.auth.AuthorizeRecovery(r.Context(), r, node)
+	admission, err := admissionRequest(r)
+	if err != nil {
+		http.Error(w, "recovery admission denied", http.StatusUnauthorized)
+		return
+	}
+	principal, err := g.auth.AuthorizeRecovery(r.Context(), admission, node)
 	if err != nil {
 		http.Error(w, "recovery admission denied", http.StatusUnauthorized)
 		return
@@ -259,21 +313,73 @@ func (g *Gateway) admit(w http.ResponseWriter, r *http.Request, node Node) {
 	now := g.now().UTC()
 	expires := now.Add(g.ttl)
 	hash := sha256.Sum256(raw)
+	capabilityHash := sha256.Sum256([]byte(admission.Header.Get("Authorization")))
 	g.mu.Lock()
 	g.gcLocked(now)
+	if _, exists := g.admitted[capabilityHash]; exists {
+		g.mu.Unlock()
+		http.Error(w, "recovery admission already used", http.StatusConflict)
+		return
+	}
 	g.sessions[hash] = session{nodeID: node.ID, principal: principal.Login, expiresAt: expires}
+	g.admitted[capabilityHash] = expires
 	g.mu.Unlock()
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: hex.EncodeToString(raw), Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode, Expires: expires})
+	if strings.Contains(r.Header.Get("Accept"), "text/html") {
+		http.Redirect(w, r, "/recovery/v1/nodes/"+node.ID+"/client", http.StatusSeeOther)
+		return
+	}
 	writeJSON(w, http.StatusCreated, map[string]string{"node": node.ID, "expires_at": expires.Format(time.RFC3339), "client_path": "/recovery/v1/nodes/" + node.ID + "/client"})
 }
 
+func (g *Gateway) entry(w http.ResponseWriter, r *http.Request, node Node) {
+	if r.Method != http.MethodGet || r.URL.RawQuery != "" {
+		http.Error(w, "recovery entry requires GET without query", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = fmt.Fprintf(w, "<!doctype html><html><head><meta charset=utf-8><title>Pantheon recovery</title></head><body><main><h1>Open approved desktop recovery</h1><p>Enter a short-lived Pantheon recovery admission for %s. It is used once and is not placed in a URL or retained.</p><form method=post action=\"/recovery/v1/nodes/%s/sessions\"><label>Recovery admission <input name=capability type=password autocomplete=off required></label><button type=submit>Continue</button></form></main></body></html>", node.ID, node.ID)
+}
+
 func (g *Gateway) client(w http.ResponseWriter, r *http.Request, node Node) {
-	if r.Method != http.MethodGet || !g.validSession(r, node.ID, false) {
-		http.Error(w, "active recovery admission required", http.StatusUnauthorized)
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "GET required", http.StatusMethodNotAllowed)
+		return
+	}
+	if !g.validSession(r, node.ID, false) {
+		http.Redirect(w, r, "/recovery/v1/nodes/"+node.ID+"/entry", http.StatusFound)
 		return
 	}
 	q := url.Values{"autoconnect": {"true"}, "reconnect": {"false"}, "path": {"recovery/v1/nodes/" + node.ID + "/ws"}}
 	http.Redirect(w, r, "/recovery/novnc/vnc.html?"+q.Encode(), http.StatusFound)
+}
+
+func admissionRequest(r *http.Request) (*http.Request, error) {
+	if r.URL.RawQuery != "" {
+		return nil, errors.New("recovery admission capability must not be in a URL")
+	}
+	if len(r.Header.Values("Authorization")) != 0 {
+		return r, nil
+	}
+	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
+		return nil, errors.New("recovery admission capability is required")
+	}
+	raw, err := io.ReadAll(io.LimitReader(r.Body, 4097))
+	if err != nil || len(raw) > 4096 {
+		return nil, errors.New("recovery admission form is invalid")
+	}
+	form, err := url.ParseQuery(string(raw))
+	if err != nil || len(form) != 1 || len(form["capability"]) != 1 || form.Get("capability") == "" {
+		return nil, errors.New("recovery admission form is invalid")
+	}
+	clone := r.Clone(r.Context())
+	clone.Header = r.Header.Clone()
+	clone.Header.Set("Authorization", "Bearer "+form.Get("capability"))
+	return clone, nil
 }
 
 func (g *Gateway) websocket(node Node) websocket.Server {
@@ -361,6 +467,11 @@ func (g *Gateway) gcLocked(now time.Time) {
 	for key, s := range g.sessions {
 		if !now.Before(s.expiresAt) {
 			delete(g.sessions, key)
+		}
+	}
+	for key, expires := range g.admitted {
+		if !now.Before(expires) {
+			delete(g.admitted, key)
 		}
 	}
 }

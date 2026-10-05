@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,13 +21,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// recoveryServeConfig is intentionally small: it contains only node and
-// operator allowlists. It contains no RFB credential, and never changes macOS
-// screen-sharing, TCC, FileVault, SIP, or Tailscale configuration.
+// recoveryServeConfig contains only public operator-admission authority. It
+// contains no RFB credential or private signing material, and never changes
+// macOS screen-sharing, TCC, FileVault, SIP, or Tailscale configuration.
 type recoveryServeConfig struct {
-	Nodes                []desktoprecovery.Node `json:"nodes"`
-	AllowedTailnetLogins []string               `json:"allowed_tailnet_logins"`
-	SessionTTLSeconds    int                    `json:"session_ttl_seconds"`
+	Nodes               []desktoprecovery.Node `json:"nodes"`
+	AdmissionPublicKeys map[string]string      `json:"admission_public_keys"`
+	SessionTTLSeconds   int                    `json:"session_ttl_seconds"`
 }
 
 var (
@@ -37,9 +39,10 @@ var recoveryServeCmd = &cobra.Command{
 	Use:   "serve",
 	Short: "Serve the loopback-only noVNC recovery bridge behind Tailscale Serve",
 	Long: `Starts a browser-to-RFB recovery bridge only on loopback. Put it behind
-authenticated Tailscale Serve and use its authenticated identity headers. The
-JSON config names approved private port-5900 nodes, exact HTTPS origins, and
-operator logins. It never accepts a destination or credential from a browser.
+authenticated Tailscale Serve for private encrypted transport. The JSON config
+names approved private port-5900 nodes, exact HTTPS origins, and public keys
+for short-lived Pantheon operator admissions. It never trusts identity headers,
+accepts a destination from a browser, or contains a desktop credential.
 
 This command does not configure Screen Sharing, Tailscale Serve, permissions,
 or launchd. Those are separately qualified host operations.`,
@@ -51,16 +54,9 @@ or launchd. Those are separately qualified host operations.`,
 		if !isLoopbackListen(recoveryListenAddr) {
 			return errors.New("recovery serve: --listen must be a literal loopback address; place the bridge behind authenticated Tailscale Serve")
 		}
-		allow := make(map[string]struct{}, len(cfg.AllowedTailnetLogins))
-		for _, login := range cfg.AllowedTailnetLogins {
-			login = strings.TrimSpace(login)
-			if login == "" {
-				return errors.New("recovery serve: allowed_tailnet_logins contains an empty login")
-			}
-			allow[login] = struct{}{}
-		}
-		if len(allow) == 0 {
-			return errors.New("recovery serve: allowed_tailnet_logins is required")
+		keys, err := recoveryPublicKeys(cfg.AdmissionPublicKeys)
+		if err != nil {
+			return err
 		}
 		ttl := 0 * time.Second
 		if cfg.SessionTTLSeconds != 0 {
@@ -68,7 +64,7 @@ or launchd. Those are separately qualified host operations.`,
 		}
 		gateway, err := desktoprecovery.New(desktoprecovery.Config{
 			Nodes:      cfg.Nodes,
-			Authorizer: desktoprecovery.TailnetHeaderAuthorizer{AllowedLogins: allow},
+			Authorizer: desktoprecovery.CapabilityAuthorizer{PublicKeys: keys},
 			SessionTTL: ttl,
 		})
 		if err != nil {
@@ -97,6 +93,24 @@ or launchd. Those are separately qualified host operations.`,
 			return server.Shutdown(shutdown)
 		}
 	},
+}
+
+func recoveryPublicKeys(encoded map[string]string) (map[string]ed25519.PublicKey, error) {
+	if len(encoded) == 0 {
+		return nil, errors.New("recovery serve: admission_public_keys is required")
+	}
+	keys := make(map[string]ed25519.PublicKey, len(encoded))
+	for id, text := range encoded {
+		if strings.TrimSpace(id) == "" {
+			return nil, errors.New("recovery serve: admission_public_keys contains an empty key id")
+		}
+		bytes, err := base64.RawURLEncoding.DecodeString(text)
+		if err != nil || len(bytes) != ed25519.PublicKeySize {
+			return nil, fmt.Errorf("recovery serve: admission public key %q must be base64url Ed25519", id)
+		}
+		keys[id] = ed25519.PublicKey(bytes)
+	}
+	return keys, nil
 }
 
 func loadRecoveryConfig(path string) (recoveryServeConfig, error) {
