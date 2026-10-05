@@ -262,6 +262,33 @@ func (s *SQLiteStore) ListAll(ctx context.Context) ([]Item, error) {
 	return scanItems(rows)
 }
 
+// ListActive returns the items that are not terminal, plus the terminal items
+// they reference through blocked_by (dependency truth for the ledger). Whole-fabric
+// surfaces (router ledger, router status) only need open work; ListAll reads every
+// row ever written (13k+ and growing, 6-20 s per call on the service, the cause of
+// the "no response within 30s" spool timeouts under concurrency).
+func (s *SQLiteStore) ListActive(ctx context.Context) ([]Item, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+itemCols+` FROM items
+		WHERE status NOT IN ('closed','completed','dead_letter')
+		   OR id IN (SELECT blocked_by FROM items WHERE blocked_by<>'' AND status NOT IN ('closed','completed','dead_letter'))
+		ORDER BY id ASC;`)
+	if err != nil {
+		return nil, fmt.Errorf("routerstore: ListActive: %w", err)
+	}
+	defer rows.Close()
+	return scanItems(rows)
+}
+
+// CountClosed returns how many items are closed (status 'closed'), so a summary
+// can print totals without reading the rows.
+func (s *SQLiteStore) CountClosed(ctx context.Context) (int, error) {
+	var n int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM items WHERE status='closed';`).Scan(&n); err != nil {
+		return 0, fmt.Errorf("routerstore: CountClosed: %w", err)
+	}
+	return n, nil
+}
+
 // SetWake records the wake-pass annotation on an item, mirroring
 // internal/work.SetWake for store-only rows (the post-cutover authority). It is
 // a single UPDATE keyed on id; unknown ids return ErrNotFound so the caller can

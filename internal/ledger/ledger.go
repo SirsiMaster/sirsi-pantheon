@@ -69,7 +69,7 @@ func Build(repoRoot, agent string, now time.Time, staleAfter time.Duration) (Sna
 		return Snapshot{}, err
 	}
 	defer f.Close()
-	all, err := f.ListAll()
+	all, _, err := f.ListActive()
 	if err != nil {
 		return Snapshot{}, err
 	}

@@ -462,6 +462,22 @@ func (rs *RemoteStore) do(ctx context.Context, method string, args []any, sess *
 // for that lock (SSA review, PR #748). This is narrower than "unconditionally
 // honored" and is a known, undeferred residual — lock contention, not the
 // RPC-races-an-independent-timeout gap this fix actually closes.
+func (rs *RemoteStore) ListActive(ctx context.Context) ([]Item, error) {
+	ctx, cancel := context.WithTimeout(ctx, rs.perCall)
+	defer cancel()
+	var out []Item
+	err := rs.callCtx(ctx, "ListActive", nil, &out)
+	return out, err
+}
+
+func (rs *RemoteStore) CountClosed(ctx context.Context) (int, error) {
+	ctx, cancel := context.WithTimeout(ctx, rs.perCall)
+	defer cancel()
+	var out int
+	err := rs.callCtx(ctx, "CountClosed", nil, &out)
+	return out, err
+}
+
 func (rs *RemoteStore) ListAll(ctx context.Context) ([]Item, error) {
 	ctx, cancel := context.WithTimeout(ctx, rs.perCall)
 	defer cancel()

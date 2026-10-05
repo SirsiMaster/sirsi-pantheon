@@ -59,6 +59,9 @@ type Store interface {
 	ItemSession(id string) (string, error)
 	ListAgents() ([]Agent, error)
 	ListAll(ctx context.Context) ([]Item, error)
+	// ListActive is ListAll without the terminal history (plus blocked_by targets).
+	ListActive(ctx context.Context) ([]Item, error)
+	CountClosed(ctx context.Context) (int, error)
 	ListHostTokens() ([]HostToken, error)
 	ListIdentifiers(namespace string) ([]Identifier, error)
 	ListRequirements(owner string) ([]Requirement, error)
