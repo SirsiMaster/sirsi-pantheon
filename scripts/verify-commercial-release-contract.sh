@@ -38,7 +38,8 @@ for needle in \
     'export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"' \
     '--development' \
     '--release' \
-    'DEVELOPER_ID_APPLICATION APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD' \
+    'PANTHEON_SIGNING_EXECUTION:-' \
+    'direct --release requires' \
     'SirsiPantheon-${VERSION}-dev-${ARCH}.dmg' \
     'xcrun notarytool submit' \
     'xcrun stapler validate'; do

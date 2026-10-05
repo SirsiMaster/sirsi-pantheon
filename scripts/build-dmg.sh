@@ -54,19 +54,6 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "$MODE" ]] || { echo "ERROR: choose --development or --release explicitly" >&2; exit 2; }
-if [[ "$MODE" == "release" ]]; then
-    for required in DEVELOPER_ID_APPLICATION APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD; do
-        [[ -n "${!required:-}" ]] || { echo "ERROR: --release requires ${required}" >&2; exit 2; }
-    done
-    DMG_NAME="SirsiPantheon-${VERSION}-${ARCH}.dmg"
-    ARTIFACT_LABEL="Commercial release"
-else
-    DMG_NAME="SirsiPantheon-${VERSION}-dev-${ARCH}.dmg"
-    ARTIFACT_LABEL="Development"
-fi
-DMG_PATH="${BUILD_DIR}/${DMG_NAME}"
-STAGING_DIR="${BUILD_DIR}/dmg-staging"
-
 REMOTE_SIGNING=false
 if [[ "$MODE" == "release" && "${PANTHEON_SIGNING_EXECUTION:-}" == "remote-service" ]]; then
     [[ -x "${PANTHEON_SIGN_CLIENT:-}" ]] || {
@@ -75,6 +62,22 @@ if [[ "$MODE" == "release" && "${PANTHEON_SIGNING_EXECUTION:-}" == "remote-servi
     }
     REMOTE_SIGNING=true
 fi
+if [[ "$MODE" == "release" ]]; then
+    # The enrolled signing service is the canonical secretless route. Only a
+    # direct local signing run requires Apple credential variables here.
+    if [[ "$REMOTE_SIGNING" != true ]]; then
+        for required in DEVELOPER_ID_APPLICATION APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD; do
+            [[ -n "${!required:-}" ]] || { echo "ERROR: direct --release requires ${required}" >&2; exit 2; }
+        done
+    fi
+    DMG_NAME="SirsiPantheon-${VERSION}-${ARCH}.dmg"
+    ARTIFACT_LABEL="Commercial release"
+else
+    DMG_NAME="SirsiPantheon-${VERSION}-dev-${ARCH}.dmg"
+    ARTIFACT_LABEL="Development"
+fi
+DMG_PATH="${BUILD_DIR}/${DMG_NAME}"
+STAGING_DIR="${BUILD_DIR}/dmg-staging"
 
 echo "Building Sirsi Pantheon ${MODE} DMG  (version ${VERSION}, arch ${ARCH})"
 
@@ -128,14 +131,15 @@ fi
 
 # --- Code signing ---
 if [[ "$MODE" == "release" ]]; then
-    echo "Signing with Developer ID: ${DEVELOPER_ID_APPLICATION}"
     if [[ "$REMOTE_SIGNING" == true ]]; then
+        echo "Signing through the enrolled Sirsi signing service."
         "${PANTHEON_SIGN_CLIENT}" "${BUNDLE_DIR}" app
         SIGNED_APP="$(dirname "${BUNDLE_DIR}")/signed-$(basename "${BUNDLE_DIR}")"
         [[ -d "$SIGNED_APP" ]] || { echo "ERROR: signing service returned no signed app" >&2; exit 1; }
         rm -rf "${BUNDLE_DIR}"
         mv "${SIGNED_APP}" "${BUNDLE_DIR}"
     else
+        echo "Signing with Developer ID: ${DEVELOPER_ID_APPLICATION}"
         # Sign inner executables first (inside-out), then the bundle.
         for inner in "${BUNDLE_DIR}/Contents/MacOS/sirsi" "${BUNDLE_DIR}/Contents/MacOS/sirsi-menubar"; do
             codesign --force --options runtime --timestamp --sign "${DEVELOPER_ID_APPLICATION}" "${inner}"

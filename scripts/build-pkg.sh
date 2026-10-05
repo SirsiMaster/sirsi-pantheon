@@ -40,17 +40,6 @@ done
 [[ -x "$APP_PATH/Contents/MacOS/sirsi-menubar" ]] || { echo "ERROR: Pantheon.app is missing sirsi-menubar" >&2; exit 1; }
 [[ -d "$APP_PATH/Contents/Resources/StackLab" ]] || { echo "ERROR: Pantheon.app is missing Stack Lab contracts" >&2; exit 1; }
 
-if [[ "$MODE" == "release" ]]; then
-    for required in DEVELOPER_ID_INSTALLER APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD; do
-        [[ -n "${!required:-}" ]] || { echo "ERROR: --release requires ${required}" >&2; exit 2; }
-    done
-    PKG_NAME="SirsiPantheon-${VERSION}-${ARCH}.pkg"
-    ARTIFACT_LABEL="Commercial release"
-else
-    PKG_NAME="SirsiPantheon-${VERSION}-dev-${ARCH}.pkg"
-    ARTIFACT_LABEL="Development"
-fi
-
 REMOTE_SIGNING=false
 if [[ "$MODE" == "release" && "${PANTHEON_SIGNING_EXECUTION:-}" == "remote-service" ]]; then
     [[ -x "${PANTHEON_SIGN_CLIENT:-}" ]] || {
@@ -58,6 +47,20 @@ if [[ "$MODE" == "release" && "${PANTHEON_SIGNING_EXECUTION:-}" == "remote-servi
         exit 1
     }
     REMOTE_SIGNING=true
+fi
+if [[ "$MODE" == "release" ]]; then
+    # The signer keeps notarization credentials on the enrolled signing Mac;
+    # direct local signing remains explicitly credential-gated.
+    if [[ "$REMOTE_SIGNING" != true ]]; then
+        for required in DEVELOPER_ID_INSTALLER APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD; do
+            [[ -n "${!required:-}" ]] || { echo "ERROR: direct --release requires ${required}" >&2; exit 2; }
+        done
+    fi
+    PKG_NAME="SirsiPantheon-${VERSION}-${ARCH}.pkg"
+    ARTIFACT_LABEL="Commercial release"
+else
+    PKG_NAME="SirsiPantheon-${VERSION}-dev-${ARCH}.pkg"
+    ARTIFACT_LABEL="Development"
 fi
 
 mkdir -p "$BUILD_DIR"
