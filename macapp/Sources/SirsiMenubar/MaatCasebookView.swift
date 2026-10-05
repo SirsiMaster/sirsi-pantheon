@@ -2116,7 +2116,7 @@ struct MaatJournalIssue: Decodable, Identifiable {
     let digest: String
     let reason: String
 
-    var id: String { "\\(line):\\(digest)" }
+    var id: String { "\(line):\(digest)" }
 }
 
 struct MaatCasebookSummary: Decodable {

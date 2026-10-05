@@ -254,7 +254,10 @@ final class CoreContractsTests: XCTestCase {
           "summary": {"total":0,"open":0,"urgent":0,"high":0,"resolved":0},
           "journal_integrity": {
             "invalid_count": 1,
-            "issues": [{"line": 14, "digest": "sha256=fixture", "reason": "requester is required"}]
+            "issues": [
+              {"line": 14, "digest": "sha256=fixture-a", "reason": "requester is required"},
+              {"line": 15, "digest": "sha256=fixture-b", "reason": "host is required"}
+            ]
           }
         }
         """#.data(using: .utf8)!
@@ -265,6 +268,7 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertEqual(projection.journalIntegrity.invalidCount, 1)
         XCTAssertEqual(projection.journalIntegrity.issues.first?.line, 14)
         XCTAssertEqual(projection.journalIntegrity.issues.first?.reason, "requester is required")
+        XCTAssertEqual(Set(projection.journalIntegrity.issues.map(\.id)).count, 2)
     }
 
     func testDesktopEnginePrefersTheBundledCLIOverAHostInstall() throws {
@@ -282,6 +286,13 @@ final class CoreContractsTests: XCTestCase {
         let selected = SirsiEngine.sirsiBinary(bundleExecutableURL: menubar, homeDirectory: "/does-not-exist")
 
         XCTAssertEqual(selected, cli.path)
+
+        try FileManager.default.removeItem(at: cli)
+        try FileManager.default.createSymbolicLink(atPath: cli.path, withDestinationPath: "/bin/true")
+        XCTAssertNil(SirsiEngine.sirsiBinary(bundleExecutableURL: menubar, homeDirectory: "/does-not-exist"))
+
+        try FileManager.default.removeItem(at: cli)
+        XCTAssertNil(SirsiEngine.sirsiBinary(bundleExecutableURL: menubar, homeDirectory: "/does-not-exist"))
     }
 
     func testMenubarLeaseAllowsOneLocalProcessAtATime() throws {

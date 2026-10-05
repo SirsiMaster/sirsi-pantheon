@@ -1250,6 +1250,10 @@ final class SirsiEngine: ObservableObject {
     nonisolated static func run(args: [String], stdin: String?) async -> String {
         await withCheckedContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
+				guard let binary = sirsiBinary() else {
+					cont.resume(returning: "error: Pantheon's bundled CLI is missing, linked, or not executable. This app will not fall back to an ambient command. Reinstall or repair this Pantheon bundle from Stack Lab.")
+					return
+				}
                 let p = Process()
                 // Repo-scoped verbs (maat, net) run from the configured project
                 // root so they weigh a real repository; everything else runs
@@ -1257,7 +1261,7 @@ final class SirsiEngine: ObservableObject {
                 // path-scoped `sirsi scan` walks the entire disk (the
                 // 2026-07-02 infinite-spinner bug).
                 p.currentDirectoryURL = workingDirectory(for: args)
-                p.executableURL = URL(fileURLWithPath: sirsiBinary())
+                p.executableURL = URL(fileURLWithPath: binary)
                 p.arguments = args
                 let outPipe = Pipe()
                 p.standardOutput = outPipe
@@ -1342,13 +1346,16 @@ final class SirsiEngine: ObservableObject {
     // local inference every time, never a cloud model. The native app calls the
     // Go `sirsi gemma` client directly; the retired ~/.local/bin/gemma Python
     // helper is not part of the application or inference path.
-    nonisolated static func gemmaBinary() -> String {
+    nonisolated static func gemmaBinary() -> String? {
         sirsiBinary()
     }
     nonisolated static func runGemma(prompt: String, system: String) async -> String {
         await withCheckedContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
-                let bin = gemmaBinary()
+                guard let bin = gemmaBinary() else {
+					cont.resume(returning: "Pantheon's bundled inference bridge is unavailable. This query was not sent to an ambient or cloud fallback.")
+					return
+				}
                 guard FileManager.default.isExecutableFile(atPath: bin) else {
                     cont.resume(returning: "Sirsi's on-device model isn't set up yet. This query stays on-device — never cloud.")
                     return
@@ -1721,11 +1728,14 @@ final class SirsiEngine: ObservableObject {
     nonisolated static func runJSON(args: [String]) async -> Data {
         await withCheckedContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
+				guard let binary = sirsiBinary() else {
+					cont.resume(returning: Data()); return
+				}
                 let p = Process()
                 // Repo-scoped verbs (maat, net) run from the configured project
                 // root; everything else from $HOME — see run() above.
                 p.currentDirectoryURL = workingDirectory(for: args)
-                p.executableURL = URL(fileURLWithPath: sirsiBinary())
+                p.executableURL = URL(fileURLWithPath: binary)
                 p.arguments = args
                 let outPipe = Pipe()
                 p.standardOutput = outPipe
@@ -1741,24 +1751,37 @@ final class SirsiEngine: ObservableObject {
     }
 
     nonisolated static func sirsiBinary(bundleExecutableURL: URL? = Bundle.main.executableURL,
-                                        homeDirectory: String? = nil) -> String {
+                                        homeDirectory: String? = nil) -> String? {
 		// The desktop product and CLI ship as one signed payload. Prefer the
 		// executable sibling inside this exact bundle so the Swift surface never
 		// delegates to an older Homebrew, PATH, or developer-copy CLI with a
 		// different Ma'at schema and recovery contract. The fallback list exists
 		// only for unit-test and development-host execution outside a bundle.
-        if let executable = bundleExecutableURL {
-			let bundled = executable.deletingLastPathComponent().appendingPathComponent("sirsi").path
-			if FileManager.default.isExecutableFile(atPath: bundled) {
-				return bundled
-			}
-		}
+        if let executable = bundleExecutableURL, isPantheonBundleExecutable(executable) {
+			let bundled = executable.deletingLastPathComponent().appendingPathComponent("sirsi")
+			return isTrustedBundledCLI(bundled) ? bundled.path : nil
+        }
         let home = homeDirectory ?? FileManager.default.homeDirectoryForCurrentUser.path
         for c in ["\(home)/.local/bin/sirsi", "/opt/homebrew/bin/sirsi", "/usr/local/bin/sirsi"] {
             if FileManager.default.isExecutableFile(atPath: c) { return c }
         }
-        return "sirsi"
+		return nil
     }
+
+	// A production bundle has a fixed sibling topology. Treat any missing,
+	// linked, non-regular, or non-executable sibling as a failed product
+	// integrity check rather than borrowing a Homebrew/PATH binary with an
+	// unrelated version and authority surface.
+	nonisolated static func isPantheonBundleExecutable(_ executable: URL) -> Bool {
+		executable.pathComponents.contains { $0.hasSuffix(".app") }
+	}
+
+	nonisolated static func isTrustedBundledCLI(_ candidate: URL) -> Bool {
+		guard let values = try? candidate.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
+			  values.isRegularFile == true,
+			  values.isSymbolicLink != true else { return false }
+		return FileManager.default.isExecutableFile(atPath: candidate.path)
+	}
 
     nonisolated static func stripANSI(_ s: String) -> String {
         guard let re = try? NSRegularExpression(pattern: "\\x1B\\[[0-9;]*[A-Za-z]") else { return s }

@@ -197,6 +197,12 @@ func (j *FileDecisionJournal) Append(decision Decision) error {
 	if err := os.MkdirAll(filepath.Dir(j.Path), 0o700); err != nil {
 		return fmt.Errorf("maat decision journal: create parent: %w", err)
 	}
+	return withJournalMutationLock(j.Path, func() error {
+		return j.appendLocked(decision)
+	})
+}
+
+func (j *FileDecisionJournal) appendLocked(decision Decision) error {
 	encoded, err := json.Marshal(decision)
 	if err != nil {
 		return fmt.Errorf("maat decision journal: encode: %w", err)
@@ -307,160 +313,12 @@ func journalIssueReason(err error) string {
 	return reason
 }
 
-// RepairInvalidRecords preserves the original journal in a create-only backup
-// and atomically replaces only the active projection with the records that
-// satisfy the current journal contract. It is deliberately confirmation-gated
-// by the command surface; callers use it only after presenting the integrity
-// summary in the native application.
-//
-// This method does not invent values for damaged rows, silently edit them, or
-// treat a partial write as recovered. A concurrent pathname replacement is
-// rejected before rename, the replacement is synced, and the strict reader
-// must be able to consume the resulting journal before success is returned.
+// RepairInvalidRecords preserves the original journal and rebuilds only the
+// active Casebook projection with strict-valid records. Platform-specific
+// implementations retain the source and parent capabilities through the final
+// replacement; the confirmation gate lives in the Casebook command/UI.
 func (j *FileDecisionJournal) RepairInvalidRecords() (JournalRepairReceipt, error) {
-	if j == nil || strings.TrimSpace(j.Path) == "" {
-		return JournalRepairReceipt{}, fmt.Errorf("maat decision journal: empty path")
-	}
-	f, err := os.Open(j.Path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return JournalRepairReceipt{}, fmt.Errorf("maat decision journal: no journal exists to repair")
-		}
-		return JournalRepairReceipt{}, fmt.Errorf("maat decision journal: open repair source: %w", err)
-	}
-	info, err := f.Stat()
-	if err != nil {
-		_ = f.Close()
-		return JournalRepairReceipt{}, fmt.Errorf("maat decision journal: stat repair source: %w", err)
-	}
-	if !info.Mode().IsRegular() {
-		_ = f.Close()
-		return JournalRepairReceipt{}, fmt.Errorf("maat decision journal: repair source is not a regular file")
-	}
-	raw, readErr := io.ReadAll(f)
-	closeErr := f.Close()
-	if readErr != nil {
-		return JournalRepairReceipt{}, fmt.Errorf("maat decision journal: read repair source: %w", readErr)
-	}
-	if closeErr != nil {
-		return JournalRepairReceipt{}, fmt.Errorf("maat decision journal: close repair source: %w", closeErr)
-	}
-
-	valid, invalid, retained := partitionDecisionJournal(raw)
-	if invalid == 0 {
-		return JournalRepairReceipt{}, fmt.Errorf("maat decision journal: no invalid records need repair")
-	}
-	parent := filepath.Dir(j.Path)
-	backup, err := os.CreateTemp(parent, filepath.Base(j.Path)+".invalid-backup-*")
-	if err != nil {
-		return JournalRepairReceipt{}, fmt.Errorf("maat decision journal: create preserved backup: %w", err)
-	}
-	backupPath := backup.Name()
-	backupOK := false
-	defer func() {
-		if !backupOK {
-			_ = backup.Close()
-			_ = os.Remove(backupPath)
-		}
-	}()
-	if err := backup.Chmod(0o600); err != nil {
-		return JournalRepairReceipt{}, fmt.Errorf("maat decision journal: set backup mode: %w", err)
-	}
-	if err := writeAll(backup, raw); err != nil {
-		return JournalRepairReceipt{}, fmt.Errorf("maat decision journal: write preserved backup: %w", err)
-	}
-	if err := backup.Sync(); err != nil {
-		return JournalRepairReceipt{}, fmt.Errorf("maat decision journal: sync preserved backup: %w", err)
-	}
-	if err := backup.Close(); err != nil {
-		return JournalRepairReceipt{}, fmt.Errorf("maat decision journal: close preserved backup: %w", err)
-	}
-	backupOK = true
-
-	replacement, err := os.CreateTemp(parent, filepath.Base(j.Path)+".repair-*")
-	if err != nil {
-		return JournalRepairReceipt{}, fmt.Errorf("maat decision journal: create replacement: %w", err)
-	}
-	replacementPath := replacement.Name()
-	replacementOK := false
-	defer func() {
-		if !replacementOK {
-			_ = replacement.Close()
-			_ = os.Remove(replacementPath)
-		}
-	}()
-	if err := replacement.Chmod(0o600); err != nil {
-		return JournalRepairReceipt{}, fmt.Errorf("maat decision journal: set replacement mode: %w", err)
-	}
-	if err := writeAll(replacement, valid); err != nil {
-		return JournalRepairReceipt{}, fmt.Errorf("maat decision journal: write replacement: %w", err)
-	}
-	if err := replacement.Sync(); err != nil {
-		return JournalRepairReceipt{}, fmt.Errorf("maat decision journal: sync replacement: %w", err)
-	}
-	if err := replacement.Close(); err != nil {
-		return JournalRepairReceipt{}, fmt.Errorf("maat decision journal: close replacement: %w", err)
-	}
-
-	current, err := os.Lstat(j.Path)
-	if err != nil || current.Mode()&os.ModeSymlink != 0 || !current.Mode().IsRegular() || !os.SameFile(info, current) || current.Size() != info.Size() {
-		return JournalRepairReceipt{}, fmt.Errorf("maat decision journal: source changed during repair; original was preserved at %s and no replacement was installed", backupPath)
-	}
-	if err := os.Rename(replacementPath, j.Path); err != nil {
-		return JournalRepairReceipt{}, fmt.Errorf("maat decision journal: install replacement: %w", err)
-	}
-	replacementOK = true
-	if err := syncDirectory(parent); err != nil {
-		return JournalRepairReceipt{}, fmt.Errorf("maat decision journal: replacement installed but parent sync failed; preserve and inspect backup %s: %w", backupPath, err)
-	}
-	if _, err := j.Recent(0); err != nil {
-		return JournalRepairReceipt{}, fmt.Errorf("maat decision journal: replacement did not pass strict verification; preserve and inspect backup %s: %w", backupPath, err)
-	}
-	digest := sha256.Sum256(raw)
-	return JournalRepairReceipt{
-		BackupPath: backupPath, OriginalDigest: fmt.Sprintf("sha256:%x", digest), RemovedCount: invalid, RetainedCount: retained,
-	}, nil
-}
-
-func partitionDecisionJournal(raw []byte) (valid []byte, invalid, retained int) {
-	for _, line := range strings.Split(string(raw), "\n") {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			continue
-		}
-		var decision Decision
-		if err := json.Unmarshal([]byte(trimmed), &decision); err != nil || validateDecision(decision) != nil {
-			invalid++
-			continue
-		}
-		valid = append(valid, line...)
-		valid = append(valid, '\n')
-		retained++
-	}
-	return valid, invalid, retained
-}
-
-func writeAll(f *os.File, data []byte) error {
-	for len(data) > 0 {
-		n, err := f.Write(data)
-		if err != nil {
-			return err
-		}
-		if n <= 0 {
-			return io.ErrShortWrite
-		}
-		data = data[n:]
-	}
-	return nil
-}
-
-func syncDirectory(path string) error {
-	dir, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
+	return repairInvalidRecords(j)
 }
 
 func normalizeDecision(decision *Decision) error {
