@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/net/websocket"
 )
 
@@ -37,7 +38,11 @@ func TestGatewayRejectsUnboundedDestinations(t *testing.T) {
 }
 
 func TestTailnetHeaderAuthorizerRequiresLoopbackAndAllowlist(t *testing.T) {
-	a := TailnetHeaderAuthorizer{AllowedLogins: map[string]struct{}{"owner@example.test": {}}}
+	hash, err := bcrypt.GenerateFromPassword([]byte("synthetic-recovery-password"), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := TailnetHeaderAuthorizer{AllowedLogins: map[string]struct{}{"owner@example.test": {}}, PasswordHashes: map[string]string{"owner@example.test": string(hash)}}
 	req := httptest.NewRequest(http.MethodPost, "https://m5.example.ts.net/recovery", nil)
 	req.RemoteAddr = "100.88.242.1:443"
 	req.Header.Set("Tailscale-User-Login", "owner@example.test")
@@ -45,6 +50,14 @@ func TestTailnetHeaderAuthorizerRequiresLoopbackAndAllowlist(t *testing.T) {
 		t.Fatal("accepted spoofable non-loopback identity header")
 	}
 	req.RemoteAddr = "127.0.0.1:12345"
+	if _, err := a.AuthorizeRecovery(context.Background(), req, Node{}); err == nil {
+		t.Fatal("forged local header admitted without independent authentication")
+	}
+	req.SetBasicAuth("owner@example.test", "wrong")
+	if _, err := a.AuthorizeRecovery(context.Background(), req, Node{}); err == nil {
+		t.Fatal("wrong password admitted")
+	}
+	req.SetBasicAuth("owner@example.test", "synthetic-recovery-password")
 	if _, err := a.AuthorizeRecovery(context.Background(), req, Node{}); err != nil {
 		t.Fatalf("rejected loopback allowlisted identity: %v", err)
 	}
@@ -136,4 +149,25 @@ func TestGatewayProxiesOnlyAdmittedNodeAndCleansSessionOnDisconnect(t *testing.T
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("recovery session survived disconnect")
+}
+
+func TestFreshAndExpiredBrowserEntry(t *testing.T) {
+	g := testGateway(t, "100.88.242.95:5900")
+	handler := g.Handler()
+	for _, expired := range []bool{false, true} {
+		req := httptest.NewRequest(http.MethodGet, "/recovery/v1/nodes/m1/client", nil)
+		if expired {
+			admission := httptest.NewRequest(http.MethodPost, "/recovery/v1/nodes/m1/sessions", nil)
+			admission.Header.Set("Origin", "https://m5.example.ts.net")
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, admission)
+			req.AddCookie(w.Result().Cookies()[0])
+			g.now = func() time.Time { return time.Now().Add(2 * time.Minute) }
+		}
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code != 200 || !strings.Contains(w.Body.String(), "Recover your desktop") || w.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("entry failed: %d", w.Code)
+		}
+	}
 }

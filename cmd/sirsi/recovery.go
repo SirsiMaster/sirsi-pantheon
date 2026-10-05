@@ -17,15 +17,17 @@ import (
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/desktoprecovery"
 	"github.com/spf13/cobra"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // recoveryServeConfig is intentionally small: it contains only node and
 // operator allowlists. It contains no RFB credential, and never changes macOS
 // screen-sharing, TCC, FileVault, SIP, or Tailscale configuration.
 type recoveryServeConfig struct {
-	Nodes                []desktoprecovery.Node `json:"nodes"`
-	AllowedTailnetLogins []string               `json:"allowed_tailnet_logins"`
-	SessionTTLSeconds    int                    `json:"session_ttl_seconds"`
+	Nodes                  []desktoprecovery.Node `json:"nodes"`
+	AllowedTailnetLogins   []string               `json:"allowed_tailnet_logins"`
+	OperatorPasswordHashes map[string]string      `json:"operator_password_hashes"`
+	SessionTTLSeconds      int                    `json:"session_ttl_seconds"`
 }
 
 var (
@@ -62,6 +64,11 @@ or launchd. Those are separately qualified host operations.`,
 			if login == "" {
 				return errors.New("recovery serve: allowed_tailnet_logins contains an empty login")
 			}
+			hash := cfg.OperatorPasswordHashes[login]
+			cost, err := bcrypt.Cost([]byte(hash))
+			if err != nil || cost < 10 || cost > 14 {
+				return errors.New("recovery serve: each operator requires a bcrypt password hash with cost 10 through 14")
+			}
 			allow[login] = struct{}{}
 		}
 		if len(allow) == 0 {
@@ -73,7 +80,7 @@ or launchd. Those are separately qualified host operations.`,
 		}
 		gateway, err := desktoprecovery.New(desktoprecovery.Config{
 			Nodes:      cfg.Nodes,
-			Authorizer: desktoprecovery.TailnetHeaderAuthorizer{AllowedLogins: allow},
+			Authorizer: desktoprecovery.TailnetHeaderAuthorizer{AllowedLogins: allow, PasswordHashes: cfg.OperatorPasswordHashes},
 			SessionTTL: ttl,
 		})
 		if err != nil {

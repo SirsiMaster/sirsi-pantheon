@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/net/websocket"
 )
 
@@ -64,6 +65,8 @@ type Authorizer interface {
 // backend to loopback prevents a LAN/tailnet client from forging those headers.
 type TailnetHeaderAuthorizer struct {
 	AllowedLogins map[string]struct{}
+	// PasswordHashes independently authenticate operators; headers alone confer no authority.
+	PasswordHashes map[string]string
 }
 
 func (a TailnetHeaderAuthorizer) AuthorizeRecovery(_ context.Context, r *http.Request, _ Node) (Principal, error) {
@@ -78,6 +81,11 @@ func (a TailnetHeaderAuthorizer) AuthorizeRecovery(_ context.Context, r *http.Re
 	}
 	if _, ok := a.AllowedLogins[login]; !ok {
 		return Principal{}, errors.New("desktop recovery operator is not allowlisted")
+	}
+	user, password, ok := r.BasicAuth()
+	hash := a.PasswordHashes[login]
+	if !ok || user != login || hash == "" || len(password) > 72 || bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil {
+		return Principal{}, errors.New("desktop recovery requires independent operator authentication")
 	}
 	return Principal{Login: login}, nil
 }
@@ -201,6 +209,11 @@ func (g *Gateway) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/recovery/novnc/", http.StripPrefix("/recovery/novnc/", http.FileServerFS(mustSub(noVNC, "novnc"))))
 	mux.HandleFunc("/recovery/v1/nodes/", g.handleNode)
+	mux.HandleFunc("/recovery/entry.js", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = io.WriteString(w, entryJS)
+	})
 	return mux
 }
 
@@ -228,6 +241,10 @@ func (g *Gateway) handleNode(w http.ResponseWriter, r *http.Request) {
 	case "sessions":
 		g.admit(w, r, node)
 	case "client":
+		if r.Method == http.MethodGet && !g.validSession(r, node.ID, false) {
+			g.entry(w, r)
+			return
+		}
 		g.client(w, r, node)
 	case "ws":
 		g.websocket(node).ServeHTTP(w, r)
@@ -265,6 +282,15 @@ func (g *Gateway) admit(w http.ResponseWriter, r *http.Request, node Node) {
 	g.mu.Unlock()
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: hex.EncodeToString(raw), Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode, Expires: expires})
 	writeJSON(w, http.StatusCreated, map[string]string{"node": node.ID, "expires_at": expires.Format(time.RFC3339), "client_path": "/recovery/v1/nodes/" + node.ID + "/client"})
+}
+
+// entry contains no authority or secrets. Admission happens through a same-origin POST.
+func (g *Gateway) entry(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'")
+	_, _ = io.WriteString(w, entryHTML)
 }
 
 func (g *Gateway) client(w http.ResponseWriter, r *http.Request, node Node) {
