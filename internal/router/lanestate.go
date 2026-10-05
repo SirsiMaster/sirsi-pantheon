@@ -223,6 +223,9 @@ func currentHold(routerRoot, agentID string, fruitless int, nextDispatchAllowed 
 	if getAttendedLiveFn()(routerRoot, agentID) {
 		return HoldAttended, time.Time{}
 	}
+	if consumerSlotsFull(routerRoot, agentID) {
+		return HoldSlots, time.Time{}
+	}
 	if time.Now().Before(nextDispatchAllowed) {
 		return HoldBackoff, nextDispatchAllowed
 	}

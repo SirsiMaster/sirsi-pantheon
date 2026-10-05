@@ -1280,7 +1280,8 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 		} else if consumer != nil && !consumer.Resident && lerr == nil && depth > 0 && !run.running() &&
 			time.Now().After(nextDispatchAllowed) &&
 			!fabricDispatchQuarantined(agentID, depth) && !fabricDispatchOverloaded(agentID, depth) &&
-			!measurementWindowOpen(agentID, depth) && !attendedSessionOwnsInbox(routerRoot, agentID, depth) {
+			!measurementWindowOpen(agentID, depth) && !attendedSessionOwnsInbox(routerRoot, agentID, depth) &&
+			!hostConsumerSlotsFull(routerRoot, agentID, depth) {
 
 			// #636 C3 — hard hourly ceiling, enforced independently of everything
 			// above. This is what bounds a future variant whose gate logic is wrong.
