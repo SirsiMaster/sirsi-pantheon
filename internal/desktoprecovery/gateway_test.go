@@ -5,14 +5,17 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -32,7 +35,7 @@ func testGateway(t *testing.T, address string) *Gateway {
 	if err != nil {
 		t.Fatal(err)
 	}
-	g, err := New(Config{Nodes: []Node{{ID: "m1", Address: address, Origins: []string{"https://m5.example.ts.net"}}}, Authorizer: CapabilityAuthorizer{PublicKeys: map[string]ed25519.PublicKey{"test": private.Public().(ed25519.PublicKey)}}, SessionTTL: time.Minute})
+	g, err := New(Config{Nodes: []Node{{ID: "m1", Address: address, Origins: []string{"https://m5.example.ts.net"}}}, Authorizer: CapabilityAuthorizer{PublicKeys: map[string]ed25519.PublicKey{"test": private.Public().(ed25519.PublicKey)}}, Claims: NewMemoryAdmissionStore(), SessionTTL: time.Minute})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,9 +64,45 @@ func testCapability(t *testing.T) string {
 
 func TestGatewayRejectsUnboundedDestinations(t *testing.T) {
 	for _, address := range []string{"example.com:5900", "8.8.8.8:5900", "100.88.242.95:22", "100.88.242.95"} {
-		if _, err := New(Config{Nodes: []Node{{ID: "m1", Address: address, Origins: []string{"https://m5.example.ts.net"}}}, Authorizer: allowAuth{}}); err == nil {
+		if _, err := New(Config{Nodes: []Node{{ID: "m1", Address: address, Origins: []string{"https://m5.example.ts.net"}}}, Authorizer: allowAuth{}, Claims: NewMemoryAdmissionStore()}); err == nil {
 			t.Fatalf("accepted unbounded address %q", address)
 		}
+	}
+}
+
+func TestGatewayRequiresAdmissionStore(t *testing.T) {
+	if _, err := New(Config{Nodes: []Node{{ID: "m1", Address: "100.88.242.95:5900", Origins: []string{"https://m5.example.ts.net"}}}, Authorizer: allowAuth{}}); err == nil {
+		t.Fatal("accepted a recovery gateway without durable admission storage")
+	}
+}
+
+func TestFileAdmissionStoreSurvivesRestartAndRefusesSymlinkRoot(t *testing.T) {
+	root := t.TempDir()
+	first, err := NewFileAdmissionStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := sha256.Sum256([]byte("signed-key-and-nonce"))
+	if err := first.Claim(id, time.Now().Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	second, err := NewFileAdmissionStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+	if err := second.Claim(id, time.Now().Add(time.Minute)); !errors.Is(err, ErrAdmissionAlreadyUsed) {
+		t.Fatalf("claim replay after restart = %v, want ErrAdmissionAlreadyUsed", err)
+	}
+	link := filepath.Join(t.TempDir(), "claim-link")
+	if err := os.Symlink(root, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewFileAdmissionStore(link); err == nil {
+		t.Fatal("accepted symlinked admission claim directory")
 	}
 }
 
@@ -199,6 +238,7 @@ func TestAdmissionReplayRetainedThroughSignedExpiryAndSessionDeadlineCapped(t *t
 	g, err := New(Config{
 		Nodes:      []Node{{ID: "m1", Address: "100.88.242.95:5900", Origins: []string{"https://m5.example.ts.net"}}},
 		Authorizer: CapabilityAuthorizer{PublicKeys: map[string]ed25519.PublicKey{"test": public}, Now: func() time.Time { return now }},
+		Claims:     NewMemoryAdmissionStore(),
 		SessionTTL: time.Minute,
 		Now:        func() time.Time { return now },
 	})

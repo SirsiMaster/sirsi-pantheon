@@ -16,7 +16,9 @@ Tailscale configuration tool.
   on port 5900. Browser requests cannot name a host, port, or TCP service.
 - Each exact HTTPS origin receives a single, expiring, `Secure`, `HttpOnly`,
   host-only cookie. The recovery capability is submitted in a POST body, never
-  in a URL, and is not retained after admission.
+  in a URL. A create-only local claim ledger retains only a hash-derived
+  single-use record through signed expiry, so a bridge restart cannot reuse an
+  admitted capability.
 - A WebSocket may connect only once for the admitted node. Disconnect or expiry
   removes the session. The bridge does not launch or execute desktop payloads.
 - Screen Sharing, TCC, FileVault, SIP, reboot, and Tailscale changes remain
@@ -40,9 +42,14 @@ separately authenticated Pantheon authority and never belongs in this file.
   "admission_public_keys": {
     "pantheon-ra-operator-2026q4": "base64url-encoded-ed25519-public-key"
   },
+  "admission_claim_dir": "/Users/operator/Library/Application Support/SirsiPantheon/recovery-claims",
   "session_ttl_seconds": 600
 }
 ```
+
+`admission_claim_dir` must already be an operator-owned absolute directory.
+The bridge opens it without following a symlink and only creates opaque,
+create-once claim records. It never receives a signing key or an RFB password.
 
 Run the bridge locally:
 

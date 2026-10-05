@@ -27,6 +27,7 @@ import (
 type recoveryServeConfig struct {
 	Nodes               []desktoprecovery.Node `json:"nodes"`
 	AdmissionPublicKeys map[string]string      `json:"admission_public_keys"`
+	AdmissionClaimDir   string                 `json:"admission_claim_dir"`
 	SessionTTLSeconds   int                    `json:"session_ttl_seconds"`
 }
 
@@ -58,6 +59,11 @@ or launchd. Those are separately qualified host operations.`,
 		if err != nil {
 			return err
 		}
+		claims, err := desktoprecovery.NewFileAdmissionStore(cfg.AdmissionClaimDir)
+		if err != nil {
+			return fmt.Errorf("recovery serve: admission claim store: %w", err)
+		}
+		defer claims.Close()
 		ttl := 0 * time.Second
 		if cfg.SessionTTLSeconds != 0 {
 			ttl = time.Duration(cfg.SessionTTLSeconds) * time.Second
@@ -65,6 +71,7 @@ or launchd. Those are separately qualified host operations.`,
 		gateway, err := desktoprecovery.New(desktoprecovery.Config{
 			Nodes:      cfg.Nodes,
 			Authorizer: desktoprecovery.CapabilityAuthorizer{PublicKeys: keys},
+			Claims:     claims,
 			SessionTTL: ttl,
 		})
 		if err != nil {

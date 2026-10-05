@@ -24,12 +24,14 @@ import (
 	"net/netip"
 	"net/url"
 	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"golang.org/x/net/websocket"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -58,6 +60,120 @@ type Principal struct {
 	Login              string
 	admissionID        [sha256.Size]byte
 	admissionExpiresAt time.Time
+}
+
+var ErrAdmissionAlreadyUsed = errors.New("desktop recovery admission already used")
+
+// AdmissionStore makes a verified admission single-use through its signed
+// expiry. Production requires durable storage so a bridge restart cannot make
+// an accepted signed admission usable again.
+type AdmissionStore interface {
+	Claim([sha256.Size]byte, time.Time) error
+}
+
+// MemoryAdmissionStore is deliberately test-only: it does not survive a
+// process restart and must never be used by recovery serve.
+type MemoryAdmissionStore struct {
+	mu      sync.Mutex
+	claimed map[[sha256.Size]byte]struct{}
+}
+
+func NewMemoryAdmissionStore() *MemoryAdmissionStore {
+	return &MemoryAdmissionStore{claimed: make(map[[sha256.Size]byte]struct{})}
+}
+
+func (s *MemoryAdmissionStore) Claim(id [sha256.Size]byte, _ time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, exists := s.claimed[id]; exists {
+		return ErrAdmissionAlreadyUsed
+	}
+	s.claimed[id] = struct{}{}
+	return nil
+}
+
+// FileAdmissionStore uses a retained, no-follow directory descriptor and a
+// create-only leaf per signed admission. It intentionally never prunes claim
+// leaves: an expired capability is rejected before this store is called, while
+// retaining a claim is safer than making a previously accepted admission live
+// after a crash or cleanup ambiguity.
+type FileAdmissionStore struct{ rootFD int }
+
+func NewFileAdmissionStore(root string) (*FileAdmissionStore, error) {
+	if !filepath.IsAbs(root) {
+		return nil, errors.New("desktop recovery: admission claim directory must be absolute")
+	}
+	fd, err := unix.Open(root, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, fmt.Errorf("desktop recovery: open admission claim directory: %w", err)
+	}
+	var stat unix.Stat_t
+	if err := unix.Fstat(fd, &stat); err != nil || stat.Mode&unix.S_IFMT != unix.S_IFDIR {
+		_ = unix.Close(fd)
+		if err != nil {
+			return nil, fmt.Errorf("desktop recovery: stat admission claim directory: %w", err)
+		}
+		return nil, errors.New("desktop recovery: admission claim path is not a directory")
+	}
+	return &FileAdmissionStore{rootFD: fd}, nil
+}
+
+func (s *FileAdmissionStore) Claim(id [sha256.Size]byte, expiresAt time.Time) error {
+	if s == nil || s.rootFD < 0 {
+		return errors.New("desktop recovery: admission claim store is unavailable")
+	}
+	name := hex.EncodeToString(id[:]) + ".claim"
+	fd, err := unix.Openat(s.rootFD, name, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
+	if err != nil {
+		if errors.Is(err, unix.EEXIST) {
+			return ErrAdmissionAlreadyUsed
+		}
+		return fmt.Errorf("desktop recovery: create admission claim: %w", err)
+	}
+	closed := false
+	defer func() {
+		if !closed {
+			_ = unix.Close(fd)
+		}
+	}()
+	var stat unix.Stat_t
+	if err := unix.Fstat(fd, &stat); err != nil || stat.Mode&unix.S_IFMT != unix.S_IFREG || stat.Nlink != 1 {
+		if err != nil {
+			return fmt.Errorf("desktop recovery: stat admission claim: %w", err)
+		}
+		return errors.New("desktop recovery: admission claim identity is invalid")
+	}
+	content := []byte(fmt.Sprintf("pantheon-recovery-claim-v1\nexpires_at_unix=%d\n", expiresAt.UTC().Unix()))
+	for written := 0; written < len(content); {
+		n, writeErr := unix.Write(fd, content[written:])
+		if writeErr != nil {
+			return fmt.Errorf("desktop recovery: write admission claim: %w", writeErr)
+		}
+		if n <= 0 {
+			return errors.New("desktop recovery: short admission claim write")
+		}
+		written += n
+	}
+	if err := unix.Fsync(fd); err != nil {
+		return fmt.Errorf("desktop recovery: fsync admission claim: %w", err)
+	}
+	if err := unix.Close(fd); err != nil {
+		return fmt.Errorf("desktop recovery: close admission claim: %w", err)
+	}
+	closed = true
+	if err := unix.Fsync(s.rootFD); err != nil {
+		return fmt.Errorf("desktop recovery: fsync admission claim directory: %w", err)
+	}
+	return nil
+}
+
+func (s *FileAdmissionStore) Close() error {
+	if s == nil || s.rootFD < 0 {
+		return nil
+	}
+	err := unix.Close(s.rootFD)
+	s.rootFD = -1
+	return err
 }
 
 // Authorizer is the Pantheon admission seam. Production uses a signed
@@ -151,6 +267,7 @@ func canonicalBase64URL(value string) ([]byte, error) {
 type Config struct {
 	Nodes       []Node
 	Authorizer  Authorizer
+	Claims      AdmissionStore
 	SessionTTL  time.Duration
 	Now         func() time.Time
 	Rand        func([]byte) (int, error)
@@ -168,21 +285,24 @@ type session struct {
 // WebSocket-to-RFB bridge. It does not execute desktop payloads or invoke a
 // shell; it only carries the existing Screen Sharing protocol after admission.
 type Gateway struct {
-	nodes map[string]Node
-	auth  Authorizer
-	ttl   time.Duration
-	now   func() time.Time
-	rand  func([]byte) (int, error)
-	dial  func(context.Context, string, string) (net.Conn, error)
+	nodes  map[string]Node
+	auth   Authorizer
+	ttl    time.Duration
+	now    func() time.Time
+	rand   func([]byte) (int, error)
+	dial   func(context.Context, string, string) (net.Conn, error)
+	claims AdmissionStore
 
 	mu       sync.Mutex
 	sessions map[[sha256.Size]byte]session
-	admitted map[[sha256.Size]byte]time.Time
 }
 
 func New(cfg Config) (*Gateway, error) {
 	if cfg.Authorizer == nil {
 		return nil, errors.New("desktop recovery: authorizer is required")
+	}
+	if cfg.Claims == nil {
+		return nil, errors.New("desktop recovery: durable admission claim store is required")
 	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
@@ -214,7 +334,7 @@ func New(cfg Config) (*Gateway, error) {
 	if len(nodes) == 0 {
 		return nil, errors.New("desktop recovery: at least one approved node is required")
 	}
-	return &Gateway{nodes: nodes, auth: cfg.Authorizer, ttl: cfg.SessionTTL, now: cfg.Now, rand: cfg.Rand, dial: cfg.DialContext, sessions: make(map[[sha256.Size]byte]session), admitted: make(map[[sha256.Size]byte]time.Time)}, nil
+	return &Gateway{nodes: nodes, auth: cfg.Authorizer, claims: cfg.Claims, ttl: cfg.SessionTTL, now: cfg.Now, rand: cfg.Rand, dial: cfg.DialContext, sessions: make(map[[sha256.Size]byte]session)}, nil
 }
 
 func validateNode(node Node) error {
@@ -354,16 +474,18 @@ func (g *Gateway) admit(w http.ResponseWriter, r *http.Request, node Node) {
 	if expires.After(principal.admissionExpiresAt) {
 		expires = principal.admissionExpiresAt
 	}
+	if err := g.claims.Claim(principal.admissionID, principal.admissionExpiresAt); err != nil {
+		if errors.Is(err, ErrAdmissionAlreadyUsed) {
+			http.Error(w, "recovery admission already used", http.StatusConflict)
+			return
+		}
+		http.Error(w, "recovery admission unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	hash := sha256.Sum256(raw)
 	g.mu.Lock()
 	g.gcLocked(now)
-	if _, exists := g.admitted[principal.admissionID]; exists {
-		g.mu.Unlock()
-		http.Error(w, "recovery admission already used", http.StatusConflict)
-		return
-	}
 	g.sessions[hash] = session{nodeID: node.ID, principal: principal.Login, expiresAt: expires}
-	g.admitted[principal.admissionID] = principal.admissionExpiresAt
 	g.mu.Unlock()
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: hex.EncodeToString(raw), Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode, Expires: expires})
 	if strings.Contains(r.Header.Get("Accept"), "text/html") {
@@ -533,11 +655,6 @@ func (g *Gateway) gcLocked(now time.Time) {
 	for key, s := range g.sessions {
 		if !now.Before(s.expiresAt) {
 			delete(g.sessions, key)
-		}
-	}
-	for key, expires := range g.admitted {
-		if !now.Before(expires) {
-			delete(g.admitted, key)
 		}
 	}
 }
