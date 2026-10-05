@@ -59,6 +59,76 @@ func TestRepairSpoolOutboxRejectsSymlinkLeaf(t *testing.T) {
 	}
 }
 
+func TestRepairSpoolOutboxRejectsRootSymlinkToMovedOriginalBeforeMutation(t *testing.T) {
+	base := t.TempDir()
+	spool := filepath.Join(base, "relay")
+	moved := filepath.Join(base, "relay-original")
+	if err := os.MkdirAll(filepath.Join(spool, "agent-a", "outbox"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(spool, "agent-a", "outbox"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(filepath.Join(moved, "agent-a", "outbox"), 0o700) })
+
+	_, err := repairSpoolOutbox(spool, "agent-a", func() {
+		if renameErr := os.Rename(spool, moved); renameErr != nil {
+			t.Fatalf("move checked root: %v", renameErr)
+		}
+		if linkErr := os.Symlink(moved, spool); linkErr != nil {
+			t.Fatalf("replace root with symlink to original: %v", linkErr)
+		}
+	})
+	if err == nil {
+		t.Fatal("expected symlink-backed root replacement to be refused")
+	}
+	st, statErr := os.Stat(filepath.Join(moved, "agent-a", "outbox"))
+	if statErr != nil {
+		t.Fatal(statErr)
+	}
+	if got := st.Mode().Perm(); got != 0o000 {
+		t.Fatalf("original outbox was mutated after rejected root substitution: mode=%04o", got)
+	}
+}
+
+func TestRepairSpoolOutboxRejectsSubstitutedLooseRootBeforeMutation(t *testing.T) {
+	base := t.TempDir()
+	spool := filepath.Join(base, "relay")
+	replacement := filepath.Join(base, "relay-replacement")
+	if err := os.MkdirAll(filepath.Join(spool, "agent-a", "outbox"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(replacement, "agent-a", "outbox"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(replacement, "agent-a", "outbox"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(replacement, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(filepath.Join(replacement, "agent-a", "outbox"), 0o700) })
+
+	_, err := repairSpoolOutbox(spool, "agent-a", func() {
+		if renameErr := os.Rename(spool, filepath.Join(base, "relay-original")); renameErr != nil {
+			t.Fatalf("move checked root: %v", renameErr)
+		}
+		if renameErr := os.Rename(replacement, spool); renameErr != nil {
+			t.Fatalf("install loose replacement root: %v", renameErr)
+		}
+	})
+	if err == nil {
+		t.Fatal("expected loose replacement root to be refused")
+	}
+	st, statErr := os.Stat(filepath.Join(spool, "agent-a", "outbox"))
+	if statErr != nil {
+		t.Fatal(statErr)
+	}
+	if got := st.Mode().Perm(); got != 0o000 {
+		t.Fatalf("replacement outbox was mutated after root substitution: mode=%04o", got)
+	}
+}
+
 func TestRepairSpoolOutboxRejectsTraversalAgent(t *testing.T) {
 	if _, err := RepairSpoolOutbox("/tmp/relay", "../other"); err == nil {
 		t.Fatal("expected traversal agent to be refused")
