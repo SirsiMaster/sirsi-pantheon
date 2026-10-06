@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased] — Apollo view: retire the last user-facing "SNE" copy
 
+- **Commercial macOS notarization recovers transient Apple upload deadlines.**
+  The DMG and PKG builders retry only the observed `abortedUpload` /
+  `HTTPClientError.deadlineExceeded` multipart-upload failure with a bounded
+  delay. Credential, signing, and Apple notarization-verdict failures remain
+  fail-closed; no partial artifact is published. The helper uses the absolute
+  macOS `xcrun` path in production and is covered by an isolated transient vs.
+  permanent failure regression.
+
 - **v0.24.89 — native System One observation now reads the canonical Ma’at
   result.** Host observation and imported System One evidence both decode the
   typed verdict the CLI actually emits. A successful retained Casebook screen
