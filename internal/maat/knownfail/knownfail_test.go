@@ -3,6 +3,7 @@ package knownfail
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -25,9 +26,8 @@ func TestEveryGuardTestExistsInTheRepo(t *testing.T) {
 		if e.Status != "resolved" {
 			continue
 		}
-		out, err := gitCmd(repoRoot(t), "grep", "--untracked", "-l", "func "+e.Guard.Ref+"(", "--", "*_test.go").Output()
-		if err != nil || strings.TrimSpace(string(out)) == "" {
-			t.Errorf("known failure %q names guard %s, which is not a test in the repo", e.ID, e.Guard.Ref)
+		if err := guardExists(repoRoot(t), e.Guard.Kind, e.Guard.Ref); err != nil {
+			t.Errorf("known failure %q names %s guard %s: %v", e.ID, e.Guard.Kind, e.Guard.Ref, err)
 		}
 	}
 }
@@ -101,5 +101,37 @@ func TestRegisterThenResolveRequiresARealGuard(t *testing.T) {
 	b, _ := os.ReadFile(path)
 	if !strings.Contains(string(b), `"status": "resolved"`) {
 		t.Fatalf("entry not resolved: %s", b)
+	}
+}
+
+// A script guard is only real if CI runs it; a guard nobody executes is a note, not a guard.
+func TestScriptGuardMustBeExecutableAndRunByCI(t *testing.T) {
+	dir := t.TempDir()
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(os.MkdirAll(filepath.Join(dir, "scripts"), 0o755))
+	must(os.MkdirAll(filepath.Join(dir, ".github", "workflows"), 0o755))
+	must(os.WriteFile(filepath.Join(dir, "scripts", "g.test.sh"), []byte("#!/bin/sh\n"), 0o755))
+	must(os.WriteFile(filepath.Join(dir, "scripts", "plain.sh"), []byte("#!/bin/sh\n"), 0o644))
+	must(os.WriteFile(filepath.Join(dir, ".github", "workflows", "ci.yml"), []byte("run: bash scripts/g.test.sh\n"), 0o644))
+	if err := guardExists(dir, "script", "scripts/g.test.sh"); err != nil {
+		t.Fatalf("executable script run by CI must pass: %v", err)
+	}
+	if guardExists(dir, "script", "scripts/plain.sh") == nil {
+		t.Fatal("a non-executable script must be refused")
+	}
+	must(os.WriteFile(filepath.Join(dir, "scripts", "orphan.sh"), []byte("#!/bin/sh\n"), 0o755))
+	if guardExists(dir, "script", "scripts/orphan.sh") == nil {
+		t.Fatal("a script CI does not run must be refused")
+	}
+	if guardExists(dir, "script", "../etc/passwd") == nil || guardExists(dir, "script", "/etc/passwd") == nil {
+		t.Fatal("a script outside the repo must be refused")
+	}
+	if GuardKindFor("scripts/x.sh") != "script" || GuardKindFor("TestX") != "test" {
+		t.Fatal("guard kind detection wrong")
 	}
 }

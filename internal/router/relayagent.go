@@ -20,6 +20,17 @@ import (
 // RelayLaunchAgentLabel is the launchd label of the host relay.
 const RelayLaunchAgentLabel = "ai.sirsi.router.relay"
 
+// relayPinEnvXML carries SIRSI_ROUTER_SPKI_PIN into the relay's environment when the installing
+// process has it: the relay holds the host token, so it is the process that must enforce the
+// TLS pin. launchd runs no shell, so a pin that is only in ~/.zshenv would never reach it.
+func relayPinEnvXML() string {
+	v := strings.TrimSpace(os.Getenv(routerstore.EnvSPKIPin))
+	if v == "" {
+		return ""
+	}
+	return fmt.Sprintf("\n    <key>%s</key>\n    <string>%s</string>", routerstore.EnvSPKIPin, escapeXML(v))
+}
+
 // RelayLaunchAgentPlist renders the relay plist. url/token are the SERVICE
 // address and this host's token — never a spool:// URL, which is for lanes.
 func RelayLaunchAgentPlist(sirsiBin, spool, url, token string) string {
@@ -38,7 +49,7 @@ func RelayLaunchAgentPlist(sirsiBin, spool, url, token string) string {
     <key>SIRSI_ROUTER_URL</key>
     <string>%s</string>
     <key>SIRSI_ROUTER_TOKEN</key>
-    <string>%s</string>
+    <string>%s</string>%s
   </dict>
   <key>ProgramArguments</key>
   <array>
@@ -63,7 +74,7 @@ func RelayLaunchAgentPlist(sirsiBin, spool, url, token string) string {
   <string>%s</string>
 </dict>
 </plist>
-`, RelayLaunchAgentLabel, escapeXML(LaunchAgentPATH(sirsiBin)), escapeXML(url), escapeXML(token), escapeXML(sirsiBin), escapeXML(spool), escapeXML(logPath), escapeXML(logPath))
+`, RelayLaunchAgentLabel, escapeXML(LaunchAgentPATH(sirsiBin)), escapeXML(url), escapeXML(token), relayPinEnvXML(), escapeXML(sirsiBin), escapeXML(spool), escapeXML(logPath), escapeXML(logPath))
 }
 
 // runningExecutable resolves THIS process's binary to an absolute, symlink-free

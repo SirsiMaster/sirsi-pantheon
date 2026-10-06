@@ -194,6 +194,8 @@ func NewRemoteStore(base, token string) *RemoteStore {
 		// carries none and signs exactly as over HTTP.
 		client.Transport = newSpoolTransport(d, agent)
 		base, token = "http://spool", ""
+	} else if t := pinTransport(os.Getenv(EnvSPKIPin), base); t != nil {
+		client.Transport = t // opt-in TLS public-key pinning (remote_pin.go)
 	}
 	return &RemoteStore{
 		base:       strings.TrimRight(base, "/"),

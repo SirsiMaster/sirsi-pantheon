@@ -270,3 +270,20 @@ func TestLoadRelayAgentFailsClosedWhenBootstrapNeverSucceeds(t *testing.T) {
 		t.Fatalf("bootout then bootstrap must succeed: %v", err)
 	}
 }
+
+// The relay is the process that holds the host token and opens the https connection, so the
+// TLS pin must reach it through its launch agent (launchd runs no shell, so ~/.zshenv would not).
+func TestRelayPlistCarriesTheTLSPin(t *testing.T) {
+	t.Setenv("SIRSI_ROUTER_SPKI_PIN", "")
+	if p := RelayLaunchAgentPlist("/bin/sirsi", "/spool", "https://r", "tok"); strings.Contains(p, "SIRSI_ROUTER_SPKI_PIN") {
+		t.Fatal("with no pin configured the plist must not mention one")
+	}
+	t.Setenv("SIRSI_ROUTER_SPKI_PIN", "78rPvnhm1Lb3jziI2hDDogyku5XoaVABHemUnWwOd7M=")
+	p := RelayLaunchAgentPlist("/bin/sirsi", "/spool", "https://r", "tok")
+	if !strings.Contains(p, "<key>SIRSI_ROUTER_SPKI_PIN</key>") || !strings.Contains(p, "78rPvnhm1Lb3jziI2hDDogyku5XoaVABHemUnWwOd7M=") {
+		t.Fatalf("the configured pin must reach the relay's environment:\n%s", p)
+	}
+	if strings.Count(p, "<dict>") != 2 || !strings.Contains(p, "</dict>\n  <key>ProgramArguments</key>") {
+		t.Fatalf("plist structure broken by the pin entry:\n%s", p)
+	}
+}

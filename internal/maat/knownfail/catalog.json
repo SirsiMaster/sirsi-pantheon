@@ -54,6 +54,24 @@
       "status": "resolved",
       "fix": {"kind": "guide", "text": "Run `sirsi router task why <agent> <task-id>`; clear blocked_by with `task update --blocked-by \"\"` when true; `task reset-attempts` only after the cause is fixed.", "fixed_in": "0.24.68", "ref": "task why"},
       "guard": {"kind": "test", "ref": "TestTaskEligibilityExplainsEveryRefusal"}
+    },
+    {
+      "id": "golangci-lint-concurrent-gates",
+      "title": "golangci-lint refuses to start because another lint is already running on this host",
+      "signature": "parallel golangci-lint is running|another golangci-lint (instance|process)",
+      "cause": "Two Ma'at pre-push gates (or a gate and a manual lint) ran at once on one Mac. golangci-lint allows one instance per host, so the second run fails even though its code is clean. Several agents push from the same machine.",
+      "status": "resolved",
+      "fix": {"kind": "guide", "text": "Nothing is wrong with your code. The gate now queues behind any other gate on this host (.githooks/gate-lock.sh); wait for the other push to finish and re-run. Do not run two lints at once, and do not bypass the gate with --no-verify.", "fixed_in": "0.24.95", "ref": "PR #1011; scripts/maat-gate-lock.test.sh"},
+      "guard": {"kind": "script", "ref": "scripts/maat-gate-lock.test.sh"}
+    },
+    {
+      "id": "quota-test-hour-boundary",
+      "title": "the sender-flood test fails at the top of the hour with a doubled item count",
+      "signature": "flood appended [0-9]+ items",
+      "cause": "The send quota window is one wall-clock hour. A test that ran its 500-send loop on the real clock across the hour boundary got two budgets, so it saw twice the expected items and failed the gate (v0.24.95 release, 06:00 UTC).",
+      "status": "resolved",
+      "fix": {"kind": "guide", "text": "Re-run: it is the clock, not your change. The test now pins the store clock. Any new test that counts items inside a quota or time-bucket window must inject the clock and never read wall time.", "fixed_in": "0.24.95", "ref": "PR #1009"},
+      "guard": {"kind": "test", "ref": "TestSendQuotaRefreshesWhenTheWindowRollsOver"}
     }
   ]
 }
