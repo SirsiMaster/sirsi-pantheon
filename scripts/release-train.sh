@@ -3,7 +3,9 @@
 # One verb for the release: prepare the changelog PR, wait for its single CI run,
 # merge, optionally deploy the router service (before clients ship a new Store
 # method), tag, wait for the publish, upgrade both Macs, restart every loop.
-# Every step is a hard stop: nothing proceeds on a failed, missing or stale result.
+# Every gate is a hard stop (nothing proceeds on a failed, missing or stale result) and
+# the M1 must end on the released version. The M5 is best-effort: hostname, then LAN
+# address, never a gate, and the final line says what happened to it.
 set -uo pipefail
 VERSION="${1:-}"; shift || true
 DEPLOY=0; DRY=0
