@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -105,5 +106,67 @@ func TestReleaseWithNoEntriesHasAnEmptyItemsListNotNull(t *testing.T) {
 	}
 	if got[0].Items == nil || len(got[0].Items) != 0 {
 		t.Fatalf("an empty Unreleased must have Items == []string{}, got %#v", got[0].Items)
+	}
+}
+
+// The snapshot JSON field names are a contract with two consumers (the web dashboard
+// and the native menubar decoding `sirsi router snapshot`). This pins them: renaming a
+// key is a breaking change and must fail here, not in a Swift decoder.
+func TestSnapshotJSONContractFieldNames(t *testing.T) {
+	snap := dashboard.RouterSnapshot{
+		Lanes: dashboard.RouterLanes{Counts: zeroVerdictCounts(), List: []dashboard.RouterLaneVerdict{{Agent: "a", Verdict: "WAKEABLE", ObservedAt: "t", WorkerThreadID: "w", LastReportAt: "t", LastReportSummary: "ok"}}},
+		Queue: []dashboard.RouterQueueRow{{Agent: "a", Open: 1}}, KnownFailures: []dashboard.RouterKnownFail{{ID: "k"}},
+		Releases: []dashboard.RouterRelease{{Version: "1", Items: []string{}}}, Swap: &dashboard.RouterSwap{},
+		Attention: []dashboard.RouterAttention{{ID: "x", Agent: "a", Severity: "warn", Next: &dashboard.RouterNext{Kind: "command-copy", Label: "l", Command: "c"}}},
+		Timings:   map[string]int64{"threads": 1},
+	}
+	b, err := json.Marshal(snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(b, &top); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"generated_at", "built_ms", "timings_ms", "version", "lanes", "queue", "consumers", "registry", "known_failures", "swap", "releases", "attention"} {
+		if _, ok := top[k]; !ok {
+			t.Errorf("snapshot lost top-level key %q", k)
+		}
+	}
+	need := map[string][]string{
+		"lanes":     {"counts", "list"},
+		"consumers": {"running", "max"},
+		"registry":  {"pinned", "source"},
+	}
+	for obj, keys := range need {
+		var m map[string]json.RawMessage
+		_ = json.Unmarshal(top[obj], &m)
+		for _, k := range keys {
+			if _, ok := m[k]; !ok {
+				t.Errorf("%s lost key %q", obj, k)
+			}
+		}
+	}
+	var lanes struct {
+		List []map[string]any `json:"list"`
+	}
+	_ = json.Unmarshal(top["lanes"], &lanes)
+	for _, k := range []string{"agent", "verdict", "detail", "open", "observed_at", "worker_thread_id", "last_report_at", "last_report_summary"} {
+		if _, ok := lanes.List[0][k]; !ok {
+			t.Errorf("lane lost key %q", k)
+		}
+	}
+	var att []map[string]any
+	_ = json.Unmarshal(top["attention"], &att)
+	for _, k := range []string{"id", "severity", "agent", "title", "detail", "next"} {
+		if _, ok := att[0][k]; !ok {
+			t.Errorf("attention lost key %q", k)
+		}
+	}
+	next := att[0]["next"].(map[string]any)
+	for _, k := range []string{"kind", "label", "command"} {
+		if _, ok := next[k]; !ok {
+			t.Errorf("next lost key %q", k)
+		}
 	}
 }
