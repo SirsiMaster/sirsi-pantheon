@@ -112,6 +112,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
   name, matching the rename already carried by the deck, data room, and
   Stack Lab. Pure copy change — no behaviour change, no ADR required. The
   internal code comment at the top of `viewApollo()` is unchanged.
+## [0.24.91] — 2026-10-05
+
+- **Commercial macOS notarization recovers transient Apple upload deadlines.**
+  The DMG and PKG builders retry only the observed `abortedUpload` /
+  `HTTPClientError.deadlineExceeded` multipart-upload failure with a bounded
+  delay. Credential, signing, and Apple notarization-verdict failures remain
+  fail-closed; no partial artifact is published. The helper uses the absolute
+  macOS `xcrun` path in production and is covered by an isolated transient vs.
+  permanent failure regression.
+
 ## [0.24.90] — 2026-10-05
 
 - **v0.24.89 — native System One observation now reads the canonical Ma’at
