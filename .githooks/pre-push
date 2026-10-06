@@ -71,6 +71,9 @@ fi
 # shellcheck source=gate-lock.sh
 . "$(cd "$(dirname "$0")" && pwd)/gate-lock.sh"
 gate_lock_acquire || exit 1
+# shellcheck source=gate-advise.sh
+. "$(cd "$(dirname "$0")" && pwd)/gate-advise.sh"
+trap 'gate_lock_release; rm -rf "$GATE_OUT"' EXIT
 
 # ── Detect changed files (for diff-based testing + auto-escalation) ──
 CHANGED_PKGS=""
@@ -208,18 +211,20 @@ if [ -n "$BAD_FMT" ]; then
     echo "$BAD_FMT" | sed 's/^/     /'
     echo ""
     echo "  Fix: gofmt -w ./internal/ ./cmd/"
+    printf '%s\n' "$BAD_FMT" > "$GATE_OUT/gofmt.log"
+    gate_advise gofmt "$GATE_OUT/gofmt.log"
     exit 1
 fi
 
 # ── 2. go vet — static analysis ─────────────────────────────────────
-if ! go vet ./... 2>/dev/null; then
+if ! gate_run vet go vet ./...; then
     echo "  ❌ go vet failed"
     exit 1
 fi
 
 # ── 2b. router store direct-open gate (ADR-062 §1) — matches CI exactly ──
 if [ -x scripts/check-router-store-open.sh ]; then
-    if ! bash scripts/check-router-store-open.sh >/dev/null 2>&1; then
+    if ! gate_run direct-open bash scripts/check-router-store-open.sh; then
         echo "  ❌ router store opened outside routerstore.Resolve() — run: bash scripts/check-router-store-open.sh"
         exit 1
     fi
@@ -229,30 +234,24 @@ fi
 if command -v golangci-lint >/dev/null 2>&1; then
     if [ -n "$CHANGED_PKGS" ] && [ "$CHANGED_PKGS" != "./..." ]; then
         # Lint only changed packages for speed
-        LINT_OUT="$(mktemp)"
-        if ! golangci-lint run $CHANGED_PKGS >"$LINT_OUT" 2>&1; then
-            tail -25 "$LINT_OUT" | sed 's/^/     /'; rm -f "$LINT_OUT"
+        if ! gate_run lint golangci-lint run $CHANGED_PKGS; then
             echo "  ❌ golangci-lint failed on changed packages"
             echo "  Fix: golangci-lint run --fix $CHANGED_PKGS"
             exit 1
         fi
-        rm -f "$LINT_OUT"
     else
-        LINT_OUT="$(mktemp)"
-        if ! golangci-lint run ./... >"$LINT_OUT" 2>&1; then
-            tail -25 "$LINT_OUT" | sed 's/^/     /'; rm -f "$LINT_OUT"
+        if ! gate_run lint golangci-lint run ./...; then
             echo "  ❌ golangci-lint failed"
             echo "  Fix: golangci-lint run --fix ./..."
             exit 1
         fi
-        rm -f "$LINT_OUT"
     fi
 else
     echo "  ⚠️  golangci-lint not installed — skipping (CI will catch issues)"
 fi
 
 # ── 4. Build check — both binaries ──────────────────────────────────
-if ! go build ./... 2>/dev/null; then
+if ! gate_run build go build ./...; then
     echo "  ❌ build failed"
     exit 1
 fi
@@ -279,7 +278,7 @@ SCRUB_SIRSI=$(env | sed -n 's/^\(SIRSI_[A-Za-z0-9_]*\)=.*/-u \1/p' | tr '\n' ' '
 if [ "$DEPTH" = "deep" ]; then
     # Deep: full test suite under CI's exact flags (-race -short; A28 parity)
     echo "  🧪 Running full test suite..."
-    if ! env $SCRUB_SIRSI go test -race -short ./... -count=1 -timeout 900s 2>/dev/null; then
+    if ! gate_run tests env $SCRUB_SIRSI go test -race -short ./... -count=1 -timeout 900s; then
         echo "  ❌ Tests failed — fix before pushing."
         exit 1
     fi
@@ -291,7 +290,7 @@ elif [ -n "$CHANGED_PKGS" ]; then
     # pass (A28: local gate parity with CI). Re-measure and raise again if
     # routerstore keeps growing.
     echo "  🧪 Testing changed packages: $(echo $CHANGED_PKGS | wc -w | tr -d ' ') pkg(s)"
-    if ! env $SCRUB_SIRSI go test -race -short $CHANGED_PKGS -count=1 -timeout 900s 2>/dev/null; then
+    if ! gate_run tests env $SCRUB_SIRSI go test -race -short $CHANGED_PKGS -count=1 -timeout 900s; then
         echo "  ❌ Tests failed in changed packages — fix before pushing."
         exit 1
     fi
@@ -304,7 +303,7 @@ if [ "$DEPTH" = "standard" ] || [ "$DEPTH" = "deep" ]; then
     go build -o ./sirsi ./cmd/sirsi/ 2>/dev/null
     if [ -x "./sirsi" ]; then
         echo "  𓆄 Ma'at quality assessment..."
-        ./sirsi maat pulse --skip-test || {
+        gate_run maat-pulse ./sirsi maat pulse --skip-test || {
             echo "  ❌ Ma'at assessment failed"
             exit 1
         }

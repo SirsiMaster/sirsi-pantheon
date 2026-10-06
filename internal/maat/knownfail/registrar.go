@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -34,8 +35,9 @@ func Resolve(path, repoDir, id string, fix Fix, guardTest string) error {
 	if strings.TrimSpace(guardTest) == "" || strings.TrimSpace(fix.FixedIn) == "" || strings.TrimSpace(fix.Text) == "" {
 		return fmt.Errorf("resolving %q needs --fixed-in, --text and --guard (a regression test name)", id)
 	}
-	if !testExists(repoDir, guardTest) {
-		return fmt.Errorf("guard %q is not a test in %s: write the regression test first", guardTest, repoDir)
+	kind := GuardKindFor(guardTest)
+	if err := guardExists(repoDir, kind, guardTest); err != nil {
+		return fmt.Errorf("guard %q: %w: write the regression guard first", guardTest, err)
 	}
 	return mutate(path, func(c *Catalog) error {
 		for i := range c.Entries {
@@ -45,7 +47,7 @@ func Resolve(path, repoDir, id string, fix Fix, guardTest string) error {
 					fix.Kind = "guide"
 				}
 				c.Entries[i].Fix = fix
-				c.Entries[i].Guard = Guard{Kind: "test", Ref: guardTest}
+				c.Entries[i].Guard = Guard{Kind: kind, Ref: guardTest}
 				return nil
 			}
 		}
@@ -54,6 +56,40 @@ func Resolve(path, repoDir, id string, fix Fix, guardTest string) error {
 }
 
 var testNameRe = regexp.MustCompile(`^Test[A-Za-z0-9_]+$`)
+
+// GuardKindFor says which kind of guard a reference names: a path is a script that CI runs,
+// anything else is a Go test name.
+func GuardKindFor(ref string) string {
+	if strings.Contains(ref, "/") {
+		return "script"
+	}
+	return "test"
+}
+
+// guardExists proves a guard is real. A test must be a Go test function in the repo. A
+// script must be an executable file in the repo that the CI workflow actually runs, so a
+// "fixed" claim cannot rest on a script nobody executes.
+func guardExists(repoDir, kind, ref string) error {
+	if kind == "script" {
+		clean := filepath.Clean(ref)
+		if filepath.IsAbs(clean) || strings.HasPrefix(clean, "..") {
+			return fmt.Errorf("a script guard must be a path inside the repo")
+		}
+		info, err := os.Stat(filepath.Join(repoDir, clean))
+		if err != nil || info.IsDir() || info.Mode()&0o111 == 0 {
+			return fmt.Errorf("%s is not an executable file in the repo", clean)
+		}
+		ci, err := os.ReadFile(filepath.Join(repoDir, ".github", "workflows", "ci.yml"))
+		if err != nil || !strings.Contains(string(ci), clean) {
+			return fmt.Errorf("%s is not run by .github/workflows/ci.yml", clean)
+		}
+		return nil
+	}
+	if !testExists(repoDir, ref) {
+		return fmt.Errorf("not a test in the repo")
+	}
+	return nil
+}
 
 func testExists(repoDir, name string) bool {
 	if !testNameRe.MatchString(name) {
