@@ -37,11 +37,11 @@ function nav(){
   return '<button type="button" data-v="'+v[0]+'"'+(state.view===v[0]?' aria-current="page"':'')+'>'+ICON[v[0]]+'<span>'+v[1]+'</span>'+(v[0]==='overview'&&n?'<span class="count" aria-label="'+n+' critical">'+n+'</span>':'')+'</button>'}).join('');
  $('#nav').querySelectorAll('button').forEach(function(b){b.addEventListener('click',function(){go(b.dataset.v)})});
 }
-function go(v){state.view=v;location.hash=v;render();if(v==='fleet'&&!state.fleet)loadFleet();$('#main').focus({preventScroll:true})}
+function go(v){var dlg=$('.inspector');if(dlg&&dlg.open)dlg.close();state.view=v;location.hash=v;render();if(v==='fleet'&&!state.fleet)loadFleet();$('#main').focus({preventScroll:true})}
 
 function skeleton(){return '<p class="sub loading">Loading the local snapshot… Other views remain available.</p>'+ '<div class="grid g4"><div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>'}
 function chip(v){return '<span class="chip v-'+esc(v)+'">'+esc(v.replace('_',' ').toLowerCase().replace(/^./,function(c){return c.toUpperCase()}))+'</span>'}
-var VCOL={LIVE:'var(--ok)',WAKEABLE:'var(--ok)',HELD:'var(--warn)',AUTH_REQUIRED:'var(--danger)',UNREACHABLE:'var(--danger)',WATCH_ONLY:'var(--info)',UNSTAFFED:'var(--dim)'};
+var VCOL={LIVE:'var(--ok)',WAKEABLE:'var(--wakeable)',HELD:'var(--warn)',AUTH_REQUIRED:'var(--danger)',UNREACHABLE:'var(--danger)',WATCH_ONLY:'var(--info)',UNSTAFFED:'var(--dim)'};
 var ORDER=['LIVE','WAKEABLE','HELD','WATCH_ONLY','AUTH_REQUIRED','UNREACHABLE','UNSTAFFED'];
 
 function stackBar(counts){
@@ -142,7 +142,7 @@ function inspector(agent){
  showInspector('Lane inspector','<p class="sub">Snapshot '+esc(state.data&&state.data.generated_at||'time unknown')+' · Reopen to see the latest received snapshot.</p><h3>'+esc(agent)+'</h3>'+(lane?chip(lane.verdict)+'<p>'+esc(lane.detail)+'</p><dl>'+[['Open items',lane.open],['Observed',lane.observed_at],['Worker thread',lane.worker_thread_id],['Last report',lane.last_report_at],['Report',lane.last_report_summary]].map(function(x){return '<dt>'+esc(x[0])+'</dt><dd>'+esc(x[1]??'Unknown / not supplied')+'</dd>'}).join('')+'</dl>'+nextStep(lane.next):'<p>No lane projection supplied for this recipient.</p>'),true);
 }
 document.addEventListener('click',function(e){var b=e.target.closest('[data-inspect],[data-copy],[data-failure]');if(!b)return;if(b.dataset.failure)failureInspector(b.dataset.failure);else if(b.dataset.inspect)inspector(b.dataset.inspect);else if(!navigator.clipboard){$('#announcement').textContent='Clipboard unavailable. Command: '+b.dataset.copy}else navigator.clipboard.writeText(b.dataset.copy).then(function(){$('#announcement').textContent='Command copied.'}).catch(function(){$('#announcement').textContent='Clipboard unavailable. Command: '+b.dataset.copy})});
-document.addEventListener('keydown',function(e){if(e.target.closest('input,textarea,select,dialog')||e.metaKey||e.ctrlKey||e.altKey)return;if(e.key==='r'){e.preventDefault();load()}if(e.key==='/'){e.preventDefault();go('lanes');$('#lq').focus()}});
+document.addEventListener('keydown',function(e){var dlg=$('.inspector.persistent');if(e.key==='Escape'&&dlg&&dlg.open&&!e.target.closest('input,textarea,select,[contenteditable]')){e.preventDefault();dlg.close();return}if(e.target.closest('input,textarea,select,dialog')||e.metaKey||e.ctrlKey||e.altKey)return;if(e.key==='r'){e.preventDefault();load()}if(e.key==='/'){e.preventDefault();go('lanes');$('#lq').focus()}});
 $('#refresh').addEventListener('click',function(){load()});
 window.addEventListener('hashchange',function(){var h=location.hash.slice(1);if(h&&h!==state.view&&VIEWS.some(function(v){return v[0]===h}))go(h)});
 var h0=location.hash.slice(1);if(VIEWS.some(function(v){return v[0]===h0}))state.view=h0;

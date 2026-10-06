@@ -4,6 +4,7 @@
   --mono:"SF Mono",ui-monospace,Menlo,monospace;
   --r-sm:8px;--r-md:12px;--r-lg:18px;
   --sidebar:248px;
+  --wakeable:color-mix(in srgb,var(--emerald) 55%,var(--panel));
   --ease:cubic-bezier(.2,.8,.2,1);
 }
 *{box-sizing:border-box;margin:0}
@@ -26,6 +27,7 @@ a:hover{text-decoration:underline}
 .nav button[aria-current="page"]{background:color-mix(in srgb,var(--emerald) 16%,transparent);color:var(--ink);font-weight:600}
 .nav svg{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .nav .count{margin-left:auto;font-size:12px;padding:1px 8px;border-radius:999px;background:color-mix(in srgb,var(--danger) 18%,transparent);color:var(--danger);font-weight:600}
+.side-foot a{display:flex;align-items:center;min-height:44px;min-width:44px}
 .side-foot{margin-top:auto;padding:12px;font-size:12px;color:var(--dim);display:grid;gap:4px}
 
 .main{padding:32px clamp(20px,4vw,56px) 64px;max-width:1280px;width:100%}
@@ -62,7 +64,7 @@ h1{font-size:34px;line-height:1.12;font-weight:700;letter-spacing:-.03em}
 
 .chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;letter-spacing:.01em;background:color-mix(in srgb,var(--c,var(--dim)) 15%,transparent);color:var(--c,var(--dim))}
 .chip::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
-.v-LIVE,.v-WAKEABLE,.st-resolved{--c:var(--ok)}.v-HELD{--c:var(--warn)}.v-AUTH_REQUIRED,.v-UNREACHABLE,.st-open{--c:var(--danger)}.v-WATCH_ONLY{--c:var(--info)}.v-UNSTAFFED{--c:var(--dim)}
+.v-LIVE,.st-resolved{--c:var(--ok)}.v-WAKEABLE{--c:var(--wakeable)}.v-HELD{--c:var(--warn)}.v-AUTH_REQUIRED,.v-UNREACHABLE,.st-open{--c:var(--danger)}.v-WATCH_ONLY{--c:var(--info)}.v-UNSTAFFED{--c:var(--dim)}
 
 .bar{display:flex;height:12px;border-radius:999px;overflow:hidden;background:color-mix(in srgb,var(--ink) 8%,transparent);gap:2px}
 .bar span{display:block;min-width:4px;background:var(--c);transition:flex .6s var(--ease)}
@@ -140,3 +142,6 @@ button,.btn,.sort,.lane-select{min-width:44px;min-height:44px}
 @media(min-width:1200px){.has-inspector .main{padding-right:400px}.inspector.persistent{width:360px;box-shadow:none;top:24px;bottom:24px}}
 @media(max-width:820px){.sidebar{overflow:hidden}.nav{display:flex;overflow-x:auto;flex-wrap:nowrap;gap:4px;padding-bottom:4px}.nav button{width:auto;flex:none;flex-direction:row;min-height:44px;padding:8px 12px;white-space:nowrap}.nav .count{margin-left:0}.nav-label{display:none}}
 @media(max-width:640px){.responsive-table,.responsive-table tbody,.responsive-table tr,.responsive-table td{display:block;width:100%}.responsive-table thead{display:none}.responsive-table{background:transparent;border:0;overflow:visible}.responsive-table tr{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}.responsive-table td{padding:6px 0;border:0;text-align:left;font-size:15px}.responsive-table td[data-label]::before{content:attr(data-label);display:block;color:var(--dim);font:12px var(--font);margin-bottom:4px}.responsive-table .lane-select{padding:8px 0;font-size:15px}.responsive-table .chip{font-size:12px}.search{width:100%;min-width:0}.queue-recipient{align-items:flex-start;gap:4px}.queue-recipient button{width:100%;text-align:left}.queue-recipient span{padding-bottom:12px}}
+
+/* Round 3: each narrow stat owns its internal divider; no outer child edge. */
+@media(max-width:820px){.status-strip .card{min-width:0;border-right:0;overflow-wrap:anywhere}.status-strip .card:nth-child(odd){border-right:1px solid var(--line)}.status-strip .card:nth-child(-n+2){border-bottom:1px solid var(--line)}}
