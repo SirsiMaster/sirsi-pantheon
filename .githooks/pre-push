@@ -105,7 +105,8 @@ fi
 if [ "$CHANGED_GO_FILES" = "all" ]; then
     CHANGED_PKGS="./..."
 elif [ -n "$CHANGED_GO_FILES" ]; then
-    CHANGED_PKGS=$(echo "$CHANGED_GO_FILES" | xargs -I{} dirname {} | sort -u | \
+    # testdata/ holds fixtures the go tool never compiles; CI's `./...` skips them, so must we.
+    CHANGED_PKGS=$(echo "$CHANGED_GO_FILES" | grep -v '/testdata/' | xargs -I{} dirname {} | sort -u | \
                    while read dir; do [ -d "$dir" ] && echo "./$dir"; done | tr '\n' ' ')
 fi
 
@@ -255,6 +256,16 @@ fi
 if ! go build ./... 2>/dev/null; then
     echo "  ❌ build failed"
     exit 1
+fi
+
+# ── 4b. Trust-Boundary gate (ADR-076, Universal Rule 32) — A–H lint on pushed files ──
+# Each finding names its rule letter; a reviewed false positive is silenced with
+# `trust-boundary: <reason>` on the line or the line above. The exit status gates.
+if [ -n "$DIFF_BASE" ] && [ -n "$PUSH_LOCAL_SHA" ]; then
+    if ! go run ./cmd/sirsi maat gate --lint-only --base "$DIFF_BASE" --head "$PUSH_LOCAL_SHA"; then
+        echo "  ❌ Trust-Boundary lint failed (ADR-076) — fix it or record the reason on the line"
+        exit 1
+    fi
 fi
 
 # ── 5. Tests — diff-based or full depending on depth ────────────────
