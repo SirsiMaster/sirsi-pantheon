@@ -820,6 +820,18 @@ Loop"); the launchd pull-loop is for worker/headless surfaces.`,
 			return fmt.Errorf("pass only one of --install / --uninstall")
 
 		case threadWatchUninstall:
+			// A lane disarms only itself. --agent is accepted here only when it
+			// names the identity this session already resolves to without it;
+			// otherwise one session could loop --uninstall over every other
+			// lane's wake channel (observed on the M5, 2026-10-05 17:16: four
+			// loops removed in one second). The durable off switch for the whole
+			// fabric is `sirsi router quarantine`, which the owner controls.
+			if how == "flag" {
+				own, ownHow := resolveCurrentAgent(routerRoot, "")
+				if own != agentID {
+					return fmt.Errorf("--uninstall removes only this session's own wake channel (this session resolves to %q via %s), not %q: a lane never disarms another lane; to stand the fabric down use `sirsi router quarantine`", own, ownHow, agentID)
+				}
+			}
 			removed, path, uerr := router.UninstallWakeLaunchAgent(*cfg)
 			if uerr != nil {
 				return uerr
