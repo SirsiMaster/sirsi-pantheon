@@ -782,7 +782,7 @@
       "cwd": "/Users/thekryptodragon/Development/FinalWishes",
       "workstream": "finalwishes",
       "wake": {
-        "mechanism": "none"
+        "mechanism": "launchagent"
       },
       "consumer": {
         "command": [

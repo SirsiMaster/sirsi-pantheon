@@ -8,6 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ### Fixed
 
+- **`claude-finalwishes-m5` is wakeable.** Its registry entry said `wake: none`, so review items from `codex-finalwishes` (21 open tonight) piled up with nobody reading them; it now declares a launchagent wake like every other staffed lane.
 - **The registry no longer declares a `mercury-m5` lane.** Claude Mercury exists only on the M1 (`mercury`). The three aliases that pointed at `mercury-m5` (`claude-io-cylton`, `cylton-mercury`, `m5-mercury`) now resolve to `mercury`.
 
 
