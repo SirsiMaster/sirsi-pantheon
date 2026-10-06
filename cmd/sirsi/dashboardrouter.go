@@ -31,8 +31,10 @@ func collectDashboardRouter() (result dashboard.RouterSnapshot, _ error) {
 	snap := dashboard.RouterSnapshot{
 		GeneratedAt: started.UTC().Format(time.RFC3339),
 		Version:     appversion.Version,
-		Lanes:       dashboard.RouterLanes{Counts: map[string]int{}},
-		Timings:     map[string]int64{},
+		// Every verdict is present, zero included: a verdict absent from the map reads
+		// as "unknown" to a UI, and zero lanes LIVE is a fact, not a gap.
+		Lanes:   dashboard.RouterLanes{Counts: zeroVerdictCounts()},
+		Timings: map[string]int64{},
 	}
 	last := started
 	lap := func(stage string) {
@@ -263,4 +265,12 @@ func routerAttention(s dashboard.RouterSnapshot) []dashboard.RouterAttention {
 	rank := map[string]int{"critical": 0, "warn": 1, "info": 2}
 	sort.SliceStable(out, func(i, j int) bool { return rank[out[i].Severity] < rank[out[j].Severity] })
 	return out
+}
+
+// zeroVerdictCounts has every ping verdict at zero.
+func zeroVerdictCounts() map[string]int {
+	return map[string]int{
+		router.VerdictLive: 0, router.VerdictWakeable: 0, router.VerdictHeld: 0, router.VerdictAuthRequired: 0,
+		router.VerdictWatchOnly: 0, router.VerdictUnstaffed: 0, router.VerdictUnreachable: 0,
+	}
 }
