@@ -1,8 +1,9 @@
 # RA-P18 — Ma'at pre-push gate and CI
 
 Owner: claude-pantheon. Source: `.githooks/pre-push`, `.githooks/gate-lock.sh`,
-`internal/setup/maatgate.go`, `scripts/bind/sirsi-bind.sh`, `internal/maat/knownfail/`.
-Revision: main, post-#1011.
+`.githooks/gate-advise.sh`, `internal/setup/maatgate.go`, `scripts/bind/sirsi-bind.sh`,
+`internal/maat/knownfail/`, `.github/workflows/maat-advise.yml`.
+Revision: main, post-#1011, pending #1015.
 
 ## Logical view
 ```mermaid
@@ -15,10 +16,10 @@ flowchart TD
   E -- yes --> F[Fast pass, nothing to check]
   E -- no --> GL{Host-wide gate-lock free? .githooks/gate-lock.sh}
   GL -- held by another push --> GLW[Wait up to MAAT_GATE_LOCK_WAIT_SECS, reclaim if holder dead] --> GL
-  GL -- free --> G[gofmt + vet + lint + diff-scoped build/test, MAAT_DEPTH tier]
-  G -- fail --> H[Push refused locally] --> C
+  GL -- free --> G[gate_run: gofmt + vet + lint + diff-scoped build/test, MAAT_DEPTH tier]
+  G -- fail --> GA[gate_advise asks cmd/maat-advise: known signature -> cause+fix, unknown -> how to register] --> H[Push refused locally] --> C
   G -- pass --> I[Push succeeds] --> J[CI on the PR: same checks + canon guard + secrets scan]
-  J -- red --> K[PR blocked, author fixes, new head]
+  J -- red --> JA[maat-advise.yml: known signature -> cause+fix on run + PR comment, unknown -> how to register] --> K[PR blocked, author fixes, new head]
   J -- green --> L[SSA independent review on the exact head SHA]
   L -- CHANGES_REQUESTED --> K
   L -- APPROVE --> M[sirsi-bind.sh: query reviews on current head]
@@ -35,15 +36,21 @@ local flag (A28).
 flowchart LR
   INSTALL[sirsi setup/install] -->|core.hooksPath| HOOK[.githooks/pre-push]
   HOOK -->|reads| LOCK[(rails.lock)]
-  HOOK -->|changed pkgs| LOCALCHECK[fmt/vet/lint/test]
+  HOOK -->|queue| GATELOCK[(.githooks/gate-lock.sh: host-wide gate queue)]
+  GATELOCK -->|changed pkgs| LOCALCHECK[gate_run: fmt/vet/lint/build/test]
+  LOCALCHECK -->|failure log, gate_advise| CATALOG[(internal/maat/knownfail/catalog.json)]
   PUSH[git push] --> CI[GitHub Actions: Lint, Test, Build, Canon guard, Secrets scan]
   CI -->|status checks| GH[(GitHub PR)]
+  CI -->|on failure, workflow_run| MAATADVISE[.github/workflows/maat-advise.yml]
+  MAATADVISE -->|cmd/maat-advise| CATALOG
+  MAATADVISE -->|cause+fix or how-to-register| GH
   SSA[sirsi-software-admin] -->|APPROVE / CHANGES_REQUESTED| GH
   BIND[sirsi-bind.sh] -->|gh pr view --json reviews, current head SHA| GH
   BIND -->|merge or refuse| GH
   GH --> TRAIN[release-train.sh] --> TAGS[(git tags)] --> INSTALLS[(installed sirsi binaries)]
-  WAKE[Wake loop: lane session consumer output] -.unknown signature.-> CATALOG[(internal/maat/knownfail/catalog.json)]
-  CATALOG -->|known match| ANSWER[Published answer to the lane]
+  WAKE[Wake loop: lane session consumer output] -.unknown signature.-> CATALOG
+  CATALOG -->|known match| ANSWER[cause + fix, at once]
+  CATALOG -->|unknown signature| REGISTER[sirsi maat known-failures register]
 ```
 
 ## State view
@@ -71,10 +78,16 @@ stateDiagram-v2
   backstop until `sirsi setup`/installer runs (A28 — "armed, not just shipped").
 - Rails-lock held during a measurement window: push refused unless the owner
   explicitly overrides with `MAAT_WINDOW_OVERRIDE=1` (deliberate bypass, not a bug).
-- The pre-push hook and CI do not consult the known-failure catalog (not
-  implemented). The catalog is matched only against a lane session's output by the
-  wake loop (RA-P02), or manually with `sirsi maat known-failures match`. An
-  unknown signature is registered via `sirsi maat known-failures register` and
+- The pre-push hook and CI now consult the known-failure catalog on every failing
+  gate step (#1015), before anyone — human or model — spends time or tokens on it.
+  `gate_run`/`gate_advise` (`.githooks/gate-advise.sh`) wraps each hook step; on
+  failure it asks `cmd/maat-advise`. A known signature prints cause + fix at once;
+  an unknown one prints how to record it with `sirsi maat known-failures register`.
+  CI gets the same advice via `.github/workflows/maat-advise.yml`, which runs on
+  `workflow_run` failure and posts cause+fix (or the how-to-register prompt) as a
+  PR comment, using only catalog text — never the PR's own code. The wake loop
+  (RA-P02) and `sirsi maat known-failures match` remain a second, independent
+  consumer for lane-session output outside the hook/CI path. An unknown signature
   stays open until a PR ships a fix with a guard test (`resolve` requires
   `fixed_in` + an existing guard test) — see RA-P02.
 - A34 is the hard rule at bind time: a `CHANGES_REQUESTED` review on the current
