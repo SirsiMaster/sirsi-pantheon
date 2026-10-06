@@ -18,10 +18,11 @@ flowchart TD
   H --> I[Tag origin/main, push tag]
   I --> J[Wait for the Release workflow to finish green]
   J --> K[brew upgrade on the M1, check version]
-  K --> L[brew upgrade on the M5 over SSH, check version]
-  L --> M[Kickstart every wake loop on both Macs]
+  K -- wrong version --> STOP3([STOP])
+  K --> L[M5 best effort: hostname then LAN address, upgrade and restart loops]
+  L --> M[Kickstart the M1 loops, print the M5 outcome]
 ```
-Every step is a hard stop. Service deploy precedes the tag so a new Store method exists server-side before clients ship.
+Every gate through the M1 upgrade is a hard stop. The M5 is best-effort and never a gate: the last line reports whether it was upgraded, reached but not on the version, or unreachable. Service deploy precedes the tag so a new Store method exists server-side before clients ship.
 
 ## Data view
 ```mermaid
