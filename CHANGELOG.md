@@ -6,9 +6,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased] — Apollo view: retire the last user-facing "SNE" copy
 
-### Added
-
-- **Process diagrams for the router wing (SL-DIAGRAM-001).** `docs/stacklab/RA_HORUS_FABRIC_DIAGRAM_INDEX.md` inventories 18 processes and reports coverage against all of them: 4 complete (wake loop, known-failure loop, registry pin, release train), 1 drafted for its owner's confirmation (review and bind), 13 open with a next action. Logical, data, state and recovery views are Mermaid sources, each checked to parse.
 - **Commercial notarization spaces repeated Apple transport retries.** The
   release helper now uses a bounded five-submission budget with capped
   exponential spacing only for Apple’s exact multipart-upload deadline.
