@@ -54,3 +54,19 @@ It does not stop running sessions; pair it with `sirsi router quarantine-worker`
 ## Danger
 
 `sirsi router migrate-store` mirrors the source into the destination and **deletes** what the destination holds. Never point it at a live service.
+
+## Pin the service's TLS key (opt-in)
+
+By default a node trusts any certificate that verifies normally. To require the service's own key as well, set `SIRSI_ROUTER_SPKI_PIN` in the environment of the process that opens the https connection: the per-host relay (`sirsi router relay serve`), or a node using `SIRSI_ROUTER_URL=https://...` directly. Lanes on `spool://` need nothing.
+
+```bash
+# the pin of one certificate (leaf or CA) the service presents
+echo | openssl s_client -connect <service-host>:443 -servername <service-host> 2>/dev/null \
+  | openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64
+```
+`scripts/router-service/deploy.sh` prints the leaf pin at deploy time (recorded in the release manifest).
+
+- The client still verifies the certificate normally; the pin is an additional requirement. It matches ANY certificate in the verified chain, so **pin the issuing CA, not the leaf**: managed certificates renew on a schedule and a leaf pin would lock every node out at the next renewal.
+- Several pins, comma separated, allow rotation: add the new pin, roll it out, then drop the old one.
+- Fails closed: a malformed pin, or a pin with a non-https URL, makes every call fail with an error naming `SIRSI_ROUTER_SPKI_PIN`. A wrong pin fails with "TLS public-key pin mismatch". Remove the variable to return to default trust.
+- Status: supported and tested (`remote_pin_test.go`); **not enabled on the fleet**. Choosing which key to pin, and the rotation policy, is a security decision for the owner.
