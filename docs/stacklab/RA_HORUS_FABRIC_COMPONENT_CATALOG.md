@@ -39,3 +39,5 @@ The companion traceability matrix is the release checklist. A row marked
 `OPEN` is a real work item, not a green claim. The Stack Lab doctor must pass
 and the record must be byte-pinned by the universal registry before the wing
 is called canonical.
+
+**Diagrams:** every process this catalog covers is indexed in [RA_HORUS_FABRIC_DIAGRAM_INDEX.md](RA_HORUS_FABRIC_DIAGRAM_INDEX.md) (SL-DIAGRAM-001).
