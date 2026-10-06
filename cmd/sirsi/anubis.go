@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -1364,12 +1365,15 @@ func applyPantheonDoctorPostChecks(report *guard.DoctorReport) {
 }
 
 // deadThirdPartyPlists scans the given directories for non-Sirsi
-// LaunchAgent/Daemon plists that are empty (no <dict> body) or whose
+// LaunchAgent/Daemon plists that are empty (no keys) or whose
 // Program/first ProgramArguments entry is an absolute path that no longer
 // exists on disk — the dead-remnant class found by hand on 2026-10-05.
-// Best-effort; unreadable directories/files are skipped.
+// Best-effort; directories, and plists that are unreadable or fail to parse
+// (XML or binary — malformed is not the same as empty), are skipped rather
+// than counted as dead.
 func deadThirdPartyPlists(dirs []string) []string {
 	var dead []string
+	ctx := context.Background()
 	for _, dir := range dirs {
 		entries, rerr := os.ReadDir(dir)
 		if rerr != nil {
@@ -1380,19 +1384,20 @@ func deadThirdPartyPlists(dirs []string) []string {
 			if strings.HasPrefix(name, "ai.sirsi.") || !strings.HasSuffix(name, ".plist") {
 				continue
 			}
-			raw, rerr := os.ReadFile(filepath.Join(dir, name))
-			if rerr != nil {
+			v, perr := readPlistDict(ctx, filepath.Join(dir, name))
+			if perr != nil {
+				// Unreadable or malformed: unknown, never "empty".
 				continue
 			}
-			content := string(raw)
-			if !strings.Contains(content, "<dict>") {
+			if len(v) == 0 {
 				dead = append(dead, name+" (empty)")
 				continue
 			}
-			if bin := plistFirstExecutablePath(content); bin != "" {
-				if _, serr := os.Stat(bin); serr != nil {
+			if bin := plistFirstExecutablePath(v); bin != "" {
+				if _, serr := os.Stat(bin); serr != nil && os.IsNotExist(serr) {
 					dead = append(dead, name+" (missing binary: "+bin+")")
 				}
+				// Any other Stat error (permission, I/O) is unknown, not dead.
 			}
 		}
 	}
@@ -1400,27 +1405,31 @@ func deadThirdPartyPlists(dirs []string) []string {
 	return dead
 }
 
-// plistFirstExecutablePath returns the first absolute-path <string> value
-// following a Program or ProgramArguments key, or "" if neither key or value
-// is present.
-func plistFirstExecutablePath(content string) string {
-	for _, key := range []string{"<key>Program</key>", "<key>ProgramArguments</key>"} {
-		i := strings.Index(content, key)
-		if i < 0 {
-			continue
-		}
-		rest := content[i+len(key):]
-		start := strings.Index(rest, "<string>")
-		if start < 0 {
-			continue
-		}
-		start += len("<string>")
-		end := strings.Index(rest[start:], "</string>")
-		if end < 0 {
-			continue
-		}
-		if val := rest[start : start+end]; strings.HasPrefix(val, "/") {
-			return val
+// readPlistDict parses a plist file — XML or binary, macOS's `plutil`
+// handles both — into its top-level dict. An error means the file could
+// not be read or is not a well-formed plist; callers must treat that as
+// unknown, not as an empty dict.
+func readPlistDict(ctx context.Context, path string) (map[string]interface{}, error) {
+	out, err := exec.CommandContext(ctx, "plutil", "-convert", "json", "-o", "-", path).Output()
+	if err != nil {
+		return nil, err
+	}
+	var v map[string]interface{}
+	if err := json.Unmarshal(out, &v); err != nil {
+		return nil, err
+	}
+	return v, nil
+}
+
+// plistFirstExecutablePath returns the absolute-path Program value, or the
+// first absolute-path entry of ProgramArguments, or "" if neither is present.
+func plistFirstExecutablePath(v map[string]interface{}) string {
+	if s, ok := v["Program"].(string); ok && strings.HasPrefix(s, "/") {
+		return s
+	}
+	if args, ok := v["ProgramArguments"].([]interface{}); ok && len(args) > 0 {
+		if s, ok := args[0].(string); ok && strings.HasPrefix(s, "/") {
+			return s
 		}
 	}
 	return ""
