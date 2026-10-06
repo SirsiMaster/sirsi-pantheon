@@ -25,9 +25,10 @@ sec='## [%s] — %s\n\n%s\n\n'%(ver,datetime.date.today().isoformat(),'\n\n'.joi
 s=s[:j+1]+sec.lstrip('\n')+s[j+1:] if False else s[:j]+'\n'+sec.rstrip('\n')+'\n'+s[j:]
 open('CHANGELOG.md','w').write(s)
 open('VERSION','w').write(ver+'\n')
-# stacklab canon changelog
+# stacklab canon changelog: this release's entry titles under the newest heading
 p='docs/stacklab/pantheon-pt/canon/CHANGELOG.md'; t=open(p).read()
-m='## 2026-10-01 — v0.24.65 release candidate'
-add='## %s — v%s release candidate\n\n- Records the lease/session-identity fixes (per-thread session cache, dispatch-contract agent id), the ps-free thread anchor, the pre-push window gate, the bind router-rejection check, the gemma status default port, who-is-on live activity, the ADR-070 revision and the doctor name-conformance report from the exact tested mainline.\n\n'%(datetime.date.today().isoformat(),ver)
-assert m in t; open(p,'w').write(t.replace(m,add+m,1))
+titles=[(re.search(r'\*\*(.+?)\*\*',b).group(1) if re.search(r'\*\*(.+?)\*\*',b) else b[2:90].rstrip('.')) for b in new]
+add='## %s — v%s release candidate\n\n%s\n\n'%(datetime.date.today().isoformat(),ver,'\n'.join('- '+x for x in titles))
+m=re.search(r'^## ',t,re.M); assert m, "no heading in canon changelog"
+open(p,'w').write(t[:m.start()]+add+t[m.start():])
 print(len(new),"bullets")
