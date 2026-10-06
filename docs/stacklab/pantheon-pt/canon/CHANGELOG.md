@@ -1,5 +1,14 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-06 — v0.24.95 release candidate
+
+- `sirsi router snapshot`: the router snapshot as JSON, from the same producer as the Horus dashboard.
+- The release train clears the abandoned branch a stopped run leaves behind, and refuses to touch real history.
+- The Ma'at pre-push gate queues behind another gate on the same Mac, and shows the linter's real error.
+- The Horus dashboard is redesigned
+- `TestSenderFloodRejected` no longer fails at the top of the hour.
+- `/api/router` sends an empty list, not `null`, for a release section with no entries.
+
 ## 2026-10-06 — v0.24.94 release candidate
 
 - Reviewer lanes get a reserved consumer slot.
