@@ -1568,7 +1568,7 @@ func routerServiceEnvXML() string {
 	// group-trusted spool creates 0700 lane directories the relay cannot enter
 	// (M5, 2026-09-14: `claude-io/` and `M5.local/` — every call from them
 	// waited 30 s unseen).
-	for _, k := range []string{"SIRSI_ROUTER_URL", "SIRSI_ROUTER_TOKEN", "SIRSI_RELAY_TRUST_GROUP"} {
+	for _, k := range []string{"SIRSI_ROUTER_URL", "SIRSI_ROUTER_TOKEN", "SIRSI_RELAY_TRUST_GROUP", "SIRSI_ROUTER_SPKI_PIN"} {
 		if v := strings.TrimSpace(os.Getenv(k)); v != "" {
 			fmt.Fprintf(&b, "\n    <key>%s</key>\n    <string>%s</string>", k, escapeXML(v))
 		}
