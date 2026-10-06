@@ -30,6 +30,18 @@ git fetch -q origin main || die "fetch main failed"
 git show-ref --verify --quiet "refs/tags/v$VERSION" && die "local tag v$VERSION already exists"
 git ls-remote --exit-code --refs origin "refs/tags/v$VERSION" >/dev/null 2>&1 && die "remote tag v$VERSION already exists"
 git rev-parse -q --verify "origin/main" >/dev/null || die "no origin/main"
+# A previous run that stopped before its push leaves a local release branch (and a temp worktree)
+# behind, and `git worktree add -b` then fails on it. Clear that leftover only when it is provably
+# abandoned: never pushed, no PR in any state, and nothing on it beyond its own single prep commit.
+# Anything else is real history: STOP and say exactly what to look at.
+if git rev-parse -q --verify "refs/heads/$B" >/dev/null; then
+  [ -z "$(git ls-remote --heads origin "$B")" ] || die "branch $B exists on origin: inspect it, this run will not touch it"
+  [ -z "$(gh pr list --head "$B" --state all --json number -q '.[].number')" ] || die "a PR exists for $B: inspect it, this run will not touch it"
+  [ "$(git rev-list --count "origin/main..$B")" -le 1 ] && git log --format=%s "origin/main..$B" | grep -qvx "release: prepare Pantheon v$VERSION" && die "local $B carries commits beyond its prep commit: inspect it"
+  echo "   clearing the abandoned local $B left by a run that stopped before its push"
+  for w in $(git worktree list --porcelain | awk -v b="refs/heads/$B" '/^worktree /{p=$2} $0=="branch "b{print p}'); do git worktree remove --force "$w" || die "could not remove stale worktree $w"; done
+  git branch -D "$B" >/dev/null || die "could not delete stale branch $B"
+fi
 WT="$(mktemp -d)/rel"; git worktree add -q -b "$B" "$WT" origin/main || die "worktree failed"
 cd "$WT" || die "cd failed"
 bash "$WT/scripts/changelog-assemble.sh" || die "changelog assemble failed"
