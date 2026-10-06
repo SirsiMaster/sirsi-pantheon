@@ -1254,6 +1254,44 @@ private func parseFindingDetailList(_ detail: String) -> [FindingDetailEntry]? {
     }
 }
 
+// Health checks remain stable machine-facing identifiers so that Ma'at can
+// bind findings and receipts across every Pantheon surface. The title at the
+// top of a native screen, however, should tell a person what Pantheon can do
+// next—not expose an implementation detail as the task they have to solve.
+func findingDisplayTitle(check: String) -> String {
+    switch check {
+    case "launchd Disabled Override":
+        return "Restore managed services"
+    default:
+        return check
+    }
+}
+
+// Older installed CLIs can omit a typed `fix` while still emitting a known
+// diagnostic identifier.  Keep the compatibility surface closed: only these
+// audited native actions may be recovered from the identifier, never prose or
+// a command copied out of the diagnostic.
+func legacyDiagnosticRepairArgs(check: String, severity: Int) -> [String]? {
+    switch check {
+    case "launchd Disabled Override":
+        return ["maat", "repair", "launchd-disabled", "--confirm"]
+    case "binary-drift":
+        return ["self-update"]
+    case "App Hangs (7d)", "Process Footprint", "Thread Leaks":
+        return severity >= 2 ? ["relieve"] : nil
+    case "RAM Pressure", "Top Memory Consumers", "Jetsam Events (7d)", "Memory Death Spiral", "Swap Usage":
+        return severity >= 2 ? ["relieve", "--memory"] : nil
+    case "Duplicate Model Brokers":
+        return severity >= 2 ? ["gemma", "reap-orphans"] : nil
+    case "Local Snapshots":
+        return ["reclaim-snapshots"]
+    case "Runaway Executor":
+        return severity >= 2 ? ["router", "quarantine-worker"] : nil
+    default:
+        return nil
+    }
+}
+
 struct FindingView: View {
     @ObservedObject var engine: SirsiEngine
     let finding: DiagFinding
@@ -1261,6 +1299,7 @@ struct FindingView: View {
     // The honesty class drives EVERY label so a 7-day history never wears an
     // "instant fix" costume. See guard.FixKind (instant | relief | guidance).
     private var kind: String { finding.fixKind ?? "" }
+    private var displayTitle: String { findingDisplayTitle(check: finding.check) }
     @State private var maatReviewResult: CommandResult?
     @State private var maatReviewError: String?
     @State private var maatReviewInFlight = false
@@ -1277,22 +1316,7 @@ struct FindingView: View {
     // and current severity. Everything else stays in the native Ma'at route.
     private var legacyNativeRepairArgs: [String]? {
         guard finding.fix?.isEmpty != false else { return nil }
-        switch finding.check {
-        case "binary-drift":
-            return ["self-update"]
-        case "App Hangs (7d)", "Process Footprint", "Thread Leaks":
-            return finding.severity >= 2 ? ["relieve"] : nil
-        case "RAM Pressure", "Top Memory Consumers", "Jetsam Events (7d)", "Memory Death Spiral", "Swap Usage":
-            return finding.severity >= 2 ? ["relieve", "--memory"] : nil
-        case "Duplicate Model Brokers":
-            return finding.severity >= 2 ? ["gemma", "reap-orphans"] : nil
-        case "Local Snapshots":
-            return ["reclaim-snapshots"]
-        case "Runaway Executor":
-            return finding.severity >= 2 ? ["router", "quarantine-worker"] : nil
-        default:
-            return nil
-        }
+        return legacyDiagnosticRepairArgs(check: finding.check, severity: finding.severity)
     }
 
     // A generic health observation cannot safely choose or widen a cleanup
@@ -1326,6 +1350,9 @@ struct FindingView: View {
         }
     }
     private var fixSectionLabel: String {
+        if finding.check == "launchd Disabled Override" {
+            return "RESTORE MANAGED SERVICES"
+        }
         switch kind {
         case "relief": return "RELIEVE THE LIVE CAUSE"
         case "guidance": return "HOW TO ADDRESS"
@@ -1387,9 +1414,21 @@ struct FindingView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            BackBar(title: finding.check)
+            BackBar(title: displayTitle)
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
+                    if finding.check == "launchd Disabled Override" {
+                        Label("Pantheon can restore these managed services", systemImage: "wrench.and.screwdriver.fill")
+                            .sirsiFont(.callout, weight: .semibold)
+                            .foregroundStyle(gold)
+                        Text("Review the affected labels below. When you confirm, Ma'at re-checks the exact managed set, restores only that set, and records a verified result here.")
+                            .sirsiFont(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(PantheonTheme.panel))
+                    }
                     HStack(alignment: .top, spacing: 8) {
                         Circle().fill(findingColor(finding)).frame(width: 10, height: 10).padding(.top, 4)
                         Text(finding.message).sirsiFont(14, weight: .semibold)
@@ -1672,22 +1711,6 @@ extension View {
 struct FleetView: View {
     @ObservedObject var engine: SirsiEngine
 
-    private func stateColor(_ st: String) -> Color {
-        switch st {
-        case "working": return .green
-        case "blocked": return .orange
-        default: return .secondary
-        }
-    }
-
-    private func stateLabel(_ st: String) -> String {
-        switch st {
-        case "working": return "WORKING"
-        case "blocked": return "blocked"
-        default: return "stopped — no open work"
-        }
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             BackBar(title: "Fleet")
@@ -1719,8 +1742,8 @@ struct FleetView: View {
                                 Text(l.agent).sirsiFont(12, weight: .medium)
                                     .sirsiFrame(width: 150).frame(alignment: .leading)
                                     .lineLimit(1)
-                                Text(stateLabel(l.state)).sirsiFont(11)
-                                    .foregroundColor(stateColor(l.state))
+                                Text(FleetStatePresentation.label(l.state)).sirsiFont(11)
+                                    .foregroundColor(FleetStatePresentation.color(l.state))
                                     .sirsiFrame(width: 130).frame(alignment: .leading)
                                     .lineLimit(1)
                                 Text(laneCounts(l)).sirsiFont(11)
@@ -4379,6 +4402,10 @@ private struct ActivityRow: View {
 private struct ActivityDetailView: View {
     let entry: ActivityEntry
     @ObservedObject var engine: SirsiEngine
+    @State private var confirmMaatReview = false
+    @State private var maatReviewInFlight = false
+    @State private var maatReviewResult: CommandResult?
+    @State private var maatReviewError: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -4411,18 +4438,63 @@ private struct ActivityDetailView: View {
                     }
 
                     if entry.resolution != .resolved {
-                        NavLink { MaatWorkspaceView(engine: engine) } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: "sparkles")
-                                Text("Open Ma’at guided review").sirsiFont(13, weight: .semibold)
-                                Spacer()
-                                Image(systemName: "chevron.right").sirsiFont(.caption, weight: .semibold)
+                        VStack(alignment: .leading, spacing: 10) {
+                    Text("MA’AT RESOLUTION")
+                                .sirsiFont(.caption, weight: .semibold)
+                                .foregroundStyle(.secondary)
+                            Text("Ma'at will retain this exact command and outcome, classify what is still open, and create the next bounded action in Casebook. It will not replay the command or change your Mac during review.")
+                                .sirsiFont(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Button { confirmMaatReview = true } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "sparkles")
+                                    Text("Review this outcome in Ma'at").sirsiFont(13, weight: .semibold)
+                                    Spacer()
+                                    Image(systemName: "arrow.right.circle.fill").sirsiFont(.caption, weight: .semibold)
+                                }
+                                .foregroundStyle(.black)
+                                .padding(.horizontal, 14).padding(.vertical, 12)
+                                .background(RoundedRectangle(cornerRadius: 12).fill(gold))
                             }
-                            .foregroundStyle(.black)
-                            .padding(.horizontal, 14).padding(.vertical, 12)
-                            .background(RoundedRectangle(cornerRadius: 12).fill(gold))
+                            .buttonStyle(.plain)
+                            .disabled(maatReviewInFlight)
+                            .accessibilityLabel("Review this activity outcome in Ma'at")
+                            .accessibilityHint("Records the retained command and outcome for Ma'at to classify. It does not replay the command or change the Mac.")
+
+                            if maatReviewInFlight {
+                                HStack(spacing: 8) {
+                                    ProgressView().controlSize(.small)
+                                    Text("Ma'at is recording the evidence-bound review…")
+                                        .sirsiFont(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+
+                            if let result = maatReviewResult {
+                                Label(result.summary, systemImage: result.ok ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                                    .sirsiFont(.caption)
+                                    .foregroundStyle(result.ok ? .green : .orange)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                if result.ok {
+                                    NavLink { MaatCasebookView(engine: engine) } label: {
+                                        Label("Open Ma'at Casebook", systemImage: "book.closed")
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .accessibilityHint("Open the newly recorded Ma'at case and its next bounded action.")
+                                }
+                            }
+
+                            if let error = maatReviewError {
+                                Label(error, systemImage: "exclamationmark.triangle.fill")
+                                    .sirsiFont(.caption)
+                                    .foregroundStyle(.orange)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
-                        .accessibilityLabel("Open Ma’at guided review for this activity")
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.05)))
                     }
 
                     VStack(alignment: .leading, spacing: 6) {
@@ -4437,6 +4509,23 @@ private struct ActivityDetailView: View {
                 .padding(20)
             }
         }
+        .confirmationDialog("Review this activity outcome in Ma'at?", isPresented: $confirmMaatReview, titleVisibility: .visible) {
+            Button("Record Ma'at review") { Task { await recordMaatReview() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Ma'at will retain the exact command and outcome as evidence, classify the remaining work, and expose the next safe action in Casebook. It will not replay the command or change your Mac.")
+        }
+    }
+
+    @MainActor private func recordMaatReview() async {
+        guard !maatReviewInFlight else { return }
+        maatReviewInFlight = true
+        maatReviewError = nil
+        maatReviewResult = await SirsiEngine.runResult(args: activityMaatReviewArgs(for: entry))
+        if maatReviewResult == nil {
+            maatReviewError = "Ma'at could not record the review. This activity remains open; retry here to preserve the same retained evidence."
+        }
+        maatReviewInFlight = false
     }
 }
 

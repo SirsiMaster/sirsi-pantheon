@@ -4,7 +4,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 **Building in public** — see [docs/BUILD_LOG.md](docs/BUILD_LOG.md) for the full narrative.
 
-## [Unreleased] — Apollo view: retire the last user-facing "SNE" copy
+## [Unreleased]
 
 - **v0.24.81 release candidate — enrolled signing Mac releases without credential export.** The commercial DMG and PKG builders now accept an existing `notarytool` keychain profile on an enrolled signing Mac. Direct release signing still requires the exact Developer ID Application or Installer identity, but Apple credentials never have to be copied into environment variables, logs, source, or a receipt. The existing remote signing-service and CI credential routes remain intact.
 
@@ -13,44 +13,217 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 - **v0.24.79 release candidate — Command Center treats optional access truthfully.** Full Disk Access remains available for broader disk visibility, but its absence no longer promotes an otherwise healthy Mac into Pantheon’s global “Needs attention” state or routes the operator into a false repair flow. Actual diagnostics retain their bounded Ma’at repair, re-verification, and receipt path.
 
 ### Fixed
+## [0.24.93] — 2026-10-05
 
-- **Wake loops work on every host without per-host registry edits.** The shared registry holds absolute paths (`/Users/thekryptodragon/...`), so the same lane read WATCH_ONLY ("consumer cwd is not usable") on the other Mac. The consumer resolver now rebases another machine's home prefix onto the local home — cwd, argv and env — only when that home does not exist locally. `claude-deck`, `claude-pantheon` and `claude-nexus` now have reactive wake loops on the M1; `mercury-m5` and `claude-apollo-m5-rail` on the M5.
+- **Router: add the task retry-ceiling operator verb the breaker verbs already established the shape for** (claude-home, 2026-08-07). A task at `attempts>=MaxRetriesPerItem` was recoverable only by a hand `UPDATE` against `router.db` — no CLI verb existed, the same gap `breaker-no-operator-path` found and fixed for tripped circuit breakers. Adds `sirsi router task reset-attempts <agent> <task-id>`, mirroring `sirsi router breaker-reset`: zeroes `attempts`, clears stale lease remnants, and — only when the row is `blocked` with no `blocked_by` set — restores it to `pending`, because that block was exhaustion's own side effect (`ClaimTask`/`ReclaimExpiredTaskLeases` flip status to `blocked` purely on hitting the ceiling). A row genuinely blocked on a dependency (`blocked_by` set) is left alone; this verb only undoes what exhaustion did. Three tests drive a real store: ceiling reached via claim/release cycles → unclaimable → reset → claimable again with `attempt=1`; unknown task returns `ErrNotFound`; a dependency-blocked row survives the reset with status untouched (negative control for the status-restore side effect). Refs: PANTHEON_RULES.md A7; ledger task `task-retry-ceiling-reset`.
 
+- Development candidate: bounded mobile desktop recovery transplanted onto current release source, retaining operator issuer/private ingress and real phone qualification gates (ADR-075).
 
-- **Dashboard: a Router view that shows everything built, and fixes to Fleet.** `GET /api/router` and a new Router tab show the installed version, lane verdicts (the same as `sirsi router ping --all`), the open queue, the consumer cap in use, whether the registry is pinned, the known-failure catalog with each fix's release and guard, the swap-hygiene receipt, and what each release added (read from CHANGELOG). A producer error is a 5xx, never an empty panel. Fleet now shows a loading line instead of a blank screen for the ~3 seconds the board takes, and no longer lists retired aliases (such as `claude-finalwishes-helper`) as lanes. The dashboard is now a component of the Ra/Horus fabric Stack Lab recipe, component catalog and traceability matrix, together with the known-failure catalog, registry pin, swap hygiene and claim-eligibility components.
-- **The work board and insight stop reading the whole item history.** `router workboard` and the platform "Router — Collaboration" signal called ListAll (13,000+ rows, 6-20 seconds on the service) on every refresh, and those calls were the repeated multi-second reads seen in the service logs alongside the 30-second spool timeouts. The board needs only open work plus the last week's closures (new `ListSince` store method / `RecentItems`) and the insight signal needs only open items (`ListActive`). The service is deployed before the client ships.
+- feat(routerstore): migration gate — a build with uncommitted changes may not
+  apply a schema migration. Source that exists only in a working tree cannot be
+  rebuilt by any peer, so the migration it performs is unrecoverable by
+  construction. Every migration now records its provenance in the existing
+  `state` table, and the "schema newer than this binary" refusal names the build
+  that did it instead of posing a forensic puzzle. Override:
+  `SIRSI_ALLOW_DIRTY_MIGRATION=1`, loud and explicit.
+
+- feat(menubar): decode node-status's `outbox[]` (ADR-069, PR #931) into
+  `RBOutbox` and surface an unreadable relay outbox as a blocker
+  (`OutboxBlockerCard`) — a decoder that modeled the field but never reached a
+  view would reintroduce, in Swift, the exact false-quiet-zero bug PR #931
+  fixed on the Go side.
+
+- test(menubar): `OutboxReachabilityTests` — the new `macapp` test target
+  proving the decode actually reaches `routerHasBlockers`, not just that it
+  parses.
+
+- feat(board): `sirsi board-serve` — the Go router board, replacing the
+  out-of-repo Python server.py. Same UI, same URL, verified field-identical
+  side by side before cutover.
+
+- fix(menubar): reads `board-serve --once --shape fleet` — a PROJECTION of the
+  board's own payload, not a parallel aggregation. It previously called
+  `router fleet --json`, which counts blocked separately while the board treats
+  it as a subset of active, so the two disagreed by construction.
+
+- chore: retire the 9119 Horus dashboard (duplicated the menubar) and the
+  token-burning auth probe in sirsi-router-board.sh, which launched a real
+  Claude session per agent per refresh and caused the "gtimeout wants to access
+  data from other apps" prompt.
+
+- Add `sirsi maat submit --kind tag|release|release-edit|merge --repo OWNER/REPO --ref REF`: Phase 1 GitHub-submission attribution. Requester derives from the caller's registered session marker, validated against the declared agent registry (dispatch.ValidateAgent); per-repo policy restricts sirsi-mercury/sirsi-photon to mercury; every grant/refuse is appended to the existing Ma'at decision ledger. No GitHub watcher or auto-mutation — attribution only. Refs: PANTHEON_RULES.md; docs/user-guides/maat.md.
+
+- **Router: `setThreadConsumerCapable` no longer silently drops its write — two independent gaps closed, not one** (claude-home, 2026-08-08). `could not record consumer capability: mutation lost lifecycle fence` still fired 109x/83x across two wake logs after PR #619 landed — #619's `retryOnLostFence` only protects the two reap passes; this call site had zero retry at all, so any concurrent writer racing on the same registry made the write vanish under measured fleet-wide contention (~150 thread records). Extracted `retryOnLostFenceErr`, a plain-`error` counterpart to `retryOnLostFence` (same budget, same backoff — `retryOnLostFence` can't be reused directly, its signature is pinned to `[]ReapedThread`), and wired `setThreadConsumerCapable` through it. **That alone was not sufficient**: a real-store reproduction (register a thread, immediately call `setThreadConsumerCapable`) still failed all 3 retry attempts identically. Root cause: this is the only lifecycle mutator in the package that never advances `LastSeenAt`, so its CAS write depends entirely on the fence's fallback branch — `excluded.payload > threads.payload`, a raw byte comparison of JSON encodings that is not equivalent to "this is a newer write" and can fail *permanently*, not transiently, when the encoding doesn't happen to sort greater. Added the same `LastSeenAt = time.Now().UTC()` bump every other mutator already performs. Negative control run: reverting only the `LastSeenAt` line (retry still wired) reproduces the identical 3/3 failure, proving the retry alone was not the fix. Six tests: three mock-based (`retryOnLostFenceErr` redoes/does-not-retry-other-errors/surfaces-persistent-contention, mirroring the three existing `retryOnLostFence` tests exactly) plus one real-store end-to-end sanity check (`TestSetThreadConsumerCapablePersistsAgainstRealStore`) that exercises the actual production call site, since a mocked helper test alone cannot prove the call site uses it. `go vet ./...` clean repo-wide, full `internal/router` package green. Refs: PR #619 (the reap-pass half of this class); ledger tasks `lifecycle-fence-lost`, `fence-retry-budget-underprovisioned`; Changelog: Unreleased
+
+- fix(board,menubar): rename the "touched" column to "last ledger update". It
+  measures task-record mutation, not liveness — a lane doing real work without
+  recording it reads as stale, correctly — but the old label invited reading a
+  bookkeeping figure as a heartbeat. The owner read claude-deck's accurate
+  "touched 1d1h" as a bug because of it.
+
+- fix(supervision): `supervision.Escalates()` had no caller — lanes no wake could
+  reach were classified, painted red, and never reported to anyone. Adds
+  `supervision.Escalations` + `router.RouteLaneEscalations`, wired into the
+  Horus supervisor sweep, deduped by stable title against the owner's open inbox.
+
+- fix(dashboard): `fleet.go` hardcoded `Routable: true`, making `UNROUTABLE`
+  unreachable. Routability is now read from the registry: 10 lanes that were
+  rendering as merely idle are unroutable, 6 of them holding open work.
+
+- fix(routerstore): recognize schema v8–v14, already deployed to the live store
+  by an out-of-band build. All additive; ports the definitions so binaries stop
+  refusing a store they can safely read.
+
+- **Hooks: the SessionStart inbox counter now warns loudly on a schema drift instead of silently reporting a healthy empty inbox** (claude-home, 2026-08-08). `router_inbox_check.py`'s `pull_model_open_items` reads the router store's `items` table directly via raw sqlite (`id`/`to_agent`/`status`), making it a second reader of a schema at `user_version` 16 that is actively migrating — flagged as a conditional-PASS note on PR #585. Its own test built a synthetic 3-column table matching today's shape, so a real column rename would pass that test forever while the hook silently returned `[]` in production: the cry-wolf defect inverted, a false all-clear instead of a false alarm, and worse for it — nothing ever told the operator the counter went blind. Adds a `pragma table_info(items)` shape check before the query; a missing required column now prints a stderr warning naming the column and still returns `[]` (never crashes the hook), rather than returning `[]` with no signal at all. New test drives a real sqlite file with `to_agent` renamed to `recipient` and asserts the warning fires by name — deleting the guard still leaves the return-value assertion passing, so only the stderr check catches the regression. Two pre-existing `TestAdoptOrRegister_AnchorPidIdentity` failures are unrelated (confirmed via `git stash` before/after) and untouched by this change. Refs: PR #585 conditional PASS; ledger task `hook-store-schema-second-reader`; Changelog: Unreleased
+
+- fix(router): gemma was unreachable from the router in two independent ways —
+  the worker polled identity `gemma`, which is absent from agents.json, while the
+  registered identity `gemma-pantheon` carried `wake.mechanism: cli-spawn`, which
+  the ADR-054 validator refuses. Both doors were shut, so the local model could
+  never be given work and every task fell through to a paid API agent.
+
+- fix(router): the wake loop now logs a bounded tail of a failed consumer's
+  output. `dispatchConsumer` left `cmd.Stdout`/`cmd.Stderr` nil, so `exec.Cmd`
+  wired both to `/dev/null` and destroyed the cause of every dispatch failure at
+  the source — 3843 of 4082 dispatches across 8 lanes exited 1 carrying nothing
+  but `exit status 1`, and `claude-finalwishes` spent a day respawning every 60s
+  behind a 1.4 MB log of it. Capture is an `*os.File` pipe, not an `io.Writer`:
+  exec hands a file through to the child directly and starts no copier, so a
+  setsid-detached consumer's lingering grandchildren cannot hold `cmd.Wait` open
+  and stall re-dispatch. The last 4 KB is kept, and silence is reported as
+  `(no output)` rather than an empty field. This makes the failure legible; it
+  does not fix it.
+
+- fix(routerstore): read-compatibility with a store newer than the binary. The
+  write guard stays — a binary must never migrate a schema it does not define —
+  but refusing to READ turned a coordination problem into a fleet-wide blackout.
+  `OpenReadOnly` opens driver-enforced read-only, reads only the tables this
+  binary defines, and carries a `SchemaGap` whose banner every surface renders.
+
+- fix(dashboard): 8734 is now served by the SAME process and handler as 9119.
+  It was a separate Python board computing its own lane states, and reported
+  nine lanes WORKING while every one had zero live processes. Two producers
+  cannot agree by discipline, only by being one producer.
+
+- fix(board): emit `ledger` alongside `board` in the router-board payload.
+  index.html renders `d.ledger`; the payload carried only `d.board`, so every
+  tile bound to it read undefined — the page showed nonsense while /api/ledger
+  and the CLI returned correct numbers. Adds a payload contract test asserting
+  every field the page reads is present, since a dropped key is invisible in Go.
+
+- Made CTR thread registration, heartbeat/current-item, close, suspend, and resume SQLite-authoritative during STORE-ONLY cutover, so sandboxed agent sessions no longer require writes to the repository-owned `threads.json` mirror.
+
+- **Router: restore the ledger header items/tasks split that PR #668 silently reverted** (claude-home, 2026-08-08). #668's own branch was built by copying `cmd/sirsi/routerledgercmd.go` *whole* from a checkout that predated PR #663's fix (2026-08-07). The copy clobbered #663's header format back to the unlabeled single-count line (`0 open · blocked 0 · unblocked/unpicked 0`) — the exact defect #663 fixed, reintroduced by a file-level overwrite rather than a merge, with none of #668's own tests (all scoped to the unrelated `reset-attempts` verb it actually added) anywhere near `renderLedger` to catch it. Shipped to `main` and deployed to production before being caught. Restores the `items: %d open … — tasks: %d open · %d blocked` format from #663 verbatim. Adds `TestRenderLedgerHeaderSplitsItemsAndTasks` and `TestRenderLedgerHeaderZeroTasksStillLabelsScope`, which capture `renderLedger`'s actual stdout and pin the labeled-split shape directly — pinning the *output*, not the `Agent` struct's fields (which #668's revert left completely correct; only the print statement consuming them regressed), so a future whole-file copy from a stale source fails these tests by name instead of shipping silent again. Refs: PR #663 (the original fix); PR #668 (the accidental revert); Changelog: Unreleased
+
+- **A lane can no longer disarm another lane's wake loop.** `sirsi thread watch --uninstall` accepted `--agent <any lane>`; on 2026-10-05 four M5 wake loops were removed in one second that way. It now acts only on the session's own resolved identity and refuses anything else, pointing at `sirsi router quarantine` as the owner's durable off switch. The fabric-on rule (never park, bootout or reap a wake lane) is now enforced at the one code path that deletes a wake plist.
+
+- **Process diagrams for the router wing (SL-DIAGRAM-001).** `docs/stacklab/RA_HORUS_FABRIC_DIAGRAM_INDEX.md` inventories 18 processes and reports coverage against all of them: 4 complete (wake loop, known-failure loop, registry pin, release train), 1 drafted for its owner's confirmation (review and bind), 13 open with a next action. Logical, data, state and recovery views are Mermaid sources, each checked to parse.
+
+- **Router readiness audit (G1 to G12) and the docs it was missing.** `docs/evidence/ADR-062-ROUTER-READINESS-AUDIT-20261005.md` grades all twelve conditions with evidence: 7 met (with this change), 3 partial, 2 open. New `docs/router-service/` user guide, developer README and runbook (each runbook step says whether it was rehearsed), and the first `docs/COMMERCIALIZATION_GATE.md` entry, classification `pilot`.
+
+- **Exactly-once claim test over 1,000 contended rounds** with injected latency, plus a negative control on two separate ledgers that must show both claimers "winning" (`TestClaimExactlyOnceAcrossManyRounds`).
+
+- **Per-deploy audit receipt.** The release train now writes a router item to `claude-home` after every service deploy with the revision, image digest, git SHA and rollback target (ADR-062 section 4).
+
+- **The release train assembles `changelog.d/` before it cuts a version.** Fragments had never shipped: `scripts/release-train.sh` went straight to the version split, so entries written the documented way stayed in `changelog.d/` across releases. It now runs `scripts/changelog-assemble.sh` first. `release-prep-changelog.py` also wrote a fixed 0.24.65-era line into the Stack Lab canon changelog on every release; it now lists the release's own entry titles under the newest heading.
+
+- `cmd/sirsi/threadcmd.go` `thread register` derived the router filesystem root directly from `--repo` (`Join(--repo, .agents, idea-router)`), so a surface correctly registering with `--repo` pointed at a portfolio repo that has no router of its own (FinalWishes, sirsi-io, ...) was rejected. Every other `thread` subcommand (heartbeat, close, watch, list) already resolves the router root through `router.FindRepoRoot()` (the canonical git-common-dir/cwd-walk-up/marker resolver); `register` now does the same, while `--repo` continues to be recorded as-is in the registered thread's `Repo` metadata. No new router home, no filesystem fork. Item 20260930-230920.
+
+- Fixed: `SpoolOutboxHealth` used `filepath.Glob`, which silently swallows directory-read errors — a permission-denied or otherwise unreadable per-agent outbox reported as zero held items, indistinguishable from a genuinely quiet lane. Now reads the outbox directory directly via `os.ReadDir` and reports an unreadable outbox as `SpoolAgentOutbox{Unreadable: true, Error: ...}` instead of a confident `0`; only a legitimately absent outbox directory stays silent. Flagged by codex-pantheon's independent review of PR #931 (item 20261001-010622), which reproduced the false-quiet state with a chmod-0000 fixture.
+
+- `router.NodeStatus` (`sirsi router node-status --json`, GET /api/node-status) gains `outbox` (per-agent held/queued-for-retry spool relay items, ADR-069) and `outbox_health_error`. Collection is strictly read-only — it only globs `<spool>/<agent>/outbox/*.json`, never drains or retries anything — and is populated only on a host whose `SIRSI_ROUTER_URL` is a `spool://` relay; a non-spool host reports neither field rather than a fabricated all-clear. New `internal/routerstore.SpoolOutboxHealth`. Foundational piece of the Ra native fabric read-only health panel (item 20260930-230149); the Swift UI surface and the still-unmerged Ra fabric candidate are separate follow-up work, not bundled here.
+
+- Forward correction to the previous append-error propagation fix: PR #929's `appendCedeDecision` still used `defer f.Close()`, discarding the close error — a close-time I/O failure (deferred flush, NFS, disk-full-on-close) could still report a durable cede/reservation success. `appendCedeDecision` now captures the close error via a named return, preferring an earlier write error (more informative) but surfacing a close-only failure instead of swallowing it. The file opener is injected (`cedeDecisionFileOpener`) so a close-time failure — which a real `*os.File` can't be made to produce deterministically — is testable. Regression coverage now also proves the failure contract (committed transition, named id, no false success) across all four mutation paths: cede request, grant/counter/decline, withdraw, and floor-share reservation grant — not just request. Flagged by codex-pantheon's independent review of PR #929 (item 20261001-001503). Refs: PANTHEON_RULES.md A16, A17, A35.
+
+- Document Pantheon's Ma'at failure-memory contract and eight-domain operational preflight integration plan. Preserve SNE exclusive engineering authority, immutable evidence and scoped deterministic guards. Executable integration and three-home publication remain pending. Refs: ADR-004; docs/contracts/PANTHEON_MAAT_FAILURE_MEMORY_CONTRACT.md; PANTHEON_RULES.md A17/A35.
+
+- **liveness-watch re-alarmed on a menubar the owner had just quarantined, and a live agent auto-relaunched it** (claude-pantheon, 2026-08-09). The 2026-08-06 fix (`suppressMenubarDown`) suppressed the finding only when `ai.sirsi.pantheon.plist` was absent from LaunchAgents — but a `launchctl bootout` leaves the exact-named plist in place ("quarantine excluded by construction" was false; it was excluded explicitly, not by plist removal), so the heuristic missed this case: the probe reported WEDGED, routed a decision to `claude-pantheon`, and a live lane "helpfully" relaunched the app the owner had just taken offline (router item `20260809-093638`, prior owner card `20260808-221547`). Fixed: an explicit `~/.sirsi/menubar-quarantine` marker (`sirsi menubar quarantine` / `unquarantine`), mirroring gemma-broker's `QuarantineMarkerPath` pattern, checked before the plist-absence fallback so quarantine state no longer depends on how the owner chose to take the process down. Also documented `sirsi router dismiss` (existing since `#656`, previously undiscoverable) as the owner-attested close path for owner-addressed decision cards. Refs: router item `20260809-093638`; ledger task `menubar-liveness-quarantine-marker`; Changelog: Unreleased
+
+- **fix(router): stray-reap salvage is inscribed only after the save persists** (claude-home, 2026-08-07). Follow-up demanded by codex-home before binding PR #619: prove `ReapStrayThreads` cannot duplicate `inscribeStraySalvage` entries under the new bounded retry, or move the retry scope above inscription. Proof went the other way — the ordering was already wrong on `main`. `reapStrayThreadsOnce` inscribed each stray's salvage **inside the sweep loop**, then called `SaveThreadRegistry` afterwards, and returned `nil, err` on failure. So on any save failure the pass announced "nothing reaped" (sirsi-io #18 invariant) while the Stele already held a `thread_reap` entry for every stray it had walked — **a ledger record of a reap that never happened**, on a ledger whose whole purpose is the owner's "nothing lost" guarantee. The retry added by #619 did not introduce this; it multiplied it, because a lost CAS fence re-runs the pass and re-inscribes every stray that did not persist. Fix: the salvage PAYLOAD is still computed in the loop against pre-mutation state (it records `prior_status`, which the next line overwrites), but the INSCRIPTION is deferred until after `SaveThreadRegistry` returns nil — so the pass is now genuinely idempotent under retry, and a failed sweep writes nothing. This uses the seam Rule A16 already built: `straySalvage` is the pure predicate, so only the side-effecting half moved. `inscribeStraySalvage` had no other caller and is removed. The Stele write is now injectable (`inscribeSalvageFn`, A21 RWMutex accessors) because `stele.Inscribe` is a process-global singleton bound to `$HOME` and cannot otherwise be sandboxed per-test. Two tests, verified in BOTH directions per A35: restoring the in-loop inscription reddens `TestReapStrayThreads_SaveFailInscribesNothing`, which names the phantom entry it found; `TestReapStrayThreads_SuccessStillInscribes` guards the opposite regression (a "fix" that inscribes nothing) and asserts `prior_status` is still the pre-mutation value. The save-fail fixture asserts its own stray is salvageable first, so it cannot pass vacuously on an empty tombstone. golangci-lint 0 issues — note vanilla `go vet` does NOT enable `shadow` and passed a shadowed `err` that golangci-lint caught, the same trap as #621. Refs: PANTHEON_RULES.md A7/A16/A21/A33/A35; ADR-022 (OS-truth reaping); ADR-024; PR #619; owner directive 2026-07-22 (nothing lost); Changelog: Unreleased
+
+## [0.24.92] — 2026-10-05
+
+- **Commercial notarization spaces repeated Apple transport retries.** The
+  release helper now uses a bounded five-submission budget with capped
+  exponential spacing only for Apple’s exact multipart-upload deadline.
+  Rejected artifacts, invalid credentials, signing failures, and every other
+  notarization verdict remain immediately fail-closed.
+
+## [0.24.91] — 2026-10-05
+
+- **Commercial macOS notarization recovers transient Apple upload deadlines.**
+  The DMG and PKG builders retry only the observed `abortedUpload` /
+  `HTTPClientError.deadlineExceeded` multipart-upload failure with a bounded
+  delay. Credential, signing, and Apple notarization-verdict failures remain
+  fail-closed; no partial artifact is published. The helper uses the absolute
+  macOS `xcrun` path in production and is covered by an isolated transient vs.
+  permanent failure regression.
+
+## [0.24.90] — 2026-10-05
+
+- **v0.24.89 — native System One observation now reads the canonical Ma’at
+  result.** Host observation and imported System One evidence both decode the
+  typed verdict the CLI actually emits. A successful retained Casebook screen
+  now refreshes the native surface instead of being presented as a false
+  failure because it was not wrapped in a generic command-result envelope.
+
+- **v0.24.88 — guided service restoration leads with the outcome.** The
+  native Health detail for managed launchd overrides now says what Pantheon
+  can do—restore managed services—before showing the retained technical
+  finding. The exact managed-label list remains visible, and the existing
+  confirmation, bounded Ma'at repair, re-check, and receipt path are unchanged.
+
+- **v0.24.87 — Casebook completes the declared Ma’at liveness recovery.**
+  System One can now invoke its closed, native `liveness-watch` repair from
+  the macOS Casebook as well as the managed launchd repair. The UI accepts
+  only those two explicit Ma’at repair identifiers; evidence and command-like
+  text can never become executable input.
+
+- **v0.24.86 — Fleet reads Ra directly instead of starting a dashboard server.**
+  The native Fleet now requests the canonical one-shot `router fleet --json`
+  producer with a bounded 20-second read. It no longer starts `board-serve`
+  just to render one frame, so a healthy fabric cannot become an empty Fleet
+  screen while dashboard startup waits on unrelated initialization.
+
+- **v0.24.85 — Fleet now renders Ra's full supervision vocabulary.** The native
+  view recognizes WORKING, ASSIGNED, IDLE WITH WORK, BLOCKED, UNROUTABLE, and
+  COMPLETE exactly as Ra produces them. Unknown future values are shown as an
+  explicit review state; Pantheon no longer mislabels a live lane as stopped.
+
+- **v0.24.84 — native Ma'at now owns the entire known-failure intake.** The
+  app has a first-class Proposals workspace: people can inspect every local
+  recurring-failure report, record a typed observation with a confirmation,
+  retry a failed read, and open the Stack Lab review route. The bundled CLI
+  now exposes the same proposal objects as clean JSON for creation and listing.
+  Local evidence still cannot silently edit source or become a fabric-wide
+  matcher until it is reviewed and promoted.
+
+- **v0.24.83 — Ma’at known-failure intake no longer depends on a source checkout.**
+  `sirsi maat known-failures register` now writes a create-only, read-back
+  verified, catalog-hash-bound local proposal under Ma’at’s protected local
+  evidence root. A missing or dirty checkout can no longer turn a new failure
+  report into a dead end. Local proposals stay out of automatic recognition
+  until Stack Lab review promotes them; the former checked-out catalog mutation
+  path is retained only behind explicit `--source-catalog` intent.
+
+- **v0.24.82 — every retained activity has a guided Ma’at resolution.** Failed,
+  ambiguous, and evidence-pending Activity records now offer a native
+  resolution card that explains what happened, records the precise retained
+  outcome in Ma’at’s casebook, and opens the resulting case. It never replays
+  a retained command, so evidence cannot become an accidental action. The
+  detail view now has a visible completion route instead of leaving an operator
+  with raw status text and a dead end.
 
 - **Two things that were hand work are now verbs.** `sirsi router registry sync --install` re-pins a host to origin/main every hour through launchd (no resident process), so registry drift cannot return by omission. `scripts/release-train.sh <version> [--deploy-service]` is the whole release in one command with a hard stop at every step: changelog PR, one CI run, merge, optional router-service deploy before the client ships, tag, publish, upgrade on the M1 and M5, restart every loop. CI checks its syntax, dry-run and refusal of a bad version.
 - **Known-failure loop: register the problem once, record the fix with a guard, recognize it next time (Ma'at + Stack Lab).** Recurring failures were being diagnosed and fixed by hand each time. `internal/maat/knownfail` is a catalog of failures (signature, cause, fix, the release it shipped in, and a regression test that must exist); a resolved entry without a real guard test is rejected by the loader and by a CI test. The wake loop now recognizes a failing consumer's output against the catalog and publishes the answer ("KNOWN failure X: cause; fix; upgrade to N") in the lane state and log instead of leaving a quarantine for a person to diagnose. `sirsi maat known-failures list | match | register | resolve` is the registrar (`resolve` refuses unless the guard names a test that exists). The catalog is a Stack Lab component of the Ra/Horus fabric recipe. Seeded with this week's classes: symlinked codex writable root (new registry guard test), shared fallback agent session, ps-denied anchor, 30-second spool timeouts from full-ledger reads, working-tree registry drift, and claim refusals.
+- **v0.24.81 release candidate — enrolled signing Mac releases without credential export.** The commercial DMG and PKG builders now accept an existing `notarytool` keychain profile on an enrolled signing Mac. Direct release signing still requires the exact Developer ID Application or Installer identity, but Apple credentials never have to be copied into environment variables, logs, source, or a receipt. The existing remote signing-service and CI credential routes remain intact.
 
-- **Horus closes its own "lane needs you" alerts when the lane recovers.** The escalation pass only ever opened them (deduped by title) and nothing closed them, so every recovered lane left a stale card on the owner board (six were dismissed by hand on 2026-10-02 for lanes that were already wakeable). Each pass now closes the Horus-sent alerts for lanes it no longer escalates, including when nothing is escalated; a still-true alert and cards from anyone else are never touched.
+- **v0.24.80 release candidate — Activity resolves instead of dumping terminal remnants.** Activity now classifies every retained outcome as completed, needing review, or requiring evidence verification. Ambiguous and failed records open a native Ma’at guided-review route; the exact command is retained as technical evidence in the detail view rather than being the user-facing workflow. This preserves provenance without making people decode shell output to find a next step.
 
-- **Host-wide cap on concurrent headless consumers.** Wake loops are nearly free when idle (a two-minute probe cost 0.05 CPU-seconds); the CPU on a busy Mac is the consumers they spawn, each a full agent session, and the lane gates were per-lane so six lanes could each run one at once. A lane now holds (`hold: slots`, retried next tick, nothing lost) while the host already runs `SIRSI_MAX_CONSUMERS` consumers; the default is one per five cores (2 on a 10-core Mac, 3 on the M5).
-- **`sirsi router task why <agent> <task-id>`: read-only claim-refusal diagnosis.** Lanes were probing the ledger with claim attempts to learn why a task would not claim, and asking Ra for the fields the task list omits. It reports claimed_by, thread, lease expiry, attempts against the ceiling, failure reason, the blocked_by dependency's own state (task status or free-text reason) and every cause that blocks a claim, never the lease token. New Store method `TaskEligibility` (the service is deployed before the client ships).
-- **`sirsi swap-hygiene`: recurring swap and memory hygiene (owner priority 2026-10-04).** Samples `vm.swapusage`, the `vm_stat` swap-in/out counters and `memory_pressure`, compares with the previous sample, and records a receipt under `~/.sirsi/swap-hygiene/`. A nonzero swap allocation is not treated as paging: the verdict (`clean`, `idle-allocation`, `active-paging`, `pressure`, `unknown`) comes from swap movement between samples, a missing reading is reported `unknown` rather than defaulted, and a counter reset is not movement. It publishes both qualification flags Apollo needs kept visible (correctness-only: known swap and at least 50% free memory; release timing: additionally clean). A restart is only PROPOSED, for the owner and workload owners, when paging coincides with under 20% free memory; swap files are never touched and nothing is killed or restarted. `--install` runs it every 30 minutes through launchd with no resident process.
-- **The agent registry can be pinned to origin/main (A37, ADR-072 P5).** `agents.json` was read from the working tree of a shared checkout, so another session's branch or uncommitted edit silently became the fabric's identity (codex-apollo flipped to `wake=none` and read WATCH_ONLY; "identity is not fully declared"; every fix a hand copy). `sirsi router registry sync` stores a snapshot of origin/main as this host's registry (validated before it replaces anything, written atomically, scoped to its own router root, ignored once older than 72 hours); while pinned, a working-tree edit cannot change who the lanes are and registry writes are refused with the PR path. `registry status` shows the source and `registry unpin` goes back to the working tree. Opt-in per host.
-- **`router ledger` and `router status` no longer read the whole item history.** Every call read all 13,000+ rows (6-20 seconds on the service), so a few concurrent callers produced the "no response within 30s" spool timeouts and HTTP 502s that lanes reported (ListAll, GetState, ListTasks on the M5). A new `ListActive` store method returns the non-terminal items plus the closed items they are blocked on (dependency truth) and `CountClosed` supplies the closed total; the ledger and status use them. `router dump`, the work board and insight still read everything. The service is deployed before the client ships.
+- **v0.24.79 release candidate — Command Center treats optional access truthfully.** Full Disk Access remains available for broader disk visibility, but its absence no longer promotes an otherwise healthy Mac into Pantheon’s global “Needs attention” state or routes the operator into a false repair flow. Actual diagnostics retain their bounded Ma’at repair, re-verification, and receipt path.
 
-- **Router alias `mercury` → `hermes`.** Owner rename 2026-10-02 (Hermes is now Mercury): `mercury` resolves to the existing `hermes` lane (same inbox, same worker) so mail addressed either way arrives; the canonical lane id stays `hermes` until the coordinated migration. With #966, `sirsi-mercury` inherits the Hermes release policy before the GitHub repo is renamed.
+- **Wake loops work on every host without per-host registry edits.** The shared registry holds absolute paths (`/Users/thekryptodragon/...`), so the same lane read WATCH_ONLY ("consumer cwd is not usable") on the other Mac. The consumer resolver now rebases another machine's home prefix onto the local home — cwd, argv and env — only when that home does not exist locally. `claude-deck`, `claude-pantheon` and `claude-nexus` now have reactive wake loops on the M1; `mercury-m5` and `claude-apollo-m5-rail` on the M5.
 
-- **SSA's headless consumer works again.** Its sandbox listed `~/.sirsi/relay` (a symlink to `/var/sirsipantheon/relay`) as a writable root and the codex executor now refuses a root containing a symlink component, so every command failed, every dispatch made no progress, and the lane was quarantined three times (9/20, 9/22, 10/1). Only the real path is listed now.
-
-- **A headless worker stands down while an attended session owns the lane.** The wake loop dispatched a `claude --print` consumer on a lane whose owner was working it interactively, so two writers acted as one id (the worker acknowledged and worked PR #893 on `claude-finalwishes-m5` while the owner's session never saw it). Dispatch now holds (`hold: attended` in the lane state) while a live, armed attended session is on the lane, and resumes as soon as it is gone.
-
-- **A dispatched consumer authenticates as its lane, not the hostname.** With no `SIRSI_AGENT_ID` and no session marker the router client fell back to the hostname, so every such consumer on a host shared one identity ("Mac"); the wake loop already names the lane in `SIRSI_ROUTER_AGENT`. That variable now fills the gap before the hostname fallback; an explicit `SIRSI_AGENT_ID` still wins.
-
-- **Two actors with the same fallback agent id no longer swap sessions.** Callers that cannot resolve their agent id (sandboxed claude-pantheon and codex-pantheon sessions) both fall back to the hostname, and one cache file per agent made them overwrite each other's session, so a lease claimed under one session was completed under another and refused. A caller with a thread now gets its own per-thread session file; the per-agent file stays the latest-session cache for thread-less callers.
-- **The bind refuses to approve a PR the router has rejected.** `sirsi-bind.sh` consulted GitHub reviews only, so a router-only rejection did not stop PR #927 from merging (A34 gap, 2026-10-01). It now reads the router's latest verdict item naming the PR and refuses APPROVE while that is a rejection; a newer ACCEPT/PASS item or the explicit owner override clears it, and an unreadable router fails closed. The bind tests (`scripts/bind/*.test.sh`, including the new router-rejection test with both directions) now run in the Lint job.
-- **The bind refuses to approve a PR the router has rejected.** `sirsi-bind.sh` consulted GitHub reviews only, so a router-only rejection did not stop PR #927 from merging (A34 gap, 2026-10-01). It now reads the router's latest verdict item naming the PR and refuses APPROVE while that is a rejection; a newer ACCEPT/PASS item or the explicit owner override clears it, and an unreadable router fails closed. Two pure-jq bind tests, including the new router-rejection test (both directions), now run in the Lint job.
-- **ADR-070 revised for re-review.** Applies codex-pantheon's five required amendments: the boundary test runs first and independent of findings; one exhaustive verdict precedence (R0-R8) rejects invalid or non-finite input; a screen pass never supplies the binding approval; calibration samples auto-passes and fails closed when unqualified, with provisional thresholds and no unmeasured "90%" claim; provenance adds an evidence-set digest and calibration identity. No code changes; the current deterministic gate stays until the corrected schema is independently accepted.
-- **`sirsi router doctor` reports ADR-072 name conformance.** Lists the registered ids that are not in `<agent>-<project>-<machine>[-<task>]` form (23 of 33 today) with the ADR's migration-map suggestion where one exists. Informational and report-only: the rename verb is not built, so it adds no issue count and renames nothing.
-- **`sirsi maat who-is-on` no longer says "free" over live work, and shells are not load.** The reservation ledger only knows who asked; `who-is-on` now also lists the contaminating processes running on this host right now. The process probe also stops classifying a `zsh -c "<script>"` wrapper as bench/build load because its script text mentions "go build" or "tbraw" (it flagged every agent's own shell); the real child process is still classified. Closes the (a) and (b) halves of the codex-apollo admission repro.
-
-- **Dashboard copy:** `viewApollo()`'s six user-visible strings (session
-  awaiting/active/error copy) now say "Apollo" instead of the retired "SNE"
-  name, matching the rename already carried by the deck, data room, and
-  Stack Lab. Pure copy change — no behaviour change, no ADR required. The
-  internal code comment at the top of `viewApollo()` is unchanged.
 ## [0.24.69] — 2026-10-05
 
 - **Dashboard: a Router view that shows everything built, and fixes to Fleet.** `GET /api/router` and a new Router tab show the installed version, lane verdicts (the same as `sirsi router ping --all`), the open queue, the consumer cap in use, whether the registry is pinned, the known-failure catalog with each fix's release and guard, the swap-hygiene receipt, and what each release added (read from CHANGELOG). A producer error is a 5xx, never an empty panel. Fleet now shows a loading line instead of a blank screen for the ~3 seconds the board takes, and no longer lists retired aliases (such as `claude-finalwishes-helper`) as lanes. The dashboard is now a component of the Ra/Horus fabric Stack Lab recipe, component catalog and traceability matrix, together with the known-failure catalog, registry pin, swap hygiene and claim-eligibility components.
@@ -104,29 +277,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
   name, matching the rename already carried by the deck, data room, and
   Stack Lab. Pure copy change — no behaviour change, no ADR required. The
   internal code comment at the top of `viewApollo()` is unchanged.
-## [Unreleased] — routerstore: ListenNotify no longer leaks a blocking reader past ctx cancellation
-
-- **Router dispatch:** `SQLiteStore.ListenNotify`'s FIFO reader opened the
-  notify pipe with a plain blocking `os.OpenFile(O_RDWR)` and relied on a
-  second goroutine's `fd.Close()` to interrupt an in-flight `Read` when the
-  context was cancelled. On darwin that close does not reliably unblock the
-  reader, so the goroutine (and its fd) leaked past `ctx.Done()` — confirmed
-  live under `-race -short`: a goroutine dump showed a reader still blocked
-  in `syscall.Read` at this call site 8 minutes after its owning test had
-  finished, and with enough tests accumulating these it starved every other
-  `*sql.DB` in the process. Switched to an explicit non-blocking
-  (`O_NONBLOCK`) open with a 200ms `SetReadDeadline` poll that rechecks
-  `ctx.Err()` each cycle, so the goroutine exits promptly on cancellation
-  instead of waiting on a close that may never land.
-
-## [Unreleased] — routerstore: Task now surfaces result_ref
-
-- **Router tasks:** `CompleteTaskLease` persists `result_ref` into the
-  `tasks` table (used by the done-without-proof report and reconcile
-  checks), but `Task` never had a corresponding field — `GetTask`/
-  `ListTasks` could never read completion evidence back. Added
-  `ResultRef` to `Task`, `taskSelect`, and `scanTask`.
-
 ## [0.24.65] — 2026-10-01
 
 - **Router leases:** a worker keeps its own lease across a session remint
@@ -162,145 +312,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
   coverage (PR #933, ADR-069).
 - **Release identity:** align the source `VERSION`, embedded binary version,
   and release tag after the stale embedded version in v0.24.56.
-
-## [Unreleased] — staff the unstaffed lanes; workers acknowledge and are linked to their lane
-
-- **Thread registration works where `ps` is denied.** A sandboxed worker (codex: `fork/exec /bin/ps` not permitted) could not resolve its durable anchor, so native registration failed and its claims and completions ran under unbound sessions. The ancestry lookup now falls back to a kernel `sysctl` read (macOS) when `ps` fails; `ps` stays the first choice because it reports the full executable name.
-- **The local pre-push test timeout matches CI.** `go test` for changed packages timed out at 300s while `routerstore` now takes 572s under `-race`, so the gate could fail a push CI itself would pass. Raised to 600s for both tiers (A28 parity).
-
-- **The pre-push gate holds pushes and tags while a Ma'at measurement window is open.** A push starts CI on the local runners and a tag starts the release build, so either contaminated a run while `rails.lock` existed (PR #928 CI began 6 seconds after hermes opened the lock). The hook now refuses until the lock clears; `MAAT_WINDOW_OVERRIDE=1` is the deliberate bypass. Tested both directions in `scripts/pre-push-window.test.sh`, wired into the Lint job.
-- **`sirsi gemma serve --status` finds the launchd-owned SNE.** It read only the old broker's port file, so a healthy SNE on 127.0.0.1:8477 reported "unavailable" (and `ctr`/`insight` skipped the warm local model). A missing or stale port file now falls back to the default port.
-
-- **CI's PostgreSQL leg now fails closed instead of silently skipping.**
-  `scripts/ci-postgres.sh` exited 0 and printed a one-line `SKIP:` when
-  `initdb`/`pg_ctl`/`psql` were missing — on the hosted `macos-14` runner,
-  which does not link any Postgres version onto `PATH` by default, this
-  meant the required "Router store on PostgreSQL (ADR-062)" CI step had been
-  reporting green without ever running the PostgreSQL leg (A35). The step
-  now provisions `postgresql@16` onto `PATH` explicitly and the script fails
-  loudly (`::error::`, exit 1) if the prerequisite is still missing, proven
-  by a checked-in negative-control test (`scripts/ci-postgres-fail-closed.test.sh`,
-  wired into the Lint job) that fails against the old silent-skip script and
-  passes against the new one. Also fixed a real version mismatch found while
-  verifying this: `check-pg-schema.sh`'s `router_migrator`/`router_service`
-  ADMIN OPTION negative control depends on PostgreSQL 16's `ALTER ROLE`
-  enforcement — PostgreSQL 14 does not enforce it, so the same negative
-  control silently passed-when-it-shouldn't on 14 (verified locally: fails
-  on `postgresql@14`, passes end-to-end on `postgresql@16`). Corrected the
-  stale PG14 references in `scripts/ci-postgres.sh` and
-  `internal/routerstore/pg/README.md` to PG16, and the README's stale
-  table-count/schema-version figures to the current live values.
-- **A worker that loses its thread between claim and complete keeps its lease.** The session cache is keyed by (agent, runtime, thread); a sandboxed worker (codex: `fork/exec /bin/ps` denied) resolved no thread on its second invocation, minted a fresh threadless session, and was refused `ErrNotOwner` on its own lease. A caller that resolves no thread now reuses the cached session; a caller that resolves a different thread still mints its own. Complements #947, which only matched sessions sharing a non-empty thread.
-- **Lane `claude-apollo-m5-rail` (M5-Apollo-Rail).** The M5 inference rail was reachable only through the aliases `claude-inference-cylton` / `cylton-apollo`, which pointed at the M1 `claude-inference` lane. It now has its own registry entry; both aliases and `m5-apollo-rail` resolve to it.
-
-- **Dispatch gate reads idle CPU, not load average.** Load average counts Spotlight and Photos analysis, which only take cores nothing else wants; the M1 sat at load 13-17 on 10 cores with 36% idle and deferred every lane. The gate now defers only when idle CPU falls below 10% (falls back to half the load average if `top` is unreadable).
-
-- **Lanes staffed:** `hermes`, `claude-io` (now on the M1, directory `sirsi-io-connect`),
-  `claude-home` and `ra` (M1; Ra's headless worker uses its own worktree) get a wake
-  loop with a working Claude consumer; `sirsi-hardware-admin` and `codex-finalwishes-web`
-  get a Codex consumer (M5); SSA's consumer is restored from origin and its sandbox
-  reaches the real relay directory (`/var/sirsipantheon/relay`).
-- **Workers acknowledge:** the standard worker prompt (28 lanes) now tells the worker
-  to `sirsi router acknowledge <id>` as soon as it has read an item, and to claim tasks
-  with `--worker <lane> --thread <thread>` so the lease links the task to its worker.
-- **Linked to the thread:** a `{{thread}}` placeholder in the consumer prompt/argv is
-  replaced with the wake loop's registered thread id (`bindConsumerThread`), in addition
-  to `SIRSI_THREAD_ID` in the environment. A sandboxed consumer can have its environment
-  stripped (SSA reported `thread=unset`); the prompt now carries the id in words.
-- **`router ping` judges the best worker:** a lane with a working loop on one host and a
-  newer-heartbeating watch-only loop on another is WAKEABLE, not WATCH_ONLY.
-- Verified live 2026-10-01 with a link-check item per lane: hermes, sirsi-hardware-admin
-  and codex-finalwishes-web acknowledged, closed, and reported a thread id matching their
-  loop's registered thread.
-
-## [Unreleased] — wake loops start a worker for ledger tasks, not only inbox items
-
-- A wake loop decided whether to start a worker from the inbox alone, so work the
-  router placed on a lane's task ledger started nobody (2026-10-01: 22 requests
-  moved to tasks; the quiet lanes behind them stayed pending while busy lanes
-  progressed only because other mail kept their consumer running). The loop now
-  counts **dispatchable ledger tasks** with inbox items. Dispatchable = claimable
-  and the lane's own to do (responsible party `self`, empty or the lane itself):
-  owner-assigned, other-party, blocked and leased tasks do NOT start a worker.
-- New `RunnableState.DispatchableLedgerTasks` (shared `RunnableFor` predicate, no
-  retyped SQL). The progress/stall fingerprint includes the task counts, so a
-  consumer that claims or finishes tasks is not killed as stalled.
-- Rollout: deploy the router service first (the count is computed server-side);
-  an older service returns 0, which is the previous behavior, so nothing can
-  regress before then.
-
-## [Unreleased] — `sirsi router ping`: can this lane actually work right now?
-
-- Wake loops now publish an honest **lane state** on every heartbeat (inside the
-  existing thread payload — no schema change): whether a working consumer is
-  declared, the last consumer outcome (`ok`, `no_progress`, `auth_required`,
-  `relay_unreach`, `start_failed`, `exited_error`), any hold on dispatch (Ma'at
-  measurement window, host load, no-progress back-off with its expiry, quarantine,
-  spawn ceiling) and when the lane last made progress.
-- New `sirsi router ping <lane>` / `--all` turns that into one verdict: `LIVE`,
-  `WAKEABLE`, `HELD`, `AUTH_REQUIRED`, `WATCH_ONLY`, `UNSTAFFED` or `UNREACHABLE`.
-  It reads state only (no model call, no spawn). A retired name resolves to its
-  successor. `send` prints the recipient's verdict on **stderr** after sending
-  (stdout, which callers parse for the item id, is unchanged).
-- Why: `node-status` reported SSA and claude-io as "armed (heartbeat-fresh)" while
-  both were watch-only and could not work anything, and items to lanes with no
-  worker waited silently (2026-10-01). A launch job installed plus a fresh
-  heartbeat is not readiness. A worker still running an older binary reports
-  WAKEABLE "declared, not proven" until it publishes lane state.
-
-## [Unreleased] — `sirsi router reopen`: the undo for close
-
-- New `sirsi router reopen <id> --reason <text|@file>` returns a closed item to
-  open, keeping its close result in the body with who, when and why. Same
-  authority as close (the recipient, or an actor with `close:any`); an
-  owner-addressed item can only be reopened by the owner. A reason is required.
-  On 2026-10-01 a live request was closed by a bad id and there was no way back;
-  this is step 1 of the local router reconciler (ledger ra/router-local-reconciler),
-  so every automatic close can be reversed. Store `ReopenItem` is served by the
-  existing reflective server (no schema change).
-
-## [Unreleased] — alias fixes: claude-finalwishes-helper → claude-finalwishes-m1, ssa → sirsi-software-admin
-
-- `claude-finalwishes-helper` is the M1 FinalWishes Claude lane, not the M5 one
-  (owner correction 2026-10-01); the alias now points at `claude-finalwishes-m1`.
-- `ssa` resolves to `sirsi-software-admin`: `codex-pantheon`'s source reviews fell
-  through to the owner because the short name was undeclared.
-
-## [Unreleased] — wake loops hold dispatch during a Ma'at measurement window
-
-- The wake loop no longer starts a consumer while `~/libsirsimpi/rails.lock`
-  (or `$MAAT_RAILS_LOCK`) exists — the same marker the owner's
-  maat-window-gate hook honors. On 2026-09-30 a quiet cablepull reservation on
-  the M1 was invalidated by a Claude shell; unattended consumers must wait for
-  the window instead. A session already running is not interrupted.
-## [Unreleased] — Ma'at cede/reservation decision ledger reports append failures instead of swallowing them
-
-- `cmd/sirsi/maatcede.go` `logCedeDecision` and `cmd/sirsi/maatschedule.go`
-  `logFloorGrant` used to warn on stderr and return success when the
-  decision-ledger append (mkdir/open/write) failed, so a cede
-  request/grant/counter/decline/withdraw or a floor-share reservation grant
-  could report a durable success with no drillable record. Both now return
-  the append error; every call site returns it from `RunE` naming the
-  scheduler transition that already committed, so a caller sees a clear
-  failure and knows not to retry (retrying would double-apply an
-  already-applied cede/reservation). Rejected by SSA review 20260927-143128;
-  confirmed still present on main and fixed here.
-
-## [Unreleased] — Codex consumers can reach the router through the spool relay again
-
-- Every Codex lane's consumer now passes `--add-dir /var/sirsipantheon/relay`.
-  `~/.sirsi/relay` is a symlink there (since 2026-09-12), and Codex's
-  workspace-write sandbox refused writes through it, so every Codex consumer on
-  the M5 failed with `spool: 64 requests in flight … relay stalled?` and did no
-  work. Verified live: the same `codex exec` reads its inbox with the path added.
-
-## [Unreleased] — lane registry: wake Apollo + FinalWishes M1, fold idle codex lanes (owner 2026-09-30)
-
-- `codex-apollo`, `claude-inference` (the M1 Claude Apollo lane; paths now M1)
-  and `claude-finalwishes-m1` wake on mail (`launchagent`).
-- `codex-io` → `claude-io`, `codex-nexus` → `claude-nexus`, `codex-home` →
-  `claude-home` become aliases; their mail drains to the Claude lane.
-- `hermes-m5` is recorded as subordinate to `hermes` (the M1 Claude Hermes lane).
 
 ## [0.24.55] — 2026-09-30 — Router aliases and reassign
 
@@ -420,27 +431,6 @@ attempt provably never reached the Cloud Run service, while post-send failures
 remain outcome-unknown and are never auto-retried. The transport documents its
 no-pool guarantee and defensive idle bounds.
 
-## [Unreleased] — router aliases + reassign: retired names deliver to their successor (ADR-072 C5)
-**Feature.** `agents.json` gains an `"aliases"` map (retired name → declared
-successor). `Send` resolves an alias to its successor, so senders still using
-an old name stop refilling mailboxes nobody watches (on 2026-09-30
-codex-finalwishes sent 22 items to the retired `claude-finalwishes-helper` in
-two hours). New `sirsi router reassign <id> --to <agent>` hands an open,
-unclaimed item to another declared agent keeping its id, sender and body (only
-the recipient may hand off; alias mail moves only to its declared successor),
-and `sirsi router drain-aliases [--dry-run]` empties each alias into its
-successor. Store: `ReassignItem`, guarded on recipient/open/unleased, served by
-the existing reflective server (no schema change). Registry: retires
-`claude-inference-cylton`, `cylton-apollo`, `codex-sne-runtime`, `cylton-hermes`
-and maps nine retired names per the owner's 2026-09-30 decisions. The Router
-Addressing Law in the router README now uses ADR-072 names and no longer tells
-senders to use `claude-finalwishes`. Live dry run from the new registry: 120
-items across 6 aliases. Tests both directions; negative control: Send without
-alias resolution refuses the alias exactly as live senders are refused today.
-
-## [Unreleased]
-- **feat(maat): attribute GitHub submission admission to the registered agent session** (2026-10-01, PR #927). Adds `sirsi maat submit` Phase 1 admission for tag, release, release-edit, and merge submissions. Requester identity is resolved from the registered session marker, policy decisions are written to the existing Ma'at ledger, and unregistered sessions fail closed. Automatic watcher/release mutation remains explicitly out of scope. Refs: PR #927; ADR-062; PANTHEON_RULES.md A1/A7/A16/A32/A35
-
 ## [0.24.45] — 2026-09-29 — Declared-agent resolution hardening
 **Source release.** Acting-agent resolution now rejects inferred session markers
 and sole-live-thread candidates unless the candidate is declared in the agent
@@ -502,42 +492,6 @@ declared GitHub pipeline evidence and distinguishes measured, partial, skipped,
 and unavailable coverage. Command-result JSON now reports `duration_ms` in
 milliseconds as documented. Commercial signing, notarization, and release
 publication remain separate credentialed operations.
-
----
-
-## [Unreleased] — acting-agent resolution never returns an undeclared agent
-**Fix.** `resolveCurrentAgent` (close/respond/acknowledge/heartbeat/thread watch)
-now accepts its two INFERRED sources — the session→agent marker and the
-sole-live-thread fallback — only when the agent is declared in agents.json now,
-via the same `dispatch.ValidateAgent` check dispatch enforces. A marker outlives
-the declaration it was written under: a verification agent stubbed in,
-registered from a live session and reverted left the Ra session resolving as
-`verify-m1-1790459290`, and every `router close` was refused. An undeclared
-inference is skipped and named in the error; `--agent` and `$SIRSI_AGENT_ID`
-stay explicit. Test `TestResolveCurrentAgentIgnoresUndeclaredMarker` (both
-directions; negative control run: the pre-fix body reproduces the live bug).
-
-## [Unreleased] — read-only `router_reader` role for board consumers (rs-44)
-**Security.** New NOLOGIN `router_reader` group role (roles.sql) with SELECT on
-an explicit allowlist of the 13 board tables (schema.sql), re-asserted fail-closed
-on every schema apply (`REVOKE ALL` then grant the list). `sessions` (plaintext
-secrets), `host_tokens` and `lease_sessions` are never granted; no default
-privileges, so a future table stays unreadable until listed. Verified against a
-scratch Postgres 16: 13/13 allow, 7/7 deny (secret reads + DML + DDL), a leaked
-grant is detected, and re-apply revokes it. Residual: `lease_token` fencing
-columns on items/tasks/wake_events are readable; unusable without an
-authenticated session, which this role cannot read or mint.
-
-## [Unreleased] — relay re-dials half-open pooled connections (rs-30)
-**Fix.** The router relay's forward path now re-dials ONCE on a fresh
-connection when the first attempt provably never reached the Cloud Run service
-(a dial/DNS-phase failure — the shape a dropped half-open pooled connection
-surfaces), instead of parking a network-less codex sandbox's request in the
-outbox for a full retry cycle. The re-dial is gated on `neverReachedService`,
-so a post-send failure stays OUTCOME UNKNOWN and is never auto-retried (no
-double-commit). The forward transport also documents its no-pool guarantee
-(`DisableKeepAlives`) plus defensive idle bounds. Refs: rs-30; ADR-062 relay
-trust boundary.
 
 ---
 
@@ -643,8 +597,6 @@ working directory, and Stack Lab workstream resolution deterministic.
 renamed `sirsi-hermes` transport repository and the new `sirsi-photon`
 hardware repository, while preserving the stable `io-connect` wing id. The
 local router identity hook follows the same repository split.
-
-## [Unreleased]
 
 ## [0.24.18] — 2026-09-28 — Governed mail hygiene operations
 **Commercial feature release.** Adds a dry-run-by-default mail hygiene surface
@@ -2186,3 +2138,606 @@ v0.8.0-beta is the first credible public release of Pantheon. All metrics are ve
 - 60+ scan rule categories across 7 domains identified
 - Agent-controller architecture designed
 - Network topology awareness (VLAN, subnet, relay) specified
+
+## [Uncut entries, 2026-08 to 2026-10]
+
+These entries were recorded under `## [Unreleased]` headings that no release cut: the release script cut only the first such block, so the rest stayed behind while their code shipped in later releases. They are moved here verbatim and unedited, one subsection per original block, so the record is complete and `[Unreleased]` can mean what it says. Some may also appear in a release above. Fixed 2026-10-06 (`scripts/release-prep-changelog.py` now cuts every `[Unreleased]` block).
+
+### Unreleased — Apollo view: retire the last user-facing "SNE" copy
+
+- **Router: add the task retry-ceiling operator verb the breaker verbs already established the shape for** (claude-home, 2026-08-07). A task at `attempts>=MaxRetriesPerItem` was recoverable only by a hand `UPDATE` against `router.db` — no CLI verb existed, the same gap `breaker-no-operator-path` found and fixed for tripped circuit breakers. Adds `sirsi router task reset-attempts <agent> <task-id>`, mirroring `sirsi router breaker-reset`: zeroes `attempts`, clears stale lease remnants, and — only when the row is `blocked` with no `blocked_by` set — restores it to `pending`, because that block was exhaustion's own side effect (`ClaimTask`/`ReclaimExpiredTaskLeases` flip status to `blocked` purely on hitting the ceiling). A row genuinely blocked on a dependency (`blocked_by` set) is left alone; this verb only undoes what exhaustion did. Three tests drive a real store: ceiling reached via claim/release cycles → unclaimable → reset → claimable again with `attempt=1`; unknown task returns `ErrNotFound`; a dependency-blocked row survives the reset with status untouched (negative control for the status-restore side effect). Refs: PANTHEON_RULES.md A7; ledger task `task-retry-ceiling-reset`.
+
+#### Added
+- Development candidate: bounded mobile desktop recovery transplanted onto current release source, retaining operator issuer/private ingress and real phone qualification gates (ADR-075).
+
+- feat(routerstore): migration gate — a build with uncommitted changes may not
+  apply a schema migration. Source that exists only in a working tree cannot be
+  rebuilt by any peer, so the migration it performs is unrecoverable by
+  construction. Every migration now records its provenance in the existing
+  `state` table, and the "schema newer than this binary" refusal names the build
+  that did it instead of posing a forensic puzzle. Override:
+  `SIRSI_ALLOW_DIRTY_MIGRATION=1`, loud and explicit.
+
+- feat(menubar): decode node-status's `outbox[]` (ADR-069, PR #931) into
+  `RBOutbox` and surface an unreadable relay outbox as a blocker
+  (`OutboxBlockerCard`) — a decoder that modeled the field but never reached a
+  view would reintroduce, in Swift, the exact false-quiet-zero bug PR #931
+  fixed on the Go side.
+- test(menubar): `OutboxReachabilityTests` — the new `macapp` test target
+  proving the decode actually reaches `routerHasBlockers`, not just that it
+  parses.
+
+- feat(board): `sirsi board-serve` — the Go router board, replacing the
+  out-of-repo Python server.py. Same UI, same URL, verified field-identical
+  side by side before cutover.
+- fix(menubar): reads `board-serve --once --shape fleet` — a PROJECTION of the
+  board's own payload, not a parallel aggregation. It previously called
+  `router fleet --json`, which counts blocked separately while the board treats
+  it as a subset of active, so the two disagreed by construction.
+- chore: retire the 9119 Horus dashboard (duplicated the menubar) and the
+  token-burning auth probe in sirsi-router-board.sh, which launched a real
+  Claude session per agent per refresh and caused the "gtimeout wants to access
+  data from other apps" prompt.
+
+- Add `sirsi maat submit --kind tag|release|release-edit|merge --repo OWNER/REPO --ref REF`: Phase 1 GitHub-submission attribution. Requester derives from the caller's registered session marker, validated against the declared agent registry (dispatch.ValidateAgent); per-repo policy restricts sirsi-mercury/sirsi-photon to mercury; every grant/refuse is appended to the existing Ma'at decision ledger. No GitHub watcher or auto-mutation — attribution only. Refs: PANTHEON_RULES.md; docs/user-guides/maat.md.
+
+- **Router: `setThreadConsumerCapable` no longer silently drops its write — two independent gaps closed, not one** (claude-home, 2026-08-08). `could not record consumer capability: mutation lost lifecycle fence` still fired 109x/83x across two wake logs after PR #619 landed — #619's `retryOnLostFence` only protects the two reap passes; this call site had zero retry at all, so any concurrent writer racing on the same registry made the write vanish under measured fleet-wide contention (~150 thread records). Extracted `retryOnLostFenceErr`, a plain-`error` counterpart to `retryOnLostFence` (same budget, same backoff — `retryOnLostFence` can't be reused directly, its signature is pinned to `[]ReapedThread`), and wired `setThreadConsumerCapable` through it. **That alone was not sufficient**: a real-store reproduction (register a thread, immediately call `setThreadConsumerCapable`) still failed all 3 retry attempts identically. Root cause: this is the only lifecycle mutator in the package that never advances `LastSeenAt`, so its CAS write depends entirely on the fence's fallback branch — `excluded.payload > threads.payload`, a raw byte comparison of JSON encodings that is not equivalent to "this is a newer write" and can fail *permanently*, not transiently, when the encoding doesn't happen to sort greater. Added the same `LastSeenAt = time.Now().UTC()` bump every other mutator already performs. Negative control run: reverting only the `LastSeenAt` line (retry still wired) reproduces the identical 3/3 failure, proving the retry alone was not the fix. Six tests: three mock-based (`retryOnLostFenceErr` redoes/does-not-retry-other-errors/surfaces-persistent-contention, mirroring the three existing `retryOnLostFence` tests exactly) plus one real-store end-to-end sanity check (`TestSetThreadConsumerCapablePersistsAgainstRealStore`) that exercises the actual production call site, since a mocked helper test alone cannot prove the call site uses it. `go vet ./...` clean repo-wide, full `internal/router` package green. Refs: PR #619 (the reap-pass half of this class); ledger tasks `lifecycle-fence-lost`, `fence-retry-budget-underprovisioned`; Changelog: Unreleased
+
+- fix(board,menubar): rename the "touched" column to "last ledger update". It
+  measures task-record mutation, not liveness — a lane doing real work without
+  recording it reads as stale, correctly — but the old label invited reading a
+  bookkeeping figure as a heartbeat. The owner read claude-deck's accurate
+  "touched 1d1h" as a bug because of it.
+
+- fix(supervision): `supervision.Escalates()` had no caller — lanes no wake could
+  reach were classified, painted red, and never reported to anyone. Adds
+  `supervision.Escalations` + `router.RouteLaneEscalations`, wired into the
+  Horus supervisor sweep, deduped by stable title against the owner's open inbox.
+- fix(dashboard): `fleet.go` hardcoded `Routable: true`, making `UNROUTABLE`
+  unreachable. Routability is now read from the registry: 10 lanes that were
+  rendering as merely idle are unroutable, 6 of them holding open work.
+- fix(routerstore): recognize schema v8–v14, already deployed to the live store
+  by an out-of-band build. All additive; ports the definitions so binaries stop
+  refusing a store they can safely read.
+
+- **Hooks: the SessionStart inbox counter now warns loudly on a schema drift instead of silently reporting a healthy empty inbox** (claude-home, 2026-08-08). `router_inbox_check.py`'s `pull_model_open_items` reads the router store's `items` table directly via raw sqlite (`id`/`to_agent`/`status`), making it a second reader of a schema at `user_version` 16 that is actively migrating — flagged as a conditional-PASS note on PR #585. Its own test built a synthetic 3-column table matching today's shape, so a real column rename would pass that test forever while the hook silently returned `[]` in production: the cry-wolf defect inverted, a false all-clear instead of a false alarm, and worse for it — nothing ever told the operator the counter went blind. Adds a `pragma table_info(items)` shape check before the query; a missing required column now prints a stderr warning naming the column and still returns `[]` (never crashes the hook), rather than returning `[]` with no signal at all. New test drives a real sqlite file with `to_agent` renamed to `recipient` and asserts the warning fires by name — deleting the guard still leaves the return-value assertion passing, so only the stderr check catches the regression. Two pre-existing `TestAdoptOrRegister_AnchorPidIdentity` failures are unrelated (confirmed via `git stash` before/after) and untouched by this change. Refs: PR #585 conditional PASS; ledger task `hook-store-schema-second-reader`; Changelog: Unreleased
+
+- fix(router): gemma was unreachable from the router in two independent ways —
+  the worker polled identity `gemma`, which is absent from agents.json, while the
+  registered identity `gemma-pantheon` carried `wake.mechanism: cli-spawn`, which
+  the ADR-054 validator refuses. Both doors were shut, so the local model could
+  never be given work and every task fell through to a paid API agent.
+
+- fix(router): the wake loop now logs a bounded tail of a failed consumer's
+  output. `dispatchConsumer` left `cmd.Stdout`/`cmd.Stderr` nil, so `exec.Cmd`
+  wired both to `/dev/null` and destroyed the cause of every dispatch failure at
+  the source — 3843 of 4082 dispatches across 8 lanes exited 1 carrying nothing
+  but `exit status 1`, and `claude-finalwishes` spent a day respawning every 60s
+  behind a 1.4 MB log of it. Capture is an `*os.File` pipe, not an `io.Writer`:
+  exec hands a file through to the child directly and starts no copier, so a
+  setsid-detached consumer's lingering grandchildren cannot hold `cmd.Wait` open
+  and stall re-dispatch. The last 4 KB is kept, and silence is reported as
+  `(no output)` rather than an empty field. This makes the failure legible; it
+  does not fix it.
+
+- fix(routerstore): read-compatibility with a store newer than the binary. The
+  write guard stays — a binary must never migrate a schema it does not define —
+  but refusing to READ turned a coordination problem into a fleet-wide blackout.
+  `OpenReadOnly` opens driver-enforced read-only, reads only the tables this
+  binary defines, and carries a `SchemaGap` whose banner every surface renders.
+- fix(dashboard): 8734 is now served by the SAME process and handler as 9119.
+  It was a separate Python board computing its own lane states, and reported
+  nine lanes WORKING while every one had zero live processes. Two producers
+  cannot agree by discipline, only by being one producer.
+
+- fix(board): emit `ledger` alongside `board` in the router-board payload.
+  index.html renders `d.ledger`; the payload carried only `d.board`, so every
+  tile bound to it read undefined — the page showed nonsense while /api/ledger
+  and the CLI returned correct numbers. Adds a payload contract test asserting
+  every field the page reads is present, since a dropped key is invisible in Go.
+
+#### Fixed
+
+- Made CTR thread registration, heartbeat/current-item, close, suspend, and resume SQLite-authoritative during STORE-ONLY cutover, so sandboxed agent sessions no longer require writes to the repository-owned `threads.json` mirror.
+
+- **Router: restore the ledger header items/tasks split that PR #668 silently reverted** (claude-home, 2026-08-08). #668's own branch was built by copying `cmd/sirsi/routerledgercmd.go` *whole* from a checkout that predated PR #663's fix (2026-08-07). The copy clobbered #663's header format back to the unlabeled single-count line (`0 open · blocked 0 · unblocked/unpicked 0`) — the exact defect #663 fixed, reintroduced by a file-level overwrite rather than a merge, with none of #668's own tests (all scoped to the unrelated `reset-attempts` verb it actually added) anywhere near `renderLedger` to catch it. Shipped to `main` and deployed to production before being caught. Restores the `items: %d open … — tasks: %d open · %d blocked` format from #663 verbatim. Adds `TestRenderLedgerHeaderSplitsItemsAndTasks` and `TestRenderLedgerHeaderZeroTasksStillLabelsScope`, which capture `renderLedger`'s actual stdout and pin the labeled-split shape directly — pinning the *output*, not the `Agent` struct's fields (which #668's revert left completely correct; only the print statement consuming them regressed), so a future whole-file copy from a stale source fails these tests by name instead of shipping silent again. Refs: PR #663 (the original fix); PR #668 (the accidental revert); Changelog: Unreleased
+
+#### Fixed
+
+- **A lane can no longer disarm another lane's wake loop.** `sirsi thread watch --uninstall` accepted `--agent <any lane>`; on 2026-10-05 four M5 wake loops were removed in one second that way. It now acts only on the session's own resolved identity and refuses anything else, pointing at `sirsi router quarantine` as the owner's durable off switch. The fabric-on rule (never park, bootout or reap a wake lane) is now enforced at the one code path that deletes a wake plist.
+
+#### Added
+
+- **Process diagrams for the router wing (SL-DIAGRAM-001).** `docs/stacklab/RA_HORUS_FABRIC_DIAGRAM_INDEX.md` inventories 18 processes and reports coverage against all of them: 4 complete (wake loop, known-failure loop, registry pin, release train), 1 drafted for its owner's confirmation (review and bind), 13 open with a next action. Logical, data, state and recovery views are Mermaid sources, each checked to parse.
+
+#### Added
+
+- **Router readiness audit (G1 to G12) and the docs it was missing.** `docs/evidence/ADR-062-ROUTER-READINESS-AUDIT-20261005.md` grades all twelve conditions with evidence: 7 met (with this change), 3 partial, 2 open. New `docs/router-service/` user guide, developer README and runbook (each runbook step says whether it was rehearsed), and the first `docs/COMMERCIALIZATION_GATE.md` entry, classification `pilot`.
+- **Exactly-once claim test over 1,000 contended rounds** with injected latency, plus a negative control on two separate ledgers that must show both claimers "winning" (`TestClaimExactlyOnceAcrossManyRounds`).
+- **Per-deploy audit receipt.** The release train now writes a router item to `claude-home` after every service deploy with the revision, image digest, git SHA and rollback target (ADR-062 section 4).
+- **The release train assembles `changelog.d/` before it cuts a version.** Fragments had never shipped: `scripts/release-train.sh` went straight to the version split, so entries written the documented way stayed in `changelog.d/` across releases. It now runs `scripts/changelog-assemble.sh` first. `release-prep-changelog.py` also wrote a fixed 0.24.65-era line into the Stack Lab canon changelog on every release; it now lists the release's own entry titles under the newest heading.
+
+- `cmd/sirsi/threadcmd.go` `thread register` derived the router filesystem root directly from `--repo` (`Join(--repo, .agents, idea-router)`), so a surface correctly registering with `--repo` pointed at a portfolio repo that has no router of its own (FinalWishes, sirsi-io, ...) was rejected. Every other `thread` subcommand (heartbeat, close, watch, list) already resolves the router root through `router.FindRepoRoot()` (the canonical git-common-dir/cwd-walk-up/marker resolver); `register` now does the same, while `--repo` continues to be recorded as-is in the registered thread's `Repo` metadata. No new router home, no filesystem fork. Item 20260930-230920.
+
+- Fixed: `SpoolOutboxHealth` used `filepath.Glob`, which silently swallows directory-read errors — a permission-denied or otherwise unreadable per-agent outbox reported as zero held items, indistinguishable from a genuinely quiet lane. Now reads the outbox directory directly via `os.ReadDir` and reports an unreadable outbox as `SpoolAgentOutbox{Unreadable: true, Error: ...}` instead of a confident `0`; only a legitimately absent outbox directory stays silent. Flagged by codex-pantheon's independent review of PR #931 (item 20261001-010622), which reproduced the false-quiet state with a chmod-0000 fixture.
+
+- `router.NodeStatus` (`sirsi router node-status --json`, GET /api/node-status) gains `outbox` (per-agent held/queued-for-retry spool relay items, ADR-069) and `outbox_health_error`. Collection is strictly read-only — it only globs `<spool>/<agent>/outbox/*.json`, never drains or retries anything — and is populated only on a host whose `SIRSI_ROUTER_URL` is a `spool://` relay; a non-spool host reports neither field rather than a fabricated all-clear. New `internal/routerstore.SpoolOutboxHealth`. Foundational piece of the Ra native fabric read-only health panel (item 20260930-230149); the Swift UI surface and the still-unmerged Ra fabric candidate are separate follow-up work, not bundled here.
+
+- Forward correction to the previous append-error propagation fix: PR #929's `appendCedeDecision` still used `defer f.Close()`, discarding the close error — a close-time I/O failure (deferred flush, NFS, disk-full-on-close) could still report a durable cede/reservation success. `appendCedeDecision` now captures the close error via a named return, preferring an earlier write error (more informative) but surfacing a close-only failure instead of swallowing it. The file opener is injected (`cedeDecisionFileOpener`) so a close-time failure — which a real `*os.File` can't be made to produce deterministically — is testable. Regression coverage now also proves the failure contract (committed transition, named id, no false success) across all four mutation paths: cede request, grant/counter/decline, withdraw, and floor-share reservation grant — not just request. Flagged by codex-pantheon's independent review of PR #929 (item 20261001-001503). Refs: PANTHEON_RULES.md A16, A17, A35.
+
+Fix macOS release signing by adding the imported temporary keychain to the
+codesign keychain search list.
+
+**Developer ID signing identity resolution** (2026-09-28). The macOS release
+job now derives the application signing identity from the certificate actually
+imported into its temporary keychain, preventing a stale secret label from
+breaking an otherwise valid signed/notarized package build.
+
+**Fail-closed signing identity guard** (2026-09-28). The macOS package job
+now always verifies that the temporary signing keychain exists and resolves a
+Developer ID Application identity before package production, preventing a
+conditional mismatch from silently falling back to ad-hoc signing.
+
+**Codex Apollo registration cleanup** (2026-09-28; PR #838). The canonical
+router retires the stale `codex-inference` alias and binds the active Apollo
+consumer to its M5 checkout as `codex-apollo`, with an explicit public name
+and callsign. Historical task records remain unchanged.
+
+- Document Pantheon's Ma'at failure-memory contract and eight-domain operational preflight integration plan. Preserve SNE exclusive engineering authority, immutable evidence and scoped deterministic guards. Executable integration and three-home publication remain pending. Refs: ADR-004; docs/contracts/PANTHEON_MAAT_FAILURE_MEMORY_CONTRACT.md; PANTHEON_RULES.md A17/A35.
+
+- **liveness-watch re-alarmed on a menubar the owner had just quarantined, and a live agent auto-relaunched it** (claude-pantheon, 2026-08-09). The 2026-08-06 fix (`suppressMenubarDown`) suppressed the finding only when `ai.sirsi.pantheon.plist` was absent from LaunchAgents — but a `launchctl bootout` leaves the exact-named plist in place ("quarantine excluded by construction" was false; it was excluded explicitly, not by plist removal), so the heuristic missed this case: the probe reported WEDGED, routed a decision to `claude-pantheon`, and a live lane "helpfully" relaunched the app the owner had just taken offline (router item `20260809-093638`, prior owner card `20260808-221547`). Fixed: an explicit `~/.sirsi/menubar-quarantine` marker (`sirsi menubar quarantine` / `unquarantine`), mirroring gemma-broker's `QuarantineMarkerPath` pattern, checked before the plist-absence fallback so quarantine state no longer depends on how the owner chose to take the process down. Also documented `sirsi router dismiss` (existing since `#656`, previously undiscoverable) as the owner-attested close path for owner-addressed decision cards. Refs: router item `20260809-093638`; ledger task `menubar-liveness-quarantine-marker`; Changelog: Unreleased
+
+- **fix(router): stray-reap salvage is inscribed only after the save persists** (claude-home, 2026-08-07). Follow-up demanded by codex-home before binding PR #619: prove `ReapStrayThreads` cannot duplicate `inscribeStraySalvage` entries under the new bounded retry, or move the retry scope above inscription. Proof went the other way — the ordering was already wrong on `main`. `reapStrayThreadsOnce` inscribed each stray's salvage **inside the sweep loop**, then called `SaveThreadRegistry` afterwards, and returned `nil, err` on failure. So on any save failure the pass announced "nothing reaped" (sirsi-io #18 invariant) while the Stele already held a `thread_reap` entry for every stray it had walked — **a ledger record of a reap that never happened**, on a ledger whose whole purpose is the owner's "nothing lost" guarantee. The retry added by #619 did not introduce this; it multiplied it, because a lost CAS fence re-runs the pass and re-inscribes every stray that did not persist. Fix: the salvage PAYLOAD is still computed in the loop against pre-mutation state (it records `prior_status`, which the next line overwrites), but the INSCRIPTION is deferred until after `SaveThreadRegistry` returns nil — so the pass is now genuinely idempotent under retry, and a failed sweep writes nothing. This uses the seam Rule A16 already built: `straySalvage` is the pure predicate, so only the side-effecting half moved. `inscribeStraySalvage` had no other caller and is removed. The Stele write is now injectable (`inscribeSalvageFn`, A21 RWMutex accessors) because `stele.Inscribe` is a process-global singleton bound to `$HOME` and cannot otherwise be sandboxed per-test. Two tests, verified in BOTH directions per A35: restoring the in-loop inscription reddens `TestReapStrayThreads_SaveFailInscribesNothing`, which names the phantom entry it found; `TestReapStrayThreads_SuccessStillInscribes` guards the opposite regression (a "fix" that inscribes nothing) and asserts `prior_status` is still the pre-mutation value. The save-fail fixture asserts its own stray is salvageable first, so it cannot pass vacuously on an empty tombstone. golangci-lint 0 issues — note vanilla `go vet` does NOT enable `shadow` and passed a shadowed `err` that golangci-lint caught, the same trap as #621. Refs: PANTHEON_RULES.md A7/A16/A21/A33/A35; ADR-022 (OS-truth reaping); ADR-024; PR #619; owner directive 2026-07-22 (nothing lost); Changelog: Unreleased
+
+### Unreleased — fix(router): close two residuals from PR #622 (A35 follow-up)
+
+**`newest-by-agent-counts-suspended`**: `NewestNonTerminalByAgent` now excludes
+SUSPENDED records in addition to terminal ones. Previously a suspended thread
+could win the "newest" slot, causing `newestByAgent[agent]` to never match any
+thread that `AgentArmed` evaluates (it skips SUSPENDED), silently denying the
+agent-keyed rescue credit to the next-newest active thread.
+
+**`threadarmed-unscoped-reentry`**: Deleted `threadArmed` (was dead code with
+zero production callers after PR #622 converted all three call sites to
+`threadArmedForNewest`). Retaining it as an unscoped wrapper created a live
+re-entry point: a future caller reaching for the shorter name would silently
+restore the unscoped probe and re-introduce the A35 blast-radius bug that #622
+fixed. The single test that called it is updated to call
+`threadArmedForNewest(thr, now, false)` directly — same semantics, explicit
+contract.
+
+Refs: PANTHEON_RULES.md §2.33 (A35), docs/ADR-INDEX.md; PR #622 (parent fix)
+
+- **fix(router): scope WatcherAliveByAgent to newest thread in threadArmed, AgentArmed, AttendedSessionLive, CollectNodeStatus** (claude-pantheon, 2026-08-07). PR #614 added `WatcherAliveByAgent(agentID)` to the agent-keyed watcher probe (`pgrep -f <agentID>-watcher.sh`) for the re-registration case, but applied it unscoped at three runtime call sites: `threadArmed` (strand.go), `AttendedSessionLive` (attended.go), and `CollectNodeStatus` (nodestatus.go). With claude-home at 12-20 thread records/hour one live PID 961 vouched for all non-terminal records for that agent — an A35 unscoped blast-radius identical to the EffectiveStale gap already fixed by `6785e7ad`. Fix: add `threadArmedForNewest(thr, now, isNewest)` (same split as `EffectiveStaleForNewest`), keep `threadArmed` as the unscoped/isNewest=false entry point for single-thread callers, and update `AgentArmed`, `AttendedSessionLive`, and `CollectNodeStatus` to precompute `newestByAgent := NewestActiveByAgent(threads)` and pass `isNewest=true` only for the newest thread. Existing `TestThreadArmed_ReRegistrationCase` updated to call `threadArmedForNewest(..., true)` (the re-registration successor is always the newest). New `TestThreadArmedForNewest_TwoThreadsOneAgent`: two threads, agent-keyed probe alive, thread-keyed dead for both — older stays loop-dead, newer is rescued, `AgentArmed` overall true. All router tests green (`-race`). Refs: PANTHEON_RULES.md §2.33 (A35), §2.16 (A21), §2.13 (A16); PR #614 follow-up (claude-home item `20260806-234150`); Changelog: Unreleased
+
+- docs: REPRODUCTION.md no longer cites four `docs/evidence/…` artifacts as if they were in this repository — they are private-repo paths, now labeled as such, with the sealed-binary hash named as an open publication gap (A33).
+
+- **Consumer dispatch: spawn through the operator's login shell — fixes 94% of fleet-wide wake dispatches failing "Not logged in"** (claude-home, 2026-08-07). 3907 of 4161 consumer dispatches across eight lanes (claude-finalwishes 1053/1146, claude-nexus 836/908, claude-deck 560/565, claude-io 490/496, claude-home 362/364, claude-pantheon 348/353, codex-home 252/322, codex-inference 6/7) exited 1 immediately. `claude-finalwishes` spawned a fresh consumer every ~60s for over 24h with its inbox depth pinned at 27 the entire time. Root cause, read directly from the 4 KB output tail that PR #628 added: `Not logged in - Please run /login`. The login state was never broken — the identical command run by a human in a terminal returns normally. launchd `exec`s a program with ONLY the plist's `EnvironmentVariables` and no shell at all, so no shell startup file runs; the consumer CLIs take their credentials from what `~/.zshenv` exports, and that never reached the child. Reproduced deterministically in both directions: the exact launchd environment fails, the same environment through `zsh -lc` succeeds. Fix: `dispatchConsumer` wraps argv via `loginShellArgv`, spawning `$SHELL -lc 'exec "$@"' $SHELL <argv...>`. argv is passed as POSITIONAL PARAMETERS and never interpolated into the script text — load-bearing, because the consumer prompt contains backticks and `$(...)` that a naive `-lc "<command>"` would execute at dispatch. `exec` replaces the shell, so the tracked pid is still the consumer and the setsid detach and `*os.File` output pipe from #628 are both unchanged. Fails OPEN on an unset/missing/directory/non-executable `SHELL`, the same stance as an unreadable load average. Verified both directions (A35): reverting only the dispatch site reddens `TestDispatchConsumerRunsThroughLoginShellSoStartupFilesApply` by name — the test gives itself a temp `HOME` whose `.zshenv` exports a marker, a signal that cannot exist unless a startup file ran, and asserts in the same run that backticks arrive literally. An earlier draft of this test used `/bin/echo` and passed with the fix reverted; it was replaced rather than kept. `go build`/`vet`/`gofmt` clean, full `internal/router` suite ok, `-race -count=3` ok. NOTE: no secret is written to disk — this sources the operator's existing 0600 `~/.zshenv` rather than copying a token into world-readable LaunchAgent plists. Residual: this repairs the environment; whether each lane's consumer then completes its work is a separate observation. Refs: PR #628 (`2b2e31e9`, the tail that made this legible); ledger row `consumer-dispatch-rootcause`; Changelog: Unreleased
+
+- liveness: the gemma-broker finding now names `sne-server` and explicitly denies the legacy python/mlx_lm path, so the misleading LaunchAgent label cannot again be read as "a Python service that can be downed".
+
+- **Fixed — the backstop worker's 30-minute idle window is now a real failover** (claude-home, 2026-08-06). `sirsi-claude-worker.sh` defers items younger than `SIRSI_WORKER_MIN_AGE` (1800s) so it never races an attended session already handling them. That deferral was unconditional, so with NO attended session live an item still waited the full 30 minutes while a healthy, polling worker declined it every pass — the mechanical shape of "the agent stopped and nothing noticed", with every surface green throughout (`launchctl` running, normal worker log cadence, item simply open). Deferral is now conditional on somebody being there to defer TO, via new `sirsi thread attended <agent>` (exit 0 = live attended session). The predicate is deliberately NARROWER than "armed": `surfaceWorker` is non-resident and watches its inbox, so every capability-shaped check — including `AgentArmed` — counts the headless backstop as a live consumer; gating on that inverts into a deadlock where the worker defers to itself forever and the item is never processed at all. Attended means `claude`/`codex` only, proven by loop evidence for claude and heartbeat freshness for codex, reusing `threadArmed` so this never becomes a second drifting definition of "alive". An unreadable registry reads as attended (degrades to the previous wait, never to something more aggressive). Also versions the worker script into `scripts/worker/` — it was load-bearing and existed only in `~/.local/bin`, unreviewable and lost on reinstall. Refs: PANTHEON_RULES.md A16/A21/A27; AGENTS.md A36; `internal/router/attended.go`, `scripts/worker/should_defer_test.sh`; Changelog: Unreleased
+
+- **The router store reported write-lock contention as `SQLITE_READONLY`, so `busy_timeout` never engaged and every losing writer failed outright** (claude-home, 2026-08-06). This took the fleet down tonight and misdiagnoses as a permissions or corruption fault every single time. The store runs in WAL mode; when a connection must run WAL recovery it needs a brief exclusive lock, and if another process holds the file SQLite returns `SQLITE_READONLY_RECOVERY` (extended code `8|(1<<8)`) whose primary code is READONLY — **not** `SQLITE_BUSY`. The DSN's `busy_timeout(5000)` is only consulted for BUSY, so it did nothing. Symptoms: reads stay perfectly healthy (`status`/`show`/`pull`/`dump` all fine) while every write from the losing process dies with "attempt to write a readonly database", the C `sqlite3` CLI writes the same file from the same shell without complaint, and the condition clears the instant the other holder exits. Every plausible remedy is a dead end and all were walked tonight — chmod (mode was already 644 and ours), rebuilding the binary from a pristine clone, `wal_checkpoint(TRUNCATE)` (returned `0|0|0`, nothing to checkpoint), changing cwd, and auditing for a read-only open path in `internal/routerstore` (there is none). Fix: `retryWrite` treats READONLY as retryable contention with exponential backoff up to a 5s budget matching `busy_timeout`, masking to the primary code so extended codes are caught; all 12 direct `s.db.Exec` write sites now route through a retrying `s.exec`, and `withTx` retries the whole transaction (SQLite often surfaces the failure at Commit, and nothing is committed on the failing path so re-running is safe). Real errors pass through on the first attempt, and a genuinely unwritable store still fails — bounded, wrapping the driver error, and naming contention so the next operator does not lose an hour to chmod. On a host running a triage loop, two claude-workers, a gemma worker, thread watchers and a board publisher, this contention is constant, not exotic. Refs: ADR-057; PANTHEON_RULES A16/A21; Changelog: Unreleased
+
+- **Stale-thread reconcile duty healed only half the records it should, and its save guard was coupled to an unstated invariant** (claude-home, 2026-08-06). Follow-ups F1/F2/F3 from the PR #528 binding review, fixed at the source. **F2 (real impact):** the duty passed `os.Hostname()` as the `ReconcileExits` host filter, and that filter skips any record whose `Host` is a different non-empty string. A hostname is mutable across networks, so this machine's own older records — written under a prior name — were treated as a foreign host and never healed. `ReapDeadThreads` was deliberately migrated off hostname to `MachineID`/`SameMachine` for exactly this reason after it stranded an inbox for 1d16h; the reconcile half then re-introduced it, so reaping ignored hostname while reconcile honored it. Now passes `""` — the registry is per-machine and `ReconcileExits` already scopes by `MachineID`. **F1 (latent):** the `healed > 0` save guard counted only `ReconcileSuspendedStale`, but `ReconcileExits` also mutates `reg` via `ReconcileMintedSuccessor`, unreachable from this caller *only* because the local retro closure returns `ok=false` for reaped records. Anyone making reaped recoverable here would have had a successor minted into the registry and then silently discarded, with no test failing. Now counts every mutating action. **F3 (efficiency):** `New`+`ReadState`+`NormalizePending` ran once per stale record inside the retro closure; hoisted to a single read above it. Regression test proves F2 by control — a stale record carrying a prior hostname and a prior `MachineID` (the one path the reaper skips and only reconcile can heal) stays `active` against the pre-fix code and becomes `suspended` after. Refs: PR #528 review findings F1/F2/F3; ADR-022; ADR-025; PANTHEON_RULES A27; Changelog: Unreleased
+
+- **`SortedThreads` was not a total order, so CI went red at random for every PR in the repo** (claude-home, 2026-08-06). `ThreadRegistry.SortedThreads` used `sort.Slice` ordering **only** by `LastSeenAt`. `sort.Slice` is unstable, so any two threads sharing a timestamp came back in arbitrary order that varied run to run. Shared timestamps are not an edge case — heartbeats land in the same second, and a fixed test clock makes every record identical. `TestStaleActiveSupervisors` builds five threads across exactly two timestamps and asserts a fixed order, so it passed or failed by luck: it failed on `main` here, then passed five consecutive runs, which is exactly how a flake hides. **This is what failed the Test job on an unrelated docs-only PR, and it was failing on `main` itself, not on the branch.** Beyond CI, the same nondeterminism reordered the live fleet board between refreshes for no reason. Fixed by tiebreaking on `ThreadID` when `LastSeenAt` is equal, making the comparator a total order; recency remains the primary key. Two regression tests: one hammers 200 rounds with all records on a single timestamp (Go randomizes map iteration per run, so one pass can pass by luck) and one guards the tiebreak from inverting the recency contract. `internal/router`, `internal/routerstore`, `internal/dispatch` all green; `go vet` clean. Refs: PANTHEON_RULES A27; PR #534 (the docs PR this reddened); Changelog: Unreleased
+
+- **Close/respond mutations now require declared acting identity and explicit delegated-close authority** (codex-pantheon, 2026-08-05). The dispatch facade validates the actor before changing item state. CLI `router close` and `router respond` gain `--agent`; without it they resolve the current session and fail closed when ambiguous. A non-recipient close is rejected unless the actor carries the enumerated `close:any` capability; the Horus triage service is the sole initial holder, and its delegated closes automatically record actor and recipient in the durable Result. All live launchd consumers declare their real identity. The validator also preserves the router's established explicit `cli-spawn` wake adapter, restoring routability for five live lanes that the narrower enum accidentally rejected. Refs: ADR-054 A1; PANTHEON_RULES.md A27; Changelog: Unreleased.
+
+- **`docs/REPRODUCTION.md` told readers to run six scripts that do not exist in this repository** (claude-home, 2026-08-06). The page is titled "Test our findings yourself", promised "one-command scripts", and listed `scripts/prove-exceed.sh`, `scripts/prove-contribution.sh`, `scripts/prove-contribution-concurrent.sh`, `scripts/prove-guarantee.sh`, `scripts/time-invariant-arms.sh` and `scripts/build-mlx.sh` as bare paths in the measurements table. **All six are absent from `sirsi-pantheon`** — verified by direct existence check, not inference. They live in the private `sirsi-inference` engine repo, which the page did disclose, but twenty lines above the table and in passing, so a reader arriving at a table of script paths under a "test this yourself" heading would reasonably try to run them. Under Rule A33 a reproduction claim that cannot be reproduced is worse than no claim, and this is the exact credibility failure the humble-claims law exists to prevent. Fixed by stating the boundary where the reader actually looks: a prominent note that the named paths are private-repo procedure records and **not publicly runnable**, a table header and preamble that repeat it, removal of the "one-command scripts" promise from the intro, and an explicit statement that a scrubbed public harness is **not published yet** — so the numbers are independently checkable against our sealed endpoint but not independently re-derivable from our source. No claim was strengthened and no number changed; this only removes an assertion we could not honor. Refs: ANUBIS_RULES.md Rule A33; ADR-051; PR #465 forward-fix /plan steps 5 and 7; Changelog: Unreleased
+
+- **Three working router-lane settings existed only in an uncommitted working tree** (claude-home, 2026-08-06). `.agents/idea-router/agents.json` is a file *inside* the repo, so what everything calls the "live registry" is literally the dirty working tree — the drift `router doctor` reports is uncommitted local edits, not deployment skew. Three settings that make lanes work had never been committed, and any reconcile-from-`main` would have silently destroyed them: `claude-nexus` wake (`launchagent` + label vs `none` on main), `codex-deck`'s `sandbox_workspace_write.writable_roots=["~/.sirsi"]` argument (without which that lane cannot write the router at all), and `claude-home`'s `capabilities: ["close:any"]` (which `horus` already carried on main — the conduit's other identity). Landed here so the deployed state is reproducible. **The drift is bidirectional, which is the part worth remembering:** in the same file, `main` was authoritative for two *other* fields where the working tree had regressed — `gemma-pantheon` had lost its `consumer` block, and `claude-deck` still carried the superseded one-shot consumer prompt instructing that lane to *"exit immediately"* on an empty inbox, a **direct A36 violation baked into the registry** and the only lane of 23 still on it. Those two were repaired live from `main` by targeted `jq`, not by a wholesale copy — a blanket "reset to main" would have broken the two lanes fixed here, and a blanket "push live to main" would have re-enshrined the A36 regression. Neither direction is safe as a bulk operation. `codex-mail` is deliberately NOT included: it is live-only with `repo: null` and no consumer, and is being dispositioned separately rather than half-registered into canon. Refs: ledger tasks `registry-canon-drift-live-ahead`, `gemma-pantheon-lost-consumer`, `codex-mail-orphan-lane`; Changelog: Unreleased
+
+Unreleased — `ReconcileOperationalState` now clears impossible ownership on non-active task rows before the expiry pass, so `router doctor --fix` recovers poison without direct SQLite edits.
+
+- **Supervisor surfaces the reconcile counters — ADR-057's completion gate can now be observed firing** (claude-home, 2026-08-06). Every `sirsi horus supervise` pass called `ReconcileOperationalState`, which computes seven counters describing what the pass actually repaired, and then read only `.State` at `supervisor.go:244` — discarding all seven. `RepairedNonActiveLeases`, `ExpiredItemLeases`, `ExpiredTaskLeases`, `ExpiredWakeLeases`, `RequirementTasksCreated`, `WakeEventsCreated` and `FalseDoneRejected` had test-only readers in production code. The consequential one is `FalseDoneRejected`: it counts lanes whose `done` was reverted for carrying no evidence — ADR-057's evidence-backed completion gate FIRING — so the gate ran on every tick and left no record anywhere an operator could see. A gate nobody can observe firing cannot be shown to work, and a silent repair is indistinguishable from no repair. Fix: the counters are split out of `ReconcileReport` into an embedded `routerstore.ReconcileCounters` (embedding keeps both existing field access and the report's JSON shape byte-identical, so no call site or test changed), and `AgentSurfaceStatus` gains a `reconcile` field carrying them onto the same supervision contract as the `operational` state they were derived from. Additive to the `SuperviseReport` contract — no schema bump. Scope of the new test, stated per A35: it proves a real repair reaches the report with the correct count and that the full counter set survives serialization; it does NOT re-prove that any individual counter increments, which is `routerstore/reconcile_test.go`'s job. `FalseDoneRejected` specifically cannot be exercised end-to-end from `internal/router` because a false `done` cannot be forged through the store API — the gate rejects it, which is the point — so its presence is asserted on the wire rather than by increment. Verified both directions: 1 new test plus the existing `internal/router` and `internal/routerstore` suites green, and deleting the assignment reddens the new test by name. Refs: PANTHEON_RULES.md A33 (Horus visibility), A35 (Scope The Check To The Claim), A36 §2.32; ADR-057 §6 (evidence-backed completion gate); ledger row `reconcile-counters-have-no-production-consumer`; Changelog: Unreleased
+
+- **fix(router): OS-truth reap retries a lost lifecycle fence instead of abandoning the sweep** (claude-home, 2026-08-06). `SaveThreadRegistry` compare-and-swaps each mutated row and returns `thread %q mutation lost lifecycle fence` when `UpsertThreadCAS` finds it changed since the load baseline. That was returned as a fault, but it is **contention, not corruption** — a wake loop, a watcher, or a sibling sweep legitimately touched the row between load and save, which is exactly what the fence exists to detect. `ReapDeadThreads`/`ReapStrayThreads` had no recovery, so the error reached their callers (`thread reconcile`, `thread discover`, `thread list`), all three of which can only downgrade it to `warning: OS-truth sweep incomplete`. **A failed sweep is byte-identical to "nothing to reap"** (the hazard already named in `reapDeadPIDThreads`'s own doc comment), so dead threads keep presenting 🟢 active until a later pass happens to win the race. Observed on the conduit host in 4 consecutive 15-min runs on 4 *distinct* thread ids (`thr-77504805bedc24b8`, `thr-8c0d33f763211fbb`, +2) — not one wedged record, ordinary write contention on a busy fleet. Fix: `ErrLostLifecycleFence` sentinel (both fence sites wrap it with `%w`) plus `retryOnLostFence`, a 3-attempt reload-and-redo with a 50ms pause, wrapping both reap passes. Retry is sound **only** because both passes RE-DERIVE their mutation from OS truth plus a freshly-loaded registry — a redo against the concurrent writer's result is the correct answer, not a clobber; the helper's doc comment states that a delta-applying pass must not be wrapped. Scoped to the fence signal alone: any other error returns on the first attempt, and persistent contention still surfaces after the budget rather than being swallowed into a false "nothing to reap". Matches the retry-on-contention shape already established in `internal/routerstore/store.go` (`pinConnWithRetry`, `beginImmediateWithRetry`) rather than introducing a second idiom. Three tests, verified in BOTH directions per A35 — forcing the budget to 1 attempt reddens exactly the two contention tests and names itself, while the scoping test correctly stays green. **Residual, deliberately not closed:** the save loop still returns mid-iteration, so rows already upserted persist while remaining dirty rows are dropped; the retry masks it (the redo recomputes from fresh state) but does not remove it, and after an exhausted budget a partial application survives. It is not corrupting — the mutations are idempotent status transitions, so the effect is fewer threads reaped, never a wrong one. Refs: PANTHEON_RULES.md A7/A33/A35; ADR-022 (OS-truth reaping); ADR-024; ledger task `reap-loses-lifecycle-fence-no-retry`; Changelog: Unreleased
+
+- **Rule A35 existed in canon and in NEITHER synced copy — agents reading CLAUDE.md had never seen it** (claude-home, 2026-08-05). Canon declares `PANTHEON_RULES.md` "synced to `GEMINI.md` and `CLAUDE.md`". §4 *was* identical across all three, and the §4 guard passed — but `Scope The Check To The Claim` was defined only in the canonical file. Every agent whose entry point is `CLAUDE.md` (which is all of them, per the repo's own AI-startup instructions) had no access to that rule at all. **The §4 check passing is itself the A35 failure shape**: "the copies are synced" is a claim about the whole document, and comparing one section is a narrower check than the claim it appears to satisfy — a check narrower than its claim converts an unknown risk into a false assurance. Ported the rule into both copies at the same structural boundary. New `TestSyncedCopiesDefineTheSameRules` compares the full rule SET in both directions, so a copy that falls behind *or* diverges forward is caught. Worth recording how this nearly went wrong: the first insertion attempt anchored on "the next `###` heading after A34", which in `CLAUDE.md` sits past a `## 4.` boundary the canonical file does not share — it produced a **duplicate §4 section**, and the §4 guard written an hour earlier is what caught it. Reverted and re-anchored on the level-2 boundary. Refs: PANTHEON_RULES.md A35 / §4; Changelog: Unreleased
+- **Two different rules both answered to §2.26 / Rule A29 — the citation-collision class, second occurrence** (claude-home, 2026-08-05). `Orchestration Brain: Tiered & Pluggable` and `Scope The Check To The Claim` shared BOTH the section number and the rule tag, so an agent resolving a citation to "A29" got whichever it found first — and a careful agent resolving *by number* is precisely the one that gets it wrong. This is the Rule 14/17 collision again (PR #491), where every Ra-deployed agent was handed written permission to override **Do No Harm** because a markdown list ordinal had been written as a rule tag. Renumbered by reference weight rather than by date: Orchestration Brain keeps A29 (~32 references against ~9), and Scope-The-Check becomes **§2.32 / Rule A35** carrying an explicit *"older citations of A29 that mean scope-the-check refer to THIS rule"* alias — both numbers are load-bearing in the archive, so neither is silently rewritten. New `TestNoDuplicateRuleNumbers` matches rule **definitions** (headings) rather than citations, because A22's text legitimately cites A17 and a naive grep flags that as a duplicate; it also fails if it finds fewer than 25 definitions, so the parser cannot drift into checking nothing. Verified falsifying: restoring the collision fails with both the section and the rule-tag message. Refs: PANTHEON_RULES.md §2.26/§2.32/A29/A35; PR #491; Changelog: Unreleased
+- **Canon §4 listed 22 sources of truth; nine of them did not exist — Rule 16 was literally unfollowable** (claude-home, 2026-08-05). Rule 16 (Mandatory Canon Review) requires re-reading the relevant canonical documents before writing code. §4 is that list, and **9 of its 22 entries resolved to nothing**: `ANUBIS_RULES.md` (the file had renamed *itself* to `PANTHEON_RULES.md` and kept citing the old name in three places, including the Rule 16 text itself), `configs/default_policies.yaml` (now `configs/example_policy.yaml`), and seven that were never written at all — `PROJECT_SCOPE`, `TECHNICAL_DESIGN`, `SECURITY_COMPLIANCE`, `RISK_MANAGEMENT`, `DEPLOYMENT_GUIDE`, `VERSIONING_STANDARD`, `configs/network_example.yaml`. This does not merely rot: it silently teaches every agent to cite a document nobody can open, and **no test, lint, or CI gate ever looked at it** — the same shape as the untracked-script and registry-drift findings earlier this week, where the thing that was wrong was the thing nothing checked. Fix states reality rather than inventing seven documents: the two renames are corrected, the seven genuinely-absent paths are marked **(NOT YET WRITTEN)**, and a status note above the list says plainly that such an entry is aspirational — create the file or delete the line, but do not leave it ambiguous. Applied identically to all three synced copies (`PANTHEON_RULES.md`, `CLAUDE.md`, `GEMINI.md`), because a correction landing in one produces three disagreeing copies of canon, which is worse than one stale copy since agents read different files. New `internal/canon` guard: `TestCanonicalDocumentsExistOrAreMarked` parses §4 and requires every entry to either resolve on disk or say out loud that it does not — and fails in BOTH directions, so a marker left on a file that later gets written is caught too; `TestCanonSyncedCopiesAgreeOnSection4` pins the three copies together. Verified falsifying: removing one marker fails the guard with the exact remediation text. Refs: PANTHEON_RULES.md Rule 16 / §4 / A7; Changelog: Unreleased
+
+- **`ccd reap` now inherits the tested ancestry-safety contract from `internal/reaper`** (claude-pantheon, 2026-08-03). `sessionReaperDuty` (the supervised `ccd reap` path in `internal/router/sessionreaper.go`) previously guarded its kill step with a shallow check of only `selfPID` and `selfParent`, while `internal/reaper.ancestrySet` walks the FULL caller ancestry chain to PID 1 and is the tested safety contract for `sirsi reap-sessions`. Both could signal the same process class but with non-equivalent safety — the shallower guard would reap a grandparent session (e.g. the interactive Claude window that spawned the CLI that spawned sirsi) that `internal/reaper` correctly protects. Fix: export `ancestrySet` as `reaper.AncestrySet`, import it in `sessionreaper.go`, build a minimal `[]reaper.Proc` (PID+PPID only) from the parsed `sessionProc` slice, and replace the `selfPID/selfParent` guard with the full ancestry walk in all three kill sites (superseded-session groups, orphaned watchers, legacy sidecars). New regression test `TestReapNeverTouchesDeepAncestry` constructs a grandparent chain (launchd→live-session→sirsi) and verifies the grandparent is never reaped — this test FAILS against the old shallow check and PASSES with the new one. There is now one tested kill-safety contract across both reapers. Refs: PANTHEON_RULES.md A7, A16; router item 20260731-235047; Changelog: Unreleased
+
+- **Router item retention is now tombstone-preserving** (codex-pantheon, 2026-07-28). `sirsi router prune` no longer deletes closed `items/<id>.md` files past the retention window. It compacts the payload into a tombstone that preserves the item id, frontmatter provenance, close timestamp, and original SHA-256 content hash, satisfying the ADR-006 invariant that router pruning may compact evidence but may never remove the provenance skeleton. Router prune reports now use `after_bytes` for item compaction so reclaimed bytes are honest. Refs: router item 20260725-021633; ADR-006 retention constraint; Changelog: Unreleased.
+
+- **`sirsi ops` exposes Agent-Operations Parity as an operator command** (codex-pantheon, 2026-07-28). Adds a read-only capability map for the work agents had been doing behind the scenes: router wake/check, queue inspection, respond/close, review, local Ask Sirsi, Thoth memory, thread watch/reap, supervisor audit, and host insight. Each row lists the deterministic CLI path first, the local-AI augmentation where available, and the menubar surface expected to expose the same work. `--json` gives the same map to menus/tests/automation, plus a live router summary when the repo router is available. Refs: router item 20260616-154337; docs/user-guides/agent-operations.md; Changelog: Unreleased.
+
+- **Menubar answers `--help` on the command line instead of opening a window; singleton guard now sees raw-binary runs** (claude-home, 2026-08-06). Two ledger defects, one root cause each, both in `macapp/Sources/SirsiMenubar/`. **(1) `menubar-help-launches-ui`:** argument handling was `if let i = argv.firstIndex(of: "--snapshot") … else { app.run() }`, so *every* argument the snapshot parser did not consume fell through to the LAUNCH path — a second Command Deck panel appeared on the owner's screen from a `--help` invocation. `--help` was only the reported symptom: `--snapshot` with no directory, and `--width`/`--appearance` passed without `--snapshot`, had the same fate. Fixed against the fall-through rather than against the one flag — unknown flags and malformed values now print usage and `exit(2)`, `--help`/`-h` print usage and `exit(0)`. **(2) `menubar-singleton-misses-raw-binary`:** `retireOlderInstances()` opened with `guard let bundleID = Bundle.main.bundleIdentifier else { return }`, but the normal dev path runs the raw binary (`.build/release/SirsiMenubar`), which has no bundle identifier — so the guard read as "no peers found" when it meant "cannot tell", and two panels coexisted with neither able to retire the other. New `peerInstances()` matches bundle id **or** executable name, so a bundled `.app` and a raw-binary run can now see each other. **BEHAVIOR CHANGE worth naming: a `swift run` dev build will now retire an older running `Sirsi Menubar.app`.** That is the requested singleton semantic (newest wins, `retireOlderInstances` only retires *older* peers), but it is new blast radius for anyone who ran both deliberately. **New guard `macapp/check-cli-flags.sh`, wired into CI** beside `check-font-scaling.sh`: it RUNS the binary because the invariant is "the process exits" — `app.run()` blocks forever, so a launch and a correct exit are only distinguishable by whether the process terminates on its own. Verified both directions (A35): 8/8 green on the fix; deliberately reverting the usage block turned exactly the 5 affected cases red via the 5s timeout while the 3 still-parsed cases stayed green. The guard copies the binary to a non-matching name before running it — load-bearing, not incidental: a regressed case *launches*, and a launched instance retires peers by executable name, so running under the real name would have killed the operator's live menubar as a side effect of testing for it (verified: PID 91206 survived the red run). Refs: PANTHEON_RULES.md A7 / A32 / A35; ADR-030; Changelog: Unreleased
+
+- **`liveness-watch` prescribed a repair against a plist that does not exist** (claude-home, 2026-08-06). `probeLaunchdDisabled` flagged every disabled `ai.sirsi.*` / `actions.runner.*` label in launchd's override DB and told the operator to run `launchctl enable … && launchctl bootstrap gui/<uid> ~/Library/LaunchAgents/<label>.plist` — without ever checking that the plist was still there. Retiring a service renames its plist (`.plist.retired-*`, `.plist.superseded-*`) instead of deleting it, and launchd's own cleanup then parks the orphaned label as `disabled` permanently. The result was a finding that could never be cleared and a remediation that could never succeed: `ai.sirsi.horus.dashboard` (retired as a menubar duplicate) and `ai.sirsi.ledger-dashboard` (superseded by the Go service) re-fired on every supervisor pass, and were re-enabled by hand on 2026-08-06 to silence a false positive. `probeLaunchdDisabled` now skips labels with no loadable `<label>.plist` and **names them in the finding detail** rather than dropping them silently — a filtered label that vanishes reads as "all clear". **This closes only the retired-plist arm of the class.** The probe still cannot distinguish a deliberate owner quarantine from a crash: `ai.sirsi.gemma-broker` and `ai.sirsi.pantheon` are owner-disabled decisions that a health badge reports in the same voice as a fault, and re-enabling one on that badge alone has already had to be reverted once. That needs a quarantine marker the watcher honours, tracked separately as ledger task `livenesswatch-no-quarantine-state`. Refs: router item `20260806-061719-claude-pantheon-horus-…`; ledger task `livenesswatch-no-quarantine-state`; Changelog: Unreleased
+
+- **`launchctl print-disabled` parsers read a space-joined key verbatim, so a five-service quarantine reported as clear** (claude-home, 2026-08-06). `launchctl` stores whatever argument it is handed, so an unquoted `"$@"` in a caller writes every label into ONE override key — the live host carries exactly that: `"ai.sirsi.horus.agent-router ai.sirsi.triage ai.sirsi.pantheon ai.sirsi.gemma-worker ai.sirsi.gemma-broker"`. Three byte-identical parsers (`internal/guard/doctor.go` `parseLaunchdDisabled`, `internal/router/launchdkickstart.go` `disabledLabels`, `internal/liveness/livenesswatch.go`) extracted the quoted key as a single label. That label matches no real service, so all five genuinely-disabled labels reported as **not disabled**: `sirsi diagnose` and the liveness watch render an owner-quarantine as clear, and `KickstartDeadLabels` skips its `launchctl enable` step and then fails `bootstrap` with `Operation not permitted` — the exact 2026-07-31 fabric-loss failure mode the enable step was added to prevent. This is A35-shaped: the check claimed "these are the disabled labels" while its scope was "the first quoted string on the line". Fixed by deduplicating all three into `platform.ParseDisabledLabels` + `platform.ManagedLabel`, which split the key on whitespace; patching only the caller the defect was reported against would have left `doctor` and `livenesswatch` blind, so the shared parser is both the smaller diff and the root-cause fix. Test pins both directions across five cases including the exact live five-label key and the joined-but-enabled inverse. Refs: PANTHEON_RULES.md A35, A32; Changelog: Unreleased
+
+- **Fixed — the wake watcher no longer borrows a resident's consumer capability (H6, follow-up to PR #389)** (claude-home, 2026-08-06). `resolveResidentConsumer` credited a resident lane by RUNNING its declared `consumer.health_check`. gemma-pantheon's check was `sirsi-gemma-worker.sh --version` — that proves a binary can print a string. It exits 0 identically whether the worker is draining an inbox or was stopped an hour ago, so the credit **could never decay** and the watcher was asserting liveness on the resident's behalf (A35: the check's scope was "a file exists and exits 0"; its claim was "a consumer is alive"). A resident is now credited **only on a thread it published itself** — active, heartbeat-fresh, and self-declared `ConsumerCapable`, exactly like every other consumer surface. Capability therefore decays on its own: a resident that stops heartbeating stops being credited within `DefaultThreadStaleAfter`, with no probe to fool. `health_check` is retained as an OPTIONAL, **disqualifying-only** signal — a declared check that fails is still a real negative, but a passing one can no longer qualify a lane, and its absence is no longer a refusal. The registry lookup fails CLOSED (an unreadable registry is not evidence of a live consumer). Two pre-existing tests are REVERSED with the reason recorded in place rather than deleted: both previously qualified the lane on `sh -c "exit 0"` alone. Falsified in both directions — reverting to probe-only makes `TestResidentNotCreditedWhenItStopsPublishing` and `TestPassingHealthCheckAloneCannotQualify` fail, and restoring makes the package green. Refs: PANTHEON_RULES.md A27/A33/A35; PR #389; Changelog: Unreleased
+
+- **`sirsi-gemma-worker.sh` hard-exited on an MLX runtime it never invokes** (claude-home, 2026-08-06). Line 73 ran `[ -x "$MLX" ] || exit 1` against `~/.venvs/mlx/bin/mlx_lm.generate`, so a missing or removed Python MLX venv killed the router's Gemma triage worker at startup. But `$MLX` was referenced **exactly once in the whole script — inside that guard**. Generation has routed through `sirsi gemma` (the Go broker) since the 2026-07-03 swap-thrash fix, which the script's own comment at line 108 states explicitly: "Routes through `sirsi gemma` (Go broker), NOT raw `mlx_lm.generate`." The guard was the last live dependency on Python MLX in the worker path and it protected nothing — it only added a way to fail. Removed the guard and the now-dead `MLX=` assignment (two lines, no behaviour change; `bash -n` clean, `$MLX` has zero remaining references). This matters beyond tidiness: per the Go Standard the serving path is Go-only (ADR-060), and a dead Python precondition on a Go path is exactly the kind of invisible coupling that turns an unrelated venv cleanup into a silent triage outage. Refs: `docs/ADR-060-GO-OWNS-THE-SERVING-PATH.md`; ledger task `gemma-worker-vestigial-python-gate`; Changelog: Unreleased
+
+- **Fixed — the gemma-liveness supervisor duty overrode an explicit operator stop, twice, within 44 minutes** (claude-home, 2026-08-06, owner directive: "stop it until we can configure it properly"). Three independent restorers can revive the SNE broker — `ai.sirsi.liveness-watch` and `sirsi-fabric-watchdog.sh` (both launchd, both defeated by removing/quarantining the LaunchAgent plist) and `RunGemmaLivenessDuty` (a Go supervisor tick inside the resident `ai.sirsi.pantheon` router process, cadence 2 min). The third is NOT a launchd consumer, so plist quarantine was invisible to it by construction — `GemmaDown` unconditionally called `getGemmaServeFn()(false)`, reinstalling the plist and restarting the broker regardless of operator intent. Added a quarantine marker (`~/.sirsi/gemma-quarantine`) checked BEFORE the probe result is acted on, so a quarantined-and-gone broker never reaches the restart branch. New CLI verbs `sirsi gemma quarantine` / `sirsi gemma unquarantine` are the sanctioned way to set or clear it — quarantine also issues a best-effort graceful stop via the same path `defaultGemmaServe` uses. Six new/updated tests: two lock down the acceptance criterion (quarantined+down skips restore; un-quarantined+down still restores — falsified both directions), one exercises the real filesystem check (not the injected seam) against a temp HOME, and the pre-existing `installGemmaFakes` helper plus three standalone tests were fixed to force not-quarantined, because none of them injected `isQuarantinedFn` and the REAL marker on this dev machine (written while diagnosing this exact incident) made them all fail against the live filesystem — a test-isolation gap this change surfaced, not introduced. `internal/router` package fully green; `gofmt`/`vet`/`golangci-lint` clean. Refs: PANTHEON_RULES.md A32 (Do No Harm To The Running Host), A35 (Scope The Check To The Claim — "the broker isn't running" had only ever meant "restore it"); Changelog: Unreleased
+
+- **An evidence gate nobody could satisfy was teaching the fleet to skip evidence** (claude-home, 2026-08-06). `routerstore.validateTask` rejects `--test-state passed` unless a task carries a link whose *kind* is `evidence`, but the error read only `test-state passed requires an evidence link`. Agents who had just attached a `pr:` link successfully — and could see it persisted in `task list --json` — read that as the gate being broken. **Two independent agents recorded it as unsatisfiable in their continuity notes, and both adopted "close without test-state" as the workaround**, which discards precisely the completion signal ADR-057 exists to preserve. The gate was never broken: `--link 'evidence:<label>:<url>'` always satisfied it. Only the message was wrong, and it was wrong in the most expensive direction — it named the requirement in words that a caller holding a valid-but-wrong-kind link would read as "you already did this". The message now names the required kind explicitly, reports which kinds *are* attached (`kinds present: pr` / `none`), and shows the exact flag to run. Behaviour is unchanged and its existing coverage in `store_test.go` still passes; the new test guards the wording, not the rule, and was falsified against the old string before being trusted. **Class note:** this is the inverse of a silent failure — a loud failure whose text points away from the fix. `pr`, `repo`, `canon`, and `owner-instruction` are all valid link kinds and none of them satisfies this gate; that is intentional, and now legible. Refs: ledger task `tasklink-gate-unsatisfiable`; Changelog: Unreleased
+
+- **Fixed — every `log.Printf` in the repo was silently discarded in production; daemon verbs now log at Info** (claude-home, 2026-08-06). `slog.SetDefault` routes the standard library's `log` package through the slog handler at **LevelInfo**, while `logging.Init` defaults to **LevelWarn**. INFO is below WARN, so every `log.Printf` call was dropped unless `-v` was passed — and launchd invokes `sirsi router wake-loop` and `sirsi horus supervise` without `-v`. `internal/router/wake.go` alone carries 11 `log.Printf` calls that constitute the entire operational diagnostic surface of the wake loop; all of them were invisible. The symptom was `~/.sirsi/logs/wake-*.log` files sitting at **0 bytes since July** while the loops demonstrably ran, which made "loop running but inbox never drains" undiagnosable from logs and left a healthy watcher indistinguishable from a wedged one. New `logging.EnableDaemonLogging()` lifts the floor to Info for the two machine-run long-lived verbs, whose stderr IS a dedicated log file. It lifts **only the default**: levels order Debug(-4) < Info(0) < Warn(4) < Error(8), so a `>= Info` test would also have matched `--quiet`'s Error and silently overridden an explicit request for silence — caught by its own test during development — so it matches Warn exactly and any explicitly-chosen level wins in either direction. Verified by falsification: with the fix a `wake-loop` run emits 877 bytes without `-v` where it previously emitted 0. That output immediately exposed a separate live defect, reported but deliberately not fixed here: the loop logs `inbox read FAILED: ...` and then reports `depth -1 -> 0 (status=idle)` — an unreadable inbox rendering as an idle lane with no work. The code comment at `wake.go:736` states the mitigation is to "fail loud in the log rather than silently reporting idle", so that safety property was defeated entirely by this logging default. Refs: PANTHEON_RULES.md A21; `internal/logging/logging.go`; `internal/router/wake.go:736-743`; Changelog: Unreleased
+
+- **Codified Rule A36 (Permanent Execution Loop) into canon, and named its precedence over Rule 17 and Rule A27** (claude-home, 2026-08-06). A36 has been binding since the owner directive of 2026-08-05 and is cited by number in ADR-057, both CLAUDE.md files, and the conduit runbook — yet it appeared **nowhere in this repository**: `grep -c A36` returned **0** in both `PANTHEON_RULES.md` and `AGENTS.md`. A rule that cannot be looked up cannot be quoted, checked, or reconciled against the rules it contradicts, and two of those contradictions were live. **(1) Rule 17** ("Before ANY code change, present a detailed sprint plan. No code is written until the USER approves") was stated absolutely, with only A24 named as an override, while A36 says the only owner gates are security and privacy — an agent following canon literally would have blocked on approval for work A36 defines as pre-approved. Rule 17 now names A36 alongside A24, scoped so Rule 17 still governs *new scope* an agent proposes on its own initiative. **(2) Rule A27** (§2.24) defines the heartbeat loop as "a *watcher*, not a work driver", which read alone licenses precisely the failure A36 exists to forbid: a lane that pulls, heartbeats and sleeps beside an inbox it never drains is fully A27-compliant while doing no work — the exact shape observed live this week across eleven lanes. Both files now carry an amendment bullet on A27: where A27 and A36 meet, **A36 governs; a heartbeat is necessary and never sufficient**. New §2.32 states the three work sources, the all-three-empty stopping condition, the traceability bar for completion claims, and — carried verbatim from the directive — that A36 is *intent, not enforcement*, with ADR-057 as the mechanism, so nobody cites the prose as the control. **Separately surfaced, not fixed here: `AGENTS.md` is missing §2.25–§2.31 (Rules A28–A34) entirely**, which exist in `PANTHEON_RULES.md`; the new section keeps the 2.32 number in both so citations resolve identically, and the gap is flagged inline. Refs: AGENTS.md/PANTHEON_RULES.md §2.32, §2.24, Rule 17; ADR-057; Changelog: Unreleased
+
+- **Zero-registration state filed: codex-nexus and codex-puck-technology have no live thread records** (claude-pantheon, 2026-08-06, claude-home finding). After the PR #508 demit `codex-nexus` and `codex-puck-technology` hold zero thread records in the registry (confirmed: `codex-finalwishes` 5 records, `codex-pantheon` 1 record + 1 open inbox item; `codex-nexus` 0, `codex-puck-technology` 0). Neither lane has open inbox items at time of filing, so nothing is stranded *yet*. The risk: any item routed to either lane lands with no watcher; it will sit unread until a human runs `ctr` — the stranded-inbox condition A27 exists to prevent. **Correct follow-up is not re-registration against PID 17275 (the shared ChatGPT host).** The authoritative fix is each new agent session publishing and heartbeating its OWN thread, anchored to a liveness signal that dies when the session dies (per A27 and the ADR-022 lease model). Liveness not observed is not liveness that can be borrowed; a PID you share is a PID you cannot speak for. This entry is a visibility filing — the defect class is known, the repair path is codified, and no stranded work exists at filing time. Refs: PANTHEON_RULES.md A27 / A7; ADR-022; PR #508 post-merge audit; claude-home router item 20260806-002157; Changelog: Unreleased
+
+- **The blessed A33 claims table was still filed under a DRAFT filename** (claude-home, 2026-08-06). `docs/CLAIMS-TABLE-DRAFT-A33.md` carried `Status: BLESSED by the owner as written, 2026-08-03` in its own first paragraph, while its filename said DRAFT — and the filename is what every reader sees first in a directory listing, a link, or a search result. That is an A33 honesty defect in the file whose entire job is A33 honesty: the table is the ONLY sanctioned claims source for outward surfaces, and a name reading DRAFT invites a reader to treat the blessed claims as provisional, or to go looking for a "real" table that does not exist. Renamed to `docs/CLAIMS-TABLE-A33.md` and updated all three inbound references (`CHANGELOG.md`, `docs/ADR-055-SNE-LICENSING-ANUBIS-RA-SEAM.md`, `docs/REPRODUCTION.md`); zero occurrences of the old path remain in the repo. Content is unchanged — the file was already correct, only its name lied. Refs: router item 20260803-165513 (the blessing); PANTHEON_RULES A33; Changelog: Unreleased
+
+- **`changelog.d/` replaces hand-edited `CHANGELOG.md` — the merge-conflict class is gone by construction** (claude-home, 2026-08-06). Every PR prepended to `## [Unreleased]` in one shared file, so any merge moved `main` and re-conflicted every sibling on the same lines. Measured this run: **all nine conflicting sirsi-pantheon PRs conflicted on `CHANGELOG.md`, and four (#508, #507, #471, #468) conflicted on nothing else** — mergeable work idle 49h+. The existing `.gitattributes` `merge=union` mitigation is not merely insufficient, it is actively misleading: `git merge-tree --write-tree origin/main <ref>` resolves **CLEAN** locally while the GitHub API reports `mergeable=CONFLICTING, mergeState=DIRTY` for the identical refs, because **GitHub's server-side merge does not honor the attribute**. A mitigation that passes wherever an agent verifies it and fails in the only place that decides whether a PR merges reads as "already fixed" and stops investigation. Fix: one file per entry under `changelog.d/`, so two PRs can never touch the same file; `scripts/changelog-assemble.sh` concatenates them into `CHANGELOG.md` newest-first at release cut and removes what it consumed. Entry prose, depth, and `Refs:` discipline are unchanged — only the destination file changes. `scripts/changelog-assemble.test.sh` pins newest-first ordering, README-is-not-an-entry, empty-directory-is-a-no-op (release scripts run it unconditionally), and missing-marker-fails-loudly; all falsified. Deliberately not a tool adoption — a directory plus `cat` is the whole feature. The four blocked PRs were unblocked by moving their entries verbatim, each as a fast-forward that preserved the original commits. Refs: PANTHEON_RULES.md A7/A26; changelog.d/README.md; PRs #508/#507/#471/#468; Changelog: Unreleased
+
+- **Added — Apple Silicon compute & memory map (M5 Max), and the SNE heterogeneous-compute PRD built from it** (claude-home, 2026-08-06, owner directive). Every figure is measured on `Mac17,6` with the command shown, not quoted from a spec sheet; unverifiable claims are marked `[spec]` with the reason. Headline findings: **(1) SNE is Metal-only** — `otool -L` links Metal/Accelerate/Foundation with **CoreML absent**, and symbol counts are `mlx_=1063, CoreML=0, BNNS=0, AMX=0`, so the ANE is unreachable by construction and SNE's founding premise is unimplemented; **(2) the 20 GB MLX "limit" is not a cap** — the engine itself reports `mlx_memory_limit_semantics="scheduler_backpressure_not_allocation_cap"`, and the 8-bit model ran to **36.33 GB peak = 97% of the GPU's 37.4 GB `recommendedMaxWorkingSetSize`** while that limit was nominally in force (A35: a limit inside the allocator it bounds is not a limit); **(3) RSS is blind to Metal** — `RSS 4.2 GB` against `mlx_active 31.4 GB`, a **27 GB blind spot** that already produced a false "host healthy" verdict, so every RSS-based guard is unfit; **(4) SME/SME2 supersedes AMX in the map** — `FEAT_SME`, `FEAT_SME2`, `FEAT_I8MM`, `FEAT_BF16` are all enabled on this chip, replacing the previous map's private/undocumented AMX framing with documented ARM ISA; **(5) `context_window=262144` vs `qualified_prompt_tokens=1024`** is a 256x gap and the likely direct cause of the 31 GB. The map upholds the 2026-07-21 finding that **decode belongs on the GPU** and explicitly rejects "route everything to the ANE" — the ANE's win is fixed-shape encoder work (embeddings), while M5's headline Neural Accelerators are *in-GPU* matmul units reached through Metal 4, not the ANE. PRD sequences by value/cost: guards-read-truth + index hygiene + worker caps (hours) -> external cap + KV envelope (days) -> SME2 ranking (linker flag) -> embeddings->ANE via Core ML (week+) -> Metal 4 prefill (benchmark-gated). Also documents the Electron constraint honestly: Claude/Codex/VS Code pin their main thread by construction and cannot be distributed; what we control is everything they spawn, which is where the measured 2x oversubscription originates. Refs: PANTHEON_RULES.md A14/A30/A32/A35; ADR-031-A/B; ADR-032; Changelog: Unreleased
+- **Corrected — "decode will not get faster" was an A35 scope error; decode is STALL-bound in the regime we run in** (claude-home, 2026-08-06, owner correction). The original claim was scoped to *peak decode on an unloaded, non-paging machine* and stated as a universal. On the measured machine — 97% of the GPU's recommended working set, swap 628 MB -> 3.04 GB, load average 36 on 18 cores — decode is nowhere near the bandwidth ceiling; it is stalling on paging, contention, and queueing. **A completed operation delivered on time beats a faster operation delivered late**, so eliminating stalls raises *delivered* throughput even though the bandwidth ceiling never moves. New map §5a tabulates the five measured stall sources and adds R9 (stall baseline) as a Phase-0 gate: no throughput claim from any later phase is admissible without a committed before/after baseline and its regime (A14). New map §5b covers the multi-node fabric with the arithmetic stated up front — **Thunderbolt 5 at 10 GB/s is ~2% of local unified memory bandwidth (~546 GB/s)**, so a TB5 fabric *cannot* extend memory bandwidth, and the non-negotiable design rule is **transport activations, never weights** (weights are GB and static; activations/logits/embeddings/KV deltas are KB–MB per request). The fabric wins by **residency** — every node's working set fits its own memory so paging goes to zero — not by transport speed. R10 ships a measured point-to-point link test first, not an architecture; RDMA semantics over TB5 on macOS are unverified and marked `[spec]`. Refs: PANTHEON_RULES.md A14/A35; Changelog: Unreleased
+
+- **`AGENTS.md` was missing seven binding rules — section 2 jumped 2.24 → 2.32** (claude-home, 2026-08-06). The synced canon copy carried Rules A1-A27 and then A36, with **A28-A34 absent entirely**: Ma'at Gate & CI Protection (A28), Orchestration Brain (A29), Model Tiering Doctrine (A30), CTR — Check The Router (A31), Do No Harm To The Running Host (A32), Universal Thread Census & Work Board Overseer (A33), and Bind Directives Cannot Supersede a Live Rejection (A34). Every one is cited by number elsewhere in canon — A29 by `ADR-034` and `docs/prd/ORCHESTRATION_BRAIN.md`, A31 by the global `CLAUDE.md` CTR block, A32 by the Owner Reporting Standard — so agents were being pointed at rule numbers that the file they were told to read did not define. This is the same shape as the A36 gap that PR #536 closed and the ADR-057 gap closed by PR #517 in the same pass: canon citing an authority that does not exist where it says it does. Backfilled sections 2.25-2.31 verbatim from `PANTHEON_RULES.md`; AGENTS.md now inventories A1-A34 + A36 across sections 2.1-2.32 with no duplicates and no gaps. **Two related defects found and deliberately NOT fixed here, because renumbering canon deserves its own reviewed change:** (1) `PANTHEON_RULES.md` contains **two** sections numbered **2.26 both labelled Rule A29** — "Orchestration Brain: Tiered & Pluggable" (correct; A29 is bound to the Orchestration Brain by ADR-034 and its PRD) and "Scope The Check To The Claim", which is additionally stranded *after* section 2.32, out of order; the backfill takes the ordered block only, so AGENTS.md does not inherit the collision. (2) **Rule A35 does not exist in either file** — `git grep A35` across all markdown on `origin/main` returns nothing, leaving an allocated-but-empty rule number directly beneath A36. One rule currently has no valid number and one number has no rule; whether those are the same defect is not established and is not being assumed. Refs: PR #536 (A36 codification); PR #517 (ADR-057); ledger tasks `agents-md-missing-a28-a34`, `adr-index-gap-056-057`; Changelog: Unreleased
+
+- **ADR-057 step 1: canonical requirement registry, plus a durable identifier allocator that ends cross-claimed document numbers** (claude-home, 2026-08-06). Two deliveries sharing one mechanism. **(1) Requirement registry** (`internal/routerstore/requirements.go`, `sirsi req`): the referent for the third term of the runnable predicate ("unmet traced canon requirement") and the thing the completion gate traces to — without it, "all canon implemented" is an opinion, because nothing enumerates what canon requires. Requirements store **evidence references, not booleans**: a boolean `tests_pass` records that someone once believed the tests passed, a `tests_ref` records which run. `Satisfy()` refuses unless all six ADR-057 §6 references are present and names the missing ones, so a merged PR plus green tests — the two things most often mistaken for completion — cannot satisfy a requirement between them. Verified by dogfooding: REQ-001 is this very PR, and the gate refused it. Waivers require a reason (an unexplained waiver is a dropped requirement wearing a terminal status), and requirements require a canon `source` (an untraced requirement cannot be audited, which is the only reason the registry exists). **(2) Identifier allocator** (`internal/routerstore/identifiers.go`, `sirsi adr`): ADR numbers were chosen by reading the filesystem and counting, which races by construction — two agents branching from the same main both see the same highest number and both claim it. The audit found the damage is worse than assumed: **four genuine collisions on main (ADR-013, 016, 046, 054), not one**. Allocation now runs through the same serialized store that already prevents duplicate router items, with `PRIMARY KEY (namespace, number)` making a cross-claim structurally impossible rather than merely detectable; withdrawn numbers are retained so a retired number is never reissued into existing citations. Falsified both ways: a naive read-then-write allocator fails the 25-goroutine concurrency test with a UNIQUE violation, and removing the evidence check makes the gate test fail. `sirsi adr audit` gained a **ratchet** (`--allow 13,16,46,54`) after the first draft would have red-failed CI on day one for pre-existing debt — a gate that fails immediately gets switched off and then protects nothing; new collisions fail, known ones are reported and may only ever be removed from the list. It also learned that **lettered sub-parts are legitimate** (ADR-031-A/B/C each amend ADR-031), which had made 4 of the first 5 findings false positives. Schema v8 adds `identifiers` and `requirements`; the v4-v6 migration test now asserts the current max version instead of a hardcoded 7, which is what made v8 break an unrelated test. Refs: ADR-057; PANTHEON_RULES.md A26; PR #517; Changelog: Unreleased
+
+- **ADR number integrity is now a CI gate — uniqueness AND the allocator high-water mark** (claude-home, 2026-08-06). The hand-maintained `Next available: ADR-NNN` pointer in `ADR-INDEX.md` failed three times in twenty minutes on 2026-08-03, and again on 2026-08-06 when PRs #465 and #495 merged **ten seconds apart** onto the same number. Renaming files was never the fix: the index advertised ADR-055 as next-available while ADR-055 was already registered in that same file, and two ADR-054 documents sat on disk with zero index mentions. **An allocator that under-reports its high-water mark hands out a number that is already taken.** `scripts/check-adr-numbers.sh` now runs two checks in the Lint job — (1) no two `docs/ADR-NNN-*.md` share a numeric prefix, with lettered sub-ADRs (`031-A`) keyed separately, and (2) the index pointer must be strictly greater than the highest number on disk, failing closed if the pointer is missing entirely. Check 2 is the one that prevents collisions rather than cleaning up after them. `ADR-054-ONE-HORUS` and `ADR-054-CONTRACTS-IDENTITY-AND-LEDGER-V7` share 054 **by design** and are recorded in an explicit `SANCTIONED_SHARED` allowlist plus the index, so the gate does not false-fire and no future reader "fixes" the companions apart. Also resolves the three real collisions still live on `main` — `ADR-013-THOTH-FOLD` → **ADR-058**, `ADR-016-THOTH-EXTRACTION` → **ADR-059**, `ADR-046-GO-OWNS-THE-SERVING-PATH` → **ADR-060** (all unindexed drafts; the canonical 013/016/046 are Tiled Context Rendering, TUI Primary Interface, and Local Sovereignty) — registers ADR-054 and the three renumbered drafts in both index tables, corrects the stale `ADR-047 | (file exists — unindexed)` row (no such file exists), and advances next-available to **ADR-061**. Supersedes PR #524, whose index-only fix would have raced this PR on the same header line. Verified by control: the gate fails on a reintroduced duplicate, on an under-reporting pointer, and on a deleted pointer, and passes on the fixed tree. Refs: PANTHEON_RULES.md A6/A7/A17; PR #465; PR #495; PR #524; router items `20260803-193619`, `20260805-234120`; Changelog: Unreleased
+
+- **`ADR-INDEX.md` did not know about ADR-057, the ADR that canon tells every agent to cite** (claude-home, 2026-08-06). PR #517 landed `docs/ADR-057-OPERATIONAL-ENFORCEMENT-SUPERVISION.md` but touched only the ADR file and a changelog fragment, so the index still had no row for it — the document existed and the one file whose job is to find documents could not. Registered ADR-057 in both the decision table and the allocation table and advanced the total to 59. Also recorded **ADR-056 as explicitly UNALLOCATED**: it has no file on `main`, no open PR claims it (all eight open PRs scanned), and no history references it — a number consumed by the allocator with nothing behind it. Written as a visible row rather than left as a silent gap, because a gap is indistinguishable from an oversight and invites the next agent to reuse a number someone may still be holding. **Note the gate limitation this exposes:** PR #464's ADR-number integrity CI gate checks uniqueness and allocator high-water monotonicity, and both PASS on a hole — no number is duplicated, and next-available (061) is genuinely above every allocated number. The gate proves the counter never goes backwards; it does not prove the set is dense, so an allocated-but-absent number stays green forever. Refs: PR #517; PR #464; ledger task `adr-index-gap-056-057`; Changelog: Unreleased
+
+- **ADR-057: operational enforcement moves into Pantheon's Go runtime — Rule A36 was a promise, not an invariant** (claude-home, owner directive 2026-08-06). A36 landed the permanent-execution-loop rule as text in `AGENTS.md`/`CLAUDE.md`/`PANTHEON_RULES.md`, enforced entirely by an agent choosing to honor a sentence it read at session start. Nothing detected a lane that stopped early, nothing distinguished a worker holding real work from one that merely looked alive, and nothing prevented a `done` that no evidence supported — the 15-minute conduit heartbeat is a timer-based bridge, not enforcement. ADR-057 specifies the durable supervision state machine that replaces the promise with an invariant: a single runtime-computed `runnable` predicate over three sources (open router item OR actionable ledger task OR unmet traced canon requirement) with parking permitted only when all three are false; transactional work claims carrying lease ID, expiry, heartbeat, attempt count, and idempotency key so a worker cannot look active while holding no task; event-driven wake on durable store transitions (item created/unblocked, task created/assigned/unblocked, requirement gap opened, lease expired, worker completed with work remaining) with durable wake IDs, bounded retries, acknowledgment via a real store mutation, and terminal-failure escalation; six honest lane states in Horus (`WORKING`/`ASSIGNED`/`IDLE with work`/`BLOCKED`/`UNROUTABLE`/`COMPLETE`) on the explicit principle that **process existence and heartbeat prove session liveness only, never work**; mechanical reconciliation across inbox ↔ ledger ↔ leases ↔ requirement registry ↔ production evidence that expires orphan leases and rejects inaccurate `done`; and an evidence-backed completion gate requiring requirement ID, commit/PR, tests, security control, design acceptance, deployment version, and production verification, with whole-app completion permitted only when every canonical requirement has a terminal verified disposition. Also records the Codex reality: Codex.app cannot guarantee endless execution from a text instruction, so an external Go supervisor must wake the registered task on durable work and verify acknowledgment. Implementation order is a dependency chain, not a preference: requirement registry → leases/acks → runnable predicate → event-triggered supervisor → stale/idle repair → completion gate → Horus surface. Numbered **057** because 054-056 is contested — `origin/main` carries two distinct ADR-054 documents and an ADR-055 while open PRs claim 051/054/055/056; PR #464's uniqueness gate is what makes that detectable. Refs: PANTHEON_RULES.md A36; ADR-050; ADR-054; PR #464; Changelog: Unreleased
+
+- **PR/task reconciliation — authoritative disposition matrix for claude-pantheon × codex-pantheon stack** (claude-pantheon, 2026-08-05). One session to close all ambiguity: (1) PR #502 SUPERSEDED — `git diff HEAD..feat/ledger-seam-dashboard-only -- cmd/sirsi/dashboard.go` is empty; LedgerFn seam landed in PR #496. Closed. (2) PR #499 NEEDS REBASE — correctly deletes `internal/modelrouter/` but inadvertently removes `LedgerFn` (regression vs main); routed to codex-pantheon. (3) PR #501 SNE-52 review PASS; SNE-51 four admission paths remain; owner codex-pantheon. (4) PR #495 ADR-054 One Horus: bound (`sirsi-bind[bot] @ b01b3f17`). (5) All 10 stale claude-pantheon task records resolved: 7 MERGED, 1 CLOSED, 2 forwarded (pr451, gemma-prefetch). Disposition matrix: `docs/reviews/reconciliation-disposition-matrix-20260805.md`. Refs: PANTHEON_RULES.md A7/A26/A32; ADR-041; ADR-054; router items `20260805-225043`, `20260805-231049`, `20260805-231140`.
+
+- **Four shared-host Codex thread registrations demitted** (claude-pantheon, 2026-08-05, codex-pantheon mandate). Closed thread registrations `thr-f837490e7e4b1ee7` (codex-finalwishes), `thr-36d2c25ec4b86018` (codex-puck-technology), `thr-9b8fcfe35e89455a` (codex-nexus), and `thr-a5bb47cd53667c87` (codex-pantheon). **Corrected rationale (post-merge audit, 2026-08-06):** PID 17275 was *not* stale — `ps -p 17275` confirmed it running as `/Applications/ChatGPT.app/Contents/Resources/codex-code-mode-host`. The real defect: four different agent sessions anchored their liveness signal to one shared ChatGPT *app-host* process. A shared-host PID outlives every individual session it hosts; its aliveness is evidence about the app, not about any of those sessions. All four threads read `status: active` while none was working its inbox — the liveness signal was measuring the wrong thing, same class as the wake-loop defect in #389 (a watcher heartbeating beside an inbox it never drained). Action stands; stated reason corrected. Codex sandbox denies `threads.json` writes; claude-pantheon executed four `sirsi thread close` calls on codex-pantheon's mandate. Horus had already repaired the registry with fresh canonical thread `thr-b092415e64829c8f`. `threads.json` is gitignored (live operational file). Refs: PANTHEON_RULES.md A27 / A7; ADR-022; PR #508; Changelog: Unreleased
+
+- **Ledger board accuracy: `Blocked` not in `Active`; menubar `+N more…` overflow row; `Summarize` tests** (claude-pantheon, 2026-08-03). Two follow-ups from the PR #454 bind (claude-home, `bf0f830`). *(1) `internal/ledger.Summarize`: blocked tasks no longer increment `ActiveTasks`.* `Done + Active + Blocked` are now three disjoint buckets, matching what `TextBoard` prints and what the owner sees in every surface. Same fix in `PhaseGroup.Active`. *(2) Menubar overflow row:* the ledger section has 5 pre-allocated slots (1 summary + up to 4 blocker rows). When blockers exceed 4, the 5th slot now shows `+ N more blocker(s)…` instead of silently dropping them — the board whose purpose is "what is blocked" must not truncate silently. *(3) `TestSummarizeSemantics`:* table test over zero-tasks, all-done (100%), and the blocked-not-in-active invariant, so both the percentage arithmetic and the subset semantics are pinned. Refs: PANTHEON_RULES.md A7/A10/A17; PR #454 bind; Changelog: Unreleased
+
+- **A1: HuggingFace cache rule skips the configured Sirsi model substrate — `sirsi clean` can no longer delete the Gemma weights** (claude-home, 2026-08-03). On 2026-08-03 the `huggingface_cache` scan rule reported the running Gemma inference substrate as cold reclaimable cache and `sirsi clean` deleted the weights — the tool ate its own substrate. Root cause: the rule guarded only on runtime env-var pins (`HF_HOME`/`HUGGINGFACE_HUB_CACHE`/`TRANSFORMERS_CACHE`) and a 30-day mtime floor; a model that is served but not env-pinned and whose cache mtime is cold passed both guards. Fix: `envGuardedRule` gains an optional `livePathFns` seam; `NewHuggingFaceCacheRule` supplies `sirsiGemmaLivePaths`, which reads `~/.sirsi/gemma-model.conf` and `gemma-model-max.conf`, translates each configured model ID to its HuggingFace hub snapshot dir (`models--<org>--<name>`), and adds it to the live-target set — so the configured Sirsi model is excluded from findings entirely, even when cold. Reuses the existing `isLiveTarget` exclusion (protects both descendant and ancestor/hub-root findings) and adds a `readFileLines` test seam. Regression tests in `ai_liveness_test.go` cover conf-driven exclusion, absent conf (no-op), and hub-root granularity. Known limitation: the scanner emits the HuggingFace hub as a single finding, so protecting one configured model conservatively suppresses reclamation of stale sibling models — safe for the incident fix; precise per-model reclamation is a separate design change. Split cleanly from PR #452 (safety fix only — no ADR renumbers, no ledger-board spec). Refs: PANTHEON_RULES.md A1/A2/A16; router items 20260803-193445, 20260803-225956; PR #452 review (codex-pantheon); Changelog: Unreleased
+
+#### Fixed
+
+- **Commercial macOS release notarization now recovers one bounded class of Apple transport failure.** DMG and PKG submission retain fail-closed behavior for credential, signing, and notarization-verdict errors, but retry an observed `abortedUpload` / `HTTPClientError.deadlineExceeded` multipart-upload interruption with a bounded delay. The helper uses the absolute macOS `xcrun` path in production, preserves the original failure after its bounded attempts, and has an isolated fake-`xcrun` regression covering both the retryable and permanent paths. This closes the three failed `v0.24.90` Apple upload attempts without representing their unsigned/unpublished artifacts as a release.
+
+
+- **Commercial notarization spaces repeated Apple transport retries.** The
+  release helper now uses a bounded five-submission budget with capped
+  exponential spacing only for Apple’s exact multipart-upload deadline.
+  Rejected artifacts, invalid credentials, signing failures, and every other
+  notarization verdict remain immediately fail-closed.
+
+- **Commercial macOS notarization recovers transient Apple upload deadlines.**
+  The DMG and PKG builders retry only the observed `abortedUpload` /
+  `HTTPClientError.deadlineExceeded` multipart-upload failure with a bounded
+  delay. Credential, signing, and Apple notarization-verdict failures remain
+  fail-closed; no partial artifact is published. The helper uses the absolute
+  macOS `xcrun` path in production and is covered by an isolated transient vs.
+  permanent failure regression.
+
+- **v0.24.89 — native System One observation now reads the canonical Ma’at
+  result.** Host observation and imported System One evidence both decode the
+  typed verdict the CLI actually emits. A successful retained Casebook screen
+  now refreshes the native surface instead of being presented as a false
+  failure because it was not wrapped in a generic command-result envelope.
+
+- **v0.24.88 — guided service restoration leads with the outcome.** The
+  native Health detail for managed launchd overrides now says what Pantheon
+  can do—restore managed services—before showing the retained technical
+  finding. The exact managed-label list remains visible, and the existing
+  confirmation, bounded Ma'at repair, re-check, and receipt path are unchanged.
+
+- **v0.24.87 — Casebook completes the declared Ma’at liveness recovery.**
+  System One can now invoke its closed, native `liveness-watch` repair from
+  the macOS Casebook as well as the managed launchd repair. The UI accepts
+  only those two explicit Ma’at repair identifiers; evidence and command-like
+  text can never become executable input.
+
+- **v0.24.86 — Fleet reads Ra directly instead of starting a dashboard server.**
+  The native Fleet now requests the canonical one-shot `router fleet --json`
+  producer with a bounded 20-second read. It no longer starts `board-serve`
+  just to render one frame, so a healthy fabric cannot become an empty Fleet
+  screen while dashboard startup waits on unrelated initialization.
+
+- **v0.24.85 — Fleet now renders Ra's full supervision vocabulary.** The native
+  view recognizes WORKING, ASSIGNED, IDLE WITH WORK, BLOCKED, UNROUTABLE, and
+  COMPLETE exactly as Ra produces them. Unknown future values are shown as an
+  explicit review state; Pantheon no longer mislabels a live lane as stopped.
+
+- **v0.24.84 — native Ma'at now owns the entire known-failure intake.** The
+  app has a first-class Proposals workspace: people can inspect every local
+  recurring-failure report, record a typed observation with a confirmation,
+  retry a failed read, and open the Stack Lab review route. The bundled CLI
+  now exposes the same proposal objects as clean JSON for creation and listing.
+  Local evidence still cannot silently edit source or become a fabric-wide
+  matcher until it is reviewed and promoted.
+
+- **v0.24.83 — Ma’at known-failure intake no longer depends on a source checkout.**
+  `sirsi maat known-failures register` now writes a create-only, read-back
+  verified, catalog-hash-bound local proposal under Ma’at’s protected local
+  evidence root. A missing or dirty checkout can no longer turn a new failure
+  report into a dead end. Local proposals stay out of automatic recognition
+  until Stack Lab review promotes them; the former checked-out catalog mutation
+  path is retained only behind explicit `--source-catalog` intent.
+
+- **v0.24.82 — every retained activity has a guided Ma’at resolution.** Failed,
+  ambiguous, and evidence-pending Activity records now offer a native
+  resolution card that explains what happened, records the precise retained
+  outcome in Ma’at’s casebook, and opens the resulting case. It never replays
+  a retained command, so evidence cannot become an accidental action. The
+  detail view now has a visible completion route instead of leaving an operator
+  with raw status text and a dead end.
+
+- **v0.24.81 release candidate — enrolled signing Mac releases without credential export.** The commercial DMG and PKG builders now accept an existing `notarytool` keychain profile on an enrolled signing Mac. Direct release signing still requires the exact Developer ID Application or Installer identity, but Apple credentials never have to be copied into environment variables, logs, source, or a receipt. The existing remote signing-service and CI credential routes remain intact.
+
+- **v0.24.80 release candidate — Activity resolves instead of dumping terminal remnants.** Activity now classifies every retained outcome as completed, needing review, or requiring evidence verification. Ambiguous and failed records open a native Ma’at guided-review route; the exact command is retained as technical evidence in the detail view rather than being the user-facing workflow. This preserves provenance without making people decode shell output to find a next step.
+
+- **v0.24.79 release candidate — Command Center treats optional access truthfully.** Full Disk Access remains available for broader disk visibility, but its absence no longer promotes an otherwise healthy Mac into Pantheon’s global “Needs attention” state or routes the operator into a false repair flow. Actual diagnostics retain their bounded Ma’at repair, re-verification, and receipt path.
+
+#### Fixed
+
+- **The owner inbox is no longer reported as a stranded queue.** Only the literal lane `user` was exempt, so `owner` (also mechanism `owner-surface`) showed in the Command Center as "work waiting but no armed watcher". Every owner-surface lane is now excluded, driven by the registry.
+
+
+#### Fixed
+
+- **`claude-finalwishes-m5` is wakeable.** Its registry entry said `wake: none`, so review items from `codex-finalwishes` (21 open tonight) piled up with nobody reading them; it now declares a launchagent wake like every other staffed lane.
+- **The registry no longer declares a `mercury-m5` lane.** Claude Mercury exists only on the M1 (`mercury`). The three aliases that pointed at `mercury-m5` (`claude-io-cylton`, `cylton-mercury`, `m5-mercury`) now resolve to `mercury`.
+
+
+#### Fixed
+
+- **Wake loops work on every host without per-host registry edits.** The shared registry holds absolute paths (`/Users/thekryptodragon/...`), so the same lane read WATCH_ONLY ("consumer cwd is not usable") on the other Mac. The consumer resolver now rebases another machine's home prefix onto the local home — cwd, argv and env — only when that home does not exist locally. `claude-deck`, `claude-pantheon` and `claude-nexus` now have reactive wake loops on the M1; `mercury-m5` and `claude-apollo-m5-rail` on the M5.
+
+
+- **Dashboard: a Router view that shows everything built, and fixes to Fleet.** `GET /api/router` and a new Router tab show the installed version, lane verdicts (the same as `sirsi router ping --all`), the open queue, the consumer cap in use, whether the registry is pinned, the known-failure catalog with each fix's release and guard, the swap-hygiene receipt, and what each release added (read from CHANGELOG). A producer error is a 5xx, never an empty panel. Fleet now shows a loading line instead of a blank screen for the ~3 seconds the board takes, and no longer lists retired aliases (such as `claude-finalwishes-helper`) as lanes. The dashboard is now a component of the Ra/Horus fabric Stack Lab recipe, component catalog and traceability matrix, together with the known-failure catalog, registry pin, swap hygiene and claim-eligibility components.
+- **The work board and insight stop reading the whole item history.** `router workboard` and the platform "Router — Collaboration" signal called ListAll (13,000+ rows, 6-20 seconds on the service) on every refresh, and those calls were the repeated multi-second reads seen in the service logs alongside the 30-second spool timeouts. The board needs only open work plus the last week's closures (new `ListSince` store method / `RecentItems`) and the insight signal needs only open items (`ListActive`). The service is deployed before the client ships.
+
+- **Two things that were hand work are now verbs.** `sirsi router registry sync --install` re-pins a host to origin/main every hour through launchd (no resident process), so registry drift cannot return by omission. `scripts/release-train.sh <version> [--deploy-service]` is the whole release in one command with a hard stop at every step: changelog PR, one CI run, merge, optional router-service deploy before the client ships, tag, publish, upgrade on the M1 and M5, restart every loop. CI checks its syntax, dry-run and refusal of a bad version.
+- **Known-failure loop: register the problem once, record the fix with a guard, recognize it next time (Ma'at + Stack Lab).** Recurring failures were being diagnosed and fixed by hand each time. `internal/maat/knownfail` is a catalog of failures (signature, cause, fix, the release it shipped in, and a regression test that must exist); a resolved entry without a real guard test is rejected by the loader and by a CI test. The wake loop now recognizes a failing consumer's output against the catalog and publishes the answer ("KNOWN failure X: cause; fix; upgrade to N") in the lane state and log instead of leaving a quarantine for a person to diagnose. `sirsi maat known-failures list | match | register | resolve` is the registrar (`resolve` refuses unless the guard names a test that exists). The catalog is a Stack Lab component of the Ra/Horus fabric recipe. Seeded with this week's classes: symlinked codex writable root (new registry guard test), shared fallback agent session, ps-denied anchor, 30-second spool timeouts from full-ledger reads, working-tree registry drift, and claim refusals.
+
+- **Horus closes its own "lane needs you" alerts when the lane recovers.** The escalation pass only ever opened them (deduped by title) and nothing closed them, so every recovered lane left a stale card on the owner board (six were dismissed by hand on 2026-10-02 for lanes that were already wakeable). Each pass now closes the Horus-sent alerts for lanes it no longer escalates, including when nothing is escalated; a still-true alert and cards from anyone else are never touched.
+
+- **Host-wide cap on concurrent headless consumers.** Wake loops are nearly free when idle (a two-minute probe cost 0.05 CPU-seconds); the CPU on a busy Mac is the consumers they spawn, each a full agent session, and the lane gates were per-lane so six lanes could each run one at once. A lane now holds (`hold: slots`, retried next tick, nothing lost) while the host already runs `SIRSI_MAX_CONSUMERS` consumers; the default is one per five cores (2 on a 10-core Mac, 3 on the M5).
+- **`sirsi router task why <agent> <task-id>`: read-only claim-refusal diagnosis.** Lanes were probing the ledger with claim attempts to learn why a task would not claim, and asking Ra for the fields the task list omits. It reports claimed_by, thread, lease expiry, attempts against the ceiling, failure reason, the blocked_by dependency's own state (task status or free-text reason) and every cause that blocks a claim, never the lease token. New Store method `TaskEligibility` (the service is deployed before the client ships).
+- **`sirsi swap-hygiene`: recurring swap and memory hygiene (owner priority 2026-10-04).** Samples `vm.swapusage`, the `vm_stat` swap-in/out counters and `memory_pressure`, compares with the previous sample, and records a receipt under `~/.sirsi/swap-hygiene/`. A nonzero swap allocation is not treated as paging: the verdict (`clean`, `idle-allocation`, `active-paging`, `pressure`, `unknown`) comes from swap movement between samples, a missing reading is reported `unknown` rather than defaulted, and a counter reset is not movement. It publishes both qualification flags Apollo needs kept visible (correctness-only: known swap and at least 50% free memory; release timing: additionally clean). A restart is only PROPOSED, for the owner and workload owners, when paging coincides with under 20% free memory; swap files are never touched and nothing is killed or restarted. `--install` runs it every 30 minutes through launchd with no resident process.
+- **The agent registry can be pinned to origin/main (A37, ADR-072 P5).** `agents.json` was read from the working tree of a shared checkout, so another session's branch or uncommitted edit silently became the fabric's identity (codex-apollo flipped to `wake=none` and read WATCH_ONLY; "identity is not fully declared"; every fix a hand copy). `sirsi router registry sync` stores a snapshot of origin/main as this host's registry (validated before it replaces anything, written atomically, scoped to its own router root, ignored once older than 72 hours); while pinned, a working-tree edit cannot change who the lanes are and registry writes are refused with the PR path. `registry status` shows the source and `registry unpin` goes back to the working tree. Opt-in per host.
+- **`router ledger` and `router status` no longer read the whole item history.** Every call read all 13,000+ rows (6-20 seconds on the service), so a few concurrent callers produced the "no response within 30s" spool timeouts and HTTP 502s that lanes reported (ListAll, GetState, ListTasks on the M5). A new `ListActive` store method returns the non-terminal items plus the closed items they are blocked on (dependency truth) and `CountClosed` supplies the closed total; the ledger and status use them. `router dump`, the work board and insight still read everything. The service is deployed before the client ships.
+
+- **Router alias `mercury` → `hermes`.** Owner rename 2026-10-02 (Hermes is now Mercury): `mercury` resolves to the existing `hermes` lane (same inbox, same worker) so mail addressed either way arrives; the canonical lane id stays `hermes` until the coordinated migration. With #966, `sirsi-mercury` inherits the Hermes release policy before the GitHub repo is renamed.
+
+- **SSA's headless consumer works again.** Its sandbox listed `~/.sirsi/relay` (a symlink to `/var/sirsipantheon/relay`) as a writable root and the codex executor now refuses a root containing a symlink component, so every command failed, every dispatch made no progress, and the lane was quarantined three times (9/20, 9/22, 10/1). Only the real path is listed now.
+
+- **A headless worker stands down while an attended session owns the lane.** The wake loop dispatched a `claude --print` consumer on a lane whose owner was working it interactively, so two writers acted as one id (the worker acknowledged and worked PR #893 on `claude-finalwishes-m5` while the owner's session never saw it). Dispatch now holds (`hold: attended` in the lane state) while a live, armed attended session is on the lane, and resumes as soon as it is gone.
+
+- **A dispatched consumer authenticates as its lane, not the hostname.** With no `SIRSI_AGENT_ID` and no session marker the router client fell back to the hostname, so every such consumer on a host shared one identity ("Mac"); the wake loop already names the lane in `SIRSI_ROUTER_AGENT`. That variable now fills the gap before the hostname fallback; an explicit `SIRSI_AGENT_ID` still wins.
+
+- **Two actors with the same fallback agent id no longer swap sessions.** Callers that cannot resolve their agent id (sandboxed claude-pantheon and codex-pantheon sessions) both fall back to the hostname, and one cache file per agent made them overwrite each other's session, so a lease claimed under one session was completed under another and refused. A caller with a thread now gets its own per-thread session file; the per-agent file stays the latest-session cache for thread-less callers.
+- **The bind refuses to approve a PR the router has rejected.** `sirsi-bind.sh` consulted GitHub reviews only, so a router-only rejection did not stop PR #927 from merging (A34 gap, 2026-10-01). It now reads the router's latest verdict item naming the PR and refuses APPROVE while that is a rejection; a newer ACCEPT/PASS item or the explicit owner override clears it, and an unreadable router fails closed. The bind tests (`scripts/bind/*.test.sh`, including the new router-rejection test with both directions) now run in the Lint job.
+- **The bind refuses to approve a PR the router has rejected.** `sirsi-bind.sh` consulted GitHub reviews only, so a router-only rejection did not stop PR #927 from merging (A34 gap, 2026-10-01). It now reads the router's latest verdict item naming the PR and refuses APPROVE while that is a rejection; a newer ACCEPT/PASS item or the explicit owner override clears it, and an unreadable router fails closed. Two pure-jq bind tests, including the new router-rejection test (both directions), now run in the Lint job.
+- **ADR-070 revised for re-review.** Applies codex-pantheon's five required amendments: the boundary test runs first and independent of findings; one exhaustive verdict precedence (R0-R8) rejects invalid or non-finite input; a screen pass never supplies the binding approval; calibration samples auto-passes and fails closed when unqualified, with provisional thresholds and no unmeasured "90%" claim; provenance adds an evidence-set digest and calibration identity. No code changes; the current deterministic gate stays until the corrected schema is independently accepted.
+- **`sirsi router doctor` reports ADR-072 name conformance.** Lists the registered ids that are not in `<agent>-<project>-<machine>[-<task>]` form (23 of 33 today) with the ADR's migration-map suggestion where one exists. Informational and report-only: the rename verb is not built, so it adds no issue count and renames nothing.
+- **`sirsi maat who-is-on` no longer says "free" over live work, and shells are not load.** The reservation ledger only knows who asked; `who-is-on` now also lists the contaminating processes running on this host right now. The process probe also stops classifying a `zsh -c "<script>"` wrapper as bench/build load because its script text mentions "go build" or "tbraw" (it flagged every agent's own shell); the real child process is still classified. Closes the (a) and (b) halves of the codex-apollo admission repro.
+
+- **Dashboard copy:** `viewApollo()`'s six user-visible strings (session
+  awaiting/active/error copy) now say "Apollo" instead of the retired "SNE"
+  name, matching the rename already carried by the deck, data room, and
+  Stack Lab. Pure copy change — no behaviour change, no ADR required. The
+  internal code comment at the top of `viewApollo()` is unchanged.
+
+### Unreleased — routerstore: ListenNotify no longer leaks a blocking reader past ctx cancellation
+
+- **Router dispatch:** `SQLiteStore.ListenNotify`'s FIFO reader opened the
+  notify pipe with a plain blocking `os.OpenFile(O_RDWR)` and relied on a
+  second goroutine's `fd.Close()` to interrupt an in-flight `Read` when the
+  context was cancelled. On darwin that close does not reliably unblock the
+  reader, so the goroutine (and its fd) leaked past `ctx.Done()` — confirmed
+  live under `-race -short`: a goroutine dump showed a reader still blocked
+  in `syscall.Read` at this call site 8 minutes after its owning test had
+  finished, and with enough tests accumulating these it starved every other
+  `*sql.DB` in the process. Switched to an explicit non-blocking
+  (`O_NONBLOCK`) open with a 200ms `SetReadDeadline` poll that rechecks
+  `ctx.Err()` each cycle, so the goroutine exits promptly on cancellation
+  instead of waiting on a close that may never land.
+
+### Unreleased — routerstore: Task now surfaces result_ref
+
+- **Router tasks:** `CompleteTaskLease` persists `result_ref` into the
+  `tasks` table (used by the done-without-proof report and reconcile
+  checks), but `Task` never had a corresponding field — `GetTask`/
+  `ListTasks` could never read completion evidence back. Added
+  `ResultRef` to `Task`, `taskSelect`, and `scanTask`.
+
+### Unreleased — staff the unstaffed lanes; workers acknowledge and are linked to their lane
+
+- **Thread registration works where `ps` is denied.** A sandboxed worker (codex: `fork/exec /bin/ps` not permitted) could not resolve its durable anchor, so native registration failed and its claims and completions ran under unbound sessions. The ancestry lookup now falls back to a kernel `sysctl` read (macOS) when `ps` fails; `ps` stays the first choice because it reports the full executable name.
+- **The local pre-push test timeout matches CI.** `go test` for changed packages timed out at 300s while `routerstore` now takes 572s under `-race`, so the gate could fail a push CI itself would pass. Raised to 600s for both tiers (A28 parity).
+
+- **The pre-push gate holds pushes and tags while a Ma'at measurement window is open.** A push starts CI on the local runners and a tag starts the release build, so either contaminated a run while `rails.lock` existed (PR #928 CI began 6 seconds after hermes opened the lock). The hook now refuses until the lock clears; `MAAT_WINDOW_OVERRIDE=1` is the deliberate bypass. Tested both directions in `scripts/pre-push-window.test.sh`, wired into the Lint job.
+- **`sirsi gemma serve --status` finds the launchd-owned SNE.** It read only the old broker's port file, so a healthy SNE on 127.0.0.1:8477 reported "unavailable" (and `ctr`/`insight` skipped the warm local model). A missing or stale port file now falls back to the default port.
+
+- **CI's PostgreSQL leg now fails closed instead of silently skipping.**
+  `scripts/ci-postgres.sh` exited 0 and printed a one-line `SKIP:` when
+  `initdb`/`pg_ctl`/`psql` were missing — on the hosted `macos-14` runner,
+  which does not link any Postgres version onto `PATH` by default, this
+  meant the required "Router store on PostgreSQL (ADR-062)" CI step had been
+  reporting green without ever running the PostgreSQL leg (A35). The step
+  now provisions `postgresql@16` onto `PATH` explicitly and the script fails
+  loudly (`::error::`, exit 1) if the prerequisite is still missing, proven
+  by a checked-in negative-control test (`scripts/ci-postgres-fail-closed.test.sh`,
+  wired into the Lint job) that fails against the old silent-skip script and
+  passes against the new one. Also fixed a real version mismatch found while
+  verifying this: `check-pg-schema.sh`'s `router_migrator`/`router_service`
+  ADMIN OPTION negative control depends on PostgreSQL 16's `ALTER ROLE`
+  enforcement — PostgreSQL 14 does not enforce it, so the same negative
+  control silently passed-when-it-shouldn't on 14 (verified locally: fails
+  on `postgresql@14`, passes end-to-end on `postgresql@16`). Corrected the
+  stale PG14 references in `scripts/ci-postgres.sh` and
+  `internal/routerstore/pg/README.md` to PG16, and the README's stale
+  table-count/schema-version figures to the current live values.
+- **A worker that loses its thread between claim and complete keeps its lease.** The session cache is keyed by (agent, runtime, thread); a sandboxed worker (codex: `fork/exec /bin/ps` denied) resolved no thread on its second invocation, minted a fresh threadless session, and was refused `ErrNotOwner` on its own lease. A caller that resolves no thread now reuses the cached session; a caller that resolves a different thread still mints its own. Complements #947, which only matched sessions sharing a non-empty thread.
+- **Lane `claude-apollo-m5-rail` (M5-Apollo-Rail).** The M5 inference rail was reachable only through the aliases `claude-inference-cylton` / `cylton-apollo`, which pointed at the M1 `claude-inference` lane. It now has its own registry entry; both aliases and `m5-apollo-rail` resolve to it.
+
+- **Dispatch gate reads idle CPU, not load average.** Load average counts Spotlight and Photos analysis, which only take cores nothing else wants; the M1 sat at load 13-17 on 10 cores with 36% idle and deferred every lane. The gate now defers only when idle CPU falls below 10% (falls back to half the load average if `top` is unreadable).
+
+- **Lanes staffed:** `hermes`, `claude-io` (now on the M1, directory `sirsi-io-connect`),
+  `claude-home` and `ra` (M1; Ra's headless worker uses its own worktree) get a wake
+  loop with a working Claude consumer; `sirsi-hardware-admin` and `codex-finalwishes-web`
+  get a Codex consumer (M5); SSA's consumer is restored from origin and its sandbox
+  reaches the real relay directory (`/var/sirsipantheon/relay`).
+- **Workers acknowledge:** the standard worker prompt (28 lanes) now tells the worker
+  to `sirsi router acknowledge <id>` as soon as it has read an item, and to claim tasks
+  with `--worker <lane> --thread <thread>` so the lease links the task to its worker.
+- **Linked to the thread:** a `{{thread}}` placeholder in the consumer prompt/argv is
+  replaced with the wake loop's registered thread id (`bindConsumerThread`), in addition
+  to `SIRSI_THREAD_ID` in the environment. A sandboxed consumer can have its environment
+  stripped (SSA reported `thread=unset`); the prompt now carries the id in words.
+- **`router ping` judges the best worker:** a lane with a working loop on one host and a
+  newer-heartbeating watch-only loop on another is WAKEABLE, not WATCH_ONLY.
+- Verified live 2026-10-01 with a link-check item per lane: hermes, sirsi-hardware-admin
+  and codex-finalwishes-web acknowledged, closed, and reported a thread id matching their
+  loop's registered thread.
+
+### Unreleased — wake loops start a worker for ledger tasks, not only inbox items
+
+- A wake loop decided whether to start a worker from the inbox alone, so work the
+  router placed on a lane's task ledger started nobody (2026-10-01: 22 requests
+  moved to tasks; the quiet lanes behind them stayed pending while busy lanes
+  progressed only because other mail kept their consumer running). The loop now
+  counts **dispatchable ledger tasks** with inbox items. Dispatchable = claimable
+  and the lane's own to do (responsible party `self`, empty or the lane itself):
+  owner-assigned, other-party, blocked and leased tasks do NOT start a worker.
+- New `RunnableState.DispatchableLedgerTasks` (shared `RunnableFor` predicate, no
+  retyped SQL). The progress/stall fingerprint includes the task counts, so a
+  consumer that claims or finishes tasks is not killed as stalled.
+- Rollout: deploy the router service first (the count is computed server-side);
+  an older service returns 0, which is the previous behavior, so nothing can
+  regress before then.
+
+### Unreleased — `sirsi router ping`: can this lane actually work right now?
+
+- Wake loops now publish an honest **lane state** on every heartbeat (inside the
+  existing thread payload — no schema change): whether a working consumer is
+  declared, the last consumer outcome (`ok`, `no_progress`, `auth_required`,
+  `relay_unreach`, `start_failed`, `exited_error`), any hold on dispatch (Ma'at
+  measurement window, host load, no-progress back-off with its expiry, quarantine,
+  spawn ceiling) and when the lane last made progress.
+- New `sirsi router ping <lane>` / `--all` turns that into one verdict: `LIVE`,
+  `WAKEABLE`, `HELD`, `AUTH_REQUIRED`, `WATCH_ONLY`, `UNSTAFFED` or `UNREACHABLE`.
+  It reads state only (no model call, no spawn). A retired name resolves to its
+  successor. `send` prints the recipient's verdict on **stderr** after sending
+  (stdout, which callers parse for the item id, is unchanged).
+- Why: `node-status` reported SSA and claude-io as "armed (heartbeat-fresh)" while
+  both were watch-only and could not work anything, and items to lanes with no
+  worker waited silently (2026-10-01). A launch job installed plus a fresh
+  heartbeat is not readiness. A worker still running an older binary reports
+  WAKEABLE "declared, not proven" until it publishes lane state.
+
+### Unreleased — `sirsi router reopen`: the undo for close
+
+- New `sirsi router reopen <id> --reason <text|@file>` returns a closed item to
+  open, keeping its close result in the body with who, when and why. Same
+  authority as close (the recipient, or an actor with `close:any`); an
+  owner-addressed item can only be reopened by the owner. A reason is required.
+  On 2026-10-01 a live request was closed by a bad id and there was no way back;
+  this is step 1 of the local router reconciler (ledger ra/router-local-reconciler),
+  so every automatic close can be reversed. Store `ReopenItem` is served by the
+  existing reflective server (no schema change).
+
+### Unreleased — alias fixes: claude-finalwishes-helper → claude-finalwishes-m1, ssa → sirsi-software-admin
+
+- `claude-finalwishes-helper` is the M1 FinalWishes Claude lane, not the M5 one
+  (owner correction 2026-10-01); the alias now points at `claude-finalwishes-m1`.
+- `ssa` resolves to `sirsi-software-admin`: `codex-pantheon`'s source reviews fell
+  through to the owner because the short name was undeclared.
+
+### Unreleased — wake loops hold dispatch during a Ma'at measurement window
+
+- The wake loop no longer starts a consumer while `~/libsirsimpi/rails.lock`
+  (or `$MAAT_RAILS_LOCK`) exists — the same marker the owner's
+  maat-window-gate hook honors. On 2026-09-30 a quiet cablepull reservation on
+  the M1 was invalidated by a Claude shell; unattended consumers must wait for
+  the window instead. A session already running is not interrupted.
+
+### Unreleased — Ma'at cede/reservation decision ledger reports append failures instead of swallowing them
+
+- `cmd/sirsi/maatcede.go` `logCedeDecision` and `cmd/sirsi/maatschedule.go`
+  `logFloorGrant` used to warn on stderr and return success when the
+  decision-ledger append (mkdir/open/write) failed, so a cede
+  request/grant/counter/decline/withdraw or a floor-share reservation grant
+  could report a durable success with no drillable record. Both now return
+  the append error; every call site returns it from `RunE` naming the
+  scheduler transition that already committed, so a caller sees a clear
+  failure and knows not to retry (retrying would double-apply an
+  already-applied cede/reservation). Rejected by SSA review 20260927-143128;
+  confirmed still present on main and fixed here.
+
+### Unreleased — Codex consumers can reach the router through the spool relay again
+
+- Every Codex lane's consumer now passes `--add-dir /var/sirsipantheon/relay`.
+  `~/.sirsi/relay` is a symlink there (since 2026-09-12), and Codex's
+  workspace-write sandbox refused writes through it, so every Codex consumer on
+  the M5 failed with `spool: 64 requests in flight … relay stalled?` and did no
+  work. Verified live: the same `codex exec` reads its inbox with the path added.
+
+### Unreleased — lane registry: wake Apollo + FinalWishes M1, fold idle codex lanes (owner 2026-09-30)
+
+- `codex-apollo`, `claude-inference` (the M1 Claude Apollo lane; paths now M1)
+  and `claude-finalwishes-m1` wake on mail (`launchagent`).
+- `codex-io` → `claude-io`, `codex-nexus` → `claude-nexus`, `codex-home` →
+  `claude-home` become aliases; their mail drains to the Claude lane.
+- `hermes-m5` is recorded as subordinate to `hermes` (the M1 Claude Hermes lane).
+
+### Unreleased — router aliases + reassign: retired names deliver to their successor (ADR-072 C5)
+**Feature.** `agents.json` gains an `"aliases"` map (retired name → declared
+successor). `Send` resolves an alias to its successor, so senders still using
+an old name stop refilling mailboxes nobody watches (on 2026-09-30
+codex-finalwishes sent 22 items to the retired `claude-finalwishes-helper` in
+two hours). New `sirsi router reassign <id> --to <agent>` hands an open,
+unclaimed item to another declared agent keeping its id, sender and body (only
+the recipient may hand off; alias mail moves only to its declared successor),
+and `sirsi router drain-aliases [--dry-run]` empties each alias into its
+successor. Store: `ReassignItem`, guarded on recipient/open/unleased, served by
+the existing reflective server (no schema change). Registry: retires
+`claude-inference-cylton`, `cylton-apollo`, `codex-sne-runtime`, `cylton-hermes`
+and maps nine retired names per the owner's 2026-09-30 decisions. The Router
+Addressing Law in the router README now uses ADR-072 names and no longer tells
+senders to use `claude-finalwishes`. Live dry run from the new registry: 120
+items across 6 aliases. Tests both directions; negative control: Send without
+alias resolution refuses the alias exactly as live senders are refused today.
+
+### Unreleased — no title
+- **feat(maat): attribute GitHub submission admission to the registered agent session** (2026-10-01, PR #927). Adds `sirsi maat submit` Phase 1 admission for tag, release, release-edit, and merge submissions. Requester identity is resolved from the registered session marker, policy decisions are written to the existing Ma'at ledger, and unregistered sessions fail closed. Automatic watcher/release mutation remains explicitly out of scope. Refs: PR #927; ADR-062; PANTHEON_RULES.md A1/A7/A16/A32/A35
+
+### Unreleased — acting-agent resolution never returns an undeclared agent
+**Fix.** `resolveCurrentAgent` (close/respond/acknowledge/heartbeat/thread watch)
+now accepts its two INFERRED sources — the session→agent marker and the
+sole-live-thread fallback — only when the agent is declared in agents.json now,
+via the same `dispatch.ValidateAgent` check dispatch enforces. A marker outlives
+the declaration it was written under: a verification agent stubbed in,
+registered from a live session and reverted left the Ra session resolving as
+`verify-m1-1790459290`, and every `router close` was refused. An undeclared
+inference is skipped and named in the error; `--agent` and `$SIRSI_AGENT_ID`
+stay explicit. Test `TestResolveCurrentAgentIgnoresUndeclaredMarker` (both
+directions; negative control run: the pre-fix body reproduces the live bug).
+
+### Unreleased — read-only `router_reader` role for board consumers (rs-44)
+**Security.** New NOLOGIN `router_reader` group role (roles.sql) with SELECT on
+an explicit allowlist of the 13 board tables (schema.sql), re-asserted fail-closed
+on every schema apply (`REVOKE ALL` then grant the list). `sessions` (plaintext
+secrets), `host_tokens` and `lease_sessions` are never granted; no default
+privileges, so a future table stays unreadable until listed. Verified against a
+scratch Postgres 16: 13/13 allow, 7/7 deny (secret reads + DML + DDL), a leaked
+grant is detected, and re-apply revokes it. Residual: `lease_token` fencing
+columns on items/tasks/wake_events are readable; unusable without an
+authenticated session, which this role cannot read or mint.
+
+### Unreleased — relay re-dials half-open pooled connections (rs-30)
+**Fix.** The router relay's forward path now re-dials ONCE on a fresh
+connection when the first attempt provably never reached the Cloud Run service
+(a dial/DNS-phase failure — the shape a dropped half-open pooled connection
+surfaces), instead of parking a network-less codex sandbox's request in the
+outbox for a full retry cycle. The re-dial is gated on `neverReachedService`,
+so a post-send failure stays OUTCOME UNKNOWN and is never auto-retried (no
+double-commit). The forward transport also documents its no-pool guarantee
+(`DisableKeepAlives`) plus defensive idle bounds. Refs: rs-30; ADR-062 relay
+trust boundary.
+
+---
+
+### Unreleased — no title

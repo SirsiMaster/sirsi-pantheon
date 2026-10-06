@@ -492,11 +492,38 @@ func activityResolution(for result: String) -> ActivityResolution {
     return .resolved
 }
 
+// An activity row is evidence, not executable input.  When its completion is
+// ambiguous, Ma'at receives the retained command and outcome as quoted facts so
+// it can create the canonical review case.  The app never replays the command
+// that produced the entry.
+func activityMaatReviewArgs(for entry: ActivityEntry) -> [String] {
+    let outcome = entry.result.trimmingCharacters(in: .whitespacesAndNewlines)
+    let message = outcome.isEmpty
+        ? "Pantheon retained this activity without a readable outcome."
+        : outcome
+    let command = entry.command.trimmingCharacters(in: .whitespacesAndNewlines)
+    let detail = command.isEmpty
+        ? "Pantheon activity has no retained command text."
+        : "Retained Pantheon activity command: sirsi \(command)"
+    return [
+        "maat", "record-resolution",
+        "--check", "Pantheon activity: \(entry.title)",
+        "--message", message,
+        "--detail", detail,
+        "--confirm",
+    ]
+}
+
 // SirsiEngine is the observable model behind every view. All deletion happens in
 // the Go `sirsi` binary (safety-gated, trash-first, protected paths hardcoded);
 // this type only reads the persisted scan and runs the CLI.
 @MainActor
 final class SirsiEngine: ObservableObject {
+    // One bounded, direct Ra read for the native Fleet surface.  Keep this
+    // data rather than a prose convention so a later refactor cannot quietly
+    // reintroduce `board-serve --once` and its server-start latency.
+    nonisolated static let fleetReadArgs = ["router", "fleet", "--json"]
+    nonisolated static let fleetReadTimeoutSeconds = 20
     struct FabricHandoffOutcome {
         let text: String
         let succeeded: Bool
@@ -750,21 +777,20 @@ final class SirsiEngine: ObservableObject {
     // loadRouterBoard reads ~/.sirsi/router-board.json; if absent, shells
     // `sirsi router node-status --json` (same contract). Never blocks the UI.
 
-    // loadFleetBoard reads the shared producer. No local aggregation: the whole
-    // point is that this surface renders what Horus renders.
+    // loadFleetBoard reads Ra's canonical one-shot fleet projection. No local
+    // aggregation: the native surface renders exactly the router's supervised
+    // lanes rather than starting the long-lived dashboard server merely to ask
+    // for one frame. The latter can spend tens of seconds initializing board
+    // dependencies and leave a usable Fleet screen with no data.
     func loadFleetBoard() async {
         fleetLoading = true
         defer { fleetLoading = false }
-        // Read the ROUTER BOARD's own output, not a parallel aggregation.
-        //
-        // This used to call `router fleet --json`, whose summary counts
-        // differently from the board's BoardSummary (the board treats blocked as
-        // a SUBSET of active; fleet reports them as separate tallies). Two
-        // careful aggregations still disagree, and on 2026-08-05 the owner was
-        // shown three surfaces reporting three different numbers under
-        // interchangeable labels. `board-serve --once` runs the SAME code the
-        // served board runs, so parity is structural rather than maintained.
-        let out = await Self.runJSON(args: ["board-serve", "--once", "--shape", "fleet"])
+        // `router fleet --json` is the canonical Ra consumer contract. It
+        // constructs the one-shot view directly; it does not boot an HTTP board
+        // plus its long-lived poller to produce one read. A 20-second bound is
+        // long enough for a real router ledger but still gives the user a clear
+        // recovery surface instead of an endless spinner.
+        let out = await Self.runJSON(args: Self.fleetReadArgs, timeoutSeconds: Self.fleetReadTimeoutSeconds)
         if let board = try? JSONDecoder().decode(FleetBoard.self, from: out) {
             fleetBoard = board
             fleetError = nil
@@ -1778,16 +1804,34 @@ final class SirsiEngine: ObservableObject {
         return await Self.runGemma(prompt: prompt, system: system)
     }
 
+    // JSONCommandRead retains the execution boundary for a typed CLI read.
+    // The native surfaces must distinguish an absent, timed-out, or malformed
+    // result instead of collapsing all three into a misleading decode failure.
+    struct JSONCommandRead: Sendable {
+        let data: Data
+        let exitStatus: Int32?
+        let timedOut: Bool
+        let launchError: String?
+    }
+
     // runJSON shells `sirsi` capturing STDOUT ONLY (stderr discarded) so JSON
     // output is never corrupted by a styled banner written to stderr. JSON is
     // used to drive native controls, so it has a shorter hard bound than an
     // attended repair: an empty response makes the view render its recovery
     // state instead of keeping an invisible child and spinner alive.
     nonisolated static func runJSON(args: [String], timeoutSeconds: Int = 12) async -> Data {
+        await runJSONRead(args: args, timeoutSeconds: timeoutSeconds).data
+    }
+
+    // runJSONRead is the provenance-preserving counterpart to runJSON. It
+    // never treats a non-zero exit as an absent report: several typed commands
+    // intentionally return a report and a non-zero status when it contains
+    // findings. Callers decode first, then use this boundary to guide recovery.
+    nonisolated static func runJSONRead(args: [String], timeoutSeconds: Int = 12) async -> JSONCommandRead {
         await withCheckedContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
 				guard let binary = sirsiBinary() else {
-					cont.resume(returning: Data()); return
+					cont.resume(returning: JSONCommandRead(data: Data(), exitStatus: nil, timedOut: false, launchError: "Pantheon's bundled CLI is missing, linked, or not executable.")); return
 				}
                 let p = Process()
                 // Repo-scoped verbs (maat, net) run from the configured project
@@ -1799,7 +1843,7 @@ final class SirsiEngine: ObservableObject {
                 p.standardOutput = outPipe
                 p.standardError = FileHandle.nullDevice
                 do { try p.run() } catch {
-                    cont.resume(returning: Data()); return
+                    cont.resume(returning: JSONCommandRead(data: Data(), exitStatus: nil, timedOut: false, launchError: error.localizedDescription)); return
                 }
                 let timeoutLock = NSLock()
                 var timedOut = false
@@ -1822,10 +1866,10 @@ final class SirsiEngine: ObservableObject {
                 let enforcedTimeout = timedOut
                 timeoutLock.unlock()
                 if enforcedTimeout {
-                    cont.resume(returning: Data())
+                    cont.resume(returning: JSONCommandRead(data: Data(), exitStatus: nil, timedOut: true, launchError: nil))
                     return
                 }
-                cont.resume(returning: data)
+                cont.resume(returning: JSONCommandRead(data: data, exitStatus: p.terminationStatus, timedOut: false, launchError: nil))
             }
         }
     }

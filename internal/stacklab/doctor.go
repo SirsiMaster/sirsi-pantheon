@@ -147,7 +147,14 @@ func Run(reader RemoteReader, roster []string, laneRepoMap map[string]string, se
 	sortedRoster := append([]string(nil), roster...)
 	sort.Strings(sortedRoster)
 
-	rep := Report{Roster: sortedRoster}
+	// The native workspace consumes this contract as a typed report.  Emit
+	// empty collections as [] rather than null so every consumer sees one
+	// stable schema whether or not any findings were produced.
+	rep := Report{
+		Roster:   sortedRoster,
+		Findings: make([]Finding, 0),
+		Unknown:  make([]string, 0),
+	}
 
 	pins, pinsUnknown := loadRegistryPins(reader)
 	rep.Unknown = append(rep.Unknown, pinsUnknown...)

@@ -1,5 +1,58 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-05 — v0.24.93 release candidate
+
+- Router: add the task retry-ceiling operator verb the breaker verbs already established the shape for
+- Development candidate: bounded mobile desktop recovery transplanted onto current release
+- feat(routerstore): migration gate — a build with uncommitted changes may not
+  apply a s
+- feat(menubar): decode node-status's `outbox[]` (ADR-069, PR #931) into
+  `RBOutbox` and 
+- test(menubar): `OutboxReachabilityTests` — the new `macapp` test target
+  proving the de
+- feat(board): `sirsi board-serve` — the Go router board, replacing the
+  out-of-repo Pyth
+- fix(menubar): reads `board-serve --once --shape fleet` — a PROJECTION of the
+  board's o
+- chore: retire the 9119 Horus dashboard (duplicated the menubar) and the
+  token-burning 
+- Add `sirsi maat submit --kind tag|release|release-edit|merge --repo OWNER/REPO --ref REF
+- Router: `setThreadConsumerCapable` no longer silently drops its write — two independent gaps closed, not one
+- fix(board,menubar): rename the "touched" column to "last ledger update". It
+  measures t
+- fix(supervision): `supervision.Escalates()` had no caller — lanes no wake could
+  reach 
+- fix(dashboard): `fleet.go` hardcoded `Routable: true`, making `UNROUTABLE`
+  unreachable
+- fix(routerstore): recognize schema v8–v14, already deployed to the live store
+  by an ou
+- Hooks: the SessionStart inbox counter now warns loudly on a schema drift instead of silently reporting a healthy empty inbox
+- fix(router): gemma was unreachable from the router in two independent ways —
+  the worke
+- fix(router): the wake loop now logs a bounded tail of a failed consumer's
+  output. `dis
+- fix(routerstore): read-compatibility with a store newer than the binary. The
+  write gua
+- fix(dashboard): 8734 is now served by the SAME process and handler as 9119.
+  It was a s
+- fix(board): emit `ledger` alongside `board` in the router-board payload.
+  index.html re
+- Made CTR thread registration, heartbeat/current-item, close, suspend, and resume SQLite-
+- Router: restore the ledger header items/tasks split that PR #668 silently reverted
+- A lane can no longer disarm another lane's wake loop.
+- Process diagrams for the router wing (SL-DIAGRAM-001).
+- Router readiness audit (G1 to G12) and the docs it was missing.
+- Exactly-once claim test over 1,000 contended rounds
+- Per-deploy audit receipt.
+- The release train assembles `changelog.d/` before it cuts a version.
+- `cmd/sirsi/threadcmd.go` `thread register` derived the router filesystem root directly f
+- Fixed: `SpoolOutboxHealth` used `filepath.Glob`, which silently swallows directory-read 
+- `router.NodeStatus` (`sirsi router node-status --json`, GET /api/node-status) gains `out
+- Forward correction to the previous append-error propagation fix: PR #929's `appendCedeDe
+- Document Pantheon's Ma'at failure-memory contract and eight-domain operational preflight
+- liveness-watch re-alarmed on a menubar the owner had just quarantined, and a live agent auto-relaunched it
+- fix(router): stray-reap salvage is inscribed only after the save persists
+
 ## 2026-10-02 — v0.24.66 release candidate
 
 - Records the lease/session-identity fixes (per-thread session cache, dispatch-contract agent id), the ps-free thread anchor, the pre-push window gate, the bind router-rejection check, the gemma status default port, who-is-on live activity, the ADR-070 revision and the doctor name-conformance report from the exact tested mainline.
@@ -13,6 +66,18 @@
 - Records the lease/session-identity fixes (per-thread session cache, dispatch-contract agent id), the ps-free thread anchor, the pre-push window gate, the bind router-rejection check, the gemma status default port, who-is-on live activity, the ADR-070 revision and the doctor name-conformance report from the exact tested mainline.
 
 ## 2026-10-05 — v0.24.69 release candidate
+
+- Records the lease/session-identity fixes (per-thread session cache, dispatch-contract agent id), the ps-free thread anchor, the pre-push window gate, the bind router-rejection check, the gemma status default port, who-is-on live activity, the ADR-070 revision and the doctor name-conformance report from the exact tested mainline.
+
+## 2026-10-05 — v0.24.90 release candidate
+
+- Records the lease/session-identity fixes (per-thread session cache, dispatch-contract agent id), the ps-free thread anchor, the pre-push window gate, the bind router-rejection check, the gemma status default port, who-is-on live activity, the ADR-070 revision and the doctor name-conformance report from the exact tested mainline.
+
+## 2026-10-05 — v0.24.91 release candidate
+
+- Records the lease/session-identity fixes (per-thread session cache, dispatch-contract agent id), the ps-free thread anchor, the pre-push window gate, the bind router-rejection check, the gemma status default port, who-is-on live activity, the ADR-070 revision and the doctor name-conformance report from the exact tested mainline.
+
+## 2026-10-05 — v0.24.92 release candidate
 
 - Records the lease/session-identity fixes (per-thread session cache, dispatch-contract agent id), the ps-free thread anchor, the pre-push window gate, the bind router-rejection check, the gemma status default port, who-is-on live activity, the ADR-070 revision and the doctor name-conformance report from the exact tested mainline.
 

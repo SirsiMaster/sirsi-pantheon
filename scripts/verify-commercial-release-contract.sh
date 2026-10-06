@@ -20,8 +20,10 @@ package_inventory_cmd="$root/cmd/sirsi/packageinventorycmd.go"
 package_inventory_adapter="$root/internal/packageinventorycmd/verify.go"
 bootstrap="$root/scripts/install.sh"
 bootstrap_test="$root/scripts/install.test.sh"
+notary_helper="$root/scripts/notarize-release-artifact.sh"
+notary_helper_test="$root/scripts/notarize-release-artifact.test.sh"
 
-for file in "$dmg" "$pkg" "$workflow" "$makefile" "$recipe" "$cask_cmd" "$cask_package" "$package_inventory" "$package_inventory_cmd" "$package_inventory_adapter" "$bootstrap" "$bootstrap_test"; do
+for file in "$dmg" "$pkg" "$workflow" "$makefile" "$recipe" "$cask_cmd" "$cask_package" "$package_inventory" "$package_inventory_cmd" "$package_inventory_adapter" "$bootstrap" "$bootstrap_test" "$notary_helper" "$notary_helper_test"; do
     [[ -f "$file" ]] || { echo "missing release-contract source: $file" >&2; exit 1; }
 done
 
@@ -43,7 +45,7 @@ for needle in \
     'APPLE_NOTARY_PROFILE' \
     'APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD' \
     'SirsiPantheon-${VERSION}-dev-${ARCH}.dmg' \
-    'xcrun notarytool submit' \
+    'notarize-release-artifact.sh' \
     'xcrun stapler validate'; do
     /usr/bin/grep -Fq -- "$needle" "$dmg" || { echo "DMG release contract missing: $needle" >&2; exit 1; }
 done
@@ -57,9 +59,21 @@ for needle in \
     'APPLE_NOTARY_PROFILE' \
     'APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD' \
     'SirsiPantheon-${VERSION}-dev-${ARCH}.pkg' \
-    'xcrun notarytool submit' \
+    'notarize-release-artifact.sh' \
     'xcrun stapler validate'; do
     /usr/bin/grep -Fq -- "$needle" "$pkg" || { echo "PKG release contract missing: $needle" >&2; exit 1; }
+done
+
+for needle in \
+    'notarytool submit' \
+    'HTTPClientError\.deadlineExceeded' \
+    'abortedUpload' \
+    'PANTHEON_NOTARY_UPLOAD_ATTEMPTS' \
+    'Apple notarization failed without a retryable upload recovery path'; do
+    /usr/bin/grep -Fq -- "$needle" "$notary_helper" || {
+        echo "notary retry contract missing: $needle" >&2
+        exit 1
+    }
 done
 
 /usr/bin/grep -Fq 'scripts/build-dmg.sh --release' "$workflow" || { echo "release workflow does not request release DMG mode" >&2; exit 1; }

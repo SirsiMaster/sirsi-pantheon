@@ -21,32 +21,46 @@ import (
 // collectDashboardRouter builds the router panel from the same sources the CLI
 // uses (ping, status, registry pin, known-failure catalog, swap receipt, changelog),
 // so the dashboard cannot disagree with `sirsi router ping --all`.
-func collectDashboardRouter() (dashboard.RouterSnapshot, error) {
+func collectDashboardRouter() (result dashboard.RouterSnapshot, _ error) {
 	repo, err := router.FindRepoRoot()
 	if err != nil {
 		return dashboard.RouterSnapshot{}, fmt.Errorf("locate repo root: %w", err)
 	}
 	routerRoot := filepath.Join(repo, ".agents", "idea-router")
+	started := time.Now()
 	snap := dashboard.RouterSnapshot{
-		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		GeneratedAt: started.UTC().Format(time.RFC3339),
 		Version:     appversion.Version,
-		Lanes:       dashboard.RouterLanes{Counts: map[string]int{}},
+		// Every verdict is present, zero included: a verdict absent from the map reads
+		// as "unknown" to a UI, and zero lanes LIVE is a fact, not a gap.
+		Lanes:   dashboard.RouterLanes{Counts: zeroVerdictCounts()},
+		Timings: map[string]int64{},
 	}
+	last := started
+	lap := func(stage string) {
+		now := time.Now()
+		snap.Timings[stage] = now.Sub(last).Milliseconds()
+		last = now
+	}
+	defer func() { result.BuiltMs = time.Since(started).Milliseconds() }()
 
 	reg, err := router.LoadRegistry(routerRoot)
 	if err != nil {
 		return snap, fmt.Errorf("registry: %w", err)
 	}
+	lap("registry")
 	threads, err := router.LoadThreadRegistry(routerRoot)
 	if err != nil {
 		return snap, fmt.Errorf("threads: %w", err)
 	}
+	lap("threads")
 	f, err := dispatch.Open(repo)
 	if err != nil {
 		return snap, fmt.Errorf("dispatch: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 	aliases, _ := f.Aliases()
+	lap("open_and_aliases")
 
 	now := time.Now().UTC()
 	ids := make([]string, 0, len(reg.Agents))
@@ -60,13 +74,19 @@ func collectDashboardRouter() (dashboard.RouterSnapshot, error) {
 	for _, id := range ids {
 		p := router.PingLane(threads, reg.Agents[id], id, now)
 		snap.Lanes.Counts[p.Verdict]++
-		snap.Lanes.List = append(snap.Lanes.List, dashboard.RouterLaneVerdict{Agent: id, Verdict: p.Verdict, Detail: p.Detail})
+		snap.Lanes.List = append(snap.Lanes.List, dashboard.RouterLaneVerdict{
+			Agent: id, Verdict: p.Verdict, Detail: p.Detail,
+			ObservedAt: now.Format(time.RFC3339), WorkerThreadID: p.Thread,
+			LastReportAt: p.ReportedAt, LastReportSummary: p.ReportSummary,
+		})
 	}
+	lap("lane_verdicts")
 
 	items, _, err := f.ListActive()
 	if err != nil {
 		return snap, fmt.Errorf("queue: %w", err)
 	}
+	lap("list_active")
 	per := map[string]int{}
 	for _, it := range items {
 		per[it.To]++
@@ -85,12 +105,14 @@ func collectDashboardRouter() (dashboard.RouterSnapshot, error) {
 		snap.Lanes.List[i].Open = per[snap.Lanes.List[i].Agent]
 	}
 	snap.Consumers.Running, snap.Consumers.Max = router.ConsumerSlotUsage(routerRoot)
+	lap("consumer_slots")
 	path, pinned, meta := router.RegistryPinStatus(routerRoot)
 	snap.Registry = dashboard.RouterRegistryPin{Pinned: pinned, Source: path}
 	if meta != nil {
 		snap.Registry.Commit, snap.Registry.FetchedAt = meta.Commit, meta.FetchedAt
 	}
 
+	lap("registry_pin")
 	if c, kerr := knownfail.Load(); kerr == nil {
 		for _, e := range c.Entries {
 			snap.KnownFailures = append(snap.KnownFailures, dashboard.RouterKnownFail{ID: e.ID, Title: e.Title, Status: e.Status, FixedIn: e.Fix.FixedIn, Guard: e.Guard.Ref})
@@ -102,7 +124,9 @@ func collectDashboardRouter() (dashboard.RouterSnapshot, error) {
 				FreePct: r.FreePct, DeltaPages: r.DeltaSwapPages, Correctness: r.CorrectnessOnlyOK, Timing: r.ReleaseTimingOK, Restart: r.RestartProposed}
 		}
 	}
+	lap("known_failures_and_swap")
 	snap.Releases = readChangelogReleases(changelogText(repo), 5)
+	lap("changelog")
 	snap.Attention = routerAttention(snap)
 	return snap, nil
 }
@@ -204,34 +228,49 @@ func changelogText(repo string) string {
 // most severe first. It claims only what the data shows.
 func routerAttention(s dashboard.RouterSnapshot) []dashboard.RouterAttention {
 	var out []dashboard.RouterAttention
-	add := func(sev, title, detail, action string) {
-		out = append(out, dashboard.RouterAttention{Severity: sev, Title: title, Detail: detail, Action: action})
+	add := func(id, agent, sev, title, detail, action string, next *dashboard.RouterNext) {
+		out = append(out, dashboard.RouterAttention{ID: id, Agent: agent, Severity: sev, Title: title, Detail: detail, Action: action, Next: next})
+	}
+	cmd := func(label, command string) *dashboard.RouterNext {
+		return &dashboard.RouterNext{Kind: "command-copy", Label: label, Command: command}
 	}
 	if s.Swap != nil && s.Swap.Verdict == "pressure" {
-		add("critical", "Memory pressure with active paging", fmt.Sprintf("swap %d of %d MiB, %d%% free; a coordinated restart is proposed (nothing was restarted)", int(s.Swap.UsedMiB), int(s.Swap.TotalMiB), s.Swap.FreePct), "coordinate a restart with the owner and workload owners")
+		add("swap-pressure", "", "critical", "Memory pressure with active paging", fmt.Sprintf("swap %d of %d MiB, %d%% free; a coordinated restart is proposed (nothing was restarted)", int(s.Swap.UsedMiB), int(s.Swap.TotalMiB), s.Swap.FreePct), "coordinate a restart with the owner and workload owners", cmd("Show the swap assessment", "sirsi swap-hygiene --status"))
 	}
 	for _, l := range s.Lanes.List {
 		switch {
 		case l.Verdict == "AUTH_REQUIRED":
-			add("critical", l.Agent+": consumer cannot log in", l.Detail, "re-authenticate that account")
+			add("auth:"+l.Agent, l.Agent, "critical", l.Agent+": consumer cannot log in", l.Detail, "re-authenticate that account", cmd("Check the lane", "sirsi router ping "+l.Agent))
 		case l.Verdict == "HELD" && strings.Contains(l.Detail, "quarantine"):
-			add("critical", l.Agent+": quarantined", l.Detail, "needs a human: see the lane log; known failures are matched automatically")
+			add("quarantine:"+l.Agent, l.Agent, "critical", l.Agent+": quarantined", l.Detail, "needs a human: see the lane log; known failures are matched automatically", cmd("Check the lane", "sirsi router ping "+l.Agent))
 		case (l.Verdict == "WATCH_ONLY" || l.Verdict == "UNSTAFFED" || l.Verdict == "UNREACHABLE") && l.Open > 0:
-			add("warn", fmt.Sprintf("%s: %d open item(s), nothing will work them", l.Agent, l.Open), l.Verdict+": "+l.Detail, "staff the lane or register an attended session")
+			next := cmd("Install its wake loop on the lane's host", "sirsi router wake-install "+l.Agent)
+			if l.Verdict == "WATCH_ONLY" {
+				next = cmd("See why it has no working consumer", "sirsi router ping "+l.Agent)
+			}
+			add("unworked:"+l.Agent, l.Agent, "warn", fmt.Sprintf("%s: %d open item(s), nothing will work them", l.Agent, l.Open), l.Verdict+": "+l.Detail, "staff the lane or register an attended session", next)
 		}
 	}
 	for _, k := range s.KnownFailures {
 		if k.Status == "open" {
-			add("warn", "Known failure unresolved: "+k.ID, k.Title, "resolve it with a fix and a guard test")
+			add("knownfail:"+k.ID, "", "warn", "Known failure unresolved: "+k.ID, k.Title, "resolve it with a fix and a guard test", cmd("List known failures", "sirsi maat known-failures list"))
 		}
 	}
 	if !s.Registry.Pinned {
-		add("warn", "Registry is not pinned to origin/main", "this host reads a shared working tree; another session's branch can change who the lanes are", "sirsi router registry sync --install")
+		add("registry-unpinned", "", "warn", "Registry is not pinned to origin/main", "this host reads a shared working tree; another session's branch can change who the lanes are", "sirsi router registry sync --install", cmd("Pin this host", "sirsi router registry sync --install"))
 	}
 	if s.Consumers.Max > 0 && s.Consumers.Running >= s.Consumers.Max {
-		add("info", "Consumer cap reached", fmt.Sprintf("%d of %d headless consumers running; further lanes wait their turn", s.Consumers.Running, s.Consumers.Max), "")
+		add("consumer-cap", "", "info", "Consumer cap reached", fmt.Sprintf("%d of %d headless consumers running; further lanes wait their turn", s.Consumers.Running, s.Consumers.Max), "", nil)
 	}
 	rank := map[string]int{"critical": 0, "warn": 1, "info": 2}
 	sort.SliceStable(out, func(i, j int) bool { return rank[out[i].Severity] < rank[out[j].Severity] })
 	return out
+}
+
+// zeroVerdictCounts has every ping verdict at zero.
+func zeroVerdictCounts() map[string]int {
+	return map[string]int{
+		router.VerdictLive: 0, router.VerdictWakeable: 0, router.VerdictHeld: 0, router.VerdictAuthRequired: 0,
+		router.VerdictWatchOnly: 0, router.VerdictUnstaffed: 0, router.VerdictUnreachable: 0,
+	}
 }

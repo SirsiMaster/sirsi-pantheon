@@ -41,6 +41,13 @@ func seedAgent(t *testing.T, dir, agentID, agentType string) {
 // label). This is the injected-writer boundary for the CLI path (Rule A16).
 func runThreadWatch(t *testing.T, dir, home string, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
+	return runThreadWatchEnv(t, dir, home, nil, args...)
+}
+
+// runThreadWatchEnv is runThreadWatch with extra environment (e.g. the session's
+// own SIRSI_AGENT_ID, which --uninstall requires to match --agent).
+func runThreadWatchEnv(t *testing.T, dir, home string, extra []string, args ...string) (stdout, stderr string, err error) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, testBinary, append([]string{"thread", "watch"}, args...)...)
@@ -51,6 +58,7 @@ func runThreadWatch(t *testing.T, dir, home string, args ...string) (stdout, std
 		"XDG_CONFIG_HOME="+filepath.Join(home, ".config"),
 		"XDG_CACHE_HOME="+filepath.Join(home, ".cache"),
 	)
+	env = append(env, extra...)
 	cmd.Env = env
 	cmd.Stdin = nil
 	var outBuf, errBuf bytes.Buffer
@@ -99,7 +107,8 @@ func TestThreadWatchInstallUninstall(t *testing.T) {
 	}
 
 	// Uninstall → plist gone.
-	if _, stderr, err = runThreadWatch(t, tmp, home, "--agent", "gemma-tw", "--uninstall"); err != nil {
+	own := []string{"SIRSI_AGENT_ID=gemma-tw"}
+	if _, stderr, err = runThreadWatchEnv(t, tmp, home, own, "--agent", "gemma-tw", "--uninstall"); err != nil {
 		t.Fatalf("uninstall: %v\n%s", err, stderr)
 	}
 	if _, statErr := os.Stat(plist); !os.IsNotExist(statErr) {
@@ -107,7 +116,7 @@ func TestThreadWatchInstallUninstall(t *testing.T) {
 	}
 
 	// Uninstall again → clean no-op.
-	if _, stderr, err = runThreadWatch(t, tmp, home, "--agent", "gemma-tw", "--uninstall"); err != nil {
+	if _, stderr, err = runThreadWatchEnv(t, tmp, home, own, "--agent", "gemma-tw", "--uninstall"); err != nil {
 		t.Fatalf("uninstall (repeat): %v\n%s", err, stderr)
 	}
 }
@@ -132,5 +141,42 @@ func TestThreadWatchUnresolvedAgentErrors(t *testing.T) {
 	_, stderr, err := runThreadWatch(t, tmp, home)
 	if err == nil {
 		t.Fatalf("thread watch with no resolvable agent must error; stderr=%s", stderr)
+	}
+}
+
+// TestThreadWatchUninstallRefusesAnotherLane: --uninstall acts only on the
+// session's own lane. A session identified as gemma-b cannot remove gemma-a's
+// wake channel through --agent; the plist survives; gemma-a itself can.
+func TestThreadWatchUninstallRefusesAnotherLane(t *testing.T) {
+	tmp := setupTempRouter(t)
+	home := t.TempDir()
+	reg := map[string]any{"agents": map[string]any{
+		"gemma-a": map[string]any{"id": "gemma-a", "type": "gemma", "wake": map[string]any{"mechanism": "launchagent"}},
+		"gemma-b": map[string]any{"id": "gemma-b", "type": "gemma", "wake": map[string]any{"mechanism": "launchagent"}},
+	}}
+	blob, _ := json.MarshalIndent(reg, "", "  ")
+	if err := os.WriteFile(filepath.Join(tmp, ".agents", "idea-router", "agents.json"), blob, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plist := filepath.Join(home, "Library", "LaunchAgents", "ai.sirsi.router.wake.gemma-a.plist")
+	if _, stderr, err := runThreadWatch(t, tmp, home, "--agent", "gemma-a", "--install"); err != nil {
+		t.Fatalf("install: %v\n%s", err, stderr)
+	}
+	// Another lane, and an unidentified session, are both refused.
+	for _, env := range [][]string{{"SIRSI_AGENT_ID=gemma-b"}, nil} {
+		if _, stderr, err := runThreadWatchEnv(t, tmp, home, env, "--agent", "gemma-a", "--uninstall"); err == nil {
+			t.Fatalf("env %v: uninstall of another lane must be refused", env)
+		} else if !bytes.Contains([]byte(stderr), []byte("never disarms another lane")) {
+			t.Fatalf("env %v: wrong refusal: %s", env, stderr)
+		}
+		if _, statErr := os.Stat(plist); statErr != nil {
+			t.Fatalf("env %v: plist must survive a refused uninstall: %v", env, statErr)
+		}
+	}
+	if _, stderr, err := runThreadWatchEnv(t, tmp, home, []string{"SIRSI_AGENT_ID=gemma-a"}, "--agent", "gemma-a", "--uninstall"); err != nil {
+		t.Fatalf("own-lane uninstall: %v\n%s", err, stderr)
+	}
+	if _, statErr := os.Stat(plist); !os.IsNotExist(statErr) {
+		t.Fatalf("own-lane uninstall must remove the plist; stat err=%v", statErr)
 	}
 }

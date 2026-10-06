@@ -19,13 +19,20 @@ step "plan"; echo "   prepare $VERSION on $B; CI; merge; deploy-service=$DEPLOY;
 [ "$DRY" = 1 ] && { echo "dry-run complete"; exit 0; }
 
 cd "$ROOT" || die "no repo"
-git fetch -q origin --tags || die "fetch failed"
-git tag -l "v$VERSION" | grep -q . && die "tag v$VERSION already exists"
+git fetch -q origin main || die "fetch main failed"
+# A developer checkout can legitimately retain divergent historical local tags.
+# The release decision is about this exact target name at the publishing
+# authority, not whether every old local tag can be force-updated by fetch.
+# Refuse a local target collision and an already-published remote target, but
+# do not make unrelated stale tags block a new commercial release.
+git show-ref --verify --quiet "refs/tags/v$VERSION" && die "local tag v$VERSION already exists"
+git ls-remote --exit-code --refs origin "refs/tags/v$VERSION" >/dev/null 2>&1 && die "remote tag v$VERSION already exists"
 git rev-parse -q --verify "origin/main" >/dev/null || die "no origin/main"
 WT="$(mktemp -d)/rel"; git worktree add -q -b "$B" "$WT" origin/main || die "worktree failed"
 cd "$WT" || die "cd failed"
+bash "$WT/scripts/changelog-assemble.sh" || die "changelog assemble failed"
 python3 "$ROOT/scripts/release-prep-changelog.py" "$VERSION" || die "changelog prep failed (no new entries?)"
-git add VERSION CHANGELOG.md docs/stacklab/pantheon-pt/canon/CHANGELOG.md && git commit -qm "release: prepare Pantheon v$VERSION" || die "commit failed"
+git add -u -- changelog.d && git add VERSION CHANGELOG.md docs/stacklab/pantheon-pt/canon/CHANGELOG.md && git commit -qm "release: prepare Pantheon v$VERSION" || die "commit failed"
 MAAT_WINDOW_OVERRIDE=1 git push -q -u origin "$B" || die "push failed"
 [ "$(git ls-remote --heads origin "$B" | cut -c1-40)" = "$(git rev-parse HEAD)" ] || die "remote head differs"
 gh pr create --base main --head "$B" --title "release: prepare Pantheon v$VERSION" --body "Release prep (changelog, VERSION, canon)." >/dev/null || die "pr create failed"
@@ -37,8 +44,16 @@ if [ "$DEPLOY" = 1 ]; then
   git fetch -q origin; D="$(mktemp -d)/deploy"; git worktree add -q --detach "$D" origin/main || die "deploy worktree"
   (cd "$D" && gcloud run deploy sirsi-router --source . --project sirsi-nexus-live --region us-central1 --quiet) || die "deploy failed"
   gcloud run services describe sirsi-router --region us-central1 --project sirsi-nexus-live --format='value(status.traffic[0].percent)' | grep -q 100 || die "traffic not 100% on the new revision"
+  # ADR-062 §4 audit receipt: a deploy without one is unrecorded.
+  RP="--region us-central1 --project sirsi-nexus-live"
+  REV="$(gcloud run services describe sirsi-router $RP --format='value(status.latestReadyRevisionName)')"; [ -n "$REV" ] || die "no ready revision name"
+  IMG="$(gcloud run revisions describe "$REV" $RP --format='value(spec.containers[0].image)')"; [ -n "$IMG" ] || die "no image for $REV"
+  PREV="$(gcloud run revisions list --service sirsi-router $RP --format='value(metadata.name)' --limit 2 | sed -n 2p)"
+  PIMG=""; [ -n "$PREV" ] && PIMG="$(gcloud run revisions describe "$PREV" $RP --format='value(spec.containers[0].image)')"
+  RCPT="$(mktemp)"; printf 'Router service deploy receipt for v%s.\n\nrevision: %s\nimage: %s\ngit sha: %s\nrollback target revision: %s\nrollback target image: %s\n\nRollback: gcloud run services update-traffic sirsi-router --to-revisions %s=100 %s\n' "$VERSION" "$REV" "$IMG" "$(git rev-parse origin/main)" "${PREV:-none}" "${PIMG:-none}" "${PREV:-none}" "$RP" > "$RCPT"
+  sirsi router send --from ra --to claude-home --type decision --title "Router service deploy receipt: $REV (v$VERSION)" --instructions @"$RCPT" >/dev/null || die "deploy receipt not recorded"
 fi
-git fetch -q origin --tags; SHA="$(git rev-parse origin/main)"
+git fetch -q origin main; SHA="$(git rev-parse origin/main)"
 git tag -a "v$VERSION" "$SHA" -m "v$VERSION" && MAAT_WINDOW_OVERRIDE=1 git push -q origin "v$VERSION" || die "tag push failed"
 sleep 20; RID="$(gh run list --workflow 'Release — Build & Publish' --branch "v$VERSION" --limit 1 --json databaseId -q '.[0].databaseId')"
 [ -n "$RID" ] || die "no release run found"
@@ -46,7 +61,14 @@ while :; do s="$(gh run view "$RID" --json status,conclusion -q '.status+" "+.co
 export PATH=/opt/homebrew/bin:$PATH
 brew update -q >/dev/null 2>&1; brew upgrade --cask sirsimaster/tools/sirsi-pantheon >/dev/null 2>&1
 sirsi version | grep -q "v$VERSION" || die "M1 not on v$VERSION"
-ssh -o BatchMode=yes "$M5_HOST" "export PATH=/opt/homebrew/bin:\$HOME/.local/bin:\$PATH; brew update -q >/dev/null 2>&1; brew upgrade --cask sirsimaster/tools/sirsi-pantheon >/dev/null 2>&1; sirsi version" | grep -q "v$VERSION" || die "M5 not on v$VERSION"
+# M5 is best-effort, never a gate (owner rule): it may be asleep or off the network. Try the
+# hostname, then its LAN address; report what happened instead of claiming it, and exit 0.
+M5_STATUS="unreachable"
+for h in "$M5_HOST" "${M5_FALLBACK:-thekryptodragon@192.168.1.155}"; do
+  out="$(ssh -o BatchMode=yes -o ConnectTimeout=10 "$h" "export PATH=/opt/homebrew/bin:\$HOME/.local/bin:\$PATH; brew update -q >/dev/null 2>&1; brew upgrade --cask sirsimaster/tools/sirsi-pantheon >/dev/null 2>&1; sirsi version | head -1; U=\$(id -u); for l in \$(launchctl list | awk '{print \$3}' | grep '^ai.sirsi.router.wake\\.'); do launchctl kickstart -k gui/\$U/\$l >/dev/null; done" 2>/dev/null)" && {
+    if printf '%s' "$out" | grep -q "v$VERSION"; then M5_STATUS="upgraded to v$VERSION, loops restarted via $h"; else M5_STATUS="reached via $h but NOT on v$VERSION (brew has not caught up); loops restarted"; fi
+    break; }
+done
 U="$(id -u)"; for l in $(launchctl list | awk '{print $3}' | grep '^ai.sirsi.router.wake\.'); do launchctl kickstart -k "gui/$U/$l" >/dev/null; done
-ssh -o BatchMode=yes "$M5_HOST" 'U=$(id -u); for l in $(launchctl list|awk "{print \$3}"|grep "^ai.sirsi.router.wake\."); do launchctl kickstart -k gui/$U/$l >/dev/null; done'
-echo "RELEASED v$VERSION on M1 and M5, loops restarted"
+echo "RELEASED v$VERSION on the M1, loops restarted. M5: $M5_STATUS"
+case "$M5_STATUS" in unreachable) echo "WARN: M5 not reached. When it is back: ssh <m5> 'brew upgrade --cask sirsimaster/tools/sirsi-pantheon' then restart its wake loops (bootout+bootstrap if a plist changed)." >&2;; esac

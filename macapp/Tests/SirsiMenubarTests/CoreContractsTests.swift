@@ -2,11 +2,99 @@ import XCTest
 @testable import SirsiMenubar
 
 final class CoreContractsTests: XCTestCase {
+    func testStackLabReportTreatsNullCollectionsAsAnEmptyTypedReport() {
+        let raw = #"""
+        {"roster":["stacklab.wing.maat"],"findings":null}
+        """#
+
+        let report = StackLabReport.decode(Data(raw.utf8))
+
+        XCTAssertEqual(report?.roster, ["stacklab.wing.maat"])
+        XCTAssertEqual(report?.findings.count, 0)
+        XCTAssertEqual(report?.unknown.count, 0)
+        XCTAssertEqual(report?.clean, true)
+    }
+
+    func testStackLabReadFailureExplainsTheRealRecoveryBoundary() {
+        let timedOut = SirsiEngine.JSONCommandRead(data: Data(), exitStatus: nil, timedOut: true, launchError: nil)
+        XCTAssertTrue(StackLabReadFailure.message(for: timedOut).contains("20 seconds"))
+
+        let empty = SirsiEngine.JSONCommandRead(data: Data(), exitStatus: 1, timedOut: false, launchError: nil)
+        XCTAssertTrue(StackLabReadFailure.message(for: empty).contains("exit 1"))
+    }
+
+    func testFleetStatePresentationCoversCanonicalSixStatesAndUnknown() {
+        let cases: [(String, String)] = [
+            ("WORKING", "WORKING"),
+            ("ASSIGNED", "ASSIGNED"),
+            ("IDLE_WITH_WORK", "IDLE — WORK WAITING"),
+            ("BLOCKED", "BLOCKED"),
+            ("UNROUTABLE", "UNROUTABLE"),
+            ("COMPLETE", "COMPLETE"),
+            ("new_router_state", "UNKNOWN — REVIEW"),
+        ]
+
+        for (state, expected) in cases {
+            XCTAssertEqual(FleetStatePresentation.label(state), expected, "state \\(state)")
+        }
+        // Older routers remain readable, but the app never maps an unknown
+        // state to the old, incorrect "stopped" label.
+        XCTAssertEqual(FleetStatePresentation.label("working"), "WORKING")
+        XCTAssertEqual(FleetStatePresentation.label("stopped"), "UNKNOWN — REVIEW")
+    }
+
+    func testFleetUsesBoundedDirectRaProducerInsteadOfStartingTheDashboardServer() {
+        XCTAssertEqual(SirsiEngine.fleetReadArgs, ["router", "fleet", "--json"])
+        XCTAssertEqual(SirsiEngine.fleetReadTimeoutSeconds, 20)
+        XCTAssertFalse(SirsiEngine.fleetReadArgs.contains("board-serve"))
+    }
+
+    func testKnownFailureProposalDecodesTheTypedLocalReviewQueue() throws {
+        let raw = #"""
+        [{
+          "schema":"sirsi.maat.known-failure-proposal.v1",
+          "id":"catalog-root-missing",
+          "title":"Catalog root missing",
+          "signature":"catalog missing",
+          "cause":"an ambient checkout is incomplete",
+          "status":"proposed",
+          "created_at_utc":"2026-10-05T20:00:00Z",
+          "catalog_sha256":"abc123"
+        }]
+        """#
+
+        let proposals = MaatKnownFailureProposalsView.decode(raw)
+
+        XCTAssertEqual(proposals?.count, 1)
+        XCTAssertEqual(proposals?.first?.id, "catalog-root-missing")
+        XCTAssertEqual(proposals?.first?.titleOrID, "Catalog root missing")
+    }
+
     func testActivityResolutionAlwaysClosesAnAmbiguousOrFailedOutcome() {
         XCTAssertEqual(activityResolution(for: "applied"), .resolved)
         XCTAssertEqual(activityResolution(for: "The command exited successfully, but returned no readable structured result. No repair is claimed."), .evidenceOnly)
         XCTAssertEqual(activityResolution(for: "registry-police: exit status 1"), .maatReview)
         XCTAssertEqual(activityResolution(for: "Error: evidence unavailable"), .maatReview)
+    }
+
+    func testActivityMaatReviewCarriesEvidenceButNeverReplaysTheActivityCommand() {
+        let entry = ActivityEntry(
+            title: "LaunchAgent restore",
+            command: "liveness-watch restore-disabled --confirm",
+            when: "2026-10-05T20:00:00Z",
+            result: "exit status 1: verification is incomplete"
+        )
+
+        XCTAssertEqual(
+            activityMaatReviewArgs(for: entry),
+            [
+                "maat", "record-resolution",
+                "--check", "Pantheon activity: LaunchAgent restore",
+                "--message", "exit status 1: verification is incomplete",
+                "--detail", "Retained Pantheon activity command: sirsi liveness-watch restore-disabled --confirm",
+                "--confirm",
+            ]
+        )
     }
 
     func testEveryDiagnosticHasAClosedNativeResolutionRoute() {
@@ -34,6 +122,54 @@ final class CoreContractsTests: XCTestCase {
             diagnosticResolutionRoute(resolution: nil, severity: 1, hasFix: false, hasRecommendedCommand: true),
             .command
         )
+    }
+
+    func testFindingDisplayTitleLeadsWithTheManagedRecoveryInsteadOfTheLaunchdImplementationDetail() {
+        XCTAssertEqual(findingDisplayTitle(check: "launchd Disabled Override"), "Restore managed services")
+        XCTAssertEqual(findingDisplayTitle(check: "Swap Usage"), "Swap Usage")
+    }
+
+    func testLegacyLaunchdOverrideStillGetsTheClosedMaatRepairRoute() {
+        XCTAssertEqual(
+            legacyDiagnosticRepairArgs(check: "launchd Disabled Override", severity: 3),
+            ["maat", "repair", "launchd-disabled", "--confirm"]
+        )
+        XCTAssertNil(legacyDiagnosticRepairArgs(check: "unrecognized historical diagnostic", severity: 3))
+    }
+
+    func testMaatSystemOneCommandResultDecodesBothTypedTriageAndScreenShapes() {
+        let triage = MaatSystemOneCommandResult.decode(#"""
+        {
+          "schema_version": 1,
+          "feather_weight": 42,
+          "gate": "changes",
+          "confidence": 0.91,
+          "subject": {"kind": "host", "ref": "M5", "head_sha": ""},
+          "floor": {"passed": true, "checks": []},
+          "model": {"provider": "Ma'at", "version": "1", "local": true, "latency_ms": 3},
+          "findings": [],
+          "snapshot_evidence": "diagnostic:sha256=abc",
+          "decision_evidence": "decision:sha256=def"
+        }
+        """#)
+        XCTAssertEqual(triage?.verdict.gate, "changes")
+        XCTAssertEqual(triage?.snapshotEvidence, "diagnostic:sha256=abc")
+        XCTAssertEqual(triage?.decisionEvidence, "decision:sha256=def")
+
+        let screen = MaatSystemOneCommandResult.decode(#"""
+        {
+          "schema_version": 1,
+          "feather_weight": 100,
+          "gate": "pass",
+          "confidence": 0.99,
+          "subject": {"kind": "recipe", "ref": "stack-lab", "head_sha": "abc"},
+          "floor": {"passed": true, "checks": []},
+          "model": {"provider": "Ma'at", "version": "1", "local": true, "latency_ms": 1},
+          "findings": []
+        }
+        """#)
+        XCTAssertEqual(screen?.verdict.gate, "pass")
+        XCTAssertEqual(screen?.decisionEvidence, "")
     }
 
     func testDiagnosticFindingDecodesExplicitMaatReviewRoute() throws {
@@ -278,6 +414,18 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertEqual(action.kind, "maat_repair")
         XCTAssertEqual(action.actionID, "launchd-disabled")
         XCTAssertFalse(action.detail.contains("launchctl"))
+    }
+
+    func testMaatCasebookExecutesOnlyClosedNativeRepairReferences() {
+        XCTAssertEqual(
+            maatCasebookRepairArguments(actionID: "launchd-disabled"),
+            ["maat", "repair", "launchd-disabled", "--confirm"]
+        )
+        XCTAssertEqual(
+            maatCasebookRepairArguments(actionID: "liveness-watch"),
+            ["maat", "repair", "liveness-watch", "--confirm"]
+        )
+        XCTAssertNil(maatCasebookRepairArguments(actionID: "launchctl bootstrap gui/501/untrusted"))
     }
 
     func testMaatCasebookIntegrityKeepsValidCasesVisibleAndRoutesRepair() throws {
