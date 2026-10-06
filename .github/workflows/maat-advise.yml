@@ -1,0 +1,66 @@
+name: Ma'at known-failure advice
+
+# When CI fails, ask the known-failure catalog BEFORE anyone spends time or tokens on it.
+# A known failure gets its cause and fix on the run page and on the PR at once; an unknown
+# one is told how to record it so the next occurrence is answered instantly.
+#
+# Security: workflow_run runs the DEFAULT BRANCH's workflow and code, with write access to
+# the PR. It therefore never checks out or executes the PR's code (the advisor comes from the
+# default branch), and it never copies log content into the comment: it posts only text from
+# the catalog, which is reviewed source. The failed-job logs are read as data for a regexp.
+
+on:
+  workflow_run:
+    workflows: ["CI — Sirsi Pantheon", "Docs Canon Check", "Secrets Scan — gitleaks"]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+
+jobs:
+  advise:
+    name: Ma'at advice
+    if: github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Read the failed jobs' logs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --log-failed > failed.log || true
+      - name: Ask Ma'at
+        env:
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+        run: go run ./cmd/maat-advise --github --step "$WORKFLOW_NAME" < failed.log | tee advice.txt
+      - name: Say it on the PR
+        if: github.event.workflow_run.pull_requests[0].number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.workflow_run.pull_requests[0].number }}
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          {
+            echo "<!-- maat-advise:$WORKFLOW_NAME -->"
+            echo "### 𓆄 Ma'at on the failed run of **$WORKFLOW_NAME**"
+            echo
+            echo '```'
+            grep -v '^::' advice.txt
+            echo '```'
+            echo "Run: $RUN_URL"
+          } > comment.md
+          marker="<!-- maat-advise:$WORKFLOW_NAME -->"
+          id="$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate -q ".[] | select(.body | startswith(\"$marker\")) | .id" | head -1)"
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@comment.md > /dev/null
+          else
+            gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body-file comment.md
+          fi

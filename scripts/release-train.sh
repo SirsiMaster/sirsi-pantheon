@@ -15,7 +15,7 @@ ROOT="$(git rev-parse --show-toplevel)"; B="release/${VERSION}"
 M5_HOST="${M5_HOST:-thekryptodragon@m5}"
 step() { echo "== $*"; }
 run()  { if [ "$DRY" = 1 ]; then echo "   (dry-run) $*"; else eval "$@"; fi; }
-die()  { echo "STOP: $*" >&2; exit 1; }
+die()  { echo "STOP: $*" >&2; ( cd "$ROOT" 2>/dev/null && printf '%s\n' "$*" | go run ./cmd/maat-advise --step release-train 2>/dev/null ) >&2 || true; exit 1; }
 
 step "plan"; echo "   prepare $VERSION on $B; CI; merge; deploy-service=$DEPLOY; tag v$VERSION; publish; upgrade M1+$M5_HOST; restart loops"
 [ "$DRY" = 1 ] && { echo "dry-run complete"; exit 0; }
