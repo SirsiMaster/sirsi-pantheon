@@ -216,22 +216,10 @@ if [[ "$MODE" == "release" ]]; then
         mv "${SIGNED_DMG}" "${DMG_PATH}"
     else
         codesign --force --timestamp --sign "${DEVELOPER_ID_APPLICATION}" "${DMG_PATH}"
-        echo "Notarizing ${DMG_NAME} (this can take a few minutes)..."
-        # --timeout bounds the --wait poll so a stuck Apple-notary submission
-        # fails the step instead of hanging.
-        if [[ -n "${APPLE_NOTARY_PROFILE:-}" ]]; then
-            xcrun notarytool submit "${DMG_PATH}" \
-                --keychain-profile "${APPLE_NOTARY_PROFILE}" \
-                --timeout 20m \
-                --wait
-        else
-            xcrun notarytool submit "${DMG_PATH}" \
-                --apple-id "${APPLE_ID}" \
-                --team-id "${APPLE_TEAM_ID}" \
-                --password "${APPLE_APP_PASSWORD}" \
-                --timeout 20m \
-                --wait
-        fi
+        # The helper preserves the 20-minute notary bound and retries only a
+        # documented transient multipart-upload deadline. It never converts a
+        # failed notarization verdict into a distributable artifact.
+        "${PROJECT_ROOT}/scripts/notarize-release-artifact.sh" "${DMG_PATH}"
         echo "Stapling notarization ticket..."
         xcrun stapler staple "${DMG_PATH}"
         xcrun stapler validate "${DMG_PATH}"
