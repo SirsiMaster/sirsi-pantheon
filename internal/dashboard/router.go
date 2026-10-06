@@ -35,11 +35,11 @@ type RouterAttention struct {
 	Title    string `json:"title"`
 	Detail   string `json:"detail"`
 	Action   string `json:"action,omitempty"`
-	// NextStep is an additive, typed projection of Action for UIs that want to
+	// Next is an additive, typed projection of Action for UIs that want to
 	// offer a concrete follow-up instead of parsing the prose Action string.
 	// Nil when Action is prose guidance rather than a copyable command or a
 	// known in-app destination — the UI must not infer one from free text.
-	NextStep *RouterNextStep `json:"next_step,omitempty"`
+	Next *RouterNextStep `json:"next,omitempty"`
 }
 
 // RouterNextStep is a typed, additive next action for an attention row.
@@ -70,6 +70,10 @@ type RouterLaneVerdict struct {
 	// a direct registry projection, not an inferred liveness claim — readiness
 	// is not proof that a worker is executing.
 	WorkerThreadID string `json:"worker_thread_id,omitempty"`
+	// Next mirrors this lane's own attention row's typed next step (if any),
+	// so the lane inspector can offer the same command-copy without the UI
+	// having to cross-reference the attention list itself.
+	Next *RouterNextStep `json:"next,omitempty"`
 }
 
 type RouterQueueRow struct {

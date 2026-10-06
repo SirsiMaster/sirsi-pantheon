@@ -80,10 +80,34 @@ func TestAttentionIDAgentAndTypedNextStep(t *testing.T) {
 	if quarantine.Agent != "q" {
 		t.Fatalf("quarantine row must name its lane: %+v", quarantine)
 	}
-	if quarantine.NextStep != nil {
-		t.Fatalf("prose guidance must not become a typed next step: %+v", quarantine.NextStep)
+	if quarantine.Next != nil {
+		t.Fatalf("prose guidance must not become a typed next step: %+v", quarantine.Next)
 	}
-	if unpinned.NextStep == nil || unpinned.NextStep.Kind != "command-copy" || unpinned.NextStep.Command != "sirsi router registry sync --install" {
-		t.Fatalf("a literal CLI action must become a command-copy next step: %+v", unpinned.NextStep)
+	if unpinned.Next == nil || unpinned.Next.Kind != "command-copy" || unpinned.Next.Command != "sirsi router registry sync --install" {
+		t.Fatalf("a literal CLI action must become a command-copy next step: %+v", unpinned.Next)
+	}
+}
+
+// applyLaneNextSteps mirrors an agent-scoped attention row's typed Next onto
+// that same lane (first match wins), and never touches a lane with no
+// matching attention row — the lane inspector reads lane.next directly, so a
+// mismatch here would silently drop the button the UI already renders for it.
+func TestApplyLaneNextStepsMirrorsAgentScopedNext(t *testing.T) {
+	step := &dashboard.RouterNextStep{Kind: "command-copy", Label: "Copy command", Command: "sirsi router wake q"}
+	snap := dashboard.RouterSnapshot{
+		Lanes: dashboard.RouterLanes{List: []dashboard.RouterLaneVerdict{
+			{Agent: "q", Verdict: "UNSTAFFED"},
+			{Agent: "r", Verdict: "WAKEABLE"},
+		}},
+		Attention: []dashboard.RouterAttention{
+			{Agent: "q", Severity: "warn", Title: "q needs staffing", Next: step},
+		},
+	}
+	applyLaneNextSteps(&snap)
+	if snap.Lanes.List[0].Next != step {
+		t.Fatalf("lane q must receive its attention row's next step: %+v", snap.Lanes.List[0])
+	}
+	if snap.Lanes.List[1].Next != nil {
+		t.Fatalf("lane r has no matching attention row and must stay nil: %+v", snap.Lanes.List[1])
 	}
 }

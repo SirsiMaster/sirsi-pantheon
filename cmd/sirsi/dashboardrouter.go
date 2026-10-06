@@ -114,7 +114,29 @@ func collectDashboardRouter() (dashboard.RouterSnapshot, error) {
 	}
 	snap.Releases = readChangelogReleases(changelogText(repo), 5)
 	snap.Attention = routerAttention(snap)
+	applyLaneNextSteps(&snap)
 	return snap, nil
+}
+
+// applyLaneNextSteps mirrors each lane's own attention row's typed Next step
+// onto that lane, so the lane inspector can offer the same command-copy
+// without cross-referencing the attention list itself. First match per agent
+// wins (attention is already severity-ordered, most severe first).
+func applyLaneNextSteps(snap *dashboard.RouterSnapshot) {
+	byAgent := map[string]*dashboard.RouterNextStep{}
+	for _, a := range snap.Attention {
+		if a.Agent == "" || a.Next == nil {
+			continue
+		}
+		if _, ok := byAgent[a.Agent]; !ok {
+			byAgent[a.Agent] = a.Next
+		}
+	}
+	for i := range snap.Lanes.List {
+		if n, ok := byAgent[snap.Lanes.List[i].Agent]; ok {
+			snap.Lanes.List[i].Next = n
+		}
+	}
 }
 
 var changelogHead = regexp.MustCompile(`^## \[([^\]]+)\](?: — (\d{4}-\d{2}-\d{2}))?`)
@@ -220,7 +242,7 @@ func routerAttention(s dashboard.RouterSnapshot) []dashboard.RouterAttention {
 		// guidance ("re-authenticate that account") is never promoted into a
 		// command the UI could be tempted to run.
 		if strings.HasPrefix(action, "sirsi ") {
-			a.NextStep = &dashboard.RouterNextStep{Kind: "command-copy", Label: "Copy command", Command: action}
+			a.Next = &dashboard.RouterNextStep{Kind: "command-copy", Label: "Copy command", Command: action}
 		}
 		out = append(out, a)
 	}
