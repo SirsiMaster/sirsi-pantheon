@@ -300,7 +300,14 @@ type spoolTransport struct {
 }
 
 func newSpoolTransport(spool, agent string) *spoolTransport {
-	return &spoolTransport{agent: agent, root: spool, wait: 30 * time.Second, now: time.Now}
+	// wait was 30s until rs-hw-20261006: M1 relay evidence (IDs
+	// 1791249411390-1-c3e1aed8, 1791249524791-1-e0a45774) showed the relay
+	// itself forwarding and answering GetState 34.040s/48.001s after the
+	// request — a consumed-but-not-yet-answered round trip the old wait gave
+	// up on before the relay could ever win. 60s gives headroom above the
+	// worst measured leg (48.001s) without the transport ignoring the server
+	// having genuinely failed.
+	return &spoolTransport{agent: agent, root: spool, wait: 60 * time.Second, now: time.Now}
 }
 
 func (t *spoolTransport) nextID() string {

@@ -200,7 +200,7 @@ func NewRemoteStore(base, token string) *RemoteStore {
 		base:       strings.TrimRight(base, "/"),
 		token:      token,
 		client:     client,
-		perCall:    35 * time.Second, // CLIENT-side call budget. Must exceed the 30s spool wait, or it cancels a spool round-trip before the relay answers; the old 5s also canceled a warm ~3-4s full-ledger ListAll outright (SSA 2026-09-11, confirmed by a client negative control). ListAll's own QueryContext is now server-bound too (rs-26, serve.go's per-request timeout), so this ceiling and the server's deadline both apply. A LOCAL SQLiteStore's ExportMarkdown, by contrast, has no server injecting a deadline — its context.Background() bounds nothing.
+		perCall:    65 * time.Second, // CLIENT-side call budget. Must exceed the spool wait (now 60s, rs-hw-20261006 — see newSpoolTransport), or it cancels a spool round-trip before the relay answers; the old 5s also canceled a warm ~3-4s full-ledger ListAll outright (SSA 2026-09-11, confirmed by a client negative control). ListAll's own QueryContext is now server-bound too (rs-26, serve.go's per-request timeout), so this ceiling and the server's deadline both apply. A LOCAL SQLiteStore's ExportMarkdown, by contrast, has no server injecting a deadline — its context.Background() bounds nothing.
 		host:       host,
 		agent:      agent,
 		threadID:   threadID,
