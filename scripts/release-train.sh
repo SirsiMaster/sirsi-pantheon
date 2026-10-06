@@ -61,7 +61,14 @@ while :; do s="$(gh run view "$RID" --json status,conclusion -q '.status+" "+.co
 export PATH=/opt/homebrew/bin:$PATH
 brew update -q >/dev/null 2>&1; brew upgrade --cask sirsimaster/tools/sirsi-pantheon >/dev/null 2>&1
 sirsi version | grep -q "v$VERSION" || die "M1 not on v$VERSION"
-ssh -o BatchMode=yes "$M5_HOST" "export PATH=/opt/homebrew/bin:\$HOME/.local/bin:\$PATH; brew update -q >/dev/null 2>&1; brew upgrade --cask sirsimaster/tools/sirsi-pantheon >/dev/null 2>&1; sirsi version" | grep -q "v$VERSION" || die "M5 not on v$VERSION"
+# M5 is best-effort, never a gate (owner rule): it may be asleep or off the network. Try the
+# hostname, then its LAN address; report what happened instead of claiming it, and exit 0.
+M5_STATUS="unreachable"
+for h in "$M5_HOST" "${M5_FALLBACK:-thekryptodragon@192.168.1.155}"; do
+  out="$(ssh -o BatchMode=yes -o ConnectTimeout=10 "$h" "export PATH=/opt/homebrew/bin:\$HOME/.local/bin:\$PATH; brew update -q >/dev/null 2>&1; brew upgrade --cask sirsimaster/tools/sirsi-pantheon >/dev/null 2>&1; sirsi version | head -1; U=\$(id -u); for l in \$(launchctl list | awk '{print \$3}' | grep '^ai.sirsi.router.wake\\.'); do launchctl kickstart -k gui/\$U/\$l >/dev/null; done" 2>/dev/null)" && {
+    if printf '%s' "$out" | grep -q "v$VERSION"; then M5_STATUS="upgraded to v$VERSION, loops restarted via $h"; else M5_STATUS="reached via $h but NOT on v$VERSION (brew has not caught up); loops restarted"; fi
+    break; }
+done
 U="$(id -u)"; for l in $(launchctl list | awk '{print $3}' | grep '^ai.sirsi.router.wake\.'); do launchctl kickstart -k "gui/$U/$l" >/dev/null; done
-ssh -o BatchMode=yes "$M5_HOST" 'U=$(id -u); for l in $(launchctl list|awk "{print \$3}"|grep "^ai.sirsi.router.wake\."); do launchctl kickstart -k gui/$U/$l >/dev/null; done'
-echo "RELEASED v$VERSION on M1 and M5, loops restarted"
+echo "RELEASED v$VERSION on the M1, loops restarted. M5: $M5_STATUS"
+case "$M5_STATUS" in unreachable) echo "WARN: M5 not reached. When it is back: ssh <m5> 'brew upgrade --cask sirsimaster/tools/sirsi-pantheon' then restart its wake loops (bootout+bootstrap if a plist changed)." >&2;; esac
