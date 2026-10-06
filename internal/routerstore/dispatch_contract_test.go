@@ -207,6 +207,10 @@ func TestRestartMidLease(t *testing.T) {
 // point — the breaker is reserved for genuine delivery faults.
 func TestSenderFloodRejected(t *testing.T) {
 	s := openTestStore(t)
+	// Pin the clock mid-window. The quota bucket is one wall-clock hour, so on the real
+	// clock a 500-send loop that straddles the top of the hour gets TWO buckets (10 + 10
+	// + 1 throttle = 21 items) and this test failed once, at 06:00 UTC, during a release.
+	s.now = func() time.Time { return time.Date(2026, 10, 6, 12, 30, 0, 0, time.UTC) }
 	oldQ := MaxSendsPerSenderPerWindow
 	MaxSendsPerSenderPerWindow = 10
 	t.Cleanup(func() { MaxSendsPerSenderPerWindow = oldQ })
@@ -531,5 +535,33 @@ func TestCountersAggregate(t *testing.T) {
 	}
 	if c.Claims != 1 || c.Retries != 1 || c.OpenItems != 2 {
 		t.Fatalf("counters lie: %+v", c)
+	}
+}
+
+// The quota window is wall-clock time: when the hour rolls over a sender legitimately
+// gets a fresh budget. This is the behavior that made the flood test above flaky on
+// the real clock, pinned here so it is deliberate and visible.
+func TestSendQuotaRefreshesWhenTheWindowRollsOver(t *testing.T) {
+	s := openTestStore(t)
+	oldQ := MaxSendsPerSenderPerWindow
+	MaxSendsPerSenderPerWindow = 3
+	t.Cleanup(func() { MaxSendsPerSenderPerWindow = oldQ })
+	clock := time.Date(2026, 10, 6, 12, 59, 59, 0, time.UTC)
+	s.now = func() time.Time { return clock }
+	send := func(i int) error {
+		_, _, err := s.SendGuarded(SendReq{From: "burst", To: "claude-home", Title: fmt.Sprintf("burst %d", i)})
+		return err
+	}
+	for i := 0; i < 3; i++ {
+		if err := send(i); err != nil {
+			t.Fatalf("send %d inside the budget: %v", i, err)
+		}
+	}
+	if err := send(3); !errors.Is(err, ErrOverQuota) {
+		t.Fatalf("the 4th send in one window must be over quota, got %v", err)
+	}
+	clock = clock.Add(2 * time.Second) // 13:00:01, a new window
+	if err := send(4); err != nil {
+		t.Fatalf("a new window must grant a fresh budget, got %v", err)
 	}
 }
