@@ -129,6 +129,14 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertEqual(findingDisplayTitle(check: "Swap Usage"), "Swap Usage")
     }
 
+    func testLegacyLaunchdOverrideStillGetsTheClosedMaatRepairRoute() {
+        XCTAssertEqual(
+            legacyDiagnosticRepairArgs(check: "launchd Disabled Override", severity: 3),
+            ["maat", "repair", "launchd-disabled", "--confirm"]
+        )
+        XCTAssertNil(legacyDiagnosticRepairArgs(check: "unrecognized historical diagnostic", severity: 3))
+    }
+
     func testMaatSystemOneCommandResultDecodesBothTypedTriageAndScreenShapes() {
         let triage = MaatSystemOneCommandResult.decode(#"""
         {

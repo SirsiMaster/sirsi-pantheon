@@ -1267,6 +1267,31 @@ func findingDisplayTitle(check: String) -> String {
     }
 }
 
+// Older installed CLIs can omit a typed `fix` while still emitting a known
+// diagnostic identifier.  Keep the compatibility surface closed: only these
+// audited native actions may be recovered from the identifier, never prose or
+// a command copied out of the diagnostic.
+func legacyDiagnosticRepairArgs(check: String, severity: Int) -> [String]? {
+    switch check {
+    case "launchd Disabled Override":
+        return ["maat", "repair", "launchd-disabled", "--confirm"]
+    case "binary-drift":
+        return ["self-update"]
+    case "App Hangs (7d)", "Process Footprint", "Thread Leaks":
+        return severity >= 2 ? ["relieve"] : nil
+    case "RAM Pressure", "Top Memory Consumers", "Jetsam Events (7d)", "Memory Death Spiral", "Swap Usage":
+        return severity >= 2 ? ["relieve", "--memory"] : nil
+    case "Duplicate Model Brokers":
+        return severity >= 2 ? ["gemma", "reap-orphans"] : nil
+    case "Local Snapshots":
+        return ["reclaim-snapshots"]
+    case "Runaway Executor":
+        return severity >= 2 ? ["router", "quarantine-worker"] : nil
+    default:
+        return nil
+    }
+}
+
 struct FindingView: View {
     @ObservedObject var engine: SirsiEngine
     let finding: DiagFinding
@@ -1291,22 +1316,7 @@ struct FindingView: View {
     // and current severity. Everything else stays in the native Ma'at route.
     private var legacyNativeRepairArgs: [String]? {
         guard finding.fix?.isEmpty != false else { return nil }
-        switch finding.check {
-        case "binary-drift":
-            return ["self-update"]
-        case "App Hangs (7d)", "Process Footprint", "Thread Leaks":
-            return finding.severity >= 2 ? ["relieve"] : nil
-        case "RAM Pressure", "Top Memory Consumers", "Jetsam Events (7d)", "Memory Death Spiral", "Swap Usage":
-            return finding.severity >= 2 ? ["relieve", "--memory"] : nil
-        case "Duplicate Model Brokers":
-            return finding.severity >= 2 ? ["gemma", "reap-orphans"] : nil
-        case "Local Snapshots":
-            return ["reclaim-snapshots"]
-        case "Runaway Executor":
-            return finding.severity >= 2 ? ["router", "quarantine-worker"] : nil
-        default:
-            return nil
-        }
+        return legacyDiagnosticRepairArgs(check: finding.check, severity: finding.severity)
     }
 
     // A generic health observation cannot safely choose or widen a cleanup
