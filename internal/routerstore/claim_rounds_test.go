@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -60,7 +61,10 @@ func TestClaimExactlyOnceAcrossManyRounds(t *testing.T) {
 		}
 	}
 
-	left, right := newTestStore(t), newTestStore(t)
+	// Two explicit SQLite files, whatever driver the suite runs under: on the
+	// Postgres leg every newTestStore shares one schema, which would make this
+	// control the shared-ledger case again.
+	left, right := openSplitStore(t, "left.db"), openSplitStore(t, "right.db")
 	split := 0
 	for i := 0; i < 50; i++ {
 		id := fmt.Sprintf("c%02d", i)
@@ -76,4 +80,14 @@ func TestClaimExactlyOnceAcrossManyRounds(t *testing.T) {
 	if split == 0 {
 		t.Fatal("negative control: two separate ledgers never produced two winners, so the counter cannot detect split-brain")
 	}
+}
+
+func openSplitStore(t *testing.T, name string) *SQLiteStore {
+	t.Helper()
+	s, err := OpenPath(filepath.Join(t.TempDir(), name))
+	if err != nil {
+		t.Fatalf("open %s: %v", name, err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	return s
 }

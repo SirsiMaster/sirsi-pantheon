@@ -16,7 +16,7 @@ Auditor: Ra. Revision: origin/main `c1a78077` plus the changes in this PR. Each 
 | G8 | Unset `SIRSI_ROUTER_URL` returns to the local file | **Met** | Rehearsed and timed 2026-09-10 on the M5: rollback 0.030 s, identical data dump hash (`ADR-062-RS20-CUTOVER-EVIDENCE-20260910.md`). Not re-run today. |
 | G9 | Third machine: mint token, one env var, register | **Open** | Not rehearsed (rs-21). A rehearsal needs a fresh account and a minted token. Agents do not touch tokens, so this is owner-run. |
 | G10 | Fleet-wide board in Horus, menubar, `router board` | **Met** | Redesigned Horus dashboard rendered against the live service today (Overview, Lanes, Releases) and shipped in v0.24.69; `sirsi router fleet` agrees. |
-| G11 | User guide, developer README, runbook | **Met on merge** | `docs/router-service/{USER_GUIDE,README,RUNBOOK}.md`. Runbook marks each step rehearsed or documented only. |
+| G11 | User guide, developer README, runbook | **Met on merge** | `docs/router-service/{USER_GUIDE,README,RUNBOOK}.md`. Runbook marks each step rehearsed or documented only. Before this change the only runbook was `docs/stacklab/ra/canon/RUNBOOK.md`, a three-line stub. |
 | G12 | Commercialization gate entry | **Open** | Entry recorded in `docs/COMMERCIALIZATION_GATE.md`; classification `pilot`, with product, narrative open and design, technical, operational partial. The gate is recorded, not passed. |
 
 ## What closes the rest
@@ -26,3 +26,8 @@ Auditor: Ra. Revision: origin/main `c1a78077` plus the changes in this PR. Each 
 3. G7: one Codex lane on the M1 and one Claude consumer on the M5, same-minute status from both.
 4. G9: owner mints a token and rehearses on a fresh account.
 5. G12: close product (a "run your own" install rehearsed by an outsider) and narrative (README and launch copy).
+
+
+## Ledger rows that read done without evidence
+
+`sirsi router ledger ra` shows `rs-17-rehearsals`, `rs-21-third-machine`, `rs-23-docs` and `rs-25-gate-closure` as done, yet each sits at stage `spec` with no links or evidence attached, and the repo held none of the artifacts they name (no third-machine rehearsal, a stub runbook, no commercialization gate file). A done row with no evidence is the A35 shape: the claim outran the check. This audit is now linked from those rows; rs-21 and rs-17 stay open in substance until a rehearsal is recorded.
