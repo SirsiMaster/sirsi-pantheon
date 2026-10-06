@@ -1,5 +1,12 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-06 — v0.24.94 release candidate
+
+- Reviewer lanes get a reserved consumer slot.
+- The release train treats the M5 as best-effort and reports it honestly.
+- The changelog now says what is unreleased, and the release script cuts all of it.
+- `/api/router` carries what a richer dashboard needs, additively.
+
 ## 2026-10-05 — v0.24.93 release candidate
 
 - Router: add the task retry-ceiling operator verb the breaker verbs already established the shape for
