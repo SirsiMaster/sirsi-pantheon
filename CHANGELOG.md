@@ -118,6 +118,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
   name, matching the rename already carried by the deck, data room, and
   Stack Lab. Pure copy change — no behaviour change, no ADR required. The
   internal code comment at the top of `viewApollo()` is unchanged.
+## [0.24.92] — 2026-10-05
+
+- **Commercial notarization spaces repeated Apple transport retries.** The
+  release helper now uses a bounded five-submission budget with capped
+  exponential spacing only for Apple’s exact multipart-upload deadline.
+  Rejected artifacts, invalid credentials, signing failures, and every other
+  notarization verdict remain immediately fail-closed.
+
 ## [0.24.91] — 2026-10-05
 
 - **Commercial macOS notarization recovers transient Apple upload deadlines.**
