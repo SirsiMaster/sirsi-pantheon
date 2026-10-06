@@ -24,7 +24,7 @@ done
 self_test() {
   TMP="$(mktemp -d)"
   trap 'rm -rf "$TMP"' EXIT
-  git init -q "$TMP"
+  git init -q -b main "$TMP"
   (cd "$TMP" && git config user.email t@t.com && git config user.name t
    echo "# CHANGELOG" > CHANGELOG.md
    git add CHANGELOG.md && git commit -q -m base
