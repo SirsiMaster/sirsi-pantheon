@@ -31,6 +31,10 @@ func RelayLaunchAgentPlist(sirsiBin, spool, url, token string) string {
 <dict>
   <key>Label</key>
   <string>%s</string>
+  <key>AssociatedBundleIdentifiers</key>
+  <array>
+    <string>ai.sirsi.pantheon</string>
+  </array>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>

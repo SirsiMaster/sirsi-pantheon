@@ -85,6 +85,10 @@ func installSwapHygiene(home string) error {
 <dict>
 	<key>Label</key>
 	<string>%s</string>
+	<key>AssociatedBundleIdentifiers</key>
+	<array>
+		<string>ai.sirsi.pantheon</string>
+	</array>
 	<key>ProgramArguments</key>
 	<array>
 		<string>%s</string>
