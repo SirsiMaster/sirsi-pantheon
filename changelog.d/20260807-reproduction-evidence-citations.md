@@ -1,1 +1,0 @@
-- docs: REPRODUCTION.md no longer cites four `docs/evidence/…` artifacts as if they were in this repository — they are private-repo paths, now labeled as such, with the sealed-binary hash named as an open publication gap (A33).

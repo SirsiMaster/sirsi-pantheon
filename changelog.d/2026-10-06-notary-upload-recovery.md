@@ -1,3 +1,0 @@
-### Fixed
-
-- **Commercial macOS release notarization now recovers one bounded class of Apple transport failure.** DMG and PKG submission retain fail-closed behavior for credential, signing, and notarization-verdict errors, but retry an observed `abortedUpload` / `HTTPClientError.deadlineExceeded` multipart-upload interruption with a bounded delay. The helper uses the absolute macOS `xcrun` path in production, preserves the original failure after its bounded attempts, and has an isolated fake-`xcrun` regression covering both the retryable and permanent paths. This closes the three failed `v0.24.90` Apple upload attempts without representing their unsigned/unpublished artifacts as a release.

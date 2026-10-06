@@ -1,6 +1,0 @@
-### Added
-
-- **Router readiness audit (G1 to G12) and the docs it was missing.** `docs/evidence/ADR-062-ROUTER-READINESS-AUDIT-20261005.md` grades all twelve conditions with evidence: 7 met (with this change), 3 partial, 2 open. New `docs/router-service/` user guide, developer README and runbook (each runbook step says whether it was rehearsed), and the first `docs/COMMERCIALIZATION_GATE.md` entry, classification `pilot`.
-- **Exactly-once claim test over 1,000 contended rounds** with injected latency, plus a negative control on two separate ledgers that must show both claimers "winning" (`TestClaimExactlyOnceAcrossManyRounds`).
-- **Per-deploy audit receipt.** The release train now writes a router item to `claude-home` after every service deploy with the revision, image digest, git SHA and rollback target (ADR-062 section 4).
-- **The release train assembles `changelog.d/` before it cuts a version.** Fragments had never shipped: `scripts/release-train.sh` went straight to the version split, so entries written the documented way stayed in `changelog.d/` across releases. It now runs `scripts/changelog-assemble.sh` first. `release-prep-changelog.py` also wrote a fixed 0.24.65-era line into the Stack Lab canon changelog on every release; it now lists the release's own entry titles under the newest heading.
