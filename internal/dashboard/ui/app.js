@@ -15,6 +15,7 @@ var ICON={
  info:'<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><circle cx="12" cy="7.5" r=".6"/></svg>',
  check:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5"/></svg>'
 };
+function plural(n,one,many){return n+' '+(n===1?one:many)}
 var VIEWS=[['overview','Overview','Is the router healthy, and what needs attention'],['lanes','Lanes','Can each lane work right now'],['queue','Queue','Open items by recipient'],['releases','Releases','What each release added'],['failures','Known failures','Registered once, fixed with a guard'],['fleet','Fleet','Work in flight across every lane'],['host','Host','Memory, swap and this Mac']];
 var state={view:'overview',data:null,fleet:null,stats:null,err:null,at:null,lane:{filter:'ALL',q:'',sort:'agent',dir:1},timer:null};
 
@@ -46,7 +47,7 @@ var ORDER=['LIVE','WAKEABLE','HELD','WATCH_ONLY','AUTH_REQUIRED','UNREACHABLE','
 function stackBar(counts){
  var tot=ORDER.reduce(function(s,k){return s+(counts[k]||0)},0)||1;
  var bar=ORDER.filter(function(k){return counts[k]}).map(function(k){return '<span style="flex:'+counts[k]+';--c:'+VCOL[k]+'" title="'+k+' '+counts[k]+'"></span>'}).join('');
- var leg=ORDER.filter(function(k){return counts[k]}).map(function(k){return '<span><i style="--c:'+VCOL[k]+'"></i>'+esc(k.replace('_',' ').toLowerCase())+' '+counts[k]+'</span>'}).join('');
+ var leg=ORDER.map(function(k){return '<span><i style="--c:'+VCOL[k]+'"></i>'+esc(k.replace('_',' ').toLowerCase())+' '+(counts[k]??'Unknown')+'</span>'}).join('');
  return '<div class="bar" role="img" aria-label="Lane verdicts">'+bar+'</div><div class="legend">'+leg+'</div>';
 }
 function ring(pct,color){var c=2*Math.PI*40,d=Math.max(0,Math.min(100,pct))/100*c;return '<svg class="ring" viewBox="0 0 100 100" style="--c:'+color+'" role="img" aria-label="'+Math.round(pct)+' percent"><circle class="bg" cx="50" cy="50" r="40"/><circle class="fg" cx="50" cy="50" r="40" stroke-dasharray="'+d+' '+c+'" transform="rotate(-90 50 50)"/></svg>'}
@@ -54,9 +55,12 @@ function ring(pct,color){var c=2*Math.PI*40,d=Math.max(0,Math.min(100,pct))/100*
 function nextStep(n){return n&&n.kind==='command-copy'&&n.command?'<button class="btn" data-copy="'+esc(n.command)+'">'+esc(n.label||'Copy command')+'</button>':''}
 function vOverview(d){
  var att=(d.attention||[]).slice().sort(function(a,b){return ['critical','warn','info'].indexOf(a.severity)-['critical','warn','info'].indexOf(b.severity)});
- var h='<section class="attention"><div class="eyebrow">Operator attention</div><h2 class="hero-title">'+(att.length?att.length+' reported conditions':'No attention items reported')+'</h2><p class="sub">Snapshot '+esc(d.generated_at||'time unknown')+'</p><div class="attn">'+att.map(function(a){return '<article class="row sev-'+esc(a.severity)+'"><div><span class="chip">'+esc(a.severity)+'</span><h3>'+esc(a.title)+'</h3><p>'+esc(a.detail)+'</p>'+(a.action?'<p class="sub">'+esc(a.action)+'</p>':'')+nextStep(a.next)+(a.agent?'<button class="btn" data-inspect="'+esc(a.agent)+'">Inspect lane</button>':'')+'</div></article>'}).join('')+'</div></section>';
+ var h='<section class="attention"><div class="eyebrow">Operator attention</div><h2 class="hero-title">'+(att.length?plural(att.length,'reported condition','reported conditions'):'No attention items reported')+'</h2><p class="sub">Snapshot '+esc(d.generated_at||'time unknown')+'</p><div class="attn">'+att.map(function(a){return '<article class="row sev-'+esc(a.severity)+'"><div><span class="chip">'+esc(a.severity)+'</span><h3>'+esc(a.title)+'</h3><p>'+esc(a.detail)+'</p>'+(a.action?'<p class="sub">'+esc(a.action)+'</p>':'')+nextStep(a.next_step||a.next)+(a.agent?'<button class="btn" data-inspect="'+esc(a.agent)+'">Inspect lane</button>':'')+'</div></article>'}).join('')+'</div></section>';
  var counts=(d.lanes||{}).counts||{},q=d.queue||[],c=d.consumers||{};
  h+='<div class="status-strip">'+posture('Live',counts.LIVE??'Unknown','reported live lanes',true)+posture('Wakeable',counts.WAKEABLE??'Unknown','ready to receive work',true)+posture('Queue',q.reduce(function(s,x){return s+x.open},0),'open items',true)+posture('Consumers',(c.running??'Unknown')+' / '+(c.max??'Unknown'),'occupied slots',true)+'</div>';
+ h+='<section class="card"><h2>Lane verdicts</h2>'+stackBar(counts)+'</section>';
+ h+='<section class="card overview-queue"><h2>Top queue recipients</h2>'+(q.length?q.slice().sort(function(a,b){return b.open-a.open}).slice(0,3).map(function(x){return '<div class="queue-recipient"><button class="lane-select" data-inspect="'+esc(x.agent)+'">'+esc(x.agent)+'</button><span>'+plural(x.open,'open item','open items')+'</span></div>'}).join(''):'<p class="sub">No open items reported.</p>')+'</section>';
+ if(d.swap)h+='<section class="card overview-swap"><h2>Memory and swap</h2><p>'+esc(d.swap.verdict)+' · '+Math.round(d.swap.used_mib)+' MiB allocated · '+(d.swap.delta_pages<0?'Paging not measurable yet':plural(d.swap.delta_pages,'page moved','pages moved'))+'</p><p class="sub">'+(state.stats&&state.stats.ram_percent!=null?Math.round(state.stats.ram_percent)+'% memory used · ':'')+'Sample '+esc(d.swap.at||'time unknown')+'</p></section>';
  h+='<section class="card provenance"><h2>Snapshot provenance</h2><p>Installed '+esc(d.version)+' · Registry '+esc(d.registry&&d.registry.pinned?'pinned':'unconfirmed')+'</p><p class="sub">'+esc(d.registry&&d.registry.commit||'Commit unknown')+' · Producer '+esc(d.built_ms??'unknown')+' ms</p></section>';return h;
 }
 function posture(t,v,s,ok){return '<div class="card kpi"><h2>'+esc(t)+'</h2><div style="font-size:20px;font-weight:650;letter-spacing:-.02em;color:'+(ok?'var(--ink)':'var(--warn)')+'">'+esc(v)+'</div><div class="s">'+esc(s)+'</div></div>'}
@@ -67,8 +71,8 @@ function vLanes(d){
  list.sort(function(a,b){var x=a[L.sort],y=b[L.sort];return (typeof x==='number'?x-y:String(x).localeCompare(String(y)))*L.dir});
  var counts=d.lanes.counts,keys=['ALL'].concat(ORDER.filter(function(k){return counts[k]}));
  var h='<div class="toolbar"><div class="seg" role="group" aria-label="Filter">'+keys.map(function(k){return '<button type="button" data-f="'+k+'" aria-pressed="'+(L.filter===k)+'">'+(k==='ALL'?'All '+(d.lanes.list||[]).length:k.replace('_',' ').toLowerCase()+' '+counts[k])+'</button>'}).join('')+'</div><input class="search" id="lq" type="search" placeholder="Search lanes" aria-label="Search lanes" value="'+esc(L.q)+'"></div>';
- h+='<table class="table"><thead><tr><th><button class="sort" data-s="agent">Lane ↕</button></th><th><button class="sort" data-s="verdict">Status ↕</button></th><th class="num"><button class="sort" data-s="open">Open ↕</button></th><th>Detail</th></tr></thead><tbody>'+
-  (list.length?list.map(function(l){return '<tr><td class="mono"><button class="lane-select" data-inspect="'+esc(l.agent)+'">'+esc(l.agent)+'</button>'+'</td><td>'+chip(l.verdict)+'</td><td class="num">'+(l.open??'Unknown')+'</td><td class="dim">'+esc(l.detail)+'</td></tr>'}).join(''):'<tr><td colspan="4" class="empty">No lanes match.</td></tr>')+'</tbody></table>';
+ h+='<table class="table responsive-table"><thead><tr><th><button class="sort" data-s="agent">Lane ↕</button></th><th><button class="sort" data-s="verdict">Status ↕</button></th><th class="num"><button class="sort" data-s="open">Open ↕</button></th><th>Detail</th></tr></thead><tbody>'+
+  (list.length?list.map(function(l){return '<tr><td data-label="Lane" class="mono"><button class="lane-select" data-inspect="'+esc(l.agent)+'">'+esc(l.agent)+'</button>'+'</td><td data-label="Status">'+chip(l.verdict)+'</td><td data-label="Open items" class="num">'+(l.open??'Unknown')+'</td><td data-label="Detail" class="dim">'+esc(l.detail)+'</td></tr>'}).join(''):'<tr><td colspan="4" class="empty">No lanes match.</td></tr>')+'</tbody></table>';
  return h;
 }
 function bindLanes(){
@@ -81,10 +85,10 @@ function vQueue(d){
  if(!q.length)return '<div class="card empty">The queue is empty.</div>';
  return '<div class="card"><h2>Open items by recipient</h2>'+q.map(function(x){return '<div class="hbar"><span class="mono">'+esc(x.agent)+'</span><div class="t"><span style="width:'+(x.open/max*100)+'%"></span></div><span class="n">'+x.open+'</span></div>'}).join('')+'</div>';
 }
-function vReleases(d){return '<div class="card">'+(d.releases||[]).map(function(x,i){return '<details class="release" data-release="'+i+'"><summary><strong>'+esc(x.version)+'</strong><span class="sub">'+esc(x.date||'Date not supplied')+' · '+(x.items||[]).length+' entries</span><p>'+esc((x.items||[])[0]||'No entries supplied')+'</p></summary><ul>'+(x.items||[]).map(function(t){return '<li>'+esc(t)+'</li>'}).join('')+'</ul></details>'}).join('')+'</div>'}
+function vReleases(d){return '<div class="card">'+(d.releases||[]).map(function(x,i){return '<details class="release" data-release="'+i+'"><summary><strong>'+esc(x.version)+'</strong><span class="sub">'+esc(x.date||'Date not supplied')+' · '+plural((x.items||[]).length,'entry','entries')+'</span><p>'+esc((x.items||[])[0]||'No changes recorded for this release.')+'</p></summary><ul>'+(x.items||[]).map(function(t){return '<li>'+esc(t)+'</li>'}).join('')+'</ul></details>'}).join('')+'</div>'}
 function vFailures(d){
  var k=d.known_failures||[];
- return '<p class="sub" style="margin-bottom:16px">A recurring failure is registered once with its signature and cause. The fix records the release it shipped in and a regression test that must exist. The wake loop recognizes the failure next time instead of waiting for a person.</p><table class="table"><thead><tr><th>Failure</th><th>Status</th><th>Fixed in</th><th>Regression guard</th></tr></thead><tbody>'+k.map(function(x){return '<tr><td><button class="lane-select" data-failure="'+esc(x.id)+'">'+esc(x.id)+'</button><div class="dim">'+esc(x.title)+'</div></td><td><span class="chip st-'+esc(x.status)+'">'+esc(x.status)+'</span></td><td class="mono">'+esc(x.fixed_in||'—')+'</td><td class="mono">'+esc(x.guard||'—')+'</td></tr>'}).join('')+'</tbody></table>';
+ return '<p class="sub" style="margin-bottom:16px">A recurring failure is registered once with its signature and cause. The fix records the release it shipped in and a regression test that must exist. The wake loop recognizes the failure next time instead of waiting for a person.</p><table class="table responsive-table"><thead><tr><th>Failure</th><th>Status</th><th>Fixed in</th><th>Regression guard</th></tr></thead><tbody>'+k.map(function(x){return '<tr><td data-label="Failure"><button class="lane-select" data-failure="'+esc(x.id)+'">'+esc(x.id)+'</button><div class="dim">'+esc(x.title)+'</div></td><td data-label="Status"><span class="chip st-'+esc(x.status)+'">'+esc(x.status)+'</span></td><td data-label="Fixed in" class="mono">'+esc(x.fixed_in||'—')+'</td><td data-label="Regression guard" class="mono">'+esc(x.guard||'—')+'</td></tr>'}).join('')+'</tbody></table>';
 }
 function vFleet(){
  if(state.fleetErr&&!state.fleet)return '<div class="card err-card"><h2>Fleet unavailable</h2>'+esc(state.fleetErr)+'</div>';
@@ -95,7 +99,7 @@ function vFleet(){
  '<div class="card kpi"><h2>In progress</h2><div class="v">'+s.active+'</div><div class="l">'+s.assigned+' assigned, not started</div></div>'+
  '<div class="card kpi"><h2>Blocked</h2><div class="v">'+s.blocked+'</div><div class="l">'+s.stalled+' more stalled</div></div>'+
  '<div class="card kpi"><h2>Lanes</h2><div class="v">'+s.lanes_working+' <span style="font-size:20px;color:var(--dim)">of '+s.lanes_total+'</span></div><div class="l">working · '+s.idle_lanes+' idle with work</div></div></div>';
- h+='<h2 class="sec">Lanes</h2><table class="table"><thead><tr><th>Lane</th><th>State</th><th class="num">Open</th><th class="num">Inbox</th><th class="num">Blocked</th><th>Last touched</th></tr></thead><tbody>'+(f.lanes||[]).map(function(l){return '<tr><td class="mono"><button class="lane-select" data-inspect="'+esc(l.agent)+'">'+esc(l.agent)+'</button>'+'</td><td><span class="chip" style="--c:'+(l.state==='WORKING'?'var(--ok)':l.state==='UNROUTABLE'?'var(--danger)':'var(--warn)')+'">'+esc(l.state.replace(/_/g,' ').toLowerCase())+'</span></td><td class="num">'+l.open+'</td><td class="num">'+l.inbox+'</td><td class="num">'+l.blocked+'</td><td class="dim">'+esc(l.touched_ago||'—')+'</td></tr>'}).join('')+'</tbody></table>';
+ h+='<h2 class="sec">Lanes</h2><table class="table responsive-table"><thead><tr><th>Lane</th><th>State</th><th class="num">Open</th><th class="num">Inbox</th><th class="num">Blocked</th><th>Last touched</th></tr></thead><tbody>'+(f.lanes||[]).map(function(l){return '<tr><td data-label="Lane" class="mono"><button class="lane-select" data-inspect="'+esc(l.agent)+'">'+esc(l.agent)+'</button>'+'</td><td data-label="State"><span class="chip" style="--c:'+(l.state==='WORKING'?'var(--ok)':l.state==='UNROUTABLE'?'var(--danger)':'var(--warn)')+'">'+esc(l.state.replace(/_/g,' ').toLowerCase())+'</span></td><td data-label="Open items" class="num">'+l.open+'</td><td data-label="Inbox" class="num">'+l.inbox+'</td><td data-label="Blocked" class="num">'+l.blocked+'</td><td data-label="Last ledger update" class="dim">'+esc(l.touched_ago||'—')+'</td></tr>'}).join('')+'</tbody></table>';
  return h;
 }
 function vHost(d){
@@ -121,10 +125,13 @@ function render(){
  if(key){var replacement=document.getElementById(key);if(replacement){replacement.focus({preventScroll:true});if(start!=null&&replacement.setSelectionRange)replacement.setSelectionRange(start,end)}}
  window.scrollTo(0,scroll);
 }
-function showInspector(title,body){
+function showInspector(title,body,persistent){
+ var old=$('.inspector');if(old){old.close();old.remove()}
+
  var dlg=document.createElement('dialog');dlg.className='inspector';dlg.setAttribute('aria-label',title);
  dlg.innerHTML='<div class="inspector-head"><h2>'+esc(title)+'</h2><button class="btn" data-close>Close</button></div>'+body;
- var previous=document.activeElement;document.body.appendChild(dlg);dlg.querySelector('[data-close]').onclick=function(){dlg.close()};dlg.addEventListener('close',function(){dlg.remove();if(previous&&previous.isConnected)previous.focus()});dlg.showModal();
+ var previous=document.activeElement;var previousAgent=previous&&previous.dataset&&previous.dataset.inspect;document.body.appendChild(dlg);if(persistent&&window.matchMedia('(min-width:1200px)').matches){dlg.classList.add('persistent');document.body.classList.add('has-inspector')}
+dlg.addEventListener('keydown',function(e){if(e.key==='Escape'){e.preventDefault();dlg.close()}});dlg.querySelector('[data-close]').onclick=function(){dlg.close()};dlg.addEventListener('close',function(){dlg.remove();document.body.classList.remove('has-inspector');if(previous&&previous.isConnected)previous.focus();else if(previousAgent){var target=Array.from(document.querySelectorAll('[data-inspect]')).find(function(x){return x.dataset.inspect===previousAgent});if(target)target.focus();else $('#main').focus()}});if(dlg.classList.contains('persistent'))dlg.show();else dlg.showModal();dlg.querySelector('[data-close]').focus();
 }
 function failureInspector(id){
  var failure=((state.data||{}).known_failures||[]).find(function(x){return x.id===id});if(!failure)return;
@@ -132,7 +139,7 @@ function failureInspector(id){
 }
 function inspector(agent){
  var l=((state.data||{}).lanes||{}).list||[],lane=l.find(function(x){return x.agent===agent});
- showInspector('Lane inspector','<h3>'+esc(agent)+'</h3>'+(lane?chip(lane.verdict)+'<p>'+esc(lane.detail)+'</p><dl>'+[['Open items',lane.open],['Observed',lane.observed_at],['Worker thread',lane.worker_thread_id],['Last report',lane.last_report_at],['Report',lane.last_report_summary]].map(function(x){return '<dt>'+esc(x[0])+'</dt><dd>'+esc(x[1]??'Unknown / not supplied')+'</dd>'}).join('')+'</dl>'+nextStep(lane.next):'<p>No lane projection supplied for this recipient.</p>'));
+ showInspector('Lane inspector','<p class="sub">Snapshot '+esc(state.data&&state.data.generated_at||'time unknown')+' · Reopen to see the latest received snapshot.</p><h3>'+esc(agent)+'</h3>'+(lane?chip(lane.verdict)+'<p>'+esc(lane.detail)+'</p><dl>'+[['Open items',lane.open],['Observed',lane.observed_at],['Worker thread',lane.worker_thread_id],['Last report',lane.last_report_at],['Report',lane.last_report_summary]].map(function(x){return '<dt>'+esc(x[0])+'</dt><dd>'+esc(x[1]??'Unknown / not supplied')+'</dd>'}).join('')+'</dl>'+nextStep(lane.next):'<p>No lane projection supplied for this recipient.</p>'),true);
 }
 document.addEventListener('click',function(e){var b=e.target.closest('[data-inspect],[data-copy],[data-failure]');if(!b)return;if(b.dataset.failure)failureInspector(b.dataset.failure);else if(b.dataset.inspect)inspector(b.dataset.inspect);else if(!navigator.clipboard){$('#announcement').textContent='Clipboard unavailable. Command: '+b.dataset.copy}else navigator.clipboard.writeText(b.dataset.copy).then(function(){$('#announcement').textContent='Command copied.'}).catch(function(){$('#announcement').textContent='Clipboard unavailable. Command: '+b.dataset.copy})});
 document.addEventListener('keydown',function(e){if(e.target.closest('input,textarea,select,dialog')||e.metaKey||e.ctrlKey||e.altKey)return;if(e.key==='r'){e.preventDefault();load()}if(e.key==='/'){e.preventDefault();go('lanes');$('#lq').focus()}});
