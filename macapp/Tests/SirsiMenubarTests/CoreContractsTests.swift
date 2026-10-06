@@ -2,6 +2,27 @@ import XCTest
 @testable import SirsiMenubar
 
 final class CoreContractsTests: XCTestCase {
+    func testStackLabReportTreatsNullCollectionsAsAnEmptyTypedReport() {
+        let raw = #"""
+        {"roster":["stacklab.wing.maat"],"findings":null}
+        """#
+
+        let report = StackLabReport.decode(Data(raw.utf8))
+
+        XCTAssertEqual(report?.roster, ["stacklab.wing.maat"])
+        XCTAssertEqual(report?.findings.count, 0)
+        XCTAssertEqual(report?.unknown.count, 0)
+        XCTAssertEqual(report?.clean, true)
+    }
+
+    func testStackLabReadFailureExplainsTheRealRecoveryBoundary() {
+        let timedOut = SirsiEngine.JSONCommandRead(data: Data(), exitStatus: nil, timedOut: true, launchError: nil)
+        XCTAssertTrue(StackLabReadFailure.message(for: timedOut).contains("20 seconds"))
+
+        let empty = SirsiEngine.JSONCommandRead(data: Data(), exitStatus: 1, timedOut: false, launchError: nil)
+        XCTAssertTrue(StackLabReadFailure.message(for: empty).contains("exit 1"))
+    }
+
     func testFleetStatePresentationCoversCanonicalSixStatesAndUnknown() {
         let cases: [(String, String)] = [
             ("WORKING", "WORKING"),
@@ -106,6 +127,14 @@ final class CoreContractsTests: XCTestCase {
     func testFindingDisplayTitleLeadsWithTheManagedRecoveryInsteadOfTheLaunchdImplementationDetail() {
         XCTAssertEqual(findingDisplayTitle(check: "launchd Disabled Override"), "Restore managed services")
         XCTAssertEqual(findingDisplayTitle(check: "Swap Usage"), "Swap Usage")
+    }
+
+    func testLegacyLaunchdOverrideStillGetsTheClosedMaatRepairRoute() {
+        XCTAssertEqual(
+            legacyDiagnosticRepairArgs(check: "launchd Disabled Override", severity: 3),
+            ["maat", "repair", "launchd-disabled", "--confirm"]
+        )
+        XCTAssertNil(legacyDiagnosticRepairArgs(check: "unrecognized historical diagnostic", severity: 3))
     }
 
     func testMaatSystemOneCommandResultDecodesBothTypedTriageAndScreenShapes() {

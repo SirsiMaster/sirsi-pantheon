@@ -275,12 +275,16 @@ struct StackLabView: View {
         }
         loading = true
         loadError = nil
-        let data = await SirsiEngine.runJSON(args: ["stacklab", "doctor", "--json"])
-        if let decoded = try? JSONDecoder().decode(StackLabReport.self, from: data) {
+        // This is a remote canonical read, not a local scan.  It gets a
+        // bounded but realistic window and retains enough execution context to
+        // offer the correct recovery instead of calling every failure a JSON
+        // decode error.
+        let read = await SirsiEngine.runJSONRead(args: ["stacklab", "doctor", "--json"], timeoutSeconds: 20)
+        if let decoded = StackLabReport.decode(read.data) {
             report = decoded
         } else {
             report = nil
-            loadError = "Pantheon could not decode the canonical Stack Lab report. The registry was not treated as clean; retry the read or inspect Ma'at evidence."
+            loadError = StackLabReadFailure.message(for: read)
         }
         loading = false
     }
@@ -332,7 +336,7 @@ private struct StackLabFindingCard: View {
     }
 }
 
-private struct StackLabReport: Decodable {
+struct StackLabReport: Decodable {
     let roster: [String]
     let findings: [StackLabFinding]
     let unknown: [String]
@@ -347,9 +351,29 @@ private struct StackLabReport: Decodable {
     }
 
     var clean: Bool { findings.isEmpty && unknown.isEmpty }
+
+    static func decode(_ data: Data) -> StackLabReport? {
+        try? JSONDecoder().decode(StackLabReport.self, from: data)
+    }
 }
 
-private struct StackLabFinding: Decodable, Identifiable {
+enum StackLabReadFailure {
+    static func message(for read: SirsiEngine.JSONCommandRead) -> String {
+        if read.timedOut {
+            return "The canonical registry did not answer within 20 seconds, so Pantheon made no registry decision. Refresh to retry the bounded read; if it repeats, open Ma'at evidence to retain the failed read and guide the next repair."
+        }
+        if let error = read.launchError {
+            return "Pantheon could not start its verified bundled Stack Lab reader (\(error)). No registry result was inferred. Open Ma'at evidence for the repair route."
+        }
+        if read.data.isEmpty {
+            let status = read.exitStatus.map(String.init) ?? "unknown"
+            return "The canonical Stack Lab reader ended without a report (exit \(status)). No registry result was inferred. Refresh to retry; Ma'at can retain this evidence and guide a repair if it repeats."
+        }
+        return "The canonical Stack Lab reader returned an incomplete report, so Pantheon did not infer a registry result. Refresh to retry the same authority; open Ma'at evidence to inspect and resolve the contract if it repeats."
+    }
+}
+
+struct StackLabFinding: Decodable, Identifiable {
     let wingID: String
     let finding: String
     let detail: String

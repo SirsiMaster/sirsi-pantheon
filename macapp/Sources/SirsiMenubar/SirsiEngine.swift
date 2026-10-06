@@ -1804,16 +1804,34 @@ final class SirsiEngine: ObservableObject {
         return await Self.runGemma(prompt: prompt, system: system)
     }
 
+    // JSONCommandRead retains the execution boundary for a typed CLI read.
+    // The native surfaces must distinguish an absent, timed-out, or malformed
+    // result instead of collapsing all three into a misleading decode failure.
+    struct JSONCommandRead: Sendable {
+        let data: Data
+        let exitStatus: Int32?
+        let timedOut: Bool
+        let launchError: String?
+    }
+
     // runJSON shells `sirsi` capturing STDOUT ONLY (stderr discarded) so JSON
     // output is never corrupted by a styled banner written to stderr. JSON is
     // used to drive native controls, so it has a shorter hard bound than an
     // attended repair: an empty response makes the view render its recovery
     // state instead of keeping an invisible child and spinner alive.
     nonisolated static func runJSON(args: [String], timeoutSeconds: Int = 12) async -> Data {
+        await runJSONRead(args: args, timeoutSeconds: timeoutSeconds).data
+    }
+
+    // runJSONRead is the provenance-preserving counterpart to runJSON. It
+    // never treats a non-zero exit as an absent report: several typed commands
+    // intentionally return a report and a non-zero status when it contains
+    // findings. Callers decode first, then use this boundary to guide recovery.
+    nonisolated static func runJSONRead(args: [String], timeoutSeconds: Int = 12) async -> JSONCommandRead {
         await withCheckedContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
 				guard let binary = sirsiBinary() else {
-					cont.resume(returning: Data()); return
+					cont.resume(returning: JSONCommandRead(data: Data(), exitStatus: nil, timedOut: false, launchError: "Pantheon's bundled CLI is missing, linked, or not executable.")); return
 				}
                 let p = Process()
                 // Repo-scoped verbs (maat, net) run from the configured project
@@ -1825,7 +1843,7 @@ final class SirsiEngine: ObservableObject {
                 p.standardOutput = outPipe
                 p.standardError = FileHandle.nullDevice
                 do { try p.run() } catch {
-                    cont.resume(returning: Data()); return
+                    cont.resume(returning: JSONCommandRead(data: Data(), exitStatus: nil, timedOut: false, launchError: error.localizedDescription)); return
                 }
                 let timeoutLock = NSLock()
                 var timedOut = false
@@ -1848,10 +1866,10 @@ final class SirsiEngine: ObservableObject {
                 let enforcedTimeout = timedOut
                 timeoutLock.unlock()
                 if enforcedTimeout {
-                    cont.resume(returning: Data())
+                    cont.resume(returning: JSONCommandRead(data: Data(), exitStatus: nil, timedOut: true, launchError: nil))
                     return
                 }
-                cont.resume(returning: data)
+                cont.resume(returning: JSONCommandRead(data: data, exitStatus: p.terminationStatus, timedOut: false, launchError: nil))
             }
         }
     }

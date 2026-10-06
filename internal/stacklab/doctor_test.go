@@ -1,7 +1,9 @@
 package stacklab
 
 import (
+	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -156,6 +158,16 @@ func TestRun_Clean(t *testing.T) {
 	rep := Run(r, []string{testWingID}, testLaneRepoMap())
 	if !rep.Clean() {
 		t.Fatalf("expected clean report, got findings=%v unknown=%v", rep.Findings, rep.Unknown)
+	}
+	if rep.Findings == nil || rep.Unknown == nil {
+		t.Fatalf("clean report collections must be typed empty arrays, got findings=%#v unknown=%#v", rep.Findings, rep.Unknown)
+	}
+	encoded, err := json.Marshal(rep)
+	if err != nil {
+		t.Fatalf("marshal clean report: %v", err)
+	}
+	if !strings.Contains(string(encoded), `"findings":[]`) {
+		t.Fatalf("clean report must encode findings as [], got %s", encoded)
 	}
 }
 
