@@ -1,5 +1,17 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-06 — v0.24.96 release candidate
+
+- `sirsi router task-lease-audit [task-id]` — a read-only audit of task-lease
+  ownership 
+- The router client can enforce the published TLS key pin (opt-in).
+- The TLS pin now binds the per-host relay, the process that holds the host token.
+- Ma'at consults the known-failure catalog on every failing gate step, in the pre-push hook, in CI and in the release train.
+- Sending to a lane now validates against the pinned registry.
+- `claude-m5-compasspoint` is a declared router lane.
+- CI + pre-push gate refuse a non-release/* branch that edits `CHANGELOG.md`
+  directly; t
+
 ## 2026-10-06 — v0.24.95 release candidate
 
 - `sirsi router snapshot`: the router snapshot as JSON, from the same producer as the Horus dashboard.
