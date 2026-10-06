@@ -81,6 +81,12 @@ type PingResult struct {
 	// anyone doing anything else (LIVE, WAKEABLE, or a HELD that will clear).
 	Workable bool   `json:"workable"`
 	Thread   string `json:"thread,omitempty"`
+	// ReportedAt and ReportSummary project the worker's OWN published lane state
+	// (never a heartbeat): when it last published and what its last consumer run
+	// ended with. Empty means the worker has published none, which is unknown,
+	// not healthy.
+	ReportedAt    string `json:"reported_at,omitempty"`
+	ReportSummary string `json:"report_summary,omitempty"`
 }
 
 // attendedSurface reports whether a thread surface is an interactive session
@@ -129,6 +135,13 @@ func PingLane(reg *ThreadRegistry, cfg AgentConfig, agentID string, now time.Tim
 	case worker != nil:
 		res.Thread = worker.ThreadID
 		l := worker.Lane
+		if l != nil && !l.PublishedAt.IsZero() {
+			res.ReportedAt = l.PublishedAt.UTC().Format(time.RFC3339)
+			res.ReportSummary = l.LastOutcome
+			if d := strings.TrimSpace(l.LastDetail); d != "" {
+				res.ReportSummary = strings.TrimSpace(res.ReportSummary + ": " + trimDetail(d))
+			}
+		}
 		switch {
 		case !worker.ConsumerCapable || (l != nil && !l.ConsumerDeclared):
 			res.Verdict = VerdictWatchOnly

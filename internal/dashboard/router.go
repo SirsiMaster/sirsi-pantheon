@@ -9,7 +9,11 @@ import (
 // the router in one read, produced by the caller (the dashboard does not import
 // the registry or store itself).
 type RouterSnapshot struct {
-	GeneratedAt   string            `json:"generated_at"`
+	GeneratedAt string `json:"generated_at"`
+	// BuiltMs is how long producing this snapshot took, and Timings the same by
+	// stage, so a slow panel can be traced to its source rather than guessed at.
+	BuiltMs       int64             `json:"built_ms"`
+	Timings       map[string]int64  `json:"timings_ms,omitempty"`
 	Version       string            `json:"version"`
 	Lanes         RouterLanes       `json:"lanes"`
 	Queue         []RouterQueueRow  `json:"queue"`
@@ -25,10 +29,26 @@ type RouterSnapshot struct {
 
 // RouterAttention is one thing that needs attention. Severity is critical, warn or info.
 type RouterAttention struct {
+	// ID is stable across refreshes for the same condition (kind plus lane), so a
+	// UI can keep a selection without parsing the title.
+	ID       string `json:"id"`
 	Severity string `json:"severity"`
+	Agent    string `json:"agent,omitempty"` // the related lane, when there is one
 	Title    string `json:"title"`
 	Detail   string `json:"detail"`
 	Action   string `json:"action,omitempty"`
+	// Next is a typed next step. The UI may copy a command or navigate to a known
+	// route; it never executes text.
+	Next *RouterNext `json:"next,omitempty"`
+}
+
+// RouterNext is one safe next step. Kind is "command-copy" (Command is shown and
+// copied, never run) or "navigate" (Target is a dashboard route such as "lanes").
+type RouterNext struct {
+	Kind    string `json:"kind"`
+	Label   string `json:"label"`
+	Command string `json:"command,omitempty"`
+	Target  string `json:"target,omitempty"`
 }
 
 type RouterLanes struct {
@@ -43,6 +63,11 @@ type RouterLaneVerdict struct {
 	Verdict string `json:"verdict"`
 	Detail  string `json:"detail"`
 	Open    int    `json:"open"` // open router items addressed to this lane
+	// Evidence, each omitted when unknown (omitted never means healthy).
+	ObservedAt        string `json:"observed_at,omitempty"`         // when this verdict was computed
+	WorkerThreadID    string `json:"worker_thread_id,omitempty"`    // the thread the verdict rests on
+	LastReportAt      string `json:"last_report_at,omitempty"`      // the worker's own last publication
+	LastReportSummary string `json:"last_report_summary,omitempty"` // its last consumer outcome
 }
 
 type RouterQueueRow struct {
