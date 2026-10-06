@@ -13,13 +13,17 @@ import (
 
 // Actor is one process/load source active on a machine right now, as seen by an
 // ActivityProbe. Kind is a coarse class ("bench", "build", "model", "runner",
-// "other"); Detail is a short human string (argv fragment); Owner is the agent
-// id when it can be attributed, else "".
+// "traffic", "other"); Detail is a short human string (argv fragment, or for a
+// "traffic" actor, the measured rate); Owner is the agent id when it can be
+// attributed, else "". Iface names the specific cable the load was attributed
+// to (a Thunderbolt interface, e.g. "en1") — set by a rail/traffic-counter
+// probe, empty for a process-classified actor.
 type Actor struct {
 	Kind   string `json:"kind"`
 	Detail string `json:"detail"`
 	Owner  string `json:"owner,omitempty"`
 	PID    int    `json:"pid,omitempty"`
+	Iface  string `json:"iface,omitempty"`
 }
 
 // ActivityProbe samples the load/traffic actors on a machine. It is injectable so

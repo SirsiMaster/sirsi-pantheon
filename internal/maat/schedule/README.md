@@ -59,8 +59,12 @@ runner calls `should-defer <machine>` before starting a job.
   cadence is a handful per hour, so this is negligible; upgrade to a
   compare-and-swap on the state key if throughput ever demands it.
 - The default `ActivityProbe` is a process classifier. **Per-rail traffic
-  counters** (attributing load to a specific cable) are a deeper detector that
-  plugs into the same interface — framework built, rail detector is a follow-up.
+  counters** (`NetTrafficProbe`, `internal/maat/schedule/traffic.go`) attribute
+  load to a specific Thunderbolt cable by diffing its link-layer byte counters
+  across a short sampling window — an `Actor.Iface` set to the interface, not
+  just a process guess. Not wired in as the default; opt in per host with
+  `SetActivityProbe(NetTrafficProbe)`, or combine it with the process
+  classifier via `ComposeActivityProbes`.
 
 ## Owner gates
 
