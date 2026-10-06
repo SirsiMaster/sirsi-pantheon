@@ -2,12 +2,13 @@ package router
 
 import (
 	"errors"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 )
 
 const pinnedJSON = `{"agents":{"lane-a":{"type":"claude","workstream":"w","wake":{"mechanism":"launchagent"}}}}`
