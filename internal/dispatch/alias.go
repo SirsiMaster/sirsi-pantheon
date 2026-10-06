@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -17,7 +16,7 @@ import (
 // whose successor is not a declared agent, is a registry defect and is refused
 // here so no caller can route through it.
 func (f *Facade) Aliases() (map[string]string, error) {
-	data, err := os.ReadFile(filepath.Join(f.root, "agents.json"))
+	data, err := os.ReadFile(f.registryFile())
 	if err != nil {
 		return nil, fmt.Errorf("dispatch: read agents.json: %w", err)
 	}
