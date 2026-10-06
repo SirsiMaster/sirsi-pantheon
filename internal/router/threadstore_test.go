@@ -3,6 +3,8 @@ package router
 import (
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -216,5 +218,69 @@ func TestSetThreadConsumerCapablePersistsAgainstRealStore(t *testing.T) {
 	}
 	if reg.Threads["thr-consumer"] == nil || !reg.Threads["thr-consumer"].ConsumerCapable {
 		t.Fatalf("ConsumerCapable did not persist: %#v", reg.Threads["thr-consumer"])
+	}
+}
+
+// TestHeartbeat_ConcurrentWritersDoNotSurfaceLostFence is the root-cause
+// regression for m5-thread-registry-fence-contention: Heartbeat is the
+// highest-frequency registry mutator (every registered wake loop calls it
+// once per cycle, A27), and unlike setThreadConsumerCapable it had no
+// retry-on-lost-fence wrapping — any wake loop whose heartbeat raced a
+// concurrent writer touching the SAME shared registry save got "mutation
+// lost lifecycle fence" as a hard failure instead of an absorbed retry,
+// observed as a retry storm (65x in one lane's log on 2026-10-05). This pins
+// real CAS contention (several goroutines heartbeating concurrently against
+// the same store-wake registry row) and requires zero fence errors to
+// surface. Verified as a negative control (A35): reverting the retry wrap
+// reproduces this failure.
+func TestHeartbeat_ConcurrentWritersDoNotSurfaceLostFence(t *testing.T) {
+	home := t.TempDir()
+	root := filepath.Join(t.TempDir(), ".agents", "idea-router")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv(routercfg.StoreWakeEnv, "1")
+	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(home, ".sirsi", "router.db"))
+	t.Setenv("SIRSI_ALLOW_SCHEMA_MIGRATE", "1")
+
+	thr, err := RegisterThread(root, &Thread{AgentID: "claude-test", Surface: "claude", PID: 9100, StartTime: "sig"})
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	// A few goroutines heartbeat the SAME thread id concurrently — this is the
+	// actual CAS race: each loads the registry, mutates its in-memory copy,
+	// then saves, so whichever saves second finds the row changed since its
+	// own load baseline. Without retry that surfaces as a hard failure on
+	// every lost race, not just the first writer to land. Kept small (3
+	// workers, 2 heartbeats each) so the 3-attempt/50ms retry budget — shared
+	// infra, not tunable per-caller — reliably absorbs it rather than
+	// modeling contention heavier than a real wake-loop fleet produces.
+	const n = 3
+	var wg sync.WaitGroup
+	errs := make([]error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			for j := 0; j < 2; j++ {
+				item := "cycle"
+				if _, err := Heartbeat(root, thr.ThreadID, HeartbeatUpdate{CurrentItem: &item}); err != nil {
+					errs[i] = err
+					return
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil && strings.Contains(err.Error(), "lost lifecycle fence") {
+			t.Fatalf("heartbeat %d surfaced lost lifecycle fence instead of retrying: %v", i, err)
+		}
+		if err != nil {
+			t.Fatalf("heartbeat %d: %v", i, err)
+		}
 	}
 }

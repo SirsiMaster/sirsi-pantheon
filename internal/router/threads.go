@@ -772,47 +772,65 @@ type HeartbeatUpdate struct {
 
 // Heartbeat updates a thread's last_seen_at and optional fields.
 // Returns the updated thread, or an error if the thread is unknown.
+//
+// Retries on a lost lifecycle fence (same class as setThreadConsumerCapable,
+// PR #619): Heartbeat is the single highest-frequency registry mutator —
+// every registered wake loop calls it once per cycle (A27) — so under
+// fleet-wide write contention an unretried CAS loss here is not a rare edge
+// case, it is a retry storm: the same lane logging "mutation lost lifecycle
+// fence" on every tick (65x in one lane's log on 2026-10-05) because the
+// write was never retried, just surfaced as a hard failure. The mutation is
+// re-derived from a fresh load every attempt (same shape retryOnLostFenceErr
+// requires).
 func Heartbeat(routerRoot, threadID string, upd HeartbeatUpdate) (*Thread, error) {
 	if threadID == "" {
 		return nil, fmt.Errorf("thread_id is required")
 	}
-	reg, err := LoadThreadRegistry(routerRoot)
+	var t *Thread
+	err := retryOnLostFenceErr(func() error {
+		reg, err := LoadThreadRegistry(routerRoot)
+		if err != nil {
+			return err
+		}
+		cur, ok := reg.Threads[threadID]
+		if !ok {
+			return fmt.Errorf("thread %q not registered", threadID)
+		}
+		// reaped-is-terminal: a closed/reaped record must never be revived by a
+		// late heartbeat. Refusing the write here is what stops a dead PID from
+		// reappearing as `active` with a fresh last_seen_at while still carrying
+		// `last_error: reaped`. Reopening requires a new registration (new ID).
+		if cur.Status.IsTerminal() {
+			return fmt.Errorf("thread %q is %s and cannot be revived by heartbeat (last_error=%q); register a new thread to resume", threadID, cur.Status, cur.LastError)
+		}
+		// ADR-025: suspended is resumable but NOT live. A heartbeat must not
+		// revive it or refresh last_seen_at — that would mask a session that
+		// has actually ended. Restoring requires the explicit resume transition.
+		if cur.Status == ThreadStatusSuspended {
+			return fmt.Errorf("thread %q is suspended and cannot heartbeat; run `sirsi thread resume --thread %s` to restore it", threadID, threadID)
+		}
+		cur.LastSeenAt = time.Now().UTC()
+		if upd.Status != "" {
+			cur.Status = upd.Status
+		}
+		if upd.CurrentItem != nil {
+			cur.CurrentItem = *upd.CurrentItem
+		}
+		if upd.LastError != nil {
+			cur.LastError = *upd.LastError
+		}
+		if upd.Lane != nil {
+			l := *upd.Lane
+			l.PublishedAt = cur.LastSeenAt
+			cur.Lane = &l
+		}
+		if err := SaveThreadRegistry(routerRoot, reg); err != nil {
+			return err
+		}
+		t = cur
+		return nil
+	})
 	if err != nil {
-		return nil, err
-	}
-	t, ok := reg.Threads[threadID]
-	if !ok {
-		return nil, fmt.Errorf("thread %q not registered", threadID)
-	}
-	// reaped-is-terminal: a closed/reaped record must never be revived by a
-	// late heartbeat. Refusing the write here is what stops a dead PID from
-	// reappearing as `active` with a fresh last_seen_at while still carrying
-	// `last_error: reaped`. Reopening requires a new registration (new ID).
-	if t.Status.IsTerminal() {
-		return nil, fmt.Errorf("thread %q is %s and cannot be revived by heartbeat (last_error=%q); register a new thread to resume", threadID, t.Status, t.LastError)
-	}
-	// ADR-025: suspended is resumable but NOT live. A heartbeat must not revive
-	// it or refresh last_seen_at — that would mask a session that has actually
-	// ended. Restoring requires the explicit resume transition.
-	if t.Status == ThreadStatusSuspended {
-		return nil, fmt.Errorf("thread %q is suspended and cannot heartbeat; run `sirsi thread resume --thread %s` to restore it", threadID, threadID)
-	}
-	t.LastSeenAt = time.Now().UTC()
-	if upd.Status != "" {
-		t.Status = upd.Status
-	}
-	if upd.CurrentItem != nil {
-		t.CurrentItem = *upd.CurrentItem
-	}
-	if upd.LastError != nil {
-		t.LastError = *upd.LastError
-	}
-	if upd.Lane != nil {
-		l := *upd.Lane
-		l.PublishedAt = t.LastSeenAt
-		t.Lane = &l
-	}
-	if err := SaveThreadRegistry(routerRoot, reg); err != nil {
 		return nil, err
 	}
 	return t, nil
