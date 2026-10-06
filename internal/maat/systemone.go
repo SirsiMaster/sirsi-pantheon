@@ -33,11 +33,13 @@ const (
 	GateEscalate GateDecision = "escalate"
 )
 
-// SystemOneRepairLaunchdDisabled is a closed reference to Ma'at's one
-// currently implemented bounded host repair. It is deliberately an identifier,
-// not a command: Casebook consumers can offer the known workflow, but never
-// execute a producer-supplied string.
-const SystemOneRepairLaunchdDisabled = "launchd-disabled"
+// Closed Ma'at repair identifiers. They are identifiers, not commands:
+// Casebook consumers can offer a known workflow, but never execute a
+// producer-supplied string.
+const (
+	SystemOneRepairLaunchdDisabled = "launchd-disabled"
+	SystemOneRepairLivenessWatch   = "liveness-watch"
+)
 
 // VerdictSubject pins a screen to the immutable change it assessed. A result
 // cannot be reused after its head changes.
@@ -508,7 +510,7 @@ func validateFinding(finding ScreenFinding) error {
 	if finding.Line < 0 {
 		return fmt.Errorf("maat system one: finding line cannot be negative")
 	}
-	if !oneOf(finding.RepairID, "", SystemOneRepairLaunchdDisabled) {
+	if !oneOf(finding.RepairID, "", SystemOneRepairLaunchdDisabled, SystemOneRepairLivenessWatch) {
 		return fmt.Errorf("maat system one: unsupported closed repair id %q", finding.RepairID)
 	}
 	return validateConfidence("finding", finding.Confidence)

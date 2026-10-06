@@ -19,8 +19,14 @@ step "plan"; echo "   prepare $VERSION on $B; CI; merge; deploy-service=$DEPLOY;
 [ "$DRY" = 1 ] && { echo "dry-run complete"; exit 0; }
 
 cd "$ROOT" || die "no repo"
-git fetch -q origin --tags || die "fetch failed"
-git tag -l "v$VERSION" | grep -q . && die "tag v$VERSION already exists"
+git fetch -q origin main || die "fetch main failed"
+# A developer checkout can legitimately retain divergent historical local tags.
+# The release decision is about this exact target name at the publishing
+# authority, not whether every old local tag can be force-updated by fetch.
+# Refuse a local target collision and an already-published remote target, but
+# do not make unrelated stale tags block a new commercial release.
+git show-ref --verify --quiet "refs/tags/v$VERSION" && die "local tag v$VERSION already exists"
+git ls-remote --exit-code --refs origin "refs/tags/v$VERSION" >/dev/null 2>&1 && die "remote tag v$VERSION already exists"
 git rev-parse -q --verify "origin/main" >/dev/null || die "no origin/main"
 WT="$(mktemp -d)/rel"; git worktree add -q -b "$B" "$WT" origin/main || die "worktree failed"
 cd "$WT" || die "cd failed"
@@ -38,7 +44,7 @@ if [ "$DEPLOY" = 1 ]; then
   (cd "$D" && gcloud run deploy sirsi-router --source . --project sirsi-nexus-live --region us-central1 --quiet) || die "deploy failed"
   gcloud run services describe sirsi-router --region us-central1 --project sirsi-nexus-live --format='value(status.traffic[0].percent)' | grep -q 100 || die "traffic not 100% on the new revision"
 fi
-git fetch -q origin --tags; SHA="$(git rev-parse origin/main)"
+git fetch -q origin main; SHA="$(git rev-parse origin/main)"
 git tag -a "v$VERSION" "$SHA" -m "v$VERSION" && MAAT_WINDOW_OVERRIDE=1 git push -q origin "v$VERSION" || die "tag push failed"
 sleep 20; RID="$(gh run list --workflow 'Release — Build & Publish' --branch "v$VERSION" --limit 1 --json databaseId -q '.[0].databaseId')"
 [ -n "$RID" ] || die "no release run found"

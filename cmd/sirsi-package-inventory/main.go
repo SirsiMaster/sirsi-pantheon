@@ -21,7 +21,7 @@ func main() {
 func run(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("sirsi-package-inventory", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	var app, version, build, infoPath, pkgInfoPath, launchAgentPath string
+	var app, version, build, infoPath, pkgInfoPath, launchAgentPath, brandLogoPath string
 	var requireCodeSignature bool
 	flags.StringVar(&app, "app", "", "Pantheon.app path")
 	flags.StringVar(&version, "version", "", "expected CFBundleShortVersionString")
@@ -29,6 +29,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	flags.StringVar(&infoPath, "info-plist", "", "canonical Info.plist path")
 	flags.StringVar(&pkgInfoPath, "pkg-info", "", "canonical PkgInfo path")
 	flags.StringVar(&launchAgentPath, "launch-agent", "", "canonical LaunchAgent plist path")
+	flags.StringVar(&brandLogoPath, "brand-logo", "", "canonical Sirsi application-mark PNG path")
 	flags.BoolVar(&requireCodeSignature, "require-code-signature", false, "require the _CodeSignature payload")
 	if err := flags.Parse(args); err != nil {
 		return 2
@@ -37,13 +38,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "sirsi-package-inventory: positional arguments are not accepted")
 		return 2
 	}
-	if app == "" || version == "" || build == "" || infoPath == "" || pkgInfoPath == "" || launchAgentPath == "" {
-		fmt.Fprintln(stderr, "sirsi-package-inventory: --app, --version, --build, --info-plist, --pkg-info, and --launch-agent are required")
+	if app == "" || version == "" || build == "" || infoPath == "" || pkgInfoPath == "" || launchAgentPath == "" || brandLogoPath == "" {
+		fmt.Fprintln(stderr, "sirsi-package-inventory: --app, --version, --build, --info-plist, --pkg-info, --launch-agent, and --brand-logo are required")
 		return 2
 	}
 	report, err := packageinventorycmd.Verify(packageinventorycmd.Inputs{
 		App: app, Version: version, Build: build, InfoPlist: infoPath,
-		PkgInfo: pkgInfoPath, LaunchAgent: launchAgentPath,
+		PkgInfo: pkgInfoPath, LaunchAgent: launchAgentPath, BrandLogo: brandLogoPath,
 		RequireCodeSignature: requireCodeSignature,
 	})
 	if err != nil {

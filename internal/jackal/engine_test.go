@@ -136,6 +136,97 @@ func TestEngine_ScanWithFindings(t *testing.T) {
 	}
 }
 
+func TestEngine_ScanCoalescesIdenticalPathsWithoutDoubleCounting(t *testing.T) {
+	e := NewEngine()
+	const duplicateSize = int64(515_349_076)
+	e.RegisterAll(
+		&mockRule{
+			name:      "system_caches",
+			category:  CategoryGeneral,
+			platforms: []string{"darwin", "linux", "windows"},
+			findings: []Finding{{
+				RuleName: "system_caches", Category: CategoryGeneral,
+				Path: "/tmp/caches/org.swift.swiftpm", SizeBytes: duplicateSize,
+				FileCount: 617, Severity: SeveritySafe, IsDir: true,
+			}},
+		},
+		&mockRule{
+			name:      "ka_ghost",
+			category:  CategoryGeneral,
+			platforms: []string{"darwin", "linux", "windows"},
+			findings: []Finding{{
+				RuleName: "ka_ghost", Category: CategoryGeneral,
+				Path: "/tmp/caches/org.swift.swiftpm", SizeBytes: duplicateSize,
+				FileCount: 617, Severity: SeveritySafe, IsDir: true,
+			}},
+		},
+	)
+
+	result, err := e.Scan(context.Background(), ScanOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Findings) != 1 {
+		t.Fatalf("len(Findings) = %d, want 1", len(result.Findings))
+	}
+	if result.Findings[0].RuleName != "system_caches" {
+		t.Errorf("cleanup owner = %q, want primary system_caches rule", result.Findings[0].RuleName)
+	}
+	if result.TotalSize != duplicateSize {
+		t.Errorf("TotalSize = %d, want %d without duplicate charge", result.TotalSize, duplicateSize)
+	}
+	if result.ReclaimableSize != duplicateSize {
+		t.Errorf("ReclaimableSize = %d, want %d without duplicate charge", result.ReclaimableSize, duplicateSize)
+	}
+}
+
+func TestNormalizeFindingsPreservesDisagreeingObjects(t *testing.T) {
+	result := &ScanResult{Findings: []Finding{
+		{RuleName: "first", Category: CategoryGeneral, Path: "/tmp/object", SizeBytes: 10, FileCount: 1, IsDir: false, Severity: SeveritySafe},
+		// A different observed size is not an identical object. Do not hide it.
+		{RuleName: "second", Category: CategoryGeneral, Path: "/tmp/object", SizeBytes: 11, FileCount: 1, IsDir: false, Severity: SeveritySafe},
+	}}
+	NormalizeFindings(result)
+	if len(result.Findings) != 2 {
+		t.Fatalf("len(Findings) = %d, want 2 for a conflicting observation", len(result.Findings))
+	}
+	if result.TotalSize != 21 {
+		t.Errorf("TotalSize = %d, want 21", result.TotalSize)
+	}
+}
+
+func TestNormalizeFindingsPreservesCategoryAndCleanupAuthorityConflicts(t *testing.T) {
+	result := &ScanResult{Findings: []Finding{
+		{
+			RuleName: "cache", Category: CategoryGeneral, Path: "/tmp/shared", SizeBytes: 10,
+			FileCount: 1, IsDir: false, Severity: SeveritySafe, CanFix: true,
+		},
+		// Category controls both user meaning and reclaimable accounting: AI model
+		// storage must not silently become general one-click waste.
+		{
+			RuleName: "model", Category: CategoryAI, Path: "/tmp/shared", SizeBytes: 10,
+			FileCount: 1, IsDir: false, Severity: SeveritySafe, CanFix: true,
+		},
+		// A non-actionable observation cannot silently become actionable merely
+		// because another rule found the same path.
+		{
+			RuleName: "protected", Category: CategoryGeneral, Path: "/tmp/shared", SizeBytes: 10,
+			FileCount: 1, IsDir: false, Severity: SeveritySafe, CanFix: false,
+		},
+	}}
+
+	NormalizeFindings(result)
+	if len(result.Findings) != 3 {
+		t.Fatalf("len(Findings) = %d, want 3 for category/action conflicts", len(result.Findings))
+	}
+	if result.TotalSize != 30 {
+		t.Errorf("TotalSize = %d, want 30", result.TotalSize)
+	}
+	if result.ReclaimableSize != 20 {
+		t.Errorf("ReclaimableSize = %d, want 20 with AI excluded", result.ReclaimableSize)
+	}
+}
+
 func TestEngine_ScanWithErrors(t *testing.T) {
 	e := NewEngine()
 	e.Register(&mockRule{

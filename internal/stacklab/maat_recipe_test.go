@@ -40,7 +40,7 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 	}
 	want := []string{
 		"maat-canon", "maat-casebook", "maat-cli", "maat-confirmed-diagnostic-repair", "maat-core", "maat-coverage",
-		"maat-decision-journal", "maat-guided-managed-repair", "maat-horus-surface", "maat-knowledge-surface", "maat-mcp-surface", "maat-native-resolution-surface", "maat-pipeline", "maat-pulse-proof-platform",
+		"maat-decision-journal", "maat-failure-memory", "maat-guided-managed-repair", "maat-horus-surface", "maat-knowledge-surface", "maat-known-failure-proposals", "maat-mcp-surface", "maat-native-resolution-surface", "maat-pipeline", "maat-pulse-proof-platform",
 		"maat-host-health-screen", "maat-release-contract-preflight", "maat-release-credential-preflight", "maat-scheduler", "maat-system-one-screen", "maat-terminal-console-surface", "maat-wing-contract", "stacklab-apollo-run-planner",
 	}
 	got := make([]string, 0, len(recipe.Components))
@@ -68,6 +68,55 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 	componentsByID := make(map[string]component, len(recipe.Components))
 	for _, component := range recipe.Components {
 		componentsByID[component.ID] = component
+	}
+	memory, ok := componentsByID["maat-failure-memory"]
+	if !ok {
+		t.Fatal("Ma'at failure-memory component is missing")
+	}
+	for _, path := range []string{"internal/maat/memory.go", "internal/maat/memory_test.go"} {
+		if !contains(append(append([]string{}, memory.Source...), memory.Tests...), path) {
+			t.Fatalf("Ma'at failure-memory recipe omits canonical surface %q: %+v", path, memory)
+		}
+	}
+	if !contains(memory.Outputs, "pass/reject/unverifiable preflight receipt") ||
+		!contains(memory.UpgradeRecipe, "make every recovery instruction presentation data rather than executable input") {
+		t.Fatalf("Ma'at failure-memory recipe omits its fail-closed recovery contract: %+v", memory)
+	}
+	proposals, ok := componentsByID["maat-known-failure-proposals"]
+	if !ok {
+		t.Fatal("Ma'at known-failure proposals component is missing")
+	}
+	for _, path := range []string{
+		"internal/maat/knownfail/proposal.go",
+		"internal/maat/knownfail/proposal_test.go",
+		"cmd/sirsi/maatknownfail.go",
+		"macapp/Sources/SirsiMenubar/MaatCasebookView.swift",
+	} {
+		if !contains(append(append([]string{}, proposals.Source...), proposals.Tests...), path) {
+			t.Fatalf("Ma'at known-failure proposal recipe omits canonical surface %q: %+v", path, proposals)
+		}
+	}
+	if !contains(proposals.Outputs, "typed local proposal queue shared by CLI JSON and native Ma'at") ||
+		!contains(proposals.UpgradeRecipe, "never let an unreviewed proposal affect matching or fabric-wide recognition") {
+		t.Fatalf("Ma'at known-failure proposal recipe omits its local-review boundary: %+v", proposals)
+	}
+	journal, ok := componentsByID["maat-decision-journal"]
+	if !ok {
+		t.Fatal("Ma'at decision-journal component is missing")
+	}
+	for _, path := range []string{
+		"internal/maat/journalrepair_unix.go",
+		"internal/maat/journalrepair_unix_test.go",
+		"cmd/sirsi/maatcasebook.go",
+		"macapp/Sources/SirsiMenubar/MaatCasebookView.swift",
+	} {
+		if !contains(append(append([]string{}, journal.Source...), journal.Tests...), path) {
+			t.Fatalf("Ma'at decision journal recipe omits integrity-recovery surface %q: %+v", path, journal)
+		}
+	}
+	if !contains(journal.Outputs, "confirmation-gated preservation repair with a retained original and strict active-projection verification") ||
+		!contains(journal.UpgradeRecipe, "retain parent and source descriptor identity through repair, reread source bytes before install, and refuse substitution") {
+		t.Fatalf("Ma'at decision journal recipe omits retained repair contract: %+v", journal)
 	}
 	knowledge, ok := componentsByID["maat-knowledge-surface"]
 	if !ok {

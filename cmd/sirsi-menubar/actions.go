@@ -181,9 +181,9 @@ func runCleanApply(confirm *systray.MenuItem, sirsiBin string, store *notify.Sto
 
 // reviewCleanList opens the COMPLETE itemized manifest of a one-click clean —
 // every SAFE item that WILL be moved to Trash (full path + size) and every
-// CAUTION item that will NOT be touched — read from the same persisted scan the
-// cleaner uses, so the list is exactly what Confirm Clean will move. This is the
-// visibility half of consent: a total with no manifest is not consent (Rule A1).
+// CAUTION item that needs selection in Pantheon's native Scan & Clean surface —
+// read from the same persisted scan the cleaner uses. This is the visibility half
+// of consent: a total with no manifest is not consent (Rule A1).
 func reviewCleanList() {
 	ps, err := jackal.LoadLatest()
 	if err != nil || ps == nil || len(ps.Findings) == 0 {
@@ -216,9 +216,9 @@ func reviewCleanList() {
 	if len(safe) == 0 {
 		fmt.Fprintf(&b, "  (nothing safe to clean right now)\n")
 	}
-	fmt.Fprintf(&b, "\n\n□ EXCLUDED — NOT cleaned by the menubar (needs your review)\n")
+	fmt.Fprintf(&b, "\n\n□ REQUIRES REVIEW — choose in Pantheon before moving to Trash\n")
 	fmt.Fprintf(&b, "  %d caution items · %s · app remnants & judgment calls\n", len(caution), jackal.FormatSize(cautionBytes))
-	fmt.Fprintf(&b, "  Clean these deliberately in a terminal:  sirsi anubis clean --include-caution --confirm\n\n")
+	fmt.Fprintf(&b, "  Open Pantheon → Scan & Clean, inspect each item, select only what you accept rebuilding, then confirm the scoped Trash move.\n\n")
 	for _, f := range caution {
 		fmt.Fprintf(&b, "  %10s   %s\n", jackal.FormatSize(f.SizeBytes), f.Path)
 	}

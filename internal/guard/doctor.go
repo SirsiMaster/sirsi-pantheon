@@ -242,6 +242,15 @@ func resolutionRoute(f DiagnosticFinding) ResolutionRoute {
 	if f.Severity < SeverityWarn {
 		return ResolutionInfo
 	}
+	// Some observations are produced after the main diagnostic pass (for
+	// example the reboot-proof liveness watch). Those producers already attach
+	// a closed, locally-owned repair command. Treating them as Ma'at-review-only
+	// makes the native app advertise a fix while Casebook strands the same case
+	// in review. A non-empty Fix is emitted only by Pantheon's own diagnostic
+	// producers; imported evidence never becomes executable here.
+	if strings.TrimSpace(f.Fix) != "" {
+		return ResolutionRepair
+	}
 	if remediationCommand(f) != "" {
 		return ResolutionRepair
 	}
@@ -1396,7 +1405,14 @@ func checkSirsiProcesses(p platform.Platform, report *DoctorReport) {
 		}
 		finding.Detail = strings.Join(details, " | ")
 
-		if totalSize > 500*1024*1024 {
+		// A normal Pantheon installation intentionally runs several coordinated
+		// components (menubar, Ra listener/worker, Hermes rail, and optionally
+		// Apollo). Their combined footprint around half a gigabyte is ordinary
+		// operational state, not a user problem. Escalate only when the local
+		// estate itself is materially large enough to warrant Ma'at's owned
+		// review and resolution flow; individual runaway processes remain caught
+		// by Process Footprint above.
+		if totalSize > 2*1024*1024*1024 {
 			finding.Severity = SeverityWarn
 			finding.Message = fmt.Sprintf("%d Sirsi process(es) using %s total", len(pantheonProcs), FormatBytes(totalSize))
 		} else {

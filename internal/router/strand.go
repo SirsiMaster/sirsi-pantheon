@@ -115,7 +115,9 @@ func liveWakeAgents(agents []string, launchctlCheck LaunchctlChecker) map[string
 func noWakeAgents(reg *Registry) map[string]bool {
 	out := make(map[string]bool, len(reg.Agents))
 	for id, cfg := range reg.Agents {
-		if cfg.WakeMechanism() == WakeNone {
+		// owner-surface lanes (owner, user) are read by a person on the board,
+		// never by a watcher: the same category error as stranding "user".
+		if m := cfg.WakeMechanism(); m == WakeNone || m == WakeOwnerSurface {
 			out[id] = true
 		}
 	}

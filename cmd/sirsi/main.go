@@ -92,8 +92,9 @@ var versionCmd = &cobra.Command{
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "sirsi",
-	Short: "Sirsi Pantheon — Infrastructure Hygiene & Developer Intelligence",
+	Use:     "sirsi",
+	Short:   "Sirsi Pantheon — Infrastructure Hygiene & Developer Intelligence",
+	Version: version,
 	// A failed command must read as a failed command — not as a help dump.
 	// Without these, cobra prints the full usage on every RunE error, so a
 	// command that hit a real error looks like it "just printed help and did

@@ -22,12 +22,21 @@ import (
 
 const Schema = "pantheon.package-inventory/v1"
 
+// maxPayloadFileSize bounds one regular file admitted to the signed Pantheon
+// app. The Go CLI is a real native executable and currently exceeds 32 MiB;
+// the previous 32 MiB parser cap made the verifier reject the product it is
+// meant to attest. 256 MiB keeps the reader bounded while leaving deliberate
+// room for the two canonical native engines without accepting an unbounded
+// payload.
+const maxPayloadFileSize = 256 << 20
+
 type Expectations struct {
 	Version              string
 	Build                string
 	InfoPlist            []byte
 	PkgInfo              []byte
 	LaunchAgent          []byte
+	BrandLogo            []byte
 	RequireCodeSignature bool
 }
 
@@ -60,6 +69,7 @@ var allowed = map[string]string{
 	"Contents/MacOS/sirsi-menubar":               "regular",
 	"Contents/Resources":                         "directory",
 	"Contents/Resources/ai.sirsi.pantheon.plist": "regular",
+	"Contents/Resources/sirsi-logo-white.png":    "regular",
 	// Stack Lab is shipped inside the app as the versioned, inspectable
 	// methodology contract. Keep this allowlist exact: a new recipe is a
 	// deliberate payload and verifier change, never ambient bundle content.
@@ -341,7 +351,7 @@ func readStable(fd int, opened unix.Stat_t, rel string) ([]byte, string, error) 
 }
 
 func readOnce(fd int, size int64) ([]byte, error) {
-	if size < 0 || size > 32<<20 {
+	if size < 0 || size > maxPayloadFileSize {
 		return nil, fmt.Errorf("invalid file size %d", size)
 	}
 	data := make([]byte, 0, size)
@@ -364,7 +374,7 @@ func validateReport(report Report, contents map[string][]byte, expected Expectat
 	if report.Schema != Schema || !report.PythonFree || report.EngineCount != 2 {
 		return errors.New("package inventory: malformed report")
 	}
-	if !hasExact(report, "Contents/Info.plist", expected.InfoPlist) || !hasExact(report, "Contents/PkgInfo", expected.PkgInfo) || !hasExact(report, "Contents/Resources/ai.sirsi.pantheon.plist", expected.LaunchAgent) {
+	if !hasExact(report, "Contents/Info.plist", expected.InfoPlist) || !hasExact(report, "Contents/PkgInfo", expected.PkgInfo) || !hasExact(report, "Contents/Resources/ai.sirsi.pantheon.plist", expected.LaunchAgent) || !hasExact(report, "Contents/Resources/sirsi-logo-white.png", expected.BrandLogo) {
 		return errors.New("package inventory: canonical payload bytes mismatch")
 	}
 	previous := ""

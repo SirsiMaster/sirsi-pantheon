@@ -1,6 +1,8 @@
 package selfupdate
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/version"
@@ -74,6 +76,29 @@ func TestBuildReport_D3PathDrift(t *testing.T) {
 	}
 	if r.D3PathBin != "/opt/homebrew/bin/sirsi" {
 		t.Errorf("D3PathBin = %q", r.D3PathBin)
+	}
+}
+
+func TestBuildReport_D3PathCaskSymlinkIsNotDrift(t *testing.T) {
+	root := t.TempDir()
+	bundleBinary := filepath.Join(root, "Pantheon.app", "Contents", "MacOS", "sirsi")
+	if err := os.MkdirAll(filepath.Dir(bundleBinary), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bundleBinary, []byte("signed release"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pathBinary := filepath.Join(root, "bin", "sirsi")
+	if err := os.MkdirAll(filepath.Dir(pathBinary), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(bundleBinary, pathBinary); err != nil {
+		t.Fatal(err)
+	}
+
+	r := BuildReport(version.Info{Binary: "sirsi", Version: "v-test", Path: bundleBinary}, nil, pathBinary)
+	if !r.Healthy {
+		t.Fatalf("Cask symlink to the running app binary must be healthy, got %s", r.Summary())
 	}
 }
 

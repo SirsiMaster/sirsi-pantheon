@@ -1,10 +1,11 @@
 import AppKit
 import SwiftUI
 
-// PantheonControlCenter is deliberately small. The status-item panel is where
-// an operator learns what needs attention and takes the next action; it is not
-// a dashboard trying to expose every Pantheon capability at once. The complete
-// surface remains available through PantheonLibraryView.
+// PantheonControlCenter is the application's front door. It is intentionally
+// not a status-card dashboard: the first screen names the current condition,
+// offers one complete in-app route through it, then makes the two creative
+// operator routes (Stack Lab and Apollo) immediately available. The complete
+// library remains available, but discovery never competes with the next action.
 struct PantheonControlCenterView: View {
     @ObservedObject var engine: SirsiEngine
     @Environment(\.snapshotMode) private var snapshotMode
@@ -13,11 +14,10 @@ struct PantheonControlCenterView: View {
         !engine.ownerGatedItems.isEmpty ||
             engine.healthStatus != "green" ||
             engine.routerStatus != "green" ||
-            engine.safeBytes >= SirsiEngine.wasteThreshold ||
-            !engine.hasFDA
+            engine.safeBytes >= SirsiEngine.wasteThreshold
     }
 
-    private var overallTitle: String { hasAttention ? "Needs attention" : "Ready" }
+    private var overallTitle: String { hasAttention ? "Guidance is ready" : "Ready" }
     private var overallDetail: String {
         if !engine.ownerGatedItems.isEmpty {
             return "\(engine.ownerGatedItems.count) decision\(engine.ownerGatedItems.count == 1 ? "" : "s") waiting for you"
@@ -25,7 +25,10 @@ struct PantheonControlCenterView: View {
         if engine.healthStatus != "green" { return engine.healthLoading ? "Checking system health" : engine.healthSummary }
         if engine.routerStatus != "green" { return engine.routerSummary }
         if engine.safeBytes >= SirsiEngine.wasteThreshold { return "\(engine.safe.count) cleanup item\(engine.safe.count == 1 ? "" : "s") ready" }
-        if !engine.hasFDA { return "Full Disk Access needs your approval" }
+        // Full Disk Access expands optional observability; Pantheon can still
+        // diagnose, guide repairs, and operate its managed surfaces without
+        // it. Never turn a capability upgrade into a false blocking incident.
+        if !engine.hasFDA { return "Ready — Full Disk Access is optional for broader disk visibility" }
         return "Pantheon is monitoring this Mac"
     }
 
@@ -34,28 +37,77 @@ struct PantheonControlCenterView: View {
         if engine.healthStatus != "green" { return "exclamationmark.triangle.fill" }
         if engine.routerStatus != "green" { return "point.3.connected.trianglepath.dotted" }
         if engine.safeBytes >= SirsiEngine.wasteThreshold { return "trash" }
-        if !engine.hasFDA { return "lock.trianglebadge.exclamationmark" }
         return "checkmark.circle.fill"
     }
 
     private var overallTint: Color {
-        if !engine.ownerGatedItems.isEmpty || engine.safeBytes >= SirsiEngine.wasteThreshold || !engine.hasFDA { return .orange }
-        if engine.healthStatus != "green" { return statusColor(engine.healthStatus) }
-        return statusColor(engine.routerStatus)
+        if hasAttention { return gold }
+        return emerald
+    }
+
+    private func controlledStateTint(_ state: String) -> Color {
+        state == "green" ? emerald : gold
+    }
+
+    private var routerDetail: String {
+        engine.routerStatus == "green" ? engine.routerSummary : "Guidance available in Ra"
+    }
+
+    private var healthDetail: String {
+        if engine.healthLoading { return "Checking local health" }
+        return engine.healthStatus == "green" ? engine.healthSummary : "Guidance available in Horus"
+    }
+
+    private var heroTitle: String {
+        hasAttention ? "Your next step is ready." : "Your local estate is ready."
+    }
+
+    private var heroDetail: String {
+        if !engine.ownerGatedItems.isEmpty {
+            return "Ma’at has an evidence-bound decision for you. Review it, take the guided action, and keep the resulting proof with this Mac."
+        }
+        if engine.healthStatus != "green" || engine.routerStatus != "green" {
+            return "Pantheon has isolated the current condition and can take you to the right local control surface without sending you to a terminal."
+        }
+        if engine.safeBytes >= SirsiEngine.wasteThreshold {
+            return "There is verified reclaimable space. Review the exact items and complete the cleanup from Pantheon."
+        }
+        return "Choose a recipe, prepare an Apollo run, inspect the fabric, or open a retained result. Every route stays in the application."
+    }
+
+    private var nextActionTitle: String {
+        // Keep the primary recovery route named consistently across the
+        // control center, casebook, CLI, and the release contract. This is a
+        // review-first route: Ma'at explains the evidence and scopes the next
+        // action before the operator confirms anything that could change the
+        // Mac.
+        if !engine.ownerGatedItems.isEmpty { return "Resolve with Ma'at" }
+        if engine.healthStatus != "green" { return "Open system recovery" }
+        if engine.routerStatus != "green" { return "Inspect the Ra fabric" }
+        if engine.safeBytes >= SirsiEngine.wasteThreshold { return "Review verified cleanup" }
+        return "Open today’s activity"
+    }
+
+    private var nextActionDetail: String {
+        if !engine.ownerGatedItems.isEmpty { return "Open Ma'at evidence, see the safe choices, and confirm only the scoped action you choose." }
+        if engine.healthStatus != "green" { return "Understand the current health signal and follow the guided local resolution." }
+        if engine.routerStatus != "green" { return "Review the route, claim, or handback that needs attention." }
+        if engine.safeBytes >= SirsiEngine.wasteThreshold { return "Inspect exact reclaimable items before anything is removed." }
+        return "See the latest completed work and retained evidence."
     }
 
     var body: some View {
         VStack(spacing: 0) {
             MaybeScroll {
-                VStack(alignment: .leading, spacing: 18) {
-                    header
-                    primaryAction
-                    attention
-                    controls
-                    planning
-                    library
+                VStack(alignment: .leading, spacing: 28) {
+                    commandHero
+                    nextAction
+                    operationalContext
+                    buildRoute
+                    workspaceLibrary
                 }
-                .padding(16)
+                .padding(.horizontal, 34)
+                .padding(.vertical, 30)
             }
 
             Divider()
@@ -92,60 +144,66 @@ struct PantheonControlCenterView: View {
         }
     }
 
-    private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Pantheon")
-                    .sirsiFont(.title2, weight: .bold)
-                Text(engine.projectName ?? "Local operator view")
-                    .sirsiFont(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            Spacer()
-            Label(overallTitle, systemImage: overallSymbol)
-                .sirsiFont(.caption, weight: .semibold)
-                .foregroundStyle(overallTint)
-                .labelStyle(.titleAndIcon)
-        }
-    }
-
-    private var primaryAction: some View {
-        NavLink { MaatWorkspaceView(engine: engine) } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "checkmark.seal.fill")
-                    .sirsiFont(.title3, weight: .semibold)
-                    .frame(width: 24)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(hasAttention ? "Resolve with Ma'at" : "Open Ma'at evidence")
-                        .sirsiFont(.headline)
-                    Text(hasAttention
-                        ? "Inspect evidence, follow the guided recovery, and confirm the result."
-                        : "Review this Mac's local evidence and keep its next decision grounded.")
-                        .sirsiFont(.subheadline)
-                        .foregroundStyle(.secondary)
+    private var commandHero: some View {
+        HStack(alignment: .top, spacing: 26) {
+            VStack(alignment: .leading, spacing: 13) {
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(overallTint)
+                        .frame(width: 8, height: 8)
+                        .accessibilityHidden(true)
+                    Text(overallTitle.uppercased())
+                        .sirsiFont(.caption, weight: .bold)
+                        .tracking(1.1)
+                        .foregroundStyle(overallTint)
                 }
-                Spacer()
-                Image(systemName: "arrow.right")
-                    .sirsiFont(.body, weight: .semibold)
+                Text(heroTitle)
+                    .sirsiFont(.largeTitle, weight: .bold)
+                    .foregroundStyle(Color.white)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(heroDetail)
+                    .sirsiFont(.body)
+                    .foregroundStyle(PantheonTheme.mutedText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: 620, alignment: .leading)
             }
-            .foregroundStyle(.primary)
-            .padding(14)
-            .background(RoundedRectangle(cornerRadius: 10).fill(gold.opacity(0.14)))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(gold.opacity(0.42), lineWidth: 1))
-            .contentShape(RoundedRectangle(cornerRadius: 10))
+            Spacer(minLength: 24)
+            VStack(alignment: .trailing, spacing: 10) {
+                PantheonBrandMark(size: 62)
+                    .accessibilityHidden(true)
+                Text(engine.projectName ?? "Local Pantheon")
+                    .sirsiFont(.subheadline, weight: .semibold)
+                    .foregroundStyle(PantheonTheme.mutedText)
+                    .lineLimit(1)
+                Text("Native workspace")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(PantheonTheme.mutedText.opacity(0.72))
+            }
         }
-        .accessibilityLabel("Ma'at — open local evidence and guided recovery")
+        .padding(26)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(PantheonTheme.panel)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(gold.opacity(0.82))
+                .frame(height: 1)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Pantheon status: \(overallTitle). \(heroTitle). \(heroDetail)")
     }
 
-    private var attention: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text("NOW")
-                .sirsiFont(.caption, weight: .bold)
-                .foregroundStyle(.secondary)
+    private var nextAction: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionLabel("NEXT")
             priorityLink
-                .padding(12)
-                .background(RoundedRectangle(cornerRadius: 10).fill(overallTint.opacity(0.10)))
+                .padding(18)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(PantheonTheme.panelRaised)
+                .overlay(alignment: .leading) {
+                    Rectangle().fill(overallTint).frame(width: 3)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 12))
         }
     }
 
@@ -158,123 +216,165 @@ struct PantheonControlCenterView: View {
             NavLink { RaFabricView(engine: engine) } label: { priorityRow }
         } else if engine.safeBytes >= SirsiEngine.wasteThreshold {
             NavLink { AnubisView(engine: engine) } label: { priorityRow }
-        } else if !engine.hasFDA {
-            NavLink { FDAGuideView() } label: { priorityRow }
         } else {
             NavLink { ActivityView(engine: engine) } label: { priorityRow }
         }
     }
 
     private var priorityRow: some View {
-        ControlCenterRow(symbol: overallSymbol, title: overallTitle, detail: overallDetail, tint: overallTint)
+        HStack(spacing: 16) {
+            Image(systemName: overallSymbol)
+                .sirsiFont(.title3, weight: .semibold)
+                .foregroundStyle(overallTint)
+                .frame(width: 26)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(nextActionTitle)
+                    .sirsiFont(.headline)
+                    .foregroundStyle(Color.white)
+                Text(nextActionDetail)
+                    .sirsiFont(.subheadline)
+                    .foregroundStyle(PantheonTheme.mutedText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 10)
+            Image(systemName: "arrow.right")
+                .sirsiFont(.body, weight: .semibold)
+                .foregroundStyle(gold)
+        }
+        .contentShape(Rectangle())
+        .accessibilityLabel("\(nextActionTitle). \(nextActionDetail)")
     }
 
-    private var controls: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text("CONTROL")
-                .sirsiFont(.caption, weight: .bold)
-                .foregroundStyle(.secondary)
-            VStack(spacing: 1) {
-                NavLink { RaFabricView(engine: engine) } label: {
-                    ControlCenterRow(symbol: "point.3.connected.trianglepath.dotted", title: "Ra fabric", detail: engine.routerSummary, tint: statusColor(engine.routerStatus))
+    private var operationalContext: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionLabel("AT A GLANCE")
+            HStack(alignment: .top, spacing: 0) {
+                operationalLink(symbol: "point.3.connected.trianglepath.dotted", title: "Ra fabric", detail: routerDetail, tint: controlledStateTint(engine.routerStatus)) {
+                    RaFabricView(engine: engine)
                 }
-                Divider().padding(.leading, 38)
-                NavLink { HorusView(engine: engine) } label: {
-                    ControlCenterRow(symbol: "waveform.path.ecg", title: "System health", detail: engine.healthLoading ? "Checking" : engine.healthSummary, tint: statusColor(engine.healthStatus))
+                Divider().frame(height: 62)
+                operationalLink(symbol: "waveform.path.ecg", title: "System health", detail: healthDetail, tint: controlledStateTint(engine.healthStatus)) {
+                    HorusView(engine: engine)
                 }
-                Divider().padding(.leading, 38)
-                NavLink { ThreadsView(engine: engine) } label: {
-                    ControlCenterRow(symbol: "circle.dotted", title: "Active work", detail: engine.threadsTotal > 0 ? "\(engine.threadsTotal) live thread\(engine.threadsTotal == 1 ? "" : "s")" : "No live threads", tint: .secondary)
-                }
-                Divider().padding(.leading, 38)
-                NavLink { ActivityView(engine: engine) } label: {
-                    ControlCenterRow(symbol: "clock.arrow.circlepath", title: "Recent activity", detail: engine.lastRunSentence ?? "No recorded run", tint: .secondary)
+                Divider().frame(height: 62)
+                operationalLink(symbol: "circle.dotted", title: "Active work", detail: engine.threadsTotal > 0 ? "\(engine.threadsTotal) live thread\(engine.threadsTotal == 1 ? "" : "s")" : "No live threads", tint: PantheonTheme.mutedText) {
+                    ThreadsView(engine: engine)
                 }
             }
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.045)))
+            .background(PantheonTheme.panel)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
         }
     }
 
-    private var library: some View {
+    // Stack Lab and Apollo are the product's creative work route. Neither
+    // starts inference from Home: Stack Lab assembles a bounded recipe, then
+    // Apollo shows the measured local envelope and live telemetry.
+    private var buildRoute: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionLabel("BUILD WITH INTENT")
+            HStack(spacing: 14) {
+                workspaceRoute(
+                    symbol: "square.3.layers.3d",
+                    title: "Stack Lab",
+                    detail: "Choose a recipe, inspect every component, and retain the evidence behind a candidate.",
+                    action: "Open recipes"
+                ) { StackLabView(engine: engine) }
+                workspaceRoute(
+                    symbol: "cpu",
+                    title: "Apollo",
+                    detail: "Select a qualified machine, engine, model, and resource envelope—then read live telemetry.",
+                    action: "Plan a run"
+                ) { ApolloRunPlannerView(engine: engine) }
+            }
+        }
+    }
+
+    private var workspaceLibrary: some View {
         NavLink { PantheonLibraryView(engine: engine) } label: {
-            HStack {
-                Label("All Pantheon tools", systemImage: "square.grid.2x2")
-                    .sirsiFont(.headline)
+            HStack(spacing: 10) {
+                Image(systemName: "square.grid.2x2")
+                    .foregroundStyle(PantheonTheme.mutedText)
+                Text("Browse every Pantheon surface")
+                    .sirsiFont(.body, weight: .semibold)
+                    .foregroundStyle(Color.white)
                 Spacer()
-                Image(systemName: "chevron.right")
+                Text("All tools")
+                    .sirsiFont(.subheadline)
+                    .foregroundStyle(PantheonTheme.mutedText)
+                Image(systemName: "arrow.right")
                     .sirsiFont(.caption, weight: .semibold)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(gold)
             }
             .padding(.vertical, 10)
-            .padding(.horizontal, 12)
             .contentShape(Rectangle())
         }
-        .foregroundStyle(.primary)
-        .accessibilityLabel("All Pantheon tools")
+        .buttonStyle(.plain)
+        .accessibilityLabel("Browse every Pantheon surface")
     }
 
-    // Stack Lab and Apollo are primary operator workflows, not buried utilities:
-    // Stack Lab selects and verifies a recipe; Apollo turns its measured machine,
-    // resident-model, and resource declaration into a live-session view. Neither
-    // link starts inference or invents capacity outside the qualified SNE route.
-    private var planning: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text("PLAN")
-                .sirsiFont(.caption, weight: .bold)
-                .foregroundStyle(.secondary)
-            VStack(spacing: 1) {
-                NavLink { StackLabView(engine: engine) } label: {
-                    ControlCenterRow(
-                        symbol: "square.3.layers.3d",
-                        title: "Stack Lab",
-                        detail: "Inspect recipes, evidence, and release readiness",
-                        tint: gold
-                    )
+    private func sectionLabel(_ title: String) -> some View {
+        Text(title)
+            .sirsiFont(.caption, weight: .bold)
+            .tracking(1.0)
+            .foregroundStyle(PantheonTheme.mutedText.opacity(0.78))
+    }
+
+    private func operationalLink<Destination: View>(symbol: String, title: String, detail: String, tint: Color, @ViewBuilder destination: @escaping () -> Destination) -> some View {
+        NavLink(destination: destination) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: symbol)
+                    .sirsiFont(.body, weight: .semibold)
+                    .foregroundStyle(tint)
+                    .frame(width: 20)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .sirsiFont(.subheadline, weight: .semibold)
+                        .foregroundStyle(Color.white)
+                    Text(detail)
+                        .sirsiFont(.caption)
+                        .foregroundStyle(PantheonTheme.mutedText)
+                        .lineLimit(2)
                 }
-                Divider().padding(.leading, 38)
-                NavLink { ApolloRunPlannerView(engine: engine) } label: {
-                    ControlCenterRow(
-                        symbol: "cpu",
-                        title: "Apollo",
-                        detail: "Choose a resident model, machine, and resource envelope",
-                        tint: gold
-                    )
-                }
+                Spacer(minLength: 0)
             }
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.045)))
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Open \(title): \(detail)")
     }
-}
 
-private struct ControlCenterRow: View {
-    let symbol: String
-    let title: String
-    let detail: String
-    let tint: Color
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: symbol)
-                .sirsiFont(.body, weight: .semibold)
-                .foregroundStyle(tint)
-                .frame(width: 20)
-            VStack(alignment: .leading, spacing: 2) {
+    private func workspaceRoute<Destination: View>(symbol: String, title: String, detail: String, action: String, @ViewBuilder destination: @escaping () -> Destination) -> some View {
+        NavLink(destination: destination) {
+            VStack(alignment: .leading, spacing: 16) {
+                Image(systemName: symbol)
+                    .sirsiFont(.title2, weight: .semibold)
+                    .foregroundStyle(gold)
                 Text(title)
-                    .sirsiFont(.headline)
-                    .foregroundStyle(.primary)
+                    .sirsiFont(.title3, weight: .bold)
+                    .foregroundStyle(Color.white)
                 Text(detail)
                     .sirsiFont(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .foregroundStyle(PantheonTheme.mutedText)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 2)
+                HStack(spacing: 6) {
+                    Text(action)
+                        .sirsiFont(.subheadline, weight: .semibold)
+                    Image(systemName: "arrow.right")
+                        .sirsiFont(.caption, weight: .semibold)
+                }
+                .foregroundStyle(gold)
             }
-            Spacer(minLength: 8)
-            Image(systemName: "chevron.right")
-                .sirsiFont(.caption, weight: .semibold)
-                .foregroundStyle(.tertiary)
+            .padding(20)
+            .frame(maxWidth: .infinity, minHeight: 210, alignment: .leading)
+            .background(PantheonTheme.panel)
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.08), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 14))
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .contentShape(Rectangle())
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(title). \(detail). \(action)")
     }
 }
 

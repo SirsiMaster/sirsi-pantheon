@@ -7,6 +7,7 @@ package maat
 
 import (
 	"bufio"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -49,6 +50,38 @@ type Decision struct {
 type DecisionJournal interface {
 	Append(Decision) error
 	Recent(limit int) ([]Decision, error)
+}
+
+// ProjectFailureMemoryPreflight records a completed failure-memory screen in
+// Ma'at's existing decision journal.  This is intentionally one-way: the
+// journal is an inspectable projection for Casebook and surfaces, never an
+// input that can alter a failure-memory decision or authorize remediation.
+func ProjectFailureMemoryPreflight(j DecisionJournal, receipt PreflightReceipt) error {
+	if j == nil {
+		return fmt.Errorf("maat failure memory projection: nil decision journal")
+	}
+	if err := receipt.validate(); err != nil {
+		return fmt.Errorf("maat failure memory projection: invalid preflight receipt")
+	}
+	evidence, err := receipt.EvidenceReference()
+	if err != nil {
+		return fmt.Errorf("maat failure memory projection: bind receipt evidence: %w", err)
+	}
+	why := fmt.Sprintf("%d measured records; %d recovery actions", len(receipt.MeasuredChecks), len(receipt.RecoveryActions))
+	if receipt.RecoveryReference != "" {
+		why += "; recovery reference: " + receipt.RecoveryReference
+	}
+	return j.Append(Decision{
+		Time:          receipt.EvaluatedAtUTC.UTC().Format(time.RFC3339Nano),
+		Kind:          "failure memory preflight",
+		Requester:     "maat",
+		Resource:      receipt.Action.Component,
+		Assessed:      receipt.Action.Operation,
+		Affected:      receipt.Action.Profile,
+		Determination: string(receipt.Decision),
+		Why:           why,
+		Evidence:      evidence,
+	})
 }
 
 // RecordReport projects a completed Ma'at report into the same append-only
@@ -106,6 +139,38 @@ type FileDecisionJournal struct {
 	Path string
 }
 
+// JournalIssue is a bounded, non-content-bearing description of a record the
+// strict journal reader cannot admit.  It deliberately contains a line number
+// and digest rather than the record itself: a damaged local projection should
+// remain actionable without copying potentially sensitive decision text into a
+// UI, command result, or diagnostic bundle.
+type JournalIssue struct {
+	Line   int    `json:"line"`
+	Digest string `json:"digest"`
+	Reason string `json:"reason"`
+}
+
+// JournalIntegrity accompanies the tolerant Casebook projection.  The strict
+// journal API remains the policy read path; this shape exists only so a legacy
+// or damaged display record cannot make every healthy Ma'at case invisible.
+type JournalIntegrity struct {
+	InvalidCount int            `json:"invalid_count"`
+	Issues       []JournalIssue `json:"issues,omitempty"`
+}
+
+// JournalRepairReceipt names the retained original and the verified active
+// projection after a confirmation-gated repair. It never claims that a
+// malformed historical record was fixed; the original bytes remain available
+// in BackupPath and only the active Casebook projection is rebuilt.
+type JournalRepairReceipt struct {
+	BackupPath     string `json:"backup_path"`
+	OriginalDigest string `json:"original_digest"`
+	RemovedCount   int    `json:"removed_count"`
+	RetainedCount  int    `json:"retained_count"`
+}
+
+const maxRetainedJournalIssues = 20
+
 func DefaultDecisionPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -132,6 +197,12 @@ func (j *FileDecisionJournal) Append(decision Decision) error {
 	if err := os.MkdirAll(filepath.Dir(j.Path), 0o700); err != nil {
 		return fmt.Errorf("maat decision journal: create parent: %w", err)
 	}
+	return withJournalMutationLock(j.Path, func() error {
+		return j.appendLocked(decision)
+	})
+}
+
+func (j *FileDecisionJournal) appendLocked(decision Decision) error {
 	encoded, err := json.Marshal(decision)
 	if err != nil {
 		return fmt.Errorf("maat decision journal: encode: %w", err)
@@ -151,8 +222,23 @@ func (j *FileDecisionJournal) Append(decision Decision) error {
 }
 
 func (j *FileDecisionJournal) Recent(limit int) ([]Decision, error) {
+	decisions, _, err := j.readRecent(limit, false)
+	return decisions, err
+}
+
+// RecentTolerant returns all valid decisions while retaining bounded,
+// content-free evidence about invalid records.  It is intentionally not part
+// of DecisionJournal: callers that make or authorize decisions continue to
+// use Recent and fail closed.  Casebook is a read-only operator projection, so
+// its job is to reveal the repairable data problem instead of hiding every
+// valid decision behind one legacy row.
+func (j *FileDecisionJournal) RecentTolerant(limit int) ([]Decision, JournalIntegrity, error) {
+	return j.readRecent(limit, true)
+}
+
+func (j *FileDecisionJournal) readRecent(limit int, tolerateInvalid bool) ([]Decision, JournalIntegrity, error) {
 	if j == nil || strings.TrimSpace(j.Path) == "" {
-		return nil, fmt.Errorf("maat decision journal: empty path")
+		return nil, JournalIntegrity{}, fmt.Errorf("maat decision journal: empty path")
 	}
 	if limit <= 0 {
 		limit = 50
@@ -160,39 +246,79 @@ func (j *FileDecisionJournal) Recent(limit int) ([]Decision, error) {
 	f, err := os.Open(j.Path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return []Decision{}, nil
+			return []Decision{}, JournalIntegrity{}, nil
 		}
-		return nil, fmt.Errorf("maat decision journal: open: %w", err)
+		return nil, JournalIntegrity{}, fmt.Errorf("maat decision journal: open: %w", err)
 	}
 	defer f.Close()
 
 	var decisions []Decision
+	var integrity JournalIntegrity
 	scanner := bufio.NewScanner(f)
 	// A decision is deliberately bounded; raising Scanner's default is for
 	// structured evidence links, not an invitation to treat this as a trace log.
 	scanner.Buffer(make([]byte, 4096), 256*1024)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+	for lineNumber := 1; scanner.Scan(); lineNumber++ {
+		raw := scanner.Text()
+		line := strings.TrimSpace(raw)
 		if line == "" {
 			continue
 		}
 		var decision Decision
 		if err := json.Unmarshal([]byte(line), &decision); err != nil {
-			return nil, fmt.Errorf("maat decision journal: malformed record: %w", err)
+			if !tolerateInvalid {
+				return nil, JournalIntegrity{}, fmt.Errorf("maat decision journal: malformed record: %w", err)
+			}
+			integrity.addIssue(lineNumber, raw, "malformed JSON record")
+			continue
 		}
 		if err := validateDecision(decision); err != nil {
-			return nil, err
+			if !tolerateInvalid {
+				return nil, JournalIntegrity{}, err
+			}
+			integrity.addIssue(lineNumber, raw, journalIssueReason(err))
+			continue
 		}
 		decisions = append(decisions, decision)
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("maat decision journal: read: %w", err)
+		return nil, JournalIntegrity{}, fmt.Errorf("maat decision journal: read: %w", err)
 	}
 	sort.SliceStable(decisions, func(i, k int) bool { return decisions[i].Time > decisions[k].Time })
 	if len(decisions) > limit {
 		decisions = decisions[:limit]
 	}
-	return decisions, nil
+	return decisions, integrity, nil
+}
+
+func (integrity *JournalIntegrity) addIssue(line int, raw, reason string) {
+	integrity.InvalidCount++
+	if len(integrity.Issues) >= maxRetainedJournalIssues {
+		return
+	}
+	digest := sha256.Sum256([]byte(raw))
+	integrity.Issues = append(integrity.Issues, JournalIssue{
+		Line: line, Digest: fmt.Sprintf("sha256:%x", digest), Reason: reason,
+	})
+}
+
+func journalIssueReason(err error) string {
+	reason := strings.TrimSpace(strings.TrimPrefix(err.Error(), "maat decision journal:"))
+	if reason == "" {
+		return "record violates the Ma'at journal contract"
+	}
+	if len(reason) > 240 {
+		return reason[:240]
+	}
+	return reason
+}
+
+// RepairInvalidRecords preserves the original journal and rebuilds only the
+// active Casebook projection with strict-valid records. Platform-specific
+// implementations retain the source and parent capabilities through the final
+// replacement; the confirmation gate lives in the Casebook command/UI.
+func (j *FileDecisionJournal) RepairInvalidRecords() (JournalRepairReceipt, error) {
+	return repairInvalidRecords(j)
 }
 
 func normalizeDecision(decision *Decision) error {

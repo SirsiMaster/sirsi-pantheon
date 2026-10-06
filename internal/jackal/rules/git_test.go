@@ -187,6 +187,40 @@ func TestGitUntrackedArtifacts_FindsLargeBinaries(t *testing.T) {
 	if findings[0].SizeBytes < 2*1024*1024 {
 		t.Errorf("size = %d, want >= 2MB", findings[0].SizeBytes)
 	}
+	if findings[0].Path != objFile || findings[0].IsDir || findings[0].FileCount != 1 {
+		t.Fatalf("artifact must be one exact file, not its repository: %#v", findings[0])
+	}
+}
+
+func TestGitUntrackedArtifactsNeverOffersRepositoryRootForAggregateRemoval(t *testing.T) {
+	t.Parallel()
+	repo := initGitRepo(t)
+	for _, name := range []string{"build/a.o", "build/b.dylib"} {
+		path := filepath.Join(repo, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		f, err := os.Create(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Truncate(2 * 1024 * 1024); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	findings := analyzeUntrackedArtifacts(context.Background(), repo)
+	if len(findings) != 2 {
+		t.Fatalf("findings = %#v, want two exact leaves", findings)
+	}
+	for _, finding := range findings {
+		if finding.Path == repo || finding.IsDir || finding.FileCount != 1 {
+			t.Fatalf("must never offer repository root cleanup: %#v", finding)
+		}
+	}
 }
 
 func TestGitUntrackedArtifacts_IgnoresSmallFiles(t *testing.T) {

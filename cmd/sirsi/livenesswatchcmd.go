@@ -47,18 +47,24 @@ var livenessInstallCmd = &cobra.Command{
 	Use:   "install",
 	Short: "Install the launchd LaunchAgent (runs now + every 15 min, at every login)",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		bin := setup.BinaryPath()
-		repoRoot, err := router.FindRepoRoot()
-		if err != nil {
-			return fmt.Errorf("locate repo root: %w", err)
-		}
-		msg, err := liveness.Install(bin, repoRoot)
+		msg, err := installLivenessWatch()
 		if err != nil {
 			return err
 		}
 		fmt.Println("  " + msg)
 		return nil
 	},
+}
+
+// installLivenessWatch is shared by the direct command and Ma'at's closed
+// repair registry. Both routes install the exact executable that is running
+// now and require the persisted local router root used by the watch at boot.
+func installLivenessWatch() (string, error) {
+	repoRoot, err := router.FindRepoRoot()
+	if err != nil {
+		return "", fmt.Errorf("locate Pantheon router root for liveness watch: %w", err)
+	}
+	return liveness.Install(setup.BinaryPath(), repoRoot)
 }
 
 var livenessUninstallCmd = &cobra.Command{

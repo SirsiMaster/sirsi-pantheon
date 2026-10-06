@@ -2,6 +2,101 @@ import XCTest
 @testable import SirsiMenubar
 
 final class CoreContractsTests: XCTestCase {
+    func testStackLabReportTreatsNullCollectionsAsAnEmptyTypedReport() {
+        let raw = #"""
+        {"roster":["stacklab.wing.maat"],"findings":null}
+        """#
+
+        let report = StackLabReport.decode(Data(raw.utf8))
+
+        XCTAssertEqual(report?.roster, ["stacklab.wing.maat"])
+        XCTAssertEqual(report?.findings.count, 0)
+        XCTAssertEqual(report?.unknown.count, 0)
+        XCTAssertEqual(report?.clean, true)
+    }
+
+    func testStackLabReadFailureExplainsTheRealRecoveryBoundary() {
+        let timedOut = SirsiEngine.JSONCommandRead(data: Data(), exitStatus: nil, timedOut: true, launchError: nil)
+        XCTAssertTrue(StackLabReadFailure.message(for: timedOut).contains("20 seconds"))
+
+        let empty = SirsiEngine.JSONCommandRead(data: Data(), exitStatus: 1, timedOut: false, launchError: nil)
+        XCTAssertTrue(StackLabReadFailure.message(for: empty).contains("exit 1"))
+    }
+
+    func testFleetStatePresentationCoversCanonicalSixStatesAndUnknown() {
+        let cases: [(String, String)] = [
+            ("WORKING", "WORKING"),
+            ("ASSIGNED", "ASSIGNED"),
+            ("IDLE_WITH_WORK", "IDLE — WORK WAITING"),
+            ("BLOCKED", "BLOCKED"),
+            ("UNROUTABLE", "UNROUTABLE"),
+            ("COMPLETE", "COMPLETE"),
+            ("new_router_state", "UNKNOWN — REVIEW"),
+        ]
+
+        for (state, expected) in cases {
+            XCTAssertEqual(FleetStatePresentation.label(state), expected, "state \\(state)")
+        }
+        // Older routers remain readable, but the app never maps an unknown
+        // state to the old, incorrect "stopped" label.
+        XCTAssertEqual(FleetStatePresentation.label("working"), "WORKING")
+        XCTAssertEqual(FleetStatePresentation.label("stopped"), "UNKNOWN — REVIEW")
+    }
+
+    func testFleetUsesBoundedDirectRaProducerInsteadOfStartingTheDashboardServer() {
+        XCTAssertEqual(SirsiEngine.fleetReadArgs, ["router", "fleet", "--json"])
+        XCTAssertEqual(SirsiEngine.fleetReadTimeoutSeconds, 20)
+        XCTAssertFalse(SirsiEngine.fleetReadArgs.contains("board-serve"))
+    }
+
+    func testKnownFailureProposalDecodesTheTypedLocalReviewQueue() throws {
+        let raw = #"""
+        [{
+          "schema":"sirsi.maat.known-failure-proposal.v1",
+          "id":"catalog-root-missing",
+          "title":"Catalog root missing",
+          "signature":"catalog missing",
+          "cause":"an ambient checkout is incomplete",
+          "status":"proposed",
+          "created_at_utc":"2026-10-05T20:00:00Z",
+          "catalog_sha256":"abc123"
+        }]
+        """#
+
+        let proposals = MaatKnownFailureProposalsView.decode(raw)
+
+        XCTAssertEqual(proposals?.count, 1)
+        XCTAssertEqual(proposals?.first?.id, "catalog-root-missing")
+        XCTAssertEqual(proposals?.first?.titleOrID, "Catalog root missing")
+    }
+
+    func testActivityResolutionAlwaysClosesAnAmbiguousOrFailedOutcome() {
+        XCTAssertEqual(activityResolution(for: "applied"), .resolved)
+        XCTAssertEqual(activityResolution(for: "The command exited successfully, but returned no readable structured result. No repair is claimed."), .evidenceOnly)
+        XCTAssertEqual(activityResolution(for: "registry-police: exit status 1"), .maatReview)
+        XCTAssertEqual(activityResolution(for: "Error: evidence unavailable"), .maatReview)
+    }
+
+    func testActivityMaatReviewCarriesEvidenceButNeverReplaysTheActivityCommand() {
+        let entry = ActivityEntry(
+            title: "LaunchAgent restore",
+            command: "liveness-watch restore-disabled --confirm",
+            when: "2026-10-05T20:00:00Z",
+            result: "exit status 1: verification is incomplete"
+        )
+
+        XCTAssertEqual(
+            activityMaatReviewArgs(for: entry),
+            [
+                "maat", "record-resolution",
+                "--check", "Pantheon activity: LaunchAgent restore",
+                "--message", "exit status 1: verification is incomplete",
+                "--detail", "Retained Pantheon activity command: sirsi liveness-watch restore-disabled --confirm",
+                "--confirm",
+            ]
+        )
+    }
+
     func testEveryDiagnosticHasAClosedNativeResolutionRoute() {
         XCTAssertEqual(
             diagnosticResolutionRoute(resolution: nil, severity: 0, hasFix: false, hasRecommendedCommand: false),
@@ -27,6 +122,54 @@ final class CoreContractsTests: XCTestCase {
             diagnosticResolutionRoute(resolution: nil, severity: 1, hasFix: false, hasRecommendedCommand: true),
             .command
         )
+    }
+
+    func testFindingDisplayTitleLeadsWithTheManagedRecoveryInsteadOfTheLaunchdImplementationDetail() {
+        XCTAssertEqual(findingDisplayTitle(check: "launchd Disabled Override"), "Restore managed services")
+        XCTAssertEqual(findingDisplayTitle(check: "Swap Usage"), "Swap Usage")
+    }
+
+    func testLegacyLaunchdOverrideStillGetsTheClosedMaatRepairRoute() {
+        XCTAssertEqual(
+            legacyDiagnosticRepairArgs(check: "launchd Disabled Override", severity: 3),
+            ["maat", "repair", "launchd-disabled", "--confirm"]
+        )
+        XCTAssertNil(legacyDiagnosticRepairArgs(check: "unrecognized historical diagnostic", severity: 3))
+    }
+
+    func testMaatSystemOneCommandResultDecodesBothTypedTriageAndScreenShapes() {
+        let triage = MaatSystemOneCommandResult.decode(#"""
+        {
+          "schema_version": 1,
+          "feather_weight": 42,
+          "gate": "changes",
+          "confidence": 0.91,
+          "subject": {"kind": "host", "ref": "M5", "head_sha": ""},
+          "floor": {"passed": true, "checks": []},
+          "model": {"provider": "Ma'at", "version": "1", "local": true, "latency_ms": 3},
+          "findings": [],
+          "snapshot_evidence": "diagnostic:sha256=abc",
+          "decision_evidence": "decision:sha256=def"
+        }
+        """#)
+        XCTAssertEqual(triage?.verdict.gate, "changes")
+        XCTAssertEqual(triage?.snapshotEvidence, "diagnostic:sha256=abc")
+        XCTAssertEqual(triage?.decisionEvidence, "decision:sha256=def")
+
+        let screen = MaatSystemOneCommandResult.decode(#"""
+        {
+          "schema_version": 1,
+          "feather_weight": 100,
+          "gate": "pass",
+          "confidence": 0.99,
+          "subject": {"kind": "recipe", "ref": "stack-lab", "head_sha": "abc"},
+          "floor": {"passed": true, "checks": []},
+          "model": {"provider": "Ma'at", "version": "1", "local": true, "latency_ms": 1},
+          "findings": []
+        }
+        """#)
+        XCTAssertEqual(screen?.verdict.gate, "pass")
+        XCTAssertEqual(screen?.decisionEvidence, "")
     }
 
     func testDiagnosticFindingDecodesExplicitMaatReviewRoute() throws {
@@ -147,6 +290,32 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertFalse(ambiguousLegacy.matches(plan: plan))
     }
 
+    func testApolloTelemetryRecoveryAlwaysClosesAwaitingStates() throws {
+        let awaiting = try JSONDecoder().decode(ApolloTelemetryRead.self, from: #"""
+        {"state":"awaiting_session","reason":"SNE has not published a sample"}
+        """#.data(using: .utf8)!)
+        let different = try JSONDecoder().decode(ApolloTelemetryRead.self, from: #"""
+        {"state":"active","telemetry":{"engine_id":"other-engine","chip_estates":[]}}
+        """#.data(using: .utf8)!)
+
+        XCTAssertEqual(
+            apolloTelemetryResolution(read: awaiting, matchesSelectedPlan: nil, localRouteHealthy: true, telemetryDecodeFailed: false),
+            .awaitingAdmission
+        )
+        XCTAssertEqual(
+            apolloTelemetryResolution(read: awaiting, matchesSelectedPlan: nil, localRouteHealthy: false, telemetryDecodeFailed: false),
+            .routeUnavailable
+        )
+        XCTAssertEqual(
+            apolloTelemetryResolution(read: different, matchesSelectedPlan: false, localRouteHealthy: true, telemetryDecodeFailed: false),
+            .differentSession
+        )
+        XCTAssertEqual(
+            apolloTelemetryResolution(read: nil, matchesSelectedPlan: nil, localRouteHealthy: false, telemetryDecodeFailed: true),
+            .unreadableEvidence
+        )
+    }
+
     func testMaatCredentialPreflightDecodesObservedNonDeveloperIdentityTypes() throws {
         let raw = #"""
         {
@@ -247,6 +416,66 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertFalse(action.detail.contains("launchctl"))
     }
 
+    func testMaatCasebookExecutesOnlyClosedNativeRepairReferences() {
+        XCTAssertEqual(
+            maatCasebookRepairArguments(actionID: "launchd-disabled"),
+            ["maat", "repair", "launchd-disabled", "--confirm"]
+        )
+        XCTAssertEqual(
+            maatCasebookRepairArguments(actionID: "liveness-watch"),
+            ["maat", "repair", "liveness-watch", "--confirm"]
+        )
+        XCTAssertNil(maatCasebookRepairArguments(actionID: "launchctl bootstrap gui/501/untrusted"))
+    }
+
+    func testMaatCasebookIntegrityKeepsValidCasesVisibleAndRoutesRepair() throws {
+        let raw = #"""
+        {
+          "cases": [],
+          "summary": {"total":0,"open":0,"urgent":0,"high":0,"resolved":0},
+          "journal_integrity": {
+            "invalid_count": 1,
+            "issues": [
+              {"line": 14, "digest": "sha256=fixture-a", "reason": "requester is required"},
+              {"line": 15, "digest": "sha256=fixture-b", "reason": "host is required"}
+            ]
+          }
+        }
+        """#.data(using: .utf8)!
+
+        let projection = try JSONDecoder().decode(MaatCasebookProjection.self, from: raw)
+
+        XCTAssertEqual(projection.cases.count, 0)
+        XCTAssertEqual(projection.journalIntegrity.invalidCount, 1)
+        XCTAssertEqual(projection.journalIntegrity.issues.first?.line, 14)
+        XCTAssertEqual(projection.journalIntegrity.issues.first?.reason, "requester is required")
+        XCTAssertEqual(Set(projection.journalIntegrity.issues.map(\.id)).count, 2)
+    }
+
+    func testDesktopEnginePrefersTheBundledCLIOverAHostInstall() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("sirsi-bundled-cli-\(UUID().uuidString)", isDirectory: true)
+        let macOS = root.appendingPathComponent("Pantheon.app/Contents/MacOS", isDirectory: true)
+        try FileManager.default.createDirectory(at: macOS, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let menubar = macOS.appendingPathComponent("sirsi-menubar")
+        let cli = macOS.appendingPathComponent("sirsi")
+        try Data().write(to: menubar)
+        try Data().write(to: cli)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: cli.path)
+
+        let selected = SirsiEngine.sirsiBinary(bundleExecutableURL: menubar, homeDirectory: "/does-not-exist")
+
+        XCTAssertEqual(selected, cli.path)
+
+        try FileManager.default.removeItem(at: cli)
+        try FileManager.default.createSymbolicLink(atPath: cli.path, withDestinationPath: "/bin/true")
+        XCTAssertNil(SirsiEngine.sirsiBinary(bundleExecutableURL: menubar, homeDirectory: "/does-not-exist"))
+
+        try FileManager.default.removeItem(at: cli)
+        XCTAssertNil(SirsiEngine.sirsiBinary(bundleExecutableURL: menubar, homeDirectory: "/does-not-exist"))
+    }
+
     func testMenubarLeaseAllowsOneLocalProcessAtATime() throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("sirsi-menubar-lease-\(UUID().uuidString)", isDirectory: true)
@@ -259,6 +488,18 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertNil(MenubarInstanceLease.acquire(at: path))
         first = nil
         XCTAssertNotNil(MenubarInstanceLease.acquire(at: path))
+    }
+
+    @MainActor
+    func testMenubarCleanupLabelNamesTheActionInsteadOfShowingAnAmbiguousByteCount() throws {
+        let finding = try JSONDecoder().decode(Finding.self, from: #"""
+        {"path":"/tmp/reclaimable","size_bytes":43379169689,"severity":"safe","description":"reclaimable data"}
+        """#.data(using: .utf8)!)
+        let engine = SirsiEngine()
+        engine.findings = [finding]
+
+        XCTAssertEqual(engine.titleLabel(), "Clean 40.4 GB")
+        XCTAssertFalse(engine.titleLabel().hasPrefix("40"))
     }
 
     func testProjectRootAdmissionAcceptsGitWorktreesAndRejectsPlainFolders() throws {

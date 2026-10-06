@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/cleaner"
@@ -330,8 +331,7 @@ func analyzeUntrackedArtifacts(ctx context.Context, repo string) []jackal.Findin
 		".pyc": true, ".pyo": true, ".egg": true, ".whl": true,
 	}
 
-	var totalSize int64
-	var count int
+	var findings []jackal.Finding
 
 	for _, relPath := range strings.Split(out, "\n") {
 		relPath = strings.TrimSpace(relPath)
@@ -342,33 +342,41 @@ func analyzeUntrackedArtifacts(ctx context.Context, repo string) []jackal.Findin
 		if !artifactExts[ext] {
 			continue
 		}
-		absPath := filepath.Join(repo, relPath)
-		info, err := os.Stat(absPath)
+		// Git emits repository-relative names, but a cleaner must still not
+		// treat that as permission to escape the repository or follow a link.
+		cleanRel := filepath.Clean(relPath)
+		if filepath.IsAbs(cleanRel) || cleanRel == ".." || strings.HasPrefix(cleanRel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		absPath := filepath.Join(repo, cleanRel)
+		info, err := os.Lstat(absPath)
 		if err != nil {
+			continue
+		}
+		if !info.Mode().IsRegular() {
 			continue
 		}
 		// Only flag files > 1MB
 		if info.Size() < 1024*1024 {
 			continue
 		}
-		totalSize += info.Size()
-		count++
+		findings = append(findings, jackal.Finding{
+			RuleName:    "git_untracked_artifacts",
+			Category:    jackal.CategoryDev,
+			Description: "Untracked build artifact: " + cleanRel,
+			Path:        absPath,
+			SizeBytes:   info.Size(),
+			FileCount:   1,
+			Severity:    jackal.SeverityCaution,
+			IsDir:       false,
+		})
 	}
 
-	if count == 0 {
+	if len(findings) == 0 {
 		return nil
 	}
-
-	return []jackal.Finding{{
-		RuleName:    "git_untracked_artifacts",
-		Category:    jackal.CategoryDev,
-		Description: fmt.Sprintf("Untracked artifacts in %s (%d files)", filepath.Base(repo), count),
-		Path:        repo,
-		SizeBytes:   totalSize,
-		FileCount:   count,
-		Severity:    jackal.SeverityCaution,
-		IsDir:       true,
-	}}
+	sort.Slice(findings, func(i, j int) bool { return findings[i].Path < findings[j].Path })
+	return findings
 }
 
 // ── Merged Branches Rule ─────────────────────────────────────────────
