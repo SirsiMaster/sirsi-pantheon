@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dashboard"
@@ -40,5 +41,47 @@ func TestChangelogMergesUnreleasedAndAttentionIsDerived(t *testing.T) {
 	a := routerAttention(sick)
 	if len(a) != 3 || a[0].Severity != "critical" || a[0].Title != "q: quarantined" {
 		t.Fatalf("attention wrong or unordered: %+v", a)
+	}
+}
+
+// Every attention item carries a stable id; lane items name their lane; a next
+// step is always a copyable command naming that lane (the UI never executes text).
+func TestAttentionHasStableIDsLanesAndCopyOnlyNextSteps(t *testing.T) {
+	s := dashboard.RouterSnapshot{Registry: dashboard.RouterRegistryPin{Pinned: false}, Consumers: dashboard.RouterConsumers{Running: 2, Max: 2},
+		Lanes: dashboard.RouterLanes{List: []dashboard.RouterLaneVerdict{
+			{Agent: "q", Verdict: "HELD", Detail: "held: quarantine (needs a human)"},
+			{Agent: "w", Verdict: "WATCH_ONLY", Open: 3},
+			{Agent: "u", Verdict: "UNSTAFFED", Open: 1}}}}
+	first, second := routerAttention(s), routerAttention(s)
+	if len(first) != 5 {
+		t.Fatalf("want 5 items, got %d: %+v", len(first), first)
+	}
+	seen := map[string]bool{}
+	for i, a := range first {
+		if a.ID == "" || a.ID != second[i].ID {
+			t.Fatalf("id missing or unstable: %+v vs %+v", a, second[i])
+		}
+		if seen[a.ID] {
+			t.Fatalf("duplicate id %q", a.ID)
+		}
+		seen[a.ID] = true
+		if a.Next != nil && (a.Next.Kind != "command-copy" || a.Next.Command == "") {
+			t.Fatalf("next step must be a copyable command: %+v", a.Next)
+		}
+		if a.Agent != "" && a.Next != nil && !strings.Contains(a.Next.Command, a.Agent) {
+			t.Fatalf("lane item's command must name its lane: %+v", a)
+		}
+	}
+	for _, a := range first {
+		switch a.ID {
+		case "unworked:w":
+			if a.Agent != "w" || !strings.Contains(a.Next.Command, "router ping w") {
+				t.Fatalf("WATCH_ONLY must diagnose, not install: %+v", a)
+			}
+		case "unworked:u":
+			if !strings.Contains(a.Next.Command, "wake-install u") {
+				t.Fatalf("UNSTAFFED should install: %+v", a)
+			}
+		}
 	}
 }
