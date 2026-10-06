@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
@@ -61,29 +62,45 @@ Runs, with each verifier's OWN exit status as the verdict:
 			output.Success("Ma'at gate armed: core.hooksPath=.githooks in %s (shared by its worktrees)", root)
 			return nil
 		}
-		base, head := gateBase, gateHead
+		g := trustboundary.Gate{Root: root, All: gateAll, Lint: gateLintOnly, Out: cmd.ErrOrStderr()}
+		var res trustboundary.Result
 		if gatePrePush {
-			var ok bool
-			base, head, ok = trustboundary.RangeFromPrePush(root, cmd.InOrStdin())
-			if !ok {
-				output.Info("𓆄 gate: no branch content in this push — nothing to check")
+			ranges, err := trustboundary.RangesFromPrePush(root, cmd.InOrStdin())
+			if err != nil {
+				// Fail CLOSED: a branch ref without a verifiable base is refused,
+				// never admitted as "nothing to check".
+				cmd.SilenceUsage = true
+				return fmt.Errorf("𓆄 trust-boundary gate refused the push: %v", err)
+			}
+			if len(ranges) == 0 {
+				output.Info("𓆄 gate: no branch content in this push (tags / deletions only) — nothing to check")
 				return nil
 			}
+			res = trustboundary.RunRanges(g, ranges)
+		} else {
+			g.Base, g.Head = gateBase, gateHead
+			res = g.Run()
 		}
-		g := trustboundary.Gate{Root: root, Base: base, Head: head, All: gateAll, Lint: gateLintOnly, Out: cmd.ErrOrStderr()}
-		res := g.Run()
 		if JsonOutput {
+			// JSON only on stdout; the exit status carries the verdict.
 			if err := emitJSON(res); err != nil {
 				return err
 			}
-		} else {
-			for _, s := range res.Steps {
-				icon := map[string]string{"pass": "✅", "fail": "❌", "skip": "⏭️ "}[s.Status]
-				fmt.Fprintf(cmd.OutOrStdout(), "  %s %-20s %s\n", icon, s.Name, s.Detail)
+			if !res.OK {
+				os.Exit(1)
 			}
-			for _, f := range res.Findings {
-				fmt.Fprintf(cmd.OutOrStdout(), "     %s\n", f)
+			return nil
+		}
+		for _, s := range res.Steps {
+			icon := map[string]string{"pass": "✅", "fail": "❌", "skip": "⏭️ "}[s.Status]
+			ref := ""
+			if s.Ref != "" {
+				ref = s.Ref + " "
 			}
+			fmt.Fprintf(cmd.OutOrStdout(), "  %s %s%-20s %s\n", icon, ref, s.Name, s.Detail)
+		}
+		for _, f := range res.Findings {
+			fmt.Fprintf(cmd.OutOrStdout(), "     %s\n", f)
 		}
 		if !res.OK {
 			// Exit non-zero through cobra so a hook's `|| exit 1` sees it. Never

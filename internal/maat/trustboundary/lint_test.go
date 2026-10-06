@@ -33,7 +33,11 @@ func TestFixtures(t *testing.T) {
 				}
 			}
 			got := map[int][]string{}
-			for _, f := range lintSource(name, src) {
+			findings, err := lintSource(name, src)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, f := range findings {
 				got[f.Line] = append(got[f.Line], f.Rule)
 				sort.Strings(got[f.Line])
 			}
@@ -79,5 +83,11 @@ func TestReportListsEveryRule(t *testing.T) {
 	}
 	if !strings.Contains(r, "satisfied") || !strings.Contains(r, "n/a") {
 		t.Error("report must tell agents the two allowed verdicts")
+	}
+}
+
+func TestMalformedGoIsExplicitFailure(t *testing.T) {
+	if _, err := lintSource("broken.go", []byte("package x\nfunc (")); err == nil {
+		t.Fatal("unparsable Go must fail the lint explicitly, not pass as nil findings")
 	}
 }

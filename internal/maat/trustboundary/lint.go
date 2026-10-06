@@ -87,23 +87,33 @@ func LintTree(root string) ([]Finding, error) {
 	return LintFiles(root, paths)
 }
 
-// LintFiles lints the given root-relative paths; unsupported or missing files
-// are skipped. Generated and test files are skipped: they are not request paths.
+// LintFiles lints the given root-relative paths from the working tree
+// (survey mode). Unsupported, generated and test files are skipped; a path
+// that cannot be read is an error, never a silent skip.
 func LintFiles(root string, paths []string) ([]Finding, error) {
+	return LintBlobs(func(rel string) ([]byte, error) { return os.ReadFile(filepath.Join(root, rel)) }, paths)
+}
+
+// LintBlobs lints paths through read, which returns the exact bytes under
+// review (a git blob at the pushed head, or a working-tree file). Every path
+// handed in is expected to exist: a read failure or absence fails the lint
+// with the path named, and a Go file that does not parse is an explicit
+// failure rather than an unknown that passes.
+func LintBlobs(read func(rel string) ([]byte, error), paths []string) ([]Finding, error) {
 	var out []Finding
 	for _, rel := range paths {
 		if !Lintable(rel) {
 			continue
 		}
-		abs := filepath.Join(root, rel)
-		src, err := os.ReadFile(abs)
+		src, err := read(rel)
 		if err != nil {
-			if os.IsNotExist(err) {
-				continue // deleted in the range
-			}
+			return nil, fmt.Errorf("read %s: %w", rel, err)
+		}
+		f, err := lintSource(rel, src)
+		if err != nil {
 			return nil, err
 		}
-		out = append(out, lintSource(rel, src)...)
+		out = append(out, f...)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].File != out[j].File {
@@ -134,13 +144,17 @@ func Lintable(rel string) bool {
 	return goExts[ext] || tsExts[ext] || shExts[ext]
 }
 
-func lintSource(rel string, src []byte) []Finding {
+func lintSource(rel string, src []byte) ([]Finding, error) {
 	lines := strings.Split(string(src), "\n")
 	var raw []Finding
 	ext := filepath.Ext(rel)
 	switch {
 	case goExts[ext]:
-		raw = lintGo(rel, src, lines)
+		var err error
+		raw, err = lintGo(rel, src, lines)
+		if err != nil {
+			return nil, err
+		}
 	case tsExts[ext]:
 		raw = lintTS(rel, lines)
 	default:
@@ -153,7 +167,7 @@ func lintSource(rel string, src []byte) []Finding {
 		}
 		out = append(out, f)
 	}
-	return out
+	return out, nil
 }
 
 func allowed(lines []string, line int) bool {
@@ -197,11 +211,13 @@ var (
 
 // ── Go ──────────────────────────────────────────────────────────────────────
 
-func lintGo(rel string, src []byte, lines []string) []Finding {
+func lintGo(rel string, src []byte, lines []string) ([]Finding, error) {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, rel, src, parser.ParseComments)
 	if err != nil {
-		return nil // unparsable Go is the compiler's problem, not ours
+		// Malformed Go is an explicit failure: a file the lint cannot read is
+		// an unknown, and an unknown never passes a gate (rule H).
+		return nil, fmt.Errorf("%s: Go parse failure — lint outcome unknown: %w", rel, err)
 	}
 	var out []Finding
 	add := func(pos token.Pos, rule string, extra string) {
@@ -269,7 +285,7 @@ func lintGo(rel string, src []byte, lines []string) []Finding {
 			}
 		}
 	}
-	return out
+	return out, nil
 }
 
 func isRequestFunc(fn *ast.FuncDecl) bool {

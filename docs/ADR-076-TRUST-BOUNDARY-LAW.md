@@ -56,12 +56,14 @@ H. Process — verifier exit status gates; zero self-exemptions; bounded-but-com
 
 | Step | What | Fails when |
 |---|---|---|
-| `traceability` | `scripts/verify-commit-traceability.sh --pull-request <base> <head>` when the repo ships it | the script exits non-zero |
-| `exemption-growth` | counts 40-hex lines in `scripts/traceability-historical-exemptions.txt` at base vs head | the count grew in the range (H: self-exemption) |
+| `traceability` | runs the verifier **as committed at the pushed head** (`git show head:scripts/verify-commit-traceability.sh`, beside the head's exemption list) with `--pull-request <base> <head>` when the head ships it | the script exits non-zero; a read error fails; absence at the head is a reported skip |
+| `exemption-growth` | the hash SET in `scripts/traceability-historical-exemptions.txt` at head must be a subset of the set at base (both read as blobs at those commits) | any hash is newly admitted in the range — including an equal-count replacement (H: self-exemption); a git read error also fails |
 | `secrets` | `gitleaks detect --log-opts=<base>..<head>` when installed (CI's scan remains authoritative) | gitleaks finds a secret |
-| `trust-boundary-lint` | heuristics over the changed Go/TS/shell files; each finding names its rule letter | any finding; a reviewed false positive is silenced by `trust-boundary: <reason>` on the line or the line above |
+| `trust-boundary-lint` | heuristics over the changed Go/TS/shell files read as **blobs at the pushed head** (never the working tree); each finding names its rule letter | any finding; a blob that is missing or unreadable, or Go that does not parse, is an explicit failure (unknown never passes); a reviewed false positive is silenced by `trust-boundary: <reason>` on the line or the line above |
 
 Lint heuristics (tripwires, not proofs): **A** `strconv.*`/`Number()`/`parseInt()` of an object key or client string flowing into `make()`, `Array.from({length})`, `new Array()` or a `for` bound (taint propagates through plain assignment, so `max = n` is caught); **B** `InsertPages`/`AddPage`-family calls inside a loop; **C** provenance-named fields (`hash|receipt|checksum|digest|signature|generatedBy`) on request-shaped types; **D** a per-file `// trust-boundary-gate: F1, F2` directive makes every request-shaped function in that file prove it calls F1 and F2; **E** `firestore.MergeAll` with a map value, `{ merge: true }` on a spread/variable document; **F** sensitive keys (`ssn|dob|answers|formData|passport|bankAccount|…`) inside a document write; **G** `\D`-stripping of a money-named value; **H** depth compares against a literal `< 64`, `verifier | tail` without `pipefail`, `git push --no-verify` in scripts.
+
+Range semantics: `--pre-push` evaluates **every** content-bearing branch ref on stdin and aggregates (one failing ref fails the push; tags and deletions carry no content). A new branch is based at its merge-base with `origin/main`/`origin/master`; when no base can be resolved the push is **refused** — never admitted as "nothing to check".
 
 Adoption:
 

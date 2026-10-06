@@ -44,6 +44,7 @@ ZERO_SHA="0000000000000000000000000000000000000000"
 NO_CONTENT_PUSH=true
 PUSH_LOCAL_SHA=""
 PUSH_REMOTE_SHA=""
+PUSH_REFS=""        # every content-bearing ref as "<ref>:<local_sha>:<remote_sha>" (ADR-076: all refs are gated, not the last one read)
 while read local_ref local_sha remote_ref remote_sha; do
     case "$local_ref" in
         refs/tags/*) ;;                    # tag push — no code content
@@ -54,6 +55,7 @@ while read local_ref local_sha remote_ref remote_sha; do
                 NO_CONTENT_PUSH=false
                 PUSH_LOCAL_SHA="$local_sha"
                 PUSH_REMOTE_SHA="$remote_sha"
+                PUSH_REFS="${PUSH_REFS:+$PUSH_REFS }${local_ref}:${local_sha}:${remote_sha}"
             fi
             ;;
     esac
@@ -258,15 +260,29 @@ if ! go build ./... 2>/dev/null; then
     exit 1
 fi
 
-# ── 4b. Trust-Boundary gate (ADR-076, Universal Rule 32) — A–H lint on pushed files ──
+# ── 4b. Trust-Boundary gate (ADR-076, Universal Rule 32) — A–H lint on EVERY pushed ref ──
 # Each finding names its rule letter; a reviewed false positive is silenced with
 # `trust-boundary: <reason>` on the line or the line above. The exit status gates.
-if [ -n "$DIFF_BASE" ] && [ -n "$PUSH_LOCAL_SHA" ]; then
-    if ! go run ./cmd/sirsi maat gate --lint-only --base "$DIFF_BASE" --head "$PUSH_LOCAL_SHA"; then
-        echo "  ❌ Trust-Boundary lint failed (ADR-076) — fix it or record the reason on the line"
-        exit 1
+# The lint reads the blobs at each pushed head, never this working tree. A new
+# branch whose base cannot be resolved is refused (fail closed), not skipped.
+TB_FAILED=0
+for entry in $PUSH_REFS; do
+    tb_ref="${entry%%:*}"; rest="${entry#*:}"; tb_head="${rest%%:*}"; tb_remote="${rest#*:}"
+    if [ "$tb_remote" != "$ZERO_SHA" ]; then
+        tb_base="$tb_remote"
+    else
+        tb_base=$(git merge-base "$tb_head" origin/main 2>/dev/null || git merge-base "$tb_head" origin/master 2>/dev/null || echo "")
+        if [ -z "$tb_base" ]; then
+            echo "  ❌ $tb_ref: new branch with no resolvable base (fetch origin) — refusing to push unchecked (ADR-076 H)"
+            TB_FAILED=1; continue
+        fi
     fi
-fi
+    if ! go run ./cmd/sirsi maat gate --lint-only --base "$tb_base" --head "$tb_head"; then
+        echo "  ❌ Trust-Boundary lint failed for $tb_ref (ADR-076) — fix it or record the reason on the line"
+        TB_FAILED=1
+    fi
+done
+[ "$TB_FAILED" = 0 ] || exit 1
 
 # ── 5. Tests — diff-based or full depending on depth ────────────────
 # Tests run against the WORKING TREE, not the sha being pushed. An uncommitted
