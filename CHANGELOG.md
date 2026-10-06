@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased] — Apollo view: retire the last user-facing "SNE" copy
 
+- **Commercial notarization spaces repeated Apple transport retries.** The
+  release helper now uses a bounded five-submission budget with capped
+  exponential spacing only for Apple’s exact multipart-upload deadline.
+  Rejected artifacts, invalid credentials, signing failures, and every other
+  notarization verdict remain immediately fail-closed.
+
 - **Commercial macOS notarization recovers transient Apple upload deadlines.**
   The DMG and PKG builders retry only the observed `abortedUpload` /
   `HTTPClientError.deadlineExceeded` multipart-upload failure with a bounded
