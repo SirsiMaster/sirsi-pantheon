@@ -1,7 +1,8 @@
 # RA-P18 — Ma'at pre-push gate and CI
 
-Owner: claude-pantheon. Source: `.githooks/pre-push`, `internal/setup/maatgate.go`,
-`scripts/bind/sirsi-bind.sh`, `internal/maat/knownfail/`. Revision: main `fd645827`.
+Owner: claude-pantheon. Source: `.githooks/pre-push`, `.githooks/gate-lock.sh`,
+`internal/setup/maatgate.go`, `scripts/bind/sirsi-bind.sh`, `internal/maat/knownfail/`.
+Revision: main, post-#1011.
 
 ## Logical view
 ```mermaid
@@ -12,7 +13,9 @@ flowchart TD
   D -- yes --> R[Refuse: wait or owner sets MAAT_WINDOW_OVERRIDE=1] --> C
   D -- no --> E{Tag-only or ref-deletion push?}
   E -- yes --> F[Fast pass, nothing to check]
-  E -- no --> G[gofmt + vet + lint + diff-scoped build/test, MAAT_DEPTH tier]
+  E -- no --> GL{Host-wide gate-lock free? .githooks/gate-lock.sh}
+  GL -- held by another push --> GLW[Wait up to MAAT_GATE_LOCK_WAIT_SECS, reclaim if holder dead] --> GL
+  GL -- free --> G[gofmt + vet + lint + diff-scoped build/test, MAAT_DEPTH tier]
   G -- fail --> H[Push refused locally] --> C
   G -- pass --> I[Push succeeds] --> J[CI on the PR: same checks + canon guard + secrets scan]
   J -- red --> K[PR blocked, author fixes, new head]
@@ -39,7 +42,7 @@ flowchart LR
   BIND[sirsi-bind.sh] -->|gh pr view --json reviews, current head SHA| GH
   BIND -->|merge or refuse| GH
   GH --> TRAIN[release-train.sh] --> TAGS[(git tags)] --> INSTALLS[(installed sirsi binaries)]
-  LOCALCHECK -.on failure, unknown signature.-> CATALOG[(internal/maat/knownfail/catalog.json)]
+  WAKE[Wake loop: lane session consumer output] -.unknown signature.-> CATALOG[(internal/maat/knownfail/catalog.json)]
   CATALOG -->|known match| ANSWER[Published answer to the lane]
 ```
 
@@ -68,11 +71,12 @@ stateDiagram-v2
   backstop until `sirsi setup`/installer runs (A28 — "armed, not just shipped").
 - Rails-lock held during a measurement window: push refused unless the owner
   explicitly overrides with `MAAT_WINDOW_OVERRIDE=1` (deliberate bypass, not a bug).
-- A known failure signature (local check or CI) is matched against
-  `internal/maat/knownfail/catalog.json`; a match publishes the existing answer to
-  the lane without a model call. An unknown signature is registered via
-  `sirsi maat known-failures register` and stays open until a PR ships a fix with a
-  guard test (`resolve` requires `fixed_in` + an existing guard test) — see RA-P02.
+- The pre-push hook and CI do not consult the known-failure catalog (not
+  implemented). The catalog is matched only against a lane session's output by the
+  wake loop (RA-P02), or manually with `sirsi maat known-failures match`. An
+  unknown signature is registered via `sirsi maat known-failures register` and
+  stays open until a PR ships a fix with a guard test (`resolve` requires
+  `fixed_in` + an existing guard test) — see RA-P02.
 - A34 is the hard rule at bind time: a `CHANGES_REQUESTED` review on the current
   head SHA is never superseded by a standing bind directive. It clears only via (a)
   a new head + a new review resolving the finding, or (b) `--override-pr
