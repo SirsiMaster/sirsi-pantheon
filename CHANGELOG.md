@@ -86,6 +86,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ### Fixed
 
+- **`claude-finalwishes-m5` is wakeable.** Its registry entry said `wake: none`, so review items from `codex-finalwishes` (21 open tonight) piled up with nobody reading them; it now declares a launchagent wake like every other staffed lane.
+- **The registry no longer declares a `mercury-m5` lane.** Claude Mercury exists only on the M1 (`mercury`). The three aliases that pointed at `mercury-m5` (`claude-io-cylton`, `cylton-mercury`, `m5-mercury`) now resolve to `mercury`.
+
+
+### Fixed
+
 - **Wake loops work on every host without per-host registry edits.** The shared registry holds absolute paths (`/Users/thekryptodragon/...`), so the same lane read WATCH_ONLY ("consumer cwd is not usable") on the other Mac. The consumer resolver now rebases another machine's home prefix onto the local home — cwd, argv and env — only when that home does not exist locally. `claude-deck`, `claude-pantheon` and `claude-nexus` now have reactive wake loops on the M1; `mercury-m5` and `claude-apollo-m5-rail` on the M5.
 
 
