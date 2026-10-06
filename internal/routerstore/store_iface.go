@@ -88,6 +88,23 @@ type Store interface {
 	ReconcileOperationalState(agent string, wakeRoutable bool) (ReconcileReport, error)
 	RecordEvidence(reqID string, ev Evidence) error
 	RegisterAgent(id string, pid int) error
+	// RegisterWing schema-validates and atomically persists a Stack Lab wing
+	// record (rs-31a), requiring principal to hold an active WingAuthorityGrant
+	// covering every workspace root the record claims (rs-31b/c). Idempotent on
+	// identical bytes; ErrWingConflict on a conflicting identity;
+	// ErrWingAuthorityMissing / ErrWingRootNotContained on a missing or
+	// insufficient grant.
+	RegisterWing(principal string, raw []byte) (WingReceipt, error)
+	// GrantWingAuthority issues a wing-authority grant binding principal to
+	// (projectID, namespace) over repositoryRoot/evidenceRoots (rs-31b).
+	// Server-side only (see serve.go notServed): run on the service host via
+	// `sirsi router wing authority grant`, never reachable from a node. The
+	// bootstrap grant (table empty) is the one ungated root of trust; every
+	// later grant requires issuer to already hold a covering active grant.
+	GrantWingAuthority(issuer, principal, projectID, namespace, repositoryRoot string, evidenceRoots []string) (WingAuthorityGrant, error)
+	// RevokeWingAuthority marks a wing-authority grant revoked; idempotent on
+	// an already-revoked id. Server-side only (see serve.go notServed).
+	RevokeWingAuthority(grantID string) error
 	ReleaseTaskLease(agent, taskID, token, reason string) error
 	Render(id string) (string, error)
 	RenewLease(id, token string, ttl time.Duration) error

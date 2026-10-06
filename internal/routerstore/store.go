@@ -755,6 +755,54 @@ ALTER TABLE host_tokens ADD COLUMN machine_id TEXT NOT NULL DEFAULT '';
 CREATE UNIQUE INDEX IF NOT EXISTS idx_host_tokens_machine_id
     ON host_tokens(machine_id) WHERE machine_id != '' AND revoked = '';
 `},
+	// v24 — Stack Lab wing admission, persistence layer (rs-31a, ADR-066 SNE
+	// design confirmed 2026-09-12, item 015930). One row per admitted wing id,
+	// keyed so RegisterWing can enforce idempotency-on-identical-bytes and
+	// reject a conflicting identity (wing_id PRIMARY KEY; content_hash decides
+	// idempotent-return vs conflict). Caller-authority binding (rs-31b) and
+	// canonical-path containment enforcement (rs-31c) are separate sub-builds
+	// layered on top of this table — not added here.
+	{24, `
+CREATE TABLE IF NOT EXISTS wings (
+    wing_id          TEXT PRIMARY KEY,
+    project_id       TEXT NOT NULL,
+    router_namespace TEXT NOT NULL,
+    owner            TEXT NOT NULL,
+    content_hash     TEXT NOT NULL,
+    record_json      TEXT NOT NULL,
+    created          TEXT NOT NULL,
+    updated          TEXT NOT NULL
+);
+`},
+	// v25 — Stack Lab wing admission, authority binding + path containment
+	// (rs-31b/c, per codex-apollo's SNE disposition on item 20261002-211532:
+	// the wings table alone cannot authorize a caller, so RegisterWing needs an
+	// INDEPENDENTLY-granted binding to check against). One row per grant: a
+	// principal (agent id) is authorized to admit wings for (project_id,
+	// router_namespace) whose workspace roots resolve inside repository_root or
+	// one of evidence_roots_json. issuer records provenance; '' means the
+	// bootstrap grant (table was empty when issued — the one ungated root of
+	// trust, since this verb is server-side-only, see serve.go's notServed).
+	// Every non-bootstrap grant's issuer must hold an active grant whose own
+	// roots already contain the new grant's roots (no second owner without
+	// delegation from covering authority). status/revoked give revocation
+	// semantics without deleting the audit row.
+	{25, `
+CREATE TABLE IF NOT EXISTS wing_authority_grants (
+    grant_id          TEXT PRIMARY KEY,
+    principal         TEXT NOT NULL,
+    issuer            TEXT NOT NULL,
+    project_id        TEXT NOT NULL,
+    router_namespace  TEXT NOT NULL,
+    repository_root   TEXT NOT NULL,
+    evidence_roots_json TEXT NOT NULL,
+    status            TEXT NOT NULL,
+    created           TEXT NOT NULL,
+    revoked           TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_wing_authority_grants_lookup
+    ON wing_authority_grants(principal, project_id, router_namespace, status);
+`},
 }
 
 // migrate applies any pending numbered migrations, tracked via the SQLite

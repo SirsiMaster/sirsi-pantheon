@@ -33,16 +33,15 @@ var (
 
 // WingRecord mirrors contracts/stacklab/v2/wing.schema.json.
 type WingRecord struct {
-	Schema          string            `json:"schema"`
-	ID              string            `json:"id"`
-	Owner           string            `json:"owner"`
-	ProjectID       string            `json:"project_id"`
-	RouterNamespace string            `json:"router_namespace"`
-	Class           string            `json:"class"`
-	Scope           string            `json:"scope"`
-	Status          string            `json:"status"`
-	NamingCanon     map[string]string `json:"naming_canon"`
-	FirstGate       string            `json:"first_gate"`
+	Schema          string `json:"schema"`
+	ID              string `json:"id"`
+	Owner           string `json:"owner"`
+	ProjectID       string `json:"project_id"`
+	RouterNamespace string `json:"router_namespace"`
+	Class           string `json:"class"`
+	Scope           string `json:"scope"`
+	Status          string `json:"status"`
+	FirstGate       string `json:"first_gate"`
 	Workspace       struct {
 		RepositoryRoot      string   `json:"repository_root"`
 		WritableRoots       []string `json:"writable_roots"`
@@ -103,10 +102,6 @@ func ValidateWing(raw []byte) (*WingRecord, error) {
 	add(!oneOf(w.Class, "engine", "control-plane", "operator-surface", "transport", "hardware", "application"), "class: invalid enum value "+w.Class)
 	add(strings.TrimSpace(w.Scope) == "", "scope: required, non-empty")
 	add(!oneOf(w.Status, "intake", "active", "held", "retired"), "status: invalid enum value "+w.Status)
-	for key, value := range w.NamingCanon {
-		add(strings.TrimSpace(key) == "", "naming_canon: keys must be non-empty")
-		add(strings.TrimSpace(value) == "", "naming_canon: values must be non-empty")
-	}
 	add(strings.TrimSpace(w.FirstGate) == "", "first_gate: required, non-empty")
 
 	add(len(w.Workspace.RepositoryRoot) < 2, "workspace.repository_root: minLength 2")

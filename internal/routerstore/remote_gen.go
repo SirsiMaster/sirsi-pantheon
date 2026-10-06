@@ -144,6 +144,11 @@ func (rs *RemoteStore) GetState(key string) (string, bool, error) {
 	err := rs.call("GetState", []any{key}, &o0, &o1)
 	return o0, o1, err
 }
+func (rs *RemoteStore) GrantWingAuthority(issuer, principal, projectID, namespace, repositoryRoot string, evidenceRoots []string) (WingAuthorityGrant, error) {
+	var o0 WingAuthorityGrant
+	err := rs.call("GrantWingAuthority", []any{issuer, principal, projectID, namespace, repositoryRoot, evidenceRoots}, &o0)
+	return o0, err
+}
 func (rs *RemoteStore) GetTask(agent, taskID string) (Task, error) {
 	var o0 Task
 	err := rs.call("GetTask", []any{agent, taskID}, &o0)
@@ -247,6 +252,11 @@ func (rs *RemoteStore) RecordEvidence(reqID string, ev Evidence) error {
 func (rs *RemoteStore) RegisterAgent(id string, pid int) error {
 	return rs.call("RegisterAgent", []any{id, pid})
 }
+func (rs *RemoteStore) RegisterWing(principal string, raw []byte) (WingReceipt, error) {
+	var o0 WingReceipt
+	err := rs.call("RegisterWing", []any{principal, raw}, &o0)
+	return o0, err
+}
 func (rs *RemoteStore) ReleaseTaskLease(agent, taskID, token, reason string) error {
 	return rs.call("ReleaseTaskLease", []any{agent, taskID, token, reason})
 }
@@ -272,6 +282,9 @@ func (rs *RemoteStore) ResumeThreadCAS(record ThreadRecord, suspendedAt string) 
 }
 func (rs *RemoteStore) RevokeHostToken(id string) error { return rs.call("RevokeHostToken", []any{id}) }
 func (rs *RemoteStore) RevokeSession(id string) error   { return rs.call("RevokeSession", []any{id}) }
+func (rs *RemoteStore) RevokeWingAuthority(grantID string) error {
+	return rs.call("RevokeWingAuthority", []any{grantID})
+}
 func (rs *RemoteStore) RunnableFor(agent string) (RunnableState, error) {
 	var o0 RunnableState
 	err := rs.call("RunnableFor", []any{agent}, &o0)
