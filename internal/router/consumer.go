@@ -163,6 +163,11 @@ type ConsumerConfig struct {
 	// HealthCheck is required for resident consumers. It proves the external
 	// worker surface exists without spawning another copy of it.
 	HealthCheck []string `json:"health_check,omitempty"`
+
+	// ReservedSlot lets this lane start a consumer one beyond the host cap, so a
+	// reviewer is never starved by the lanes whose work it reviews. The host total
+	// can exceed the cap by at most one, however many lanes carry the flag.
+	ReservedSlot bool `json:"reserved_slot,omitempty"`
 }
 
 // ResolvedConsumer is a validated, ready-to-dispatch draining invocation.

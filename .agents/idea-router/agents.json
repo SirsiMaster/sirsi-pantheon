@@ -611,6 +611,7 @@
         "codex"
       ],
       "consumer": {
+        "reserved_slot": true,
         "command": [
           "env",
           "-u",
@@ -658,6 +659,7 @@
         ]
       },
       "consumer": {
+        "reserved_slot": true,
         "command": [
           "env",
           "-u",

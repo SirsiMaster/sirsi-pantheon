@@ -63,7 +63,23 @@ func runningConsumersExcept(routerRoot, agentID string) int {
 // consumerSlotsFull reports whether starting another consumer would exceed the host
 // cap. Quiet: the caller logs.
 func consumerSlotsFull(routerRoot, agentID string) bool {
-	return runningConsumersExcept(routerRoot, agentID) >= maxConcurrentConsumers()
+	limit := maxConcurrentConsumers()
+	if consumerHasReservedSlot(routerRoot, agentID) {
+		limit++ // one reserved slot beyond the cap, shared by every flagged lane
+	}
+	return runningConsumersExcept(routerRoot, agentID) >= limit
+}
+
+// consumerHasReservedSlot reports whether the lane's registry entry carries
+// consumer.reserved_slot. An unreadable registry or an unknown lane is "no":
+// the cap stays the cap.
+func consumerHasReservedSlot(routerRoot, agentID string) bool {
+	reg, err := LoadRegistry(routerRoot)
+	if err != nil {
+		return false
+	}
+	cfg, err := reg.Lookup(agentID)
+	return err == nil && cfg != nil && cfg.Consumer.ReservedSlot
 }
 
 func hostConsumerSlotsFull(routerRoot, agentID string, depth int) bool {
