@@ -85,3 +85,13 @@ func TestAttentionHasStableIDsLanesAndCopyOnlyNextSteps(t *testing.T) {
 		}
 	}
 }
+
+// A verdict with no lanes is an explicit zero, never an absent key.
+func TestVerdictCountsAreZeroFilled(t *testing.T) {
+	c := zeroVerdictCounts()
+	for _, v := range []string{"LIVE", "WAKEABLE", "HELD", "AUTH_REQUIRED", "WATCH_ONLY", "UNSTAFFED", "UNREACHABLE"} {
+		if n, ok := c[v]; !ok || n != 0 {
+			t.Fatalf("verdict %s must be present at zero, got %v ok=%v", v, n, ok)
+		}
+	}
+}
