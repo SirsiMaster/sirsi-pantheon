@@ -315,6 +315,23 @@ ALTER TABLE host_tokens ADD COLUMN IF NOT EXISTS machine_id TEXT NOT NULL DEFAUL
 CREATE UNIQUE INDEX IF NOT EXISTS idx_host_tokens_machine_id
     ON host_tokens(machine_id) WHERE machine_id <> '' AND revoked = '';
 
+-- v24 — task-lease audit log: one row per checkTaskOwner verdict and per
+-- BindTaskSession outcome, keyed by (agent, task_id). audience_log covers the
+-- registration gate; nothing covered task claim/bind ownership before this.
+CREATE TABLE IF NOT EXISTS task_lease_log (
+    ts         TEXT NOT NULL,
+    task_id    TEXT NOT NULL,
+    agent      TEXT NOT NULL,
+    op         TEXT NOT NULL,   -- 'claim_check' | 'bind'
+    session_id TEXT NOT NULL,
+    thread_id  TEXT NOT NULL DEFAULT '',
+    host       TEXT NOT NULL DEFAULT '',
+    verdict    TEXT NOT NULL,   -- 'allowed' | 'refused' | 'error'
+    reason     TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_task_lease_log_task ON task_lease_log(agent, task_id, ts);
+CREATE INDEX IF NOT EXISTS idx_task_lease_log_ts ON task_lease_log(ts);
+
 -- ── wake-event triggers (final state after migrations 10..15) ─────────────
 -- Each is one function + one trigger. A wake event is emitted in the SAME
 -- transaction as the source mutation, exactly as in SQLite, so a writer
@@ -512,12 +529,12 @@ DO $$ BEGIN
     GRANT USAGE ON SCHEMA router TO router_reader;
     REVOKE ALL ON ALL TABLES IN SCHEMA router FROM router_reader;
     GRANT SELECT ON agents, audience_log, breakers, counters, identifiers, items,
-      requirements, schema_version, send_quota, state, tasks, threads, wake_events
+      requirements, schema_version, send_quota, state, task_lease_log, tasks, threads, wake_events
       TO router_reader;
   END IF;
 END $$;
 
 -- ── version — last, so a partial apply never publishes a version it does not have ──
-INSERT INTO schema_version(version, applied_at) VALUES (23, router.now_rfc3339())
-  ON CONFLICT (singleton) DO UPDATE SET version = 23, applied_at = router.now_rfc3339()
-  WHERE schema_version.version < 23;
+INSERT INTO schema_version(version, applied_at) VALUES (24, router.now_rfc3339())
+  ON CONFLICT (singleton) DO UPDATE SET version = 24, applied_at = router.now_rfc3339()
+  WHERE schema_version.version < 24;

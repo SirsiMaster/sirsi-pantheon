@@ -578,3 +578,16 @@ func (rs *RemoteStore) AudienceSince(since string) (AudienceReport, error) {
 	err := rs.call("AudienceSince", []any{since}, &out)
 	return out, err
 }
+
+// RecordTaskLeaseEvent is server-side only; a lane never writes the
+// task-lease audit log itself.
+func (rs *RemoteStore) RecordTaskLeaseEvent(TaskLeaseLogEntry) error {
+	return errors.New("routerstore: RecordTaskLeaseEvent is not served over the wire")
+}
+
+// TaskLeaseEventsSince over the wire (read-only, exempt from the gate).
+func (rs *RemoteStore) TaskLeaseEventsSince(agent, taskID, since string) ([]TaskLeaseLogEntry, error) {
+	var out []TaskLeaseLogEntry
+	err := rs.call("TaskLeaseEventsSince", []any{agent, taskID, since}, &out)
+	return out, err
+}

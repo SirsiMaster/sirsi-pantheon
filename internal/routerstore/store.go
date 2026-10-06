@@ -755,6 +755,26 @@ ALTER TABLE host_tokens ADD COLUMN machine_id TEXT NOT NULL DEFAULT '';
 CREATE UNIQUE INDEX IF NOT EXISTS idx_host_tokens_machine_id
     ON host_tokens(machine_id) WHERE machine_id != '' AND revoked = '';
 `},
+	// v24 — task-lease audit log: one row per checkTaskOwner verdict and per
+	// BindTaskSession outcome, keyed by (agent, task_id), so "who held this
+	// lease and what did the service decide" is a query instead of a gap
+	// (router-task-lease-diagnostic-missing: audience_log covers the
+	// registration gate, nothing covered task claim/bind ownership).
+	{24, `
+CREATE TABLE IF NOT EXISTS task_lease_log (
+    ts         TEXT NOT NULL,
+    task_id    TEXT NOT NULL,
+    agent      TEXT NOT NULL,
+    op         TEXT NOT NULL,   -- 'claim_check' | 'bind'
+    session_id TEXT NOT NULL,
+    thread_id  TEXT NOT NULL DEFAULT '',
+    host       TEXT NOT NULL DEFAULT '',
+    verdict    TEXT NOT NULL,   -- 'allowed' | 'refused' | 'error'
+    reason     TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_task_lease_log_task ON task_lease_log(agent, task_id, ts);
+CREATE INDEX IF NOT EXISTS idx_task_lease_log_ts ON task_lease_log(ts);
+`},
 }
 
 // migrate applies any pending numbered migrations, tracked via the SQLite

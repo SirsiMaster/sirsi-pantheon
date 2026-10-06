@@ -113,6 +113,12 @@ type Store interface {
 	StartWork(id, token string) error
 	// TaskEligibility is the read-only "why would a claim be refused" diagnosis.
 	TaskEligibility(agent, taskID string) (TaskEligibility, error)
+	// RecordTaskLeaseEvent is server-side only — a lane never writes the
+	// task-lease audit log itself (mirrors RecordAudience).
+	RecordTaskLeaseEvent(e TaskLeaseLogEntry) error
+	// TaskLeaseEventsSince is the read-only audit query: every task_lease_log
+	// row at or after `since`, optionally narrowed to one (agent, taskID).
+	TaskLeaseEventsSince(agent, taskID, since string) ([]TaskLeaseLogEntry, error)
 	TaskSession(agent, taskID string) (string, error)
 	TouchSession(id string) error
 	UnmetRequirements(owner string) ([]Requirement, error)
