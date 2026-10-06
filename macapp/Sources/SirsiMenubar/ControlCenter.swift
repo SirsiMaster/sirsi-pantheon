@@ -76,7 +76,12 @@ struct PantheonControlCenterView: View {
     }
 
     private var nextActionTitle: String {
-        if !engine.ownerGatedItems.isEmpty { return "Review Ma’at’s decision" }
+        // Keep the primary recovery route named consistently across the
+        // control center, casebook, CLI, and the release contract. This is a
+        // review-first route: Ma'at explains the evidence and scopes the next
+        // action before the operator confirms anything that could change the
+        // Mac.
+        if !engine.ownerGatedItems.isEmpty { return "Resolve with Ma'at" }
         if engine.healthStatus != "green" { return "Open system recovery" }
         if engine.routerStatus != "green" { return "Inspect the Ra fabric" }
         if engine.safeBytes >= SirsiEngine.wasteThreshold { return "Review verified cleanup" }
@@ -84,7 +89,7 @@ struct PantheonControlCenterView: View {
     }
 
     private var nextActionDetail: String {
-        if !engine.ownerGatedItems.isEmpty { return "See the reason, the safe choices, and the evidence before you commit." }
+        if !engine.ownerGatedItems.isEmpty { return "Open Ma'at evidence, see the safe choices, and confirm only the scoped action you choose." }
         if engine.healthStatus != "green" { return "Understand the current health signal and follow the guided local resolution." }
         if engine.routerStatus != "green" { return "Review the route, claim, or handback that needs attention." }
         if engine.safeBytes >= SirsiEngine.wasteThreshold { return "Inspect exact reclaimable items before anything is removed." }
