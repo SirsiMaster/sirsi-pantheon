@@ -67,7 +67,7 @@ func TestHomeServesTheDashboardAndItsAssets(t *testing.T) {
 		t.Fatalf("home page wrong: %d %s", code, ct)
 	}
 	js, _, _ := body("/assets/app.js")
-	for _, want := range []string{"/api/router", "/api/fleet", "/api/stats", "Needs attention"} {
+	for _, want := range []string{"/api/router", "/api/fleet", "/api/stats", "Operator attention"} {
 		if !strings.Contains(js, want) {
 			t.Errorf("app.js missing %q", want)
 		}
