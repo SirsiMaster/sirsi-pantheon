@@ -12,11 +12,11 @@ CLI (`sirsi maat gate`); this package does the work.
 | `report.go` | `Report()` — the A–H checklist skeleton (`--report`) |
 | `testdata/` | one minimal fixture per class with `// want X` markers; `lint_test.go` asserts exactly those letters fire and nothing else |
 
-**Everything in range mode is read from the pushed head.** The verifier that runs is `git show head:scripts/verify-commit-traceability.sh`, extracted beside the head's exemption list; the lint reads `git show head:<path>` for every path in `git diff --name-only --diff-filter=AM base head`. The working tree is consulted only in survey mode (no range). A path named by the diff that cannot be read at the head is an error, not a skip.
+**Nothing in range mode is read from the working tree.** The verifier that runs is `git show base:scripts/verify-commit-traceability.sh` — the copy the remote already trusts — extracted beside the base's exemption list; if the script differs between base and head (or exists at only one) the gate fails ("verifier changed in range"), so a push cannot attest itself. The lint reads `git show head:<path>` for every path in `git diff --name-only -z --no-renames --diff-filter=d base head` (every path existing at head that differs from base; a rename-with-edit is an added file; `-z` keeps names with spaces/non-ASCII exact — a C-quoted name reaching the lint is an error). The working tree is consulted only in survey mode (no range). A path named by the diff that cannot be read at the head is an error, not a skip.
 
 ## Contract (what fails)
 
-- `traceability`: the verifier's own exit status. Absent at head → `skip` (reported). Read error → `fail`.
+- `traceability`: the BASE verifier's own exit status. Script changed/added/removed in range → `fail` (separate review). Absent at both → `skip` (reported). Read error → `fail`.
 - `exemption-growth`: `set(head) ⊆ set(base)` over 40-hex lines; any added hash → `fail` naming it. Absent at head → `skip`; absent at base with present at head → every entry is an addition → `fail`. Read error → `fail`.
 - `secrets`: gitleaks exit status over `base..head`; binary absent → `skip` (CI remains authoritative).
 - `trust-boundary-lint`: any finding → `fail`; unreadable blob or unparsable Go → `fail` (unknown never passes).

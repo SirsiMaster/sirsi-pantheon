@@ -102,6 +102,11 @@ func LintFiles(root string, paths []string) ([]Finding, error) {
 func LintBlobs(read func(rel string) ([]byte, error), paths []string) ([]Finding, error) {
 	var out []Finding
 	for _, rel := range paths {
+		if strings.HasPrefix(rel, `"`) {
+			// A C-quoted name means the caller split quoted output; the file
+			// could not be read under this name, so it must not be skipped.
+			return nil, fmt.Errorf("quoted path %s handed to the lint — read paths with -z", rel)
+		}
 		if !Lintable(rel) {
 			continue
 		}

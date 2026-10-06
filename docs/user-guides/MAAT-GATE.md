@@ -49,7 +49,7 @@ uncommitted experiment does not make it fail.
 
 | Step | Fails when |
 |---|---|
-| `traceability` | the repo's `scripts/verify-commit-traceability.sh` (as committed at the head) exits non-zero |
+| `traceability` | the repo's `scripts/verify-commit-traceability.sh` **as committed at the base** exits non-zero, or the script itself changed in the range (a push may not attest itself — land verifier changes in their own reviewed PR) |
 | `exemption-growth` | `scripts/traceability-historical-exemptions.txt` at the head contains a hash that is not in it at the base — even if another hash was removed |
 | `secrets` | gitleaks finds a secret in the range (skipped with a warning if gitleaks is not installed) |
 | `trust-boundary-lint` | any A–H finding in a changed file; a file that cannot be read or Go that does not parse |

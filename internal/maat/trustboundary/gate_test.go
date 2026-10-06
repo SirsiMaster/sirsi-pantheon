@@ -73,30 +73,59 @@ func TestGateExitStatusIsTheVerdict(t *testing.T) {
 		t.Errorf("exemption-growth = %s, want pass", got)
 	}
 
+	// A passing verifier already trusted at the base passes a clean range.
 	write(traceabilityScript, "#!/usr/bin/env bash\nexit 0\n")
-	head2 := commit("chore: verifier fixed")
-	res = Gate{Root: dir, Base: base, Head: head2}.Run()
+	base2 := commit("chore: verifier fixed (reviewed separately)")
+	write("ok2.go", clean)
+	head2 := commit("chore: head2")
+	res = Gate{Root: dir, Base: base2, Head: head2}.Run()
 	if got := step(res, "traceability").Status; got != "pass" {
 		t.Errorf("traceability = %s, want pass: %s", got, step(res, "traceability").Detail)
 	}
 }
 
-// TestVerifierRunsFromPushedHeadNotWorkingTree: the working tree holds a passing
-// verifier, the pushed head holds a failing one — the head's verdict wins.
-func TestVerifierRunsFromPushedHeadNotWorkingTree(t *testing.T) {
+// TestVerifierChangedInRangeFails pins sweep #1: a push cannot attest itself
+// by editing, replacing or removing its own verifier. The verifier that runs is
+// the BASE's; any difference in range fails with a separate-review message.
+func TestVerifierChangedInRangeFails(t *testing.T) {
 	dir, commit, write := repo(t)
-	base := commit("chore: base")
 	write(traceabilityScript, "#!/usr/bin/env bash\nexit 1\n")
-	head := commit("chore: failing verifier at head")
-	write(traceabilityScript, "#!/usr/bin/env bash\nexit 0\n") // uncommitted: not what is being pushed
-	res := Gate{Root: dir, Base: base, Head: head}.Run()
-	if got := step(res, "traceability").Status; got != "fail" {
-		t.Fatalf("traceability = %s, want fail from the HEAD blob", got)
+	base := commit("chore: strict verifier at base")
+	write(traceabilityScript, "#!/usr/bin/env bash\nexit 0\n") // head neuters it
+	head := commit("chore: neuter verifier")
+	s := step(Gate{Root: dir, Base: base, Head: head}.Run(), "traceability")
+	if s.Status != "fail" || !strings.Contains(s.Detail, "verifier changed in range") {
+		t.Fatalf("neutered verifier: %+v, want fail 'verifier changed in range'", s)
 	}
-	// And absence is decided at the head, not by os.Stat of the tree.
-	res = Gate{Root: dir, Base: base, Head: base}.Run()
-	if got := step(res, "traceability"); got.Status != "skip" || !strings.Contains(got.Detail, "at "+short(base)) {
-		t.Fatalf("traceability at a head without the script = %+v, want skip pinned to the head", got)
+	// Removed at head: same refusal.
+	if err := os.Remove(filepath.Join(dir, traceabilityScript)); err != nil {
+		t.Fatal(err)
+	}
+	head2 := commit("chore: remove verifier")
+	if s := step(Gate{Root: dir, Base: base, Head: head2}.Run(), "traceability"); s.Status != "fail" || !strings.Contains(s.Detail, "verifier changed in range") {
+		t.Fatalf("removed verifier: %+v, want fail", s)
+	}
+	// Absent at both: a reported skip, pinned to the revisions.
+	d2, c2, w2 := repo(t)
+	b2 := c2("chore: no verifier")
+	w2("a.go", clean)
+	h2 := c2("chore: file")
+	if s := step(Gate{Root: d2, Base: b2, Head: h2}.Run(), "traceability"); s.Status != "skip" || !strings.Contains(s.Detail, short(b2)) {
+		t.Fatalf("absent at both: %+v, want skip naming the revisions", s)
+	}
+}
+
+// TestVerifierRunsFromBaseNotWorkingTree: the working tree holds a passing
+// verifier, base and head hold a failing one — the committed base's verdict wins.
+func TestVerifierRunsFromBaseNotWorkingTree(t *testing.T) {
+	dir, commit, write := repo(t)
+	write(traceabilityScript, "#!/usr/bin/env bash\nexit 1\n")
+	base := commit("chore: failing verifier")
+	write("a.go", clean)
+	head := commit("chore: file")
+	write(traceabilityScript, "#!/usr/bin/env bash\nexit 0\n") // uncommitted: not what is being pushed
+	if got := step(Gate{Root: dir, Base: base, Head: head}.Run(), "traceability").Status; got != "fail" {
+		t.Fatalf("traceability = %s, want fail from the committed blob", got)
 	}
 }
 
@@ -157,6 +186,43 @@ func TestLintReadsPushedHeadNotWorkingTree(t *testing.T) {
 	res = Gate{Root: dir, Base: head, Head: head2, Lint: true}.Run()
 	if res.OK || len(res.Findings) != 1 || res.Findings[0].Rule != "A" {
 		t.Fatalf("head carrying class A passed because the working tree was fixed: %+v", res)
+	}
+}
+
+// TestRenamedAndEditedUnsafeFileIsLinted pins sweep #2: a rename-with-edit is
+// not a "rename" to the gate (--no-renames) — the new path is linted.
+func TestRenamedAndEditedUnsafeFileIsLinted(t *testing.T) {
+	dir, commit, write := repo(t)
+	write("old.go", clean)
+	base := commit("chore: base")
+	if err := os.Remove(filepath.Join(dir, "old.go")); err != nil {
+		t.Fatal(err)
+	}
+	write("renamed.go", strings.Replace(classA, "package x", "package x\n// moved", 1))
+	head := commit("refactor: rename + edit")
+	res := Gate{Root: dir, Base: base, Head: head, Lint: true}.Run()
+	if res.OK || len(res.Findings) != 1 || res.Findings[0].File != "renamed.go" || res.Findings[0].Rule != "A" {
+		t.Fatalf("renamed+edited class A must be flagged, got %+v", res)
+	}
+}
+
+// TestNonASCIIPathIsLinted pins sweep #3: paths come back NUL-separated and
+// exact, so a name with a space and non-ASCII is read, not skipped as quoted.
+func TestNonASCIIPathIsLinted(t *testing.T) {
+	dir, commit, write := repo(t)
+	base := commit("chore: base")
+	write("héllo wörld.go", classA)
+	head := commit("feat: odd path")
+	res := Gate{Root: dir, Base: base, Head: head, Lint: true}.Run()
+	if res.OK || len(res.Findings) != 1 || res.Findings[0].File != "héllo wörld.go" {
+		t.Fatalf("non-ASCII path must be linted, got %+v", res)
+	}
+	res = Gate{Root: dir, Base: base, Head: head, Lint: true, All: true}.Run()
+	if len(res.Findings) != 1 {
+		t.Fatalf("--all at head must lint the odd path too, got %+v", res)
+	}
+	if _, err := LintBlobs(func(string) ([]byte, error) { return nil, errAbsent }, []string{`"h\303\251llo.go"`}); err == nil || !strings.Contains(err.Error(), "quoted path") {
+		t.Fatalf("a quoted path must be an error, got %v", err)
 	}
 }
 

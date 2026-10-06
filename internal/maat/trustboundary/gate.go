@@ -168,16 +168,24 @@ func (g Gate) traceability(ranged bool) Step {
 		s.Status, s.Detail = "skip", "no commit range (pass --base/--head or --pre-push)"
 		return s
 	}
-	// The verifier that runs is the one IN the pushed head, extracted beside the
-	// exemption list it reads via $(dirname "$0"); the working tree's copy is
-	// not consulted.
-	script, err := g.blob(g.Head, traceabilityScript)
-	if errors.Is(err, errAbsent) {
-		s.Status, s.Detail = "skip", "no "+traceabilityScript+" at "+short(g.Head)
-		return s
+	// The verifier that runs is the one at the BASE (what the remote already
+	// trusts), beside the base's exemption list. A push that edits, replaces or
+	// removes its own verifier cannot attest itself: any difference between
+	// base and head in the script fails the gate and asks for a separate review.
+	baseScript, baseErr := g.blob(g.Base, traceabilityScript)
+	headScript, headErr := g.blob(g.Head, traceabilityScript)
+	for _, err := range []error{baseErr, headErr} {
+		if err != nil && !errors.Is(err, errAbsent) {
+			s.Status, s.Detail = "fail", err.Error()
+			return s
+		}
 	}
-	if err != nil {
-		s.Status, s.Detail = "fail", err.Error()
+	switch {
+	case errors.Is(baseErr, errAbsent) && errors.Is(headErr, errAbsent):
+		s.Status, s.Detail = "skip", "no "+traceabilityScript+" at "+short(g.Base)+" or "+short(g.Head)
+		return s
+	case errors.Is(baseErr, errAbsent) || errors.Is(headErr, errAbsent) || !bytes.Equal(baseScript, headScript):
+		s.Status, s.Detail = "fail", traceabilityScript+" verifier changed in range "+short(g.Base)+".."+short(g.Head)+" — separate review required; a push may not attest itself (rule H)"
 		return s
 	}
 	tmp, err := os.MkdirTemp("", "tb-gate-")
@@ -187,11 +195,11 @@ func (g Gate) traceability(ranged bool) Step {
 	}
 	defer os.RemoveAll(tmp)
 	scriptPath := filepath.Join(tmp, filepath.Base(traceabilityScript))
-	if err := os.WriteFile(scriptPath, script, 0o700); err != nil {
+	if err := os.WriteFile(scriptPath, baseScript, 0o700); err != nil {
 		s.Status, s.Detail = "fail", err.Error()
 		return s
 	}
-	if ex, err := g.blob(g.Head, exemptionsFile); err == nil {
+	if ex, err := g.blob(g.Base, exemptionsFile); err == nil {
 		if err := os.WriteFile(filepath.Join(tmp, filepath.Base(exemptionsFile)), ex, 0o600); err != nil {
 			s.Status, s.Detail = "fail", err.Error()
 			return s
@@ -307,20 +315,23 @@ func (g Gate) lint(ranged bool) (Step, []Finding) {
 	default:
 		var paths []string
 		if g.All {
-			out, gerr := g.git("ls-tree", "-r", "--name-only", g.Head)
+			out, gerr := g.git("ls-tree", "-r", "-z", "--name-only", g.Head)
 			if gerr != nil {
 				s.Status, s.Detail = "fail", "git ls-tree failed: "+gerr.Error()
 				return s, nil
 			}
-			paths = splitLines(out)
+			paths = splitNUL(out)
 			s.Detail = "whole tree at " + short(g.Head)
 		} else {
-			out, gerr := g.git("diff", "--name-only", "--diff-filter=AM", g.Base, g.Head)
+			// Every path that exists at head and differs from base: --no-renames
+			// shows a rename-with-edit as an added file (so it is linted) and
+			// -z hands back exact bytes, never a quoted name the lint would miss.
+			out, gerr := g.git("diff", "--name-only", "-z", "--no-renames", "--diff-filter=d", g.Base, g.Head)
 			if gerr != nil {
 				s.Status, s.Detail = "fail", "git diff failed: "+gerr.Error()
 				return s, nil
 			}
-			paths = splitLines(out)
+			paths = splitNUL(out)
 			s.Detail = fmt.Sprintf("%d changed files at %s", len(paths), short(g.Head))
 		}
 		head := g.Head
@@ -339,10 +350,10 @@ func (g Gate) lint(ranged bool) (Step, []Finding) {
 	return s, nil
 }
 
-func splitLines(s string) []string {
+func splitNUL(s string) []string {
 	var out []string
-	for _, p := range strings.Split(s, "\n") {
-		if p = strings.TrimSpace(p); p != "" {
+	for _, p := range strings.Split(s, "\x00") {
+		if p != "" {
 			out = append(out, p)
 		}
 	}
