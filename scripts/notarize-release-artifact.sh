@@ -16,14 +16,14 @@ artifact="${1:-}"
     exit 2
 }
 
-attempt_limit="${PANTHEON_NOTARY_UPLOAD_ATTEMPTS:-3}"
-retry_delay="${PANTHEON_NOTARY_RETRY_DELAY_SECONDS:-10}"
-[[ "$attempt_limit" =~ ^[1-9][0-9]*$ ]] || {
-    echo "PANTHEON_NOTARY_UPLOAD_ATTEMPTS must be a positive decimal integer" >&2
+attempt_limit="${PANTHEON_NOTARY_UPLOAD_ATTEMPTS:-5}"
+retry_delay="${PANTHEON_NOTARY_RETRY_DELAY_SECONDS:-30}"
+[[ "$attempt_limit" =~ ^[1-9][0-9]*$ && "$attempt_limit" -le 8 ]] || {
+    echo "PANTHEON_NOTARY_UPLOAD_ATTEMPTS must be a decimal integer from 1 through 8" >&2
     exit 2
 }
-[[ "$retry_delay" =~ ^[0-9]+$ ]] || {
-    echo "PANTHEON_NOTARY_RETRY_DELAY_SECONDS must be a non-negative decimal integer" >&2
+[[ "$retry_delay" =~ ^[0-9]+$ && "$retry_delay" -le 300 ]] || {
+    echo "PANTHEON_NOTARY_RETRY_DELAY_SECONDS must be a non-negative decimal integer no greater than 300" >&2
     exit 2
 }
 
@@ -73,7 +73,13 @@ while [[ "$attempt" -le "$attempt_limit" ]]; do
         echo "ERROR: Apple notarization failed without a retryable upload recovery path." >&2
         exit "$status"
     fi
-    echo "Transient Apple multipart-upload deadline; retrying in ${retry_delay}s." >&2
-    /bin/sleep "$retry_delay"
+    # Reopening a multipart upload immediately can hit the same stalled Apple
+    # edge.  Space only the narrow transport retry class, with a bounded
+    # exponential delay; ordinary notarization, signing, and credential errors
+    # still return at once above.
+    delay=$((retry_delay * (1 << (attempt - 1))))
+    [[ "$delay" -le 300 ]] || delay=300
+    echo "Transient Apple multipart-upload deadline; retrying in ${delay}s." >&2
+    /bin/sleep "$delay"
     attempt=$((attempt + 1))
 done
