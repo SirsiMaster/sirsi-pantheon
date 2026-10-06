@@ -57,7 +57,7 @@ It does not stop running sessions; pair it with `sirsi router quarantine-worker`
 
 ## Pin the service's TLS key (opt-in)
 
-By default a node trusts any certificate that verifies normally. To require the service's own key as well, set `SIRSI_ROUTER_SPKI_PIN` in the environment of the process that opens the https connection: the per-host relay (`sirsi router relay serve`), or a node using `SIRSI_ROUTER_URL=https://...` directly. Lanes on `spool://` need nothing.
+By default a node trusts any certificate that verifies normally. To require the service's own key as well, set `SIRSI_ROUTER_SPKI_PIN` in the environment of the process that opens the https connection: the per-host relay (`sirsi router relay serve`, which holds the host token and so matters most), or a node using `SIRSI_ROUTER_URL=https://...` directly. Lanes on `spool://` need nothing. Install the relay with the variable exported and its launch agent carries it (launchd runs no shell, so `~/.zshenv` alone would never reach it); the relay refuses to start on a malformed pin instead of forwarding the host token unpinned.
 
 ```bash
 # the pin of one certificate (leaf or CA) the service presents

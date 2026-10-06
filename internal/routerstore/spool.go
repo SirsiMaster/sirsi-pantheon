@@ -20,6 +20,7 @@ package routerstore
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -538,6 +539,28 @@ func newRelayHTTPClient() *http.Client {
 	return &http.Client{Timeout: 25 * time.Second, Transport: tr}
 }
 
+// newRelayHTTPClientFor is the relay's forward client for base with the TLS pin from the
+// environment applied (remote_pin.go). The relay holds the host token, so it is the process
+// where an unpinned connection matters most. A malformed pin is an error: the relay refuses to
+// start rather than forward the host token unpinned.
+func newRelayHTTPClientFor(base string) (*http.Client, error) {
+	return relayClient(base, &tls.Config{MinVersion: tls.VersionTLS12})
+}
+
+// relayClient is newRelayHTTPClientFor with the base TLS config injectable (tests trust their
+// own certificate authority through it).
+func relayClient(base string, baseTLS *tls.Config) (*http.Client, error) {
+	c := newRelayHTTPClient()
+	cfg, err := pinConfig(os.Getenv(EnvSPKIPin), base, baseTLS)
+	if err != nil {
+		return nil, err
+	}
+	if cfg != nil {
+		c.Transport.(*http.Transport).TLSClientConfig = cfg
+	}
+	return c, nil
+}
+
 // Relay is the host side: it holds the host token and forwards spooled requests.
 type Relay struct {
 	Spool  string
@@ -569,7 +592,11 @@ type Relay struct {
 // its response file is written atomically; stale files are swept with a log line.
 func (rl *Relay) Serve(ctx context.Context) error {
 	if rl.Client == nil {
-		rl.Client = newRelayHTTPClient()
+		c, err := newRelayHTTPClientFor(rl.Base)
+		if err != nil {
+			return fmt.Errorf("relay: %w", err)
+		}
+		rl.Client = c
 	}
 	if rl.Log == nil {
 		rl.Log = slog.Default()

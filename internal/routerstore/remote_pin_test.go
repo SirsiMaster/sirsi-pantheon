@@ -153,3 +153,65 @@ func TestRemoteStoreHonorsTheEnvironmentPin(t *testing.T) {
 		t.Fatalf("calls must fail naming %s, got %v", EnvSPKIPin, err)
 	}
 }
+
+// The relay holds the host token, so the pin must bind the RELAY's client, not only the CLI's.
+// (Found in review: the relay built its own client and never saw the pin.)
+func TestRelayClientEnforcesThePin(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { hits.Add(1); _, _ = w.Write([]byte("ok")) }))
+	t.Cleanup(srv.Close)
+	trusted := srv.Client().Transport.(*http.Transport).TLSClientConfig // the test CA, as normal verification
+	other, _ := mkCert(t, "other", nil, nil, true)
+
+	t.Setenv(EnvSPKIPin, spkiPin(other))
+	c, err := relayClient(srv.URL, trusted)
+	if err != nil {
+		t.Fatalf("a well-formed pin must build a client: %v", err)
+	}
+	if _, err := c.Get(srv.URL); err == nil || !strings.Contains(err.Error(), "pin mismatch") {
+		t.Fatalf("the relay must refuse a server whose key is not pinned, got %v", err)
+	}
+	if hits.Load() != 0 {
+		t.Fatalf("a pin mismatch must stop before the handler (hits=%d): the host token would have been sent", hits.Load())
+	}
+
+	t.Setenv(EnvSPKIPin, spkiPin(srv.Certificate())+","+spkiPin(other))
+	c, err = relayClient(srv.URL, trusted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := c.Get(srv.URL)
+	if err != nil {
+		t.Fatalf("the relay must reach a server whose key is pinned: %v", err)
+	}
+	_ = resp.Body.Close()
+	if hits.Load() != 1 {
+		t.Fatalf("hits = %d, want 1", hits.Load())
+	}
+	// The relay's own transport settings survive pinning.
+	tr := c.Transport.(*http.Transport)
+	if !tr.DisableKeepAlives || tr.ResponseHeaderTimeout == 0 {
+		t.Fatalf("pinning must not drop the relay's no-keepalive and header-timeout settings: %+v", tr)
+	}
+}
+
+// A relay told to pin but given a bad pin must refuse to start, never forward unpinned.
+func TestRelayRefusesToStartOnAMalformedPin(t *testing.T) {
+	for name, c := range map[string]struct{ pin, base string }{
+		"malformed":  {"AAAA", "https://router.example"},
+		"http url":   {spkiPin(func() *x509.Certificate { x, _ := mkCert(t, "x", nil, nil, true); return x }()), "http://router.example"},
+		"empty list": {" , ", "https://router.example"},
+	} {
+		t.Setenv(EnvSPKIPin, c.pin)
+		rl := &Relay{Spool: t.TempDir(), Base: c.base, Token: "tok"}
+		err := rl.Serve(t.Context())
+		if err == nil || !strings.Contains(err.Error(), EnvSPKIPin) {
+			t.Errorf("%s: Serve must refuse to start naming %s, got %v", name, EnvSPKIPin, err)
+		}
+	}
+	t.Setenv(EnvSPKIPin, "")
+	if c, err := relayClient("https://router.example", &tls.Config{MinVersion: tls.VersionTLS12}); err != nil || c.Transport.(*http.Transport).TLSClientConfig == nil {
+		// no pin: still a normal TLS client built from the supplied base config
+		t.Fatalf("with no pin the relay builds an ordinary client: %v", err)
+	}
+}

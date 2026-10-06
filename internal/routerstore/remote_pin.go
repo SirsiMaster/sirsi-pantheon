@@ -87,24 +87,39 @@ type failClosedTransport struct{ err error }
 
 func (t failClosedTransport) RoundTrip(*http.Request) (*http.Response, error) { return nil, t.err }
 
-// pinTransport returns the transport that enforces the pins from the environment value, nil
-// when pinning is not configured (default behavior unchanged), or a fail-closed transport
-// when it is configured wrongly.
-func pinTransport(envValue, base string) http.RoundTripper {
+// pinConfig returns the TLS configuration that enforces the pins in envValue on top of base,
+// nil when pinning is not configured (default behavior unchanged), or an error when it is
+// configured wrongly. Every https client in this package (the CLI/lane client and the
+// per-host relay, which is the process that actually holds the host token) goes through it,
+// so a pin set for one is enforced by all and a mistake in one is a mistake in all.
+func pinConfig(envValue, base string, baseTLS *tls.Config) (*tls.Config, error) {
 	if strings.TrimSpace(envValue) == "" {
-		return nil
+		return nil, nil
 	}
 	pins, err := parseSPKIPins(envValue)
 	if err != nil {
-		return failClosedTransport{err}
+		return nil, err
 	}
 	if len(pins) == 0 {
-		return failClosedTransport{fmt.Errorf("routerstore: %s is set but holds no pin", EnvSPKIPin)}
+		return nil, fmt.Errorf("routerstore: %s is set but holds no pin", EnvSPKIPin)
 	}
 	if !strings.HasPrefix(strings.ToLower(base), "https://") {
-		return failClosedTransport{fmt.Errorf("routerstore: %s is set but the router URL is not https: refusing to talk to it unpinned", EnvSPKIPin)}
+		return nil, fmt.Errorf("routerstore: %s is set but the router URL is not https: refusing to talk to it unpinned", EnvSPKIPin)
+	}
+	return pinnedTLSConfig(baseTLS, pins), nil
+}
+
+// pinTransport returns the transport that enforces the pins from the environment value, nil
+// when pinning is not configured, or a fail-closed transport when it is configured wrongly.
+func pinTransport(envValue, base string) http.RoundTripper {
+	cfg, err := pinConfig(envValue, base, &tls.Config{MinVersion: tls.VersionTLS12})
+	if err != nil {
+		return failClosedTransport{err}
+	}
+	if cfg == nil {
+		return nil
 	}
 	t := http.DefaultTransport.(*http.Transport).Clone()
-	t.TLSClientConfig = pinnedTLSConfig(&tls.Config{MinVersion: tls.VersionTLS12}, pins)
+	t.TLSClientConfig = cfg
 	return t
 }
