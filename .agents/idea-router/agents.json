@@ -772,6 +772,17 @@
       "repo": "/Users/thekryptodragon/Development/FinalWishes",
       "note": "Attended Claude Code session on M1 (owner-directed rename from claude-finalwishes, 2026-09-26). wake none: never auto-spawned."
     },
+    "claude-m5-compasspoint": {
+      "id": "claude-m5-compasspoint",
+      "type": "claude",
+      "cwd": "/Users/thekryptodragon/Development/compasspoint-app",
+      "workstream": "compasspoint",
+      "wake": {
+        "mechanism": "none"
+      },
+      "repo": "/Users/thekryptodragon/Development/compasspoint-app",
+      "note": "Attended CompassPoint build session (Claude Code IDE) on the M5. wake none: never auto-spawned. Declared 2026-10-06; before this, items addressed to it were refused as an undeclared identity while it could still send."
+    },
     "claude-finalwishes-m5": {
       "id": "claude-finalwishes-m5",
       "type": "claude",
