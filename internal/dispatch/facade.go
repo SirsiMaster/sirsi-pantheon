@@ -196,6 +196,14 @@ func (f *Facade) Send(from, to, title, msgType, instructions string) (SendResult
 	return SendResult{ID: id, Deduped: deduped, AuditPath: path}, nil
 }
 
+// RegistryPath picks the agents.json this host reads for a router root. The default is
+// the working tree; the router package installs the origin-pinned snapshot logic so a
+// send is validated against the same registry the rest of the fabric reads (A35: a pin
+// that only some readers honor is a false assurance).
+var RegistryPath = func(root string) string { return filepath.Join(root, "agents.json") }
+
+func (f *Facade) registryFile() string { return RegistryPath(f.root) }
+
 // ValidateAgent enforces ADR-054 declared identity at the shared facade
 // boundary. Eligibility is registry declaration, never live-thread state.
 func (f *Facade) ValidateAgent(party, id string) error {
@@ -203,7 +211,7 @@ func (f *Facade) ValidateAgent(party, id string) error {
 	if id == "" {
 		return fmt.Errorf("dispatch: %s is required", party)
 	}
-	registryPath := filepath.Join(f.root, "agents.json")
+	registryPath := f.registryFile()
 	if id == "user" {
 		return fmt.Errorf("dispatch: invalid %s %q: user is a legacy alias; use declared identity %q for new writes", party, id, "owner")
 	}
@@ -247,7 +255,7 @@ func (f *Facade) ValidateAgent(party, id string) error {
 }
 
 func (f *Facade) agentHasCapability(id, wanted string) (bool, error) {
-	data, err := os.ReadFile(filepath.Join(f.root, "agents.json"))
+	data, err := os.ReadFile(f.registryFile())
 	if err != nil {
 		return false, err
 	}

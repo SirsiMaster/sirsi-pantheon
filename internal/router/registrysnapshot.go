@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 )
 
 // Origin-pinned registry (A37, ADR-072 P5, ledger task identity-from-origin).
@@ -74,6 +76,10 @@ func snapshotPaths() (data, meta string) {
 }
 
 var staleLogged sync.Once
+
+func init() {
+	dispatch.RegistryPath = func(root string) string { p, _ := registrySource(root); return p }
+}
 
 // registrySource says which agents.json this host reads: the origin snapshot when
 // one exists and is fresh, else the working tree (the pre-pinning behavior).

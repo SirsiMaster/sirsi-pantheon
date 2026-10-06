@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 )
 
 const pinnedJSON = `{"agents":{"lane-a":{"type":"claude","workstream":"w","wake":{"mechanism":"launchagent"}}}}`
@@ -119,4 +121,30 @@ func repoWithTree2(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return root
+}
+
+// A send is validated against the same registry the fabric reads: a lane declared only
+// on origin must be addressable once synced, and one declared only in the working tree
+// must not be (both directions; before this, dispatch always read the working tree).
+func TestDispatchValidatesAgainstThePinnedRegistry(t *testing.T) {
+	root := repoWithTree(t)
+	decl := func(id string) string {
+		return `{"agents":{"` + id + `":{"id":"` + id + `","type":"claude","repo":"/r","workstream":"w","wake":{"mechanism":"none"}}}}`
+	}
+	if err := os.WriteFile(filepath.Join(root, "agents.json"), []byte(decl("lane-tree")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f := dispatch.New(root, nil)
+	if err := f.ValidateAgent("to", "lane-tree"); err != nil {
+		t.Fatalf("unsynced host must accept the working-tree lane: %v", err)
+	}
+	if _, err := SyncRegistrySnapshot(root, fakeGit(decl("lane-a"))); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.ValidateAgent("to", "lane-a"); err != nil {
+		t.Fatalf("lane declared on origin must be addressable once synced: %v", err)
+	}
+	if err := f.ValidateAgent("to", "lane-tree"); err == nil {
+		t.Fatal("lane declared only in the working tree must not be addressable on a pinned host")
+	}
 }
