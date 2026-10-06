@@ -67,6 +67,11 @@ if [ "$NO_CONTENT_PUSH" = "true" ]; then
     exit 0
 fi
 
+# ── Queue behind any other gate running on this host ─────────────────
+# shellcheck source=gate-lock.sh
+. "$(cd "$(dirname "$0")" && pwd)/gate-lock.sh"
+gate_lock_acquire || exit 1
+
 # ── Detect changed files (for diff-based testing + auto-escalation) ──
 CHANGED_PKGS=""
 
@@ -224,17 +229,23 @@ fi
 if command -v golangci-lint >/dev/null 2>&1; then
     if [ -n "$CHANGED_PKGS" ] && [ "$CHANGED_PKGS" != "./..." ]; then
         # Lint only changed packages for speed
-        if ! golangci-lint run $CHANGED_PKGS 2>/dev/null; then
+        LINT_OUT="$(mktemp)"
+        if ! golangci-lint run $CHANGED_PKGS >"$LINT_OUT" 2>&1; then
+            tail -25 "$LINT_OUT" | sed 's/^/     /'; rm -f "$LINT_OUT"
             echo "  ❌ golangci-lint failed on changed packages"
             echo "  Fix: golangci-lint run --fix $CHANGED_PKGS"
             exit 1
         fi
+        rm -f "$LINT_OUT"
     else
-        if ! golangci-lint run ./... 2>/dev/null; then
+        LINT_OUT="$(mktemp)"
+        if ! golangci-lint run ./... >"$LINT_OUT" 2>&1; then
+            tail -25 "$LINT_OUT" | sed 's/^/     /'; rm -f "$LINT_OUT"
             echo "  ❌ golangci-lint failed"
             echo "  Fix: golangci-lint run --fix ./..."
             exit 1
         fi
+        rm -f "$LINT_OUT"
     fi
 else
     echo "  ⚠️  golangci-lint not installed — skipping (CI will catch issues)"
