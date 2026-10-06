@@ -95,3 +95,15 @@ func TestVerdictCountsAreZeroFilled(t *testing.T) {
 		}
 	}
 }
+
+// A section with no entries (the normal state of [Unreleased] right after a cut) is an
+// empty list, never JSON null: a UI iterating items must not have to guard for it.
+func TestReleaseWithNoEntriesHasAnEmptyItemsListNotNull(t *testing.T) {
+	got := readChangelogReleases("## [Unreleased]\n\n## [1.0.0] — 2026-01-01\n\n- shipped\n", 3)
+	if len(got) != 2 || got[0].Version != "Unreleased" {
+		t.Fatalf("want Unreleased then 1.0.0, got %+v", got)
+	}
+	if got[0].Items == nil || len(got[0].Items) != 0 {
+		t.Fatalf("an empty Unreleased must have Items == []string{}, got %#v", got[0].Items)
+	}
+}

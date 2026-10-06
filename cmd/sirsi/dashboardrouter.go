@@ -160,7 +160,7 @@ func readChangelogReleases(text string, n int) []dashboard.RouterRelease {
 				cur = &out[idx]
 				continue
 			}
-			out = append(out, dashboard.RouterRelease{Version: m[1], Date: m[2]})
+			out = append(out, dashboard.RouterRelease{Version: m[1], Date: m[2], Items: []string{}})
 			seenVersion[m[1]] = len(out) - 1
 			cur = &out[len(out)-1]
 			continue

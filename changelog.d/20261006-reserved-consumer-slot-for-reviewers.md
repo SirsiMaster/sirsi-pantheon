@@ -1,3 +1,0 @@
-### Added
-
-- **Reviewer lanes get a reserved consumer slot.** The host-wide cap (one session per five cores) starved `sirsi-software-admin` on the M5: two lane sessions held the slots, so the lane every bind depends on read "HELD: slots" for hours. A lane whose registry `consumer.reserved_slot` is true may start one session beyond the cap, and the host total can exceed the cap by at most one however many lanes carry the flag. `sirsi-software-admin` and `sirsi-hardware-admin` are flagged. Test covers an unflagged lane held at the cap, a flagged lane admitted, a second flagged lane held, and the reserved session still counting against everyone else.
