@@ -29,7 +29,7 @@ GO_LDFLAGS="-s -w -X github.com/SirsiMaster/sirsi-pantheon/internal/version.Vers
 echo "▸ building native Pantheon workspace…"
 ( cd "$HERE" && swift build -c release )
 echo "▸ building bundled sirsi CLI…"
-CGO_ENABLED=1 GOARCH="$(uname -m)" go build -ldflags="$GO_LDFLAGS" -o "$CLI_BIN" "$PROJECT_ROOT/cmd/sirsi/"
+( cd "$PROJECT_ROOT" && CGO_ENABLED=1 GOARCH="$(uname -m)" go build -ldflags="$GO_LDFLAGS" -o "$CLI_BIN" ./cmd/sirsi/ )
 
 echo "▸ assembling complete developer payload at $APP"
 rm -rf "$APP"
