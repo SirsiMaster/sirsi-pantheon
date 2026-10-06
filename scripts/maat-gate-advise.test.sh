@@ -31,7 +31,8 @@ out="$(MAAT_ADVISE=off gate_run tests bash -c 'echo "flood appended 21 items"; e
 [ $rc -ne 0 ] || fail "off must not change the verdict"
 echo "$out" | grep -q "Ma'at" && fail "MAAT_ADVISE=off must print no advice: $out"
 
-out="$(PATH=/usr/bin:/bin gate_run tests bash -c 'echo "flood appended 21 items"; exit 1' 2>&1)"; rc=$?
+broken="$(mktemp -d)"; printf '#!/bin/sh\nexit 1\n' > "$broken/go"; chmod +x "$broken/go"
+out="$(PATH="$broken:$PATH" gate_run tests bash -c 'echo "flood appended 21 items"; exit 1' 2>&1)"; rc=$?
 [ $rc -ne 0 ] || fail "an unavailable advisor must not change the verdict"
 echo "$out" | grep -q "advisor could not run" || fail "an unavailable advisor must say so: $out"
 
