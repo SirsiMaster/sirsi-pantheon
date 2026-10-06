@@ -230,6 +230,20 @@ if [ -x scripts/check-router-store-open.sh ]; then
     fi
 fi
 
+# ── 2c. changelog straggler guard — CHANGELOG.md is assembled, not hand-edited ──
+if [ -x scripts/check-changelog-straggler.sh ]; then
+    CL_BASE="${DIFF_BASE:-}"
+    if [ -n "$PUSH_LOCAL_SHA" ] && [ "$PUSH_LOCAL_SHA" != "$ZERO_SHA" ]; then
+        CL_HEAD="$PUSH_LOCAL_SHA"
+    else
+        CL_HEAD="HEAD"
+    fi
+    CL_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
+    if ! bash scripts/check-changelog-straggler.sh ${CL_BASE:+--base="$CL_BASE"} --head="$CL_HEAD" --branch="$CL_BRANCH"; then
+        exit 1
+    fi
+fi
+
 # ── 3. golangci-lint — matches CI exactly ───────────────────────────
 if command -v golangci-lint >/dev/null 2>&1; then
     if [ -n "$CHANGED_PKGS" ] && [ "$CHANGED_PKGS" != "./..." ]; then
