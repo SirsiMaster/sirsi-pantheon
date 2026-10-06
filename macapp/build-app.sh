@@ -1,88 +1,84 @@
 #!/usr/bin/env bash
-# Builds SirsiMenubar and packages it as a signed .app bundle with a stable
-# CFBundleIdentifier (ai.sirsi.pantheon) so macOS TCC keys Full Disk Access on it
-# across reinstalls. AMFI-safe install (fresh inode + ad-hoc sign). LSUIElement
-# keeps it a Dock-less menubar agent. ADR-030.
+# Build a complete local Pantheon.app from this checkout.
+#
+# This is deliberately a developer build, never a commercial release: it
+# creates the same app/CLI/recipe payload shape as scripts/build-dmg.sh, but
+# does not notarize, staple, publish, or install a LaunchAgent. Keeping this
+# tool honest prevents a second, partial "Sirsi Menubar.app" from competing
+# with Pantheon in the user's menu bar.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-APP_NAME="Sirsi Menubar"
-BUNDLE_ID="ai.sirsi.pantheon"
+PROJECT_ROOT="$(cd "$HERE/.." && pwd)"
+VERSION="$(tr -d '\n' < "$PROJECT_ROOT/VERSION")"
 DEST="${1:-$HOME/Applications}"
-APP="$DEST/$APP_NAME.app"
+APP="$DEST/Pantheon.app"
+SWIFT_BIN="$HERE/.build/release/SirsiMenubar"
+CLI_BIN="$HERE/.build/release/sirsi"
+INFO_TEMPLATE="$PROJECT_ROOT/cmd/sirsi-menubar/bundle/Info.plist"
+PKG_INFO="$PROJECT_ROOT/cmd/sirsi-menubar/bundle/PkgInfo"
+LAUNCH_AGENT="$PROJECT_ROOT/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist"
+BRAND_LOGO="$PROJECT_ROOT/docs/assets/sirsi-logo-white.png"
+GO_LDFLAGS="-s -w -X github.com/SirsiMaster/sirsi-pantheon/internal/version.Version=v${VERSION}"
 
-echo "▸ swift build…"
+[[ -f "$INFO_TEMPLATE" && -f "$PKG_INFO" && -f "$LAUNCH_AGENT" && -f "$BRAND_LOGO" ]] || {
+    echo "✘ canonical bundle resources are incomplete in this checkout" >&2
+    exit 1
+}
+
+echo "▸ building native Pantheon workspace…"
 ( cd "$HERE" && swift build -c release )
-BIN="$HERE/.build/release/SirsiMenubar"
+echo "▸ building bundled sirsi CLI…"
+CGO_ENABLED=1 GOARCH="$(uname -m)" go build -ldflags="$GO_LDFLAGS" -o "$CLI_BIN" "$PROJECT_ROOT/cmd/sirsi/"
 
-echo "▸ packaging $APP"
+echo "▸ assembling complete developer payload at $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+cp "$SWIFT_BIN" "$APP/Contents/MacOS/sirsi-menubar"
+cp "$CLI_BIN" "$APP/Contents/MacOS/sirsi"
+cp "$INFO_TEMPLATE" "$APP/Contents/Info.plist"
+cp "$PKG_INFO" "$APP/Contents/PkgInfo"
+cp "$LAUNCH_AGENT" "$APP/Contents/Resources/ai.sirsi.pantheon.plist"
+cp "$BRAND_LOGO" "$APP/Contents/Resources/sirsi-logo-white.png"
+cp -R "$PROJECT_ROOT/contracts/stacklab" "$APP/Contents/Resources/StackLab"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${VERSION}" "$APP/Contents/Info.plist"
 
-cat > "$APP/Contents/Info.plist" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-	<key>CFBundleIdentifier</key>
-	<string>$BUNDLE_ID</string>
-	<key>CFBundleName</key>
-	<string>$APP_NAME</string>
-	<key>CFBundleExecutable</key>
-	<string>SirsiMenubar</string>
-	<key>CFBundlePackageType</key>
-	<string>APPL</string>
-	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
-	<key>CFBundleVersion</key>
-	<string>1</string>
-	<key>LSUIElement</key>
-	<true/>
-	<key>LSMinimumSystemVersion</key>
-	<string>13.0</string>
-</dict>
-</plist>
-PLIST
+# AppleDouble sidecars are transport metadata, never product resources.
+/usr/bin/find "$APP" -type f -name '._*' -delete
+if /usr/bin/find "$APP" -type f -name '._*' -print -quit | /usr/bin/grep -q .; then
+    echo "✘ AppleDouble metadata remains in the app payload" >&2
+    exit 1
+fi
 
-# Fresh inode (never cp-over) then sign — avoids the AMFI stale-cdhash
-# SIGKILL-137 class (reference_macos_amfi_cp_sigkill).
-cp "$BIN" "$APP/Contents/MacOS/SirsiMenubar"
-
-# Sign with a STABLE identity, not ad-hoc. Ad-hoc (cdhash-only) signatures are
-# NOT honored by TCC for Full Disk Access across relaunch — the grant toggle
-# reverts. A self-signed code-signing cert gives a stable designated requirement
-# (identifier + certificate leaf) that TCC persists across relaunch AND across
-# rebuilds, so the user grants FDA exactly once. Falls back to ad-hoc only if the
-# cert is missing (FDA will not persist in that case). Create the cert with:
-#   macapp/make-signing-cert.sh   (self-signed, login keychain, no Apple needed)
 SIGN_ID="${SIRSI_SIGN_IDENTITY:-Sirsi Local Code Signing}"
-ALLOW_ADHOC="${SIRSI_ALLOW_ADHOC:-0}"   # set 1 to permit ad-hoc (FDA will NOT persist)
+ALLOW_ADHOC="${SIRSI_ALLOW_ADHOC:-0}"
 if security find-identity -p codesigning 2>/dev/null | grep -q "$SIGN_ID"; then
-	if ! codesign --force --deep --sign "$SIGN_ID" --identifier "$BUNDLE_ID" "$APP" 2>&1; then
-		echo "✘ codesign with '$SIGN_ID' FAILED (keychain locked, or codesign not authorized for the key)." >&2
-		echo "  Fix: unlock the login keychain and click 'Always Allow' once, or run:" >&2
-		echo "    security set-key-partition-list -S apple-tool:,apple: -s -k <login-pw> ~/Library/Keychains/login.keychain-db" >&2
-		exit 1
-	fi
-	echo "▸ signed with: $SIGN_ID"
+    for inner in "$APP/Contents/MacOS/sirsi" "$APP/Contents/MacOS/sirsi-menubar"; do
+        codesign --force --sign "$SIGN_ID" --identifier ai.sirsi.pantheon "$inner"
+    done
+    codesign --force --deep --sign "$SIGN_ID" --identifier ai.sirsi.pantheon "$APP"
+    echo "▸ signed with local identity: $SIGN_ID"
 elif [ "$ALLOW_ADHOC" = "1" ]; then
-	echo "⚠ '$SIGN_ID' not found — ad-hoc signing (SIRSI_ALLOW_ADHOC=1). FDA will NOT persist." >&2
-	codesign --force --deep --sign - --identifier "$BUNDLE_ID" "$APP" >/dev/null 2>&1 || true
+    echo "⚠ local signing identity missing — using ad-hoc signature for this non-distributable developer build" >&2
+    codesign --force --deep --sign - --identifier ai.sirsi.pantheon "$APP"
 else
-	echo "✘ signing identity '$SIGN_ID' not found. Create it with macapp/make-signing-cert.sh," >&2
-	echo "  or set SIRSI_ALLOW_ADHOC=1 to ship ad-hoc (FDA will not persist). Refusing to ship ad-hoc silently." >&2
-	exit 1
+    echo "✘ local signing identity '$SIGN_ID' not found. Create it with macapp/make-signing-cert.sh," >&2
+    echo "  or set SIRSI_ALLOW_ADHOC=1 for a non-distributable developer build." >&2
+    exit 1
 fi
 
-# Fail loud if the result is not the stable cert-based requirement: an ad-hoc or
-# cdhash-only DR means TCC will drop the FDA grant on relaunch. This guard is why
-# a backgrounded build can never silently regress to ad-hoc again.
-DR="$(codesign -d --requirements - "$APP" 2>&1 | grep designated || true)"
-if [ "$ALLOW_ADHOC" != "1" ] && ! printf '%s' "$DR" | grep -q 'certificate leaf'; then
-	echo "✘ post-sign check FAILED — designated requirement is not certificate-based:" >&2
-	echo "    $DR" >&2
-	echo "  TCC would drop FDA on relaunch. Aborting." >&2
-	exit 1
-fi
-codesign -dv "$APP" 2>&1 | grep -i 'Identifier=' || true
-echo "▸ built $APP  (DR: ${DR#*designated => })"
+echo "▸ verifying complete app payload with the bundled canonical engine…"
+"$APP/Contents/MacOS/sirsi" package-inventory \
+    --app "$APP" \
+    --version "$VERSION" \
+    --build "$VERSION" \
+    --info-plist "$APP/Contents/Info.plist" \
+    --pkg-info "$PKG_INFO" \
+    --launch-agent "$LAUNCH_AGENT" \
+    --brand-logo "$BRAND_LOGO" \
+    --require-code-signature
+
+echo "✓ complete Pantheon developer app built: $APP"
+echo "  includes: native workspace, bundled CLI, Sirsi logo, Stack Lab recipes, PkgInfo, and LaunchAgent bytes"
+echo "  this is a developer build only; use scripts/build-dmg.sh --release for signed/notarized distribution"
