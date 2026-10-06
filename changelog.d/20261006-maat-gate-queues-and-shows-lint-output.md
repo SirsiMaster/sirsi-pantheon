@@ -1,3 +1,0 @@
-### Fixed
-
-- **The Ma'at pre-push gate queues behind another gate on the same Mac, and shows the linter's real error.** Several agents push from one host and `golangci-lint` refuses to run twice at once, but the hook threw its stderr away, so overlapping pushes failed one of them with a bare "golangci-lint failed" while its code was clean (the v0.24.95 release lost a run to the headless ra worker's push). Gates now take a host-wide lock (`.githooks/gate-lock.sh`: waits up to 30 minutes, reclaims a dead holder's lock, fails loudly on timeout, `MAAT_GATE_LOCK=off` to bypass) and a failing lint step prints the last 25 lines of its own output. A test covers waiting, stale reclaim and timeout, and fails with the lock disabled.
