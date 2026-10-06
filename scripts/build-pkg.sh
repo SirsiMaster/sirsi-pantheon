@@ -162,19 +162,7 @@ if [[ "$MODE" == "release" ]]; then
         mv "${SIGNED_PKG}" "${PKG_PATH}"
     else
         /usr/sbin/pkgutil --check-signature "$PKG_PATH"
-        if [[ -n "${APPLE_NOTARY_PROFILE:-}" ]]; then
-            xcrun notarytool submit "$PKG_PATH" \
-                --keychain-profile "${APPLE_NOTARY_PROFILE}" \
-                --timeout 20m \
-                --wait
-        else
-            xcrun notarytool submit "$PKG_PATH" \
-                --apple-id "${APPLE_ID}" \
-                --team-id "${APPLE_TEAM_ID}" \
-                --password "${APPLE_APP_PASSWORD}" \
-                --timeout 20m \
-                --wait
-        fi
+        "${PROJECT_ROOT}/scripts/notarize-release-artifact.sh" "$PKG_PATH"
         xcrun stapler staple "$PKG_PATH"
         xcrun stapler validate "$PKG_PATH"
     fi
