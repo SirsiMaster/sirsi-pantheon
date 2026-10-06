@@ -50,6 +50,17 @@ jobs:
           bash scripts/check-router-store-open.sh --self-test
           bash scripts/check-router-store-open.sh
 
+      # changelog.d/README.md: CHANGELOG.md is assembled at release time, never
+      # hand-edited — a direct edit on a non-release branch re-introduces the
+      # every-PR-conflicts-on-one-file class changelog.d/ was built to remove.
+      - name: changelog straggler guard
+        env:
+          CL_BASE_REF: ${{ github.base_ref || 'main' }}
+          CL_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          bash scripts/check-changelog-straggler.sh --self-test
+          bash scripts/check-changelog-straggler.sh --base="origin/$CL_BASE_REF" --head=HEAD --branch="$CL_BRANCH"
+
       # Structural invariant, not a style check: every user-visible font on the
       # menubar surface must route through the width-derived type scale. It runs
       # on the HOSTED runner because it needs no Xcode — a guard that only runs
