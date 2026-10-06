@@ -125,8 +125,8 @@ func TestSessionCarriesThreadAcrossTheWireAndSurvivesMigration(t *testing.T) {
 			_ = v.Scan(&ver)
 		}
 		_ = v.Close()
-		if ver != 23 {
-			t.Fatalf("schema version %d, want 23", ver)
+		if ver != 24 {
+			t.Fatalf("schema version %d, want 24", ver)
 		}
 	}
 }
@@ -539,5 +539,61 @@ func TestRuleOfRaAcceptsIdleAndBlockedRefusesRestingStates(t *testing.T) {
 	register(t, backend, "thr-idle-stale", "lane-idle-stale", host, "idle", now.Add(-time.Hour))
 	if err := send("lane-idle-stale", "thr-idle-stale"); !errors.Is(err, ErrUnregistered) {
 		t.Fatal("an idle thread with a stale heartbeat must still be refused")
+	}
+}
+
+// router-task-lease-diagnostic-missing: checkTaskOwner verdicts and
+// BindTaskSession outcomes are durably logged, independent of the Rule of Ra
+// gate (mode "off" here) — task ownership is a separate check from
+// registration (serve.go taskOwnership dispatch runs unconditionally).
+func TestTaskLeaseLogRecordsBindAndOwnershipVerdicts(t *testing.T) {
+	var logs strings.Builder
+	backend, client := ruleHarness(t, "off", &logs)
+	if err := backend.AddTask(Task{Agent: "ra", TaskID: "t1", Subject: "x"}); err != nil {
+		t.Fatal(err)
+	}
+
+	owner := client("ra", "thr-owner")
+	lease, err := owner.ClaimTask("ra", "t1", "w1", "thr-owner", time.Minute)
+	if err != nil || lease == nil {
+		t.Fatalf("ClaimTask: %v %+v", err, lease)
+	}
+	events, err := backend.TaskLeaseEventsSince("ra", "t1", "2026-09-10T00:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].Op != "bind" || events[0].Verdict != "allowed" {
+		t.Fatalf("expected one allowed bind event, got %+v", events)
+	}
+
+	// The claiming session renews its own lease — an allowed claim_check.
+	if err := owner.RenewTaskLease("ra", "t1", lease.Token, time.Minute); err != nil {
+		t.Fatalf("RenewTaskLease (owner): %v", err)
+	}
+	events, err = backend.TaskLeaseEventsSince("ra", "t1", "2026-09-10T00:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 || events[1].Op != "claim_check" || events[1].Verdict != "allowed" {
+		t.Fatalf("expected a second, allowed claim_check event, got %+v", events)
+	}
+
+	// A different, unrelated session (same agent, no shared thread) is refused
+	// — and the refusal lands in the log too, not just the returned error.
+	intruder := client("ra", "thr-intruder")
+	if err := intruder.RenewTaskLease("ra", "t1", lease.Token, time.Minute); !errors.Is(err, ErrNotOwner) {
+		t.Fatalf("expected ErrNotOwner for a non-owning session, got %v", err)
+	}
+	events, err = backend.TaskLeaseEventsSince("ra", "t1", "2026-09-10T00:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 3 || events[2].Op != "claim_check" || events[2].Verdict != "refused" {
+		t.Fatalf("expected a logged refusal as the third event, got %+v", events)
+	}
+
+	// Filtering by agent+task narrows correctly; a mismatched filter finds nothing.
+	if filtered, ferr := backend.TaskLeaseEventsSince("ra", "no-such-task", "2026-09-10T00:00:00Z"); ferr != nil || len(filtered) != 0 {
+		t.Fatalf("a mismatched task filter must find nothing: %+v %v", filtered, ferr)
 	}
 }

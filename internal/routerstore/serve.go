@@ -51,7 +51,7 @@ var notServed = map[string]bool{
 	"GetSession": true, "RevokeSession": true, "TouchSession": true,
 	"BindItemSession": true, "ItemSession": true, "BindTaskSession": true, "TaskSession": true,
 	"MintHostToken": true, "LookupHostToken": true, "RevokeHostToken": true, "ListHostTokens": true,
-	"Close": true, "RecordAudience": true,
+	"Close": true, "RecordAudience": true, "RecordTaskLeaseEvent": true,
 	// HostIdentity is the ADR-067 identity resolver: read by threadAuthority and
 	// the mint host-check, never a node-reachable RPC (it takes no credential).
 	"HostIdentity": true,
@@ -110,7 +110,7 @@ var ruleOfRaExempt = map[string]bool{
 	"GetState": true, "Counters": true, "Breakers": true, "Render": true, "ListWakeEvents": true, "ListIdentifiers": true,
 	"ListRequirements": true, "UnmetRequirements": true, "RunnableFor": true, "ClassifyLane": true, "OperationalAgents": true,
 	"Wait": true, "ListenNotify": true, "NotifyAgent": true, "NotifyPath": true, "ExportItem": true, "ExportMarkdown": true,
-	"ForceOwner": true, "AudienceSince": true,
+	"ForceOwner": true, "AudienceSince": true, "TaskLeaseEventsSince": true,
 }
 
 // ErrThreadAuthority: a session tried to write or delete a thread binding
@@ -542,7 +542,7 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Bind the session to what was just claimed, so ownership holds from here.
-	s.bindAfterClaim(name, results, sess.ID)
+	s.bindAfterClaim(name, results, sess)
 	if sess.ID != "" {
 		_ = s.store.TouchSession(sess.ID)
 	}
@@ -693,29 +693,55 @@ func (s *server) sameWorkerAcrossRemint(ownerSessionID string, caller Session) b
 func (s *server) checkTaskOwner(agent, taskID string, caller Session) error {
 	owner, err := s.store.TaskSession(agent, taskID)
 	if err != nil {
+		s.recordTaskLeaseEvent(taskID, agent, "claim_check", caller, "error", err.Error())
 		return err
 	}
 	if owner == "" || owner == caller.ID {
+		s.recordTaskLeaseEvent(taskID, agent, "claim_check", caller, "allowed", "")
 		return nil
 	}
 	if s.sameWorkerAcrossRemint(owner, caller) {
+		s.recordTaskLeaseEvent(taskID, agent, "claim_check", caller, "allowed", "same worker across session remint")
 		return nil
 	}
+	s.recordTaskLeaseEvent(taskID, agent, "claim_check", caller, "refused", "owned by a different session")
 	return ErrNotOwner
 }
 
-func (s *server) bindAfterClaim(name string, results []reflect.Value, sid string) {
-	if sid == "" || len(results) == 0 {
+// recordTaskLeaseEvent is best-effort: a logging failure must never turn a
+// claim/bind decision that already happened into a request failure (unlike
+// the audience gate, which the mutation depends on). It is also skipped on
+// an empty caller session (the pre-authenticate paths, e.g. MintSession,
+// never carry a task-ownership decision to log).
+func (s *server) recordTaskLeaseEvent(taskID, agent, op string, caller Session, verdict, reason string) {
+	if caller.ID == "" {
+		return
+	}
+	entry := TaskLeaseLogEntry{
+		TS: s.opts.now().UTC().Format(time.RFC3339Nano), TaskID: taskID, Agent: agent, Op: op,
+		SessionID: caller.ID, ThreadID: caller.ThreadID, Host: caller.Host, Verdict: verdict, Reason: reason,
+	}
+	if err := s.store.RecordTaskLeaseEvent(entry); err != nil {
+		s.logf("task-lease-log: record %s for %s/%s failed: %v", op, agent, taskID, err)
+	}
+}
+
+func (s *server) bindAfterClaim(name string, results []reflect.Value, caller Session) {
+	if caller.ID == "" || len(results) == 0 {
 		return
 	}
 	switch name {
 	case "ClaimNext":
 		if l, ok := results[0].Interface().(*Lease); ok && l != nil {
-			_ = s.store.BindItemSession(l.ItemID, sid)
+			_ = s.store.BindItemSession(l.ItemID, caller.ID)
 		}
 	case "ClaimTask", "ClaimNextTask":
 		if l, ok := results[0].Interface().(*TaskLease); ok && l != nil {
-			_ = s.store.BindTaskSession(l.Agent, l.TaskID, sid)
+			verdict, reason := "allowed", ""
+			if err := s.store.BindTaskSession(l.Agent, l.TaskID, caller.ID); err != nil {
+				verdict, reason = "error", err.Error()
+			}
+			s.recordTaskLeaseEvent(l.TaskID, l.Agent, "bind", caller, verdict, reason)
 		}
 	}
 }
