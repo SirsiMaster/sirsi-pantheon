@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -60,7 +62,7 @@ func collectDashboardRouter() (dashboard.RouterSnapshot, error) {
 	for _, id := range ids {
 		p := router.PingLane(threads, reg.Agents[id], id, now)
 		snap.Lanes.Counts[p.Verdict]++
-		snap.Lanes.List = append(snap.Lanes.List, dashboard.RouterLaneVerdict{Agent: id, Verdict: p.Verdict, Detail: p.Detail})
+		snap.Lanes.List = append(snap.Lanes.List, dashboard.RouterLaneVerdict{Agent: id, Verdict: p.Verdict, Detail: p.Detail, WorkerThreadID: p.Thread})
 	}
 
 	items, _, err := f.ListActive()
@@ -68,11 +70,19 @@ func collectDashboardRouter() (dashboard.RouterSnapshot, error) {
 		return snap, fmt.Errorf("queue: %w", err)
 	}
 	per := map[string]int{}
+	byAgent := map[string][]dashboard.RouterQueueItem{}
 	for _, it := range items {
 		per[it.To]++
+		byAgent[it.To] = append(byAgent[it.To], dashboard.RouterQueueItem{
+			ID: it.ID, Recipient: it.To, Subject: it.Title, OpenedAt: it.Opened, AcknowledgedAt: it.AckedAt,
+		})
 	}
 	for a, n := range per {
-		snap.Queue = append(snap.Queue, dashboard.RouterQueueRow{Agent: a, Open: n})
+		row := dashboard.RouterQueueRow{Agent: a, Open: n}
+		rowItems := byAgent[a]
+		sort.Slice(rowItems, func(i, j int) bool { return rowItems[i].OpenedAt < rowItems[j].OpenedAt })
+		row.Items = rowItems
+		snap.Queue = append(snap.Queue, row)
 	}
 	sort.Slice(snap.Queue, func(i, j int) bool {
 		if snap.Queue[i].Open != snap.Queue[j].Open {
@@ -204,34 +214,49 @@ func changelogText(repo string) string {
 // most severe first. It claims only what the data shows.
 func routerAttention(s dashboard.RouterSnapshot) []dashboard.RouterAttention {
 	var out []dashboard.RouterAttention
-	add := func(sev, title, detail, action string) {
-		out = append(out, dashboard.RouterAttention{Severity: sev, Title: title, Detail: detail, Action: action})
+	add := func(agent, sev, title, detail, action string) {
+		a := dashboard.RouterAttention{ID: attentionID(sev, title), Agent: agent, Severity: sev, Title: title, Detail: detail, Action: action}
+		// Only a literal CLI invocation becomes a typed next step — prose
+		// guidance ("re-authenticate that account") is never promoted into a
+		// command the UI could be tempted to run.
+		if strings.HasPrefix(action, "sirsi ") {
+			a.NextStep = &dashboard.RouterNextStep{Kind: "command-copy", Label: "Copy command", Command: action}
+		}
+		out = append(out, a)
 	}
 	if s.Swap != nil && s.Swap.Verdict == "pressure" {
-		add("critical", "Memory pressure with active paging", fmt.Sprintf("swap %d of %d MiB, %d%% free; a coordinated restart is proposed (nothing was restarted)", int(s.Swap.UsedMiB), int(s.Swap.TotalMiB), s.Swap.FreePct), "coordinate a restart with the owner and workload owners")
+		add("", "critical", "Memory pressure with active paging", fmt.Sprintf("swap %d of %d MiB, %d%% free; a coordinated restart is proposed (nothing was restarted)", int(s.Swap.UsedMiB), int(s.Swap.TotalMiB), s.Swap.FreePct), "coordinate a restart with the owner and workload owners")
 	}
 	for _, l := range s.Lanes.List {
 		switch {
 		case l.Verdict == "AUTH_REQUIRED":
-			add("critical", l.Agent+": consumer cannot log in", l.Detail, "re-authenticate that account")
+			add(l.Agent, "critical", l.Agent+": consumer cannot log in", l.Detail, "re-authenticate that account")
 		case l.Verdict == "HELD" && strings.Contains(l.Detail, "quarantine"):
-			add("critical", l.Agent+": quarantined", l.Detail, "needs a human: see the lane log; known failures are matched automatically")
+			add(l.Agent, "critical", l.Agent+": quarantined", l.Detail, "needs a human: see the lane log; known failures are matched automatically")
 		case (l.Verdict == "WATCH_ONLY" || l.Verdict == "UNSTAFFED" || l.Verdict == "UNREACHABLE") && l.Open > 0:
-			add("warn", fmt.Sprintf("%s: %d open item(s), nothing will work them", l.Agent, l.Open), l.Verdict+": "+l.Detail, "staff the lane or register an attended session")
+			add(l.Agent, "warn", fmt.Sprintf("%s: %d open item(s), nothing will work them", l.Agent, l.Open), l.Verdict+": "+l.Detail, "staff the lane or register an attended session")
 		}
 	}
 	for _, k := range s.KnownFailures {
 		if k.Status == "open" {
-			add("warn", "Known failure unresolved: "+k.ID, k.Title, "resolve it with a fix and a guard test")
+			add("", "warn", "Known failure unresolved: "+k.ID, k.Title, "resolve it with a fix and a guard test")
 		}
 	}
 	if !s.Registry.Pinned {
-		add("warn", "Registry is not pinned to origin/main", "this host reads a shared working tree; another session's branch can change who the lanes are", "sirsi router registry sync --install")
+		add("", "warn", "Registry is not pinned to origin/main", "this host reads a shared working tree; another session's branch can change who the lanes are", "sirsi router registry sync --install")
 	}
 	if s.Consumers.Max > 0 && s.Consumers.Running >= s.Consumers.Max {
-		add("info", "Consumer cap reached", fmt.Sprintf("%d of %d headless consumers running; further lanes wait their turn", s.Consumers.Running, s.Consumers.Max), "")
+		add("", "info", "Consumer cap reached", fmt.Sprintf("%d of %d headless consumers running; further lanes wait their turn", s.Consumers.Running, s.Consumers.Max), "")
 	}
 	rank := map[string]int{"critical": 0, "warn": 1, "info": 2}
 	sort.SliceStable(out, func(i, j int) bool { return rank[out[i].Severity] < rank[out[j].Severity] })
 	return out
+}
+
+// attentionID is a stable selection identity for an attention row: deterministic
+// from severity+title (which already encode the lane/condition), so a UI can
+// select/compare rows across refreshes without parsing Title text itself.
+func attentionID(severity, title string) string {
+	sum := sha256.Sum256([]byte(severity + "\x00" + title))
+	return hex.EncodeToString(sum[:8])
 }

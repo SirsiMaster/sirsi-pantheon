@@ -25,10 +25,31 @@ type RouterSnapshot struct {
 
 // RouterAttention is one thing that needs attention. Severity is critical, warn or info.
 type RouterAttention struct {
+	// ID is a stable selection identity (deterministic from severity+title),
+	// so a UI can select/compare attention rows without parsing Title text.
+	ID string `json:"id"`
+	// Agent names the lane this attention item is about, when it is about one
+	// specific lane rather than a fabric-wide condition (e.g. swap pressure).
+	Agent    string `json:"agent,omitempty"`
 	Severity string `json:"severity"`
 	Title    string `json:"title"`
 	Detail   string `json:"detail"`
 	Action   string `json:"action,omitempty"`
+	// NextStep is an additive, typed projection of Action for UIs that want to
+	// offer a concrete follow-up instead of parsing the prose Action string.
+	// Nil when Action is prose guidance rather than a copyable command or a
+	// known in-app destination — the UI must not infer one from free text.
+	NextStep *RouterNextStep `json:"next_step,omitempty"`
+}
+
+// RouterNextStep is a typed, additive next action for an attention row.
+// Kind is "command-copy" (Command is a literal CLI invocation to copy, never
+// execute) or "navigate" (Command is a known in-app route). The dashboard
+// never invents or executes a command from unstructured text.
+type RouterNextStep struct {
+	Kind    string `json:"kind"`
+	Label   string `json:"label"`
+	Command string `json:"command"`
 }
 
 type RouterLanes struct {
@@ -43,11 +64,32 @@ type RouterLaneVerdict struct {
 	Verdict string `json:"verdict"`
 	Detail  string `json:"detail"`
 	Open    int    `json:"open"` // open router items addressed to this lane
+	// WorkerThreadID is the thread registry ID the verdict was computed
+	// against, when the verdict came from a live or recent thread record.
+	// Empty when the verdict has no backing thread (e.g. UNSTAFFED). This is
+	// a direct registry projection, not an inferred liveness claim — readiness
+	// is not proof that a worker is executing.
+	WorkerThreadID string `json:"worker_thread_id,omitempty"`
 }
 
 type RouterQueueRow struct {
 	Agent string `json:"agent"`
 	Open  int    `json:"open"`
+	// Items is an optional per-item projection for queue drill-in. Omitted
+	// (nil) means the caller did not supply item-level detail, which the UI
+	// must render as "not available", never as "zero items".
+	Items []RouterQueueItem `json:"items,omitempty"`
+}
+
+// RouterQueueItem is one inbox item's identity and ack state. There is no
+// "lease owner/thread" on an inbox item — leases live on the task registry,
+// a separate concept — so that field is intentionally not projected here.
+type RouterQueueItem struct {
+	ID             string `json:"id"`
+	Recipient      string `json:"recipient"`
+	Subject        string `json:"subject"`
+	OpenedAt       string `json:"opened_at"`
+	AcknowledgedAt string `json:"acknowledged_at,omitempty"`
 }
 
 type RouterConsumers struct {

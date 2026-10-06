@@ -42,3 +42,48 @@ func TestChangelogMergesUnreleasedAndAttentionIsDerived(t *testing.T) {
 		t.Fatalf("attention wrong or unordered: %+v", a)
 	}
 }
+
+// Attention IDs are stable selection identities (same severity+title -> same ID,
+// different title -> different ID) and the agent field tracks the lane a row is
+// about. Only a literal CLI invocation is promoted into a typed NextStep —
+// prose guidance never is, so the UI can never be tricked into "running" advice.
+func TestAttentionIDAgentAndTypedNextStep(t *testing.T) {
+	sick := dashboard.RouterSnapshot{
+		Registry:  dashboard.RouterRegistryPin{Pinned: false},
+		Consumers: dashboard.RouterConsumers{Running: 1, Max: 2},
+		Lanes: dashboard.RouterLanes{List: []dashboard.RouterLaneVerdict{
+			{Agent: "q", Verdict: "HELD", Detail: "held: quarantine (needs a human)"},
+		}},
+	}
+	a := routerAttention(sick)
+	if len(a) != 2 {
+		t.Fatalf("expected 2 attention rows, got %+v", a)
+	}
+	var quarantine, unpinned *dashboard.RouterAttention
+	for i := range a {
+		switch a[i].Title {
+		case "q: quarantined":
+			quarantine = &a[i]
+		case "Registry is not pinned to origin/main":
+			unpinned = &a[i]
+		}
+	}
+	if quarantine == nil || unpinned == nil {
+		t.Fatalf("missing expected rows: %+v", a)
+	}
+	if quarantine.ID == "" || unpinned.ID == "" || quarantine.ID == unpinned.ID {
+		t.Fatalf("attention IDs must be stable and distinct: quarantine=%q unpinned=%q", quarantine.ID, unpinned.ID)
+	}
+	if attentionID(quarantine.Severity, quarantine.Title) != quarantine.ID {
+		t.Fatalf("attention ID must be deterministic from severity+title")
+	}
+	if quarantine.Agent != "q" {
+		t.Fatalf("quarantine row must name its lane: %+v", quarantine)
+	}
+	if quarantine.NextStep != nil {
+		t.Fatalf("prose guidance must not become a typed next step: %+v", quarantine.NextStep)
+	}
+	if unpinned.NextStep == nil || unpinned.NextStep.Kind != "command-copy" || unpinned.NextStep.Command != "sirsi router registry sync --install" {
+		t.Fatalf("a literal CLI action must become a command-copy next step: %+v", unpinned.NextStep)
+	}
+}
