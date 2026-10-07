@@ -6,6 +6,8 @@
 
 **Hardware-seat verdict 2026-09-16 (claude-io acting as sirsi-hardware-admin, owner delegation to 2026-09-19; item `20260916-040736`): ACCEPT as written, with two conditions on the build (rs-37): (1) node identity is config-pinned before or with the informer — rs-42 lands first or as one cut-over; (2) Decision 6 supervision covers the token holder's host binding (`token host == pinned node host`), not liveness alone. Cut-over needs rs-22-style proof-before-retire per lane per host, M1/M5 first. SSA verdict and owner bind still pending.
 
+**SSA build authorization 2026-10-07 (item `20261007-144957`): GRANTED, bounded to the single-host informer + `AgentConfig.Delivery` (condition 1), with corrections to Decisions 2 and 6 (delivery attempt is distinct from read-ack; token-host validates against the ADR-067 adoption record, not hostname shape) and a requirement for a published Rule-17 sprint plan before code. That plan is `docs/sprints/SPRINT-ADR065-ROUTER-INFORMER-PHASE1.md` (rs-37). Retirement of any per-lane LaunchAgent is out of scope for Phase 1 and gated separately.
+
 ## Context
 
 On 2026-09-13, one review cycle produced four independent failures with a single shape:
