@@ -8,7 +8,7 @@
     {"path": "docs/COMMERCIALIZATION_GATE.md", "role": "scope"},
     {"path": "docs/ARCHITECTURE_DESIGN.md", "role": "architecture"},
     {"path": "docs/SAFETY_DESIGN.md", "role": "security"},
-    {"path": "${DEVELOPMENT_ROOT:-$HOME/Development}/SIRSI_MANIFESTO.md", "role": "portfolio-canon"}
+    {"path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md", "role": "portfolio-canon"}
   ],
   "done_definition": [
     {"category": "product", "criteria": ["the sprint's /goal is met for every named item"]},
