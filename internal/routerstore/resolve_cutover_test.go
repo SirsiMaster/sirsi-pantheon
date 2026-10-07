@@ -19,15 +19,23 @@ func TestResolveRefusesLocalFileOnCutOverHost(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(home, ".sirsi"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if s, err := Resolve(); err != nil { // not cut over: local file is fine
-		t.Fatalf("plain host must resolve locally: %v", err)
-	} else {
+	// One store: with nothing configured there is NO implicit local ledger. Resolve
+	// refuses and creates no file (the stranded-items incident, 2026-10-07).
+	if s, err := Resolve(); err == nil {
 		_ = s.Close()
+		t.Fatal("a host with no router configured must refuse, got a store")
 	}
 	dbPath := filepath.Join(home, ".sirsi", "router.db")
-	before, statErr := os.Stat(dbPath) // the plain-host call above legitimately created this
+	if _, err := os.Stat(dbPath); err == nil {
+		t.Fatal("refusing must not create ~/.sirsi/router.db")
+	}
+	// A pre-existing stale file is still never touched by a cut-over host.
+	if err := os.WriteFile(dbPath, []byte("stale"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before, statErr := os.Stat(dbPath)
 	if statErr != nil {
-		t.Fatalf("expected router.db from the plain-host resolve above: %v", statErr)
+		t.Fatal(statErr)
 	}
 	if err := os.WriteFile(filepath.Join(home, ".sirsi", "router-service.env"), []byte("export SIRSI_ROUTER_URL=x\n"), 0o600); err != nil {
 		t.Fatal(err)

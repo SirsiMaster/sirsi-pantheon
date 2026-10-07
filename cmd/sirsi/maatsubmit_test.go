@@ -86,6 +86,7 @@ func TestCaseFoldedRepoCannotBypassPolicy(t *testing.T) {
 func TestResolveSubmitRequester(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(home, "router.db"))
 
 	t.Run("no session id refuses", func(t *testing.T) {
 		t.Setenv("CLAUDE_CODE_SESSION_ID", "")
@@ -188,6 +189,7 @@ func TestSubmitCommandExitCode(t *testing.T) {
 			cmd.Env = append(os.Environ(),
 				"MAAT_SUBMIT_HELPER=1",
 				"HOME="+home,
+				"SIRSI_ROUTER_DB="+filepath.Join(home, "router.db"),
 				"CLAUDE_CODE_SESSION_ID="+sid,
 				"MAAT_SUBMIT_HELPER_REPO="+c.repo,
 				"MAAT_SUBMIT_HELPER_JSON="+boolToStr(c.json),
@@ -250,6 +252,7 @@ func TestSubmitCommandLedgerFailureVisibility(t *testing.T) {
 		const sid = "sid-unregistered-ledger-fail"
 		exitCode, out := runHelper(t,
 			"HOME="+home,
+			"SIRSI_ROUTER_DB="+filepath.Join(home, "router.db"),
 			"CLAUDE_CODE_SESSION_ID="+sid, // no marker file written → unregistered
 			"MAAT_SUBMIT_HELPER_REPO=sirsimaster/sirsi-mercury",
 			"MAAT_SUBMIT_HELPER_JSON=0",
@@ -266,6 +269,7 @@ func TestSubmitCommandLedgerFailureVisibility(t *testing.T) {
 		const sid = "sid-unregistered-ledger-fail-json"
 		exitCode, out := runHelper(t,
 			"HOME="+home,
+			"SIRSI_ROUTER_DB="+filepath.Join(home, "router.db"),
 			"CLAUDE_CODE_SESSION_ID="+sid,
 			"MAAT_SUBMIT_HELPER_REPO=sirsimaster/sirsi-mercury",
 			"MAAT_SUBMIT_HELPER_JSON=1",
@@ -289,6 +293,7 @@ func TestSubmitCommandLedgerFailureVisibility(t *testing.T) {
 		}
 		exitCode, out := runHelper(t,
 			"HOME="+home,
+			"SIRSI_ROUTER_DB="+filepath.Join(home, "router.db"),
 			"CLAUDE_CODE_SESSION_ID="+sid,
 			"MAAT_SUBMIT_HELPER_REPO=sirsimaster/sirsi-mercury",
 			"MAAT_SUBMIT_HELPER_JSON=0",

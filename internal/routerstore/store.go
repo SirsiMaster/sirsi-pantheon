@@ -108,12 +108,13 @@ func LocalPath() (string, error) {
 	if p := os.Getenv("SIRSI_ROUTER_DB"); p != "" {
 		return p, nil
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("routerstore: resolve home dir: %w", err)
-	}
-	return filepath.Join(home, ".sirsi", "router.db"), nil
+	// There is no implicit ~/.sirsi/router.db: a second store that nothing declared is
+	// how 30 items were stranded on the M5 (2026-10-07). A local ledger exists only
+	// when SIRSI_ROUTER_DB names it on purpose (tests, an explicit single-host setup).
+	return "", errNoRouterConfigured
 }
+
+var errNoRouterConfigured = errors.New("routerstore: no router configured: set SIRSI_ROUTER_URL (the router service) or, for a deliberate local ledger, SIRSI_ROUTER_DB; there is no implicit local store")
 
 // Item is the durable projection of one work item. Fields mirror
 // internal/work.Item exactly — field-for-field, same names, same semantics —

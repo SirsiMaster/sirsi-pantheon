@@ -114,7 +114,7 @@ func TestSchemaGateRejectsCandidateWithNoDeclaredCeiling(t *testing.T) {
 
 // TestResolveRouterDBPathPrefersEnvOverride pins the override contract the gate
 // and the conduit heal share. LocalPath reads SIRSI_ROUTER_DB first
-// (testable via t.Setenv) and falls back to $HOME/.sirsi/router.db.
+// (testable via t.Setenv) and refuses without it (there is no implicit local store).
 func TestResolveRouterDBPathPrefersEnvOverride(t *testing.T) {
 	t.Setenv("SIRSI_ROUTER_DB", "/custom/router.db")
 	got, err := resolveRouterDBPath()
@@ -128,12 +128,9 @@ func TestResolveRouterDBPathPrefersEnvOverride(t *testing.T) {
 	t.Setenv("SIRSI_ROUTER_DB", "")
 	t.Setenv("HOME", "/home/test")
 
-	got, err = resolveRouterDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := filepath.Join("/home/test", ".sirsi", "router.db"); got != want {
-		t.Fatalf("default path = %s, want %s", got, want)
+	// No implicit local store: with no override there is no path (one store, the service).
+	if got, err = resolveRouterDBPath(); err == nil {
+		t.Fatalf("no SIRSI_ROUTER_DB must yield no path, got %s", got)
 	}
 }
 
