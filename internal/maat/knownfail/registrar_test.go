@@ -202,3 +202,32 @@ func TestCiRunsExactPathRejectsCommentsAndSuffixMatches(t *testing.T) {
 		}
 	}
 }
+
+// TestCiRunsExactPathRejectsShellTextAndPathSuffixes covers the four
+// non-proof forms codex-pantheon found still accepted at 2c387915: a
+// statement separator or comment marker hidden inside quotes/comments/
+// heredoc data, and a different path merely sharing a suffix with the
+// pinned one.
+func TestCiRunsExactPathRejectsShellTextAndPathSuffixes(t *testing.T) {
+	path := "scripts/guard.sh"
+	reject := []string{
+		wrapStepBlock("echo 'x; " + path + "'"),
+		wrapStepBlock("echo nothing # x; " + path),
+		wrapStepBlock("cat <<'EOF'\n" + path + "\nEOF"),
+		wrapStepBlock("bash /tmp/other/" + path),
+	}
+	for _, yaml := range reject {
+		if ciRunsExactPath([]byte(yaml), path) {
+			t.Errorf("must reject non-invocation: %q", yaml)
+		}
+	}
+	accept := []string{
+		wrapStepBlock("echo start ; " + path),
+		wrapStepBlock("echo 'quoted arg' && " + path),
+	}
+	for _, yaml := range accept {
+		if !ciRunsExactPath([]byte(yaml), path) {
+			t.Errorf("must accept real invocation: %q", yaml)
+		}
+	}
+}

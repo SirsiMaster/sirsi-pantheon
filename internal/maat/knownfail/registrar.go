@@ -196,8 +196,6 @@ type ciWorkflow struct {
 	} `yaml:"jobs"`
 }
 
-var stmtSplitRe = regexp.MustCompile(`&&|\|\||[;|]`)
-
 // shellWrappers are the only supported command-grammar prefixes that make the
 // FOLLOWING token the thing actually executed (`bash scripts/guard.sh`,
 // `sh scripts/guard.sh`, `source scripts/guard.sh`, `. scripts/guard.sh`).
@@ -205,14 +203,21 @@ var stmtSplitRe = regexp.MustCompile(`&&|\|\||[;|]`)
 // is read literally: the path must BE the command, not its argument.
 var shellWrappers = map[string]bool{"bash": true, "sh": true, "source": true, ".": true}
 
+// heredocStartRe matches a `<<EOF`, `<<-EOF`, `<<'EOF'`, or `<<"EOF"` heredoc
+// opener so its body can be skipped: heredoc data is never a shell command,
+// no matter what text it contains.
+var heredocStartRe = regexp.MustCompile(`<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?`)
+
 // ciRunsExactPath reports whether a CI workflow actually EXECUTES path as a
 // shell command, fail-closed over a small supported grammar: the first word
-// of a statement (split on &&, ||, ;, |, newline) in a step's run: script, or
-// the second word when the first is a known interpreter wrapper. A path that
-// is merely mentioned — as a step's name, a comment, or an argument to echo
-// or cat — is inert and does not count, because none of those actually run
-// it; only real YAML parsing (not line/token scanning) can tell a run: step
-// from a name: field or a comment in the first place.
+// of a statement (split on &&, ||, ;, | — never inside quotes, a comment, or
+// a heredoc body) in a step's run: script, or the second word when the first
+// is a known interpreter wrapper, matched by EXACT repo-relative identity
+// (never a path suffix, so a guard script at a different path can't be
+// substituted). A path that is merely mentioned — as a step's name, a
+// comment, a quoted argument, or heredoc data — is inert and does not count;
+// only real YAML parsing (not line/token scanning) can tell a run: step from
+// a name: field in the first place.
 func ciRunsExactPath(ciYAML []byte, path string) bool {
 	var wf ciWorkflow
 	if err := yaml.Unmarshal(ciYAML, &wf); err != nil {
@@ -220,27 +225,87 @@ func ciRunsExactPath(ciYAML []byte, path string) bool {
 	}
 	for _, job := range wf.Jobs {
 		for _, step := range job.Steps {
-			for _, line := range strings.Split(step.Run, "\n") {
-				for _, stmt := range stmtSplitRe.Split(line, -1) {
-					fields := strings.Fields(stmt)
-					if len(fields) == 0 {
-						continue
-					}
-					cmd := strings.TrimPrefix(strings.Trim(fields[0], "\"'"), "./")
-					if cmd == path || strings.HasSuffix(cmd, "/"+path) {
+			for _, stmt := range splitShellStatements(step.Run) {
+				fields := strings.Fields(stmt)
+				if len(fields) == 0 {
+					continue
+				}
+				cmd := strings.TrimPrefix(strings.Trim(fields[0], "\"'"), "./")
+				if cmd == path {
+					return true
+				}
+				if shellWrappers[cmd] && len(fields) > 1 {
+					arg := strings.TrimPrefix(strings.Trim(fields[1], "\"'"), "./")
+					if arg == path {
 						return true
-					}
-					if shellWrappers[cmd] && len(fields) > 1 {
-						arg := strings.TrimPrefix(strings.Trim(fields[1], "\"'"), "./")
-						if arg == path || strings.HasSuffix(arg, "/"+path) {
-							return true
-						}
 					}
 				}
 			}
 		}
 	}
 	return false
+}
+
+// splitShellStatements breaks a shell script into top-level statements,
+// skipping heredoc bodies entirely (they are data, never commands) and
+// splitting each remaining line on &&, ||, ;, | only where those characters
+// are NOT inside a quoted string and NOT past a comment marker — so a path
+// named inside a quoted argument, a comment, or heredoc data can never be
+// mistaken for a statement split that puts it in command position.
+func splitShellStatements(script string) []string {
+	var stmts []string
+	lines := strings.Split(script, "\n")
+	for i := 0; i < len(lines); i++ {
+		if m := heredocStartRe.FindStringSubmatch(lines[i]); m != nil {
+			delim := m[1]
+			for i++; i < len(lines); i++ {
+				if strings.TrimSpace(lines[i]) == delim {
+					break
+				}
+			}
+			continue
+		}
+		stmts = append(stmts, splitStatementLine(lines[i])...)
+	}
+	return stmts
+}
+
+// splitStatementLine splits one line on &&, ||, ;, | while tracking single-
+// and double-quote state (so a separator character inside a quoted string is
+// literal text, not a split point) and truncating at an unquoted `#` comment.
+func splitStatementLine(line string) []string {
+	var stmts []string
+	var cur strings.Builder
+	var inSingle, inDouble bool
+	runes := []rune(line)
+	for i := 0; i < len(runes); i++ {
+		c := runes[i]
+		switch {
+		case c == '\'' && !inDouble:
+			inSingle = !inSingle
+			cur.WriteRune(c)
+		case c == '"' && !inSingle:
+			inDouble = !inDouble
+			cur.WriteRune(c)
+		case inSingle || inDouble:
+			cur.WriteRune(c)
+		case c == '#' && (i == 0 || runes[i-1] == ' ' || runes[i-1] == '\t'):
+			i = len(runes) // rest of the line is a comment
+		case c == ';' || c == '|':
+			if c == '|' && i+1 < len(runes) && runes[i+1] == '|' {
+				i++
+			}
+			stmts = append(stmts, cur.String())
+			cur.Reset()
+		case c == '&' && i+1 < len(runes) && runes[i+1] == '&':
+			i++
+			stmts = append(stmts, cur.String())
+			cur.Reset()
+		default:
+			cur.WriteRune(c)
+		}
+	}
+	return append(stmts, cur.String())
 }
 
 func testExists(repoDir, name string) bool {
