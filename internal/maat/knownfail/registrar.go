@@ -336,20 +336,33 @@ func splitShellStatements(script string) [][]string {
 			stmts = append(stmts, words)
 		}
 		if len(words) > 0 {
-			first, last := words[0], words[len(words)-1]
-			switch {
 			// A closer is only trusted in command position (the statement's
 			// first word) — a real `fi`/`done`/`esac`/`}` never appears
 			// anywhere else, so this can't be fooled by one showing up as a
-			// later argument the way `last == "}"` alone could.
-			case isBareReservedWord(0) && (blockCloseWords[first] || first == "}"):
+			// later argument.
+			first := words[0]
+			if isBareReservedWord(0) && (blockCloseWords[first] || first == "}") {
 				if blockDepth > 0 {
 					blockDepth--
 				}
-			case isBareReservedWord(0) && blockOpenWords[first]:
-				blockDepth++
-			case isBareReservedWord(len(words)-1) && last == "{":
-				blockDepth++
+			}
+			// An opener, unlike a closer, is NOT confined to words[0]: `!`
+			// (negation), `time`, or chaining a control keyword straight
+			// after `then`/`else`/`elif`/`do` without a `;` (`then if`,
+			// `! if`) all put a real nested opener at a later word position
+			// in the SAME split statement. Scanning every word (instead of
+			// only the first or the last) means a negated or chained opener
+			// is never missed; the cost is poisoning an occasional statement
+			// that merely contains a bare reserved word as a plain argument
+			// (e.g. `echo if`) — safe, since over-poisoning can only reject
+			// a real match, never accept a false one.
+			for i, w := range words {
+				if !isBareReservedWord(i) {
+					continue
+				}
+				if blockOpenWords[w] || w == "{" {
+					blockDepth++
+				}
 			}
 		}
 		words = nil

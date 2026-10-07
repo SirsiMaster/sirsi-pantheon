@@ -523,3 +523,28 @@ func TestCiRunsExactPathRejectsQuotedBraceDesync(t *testing.T) {
 		}
 	}
 }
+
+// TestCiRunsExactPathRejectsNegatedAndChainedCompoundOpeners covers
+// codex-pantheon's fresh review of c98dc1c1: an opener restricted to
+// words[0] (or the last word, for a bare brace) misses a REAL opener sitting
+// at a later word position in the same split statement — `!` negation
+// (`! if false; then`) and chaining a nested control keyword straight after
+// `then`/`else`/`elif`/`do` without a `;` (`if false; then if false; then`)
+// both put `if` at words[1], not words[0]. Scanning every word in the
+// statement for a bare opener (not just the first or last) catches both:
+// the first repro's sole statement is `! if false`, and the second repro's
+// inner `if` increments blockDepth a second time so its own `fi` only
+// closes the inner block, leaving the outer `if false` still open for the
+// guard line that follows.
+func TestCiRunsExactPathRejectsNegatedAndChainedCompoundOpeners(t *testing.T) {
+	path := "scripts/guard.sh"
+	reject := []string{
+		wrapStepBlock(`! if false; then` + "\n" + path + "\n" + `fi`),
+		wrapStepBlock(`if false; then if false; then` + "\n" + `:; fi` + "\n" + path + "\n" + `fi`),
+	}
+	for _, yaml := range reject {
+		if ciRunsExactPath([]byte(yaml), path) {
+			t.Errorf("must reject: a negated or chained nested opener must still be recognized: %q", yaml)
+		}
+	}
+}
