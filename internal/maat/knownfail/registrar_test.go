@@ -396,3 +396,37 @@ func TestSplitShellStatementsTracksWordBoundaryThroughNonWhitespaceRunes(t *test
 		}
 	}
 }
+
+// TestSplitShellStatementsTreatsShellMetacharactersAsWordBoundaries covers
+// a second automated security review on 6bc5bc96: an unquoted single '&'
+// (the background operator) or '(' '/' ')' (subshell grouping) fell
+// through to the default case and got glued onto adjacent text as a
+// literal character instead of ending the word — so `true&#;scripts/
+// guard.sh` kept atBoundary false across the '&', meaning the following
+// '#' was NOT read as a comment opener (real bash DOES read it as one,
+// since '&' is itself a statement separator), so `scripts/guard.sh` fell
+// out of the "comment" and matched as a real statement. Real bash never
+// executes it — everything after '&' here is commented out.
+func TestSplitShellStatementsTreatsShellMetacharactersAsWordBoundaries(t *testing.T) {
+	path := "scripts/guard.sh"
+	reject := []string{
+		wrapStepBlock("true&#;" + path),
+		wrapStepBlock("(true)#;" + path),
+	}
+	for _, yaml := range reject {
+		if ciRunsExactPath([]byte(yaml), path) {
+			t.Errorf("must reject non-invocation (metacharacter word-glue bypass): %q", yaml)
+		}
+	}
+	// A background command followed by a REAL next statement must still
+	// match: '&' ends the statement like ';' does, it does not blind the
+	// scanner to what comes after.
+	accept := []string{
+		wrapStepBlock("sleep 1& " + path),
+	}
+	for _, yaml := range accept {
+		if !ciRunsExactPath([]byte(yaml), path) {
+			t.Errorf("must accept real invocation after a backgrounded command: %q", yaml)
+		}
+	}
+}

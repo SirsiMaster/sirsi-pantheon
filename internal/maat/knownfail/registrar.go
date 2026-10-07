@@ -388,6 +388,18 @@ func splitShellStatements(script string) [][]string {
 		case c == '&' && i+1 < n && runes[i+1] == '&':
 			i++
 			endStmt()
+		case c == '&':
+			// A lone '&' is the background operator: a statement
+			// terminator exactly like ';', not a literal word character.
+			endStmt()
+		case c == '(' || c == ')' || c == '<' || c == '>':
+			// Unquoted (, ), <, > are shell metacharacters — POSIX never
+			// lets them glue onto adjacent text as a literal word
+			// character, so they must end the current word (and move
+			// atBoundary to true) even though this narrow grammar does not
+			// otherwise understand subshells or redirects.
+			endWord()
+			atBoundary = true
 		default:
 			addRune(c)
 		}
