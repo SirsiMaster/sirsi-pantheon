@@ -295,22 +295,33 @@ var blockCloseWords = map[string]bool{"fi": true, "done": true, "esac": true}
 // status, so every statement to the right of a `&&`/`||` — and transitively
 // every statement after THAT in the same chain, since each one's execution
 // still depends on the unevaluated statement before it — is poisoned the
-// same way a compound-construct body is. `;`, a bare newline, `&`
-// (background), and `|` (pipe) are true separators: each side still runs
-// unconditionally, so they never poison. A parenthesized subshell is poison
-// for the same depth-tracked reason as a block: parenDepth counts unclosed
-// `(` the way blockDepth counts unclosed if/while/etc, so a statement two
-// lines inside an open paren is still poisoned even though it sits between
-// two ordinary newlines.
+// same way a compound-construct body is. `;`, a bare newline, and `&`
+// (background) are true separators: each side still runs unconditionally,
+// so they never poison by themselves. A parenthesized subshell is poison for
+// the same depth-tracked reason as a block: parenDepth counts unclosed `(`
+// the way blockDepth counts unclosed if/while/etc, so a statement two lines
+// inside an open paren is still poisoned even though it sits between two
+// ordinary newlines.
+//
+// `|` (pipe) is a true separator only between members of DIFFERENT
+// statements — but a pipeline (`a | b | c`) is itself a single list item, so
+// when that whole pipeline is the right-hand side of a pending &&/||, a
+// plain `|` between its members must NOT resolve that pending poison: every
+// member stays poisoned, not just the first one up to the first `|`
+// (`false && echo no | scripts/guard.sh` must poison scripts/guard.sh too,
+// even though it is the pipeline's second member rather than the one
+// directly after `&&`).
 //
 // The &&/|| poison is held in condPending rather than applied to poisoned
-// directly, because real shell grammar lets a newline or a comment-only line
-// sit between the operator and the statement it actually governs (`false &&
-// \n` then `echo c` on the next line is still conditional on `false`,
-// exactly like `false && echo c` on one line). An empty statement — no words
-// at all, produced by a bare separator run or a comment-only line — must
-// never consume or clear that pending poison; only a statement that actually
-// collected words can, whether it ends up poisoned or not.
+// directly, because real shell grammar lets a newline, a comment-only line,
+// or a plain-pipe split sit between the operator and the statement it
+// actually governs (`false &&\n` then `echo c` on the next line is still
+// conditional on `false`, exactly like `false && echo c` on one line). An
+// empty statement — no words at all, produced by a bare separator run or a
+// comment-only line — must never consume or clear that pending poison; only
+// a statement that actually collected words can, whether it ends up
+// poisoned or not, and even then only when it is not itself merely a
+// plain-pipe split within the same still-governed pipeline.
 func splitShellStatements(script string) [][]string {
 	var stmts [][]string
 	var words []string
@@ -352,7 +363,14 @@ func splitShellStatements(script string) [][]string {
 	isBareReservedWord := func(i int) bool {
 		return i >= 0 && i < len(quotedWord) && !quotedWord[i]
 	}
-	endStmt := func() {
+	// endStmt flushes the current word-collecting segment. pipeMember is true
+	// only for the plain-`|` split between two members of the SAME pipeline:
+	// a pipeline is one list item, so when it is itself the right-hand side
+	// of a pending &&/||, every member must stay poisoned — not just the
+	// first one up to the first `|`. A true statement separator (`;`, a bare
+	// newline, `&`, or `||`/`&&` resolving their own left-hand side) always
+	// passes pipeMember=false and really resolves the pending poison.
+	endStmt := func(pipeMember bool) {
 		endWord()
 		if blockDepth > 0 || parenDepth > 0 || condPending {
 			poisoned = true
@@ -364,8 +382,12 @@ func splitShellStatements(script string) [][]string {
 			// Only a statement that actually collected words resolves a
 			// pending &&/|| poison — an empty statement (consecutive
 			// separators, or a comment-only line) must leave it pending
-			// for whichever real statement comes next.
-			condPending = false
+			// for whichever real statement comes next. A plain-pipe split
+			// must leave it pending too: the next pipe member is still part
+			// of the same poisoned pipeline, not a fresh statement.
+			if !pipeMember {
+				condPending = false
+			}
 			// A closer is only trusted in command position (the statement's
 			// first word) — a real `fi`/`done`/`esac`/`}` never appears
 			// anywhere else, so this can't be fooled by one showing up as a
@@ -487,9 +509,9 @@ func splitShellStatements(script string) [][]string {
 			endWord()
 			atBoundary = true
 		case c == ';':
-			endStmt()
+			endStmt(false)
 		case c == '\n':
-			endStmt()
+			endStmt(false)
 			if len(pending) > 0 {
 				i = consumeHeredocBodies(i+1) - 1
 			}
@@ -498,7 +520,14 @@ func splitShellStatements(script string) [][]string {
 			if isOr {
 				i++
 			}
-			endStmt()
+			// A plain `|` splits two members of the SAME pipeline, which is
+			// one list item for &&/|| purposes: if a pending poison governs
+			// this pipeline, it governs every member, not just the one up
+			// to the first `|` — so a plain pipe must not resolve it
+			// (pipeMember=true). `||` is a real statement boundary for its
+			// own left-hand side (pipeMember=false) before setting a fresh
+			// pending poison for its right-hand side below.
+			endStmt(!isOr)
 			if isOr {
 				// `||` only runs the right-hand statement if the left one
 				// failed — an exit status this scanner cannot evaluate —
@@ -511,7 +540,7 @@ func splitShellStatements(script string) [][]string {
 			}
 		case c == '&' && i+1 < n && runes[i+1] == '&':
 			i++
-			endStmt()
+			endStmt(false)
 			// `&&` only runs the right-hand statement if the left one
 			// succeeded — poison it for the same reason as `||` above.
 			condPending = true
@@ -525,7 +554,7 @@ func splitShellStatements(script string) [][]string {
 		case c == '&':
 			// A lone '&' is the background operator: a statement
 			// terminator exactly like ';', not a literal word character.
-			endStmt()
+			endStmt(false)
 		case c == '(':
 			// Unquoted `(` opens a subshell this narrow grammar does not
 			// model. Depth-track it like blockDepth so every statement
@@ -558,7 +587,7 @@ func splitShellStatements(script string) [][]string {
 			addRune(c)
 		}
 	}
-	endStmt()
+	endStmt(false)
 	return stmts
 }
 

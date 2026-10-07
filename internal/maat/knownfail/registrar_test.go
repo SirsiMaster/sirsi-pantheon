@@ -258,6 +258,13 @@ func TestCiRunsExactPathRejectsConditionalListsAndSubshells(t *testing.T) {
 		// A comment-only line between the operator and the real statement
 		// must not clear the pending poison either.
 		wrapStepBlock("false && # comment\n" + path),
+		// A pipeline is one list item: when it is the right-hand side of a
+		// pending &&/||, a plain `|` between its members must not resolve
+		// that pending poison — the path is the pipeline's SECOND member,
+		// still conditional on false/true, not a fresh unconditional
+		// statement past a true separator.
+		wrapStepBlock("false && echo no | " + path),
+		wrapStepBlock("true || echo no | " + path),
 	}
 	for _, yaml := range reject {
 		if ciRunsExactPath([]byte(yaml), path) {
@@ -272,6 +279,10 @@ func TestCiRunsExactPathRejectsConditionalListsAndSubshells(t *testing.T) {
 		wrapStepBlock("false\n" + path),
 		wrapStepBlock("sleep 1 & " + path),
 		wrapStepBlock("echo hi | cat; " + path),
+		// The background `&` ends the whole preceding list (`false && echo
+		// no`, backgrounded) as a true separator: the path starts a fresh,
+		// unconditional foreground statement, not a further pipeline member.
+		wrapStepBlock("false && echo no & " + path),
 	}
 	for _, yaml := range accept {
 		if !ciRunsExactPath([]byte(yaml), path) {
