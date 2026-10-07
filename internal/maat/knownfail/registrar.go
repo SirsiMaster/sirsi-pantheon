@@ -203,21 +203,18 @@ type ciWorkflow struct {
 // is read literally: the path must BE the command, not its argument.
 var shellWrappers = map[string]bool{"bash": true, "sh": true, "source": true, ".": true}
 
-// heredocStartRe matches a `<<EOF`, `<<-EOF`, `<<'EOF'`, or `<<"EOF"` heredoc
-// opener so its body can be skipped: heredoc data is never a shell command,
-// no matter what text it contains.
-var heredocStartRe = regexp.MustCompile(`<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?`)
-
 // ciRunsExactPath reports whether a CI workflow actually EXECUTES path as a
-// shell command, fail-closed over a small supported grammar: the first word
-// of a statement (split on &&, ||, ;, | — never inside quotes, a comment, or
-// a heredoc body) in a step's run: script, or the second word when the first
-// is a known interpreter wrapper, matched by EXACT repo-relative identity
-// (never a path suffix, so a guard script at a different path can't be
-// substituted). A path that is merely mentioned — as a step's name, a
-// comment, a quoted argument, or heredoc data — is inert and does not count;
-// only real YAML parsing (not line/token scanning) can tell a run: step from
-// a name: field in the first place.
+// shell command, fail-closed over a small supported grammar: the first WORD
+// (quote- and escape-resolved, so a literal space inside quotes or after a
+// backslash can never masquerade as a word boundary) of a statement (split
+// on &&, ||, ;, | — never inside quotes, a comment, or a heredoc body) in a
+// step's run: script, or the second word when the first is a known
+// interpreter wrapper, matched by EXACT repo-relative identity (never a path
+// suffix, so a guard script at a different path can't be substituted). A
+// path that is merely mentioned — as a step's name, a comment, a quoted or
+// escaped argument, or heredoc data — is inert and does not count; only real
+// YAML parsing (not line/token scanning) can tell a run: step from a name:
+// field in the first place.
 func ciRunsExactPath(ciYAML []byte, path string) bool {
 	var wf ciWorkflow
 	if err := yaml.Unmarshal(ciYAML, &wf); err != nil {
@@ -225,17 +222,16 @@ func ciRunsExactPath(ciYAML []byte, path string) bool {
 	}
 	for _, job := range wf.Jobs {
 		for _, step := range job.Steps {
-			for _, stmt := range splitShellStatements(step.Run) {
-				fields := strings.Fields(stmt)
-				if len(fields) == 0 {
+			for _, words := range splitShellStatements(step.Run) {
+				if len(words) == 0 {
 					continue
 				}
-				cmd := strings.TrimPrefix(strings.Trim(fields[0], "\"'"), "./")
+				cmd := strings.TrimPrefix(words[0], "./")
 				if cmd == path {
 					return true
 				}
-				if shellWrappers[cmd] && len(fields) > 1 {
-					arg := strings.TrimPrefix(strings.Trim(fields[1], "\"'"), "./")
+				if shellWrappers[cmd] && len(words) > 1 {
+					arg := strings.TrimPrefix(words[1], "./")
 					if arg == path {
 						return true
 					}
@@ -246,31 +242,46 @@ func ciRunsExactPath(ciYAML []byte, path string) bool {
 	return false
 }
 
-// splitShellStatements breaks a shell script into top-level statements. It is
-// a single pass over the WHOLE script, not a per-line scan, because a single
-// or double quote legitimately spans a newline (the embedded newline is part
-// of the string, not a statement separator) — tracking quote state per line
-// would let such a line's second half fall out of the quote and be read as a
-// fresh, unquoted statement. Heredoc bodies are skipped entirely (they are
-// data, never commands); a trailing backslash escapes the following
-// character, including a line continuation, so neither is ever treated as
-// quoting, a comment, or a separator; `&&`, `||`, `;`, `|`, and an unquoted
-// newline split statements; `#` starts a comment only at a word boundary
-// (start of script, after whitespace, or right after a split).
-func splitShellStatements(script string) []string {
-	var stmts []string
-	var cur strings.Builder
+// splitShellStatements breaks a shell script into top-level statements, each
+// already split into fully quote- and escape-RESOLVED words (no leftover
+// quote characters, no literal-whitespace-inside-a-word masquerading as a
+// word boundary) — so a caller never re-splits on whitespace itself and
+// cannot repeat the quoting mistake this function exists to avoid.
+//
+// It is a single pass over the WHOLE script, not a per-line scan, because a
+// single or double quote legitimately spans a newline (the embedded newline
+// is part of the string, not a statement separator) — tracking quote state
+// per line would let such a line's second half fall out of the quote and be
+// read as a fresh, unquoted statement. Heredoc bodies are skipped entirely
+// (they are data, never commands), with the real shell rule for where a
+// heredoc body ends: a plain `<<DELIM` requires the body line to equal DELIM
+// byte-for-byte (no stripping), while `<<-DELIM` strips only leading TAB
+// characters (never spaces) from each body line before comparing. A trailing
+// backslash escapes the following character, including a line continuation,
+// so neither is ever treated as quoting, a comment, or a separator; `&&`,
+// `||`, `;`, `|`, and an unquoted newline split statements; `#` starts a
+// comment only at a word boundary (start of script, after whitespace, or
+// right after a split).
+func splitShellStatements(script string) [][]string {
+	var stmts [][]string
+	var words []string
+	var word strings.Builder
 	var inSingle, inDouble bool
 	atBoundary := true
 	runes := []rune(script)
 	n := len(runes)
-	write := func(r rune) {
-		cur.WriteRune(r)
-		atBoundary = r == ' ' || r == '\t'
+	endWord := func() {
+		if word.Len() > 0 {
+			words = append(words, word.String())
+			word.Reset()
+		}
 	}
-	split := func() {
-		stmts = append(stmts, cur.String())
-		cur.Reset()
+	endStmt := func() {
+		endWord()
+		if len(words) > 0 {
+			stmts = append(stmts, words)
+			words = nil
+		}
 		atBoundary = true
 	}
 	for i := 0; i < n; i++ {
@@ -279,37 +290,51 @@ func splitShellStatements(script string) []string {
 		case c == '\\' && !inSingle && i+1 < n:
 			i++
 			if runes[i] != '\n' {
-				write(runes[i])
+				word.WriteRune(runes[i])
+				atBoundary = false
 			}
 		case c == '\'' && !inDouble:
 			inSingle = !inSingle
-			write(c)
+			atBoundary = false
 		case c == '"' && !inSingle:
 			inDouble = !inDouble
-			write(c)
+			atBoundary = false
 		case inSingle || inDouble:
-			write(c)
+			word.WriteRune(c)
+			atBoundary = false
 		case c == '<' && i+1 < n && runes[i+1] == '<':
 			lineEnd := i
 			for lineEnd < n && runes[lineEnd] != '\n' {
 				lineEnd++
 			}
-			m := heredocStartRe.FindStringSubmatch(string(runes[i:lineEnd]))
-			if m == nil {
+			dashForm := i+2 < n && runes[i+2] == '-'
+			rest := i + 2
+			if dashForm {
+				rest++
+			}
+			for rest < lineEnd && (runes[rest] == ' ' || runes[rest] == '\t') {
+				rest++
+			}
+			delim, ok := parseHeredocDelim(runes[rest:lineEnd])
+			if !ok {
 				// Not a recognizable heredoc opener (e.g. a bare `<<` with
-				// no word) — read it as two literal redirect characters
+				// no delimiter word) — read it as a literal character
 				// rather than risk silently skipping real statements.
-				write(c)
+				word.WriteRune(c)
+				atBoundary = false
 				continue
 			}
-			delim := m[1]
 			k := lineEnd + 1
 			for k < n {
 				bodyEnd := k
 				for bodyEnd < n && runes[bodyEnd] != '\n' {
 					bodyEnd++
 				}
-				if strings.TrimSpace(string(runes[k:bodyEnd])) == delim {
+				line := string(runes[k:bodyEnd])
+				if dashForm {
+					line = strings.TrimLeft(line, "\t")
+				}
+				if line == delim {
 					k = bodyEnd
 					break
 				}
@@ -325,21 +350,59 @@ func splitShellStatements(script string) []string {
 				i++
 			}
 			i--
+		case c == ' ' || c == '\t':
+			endWord()
+			atBoundary = true
 		case c == ';' || c == '\n':
-			split()
+			endStmt()
 		case c == '|':
 			if i+1 < n && runes[i+1] == '|' {
 				i++
 			}
-			split()
+			endStmt()
 		case c == '&' && i+1 < n && runes[i+1] == '&':
 			i++
-			split()
+			endStmt()
 		default:
-			write(c)
+			word.WriteRune(c)
+			atBoundary = false
 		}
 	}
-	return append(stmts, cur.String())
+	endStmt()
+	return stmts
+}
+
+// parseHeredocDelim reads a heredoc delimiter word starting at the first
+// non-blank rune after `<<`/`<<-`, applying shell quote removal (so `'END-
+// TEXT'` yields the exact delimiter END-TEXT, not a regex-truncated prefix)
+// and stopping at the first unquoted whitespace. Reports false for an empty
+// or all-blank delimiter.
+func parseHeredocDelim(r []rune) (string, bool) {
+	var b strings.Builder
+	var inSingle, inDouble bool
+	for i := 0; i < len(r); i++ {
+		c := r[i]
+		switch {
+		case c == '\\' && !inSingle && i+1 < len(r):
+			i++
+			b.WriteRune(r[i])
+		case c == '\'' && !inDouble:
+			inSingle = !inSingle
+		case c == '"' && !inSingle:
+			inDouble = !inDouble
+		case !inSingle && !inDouble && (c == ' ' || c == '\t'):
+			if b.Len() == 0 {
+				return "", false
+			}
+			return b.String(), true
+		default:
+			b.WriteRune(c)
+		}
+	}
+	if b.Len() == 0 {
+		return "", false
+	}
+	return b.String(), true
 }
 
 func testExists(repoDir, name string) bool {

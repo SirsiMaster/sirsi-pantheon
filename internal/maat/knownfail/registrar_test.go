@@ -241,47 +241,74 @@ func TestCiRunsExactPathRejectsShellTextAndPathSuffixes(t *testing.T) {
 func TestSplitShellStatementsHandlesMultilineQuotesAndEscapes(t *testing.T) {
 	path := "scripts/guard.sh"
 
+	hasPathAsWord0 := func(stmts [][]string) bool {
+		for _, words := range stmts {
+			if len(words) > 0 && words[0] == path {
+				return true
+			}
+		}
+		return false
+	}
+
 	// A single-quoted string spanning a newline must stay one quoted
 	// token: the embedded newline is data, not a statement separator,
 	// so the path on the second physical line is still inside the quote.
 	stmts := splitShellStatements("echo 'line one\n" + path + "'")
-	for _, s := range stmts {
-		fields := strings.Fields(s)
-		if len(fields) > 0 && strings.Trim(fields[0], "\"'") == path {
-			t.Errorf("multiline single-quote leaked the path into command position: stmts=%q", stmts)
-		}
+	if hasPathAsWord0(stmts) {
+		t.Errorf("multiline single-quote leaked the path into command position: stmts=%q", stmts)
 	}
 
 	// A backslash-escaped separator is literal text, not a split point.
 	stmts = splitShellStatements(`echo foo\;` + path)
-	for _, s := range stmts {
-		fields := strings.Fields(s)
-		if len(fields) > 0 && strings.Trim(fields[0], "\"'") == path {
-			t.Errorf("backslash-escaped ';' must not split: stmts=%q", stmts)
-		}
+	if hasPathAsWord0(stmts) {
+		t.Errorf("backslash-escaped ';' must not split: stmts=%q", stmts)
 	}
 
 	// '#' right after a statement separator (no intervening space) still
 	// starts a comment.
 	stmts = splitShellStatements("true;# " + path)
-	for _, s := range stmts {
-		fields := strings.Fields(s)
-		if len(fields) > 0 && strings.Trim(fields[0], "\"'") == path {
-			t.Errorf("comment immediately after ';' must not count: stmts=%q", stmts)
-		}
+	if hasPathAsWord0(stmts) {
+		t.Errorf("comment immediately after ';' must not count: stmts=%q", stmts)
 	}
 
 	// A backslash-newline line continuation joins two lines without
 	// introducing a statement split or quoting the path.
 	stmts = splitShellStatements("echo start && \\\n" + path)
-	found := false
-	for _, s := range stmts {
-		fields := strings.Fields(s)
-		if len(fields) > 0 && strings.Trim(fields[0], "\"'") == path {
-			found = true
-		}
-	}
-	if !found {
+	if !hasPathAsWord0(stmts) {
 		t.Errorf("line continuation must still let the following real invocation match: stmts=%q", stmts)
+	}
+}
+
+// TestCiRunsExactPathRejectsWordIdentityAndHeredocDelimiterFalsePositives
+// covers codex-pantheon's successor review on fa2d6059 (item
+// 20261007-124810): strings.Fields re-splitting an already-built statement
+// string on whitespace discards the quote/escape awareness that built it
+// (so a quoted or escaped embedded space could still smuggle a second
+// "word" in), and the heredoc delimiter regexp silently truncated at the
+// first non-identifier character while treating `<<` (exact-match
+// termination) the same as `<<-` (leading-tab-stripped termination).
+func TestCiRunsExactPathRejectsWordIdentityAndHeredocDelimiterFalsePositives(t *testing.T) {
+	path := "scripts/guard.sh"
+	reject := []string{
+		// The "command" is one word containing an escaped space, so it is
+		// not literally scripts/guard.sh as a shell would invoke it.
+		wrapStepBlock(`scripts/guard.sh\ --fake`),
+		wrapStepBlock(`'scripts/guard.sh --fake'`),
+		// Plain `<<EOF` requires an EXACT body-line match (no stripping);
+		// the indented " EOF" line must NOT end the heredoc early, so the
+		// real path line stays heredoc data.
+		wrapStepBlock("cat <<EOF\n EOF\n" + path + "\nEOF"),
+		// A quoted delimiter containing a non-identifier character must be
+		// matched in FULL, not truncated to its leading identifier prefix.
+		wrapStepBlock("cat <<'END-TEXT'\nEND\n" + path + "\nEND-TEXT"),
+		// Heredoc bodies (plain and dash-form) are data, never commands,
+		// even though the path is the only "statement" visible per line.
+		wrapStepBlock("cat <<EOF\n" + path + "\nEOF"),
+		wrapStepBlock("cat <<-EOF\n\t" + path + "\n\tEOF"),
+	}
+	for _, yaml := range reject {
+		if ciRunsExactPath([]byte(yaml), path) {
+			t.Errorf("must reject non-invocation: %q", yaml)
+		}
 	}
 }
