@@ -312,3 +312,48 @@ func TestCiRunsExactPathRejectsWordIdentityAndHeredocDelimiterFalsePositives(t *
 		}
 	}
 }
+
+// TestCiRunsExactPathRejectsEmptyWordsEscapesAndQueuedHeredocs covers
+// codex-pantheon's successor review on 833eb725 (item 20261007-132511):
+// (1) an explicit empty quoted argument/command was silently dropped
+// because endWord only kept words with nonzero builder length, which let
+// the NEXT real word slide into command position; (2) inside double quotes
+// a backslash was stripped before ANY character, when POSIX only grants it
+// that meaning before $, `, ", \, or a line-continuation newline — before
+// any other character the backslash is literal; (3) a line opening more
+// than one heredoc (`cmd <<A <<B`) lost the second queued delimiter and let
+// its body fall through as a real statement.
+func TestCiRunsExactPathRejectsEmptyWordsEscapesAndQueuedHeredocs(t *testing.T) {
+	path := "scripts/guard.sh"
+	reject := []string{
+		// bash exits 127 trying to run "" as $0; scripts/guard.sh is never
+		// reached as the executed command.
+		wrapStepBlock(`bash "" ` + path),
+		wrapStepBlock(`"" ` + path),
+		// Backslash before a non-escapable character inside double quotes
+		// is literal, so this names a DIFFERENT path (with a backslash in
+		// it), not scripts/guard.sh.
+		wrapStepBlock(`"scripts/\guard.sh"`),
+		// Two heredocs opened on one line must both be tracked in order;
+		// the real shell prints the path as heredoc-B data, never runs it.
+		wrapStepBlock("cat <<A <<B\nfirst\nA\n" + path + "\nB"),
+	}
+	for _, yaml := range reject {
+		if ciRunsExactPath([]byte(yaml), path) {
+			t.Errorf("must reject non-invocation: %q", yaml)
+		}
+	}
+	accept := []string{
+		// A backslash before an escapable character (") inside double
+		// quotes is consumed, so it does NOT end the string early — the
+		// real invocation after && must still be found.
+		wrapStepBlock(`echo "say \"hi\"" && ` + path),
+		// bash with a REAL first argument still finds the path as $2.
+		wrapStepBlock("bash " + path),
+	}
+	for _, yaml := range accept {
+		if !ciRunsExactPath([]byte(yaml), path) {
+			t.Errorf("must accept real invocation: %q", yaml)
+		}
+	}
+}

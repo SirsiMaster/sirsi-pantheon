@@ -266,14 +266,21 @@ func splitShellStatements(script string) [][]string {
 	var stmts [][]string
 	var words []string
 	var word strings.Builder
+	var wordStarted bool // a word exists even if empty, e.g. a bare "" argument
 	var inSingle, inDouble bool
+	var pending []heredocSpec // heredocs opened on the current line, in order
 	atBoundary := true
 	runes := []rune(script)
 	n := len(runes)
+	addRune := func(r rune) {
+		word.WriteRune(r)
+		wordStarted = true
+	}
 	endWord := func() {
-		if word.Len() > 0 {
+		if wordStarted {
 			words = append(words, word.String())
 			word.Reset()
+			wordStarted = false
 		}
 	}
 	endStmt := func() {
@@ -284,57 +291,20 @@ func splitShellStatements(script string) [][]string {
 		}
 		atBoundary = true
 	}
-	for i := 0; i < n; i++ {
-		c := runes[i]
-		switch {
-		case c == '\\' && !inSingle && i+1 < n:
-			i++
-			if runes[i] != '\n' {
-				word.WriteRune(runes[i])
-				atBoundary = false
-			}
-		case c == '\'' && !inDouble:
-			inSingle = !inSingle
-			atBoundary = false
-		case c == '"' && !inSingle:
-			inDouble = !inDouble
-			atBoundary = false
-		case inSingle || inDouble:
-			word.WriteRune(c)
-			atBoundary = false
-		case c == '<' && i+1 < n && runes[i+1] == '<':
-			lineEnd := i
-			for lineEnd < n && runes[lineEnd] != '\n' {
-				lineEnd++
-			}
-			dashForm := i+2 < n && runes[i+2] == '-'
-			rest := i + 2
-			if dashForm {
-				rest++
-			}
-			for rest < lineEnd && (runes[rest] == ' ' || runes[rest] == '\t') {
-				rest++
-			}
-			delim, ok := parseHeredocDelim(runes[rest:lineEnd])
-			if !ok {
-				// Not a recognizable heredoc opener (e.g. a bare `<<` with
-				// no delimiter word) — read it as a literal character
-				// rather than risk silently skipping real statements.
-				word.WriteRune(c)
-				atBoundary = false
-				continue
-			}
-			k := lineEnd + 1
+	// consumeHeredocBodies skips the body of every queued heredoc, in the
+	// order their openers appeared, starting at line start index k.
+	consumeHeredocBodies := func(k int) int {
+		for _, h := range pending {
 			for k < n {
 				bodyEnd := k
 				for bodyEnd < n && runes[bodyEnd] != '\n' {
 					bodyEnd++
 				}
 				line := string(runes[k:bodyEnd])
-				if dashForm {
+				if h.dash {
 					line = strings.TrimLeft(line, "\t")
 				}
-				if line == delim {
+				if line == h.delim {
 					k = bodyEnd
 					break
 				}
@@ -344,7 +314,53 @@ func splitShellStatements(script string) [][]string {
 				}
 				k = bodyEnd + 1
 			}
-			i = k - 1
+			if k < n {
+				k++ // step past the delimiter line's newline for the next body
+			}
+		}
+		pending = nil
+		return k
+	}
+	for i := 0; i < n; i++ {
+		c := runes[i]
+		switch {
+		case c == '\\' && !inSingle && (!inDouble || isDQEscapable(peek(runes, i+1))) && i+1 < n:
+			i++
+			if runes[i] != '\n' {
+				addRune(runes[i])
+			}
+		case c == '\\' && inDouble:
+			// Inside double quotes a backslash keeps its special meaning
+			// only before $, `, ", \, or newline (handled above); before
+			// any other character it is LITERAL and both runes survive.
+			addRune(c)
+		case c == '\'' && !inDouble:
+			inSingle = !inSingle
+			wordStarted = true
+		case c == '"' && !inSingle:
+			inDouble = !inDouble
+			wordStarted = true
+		case inSingle || inDouble:
+			addRune(c)
+		case c == '<' && i+1 < n && runes[i+1] == '<':
+			dashForm := i+2 < n && runes[i+2] == '-'
+			rest := i + 2
+			if dashForm {
+				rest++
+			}
+			for rest < n && (runes[rest] == ' ' || runes[rest] == '\t') {
+				rest++
+			}
+			delim, consumed, ok := parseHeredocDelim(runes[rest:])
+			if !ok {
+				// Not a recognizable heredoc opener (e.g. a bare `<<` with
+				// no delimiter word) — read it as a literal character
+				// rather than risk silently skipping real statements.
+				addRune(c)
+				continue
+			}
+			pending = append(pending, heredocSpec{delim: delim, dash: dashForm})
+			i = rest + consumed - 1
 		case c == '#' && atBoundary:
 			for i < n && runes[i] != '\n' {
 				i++
@@ -353,8 +369,13 @@ func splitShellStatements(script string) [][]string {
 		case c == ' ' || c == '\t':
 			endWord()
 			atBoundary = true
-		case c == ';' || c == '\n':
+		case c == ';':
 			endStmt()
+		case c == '\n':
+			endStmt()
+			if len(pending) > 0 {
+				i = consumeHeredocBodies(i+1) - 1
+			}
 		case c == '|':
 			if i+1 < n && runes[i+1] == '|' {
 				i++
@@ -364,45 +385,79 @@ func splitShellStatements(script string) [][]string {
 			i++
 			endStmt()
 		default:
-			word.WriteRune(c)
-			atBoundary = false
+			addRune(c)
 		}
 	}
 	endStmt()
 	return stmts
 }
 
-// parseHeredocDelim reads a heredoc delimiter word starting at the first
-// non-blank rune after `<<`/`<<-`, applying shell quote removal (so `'END-
-// TEXT'` yields the exact delimiter END-TEXT, not a regex-truncated prefix)
-// and stopping at the first unquoted whitespace. Reports false for an empty
-// or all-blank delimiter.
-func parseHeredocDelim(r []rune) (string, bool) {
+// heredocSpec is one `<<DELIM`/`<<-DELIM` opener queued on a line, to be
+// consumed in the order it appeared — a line can open more than one heredoc
+// (`cmd <<A <<B`), and each one's body must be skipped as data regardless of
+// what text it contains.
+type heredocSpec struct {
+	delim string
+	dash  bool
+}
+
+// peek returns runes[i] or 0 past the end, so a trailing backslash at
+// end-of-script never panics the double-quote escapability check.
+func peek(runes []rune, i int) rune {
+	if i < len(runes) {
+		return runes[i]
+	}
+	return 0
+}
+
+// isDQEscapable reports whether r is one of the handful of characters a
+// backslash retains its special (escaping) meaning before INSIDE double
+// quotes per POSIX shell quoting: $, `, ", \, or a line-continuation
+// newline. Before any other character, a backslash inside double quotes is
+// literal and both runes survive untouched.
+func isDQEscapable(r rune) bool {
+	return r == '$' || r == '`' || r == '"' || r == '\\' || r == '\n'
+}
+
+// parseHeredocDelim reads a heredoc delimiter word starting at r[0] (the
+// first non-blank rune after `<<`/`<<-`), applying real shell quote removal
+// — including the double-quote escape rule above — so `'END-TEXT'` yields
+// the exact delimiter END-TEXT, not a regex-truncated prefix, and stops at
+// the first unquoted whitespace or newline. Reports the number of runes
+// consumed so the caller can resume scanning the rest of the opener line
+// (which may queue further heredocs). Reports false for an empty or
+// all-blank delimiter.
+func parseHeredocDelim(r []rune) (delim string, consumed int, ok bool) {
 	var b strings.Builder
 	var inSingle, inDouble bool
-	for i := 0; i < len(r); i++ {
+	i := 0
+loop:
+	for i < len(r) {
 		c := r[i]
 		switch {
-		case c == '\\' && !inSingle && i+1 < len(r):
+		case !inSingle && !inDouble && (c == ' ' || c == '\t' || c == '\n'):
+			break loop
+		case c == '\\' && !inSingle && (!inDouble || isDQEscapable(peek(r, i+1))) && i+1 < len(r):
+			b.WriteRune(r[i+1])
+			i += 2
+		case c == '\\' && inDouble:
+			b.WriteRune(c)
 			i++
-			b.WriteRune(r[i])
 		case c == '\'' && !inDouble:
 			inSingle = !inSingle
+			i++
 		case c == '"' && !inSingle:
 			inDouble = !inDouble
-		case !inSingle && !inDouble && (c == ' ' || c == '\t'):
-			if b.Len() == 0 {
-				return "", false
-			}
-			return b.String(), true
+			i++
 		default:
 			b.WriteRune(c)
+			i++
 		}
 	}
 	if b.Len() == 0 {
-		return "", false
+		return "", i, false
 	}
-	return b.String(), true
+	return b.String(), i, true
 }
 
 func testExists(repoDir, name string) bool {
