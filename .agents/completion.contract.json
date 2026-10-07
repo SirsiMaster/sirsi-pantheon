@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "repo_name": "sirsi-pantheon",
+  "release_target": "v0.23.8-beta",
+  "classification": "platform-foundation",
+  "canon_documents": [
+    {"path": "PANTHEON_RULES.md", "role": "governance"},
+    {"path": "docs/COMMERCIALIZATION_GATE.md", "role": "scope"},
+    {"path": "docs/ARCHITECTURE_DESIGN.md", "role": "architecture"},
+    {"path": "docs/SAFETY_DESIGN.md", "role": "security"},
+    {"path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md", "role": "portfolio-canon"}
+  ],
+  "done_definition": [
+    {"category": "product", "criteria": ["the sprint's /goal is met for every named item"]},
+    {"category": "design", "criteria": ["ADR referenced by the sprint is accurate for the implemented behavior, no stale/superseded text left uncorrected"]},
+    {"category": "technical", "criteria": ["go build, go vet, golangci-lint clean; go test ./... -race green including every required negative control shown red-before-green (A35)"]},
+    {"category": "operational", "criteria": ["rollback contract named and exercised where the sprint requires it; CHANGELOG entry present"]},
+    {"category": "narrative", "criteria": ["three-home publication status recorded (origin commit, Reading Room, Workspace) or honestly marked blocked/stale, never silently assumed synced"]}
+  ],
+  "required_verification_commands": [
+    {"name": "build", "command": "go build ./cmd/sirsi/"},
+    {"name": "vet", "command": "go vet ./..."},
+    {"name": "lint", "command": "golangci-lint run ./..."},
+    {"name": "test-race", "command": "go test ./... -race"}
+  ]
+}
