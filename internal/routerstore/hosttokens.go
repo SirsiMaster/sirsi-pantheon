@@ -45,6 +45,15 @@ var (
 	// adoption cannot pick which one to bind — a fleet anomaly, not a normal
 	// state (canon: one token per physical machine). Revoke the duplicate first.
 	ErrAmbiguousHostToken = errors.New("routerstore: more than one live host token for this host")
+	// ErrNoAdoption: the token is live but has never adopted a machine id
+	// (ADR-067 §3.1), so it has no cross-host pin to compare — insufficient to
+	// authorize an informer push regardless of any string-level host match.
+	ErrNoAdoption = errors.New("routerstore: host token has no ADR-067 adoption")
+	// ErrHostPinMismatch: the token's adopted machine id does not equal the
+	// target lane's independently pinned machine id (ADR-065 Decision 6, NC1)
+	// — a live, adopted credential for one host cannot push to a lane pinned
+	// to another.
+	ErrHostPinMismatch = errors.New("routerstore: host token's adoption does not match the pinned machine id")
 )
 
 func hashToken(tok string) string {
@@ -76,8 +85,8 @@ func (s *SQLiteStore) MintHostToken(host, label string) (string, HostToken, erro
 // LookupHostToken resolves a presented plaintext token to its record.
 func (s *SQLiteStore) LookupHostToken(plaintext string) (HostToken, error) {
 	var t HostToken
-	err := s.db.QueryRow(`SELECT token_id,host,label,created,revoked FROM host_tokens WHERE token_hash=?`, hashToken(plaintext)).
-		Scan(&t.ID, &t.Host, &t.Label, &t.Created, &t.Revoked)
+	err := s.db.QueryRow(`SELECT token_id,host,label,created,revoked,machine_id FROM host_tokens WHERE token_hash=?`, hashToken(plaintext)).
+		Scan(&t.ID, &t.Host, &t.Label, &t.Created, &t.Revoked, &t.MachineID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return HostToken{}, ErrTokenUnknown
 	}
@@ -209,6 +218,40 @@ func (s *SQLiteStore) HostIdentity(id string) (string, error) {
 		return "", fmt.Errorf("routerstore: HostIdentity: %w", err)
 	}
 	return mid, nil
+}
+
+// InformerHostAuthorized is the ADR-065/067 Decision-6 predicate (rs-37 task
+// 7): an informer presenting token may push to a lane independently pinned to
+// pinnedMachineID only when the token is known, currently live, and its
+// ADR-067 adoption equals that exact pin — the positive, backend-read fact,
+// never string equality alone (HostIdentity's own no-row result returns its
+// input unchanged, so equal strings can survive a revocation or a missing
+// adoption; see HostIdentity's doc comment). Credential rotation cannot
+// silently authorize an old token via its replacement: each check re-reads
+// the exact presented token's own row.
+//
+//   - unknown/revoked token              → ErrTokenUnknown / ErrTokenRevoked
+//   - live token, no adoption            → ErrNoAdoption
+//   - live token, adoption ≠ pinned id   → ErrHostPinMismatch (NC1)
+//   - live token, adoption == pinned id  → nil (authorized)
+//
+// A token adopted to the matching pin and later revoked (NC2) refuses via
+// ErrTokenRevoked on the very next check — there is no cache to go stale.
+func (s *SQLiteStore) InformerHostAuthorized(token, pinnedMachineID string) error {
+	if pinnedMachineID == "" {
+		return fmt.Errorf("routerstore: InformerHostAuthorized: pinned machine id is required")
+	}
+	rec, err := s.LookupHostToken(token)
+	if err != nil {
+		return err
+	}
+	if rec.MachineID == "" {
+		return ErrNoAdoption
+	}
+	if rec.MachineID != pinnedMachineID {
+		return ErrHostPinMismatch
+	}
+	return nil
 }
 
 // ListHostTokens returns every token record, revoked ones included.

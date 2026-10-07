@@ -114,3 +114,79 @@ func TestHostTokenRevocationKillsItsSessionsOnNextRequest(t *testing.T) {
 		t.Fatalf("unrelated host must be unaffected by m1's revocation: %v", err)
 	}
 }
+
+// rs-37 task 7 (ADR-065 Decision 6, SSA ruling 20261007-230828): the
+// informer-host-pin predicate. NC1 and NC2 are the two non-equivalent
+// controls the ruling named explicitly; each sits beside the positive
+// control it refuses against (A35).
+
+func TestInformerHostAuthorizedPositiveControl(t *testing.T) {
+	h := newIdentityHarness(t)
+	plain, _, err := h.backend.MintHostToken("m1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.backend.AdoptTokenMachineID("m1", "machine-a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.backend.InformerHostAuthorized(plain, "machine-a"); err != nil {
+		t.Fatalf("live token adopted to the pinned machine id must authorize: %v", err)
+	}
+}
+
+// NC1: a valid, adopted informer credential for host A pushing to a lane
+// pinned to a different host B must refuse — before any adapter invocation.
+func TestInformerHostAuthorizedRefusesCrossHostPin(t *testing.T) {
+	h := newIdentityHarness(t)
+	plain, _, err := h.backend.MintHostToken("m1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.backend.AdoptTokenMachineID("m1", "machine-a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.backend.InformerHostAuthorized(plain, "machine-b"); !errors.Is(err, ErrHostPinMismatch) {
+		t.Fatalf("adoption for a different machine must refuse with ErrHostPinMismatch, got %v", err)
+	}
+}
+
+// NC2: a credential that previously adopted the matching pin, then revoked
+// before push, must refuse despite the earlier successful adoption — no
+// cached prior success survives revocation.
+func TestInformerHostAuthorizedRefusesAfterRevocation(t *testing.T) {
+	h := newIdentityHarness(t)
+	plain, rec, err := h.backend.MintHostToken("m1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.backend.AdoptTokenMachineID("m1", "machine-a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.backend.InformerHostAuthorized(plain, "machine-a"); err != nil {
+		t.Fatalf("positive control before revocation: %v", err)
+	}
+	if err := h.backend.RevokeHostToken(rec.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.backend.InformerHostAuthorized(plain, "machine-a"); !errors.Is(err, ErrTokenRevoked) {
+		t.Fatalf("revoked token must refuse despite matching prior adoption, got %v", err)
+	}
+}
+
+func TestInformerHostAuthorizedRefusesMissingAdoption(t *testing.T) {
+	h := newIdentityHarness(t)
+	plain, _, err := h.backend.MintHostToken("m1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.backend.InformerHostAuthorized(plain, "machine-a"); !errors.Is(err, ErrNoAdoption) {
+		t.Fatalf("a live token with no adoption must refuse with ErrNoAdoption, got %v", err)
+	}
+}
+
+func TestInformerHostAuthorizedRefusesUnknownToken(t *testing.T) {
+	h := newIdentityHarness(t)
+	if err := h.backend.InformerHostAuthorized("not-a-token", "machine-a"); !errors.Is(err, ErrTokenUnknown) {
+		t.Fatalf("unknown token must refuse with ErrTokenUnknown, got %v", err)
+	}
+}
