@@ -32,12 +32,12 @@ func TestNetTrafficProbe_AttributesLoadToTheBusyLane(t *testing.T) {
 			}, nil
 		},
 	)
-	defer SetTrafficProviders(nil, nil)
+	defer ResetTrafficProvidersForTest()
 	origWindow := getTrafficSampleWindow()
 	setTrafficSampleWindowForTest(0)
 	defer setTrafficSampleWindowForTest(origWindow)
 
-	actors, err := NetTrafficProbe("m1")
+	actors, err := NetTrafficProbe("m1", "")
 	if err != nil {
 		t.Fatalf("NetTrafficProbe: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestNetTrafficProbe_RefusesCrossHost(t *testing.T) {
 	SetLocalMachineLabelFn(func() (string, error) { return "m1", nil })
 	defer SetLocalMachineLabelFn(nil)
 
-	_, err := NetTrafficProbe("m5")
+	_, err := NetTrafficProbe("m5", "")
 	if err == nil {
 		t.Fatal("expected refusal probing a different machine, got nil error")
 	}
@@ -66,9 +66,9 @@ func TestNetTrafficProbe_NoActiveLanesIsNotAnError(t *testing.T) {
 		func() (map[string][2]int64, error) { return nil, errors.New("must not be called") },
 		func() ([]scales.TBLane, error) { return nil, nil },
 	)
-	defer SetTrafficProviders(nil, nil)
+	defer ResetTrafficProvidersForTest()
 
-	actors, err := NetTrafficProbe("m1")
+	actors, err := NetTrafficProbe("m1", "")
 	if err != nil {
 		t.Fatalf("NetTrafficProbe: %v", err)
 	}
@@ -89,14 +89,86 @@ func TestNetTrafficProbe_MissingCounterForActiveLaneIsAnErrorNotClean(t *testing
 			return []scales.TBLane{{Iface: "en1", Port: "Thunderbolt 1", Active: true}}, nil
 		},
 	)
-	defer SetTrafficProviders(nil, nil)
+	defer ResetTrafficProvidersForTest()
 	origWindow := getTrafficSampleWindow()
 	setTrafficSampleWindowForTest(0)
 	defer setTrafficSampleWindowForTest(origWindow)
 
-	actors, err := NetTrafficProbe("m1")
+	actors, err := NetTrafficProbe("m1", "")
 	if err == nil {
 		t.Fatalf("expected an error for an active lane with no readable counters, got actors %#v", actors)
+	}
+}
+
+func TestNetTrafficProbe_CounterResetIsAnErrorNotClean(t *testing.T) {
+	SetLocalMachineLabelFn(func() (string, error) { return "m1", nil })
+	defer SetLocalMachineLabelFn(nil)
+
+	call := 0
+	snapshots := []map[string][2]int64{
+		{"en1": {1_000_000, 1_000_000}},
+		{"en1": {0, 0}}, // counter reset (interface flap/replug), not a quiet lane
+	}
+	SetTrafficProviders(
+		func() (map[string][2]int64, error) {
+			s := snapshots[call]
+			if call < len(snapshots)-1 {
+				call++
+			}
+			return s, nil
+		},
+		func() ([]scales.TBLane, error) {
+			return []scales.TBLane{{Iface: "en1", Port: "Thunderbolt 1", Active: true}}, nil
+		},
+	)
+	defer ResetTrafficProvidersForTest()
+	origWindow := getTrafficSampleWindow()
+	setTrafficSampleWindowForTest(0)
+	defer setTrafficSampleWindowForTest(origWindow)
+
+	actors, err := NetTrafficProbe("m1", "")
+	if err == nil {
+		t.Fatalf("expected an error for a counter reset, got actors %#v (a reset interval is unmeasurable, not clean)", actors)
+	}
+}
+
+func TestNetTrafficProbe_ScopedToIfaceIgnoresUnrelatedLaneCounterErrors(t *testing.T) {
+	SetLocalMachineLabelFn(func() (string, error) { return "m1", nil })
+	defer SetLocalMachineLabelFn(nil)
+
+	call := 0
+	// en1 has valid, busy counters; en2 is active but has NO readable counter
+	// row at all. Scoped to en1, en2's unreadability must never surface.
+	snapshots := []map[string][2]int64{
+		{"en1": {0, 0}},
+		{"en1": {0, 1_000_000}},
+	}
+	SetTrafficProviders(
+		func() (map[string][2]int64, error) {
+			s := snapshots[call]
+			if call < len(snapshots)-1 {
+				call++
+			}
+			return s, nil
+		},
+		func() ([]scales.TBLane, error) {
+			return []scales.TBLane{
+				{Iface: "en1", Port: "Thunderbolt 1", Active: true},
+				{Iface: "en2", Port: "Thunderbolt 2", Active: true}, // unreadable, but out of scope
+			}, nil
+		},
+	)
+	defer ResetTrafficProvidersForTest()
+	origWindow := getTrafficSampleWindow()
+	setTrafficSampleWindowForTest(0)
+	defer setTrafficSampleWindowForTest(origWindow)
+
+	actors, err := NetTrafficProbe("m1", "en1")
+	if err != nil {
+		t.Fatalf("en1-scoped probe must not fail on en2's missing counters: %v", err)
+	}
+	if len(actors) != 1 || actors[0].Iface != "en1" {
+		t.Fatalf("expected exactly the en1 actor, got %#v", actors)
 	}
 }
 

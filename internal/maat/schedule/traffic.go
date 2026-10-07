@@ -91,11 +91,27 @@ func getTrafficProviders() (func() (map[string][2]int64, error), func() ([]scale
 	return ifaceCounterFn, tbLaneListerFn
 }
 
+// ResetTrafficProvidersForTest restores the real counter/lane sources. Unlike
+// SetTrafficProviders(nil, nil) — which is a deliberate no-op update, not a
+// reset — this is what a test's defer actually needs, so a mock installed by
+// one test can never leak into the next.
+func ResetTrafficProvidersForTest() {
+	ifaceCounterMu.Lock()
+	defer ifaceCounterMu.Unlock()
+	ifaceCounterFn = readNetstatIB
+	tbLaneListerFn = listTBLanesDiscardDrift
+}
+
 // NetTrafficProbe is an ActivityProbe that attributes load to a specific
 // Thunderbolt cable by sampling its link-layer byte counters twice,
 // trafficSampleWindow apart, and reporting an Actor per active lane whose
-// combined in+out rate clears trafficNoiseFloorBytesPerSec.
-func NetTrafficProbe(machine string) ([]Actor, error) {
+// combined in+out rate clears trafficNoiseFloorBytesPerSec. When ifaceScope
+// is non-empty, only that one lane is sampled and its counters/resets are
+// the only ones that can error this call — an unrelated lane elsewhere on
+// the machine is never this reservation's business (A35: the sampling and
+// its error boundary are scoped to the same lane the caller actually cares
+// about, not to every active lane on the host).
+func NetTrafficProbe(machine, ifaceScope string) ([]Actor, error) {
 	if machine != "" {
 		local, err := getLocalMachineLabelFn()()
 		if err != nil {
@@ -112,9 +128,13 @@ func NetTrafficProbe(machine string) ([]Actor, error) {
 	}
 	var active []scales.TBLane
 	for _, l := range lanesList {
-		if l.Active {
-			active = append(active, l)
+		if !l.Active {
+			continue
 		}
+		if ifaceScope != "" && !strings.EqualFold(l.Iface, ifaceScope) {
+			continue // not the lane this check was scoped to
+		}
+		active = append(active, l)
 	}
 	if len(active) == 0 {
 		return nil, nil
@@ -148,7 +168,12 @@ func NetTrafficProbe(machine string) ([]Actor, error) {
 		inPS := int64(float64(b[0]-a[0]) / windowSec)
 		outPS := int64(float64(b[1]-a[1]) / windowSec)
 		if inPS < 0 || outPS < 0 {
-			continue // counter reset between snapshots: not a measurable rate
+			// A counter reset between snapshots (interface flap/replug, counter
+			// wraparound) makes the interval UNMEASURABLE, not clean: silently
+			// skipping it reported "no traffic" for a lane we simply couldn't read
+			// this round (the same false-clean shape as a missing counter row
+			// above — A35, same fail-toward-reporting discipline).
+			return nil, fmt.Errorf("sample byte counters: active lane %s (%s) counter reset between snapshots — unmeasurable, not clean", l.Port, l.Iface)
 		}
 		if inPS+outPS < trafficNoiseFloorBytesPerSec {
 			continue
@@ -200,10 +225,10 @@ func parseNetstatIB(out string) (map[string][2]int64, error) {
 // probe's error aborts the whole sample (fail toward reporting, matching
 // CheckConflicts's own fail-closed discipline).
 func ComposeActivityProbes(probes ...ActivityProbe) ActivityProbe {
-	return func(machine string) ([]Actor, error) {
+	return func(machine, ifaceScope string) ([]Actor, error) {
 		var all []Actor
 		for _, p := range probes {
-			actors, err := p(machine)
+			actors, err := p(machine, ifaceScope)
 			if err != nil {
 				return nil, err
 			}

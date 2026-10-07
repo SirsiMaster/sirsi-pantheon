@@ -12,7 +12,7 @@ func TestCheckConflicts_ReportsPressureAlongsideCleanReport(t *testing.T) {
 	if _, err := l.Reserve(mkReq("m1", "claude-io", "2026-09-24T09:00:00Z", "2026-09-24T11:00:00Z", RegimeQuiet), false); err != nil {
 		t.Fatal(err)
 	}
-	SetActivityProbe(func(machine string) ([]Actor, error) { return nil, nil })
+	SetActivityProbe(func(machine, _ string) ([]Actor, error) { return nil, nil })
 	defer SetActivityProbe(probeProcesses)
 	SetPressureFn(func() (guard.PressureLevel, string) { return guard.PressureCritical, "kernel-dispatch" })
 	defer SetPressureFn(nil)
@@ -36,7 +36,7 @@ func TestProbeProcesses_RefusesRemoteMachine(t *testing.T) {
 	SetLocalMachineLabelFn(func() (string, error) { return "m1", nil })
 	defer SetLocalMachineLabelFn(nil)
 
-	if _, err := probeProcesses("m5"); err == nil {
+	if _, err := probeProcesses("m5", ""); err == nil {
 		t.Fatal("probing a machine that isn't this host must error, never silently scan local ps and mislabel it")
 	} else if !strings.Contains(err.Error(), "m1") || !strings.Contains(err.Error(), "m5") {
 		t.Fatalf("error should name both this host and the requested machine, got %q", err)
@@ -47,7 +47,7 @@ func TestProbeProcesses_AllowsLocalMachineCaseInsensitive(t *testing.T) {
 	SetLocalMachineLabelFn(func() (string, error) { return "m1", nil })
 	defer SetLocalMachineLabelFn(nil)
 
-	if _, err := probeProcesses("M1"); err != nil {
+	if _, err := probeProcesses("M1", ""); err != nil {
 		t.Fatalf("probing this host (case-insensitive) must succeed, got %v", err)
 	}
 }
@@ -67,7 +67,7 @@ func TestCheckConflicts_ExemptPIDCoversItsOwnDescendants(t *testing.T) {
 		return map[int]int{200: 100, 300: 200, 999: 1}, nil
 	})
 	defer SetProcessAncestryFn(nil)
-	SetActivityProbe(func(machine string) ([]Actor, error) {
+	SetActivityProbe(func(machine, _ string) ([]Actor, error) {
 		return []Actor{
 			{Kind: "bench", Detail: "ssh ... tbraw-bench ...", PID: 300},
 			{Kind: "bench", Detail: "iperf", PID: 999},
@@ -103,7 +103,7 @@ func TestCheckConflicts_ExemptPIDCoversItsOwnAncestors(t *testing.T) {
 		return map[int]int{100: 19614, 19614: 19610, 19610: 1, 999: 1}, nil
 	})
 	defer SetProcessAncestryFn(nil)
-	SetActivityProbe(func(machine string) ([]Actor, error) {
+	SetActivityProbe(func(machine, _ string) ([]Actor, error) {
 		return []Actor{
 			{Kind: "build", Detail: "zsh -c source ...shell-snapshots...", PID: 19610},
 			{Kind: "build", Detail: "zsh .../mlx-wait-run.sh", PID: 19614},
@@ -152,7 +152,7 @@ func TestCheckConflicts_TrafficOnAnotherLaneIsNotThisReservationsIntruder(t *tes
 	if _, err := l.Reserve(req, false); err != nil {
 		t.Fatal(err)
 	}
-	SetActivityProbe(func(string) ([]Actor, error) {
+	SetActivityProbe(func(string, string) ([]Actor, error) {
 		return []Actor{{Kind: "traffic", Detail: "en2: 2MB/s out", Iface: "en2"}}, nil
 	})
 	defer SetActivityProbe(probeProcesses)
@@ -173,7 +173,7 @@ func TestCheckConflicts_QuietRegimeStillFlagsTrafficOnItsOwnLane(t *testing.T) {
 	if _, err := l.Reserve(req, false); err != nil {
 		t.Fatal(err)
 	}
-	SetActivityProbe(func(string) ([]Actor, error) {
+	SetActivityProbe(func(string, string) ([]Actor, error) {
 		return []Actor{{Kind: "traffic", Detail: "en1: 2MB/s out", Iface: "en1"}}, nil
 	})
 	defer SetActivityProbe(probeProcesses)
@@ -194,7 +194,7 @@ func TestCheckConflicts_LoadedRegimeTreatsItsOwnLaneTrafficAsExpected(t *testing
 	if _, err := l.Reserve(req, false); err != nil {
 		t.Fatal(err)
 	}
-	SetActivityProbe(func(string) ([]Actor, error) {
+	SetActivityProbe(func(string, string) ([]Actor, error) {
 		return []Actor{{Kind: "traffic", Detail: "en1: 2MB/s out", Iface: "en1"}}, nil
 	})
 	defer SetActivityProbe(probeProcesses)
@@ -208,18 +208,44 @@ func TestCheckConflicts_LoadedRegimeTreatsItsOwnLaneTrafficAsExpected(t *testing
 	}
 }
 
+func TestCheckConflicts_LoadedRegimeStillFlagsExplicitlyForeignOwnerOnReservedLane(t *testing.T) {
+	l := fixedLedger("2026-09-24T10:00:00Z")
+	req := mkReq("m1", "claude-io", "2026-09-24T09:00:00Z", "2026-09-24T11:00:00Z", RegimeLoaded)
+	req.Iface = "en1"
+	if _, err := l.Reserve(req, false); err != nil {
+		t.Fatal(err)
+	}
+	// Unlike the unattributed-byte-counter shape in
+	// TestCheckConflicts_LoadedRegimeTreatsItsOwnLaneTrafficAsExpected, this
+	// actor already carries an explicit, non-holder Owner on the same lane —
+	// the loaded-lane exemption must never suppress a genuinely attributed
+	// foreign actor just because it shares Kind=="traffic" and Iface.
+	SetActivityProbe(func(string, string) ([]Actor, error) {
+		return []Actor{{Kind: "traffic", Detail: "en1: 2MB/s out", Iface: "en1", Owner: "some-other-agent"}}, nil
+	})
+	defer SetActivityProbe(probeProcesses)
+
+	rep, err := l.CheckConflicts("m1", "m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Clean {
+		t.Fatalf("an explicitly foreign-owned actor on the reserved lane must still be reported, got %+v", rep)
+	}
+}
+
 // LiveActivity must surface what the process probe sees even when no reservation
 // exists, and report nothing when the host is quiet (both directions).
 func TestLiveActivityReportsRunningWorkWithoutAReservation(t *testing.T) {
 	defer SetActivityProbe(probeProcesses)
-	SetActivityProbe(func(string) ([]Actor, error) {
+	SetActivityProbe(func(string, string) ([]Actor, error) {
 		return []Actor{{Kind: "build", Detail: "Runner.Worker", PID: 42}}, nil
 	})
 	got, err := LiveActivity("m5")
 	if err != nil || len(got) != 1 || got[0].Kind != "build" {
 		t.Fatalf("busy host: %+v err=%v", got, err)
 	}
-	SetActivityProbe(func(string) ([]Actor, error) { return nil, nil })
+	SetActivityProbe(func(string, string) ([]Actor, error) { return nil, nil })
 	if got, err := LiveActivity("m5"); err != nil || len(got) != 0 {
 		t.Fatalf("quiet host must report nothing: %+v err=%v", got, err)
 	}
