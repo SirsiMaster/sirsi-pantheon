@@ -291,8 +291,10 @@ var blockCloseWords = map[string]bool{"fi": true, "done": true, "esac": true}
 func splitShellStatements(script string) [][]string {
 	var stmts [][]string
 	var words []string
+	var quotedWord []bool // parallel to words: true if quoting/escaping touched this word
 	var word strings.Builder
-	var wordStarted bool // a word exists even if empty, e.g. a bare "" argument
+	var wordStarted bool   // a word exists even if empty, e.g. a bare "" argument
+	var curWordQuoted bool // true once the word under construction has seen a quote or escape
 	var inSingle, inDouble bool
 	var pending []heredocSpec // heredocs opened on the current line, in order
 	var poisoned bool         // this statement contains ungrammared text; never let it match
@@ -305,12 +307,25 @@ func splitShellStatements(script string) [][]string {
 		wordStarted = true
 		atBoundary = false
 	}
+	markQuoted := func() { curWordQuoted = true }
 	endWord := func() {
 		if wordStarted {
 			words = append(words, word.String())
+			quotedWord = append(quotedWord, curWordQuoted)
 			word.Reset()
 			wordStarted = false
+			curWordQuoted = false
 		}
+	}
+	// isBareReservedWord reports whether words[i] can be trusted as a real
+	// shell reserved word or brace rather than a quoted/escaped string that
+	// merely contains the same text (`echo "{"`, `echo done`-as-a-literal-
+	// looking token still a plain argument, not this check's concern since
+	// position gates that separately) — quoting is the one thing that can
+	// make text LOOK like a keyword without the shell ever treating it as
+	// one, so an escaped or quoted occurrence must never move blockDepth.
+	isBareReservedWord := func(i int) bool {
+		return i >= 0 && i < len(quotedWord) && !quotedWord[i]
 	}
 	endStmt := func() {
 		endWord()
@@ -323,15 +338,22 @@ func splitShellStatements(script string) [][]string {
 		if len(words) > 0 {
 			first, last := words[0], words[len(words)-1]
 			switch {
-			case blockCloseWords[first] || last == "}":
+			// A closer is only trusted in command position (the statement's
+			// first word) — a real `fi`/`done`/`esac`/`}` never appears
+			// anywhere else, so this can't be fooled by one showing up as a
+			// later argument the way `last == "}"` alone could.
+			case isBareReservedWord(0) && (blockCloseWords[first] || first == "}"):
 				if blockDepth > 0 {
 					blockDepth--
 				}
-			case blockOpenWords[first] || last == "{":
+			case isBareReservedWord(0) && blockOpenWords[first]:
+				blockDepth++
+			case isBareReservedWord(len(words)-1) && last == "{":
 				blockDepth++
 			}
 		}
 		words = nil
+		quotedWord = nil
 		poisoned = false
 		atBoundary = true
 	}
@@ -372,22 +394,27 @@ func splitShellStatements(script string) [][]string {
 			i++
 			if runes[i] != '\n' {
 				addRune(runes[i])
+				markQuoted()
 			}
 		case c == '\\' && inDouble:
 			// Inside double quotes a backslash keeps its special meaning
 			// only before $, `, ", \, or newline (handled above); before
 			// any other character it is LITERAL and both runes survive.
 			addRune(c)
+			markQuoted()
 		case c == '\'' && !inDouble:
 			inSingle = !inSingle
 			wordStarted = true
 			atBoundary = false
+			markQuoted()
 		case c == '"' && !inSingle:
 			inDouble = !inDouble
 			wordStarted = true
 			atBoundary = false
+			markQuoted()
 		case inSingle || inDouble:
 			addRune(c)
+			markQuoted()
 		case c == '<' && i+1 < n && runes[i+1] == '<':
 			dashForm := i+2 < n && runes[i+2] == '-'
 			rest := i + 2

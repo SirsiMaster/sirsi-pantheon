@@ -492,3 +492,34 @@ func TestCiRunsExactPathRejectsInertCompoundBodies(t *testing.T) {
 		}
 	}
 }
+
+// TestCiRunsExactPathRejectsQuotedBraceDesync covers automated security
+// review on the first TestCiRunsExactPathRejectsInertCompoundBodies fix: a
+// QUOTED "{" or "}" (`echo "{"`) looks identical, once quote-resolved into a
+// plain word, to a real bare brace — if blockDepth bookkeeping trusted that
+// resolved text alone, a quoted "}" sitting inside a still-open `if false`
+// block could decrement blockDepth to zero early and un-poison the guard
+// invocation that follows it, a real bypass of the fail-closed guarantee.
+// splitShellStatements must track whether each word was quoted/escaped and
+// never let a quoted occurrence move blockDepth.
+func TestCiRunsExactPathRejectsQuotedBraceDesync(t *testing.T) {
+	path := "scripts/guard.sh"
+	reject := []string{
+		// A QUOTED "}" as its own statement (command position, so the
+		// position-only restriction alone would not catch it) must not be
+		// read as a real closer and prematurely reopen command position for
+		// the guard line that follows it.
+		wrapStepBlock(`if false; then` + "\n" + `"}"` + "\n" + path + "\n" + `fi`),
+		wrapStepBlock(`if false; then` + "\n" + `'}'` + "\n" + path + "\n" + `fi`),
+		// An ESCAPED "}" (\}) as its own statement, same reasoning.
+		wrapStepBlock(`if false; then` + "\n" + `\}` + "\n" + path + "\n" + `fi`),
+		// A bare "done"/"fi"/"esac" used as a plain (non-command-position)
+		// argument must not be read as a closer either.
+		wrapStepBlock(`if false; then` + "\n" + `echo done` + "\n" + path + "\n" + `fi`),
+	}
+	for _, yaml := range reject {
+		if ciRunsExactPath([]byte(yaml), path) {
+			t.Errorf("must reject: a quoted/escaped or non-command-position brace/keyword must not desync blockDepth: %q", yaml)
+		}
+	}
+}
