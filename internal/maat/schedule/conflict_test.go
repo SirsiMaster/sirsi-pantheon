@@ -234,6 +234,36 @@ func TestCheckConflicts_LoadedRegimeStillFlagsExplicitlyForeignOwnerOnReservedLa
 	}
 }
 
+func TestReviewerLoadedTrafficWithForeignPID(t *testing.T) {
+	l := fixedLedger("2026-09-24T10:00:00Z")
+	req := mkReq("m1", "claude-io", "2026-09-24T09:00:00Z", "2026-09-24T11:00:00Z", RegimeLoaded)
+	req.Iface = "en1"
+	req.ExemptPID = 100
+	if _, err := l.Reserve(req, false); err != nil {
+		t.Fatal(err)
+	}
+	// Same shape as TestCheckConflicts_LoadedRegimeStillFlagsExplicitlyForeignOwnerOnReservedLane,
+	// but attribution arrives via PID instead of Owner: a Kind=="traffic" actor
+	// on the reserved lane with an explicit, non-exempt PID must still be
+	// reported, not swallowed by the unattributed-byte-counter exemption.
+	SetActivityProbe(func(string, string) ([]Actor, error) {
+		return []Actor{{Kind: "traffic", Detail: "en1: 2MB/s out", Iface: "en1", PID: 999}}, nil
+	})
+	defer SetActivityProbe(probeProcesses)
+	defer SetProcessAncestryFn(nil)
+	SetProcessAncestryFn(func() (map[int]int, error) {
+		return map[int]int{100: 1, 999: 1}, nil
+	})
+
+	rep, err := l.CheckConflicts("m1", "m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Clean {
+		t.Fatalf("an explicitly foreign-PID actor on the reserved lane must still be reported, got %+v", rep)
+	}
+}
+
 // LiveActivity must surface what the process probe sees even when no reservation
 // exists, and report nothing when the host is quiet (both directions).
 func TestLiveActivityReportsRunningWorkWithoutAReservation(t *testing.T) {

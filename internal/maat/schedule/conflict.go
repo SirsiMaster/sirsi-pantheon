@@ -128,13 +128,13 @@ func (l *Ledger) CheckConflicts(resource, machine string) (ConflictReport, error
 		if a.Iface != "" && cur.Iface != "" && !strings.EqualFold(a.Iface, cur.Iface) {
 			continue // a different cable than the one THIS reservation covers — not this check's business
 		}
-		if a.Kind == "traffic" && a.Owner == "" && a.Iface != "" && cur.Iface != "" &&
+		if a.Kind == "traffic" && a.Owner == "" && a.PID == 0 && a.Iface != "" && cur.Iface != "" &&
 			strings.EqualFold(a.Iface, cur.Iface) && cur.Regime == RegimeLoaded {
 			continue // traffic on the reserved lane during a load test IS the holder's own expected load
 			// (Regime doc: "the holder's own load is expected") — restricted to Kind=="traffic" with no
-			// Owner: that is the ONLY shape a byte-counter probe can ever produce (it cannot attribute to
-			// a process), so this is the one case where "same lane, loaded regime" is itself the
-			// attribution. An actor of any other Kind, or one that already carries an explicit (possibly
+			// Owner AND no PID: that is the ONLY shape a byte-counter probe can ever produce (it cannot
+			// attribute to a process), so this is the one case where "same lane, loaded regime" is itself
+			// the attribution. An actor of any other Kind, or one that already carries an explicit (possibly
 			// foreign) Owner/PID, is never exempted here — it still falls through to the Owner check below.
 		}
 		if a.Owner != "" {
