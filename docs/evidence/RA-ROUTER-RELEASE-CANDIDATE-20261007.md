@@ -2,6 +2,7 @@
 
 **Source branch:** `fix/router-one-authority-live-20261007`
 **Base:** `origin/main` `958e7fbf`
+**Candidate commit:** `7cde574e` (published to origin)
 **Candidate changes:** `6f71127a`, `379d8e71`, Stack Lab canon and recipe
 consolidation
 **Classification:** platform-foundation/pilot
