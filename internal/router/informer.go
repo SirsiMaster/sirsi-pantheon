@@ -2,16 +2,21 @@
 //
 // ADR-065 (Router-Owned Watcher/Informer) Decision 3a: the environment's
 // delivery quirks live in one table, in the router — not copied into every
-// lane's own config. This file is that table, for Phase 1 (single host):
-// given a registered agent's declared Type and Wake.SessionMode, it returns
-// the one delivery strategy the informer (task 5) will use to reach that
-// lane. Task 3 only; no subscriber loop, no push, no admission logic lives
-// here yet.
+// lane's own config. This file is that table (task 3), plus the single-host
+// subscriber loop it feeds (task 5): one goroutine per lane, blocked on the
+// store's ListenNotify/Wait instead of a per-lane ticker, dispatching through
+// the exact same admission boundary (admission.go, task 4) RunWakeLoop uses —
+// coexistence, not replacement (sprint /goal item 2 and item 6).
 package router
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"strings"
+	"sync"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
 
 // Delivery strategies, per ADR-065 Decision 3a's table. These name HOW the
@@ -66,4 +71,80 @@ func DeliveryStrategyFor(cfg AgentConfig) (string, error) {
 		return "", fmt.Errorf("router: agent %q (type %q) declared delivery target %q, which widens its mandated strategy %q — a lane may narrow but never widen its type's strategy (ADR-065 Decision 3a)", cfg.ID, cfg.Type, target, mandated)
 	}
 	return mandated, nil
+}
+
+// RunInformer is the ADR-065 single-host subscriber (task 5): one lane
+// goroutine per registered, dispatchable agent, each blocked on
+// store.ListenNotify instead of polling a ticker. It runs ALONGSIDE every
+// lane's existing RunWakeLoop, never instead of it — Phase 1 proves
+// coexistence before anything is asked to depend on the informer exclusively
+// (sprint /goal item 2; no retirement code in this sprint).
+//
+// A lane is skipped here, left entirely to its own RunWakeLoop/watch-only
+// path, when it has no dispatchable consumer (resident, or none declared) or
+// when its mandated strategy is session-message — wake.go design constraint 3
+// (interactive claude is never blind-spawned) holds for the informer exactly
+// as it holds for the per-lane loop; session-message delivery is built in
+// task 6, not here.
+func RunInformer(ctx context.Context, routerRoot string) error {
+	reg, err := LoadRegistry(routerRoot)
+	if err != nil {
+		return fmt.Errorf("router: informer: load registry: %w", err)
+	}
+	store, err := routerstore.Resolve()
+	if err != nil {
+		return fmt.Errorf("router: informer: resolve store: %w", err)
+	}
+
+	var wg sync.WaitGroup
+	for id, cfg := range reg.Agents {
+		rc, why := ResolveConsumer(cfg, routerRoot)
+		if rc == nil || rc.Resident {
+			log.Printf("informer %s: no dispatchable consumer, not subscribing: %s", id, why)
+			continue
+		}
+		strategy, serr := DeliveryStrategyFor(cfg)
+		if serr != nil {
+			log.Printf("informer %s: %v", id, serr)
+			continue
+		}
+		if strategy == StrategySessionMessage {
+			continue
+		}
+		events, lerr := store.ListenNotify(ctx, id)
+		if lerr != nil {
+			log.Printf("informer %s: ListenNotify: %v", id, lerr)
+			continue
+		}
+		wg.Add(1)
+		go func(agentID string, consumer *ResolvedConsumer, events <-chan struct{}) {
+			defer wg.Done()
+			runInformerLane(ctx, routerRoot, agentID, consumer, events)
+		}(id, rc, events)
+	}
+	wg.Wait()
+	return nil
+}
+
+// runInformerLane blocks on events (one store notification per wake poke)
+// and, on each, attempts admission through the SAME shared primitives
+// RunWakeLoop's own dispatch call site checks (/goal item 6) before calling
+// admitConsumer — a quarantined or overloaded host, an open measurement
+// window, or a live attended session holds the informer's hand exactly as it
+// holds the per-lane loop's. admitConsumer's per-agent flock (task 4) is what
+// makes a simultaneous edge seen by both loops produce exactly one spawn —
+// caller identity is irrelevant to that boundary, which is the point.
+func runInformerLane(ctx context.Context, routerRoot, agentID string, consumer *ResolvedConsumer, events <-chan struct{}) {
+	for range events {
+		if ctx.Err() != nil {
+			return
+		}
+		if fabricDispatchQuarantined(agentID, -1) || fabricDispatchOverloaded(agentID, -1) ||
+			measurementWindowOpen(agentID, -1) || attendedSessionOwnsInbox(routerRoot, agentID, -1) {
+			continue
+		}
+		if _, _, derr := admitConsumer(routerRoot, agentID, consumer); derr != nil {
+			log.Printf("informer %s: admission failed: %v", agentID, derr)
+		}
+	}
 }
