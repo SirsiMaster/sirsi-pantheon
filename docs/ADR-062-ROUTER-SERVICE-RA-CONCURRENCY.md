@@ -83,11 +83,12 @@ the inventory above is moved onto `Resolve()` in Migration step 1. A
 `go vet` analyzer (or a `grep`-based Ma'at gate rule, whichever is smaller)
 fails the build on any new direct open outside `internal/routerstore`.
 Diagnostics classified local-only (`schemacheck`, `selfupdate`) call
-`routerstore.LocalPath()` which is read-only by construction and refuses to
-return a path when `SIRSI_ROUTER_URL` is set — a node on the service has no
-local ledger to check or back up. This closes the split-brain path the
-reviewer identified: nothing can write local state while the node is
-pointed at the service.
+`routerstore.LocalPath()` which is read-only by construction and requires an
+explicit `SIRSI_ROUTER_DB`; it refuses both when `SIRSI_ROUTER_URL` is set and
+when no local path is explicitly selected. A node on the service has no local
+ledger to check or back up. This closes the split-brain path the reviewer
+identified: nothing can write local state while the node is pointed at the
+service, and an unconfigured process cannot create a second implicit ledger.
 
 ### 2. Transport
 
@@ -96,7 +97,8 @@ interface over HTTPS, one route per method, JSON bodies. `Resolve()` picks:
 
 1. `SIRSI_ROUTER_URL` set → HTTP client implementing `Store`.
 2. `SIRSI_ROUTER_DB` set → SQLite path (unchanged, tests and sandboxes).
-3. neither → `~/.sirsi/router.db` (unchanged, Anubis default).
+3. neither → refuse. There is no implicit local ledger; deliberate test and
+   sandbox callers must set `SIRSI_ROUTER_DB` explicitly.
 
 Every remote call carries a bounded `context.Context` (default 5 s, lease
 operations 2 s), exponential backoff with jitter capped at 30 s, and a

@@ -58,8 +58,8 @@ type Facade struct {
 // remains the owner of the handle; callers must not close it directly.
 func (f *Facade) Store() routerstore.Store { return f.store }
 
-// Open resolves the repo's router root and the durable store
-// (~/.sirsi/router.db — outside any git tree, PRD /goal #2).
+// Open resolves the repo's router root and the canonical durable router
+// service (outside any git tree, PRD /goal #2).
 // SIRSI_ROUTER_DB overrides the store path — REQUIRED for tests and sandboxes
 // so a test send can never write a row into the live store (the "test
 // binaries reaching the user" storm class, PR #151).

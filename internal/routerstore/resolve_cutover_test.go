@@ -7,9 +7,8 @@ import (
 	"testing"
 )
 
-// A host that has been cut over (router-service.env present) must never fall
-// back to the local file when the service env is missing; an explicit
-// SIRSI_ROUTER_DB is still honored (tests, sandboxes).
+// A host must never fall back to the local file when the service env is
+// missing; an explicit SIRSI_ROUTER_DB is still honored for tests/sandboxes.
 func TestResolveRefusesLocalFileOnCutOverHost(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -19,15 +18,15 @@ func TestResolveRefusesLocalFileOnCutOverHost(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(home, ".sirsi"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if s, err := Resolve(); err != nil { // not cut over: local file is fine
-		t.Fatalf("plain host must resolve locally: %v", err)
-	} else {
-		_ = s.Close()
+	if s, err := Resolve(); err == nil {
+		if s != nil {
+			_ = s.Close()
+		}
+		t.Fatal("plain host without explicit DB must refuse instead of creating a local file")
 	}
 	dbPath := filepath.Join(home, ".sirsi", "router.db")
-	before, statErr := os.Stat(dbPath) // the plain-host call above legitimately created this
-	if statErr != nil {
-		t.Fatalf("expected router.db from the plain-host resolve above: %v", statErr)
+	if _, statErr := os.Stat(dbPath); !os.IsNotExist(statErr) {
+		t.Fatalf("plain-host refusal must not create router.db: %v", statErr)
 	}
 	if err := os.WriteFile(filepath.Join(home, ".sirsi", "router-service.env"), []byte("export SIRSI_ROUTER_URL=x\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -38,17 +37,12 @@ func TestResolveRefusesLocalFileOnCutOverHost(t *testing.T) {
 	// "unset" message — a stronger proof of the actual invariant this test
 	// protects, since it now exercises the RemoteStore/token path entirely and
 	// never goes anywhere near LocalPath(). Assert the invariant directly: the
-	// pre-existing router.db from the plain-host phase above is untouched.
+	// no local router.db is created or touched.
 	if _, err := Resolve(); err == nil {
 		t.Fatal("cut-over host without a usable env must refuse, got success")
 	}
-	after, statErr := os.Stat(dbPath)
-	if statErr != nil {
-		t.Fatalf("router.db vanished: %v", statErr)
-	}
-	if !after.ModTime().Equal(before.ModTime()) || after.Size() != before.Size() {
-		t.Fatalf("cut-over host must never touch the local router.db: before=%v/%d after=%v/%d",
-			before.ModTime(), before.Size(), after.ModTime(), after.Size())
+	if _, statErr := os.Stat(dbPath); !os.IsNotExist(statErr) {
+		t.Fatalf("cut-over refusal must leave router.db absent: %v", statErr)
 	}
 	t.Setenv("SIRSI_ROUTER_URL", "") // undo this test's own self-heal before the explicit-DB case below
 	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(home, "explicit.db"))
