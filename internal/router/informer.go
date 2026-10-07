@@ -15,8 +15,11 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
 
 // Delivery strategies, per ADR-065 Decision 3a's table. These name HOW the
@@ -145,6 +148,39 @@ func runInformerLane(ctx context.Context, routerRoot, agentID string, consumer *
 		}
 		if _, _, derr := admitConsumer(routerRoot, agentID, consumer); derr != nil {
 			log.Printf("informer %s: admission failed: %v", agentID, derr)
+			continue
+		}
+		markDeliveryAttempted(routerRoot, agentID)
+	}
+}
+
+// markDeliveryAttempted is the ADR-065 Decision 2 correction (task 6): the
+// informer's push records a DELIVERY-ATTEMPT marker only, reusing the exact
+// wake_status/wake_attempted_at frontmatter WakePass already writes
+// (dispatch.Facade.SetWake — no new ack primitive invented, per sprint
+// scope). It never touches acked_at/read_at; the lane's own `router
+// acknowledge` call (SetAckedAt) is the ONLY writer of that field. A marking
+// failure is logged and swallowed — the dispatch already happened, and losing
+// the attempt record must not be treated as losing the dispatch.
+func markDeliveryAttempted(routerRoot, agentID string) {
+	items, err := OpenItems(routerRoot, agentID)
+	if err != nil {
+		log.Printf("informer %s: delivery-attempt mark: inbox read failed: %v", agentID, err)
+		return
+	}
+	if len(items) == 0 {
+		return
+	}
+	f, ferr := dispatch.OpenRoot(routerRoot)
+	if ferr != nil {
+		log.Printf("informer %s: delivery-attempt mark: open store: %v", agentID, ferr)
+		return
+	}
+	defer func() { _ = f.Close() }()
+	ann := work.WakeAnnotation{Status: WakeStatusAttempted, AttemptedAt: time.Now().UTC().Format(time.RFC3339), Adapter: "informer"}
+	for _, item := range items {
+		if werr := f.SetWake(item.ID, ann); werr != nil {
+			log.Printf("informer %s: delivery-attempt mark failed for %s: %v", agentID, item.ID, werr)
 		}
 	}
 }
