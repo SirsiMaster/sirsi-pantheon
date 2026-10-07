@@ -59,9 +59,10 @@ canonical service.
 
 ## Rollback
 
-The prior client binary is preserved at
-`~/.local/bin/sirsi-legacy-379d8e71`; the previous absolute worker binary remains
-at `~/.sirsi/bin/sirsi-router-one-authority-379d8e71` for rollback. All nine
-user LaunchAgents now invoke the new `a96cf51f` binary. The prior healthy Cloud
-Run revision remains the rollback authority in `ROUTER_STACK_LAB_RECIPE.md`.
+The prior client binary is preserved, mode `0600`, at
+`~/.sirsi/quarantine/20261007-router-auth/sirsi-router-one-authority-379d8e71`;
+its old Homebrew and local symlinks were moved into the same quarantine and are
+not active launch targets. All nine user LaunchAgents and Horus now invoke the
+new `a96cf51f` binary. The prior healthy Cloud Run revision remains the rollback
+authority in `ROUTER_STACK_LAB_RECIPE.md`.
 No local archive or stranded-item store is deleted by this release candidate.
