@@ -138,7 +138,12 @@ func NetTrafficProbe(machine string) ([]Actor, error) {
 		a, aok := before[l.Iface]
 		b, bok := after[l.Iface]
 		if !aok || !bok {
-			continue // interface vanished/renamed between snapshots
+			// An active lane with no readable counter row (malformed `netstat -ib`
+			// output, or the interface vanished/renamed between snapshots) is
+			// UNKNOWN, never clean: silently skipping it reported "no traffic" for
+			// a lane we simply failed to read. Fail toward reporting (A35 — a
+			// check narrower than its claim is worse than no check).
+			return nil, fmt.Errorf("sample byte counters: active lane %s (%s) missing or unreadable in netstat output", l.Port, l.Iface)
 		}
 		inPS := int64(float64(b[0]-a[0]) / windowSec)
 		outPS := int64(float64(b[1]-a[1]) / windowSec)

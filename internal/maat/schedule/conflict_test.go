@@ -145,6 +145,69 @@ func TestCheckConflicts_BuildRegimeSkipsPressureRead(t *testing.T) {
 	}
 }
 
+func TestCheckConflicts_TrafficOnAnotherLaneIsNotThisReservationsIntruder(t *testing.T) {
+	l := fixedLedger("2026-09-24T10:00:00Z")
+	req := mkReq("m1", "claude-io", "2026-09-24T09:00:00Z", "2026-09-24T11:00:00Z", RegimeQuiet)
+	req.Iface = "en1" // this reservation covers only the en1 cable
+	if _, err := l.Reserve(req, false); err != nil {
+		t.Fatal(err)
+	}
+	SetActivityProbe(func(string) ([]Actor, error) {
+		return []Actor{{Kind: "traffic", Detail: "en2: 2MB/s out", Iface: "en2"}}, nil
+	})
+	defer SetActivityProbe(probeProcesses)
+
+	rep, err := l.CheckConflicts("m1", "m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rep.Clean {
+		t.Fatalf("traffic on en2 is a different cable than this reservation's en1 — must not be reported, got %+v", rep)
+	}
+}
+
+func TestCheckConflicts_QuietRegimeStillFlagsTrafficOnItsOwnLane(t *testing.T) {
+	l := fixedLedger("2026-09-24T10:00:00Z")
+	req := mkReq("m1", "claude-io", "2026-09-24T09:00:00Z", "2026-09-24T11:00:00Z", RegimeQuiet)
+	req.Iface = "en1"
+	if _, err := l.Reserve(req, false); err != nil {
+		t.Fatal(err)
+	}
+	SetActivityProbe(func(string) ([]Actor, error) {
+		return []Actor{{Kind: "traffic", Detail: "en1: 2MB/s out", Iface: "en1"}}, nil
+	})
+	defer SetActivityProbe(probeProcesses)
+
+	rep, err := l.CheckConflicts("m1", "m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Clean {
+		t.Fatal("a quiet-regime reservation tolerates NO traffic on its own reserved lane — must report the intruder, not read clean")
+	}
+}
+
+func TestCheckConflicts_LoadedRegimeTreatsItsOwnLaneTrafficAsExpected(t *testing.T) {
+	l := fixedLedger("2026-09-24T10:00:00Z")
+	req := mkReq("m1", "claude-io", "2026-09-24T09:00:00Z", "2026-09-24T11:00:00Z", RegimeLoaded)
+	req.Iface = "en1"
+	if _, err := l.Reserve(req, false); err != nil {
+		t.Fatal(err)
+	}
+	SetActivityProbe(func(string) ([]Actor, error) {
+		return []Actor{{Kind: "traffic", Detail: "en1: 2MB/s out", Iface: "en1"}}, nil
+	})
+	defer SetActivityProbe(probeProcesses)
+
+	rep, err := l.CheckConflicts("m1", "m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rep.Clean {
+		t.Fatalf("a load-test reservation's own traffic on its reserved lane is expected, not foreign — a traffic Actor carries no Owner/PID to match, so Iface+RegimeLoaded is its only attribution; got %+v", rep)
+	}
+}
+
 // LiveActivity must surface what the process probe sees even when no reservation
 // exists, and report nothing when the host is quiet (both directions).
 func TestLiveActivityReportsRunningWorkWithoutAReservation(t *testing.T) {

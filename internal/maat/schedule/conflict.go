@@ -121,6 +121,15 @@ func (l *Ledger) CheckConflicts(resource, machine string) (ConflictReport, error
 	}
 	sharedSeen := map[string]bool{}
 	for _, a := range actors {
+		if a.Iface != "" && cur.Iface != "" && !strings.EqualFold(a.Iface, cur.Iface) {
+			continue // a different cable than the one THIS reservation covers — not this check's business
+		}
+		if a.Iface != "" && cur.Iface != "" && strings.EqualFold(a.Iface, cur.Iface) && cur.Regime == RegimeLoaded {
+			continue // traffic on the reserved lane during a load test IS the holder's own expected load
+			// (Regime doc: "the holder's own load is expected") — a traffic Actor carries no PID/Owner to
+			// match against known[] (byte counters can't be attributed to a process), so this lane+regime
+			// match is the only attribution a traffic-counter probe can ever offer.
+		}
 		if a.Owner != "" {
 			if h, ok := known[a.Owner]; ok {
 				if h.Holder != cur.Holder && h.Share == ShareFloor && !sharedSeen[h.Holder] {

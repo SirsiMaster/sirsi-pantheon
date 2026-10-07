@@ -77,6 +77,29 @@ func TestNetTrafficProbe_NoActiveLanesIsNotAnError(t *testing.T) {
 	}
 }
 
+func TestNetTrafficProbe_MissingCounterForActiveLaneIsAnErrorNotClean(t *testing.T) {
+	SetLocalMachineLabelFn(func() (string, error) { return "m1", nil })
+	defer SetLocalMachineLabelFn(nil)
+
+	SetTrafficProviders(
+		// en1 is active but never appears in the counter snapshot (a malformed
+		// or missing netstat row) — must not be silently read as "no traffic".
+		func() (map[string][2]int64, error) { return map[string][2]int64{}, nil },
+		func() ([]scales.TBLane, error) {
+			return []scales.TBLane{{Iface: "en1", Port: "Thunderbolt 1", Active: true}}, nil
+		},
+	)
+	defer SetTrafficProviders(nil, nil)
+	origWindow := getTrafficSampleWindow()
+	setTrafficSampleWindowForTest(0)
+	defer setTrafficSampleWindowForTest(origWindow)
+
+	actors, err := NetTrafficProbe("m1")
+	if err == nil {
+		t.Fatalf("expected an error for an active lane with no readable counters, got actors %#v", actors)
+	}
+}
+
 func TestReadNetstatIB_ParsesLinkRowsOnly(t *testing.T) {
 	// Mirrors real `netstat -ib` output shapes: a virtual interface with a
 	// blank Address column (lo0) and a hardware interface with a MAC in that
