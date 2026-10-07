@@ -1,6 +1,13 @@
 package router
 
-import "testing"
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"sync"
+	"testing"
+	"time"
+)
 
 // TestDeliveryStrategyFor_TypeTable exercises ADR-065 Decision 3a's lookup
 // table directly: each registered type/session-mode combination must resolve
@@ -84,4 +91,72 @@ func TestDeliveryStrategyNarrowsNotWidens(t *testing.T) {
 			t.Errorf("got %q, want %q", got, StrategyFilesystemPush)
 		}
 	})
+}
+
+// TestInformerCoexistenceNegativeControl6_SimultaneousEdgeNoDuplicateSpawn is
+// ADR-065 Phase 1 Negative Control 6 (rs-37 task 5), exercised at the
+// informer's own call site: the informer's runInformerLane and a simulated
+// RunWakeLoop dispatch (the identical admitConsumer call wake.go's dispatch
+// site makes) observe the SAME edge for the SAME agent concurrently. Exactly
+// one process must actually spawn.
+//
+// Red-before-green (A35) verified manually: with runInformerLane's admission
+// call swapped for a direct dispatchConsumer (bypassing the shared flock —
+// the bug this boundary exists to prevent), this test reproduced 2 spawns in
+// every run; restored to admitConsumer, it is 1/1. Not shipped as the
+// swapped variant — that would be a standing flaky/broken test, not evidence.
+func TestInformerCoexistenceNegativeControl6_SimultaneousEdgeNoDuplicateSpawn(t *testing.T) {
+	// The real load-average guard shells out to `top -l 2 -n 0 -s 1` (~2-4s,
+	// backpressure.go) on every dispatch attempt — legitimate production
+	// latency, but on a host slow enough it can outlast this fixture's
+	// consumer and turn a live-process adoption into a false "already
+	// exited, spawn fresh" read. Deterministic/fast stand-in via the
+	// existing test seam; the real shell-out is covered by its own tests.
+	SetLoadAvgFn(func() (float64, bool) { return 0, true })
+	t.Cleanup(func() { SetLoadAvgFn(nil) })
+
+	root := t.TempDir()
+	logPath := filepath.Join(root, "invocations.log")
+	consumer := &ResolvedConsumer{Argv: []string{sleepConsumer(t, logPath)}}
+	events := make(chan struct{}, 1)
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	var wakeErr error
+	go func() {
+		defer wg.Done()
+		runInformerLane(context.Background(), root, "edge-agent", consumer, events)
+	}()
+	go func() {
+		defer wg.Done()
+		// Simulates RunWakeLoop's own dispatch call site (wake.go) observing
+		// the identical edge concurrently with the informer.
+		_, _, wakeErr = admitConsumer(root, "edge-agent", consumer)
+	}()
+
+	events <- struct{}{} // the simultaneous edge both observers see
+	close(events)        // lets runInformerLane's range exit once drained
+
+	wg.Wait()
+	if wakeErr != nil {
+		t.Fatalf("simulated RunWakeLoop admitConsumer: %v", wakeErr)
+	}
+
+	// wg.Wait() only proves both admission attempts RETURNED (Start() begun);
+	// a spawned child's own "echo $$ >> log" still needs a scheduler turn to
+	// actually run. Settle for the full window rather than breaking on the
+	// first line seen — a second, slower spawn's echo arriving after an
+	// early break would read as "1 spawn" when two processes actually ran.
+	var lines []string
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		time.Sleep(200 * time.Millisecond)
+		b, _ := os.ReadFile(logPath)
+		lines = splitNonEmptyLines(string(b))
+	}
+	if len(lines) != 1 {
+		t.Fatalf("got %d process spawn(s) (%v) for one edge observed by both the informer and a simulated "+
+			"RunWakeLoop, want exactly 1 — a shared PID filename alone is not atomic spawn admission",
+			len(lines), lines)
+	}
 }
