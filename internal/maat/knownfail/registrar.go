@@ -57,9 +57,19 @@ func Resolve(path, repoDir, id string, fix Fix, guardTest string) error {
 
 var testNameRe = regexp.MustCompile(`^Test[A-Za-z0-9_]+$`)
 
-// GuardKindFor says which kind of guard a reference names: a path is a script that CI runs,
-// anything else is a Go test name.
+// crossRepoGuardRef matches a guard that names a commit in another Sirsi repo:
+// "owner/repo@commit:path". The commit (not a branch) makes the guard an
+// immutable fact instead of a moving target (Ra decision 20261007-110326,
+// answering mercury's known-failures-resolve question 20261007-042548).
+var crossRepoGuardRef = regexp.MustCompile(`^([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)@([0-9a-fA-F]{7,40}):(.+)$`)
+
+// GuardKindFor says which kind of guard a reference names: "owner/repo@commit:path"
+// lives in another Sirsi repo's local checkout; any other path is a script this
+// repo's CI runs; anything else is a Go test name.
 func GuardKindFor(ref string) string {
+	if crossRepoGuardRef.MatchString(ref) {
+		return "cross-repo-script"
+	}
 	if strings.Contains(ref, "/") {
 		return "script"
 	}
@@ -68,8 +78,12 @@ func GuardKindFor(ref string) string {
 
 // guardExists proves a guard is real. A test must be a Go test function in the repo. A
 // script must be an executable file in the repo that the CI workflow actually runs, so a
-// "fixed" claim cannot rest on a script nobody executes.
+// "fixed" claim cannot rest on a script nobody executes. A cross-repo-script is the same
+// proof read from another Sirsi repo's own local checkout at a pinned commit.
 func guardExists(repoDir, kind, ref string) error {
+	if kind == "cross-repo-script" {
+		return crossRepoGuardExists(ref)
+	}
 	if kind == "script" {
 		clean := filepath.Clean(ref)
 		if filepath.IsAbs(clean) || strings.HasPrefix(clean, "..") {
@@ -87,6 +101,47 @@ func guardExists(repoDir, kind, ref string) error {
 	}
 	if !testExists(repoDir, ref) {
 		return fmt.Errorf("not a test in the repo")
+	}
+	return nil
+}
+
+// crossRepoGuardExists proves an "owner/repo@commit:path" guard the same way
+// guardExists proves a local one, but reads the OTHER repo's own local checkout
+// (convention: ~/Development/<repo>) at the pinned commit: the commit exists
+// there, the blob at that commit is executable, and that repo's CI workflow at
+// that commit runs it. It never trusts the current working tree of that repo,
+// so a later uncommitted edit there can't forge the guard retroactively.
+func crossRepoGuardExists(ref string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	return crossRepoGuardExistsIn(filepath.Join(home, "Development"), ref)
+}
+
+func crossRepoGuardExistsIn(devRoot, ref string) error {
+	m := crossRepoGuardRef.FindStringSubmatch(ref)
+	if m == nil {
+		return fmt.Errorf("must be owner/repo@commit:path")
+	}
+	owner, repo, commit, path := m[1], m[2], m[3], m[4]
+	dir := filepath.Join(devRoot, repo)
+	if _, err := os.Stat(dir); err != nil {
+		return fmt.Errorf("no local checkout of %s/%s at %s", owner, repo, dir)
+	}
+	if err := gitCmd(dir, "cat-file", "-e", commit+"^{commit}").Run(); err != nil {
+		return fmt.Errorf("commit %s not found in local checkout %s", commit, dir)
+	}
+	out, err := gitCmd(dir, "ls-tree", commit, "--", path).Output()
+	if err != nil || strings.TrimSpace(string(out)) == "" {
+		return fmt.Errorf("%s not found at commit %s in %s", path, commit, dir)
+	}
+	if fields := strings.Fields(string(out)); len(fields) == 0 || fields[0] != "100755" {
+		return fmt.Errorf("%s at commit %s is not mode 100755", path, commit)
+	}
+	ci, err := gitCmd(dir, "show", commit+":.github/workflows/ci.yml").Output()
+	if err != nil || !strings.Contains(string(ci), path) {
+		return fmt.Errorf("%s is not run by %s/%s's .github/workflows/ci.yml at commit %s", path, owner, repo, commit)
 	}
 	return nil
 }
