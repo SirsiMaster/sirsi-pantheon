@@ -242,6 +242,22 @@ func ciRunsExactPath(ciYAML []byte, path string) bool {
 	return false
 }
 
+// blockOpenWords are the shell keywords that start a compound construct
+// (if/while/until/for/case/select/function) whose body is NOT command
+// position at the top level this grammar reasons about — the body only runs
+// conditionally, repeatedly, or as a function call elsewhere, never simply
+// because it is text in the script. Appearing as a statement's first word,
+// each opens one level of blockDepth.
+var blockOpenWords = map[string]bool{
+	"if": true, "while": true, "until": true, "for": true,
+	"case": true, "select": true, "function": true,
+}
+
+// blockCloseWords are the matching closers (fi/done/esac) for blockOpenWords.
+// A bare "}" closes a brace group or `name() { ... }` function body instead
+// (checked separately, since "}" is a word by itself rather than a keyword).
+var blockCloseWords = map[string]bool{"fi": true, "done": true, "esac": true}
+
 // splitShellStatements breaks a shell script into top-level statements, each
 // already split into fully quote- and escape-RESOLVED words (no leftover
 // quote characters, no literal-whitespace-inside-a-word masquerading as a
@@ -262,6 +278,16 @@ func ciRunsExactPath(ciYAML []byte, path string) bool {
 // `||`, `;`, `|`, and an unquoted newline split statements; `#` starts a
 // comment only at a word boundary (start of script, after whitespace, or
 // right after a split).
+//
+// Compound constructs (if/while/until/for/case/select, a `name() { ... }`
+// function, or a bare `{ ... }` brace group) are grammar this scanner does
+// not model any deeper than recognizing their open/close keywords — rather
+// than try to decide whether an `if false` branch or a never-called function
+// body would really run, every statement while blockDepth > 0 is poisoned
+// (fail closed, same as an unmodeled redirect or subshell): a statement
+// merely sitting inside a conditional, loop, or function body is never
+// command position for this guard's purposes, even when the enclosing
+// construct would in fact execute it.
 func splitShellStatements(script string) [][]string {
 	var stmts [][]string
 	var words []string
@@ -270,6 +296,7 @@ func splitShellStatements(script string) [][]string {
 	var inSingle, inDouble bool
 	var pending []heredocSpec // heredocs opened on the current line, in order
 	var poisoned bool         // this statement contains ungrammared text; never let it match
+	var blockDepth int        // >0 means every statement is inside an unmodeled compound construct
 	atBoundary := true
 	runes := []rune(script)
 	n := len(runes)
@@ -287,8 +314,22 @@ func splitShellStatements(script string) [][]string {
 	}
 	endStmt := func() {
 		endWord()
+		if blockDepth > 0 {
+			poisoned = true
+		}
 		if len(words) > 0 && !poisoned {
 			stmts = append(stmts, words)
+		}
+		if len(words) > 0 {
+			first, last := words[0], words[len(words)-1]
+			switch {
+			case blockCloseWords[first] || last == "}":
+				if blockDepth > 0 {
+					blockDepth--
+				}
+			case blockOpenWords[first] || last == "{":
+				blockDepth++
+			}
 		}
 		words = nil
 		poisoned = false

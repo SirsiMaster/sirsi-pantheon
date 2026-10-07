@@ -456,3 +456,39 @@ func TestCiRunsExactPathRejectsRedirectTargetsAndCompoundAmpersandOperators(t *t
 		}
 	}
 }
+
+// TestCiRunsExactPathRejectsInertCompoundBodies covers codex-pantheon's
+// review of 788acb40: a function body or an untaken `if false` branch is
+// text this grammar does not model, not a real top-level invocation —
+// splitShellStatements must poison every statement while it is inside an
+// unclosed if/while/until/for/case/select/function/brace construct, fail
+// closed the same way an unmodeled redirect or subshell is poisoned, rather
+// than let the enclosing keywords reset per-newline state and leave the body
+// looking like ordinary command position. Direct and wrapper positive
+// controls below prove the fix does not also poison ordinary top-level
+// invocations.
+func TestCiRunsExactPathRejectsInertCompoundBodies(t *testing.T) {
+	path := "scripts/guard.sh"
+	reject := []string{
+		wrapStepBlock("unused() {\n" + path + "\n}"),
+		wrapStepBlock("if false; then\n" + path + "\nfi"),
+		wrapStepBlock("while false; do\n" + path + "\ndone"),
+		wrapStepBlock("for x in a b; do\n" + path + "\ndone"),
+		wrapStepBlock("case x in\n  a)\n    " + path + "\n    ;;\nesac"),
+	}
+	for _, yaml := range reject {
+		if ciRunsExactPath([]byte(yaml), path) {
+			t.Errorf("must reject invocation hidden inside a compound construct: %q", yaml)
+		}
+	}
+	accept := []string{
+		wrapStep(path),
+		wrapStep("bash " + path),
+		wrapStepBlock("set -e\n" + path),
+	}
+	for _, yaml := range accept {
+		if !ciRunsExactPath([]byte(yaml), path) {
+			t.Errorf("must still accept real top-level invocation: %q", yaml)
+		}
+	}
+}
