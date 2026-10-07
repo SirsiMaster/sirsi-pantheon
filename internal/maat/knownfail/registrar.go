@@ -288,6 +288,29 @@ var blockCloseWords = map[string]bool{"fi": true, "done": true, "esac": true}
 // merely sitting inside a conditional, loop, or function body is never
 // command position for this guard's purposes, even when the enclosing
 // construct would in fact execute it.
+//
+// `&&` and `||` are conditional-list operators, not plain separators: the
+// right-hand statement only runs if the left-hand one's exit status matches
+// (succeeded for &&, failed for ||). This scanner cannot evaluate an exit
+// status, so every statement to the right of a `&&`/`||` — and transitively
+// every statement after THAT in the same chain, since each one's execution
+// still depends on the unevaluated statement before it — is poisoned the
+// same way a compound-construct body is. `;`, a bare newline, `&`
+// (background), and `|` (pipe) are true separators: each side still runs
+// unconditionally, so they never poison. A parenthesized subshell is poison
+// for the same depth-tracked reason as a block: parenDepth counts unclosed
+// `(` the way blockDepth counts unclosed if/while/etc, so a statement two
+// lines inside an open paren is still poisoned even though it sits between
+// two ordinary newlines.
+//
+// The &&/|| poison is held in condPending rather than applied to poisoned
+// directly, because real shell grammar lets a newline or a comment-only line
+// sit between the operator and the statement it actually governs (`false &&
+// \n` then `echo c` on the next line is still conditional on `false`,
+// exactly like `false && echo c` on one line). An empty statement — no words
+// at all, produced by a bare separator run or a comment-only line — must
+// never consume or clear that pending poison; only a statement that actually
+// collected words can, whether it ends up poisoned or not.
 func splitShellStatements(script string) [][]string {
 	var stmts [][]string
 	var words []string
@@ -299,6 +322,8 @@ func splitShellStatements(script string) [][]string {
 	var pending []heredocSpec // heredocs opened on the current line, in order
 	var poisoned bool         // this statement contains ungrammared text; never let it match
 	var blockDepth int        // >0 means every statement is inside an unmodeled compound construct
+	var parenDepth int        // >0 means every statement is inside an unclosed subshell
+	var condPending bool      // a preceding &&/|| still needs a real (non-empty) statement to poison
 	atBoundary := true
 	runes := []rune(script)
 	n := len(runes)
@@ -329,13 +354,18 @@ func splitShellStatements(script string) [][]string {
 	}
 	endStmt := func() {
 		endWord()
-		if blockDepth > 0 {
+		if blockDepth > 0 || parenDepth > 0 || condPending {
 			poisoned = true
 		}
 		if len(words) > 0 && !poisoned {
 			stmts = append(stmts, words)
 		}
 		if len(words) > 0 {
+			// Only a statement that actually collected words resolves a
+			// pending &&/|| poison — an empty statement (consecutive
+			// separators, or a comment-only line) must leave it pending
+			// for whichever real statement comes next.
+			condPending = false
 			// A closer is only trusted in command position (the statement's
 			// first word) — a real `fi`/`done`/`esac`/`}` never appears
 			// anywhere else, so this can't be fooled by one showing up as a
@@ -464,13 +494,27 @@ func splitShellStatements(script string) [][]string {
 				i = consumeHeredocBodies(i+1) - 1
 			}
 		case c == '|':
-			if i+1 < n && runes[i+1] == '|' {
+			isOr := i+1 < n && runes[i+1] == '|'
+			if isOr {
 				i++
 			}
 			endStmt()
+			if isOr {
+				// `||` only runs the right-hand statement if the left one
+				// failed — an exit status this scanner cannot evaluate —
+				// so poison it (and transitively the rest of the chain)
+				// the same way an unmodeled block body is poisoned. A bare
+				// `|` (pipe) runs both sides unconditionally and must not
+				// set this. condPending (not poisoned directly) survives
+				// any blank/comment-only statement before the real one.
+				condPending = true
+			}
 		case c == '&' && i+1 < n && runes[i+1] == '&':
 			i++
 			endStmt()
+			// `&&` only runs the right-hand statement if the left one
+			// succeeded — poison it for the same reason as `||` above.
+			condPending = true
 		case c == '&' && i > 0 && (runes[i-1] == '<' || runes[i-1] == '>'):
 			// Part of a compound redirect operator (>&, <&), not the
 			// background operator — the metachar case below already
@@ -482,15 +526,31 @@ func splitShellStatements(script string) [][]string {
 			// A lone '&' is the background operator: a statement
 			// terminator exactly like ';', not a literal word character.
 			endStmt()
-		case c == '(' || c == ')' || c == '<' || c == '>':
-			// Unquoted (, ), <, > are shell metacharacters this narrow
-			// grammar does not model (subshells, redirects — a redirect
-			// target like `>scripts/guard.sh` is never command position,
-			// a `)` ending a case-pattern label never runs its label as a
-			// command). Rather than try to track what each one specifically
-			// consumes, poison the whole statement: it still scans
-			// cleanly (words end here, same as any boundary) but can never
-			// produce a match when it is finally flushed.
+		case c == '(':
+			// Unquoted `(` opens a subshell this narrow grammar does not
+			// model. Depth-track it like blockDepth so every statement
+			// until the matching `)` is poisoned — not just the statement
+			// that happens to contain the `(` itself, which would let a
+			// later line inside the subshell slip through as if it were
+			// plain top-level command position.
+			endWord()
+			poisoned = true
+			atBoundary = true
+			parenDepth++
+		case c == ')':
+			endWord()
+			poisoned = true
+			atBoundary = true
+			if parenDepth > 0 {
+				parenDepth--
+			}
+		case c == '<' || c == '>':
+			// Unquoted <, > are redirect metacharacters this narrow
+			// grammar does not model (a redirect target like
+			// `>scripts/guard.sh` is never command position). Poison the
+			// whole statement: it still scans cleanly (words end here,
+			// same as any boundary) but can never produce a match when it
+			// is finally flushed.
 			endWord()
 			poisoned = true
 			atBoundary = true

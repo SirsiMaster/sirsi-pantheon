@@ -180,7 +180,7 @@ func TestCiRunsExactPathRejectsCommentsAndSuffixMatches(t *testing.T) {
 		wrapStep("./scripts/guard.sh"),
 		wrapStepBlock("scripts/guard.sh"),
 		wrapStepBlock("set -e\nscripts/guard.sh"),
-		wrapStepBlock("echo start && scripts/guard.sh"),
+		wrapStepBlock("echo start ; scripts/guard.sh"),
 	}
 	for _, yaml := range accept {
 		if !ciRunsExactPath([]byte(yaml), path) {
@@ -223,11 +223,59 @@ func TestCiRunsExactPathRejectsShellTextAndPathSuffixes(t *testing.T) {
 	}
 	accept := []string{
 		wrapStepBlock("echo start ; " + path),
-		wrapStepBlock("echo 'quoted arg' && " + path),
+		wrapStepBlock("echo 'quoted arg' ; " + path),
 	}
 	for _, yaml := range accept {
 		if !ciRunsExactPath([]byte(yaml), path) {
 			t.Errorf("must accept real invocation: %q", yaml)
+		}
+	}
+}
+
+// TestCiRunsExactPathRejectsConditionalListsAndSubshells covers
+// codex-pantheon's review on 332af950 (item
+// 20261007-145648-codex-pantheon-ra-pr1031-332af950-changes-requested-short-circuit-and-subshell):
+// `&&`/`||` only run their right-hand statement depending on the left
+// statement's exit status, which this scanner cannot evaluate, so the
+// right-hand statement must never count as a proven invocation even when it
+// names the guard path exactly. A statement still inside an unclosed
+// subshell must be poisoned too, no matter how many ordinary separators
+// (newlines, `;`) appear between the `(` and the path — poisoning only the
+// statement that literally contains the `(` would let a later line inside
+// the same subshell slip through as if it were top-level command position.
+func TestCiRunsExactPathRejectsConditionalListsAndSubshells(t *testing.T) {
+	path := "scripts/guard.sh"
+	reject := []string{
+		wrapStepBlock("false && " + path),
+		wrapStepBlock("true || " + path),
+		wrapStepBlock("(false &&\n" + path + "\n)"),
+		// Chained: the second && still depends on the unevaluated first.
+		wrapStepBlock("false && echo mid && " + path),
+		// A bare newline right after && is a shell line continuation, not
+		// a statement separator — the path is still conditional on false.
+		wrapStepBlock("false &&\n" + path),
+		wrapStepBlock("true ||\n" + path),
+		// A comment-only line between the operator and the real statement
+		// must not clear the pending poison either.
+		wrapStepBlock("false && # comment\n" + path),
+	}
+	for _, yaml := range reject {
+		if ciRunsExactPath([]byte(yaml), path) {
+			t.Errorf("must reject conditional-list/subshell false proof: %q", yaml)
+		}
+	}
+	// `;`, a bare newline, `&` (background), and `|` (pipe) are true
+	// separators — both sides still run unconditionally — so they must
+	// keep matching a real invocation.
+	accept := []string{
+		wrapStepBlock("false ; " + path),
+		wrapStepBlock("false\n" + path),
+		wrapStepBlock("sleep 1 & " + path),
+		wrapStepBlock("echo hi | cat; " + path),
+	}
+	for _, yaml := range accept {
+		if !ciRunsExactPath([]byte(yaml), path) {
+			t.Errorf("must accept real invocation past a true separator: %q", yaml)
 		}
 	}
 }
@@ -273,7 +321,7 @@ func TestSplitShellStatementsHandlesMultilineQuotesAndEscapes(t *testing.T) {
 
 	// A backslash-newline line continuation joins two lines without
 	// introducing a statement split or quoting the path.
-	stmts = splitShellStatements("echo start && \\\n" + path)
+	stmts = splitShellStatements("echo start ; \\\n" + path)
 	if !hasPathAsWord0(stmts) {
 		t.Errorf("line continuation must still let the following real invocation match: stmts=%q", stmts)
 	}
@@ -346,8 +394,8 @@ func TestCiRunsExactPathRejectsEmptyWordsEscapesAndQueuedHeredocs(t *testing.T) 
 	accept := []string{
 		// A backslash before an escapable character (") inside double
 		// quotes is consumed, so it does NOT end the string early — the
-		// real invocation after && must still be found.
-		wrapStepBlock(`echo "say \"hi\"" && ` + path),
+		// real invocation after ';' must still be found.
+		wrapStepBlock(`echo "say \"hi\"" ; ` + path),
 		// bash with a REAL first argument still finds the path as $2.
 		wrapStepBlock("bash " + path),
 	}
