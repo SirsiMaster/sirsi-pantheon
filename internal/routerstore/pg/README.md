@@ -39,8 +39,8 @@ carries `host`, `user_id`, `session`, `runtime_hash`.
 
 **Verification.** `scripts/check-pg-schema.sh` creates a throwaway database,
 applies both files as the roles they will run as in production, and asserts:
-16 tables, 12 distinct triggers, ≥5 partial indexes, version 23 (verified
-2026-10-01, superseding the stale 15-table/version-17 figures previously
+16 tables, 12 distinct triggers, ≥5 partial indexes, version 24 (verified
+2026-10-07, superseding the stale 15-table/version-17 figures previously
 here — schema_version advances as migrations land; re-verify against a live
 run rather than trusting this number indefinitely); an item insert
 emits exactly one wake event and a duplicate `event_key` is ignored; a claim
