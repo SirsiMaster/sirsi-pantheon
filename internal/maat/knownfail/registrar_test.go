@@ -430,3 +430,29 @@ func TestSplitShellStatementsTreatsShellMetacharactersAsWordBoundaries(t *testin
 		}
 	}
 }
+
+// TestCiRunsExactPathRejectsRedirectTargetsAndCompoundAmpersandOperators
+// covers a second-round security review on 9d7ce766 against the same
+// metacharacter handling: a redirect TARGET (the word after `<`, `>`, or a
+// compound `>&`/`<&`) was still being read as an ordinary word and could
+// land in command position — `<scripts/guard.sh` and `>scripts/guard.sh`
+// open/truncate the file but never execute it, and `true >&scripts/
+// guard.sh` is one redirect-decorated statement, not "true" then a fresh
+// statement starting at the path (the prior fix's lone-'&' handling ended
+// the statement right at the '&', letting the redirect target start a
+// clean, unpoisoned new one).
+func TestCiRunsExactPathRejectsRedirectTargetsAndCompoundAmpersandOperators(t *testing.T) {
+	path := "scripts/guard.sh"
+	reject := []string{
+		wrapStepBlock("<" + path),
+		wrapStepBlock(">" + path),
+		wrapStepBlock("true >&" + path),
+		wrapStepBlock("true <&" + path),
+		wrapStepBlock("true 2>&" + path),
+	}
+	for _, yaml := range reject {
+		if ciRunsExactPath([]byte(yaml), path) {
+			t.Errorf("must reject non-invocation (redirect target read as command): %q", yaml)
+		}
+	}
+}

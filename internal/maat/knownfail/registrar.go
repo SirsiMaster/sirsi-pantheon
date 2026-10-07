@@ -269,6 +269,7 @@ func splitShellStatements(script string) [][]string {
 	var wordStarted bool // a word exists even if empty, e.g. a bare "" argument
 	var inSingle, inDouble bool
 	var pending []heredocSpec // heredocs opened on the current line, in order
+	var poisoned bool         // this statement contains ungrammared text; never let it match
 	atBoundary := true
 	runes := []rune(script)
 	n := len(runes)
@@ -286,10 +287,11 @@ func splitShellStatements(script string) [][]string {
 	}
 	endStmt := func() {
 		endWord()
-		if len(words) > 0 {
+		if len(words) > 0 && !poisoned {
 			stmts = append(stmts, words)
-			words = nil
 		}
+		words = nil
+		poisoned = false
 		atBoundary = true
 	}
 	// consumeHeredocBodies skips the body of every queued heredoc, in the
@@ -388,17 +390,28 @@ func splitShellStatements(script string) [][]string {
 		case c == '&' && i+1 < n && runes[i+1] == '&':
 			i++
 			endStmt()
+		case c == '&' && i > 0 && (runes[i-1] == '<' || runes[i-1] == '>'):
+			// Part of a compound redirect operator (>&, <&), not the
+			// background operator — the metachar case below already
+			// poisoned this statement when it saw the '<'/'>'; this is
+			// still the SAME statement (the redirect target follows), so
+			// it must not end it the way a true lone '&' does.
+			atBoundary = true
 		case c == '&':
 			// A lone '&' is the background operator: a statement
 			// terminator exactly like ';', not a literal word character.
 			endStmt()
 		case c == '(' || c == ')' || c == '<' || c == '>':
-			// Unquoted (, ), <, > are shell metacharacters — POSIX never
-			// lets them glue onto adjacent text as a literal word
-			// character, so they must end the current word (and move
-			// atBoundary to true) even though this narrow grammar does not
-			// otherwise understand subshells or redirects.
+			// Unquoted (, ), <, > are shell metacharacters this narrow
+			// grammar does not model (subshells, redirects — a redirect
+			// target like `>scripts/guard.sh` is never command position,
+			// a `)` ending a case-pattern label never runs its label as a
+			// command). Rather than try to track what each one specifically
+			// consumes, poison the whole statement: it still scans
+			// cleanly (words end here, same as any boundary) but can never
+			// produce a match when it is finally flushed.
 			endWord()
+			poisoned = true
 			atBoundary = true
 		default:
 			addRune(c)
