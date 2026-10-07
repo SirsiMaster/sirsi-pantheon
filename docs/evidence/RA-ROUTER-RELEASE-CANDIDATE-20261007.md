@@ -1,18 +1,18 @@
-# Ra router release candidate — 0.24.97
+# Ra router release candidate — 0.24.97 (deployed)
 
 **Source branch:** `fix/router-one-authority-live-20261007`
 **Base:** `origin/main` `958e7fbf`
-**Candidate commit:** `ec92f527` (published to origin)
+**Deployed commit:** `a96cf51f` (published to origin)
 **Clean CLI build:** `sirsi` v0.24.97, SHA-256
-`e58823bd9e97937806c48621c0f02dab59b01d679c29e2c5a12d70ed3a889d7e`,
-50,565,314 bytes, `dirty=false` from `version --json`.
+`323906eb0dd01d7c31a28d3ec443e01acfd09719862dfeb3c2aa0d7ff94f215c`,
+34,340,482 bytes, `dirty=false` from `version --json`.
 **Candidate changes:** `6f71127a`, `379d8e71`, Stack Lab canon and recipe
 consolidation
 **Classification:** platform-foundation/pilot
 
 ## What is delivered
 
-The candidate has one production authority. `routerstore.Resolve()` selects the
+The deployed candidate has one production authority. `routerstore.Resolve()` selects the
 configured service; an unset service configuration is an error. `SIRSI_ROUTER_DB`
 is explicit test/migration input only. Ma'at tests now pass an explicit isolated
 ledger instead of inheriting the operator's service environment.
@@ -44,9 +44,13 @@ canonical service.
 
 ## Honest open evidence
 
-- The GCP service and Cloud SQL topology are documented from retained deployment
-  evidence, but the current shell's active account lacks `run.services.get` and
-  SQL read permission, so this turn does not invent a fresh live revision receipt.
+- The GCP deployment is now read back with the existing `claude-agent` service
+  account: Cloud Run revision `sirsi-router-00024-cl2` serves 100% of traffic at
+  `https://sirsi-router-6kdf4or4qq-uc.a.run.app`, image digest
+  `sha256:7c465ab88ce45ee61ef4b9afec7947cb98f676161605d8172ca36c26364552fc`.
+  The Cloud SQL schema job `sirsi-router-apply-schema-vj5dk` completed successfully
+  at schema version 24 with the complete 17-table shape. The prior healthy revision
+  `sirsi-router-00022-4d7` remains the rollback target.
 - The real third-machine rehearsal, complete Codex/Claude parity across every
   lane, and commercial product/narrative closure remain open in the matrix.
 - ADR-065's router-owned informer remains the next bounded implementation slice;
@@ -55,6 +59,9 @@ canonical service.
 
 ## Rollback
 
-The prior client candidate and the named prior Cloud Run revision remain the
-rollback authority in `ROUTER_STACK_LAB_RECIPE.md`. No local archive or stranded
-item store is deleted by this release candidate.
+The prior client binary is preserved at
+`~/.local/bin/sirsi-legacy-379d8e71`; the previous absolute worker binary remains
+at `~/.sirsi/bin/sirsi-router-one-authority-379d8e71` for rollback. All nine
+user LaunchAgents now invoke the new `a96cf51f` binary. The prior healthy Cloud
+Run revision remains the rollback authority in `ROUTER_STACK_LAB_RECIPE.md`.
+No local archive or stranded-item store is deleted by this release candidate.
