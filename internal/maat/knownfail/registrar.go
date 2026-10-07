@@ -60,8 +60,15 @@ var testNameRe = regexp.MustCompile(`^Test[A-Za-z0-9_]+$`)
 // crossRepoGuardRef matches a guard that names a commit in another Sirsi repo:
 // "owner/repo@commit:path". The commit (not a branch) makes the guard an
 // immutable fact instead of a moving target (Ra decision 20261007-110326,
-// answering mercury's known-failures-resolve question 20261007-042548).
-var crossRepoGuardRef = regexp.MustCompile(`^([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)@([0-9a-fA-F]{7,40}):(.+)$`)
+// answering mercury's known-failures-resolve question 20261007-042548). Owner
+// and repo exclude "." so neither component can ever be ".." — a directory
+// traversal segment — eliminating that escape by construction rather than by
+// a path-containment check after the fact.
+var crossRepoGuardRef = regexp.MustCompile(`^([A-Za-z0-9_-]+)/([A-Za-z0-9_-]+)@([0-9a-fA-F]{7,40}):(.+)$`)
+
+// githubRemoteRe pulls owner/repo out of a GitHub remote URL, either form
+// ("git@github.com:Owner/Repo.git" or "https://github.com/Owner/Repo").
+var githubRemoteRe = regexp.MustCompile(`(?i)github\.com[:/]([^/]+)/([^/]+?)(\.git)?/?$`)
 
 // GuardKindFor says which kind of guard a reference names: "owner/repo@commit:path"
 // lives in another Sirsi repo's local checkout; any other path is a script this
@@ -126,8 +133,36 @@ func crossRepoGuardExistsIn(devRoot, ref string) error {
 	}
 	owner, repo, commit, path := m[1], m[2], m[3], m[4]
 	dir := filepath.Join(devRoot, repo)
+	// Belt-and-suspenders: crossRepoGuardRef already forbids "." in repo, so
+	// this can't actually escape devRoot, but a future loosened regex must not
+	// silently regain a traversal — fail the containment check explicitly too.
+	absDevRoot, err := filepath.Abs(devRoot)
+	if err != nil {
+		return err
+	}
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	if absDir != filepath.Join(absDevRoot, repo) || !strings.HasPrefix(absDir+string(filepath.Separator), absDevRoot+string(filepath.Separator)) {
+		return fmt.Errorf("repo %q escapes the local checkout root", repo)
+	}
 	if _, err := os.Stat(dir); err != nil {
 		return fmt.Errorf("no local checkout of %s/%s at %s", owner, repo, dir)
+	}
+	// The directory name alone is not proof of identity: verify the checkout's
+	// own origin remote actually points at the declared owner/repo, so a
+	// same-named checkout of a DIFFERENT repo (or a fork) can't be substituted.
+	remote, err := gitCmd(dir, "remote", "get-url", "origin").Output()
+	if err != nil {
+		return fmt.Errorf("could not read origin remote of %s: %w", dir, err)
+	}
+	rm := githubRemoteRe.FindStringSubmatch(strings.TrimSpace(string(remote)))
+	if rm == nil {
+		return fmt.Errorf("origin remote %q of %s is not a recognizable GitHub URL", strings.TrimSpace(string(remote)), dir)
+	}
+	if !strings.EqualFold(rm[1], owner) || !strings.EqualFold(rm[2], repo) {
+		return fmt.Errorf("checkout at %s is %s/%s, not %s/%s", dir, rm[1], rm[2], owner, repo)
 	}
 	if err := gitCmd(dir, "cat-file", "-e", commit+"^{commit}").Run(); err != nil {
 		return fmt.Errorf("commit %s not found in local checkout %s", commit, dir)
@@ -140,10 +175,32 @@ func crossRepoGuardExistsIn(devRoot, ref string) error {
 		return fmt.Errorf("%s at commit %s is not mode 100755", path, commit)
 	}
 	ci, err := gitCmd(dir, "show", commit+":.github/workflows/ci.yml").Output()
-	if err != nil || !strings.Contains(string(ci), path) {
+	if err != nil || !ciRunsExactPath(ci, path) {
 		return fmt.Errorf("%s is not run by %s/%s's .github/workflows/ci.yml at commit %s", path, owner, repo, commit)
 	}
 	return nil
+}
+
+// ciRunsExactPath reports whether a CI workflow actually invokes path as a
+// command token — not merely mentioned in a comment, and not a longer path
+// that happens to end the same way (e.g. "path.disabled"). Comments are
+// stripped per line before tokenizing, so "# scripts/guard.sh" never counts,
+// and tokens are compared for an exact (optionally "./"-prefixed, or
+// parent-path-qualified) match, so "scripts/guard.sh.disabled" never counts.
+func ciRunsExactPath(ciYAML []byte, path string) bool {
+	for _, line := range strings.Split(string(ciYAML), "\n") {
+		if idx := strings.Index(line, "#"); idx >= 0 {
+			line = line[:idx]
+		}
+		for _, tok := range strings.Fields(line) {
+			tok = strings.Trim(tok, "\"'")
+			tok = strings.TrimPrefix(tok, "./")
+			if tok == path || strings.HasSuffix(tok, "/"+path) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func testExists(repoDir, name string) bool {

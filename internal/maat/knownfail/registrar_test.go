@@ -8,8 +8,9 @@ import (
 )
 
 // buildFakeRepo makes a tiny git repo at devRoot/repoName with an executable
-// script committed and referenced by its ci.yml, returning the commit sha.
-func buildFakeRepo(t *testing.T, devRoot, repoName, scriptPath string) string {
+// script committed, referenced by its ci.yml, and an origin remote matching
+// owner/repoName — returning the commit sha.
+func buildFakeRepo(t *testing.T, devRoot, owner, repoName, scriptPath string) string {
 	t.Helper()
 	dir := filepath.Join(devRoot, repoName)
 	must := func(err error) {
@@ -31,6 +32,7 @@ func buildFakeRepo(t *testing.T, devRoot, repoName, scriptPath string) string {
 	run("init", "-q")
 	run("config", "user.email", "test@example.com")
 	run("config", "user.name", "test")
+	run("remote", "add", "origin", "https://github.com/"+owner+"/"+repoName+".git")
 	run("add", "-A")
 	run("commit", "-q", "-m", "init")
 	out, err := gitCmd(dir, "rev-parse", "HEAD").Output()
@@ -51,64 +53,133 @@ func TestGuardKindForDetectsCrossRepoRef(t *testing.T) {
 			t.Errorf("GuardKindFor(%q) = %q, want %q", ref, got, want)
 		}
 	}
+	// A ".." component anywhere must never classify as cross-repo-script: it
+	// must not even reach the directory-traversal check, because the grammar
+	// forbids "." in owner/repo entirely.
+	for _, ref := range []string{"../etc@6255871abcdef1234567890abcdef1234567890:x", "owner/..@6255871abcdef1234567890abcdef1234567890:x"} {
+		if GuardKindFor(ref) == "cross-repo-script" {
+			t.Errorf("GuardKindFor(%q) must not classify a dot-segment as cross-repo-script", ref)
+		}
+	}
 }
 
 // A cross-repo guard is only real if the NAMED repo's own local checkout has the
-// commit, the blob there is executable, and that repo's CI (at that commit) runs
-// it — proven both directions, including against the current working tree
-// lying about what the commit actually contains.
+// commit, the blob there is executable, that checkout's origin remote actually
+// IS the declared owner/repo, and that repo's CI (at that commit) runs it as a
+// real command token — proven both directions.
 func TestCrossRepoGuardExistsProvesAgainstTheOtherReposCommit(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git unavailable")
 	}
 	devRoot := t.TempDir()
-	sha := buildFakeRepo(t, devRoot, "sirsi-mercury", "packaging/test-release-stamps.sh")
+	sha := buildFakeRepo(t, devRoot, "SirsiMaster", "sirsi-mercury", "packaging/test-release-stamps.sh")
 
 	ref := "SirsiMaster/sirsi-mercury@" + sha + ":packaging/test-release-stamps.sh"
 	if err := crossRepoGuardExistsIn(devRoot, ref); err != nil {
 		t.Fatalf("a real committed+executable+CI-run guard must pass: %v", err)
 	}
 
-	if err := crossRepoGuardExistsIn(devRoot, "SirsiMaster/sirsi-mercury@"+sha+":packaging/missing.sh"); err == nil {
-		t.Fatal("a path absent at that commit must be refused")
+	cases := map[string]string{
+		"SirsiMaster/sirsi-mercury@" + sha + ":packaging/missing.sh":                                          "a path absent at that commit must be refused",
+		"SirsiMaster/no-such-repo@" + sha + ":x.sh":                                                           "a repo with no local checkout must be refused",
+		"SirsiMaster/sirsi-mercury@deadbeefdeadbeefdeadbeefdeadbeefdeadbeef:packaging/test-release-stamps.sh": "a commit absent from the local checkout must be refused",
+		"not-a-valid-ref": "a malformed ref must be refused",
+		"UnrelatedOwner/sirsi-mercury@" + sha + ":packaging/test-release-stamps.sh": "a checkout whose origin remote names a DIFFERENT owner must be refused (same directory, wrong identity)",
 	}
-	if err := crossRepoGuardExistsIn(devRoot, "SirsiMaster/no-such-repo@"+sha+":x.sh"); err == nil {
-		t.Fatal("a repo with no local checkout must be refused")
+	for ref, msg := range cases {
+		if err := crossRepoGuardExistsIn(devRoot, ref); err == nil {
+			t.Fatal(msg)
+		}
 	}
-	if err := crossRepoGuardExistsIn(devRoot, "SirsiMaster/sirsi-mercury@deadbeefdeadbeefdeadbeefdeadbeefdeadbeef:packaging/test-release-stamps.sh"); err == nil {
-		t.Fatal("a commit absent from the local checkout must be refused")
-	}
-	if err := crossRepoGuardExistsIn(devRoot, "not-a-valid-ref"); err == nil {
-		t.Fatal("a malformed ref must be refused")
-	}
+}
 
-	// A non-executable blob at the SAME commit must be refused, even though the
-	// file exists and is readable.
-	nonExecDevRoot := t.TempDir()
-	dir := filepath.Join(nonExecDevRoot, "sirsi-mercury")
-	if err := os.MkdirAll(filepath.Join(dir, "packaging"), 0o755); err != nil {
-		t.Fatal(err)
+// A same-named directory whose origin remote points at an entirely different
+// repo (a fork, or an unrelated project sharing the name) must never be
+// accepted just because the directory basename matches.
+func TestCrossRepoGuardRefusesWrongOriginRemote(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git unavailable")
 	}
-	if err := os.MkdirAll(filepath.Join(dir, ".github", "workflows"), 0o755); err != nil {
-		t.Fatal(err)
+	devRoot := t.TempDir()
+	sha := buildFakeRepo(t, devRoot, "SomeoneElse", "sirsi-mercury", "packaging/test-release-stamps.sh")
+	ref := "SirsiMaster/sirsi-mercury@" + sha + ":packaging/test-release-stamps.sh"
+	if err := crossRepoGuardExistsIn(devRoot, ref); err == nil {
+		t.Fatal("a checkout whose origin remote is a different owner must be refused even though the directory name matches")
 	}
-	if err := os.WriteFile(filepath.Join(dir, "packaging", "test-release-stamps.sh"), []byte("#!/bin/sh\n"), 0o644); err != nil {
-		t.Fatal(err)
+}
+
+// Neither a dot-segment repo name nor a nested path can escape devRoot: the
+// grammar rejects "." in owner/repo outright, so this never reaches the
+// filesystem lookup with an escaped path.
+func TestCrossRepoGuardRefusesDotSegmentAndNestedEscape(t *testing.T) {
+	devRoot := t.TempDir()
+	for _, ref := range []string{
+		"SirsiMaster/..@6255871abcdef1234567890abcdef1234567890:x",
+		"../etc/SirsiMaster@6255871abcdef1234567890abcdef1234567890:x",
+		"SirsiMaster/sub/dir@6255871abcdef1234567890abcdef1234567890:x",
+	} {
+		if err := crossRepoGuardExistsIn(devRoot, ref); err == nil {
+			t.Fatalf("ref %q must be refused as malformed, not resolved to a path", ref)
+		}
 	}
-	if err := os.WriteFile(filepath.Join(dir, ".github", "workflows", "ci.yml"), []byte("run: packaging/test-release-stamps.sh\n"), 0o644); err != nil {
-		t.Fatal(err)
+}
+
+// A non-executable blob at the SAME commit must be refused, even though the
+// file exists, is readable, and CI references its path.
+func TestCrossRepoGuardRefusesNonExecutableBlob(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git unavailable")
 	}
-	for _, args := range [][]string{{"init", "-q"}, {"config", "user.email", "t@example.com"}, {"config", "user.name", "t"}, {"add", "-A"}, {"commit", "-q", "-m", "init"}} {
-		if err := gitCmd(dir, args...).Run(); err != nil {
+	devRoot := t.TempDir()
+	dir := filepath.Join(devRoot, "sirsi-mercury")
+	must := func(err error) {
+		if err != nil {
 			t.Fatal(err)
 		}
+	}
+	must(os.MkdirAll(filepath.Join(dir, "packaging"), 0o755))
+	must(os.MkdirAll(filepath.Join(dir, ".github", "workflows"), 0o755))
+	must(os.WriteFile(filepath.Join(dir, "packaging", "test-release-stamps.sh"), []byte("#!/bin/sh\n"), 0o644))
+	must(os.WriteFile(filepath.Join(dir, ".github", "workflows", "ci.yml"), []byte("run: packaging/test-release-stamps.sh\n"), 0o644))
+	for _, args := range [][]string{
+		{"init", "-q"}, {"config", "user.email", "t@example.com"}, {"config", "user.name", "t"},
+		{"remote", "add", "origin", "https://github.com/SirsiMaster/sirsi-mercury.git"},
+		{"add", "-A"}, {"commit", "-q", "-m", "init"},
+	} {
+		must(gitCmd(dir, args...).Run())
 	}
 	out, err := gitCmd(dir, "rev-parse", "HEAD").Output()
 	if err != nil {
 		t.Fatal(err)
 	}
-	nonExecSHA := string(out[:40])
-	if err := crossRepoGuardExistsIn(nonExecDevRoot, "SirsiMaster/sirsi-mercury@"+nonExecSHA+":packaging/test-release-stamps.sh"); err == nil {
+	sha := string(out[:40])
+	if err := crossRepoGuardExistsIn(devRoot, "SirsiMaster/sirsi-mercury@"+sha+":packaging/test-release-stamps.sh"); err == nil {
 		t.Fatal("a non-executable blob must be refused even if CI references the path")
+	}
+}
+
+func TestCiRunsExactPathRejectsCommentsAndSuffixMatches(t *testing.T) {
+	path := "scripts/guard.sh"
+	accept := []string{
+		"run: scripts/guard.sh\n",
+		"run: bash scripts/guard.sh --flag\n",
+		"run: ./scripts/guard.sh\n",
+		"run: |\n  scripts/guard.sh\n",
+	}
+	for _, yaml := range accept {
+		if !ciRunsExactPath([]byte(yaml), path) {
+			t.Errorf("must accept real invocation: %q", yaml)
+		}
+	}
+	reject := []string{
+		"# scripts/guard.sh\n",
+		"run: echo nothing # scripts/guard.sh\n",
+		"run: scripts/guard.sh.disabled\n",
+		"run: other-scripts/guard.sh\n",
+	}
+	for _, yaml := range reject {
+		if ciRunsExactPath([]byte(yaml), path) {
+			t.Errorf("must reject comment-only or suffix-only match: %q", yaml)
+		}
 	}
 }
