@@ -2,7 +2,7 @@
 
 ## Candidate
 
-Release candidate `0.24.97` is cut from commit `7cde574e` on the exact Ra branch
+Release candidate `0.24.97` is cut from commit `ec92f527` on the exact Ra branch
 after the one-authority resolver fix and the canonical Stack Lab documentation
 update. The candidate
 must report its stamped commit, source cleanliness, router schema ceiling, and

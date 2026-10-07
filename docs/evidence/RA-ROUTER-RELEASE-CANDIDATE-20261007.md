@@ -2,7 +2,10 @@
 
 **Source branch:** `fix/router-one-authority-live-20261007`
 **Base:** `origin/main` `958e7fbf`
-**Candidate commit:** `7cde574e` (published to origin)
+**Candidate commit:** `ec92f527` (published to origin)
+**Clean CLI build:** `sirsi` v0.24.97, SHA-256
+`e58823bd9e97937806c48621c0f02dab59b01d679c29e2c5a12d70ed3a889d7e`,
+50,565,314 bytes, `dirty=false` from `version --json`.
 **Candidate changes:** `6f71127a`, `379d8e71`, Stack Lab canon and recipe
 consolidation
 **Classification:** platform-foundation/pilot
