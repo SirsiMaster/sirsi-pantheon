@@ -231,3 +231,57 @@ func TestCiRunsExactPathRejectsShellTextAndPathSuffixes(t *testing.T) {
 		}
 	}
 }
+
+// TestSplitShellStatementsHandlesMultilineQuotesAndEscapes covers the
+// automated security review's follow-up on e9f8570e: quote state must
+// survive a newline (a single/double-quoted string legitimately spans
+// lines), a backslash must escape the next character (including a line
+// continuation) rather than being read specially, and `#` must start a
+// comment right after a statement separator, not only after whitespace.
+func TestSplitShellStatementsHandlesMultilineQuotesAndEscapes(t *testing.T) {
+	path := "scripts/guard.sh"
+
+	// A single-quoted string spanning a newline must stay one quoted
+	// token: the embedded newline is data, not a statement separator,
+	// so the path on the second physical line is still inside the quote.
+	stmts := splitShellStatements("echo 'line one\n" + path + "'")
+	for _, s := range stmts {
+		fields := strings.Fields(s)
+		if len(fields) > 0 && strings.Trim(fields[0], "\"'") == path {
+			t.Errorf("multiline single-quote leaked the path into command position: stmts=%q", stmts)
+		}
+	}
+
+	// A backslash-escaped separator is literal text, not a split point.
+	stmts = splitShellStatements(`echo foo\;` + path)
+	for _, s := range stmts {
+		fields := strings.Fields(s)
+		if len(fields) > 0 && strings.Trim(fields[0], "\"'") == path {
+			t.Errorf("backslash-escaped ';' must not split: stmts=%q", stmts)
+		}
+	}
+
+	// '#' right after a statement separator (no intervening space) still
+	// starts a comment.
+	stmts = splitShellStatements("true;# " + path)
+	for _, s := range stmts {
+		fields := strings.Fields(s)
+		if len(fields) > 0 && strings.Trim(fields[0], "\"'") == path {
+			t.Errorf("comment immediately after ';' must not count: stmts=%q", stmts)
+		}
+	}
+
+	// A backslash-newline line continuation joins two lines without
+	// introducing a statement split or quoting the path.
+	stmts = splitShellStatements("echo start && \\\n" + path)
+	found := false
+	for _, s := range stmts {
+		fields := strings.Fields(s)
+		if len(fields) > 0 && strings.Trim(fields[0], "\"'") == path {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("line continuation must still let the following real invocation match: stmts=%q", stmts)
+	}
+}

@@ -246,63 +246,97 @@ func ciRunsExactPath(ciYAML []byte, path string) bool {
 	return false
 }
 
-// splitShellStatements breaks a shell script into top-level statements,
-// skipping heredoc bodies entirely (they are data, never commands) and
-// splitting each remaining line on &&, ||, ;, | only where those characters
-// are NOT inside a quoted string and NOT past a comment marker — so a path
-// named inside a quoted argument, a comment, or heredoc data can never be
-// mistaken for a statement split that puts it in command position.
+// splitShellStatements breaks a shell script into top-level statements. It is
+// a single pass over the WHOLE script, not a per-line scan, because a single
+// or double quote legitimately spans a newline (the embedded newline is part
+// of the string, not a statement separator) — tracking quote state per line
+// would let such a line's second half fall out of the quote and be read as a
+// fresh, unquoted statement. Heredoc bodies are skipped entirely (they are
+// data, never commands); a trailing backslash escapes the following
+// character, including a line continuation, so neither is ever treated as
+// quoting, a comment, or a separator; `&&`, `||`, `;`, `|`, and an unquoted
+// newline split statements; `#` starts a comment only at a word boundary
+// (start of script, after whitespace, or right after a split).
 func splitShellStatements(script string) []string {
-	var stmts []string
-	lines := strings.Split(script, "\n")
-	for i := 0; i < len(lines); i++ {
-		if m := heredocStartRe.FindStringSubmatch(lines[i]); m != nil {
-			delim := m[1]
-			for i++; i < len(lines); i++ {
-				if strings.TrimSpace(lines[i]) == delim {
-					break
-				}
-			}
-			continue
-		}
-		stmts = append(stmts, splitStatementLine(lines[i])...)
-	}
-	return stmts
-}
-
-// splitStatementLine splits one line on &&, ||, ;, | while tracking single-
-// and double-quote state (so a separator character inside a quoted string is
-// literal text, not a split point) and truncating at an unquoted `#` comment.
-func splitStatementLine(line string) []string {
 	var stmts []string
 	var cur strings.Builder
 	var inSingle, inDouble bool
-	runes := []rune(line)
-	for i := 0; i < len(runes); i++ {
+	atBoundary := true
+	runes := []rune(script)
+	n := len(runes)
+	write := func(r rune) {
+		cur.WriteRune(r)
+		atBoundary = r == ' ' || r == '\t'
+	}
+	split := func() {
+		stmts = append(stmts, cur.String())
+		cur.Reset()
+		atBoundary = true
+	}
+	for i := 0; i < n; i++ {
 		c := runes[i]
 		switch {
+		case c == '\\' && !inSingle && i+1 < n:
+			i++
+			if runes[i] != '\n' {
+				write(runes[i])
+			}
 		case c == '\'' && !inDouble:
 			inSingle = !inSingle
-			cur.WriteRune(c)
+			write(c)
 		case c == '"' && !inSingle:
 			inDouble = !inDouble
-			cur.WriteRune(c)
+			write(c)
 		case inSingle || inDouble:
-			cur.WriteRune(c)
-		case c == '#' && (i == 0 || runes[i-1] == ' ' || runes[i-1] == '\t'):
-			i = len(runes) // rest of the line is a comment
-		case c == ';' || c == '|':
-			if c == '|' && i+1 < len(runes) && runes[i+1] == '|' {
+			write(c)
+		case c == '<' && i+1 < n && runes[i+1] == '<':
+			lineEnd := i
+			for lineEnd < n && runes[lineEnd] != '\n' {
+				lineEnd++
+			}
+			m := heredocStartRe.FindStringSubmatch(string(runes[i:lineEnd]))
+			if m == nil {
+				// Not a recognizable heredoc opener (e.g. a bare `<<` with
+				// no word) — read it as two literal redirect characters
+				// rather than risk silently skipping real statements.
+				write(c)
+				continue
+			}
+			delim := m[1]
+			k := lineEnd + 1
+			for k < n {
+				bodyEnd := k
+				for bodyEnd < n && runes[bodyEnd] != '\n' {
+					bodyEnd++
+				}
+				if strings.TrimSpace(string(runes[k:bodyEnd])) == delim {
+					k = bodyEnd
+					break
+				}
+				if bodyEnd >= n {
+					k = n
+					break
+				}
+				k = bodyEnd + 1
+			}
+			i = k - 1
+		case c == '#' && atBoundary:
+			for i < n && runes[i] != '\n' {
 				i++
 			}
-			stmts = append(stmts, cur.String())
-			cur.Reset()
-		case c == '&' && i+1 < len(runes) && runes[i+1] == '&':
+			i--
+		case c == ';' || c == '\n':
+			split()
+		case c == '|':
+			if i+1 < n && runes[i+1] == '|' {
+				i++
+			}
+			split()
+		case c == '&' && i+1 < n && runes[i+1] == '&':
 			i++
-			stmts = append(stmts, cur.String())
-			cur.Reset()
+			split()
 		default:
-			cur.WriteRune(c)
+			write(c)
 		}
 	}
 	return append(stmts, cur.String())
