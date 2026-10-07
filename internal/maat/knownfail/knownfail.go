@@ -28,8 +28,8 @@ type Fix struct {
 }
 
 type Guard struct {
-	Kind string `json:"kind"` // test | script
-	Ref  string `json:"ref"`  // test: a Go test name; script: a repo-relative executable that CI runs. Either must exist in the repo
+	Kind string `json:"kind"` // test | script | cross-repo-script
+	Ref  string `json:"ref"`  // test: a Go test name; script: a repo-relative executable that CI runs; cross-repo-script: "owner/repo@commit:path" in another Sirsi repo's own checkout
 }
 
 type Entry struct {
@@ -86,7 +86,7 @@ func parse(b []byte) (Catalog, error) {
 			if e.Fix.FixedIn == "" || e.Fix.Text == "" {
 				return Catalog{}, fmt.Errorf("known-failure %q: resolved needs fix.text and fix.fixed_in", e.ID)
 			}
-			if (e.Guard.Kind != "test" && e.Guard.Kind != "script") || e.Guard.Ref == "" {
+			if (e.Guard.Kind != "test" && e.Guard.Kind != "script" && e.Guard.Kind != "cross-repo-script") || e.Guard.Ref == "" {
 				return Catalog{}, fmt.Errorf("known-failure %q: resolved needs a regression guard (guard.kind=test or script, guard.ref)", e.ID)
 			}
 		default:
