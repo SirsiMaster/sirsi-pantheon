@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Register adds an OPEN problem to the catalog file at path (the repo's
@@ -181,22 +183,60 @@ func crossRepoGuardExistsIn(devRoot, ref string) error {
 	return nil
 }
 
-// ciRunsExactPath reports whether a CI workflow actually invokes path as a
-// command token — not merely mentioned in a comment, and not a longer path
-// that happens to end the same way (e.g. "path.disabled"). Comments are
-// stripped per line before tokenizing, so "# scripts/guard.sh" never counts,
-// and tokens are compared for an exact (optionally "./"-prefixed, or
-// parent-path-qualified) match, so "scripts/guard.sh.disabled" never counts.
+// ciWorkflow is the slice of GitHub Actions workflow shape ciRunsExactPath
+// needs: every job's steps, each step's run script. Any other field (name,
+// uses, env, with, comments) is not a shell command and is never consulted —
+// a path merely named in a step's "name:" or passed as an argument to echo/cat
+// is not an invocation.
+type ciWorkflow struct {
+	Jobs map[string]struct {
+		Steps []struct {
+			Run string `yaml:"run"`
+		} `yaml:"steps"`
+	} `yaml:"jobs"`
+}
+
+var stmtSplitRe = regexp.MustCompile(`&&|\|\||[;|]`)
+
+// shellWrappers are the only supported command-grammar prefixes that make the
+// FOLLOWING token the thing actually executed (`bash scripts/guard.sh`,
+// `sh scripts/guard.sh`, `source scripts/guard.sh`, `. scripts/guard.sh`).
+// Anything else in command position — echo, cat, printf, or the path itself —
+// is read literally: the path must BE the command, not its argument.
+var shellWrappers = map[string]bool{"bash": true, "sh": true, "source": true, ".": true}
+
+// ciRunsExactPath reports whether a CI workflow actually EXECUTES path as a
+// shell command, fail-closed over a small supported grammar: the first word
+// of a statement (split on &&, ||, ;, |, newline) in a step's run: script, or
+// the second word when the first is a known interpreter wrapper. A path that
+// is merely mentioned — as a step's name, a comment, or an argument to echo
+// or cat — is inert and does not count, because none of those actually run
+// it; only real YAML parsing (not line/token scanning) can tell a run: step
+// from a name: field or a comment in the first place.
 func ciRunsExactPath(ciYAML []byte, path string) bool {
-	for _, line := range strings.Split(string(ciYAML), "\n") {
-		if idx := strings.Index(line, "#"); idx >= 0 {
-			line = line[:idx]
-		}
-		for _, tok := range strings.Fields(line) {
-			tok = strings.Trim(tok, "\"'")
-			tok = strings.TrimPrefix(tok, "./")
-			if tok == path || strings.HasSuffix(tok, "/"+path) {
-				return true
+	var wf ciWorkflow
+	if err := yaml.Unmarshal(ciYAML, &wf); err != nil {
+		return false
+	}
+	for _, job := range wf.Jobs {
+		for _, step := range job.Steps {
+			for _, line := range strings.Split(step.Run, "\n") {
+				for _, stmt := range stmtSplitRe.Split(line, -1) {
+					fields := strings.Fields(stmt)
+					if len(fields) == 0 {
+						continue
+					}
+					cmd := strings.TrimPrefix(strings.Trim(fields[0], "\"'"), "./")
+					if cmd == path || strings.HasSuffix(cmd, "/"+path) {
+						return true
+					}
+					if shellWrappers[cmd] && len(fields) > 1 {
+						arg := strings.TrimPrefix(strings.Trim(fields[1], "\"'"), "./")
+						if arg == path || strings.HasSuffix(arg, "/"+path) {
+							return true
+						}
+					}
+				}
 			}
 		}
 	}

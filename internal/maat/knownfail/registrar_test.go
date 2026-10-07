@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -22,7 +23,7 @@ func buildFakeRepo(t *testing.T, devRoot, owner, repoName, scriptPath string) st
 	must(os.MkdirAll(filepath.Join(dir, filepath.Dir(scriptPath)), 0o755))
 	must(os.MkdirAll(filepath.Join(dir, ".github", "workflows"), 0o755))
 	must(os.WriteFile(filepath.Join(dir, scriptPath), []byte("#!/bin/sh\n"), 0o755))
-	must(os.WriteFile(filepath.Join(dir, ".github", "workflows", "ci.yml"), []byte("run: "+scriptPath+"\n"), 0o644))
+	must(os.WriteFile(filepath.Join(dir, ".github", "workflows", "ci.yml"), []byte("jobs:\n  build:\n    steps:\n      - run: "+scriptPath+"\n"), 0o644))
 	run := func(args ...string) {
 		t.Helper()
 		if err := gitCmd(dir, args...).Run(); err != nil {
@@ -158,13 +159,28 @@ func TestCrossRepoGuardRefusesNonExecutableBlob(t *testing.T) {
 	}
 }
 
+// wrapStep puts a run: script inside a minimal real jobs/steps document, the
+// only shape ciRunsExactPath reads.
+func wrapStep(run string) string {
+	return "jobs:\n  build:\n    steps:\n      - run: " + run + "\n"
+}
+
+// wrapStepBlock uses a literal block scalar so a multi-line script (or one
+// containing a "#") survives verbatim into the run field.
+func wrapStepBlock(run string) string {
+	indented := strings.ReplaceAll(run, "\n", "\n          ")
+	return "jobs:\n  build:\n    steps:\n      - run: |\n          " + indented + "\n"
+}
+
 func TestCiRunsExactPathRejectsCommentsAndSuffixMatches(t *testing.T) {
 	path := "scripts/guard.sh"
 	accept := []string{
-		"run: scripts/guard.sh\n",
-		"run: bash scripts/guard.sh --flag\n",
-		"run: ./scripts/guard.sh\n",
-		"run: |\n  scripts/guard.sh\n",
+		wrapStep("scripts/guard.sh"),
+		wrapStep("bash scripts/guard.sh --flag"),
+		wrapStep("./scripts/guard.sh"),
+		wrapStepBlock("scripts/guard.sh"),
+		wrapStepBlock("set -e\nscripts/guard.sh"),
+		wrapStepBlock("echo start && scripts/guard.sh"),
 	}
 	for _, yaml := range accept {
 		if !ciRunsExactPath([]byte(yaml), path) {
@@ -172,14 +188,17 @@ func TestCiRunsExactPathRejectsCommentsAndSuffixMatches(t *testing.T) {
 		}
 	}
 	reject := []string{
-		"# scripts/guard.sh\n",
-		"run: echo nothing # scripts/guard.sh\n",
-		"run: scripts/guard.sh.disabled\n",
-		"run: other-scripts/guard.sh\n",
+		"# " + path + "\n",                 // a comment, no jobs at all
+		wrapStep("echo nothing # " + path), // YAML comment stripped before the shell ever sees it
+		wrapStep(path + ".disabled"),       // suffix match, not the path itself
+		wrapStep("other-" + path),          // a different, longer path
+		wrapStep("echo " + path),           // path is an ARGUMENT to echo, not the command run
+		wrapStep("cat " + path),            // path is an ARGUMENT to cat, not the command run
+		"jobs:\n  build:\n    steps:\n      - name: " + path + "\n        run: echo nothing\n", // named for the path but never invoked
 	}
 	for _, yaml := range reject {
 		if ciRunsExactPath([]byte(yaml), path) {
-			t.Errorf("must reject comment-only or suffix-only match: %q", yaml)
+			t.Errorf("must reject non-invocation: %q", yaml)
 		}
 	}
 }
