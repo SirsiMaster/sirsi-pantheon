@@ -160,3 +160,39 @@ func TestInformerCoexistenceNegativeControl6_SimultaneousEdgeNoDuplicateSpawn(t 
 			len(lines), lines)
 	}
 }
+
+// TestDeliveryAttemptDoesNotImplyReadAck is ADR-065 Phase 1 Negative Control
+// 5 (rs-37 task 6, Decision 2 correction): a successful delivery attempt
+// (the informer's push) must record wake_status/wake_attempted_at and must
+// NEVER set acked_at — only the lane's own `router acknowledge` call
+// (work.SetAckedAt) does that.
+func TestDeliveryAttemptDoesNotImplyReadAck(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("SIRSI_ROUTER_STORE_WAKE", "0")
+	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(root, "unused-store.db"))
+
+	writeItem(t, root, "20261007-000001-nc5", "owner", "nc5-agent", "NC5 fixture", "open", time.Now().UTC(), time.Time{})
+
+	before, err := OpenItems(root, "nc5-agent")
+	if err != nil || len(before) != 1 {
+		t.Fatalf("OpenItems before mark: items=%v err=%v", before, err)
+	}
+	if before[0].AckedAt != "" {
+		t.Fatalf("fixture item already has acked_at %q before any mark", before[0].AckedAt)
+	}
+
+	markDeliveryAttempted(root, "nc5-agent")
+
+	after, err := OpenItems(root, "nc5-agent")
+	if err != nil || len(after) != 1 {
+		t.Fatalf("OpenItems after mark: items=%v err=%v", after, err)
+	}
+	item := after[0]
+	if item.WakeStatus != WakeStatusAttempted || item.WakeAttemptedAt == "" {
+		t.Fatalf("delivery-attempt marker not recorded: wake_status=%q wake_attempted_at=%q", item.WakeStatus, item.WakeAttemptedAt)
+	}
+	if item.AckedAt != "" {
+		t.Fatalf("delivery attempt set acked_at=%q — adapter success must never imply read-acknowledgement "+
+			"(ADR-065 Decision 2 correction); only `router acknowledge` (work.SetAckedAt) may write it", item.AckedAt)
+	}
+}
