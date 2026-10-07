@@ -275,6 +275,7 @@ func splitShellStatements(script string) [][]string {
 	addRune := func(r rune) {
 		word.WriteRune(r)
 		wordStarted = true
+		atBoundary = false
 	}
 	endWord := func() {
 		if wordStarted {
@@ -337,9 +338,11 @@ func splitShellStatements(script string) [][]string {
 		case c == '\'' && !inDouble:
 			inSingle = !inSingle
 			wordStarted = true
+			atBoundary = false
 		case c == '"' && !inSingle:
 			inDouble = !inDouble
 			wordStarted = true
+			atBoundary = false
 		case inSingle || inDouble:
 			addRune(c)
 		case c == '<' && i+1 < n && runes[i+1] == '<':
@@ -361,6 +364,7 @@ func splitShellStatements(script string) [][]string {
 			}
 			pending = append(pending, heredocSpec{delim: delim, dash: dashForm})
 			i = rest + consumed - 1
+			atBoundary = false
 		case c == '#' && atBoundary:
 			for i < n && runes[i] != '\n' {
 				i++

@@ -357,3 +357,42 @@ func TestCiRunsExactPathRejectsEmptyWordsEscapesAndQueuedHeredocs(t *testing.T) 
 		}
 	}
 }
+
+// TestSplitShellStatementsTracksWordBoundaryThroughNonWhitespaceRunes covers
+// automated security review on 6bc5bc96: addRune stopped clearing
+// atBoundary, so it stayed true (its zero-value) past any non-whitespace
+// character that didn't happen to toggle a quote. A `#` immediately after
+// such a character (e.g. `x#`) was then wrongly treated as starting a
+// comment — a REAL shell only treats `#` as a comment opener at the start
+// of a word (preceded by whitespace or the start of script), never stuck to
+// the end of the previous token. Skipping the "comment" also skipped the
+// quote character it happened to contain WITHOUT opening that quote, so a
+// single-quoted guard-path-as-data block after it was never actually
+// quoted: the path then parsed as a normal, unquoted top-level statement
+// and matched — a verification bypass, not just an over-rejection.
+func TestSplitShellStatementsTracksWordBoundaryThroughNonWhitespaceRunes(t *testing.T) {
+	path := "scripts/guard.sh"
+	reject := []string{
+		// The guard path is supposed to be heredoc-shaped data inside a
+		// single-quoted block; if the preceding '#' is wrongly treated as
+		// a mid-word comment, the quote char is skipped unopened and the
+		// path below parses as a real top-level statement.
+		wrapStepBlock("echo x#'\n" + path + "\n'"),
+		wrapStepBlock("echo ''#'\n" + path + "\n'"),
+	}
+	for _, yaml := range reject {
+		if ciRunsExactPath([]byte(yaml), path) {
+			t.Errorf("must reject non-invocation (comment-swallowed-quote bypass): %q", yaml)
+		}
+	}
+	// A '#' immediately after a real word boundary must still start a
+	// comment — the fix must not disable comment detection altogether.
+	accept := []string{
+		wrapStepBlock("echo x #" + path + "\n" + path),
+	}
+	for _, yaml := range accept {
+		if !ciRunsExactPath([]byte(yaml), path) {
+			t.Errorf("must accept real invocation after a genuine comment line: %q", yaml)
+		}
+	}
+}
