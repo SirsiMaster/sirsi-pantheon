@@ -177,8 +177,16 @@ func runInformerLane(ctx context.Context, routerRoot, agentID string, consumer *
 			log.Printf("informer %s: no live worker thread registered for this lane, declining to dispatch", agentID)
 			continue
 		}
-		if thr.Lane != nil && thr.Lane.Hold == HoldQuarantine {
-			log.Printf("informer %s: lane quarantined by its own wake loop, holding dispatch too", agentID)
+		// The loop's own no-progress backoff (HoldBackoff) lives only in its
+		// in-memory nextDispatchAllowed/fruitless counters (wake.go) — its
+		// published Lane.Hold is the ONLY place that state is visible to a
+		// second process, so every published hold is honored here, not just
+		// quarantine (codex-pantheon review 20261008-193715, finding 1).
+		// HoldUntil zero means "until the condition clears" (quarantine,
+		// window, attended, slots); non-zero means time-boxed (backoff).
+		if thr.Lane != nil && thr.Lane.Hold != "" &&
+			(thr.Lane.HoldUntil.IsZero() || time.Now().Before(thr.Lane.HoldUntil)) {
+			log.Printf("informer %s: lane held (%s) by its own wake loop, holding dispatch too", agentID, thr.Lane.Hold)
 			continue
 		}
 		bound := bindConsumerThread(consumer, thr.ThreadID)
@@ -208,7 +216,21 @@ func currentWorkerThread(routerRoot, agentID string) *Thread {
 	if err != nil {
 		return nil
 	}
-	return findWorkerThread(reg, agentID, MachineID())
+	thr := findWorkerThread(reg, agentID, MachineID())
+	if thr == nil {
+		return nil
+	}
+	// findWorkerThread filters by registry status only (non-terminal,
+	// non-suspended) — a crashed loop that never got to flip its own status
+	// leaves a stale "active" record forever. adoptWorkerThread is safe to
+	// hand that record to its OWNER (it re-points PID/StartTime to itself),
+	// but the informer is a DIFFERENT process borrowing it read-only, so it
+	// must check OS truth itself before trusting the record is a live
+	// RunWakeLoop (codex-pantheon review 20261008-193715, finding 2).
+	if DeadByOSTruth(PIDStateOfThread(thr)) {
+		return nil
+	}
+	return thr
 }
 
 // markDeliveryAttempted is the ADR-065 Decision 2 correction (task 6): the
