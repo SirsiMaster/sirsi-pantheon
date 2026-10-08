@@ -9,11 +9,10 @@
 
 The router has one browser read model and three supported front doors:
 
-1. **Standalone:** Pantheon serves `/router` from `sirsi board-serve`.
-2. **Pantheon/Horus:** the existing dashboard links to and may consume the same
-   versioned surface contract.
-3. **Nexus:** the portal discovers and embeds `/router?surface=nexus`, or consumes
-   the contract directly when embedding is unavailable.
+1. **Standalone:** the supervised Pantheon/Horus server serves `/router`.
+2. **Pantheon/Horus:** the existing dashboard and the standalone page call the
+   same typed `RouterFn` producer.
+3. **Nexus:** the portal discovers and consumes the versioned snapshot contract.
 
 All three are projections of the Ra-owned router service. They do not open
 SQLite, read `agents.json`, reconstruct leases, or maintain local copies of
@@ -30,10 +29,9 @@ Discovery is `GET /api/router/v1/manifest` and must identify:
 - the canonical snapshot, stream, ledger, and task endpoints; and
 - the declared Pantheon/Nexus integrations.
 
-`GET /api/router/v1/snapshot` returns the last successful producer snapshot.
-Before the first successful poll it returns `503`, not fabricated zero state.
-The stream and projections are no-store responses. Cross-origin reads use an
-explicit allowlist; wildcard credentialed CORS is not permitted.
+`GET /api/router/v1/snapshot` returns the current producer snapshot or `503`.
+It never fabricates zero state. Cross-origin reads use an explicit allowlist;
+wildcard credentialed CORS is not permitted.
 
 The standalone page keeps mutations separate from the read contract. Existing
 operator actions remain behind the established router controls and are not

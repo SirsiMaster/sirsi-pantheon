@@ -47,6 +47,59 @@ func TestAPIRouterNilFailingAndWired(t *testing.T) {
 	}
 }
 
+func TestRouterSurfaceUsesTheHorusProducer(t *testing.T) {
+	t.Parallel()
+	want := RouterSnapshot{Version: "v-surface", GeneratedAt: "2026-10-08T12:00:00Z", Lanes: RouterLanes{Counts: map[string]int{"active": 2}}}
+	ts := testServer(t, Config{RouterFn: func() (RouterSnapshot, error) { return want, nil }})
+	defer ts.Close()
+
+	manifest, err := http.Get(ts.URL + "/api/router/v1/manifest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manifest.Body.Close()
+	if manifest.StatusCode != http.StatusOK || manifest.Header.Get("X-Sirsi-Router-Schema") != "router-surface.v1" {
+		t.Fatalf("manifest = %d schema=%q", manifest.StatusCode, manifest.Header.Get("X-Sirsi-Router-Schema"))
+	}
+	var m map[string]any
+	if err := json.NewDecoder(manifest.Body).Decode(&m); err != nil || m["authority"] != "ra" {
+		t.Fatalf("manifest = %+v err=%v", m, err)
+	}
+
+	snapshot, err := http.Get(ts.URL + "/api/router/v1/snapshot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer snapshot.Body.Close()
+	var got RouterSnapshot
+	if snapshot.StatusCode != http.StatusOK || json.NewDecoder(snapshot.Body).Decode(&got) != nil || got.Version != want.Version {
+		t.Fatalf("snapshot = %d %+v", snapshot.StatusCode, got)
+	}
+
+	page, err := http.Get(ts.URL + "/router")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer page.Body.Close()
+	if page.StatusCode != http.StatusOK {
+		t.Fatalf("router page = %d", page.StatusCode)
+	}
+}
+
+func TestRouterSurfaceFailsClosedWhenProducerIsMissing(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t, Config{})
+	defer ts.Close()
+	resp, err := http.Get(ts.URL + "/api/router/v1/snapshot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("snapshot without producer = %d, want 503", resp.StatusCode)
+	}
+}
+
 // The home page is the new dashboard: it loads the brand-token stylesheet and the app,
 // and the app reads the router API. A page that cannot reach its data ships blank.
 func TestHomeServesTheDashboardAndItsAssets(t *testing.T) {
