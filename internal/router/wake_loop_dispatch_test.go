@@ -797,6 +797,17 @@ func TestStalledConsumerIsTerminatedOnceAndReplaced(t *testing.T) {
 		_ = syscall.Kill(-first, syscall.SIGKILL)
 		t.Fatalf("stalled consumer pid %d still alive after termination", first)
 	}
+	// The exited consumer's marker-cleanup goroutine (wake.go) wakes on the
+	// SAME process exit this loop just confirmed via syscall.Kill ESRCH, then
+	// does its own filesystem work (clearConsumerPIDFileIfMatch takes the
+	// admission lock) inside this test's TempDir. There is nothing externally
+	// observable to poll for — a no-op (the replacement already overwrote the
+	// marker) and a completed no-op look identical from here — so give it a
+	// short bounded grace to finish before TempDir's own cleanup starts
+	// removing the directory out from under it (intermittent race found by
+	// `go test -race -count=15`: "TempDir RemoveAll cleanup: ... directory
+	// not empty").
+	time.Sleep(500 * time.Millisecond)
 	// Every later consumer is killed on cancel-independent grounds too; sweep so
 	// no 30 s sleeper outlives the test.
 	for _, f := range strings.Fields(string(b))[1:] {

@@ -365,11 +365,15 @@ func consumerPIDFilePath(routerRoot, agentID string) string {
 }
 
 // writeConsumerPIDFile records the just-dispatched consumer's (pid, startedAt)
-// so a restarted loop can find it. Best-effort: a write failure only costs the
-// restart-survives-dispatch guarantee, never the dispatch itself.
-func writeConsumerPIDFile(routerRoot, agentID string, pid int, startedAt string) {
+// so a restarted loop can find it, and so a delayed cleanup can confirm it is
+// still removing the consumer it dispatched (see clearConsumerPIDFileIfMatch).
+// The coexistence guarantee (admitConsumer, below) depends on this marker
+// actually landing — a discarded write error lets two sequential admissions
+// both believe they are first (codex-pantheon review of PR #1044, finding
+// P2), so the error is returned rather than swallowed.
+func writeConsumerPIDFile(routerRoot, agentID string, pid int, startedAt string) error {
 	path := consumerPIDFilePath(routerRoot, agentID)
-	_ = os.WriteFile(path, []byte(strconv.Itoa(pid)+"\n"+startedAt+"\n"), 0o644)
+	return os.WriteFile(path, []byte(strconv.Itoa(pid)+"\n"+startedAt+"\n"), 0o644)
 }
 
 // clearConsumerPIDFile removes the marker once the dispatching process has
@@ -378,24 +382,55 @@ func clearConsumerPIDFile(routerRoot, agentID string) {
 	_ = os.Remove(consumerPIDFilePath(routerRoot, agentID))
 }
 
+// readConsumerPIDFile parses the durable marker, or returns ok=false if it is
+// absent or unparseable.
+func readConsumerPIDFile(routerRoot, agentID string) (pid int, startedAt string, ok bool) {
+	data, err := os.ReadFile(consumerPIDFilePath(routerRoot, agentID))
+	if err != nil {
+		return 0, "", false
+	}
+	lines := strings.SplitN(strings.TrimSpace(string(data)), "\n", 2)
+	pid, perr := strconv.Atoi(strings.TrimSpace(lines[0]))
+	if perr != nil || pid <= 0 {
+		return 0, "", false
+	}
+	if len(lines) > 1 {
+		startedAt = strings.TrimSpace(lines[1])
+	}
+	return pid, startedAt, true
+}
+
+// clearConsumerPIDFileIfMatch removes the marker only if it still records the
+// exact (pid, startedAt) signature of the consumer that is exiting, under the
+// same admission lock admitConsumer uses. Without the lock-and-compare, a
+// delayed cleanup for an OLD consumer can fire after a concurrent admission
+// has already adopted-then-replaced it or spawned a NEW one under the same
+// agentID, deleting the newer consumer's live marker and letting the next
+// admission spawn a duplicate beside it (codex-pantheon review of PR #1044,
+// finding P1).
+func clearConsumerPIDFileIfMatch(routerRoot, agentID string, pid int, startedAt string) {
+	unlock, lerr := lockConsumerAdmission(consumerAdmissionLockPath(routerRoot, agentID))
+	if lerr != nil {
+		return
+	}
+	defer unlock()
+
+	curPID, curStarted, ok := readConsumerPIDFile(routerRoot, agentID)
+	if !ok || curPID != pid || curStarted != startedAt {
+		return // marker already belongs to a different (newer) consumer, or is gone
+	}
+	clearConsumerPIDFile(routerRoot, agentID)
+}
+
 // adoptRunningConsumer reads the durable marker and, if the recorded PID is
 // still OS-truth alive (recycle-guarded by its start signature), returns a
 // consumerRun this loop can poll instead of blind-dispatching a duplicate. A
 // stale marker (process gone) is cleaned up so it never misreports again.
 func adoptRunningConsumer(routerRoot, agentID string) *consumerRun {
-	data, err := os.ReadFile(consumerPIDFilePath(routerRoot, agentID))
-	if err != nil {
-		return nil
-	}
-	lines := strings.SplitN(strings.TrimSpace(string(data)), "\n", 2)
-	pid, perr := strconv.Atoi(strings.TrimSpace(lines[0]))
-	if perr != nil || pid <= 0 {
+	pid, startedAt, ok := readConsumerPIDFile(routerRoot, agentID)
+	if !ok {
 		clearConsumerPIDFile(routerRoot, agentID)
 		return nil
-	}
-	startedAt := ""
-	if len(lines) > 1 {
-		startedAt = strings.TrimSpace(lines[1])
 	}
 	if PIDStateOf(pid, startedAt) != PIDAlive {
 		clearConsumerPIDFile(routerRoot, agentID)
@@ -448,6 +483,28 @@ func admitConsumer(routerRoot, agentID string, rc *ResolvedConsumer) (run *consu
 	if err != nil {
 		return nil, false, err
 	}
-	writeConsumerPIDFile(routerRoot, agentID, run.pid, getPIDStartFn()(run.pid))
+	startedAt := getPIDStartFn()(run.pid)
+	if werr := writeConsumerPIDFile(routerRoot, agentID, run.pid, startedAt); werr != nil {
+		// The coexistence guarantee lives in this marker: a live, unrecorded
+		// consumer is indistinguishable from "nothing running" to the next
+		// admission, which would spawn a duplicate. Roll the fresh spawn back
+		// rather than return success with an untracked process (finding P2).
+		//
+		// Rollback is not instantaneous: terminateConsumer sends SIGTERM and
+		// only schedules SIGKILL after consumerKillGrace, so a TERM-ignoring
+		// consumer can stay alive well past this call returning. Releasing
+		// the admission lock (deferred, above) the moment this function
+		// returns would let a concurrent/next-tick caller see no marker and
+		// admit a SECOND live, equally unrecorded consumer during that
+		// window (codex-pantheon review of 1d965e57, finding P1). So this
+		// blocks on run.done — holding admission authority for this agent —
+		// until the rollback is actually confirmed dead, not merely signaled.
+		if terr := terminateConsumer(run.pid); terr != nil {
+			log.Printf("router: rollback SIGTERM for %s pid %d failed: %v", agentID, run.pid, terr)
+		}
+		<-run.done
+		return nil, false, fmt.Errorf("publish consumer marker for %s (pid %d): %w", agentID, run.pid, werr)
+	}
+	run.startedAt = startedAt
 	return run, false, nil
 }
