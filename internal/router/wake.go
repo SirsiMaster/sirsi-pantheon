@@ -991,10 +991,13 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 					run.depthAtDispatch = depth
 					scored = false
 					// #642: durable marker (written by admitConsumer) so a restarted
-					// loop adopts this child instead of duplicating it.
+					// loop adopts this child instead of duplicating it. Cleared only if
+					// it still names THIS run's (pid, startedAt) — a concurrent admission
+					// may have already adopted-then-replaced it after this one exited,
+					// and that newer marker must survive (finding P1).
 					go func(r *consumerRun) {
 						<-r.done
-						clearConsumerPIDFile(routerRoot, agentID)
+						clearConsumerPIDFileIfMatch(routerRoot, agentID, r.pid, r.startedAt)
 					}(run)
 					if err := recordDispatch(agentID, time.Now()); err != nil {
 						// Forfeiting rate protection silently is how a ceiling becomes
