@@ -17,12 +17,16 @@
 package router
 
 import (
+	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // loadAvgMu guards the injected seam (Rule A16/A21): tests substitute a fixed
@@ -48,6 +52,71 @@ var cpuIdleRe = regexp.MustCompile(`([0-9.]+)% idle`)
 // old gate tripped at 2x). A read failure returns 0, false — an unreadable
 // host is not evidence of an overloaded host, so callers must not gate.
 func defaultLoadAvg1m() (float64, bool) {
+	if v, ok := readHostLoadCache(); ok {
+		return v, true
+	}
+	v, ok := loadProbeFn()
+	if ok {
+		writeHostLoadCache(v)
+	}
+	return v, ok
+}
+
+// hostLoadCacheTTL: every wake loop on a host asks this question each cycle, and the answer
+// costs a `top -l 2` (3-8 s at 5-8% of a core). Nine loops measured 0.1-0.15 of a core,
+// constantly (Mercury, 2026-10-07). One probe per host per TTL serves all of them; a gate
+// that tolerates a 30 s old reading loses nothing, since dispatch pacing is minutes.
+const hostLoadCacheTTL = 30 * time.Second
+
+var (
+	loadProbeFn       = probeLoad
+	hostLoadNow       = time.Now
+	hostLoadCachePath = func() string {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+		return filepath.Join(home, ".sirsi", "host-load.cache")
+	}
+)
+
+func readHostLoadCache() (float64, bool) {
+	p := hostLoadCachePath()
+	if p == "" {
+		return 0, false
+	}
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return 0, false
+	}
+	var ms int64
+	var v float64
+	if n, _ := fmt.Sscanf(string(b), "%d %f", &ms, &v); n != 2 {
+		return 0, false
+	}
+	age := hostLoadNow().Sub(time.UnixMilli(ms))
+	if age < 0 || age > hostLoadCacheTTL {
+		return 0, false
+	}
+	return v, true
+}
+
+// writeHostLoadCache is best effort and atomic (tmp + rename): a failed write only means
+// the next loop probes again.
+func writeHostLoadCache(v float64) {
+	p := hostLoadCachePath()
+	if p == "" {
+		return
+	}
+	tmp := fmt.Sprintf("%s.%d", p, os.Getpid())
+	if os.WriteFile(tmp, []byte(fmt.Sprintf("%d %f", hostLoadNow().UnixMilli(), v)), 0o600) == nil {
+		if os.Rename(tmp, p) != nil {
+			_ = os.Remove(tmp)
+		}
+	}
+}
+
+func probeLoad() (float64, bool) {
 	if out, err := exec.Command("top", "-l", "2", "-n", "0", "-s", "1").Output(); err == nil {
 		if m := cpuIdleRe.FindAllStringSubmatch(string(out), -1); len(m) > 0 {
 			if idle, err := strconv.ParseFloat(m[len(m)-1][1], 64); err == nil {
