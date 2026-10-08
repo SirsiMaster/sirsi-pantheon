@@ -48,6 +48,6 @@ func runSchemaCheck(_ *cobra.Command, _ []string) error {
 }
 
 func init() {
-	schemaCheckCmd.Flags().StringVar(&schemaCheckDBFlag, "db", "", "local router store path (default: $SIRSI_ROUTER_DB or ~/.sirsi/router.db; refused when SIRSI_ROUTER_URL is set)")
+	schemaCheckCmd.Flags().StringVar(&schemaCheckDBFlag, "db", "", "explicit local router store path (otherwise $SIRSI_ROUTER_DB; implicit ~/.sirsi/router.db is refused)")
 	rootCmd.AddCommand(schemaCheckCmd)
 }

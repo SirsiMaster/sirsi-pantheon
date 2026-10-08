@@ -31,8 +31,8 @@ func TestResolveAndLocalPathRefuseWhenServiceURLSet(t *testing.T) {
 	}
 }
 
-// Resolve honors SIRSI_ROUTER_DB and creates the parent directory, so a fresh
-// HOME (or a fresh temp dir) is not an error.
+// Resolve honors an explicitly supplied SIRSI_ROUTER_DB and creates the parent
+// directory, so deliberate test/sandbox stores remain available.
 func TestResolveOpensSIRSIRouterDBAndCreatesParent(t *testing.T) {
 	t.Setenv("SIRSI_ROUTER_URL", "")
 	path := filepath.Join(t.TempDir(), "nested", "dir", "router.db")
@@ -46,6 +46,51 @@ func TestResolveOpensSIRSIRouterDBAndCreatesParent(t *testing.T) {
 	got, err := LocalPath()
 	if err != nil || got != path {
 		t.Fatalf("LocalPath = %q, %v; want %q", got, err, path)
+	}
+}
+
+// A process with neither the service pointer nor an explicit test/sandbox DB
+// must fail closed. It must not recreate the retired ~/.sirsi/router.db.
+func TestResolveRefusesImplicitLocalLedger(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("SIRSI_ROUTER_URL", "")
+	t.Setenv("SIRSI_ROUTER_TOKEN", "")
+	t.Setenv("SIRSI_ROUTER_DB", "")
+
+	if s, err := Resolve(); err == nil {
+		if s != nil {
+			_ = s.Close()
+		}
+		t.Fatal("Resolve without service or explicit DB must refuse")
+	} else if !strings.Contains(err.Error(), "refusing an implicit local ledger") {
+		t.Fatalf("Resolve error = %v, want implicit-ledger refusal", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".sirsi", "router.db")); !os.IsNotExist(err) {
+		t.Fatalf("implicit refusal must not create router.db, stat error=%v", err)
+	}
+	// The same refusal must hold when an old binary already left the retired
+	// path behind: Resolve must not open, mutate, or replace that stranded file.
+	legacyPath := filepath.Join(home, ".sirsi", "router.db")
+	if err := os.MkdirAll(filepath.Dir(legacyPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacyBytes := []byte("stranded legacy ledger")
+	if err := os.WriteFile(legacyPath, legacyBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if s, err := Resolve(); err == nil {
+		if s != nil {
+			_ = s.Close()
+		}
+		t.Fatal("Resolve must refuse even when the retired router.db already exists")
+	}
+	got, err := os.ReadFile(legacyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(legacyBytes) {
+		t.Fatalf("implicit refusal changed the stranded router.db: got %q", got)
 	}
 }
 

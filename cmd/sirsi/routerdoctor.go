@@ -48,6 +48,32 @@ func routerDBOnCutoverHostWarning() string {
 		"process; if this is an interactive shell, unset SIRSI_ROUTER_DB.", db, marker)
 }
 
+// routerLocalLedgerWarning catches the other half of the split-brain failure:
+// even after the resolver stops using ~/.sirsi/router.db, an old binary or
+// shell can recreate that path. A regular file there is never a harmless
+// cache on a service-backed host; it is a second writable ledger waiting for
+// a stale process to use it. This check is observational and never removes or
+// changes the path.
+func routerLocalLedgerWarning() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	marker := filepath.Join(home, ".sirsi", "router-service.env")
+	if _, err := os.Stat(marker); err != nil {
+		return ""
+	}
+	db := filepath.Join(home, ".sirsi", "router.db")
+	info, err := os.Lstat(db)
+	if err != nil {
+		return ""
+	}
+	if info.IsDir() {
+		return ""
+	}
+	return fmt.Sprintf("retired local router path %s exists as %s on a host cut over to the router service (%s exists); stale binaries must not be allowed to use or recreate it", db, info.Mode().Type(), marker)
+}
+
 // partitionWakeDrift classifies wake.mechanism ChangedFields by statting the
 // LaunchAgent plist on disk. Three outcomes:
 //
@@ -169,6 +195,10 @@ var routerDoctorCmd = &cobra.Command{
 
 		issues := 0
 		if w := routerDBOnCutoverHostWarning(); w != "" {
+			issues++
+			fmt.Printf("⚠ split-brain risk: %s\n\n", w)
+		}
+		if w := routerLocalLedgerWarning(); w != "" {
 			issues++
 			fmt.Printf("⚠ split-brain risk: %s\n\n", w)
 		}

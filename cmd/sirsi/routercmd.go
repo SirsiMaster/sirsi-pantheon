@@ -258,7 +258,7 @@ var (
 var routerSendCmd = &cobra.Command{
 	Use:   "send",
 	Short: "Send a work item from one agent to another",
-	Long: `Commits a new open work item to the durable router store (~/.sirsi/router.db).
+	Long: `Commits a new open work item to the canonical router service.
 The recipient picks it up on sirsi router pull <their-id>, or wakes on it
 immediately if they are blocked in sirsi router wait <their-id>.
 

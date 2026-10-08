@@ -21,10 +21,13 @@ import (
 //     as live or create an empty ledger. Rollback of a node is a deliberate
 //     procedure (docs/runbooks/router-service-tokens-and-rollback.md), not an
 //     unset variable.
-//  4. otherwise → ~/.sirsi/router.db (Anubis default).
+//  4. otherwise → refuse. There is no implicit local ledger (ADR-062 §1).
+//     A local SQLite store is available only when SIRSI_ROUTER_DB is explicitly
+//     supplied for a deliberate test/sandbox operation.
 //
-// The parent directory is created for the local cases: a fresh HOME has no
-// ~/.sirsi yet and SQLite cannot create a file in a missing directory.
+// The parent directory is created for explicit local test/sandbox cases: a
+// fresh HOME has no directory yet and SQLite cannot create a file in a missing
+// directory. Production callers never reach that path by accident.
 func Resolve() (Store, error) {
 	if u := strings.TrimSpace(os.Getenv("SIRSI_ROUTER_URL")); u != "" {
 		tok := strings.TrimSpace(os.Getenv("SIRSI_ROUTER_TOKEN"))
@@ -58,6 +61,9 @@ func Resolve() (Store, error) {
 			return Resolve()
 		}
 		return nil, fmt.Errorf("routerstore: this host is cut over to the router service (%s exists) but SIRSI_ROUTER_URL is unset and could not be recovered from the marker file — run `source ~/.zshenv` or start the process with the service env; the local file is not a ledger here", p)
+	}
+	if strings.TrimSpace(os.Getenv("SIRSI_ROUTER_DB")) == "" {
+		return nil, fmt.Errorf("routerstore: no router service is configured (SIRSI_ROUTER_URL or router-service.env) and SIRSI_ROUTER_DB is unset; refusing an implicit local ledger")
 	}
 	path, err := LocalPath()
 	if err != nil {

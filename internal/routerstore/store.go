@@ -16,8 +16,9 @@
 // # Design
 //
 //   - CGO-free SQLite via modernc.org/sqlite (Rule A3 static-binary mandate).
-//   - The DB lives OUTSIDE any git repo (default ~/.sirsi/router.db) so runtime
-//     state never pollutes the tree (PRD /goal #2). Callers pass the path.
+//   - The DB lives OUTSIDE any git repo so runtime state never pollutes the
+//     tree (PRD /goal #2). Production callers resolve the canonical service;
+//     deliberate local callers pass an explicit path.
 //   - WAL mode + a single *sql.DB with a serialized writer (busy_timeout +
 //     one connection for writes) keeps concurrent writes safe (Rule A21 intent
 //     applied at the DB layer).
@@ -93,8 +94,10 @@ func ReadSchemaVersion(path string) (int, error) {
 	return version, nil
 }
 
-// LocalPath returns the filesystem path of this host's LOCAL router store:
-// SIRSI_ROUTER_DB when set, else ~/.sirsi/router.db.
+// LocalPath returns the filesystem path of an explicitly selected LOCAL router
+// store. SIRSI_ROUTER_DB must be set; there is deliberately no ~/.sirsi/router.db
+// default. An implicit default created the second writable ledger that caused
+// the 2026-10-07 split-brain incident.
 //
 // It is for read-only, local-only diagnostics (schema-check, self-update
 // backup) — never for opening a store to mutate. Production mutation goes
@@ -105,14 +108,10 @@ func LocalPath() (string, error) {
 	if u := strings.TrimSpace(os.Getenv("SIRSI_ROUTER_URL")); u != "" {
 		return "", fmt.Errorf("routerstore: SIRSI_ROUTER_URL is set (%s); this host has no local ledger of record", u)
 	}
-	if p := os.Getenv("SIRSI_ROUTER_DB"); p != "" {
+	if p := strings.TrimSpace(os.Getenv("SIRSI_ROUTER_DB")); p != "" {
 		return p, nil
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("routerstore: resolve home dir: %w", err)
-	}
-	return filepath.Join(home, ".sirsi", "router.db"), nil
+	return "", fmt.Errorf("routerstore: SIRSI_ROUTER_DB is unset; refusing an implicit local ledger")
 }
 
 // Item is the durable projection of one work item. Fields mirror

@@ -259,8 +259,9 @@ func scanADRDocs(dir string) (map[int][]string, map[int][]string, error) {
 }
 
 func openRouterStoreForADR() (routerstore.Store, error) {
-	// Same resolution as dispatch.Open: ~/.sirsi/router.db, with
-	// SIRSI_ROUTER_DB overriding it. Matching that exactly matters — an ADR
+	// Same resolution as dispatch.Open: the canonical router service, with
+	// SIRSI_ROUTER_DB reserved for deliberate local sandboxes. Matching that
+	// exactly matters — an ADR
 	// allocator pointed at a different database than the router would hand out
 	// numbers nobody else can see, which is the drift it exists to prevent.
 	return routerstore.Resolve()
