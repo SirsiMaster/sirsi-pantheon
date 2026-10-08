@@ -168,13 +168,16 @@ func TestPingLaneJudgesTheBestWorker(t *testing.T) {
 // well as the environment, so a sandbox that strips env vars cannot unlink it.
 func TestBindConsumerThread(t *testing.T) {
 	rc := &ResolvedConsumer{Argv: []string{"codex", "exec", "You are a. Claim with --thread {{thread}} and report thread {{thread}}."}}
-	bindConsumerThread(rc, "thr-abc123")
-	got := strings.Join(rc.Argv, " ")
+	bound := bindConsumerThread(rc, "thr-abc123")
+	got := strings.Join(bound.Argv, " ")
 	if strings.Contains(got, "{{thread}}") || strings.Count(got, "thr-abc123") != 2 {
 		t.Fatalf("placeholder not substituted everywhere: %q", got)
 	}
+	if strings.Join(rc.Argv, " ") != "codex exec You are a. Claim with --thread {{thread}} and report thread {{thread}}." {
+		t.Fatalf("bindConsumerThread must not mutate its input in place: %q", rc.Argv)
+	}
 	found := false
-	for _, e := range rc.Env {
+	for _, e := range bound.Env {
 		if e == "SIRSI_THREAD_ID=thr-abc123" {
 			found = true
 		}

@@ -719,8 +719,7 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 	} else {
 		// The consumer inherits this loop's registered thread (Rule of Ra):
 		// the service binds its session to that thread at mint.
-		bindConsumerThread(rc, thr.ThreadID)
-		consumer = rc
+		consumer = bindConsumerThread(rc, thr.ThreadID)
 	}
 
 	// Publish the capability on the thread record. This is what stops a watch-only

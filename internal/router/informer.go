@@ -181,9 +181,9 @@ func runInformerLane(ctx context.Context, routerRoot, agentID string, consumer *
 			log.Printf("informer %s: lane quarantined by its own wake loop, holding dispatch too", agentID)
 			continue
 		}
-		bindConsumerThread(consumer, thr.ThreadID)
+		bound := bindConsumerThread(consumer, thr.ThreadID)
 
-		run, adopted, derr := admitConsumer(routerRoot, agentID, consumer)
+		run, adopted, derr := admitConsumer(routerRoot, agentID, bound)
 		if derr != nil {
 			log.Printf("informer %s: admission failed: %v", agentID, derr)
 			continue
