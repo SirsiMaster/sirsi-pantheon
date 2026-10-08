@@ -2,6 +2,7 @@ package router
 
 import (
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -234,6 +235,19 @@ func TestAdmitConsumerRollsBackDispatchWhenMarkerPublicationFails(t *testing.T) 
 	// its own trap. Unset SHELL so the script runs directly via its shebang.
 	t.Setenv("SHELL", "")
 
+	// Even without the login-shell detour, there is still a fork/exec/trap
+	// race: the rollback's SIGTERM can reach the child before the script's
+	// own "trap '' TERM" line has executed, killing it via SIGTERM's default
+	// disposition before it ever echoes its pid (observed: intermittent
+	// failures below ~150ms, well under consumerKillGrace, meaning TERM
+	// killed it, not the KILL that follows the grace). SIG_IGN survives
+	// fork+exec unless the new program installs its own handler, so ignoring
+	// SIGTERM in this test process before spawning closes the race at its
+	// root — the child inherits "ignored" from the instant it exists, before
+	// the shell has run a single line.
+	signal.Ignore(syscall.SIGTERM)
+	defer signal.Reset(syscall.SIGTERM)
+
 	log := filepath.Join(t.TempDir(), "spawned.log")
 	// A long sleep (not sleepConsumer's 1s) so the process is still alive at
 	// the moment admitConsumer returns, and only the rollback's SIGTERM/KILL
@@ -257,32 +271,25 @@ func TestAdmitConsumerRollsBackDispatchWhenMarkerPublicationFails(t *testing.T) 
 		t.Fatalf("admitConsumer returned a non-nil run on a failed publish: %+v", run)
 	}
 
-	// The script needs a moment to fork/exec and run its first line before the
-	// log appears — admitConsumer returning (with the rollback already
-	// in flight) does not mean the child has executed anything yet.
-	var pidBytes []byte
-	readDeadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(readDeadline) {
-		if b, rerr := os.ReadFile(log); rerr == nil && len(b) > 0 {
-			pidBytes = b
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if len(pidBytes) == 0 {
-		t.Fatalf("spawned process never recorded its pid in %s", log)
+	// admitConsumer already returned above — by construction (see the comment
+	// at the rollback call site) it does not return until the rollback is
+	// CONFIRMED dead, not merely signaled. So this checks immediately, with
+	// no grace poll: a pid still alive here means admitConsumer released its
+	// admission lock before termination actually completed, letting a
+	// concurrent/next-tick caller admit a second live, unrecorded consumer
+	// during that gap (codex-pantheon review of 1d965e57, finding P1 — "the
+	// added author test waits for eventual death, so it does not test this
+	// admission interval").
+	pidBytes, rerr := os.ReadFile(log)
+	if rerr != nil || len(pidBytes) == 0 {
+		t.Fatalf("spawned process never recorded its pid in %s: %v", log, rerr)
 	}
 	spawnedPID, perr := strconv.Atoi(strings.TrimSpace(string(pidBytes)))
 	if perr != nil {
 		t.Fatalf("parse spawned pid %q: %v", pidBytes, perr)
 	}
-
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if syscall.Kill(spawnedPID, 0) != nil {
-			return // confirmed dead — rollback terminated the untracked spawn
-		}
-		time.Sleep(20 * time.Millisecond)
+	if syscall.Kill(spawnedPID, 0) == nil {
+		_ = syscall.Kill(-spawnedPID, syscall.SIGKILL)
+		t.Fatalf("spawned pid %d still alive the instant admitConsumer returned — admission lock was released before rollback was confirmed dead", spawnedPID)
 	}
-	t.Fatalf("spawned pid %d still alive after admitConsumer's publish-failure rollback", spawnedPID)
 }

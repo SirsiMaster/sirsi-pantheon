@@ -489,7 +489,20 @@ func admitConsumer(routerRoot, agentID string, rc *ResolvedConsumer) (run *consu
 		// consumer is indistinguishable from "nothing running" to the next
 		// admission, which would spawn a duplicate. Roll the fresh spawn back
 		// rather than return success with an untracked process (finding P2).
-		_ = terminateConsumer(run.pid)
+		//
+		// Rollback is not instantaneous: terminateConsumer sends SIGTERM and
+		// only schedules SIGKILL after consumerKillGrace, so a TERM-ignoring
+		// consumer can stay alive well past this call returning. Releasing
+		// the admission lock (deferred, above) the moment this function
+		// returns would let a concurrent/next-tick caller see no marker and
+		// admit a SECOND live, equally unrecorded consumer during that
+		// window (codex-pantheon review of 1d965e57, finding P1). So this
+		// blocks on run.done — holding admission authority for this agent —
+		// until the rollback is actually confirmed dead, not merely signaled.
+		if terr := terminateConsumer(run.pid); terr != nil {
+			log.Printf("router: rollback SIGTERM for %s pid %d failed: %v", agentID, run.pid, terr)
+		}
+		<-run.done
 		return nil, false, fmt.Errorf("publish consumer marker for %s (pid %d): %w", agentID, run.pid, werr)
 	}
 	run.startedAt = startedAt
