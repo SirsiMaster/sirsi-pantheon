@@ -211,10 +211,18 @@ func runRelieveMemory() error {
 		return nil
 	}
 
-	// Apply: purge via macOS admin authorization. osascript shows the native
-	// password dialog; the credential is handled by the OS, never seen by sirsi.
-	script := `do shell script "/usr/sbin/purge" with administrator privileges`
-	if out, err := exec.Command("osascript", "-e", script).CombinedOutput(); err != nil {
+	// Apply. Unattended callers (--quiet: autoheal, Horus supervise) must never
+	// raise a GUI dialog nobody can answer — each one orphans an osascript
+	// process and re-pops every cycle — so they use non-interactive sudo only.
+	skipped, out, err := purgeCaches(runCombined, output.IsQuiet())
+	if skipped {
+		res.Status = "skipped"
+		res.Errors = []string{strings.TrimSpace(string(out))}
+		res.Summary = "Skipped cache flush — purge needs root and non-interactive sudo is unavailable; unattended runs never show an admin dialog. Run `sirsi relieve --memory --confirm` interactively."
+		res.Render()
+		return nil
+	}
+	if err != nil {
 		res.Status = "error"
 		res.Errors = []string{strings.TrimSpace(string(out))}
 		res.Summary = "Couldn't flush caches — the admin authorization was declined or failed, so nothing changed."
@@ -233,4 +241,22 @@ func runRelieveMemory() error {
 	res.Summary = fmt.Sprintf("Flushed inactive caches. Free memory: %.1f GB → %.1f GB · pressure now %s. (macOS re-caches as it needs to, so free may settle back — the pressure relief is the point.)", freeBefore, freeAfter, after.Pressure)
 	res.Render()
 	return nil
+}
+
+func runCombined(name string, args ...string) ([]byte, error) {
+	return exec.Command(name, args...).CombinedOutput()
+}
+
+// purgeCaches runs `purge` as root: passwordless sudo first, then — only for an
+// interactive caller — the native osascript admin dialog. skipped=true means an
+// unattended caller had no non-interactive path, so nothing was attempted.
+func purgeCaches(run func(string, ...string) ([]byte, error), unattended bool) (skipped bool, out []byte, err error) {
+	if out, err = run("sudo", "-n", "/usr/sbin/purge"); err == nil {
+		return false, out, nil
+	}
+	if unattended {
+		return true, out, err
+	}
+	out, err = run("osascript", "-e", `do shell script "/usr/sbin/purge" with administrator privileges`)
+	return false, out, err
 }
