@@ -65,6 +65,10 @@ func TestRouterSurfaceUsesTheHorusProducer(t *testing.T) {
 	if err := json.NewDecoder(manifest.Body).Decode(&m); err != nil || m["authority"] != "ra" {
 		t.Fatalf("manifest = %+v err=%v", m, err)
 	}
+	build, ok := m["build"].(map[string]any)
+	if !ok || build["version"] == nil || build["commit"] == nil {
+		t.Fatalf("manifest missing producer build identity: %+v", m)
+	}
 
 	snapshot, err := http.Get(ts.URL + "/api/router/v1/snapshot")
 	if err != nil {
@@ -97,6 +101,24 @@ func TestRouterSurfaceFailsClosedWhenProducerIsMissing(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("snapshot without producer = %d, want 503", resp.StatusCode)
+	}
+}
+
+// ADR-077: the versioned surface's failure status is uniformly 503 (service
+// unavailable, retry later) whether the producer was never wired or errored
+// on this call — unlike the older /api/router contract (502 for a failing
+// producer), which the v1 surface does not inherit.
+func TestRouterSurfaceSnapshotIs503WhenProducerErrors(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t, Config{RouterFn: func() (RouterSnapshot, error) { return RouterSnapshot{}, errors.New("boom") }})
+	defer ts.Close()
+	resp, err := http.Get(ts.URL + "/api/router/v1/snapshot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("snapshot with failing producer = %d, want 503", resp.StatusCode)
 	}
 }
 

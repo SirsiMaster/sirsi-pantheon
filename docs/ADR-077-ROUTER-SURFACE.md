@@ -1,4 +1,4 @@
-# ADR-076 — One router surface, three front doors
+# ADR-077 — One router surface, three front doors
 
 - **Status:** Proposed — owner-directed implementation, 2026-10-08
 - **Steward:** `ra` (router service), with Pantheon as the surface owner

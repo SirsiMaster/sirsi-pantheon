@@ -70,6 +70,23 @@ func TestRouterSurfaceDoesNotInventSnapshotBeforePoll(t *testing.T) {
 	}
 }
 
+func TestRouterSurfaceSliceRejectsUnknownCORSOriginWithoutWildcard(t *testing.T) {
+	// Regression: slice (serving /api/router/v1/ledger and /tasks) used to set
+	// Access-Control-Allow-Origin: * unconditionally after surfaceHeaders ran,
+	// clobbering the explicit allowlist the manifest/snapshot routes already
+	// enforced. The manifest-only test above never exercised this path.
+	for _, path := range []string{"/api/router/v1/ledger", "/api/router/v1/tasks"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Origin", "https://evil.example")
+		rec := httptest.NewRecorder()
+		testSurfaceHandler().ServeHTTP(rec, req)
+
+		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+			t.Fatalf("%s: unknown origin received CORS permission %q", path, got)
+		}
+	}
+}
+
 func TestRouterSurfaceAliasesTheStandalonePage(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/router?surface=nexus", nil)
 	rec := httptest.NewRecorder()

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/version"
 )
 
 // routerSurfaceSchema is intentionally separate from the internal dashboard
@@ -82,12 +84,19 @@ func (s *Server) apiRouterSurfaceManifest(w http.ResponseWriter, r *http.Request
 		http.Error(w, `{"error":"router producer not configured"}`, http.StatusServiceUnavailable)
 		return
 	}
+	build := version.Current("pantheon.horus")
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"schema":    routerSurfaceSchema,
 		"authority": "ra",
 		"producer":  "pantheon.horus",
 		"surface":   "/router",
+		"build": map[string]any{
+			"version": build.Version,
+			"commit":  build.Commit,
+			"date":    build.Date,
+			"dirty":   build.Dirty,
+		},
 		"endpoints": map[string]string{"snapshot": "/api/router/v1/snapshot"},
 		"integrations": map[string]string{
 			"pantheon": "same Horus producer",
@@ -112,7 +121,7 @@ func (s *Server) apiRouterSurfaceSnapshot(w http.ResponseWriter, r *http.Request
 	}
 	snap, err := s.cfg.RouterFn()
 	if err != nil {
-		http.Error(w, `{"error":"router producer unavailable"}`, http.StatusBadGateway)
+		http.Error(w, `{"error":"router producer unavailable"}`, http.StatusServiceUnavailable)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
