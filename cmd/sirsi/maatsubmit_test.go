@@ -86,6 +86,13 @@ func TestCaseFoldedRepoCannotBypassPolicy(t *testing.T) {
 func TestResolveSubmitRequester(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// This test deliberately exercises the local test ledger.  Production
+	// callers must use the configured router service; make that distinction
+	// explicit so the test does not inherit whichever service environment the
+	// invoking shell happens to have.
+	t.Setenv("SIRSI_ROUTER_URL", "")
+	t.Setenv("SIRSI_ROUTER_TOKEN", "")
+	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(home, "router.db"))
 
 	t.Run("no session id refuses", func(t *testing.T) {
 		t.Setenv("CLAUDE_CODE_SESSION_ID", "")
@@ -188,6 +195,9 @@ func TestSubmitCommandExitCode(t *testing.T) {
 			cmd.Env = append(os.Environ(),
 				"MAAT_SUBMIT_HELPER=1",
 				"HOME="+home,
+				"SIRSI_ROUTER_URL=",
+				"SIRSI_ROUTER_TOKEN=",
+				"SIRSI_ROUTER_DB="+filepath.Join(home, "router.db"),
 				"CLAUDE_CODE_SESSION_ID="+sid,
 				"MAAT_SUBMIT_HELPER_REPO="+c.repo,
 				"MAAT_SUBMIT_HELPER_JSON="+boolToStr(c.json),
@@ -233,7 +243,13 @@ func TestSubmitCommandLedgerFailureVisibility(t *testing.T) {
 		t.Helper()
 		cmd := exec.Command(os.Args[0], "-test.run=TestSubmitCommandExitCode", "-test.v")
 		cmd.Env = append(append([]string{}, os.Environ()...), env...)
-		cmd.Env = append(cmd.Env, "MAAT_SUBMIT_HELPER=1", "SIRSI_MAAT_DECISIONS_PATH="+badLedgerPath)
+		cmd.Env = append(cmd.Env,
+			"MAAT_SUBMIT_HELPER=1",
+			"SIRSI_ROUTER_URL=",
+			"SIRSI_ROUTER_TOKEN=",
+			"SIRSI_ROUTER_DB="+filepath.Join(home, "router.db"),
+			"SIRSI_MAAT_DECISIONS_PATH="+badLedgerPath,
+		)
 		raw, runErr := cmd.CombinedOutput()
 		exitCode = 0
 		if runErr != nil {

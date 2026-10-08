@@ -52,6 +52,41 @@ func TestRouterDBOnCutoverHostWarning(t *testing.T) {
 	})
 }
 
+func TestRouterLocalLedgerWarning(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, ".sirsi")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(dir, "router-service.env")
+	if err := os.WriteFile(marker, []byte("export SIRSI_ROUTER_URL=spool:///var/sirsipantheon/relay\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := routerLocalLedgerWarning(); got != "" {
+		t.Fatalf("warned while the retired path was absent: %q", got)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "router.db"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if got := routerLocalLedgerWarning(); got != "" {
+		t.Fatalf("warned for a protective directory replacement: %q", got)
+	}
+	if err := os.Remove(filepath.Join(dir, "router.db")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "router.db"), []byte("stranded local ledger"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := routerLocalLedgerWarning()
+	for _, want := range []string{"router.db", "router service", marker} {
+		if !contains(got, want) {
+			t.Errorf("warning missing %q: %s", want, got)
+		}
+	}
+}
+
 func contains(s, sub string) bool {
 	return len(sub) == 0 || (len(s) >= len(sub) && indexOf(s, sub) >= 0)
 }

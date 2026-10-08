@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
@@ -112,9 +113,9 @@ func TestSchemaGateRejectsCandidateWithNoDeclaredCeiling(t *testing.T) {
 	}
 }
 
-// TestResolveRouterDBPathPrefersEnvOverride pins the override contract the gate
-// and the conduit heal share. LocalPath reads SIRSI_ROUTER_DB first
-// (testable via t.Setenv) and falls back to $HOME/.sirsi/router.db.
+// TestResolveRouterDBPathPrefersEnvOverride pins the explicit local-store
+// contract used by schema tooling. An unset override must fail closed rather
+// than recreate the retired ~/.sirsi/router.db split-brain store.
 func TestResolveRouterDBPathPrefersEnvOverride(t *testing.T) {
 	t.Setenv("SIRSI_ROUTER_DB", "/custom/router.db")
 	got, err := resolveRouterDBPath()
@@ -128,12 +129,10 @@ func TestResolveRouterDBPathPrefersEnvOverride(t *testing.T) {
 	t.Setenv("SIRSI_ROUTER_DB", "")
 	t.Setenv("HOME", "/home/test")
 
-	got, err = resolveRouterDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := filepath.Join("/home/test", ".sirsi", "router.db"); got != want {
-		t.Fatalf("default path = %s, want %s", got, want)
+	if _, err = resolveRouterDBPath(); err == nil {
+		t.Fatal("unset SIRSI_ROUTER_DB must refuse an implicit local ledger")
+	} else if !strings.Contains(err.Error(), "implicit local ledger") {
+		t.Fatalf("unexpected refusal: %v", err)
 	}
 }
 

@@ -25,8 +25,9 @@ import (
 // routerBreakersJSON is the machine contract for `router breakers`.
 var routerBreakersJSON bool
 
-// openRouterStore resolves the same database every other router verb uses:
-// SIRSI_ROUTER_DB when set, else ~/.sirsi/router.db. Pointing a breaker verb
+// openRouterStore resolves the same canonical service every other router verb
+// uses. An explicit SIRSI_ROUTER_DB is reserved for deliberate tests/sandboxes.
+// Pointing a breaker verb
 // at a different store than the dispatcher would let an operator "clear" a
 // breaker that is still tripped for everyone else.
 func openRouterStore() (routerstore.Store, error) {

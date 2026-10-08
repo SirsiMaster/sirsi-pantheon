@@ -35,10 +35,12 @@ sessions` on the backend.
 A cut-over node is marked by `~/.sirsi/router-service.env` (written by
 `scripts/router-service/cutover-m5.sh` step 6 and sourced from `~/.zshenv`).
 While that file exists, a process without `SIRSI_ROUTER_URL` is **refused** by
-`routerstore.Resolve()` — it does not fall back to the local file. That is
-deliberate: a GUI-launched process read a frozen `router.db` as a live inbox on
-2026-09-10, and a newer binary would have created an empty ledger and split the
-fabric. Unsetting the two variables is therefore not a rollback.
+`routerstore.Resolve()` — it does not fall back to the local file. The same
+fail-closed rule applies before the marker exists: an unconfigured process
+cannot create an implicit local ledger. That is deliberate: a GUI-launched
+process read a frozen `router.db` as a live inbox on 2026-09-10, and a newer
+binary would have created an empty ledger and split the fabric. Unsetting the
+two variables is therefore not a rollback.
 
 Rolling a node back is a deliberate procedure, in this order:
 

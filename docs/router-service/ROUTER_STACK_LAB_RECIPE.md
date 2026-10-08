@@ -2,6 +2,51 @@
 
 # Router Service — Stack Lab Recipe
 
+> **Ra wing authority — 2026-10-07 correction.** This recipe and
+> `docs/stacklab/ra/canon/` are one contract. The implementation already
+> contains the canonical GCP Cloud Run/Cloud SQL service, authenticated
+> `RemoteStore`, per-host filesystem relay, A2A/MCP front end, and Horus read
+> model. The one-authority repair is on the release branch: missing service
+> configuration fails closed instead of opening a second local ledger. Do not
+> create a new service, database, relay protocol, or competing Stack Lab recipe.
+> Historical rows below remain historical unless a newer dated receipt supersedes
+> them.
+
+## Current release boundary
+
+- Source branch: `fix/router-one-authority-live-20261007`.
+- Base source: `origin/main` `958e7fbf` at the start of this candidate.
+- Candidate commits: `6f71127a` (implicit local ledger refusal) and `379d8e71`
+  (explicit Ma'at test ledger binding).
+- Service authority: GCP project `sirsi-nexus-live`, Cloud Run service
+  `sirsi-router`, Cloud SQL database `router`, region `us-central1`.
+- Host delivery: M1/M5 relay spool; relay owns the host token and lanes do not
+  receive it. The historical local SQLite store is retained as an archive only.
+- Release classification: platform-foundation/pilot. This candidate does not
+  claim fresh cloud readback, a fresh physical third-machine rehearsal, universal
+  Codex/Claude lane parity, or commercial GA when those observations are not
+  available to the releasing identity.
+
+## Non-negotiable invariants
+
+1. Production code resolves one authority through `routerstore.Resolve()` and
+   writes through `dispatch.Facade`.
+2. `SIRSI_ROUTER_DB` is permitted only for an explicitly isolated test or
+   migration operation; unset service configuration is an error.
+3. A service row is authoritative before any markdown/audit mirror or wake
+   attempt. Mirrors never resurrect work.
+4. Every mutating request is bound to host token, session, runtime, nonce, agent
+   and live thread. Read acknowledgement is recipient-only and distinct from
+   completion.
+5. Relay request/response files are atomic, bounded, correlation-bound and
+   secret-free. Outcome-unknown mutations are re-read, never blindly retried.
+6. Schema migration, service deployment, client replacement and rollback are
+   hash/readback operations with retained evidence.
+
+The rest of this file is the operational procedure and historical component
+inventory. When a historical row conflicts with the current boundary above, the
+current boundary and a newer dated receipt win.
+
 **Status:** Active operating recipe (revision 3)
 **Owner:** `ra` (router / worker-plane; ADR-062, ADR-063)
 **Classification:** Core platform foundation — the router is critical infrastructure; if it fails, many threads' business goes undone. It is therefore built and maintained under Stack Lab methodology: a reproducible recipe assembled from *identified* components, not an untraceable build.

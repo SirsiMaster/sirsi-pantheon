@@ -6,8 +6,8 @@
 # schema.sql is re-runnable and applied in ONE transaction with the version row last, so an
 # existing v18 ledger upgrades in place or stays exactly v18). DRY_RUN=1 prints only.
 #
-# Asserts the same four facts as scripts/check-pg-schema.sh (15 tables, 12 triggers, >=5 partial
-# indexes, version 20) and then a CLOSED privilege audit of router_service (SSA finding 3, 2026-09-08):
+# Asserts the same four facts as scripts/check-pg-schema.sh (17 tables, 12 triggers, >=5 partial
+# indexes, version 24) and then a CLOSED privilege audit of router_service (SSA finding 3, 2026-09-08):
 # no role memberships (Cloud SQL makes every gcloud-created user a cloudsqlsuperuser member — the
 # bundle revokes it, and the audit proves the revoke landed), no SUPERUSER/CREATEROLE/CREATEDB, no
 # CREATE on schema router or on the database, no default-ACL grants beyond DML, and the executing
@@ -68,9 +68,9 @@ partial=$(q "SELECT count(*) FROM pg_indexes WHERE schemaname='router' AND index
 version=$(q "SELECT version FROM router.schema_version")
 echo "tables=$tables triggers=$triggers partial=$partial version=$version"
 # The version pin MUST track internal/routerstore/open_postgres.go postgresSchemaVersion (and
-# scripts/check-pg-schema.sh). It sat at 20 through v21 and v22: exec sirsi-router-apply-schema-mlccq
-# (2026-09-13) applied v22 correctly and then reported FAIL-shape purely from this stale literal.
-[ "$tables" = 16 ] && [ "$triggers" = 12 ] && [ "$partial" -ge 5 ] && [ "$version" = 23 ] || { echo FAIL-shape; exit 1; }
+# scripts/check-pg-schema.sh). It previously lagged the source through v21/v22/v23, allowing a
+# deploy to build successfully and then fail its Cloud Run startup probe against the live ledger.
+[ "$tables" = 17 ] && [ "$triggers" = 12 ] && [ "$partial" -ge 5 ] && [ "$version" = 24 ] || { echo FAIL-shape; exit 1; }
 # Closed privilege audit of router_service: every DDL path, not one probe.
 members=$(q "SELECT coalesce(string_agg(b.rolname, ','), '') FROM pg_auth_members m JOIN pg_roles b ON b.oid=m.roleid JOIN pg_roles r ON r.oid=m.member WHERE r.rolname='router_service'")
 attrs=$(q "SELECT rolsuper||' '||rolcreaterole||' '||rolcreatedb||' '||rolbypassrls FROM pg_roles WHERE rolname='router_service'")  # booleans render as true/false
