@@ -3,28 +3,28 @@
 The router now has one independent operator surface and two governed consumers:
 
 ```text
-Ra / router store
+Ra / router service
         │
         ▼
-Horus routerboard producer
-        ├── standalone: http://127.0.0.1:8734/router
-        ├── Pantheon:   Horus dashboard read-model and router link
-        └── Nexus:      embedded surface or router-surface.v1 read-model
+Pantheon/Horus supervised server :9119
+        ├── standalone: http://127.0.0.1:9119/router
+        ├── Pantheon:   same RouterFn read model
+        └── Nexus:      authenticated read-only router-surface.v1 consumer
 ```
 
 ## Authority
 
 Ra remains the authority for work items, leases, thread state, lane verdicts and
 queue counts. The frontend never opens SQLite, reads `agents.json` directly, or
-recomputes a lane verdict. `routerboard.Board` is the one producer for the
-standalone surface. Horus and Nexus consume projections of that producer.
+recomputes a lane verdict. `dashboard.Config.RouterFn` is the one producer for
+the standalone surface, Pantheon, and Nexus.
 
 ## Independent surface
 
-`sirsi board-serve` serves the existing owner-facing board at `/router`. The
-page is cache-disabled and emits `sirsi.router.ready` when embedded. The parent
-may use that event for layout only; it cannot issue a router mutation through
-the embedded page.
+The supervised `sirsi dashboard` process serves the owner-facing surface at
+`/router`. It reads the same typed `RouterFn` used by Horus; there is no second
+shell-polling board process to start, drift, or silently disappear. The page is
+cache-disabled and shows an explicit unavailable state when the producer fails.
 
 ## Versioned read contract
 
@@ -39,25 +39,19 @@ and the canonical endpoints:
 
 | Endpoint | Purpose |
 |---|---|
-| `/api/router/v1/snapshot` | Complete last-good board payload |
-| `/api/router/v1/stream` | SSE updates when the payload changes |
-| `/api/router/v1/ledger` | Ledger projection used by existing board consumers |
-| `/api/router/v1/tasks` | Task projection used by existing board consumers |
+| `/api/router/v1/snapshot` | Typed last-good `RouterSnapshot` |
 
-Before the first successful poll, snapshot and projection endpoints return 503;
-they never manufacture an empty board. Clients retain the last good payload and
-show its generation time when the producer is unavailable.
+When the producer is unavailable, the snapshot endpoint returns 503; it never
+manufactures an empty board. Clients retain no hidden stale copy and show the
+producer's generation time whenever a snapshot is available.
 
 ## Surface bindings
 
-- **Pantheon/Horus** continues to own local node operation and renders the
-  router read model from its existing `/api/router` and `/api/fleet` producers.
-  The standalone board is an additional door onto the same producer, not a
-  second ledger.
-- **Nexus** may embed `/router?surface=nexus` when the local Pantheon endpoint is
-  available, or consume the versioned read endpoints directly. If the endpoint
-  is absent, Nexus shows `Router surface unavailable` rather than falling back
-  to a local router database or a stale snapshot.
+- **Pantheon/Horus** owns local node operation and exposes the same `RouterFn`
+  through `/api/router` and the versioned surface endpoint.
+- **Nexus** consumes `/api/router/v1/manifest` and `/api/router/v1/snapshot`
+  directly. If Horus is absent, Nexus shows `Router surface unavailable`
+  rather than falling back to a local router database or a stale snapshot.
 
 Browser access is allowlisted for the local Pantheon/Horus ports, the Nexus
 development port, and `https://sirsi.ai`. There is no wildcard CORS grant and
