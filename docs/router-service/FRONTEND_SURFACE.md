@@ -9,7 +9,7 @@ Ra / router service
 Pantheon/Horus supervised server :9119
         ├── standalone: http://127.0.0.1:9119/router
         ├── Pantheon:   same RouterFn read model
-        └── Nexus:      authenticated read-only router-surface.v1 consumer
+        └── Nexus:      allowlisted read-only router-surface.v1 consumer
 ```
 
 ## Authority
@@ -41,9 +41,14 @@ and the canonical endpoints:
 |---|---|
 | `/api/router/v1/snapshot` | Typed last-good `RouterSnapshot` |
 
-When the producer is unavailable, the snapshot endpoint returns 503; it never
-manufactures an empty board. Clients retain no hidden stale copy and show the
-producer's generation time whenever a snapshot is available.
+An unconfigured producer returns 503; a collection failure returns 502. It never
+manufactures an empty board. The console labels a retained last-good snapshot
+with its original generation time and a stale/unavailable banner.
+
+The `/router` and `/` doors now serve the same embedded operator workspace,
+including searchable lanes, inspection, queue, fleet, releases and host views.
+The manifest includes the running executable's build identity. The actual local
+deployment and rollback contract is in `FRONTEND_DELIVERY_20261008.md`.
 
 ## Surface bindings
 

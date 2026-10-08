@@ -150,3 +150,39 @@ button,.btn,.sort,.lane-select{min-width:44px;min-height:44px}
 .chip.v-WAKEABLE::before{background:transparent;border:1.5px solid var(--ok)}
 .chip.v-LIVE::before{background:var(--ok)}
 @media(max-width:640px){.toolbar .seg{width:100%}.toolbar .search{flex:0 0 100%;width:100%;min-width:0}}
+
+/* Ra inherits Pantheon's token system. Dense work, quiet Sirsi identity. */
+.router-console{color-scheme:dark}
+.router-console .sidebar{background:var(--bg);backdrop-filter:none}
+.router-console .brand{padding:8px 12px 32px;font-size:27px;gap:14px;color:var(--gold)}
+.router-console .brand svg{width:32px;height:32px;fill:none;stroke:currentColor;stroke-width:1.5;flex:none}
+.router-console .brand small{display:block;font-size:12px;letter-spacing:0;font-weight:400;color:var(--ink2);margin-top:3px}
+.router-console .main{max-width:1700px;padding:36px clamp(24px,3vw,52px) 48px}
+.router-console .titlebar{padding-bottom:24px;border-bottom:1px solid var(--line);align-items:center}
+.router-console h1{font-size:22px;letter-spacing:-.02em;font-weight:600}
+.router-console .nav button[aria-current="page"]{background:color-mix(in srgb,var(--gold) 12%,var(--bg));color:var(--gold)}
+.router-console .btn{border-radius:8px}
+.router-console .primary{background:var(--gold);color:var(--bg);border-color:var(--gold);font-weight:600}
+.fabric-summary{padding:20px 0 36px;max-width:860px}
+.fabric-summary h2{font-size:clamp(30px,3vw,46px);line-height:1.18;letter-spacing:-.03em;font-weight:550}
+.fabric-summary h2 span{color:var(--ink2)}
+.fabric-summary p{max-width:66ch;margin:20px 0;color:var(--ink2)}
+.workbench{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:32px}
+.work-list{min-width:0}
+.section-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px;min-height:44px}
+.section-heading h2{font-size:17px;letter-spacing:-.02em}
+.fabric-notes{padding-left:24px;border-left:1px solid var(--line)}
+.fabric-notes article{padding:18px 0;border-top:1px solid var(--line)}
+.fabric-notes h3{font-size:15px;margin:12px 0 8px}
+.fabric-notes p{color:var(--ink2);font-size:14px}
+.fabric-notes .btn{margin-top:14px}
+.fabric-provenance{display:flex;flex-wrap:wrap;gap:12px 28px;color:var(--dim);font-size:12px;padding-top:24px;margin-top:32px;border-top:1px solid var(--line)}
+.router-console .table{background:transparent;border-radius:0;border-left:0;border-right:0;box-shadow:none}
+.router-console .lane-select{color:var(--ink);font-family:var(--font);font-weight:550}
+.router-console .lane-select:hover{color:var(--gold);text-decoration:underline;text-underline-offset:4px}
+.router-console .dot:not(.stale):not(.err){background:var(--ok)}
+::selection{background:var(--gold);color:var(--bg)}
+input{caret-color:var(--gold)}
+*{scrollbar-color:var(--line) var(--bg);scrollbar-width:thin}
+@media(max-width:1100px){.workbench{grid-template-columns:1fr}.fabric-notes{padding-left:0;border-left:0;border-top:1px solid var(--line);padding-top:24px}}
+@media(max-width:820px){.router-console .main{padding:24px 16px}.router-console .brand{padding:8px 12px 20px}.router-console .sidebar{border-bottom:1px solid var(--line)}.fabric-summary{padding-top:8px}.fabric-summary h2{font-size:30px}.router-console .responsive-table tr{background:transparent}.fabric-provenance{display:grid;gap:8px}.router-console .titlebar{align-items:flex-start}}

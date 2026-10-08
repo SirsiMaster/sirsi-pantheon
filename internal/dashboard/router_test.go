@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"regexp"
 	"strings"
@@ -12,18 +13,37 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 )
 
-// TestRouterSurfaceActiveLaneCardReadsRealVerdictKey guards the 2026-10-08
-// defect: the embedded page JS read counts.active, a key that never existed
-// in the real producer's Counts map (keyed by the router.Verdict* strings,
-// e.g. "LIVE") — the card silently rendered 0 regardless of fleet state.
-func TestRouterSurfaceActiveLaneCardReadsRealVerdictKey(t *testing.T) {
-	t.Parallel()
-	want := "c." + router.VerdictLive
-	if !strings.Contains(routerSurfaceHTML, want) {
-		t.Fatalf("routerSurfaceHTML must read %q (the real Counts key); not found", want)
+func TestStartRejectsOccupiedPortBeforeReportingRunning(t *testing.T) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if strings.Contains(routerSurfaceHTML, "c.active") {
-		t.Fatalf("routerSurfaceHTML still reads the invented c.active key")
+	defer l.Close()
+	s := New(Config{Port: l.Addr().(*net.TCPAddr).Port})
+	if err := s.Start(); err == nil {
+		s.Stop()
+		t.Fatal("occupied port reported successful startup")
+	}
+	if s.IsRunning() {
+		t.Fatal("failed listener reported running")
+	}
+}
+
+// TestRouterConsoleLaneCardsReadRealVerdictKeys guards the 2026-10-08 defect: the page JS read
+// counts.active, a key that never existed in the real producer's Counts map (keyed by the
+// router.Verdict* strings, e.g. "LIVE"), so the card silently rendered 0 regardless of fleet state.
+func TestRouterConsoleLaneCardsReadRealVerdictKeys(t *testing.T) {
+	t.Parallel()
+	b, err := uiFS.ReadFile("ui/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	js := string(b)
+	if want := "counts." + router.VerdictLive; !strings.Contains(js, want) {
+		t.Fatalf("ui/app.js must read %q (the real Counts key); not found", want)
+	}
+	if strings.Contains(js, "counts.active") {
+		t.Fatal("ui/app.js reads the invented counts.active key")
 	}
 }
 
@@ -159,7 +179,7 @@ func TestHomeServesTheDashboardAndItsAssets(t *testing.T) {
 		t.Fatalf("home page wrong: %d %s", code, ct)
 	}
 	js, _, _ := body("/assets/app.js")
-	for _, want := range []string{"/api/router", "/api/fleet", "/api/stats", "Operator attention"} {
+	for _, want := range []string{"/api/router/v1/snapshot", "/api/fleet", "/api/stats", "Where work is waiting", "data-view", "data-inspect"} {
 		if !strings.Contains(js, want) {
 			t.Errorf("app.js missing %q", want)
 		}
@@ -177,6 +197,53 @@ func TestHomeServesTheDashboardAndItsAssets(t *testing.T) {
 	classic, _, code := body("/classic")
 	if code != 200 || !strings.Contains(classic, "Horus") {
 		t.Fatalf("classic tools page missing: %d", code)
+	}
+}
+
+func TestRouterDoorUsesTheSameEmbeddedConsole(t *testing.T) {
+	ts := testServer(t, Config{})
+	defer ts.Close()
+	read := func(path string) string {
+		resp, err := http.Get(ts.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.Header.Get("Cache-Control") != "no-store" {
+			t.Fatal("page must not be cached")
+		}
+		return string(b)
+	}
+	if a, b := read("/"), read("/router"); a != b || !strings.Contains(b, "Ra — Sirsi Work Fabric") {
+		t.Fatal("router door drifted from the shared embedded console")
+	}
+	if !strings.Contains(read("/assets/router-tokens.css"), "color-scheme:dark") {
+		t.Fatal("Ra must inherit the dark Sirsi tokens")
+	}
+}
+
+func TestRouterSurfaceCORSIsExplicit(t *testing.T) {
+	ts := testServer(t, Config{RouterFn: func() (RouterSnapshot, error) { return RouterSnapshot{}, nil }})
+	defer ts.Close()
+	for _, origin := range []string{"https://sirsi.ai", "https://untrusted.invalid"} {
+		req, _ := http.NewRequest("GET", ts.URL+"/api/router/v1/snapshot", nil)
+		req.Header.Set("Origin", origin)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		got := resp.Header.Get("Access-Control-Allow-Origin")
+		if origin == "https://sirsi.ai" && got != origin {
+			t.Fatal("configured Nexus origin rejected")
+		}
+		if origin != "https://sirsi.ai" && got != "" {
+			t.Fatal("untrusted origin granted")
+		}
 	}
 }
 
