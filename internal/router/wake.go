@@ -1039,6 +1039,30 @@ func wakeLoopInboxState(depth int, readErr error) (ThreadStatus, int, string) {
 	return ThreadStatusIdle, 0, ""
 }
 
+// findWorkerThread picks the newest live (non-terminal, non-suspended)
+// surface=worker record for agentID on machineID — read-only, no mutation.
+// Shared by adoptWorkerThread (which then re-points it at the caller) and the
+// ADR-065 informer's currentWorkerThread (which must NOT re-point it, since
+// the informer is a different process from the lane's own RunWakeLoop).
+func findWorkerThread(reg *ThreadRegistry, agentID, machineID string) *Thread {
+	var found *Thread
+	for _, t := range reg.Threads {
+		if t == nil || t.AgentID != agentID || t.Surface != surfaceWorker {
+			continue
+		}
+		if t.Status.IsTerminal() || t.Status == ThreadStatusSuspended {
+			continue
+		}
+		if !SameMachine(t.MachineID, machineID) {
+			continue
+		}
+		if found == nil || t.LastSeenAt.After(found.LastSeenAt) {
+			found = t
+		}
+	}
+	return found
+}
+
 // adoptWorkerThread resolves the keyed-singleton worker thread for an agent on
 // THIS machine: it re-points the newest live (non-terminal, non-suspended)
 // surface=worker record at the calling process and retires any other worker
@@ -1053,21 +1077,7 @@ func adoptWorkerThread(routerRoot, agentID string, pid int) (*Thread, error) {
 	thisMachine := MachineID()
 	now := time.Now().UTC()
 
-	var adopted *Thread
-	for _, t := range reg.Threads {
-		if t == nil || t.AgentID != agentID || t.Surface != surfaceWorker {
-			continue
-		}
-		if t.Status.IsTerminal() || t.Status == ThreadStatusSuspended {
-			continue
-		}
-		if !SameMachine(t.MachineID, thisMachine) {
-			continue
-		}
-		if adopted == nil || t.LastSeenAt.After(adopted.LastSeenAt) {
-			adopted = t
-		}
-	}
+	adopted := findWorkerThread(reg, agentID, thisMachine)
 	if adopted == nil {
 		return nil, nil
 	}

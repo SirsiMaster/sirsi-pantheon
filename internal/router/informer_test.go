@@ -120,6 +120,19 @@ func TestInformerCoexistenceNegativeControl6_SimultaneousEdgeNoDuplicateSpawn(t 
 	consumer := &ResolvedConsumer{Argv: []string{sleepConsumer(t, logPath)}}
 	events := make(chan struct{}, 1)
 
+	// runInformerLane borrows its dispatch identity from the lane's own
+	// RunWakeLoop worker thread (rs-46 finding 2) rather than minting one, so
+	// the simultaneous edge this test simulates needs that thread to already
+	// exist — exactly as it would on a host where RunWakeLoop is live
+	// alongside the informer (ADR-065 Phase 1 coexistence).
+	host, _ := os.Hostname()
+	if _, err := RegisterThread(root, &Thread{
+		AgentID: "edge-agent", Surface: surfaceWorker, WakeMechanism: WakeLaunchAgent,
+		PID: os.Getpid(), Host: host, Status: ThreadStatusActive,
+	}); err != nil {
+		t.Fatalf("RegisterThread: %v", err)
+	}
+
 	var wg sync.WaitGroup
 	wg.Add(2)
 	var wakeErr error

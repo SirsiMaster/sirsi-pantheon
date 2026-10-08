@@ -111,7 +111,16 @@ func RunInformer(ctx context.Context, routerRoot string) error {
 			log.Printf("informer %s: %v", id, serr)
 			continue
 		}
-		if strategy == StrategySessionMessage {
+		if strategy == StrategySessionMessage || strategy == StrategyFilesystemPush {
+			// session-message: never blind-spawn an interactive lane (wake.go
+			// design constraint 3). filesystem-push: the actual spool-dir
+			// transport is ADR-065 Decision 4, explicitly deferred past Phase 1
+			// (SPRINT-ADR065-ROUTER-INFORMER-PHASE1.md "Out of scope") — until
+			// that lands, admitting a generic process-spawn for a sandboxed
+			// codex lane would be wrong, not merely unimplemented, so this
+			// strategy is held here rather than silently falling through to
+			// the cli-spawn dispatch path below.
+			log.Printf("informer %s: strategy %q has no admitted transport yet, not subscribing", id, strategy)
 			continue
 		}
 		events, lerr := store.ListenNotify(ctx, id)
@@ -133,25 +142,73 @@ func RunInformer(ctx context.Context, routerRoot string) error {
 // and, on each, attempts admission through the SAME shared primitives
 // RunWakeLoop's own dispatch call site checks (/goal item 6) before calling
 // admitConsumer — a quarantined or overloaded host, an open measurement
-// window, or a live attended session holds the informer's hand exactly as it
-// holds the per-lane loop's. admitConsumer's per-agent flock (task 4) is what
-// makes a simultaneous edge seen by both loops produce exactly one spawn —
-// caller identity is irrelevant to that boundary, which is the point.
+// window, a live attended session, a full host consumer slot table, or an
+// hourly spawn ceiling already tripped holds the informer's hand exactly as
+// it holds the per-lane loop's (codex-pantheon review 20261008-174407,
+// finding 1: the informer must not have its own, narrower admission gate).
+// admitConsumer's per-agent flock (task 4) is what makes a simultaneous edge
+// seen by both loops produce exactly one spawn — caller identity is
+// irrelevant to that boundary, which is the point.
 func runInformerLane(ctx context.Context, routerRoot, agentID string, consumer *ResolvedConsumer, events <-chan struct{}) {
 	for range events {
 		if ctx.Err() != nil {
 			return
 		}
 		if fabricDispatchQuarantined(agentID, -1) || fabricDispatchOverloaded(agentID, -1) ||
-			measurementWindowOpen(agentID, -1) || attendedSessionOwnsInbox(routerRoot, agentID, -1) {
+			measurementWindowOpen(agentID, -1) || attendedSessionOwnsInbox(routerRoot, agentID, -1) ||
+			hostConsumerSlotsFull(routerRoot, agentID, -1) {
 			continue
 		}
-		if _, _, derr := admitConsumer(routerRoot, agentID, consumer); derr != nil {
+		if over, n := spawnCeilingReached(agentID, time.Now()); over {
+			log.Printf("informer %s: SPAWN CEILING reached (%d dispatches in the last hour) — refusing to dispatch", agentID, n)
+			continue
+		}
+
+		// Borrow the lane's own RunWakeLoop worker-thread identity rather than
+		// minting one (finding 2: a dispatch with no thread binding has no
+		// real worker identity). Read-only — the informer is a different
+		// process from the loop that owns this thread and must never
+		// re-point its PID (that is adoptWorkerThread's job, called only by
+		// the loop itself). No thread yet (no RunWakeLoop running this lane)
+		// means no identity to hand the consumer, so the informer declines
+		// rather than inventing one.
+		thr := currentWorkerThread(routerRoot, agentID)
+		if thr == nil {
+			log.Printf("informer %s: no live worker thread registered for this lane, declining to dispatch", agentID)
+			continue
+		}
+		if thr.Lane != nil && thr.Lane.Hold == HoldQuarantine {
+			log.Printf("informer %s: lane quarantined by its own wake loop, holding dispatch too", agentID)
+			continue
+		}
+		bindConsumerThread(consumer, thr.ThreadID)
+
+		run, adopted, derr := admitConsumer(routerRoot, agentID, consumer)
+		if derr != nil {
 			log.Printf("informer %s: admission failed: %v", agentID, derr)
 			continue
 		}
+		if !adopted {
+			if err := recordDispatch(agentID, time.Now()); err != nil {
+				log.Printf("informer %s: WARNING could not record dispatch in the rate ledger: %v", agentID, err)
+			}
+			log.Printf("informer %s: dispatched consumer pid %d", agentID, run.pid)
+		}
 		markDeliveryAttempted(routerRoot, agentID)
 	}
+}
+
+// currentWorkerThread returns the lane's own live RunWakeLoop worker thread
+// for agentID on this machine, without mutating it — read-only, unlike
+// adoptWorkerThread which re-points PID at the caller. The informer borrows
+// this identity rather than minting a second worker thread for the same
+// lane, which would fragment "who is the worker" across two live records.
+func currentWorkerThread(routerRoot, agentID string) *Thread {
+	reg, err := LoadThreadRegistry(routerRoot)
+	if err != nil {
+		return nil
+	}
+	return findWorkerThread(reg, agentID, MachineID())
 }
 
 // markDeliveryAttempted is the ADR-065 Decision 2 correction (task 6): the
