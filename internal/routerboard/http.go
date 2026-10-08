@@ -161,9 +161,9 @@ func (h *Handler) snapshot(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	body, version := h.board.Snapshot()
+	body, version, valid := h.board.SnapshotState()
 	w.Header().Set("Content-Type", "application/json")
-	if version == 0 || len(body) == 0 || !h.board.Valid() {
+	if version == 0 || len(body) == 0 || !valid {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = w.Write([]byte(`{"error":"no poll completed yet"}`))
 		return
@@ -176,7 +176,7 @@ func (h *Handler) snapshot(w http.ResponseWriter, r *http.Request) {
 // Before the first successful poll it returns 503, never an all-zero board:
 // zeros render as a DEAD FLEET, which is a worse lie than an error.
 func (h *Handler) slice(w http.ResponseWriter, r *http.Request) {
-	body, version := h.board.Snapshot()
+	body, version, valid := h.board.SnapshotState()
 	if strings.HasPrefix(r.URL.Path, "/api/router/v1/") {
 		h.surfaceHeaders(w, r)
 		if r.Method == http.MethodOptions {
@@ -190,7 +190,7 @@ func (h *Handler) slice(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
-	if version == 0 || len(body) == 0 || !h.board.Valid() {
+	if version == 0 || len(body) == 0 || !valid {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = w.Write([]byte(`{"error":"no poll completed yet"}`))
 		return
@@ -230,12 +230,26 @@ func (h *Handler) stream(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
 		return
 	}
+	// Check validity BEFORE committing the 200: once WriteHeader fires, the
+	// status is locked in and an invalid producer can only be reported inside
+	// the body, which a client reading status codes never sees (it sees an
+	// established, apparently-healthy stream). A producer that is still
+	// invalid at connect time gets 503 like every other endpoint, not a
+	// stream that silently waits for a poll that may never come.
+	_, version, valid := h.board.SnapshotState()
+	if version == 0 || !valid {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":"no poll completed yet"}`))
+		return
+	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
 
 	var lastSent uint64
+	lastValid := true
 	lastPing := time.Now()
 	tick := time.NewTicker(300 * time.Millisecond)
 	defer tick.Stop()
@@ -245,8 +259,18 @@ func (h *Handler) stream(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case <-tick.C:
-			body, v := h.board.Snapshot()
-			if v != lastSent && v != 0 && h.board.Valid() {
+			body, v, valid := h.board.SnapshotState()
+			// A stream that goes stale mid-connection (producer fails after a
+			// good start) must say so: silently stopping pushes and falling
+			// back to bare keepalives leaves the client holding a payload it
+			// has no way to know is now stale.
+			if !valid && lastValid {
+				fmt.Fprint(w, "event: invalid\ndata: {\"error\":\"producer unavailable\"}\n\n")
+				flusher.Flush()
+				lastPing = time.Now()
+			}
+			lastValid = valid
+			if v != lastSent && v != 0 && valid {
 				fmt.Fprintf(w, "data: %s\n\n", body)
 				flusher.Flush()
 				lastSent, lastPing = v, time.Now()

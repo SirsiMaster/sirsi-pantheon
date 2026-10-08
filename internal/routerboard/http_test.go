@@ -110,12 +110,47 @@ func TestRouterSurfaceFailsClosedWhenProducerPollFails(t *testing.T) {
 	mux := http.NewServeMux()
 	NewHandler(b, filepath.Join("ui")).Register(mux)
 
-	for _, path := range []string{"/api/router/v1/snapshot", "/api/router/v1/ledger", "/api/router/v1/tasks"} {
+	for _, path := range []string{"/api/router/v1/snapshot", "/api/router/v1/ledger", "/api/router/v1/tasks", "/api/router/v1/stream"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
 		if rec.Code != http.StatusServiceUnavailable {
 			t.Fatalf("%s status = %d, want 503 after a failed poll (version=%d)", path, rec.Code, b.Version())
+		}
+	}
+}
+
+// TestRouterSurfaceSnapshotStateIsAtomic guards PR#1042's successor defect:
+// Snapshot() and Valid() were separate RLock acquisitions, so a Poll landing
+// between them could pair a stale/invalid body with a valid flag from the
+// NEXT poll (or vice versa), serving 200 with a fabricated body. SnapshotState
+// must read payload+version+valid under one lock.
+func TestRouterSurfaceSnapshotStateIsAtomic(t *testing.T) {
+	tmp := t.TempDir()
+	cli := filepath.Join(tmp, "false-cli")
+	if err := os.WriteFile(cli, []byte("#!/bin/sh\nexit 1\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	b := New(cli, filepath.Join(tmp, "missing-agents.json"), "build1234")
+	b.Poll(context.Background())
+
+	_, _, valid := b.SnapshotState()
+	if valid {
+		t.Fatal("SnapshotState reports valid after every producer call failed")
+	}
+
+	// Snapshot() and Valid() must never be called separately by a gating
+	// caller again: lock in the contract that SnapshotState is the only way
+	// to read payload+version+valid, so the two can't drift apart on a poll
+	// landing mid-read.
+	for _, path := range []string{"/api/router/v1/snapshot", "/api/router/v1/ledger", "/api/router/v1/tasks", "/api/router/v1/stream"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		mux := http.NewServeMux()
+		NewHandler(b, filepath.Join("ui")).Register(mux)
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Fatalf("%s status = %d, want 503 when SnapshotState reports invalid", path, rec.Code)
 		}
 	}
 }

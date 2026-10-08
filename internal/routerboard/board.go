@@ -348,3 +348,15 @@ func (b *Board) Valid() bool {
 	defer b.mu.RUnlock()
 	return b.valid
 }
+
+// SnapshotState returns payload, version and validity from a SINGLE lock
+// acquisition. Snapshot() and Valid() are separate RLocks: a Poll can land
+// between them, so a caller doing Snapshot() then Valid() can capture an
+// invalid body alongside a valid flag from the next poll (or vice versa) and
+// serve 200 with a fabricated/stale body. Callers that gate a response on
+// validity MUST use this, not the two calls separately.
+func (b *Board) SnapshotState() ([]byte, uint64, bool) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.payload, b.version, b.valid
+}
