@@ -6,6 +6,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- Closes codex-pantheon's CHANGES_REQUESTED on PR #1042 (head 0b1184c8):
+  splits the standalone `routerboard` schema (`router-board.v1`) from Horus's
+  canonical `router-surface.v1` so a consumer of one can no longer be
+  silently fed the other's payload shape; `Board.Poll` now fails closed
+  (503) on snapshot/slice/stream when the authoritative ledger read fails,
+  instead of serving a fabricated all-zero 200; the embedded router page's
+  Active-lanes card now reads the real `counts.LIVE` verdict key instead of
+  an invented `counts.active`.
+
 ## [0.24.97] — 2026-10-08
 
 - **Wake loops share one CPU-headroom probe per host.** Every loop ran `top -l 2` each cycle; nine loops cost 0.1-0.15 of a core continuously (measured by Mercury on the M1 while it was CPU-bound receiving at ~12 GB/s). One probe per host per 30 s now serves all loops through `~/.sirsi/host-load.cache`; the dispatch gate's behavior is unchanged.
