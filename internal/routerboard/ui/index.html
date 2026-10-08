@@ -1313,9 +1313,17 @@
         document.getElementById("dot").className = "dot down";
         document.getElementById("conn").textContent = "reconnecting…";
       };
+      es.addEventListener("invalid", () => {
+        document.getElementById("dot").className = "dot down";
+        document.getElementById("conn").textContent =
+          "stale — producer unavailable, numbers below are not live";
+      });
       es.onmessage = (e) => {
         try {
           render(JSON.parse(e.data));
+          document.getElementById("dot").className = "dot live";
+          document.getElementById("conn").textContent =
+            "live — pushed on real change, no refresh";
         } catch (err) {
           document.getElementById("err").textContent =
             "render error: " + err.message;
