@@ -2,6 +2,7 @@ package router
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -194,5 +195,42 @@ func TestDeliveryAttemptDoesNotImplyReadAck(t *testing.T) {
 	if item.AckedAt != "" {
 		t.Fatalf("delivery attempt set acked_at=%q — adapter success must never imply read-acknowledgement "+
 			"(ADR-065 Decision 2 correction); only `router acknowledge` (work.SetAckedAt) may write it", item.AckedAt)
+	}
+}
+
+// TestRunInformer_RemoteStoreBackend_ReportsUnsupported is the rs-37 task 7
+// service-side-wiring regression (ADR-065/067 Decision-6, SSA ruling
+// 20261007-230828): a RunInformer process whose resolved store is a
+// *routerstore.RemoteStore — this host is a client of a router service
+// elsewhere, not the authoritative backend — has no authenticated per-host
+// dispatch-authorization channel yet. It must refuse explicitly with
+// ErrInformerRemoteBackendUnsupported BEFORE subscribing to any lane, never
+// silently run the subscribe/dispatch loop as if the in-process host-pin
+// predicate (InformerHostAuthorized) had been consulted.
+func TestRunInformer_RemoteStoreBackend_ReportsUnsupported(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("SIRSI_ROUTER_URL", "http://127.0.0.1:0") // unreachable by construction; must never be dialed
+	t.Setenv("SIRSI_ROUTER_TOKEN", "test-token")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err := RunInformer(ctx, root)
+	if !errors.Is(err, ErrInformerRemoteBackendUnsupported) {
+		t.Fatalf("RunInformer with a RemoteStore backend: got err=%v, want ErrInformerRemoteBackendUnsupported", err)
+	}
+}
+
+// TestRunInformer_LocalBackend_NotReportedUnsupported is the positive control
+// for the above: a local SQLite backend (the authoritative host) must NOT be
+// refused by the RemoteStore gate — an empty agent registry simply yields no
+// lanes to subscribe and RunInformer returns nil.
+func TestRunInformer_LocalBackend_NotReportedUnsupported(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(root, "local.db"))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := RunInformer(ctx, root); err != nil {
+		t.Fatalf("RunInformer with a local SQLite backend and an empty registry: got err=%v, want nil", err)
 	}
 }

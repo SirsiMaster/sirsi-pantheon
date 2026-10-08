@@ -11,6 +11,7 @@ package router
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -21,6 +22,26 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
+
+// ErrInformerRemoteBackendUnsupported is RunInformer's refusal when its
+// resolved store is a *routerstore.RemoteStore — this process is a client of
+// a router service elsewhere, not the authoritative backend host. Phase 1
+// ships only the in-process host-pin predicate (InformerHostAuthorized,
+// routerstore/hosttokens.go, ADR-065/067 Decision-6); no authenticated
+// per-host dispatch-authorization channel exists yet for an informer to
+// request, verify, or cache a remote credential's adoption over the wire.
+// Running the subscribe/dispatch loop here anyway would let this host accept
+// an unauthenticated cross-host push with no NC1/NC2 refusal path at all, so
+// RunInformer refuses outright — before subscribing to a single lane —
+// rather than silently degrading to "no cross-host check performed." Per SSA
+// ruling 20261007-230828 (rs-37 task 7): "a RemoteStore client RunInformer
+// lacking an admitted authenticated authorization channel must explicitly
+// report unsupported/blocked before attempted delivery. It cannot count as
+// the usable M1 observation path."
+var ErrInformerRemoteBackendUnsupported = errors.New(
+	"router: informer: RemoteStore backend unsupported in Phase 1 — no authenticated per-host " +
+		"dispatch-authorization channel exists yet (ADR-065/067 Decision-6); refusing rather than " +
+		"running unauthorized cross-host dispatch")
 
 // Delivery strategies, per ADR-065 Decision 3a's table. These name HOW the
 // informer reaches a lane, not WHERE (that is AgentConfig.Delivery, task 2).
@@ -90,13 +111,17 @@ func DeliveryStrategyFor(cfg AgentConfig) (string, error) {
 // as it holds for the per-lane loop; session-message delivery is built in
 // task 6, not here.
 func RunInformer(ctx context.Context, routerRoot string) error {
-	reg, err := LoadRegistry(routerRoot)
-	if err != nil {
-		return fmt.Errorf("router: informer: load registry: %w", err)
-	}
 	store, err := routerstore.Resolve()
 	if err != nil {
 		return fmt.Errorf("router: informer: resolve store: %w", err)
+	}
+	if _, remote := store.(*routerstore.RemoteStore); remote {
+		log.Printf("informer: %v", ErrInformerRemoteBackendUnsupported)
+		return ErrInformerRemoteBackendUnsupported
+	}
+	reg, err := LoadRegistry(routerRoot)
+	if err != nil {
+		return fmt.Errorf("router: informer: load registry: %w", err)
 	}
 
 	var wg sync.WaitGroup
