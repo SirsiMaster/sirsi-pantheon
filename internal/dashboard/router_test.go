@@ -8,7 +8,24 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 )
+
+// TestRouterSurfaceActiveLaneCardReadsRealVerdictKey guards the 2026-10-08
+// defect: the embedded page JS read counts.active, a key that never existed
+// in the real producer's Counts map (keyed by the router.Verdict* strings,
+// e.g. "LIVE") — the card silently rendered 0 regardless of fleet state.
+func TestRouterSurfaceActiveLaneCardReadsRealVerdictKey(t *testing.T) {
+	t.Parallel()
+	want := "c." + router.VerdictLive
+	if !strings.Contains(routerSurfaceHTML, want) {
+		t.Fatalf("routerSurfaceHTML must read %q (the real Counts key); not found", want)
+	}
+	if strings.Contains(routerSurfaceHTML, "c.active") {
+		t.Fatalf("routerSurfaceHTML still reads the invented c.active key")
+	}
+}
 
 // An unwired producer is a 503 (never an empty panel), a failing one a 502, and a
 // working one is served verbatim (all three directions).

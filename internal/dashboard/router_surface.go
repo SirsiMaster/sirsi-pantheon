@@ -36,7 +36,7 @@ function render(d){const c=d.lanes?.counts||{};const lanes=d.lanes?.list||[];con
  const laneHTML=lanes.length?lanes.map(l=>'<div class="row"><span>'+esc(l.agent)+'</span><span class="muted">'+esc(l.verdict)+' · '+(l.open||0)+' open</span></div>').join(''):'<p class="muted">No lane data returned.</p>';
  document.querySelector('#app').innerHTML='<div class="grid">'+
  '<div class="card"><div class="label">Open items</div><div class="value">'+(d.queue?.reduce((n,x)=>n+(x.open||0),0)||0)+'</div></div>'+ 
- '<div class="card"><div class="label">Active lanes</div><div class="value">'+(c.active||0)+'</div></div>'+ 
+ '<div class="card"><div class="label">Active lanes</div><div class="value">'+(c.LIVE||0)+'</div></div>'+
  '<div class="card"><div class="label">Consumers</div><div class="value">'+(d.consumers?.running||0)+'<span class="muted"> / '+(d.consumers?.max||0)+'</span></div></div>'+ 
  '<div class="card"><div class="label">Attention</div><div class="value">'+attention.length+'</div></div></div>'+ 
  '<section><h2>Attention</h2>'+attentionHTML+'</section>'+ 

@@ -57,7 +57,7 @@ func init() {
 	boardServeCmd.Flags().DurationVar(&boardServePoll, "poll", 3*time.Second, "Router poll interval")
 	boardServeCmd.Flags().BoolVar(&boardServeOnce, "once", false, "Poll once, print the payload as JSON, exit")
 	boardServeCmd.Flags().StringVar(&boardServeShape, "shape", "board", "Output shape for --once: board|fleet (fleet is the menubar projection)")
-	boardServeCmd.Flags().StringSliceVar(&boardServeOrigins, "surface-origin", nil, "Additional browser origin allowed to read router-surface.v1 (repeatable)")
+	boardServeCmd.Flags().StringSliceVar(&boardServeOrigins, "surface-origin", nil, "Additional browser origin allowed to read router-board.v1 (repeatable)")
 	rootCmd.AddCommand(boardServeCmd)
 }
 

@@ -76,6 +76,7 @@ type Board struct {
 	mu       sync.RWMutex
 	payload  []byte // marshaled Payload
 	version  uint64 // bumped only when the payload actually CHANGES
+	valid    bool   // true only when the last poll's authoritative read (ledger) succeeded
 	buildID  string
 	prev     map[string]string // agent\x00task_id -> last seen status
 	activity []Event
@@ -335,4 +336,15 @@ func (b *Board) Snapshot() ([]byte, uint64) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.payload, b.version
+}
+
+// Valid reports whether the most recent poll's authoritative read (the
+// ledger load) succeeded. A version > 0 only means a payload was published
+// at least once — it says nothing about whether the CURRENT payload is real
+// or a fabricated all-zero body from a failed producer. Callers must check
+// both before serving 200.
+func (b *Board) Valid() bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.valid
 }

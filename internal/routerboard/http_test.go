@@ -1,9 +1,11 @@
 package routerboard
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -36,7 +38,7 @@ func TestRouterSurfaceManifestIsDiscoverable(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &manifest); err != nil {
 		t.Fatal(err)
 	}
-	if manifest.Schema != "router-surface.v1" || manifest.Authority != "ra" {
+	if manifest.Schema != "router-board.v1" || manifest.Authority != "ra" {
 		t.Fatalf("manifest identity = %+v", manifest)
 	}
 	if manifest.Endpoints["snapshot"] != "/api/router/v1/snapshot" || manifest.Endpoints["stream"] != "/api/router/v1/stream" {
@@ -83,6 +85,37 @@ func TestRouterSurfaceSliceRejectsUnknownCORSOriginWithoutWildcard(t *testing.T)
 
 		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
 			t.Fatalf("%s: unknown origin received CORS permission %q", path, got)
+		}
+	}
+}
+
+// TestRouterSurfaceFailsClosedWhenProducerPollFails guards the 2026-10-08
+// defect: a failed authoritative (ledger) read still bumped the payload
+// version, so a dead producer rendered a fabricated all-zero 200 OK board
+// instead of a 503 — a dead fleet looked identical to an empty one.
+func TestRouterSurfaceFailsClosedWhenProducerPollFails(t *testing.T) {
+	tmp := t.TempDir()
+	cli := filepath.Join(tmp, "false-cli")
+	if err := os.WriteFile(cli, []byte("#!/bin/sh\nexit 1\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	agents := filepath.Join(tmp, "missing-agents.json")
+
+	b := New(cli, agents, "build1234")
+	b.Poll(context.Background())
+	if b.Valid() {
+		t.Fatal("board reports valid after every producer call failed")
+	}
+
+	mux := http.NewServeMux()
+	NewHandler(b, filepath.Join("ui")).Register(mux)
+
+	for _, path := range []string{"/api/router/v1/snapshot", "/api/router/v1/ledger", "/api/router/v1/tasks"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Fatalf("%s status = %d, want 503 after a failed poll (version=%d)", path, rec.Code, b.Version())
 		}
 	}
 }

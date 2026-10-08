@@ -72,9 +72,11 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/tasks", h.slice)
 	mux.HandleFunc("/api/stream", h.stream)
 	mux.HandleFunc("/api/arm", h.arm)
-	// Versioned contract for Nexus and the Pantheon dashboard. These endpoints
-	// are projections of this same Board producer; consumers must not rebuild
-	// lane state from their own local files.
+	// Versioned contract for this standalone board only. This is a DIFFERENT
+	// producer and payload shape (Payload: fleet/board/tasks) than Horus's
+	// canonical router-surface.v1 (internal/dashboard: lanes/queue/consumers/
+	// attention) — the two must never share a schema name or a consumer that
+	// expects one gets silently fed the other's shape and renders empty lanes.
 	mux.HandleFunc("/api/router/v1/manifest", h.manifest)
 	mux.HandleFunc("/api/router/v1/snapshot", h.snapshot)
 	mux.HandleFunc("/api/router/v1/ledger", h.slice)
@@ -104,7 +106,7 @@ func (h *Handler) index(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) surfaceHeaders(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-Sirsi-Router-Schema", "router-surface.v1")
+	w.Header().Set("X-Sirsi-Router-Schema", "router-board.v1")
 	origin := strings.TrimRight(strings.TrimSpace(r.Header.Get("Origin")), "/")
 	if origin == "" {
 		return
@@ -132,7 +134,7 @@ func (h *Handler) manifest(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"schema":    "router-surface.v1",
+		"schema":    "router-board.v1",
 		"authority": "ra",
 		"producer":  "pantheon.routerboard",
 		"build":     h.board.buildID,
@@ -144,8 +146,7 @@ func (h *Handler) manifest(w http.ResponseWriter, r *http.Request) {
 			"tasks":    "/api/router/v1/tasks",
 		},
 		"integrations": map[string]string{
-			"pantheon": "read-only same-producer projection",
-			"nexus":    "read-only embedded surface or contract consumer",
+			"standalone": "legacy ledger-dashboard board (sirsi board-serve); NOT the Horus canonical router-surface.v1 contract",
 		},
 	})
 }
@@ -162,7 +163,7 @@ func (h *Handler) snapshot(w http.ResponseWriter, r *http.Request) {
 	}
 	body, version := h.board.Snapshot()
 	w.Header().Set("Content-Type", "application/json")
-	if version == 0 || len(body) == 0 {
+	if version == 0 || len(body) == 0 || !h.board.Valid() {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = w.Write([]byte(`{"error":"no poll completed yet"}`))
 		return
@@ -189,7 +190,7 @@ func (h *Handler) slice(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
-	if version == 0 || len(body) == 0 {
+	if version == 0 || len(body) == 0 || !h.board.Valid() {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = w.Write([]byte(`{"error":"no poll completed yet"}`))
 		return
@@ -245,7 +246,7 @@ func (h *Handler) stream(w http.ResponseWriter, r *http.Request) {
 			return
 		case <-tick.C:
 			body, v := h.board.Snapshot()
-			if v != lastSent && v != 0 {
+			if v != lastSent && v != 0 && h.board.Valid() {
 				fmt.Fprintf(w, "data: %s\n\n", body)
 				flusher.Flush()
 				lastSent, lastPing = v, time.Now()
