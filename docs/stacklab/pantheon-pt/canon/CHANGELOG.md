@@ -1,5 +1,33 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-08 — v0.24.97 release candidate
+
+- Wake loops share one CPU-headroom probe per host.
+- Refuses implicit production use of `~/.sirsi/router.db`; service resolution is
+  fail-cl
+- Makes Ma'at's test ledger binding explicit so tests cannot inherit the live
+  router aut
+- Publishes the complete Ra router architecture, release contract, traceability
+  matrix, 
+- Adds a hermetic one-authority negative control and preserves the existing
+  routerstore,
+- Classification: platform-foundation/pilot. Fresh cloud readback, third-machine
+  rehears
+- `knownfail.ciRunsExactPath` now parses the CI workflow as real YAML and
+  requires the g
+- `docs/sprints/SPRINT-ADR065-ROUTER-INFORMER-PHASE1.md` — the Rule-17 sprint
+  plan SSA's
+- `.agents/completion.contract.json` — `canon_documents[4].path` (portfolio
+  manifesto) c
+- `docs/sprints/SPRINT-ADR065-ROUTER-INFORMER-PHASE1.md` — third-round
+  correction per SS
+- `docs/sprints/SPRINT-ADR065-ROUTER-INFORMER-PHASE1.md` — second-round
+  correction per S
+- `.agents/completion.contract.json` — added (new file); sirsi-pantheon had
+  no completio
+- Router: refuse the retired implicit local ledger
+- `claude-pantheon` shares the reserved consumer slot.
+
 ## 2026-10-06 — v0.24.96 release candidate
 
 - `sirsi router task-lease-audit [task-id]` — a read-only audit of task-lease
