@@ -48,6 +48,18 @@ type AgentConfig struct {
 	// than infer one from the shape of Command (see consumer.go).
 	Consumer ConsumerConfig `json:"consumer,omitempty"`
 
+	// Delivery declares where the router-owned informer (ADR-065) pushes work
+	// for this lane — a spool directory, an HTTP endpoint, or the existing
+	// session-message adapter. Additive and optional: a row that omits it
+	// round-trips unchanged, same as any other absent typed field. A pointer
+	// (not a plain struct) because encoding/json's omitempty never treats a
+	// zero-value struct as empty — a plain DeliveryConfig would marshal every
+	// row as "delivery":{} even when no lane ever set it. The informer still
+	// chooses its delivery STRATEGY from Type/Wake.SessionMode (ADR-065
+	// Decision 3a) — Delivery only supplies the address a chosen strategy
+	// pushes to; it is not itself the strategy selector.
+	Delivery *DeliveryConfig `json:"delivery,omitempty"`
+
 	// extra preserves JSON fields not known to this version of AgentConfig so a
 	// LoadRegistry→SaveRegistry round-trip never silently erases metadata the
 	// struct does not model. "consumer" was the original motivating example and
@@ -133,6 +145,17 @@ type WakeConfig struct {
 	// WakeLaunchAgentLabel(cfg.ID) — never read back from this stored value.
 	// A missing or stale stored label is caught by registrydrift.go.
 	LaunchAgentLabel string `json:"launch_agent_label,omitempty"`
+}
+
+// DeliveryConfig declares the address the informer pushes to for a lane.
+// Target names which address field is live: "spool-dir" | "endpoint" |
+// "session-message" (ADR-065 Decision 3). "session-message" needs no address
+// here — it reuses the lane's existing interactive session, so only Target is
+// set.
+type DeliveryConfig struct {
+	Target   string `json:"target,omitempty"`
+	SpoolDir string `json:"spool_dir,omitempty"`
+	Endpoint string `json:"endpoint,omitempty"`
 }
 
 // Registry holds all registered agent configurations.

@@ -231,6 +231,55 @@ func TestUnknownFieldPreservedRoundTrip(t *testing.T) {
 	}
 }
 
+// TestDeliveryFieldRoundTrip is the task-2 regression test for ADR-065's
+// AgentConfig.Delivery addition: a row that never sets Delivery must not gain
+// a "delivery" key on save (the pointer-not-struct choice this guards), and a
+// row that does set it must carry the value through LoadRegistry→SaveRegistry
+// unchanged.
+func TestDeliveryFieldRoundTrip(t *testing.T) {
+	tmp := t.TempDir()
+	reg := &Registry{Agents: map[string]AgentConfig{
+		"no-delivery": {
+			ID: "no-delivery", Type: "claude",
+			Command: []string{"claude"}, Cwd: "/tmp",
+		},
+		"with-delivery": {
+			ID: "with-delivery", Type: "codex",
+			Command: []string{"codex"}, Cwd: "/tmp",
+			Delivery: &DeliveryConfig{Target: "spool-dir", SpoolDir: "/home/.sirsi/relay/with-delivery"},
+		},
+	}}
+	if err := SaveRegistry(tmp, reg); err != nil {
+		t.Fatalf("SaveRegistry: %v", err)
+	}
+
+	saved, err := os.ReadFile(filepath.Join(tmp, "agents.json"))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(saved, &out); err != nil {
+		t.Fatalf("unmarshal saved: %v", err)
+	}
+	agents, _ := out["agents"].(map[string]any)
+	noDelivery, _ := agents["no-delivery"].(map[string]any)
+	if _, ok := noDelivery["delivery"]; ok {
+		t.Errorf("no-delivery agent gained a \"delivery\" key it never set — round-trip not unchanged:\n%s", saved)
+	}
+
+	loaded, err := LoadRegistry(tmp)
+	if err != nil {
+		t.Fatalf("LoadRegistry: %v", err)
+	}
+	if loaded.Agents["no-delivery"].Delivery != nil {
+		t.Errorf("no-delivery agent loaded with non-nil Delivery: %+v", loaded.Agents["no-delivery"].Delivery)
+	}
+	got := loaded.Agents["with-delivery"].Delivery
+	if got == nil || got.Target != "spool-dir" || got.SpoolDir != "/home/.sirsi/relay/with-delivery" {
+		t.Errorf("with-delivery agent Delivery not preserved across save/load: got %+v", got)
+	}
+}
+
 // TestSaveRegistry_PreservesUnknownKeys is the regression test for the lossy
 // round-trip defect: every SaveRegistry call via json.MarshalIndent(reg)
 // silently dropped keys the Go struct has never modeled (e.g. "consumer" and
