@@ -17,11 +17,12 @@ import (
 )
 
 var (
-	boardServePort  int
-	boardServeDir   string
-	boardServePoll  time.Duration
-	boardServeOnce  bool
-	boardServeShape string
+	boardServePort    int
+	boardServeDir     string
+	boardServePoll    time.Duration
+	boardServeOnce    bool
+	boardServeShape   string
+	boardServeOrigins []string
 )
 
 var boardServeCmd = &cobra.Command{
@@ -56,6 +57,7 @@ func init() {
 	boardServeCmd.Flags().DurationVar(&boardServePoll, "poll", 3*time.Second, "Router poll interval")
 	boardServeCmd.Flags().BoolVar(&boardServeOnce, "once", false, "Poll once, print the payload as JSON, exit")
 	boardServeCmd.Flags().StringVar(&boardServeShape, "shape", "board", "Output shape for --once: board|fleet (fleet is the menubar projection)")
+	boardServeCmd.Flags().StringSliceVar(&boardServeOrigins, "surface-origin", nil, "Additional browser origin allowed to read router-board.v1 (repeatable)")
 	rootCmd.AddCommand(boardServeCmd)
 }
 
@@ -119,7 +121,13 @@ func runRouterBoard(_ *cobra.Command, _ []string) error {
 	go b.Run(ctx, boardServePoll)
 
 	mux := http.NewServeMux()
-	routerboard.NewHandler(b, dir).Register(mux)
+	handler := routerboard.NewHandler(b, dir)
+	if len(boardServeOrigins) > 0 {
+		origins := append([]string{}, routerboard.DefaultSurfaceOrigins...)
+		origins = append(origins, boardServeOrigins...)
+		handler = routerboard.NewHandlerWithOrigins(b, dir, origins)
+	}
+	handler.Register(mux)
 	srv := &http.Server{
 		Addr:        fmt.Sprintf("127.0.0.1:%d", boardServePort),
 		Handler:     mux,

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -74,6 +75,10 @@ type Config struct {
 	// release added. Wired by the caller, which owns registry/store access.
 	// If nil the endpoint returns 503 rather than an empty panel.
 	RouterFn RouterProducer
+	// SurfaceOrigins is the explicit browser-origin allowlist for the canonical
+	// router surface consumed by Nexus. Empty uses the local development and
+	// Sirsi production defaults; wildcard CORS is never used.
+	SurfaceOrigins []string
 	// MaatDecisionsFn supplies the shared, read-only decision projection. The
 	// dashboard never recalculates a Ma'at determination from reservations or
 	// host facts; it renders the producer's recorded assessment verbatim.
@@ -111,16 +116,17 @@ type FleetProducer func() (ledger.Snapshot, error)
 
 // Server is the Pantheon local dashboard HTTP server.
 type Server struct {
-	cfg     Config
-	handler http.Handler
-	alt     []*http.Server
-	srv     *http.Server
-	unlock  func()
-	mu      sync.RWMutex
-	running bool
-	runner  *Runner
-	confirm *ConfirmGuard
-	fleet   *FleetTracker
+	cfg            Config
+	handler        http.Handler
+	alt            []*http.Server
+	srv            *http.Server
+	unlock         func()
+	mu             sync.RWMutex
+	running        bool
+	runner         *Runner
+	confirm        *ConfirmGuard
+	fleet          *FleetTracker
+	surfaceOrigins map[string]struct{}
 }
 
 // New creates a dashboard server with all routes registered.
@@ -129,7 +135,18 @@ func New(cfg Config) *Server {
 		cfg.Port = DashboardPort
 	}
 
-	s := &Server{cfg: cfg, confirm: NewConfirmGuard(), fleet: NewFleetTracker(cfg.Unroutable)}
+	origins := cfg.SurfaceOrigins
+	if origins == nil {
+		origins = []string{"http://127.0.0.1:5173", "http://localhost:5173", "https://sirsi.ai"}
+	}
+	allowed := make(map[string]struct{}, len(origins))
+	for _, origin := range origins {
+		origin = strings.TrimRight(strings.TrimSpace(origin), "/")
+		if origin != "" {
+			allowed[origin] = struct{}{}
+		}
+	}
+	s := &Server{cfg: cfg, confirm: NewConfirmGuard(), fleet: NewFleetTracker(cfg.Unroutable), surfaceOrigins: allowed}
 
 	// Initialize runner if we have both an event buffer and a binary path.
 	if cfg.Events != nil && cfg.SirsiBin != "" {
@@ -148,6 +165,7 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("/notifications", s.handleNotifications)
 	mux.HandleFunc("/horus", s.handleHorus)
 	mux.HandleFunc("/vault", s.handleVault)
+	mux.HandleFunc("/router", s.handleRouterSurface)
 
 	// JSON API endpoints
 	mux.HandleFunc("/api/stats", s.apiStats)
@@ -180,7 +198,9 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("/api/fleet", s.apiFleet)            // A32 owner-reporting board (replaces server.py)
 	mux.HandleFunc("/api/ledger", s.apiLedger)          // A26 Nexus board seam — ledger.BoardSummary
 	mux.HandleFunc("/api/router", s.apiRouter)          // router panel: lanes, queue, known failures, swap, releases
-	mux.HandleFunc("/api/fabric", s.apiFabric)          // unified work/message/lane contract
+	mux.HandleFunc("/api/router/v1/manifest", s.apiRouterSurfaceManifest)
+	mux.HandleFunc("/api/router/v1/snapshot", s.apiRouterSurfaceSnapshot)
+	mux.HandleFunc("/api/fabric", s.apiFabric) // unified work/message/lane contract
 	mux.HandleFunc("/api/maat/decisions", s.apiMaatDecisions)
 	mux.HandleFunc("/api/maat/casebook", s.apiMaatCasebook)
 	mux.HandleFunc("/api/maat/knowledge", s.apiMaatKnowledge)

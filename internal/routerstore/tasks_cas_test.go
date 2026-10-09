@@ -85,3 +85,63 @@ func TestUpdateTaskSucceedsWhenStatusUnchanged(t *testing.T) {
 		t.Fatalf("update did not land: %+v", got)
 	}
 }
+
+// TestUpdateTaskRelabelsOrphanedInProgressWithoutLease is rs-43: a task stuck
+// at status "in-progress" with no live lease (expired, or never fenced — the
+// exact state hit live on codex-pantheon/inbox-20260927-134144-11a1 and
+// fw-lead-overlap-094238, both unclaimable because their own dependency was
+// unresolved, not because anyone held them) could never have its status label
+// corrected — update refused unconditionally on t.Status=="in-progress", even
+// though nobody held a lease to protect. Exiting in-progress for a
+// non-executable status (blocked/pending) must succeed once the lease is
+// provably not live, and must leave no stale lease columns behind.
+func TestUpdateTaskRelabelsOrphanedInProgressWithoutLease(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Date(2026, 8, 6, 8, 0, 0, 0, time.UTC)
+	s.now = func() time.Time { return now }
+
+	if err := s.AddTask(Task{Agent: "ra", TaskID: "O1", Subject: "orphaned"}); err != nil {
+		t.Fatal(err)
+	}
+	// Forge the exact poison: status=in-progress, lease already expired.
+	poisonTask(t, s, "ra", "O1", "in-progress", "dead-token", now.Add(-time.Hour).Format(time.RFC3339))
+
+	got, err := s.UpdateTask("ra", "O1", TaskUpdate{Status: "blocked", Subject: "dependency never resolved"})
+	if err != nil {
+		t.Fatalf("relabel of an orphaned in-progress task must succeed without a lease: %v", err)
+	}
+	if got.Status != "blocked" {
+		t.Fatalf("status did not land: %+v", got)
+	}
+	token, expires, claimedBy, threadID := leaseOwnership(t, s, "ra", "O1")
+	if token != "" || expires != "" || claimedBy != "" || threadID != "" {
+		t.Fatalf("stale lease columns survived relabel: token=%q expires=%q claimedBy=%q thread=%q", token, expires, claimedBy, threadID)
+	}
+}
+
+// TestUpdateTaskRefusesRelabelOfLiveLeasedTask is the negative control for the
+// fix above: a task actually held by a LIVE lease must still refuse a plain
+// relabel — only ReleaseTaskLease (which requires the token) may move it.
+func TestUpdateTaskRefusesRelabelOfLiveLeasedTask(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Date(2026, 8, 6, 8, 0, 0, 0, time.UTC)
+	s.now = func() time.Time { return now }
+
+	if err := s.AddTask(Task{Agent: "ra", TaskID: "L1", Subject: "held"}); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := s.ClaimNextTask("ra", "worker-1", "thread-1", time.Minute)
+	if err != nil {
+		t.Fatalf("claim failed: %v", err)
+	}
+
+	_, err = s.UpdateTask("ra", "L1", TaskUpdate{Status: "blocked"})
+	if err == nil {
+		t.Fatal("relabel of a live-leased task must be refused")
+	}
+
+	token, _, claimedBy, threadID := leaseOwnership(t, s, "ra", "L1")
+	if token != lease.Token || claimedBy != "worker-1" || threadID != "thread-1" {
+		t.Fatalf("refused relabel must not touch ownership: token=%q claimedBy=%q thread=%q", token, claimedBy, threadID)
+	}
+}

@@ -253,6 +253,28 @@ func hasOwnerInstruction(links []TaskLink) bool {
 	return false
 }
 
+// taskLeaseSnapshot reads lease_token and whether that lease is still live
+// (unexpired) for one row, without exposing either through the public Task
+// type — lease_token is a capability, never safe to round-trip through the
+// JSON API that Task backs.
+func (s *SQLiteStore) taskLeaseSnapshot(agent, taskID string) (token string, live bool, err error) {
+	var leaseExpires string
+	if err := s.db.QueryRow(`SELECT lease_token, lease_expires FROM tasks WHERE agent=? AND task_id=?;`, agent, taskID).Scan(&token, &leaseExpires); err != nil {
+		return "", false, fmt.Errorf("routerstore: read task lease state: %w", err)
+	}
+	if token == "" {
+		return "", false, nil
+	}
+	if leaseExpires == "" {
+		return token, true, nil
+	}
+	expires, parseErr := time.Parse(time.RFC3339, leaseExpires)
+	if parseErr != nil {
+		return token, true, nil // malformed expiry: treat conservatively as live
+	}
+	return token, expires.After(s.clock().UTC()), nil
+}
+
 func (s *SQLiteStore) UpdateTask(agent, taskID string, u TaskUpdate) (Task, error) {
 	if u.AddTokens < 0 || u.AddSeconds < 0 {
 		return Task{}, fmt.Errorf("routerstore: accounting increments cannot be negative")
@@ -265,11 +287,23 @@ func (s *SQLiteStore) UpdateTask(agent, taskID string, u TaskUpdate) (Task, erro
 	// row may legally shed lease ownership — is derived from this value, so the
 	// write must refuse to land if it changed underneath us (see the CAS guard).
 	observedStatus := t.Status
+	observedLeaseToken, leaseLive, err := s.taskLeaseSnapshot(agent, taskID)
+	if err != nil {
+		return Task{}, err
+	}
 	if afterTaskReadHook != nil {
 		afterTaskReadHook()
 	}
 	if u.Status != "" && u.Status != t.Status {
-		if u.Status == "done" || u.Status == "in-progress" || t.Status == "in-progress" {
+		// Claiming (->in-progress) or completing (->done) real work must always
+		// go through ClaimTask/CompleteTaskLease, never this generic path.
+		// Leaving in-progress for a non-executable status (blocked, pending) is
+		// an administrative relabel, not work: it only needs fencing while a
+		// lease is actually LIVE, i.e. a worker could be holding real work right
+		// now. A task stuck "in-progress" with no lease or an expired one is not
+		// held by anyone — refusing to relabel it leaves a correctly-blocked
+		// task's status permanently wrong (rs-43).
+		if u.Status == "done" || u.Status == "in-progress" || (t.Status == "in-progress" && leaseLive) {
 			return Task{}, fmt.Errorf("routerstore: executable task transition %q -> %q requires a fenced task lease", t.Status, u.Status)
 		}
 	}
@@ -348,8 +382,20 @@ func (s *SQLiteStore) UpdateTask(agent, taskID string, u TaskUpdate) (Task, erro
 	// read — strip the newly valid ownership fields, silently un-fencing live
 	// work. That is a worse failure than the poison this clearing exists to
 	// prevent, so the update refuses rather than clobbers.
-	res, err := s.exec(`UPDATE tasks SET subject=?,status=?,phase=?,responsible_party=?,blocked_by=?,updated=?,charter=?,outline=?,timeline=?,links=?,test_state=?,stage=?,tokens_consumed=tokens_consumed+?,duration_seconds=duration_seconds+?`+leaseClear+` WHERE agent=? AND task_id=? AND status=?;`,
-		t.Subject, t.Status, t.Phase, t.ResponsibleParty, t.BlockedBy, t.Updated, t.Charter, t.Outline, string(timeline), string(links), t.TestState, t.Stage, u.AddTokens, u.AddSeconds, agent, taskID, observedStatus)
+	//
+	// The relabel-out-of-in-progress path above is only reachable when the
+	// observed lease was not live; also pin the write to the exact observed
+	// lease_token so a ClaimTask that installs a brand-new live lease in the
+	// gap between that read and this write loses the CAS (0 rows) and errors,
+	// instead of this write silently clobbering the new owner's lease.
+	whereExtra := ""
+	args := []any{t.Subject, t.Status, t.Phase, t.ResponsibleParty, t.BlockedBy, t.Updated, t.Charter, t.Outline, string(timeline), string(links), t.TestState, t.Stage, u.AddTokens, u.AddSeconds, agent, taskID, observedStatus}
+	if observedStatus == "in-progress" && t.Status != observedStatus {
+		whereExtra = ` AND lease_token=?`
+		args = append(args, observedLeaseToken)
+	}
+	res, err := s.exec(`UPDATE tasks SET subject=?,status=?,phase=?,responsible_party=?,blocked_by=?,updated=?,charter=?,outline=?,timeline=?,links=?,test_state=?,stage=?,tokens_consumed=tokens_consumed+?,duration_seconds=duration_seconds+?`+leaseClear+` WHERE agent=? AND task_id=? AND status=?`+whereExtra+`;`,
+		args...)
 	if err != nil {
 		return Task{}, fmt.Errorf("routerstore: UpdateTask %s/%s: %w", agent, taskID, err)
 	}

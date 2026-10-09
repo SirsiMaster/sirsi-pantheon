@@ -1,6 +1,12 @@
 # ADR-072 — Universal Thread Naming Convention, Router-Enforced
 
-**Status:** Proposed 2026-09-28 (Ra design; owner-directed; SSA review + owner bind pending)
+**Status:** Proposed 2026-09-28 (Ra design; owner-directed). SSA round 1
+(2026-10-09, thr-80b0f440844c2424): **changes requested** on C2/C4/C5 plus phase
+order — resolved in the revised C2/C4/C5 and §6 "Phase order" below. SSA round 2
+(2026-10-09): **changes requested** on offline authority scope (C2/C4),
+live-renamed alias cutover (C5), and registering-session vs. service-principal
+separation (C3) — resolved in the revised C2/C3/C4/C5 below. Re-review + owner
+bind still pending.
 **Deciders:** owner (directive 2026-09-28), Ra (router architect)
 **Custodian:** 𓁢 the Router (registry authority)
 
@@ -146,12 +152,63 @@ and stay retired; their names become reusable under the grammar.
 **C2 — Versioned, origin-pinned registry schema.** The allowed agent values,
 project values, and machine aliases live in ONE versioned schema on origin at a
 canonical path (`contracts/naming/registry-schema-vN.json`), carrying an explicit
-`schema_version` and an immutable content hash. The router validates a
-registration against the **origin-pinned schema hash**, never a working-tree copy
-(A37). Adding an agent/project value or a machine alias is a **promotion** —
-an owner/SSA-bound change to the schema on origin that bumps the version + hash;
-a lane cannot introduce a value by self-declaring. A working-tree divergence is
-detected (hash mismatch) and refused, never used to authorize an identity.
+`schema_version` and a content hash computed over the schema's own bytes with
+`schema_hash` itself excluded from the hashed payload (sha256 over the
+canonicalized JSON minus the `schema_hash` field — never a hash that includes
+itself, which proves nothing). **Canonical encoding (SSA round 2 detail):**
+RFC 8785 JSON Canonicalization Scheme (JCS) — UTF-8, lexicographic key
+ordering by UTF-16 code unit, no insignificant whitespace, numbers in
+shortest round-trip form. A duplicate key in the source document is a parse
+error at load time (rejected before hashing, never silently last-wins);
+non-UTF-8 input is rejected the same way. The hash is sha256 over the JCS
+bytes of the payload with `schema_hash` excluded, matching the existing rule
+above. The hash alone grants no authority: it is
+meaningful only alongside a **promotion receipt** — a signed/attributable
+record, written by the router service at promotion time, binding
+`{schema_version, schema_hash, promoted_by, promoted_at}` to the origin commit
+that introduced it. A client-supplied pin (a hash a lane happens to hold) is
+never trusted on its own; the router always re-derives trust from the
+service's own promotion receipt, not from what the caller presents. Promotion
+(adding an agent/project value or a machine alias) is an owner/SSA-bound change
+on origin that **atomically** activates the new `(schema_version, schema_hash,
+machine bindings)` triple together — never bumps the version without the hash,
+or the hash without the machine bindings. The router **rejects** an
+unsupported (unknown) schema version outright and **rejects** an
+authenticated-but-stale version presented where a newer one has been promoted
+(unauthorized downgrade), unless the caller is in the explicit offline
+carve-out below.
+  - **Offline carve-out (SSA round 2, resolved) — read-only, never a second
+    writer.** A disconnected host's last-verified promotion receipt proves
+    only that a schema was once admitted; it is never upgraded into global
+    mutation authority. Offline operation is limited to the **read-only
+    surface already admitted under that receipt**: validating an already-held
+    name's shape, answering `sirsi router doctor`-style local diagnostics, and
+    serving previously-cached lookups. Any operation that **mutates the global
+    1:1 namespace** — new registration, rename, reuse/promotion out of
+    tombstone, schema promotion — **remains unavailable while disconnected**,
+    full stop; there is no fenced delegated-writer mode in this ADR. A
+    disconnected host queues the *request* locally (never the *decision*) and
+    replays it through the normal C2/C4 path once the authoritative store is
+    reachable, where it is subject to the same collision/CAS/idempotency
+    checks as any online request — reconnection never grants retroactive
+    priority to a request merely because it was queued first. Missing or
+    never-verified pin **fails closed** (registration refused, not silently
+    allowed through). Required fixtures (folds into C6): two disconnected
+    hosts each attempting the same mutating operation against their own
+    last-verified receipt (both refused locally, neither commits); a
+    disconnected host with a **revoked** machine-id credential (ADR-067)
+    presenting its stale receipt (refused, not merely stale-schema-refused);
+    and reconnect-and-replay (a queued mutating request, submitted after
+    reconnection, obeys C4's normal revision/idempotency checks — no
+    special-cased "offline-origin" bypass).
+  - **Working-tree divergence is never authority** (A37): a schema file edited
+    in a checkout, with no matching promotion receipt, is detected as a hash
+    mismatch and refused — the router's refusal is a **local operator
+    diagnostic** ("your checkout disagrees with the last promoted schema"),
+    distinct from the router **service's** rejection of a remote registration
+    request against an unpromoted/stale schema. The service itself never
+    depends on any client checkout to decide trust — only on its own
+    promotion receipts.
 
 **C3 — Machine proof from the authenticated session, not hostname text.** The
 `machine` alias is not trusted from any client-supplied string. The router derives
@@ -160,36 +217,205 @@ machine-id** (ADR-067), then verifies the canonical alias maps to that machine-i
 Hostname text alone carries no authority; a session on m5 cannot register a `-m1`
 name. The alias↔machine-id binding is part of the schema (C2).
 
+**SSA round 2, resolved — registering session vs. outbound service principal
+are never substituted for each other.** The name slot is derived **solely**
+from the authenticated **registering session's** credentialed machine-id,
+checked against its unrevoked credential (ADR-067) and its promoted alias
+binding (C2). When the router service itself makes a remote call *during*
+registration (schema promotion lookup, machine-id verification against a
+central authority), that call authenticates as the **router service's own**
+outbound principal — a valid transport credential for *that* hop — but this
+service principal is carried **alongside**, and never **in place of**, an
+integrity-protected reference to the registering session's subject: the
+downstream call states both "router-service-as-caller" and "registering this
+machine-id on behalf of." The service's own machine-id is never substituted
+for the registering session's machine-id when deciding which name slot is
+granted — a request authenticated as the M1 router service does not thereby
+grant an M1 name to a session that is itself running on M5.
+
+Required test (folds into C6): an actual remote M5 client → M1 service
+registration call. The M5 session gets back an `-m5` name; it cannot obtain
+an `-m1` name by any combination of request shape. The service's own M1
+credential (used for its outbound schema-promotion/machine-id-verification
+calls) never authorizes the client's requested name — asserted by a fixture
+that deliberately runs the service's verification hop *from* M1 while the
+registering session is *on* M5, and checks the returned name is `-m5`, not
+`-m1`.
+
 **C4 — Atomic mapping, crash-safe rename, recovery.** The mapping
 `name → thread-id → machine-id → task-id` is written in a **single transaction**.
 Invariants are enforced as store constraints, not application checks: a **partial
 unique index on live rows** gives exactly one live name per thread and one live
-thread per name; a unique `(machine-id, session)` ownership constraint prevents a
-duplicate live claim. **Rename** is one transaction that relabels the same
-thread-id, guarded by an **idempotency key** so a retried/interrupted rename is a
-no-op, not a double-apply. **Migration** writes a **rollback/resume receipt**
-(idempotency key + prior state) so an interrupted rename/migration resumes or
-rolls back cleanly; a crash mid-rename never leaves a thread nameless or a name
-dangling. Collisions are **rejected**, never silently overwritten.
+thread per name. The `(machine-id, session)` constraint governs **ownership of a
+live name claim**, not "one thread per session" — a session legitimately runs
+several threads (parallel tasks), so the constraint is scoped to
+`(machine-id, session, name)` uniqueness, never a blanket single-thread-per-session
+rule; any tighter restriction is a separate, explicit lifecycle decision this
+ADR does not make.
 
-**C5 — Alias draining during flag-then-refuse (no silent stranding).** During the
-migration window, an old (pre-rename) name **resolves to the same durable
-thread-id** via an alias mapping, so mail addressed to it is delivered, never
-stranded. Once a thread is retired (or the refuse-cutover completes), the old name
-returns a **machine-actionable structured response** — `{status: renamed, to:
-<new-name>}` or `{status: retired, successor?: <name>}` — so a sender re-routes
-programmatically. No old alias silently drops a message at any point. Alias
-mappings are time-bounded to the migration window and removed at cutover.
+**Idempotency is a replay guard, not a concurrency guard — the two are separate
+mechanisms and C4 requires both:**
+- **Serialization (concurrency):** a rename request **carries the caller's
+  expected mapping revision** (read by the caller before issuing the
+  request) rather than the server silently reading "whatever the newest row
+  happens to be" at write time. The server compares the caller-supplied
+  expected revision against the current row, in a **compare-and-swap** inside
+  the transaction. Two renames racing on the same thread are serialized by
+  the store (row lock / CAS failure on the loser); the loser gets an explicit
+  **stale-revision conflict** error, never a silent overwrite and never two
+  successful "renamed" receipts for one thread's single rename. The expected
+  revision is bound into the **request digest** (below), so a replay with a
+  stale revision is distinguishable from a genuine same-payload retry: the
+  idempotency check (same key, same digest) runs **before** the CAS check — a
+  retried request against a now-committed rename finds its own receipt by
+  key+digest and returns it unchanged, rather than being rejected as a
+  stale-revision conflict for colliding with the very commit it caused.
+- **Idempotency (replay):** each rename request carries an idempotency key.
+  The key is recorded bound to `{authenticated caller, thread-id, operation,
+  request-digest}` — a digest of the actual requested change, not just the key
+  string. A retried request with the **same key and same digest** returns the
+  original receipt as a no-op. A request with the **same key but a different
+  digest** (a key reused for a different payload) is **rejected**, never
+  applied as a new rename and never treated as a replay of the old one.
+- **Receipt/mapping atomicity:** the idempotency receipt and the mapping update
+  commit in the **same transaction**. If the process crashes after commit but
+  before the reply reaches the caller, the retried request finds the committed
+  receipt and returns it unchanged — the caller cannot distinguish a slow
+  success from a crash-after-commit, by design.
+
+**Migration** writes a **rollback/resume receipt** (idempotency key + prior
+state) so an interrupted rename/migration resumes or rolls back cleanly; a
+crash mid-rename never leaves a thread nameless or a name dangling. Collisions
+are **rejected**, never silently overwritten.
+
+**C5 — Alias draining during flag-then-refuse (no silent stranding), with
+generation-fenced reuse.** Every bound name carries one of three states —
+**canonical** (the live holder's current name), **active alias** (a prior
+name of the *same still-live* thread-id, during its migration window), or
+**tombstone** (a prior name of a now-*retired* thread-id, retained for
+redirect, not for delivery) — and the router enforces a **single collision
+policy** across all three: a name can be promoted from tombstone back to
+canonical (reuse) only when no canonical or active-alias row currently holds
+it. A retiring thread's name does not go straight to "free" — it becomes a
+tombstone first, carrying the retired thread's **durable thread-id and
+generation number** (incremented each time the name is reused on a new
+thread), so a redirect can always name "which" dead thread the mail was meant
+for, not just a label.
+
+Reuse does **not** delete the tombstone; it **supersedes** it with a new
+generation while keeping the superseded generation's identity (thread-id +
+generation) in the record, so the structured response C5 promises stays
+answerable after reuse, not just during the migration window:
+- **Active alias → canonical (still live):** mail to the old name is
+  delivered to the live thread-id — `{status: renamed, to: <new-name>}`.
+- **Tombstone, not yet reused:** `{status: retired, successor?: <name>}`.
+- **Tombstone, reused by a new holder (new generation):** mail addressed to
+  the name **by thread-id/generation** (a sender who resolved an expected
+  thread-id before sending) that no longer matches the current generation is
+  **rejected as stale** — `{status: stale, expected_generation: N, current:
+  M}` — never silently redirected into the new, unrelated holder's inbox. A
+  **legacy name-only send** (no resolved generation attached, e.g. an old
+  script) is **required to resolve an expected thread/generation before
+  delivery is attempted**, or the send is rejected as ambiguous; the router
+  never guesses which generation a bare name means once more than one has
+  existed.
+- The router **never auto-reroutes** a retired thread's queued-but-undelivered
+  mail to whatever new holder later reuses its name — queued mail for a
+  retired thread is surfaced to the retired thread's successor only via the
+  explicit `ra/reassign-verb` path, never implicitly by name collision.
+
+**SSA round 2, resolved — cutover for a still-live renamed thread.** The prior
+text only defined "active alias → canonical (while the original thread-id is
+still live)" and "tombstone (now-retired)," leaving no state for a migration
+window that **ends while the renamed thread is still live** — the gap SSA
+flagged: a still-live thread's old name would otherwise keep delivering
+forever. A fourth state closes it: **expired alias** — an active alias whose
+migration window has been explicitly ended (`sirsi thread rename --end-alias`
+or the window's configured duration elapses) while its thread-id is still
+live. An expired alias:
+- **stops compatibility delivery** — mail to it is refused with
+  `{status: alias-expired, canonical: <current-name>, thread-id, generation}`,
+  never silently delivered and never silently dropped;
+- **retains the thread-id + generation** (same durable pair C5 already
+  threads through tombstones), so a structured reply can state exactly which
+  live thread the expired name used to mean;
+- **preserves the namespace reservation** per the same retirement/reuse
+  policy as a tombstone — the expired name does not become freely reusable
+  just because delivery stopped; it is reusable only once *its* holder
+  retires, same as any canonical name;
+- is tracked **separately** from retired-thread tombstones in the collision
+  policy (an expired-alias row and a tombstone row are both "not live,"
+  but an expired alias's thread-id is still live elsewhere under its
+  canonical name, where a tombstone's is not) — a lookup against an expired
+  alias always offers the live thread's current canonical name; a lookup
+  against a tombstone offers retired/successor status only.
+
+**Redirect-target safety on name reuse.** A `{status: renamed, to: <new-name>}`
+response is not itself a safe redirect target once `<new-name>` can later be
+reused on an unrelated thread: the response MUST also carry the **target's
+durable thread-id and generation** (`{status: renamed, to: <new-name>,
+thread_id, generation}`), so a sender who follows the redirect later can
+detect — via the same generation check C5 already defines for stale sends —
+whether `<new-name>` still names the thread it was redirected to, or has
+since been superseded by reuse. Rejecting a stale *incoming* send (already
+specified above) is necessary but not sufficient; the redirect *response*
+needs the same binding on the way out.
+
+Required test coverage (folds into C6): rename A→B (A becomes active alias);
+attempted reuse of A **while** A is still an active alias of the live thread
+(must be refused — collision policy, not a race to win); **alias expiry while
+the thread stays live** (A becomes an expired alias, not a tombstone;
+delivery to A is refused with the live thread's current canonical name,
+never redirected); retirement of A (A becomes tombstone) and reuse of A after
+the window (new generation, superseded tombstone kept); stale sender delivery
+(an old resolved generation reference against a reused name is rejected, not
+redirected); redirect delivery (unresolved legacy name-only send is rejected
+as ambiguous, never guessed); **rename-chain redirect-target generation**
+(A→B→C: a sender holding the `{to: B, thread_id, generation}` receipt from
+the first rename detects, via generation mismatch, that B was itself renamed
+or reused before following it to C). Alias/tombstone/expired-alias rows are
+not time-bounded by a calendar window alone — an active alias is scoped to
+"while the original thread-id is still live and its migration window is
+open"; an expired alias persists (refusing delivery) until its thread
+retires; a tombstone persists until explicitly superseded by reuse, not
+deleted on a timer.
 
 **C6 — Adversarial + divergence fixtures (required before the impl bind).** The
-implementation ships fixtures that fail without the guard and pass with it (A35):
+implementation ships fixtures that fail without the guard and pass with it (A35),
+run against the actual store/service boundary with production constraints
+enabled — each with a causal negative control that reaches the guarded
+operation and fails without the guard, followed by a restored pass:
 cross-host spoofing (a `-m1` name from an m5 session — refused via C3),
 stale/working-tree registry divergence (schema-hash mismatch — refused via C2),
-duplicate live claim (two sessions, one name — refused via C4's partial unique
-index), rename race (concurrent renames of one thread — serialized by C4's
-idempotency key), crash midway through rename/migration (resume/rollback via C4's
-receipt), retired-name reuse (a name re-bound only after retirement), and
-old-alias delivery (mail to a pre-rename name reaches the durable thread via C5).
+unsupported/downgraded schema version and revoked host credential (refused via
+C2/C3), duplicate live claim (two sessions, one name — refused via C4's partial
+unique index), rename race (concurrent renames of one thread — serialized by
+C4's revision CAS, not just the idempotency key), same-key/same-payload retry
+(no-op replay), same-key/different-payload retry (rejected), crash midway
+through rename/migration at points both before and after commit
+(resume/rollback via C4's receipt, same receipt returned post-crash),
+atomic schema promotion racing a concurrent registration, duplicate
+canonical/alias/tombstone collision (refused via C5's single collision
+policy), retired-name reuse only after retirement with a new generation
+(tombstone superseded, not deleted), stale generation delivery and ambiguous
+legacy name-only send (both rejected per C5, never guessed or cross-delivered),
+task-component binding rejection (an unauthorized/non-existent task — C2
+phase-order note below), and migration retry/rollback that loses no mail,
+lease, or history. Preserve exact source/schema/store versions, command
+outputs, and failure evidence for each fixture; no fixture execution is
+claimed by this ADR text itself — fixtures ship with the P2 implementation.
+
+**Phase order (SSA round 1, resolved):** P2 — not P3/P5 — MUST land C2's
+origin-pinned schema/promotion-receipt check and C4's crash-safe,
+revision-guarded mapping **before registration is allowed to mutate state at
+all**. P3 may expose the `rename`/reuse *commands* and P5 may finish
+integration/cutover, but neither phase defers P2's trust (C2/C3) or storage
+(C4) invariants — those are preconditions of the first successful
+registration, not later hardening. The optional `task` component, when
+present, MUST bind to an existing, authorized, durable task/workstream id
+known to the router (not an arbitrary string the caller supplies) — the
+namespec grammar check (P1) validates the *shape* of the task slot only and
+grants no binding authority by itself.
 
 ## Neith's Triad (A22)
 
@@ -218,7 +444,10 @@ flowchart TD
    agent/project sets; `machine` gleaned from hostname; unit tests both directions.
 2. **P2 — router hands out names:** component-based `register`/`adopt` that returns
    the canonical name and writes the name→thread-id→machine-id→task-id mapping; the
-   machine-slot == credentialed-machine-id check (extends ADR-067).
+   machine-slot == credentialed-machine-id check (extends ADR-067). **Precondition,
+   not follow-up:** C2 (origin-pinned schema + promotion receipt) and C4 (CAS'd,
+   crash-safe mapping transaction) land in this phase — the first registration P2
+   ships already enforces both; they are not deferred to P3/P5.
 3. **P3 — rename + reuse lifecycle:** `sirsi thread rename` (same thread-id, atomic
    relabel); retirement frees the name; the 1:1-live invariant enforced in the store.
 4. **P4 — doctor + migration:** `sirsi router doctor` flags non-conforming live
