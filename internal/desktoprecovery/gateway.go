@@ -107,20 +107,35 @@ func NewFileAdmissionStore(root string) (*FileAdmissionStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("desktop recovery: open admission claim directory: %w", err)
 	}
-	var stat unix.Stat_t
-	if err := unix.Fstat(fd, &stat); err != nil || stat.Mode&unix.S_IFMT != unix.S_IFDIR {
+	if err := validateClaimDirectory(fd, unix.Fstat, unix.Geteuid()); err != nil {
 		_ = unix.Close(fd)
-		if err != nil {
-			return nil, fmt.Errorf("desktop recovery: stat admission claim directory: %w", err)
-		}
-		return nil, errors.New("desktop recovery: admission claim path is not a directory")
+		return nil, err
 	}
 	return &FileAdmissionStore{rootFD: fd}, nil
+}
+
+// Check the retained descriptor rather than re-resolving a mutable path. The
+// injectable stat operation also lets tests prove failure closes admission.
+func validateClaimDirectory(fd int, statFn func(int, *unix.Stat_t) error, effectiveUID int) error {
+	var stat unix.Stat_t
+	if err := statFn(fd, &stat); err != nil {
+		return fmt.Errorf("desktop recovery: stat admission claim directory: %w", err)
+	}
+	if stat.Mode&unix.S_IFMT != unix.S_IFDIR {
+		return errors.New("desktop recovery: admission claim path is not a directory")
+	}
+	if stat.Uid != uint32(effectiveUID) || stat.Mode&0o7777 != 0o700 {
+		return errors.New("desktop recovery: admission claim directory must be owned by the effective operator and have mode 0700")
+	}
+	return nil
 }
 
 func (s *FileAdmissionStore) Claim(id [sha256.Size]byte, expiresAt time.Time) error {
 	if s == nil || s.rootFD < 0 {
 		return errors.New("desktop recovery: admission claim store is unavailable")
+	}
+	if err := validateClaimDirectory(s.rootFD, unix.Fstat, unix.Geteuid()); err != nil {
+		return err
 	}
 	name := hex.EncodeToString(id[:]) + ".claim"
 	fd, err := unix.Openat(s.rootFD, name, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)

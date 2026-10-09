@@ -40,8 +40,10 @@ A transport identity header is not an authenticated operator.
    durable. Create-only hash-derived nonce claims survive restart. Claim files
    contain expiry only, no capability/Apple credential. Retain claims until a
    separate reviewed, dry-run-capable expiry collector exists. Removing claims
-   is not rollback. Current source does not validate ownership/mode: deployment
-   must check these and independent security review must bind them before use.
+   is not rollback. The source checks the retained directory descriptor for effective-operator
+   ownership and exact mode 0700 at startup and before each claim, denying
+   admission on stat failure or permission drift. Deployment and independent
+   security review must still bind actual operator enrollment before use.
 6. Local audit records only operator id, node id, key id, decision code and
    timestamps; never capability, cookie, desktop pixels, keystrokes, password,
    private paths or process arguments. Retention is operator-controlled. Audit
