@@ -1,19 +1,29 @@
 # ADR-077: Ownerless Recovery — Signed LAN Anchor
 
 ## Status
-**Proposed, revision 3** — 2026-10-09. Design only; no code, no key material,
+**Proposed, revision 4** — 2026-10-09. Design only; no code, no key material,
 no new `authorized_keys` entries. Routed for SHA (hardware) + SSA (software)
 review before any implementation, per the owner directive that created this
 task (SHA 20260915-012036, ledger `rs-41-ownerless-recovery-signed-lan-anchor`).
 Revision 2 responded to SSA's and SHA's CHANGES_REQUESTED verdicts on
-revision 1 (exact head `e22478e1`); revision 3 (this text) responds to SSA's
-CHANGES_REQUESTED verdict on revision 2 (exact head `c5680351`) — see "Review
-History" below. SSA's revision-2 review named three remaining gaps: an
-unresolved trust mapping between the signing key and SSH's own restriction
-semantics, an admission/replay check that was not atomic with dispatch, and
-a custody check (§Decision item 3) that inspected ownership without holding
-a fence through execution. This revision closes all three; it remains
-proposed, not accepted, pending a fresh SHA+SSA pass on this exact text.
+revision 1 (exact head `e22478e1`); revision 3 responded to SSA's
+CHANGES_REQUESTED verdict on revision 2 (exact head `c5680351`). Both SHA and
+SSA independently reviewed revision 3 (exact head `1087bf15`) and both
+returned CHANGES_REQUESTED — see "Review History" below. The two reviews
+converged on the same underlying gap stated two ways: the authority a
+revocation changes and the authority a dispatch reads are not the same
+protected, versioned thing, so "revoke before invoke denies" was asserted
+without a mechanism that makes it true. This revision (a) makes the grant
+source root-owned and distinct from account-writable `authorized_keys`,
+(b) replaces the "re-read before dispatch" prose with an explicit generation
+fence shared between policy publication and dispatch commitment,
+(c) makes the clock-rollback replay defense survive record pruning via a
+durable high-water mark, (d) fixes the reservation key to
+`UNIQUE(fingerprint, request_id)` with content hash as a checked value, and
+(e) corrects three qualification-matrix rows that contradicted the
+linearization-point rule and the Verifier/Custody stage split stated
+elsewhere in this document. It remains proposed, not accepted, pending a
+fresh SHA+SSA pass on this exact text.
 Number note: ADR-076 is claimed by an open, unmerged PR (#1017,
 `maat/trust-boundary-gate`) and does not exist on `origin/main` (A37 — a
 record exists only on origin). This document takes ADR-077 to avoid a
@@ -51,11 +61,26 @@ network lane in Option A is down.
    which key authenticated the caller or whether the caller arrived over SSH
    at all. This ADR defines "signed" as a separate, self-contained property,
    verified independently of SSH:
-   - **Encoding and namespace.** The envelope is
-     `{node_id, verb, target, config_digest, request_id, issued_at, expires_at}`,
-     serialized as key-sorted, UTF-8, newline-terminated canonical JSON
-     (no insignificant whitespace, fixed field order). The signer signs this
-     exact byte sequence using `ssh-keygen -Y sign -n sirsi-recovery-anchor`
+   - **Encoding and namespace, field types pinned (closes SSA's
+     implementation elaboration).** The envelope is
+     `{node_id, verb, target, config_digest, request_id, issued_at, expires_at}`
+     with field types fixed, not left to the implementation to infer:
+     `node_id` (string, this node's pinned identity), `verb` (string, one of
+     the enumerated allowlist names — §item 3), `target` (string, the
+     verb's approved service label or volume UUID), `config_digest` (string,
+     lowercase-hex `sha256`, exactly 64 characters), `request_id` (string,
+     UUIDv4 canonical form), `issued_at`/`expires_at` (integer, Unix seconds
+     UTC — never a float, never a string, never a different unit). The
+     parser rejects a duplicate JSON key or an unrecognized field in the
+     envelope **before** canonicalization or signature verification runs —
+     an envelope is well-formed-or-rejected, never "ignore what you don't
+     recognize." Serialized as key-sorted, UTF-8, newline-terminated
+     canonical JSON (no insignificant whitespace, fixed field order); the
+     implementation publishes byte-level fixture examples of a valid
+     canonical envelope alongside the code, because key-sorting and a
+     trailing newline alone do not pin every JSON encoder's whitespace and
+     escaping choices. The signer signs this exact byte sequence using
+     `ssh-keygen -Y sign -n sirsi-recovery-anchor`
      (a **dedicated signature namespace**, distinct from any other use of
      the same key — `ssh-keygen -Y verify` is namespace-bound and rejects a
      signature produced under a different `-n`). An envelope whose signature
@@ -63,22 +88,57 @@ network lane in Option A is down.
      daemon explicitly enumerates (ed25519 and ecdsa-sha2-nistp256 at
      launch; nothing else), is rejected before any further check — unknown
      key or certificate formats never reach the allowlist step.
-   - **The trust mapping is a derived artifact, not `authorized_keys`
-     itself.** `ssh-keygen -Y verify` consumes an *allowed-signers* file,
-     which is a different format from `authorized_keys` and carries no
-     `from=`/forced-command restrictions on its own. The anchor therefore
-     does not read `authorized_keys` directly; it reads a **generated,
-     anchor-local allowed-signers file**, rebuilt by a privileged sync step
-     from the account's `authorized_keys` on every change. That sync step is
-     the trust boundary: it maps `ssh_pubkey_fingerprint → {local UID,
-     permitted verbs}`, and it **excludes** any key whose `authorized_keys`
-     entry carries a `from=`, `command=`, or other restriction, unless that
-     exact fingerprint also appears in a separate, explicit
-     `anchor-signers.allow` entry naming it for anchor use. A restriction
-     written for SSH-session authorization is inherited as a restriction on
-     anchor use, never silently discarded; granting anchor use to an
-     already-restricted key requires a second, explicit grant, not an
-     inference from the SSH entry's mere existence.
+   - **The trust mapping's sole grant source is root-owned, not
+     `authorized_keys` (closes SHA R3-1 / SSA R3-1).** An ordinary account's
+     `authorized_keys` is account-writable — if membership in it could by
+     itself create an anchor grant, any account able to add its own SSH key
+     could enroll that key for root recovery verbs, turning an everyday SSH
+     capability into a privilege escalation. This ADR therefore splits grant
+     and restriction into two inputs with different owners and different
+     powers, and neither can do the other's job:
+     - **`anchor-grants.allow`** — root-owned, mode `0600`, located outside
+       any account's home directory, writable only by the owner (directly,
+       or via an owner-authorized enrollment flow that itself writes as
+       root). Every line is an explicit `(ssh_pubkey_fingerprint, local UID,
+       permitted verbs)` tuple. This file is the **only** source from which
+       a grant can originate — not "the key appears somewhere in
+       `authorized_keys`," not "the key can log in as that account." A key
+       absent from `anchor-grants.allow` has no anchor grant regardless of
+       its `authorized_keys` status, including an entirely unrestricted
+       `authorized_keys` entry.
+     - **`authorized_keys`** — account-writable, consulted for **narrowing
+       only**. If a fingerprint holds a grant in `anchor-grants.allow` and
+       that same fingerprint's `authorized_keys` entry carries a `from=`,
+       `command=`, or other restriction, the restriction **excludes that
+       fingerprint from the derived mapping by default** — a restriction
+       written for SSH-session authorization is inherited as an anchor
+       exclusion, never silently discarded. The only way to grant anchor
+       use to an already-restricted key is an explicit `override: true`
+       flag on that exact fingerprint's `anchor-grants.allow` line — a
+       second, deliberate owner act naming the override, never an
+       inference from the restriction's mere absence or from the grant
+       entry's existence alone. Either way, `authorized_keys` can only take
+       a grant away or scope it down; it can never add one, and an account
+       editing its own `authorized_keys` can never create or enlarge an
+       anchor grant for itself.
+     - The **derived, anchor-local allowed-signers file** consumed by
+       `ssh-keygen -Y verify` is rebuilt by a privileged sync step that
+       reads both inputs under this rule and writes the output via
+       **atomic replace** (write to a temp path, `fsync`, `rename` over the
+       live path) — never an in-place edit a partial write could corrupt.
+       The sync step **rejects and refuses to publish** a malformed or
+       ambiguous input (duplicate fingerprint with conflicting verb sets,
+       unparseable line, wrong file mode/ownership on either source file)
+       rather than publishing a best-effort partial mapping; on rejection,
+       or if the previous successful sync is older than a bounded
+       **freshness ceiling**, the daemon serves the last-known-good mapping
+       if still within ceiling, or **fails closed** (denies all requests)
+       once the ceiling is exceeded — a stale or broken policy input must
+       never silently keep granting.
+     - A key present in `authorized_keys` with a `from=`/`command=`
+       restriction and no `override: true` on its `anchor-grants.allow`
+       line remains **absent from the derived mapping**: the restriction is
+       inherited as exclusion, never as a narrowed-but-present grant.
    - **The ingress boundary is same-UID-plus-signature, not "arrived over
      SSH."** Kernel peer-credential checks on the local IPC socket (item 2
      below) can only ever prove the connecting process's UID — never which
@@ -122,13 +182,25 @@ network lane in Option A is down.
      tuple that requires interactive confirmation stays candidate, not
      qualified, until proven otherwise (§8).
    - **Test coverage required before qualification**: a different UID
-     presenting a validly-signed envelope (must deny); two keys enrolled on
-     one UID, each independently valid (both must work, each under its own
-     mapped permitted-verb set); local same-UID invocation with no SSH
+     presenting a validly-signed envelope (must deny); a UID that holds a
+     valid anchor grant under one fingerprint, presenting a different
+     fingerprint's otherwise-valid signature mapped to a *different* UID
+     (must deny — the presenting UID must equal the signing fingerprint's
+     own mapped UID, not merely hold *some* valid grant); two keys enrolled
+     on one UID, each independently valid (both must work, each under its
+     own mapped permitted-verb set); local same-UID invocation with no SSH
      session involved (must succeed identically to an SSH-forked
      invocation); a key present in `authorized_keys` with a `from=`/
-     `command=` restriction and no matching `anchor-signers.allow` entry
-     (must be absent from the derived mapping, i.e. deny as unknown key).
+     `command=` restriction and no `override: true` on its
+     `anchor-grants.allow` line (must be absent from the derived mapping,
+     i.e. deny as unknown key); a
+     key added to `authorized_keys` by the account itself with no matching
+     `anchor-grants.allow` entry (must be absent from the derived mapping —
+     an account cannot self-enroll); the privileged sync step given a
+     malformed or ambiguous input (must refuse to publish, serve
+     last-known-good within the freshness ceiling, then fail closed); the
+     freshness ceiling exceeded with no successful sync (must deny all
+     requests, not serve a stale mapping indefinitely).
 
 1a. **Execution-time admission and replay atomicity (closes SSA R2-2).** The
    checks above are necessary but, taken alone, leave two gaps: a
@@ -146,40 +218,78 @@ network lane in Option A is down.
      clock-skew allowance** on `issued_at` — a request claiming a TTL longer
      than the constant, or an `issued_at` outside the skew window, is denied
      at the Verifier regardless of signature validity.
-   - **Atomic admission.** The triple `(signing fingerprint, request_id,
-     sha256(canonical envelope bytes))` is reserved in the **same durable
-     transaction** as the `pending` audit write (§item 4), under the
+   - **Atomic admission, reservation key corrected (closes SHA R3-2 /
+     SSA R3-2 implementation note).** The reservation's unique key is
+     `UNIQUE(signing fingerprint, request_id)` — **not** the whole
+     `(fingerprint, request_id, content-hash)` triple, which would let two
+     different-content requests sharing a `request_id` both admit under
+     different hashes. `sha256(canonical envelope bytes)` is stored as a
+     **checked value against the existing unique row**, not folded into the
+     uniqueness constraint. The reservation and the `pending` audit write
+     (§item 4) happen in the **same durable transaction**, under the
      existing per-node serialization lock — there is no separate
      cache-check followed by a later cache-write. A `request_id` already
-     reserved with a *different* content hash fails immediately (replay of
-     the ID with altered content is not treated as a fresh request); a
-     `request_id` reserved with the *same* content hash within the replay
-     window resolves to the existing record's outcome as a no-op (§item 3's
-     idempotency rule), never a second admission.
-   - **Retention covers the full permitted lifetime.** A replay record is
-     retained for at least `max TTL + max permitted clock-skew allowance`
-     past its `expires_at`, so a request cannot outlive its own replay
-     protection. A request whose `issued_at` predates the oldest retained
-     record for its fingerprint is denied outright (defends against a
-     clock-rollback attempt to evade replay detection by presenting a
-     "new" old timestamp).
-   - **Revalidation immediately before dispatch.** Admission (Verifier →
-     Authorizer → durable `pending` write) and dispatch (handing the request
-     to the Executor) are not the same instant — a custody check (§item 3)
-     and any queueing can separate them. Immediately before the Executor is
-     invoked, the daemon **re-checks** `expires_at` against current wall
-     clock and **re-checks** the signing fingerprint's permitted-verb
-     mapping against its *current* state (item 1's derived allowed-signers
-     mapping, re-read, not the snapshot taken at admission). A request that
-     has expired, or whose signing key has been revoked, in that interval is
-     denied; the audit record resolves to `denied`, never proceeds to
-     `completed`.
+     reserved for that fingerprint with a *different* content hash fails
+     immediately (replay of the ID with altered content is not treated as a
+     fresh request); the *same* content hash within the replay window
+     resolves to the existing record's outcome as a no-op (§item 3's
+     idempotency rule), never a second admission. **Residual first-use risk,
+     stated rather than eliminated:** a request whose `request_id` has not
+     yet been reserved is not yet protected by this mechanism — a captured
+     but never-yet-submitted valid signed envelope can still win first
+     admission any time before `expires_at`, the same as any bearer
+     credential with an expiry. This mechanism makes a `request_id`
+     unreplayable **after** its first reservation; it does not make an
+     unreserved, still-valid envelope un-usable before that point.
+   - **Clock-rollback defense survives record pruning (closes SSA R3-2
+     P1).** "A request whose `issued_at` predates the oldest retained
+     record" is not a durable watermark by itself: once completed replay
+     rows age out and are pruned, an empty per-fingerprint set has no oldest
+     record, and a rolled-back clock can make a previously-expired, pruned
+     envelope satisfy TTL/skew again. This ADR instead requires a **durable
+     high-water mark**, persisted independently of individual replay rows
+     (per fingerprint, and a global value) — updated to `max(current value,
+     this request's issued_at)` in the **same transaction** as each
+     admission, so it survives pruning of the rows it was derived from. At
+     daemon startup, the current wall clock is checked against the
+     persisted global high-water mark minus the max permitted skew; if wall
+     clock is behind that mark, the daemon treats this as a detected clock
+     rollback and **fails closed** — denies all admissions — until the
+     condition clears (clock resynchronized past the mark, or an explicit
+     owner-gated override). A fingerprint with no prior high-water mark
+     (new principal, never-pruned empty state) has no rollback floor yet and
+     is evaluated on TTL/skew alone, same as today.
+   - **Revalidation immediately before dispatch, under a shared generation
+     fence (closes SHA R3-1 / SSA R3-1 — the core convergent finding).**
+     Revision 3's "re-read current state immediately before dispatch" was
+     necessary but not sufficient: a re-read and a separate revocation
+     publish are still two operations, and a revocation can commit in the
+     gap between the re-read and the Executor invocation. This revision
+     replaces "re-read" with an explicit **fence**: the privileged sync
+     step (item 1) publishes each new derived mapping under a monotonic
+     **generation counter**, guarded by a single mutex/version-CAS shared
+     with dispatch. Immediately before the Executor is invoked, the daemon
+     acquires that same guard, re-checks `expires_at` against current wall
+     clock and the signing fingerprint's permitted-verb mapping against the
+     **current generation** (never the generation snapshotted at
+     admission), and the Executor invocation is committed **while still
+     holding that guard** (or atomically bound to the generation value it
+     just observed via a CAS token the sync step's publish would
+     invalidate) — there is no window between "read current generation" and
+     "invoke Executor" in which a concurrent publish can land unobserved.
+     A request that has expired, or whose signing key has been revoked or
+     whose generation has advanced past the one it was authorized under, in
+     that interval is denied; the audit record resolves to `denied`, never
+     proceeds to `completed`.
    - **The execution linearization point, defined.** The single instant the
-     Executor is invoked is the linearization point: before it, revocation
-     or expiry denies outright (above). After it, the action is in flight
-     and this ADR makes **no promise of retroactive non-execution** —
-     already-started operations are resolved only by the post-action
-     verification step (§item 4) into `completed`, `failed`, or
+     Executor is invoked under the fence above is the linearization point:
+     before it, revocation or expiry denies outright (above), because the
+     fence makes "the generation dispatch committed under" and "the
+     generation revocation published under" mutually observable — one must
+     happen-before the other, never interleaved. After that instant, the
+     action is in flight and this ADR makes **no promise of retroactive
+     non-execution** — already-started operations are resolved only by the
+     post-action verification step (§item 4) into `completed`, `failed`, or
      `unknown-reconcile-required`; a revocation arriving after that instant
      is handled as a future reconciliation input, not an in-flight abort.
    - **Test coverage required before qualification**: two requests with the
@@ -192,7 +302,14 @@ network lane in Option A is down.
      that is queued behind another and whose `expires_at` passes while
      queued (deny at the pre-dispatch revalidation, not at admission); a key
      revoked while its request is queued between admission and dispatch
-     (deny at the pre-dispatch revalidation).
+     (deny at the pre-dispatch revalidation); **a deterministic negative
+     control that pauses the daemon after the pre-dispatch fence read,
+     commits a revocation of the signing key's generation, then resumes**
+     — the paused request must deny, never complete, proving the fence
+     (not timing luck) is what closes the gap; all replay rows for a
+     fingerprint pruned, then the daemon's wall clock rolled back, then an
+     old (previously valid, now-expired-by-real-time) envelope resubmitted
+     (must deny via the persisted high-water mark, not re-admit).
 
 2. **Local privilege boundary (closes SSA-2 / SHA-1-second-half).** The
    anchor is a system-domain launchd daemon listening on a **local-only,
@@ -373,10 +490,14 @@ anchor daemon — Verifier
   ├─ issued_at/expires_at outside server-bound TTL+skew → DENY, log, stop
   ▼ (signature valid, scoped to this node/verb, within TTL)
 anchor daemon — Atomic admission
-  ├─ (fingerprint, request_id, content-hash) already reserved with a
-  │  DIFFERENT content hash → DENY, log, stop
-  ├─ same content hash already reserved → return existing outcome (no-op)
-  ▼ (fresh reservation + `pending` audit write, same transaction, node-serialized)
+  ├─ UNIQUE(fingerprint, request_id) already reserved with a DIFFERENT
+  │  content hash → DENY, log, stop
+  ├─ same content hash already reserved for that key → return existing
+  │  outcome (no-op)
+  ├─ issued_at behind the fingerprint's/global persisted high-water mark →
+  │  DENY, log, stop (clock-rollback defense, survives replay-row pruning)
+  ▼ (fresh reservation + `pending` audit write + high-water-mark update,
+     same transaction, node-serialized)
 anchor daemon — Authorizer
   ├─ (pubkey_fingerprint, verb) not in current allowlist → DENY, mark audit `denied`
   ▼ (principal permitted for this verb)
@@ -385,10 +506,13 @@ anchor daemon — Custody fence acquire (verb-specific, via ADR-045/046)
   │  config source/digest unapproved, or path/symlink caller-writable
   │  → DENY, mark audit `denied`, release nothing (never acquired)
   ▼ (fence held)
-anchor daemon — Pre-dispatch revalidation
-  ├─ expires_at now passed, or signing key revoked since admission → DENY,
-  │  mark audit `denied`, release fence
-  ▼ (still valid — this is the linearization point)
+anchor daemon — Pre-dispatch revalidation, under the shared generation fence
+  ├─ expires_at now passed, or signing key revoked/generation advanced since
+  │  admission — checked against the CURRENT generation under the same
+  │  mutex/CAS the privileged sync step publishes under, never a snapshot
+  │  → DENY, mark audit `denied`, release fence
+  ▼ (still valid under current generation — Executor invocation commits
+     while still holding this same fence; this is the linearization point)
 Executor — runs the ONE fixed, root-owned absolute executable bound to this
 verb, fence still held
   ▼
@@ -414,10 +538,12 @@ each row below must have a reviewed, dated test result on file:
 | :--- | :--- |
 | Positive recovery (valid signed request, authorized verb, clear custody) | `completed`, post-action verification confirms state |
 | Denied principal (valid signature, verb not in that principal's allowlist) | `denied`, no execution, audit entry written |
-| Denied verb target (valid principal, unapproved target/path/digest) | `denied` at custody check, no execution |
+| Denied verb target (valid principal, `target`/`config_digest` ≠ verb's approved identity) | `denied` at **Verifier**, no execution |
+| Denied verb path (valid principal/target, unapproved config source, caller-writable path, or symlink) | `denied` at **Custody**, no execution |
 | Replayed request (same `request_id` resubmitted within window) | No-op per idempotency rule, not a second execution |
 | Expired request (`expires_at` passed) | `denied` at Verifier, before allowlist check |
-| Revoked authority (principal's `authorized_keys` entry removed mid-window) | `denied`, existing in-flight request is NOT grandfathered |
+| Revoked authority, revocation observed at or before the pre-dispatch fence (principal's grant removed/narrowed before the Executor invocation commits) | `denied` at pre-dispatch revalidation; queued/not-yet-dispatched requests are **not grandfathered** |
+| Revoked authority, revocation published strictly after the Executor invocation has committed under the generation fence | **No retroactive non-execution promise** — action resolves via post-action verification into `completed`/`failed`/`unknown-reconcile-required`; revocation is a reconciliation input, not an abort |
 | Audit store unavailable (disk full / fsync failure) | `denied` fail-closed, no execution, attempt logged where possible |
 | Protected/owned workload (ADR-045/046 marks target owner-managed) | `denied` at custody check |
 | Concurrent requests to same node | Serialized; second request waits or is rejected, never interleaved |
@@ -425,15 +551,20 @@ each row below must have a reviewed, dated test result on file:
 | Per-lane independence (e.g. two TB rails on one hub) | Status report shows shared dependency, not two independent "OK" lanes |
 | Dead `sshd`/network on target | Lane reports `unreachable`, distinct from `denied` — never conflated |
 | Different UID presents a validly-signed envelope | `denied` — UID not present in the derived mapping |
+| Presenting UID holds *some* valid anchor grant under a different fingerprint, but differs from the mapped UID of the fingerprint that actually signed this envelope | `denied` — holding any grant is not sufficient; the presenting UID must equal the signing fingerprint's own mapped UID |
 | Two keys enrolled on one UID | Both succeed independently, each bound to its own mapped permitted-verb set |
 | Local same-UID invocation with no SSH session involved | Succeeds identically to an SSH-forked invocation |
-| Key in `authorized_keys` with `from=`/`command=` restriction, no matching `anchor-signers.allow` entry | Absent from derived mapping; `denied` as unknown key |
-| Two requests, same `request_id`, different content, submitted concurrently | One wins admission; the other fails — never both execute |
+| Key in `authorized_keys` with `from=`/`command=` restriction, no `override: true` on its `anchor-grants.allow` line | Absent from derived mapping; `denied` as unknown key |
+| Key added to `authorized_keys` by the account itself, no matching `anchor-grants.allow` entry | Absent from derived mapping; `denied` as unknown key — self-enrollment via `authorized_keys` alone is impossible |
+| Privileged sync step given a malformed/ambiguous `anchor-grants.allow` or `authorized_keys` input | Refuses to publish; serves last-known-good within freshness ceiling, then fails closed past the ceiling |
+| Two requests, same `request_id`, different content, submitted concurrently | One wins admission under `UNIQUE(fingerprint, request_id)`; the other fails — never both execute |
 | Same `request_id` resubmitted after daemon restart | Resolves from persisted replay record, not re-admitted as new |
 | Request `node_id` names a different node | `denied` at Verifier |
 | Request claims a TTL longer than the server-bound maximum | `denied` at Verifier |
 | Queued request whose `expires_at` passes before dispatch | `denied` at pre-dispatch revalidation, not at admission |
 | Signing key revoked while its request is queued between admission and dispatch | `denied` at pre-dispatch revalidation |
+| Negative control: daemon paused immediately after the pre-dispatch fence read; revocation committed under the generation fence; daemon resumed | Paused request `denied` — the fence, not timing, must be what closes the gap |
+| All replay rows for a fingerprint pruned, daemon clock rolled back, previously-valid-but-now-expired envelope resubmitted | `denied` via the persisted high-water mark, not re-admitted as new |
 | Competing non-anchor owner acquires target lock between custody inspection and dispatch | Fenced-acquire fails; request `denied`, not proceeded on stale state |
 
 A lane or verb with an unresolved row stays labeled "candidate," not
@@ -480,11 +611,39 @@ This section is platform groundwork, not a launchable-feature claim.
   (A37 — a record exists only on origin). That gap is closed by this
   revision's push; it does not by itself constitute SHA acceptance of
   anything.
-- Revision 3 (this text): responds to all three of SSA's revision-2 P1/P2
-  items and both editorial notes — see inline "(closes SSA R2-N)" markers
-  above. Remains **Proposed** pending a fresh SHA+SSA pass on this exact
-  text; no merge, installation, or implementation is authorized by this
-  revision.
+- Revision 3 (head `1087bf15`): responded to all three of SSA's revision-2
+  P1/P2 items and both editorial notes — see inline "(closes SSA R2-N)"
+  markers (now superseded, see below). Both SHA and SSA independently
+  reviewed this exact head and both returned CHANGES_REQUESTED: SHA found
+  R3-1 (P1, revocation not serialized with dispatch — a re-read and a
+  separate revocation publish remain two operations) and R3-2 (P2,
+  qualification-matrix rows contradicting the stated linearization-point
+  and Verifier/Custody-stage rules), plus an implementation note on the
+  reservation key. SSA found R3-1 (P1, the trust-mapping source itself —
+  account-writable `authorized_keys` — was never root-protected, so the
+  "sync on every change" claim did not establish synchronous revocation),
+  R3-2 (P1, the clock-rollback defense did not survive replay-record
+  pruning), and R3-3 (P2, the same qualification-matrix contradictions SHA
+  found, plus a missing two-UID denial case and a Verifier/Custody
+  misattribution), plus implementation elaborations on field encoding and
+  the first-use/bearer-risk scoping of the "unreplayable" claim.
+- Revision 4 (this text): responds to all P1/P2 items from both of
+  revision 3's reviews — see inline "(closes SHA R3-N / SSA R3-N)" markers
+  above. Specifically: introduced `anchor-grants.allow` as the sole,
+  root-owned grant source (`authorized_keys` narrows only, never grants);
+  replaced "re-read before dispatch" with an explicit generation-fenced
+  mutex/CAS shared between policy publication and dispatch commitment;
+  added a durable, pruning-independent high-water mark for clock-rollback
+  detection with fail-closed startup behavior; corrected the reservation
+  key to `UNIQUE(fingerprint, request_id)` with content hash as a checked
+  value; pinned envelope field types and duplicate/unknown-field rejection;
+  scoped the "unreplayable" claim to state the residual first-use/bearer
+  risk on an unreserved `request_id` rather than asserting it away; and
+  corrected three qualification-matrix rows (verb-target vs. verb-path
+  staging, the grandfather/linearization contradiction split into
+  pre-fence vs. post-fence rows, and a new two-UID denial row). Remains
+  **Proposed** pending a fresh SHA+SSA pass on this exact text; no merge,
+  installation, or implementation is authorized by this revision.
 
 ## References
 - Ledger: `ra/rs-41-ownerless-recovery-signed-lan-anchor`; owner direction SHA
