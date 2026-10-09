@@ -1,7 +1,7 @@
 # ADR-077: Ownerless Recovery — Signed LAN Anchor
 
 ## Status
-**Proposed, revision 6** — 2026-10-09. Design only; no code, no key material,
+**Proposed, revision 7** — 2026-10-09. Design only; no code, no key material,
 no new `authorized_keys` entries. Routed for SHA (hardware) + SSA (software)
 review before any implementation, per the owner directive that created this
 task (SHA 20260915-012036, ledger `rs-41-ownerless-recovery-signed-lan-anchor`).
@@ -10,46 +10,57 @@ revision 1 (exact head `e22478e1`); revision 3 responded to SSA's
 CHANGES_REQUESTED verdict on revision 2 (exact head `c5680351`); revision 4
 responded to both SHA's and SSA's CHANGES_REQUESTED verdicts on revision 3
 (exact head `1087bf15`); revision 5 responded to both SHA's and SSA's
-CHANGES_REQUESTED verdicts on revision 4 (exact head `f2d03042`). SSA
-independently reviewed revision 5 (exact head `7449476b`) and returned
-CHANGES_REQUESTED on three items — see "Review History" below. (SHA's
-parallel revision-5 review returned BLOCKED on source access, not a verdict
-on the text; a handoff bundle was supplied and SHA's review is still
-pending on this revision-6 text.) SSA's findings: (1) the `dirty` flag from
-revision 5 is set only when the *async* privileged sync step observes
-source divergence, leaving a window between a source change (e.g. a root
-revocation) and that observation in which pre-dispatch revalidation still
-reads `dirty=false` and dispatches on the stale, still-current generation —
-an unfenced source change, by itself, does not yet count as "committed" for
-dispatch purposes; (2) the daemon-maintained wall-clock ratchet from
-revision 5 exempted a fingerprint's first-ever admission from the rollback
-check, checked rollback only at admission/startup and not again at
-pre-dispatch, and left pruning's interaction with the ratchet and an
-owner-gated override's effect on previously-retired validity windows
-unspecified; (3) two qualification-matrix rows and the "Test coverage
-required" prose in item 1 still describe the pre-revision-5 last-known-good
-fallback in a way that reads as applying to a changed-and-failed-to-resync
-source, contradicting the new unconditional-dirty-denies rule, plus two
-narrower matrix-wording corrections. This revision (a) makes the pre-dispatch
-revalidation step perform a **synchronous** freshness check of the
-root-owned source files directly, under the same shared guard, immediately
-before the Executor invocation — replacing reliance on the async sync
-step's last-observed `dirty` flag with a live stat/hash comparison at the
-exact instant of dispatch, so there is no interval in which a committed
-source change can be invisible to the gate that is about to act on it,
-(b) removes the new-principal ratchet exemption (the ratchet is a global,
-daemon-wide value, not a per-fingerprint one, so it applies to every
-admission including a fingerprint's first), adds the identical rollback-
-ratchet recheck to pre-dispatch revalidation (not admission/startup alone),
-requires pruning to persist its own retirement floor atomically with row
-deletion, and defines an owner-gated override as minting a new monotonic
-**protected epoch** that invalidates every envelope signed under a prior
-epoch rather than resetting the ratchet value backward, and (c) aligns the
-last-known-good-fallback wording across §1's prose, its "Test coverage
-required" list, and the qualification matrix so all three state the same
-unchanged-source-only rule, plus the two narrower matrix-wording fixes. It
-remains proposed, not accepted, pending a fresh SHA+SSA pass on this exact
-text.
+CHANGES_REQUESTED verdicts on revision 4 (exact head `f2d03042`); revision 6
+responded to SSA's CHANGES_REQUESTED verdict on revision 5 (exact head
+`7449476b`). SSA independently reviewed revision 6 (exact head `5b4e7de3`)
+and returned CHANGES_REQUESTED on four items — see "Review History" below.
+(SHA's parallel revision-6 review returned BLOCKED on bundle delivery to its
+worker host, not a verdict on the text; see the open cross-host-delivery
+item — ra has no filesystem or network path onto SHA's host, so this
+blocker is escalated to the owner rather than re-attempted with another
+bundle cut from this side.) SSA's revision-6 findings: (1) **R6-1 P1** — the
+synchronous stat added in revision 6 compares `mtime`+`size`, which is not
+content identity (a same-length, restored-mtime replacement is
+indistinguishable from "unchanged"), and the shared guard it runs under
+covers the sync publisher and the Executor, not an account editing
+`authorized_keys` or root editing `anchor-grants.allow` directly — a raw
+edit was never defined as "committed" against a distinct controlled
+commitment; (2) **R6-2 P1** — the seven-field envelope carries no epoch, so
+"the Verifier rejects an envelope whose claimed admission epoch is older
+than current" has nothing authenticated to check: a captured, never-before-
+admitted envelope gets implicitly assigned the *current* epoch on first
+verification rather than a distinguishable prior one, and minting an epoch
+did not specify how the ratchet lets new post-override requests through
+without re-opening the retired window; (3) **R6-3 P1** — the pruning
+transaction advances the retirement floor to the deleted row's `expires_at`,
+not to a wall-clock observation made at prune time, so a crash/restart at a
+rolled-back clock value at or before that `expires_at` passes both the
+ratchet check (floor not exceeded) and the replay check (row already gone)
+— a concrete counterexample with TTL/skew/prune-time constants is given
+inline below; (4) **R6-4 P2** — §1's active fallback prose
+(not the test-coverage list or matrix, already fixed in revision 6) still
+omits the unchanged-source qualifier, plus a stale "(this text)" self-label
+on the revision-5 history entry. This revision: (a) replaces the mtime+size
+stat with a **synchronous, in-guard invocation of the same content-hash
+validate function the async sync step uses**, run against both
+`anchor-grants.allow` and the signing fingerprint's `authorized_keys`
+content on every pre-dispatch revalidation — making that synchronous
+validate call, not a raw file write, the authoritative commit boundary for
+both root-owned grants and account-writable restrictions; (b) adds an
+eighth, signed envelope field, `epoch` (integer, must equal the daemon's
+current protected epoch at verification time, checked again at pre-dispatch
+under the same guard — never the caller's claimed admission epoch), and
+defines an override as both minting the next epoch **and** re-anchoring the
+wall-clock ratchet to the daemon's actual current wall clock in the same
+guarded transaction, so epoch-bound fresh requests are admissible again
+while every prior-epoch envelope stays permanently rejected regardless of
+its own `expires_at`; (c) changes the pruning floor formula from
+`max(current floor, row.expires_at)` to `max(current floor, the daemon's
+trusted current wall-clock observation taken at prune time)`, persisted
+atomically with the row deletion; and (d) adds the missing qualifier to
+§1's active fallback prose and corrects the revision-5 history entry's
+self-label. It remains proposed, not accepted, pending a fresh SHA+SSA pass
+on this exact text.
 Number note: ADR-076 is claimed by an open, unmerged PR (#1017,
 `maat/trust-boundary-gate`) and does not exist on `origin/main` (A37 — a
 record exists only on origin). This document takes ADR-077 to avoid a
@@ -96,7 +107,19 @@ network lane in Option A is down.
      verb's approved service label or volume UUID), `config_digest` (string,
      lowercase-hex `sha256`, exactly 64 characters), `request_id` (string,
      UUIDv4 canonical form), `issued_at`/`expires_at` (integer, Unix seconds
-     UTC — never a float, never a string, never a different unit). The
+     UTC — never a float, never a string, never a different unit),
+     `epoch` (integer, the daemon's **protected epoch** the signer read
+     before signing — closes SSA R6-2 P1). `epoch` is an eighth, signed
+     field, not an unsigned claim: the Verifier rejects, before any other
+     check, an envelope whose `epoch` does not exactly equal the daemon's
+     current protected epoch at verification time — not the caller's
+     "admission epoch," not the epoch current when the envelope predates an
+     override. A signer with a stale epoch gets a hard reject and must
+     re-read the current epoch (published alongside the derived
+     allowed-signers mapping) and re-sign; there is no partial-credit or
+     grace window for a one-epoch-old envelope. This makes epoch a property
+     the Verifier can check the same way it checks every other field —
+     never an inferred admission-time fact. The
      parser rejects a duplicate JSON key or an unrecognized field in the
      envelope **before** canonicalization or signature verification runs —
      an envelope is well-formed-or-rejected, never "ignore what you don't
@@ -156,11 +179,16 @@ network lane in Option A is down.
        ambiguous input (duplicate fingerprint with conflicting verb sets,
        unparseable line, wrong file mode/ownership on either source file)
        rather than publishing a best-effort partial mapping; on rejection,
-       or if the previous successful sync is older than a bounded
-       **freshness ceiling**, the daemon serves the last-known-good mapping
-       if still within ceiling, or **fails closed** (denies all requests)
-       once the ceiling is exceeded — a stale or broken policy input must
-       never silently keep granting.
+       **while the source it was deriving from is otherwise unchanged
+       since the last successful publish** (closes SSA R6-4 P2 — this
+       qualifier was already present in the test-coverage list and matrix
+       but missing from this active prose), or if the previous successful
+       sync is older than a bounded **freshness ceiling** with the source
+       likewise unchanged, the daemon serves the last-known-good mapping if
+       still within ceiling, or **fails closed** (denies all requests) once
+       the ceiling is exceeded — a stale or broken policy input must never
+       silently keep granting, and a source that *has* changed is the
+       `dirty` case below, never this fallback.
      - A key present in `authorized_keys` with a `from=`/`command=`
        restriction and no `override: true` on its `anchor-grants.allow`
        line remains **absent from the derived mapping**: the restriction is
@@ -366,34 +394,82 @@ network lane in Option A is down.
      above, so the two defenses are reinforcing rather than one silently
      substituting for the other. Concretely: the pruning routine, in the
      **same durable transaction** that deletes a row, persists
-     `last_observed_wallclock = max(current value, that row's expires_at)`
-     — the ratchet is advanced to at least cover the row being discarded
-     *before or atomically with* its deletion, never after. A periodic
+     `last_observed_wallclock = max(current value, trusted current
+     wall-clock observation taken at prune time)` — **not**
+     `max(current value, that row's expires_at)` (closes SSA R6-3 P1: a
+     floor pinned to the deleted row's own `expires_at` is itself a
+     request-derived value bounded by that row's TTL, so a restart at a
+     rolled-back clock sitting at or before `expires_at` passes the
+     ratchet check — floor not exceeded — at the exact moment the one row
+     that could have caught the replay by `request_id` is already gone.
+     Concrete countermodel: max TTL 60s,
+     max skew 5s, an envelope issued at wall-clock 940 with a 1s TTL
+     (`expires_at` 941), a ratchet stalled at 940 because its periodic tick
+     missed a cycle, pruning running at 1006 — satisfying
+     `expires_at + maxTTL + skew = 1006` — deletes the row and would have
+     advanced the floor only to 941 under the old formula; a crash/restart
+     at wall-clock 940 then re-admits the identical `issued_at`, since 940
+     is not behind `941 - skew`. Advancing the floor to the *trusted
+     wall-clock reading pruning itself took* (1006, not 941) closes this:
+     any subsequent admission claiming wall-clock 940 fails the ratchet
+     check outright, independent of whether its replay row still exists).
+     The ratchet is therefore advanced to at least the trusted wall clock
+     pruning observed *before or atomically with* each deletion, never
+     after, and never bounded by the deleted row's own expiry. A periodic
      pruning tick that stalls, crashes, or restarts between computing
      eligible rows and committing their deletion must re-derive eligibility
      from the persisted floor on resume, not from an in-memory list
      computed before the interruption — there is no window in which rows
      are gone but the ratchet has not yet absorbed what they protected.
-   - **Owner-gated override defined as a new protected epoch, not a
-     ratchet reset (closes SSA R5-2 P1, fourth clause).** An owner-gated
-     override that clears a detected-rollback fail-closed state must not
-     simply lower or clear `last_observed_wallclock` — doing so would
-     reopen exactly the replay window the ratchet exists to close, for
-     every envelope whose validity interval the ratchet had already
-     retired. Instead, an override mints a new, strictly-increasing
-     **protected epoch** value, persisted alongside the ratchet. Every
-     signed envelope's admission record (and the allowed-signers mapping
-     derivation) is implicitly bound to the epoch current at admission
-     time; the Verifier rejects, before any other check, an envelope whose
-     claimed admission epoch (or, for a never-before-seen envelope, the
-     daemon's current epoch at verification time if the envelope predates
-     the override) is older than the daemon's current epoch, once an
-     override has advanced it. In effect: a daemon-clock rollback is
-     recovered from by **invalidating the past** (every prior epoch's
-     envelopes stop being admittable) rather than by **erasing the
-     ratchet's memory** of what it had already retired. The override is
-     logged as a decision card per A32/A23 — it is the owner's call, not a
-     silent recovery path a crashed daemon takes on its own restart.
+   - **Owner-gated override defined as a new protected epoch bound to a
+     signed envelope field, with the ratchet re-anchored to real wall
+     clock in the same transaction (closes SSA R5-2 P1 fourth clause and
+     SSA R6-2 P1).** An owner-gated override that clears a
+     detected-rollback fail-closed state must not simply lower or clear
+     `last_observed_wallclock` — doing so would reopen exactly the replay
+     window the ratchet exists to close, for every envelope whose validity
+     interval the ratchet had already retired. Instead, an override mints
+     a new, strictly-increasing **protected epoch** value, persisted
+     alongside the ratchet. Revision 6 bound this to an *implicit*
+     admission-time epoch, which SSA correctly found unverifiable: nothing
+     in the seven-field envelope is epoch, so a captured, never-before-
+     admitted envelope has no prior admission record to compare against,
+     and binding it to "the daemon's current epoch at verification time"
+     when first seen simply assigns it the new epoch — it can never be
+     distinguished from a legitimately fresh one. This revision instead
+     makes `epoch` the envelope's eighth **signed** field (closes SSA
+     R6-2 P1 — see the envelope definition above): the Verifier rejects,
+     before any other check, an envelope whose `epoch` field does not
+     exactly equal the daemon's current protected epoch, both at admission
+     and, under the same shared guard, again at pre-dispatch revalidation
+     — so an admitted, queued request whose epoch is retired by an
+     intervening override is denied before dispatch, not merely at
+     admission. A signer always reads the current epoch (published
+     alongside the derived allowed-signers mapping) before signing; an
+     envelope signed under a retired epoch fails signature-field matching
+     outright, with no implicit inference involved on either side.
+     Minting a new epoch alone would leave every admission denied forever
+     if the wall-clock ratchet from revision 5 still reads the pre-rollback
+     clock as "behind" — SSA's "how rollback recovery resumes" question —
+     so the same guarded override transaction that mints the new epoch
+     also re-anchors `last_observed_wallclock` to the daemon's actual
+     current wall-clock reading. This is safe specifically because the
+     override is an explicit, owner-authenticated act (never a daemon
+     self-heal on restart): a fresh request signed under the new epoch is
+     admissible again once the ratchet reflects real time, while every
+     envelope signed under a prior epoch remains permanently rejected at
+     the epoch check regardless of its own `expires_at` or the ratchet's
+     new value — the two checks are independent and both must pass, so
+     re-anchoring the ratchet for forward progress never reopens the
+     retired window the epoch check protects. In effect: a daemon-clock
+     rollback is recovered from by **invalidating the past** (every prior
+     epoch's envelopes stop being admittable, permanently) while
+     **restoring forward progress** (the ratchet is re-anchored to real
+     time so new, correctly-epoched requests are not denied as "rollback"
+     forever) — never by erasing the ratchet's memory of what the prior
+     epoch had already retired. The override is logged as a decision card
+     per A32/A23 — it is the owner's call, not a silent recovery path a
+     crashed daemon takes on its own restart.
    - **Revalidation immediately before dispatch, under a shared generation
      fence (closes SHA R3-1 / SSA R3-1 — the core convergent finding).**
      Revision 3's "re-read current state immediately before dispatch" was
@@ -462,29 +538,47 @@ network lane in Option A is down.
      by removing the dependency on the async observer for the *dispatch*
      decision: pre-dispatch revalidation, under the same shared guard as
      the generation/dirty/ratchet checks and immediately before the
-     Executor invocation, performs its own **synchronous stat (mtime +
-     size) of `anchor-grants.allow` and the signing fingerprint's
-     `authorized_keys` entry**, right then, and compares it against the
-     mtime/size pair the currently-published generation was derived from.
-     A mismatch is treated identically to `dirty=true` — deny
-     unconditionally — **regardless of whether the background sync step
-     has run yet**. This makes the question "has the source changed since
-     this generation was published?" answerable at the instant of dispatch
-     itself, from the filesystem the kernel actually enforces, rather than
-     from a cached flag whose freshness depends on a separate process's
-     schedule. The async sync step's `dirty` flag remains as the signal
-     that *drives republishing* (so the derived allowed-signers mapping
-     used for signature verification stays current); the synchronous stat
-     is the independent, narrower guarantee that dispatch itself can never
-     act on a source state that has already changed, no matter how far
-     behind the async observer is. (A raw edit to either source file is
-     therefore never itself "committed" for dispatch purposes by the mere
-     act of writing it — the stat comparison, not the sync step's
-     observation, is what the dispatch gate actually reads; the sync
-     step's job is to keep the *verification* mapping current, not to
-     gate *this* check.) The stat is two `stat(2)` calls under an
-     already-held guard on a local filesystem — bounded, cheap, and does
-     not change the fence's existing latency characteristics.
+     Executor invocation, performs a **synchronous, in-guard invocation of
+     the identical content-hash validate function the async sync step
+     uses** — not a separate, lighter-weight check — against both
+     `anchor-grants.allow` and the signing fingerprint's `authorized_keys`
+     content, right then, and compares the resulting hash pair against the
+     hashes the currently-published generation was derived from.
+     Revision 6 compared `mtime`+`size` instead, which SSA correctly found
+     insufficient on two counts (closes SSA R6-1 P1): first, mtime+size is
+     not content identity — a same-length replacement with a restored
+     mtime (the ADR's own temporary-file-check language demonstrates this
+     exact pattern) produces an identical pair while the content differs;
+     second, the shared guard that comparison ran under was held by the
+     sync publisher and the Executor, not by whatever process writes
+     `anchor-grants.allow` or an account's `authorized_keys` — so a raw
+     edit landing between the stat read and the Executor invocation was
+     never actually fenced, only usually-fast-enough. Running the *same
+     validate call* the sync step uses — not a cheaper proxy for it —
+     synchronously and in-guard fixes both: a content hash cannot be
+     spoofed by a same-length/same-mtime replacement, and because the
+     call runs while pre-dispatch already holds the guard, there is no
+     process on the write side left unfenced — any writer's edit is either
+     already reflected in the hash this call just computed, or it lands
+     after this call released the guard and will be caught by the next
+     one. This makes **this synchronous validate call**, not a raw file
+     write by any actor, the authoritative commit boundary for dispatch
+     purposes, consistently for both the root-owned grant source and the
+     account-writable restriction source (closes SSA's "handle account
+     restrictions consistently"): nothing is "committed" until this call,
+     under the guard, says so. A mismatch from the last-published hashes
+     is treated identically to `dirty=true` — deny unconditionally —
+     **regardless of whether the background sync step has run yet**. The
+     async sync step's `dirty` flag remains the signal that *drives
+     republishing* (so the derived allowed-signers mapping used for
+     signature verification stays current); the synchronous in-guard
+     validate call is the independent, narrower guarantee that dispatch
+     itself can never act on a source state that has already changed, no
+     matter how far behind the async observer is. This is two SHA-256
+     reads of bounded, root-owned local files under an already-held guard;
+     SSA is correct that no latency claim is made here without
+     measurement — the qualification matrix below requires a timed result
+     before either lane is reported "proven" rather than "candidate."
    - **Parent-directory and ownership hardening for policy state (closes
      SSA's "root-owned file mode alone does not protect" note).** Root
      ownership and mode `0600` on `anchor-grants.allow`, the derived
@@ -733,8 +827,9 @@ resort when revive also fails.
 ## Data Flow (closes SHA-5's diagram ask)
 ```
 caller (owner session or authorized automated agent)
-  │  signs {node_id, verb, target, config_digest, request_id, issued_at, expires_at}
-  │  under namespace "sirsi-recovery-anchor" with its existing SSH key
+  │  signs {node_id, verb, target, config_digest, request_id, issued_at,
+  │  expires_at, epoch} under namespace "sirsi-recovery-anchor" with its
+  │  existing SSH key, after reading the daemon's current protected epoch
   │  (typically from an existing SSH session; item 1 permits any local
   │   process running as the same mapped UID — ingress is UID+signature,
   │   not "arrived over SSH")
@@ -744,6 +839,7 @@ same host, never network-reachable)
   ▼
 anchor daemon — Verifier
   ├─ wrong namespace / unenumerated key format → DENY, log, stop
+  ├─ epoch ≠ daemon's current protected epoch → DENY, log, stop
   ├─ signature does not verify against derived allowed-signers mapping → DENY, log, stop
   ├─ node_id ≠ this node, or target/config_digest ≠ verb's approved identity → DENY, log, stop
   ├─ issued_at/expires_at outside server-bound TTL+skew → DENY, log, stop
@@ -769,13 +865,18 @@ anchor daemon — Custody fence acquire (verb-specific, via ADR-045/046)
   │  → DENY, mark audit `denied`, release nothing (never acquired)
   ▼ (fence held)
 anchor daemon — Pre-dispatch revalidation, under the shared generation fence
+  ├─ epoch ≠ daemon's current protected epoch, rechecked here (not
+  │  admission only, so an intervening override retires a queued request)
+  │  → DENY, mark audit `denied`, release fence
   ├─ dirty=true (sync step observed source divergence not yet validated
   │  and published) → DENY unconditionally, mark audit `denied`, release
   │  fence — freshness-ceiling last-known-good fallback does NOT apply here
-  ├─ synchronous stat of anchor-grants.allow / the signing fingerprint's
-  │  authorized_keys entry, taken NOW, differs from the mtime/size the
-  │  current generation was derived from → DENY as dirty, same as above —
-  │  does not wait for the async sync step to observe the change
+  ├─ synchronous, in-guard content-hash validate of anchor-grants.allow /
+  │  the signing fingerprint's authorized_keys entry, run NOW using the
+  │  same validate function the async sync step uses, differs from the
+  │  hashes the current generation was derived from → DENY as dirty, same
+  │  as above — does not wait for the async sync step to observe the
+  │  change, and is not spoofable by a same-mtime/same-size replacement
   ├─ current wall clock behind the daemon-maintained wall-clock ratchet
   │  minus max skew, rechecked here (not admission/startup only) → DENY
   │  ALL, mark audit `denied`, release fence
@@ -846,11 +947,17 @@ each row below must have a reviewed, dated test result on file:
 | Wall-clock ratchet advances with zero admissions in flight over a full tick interval | Periodic durable tick observed in the persisted store |
 | Replay row pruned before `max permitted TTL + max permitted skew` has elapsed past its `expires_at` | Refused by the pruning routine itself — not an operator-tunable schedule |
 | Competing non-anchor owner acquires target lock between custody inspection and dispatch | Fenced-acquire fails; request `denied`, not proceeded on stale state |
-| `anchor-grants.allow` edited (grant removed) at `t0`; a request already admitted and queued reaches pre-dispatch revalidation at `t1 > t0`, before the async sync step has run at all | `denied` via the synchronous stat comparison at pre-dispatch, not dependent on the sync step having observed `t0` yet |
+| `anchor-grants.allow` edited (grant removed) at `t0`; a request already admitted and queued reaches pre-dispatch revalidation at `t1 > t0`, before the async sync step has run at all | `denied` via the synchronous in-guard content-hash validate call at pre-dispatch, not dependent on the sync step having observed `t0` yet |
+| `anchor-grants.allow` replaced with a same-length file, mtime restored to match the previously-published generation's recorded value, content actually changed | `denied` — the content-hash comparison catches the change; an mtime+size-only comparison (revision 6, superseded) would not |
+| Signing fingerprint's `authorized_keys` entry edited by the account itself (restriction added or removed) between admission and pre-dispatch | `denied`-or-admitted consistently with the content-hash check — the account-writable source is covered by the same synchronous validate call as the root-owned source, not a narrower or separately-timed check |
+| Envelope's `epoch` field does not equal the daemon's current protected epoch at verification | `denied` at Verifier, before any other check — including a never-before-seen envelope, which gets no implicit admission-epoch inference |
+| Envelope admitted under epoch N; an owner-gated override mints epoch N+1 before the request reaches pre-dispatch | `denied` at pre-dispatch's epoch recheck, not only re-checked at admission |
+| Owner-gated override mints a new epoch; a correctly-epoched (N+1) fresh request is submitted immediately after | Admitted — the override transaction re-anchors the wall-clock ratchet to real time in the same transaction, so the new epoch does not itself leave every request denied as rollback |
+| Pruning transaction deletes a replay row at wall-clock `T_prune`; daemon crashes and restarts at a wall-clock value at or before the row's `expires_at` (but after the old `max(floor, row.expires_at)` value) | `denied` via the ratchet, because the floor was advanced to the trusted wall-clock observation taken at `T_prune`, not to the deleted row's own `expires_at` (closes SSA R6-3 P1 countermodel) |
 | Fingerprint's first-ever admission on this daemon, submitted while the daemon's current wall-clock ratchet is behind a rolled-back clock | `denied` via the global ratchet — no new-principal exemption; the ratchet applies identically regardless of admission history |
 | Request admitted while ratchet check passes, then a rollback is detected (ratchet check would now fail) before the request reaches dispatch | `denied` at pre-dispatch revalidation's ratchet recheck, not only at admission/startup |
 | Pruning tick computes eligible rows, then crashes/restarts before committing their deletion | On resume, eligibility is re-derived from the persisted ratchet floor, never from the pre-crash in-memory list; no row is deleted without the ratchet already covering it |
-| Owner-gated override clears a rollback fail-closed state | A new protected epoch is minted; every envelope signed under a prior epoch is rejected at the Verifier, regardless of its own `expires_at`; the ratchet's prior value is never reset backward |
+| Owner-gated override clears a rollback fail-closed state | A new protected epoch is minted and the ratchet is re-anchored to real wall clock, in the same transaction; every envelope signed under a prior epoch is rejected at the Verifier on its `epoch` field, regardless of its own `expires_at`; the ratchet's prior value is never reset backward, only forward to real time |
 
 A lane or verb with an unresolved row stays labeled "candidate," not
 "proven," in every status surface (Pantheon dashboard, Ra report, this ADR).
@@ -942,7 +1049,7 @@ This section is platform groundwork, not a launchable-feature claim.
   and R4-3 (P2, the same mutex/CAS negative-control contradiction SHA
   found), plus implementation elaborations on parent-directory/ownership
   hardening and the `authorized_keys` self-restoration scoping.
-- Revision 5 (this text): responds to all P1/P2 items from both of
+- Revision 5 (head `7449476b`): responds to all P1/P2 items from both of
   revision 4's reviews — see inline "(closes SHA R4-N / SSA R4-N)" markers
   above. Specifically: replaced the request-derived high-water mark's
   rollback check with a daemon-maintained wall-clock ratchet, persisted
@@ -993,6 +1100,44 @@ This section is platform groundwork, not a launchable-feature claim.
   (UID-mismatch scope, "commits first" vs. `completed`). Remains
   **Proposed** pending a fresh SHA+SSA pass on this exact text; no merge,
   installation, or implementation is authorized by this revision.
+- Revision 7 (this text, head after `5b4e7de3`): responds to SSA's
+  CHANGES_REQUESTED on revision 6 (exact head `5b4e7de3`) — see inline
+  "(closes SSA R6-N)" markers above. SHA's parallel revision-6 review
+  returned BLOCKED — not on source content, but on bundle delivery to its
+  worker host (a different physical machine from the one cutting the
+  bundle); ra has no filesystem or network path onto that host, so this
+  blocker is escalated to the owner rather than re-attempted with another
+  bundle. SSA found R6-1 (P1, the synchronous pre-dispatch stat compared
+  `mtime`+`size`, not content, and ran under a guard that fenced the sync
+  publisher and Executor but not an account or root editing the source
+  files directly — no distinct controlled commitment was defined); R6-2
+  (P1, the seven-field envelope carried no signed epoch, so "reject an
+  envelope whose admission epoch is older than current" had nothing
+  authenticated to check, and minting an override epoch did not specify
+  how new post-override requests resume admission without reopening the
+  retired window); R6-3 (P1, the pruning transaction advanced the
+  retirement floor to the deleted row's own `expires_at` rather than a
+  wall-clock observation taken at prune time, leaving a crash/restart
+  window where both the ratchet and the replay-row check pass); and R6-4
+  (P2, the §1 active fallback prose — not the already-aligned test-list or
+  matrix — still lacked the unchanged-source qualifier, plus a stale
+  revision-5 "(this text)" self-label). This revision: replaces the
+  mtime+size stat with a synchronous, in-guard invocation of the same
+  content-hash validate function the async sync step uses, covering both
+  the root-owned grant source and the account-writable restriction source
+  identically, making that call itself the commit boundary; adds `epoch`
+  as an eighth, signed envelope field checked at both admission and
+  pre-dispatch against the daemon's actual current epoch, and defines an
+  override as minting the next epoch **and** re-anchoring the wall-clock
+  ratchet to real time in the same guarded transaction, so epoch-bound
+  fresh requests resume while every prior-epoch envelope stays permanently
+  rejected; changes the pruning floor formula to
+  `max(current floor, trusted wall-clock observation at prune time)`
+  instead of the deleted row's own `expires_at`, with a recorded
+  countermodel; and adds the missing qualifier plus the history-label
+  correction. Remains **Proposed** pending a fresh SHA+SSA pass on this
+  exact text; no merge, installation, or implementation is authorized by
+  this revision.
 
 ## References
 - Ledger: `ra/rs-41-ownerless-recovery-signed-lan-anchor`; owner direction SHA
