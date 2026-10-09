@@ -23,10 +23,11 @@ func TestRunCensus(t *testing.T) {
 		{PID: 90002, Command: "Python /Users/x/.sirsi/gemma-capped-server.py 22320611328 --model m"},
 		{PID: 90003, Command: "/usr/libexec/some-system-daemon"},
 		{PID: 90004, Command: "/Users/x/.local/share/apollo-observer/apollo-observer-agent --addr 100.88.242.95:8490 --dir /Users/x/.local/share/apollo-observer/telemetry --machine M1"},
+		{PID: 90005, Command: "/Users/x/Development/Apollo/artifacts/development/apollo-dashboard/apollo-dashboard --repo /Users/x/Development/Apollo --addr 127.0.0.1:8488"},
 	}
 	actions := RunCensus(root, procs)
-	if len(actions) != 3 {
-		t.Fatalf("actions = %+v, want 3 (system daemon untouched)", actions)
+	if len(actions) != 4 {
+		t.Fatalf("actions = %+v, want 4 (system daemon untouched)", actions)
 	}
 	byPID := map[int]CensusAction{}
 	for _, a := range actions {
@@ -50,6 +51,11 @@ func TestRunCensus(t *testing.T) {
 	b := byPID[90004]
 	if b.Outcome != CensusRegistered || b.AgentID != "apollo-observer" || b.Surface != "worker" || b.Thread == "" {
 		t.Fatalf("apollo observer = %+v, want registered as apollo-observer/worker", b)
+	}
+
+	c := byPID[90005]
+	if c.Outcome != CensusRegistered || c.AgentID != "apollo-dashboard" || c.Surface != "worker" || c.Thread == "" {
+		t.Fatalf("apollo dashboard = %+v, want registered as apollo-dashboard/worker", c)
 	}
 
 	// Second pass: idempotent — the gpu server is now tracked, nothing new.
