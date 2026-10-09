@@ -1,7 +1,7 @@
 # ADR-077: Ownerless Recovery — Signed LAN Anchor
 
 ## Status
-**Proposed, revision 9** — 2026-10-09. Design only; no code, no key material,
+**Proposed, revision 10** — 2026-10-09. Design only; no code, no key material,
 no new `authorized_keys` entries. Routed for SHA (hardware) + SSA (software)
 review before any implementation, per the owner directive that created this
 task (SHA 20260915-012036, ledger `rs-41-ownerless-recovery-signed-lan-anchor`).
@@ -15,10 +15,12 @@ responded to SSA's CHANGES_REQUESTED verdict on revision 5 (exact head
 `7449476b`). SSA independently reviewed revision 6 (exact head `5b4e7de3`)
 and returned CHANGES_REQUESTED on four items — see "Review History" below.
 (SHA's parallel revision-6 review returned BLOCKED on bundle delivery to its
-worker host, not a verdict on the text; see the open cross-host-delivery
-item — ra has no filesystem or network path onto SHA's host, so this
-blocker is escalated to the owner rather than re-attempted with another
-bundle cut from this side.) SSA's revision-6 findings: (1) **R6-1 P1** — the
+worker host, not a verdict on the text — **historical**: the premise that
+no cross-host path existed was itself wrong, the correct target was
+`thekryptodragon@m5` rather than `m5`; once delivered that way, SHA
+independently reviewed revision 9, exact head `466a50d7`, and returned
+DESIGN_ACCEPTED, closing R6-1/R6-2/R6-3 at the contract level — see
+"Review History" below for that verdict.) SSA's revision-6 findings: (1) **R6-1 P1** — the
 synchronous stat added in revision 6 compares `mtime`+`size`, which is not
 content identity (a same-length, restored-mtime replacement is
 indistinguishable from "unchanged"), and the shared guard it runs under
@@ -118,6 +120,19 @@ impossible matrix row with the actual schedule — a later dispatch always
 performs its own mandatory validate call against the current source
 (closes SSA R8-2 P2). It remains proposed, not accepted, pending a fresh
 SHA+SSA pass on this exact text.
+SSA independently reviewed revision 9 (exact head `466a50d7`) and returned
+**ACCEPT_BOUNDED_DESIGN** — no remaining R8 P1/P2 design finding. SHA
+independently reviewed the same exact head and returned
+**DESIGN_ACCEPTED** — no remaining blocking hardware-custody design
+finding, closing R6-1/R6-2/R6-3 at the contract level (delivered via
+`thekryptodragon@m5`, the corrected cross-host path; see the superseded
+note above). This revision (10) makes only the two nonblocking wording
+fixes SHA's acceptance flagged — correcting one place that called
+`authorized_keys` "root-owned" when it is account-writable, and marking
+the revision-6-era "no cross-host path" prose as historical — and carries
+no design-content change. Both reviewers' acceptances are of the design
+contract only: neither authorizes implementation, host qualification, key
+enrollment, merge, or a release claim.
 Number note: ADR-076 is claimed by an open, unmerged PR (#1017,
 `maat/trust-boundary-gate`) and does not exist on `origin/main` (A37 — a
 record exists only on origin). This document takes ADR-077 to avoid a
@@ -746,7 +761,8 @@ network lane in Option A is down.
      itself never acts on a *snapshot* older than the one its own
      pre-dispatch read just took, which is a claim about snapshot
      freshness, not about raw-write fencing. This is two SHA-256 reads of
-     bounded, root-owned local files under an already-held guard; SSA is
+     bounded, root-owned grant and account-writable restriction inputs
+     under an already-held guard; SSA is
      correct that no latency claim is made here without measurement — the
      qualification matrix below requires a timed result before either
      lane is reported "proven" rather than "candidate."
@@ -1431,6 +1447,21 @@ This section is platform groundwork, not a launchable-feature claim.
   the current source. Remains **Proposed** pending a fresh SHA+SSA pass
   on this exact text; no merge, installation, or implementation is
   authorized by this revision.
+- Revision 10 (this text, head after `466a50d7`): both reviewers
+  independently accepted revision 9 (exact head `466a50d7`) with no
+  remaining design finding — SSA returned **ACCEPT_BOUNDED_DESIGN** and
+  SHA returned **DESIGN_ACCEPTED**, closing R6-1/R6-2/R6-3 and R7/R8 at
+  the contract level. SHA's acceptance flagged two nonblocking wording
+  notes, applied here with no design-content change: one place calling
+  both `anchor-grants.allow` and `authorized_keys` "root-owned" corrected
+  to distinguish the root-owned grant from the account-writable
+  restriction; and the revision-6-era "no cross-host delivery path" prose
+  marked historical, since `thekryptodragon@m5` (not `m5`) was the
+  correct, already-working target the whole time. Both acceptances are
+  bounded to the design contract — neither authorizes implementation,
+  host qualification, key enrollment, merge, or a release claim; the
+  qualification matrix still requires independently evidenced runtime
+  receipts before any lane is "proven" rather than "candidate."
 
 ## References
 - Ledger: `ra/rs-41-ownerless-recovery-signed-lan-anchor`; owner direction SHA
