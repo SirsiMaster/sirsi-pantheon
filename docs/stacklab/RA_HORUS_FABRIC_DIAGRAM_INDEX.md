@@ -4,7 +4,9 @@
 
 Coverage is reported against the whole process inventory below, not against what is already drawn.
 
-**Covered (logical + data): 4 of 18. Drafted, awaiting its owner's confirmation: 1. Open: 13.**
+**Covered (logical + data): 7 of 18. Drafted, awaiting its owner's confirmation: 1. Open: 10.**
+
+Separately, `ra/sl-diagram-001-ra-p06-p07-p16` (PR #1047, open, CI green, awaiting review) draws RA-P06, RA-P07, RA-P16 — not reflected in this branch's count until that PR merges.
 
 State, sequence and recovery views are marked per row. A row is complete only when it has a logical view and a data view; every gap stays OPEN with a next action.
 
@@ -17,11 +19,11 @@ State, sequence and recovery views are marked per row. A row is complete only wh
 | RA-P05 | Review and bind (SSA) | PR opened | [RA-P05](diagrams/RA-P05-review-and-bind.md) | same file | recovery | owner: sirsi-software-admin; **Ra's understanding, awaiting SSA confirmation** | SSA confirms or corrects (item sent 2026-10-05) |
 | RA-P06 | Item lifecycle: send, pull, acknowledge, claim, close, reopen, reassign, dismiss | any lane | OPEN | OPEN | OPEN | implemented | draw from `internal/routerstore/items.go` and the dispatch facade |
 | RA-P07 | Thread registration and heartbeat | session start | OPEN | OPEN | OPEN | implemented | draw |
-| RA-P08 | Spool relay forwarding | any lane call | OPEN | OPEN | OPEN | implemented | draw; include the 30 s timeout class |
-| RA-P09 | Router service authorization (host token, thread binding, audience log) | every gated call | OPEN | OPEN | OPEN | implemented | draw; confirm what authenticates a lane |
+| RA-P08 | Spool relay forwarding | any lane call | [RA-P08](diagrams/RA-P08-spool-relay-forwarding.md) | same file | recovery | implemented | none |
+| RA-P09 | Router service authorization (host token, thread binding, audience log) | every gated call | [RA-P09](diagrams/RA-P09-router-service-authorization.md) | same file | recovery | implemented | none |
 | RA-P10 | Quarantine stand-down and lift | owner or Ra | OPEN | OPEN | OPEN | implemented | draw |
 | RA-P11 | Horus supervisor duties: dispatch pump, hourly sweep, registry police, thread census | supervisor cadence | OPEN | OPEN | OPEN | implemented | draw |
-| RA-P12 | Lane escalation: "lane needs you" alert and auto-resolve | lane unreachable | OPEN | OPEN | OPEN | implemented | draw from `internal/router/laneescalation.go` |
+| RA-P12 | Lane escalation: "lane needs you" alert and auto-resolve | lane unreachable | [RA-P12](diagrams/RA-P12-lane-escalation.md) | same file | recovery | implemented | none |
 | RA-P13 | Swap hygiene sampling | `sirsi swap-hygiene` | OPEN | OPEN | OPEN | implemented | draw |
 | RA-P14 | Dashboard read path | `sirsi dashboard` | OPEN | OPEN | OPEN | implemented | draw: bounded reads (`ListActive`, `ListSince`, `CountClosed`) |
 | RA-P15 | Claim eligibility (`router task why`) | refused claim | OPEN | OPEN | OPEN | implemented | draw |
