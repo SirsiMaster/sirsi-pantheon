@@ -1,5 +1,9 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-09 — v0.24.98 release candidate
+
+- `relieve --memory` no longer raises an admin-password dialog when run unattended.
+
 ## 2026-10-08 — v0.24.97 release candidate
 
 - Wake loops share one CPU-headroom probe per host.
