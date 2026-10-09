@@ -1,5 +1,12 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-09 — v0.24.99 release candidate
+
+- Revises ADR-072 (universal thread naming) C2/C4/C5 and the phase order per
+  SSA round-1
+- Closes codex-pantheon's successor CHANGES_REQUESTED on PR #1042 (head
+  `0b1184c8`): `Bo
+
 ## 2026-10-09 — v0.24.98 release candidate
 
 - `relieve --memory` no longer raises an admin-password dialog when run unattended.
