@@ -422,11 +422,35 @@ func clearConsumerPIDFileIfMatch(routerRoot, agentID string, pid int, startedAt 
 	clearConsumerPIDFile(routerRoot, agentID)
 }
 
-// adoptRunningConsumer reads the durable marker and, if the recorded PID is
-// still OS-truth alive (recycle-guarded by its start signature), returns a
-// consumerRun this loop can poll instead of blind-dispatching a duplicate. A
-// stale marker (process gone) is cleaned up so it never misreports again.
+// adoptRunningConsumer resolves the durable marker under the SAME per-agent
+// admission flock admitConsumer uses, so a standalone caller (wake.go's
+// startup adoption) can never race a concurrent admitConsumer's publish: the
+// unlocked predecessor of this function read-then-unconditionally-cleared the
+// marker outside any lock, so a loop restart's startup adoption could delete
+// a successor another admission had just published between this read and
+// that clear, stranding the live successor markerless and letting the next
+// admission spawn a duplicate beside it (sirsi-software-admin review of PR
+// #1045, finding P1). Callers that already hold the lock (admitConsumer
+// itself) MUST call adoptRunningConsumerLocked directly — flock is not
+// reentrant across fds in the same process, so calling this wrapper from
+// inside admitConsumer would deadlock.
 func adoptRunningConsumer(routerRoot, agentID string) *consumerRun {
+	unlock, lerr := lockConsumerAdmission(consumerAdmissionLockPath(routerRoot, agentID))
+	if lerr != nil {
+		return nil
+	}
+	defer unlock()
+	return adoptRunningConsumerLocked(routerRoot, agentID)
+}
+
+// adoptRunningConsumerLocked is the unlocked core: reads the durable marker
+// and, if the recorded PID is still OS-truth alive (recycle-guarded by its
+// start signature), returns a consumerRun this loop can poll instead of
+// blind-dispatching a duplicate. A stale marker (process gone) is cleaned up
+// so it never misreports again. The caller MUST already hold the per-agent
+// admission flock (consumerAdmissionLockPath) — this function performs no
+// locking of its own.
+func adoptRunningConsumerLocked(routerRoot, agentID string) *consumerRun {
 	pid, startedAt, ok := readConsumerPIDFile(routerRoot, agentID)
 	if !ok {
 		clearConsumerPIDFile(routerRoot, agentID)
@@ -476,7 +500,7 @@ func admitConsumer(routerRoot, agentID string, rc *ResolvedConsumer) (run *consu
 	}
 	defer unlock()
 
-	if existing := adoptRunningConsumer(routerRoot, agentID); existing != nil {
+	if existing := adoptRunningConsumerLocked(routerRoot, agentID); existing != nil {
 		return existing, true, nil
 	}
 	run, err = dispatchConsumer(rc)

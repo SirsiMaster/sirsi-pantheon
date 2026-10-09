@@ -156,6 +156,73 @@ func TestAdmitConsumerAdoptsAnAlreadyRunningConsumerWithoutLock(t *testing.T) {
 	}
 }
 
+// TestAdoptRunningConsumerSerializesWithAdmitConsumer is the regression test
+// for sirsi-software-admin's PR #1045 finding P1: a standalone startup
+// adoption (wake.go's loop-restart path) called the unlocked predecessor of
+// adoptRunningConsumer, racing a concurrent admitConsumer (the informer
+// admitting/publishing a successor) without sharing the admission flock. The
+// startup caller's read-dead-then-unconditional-clear could erase the
+// successor's just-published marker out from under it, leaving a live,
+// markerless process that the next admission would duplicate.
+//
+// Fired many times concurrently against a pre-existing dead marker: with the
+// fix, adoptRunningConsumer takes the SAME flock admitConsumer does, so
+// whichever caller wins completes its own check-then-mutate atomically.
+// Confirmed red before this fix by temporarily reverting adoptRunningConsumer
+// to call adoptRunningConsumerLocked directly (no lock) — this test then
+// intermittently found an empty marker after a live spawn under
+// `go test -race -count=20`.
+func TestAdoptRunningConsumerSerializesWithAdmitConsumer(t *testing.T) {
+	root := t.TempDir()
+	const agent = "startup-race-agent"
+	logPath := filepath.Join(root, "invocations.log")
+	consumer := &ResolvedConsumer{Argv: []string{sleepConsumer(t, logPath)}}
+
+	// A dead marker left behind by a previous run — the shape both the
+	// informer's admitConsumer and wake.go's startup adoption see first.
+	writeMarker(t, root, agent, 2147480000)
+
+	const racers = 8
+	var wg sync.WaitGroup
+	wg.Add(racers)
+	for i := 0; i < racers; i++ {
+		go func(i int) {
+			defer wg.Done()
+			if i%2 == 0 {
+				if _, _, err := admitConsumer(root, agent, consumer); err != nil {
+					t.Errorf("admitConsumer: %v", err)
+				}
+				return
+			}
+			adoptRunningConsumer(root, agent)
+		}(i)
+	}
+	wg.Wait()
+
+	deadline := time.Now().Add(5 * time.Second)
+	var lines []string
+	for time.Now().Before(deadline) {
+		b, _ := os.ReadFile(logPath)
+		lines = splitNonEmptyLines(string(b))
+		if len(lines) >= 1 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if len(lines) != 1 {
+		t.Fatalf("invocations.log recorded %d process starts (%v), want exactly 1 real spawn across admitConsumer + adoptRunningConsumer racing the same agent",
+			len(lines), lines)
+	}
+
+	pid, startedAt, ok := readConsumerPIDFile(root, agent)
+	if !ok {
+		t.Fatalf("marker missing after the race settled — a startup adoption erased the live successor's marker (finding P1)")
+	}
+	if PIDStateOf(pid, startedAt) != PIDAlive {
+		t.Fatalf("marker (%d, %q) after the race does not name a live process", pid, startedAt)
+	}
+}
+
 // TestClearConsumerPIDFileIfMatchRefusesToDeleteANewerMarker is codex-pantheon's
 // PR #1044 finding P1, reproduced: an old consumer's delayed cleanup goroutine
 // fires after a concurrent admission has already recorded a NEWER consumer
