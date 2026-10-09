@@ -26,7 +26,7 @@ func (b *Board) Poll(ctx context.Context) {
 			Tasks []rawTask `json:"tasks"`
 		} `json:"agents"`
 	}
-	b.runJSON(ctx, 8*time.Second, []string{"router", "ledger", "--json"}, &ledger, &errs)
+	ledgerOK := b.runJSON(ctx, 8*time.Second, []string{"router", "ledger", "--json"}, &ledger, &errs)
 
 	agentsCfg := b.registeredAgents(&errs)
 	threads := b.allThreads(ctx, &errs)
@@ -230,7 +230,12 @@ func (b *Board) Poll(ctx context.Context) {
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	// Version bumps ONLY on real change, so an SSE event means the fleet moved.
+	// valid tracks the AUTHORITATIVE read (the ledger load), not the auxiliary
+	// ones (registry/threads/consumers). A failed ledger load means every
+	// counter and lane above is fabricated zero state, not data — serve 503,
+	// never 200 with zeros. Version still bumps so a later successful poll is
+	// recognized as a real change, but callers must check Valid() too.
+	b.valid = ledgerOK
 	if b.version == 0 || string(body) != string(b.payload) {
 		b.payload = body
 		b.version++
