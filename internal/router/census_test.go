@@ -22,10 +22,11 @@ func TestRunCensus(t *testing.T) {
 		{PID: 90001, Command: "/bin/bash /Users/x/.local/bin/sirsi-gemma-worker.sh"},
 		{PID: 90002, Command: "Python /Users/x/.sirsi/gemma-capped-server.py 22320611328 --model m"},
 		{PID: 90003, Command: "/usr/libexec/some-system-daemon"},
+		{PID: 90004, Command: "/Users/x/.local/share/apollo-observer/apollo-observer-agent --addr 100.88.242.95:8490 --dir /Users/x/.local/share/apollo-observer/telemetry --machine M1"},
 	}
 	actions := RunCensus(root, procs)
-	if len(actions) != 2 {
-		t.Fatalf("actions = %+v, want 2 (system daemon untouched)", actions)
+	if len(actions) != 3 {
+		t.Fatalf("actions = %+v, want 3 (system daemon untouched)", actions)
 	}
 	byPID := map[int]CensusAction{}
 	for _, a := range actions {
@@ -44,6 +45,11 @@ func TestRunCensus(t *testing.T) {
 	thr := reg.Threads[a.Thread]
 	if thr == nil || thr.PID != 90002 || thr.Status != ThreadStatusActive || thr.MachineID != MachineID() {
 		t.Fatalf("registered thread wrong: %+v", thr)
+	}
+
+	b := byPID[90004]
+	if b.Outcome != CensusRegistered || b.AgentID != "apollo-observer" || b.Surface != "worker" || b.Thread == "" {
+		t.Fatalf("apollo observer = %+v, want registered as apollo-observer/worker", b)
 	}
 
 	// Second pass: idempotent — the gpu server is now tracked, nothing new.

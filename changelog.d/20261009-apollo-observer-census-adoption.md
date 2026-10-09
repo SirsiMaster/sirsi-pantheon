@@ -1,0 +1,2 @@
+- **Universal Thread Census adopts the Apollo read-only observer.** `apollo-observer-agent` (`ai.sirsi.apollo.observer`, a per-host read-only GPU/chip telemetry observer with no inference, no workload placement decisions) now matches `censusMatchers` as `apollo-observer`/`worker`, so it registers in the thread registry within one census cadence on every machine it runs — M1 and M5 today, M5-Studio once enrolled — instead of being invisible to the board and reaper (A33).
+  Refs: PANTHEON_RULES A33 (Universal Thread Census), A27 (registration is alive-and-watching).
