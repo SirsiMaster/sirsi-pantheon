@@ -1,29 +1,44 @@
 # ADR-077: Ownerless Recovery — Signed LAN Anchor
 
 ## Status
-**Proposed, revision 4** — 2026-10-09. Design only; no code, no key material,
+**Proposed, revision 5** — 2026-10-09. Design only; no code, no key material,
 no new `authorized_keys` entries. Routed for SHA (hardware) + SSA (software)
 review before any implementation, per the owner directive that created this
 task (SHA 20260915-012036, ledger `rs-41-ownerless-recovery-signed-lan-anchor`).
 Revision 2 responded to SSA's and SHA's CHANGES_REQUESTED verdicts on
 revision 1 (exact head `e22478e1`); revision 3 responded to SSA's
-CHANGES_REQUESTED verdict on revision 2 (exact head `c5680351`). Both SHA and
-SSA independently reviewed revision 3 (exact head `1087bf15`) and both
-returned CHANGES_REQUESTED — see "Review History" below. The two reviews
-converged on the same underlying gap stated two ways: the authority a
-revocation changes and the authority a dispatch reads are not the same
-protected, versioned thing, so "revoke before invoke denies" was asserted
-without a mechanism that makes it true. This revision (a) makes the grant
-source root-owned and distinct from account-writable `authorized_keys`,
-(b) replaces the "re-read before dispatch" prose with an explicit generation
-fence shared between policy publication and dispatch commitment,
-(c) makes the clock-rollback replay defense survive record pruning via a
-durable high-water mark, (d) fixes the reservation key to
-`UNIQUE(fingerprint, request_id)` with content hash as a checked value, and
-(e) corrects three qualification-matrix rows that contradicted the
-linearization-point rule and the Verifier/Custody stage split stated
-elsewhere in this document. It remains proposed, not accepted, pending a
-fresh SHA+SSA pass on this exact text.
+CHANGES_REQUESTED verdict on revision 2 (exact head `c5680351`); revision 4
+responded to both SHA's and SSA's CHANGES_REQUESTED verdicts on revision 3
+(exact head `1087bf15`). Both SHA and SSA independently reviewed revision 4
+(exact head `f2d03042`) and both again returned CHANGES_REQUESTED — see
+"Review History" below. The two reviews converged on three gaps stated two
+ways each: (1) the pruning-independent high-water mark compared a request's
+own `issued_at` against itself, so an envelope replayed at the exact mark
+after its row was pruned passed both the mark check and the startup
+rollback check; (2) the generation fence serializes *successful publication*
+with dispatch, but a *failed or dirty* re-sync (source edited, republish
+malformed or interrupted) leaves the prior generation "current," so a
+revoked grant removed from the root-owned source before a failed sync still
+dispatches; (3) the single negative-control test demanded an outcome
+("revocation commits while the paused request still holds the guard") that
+is structurally impossible under the mutex fence variant, since holding the
+mutex is what blocks the competing publish. This revision (a) replaces the
+request-derived high-water mark with a daemon-maintained, continuously
+persisted **wall-clock ratchet** checked at every admission (not just
+startup) and restores a minimum replay-retention floor so no row is pruned
+before its rollback-detection value has already been absorbed into the
+ratchet, (b) adds an explicit **dirty/invalid policy state** under the same
+generation guard that pre-dispatch revalidation must deny against whenever
+the sync step has observed source divergence it has not yet validated and
+published — the freshness-ceiling last-known-good fallback now applies only
+when the source has not changed, never when it has changed and republish
+failed, (c) splits the fence negative control into mutex-variant and
+CAS-variant cases with per-variant expected orderings instead of one
+cross-variant-impossible assertion, and (d) folds in the remaining editorial
+corrections from both reviews (history-note attribution, the generic
+different-UID matrix row wording, and the `authorized_keys`
+narrowing-vs-restoring clarification). It remains proposed, not accepted,
+pending a fresh SHA+SSA pass on this exact text.
 Number note: ADR-076 is claimed by an open, unmerged PR (#1017,
 `maat/trust-boundary-gate`) and does not exist on `origin/main` (A37 — a
 record exists only on origin). This document takes ADR-077 to avoid a
@@ -139,6 +154,27 @@ network lane in Option A is down.
        restriction and no `override: true` on its `anchor-grants.allow`
        line remains **absent from the derived mapping**: the restriction is
        inherited as exclusion, never as a narrowed-but-present grant.
+     - **Self-restoration via one's own `authorized_keys` edit, scoped
+       explicitly (closes SSA's implementation elaboration on lines
+       109-123).** The categorical statement above — "an account editing
+       its own `authorized_keys` can never create or enlarge an anchor
+       grant for itself" — covers creating a grant that never existed in
+       `anchor-grants.allow`. It does not by itself cover the narrower case
+       of an account *removing* a `from=`/`command=` restriction on a key
+       that already holds a root-owned grant: because exclusion here is
+       derived live from the current `authorized_keys` content rather than
+       recorded as its own persistent fact, removing the restriction
+       removes the exclusion and the pre-existing root grant becomes
+       effective again on the next sync — not a new grant, but the
+       restoration of one the account did not itself create. This ADR
+       permits exactly that and no more: restoring a pre-existing
+       `anchor-grants.allow` grant by removing one's own restriction is
+       within the account's existing power over its own
+       `authorized_keys` entry, identical in kind to the account's
+       pre-existing power to narrow or widen its own SSH login
+       restrictions. It remains true, unchanged, that no `authorized_keys`
+       edit can create a grant absent from `anchor-grants.allow` or widen a
+       grant's permitted-verb set beyond what that root-owned line states.
    - **The ingress boundary is same-UID-plus-signature, not "arrived over
      SSH."** Kernel peer-credential checks on the local IPC socket (item 2
      below) can only ever prove the connecting process's UID — never which
@@ -241,24 +277,56 @@ network lane in Option A is down.
      credential with an expiry. This mechanism makes a `request_id`
      unreplayable **after** its first reservation; it does not make an
      unreserved, still-valid envelope un-usable before that point.
-   - **Clock-rollback defense survives record pruning (closes SSA R3-2
-     P1).** "A request whose `issued_at` predates the oldest retained
-     record" is not a durable watermark by itself: once completed replay
-     rows age out and are pruned, an empty per-fingerprint set has no oldest
-     record, and a rolled-back clock can make a previously-expired, pruned
-     envelope satisfy TTL/skew again. This ADR instead requires a **durable
-     high-water mark**, persisted independently of individual replay rows
-     (per fingerprint, and a global value) — updated to `max(current value,
-     this request's issued_at)` in the **same transaction** as each
-     admission, so it survives pruning of the rows it was derived from. At
-     daemon startup, the current wall clock is checked against the
-     persisted global high-water mark minus the max permitted skew; if wall
-     clock is behind that mark, the daemon treats this as a detected clock
-     rollback and **fails closed** — denies all admissions — until the
-     condition clears (clock resynchronized past the mark, or an explicit
-     owner-gated override). A fingerprint with no prior high-water mark
-     (new principal, never-pruned empty state) has no rollback floor yet and
-     is evaluated on TTL/skew alone, same as today.
+   - **Clock-rollback defense survives record pruning and equal-mark replay
+     (closes SHA R4-1 P1 / SSA R4-2 P1 — revision 4's high-water mark was
+     itself a replayable value).** Revision 4's mark was derived from
+     admitted requests' own `issued_at` and compared with a strict `<`:
+     admit envelope with `issued_at=T`, mark becomes `T`; after real expiry
+     and pruning, roll the clock back to `T+1` and resubmit the identical
+     envelope — `T` is not "behind" mark `T` (strict `<` is false), the
+     replay row is gone, and the envelope's own signed `expires_at` is still
+     in the future relative to the rolled-back clock, so TTL passes too.
+     Changing the comparison to `<=` does not fix this alone: a mark that
+     advances on *every* admission would then wrongly deny a second,
+     legitimate, distinct `request_id` admitted in the same `issued_at`
+     second (SSA's explicit caution). The defect is using a
+     **request-derived** value as the rollback floor at all — a value an
+     attacker-controlled or rolled-back clock can reproduce by construction.
+     This revision instead persists a **daemon-maintained wall-clock
+     ratchet**, independent of any individual request: `last_observed_wallclock`
+     is updated to `max(current value, current wall-clock reading)` (a) in
+     the same transaction as every admission, (b) on a periodic durable tick
+     (a fixed interval, e.g. every 30s, written whether or not any request
+     arrived) so the ratchet keeps advancing even during idle periods, and
+     (c) at daemon startup before serving any request. The rollback check
+     runs **at every admission and at startup** (not startup only): if the
+     current wall-clock reading is behind `last_observed_wallclock` minus the
+     max permitted skew, the daemon treats this as a detected clock rollback
+     and **fails closed** — denies all admissions — until the condition
+     clears (clock resynchronized past the ratchet, or an explicit
+     owner-gated override). Because the ratchet advances from the daemon's
+     own continuous observation of wall-clock time rather than from any one
+     request's claimed `issued_at`, the counterexample above is caught
+     regardless of pruning: by the time the original envelope's
+     `expires_at` passed in real time, the ratchet had already advanced past
+     it, and a clock rolled back to `T+1` reads as "behind the ratchet" even
+     though no replay row and no request-derived mark survived. This
+     coexists with, and does not replace, the per-fingerprint/global
+     high-water mark from admitted `issued_at` values (§ above) — the
+     ratchet catches rollback independent of admissions; the mark still
+     orders admissions relative to each other.
+   - **Minimum replay-retention floor restored (closes SSA's "R4 deleted
+     R3's TTL+skew-past-expiry requirement" note).** A replay row (and any
+     per-fingerprint value derived solely from it) is not eligible for
+     pruning until at least `max permitted TTL + max permitted skew` has
+     elapsed past that row's `expires_at`, persisted and checked by the
+     pruning routine itself — pruning on any shorter schedule is a bug in
+     the pruning routine, not a design choice the operator can tune away.
+     This bounds how far pruning can ever run ahead of the ratchet above,
+     so the two defenses are reinforcing rather than one silently
+     substituting for the other. A fingerprint with no prior ratchet value
+     (new principal, first-ever admission on this daemon) has no rollback
+     floor yet and is evaluated on TTL/skew alone, same as today.
    - **Revalidation immediately before dispatch, under a shared generation
      fence (closes SHA R3-1 / SSA R3-1 — the core convergent finding).**
      Revision 3's "re-read current state immediately before dispatch" was
@@ -281,6 +349,51 @@ network lane in Option A is down.
      whose generation has advanced past the one it was authorized under, in
      that interval is denied; the audit record resolves to `denied`, never
      proceeds to `completed`.
+   - **Dirty/invalid policy state under the same guard (closes SHA R4-1 P1 /
+     SSA R4-1 P1 — the fence covers publication, not source divergence or a
+     failed republish).** The generation fence above serializes dispatch
+     against a *successful* publish; it says nothing about the interval
+     between the root-owned source (`anchor-grants.allow` or
+     `authorized_keys`) changing and the sync step either publishing a new
+     generation or failing to. Concrete gap: a grant is removed from
+     `anchor-grants.allow`, but the sync step's republish fails (malformed
+     second line, interrupted write, any rejection case in item 1's sync
+     rule) before the freshness ceiling is reached; the old generation
+     remains "current," and a request queued before the removal still reads
+     that unchanged, still-current generation at the pre-dispatch fence and
+     dispatches. Revision 4's "serve last-known-good within the freshness
+     ceiling" fallback was written for the case where the source has not
+     changed and the sync step simply has not run yet — it was never meant
+     to, but as written did, also cover "the source changed and the
+     republish failed." This revision adds an explicit **dirty** flag to
+     the same generation-fence state: the sync step, on observing that the
+     source's mtime/content-hash differs from what the currently-published
+     generation was derived from, sets `dirty=true` under the guard
+     *before* attempting to validate and republish; a successful validate
+     + publish clears `dirty` and advances the generation atomically in
+     that same guarded operation; a failed validate (malformed, ambiguous,
+     wrong mode/ownership) leaves `dirty=true`. The pre-dispatch
+     revalidation above now checks `dirty` in addition to generation and
+     expiry: **`dirty=true` denies unconditionally, regardless of freshness
+     ceiling** — the last-known-good fallback applies only to "sync hasn't
+     run since the last successful publish, and the source is unchanged
+     since then," never to "the source changed and the daemon cannot prove
+     the new policy." A stale mapping that was never invalidated by a
+     source change may still serve within the ceiling; a mapping the daemon
+     knows is now wrong may not, ceiling or not.
+   - **Parent-directory and ownership hardening for policy state (closes
+     SSA's "root-owned file mode alone does not protect" note).** Root
+     ownership and mode `0600` on `anchor-grants.allow`, the derived
+     allowed-signers mapping, and the persisted generation/dirty/ratchet
+     state protect those files only if their **parent directories** are
+     also non-account-writable — a writable parent lets any account holding
+     write on it replace the file wholesale (unlink + recreate) regardless
+     of the child file's own mode and ownership. This ADR requires every
+     directory in the path to each of these files, up to and including its
+     immediate parent, to be root-owned with no group/other write bit; the
+     qualification matrix (§8) must include a test that attempts exactly
+     this replacement-via-writable-parent and expects it to be refused by
+     filesystem permissions before the sync step ever reads the result.
    - **The execution linearization point, defined.** The single instant the
      Executor is invoked under the fence above is the linearization point:
      before it, revocation or expiry denies outright (above), because the
@@ -292,6 +405,40 @@ network lane in Option A is down.
      post-action verification step (§item 4) into `completed`, `failed`, or
      `unknown-reconcile-required`; a revocation arriving after that instant
      is handled as a future reconciliation input, not an in-flight abort.
+   - **Negative control, split by fence implementation (closes SHA R4-2 P2
+     / SSA R4-3 P2 — one assertion cannot hold for both allowed fence
+     types).** The single control inherited from revision 3 ("pause after
+     the fence read, commit a revocation, resume, the paused request must
+     deny") is correct for a CAS fence but impossible for a held-mutex
+     fence: pausing *after acquiring* a mutex does not release it, so a
+     competing revocation publish cannot commit at all while the paused
+     request still holds the guard — the control as written demands that a
+     correct mutex implementation either deadlock or violate its own
+     mutual-exclusion guarantee. This revision replaces it with a pair of
+     per-variant controls, each asserting an outcome that follows from which
+     operation commits first, rather than mandating an ordering that
+     implementation can never produce:
+     - **Mutex variant.** (a) Revocation publish commits and releases the
+       guard before the dispatching request acquires it → the request's
+       acquire observes the new generation → **deny**. (b) The dispatching
+       request acquires the guard first (and, per the fence definition
+       above, holds it through Executor invocation) → revocation's publish
+       attempt blocks on the same guard and cannot commit until the guard
+       is released → the held request's action **commits first**;
+       revocation, once it does commit, governs only subsequent requests
+       and triggers §item 4's post-action reconciliation for the one that
+       already ran. Both outcomes are correct; the test asserts the
+       Executor call count and the revocation-publish ordering for each
+       case, not one cross-case expected verdict.
+     - **CAS variant.** (a) Revocation publish advances the generation
+       before the dispatching request's atomic commit attempt → the CAS
+       fails on a stale generation token → **deny**, no Executor
+       invocation. (b) The dispatching request's CAS commits first → the
+       Executor invocation is already bound to the generation value the CAS
+       observed; a revocation publishing afterward cannot un-commit it →
+       same post-action-reconciliation outcome as mutex-(b). The
+       qualification matrix (§8) names which fence variant the
+       implementation uses and tests only that variant's two orderings.
    - **Test coverage required before qualification**: two requests with the
      same `request_id` and *different* content submitted concurrently (one
      must win admission, the other must fail — never both executing);
@@ -302,14 +449,22 @@ network lane in Option A is down.
      that is queued behind another and whose `expires_at` passes while
      queued (deny at the pre-dispatch revalidation, not at admission); a key
      revoked while its request is queued between admission and dispatch
-     (deny at the pre-dispatch revalidation); **a deterministic negative
-     control that pauses the daemon after the pre-dispatch fence read,
-     commits a revocation of the signing key's generation, then resumes**
-     — the paused request must deny, never complete, proving the fence
-     (not timing luck) is what closes the gap; all replay rows for a
-     fingerprint pruned, then the daemon's wall clock rolled back, then an
-     old (previously valid, now-expired-by-real-time) envelope resubmitted
-     (must deny via the persisted high-water mark, not re-admit).
+     (deny at the pre-dispatch revalidation); the two fence-variant negative
+     controls above, exercised against whichever variant the implementation
+     actually uses; a source edit (grant removed) followed by a sync
+     failure (malformed replacement line) before the freshness ceiling,
+     with a request queued before the edit — the queued request must deny
+     at pre-dispatch revalidation on `dirty=true`, not dispatch on
+     last-known-good; replacement of `anchor-grants.allow`, the derived
+     mapping, or the generation/dirty/ratchet state via a writable parent
+     directory (must be refused by filesystem permissions); all replay rows
+     for a fingerprint pruned, then the daemon's wall clock rolled back,
+     then an old (previously valid, now-expired-by-real-time) envelope
+     resubmitted at the exact `issued_at` the pruned row held (must deny via
+     the daemon-maintained wall-clock ratchet, not the now-absent replay row
+     or the request-derived mark alone); the ratchet itself advancing with
+     zero admissions in flight (periodic durable tick observed in the
+     persisted store).
 
 2. **Local privilege boundary (closes SSA-2 / SHA-1-second-half).** The
    anchor is a system-domain launchd daemon listening on a **local-only,
@@ -495,9 +650,12 @@ anchor daemon — Atomic admission
   ├─ same content hash already reserved for that key → return existing
   │  outcome (no-op)
   ├─ issued_at behind the fingerprint's/global persisted high-water mark →
-  │  DENY, log, stop (clock-rollback defense, survives replay-row pruning)
-  ▼ (fresh reservation + `pending` audit write + high-water-mark update,
-     same transaction, node-serialized)
+  │  DENY, log, stop (orders admissions relative to each other)
+  ├─ current wall clock behind the daemon-maintained wall-clock ratchet
+  │  minus max skew → DENY ALL, log, stop (rollback defense, request-
+  │  independent, checked here and at startup, survives replay-row pruning)
+  ▼ (fresh reservation + `pending` audit write + high-water-mark +
+     ratchet update, same transaction, node-serialized)
 anchor daemon — Authorizer
   ├─ (pubkey_fingerprint, verb) not in current allowlist → DENY, mark audit `denied`
   ▼ (principal permitted for this verb)
@@ -507,6 +665,9 @@ anchor daemon — Custody fence acquire (verb-specific, via ADR-045/046)
   │  → DENY, mark audit `denied`, release nothing (never acquired)
   ▼ (fence held)
 anchor daemon — Pre-dispatch revalidation, under the shared generation fence
+  ├─ dirty=true (sync step observed source divergence not yet validated
+  │  and published) → DENY unconditionally, mark audit `denied`, release
+  │  fence — freshness-ceiling last-known-good fallback does NOT apply here
   ├─ expires_at now passed, or signing key revoked/generation advanced since
   │  admission — checked against the CURRENT generation under the same
   │  mutex/CAS the privileged sync step publishes under, never a snapshot
@@ -550,7 +711,7 @@ each row below must have a reviewed, dated test result on file:
 | Interrupted recovery (daemon restarts mid-verb) | Audit resolves from `pending` to `unknown-reconcile-required`, never silently `completed` |
 | Per-lane independence (e.g. two TB rails on one hub) | Status report shows shared dependency, not two independent "OK" lanes |
 | Dead `sshd`/network on target | Lane reports `unreachable`, distinct from `denied` — never conflated |
-| Different UID presents a validly-signed envelope | `denied` — UID not present in the derived mapping |
+| Presenting UID does not equal the signing fingerprint's mapped UID | `denied` — UID not present in the derived mapping |
 | Presenting UID holds *some* valid anchor grant under a different fingerprint, but differs from the mapped UID of the fingerprint that actually signed this envelope | `denied` — holding any grant is not sufficient; the presenting UID must equal the signing fingerprint's own mapped UID |
 | Two keys enrolled on one UID | Both succeed independently, each bound to its own mapped permitted-verb set |
 | Local same-UID invocation with no SSH session involved | Succeeds identically to an SSH-forked invocation |
@@ -563,8 +724,16 @@ each row below must have a reviewed, dated test result on file:
 | Request claims a TTL longer than the server-bound maximum | `denied` at Verifier |
 | Queued request whose `expires_at` passes before dispatch | `denied` at pre-dispatch revalidation, not at admission |
 | Signing key revoked while its request is queued between admission and dispatch | `denied` at pre-dispatch revalidation |
-| Negative control: daemon paused immediately after the pre-dispatch fence read; revocation committed under the generation fence; daemon resumed | Paused request `denied` — the fence, not timing, must be what closes the gap |
-| All replay rows for a fingerprint pruned, daemon clock rolled back, previously-valid-but-now-expired envelope resubmitted | `denied` via the persisted high-water mark, not re-admitted as new |
+| Negative control (mutex variant), case (a): revocation publish commits and releases the guard before the dispatching request acquires it | Request's acquire observes new generation; `denied`, no Executor invocation |
+| Negative control (mutex variant), case (b): dispatching request acquires the guard first and holds it through Executor invocation | Revocation publish blocks until guard release; dispatched action `completed` first; revocation governs only subsequent requests (post-action reconciliation) |
+| Negative control (CAS variant), case (a): revocation advances the generation before the dispatching request's atomic commit | CAS fails on stale generation token; `denied`, no Executor invocation |
+| Negative control (CAS variant), case (b): dispatching request's CAS commits before a subsequent revocation publish | Executor invocation proceeds bound to the observed generation; revocation cannot un-commit it (post-action reconciliation) |
+| Source edit (grant removed) followed by sync failure (malformed replacement) before the freshness ceiling, with a request queued before the edit | Queued request `denied` at pre-dispatch revalidation on `dirty=true`, never dispatched on last-known-good |
+| Source unchanged, sync simply has not run since last successful publish, freshness ceiling not yet exceeded | Last-known-good mapping served (not `dirty`) |
+| Replacement of `anchor-grants.allow`, the derived mapping, or the generation/dirty/ratchet state via a writable parent directory | Refused by filesystem permissions before the sync step ever reads the result |
+| All replay rows for a fingerprint pruned, daemon clock rolled back, previously-valid-but-now-expired envelope resubmitted at the exact `issued_at` the pruned row held | `denied` via the daemon-maintained wall-clock ratchet (checked at admission, not startup only), not re-admitted as new |
+| Wall-clock ratchet advances with zero admissions in flight over a full tick interval | Periodic durable tick observed in the persisted store |
+| Replay row pruned before `max permitted TTL + max permitted skew` has elapsed past its `expires_at` | Refused by the pruning routine itself — not an operator-tunable schedule |
 | Competing non-anchor owner acquires target lock between custody inspection and dispatch | Fenced-acquire fails; request `denied`, not proceeded on stale state |
 
 A lane or verb with an unresolved row stays labeled "candidate," not
@@ -606,11 +775,14 @@ This section is platform groundwork, not a launchable-feature claim.
   execution-time admission/replay atomicity, R2-3 custody-fence atomicity)
   plus two editorial notes (the "(built here)" wording, signing-key
   availability qualified per caller/device tuple). SHA's parallel review of
-  this same head returned BLOCKED, no verdict: the exact commit had not yet
-  been pushed to `origin`, so SHA's independent fetch could not reach it
-  (A37 — a record exists only on origin). That gap is closed by this
-  revision's push; it does not by itself constitute SHA acceptance of
-  anything.
+  this same head returned BLOCKED, no verdict — not because the commit was
+  unpushed, but because source was inaccessible from SHA's reviewing worker
+  (DNS/`FETCH_HEAD` failure in that worker; corrected here per SHA's
+  revision-4 review, which proved the remote object was present throughout
+  and traced the failure to that worker's own resolution/fetch path, not to
+  remote absence — A37's "a record exists only on origin" does not apply
+  here, since the record was on origin the whole time). No revision-2
+  acceptance is inferred from this correction.
 - Revision 3 (head `1087bf15`): responded to all three of SSA's revision-2
   P1/P2 items and both editorial notes — see inline "(closes SSA R2-N)"
   markers (now superseded, see below). Both SHA and SSA independently
@@ -627,7 +799,7 @@ This section is platform groundwork, not a launchable-feature claim.
   found, plus a missing two-UID denial case and a Verifier/Custody
   misattribution), plus implementation elaborations on field encoding and
   the first-use/bearer-risk scoping of the "unreplayable" claim.
-- Revision 4 (this text): responds to all P1/P2 items from both of
+- Revision 4 (head `f2d03042`): responds to all P1/P2 items from both of
   revision 3's reviews — see inline "(closes SHA R3-N / SSA R3-N)" markers
   above. Specifically: introduced `anchor-grants.allow` as the sole,
   root-owned grant source (`authorized_keys` narrows only, never grants);
@@ -641,9 +813,38 @@ This section is platform groundwork, not a launchable-feature claim.
   risk on an unreserved `request_id` rather than asserting it away; and
   corrected three qualification-matrix rows (verb-target vs. verb-path
   staging, the grandfather/linearization contradiction split into
-  pre-fence vs. post-fence rows, and a new two-UID denial row). Remains
-  **Proposed** pending a fresh SHA+SSA pass on this exact text; no merge,
-  installation, or implementation is authorized by this revision.
+  pre-fence vs. post-fence rows, and a new two-UID denial row). Both SHA and
+  SSA independently reviewed this exact head and both again returned
+  CHANGES_REQUESTED: SHA found R4-1 (P1, the new high-water mark was itself
+  a request-derived, replayable value — equal-mark replay after pruning
+  still passed) and R4-2 (P2, the single negative control was impossible
+  under the mutex fence variant), plus the SHA-revision2-attribution
+  history-note correction. SSA found R4-1 (P1, the generation fence
+  serializes successful publication, not a dirty/failed re-sync, leaving a
+  source-edited-but-unpublished revocation unenforced), R4-2 (P1, the same
+  equal-mark replay-after-pruning gap SHA found, independently derived),
+  and R4-3 (P2, the same mutex/CAS negative-control contradiction SHA
+  found), plus implementation elaborations on parent-directory/ownership
+  hardening and the `authorized_keys` self-restoration scoping.
+- Revision 5 (this text): responds to all P1/P2 items from both of
+  revision 4's reviews — see inline "(closes SHA R4-N / SSA R4-N)" markers
+  above. Specifically: replaced the request-derived high-water mark's
+  rollback check with a daemon-maintained wall-clock ratchet, persisted
+  independently of any individual request and checked at every admission
+  (not startup only), plus a restored minimum replay-retention floor tying
+  pruning eligibility to `TTL + skew` past each row's `expires_at`; added an
+  explicit `dirty` policy state under the same generation guard that
+  pre-dispatch revalidation denies against unconditionally, closing the gap
+  where a failed or interrupted re-sync left a source-edited revocation
+  unenforced behind the freshness-ceiling fallback; split the single fence
+  negative control into mutex-variant and CAS-variant cases, each asserting
+  the outcome that actually follows from which operation commits first;
+  and folded in the remaining editorial corrections (SHA's revision-2
+  attribution history note, the generic different-UID matrix row wording,
+  the `authorized_keys` self-restoration scope, and parent-directory/
+  ownership hardening for the policy-state files). Remains **Proposed**
+  pending a fresh SHA+SSA pass on this exact text; no merge, installation,
+  or implementation is authorized by this revision.
 
 ## References
 - Ledger: `ra/rs-41-ownerless-recovery-signed-lan-anchor`; owner direction SHA
