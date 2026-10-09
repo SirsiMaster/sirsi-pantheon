@@ -1,7 +1,7 @@
 # ADR-077: Ownerless Recovery — Signed LAN Anchor
 
 ## Status
-**Proposed, revision 7** — 2026-10-09. Design only; no code, no key material,
+**Proposed, revision 8** — 2026-10-09. Design only; no code, no key material,
 no new `authorized_keys` entries. Routed for SHA (hardware) + SSA (software)
 review before any implementation, per the owner directive that created this
 task (SHA 20260915-012036, ledger `rs-41-ownerless-recovery-signed-lan-anchor`).
@@ -61,6 +61,33 @@ atomically with the row deletion; and (d) adds the missing qualifier to
 §1's active fallback prose and corrects the revision-5 history entry's
 self-label. It remains proposed, not accepted, pending a fresh SHA+SSA pass
 on this exact text.
+SSA independently reviewed revision 7 (exact head `68dc688c`) and returned
+CHANGES_REQUESTED on two items — see "Review History" below. SSA's
+revision-7 findings: (1) **R7-1 P1** — the raw-edit commitment boundary
+still asserted both that the synchronous validate call is authoritative and
+that "no write-side process is left unfenced," which is false for a raw
+writer that never acquires the guard the validate call runs under; (2)
+**R7-2 P2** — the rollback override's new-epoch forward progress was
+contradicted by the retained global admission-order high-water mark, which
+can deny a fresh, correctly-epoched, post-override request whose `issued_at`
+falls below a mark set before the override. This revision: (a) redefines the
+raw-edit boundary so that `anchor-grants.allow` and `authorized_keys` hold
+**proposed** policy at all times, and only the most recent synchronous
+validate call's content-hash snapshot, taken and compared under the shared
+guard, is **active** authority for dispatch — a raw edit landing after that
+snapshot was read but before the guard releases is not yet a committed
+revocation, it is input to the *next* validate call; drops the "no process
+on the write side left unfenced" and "never act on a source state that has
+already changed" claims as false of any writer that bypasses the guard;
+and defines how an operator or account learns a proposed edit was actually
+committed (closes SSA R7-1 P1); (b) scopes the admission-order high-water
+mark into the protected-epoch domain introduced in revision 7, so an
+owner-gated override both mints the next epoch and initializes that new
+epoch's own high-water floor from the daemon's current wall-clock
+observation, while the prior epoch's floor is retained historically and
+never consulted for a current-epoch admission (closes SSA R7-2 P2). It
+remains proposed, not accepted, pending a fresh SHA+SSA pass on this exact
+text.
 Number note: ADR-076 is claimed by an open, unmerged PR (#1017,
 `maat/trust-boundary-gate`) and does not exist on `origin/main` (A37 — a
 record exists only on origin). This document takes ADR-077 to avoid a
@@ -100,7 +127,7 @@ network lane in Option A is down.
    verified independently of SSH:
    - **Encoding and namespace, field types pinned (closes SSA's
      implementation elaboration).** The envelope is
-     `{node_id, verb, target, config_digest, request_id, issued_at, expires_at}`
+     `{node_id, verb, target, config_digest, request_id, issued_at, expires_at, epoch}`
      with field types fixed, not left to the implementation to infer:
      `node_id` (string, this node's pinned identity), `verb` (string, one of
      the enumerated allowlist names — §item 3), `target` (string, the
@@ -470,6 +497,61 @@ network lane in Option A is down.
      epoch had already retired. The override is logged as a decision card
      per A32/A23 — it is the owner's call, not a silent recovery path a
      crashed daemon takes on its own restart.
+   - **The admission-order high-water mark is scoped per protected epoch,
+     not a single global sequence spanning an override (closes SSA R7-2
+     P2).** The per-fingerprint/global high-water mark from admitted
+     `issued_at` values (above) was, through revision 7, one unscoped
+     sequence that an override's epoch bump never touched. Concrete
+     failure this left open: epoch 1 admits an envelope with
+     `issued_at=1000`, advancing the mark to `1000`; the daemon's clock is
+     later found to read a false future value and the owner issues an
+     override, minting epoch 2 and re-anchoring the wall-clock ratchet to
+     the real current reading of `940`; a fresh, correctly-signed epoch-2
+     envelope issued at the real time `940` passes the epoch check and the
+     re-anchored ratchet, but still fails the retained mark check (`940`
+     is behind `1000`) — the override's promised immediate forward
+     progress does not actually happen. This revision makes the mark a
+     property **of the current protected epoch**, not of the daemon's
+     entire history: each epoch owns its own mark, initialized to the
+     daemon's current trusted wall-clock observation at the moment that
+     epoch is minted (the same observation the override uses to re-anchor
+     the ratchet, taken once and used for both) and advanced only by
+     admissions under that same epoch thereafter. The prior epoch's mark
+     is retained, never deleted or merged forward — its admission history
+     stays available for audit — but it is never read by a check against
+     the current epoch's admissions; an epoch-N check reads only epoch-N's
+     mark. A correctly-epoched, post-override request is therefore
+     admissible immediately once it clears the epoch and ratchet checks,
+     with no dependency on where the retired epoch's mark happened to
+     stop. No old-epoch envelope becomes newly eligible by this change:
+     the epoch field check (above) rejects it before the mark is ever
+     consulted, exactly as before. Qualification-matrix row 956's
+     "ratchet is never reset backward" language is retained for the
+     ratchet itself — only the mark gains an epoch-scoped domain; the two
+     are independent state, and this revision does not claim the mark
+     "decreases," it claims a new epoch's mark starts from a fresh
+     initial value that happens to be lower than the retired epoch's final
+     value, which is a different thing than resetting one sequence
+     backward.
+   - **Test coverage required before qualification (closes SSA R7-2
+     P2).** An envelope admitted under epoch N advances epoch N's mark to
+     a high value; an owner-gated override mints epoch N+1; a
+     correctly-epoched, correctly-timed fresh request under epoch N+1,
+     with an `issued_at` below epoch N's retained mark, is submitted
+     immediately after the override (must be **admitted** — the retained
+     epoch-N mark must not be consulted for an epoch-(N+1) admission);
+     the same scenario repeated with the post-override request's
+     `issued_at` deliberately set below the override transaction's own
+     wall-clock re-anchor value (must still be **denied** by the
+     re-anchored ratchet, which is a separate check from the mark); an
+     epoch-N envelope presented after the override, with an `issued_at`
+     that would have passed epoch N's own mark had epoch N still been
+     current (must be **denied** at the epoch field check, before the
+     mark is reached at all); and a daemon with no override history at
+     all, where the first-ever admission under epoch 1 is checked against
+     epoch 1's own freshly-initialized mark, not an undefined or
+     carried-over value (must behave identically to every subsequent
+     admission under that same epoch).
    - **Revalidation immediately before dispatch, under a shared generation
      fence (closes SHA R3-1 / SSA R3-1 — the core convergent finding).**
      Revision 3's "re-read current state immediately before dispatch" was
@@ -555,30 +637,100 @@ network lane in Option A is down.
      edit landing between the stat read and the Executor invocation was
      never actually fenced, only usually-fast-enough. Running the *same
      validate call* the sync step uses — not a cheaper proxy for it —
-     synchronously and in-guard fixes both: a content hash cannot be
-     spoofed by a same-length/same-mtime replacement, and because the
-     call runs while pre-dispatch already holds the guard, there is no
-     process on the write side left unfenced — any writer's edit is either
-     already reflected in the hash this call just computed, or it lands
-     after this call released the guard and will be caught by the next
-     one. This makes **this synchronous validate call**, not a raw file
-     write by any actor, the authoritative commit boundary for dispatch
-     purposes, consistently for both the root-owned grant source and the
-     account-writable restriction source (closes SSA's "handle account
-     restrictions consistently"): nothing is "committed" until this call,
-     under the guard, says so. A mismatch from the last-published hashes
-     is treated identically to `dirty=true` — deny unconditionally —
-     **regardless of whether the background sync step has run yet**. The
-     async sync step's `dirty` flag remains the signal that *drives
+     synchronously and in-guard fixes the spoofability half: a content
+     hash cannot be spoofed by a same-length/same-mtime replacement.
+     It does not, and cannot, fence a raw writer that never acquires this
+     guard at all — a root process editing `anchor-grants.allow` directly,
+     or an account editing its own `authorized_keys`, writes straight to
+     the filesystem with no lock to wait on (closes SSA R7-1 P1, replacing
+     revision 7's false "no process on the write side left unfenced" and
+     "never act on a source state that has already changed" claims, which
+     asserted a fence over writers this design never gives one to).
+     **Proposed vs. active, stated precisely.** `anchor-grants.allow` and
+     an account's `authorized_keys` content are, at every instant,
+     **proposed** policy — whatever bytes currently sit on disk, writable
+     at will by their respective owners, with no commitment semantics of
+     their own. **Active** authority for dispatch is a distinct, narrower
+     thing: the `(hash_pair, generation)` snapshot that the most recent
+     successful validate call — async publish or synchronous pre-dispatch
+     call, under the same shared guard — read and recorded. A raw edit
+     has exactly two possible relationships to that snapshot, never a
+     third: either it happened **before** the snapshot's read (already
+     reflected in the hash, already active), or it happened **after** the
+     guard that produced the snapshot was released (not yet reflected,
+     not yet active, and not a revocation of anything — it is simply the
+     *next* proposed state, waiting for the *next* validate call to read
+     and commit or reject it). An edit landing **while** a validate call
+     holds the guard cannot occur mid-read by definition of mutual
+     exclusion, but a raw writer that queues behind the guard and lands
+     the instant it releases is in the second case, not a third: it was
+     not committed by the call that just ran, because that call's read
+     necessarily finished before the writer's write could land under the
+     same guard discipline the writer never acquired. This revision makes
+     **the validate call's snapshot**, never a raw file write by any
+     actor, the sole source of active authority, consistently for both
+     the root-owned grant source and the account-writable restriction
+     source: a proposed edit becomes active authority only when some
+     later validate call reads it and successfully commits a new
+     generation from it; until then, the prior generation's snapshot
+     remains active and governs dispatch, and a pending proposed edit is
+     not an acknowledged revocation of anything. A mismatch between a
+     pre-dispatch read and the currently-published generation's recorded
+     hashes is treated identically to `dirty=true` — deny unconditionally
+     — **regardless of whether the background sync step has run yet**;
+     this is the committed-snapshot case changing underneath a queued
+     request, not a claim about the raw writer's own fencing. The async
+     sync step's `dirty` flag remains the signal that *drives
      republishing* (so the derived allowed-signers mapping used for
      signature verification stays current); the synchronous in-guard
      validate call is the independent, narrower guarantee that dispatch
-     itself can never act on a source state that has already changed, no
-     matter how far behind the async observer is. This is two SHA-256
-     reads of bounded, root-owned local files under an already-held guard;
-     SSA is correct that no latency claim is made here without
-     measurement — the qualification matrix below requires a timed result
-     before either lane is reported "proven" rather than "candidate."
+     itself never acts on a *snapshot* older than the one its own
+     pre-dispatch read just took, which is a claim about snapshot
+     freshness, not about raw-write fencing. This is two SHA-256 reads of
+     bounded, root-owned local files under an already-held guard; SSA is
+     correct that no latency claim is made here without measurement — the
+     qualification matrix below requires a timed result before either
+     lane is reported "proven" rather than "candidate."
+   - **Commitment acknowledgement: a raw write completing is not a signal
+     that a proposed restriction has taken effect (closes SSA R7-1 P1,
+     second half).** Because activation happens only at the next validate
+     call, an operator or account that has just written a restriction
+     into `anchor-grants.allow` or `authorized_keys` has not thereby
+     learned anything about whether that restriction is enforced yet — the
+     write syscall returning is a filesystem fact, not a policy fact. This
+     ADR requires the daemon to expose a **commit sequence number**: every
+     successful validate call (async publish or synchronous pre-dispatch)
+     increments it and records, in the durable generation state, which
+     source hash pair it last saw for each of `anchor-grants.allow` and
+     each enrolled `authorized_keys` file. An operator or account that
+     needs to know a specific edit is active polls this exposed state
+     (a local, unauthenticated-read, root-owned status file or socket
+     query — no new network surface) until the recorded hash for the file
+     they edited matches the hash of their edit; before that match, the
+     edit is proposed, not committed, regardless of elapsed time or the
+     freshness ceiling. The daemon never claims a restriction is "in
+     effect" based on write completion, mtime, or any signal other than
+     this recorded hash match.
+   - **Test coverage required before qualification (closes SSA R7-1
+     P1).** Edit committed strictly before a validate call's guarded read
+     (must be reflected in that call's hash and treated as active from
+     that call onward); edit landing strictly after a validate call's
+     guard releases, with no subsequent validate call yet run (must read
+     as the *proposed*, not-yet-active state — the prior generation stays
+     authoritative for any dispatch in the interim, and the edit is not
+     treated as a revocation that already occurred); a validation attempt
+     that fails (malformed, ambiguous, wrong mode/ownership) on an edited
+     source (must leave the prior generation active and `dirty` or
+     last-known-good per item 1's rule — the failed attempt must not be
+     reported as a commitment of the edit, successful or otherwise); an
+     operator polling the exposed commit-sequence/hash state after writing
+     a restriction (must observe the pre-edit hash until the next
+     successful validate call runs, then the post-edit hash — never a
+     premature "committed" report); and the same four cases repeated for
+     an account-writable `authorized_keys` restriction, not only the
+     root-owned `anchor-grants.allow` source, since both sources are
+     covered by the identical validate call and must behave identically
+     under all four.
    - **Parent-directory and ownership hardening for policy state (closes
      SSA's "root-owned file mode alone does not protect" note).** Root
      ownership and mode `0600` on `anchor-grants.allow`, the derived
@@ -849,8 +1001,10 @@ anchor daemon — Atomic admission
   │  content hash → DENY, log, stop
   ├─ same content hash already reserved for that key → return existing
   │  outcome (no-op)
-  ├─ issued_at behind the fingerprint's/global persisted high-water mark →
-  │  DENY, log, stop (orders admissions relative to each other)
+  ├─ issued_at behind the fingerprint's/global persisted high-water mark
+  │  FOR THE ENVELOPE'S OWN (already-verified) epoch → DENY, log, stop
+  │  (orders admissions relative to each other within one epoch; a prior
+  │  epoch's mark is never consulted for the current epoch)
   ├─ current wall clock behind the daemon-maintained wall-clock ratchet
   │  minus max skew → DENY ALL, log, stop (rollback defense, request-
   │  independent, checked here and at startup, survives replay-row pruning)
@@ -953,11 +1107,17 @@ each row below must have a reviewed, dated test result on file:
 | Envelope's `epoch` field does not equal the daemon's current protected epoch at verification | `denied` at Verifier, before any other check — including a never-before-seen envelope, which gets no implicit admission-epoch inference |
 | Envelope admitted under epoch N; an owner-gated override mints epoch N+1 before the request reaches pre-dispatch | `denied` at pre-dispatch's epoch recheck, not only re-checked at admission |
 | Owner-gated override mints a new epoch; a correctly-epoched (N+1) fresh request is submitted immediately after | Admitted — the override transaction re-anchors the wall-clock ratchet to real time in the same transaction, so the new epoch does not itself leave every request denied as rollback |
-| Pruning transaction deletes a replay row at wall-clock `T_prune`; daemon crashes and restarts at a wall-clock value at or before the row's `expires_at` (but after the old `max(floor, row.expires_at)` value) | `denied` via the ratchet, because the floor was advanced to the trusted wall-clock observation taken at `T_prune`, not to the deleted row's own `expires_at` (closes SSA R6-3 P1 countermodel) |
+| Max TTL 60s, max skew 5s; envelope issued at wall-clock 940 with a 1s TTL (`expires_at` 941); ratchet stalled at 940 (periodic tick missed a cycle); pruning runs at 1006 (`expires_at` + maxTTL + skew) and deletes the row; daemon crashes and restarts at wall-clock 940, resubmitting the identical envelope | `denied` via the ratchet — the floor was advanced to the trusted wall-clock observation taken at prune time (1006), not to the deleted row's own `expires_at` (941), so 940 fails `940 < 1006 - skew` even though the replay row and its request-derived mark are both gone (closes SSA R6-3 P1 countermodel) |
 | Fingerprint's first-ever admission on this daemon, submitted while the daemon's current wall-clock ratchet is behind a rolled-back clock | `denied` via the global ratchet — no new-principal exemption; the ratchet applies identically regardless of admission history |
 | Request admitted while ratchet check passes, then a rollback is detected (ratchet check would now fail) before the request reaches dispatch | `denied` at pre-dispatch revalidation's ratchet recheck, not only at admission/startup |
 | Pruning tick computes eligible rows, then crashes/restarts before committing their deletion | On resume, eligibility is re-derived from the persisted ratchet floor, never from the pre-crash in-memory list; no row is deleted without the ratchet already covering it |
 | Owner-gated override clears a rollback fail-closed state | A new protected epoch is minted and the ratchet is re-anchored to real wall clock, in the same transaction; every envelope signed under a prior epoch is rejected at the Verifier on its `epoch` field, regardless of its own `expires_at`; the ratchet's prior value is never reset backward, only forward to real time |
+| Epoch N admits a request, advancing epoch N's high-water mark to a high value; override mints epoch N+1; a correctly-epoched, correctly-timed fresh request under epoch N+1 with `issued_at` below epoch N's mark is submitted immediately after | `admitted` — epoch N's retained mark is never consulted for an epoch-(N+1) admission (closes SSA R7-2 P2) |
+| Post-override epoch-(N+1) request with `issued_at` below the override transaction's own wall-clock re-anchor value | `denied` by the re-anchored ratchet — a separate check from the per-epoch mark |
+| Epoch-N envelope presented after an override to epoch N+1, with an `issued_at` that would have passed epoch N's own mark had epoch N still been current | `denied` at the epoch field check, before the mark is ever reached |
+| A raw edit to `anchor-grants.allow` or `authorized_keys` lands strictly after a validate call's guard releases, with no subsequent validate call yet run, and a request is dispatched in the interim | Dispatch reads the prior generation's snapshot, which remains active; the raw edit is proposed, not yet committed, and is not treated as an already-occurred revocation |
+| A validate call attempt fails (malformed, ambiguous, wrong mode/ownership) against an edited source | Prior generation stays active; state is `dirty` or last-known-good per item 1's rule; the failed attempt is never reported as committing the edit |
+| Operator writes a restriction, then polls the daemon's exposed commit-sequence/hash state before any validate call has run against it | State reports the pre-edit hash; `committed` is reported only after a validate call records the post-edit hash matching the operator's write |
 
 A lane or verb with an unresolved row stays labeled "candidate," not
 "proven," in every status surface (Pantheon dashboard, Ra report, this ADR).
@@ -1068,7 +1228,7 @@ This section is platform groundwork, not a launchable-feature claim.
   ownership hardening for the policy-state files). Remains **Proposed**
   pending a fresh SHA+SSA pass on this exact text; no merge, installation,
   or implementation is authorized by this revision.
-- Revision 6 (this text, head after `7449476b`): responds to SSA's
+- Revision 6 (head `5b4e7de3`): responds to SSA's
   CHANGES_REQUESTED on revision 5 (exact head `7449476b`) — see inline
   "(closes SSA R5-N)" markers above. SHA's parallel revision-5 review
   returned BLOCKED on source access (not a verdict on the text); a
@@ -1100,7 +1260,7 @@ This section is platform groundwork, not a launchable-feature claim.
   (UID-mismatch scope, "commits first" vs. `completed`). Remains
   **Proposed** pending a fresh SHA+SSA pass on this exact text; no merge,
   installation, or implementation is authorized by this revision.
-- Revision 7 (this text, head after `5b4e7de3`): responds to SSA's
+- Revision 7 (head `68dc688c`): responds to SSA's
   CHANGES_REQUESTED on revision 6 (exact head `5b4e7de3`) — see inline
   "(closes SSA R6-N)" markers above. SHA's parallel revision-6 review
   returned BLOCKED — not on source content, but on bundle delivery to its
@@ -1136,6 +1296,37 @@ This section is platform groundwork, not a launchable-feature claim.
   instead of the deleted row's own `expires_at`, with a recorded
   countermodel; and adds the missing qualifier plus the history-label
   correction. Remains **Proposed** pending a fresh SHA+SSA pass on this
+  exact text; no merge, installation, or implementation is authorized by
+  this revision.
+- Revision 8 (this text, head after `68dc688c`): responds to SSA's
+  CHANGES_REQUESTED on revision 7 (exact head `68dc688c`) — see inline
+  "(closes SSA R7-N)" markers above. SSA found R7-1 (P1, the raw-edit
+  commitment boundary asserted both that the synchronous validate call is
+  authoritative and that "no write-side process is left unfenced," which
+  is false for a raw writer — a root process editing `anchor-grants.allow`
+  directly, or an account editing its own `authorized_keys` — that never
+  acquires the guard the validate call runs under; a validated snapshot
+  and the live file content were conflated as the same commitment) and
+  R7-2 (P2, the rollback override's new-epoch forward progress was
+  contradicted by the retained global admission-order high-water mark,
+  which could deny a fresh, correctly-epoched, post-override request
+  whose `issued_at` fell below a mark set before the override). This
+  revision: redefines `anchor-grants.allow` and `authorized_keys` as
+  always-**proposed** policy, with only the most recent validate call's
+  content-hash-and-generation snapshot, read under the shared guard,
+  serving as **active** authority for dispatch — a raw edit landing after
+  that snapshot was read is the next proposed state, not an
+  already-occurred revocation, and is committed or rejected only by a
+  later validate call; drops the false "no write-side process left
+  unfenced" and "never act on a source state that has already changed"
+  claims; adds an exposed commit-sequence/hash state so an operator or
+  account can observe when a specific edit actually became active, rather
+  than inferring commitment from write completion; and scopes the
+  admission-order high-water mark into the protected-epoch domain, so an
+  owner-gated override initializes the new epoch's own mark from the
+  daemon's current wall-clock observation while the retired epoch's mark
+  is retained historically and never consulted for a current-epoch
+  admission. Remains **Proposed** pending a fresh SHA+SSA pass on this
   exact text; no merge, installation, or implementation is authorized by
   this revision.
 
