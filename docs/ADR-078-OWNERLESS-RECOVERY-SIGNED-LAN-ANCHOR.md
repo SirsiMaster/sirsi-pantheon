@@ -1,4 +1,4 @@
-# ADR-077: Ownerless Recovery — Signed LAN Anchor
+# ADR-078: Ownerless Recovery — Signed LAN Anchor
 
 ## Status
 **Proposed, revision 10** — 2026-10-09. Design only; no code, no key material,
@@ -133,10 +133,17 @@ the revision-6-era "no cross-host path" prose as historical — and carries
 no design-content change. Both reviewers' acceptances are of the design
 contract only: neither authorizes implementation, host qualification, key
 enrollment, merge, or a release claim.
-Number note: ADR-076 is claimed by an open, unmerged PR (#1017,
-`maat/trust-boundary-gate`) and does not exist on `origin/main` (A37 — a
-record exists only on origin). This document takes ADR-077 to avoid a
-collision if/when #1017 merges first.
+Number note: this document was drafted and reviewed under the number
+ADR-077. By the time of this merge, `main` had independently merged a
+different ADR-077 (Router Surface, `docs/ADR-077-ROUTER-SURFACE.md`,
+merged 2026-10-08, before this document's revision-10 merge) — a genuine
+collision, not the previously-anticipated one with ADR-076 (still an open,
+unmerged PR, #1017, `maat/trust-boundary-gate`, not on `origin/main`;
+A37 — a record exists only on origin). This document is renumbered to
+ADR-078 to resolve that collision; the reviewed content, every cited exact
+commit hash, and every reviewer verdict above are unchanged — only the
+number and this file's name moved. ADR-076 remains available for #1017 if
+it merges first.
 
 ## Context
 Owner direction: every Sirsi machine must be recoverable without an
