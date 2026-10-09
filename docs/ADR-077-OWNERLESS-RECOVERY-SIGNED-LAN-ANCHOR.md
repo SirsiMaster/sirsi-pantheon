@@ -1,17 +1,19 @@
 # ADR-077: Ownerless Recovery — Signed LAN Anchor
 
 ## Status
-**Proposed, revision 2** — 2026-10-09. Design only; no code, no key material,
+**Proposed, revision 3** — 2026-10-09. Design only; no code, no key material,
 no new `authorized_keys` entries. Routed for SHA (hardware) + SSA (software)
 review before any implementation, per the owner directive that created this
 task (SHA 20260915-012036, ledger `rs-41-ownerless-recovery-signed-lan-anchor`).
-Revision 2 responds to SSA's and SHA's CHANGES_REQUESTED verdicts on revision
-1 (exact head `e22478e1`) — see "Review History" below. Both reviews named
-the same four gaps
-independently: an undefined signing/admission contract, an overstated SSH
-blast-radius claim, unbound verb custody, and an availability claim ahead of
-its evidence. This revision closes all four; it remains proposed, not
-accepted, pending a fresh SHA+SSA pass on this exact text.
+Revision 2 responded to SSA's and SHA's CHANGES_REQUESTED verdicts on
+revision 1 (exact head `e22478e1`); revision 3 (this text) responds to SSA's
+CHANGES_REQUESTED verdict on revision 2 (exact head `c5680351`) — see "Review
+History" below. SSA's revision-2 review named three remaining gaps: an
+unresolved trust mapping between the signing key and SSH's own restriction
+semantics, an admission/replay check that was not atomic with dispatch, and
+a custody check (§Decision item 3) that inspected ownership without holding
+a fence through execution. This revision closes all three; it remains
+proposed, not accepted, pending a fresh SHA+SSA pass on this exact text.
 Number note: ADR-076 is claimed by an open, unmerged PR (#1017,
 `maat/trust-boundary-gate`) and does not exist on `origin/main` (A37 — a
 record exists only on origin). This document takes ADR-077 to avoid a
@@ -41,59 +43,179 @@ Adopt **Option A — per-node signed LAN anchor** as the operational path;
 document **Option B — physical out-of-band floor** as the fallback when every
 network lane in Option A is down.
 
-**Option A (built here):**
+**Option A (to be built):**
 
-1. **What "signed" means (closes SSA-1 / SHA-1).** SSH authenticates a
-   *transport and account*; it does not by itself authenticate a *request*.
-   This ADR defines "signed" as a separate property layered on top of the
-   existing SSH session, not a synonym for it:
-   - Every recovery request is a bounded envelope —
-     `{node_id, verb, target, config_digest, request_id, issued_at, expires_at}`
-     — serialized and signed with the SAME key material the owner's SSH
-     session already authenticates with (the client's existing SSH keypair,
-     signature produced via `ssh-keygen -Y sign` / agent signature, verified
-     server-side with `ssh-keygen -Y verify` against the same
-     `authorized_keys` entry already trusted for that account). **No new
-     signing credential, no new enrollment, no new key type** — the signer
-     is the principal already authorized to open that SSH session.
-   - The anchor daemon is the **verifier**: it checks the signature against
-     the connecting account's known public key, checks `expires_at` against
-     wall clock, and checks `request_id` against a local replay cache that
-     survives restart (persisted alongside the audit log — item 4 below). A
-     request that fails any of those three checks is denied and logged; it
-     never reaches the verb dispatcher.
+1. **What "signed" means (closes SSA-1 / SHA-1), and its trust mapping
+   (closes SSA R2-1).** SSH authenticates a *transport and account*; it does
+   not by itself authenticate a *request*, and it does not tell the daemon
+   which key authenticated the caller or whether the caller arrived over SSH
+   at all. This ADR defines "signed" as a separate, self-contained property,
+   verified independently of SSH:
+   - **Encoding and namespace.** The envelope is
+     `{node_id, verb, target, config_digest, request_id, issued_at, expires_at}`,
+     serialized as key-sorted, UTF-8, newline-terminated canonical JSON
+     (no insignificant whitespace, fixed field order). The signer signs this
+     exact byte sequence using `ssh-keygen -Y sign -n sirsi-recovery-anchor`
+     (a **dedicated signature namespace**, distinct from any other use of
+     the same key — `ssh-keygen -Y verify` is namespace-bound and rejects a
+     signature produced under a different `-n`). An envelope whose signature
+     verifies under any other namespace, or whose key format is not one the
+     daemon explicitly enumerates (ed25519 and ecdsa-sha2-nistp256 at
+     launch; nothing else), is rejected before any further check — unknown
+     key or certificate formats never reach the allowlist step.
+   - **The trust mapping is a derived artifact, not `authorized_keys`
+     itself.** `ssh-keygen -Y verify` consumes an *allowed-signers* file,
+     which is a different format from `authorized_keys` and carries no
+     `from=`/forced-command restrictions on its own. The anchor therefore
+     does not read `authorized_keys` directly; it reads a **generated,
+     anchor-local allowed-signers file**, rebuilt by a privileged sync step
+     from the account's `authorized_keys` on every change. That sync step is
+     the trust boundary: it maps `ssh_pubkey_fingerprint → {local UID,
+     permitted verbs}`, and it **excludes** any key whose `authorized_keys`
+     entry carries a `from=`, `command=`, or other restriction, unless that
+     exact fingerprint also appears in a separate, explicit
+     `anchor-signers.allow` entry naming it for anchor use. A restriction
+     written for SSH-session authorization is inherited as a restriction on
+     anchor use, never silently discarded; granting anchor use to an
+     already-restricted key requires a second, explicit grant, not an
+     inference from the SSH entry's mere existence.
+   - **The ingress boundary is same-UID-plus-signature, not "arrived over
+     SSH."** Kernel peer-credential checks on the local IPC socket (item 2
+     below) can only ever prove the connecting process's UID — never which
+     key authenticated it, nor whether an SSH session was involved. This ADR
+     states that boundary explicitly instead of asserting an SSH-only
+     ingress it cannot enforce: **any local process running as a UID present
+     in the derived mapping, presenting an envelope whose signature verifies
+     against that UID's mapped fingerprint, is authorized** — whether that
+     process was forked from an SSH session or invoked the socket directly
+     as that same local account. A different UID, or the right UID with a
+     signature that does not verify against its mapped fingerprint, is
+     denied regardless of transport. Multiple keys may map to one UID (one
+     account, several enrolled devices); the mapping is keyed by fingerprint
+     and permitted-verb set, not "the account's known public key" singular.
+     This replaces, rather than inherits, SSH's own `from=`/forced-command
+     semantics for anchor purposes — those remain fully enforced for
+     ordinary SSH login, independent of and unaffected by this ADR.
+   - The anchor daemon is the **verifier**: namespace, key format, and
+     signature validity first (above); `expires_at`/`issued_at` against wall
+     clock within a server-bounded TTL and skew (item 1a below); then
+     `request_id` against the durable, atomically-reserved replay record
+     (closes SSA R2-2, detailed in item 1a). A request that fails any check
+     is denied and logged; it never reaches the verb dispatcher.
    - This gives the design a real, falsifiable meaning for "signed" — a
      forged or replayed request is rejected even by someone who has
      captured a live SSH session's output, because the signature is bound
-     to `request_id` + `expires_at` + the specific verb/target/digest, not
-     to the transport. If a future revision drops this envelope and relies
-     on SSH authentication alone, it must say so explicitly and drop
-     "signed" from the title.
+     to `request_id` + `expires_at` + the specific verb/target/digest under
+     a dedicated namespace, not to the transport. If a future revision drops
+     this envelope and relies on SSH authentication alone, it must say so
+     explicitly and drop "signed" from the title.
    - This does **not** change how an automated caller (a cloud agent, a
      supervisor) invokes the anchor: it uses the account's existing
      SSH key and existing `ssh-agent` (or an on-disk key it is already
-     authorized to use) to produce the request signature — no interactive
-     unlock, no owner login credential borrowed, no new secret issued to
-     the caller.
+     authorized to use) to produce the request signature — no owner login
+     credential borrowed, no new secret issued to the caller. Whether that
+     key can sign *without* an interactive unlock/touch confirmation is a
+     per caller/device-tuple property to be verified against the actual
+     key storage in use (software key, `ssh-agent`-held key, or
+     hardware-backed key with a user-presence requirement) — it is not
+     inherited from "this account is already authorized for SSH," and a
+     tuple that requires interactive confirmation stays candidate, not
+     qualified, until proven otherwise (§8).
+   - **Test coverage required before qualification**: a different UID
+     presenting a validly-signed envelope (must deny); two keys enrolled on
+     one UID, each independently valid (both must work, each under its own
+     mapped permitted-verb set); local same-UID invocation with no SSH
+     session involved (must succeed identically to an SSH-forked
+     invocation); a key present in `authorized_keys` with a `from=`/
+     `command=` restriction and no matching `anchor-signers.allow` entry
+     (must be absent from the derived mapping, i.e. deny as unknown key).
+
+1a. **Execution-time admission and replay atomicity (closes SSA R2-2).** The
+   checks above are necessary but, taken alone, leave two gaps: a
+   check-then-act race between validating a request and dispatching it, and
+   an admission window that does not re-confirm validity immediately before
+   execution. This item closes both.
+   - **Scope of the Verifier's checks, made explicit.** Beyond signature/
+     namespace/key-format (item 1): `node_id` must equal this node's own
+     locally-pinned identity (a request signed for a different node is
+     denied here, not forwarded); `target` and `config_digest` must equal
+     the selected verb's build-time-approved identity (§item 3) — the
+     Verifier rejects a mismatch before the Authorizer or Custody check ever
+     runs; `issued_at`/`expires_at` must fall within a **server-bounded
+     maximum TTL** (a fixed constant, not caller-supplied) and a **bounded
+     clock-skew allowance** on `issued_at` — a request claiming a TTL longer
+     than the constant, or an `issued_at` outside the skew window, is denied
+     at the Verifier regardless of signature validity.
+   - **Atomic admission.** The triple `(signing fingerprint, request_id,
+     sha256(canonical envelope bytes))` is reserved in the **same durable
+     transaction** as the `pending` audit write (§item 4), under the
+     existing per-node serialization lock — there is no separate
+     cache-check followed by a later cache-write. A `request_id` already
+     reserved with a *different* content hash fails immediately (replay of
+     the ID with altered content is not treated as a fresh request); a
+     `request_id` reserved with the *same* content hash within the replay
+     window resolves to the existing record's outcome as a no-op (§item 3's
+     idempotency rule), never a second admission.
+   - **Retention covers the full permitted lifetime.** A replay record is
+     retained for at least `max TTL + max permitted clock-skew allowance`
+     past its `expires_at`, so a request cannot outlive its own replay
+     protection. A request whose `issued_at` predates the oldest retained
+     record for its fingerprint is denied outright (defends against a
+     clock-rollback attempt to evade replay detection by presenting a
+     "new" old timestamp).
+   - **Revalidation immediately before dispatch.** Admission (Verifier →
+     Authorizer → durable `pending` write) and dispatch (handing the request
+     to the Executor) are not the same instant — a custody check (§item 3)
+     and any queueing can separate them. Immediately before the Executor is
+     invoked, the daemon **re-checks** `expires_at` against current wall
+     clock and **re-checks** the signing fingerprint's permitted-verb
+     mapping against its *current* state (item 1's derived allowed-signers
+     mapping, re-read, not the snapshot taken at admission). A request that
+     has expired, or whose signing key has been revoked, in that interval is
+     denied; the audit record resolves to `denied`, never proceeds to
+     `completed`.
+   - **The execution linearization point, defined.** The single instant the
+     Executor is invoked is the linearization point: before it, revocation
+     or expiry denies outright (above). After it, the action is in flight
+     and this ADR makes **no promise of retroactive non-execution** —
+     already-started operations are resolved only by the post-action
+     verification step (§item 4) into `completed`, `failed`, or
+     `unknown-reconcile-required`; a revocation arriving after that instant
+     is handled as a future reconciliation input, not an in-flight abort.
+   - **Test coverage required before qualification**: two requests with the
+     same `request_id` and *different* content submitted concurrently (one
+     must win admission, the other must fail — never both executing);
+     the same `request_id` resubmitted after a daemon restart (must resolve
+     from the persisted replay record, not re-admit as new); a request with
+     `node_id` for a different node (deny at Verifier); a request claiming a
+     TTL longer than the server-bound maximum (deny at Verifier); a request
+     that is queued behind another and whose `expires_at` passes while
+     queued (deny at the pre-dispatch revalidation, not at admission); a key
+     revoked while its request is queued between admission and dispatch
+     (deny at the pre-dispatch revalidation).
 
 2. **Local privilege boundary (closes SSA-2 / SHA-1-second-half).** The
    anchor is a system-domain launchd daemon listening on a **local-only,
-   filesystem-permissioned IPC socket** (not a TCP port), reachable only
-   from the same host's already-authenticated SSH session (the SSH session
-   forks/execs the signed-request submission step as the authenticated
-   user; the daemon trusts the kernel's peer-credential check on that
-   socket, not the network). Authorization is **per-principal, per-verb**:
-   the daemon holds a static allowlist mapping `(ssh_pubkey_fingerprint) →
-   {verbs permitted}`, so a given SSH account's compromise is bounded by
-   that account's verb entry, never by "whatever that account's shell could
-   do." **This explicitly narrows, and replaces, the prior "compromised-lane
-   blast radius is bounded by the allowlist" claim**: that claim is true
-   only for actions routed through this daemon. It does **not** reduce the
-   residual risk already carried by an unrestricted SSH account on that
-   host — a compromised SSH key still has whatever rights that account's
-   shell already has, independent of this ADR. This ADR bounds the
-   *anchor's own* attack surface; it makes no claim about the pre-existing
-   SSH account's blast radius.
+   filesystem-permissioned IPC socket** (not a TCP port) — reachable, per
+   item 1's ingress boundary, by any local process running as a UID present
+   in the derived allowed-signers mapping, kernel peer-credential checked
+   (not network-reachable). In the ordinary case that process is the SSH
+   session's forked signed-request submission step; item 1 states
+   explicitly that this is the expected path, not an enforced one — the
+   daemon cannot and does not distinguish "forked from SSH" from "invoked
+   locally as the same account" at the socket layer, only the UID and the
+   envelope's signature. Authorization is **per-principal, per-verb**: the
+   daemon holds the item-1 derived mapping `(ssh_pubkey_fingerprint) →
+   {local UID, verbs permitted}`, so a given signing key's compromise is
+   bounded by that key's verb entry, never by "whatever that account's
+   shell could do." **This explicitly narrows, and replaces, the prior
+   "compromised-lane blast radius is bounded by the allowlist" claim**:
+   that claim is true only for actions routed through this daemon. It does
+   **not** reduce the residual risk already carried by an unrestricted SSH
+   account on that host — a compromised SSH key still has whatever rights
+   that account's shell already has, independent of this ADR. This ADR
+   bounds the *anchor's own* attack surface; it makes no claim about the
+   pre-existing SSH account's blast radius.
 
 3. **Verb custody and safety (closes SHA-3).** Each allowlisted verb
    (restart-broker, remount-volume, re-arm-supervisor, fetch-known-good-config)
@@ -105,10 +227,25 @@ network lane in Option A is down.
    window is a no-op, not a second execution); and a mandatory post-action
    verification step (re-check the service/volume state and record the
    observed outcome, not just "command exited 0"). `restart-broker`
-   specifically must check ADR-045/ADR-046's existing ownership state for
-   the target broker before acting — if that broker is marked
-   owner-managed or mid-operation by ADR-045/046's own bookkeeping, the
-   anchor denies the request rather than silently overriding it.
+   specifically must **acquire ADR-045/ADR-046's own ownership lock/lease**
+   for the target broker — not merely inspect its state — before acting
+   (closes SSA R2-3). Inspecting ownership and then invoking the verb are
+   two steps with a race between them: another broker owner can acquire in
+   the gap. The anchor instead calls ADR-045/046's existing authoritative
+   acquire operation, holds that fence across the Executor's action and the
+   post-action readback (item 4 below), and releases it only after the
+   audit record resolves — it never checks, releases, and re-acquires. If
+   ADR-045/046 exposes no compatible fenced-acquire for a given target (only
+   a read-only status check), the anchor **denies** the request rather than
+   proceeding on an inspect-only check; this ADR does not add a parallel
+   ownership database, it calls the one ADR-045/046 already owns. A target
+   marked owner-managed, or whose fence cannot be acquired because another
+   owner already holds it, is denied the same way.
+   **Test coverage required before qualification**: a competing non-anchor
+   owner acquires the target's lock in the window between the anchor's
+   custody inspection and its dispatch attempt — the anchor's fenced-acquire
+   call must fail and the request must deny, not proceed on the now-stale
+   inspected state.
    `fetch-known-good-config` fetches only from a fixed, owner-approved
    source location and verifies an integrity digest (not a version string)
    against a pinned allowlist before any write; it refuses a
@@ -221,37 +358,53 @@ resort when revive also fails.
 ```
 caller (owner session or authorized automated agent)
   │  signs {node_id, verb, target, config_digest, request_id, issued_at, expires_at}
-  │  with its existing, already-authorized SSH key
+  │  under namespace "sirsi-recovery-anchor" with its existing SSH key
+  │  (typically from an existing SSH session; item 1 permits any local
+  │   process running as the same mapped UID — ingress is UID+signature,
+  │   not "arrived over SSH")
   ▼
-EXISTING authenticated LAN SSH session to target node
-  │  (no new port, no new auth mechanism)
-  ▼
-local-only IPC socket, peer-credential checked (kernel-enforced, same host only)
+local-only IPC socket, peer-credential checked (kernel-enforced UID only,
+same host, never network-reachable)
   ▼
 anchor daemon — Verifier
-  ├─ signature invalid / expired / request_id replayed → DENY, log, stop
-  ▼ (signature valid, fresh, not replayed)
+  ├─ wrong namespace / unenumerated key format → DENY, log, stop
+  ├─ signature does not verify against derived allowed-signers mapping → DENY, log, stop
+  ├─ node_id ≠ this node, or target/config_digest ≠ verb's approved identity → DENY, log, stop
+  ├─ issued_at/expires_at outside server-bound TTL+skew → DENY, log, stop
+  ▼ (signature valid, scoped to this node/verb, within TTL)
+anchor daemon — Atomic admission
+  ├─ (fingerprint, request_id, content-hash) already reserved with a
+  │  DIFFERENT content hash → DENY, log, stop
+  ├─ same content hash already reserved → return existing outcome (no-op)
+  ▼ (fresh reservation + `pending` audit write, same transaction, node-serialized)
 anchor daemon — Authorizer
-  ├─ (pubkey_fingerprint, verb) not in allowlist → DENY, log, stop
+  ├─ (pubkey_fingerprint, verb) not in current allowlist → DENY, mark audit `denied`
   ▼ (principal permitted for this verb)
-anchor daemon — Audit writer
-  ├─ durable write fails (fsync error / disk full) → DENY, log attempt, stop
-  ▼ (audit record durably persisted as `pending`)
-anchor daemon — Custody check (verb-specific)
-  ├─ target owned/mid-operation per ADR-045/046, or config source/digest
-  │  unapproved, or path/symlink caller-writable → DENY, mark audit `denied`
-  ▼ (custody clear)
-Executor — runs the ONE fixed, root-owned absolute executable bound to this verb
+anchor daemon — Custody fence acquire (verb-specific, via ADR-045/046)
+  ├─ no compatible fenced-acquire, fence already held by another owner, or
+  │  config source/digest unapproved, or path/symlink caller-writable
+  │  → DENY, mark audit `denied`, release nothing (never acquired)
+  ▼ (fence held)
+anchor daemon — Pre-dispatch revalidation
+  ├─ expires_at now passed, or signing key revoked since admission → DENY,
+  │  mark audit `denied`, release fence
+  ▼ (still valid — this is the linearization point)
+Executor — runs the ONE fixed, root-owned absolute executable bound to this
+verb, fence still held
   ▼
 Post-action verification — re-checks service/volume state
   ▼
 Audit writer — resolves `pending` → `completed` | `failed` | `unknown-reconcile-required`
   ▼
+Custody fence release (only now, after resolution)
+  ▼
 Status report to Pantheon/Ra — per-lane, per-node (never pooled; §Decision-6)
 ```
 Every arrow left of "Executor" can terminate in DENY; only a request that
-clears signature, allowlist, audit-durability, and custody checks, in that
-order, reaches the single fixed executable for its verb.
+clears signature/namespace/key-format, node/target/TTL scope, atomic
+admission, allowlist, and custody-fence acquisition, in that order, reaches
+the single fixed executable for its verb — and the fence it acquired stays
+held until the audit record resolves, never released-and-reacquired.
 
 ## Qualification Matrix (closes SSA-4 / SHA-5)
 Before any lane or verb is reported as "proven" rather than "candidate,"
@@ -271,6 +424,17 @@ each row below must have a reviewed, dated test result on file:
 | Interrupted recovery (daemon restarts mid-verb) | Audit resolves from `pending` to `unknown-reconcile-required`, never silently `completed` |
 | Per-lane independence (e.g. two TB rails on one hub) | Status report shows shared dependency, not two independent "OK" lanes |
 | Dead `sshd`/network on target | Lane reports `unreachable`, distinct from `denied` — never conflated |
+| Different UID presents a validly-signed envelope | `denied` — UID not present in the derived mapping |
+| Two keys enrolled on one UID | Both succeed independently, each bound to its own mapped permitted-verb set |
+| Local same-UID invocation with no SSH session involved | Succeeds identically to an SSH-forked invocation |
+| Key in `authorized_keys` with `from=`/`command=` restriction, no matching `anchor-signers.allow` entry | Absent from derived mapping; `denied` as unknown key |
+| Two requests, same `request_id`, different content, submitted concurrently | One wins admission; the other fails — never both execute |
+| Same `request_id` resubmitted after daemon restart | Resolves from persisted replay record, not re-admitted as new |
+| Request `node_id` names a different node | `denied` at Verifier |
+| Request claims a TTL longer than the server-bound maximum | `denied` at Verifier |
+| Queued request whose `expires_at` passes before dispatch | `denied` at pre-dispatch revalidation, not at admission |
+| Signing key revoked while its request is queued between admission and dispatch | `denied` at pre-dispatch revalidation |
+| Competing non-anchor owner acquires target lock between custody inspection and dispatch | Fenced-acquire fails; request `denied`, not proceeded on stale state |
 
 A lane or verb with an unresolved row stays labeled "candidate," not
 "proven," in every status surface (Pantheon dashboard, Ra report, this ADR).
@@ -304,10 +468,23 @@ This section is platform groundwork, not a launchable-feature claim.
   semantics absent, availability claim ahead of evidence) and SHA
   CHANGES_REQUESTED (same four gaps, plus verb custody/ADR-045/046
   reconciliation and the Option B attended-procedure distinction).
-- Revision 2 (this text): responds to all P1/P2 items from both reviews —
-  see inline "(closes SSA-N / SHA-N)" markers above. Remains **Proposed**
-  pending a fresh SHA+SSA pass on this exact text; no merge, installation,
-  or implementation is authorized by this revision.
+- Revision 2 (head `c5680351`): responded to all P1/P2 items from both
+  revision-1 reviews — see inline "(closes SSA-N / SHA-N)" markers above.
+  SSA reviewed this exact head and returned CHANGES_REQUESTED on three
+  remaining items (R2-1 trust mapping/SSH-restriction bypass, R2-2
+  execution-time admission/replay atomicity, R2-3 custody-fence atomicity)
+  plus two editorial notes (the "(built here)" wording, signing-key
+  availability qualified per caller/device tuple). SHA's parallel review of
+  this same head returned BLOCKED, no verdict: the exact commit had not yet
+  been pushed to `origin`, so SHA's independent fetch could not reach it
+  (A37 — a record exists only on origin). That gap is closed by this
+  revision's push; it does not by itself constitute SHA acceptance of
+  anything.
+- Revision 3 (this text): responds to all three of SSA's revision-2 P1/P2
+  items and both editorial notes — see inline "(closes SSA R2-N)" markers
+  above. Remains **Proposed** pending a fresh SHA+SSA pass on this exact
+  text; no merge, installation, or implementation is authorized by this
+  revision.
 
 ## References
 - Ledger: `ra/rs-41-ownerless-recovery-signed-lan-anchor`; owner direction SHA
@@ -321,5 +498,12 @@ This section is platform groundwork, not a launchable-feature claim.
   item 3) must defer to these, not override them.
 - Apple, "DFU restore a Mac" — https://support.apple.com/en-us/108900 (read
   2026-10-09); source for Option B's destructive-restore procedure.
+- OpenBSD, `ssh-keygen(1)` (ALLOWED SIGNERS, `-Y sign`/`-Y verify`, `-n`
+  namespace) — https://man.openbsd.org/ssh-keygen; `sshd(8)`
+  (`authorized_keys` `from=`/`command=` restrictions) —
+  https://man.openbsd.org/sshd (both read 2026-10-09). Source for item 1's
+  allowed-signers/authorized_keys distinction, namespace binding, and the
+  restriction-inheritance rule in the derived trust mapping — cited by SSA
+  in the revision-2 review this revision responds to.
 - PANTHEON_RULES.md A1 (Safety First), A3 (fixed auditable command set), A32
   (load-bearing recognition by pidfile), A35 (scope the check to the claim).
