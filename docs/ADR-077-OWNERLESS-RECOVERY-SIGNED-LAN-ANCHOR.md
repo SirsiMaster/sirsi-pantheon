@@ -1,7 +1,7 @@
 # ADR-077: Ownerless Recovery — Signed LAN Anchor
 
 ## Status
-**Proposed, revision 8** — 2026-10-09. Design only; no code, no key material,
+**Proposed, revision 9** — 2026-10-09. Design only; no code, no key material,
 no new `authorized_keys` entries. Routed for SHA (hardware) + SSA (software)
 review before any implementation, per the owner directive that created this
 task (SHA 20260915-012036, ledger `rs-41-ownerless-recovery-signed-lan-anchor`).
@@ -88,6 +88,36 @@ observation, while the prior epoch's floor is retained historically and
 never consulted for a current-epoch admission (closes SSA R7-2 P2). It
 remains proposed, not accepted, pending a fresh SHA+SSA pass on this exact
 text.
+SSA independently reviewed revision 8 (exact head `9054b085`) and returned
+CHANGES_REQUESTED on two items — see "Review History" below. SSA's
+revision-8 findings: (1) **R8-1 P1** — the raw-edit section still asserted
+an impossible mutual-exclusion invariant ("exactly two timings," "cannot
+occur mid-read") over writers that never acquire the guard, restating
+R7-1's defect rather than removing it; the commitment-acknowledgement
+query also conflated "a validate call observed this hash" with "this hash
+is active," which a denied or dirty validation would have falsely
+satisfied; (2) **R8-2 P2** — the claim that the ratchet is "never reset
+backward, only forward" contradicted the override transaction's own
+re-anchor from a false-future reading to real time, and a test/matrix row
+wrongly attributed an ordering-floor denial to the ratchet check (which
+never reads an envelope's `issued_at`), plus one matrix row described an
+impossible "dispatch with no subsequent validate call" schedule. This
+revision: (a) removes the mutual-exclusion claim entirely — raw writers
+may write at any time including mid-validate-read, and the guard
+serializes only validation/publication against dispatch, never against
+raw writes; redefines the acknowledgement query to report the active
+published snapshot's hash/generation separately from dirty/invalid state,
+so a mere validation observation never advances the reported active hash
+(closes SSA R8-1 P1); (b) makes the ratchet epoch-scoped like the mark —
+the retired epoch's ratchet is preserved unmutated while the new epoch's
+ratchet is freshly initialized and may be numerically lower, correcting
+the false universal-monotonicity claim; re-attributes the `issued_at`-based
+test to the ordering-floor/mark check and adds a genuine, envelope-
+independent rollback control against the ratchet; and replaces the
+impossible matrix row with the actual schedule — a later dispatch always
+performs its own mandatory validate call against the current source
+(closes SSA R8-2 P2). It remains proposed, not accepted, pending a fresh
+SHA+SSA pass on this exact text.
 Number note: ADR-076 is claimed by an open, unmerged PR (#1017,
 `maat/trust-boundary-gate`) and does not exist on `origin/main` (A37 — a
 record exists only on origin). This document takes ADR-077 to avoid a
@@ -480,22 +510,37 @@ network lane in Option A is down.
      clock as "behind" — SSA's "how rollback recovery resumes" question —
      so the same guarded override transaction that mints the new epoch
      also re-anchors `last_observed_wallclock` to the daemon's actual
-     current wall-clock reading. This is safe specifically because the
+     current wall-clock reading. **The ratchet, like the mark below, is a
+     property of the current protected epoch, not one value monotone
+     across the daemon's entire history (closes SSA R8-2 P2 — a prior
+     draft claimed the ratchet is "never reset backward, only forward,"
+     which is false of exactly this transaction: a false-future reading
+     of `1000` corrected by an override to the real reading of `940` is a
+     numeric decrease).** Within one epoch, the ratchet is monotone —
+     every admission and every periodic tick only ever advances it,
+     exactly as revision 5 defined. An authorized epoch transition is the
+     one deliberate exception: it atomically preserves the retired
+     epoch's ratchet value and admission history for audit, then
+     initializes the new epoch's ratchet from one trusted current
+     wall-clock observation — which may be numerically lower than the
+     retired epoch's final value, because the two are independent epochs'
+     state, not one sequence. This is safe specifically because the
      override is an explicit, owner-authenticated act (never a daemon
      self-heal on restart): a fresh request signed under the new epoch is
-     admissible again once the ratchet reflects real time, while every
-     envelope signed under a prior epoch remains permanently rejected at
-     the epoch check regardless of its own `expires_at` or the ratchet's
-     new value — the two checks are independent and both must pass, so
-     re-anchoring the ratchet for forward progress never reopens the
-     retired window the epoch check protects. In effect: a daemon-clock
-     rollback is recovered from by **invalidating the past** (every prior
-     epoch's envelopes stop being admittable, permanently) while
-     **restoring forward progress** (the ratchet is re-anchored to real
-     time so new, correctly-epoched requests are not denied as "rollback"
-     forever) — never by erasing the ratchet's memory of what the prior
-     epoch had already retired. The override is logged as a decision card
-     per A32/A23 — it is the owner's call, not a silent recovery path a
+     admissible again once the new epoch's ratchet reflects real time,
+     while every envelope signed under a prior epoch remains permanently
+     rejected at the epoch check regardless of its own `expires_at` or any
+     epoch's ratchet value — the two checks are independent and both must
+     pass, so initializing the new epoch's ratchet for forward progress
+     never reopens the retired epoch's window, which the epoch check
+     alone protects. In effect: a daemon-clock rollback is recovered from
+     by **invalidating the past** (every prior epoch's envelopes stop
+     being admittable, permanently) while **restoring forward progress**
+     (the new epoch starts its own ratchet from real time so new,
+     correctly-epoched requests are not denied as "rollback" forever) —
+     never by mutating the retired epoch's own ratchet value, which stays
+     exactly what it was. The override is logged as a decision card per
+     A32/A23 — it is the owner's call, not a silent recovery path a
      crashed daemon takes on its own restart.
    - **The admission-order high-water mark is scoped per protected epoch,
      not a single global sequence spanning an override (closes SSA R7-2
@@ -525,14 +570,13 @@ network lane in Option A is down.
      with no dependency on where the retired epoch's mark happened to
      stop. No old-epoch envelope becomes newly eligible by this change:
      the epoch field check (above) rejects it before the mark is ever
-     consulted, exactly as before. Qualification-matrix row 956's
-     "ratchet is never reset backward" language is retained for the
-     ratchet itself — only the mark gains an epoch-scoped domain; the two
-     are independent state, and this revision does not claim the mark
-     "decreases," it claims a new epoch's mark starts from a fresh
-     initial value that happens to be lower than the retired epoch's final
-     value, which is a different thing than resetting one sequence
-     backward.
+     consulted, exactly as before. The mark and the ratchet (above) are
+     both epoch-scoped by this revision — neither is "the daemon's one
+     value for all time," and neither claims to decrease within an epoch;
+     each new epoch starts its own mark and its own ratchet from a fresh
+     initial value that may be lower than the retired epoch's final
+     value, which is a property of starting a new independent domain, not
+     of resetting one sequence backward.
    - **Test coverage required before qualification (closes SSA R7-2
      P2).** An envelope admitted under epoch N advances epoch N's mark to
      a high value; an owner-gated override mints epoch N+1; a
@@ -541,16 +585,25 @@ network lane in Option A is down.
      immediately after the override (must be **admitted** — the retained
      epoch-N mark must not be consulted for an epoch-(N+1) admission);
      the same scenario repeated with the post-override request's
-     `issued_at` deliberately set below the override transaction's own
-     wall-clock re-anchor value (must still be **denied** by the
-     re-anchored ratchet, which is a separate check from the mark); an
-     epoch-N envelope presented after the override, with an `issued_at`
-     that would have passed epoch N's own mark had epoch N still been
-     current (must be **denied** at the epoch field check, before the
-     mark is reached at all); and a daemon with no override history at
-     all, where the first-ever admission under epoch 1 is checked against
-     epoch 1's own freshly-initialized mark, not an undefined or
-     carried-over value (must behave identically to every subsequent
+     `issued_at` set below the new epoch's own freshly-initialized mark
+     (not below the retired epoch's mark) (must be **denied** at the
+     epoch-(N+1) **ordering-floor/mark** check — attributed correctly to
+     the mark, not the ratchet, since the ratchet compares the daemon's
+     own current wall-clock reading against its floor minus skew and
+     never reads the envelope's `issued_at` at all; closes SSA R8-2 P2,
+     correcting the prior draft's wrong attribution of this outcome to
+     "the re-anchored ratchet"); a genuinely separate rollback control:
+     the daemon's own current wall-clock reading, independent of any
+     envelope, found behind the new epoch's ratchet floor minus max skew
+     (must be **denied ALL** by the ratchet check, which never consults
+     any envelope's `issued_at`); an epoch-N envelope presented after the
+     override, with an `issued_at` that would have passed epoch N's own
+     mark had epoch N still been current (must be **denied** at the
+     epoch field check, before the mark is reached at all); and a daemon
+     with no override history at all, where the first-ever admission
+     under epoch 1 is checked against epoch 1's own freshly-initialized
+     mark, not an undefined or carried-over value (must behave identically
+     to every subsequent
      admission under that same epoch).
    - **Revalidation immediately before dispatch, under a shared generation
      fence (closes SHA R3-1 / SSA R3-1 — the core convergent finding).**
@@ -653,20 +706,26 @@ network lane in Option A is down.
      their own. **Active** authority for dispatch is a distinct, narrower
      thing: the `(hash_pair, generation)` snapshot that the most recent
      successful validate call — async publish or synchronous pre-dispatch
-     call, under the same shared guard — read and recorded. A raw edit
-     has exactly two possible relationships to that snapshot, never a
-     third: either it happened **before** the snapshot's read (already
-     reflected in the hash, already active), or it happened **after** the
-     guard that produced the snapshot was released (not yet reflected,
-     not yet active, and not a revocation of anything — it is simply the
-     *next* proposed state, waiting for the *next* validate call to read
-     and commit or reject it). An edit landing **while** a validate call
-     holds the guard cannot occur mid-read by definition of mutual
-     exclusion, but a raw writer that queues behind the guard and lands
-     the instant it releases is in the second case, not a third: it was
-     not committed by the call that just ran, because that call's read
-     necessarily finished before the writer's write could land under the
-     same guard discipline the writer never acquired. This revision makes
+     call, under the same shared guard — read and recorded. **Raw writers
+     may edit either proposed source at any time, including while
+     validation or dispatch holds the internal guard (closes SSA R8-1 P1
+     — removing the prior "exactly two timings"/"cannot occur mid-read"
+     claim, which restated the same impossible mutual-exclusion invariant
+     R7-1 was supposed to remove: the guard was never held by any raw
+     writer, so nothing serializes a raw write against it, and a write
+     can land at any point relative to a validate call's read, including
+     mid-read.)** The guard serializes policy validation/publication and
+     dispatch; it does not serialize raw writes. Validation hashes and
+     parses the same captured byte buffers for both inputs and commits
+     their exact hash pair and generation durably under the guard, or
+     fails closed if a stable valid capture cannot be obtained. An edit
+     whose bytes are not included in that committed snapshot remains
+     proposed, even if its write completed before the Executor invocation
+     — a write landing concurrently with, or ahead of, a validate call's
+     read is simply not guaranteed to be captured by that specific call;
+     it is captured by whichever call's read actually observed it. Only a
+     guarded active-policy commitment is an acknowledged anchor
+     revocation. This revision makes
      **the validate call's snapshot**, never a raw file write by any
      actor, the sole source of active authority, consistently for both
      the root-owned grant source and the account-writable restriction
@@ -698,19 +757,33 @@ network lane in Option A is down.
      into `anchor-grants.allow` or `authorized_keys` has not thereby
      learned anything about whether that restriction is enforced yet — the
      write syscall returning is a filesystem fact, not a policy fact. This
-     ADR requires the daemon to expose a **commit sequence number**: every
-     successful validate call (async publish or synchronous pre-dispatch)
-     increments it and records, in the durable generation state, which
-     source hash pair it last saw for each of `anchor-grants.allow` and
-     each enrolled `authorized_keys` file. An operator or account that
-     needs to know a specific edit is active polls this exposed state
-     (a local, unauthenticated-read, root-owned status file or socket
-     query — no new network surface) until the recorded hash for the file
-     they edited matches the hash of their edit; before that match, the
-     edit is proposed, not committed, regardless of elapsed time or the
-     freshness ceiling. The daemon never claims a restriction is "in
-     effect" based on write completion, mtime, or any signal other than
-     this recorded hash match.
+     ADR requires the daemon to expose a **commit sequence number**, bound
+     atomically to the specific state it reports (closes SSA R8-1 P1,
+     second half — a prior draft of this state conflated "a validate call
+     observed this hash" with "this hash is active," which a denied or
+     dirty validation attempt would have falsely satisfied). The exposed
+     status transaction reports, together and atomically: (a) the
+     **active published snapshot** — the hash pair and generation of the
+     currently-dispatching policy, updated only by a validate call that
+     successfully commits a new generation; (b) the current **dirty or
+     invalid** state, if any, kept separate from (a) rather than merged
+     into it; and (c) last-observed/proposed metadata for diagnostics,
+     clearly labeled as neither of the above. A validation attempt that
+     merely observed a hash — whether it committed, found a mismatch and
+     denied, or failed closed — advances (b)/(c) but never substitutes for
+     (a). An operator or account that needs to know a specific edit is
+     active polls this exposed state (a local, unauthenticated-read,
+     root-owned status file or socket query — no new network surface)
+     until the **active published snapshot's** hash for the file they
+     edited matches the hash of their edit; before that match, the edit is
+     proposed, not committed, regardless of elapsed time, the freshness
+     ceiling, or any denied/dirty validation observation that happened to
+     see the new bytes. The daemon never claims a restriction is "in
+     effect" based on write completion, mtime, a validation observation
+     that did not commit, or any signal other than the active published
+     snapshot's recorded hash match. A past hash that merely matches
+     historically is not proof of current active authority — only the
+     current active published snapshot is.
    - **Test coverage required before qualification (closes SSA R7-1
      P1).** Edit committed strictly before a validate call's guarded read
      (must be reflected in that call's hash and treated as active from
@@ -1111,13 +1184,15 @@ each row below must have a reviewed, dated test result on file:
 | Fingerprint's first-ever admission on this daemon, submitted while the daemon's current wall-clock ratchet is behind a rolled-back clock | `denied` via the global ratchet — no new-principal exemption; the ratchet applies identically regardless of admission history |
 | Request admitted while ratchet check passes, then a rollback is detected (ratchet check would now fail) before the request reaches dispatch | `denied` at pre-dispatch revalidation's ratchet recheck, not only at admission/startup |
 | Pruning tick computes eligible rows, then crashes/restarts before committing their deletion | On resume, eligibility is re-derived from the persisted ratchet floor, never from the pre-crash in-memory list; no row is deleted without the ratchet already covering it |
-| Owner-gated override clears a rollback fail-closed state | A new protected epoch is minted and the ratchet is re-anchored to real wall clock, in the same transaction; every envelope signed under a prior epoch is rejected at the Verifier on its `epoch` field, regardless of its own `expires_at`; the ratchet's prior value is never reset backward, only forward to real time |
+| Owner-gated override clears a rollback fail-closed state | A new protected epoch is minted, and its own ratchet is initialized from the daemon's trusted current wall-clock reading, in the same transaction; every envelope signed under a prior epoch is rejected at the Verifier on its `epoch` field, regardless of its own `expires_at`; the retired epoch's own ratchet value is preserved unchanged for audit — it is never mutated — while the new epoch's ratchet may be numerically lower than it, since the two are independent epochs' state, not one value reset backward (closes SSA R8-2 P2) |
 | Epoch N admits a request, advancing epoch N's high-water mark to a high value; override mints epoch N+1; a correctly-epoched, correctly-timed fresh request under epoch N+1 with `issued_at` below epoch N's mark is submitted immediately after | `admitted` — epoch N's retained mark is never consulted for an epoch-(N+1) admission (closes SSA R7-2 P2) |
-| Post-override epoch-(N+1) request with `issued_at` below the override transaction's own wall-clock re-anchor value | `denied` by the re-anchored ratchet — a separate check from the per-epoch mark |
+| Post-override epoch-(N+1) request with `issued_at` below the new epoch's own freshly-initialized mark | `denied` at the epoch-(N+1) ordering-floor/mark check — not the ratchet, which never reads an envelope's `issued_at` (closes SSA R8-2 P2, correcting the prior row's wrong attribution) |
+| Daemon's own current wall-clock reading (independent of any envelope) found behind the new epoch's ratchet floor minus max skew | `denied ALL` by the ratchet check — the genuine rollback control, distinct from the ordering-floor/mark row above |
 | Epoch-N envelope presented after an override to epoch N+1, with an `issued_at` that would have passed epoch N's own mark had epoch N still been current | `denied` at the epoch field check, before the mark is ever reached |
-| A raw edit to `anchor-grants.allow` or `authorized_keys` lands strictly after a validate call's guard releases, with no subsequent validate call yet run, and a request is dispatched in the interim | Dispatch reads the prior generation's snapshot, which remains active; the raw edit is proposed, not yet committed, and is not treated as an already-occurred revocation |
-| A validate call attempt fails (malformed, ambiguous, wrong mode/ownership) against an edited source | Prior generation stays active; state is `dirty` or last-known-good per item 1's rule; the failed attempt is never reported as committing the edit |
-| Operator writes a restriction, then polls the daemon's exposed commit-sequence/hash state before any validate call has run against it | State reports the pre-edit hash; `committed` is reported only after a validate call records the post-edit hash matching the operator's write |
+| A raw edit to `anchor-grants.allow` or `authorized_keys` lands while a dispatch's own mandatory pre-dispatch validate call still holds the guard, strictly before that call's Executor invocation | That dispatch proceeds on whichever bytes its own validate call actually captured and committed — not on a stale snapshot, since every dispatch performs its own synchronous in-guard validate call (item 1a); the edit is not acknowledged as a revocation unless this call's own read captured it (closes SSA R8-2 P2, replacing the prior, impossible "dispatch with no subsequent validate call" row) |
+| A raw edit lands after one dispatch's validate call has already committed its snapshot and released the guard; a **later**, separate dispatch request then reaches pre-dispatch revalidation | The later dispatch performs its own mandatory synchronous validate call and denies as `dirty`/mismatch if the edit changed the content hash since the previously-published generation — it never reuses the first dispatch's now-stale snapshot |
+| A validate call attempt fails (malformed, ambiguous, wrong mode/ownership) against an edited source | Prior generation stays active and governs any dispatch in the interim; retaining those old snapshot bytes as active is permitted, but dispatching while `dirty`/invalid is not — state is `dirty` or last-known-good per item 1's rule (last-known-good only where the source is proven unchanged since the last successful publish, never where it has changed and the republish failed), applying identically to the root-owned grant source and the account-writable restriction source; the failed attempt is never reported as committing the edit |
+| Operator writes a restriction, then polls the daemon's exposed commit-sequence/hash state before any validate call has run against it | State reports the active published snapshot's pre-edit hash, with dirty/invalid state reported separately; `committed` is reported only after a validate call successfully commits a new active generation whose hash matches the operator's write — a validation observation that merely saw the new bytes without committing (including one that denied as dirty) never advances the reported active hash |
 
 A lane or verb with an unresolved row stays labeled "candidate," not
 "proven," in every status surface (Pantheon dashboard, Ra report, this ADR).
@@ -1298,7 +1373,7 @@ This section is platform groundwork, not a launchable-feature claim.
   correction. Remains **Proposed** pending a fresh SHA+SSA pass on this
   exact text; no merge, installation, or implementation is authorized by
   this revision.
-- Revision 8 (this text, head after `68dc688c`): responds to SSA's
+- Revision 8 (head `9054b085`): responds to SSA's
   CHANGES_REQUESTED on revision 7 (exact head `68dc688c`) — see inline
   "(closes SSA R7-N)" markers above. SSA found R7-1 (P1, the raw-edit
   commitment boundary asserted both that the synchronous validate call is
@@ -1329,6 +1404,33 @@ This section is platform groundwork, not a launchable-feature claim.
   admission. Remains **Proposed** pending a fresh SHA+SSA pass on this
   exact text; no merge, installation, or implementation is authorized by
   this revision.
+- Revision 9 (this text, head after `9054b085`): responds to SSA's
+  CHANGES_REQUESTED on revision 8 (exact head `9054b085`) — see inline
+  "(closes SSA R8-N)" markers above. SSA found R8-1 (P1, the raw-edit
+  section still asserted an impossible mutual-exclusion invariant over
+  writers that never hold the guard, restating rather than removing R7-1's
+  defect; the acknowledgement query conflated a validation observation
+  with an active commitment) and R8-2 (P2, "the ratchet is never reset
+  backward" contradicted the override's own re-anchor from a false-future
+  reading to real time; a test/matrix row wrongly attributed an
+  ordering-floor denial to the ratchet; one matrix row described an
+  impossible dispatch-with-no-validate-call schedule). This revision:
+  removes the mutual-exclusion claim — raw writers may write at any time,
+  including mid-validate-read, since the guard never serializes against
+  them; redefines the exposed acknowledgement state to report the active
+  published snapshot separately from dirty/invalid/observed state, so a
+  non-committing validation observation never advances the reported
+  active hash; makes the ratchet epoch-scoped like the mark, so an
+  override's new epoch starts its own ratchet from a fresh observation
+  (which may be numerically lower than the retired epoch's unmutated
+  ratchet) without claiming one value is reset backward; re-attributes
+  the `issued_at`-based positive control to the ordering-floor/mark check
+  and adds a genuine, envelope-independent ratchet rollback control; and
+  replaces the impossible matrix row with the actual rule that every
+  dispatch performs its own mandatory synchronous validate call against
+  the current source. Remains **Proposed** pending a fresh SHA+SSA pass
+  on this exact text; no merge, installation, or implementation is
+  authorized by this revision.
 
 ## References
 - Ledger: `ra/rs-41-ownerless-recovery-signed-lan-anchor`; owner direction SHA
