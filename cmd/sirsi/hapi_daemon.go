@@ -93,6 +93,10 @@ func hapiDaemonPlist(sirsiBin string, govern bool, interval int) string {
 <dict>
 	<key>Label</key>
 	<string>%[1]s</string>
+	<key>AssociatedBundleIdentifiers</key>
+	<array>
+		<string>ai.sirsi.pantheon</string>
+	</array>
 	<key>ProgramArguments</key>
 	<array>
 		<string>/bin/zsh</string>

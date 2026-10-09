@@ -1,0 +1,3 @@
+### Fixed
+
+- **Sirsi Login Items showed as bare `zsh`/`sirsi` rows instead of "Sirsi Technologies Inc."** Every Go-templated Sirsi LaunchAgent/Daemon plist (menubar, Horus supervisor, Gemma broker, swap-hygiene, registry-sync, hapi watch, conduit, liveness-watch, router relay, and per-agent wake-loop) now sets `AssociatedBundleIdentifiers` to the Pantheon app bundle id, so macOS Background Task Management groups them under "Sirsi Technologies Inc." instead of the bare interpreter. `sirsi diagnose` gained a `login-items` check that flags any installed `ai.sirsi.*` plist still missing it, and a `dead-plists` check that flags third-party plists that are empty or point at a missing binary (the class claude-home found by hand on 2026-10-05).
