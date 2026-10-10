@@ -13,13 +13,17 @@ import (
 
 // Actor is one process/load source active on a machine right now, as seen by an
 // ActivityProbe. Kind is a coarse class ("bench", "build", "model", "runner",
-// "other"); Detail is a short human string (argv fragment); Owner is the agent
-// id when it can be attributed, else "".
+// "traffic", "other"); Detail is a short human string (argv fragment, or for a
+// "traffic" actor, the measured rate); Owner is the agent id when it can be
+// attributed, else "". Iface names the specific cable the load was attributed
+// to (a Thunderbolt interface, e.g. "en1") — set by a rail/traffic-counter
+// probe, empty for a process-classified actor.
 type Actor struct {
 	Kind   string `json:"kind"`
 	Detail string `json:"detail"`
 	Owner  string `json:"owner,omitempty"`
 	PID    int    `json:"pid,omitempty"`
+	Iface  string `json:"iface,omitempty"`
 }
 
 // ActivityProbe samples the load/traffic actors on a machine. It is injectable so
@@ -27,7 +31,11 @@ type Actor struct {
 // (A16). The default probeProcesses walks `ps` for the process classes that
 // contaminate measurement — closing the FOREIGN_EXCLUDE hole (tbraw-bench and
 // tcp-bench were deliberately ignored before; here they are intruders).
-type ActivityProbe func(machine string) ([]Actor, error)
+// ifaceScope, when non-empty, asks the probe to sample only that one
+// interface/lane rather than the whole machine (a probe with no per-interface
+// concept, like probeProcesses, ignores it); "" preserves whole-machine
+// behavior for a reservation that isn't cable-scoped.
+type ActivityProbe func(machine, ifaceScope string) ([]Actor, error)
 
 var (
 	probeMu     sync.RWMutex
@@ -103,7 +111,7 @@ func (l *Ledger) CheckConflicts(resource, machine string) (ConflictReport, error
 		known[h.Holder] = h
 	}
 
-	actors, err := getActivityProbe()(machine)
+	actors, err := getActivityProbe()(machine, cur.Iface)
 	if err != nil {
 		return ConflictReport{}, err
 	}
@@ -117,6 +125,18 @@ func (l *Ledger) CheckConflicts(resource, machine string) (ConflictReport, error
 	}
 	sharedSeen := map[string]bool{}
 	for _, a := range actors {
+		if a.Iface != "" && cur.Iface != "" && !strings.EqualFold(a.Iface, cur.Iface) {
+			continue // a different cable than the one THIS reservation covers — not this check's business
+		}
+		if a.Kind == "traffic" && a.Owner == "" && a.PID == 0 && a.Iface != "" && cur.Iface != "" &&
+			strings.EqualFold(a.Iface, cur.Iface) && cur.Regime == RegimeLoaded {
+			continue // traffic on the reserved lane during a load test IS the holder's own expected load
+			// (Regime doc: "the holder's own load is expected") — restricted to Kind=="traffic" with no
+			// Owner AND no PID: that is the ONLY shape a byte-counter probe can ever produce (it cannot
+			// attribute to a process), so this is the one case where "same lane, loaded regime" is itself
+			// the attribution. An actor of any other Kind, or one that already carries an explicit (possibly
+			// foreign) Owner/PID, is never exempted here — it still falls through to the Owner check below.
+		}
 		if a.Owner != "" {
 			if h, ok := known[a.Owner]; ok {
 				if h.Holder != cur.Holder && h.Share == ShareFloor && !sharedSeen[h.Holder] {
@@ -225,7 +245,7 @@ func defaultLocalMachineLabel() (string, error) {
 // and report it as the named machine's activity (2026-09-27, three failed
 // Mercury signing attempts: an M1 conflict-check run against "m5" reported the
 // M1's own idle runner as an M5 intruder). Refuse instead of mislabeling.
-func probeProcesses(machine string) ([]Actor, error) {
+func probeProcesses(machine, _ string) ([]Actor, error) {
 	if machine != "" {
 		local, err := getLocalMachineLabelFn()()
 		if err != nil {
@@ -294,7 +314,7 @@ func classifyProc(cmd string) string {
 // "idle": a reservation ledger only knows who asked, not who is running
 // (codex-apollo repro 2026-09-26, FinalWishes work running while the ledger said free).
 func LiveActivity(machine string) ([]Actor, error) {
-	return getActivityProbe()(machine)
+	return getActivityProbe()(machine, "")
 }
 
 // isShellWrapper reports whether cmd is a shell started with -c.

@@ -102,11 +102,11 @@ func emitJSON(v any) error {
 }
 
 var (
-	resHolder, resWork, resRegime, resStart, resEstEnd, resRepro string
-	resPriority, resLeaseTTL, resExemptPID                       int
-	resQueue, maatJSON                                           bool
-	covHorizon                                                   int
-	conflictMachine                                              string
+	resHolder, resWork, resRegime, resStart, resEstEnd, resRepro, resIface string
+	resPriority, resLeaseTTL, resExemptPID                                 int
+	resQueue, maatJSON                                                     bool
+	covHorizon                                                             int
+	conflictMachine                                                        string
 )
 
 var maatReserveCmd = &cobra.Command{
@@ -136,7 +136,7 @@ a cable; it is the rails.lock replacement.`,
 			Resource: args[0], Holder: holder, Work: resWork,
 			Regime: schedule.Regime(resRegime), Priority: resPriority,
 			Repro: resRepro, Start: start, EstEnd: resEstEnd, LeaseTTLSec: resLeaseTTL,
-			ExemptPID: resExemptPID,
+			ExemptPID: resExemptPID, Iface: resIface,
 		}
 		res, err := l.Reserve(req, resQueue)
 		if err != nil {
@@ -496,6 +496,7 @@ func init() {
 	maatReserveCmd.Flags().IntVar(&resLeaseTTL, "lease-ttl", 120, "lease TTL seconds (expires without heartbeat)")
 	maatReserveCmd.Flags().BoolVar(&resQueue, "queue", false, "queue behind the holder instead of refusing")
 	maatReserveCmd.Flags().IntVar(&resExemptPID, "exempt-pid", 0, "PID of this reservation's own guarded-run process tree (e.g. the run-guard script); conflict-check never treats its ancestors or descendants as intruders")
+	maatReserveCmd.Flags().StringVar(&resIface, "iface", "", "Thunderbolt interface this reservation covers (e.g. en1), when it is one specific cable rather than a whole machine; scopes NetTrafficProbe's intruder check to this lane")
 	maatReserveCmd.Flags().BoolVar(&maatJSON, "json", false, "JSON output")
 
 	maatExtendCmd.Flags().StringVar(&resEstEnd, "est-end", "", "new estimated end RFC3339")

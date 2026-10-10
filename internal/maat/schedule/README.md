@@ -37,7 +37,7 @@ a control.
 
 ```
 sirsi maat reserve <resource> --holder --work --regime quiet|loaded|build \
-                   --est-end <rfc3339> [--queue] [--json]   # exit 97 if refused
+                   --est-end <rfc3339> [--queue] [--iface en1] [--json]   # exit 97 if refused
 sirsi maat status [resource] [--json]
 sirsi maat who-is-on <resource> [--json]
 sirsi maat heartbeat <id>            # keep the lease alive
@@ -59,8 +59,21 @@ runner calls `should-defer <machine>` before starting a job.
   cadence is a handful per hour, so this is negligible; upgrade to a
   compare-and-swap on the state key if throughput ever demands it.
 - The default `ActivityProbe` is a process classifier. **Per-rail traffic
-  counters** (attributing load to a specific cable) are a deeper detector that
-  plugs into the same interface — framework built, rail detector is a follow-up.
+  counters** (`NetTrafficProbe`, `internal/maat/schedule/traffic.go`) attribute
+  load to a specific Thunderbolt cable by diffing its link-layer byte counters
+  across a short sampling window — an `Actor.Iface` set to the interface, not
+  just a process guess. Not wired in as the default; opt in per host with
+  `SetActivityProbe(NetTrafficProbe)`, or combine it with the process
+  classifier via `ComposeActivityProbes`. A traffic `Actor` carries no
+  PID/Owner (byte counters can't be tied to a process), so `CheckConflicts`
+  attributes it by lane instead: `reserve --iface en1` scopes the
+  reservation to one cable — traffic on any OTHER lane is never this
+  reservation's intruder, and traffic on ITS OWN lane during a `loaded`
+  window is the holder's own expected load, not foreign. A reservation with
+  no `--iface` is unscoped (a whole-machine resource) and traffic actors are
+  considered exactly as before this field existed. An active lane whose
+  counters can't be read (a malformed/missing `netstat -ib` row) is an
+  ERROR, never silently reported as clean.
 
 ## Owner gates
 
