@@ -85,6 +85,19 @@ type KIReference struct {
 	Value string `json:"value"`
 }
 
+// UnmarshalJSON unmarshals either a structured {"type": "...", "value": "..."} object
+// or a simple string reference (as written by Antigravity IDE).
+func (r *KIReference) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		r.Type = "file"
+		r.Value = s
+		return nil
+	}
+	type raw KIReference
+	return json.Unmarshal(data, (*raw)(r))
+}
+
 // KITimestamps tracks the lifecycle of a Knowledge Item.
 type KITimestamps struct {
 	Created  string `json:"created"`
@@ -101,9 +114,19 @@ type Paths struct {
 }
 
 // DefaultPaths returns the standard Antigravity paths based on $HOME.
+// It checks ANTIGRAVITY_DIR env var first, then ~/.gemini/antigravity-ide,
+// falling back to ~/.gemini/antigravity.
 func DefaultPaths() Paths {
 	home, _ := os.UserHomeDir()
-	agDir := filepath.Join(home, ".gemini", "antigravity")
+	agDir := os.Getenv("ANTIGRAVITY_DIR")
+	if agDir == "" {
+		ideDir := filepath.Join(home, ".gemini", "antigravity-ide")
+		if _, err := os.Stat(ideDir); err == nil {
+			agDir = ideDir
+		} else {
+			agDir = filepath.Join(home, ".gemini", "antigravity")
+		}
+	}
 	return Paths{
 		AntigravityDir:   agDir,
 		KnowledgeDir:     filepath.Join(agDir, "knowledge"),
