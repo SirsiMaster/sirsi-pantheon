@@ -1,6 +1,7 @@
 package router
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -132,15 +133,68 @@ func TestCoordinationFailure(t *testing.T) {
 	}
 	// A missing parent directory is no longer a failure mode (coordinatedHostLoad
 	// now creates it, same as a cold CI/new-user home with no ~/.sirsi yet —
-	// PR #1060 CI finding). Simulate a genuine lock-open failure instead: a
-	// parent that exists but is not writable, so MkdirAll is a no-op and the
-	// lock file's O_CREATE still cannot succeed inside it.
-	absent := filepath.Join(p, "absent")
-	if err := os.Mkdir(absent, 0500); err != nil {
+	// PR #1060 CI finding). Simulate a genuine lock-open failure instead: an
+	// unwritable directory depends on uid (root ignores the permission bits,
+	// so this was non-deterministic under a root-run CI). Put a directory AT
+	// the exact lock-file path instead — OpenFile(O_RDWR) on an existing
+	// directory fails with EISDIR regardless of uid or permission bits.
+	dir := filepath.Join(t.TempDir(), "cache3")
+	if err := os.Mkdir(dir+".lock", 0700); err != nil {
 		t.Fatal(err)
 	}
-	v, ok = coordinatedHostLoad(filepath.Join(absent, "cache"), probe, time.Second)
+	v, ok = coordinatedHostLoad(dir, probe, time.Second)
 	if ok || v != 0 || calls != 1 {
 		t.Fatal("lock failure probed", v, ok, calls)
+	}
+}
+
+// TestCoordinatedHostLoadReleasesLockForNextCaller proves coordinatedHostLoad
+// releases its exclusive flock before returning, not merely on process exit:
+// a second, independent file descriptor on the same lock path must acquire a
+// non-blocking exclusive lock immediately. The paired negative control proves
+// this check has teeth — holding the lock open on a THIRD descriptor (the
+// exact shape of a caller that leaked the lock by skipping unlock/close)
+// must make the identical non-blocking acquisition fail.
+func TestCoordinatedHostLoadReleasesLockForNextCaller(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "cache")
+	calls := 0
+	probe := func() (float64, bool) { calls++; return 10, true }
+	v, ok := coordinatedHostLoad(p, probe, time.Second)
+	if !ok || v != 10 || calls != 1 {
+		t.Fatalf("unexpected probe result: v=%v ok=%v calls=%d", v, ok, calls)
+	}
+
+	released, err := os.OpenFile(p+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Flock(int(released.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		t.Fatalf("lock not released after coordinatedHostLoad returned: %v", err)
+	}
+	if err := syscall.Flock(int(released.Fd()), syscall.LOCK_UN); err != nil {
+		t.Fatal(err)
+	}
+	if err := released.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	holder, err := os.OpenFile(p+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer holder.Close()
+	if err := syscall.Flock(int(holder.Fd()), syscall.LOCK_EX); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = syscall.Flock(int(holder.Fd()), syscall.LOCK_UN) }()
+
+	contender, err := os.OpenFile(p+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer contender.Close()
+	err = syscall.Flock(int(contender.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+	if !errors.Is(err, syscall.EWOULDBLOCK) && !errors.Is(err, syscall.EAGAIN) {
+		t.Fatalf("negative control did not observe contention on a held lock: err=%v", err)
 	}
 }
