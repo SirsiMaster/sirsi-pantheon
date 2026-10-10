@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -8,6 +9,12 @@ import (
 func TestRunDeniesEveryRecordedDisplayPowerWrapper(t *testing.T) {
 	for _, command := range []string{
 		"pmset displaysleepnow",
+		"env pmset displaysleepnow",
+		"env -u EXAMPLE X=1 pmset displaysleepnow",
+		"X=1 pmset displaysleepnow",
+		"command pmset displaysleepnow",
+		"command -p pmset displaysleepnow",
+		"printf '%s' \"`pmset displaysleepnow`\"",
 		"/usr/bin/pmset displaysleepnow",
 		"sudo /usr/bin/pmset sleepnow",
 		"zsh -lc 'pmset displaysleepnow'",
@@ -49,6 +56,6 @@ func TestRunFailsClosedOnMalformedHookInput(t *testing.T) {
 }
 
 func quote(value string) string {
-	replacer := strings.NewReplacer(`\\`, `\\\\`, `"`, `\\"`)
-	return `"` + replacer.Replace(value) + `"`
+	raw, _ := json.Marshal(value)
+	return string(raw)
 }

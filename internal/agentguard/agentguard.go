@@ -272,6 +272,13 @@ func shellInvocations(command string) [][]string {
 				quote = 0
 				continue
 			}
+			if quote == '"' && ch == '`' {
+				if end := shellClosingBacktick(command, i+1); end >= 0 {
+					invocations = append(invocations, shellInvocations(command[i+1:end])...)
+					i = end
+					continue
+				}
+			}
 			if quote == '"' && ch == '$' && i+1 < len(command) && command[i+1] == '(' {
 				if end := shellClosingParen(command, i+2); end >= 0 {
 					invocations = append(invocations, shellInvocations(command[i+2:end])...)
@@ -295,8 +302,7 @@ func shellInvocations(command string) [][]string {
 			}
 			word.WriteByte(ch)
 		case '`':
-			if end := strings.IndexByte(command[i+1:], '`'); end >= 0 {
-				end += i + 1
+			if end := shellClosingBacktick(command, i+1); end >= 0 {
 				invocations = append(invocations, shellInvocations(command[i+1:end])...)
 				i = end
 				continue
@@ -315,6 +321,25 @@ func shellInvocations(command string) [][]string {
 	}
 	finishInvocation()
 	return invocations
+}
+
+// Escaped backticks are literal data, including inside double quotes.
+func shellClosingBacktick(command string, start int) int {
+	escaped := false
+	for i := start; i < len(command); i++ {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if command[i] == '\\' {
+			escaped = true
+			continue
+		}
+		if command[i] == '`' {
+			return i
+		}
+	}
+	return -1
 }
 
 func shellClosingParen(command string, start int) int {
@@ -366,6 +391,49 @@ func isDirectDisplayPowerInvocation(command []string) bool {
 			}
 			return false
 		}
+		// Shell assignment words and ordinary execution prefixes preserve the
+		// command's identity. This does not evaluate variable expansion.
+		if isShellAssignment(command[0]) {
+			command = command[1:]
+			continue
+		}
+		if name == "env" {
+			command = command[1:]
+			for len(command) > 0 {
+				arg := command[0]
+				if arg == "--" {
+					command = command[1:]
+					break
+				}
+				if isShellAssignment(arg) {
+					command = command[1:]
+					continue
+				}
+				if !strings.HasPrefix(arg, "-") {
+					break
+				}
+				command = command[1:]
+				if (arg == "-u" || arg == "--unset" || arg == "-C" || arg == "--chdir") && len(command) > 0 {
+					command = command[1:]
+				}
+			}
+			continue
+		}
+		if name == "command" {
+			command = command[1:]
+			for len(command) > 0 && strings.HasPrefix(command[0], "-") {
+				arg := command[0]
+				// -v/-V query command resolution and do not execute it.
+				if strings.ContainsAny(arg, "vV") {
+					return false
+				}
+				command = command[1:]
+				if arg == "--" {
+					break
+				}
+			}
+			continue
+		}
 		if name == "sudo" || name == "doas" || name == "exec" {
 			command = command[1:]
 			for len(command) > 0 && strings.HasPrefix(normalizeCommandToken(command[0]), "-") {
@@ -395,6 +463,19 @@ func isDirectDisplayPowerInvocation(command []string) bool {
 		return false
 	}
 	return false
+}
+
+func isShellAssignment(word string) bool {
+	name, _, ok := strings.Cut(word, "=")
+	if !ok || name == "" {
+		return false
+	}
+	for i, ch := range name {
+		if ch != '_' && (ch < 'a' || ch > 'z') && (ch < 'A' || ch > 'Z') && (i == 0 || ch < '0' || ch > '9') {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeCommandToken(value string) string {

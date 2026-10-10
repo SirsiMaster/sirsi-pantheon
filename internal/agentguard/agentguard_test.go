@@ -174,3 +174,32 @@ func TestSafeRunTruncatesOutput(t *testing.T) {
 		t.Fatalf("filtered output grew unexpectedly: %#v", result)
 	}
 }
+
+// These strings are parser input only. No pmset, shell, or display actuator runs.
+func TestDisplayPowerOrdinaryShellForms(t *testing.T) {
+	for _, tc := range []struct {
+		command string
+		denied  bool
+	}{
+		{`env pmset displaysleepnow`, true},
+		{`/usr/bin/env -i X=1 pmset displaysleepnow`, true},
+		{`env --unset EXAMPLE command -p pmset displaysleepnow`, true},
+		{`X=1 Y=2 pmset displaysleepnow`, true},
+		{`command -- /usr/bin/pmset displaysleepnow`, true},
+		{"printf '%s' \"`pmset displaysleepnow`\"", true},
+		{"printf '%s' '`pmset displaysleepnow`'", false},
+		{"printf '%s' \"\\`pmset displaysleepnow\\`\"", false},
+		{`env X=1 printf '%s' 'pmset displaysleepnow'`, false},
+		{`command -v pmset`, false},
+		{`command -V pmset`, false},
+		{`env X=1 command pmset -g`, false},
+		{`X=1 pmset -g`, false},
+		{`# pmset displaysleepnow`, false},
+	} {
+		t.Run(tc.command, func(t *testing.T) {
+			if got := IsDirectDisplayPowerShell(tc.command); got != tc.denied {
+				t.Fatalf("denied = %v, want %v", got, tc.denied)
+			}
+		})
+	}
+}
