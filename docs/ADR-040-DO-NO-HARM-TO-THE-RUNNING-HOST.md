@@ -54,3 +54,56 @@ flowchart TD
 ## Consequences
 - **Positive:** the model substrate the whole system relies on can't be killed by a routine reclaim or a careless agent; the real fix (right-size) is the codified response; a general recognition seam (`IsLoadBearing`) exists for future load-bearing services.
 - **Negative / bounded:** at genuine emergency, protecting the broker means Hapi reclaims from the next-largest process instead — acceptable, since killing the substrate to save the host defeats the purpose; the true-emergency last-resort path remains explicit and separate.
+
+## Desktop power boundary — proposed source foundation (2026-10-10)
+
+PR #1059 adds unconditional denial of selected direct display-power commands to
+`internal/agentguard` and the Codex/Claude `cmd/sirsi-pretoolguard` hook. The
+recognized forms include assignment prefixes, `env`, `command`, sudo/doas/exec,
+shell separators and command substitutions, including double-quoted backticks.
+Read-only `pmset -g`, `command -v/-V` resolution queries and quoted command text
+remain permitted. This is a narrow command deny list, not arbitrary shell
+containment. A managed `SafeRun` denial cannot be overridden by `--force`.
+
+`internal/desktopcustody` is a durable grant/revocation foundation only. It has no
+production issuer, owner-return event handler or display actuator caller. Its
+owner string is a binding, not authenticated issuance. Single-grant revocation
+does not prove host-wide invalidation or refusal of fresh grants after owner
+return. The existing proprietary desktop-session tool bridge is outside these
+hook routes and remains an unresolved operation boundary. No runtime safety or
+whole-host coverage is claimed. Recipe retirement in Apollo is separately
+attributed to SSA's immutable-object verification of commit `0e8e9f1f`.
+
+### Data flow architecture
+
+```mermaid
+flowchart TD
+  T[Managed shell tool input] -->|extract command JSON| H[PreToolUse hook]
+  H -->|recognize selected invocations| D{Direct display power?}
+  D -->|yes: return denial| N[No shell launch]
+  D -->|no: return allow| S[Managed tool continues]
+  G[Grant/revoke test fixture] -->|persist bounded grant and revocation| F[Local file store]
+  F -->|check binding and revocation under retained-root lock| A[Fake actuator]
+  B[Proprietary desktop bridge] -->|bypasses this hook: unresolved| U[Unqualified route]
+```
+
+### Implementation order
+
+1. Reproduce ordinary parser omissions with inert strings; cure and independently review.
+2. Bind a trusted issuer and persistent host-wide owner-return state; test multiple grants and restart.
+3. Enforce admission or exclusion at the actual desktop bridge; qualify inert negative controls.
+4. Publish human-readable mirrors and complete independent source/CI review.
+5. Only after current owner admission permits it, qualify native installation and lifecycle.
+
+### Key decisions
+
+| Question | Decision |
+|---|---|
+| Does a capacity reservation authorize display power? | No; separate explicit owner authority is required. |
+| May `--force` bypass selected direct-command denial? | No. |
+| Does hook qualification cover the desktop bridge? | No; route-side enforcement is outstanding. |
+| Is the custody library a completed safeguard? | No; trusted host lifecycle and callers remain outstanding. |
+| Are human mirrors published? | No; Desktop writes are denied in this managed lane and no Workspace publication receipt exists. |
+
+Owner Studio hold and M5 owner-active revocation remain binding. Source fixtures
+never launch a display command, deploy hooks, pause helpers or sample the host.

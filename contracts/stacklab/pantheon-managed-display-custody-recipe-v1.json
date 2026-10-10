@@ -1,0 +1,62 @@
+{
+  "schema": "sirsi.stacklab.recipe.v1",
+  "id": "stacklab.recipe.pantheon-managed-display-custody",
+  "wing": "stacklab.wing.pantheon.pt-wing-001",
+  "product": "sirsi-pantheon",
+  "version": 1,
+  "purpose": "Reproducible, owner-gated deployment and verification recipe for Pantheon's managed native-CLI display-power denial guard. It is deployment tooling, not a product payload or a substitute for the durable in-process custody gate.",
+  "authority": {
+    "source_owner": "Pantheon release engineering",
+    "root_deployment_owner": "Hardware system administrator through an explicit owner-approved sudo transaction",
+    "runtime_scope": "native Codex CLI PreToolUse only",
+    "prohibited": [
+      "do not execute this recipe implicitly or from a product UI",
+      "do not set allow_managed_hooks_only",
+      "do not claim desktop-session tool-bridge or OS-wide coverage",
+      "do not run Studio tests, display-power operations, reboot, or settings changes as part of installation"
+    ]
+  },
+  "components": [
+    {
+      "id": "managed-native-cli-display-guard",
+      "source": [
+        "cmd/sirsi-pretoolguard/main.go",
+        "internal/agentguard/agentguard.go",
+        "internal/desktopcustody/custody.go",
+        "internal/desktopcustody/store_unix.go",
+        "scripts/stacklab/install-managed-display-guard.py",
+        "scripts/stacklab/managed-requirements.toml"
+      ],
+      "tests": [
+        "cmd/sirsi-pretoolguard/main_test.go",
+        "internal/agentguard/agentguard_test.go",
+        "internal/desktopcustody/custody_test.go",
+        "internal/stacklab/managed_display_custody_recipe_test.go"
+      ],
+      "inputs": [
+        "an exact SHA-256 bound sirsi-pretoolguard executable",
+        "the exact managed requirements policy bytes",
+        "a root-owned /etc/codex directory and an explicit owner-approved sudo transaction",
+        "an inert fake-pmset native CLI verification fixture"
+      ],
+      "outputs": [
+        "a root-owned managed PreToolUse policy preserving existing user lifecycle hooks",
+        "a native CLI denial for direct display-power routes before execution",
+        "an idempotent no-change result when identical safe artifacts are already installed",
+        "an explicit limitation that desktop-session tool bridging requires a separate Ra integration"
+      ],
+      "writes": [
+        "/etc/codex/hooks/sirsi-display-power-guard",
+        "/etc/codex/requirements.toml"
+      ],
+      "upgrade_recipe": [
+        "build and independently verify the exact guard binary before any root transaction",
+        "preserve the pinned policy bytes and refuse symlinks, non-root ownership, writable root artifacts, or conflicting existing bytes",
+        "preserve existing user hooks by omitting allow_managed_hooks_only",
+        "verify the native CLI with an inert fake executable; never use real pmset as a canary",
+        "treat native CLI success as narrow coverage and route desktop tool-bridge enforcement to Ra",
+        "keep this Python installer outside product payloads and package inventory"
+      ]
+    }
+  ]
+}

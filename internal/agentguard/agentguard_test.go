@@ -102,6 +102,59 @@ func TestSafeRunBlocksHazardousCommand(t *testing.T) {
 	}
 }
 
+func TestPreflightBlocksDirectDisplayPowerRoutes(t *testing.T) {
+	for _, command := range [][]string{
+		{"pmset", "displaysleepnow"},
+		{"/usr/bin/pmset", "displaysleepnow"},
+		{"sudo", "/usr/bin/pmset", "sleepnow"},
+		{"zsh", "-lc", "pmset displaysleepnow"},
+		{"sudo", "-u", "root", "/usr/bin/pmset", "displaysleepnow"},
+		{"pmset", "-a", "displaysleep", "1"},
+		{"/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession", "-suspend"},
+	} {
+		t.Run(strings.Join(command, "_"), func(t *testing.T) {
+			report := Preflight(PreflightOptions{
+				Command:        command,
+				Platform:       healthyPlatform(),
+				LoadProvider:   func() (float64, float64, error) { return 1, 1, nil },
+				HealthProvider: healthyDoctor,
+			})
+			if report.Verdict != VerdictBlock {
+				t.Fatalf("verdict = %s, want block; findings=%v", report.Verdict, report.Findings)
+			}
+		})
+	}
+	if IsDirectDisplayPowerCommand([]string{"pmset", "-g"}) {
+		t.Fatal("read-only pmset query must remain allowed")
+	}
+	if IsDirectDisplayPowerShell(`printf '%s' 'pmset displaysleepnow'`) || IsDirectDisplayPowerShell(`echo 'pmset displaysleepnow'`) {
+		t.Fatal("text canary must not be mistaken for a display-power invocation")
+	}
+	for _, command := range []string{
+		`echo harmless; /usr/bin/pmset displaysleepnow`,
+		`printf '%s' ok && /System/Library/CoreServices/Menu\ Extras/User.menu/Contents/Resources/CGSession -suspend`,
+		`printf '%s' "$(pmset displaysleepnow)"`,
+		"printf '%s' `pmset displaysleepnow`",
+	} {
+		if !IsDirectDisplayPowerShell(command) {
+			t.Fatalf("shell composition bypassed display-power denial: %q", command)
+		}
+	}
+}
+
+func TestSafeRunCannotForceDirectDisplayPowerRoute(t *testing.T) {
+	result, err := SafeRun(context.Background(), RunOptions{
+		Command:        []string{"pmset", "displaysleepnow"},
+		Platform:       healthyPlatform(),
+		LoadProvider:   func() (float64, float64, error) { return 1, 1, nil },
+		HealthProvider: healthyDoctor,
+		Force:          true,
+	})
+	if err == nil || result == nil || result.ExitCode != 126 {
+		t.Fatalf("forced display-power route escaped denial: result=%#v err=%v", result, err)
+	}
+}
+
 func TestSafeRunTruncatesOutput(t *testing.T) {
 	result, err := SafeRun(context.Background(), RunOptions{
 		Command:        []string{"printf", strings.Repeat("x", 128)},
@@ -119,5 +172,34 @@ func TestSafeRunTruncatesOutput(t *testing.T) {
 	}
 	if result.FilteredBytes > 128 {
 		t.Fatalf("filtered output grew unexpectedly: %#v", result)
+	}
+}
+
+// These strings are parser input only. No pmset, shell, or display actuator runs.
+func TestDisplayPowerOrdinaryShellForms(t *testing.T) {
+	for _, tc := range []struct {
+		command string
+		denied  bool
+	}{
+		{`env pmset displaysleepnow`, true},
+		{`/usr/bin/env -i X=1 pmset displaysleepnow`, true},
+		{`env --unset EXAMPLE command -p pmset displaysleepnow`, true},
+		{`X=1 Y=2 pmset displaysleepnow`, true},
+		{`command -- /usr/bin/pmset displaysleepnow`, true},
+		{"printf '%s' \"`pmset displaysleepnow`\"", true},
+		{"printf '%s' '`pmset displaysleepnow`'", false},
+		{"printf '%s' \"\\`pmset displaysleepnow\\`\"", false},
+		{`env X=1 printf '%s' 'pmset displaysleepnow'`, false},
+		{`command -v pmset`, false},
+		{`command -V pmset`, false},
+		{`env X=1 command pmset -g`, false},
+		{`X=1 pmset -g`, false},
+		{`# pmset displaysleepnow`, false},
+	} {
+		t.Run(tc.command, func(t *testing.T) {
+			if got := IsDirectDisplayPowerShell(tc.command); got != tc.denied {
+				t.Fatalf("denied = %v, want %v", got, tc.denied)
+			}
+		})
 	}
 }
