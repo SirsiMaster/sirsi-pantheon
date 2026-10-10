@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- **docs(portfolio-standard):** adopted the Carrier-First Engineering Rubric (R1-R10) as Rule 29 of
+  `docs/SIRSI_PORTFOLIO_STANDARD.md` (v2.2.0), per owner directive relayed by Mercury (Stack Lab
+  canon #386). Binds every agent touching a Mercury transport/conduit (Thunderbolt, PCIe tunnels,
+  Ethernet, Wi-Fi, NVIDIA-class NICs) and every agent they hand work to. Rubric text canon stays
+  owned by `sirsi-stacklab`/`sirsi-mercury`; this repo binds by reference only.
+
 ## [0.24.97] — 2026-10-08
 
 - **Wake loops share one CPU-headroom probe per host.** Every loop ran `top -l 2` each cycle; nine loops cost 0.1-0.15 of a core continuously (measured by Mercury on the M1 while it was CPU-bound receiving at ~12 GB/s). One probe per host per 30 s now serves all loops through `~/.sirsi/host-load.cache`; the dispatch gate's behavior is unchanged.
