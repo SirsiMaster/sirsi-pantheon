@@ -100,3 +100,26 @@ func TestPressureCacheNormalizesInvalidProbe(t *testing.T) {
 		}
 	}
 }
+
+// TestCoordinatedHostLoadCreatesColdHomeCacheDir is the exact CI regression
+// (PR #1060, job 114116632633): a fresh home has no ~/.sirsi yet, so
+// O_CREATE on the lock file inside a missing parent directory failed before
+// ever reaching probe(), and every caller silently saw unknown. The real
+// defaultLoadAvg1m() has no seam for an empty HOME in this test binary, so
+// this drives coordinatedHostLoad directly against a cache path whose
+// parent does not exist — the same condition a cold CI/new-user home
+// produces — and asserts the probe actually runs and its result persists.
+func TestCoordinatedHostLoadCreatesColdHomeCacheDir(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "cold-home", ".sirsi", "host-pressure-v2.cache")
+	if _, err := os.Stat(filepath.Dir(p)); !os.IsNotExist(err) {
+		t.Fatalf("precondition: parent directory must not exist yet, stat err = %v", err)
+	}
+	calls := 0
+	v, ok := coordinatedHostLoad(p, func() (float64, bool) { calls++; return 3.5, true }, time.Second)
+	if !ok || v != 3.5 || calls != 1 {
+		t.Fatalf("cold-home probe: got %v %v calls=%d, want 3.5 true calls=1", v, ok, calls)
+	}
+	if _, _, fresh := readPressureRecord(p); !fresh {
+		t.Fatal("cold-home probe result was not persisted")
+	}
+}

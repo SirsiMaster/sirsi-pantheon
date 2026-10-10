@@ -67,6 +67,13 @@ func coordinatedHostLoad(p string, probe func() (float64, bool), wait time.Durat
 	if v, ok, fresh := readPressureRecord(p); fresh {
 		return v, ok
 	}
+	// A fresh home (CI, a new user) has no ~/.sirsi yet: O_CREATE cannot
+	// create the missing parent directory, so OpenFile would fail and every
+	// caller would see unknown without ever reaching probe(). Create it once,
+	// up front, same as every other first-write-to-~/.sirsi site in this repo.
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		return 0, false
+	}
 	f, err := os.OpenFile(p+".lock", os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return 0, false
@@ -86,7 +93,10 @@ func coordinatedHostLoad(p string, probe func() (float64, bool), wait time.Durat
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	// The lock is released on close/exit regardless; the unlock here is only
+	// to free it for a waiting contender before this function's other
+	// deferred work runs. Its error carries no actionable recovery (errcheck).
+	defer func() { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) }()
 	if v, ok, fresh := readPressureRecord(p); fresh {
 		return v, ok
 	}

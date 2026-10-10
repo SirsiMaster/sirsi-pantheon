@@ -130,7 +130,16 @@ func TestCoordinationFailure(t *testing.T) {
 	if !ok || v != 10 || calls != 1 {
 		t.Fatal("publish failure lost measured pressure", v, ok, calls)
 	}
-	v, ok = coordinatedHostLoad(filepath.Join(p, "absent", "cache"), probe, time.Second)
+	// A missing parent directory is no longer a failure mode (coordinatedHostLoad
+	// now creates it, same as a cold CI/new-user home with no ~/.sirsi yet —
+	// PR #1060 CI finding). Simulate a genuine lock-open failure instead: a
+	// parent that exists but is not writable, so MkdirAll is a no-op and the
+	// lock file's O_CREATE still cannot succeed inside it.
+	absent := filepath.Join(p, "absent")
+	if err := os.Mkdir(absent, 0500); err != nil {
+		t.Fatal(err)
+	}
+	v, ok = coordinatedHostLoad(filepath.Join(absent, "cache"), probe, time.Second)
 	if ok || v != 0 || calls != 1 {
 		t.Fatal("lock failure probed", v, ok, calls)
 	}
