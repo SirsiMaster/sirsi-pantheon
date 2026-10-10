@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
 
 // unroutableAgents returns the set of agent ids that no automated wake path
@@ -35,9 +36,18 @@ func unroutableAgents(repoRoot string) (map[string]bool, error) {
 	if reg == nil {
 		return nil, fmt.Errorf("unroutable: registry loaded as nil — routability is unknown")
 	}
+	routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
 	out := map[string]bool{}
 	for id, cfg := range reg.Agents {
 		if cfg.WakeMechanism() == router.WakeNone {
+			out[id] = true
+			continue
+		}
+		// A lane that DECLARES a wake mechanism is not routable just because
+		// the declaration exists — if waking it has failed MaxWakeAttempts
+		// times in a row (lane-ping-and-incoming-notice remaining (4)), it is
+		// unroutable in practice the same as one with no mechanism at all.
+		if router.TerminalWakeFailures(routerRoot, id) >= routerstore.MaxWakeAttempts {
 			out[id] = true
 		}
 	}

@@ -578,6 +578,11 @@ func WakePassFiltered(routerRoot string, now time.Time, allow func(work.Item) bo
 		if !alreadyInvoked {
 			ierr = invoke(*cfg, health.Adapter)
 			invoked[agentID] = ierr
+			if ierr != nil {
+				recordWakeMiss(routerRoot, agentID)
+			} else {
+				recordWakeSuccess(routerRoot, agentID)
+			}
 		}
 		if ierr != nil {
 			ann = work.WakeAnnotation{Status: WakeStatusUnavailable, Error: fmt.Sprintf("%s adapter failed: %v", health.Adapter, ierr)}
