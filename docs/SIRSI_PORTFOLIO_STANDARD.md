@@ -1,7 +1,7 @@
 # SIRSI_PORTFOLIO_STANDARD.md
 **Universal Governance Standard for All Sirsi Technologies Repositories**
-**Version:** 2.1.0 (Independent Deities)
-**Date:** March 23, 2026
+**Version:** 2.2.0 (Carrier-First Engineering Rubric)
+**Date:** October 9, 2026 (Rule 29 added; v2.1.0 March 23, 2026)
 
 ---
 
@@ -60,6 +60,21 @@ Every AI agent (Gemini, Claude, Antigravity) and every developer can navigate an
 26. **Build-in-Public** (ADR-003 graduated): Every release updates VERSION, CHANGELOG, BUILD_LOG (if applicable), Thoth memory, and journal. Mistakes stay in the record.
 27. **Independent Deity Deployment**: Every deity (Anubis, Thoth, Ma'at, etc.) MUST be deployable as a standalone agent. Users can install any single deity or combination without requiring the entire Pantheon.
 28. **Cross-Agent Referral Logic**: Findings produced by any deity should allude to whether another deity can provide the necessary action to mitigate or remediate the finding. This creates a cohesive ecosystem without forced dependencies.
+
+### Hardware & Transport (29)
+29. **Carrier-First Engineering Rubric** (owner directive, 2026-10-09, relayed via Mercury, Stack Lab canon #386): binds every agent who touches a Mercury transport or any conduit it drives (Thunderbolt 4/5, PCIe tunnels, Ethernet, Wi-Fi, NVIDIA-class NICs), and every agent they hand work to.
+    - **R1** — budget first: every result as a % of line, per cable and per direction.
+    - **R2** — assess before experimenting, and port proven recipes.
+    - **R3** — pre-register tests, and batch them into one designed experiment.
+    - **R4** — locate walls layer by layer, with two independent methods.
+    - **R5** — no dither (under 3%) while any cable is below 90% of its budget.
+    - **R6** — per-endpoint parameters, never global constants.
+    - **R7** — same-session paired, guarded, repro, negative control.
+    - **R8** — code + ledger + Stack Lab + article for every step.
+    - **R9** — milestones and gates.
+    - **R10** — push past proven walls to physics.
+
+    Canon: `sirsi-stacklab` `canon/docs/mercury/CARRIER-RUBRIC.md` (Stack Lab #386, sha256 `b7780bbf…`); `sirsi-mercury` `docs/CARRIER-RUBRIC.md` and `MERCURY_RULES.md` §4 (#533); program and milestones in `canon/docs/mercury/CARRIER-PROGRAM.md`; history in `canon/docs/mercury/ACHIEVEMENT-LEDGER.md`. Those repos own the rubric text; this entry binds every portfolio repo to it by reference, per the owner directive — it is not redrafted here.
 
 ---
 
