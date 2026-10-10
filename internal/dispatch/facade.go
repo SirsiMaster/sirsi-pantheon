@@ -159,6 +159,19 @@ type SendResult struct {
 // appended), and circuit breakers (ErrBreakerOpen). Success means the store
 // row exists; the markdown audit view is then dual-written with the same id.
 func (f *Facade) Send(from, to, title, msgType, instructions string) (SendResult, error) {
+	return f.send(from, to, title, msgType, instructions, "")
+}
+
+// SendReply is Send for an answer to an inbound item: sourceItem is the id of
+// the item being answered. The store verifies server-side that sourceItem is
+// really addressed to `from` before exempting it from the sender's quota
+// (routerstore.isVerifiedReplyTx) — a storm someone else sent should not
+// throttle the agent answering it.
+func (f *Facade) SendReply(from, to, title, msgType, instructions, sourceItem string) (SendResult, error) {
+	return f.send(from, to, title, msgType, instructions, sourceItem)
+}
+
+func (f *Facade) send(from, to, title, msgType, instructions, sourceItem string) (SendResult, error) {
 	if err := work.EnsureRoot(f.root); err != nil {
 		return SendResult{}, fmt.Errorf("dispatch: ensure root: %w", err)
 	}
@@ -175,7 +188,7 @@ func (f *Facade) Send(from, to, title, msgType, instructions string) (SendResult
 		return SendResult{}, err
 	}
 	id, deduped, err := f.store.SendGuarded(routerstore.SendReq{
-		From: from, To: to, Title: title, Type: msgType, Instructions: instructions,
+		From: from, To: to, Title: title, Type: msgType, Instructions: instructions, SourceItem: sourceItem,
 	})
 	if err != nil {
 		return SendResult{}, err // refused: no store row, no dispatch (§2b axiom 8)

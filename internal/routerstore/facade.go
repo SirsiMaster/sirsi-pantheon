@@ -118,16 +118,29 @@ func (s *SQLiteStore) sendGuardedOnce(r SendReq) (string, bool, error) {
 		return existing, true, nil
 	}
 
-	// Quota (§2b axiom 7): spend one slot in this sender's window bucket.
-	bucket := now.Truncate(SendWindow).Format("2006-01-02T15")
-	if _, err = tx.Exec(
-		`INSERT INTO send_quota(sender, bucket, count) VALUES (?, ?, 1)
-		 ON CONFLICT(sender, bucket) DO UPDATE SET count = send_quota.count + 1;`, r.From, bucket); err != nil {
-		return "", false, fmt.Errorf("routerstore: SendGuarded: quota: %w", err)
+	// Quota (§2b axiom 7): spend one slot in this sender's window bucket —
+	// UNLESS this send is a verified reply to an item actually addressed to
+	// this sender (isVerifiedReplyTx). A reply's volume is bounded by
+	// whatever storm someone else sent, not by this sender's own behavior,
+	// so charging it against this sender's budget throttles the victim of a
+	// review/request storm instead of its source. The check reads the real
+	// row, not the caller-claimed SourceItem field, so a sender cannot
+	// self-exempt by inventing an id (A35).
+	exemptReply, err := isVerifiedReplyTx(tx, r.SourceItem, r.From, r.To)
+	if err != nil {
+		return "", false, fmt.Errorf("routerstore: SendGuarded: verify reply: %w", err)
 	}
-	var used int
-	if err = tx.QueryRow(`SELECT count FROM send_quota WHERE sender = ? AND bucket = ?;`, r.From, bucket).Scan(&used); err != nil {
-		return "", false, fmt.Errorf("routerstore: SendGuarded: quota read: %w", err)
+	bucket := now.Truncate(SendWindow).Format("2006-01-02T15")
+	used := 0
+	if !exemptReply {
+		if _, err = tx.Exec(
+			`INSERT INTO send_quota(sender, bucket, count) VALUES (?, ?, 1)
+			 ON CONFLICT(sender, bucket) DO UPDATE SET count = send_quota.count + 1;`, r.From, bucket); err != nil {
+			return "", false, fmt.Errorf("routerstore: SendGuarded: quota: %w", err)
+		}
+		if err = tx.QueryRow(`SELECT count FROM send_quota WHERE sender = ? AND bucket = ?;`, r.From, bucket).Scan(&used); err != nil {
+			return "", false, fmt.Errorf("routerstore: SendGuarded: quota read: %w", err)
+		}
 	}
 	if used > MaxSendsPerSenderPerWindow {
 		// Over-quota UPDATES a singleton throttle item; it never appends.
@@ -169,6 +182,39 @@ func (s *SQLiteStore) sendGuardedOnce(r SendReq) (string, bool, error) {
 		return "", false, fmt.Errorf("routerstore: SendGuarded: commit: %w", err)
 	}
 	return id, false, nil
+}
+
+// isVerifiedReplyTx reports whether this send is a verified, ONE-TIME reply:
+// sourceItem names a real item that was addressed TO `from` and sent BY `to`
+// (a genuine round-trip, not a caller's unchecked claim — A35: exempting on a
+// self-declared field would let any sender bypass quota by inventing an id),
+// AND `from` has not already spent this same sourceItem's exemption (without
+// that cap, one inbound item would buy unlimited exempt sends — the
+// rate-limit-bypass the security review flagged). A missing, foreign, or
+// already-used source item is "not exempt", never an error — an unverifiable
+// or exhausted claim just falls back to the normal quota.
+func isVerifiedReplyTx(tx *txHandle, sourceItem, from, to string) (bool, error) {
+	if strings.TrimSpace(sourceItem) == "" {
+		return false, nil
+	}
+	var fromAgent, toAgent string
+	err := tx.QueryRow(`SELECT from_agent, to_agent FROM items WHERE id = ?;`, sourceItem).Scan(&fromAgent, &toAgent)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("lookup source item %s: %w", sourceItem, err)
+	}
+	if toAgent != from || fromAgent != to {
+		return false, nil
+	}
+	var alreadyUsed int
+	if err := tx.QueryRow(
+		`SELECT COUNT(*) FROM items WHERE source_item = ? AND from_agent = ?;`, sourceItem, from,
+	).Scan(&alreadyUsed); err != nil {
+		return false, fmt.Errorf("check prior reply to %s: %w", sourceItem, err)
+	}
+	return alreadyUsed == 0, nil
 }
 
 // escalateTx upserts the keyed-singleton escalation/throttle item on

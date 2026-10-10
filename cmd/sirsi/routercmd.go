@@ -661,7 +661,7 @@ var routerRespondCmd = &cobra.Command{
 		}
 		body := fmt.Sprintf("RESPONSE to your request %q (your item %s, closed with this as the Result).\n\n%s",
 			item.Title, args[0], result)
-		res, err := f.Send(me, item.From, title, "decision", body)
+		res, err := f.SendReply(me, item.From, title, "decision", body, args[0])
 		if err != nil {
 			return fmt.Errorf("notifying %s FAILED — %s left OPEN, nothing lost, rerun respond: %w",
 				item.From, args[0], err)
