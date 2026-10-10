@@ -102,6 +102,59 @@ func TestSafeRunBlocksHazardousCommand(t *testing.T) {
 	}
 }
 
+func TestPreflightBlocksDirectDisplayPowerRoutes(t *testing.T) {
+	for _, command := range [][]string{
+		{"pmset", "displaysleepnow"},
+		{"/usr/bin/pmset", "displaysleepnow"},
+		{"sudo", "/usr/bin/pmset", "sleepnow"},
+		{"zsh", "-lc", "pmset displaysleepnow"},
+		{"sudo", "-u", "root", "/usr/bin/pmset", "displaysleepnow"},
+		{"pmset", "-a", "displaysleep", "1"},
+		{"/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession", "-suspend"},
+	} {
+		t.Run(strings.Join(command, "_"), func(t *testing.T) {
+			report := Preflight(PreflightOptions{
+				Command:        command,
+				Platform:       healthyPlatform(),
+				LoadProvider:   func() (float64, float64, error) { return 1, 1, nil },
+				HealthProvider: healthyDoctor,
+			})
+			if report.Verdict != VerdictBlock {
+				t.Fatalf("verdict = %s, want block; findings=%v", report.Verdict, report.Findings)
+			}
+		})
+	}
+	if IsDirectDisplayPowerCommand([]string{"pmset", "-g"}) {
+		t.Fatal("read-only pmset query must remain allowed")
+	}
+	if IsDirectDisplayPowerShell(`printf '%s' 'pmset displaysleepnow'`) || IsDirectDisplayPowerShell(`echo 'pmset displaysleepnow'`) {
+		t.Fatal("text canary must not be mistaken for a display-power invocation")
+	}
+	for _, command := range []string{
+		`echo harmless; /usr/bin/pmset displaysleepnow`,
+		`printf '%s' ok && /System/Library/CoreServices/Menu\ Extras/User.menu/Contents/Resources/CGSession -suspend`,
+		`printf '%s' "$(pmset displaysleepnow)"`,
+		"printf '%s' `pmset displaysleepnow`",
+	} {
+		if !IsDirectDisplayPowerShell(command) {
+			t.Fatalf("shell composition bypassed display-power denial: %q", command)
+		}
+	}
+}
+
+func TestSafeRunCannotForceDirectDisplayPowerRoute(t *testing.T) {
+	result, err := SafeRun(context.Background(), RunOptions{
+		Command:        []string{"pmset", "displaysleepnow"},
+		Platform:       healthyPlatform(),
+		LoadProvider:   func() (float64, float64, error) { return 1, 1, nil },
+		HealthProvider: healthyDoctor,
+		Force:          true,
+	})
+	if err == nil || result == nil || result.ExitCode != 126 {
+		t.Fatalf("forced display-power route escaped denial: result=%#v err=%v", result, err)
+	}
+}
+
 func TestSafeRunTruncatesOutput(t *testing.T) {
 	result, err := SafeRun(context.Background(), RunOptions{
 		Command:        []string{"printf", strings.Repeat("x", 128)},

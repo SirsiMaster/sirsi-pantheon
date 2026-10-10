@@ -137,6 +137,13 @@ func AnalyzeCommand(command []string) []Finding {
 	}
 
 	var findings []Finding
+	if IsDirectDisplayPowerCommand(command) {
+		findings = append(findings, Finding{
+			Severity: string(VerdictBlock),
+			Check:    "desktop-custody",
+			Message:  "direct display-power commands are denied; use Pantheon's custody-gated desktop actuator",
+		})
+	}
 	name := filepath.Base(command[0])
 	lowerName := strings.ToLower(name)
 	joined := strings.ToLower(strings.Join(command, " "))
@@ -185,6 +192,215 @@ func AnalyzeCommand(command []string) []Finding {
 	return findings
 }
 
+// IsDirectDisplayPowerCommand recognizes the narrow set of macOS display
+// disruption routes that must never run through a generic agent shell. It is
+// intentionally a deny list for managed command surfaces, not a claimed shell
+// sandbox: arbitrary unmanaged processes remain outside agentguard's scope.
+//
+// It recognizes the direct invocation forms used by managed tools (absolute
+// paths, sudo, and sh/zsh -c). It deliberately does not claim to parse an
+// arbitrary shell program; unmanaged shell composition stays outside this
+// narrow command-boundary control. A read-only `pmset -g` is not matched.
+func IsDirectDisplayPowerCommand(command []string) bool {
+	if len(command) == 0 {
+		return false
+	}
+	name := filepath.Base(normalizeCommandToken(command[0]))
+	if name == "sh" || name == "bash" || name == "zsh" {
+		for i, arg := range command[:len(command)-1] {
+			if strings.Contains(normalizeCommandToken(arg), "c") && strings.HasPrefix(normalizeCommandToken(arg), "-") {
+				return IsDirectDisplayPowerShell(command[i+1])
+			}
+		}
+	}
+	return isDirectDisplayPowerInvocation(command)
+}
+
+// IsDirectDisplayPowerShell applies the same narrow check to the command text
+// received from Codex/Claude shell tools. It keeps quoted text supplied to
+// harmless commands harmless: `printf 'pmset displaysleepnow'` is not an
+// invocation and is therefore permitted as a safe activation canary.
+func IsDirectDisplayPowerShell(command string) bool {
+	for _, invocation := range shellInvocations(command) {
+		if isDirectDisplayPowerInvocation(invocation) {
+			return true
+		}
+	}
+	return false
+}
+
+// shellInvocations is deliberately a small, bounded shell lexer rather than a
+// shell evaluator. It identifies executable words separated by the shell
+// operators that can start another command, while preserving quoted literals
+// as arguments. It also recurses into command substitutions, because those do
+// execute commands. The guard does not claim to be a general shell sandbox;
+// malformed or exotic shell syntax remains subject to the shell itself.
+func shellInvocations(command string) [][]string {
+	var (
+		invocations [][]string
+		words       []string
+		word        strings.Builder
+		quote       byte
+		escaped     bool
+	)
+	finishWord := func() {
+		if word.Len() != 0 {
+			words = append(words, word.String())
+			word.Reset()
+		}
+	}
+	finishInvocation := func() {
+		finishWord()
+		if len(words) != 0 {
+			invocations = append(invocations, words)
+			words = nil
+		}
+	}
+	for i := 0; i < len(command); i++ {
+		ch := command[i]
+		if escaped {
+			word.WriteByte(ch)
+			escaped = false
+			continue
+		}
+		if ch == '\\' && quote != '\'' {
+			escaped = true
+			continue
+		}
+		if quote != 0 {
+			if ch == quote {
+				quote = 0
+				continue
+			}
+			if quote == '"' && ch == '$' && i+1 < len(command) && command[i+1] == '(' {
+				if end := shellClosingParen(command, i+2); end >= 0 {
+					invocations = append(invocations, shellInvocations(command[i+2:end])...)
+					i = end
+					continue
+				}
+			}
+			word.WriteByte(ch)
+			continue
+		}
+		switch ch {
+		case '\'', '"':
+			quote = ch
+		case '$':
+			if i+1 < len(command) && command[i+1] == '(' {
+				if end := shellClosingParen(command, i+2); end >= 0 {
+					invocations = append(invocations, shellInvocations(command[i+2:end])...)
+					i = end
+					continue
+				}
+			}
+			word.WriteByte(ch)
+		case '`':
+			if end := strings.IndexByte(command[i+1:], '`'); end >= 0 {
+				end += i + 1
+				invocations = append(invocations, shellInvocations(command[i+1:end])...)
+				i = end
+				continue
+			}
+			word.WriteByte(ch)
+		case ' ', '\t', '\r':
+			finishWord()
+		case ';', '\n', '|', '&':
+			finishInvocation()
+			if i+1 < len(command) && command[i+1] == ch && (ch == '|' || ch == '&') {
+				i++
+			}
+		default:
+			word.WriteByte(ch)
+		}
+	}
+	finishInvocation()
+	return invocations
+}
+
+func shellClosingParen(command string, start int) int {
+	depth := 1
+	var quote byte
+	escaped := false
+	for i := start; i < len(command); i++ {
+		ch := command[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if ch == '\\' && quote != '\'' {
+			escaped = true
+			continue
+		}
+		if quote != 0 {
+			if ch == quote {
+				quote = 0
+			}
+			continue
+		}
+		if ch == '\'' || ch == '"' {
+			quote = ch
+			continue
+		}
+		switch ch {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+func isDirectDisplayPowerInvocation(command []string) bool {
+	for len(command) > 0 {
+		name := filepath.Base(normalizeCommandToken(command[0]))
+		if name == "sh" || name == "bash" || name == "zsh" {
+			for i, arg := range command[:len(command)-1] {
+				normalized := normalizeCommandToken(arg)
+				if strings.HasPrefix(normalized, "-") && strings.Contains(normalized, "c") {
+					return IsDirectDisplayPowerShell(strings.Join(command[i+1:], " "))
+				}
+			}
+			return false
+		}
+		if name == "sudo" || name == "doas" || name == "exec" {
+			command = command[1:]
+			for len(command) > 0 && strings.HasPrefix(normalizeCommandToken(command[0]), "-") {
+				option := normalizeCommandToken(command[0])
+				command = command[1:]
+				if (option == "-u" || option == "-g" || option == "-h" || option == "-p" || option == "-r" || option == "-t") && len(command) > 0 {
+					command = command[1:]
+				}
+			}
+			continue
+		}
+		switch name {
+		case "pmset":
+			for _, arg := range command[1:] {
+				switch normalizeCommandToken(arg) {
+				case "displaysleepnow", "sleepnow", "lock", "displaysleep":
+					return true
+				}
+			}
+		case "cgsession":
+			for _, arg := range command[1:] {
+				if normalizeCommandToken(arg) == "-suspend" {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return false
+}
+
+func normalizeCommandToken(value string) string {
+	return strings.ToLower(strings.Trim(value, " \t\n\r'\";()[]{}"))
+}
+
 func SafeRun(ctx context.Context, opts RunOptions) (*RunResult, error) {
 	if len(opts.Command) == 0 {
 		return nil, errors.New("command is required")
@@ -206,7 +422,7 @@ func SafeRun(ctx context.Context, opts RunOptions) (*RunResult, error) {
 		IgnoreChecks:   opts.IgnoreChecks,
 		HealthProvider: opts.HealthProvider,
 	})
-	if report.Verdict == VerdictBlock && !opts.Force {
+	if report.Verdict == VerdictBlock && (!opts.Force || hasNonBypassableBlock(report.Findings)) {
 		return &RunResult{Report: report, ExitCode: 126}, fmt.Errorf("agent safety preflight blocked command")
 	}
 
@@ -258,6 +474,15 @@ func SafeRun(ctx context.Context, opts RunOptions) (*RunResult, error) {
 		FilteredBytes: filtered.FilteredBytes,
 		Truncated:     lim.truncated || filtered.Truncated,
 	}, err
+}
+
+func hasNonBypassableBlock(findings []Finding) bool {
+	for _, finding := range findings {
+		if finding.Severity == string(VerdictBlock) && finding.Check == "desktop-custody" {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *Report) add(verdict Verdict, check, message string) {
