@@ -1,10 +1,10 @@
 # Ra–Horus Fabric — Diagram index (SL-DIAGRAM-001)
 
-**Wing:** `stacklab.wing.ra-horus-fabric` · **Owner of every row:** Ra unless stated · **Source revision:** main `c1a78077` · **Last review:** 2026-10-05
+**Wing:** `stacklab.wing.ra-horus-fabric` · **Owner of every row:** Ra unless stated · **Source revision:** main `0ed15ac9` · **Last review:** 2026-10-10
 
 Coverage is reported against the whole process inventory below, not against what is already drawn.
 
-**Covered (logical + data): 4 of 18. Drafted, awaiting its owner's confirmation: 1. Open: 13.**
+**Covered (logical + data): 10 of 18 (6 drawn this pass: P10, P11, P13, P14, P15, P17; P06/P07/P16 and P08/P09/P12 are drawn on open, unmerged PRs #1047/#1048 — not yet landed on this branch). Drafted, awaiting its owner's confirmation: 1. Open: 7 (P06, P07, P08, P09, P12, P16, P18).
 
 State, sequence and recovery views are marked per row. A row is complete only when it has a logical view and a data view; every gap stays OPEN with a next action.
 
@@ -19,14 +19,14 @@ State, sequence and recovery views are marked per row. A row is complete only wh
 | RA-P07 | Thread registration and heartbeat | session start | OPEN | OPEN | OPEN | implemented | draw |
 | RA-P08 | Spool relay forwarding | any lane call | OPEN | OPEN | OPEN | implemented | draw; include the 30 s timeout class |
 | RA-P09 | Router service authorization (host token, thread binding, audience log) | every gated call | OPEN | OPEN | OPEN | implemented | draw; confirm what authenticates a lane |
-| RA-P10 | Quarantine stand-down and lift | owner or Ra | OPEN | OPEN | OPEN | implemented | draw |
-| RA-P11 | Horus supervisor duties: dispatch pump, hourly sweep, registry police, thread census | supervisor cadence | OPEN | OPEN | OPEN | implemented | draw |
+| RA-P10 | Quarantine stand-down and lift | owner or Ra | [RA-P10](diagrams/RA-P10-quarantine-stand-down-and-lift.md) | same file | yes | implemented | none |
+| RA-P11 | Horus supervisor duties: dispatch pump, hourly sweep, registry police, thread census | supervisor cadence | [RA-P11](diagrams/RA-P11-horus-supervisor-duties.md) | same file | — | implemented | none |
 | RA-P12 | Lane escalation: "lane needs you" alert and auto-resolve | lane unreachable | OPEN | OPEN | OPEN | implemented | draw from `internal/router/laneescalation.go` |
-| RA-P13 | Swap hygiene sampling | `sirsi swap-hygiene` | OPEN | OPEN | OPEN | implemented | draw |
-| RA-P14 | Dashboard read path | `sirsi dashboard` | OPEN | OPEN | OPEN | implemented | draw: bounded reads (`ListActive`, `ListSince`, `CountClosed`) |
-| RA-P15 | Claim eligibility (`router task why`) | refused claim | OPEN | OPEN | OPEN | implemented | draw |
+| RA-P13 | Swap hygiene sampling | `sirsi swap-hygiene` | [RA-P13](diagrams/RA-P13-swap-hygiene-sampling.md) | same file | — | implemented | none |
+| RA-P14 | Dashboard read path | `sirsi dashboard` | [RA-P14](diagrams/RA-P14-dashboard-read-path.md) | same file | — | implemented | none |
+| RA-P15 | Claim eligibility (`router task why`) | refused claim | [RA-P15](diagrams/RA-P15-claim-eligibility.md) | same file | — | implemented | none |
 | RA-P16 | Mailbox alias and reassign | send to a retired lane | OPEN | OPEN | OPEN | implemented | draw (ADR-072 C5) |
-| RA-P17 | Router service deploy | release with a new Store method | partly in RA-P04 | OPEN | OPEN | implemented | separate view |
+| RA-P17 | Router service deploy | release with a new Store method | [RA-P17](diagrams/RA-P17-router-service-deploy.md) | same file | — | implemented | none |
 | RA-P18 | Ma'at pre-push gate and CI | `git push`, PR | OPEN | OPEN | OPEN | implemented; owner claude-pantheon | claude-pantheon draws or confirms (item sent 2026-10-05) |
 
 Editable source is the Mermaid in each linked file. Each file renders in any Mermaid viewer.
