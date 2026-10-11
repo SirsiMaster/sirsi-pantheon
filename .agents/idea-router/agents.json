@@ -923,6 +923,7 @@
     "cylton-apollo": "claude-apollo-m5-rail",
     "codex-inference": "codex-apollo",
     "codex-sne-runtime": "codex-apollo",
+    "mercury-m5": "mercury",
     "codex-io": "claude-io",
     "codex-nexus": "claude-nexus",
     "codex-home": "claude-home",
