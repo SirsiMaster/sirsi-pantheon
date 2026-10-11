@@ -405,7 +405,7 @@ func (f *Facade) ListAll() ([]work.Item, error) {
 	// unioning the frozen files inflates every whole-fabric count (open AND
 	// closed) with items the store already resolved.
 	if routercfg.StoreWake() {
-		rows, err := f.store.ListAll(context.Background())
+		rows, err := routerstore.ListAllPaged(context.Background(), f.store, routerstore.ListPageMax)
 		if err != nil {
 			return nil, fmt.Errorf("store list unavailable (store is the cutover authority): %w", err)
 		}

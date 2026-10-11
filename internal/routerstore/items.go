@@ -262,6 +262,53 @@ func (s *SQLiteStore) ListAll(ctx context.Context) ([]Item, error) {
 	return scanItems(rows)
 }
 
+// ListPageMax bounds one ListPage response: at ~3.7 KB per item (measured 2026-10-11: 17.6k items hit the
+// 64 MiB spool ceiling) a full page is ~7 MB, well inside every transport limit.
+const ListPageMax = 2000
+
+// ListPage returns up to limit items with id > afterID, oldest id first. Ids are time-ordered, so
+// walking pages with the last id as the cursor visits every item that existed when the walk began
+// exactly once; an item inserted behind the cursor mid-walk is not revisited (a dump is not a snapshot).
+func (s *SQLiteStore) ListPage(ctx context.Context, afterID string, limit int) ([]Item, error) {
+	if limit < 1 || limit > ListPageMax {
+		limit = ListPageMax
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT `+itemCols+` FROM items WHERE id > ? ORDER BY id ASC LIMIT ?;`, afterID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("routerstore: ListPage: %w", err)
+	}
+	defer rows.Close()
+	return scanItems(rows)
+}
+
+// ListAllPaged reads the whole ledger through ListPage so no single response grows with the ledger.
+// A page whose last id does not advance the cursor is an error, never a retry: a server that keeps
+// returning the same page must not hold the caller in an endless loop.
+func ListAllPaged(ctx context.Context, s interface {
+	ListPage(context.Context, string, int) ([]Item, error)
+}, pageSize int) ([]Item, error) {
+	if pageSize < 1 || pageSize > ListPageMax {
+		pageSize = ListPageMax
+	}
+	var all []Item
+	after := ""
+	for {
+		page, err := s.ListPage(ctx, after, pageSize)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, page...)
+		if len(page) < pageSize {
+			return all, nil
+		}
+		last := page[len(page)-1].ID
+		if last <= after {
+			return nil, fmt.Errorf("routerstore: ListAllPaged: cursor did not advance past %q (page of %d)", after, len(page))
+		}
+		after = last
+	}
+}
+
 // ListActive returns the items that are not terminal, plus the terminal items
 // they reference through blocked_by (dependency truth for the ledger). Whole-fabric
 // surfaces (router ledger, router status) only need open work; ListAll reads every

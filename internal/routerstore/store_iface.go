@@ -64,6 +64,10 @@ type Store interface {
 	CountClosed(ctx context.Context) (int, error)
 	// ListSince is ListActive plus items closed at or after since (RFC3339).
 	ListSince(ctx context.Context, since string) ([]Item, error)
+	// ListPage is ListAll in id order, one bounded page at a time: items with id > afterID, at most
+	// limit (clamped to [1, ListPageMax]). The full-ledger read grows without bound and crossed the
+	// spool's 64 MiB response ceiling; callers that need history page with ListAllPaged.
+	ListPage(ctx context.Context, afterID string, limit int) ([]Item, error)
 	ListHostTokens() ([]HostToken, error)
 	ListIdentifiers(namespace string) ([]Identifier, error)
 	ListRequirements(owner string) ([]Requirement, error)
