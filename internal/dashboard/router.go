@@ -18,6 +18,7 @@ type RouterSnapshot struct {
 	Lanes         RouterLanes       `json:"lanes"`
 	Queue         []RouterQueueRow  `json:"queue"`
 	Items         []RouterQueueItem `json:"items"`
+	Recipients    []string          `json:"recipients"`
 	Consumers     RouterConsumers   `json:"consumers"`
 	Registry      RouterRegistryPin `json:"registry"`
 	KnownFailures []RouterKnownFail `json:"known_failures"`
@@ -31,6 +32,8 @@ type RouterSnapshot struct {
 // RouterQueueItem is the read-only drill-down from the same active-item read
 // used for Queue and lane counts. The UI never resolves a separate local store.
 type RouterQueueItem struct {
+	Revision     string `json:"revision"`
+	Status       string `json:"status"`
 	ID           string `json:"id"`
 	From         string `json:"from"`
 	To           string `json:"to"`

@@ -48,6 +48,10 @@ func collectDashboardRouter() (result dashboard.RouterSnapshot, _ error) {
 	if err != nil {
 		return snap, fmt.Errorf("registry: %w", err)
 	}
+	for id := range reg.Agents {
+		snap.Recipients = append(snap.Recipients, id)
+	}
+	sort.Strings(snap.Recipients)
 	lap("registry")
 	threads, err := router.LoadThreadRegistry(routerRoot)
 	if err != nil {
@@ -91,7 +95,7 @@ func collectDashboardRouter() (result dashboard.RouterSnapshot, _ error) {
 	snap.Items = make([]dashboard.RouterQueueItem, 0, len(items))
 	for _, it := range items {
 		per[it.To]++
-		snap.Items = append(snap.Items, dashboard.RouterQueueItem{ID: it.ID, From: it.From, To: it.To, Title: it.Title, Type: it.Type, Opened: it.Opened, Instructions: it.Instructions, BlockedBy: it.BlockedBy, AckedAt: it.AckedAt})
+		snap.Items = append(snap.Items, dashboard.RouterQueueItem{Revision: dispatch.ItemRevision(it), Status: it.Status, ID: it.ID, From: it.From, To: it.To, Title: it.Title, Type: it.Type, Opened: it.Opened, Instructions: it.Instructions, BlockedBy: it.BlockedBy, AckedAt: it.AckedAt})
 	}
 	sort.Slice(snap.Items, func(i, j int) bool {
 		if snap.Items[i].Opened != snap.Items[j].Opened {

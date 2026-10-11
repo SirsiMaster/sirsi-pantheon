@@ -80,6 +80,7 @@ type Config struct {
 	// router surface consumed by Nexus. Empty uses the local development and
 	// Sirsi production defaults; wildcard CORS is never used.
 	SurfaceOrigins []string
+	RouterActionFn RouterActionProcessor
 	// MaatDecisionsFn supplies the shared, read-only decision projection. The
 	// dashboard never recalculates a Ma'at determination from reservations or
 	// host facts; it renders the producer's recorded assessment verbatim.
@@ -128,6 +129,8 @@ type Server struct {
 	confirm        *ConfirmGuard
 	fleet          *FleetTracker
 	surfaceOrigins map[string]struct{}
+	ownerCSRF      string
+	ownerActionMu  sync.Mutex
 }
 
 // New creates a dashboard server with all routes registered.
@@ -147,7 +150,7 @@ func New(cfg Config) *Server {
 			allowed[origin] = struct{}{}
 		}
 	}
-	s := &Server{cfg: cfg, confirm: NewConfirmGuard(), fleet: NewFleetTracker(cfg.Unroutable), surfaceOrigins: allowed}
+	s := &Server{cfg: cfg, confirm: NewConfirmGuard(), fleet: NewFleetTracker(cfg.Unroutable), surfaceOrigins: allowed, ownerCSRF: ownerToken()}
 
 	// Initialize runner if we have both an event buffer and a binary path.
 	if cfg.Events != nil && cfg.SirsiBin != "" {
@@ -201,6 +204,8 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("/api/router", s.apiRouter)          // router panel: lanes, queue, known failures, swap, releases
 	mux.HandleFunc("/api/router/v1/manifest", s.apiRouterSurfaceManifest)
 	mux.HandleFunc("/api/router/v1/snapshot", s.apiRouterSurfaceSnapshot)
+	mux.HandleFunc("/api/router/v1/owner-session", s.apiRouterOwnerSession)
+	mux.HandleFunc("/api/router/v1/action", s.apiRouterOwnerAction)
 	mux.HandleFunc("/api/fabric", s.apiFabric) // unified work/message/lane contract
 	mux.HandleFunc("/api/maat/decisions", s.apiMaatDecisions)
 	mux.HandleFunc("/api/maat/casebook", s.apiMaatCasebook)

@@ -30,6 +30,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
   (a `>=` cursor fails fast). **Deploy order:** the service must carry `ListPage` before clients that page are released.
 
 ## [0.24.100] — 2026-10-11
+- **Owner router actions:** same-origin loopback console now sends owner replies, assigns requests with retained history, and records closure dispositions through the canonical dispatch facade. Browser origin/token checks, stale-selection rejection, claimed-item protection, bounded JSON and persistent in-page drafts cover the write path. Read-only Nexus integration does not grant owner mutation authority.
 
 - **Router queue drill-down:** headline and recipient counts open actual messages, with full request inspection and oldest-first ordering. Include every waiting recipient (including owner and identities outside the lane registry); remove silent eight-lane truncation. Counts and details derive from the same active-item read. Missing details or inconsistent snapshot totals are explicitly disclosed.
 

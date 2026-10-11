@@ -69,6 +69,7 @@ func runDashboard(cmd *cobra.Command, args []string) {
 		LedgerFn:        collectDashboardLedger,
 		FleetFn:         collectDashboardFleet,
 		RouterFn:        collectDashboardRouter,
+		RouterActionFn:  dashboardOwnerAction,
 		Unroutable:      dashboardUnroutable(),
 		FabricFn:        collectDashboardFabric,
 		MaatDecisionsFn: collectDashboardMaatDecisions,

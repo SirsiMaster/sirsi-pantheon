@@ -88,7 +88,33 @@ function vQueue(d){
  h+='<p class="sub">Showing '+rows.length+' of '+all+' open items'+(state.recipient==='*'?'':' for '+esc(state.recipient))+'. Oldest first. Received '+esc(d.generated_at)+'.</p>';
  return h+(rows.length?'<table class="table responsive-table"><thead><tr><th>Request</th><th>From → recipient</th><th>Opened</th><th>State</th></tr></thead><tbody>'+rows.map(function(x){return '<tr><td data-label="Request"><button class="lane-select" data-item="'+esc(x.id)+'">'+esc(x.title||x.id)+'</button><div class="dim mono">'+esc(x.id)+'</div></td><td data-label="Routing">'+esc(x.from)+' → '+esc(x.to)+'</td><td data-label="Opened">'+esc(x.opened||'Unknown')+'</td><td data-label="State">'+(x.blocked_by?'Blocked by '+esc(x.blocked_by):x.acked_at?'Acknowledged':'Awaiting acknowledgment')+'</td></tr>'}).join('')+'</tbody></table>':'<p class="empty">No open items for this selection.</p>');
 }
-function itemInspector(id){var x=(state.data.items||[]).find(function(x){return x.id===id});if(!x)return;showInspector(x.title||x.id,'<p class="mono">'+esc(x.id)+'</p><p>'+esc(x.from)+' → '+esc(x.to)+'</p><p class="sub">Opened '+esc(x.opened)+' · '+esc(x.type||'Request')+'</p><h3>Request</h3><pre class="message-body">'+esc(x.instructions||'No request body supplied.')+'</pre>',true)}
+var drafts={},ownerSession=null;
+function itemInspector(id){
+ var x=(state.data.items||[]).find(function(x){return x.id===id});if(!x)return;
+ var draft=drafts[id]||{action:'reply',message:'',recipient:''};
+ var recipients=state.data.recipients||[];
+ showInspector(x.title||x.id,'<p class="mono">'+esc(x.id)+'</p><p>'+esc(x.from)+' → '+esc(x.to)+'</p><p class="sub">Opened '+esc(x.opened)+' · '+esc(x.type||'Request')+'</p>'+
+ '<form class="owner-composer" data-owner-form data-owner-item="'+esc(x.id)+'" data-revision="'+esc(x.revision)+'"><h3>Act as owner</h3><label for="owner-action">Action</label><select id="owner-action" name="action"><option value="reply">Reply — keep request open</option><option value="assign">Assign — move this request</option><option value="close">Close — record a disposition</option></select><div data-assignment hidden><label for="owner-recipient">Assign to</label><select id="owner-recipient" name="recipient"><option value="">Choose a lane</option>'+recipients.map(function(a){return '<option value="'+esc(a)+'">'+esc(a)+'</option>'}).join('')+'</select></div><label for="owner-message">Response / assignment note / closing disposition</label><textarea id="owner-message" name="message" maxlength="32768" rows="5" required placeholder="Write your response or explain the disposition…">'+esc(draft.message)+'</textarea><p class="sub" data-action-help></p><p class="action-error" data-action-status role="status" aria-live="polite"></p><button type="submit" class="btn primary" data-owner-submit>Send reply</button></form><details class="request-source" open><summary>Original request</summary><pre class="message-body">'+esc(x.instructions||'No request body supplied.')+'</pre></details>',true);
+ var f=$('[data-owner-form]');f.elements.action.value=draft.action;f.elements.recipient.value=draft.recipient;
+ function mode(){var a=f.elements.action.value;f.querySelector('[data-assignment]').hidden=a!=='assign';f.elements.recipient.required=a==='assign';f.querySelector('[data-owner-submit]').textContent=a==='reply'?'Send reply':a==='assign'?'Assign request':'Close item';f.querySelector('[data-action-help]').textContent=a==='reply'?'Creates a fresh owner response in '+x.from+'’s inbox. This request stays open.':a==='assign'?'Moves the same item and retains its history. A claimed worker item cannot be reassigned.':'Closes this item with your recorded disposition. It does not certify a build, review or release.';}
+ mode();f.addEventListener('input',function(){drafts[id]={action:f.elements.action.value,message:f.elements.message.value,recipient:f.elements.recipient.value}});f.elements.action.addEventListener('change',mode);
+ f.addEventListener('submit',async function(e){
+  e.preventDefault();if(f.dataset.busy==='true'||!f.reportValidity())return;
+  f.dataset.busy='true';Array.from(f.elements).forEach(function(el){el.disabled=true});
+  var status=f.querySelector('[data-action-status]');status.textContent='Submitting to the canonical router…';
+  var req={action:f.elements.action.value,item_id:id,expected:f.dataset.revision,recipient:f.elements.recipient.value,message:f.elements.message.value};
+  try{
+   ownerSession=ownerSession||await get('/api/router/v1/owner-session');
+   var response=await fetch('/api/router/v1/action',{method:'POST',headers:{'Content-Type':'application/json','X-Sirsi-Owner-Token':ownerSession.token},body:JSON.stringify(req),signal:AbortSignal.timeout(30000)});
+   var result=await response.json();if(!response.ok){if(response.status===403)ownerSession=null;throw new Error(result.error||('HTTP '+response.status))}
+   delete drafts[id];
+   var message=result.action==='reply'?'Reply delivered to '+result.recipient+' · '+result.response_id:result.action==='assign'?'Assigned to '+result.recipient+'; original item history retained.':'Item closed with your disposition.';
+   if(result.action==='reply'){f.elements.message.value='';status.className='action-success';status.textContent=message;await load()}
+   else{var dlg=$('.inspector');if(dlg)dlg.close();await load();$('#announcement').textContent=message;var notice=document.createElement('p');notice.className='action-success operation-notice';notice.setAttribute('role','status');notice.textContent=message;$('#view').prepend(notice)}
+  }catch(err){status.className='action-error';status.textContent=err.name==='TimeoutError'?'Result not confirmed. Your draft is preserved. Refresh the queue and check router records before retrying.':err.message;}
+  finally{f.dataset.busy='false';Array.from(f.elements).forEach(function(el){el.disabled=false});}
+ });
+}
 function vReleases(d){return '<div class="card">'+(d.releases||[]).map(function(x,i){return '<details class="release" data-release="'+i+'"><summary><strong>'+esc(x.version)+'</strong><span class="sub">'+esc(x.date||'Date not supplied')+' · '+plural((x.items||[]).length,'entry','entries')+'</span><p>'+esc((x.items||[])[0]||'No changes recorded for this release.')+'</p></summary><ul>'+(x.items||[]).map(function(t){return '<li>'+esc(t)+'</li>'}).join('')+'</ul></details>'}).join('')+'</div>'}
 function vFailures(d){
  var k=d.known_failures||[];

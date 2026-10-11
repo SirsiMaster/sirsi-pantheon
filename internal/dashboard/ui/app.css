@@ -198,6 +198,16 @@ button,.btn,.sort,.lane-select{min-width:44px;min-height:44px}
 .message-body{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;line-height:1.65}
 .toolbar{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}
 .toolbar [aria-pressed="true"]{color:var(--gold);border-color:var(--gold)}
+.owner-composer{margin:24px 0;padding:24px 0;border-block:1px solid var(--line)}
+.owner-composer label{display:block;margin:16px 0 8px;font-size:14px;font-weight:600}
+.owner-composer select,.owner-composer textarea{display:block;width:100%;max-width:100%;box-sizing:border-box;font:inherit;font-size:16px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px}
+.owner-composer textarea{resize:vertical;min-height:120px}
+.owner-composer :focus-visible{outline:2px solid var(--gold);outline-offset:3px}
+.owner-composer [disabled]{opacity:.6;cursor:wait}
+.action-error{color:var(--danger);overflow-wrap:anywhere}
+.action-success{color:var(--ok);overflow-wrap:anywhere}
+.operation-notice{padding:16px 0;border-bottom:1px solid var(--line)}
+.request-source summary{cursor:pointer;font-weight:600;padding:12px 0}
 input{caret-color:var(--gold)}
 *{scrollbar-color:var(--line) var(--bg);scrollbar-width:thin}
 @media(max-width:1100px){.workbench{grid-template-columns:1fr}.fabric-notes{padding-left:0;border-left:0;border-top:1px solid var(--line);padding-top:24px}}
