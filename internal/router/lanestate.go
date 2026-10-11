@@ -70,6 +70,7 @@ const (
 	VerdictWatchOnly    = "WATCH_ONLY"    // a loop exists but declares no consumer
 	VerdictUnstaffed    = "UNSTAFFED"     // no worker path at all
 	VerdictUnreachable  = "UNREACHABLE"   // a worker existed but has stopped reporting
+	VerdictResident     = "RESIDENT"      // declares no router wake mechanism but runs its own LaunchAgent
 )
 
 // PingResult is what a sender is told about a recipient before sending.
@@ -177,12 +178,16 @@ func PingLane(reg *ThreadRegistry, cfg AgentConfig, agentID string, now time.Tim
 		res.Verdict, res.Thread = VerdictUnreachable, stale.ThreadID
 		res.Detail = "its worker last reported " + ago(now, stale.LastSeenAt) + " on " + hostOrUnknown(stale.Host)
 	default:
-		res.Verdict = VerdictUnstaffed
 		mech := ExplicitWakeMechanism(cfg)
-		switch mech {
-		case "", WakeNone:
+		switch {
+		case cfg.Type == "service" && (mech == "" || mech == WakeNone) && cfg.Wake.LaunchAgentLabel != "":
+			res.Verdict, res.Workable = VerdictResident, true
+			res.Detail = "resident via its own LaunchAgent " + cfg.Wake.LaunchAgentLabel + ": the router does not spawn it, it self-polls"
+		case mech == "", mech == WakeNone:
+			res.Verdict = VerdictUnstaffed
 			res.Detail = "no worker path: wake mechanism is none and no session is registered"
 		default:
+			res.Verdict = VerdictUnstaffed
 			res.Detail = "wake mechanism " + mech + " is declared but no worker is reporting"
 		}
 	}
