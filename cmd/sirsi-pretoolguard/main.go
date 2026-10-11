@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/agentguard"
 )
@@ -41,32 +40,18 @@ func run(in io.Reader, stderr io.Writer) error {
 	// string command/cmd field is relevant to this narrow denial.
 	var toolInput map[string]json.RawMessage
 	if err := json.Unmarshal(input.ToolInput, &toolInput); err != nil {
-		return fmt.Errorf("malformed tool input")
-	}
-	command, present, err := commandFromToolInput(toolInput)
-	if err != nil {
-		return err
-	}
-	if !present {
+		// Valid scalar, array, or absent payloads carry no command fields.
 		return nil
 	}
-	if agentguard.IsDirectDisplayPowerShell(command) {
-		return fmt.Errorf("direct pmset display-power operation denied; an explicit, active, unrevoked desktop-custody grant is required")
-	}
-	return nil
-}
-
-func commandFromToolInput(input map[string]json.RawMessage) (string, bool, error) {
+	// Inspect both fields: a harmless command must not hide a disruptive cmd.
 	for _, key := range []string{"command", "cmd"} {
-		raw, ok := input[key]
-		if !ok {
+		var command string
+		if raw, ok := toolInput[key]; !ok || json.Unmarshal(raw, &command) != nil {
 			continue
 		}
-		var command string
-		if err := json.Unmarshal(raw, &command); err != nil || strings.TrimSpace(command) == "" {
-			return "", false, fmt.Errorf("tool input %q must be a nonempty command string", key)
+		if agentguard.IsDirectDisplayPowerShell(command) {
+			return fmt.Errorf("direct pmset display-power operation denied; an explicit, active, unrevoked desktop-custody grant is required")
 		}
-		return command, true, nil
 	}
-	return "", false, nil
+	return nil
 }

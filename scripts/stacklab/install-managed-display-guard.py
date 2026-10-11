@@ -3,10 +3,10 @@
 import hashlib,pathlib,subprocess,sys
 def require(ok, message):
  if not ok: raise RuntimeError(message)
-expected='e08b331ed8e84b84d41cc5f9b5d4b8224af54da3a70185ecb66a84d843a87206'
+expected='88d7b791721af3eeeba167e18f7161b2201e90a677218da400ee193c618aa840'
 source=pathlib.Path(sys.argv[1]);policy=pathlib.Path(__file__).with_name('managed-requirements.toml')
 require(hashlib.sha256(source.read_bytes()).hexdigest()==expected,'guard hash mismatch')
-require(hashlib.sha256(policy.read_bytes()).hexdigest()=='370956d366430011542ec6303e0c4eaa3e2290f81aab8fd91905e0d4ebcb9156','policy hash mismatch')
+require(hashlib.sha256(policy.read_bytes()).hexdigest()=='66ee45441852eee31946722a6ea4cdbc1c3267845bb997f153d665a9d83f14c8','policy hash mismatch')
 root=pathlib.Path('/etc/codex');hooks=root/'hooks';destination=root/'requirements.toml'
 for p in [root,hooks]:
  if p.exists():
