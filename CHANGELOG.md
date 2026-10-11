@@ -138,12 +138,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 - **`claude-pantheon` shares the reserved consumer slot.** The independent reviewer on gating work waited 8+ minutes behind two long-running consumers ("held: slots") for a review request. It joins SSA and SHA on the one extra slot beyond the host cap; the cap itself is unchanged.
 
-- **Router queue drill-down:** headline and recipient counts open actual messages, with full request inspection and oldest-first ordering. Include every waiting recipient (including owner and identities outside the lane registry); remove silent eight-lane truncation. Counts and details derive from the same active-item read. Missing details or inconsistent snapshot totals are explicitly disclosed.
-
-- Claude, Codex, Gemini recovery roots and Thoth memory are protected from the
-  file cleaner. Claude history is inventory-only, not safe cache. All-lane
-  checkpoint coordination before maintenance is tracked separately; protection
-  alone does not prove that coordination exists.
 
 
 ## [0.24.96] — 2026-10-06
@@ -3369,13 +3363,7 @@ senders to use `claude-finalwishes`. Live dry run from the new registry: 120
 items across 6 aliases. Tests both directions; negative control: Send without
 alias resolution refuses the alias exactly as live senders are refused today.
 
-### Unreleased — connected Ra operator console delivery
-
-- Replace the disconnected duplicate `/router` mock with the shared embedded Horus operator workspace; truthful readiness counts, priority lane inspection and searchable navigation use the canonical snapshot.
-- Preserve queued recipients missing from the lane projection instead of hiding their work; identify their availability as unstaffed rather than inventing liveness.
-- Retired direct-file board entry points open the running loopback console instead of displaying disconnected zero counts.
-- Return listener bind failure before claiming the dashboard is running. Source/build provenance is available through the manifest; local delivery uses one user-owned LaunchAgent, without privileged prompts.
-- Add shared-page, explicit CORS and occupied-port startup regressions. Documentation distinguishes local delivery from public deployment and release qualification.
+### Unreleased — no title
 - **feat(maat): attribute GitHub submission admission to the registered agent session** (2026-10-01, PR #927). Adds `sirsi maat submit` Phase 1 admission for tag, release, release-edit, and merge submissions. Requester identity is resolved from the registered session marker, policy decisions are written to the existing Ma'at ledger, and unregistered sessions fail closed. Automatic watcher/release mutation remains explicitly out of scope. Refs: PR #927; ADR-062; PANTHEON_RULES.md A1/A7/A16/A32/A35
 
 ### Unreleased — acting-agent resolution never returns an undeclared agent

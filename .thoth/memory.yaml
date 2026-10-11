@@ -317,9 +317,3 @@ sync_protocol:
 # removes the editable sender field/undeclared `horus-local` alias. Swift
 # release build and CLI flag checks pass; full Go-suite host/router failures are
 # recorded in the build log.
-# 2026-10-08 SSA: owner Chrome was reading a file:// legacy routerboard, not a
-# running service. /router now shares the embedded Horus UI and canonical v1
-# snapshot, with dark brand tokens, searchable lanes and evidence inspection.
-# ai.sirsi.router.surface is the user-owned persistent loopback LaunchAgent;
-# no router service/wake-loop binary replacement or admin authorization.
-# Local delivery tests/receipt: docs/router-service/FRONTEND_DELIVERY_20261008.md.
