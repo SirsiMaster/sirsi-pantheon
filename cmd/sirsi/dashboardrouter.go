@@ -88,9 +88,17 @@ func collectDashboardRouter() (result dashboard.RouterSnapshot, _ error) {
 	}
 	lap("list_active")
 	per := map[string]int{}
+	snap.Items = make([]dashboard.RouterQueueItem, 0, len(items))
 	for _, it := range items {
 		per[it.To]++
+		snap.Items = append(snap.Items, dashboard.RouterQueueItem{ID: it.ID, From: it.From, To: it.To, Title: it.Title, Type: it.Type, Opened: it.Opened, Instructions: it.Instructions, BlockedBy: it.BlockedBy, AckedAt: it.AckedAt})
 	}
+	sort.Slice(snap.Items, func(i, j int) bool {
+		if snap.Items[i].Opened != snap.Items[j].Opened {
+			return snap.Items[i].Opened < snap.Items[j].Opened
+		}
+		return snap.Items[i].ID < snap.Items[j].ID
+	})
 	for a, n := range per {
 		snap.Queue = append(snap.Queue, dashboard.RouterQueueRow{Agent: a, Open: n})
 	}

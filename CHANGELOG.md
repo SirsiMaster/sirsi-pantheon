@@ -138,6 +138,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 - **`claude-pantheon` shares the reserved consumer slot.** The independent reviewer on gating work waited 8+ minutes behind two long-running consumers ("held: slots") for a review request. It joins SSA and SHA on the one extra slot beyond the host cap; the cap itself is unchanged.
 
+- **Router queue drill-down:** headline and recipient counts open actual messages, with full request inspection and oldest-first ordering. Include every waiting recipient (including owner and identities outside the lane registry); remove silent eight-lane truncation. Counts and details derive from the same active-item read. Missing details or inconsistent snapshot totals are explicitly disclosed.
+
+- Claude, Codex, Gemini recovery roots and Thoth memory are protected from the
+  file cleaner. Claude history is inventory-only, not safe cache. All-lane
+  checkpoint coordination before maintenance is tracked separately; protection
+  alone does not prove that coordination exists.
 
 
 ## [0.24.96] — 2026-10-06
