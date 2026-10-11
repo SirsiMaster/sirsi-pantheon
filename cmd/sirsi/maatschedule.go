@@ -383,7 +383,7 @@ var maatCoverageCmd = &cobra.Command{
 }
 
 var maatShouldDeferCmd = &cobra.Command{
-	Use: "should-defer <machine>", Short: "Exit 0 if a runner must defer (a quiet/loaded reservation covers the machine)", Args: cobra.ExactArgs(1),
+	Use: "should-defer <machine>", Short: "Exit 97 if a runner must defer (a quiet/loaded reservation covers the machine); exit 0 if clear", Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		l, err := maatLedger()
 		if err != nil {
