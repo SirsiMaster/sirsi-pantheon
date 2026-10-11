@@ -52,7 +52,7 @@ func TestPingLaneVerdicts(t *testing.T) {
 		{"suspended thread does not count", regWith(&Thread{AgentID: "a", Surface: "claude", Status: ThreadStatusSuspended, LastSeenAt: pingNow}), AgentConfig{}, VerdictUnstaffed, false, ""},
 		{"closed thread does not count", regWith(&Thread{AgentID: "a", Surface: "claude", Status: ThreadStatusClosed, LastSeenAt: pingNow}), AgentConfig{}, VerdictUnstaffed, false, ""},
 		{"someone else's thread is not mine", regWith(worker("b", true, ok, time.Minute)), AgentConfig{}, VerdictUnstaffed, false, ""},
-		{"no thread, but a service resident via its own LaunchAgent", regWith(), AgentConfig{Type: "service", Wake: WakeConfig{LaunchAgentLabel: "ai.sirsi.mercury.metal-runner"}}, VerdictResident, true, "ai.sirsi.mercury.metal-runner"},
+		{"no thread, but a service resident via its own LaunchAgent", regWith(), AgentConfig{Type: "service", Wake: WakeConfig{LaunchAgentLabel: "ai.sirsi.mercury.metal-runner"}}, VerdictResident, false, "not proven"},
 	}
 	for _, c := range cases {
 		got := PingLane(c.reg, c.cfg, "a", pingNow)

@@ -49,7 +49,8 @@ installed". Verdicts:
   WATCH_ONLY     a wake loop exists but declares no consumer
   UNSTAFFED      no worker path at all
   UNREACHABLE    its worker stopped reporting
-  RESIDENT       declares no router wake mechanism but self-polls via its own LaunchAgent
+  RESIDENT       declares no router wake mechanism but self-polls via its own LaunchAgent;
+                 this is the declared config, not a liveness check — readiness unknown
 
 A retired name resolves to its declared successor.
 
@@ -86,7 +87,7 @@ A retired name resolves to its declared successor.
 				}
 				out = append(out, router.PingLane(threads, cfg, id, time.Now().UTC()))
 			}
-			rank := map[string]int{router.VerdictUnreachable: 0, router.VerdictAuthRequired: 1, router.VerdictWatchOnly: 2, router.VerdictUnstaffed: 3, router.VerdictHeld: 4, router.VerdictWakeable: 5, router.VerdictResident: 6, router.VerdictLive: 7}
+			rank := map[string]int{router.VerdictUnreachable: 0, router.VerdictAuthRequired: 1, router.VerdictWatchOnly: 2, router.VerdictUnstaffed: 3, router.VerdictResident: 4, router.VerdictHeld: 5, router.VerdictWakeable: 6, router.VerdictLive: 7}
 			sort.Slice(out, func(i, j int) bool {
 				if rank[out[i].Verdict] != rank[out[j].Verdict] {
 					return rank[out[i].Verdict] < rank[out[j].Verdict]
