@@ -1,0 +1,32 @@
+import subprocess,time,statistics as st,json,sys
+SVC="https://sirsi-router-6kdf4or4qq-uc.a.run.app"
+def pct(v,p):
+    v=sorted(v);k=(len(v)-1)*p/100;f=int(k);c=min(f+1,len(v)-1);return v[f]+(v[c]-v[f])*(k-f)
+def curl(url):
+    o=subprocess.run(["curl","-s","-m","10","-o","/dev/null","-w","%{time_connect} %{time_appconnect} %{time_starttransfer} %{time_total}",url],capture_output=True,text=True).stdout.split()
+    return [float(x)*1000 for x in o]
+def run(cmd):
+    t=time.perf_counter();r=subprocess.run(cmd,capture_output=True,text=True,env=None);return (time.perf_counter()-t)*1000,r.returncode
+def series(name,fn,n=30):
+    xs=[];fails=0
+    for _ in range(n):
+        v=fn()
+        if v is None: fails+=1
+        else: xs.append(v)
+        time.sleep(1)
+    r={"series":name,"n":len(xs),"fail":fails}
+    if xs: r.update({"p50":round(pct(xs,50),1),"p95":round(pct(xs,95),1),"p99":round(pct(xs,99),1),"max":round(max(xs),1),"min":round(min(xs),1)})
+    print(json.dumps(r),flush=True);return xs
+def https_first_byte():
+    t=curl(SVC+"/");return t[2]
+def spool_pull():
+    ms,rc=run(["/usr/bin/env","zsh","-lc","sirsi router pull ra >/dev/null 2>&1"]);return ms if rc==0 else None
+def cli_local_noop():
+    ms,rc=run(["/usr/bin/env","zsh","-lc","sirsi version >/dev/null 2>&1"]);return ms if rc==0 else None
+def bogus():
+    t=curl("https://127.0.0.1:1/");return t[2] if t[2]>0 else None
+a=series("https_first_byte_to_cloudrun",https_first_byte)
+b=series("cli_noop_floor(sirsi version, zsh -lc)",cli_local_noop)
+c=series("spool_read(sirsi router pull ra)",spool_pull)
+d=series("NEG_CONTROL bogus host",bogus,5)
+json.dump({"https":a,"noop":b,"spool":c},open("m0_01_raw.json","w"))

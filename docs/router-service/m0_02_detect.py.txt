@@ -1,0 +1,29 @@
+import json,re,glob,os,datetime as d,statistics as st
+rows=[json.loads(l) for l in open('dump-20261011.jsonl') if l.strip()]
+def ts(s): return d.datetime.fromisoformat(s.replace('Z','+00:00'))
+by={}
+for r in rows:
+    if r.get('opened'): by.setdefault(r['to'],[]).append(ts(r['opened']))
+pat=re.compile(r'time=(\S+) level=INFO msg="wake-loop (\S+): inbox depth (-?\d+) -> (\d+)')
+def pct(v,p):
+    v=sorted(v);k=(len(v)-1)*p/100;f=int(k);c=min(f+1,len(v)-1);return v[f]+(v[c]-v[f])*(k-f)
+out=[]
+for f in sorted(glob.glob(os.path.expanduser('~/.sirsi/logs/wake-*.log'))):
+    lane=os.path.basename(f)[5:-4]
+    opened=sorted(by.get(lane,[]))
+    if not opened: continue
+    ev=[]
+    for l in open(f,errors='ignore'):
+        m=pat.search(l)
+        if m and m.group(2)==lane and int(m.group(4))>int(m.group(3)) and int(m.group(3))>=0:
+            ev.append(ts(m.group(1)))
+    lat=[]
+    for e in ev:
+        # items opened in the 75 s before this increase: take the OLDEST pending one (worst case for that event)
+        c=[(e-o).total_seconds() for o in opened if 0<=(e-o).total_seconds()<=75]
+        if c: lat.append(max(c))
+    if len(lat)>=5:
+        out.append((lane,len(lat),round(pct(lat,50),1),round(pct(lat,95),1),round(max(lat),1)))
+print("lane                       n   p50s  p95s  max_s   (item opened -> loop logs depth increase; M1 logs only)")
+for o in sorted(out,key=lambda x:-x[1]): print("%-26s %3d %6.1f %5.1f %6.1f"%o)
+allp=[]
