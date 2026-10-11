@@ -57,7 +57,7 @@ func (f *Facade) ActAsOwner(req OwnerAction) (OwnerActionResult, error) {
 	if it.Status != "open" {
 		return out, fmt.Errorf("item is %s; claimed/closed work cannot be changed from this surface", it.Status)
 	}
-	audit := fmt.Sprintf("Owner %s via router console on item %s.\n\n%s", req.Action, it.ID, strings.TrimSpace(req.Message))
+	audit := fmt.Sprintf("Owner %s via router console on item %s. surface=router-board actor=owner\n\n%s", req.Action, it.ID, strings.TrimSpace(req.Message))
 	switch req.Action {
 	case "reply":
 		res, e := f.Send("owner", it.From, "OWNER RESPONSE: "+it.Title, "decision", audit)

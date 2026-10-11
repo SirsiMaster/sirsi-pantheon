@@ -19,7 +19,7 @@ func TestOwnerActionsReplyAssignClose(t *testing.T) {
 		t.Fatal(err)
 	}
 	response, _ := f.getFromStore(reply.ResponseID)
-	if response.From != "owner" || response.To != "a" || !strings.Contains(response.Instructions, it.ID) {
+	if response.From != "owner" || response.To != "a" || !strings.Contains(response.Instructions, it.ID) || !strings.Contains(response.Instructions, "surface=router-board actor=owner") {
 		t.Fatalf("bad response: %+v", response)
 	}
 	it, _ = f.getFromStore(it.ID)

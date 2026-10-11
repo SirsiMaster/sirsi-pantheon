@@ -49,6 +49,9 @@ func collectDashboardRouter() (result dashboard.RouterSnapshot, _ error) {
 		return snap, fmt.Errorf("registry: %w", err)
 	}
 	for id := range reg.Agents {
+		if id == "user" { // Retired alias: new writes must use the declared owner identity.
+			continue
+		}
 		snap.Recipients = append(snap.Recipients, id)
 	}
 	sort.Strings(snap.Recipients)
