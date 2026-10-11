@@ -901,6 +901,19 @@
       },
       "callsign": "Mercury",
       "public_name": "Mercury"
+    },
+    "mercury-runner": {
+      "id": "mercury-runner",
+      "type": "service",
+      "repo": "SirsiMaster/sirsi-mercury",
+      "workstream": "metal-runner",
+      "wake": {
+        "mechanism": "none",
+        "launch_agent_label": "ai.sirsi.mercury.metal-runner"
+      },
+      "command": null,
+      "consumer": {},
+      "description": "Native executor (not an LLM lane) for allow-listed metal test execution in sandboxed lanes (docs/METAL-RUNNER.md). Installed on host M5-Studio as the LaunchAgent ai.sirsi.mercury.metal-runner, which polls the router every 60s; binary sirsi-mercury #555 (sha256 224464c7...). Runs only allow-listed harnesses with pattern-validated env and a sha256-pinned binary; refuses any spec without a prediction and a kill rule; honours ~/.sirsi/metal-hold and Ma'at reservations; never executes free text. Owner lane: mercury. wake.mechanism is \"none\": the router does not spawn this agent, it is already resident and self-polling via its own LaunchAgent."
     }
   },
   "aliases": {
