@@ -38,6 +38,10 @@ func (s *Server) handleUIAsset(w http.ResponseWriter, r *http.Request) {
 	case "/assets/tokens.css":
 		w.Header().Set("Content-Type", "text/css; charset=utf-8")
 		fmt.Fprintf(w, ":root{color-scheme:light dark;\n%s}\n@media (prefers-color-scheme: dark){:root{\n%s}}\n", brand.CSSVars(brand.Light), brand.CSSVars(brand.Dark))
+	case "/assets/router-tokens.css":
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Type", "text/css; charset=utf-8")
+		fmt.Fprintf(w, ":root{color-scheme:dark;\n%s}\n", brand.CSSVars(brand.Dark))
 	case "/assets/app.css":
 		s.serveEmbedded(w, "ui/app.css", "text/css; charset=utf-8")
 	case "/assets/app.js":

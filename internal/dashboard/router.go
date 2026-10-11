@@ -17,6 +17,7 @@ type RouterSnapshot struct {
 	Version       string            `json:"version"`
 	Lanes         RouterLanes       `json:"lanes"`
 	Queue         []RouterQueueRow  `json:"queue"`
+	Items         []RouterQueueItem `json:"items"`
 	Consumers     RouterConsumers   `json:"consumers"`
 	Registry      RouterRegistryPin `json:"registry"`
 	KnownFailures []RouterKnownFail `json:"known_failures"`
@@ -25,6 +26,20 @@ type RouterSnapshot struct {
 	// Attention is computed deterministically from the data above: what needs a
 	// person or a fix now, most severe first. Empty means nothing does.
 	Attention []RouterAttention `json:"attention"`
+}
+
+// RouterQueueItem is the read-only drill-down from the same active-item read
+// used for Queue and lane counts. The UI never resolves a separate local store.
+type RouterQueueItem struct {
+	ID           string `json:"id"`
+	From         string `json:"from"`
+	To           string `json:"to"`
+	Title        string `json:"title"`
+	Type         string `json:"type"`
+	Opened       string `json:"opened"`
+	Instructions string `json:"instructions"`
+	BlockedBy    string `json:"blocked_by,omitempty"`
+	AckedAt      string `json:"acked_at,omitempty"`
 }
 
 // RouterAttention is one thing that needs attention. Severity is critical, warn or info.

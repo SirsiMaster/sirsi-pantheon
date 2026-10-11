@@ -3,21 +3,22 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="light dark">
-<title>Horus — Router</title>
+<meta name="color-scheme" content="dark">
+<title>Ra — Sirsi Work Fabric</title>
 <link rel="stylesheet" href="/assets/tokens.css">
+<link rel="stylesheet" href="/assets/router-tokens.css">
 <link rel="stylesheet" href="/assets/app.css">
 </head>
-<body>
+<body class="router-console">
 <a class="skip" href="#main">Skip to content</a><div id="announcement" class="sr" role="status" aria-live="polite"></div><div class="shell">
   <aside class="sidebar">
-    <div class="brand"><i aria-hidden="true">𓂀</i><span>Horus</span></div>
+    <div class="brand"><svg aria-hidden="true" viewBox="0 0 32 32"><circle cx="16" cy="16" r="11"/><path d="M16 1v5M16 26v5M1 16h5M26 16h5M6 6l4 4M22 22l4 4M6 26l4-4M22 10l4-4"/></svg><span>Ra<small>Sirsi work fabric</small></span></div>
     <nav class="nav" aria-label="Views" id="nav"></nav>
-    <div class="side-foot"><span id="foot-ver">—</span><span>Local node · 127.0.0.1</span><a href="/classic">Classic tools</a></div>
+    <div class="side-foot"><span id="foot-ver">—</span><span>Horus · local service gateway</span><a href="/api/router/v1/manifest" target="_blank" rel="noopener">Inspect connection</a></div>
   </aside>
   <main class="main" id="main" tabindex="-1">
     <div class="titlebar">
-      <div><h1 id="title">Overview</h1><p class="sub" id="subtitle"></p></div>
+      <div><h1 id="title">Work fabric</h1><p class="sub" id="subtitle"></p></div>
       <div class="tools"><span class="live" id="live" role="status" aria-live="polite"><span class="dot"></span><span id="live-t">Loading…</span></span><button class="btn" id="refresh" type="button">Refresh</button></div>
     </div>
     <div id="view"></div>

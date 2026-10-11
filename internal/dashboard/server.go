@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os/exec"
 	"strings"
@@ -232,10 +233,15 @@ func (s *Server) Start() error {
 	if err != nil {
 		return fmt.Errorf("dashboard: %w", err)
 	}
+	listener, err := net.Listen("tcp", s.srv.Addr)
+	if err != nil {
+		unlock()
+		return fmt.Errorf("dashboard: bind %s: %w", s.srv.Addr, err)
+	}
 	s.unlock = unlock
 
 	go func() {
-		if err := s.srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := s.srv.Serve(listener); err != nil && err != http.ErrServerClosed {
 			fmt.Printf("dashboard: server error: %v\n", err)
 		}
 	}()

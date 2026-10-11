@@ -1,0 +1,6 @@
+- **Router queue drill-down:** headline and recipient counts open actual messages, with full request inspection and oldest-first ordering. Include every waiting recipient (including owner and identities outside the lane registry); remove silent eight-lane truncation. Counts and details derive from the same active-item read. Missing details or inconsistent snapshot totals are explicitly disclosed.
+- Replace the disconnected duplicate `/router` mock with the shared embedded Horus operator workspace; truthful readiness counts, priority lane inspection and searchable navigation use the canonical snapshot.
+- Preserve queued recipients missing from the lane projection instead of hiding their work; identify their availability as unstaffed rather than inventing liveness.
+- Retired direct-file board entry points open the running loopback console instead of displaying disconnected zero counts.
+- Return listener bind failure before claiming the dashboard is running. Source/build provenance is available through the manifest; local delivery uses one user-owned LaunchAgent, without privileged prompts.
+- Add shared-page, explicit CORS and occupied-port startup regressions. Documentation distinguishes local delivery from public deployment and release qualification.
