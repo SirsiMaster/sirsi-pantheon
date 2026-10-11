@@ -107,3 +107,26 @@ flowchart TD
 
 Owner Studio hold and M5 owner-active revocation remain binding. Source fixtures
 never launch a display command, deploy hooks, pause helpers or sample the host.
+
+## Command-tool matcher follow-up (2026-10-11, source candidate)
+
+Ra decision `20261011-130609` establishes that the binary is tool-name agnostic;
+the Bash-only managed matcher bypasses inspection for desktop exec tool names.
+Keep the compatibility matcher and add `.*` to the same guard. Valid non-object
+or non-command tool payloads allow; invalid envelope JSON denies. Both string
+`command` and `cmd` fields are checked, so one cannot hide the other. Direct
+recognized display commands remain denied even with grant metadata.
+
+Data flow: tool payload → managed catch-all matcher → command extraction →
+selected display-command denial → no dispatch; non-command payload → allow.
+This changes hook coverage, not the display actuator or custody issuer.
+
+Implementation order: fake-only source controls; independent source review and
+CI; native custodian installation on an admitted host not in use for testing;
+record actual desktop tool_name, exact artifact hashes and inert fake-pmset
+readback. No recorded payload or native execution receipt exists in this lane.
+
+Key decision: pure GUI coordinate actuators carry no shell command and are not
+fenced by this guard. Owner-return must revoke the computer-use grant itself.
+No whole-fabric or host-wide enforcement claim is made. Human mirrors and
+trusted owner-return lifecycle remain open under the parent safeguard task.
