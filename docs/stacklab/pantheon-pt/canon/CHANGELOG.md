@@ -1,5 +1,17 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-11 — v0.24.100 release candidate
+
+- Router queue drill-down:
+- Replace the disconnected duplicate `/router` mock with the shared embedded Horus operato
+- Preserve queued recipients missing from the lane projection instead of hiding their work
+- Retired direct-file board entry points open the running loopback console instead of disp
+- Return listener bind failure before claiming the dashboard is running. Source/build prov
+- Add shared-page, explicit CORS and occupied-port startup regressions. Documentation dist
+- fix(maat):
+- fix(router):
+- docs(portfolio-standard):
+
 ## 2026-10-09 — v0.24.99 release candidate
 
 - Revises ADR-072 (universal thread naming) C2/C4/C5 and the phase order per
