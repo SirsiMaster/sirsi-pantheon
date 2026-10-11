@@ -480,6 +480,14 @@ func (rs *RemoteStore) ListSince(ctx context.Context, since string) ([]Item, err
 	return out, err
 }
 
+func (rs *RemoteStore) ListPage(ctx context.Context, afterID string, limit int) ([]Item, error) {
+	ctx, cancel := context.WithTimeout(ctx, rs.perCall)
+	defer cancel()
+	var out []Item
+	err := rs.callCtx(ctx, "ListPage", []any{afterID, limit}, &out)
+	return out, err
+}
+
 func (rs *RemoteStore) CountClosed(ctx context.Context) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, rs.perCall)
 	defer cancel()
