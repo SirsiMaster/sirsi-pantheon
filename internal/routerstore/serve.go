@@ -50,7 +50,7 @@ var (
 var notServed = map[string]bool{
 	"GetSession": true, "RevokeSession": true, "TouchSession": true,
 	"BindItemSession": true, "ItemSession": true, "BindTaskSession": true, "TaskSession": true,
-	"MintHostToken": true, "LookupHostToken": true, "RevokeHostToken": true, "ListHostTokens": true,
+	"MintHostToken": true, "MintScopedHostToken": true, "LookupHostToken": true, "RevokeHostToken": true, "ListHostTokens": true,
 	"Close": true, "RecordAudience": true, "RecordTaskLeaseEvent": true,
 	// HostIdentity is the ADR-067 identity resolver: read by threadAuthority and
 	// the mint host-check, never a node-reachable RPC (it takes no credential).
@@ -350,7 +350,7 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 	// A store failure here (database down) is 503, never 401: a node must
 	// retry, not conclude its credentials died (rs-13 outage finding — every
 	// call during a 30 s Postgres outage came back "invalid bearer token").
-	tokenHost, ok, lookupErr := s.hostForBearer(r)
+	tokenHost, tokenScope, ok, lookupErr := s.hostForBearer(r)
 	if lookupErr != nil {
 		writeErr(w, http.StatusServiceUnavailable, "", "ledger unavailable: "+lookupErr.Error())
 		return
@@ -487,6 +487,19 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 		}
 		in = append(in, pv.Elem())
 		ai++
+	}
+	// 6a. lane scope (schema v25): a token confined to listed agents may only call the lane API, as those
+	// agents. Checked on EVERY call including mint, before any ownership or thread rule, and deny-by-default.
+	if tokenScope != nil {
+		if lerr := s.laneScope(tokenScope, sess, name, in); lerr != nil {
+			// A refusal is evidence of an attempt to step outside a lane (a cloud sandbox probing, or a compromised
+			// session): record who tried what, best-effort, so the owner can see it in `router audience`.
+			s.logf("lane-scope: REFUSED %s from %s@%s (token host %s): %v", name, sess.Agent, sess.Host, tokenHost, lerr)
+			_ = s.store.RecordAudience(AudienceEntry{TS: s.opts.now().UTC().Format(time.RFC3339Nano), Method: name, SessionID: sess.ID,
+				Agent: sess.Agent, Host: tokenHost, ThreadID: sess.ThreadID, Verdict: "refused", Reason: lerr.Error()})
+			writeErr(w, http.StatusForbidden, "ErrLaneScope", lerr.Error())
+			return
+		}
 	}
 	// 7. thread lifecycle authority — a session may only register, rewrite,
 	// resume or delete threads on ITS OWN host, so an unregistered caller cannot
@@ -791,24 +804,25 @@ func (s *server) sameIdentity(a, b string) (bool, error) {
 // hostForBearer resolves the bearer to a host: the bootstrap token → "*",
 // a minted per-host token → its host, anything else → not authorized. The
 // third result is a STORE failure (not an auth verdict) and maps to 503.
-func (s *server) hostForBearer(r *http.Request) (string, bool, error) {
+func (s *server) hostForBearer(r *http.Request) (string, map[string]bool, bool, error) {
 	h := r.Header.Get("Authorization")
 	const p = "Bearer "
 	if !strings.HasPrefix(h, p) {
-		return "", false, nil
+		return "", nil, false, nil
 	}
 	got := strings.TrimSpace(strings.TrimPrefix(h, p))
 	if subtle.ConstantTimeCompare([]byte(got), []byte(s.opts.Token)) == 1 {
-		return bootstrapHost, true, nil
+		return bootstrapHost, nil, true, nil
 	}
 	t, err := s.store.LookupHostToken(got)
 	switch {
 	case err == nil:
-		return t.Host, true, nil
+		// scope is nil for an unscoped host token (every pre-v25 token): the lane API is not applied to it.
+		return t.Host, scopeSet(t.Agents), true, nil
 	case errors.Is(err, ErrTokenUnknown), errors.Is(err, ErrTokenRevoked):
-		return "", false, nil
+		return "", nil, false, nil
 	default:
-		return "", false, err
+		return "", nil, false, err
 	}
 }
 

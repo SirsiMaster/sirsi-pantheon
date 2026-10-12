@@ -511,6 +511,14 @@ END $$;
 CREATE OR REPLACE TRIGGER ack_wake_on_task_claim AFTER UPDATE OF lease_token ON tasks
   FOR EACH ROW EXECUTE FUNCTION router.trg_ack_wake_on_task_claim();
 
+-- v25 — lane-scoped host tokens (see store.go v25). Not granted to router_reader: it stays unreadable
+-- until deliberately listed.
+CREATE TABLE IF NOT EXISTS host_token_scopes (
+    token_id TEXT NOT NULL,
+    agent    TEXT NOT NULL,
+    PRIMARY KEY (token_id, agent)
+);
+
 -- ── grants: the service is DML-only; DDL belongs to router_migrator ────────
 GRANT USAGE ON SCHEMA router TO router_service;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA router TO router_service;
@@ -535,6 +543,6 @@ DO $$ BEGIN
 END $$;
 
 -- ── version — last, so a partial apply never publishes a version it does not have ──
-INSERT INTO schema_version(version, applied_at) VALUES (24, router.now_rfc3339())
-  ON CONFLICT (singleton) DO UPDATE SET version = 24, applied_at = router.now_rfc3339()
-  WHERE schema_version.version < 24;
+INSERT INTO schema_version(version, applied_at) VALUES (25, router.now_rfc3339())
+  ON CONFLICT (singleton) DO UPDATE SET version = 25, applied_at = router.now_rfc3339()
+  WHERE schema_version.version < 25;

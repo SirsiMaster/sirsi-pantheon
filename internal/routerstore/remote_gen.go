@@ -217,6 +217,12 @@ func (rs *RemoteStore) MintHostToken(host, label string) (string, HostToken, err
 	err := rs.call("MintHostToken", []any{host, label}, &o0, &o1)
 	return o0, o1, err
 }
+func (rs *RemoteStore) MintScopedHostToken(host, label string, agents []string) (string, HostToken, error) {
+	var o0 string
+	var o1 HostToken
+	err := rs.call("MintScopedHostToken", []any{host, label, agents}, &o0, &o1)
+	return o0, o1, err
+}
 func (rs *RemoteStore) MintSession(host, agent, runtimeHash string) (Session, error) {
 	var o0 Session
 	err := rs.call("MintSession", []any{host, agent, runtimeHash}, &o0)

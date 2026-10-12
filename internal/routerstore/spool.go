@@ -265,7 +265,7 @@ const (
 
 // spoolRefused lists the methods the relay never forwards: a lane must not be
 // able to mint, list or revoke host tokens through the relay's own token.
-var spoolRefused = map[string]bool{"MintHostToken": true, "RevokeHostToken": true, "ListHostTokens": true}
+var spoolRefused = map[string]bool{"MintHostToken": true, "MintScopedHostToken": true, "RevokeHostToken": true, "ListHostTokens": true}
 
 // spoolRequest is one file in <spool>/<agent>/req/.
 type spoolRequest struct {
