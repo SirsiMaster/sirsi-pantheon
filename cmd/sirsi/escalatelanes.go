@@ -63,7 +63,7 @@ func dashboardUnroutable() map[string]bool {
 	return un
 }
 
-// escalateStuckLanes routes lanes that no wake can reach to the owner, and
+// escalateStuckLanes routes lanes that no wake can reach to software administration, and
 // returns what it actually sent.
 //
 // It reuses the fleet board's own producer rather than recomputing lane state.
@@ -124,9 +124,9 @@ func reportLaneEscalations(repoRoot string) {
 		// A rollup carries no single agent; printing an empty name would read as
 		// "escalated to owner:  (…)" and hide what was actually delivered.
 		if len(e.Lanes) > 0 {
-			fmt.Printf("  escalated to owner: %d lanes rolled up (%s, %d open total)\n", len(e.Lanes), e.State, e.OpenItems)
+			fmt.Printf("  escalated to SSA/Ma'at: %d lanes rolled up (%s, %d open total)\n", len(e.Lanes), e.State, e.OpenItems)
 			continue
 		}
-		fmt.Printf("  escalated to owner: %s (%s, %d open)\n", e.Agent, e.State, e.OpenItems)
+		fmt.Printf("  escalated to SSA/Ma'at: %s (%s, %d open)\n", e.Agent, e.State, e.OpenItems)
 	}
 }
