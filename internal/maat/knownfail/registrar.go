@@ -637,6 +637,18 @@ func skipCommandSubstitution(runes []rune, start int) int {
 		switch {
 		case c == '\\' && !inSingle && (!inDouble || isDQEscapable(peek(runes, i+1))) && i+1 < n:
 			i++
+		case c == '$' && !inSingle && i+1 < n && runes[i+1] == '(':
+			// A NESTED $(...) opens its own fresh quoting context exactly
+			// like the top-level case in splitShellStatements -- checked
+			// here BEFORE the quote-toggle cases below (and recursing,
+			// rather than a flat depth bump sharing this call's own
+			// inSingle/inDouble) so a quote inside the nested substitution
+			// can never toggle THIS call's quote state. Without this, the
+			// same desync this function exists to prevent one level up
+			// recurs one level down: codex-pantheon's CHANGES_REQUESTED on
+			// d2cbacd9 (nested $(...) inside $(...), both inside double
+			// quotes) reproduced exactly that.
+			i = skipCommandSubstitution(runes, i+2) - 1
 		case c == '\'' && !inDouble:
 			inSingle = !inSingle
 		case c == '"' && !inSingle:
@@ -648,9 +660,6 @@ func skipCommandSubstitution(runes []rune, start int) int {
 			return n
 		case c == '<' && i+1 < n && runes[i+1] == '<':
 			return n
-		case c == '$' && i+1 < n && runes[i+1] == '(':
-			i++
-			depth++
 		case c == '(':
 			depth++
 		case c == ')':

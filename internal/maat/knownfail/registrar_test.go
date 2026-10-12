@@ -673,3 +673,19 @@ func TestCiRunsExactPathRejectsCommentOrHeredocInsideCommandSubstitution(t *test
 		}
 	}
 }
+
+// TestCiRunsExactPathRejectsNestedCommandSubstitution covers codex-pantheon's
+// CHANGES_REQUESTED on d2cbacd9: a $(...) nested inside another $(...), both
+// themselves inside double quotes. skipCommandSubstitution's own quote-toggle
+// cases, checked before its '$(' case, let the INNER substitution's quotes
+// desync THIS call's quote state one level down -- the same class of bug
+// the function exists to prevent one level up. Verified against real bash
+// (/bin/bash --noprofile --norc): exit 0, stdout is purely the printed
+// substitution output -- scripts/guard.sh is never executed as a command.
+func TestCiRunsExactPathRejectsNestedCommandSubstitution(t *testing.T) {
+	path := "scripts/guard.sh"
+	script := "echo \"$(echo \"$(printf '%s' '\")\"\n" + path + "\n\"')\")\""
+	if ciRunsExactPath([]byte(wrapStepBlock(script)), path) {
+		t.Errorf("must reject: path is only printed by a nested command substitution, never executed: %q", script)
+	}
+}
