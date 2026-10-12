@@ -533,6 +533,37 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// 6c. a scoped token's thread write (schema v25, round 2): the existing-owner scope check must happen
+	// atomically with the write itself (threads.go UpsertThreadsScoped/UpsertThreadCASScoped/
+	// ResumeThreadCASScoped), not as a lookup before this generic call — a lookup-then-call here would
+	// race a legitimate concurrent write between the two (SSA PR #1079 review round 2). handled=true means
+	// the scoped path already ran the call and this request is complete.
+	if tokenScope != nil {
+		if res, handled, serr := s.scopedThreadWrite(tokenScope, name, in); handled {
+			if serr != nil {
+				s.logf("lane-scope: REFUSED %s from %s@%s (token host %s): %v", name, sess.Agent, sess.Host, tokenHost, serr)
+				_ = s.store.RecordAudience(AudienceEntry{TS: s.opts.now().UTC().Format(time.RFC3339Nano), Method: name, SessionID: sess.ID,
+					Agent: sess.Agent, Host: tokenHost, ThreadID: sess.ThreadID, Verdict: "refused", Reason: serr.Error()})
+				s.writeCallErr(w, name, serr)
+				return
+			}
+			resp := wireResponse{Result: make([]json.RawMessage, 0, len(res))}
+			for _, rv := range res {
+				b, err := json.Marshal(rv)
+				if err != nil {
+					writeErr(w, http.StatusInternalServerError, "", "encode result: "+err.Error())
+					return
+				}
+				resp.Result = append(resp.Result, b)
+			}
+			if sess.ID != "" {
+				_ = s.store.TouchSession(sess.ID)
+			}
+			writeJSON(w, http.StatusOK, resp)
+			return
+		}
+	}
+
 	outs := s.sv.MethodByName(name).Call(in)
 
 	var callErr error
