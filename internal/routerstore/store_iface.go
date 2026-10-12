@@ -78,6 +78,8 @@ type Store interface {
 	LookupHostToken(plaintext string) (HostToken, error)
 	MarkRequirementAudit(agent, evidenceRef string) error
 	MintHostToken(host, label string) (string, HostToken, error)
+	// MintScopedHostToken mints a token confined to the listed agents (v25 lane scope); server-side only.
+	MintScopedHostToken(host, label string, agents []string) (string, HostToken, error)
 	MintSession(host, agent, runtimeHash string) (Session, error)
 	MintSessionForThread(host, agent, runtimeHash, threadID string) (Session, error)
 	ThreadBinding(threadID string) (ThreadBinding, error)

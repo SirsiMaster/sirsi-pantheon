@@ -13,6 +13,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 )
 
@@ -24,6 +26,9 @@ type HostToken struct {
 	Created   string `json:"created"`
 	Revoked   string `json:"revoked,omitempty"`
 	MachineID string `json:"machine_id,omitempty"` // ADR-067: adopted stable id, "" until adopted
+	// Agents is the lane scope (v25): non-empty means this token may mint sessions for, and act as, ONLY these
+	// agents, through the deny-by-default lane API. Empty = an unscoped host token (every pre-v25 token).
+	Agents []string `json:"agents,omitempty"`
 }
 
 var (
@@ -73,6 +78,54 @@ func (s *SQLiteStore) MintHostToken(host, label string) (string, HostToken, erro
 	return tok, HostToken{ID: id, Host: host, Label: label, Created: now}, nil
 }
 
+// MintScopedHostToken is MintHostToken for a token confined to the listed agents (lane scope, v25). At least
+// one agent is required: an empty list would silently mint an UNSCOPED token, which is MintHostToken's job.
+func (s *SQLiteStore) MintScopedHostToken(host, label string, agents []string) (string, HostToken, error) {
+	clean := map[string]bool{}
+	var list []string
+	for _, a := range agents {
+		if a = strings.TrimSpace(a); a != "" && !clean[a] {
+			clean[a] = true
+			list = append(list, a)
+		}
+	}
+	if len(list) == 0 {
+		return "", HostToken{}, errors.New("routerstore: MintScopedHostToken: at least one agent is required (use MintHostToken for an unscoped token)")
+	}
+	tok, rec, err := s.MintHostToken(host, label)
+	if err != nil {
+		return "", HostToken{}, err
+	}
+	for _, a := range list {
+		if _, err := s.exec(`INSERT INTO host_token_scopes(token_id,agent) VALUES(?,?)`, rec.ID, a); err != nil {
+			// A token minted without its scope would be UNSCOPED: revoke it rather than leave it behind.
+			_ = s.RevokeHostToken(rec.ID)
+			return "", HostToken{}, fmt.Errorf("routerstore: MintScopedHostToken: record scope: %w", err)
+		}
+	}
+	sort.Strings(list)
+	rec.Agents = list
+	return tok, rec, nil
+}
+
+// tokenAgents returns the lane scope of a token, sorted; nil = unscoped.
+func (s *SQLiteStore) tokenAgents(tokenID string) ([]string, error) {
+	rows, err := s.db.Query(`SELECT agent FROM host_token_scopes WHERE token_id=? ORDER BY agent`, tokenID)
+	if err != nil {
+		return nil, fmt.Errorf("routerstore: token scope: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []string
+	for rows.Next() {
+		var a string
+		if err := rows.Scan(&a); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
 // LookupHostToken resolves a presented plaintext token to its record.
 func (s *SQLiteStore) LookupHostToken(plaintext string) (HostToken, error) {
 	var t HostToken
@@ -86,6 +139,9 @@ func (s *SQLiteStore) LookupHostToken(plaintext string) (HostToken, error) {
 	}
 	if t.Revoked != "" {
 		return HostToken{}, ErrTokenRevoked
+	}
+	if t.Agents, err = s.tokenAgents(t.ID); err != nil {
+		return HostToken{}, err
 	}
 	return t, nil
 }
@@ -226,5 +282,14 @@ func (s *SQLiteStore) ListHostTokens() ([]HostToken, error) {
 		}
 		out = append(out, t)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	_ = rows.Close()
+	for i := range out {
+		if out[i].Agents, err = s.tokenAgents(out[i].ID); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }

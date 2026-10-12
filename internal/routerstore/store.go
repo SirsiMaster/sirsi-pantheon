@@ -774,6 +774,16 @@ CREATE TABLE IF NOT EXISTS task_lease_log (
 CREATE INDEX IF NOT EXISTS idx_task_lease_log_task ON task_lease_log(agent, task_id, ts);
 CREATE INDEX IF NOT EXISTS idx_task_lease_log_ts ON task_lease_log(ts);
 `},
+	// v25 — lane-scoped host tokens: a token with rows here may mint sessions for, and act as, ONLY
+	// the listed agents (deny-by-default lane API, serve.go laneScope). No rows = an unscoped host
+	// token, the pre-v25 behavior every Mac token keeps. CREATE IF NOT EXISTS, so a re-run is safe.
+	{25, `
+CREATE TABLE IF NOT EXISTS host_token_scopes (
+    token_id TEXT NOT NULL,
+    agent    TEXT NOT NULL,
+    PRIMARY KEY (token_id, agent)
+);
+`},
 }
 
 // migrate applies any pending numbered migrations, tracked via the SQLite

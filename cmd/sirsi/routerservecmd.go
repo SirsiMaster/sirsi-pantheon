@@ -188,11 +188,21 @@ var routerTokenMintCmd = &cobra.Command{
 		}
 		defer func() { _ = store.Close() }()
 		label, _ := cmd.Flags().GetString("label")
-		plain, rec, err := store.MintHostToken(args[0], label)
+		agents, _ := cmd.Flags().GetStringSlice("agents")
+		mint := func() (string, routerstore.HostToken, error) { return store.MintHostToken(args[0], label) }
+		if len(agents) > 0 {
+			mint = func() (string, routerstore.HostToken, error) {
+				return store.MintScopedHostToken(args[0], label, agents)
+			}
+		}
+		plain, rec, err := mint()
 		if err != nil {
 			return err
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "token id: %s  host: %s  created: %s\n", rec.ID, rec.Host, rec.Created)
+		if len(rec.Agents) > 0 {
+			fmt.Fprintf(cmd.OutOrStdout(), "scope: lane-scoped to %s (may act only as these agents; deny-by-default lane API)\n", strings.Join(rec.Agents, ", "))
+		}
 		fmt.Fprintf(cmd.OutOrStdout(), "SIRSI_ROUTER_TOKEN=%s\n", plain)
 		fmt.Fprintln(cmd.ErrOrStderr(), "  (shown once; only its hash is stored)")
 		return nil
@@ -244,6 +254,7 @@ var routerTokenListCmd = &cobra.Command{
 func init() {
 	routerTokenCmd.PersistentFlags().StringVar(&routerTokenStore, "store", os.Getenv("SIRSI_ROUTER_STORE"), "postgres:// DSN or SQLite path of the SERVICE's backend (required; default $SIRSI_ROUTER_STORE so a Cloud Run job can mint/revoke)")
 	routerTokenMintCmd.Flags().String("label", "", "free-text label (e.g. the machine's name)")
+	routerTokenMintCmd.Flags().StringSlice("agents", nil, "confine the token to these agents (lane scope, e.g. a cloud sandbox); omit for an unscoped host token")
 	routerTokenCmd.AddCommand(routerTokenMintCmd, routerTokenRevokeCmd, routerTokenListCmd)
 	routerCmd.AddCommand(routerTokenCmd)
 }
