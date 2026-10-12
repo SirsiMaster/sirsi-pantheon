@@ -6,6 +6,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- **Scoped cloud router:** existing-owner scope is enforced in the same database mutation for thread writes and deletes. Missing atomic-backend support and failed ownership reads deny rather than falling through to unscoped writes. Atomic scope refusals return HTTP 403. Regression coverage includes foreign payload isolation, takeover, deletion, rollback of partially attempted batches and real changed-owner interleaving.
+
 ## [0.24.101] — 2026-10-12
 
 - **docs(router):** added `docs/router-service/PRIOR_ART.md`, the M0 prior-art chapter. Three designs read from source

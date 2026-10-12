@@ -186,7 +186,7 @@ func scopeViolation(q interface {
 		return nil // can't happen after a conflict, but not our call to diagnose further
 	}
 	if err != nil {
-		return nil // classification is best-effort; don't fail the write over it
+		return fmt.Errorf("%w: cannot verify scoped thread owner: %v", ErrLaneScope, err)
 	}
 	if !scope[agent] {
 		return fmt.Errorf("%w: thread %q is owned by %q", ErrLaneScope, threadID, agent)
@@ -346,6 +346,42 @@ func (s *SQLiteStore) DeleteThreadCAS(threadID, status, lastSeenAt, host string)
 		return false, fmt.Errorf("routerstore: count deleted thread %q: %w", threadID, err)
 	}
 	return affected == 1, nil
+}
+
+// DeleteThreadCASScoped binds both lane ownership and the observed row identity
+// to the delete statement; an agent reassignment cannot race a preflight check.
+func (s *SQLiteStore) DeleteThreadCASScoped(threadID, status, lastSeenAt, host string, scope []string) (bool, error) {
+	if len(scope) == 0 {
+		return false, ErrLaneScope
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	ph, scopeArgs := scopeInClause(scope)
+	args := append([]any{threadID, status, lastSeenAt, host, host}, scopeArgs...)
+	result, err := tx.Exec(`DELETE FROM threads WHERE thread_id=? AND status=? AND last_seen_at=? AND (host='' OR ?='' OR host=?) AND agent IN (`+ph+`)`, args...)
+	if err != nil {
+		return false, err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if n == 0 {
+		allowed := make(map[string]bool, len(scope))
+		for _, agent := range scope {
+			allowed[agent] = true
+		}
+		if err := scopeViolation(tx, threadID, allowed); err != nil {
+			return false, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return n == 1, nil
 }
 
 // ListThreads returns every durable thread payload.
