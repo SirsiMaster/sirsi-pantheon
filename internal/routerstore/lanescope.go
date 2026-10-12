@@ -120,17 +120,38 @@ func (s *server) laneScope(scope map[string]bool, sess Session, name string, in 
 	return nil
 }
 
-func threadRecordsInScope(scope map[string]bool, _ *server, in []reflect.Value) error {
+// threadRecordsInScope checks each thread record on BOTH sides: the agent the record names must be in scope, and
+// if the thread id already exists, the agent that owns it today must be in scope too. Checking only the new value
+// would let a scoped token overwrite another agent's thread by reusing its id with its own agent name. An unknown
+// thread id is a new registration and is allowed; any other lookup failure refuses (fail closed).
+func threadRecordsInScope(scope map[string]bool, s *server, in []reflect.Value) error {
+	check := func(r ThreadRecord) error {
+		if !scope[r.Agent] {
+			return fmt.Errorf("%w: thread record for %q", ErrLaneScope, r.Agent)
+		}
+		b, err := s.store.ThreadBinding(r.ThreadID)
+		switch {
+		case err == nil:
+			if !scope[b.Agent] {
+				return fmt.Errorf("%w: thread %q belongs to another agent", ErrLaneScope, r.ThreadID)
+			}
+		case errors.Is(err, ErrThreadUnknown):
+			// a new thread id: a fresh registration
+		default:
+			return fmt.Errorf("%w: thread lookup failed: %v", ErrLaneScope, err)
+		}
+		return nil
+	}
 	for _, v := range in {
 		switch r := v.Interface().(type) {
 		case ThreadRecord:
-			if !scope[r.Agent] {
-				return fmt.Errorf("%w: thread record for %q", ErrLaneScope, r.Agent)
+			if err := check(r); err != nil {
+				return err
 			}
 		case []ThreadRecord:
 			for _, t := range r {
-				if !scope[t.Agent] {
-					return fmt.Errorf("%w: thread record for %q", ErrLaneScope, t.Agent)
+				if err := check(t); err != nil {
+					return err
 				}
 			}
 		}
