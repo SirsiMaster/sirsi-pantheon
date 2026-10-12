@@ -488,11 +488,7 @@ func splitShellStatements(script string) [][]string {
 			// enclosing statement is poisoned (fail closed) rather than ever
 			// letting text that was only printed by $(...), never executed
 			// as a command, count as a command-position match.
-			end, ok := skipCommandSubstitution(runes, i+2)
-			if !ok {
-				addRune(c)
-				continue
-			}
+			end := skipCommandSubstitution(runes, i+2)
 			endWord()
 			poisoned = true
 			atBoundary = true
@@ -618,10 +614,21 @@ func splitShellStatements(script string) [][]string {
 // depth -- independent of the caller's -- because quoting and nested
 // parens/substitutions inside $(...) are a fresh grammar context in real
 // shell that must never leak into (or be confused with) the text around it.
-// Reports ok=false if the substitution is never closed, so the caller can
-// fail safe (read the "$" literally) instead of mis-skipping the rest of the
-// script.
-func skipCommandSubstitution(runes []rune, start int) (end int, ok bool) {
+//
+// It does not model comments or heredocs. Either can hide a ')' that looks
+// like the real close here but isn't one in real shell -- a comment eats
+// everything to the next newline (including any ')' on the same line), and
+// a heredoc body is data the real shell never parses for parens at all
+// until its exact delimiter line. Counting such a ')' as the close would
+// UNDER-consume: the actual remainder of the substitution would fall out
+// of this atomic span and back into the caller's normal, quote-sensitive
+// scanning -- exactly the desync this function exists to prevent. So on
+// either construct, and on reaching the end of the script without finding
+// a real close, it gives up and returns the END of the script: the whole
+// rest of the text is swallowed into this one unmodeled, poisoned span.
+// Over-consuming here can only reject a real match further on, never
+// accept a false one, which is the safe direction to fail.
+func skipCommandSubstitution(runes []rune, start int) int {
 	depth := 1
 	var inSingle, inDouble bool
 	n := len(runes)
@@ -635,8 +642,12 @@ func skipCommandSubstitution(runes []rune, start int) (end int, ok bool) {
 		case c == '"' && !inSingle:
 			inDouble = !inDouble
 		case inSingle || inDouble:
-			// literal inside either quote; depth/substitution chars below
-			// are only meaningful outside quotes.
+			// literal inside either quote; none of the cases below are
+			// meaningful until the quote closes.
+		case c == '#':
+			return n
+		case c == '<' && i+1 < n && runes[i+1] == '<':
+			return n
 		case c == '$' && i+1 < n && runes[i+1] == '(':
 			i++
 			depth++
@@ -645,11 +656,11 @@ func skipCommandSubstitution(runes []rune, start int) (end int, ok bool) {
 		case c == ')':
 			depth--
 			if depth == 0 {
-				return i + 1, true
+				return i + 1
 			}
 		}
 	}
-	return 0, false
+	return n
 }
 
 // heredocSpec is one `<<DELIM`/`<<-DELIM` opener queued on a line, to be

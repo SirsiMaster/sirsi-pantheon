@@ -614,8 +614,9 @@ func TestCiRunsExactPathRejectsNegatedAndChainedCompoundOpeners(t *testing.T) {
 // two false-proof paths verified to actually execute cleanly under
 // `/bin/bash --noprofile --norc`, printing the path rather than invoking it.
 //
-//  1. `cat <<”` is a VALID heredoc with an empty delimiter (the quotes
-//     resolve to ""); the unpatched code rejected it as unrecognized,
+//  1. A heredoc opened with a pair of empty quotes as its delimiter is a
+//     VALID heredoc with an empty delimiter (the quotes resolve to the
+//     empty string); the unpatched code rejected it as unrecognized,
 //     leaving its body line -- containing the path -- unmodeled and
 //     scanned as a live statement instead of skipped as heredoc data.
 //  2. `echo "$(printf "%s" "\nscripts/guard.sh\n")"` nests quotes inside a
@@ -644,6 +645,31 @@ func TestCiRunsExactPathRejectsEmptyHeredocDelimiterAndCommandSubstitutionQuotes
 	for _, yaml := range accept {
 		if !ciRunsExactPath([]byte(yaml), path) {
 			t.Errorf("must accept real invocation past a command substitution: %q", yaml)
+		}
+	}
+}
+
+// TestCiRunsExactPathRejectsCommentOrHeredocInsideCommandSubstitution covers
+// skipCommandSubstitution's own fail-closed boundary: an unquoted '#' or '<<'
+// inside $(...) can hide a ')' that looks like the real close here but isn't
+// one in real shell -- a comment eats the rest of the line (any ')' on it
+// included), and a heredoc body is data the real shell never parses for
+// parens until its exact delimiter line. A naive paren-counter that trusted
+// either ')' would close too early, leaking the true remainder of the
+// substitution out of its atomic span and back into ordinary, quote-
+// sensitive scanning -- reintroducing the very desync the span exists to
+// prevent. The path placed right after such a fake "close" must still never
+// match: the whole rest of the script is swallowed into the one poisoned,
+// unmodeled span.
+func TestCiRunsExactPathRejectsCommentOrHeredocInsideCommandSubstitution(t *testing.T) {
+	path := "scripts/guard.sh"
+	reject := []string{
+		wrapStepBlock("echo \"$(echo hi # fake close)\n" + path + ")\""),
+		wrapStepBlock("echo \"$(cat <<EOF\n)\nEOF\n)\"\n" + path),
+	}
+	for _, yaml := range reject {
+		if ciRunsExactPath([]byte(yaml), path) {
+			t.Errorf("must reject: a fake ')' inside a comment or heredoc body must not end the substitution span early: %q", yaml)
 		}
 	}
 }
