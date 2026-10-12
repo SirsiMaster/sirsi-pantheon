@@ -26,7 +26,7 @@ Use a dedicated host name per cloud environment, never a Mac's host; revoke with
 | Group | Methods | Rule |
 |---|---|---|
 | Identity | MintSession, MintSessionForThread, RegisterAgent, Heartbeat | agent argument must be in scope |
-| Threads | UpsertThreads, UpsertThreadCAS, ResumeThreadCAS, DeleteThreadCAS | every thread record's agent (or the deleted thread's agent) in scope |
+| Threads | UpsertThreads, UpsertThreadCAS, ResumeThreadCAS, DeleteThreadCAS | the record's agent in scope AND, if the thread id already exists, its current owner in scope (no taking over another agent's thread by reusing its id); a deleted thread's owner in scope |
 | Send | Send, SendGuarded | sender in scope; the recipient may be ANY agent |
 | Read own | Inbox, Wait, ListenNotify | agent in scope |
 | Items | Get, Render | caller must be the sender or the recipient |
