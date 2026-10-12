@@ -153,6 +153,47 @@ func TestScopedSessionCannotRegisterForeignThreadsOrCallAdminMethods(t *testing.
 	wantLaneScope(t, "ListIdentifiers", err)
 }
 
+// ListThreads is filtered to the token's own agents: a scoped session must not see another lane's
+// continuation payload (SSA PR #1079 review, P1).
+func TestScopedListThreadsHidesForeignPayloads(t *testing.T) {
+	f := newScopedFixture(t, []string{"cloud-a"})
+	if err := f.backend.UpsertThreads([]ThreadRecord{
+		{ThreadID: "thr-ra", Agent: "ra", Status: "active", Payload: []byte(`{"ResumePrompt":"ra's secret"}`)},
+		{ThreadID: "thr-cloud-a", Agent: "cloud-a", Status: "active", Payload: []byte(`{"ResumePrompt":"mine"}`)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	list, err := f.client("cloud-a").ListThreads()
+	if err != nil {
+		t.Fatalf("ListThreads: %v", err)
+	}
+	if len(list) != 1 || list[0].ThreadID != "thr-cloud-a" {
+		t.Fatalf("ListThreads = %+v, want only thr-cloud-a", list)
+	}
+}
+
+// A scoped token cannot take over an existing thread row owned by another agent by naming its id and
+// claiming it for an in-scope agent, even when the row's host is blank (legacy) or the token's own host
+// (SSA PR #1079 review, P1).
+func TestScopedThreadWriteCannotHijackExistingForeignRow(t *testing.T) {
+	f := newScopedFixture(t, []string{"cloud-a"})
+	if err := f.backend.UpsertThreads([]ThreadRecord{{ThreadID: "thr-blank", Agent: "ra", Status: "active", Payload: []byte("{}")}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.backend.UpsertThreads([]ThreadRecord{{ThreadID: "thr-samehost", Agent: "ra", Status: "active", Host: f.host, Payload: []byte("{}")}}); err != nil {
+		t.Fatal(err)
+	}
+	rs := f.client("cloud-a")
+	wantLaneScope(t, "UpsertThreads over blank-host ra row", rs.UpsertThreads([]ThreadRecord{{ThreadID: "thr-blank", Agent: "cloud-a", Status: "active", Host: f.host}}))
+	wantLaneScope(t, "UpsertThreads over same-host ra row", rs.UpsertThreads([]ThreadRecord{{ThreadID: "thr-samehost", Agent: "cloud-a", Status: "active", Host: f.host}}))
+	_, err := rs.UpsertThreadCAS(ThreadRecord{ThreadID: "thr-blank", Agent: "cloud-a", Status: "active", Host: f.host})
+	wantLaneScope(t, "UpsertThreadCAS over blank-host ra row", err)
+	// Registering a brand-new thread id for an in-scope agent is still allowed.
+	if err := rs.UpsertThreads([]ThreadRecord{{ThreadID: "thr-new", Agent: "cloud-a", Status: "active", Host: f.host, Payload: []byte("{}")}}); err != nil {
+		t.Fatalf("UpsertThreads for a new thread refused: %v", err)
+	}
+}
+
 // An unscoped host token keeps the pre-v25 behavior: no lane API applies, whole-ledger reads work.
 func TestUnscopedHostTokenIsUnaffectedByLaneScope(t *testing.T) {
 	f := newScopedFixture(t, []string{"cloud-a"})

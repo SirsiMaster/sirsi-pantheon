@@ -553,6 +553,21 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 			results[0] = reflect.ValueOf(rep)
 		}
 	}
+	// A scoped token's ListThreads is filtered to its own agents: the lane API lists ListThreads as
+	// readable (liveness is needed to see where a send will land), but the unfiltered row carries each
+	// thread's full continuation payload (ResumePrompt, OwnedOpenItems, …), not just liveness (SSA PR
+	// #1079 review, P1).
+	if tokenScope != nil && name == "ListThreads" && len(results) == 1 {
+		if recs, ok := results[0].Interface().([]ThreadRecord); ok {
+			kept := make([]ThreadRecord, 0, len(recs))
+			for _, r := range recs {
+				if tokenScope[r.Agent] {
+					kept = append(kept, r)
+				}
+			}
+			results[0] = reflect.ValueOf(kept)
+		}
+	}
 
 	// Bind the session to what was just claimed, so ownership holds from here.
 	s.bindAfterClaim(name, results, sess)

@@ -120,41 +120,35 @@ func (s *server) laneScope(scope map[string]bool, sess Session, name string, in 
 	return nil
 }
 
-// threadRecordsInScope checks each thread record on BOTH sides: the agent the record names must be in scope, and
-// if the thread id already exists, the agent that owns it today must be in scope too. Checking only the new value
-// would let a scoped token overwrite another agent's thread by reusing its id with its own agent name. An unknown
-// thread id is a new registration and is allowed; any other lookup failure refuses (fail closed).
 func threadRecordsInScope(scope map[string]bool, s *server, in []reflect.Value) error {
-	check := func(r ThreadRecord) error {
-		if !scope[r.Agent] {
-			return fmt.Errorf("%w: thread record for %q", ErrLaneScope, r.Agent)
-		}
-		b, err := s.store.ThreadBinding(r.ThreadID)
-		switch {
-		case err == nil:
-			if !scope[b.Agent] {
-				return fmt.Errorf("%w: thread %q belongs to another agent", ErrLaneScope, r.ThreadID)
-			}
-		case errors.Is(err, ErrThreadUnknown):
-			// a new thread id: a fresh registration
-		default:
-			return fmt.Errorf("%w: thread lookup failed: %v", ErrLaneScope, err)
-		}
-		return nil
-	}
 	for _, v := range in {
 		switch r := v.Interface().(type) {
 		case ThreadRecord:
-			if err := check(r); err != nil {
+			if err := threadRecordInScope(scope, s, r); err != nil {
 				return err
 			}
 		case []ThreadRecord:
 			for _, t := range r {
-				if err := check(t); err != nil {
+				if err := threadRecordInScope(scope, s, t); err != nil {
 					return err
 				}
 			}
 		}
+	}
+	return nil
+}
+
+// threadRecordInScope refuses a write whose new agent OR current row owner is outside the token's scope.
+// Checking only the incoming agent (as the original PR #1079 did) let a scoped token overwrite an existing
+// blank-host or same-host row it did not own, by naming a thread id and claiming it for an in-scope agent;
+// the pre-existing host check in threadAuthority only protects a row already bound to a DIFFERENT host
+// (SSA PR #1079 review, P1).
+func threadRecordInScope(scope map[string]bool, s *server, r ThreadRecord) error {
+	if !scope[r.Agent] {
+		return fmt.Errorf("%w: thread record for %q", ErrLaneScope, r.Agent)
+	}
+	if existing, err := s.store.ThreadBinding(r.ThreadID); err == nil && !scope[existing.Agent] {
+		return fmt.Errorf("%w: thread %q is owned by %q", ErrLaneScope, r.ThreadID, existing.Agent)
 	}
 	return nil
 }
