@@ -153,6 +153,77 @@ func threadRecordInScope(scope map[string]bool, s *server, r ThreadRecord) error
 	return nil
 }
 
+// scopedThreadWriter is implemented by the one store that owns real thread rows. Lane scope is enforced
+// server-side only, so RemoteStore (the wire client) never needs it.
+type scopedThreadWriter interface {
+	UpsertThreadsScoped(records []ThreadRecord, scope []string) error
+	UpsertThreadCASScoped(r ThreadRecord, scope []string) (bool, error)
+	ResumeThreadCASScoped(record ThreadRecord, suspendedAt string, scope []string) error
+}
+
+// scopedThreadWrite runs a scoped token's UpsertThreads/UpsertThreadCAS/ResumeThreadCAS through the
+// atomic store methods above instead of the plain ones, so the existing-owner scope check happens as
+// part of the write itself. handled=false means the caller should fall back to the generic dispatch
+// (store doesn't implement scopedThreadWriter, or name/argument shapes didn't match — both should not
+// happen with the one real store, but a mismatch here must never silently skip enforcement by crashing).
+func (s *server) scopedThreadWrite(scope map[string]bool, name string, in []reflect.Value) (result []any, handled bool, err error) {
+	w, ok := s.store.(scopedThreadWriter)
+	if !ok {
+		return nil, false, nil
+	}
+	agents := make([]string, 0, len(scope))
+	for a := range scope {
+		agents = append(agents, a)
+	}
+	switch name {
+	case "UpsertThreads":
+		if len(in) < 1 {
+			return nil, false, nil
+		}
+		records, ok := in[0].Interface().([]ThreadRecord)
+		if !ok {
+			return nil, false, nil
+		}
+		for _, r := range records {
+			if !scope[r.Agent] {
+				return nil, true, fmt.Errorf("%w: thread record for %q", ErrLaneScope, r.Agent)
+			}
+		}
+		return []any{}, true, w.UpsertThreadsScoped(records, agents)
+	case "UpsertThreadCAS":
+		if len(in) < 1 {
+			return nil, false, nil
+		}
+		r, ok := in[0].Interface().(ThreadRecord)
+		if !ok {
+			return nil, false, nil
+		}
+		if !scope[r.Agent] {
+			return nil, true, fmt.Errorf("%w: thread record for %q", ErrLaneScope, r.Agent)
+		}
+		accepted, werr := w.UpsertThreadCASScoped(r, agents)
+		return []any{accepted}, true, werr
+	case "ResumeThreadCAS":
+		if len(in) < 2 {
+			return nil, false, nil
+		}
+		r, ok := in[0].Interface().(ThreadRecord)
+		if !ok {
+			return nil, false, nil
+		}
+		suspendedAt, ok := in[1].Interface().(string)
+		if !ok {
+			return nil, false, nil
+		}
+		if !scope[r.Agent] {
+			return nil, true, fmt.Errorf("%w: thread record for %q", ErrLaneScope, r.Agent)
+		}
+		return []any{}, true, w.ResumeThreadCASScoped(r, suspendedAt, agents)
+	default:
+		return nil, false, nil
+	}
+}
+
 func deleteThreadInScope(scope map[string]bool, s *server, in []reflect.Value) error {
 	if len(in) == 0 {
 		return fmt.Errorf("%w: missing thread id", ErrLaneScope)

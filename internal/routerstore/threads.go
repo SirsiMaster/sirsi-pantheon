@@ -151,6 +151,179 @@ WHERE thread_id=? AND status='suspended' AND last_seen_at=? AND (host='' OR ?=''
 	return nil
 }
 
+// Lane scope on a write (schema v25, round 2): a scoped token's write must refuse an existing row owned
+// by an agent outside its scope. A separate pre-check (read the row, then call the plain write) races a
+// legitimate concurrent write to that same row between the read and the write — the row can change owner
+// in between, and the write proceeds against stale information (SSA PR #1079 review round 2,
+// TestSSAConcurrentExistingAgentChange). So the scope check below is part of THIS statement's WHERE
+// clause, evaluated atomically with the write by the database itself, exactly like the pre-existing host
+// check above. A thread id with no existing row (the INSERT branch) has no owner to protect and is always
+// accepted — a new registration, same as the unscoped methods.
+func scopeInClause(scope []string) (string, []any) {
+	ph := make([]byte, 0, len(scope)*2)
+	args := make([]any, len(scope))
+	for i, a := range scope {
+		if i > 0 {
+			ph = append(ph, ',')
+		}
+		ph = append(ph, '?')
+		args[i] = a
+	}
+	return string(ph), args
+}
+
+// scopeViolation runs inside the same transaction as a scoped write that affected 0 rows, to classify
+// WHY: an existing row owned outside scope (loud ErrLaneScope refusal), or one of the pre-existing benign
+// no-op reasons (closed/suspended/host mismatch/stale heartbeat — silent, matching the unscoped method's
+// existing contract). It is read-only and runs AFTER the atomic write attempt already completed, so it
+// cannot itself be raced into approving an overwrite — the overwrite already did or didn't happen.
+func scopeViolation(q interface {
+	QueryRow(string, ...any) *sql.Row
+}, threadID string, scope map[string]bool) error {
+	var agent string
+	err := q.QueryRow(`SELECT agent FROM threads WHERE thread_id=?`, threadID).Scan(&agent)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil // can't happen after a conflict, but not our call to diagnose further
+	}
+	if err != nil {
+		return nil // classification is best-effort; don't fail the write over it
+	}
+	if !scope[agent] {
+		return fmt.Errorf("%w: thread %q is owned by %q", ErrLaneScope, threadID, agent)
+	}
+	return nil // benign: some other existing predicate (status/host/freshness) blocked the write
+}
+
+// UpsertThreadsScoped is UpsertThreads with the scope check folded into the write's own predicate (see above).
+func (s *SQLiteStore) UpsertThreadsScoped(records []ThreadRecord, scope []string) error {
+	if len(scope) == 0 {
+		return fmt.Errorf("%w: scoped write with an empty scope", ErrLaneScope)
+	}
+	scopeSet := make(map[string]bool, len(scope))
+	for _, a := range scope {
+		scopeSet[a] = true
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("routerstore: begin scoped thread upsert: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	ph, scopeArgs := scopeInClause(scope)
+	for _, r := range records {
+		args := append([]any{r.ThreadID, r.Agent, r.Status, r.LastSeenAt, r.Payload, r.Host}, scopeArgs...)
+		res, err := tx.Exec(`
+INSERT INTO threads(thread_id,agent,status,last_seen_at,payload,host) VALUES(?,?,?,?,?,?)
+ON CONFLICT(thread_id) DO UPDATE SET
+ agent=excluded.agent,status=excluded.status,last_seen_at=excluded.last_seen_at,payload=excluded.payload,
+ host=CASE WHEN excluded.host='' THEN threads.host ELSE excluded.host END
+WHERE threads.status NOT IN ('closed','reaped','suspended')
+  AND (threads.host='' OR excluded.host='' OR threads.host=excluded.host)
+  AND (excluded.last_seen_at > threads.last_seen_at
+       OR excluded.last_seen_at = threads.last_seen_at
+          AND (excluded.status IN ('closed','reaped','suspended')
+               OR excluded.status = threads.status AND excluded.payload > threads.payload))
+  AND threads.agent IN (`+ph+`)`, args...)
+		if err != nil {
+			return fmt.Errorf("routerstore: upsert thread %q: %w", r.ThreadID, err)
+		}
+		if affected, _ := res.RowsAffected(); affected == 0 {
+			if verr := scopeViolation(tx, r.ThreadID, scopeSet); verr != nil {
+				return verr
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("routerstore: commit scoped thread upsert: %w", err)
+	}
+	return nil
+}
+
+// UpsertThreadCASScoped is UpsertThreadCAS with the scope check folded into the write's own predicate.
+func (s *SQLiteStore) UpsertThreadCASScoped(r ThreadRecord, scope []string) (bool, error) {
+	if len(scope) == 0 {
+		return false, fmt.Errorf("%w: scoped write with an empty scope", ErrLaneScope)
+	}
+	scopeSet := make(map[string]bool, len(scope))
+	for _, a := range scope {
+		scopeSet[a] = true
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, fmt.Errorf("routerstore: begin scoped thread upsert: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	ph, scopeArgs := scopeInClause(scope)
+	args := append([]any{r.ThreadID, r.Agent, r.Status, r.LastSeenAt, r.Payload, r.Host}, scopeArgs...)
+	result, err := tx.Exec(`
+INSERT INTO threads(thread_id,agent,status,last_seen_at,payload,host) VALUES(?,?,?,?,?,?)
+ON CONFLICT(thread_id) DO UPDATE SET
+ agent=excluded.agent,status=excluded.status,last_seen_at=excluded.last_seen_at,payload=excluded.payload,
+ host=CASE WHEN excluded.host='' THEN threads.host ELSE excluded.host END
+WHERE threads.status NOT IN ('closed','reaped','suspended')
+  AND (threads.host='' OR excluded.host='' OR threads.host=excluded.host)
+  AND (excluded.last_seen_at > threads.last_seen_at
+       OR excluded.last_seen_at = threads.last_seen_at
+          AND (excluded.status IN ('closed','reaped','suspended')
+               OR excluded.status = threads.status AND excluded.payload > threads.payload))
+  AND threads.agent IN (`+ph+`)`, args...)
+	if err != nil {
+		return false, fmt.Errorf("routerstore: upsert thread %q: %w", r.ThreadID, err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("routerstore: count upsert thread %q: %w", r.ThreadID, err)
+	}
+	if affected == 0 {
+		if verr := scopeViolation(tx, r.ThreadID, scopeSet); verr != nil {
+			return false, verr
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("routerstore: commit scoped thread upsert: %w", err)
+	}
+	return affected == 1, nil
+}
+
+// ResumeThreadCASScoped is ResumeThreadCAS with the scope check folded into the write's own predicate.
+func (s *SQLiteStore) ResumeThreadCASScoped(record ThreadRecord, suspendedAt string, scope []string) error {
+	if len(scope) == 0 {
+		return fmt.Errorf("%w: scoped write with an empty scope", ErrLaneScope)
+	}
+	scopeSet := make(map[string]bool, len(scope))
+	for _, a := range scope {
+		scopeSet[a] = true
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("routerstore: begin scoped thread resume: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	ph, scopeArgs := scopeInClause(scope)
+	args := append([]any{record.Agent, record.Status, record.LastSeenAt, record.Payload, record.Host, record.Host,
+		record.ThreadID, suspendedAt, record.Host, record.Host}, scopeArgs...)
+	result, err := tx.Exec(`UPDATE threads
+SET agent=?,status=?,last_seen_at=?,payload=?,host=CASE WHEN ?='' THEN host ELSE ? END
+WHERE thread_id=? AND status='suspended' AND last_seen_at=? AND (host='' OR ?='' OR host=?)
+  AND agent IN (`+ph+`)`, args...)
+	if err != nil {
+		return fmt.Errorf("routerstore: resume thread %q: %w", record.ThreadID, err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("routerstore: count resumed thread %q: %w", record.ThreadID, err)
+	}
+	if affected != 1 {
+		if verr := scopeViolation(tx, record.ThreadID, scopeSet); verr != nil {
+			return verr
+		}
+		return fmt.Errorf("routerstore: resume thread %q lost suspended-state fence", record.ThreadID)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("routerstore: commit scoped thread resume: %w", err)
+	}
+	return nil
+}
+
 // Host ownership (the Rule of Ra, SSA 2026-09-10 r2): every mutation above
 // and below carries the caller's host INSIDE its predicate — a row on another
 // host is never rewritten, resumed or deleted, and two hosts adopting one
