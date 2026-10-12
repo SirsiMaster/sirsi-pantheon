@@ -127,7 +127,11 @@ func NetTrafficProbe(machine, ifaceScope string) ([]Actor, error) {
 		return nil, fmt.Errorf("list thunderbolt lanes: %w", err)
 	}
 	var active []scales.TBLane
+	scopeFound := ifaceScope == ""
 	for _, l := range lanesList {
+		if ifaceScope != "" && strings.EqualFold(l.Iface, ifaceScope) {
+			scopeFound = true
+		}
 		if !l.Active {
 			continue
 		}
@@ -135,6 +139,15 @@ func NetTrafficProbe(machine, ifaceScope string) ([]Actor, error) {
 			continue // not the lane this check was scoped to
 		}
 		active = append(active, l)
+	}
+	if ifaceScope != "" && !scopeFound {
+		// The caller asked about a SPECIFIC cable that doesn't exist in the
+		// lane list at all (typo'd/vanished/renamed interface). That is
+		// unknown, never clean: a positively-identified inactive lane still
+		// reports clean below, but a lane we can't even find must refuse
+		// rather than silently clearing the check it was never measured by
+		// (A35 — the false-clean path CHANGES_REQUESTED review caught).
+		return nil, fmt.Errorf("traffic probe: requested interface %q not found among known thunderbolt lanes", ifaceScope)
 	}
 	if len(active) == 0 {
 		return nil, nil

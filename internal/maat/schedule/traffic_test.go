@@ -172,6 +172,30 @@ func TestNetTrafficProbe_ScopedToIfaceIgnoresUnrelatedLaneCounterErrors(t *testi
 	}
 }
 
+func TestNetTrafficProbe_UnknownScopedInterfaceIsAnErrorNotClean(t *testing.T) {
+	SetLocalMachineLabelFn(func() (string, error) { return "m1", nil })
+	defer SetLocalMachineLabelFn(nil)
+
+	// Only en1 is a known lane. Scoping to en999 (typo'd, vanished, or
+	// renamed interface) must refuse, not report clean — a lane that was
+	// never measured is unknown, not positively identified as idle.
+	SetTrafficProviders(
+		func() (map[string][2]int64, error) { return nil, errors.New("must not be called") },
+		func() ([]scales.TBLane, error) {
+			return []scales.TBLane{{Iface: "en1", Port: "Thunderbolt 1", Active: true}}, nil
+		},
+	)
+	defer ResetTrafficProvidersForTest()
+
+	actors, err := NetTrafficProbe("m1", "en999")
+	if err == nil {
+		t.Fatalf("expected an error for an unknown scoped interface, got actors %#v", actors)
+	}
+	if actors != nil {
+		t.Fatalf("expected nil actors alongside the error, got %#v", actors)
+	}
+}
+
 func TestReadNetstatIB_ParsesLinkRowsOnly(t *testing.T) {
 	// Mirrors real `netstat -ib` output shapes: a virtual interface with a
 	// blank Address column (lo0) and a hardware interface with a MAC in that
