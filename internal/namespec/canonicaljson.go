@@ -28,8 +28,29 @@ import (
 // would let a schema's hashed meaning diverge from what a reviewer read), and
 // non-UTF-8 input.
 func canonicalize(raw []byte) ([]byte, error) {
+	v, err := parseCanonicalValue(raw)
+	if err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
+	if err := encodeCanonical(&buf, v); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// parseCanonicalValue is canonicalize's and SchemaHash's shared parse half:
+// UTF-8 validity, lone-surrogate rejection, decode, and the single-top-level-
+// value check. SchemaHash used to run its own independent decode that skipped
+// every one of these (A35: a public entry point bypassing the checks its
+// sibling enforces is the same claim with a narrower scope) — both now go
+// through exactly this.
+func parseCanonicalValue(raw []byte) (any, error) {
 	if !utf8.Valid(raw) {
 		return nil, fmt.Errorf("namespec: schema document is not valid UTF-8")
+	}
+	if err := rejectLoneSurrogateEscapes(raw); err != nil {
+		return nil, err
 	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
@@ -41,11 +62,7 @@ func canonicalize(raw []byte) ([]byte, error) {
 		// Anything after the single top-level value is malformed JSON.
 		return nil, fmt.Errorf("namespec: trailing content after top-level value")
 	}
-	var buf bytes.Buffer
-	if err := encodeCanonical(&buf, v); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
+	return v, nil
 }
 
 // SchemaHash computes the ADR-072 C2 hash: sha256 over the JCS-canonicalized
@@ -53,9 +70,7 @@ func canonicalize(raw []byte) ([]byte, error) {
 // hashed payload (a hash that includes itself proves nothing). raw must be a
 // JSON object; any other top-level shape is a load error.
 func SchemaHash(raw []byte) (string, error) {
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.UseNumber()
-	v, err := decodeValue(dec)
+	v, err := parseCanonicalValue(raw)
 	if err != nil {
 		return "", fmt.Errorf("namespec: parse for hashing: %w", err)
 	}
@@ -70,6 +85,61 @@ func SchemaHash(raw []byte) (string, error) {
 	}
 	sum := sha256.Sum256(buf.Bytes())
 	return hex.EncodeToString(sum[:]), nil
+}
+
+// rejectLoneSurrogateEscapes scans raw's string literals for \uXXXX escapes
+// and refuses an unpaired UTF-16 surrogate. encoding/json's own decoder
+// accepts one silently: a lone surrogate cannot be represented in a Go string
+// (UTF-8 has no encoding for it), so the decoder quietly substitutes
+// U+FFFD — by the time decodeValue sees the value, the malformed escape is
+// gone and unrecoverable. This runs on the raw bytes, before that
+// substitution happens, so the input is refused instead of silently
+// corrected.
+func rejectLoneSurrogateEscapes(raw []byte) error {
+	inString := false
+	for i := 0; i < len(raw); i++ {
+		c := raw[i]
+		if !inString {
+			if c == '"' {
+				inString = true
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inString = false
+		case '\\':
+			if i+1 >= len(raw) {
+				return fmt.Errorf("namespec: truncated escape sequence")
+			}
+			if raw[i+1] != 'u' {
+				i++ // \", \\, \/, \b, \f, \n, \r, \t — one escaped byte
+				continue
+			}
+			if i+6 > len(raw) {
+				return fmt.Errorf("namespec: truncated unicode escape")
+			}
+			hi, err := strconv.ParseUint(string(raw[i+2:i+6]), 16, 32)
+			if err != nil {
+				return fmt.Errorf("namespec: invalid unicode escape %q: %w", raw[i:i+6], err)
+			}
+			i += 5 // consumed \uXXXX; loop's i++ lands past it
+			switch {
+			case hi >= 0xDC00 && hi <= 0xDFFF:
+				return fmt.Errorf("namespec: unpaired low surrogate \\u%04x", hi)
+			case hi >= 0xD800 && hi <= 0xDBFF:
+				if i+6 >= len(raw) || raw[i+1] != '\\' || raw[i+2] != 'u' {
+					return fmt.Errorf("namespec: unpaired high surrogate \\u%04x", hi)
+				}
+				lo, err := strconv.ParseUint(string(raw[i+3:i+7]), 16, 32)
+				if err != nil || lo < 0xDC00 || lo > 0xDFFF {
+					return fmt.Errorf("namespec: unpaired high surrogate \\u%04x", hi)
+				}
+				i += 6 // consumed the paired \uXXXX too
+			}
+		}
+	}
+	return nil
 }
 
 // orderedObject preserves first-insertion order (irrelevant to the canonical
@@ -222,10 +292,40 @@ func less16(a, b string) bool {
 }
 
 // encodeCanonicalString writes s per RFC 8785 §3.2.2: a plain JSON string with
-// only the characters JSON itself requires escaped, and no other escaping.
+// only the characters JSON itself requires escaped (quote, backslash, and
+// control characters below U+0020), and no other escaping. json.Marshal is
+// NOT used here: Go's encoder HTML-escapes '<', '>', '&' and unconditionally
+// escapes U+2028/U+2029 (its own JS-embedding safety feature) — JCS forbids
+// escaping any of those, so a document round-tripped through json.Marshal
+// hashed to a different byte sequence than RFC 8785 requires (two independent
+// implementations would never agree on this schema's hash).
 func encodeCanonicalString(buf *bytes.Buffer, s string) {
-	b, _ := json.Marshal(s)
-	buf.Write(b)
+	buf.WriteByte('"')
+	for _, r := range s {
+		switch r {
+		case '"':
+			buf.WriteString(`\"`)
+		case '\\':
+			buf.WriteString(`\\`)
+		case '\b':
+			buf.WriteString(`\b`)
+		case '\f':
+			buf.WriteString(`\f`)
+		case '\n':
+			buf.WriteString(`\n`)
+		case '\r':
+			buf.WriteString(`\r`)
+		case '\t':
+			buf.WriteString(`\t`)
+		default:
+			if r < 0x20 {
+				fmt.Fprintf(buf, `\u%04x`, r)
+			} else {
+				buf.WriteRune(r)
+			}
+		}
+	}
+	buf.WriteByte('"')
 }
 
 // encodeCanonicalNumber writes a schema document's number in its shortest

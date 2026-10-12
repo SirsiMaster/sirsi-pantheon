@@ -3,6 +3,7 @@ package namespec
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -123,5 +124,77 @@ func TestSchemaHashOfRealSchemaIsStable(t *testing.T) {
 	}
 	if len(h1) != 64 {
 		t.Errorf("SchemaHash should be a 64-char hex sha256, got %d chars", len(h1))
+	}
+}
+
+// TestSchemaHashBypassesCanonicalizeChecks_NowRejects: codex-pantheon
+// CHANGES_REQUESTED (PR #1056, head 443f42f8) — SchemaHash ran its own
+// independent decode that skipped canonicalize's UTF-8 validity and
+// trailing-content checks. Both entry points now share parseCanonicalValue,
+// so SchemaHash must refuse exactly what canonicalize refuses.
+func TestSchemaHashBypassesCanonicalizeChecks_NowRejects(t *testing.T) {
+	invalidUTF8 := append([]byte(`{"a":"`), 0xff, 0xfe)
+	invalidUTF8 = append(invalidUTF8, []byte(`"}`)...)
+	if _, err := SchemaHash(invalidUTF8); err == nil {
+		t.Error("SchemaHash should reject invalid UTF-8 like canonicalize does, got nil error")
+	}
+
+	trailing := []byte(`{"a":1}garbage`)
+	if _, err := SchemaHash(trailing); err == nil {
+		t.Error("SchemaHash should reject trailing content after the top-level value, got nil error")
+	}
+}
+
+// TestEncodeCanonicalString_DoesNotHTMLEscapeOrEscapeLineSeparators:
+// codex-pantheon CHANGES_REQUESTED (PR #1056) — encodeCanonicalString used
+// json.Marshal, which HTML-escapes '<','>','&' and unconditionally escapes
+// U+2028/U+2029. RFC 8785 JCS forbids escaping any of those; a schema's hash
+// must be reproducible by any compliant JCS implementation, not just Go's.
+func TestEncodeCanonicalString_DoesNotHTMLEscapeOrEscapeLineSeparators(t *testing.T) {
+	raw := []byte("{\"a\":\"<tag>&amp;\u2028\u2029\"}")
+	out, err := canonicalize(raw)
+	if err != nil {
+		t.Fatalf("canonicalize: %v", err)
+	}
+	got := string(out)
+	for _, escaped := range []string{`\u003c`, `\u003e`, `\u0026`, `\u2028`, `\u2029`} {
+		if strings.Contains(got, escaped) {
+			t.Errorf("canonical output must not contain the escape %s (JCS forbids it), got %q", escaped, got)
+		}
+	}
+	want := "{\"a\":\"<tag>&amp;\u2028\u2029\"}"
+	if got != want {
+		t.Errorf("expected the literal characters unescaped in output: got %q, want %q", got, want)
+	}
+}
+
+// TestCanonicalize_RejectsLoneSurrogateEscapes: codex-pantheon
+// CHANGES_REQUESTED (PR #1056) — a lone (unpaired) UTF-16 surrogate escape is
+// invalid Unicode text; encoding/json's decoder silently substitutes U+FFFD
+// instead of erroring, so the hash would be computed over corrupted input
+// without anyone knowing. Both a lone high surrogate and a lone low
+// surrogate must be refused; a correctly paired surrogate (a real character
+// outside the BMP) must still be accepted.
+func TestCanonicalize_RejectsLoneSurrogateEscapes(t *testing.T) {
+	cases := []struct {
+		name    string
+		raw     string
+		wantErr bool
+	}{
+		{"lone high surrogate", `{"a":"\uD800"}`, true},
+		{"lone low surrogate", `{"a":"\uDC00"}`, true},
+		{"high surrogate followed by non-escape", `{"a":"\uD800x"}`, true},
+		{"valid surrogate pair", `{"a":"😀"}`, false}, // U+1F600 GRINNING FACE
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := canonicalize([]byte(c.raw))
+			if c.wantErr && err == nil {
+				t.Errorf("canonicalize(%q): expected an error, got nil", c.raw)
+			}
+			if !c.wantErr && err != nil {
+				t.Errorf("canonicalize(%q): unexpected error: %v", c.raw, err)
+			}
+		})
 	}
 }
