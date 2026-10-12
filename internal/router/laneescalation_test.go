@@ -10,14 +10,14 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/supervision"
 )
 
-func ownerOpenTitles(t *testing.T, root string) map[string]bool {
+func technicalOpenTitles(t *testing.T, root string) map[string]bool {
 	t.Helper()
 	f, err := dispatch.OpenRoot(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = f.Close() }()
-	items, err := f.Inbox("owner")
+	items, err := f.Inbox(technicalEscalationAgent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func ownerOpenTitles(t *testing.T, root string) map[string]bool {
 func TestRouteLaneEscalationsResolvesClearedAlerts(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv(routercfg.StoreWakeEnv, "1")
-	reg := `{"agents":{"owner":{"id":"owner","type":"claude","repo":"/tmp","workstream":"owner","wake":{"mechanism":"none"}}}}`
+	reg := `{"agents":{"owner":{"id":"owner","type":"claude","repo":"/tmp","workstream":"owner","wake":{"mechanism":"none"}},"sirsi-software-admin":{"id":"sirsi-software-admin","type":"codex","repo":"/tmp","workstream":"pantheon","wake":{"mechanism":"none"}}}}`
 	if err := os.WriteFile(filepath.Join(root, "agents.json"), []byte(reg), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -45,11 +45,11 @@ func TestRouteLaneEscalationsResolvesClearedAlerts(t *testing.T) {
 		"Lane needs you: lane-a cannot be reached automatically",
 		"Lane needs you: lane-b cannot be reached automatically",
 	} {
-		if _, err := f.Store().Send("horus", "owner", title, "decision", "why"); err != nil {
+		if _, err := f.Store().Send("horus", technicalEscalationAgent, title, "proposal", "why"); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := f.Store().Send("claude-pantheon", "owner", "Lane needs you: lane-c cannot be reached automatically", "decision", "a person wrote this"); err != nil {
+	if _, err := f.Store().Send("claude-pantheon", technicalEscalationAgent, "Lane needs you: lane-c cannot be reached automatically", "proposal", "a person wrote this"); err != nil {
 		t.Fatal(err)
 	}
 	_ = f.Close()
@@ -58,7 +58,7 @@ func TestRouteLaneEscalationsResolvesClearedAlerts(t *testing.T) {
 	if _, err := RouteLaneEscalations(root, still); err != nil {
 		t.Fatal(err)
 	}
-	got := ownerOpenTitles(t, root)
+	got := technicalOpenTitles(t, root)
 	if got["Lane needs you: lane-a cannot be reached automatically"] {
 		t.Fatal("lane-a is no longer escalated: its Horus alert must be closed")
 	}
@@ -74,7 +74,7 @@ func TestRouteLaneEscalationsResolvesClearedAlerts(t *testing.T) {
 	if _, err := RouteLaneEscalations(root, nil); err != nil {
 		t.Fatal(err)
 	}
-	if ownerOpenTitles(t, root)["Lane needs you: lane-b cannot be reached automatically"] {
+	if technicalOpenTitles(t, root)["Lane needs you: lane-b cannot be reached automatically"] {
 		t.Fatal("no escalations left: lane-b's alert must resolve")
 	}
 }

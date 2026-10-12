@@ -120,7 +120,7 @@ var restoreWait = 5 * time.Second
 
 // restoreFailTitle is the router item title deduped against the open user inbox
 // so a persistent RAM gap does not flood every 2-minute duty tick.
-const restoreFailTitle = "gemma-liveness: broker restore failed — free memory"
+const restoreFailTitle = "gemma-liveness: broker restore failed — technical diagnosis required"
 
 // weightsAbsentTitle is the router item title for the "weights likely absent"
 // class: the HF model cache was deleted and a restart cannot restore it. Distinct
@@ -262,7 +262,7 @@ func setRestoreWaitFn(fn func()) {
 }
 
 // gemmaRouteRestoreFail sends ONE non-duplicate "restore did not stick" item
-// to the owner via the dispatch facade (not work.Send directly) so the alert
+// to software administration via the dispatch facade (not work.Send directly) so the alert
 // is written to BOTH the router store AND the audit file — without the store
 // row the wake path (router wait) never delivers the alert. Silently skips
 // when routerRoot is "" (test scaffolds, library consumers without a real
@@ -278,23 +278,27 @@ func gemmaRouteRestoreFail(routerRoot, reason string) {
 	}
 	defer func() { _ = f.Close() }()
 
-	// Dedup: skip if the owner already has an open item with this title.
-	if items, listErr := f.Inbox("owner"); listErr == nil {
-		for _, it := range items {
-			if it.Title == restoreFailTitle {
-				fmt.Fprintf(os.Stderr, "gemma-liveness: restore-fail item already open, skipping route\n")
-				return
-			}
+	// Fail closed on an unreadable technical inbox: do not manufacture repeated
+	// alerts by assuming its contents are empty.
+	items, listErr := f.Inbox(technicalEscalationAgent)
+	if listErr != nil {
+		fmt.Fprintf(os.Stderr, "gemma-liveness: read technical inbox: %v\n", listErr)
+		return
+	}
+	for _, it := range items {
+		if it.Title == restoreFailTitle {
+			fmt.Fprintf(os.Stderr, "gemma-liveness: restore-fail item already open, skipping route\n")
+			return
 		}
 	}
 	body := "The gemma-liveness supervisor duty attempted to restore the warm broker " +
 		"(load-bearing Tier-0 substrate for router/reconcile/gemma-builder) but the " +
 		"broker did not recover. Reason: " + reason + ". " +
-		"Most likely cause: RAM won't fit the model. " +
-		"Fix: free memory (run `sirsi reap-sessions --apply` to reclaim leaked sessions, " +
-		"or right-size the model in ~/.sirsi/gemma-model.conf to a smaller variant), " +
-		"then run `sirsi gemma serve` to restart manually."
-	if _, sendErr := f.Send("horus", "owner", restoreFailTitle, "decision", body); sendErr != nil {
+		"An exit status alone does not identify the cause. Obtain fresh native endpoint, " +
+		"process, selected-model and capacity evidence; coordinate remediation with Apollo/SHA. " +
+		"Do not reap sessions, discard unsaved context, resize models or restart workloads " +
+		"merely from this alert. Return a specific owner decision only if diagnosis establishes one."
+	if _, sendErr := f.Send("horus", technicalEscalationAgent, restoreFailTitle, "proposal", body); sendErr != nil {
 		fmt.Fprintf(os.Stderr, "gemma-liveness: route restore-fail: %v\n", sendErr)
 	}
 }

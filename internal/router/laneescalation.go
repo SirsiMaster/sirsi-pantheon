@@ -9,7 +9,11 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
 
-// RouteLaneEscalations delivers supervision escalations to the owner.
+// technicalEscalationAgent owns routine service diagnosis. Only an explicit,
+// evidenced human decision should be forwarded from this lane to the owner.
+const technicalEscalationAgent = "sirsi-software-admin"
+
+// RouteLaneEscalations delivers supervision failures to software administration.
 //
 // This is the caller supervision.Escalates() never had. Before it, the
 // classifier could decide a lane was beyond automatic repair, the board could
@@ -18,7 +22,7 @@ import (
 // to remove. ADR-054 §3 already required "two failed wake cycles -> owner
 // escalation card (never silent)"; that sentence had no implementation.
 //
-// Dedup is by exact item title against the owner's OPEN inbox, matching
+// Dedup is by exact item title against software administration's OPEN inbox, matching
 // gemmaRouteRestoreFail. A supervisor pass runs on a 60s cadence, so without
 // dedup this would mint one item per lane per minute and be muted within the
 // hour — an escalation channel nobody reads is worse than none, because it
@@ -36,12 +40,12 @@ func RouteLaneEscalations(routerRoot string, escalations []supervision.Escalatio
 	}
 	defer func() { _ = f.Close() }()
 
-	open, err := f.Inbox("owner")
+	open, err := f.Inbox(technicalEscalationAgent)
 	if err != nil {
 		// Fail closed. Sending without reading the inbox first would duplicate
 		// every still-open escalation on every pass, which is precisely the
 		// noise dedup exists to prevent.
-		return nil, fmt.Errorf("lane escalation: read owner inbox: %w", err)
+		return nil, fmt.Errorf("lane escalation: read technical inbox: %w", err)
 	}
 	openTitles := make(map[string]bool, len(open))
 	for _, it := range open {
@@ -55,7 +59,8 @@ func RouteLaneEscalations(routerRoot string, escalations []supervision.Escalatio
 		if openTitles[e.Title()] {
 			continue
 		}
-		if _, sendErr := f.Send("horus", "owner", e.Title(), "decision", e.Why); sendErr != nil {
+		body := "Technical delivery incident, not an owner decision. Diagnose actual lane custody, preserve owner-paused lanes, and repair or route to the responsible service. Escalate only a specific human choice backed by fresh evidence.\n\n" + e.Why
+		if _, sendErr := f.Send("horus", technicalEscalationAgent, e.Title(), "proposal", body); sendErr != nil {
 			if firstErr == nil {
 				firstErr = fmt.Errorf("lane escalation: send %s: %w", e.Agent, sendErr)
 			}
@@ -72,7 +77,7 @@ func RouteLaneEscalations(routerRoot string, escalations []supervision.Escalatio
 // resolveClearedAlerts closes Horus's own "lane needs you" alerts once the
 // condition that raised them is gone. The sender only ever opened these (deduped
 // by title) and nothing closed them, so every lane that recovered left a stale
-// card on the owner's board (six such cards were dismissed by hand on 2026-10-02
+// card on the recipient's board (six such cards were dismissed by hand on 2026-10-02
 // for lanes that were already wakeable). It closes only what Horus itself sent, by
 // title, and only when the current pass no longer escalates that lane; a still-true
 // alert is never touched. Failures are ignored: a stale card is the old behavior,

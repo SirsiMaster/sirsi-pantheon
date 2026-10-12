@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
@@ -12,7 +13,7 @@ import (
 
 func writeGemmaRouteRegistry(t *testing.T, root string) {
 	t.Helper()
-	body := `{"agents":{"horus":{"id":"horus","type":"service","repo":"/tmp","workstream":"pantheon","wake":{"mechanism":"none"}},"owner":{"id":"owner","type":"human","repo":"/tmp","workstream":"portfolio","wake":{"mechanism":"owner-surface"}}}}`
+	body := `{"agents":{"horus":{"id":"horus","type":"service","repo":"/tmp","workstream":"pantheon","wake":{"mechanism":"none"}},"sirsi-software-admin":{"id":"sirsi-software-admin","type":"codex","repo":"/tmp","workstream":"pantheon","wake":{"mechanism":"none"}},"owner":{"id":"owner","type":"human","repo":"/tmp","workstream":"portfolio","wake":{"mechanism":"owner-surface"}}}}`
 	if err := os.WriteFile(filepath.Join(root, "agents.json"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +135,7 @@ func TestGemmaLiveness_TransientWedgeResets(t *testing.T) {
 // TestGemmaLiveness_RestoreFailRoutesToUser: when serve itself errors (e.g. RAM
 // won't fit), the duty routes ONE non-duplicate item to `user` via the dispatch
 // facade (store + file, not file-only).
-func TestGemmaLiveness_RestoreFailRoutesToUser(t *testing.T) {
+func TestGemmaLiveness_RestoreFailRoutesToSoftware(t *testing.T) {
 	zeroRestoreWait(t)
 	root := t.TempDir()
 	writeGemmaRouteRegistry(t, root)
@@ -167,7 +168,7 @@ func TestGemmaLiveness_RestoreFailRoutesToUser(t *testing.T) {
 	}
 	defer func() { _ = f.Close() }()
 
-	items, listErr := f.Inbox("owner")
+	items, listErr := f.Inbox(technicalEscalationAgent)
 	if listErr != nil {
 		t.Fatalf("read user inbox: %v", listErr)
 	}
@@ -178,6 +179,9 @@ func TestGemmaLiveness_RestoreFailRoutesToUser(t *testing.T) {
 	for _, it := range items {
 		if it.Title == restoreFailTitle {
 			found = true
+			if it.Type != "proposal" || strings.Contains(it.Instructions, "Most likely cause") || strings.Contains(it.Instructions, "reap-sessions --apply") {
+				t.Fatalf("technical alert guesses cause or authorizes unsafe recovery: %+v", it)
+			}
 			break
 		}
 	}
@@ -187,7 +191,11 @@ func TestGemmaLiveness_RestoreFailRoutesToUser(t *testing.T) {
 
 	// Second call: item already exists — must not duplicate.
 	_ = RunGemmaLivenessDuty(root, "")
-	items2, _ := f.Inbox("owner")
+	ownerItems, ownerErr := f.Inbox("owner")
+	if ownerErr != nil || len(ownerItems) != 0 {
+		t.Fatalf("routine restore failure must not page owner: %v, %v", ownerItems, ownerErr)
+	}
+	items2, _ := f.Inbox(technicalEscalationAgent)
 	if len(items2) != len(items) {
 		t.Errorf("second call wrote a duplicate item (got %d items, want %d)", len(items2), len(items))
 	}
@@ -311,7 +319,7 @@ func TestGemmaLiveness_PostRestoreStillWedgedRoutesToUser(t *testing.T) {
 	}
 	defer func() { _ = f.Close() }()
 
-	items, _ := f.Inbox("owner")
+	items, _ := f.Inbox(technicalEscalationAgent)
 	found := false
 	for _, it := range items {
 		if it.Title == restoreFailTitle {
