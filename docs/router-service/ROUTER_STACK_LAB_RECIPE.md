@@ -14,6 +14,19 @@
 
 ## Current release boundary
 
+### 2026-10-12 delivery qualification addendum
+
+The bounded correction and its exact claims are in
+[ROUTER_DELIVERY_CLOSURE_20261012.md](ROUTER_DELIVERY_CLOSURE_20261012.md).
+Fresh M1/M5 restricted, network-disabled sandbox access passed through the
+existing relay. Bidirectional canonical-cloud close/result and controlled
+pre-send failure → durable retry → same-ID deduplication passed on both hosts.
+All 42 retired-store rows have a recorded disposition and canonical archival
+readback; originals remain untouched. This does not claim individual original-ID
+import or actual installed-client/fleet rollout. Full-history response pagination
+and release integration remain explicitly open. Earlier dated inventory below
+must not be mistaken for the 2026-10-12 deployed identity.
+
 - Source branch: `fix/router-one-authority-live-20261007`.
 - Base source: `origin/main` `958e7fbf` at the start of this candidate.
 - Candidate commits: `6f71127a` (implicit local ledger refusal) and `379d8e71`

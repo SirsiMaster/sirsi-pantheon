@@ -429,9 +429,32 @@ func acquireSlotIn(root *os.Root, relDir string) (string, error) {
 			_ = f.Close()
 			return p, nil
 		}
-		if st, serr := root.Stat(p); serr == nil && time.Since(st.ModTime()) > spoolStaleAfter {
-			_ = root.Remove(p)
-			i-- // retry this slot once
+		// Only EEXIST proves occupancy. Sandbox/permission/I/O errors must not
+		// masquerade as 64 occupied slots or an upstream relay outage.
+		if !errors.Is(err, fs.ErrExist) {
+			return "", fmt.Errorf("spool: cannot acquire request slot %s (request not published; verify sandbox writable roots and relay-directory access): %w", p, err)
+		}
+		st, serr := root.Stat(p)
+		if serr != nil {
+			if errors.Is(serr, fs.ErrNotExist) {
+				continue // another caller released the slot
+			}
+			return "", fmt.Errorf("spool: inspect occupied request slot %s: %w", p, serr)
+		}
+		if time.Since(st.ModTime()) > spoolStaleAfter {
+			if err := root.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return "", fmt.Errorf("spool: reclaim stale request slot %s: %w", p, err)
+			}
+			// One bounded retry, rather than decrementing i indefinitely when
+			// reclamation is denied or another caller repeatedly wins the slot.
+			f, err = root.OpenFile(p, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+			if err == nil {
+				_ = f.Close()
+				return p, nil
+			}
+			if !errors.Is(err, fs.ErrExist) {
+				return "", fmt.Errorf("spool: reacquire request slot %s: %w", p, err)
+			}
 		}
 	}
 	return "", fmt.Errorf("spool: %d requests in flight for this lane; relay stalled?", spoolMaxInFlight)
