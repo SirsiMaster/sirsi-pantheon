@@ -1,5 +1,11 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-12 — v0.24.101 release candidate
+
+- docs(router):
+- docs(router):
+- fix(router):
+
 ## 2026-10-11 — v0.24.100 release candidate
 
 - Router queue drill-down:
