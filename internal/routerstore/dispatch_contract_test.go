@@ -565,3 +565,84 @@ func TestSendQuotaRefreshesWhenTheWindowRollsOver(t *testing.T) {
 		t.Fatalf("a new window must grant a fresh budget, got %v", err)
 	}
 }
+
+// A reviewer answering a legitimate review storm must not be throttled by the
+// storm's volume: a verified reply (SourceItem names a real item addressed TO
+// the replier) is exempt from the replier's own quota. The exemption must be
+// VERIFIED server-side, not granted on a bare claim — a sender inventing a
+// SourceItem that is not really addressed to them gets no exemption (the
+// claim "this is a reply" is scoped to what the store can confirm, A35).
+func TestVerifiedReplyExemptFromSenderQuota(t *testing.T) {
+	s := openTestStore(t)
+	oldQ := MaxSendsPerSenderPerWindow
+	MaxSendsPerSenderPerWindow = 2
+	t.Cleanup(func() { MaxSendsPerSenderPerWindow = oldQ })
+	s.now = func() time.Time { return time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC) }
+
+	// codex-finalwishes floods ssa with inbound review items — each one real,
+	// each one FROM codex-finalwishes TO ssa, far more than ssa's own quota.
+	inbound := make([]string, 10)
+	for i := range inbound {
+		id := fmt.Sprintf("review-item-%03d", i)
+		if err := s.Put(Item{ID: id, From: "codex-finalwishes", To: "ssa", Title: fmt.Sprintf("review %d", i), Status: "open"}); err != nil {
+			t.Fatal(err)
+		}
+		inbound[i] = id
+	}
+
+	// ssa replies to each inbound item. None of these count against ssa's own
+	// quota: every SourceItem genuinely names an item addressed to ssa.
+	for i, item := range inbound {
+		_, _, err := s.SendGuarded(SendReq{
+			From: "ssa", To: "codex-finalwishes",
+			Title: fmt.Sprintf("RESPONSE %d", i), SourceItem: item,
+		})
+		if err != nil {
+			t.Fatalf("verified reply %d must not be throttled by the storm it answers: %v", i, err)
+		}
+	}
+
+	// A FRESH, unprompted send from ssa still spends real quota — the
+	// exemption covers verified replies only, not a blanket pass for ssa.
+	for i := 0; i < MaxSendsPerSenderPerWindow; i++ {
+		if _, _, err := s.SendGuarded(SendReq{From: "ssa", To: "claude-home", Title: fmt.Sprintf("fresh %d", i)}); err != nil {
+			t.Fatalf("fresh send %d inside budget: %v", i, err)
+		}
+	}
+	if _, _, err := s.SendGuarded(SendReq{From: "ssa", To: "claude-home", Title: "fresh over"}); !errors.Is(err, ErrOverQuota) {
+		t.Fatalf("a fresh send past the real budget must still be throttled, got %v", err)
+	}
+
+	// Negative control: a caller claiming a SourceItem that is NOT really
+	// addressed to them buys no exemption — this is the check that would have
+	// let the quota be bypassed entirely if the scope had been self-declared.
+	if _, _, err := s.SendGuarded(SendReq{
+		From: "attacker", To: "claude-home", Title: "fake reply", SourceItem: inbound[0], // addressed to ssa, not attacker
+	}); err != nil {
+		t.Fatalf("first unverified send should succeed (inside budget), got %v", err)
+	}
+	for i := 0; i < MaxSendsPerSenderPerWindow; i++ {
+		_, _, _ = s.SendGuarded(SendReq{
+			From: "attacker", To: "claude-home", Title: fmt.Sprintf("fake reply %d", i), SourceItem: inbound[0],
+		})
+	}
+	if _, _, err := s.SendGuarded(SendReq{
+		From: "attacker", To: "claude-home", Title: "fake reply over", SourceItem: inbound[0],
+	}); !errors.Is(err, ErrOverQuota) {
+		t.Fatalf("an unverified SourceItem claim must not bypass quota, got %v", err)
+	}
+
+	// Negative control: citing the SAME sourceItem a second time does not buy
+	// a second exemption — one inbound item authorizes exactly one exempt
+	// reply, not an unlimited stream (the rate-limit-bypass the security
+	// review flagged: without this cap, ssa could re-cite inbound[1] forever).
+	s.now = func() time.Time { return time.Date(2026, 10, 6, 13, 0, 0, 0, time.UTC) } // fresh window, isolate from the budget spent above
+	for i := 0; i < MaxSendsPerSenderPerWindow; i++ {
+		if _, _, err := s.SendGuarded(SendReq{From: "ssa", To: "codex-finalwishes", Title: fmt.Sprintf("repeat reply %d", i), SourceItem: inbound[1]}); err != nil {
+			t.Fatalf("repeat reply %d citing an already-used sourceItem spends real quota, should still be inside budget: %v", i, err)
+		}
+	}
+	if _, _, err := s.SendGuarded(SendReq{From: "ssa", To: "codex-finalwishes", Title: "repeat reply over", SourceItem: inbound[1]}); !errors.Is(err, ErrOverQuota) {
+		t.Fatalf("re-citing an already-used sourceItem must not stay exempt forever, got %v", err)
+	}
+}
