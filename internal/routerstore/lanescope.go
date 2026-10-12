@@ -120,20 +120,35 @@ func (s *server) laneScope(scope map[string]bool, sess Session, name string, in 
 	return nil
 }
 
-func threadRecordsInScope(scope map[string]bool, _ *server, in []reflect.Value) error {
+func threadRecordsInScope(scope map[string]bool, s *server, in []reflect.Value) error {
 	for _, v := range in {
 		switch r := v.Interface().(type) {
 		case ThreadRecord:
-			if !scope[r.Agent] {
-				return fmt.Errorf("%w: thread record for %q", ErrLaneScope, r.Agent)
+			if err := threadRecordInScope(scope, s, r); err != nil {
+				return err
 			}
 		case []ThreadRecord:
 			for _, t := range r {
-				if !scope[t.Agent] {
-					return fmt.Errorf("%w: thread record for %q", ErrLaneScope, t.Agent)
+				if err := threadRecordInScope(scope, s, t); err != nil {
+					return err
 				}
 			}
 		}
+	}
+	return nil
+}
+
+// threadRecordInScope refuses a write whose new agent OR current row owner is outside the token's scope.
+// Checking only the incoming agent (as the original PR #1079 did) let a scoped token overwrite an existing
+// blank-host or same-host row it did not own, by naming a thread id and claiming it for an in-scope agent;
+// the pre-existing host check in threadAuthority only protects a row already bound to a DIFFERENT host
+// (SSA PR #1079 review, P1).
+func threadRecordInScope(scope map[string]bool, s *server, r ThreadRecord) error {
+	if !scope[r.Agent] {
+		return fmt.Errorf("%w: thread record for %q", ErrLaneScope, r.Agent)
+	}
+	if existing, err := s.store.ThreadBinding(r.ThreadID); err == nil && !scope[existing.Agent] {
+		return fmt.Errorf("%w: thread %q is owned by %q", ErrLaneScope, r.ThreadID, existing.Agent)
 	}
 	return nil
 }
