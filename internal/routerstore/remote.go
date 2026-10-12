@@ -108,8 +108,9 @@ type RemoteStore struct {
 	threadID             string // SIRSI_THREAD_ID: the registered thread this process works for (Rule of Ra)
 	sessionDir           string // "" disables the on-disk cache (tests)
 
-	mu      sync.Mutex
-	session Session // ID + Secret once minted
+	mu          sync.Mutex
+	session     Session // ID + Secret once minted
+	identityErr error
 	// now is injectable for the freshness tests.
 	now func() time.Time
 }
@@ -144,15 +145,28 @@ var IdentityHook func() (agent, threadID string)
 // can rewrite), it does not remove the need to migrate deliberately.
 const EnvUseMachineIDHost = "SIRSI_ROUTER_USE_MACHINE_ID"
 
+// Cloud sandboxes have ephemeral OS hostnames. This is a declared logical
+// executor identity, NOT an assertion of physical machine identity. The server
+// still binds every session to the exact scoped host token.
+const EnvCloudHost = "SIRSI_ROUTER_CLOUD_HOST"
+
 func NewRemoteStore(base, token string) *RemoteStore {
 	displayHost, _ := os.Hostname() // readable name; the agent-id fallback below, and the default auth claim
 	host := displayHost
+	var identityErr error
 	if strings.TrimSpace(os.Getenv(EnvUseMachineIDHost)) != "" {
 		if id := machineid.MachineID(); id != "" {
 			host = id
 		}
 		// id == "": platform exposes no machine id (non-Mac/Linux, or the probe
 		// failed) — keep the hostname claim rather than authenticate as "".
+	}
+	if cloudHost := strings.TrimSpace(os.Getenv(EnvCloudHost)); cloudHost != "" {
+		if !validCloudExecutorHost(cloudHost) || strings.TrimSpace(os.Getenv(EnvUseMachineIDHost)) != "" {
+			identityErr = errors.New("invalid or conflicting cloud executor host identity")
+		} else {
+			host = cloudHost
+		}
 	}
 	agent := strings.TrimSpace(os.Getenv("SIRSI_AGENT_ID"))
 	threadID := strings.TrimSpace(os.Getenv("SIRSI_THREAD_ID"))
@@ -198,16 +212,17 @@ func NewRemoteStore(base, token string) *RemoteStore {
 		client.Transport = t // opt-in TLS public-key pinning (remote_pin.go)
 	}
 	return &RemoteStore{
-		base:       strings.TrimRight(base, "/"),
-		token:      token,
-		client:     client,
-		perCall:    35 * time.Second, // CLIENT-side call budget. Must exceed the 30s spool wait, or it cancels a spool round-trip before the relay answers; the old 5s also canceled a warm ~3-4s full-ledger ListAll outright (SSA 2026-09-11, confirmed by a client negative control). ListAll's own QueryContext is now server-bound too (rs-26, serve.go's per-request timeout), so this ceiling and the server's deadline both apply. A LOCAL SQLiteStore's ExportMarkdown, by contrast, has no server injecting a deadline — its context.Background() bounds nothing.
-		host:       host,
-		agent:      agent,
-		threadID:   threadID,
-		runtime:    RuntimeHash(),
-		sessionDir: dir,
-		now:        func() time.Time { return time.Now().UTC() },
+		identityErr: identityErr,
+		base:        strings.TrimRight(base, "/"),
+		token:       token,
+		client:      client,
+		perCall:     35 * time.Second, // CLIENT-side call budget. Must exceed the 30s spool wait, or it cancels a spool round-trip before the relay answers; the old 5s also canceled a warm ~3-4s full-ledger ListAll outright (SSA 2026-09-11, confirmed by a client negative control). ListAll's own QueryContext is now server-bound too (rs-26, serve.go's per-request timeout), so this ceiling and the server's deadline both apply. A LOCAL SQLiteStore's ExportMarkdown, by contrast, has no server injecting a deadline — its context.Background() bounds nothing.
+		host:        host,
+		agent:       agent,
+		threadID:    threadID,
+		runtime:     RuntimeHash(),
+		sessionDir:  dir,
+		now:         func() time.Time { return time.Now().UTC() },
 	}
 }
 
@@ -379,6 +394,9 @@ func (rs *RemoteStore) callUnsignedCtx(ctx context.Context, method string, args 
 }
 
 func (rs *RemoteStore) do(ctx context.Context, method string, args []any, sess *Session, outs ...any) error {
+	if rs.identityErr != nil {
+		return rs.identityErr
+	}
 	req := wireRequest{Args: make([]json.RawMessage, 0, len(args))}
 	for _, a := range args {
 		b, err := json.Marshal(a)
