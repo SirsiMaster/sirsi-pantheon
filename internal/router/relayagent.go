@@ -125,6 +125,9 @@ func InstallRelayLaunchAgent(spool, url, token string) (changed bool, path strin
 	if strings.TrimSpace(token) == "" {
 		return false, "", fmt.Errorf("relay install: SIRSI_ROUTER_TOKEN is empty; the relay is the host's token holder")
 	}
+	if err = routerstore.CheckPinRequired(url); err != nil {
+		return false, "", fmt.Errorf("relay install: %w", err)
+	}
 	sirsiBin, err := runningExecutable()
 	if err != nil {
 		return false, "", err

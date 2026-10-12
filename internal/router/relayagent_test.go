@@ -22,6 +22,7 @@ func stubRelayLoad(t *testing.T) *[]string {
 func TestInstallRelayLaunchAgentIsPrivateAndCarriesTheToken(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv(routerstore.EnvSPKIPin, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
 	loaded := stubRelayLoad(t)
 	if err := os.MkdirAll(filepath.Join(home, ".sirsi"), 0o700); err != nil {
 		t.Fatal(err)
@@ -74,6 +75,31 @@ func TestInstallRelayLaunchAgentIsPrivateAndCarriesTheToken(t *testing.T) {
 		if _, _, rerr := InstallRelayLaunchAgent(c[0], c[1], c[2]); rerr == nil {
 			t.Fatalf("%s must be refused", name)
 		}
+	}
+}
+
+// A non-loopback router URL with no SPKI pin must never reach the plist: the
+// relay is the process that holds the host token, so writing it unpinned to
+// disk ships a bearer credential to a real network host with no TLS pin
+// enforcing which host that token may legitimately reach.
+func TestInstallRelayLaunchAgentRequiresPinForNonLoopbackURL(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv(routerstore.EnvSPKIPin, "")
+	stubRelayLoad(t)
+	if err := os.MkdirAll(filepath.Join(home, ".sirsi"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	spool := filepath.Join(home, ".sirsi", "relay")
+
+	if _, _, err := InstallRelayLaunchAgent(spool, "https://router.example.test", "t"); err == nil {
+		t.Fatal("non-loopback URL with no pin must be refused")
+	}
+
+	// Loopback stays exempt: nothing leaves the machine, so no pin is required.
+	changed, _, err := InstallRelayLaunchAgent(spool, "https://127.0.0.1:8443", "t")
+	if err != nil || !changed {
+		t.Fatalf("loopback URL without a pin must be allowed: changed=%v err=%v", changed, err)
 	}
 }
 

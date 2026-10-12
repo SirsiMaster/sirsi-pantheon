@@ -23,7 +23,10 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
 )
 
@@ -107,6 +110,34 @@ func pinConfig(envValue, base string, baseTLS *tls.Config) (*tls.Config, error) 
 		return nil, fmt.Errorf("routerstore: %s is set but the router URL is not https: refusing to talk to it unpinned", EnvSPKIPin)
 	}
 	return pinnedTLSConfig(baseTLS, pins), nil
+}
+
+// CheckPinRequired refuses a plist/env render that would carry the host token to rawURL when
+// rawURL is a non-loopback https endpoint and EnvSPKIPin is unset: launchd runs no shell, so a
+// pin set only in ~/.zshenv never reaches a LaunchAgent, and an installer that wrote the token
+// anyway would ship an unpinned bearer credential to a real network host (security-review
+// finding 2026-10-12). A loopback host (127.0.0.0/8, ::1, "localhost") is exempt — nothing
+// leaves the machine. Malformed rawURL is left to the caller's own URL validation.
+func CheckPinRequired(rawURL string) error {
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return nil
+	}
+	if isLoopbackHost(u.Hostname()) {
+		return nil
+	}
+	if strings.TrimSpace(os.Getenv(EnvSPKIPin)) == "" {
+		return fmt.Errorf("router URL %q is not loopback and %s is unset: refusing to write the host token without a TLS pin", rawURL, EnvSPKIPin)
+	}
+	return nil
+}
+
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // pinTransport returns the transport that enforces the pins from the environment value, nil
