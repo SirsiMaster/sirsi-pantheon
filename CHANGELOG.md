@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.103] — 2026-10-13
+
+- **feat(gemma):** `sirsi gemma shared` gives registered builder lanes on M1 and M5 access to the selected resident native Gemma worker through the existing canonical router. Bounded waits and resume read the exact original and correlated reply; single-use metadata receipts prevent uncertain submissions from being silently resent.
+- **fix(gemma):** native worker requests preserve the selected broker profile, full prompt, lease fencing and output budget. Busy inference is classified distinctly from a failed service; truncated output is not accepted as a completed draft.
+- **docs(gemma):** document normal-command lane access, worker recovery, prompt retention and cross-machine execution. Qualification requires each builder's own registered runtime identity.
+- **test(cli):** isolate the Anubis scan integration fixture from the real user home while preserving its command, assertions and deadline.
+
 ## [0.24.101] — 2026-10-12
 
 - **docs(router):** added `docs/router-service/PRIOR_ART.md`, the M0 prior-art chapter. Three designs read from source
