@@ -89,11 +89,8 @@ func (w nativeGemmaWorker) runOnce(ctx context.Context) (bool, error) {
 	}
 	if err != nil {
 		var broker *gemmaInferenceError
-		if errors.As(err, &broker) && (broker.Permanent || broker.Busy) {
+		if errors.As(err, &broker) && broker.Permanent {
 			reason := "GEMMA BLOCKED: " + broker.Error()
-			if broker.Busy {
-				reason = "GEMMA BUSY: bounded inference wait exhausted; " + broker.Error()
-			}
 			if blockErr := w.store.Block(lease.ItemID, lease.Token, reason); blockErr != nil {
 				return true, fmt.Errorf("record fenced inference block: %w", blockErr)
 			}

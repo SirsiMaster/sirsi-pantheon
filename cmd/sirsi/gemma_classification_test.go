@@ -179,3 +179,23 @@ func TestGemmaUnknown503DoesNotBusyWaitOrPermanentBlock(t *testing.T) {
 		t.Fatal("unknown503 masqueraded as busy/block/success")
 	}
 }
+
+func TestGemmaBusyDeadlineKeepsOriginalRetryableWithExactFence(t *testing.T) {
+	s, r := claimedGemmaItem()
+	calls := 0
+	w := testGemmaWorker(s, r, func(context.Context, string) (string, error) {
+		calls++
+		return "", &gemmaInferenceError{Status: 503, Code: "BUSY", Message: "temporary backpressure", Busy: true, RetryAfter: time.Minute}
+	})
+	w.leaseTTL = 30 * time.Millisecond
+	_, e := w.runOnce(context.Background())
+	if e == nil || calls != 1 || s.blocked != "" || s.failed == "" || r.calls != 0 {
+		t.Fatal("busy deadline stranded original or falsely replied")
+	}
+	if s.failID != s.lease.ItemID || s.failToken != s.lease.Token {
+		t.Fatal("busy failure lost exact item/lease fence")
+	}
+	if !strings.Contains(s.failed, "temporary backpressure") {
+		t.Fatal("busy cause evidence lost")
+	}
+}

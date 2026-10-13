@@ -11,18 +11,19 @@ import (
 )
 
 type gemmaWorkerStoreFake struct {
-	lease     *routerstore.Lease
-	item      routerstore.Item
-	claimErr  error
-	startErr  error
-	verify    bool
-	verifyErr error
-	renewErr  error
-	failErr   error
-	started   bool
-	renews    int
-	failed    string
-	blocked   string
+	lease             *routerstore.Lease
+	item              routerstore.Item
+	claimErr          error
+	startErr          error
+	verify            bool
+	verifyErr         error
+	renewErr          error
+	failErr           error
+	started           bool
+	renews            int
+	failed            string
+	blocked           string
+	failID, failToken string
 }
 
 func (s *gemmaWorkerStoreFake) ClaimNext(_ string, _ time.Duration) (*routerstore.Lease, error) {
@@ -36,7 +37,9 @@ func (s *gemmaWorkerStoreFake) RenewLease(_, _ string, _ time.Duration) error {
 	s.renews++
 	return s.renewErr
 }
-func (s *gemmaWorkerStoreFake) Fail(_, _, reason, _ string) error {
+func (s *gemmaWorkerStoreFake) Fail(id, token, reason, _ string) error {
+	s.failID = id
+	s.failToken = token
 	s.failed = reason
 	return s.failErr
 }
