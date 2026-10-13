@@ -104,6 +104,7 @@ h1{font-size:34px;line-height:1.12;font-weight:700;letter-spacing:-.03em}
 .fleet-metric:hover{background:var(--panel2,var(--panel))}.fleet-metric:focus-visible{outline:2px solid var(--gold);outline-offset:3px}
 .fleet-metric[aria-pressed="true"]{border-color:var(--gold)}
 .fleet-filters{margin:24px 0 16px}.fleet-filters [aria-pressed="true"]{color:var(--gold);border-color:var(--gold)}
+.fleet-tasks th:first-child{width:32%}.fleet-tasks th:nth-child(2){width:18%}.fleet-tasks th:nth-child(3){width:10%}.fleet-tasks th:nth-child(4){width:24%}.fleet-tasks th:last-child{width:16%}
 
 .release{display:grid;grid-template-columns:150px 1fr;gap:24px;padding:22px 0;border-bottom:1px solid var(--line)}
 .release:last-child{border:0}
