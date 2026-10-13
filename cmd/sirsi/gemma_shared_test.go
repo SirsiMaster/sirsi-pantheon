@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
 
 type sharedFake struct {

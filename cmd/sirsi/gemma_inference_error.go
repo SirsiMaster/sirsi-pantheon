@@ -3,9 +3,10 @@ package main
 import (
 	"context"
 	"errors"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/provider"
 	"net/http"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/provider"
 )
 
 type gemmaInferenceError = provider.InferenceError

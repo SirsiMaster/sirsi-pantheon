@@ -373,7 +373,7 @@ func (o *OpenAICompat) Stream(ctx context.Context, req Request) (<-chan StreamCh
 		return nil, fmt.Errorf("%w: %s: %w", ErrUnavailable, o.ProviderName, err)
 	}
 	if hresp.StatusCode != http.StatusOK {
-		defer hresp.Body.Close()
+		defer func() { _ = hresp.Body.Close() }()
 		bearer, _ := BrokerBearer(o.AccessTokenFile)
 		if bearer == "" {
 			bearer = o.APIKey

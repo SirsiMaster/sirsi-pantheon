@@ -5,15 +5,17 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"os"
+	"os/signal"
+
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/spf13/cobra"
-	"io"
-	"os"
-	"os/signal"
 
 	"strings"
 	"syscall"
@@ -69,9 +71,6 @@ func sharedGemmaReplyFingerprint(r routerstore.Item, actor, id string) string {
 		return ""
 	}
 	return finger
-}
-func sharedGemmaMatchesReply(r routerstore.Item, actor, id string) bool {
-	return sharedGemmaReplyFingerprint(r, actor, id) != ""
 }
 func (p sharedGemmaProducer) run(ctx context.Context, prompt, resume string, wait time.Duration) (sharedGemmaResult, error) {
 	out := sharedGemmaResult{State: "pending", OriginalID: resume, Privacy: sharedGemmaPrivacy}
@@ -350,7 +349,9 @@ func newGemmaSharedCmd() *cobra.Command {
 		defer stop()
 		out, e := p.run(ctx, prompt, resume, wait)
 		if JsonOutput {
-			json.NewEncoder(cmd.OutOrStdout()).Encode(out)
+			if err := json.NewEncoder(cmd.OutOrStdout()).Encode(out); err != nil {
+				return errors.Join(e, fmt.Errorf("write shared Gemma result: %w", err))
+			}
 		} else {
 			fmt.Fprintf(cmd.OutOrStdout(), "%s original=%s reply=%s\n", out.State, out.OriginalID, out.ReplyID)
 			if out.Draft != "" {

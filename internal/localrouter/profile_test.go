@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/provider"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/provider"
 )
 
 func TestCompleteLocalUsesSelectedAuthenticatedNonstreamProfile(t *testing.T) {
