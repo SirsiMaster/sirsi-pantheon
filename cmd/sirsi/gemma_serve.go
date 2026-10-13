@@ -254,6 +254,7 @@ func gemmaWarmCompleteContext(ctx context.Context, base, model, prompt string, m
 		},
 		"max_tokens":  maxTokens,
 		"temperature": 0,
+		"stream":      false,
 	})
 	cl := &http.Client{Timeout: 5 * time.Minute}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/v1/chat/completions", bytes.NewReader(body))
@@ -266,6 +267,9 @@ func gemmaWarmCompleteContext(ctx context.Context, base, model, prompt string, m
 		return "", err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("native inference HTTP %d", resp.StatusCode)
+	}
 	var out struct {
 		Choices []struct {
 			Message struct {
