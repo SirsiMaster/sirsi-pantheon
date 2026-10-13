@@ -169,6 +169,40 @@ func TestProbeGemmaState_RetryOnTimeout(t *testing.T) {
 			t.Errorf("always-hangs-with-runner = %v (%s), want GemmaBusy", got, detail)
 		}
 	})
+
+	// Regression for the codex-apollo report (router item 20261013-164459):
+	// the one-slot broker deliberately answers 503 on contention. Without the
+	// fix, a bare 503 fell straight to the non-timeout "HTTP N (up but
+	// erroring)" branch and was reported as a decisive wedge on the very first
+	// probe — no retry, so legitimate queued work accumulated wedge strikes.
+	t.Run("busy_503_then_answers_is_healthy", func(t *testing.T) {
+		var n int32
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			if atomic.AddInt32(&n, 1) == 1 {
+				w.WriteHeader(http.StatusServiceUnavailable) // first attempt: 503 busy
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(healthy)) // retry: answers
+		}))
+		defer srv.Close()
+		got, detail := ProbeGemmaState(homeWithPort(t, srv.URL))
+		if got != GemmaHealthy {
+			t.Errorf("busy-503-then-answers = %v (%s), want GemmaHealthy", got, detail)
+		}
+	})
+
+	t.Run("always_503_with_runner_is_busy_not_wedged", func(t *testing.T) {
+		setRunnerWorkerActive(func() bool { return true })
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusServiceUnavailable) // every attempt is 503 busy
+		}))
+		defer srv.Close()
+		got, detail := ProbeGemmaState(homeWithPort(t, srv.URL))
+		if got != GemmaBusy {
+			t.Errorf("always-503-with-runner = %v (%s), want GemmaBusy", got, detail)
+		}
+	})
 }
 
 // homeWithPort writes a gemma-server.port pointing at srvURL's port under a temp

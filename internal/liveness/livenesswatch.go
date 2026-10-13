@@ -505,6 +505,14 @@ func probeGemmaAttempt(port int, model string) (GemmaStatus, string, bool) {
 		return GemmaDown, fmt.Sprintf("connection failed in %s (%v)", time.Since(start).Round(time.Second), err), false
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusServiceUnavailable {
+		// The one-slot broker deliberately returns 503/Retry-After on
+		// contention — that is backpressure, not a wedge. Route it through the
+		// same timedOut=true path a request timeout takes, so the existing
+		// retry-once + runnerWorkerActive check (above) can resolve it to
+		// GemmaBusy instead of accumulating wedge strikes toward a restart.
+		return GemmaWedged, "HTTP 503 (busy/backpressure)", true
+	}
 	if resp.StatusCode != http.StatusOK {
 		return GemmaWedged, fmt.Sprintf("HTTP %d (up but erroring)", resp.StatusCode), false
 	}
