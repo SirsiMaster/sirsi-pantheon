@@ -272,7 +272,8 @@ func gemmaWarmCompleteContext(ctx context.Context, base, model, prompt string, m
 	}
 	var out struct {
 		Choices []struct {
-			Message struct {
+			FinishReason string `json:"finish_reason"`
+			Message      struct {
 				Content string `json:"content"`
 			} `json:"message"`
 		} `json:"choices"`
@@ -282,6 +283,9 @@ func gemmaWarmCompleteContext(ctx context.Context, base, model, prompt string, m
 	}
 	if len(out.Choices) == 0 {
 		return "", fmt.Errorf("SNE returned no choices")
+	}
+	if out.Choices[0].FinishReason == "length" {
+		return "", fmt.Errorf("native inference draft truncated at token limit")
 	}
 	return gemmaClean(out.Choices[0].Message.Content), nil
 }
