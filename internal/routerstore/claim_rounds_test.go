@@ -45,8 +45,19 @@ func contend(t *testing.T, a, b *SQLiteStore, id string, rng *rand.Rand) int {
 // The negative control gives each claimer its OWN ledger (two separate SQLite
 // files, the split-brain G3 names) and must see both "win", proving the
 // counter can fail.
+//
+// -short cuts round counts (A28: CI and the pre-push gate both run with
+// -short to bound cost). Under -race plus host contention, 1,000 sequential
+// rounds of real SQLite transactions is the single heaviest thing in this
+// package and has repeatedly been the goroutine still in-flight when the
+// pre-push gate's 900s timeout fires.
 func TestClaimExactlyOnceAcrossManyRounds(t *testing.T) {
-	const rounds = 1000
+	rounds := 1000
+	splitRounds := 50
+	if testing.Short() {
+		rounds = 100
+		splitRounds = 10
+	}
 	rng := rand.New(rand.NewSource(62))
 	shared := newTestStore(t)
 	for i := 0; i < rounds; i++ {
@@ -66,7 +77,7 @@ func TestClaimExactlyOnceAcrossManyRounds(t *testing.T) {
 	// control the shared-ledger case again.
 	left, right := openSplitStore(t, "left.db"), openSplitStore(t, "right.db")
 	split := 0
-	for i := 0; i < 50; i++ {
+	for i := 0; i < splitRounds; i++ {
 		id := fmt.Sprintf("c%02d", i)
 		for _, s := range []*SQLiteStore{left, right} {
 			if err := s.AddTask(Task{Agent: "codex-home", TaskID: id, Subject: id}); err != nil {
