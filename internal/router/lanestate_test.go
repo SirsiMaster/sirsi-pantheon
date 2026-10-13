@@ -49,6 +49,8 @@ func TestPingLaneVerdicts(t *testing.T) {
 		{"relay unreachable", regWith(worker("a", true, &LaneState{ConsumerDeclared: true, LastOutcome: OutcomeRelay, LastDetail: "64 requests in flight"}, time.Minute)), AgentConfig{}, VerdictHeld, false, "relay"},
 		{"stale worker", regWith(worker("a", true, ok, time.Hour)), AgentConfig{}, VerdictUnreachable, false, "last reported"},
 		{"no thread, wake none", regWith(), AgentConfig{}, VerdictUnstaffed, false, "no worker path"},
+		{"actor-only service lane", regWith(), AgentConfig{Type: "service"}, VerdictUnstaffed, false, "actor-only lane by design"},
+		{"resident consumer paused, no wake", regWith(), AgentConfig{Consumer: ConsumerConfig{Mode: "resident"}}, VerdictUnstaffed, false, "intentionally paused"},
 		{"suspended thread does not count", regWith(&Thread{AgentID: "a", Surface: "claude", Status: ThreadStatusSuspended, LastSeenAt: pingNow}), AgentConfig{}, VerdictUnstaffed, false, ""},
 		{"closed thread does not count", regWith(&Thread{AgentID: "a", Surface: "claude", Status: ThreadStatusClosed, LastSeenAt: pingNow}), AgentConfig{}, VerdictUnstaffed, false, ""},
 		{"someone else's thread is not mine", regWith(worker("b", true, ok, time.Minute)), AgentConfig{}, VerdictUnstaffed, false, ""},
