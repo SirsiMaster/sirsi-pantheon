@@ -7,10 +7,23 @@
 package localrouter
 
 import (
+	"context"
+	"fmt"
 	"strings"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/brain"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/provider"
 )
+
+// CompleteLocal uses the same selected broker profile as Ask, worker and the
+// engine connector; role identity does not replace endpoint/model capabilities.
+func CompleteLocal(ctx context.Context, home, prompt string, maxTokens int) (provider.Response, error) {
+	p := provider.Local(home, provider.LoadConf(home))
+	if p == nil {
+		return provider.Response{}, fmt.Errorf("selected local broker unconfigured")
+	}
+	return p.Complete(ctx, provider.Request{System: SystemPrompt(), Prompt: prompt, MaxTokens: maxTokens})
+}
 
 const DefaultLocalProvider = "local:gemma"
 

@@ -17,6 +17,22 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
 
+func TestProbeGemmaServiceBusyIsNotWedged(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "2")
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	status, detail := ProbeGemmaState(homeWithPort(t, srv.URL))
+	if status != GemmaBusy || !strings.Contains(detail, "backpressure") {
+		t.Fatalf("busy classified as wedge: %v %s", status, detail)
+	}
+	finding := probeGemma(homeWithPort(t, srv.URL))
+	if !finding.OK {
+		t.Fatal("busy broker prompted restart")
+	}
+}
+
 // TestPlistContent_LeverShape enforces the LaunchAgent's load-bearing shape: it
 // invokes `sirsi liveness-watch run`, fires at load AND on the interval, and does
 // NOT set KeepAlive (a run-and-exit job under KeepAlive would tight-loop).

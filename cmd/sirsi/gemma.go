@@ -26,9 +26,10 @@ var (
 
 var gemmaCmd = &cobra.Command{
 	Use:   "gemma [prompt]",
-	Short: "Talk to Gemma — the local on-device model (zero API tokens, nothing leaves this Mac)",
-	Long: `Gemma is a local MLX model running on THIS Mac — no network, no API tokens,
-nothing leaves the machine. Give it a prompt and it answers.
+	Short: "Local Gemma drafting; shared subcommand explicitly uses the canonical router",
+	Long: `Default Gemma drafting is local to THIS Mac. The explicit shared subcommand
+sends its prompt through the canonical router and may execute on another host.
+Give the local command a prompt and it answers.
 
   sirsi gemma "summarize this: <paste text>"
   sirsi gemma --task draft "a release note for the menubar Eye fix"

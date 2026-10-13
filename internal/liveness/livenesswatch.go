@@ -505,6 +505,9 @@ func probeGemmaAttempt(port int, model string) (GemmaStatus, string, bool) {
 		return GemmaDown, fmt.Sprintf("connection failed in %s (%v)", time.Since(start).Round(time.Second), err), false
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusServiceUnavailable && resp.Header.Get("Retry-After") != "" {
+		return GemmaBusy, "HTTP 503 BUSY (Retry-After supplied; capacity backpressure, not a wedge)", false
+	}
 	if resp.StatusCode != http.StatusOK {
 		return GemmaWedged, fmt.Sprintf("HTTP %d (up but erroring)", resp.StatusCode), false
 	}
