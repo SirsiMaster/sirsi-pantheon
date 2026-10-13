@@ -264,7 +264,11 @@ func runGemmaWorker(cmd *cobra.Command, _ []string) error {
 	if err := os.Setenv("SIRSI_THREAD_ID", t.ThreadID); err != nil {
 		return fmt.Errorf("export registered thread id: %w", err)
 	}
-	defer router.CloseThread(routerRoot, t.ThreadID)
+	defer func() {
+		if err := router.CloseThread(routerRoot, t.ThreadID); err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Gemma worker thread close failed: %v\n", err)
+		}
+	}()
 	w := nativeGemmaWorker{store: f.Store(), reply: facadeGemmaReply{facade: f}, generate: gemmaWorkerGenerate, leaseTTL: 15 * time.Minute,
 		heartbeat: func() error {
 			_, err := router.Heartbeat(routerRoot, t.ThreadID, router.HeartbeatUpdate{Status: router.ThreadStatusActive})

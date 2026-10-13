@@ -1,9 +1,10 @@
 package ledger
 
 import (
-	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"testing"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 )
 
 func TestAttachAvailabilityUsesConsumerAndActorTruth(t *testing.T) {
