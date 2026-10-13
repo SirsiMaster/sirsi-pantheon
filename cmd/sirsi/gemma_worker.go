@@ -265,7 +265,7 @@ func runGemmaWorker(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("export registered thread id: %w", err)
 	}
 	defer func() {
-		if err := router.CloseThread(routerRoot, t.ThreadID); err != nil {
+		if _, err := router.CloseThread(routerRoot, t.ThreadID); err != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "Gemma worker thread close failed: %v\n", err)
 		}
 	}()
