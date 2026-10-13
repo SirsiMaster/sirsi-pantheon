@@ -264,12 +264,12 @@ func gemmaWarmCompleteContext(ctx context.Context, base, model, prompt string, m
 		if maxTokens <= 0 || maxTokens > p.OutputTokens {
 			maxTokens = p.OutputTokens
 		}
-		return gemmaWarmCompleteProfile(ctx, base, model, prompt, maxTokens, p.AccessTokenFile)
+		return gemmaWarmCompleteProfile(ctx, base, model, prompt, maxTokens, p.AccessTokenFile, provider.ProfileRequestTimeoutSeconds(p))
 	}
 	return gemmaWarmCompleteProfile(ctx, base, model, prompt, maxTokens, "")
 }
 
-func gemmaWarmCompleteProfile(ctx context.Context, base, model, prompt string, maxTokens int, tokenFile string) (string, error) {
+func gemmaWarmCompleteProfile(ctx context.Context, base, model, prompt string, maxTokens int, tokenFile string, requestTimeoutSeconds ...int) (string, error) {
 	bearer, err := gemmaBrokerBearer(tokenFile)
 	if err != nil {
 		return "", err
@@ -284,7 +284,23 @@ func gemmaWarmCompleteProfile(ctx context.Context, base, model, prompt string, m
 		"temperature": 0,
 		"stream":      false,
 	})
-	cl := &http.Client{Timeout: 5 * time.Minute}
+	requestTimeout := 5 * time.Minute
+	if len(requestTimeoutSeconds) > 0 && requestTimeoutSeconds[0] != 0 {
+		if requestTimeoutSeconds[0] < 1 || requestTimeoutSeconds[0] > 600 {
+			return "", fmt.Errorf("request_timeout_seconds must be 1..600")
+		}
+		requestTimeout = time.Duration(requestTimeoutSeconds[0]) * time.Second
+	}
+	if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) < requestTimeout {
+		requestTimeout = time.Until(deadline)
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if requestTimeout <= 0 {
+		return "", context.DeadlineExceeded
+	}
+	cl := &http.Client{Timeout: requestTimeout}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/v1/chat/completions", bytes.NewReader(body))
 	if err != nil {
 		return "", err

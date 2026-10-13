@@ -6,6 +6,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- **Local request deadlines:** optional profile `request_timeout_seconds` (1–600) now reaches the actual worker and provider HTTP clients. The worker request is also bounded by its generation context; cancellation records retryable evidence under the same item/lease fence. Missing values preserve the worker's five-minute and provider's 180-second defaults. This does not change broker timeouts, output budgets, native processes or queue ownership.
+
 - **Native broker profiles and worker recovery:** share explicit selected endpoint/model/context/output/streaming metadata and an existing private capability-file reference across the provider client and worker. Unknown capabilities fail visibly instead of advertising 8192-token/SSE support. HTTP 503 with `Retry-After` waits under the same lease; deadline exhaustion leaves the request retryable, while permanent context/auth errors block without truncating identity. See [profile selection and rollback](docs/user-guides/gemma-worker-recovery.md#selected-broker-profile).
 
 - **Router refresh under load:** coalesce simultaneous canonical snapshot reads without caching errors or completed results. Hidden Fleet/Host panels no longer request data on every overview refresh; concurrent Fleet loads share one request. Read-only refresh stays bounded at 60 seconds to accommodate observed 28-second relay reads instead of abandoning them at 15 seconds. Owner write timeouts and scope checks are unchanged.

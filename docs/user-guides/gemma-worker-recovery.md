@@ -63,6 +63,7 @@ worker only; prefer the shared reference so consumers agree.
 | `endpoint`, `model` | Credential-free loopback URL and exact full model identity; no automatic alternate-model fallback. |
 | `context_tokens`, `output_tokens`, `streaming` | Explicit declared values required for a selected profile. Missing/invalid values fail; unprofiled capability metadata remains unknown. Input/system identity is not trimmed; backend overflow is surfaced. |
 | `access_token_file` | Optional existing regular 0600 file; required by the M1 worker profile. The client builds the Bearer header in memory. Missing, empty, public-mode or invalid configured files fail closed. Never put a capability value in JSON, shell arguments or logs. |
+| `request_timeout_seconds` | Optional integer 1–600. Applies to the actual worker and provider HTTP requests; zero/negative/oversized values fail. Missing values preserve existing defaults: worker completion five minutes, provider client 180 seconds (or its injected client). The worker also caps its request to the remaining generation-context deadline. |
 | `gemma worker --profile m1` | Requires selected 1024-context metadata and capability reference; output capped at 256. |
 | `gemma worker --profile m5` | Output capped at 1024; preserves existing unauthenticated loopback when selected. |
 | Worker `--max-tokens N` | Worker-local override, bounded by the worker profile and selected JSON output cap; the parent `gemma --max-tokens` flag is not inherited. |
@@ -71,6 +72,21 @@ worker only; prefer the shared reference so consumers agree.
 Provider-backed Ask, local routing, engine connectors and the native worker use
 these shared fields. Engine fixture receipts are not standalone MCP/native
 deployment proof; separately qualify each installed consumer before release.
+
+For example, adding `"request_timeout_seconds": 600` to a qualified selected
+profile permits a longer client wait without exceeding the worker's current
+generation envelope (ten minutes under its fifteen-minute lease). This is a
+configuration example, not a native rollout or a causal fix for a slow broker.
+Broker write timeouts, generation budgets and buffered cancellation are separate
+Apollo-owned constraints; do not attribute a header timeout solely to output
+budget. The complete system identity and user input remain unchanged.
+
+On request timeout or context cancellation the worker records fenced retryable
+failure for the **same original item and lease**; it publishes no partial answer
+and does not permanently block a temporary timeout. Existing durable retry work
+must continue under its supported lease lifecycle, not a new throwaway proof.
+The worker renews while the request is alive. Missing the configured deadline
+does not authorize a native restart, a queue reset or a second consumer.
 
 ## Selection, handover and rollback
 

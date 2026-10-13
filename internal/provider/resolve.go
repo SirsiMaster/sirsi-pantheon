@@ -93,7 +93,7 @@ func Local(home string, conf Conf) *OpenAICompat {
 				return ""
 			}
 			return "/v1"
-		}(), Model: p.Model, ContextTokens: p.ContextTokens, OutputTokens: p.OutputTokens, SupportsStreaming: *p.Streaming, AccessTokenFile: p.AccessTokenFile, UseRealCompletionProbe: true}
+		}(), Model: p.Model, ContextTokens: p.ContextTokens, OutputTokens: p.OutputTokens, RequestTimeoutSeconds: ProfileRequestTimeoutSeconds(p), SupportsStreaming: *p.Streaming, AccessTokenFile: p.AccessTokenFile, UseRealCompletionProbe: true}
 	}
 
 	// RUNG ZERO IS UNCONDITIONAL. conf.Provider selects which REMOTE to prefer;

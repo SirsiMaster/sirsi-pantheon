@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/provider"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -36,6 +38,74 @@ func TestGemmaStructuredBrokerClassification(t *testing.T) {
 				t.Fatal("Retry-After lost")
 			}
 		})
+	}
+}
+
+func TestGemmaWorkerProfileTimeoutRenewsAndRetriesExactLease(t *testing.T) {
+	oldProfile, oldBudget, oldToken := gemmaWorkerSelectedProfile, gemmaWorkerMaxTokens, gemmaWorkerTokenFile
+	t.Cleanup(func() {
+		gemmaWorkerSelectedProfile = oldProfile
+		gemmaWorkerMaxTokens = oldBudget
+		gemmaWorkerTokenFile = oldToken
+	})
+	canceled := make(chan struct{}, 1)
+	var posts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" {
+			fmt.Fprint(w, `{"data":[{"id":"exact"}]}`)
+			return
+		}
+		posts.Add(1)
+		var req struct{ Messages []map[string]string }
+		json.NewDecoder(r.Body).Decode(&req)
+		if len(req.Messages) != 2 || req.Messages[0]["content"] == "" || !strings.Contains(req.Messages[1]["content"], "TASK: draft") {
+			t.Error("identity/input changed")
+		}
+		<-r.Context().Done()
+		canceled <- struct{}{}
+	}))
+	defer srv.Close()
+	seconds := 1
+	gemmaWorkerSelectedProfile = &provider.LocalProfile{Endpoint: srv.URL + "/v1", Model: "exact", RequestTimeoutSeconds: &seconds}
+	gemmaWorkerMaxTokens = 256
+	gemmaWorkerTokenFile = ""
+	s, r := claimedGemmaItem()
+	w := testGemmaWorker(s, r, gemmaWorkerGenerate)
+	w.leaseTTL = 3 * time.Second
+	start := time.Now()
+	_, e := w.runOnce(context.Background())
+	if e == nil || posts.Load() != 1 || s.blocked != "" || s.failed == "" || r.calls != 0 || s.renews < 1 || s.failID != s.lease.ItemID || s.failToken != s.lease.Token {
+		t.Fatal("request timeout did not retain exact retryable lease linkage")
+	}
+	if time.Since(start) > 1800*time.Millisecond {
+		t.Fatal("worker profile timeout not applied")
+	}
+	select {
+	case <-canceled:
+	case <-time.After(time.Second):
+		t.Fatal("worker HTTP request not canceled")
+	}
+}
+
+func TestGemmaRequestContextBoundsLongerHTTPTimeout(t *testing.T) {
+	canceled := make(chan struct{}, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(new(map[string]any))
+		<-r.Context().Done()
+		canceled <- struct{}{}
+	}))
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, e := gemmaWarmCompleteProfile(ctx, srv.URL, "exact", "full input", 256, "", 600)
+	if !errors.Is(e, context.DeadlineExceeded) || time.Since(start) > time.Second {
+		t.Fatal("HTTP request exceeded generation envelope")
+	}
+	select {
+	case <-canceled:
+	case <-time.After(time.Second):
+		t.Fatal("envelope did not cancel request")
 	}
 }
 

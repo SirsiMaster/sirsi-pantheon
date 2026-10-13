@@ -32,11 +32,12 @@ type OpenAICompat struct {
 	// SupportsStreaming is declared by the resolved provider configuration.
 	// OpenAI compatibility alone is not proof that a particular endpoint permits
 	// streamed responses.
-	SupportsStreaming  bool
-	ContextTokens      int
-	OutputTokens       int
-	AccessTokenFile    string
-	ConfigurationError error
+	SupportsStreaming     bool
+	ContextTokens         int
+	OutputTokens          int
+	RequestTimeoutSeconds int
+	AccessTokenFile       string
+	ConfigurationError    error
 	// UseRealCompletionProbe changes Available() from a /v1/models check to a
 	// real 1-token completion. Required for the SNE local lane per
 	// MODEL-ROUTER-DESIGN.md: "a serving process that cannot complete is DOWN".
@@ -57,6 +58,14 @@ func (o *OpenAICompat) Caps() Caps {
 }
 
 func (o *OpenAICompat) client() *http.Client {
+	if o.RequestTimeoutSeconds > 0 {
+		if o.HTTP != nil {
+			c := *o.HTTP
+			c.Timeout = time.Duration(o.RequestTimeoutSeconds) * time.Second
+			return &c
+		}
+		return &http.Client{Timeout: time.Duration(o.RequestTimeoutSeconds) * time.Second}
+	}
 	if o.HTTP != nil {
 		return o.HTTP
 	}
@@ -225,7 +234,7 @@ func (o *OpenAICompat) ProbeServedModel(ctx context.Context) (string, error) {
 	}
 	resp, err := o.client().Do(req)
 	if err != nil {
-		return "", fmt.Errorf("%w: %s: %v", ErrUnavailable, o.ProviderName, err)
+		return "", fmt.Errorf("%w: %s: %w", ErrUnavailable, o.ProviderName, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
@@ -278,7 +287,7 @@ func (o *OpenAICompat) Complete(ctx context.Context, req Request) (Response, err
 
 	hresp, err := o.client().Do(hreq)
 	if err != nil {
-		return Response{}, fmt.Errorf("%w: %s: %v", ErrUnavailable, o.ProviderName, err)
+		return Response{}, fmt.Errorf("%w: %s: %w", ErrUnavailable, o.ProviderName, err)
 	}
 	defer func() { _ = hresp.Body.Close() }()
 
@@ -361,7 +370,7 @@ func (o *OpenAICompat) Stream(ctx context.Context, req Request) (<-chan StreamCh
 	}
 	hresp, err := o.client().Do(hreq)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s: %v", ErrUnavailable, o.ProviderName, err)
+		return nil, fmt.Errorf("%w: %s: %w", ErrUnavailable, o.ProviderName, err)
 	}
 	if hresp.StatusCode != http.StatusOK {
 		defer hresp.Body.Close()

@@ -211,7 +211,7 @@ var gemmaWorkerGenerate = func(ctx context.Context, prompt string) (string, erro
 	if base == "" || !gemmaWorkerPing(base) {
 		return "", fmt.Errorf("selected native SNE inference endpoint is unavailable")
 	}
-	return gemmaWarmCompleteProfile(ctx, base, model, prompt, gemmaWorkerMaxTokens, gemmaWorkerTokenFile)
+	return gemmaWarmCompleteProfile(ctx, base, model, prompt, gemmaWorkerMaxTokens, gemmaWorkerTokenFile, provider.ProfileRequestTimeoutSeconds(gemmaWorkerSelectedProfile))
 }
 
 var gemmaWorkerPreflight = func() error {
