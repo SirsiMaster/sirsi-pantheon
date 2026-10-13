@@ -22,6 +22,7 @@ type gemmaWorkerStoreFake struct {
 	started   bool
 	renews    int
 	failed    string
+	blocked   string
 }
 
 func (s *gemmaWorkerStoreFake) ClaimNext(_ string, _ time.Duration) (*routerstore.Lease, error) {
@@ -187,3 +188,5 @@ func TestGemmaWorkerSingletonRejectsDuplicate(t *testing.T) {
 		t.Fatal("duplicate worker lock unexpectedly acquired")
 	}
 }
+
+func (s *gemmaWorkerStoreFake) Block(_, _, reason string) error { s.blocked = reason; return nil }

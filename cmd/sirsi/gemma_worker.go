@@ -11,6 +11,7 @@ import (
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/provider"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/spf13/cobra"
@@ -19,8 +20,11 @@ import (
 const gemmaWorkerAgent = "gemma-pantheon"
 
 var (
-	gemmaWorkerOnce    bool
-	gemmaWorkerVersion bool
+	gemmaWorkerOnce      bool
+	gemmaWorkerVersion   bool
+	gemmaWorkerProfile   string
+	gemmaWorkerMaxTokens int
+	gemmaWorkerTokenFile string
 )
 
 // gemmaWorkerStore is deliberately the token-fenced subset of the router
@@ -33,6 +37,7 @@ type gemmaWorkerStore interface {
 	VerifyLease(string, string) (bool, error)
 	RenewLease(string, string, time.Duration) error
 	Fail(string, string, string, string) error
+	Block(string, string, string) error
 }
 
 type gemmaWorkerReply interface {
@@ -74,7 +79,7 @@ func (w nativeGemmaWorker) runOnce(ctx context.Context) (bool, error) {
 		defer close(maintained)
 		w.maintainLease(genCtx, done, cancel, lease, lost)
 	}()
-	answer, err := w.generate(genCtx, gemmaWorkerPrompt(item.Instructions))
+	answer, err := gemmaGenerateWhileBusy(genCtx, w.generate, gemmaWorkerPrompt(item.Instructions))
 	close(done)
 	<-maintained
 	select {
@@ -83,6 +88,17 @@ func (w nativeGemmaWorker) runOnce(ctx context.Context) (bool, error) {
 	default:
 	}
 	if err != nil {
+		var broker *gemmaInferenceError
+		if errors.As(err, &broker) && (broker.Permanent || broker.Busy) {
+			reason := "GEMMA BLOCKED: " + broker.Error()
+			if broker.Busy {
+				reason = "GEMMA BUSY: bounded inference wait exhausted; " + broker.Error()
+			}
+			if blockErr := w.store.Block(lease.ItemID, lease.Token, reason); blockErr != nil {
+				return true, fmt.Errorf("record fenced inference block: %w", blockErr)
+			}
+			return true, broker
+		}
 		return true, w.retry(lease, "native inference unavailable", "", err)
 	}
 	answer = strings.TrimSpace(answer)
@@ -194,11 +210,11 @@ var gemmaWorkerGenerate = func(ctx context.Context, prompt string) (string, erro
 	if err != nil {
 		return "", fmt.Errorf("resolve home for selected local inference: %w", err)
 	}
-	base, model := gemmaSelectedLocalEndpoint(home)
-	if base == "" || !gemmaServerPing(base) {
+	base, model := gemmaWorkerEndpoint(home)
+	if base == "" || !gemmaWorkerPing(base) {
 		return "", fmt.Errorf("selected native SNE inference endpoint is unavailable")
 	}
-	return gemmaWarmCompleteContext(ctx, base, model, prompt, gemmaMaxTokens)
+	return gemmaWarmCompleteProfile(ctx, base, model, prompt, gemmaWorkerMaxTokens, gemmaWorkerTokenFile)
 }
 
 var gemmaWorkerPreflight = func() error {
@@ -206,8 +222,11 @@ var gemmaWorkerPreflight = func() error {
 	if err != nil {
 		return fmt.Errorf("resolve home for selected local inference: %w", err)
 	}
-	base, _ := gemmaSelectedLocalEndpoint(home)
-	if base == "" || !gemmaServerPing(base) {
+	if _, err := gemmaBrokerBearer(gemmaWorkerTokenFile); err != nil {
+		return err
+	}
+	base, _ := gemmaWorkerEndpoint(home)
+	if base == "" || !gemmaWorkerPing(base) {
 		return fmt.Errorf("selected native SNE inference endpoint is unavailable; worker will not claim work")
 	}
 	return nil
@@ -223,6 +242,10 @@ var gemmaWorkerCmd = &cobra.Command{
 }
 
 func init() {
+	gemmaWorkerCmd.Flags().StringVar(&gemmaWorkerInferenceProfilePath, "inference-profile", "", "Explicit selected installed broker JSON: endpoint, full model, existing access_token_file; mandatory for M1")
+	gemmaWorkerCmd.Flags().StringVar(&gemmaWorkerProfile, "profile", "m5", "Worker output profile: m1=256 or m5=1024 tokens; endpoint/model identity stays selected")
+	gemmaWorkerCmd.Flags().IntVar(&gemmaWorkerMaxTokens, "max-tokens", 0, "Explicit worker output budget (0 uses profile)")
+	gemmaWorkerCmd.Flags().StringVar(&gemmaWorkerTokenFile, "access-token-file", "", "Existing selected private broker capability file (0600); empty preserves unauthenticated M5 profile")
 	gemmaWorkerCmd.Flags().BoolVar(&gemmaWorkerOnce, "once", false, "claim and process at most one item")
 	gemmaWorkerCmd.Flags().BoolVar(&gemmaWorkerVersion, "version", false, "print worker version without registration or inference")
 	gemmaCmd.AddCommand(gemmaWorkerCmd)
@@ -232,6 +255,37 @@ func runGemmaWorker(cmd *cobra.Command, _ []string) error {
 	if gemmaWorkerVersion {
 		fmt.Fprintln(cmd.OutOrStdout(), "sirsi-gemma-worker native")
 		return nil
+	}
+	budget, err := gemmaWorkerBudget(gemmaWorkerProfile, gemmaWorkerMaxTokens)
+	if err != nil {
+		return err
+	}
+	gemmaWorkerMaxTokens = budget
+	if gemmaWorkerInferenceProfilePath == "" {
+		home, e := os.UserHomeDir()
+		if e != nil {
+			return e
+		}
+		gemmaWorkerInferenceProfilePath = provider.SelectedLocalProfilePath(home, provider.LoadConf(home))
+	}
+	selected, err := readGemmaWorkerProfile(gemmaWorkerInferenceProfilePath, gemmaWorkerProfile)
+	if err != nil {
+		return err
+	}
+	gemmaWorkerSelectedProfile = selected
+	if selected != nil {
+		if selected.OutputTokens < gemmaWorkerMaxTokens {
+			gemmaWorkerMaxTokens = selected.OutputTokens
+		}
+		if gemmaWorkerProfile == "m1" && selected.ContextTokens != 1024 {
+			return fmt.Errorf("M1 candidate requires verified 1024-token context profile")
+		}
+	}
+	if selected != nil {
+		if gemmaWorkerTokenFile != "" && gemmaWorkerTokenFile != selected.AccessTokenFile {
+			return fmt.Errorf("broker capability flag conflicts with selected profile")
+		}
+		gemmaWorkerTokenFile = selected.AccessTokenFile
 	}
 	if err := os.Setenv("SIRSI_AGENT_ID", gemmaWorkerAgent); err != nil {
 		return fmt.Errorf("set Gemma worker identity: %w", err)
@@ -281,6 +335,11 @@ func runGemmaWorker(cmd *cobra.Command, _ []string) error {
 		}
 		worked, err := w.runOnce(cmd.Context())
 		if err != nil {
+			var broker *gemmaInferenceError
+			if !gemmaWorkerOnce && errors.As(err, &broker) {
+				fmt.Fprintln(cmd.ErrOrStderr(), err)
+				continue
+			}
 			return err
 		}
 		if gemmaWorkerOnce {
@@ -294,4 +353,23 @@ func runGemmaWorker(cmd *cobra.Command, _ []string) error {
 			}
 		}
 	}
+}
+
+func gemmaWorkerBudget(profile string, explicit int) (int, error) {
+	limit := 0
+	switch profile {
+	case "m1":
+		limit = 256
+	case "m5":
+		limit = 1024
+	default:
+		return 0, fmt.Errorf("unknown worker profile %q", profile)
+	}
+	if explicit == 0 {
+		return limit, nil
+	}
+	if explicit < 1 || explicit > limit {
+		return 0, fmt.Errorf("worker output budget must be 1..%d for %s", limit, profile)
+	}
+	return explicit, nil
 }

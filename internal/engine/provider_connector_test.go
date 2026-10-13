@@ -2,10 +2,14 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -106,7 +110,7 @@ func TestProviderConnectorNormalizesLoopbackStreamAndReceipt(t *testing.T) {
 
 	identity := testIdentity()
 	identity.Engine = KindMLX
-	backend := &provider.OpenAICompat{ProviderName: "mlx", Endpoint: srv.URL + "/v1", TierValue: provider.TierLocal, HTTP: srv.Client()}
+	backend := &provider.OpenAICompat{SupportsStreaming: true, ProviderName: "mlx", Endpoint: srv.URL + "/v1", TierValue: provider.TierLocal, HTTP: srv.Client()}
 	connector, err := NewMLXConnector(backend, identity, Capabilities{Sessions: true, Streaming: true, Receipts: true})
 	if err != nil {
 		t.Fatal(err)
@@ -156,7 +160,7 @@ func TestProviderConnectorRejectsCompletionWithoutObservedModel(t *testing.T) {
 
 	identity := testIdentity()
 	identity.Engine = KindMLX
-	backend := &provider.OpenAICompat{ProviderName: "mlx", Endpoint: srv.URL + "/v1", Model: identity.ModelID, TierValue: provider.TierLocal, HTTP: srv.Client()}
+	backend := &provider.OpenAICompat{SupportsStreaming: true, ProviderName: "mlx", Endpoint: srv.URL + "/v1", Model: identity.ModelID, TierValue: provider.TierLocal, HTTP: srv.Client()}
 	connector, err := NewMLXConnector(backend, identity, Capabilities{Sessions: true, Streaming: true, Receipts: true})
 	if err != nil {
 		t.Fatal(err)
@@ -196,5 +200,53 @@ func TestProviderConnectorRejectsNonFiniteStreamingRequest(t *testing.T) {
 	_, err = connector.Stream(context.Background(), session, GenerateRequest{SessionID: session.ID, Identity: session.Identity, Prompt: "hello", MaxTokens: 4, Temperature: &nan, Stream: true, CacheNamespace: session.Identity.CacheNamespace})
 	if err == nil {
 		t.Fatal("non-finite streaming request was accepted")
+	}
+}
+
+func TestProviderConnectorSelectedProfileActualAuthBudgetReceipt(t *testing.T) {
+	home := t.TempDir()
+	os.MkdirAll(filepath.Join(home, ".sirsi"), 0700)
+	capability := filepath.Join(home, "capability")
+	os.WriteFile(capability, []byte("fixture-capability"), 0600)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer fixture-capability" {
+			t.Error("engine auth missing")
+		}
+		if r.Method == "GET" {
+			fmt.Fprint(w, `{"data":[{"id":"model-a"}]}`)
+			return
+		}
+		var p struct {
+			Model     string
+			MaxTokens int `json:"max_tokens"`
+			Stream    bool
+		}
+		json.NewDecoder(r.Body).Decode(&p)
+		if p.Model != "model-a" || p.MaxTokens > 256 || p.Stream {
+			t.Error("engine profile mismatch")
+		}
+		fmt.Fprint(w, `{"model":"model-a","choices":[{"finish_reason":"stop","message":{"content":"draft"}}]}`)
+	}))
+	defer srv.Close()
+	no := false
+	b, _ := json.Marshal(provider.LocalProfile{Endpoint: srv.URL + "/v1", Model: "model-a", ContextTokens: 1024, OutputTokens: 256, Streaming: &no, AccessTokenFile: capability})
+	profile := filepath.Join(home, "profile.json")
+	os.WriteFile(profile, b, 0600)
+	os.WriteFile(filepath.Join(home, ".sirsi", "orchestrator.conf"), []byte("provider=sne-native-v2\nlocal_profile="+profile), 0600)
+	backend := provider.Local(home, provider.LoadConf(home))
+	c, e := NewSNEConnector(backend, testIdentity(), Capabilities{Sessions: true, Receipts: true})
+	if e != nil {
+		t.Fatal(e)
+	}
+	session, e := c.OpenSession(context.Background(), "selected-profile-session")
+	if e != nil {
+		t.Fatal(e)
+	}
+	_, receipt, e := c.Complete(context.Background(), session, GenerateRequest{SessionID: session.ID, Identity: session.Identity, Prompt: "input", MaxTokens: 400, CacheNamespace: session.Identity.CacheNamespace})
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = receipt.Validate(session); e != nil {
+		t.Fatal(e)
 	}
 }

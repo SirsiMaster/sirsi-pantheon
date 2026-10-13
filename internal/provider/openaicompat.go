@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -33,8 +32,11 @@ type OpenAICompat struct {
 	// SupportsStreaming is declared by the resolved provider configuration.
 	// OpenAI compatibility alone is not proof that a particular endpoint permits
 	// streamed responses.
-	SupportsStreaming bool
-	ContextTokens     int
+	SupportsStreaming  bool
+	ContextTokens      int
+	OutputTokens       int
+	AccessTokenFile    string
+	ConfigurationError error
 	// UseRealCompletionProbe changes Available() from a /v1/models check to a
 	// real 1-token completion. Required for the SNE local lane per
 	// MODEL-ROUTER-DESIGN.md: "a serving process that cannot complete is DOWN".
@@ -69,7 +71,7 @@ func (o *OpenAICompat) client() *http.Client {
 // is DOWN per MODEL-ROUTER-DESIGN.md. Otherwise it probes /v1/models, which
 // proves a model is loaded but not that inference works.
 func (o *OpenAICompat) Available(ctx context.Context) bool {
-	if strings.TrimSpace(o.Endpoint) == "" {
+	if o.ConfigurationError != nil || strings.TrimSpace(o.Endpoint) == "" {
 		return false
 	}
 	if o.UseRealCompletionProbe {
@@ -81,7 +83,9 @@ func (o *OpenAICompat) Available(ctx context.Context) bool {
 	if err != nil {
 		return false
 	}
-	o.auth(req)
+	if err := o.auth(req); err != nil {
+		return false
+	}
 	resp, err := o.client().Do(req)
 	if err != nil {
 		return false
@@ -117,7 +121,9 @@ func (o *OpenAICompat) probeCompletion(ctx context.Context) bool {
 	if err != nil {
 		return false
 	}
-	o.auth(req)
+	if err := o.auth(req); err != nil {
+		return false
+	}
 	resp, err := o.client().Do(req)
 	if err != nil {
 		return false
@@ -127,11 +133,23 @@ func (o *OpenAICompat) probeCompletion(ctx context.Context) bool {
 	return resp.StatusCode == http.StatusOK
 }
 
-func (o *OpenAICompat) auth(r *http.Request) {
-	if o.APIKey != "" {
-		r.Header.Set("Authorization", "Bearer "+o.APIKey)
+func (o *OpenAICompat) auth(r *http.Request) error {
+	if o.ConfigurationError != nil {
+		return o.ConfigurationError
+	}
+	bearer := o.APIKey
+	if o.AccessTokenFile != "" {
+		var err error
+		bearer, err = BrokerBearer(o.AccessTokenFile)
+		if err != nil {
+			return err
+		}
+	}
+	if bearer != "" {
+		r.Header.Set("Authorization", "Bearer "+bearer)
 	}
 	r.Header.Set("Content-Type", "application/json")
+	return nil
 }
 
 type ccMessage struct {
@@ -202,7 +220,9 @@ func (o *OpenAICompat) ProbeServedModel(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	o.auth(req)
+	if err := o.auth(req); err != nil {
+		return "", err
+	}
 	resp, err := o.client().Do(req)
 	if err != nil {
 		return "", fmt.Errorf("%w: %s: %v", ErrUnavailable, o.ProviderName, err)
@@ -222,6 +242,12 @@ func (o *OpenAICompat) ProbeServedModel(ctx context.Context) (string, error) {
 }
 
 func (o *OpenAICompat) Complete(ctx context.Context, req Request) (Response, error) {
+	if o.ConfigurationError != nil {
+		return Response{}, o.ConfigurationError
+	}
+	if o.OutputTokens > 0 && (req.MaxTokens <= 0 || req.MaxTokens > o.OutputTokens) {
+		req.MaxTokens = o.OutputTokens
+	}
 	if strings.TrimSpace(o.Endpoint) == "" {
 		return Response{}, fmt.Errorf("%w: %s has no endpoint", ErrUnavailable, o.ProviderName)
 	}
@@ -246,7 +272,9 @@ func (o *OpenAICompat) Complete(ctx context.Context, req Request) (Response, err
 	if err != nil {
 		return Response{}, err
 	}
-	o.auth(hreq)
+	if err := o.auth(hreq); err != nil {
+		return Response{}, err
+	}
 
 	hresp, err := o.client().Do(hreq)
 	if err != nil {
@@ -254,22 +282,25 @@ func (o *OpenAICompat) Complete(ctx context.Context, req Request) (Response, err
 	}
 	defer func() { _ = hresp.Body.Close() }()
 
+	if hresp.StatusCode != http.StatusOK {
+		bearer, _ := BrokerBearer(o.AccessTokenFile)
+		if bearer == "" {
+			bearer = o.APIKey
+		}
+		return Response{}, BrokerError(hresp, bearer)
+	}
 	var cc ccResponse
 	if derr := json.NewDecoder(hresp.Body).Decode(&cc); derr != nil {
 		return Response{}, fmt.Errorf("%s: decode: %w", o.ProviderName, derr)
-	}
-	if hresp.StatusCode != http.StatusOK {
-		// Surface the backend's own words. A 404 here once read "cannot find an
-		// appropriate cached snapshot ... HF_HUB_OFFLINE" — which was a wrong
-		// model NAME in the request, not a broken broker. Swallowing it would
-		// have sent an operator hunting the wrong fault.
-		return Response{}, fmt.Errorf("%s: http %d: %v", o.ProviderName, hresp.StatusCode, cc.Error)
 	}
 	if len(cc.Choices) == 0 {
 		return Response{}, fmt.Errorf("%s: no choices in response", o.ProviderName)
 	}
 
 	ch := cc.Choices[0]
+	if ch.FinishReason == "length" {
+		return Response{}, fmt.Errorf("%s: native inference draft truncated at token limit", o.ProviderName)
+	}
 	text := ch.Message.Content
 	if text == "" && ch.Message.Reasoning != "" {
 		// Honest degradation: the model produced reasoning and ran out of room
@@ -295,6 +326,15 @@ func (o *OpenAICompat) Complete(ctx context.Context, req Request) (Response, err
 // stream: a backend that lacks this method remains explicitly unsupported at
 // the engine ABI boundary.
 func (o *OpenAICompat) Stream(ctx context.Context, req Request) (<-chan StreamChunk, error) {
+	if o.ConfigurationError != nil {
+		return nil, o.ConfigurationError
+	}
+	if !o.SupportsStreaming {
+		return nil, fmt.Errorf("selected provider streaming unsupported or unknown")
+	}
+	if o.OutputTokens > 0 && (req.MaxTokens <= 0 || req.MaxTokens > o.OutputTokens) {
+		req.MaxTokens = o.OutputTokens
+	}
 	if strings.TrimSpace(o.Endpoint) == "" {
 		return nil, fmt.Errorf("%w: %s has no endpoint", ErrUnavailable, o.ProviderName)
 	}
@@ -316,15 +356,20 @@ func (o *OpenAICompat) Stream(ctx context.Context, req Request) (<-chan StreamCh
 	if err != nil {
 		return nil, err
 	}
-	o.auth(hreq)
+	if err := o.auth(hreq); err != nil {
+		return nil, err
+	}
 	hresp, err := o.client().Do(hreq)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s: %v", ErrUnavailable, o.ProviderName, err)
 	}
 	if hresp.StatusCode != http.StatusOK {
-		defer func() { _ = hresp.Body.Close() }()
-		b, _ := io.ReadAll(io.LimitReader(hresp.Body, 64*1024))
-		return nil, fmt.Errorf("%s: stream http %d: %s", o.ProviderName, hresp.StatusCode, strings.TrimSpace(string(b)))
+		defer hresp.Body.Close()
+		bearer, _ := BrokerBearer(o.AccessTokenFile)
+		if bearer == "" {
+			bearer = o.APIKey
+		}
+		return nil, BrokerError(hresp, bearer)
 	}
 	out := make(chan StreamChunk)
 	go func() {

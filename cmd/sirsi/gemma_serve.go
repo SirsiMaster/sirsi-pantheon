@@ -19,6 +19,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/liveness"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/localrouter"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/provider"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
 )
 
@@ -246,6 +247,33 @@ func gemmaWarmComplete(base, model, prompt string, maxTokens int) (string, error
 }
 
 func gemmaWarmCompleteContext(ctx context.Context, base, model, prompt string, maxTokens int) (string, error) {
+	home, e := os.UserHomeDir()
+	if e != nil {
+		return "", e
+	}
+	path := provider.SelectedLocalProfilePath(home, provider.LoadConf(home))
+	if path != "" {
+		p, e := provider.ReadLocalProfile(path)
+		if e != nil {
+			return "", e
+		}
+		selectedBase := strings.TrimSuffix(strings.TrimRight(p.Endpoint, "/"), "/v1")
+		if strings.TrimRight(base, "/") != selectedBase || model != p.Model {
+			return "", fmt.Errorf("request differs from selected broker endpoint/model identity")
+		}
+		if maxTokens <= 0 || maxTokens > p.OutputTokens {
+			maxTokens = p.OutputTokens
+		}
+		return gemmaWarmCompleteProfile(ctx, base, model, prompt, maxTokens, p.AccessTokenFile)
+	}
+	return gemmaWarmCompleteProfile(ctx, base, model, prompt, maxTokens, "")
+}
+
+func gemmaWarmCompleteProfile(ctx context.Context, base, model, prompt string, maxTokens int, tokenFile string) (string, error) {
+	bearer, err := gemmaBrokerBearer(tokenFile)
+	if err != nil {
+		return "", err
+	}
 	body, _ := json.Marshal(map[string]any{
 		"model": model,
 		"messages": []map[string]string{
@@ -262,13 +290,16 @@ func gemmaWarmCompleteContext(ctx context.Context, base, model, prompt string, m
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
 	resp, err := cl.Do(req)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("native inference HTTP %d", resp.StatusCode)
+		return "", gemmaBrokerError(resp, bearer)
 	}
 	var out struct {
 		Choices []struct {

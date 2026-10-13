@@ -17,9 +17,10 @@ import (
 // disagreeing about which brain is active is precisely the dual-source class
 // that produced the router's phantom-item P0.
 type Conf struct {
-	Provider string // local engines: gemma | local | sne | sne-native-v2 | omlx; or a remote provider
-	Model    string
-	Endpoint string
+	Provider     string // local engines: gemma | local | sne | sne-native-v2 | omlx; or a remote provider
+	Model        string
+	Endpoint     string
+	LocalProfile string
 }
 
 // LoadConf reads the orchestrator conf. A missing file is not an error — it
@@ -53,6 +54,8 @@ func LoadConf(home string) Conf {
 			c.Model = v
 		case "endpoint":
 			c.Endpoint = v
+		case "local_profile":
+			c.LocalProfile = v
 		}
 	}
 	return c
@@ -80,6 +83,19 @@ func localEndpoint(home string) string {
 // model:"default" to mlx_lm.server returns a 404 about HF_HUB_OFFLINE that
 // reads like a broken broker and is not.
 func Local(home string, conf Conf) *OpenAICompat {
+	if path := selectedProfilePath(home, conf); path != "" {
+		p, e := ReadLocalProfile(path)
+		if e != nil {
+			return &OpenAICompat{ProviderName: "local", TierValue: TierLocal, ConfigurationError: e}
+		}
+		return &OpenAICompat{ProviderName: "local", TierValue: TierLocal, Endpoint: strings.TrimRight(p.Endpoint, "/") + func() string {
+			if strings.HasSuffix(strings.TrimRight(p.Endpoint, "/"), "/v1") {
+				return ""
+			}
+			return "/v1"
+		}(), Model: p.Model, ContextTokens: p.ContextTokens, OutputTokens: p.OutputTokens, SupportsStreaming: *p.Streaming, AccessTokenFile: p.AccessTokenFile, UseRealCompletionProbe: true}
+	}
+
 	// RUNG ZERO IS UNCONDITIONAL. conf.Provider selects which REMOTE to prefer;
 	// it must never be able to delete the local rung. The previous form only
 	// built an endpoint when Provider was ""/gemma/local, so configuring ANY
@@ -132,9 +148,9 @@ func Local(home string, conf Conf) *OpenAICompat {
 		Model:                  model,
 		TierValue:              TierLocal,
 		SupportsTools:          false, // mlx_lm.server has no tool-calling
-		SupportsStreaming:      true,  // local OpenAI-compatible broker exposes SSE
-		ContextTokens:          8192,
-		UseRealCompletionProbe: true, // MODEL-ROUTER-DESIGN.md: liveness = real completion, not /health
+		SupportsStreaming:      false, // unknown until explicitly selected profile declares it
+		ContextTokens:          0,     // unknown, never fabricate a local context capability
+		UseRealCompletionProbe: true,  // MODEL-ROUTER-DESIGN.md: liveness = real completion, not /health
 	}
 }
 
