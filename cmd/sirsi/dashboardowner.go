@@ -3,11 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
+
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dashboard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
-	"os"
-	"strings"
 )
 
 func dashboardOwnerAction(ctx context.Context, req dashboard.RouterActionRequest) (dashboard.RouterActionResult, error) {
