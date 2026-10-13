@@ -617,3 +617,26 @@ func (rs *RemoteStore) TaskLeaseEventsSince(agent, taskID, since string) ([]Task
 	err := rs.call("TaskLeaseEventsSince", []any{agent, taskID, since}, &out)
 	return out, err
 }
+
+// Context-taking siblings for bounded producer calls; wire methods/auth stay unchanged.
+func (rs *RemoteStore) GetContext(ctx context.Context, id string) (Item, error) {
+	var out Item
+	e := rs.callCtx(ctx, "Get", []any{id}, &out)
+	return out, e
+}
+func (rs *RemoteStore) InboxContext(ctx context.Context, agent string) ([]Item, error) {
+	var out []Item
+	e := rs.callCtx(ctx, "Inbox", []any{agent}, &out)
+	return out, e
+}
+func (rs *RemoteStore) ListThreadsContext(ctx context.Context) ([]ThreadRecord, error) {
+	var out []ThreadRecord
+	e := rs.callCtx(ctx, "ListThreads", nil, &out)
+	return out, e
+}
+func (rs *RemoteStore) SendGuardedContext(ctx context.Context, req SendReq) (string, bool, error) {
+	var id string
+	var deduped bool
+	e := rs.callCtx(ctx, "SendGuarded", []any{req}, &id, &deduped)
+	return id, deduped, e
+}

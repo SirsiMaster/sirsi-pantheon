@@ -42,6 +42,37 @@ foreign worker based on the observer's process table.
 
 ## Selected broker profile
 
+## Shared producer (explicit host outbound)
+
+From a genuine registered lane/session, using its existing canonical router and
+current actor/thread environment:
+
+```sh
+sirsi gemma shared --wait 15m "Draft a pure Go Add function with four test cases"
+sirsi gemma shared --resume ORIGINAL_ITEM_ID --wait 2m
+```
+
+`SIRSI_AGENT_ID` (or the current session actor) and `SIRSI_THREAD_ID` must match
+an active thread on this machine whose anchor is in the current process ancestry.
+There is no `--from` override. Prompts are UTF-8, at most 8192 bytes; oversize
+input is refused rather than trimmed. The explicit shared command sends the full
+prompt through the configured canonical HTTPS router or its existing relay and
+may execute on M5. It does not mislabel this as local inference or open an SSH
+forward, broker capability, new DB, model or consumer.
+
+`--wait 0` submits and immediately returns Pending plus the original ID.
+Wait is bounded to 0–15 minutes; cancellation preserves the original and prints
+its resume ID. Resume never resubmits. Blocked/retryable outcomes retain their
+canonical evidence. Only an exact completed original plus verified
+`nonbinding_draft` reply reference is emitted as a completed draft. Replies
+already closed by another legitimate reader remain readable by exact ID.
+Legacy completion without a reference returns pending/manual retrieval.
+No Inbox/ListAll scan, acknowledgement, claim or closure is performed by the
+producer. The worker still sends before fenced completion; deduped publication
+uses the returned reply ID and its actual stored one-way lease correlation.
+Each real builder must submit under its own genuine identity; source fixtures
+do not qualify every lane.
+
 The selected JSON profile binds one existing loopback broker, its full model
 identity and declared capabilities. It neither loads a model nor starts a worker:
 

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -186,14 +187,26 @@ func (r facadeGemmaReply) Reply(lease *routerstore.Lease, item routerstore.Item,
 	}
 	title := "NONBINDING Gemma draft for " + item.ID + ": " + strings.TrimSpace(item.Title)
 	body := gemmaWorkerReplyEnvelope(item.ID, lease.Token, draft)
-	if _, err := r.facade.Send(gemmaWorkerAgent, item.From, title, "review", body); err != nil {
+	sent, err := r.facade.Send(gemmaWorkerAgent, item.From, title, "review", body)
+	if err != nil {
 		return fmt.Errorf("send reply: %w", err)
 	}
 	// Send precedes completion: if delivery fails, the original stays open; if
 	// completion loses its fence, a resend is deduplicated and never becomes a
 	// false completion.
-	return r.facade.CompleteItem(gemmaWorkerAgent, lease.ItemID, lease.Token,
-		"Gemma draft delivered to "+item.From+"; response is the authoritative result.")
+	published, err := r.facade.Store().Get(sent.ID)
+	if err != nil {
+		return fmt.Errorf("read back reply before completion: %w", err)
+	}
+	finger := sharedGemmaReplyFingerprint(published, item.From, item.ID)
+	if finger == "" {
+		return fmt.Errorf("published reply correlation mismatch")
+	}
+	ref, e := json.Marshal(gemmaSharedCompletionRef{Kind: "nonbinding_draft", OriginalItemID: item.ID, ReplyItemID: sent.ID, LeaseCorrelation: finger})
+	if e != nil {
+		return e
+	}
+	return r.facade.CompleteItem(gemmaWorkerAgent, lease.ItemID, lease.Token, string(ref))
 }
 
 func gemmaWorkerReplyEnvelope(itemID, leaseToken, draft string) string {

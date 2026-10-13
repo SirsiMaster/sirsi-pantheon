@@ -6,6 +6,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- **Explicit shared Gemma producer:** registered actors can submit one bounded prompt through the canonical router with `sirsi gemma shared`, wait at most fifteen minutes, or resume the exact original. The prompt leaves the caller's host. Fenced worker completion now records an exact reply reference; the producer reads only that original and reply, including a closed reply. Cancellation/timeouts leave work durable, and legacy unlinked completion stays correlation-unavailable. No local inference fallback, impersonation flag, consumer or store is created.
 - **Host-scoped node PID truth:** node-status probes the observing machine's OS only for positively local rows. Foreign rows retain canonical status, work and heartbeat facts with `os=unknown(remote-unknown)`; coincident PID numbers or shared host labels cannot produce a false foreign `gone` verdict. Foreign loop evidence is unverified rather than locally dead. This read-only correction does not restart workers or change queue ownership.
 
 - **Local request deadlines:** optional profile `request_timeout_seconds` (1–600) now reaches the actual worker and provider HTTP clients. The worker request is also bounded by its generation context; cancellation records retryable evidence under the same item/lease fence. Missing values preserve the worker's five-minute and provider's 180-second defaults. This does not change broker timeouts, output budgets, native processes or queue ownership.
