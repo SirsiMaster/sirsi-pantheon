@@ -77,7 +77,7 @@ func TestStreamParsesSSEChunksAndDone(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := &OpenAICompat{ProviderName: "local", Endpoint: srv.URL + "/v1", TierValue: TierLocal, HTTP: srv.Client()}
+	p := &OpenAICompat{SupportsStreaming: true, ProviderName: "local", Endpoint: srv.URL + "/v1", TierValue: TierLocal, HTTP: srv.Client()}
 	temperature, topP, seed := 0.3, 0.9, int64(11)
 	chunks, err := p.Stream(context.Background(), Request{Prompt: "hello", MaxTokens: 4, Temperature: &temperature, TopP: &topP, Seed: &seed})
 	if err != nil {
@@ -118,7 +118,7 @@ func TestStreamCancellationClosesResponse(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	p := &OpenAICompat{ProviderName: "local", Endpoint: srv.URL + "/v1", TierValue: TierLocal, HTTP: srv.Client()}
+	p := &OpenAICompat{SupportsStreaming: true, ProviderName: "local", Endpoint: srv.URL + "/v1", TierValue: TierLocal, HTTP: srv.Client()}
 	chunks, err := p.Stream(ctx, Request{Prompt: "hello", MaxTokens: 4})
 	if err != nil {
 		t.Fatal(err)
@@ -147,7 +147,7 @@ func TestStreamRejectsEOFBeforeTerminalMarker(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := &OpenAICompat{ProviderName: "local", Endpoint: srv.URL + "/v1", TierValue: TierLocal, HTTP: srv.Client()}
+	p := &OpenAICompat{SupportsStreaming: true, ProviderName: "local", Endpoint: srv.URL + "/v1", TierValue: TierLocal, HTTP: srv.Client()}
 	chunks, err := p.Stream(context.Background(), Request{Prompt: "hello", MaxTokens: 4})
 	if err != nil {
 		t.Fatal(err)

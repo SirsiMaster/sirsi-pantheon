@@ -103,8 +103,8 @@ func TestLocalDeclaresNoToolCalling(t *testing.T) {
 	if l.Caps().Tools {
 		t.Error("local provider claims tool-calling; mlx_lm.server has none")
 	}
-	if !l.Caps().Streaming {
-		t.Error("local provider failed to declare its supported SSE transport")
+	if l.Caps().Streaming || l.Caps().ContextTokens != 0 {
+		t.Error("unprofiled local provider fabricated capability metadata")
 	}
 }
 

@@ -509,7 +509,7 @@ func TestAnubisWeigh(t *testing.T) {
 		t.Skip("skipping scan in short mode (may take several seconds)")
 	}
 
-	stdout, stderr, err := runSirsi(t, 60*time.Second, "anubis", "weigh", "--json")
+	stdout, stderr, err := runSirsiWithEnv(t, 60*time.Second, isolatedHomeEnv(t), "anubis", "weigh", "--json")
 	if err != nil {
 		t.Fatalf("sirsi anubis weigh --json failed: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
 	}

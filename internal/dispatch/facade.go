@@ -159,6 +159,10 @@ type SendResult struct {
 // appended), and circuit breakers (ErrBreakerOpen). Success means the store
 // row exists; the markdown audit view is then dual-written with the same id.
 func (f *Facade) Send(from, to, title, msgType, instructions string) (SendResult, error) {
+	return f.SendContext(context.Background(), from, to, title, msgType, instructions)
+}
+
+func (f *Facade) SendContext(ctx context.Context, from, to, title, msgType, instructions string) (SendResult, error) {
 	if err := work.EnsureRoot(f.root); err != nil {
 		return SendResult{}, fmt.Errorf("dispatch: ensure root: %w", err)
 	}
@@ -174,9 +178,19 @@ func (f *Facade) Send(from, to, title, msgType, instructions string) (SendResult
 	if err = f.ValidateAgent("recipient", to); err != nil {
 		return SendResult{}, err
 	}
-	id, deduped, err := f.store.SendGuarded(routerstore.SendReq{
-		From: from, To: to, Title: title, Type: msgType, Instructions: instructions,
-	})
+	req := routerstore.SendReq{From: from, To: to, Title: title, Type: msgType, Instructions: instructions}
+	var id string
+	var deduped bool
+	if cs, ok := f.store.(interface {
+		SendGuardedContext(context.Context, routerstore.SendReq) (string, bool, error)
+	}); ok {
+		id, deduped, err = cs.SendGuardedContext(ctx, req)
+	} else {
+		if err = ctx.Err(); err != nil {
+			return SendResult{}, err
+		}
+		id, deduped, err = f.store.SendGuarded(req)
+	}
 	if err != nil {
 		return SendResult{}, err // refused: no store row, no dispatch (§2b axiom 8)
 	}

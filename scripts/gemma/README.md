@@ -1,35 +1,43 @@
-# scripts/gemma — the local-Gemma router worker
+# Gemma resident worker
 
-`sirsi-gemma-worker.sh` is the daemon behind the `gemma` router agent: it pulls
-open `to: gemma` items through the router facade (`sirsi router pull gemma` —
-never a file glob, so it survives the StoreWake cutover), completes them with
-the on-device model via the `sirsi gemma` broker (ADR-031 RAM-gated, warm-server
-first), routes the deliverable BACK to the requester as a fresh inbound item
-(A26 relay), and closes the original.
+`sirsi-gemma-worker.sh` is a compatibility LaunchAgent entrypoint. It starts
+the canonical native consumer:
 
-This directory is the CANONICAL source (spec-fix Gap 2 — the worker previously
-lived only at `~/.local/bin`, unversioned and outside CI). Deploy with:
+```text
+sirsi gemma worker
+```
 
-    make install-gemma-worker
+The native worker is the only owner of Gemma router work. It registers the
+`gemma-pantheon` worker thread, exports its actual `SIRSI_THREAD_ID`, holds an
+OS singleton, claims each item through the router's fenced lease API, reads and
+acknowledges the full item, and heartbeats while native inference is active.
 
-which copies it to `~/.local/bin/sirsi-gemma-worker.sh` and kickstarts the
-`ai.sirsi.gemma-worker` LaunchAgent so the running daemon picks it up.
+## Inference boundary
 
-## Task modes
+The worker uses only the selected **warm native SNE** endpoint. It does not
+start a broker, cold-load a model, invoke Python, or fall back to a second
+runtime. It verifies that endpoint before claiming any item. If it is absent,
+the worker exits without consuming queue work.
 
-First line of the item body: `TASK: classify|summarize|draft|analyze|plan|extract|build`.
+Gemma produces nonbinding text drafts. It does not run tools, transfer work,
+merge code, publish changes, or issue security/release verdicts. A routed reply
+includes the original item identifier and a non-capability correlation digest;
+it never exposes a lease token.
 
-**`TASK: build` contract (canon):** gemma is text-in/text-out and resolves no
-file paths. A build task MUST embed every source file it edits via
-`--instructions @file` (or inline). The deliverable is complete file content
-(`=== FILE: <path> ===` delimiters for multiple files); a referenced-but-not-
-embedded file yields a trailing `MISSING-SOURCE: <path>` marker so the router
-can re-scope. Gemma output is a DRAFT (A30 Tier 0) — a real agent reviews and
-binds; gemma never merges, signs off, or runs tools.
+## Failure and recovery
 
-## Model policy
+Broker errors, empty output, truncated output, reply failure, and start failure
+leave the request unresolved with retryable evidence. A lost or superseded lease
+cancels generation and prevents publication. A successful response is followed
+by token-fenced completion; the notification itself is intentionally marked
+nonbinding because it is not atomic with that completion fence.
 
-Default model comes from `~/.sirsi/gemma-model.conf` (resolver-written);
-`MODEL: max` in a body requests the 31B and is RAM-gated (falls back with a
-note rather than Jetsam-killing a sibling). Owner law: the user-facing name is
-"Ask Sirsi" — model identity stays internal.
+For operator recovery and evidence interpretation, see
+[`docs/user-guides/gemma-worker-recovery.md`](../../docs/user-guides/gemma-worker-recovery.md).
+
+## Verification
+
+```text
+scripts/gemma/worker-escalation.test.sh
+go test ./cmd/sirsi -run TestGemmaWorker -count=1
+```
