@@ -393,8 +393,11 @@ func (s *SQLiteStore) Fail(id, token, reason, failureClass string) error {
 		}
 	} else {
 		_, err = tx.Exec(
-			`UPDATE items SET status='open', attempts=?, failure_class=?, lease_token='', lease_expires='', claimed_by='' WHERE id=?;`,
-			attempts, failureClass, id,
+			// Keep the exact retryable error on the reopened item. A consumer that
+			// cannot publish a generated draft must not silently discard the only
+			// actionable evidence of why it stayed unresolved.
+			`UPDATE items SET status='open', attempts=?, failure_class=?, result=?, lease_token='', lease_expires='', claimed_by='' WHERE id=?;`,
+			attempts, failureClass, strings.TrimSpace(reason), id,
 		)
 		if err != nil {
 			return fmt.Errorf("routerstore: Fail: reopen: %w", err)

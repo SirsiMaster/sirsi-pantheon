@@ -242,6 +242,10 @@ func gemmaServerPing(base string) bool {
 }
 
 func gemmaWarmComplete(base, model, prompt string, maxTokens int) (string, error) {
+	return gemmaWarmCompleteContext(context.Background(), base, model, prompt, maxTokens)
+}
+
+func gemmaWarmCompleteContext(ctx context.Context, base, model, prompt string, maxTokens int) (string, error) {
 	body, _ := json.Marshal(map[string]any{
 		"model": model,
 		"messages": []map[string]string{
@@ -252,7 +256,12 @@ func gemmaWarmComplete(base, model, prompt string, maxTokens int) (string, error
 		"temperature": 0,
 	})
 	cl := &http.Client{Timeout: 5 * time.Minute}
-	resp, err := cl.Post(base+"/v1/chat/completions", "application/json", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/v1/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := cl.Do(req)
 	if err != nil {
 		return "", err
 	}

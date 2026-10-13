@@ -34,6 +34,16 @@
 # CANONICAL SOURCE: scripts/gemma/sirsi-gemma-worker.sh in sirsi-pantheon (CI-visible,
 # reviewed). Deploy = `make install-gemma-worker` (copies to ~/.local/bin + kickstarts
 # the ai.sirsi.gemma-worker LaunchAgent). Do NOT hand-edit the ~/.local/bin copy.
+#
+# This file is intentionally only a compatibility launcher. The executable
+# worker lives in `sirsi gemma worker`: it owns the OS singleton, registers and
+# heartbeats the real consumer thread, claims fenced leases, and never closes a
+# request after a broker or reply failure. Keeping this wrapper preserves the
+# deployed LaunchAgent entrypoint without preserving its old shell-owned queue.
+REPO=${SIRSI_REPO:-$HOME/Development/sirsi-pantheon}
+SIRSI=${SIRSI_BIN:-$HOME/.local/bin/sirsi}
+cd "$REPO" || exit 70
+exec "$SIRSI" gemma worker "$@"
 
 set -u
 # Model is resolved by sirsi-gemma-model-resolver.sh (largest/most-advanced/most-
