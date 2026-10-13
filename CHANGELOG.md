@@ -6,6 +6,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- **Native broker profiles and worker recovery:** share explicit selected endpoint/model/context/output/streaming metadata and an existing private capability-file reference across the provider client and worker. Unknown capabilities fail visibly instead of advertising 8192-token/SSE support. HTTP 503 with `Retry-After` waits under the same lease; deadline exhaustion leaves the request retryable, while permanent context/auth errors block without truncating identity. See [profile selection and rollback](docs/user-guides/gemma-worker-recovery.md#selected-broker-profile).
+
 - **Router refresh under load:** coalesce simultaneous canonical snapshot reads without caching errors or completed results. Hidden Fleet/Host panels no longer request data on every overview refresh; concurrent Fleet loads share one request. Read-only refresh stays bounded at 60 seconds to accommodate observed 28-second relay reads instead of abandoning them at 15 seconds. Owner write timeouts and scope checks are unchanged.
 
 - **Fleet drilldown:** all four summary tiles are keyboard-accessible list selectors; Blocked and Stalled have separate complete task lists with recorded dependencies and task inspectors. Detail rows and totals come from one snapshot and mismatches fail visibly. Numeric column headings align with their values, and “idle with work” counts that actual lane state rather than empty lanes.

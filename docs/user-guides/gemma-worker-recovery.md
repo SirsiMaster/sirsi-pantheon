@@ -19,6 +19,9 @@ compatibility launcher, not a second queue implementation.
 | Condition | Worker behavior | Safe next action |
 | --- | --- | --- |
 | Native SNE unavailable | Exits before claiming work | Restore the approved SNE service, then restart the worker. |
+| HTTP 503 with `Retry-After` | Waits under the same live, renewed lease; bounded wait exhaustion records fenced retryable failure | Respect backpressure; do not restart or kill a BUSY broker. |
+| Unknown HTTP 503 without `Retry-After` | Preserves bounded structured runtime-failure evidence; does not pretend BUSY | Diagnose the recorded runtime error before retrying. |
+| Permanent context/capacity or authentication error | Blocks only the claimed item through its exact fence | Correct the selected profile/request/auth readiness; unblock deliberately. Never shorten the system identity to hide overflow. |
 | Empty or truncated draft | Reopens the request with retryable evidence | Inspect the retained reason; retry only after the endpoint is healthy. |
 | Reply delivery fails | Keeps the original request unresolved and retains the exact draft | Repair router delivery; the next lease holder can retry. |
 | Lease lost or superseded | Cancels generation and publishes nothing | Let the current lease holder continue; do not manually close the old item. |
@@ -26,3 +29,71 @@ compatibility launcher, not a second queue implementation.
 
 The worker never starts a model or falls back to a Python/MLX command. It also
 never treats a nonbinding draft as a completed or approved decision.
+
+## Selected broker profile
+
+The selected JSON profile binds one existing loopback broker, its full model
+identity and declared capabilities. It neither loads a model nor starts a worker:
+
+```json
+{
+  "endpoint": "http://127.0.0.1:8477/v1",
+  "model": "gemma-4-e2b-it-nvfp4-sne-v0",
+  "context_tokens": 1024,
+  "output_tokens": 256,
+  "streaming": false,
+  "access_token_file": "/Users/sirsimasterdev/.sirsi/apollo-m1-profile-20261013/capability"
+}
+```
+
+This M1 example is a **candidate**, not an installed/qualified profile. Its pilot
+failed memory admission before model load. M5's reported existing selection is
+`mlx-community/gemma-4-12B-it-8bit`, context 4096, output 1024, nonstreaming, with
+an empty `access_token_file`. Use measured values for the actually selected host;
+do not infer capabilities from a model name or copy M5 defaults onto M1.
+
+Select the JSON using `local_profile=/absolute/profile.json` in the existing
+`~/.sirsi/orchestrator.conf`, preserving its other fields, or set
+`SIRSI_LOCAL_PROFILE` to that path. The environment reference takes precedence.
+An explicit worker `--inference-profile` overrides that shared selection for that
+worker only; prefer the shared reference so consumers agree.
+
+| Field/flag | Behavior |
+| --- | --- |
+| `endpoint`, `model` | Credential-free loopback URL and exact full model identity; no automatic alternate-model fallback. |
+| `context_tokens`, `output_tokens`, `streaming` | Explicit declared values required for a selected profile. Missing/invalid values fail; unprofiled capability metadata remains unknown. Input/system identity is not trimmed; backend overflow is surfaced. |
+| `access_token_file` | Optional existing regular 0600 file; required by the M1 worker profile. The client builds the Bearer header in memory. Missing, empty, public-mode or invalid configured files fail closed. Never put a capability value in JSON, shell arguments or logs. |
+| `gemma worker --profile m1` | Requires selected 1024-context metadata and capability reference; output capped at 256. |
+| `gemma worker --profile m5` | Output capped at 1024; preserves existing unauthenticated loopback when selected. |
+| Worker `--max-tokens N` | Worker-local override, bounded by the worker profile and selected JSON output cap; the parent `gemma --max-tokens` flag is not inherited. |
+| Worker `--access-token-file PATH` | Existing private capability reference; a conflicting selected-profile path is refused. |
+
+Provider-backed Ask, local routing, engine connectors and the native worker use
+these shared fields. Engine fixture receipts are not standalone MCP/native
+deployment proof; separately qualify each installed consumer before release.
+
+## Selection, handover and rollback
+
+1. Preserve the prior configuration, profile, signed client and broker receipt.
+   Stage the new JSON separately; verify exact source/build and fresh host
+   admission through the existing native custodian. Profile fixtures do not prove
+   GPU capacity or a successful model load.
+2. Keep one canonical `gemma-pantheon` consumer. A requester on M1 may send an
+   ordinary canonical router item to the existing M5 lane with its real identity;
+   do not create an SSH forward, a second queue or simultaneous global consumers.
+3. Change queue placement only through an explicit fenced single-owner handover
+   after provider/client/requester qualification. A running old broker remains
+   authoritative until the supported native replacement succeeds.
+4. On failed admission/readiness, restore the saved selection and qualified
+   broker/client through the existing custodian, without overlapping processes.
+   Preserve failed-request bodies and lease history. Do not retry a consumed
+   admission window, widen credentials, force memory release or disable security.
+5. BUSY alone never authorizes a broker restart. The worker's bounded BUSY timeout
+   uses retryable failure, not permanent blocking. Only repair-backed native
+   custody may unblock a permanent error; no stale lease reset is implied.
+
+This follows [ADR-062 router concurrency/fencing](../ADR-062-ROUTER-SERVICE-RA-CONCURRENCY.md),
+[ADR-040 running-host safety](../ADR-040-DO-NO-HARM-TO-THE-RUNNING-HOST.md) and
+the [engine-selection guide](PANTHEON-ENGINE-SELECTION.md). A nonbinding draft,
+profile handoff or routing subtask must not close an unfinished implementation or
+offline-window obligation.
