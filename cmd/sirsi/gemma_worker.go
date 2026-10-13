@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
@@ -39,10 +40,11 @@ type gemmaWorkerReply interface {
 }
 
 type nativeGemmaWorker struct {
-	store    gemmaWorkerStore
-	reply    gemmaWorkerReply
-	generate func(context.Context, string) (string, error)
-	leaseTTL time.Duration
+	store     gemmaWorkerStore
+	reply     gemmaWorkerReply
+	generate  func(context.Context, string) (string, error)
+	leaseTTL  time.Duration
+	heartbeat func() error
 }
 
 func (w nativeGemmaWorker) runOnce(ctx context.Context) (bool, error) {
@@ -67,9 +69,14 @@ func (w nativeGemmaWorker) runOnce(ctx context.Context) (bool, error) {
 	defer cancel()
 	lost := make(chan error, 1)
 	done := make(chan struct{})
-	go w.maintainLease(genCtx, done, lease, lost)
+	maintained := make(chan struct{})
+	go func() {
+		defer close(maintained)
+		w.maintainLease(genCtx, done, cancel, lease, lost)
+	}()
 	answer, err := w.generate(genCtx, gemmaWorkerPrompt(item.Instructions))
 	close(done)
+	<-maintained
 	select {
 	case leaseErr := <-lost:
 		return true, fmt.Errorf("Gemma lease for %s lost during inference: %w", lease.ItemID, leaseErr)
@@ -100,8 +107,8 @@ func (w nativeGemmaWorker) runOnce(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-func (w nativeGemmaWorker) maintainLease(ctx context.Context, done <-chan struct{}, lease *routerstore.Lease, lost chan<- error) {
-	interval := w.leaseTTL / 3
+func (w nativeGemmaWorker) maintainLease(ctx context.Context, done <-chan struct{}, cancel context.CancelFunc, lease *routerstore.Lease, lost chan<- error) {
+	interval := w.leaseTTL / 4
 	if interval <= 0 {
 		interval = time.Minute
 	}
@@ -114,7 +121,18 @@ func (w nativeGemmaWorker) maintainLease(ctx context.Context, done <-chan struct
 		case <-ctx.Done():
 			return
 		case <-tick.C:
+			if w.heartbeat != nil {
+				if err := w.heartbeat(); err != nil {
+					cancel()
+					select {
+					case lost <- fmt.Errorf("worker heartbeat: %w", err):
+					default:
+					}
+					return
+				}
+			}
 			if err := w.store.RenewLease(lease.ItemID, lease.Token, w.leaseTTL); err != nil {
+				cancel()
 				select {
 				case lost <- err:
 				default:
@@ -154,7 +172,7 @@ func (r facadeGemmaReply) Reply(lease *routerstore.Lease, item routerstore.Item,
 		return fmt.Errorf("claimed item %s has no sender", item.ID)
 	}
 	title := "NONBINDING Gemma draft for " + item.ID + ": " + strings.TrimSpace(item.Title)
-	body := fmt.Sprintf("NONBINDING DRAFT — original item %s; lease correlation %s. This reply is not a completion claim.\n\n%s", item.ID, lease.Token, draft)
+	body := gemmaWorkerReplyEnvelope(item.ID, lease.Token, draft)
 	if _, err := r.facade.Send(gemmaWorkerAgent, item.From, title, "review", body); err != nil {
 		return fmt.Errorf("send reply: %w", err)
 	}
@@ -163,6 +181,12 @@ func (r facadeGemmaReply) Reply(lease *routerstore.Lease, item routerstore.Item,
 	// false completion.
 	return r.facade.CompleteItem(gemmaWorkerAgent, lease.ItemID, lease.Token,
 		"Gemma draft delivered to "+item.From+"; response is the authoritative result.")
+}
+
+func gemmaWorkerReplyEnvelope(itemID, leaseToken, draft string) string {
+	// The live lease token is bearer authority; correlation is one-way only.
+	fingerprint := sha256.Sum256([]byte(leaseToken))
+	return fmt.Sprintf("NONBINDING DRAFT — original item %s; lease correlation sha256:%x. This reply is not a completion claim.\n\n%s", itemID, fingerprint[:8], draft)
 }
 
 var gemmaWorkerGenerate = func(ctx context.Context, prompt string) (string, error) {
@@ -209,6 +233,12 @@ func runGemmaWorker(cmd *cobra.Command, _ []string) error {
 		fmt.Fprintln(cmd.OutOrStdout(), "sirsi-gemma-worker native")
 		return nil
 	}
+	if err := os.Setenv("SIRSI_AGENT_ID", gemmaWorkerAgent); err != nil {
+		return fmt.Errorf("set Gemma worker identity: %w", err)
+	}
+	if err := os.Setenv("SIRSI_ROUTER_AGENT", gemmaWorkerAgent); err != nil {
+		return fmt.Errorf("set Gemma router identity: %w", err)
+	}
 	if err := gemmaWorkerPreflight(); err != nil {
 		return err
 	}
@@ -235,7 +265,12 @@ func runGemmaWorker(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("export registered thread id: %w", err)
 	}
 	defer router.CloseThread(routerRoot, t.ThreadID)
-	w := nativeGemmaWorker{store: f.Store(), reply: facadeGemmaReply{facade: f}, generate: gemmaWorkerGenerate, leaseTTL: 15 * time.Minute}
+	w := nativeGemmaWorker{store: f.Store(), reply: facadeGemmaReply{facade: f}, generate: gemmaWorkerGenerate, leaseTTL: 15 * time.Minute,
+		heartbeat: func() error {
+			_, err := router.Heartbeat(routerRoot, t.ThreadID, router.HeartbeatUpdate{Status: router.ThreadStatusActive})
+			return err
+		},
+	}
 	for {
 		if _, err := router.Heartbeat(routerRoot, t.ThreadID, router.HeartbeatUpdate{Status: router.ThreadStatusActive}); err != nil {
 			return fmt.Errorf("Gemma worker heartbeat: %w", err)

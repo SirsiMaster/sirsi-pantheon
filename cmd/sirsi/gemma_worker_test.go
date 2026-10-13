@@ -101,6 +101,17 @@ func TestGemmaWorkerReplyFailurePreservesExactDraftForRetry(t *testing.T) {
 	}
 }
 
+func TestGemmaWorkerReplyNeverDisclosesLeaseBearer(t *testing.T) {
+	token := "live-bearer-token-must-not-leave-the-worker"
+	body := gemmaWorkerReplyEnvelope("i-42", token, "draft")
+	if strings.Contains(body, token) {
+		t.Fatalf("reply leaked lease bearer token: %q", body)
+	}
+	if !strings.Contains(body, "original item i-42") || !strings.Contains(body, "sha256:") {
+		t.Fatalf("reply is missing safe correlation: %q", body)
+	}
+}
+
 func TestGemmaWorkerLeaseLossPreventsPublication(t *testing.T) {
 	s, r := claimedGemmaItem()
 	s.verify = false
