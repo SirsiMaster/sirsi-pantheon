@@ -30,6 +30,16 @@ compatibility launcher, not a second queue implementation.
 The worker never starts a model or falls back to a Python/MLX command. It also
 never treats a nonbinding draft as a completed or approved decision.
 
+When observing a worker on another host, `node-status` reports its kernel PID as
+`unknown(remote-unknown)`. PID numbers are local to a machine: absence on M1 is
+not evidence that an M5 worker died. Stable machine IDs take precedence over
+mutable host labels; an id-less legacy row needs an exact observing-host match
+before a local OS check. Foreign loop evidence is likewise unverified, not dead.
+Use the canonical original/result, holder and heartbeat receipts for delivery
+reconciliation; unknown remote OS state does not contradict a completed item.
+Retain stale failure history alongside the fresh readback, and never restart a
+foreign worker based on the observer's process table.
+
 ## Selected broker profile
 
 The selected JSON profile binds one existing loopback broker, its full model

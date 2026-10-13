@@ -111,7 +111,10 @@ type ThreadSummary struct {
 	IdleSeconds   float64      `json:"idle_seconds"`
 	Stale         bool         `json:"stale,omitempty"`
 	PID           int          `json:"pid,omitempty"`
-	OSState       PIDState     `json:"os_state,omitempty"` // OS-truth liveness of PID
+	OSState       PIDState     `json:"os_state,omitempty"` // Local OS truth only; foreign PIDs are unknown.
+	Host          string       `json:"host,omitempty"`
+	MachineID     string       `json:"machine_id,omitempty"`
+	OSScope       string       `json:"os_scope,omitempty"`
 	// Honest liveness (owner priority 2026-06-19, codex-validated). watcher_type is
 	// the thread's canonical watcher (WatcherFor().Type). loop_state is the
 	// surface-native loop-evidence verdict: "alive"/"dead" for loop-bearing surfaces
@@ -483,6 +486,7 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 		sortedThrs := treg.SortedThreads()
 		newestByAgent := NewestActiveByAgent(sortedThrs)
 		machineID := MachineID()
+		observerHost, _ := os.Hostname()
 		for _, thr := range sortedThrs {
 			if thr.Status.IsTerminal() {
 				continue
@@ -490,57 +494,7 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 			if thr.Status == ThreadStatusSuspended {
 				continue
 			}
-			sum := ThreadSummary{
-				ThreadID:      thr.ThreadID,
-				AgentID:       thr.AgentID,
-				Surface:       thr.Surface,
-				Status:        thr.Status,
-				Watches:       append([]string(nil), thr.Watches...),
-				WakeMechanism: thr.WakeMechanism,
-				CurrentItem:   thr.CurrentItem,
-				LastError:     thr.LastError,
-				StartedAt:     thr.StartedAt,
-				LastSeenAt:    thr.LastSeenAt,
-				AgeSeconds:    now.Sub(thr.StartedAt).Seconds(),
-				IdleSeconds:   now.Sub(thr.LastSeenAt).Seconds(),
-				Stale:         thr.IsStale(now, DefaultThreadStaleAfter),
-				PID:           thr.PID,
-				OSState:       PIDStateOf(thr.PID, thr.StartTime),
-			}
-			osDead := SameMachine(thr.MachineID, machineID) && (sum.OSState == PIDGone || sum.OSState == PIDDefunct || sum.OSState == PIDRecycled || sum.OSState == PIDMismatched)
-			// Honest liveness, classified by watcher_type (codex-home SME verdict on #79):
-			//  - loop-monitor (Claude) ONLY requires pgrep `thr-<id>` loop evidence —
-			//    its /loop is thr-id-keyed AND its heartbeat is harness-gated, so it can
-			//    be heartbeat-FRESH while the loop is DEAD (armed:false, loop_state:"dead"
-			//    — the owner's "claims live but is idle"). NOT extended to surface-loop/
-			//    pull-loop: their heartbeat is loop-driven (dead loop → stale → caught by
-			//    !stale) and not contractually thr-id-pgrep-able, so requiring it would
-			//    false-negative healthy workers.
-			//  - app-heartbeat (Codex), native-runloop (resident UI), surface-loop,
-			//    pull-loop: loop_state "na"; heartbeat freshness is the armed proof.
-			sum.WatcherType = WatcherFor(thr.Surface, thr.AgentID, thr.ThreadID).Type
-			switch {
-			case osDead:
-				sum.Stale, sum.LoopState, sum.Armed, sum.ArmedReason = true, "dead", false, "os-"+string(sum.OSState)
-			case requiresThreadIDLoop(sum.WatcherType):
-				switch {
-				case thr.ThreadID == "":
-					sum.LoopState, sum.Armed, sum.ArmedReason = "unknown", false, "heartbeat-stale"
-				case WatcherAliveForThread(thr, newestByAgent[thr.AgentID] == thr.ThreadID):
-					sum.LoopState, sum.Armed, sum.ArmedReason = "alive", true, "loop-alive"
-				default:
-					sum.LoopState, sum.Armed, sum.ArmedReason = "dead", false, "loop-dead"
-				}
-			case sum.Stale:
-				// Any non-loop-monitor surface gone stale is unarmed regardless of kind.
-				sum.LoopState, sum.Armed, sum.ArmedReason = "na", false, "heartbeat-stale"
-			case sum.WatcherType == watcherTypeAppHeartbeat:
-				sum.LoopState, sum.Armed, sum.ArmedReason = "na", true, "app-heartbeat-fresh"
-			case sum.WatcherType == watcherTypeNativeRunloop:
-				sum.LoopState, sum.Armed, sum.ArmedReason = "na", true, "resident-runloop-fresh"
-			default: // surface-loop / pull-loop / unknown — loop-driven heartbeat is the proof
-				sum.LoopState, sum.Armed, sum.ArmedReason = "na", true, "heartbeat-fresh"
-			}
+			sum := nodeThreadSummary(thr, now, newestByAgent[thr.AgentID] == thr.ThreadID, machineID, observerHost)
 			if sum.Stale {
 				ns.StaleThreads = append(ns.StaleThreads, sum)
 			} else {
@@ -688,4 +642,76 @@ func CollectLaunchAgents(repoRoot string, launchctlCheck LaunchctlChecker) []Lau
 		}
 	}
 	return specs
+}
+
+// nodeThreadSummary is an observer-only projection; never writes or reconciles a thread.
+func nodeThreadSummary(thr *Thread, now time.Time, isNewest bool, machineID, observerHost string) ThreadSummary {
+	sum := ThreadSummary{
+		ThreadID:      thr.ThreadID,
+		AgentID:       thr.AgentID,
+		Surface:       thr.Surface,
+		Status:        thr.Status,
+		Watches:       append([]string(nil), thr.Watches...),
+		WakeMechanism: thr.WakeMechanism,
+		CurrentItem:   thr.CurrentItem,
+		LastError:     thr.LastError,
+		StartedAt:     thr.StartedAt,
+		LastSeenAt:    thr.LastSeenAt,
+		AgeSeconds:    now.Sub(thr.StartedAt).Seconds(),
+		IdleSeconds:   now.Sub(thr.LastSeenAt).Seconds(),
+		Stale:         thr.IsStale(now, DefaultThreadStaleAfter),
+		PID:           thr.PID,
+		OSState:       PIDUnknown, Host: thr.Host, MachineID: thr.MachineID, OSScope: "remote-unknown",
+	}
+	local := nodeObserverOwnsThread(thr, machineID, observerHost)
+	if local {
+		sum.OSScope = "local"
+		sum.OSState = PIDStateOf(thr.PID, thr.StartTime)
+	}
+	osDead := local && (sum.OSState == PIDGone || sum.OSState == PIDDefunct || sum.OSState == PIDRecycled || sum.OSState == PIDMismatched)
+	// Honest liveness, classified by watcher_type (codex-home SME verdict on #79):
+	//  - loop-monitor (Claude) ONLY requires pgrep `thr-<id>` loop evidence —
+	//    its /loop is thr-id-keyed AND its heartbeat is harness-gated, so it can
+	//    be heartbeat-FRESH while the loop is DEAD (armed:false, loop_state:"dead"
+	//    — the owner's "claims live but is idle"). NOT extended to surface-loop/
+	//    pull-loop: their heartbeat is loop-driven (dead loop → stale → caught by
+	//    !stale) and not contractually thr-id-pgrep-able, so requiring it would
+	//    false-negative healthy workers.
+	//  - app-heartbeat (Codex), native-runloop (resident UI), surface-loop,
+	//    pull-loop: loop_state "na"; heartbeat freshness is the armed proof.
+	sum.WatcherType = WatcherFor(thr.Surface, thr.AgentID, thr.ThreadID).Type
+	switch {
+	case osDead:
+		sum.Stale, sum.LoopState, sum.Armed, sum.ArmedReason = true, "dead", false, "os-"+string(sum.OSState)
+	case !local && requiresThreadIDLoop(sum.WatcherType):
+		sum.LoopState, sum.Armed, sum.ArmedReason = "unknown", false, "remote-loop-unverified"
+	case requiresThreadIDLoop(sum.WatcherType):
+		switch {
+		case thr.ThreadID == "":
+			sum.LoopState, sum.Armed, sum.ArmedReason = "unknown", false, "heartbeat-stale"
+		case WatcherAliveForThread(thr, isNewest):
+			sum.LoopState, sum.Armed, sum.ArmedReason = "alive", true, "loop-alive"
+		default:
+			sum.LoopState, sum.Armed, sum.ArmedReason = "dead", false, "loop-dead"
+		}
+	case sum.Stale:
+		// Any non-loop-monitor surface gone stale is unarmed regardless of kind.
+		sum.LoopState, sum.Armed, sum.ArmedReason = "na", false, "heartbeat-stale"
+	case sum.WatcherType == watcherTypeAppHeartbeat:
+		sum.LoopState, sum.Armed, sum.ArmedReason = "na", true, "app-heartbeat-fresh"
+	case sum.WatcherType == watcherTypeNativeRunloop:
+		sum.LoopState, sum.Armed, sum.ArmedReason = "na", true, "resident-runloop-fresh"
+	default: // surface-loop / pull-loop / unknown — loop-driven heartbeat is the proof
+		sum.LoopState, sum.Armed, sum.ArmedReason = "na", true, "heartbeat-fresh"
+	}
+	return sum
+}
+
+// Stable machine IDs take precedence over mutable host labels. Legacy id-less
+// rows require a positive exact observing-host match; absent identity is unknown.
+func nodeObserverOwnsThread(thr *Thread, machineID, observerHost string) bool {
+	if thr.MachineID != "" {
+		return machineID != "" && thr.MachineID == machineID
+	}
+	return thr.Host != "" && observerHost != "" && strings.EqualFold(thr.Host, observerHost)
 }

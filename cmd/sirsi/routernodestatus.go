@@ -107,16 +107,16 @@ func renderNodeStatus(ns *router.NodeStatus) {
 			if !t.Armed {
 				armed = "⚠ NOT ARMED (" + t.ArmedReason + ")"
 			}
-			fmt.Printf("    • %s  agent=%s  surface=%s  pid=%d  os=%s  loop=%s  idle=%.0fs  %s\n",
-				t.ThreadID, t.AgentID, t.Surface, t.PID, t.OSState, t.LoopState, t.IdleSeconds, armed)
+			fmt.Printf("    • %s  agent=%s  surface=%s  host=%s  pid=%d  os=%s(%s)  loop=%s  idle=%.0fs  %s\n",
+				t.ThreadID, t.AgentID, t.Surface, t.Host, t.PID, t.OSState, t.OSScope, t.LoopState, t.IdleSeconds, armed)
 		}
 		fmt.Println()
 	}
 	if len(ns.StaleThreads) > 0 {
 		fmt.Println("  Stale threads:")
 		for _, t := range ns.StaleThreads {
-			fmt.Printf("    • %s  agent=%s  pid=%d  idle=%.0fs\n",
-				t.ThreadID, t.AgentID, t.PID, t.IdleSeconds)
+			fmt.Printf("    • %s  agent=%s  host=%s  pid=%d  os=%s(%s)  idle=%.0fs\n",
+				t.ThreadID, t.AgentID, t.Host, t.PID, t.OSState, t.OSScope, t.IdleSeconds)
 		}
 		fmt.Println()
 	}
