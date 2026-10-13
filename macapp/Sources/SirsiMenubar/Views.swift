@@ -1437,6 +1437,7 @@ struct FindingView: View {
     @State private var confirmMaatReview = false
     @State private var confirmFix = false
     @State private var showConfirmedFix = false
+    @State private var approvedRepair: DiagnosticRepairApproval?
     @State private var isRechecking = false
     @State private var recheckOutcome: ResolutionOutcome?
     @State private var recheckOutcomeSnapshot: FindingObservationSnapshot?
@@ -1596,7 +1597,15 @@ struct FindingView: View {
             Text("Ma'at will retain this exact diagnostic finding for review. It will not change the system or claim that the issue is repaired.")
         }
         .confirmationDialog("Apply this system repair?", isPresented: $confirmFix, titleVisibility: .visible) {
-            Button(fixButtonLabel) { showConfirmedFix = true }
+            Button(fixButtonLabel) {
+                guard let approval = approvedRepair,
+                      approval.authorizes(snapshot: findingSnapshot, args: repairArgs,
+                                          canRun: canRunSafeAction) else {
+                    approvedRepair = nil
+                    return
+                }
+                showConfirmedFix = true
+            }
             Button("Cancel", role: .cancel) {}
         } message: {
             if displayedFinding.check == "launchd Disabled Override" {
@@ -1606,10 +1615,21 @@ struct FindingView: View {
             }
         }
         .sheet(isPresented: $showConfirmedFix) {
-            ResultView(engine: engine, title: displayedFinding.check, args: repairArgs,
-                       reverifyCheck: displayedFinding.check, reverifyKind: displayedFinding.fixKind)
+            if let approval = approvedRepair {
+                ResultView(engine: engine, title: approval.snapshot.check ?? "Repair", args: approval.args,
+                           reverifyCheck: approval.snapshot.check, reverifyKind: approval.snapshot.fixKind,
+                           authorizeExecution: {
+                               approval.authorizes(snapshot: findingSnapshot, args: repairArgs,
+                                                   canRun: canRunSafeAction)
+                           })
+            }
         }
         .onChange(of: findingSnapshot) { newSnapshot in
+            if approvedRepair?.snapshot != newSnapshot {
+                confirmFix = false
+                showConfirmedFix = false
+                approvedRepair = nil
+            }
             guard shouldInvalidateResolutionOutcome(outcomeSnapshot: recheckOutcomeSnapshot,
                                                     newSnapshot: newSnapshot) else { return }
             recheckOutcome = nil
@@ -1626,7 +1646,11 @@ struct FindingView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if fixRequiresConfirmation {
-                        Button { confirmFix = true } label: { fixButtonContents(fix) }
+                        Button {
+                            guard canRunSafeAction else { return }
+                            approvedRepair = DiagnosticRepairApproval(snapshot: findingSnapshot, args: repairArgs)
+                            confirmFix = true
+                        } label: { fixButtonContents(fix) }
                             .buttonStyle(.borderedProminent).tint(gold)
                     } else {
                         NavLink {
@@ -3884,6 +3908,7 @@ struct ResultView: View {
     // but the status stays the same." nil = a generic command run, no re-verify.
     var reverifyCheck: String? = nil
     var reverifyKind: String? = nil
+    var authorizeExecution: () -> Bool = { true }
 
     @State private var result: CommandResult?
     @State private var execution: CommandExecution?
@@ -3900,12 +3925,13 @@ struct ResultView: View {
 
     init(engine: SirsiEngine, title: String, args: [String],
          reverifyCheck: String? = nil, reverifyKind: String? = nil,
-         preloaded: CommandResult? = nil) {
+         preloaded: CommandResult? = nil, authorizeExecution: @escaping () -> Bool = { true }) {
         self.engine = engine
         self.title = title
         self.args = args
         self.reverifyCheck = reverifyCheck
         self.reverifyKind = reverifyKind
+        self.authorizeExecution = authorizeExecution
         // Snapshot mode (Snapshot.swift) pre-fetches the CommandResult and
         // injects it: ImageRenderer draws the view synchronously and never runs
         // .task, so a self-loading view would render as an eternal spinner.
@@ -4165,6 +4191,11 @@ struct ResultView: View {
 
     private func load() async {
         guard !hasExecuted else { return }
+        guard authorizeExecution() else {
+            loading = false
+            raw = "The finding changed after approval. Recheck and approve the current repair. No command was launched."
+            return
+        }
         loading = true
         hasExecuted = true
         var commandArgs = args

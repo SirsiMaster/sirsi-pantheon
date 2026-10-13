@@ -273,6 +273,56 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertTrue(source.contains("$0.searchText.localizedCaseInsensitiveContains(term)"))
     }
 
+    func testRepairApprovalRejectsChangedClearedStaleOrRemappedFinding() throws {
+        let original = try decodeFinding(#"{"check":"Disk Pressure","severity":3,"message":"Needs attention","fix":"sirsi clean --confirm"}"#)
+        let changed = try decodeFinding(#"{"check":"Disk Pressure","severity":3,"message":"Different scope","fix":"sirsi other --confirm"}"#)
+        let snapshot = findingObservationSnapshot(observation: .current, finding: original)
+        let args = ["clean", "--confirm"]
+        let approval = DiagnosticRepairApproval(snapshot: snapshot, args: args)
+        XCTAssertTrue(approval.authorizes(snapshot: snapshot, args: args, canRun: true))
+        let revoked = [findingObservationSnapshot(observation: .current, finding: changed),
+                       findingObservationSnapshot(observation: .current, finding: nil),
+                       findingObservationSnapshot(observation: .stale, finding: original)]
+        var launches = 0
+        for current in revoked {
+            if approval.authorizes(snapshot: current, args: args, canRun: true) { launches += 1 }
+        }
+        XCTAssertEqual(launches, 0)
+        XCTAssertFalse(approval.authorizes(snapshot: snapshot, args: ["other", "--confirm"], canRun: true))
+        XCTAssertFalse(approval.authorizes(snapshot: snapshot, args: args, canRun: false))
+    }
+
+    func testCaptureDeadlineDoesNotWaitForIgnoringTermChild() async {
+        let start = ProcessInfo.processInfo.systemUptime
+        let result = await SirsiEngine.captureProcess(executable: "/bin/sh",
+            args: ["-c", "trap '' TERM; printf started; /bin/sleep 1; printf ended"], timeout: 0.2)
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - start, 0.8)
+        XCTAssertTrue(result.timedOut)
+        XCTAssertNil(result.exitCode)
+        XCTAssertTrue(result.stdout.contains("started"))
+        XCTAssertFalse(result.stdout.contains("ended"))
+        XCTAssertEqual(result.outcome, .timedOut)
+    }
+
+    func testCaptureDeadlineDoesNotWaitForDescendantPipeEOF() async {
+        let start = ProcessInfo.processInfo.systemUptime
+        let result = await SirsiEngine.captureProcess(executable: "/bin/sh",
+            args: ["-c", "printf parent; /bin/sleep 1 & exit 0"], timeout: 0.2)
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - start, 0.8)
+        XCTAssertTrue(result.timedOut)
+        XCTAssertNil(result.exitCode)
+        XCTAssertEqual(result.stdout, "parent")
+    }
+
+    func testCaptureNormalCompletionRetainsBothStreamsAndExit() async {
+        let result = await SirsiEngine.captureProcess(executable: "/bin/sh",
+            args: ["-c", "printf output; printf failure >&2; exit 7"], timeout: 1)
+        XCTAssertEqual(result.stdout, "output")
+        XCTAssertEqual(result.stderr, "failure")
+        XCTAssertEqual(result.exitCode, 7)
+        XCTAssertFalse(result.timedOut)
+    }
+
     func testVerifiedOutcomeIsHiddenAfterFindingOrObservationChanges() throws {
         let verified = try decodeFinding(#"{"check":"Disk Pressure","severity":0,"message":"Clear"}"#)
         let changed = try decodeFinding(#"{"check":"Disk Pressure","severity":3,"message":"Critical again","fix":"sirsi clean --confirm"}"#)

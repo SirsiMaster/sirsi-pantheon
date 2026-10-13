@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import Darwin
 
 // Finding mirrors one entry in ~/.config/pantheon/findings/latest-scan.json,
 // the manifest the Go cleaner persists. The Swift surface NEVER computes what is
@@ -112,6 +113,17 @@ func shouldShowResolutionOutcome(_ outcome: ResolutionOutcome?, outcomeSnapshot:
 func shouldInvalidateResolutionOutcome(outcomeSnapshot: FindingObservationSnapshot?,
                                        newSnapshot: FindingObservationSnapshot) -> Bool {
     outcomeSnapshot != newSnapshot
+}
+
+// Approval binds both evidence and the exact mapped command at operator intent.
+struct DiagnosticRepairApproval {
+    let snapshot: FindingObservationSnapshot
+    let args: [String]
+
+    func authorizes(snapshot current: FindingObservationSnapshot, args currentArgs: [String], canRun: Bool) -> Bool {
+        canRun && snapshot.observation == .current && snapshot.check != nil &&
+            snapshot == current && args == currentArgs && !args.isEmpty
+    }
 }
 
 func maatReviewArguments(for finding: DiagFinding) -> [String] {
@@ -1445,71 +1457,80 @@ final class SirsiEngine: ObservableObject {
     // writing before launch can leave the child's stdin empty/closed, silently
     // cancelling the apply. Pass `stdin: "y\n"` to auto-confirm, nil otherwise.
     nonisolated static func runCaptured(args: [String], stdin: String? = nil) async -> CommandExecution {
-        await withCheckedContinuation { cont in
+        await captureProcess(executable: sirsiBinary(), args: args,
+                             directory: workingDirectory(for: args), stdin: stdin)
+    }
+
+    // Nonblocking pipe reads bound the entire operation, including descendants
+    // retaining a writer after the owned child exits. Only the owned child gets
+    // SIGTERM; timeout is unknown, never evidence that remediation completed.
+    nonisolated static func captureProcess(executable: String, args: [String], directory: URL? = nil,
+                                           stdin: String? = nil, timeout: TimeInterval = 30) async -> CommandExecution {
+        await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let process = Process()
-                process.currentDirectoryURL = workingDirectory(for: args)
-                process.executableURL = URL(fileURLWithPath: sirsiBinary())
+                process.executableURL = URL(fileURLWithPath: executable)
                 process.arguments = args
-                let stdoutPipe = Pipe()
-                let stderrPipe = Pipe()
-                process.standardOutput = stdoutPipe
-                process.standardError = stderrPipe
-                let inputPipe = Pipe()
-                if stdin != nil { process.standardInput = inputPipe }
-                do {
-                    try process.run()
-                } catch {
-                    cont.resume(returning: CommandExecution(stdout: "", stderr: "", exitCode: nil,
-                                                            launchError: error.localizedDescription, timedOut: false))
-                    return
-                }
-
-                let lock = NSLock()
-                var stdoutData = Data()
-                var stderrData = Data()
-                let readers = DispatchGroup()
-                readers.enter()
-                DispatchQueue.global(qos: .userInitiated).async {
-                    let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-                    lock.lock(); stdoutData = data; lock.unlock()
-                    readers.leave()
-                }
-                readers.enter()
-                DispatchQueue.global(qos: .userInitiated).async {
-                    let data = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-                    lock.lock(); stderrData = data; lock.unlock()
-                    readers.leave()
-                }
-                if let stdin, let data = stdin.data(using: .utf8) {
-                    inputPipe.fileHandleForWriting.write(data)
-                    inputPipe.fileHandleForWriting.closeFile()
-                }
-
-                let timeoutLock = NSLock()
-                var timedOut = false
-                let timeout = DispatchWorkItem {
-                    timeoutLock.lock()
-                    defer { timeoutLock.unlock() }
-                    if process.isRunning {
-                        timedOut = true
-                        process.terminate()
+                process.currentDirectoryURL = directory
+                let output = Pipe(), errors = Pipe(), input = Pipe()
+                process.standardOutput = output
+                process.standardError = errors
+                if stdin != nil { process.standardInput = input }
+                for handle in [output.fileHandleForReading, errors.fileHandleForReading] {
+                    let fd = handle.fileDescriptor
+                    guard fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK) != -1 else {
+                        continuation.resume(returning: CommandExecution(stdout: "", stderr: "", exitCode: nil,
+                            launchError: "Unable to configure bounded output capture", timedOut: false))
+                        return
                     }
                 }
-                DispatchQueue.global().asyncAfter(deadline: .now() + .seconds(30), execute: timeout)
-                process.waitUntilExit()
-                timeout.cancel()
-                readers.wait()
-                lock.lock()
-                let stdout = stripANSI(String(data: stdoutData, encoding: .utf8) ?? "")
-                let stderr = stripANSI(String(data: stderrData, encoding: .utf8) ?? "")
-                lock.unlock()
-                timeoutLock.lock()
-                let didTimeOut = timedOut
-                timeoutLock.unlock()
-                cont.resume(returning: CommandExecution(stdout: stdout, stderr: stderr,
-                                                        exitCode: process.terminationStatus,
-                                                        launchError: nil, timedOut: didTimeOut))
+                do { try process.run() } catch {
+                    continuation.resume(returning: CommandExecution(stdout: "", stderr: "", exitCode: nil,
+                        launchError: error.localizedDescription, timedOut: false))
+                    return
+                }
+                // Close parent writers so EOF describes actual child ownership.
+                output.fileHandleForWriting.closeFile()
+                errors.fileHandleForWriting.closeFile()
+                if let stdin {
+                    DispatchQueue.global().async {
+                        try? input.fileHandleForWriting.write(contentsOf: Data(stdin.utf8))
+                        try? input.fileHandleForWriting.close()
+                    }
+                }
+                defer {
+                    output.fileHandleForReading.closeFile()
+                    errors.fileHandleForReading.closeFile()
+                }
+                var stdout = Data(), stderr = Data()
+                var outEOF = false, errEOF = false
+                let deadline = ProcessInfo.processInfo.systemUptime + max(0, timeout)
+                func drain(_ handle: FileHandle, into data: inout Data, eof: inout Bool) {
+                    var buffer = [UInt8](repeating: 0, count: 8192)
+                    // A perpetually writing child must not starve the deadline.
+                    for _ in 0..<16 {
+                        let count = Darwin.read(handle.fileDescriptor, &buffer, buffer.count)
+                        if count > 0 { data.append(contentsOf: buffer.prefix(count)) }
+                        else { if count == 0 { eof = true }; return }
+                    }
+                }
+                var timedOut = false
+                while true {
+                    drain(output.fileHandleForReading, into: &stdout, eof: &outEOF)
+                    drain(errors.fileHandleForReading, into: &stderr, eof: &errEOF)
+                    if !process.isRunning && outEOF && errEOF { break }
+                    if ProcessInfo.processInfo.systemUptime >= deadline {
+                        timedOut = true
+                        if process.isRunning { process.terminate() }
+                        break
+                    }
+                    Thread.sleep(forTimeInterval: 0.01)
+                }
+                continuation.resume(returning: CommandExecution(
+                    stdout: stripANSI(String(decoding: stdout, as: UTF8.self)),
+                    stderr: stripANSI(String(decoding: stderr, as: UTF8.self)),
+                    exitCode: timedOut ? nil : process.terminationStatus,
+                    launchError: nil, timedOut: timedOut))
             }
         }
     }
