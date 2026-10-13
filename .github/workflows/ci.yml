@@ -85,6 +85,12 @@ jobs:
           bash scripts/gemma/model-resolver-ranking.test.sh
           bash scripts/gemma/model-resolver-cache.test.sh
 
+      # The resident worker is native: this guards its draft-only boundary and
+      # prevents a future shell fallback from turning a request into a false
+      # completion or action path.
+      - name: native Gemma worker boundary
+        run: bash scripts/gemma/worker-escalation.test.sh
+
       # A35: a required-check guard never shown both red and green is
       # untested. Proves ci-postgres.sh fails closed (exit 1, ::error::) when
       # its prerequisites are missing, instead of the silent exit 0 that let

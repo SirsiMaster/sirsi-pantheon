@@ -112,6 +112,29 @@ func TestGemmaWorkerReplyNeverDisclosesLeaseBearer(t *testing.T) {
 	}
 }
 
+func TestGemmaWorkerBoundaryPromptAlwaysDraftsWithoutEscalation(t *testing.T) {
+	for name, body := range map[string]string{
+		"security plan":   "Plan the security deploy checklist and mention PR approval steps.",
+		"binding request": "Please issue a binding security verdict for this PR.",
+		"tool request":    "Approve and merge this PR.",
+	} {
+		t.Run(name, func(t *testing.T) {
+			prompt := gemmaWorkerPrompt(body)
+			if !strings.Contains(prompt, body) {
+				t.Fatalf("worker lost supplied work body: %q", prompt)
+			}
+			for _, forbidden := range []string{"escalate", "transfer", "complete the router item"} {
+				if strings.Contains(strings.ToLower(prompt), forbidden) {
+					t.Fatalf("worker prompt widened into an action path %q: %q", forbidden, prompt)
+				}
+			}
+			if !strings.Contains(prompt, "text draft only") || !strings.Contains(prompt, "binding verdict") {
+				t.Fatalf("worker boundary is not explicit: %q", prompt)
+			}
+		})
+	}
+}
+
 func TestGemmaWorkerLeaseLossPreventsPublication(t *testing.T) {
 	s, r := claimedGemmaItem()
 	s.verify = false
