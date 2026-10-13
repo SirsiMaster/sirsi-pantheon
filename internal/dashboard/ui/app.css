@@ -94,6 +94,16 @@ h1{font-size:34px;line-height:1.12;font-weight:700;letter-spacing:-.03em}
 .table .mono{font-family:var(--mono);font-size:13px}
 .table .dim{color:var(--ink2);font-size:14px}
 .num{font-variant-numeric:tabular-nums;text-align:right}
+.table th.num,.table td.num{text-align:right}
+.fleet-lanes th:nth-child(1){width:25%}.fleet-lanes th:nth-child(2){width:23%}
+.fleet-lanes th:nth-child(3),.fleet-lanes th:nth-child(4),.fleet-lanes th:nth-child(5){width:11%}
+.fleet-lanes th:nth-child(6){width:19%}
+.fleet-metric{display:flex;flex-direction:column;align-items:flex-start;text-align:left;font:inherit;color:inherit;cursor:pointer;min-height:160px}
+.fleet-metric .metric-title{font-size:13px;font-weight:600;text-transform:uppercase;color:var(--dim);margin-bottom:16px}
+.metric-link{margin-top:16px;font-size:13px;color:var(--ink2)}
+.fleet-metric:hover{background:var(--panel2,var(--panel))}.fleet-metric:focus-visible{outline:2px solid var(--gold);outline-offset:3px}
+.fleet-metric[aria-pressed="true"]{border-color:var(--gold)}
+.fleet-filters{margin:24px 0 16px}.fleet-filters [aria-pressed="true"]{color:var(--gold);border-color:var(--gold)}
 
 .release{display:grid;grid-template-columns:150px 1fr;gap:24px;padding:22px 0;border-bottom:1px solid var(--line)}
 .release:last-child{border:0}

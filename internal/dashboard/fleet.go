@@ -98,10 +98,36 @@ type FleetSnapshot struct {
 	Summary     FleetSummary `json:"summary"`
 	Activity    []FleetEvent `json:"activity"`
 	Lanes       []FleetLane  `json:"lanes"`
+	Tasks       []FleetTask  `json:"tasks"`
 	// Seeded reports whether this tracker has observed a prior poll. Until it
 	// has, an empty Activity list means "no baseline yet", NOT "nothing is
 	// happening" — the UI must say so rather than render a confident silence.
 	Seeded bool `json:"seeded"`
+}
+
+// FleetTask is the inspectable counterpart of each summary count. Keep the
+// projection small: execution payloads and credentials do not belong on a board.
+type FleetTask struct {
+	ID        string `json:"id"`
+	Agent     string `json:"agent"`
+	Subject   string `json:"subject"`
+	Status    string `json:"status"`
+	Bucket    string `json:"bucket"`
+	BlockedBy string `json:"blocked_by,omitempty"`
+	Updated   string `json:"updated,omitempty"`
+}
+
+func fleetTaskBucket(status string) string {
+	switch strings.TrimSpace(status) {
+	case "done":
+		return "done"
+	case "in-progress":
+		return "active"
+	case "blocked":
+		return "blocked"
+	default:
+		return "stalled"
+	}
 }
 
 // maxFleetEvents bounds the activity ring. An unbounded feed on a long-lived
@@ -152,6 +178,7 @@ func (ft *FleetTracker) Observe(snap ledger.Snapshot, now time.Time) FleetSnapsh
 		GeneratedAt: now.UTC().Format(time.RFC3339),
 		Activity:    []FleetEvent{},
 		Lanes:       []FleetLane{},
+		Tasks:       []FleetTask{},
 	}
 	seen := make(map[string]bool)
 
@@ -161,6 +188,9 @@ func (ft *FleetTracker) Observe(snap ledger.Snapshot, now time.Time) FleetSnapsh
 			key := trackKey(ag.AgentID, t.TaskID)
 			seen[key] = true
 			status := strings.TrimSpace(t.Status)
+			out.Tasks = append(out.Tasks, FleetTask{ID: t.TaskID, Agent: ag.AgentID,
+				Subject: t.Subject, Status: status, Bucket: fleetTaskBucket(status),
+				BlockedBy: t.BlockedBy, Updated: t.Updated})
 
 			// Seed-don't-burst. On the FIRST sight of a task we record its
 			// status and emit nothing. Without this every restart replays the

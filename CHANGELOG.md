@@ -6,6 +6,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- **Fleet drilldown:** all four summary tiles are keyboard-accessible list selectors; Blocked and Stalled have separate complete task lists with recorded dependencies and task inspectors. Detail rows and totals come from one snapshot and mismatches fail visibly. Numeric column headings align with their values, and “idle with work” counts that actual lane state rather than empty lanes.
+
 - **Scoped cloud router:** existing-owner scope is enforced in the same database mutation for thread writes and deletes. Missing atomic-backend support and failed ownership reads deny rather than falling through to unscoped writes. Atomic scope refusals return HTTP 403. Regression coverage includes foreign payload isolation, takeover, deletion, rollback of partially attempted batches and real changed-owner interleaving.
 
 ## [0.24.101] — 2026-10-12

@@ -17,6 +17,24 @@ func task(id, status string) routerstore.Task {
 	return routerstore.Task{TaskID: id, Status: status, Subject: "s-" + id}
 }
 
+func TestFleetDetailsExactlyMatchSummary(t *testing.T) {
+	got := NewFleetTracker(nil).Observe(snapOf("lane", task("a", "done"), task("b", "in-progress"), task("c", "blocked"), task("d", "pending"), task("e", "unknown")), time.Now())
+	counts := map[string]int{}
+	for _, row := range got.Tasks {
+		counts[row.Bucket]++
+		if row.Agent != "lane" || row.Subject == "" || row.ID == "" {
+			t.Fatalf("incomplete task: %+v", row)
+		}
+	}
+	if len(got.Tasks) != got.Summary.Total || counts["done"] != got.Summary.Done || counts["active"] != got.Summary.Active || counts["blocked"] != got.Summary.Blocked || counts["stalled"] != got.Summary.Stalled {
+		t.Fatalf("detail counts %v disagree with %+v", counts, got.Summary)
+	}
+	empty := NewFleetTracker(nil).Observe(ledger.Snapshot{}, time.Now())
+	if empty.Tasks == nil {
+		t.Fatal("empty details must serialize as [], not null")
+	}
+}
+
 // THE regression this board exists to avoid.
 //
 // The activity feed's entire value is that movement in it means movement in
