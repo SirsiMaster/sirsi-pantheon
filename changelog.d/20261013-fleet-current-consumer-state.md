@@ -1,0 +1,1 @@
+- Fleet now projects current router ping consumer availability instead of relying solely on startup wake declarations. Human/service recipients and unknown registry entries remain explicit; task progress remains separate from worker readiness.

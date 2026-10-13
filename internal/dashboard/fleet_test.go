@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
 
@@ -211,5 +212,34 @@ func TestFleetTracker_ConcurrentObserveIsRaceFree(t *testing.T) {
 	}
 	for i := 0; i < 8; i++ {
 		<-done
+	}
+}
+
+func TestFleetCurrentAvailabilityOverridesStartupDeclaration(t *testing.T) {
+	now := time.Now()
+	ft := NewFleetTracker(map[string]bool{"lane": true})
+	snap := snapOf("lane", task("work", "pending"))
+	snap.Agents[0].Availability = &router.PingResult{Verdict: router.VerdictLive, Workable: true}
+	live := ft.Observe(snap, now).Lanes[0]
+	if !live.Routable || live.State == LaneUnroutable {
+		t.Fatalf("live attended lane hidden by startup map: %+v", live)
+	}
+	snap.Agents[0].Availability = &router.PingResult{Verdict: router.VerdictWatchOnly}
+	stopped := ft.Observe(snap, now).Lanes[0]
+	if stopped.Routable || stopped.State != LaneUnroutable {
+		t.Fatalf("watch-only lane advertised workable: %+v", stopped)
+	}
+	snap.Agents[0].Availability = &router.PingResult{Verdict: "UNKNOWN"}
+	unknown := ft.Observe(snap, now).Lanes[0]
+	if unknown.State != "UNKNOWN" || unknown.Routable {
+		t.Fatalf("unknown recipient fabricated: %+v", unknown)
+	}
+	for _, kind := range []string{"human", "service"} {
+		snap.Agents[0].RecipientType = kind
+		snap.Agents[0].Availability = nil
+		got := ft.Observe(snap, now).Lanes[0]
+		if got.State == LaneUnroutable || got.State == LaneWorking {
+			t.Fatalf("actor misclassified as consumer: %+v", got)
+		}
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -189,6 +190,15 @@ func collectDashboardFleet() (ledger.Snapshot, error) {
 	if err != nil {
 		return snap, err
 	}
+	registry, err := router.LoadRegistry(filepath.Join(repoRoot, ".agents", "idea-router"))
+	if err != nil {
+		return snap, fmt.Errorf("fleet registry: %w", err)
+	}
+	threads, err := router.LoadThreadRegistry(filepath.Join(repoRoot, ".agents", "idea-router"))
+	if err != nil {
+		return snap, fmt.Errorf("fleet threads: %w", err)
+	}
+	ledger.AttachAvailability(&snap, registry, threads, time.Now().UTC())
 	// A retired name (an alias) is not a lane: its mail drains to the successor, so
 	// listing it shows ghost lanes next to the real ones.
 	if f, ferr := dispatch.Open(repoRoot); ferr == nil {

@@ -69,7 +69,10 @@ type FleetLane struct {
 	// Routable reports whether any automated wake path reaches this lane. A
 	// false value is why a lane can read UNROUTABLE: work exists and no sweep,
 	// retry, or nudge will ever deliver it.
-	Routable bool `json:"routable"`
+	Routable           bool   `json:"routable"`
+	Availability       string `json:"availability,omitempty"`
+	AvailabilityDetail string `json:"availability_detail,omitempty"`
+	RecipientType      string `json:"recipient_type,omitempty"`
 	// TouchedAgo is the age of the lane's LAST LEDGER UPDATE, not a heartbeat.
 	// See internal/routerboard: work that is not recorded is invisible here by
 	// design, so this figure must never be labeled as liveness.
@@ -250,6 +253,12 @@ func (ft *FleetTracker) Observe(snap ledger.Snapshot, now time.Time) FleetSnapsh
 		// holding 18 open items between them all rendered as merely idle. A state
 		// that no caller can produce is not a state, it is a comment.
 		lane.Routable = !ft.unroutable[ag.AgentID]
+		lane.RecipientType = ag.RecipientType
+		if ag.Availability != nil {
+			lane.Routable = ag.Availability.Workable
+			lane.Availability = ag.Availability.Verdict
+			lane.AvailabilityDetail = ag.Availability.Detail
+		}
 		lane.State = string(supervision.Classify(supervision.LaneInput{
 			Agent: ag.AgentID,
 			Sources: supervision.Sources{
@@ -260,6 +269,16 @@ func (ft *FleetTracker) Observe(snap ledger.Snapshot, now time.Time) FleetSnapsh
 			LastTaskMutation: lane.touchedAt,
 			Routable:         lane.Routable,
 		}, now, supervision.DefaultWorkWindow))
+		switch {
+		case ag.RecipientType == "human":
+			lane.Routable = false
+			lane.State = "HUMAN"
+		case ag.RecipientType == "service":
+			lane.Routable = false
+			lane.State = "SERVICE"
+		case lane.Availability == "UNKNOWN":
+			lane.State = "UNKNOWN"
+		}
 		if !lane.touchedAt.IsZero() {
 			lane.TouchedAgo = ledger.FormatAge(now.Sub(lane.touchedAt).Seconds())
 		}

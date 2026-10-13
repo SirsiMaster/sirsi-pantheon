@@ -34,6 +34,8 @@ type Item struct {
 
 type Agent struct {
 	AgentID           string             `json:"agent"`
+	RecipientType     string             `json:"recipient_type,omitempty"`
+	Availability      *router.PingResult `json:"availability,omitempty"`
 	Items             []Item             `json:"items"`
 	Tasks             []routerstore.Task `json:"tasks"`
 	OldestAgeSeconds  float64            `json:"oldest_item_age_seconds"`

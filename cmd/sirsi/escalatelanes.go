@@ -86,6 +86,15 @@ func escalateStuckLanes(repoRoot string) ([]supervision.Escalation, error) {
 	if err != nil {
 		return nil, fmt.Errorf("escalate lanes: %w — refusing to escalate on unknown routability", err)
 	}
+	registry, err := router.LoadRegistry(filepath.Join(repoRoot, ".agents", "idea-router"))
+	if err != nil {
+		return nil, fmt.Errorf("escalate lanes registry: %w", err)
+	}
+	threads, err := router.LoadThreadRegistry(filepath.Join(repoRoot, ".agents", "idea-router"))
+	if err != nil {
+		return nil, fmt.Errorf("escalate lanes threads: %w", err)
+	}
+	ledger.AttachAvailability(&snap, registry, threads, now)
 	board := dashboard.NewFleetTracker(unroutable).Observe(snap, now)
 	threadCounts := activeThreadCountByAgent(repoRoot, now)
 

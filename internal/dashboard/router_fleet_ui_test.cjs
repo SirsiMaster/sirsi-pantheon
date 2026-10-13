@@ -42,3 +42,11 @@ test('lane values and state are actionable and agent drilldown remains scoped',(
  scope.fleetAgent='a';assert.match(scope.fleetTaskRows(fleet,'open'),/3 matching tasks/);
  scope.fleetAgent='*';
 });
+
+test('availability is current consumer truth, separately rendered and escaped',()=>{
+ assert.match(scope.fleetAvailability({availability:'WATCH_ONLY',availability_detail:'<script>'}),/watch only/);
+ assert.doesNotMatch(scope.fleetAvailability({availability:'LIVE',availability_detail:'<script>'}),/<script>/);
+ assert.match(scope.fleetAvailability({recipient_type:'human'}),/Human recipient/);
+ assert.match(scope.fleetAvailability({}),/unknown/);
+ assert.match(scope.vFleet(),/Current consumer availability not supplied/);
+});
