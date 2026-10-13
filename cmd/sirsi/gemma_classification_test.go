@@ -29,7 +29,7 @@ func TestGemmaStructuredBrokerClassification(t *testing.T) {
 				fmt.Fprintf(w, `{"error":{"code":%q,"type":"inference_error","message":"bounded structured evidence"}}`, tc.code)
 			}))
 			defer srv.Close()
-			_, err := gemmaWarmCompleteContext(context.Background(), srv.URL, "exact-model", "input", 256)
+			_, err := gemmaWarmCompleteProfile(context.Background(), srv.URL, "exact-model", "input", 256, "")
 			var e *gemmaInferenceError
 			if !errors.As(err, &e) || e.Code != tc.code || e.Permanent != tc.permanent || e.Busy != tc.busy {
 				t.Fatalf("classification mismatch: %v", err)
@@ -243,10 +243,34 @@ func TestGemmaUnknown503DoesNotBusyWaitOrPermanentBlock(t *testing.T) {
 	defer srv.Close()
 	s, r := claimedGemmaItem()
 	_, e := testGemmaWorker(s, r, func(ctx context.Context, prompt string) (string, error) {
-		return gemmaWarmCompleteContext(ctx, srv.URL, "exact-model", prompt, 256)
+		return gemmaWarmCompleteProfile(ctx, srv.URL, "exact-model", prompt, 256, "")
 	}).runOnce(context.Background())
 	if e == nil || calls != 1 || s.blocked != "" || s.failed == "" || r.calls != 0 {
 		t.Fatal("unknown503 masqueraded as busy/block/success")
+	}
+}
+
+func TestGemmaHTTPFixtureIsolatedFromExistingSelectedProfile(t *testing.T) {
+	profile := filepath.Join(t.TempDir(), "selected-m5.json")
+	if e := os.WriteFile(profile, []byte(`{"endpoint":"http://127.0.0.1:8477/v1","model":"mlx-community/gemma-4-12B-it-8bit","context_tokens":4096,"output_tokens":1024,"streaming":false,"request_timeout_seconds":510}`), 0600); e != nil {
+		t.Fatal(e)
+	}
+	t.Setenv("SIRSI_LOCAL_PROFILE", profile)
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(503)
+		fmt.Fprint(w, `{"error":{"code":"runtime_failure","message":"isolated fixture"}}`)
+	}))
+	defer srv.Close()
+	_, e := gemmaWarmCompleteProfile(context.Background(), srv.URL, "exact-model", "full fixture identity", 256, "")
+	var broker *gemmaInferenceError
+	if !errors.As(e, &broker) || broker.Busy || broker.Permanent || calls.Load() != 1 {
+		t.Fatal("raw classification fixture consumed host selection")
+	}
+	_, e = gemmaWarmCompleteContext(context.Background(), srv.URL, "exact-model", "full identity", 256)
+	if e == nil || !strings.Contains(e.Error(), "differs from selected") || calls.Load() != 1 {
+		t.Fatal("real selected-profile mismatch refusal was disabled")
 	}
 }
 

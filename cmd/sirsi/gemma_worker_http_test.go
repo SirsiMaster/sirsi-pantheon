@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -31,7 +32,7 @@ func TestGemmaWorkerHTTPFailureAndTruncation(t *testing.T) {
 				_, _ = w.Write([]byte(tc.body))
 			}))
 			defer srv.Close()
-			answer, err := gemmaWarmComplete(srv.URL, "model", "draft", 1024)
+			answer, err := gemmaWarmCompleteProfile(context.Background(), srv.URL, "model", "draft", 1024, "")
 			if err == nil || !strings.Contains(err.Error(), tc.want) || answer != "" {
 				t.Fatalf("want unresolved %s, got answer=%q err=%v", tc.want, answer, err)
 			}
