@@ -44,8 +44,8 @@ func BrokerError(resp *http.Response, bearer string) error {
 		e.Type = strings.ReplaceAll(e.Type, bearer, "[redacted]")
 	}
 	text := strings.ToLower(e.Code + " " + e.Type + " " + e.Message)
-	e.Permanent = resp.StatusCode == 400 || resp.StatusCode == 401 || resp.StatusCode == 403 || resp.StatusCode == 413 || resp.StatusCode == 422 || strings.Contains(text, "context_length") || strings.Contains(text, "context window") || strings.Contains(text, "context mismatch")
-	e.Busy = resp.StatusCode == http.StatusServiceUnavailable && !e.Permanent
+	e.Permanent = resp.StatusCode == 400 || resp.StatusCode == 401 || resp.StatusCode == 403 || resp.StatusCode == 413 || resp.StatusCode == 422 || strings.Contains(text, "context_length") || strings.Contains(text, "context window") || strings.Contains(text, "context mismatch") || strings.Contains(text, "context_mismatch") || strings.Contains(text, "context_capacity") || strings.Contains(text, "context_overflow") || strings.Contains(text, "max_context_exceeded") || strings.Contains(text, "max_seq_len_exceeded") || strings.Contains(text, "input_too_long") || (strings.Contains(text, "context") && (strings.Contains(text, "exceed") || strings.Contains(text, "too long")))
+	e.Busy = resp.StatusCode == http.StatusServiceUnavailable && !e.Permanent && strings.TrimSpace(resp.Header.Get("Retry-After")) != ""
 	if e.Busy {
 		e.RetryAfter = time.Second
 		if n, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && n > 0 {

@@ -162,3 +162,20 @@ func TestGemmaBusyBoundedByCancellation(t *testing.T) {
 		t.Fatal("busy cancellation classification lost")
 	}
 }
+
+func TestGemmaUnknown503DoesNotBusyWaitOrPermanentBlock(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(503)
+		fmt.Fprint(w, `{"error":{"code":"runtime_failure","message":"native runtime failed"}}`)
+	}))
+	defer srv.Close()
+	s, r := claimedGemmaItem()
+	_, e := testGemmaWorker(s, r, func(ctx context.Context, prompt string) (string, error) {
+		return gemmaWarmCompleteContext(ctx, srv.URL, "exact-model", prompt, 256)
+	}).runOnce(context.Background())
+	if e == nil || calls != 1 || s.blocked != "" || s.failed == "" || r.calls != 0 {
+		t.Fatal("unknown503 masqueraded as busy/block/success")
+	}
+}
