@@ -19,16 +19,19 @@ function plural(n,one,many){return n+' '+(n===1?one:many)}
 var VIEWS=[['overview','Work fabric','One canonical router. Every lane, one accountable history.'],['lanes','Lanes','Can each lane work right now'],['queue','Queue','Open items by recipient'],['releases','Releases','What each release added'],['failures','Known failures','Registered once, fixed with a guard'],['fleet','Fleet','Work in flight across every lane'],['host','Host','Memory, swap and this Mac']];
 var state={view:'overview',data:null,fleet:null,stats:null,err:null,at:null,recipient:'*',lane:{filter:'ALL',q:'',sort:'agent',dir:1},timer:null};
 
-function get(u){return fetch(u,{cache:'no-store',signal:AbortSignal.timeout(15000)}).then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j})})}
+// The shared relay can queue behind active consumers. Keep one bounded read
+// alive instead of abandoning it at 15s and piling another read onto the relay.
+function get(u){return fetch(u,{cache:'no-store',signal:AbortSignal.timeout(60000)}).then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j})})}
 function load(){
  if(state.loading)return state.loading;
  setLive('Refreshing…','stale');
  var router=get('/api/router/v1/snapshot').then(function(d){state.data=d;state.err=null;state.at=new Date()}).catch(function(e){state.err=e.message}).then(function(){render();setLive(state.err?'Stale / unavailable · '+state.err:'Received '+state.at.toLocaleTimeString(),' '+(state.err?'err':''))});
- var host=get('/api/stats').then(function(d){state.stats=d;state.hostErr=null}).catch(function(e){state.hostErr=e.message}).then(function(){if(state.view==='host')render()});
- var fleet=loadFleet();
+ var host=state.view==='host'?loadHost():Promise.resolve();
+ var fleet=state.view==='fleet'?loadFleet():Promise.resolve();
  state.loading=Promise.allSettled([router,host,fleet]).finally(function(){state.loading=null});return state.loading;
 }
-function loadFleet(){return get('/api/fleet').then(function(f){state.fleet=f;state.fleetErr=null}).catch(function(e){state.fleetErr=e.message}).then(function(){if(state.view==='fleet')render()})}
+function loadHost(){return get('/api/stats').then(function(d){state.stats=d;state.hostErr=null}).catch(function(e){state.hostErr=e.message}).then(function(){if(state.view==='host')render()})}
+function loadFleet(){if(state.fleetLoading)return state.fleetLoading;state.fleetLoading=get('/api/fleet').then(function(f){state.fleet=f;state.fleetErr=null}).catch(function(e){state.fleetErr=e.message}).then(function(){if(state.view==='fleet')render()}).finally(function(){state.fleetLoading=null});return state.fleetLoading}
 function setLive(t,cls){$('#live-t').textContent=t;$('#live .dot').className='dot'+(cls?' '+cls:'')}
 
 function nav(){
@@ -37,7 +40,7 @@ function nav(){
   return '<button type="button" data-v="'+v[0]+'"'+(state.view===v[0]?' aria-current="page"':'')+'>'+ICON[v[0]]+'<span>'+v[1]+'</span>'+(v[0]==='overview'&&n?'<span class="count" aria-label="'+n+' critical">'+n+'</span>':'')+'</button>'}).join('');
  $('#nav').querySelectorAll('button').forEach(function(b){b.addEventListener('click',function(){go(b.dataset.v)})});
 }
-function go(v){var dlg=$('.inspector');if(dlg&&dlg.open)dlg.close();state.view=v;location.hash=v;render();if(v==='fleet'&&!state.fleet)loadFleet();$('#main').focus({preventScroll:true})}
+function go(v){var dlg=$('.inspector');if(dlg&&dlg.open)dlg.close();state.view=v;location.hash=v;render();if(v==='fleet'&&!state.fleet)loadFleet();if(v==='host'&&!state.stats)loadHost();$('#main').focus({preventScroll:true})}
 
 function skeleton(){return '<p class="sub loading">Loading the local snapshot… Other views remain available.</p>'+ '<div class="grid g4"><div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>'}
 function chip(v){return '<span class="chip v-'+esc(v)+'">'+esc(v.replace('_',' ').toLowerCase().replace(/^./,function(c){return c.toUpperCase()}))+'</span>'}
