@@ -1,0 +1,3 @@
+### Added
+
+- **G3 contention test through the service, at full size.** `TestTwoNodesContendThroughTheServiceExactlyOnceUnderDelayAndOutage` races two separate RemoteStore clients for one task over real HTTP, 1,000 rounds, with latency injected at twice the measured baseline worst case and a 30-second service outage in the middle; exactly one winner every round, race-clean, on SQLite and on the Postgres CI leg (scaled to 300 rounds and 1.5 s under `-short`). A negative control with two separate services proves the counter can see split-brain. Two clients over one HTTP service, not two machines: the live two-Mac rehearsal is still owed.
