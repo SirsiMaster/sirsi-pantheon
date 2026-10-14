@@ -2,7 +2,7 @@
 
 This index tracks **all** architectural decisions for the Sirsi Pantheon ecosystem.
 
-**Total ADRs: 75 (+ ADR-031-A/B/C sub-decisions, + the ADR-054 companion contracts)** | **Next available: ADR-079** — ADR-076 is claimed by open, unmerged PR #1017 (`maat/trust-boundary-gate`) and is not yet on `origin/main` (A37).
+**Total ADRs: 76 (+ ADR-031-A/B/C sub-decisions, + the ADR-054 companion contracts)** | **Next available: ADR-080** — ADR-076 is claimed by open, unmerged PR #1017 (`maat/trust-boundary-gate`) and is not yet on `origin/main` (A37).
 
 ---
 
@@ -15,6 +15,7 @@ This index tracks **all** architectural decisions for the Sirsi Pantheon ecosyst
 | [ADR-075](ADR-075-DESKTOP-RECOVERY-ISSUER-INGRESS.md) | Private desktop recovery issuer and ingress — proposed Ra authority, explicit node enrollment and phone/alternate-anchor proof; no production authority or ingress change approved | Proposed | 2026-10-05 |
 | [ADR-077](ADR-077-ROUTER-SURFACE.md) | One Ra-owned router read model exposed as a standalone `/router` surface and consumed by Pantheon/Horus and Nexus through `router-surface.v1`; no local-store or stale-board fallback | Proposed | 2026-10-08 |
 | [ADR-078](ADR-078-OWNERLESS-RECOVERY-SIGNED-LAN-ANCHOR.md) | Ownerless recovery, signed LAN anchor — automated recovery verbs over existing authenticated LAN SSH, allowlisted + audited, sibling to ADR-075's interactive path; physical OOB (second Mac/DFU) documented as the floor; design only, SHA+SSA both returned bounded design acceptance | Proposed | 2026-10-09 |
+| [ADR-079](ADR-079-SAVE-BEFORE-MAINTENANCE-CONTRACT.md) | Save-before-maintenance contract — durable maintenance transaction primitive: enumerate live participants, mint expiring txn+digest, collect authenticated (not synthetic) receipts, fail closed on any gap; cleanup authorization stays a separate, later step | Proposed | 2026-10-09 |
 | [ADR-001](ADR-001-FOUNDING-ARCHITECTURE.md) | Founding Architecture — Go, cobra, agent-controller, module codenames | Accepted | 2026-03-20 |
 | [ADR-002](ADR-002-KA-GHOST-DETECTION.md) | Ka Ghost Detection — 5-step algorithm, 17 residual locations, bundle ID matching | Accepted | 2026-03-20 |
 | [ADR-003](ADR-003-BUILD-IN-PUBLIC.md) | Build-in-Public as Canonical Process — required release artifacts, transparency rules, dual-audience docs | Accepted | 2026-03-22 |
