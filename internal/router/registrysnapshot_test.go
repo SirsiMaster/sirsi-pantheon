@@ -148,3 +148,38 @@ func TestDispatchValidatesAgainstThePinnedRegistry(t *testing.T) {
 		t.Fatal("lane declared only in the working tree must not be addressable on a pinned host")
 	}
 }
+
+func TestDriftReadsTheRuntimeRegistrySource(t *testing.T) {
+	root := repoWithTree(t)
+	repo := filepath.Dir(filepath.Dir(root))
+	assertSource := func(want string) {
+		t.Helper()
+		got, err := readLiveRegistry(repo)
+		if err != nil || string(got) != want {
+			t.Fatalf("diagnostic source differs from runtime: got %q, err %v, want %q", got, err, want)
+		}
+	}
+	assertSource(treeJSON)
+	if _, err := SyncRegistrySnapshot(root, fakeGit(pinnedJSON)); err != nil {
+		t.Fatal(err)
+	}
+	assertSource(pinnedJSON)
+	// Dirty or even unreadable working-tree bytes cannot replace the active pin.
+	if err := os.WriteFile(filepath.Join(root, "agents.json"), []byte("broken working tree"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	assertSource(pinnedJSON)
+	// Conversely, a broken pin is unknown, never silently healthy via the tree.
+	dp, _ := snapshotPaths()
+	if err := os.WriteFile(dp, []byte("broken pin"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := readLiveRegistry(repo)
+	if err != nil || diffRegistries([]byte(pinnedJSON), got).Checked {
+		t.Fatal("invalid active pin must not yield a checked clean diagnostic")
+	}
+	if err := UnpinRegistry(); err != nil {
+		t.Fatal(err)
+	}
+	assertSource("broken working tree")
+}

@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- **fix(router):** make registry-drift diagnostics compare the same origin-pinned
+  source used by lane identity and dispatch. Report its actual path and the
+  supported pin-refresh action instead of presenting dirty, unexecuted shared
+  checkout edits as deployed configuration. Preserve unknown/malformed-source
+  failures and cover pinned, unpinned and corrupted-pin behavior.
+
 - **fix(router):** read macOS process-start identity from `kern.proc.pid` before
   invoking `ps`, allowing restricted lanes to verify their actual registered
   runtime without weakening actor/host/ancestry/PID-generation checks. Preserve
