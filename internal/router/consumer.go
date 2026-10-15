@@ -396,11 +396,22 @@ func HasConsumerCapability(cfg AgentConfig, routerRoot string) bool {
 // it sets SIRSI_THREAD_ID (inherited by the service session) AND substitutes the
 // {{thread}} placeholder in the argv/prompt, so the worker is told its thread id
 // in words even when the sandbox hides the environment.
-func bindConsumerThread(rc *ResolvedConsumer, threadID string) {
-	rc.Env = setEnv(rc.Env, "SIRSI_THREAD_ID", threadID)
+//
+// Returns a NEW *ResolvedConsumer rather than mutating rc in place: a single
+// resolved consumer can be dispatched by two concurrent admitters observing
+// the same edge (RunWakeLoop's own call site and the informer's — the
+// coexistence this package is built for), and an in-place field write raced
+// with that second admitter's read of the same fields (found by the race
+// detector, not by inspection).
+func bindConsumerThread(rc *ResolvedConsumer, threadID string) *ResolvedConsumer {
+	bound := *rc
+	bound.Env = setEnv(append([]string(nil), rc.Env...), "SIRSI_THREAD_ID", threadID)
+	argv := make([]string, len(rc.Argv))
 	for i, a := range rc.Argv {
-		rc.Argv[i] = strings.ReplaceAll(a, consumerThreadPlaceholder, threadID)
+		argv[i] = strings.ReplaceAll(a, consumerThreadPlaceholder, threadID)
 	}
+	bound.Argv = argv
+	return &bound
 }
 
 var foreignHomeRE = regexp.MustCompile(`/Users/[^/\s"']+`)
