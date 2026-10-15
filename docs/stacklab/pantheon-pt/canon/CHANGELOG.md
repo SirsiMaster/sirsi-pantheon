@@ -1,5 +1,13 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-15 — v0.24.104 release candidate
+
+- fix(router):
+- fix(router):
+- fix(router):
+- fix(router):
+- fix(router):
+
 ## 2026-10-12 — v0.24.101 release candidate
 
 - docs(router):
