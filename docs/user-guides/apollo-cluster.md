@@ -1,26 +1,27 @@
 # Apollo cluster client status
 
-Apollo cluster chat is under development. The current CLI refuses cluster
-commands because enrolled authentication and verified plan integration are not
-installed. An HTTPS URL does not authenticate your account. Do not supply router
-credentials, tokens or private keys to work around this refusal.
+Apollo cluster chat is under development. Remote commands currently refuse
+before network access because enrolled authentication and allowed endpoint/session
+binding are not installed. An HTTPS URL does not authenticate your account or
+make an arbitrary destination safe for private conversation text.
 
-Offline `sirsi apollo catalog`, `plan` and `telemetry` keep their existing roles.
-The existing single-host service is separate and is never substituted for a
-requested cluster job.
+Offline `sirsi apollo catalog`, `plan` and `telemetry` retain their existing roles.
+The single-host service is separate and never substitutes for a cluster request.
 
-The provisional cluster interface takes pre-tokenized input and manual immutable
-model, tokenizer, template, plan and session fields. It does not yet provide the
-normal text-to-model/routing-to-streaming conversation workflow. Apollo must
-prepare that text through its authoritative tokenizer/template contract.
+The intended chat workflow sends `--prompt` or `--stdin` text to Apollo-owned
+preparation, then streams that prepared job. The client does not select its own
+tokenizer/template or accept manually supplied token IDs. Plain and Flash remain
+distinct; the current service advertises Plain only. This source flow has fixture
+coverage and remains unavailable until actual authenticated installation proof.
 
-For qualified future event replay, retain the original admission receipt with
-the last accepted sequence in your private conversation storage. The planned
-`events --job-id JOB --job-receipt admission.json --after N` interface verifies
-every event against the same job, execution, request, plan and epoch before
-printing token text. A changed execution is an error, not a resumed conversation.
-The receipt file itself is not proof of service authentication.
+Future status, replay and cancellation commands require the original
+`--job-receipt admission.json` and the same `--job-id`. Replay also takes `--after`
+with the last accepted sequence. A changed execution is an error. An interrupted
+stream reports its last sequence; partial output is never reported as completed.
+An expired original receipt can still be used to reconcile status or cancellation;
+it does not renew permission to compute. A receipt file alone is not authentication.
 
-Signing, installation, authenticated normal-client success, foreign-endpoint and
-unauthorized refusal, exact frozen-plan verification and real reply/cancellation
-proof remain required before this client can be advertised as available.
+Do not supply router credentials, private keys or workaround tokens. Signing,
+installation, authenticated normal-client success, unauthorized/foreign-endpoint
+refusal, safe cancellation, private receipt/cursor persistence and actual useful
+streamed conversation remain prerequisites to availability.

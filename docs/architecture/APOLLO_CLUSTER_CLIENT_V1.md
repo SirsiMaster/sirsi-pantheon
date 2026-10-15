@@ -1,136 +1,95 @@
-# Pantheon installed Apollo client v1
+# Pantheon Apollo cluster client — platform groundwork
 
-This document records Pantheon's installed-client projection of the Apollo
-cluster inference proposal in
-`sirsi-inference/docs/architecture/APOLLO_CLUSTER_INFERENCE_V1.md` at
-`86f92d0d32fc41354f77057e72c8b93fa44d2d62`.
+The client projects Apollo's `internal/clusterapi` types and handlers at exact
+service commit `950c778d`. It reconciles preparation from Pantheon `aa3f6a37`
+with the authentication refusal and lifecycle/recovery safeguards from the
+`f6144e54` correction branch. It contains no engine implementation.
 
-It adds no inference engine, model loader, rank process, SSH route, or local
-fallback. `sne.openai-chat.v3` remains its existing plain/MTP surface. The
-new CLI is currently disabled until an enrolled authentication transport and
-authenticated plan inventory are actually integrated. HTTPS alone does not
-authenticate a caller. The intended command projection is:
+## Availability and trust boundary
+
+Remote CLI operations currently refuse **before network access** because no
+enrolled endpoint/session authentication provider is installed. HTTPS alone does
+not authenticate the caller or authorize a destination for private text. The
+library accepts an injected HTTP client, rejects nil clients, requires HTTPS and
+refuses redirects. A non-nil client is not proof of enrollment. No router token,
+secret flag, locally minted key, SSH/subprocess route or fallback is supplied.
+Ra's retained-source inspection of c078d592 and21f7f216 also found no approved
+Apollo front-door provider. An actual provider/configuration and authenticated
+positive/negative installed proof remain prerequisites to enabling commands.
+
+## Intended conversation flow
 
 ```text
-sirsi apollo capabilities --endpoint https://apollo.example.ts.net
-sirsi apollo chat --endpoint https://apollo.example.ts.net ...
-sirsi apollo admit --endpoint https://apollo.example.ts.net ... # chat alias
-sirsi apollo status --endpoint https://apollo.example.ts.net --job-id JOB --job-receipt admission.json
-sirsi apollo events --endpoint https://apollo.example.ts.net --job-id JOB --job-receipt admission.json --after N
-sirsi apollo cancel --endpoint https://apollo.example.ts.net --job-id JOB --job-receipt admission.json
+sirsi apollo chat --endpoint https://ENROLLED-SERVICE \
+  --model EXACT --machines auto --mode plain --precision Q8 \
+  --prompt "Explain this incident." --max-output-tokens 512
+sirsi apollo status --endpoint https://ENROLLED-SERVICE --job-id JOB --job-receipt admission.json
+sirsi apollo events --endpoint https://ENROLLED-SERVICE --job-id JOB --job-receipt admission.json --after 42
+sirsi apollo cancel --endpoint https://ENROLLED-SERVICE --job-id JOB --job-receipt admission.json
 ```
 
-The user supplies a frozen model/plan/session/token request to `chat`; the
-authenticated transport supplies caller identity. There is no `--token`,
-`--ssh`, subprocess, model-path, or unauthenticated local fallback flag.
+These commands remain disabled, not qualified installation instructions. `chat`
+sends role/content text to service-owned `/v1/apollo/prepare`. Apollo owns the
+verified tokenizer/template and returns a short-lived preparation with exact
+model/checkpoint/tokenizer/template/plan identities, tokens and rank_count.
+The job request is derived from that preparation. There is no user token-ID,
+model-path or manual immutable-hash override. Plain and Flash remain separate;
+exact950c778d advertises only Plain. Single-host v3 and offline planning remain
+separate; no silent substitution is allowed.
 
-## Required service response projection
+The chat renderer updates completion/failure state before selecting JSON or
+human output. Both require observed `completed` followed by final `released`;
+failed/cancelled/orphan outcomes and incomplete streams are errors.
 
-The proposal currently describes routes and invariants but does not yet define
-closed capability/job response objects. Pantheon therefore accepts a create
-response only when it has this projection (additional or implicit fields are
-not accepted):
+## Admission and lifecycle predicates
 
-```json
-{
-  "contract": "apollo.cluster-inference.v1",
-  "job_id": "authoritative-task-id",
-  "execution_id": "128-bit-execution-id",
-  "request_id": "same-client-request-id",
-  "plan_sha256": "64-lowercase-hex",
-  "epoch": 19,
-  "state": "admitting",
-  "rank_fences": [{
-    "rank": 0,
-    "host_id": "m5",
-    "fence": "opaque-fence",
-    "generation": "opaque-generation",
-    "expires_at": "2026-10-15T18:00:00Z",
-    "memory_admission_bytes": 17179869184
-  }]
-}
-```
+Preparation binds request/session/model/mode/precision/output extent and four
+lowercase SHA-256 identities. New admission requires exactly prepared rank_count
+fences, contiguous ordered rank IDs and unique hosts, nonempty fence/generation,
+positive memory and live RFC3339 expiry. **Preparation does not expose expected
+host placement.** Exact950c778d `validAdmission` enforces host/budget equality
+against its private frozen plan; client rank-count/topology checks do not
+independently verify absent plan contents, signatures or trusted generation data.
+That service enforcement is conditional on real Auth/planner/backend integration.
 
-Every rank must appear exactly once, have a live RFC3339 expiry, positive
-admitted memory and a nonempty host/fence/generation. A router task lease,
-placement-plan digest, or a claimed machine name is insufficient. The client
-calls `GET /v1/apollo/capabilities` first and requires exact contract plus
-`launch_available`, `stream_available`, and `cancel_available` all true for
-the requested mode. A planned-only service is refused before the job POST.
+Status/cancel/events take the original admission tuple. Every response/event must
+match job/execution/request/plan/epoch. Reconnect never adopts fresh status as
+original identity. Original expired fences remain structurally valid for
+recovery queries; fresh admission and live response fences still require expiry
+in the future. Recovery does not renew resources or authorize computation.
 
-`status` and `cancel` preserve the same identity checks. `events` is strict
-SSE: each event must name the requested job, carry the exact contract and a
-strictly increasing sequence after the caller's persisted sequence. Redirects,
-non-HTTPS endpoints, response trailing bytes, and incomplete admission data
-are rejected.
+Streams bound individual events and retain no transcript. There is no cumulative
+4 MiB live-stream cap. Final release/orphan evidence is required; completed or
+failed alone does not prove teardown. An empty/early EOF, transport failure or
+oversized frame returns `IncompleteStreamError.LastSequence` for explicit
+reconnection against the same receipt. Events after a terminal event are errors.
+Authorized typed token IDs/positions/text/error code and raw event content are
+emitted only to the caller's conversation/terminal, never general host telemetry.
+The caller owns private persistence of the frozen receipt and accepted cursor;
+a local JSON file alone does not authenticate anything.
 
-## API corrections pending Apollo/Pantheon/Ra agreement
+## Cancellation mutation gate
 
-Before an installed service is advertised as available, the PR #61 document
-needs to adopt the response projection above (or supply an equivalent
-versioned closed schema) and define:
+The existing service accepts only a contract body for cancellation. Client
+response checks occur after mutation and cannot protect a rebound target.
+Before enabling the client, the service owner must provide enforced immutable,
+nonreused owner/session-bound job IDs or an agreed atomic tuple precondition.
+A stale/rebound-target test must prove zero worker mutation. No unilateral
+precondition fields are added to the wire here.
 
-1. exact `capabilities` JSON fields and the distinction between planned and
-   launchable modes;
-2. an exact job/status/cancel response envelope including all rank fences,
-   admission bytes, expiry, and terminal release/orphan evidence;
-3. a closed error envelope and stable HTTP status mapping; and
-4. the installed authenticated transport configuration and trust anchor.
+## Verification and remaining delivery
 
-Those corrections are protocol work, not a reason to weaken the client. Until
-they land in the service, `sirsi apollo chat` correctly fails closed rather
-than claiming a model was launched.
+The complete `internal/apollo` package must pass with `go test -race` (no excluding
+regex). CLI tests exercise JSON/human success and failure through the same
+stream-rendering function used by chat. Socket-free injected fixtures retain
+HTTP routing/body validation without depending on host listener permission.
 
-## SSA correction, 2026-10-15
+Native enrolled authentication and foreign-endpoint/unauthorized refusal,
+production planner/backend/all-rank execution, stale-target mutation protection,
+private durable receipt/cursor integration, current-main CI, independent review,
+signing/install/rollback and actual useful streamed conversation remain open.
+This document does not claim a launchable or installed feature.
 
-The original f6144e54 CLI constructed an ordinary HTTP client. It did not
-authenticate callers. The corrected CLI refuses every remote operation before
-network access. A non-nil library HTTP client is dependency injection, not proof
-of enrollment, endpoint authorization, or transport identity. No credentials or
-trust anchors are minted, copied, logged, or borrowed from the router.
-
-`CreateJob` additionally requires a separate local rank/host inventory obtained
-from the authenticated frozen plan matching the request digest. Missing inventory
-is refused before network access. Admission requires exact set equality: missing,
-extra, substituted ranks and changed host identities fail. The job response must
-never supply its own expected inventory. CLI integration of the actual verified
-plan remains blocked on the implemented service contract.
-
-`Events` takes the original admitted Job rather than an unbound job ID. Contract,
-job, execution, request, plan digest and epoch must match on every event before
-the callback receives text. Sequences must increase past the supplied cursor.
-The planned CLI requires a frozen admission receipt and checks its job ID; a
-fresh status response must not replace that receipt on reconnect. Token text,
-token ID, position and committed count are typed optional fields, preserving
-zero IDs/positions. They are emitted only on the authorized command output.
-No general telemetry gains prompt or reply content.
-
-This is platform groundwork, not installed-path qualification. Native enrolled
-authentication, foreign-endpoint/unauthorized refusal, authoritative preparation,
-plan schemas and signed-plan verification, normal human text chat, signing,
-installation and real streamed reply/cancellation acceptance remain unqualified.
-The prior claim that a nonempty fence list alone verified every planned rank is
-withdrawn. No local tokenizer, single-host substitution or new wire schema is
-introduced by this correction.
-
-## Recovery and stream completion correction
-
-Historical admission receipt validation checks immutable tuple and fence
-structure, permitting expired original expiry timestamps for status, cancel and
-event reconciliation. Only fresh admission and live response validation require
-live fences. This does not renew resources or authorize continued computation.
-
-Live streams have a per-event bound, with no cumulative byte cap and no retained
-stream history in the client. A recognized terminal event must be delivered
-before Events returns nil. Empty/early EOF, transport break and oversized lines
-return IncompleteStreamError carrying the last accepted sequence. Reconnect
-uses that cursor and the same frozen receipt. Terminal stream delivery is not
-a claim of successful inference: the terminal event names the job outcome.
-The provisional terminal event vocabulary still needs the implemented service's
-closed schema before this disabled client can be enabled.
-
-Cancel currently transmits only the existing contract body. Response tuple
-validation cannot undo a mutation sent to a rebound job ID. Before enabling any
-normal path the service must enforce immutable, owner/session-authorized job IDs
-or an agreed atomic tuple precondition, with a stale-target fixture proving
-zero worker mutation. No unilateral wire precondition fields are invented here.
+Architecture authority: SIRSI_MANIFESTO.md; PANTHEON_RULES.md;
+ADR-055-SNE-LICENSING-ANUBIS-RA-SEAM.md. Service source is read-only reference;
+no engine source crosses into Pantheon.

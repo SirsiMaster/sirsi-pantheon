@@ -1,41 +1,40 @@
 # Apollo client boundary
 
-Pantheon consumes the Apollo service contract; it does not implement inference,
-tokenization, model loading or rank execution. Offline planning remains separate.
+Pantheon consumes Apollo's authenticated service contract; it does not implement
+inference, tokenization, model loading or native rank execution. Offline planning
+and single-host v3 remain separate. `cluster.go` projects exact service950c778d.
 
-`cluster.go` is provisional platform groundwork. The CLI is disabled until an
-enrolled authentication transport and authenticated plan integration exist.
-`NewClusterClient` refuses nil HTTP clients; a non-nil injected client alone is
-not proof of authentication. Integration must enforce the enrolled endpoint and
-caller/session identity without borrowing router credentials or secret flags.
+Remote CLI commands are disabled until enrolled endpoint/session authentication
+is integrated. `NewClusterClient` rejects nil clients, plaintext and redirects.
+A non-nil dependency-injected client is not proof of authentication. Never use
+router credentials, secret flags or locally minted enrollment authority.
 
-`CreateJob(ctx, request, expectedRanks)` requires a complete rank/host inventory
-from the authenticated frozen plan matching `request.PlanSHA256`. The caller
-must authenticate that plan; the method compares the returned admission with
-that separate inventory. Never derive expected ranks from the response being
-validated. No expected inventory is a rejection before network access.
+`Prepare` sends conversation text only to Apollo's preparation endpoint and
+validates frozen response identities. `CreateJob` derives its request from that
+preparation and checks prepared rank_count, contiguous unique-host fences and
+live resources. The service does not expose host inventory; exact host/budget
+matching is service-side `validAdmission`, conditional on trusted integration.
 
-`Status` and `Cancel` also require that same frozen admission and reject
-changed execution, request, plan or epoch. `Events(ctx, admittedJob, after, emit)` uses the original admission tuple for
-all events and reconnects. Never replace it with fresh status. The callback
-receives typed token text, ID, position and committed count only after tuple and
-sequence validation; zero IDs and positions survive JSON output. The caller owns
-cursor persistence in its authorized conversation scope. No hardware telemetry
-stores reply content.
+`Status`, `Cancel` and `Events` take the original admitted Job. Responses/events
+must match its complete execution tuple. Original expired fences may be used for
+recovery; fresh admissions still require live expiry. Never replace original
+identity with a status snapshot on reconnect. Caller-owned receipt/cursor storage
+must remain private and scoped to the authenticated conversation.
 
-The service schemas and endpoint enrollment still need actual implementation
-and installed qualification. See `docs/architecture/APOLLO_CLUSTER_CLIENT_V1.md`
-and `docs/user-guides/apollo-cluster.md` for current limitations.
+Streams have per-event limits, no cumulative byte cap, and require final
+released/orphan evidence. Early EOF or interrupted/oversized streams return
+IncompleteStreamError with LastSequence. Completed/failed alone is not teardown.
+The authorized event text is not telemetry. Cancellation remains disabled until
+the service guarantees immutable nonreuse or atomic stale-target preconditions.
 
-Focused socket-free regression checks:
+Run the whole relevant suite:
 
 ```sh
-go test -race ./internal/apollo -run 'Test(EventsBindFrozenTupleAndPreserveReply|RankAdmissionMatchesCompleteFrozenPlan|MissingAuthenticationAndPlanRefuseBeforeNetwork)$'
+go test -race ./internal/apollo -count=1
+go test ./cmd/sirsi -run 'Test(Apollo|SplitApollo)' -count=1
+go vet ./internal/apollo
+golangci-lint run ./internal/apollo/...
 ```
 
-Historical receipts remain usable for authenticated reconciliation after original
-fence expiry. Fresh admission still requires live fences. Events has bounded
-individual frames, no aggregate stream cap, and returns IncompleteStreamError
-with LastSequence if EOF arrives without terminal evidence. A nil stream result
-means a terminal event was delivered, not successful inference. Service-side
-immutable job IDs or atomic cancellation preconditions remain an enabling gate.
+See `docs/architecture/APOLLO_CLUSTER_CLIENT_V1.md` and
+`docs/user-guides/apollo-cluster.md` for current limits and enabling gates.
