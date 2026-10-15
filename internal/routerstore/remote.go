@@ -286,33 +286,29 @@ func (rs *RemoteStore) ensureSession(ctx context.Context) (Session, error) {
 	return minted, nil
 }
 
-// cachedThreadFits reports whether a cached session may serve a caller that
-// resolved want. A caller that resolved NO thread must reuse the cached
-// session: a sandboxed worker (codex: fork/exec /bin/ps denied) loses its
-// thread marker on a later invocation, and minting a threadless session then
-// strands the lease its own claim took (ErrNotOwner on complete, 2026-10-01).
-// A caller that resolved a different thread must still mint its own.
+// cachedThreadFits requires exact caller binding, including the legacy empty
+// binding. Missing thread identity must never borrow another conversation's
+// authority from the last same-agent cache write. Resolve the real registered
+// provider session instead; a cache cannot safely supply a missing identity.
 func cachedThreadFits(cached, want string) bool {
-	return want == "" || cached == want
+	return cached == want
 }
 
 func (rs *RemoteStore) sessionPath() string {
 	return filepath.Join(rs.sessionDir, strings.ReplaceAll(rs.agent, "/", "_")+".json")
 }
 
-// sessionPaths lists where this caller's session is cached, most specific first.
-// Actors that cannot resolve their own agent id all fall back to the hostname as
-// agent ("Mac"), and one cache file per agent made them overwrite each other's
-// session, so a lease claimed under one session was completed under another
-// (claude-pantheon vs codex-pantheon, 2026-10-02). A caller with a thread gets a
-// per-thread file; the per-agent file stays the latest-session cache a thread-less
-// caller reuses.
+// sessionPaths defines this caller's cache custody for reads, writes AND drops.
+// Bound threads own only their per-thread path. Publishing into or deleting the
+// shared per-agent legacy path let coordination sessions clobber primary lease
+// owners. Do not migrate that ambiguous cache: remint the same real thread using
+// the existing server's same-host/agent/thread ownership checks.
 func (rs *RemoteStore) sessionPaths() []string {
 	if rs.threadID == "" {
 		return []string{rs.sessionPath()}
 	}
 	per := strings.TrimSuffix(rs.sessionPath(), ".json") + "." + strings.ReplaceAll(rs.threadID, "/", "_") + ".json"
-	return []string{per, rs.sessionPath()}
+	return []string{per}
 }
 
 // dropSession forgets the session so the next call mints a fresh one
