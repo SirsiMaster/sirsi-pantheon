@@ -258,39 +258,41 @@ func (c *ClusterClient) CreateJob(ctx context.Context, in JobRequest, expectedRa
 	return out, nil
 }
 
-func (c *ClusterClient) Status(ctx context.Context, jobID string) (Job, error) {
-	if strings.TrimSpace(jobID) == "" {
-		return Job{}, fmt.Errorf("%w: job_id is required", ErrClusterProtocol)
+func (c *ClusterClient) Status(ctx context.Context, admitted Job) (Job, error) {
+	if err := admitted.validate("", "", false); err != nil {
+		return Job{}, err
 	}
+	jobID := admitted.JobID
 	var out Job
 	if err := c.doJSON(ctx, http.MethodGet, "/v1/apollo/jobs/"+url.PathEscape(jobID), nil, &out); err != nil {
 		return Job{}, err
 	}
-	if out.JobID != jobID {
+	if out.JobID != jobID || out.ExecutionID != admitted.ExecutionID || out.Epoch != admitted.Epoch {
 		return Job{}, fmt.Errorf("%w: status response job identity differs", ErrClusterProtocol)
 	}
-	if err := out.validate("", "", out.State != "released" && out.State != "orphan_unknown"); err != nil {
+	if err := out.validate(admitted.RequestID, admitted.PlanSHA256, out.State != "released" && out.State != "orphan_unknown"); err != nil {
 		return Job{}, err
 	}
 	return out, nil
 }
 
-func (c *ClusterClient) Cancel(ctx context.Context, jobID string) (Job, error) {
-	if strings.TrimSpace(jobID) == "" {
-		return Job{}, fmt.Errorf("%w: job_id is required", ErrClusterProtocol)
+func (c *ClusterClient) Cancel(ctx context.Context, admitted Job) (Job, error) {
+	if err := admitted.validate("", "", false); err != nil {
+		return Job{}, err
 	}
+	jobID := admitted.JobID
 	var out Job
 	if err := c.doJSON(ctx, http.MethodPost, "/v1/apollo/jobs/"+url.PathEscape(jobID)+"/cancel", map[string]string{"contract": ClusterContractV1}, &out); err != nil {
 		return Job{}, err
 	}
-	if out.JobID != jobID {
+	if out.JobID != jobID || out.ExecutionID != admitted.ExecutionID || out.Epoch != admitted.Epoch {
 		return Job{}, fmt.Errorf("%w: cancel response job identity differs", ErrClusterProtocol)
 	}
 	//nolint:misspell // "cancelled" is the Apollo protocol enum; do not rewrite wire values.
 	if out.State != "cancel_requested" && out.State != "draining" && out.State != "cancelled" && out.State != "released" && out.State != "orphan_unknown" {
 		return Job{}, fmt.Errorf("%w: cancel did not return a cancellation state", ErrClusterProtocol)
 	}
-	if err := out.validate("", "", out.State != "released" && out.State != "orphan_unknown"); err != nil {
+	if err := out.validate(admitted.RequestID, admitted.PlanSHA256, out.State != "released" && out.State != "orphan_unknown"); err != nil {
 		return Job{}, err
 	}
 	return out, nil

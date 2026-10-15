@@ -223,3 +223,48 @@ func TestMissingAuthenticationAndPlanRefuseBeforeNetwork(t *testing.T) {
 		t.Fatalf("missing plan: calls=%d err=%v", calls, err)
 	}
 }
+
+func TestLifecycleBindsFrozenTuple(t *testing.T) {
+	for _, operation := range []string{"status", "cancel"} {
+		for _, field := range []string{"valid", "execution", "request", "plan", "epoch", "empty-execution", "empty-request", "empty-plan"} {
+			t.Run(operation+"/"+field, func(t *testing.T) {
+				admitted := testJob("decoding", nil)
+				response := testJob("released", nil)
+				switch field {
+				case "execution":
+					response.ExecutionID = "other"
+				case "request":
+					response.RequestID = "other"
+				case "plan":
+					response.PlanSHA256 = strings.Repeat("b", 64)
+				case "epoch":
+					response.Epoch++
+				case "empty-execution":
+					response.ExecutionID = ""
+				case "empty-request":
+					response.RequestID = ""
+				case "empty-plan":
+					response.PlanSHA256 = ""
+				}
+				data, err := json.Marshal(response)
+				if err != nil {
+					t.Fatal(err)
+				}
+				client, err := newClusterClient("http://fixture.invalid", &http.Client{Transport: clusterRoundTrip(func(*http.Request) (*http.Response, error) {
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(string(data)))}, nil
+				})}, true)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if operation == "status" {
+					_, err = client.Status(context.Background(), admitted)
+				} else {
+					_, err = client.Cancel(context.Background(), admitted)
+				}
+				if (err == nil) != (field == "valid") {
+					t.Fatalf("field=%s err=%v", field, err)
+				}
+			})
+		}
+	}
+}

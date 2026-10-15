@@ -15,7 +15,8 @@ must authenticate that plan; the method compares the returned admission with
 that separate inventory. Never derive expected ranks from the response being
 validated. No expected inventory is a rejection before network access.
 
-`Events(ctx, admittedJob, after, emit)` uses the original admission tuple for
+`Status` and `Cancel` also require that same frozen admission and reject
+changed execution, request, plan or epoch. `Events(ctx, admittedJob, after, emit)` uses the original admission tuple for
 all events and reconnects. Never replace it with fresh status. The callback
 receives typed token text, ID, position and committed count only after tuple and
 sequence validation; zero IDs and positions survive JSON output. The caller owns

@@ -166,7 +166,11 @@ var apolloStatusCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		job, err := client.Status(cmd.Context(), apolloJobID)
+		admitted, err := readApolloJobReceipt(apolloJobReceipt, apolloJobID)
+		if err != nil {
+			return err
+		}
+		job, err := client.Status(cmd.Context(), admitted)
 		if err != nil {
 			return err
 		}
@@ -182,7 +186,11 @@ var apolloCancelCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		job, err := client.Cancel(cmd.Context(), apolloJobID)
+		admitted, err := readApolloJobReceipt(apolloJobReceipt, apolloJobID)
+		if err != nil {
+			return err
+		}
+		job, err := client.Cancel(cmd.Context(), admitted)
 		if err != nil {
 			return err
 		}
@@ -198,16 +206,9 @@ var apolloEventsCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		receipt, err := os.ReadFile(apolloJobReceipt)
+		admitted, err := readApolloJobReceipt(apolloJobReceipt, apolloJobID)
 		if err != nil {
-			return fmt.Errorf("read frozen Apollo job receipt: %w", err)
-		}
-		var admitted apollo.Job
-		if err := json.Unmarshal(receipt, &admitted); err != nil {
-			return fmt.Errorf("decode frozen Apollo job receipt: %w", err)
-		}
-		if admitted.JobID != apolloJobID {
-			return fmt.Errorf("Apollo job receipt differs from requested job")
+			return err
 		}
 		return client.Events(cmd.Context(), admitted, apolloEventAfter, func(event apollo.Event) error {
 			return json.NewEncoder(cmd.OutOrStdout()).Encode(event)
@@ -220,6 +221,21 @@ func configuredApolloClusterClient() (*apollo.ClusterClient, error) {
 		return nil, fmt.Errorf("Apollo cluster endpoint is required; configure the authenticated HTTPS service with --endpoint")
 	}
 	return nil, fmt.Errorf("Apollo cluster commands are unavailable: enrolled authentication transport and authenticated frozen plan integration are not installed")
+}
+
+func readApolloJobReceipt(path, jobID string) (apollo.Job, error) {
+	receipt, err := os.ReadFile(path)
+	if err != nil {
+		return apollo.Job{}, fmt.Errorf("read frozen Apollo job receipt: %w", err)
+	}
+	var admitted apollo.Job
+	if err := json.Unmarshal(receipt, &admitted); err != nil {
+		return apollo.Job{}, fmt.Errorf("decode frozen Apollo job receipt: %w", err)
+	}
+	if admitted.JobID != jobID {
+		return apollo.Job{}, fmt.Errorf("Apollo job receipt differs from requested job")
+	}
+	return admitted, nil
 }
 
 func parseApolloTokenIDs(raw string) ([]uint32, error) {
@@ -277,8 +293,8 @@ func init() {
 	apolloChatCmd.Flags().Uint32Var(&apolloMaxOutput, "max-output-tokens", 0, "Maximum output token count")
 	for _, command := range []*cobra.Command{apolloStatusCmd, apolloCancelCmd, apolloEventsCmd} {
 		command.Flags().StringVar(&apolloJobID, "job-id", "", "Authoritative Apollo job id")
+		command.Flags().StringVar(&apolloJobReceipt, "job-receipt", "", "Frozen authenticated admission receipt; never replace with a fresh status on reconnect")
 	}
-	apolloEventsCmd.Flags().StringVar(&apolloJobReceipt, "job-receipt", "", "Frozen authenticated admission receipt; never replace with a fresh status on reconnect")
 	apolloEventsCmd.Flags().Uint64Var(&apolloEventAfter, "after", 0, "Last persisted event sequence; replay starts after it")
 	apolloCmd.AddCommand(apolloCatalogCmd, apolloPlanCmd, apolloTelemetryCmd, apolloCapabilitiesCmd, apolloChatCmd, apolloStatusCmd, apolloEventsCmd, apolloCancelCmd)
 }

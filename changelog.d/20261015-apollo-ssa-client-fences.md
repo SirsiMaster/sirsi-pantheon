@@ -10,3 +10,5 @@ Refs: PANTHEON_RULES.md, docs/SAFETY_DESIGN.md, docs/ADR-055-SNE-LICENSING-ANUBI
 - Add developer and user guidance for disabled cluster commands and source-only safeguards, plus a CLI refusal regression test.
 
 - Preserve the service cancellation wire enum explicitly in lint checks.
+
+- Require frozen admission receipts for status and cancellation; reject changed execution/request/plan/epoch on those lifecycle responses too.
