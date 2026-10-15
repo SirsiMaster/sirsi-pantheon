@@ -120,43 +120,131 @@ func (s *server) laneScope(scope map[string]bool, sess Session, name string, in 
 	return nil
 }
 
-// threadRecordsInScope checks each thread record on BOTH sides: the agent the record names must be in scope, and
-// if the thread id already exists, the agent that owns it today must be in scope too. Checking only the new value
-// would let a scoped token overwrite another agent's thread by reusing its id with its own agent name. An unknown
-// thread id is a new registration and is allowed; any other lookup failure refuses (fail closed).
 func threadRecordsInScope(scope map[string]bool, s *server, in []reflect.Value) error {
-	check := func(r ThreadRecord) error {
-		if !scope[r.Agent] {
-			return fmt.Errorf("%w: thread record for %q", ErrLaneScope, r.Agent)
-		}
-		b, err := s.store.ThreadBinding(r.ThreadID)
-		switch {
-		case err == nil:
-			if !scope[b.Agent] {
-				return fmt.Errorf("%w: thread %q belongs to another agent", ErrLaneScope, r.ThreadID)
-			}
-		case errors.Is(err, ErrThreadUnknown):
-			// a new thread id: a fresh registration
-		default:
-			return fmt.Errorf("%w: thread lookup failed: %v", ErrLaneScope, err)
-		}
-		return nil
-	}
 	for _, v := range in {
 		switch r := v.Interface().(type) {
 		case ThreadRecord:
-			if err := check(r); err != nil {
+			if err := threadRecordInScope(scope, s, r); err != nil {
 				return err
 			}
 		case []ThreadRecord:
 			for _, t := range r {
-				if err := check(t); err != nil {
+				if err := threadRecordInScope(scope, s, t); err != nil {
 					return err
 				}
 			}
 		}
 	}
 	return nil
+}
+
+// threadRecordInScope refuses a write whose new agent OR current row owner is outside the token's scope.
+// Checking only the incoming agent (as the original PR #1079 did) let a scoped token overwrite an existing
+// blank-host or same-host row it did not own, by naming a thread id and claiming it for an in-scope agent;
+// the pre-existing host check in threadAuthority only protects a row already bound to a DIFFERENT host
+// (SSA PR #1079 review, P1).
+func threadRecordInScope(scope map[string]bool, s *server, r ThreadRecord) error {
+	if !scope[r.Agent] {
+		return fmt.Errorf("%w: thread record for %q", ErrLaneScope, r.Agent)
+	}
+	existing, err := s.store.ThreadBinding(r.ThreadID)
+	if err == nil && !scope[existing.Agent] {
+		return fmt.Errorf("%w: thread %q is owned by %q", ErrLaneScope, r.ThreadID, existing.Agent)
+	}
+	if err != nil && !errors.Is(err, ErrThreadUnknown) {
+		return fmt.Errorf("%w: thread lookup failed: %v", ErrLaneScope, err)
+	}
+	return nil
+}
+
+// scopedThreadWriter is implemented by the one store that owns real thread rows. Lane scope is enforced
+// server-side only, so RemoteStore (the wire client) never needs it.
+type scopedThreadWriter interface {
+	UpsertThreadsScoped(records []ThreadRecord, scope []string) error
+	UpsertThreadCASScoped(r ThreadRecord, scope []string) (bool, error)
+	ResumeThreadCASScoped(record ThreadRecord, suspendedAt string, scope []string) error
+	DeleteThreadCASScoped(threadID, status, lastSeenAt, host string, scope []string) (bool, error)
+}
+
+// scopedThreadWrite runs a scoped token's UpsertThreads/UpsertThreadCAS/ResumeThreadCAS through the
+// atomic store methods above instead of the plain ones, so the existing-owner scope check happens as
+// part of the write itself. A recognized scoped mutation never falls back to an
+// unscoped write: missing backend capability or malformed arguments fail closed.
+func (s *server) scopedThreadWrite(scope map[string]bool, name string, in []reflect.Value) (result []any, handled bool, err error) {
+	switch name {
+	case "UpsertThreads", "UpsertThreadCAS", "ResumeThreadCAS", "DeleteThreadCAS":
+	default:
+		return nil, false, nil
+	}
+	w, ok := s.store.(scopedThreadWriter)
+	if !ok {
+		return nil, true, fmt.Errorf("%w: atomic scoped thread writes unavailable", ErrLaneScope)
+	}
+	agents := make([]string, 0, len(scope))
+	for a := range scope {
+		agents = append(agents, a)
+	}
+	switch name {
+	case "UpsertThreads":
+		if len(in) < 1 {
+			return nil, true, ErrLaneScope
+		}
+		records, ok := in[0].Interface().([]ThreadRecord)
+		if !ok {
+			return nil, true, ErrLaneScope
+		}
+		for _, r := range records {
+			if !scope[r.Agent] {
+				return nil, true, fmt.Errorf("%w: thread record for %q", ErrLaneScope, r.Agent)
+			}
+		}
+		return []any{}, true, w.UpsertThreadsScoped(records, agents)
+	case "UpsertThreadCAS":
+		if len(in) < 1 {
+			return nil, true, ErrLaneScope
+		}
+		r, ok := in[0].Interface().(ThreadRecord)
+		if !ok {
+			return nil, true, ErrLaneScope
+		}
+		if !scope[r.Agent] {
+			return nil, true, fmt.Errorf("%w: thread record for %q", ErrLaneScope, r.Agent)
+		}
+		accepted, werr := w.UpsertThreadCASScoped(r, agents)
+		return []any{accepted}, true, werr
+	case "ResumeThreadCAS":
+		if len(in) < 2 {
+			return nil, true, ErrLaneScope
+		}
+		r, ok := in[0].Interface().(ThreadRecord)
+		if !ok {
+			return nil, true, ErrLaneScope
+		}
+		suspendedAt, ok := in[1].Interface().(string)
+		if !ok {
+			return nil, true, ErrLaneScope
+		}
+		if !scope[r.Agent] {
+			return nil, true, fmt.Errorf("%w: thread record for %q", ErrLaneScope, r.Agent)
+		}
+		return []any{}, true, w.ResumeThreadCASScoped(r, suspendedAt, agents)
+	case "DeleteThreadCAS":
+		if len(in) != 4 {
+			return nil, true, ErrLaneScope
+		}
+		args := make([]string, 4)
+		for i := range in {
+			value, ok := in[i].Interface().(string)
+			if !ok {
+				return nil, true, ErrLaneScope
+			}
+			args[i] = value
+		}
+		deleted, err := w.DeleteThreadCASScoped(args[0], args[1], args[2], args[3], agents)
+		return []any{deleted}, true, err
+	default:
+		return nil, false, nil
+	}
 }
 
 func deleteThreadInScope(scope map[string]bool, s *server, in []reflect.Value) error {

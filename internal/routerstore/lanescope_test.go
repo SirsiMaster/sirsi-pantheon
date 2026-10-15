@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -151,6 +152,88 @@ func TestScopedSessionCannotRegisterForeignThreadsOrCallAdminMethods(t *testing.
 	wantLaneScope(t, "Counters (admin read)", err)
 	_, err = rs.ListIdentifiers("ns")
 	wantLaneScope(t, "ListIdentifiers", err)
+}
+
+// ListThreads is filtered to the token's own agents: a scoped session must not see another lane's
+// continuation payload (SSA PR #1079 review, P1).
+func TestScopedListThreadsHidesForeignPayloads(t *testing.T) {
+	f := newScopedFixture(t, []string{"cloud-a"})
+	if err := f.backend.UpsertThreads([]ThreadRecord{
+		{ThreadID: "thr-ra", Agent: "ra", Status: "active", Payload: []byte(`{"ResumePrompt":"ra's secret"}`)},
+		{ThreadID: "thr-cloud-a", Agent: "cloud-a", Status: "active", Payload: []byte(`{"ResumePrompt":"mine"}`)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	list, err := f.client("cloud-a").ListThreads()
+	if err != nil {
+		t.Fatalf("ListThreads: %v", err)
+	}
+	if len(list) != 1 || list[0].ThreadID != "thr-cloud-a" {
+		t.Fatalf("ListThreads = %+v, want only thr-cloud-a", list)
+	}
+}
+
+// A scoped token cannot take over an existing thread row owned by another agent by naming its id and
+// claiming it for an in-scope agent, even when the row's host is blank (legacy) or the token's own host
+// (SSA PR #1079 review, P1).
+func TestScopedThreadWriteCannotHijackExistingForeignRow(t *testing.T) {
+	f := newScopedFixture(t, []string{"cloud-a"})
+	if err := f.backend.UpsertThreads([]ThreadRecord{{ThreadID: "thr-blank", Agent: "ra", Status: "active", Payload: []byte("{}")}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.backend.UpsertThreads([]ThreadRecord{{ThreadID: "thr-samehost", Agent: "ra", Status: "active", Host: f.host, Payload: []byte("{}")}}); err != nil {
+		t.Fatal(err)
+	}
+	rs := f.client("cloud-a")
+	wantLaneScope(t, "UpsertThreads over blank-host ra row", rs.UpsertThreads([]ThreadRecord{{ThreadID: "thr-blank", Agent: "cloud-a", Status: "active", Host: f.host}}))
+	wantLaneScope(t, "UpsertThreads over same-host ra row", rs.UpsertThreads([]ThreadRecord{{ThreadID: "thr-samehost", Agent: "cloud-a", Status: "active", Host: f.host}}))
+	_, err := rs.UpsertThreadCAS(ThreadRecord{ThreadID: "thr-blank", Agent: "cloud-a", Status: "active", Host: f.host})
+	wantLaneScope(t, "UpsertThreadCAS over blank-host ra row", err)
+	// Registering a brand-new thread id for an in-scope agent is still allowed.
+	if err := rs.UpsertThreads([]ThreadRecord{{ThreadID: "thr-new", Agent: "cloud-a", Status: "active", Host: f.host, Payload: []byte("{}")}}); err != nil {
+		t.Fatalf("UpsertThreads for a new thread refused: %v", err)
+	}
+}
+
+// The existing-owner scope check must be atomic with the write: a pre-check (read the owner, then call
+// the plain write) races a legitimate concurrent write between the two. This fires many out-of-scope
+// hijack attempts concurrently against many legitimate same-agent heartbeats on the SAME row and asserts
+// the out-of-scope agent never wins a single one, regardless of interleaving (SSA PR #1079 review round 2).
+func TestScopedThreadWriteCannotHijackExistingForeignRowConcurrently(t *testing.T) {
+	f := newScopedFixture(t, []string{"cloud-a"})
+	if err := f.backend.UpsertThreads([]ThreadRecord{{ThreadID: "thr-race", Agent: "ra", Status: "active", Host: f.host, LastSeenAt: "2026-01-01T00:00:00Z", Payload: []byte("{}")}}); err != nil {
+		t.Fatal(err)
+	}
+	rs := f.client("cloud-a")
+	const n = 50
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(2)
+		seq := i
+		go func() {
+			defer wg.Done()
+			_ = f.backend.UpsertThreads([]ThreadRecord{{ThreadID: "thr-race", Agent: "ra", Status: "active", Host: f.host,
+				LastSeenAt: time.Date(2026, 1, 1, 0, 0, seq, 0, time.UTC).Format(time.RFC3339), Payload: []byte("{}")}})
+		}()
+		go func() {
+			defer wg.Done()
+			err := rs.UpsertThreads([]ThreadRecord{{ThreadID: "thr-race", Agent: "cloud-a", Status: "active", Host: f.host,
+				LastSeenAt: time.Date(2027, 1, 1, 0, 0, seq, 0, time.UTC).Format(time.RFC3339), Payload: []byte("{}")}})
+			if err == nil {
+				t.Errorf("hijack attempt %d: UpsertThreads over foreign row was not refused", seq)
+			} else if !strings.Contains(err.Error(), "lane scope") {
+				t.Errorf("hijack attempt %d: got %v, want a lane-scope refusal", seq, err)
+			}
+		}()
+	}
+	wg.Wait()
+	b, err := f.backend.ThreadBinding("thr-race")
+	if err != nil {
+		t.Fatalf("ThreadBinding: %v", err)
+	}
+	if b.Agent != "ra" {
+		t.Fatalf("thr-race agent = %q after the race, want ra (an out-of-scope hijack got through)", b.Agent)
+	}
 }
 
 // An unscoped host token keeps the pre-v25 behavior: no lane API applies, whole-ledger reads work.

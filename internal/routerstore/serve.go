@@ -533,6 +533,37 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// 6c. a scoped token's thread write (schema v25, round 2): the existing-owner scope check must happen
+	// atomically with the write itself (threads.go UpsertThreadsScoped/UpsertThreadCASScoped/
+	// ResumeThreadCASScoped), not as a lookup before this generic call — a lookup-then-call here would
+	// race a legitimate concurrent write between the two (SSA PR #1079 review round 2). handled=true means
+	// the scoped path already ran the call and this request is complete.
+	if tokenScope != nil {
+		if res, handled, serr := s.scopedThreadWrite(tokenScope, name, in); handled {
+			if serr != nil {
+				s.logf("lane-scope: REFUSED %s from %s@%s (token host %s): %v", name, sess.Agent, sess.Host, tokenHost, serr)
+				_ = s.store.RecordAudience(AudienceEntry{TS: s.opts.now().UTC().Format(time.RFC3339Nano), Method: name, SessionID: sess.ID,
+					Agent: sess.Agent, Host: tokenHost, ThreadID: sess.ThreadID, Verdict: "refused", Reason: serr.Error()})
+				s.writeCallErr(w, name, serr)
+				return
+			}
+			resp := wireResponse{Result: make([]json.RawMessage, 0, len(res))}
+			for _, rv := range res {
+				b, err := json.Marshal(rv)
+				if err != nil {
+					writeErr(w, http.StatusInternalServerError, "", "encode result: "+err.Error())
+					return
+				}
+				resp.Result = append(resp.Result, b)
+			}
+			if sess.ID != "" {
+				_ = s.store.TouchSession(sess.ID)
+			}
+			writeJSON(w, http.StatusOK, resp)
+			return
+		}
+	}
+
 	outs := s.sv.MethodByName(name).Call(in)
 
 	var callErr error
@@ -551,6 +582,21 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 		if rep, ok := results[0].Interface().(AudienceReport); ok {
 			rep.Mode = s.opts.RuleOfRa // the store cannot know the gate mode; the server does
 			results[0] = reflect.ValueOf(rep)
+		}
+	}
+	// A scoped token's ListThreads is filtered to its own agents: the lane API lists ListThreads as
+	// readable (liveness is needed to see where a send will land), but the unfiltered row carries each
+	// thread's full continuation payload (ResumePrompt, OwnedOpenItems, …), not just liveness (SSA PR
+	// #1079 review, P1).
+	if tokenScope != nil && name == "ListThreads" && len(results) == 1 {
+		if recs, ok := results[0].Interface().([]ThreadRecord); ok {
+			kept := make([]ThreadRecord, 0, len(recs))
+			for _, r := range recs {
+				if tokenScope[r.Agent] {
+					kept = append(kept, r)
+				}
+			}
+			results[0] = reflect.ValueOf(kept)
 		}
 	}
 
@@ -760,6 +806,10 @@ func (s *server) bindAfterClaim(name string, results []reflect.Value, caller Ses
 }
 
 func (s *server) writeCallErr(w http.ResponseWriter, method string, err error) {
+	if errors.Is(err, ErrLaneScope) {
+		writeErr(w, http.StatusForbidden, "ErrLaneScope", err.Error())
+		return
+	}
 	if sn := sentinelName(err); sn != "" {
 		writeJSON(w, http.StatusOK, wireResponse{Error: &wireError{Name: sn, Message: err.Error()}})
 		return
