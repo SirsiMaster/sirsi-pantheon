@@ -1,10 +1,10 @@
 # Ra–Horus Fabric — Diagram index (SL-DIAGRAM-001)
 
-**Wing:** `stacklab.wing.ra-horus-fabric` · **Owner of every row:** Ra unless stated · **Source revision:** main `c1a78077` · **Last review:** 2026-10-05
+**Wing:** `stacklab.wing.ra-horus-fabric` · **Owner of every row:** Ra unless stated · **Source revision:** main `b29778fc` · **Last review:** 2026-10-08
 
 Coverage is reported against the whole process inventory below, not against what is already drawn.
 
-**Covered (logical + data): 4 of 18. Drafted, awaiting its owner's confirmation: 1. Open: 13.**
+**Covered (logical + data): 7 of 18. Drafted, awaiting its owner's confirmation: 1. Open: 10.**
 
 State, sequence and recovery views are marked per row. A row is complete only when it has a logical view and a data view; every gap stays OPEN with a next action.
 
@@ -15,8 +15,8 @@ State, sequence and recovery views are marked per row. A row is complete only wh
 | RA-P03 | Origin-pinned registry | `router registry sync`, hourly job | [RA-P03](diagrams/RA-P03-registry-pin.md) | same file | recovery | implemented | decide whether a stale pin fails closed |
 | RA-P04 | Release train | `scripts/release-train.sh` | [RA-P04](diagrams/RA-P04-release-train.md) | same file | recovery | implemented, observed (v0.24.69) | scripted rollback is absent |
 | RA-P05 | Review and bind (SSA) | PR opened | [RA-P05](diagrams/RA-P05-review-and-bind.md) | same file | recovery | owner: sirsi-software-admin; **Ra's understanding, awaiting SSA confirmation** | SSA confirms or corrects (item sent 2026-10-05) |
-| RA-P06 | Item lifecycle: send, pull, acknowledge, claim, close, reopen, reassign, dismiss | any lane | OPEN | OPEN | OPEN | implemented | draw from `internal/routerstore/items.go` and the dispatch facade |
-| RA-P07 | Thread registration and heartbeat | session start | OPEN | OPEN | OPEN | implemented | draw |
+| RA-P06 | Item lifecycle: send, pull, acknowledge, claim, close, reopen, reassign, dismiss | any lane | [RA-P06](diagrams/RA-P06-item-lifecycle.md) | same file | recovery | implemented | none |
+| RA-P07 | Thread registration and heartbeat | session start | [RA-P07](diagrams/RA-P07-thread-registration-heartbeat.md) | same file | state + recovery | implemented | none |
 | RA-P08 | Spool relay forwarding | any lane call | OPEN | OPEN | OPEN | implemented | draw; include the 30 s timeout class |
 | RA-P09 | Router service authorization (host token, thread binding, audience log) | every gated call | OPEN | OPEN | OPEN | implemented | draw; confirm what authenticates a lane |
 | RA-P10 | Quarantine stand-down and lift | owner or Ra | OPEN | OPEN | OPEN | implemented | draw |
@@ -25,7 +25,7 @@ State, sequence and recovery views are marked per row. A row is complete only wh
 | RA-P13 | Swap hygiene sampling | `sirsi swap-hygiene` | OPEN | OPEN | OPEN | implemented | draw |
 | RA-P14 | Dashboard read path | `sirsi dashboard` | OPEN | OPEN | OPEN | implemented | draw: bounded reads (`ListActive`, `ListSince`, `CountClosed`) |
 | RA-P15 | Claim eligibility (`router task why`) | refused claim | OPEN | OPEN | OPEN | implemented | draw |
-| RA-P16 | Mailbox alias and reassign | send to a retired lane | OPEN | OPEN | OPEN | implemented | draw (ADR-072 C5) |
+| RA-P16 | Mailbox alias and reassign | send to a retired lane | [RA-P16](diagrams/RA-P16-mailbox-alias-reassign.md) | same file | recovery | implemented | none |
 | RA-P17 | Router service deploy | release with a new Store method | partly in RA-P04 | OPEN | OPEN | implemented | separate view |
 | RA-P18 | Ma'at pre-push gate and CI | `git push`, PR | OPEN | OPEN | OPEN | implemented; owner claude-pantheon | claude-pantheon draws or confirms (item sent 2026-10-05) |
 
