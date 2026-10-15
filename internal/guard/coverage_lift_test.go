@@ -410,6 +410,39 @@ func TestCheckTailscaleBackend_StoppedIsWarn(t *testing.T) {
 	}
 }
 
+// TestCheckTailscaleBackend_PathMissFallsBackToBundledCLI reproduces the
+// native launchd PATH (/usr/bin:/bin:/usr/sbin:/sbin — no Homebrew symlink)
+// where `tailscale` cannot be found by name even though the app is
+// installed and the backend is actually Stopped (hardware-admin, live M1,
+// 2026-10-15). The PATH-resolved candidate must fail and the bundled
+// /Applications/Tailscale.app binary must still be tried and win.
+func TestCheckTailscaleBackend_PathMissFallsBackToBundledCLI(t *testing.T) {
+	report := &NetworkReport{}
+	p := &failingCmdPlatform{
+		Mock: &platform.Mock{CommandResults: map[string]string{
+			"/Applications/Tailscale.app/Contents/MacOS/Tailscale status --json": `{"BackendState":"Stopped"}`,
+		}},
+		failPrefixes: []string{"tailscale status"},
+	}
+	checkTailscaleBackend(p, report)
+	f := findingByCheck(t, report.Findings, "Tailscale Backend")
+	if f.Severity != SeverityWarn || !strings.Contains(f.Message, "Stopped") {
+		t.Fatalf("bundled-CLI fallback must still warn on Stopped, got %+v", f)
+	}
+}
+
+// TestCheckTailscaleBackend_NotInstalledAnywhereAddsNoFinding confirms a
+// host that genuinely doesn't run Tailscale — both the PATH name and the
+// bundled app path fail — stays silent, not just the PATH-only case already
+// covered by TestCheckTailscaleBackend_NotInstalledAddsNoFinding.
+func TestCheckTailscaleBackend_NotInstalledAnywhereAddsNoFinding(t *testing.T) {
+	report := &NetworkReport{}
+	checkTailscaleBackend(&platform.Mock{CommandError: errors.New("not found")}, report)
+	if len(report.Findings) != 0 {
+		t.Fatalf("Tailscale absent from PATH and the app bundle must add no finding, got %+v", report.Findings)
+	}
+}
+
 // ─── network.go: checkFirewall ───────────────────────────────────────────────
 
 func TestCheckFirewall(t *testing.T) {

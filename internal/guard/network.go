@@ -452,6 +452,22 @@ func checkVPNStatus(p platform.Platform, report *NetworkReport) {
 	report.Findings = append(report.Findings, finding)
 }
 
+// tailscaleCLICandidates are tried in order: a PATH-resolved `tailscale`
+// first (headless hosts, Homebrew installs, non-Darwin), then the macOS App
+// Store/direct-download bundle's binary directly. A process running under
+// launchd's native default PATH (/usr/bin:/bin:/usr/sbin:/sbin — no user
+// shell profile, no Homebrew symlink) cannot find `tailscale` by name even
+// though the app is installed and working — confirmed live on M1,
+// 2026-10-15 (hardware-admin): `command -v tailscale` found nothing under
+// that exact PATH while the bundled binary ran fine. Without the second
+// candidate, checkTailscaleBackend silently classified an installed,
+// Stopped backend as "not installed" in precisely the launchd context this
+// diagnostic exists to run in.
+var tailscaleCLICandidates = []string{
+	"tailscale",
+	"/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+}
+
 // checkTailscaleBackend adds a finding when Tailscale's own backend state is
 // Stopped, which checkVPNStatus and scutil cannot see: the macOS system
 // extension keeps the tunnel interface loaded and scutil/ifconfig report it
@@ -462,8 +478,14 @@ func checkVPNStatus(p platform.Platform, report *NetworkReport) {
 // isn't installed or returns no backend state — this host may simply not run
 // Tailscale.
 func checkTailscaleBackend(p platform.Platform, report *NetworkReport) {
-	out, err := p.Command("tailscale", "status", "--json")
-	if err != nil || len(out) == 0 {
+	var out []byte
+	for _, cli := range tailscaleCLICandidates {
+		if o, err := p.Command(cli, "status", "--json"); err == nil && len(o) > 0 {
+			out = o
+			break
+		}
+	}
+	if len(out) == 0 {
 		return
 	}
 	var status struct {
