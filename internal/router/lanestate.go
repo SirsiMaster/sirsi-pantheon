@@ -179,8 +179,20 @@ func PingLane(reg *ThreadRegistry, cfg AgentConfig, agentID string, now time.Tim
 	default:
 		res.Verdict = VerdictUnstaffed
 		mech := ExplicitWakeMechanism(cfg)
-		switch mech {
-		case "", WakeNone:
+		switch {
+		case cfg.Type == "service" && (mech == "" || mech == WakeNone):
+			// Actor-only lanes (horus, mercury-runner) declare no wake mechanism
+			// and no consumer on purpose — they are never meant to drain an
+			// inbox. UNSTAFFED is still the honest verdict (no worker path
+			// exists), but the detail must say so is by design, not a gap
+			// (SSA 2026-10-13: qualify deliberate nonconsumer actor lanes).
+			res.Detail = "actor-only lane by design: never routes inbox work, no wake mechanism declared — not a staffing gap"
+		case cfg.Consumer.Mode == "resident" && (mech == "" || mech == WakeNone):
+			// A declared resident consumer with no wake mechanism means the
+			// lane's background worker was deliberately paused (e.g. an
+			// owner-authorized cutover), not that dispatch forgot to start it.
+			res.Detail = "resident consumer declared but no wake mechanism: intentionally paused, not a staffing gap"
+		case mech == "" || mech == WakeNone:
 			res.Detail = "no worker path: wake mechanism is none and no session is registered"
 		default:
 			res.Detail = "wake mechanism " + mech + " is declared but no worker is reporting"
