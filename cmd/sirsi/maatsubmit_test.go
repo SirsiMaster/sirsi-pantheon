@@ -86,6 +86,8 @@ func TestCaseFoldedRepoCannotBypassPolicy(t *testing.T) {
 func TestResolveSubmitRequester(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("CODEX_SESSION_ID", "")
+	t.Setenv("CODEX_THREAD_ID", "")
 	// This test deliberately exercises the local test ledger.  Production
 	// callers must use the configured router service; make that distinction
 	// explicit so the test does not inherit whichever service environment the
@@ -129,6 +131,35 @@ func TestResolveSubmitRequester(t *testing.T) {
 		}
 		if got != "mercury" {
 			t.Errorf("requester = %q, want %q", got, "mercury")
+		}
+	})
+
+	t.Run("registered Codex session resolves without spoofing Claude", func(t *testing.T) {
+		const sid = "codex-registered"
+		t.Setenv("CLAUDE_CODE_SESSION_ID", "")
+		t.Setenv("CODEX_SESSION_ID", sid)
+		t.Setenv("CODEX_THREAD_ID", sid)
+		writeMarker(t, sid, "codex-apollo")
+		got, err := resolveSubmitRequester()
+		if err != nil || got != "codex-apollo" {
+			t.Fatalf("registered Codex requester = %q, %v", got, err)
+		}
+	})
+
+	t.Run("unregistered Codex session refuses", func(t *testing.T) {
+		t.Setenv("CLAUDE_CODE_SESSION_ID", "")
+		t.Setenv("CODEX_THREAD_ID", "codex-unregistered")
+		if _, err := resolveSubmitRequester(); err == nil {
+			t.Fatal("Codex environment alone must not invent a registered agent")
+		}
+	})
+
+	t.Run("conflicting Codex aliases refuse even with a marker", func(t *testing.T) {
+		t.Setenv("CLAUDE_CODE_SESSION_ID", "")
+		t.Setenv("CODEX_SESSION_ID", "codex-registered")
+		t.Setenv("CODEX_THREAD_ID", "other-conversation")
+		if _, err := resolveSubmitRequester(); err == nil {
+			t.Fatal("conflicting aliases must not pick a marker arbitrarily")
 		}
 	})
 

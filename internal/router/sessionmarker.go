@@ -9,7 +9,8 @@
 //
 // `sirsi thread register` writes ~/.claude/run/agent-by-session/<session_id> =
 // <agent_id>; `sirsi thread close` removes it. The session id comes from
-// $CLAUDE_CODE_SESSION_ID (set inside every Claude Code session).
+// the provider's session environment. The legacy marker location remains shared
+// so registration, attribution and close all use the same records.
 package router
 
 import (
@@ -56,9 +57,23 @@ func sanitizeSessionID(s string) string {
 	return sessionIDUnsafe.ReplaceAllString(strings.TrimSpace(s), "_")
 }
 
-// CurrentSessionID returns the Claude session id from the environment, or "".
+// CurrentSessionID returns the provider session id, never an agent name or PID.
+// Preserve Claude's existing explicit session binding. In a Codex-only context,
+// accept either supported native alias, but refuse conflicting alias values:
+// selecting one would silently attribute work to a different conversation.
 func CurrentSessionID() string {
-	return strings.TrimSpace(os.Getenv(SessionIDEnv))
+	if sid := strings.TrimSpace(os.Getenv(SessionIDEnv)); sid != "" {
+		return sid
+	}
+	session := strings.TrimSpace(os.Getenv("CODEX_SESSION_ID"))
+	thread := strings.TrimSpace(os.Getenv("CODEX_THREAD_ID"))
+	if session != "" && thread != "" && session != thread {
+		return ""
+	}
+	if session != "" {
+		return session
+	}
+	return thread
 }
 
 // WriteSessionAgentMarker records that sessionID resolves to agentID. No-op when
