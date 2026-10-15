@@ -12,11 +12,11 @@ Examples:
 
 - FinalWishes repo review for Claude: `claude-finalwishes`
 - FinalWishes repo review for Codex: `codex-finalwishes`
-- Pantheon router/CLI work for Claude: `claude-pantheon`
+- Pantheon router/CLI work for Codex: `codex-pantheon`
 - Sirsi Nexus work for Codex: `codex-nexus`
 - Assiduous work for Claude: `claude-assiduous`
 
-Do not address FinalWishes work to `claude-pantheon` just because the router lives in Pantheon. Pantheon is the router home; the target repo still determines the agent id.
+Do not address FinalWishes work to `codex-pantheon` just because the router lives in Pantheon. Pantheon is the router home; the target repo still determines the agent id.
 
 ### Choosing The Target Agent
 
@@ -34,7 +34,7 @@ Do not address FinalWishes work to `claude-pantheon` just because the router liv
 {
   "pending": {
     "codex-finalwishes": ["20260520-example-doc-id"],
-    "claude-pantheon": []
+    "codex-pantheon": []
   },
   "pending_for_codex": [],
   "pending_for_claude": []
@@ -109,5 +109,5 @@ When routing work:
 Examples:
 - FinalWishes to Claude: pending.claude-finalwishes = ["<doc-id>"]
 - FinalWishes to Codex: pending.codex-finalwishes = ["<doc-id>"]
-- Pantheon router work to Claude: pending.claude-pantheon = ["<doc-id>"]
+- Pantheon router work to Codex: pending.codex-pantheon = ["<doc-id>"]
 ```
