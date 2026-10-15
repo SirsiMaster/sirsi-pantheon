@@ -53,13 +53,17 @@ func defaultPIDState(pid int) PIDState {
 	return PIDAlive
 }
 
-// defaultPIDStart returns the process start signature on unix-like systems via
-// `ps -o lstart=` — a stable per-process boot timestamp that disambiguates a
+// defaultPIDStart prefers the native kernel probe where available, retaining
+// the legacy `ps -o lstart=` representation so existing registrations remain
+// valid. The fallback is a stable per-process timestamp that disambiguates a
 // recycled PID (a different process reusing the number carries a newer lstart).
 // One cheap shell-out, same shape as the stat= probe. Empty when ps fails or the
 // PID is gone (caller treats empty as "no discriminator" and keeps bare-PID
 // semantics — never a false reap).
 func defaultPIDStart(pid int) string {
+	if start := nativePIDStart(pid); start != "" {
+		return start
+	}
 	out, err := exec.Command("ps", "-o", "lstart=", "-p", strconv.Itoa(pid)).Output()
 	if err != nil {
 		return ""

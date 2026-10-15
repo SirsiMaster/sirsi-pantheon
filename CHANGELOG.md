@@ -6,6 +6,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- **fix(router):** an overdue 72-hour origin-registry refresh now warns while
+  retaining the explicit pin; it no longer silently promotes unrelated shared
+  checkout identities. Local registry writes remain refused until an explicit
+  unpin, and dispatch continues to reject working-tree-only lanes.
+
+- **fix(router):** make registry-drift diagnostics compare the same origin-pinned
+  source used by lane identity and dispatch. Report its actual path and the
+  supported pin-refresh action instead of presenting dirty, unexecuted shared
+  checkout edits as deployed configuration. Preserve unknown/malformed-source
+  failures and cover pinned, unpinned and corrupted-pin behavior.
+
+- **fix(router):** read macOS process-start identity from `kern.proc.pid` before
+  invoking `ps`, allowing restricted lanes to verify their actual registered
+  runtime without weakening actor/host/ancestry/PID-generation checks. Preserve
+  the existing start-signature representation and non-Darwin behavior. Add
+  no-`ps`, denied/wrong-identity, legacy compatibility and generation regressions.
+
 ## [0.24.103] — 2026-10-13
 
 - **feat(gemma):** `sirsi gemma shared` gives registered builder lanes on M1 and M5 access to the selected resident native Gemma worker through the existing canonical router. Bounded waits and resume read the exact original and correlated reply; single-use metadata receipts prevent uncertain submissions from being silently resent.

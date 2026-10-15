@@ -258,14 +258,8 @@ var routerDoctorCmd = &cobra.Command{
 
 		reportNameGrammar(reg)
 
-		// REGISTRY DRIFT — the router reads the WORKING TREE, so a registry fix
-		// that merged to main has not necessarily reached the live registry. That
-		// landmine armed three times in six days and every remedy was a copy;
-		// this is the check instead, so it announces itself rather than
-		// re-arming silently. Report-only, deliberately: --fix must never
-		// overwrite the working tree from origin, because the working tree is
-		// legitimately ahead sometimes and clobbering it would destroy
-		// unpushed registrations.
+		// Compare the actual runtime source (origin pin when active), not the
+		// shared checkout's unexecuted edits. Report-only: never overwrite either.
 		//
 		// Wake-mechanism drift is plist-gated (A35 scope-the-check):
 		//   upstream=launchagent, live=none, plist ABSENT → live is honest;
@@ -285,7 +279,7 @@ var routerDoctorCmd = &cobra.Command{
 			hasDrift := len(drift.MissingAgents) > 0 || len(lostReal) > 0 || len(wakeReal) > 0 || len(otherChanged) > 0
 			if hasDrift {
 				issues++
-				fmt.Printf("⚠ registry DRIFT — %s is the live registry and it is missing what origin/main has:\n", router.RegistryPath)
+				fmt.Printf("⚠ registry DRIFT — %s is the live registry and it is missing what origin/main has:\n", drift.SourcePath)
 				for _, a := range drift.MissingAgents {
 					fmt.Printf("    agent %s: merged but ABSENT live — the router cannot address it\n", a)
 				}
@@ -295,7 +289,11 @@ var routerDoctorCmd = &cobra.Command{
 				for _, c := range append(wakeReal, otherChanged...) {
 					fmt.Printf("    %s: %s differs — live %q, origin/main %q\n", c.AgentID, c.Path, c.Live, c.Upstream)
 				}
-				fmt.Println("    → a merged registry change is NOT a deployed one. Reconcile the branch; do not hand-copy the file.")
+				if drift.Pinned {
+					fmt.Println("    → refresh the origin-pinned runtime registry with `sirsi router registry sync`; do not hand-copy the file.")
+				} else {
+					fmt.Println("    → a merged registry change is NOT a deployed one. Reconcile the branch or pin with `sirsi router registry sync`; do not hand-copy the file.")
+				}
 				fmt.Println()
 			}
 			if len(wakeBroken) > 0 {

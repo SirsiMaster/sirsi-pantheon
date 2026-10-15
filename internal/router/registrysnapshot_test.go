@@ -11,8 +11,8 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 )
 
-const pinnedJSON = `{"agents":{"lane-a":{"type":"claude","workstream":"w","wake":{"mechanism":"launchagent"}}}}`
-const treeJSON = `{"agents":{"lane-tree":{"type":"claude","workstream":"w","wake":{"mechanism":"none"}}}}`
+const pinnedJSON = `{"agents":{"lane-a":{"id":"lane-a","type":"claude","repo":"/r","workstream":"w","wake":{"mechanism":"launchagent"}}}}`
+const treeJSON = `{"agents":{"lane-tree":{"id":"lane-tree","type":"claude","repo":"/r","workstream":"w","wake":{"mechanism":"none"}}}}`
 
 func repoWithTree(t *testing.T) (root string) {
 	t.Helper()
@@ -72,9 +72,9 @@ func TestRegistryReadsOriginSnapshotOnceSynced(t *testing.T) {
 	}
 }
 
-// A bad origin file must never replace a good source, and a stale snapshot is not
-// trusted (both directions).
-func TestRegistrySyncRefusesBadOriginAndStaleSnapshotIsIgnored(t *testing.T) {
+// A bad sync never replaces the good source. An overdue refresh must not undo an
+// explicit pin and promote unrelated working-tree identities.
+func TestRegistrySyncRefusesBadOriginAndStaleSnapshotRemainsPinned(t *testing.T) {
 	root := repoWithTree(t)
 	if _, err := SyncRegistrySnapshot(root, fakeGit(pinnedJSON)); err != nil {
 		t.Fatal(err)
@@ -93,8 +93,19 @@ func TestRegistrySyncRefusesBadOriginAndStaleSnapshotIsIgnored(t *testing.T) {
 	if err := os.WriteFile(mp, []byte(old), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if reg, _ := LoadRegistry(root); reg.Agents["lane-tree"].ID == "" {
-		t.Fatal("a snapshot older than the max age must not be trusted")
+	reg, err := LoadRegistry(root)
+	if err != nil || reg.Agents["lane-a"].ID == "" || reg.Agents["lane-tree"].ID != "" {
+		t.Fatalf("age must not promote the working-tree identity: %+v err=%v", reg, err)
+	}
+	if err := SaveRegistry(root, reg); !errors.Is(err, ErrRegistryPinned) {
+		t.Fatalf("an overdue pin must still refuse local registry writes: %v", err)
+	}
+	f := dispatch.New(root, nil)
+	if err := f.ValidateAgent("to", "lane-tree"); err == nil {
+		t.Fatal("age must not let dispatch admit a working-tree-only lane")
+	}
+	if err := f.ValidateAgent("to", "lane-a"); err != nil {
+		t.Fatalf("last pinned lane should remain addressable: %v", err)
 	}
 }
 
@@ -147,4 +158,39 @@ func TestDispatchValidatesAgainstThePinnedRegistry(t *testing.T) {
 	if err := f.ValidateAgent("to", "lane-tree"); err == nil {
 		t.Fatal("lane declared only in the working tree must not be addressable on a pinned host")
 	}
+}
+
+func TestDriftReadsTheRuntimeRegistrySource(t *testing.T) {
+	root := repoWithTree(t)
+	repo := filepath.Dir(filepath.Dir(root))
+	assertSource := func(want string) {
+		t.Helper()
+		got, err := readLiveRegistry(repo)
+		if err != nil || string(got) != want {
+			t.Fatalf("diagnostic source differs from runtime: got %q, err %v, want %q", got, err, want)
+		}
+	}
+	assertSource(treeJSON)
+	if _, err := SyncRegistrySnapshot(root, fakeGit(pinnedJSON)); err != nil {
+		t.Fatal(err)
+	}
+	assertSource(pinnedJSON)
+	// Dirty or even unreadable working-tree bytes cannot replace the active pin.
+	if err := os.WriteFile(filepath.Join(root, "agents.json"), []byte("broken working tree"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	assertSource(pinnedJSON)
+	// Conversely, a broken pin is unknown, never silently healthy via the tree.
+	dp, _ := snapshotPaths()
+	if err := os.WriteFile(dp, []byte("broken pin"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := readLiveRegistry(repo)
+	if err != nil || diffRegistries([]byte(pinnedJSON), got).Checked {
+		t.Fatal("invalid active pin must not yield a checked clean diagnostic")
+	}
+	if err := UnpinRegistry(); err != nil {
+		t.Fatal(err)
+	}
+	assertSource("broken working tree")
 }

@@ -3,10 +3,10 @@ package router
 // Registry drift detection — a check that FAILS, not a fix that copies.
 //
 // WHY THIS EXISTS
-//   The router reads `.agents/idea-router/agents.json` from the WORKING TREE, so
-//   the working tree IS the live registry and origin/main is the facade. A
-//   registry fix that merges to main does not reach the router until the
-//   checked-out branch carries it.
+//   Before origin pinning, the shared working tree was the live registry. The
+//   historical failures below motivated this check. After `registry sync`, the
+//   runtime instead reads its pinned snapshot. Diagnostics must resolve the
+//   SAME source as LoadRegistry, not report unexecuted working-tree edits as live.
 //
 //   That landmine has now armed three times in six days: 57f027eb defused it by
 //   committing the good registry onto the branch, #346 re-armed it by landing a
@@ -36,8 +36,8 @@ import (
 	"strings"
 )
 
-// RegistryPath is the registry relative to the repo root — the one file the
-// router actually reads.
+// RegistryPath is the repository registry path. Origin-pinned hosts resolve its
+// runtime snapshot through registrySource rather than reading this working file.
 const RegistryPath = ".agents/idea-router/agents.json"
 
 // LostField is one leaf that exists in the merged registry and not in the live one.
@@ -61,8 +61,10 @@ type ChangedField struct {
 // that way (IO7a, sirsi-io ADR-002): a surface with no representation for "I
 // could not check" collapses every unreadable source into a clean bill of health.
 type RegistryDrift struct {
-	Checked bool   `json:"checked"`
-	Unknown string `json:"unknown_reason,omitempty"` // why the comparison could not be made
+	Checked    bool   `json:"checked"`
+	Unknown    string `json:"unknown_reason,omitempty"` // why the comparison could not be made
+	SourcePath string `json:"source_path,omitempty"`    // actual runtime registry source
+	Pinned     bool   `json:"pinned,omitempty"`
 
 	MissingAgents []string       `json:"missing_agents,omitempty"` // merged, absent from live — the router cannot address these
 	LostFields    []LostField    `json:"lost_fields,omitempty"`    // merged value the live registry dropped
@@ -79,32 +81,29 @@ func (d RegistryDrift) Drifted() bool {
 
 // CheckRegistryDrift compares the live registry against origin/main.
 func CheckRegistryDrift(repoRoot string) RegistryDrift {
+	path, pinned := registrySource(filepath.Join(repoRoot, ".agents", "idea-router"))
 	live, err := readLiveRegistry(repoRoot)
 	if err != nil {
-		return RegistryDrift{Unknown: fmt.Sprintf("live registry unreadable: %v", err)}
+		return RegistryDrift{Unknown: fmt.Sprintf("live registry unreadable: %v", err), SourcePath: path, Pinned: pinned}
 	}
 	merged, err := readMergedRegistry(repoRoot)
 	if err != nil {
 		// Unknown, deliberately — not "clean". A detached checkout, an unfetched
 		// remote or a missing git are all reasons we cannot know, and none of
 		// them is evidence that the registry is fine.
-		return RegistryDrift{Unknown: err.Error()}
+		return RegistryDrift{Unknown: err.Error(), SourcePath: path, Pinned: pinned}
 	}
-	return diffRegistries(merged, live)
+	d := diffRegistries(merged, live)
+	d.SourcePath, d.Pinned = path, pinned
+	return d
 }
 
-// readLiveRegistry reads the FILE ON DISK, and nothing else.
-//
-// An earlier cut of this read the git index (`git show :path`) on the theory
-// that it is "what a commit would carry". That was wrong, and wrong in the exact
-// way this check exists to catch: the router reads the working file, so the
-// working file is the live registry. On the machine this was written against,
-// the index and the working file differed by 85 insertions — so an index-based
-// check would have reported on an artifact nobody runs.
-//
-// Verify the artifact, not a nearby one that is easier to read.
+// readLiveRegistry follows exactly the runtime's source selection. It never
+// substitutes the git index or an unexecuted shared working-tree registry for
+// an active origin pin, and does not hand-copy either source.
 func readLiveRegistry(repoRoot string) ([]byte, error) {
-	return os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(RegistryPath)))
+	path, _ := registrySource(filepath.Join(repoRoot, ".agents", "idea-router"))
+	return os.ReadFile(path)
 }
 
 func readMergedRegistry(repoRoot string) ([]byte, error) {
