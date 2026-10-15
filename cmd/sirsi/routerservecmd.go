@@ -190,10 +190,14 @@ var routerTokenMintCmd = &cobra.Command{
 		label, _ := cmd.Flags().GetString("label")
 		agents, _ := cmd.Flags().GetStringSlice("agents")
 		secret, _ := cmd.Flags().GetString("secret-resource")
-		if secret != "" {
-			if !routerSecretResourcePattern.MatchString(secret) || len(agents) == 0 {
-				return errors.New("--secret-resource requires projects/<project>/secrets/<secret> and a nonempty --agents scope")
-			}
+		hostWide, _ := cmd.Flags().GetBool("host-wide")
+		switch {
+		case hostWide && (secret == "" || len(agents) > 0):
+			return errors.New("--host-wide requires --secret-resource and cannot be combined with --agents")
+		case secret != "" && !routerSecretResourcePattern.MatchString(secret):
+			return errors.New("--secret-resource requires projects/<project>/secrets/<secret>")
+		case secret != "" && len(agents) == 0 && !hostWide:
+			return errors.New("--secret-resource requires a nonempty --agents scope (or --host-wide for a Mac host token)")
 		}
 		mint := func() (string, routerstore.HostToken, error) { return store.MintHostToken(args[0], label) }
 		if len(agents) > 0 {
@@ -204,6 +208,9 @@ var routerTokenMintCmd = &cobra.Command{
 		plain, rec, err := mint()
 		if err != nil {
 			return err
+		}
+		if secret != "" && hostWide {
+			return publishMintedHostWideToken(cmd.Context(), cmd.OutOrStdout(), plain, rec, secret, publishScopedRouterSecret, store.RevokeHostToken)
 		}
 		if secret != "" {
 			return publishMintedRouterToken(cmd.Context(), cmd.OutOrStdout(), plain, rec, secret, publishScopedRouterSecret, store.RevokeHostToken)
@@ -268,6 +275,7 @@ func init() {
 	routerTokenCmd.PersistentFlags().StringVar(&routerTokenStore, "store", os.Getenv("SIRSI_ROUTER_STORE"), "postgres:// DSN or SQLite path of the SERVICE's backend (required; default $SIRSI_ROUTER_STORE so a Cloud Run job can mint/revoke)")
 	routerTokenMintCmd.Flags().String("label", "", "free-text label (e.g. the machine's name)")
 	routerTokenMintCmd.Flags().String("secret-resource", "", "publish a scoped token directly to this Google Secret Manager resource; never print plaintext (Cloud Run identity must be allowed to add versions)")
+	routerTokenMintCmd.Flags().Bool("host-wide", false, "with --secret-resource: publish an UNSCOPED host token (a Mac) the same secure way; refused together with --agents")
 	routerTokenMintCmd.Flags().StringSlice("agents", nil, "confine the token to these agents (lane scope, e.g. a cloud sandbox); omit for an unscoped host token")
 	routerTokenCmd.AddCommand(routerTokenMintCmd, routerTokenRevokeCmd, routerTokenListCmd)
 	routerCmd.AddCommand(routerTokenCmd)

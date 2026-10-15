@@ -140,3 +140,47 @@ func TestSSAScopedTokenSecretNativePublication(t *testing.T) {
 		})
 	}
 }
+
+// A Mac host token (unscoped) can be published securely, but only through the explicit host-wide entry point:
+// the receipt says so and never carries the credential.
+func TestHostWideTokenSecretPublishesWithoutPrintingCredential(t *testing.T) {
+	var out bytes.Buffer
+	revoked := false
+	rec := routerstore.HostToken{ID: "token-id", Host: "M5-Studio"}
+	resource := "projects/210890802638/secrets/router-m5-studio"
+	err := publishMintedHostWideToken(context.Background(), &out, "sentinel-secret", rec, resource,
+		func(_ context.Context, got, value string) (string, error) {
+			if got != resource || value != "sentinel-secret" {
+				t.Fatal("publication mismatch")
+			}
+			return resource + "/versions/1", nil
+		}, func(string) error { revoked = true; return nil })
+	if err != nil || revoked || strings.Contains(out.String(), "sentinel-secret") || !strings.Contains(out.String(), "host-wide (unscoped)") {
+		t.Fatalf("invalid host-wide receipt: err=%v revoked=%t out=%q", err, revoked, out.String())
+	}
+}
+
+// The default path still refuses an unscoped token, and the host-wide path refuses a scoped one: neither can be
+// reached by accident, and a refused token is revoked, never left active.
+func TestHostWideAndScopedPathsRefuseEachOthersTokens(t *testing.T) {
+	resource := "projects/210890802638/secrets/router-x"
+	noPublish := func(context.Context, string, string) (string, error) {
+		t.Fatal("published despite refusal")
+		return "", nil
+	}
+	var out bytes.Buffer
+
+	revoked := false
+	err := publishMintedRouterToken(context.Background(), &out, "sentinel-secret", routerstore.HostToken{ID: "a", Host: "h"}, resource, noPublish,
+		func(string) error { revoked = true; return nil })
+	if err == nil || !revoked {
+		t.Fatalf("default path accepted an unscoped token (err=%v revoked=%t)", err, revoked)
+	}
+
+	revoked = false
+	err = publishMintedHostWideToken(context.Background(), &out, "sentinel-secret", routerstore.HostToken{ID: "b", Host: "h", Agents: []string{"lane"}}, resource, noPublish,
+		func(string) error { revoked = true; return nil })
+	if err == nil || !revoked || strings.Contains(out.String(), "sentinel-secret") {
+		t.Fatalf("host-wide path accepted a scoped token (err=%v revoked=%t)", err, revoked)
+	}
+}

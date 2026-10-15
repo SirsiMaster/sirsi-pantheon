@@ -22,7 +22,26 @@ var routerSecretResourcePattern = regexp.MustCompile(`^projects/([a-z][a-z0-9-]{
 // fails closed: revoke the fresh token if its secure delivery is not confirmed.
 func publishMintedRouterToken(ctx context.Context, out io.Writer, plain string, rec routerstore.HostToken, resource string,
 	publish func(context.Context, string, string) (string, error), revoke func(string) error) error {
-	if len(rec.Agents) == 0 || !routerSecretResourcePattern.MatchString(resource) {
+	return publishMintedToken(ctx, out, plain, rec, resource, publish, revoke, false)
+}
+
+// publishMintedHostWideToken is the same secure delivery for an UNSCOPED host token (a Mac's token, whose lanes are
+// not enumerable and which must keep its host-wide reach). It is only reachable through the explicit --host-wide flag;
+// the default path above still refuses an unscoped token, so a cloud sandbox can never be given one by accident.
+func publishMintedHostWideToken(ctx context.Context, out io.Writer, plain string, rec routerstore.HostToken, resource string,
+	publish func(context.Context, string, string) (string, error), revoke func(string) error) error {
+	if len(rec.Agents) != 0 {
+		if err := revoke(rec.ID); err != nil {
+			return fmt.Errorf("host-wide publication of a scoped token; CLEANUP_DEBT: token %s revocation failed", rec.ID)
+		}
+		return errors.New("host-wide publication refused for a scoped token; fresh token revoked")
+	}
+	return publishMintedToken(ctx, out, plain, rec, resource, publish, revoke, true)
+}
+
+func publishMintedToken(ctx context.Context, out io.Writer, plain string, rec routerstore.HostToken, resource string,
+	publish func(context.Context, string, string) (string, error), revoke func(string) error, allowHostWide bool) error {
+	if (len(rec.Agents) == 0 && !allowHostWide) || !routerSecretResourcePattern.MatchString(resource) {
 		if err := revoke(rec.ID); err != nil {
 			return fmt.Errorf("invalid secure scope; CLEANUP_DEBT: token %s revocation failed", rec.ID)
 		}
@@ -35,7 +54,11 @@ func publishMintedRouterToken(ctx context.Context, out io.Writer, plain string, 
 		}
 		return errors.New("secure token publication failed; fresh token revoked")
 	}
-	_, err = fmt.Fprintf(out, "token id: %s  host: %s\nscope: %s\nsecret version: %s\n", rec.ID, rec.Host, strings.Join(rec.Agents, ","), version)
+	scope := strings.Join(rec.Agents, ",")
+	if len(rec.Agents) == 0 {
+		scope = "host-wide (unscoped)"
+	}
+	_, err = fmt.Fprintf(out, "token id: %s  host: %s\nscope: %s\nsecret version: %s\n", rec.ID, rec.Host, scope, version)
 	if err != nil {
 		if revokeErr := revoke(rec.ID); revokeErr != nil {
 			return fmt.Errorf("receipt write failed; CLEANUP_DEBT: token %s revocation failed", rec.ID)
