@@ -218,3 +218,26 @@ func TestLaneScopeRefusalIsAudited(t *testing.T) {
 	}
 	t.Fatalf("no refused audit row for the forged send; failures: %+v", rep.Failures)
 }
+
+// A scoped session cannot take over an EXISTING thread that belongs to another agent by upserting a record that
+// reuses its id with its own agent name (the record's agent is in scope, the thread it overwrites is not).
+func TestScopedSessionCannotRewriteAnotherAgentsThread(t *testing.T) {
+	f := newScopedFixture(t, []string{"cloud-a"})
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := f.backend.UpsertThreads([]ThreadRecord{{ThreadID: "thr-ra", Agent: "ra", Status: "active", LastSeenAt: now, Host: f.host, Payload: []byte("{}")}}); err != nil {
+		t.Fatal(err)
+	}
+	rs := f.client("cloud-a")
+	wantLaneScope(t, "UpsertThreads over ra's thread", rs.UpsertThreads([]ThreadRecord{{ThreadID: "thr-ra", Agent: "cloud-a", Status: "active", LastSeenAt: now, Host: f.host, Payload: []byte("{}")}}))
+	_, err := rs.UpsertThreadCAS(ThreadRecord{ThreadID: "thr-ra", Agent: "cloud-a", Status: "active", LastSeenAt: now, Host: f.host, Payload: []byte("{}")})
+	wantLaneScope(t, "UpsertThreadCAS over ra's thread", err)
+	wantLaneScope(t, "ResumeThreadCAS over ra's thread", rs.ResumeThreadCAS(ThreadRecord{ThreadID: "thr-ra", Agent: "cloud-a", Status: "active", LastSeenAt: now, Host: f.host, Payload: []byte("{}")}, now))
+	b, err := f.backend.ThreadBinding("thr-ra")
+	if err != nil || b.Agent != "ra" {
+		t.Fatalf("ra's thread binding changed to %+v (err %v)", b, err)
+	}
+	// Its own thread, and a brand-new thread id, still register.
+	if err := rs.UpsertThreads([]ThreadRecord{{ThreadID: "thr-new", Agent: "cloud-a", Status: "active", LastSeenAt: now, Host: f.host, Payload: []byte("{}")}}); err != nil {
+		t.Fatalf("registering a new thread for itself refused: %v", err)
+	}
+}
