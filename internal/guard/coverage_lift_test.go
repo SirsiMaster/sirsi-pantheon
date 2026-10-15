@@ -379,6 +379,37 @@ func TestCheckVPNStatus_NoVPNIsWarn(t *testing.T) {
 	}
 }
 
+// ─── network.go: checkTailscaleBackend ───────────────────────────────────────
+
+func TestCheckTailscaleBackend_NotInstalledAddsNoFinding(t *testing.T) {
+	report := &NetworkReport{}
+	checkTailscaleBackend(&platform.Mock{CommandError: errors.New("not found")}, report)
+	if len(report.Findings) != 0 {
+		t.Fatalf("missing tailscale CLI must add no finding, got %+v", report.Findings)
+	}
+}
+
+func TestCheckTailscaleBackend_RunningAddsNoFinding(t *testing.T) {
+	report := &NetworkReport{}
+	checkTailscaleBackend(&platform.Mock{CommandResults: map[string]string{
+		"tailscale status --json": `{"BackendState":"Running"}`,
+	}}, report)
+	if len(report.Findings) != 0 {
+		t.Fatalf("Running backend must add no finding, got %+v", report.Findings)
+	}
+}
+
+func TestCheckTailscaleBackend_StoppedIsWarn(t *testing.T) {
+	report := &NetworkReport{}
+	checkTailscaleBackend(&platform.Mock{CommandResults: map[string]string{
+		"tailscale status --json": `{"BackendState":"Stopped"}`,
+	}}, report)
+	f := findingByCheck(t, report.Findings, "Tailscale Backend")
+	if f.Severity != SeverityWarn || !strings.Contains(f.Message, "Stopped") {
+		t.Fatalf("Stopped backend must warn even though scutil/ifconfig see it as connected, got %+v", f)
+	}
+}
+
 // ─── network.go: checkFirewall ───────────────────────────────────────────────
 
 func TestCheckFirewall(t *testing.T) {

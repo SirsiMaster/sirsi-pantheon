@@ -10,6 +10,7 @@ package guard
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -106,6 +107,7 @@ func NetworkAuditWith(p platform.Platform, fix bool) (*NetworkReport, error) {
 	checkTLSConnection(report)
 	checkCACertificates(p, report)
 	checkVPNStatus(p, report)
+	checkTailscaleBackend(p, report)
 	checkFirewall(p, report, fix)
 
 	report.Score = calculateScore(report.Findings)
@@ -448,6 +450,37 @@ func checkVPNStatus(p platform.Platform, report *NetworkReport) {
 	}
 
 	report.Findings = append(report.Findings, finding)
+}
+
+// checkTailscaleBackend adds a finding when Tailscale's own backend state is
+// Stopped, which checkVPNStatus and scutil cannot see: the macOS system
+// extension keeps the tunnel interface loaded and scutil/ifconfig report it
+// Connected/UP even after tailscaled's ipn.BackendState flips to Stopped, so
+// traffic silently stops while the OS still reports the VPN healthy
+// (confirmed live on M1, 2026-10-15 — hardware-admin recurrence + PR
+// SirsiMaster/SirsiNexusApp#594). Absent entirely, not a Warn, when the CLI
+// isn't installed or returns no backend state — this host may simply not run
+// Tailscale.
+func checkTailscaleBackend(p platform.Platform, report *NetworkReport) {
+	out, err := p.Command("tailscale", "status", "--json")
+	if err != nil || len(out) == 0 {
+		return
+	}
+	var status struct {
+		BackendState string `json:"BackendState"`
+	}
+	if jsonErr := json.Unmarshal(out, &status); jsonErr != nil || status.BackendState == "" {
+		return
+	}
+	if status.BackendState != "Stopped" {
+		return
+	}
+	report.Findings = append(report.Findings, DiagnosticFinding{
+		Check:    "Tailscale Backend",
+		Severity: SeverityWarn,
+		Message:  "Tailscale backend is Stopped — VPN may still show Connected in System Settings",
+		Detail:   "scutil/ifconfig only see the loaded tunnel, not tailscaled's own state; run `tailscale up` or check the host's recovery watchdog",
+	})
 }
 
 // checkFirewall checks if the macOS application firewall is enabled.
