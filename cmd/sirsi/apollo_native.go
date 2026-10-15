@@ -117,7 +117,7 @@ func loadInstalledApolloNativeProfile() (apolloNativeProfile, error) {
 }
 
 func (p apolloNativeProfile) validate() error {
-	if p.Schema != apolloNativeProfileSchema || p.Model.ID == "" || p.Model.Precision == "" || p.Model.Capacity < 1 || p.Model.Capacity > apolloNativeQualifiedContext || !filepath.IsAbs(p.Model.TokenizerPath) || len(p.Plan.Ranks) < 2 || len(p.Resources) != len(p.Plan.Ranks) {
+	if p.Schema != apolloNativeProfileSchema || p.Model.ID == "" || p.Model.Precision == "" || p.Model.Capacity < 1 || p.Model.Capacity > apolloNativeQualifiedContext || !filepath.IsAbs(p.Model.TokenizerPath) || len(p.Plan.Ranks) < 1 || len(p.Resources) != len(p.Plan.Ranks) {
 		return fmt.Errorf("installed Apollo native profile is incomplete")
 	}
 	for _, digest := range []string{p.Model.CheckpointSHA256, p.Model.TokenizerSHA256, p.Model.TemplateSHA256, p.Plan.Model, p.Plan.Tokenizer} {
@@ -142,14 +142,25 @@ func (p apolloNativeProfile) validate() error {
 	if len(hosts) != len(p.Plan.Ranks) {
 		return fmt.Errorf("installed Apollo native profile fleet and rank counts differ")
 	}
-	coordinator := p.Fleet.Coordinator
-	if coordinator == nil || coordinator.HostID == "" || coordinator.Target == "" || !filepath.IsAbs(coordinator.Binary) || !filepath.IsAbs(coordinator.TokenizerPath) || !apolloNativeDigest(coordinator.BinarySHA256) || !apolloNativeDigest(p.CoordinatorTokenizerSHA256) || p.CoordinatorTokenizerSHA256 != p.Model.TokenizerSHA256 || localRanks != 1 || !hosts[coordinator.HostID].Local {
-		return fmt.Errorf("installed Apollo native profile must bind one exact local coordinator")
-	}
 	for i, rank := range p.Plan.Ranks {
 		if rank.Index != i || hosts[rank.Host].ID == "" || p.Resources[rank.Host] == "" || rank.Budget.Admitted == 0 || !apolloNativeDigest(rank.Engine) || !apolloNativeDigest(rank.Runtime) {
 			return fmt.Errorf("installed Apollo native profile rank %d is not bound to a fleet host and Ma'at resource", i)
 		}
+	}
+	if len(p.Plan.Ranks) == 1 {
+		// A single local rank is the same Apollo backend and Ma'at admission
+		// path used by the fleet. It intentionally has no coordinator or
+		// transport edge: adding either would turn a local placement into an
+		// unbound alternate route.
+		rank := p.Plan.Ranks[0]
+		if localRanks != 1 || !hosts[rank.Host].Local || p.Fleet.Coordinator != nil || p.CoordinatorTokenizerSHA256 != "" || len(p.Plan.Links) != 0 || len(p.RawRankBinarySHA256) != 0 {
+			return fmt.Errorf("installed local Apollo profile must bind one local rank without coordinator or transport")
+		}
+		return nil
+	}
+	coordinator := p.Fleet.Coordinator
+	if coordinator == nil || coordinator.HostID == "" || coordinator.Target == "" || !filepath.IsAbs(coordinator.Binary) || !filepath.IsAbs(coordinator.TokenizerPath) || !apolloNativeDigest(coordinator.BinarySHA256) || !apolloNativeDigest(p.CoordinatorTokenizerSHA256) || p.CoordinatorTokenizerSHA256 != p.Model.TokenizerSHA256 || localRanks != 1 || !hosts[coordinator.HostID].Local {
+		return fmt.Errorf("installed Apollo fleet profile must bind one exact local coordinator")
 	}
 	if len(p.Plan.Links) != len(p.Plan.Ranks)-1 {
 		return fmt.Errorf("installed Apollo native profile link topology is incomplete")
