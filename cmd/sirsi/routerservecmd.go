@@ -245,7 +245,11 @@ var routerTokenListCmd = &cobra.Command{
 			if t.Revoked != "" {
 				state = "revoked " + t.Revoked
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s  %-16s %-24s %s  %s\n", t.ID, t.Host, t.Label, t.Created, state)
+			scope := "scope=unscoped(host-wide)"
+			if len(t.Agents) > 0 {
+				scope = "scope=" + strings.Join(t.Agents, ",")
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s  %-16s %-24s %s  %s  %s\n", t.ID, t.Host, t.Label, t.Created, state, scope)
 		}
 		return nil
 	},
