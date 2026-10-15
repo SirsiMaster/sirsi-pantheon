@@ -351,11 +351,10 @@ func TestServerListAllDeadlineEndsAnInFlightRead(t *testing.T) {
 	}
 }
 
-// TestCachedSessionSurvivesThreadlessInvocation: a worker that claimed with a
-// thread-bound session must complete with the SAME session even when the later
-// invocation cannot resolve its thread (sandbox denies /bin/ps). A different
-// resolved thread must NOT reuse it. Both directions.
-func TestCachedSessionSurvivesThreadlessInvocation(t *testing.T) {
+// Losing caller binding is not permission to borrow whichever same-agent
+// conversation last wrote the shared cache. Native provider markers must resolve
+// the real thread; missing identity cannot be repaired by choosing a cache owner.
+func TestThreadlessInvocationCannotBorrowThreadBoundSession(t *testing.T) {
 	dir := t.TempDir()
 	rs := NewRemoteStore("http://127.0.0.1:1", "t0k") // unreachable: any mint fails
 	rs.sessionDir, rs.agent = dir, "codex-x"
@@ -367,14 +366,126 @@ func TestCachedSessionSurvivesThreadlessInvocation(t *testing.T) {
 
 	rs.threadID = "" // thread unresolved on this invocation
 	got, err := rs.ensureSession(context.Background())
-	if err != nil || got.ID != "s1" {
-		t.Fatalf("threadless caller must reuse the claim's session: %+v err=%v", got, err)
+	if err == nil || got.ID != "" {
+		t.Fatal("threadless caller borrowed a thread-bound session instead of minting its own")
 	}
 
 	rs2 := NewRemoteStore("http://127.0.0.1:1", "t0k")
 	rs2.sessionDir, rs2.agent, rs2.threadID = dir, "codex-x", "thr-other"
 	if got, err := rs2.ensureSession(context.Background()); err == nil {
 		t.Fatalf("a different thread must not borrow the cached session, got %+v", got)
+	}
+}
+
+func TestBoundThreadCacheDoesNotOverwriteOrDeleteLegacySession(t *testing.T) {
+	_, rs := remoteHarness(t)
+	dir := t.TempDir()
+	mk := func(thread string) *RemoteStore {
+		c := NewRemoteStore(rs.base, "t0k")
+		c.sessionDir, c.agent, c.threadID = dir, "codex-apollo", thread
+		return c
+	}
+	legacy := mk("")
+	if _, err := legacy.ensureSession(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(legacy.sessionPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, thread := range []string{"attended", "coordination"} {
+		c := mk(thread)
+		if _, err := c.ensureSession(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		after, err := os.ReadFile(legacy.sessionPath())
+		if err != nil || string(before) != string(after) {
+			t.Fatal("bound thread overwrote the unrelated legacy cache")
+		}
+		c.dropSession()
+		after, err = os.ReadFile(legacy.sessionPath())
+		if err != nil || string(before) != string(after) {
+			t.Fatal("bound thread invalidation deleted or changed the legacy cache")
+		}
+	}
+}
+
+// Exact reported shape: task metadata names the primary thread, but the old
+// caller's authenticated session was threadless. A legitimate coordination
+// caller must not replace that cached session or acquire its lease authority.
+func TestLegacyClaimCacheSurvivesBoundCoordinationSession(t *testing.T) {
+	backend, base := remoteHarness(t)
+	dir := t.TempDir()
+	mk := func(thread string) *RemoteStore {
+		c := NewRemoteStore(base.base, "t0k")
+		c.sessionDir, c.agent, c.threadID = dir, "codex-apollo", thread
+		return c
+	}
+	if err := backend.AddTask(Task{Agent: "codex-apollo", TaskID: "legacy-primary", Subject: "preserve original session"}); err != nil {
+		t.Fatal(err)
+	}
+	legacy := mk("")
+	lease, err := legacy.ClaimTask("codex-apollo", "legacy-primary", "primary-worker", "attended", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coord := mk("coordination")
+	if _, err := coord.ensureSession(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := coord.RenewTaskLease("codex-apollo", "legacy-primary", lease.Token, time.Minute); !errors.Is(err, ErrNotOwner) {
+		t.Fatal("coordination must not adopt a threadless owner's task")
+	}
+	if err := mk("").RenewTaskLease("codex-apollo", "legacy-primary", lease.Token, time.Minute); err != nil {
+		t.Fatalf("coordination clobbered the original legacy session: %v", err)
+	}
+	coord.dropSession()
+	if err := mk("").RenewTaskLease("codex-apollo", "legacy-primary", lease.Token, time.Minute); err != nil {
+		t.Fatalf("coordination invalidation erased the original legacy session: %v", err)
+	}
+}
+
+func TestSameAgentSessionsKeepClaimOwnerAcrossCoordinationAndRemint(t *testing.T) {
+	var logs strings.Builder
+	backend, client := ruleHarness(t, "enforce", &logs)
+	base := client("codex-apollo", "attended")
+	dir := t.TempDir()
+	mk := func(thread string) *RemoteStore {
+		c := NewRemoteStore(base.base, "t0k")
+		c.sessionDir, c.agent, c.threadID = dir, "codex-apollo", thread
+		c.now = base.now
+		return c
+	}
+	for _, thread := range []string{"attended", "coordination"} {
+		register(t, backend, thread, "codex-apollo", base.host, "active", base.now())
+	}
+	if err := backend.AddTask(Task{Agent: "codex-apollo", TaskID: "primary", Subject: "actual primary work"}); err != nil {
+		t.Fatal(err)
+	}
+	primary := mk("attended")
+	lease, err := primary.ClaimTask("codex-apollo", "primary", "primary-worker", "attended", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coord := mk("coordination")
+	if _, err := coord.ensureSession(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	// The task token is insufficient for another thread, even on the same host.
+	if err := coord.RenewTaskLease("codex-apollo", "primary", lease.Token, time.Minute); !errors.Is(err, ErrNotOwner) {
+		t.Fatal("coordination thread must not renew primary's lease")
+	}
+	if err := mk("attended").RenewTaskLease("codex-apollo", "primary", lease.Token, time.Minute); err != nil {
+		t.Fatalf("primary lost its own session across another thread's call: %v", err)
+	}
+	// Losing the primary cache may remint the SAME authenticated thread, which
+	// the existing server permits; no owner-check relaxation is introduced.
+	primary.dropSession()
+	if err := mk("attended").RenewTaskLease("codex-apollo", "primary", lease.Token, time.Minute); err != nil {
+		t.Fatalf("same-thread remint failed: %v", err)
+	}
+	if err := mk("coordination").RenewTaskLease("codex-apollo", "primary", lease.Token, time.Minute); !errors.Is(err, ErrNotOwner) {
+		t.Fatal("primary invalidation must not turn coordination into its owner")
 	}
 }
 
@@ -398,7 +509,7 @@ func TestSessionCacheIsPerThreadForSharedAgentID(t *testing.T) {
 	}
 	a, b := mk("thr-aaa"), mk("thr-bbb")
 	seed(a, "sess-a")
-	seed(b, "sess-b") // b overwrites the shared per-agent file
+	seed(b, "sess-b") // b owns only its own path, not a latest-agent alias
 
 	got, err := mk("thr-aaa").ensureSession(context.Background())
 	if err != nil || got.ID != "sess-a" {
