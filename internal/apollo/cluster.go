@@ -429,7 +429,7 @@ func (c *ClusterClient) Cancel(ctx context.Context, jobID string) (Job, error) {
 	if out.JobID != jobID {
 		return Job{}, fmt.Errorf("%w: cancel response job identity differs", ErrClusterProtocol)
 	}
-	if out.State != "cancel_requested" && out.State != "draining" && out.State != "cancelled" && out.State != "released" && out.State != "orphan_unknown" {
+	if out.State != "cancel_requested" && out.State != "draining" && out.State != "cancelled" && out.State != "released" && out.State != "orphan_unknown" { //nolint:misspell // Preserve the existing Apollo wire-state spelling.
 		return Job{}, fmt.Errorf("%w: cancel did not return a cancellation state", ErrClusterProtocol)
 	}
 	if err := out.validate("", "", nil, out.State != "released" && out.State != "orphan_unknown"); err != nil {

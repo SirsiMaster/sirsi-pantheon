@@ -3,6 +3,7 @@ package apollo
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -58,7 +59,7 @@ func TestCreateJobRequiresLiveAllRankFences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.CreateJob(context.Background(), testPreparation(), "idem-1"); err == nil || !strings.Contains(err.Error(), "all-rank") {
+	if _, err := client.CreateJob(context.Background(), testPreparation(), "idem-1"); !errors.Is(err, ErrClusterAdmission) {
 		t.Fatalf("CreateJob error = %v, want all-rank admission rejection", err)
 	}
 }
@@ -197,14 +198,22 @@ func TestEventsPreserveAuthorizedTokenPayload(t *testing.T) {
 		t.Fatal(err)
 	}
 	var raw []byte
+	released := false
 	err = client.Events(context.Background(), testJob("admitting", []RankFence{testFence(0)}), 0, func(event Event) error {
+		if event.Type == "released" {
+			released = true
+			return nil
+		}
+		if event.Type != "token" {
+			return nil
+		}
 		raw, err = json.Marshal(event)
 		return err
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(raw), `"text":"hello"`) || !strings.Contains(string(raw), `"token_id":42`) {
+	if !released || !strings.Contains(string(raw), `"text":"hello"`) || !strings.Contains(string(raw), `"token_id":42`) {
 		t.Fatalf("token payload was lost: %s", raw)
 	}
 }

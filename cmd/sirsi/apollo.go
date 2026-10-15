@@ -196,7 +196,7 @@ func runApolloChat(cmd *cobra.Command, client *apollo.ClusterClient) error {
 		switch event.Type {
 		case "completed":
 			completed = true
-		case "failed", "cancelled", "orphan_unknown":
+		case "failed", "cancelled", "orphan_unknown": //nolint:misspell // Preserve the existing Apollo wire-state spelling.
 			failed = event.Type
 			if event.ErrorCode != "" {
 				failed += ": " + event.ErrorCode
