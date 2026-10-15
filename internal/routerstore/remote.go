@@ -16,7 +16,7 @@ package routerstore
 //   4xx/5xx: {"error":{"message":"..."}}                  non-sentinel
 //
 // The session (id + secret) is minted once per (host, agent, runtime) and
-// cached at ~/.sirsi/sessions/<agent>.json (0600). A runtime change (new
+// cached at ~/.sirsi/sessions/<agent>.<runtime>.json (0600). A runtime change (new
 // binary) yields a different hash, so the cached session is dropped and a new
 // one minted — the service revokes the old one on first mismatch anyway.
 
@@ -281,6 +281,7 @@ func (rs *RemoteStore) ensureSession(ctx context.Context) (Session, error) {
 			for _, path := range rs.sessionPaths() {
 				_ = os.WriteFile(path, b, 0o600)
 			}
+			pruneSessionCache(rs.sessionDir, 7*24*time.Hour)
 		}
 	}
 	return minted, nil
@@ -295,7 +296,20 @@ func cachedThreadFits(cached, want string) bool {
 }
 
 func (rs *RemoteStore) sessionPath() string {
-	return filepath.Join(rs.sessionDir, strings.ReplaceAll(rs.agent, "/", "_")+".json")
+	return filepath.Join(rs.sessionDir, strings.ReplaceAll(rs.agent, "/", "_")+"."+runtimeTag(rs.runtime)+".json")
+}
+
+// runtimeTag is the cache-key form of the runtime hash. A session is valid only for the executable that minted it, so the
+// cache is keyed by runtime: two binaries acting as the same agent (older and newer wake loops that all fall back to the hostname)
+// each keep their own session instead of overwriting and invalidating each other's on every call.
+func runtimeTag(runtime string) string {
+	if len(runtime) > 12 {
+		runtime = runtime[:12]
+	}
+	if runtime == "" {
+		return "unknown"
+	}
+	return strings.ReplaceAll(runtime, "/", "_")
 }
 
 // sessionPaths defines this caller's cache custody for reads, writes AND drops.
@@ -309,6 +323,33 @@ func (rs *RemoteStore) sessionPaths() []string {
 	}
 	per := strings.TrimSuffix(rs.sessionPath(), ".json") + "." + strings.ReplaceAll(rs.threadID, "/", "_") + ".json"
 	return []string{per}
+}
+
+// pruneSessionCache removes session cache files untouched for maxAge. A cache file is keyed by (agent, thread, runtime), so a
+// binary that stopped running leaves its files behind; without this the directory grows with every upgrade. Best effort, bounded
+// to the first 2000 directory entries, and it only touches *.json files that look like a cached session.
+func pruneSessionCache(dir string, maxAge time.Duration) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	cut := time.Now().Add(-maxAge)
+	for i, e := range entries {
+		if i >= 2000 {
+			return
+		}
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || info.ModTime().After(cut) {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		if b, err := os.ReadFile(path); err == nil && strings.Contains(string(b), `"runtime_hash"`) {
+			_ = os.Remove(path)
+		}
+	}
 }
 
 // dropSession forgets the session so the next call mints a fresh one
