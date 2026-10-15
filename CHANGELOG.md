@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- **fix(router):** read macOS process-start identity from `kern.proc.pid` before
+  invoking `ps`, allowing restricted lanes to verify their actual registered
+  runtime without weakening actor/host/ancestry/PID-generation checks. Preserve
+  the existing start-signature representation and non-Darwin behavior. Add
+  no-`ps`, denied/wrong-identity, legacy compatibility and generation regressions.
+
 ## [0.24.103] — 2026-10-13
 
 - **feat(gemma):** `sirsi gemma shared` gives registered builder lanes on M1 and M5 access to the selected resident native Gemma worker through the existing canonical router. Bounded waits and resume read the exact original and correlated reply; single-use metadata receipts prevent uncertain submissions from being silently resent.

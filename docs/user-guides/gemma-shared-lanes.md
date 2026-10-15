@@ -58,3 +58,12 @@ Operational recovery, profile selection and worker lifecycle are described in
 [Gemma worker recovery](gemma-worker-recovery.md). Normal-command qualification
 requires a real request under every registered builder lane's own identity;
 installation on a host alone is insufficient proof.
+
+On macOS the router reads process-start identity directly from the kernel before
+falling back to `ps`. A restricted caller therefore does not need permission to
+launch `ps` merely to prove its own registered runtime. Existing start signatures
+retain their local-time, second-resolution format; actor, host, ancestry and PID
+generation checks remain mandatory. If neither probe can verify identity, the
+request is still refused before submission. This does not grant relay access or
+broaden sandbox permissions: the configured relay directory must independently
+be writable by the caller's approved execution context.
