@@ -52,6 +52,10 @@ func TestPingLaneVerdicts(t *testing.T) {
 		{"suspended thread does not count", regWith(&Thread{AgentID: "a", Surface: "claude", Status: ThreadStatusSuspended, LastSeenAt: pingNow}), AgentConfig{}, VerdictUnstaffed, false, ""},
 		{"closed thread does not count", regWith(&Thread{AgentID: "a", Surface: "claude", Status: ThreadStatusClosed, LastSeenAt: pingNow}), AgentConfig{}, VerdictUnstaffed, false, ""},
 		{"someone else's thread is not mine", regWith(worker("b", true, ok, time.Minute)), AgentConfig{}, VerdictUnstaffed, false, ""},
+		{"no thread, but a service resident via its own LaunchAgent", regWith(), AgentConfig{Type: "service", Wake: WakeConfig{LaunchAgentLabel: "ai.sirsi.mercury.metal-runner"}}, VerdictResident, false, "not proven"},
+		{"only a terminal thread, resident still falls through", regWith(&Thread{AgentID: "a", Surface: "worker", Status: ThreadStatusClosed, LastSeenAt: pingNow}), AgentConfig{Type: "service", Wake: WakeConfig{LaunchAgentLabel: "ai.sirsi.mercury.metal-runner"}}, VerdictResident, false, "not proven"},
+		{"explicit wake=none, no LaunchAgent, matches absent mechanism", regWith(), AgentConfig{Wake: WakeConfig{Mechanism: WakeNone}}, VerdictUnstaffed, false, "no worker path"},
+		{"fresh watch-only service outranks a static resident declaration", regWith(worker("a", false, &LaneState{}, time.Minute)), AgentConfig{Type: "service", Wake: WakeConfig{LaunchAgentLabel: "ai.sirsi.mercury.metal-runner"}}, VerdictWatchOnly, false, "never work it"},
 	}
 	for _, c := range cases {
 		got := PingLane(c.reg, c.cfg, "a", pingNow)
