@@ -131,6 +131,10 @@ if [[ -n "${PANTHEON_APOLLO_PROFILE:-}" ]]; then
     [[ "$PANTHEON_APOLLO_PROFILE" = /* && -f "$PANTHEON_APOLLO_PROFILE" && ! -L "$PANTHEON_APOLLO_PROFILE" ]] || { echo "ERROR: Apollo profile must be an absolute regular file" >&2; exit 1; }
     mkdir -p "${BUNDLE_DIR}/Contents/Resources/Apollo"
     cp "$PANTHEON_APOLLO_PROFILE" "${BUNDLE_DIR}/Contents/Resources/Apollo/native-profile.json"
+    # Standard installed app resources must remain readable after Installer
+    # assigns root ownership. The input remains private; this profile contains
+    # paths and public identities, never credentials or private keys.
+    chmod 0644 "${BUNDLE_DIR}/Contents/Resources/Apollo/native-profile.json"
     APOLLO_PROFILE_ARGS=(--apollo-profile "$PANTHEON_APOLLO_PROFILE")
 fi
 # Never ship the historical template version from the source plist.  The
