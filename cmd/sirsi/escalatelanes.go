@@ -46,23 +46,6 @@ func activeThreadCountByAgent(repoRoot string, now time.Time) map[string]int {
 	return counts
 }
 
-// dashboardUnroutable resolves the registry for the dashboard's fleet board.
-// Separate from unroutableAgents only because the dashboard command finds its
-// repo root independently; both fail toward "routable" for the same reason.
-func dashboardUnroutable() map[string]bool {
-	repoRoot, err := router.FindRepoRoot()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "dashboard: routability unknown (repo root: %v) — lanes will not be classified UNROUTABLE\n", err)
-		return nil
-	}
-	un, err := unroutableAgents(repoRoot)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "dashboard: routability unknown (%v) — lanes will not be classified UNROUTABLE\n", err)
-		return nil
-	}
-	return un
-}
-
 // escalateStuckLanes routes lanes that no wake can reach to the owner, and
 // returns what it actually sent.
 //
@@ -86,7 +69,7 @@ func escalateStuckLanes(repoRoot string) ([]supervision.Escalation, error) {
 	if err != nil {
 		return nil, fmt.Errorf("escalate lanes: %w — refusing to escalate on unknown routability", err)
 	}
-	board := dashboard.NewFleetTracker(unroutable).Observe(snap, now)
+	board := dashboard.NewFleetTracker(nil).ObserveWithRoutability(snap, now, unroutable)
 	threadCounts := activeThreadCountByAgent(repoRoot, now)
 
 	lanes := make([]supervision.LaneInput, 0, len(board.Lanes))

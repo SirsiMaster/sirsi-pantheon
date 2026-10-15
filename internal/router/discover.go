@@ -58,7 +58,7 @@ type DiscoverAction struct {
 //
 // host scopes the "already registered" check to threads on this machine;
 // remote-host threads are never matched against local PIDs.
-func ReconcileDiscovery(reg *Registry, threads *ThreadRegistry, procs []DiscoveredProc, host string) []DiscoverAction {
+func ReconcileDiscovery(reg *Registry, threads *ThreadRegistry, procs []DiscoveredProc, host, home string) []DiscoverAction {
 	// Index active threads on this machine by live PID, so a re-run of discover
 	// recognizes sessions it (or `register`) already enrolled.
 	//
@@ -110,7 +110,7 @@ func ReconcileDiscovery(reg *Registry, threads *ThreadRegistry, procs []Discover
 			continue
 		}
 
-		matches := matchAgentsByCwd(reg, p.Surface, p.Cwd)
+		matches := matchAgentsByCwd(reg, p.Surface, p.Cwd, home)
 		switch len(matches) {
 		case 0:
 			reason := "cwd not under any " + p.Surface + " agent repo"
@@ -146,8 +146,8 @@ type agentMatch struct {
 // (longest) ancestor depth is returned: a session in repo/sub matches the
 // agent rooted at repo, not at the parent of repo. If two agents share that
 // most-specific cwd, both are returned and the caller treats it as ambiguous.
-func matchAgentsByCwd(reg *Registry, surface, procCwd string) []agentMatch {
-	if reg == nil || procCwd == "" || surface == "" {
+func matchAgentsByCwd(reg *Registry, surface, procCwd, home string) []agentMatch {
+	if reg == nil || procCwd == "" || surface == "" || home == "" {
 		return nil
 	}
 	cleanCwd := filepath.Clean(procCwd)
@@ -158,6 +158,11 @@ func matchAgentsByCwd(reg *Registry, surface, procCwd string) []agentMatch {
 			continue
 		}
 		ac := filepath.Clean(a.Cwd)
+		// A home-scoped coordinator does not own every nested project. Its
+		// actual sessions must register explicitly; cwd alone cannot infer it.
+		if ac == filepath.Clean(home) || filepath.Dir(ac) == ac {
+			continue
+		}
 		if cleanCwd != ac && !strings.HasPrefix(cleanCwd, ac+string(filepath.Separator)) {
 			continue
 		}
