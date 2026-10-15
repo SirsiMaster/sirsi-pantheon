@@ -607,3 +607,85 @@ func TestCiRunsExactPathRejectsNegatedAndChainedCompoundOpeners(t *testing.T) {
 		}
 	}
 }
+
+// TestCiRunsExactPathRejectsEmptyHeredocDelimiterAndCommandSubstitutionQuotes
+// covers codex-pantheon's PR #1033 review at 0d6ff3d3
+// (https://github.com/SirsiMaster/sirsi-pantheon/pull/1033#issuecomment-6117554036):
+// two false-proof paths verified to actually execute cleanly under
+// `/bin/bash --noprofile --norc`, printing the path rather than invoking it.
+//
+//  1. A heredoc opened with a pair of empty quotes as its delimiter is a
+//     VALID heredoc with an empty delimiter (the quotes resolve to the
+//     empty string); the unpatched code rejected it as unrecognized,
+//     leaving its body line -- containing the path -- unmodeled and
+//     scanned as a live statement instead of skipped as heredoc data.
+//  2. `echo "$(printf "%s" "\nscripts/guard.sh\n")"` nests quotes inside a
+//     command substitution. The unpatched code toggled the OUTER
+//     inDouble flag on the substitution's own inner quotes, desyncing
+//     quote state for the rest of the line and letting text that is only
+//     ever PRINTED by the substitution's output -- never executed as a
+//     command -- read as if it were unquoted command-position text.
+func TestCiRunsExactPathRejectsEmptyHeredocDelimiterAndCommandSubstitutionQuotes(t *testing.T) {
+	path := "scripts/guard.sh"
+	reject := []string{
+		wrapStepBlock("cat <<''\n" + path + "\n"),
+		wrapStepBlock(`echo "$(printf "%s" "\n` + path + `\n")"`),
+	}
+	for _, yaml := range reject {
+		if ciRunsExactPath([]byte(yaml), path) {
+			t.Errorf("must reject: heredoc data and command-substitution output are never command position: %q", yaml)
+		}
+	}
+	// The command-substitution guard must not become a blanket false
+	// rejector: a real invocation elsewhere on the same line, outside any
+	// $(...), must still be found.
+	accept := []string{
+		wrapStepBlock(`echo "$(echo hi)" ; ` + path),
+	}
+	for _, yaml := range accept {
+		if !ciRunsExactPath([]byte(yaml), path) {
+			t.Errorf("must accept real invocation past a command substitution: %q", yaml)
+		}
+	}
+}
+
+// TestCiRunsExactPathRejectsCommentOrHeredocInsideCommandSubstitution covers
+// skipCommandSubstitution's own fail-closed boundary: an unquoted '#' or '<<'
+// inside $(...) can hide a ')' that looks like the real close here but isn't
+// one in real shell -- a comment eats the rest of the line (any ')' on it
+// included), and a heredoc body is data the real shell never parses for
+// parens until its exact delimiter line. A naive paren-counter that trusted
+// either ')' would close too early, leaking the true remainder of the
+// substitution out of its atomic span and back into ordinary, quote-
+// sensitive scanning -- reintroducing the very desync the span exists to
+// prevent. The path placed right after such a fake "close" must still never
+// match: the whole rest of the script is swallowed into the one poisoned,
+// unmodeled span.
+func TestCiRunsExactPathRejectsCommentOrHeredocInsideCommandSubstitution(t *testing.T) {
+	path := "scripts/guard.sh"
+	reject := []string{
+		wrapStepBlock("echo \"$(echo hi # fake close)\n" + path + ")\""),
+		wrapStepBlock("echo \"$(cat <<EOF\n)\nEOF\n)\"\n" + path),
+	}
+	for _, yaml := range reject {
+		if ciRunsExactPath([]byte(yaml), path) {
+			t.Errorf("must reject: a fake ')' inside a comment or heredoc body must not end the substitution span early: %q", yaml)
+		}
+	}
+}
+
+// TestCiRunsExactPathRejectsNestedCommandSubstitution covers codex-pantheon's
+// CHANGES_REQUESTED on d2cbacd9: a $(...) nested inside another $(...), both
+// themselves inside double quotes. skipCommandSubstitution's own quote-toggle
+// cases, checked before its '$(' case, let the INNER substitution's quotes
+// desync THIS call's quote state one level down -- the same class of bug
+// the function exists to prevent one level up. Verified against real bash
+// (/bin/bash --noprofile --norc): exit 0, stdout is purely the printed
+// substitution output -- scripts/guard.sh is never executed as a command.
+func TestCiRunsExactPathRejectsNestedCommandSubstitution(t *testing.T) {
+	path := "scripts/guard.sh"
+	script := "echo \"$(echo \"$(printf '%s' '\")\"\n" + path + "\n\"')\")\""
+	if ciRunsExactPath([]byte(wrapStepBlock(script)), path) {
+		t.Errorf("must reject: path is only printed by a nested command substitution, never executed: %q", script)
+	}
+}

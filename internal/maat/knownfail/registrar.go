@@ -477,6 +477,22 @@ func splitShellStatements(script string) [][]string {
 			wordStarted = true
 			atBoundary = false
 			markQuoted()
+		case c == '$' && !inSingle && i+1 < n && runes[i+1] == '(':
+			// $(...) opens its OWN quoting context in real shell -- a quote
+			// inside it starts and ends there, never touching the enclosing
+			// inSingle/inDouble. Scanning it with the outer quote-toggle
+			// cases above (as unpatched code did) lets an inner quote
+			// character close the OUTER quote early, desyncing quote state
+			// for everything that follows. This grammar does not model what
+			// a command substitution's output would be, so the whole
+			// enclosing statement is poisoned (fail closed) rather than ever
+			// letting text that was only printed by $(...), never executed
+			// as a command, count as a command-position match.
+			end := skipCommandSubstitution(runes, i+2)
+			endWord()
+			poisoned = true
+			atBoundary = true
+			i = end - 1
 		case inSingle || inDouble:
 			addRune(c)
 			markQuoted()
@@ -591,6 +607,71 @@ func splitShellStatements(script string) [][]string {
 	return stmts
 }
 
+// skipCommandSubstitution returns the index just past the ')' that closes a
+// "$(" whose own '(' sits at runes[start-1] (start is the rune right after
+// it), so the caller can consume the whole command substitution as one
+// atomic, quote-neutral span. It tracks its OWN local quote state and paren
+// depth -- independent of the caller's -- because quoting and nested
+// parens/substitutions inside $(...) are a fresh grammar context in real
+// shell that must never leak into (or be confused with) the text around it.
+//
+// It does not model comments or heredocs. Either can hide a ')' that looks
+// like the real close here but isn't one in real shell -- a comment eats
+// everything to the next newline (including any ')' on the same line), and
+// a heredoc body is data the real shell never parses for parens at all
+// until its exact delimiter line. Counting such a ')' as the close would
+// UNDER-consume: the actual remainder of the substitution would fall out
+// of this atomic span and back into the caller's normal, quote-sensitive
+// scanning -- exactly the desync this function exists to prevent. So on
+// either construct, and on reaching the end of the script without finding
+// a real close, it gives up and returns the END of the script: the whole
+// rest of the text is swallowed into this one unmodeled, poisoned span.
+// Over-consuming here can only reject a real match further on, never
+// accept a false one, which is the safe direction to fail.
+func skipCommandSubstitution(runes []rune, start int) int {
+	depth := 1
+	var inSingle, inDouble bool
+	n := len(runes)
+	for i := start; i < n; i++ {
+		c := runes[i]
+		switch {
+		case c == '\\' && !inSingle && (!inDouble || isDQEscapable(peek(runes, i+1))) && i+1 < n:
+			i++
+		case c == '$' && !inSingle && i+1 < n && runes[i+1] == '(':
+			// A NESTED $(...) opens its own fresh quoting context exactly
+			// like the top-level case in splitShellStatements -- checked
+			// here BEFORE the quote-toggle cases below (and recursing,
+			// rather than a flat depth bump sharing this call's own
+			// inSingle/inDouble) so a quote inside the nested substitution
+			// can never toggle THIS call's quote state. Without this, the
+			// same desync this function exists to prevent one level up
+			// recurs one level down: codex-pantheon's CHANGES_REQUESTED on
+			// d2cbacd9 (nested $(...) inside $(...), both inside double
+			// quotes) reproduced exactly that.
+			i = skipCommandSubstitution(runes, i+2) - 1
+		case c == '\'' && !inDouble:
+			inSingle = !inSingle
+		case c == '"' && !inSingle:
+			inDouble = !inDouble
+		case inSingle || inDouble:
+			// literal inside either quote; none of the cases below are
+			// meaningful until the quote closes.
+		case c == '#':
+			return n
+		case c == '<' && i+1 < n && runes[i+1] == '<':
+			return n
+		case c == '(':
+			depth++
+		case c == ')':
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+		}
+	}
+	return n
+}
+
 // heredocSpec is one `<<DELIM`/`<<-DELIM` opener queued on a line, to be
 // consumed in the order it appeared — a line can open more than one heredoc
 // (`cmd <<A <<B`), and each one's body must be skipped as data regardless of
@@ -653,7 +734,15 @@ loop:
 			i++
 		}
 	}
-	if b.Len() == 0 {
+	if i == 0 {
+		// Nothing was consumed at all -- not even a pair of quotes resolving
+		// to an empty string -- so there was never a delimiter word here,
+		// e.g. a bare `<<` at end of line. That's the genuinely unmodeled
+		// case the caller must poison. A quoted-empty delimiter (`<<''`,
+		// `<<""`) DOES consume runes (the quote characters) even though it
+		// resolves to the empty string, and is a real, valid heredoc: it
+		// must not be rejected here, or its body silently stops being
+		// treated as heredoc data and gets scanned as live statements.
 		return "", i, false
 	}
 	return b.String(), i, true
