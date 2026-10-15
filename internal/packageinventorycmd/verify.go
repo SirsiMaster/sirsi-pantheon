@@ -24,6 +24,7 @@ type Inputs struct {
 	PkgInfo              string
 	LaunchAgent          string
 	BrandLogo            string
+	ApolloProfile        string
 	RequireCodeSignature bool
 }
 
@@ -50,9 +51,20 @@ func Verify(inputs Inputs) (packageinventory.Report, error) {
 	if brandLogoErr != nil {
 		return packageinventory.Report{}, brandLogoErr
 	}
+	var apolloProfile []byte
+	if inputs.ApolloProfile != "" {
+		var err error
+		apolloProfile, err = ReadCanonicalFile(inputs.ApolloProfile)
+		if err != nil {
+			return packageinventory.Report{}, err
+		}
+		if len(apolloProfile) == 0 || len(apolloProfile) > 64<<10 {
+			return packageinventory.Report{}, errors.New("Apollo profile exceeds bounded canonical input")
+		}
+	}
 	return packageinventory.Verify(inputs.App, packageinventory.Expectations{
 		Version: inputs.Version, Build: inputs.Build, InfoPlist: info,
-		PkgInfo: pkgInfo, LaunchAgent: launchAgent, BrandLogo: brandLogo,
+		PkgInfo: pkgInfo, LaunchAgent: launchAgent, BrandLogo: brandLogo, ApolloProfile: apolloProfile,
 		RequireCodeSignature: inputs.RequireCodeSignature,
 	})
 }

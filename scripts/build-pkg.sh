@@ -140,6 +140,10 @@ fi
 # verifier is invoked from the source-built CLI, never from the candidate
 # payload, and opens the expanded app descriptor-relatively without executing
 # an entry inside it.
+APOLLO_PROFILE_ARGS=()
+if [[ -n "${PANTHEON_APOLLO_PROFILE:-}" ]]; then
+    APOLLO_PROFILE_ARGS=(--apollo-profile "$PANTHEON_APOLLO_PROFILE")
+fi
 "${PROJECT_ROOT}/bin/sirsi" package-inventory \
     --app "$EXPANDED_ROOT/Payload/Applications/Pantheon.app" \
     --version "$VERSION" \
@@ -148,7 +152,7 @@ fi
     --pkg-info "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/PkgInfo" \
     --launch-agent "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" \
     --brand-logo "${PROJECT_ROOT}/docs/assets/sirsi-logo-white.png" \
-    --require-code-signature
+    --require-code-signature "${APOLLO_PROFILE_ARGS[@]}"
 
 # pkgutil intentionally exits nonzero for an unsigned package. That is useful
 # local-development evidence. In commercial release mode signature,

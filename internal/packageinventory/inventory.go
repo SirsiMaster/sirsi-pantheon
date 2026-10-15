@@ -37,6 +37,7 @@ type Expectations struct {
 	PkgInfo              []byte
 	LaunchAgent          []byte
 	BrandLogo            []byte
+	ApolloProfile        []byte
 	RequireCodeSignature bool
 }
 
@@ -61,15 +62,17 @@ type Report struct {
 }
 
 var allowed = map[string]string{
-	"Contents":                                   "directory",
-	"Contents/Info.plist":                        "regular",
-	"Contents/PkgInfo":                           "regular",
-	"Contents/MacOS":                             "directory",
-	"Contents/MacOS/sirsi":                       "regular",
-	"Contents/MacOS/sirsi-menubar":               "regular",
-	"Contents/Resources":                         "directory",
-	"Contents/Resources/ai.sirsi.pantheon.plist": "regular",
-	"Contents/Resources/sirsi-logo-white.png":    "regular",
+	"Contents":                                      "directory",
+	"Contents/Info.plist":                           "regular",
+	"Contents/PkgInfo":                              "regular",
+	"Contents/MacOS":                                "directory",
+	"Contents/MacOS/sirsi":                          "regular",
+	"Contents/MacOS/sirsi-menubar":                  "regular",
+	"Contents/Resources":                            "directory",
+	"Contents/Resources/ai.sirsi.pantheon.plist":    "regular",
+	"Contents/Resources/sirsi-logo-white.png":       "regular",
+	"Contents/Resources/Apollo":                     "directory",
+	"Contents/Resources/Apollo/native-profile.json": "regular",
 	// Stack Lab is shipped inside the app as the versioned, inspectable
 	// methodology contract. Keep this allowlist exact: a new recipe is a
 	// deliberate payload and verifier change, never ambient bundle content.
@@ -377,6 +380,15 @@ func validateReport(report Report, contents map[string][]byte, expected Expectat
 	if !hasExact(report, "Contents/Info.plist", expected.InfoPlist) || !hasExact(report, "Contents/PkgInfo", expected.PkgInfo) || !hasExact(report, "Contents/Resources/ai.sirsi.pantheon.plist", expected.LaunchAgent) || !hasExact(report, "Contents/Resources/sirsi-logo-white.png", expected.BrandLogo) {
 		return errors.New("package inventory: canonical payload bytes mismatch")
 	}
+	const apolloProfilePath = "Contents/Resources/Apollo/native-profile.json"
+	_, hasApollo := contents[apolloProfilePath]
+	if len(expected.ApolloProfile) != 0 {
+		if len(expected.ApolloProfile) > 64<<10 || !hasExact(report, apolloProfilePath, expected.ApolloProfile) {
+			return errors.New("package inventory: canonical Apollo profile mismatch")
+		}
+	} else if hasApollo {
+		return errors.New("package inventory: Apollo profile requires explicit canonical input")
+	}
 	previous := ""
 	seen := make(map[string]struct{}, len(report.Entries))
 	for _, entry := range report.Entries {
@@ -415,6 +427,12 @@ func validateReport(report Report, contents map[string][]byte, expected Expectat
 		}
 	}
 	for required := range allowed {
+		if strings.HasPrefix(required, "Contents/Resources/Apollo") && len(expected.ApolloProfile) == 0 {
+			if _, present := seen[required]; present {
+				return errors.New("package inventory: unexpected unbound Apollo resource")
+			}
+			continue
+		}
 		if strings.HasPrefix(required, "Contents/_CodeSignature") || required == "Contents/CodeResources" {
 			continue
 		}

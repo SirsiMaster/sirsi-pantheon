@@ -124,6 +124,15 @@ cp "${PROJECT_ROOT}/docs/assets/sirsi-logo-white.png" "${BUNDLE_DIR}/Contents/Re
 # Stack Lab is a shipped, inspectable recipe surface rather than build-only
 # documentation.  Keep its contracts alongside the app they describe.
 cp -R "${PROJECT_ROOT}/contracts/stacklab" "${BUNDLE_DIR}/Contents/Resources/StackLab"
+# Private fleet profiles are deliberate build inputs, never source-tree
+# discoveries or post-signature edits. Bind their exact bytes in inventory.
+APOLLO_PROFILE_ARGS=()
+if [[ -n "${PANTHEON_APOLLO_PROFILE:-}" ]]; then
+    [[ "$PANTHEON_APOLLO_PROFILE" = /* && -f "$PANTHEON_APOLLO_PROFILE" && ! -L "$PANTHEON_APOLLO_PROFILE" ]] || { echo "ERROR: Apollo profile must be an absolute regular file" >&2; exit 1; }
+    mkdir -p "${BUNDLE_DIR}/Contents/Resources/Apollo"
+    cp "$PANTHEON_APOLLO_PROFILE" "${BUNDLE_DIR}/Contents/Resources/Apollo/native-profile.json"
+    APOLLO_PROFILE_ARGS=(--apollo-profile "$PANTHEON_APOLLO_PROFILE")
+fi
 # Never ship the historical template version from the source plist.  The
 # package and both executables are built from the requested release version.
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "${BUNDLE_DIR}/Contents/Info.plist"
@@ -173,7 +182,7 @@ echo "Verifying assembled Pantheon.app payload..."
     --pkg-info "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/PkgInfo" \
     --launch-agent "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" \
     --brand-logo "${PROJECT_ROOT}/docs/assets/sirsi-logo-white.png" \
-    --require-code-signature
+    --require-code-signature "${APOLLO_PROFILE_ARGS[@]}"
 
 # --- Stage + create the DMG ---
 echo "Creating DMG..."
