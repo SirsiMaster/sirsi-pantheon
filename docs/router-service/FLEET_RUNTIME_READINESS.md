@@ -24,6 +24,14 @@ processes are changed. This does not staff a missing lane, remove a quarantine,
 prove work completion, or qualify an M5-off cloud cutover. Each real lane still
 owes its own correlated queue read and response using its actual runtime.
 
+Discovery also refuses to infer a lane from the user-home or filesystem-root
+ancestor alone. A coordinator configured at the home directory must explicitly
+register its own actual session; it does not acquire every unrecognized nested
+project. The CLI supplies the known home to the pure mapping function, which
+fails closed without it. Existing explicit registrations and narrower real
+project mappings remain intact. This prevents falsely staffing lanes by
+silently registering unrelated IDE processes as the coordinator.
+
 Tests cover fresh attended and worker consumers, watcher-only, stale and closed
 sessions, authentication failure, per-read readiness transitions, unavailable
 evidence, and preserved activity history. Deployment requires the normal signed

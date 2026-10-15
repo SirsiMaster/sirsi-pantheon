@@ -6,6 +6,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- **fix(router):** discovery no longer infers a coordinator's identity from a
+  home-directory ancestor match. Home-scoped sessions register explicitly;
+  unrelated projects remain unmapped, and narrower declared project mappings
+  and existing explicit registrations remain intact.
+
 - **fix(router):** derive fleet reachability from the same fresh registered
   consumer state as `router ping`, rather than treating `wake=none` as proof an
   attended lane is unreachable. Refresh dashboard reachability on every fleet

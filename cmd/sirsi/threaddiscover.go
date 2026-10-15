@@ -62,6 +62,10 @@ left for the operator to disambiguate in agents.json.
 			return err
 		}
 		host, _ := os.Hostname()
+		home, err := os.UserHomeDir()
+		if err != nil || home == "" {
+			return fmt.Errorf("cannot discover identities without a known user home")
+		}
 
 		var procs []router.DiscoveredProc
 		if threadDiscoverSelf {
@@ -73,7 +77,7 @@ left for the operator to disambiguate in agents.json.
 			procs = enumerateAgentProcs(localSurfaces(reg))
 		}
 
-		actions := router.ReconcileDiscovery(reg, threads, procs, host)
+		actions := router.ReconcileDiscovery(reg, threads, procs, host, home)
 
 		registered := 0
 		var selfAgent, selfThread string

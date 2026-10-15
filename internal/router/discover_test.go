@@ -28,7 +28,7 @@ func actionFor(actions []DiscoverAction, pid int) (DiscoverAction, bool) {
 
 func TestReconcileDiscovery_RepoMappedSession(t *testing.T) {
 	procs := []DiscoveredProc{{PID: 100, Surface: "claude", Cwd: "/Users/x/Development/sirsi-pantheon"}}
-	actions := ReconcileDiscovery(testRegistry(), &ThreadRegistry{}, procs, "host1")
+	actions := ReconcileDiscovery(testRegistry(), &ThreadRegistry{}, procs, "host1", "/Users/x")
 
 	a, ok := actionFor(actions, 100)
 	if !ok {
@@ -46,7 +46,7 @@ func TestReconcileDiscovery_NestedRepoPrefersMostSpecific(t *testing.T) {
 	// A session inside FinalWishes/web must map to claude-fw-web, not the
 	// parent claude-finalwishes — longest ancestor wins.
 	procs := []DiscoveredProc{{PID: 101, Surface: "claude", Cwd: "/Users/x/Development/FinalWishes/web/src"}}
-	actions := ReconcileDiscovery(testRegistry(), &ThreadRegistry{}, procs, "host1")
+	actions := ReconcileDiscovery(testRegistry(), &ThreadRegistry{}, procs, "host1", "/Users/x")
 
 	a, _ := actionFor(actions, 101)
 	if a.Outcome != OutcomeRegister || a.AgentID != "claude-fw-web" {
@@ -57,7 +57,7 @@ func TestReconcileDiscovery_NestedRepoPrefersMostSpecific(t *testing.T) {
 func TestReconcileDiscovery_HomeLaunchedIsUnmappable(t *testing.T) {
 	// The exact failure that motivated this feature: a session in $HOME.
 	procs := []DiscoveredProc{{PID: 102, Surface: "claude", Cwd: "/Users/x"}}
-	actions := ReconcileDiscovery(testRegistry(), &ThreadRegistry{}, procs, "host1")
+	actions := ReconcileDiscovery(testRegistry(), &ThreadRegistry{}, procs, "host1", "/Users/x")
 
 	a, _ := actionFor(actions, 102)
 	if a.Outcome != OutcomeUnmappable {
@@ -70,7 +70,7 @@ func TestReconcileDiscovery_HomeLaunchedIsUnmappable(t *testing.T) {
 
 func TestReconcileDiscovery_UnresolvedCwdIsUnmappable(t *testing.T) {
 	procs := []DiscoveredProc{{PID: 103, Surface: "claude", Cwd: ""}}
-	actions := ReconcileDiscovery(testRegistry(), &ThreadRegistry{}, procs, "host1")
+	actions := ReconcileDiscovery(testRegistry(), &ThreadRegistry{}, procs, "host1", "/Users/x")
 
 	a, _ := actionFor(actions, 103)
 	if a.Outcome != OutcomeUnmappable {
@@ -81,7 +81,7 @@ func TestReconcileDiscovery_UnresolvedCwdIsUnmappable(t *testing.T) {
 func TestReconcileDiscovery_AmbiguousIsNotGuessed(t *testing.T) {
 	// Two codex agents share homebrew-tools; reconcile must refuse to guess.
 	procs := []DiscoveredProc{{PID: 104, Surface: "codex", Cwd: "/Users/x/Development/homebrew-tools"}}
-	actions := ReconcileDiscovery(testRegistry(), &ThreadRegistry{}, procs, "host1")
+	actions := ReconcileDiscovery(testRegistry(), &ThreadRegistry{}, procs, "host1", "/Users/x")
 
 	a, _ := actionFor(actions, 104)
 	if a.Outcome != OutcomeAmbiguous {
@@ -95,7 +95,7 @@ func TestReconcileDiscovery_AmbiguousIsNotGuessed(t *testing.T) {
 func TestReconcileDiscovery_SurfaceMustMatch(t *testing.T) {
 	// A codex process in the pantheon repo must not map to claude-pantheon.
 	procs := []DiscoveredProc{{PID: 105, Surface: "codex", Cwd: "/Users/x/Development/sirsi-pantheon"}}
-	actions := ReconcileDiscovery(testRegistry(), &ThreadRegistry{}, procs, "host1")
+	actions := ReconcileDiscovery(testRegistry(), &ThreadRegistry{}, procs, "host1", "/Users/x")
 
 	a, _ := actionFor(actions, 105)
 	if a.Outcome != OutcomeRegister || a.AgentID != "codex-pantheon" {
@@ -108,7 +108,7 @@ func TestReconcileDiscovery_AlreadyRegisteredIsSkipped(t *testing.T) {
 		"thr-live": {ThreadID: "thr-live", AgentID: "claude-pantheon", Status: ThreadStatusActive, PID: 200, Host: "host1"},
 	}}
 	procs := []DiscoveredProc{{PID: 200, Surface: "claude", Cwd: "/Users/x/Development/sirsi-pantheon"}}
-	actions := ReconcileDiscovery(testRegistry(), threads, procs, "host1")
+	actions := ReconcileDiscovery(testRegistry(), threads, procs, "host1", "/Users/x")
 
 	a, _ := actionFor(actions, 200)
 	if a.Outcome != OutcomeSkip {
@@ -124,7 +124,7 @@ func TestReconcileDiscovery_ClosedThreadDoesNotShadowLivePID(t *testing.T) {
 		"thr-dead": {ThreadID: "thr-dead", AgentID: "claude-pantheon", Status: ThreadStatusClosed, PID: 300, Host: "host1"},
 	}}
 	procs := []DiscoveredProc{{PID: 300, Surface: "claude", Cwd: "/Users/x/Development/sirsi-pantheon"}}
-	actions := ReconcileDiscovery(testRegistry(), threads, procs, "host1")
+	actions := ReconcileDiscovery(testRegistry(), threads, procs, "host1", "/Users/x")
 
 	a, _ := actionFor(actions, 300)
 	if a.Outcome != OutcomeRegister {
@@ -139,7 +139,7 @@ func TestReconcileDiscovery_RemoteHostThreadDoesNotShadow(t *testing.T) {
 		"thr-remote": {ThreadID: "thr-remote", AgentID: "claude-pantheon", Status: ThreadStatusActive, PID: 400, Host: "other-host"},
 	}}
 	procs := []DiscoveredProc{{PID: 400, Surface: "claude", Cwd: "/Users/x/Development/sirsi-pantheon"}}
-	actions := ReconcileDiscovery(testRegistry(), threads, procs, "host1")
+	actions := ReconcileDiscovery(testRegistry(), threads, procs, "host1", "/Users/x")
 
 	a, _ := actionFor(actions, 400)
 	if a.Outcome != OutcomeRegister {
@@ -166,7 +166,7 @@ func TestReconcileDiscovery_StaleHostnameDoesNotRemint(t *testing.T) {
 		},
 	}}
 	procs := []DiscoveredProc{{PID: 400, Surface: "claude", Cwd: "/Users/x/Development/sirsi-pantheon"}}
-	actions := ReconcileDiscovery(testRegistry(), threads, procs, "MacBook-Pro-2.local")
+	actions := ReconcileDiscovery(testRegistry(), threads, procs, "MacBook-Pro-2.local", "/Users/x")
 
 	a, _ := actionFor(actions, 400)
 	if a.Outcome != OutcomeSkip {
@@ -186,7 +186,7 @@ func TestReconcileDiscovery_IDLessRemoteRecordStillDoesNotShadow(t *testing.T) {
 		},
 	}}
 	procs := []DiscoveredProc{{PID: 400, Surface: "claude", Cwd: "/Users/x/Development/sirsi-pantheon"}}
-	actions := ReconcileDiscovery(testRegistry(), threads, procs, "host1")
+	actions := ReconcileDiscovery(testRegistry(), threads, procs, "host1", "/Users/x")
 
 	a, _ := actionFor(actions, 400)
 	if a.Outcome != OutcomeRegister {
