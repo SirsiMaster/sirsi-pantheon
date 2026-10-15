@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -154,7 +155,7 @@ func TestPersistApolloNativeRunMetricsPublishesBoundMeasurementsOnly(t *testing.
 	if err := json.Unmarshal(raw, &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Schema != apolloNativeMetricsSchema || got.RequestID != "run_42" || got.ModelID != profile.Model.ID || got.Metrics != metrics || strings.Join(got.HostRoute, ",") != "studio,m1" {
+	if got.Schema != apolloNativeMetricsSchema || got.RequestID != "run_42" || got.ModelID != profile.Model.ID || !reflect.DeepEqual(got.Metrics, metrics) || strings.Join(got.HostRoute, ",") != "studio,m1" {
 		t.Fatalf("persisted metrics mismatch: %+v", got)
 	}
 	if err := persistApolloNativeRunMetrics("run_42", profile, metrics); err == nil {
