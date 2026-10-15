@@ -147,6 +147,38 @@ func parseLaunchctlArguments(printed string) []string {
 // enroll unrelated jobs that pass a working directory or data root, and turn
 // their trees undeletable with no way for the operator to tell why.
 func sneModelDir(args []string) (string, bool) {
+	// Apollo's native server uses a named checkpoint rather than the legacy
+	// positional serve contract. Only that executable's exact checkpoint flag
+	// is substrate; --bundle and unrelated jobs' paths are never enrolled.
+	if len(args) > 0 && filepath.Base(args[0]) == "apollo-serve" {
+		checkpoint := ""
+		seen := false
+		for i := 1; i < len(args); i++ {
+			value, inline := strings.CutPrefix(args[i], "--checkpoint=")
+			if args[i] == "--checkpoint" {
+				if i+1 >= len(args) {
+					return "", false
+				}
+				i++
+				value = args[i]
+			} else if !inline {
+				continue
+			}
+			if seen {
+				return "", false
+			}
+			seen = true
+			checkpoint = value
+		}
+		if !filepath.IsAbs(checkpoint) {
+			return "", false
+		}
+		info, err := os.Stat(checkpoint)
+		if err != nil || !info.IsDir() {
+			return "", false
+		}
+		return filepath.Clean(checkpoint), true
+	}
 	for i, a := range args {
 		if a != "serve" || i+1 >= len(args) {
 			continue
