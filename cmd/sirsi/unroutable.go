@@ -3,12 +3,13 @@ package main
 import (
 	"fmt"
 	"path/filepath"
+	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 )
 
-// unroutableAgents returns the set of agent ids that no automated wake path
-// reaches, read from the registry.
+// unroutableAgents returns agent reachability from the canonical registry and
+// current registered consumer state, using the same predicate as router ping.
 //
 // This lives in cmd rather than internal/dashboard on purpose: the dashboard
 // renders lanes and must not grow a dependency on registry loading, and the
@@ -35,11 +36,24 @@ func unroutableAgents(repoRoot string) (map[string]bool, error) {
 	if reg == nil {
 		return nil, fmt.Errorf("unroutable: registry loaded as nil — routability is unknown")
 	}
-	out := map[string]bool{}
+	threads, err := router.LoadThreadRegistry(filepath.Join(repoRoot, ".agents", "idea-router"))
+	if err != nil {
+		return nil, fmt.Errorf("unroutable: load live threads: %w", err)
+	}
+	return unroutableFromRuntime(reg, threads, time.Now().UTC()), nil
+}
+
+// Use the same readiness predicate as router ping: wake=none may have a real
+// attended consumer, and a configured launch agent may be unable to authenticate.
+// This is reachability, not evidence that a queue item has been completed.
+func unroutableFromRuntime(reg *router.Registry, threads *router.ThreadRegistry, now time.Time) map[string]bool {
+	out := make(map[string]bool, len(reg.Agents))
 	for id, cfg := range reg.Agents {
-		if cfg.WakeMechanism() == router.WakeNone {
-			out[id] = true
+		if cfg.Type == "human" {
+			out[id] = false
+		} else {
+			out[id] = !router.PingLane(threads, cfg, id, now).Workable
 		}
 	}
-	return out, nil
+	return out
 }

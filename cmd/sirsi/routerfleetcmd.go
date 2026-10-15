@@ -74,7 +74,7 @@ needs a long-lived process to hold the baseline. Use the Horus board for that.`,
 		if unErr != nil {
 			return fmt.Errorf("fleet: %w — routability is unknown; refusing to render lanes as routable", unErr)
 		}
-		out := dashboard.NewFleetTracker(un).Observe(snap, time.Now())
+		out := dashboard.NewFleetTracker(nil).ObserveWithRoutability(snap, time.Now(), un)
 
 		if JsonOutput {
 			enc := json.NewEncoder(os.Stdout)

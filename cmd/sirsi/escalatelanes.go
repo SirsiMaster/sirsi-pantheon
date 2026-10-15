@@ -86,7 +86,7 @@ func escalateStuckLanes(repoRoot string) ([]supervision.Escalation, error) {
 	if err != nil {
 		return nil, fmt.Errorf("escalate lanes: %w — refusing to escalate on unknown routability", err)
 	}
-	board := dashboard.NewFleetTracker(unroutable).Observe(snap, now)
+	board := dashboard.NewFleetTracker(nil).ObserveWithRoutability(snap, now, unroutable)
 	threadCounts := activeThreadCountByAgent(repoRoot, now)
 
 	lanes := make([]supervision.LaneInput, 0, len(board.Lanes))

@@ -129,7 +129,8 @@ type FleetTracker struct {
 	// as optional state it defaults to empty, every lane silently reads
 	// routable, and the bug this replaces returns wearing a different shape.
 	// Pass nil only when routability genuinely cannot be determined.
-	unroutable map[string]bool
+	unroutable       map[string]bool
+	runtimeReadiness bool
 }
 
 func NewFleetTracker(unroutable map[string]bool) *FleetTracker {
@@ -143,8 +144,25 @@ func trackKey(agent, taskID string) string { return agent + "\x00" + taskID }
 
 // Observe records a snapshot and returns the rendered fleet payload.
 func (ft *FleetTracker) Observe(snap ledger.Snapshot, now time.Time) FleetSnapshot {
+	return ft.observe(snap, now, nil)
+}
+
+// ObserveWithRoutability updates reachability without losing activity history.
+// Replacement and observation share the same lock, including concurrent HTTP reads.
+func (ft *FleetTracker) ObserveWithRoutability(snap ledger.Snapshot, now time.Time, unroutable map[string]bool) FleetSnapshot {
+	return ft.observe(snap, now, &unroutable)
+}
+
+func (ft *FleetTracker) observe(snap ledger.Snapshot, now time.Time, unroutable *map[string]bool) FleetSnapshot {
 	ft.mu.Lock()
 	defer ft.mu.Unlock()
+	if unroutable != nil {
+		ft.runtimeReadiness = true
+		ft.unroutable = make(map[string]bool, len(*unroutable))
+		for id, unavailable := range *unroutable {
+			ft.unroutable[id] = unavailable
+		}
+	}
 
 	// Non-nil slices: a nil slice marshals to `null`, and a client doing
 	// `.length` on it throws. Empty must serialize as [].
@@ -219,7 +237,8 @@ func (ft *FleetTracker) Observe(snap ledger.Snapshot, now time.Time) FleetSnapsh
 		// caller forbade it, and seven lanes declaring wake.mechanism=none while
 		// holding 18 open items between them all rendered as merely idle. A state
 		// that no caller can produce is not a state, it is a comment.
-		lane.Routable = !ft.unroutable[ag.AgentID]
+		unavailable, declared := ft.unroutable[ag.AgentID]
+		lane.Routable = !unavailable && (!ft.runtimeReadiness || declared)
 		lane.State = string(supervision.Classify(supervision.LaneInput{
 			Agent: ag.AgentID,
 			Sources: supervision.Sources{
@@ -322,5 +341,15 @@ func (s *Server) apiFleet(w http.ResponseWriter, r *http.Request) {
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
+	if s.cfg.RoutabilityFn != nil {
+		unroutable, err := s.cfg.RoutabilityFn()
+		if err != nil || unroutable == nil {
+			w.WriteHeader(http.StatusBadGateway)
+			_ = enc.Encode(map[string]string{"error": "fleet routability unavailable"})
+			return
+		}
+		_ = enc.Encode(s.fleet.ObserveWithRoutability(snap, time.Now(), unroutable))
+		return
+	}
 	_ = enc.Encode(s.fleet.Observe(snap, time.Now()))
 }

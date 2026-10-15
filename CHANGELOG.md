@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- **fix(router):** derive fleet reachability from the same fresh registered
+  consumer state as `router ping`, rather than treating `wake=none` as proof an
+  attended lane is unreachable. Refresh dashboard reachability on every fleet
+  read without resetting activity history; unavailable runtime evidence returns
+  an error, never a fabricated healthy board. This is availability evidence,
+  not queue-completion or all-lanes-staffed qualification.
+
 - **fix(router):** an overdue 72-hour origin-registry refresh now warns while
   retaining the explicit pin; it no longer silently promotes unrelated shared
   checkout identities. Local registry writes remain refused until an explicit

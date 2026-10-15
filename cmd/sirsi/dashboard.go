@@ -65,11 +65,17 @@ func runDashboard(cmd *cobra.Command, args []string) {
 			snap := collectDashboardStats()
 			return json.Marshal(snap)
 		},
-		NodeStatusFn:    collectDashboardNodeStatus,
-		LedgerFn:        collectDashboardLedger,
-		FleetFn:         collectDashboardFleet,
-		RouterFn:        collectDashboardRouter,
-		Unroutable:      dashboardUnroutable(),
+		NodeStatusFn: collectDashboardNodeStatus,
+		LedgerFn:     collectDashboardLedger,
+		FleetFn:      collectDashboardFleet,
+		RouterFn:     collectDashboardRouter,
+		RoutabilityFn: func() (map[string]bool, error) {
+			repoRoot, err := router.FindRepoRoot()
+			if err != nil {
+				return nil, err
+			}
+			return unroutableAgents(repoRoot)
+		},
 		FabricFn:        collectDashboardFabric,
 		MaatDecisionsFn: collectDashboardMaatDecisions,
 		MaatCasebookFn:  collectDashboardMaatCasebook,

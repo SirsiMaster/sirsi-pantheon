@@ -56,6 +56,10 @@ type Config struct {
 	// deliberately does not import it). Empty or nil means every lane is
 	// treated as routable — honest only when routability is genuinely unknown.
 	Unroutable map[string]bool
+	// RoutabilityFn refreshes canonical live readiness on every fleet read.
+	// Failures return an unavailable response, never a fabricated healthy map.
+	// Unroutable remains the compatibility input for embedded static consumers.
+	RoutabilityFn func() (map[string]bool, error)
 	// AltPorts are ADDITIONAL ports served by the SAME process and the SAME
 	// handler. Not a second dashboard: a second door onto one producer.
 	//
