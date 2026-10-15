@@ -1,1 +1,0 @@
-- Add `sirsi gemma shared` for registered M1/M5 lanes through the existing canonical router, with bounded waits, exact-reply resume, single-use metadata receipts and native fenced worker support. The installed CLI and worker use the selected resident broker; uncertain submissions are never automatically resent and full input is never truncated.
