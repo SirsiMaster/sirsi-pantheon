@@ -150,6 +150,10 @@ if /usr/bin/find "${BUNDLE_DIR}" -type f -name '._*' -print -quit | /usr/bin/gre
     exit 1
 fi
 
+# Package installation assigns root ownership. Both public entry points must
+# remain executable by the normal user, independent of the builder's umask.
+chmod 0755 "${BUNDLE_DIR}/Contents/MacOS/sirsi" "${BUNDLE_DIR}/Contents/MacOS/sirsi-menubar"
+
 # --- Code signing ---
 if [[ "$MODE" == "release" ]]; then
     if [[ "$REMOTE_SIGNING" == true ]]; then

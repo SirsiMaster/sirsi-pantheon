@@ -16,6 +16,11 @@
 - Declared attended lanes (owner 2026-10-16: secondary consumers never override the attend
 - Lane state reports a declared attended lane's `attended` hold ahead of transient measure
 - Repair the two CompassPoint attended-only lane declarations with guarded own-queue consu
+## 2026-10-15 — v0.24.105 release candidate
+
+- Preserve alias-owned task history and complete CLI/web fleet totals. Keep
+  equal task IDs under different original owners distinct. Normalize public
+  executable permissions before signing, independently of the builder umask.
 
 ## 2026-10-15 — v0.24.104 release candidate
 
