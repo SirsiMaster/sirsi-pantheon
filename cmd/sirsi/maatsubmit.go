@@ -71,7 +71,7 @@ func canonicalRepo(repo string) (string, error) {
 }
 
 // resolveSubmitRequester derives the caller's identity from its registered
-// Claude session marker, then confirms that identity is a declared agent in
+// provider session marker, then confirms that identity is a declared agent in
 // the repo's agent registry (dispatch.ValidateAgent, ADR-054) — the same
 // eligibility boundary used everywhere else in this codebase. It never
 // falls back to a flag, an env var, or a guessed PID; an unregistered
@@ -79,7 +79,7 @@ func canonicalRepo(repo string) (string, error) {
 func resolveSubmitRequester() (string, error) {
 	sid := router.CurrentSessionID()
 	if sid == "" {
-		return "", fmt.Errorf("no active session id (%s unset); refusing to guess requester identity", router.SessionIDEnv)
+		return "", fmt.Errorf("no unambiguous active session id (%s, CODEX_SESSION_ID or CODEX_THREAD_ID); refusing to guess requester identity", router.SessionIDEnv)
 	}
 	agent := router.ReadSessionAgentMarker(sid)
 	if agent == "" {

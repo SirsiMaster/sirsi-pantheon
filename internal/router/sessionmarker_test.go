@@ -6,6 +6,54 @@ import (
 	"testing"
 )
 
+func TestCurrentSessionIDProviderBindings(t *testing.T) {
+	for _, tc := range []struct {
+		name, claude, session, thread, want string
+	}{
+		{"absent", "", "", "", ""},
+		{"claude preserved", "claude-native", "codex-native", "codex-native", "claude-native"},
+		{"codex session", "", "codex-native", "", "codex-native"},
+		{"codex thread", "", "", "codex-native", "codex-native"},
+		{"matching codex aliases", "", "codex-native", "codex-native", "codex-native"},
+		{"conflicting codex aliases refuse", "", "one-session", "another-session", ""},
+		{"trimmed matching aliases", " ", " native-session ", "native-session", "native-session"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(SessionIDEnv, tc.claude)
+			t.Setenv("CODEX_SESSION_ID", tc.session)
+			t.Setenv("CODEX_THREAD_ID", tc.thread)
+			if got := CurrentSessionID(); got != tc.want {
+				t.Fatalf("CurrentSessionID() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCodexSessionUsesSameAgentAndThreadMarkers(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv(SessionIDEnv, "")
+	t.Setenv("CODEX_SESSION_ID", "codex-native")
+	t.Setenv("CODEX_THREAD_ID", "codex-native")
+	if err := WriteSessionAgentMarker(CurrentSessionID(), "codex-apollo"); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteSessionThreadMarker(CurrentSessionID(), "thr-native"); err != nil {
+		t.Fatal(err)
+	}
+	if ReadSessionAgentMarker(CurrentSessionID()) != "codex-apollo" || ReadSessionThreadMarker(CurrentSessionID()) != "thr-native" {
+		t.Fatal("Codex registration must use the same session key for both marker types")
+	}
+	if err := RemoveSessionAgentMarker(CurrentSessionID()); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveSessionThreadMarker(CurrentSessionID()); err != nil {
+		t.Fatal(err)
+	}
+	if ReadSessionAgentMarker(CurrentSessionID()) != "" || ReadSessionThreadMarker(CurrentSessionID()) != "" {
+		t.Fatal("close must remove only this session's markers")
+	}
+}
+
 func TestSessionAgentMarker_WriteReadRemove(t *testing.T) {
 	dir := t.TempDir()
 	sessionMarkerDirOverride = dir
