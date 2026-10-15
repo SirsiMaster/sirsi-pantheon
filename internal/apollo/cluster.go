@@ -28,9 +28,23 @@ const (
 )
 
 var (
-	ErrClusterAdmission = errors.New("apollo cluster admission rejected")
-	ErrClusterProtocol  = errors.New("apollo cluster protocol rejected")
+	ErrClusterAdmission  = errors.New("apollo cluster admission rejected")
+	ErrClusterProtocol   = errors.New("apollo cluster protocol rejected")
+	ErrClusterIncomplete = errors.New("apollo stream ended before terminal evidence")
 )
+
+// IncompleteStreamError retains the last accepted sequence for an explicit
+// reconnect against the SAME frozen admission. It never implies job completion.
+type IncompleteStreamError struct {
+	LastSequence uint64
+	Cause        error
+}
+
+func (e *IncompleteStreamError) Error() string {
+	return fmt.Sprintf("%v after sequence %d: %v", ErrClusterIncomplete, e.LastSequence, e.Cause)
+}
+func (e *IncompleteStreamError) Unwrap() error        { return e.Cause }
+func (e *IncompleteStreamError) Is(target error) bool { return target == ErrClusterIncomplete }
 
 // ClusterClient reaches an authenticated Apollo service. Authentication is
 // intentionally delegated to the caller's installed HTTPS transport (for
@@ -175,7 +189,10 @@ type Job struct {
 	RankFences  []RankFence `json:"rank_fences,omitempty"`
 }
 
-func (j Job) validate(expectedRequest, expectedPlan string, requireFences bool) error {
+// validate always checks immutable identity and fence structure. Fresh expiry
+// is required only for a new/live admission, never to query/cancel/replay a
+// historical receipt. Expired historical fences do not authorize computation.
+func (j Job) validate(expectedRequest, expectedPlan string, requireLiveFences bool) error {
 	if j.Contract != ClusterContractV1 || strings.TrimSpace(j.JobID) == "" || strings.TrimSpace(j.ExecutionID) == "" || j.Epoch == 0 || strings.TrimSpace(j.RequestID) == "" || strings.TrimSpace(j.PlanSHA256) == "" {
 		return fmt.Errorf("%w: response has no authoritative job execution identity", ErrClusterProtocol)
 	}
@@ -185,7 +202,7 @@ func (j Job) validate(expectedRequest, expectedPlan string, requireFences bool) 
 	if expectedPlan != "" && j.PlanSHA256 != expectedPlan {
 		return fmt.Errorf("%w: response plan identity differs", ErrClusterProtocol)
 	}
-	if requireFences && len(j.RankFences) == 0 {
+	if requireLiveFences && len(j.RankFences) == 0 {
 		return fmt.Errorf("%w: service returned no all-rank resource fences", ErrClusterAdmission)
 	}
 	seenRank := map[int]bool{}
@@ -196,7 +213,7 @@ func (j Job) validate(expectedRequest, expectedPlan string, requireFences bool) 
 		}
 		seenRank[rank.Rank] = true
 		expires, err := time.Parse(time.RFC3339, rank.ExpiresAt)
-		if err != nil || !expires.After(now) {
+		if err != nil || requireLiveFences && !expires.After(now) {
 			return fmt.Errorf("%w: rank %d has no live execution fence", ErrClusterAdmission, rank.Rank)
 		}
 	}
@@ -345,7 +362,7 @@ func (c *ClusterClient) Events(ctx context.Context, admitted Job, after uint64, 
 	if !strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
 		return fmt.Errorf("%w: events response is not server-sent events", ErrClusterProtocol)
 	}
-	scanner := bufio.NewScanner(io.LimitReader(resp.Body, maxClusterBody))
+	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64<<10), maxEventLine)
 	last := after
 	for scanner.Scan() {
@@ -367,11 +384,18 @@ func (c *ClusterClient) Events(ctx context.Context, admitted Job, after uint64, 
 		if err := emit(event); err != nil {
 			return err
 		}
+		// These terminal event names are the provisional v1 projection. Enabling
+		// the CLI still requires the implemented service's versioned event schema.
+		switch event.Type {
+		case "completed", "released", "cancelled", "failed", "orphan_unknown": //nolint:misspell // Apollo wire enum.
+			return nil // Stream terminal observed; the event determines the job outcome.
+		}
 	}
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("apollo events: %w", err)
+	cause := scanner.Err()
+	if cause == nil {
+		cause = io.ErrUnexpectedEOF
 	}
-	return nil
+	return &IncompleteStreamError{LastSequence: last, Cause: cause}
 }
 
 func (c *ClusterClient) doJSON(ctx context.Context, method, path string, in, out any) error {

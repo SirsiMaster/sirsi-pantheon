@@ -15,9 +15,9 @@ authenticate a caller. The intended command projection is:
 sirsi apollo capabilities --endpoint https://apollo.example.ts.net
 sirsi apollo chat --endpoint https://apollo.example.ts.net ...
 sirsi apollo admit --endpoint https://apollo.example.ts.net ... # chat alias
-sirsi apollo status --endpoint https://apollo.example.ts.net --job-id JOB
+sirsi apollo status --endpoint https://apollo.example.ts.net --job-id JOB --job-receipt admission.json
 sirsi apollo events --endpoint https://apollo.example.ts.net --job-id JOB --job-receipt admission.json --after N
-sirsi apollo cancel --endpoint https://apollo.example.ts.net --job-id JOB
+sirsi apollo cancel --endpoint https://apollo.example.ts.net --job-id JOB --job-receipt admission.json
 ```
 
 The user supplies a frozen model/plan/session/token request to `chat`; the
@@ -112,3 +112,25 @@ installation and real streamed reply/cancellation acceptance remain unqualified.
 The prior claim that a nonempty fence list alone verified every planned rank is
 withdrawn. No local tokenizer, single-host substitution or new wire schema is
 introduced by this correction.
+
+## Recovery and stream completion correction
+
+Historical admission receipt validation checks immutable tuple and fence
+structure, permitting expired original expiry timestamps for status, cancel and
+event reconciliation. Only fresh admission and live response validation require
+live fences. This does not renew resources or authorize continued computation.
+
+Live streams have a per-event bound, with no cumulative byte cap and no retained
+stream history in the client. A recognized terminal event must be delivered
+before Events returns nil. Empty/early EOF, transport break and oversized lines
+return IncompleteStreamError carrying the last accepted sequence. Reconnect
+uses that cursor and the same frozen receipt. Terminal stream delivery is not
+a claim of successful inference: the terminal event names the job outcome.
+The provisional terminal event vocabulary still needs the implemented service's
+closed schema before this disabled client can be enabled.
+
+Cancel currently transmits only the existing contract body. Response tuple
+validation cannot undo a mutation sent to a rebound job ID. Before enabling any
+normal path the service must enforce immutable, owner/session-authorized job IDs
+or an agreed atomic tuple precondition, with a stale-target fixture proving
+zero worker mutation. No unilateral wire precondition fields are invented here.

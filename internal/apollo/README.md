@@ -32,3 +32,10 @@ Focused socket-free regression checks:
 ```sh
 go test -race ./internal/apollo -run 'Test(EventsBindFrozenTupleAndPreserveReply|RankAdmissionMatchesCompleteFrozenPlan|MissingAuthenticationAndPlanRefuseBeforeNetwork)$'
 ```
+
+Historical receipts remain usable for authenticated reconciliation after original
+fence expiry. Fresh admission still requires live fences. Events has bounded
+individual frames, no aggregate stream cap, and returns IncompleteStreamError
+with LastSequence if EOF arrives without terminal evidence. A nil stream result
+means a terminal event was delivered, not successful inference. Service-side
+immutable job IDs or atomic cancellation preconditions remain an enabling gate.

@@ -12,3 +12,7 @@ Refs: PANTHEON_RULES.md, docs/SAFETY_DESIGN.md, docs/ADR-055-SNE-LICENSING-ANUBI
 - Preserve the service cancellation wire enum explicitly in lint checks.
 
 - Require frozen admission receipts for status and cancellation; reject changed execution/request/plan/epoch on those lifecycle responses too.
+
+- Permit historical expired receipts for recovery while retaining fresh-admission expiry checks.
+- Require terminal stream evidence; return typed incomplete outcomes with cursor for early EOF, transport breaks or oversized frames; remove cumulative live-stream truncation.
+- Document the unresolved server-side stale-target cancellation precondition; correct independent endpoint-negative fixtures and lifecycle receipt examples.

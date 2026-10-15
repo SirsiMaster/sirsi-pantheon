@@ -34,10 +34,10 @@ func testRequest() JobRequest {
 }
 
 func TestClusterClientRejectsHTTPOutsideTest(t *testing.T) {
-	if _, err := NewClusterClient("http://example.invalid", nil); err == nil {
+	if _, err := NewClusterClient("http://example.invalid", &http.Client{}); err == nil {
 		t.Fatal("accepted unencrypted endpoint")
 	}
-	if _, err := NewClusterClient("https://example.invalid?redirect=elsewhere", nil); err == nil {
+	if _, err := NewClusterClient("https://example.invalid?redirect=elsewhere", &http.Client{}); err == nil {
 		t.Fatal("accepted endpoint query")
 	}
 }
@@ -50,9 +50,11 @@ func TestCreateJobRequiresLiveAllRankFences(t *testing.T) {
 	mux.HandleFunc("/v1/apollo/jobs", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(testJob("admitting", nil))
 	})
-	srv := httptest.NewServer(mux)
-	defer srv.Close()
-	client, err := newClusterClient(srv.URL, srv.Client(), true)
+	client, err := newClusterClient("http://fixture.invalid", &http.Client{Transport: clusterRoundTrip(func(r *http.Request) (*http.Response, error) {
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, r)
+		return w.Result(), nil
+	})}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,9 +81,11 @@ func TestCreateJobBindsFrozenRequestAndRankFences(t *testing.T) {
 		}
 		_ = json.NewEncoder(w).Encode(testJob("admitting", []RankFence{testFence(0), {Rank: 1, HostID: "m1", Fence: "fence-2", Generation: "generation-2", ExpiresAt: time.Now().UTC().Add(time.Minute).Format(time.RFC3339), MemoryAdmissionBytes: 2 << 30}}))
 	})
-	srv := httptest.NewServer(mux)
-	defer srv.Close()
-	client, err := newClusterClient(srv.URL, srv.Client(), true)
+	client, err := newClusterClient("http://fixture.invalid", &http.Client{Transport: clusterRoundTrip(func(r *http.Request) (*http.Response, error) {
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, r)
+		return w.Result(), nil
+	})}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,9 +103,11 @@ func TestCreateJobRejectsPlannedCapability(t *testing.T) {
 	mux.HandleFunc("/v1/apollo/capabilities", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(Capability{Contract: ClusterContractV1, Modes: []string{"plain"}})
 	})
-	srv := httptest.NewServer(mux)
-	defer srv.Close()
-	client, err := newClusterClient(srv.URL, srv.Client(), true)
+	client, err := newClusterClient("http://fixture.invalid", &http.Client{Transport: clusterRoundTrip(func(r *http.Request) (*http.Response, error) {
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, r)
+		return w.Result(), nil
+	})}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,14 +146,22 @@ func TestEventsBindFrozenTupleAndPreserveReply(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			terminal := Event{Contract: admitted.Contract, JobID: admitted.JobID, ExecutionID: admitted.ExecutionID, RequestID: admitted.RequestID, PlanSHA256: admitted.PlanSHA256, Epoch: admitted.Epoch, Sequence: 2, Type: "released"}
+			done, err := json.Marshal(terminal)
+			if err != nil {
+				t.Fatal(err)
+			}
 			client, err := newClusterClient("http://fixture.invalid", &http.Client{Transport: clusterRoundTrip(func(r *http.Request) (*http.Response, error) {
-				return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader("data: " + string(data) + "\n\n"))}, nil
+				return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader("data: " + string(data) + "\n\ndata: " + string(done) + "\n\n"))}, nil
 			})}, true)
 			if err != nil {
 				t.Fatal(err)
 			}
 			seen := 0
 			err = client.Events(context.Background(), admitted, 0, func(e Event) error {
+				if e.Type != "token" {
+					return nil
+				}
 				seen++
 				encoded, err := json.Marshal(e)
 				if err != nil {
@@ -266,5 +280,110 @@ func TestLifecycleBindsFrozenTuple(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestExpiredOriginalReceiptStillAllowsRecovery(t *testing.T) {
+	oldFence := testFence(0)
+	oldFence.ExpiresAt = time.Now().Add(-time.Hour).Format(time.RFC3339)
+	admitted := testJob("decoding", []RankFence{oldFence})
+	if err := admitted.validate(admitted.RequestID, admitted.PlanSHA256, true); err == nil {
+		t.Fatal("expired fence authorized fresh admission")
+	}
+	for _, operation := range []string{"status-released", "status-orphan", "cancel", "events"} {
+		t.Run(operation, func(t *testing.T) {
+			calls := 0
+			client, err := newClusterClient("http://fixture.invalid", &http.Client{Transport: clusterRoundTrip(func(*http.Request) (*http.Response, error) {
+				calls++
+				response := testJob("released", nil)
+				if operation == "status-orphan" {
+					response.State = "orphan_unknown"
+				}
+				data, err := json.Marshal(response)
+				if err != nil {
+					return nil, err
+				}
+				header := http.Header{}
+				if operation == "events" {
+					event := Event{Contract: admitted.Contract, JobID: admitted.JobID, ExecutionID: admitted.ExecutionID, RequestID: admitted.RequestID, PlanSHA256: admitted.PlanSHA256, Epoch: admitted.Epoch, Sequence: 5, Type: "released"}
+					data, err = json.Marshal(event)
+					if err != nil {
+						return nil, err
+					}
+					data = []byte("data: " + string(data) + "\n\n")
+					header.Set("Content-Type", "text/event-stream")
+				}
+				return &http.Response{StatusCode: 200, Header: header, Body: io.NopCloser(strings.NewReader(string(data)))}, nil
+			})}, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch operation {
+			case "cancel":
+				_, err = client.Cancel(context.Background(), admitted)
+			case "events":
+				err = client.Events(context.Background(), admitted, 4, func(Event) error { return nil })
+			default:
+				_, err = client.Status(context.Background(), admitted)
+			}
+			if err != nil || calls != 1 {
+				t.Fatalf("historical receipt blocked recovery: calls=%d err=%v", calls, err)
+			}
+		})
+	}
+}
+
+type streamFailure struct{}
+
+func (streamFailure) Read([]byte) (int, error) { return 0, io.ErrClosedPipe }
+
+func TestStreamRequiresTerminalEvidenceAndRetainsCursor(t *testing.T) {
+	admitted := testJob("decoding", nil)
+	event := Event{Contract: admitted.Contract, JobID: admitted.JobID, ExecutionID: admitted.ExecutionID, RequestID: admitted.RequestID, PlanSHA256: admitted.PlanSHA256, Epoch: admitted.Epoch, Sequence: 1, Type: "token"}
+	token, err := json.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokenLine := "data: " + string(token) + "\n\n"
+	event.Sequence = 2
+	event.Type = "released"
+	terminal, err := json.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name       string
+		body       io.Reader
+		incomplete bool
+		cursor     uint64
+		seen       int
+	}{
+		{"empty", strings.NewReader(""), true, 0, 0},
+		{"early-eof", strings.NewReader(tokenLine), true, 1, 1},
+		{"transport-break", io.MultiReader(strings.NewReader(tokenLine), streamFailure{}), true, 1, 1},
+		{"oversized-event", strings.NewReader("data: " + strings.Repeat("x", maxEventLine)), true, 0, 0},
+		{"terminal-after-4MiB", strings.NewReader(strings.Repeat(": keepalive\n", 400000) + tokenLine + "data: " + string(terminal) + "\n\n"), false, 0, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client, err := newClusterClient("http://fixture.invalid", &http.Client{Transport: clusterRoundTrip(func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(tc.body)}, nil
+			})}, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			seen := 0
+			err = client.Events(context.Background(), admitted, 0, func(Event) error { seen++; return nil })
+			if tc.incomplete {
+				var outcome *IncompleteStreamError
+				if !errors.Is(err, ErrClusterIncomplete) || !errors.As(err, &outcome) || outcome.LastSequence != tc.cursor {
+					t.Fatalf("lost incomplete/cursor outcome: %v", err)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			if seen != tc.seen {
+				t.Fatalf("seen=%d want=%d", seen, tc.seen)
+			}
+		})
 	}
 }
