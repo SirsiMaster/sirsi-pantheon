@@ -99,6 +99,7 @@ docs/router-results/
 # on a side branch and then DELETED by a checkout back to main — taking the
 # fabric down with it (router doctor failed outright, 2026-08-06).
 .agents/idea-router/state.json
+.agents/idea-router/wake-attempts.json
 .agents/idea-router/requests/
 .agents/idea-router/results/
 .agents/idea-router/status/
