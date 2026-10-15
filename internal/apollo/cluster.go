@@ -286,6 +286,7 @@ func (c *ClusterClient) Cancel(ctx context.Context, jobID string) (Job, error) {
 	if out.JobID != jobID {
 		return Job{}, fmt.Errorf("%w: cancel response job identity differs", ErrClusterProtocol)
 	}
+	//nolint:misspell // "cancelled" is the Apollo protocol enum; do not rewrite wire values.
 	if out.State != "cancel_requested" && out.State != "draining" && out.State != "cancelled" && out.State != "released" && out.State != "orphan_unknown" {
 		return Job{}, fmt.Errorf("%w: cancel did not return a cancellation state", ErrClusterProtocol)
 	}
