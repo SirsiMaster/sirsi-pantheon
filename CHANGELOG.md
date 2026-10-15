@@ -6,6 +6,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- **fix(router):** an overdue 72-hour origin-registry refresh now warns while
+  retaining the explicit pin; it no longer silently promotes unrelated shared
+  checkout identities. Local registry writes remain refused until an explicit
+  unpin, and dispatch continues to reject working-tree-only lanes.
+
 - **fix(router):** make registry-drift diagnostics compare the same origin-pinned
   source used by lane identity and dispatch. Report its actual path and the
   supported pin-refresh action instead of presenting dirty, unexecuted shared

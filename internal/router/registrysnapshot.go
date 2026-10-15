@@ -81,8 +81,9 @@ func init() {
 	dispatch.RegistryPath = func(root string) string { p, _ := registrySource(root); return p }
 }
 
-// registrySource says which agents.json this host reads: the origin snapshot when
-// one exists and is fresh, else the working tree (the pre-pinning behavior).
+// registrySource says which agents.json this host reads: an explicitly pinned
+// origin snapshot remains authoritative until an explicit unpin. Age warns that
+// a sync is overdue; it must never promote unrelated working-tree edits.
 func registrySource(routerRoot string) (path string, pinned bool) {
 	working := filepath.Join(routerRoot, "agents.json")
 	dp, mp := snapshotPaths()
@@ -101,9 +102,8 @@ func registrySource(routerRoot string) (path string, pinned bool) {
 		}
 		if t, perr := time.Parse(time.RFC3339, m.FetchedAt); perr == nil && time.Since(t) > registrySnapshotMaxAge {
 			staleLogged.Do(func() {
-				log.Printf("registry: origin snapshot is %s old (max %s); reading the working tree until `sirsi router registry sync`", time.Since(t).Round(time.Hour), registrySnapshotMaxAge)
+				log.Printf("registry: origin snapshot is %s old (refresh interval %s); retaining pinned authority, run `sirsi router registry sync`", time.Since(t).Round(time.Hour), registrySnapshotMaxAge)
 			})
-			return working, false
 		}
 	}
 	return dp, true
