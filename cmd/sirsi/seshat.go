@@ -202,13 +202,55 @@ var seshatIngestCmd = &cobra.Command{
 }
 
 var seshatExportCmd = &cobra.Command{
-	Use:   "export <target>",
-	Short: "𓁆 Export knowledge to a target system",
-	Args:  cobra.ExactArgs(1),
+	Use:   "export [target]",
+	Short: "𓁆 Export knowledge to a target system or Markdown",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		start := time.Now()
 		output.Banner()
 		output.Header("Knowledge Export")
+
+		exportAll, _ := cmd.Flags().GetBool("all")
+		kiName, _ := cmd.Flags().GetString("ki")
+		outDir, _ := cmd.Flags().GetString("out")
+
+		paths := seshat.DefaultPaths()
+
+		if exportAll {
+			if outDir == "" {
+				home, _ := os.UserHomeDir()
+				outDir = filepath.Join(home, ".config", "seshat", "notebooklm_export")
+			}
+			files, err := seshat.ExportAllKIsToMarkdown(paths, outDir)
+			if err != nil {
+				return fmt.Errorf("export all KIs: %w", err)
+			}
+			output.Success("Exported %d Knowledge Items to %s", len(files), outDir)
+			output.Footer(time.Since(start))
+			return nil
+		}
+
+		if kiName != "" {
+			if outDir == "" {
+				home, _ := os.UserHomeDir()
+				outDir = filepath.Join(home, ".config", "seshat", "notebooklm_export")
+			}
+			_ = os.MkdirAll(outDir, 0755)
+			md, err := seshat.ExportKIToMarkdown(paths, kiName)
+			if err != nil {
+				return fmt.Errorf("export KI '%s': %w", kiName, err)
+			}
+			outFile := filepath.Join(outDir, fmt.Sprintf("ki_%s.md", kiName))
+			if err := os.WriteFile(outFile, []byte(md), 0644); err != nil {
+				return fmt.Errorf("write %s: %w", outFile, err)
+			}
+			output.Success("Exported KI '%s' → %s", kiName, outFile)
+			output.Footer(time.Since(start))
+			return nil
+		}
+
+		if len(args) == 0 {
+			return fmt.Errorf("specify a target (notebooklm, apple-notes, thoth) or use --all / --ki <name>")
+		}
 
 		targetName := args[0]
 		reg := seshat.DefaultRegistry()
@@ -477,14 +519,50 @@ var seshatSyncCmd = &cobra.Command{
 		kiName, _ := cmd.Flags().GetString("ki")
 		target, _ := cmd.Flags().GetString("target")
 
-		if kiName != "" && target != "" {
-			if err := seshat.SyncKIToGeminiMD(paths, kiName, target); err != nil {
-				return err
+		if target != "" {
+			if kiName != "" {
+				if err := seshat.SyncKIToGeminiMD(paths, kiName, target); err != nil {
+					return err
+				}
+				output.Success("Synced KI '%s' → %s", kiName, target)
+			} else {
+				items, err := seshat.ListKnowledgeItems(paths)
+				if err != nil {
+					return fmt.Errorf("list knowledge items: %w", err)
+				}
+				count := 0
+				for _, name := range items {
+					if err := seshat.SyncKIToGeminiMD(paths, name, target); err != nil {
+						output.Warn("Skipping KI '%s': %v", name, err)
+						continue
+					}
+					count++
+				}
+				output.Success("Synced %d Knowledge Items → %s", count, target)
 			}
-			output.Success("Synced KI '%s' → %s", kiName, target)
 		}
 
 		output.Footer(time.Since(start))
+		return nil
+	},
+}
+
+var seshatConversationsCmd = &cobra.Command{
+	Use:   "conversations",
+	Short: "𓁆 List recent Antigravity brain conversations",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		lastN, _ := cmd.Flags().GetInt("last")
+		if lastN <= 0 {
+			lastN = 20
+		}
+		paths := seshat.DefaultPaths()
+		convs, err := seshat.ListBrainConversations(paths, lastN)
+		if err != nil {
+			return fmt.Errorf("list brain conversations: %w", err)
+		}
+		for i, id := range convs {
+			fmt.Printf("%2d. %s\n", i+1, id)
+		}
 		return nil
 	},
 }
@@ -788,6 +866,12 @@ func init() {
 
 	seshatExportNotebookLMCmd.Flags().String("profile", "", "Chrome profile for opening NotebookLM (default: 'Default')")
 
+	seshatExportCmd.Flags().Bool("all", false, "Export all Knowledge Items as Markdown")
+	seshatExportCmd.Flags().String("ki", "", "Specific Knowledge Item to export")
+	seshatExportCmd.Flags().String("out", "", "Output directory for exported Markdown")
+
+	seshatConversationsCmd.Flags().Int("last", 20, "Number of recent conversations to display")
+
 	// Wire subcommand trees
 	seshatProfilesCmd.AddCommand(seshatProfilesChromeCmd)
 	seshatOpenCmd.AddCommand(seshatChromeOpenCmd)
@@ -801,6 +885,7 @@ func init() {
 	seshatCmd.AddCommand(seshatProfilesCmd)
 	seshatCmd.AddCommand(seshatOpenCmd)
 	seshatCmd.AddCommand(seshatSyncCmd)
+	seshatCmd.AddCommand(seshatConversationsCmd)
 	seshatCmd.AddCommand(seshatMcpCmd)
 	seshatCmd.AddCommand(seshatAuthCmd)
 }
