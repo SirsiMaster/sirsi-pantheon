@@ -93,6 +93,36 @@ func TestNativeProfileRejectsCoordinatorTokenizerHashMismatch(t *testing.T) {
 	}
 }
 
+func TestNativeProfileAcceptsOneLocalRankWithoutFleetTransport(t *testing.T) {
+	profile := nativeProfileStructFixture()
+	profile.Fleet.Hosts = profile.Fleet.Hosts[:1]
+	profile.Fleet.Coordinator = nil
+	profile.Plan.Ranks = profile.Plan.Ranks[:1]
+	profile.Plan.Links = nil
+	profile.Resources = map[string]string{"studio": "mem.studio"}
+	profile.CoordinatorTokenizerSHA256 = ""
+	if err := profile.validate(); err != nil {
+		t.Fatalf("single local Apollo profile rejected: %v", err)
+	}
+}
+
+func TestNativeProfileRejectsSingleRankFleetResidue(t *testing.T) {
+	profile := nativeProfileStructFixture()
+	profile.Fleet.Hosts = profile.Fleet.Hosts[:1]
+	profile.Plan.Ranks = profile.Plan.Ranks[:1]
+	profile.Plan.Links = nil
+	profile.Resources = map[string]string{"studio": "mem.studio"}
+	if err := profile.validate(); err == nil {
+		t.Fatal("single local Apollo profile accepted a coordinator")
+	}
+	profile.Fleet.Coordinator = nil
+	profile.CoordinatorTokenizerSHA256 = ""
+	profile.Plan.Links = []fleetservice.Link{{From: 0, To: 0, Transport: "tcp", Codec: "raw", Profile: strings.Repeat("d", 64)}}
+	if err := profile.validate(); err == nil {
+		t.Fatal("single local Apollo profile accepted a transport edge")
+	}
+}
+
 func TestApolloNativeChatResultJSONIncludesMeasuredMetrics(t *testing.T) {
 	raw, err := json.Marshal(apolloNativeChatResult{Contract: fleetservice.Contract, Text: "ok", Metrics: fleetservice.RunMetrics{InputTokens: 4, GeneratedTokens: 3, TimeToFirstTokenMS: 12.5, DecodeTokensPerSecond: 7.5, Completed: true}})
 	if err != nil {

@@ -59,6 +59,24 @@ func TestMaatAuthorityAdmitsVerifiesAndReleasesEveryRank(t *testing.T) {
 	}
 }
 
+func TestMaatAuthorityAdmitsVerifiesAndReleasesOneLocalRank(t *testing.T) {
+	a, req := nativeAuthorityFixture(t)
+	req.Ranks = req.Ranks[:1]
+	admission, err := a.Admit(context.Background(), req)
+	if err != nil {
+		t.Fatalf("single local rank admission: %v", err)
+	}
+	if len(admission.Ranks) != 1 || admission.Ranks[0].HostID != "m5" {
+		t.Fatalf("single local rank admission mismatch: %#v", admission)
+	}
+	if err := a.Verify(context.Background(), admission); err != nil {
+		t.Fatalf("verify single local rank: %v", err)
+	}
+	if err := a.Release(context.Background(), admission); err != nil {
+		t.Fatalf("release single local rank: %v", err)
+	}
+}
+
 func TestMaatAuthorityRollsBackWhenOneRankIsContended(t *testing.T) {
 	a, req := nativeAuthorityFixture(t)
 	foreign, err := a.ledger.Reserve(schedule.Reservation{

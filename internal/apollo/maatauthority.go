@@ -199,7 +199,7 @@ func (a *MaatAuthority) releaseLocked(admission NativeAdmission) error {
 }
 
 func validateNativeAdmissionRequest(req NativeAdmissionRequest, now time.Time) error {
-	if strings.TrimSpace(req.ExecutionID) == "" || strings.TrimSpace(req.PlanSHA256) == "" || strings.TrimSpace(req.Holder) == "" || req.Epoch == 0 || !req.ExpiresAt.After(now) || req.ExpiresAt.Sub(now) > nativeAdmissionLeaseTTL || len(req.Ranks) < 2 {
+	if strings.TrimSpace(req.ExecutionID) == "" || strings.TrimSpace(req.PlanSHA256) == "" || strings.TrimSpace(req.Holder) == "" || req.Epoch == 0 || !req.ExpiresAt.After(now) || req.ExpiresAt.Sub(now) > nativeAdmissionLeaseTTL || len(req.Ranks) < 1 {
 		return fmt.Errorf("invalid Apollo native admission request")
 	}
 	seenHosts, seenResources := map[string]bool{}, map[string]bool{}
