@@ -6,3 +6,5 @@
 - Native authenticated client, authoritative text preparation, signing and installed qualification remain unverified.
 
 Refs: PANTHEON_RULES.md, docs/SAFETY_DESIGN.md, docs/ADR-055-SNE-LICENSING-ANUBIS-RA-SEAM.md, docs/architecture/APOLLO_CLUSTER_CLIENT_V1.md
+
+- Add developer and user guidance for disabled cluster commands and source-only safeguards, plus a CLI refusal regression test.

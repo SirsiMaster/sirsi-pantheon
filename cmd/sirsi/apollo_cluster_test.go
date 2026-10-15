@@ -19,3 +19,12 @@ func TestParseApolloTokenIDs(t *testing.T) {
 		}
 	}
 }
+
+func TestApolloClusterCLIRefusesUnenrolledTransport(t *testing.T) {
+	old := apolloClusterEndpoint
+	t.Cleanup(func() { apolloClusterEndpoint = old })
+	apolloClusterEndpoint = "https://foreign.invalid"
+	if client, err := configuredApolloClusterClient(); err == nil || client != nil {
+		t.Fatalf("unenrolled client escaped: client=%v err=%v", client, err)
+	}
+}
