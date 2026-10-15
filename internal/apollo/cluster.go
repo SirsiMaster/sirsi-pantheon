@@ -105,11 +105,103 @@ func (c Capability) validateFor(mode string) error {
 	return fmt.Errorf("%w: service does not admit mode %q", ErrClusterAdmission, mode)
 }
 
-// JobRequest is the frozen input accepted by POST /v1/apollo/jobs. It
-// intentionally carries pre-tokenized input: this client never starts a local
-// model or silently substitutes tokenizers/templates/checkpoints.
+// ChatMessage is user text sent only to authenticated, service-owned
+// preparation. The client never tokenizes it locally or decides a template.
+type ChatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+// PrepareRequest is the normal user-facing request. Caller/tenant/session are
+// deliberately omitted: the enrolled transport derives them, and the service
+// returns the trusted preparation identity used by the subsequent job call.
+type PrepareRequest struct {
+	Contract        string        `json:"contract"`
+	RequestID       string        `json:"request_id"`
+	SessionID       string        `json:"session_id"`
+	ModelID         string        `json:"model_id"`
+	Machines        []string      `json:"machines"`
+	Precision       string        `json:"precision"`
+	Mode            string        `json:"mode"`
+	Messages        []ChatMessage `json:"messages"`
+	MaxOutputTokens uint32        `json:"max_output_tokens"`
+}
+
+func (r PrepareRequest) validate() error {
+	if r.Contract != ClusterContractV1 || strings.TrimSpace(r.RequestID) == "" || strings.TrimSpace(r.SessionID) == "" || strings.TrimSpace(r.ModelID) == "" || strings.TrimSpace(r.Precision) == "" || len(r.Messages) == 0 || r.MaxOutputTokens == 0 {
+		return fmt.Errorf("%w: request_id, session_id, model, precision, messages, and max_output_tokens are required", ErrClusterProtocol)
+	}
+	if r.Mode != "plain" && r.Mode != "flash" {
+		return fmt.Errorf("%w: mode must be plain or flash; no fallback is permitted", ErrClusterProtocol)
+	}
+	seenMachines := map[string]bool{}
+	for _, machine := range r.Machines {
+		machine = strings.TrimSpace(machine)
+		if machine == "" || seenMachines[machine] {
+			return fmt.Errorf("%w: machines must be unique nonempty service identities", ErrClusterProtocol)
+		}
+		seenMachines[machine] = true
+	}
+	if len(seenMachines) == 0 {
+		return fmt.Errorf("%w: choose at least one admitted machine or auto", ErrClusterProtocol)
+	}
+	for _, message := range r.Messages {
+		if (message.Role != "system" && message.Role != "user" && message.Role != "assistant") || strings.TrimSpace(message.Content) == "" {
+			return fmt.Errorf("%w: messages must use supported roles with nonempty content", ErrClusterProtocol)
+		}
+	}
+	return nil
+}
+
+// RankTopology is a local optional verifier input, not a field exposed by the
+// current preparation response. Exact host placement remains service-enforced.
+type RankTopology struct {
+	Rank   int    `json:"rank"`
+	HostID string `json:"host_id"`
+}
+
+// Preparation projects the service tokenization/template/checkpoint/plan
+// identities and rank count. The wire response does not expose host placement.
+type Preparation struct {
+	Contract         string   `json:"contract"`
+	PreparationID    string   `json:"preparation_id"`
+	RequestID        string   `json:"request_id"`
+	SessionID        string   `json:"session_id"`
+	ExpiresAt        string   `json:"expires_at"`
+	ModelID          string   `json:"model_id"`
+	PlanSHA256       string   `json:"plan_sha256"`
+	CheckpointSHA256 string   `json:"checkpoint_sha256"`
+	TokenizerSHA256  string   `json:"tokenizer_sha256"`
+	TemplateSHA256   string   `json:"template_sha256"`
+	Mode             string   `json:"mode"`
+	Precision        string   `json:"precision"`
+	InputTokens      []uint32 `json:"input_tokens"`
+	StopTokens       []uint32 `json:"stop_token_ids"`
+	MaxOutputTokens  uint32   `json:"max_output_tokens"`
+	RankCount        int      `json:"rank_count"`
+}
+
+func (p Preparation) validate() error {
+	if p.Contract != ClusterContractV1 || strings.TrimSpace(p.PreparationID) == "" || strings.TrimSpace(p.RequestID) == "" || strings.TrimSpace(p.SessionID) == "" || strings.TrimSpace(p.ModelID) == "" || (p.Mode != "plain" && p.Mode != "flash") || strings.TrimSpace(p.Precision) == "" || len(p.InputTokens) == 0 || p.MaxOutputTokens == 0 || p.RankCount < 2 {
+		return fmt.Errorf("%w: incomplete service preparation", ErrClusterProtocol)
+	}
+	for _, hash := range []string{p.PlanSHA256, p.CheckpointSHA256, p.TokenizerSHA256, p.TemplateSHA256} {
+		if !lowerSHA256(hash) {
+			return fmt.Errorf("%w: preparation has invalid identity digest", ErrClusterProtocol)
+		}
+	}
+	expires, err := time.Parse(time.RFC3339, p.ExpiresAt)
+	if err != nil || !expires.After(time.Now().UTC()) {
+		return fmt.Errorf("%w: preparation is expired or malformed", ErrClusterProtocol)
+	}
+	return nil
+}
+
+// JobRequest is accepted only after service-owned preparation. It carries no
+// model/tokenizer/template/session values that a caller could assert.
 type JobRequest struct {
 	Contract         string   `json:"contract"`
+	PreparationID    string   `json:"preparation_id"`
 	RequestID        string   `json:"request_id"`
 	IdempotencyKey   string   `json:"idempotency_key"`
 	SessionID        string   `json:"session_id"`
@@ -125,47 +217,18 @@ type JobRequest struct {
 }
 
 func (r JobRequest) validate() error {
-	if r.Contract != ClusterContractV1 {
-		return fmt.Errorf("%w: expected contract %q", ErrClusterProtocol, ClusterContractV1)
+	if r.Contract != ClusterContractV1 || strings.TrimSpace(r.PreparationID) == "" || strings.TrimSpace(r.RequestID) == "" || strings.TrimSpace(r.IdempotencyKey) == "" || strings.TrimSpace(r.SessionID) == "" || strings.TrimSpace(r.PlanSHA256) == "" || strings.TrimSpace(r.ModelID) == "" || strings.TrimSpace(r.CheckpointSHA256) == "" || strings.TrimSpace(r.TokenizerSHA256) == "" || strings.TrimSpace(r.TemplateSHA256) == "" || strings.TrimSpace(r.Precision) == "" || len(r.InputTokens) == 0 || r.MaxOutputTokens == 0 {
+		return fmt.Errorf("%w: incomplete frozen preparation request", ErrClusterProtocol)
 	}
-	for _, field := range []struct{ name, value string }{
-		{"request_id", r.RequestID}, {"idempotency_key", r.IdempotencyKey}, {"session_id", r.SessionID},
-		{"plan_sha256", r.PlanSHA256}, {"model_id", r.ModelID}, {"checkpoint_sha256", r.CheckpointSHA256},
-		{"tokenizer_sha256", r.TokenizerSHA256}, {"template_sha256", r.TemplateSHA256}, {"precision", r.Precision},
-	} {
-		if strings.TrimSpace(field.value) == "" {
-			return fmt.Errorf("%w: %s is required", ErrClusterProtocol, field.name)
-		}
-	}
-	if len(r.InputTokens) == 0 || r.MaxOutputTokens == 0 {
-		return fmt.Errorf("%w: input_tokens and max_output_tokens are required", ErrClusterProtocol)
-	}
-	if r.Mode != "plain" && r.Mode != "mtp" {
-		return fmt.Errorf("%w: mode must be plain or mtp; no fallback is permitted", ErrClusterProtocol)
-	}
-	for _, hash := range []string{r.PlanSHA256, r.CheckpointSHA256, r.TokenizerSHA256, r.TemplateSHA256} {
-		if len(hash) != 64 {
-			return fmt.Errorf("%w: identity digest must be lowercase SHA-256", ErrClusterProtocol)
-		}
-		for _, ch := range hash {
-			if !(ch >= '0' && ch <= '9' || ch >= 'a' && ch <= 'f') {
-				return fmt.Errorf("%w: identity digest must be lowercase SHA-256", ErrClusterProtocol)
-			}
-		}
+	if r.Mode != "plain" && r.Mode != "flash" {
+		return fmt.Errorf("%w: mode must be plain or flash", ErrClusterProtocol)
 	}
 	return nil
 }
 
 // RankFence is an actual rank resource admission, not a task lease. The
-// client checks every supplied fence and compares the complete rank/host set
-// against the caller's authenticated frozen plan before accepting admission.
-// RankPlacement is local verifier input from the authenticated frozen plan.
-// It is never inferred from the admission response or sent as a new wire field.
-type RankPlacement struct {
-	Rank   int
-	HostID string
-}
-
+// installed client requires every field so a service cannot claim all-rank
+// admission while leaving a rank or its memory/fence identity unspecified.
 type RankFence struct {
 	Rank                 int    `json:"rank"`
 	HostID               string `json:"host_id"`
@@ -189,10 +252,7 @@ type Job struct {
 	RankFences  []RankFence `json:"rank_fences,omitempty"`
 }
 
-// validate always checks immutable identity and fence structure. Fresh expiry
-// is required only for a new/live admission, never to query/cancel/replay a
-// historical receipt. Expired historical fences do not authorize computation.
-func (j Job) validate(expectedRequest, expectedPlan string, requireLiveFences bool) error {
+func (j Job) validate(expectedRequest, expectedPlan string, expectedTopology []RankTopology, requireLiveFences bool) error {
 	if j.Contract != ClusterContractV1 || strings.TrimSpace(j.JobID) == "" || strings.TrimSpace(j.ExecutionID) == "" || j.Epoch == 0 || strings.TrimSpace(j.RequestID) == "" || strings.TrimSpace(j.PlanSHA256) == "" {
 		return fmt.Errorf("%w: response has no authoritative job execution identity", ErrClusterProtocol)
 	}
@@ -205,19 +265,75 @@ func (j Job) validate(expectedRequest, expectedPlan string, requireLiveFences bo
 	if requireLiveFences && len(j.RankFences) == 0 {
 		return fmt.Errorf("%w: service returned no all-rank resource fences", ErrClusterAdmission)
 	}
+	if len(j.RankFences) > 0 {
+		if err := validateTopology(topologyFromFences(j.RankFences)); err != nil {
+			return fmt.Errorf("%w: %v", ErrClusterAdmission, err)
+		}
+		if len(expectedTopology) > 0 && !sameTopology(expectedTopology, topologyFromFences(j.RankFences)) {
+			return fmt.Errorf("%w: job rank topology differs from service preparation", ErrClusterAdmission)
+		}
+	}
 	seenRank := map[int]bool{}
+	seenHost := map[string]bool{}
 	now := time.Now().UTC()
 	for _, rank := range j.RankFences {
-		if rank.Rank < 0 || seenRank[rank.Rank] || strings.TrimSpace(rank.HostID) == "" || strings.TrimSpace(rank.Fence) == "" || strings.TrimSpace(rank.Generation) == "" || rank.MemoryAdmissionBytes <= 0 {
+		if rank.Rank < 0 || seenRank[rank.Rank] || seenHost[rank.HostID] || strings.TrimSpace(rank.HostID) == "" || strings.TrimSpace(rank.Fence) == "" || strings.TrimSpace(rank.Generation) == "" || rank.MemoryAdmissionBytes <= 0 {
 			return fmt.Errorf("%w: incomplete or duplicate rank admission", ErrClusterAdmission)
 		}
 		seenRank[rank.Rank] = true
+		seenHost[rank.HostID] = true
 		expires, err := time.Parse(time.RFC3339, rank.ExpiresAt)
 		if err != nil || requireLiveFences && !expires.After(now) {
 			return fmt.Errorf("%w: rank %d has no live execution fence", ErrClusterAdmission, rank.Rank)
 		}
 	}
 	return nil
+}
+
+func lowerSHA256(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	for _, ch := range value {
+		if !(ch >= '0' && ch <= '9' || ch >= 'a' && ch <= 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func validateTopology(topology []RankTopology) error {
+	if len(topology) == 0 {
+		return errors.New("no rank topology")
+	}
+	seenHosts := map[string]bool{}
+	for index, rank := range topology {
+		if rank.Rank != index || strings.TrimSpace(rank.HostID) == "" || seenHosts[rank.HostID] {
+			return errors.New("rank topology must be contiguous with unique hosts")
+		}
+		seenHosts[rank.HostID] = true
+	}
+	return nil
+}
+
+func topologyFromFences(fences []RankFence) []RankTopology {
+	topology := make([]RankTopology, 0, len(fences))
+	for _, fence := range fences {
+		topology = append(topology, RankTopology{Rank: fence.Rank, HostID: fence.HostID})
+	}
+	return topology
+}
+
+func sameTopology(expected, actual []RankTopology) bool {
+	if len(expected) != len(actual) {
+		return false
+	}
+	for index := range expected {
+		if expected[index] != actual[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *ClusterClient) Capabilities(ctx context.Context) (Capability, error) {
@@ -231,21 +347,48 @@ func (c *ClusterClient) Capabilities(ctx context.Context) (Capability, error) {
 	return out, nil
 }
 
-// CreateJob verifies the service's active capabilities first, then submits the
-// frozen request. It refuses success unless the returned job has a complete,
-// live all-rank memory admission and execution fence set. expectedRanks must
-// come from the authenticated plan identified by in.PlanSHA256; it must never
-// be inferred from this job response. This method does not authenticate a plan.
-func (c *ClusterClient) CreateJob(ctx context.Context, in JobRequest, expectedRanks []RankPlacement) (Job, error) {
-	if len(expectedRanks) == 0 {
-		return Job{}, fmt.Errorf("%w: authenticated frozen plan rank inventory is required", ErrClusterAdmission)
+// Prepare asks the authenticated service to select/tokenize the requested
+// conversation and return a trusted frozen preparation. It is the only normal
+// client route that carries user text.
+func (c *ClusterClient) Prepare(ctx context.Context, in PrepareRequest) (Preparation, error) {
+	if err := in.validate(); err != nil {
+		return Preparation{}, err
 	}
-	expected := make(map[int]string, len(expectedRanks))
-	for _, rank := range expectedRanks {
-		if _, duplicate := expected[rank.Rank]; duplicate || rank.Rank < 0 || strings.TrimSpace(rank.HostID) == "" {
-			return Job{}, fmt.Errorf("%w: invalid frozen plan rank inventory", ErrClusterProtocol)
-		}
-		expected[rank.Rank] = rank.HostID
+	capabilities, err := c.Capabilities(ctx)
+	if err != nil {
+		return Preparation{}, err
+	}
+	if err := capabilities.validateFor(in.Mode); err != nil {
+		return Preparation{}, err
+	}
+	var out Preparation
+	if err := c.doJSON(ctx, http.MethodPost, "/v1/apollo/prepare", in, &out); err != nil {
+		return Preparation{}, err
+	}
+	if err := out.validate(); err != nil {
+		return Preparation{}, err
+	}
+	if out.RequestID != in.RequestID || out.SessionID != in.SessionID || out.ModelID != in.ModelID || out.Mode != in.Mode || out.Precision != in.Precision || out.MaxOutputTokens != in.MaxOutputTokens {
+		return Preparation{}, fmt.Errorf("%w: service preparation changed requested mode or precision", ErrClusterProtocol)
+	}
+	return out, nil
+}
+
+// CreateJob submits one service-owned preparation. It refuses success unless
+// the returned job has the prepared rank count and contiguous unique-host
+// live fences. Exact host/budget matching is enforced by the authenticated
+// service against its private frozen plan, not independently verified here.
+func (c *ClusterClient) CreateJob(ctx context.Context, preparation Preparation, idempotencyKey string) (Job, error) {
+	if err := preparation.validate(); err != nil {
+		return Job{}, err
+	}
+	in := JobRequest{
+		Contract: ClusterContractV1, PreparationID: preparation.PreparationID, RequestID: preparation.RequestID,
+		IdempotencyKey: idempotencyKey, SessionID: preparation.SessionID, PlanSHA256: preparation.PlanSHA256,
+		ModelID: preparation.ModelID, CheckpointSHA256: preparation.CheckpointSHA256,
+		TokenizerSHA256: preparation.TokenizerSHA256, TemplateSHA256: preparation.TemplateSHA256,
+		Mode: preparation.Mode, Precision: preparation.Precision, InputTokens: preparation.InputTokens,
+		MaxOutputTokens: preparation.MaxOutputTokens,
 	}
 	if err := in.validate(); err != nil {
 		return Job{}, err
@@ -254,29 +397,24 @@ func (c *ClusterClient) CreateJob(ctx context.Context, in JobRequest, expectedRa
 	if err != nil {
 		return Job{}, err
 	}
-	if err := capabilities.validateFor(in.Mode); err != nil {
+	if err := capabilities.validateFor(preparation.Mode); err != nil {
 		return Job{}, err
 	}
 	var out Job
 	if err := c.doJSON(ctx, http.MethodPost, "/v1/apollo/jobs", in, &out); err != nil {
 		return Job{}, err
 	}
-	if err := out.validate(in.RequestID, in.PlanSHA256, true); err != nil {
+	if len(out.RankFences) != preparation.RankCount {
+		return Job{}, fmt.Errorf("%w: job did not admit every prepared rank", ErrClusterAdmission)
+	}
+	if err := out.validate(preparation.RequestID, preparation.PlanSHA256, nil, true); err != nil {
 		return Job{}, err
-	}
-	if len(out.RankFences) != len(expected) {
-		return Job{}, fmt.Errorf("%w: incomplete frozen plan rank admission", ErrClusterAdmission)
-	}
-	for _, rank := range out.RankFences {
-		if host, ok := expected[rank.Rank]; !ok || host != rank.HostID {
-			return Job{}, fmt.Errorf("%w: rank admission differs from frozen plan", ErrClusterAdmission)
-		}
 	}
 	return out, nil
 }
 
 func (c *ClusterClient) Status(ctx context.Context, admitted Job) (Job, error) {
-	if err := admitted.validate("", "", false); err != nil {
+	if err := admitted.validate("", "", nil, false); err != nil {
 		return Job{}, err
 	}
 	jobID := admitted.JobID
@@ -287,14 +425,14 @@ func (c *ClusterClient) Status(ctx context.Context, admitted Job) (Job, error) {
 	if out.JobID != jobID || out.ExecutionID != admitted.ExecutionID || out.Epoch != admitted.Epoch {
 		return Job{}, fmt.Errorf("%w: status response job identity differs", ErrClusterProtocol)
 	}
-	if err := out.validate(admitted.RequestID, admitted.PlanSHA256, out.State != "released" && out.State != "orphan_unknown"); err != nil {
+	if err := out.validate(admitted.RequestID, admitted.PlanSHA256, nil, out.State != "released" && out.State != "orphan_unknown"); err != nil {
 		return Job{}, err
 	}
 	return out, nil
 }
 
 func (c *ClusterClient) Cancel(ctx context.Context, admitted Job) (Job, error) {
-	if err := admitted.validate("", "", false); err != nil {
+	if err := admitted.validate("", "", nil, false); err != nil {
 		return Job{}, err
 	}
 	jobID := admitted.JobID
@@ -305,47 +443,65 @@ func (c *ClusterClient) Cancel(ctx context.Context, admitted Job) (Job, error) {
 	if out.JobID != jobID || out.ExecutionID != admitted.ExecutionID || out.Epoch != admitted.Epoch {
 		return Job{}, fmt.Errorf("%w: cancel response job identity differs", ErrClusterProtocol)
 	}
-	//nolint:misspell // "cancelled" is the Apollo protocol enum; do not rewrite wire values.
+	//nolint:misspell // Apollo cancellation wire enum.
 	if out.State != "cancel_requested" && out.State != "draining" && out.State != "cancelled" && out.State != "released" && out.State != "orphan_unknown" {
 		return Job{}, fmt.Errorf("%w: cancel did not return a cancellation state", ErrClusterProtocol)
 	}
-	if err := out.validate(admitted.RequestID, admitted.PlanSHA256, out.State != "released" && out.State != "orphan_unknown"); err != nil {
+	if err := out.validate(admitted.RequestID, admitted.PlanSHA256, nil, out.State != "released" && out.State != "orphan_unknown"); err != nil {
 		return Job{}, err
 	}
 	return out, nil
 }
 
 // Event is a replay-safe server-sent event. The caller provides the last
-// persisted sequence and frozen admission receipt. Every event must match its
-// complete execution tuple. Typed token fields preserve the authorized reply,
-// including zero token IDs and positions; no private tokens are logged here.
+// persisted sequence and this method rejects regressions or an event for a
+// different job; it does not print or persist private tokens itself.
 type Event struct {
-	Contract        string  `json:"contract"`
-	JobID           string  `json:"job_id"`
-	ExecutionID     string  `json:"execution_id"`
-	RequestID       string  `json:"request_id"`
-	PlanSHA256      string  `json:"plan_sha256"`
-	Epoch           uint64  `json:"epoch"`
-	Sequence        uint64  `json:"sequence"`
-	Type            string  `json:"type"`
-	Text            *string `json:"text,omitempty"`
-	TokenID         *uint32 `json:"token_id,omitempty"`
-	Position        *uint64 `json:"position,omitempty"`
-	CommittedTokens *uint64 `json:"committed_tokens,omitempty"`
+	Contract    string  `json:"contract"`
+	JobID       string  `json:"job_id"`
+	ExecutionID string  `json:"execution_id"`
+	RequestID   string  `json:"request_id"`
+	PlanSHA256  string  `json:"plan_sha256"`
+	Epoch       uint64  `json:"epoch"`
+	Sequence    uint64  `json:"sequence"`
+	Type        string  `json:"type"`
+	Position    *uint32 `json:"position,omitempty"`
+	TokenID     *uint32 `json:"token_id,omitempty"`
+	Text        string  `json:"text,omitempty"`
+	ErrorCode   string  `json:"error_code,omitempty"`
+	// Raw retains the complete authorized service event (including token text or
+	// terminal error details) for the CLI to relay without a second, lossy
+	// schema. Its identity/sequence fields are still validated before delivery.
+	Raw json.RawMessage `json:"-"`
 }
 
-func (c *ClusterClient) Events(ctx context.Context, admitted Job, after uint64, emit func(Event) error) error {
-	if err := admitted.validate("", "", false); err != nil {
+func (e *Event) UnmarshalJSON(data []byte) error {
+	type eventFields Event
+	var fields eventFields
+	if err := json.Unmarshal(data, &fields); err != nil {
 		return err
 	}
-	if strings.TrimSpace(admitted.RequestID) == "" || strings.TrimSpace(admitted.PlanSHA256) == "" {
-		return fmt.Errorf("%w: frozen event request and plan identity are required", ErrClusterProtocol)
+	*e = Event(fields)
+	e.Raw = append(e.Raw[:0], data...)
+	return nil
+}
+
+func (e Event) MarshalJSON() ([]byte, error) {
+	if len(e.Raw) != 0 {
+		return append([]byte(nil), e.Raw...), nil
 	}
-	jobID := admitted.JobID
-	if emit == nil {
-		return fmt.Errorf("%w: job_id and event consumer are required", ErrClusterProtocol)
+	type eventFields Event
+	return json.Marshal(eventFields(e))
+}
+
+func (c *ClusterClient) Events(ctx context.Context, job Job, after uint64, emit func(Event) error) error {
+	if err := job.validate("", "", nil, false); err != nil {
+		return err
 	}
-	path := "/v1/apollo/jobs/" + url.PathEscape(jobID) + "/events?after=" + strconv.FormatUint(after, 10)
+	if strings.TrimSpace(job.JobID) == "" || strings.TrimSpace(job.ExecutionID) == "" || strings.TrimSpace(job.RequestID) == "" || strings.TrimSpace(job.PlanSHA256) == "" || job.Epoch == 0 || emit == nil {
+		return fmt.Errorf("%w: authoritative job identity and event consumer are required", ErrClusterProtocol)
+	}
+	path := "/v1/apollo/jobs/" + url.PathEscape(job.JobID) + "/events?after=" + strconv.FormatUint(after, 10)
 	req, err := c.request(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return err
@@ -362,9 +518,12 @@ func (c *ClusterClient) Events(ctx context.Context, admitted Job, after uint64, 
 	if !strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
 		return fmt.Errorf("%w: events response is not server-sent events", ErrClusterProtocol)
 	}
+	// A stream has no fixed aggregate byte ceiling: it can be long-lived, while
+	// Scanner keeps each individual event bounded before allocating it.
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64<<10), maxEventLine)
 	last := after
+	terminal := false
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line == "" || strings.HasPrefix(line, ":") {
@@ -377,25 +536,26 @@ func (c *ClusterClient) Events(ctx context.Context, admitted Job, after uint64, 
 		if err := json.Unmarshal([]byte(strings.TrimSpace(strings.TrimPrefix(line, "data:"))), &event); err != nil {
 			return fmt.Errorf("%w: decode event: %v", ErrClusterProtocol, err)
 		}
-		if event.Contract != ClusterContractV1 || event.JobID != jobID || event.Sequence <= last || event.ExecutionID != admitted.ExecutionID || event.RequestID != admitted.RequestID || event.PlanSHA256 != admitted.PlanSHA256 || event.Epoch != admitted.Epoch || strings.TrimSpace(event.Type) == "" {
+		if event.Contract != ClusterContractV1 || event.JobID != job.JobID || event.ExecutionID != job.ExecutionID || event.RequestID != job.RequestID || event.PlanSHA256 != job.PlanSHA256 || event.Epoch != job.Epoch || event.Sequence <= last || strings.TrimSpace(event.Type) == "" {
 			return fmt.Errorf("%w: non-monotonic or foreign event", ErrClusterProtocol)
+		}
+		if terminal {
+			return fmt.Errorf("%w: event followed a terminal event", ErrClusterProtocol)
 		}
 		last = event.Sequence
 		if err := emit(event); err != nil {
 			return err
 		}
-		// These terminal event names are the provisional v1 projection. Enabling
-		// the CLI still requires the implemented service's versioned event schema.
-		switch event.Type {
-		case "completed", "released", "cancelled", "failed", "orphan_unknown": //nolint:misspell // Apollo wire enum.
-			return nil // Stream terminal observed; the event determines the job outcome.
+		terminal = event.Type == "released" || event.Type == "orphan_unknown"
+	}
+	if !terminal || scanner.Err() != nil {
+		cause := scanner.Err()
+		if cause == nil {
+			cause = io.ErrUnexpectedEOF
 		}
+		return &IncompleteStreamError{LastSequence: last, Cause: cause}
 	}
-	cause := scanner.Err()
-	if cause == nil {
-		cause = io.ErrUnexpectedEOF
-	}
-	return &IncompleteStreamError{LastSequence: last, Cause: cause}
+	return nil
 }
 
 func (c *ClusterClient) doJSON(ctx context.Context, method, path string, in, out any) error {
