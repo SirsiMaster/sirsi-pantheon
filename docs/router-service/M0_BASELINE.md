@@ -37,3 +37,13 @@ Recommended order: A first (free, reversible, measurable), then quantify B's ins
 ## Pre-registration text (M0-01, amended once before any measurement)
 H1: spool-path p50 <= https floor p50 + spool poll + 150 ms. H2: p99 <= 3 x p50. H3: poll dominates the gap. Negative control: bogus host fails 5/5.
 M0-02: H1 median detect >= 25 s on a 1-minute-tick lane; H2 attended/event-woken lane acks within 2 s (not yet measured).
+
+## Finding 5 (2026-10-15): the session table grew ~86k rows in 48 h because two binaries shared one cache file
+Measured on the M5: agent `Mac` minted 17 sessions in ~30 s; its cache file alternated between runtime hashes of the current CLI
+(`34b5ce2b`, 11 wake loops) and the older relay binary (`8ea0cfc3`, 8 wake loops). A cached session is valid only for the executable that
+minted it, so the two invalidated each other every call. All 19 loops authenticate as the hostname because a wake loop has no agent id
+(audit log: `Mac@Mac` 86,449 sessions / 48 h). Fixes: the cache file is keyed by runtime (20 calls from 2 binaries now mint 2 sessions, was
+20; negative control reproduces 20), stale cache files are pruned after 7 days, and the service garbage-collects dead sessions (idle or revoked
+> 24 h, never one owning a lease on an open item or unfinished task; amortized on mint, bounded batches). Operator tools: `sirsi router sessions
+stats|gc [--dry-run]`. Still open: wake loops should authenticate as their own lane (attribution), tracked as ra-wake-loop-identity.
+Pre-registration: `PREREG_SESSIONS_01.md`.
