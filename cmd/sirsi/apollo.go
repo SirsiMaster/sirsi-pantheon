@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/apollo"
@@ -17,6 +18,25 @@ var (
 	apolloMemory  int64
 	apolloSwap    int64
 	apolloEstates string
+
+	// Cluster commands consume the negotiated Apollo v1 service contract. The
+	// endpoint must be HTTPS; credentials live in the installed transport, not
+	// in flags, config output, or a request body.
+	apolloClusterEndpoint string
+	apolloRequestID       string
+	apolloIdempotencyKey  string
+	apolloSessionID       string
+	apolloPlanSHA256      string
+	apolloModelID         string
+	apolloCheckpointSHA   string
+	apolloTokenizerSHA    string
+	apolloTemplateSHA     string
+	apolloMode            string
+	apolloPrecision       string
+	apolloInputTokens     string
+	apolloMaxOutput       uint32
+	apolloJobID           string
+	apolloEventAfter      uint64
 )
 
 var apolloCmd = &cobra.Command{
@@ -81,6 +101,135 @@ var apolloTelemetryCmd = &cobra.Command{
 	},
 }
 
+var apolloCapabilitiesCmd = &cobra.Command{
+	Use:   "capabilities",
+	Short: "Read authenticated Apollo cluster capabilities",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		client, err := configuredApolloClusterClient()
+		if err != nil {
+			return err
+		}
+		capabilities, err := client.Capabilities(cmd.Context())
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(capabilities)
+	},
+}
+
+var apolloChatCmd = &cobra.Command{
+	Use:     "chat",
+	Aliases: []string{"admit"},
+	Short:   "Request authenticated, all-rank Apollo cluster inference",
+	Long: `Submits a frozen, pre-tokenized Apollo job to the authenticated cluster
+service. This command never starts a local model, uses no SSH or subprocess
+transport, and refuses a launch unless the service returns live memory admissions
+and execution fences for every rank. Plain and MTP modes remain distinct; the
+client never falls back between them.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		client, err := configuredApolloClusterClient()
+		if err != nil {
+			return err
+		}
+		tokens, err := parseApolloTokenIDs(apolloInputTokens)
+		if err != nil {
+			return err
+		}
+		job, err := client.CreateJob(cmd.Context(), apollo.JobRequest{
+			Contract:         apollo.ClusterContractV1,
+			RequestID:        apolloRequestID,
+			IdempotencyKey:   apolloIdempotencyKey,
+			SessionID:        apolloSessionID,
+			PlanSHA256:       apolloPlanSHA256,
+			ModelID:          apolloModelID,
+			CheckpointSHA256: apolloCheckpointSHA,
+			TokenizerSHA256:  apolloTokenizerSHA,
+			TemplateSHA256:   apolloTemplateSHA,
+			Mode:             apolloMode,
+			Precision:        apolloPrecision,
+			InputTokens:      tokens,
+			MaxOutputTokens:  apolloMaxOutput,
+		})
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(job)
+	},
+}
+
+var apolloStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Read the authenticated state of an Apollo cluster job",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		client, err := configuredApolloClusterClient()
+		if err != nil {
+			return err
+		}
+		job, err := client.Status(cmd.Context(), apolloJobID)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(job)
+	},
+}
+
+var apolloCancelCmd = &cobra.Command{
+	Use:   "cancel",
+	Short: "Request bounded cancellation and rank release for an Apollo job",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		client, err := configuredApolloClusterClient()
+		if err != nil {
+			return err
+		}
+		job, err := client.Cancel(cmd.Context(), apolloJobID)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(job)
+	},
+}
+
+var apolloEventsCmd = &cobra.Command{
+	Use:   "events",
+	Short: "Replay ordered Apollo cluster job events",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		client, err := configuredApolloClusterClient()
+		if err != nil {
+			return err
+		}
+		return client.Events(cmd.Context(), apolloJobID, apolloEventAfter, func(event apollo.Event) error {
+			return json.NewEncoder(cmd.OutOrStdout()).Encode(event)
+		})
+	},
+}
+
+func configuredApolloClusterClient() (*apollo.ClusterClient, error) {
+	if strings.TrimSpace(apolloClusterEndpoint) == "" {
+		return nil, fmt.Errorf("Apollo cluster endpoint is required; configure the authenticated HTTPS service with --endpoint")
+	}
+	return apollo.NewClusterClient(apolloClusterEndpoint, nil)
+}
+
+func parseApolloTokenIDs(raw string) ([]uint32, error) {
+	parts := strings.Split(raw, ",")
+	if len(parts) == 0 {
+		return nil, fmt.Errorf("input tokens are required")
+	}
+	tokens := make([]uint32, 0, len(parts))
+	for _, part := range parts {
+		value := strings.TrimSpace(part)
+		if value == "" {
+			return nil, fmt.Errorf("input tokens contain an empty value")
+		}
+		parsed, err := strconv.ParseUint(value, 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("input token %q is not an unsigned 32-bit value", value)
+		}
+		tokens = append(tokens, uint32(parsed))
+	}
+	return tokens, nil
+}
+
 func splitApolloEstates(raw string) []string {
 	var out []string
 	for _, value := range strings.Split(raw, ",") {
@@ -98,5 +247,25 @@ func init() {
 	apolloPlanCmd.Flags().Int64Var(&apolloMemory, "memory-gib", 0, "Requested unified-memory envelope in GiB")
 	apolloPlanCmd.Flags().Int64Var(&apolloSwap, "swap-gib", 0, "Requested swap ceiling in GiB (admission checks live pressure separately)")
 	apolloPlanCmd.Flags().StringVar(&apolloEstates, "estates", "", "Comma-separated detected chip estate ids")
-	apolloCmd.AddCommand(apolloCatalogCmd, apolloPlanCmd, apolloTelemetryCmd)
+
+	for _, command := range []*cobra.Command{apolloCapabilitiesCmd, apolloChatCmd, apolloStatusCmd, apolloCancelCmd, apolloEventsCmd} {
+		command.Flags().StringVar(&apolloClusterEndpoint, "endpoint", "", "Authenticated Apollo HTTPS service endpoint")
+	}
+	apolloChatCmd.Flags().StringVar(&apolloRequestID, "request-id", "", "Opaque request id bound to the authenticated session")
+	apolloChatCmd.Flags().StringVar(&apolloIdempotencyKey, "idempotency-key", "", "Opaque per-session idempotency key")
+	apolloChatCmd.Flags().StringVar(&apolloSessionID, "session-id", "", "Opaque authenticated conversation session id")
+	apolloChatCmd.Flags().StringVar(&apolloPlanSHA256, "plan-sha256", "", "Frozen signed placement-plan SHA-256")
+	apolloChatCmd.Flags().StringVar(&apolloModelID, "model", "", "Exact registered model id")
+	apolloChatCmd.Flags().StringVar(&apolloCheckpointSHA, "checkpoint-sha256", "", "Exact checkpoint manifest SHA-256")
+	apolloChatCmd.Flags().StringVar(&apolloTokenizerSHA, "tokenizer-sha256", "", "Exact tokenizer SHA-256")
+	apolloChatCmd.Flags().StringVar(&apolloTemplateSHA, "template-sha256", "", "Exact chat template SHA-256")
+	apolloChatCmd.Flags().StringVar(&apolloMode, "mode", "plain", "Inference mode: plain or mtp")
+	apolloChatCmd.Flags().StringVar(&apolloPrecision, "precision", "Q8", "Exact admitted precision")
+	apolloChatCmd.Flags().StringVar(&apolloInputTokens, "input-tokens", "", "Comma-separated pre-tokenized unsigned token ids")
+	apolloChatCmd.Flags().Uint32Var(&apolloMaxOutput, "max-output-tokens", 0, "Maximum output token count")
+	for _, command := range []*cobra.Command{apolloStatusCmd, apolloCancelCmd, apolloEventsCmd} {
+		command.Flags().StringVar(&apolloJobID, "job-id", "", "Authoritative Apollo job id")
+	}
+	apolloEventsCmd.Flags().Uint64Var(&apolloEventAfter, "after", 0, "Last persisted event sequence; replay starts after it")
+	apolloCmd.AddCommand(apolloCatalogCmd, apolloPlanCmd, apolloTelemetryCmd, apolloCapabilitiesCmd, apolloChatCmd, apolloStatusCmd, apolloEventsCmd, apolloCancelCmd)
 }

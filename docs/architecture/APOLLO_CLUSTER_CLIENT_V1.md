@@ -1,0 +1,80 @@
+# Pantheon installed Apollo client v1
+
+This document records Pantheon's installed-client projection of the Apollo
+cluster inference proposal in
+`sirsi-inference/docs/architecture/APOLLO_CLUSTER_INFERENCE_V1.md` at
+`86f92d0d32fc41354f77057e72c8b93fa44d2d62`.
+
+It adds no inference engine, model loader, rank process, SSH route, or local
+fallback. `sne.openai-chat.v3` remains its existing plain/MTP surface. The
+new CLI is an authenticated HTTPS client only:
+
+```text
+sirsi apollo capabilities --endpoint https://apollo.example.ts.net
+sirsi apollo chat --endpoint https://apollo.example.ts.net ...
+sirsi apollo admit --endpoint https://apollo.example.ts.net ... # chat alias
+sirsi apollo status --endpoint https://apollo.example.ts.net --job-id JOB
+sirsi apollo events --endpoint https://apollo.example.ts.net --job-id JOB --after N
+sirsi apollo cancel --endpoint https://apollo.example.ts.net --job-id JOB
+```
+
+The user supplies a frozen model/plan/session/token request to `chat`; the
+authenticated transport supplies caller identity. There is no `--token`,
+`--ssh`, subprocess, model-path, or unauthenticated local fallback flag.
+
+## Required service response projection
+
+The proposal currently describes routes and invariants but does not yet define
+closed capability/job response objects. Pantheon therefore accepts a create
+response only when it has this projection (additional or implicit fields are
+not accepted):
+
+```json
+{
+  "contract": "apollo.cluster-inference.v1",
+  "job_id": "authoritative-task-id",
+  "execution_id": "128-bit-execution-id",
+  "request_id": "same-client-request-id",
+  "plan_sha256": "64-lowercase-hex",
+  "epoch": 19,
+  "state": "admitting",
+  "rank_fences": [{
+    "rank": 0,
+    "host_id": "m5",
+    "fence": "opaque-fence",
+    "generation": "opaque-generation",
+    "expires_at": "2026-10-15T18:00:00Z",
+    "memory_admission_bytes": 17179869184
+  }]
+}
+```
+
+Every rank must appear exactly once, have a live RFC3339 expiry, positive
+admitted memory and a nonempty host/fence/generation. A router task lease,
+placement-plan digest, or a claimed machine name is insufficient. The client
+calls `GET /v1/apollo/capabilities` first and requires exact contract plus
+`launch_available`, `stream_available`, and `cancel_available` all true for
+the requested mode. A planned-only service is refused before the job POST.
+
+`status` and `cancel` preserve the same identity checks. `events` is strict
+SSE: each event must name the requested job, carry the exact contract and a
+strictly increasing sequence after the caller's persisted sequence. Redirects,
+non-HTTPS endpoints, response trailing bytes, and incomplete admission data
+are rejected.
+
+## API corrections pending Apollo/Pantheon/Ra agreement
+
+Before an installed service is advertised as available, the PR #61 document
+needs to adopt the response projection above (or supply an equivalent
+versioned closed schema) and define:
+
+1. exact `capabilities` JSON fields and the distinction between planned and
+   launchable modes;
+2. an exact job/status/cancel response envelope including all rank fences,
+   admission bytes, expiry, and terminal release/orphan evidence;
+3. a closed error envelope and stable HTTP status mapping; and
+4. the installed authenticated transport configuration and trust anchor.
+
+Those corrections are protocol work, not a reason to weaken the client. Until
+they land in the service, `sirsi apollo chat` correctly fails closed rather
+than claiming a model was launched.
