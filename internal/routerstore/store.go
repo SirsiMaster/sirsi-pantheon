@@ -159,6 +159,9 @@ type SQLiteStore struct {
 	escalationAgent string
 	now             func() time.Time // injectable clock (Rule A16); nil means time.Now().UTC()
 
+	sessionGCMu   sync.Mutex // guards sessionGCNext: GC of dead sessions runs at most once per interval (sessions.go)
+	sessionGCNext time.Time
+
 	// Event-driven dispatch (Phase 2): in-process waiters per agent, woken by
 	// SendGuarded/NotifyAgent. Guarded by waitMu per Rule A21.
 	waitMu  sync.Mutex
