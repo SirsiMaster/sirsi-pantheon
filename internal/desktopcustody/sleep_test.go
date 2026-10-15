@@ -216,7 +216,7 @@ func TestSleepInvalidWakeProofBecomesUnknown(t *testing.T) {
 	phase(t, f, SleepUnknown)
 	_, _, _, ca := f.p.counts()
 	if ca != 0 {
-		t.Fatalf("unverified wake was cancelled=%d", ca)
+		t.Fatalf("unverified wake was canceled=%d", ca)
 	}
 }
 func TestSleepJournalRejectsOwnerSubstitution(t *testing.T) {

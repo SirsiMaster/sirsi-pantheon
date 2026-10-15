@@ -53,7 +53,7 @@ func (j *FileSleepJournal) Close() error {
 }
 
 var sleepOrdinal = map[SleepPhase]string{
-	SleepPrepared: "00-prepared", WakeScheduled: "10-wake-scheduled", WakeReadBack: "20-wake-readback", SleepRequested: "30-sleep-requested", ReturnPending: "40-return-pending", SleepVerified: "50-verified-return", SleepFailed: "90-failed", SleepUnknown: "91-unknown",
+	SleepPrepared: "00-prepared", WakeScheduled: "10-wake-scheduled", WakeReadBack: "20-wake-readback", SleepRequested: "30-sleep-requested", SleepInvoked: "35-native-invoked", SleepNativeReturned: "36-native-returned", ReturnPending: "40-return-pending", SleepVerified: "50-verified-return", SleepFailed: "90-failed", SleepUnknown: "91-unknown",
 }
 
 func (j *FileSleepJournal) BeginSleep(e SleepEvent) error {
@@ -75,7 +75,7 @@ func (j *FileSleepJournal) ReadSleep(id string) ([]SleepEvent, error) {
 	}
 	var events []SleepEvent
 	err := j.withLock(func() error {
-		for _, p := range []SleepPhase{SleepPrepared, WakeScheduled, WakeReadBack, SleepRequested, ReturnPending, SleepVerified, SleepFailed, SleepUnknown} {
+		for _, p := range []SleepPhase{SleepPrepared, WakeScheduled, WakeReadBack, SleepRequested, SleepInvoked, SleepNativeReturned, ReturnPending, SleepVerified, SleepFailed, SleepUnknown} {
 			b, err := j.read(sleepLeaf(id, p))
 			if errors.Is(err, unix.ENOENT) {
 				continue
@@ -212,7 +212,7 @@ func decodeSleepExact(b []byte, dst any) error {
 	return nil
 }
 func validSleepEvent(e SleepEvent) bool {
-	return sleepOrdinal[e.Phase] != "" && identifierRE.MatchString(e.RequestID) && identifierRE.MatchString(e.Host) && identifierRE.MatchString(e.Owner) && e.AdmissionID != "" && e.Issuer != "" && e.PlatformUUID != "" && e.BootID != "" && e.Operation == SleepOperation && e.OwnerTag == "pantheon-sleep-"+e.RequestID && e.ReviewDigest != "" && !e.At.IsZero()
+	return sleepOrdinal[e.Phase] != "" && identifierRE.MatchString(e.RequestID) && identifierRE.MatchString(e.Host) && identifierRE.MatchString(e.Owner) && e.AdmissionID != "" && e.Issuer != "" && e.PlatformUUID != "" && e.BootID != "" && e.Operation == SleepOperation && e.OwnerTag == "pantheon-sleep-"+e.RequestID && e.ReviewDigest != "" && !e.At.IsZero() && e.Nonce != "" && e.CustodyGeneration != "" && !e.NotBefore.IsZero() && e.NotAfter.After(e.NotBefore) && e.NotAfter.Sub(e.NotBefore) <= maxSleepWindow
 }
 func validateSleepEvents(events []SleepEvent) error {
 	if len(events) == 0 {
@@ -224,12 +224,12 @@ func validateSleepEvents(events []SleepEvent) error {
 	}
 	seen := map[SleepPhase]bool{}
 	for _, e := range events {
-		if !validSleepEvent(e) || seen[e.Phase] || e.RequestID != first.RequestID || e.Host != first.Host || e.Owner != first.Owner || e.AdmissionID != first.AdmissionID || e.Issuer != first.Issuer || e.PlatformUUID != first.PlatformUUID || e.BootID != first.BootID || e.Operation != first.Operation || e.OwnerTag != first.OwnerTag || e.ReviewDigest != first.ReviewDigest {
+		if !validSleepEvent(e) || seen[e.Phase] || e.RequestID != first.RequestID || e.Host != first.Host || e.Owner != first.Owner || e.AdmissionID != first.AdmissionID || e.Issuer != first.Issuer || e.PlatformUUID != first.PlatformUUID || e.BootID != first.BootID || e.Operation != first.Operation || e.OwnerTag != first.OwnerTag || e.ReviewDigest != first.ReviewDigest || e.Nonce != first.Nonce || e.CustodyGeneration != first.CustodyGeneration || !e.NotBefore.Equal(first.NotBefore) || !e.NotAfter.Equal(first.NotAfter) {
 			return errors.New("sleep custody: substituted or duplicate journal event")
 		}
 		seen[e.Phase] = true
 	}
-	if seen[WakeScheduled] && !seen[SleepPrepared] || seen[WakeReadBack] && !seen[WakeScheduled] || seen[SleepRequested] && !seen[WakeReadBack] || seen[ReturnPending] && !seen[SleepRequested] {
+	if seen[WakeScheduled] && !seen[SleepPrepared] || seen[WakeReadBack] && !seen[WakeScheduled] || seen[SleepRequested] && !seen[WakeReadBack] || seen[SleepInvoked] && !seen[SleepRequested] || seen[SleepNativeReturned] && !seen[SleepInvoked] || seen[ReturnPending] && !seen[SleepNativeReturned] {
 		return errors.New("sleep custody: invalid event transition")
 	}
 	if seen[SleepVerified] && (!seen[ReturnPending] || seen[SleepFailed] || seen[SleepUnknown]) || (seen[SleepFailed] || seen[SleepUnknown]) && seen[SleepVerified] {

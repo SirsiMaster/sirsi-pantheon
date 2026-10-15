@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sync"
 	"time"
 )
 
@@ -106,37 +107,44 @@ type SleepPower interface {
 type SleepPhase string
 
 const (
-	SleepPrepared  SleepPhase = "prepared"
-	WakeScheduled  SleepPhase = "wake-scheduled"
-	WakeReadBack   SleepPhase = "wake-readback"
-	SleepRequested SleepPhase = "sleep-requested"
-	ReturnPending  SleepPhase = "returned-awaiting-verification"
-	SleepVerified  SleepPhase = "verified-return"
-	SleepFailed    SleepPhase = "failed"
-	SleepUnknown   SleepPhase = "unknown-reconcile-required"
+	SleepPrepared       SleepPhase = "prepared"
+	WakeScheduled       SleepPhase = "wake-scheduled"
+	WakeReadBack        SleepPhase = "wake-readback"
+	SleepRequested      SleepPhase = "sleep-requested"
+	SleepInvoked        SleepPhase = "native-invoked"
+	SleepNativeReturned SleepPhase = "native-returned"
+	ReturnPending       SleepPhase = "returned-awaiting-verification"
+	SleepVerified       SleepPhase = "verified-return"
+	SleepFailed         SleepPhase = "failed"
+	SleepUnknown        SleepPhase = "unknown-reconcile-required"
 )
 
 // SleepEvent is immutable and redundantly carries the complete typed binding.
 // A mixed, partial, or replayed event set consequently fails closed.
 type SleepEvent struct {
-	Phase        SleepPhase `json:"phase"`
-	RequestID    string     `json:"request_id"`
-	Host         string     `json:"host"`
-	Owner        string     `json:"owner"`
-	AdmissionID  string     `json:"admission_id"`
-	Issuer       string     `json:"issuer"`
-	PlatformUUID string     `json:"platform_uuid"`
-	BootID       string     `json:"boot_id"`
-	Operation    string     `json:"operation"`
-	OwnerTag     string     `json:"owner_tag"`
-	ReviewDigest string     `json:"review_digest"`
-	QuietDigest  string     `json:"quiet_digest,omitempty"`
-	WakeID       string     `json:"wake_id,omitempty"`
-	WakeAt       time.Time  `json:"wake_at,omitempty"`
-	WakeReadback string     `json:"wake_readback,omitempty"`
-	ReturnDigest string     `json:"return_digest,omitempty"`
-	At           time.Time  `json:"at"`
-	Detail       string     `json:"detail,omitempty"`
+	Phase             SleepPhase `json:"phase"`
+	RequestID         string     `json:"request_id"`
+	Host              string     `json:"host"`
+	Owner             string     `json:"owner"`
+	AdmissionID       string     `json:"admission_id"`
+	Issuer            string     `json:"issuer"`
+	PlatformUUID      string     `json:"platform_uuid"`
+	BootID            string     `json:"boot_id"`
+	Operation         string     `json:"operation"`
+	OwnerTag          string     `json:"owner_tag"`
+	ReviewDigest      string     `json:"review_digest"`
+	Nonce             string     `json:"nonce"`
+	NotBefore         time.Time  `json:"not_before"`
+	NotAfter          time.Time  `json:"not_after"`
+	CustodyGeneration string     `json:"custody_generation"`
+	NativeError       string     `json:"native_error,omitempty"`
+	QuietDigest       string     `json:"quiet_digest,omitempty"`
+	WakeID            string     `json:"wake_id,omitempty"`
+	WakeAt            time.Time  `json:"wake_at,omitempty"`
+	WakeReadback      string     `json:"wake_readback,omitempty"`
+	ReturnDigest      string     `json:"return_digest,omitempty"`
+	At                time.Time  `json:"at"`
+	Detail            string     `json:"detail,omitempty"`
 }
 
 type SleepJournal interface {
@@ -203,8 +211,44 @@ func (s SleepService) Dispatch(ctx context.Context, req SleepRequest) error {
 	if err := s.Journal.AppendSleep(s.event(SleepRequested, req, a, quiet, wake, "", "")); err != nil {
 		return s.cancelAndUnknown(ctx, req, a, wake, "sleep request receipt could not persist", err)
 	}
-	if err := s.Custodian.AuthorizeSleep(ctx, a, quiet, s.Power.Sleep); err != nil {
+	// AuthorizeSleep must invoke action synchronously and must not retain it.
+	// Serialize the callback and close it on return, rejecting duplicate/late calls.
+	var mu sync.Mutex
+	invoked, closed := false, false
+	var actionErr error
+	authorizeErr := s.Custodian.AuthorizeSleep(ctx, a, quiet, func(actionCtx context.Context) error {
+		mu.Lock()
+		defer mu.Unlock()
+		if closed || invoked {
+			return errors.New("sleep custody: native callback is closed or already invoked")
+		}
+		if err := s.Journal.AppendSleep(s.event(SleepInvoked, req, a, quiet, wake, "", "native invocation begins; physical outcome requires independent proof")); err != nil {
+			actionErr = fmt.Errorf("persist native invocation: %w", err)
+			return actionErr
+		}
+		invoked = true
+		nativeErr := s.Power.Sleep(actionCtx)
+		e := s.event(SleepNativeReturned, req, a, quiet, wake, "", "native adapter returned; physical outcome remains unverified")
+		if nativeErr != nil {
+			e.NativeError = nativeErr.Error()
+		}
+		journalErr := s.Journal.AppendSleep(e)
+		actionErr = errors.Join(nativeErr, journalErr)
+		return actionErr
+	})
+	mu.Lock()
+	closed = true
+	started, nativeErr := invoked, actionErr
+	mu.Unlock()
+	if err := errors.Join(authorizeErr, nativeErr); err != nil {
+		if started {
+			// The scheduled wake is a recovery safeguard once native invocation begins.
+			return s.unknown(req, a, "native invocation has ambiguous outcome; owned wake retained", err)
+		}
 		return s.cancelAndFail(ctx, req, a, wake, "final custody fence denied sleep", err)
+	}
+	if !started {
+		return s.cancelAndFail(ctx, req, a, wake, "custodian did not invoke sleep", errors.New("native callback not invoked"))
 	}
 	if err := s.Journal.AppendSleep(s.event(ReturnPending, req, a, quiet, wake, "", "native operation returned; independent full-wake proof required")); err != nil {
 		return s.unknown(req, a, "return-pending receipt could not persist", err)
@@ -308,7 +352,7 @@ func (s SleepService) validateReturn(r SleepRequest, a SleepAdmission, w WakeRec
 	return nil
 }
 func (s SleepService) event(p SleepPhase, r SleepRequest, a SleepAdmission, q QuietReceipt, w WakeReceipt, returnDigest, detail string) SleepEvent {
-	return SleepEvent{Phase: p, RequestID: r.ID, Host: a.Host, Owner: a.Owner, AdmissionID: a.ID, Issuer: a.Issuer, PlatformUUID: a.PlatformUUID, BootID: a.BootID, Operation: a.Operation, OwnerTag: "pantheon-sleep-" + r.ID, ReviewDigest: a.ReviewDigest, QuietDigest: q.Digest, WakeID: w.ID, WakeAt: w.WakeAt, WakeReadback: w.Readback, ReturnDigest: returnDigest, At: s.now(), Detail: detail}
+	return SleepEvent{Phase: p, RequestID: r.ID, Host: a.Host, Owner: a.Owner, AdmissionID: a.ID, Issuer: a.Issuer, PlatformUUID: a.PlatformUUID, BootID: a.BootID, Operation: a.Operation, OwnerTag: "pantheon-sleep-" + r.ID, ReviewDigest: a.ReviewDigest, Nonce: a.Nonce, NotBefore: a.NotBefore, NotAfter: a.NotAfter, CustodyGeneration: a.CustodyGeneration, QuietDigest: q.Digest, WakeID: w.ID, WakeAt: w.WakeAt, WakeReadback: w.Readback, ReturnDigest: returnDigest, At: s.now(), Detail: detail}
 }
 func (s SleepService) cancelAndFail(c context.Context, r SleepRequest, a SleepAdmission, w WakeReceipt, d string, cause error) error {
 	if err := s.Power.CancelWake(c, a, r, w); err != nil {
@@ -339,7 +383,8 @@ func (s SleepService) unknownFromEvents(events []SleepEvent, d string, cause err
 		return fmt.Errorf("%w: %s: %v", ErrSleepUnknown, d, cause)
 	}
 	e := events[0]
-	err := s.Journal.AppendSleep(SleepEvent{Phase: SleepUnknown, RequestID: e.RequestID, Host: e.Host, Owner: e.Owner, AdmissionID: e.AdmissionID, Issuer: e.Issuer, PlatformUUID: e.PlatformUUID, BootID: e.BootID, Operation: e.Operation, OwnerTag: e.OwnerTag, ReviewDigest: e.ReviewDigest, At: s.now(), Detail: d})
+	e.Phase, e.At, e.Detail = SleepUnknown, s.now(), d
+	err := s.Journal.AppendSleep(e)
 	if err != nil {
 		return fmt.Errorf("sleep custody: %s: %w; unknown-outcome receipt: %v", d, cause, err)
 	}
@@ -355,11 +400,14 @@ func admissionFromEvents(events []SleepEvent) (SleepAdmission, error) {
 	if len(events) == 0 {
 		return SleepAdmission{}, errors.New("empty sleep journal")
 	}
+	if err := validateSleepEvents(events); err != nil {
+		return SleepAdmission{}, err
+	}
 	e := events[0]
 	if e.Phase != SleepPrepared {
 		return SleepAdmission{}, errors.New("journal root is not prepared")
 	}
-	return SleepAdmission{ID: e.AdmissionID, Issuer: e.Issuer, Host: e.Host, Owner: e.Owner, PlatformUUID: e.PlatformUUID, BootID: e.BootID, Operation: e.Operation, RequestID: e.RequestID, ReviewDigest: e.ReviewDigest, CustodyGeneration: "journal-bound"}, nil
+	return SleepAdmission{ID: e.AdmissionID, Issuer: e.Issuer, Host: e.Host, Owner: e.Owner, PlatformUUID: e.PlatformUUID, BootID: e.BootID, Operation: e.Operation, RequestID: e.RequestID, ReviewDigest: e.ReviewDigest, Nonce: e.Nonce, NotBefore: e.NotBefore, NotAfter: e.NotAfter, CustodyGeneration: e.CustodyGeneration}, nil
 }
 func wakeFromEvents(events []SleepEvent) (WakeReceipt, bool) {
 	for i := len(events) - 1; i >= 0; i-- {
