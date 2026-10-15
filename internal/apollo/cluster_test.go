@@ -3,6 +3,8 @@ package apollo
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -54,7 +56,7 @@ func TestCreateJobRequiresLiveAllRankFences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.CreateJob(context.Background(), testRequest()); err == nil || !strings.Contains(err.Error(), "all-rank") {
+	if _, err := client.CreateJob(context.Background(), testRequest(), []RankPlacement{{Rank: 0, HostID: "m5"}, {Rank: 1, HostID: "m1"}}); err == nil || !strings.Contains(err.Error(), "all-rank") {
 		t.Fatalf("CreateJob error = %v, want all-rank admission rejection", err)
 	}
 }
@@ -83,7 +85,7 @@ func TestCreateJobBindsFrozenRequestAndRankFences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	job, err := client.CreateJob(context.Background(), testRequest())
+	job, err := client.CreateJob(context.Background(), testRequest(), []RankPlacement{{Rank: 0, HostID: "m5"}, {Rank: 1, HostID: "m1"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,27 +105,121 @@ func TestCreateJobRejectsPlannedCapability(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.CreateJob(context.Background(), testRequest()); err == nil || !strings.Contains(err.Error(), "active") {
+	if _, err := client.CreateJob(context.Background(), testRequest(), []RankPlacement{{Rank: 0, HostID: "m5"}, {Rank: 1, HostID: "m1"}}); err == nil || !strings.Contains(err.Error(), "active") {
 		t.Fatalf("CreateJob error = %v, want planned service rejection", err)
 	}
 }
 
-func TestEventsRejectForeignOrNonMonotonicSequence(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/apollo/jobs/job-1/events", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = w.Write([]byte("data: {\"contract\":\"apollo.cluster-inference.v1\",\"job_id\":\"job-1\",\"execution_id\":\"exec\",\"epoch\":9,\"sequence\":1,\"type\":\"admitted\"}\n\n"))
-		_, _ = w.Write([]byte("data: {\"contract\":\"apollo.cluster-inference.v1\",\"job_id\":\"job-1\",\"execution_id\":\"exec\",\"epoch\":9,\"sequence\":1,\"type\":\"token\"}\n\n"))
-	})
-	srv := httptest.NewServer(mux)
-	defer srv.Close()
-	client, err := newClusterClient(srv.URL, srv.Client(), true)
+func TestEventsBindFrozenTupleAndPreserveReply(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*Event)
+		reject bool
+	}{
+		{"reply", func(*Event) {}, false},
+		{"execution", func(e *Event) { e.ExecutionID = "other" }, true},
+		{"empty-execution", func(e *Event) { e.ExecutionID = "" }, true},
+		{"request", func(e *Event) { e.RequestID = "other" }, true},
+		{"empty-request", func(e *Event) { e.RequestID = "" }, true},
+		{"plan", func(e *Event) { e.PlanSHA256 = strings.Repeat("b", 64) }, true},
+		{"empty-plan", func(e *Event) { e.PlanSHA256 = "" }, true},
+		{"epoch", func(e *Event) { e.Epoch++ }, true},
+		{"zero-epoch", func(e *Event) { e.Epoch = 0 }, true},
+		{"job", func(e *Event) { e.JobID = "other" }, true},
+		{"replayed-sequence", func(e *Event) { e.Sequence = 0 }, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			admitted := testJob("decoding", nil)
+			text := "hello"
+			token := uint32(0)
+			position := uint64(0)
+			committed := uint64(1)
+			event := Event{Contract: ClusterContractV1, JobID: admitted.JobID, ExecutionID: admitted.ExecutionID, RequestID: admitted.RequestID, PlanSHA256: admitted.PlanSHA256, Epoch: admitted.Epoch, Sequence: 1, Type: "token", Text: &text, TokenID: &token, Position: &position, CommittedTokens: &committed}
+			tc.change(&event)
+			data, err := json.Marshal(event)
+			if err != nil {
+				t.Fatal(err)
+			}
+			client, err := newClusterClient("http://fixture.invalid", &http.Client{Transport: clusterRoundTrip(func(r *http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader("data: " + string(data) + "\n\n"))}, nil
+			})}, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			seen := 0
+			err = client.Events(context.Background(), admitted, 0, func(e Event) error {
+				seen++
+				encoded, err := json.Marshal(e)
+				if err != nil {
+					return err
+				}
+				for _, field := range []string{`"text":"hello"`, `"token_id":0`, `"position":0`, `"committed_tokens":1`} {
+					if !strings.Contains(string(encoded), field) {
+						t.Errorf("missing %s: %s", field, encoded)
+					}
+				}
+				return nil
+			})
+			if tc.reject {
+				if err == nil || seen != 0 {
+					t.Fatalf("foreign event delivered: seen=%d err=%v", seen, err)
+				}
+			} else if err != nil || seen != 1 {
+				t.Fatalf("reply lost: seen=%d err=%v", seen, err)
+			}
+		})
+	}
+}
+
+type clusterRoundTrip func(*http.Request) (*http.Response, error)
+
+func (f clusterRoundTrip) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestRankAdmissionMatchesCompleteFrozenPlan(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		ranks  []RankFence
+		reject bool
+	}{
+		{"complete", []RankFence{testFence(0), testFence(1)}, false},
+		{"missing", []RankFence{testFence(0)}, true},
+		{"extra", []RankFence{testFence(0), testFence(1), testFence(2)}, true},
+		{"substituted", []RankFence{testFence(0), testFence(2)}, true},
+		{"foreign-host", []RankFence{testFence(0), {Rank: 1, HostID: "foreign", Fence: "f", Generation: "g", MemoryAdmissionBytes: 1, ExpiresAt: time.Now().Add(time.Minute).Format(time.RFC3339)}}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client, err := newClusterClient("http://fixture.invalid", &http.Client{Transport: clusterRoundTrip(func(r *http.Request) (*http.Response, error) {
+				var response any = Capability{Contract: ClusterContractV1, LaunchAvailable: true, StreamAvailable: true, CancelAvailable: true, Modes: []string{"plain"}}
+				if r.Method == http.MethodPost {
+					response = testJob("admitting", tc.ranks)
+				}
+				data, err := json.Marshal(response)
+				if err != nil {
+					return nil, err
+				}
+				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(string(data)))}, nil
+			})}, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = client.CreateJob(context.Background(), testRequest(), []RankPlacement{{Rank: 0, HostID: "m5"}, {Rank: 1, HostID: "m5"}})
+			if (err != nil) != tc.reject {
+				t.Fatalf("reject=%v err=%v", tc.reject, err)
+			}
+		})
+	}
+}
+
+func TestMissingAuthenticationAndPlanRefuseBeforeNetwork(t *testing.T) {
+	if _, err := NewClusterClient("https://fixture.invalid", nil); err == nil {
+		t.Fatal("nil transport accepted")
+	}
+	calls := 0
+	client, err := newClusterClient("http://fixture.invalid", &http.Client{Transport: clusterRoundTrip(func(*http.Request) (*http.Response, error) { calls++; return nil, errors.New("unexpected network") })}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	seen := 0
-	err = client.Events(context.Background(), "job-1", 0, func(Event) error { seen++; return nil })
-	if err == nil || !strings.Contains(err.Error(), "non-monotonic") || seen != 1 {
-		t.Fatalf("Events error=%v seen=%d", err, seen)
+	if _, err := client.CreateJob(context.Background(), testRequest(), nil); err == nil || calls != 0 {
+		t.Fatalf("missing plan: calls=%d err=%v", calls, err)
 	}
 }

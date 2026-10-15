@@ -7,14 +7,16 @@ cluster inference proposal in
 
 It adds no inference engine, model loader, rank process, SSH route, or local
 fallback. `sne.openai-chat.v3` remains its existing plain/MTP surface. The
-new CLI is an authenticated HTTPS client only:
+new CLI is currently disabled until an enrolled authentication transport and
+authenticated plan inventory are actually integrated. HTTPS alone does not
+authenticate a caller. The intended command projection is:
 
 ```text
 sirsi apollo capabilities --endpoint https://apollo.example.ts.net
 sirsi apollo chat --endpoint https://apollo.example.ts.net ...
 sirsi apollo admit --endpoint https://apollo.example.ts.net ... # chat alias
 sirsi apollo status --endpoint https://apollo.example.ts.net --job-id JOB
-sirsi apollo events --endpoint https://apollo.example.ts.net --job-id JOB --after N
+sirsi apollo events --endpoint https://apollo.example.ts.net --job-id JOB --job-receipt admission.json --after N
 sirsi apollo cancel --endpoint https://apollo.example.ts.net --job-id JOB
 ```
 
@@ -78,3 +80,35 @@ versioned closed schema) and define:
 Those corrections are protocol work, not a reason to weaken the client. Until
 they land in the service, `sirsi apollo chat` correctly fails closed rather
 than claiming a model was launched.
+
+## SSA correction, 2026-10-15
+
+The original f6144e54 CLI constructed an ordinary HTTP client. It did not
+authenticate callers. The corrected CLI refuses every remote operation before
+network access. A non-nil library HTTP client is dependency injection, not proof
+of enrollment, endpoint authorization, or transport identity. No credentials or
+trust anchors are minted, copied, logged, or borrowed from the router.
+
+`CreateJob` additionally requires a separate local rank/host inventory obtained
+from the authenticated frozen plan matching the request digest. Missing inventory
+is refused before network access. Admission requires exact set equality: missing,
+extra, substituted ranks and changed host identities fail. The job response must
+never supply its own expected inventory. CLI integration of the actual verified
+plan remains blocked on the implemented service contract.
+
+`Events` takes the original admitted Job rather than an unbound job ID. Contract,
+job, execution, request, plan digest and epoch must match on every event before
+the callback receives text. Sequences must increase past the supplied cursor.
+The planned CLI requires a frozen admission receipt and checks its job ID; a
+fresh status response must not replace that receipt on reconnect. Token text,
+token ID, position and committed count are typed optional fields, preserving
+zero IDs/positions. They are emitted only on the authorized command output.
+No general telemetry gains prompt or reply content.
+
+This is platform groundwork, not installed-path qualification. Native enrolled
+authentication, foreign-endpoint/unauthorized refusal, authoritative preparation,
+plan schemas and signed-plan verification, normal human text chat, signing,
+installation and real streamed reply/cancellation acceptance remain unqualified.
+The prior claim that a nonempty fence list alone verified every planned rank is
+withdrawn. No local tokenizer, single-host substitution or new wire schema is
+introduced by this correction.

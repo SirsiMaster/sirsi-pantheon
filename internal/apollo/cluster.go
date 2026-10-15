@@ -45,6 +45,9 @@ type ClusterClient struct {
 // service location, never a shell/SSH target, and redirects are refused so a
 // caller cannot silently send private prompt tokens elsewhere.
 func NewClusterClient(endpoint string, client *http.Client) (*ClusterClient, error) {
+	if client == nil {
+		return nil, fmt.Errorf("%w: enrolled Apollo authentication transport is required", ErrClusterAdmission)
+	}
 	return newClusterClient(endpoint, client, false)
 }
 
@@ -140,8 +143,15 @@ func (r JobRequest) validate() error {
 }
 
 // RankFence is an actual rank resource admission, not a task lease. The
-// installed client requires every field so a service cannot claim all-rank
-// admission while leaving a rank or its memory/fence identity unspecified.
+// client checks every supplied fence and compares the complete rank/host set
+// against the caller's authenticated frozen plan before accepting admission.
+// RankPlacement is local verifier input from the authenticated frozen plan.
+// It is never inferred from the admission response or sent as a new wire field.
+type RankPlacement struct {
+	Rank   int
+	HostID string
+}
+
 type RankFence struct {
 	Rank                 int    `json:"rank"`
 	HostID               string `json:"host_id"`
@@ -166,7 +176,7 @@ type Job struct {
 }
 
 func (j Job) validate(expectedRequest, expectedPlan string, requireFences bool) error {
-	if j.Contract != ClusterContractV1 || strings.TrimSpace(j.JobID) == "" || strings.TrimSpace(j.ExecutionID) == "" || j.Epoch == 0 {
+	if j.Contract != ClusterContractV1 || strings.TrimSpace(j.JobID) == "" || strings.TrimSpace(j.ExecutionID) == "" || j.Epoch == 0 || strings.TrimSpace(j.RequestID) == "" || strings.TrimSpace(j.PlanSHA256) == "" {
 		return fmt.Errorf("%w: response has no authoritative job execution identity", ErrClusterProtocol)
 	}
 	if expectedRequest != "" && j.RequestID != expectedRequest {
@@ -206,8 +216,20 @@ func (c *ClusterClient) Capabilities(ctx context.Context) (Capability, error) {
 
 // CreateJob verifies the service's active capabilities first, then submits the
 // frozen request. It refuses success unless the returned job has a complete,
-// live all-rank memory admission and execution fence set.
-func (c *ClusterClient) CreateJob(ctx context.Context, in JobRequest) (Job, error) {
+// live all-rank memory admission and execution fence set. expectedRanks must
+// come from the authenticated plan identified by in.PlanSHA256; it must never
+// be inferred from this job response. This method does not authenticate a plan.
+func (c *ClusterClient) CreateJob(ctx context.Context, in JobRequest, expectedRanks []RankPlacement) (Job, error) {
+	if len(expectedRanks) == 0 {
+		return Job{}, fmt.Errorf("%w: authenticated frozen plan rank inventory is required", ErrClusterAdmission)
+	}
+	expected := make(map[int]string, len(expectedRanks))
+	for _, rank := range expectedRanks {
+		if _, duplicate := expected[rank.Rank]; duplicate || rank.Rank < 0 || strings.TrimSpace(rank.HostID) == "" {
+			return Job{}, fmt.Errorf("%w: invalid frozen plan rank inventory", ErrClusterProtocol)
+		}
+		expected[rank.Rank] = rank.HostID
+	}
 	if err := in.validate(); err != nil {
 		return Job{}, err
 	}
@@ -224,6 +246,14 @@ func (c *ClusterClient) CreateJob(ctx context.Context, in JobRequest) (Job, erro
 	}
 	if err := out.validate(in.RequestID, in.PlanSHA256, true); err != nil {
 		return Job{}, err
+	}
+	if len(out.RankFences) != len(expected) {
+		return Job{}, fmt.Errorf("%w: incomplete frozen plan rank admission", ErrClusterAdmission)
+	}
+	for _, rank := range out.RankFences {
+		if host, ok := expected[rank.Rank]; !ok || host != rank.HostID {
+			return Job{}, fmt.Errorf("%w: rank admission differs from frozen plan", ErrClusterAdmission)
+		}
 	}
 	return out, nil
 }
@@ -266,22 +296,33 @@ func (c *ClusterClient) Cancel(ctx context.Context, jobID string) (Job, error) {
 }
 
 // Event is a replay-safe server-sent event. The caller provides the last
-// persisted sequence and this method rejects regressions or an event for a
-// different job; it does not print or persist private tokens itself.
+// persisted sequence and frozen admission receipt. Every event must match its
+// complete execution tuple. Typed token fields preserve the authorized reply,
+// including zero token IDs and positions; no private tokens are logged here.
 type Event struct {
-	Contract    string          `json:"contract"`
-	JobID       string          `json:"job_id"`
-	ExecutionID string          `json:"execution_id"`
-	RequestID   string          `json:"request_id"`
-	PlanSHA256  string          `json:"plan_sha256"`
-	Epoch       uint64          `json:"epoch"`
-	Sequence    uint64          `json:"sequence"`
-	Type        string          `json:"type"`
-	Payload     json.RawMessage `json:"-"`
+	Contract        string  `json:"contract"`
+	JobID           string  `json:"job_id"`
+	ExecutionID     string  `json:"execution_id"`
+	RequestID       string  `json:"request_id"`
+	PlanSHA256      string  `json:"plan_sha256"`
+	Epoch           uint64  `json:"epoch"`
+	Sequence        uint64  `json:"sequence"`
+	Type            string  `json:"type"`
+	Text            *string `json:"text,omitempty"`
+	TokenID         *uint32 `json:"token_id,omitempty"`
+	Position        *uint64 `json:"position,omitempty"`
+	CommittedTokens *uint64 `json:"committed_tokens,omitempty"`
 }
 
-func (c *ClusterClient) Events(ctx context.Context, jobID string, after uint64, emit func(Event) error) error {
-	if strings.TrimSpace(jobID) == "" || emit == nil {
+func (c *ClusterClient) Events(ctx context.Context, admitted Job, after uint64, emit func(Event) error) error {
+	if err := admitted.validate("", "", false); err != nil {
+		return err
+	}
+	if strings.TrimSpace(admitted.RequestID) == "" || strings.TrimSpace(admitted.PlanSHA256) == "" {
+		return fmt.Errorf("%w: frozen event request and plan identity are required", ErrClusterProtocol)
+	}
+	jobID := admitted.JobID
+	if emit == nil {
 		return fmt.Errorf("%w: job_id and event consumer are required", ErrClusterProtocol)
 	}
 	path := "/v1/apollo/jobs/" + url.PathEscape(jobID) + "/events?after=" + strconv.FormatUint(after, 10)
@@ -316,7 +357,7 @@ func (c *ClusterClient) Events(ctx context.Context, jobID string, after uint64, 
 		if err := json.Unmarshal([]byte(strings.TrimSpace(strings.TrimPrefix(line, "data:"))), &event); err != nil {
 			return fmt.Errorf("%w: decode event: %v", ErrClusterProtocol, err)
 		}
-		if event.Contract != ClusterContractV1 || event.JobID != jobID || event.Sequence <= last || event.Epoch == 0 || strings.TrimSpace(event.Type) == "" {
+		if event.Contract != ClusterContractV1 || event.JobID != jobID || event.Sequence <= last || event.ExecutionID != admitted.ExecutionID || event.RequestID != admitted.RequestID || event.PlanSHA256 != admitted.PlanSHA256 || event.Epoch != admitted.Epoch || strings.TrimSpace(event.Type) == "" {
 			return fmt.Errorf("%w: non-monotonic or foreign event", ErrClusterProtocol)
 		}
 		last = event.Sequence

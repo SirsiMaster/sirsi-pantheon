@@ -37,6 +37,7 @@ var (
 	apolloMaxOutput       uint32
 	apolloJobID           string
 	apolloEventAfter      uint64
+	apolloJobReceipt      string
 )
 
 var apolloCmd = &cobra.Command{
@@ -149,7 +150,7 @@ client never falls back between them.`,
 			Precision:        apolloPrecision,
 			InputTokens:      tokens,
 			MaxOutputTokens:  apolloMaxOutput,
-		})
+		}, nil) // Disabled until the authenticated plan supplies its rank inventory.
 		if err != nil {
 			return err
 		}
@@ -197,7 +198,18 @@ var apolloEventsCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return client.Events(cmd.Context(), apolloJobID, apolloEventAfter, func(event apollo.Event) error {
+		receipt, err := os.ReadFile(apolloJobReceipt)
+		if err != nil {
+			return fmt.Errorf("read frozen Apollo job receipt: %w", err)
+		}
+		var admitted apollo.Job
+		if err := json.Unmarshal(receipt, &admitted); err != nil {
+			return fmt.Errorf("decode frozen Apollo job receipt: %w", err)
+		}
+		if admitted.JobID != apolloJobID {
+			return fmt.Errorf("Apollo job receipt differs from requested job")
+		}
+		return client.Events(cmd.Context(), admitted, apolloEventAfter, func(event apollo.Event) error {
 			return json.NewEncoder(cmd.OutOrStdout()).Encode(event)
 		})
 	},
@@ -207,7 +219,7 @@ func configuredApolloClusterClient() (*apollo.ClusterClient, error) {
 	if strings.TrimSpace(apolloClusterEndpoint) == "" {
 		return nil, fmt.Errorf("Apollo cluster endpoint is required; configure the authenticated HTTPS service with --endpoint")
 	}
-	return apollo.NewClusterClient(apolloClusterEndpoint, nil)
+	return nil, fmt.Errorf("Apollo cluster commands are unavailable: enrolled authentication transport and authenticated frozen plan integration are not installed")
 }
 
 func parseApolloTokenIDs(raw string) ([]uint32, error) {
@@ -266,6 +278,7 @@ func init() {
 	for _, command := range []*cobra.Command{apolloStatusCmd, apolloCancelCmd, apolloEventsCmd} {
 		command.Flags().StringVar(&apolloJobID, "job-id", "", "Authoritative Apollo job id")
 	}
+	apolloEventsCmd.Flags().StringVar(&apolloJobReceipt, "job-receipt", "", "Frozen authenticated admission receipt; never replace with a fresh status on reconnect")
 	apolloEventsCmd.Flags().Uint64Var(&apolloEventAfter, "after", 0, "Last persisted event sequence; replay starts after it")
 	apolloCmd.AddCommand(apolloCatalogCmd, apolloPlanCmd, apolloTelemetryCmd, apolloCapabilitiesCmd, apolloChatCmd, apolloStatusCmd, apolloEventsCmd, apolloCancelCmd)
 }
