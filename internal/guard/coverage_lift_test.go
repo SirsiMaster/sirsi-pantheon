@@ -443,6 +443,49 @@ func TestCheckTailscaleBackend_NotInstalledAnywhereAddsNoFinding(t *testing.T) {
 	}
 }
 
+// TestCheckTailscaleBackend_DarwinUsesCLISelector confirms the Darwin path
+// invokes the vendor-documented TAILSCALE_BE_CLI=1 override
+// (tailscale.com/docs/reference/tailscale-cli#macos) rather than the bare
+// CLI, so an automation context can't be heuristically routed into the GUI.
+func TestCheckTailscaleBackend_DarwinUsesCLISelector(t *testing.T) {
+	report := &NetworkReport{}
+	checkTailscaleBackend(&platform.Mock{NameStr: "darwin", CommandResults: map[string]string{
+		"/usr/bin/env TAILSCALE_BE_CLI=1 tailscale status --json": `{"BackendState":"Stopped"}`,
+	}}, report)
+	f := findingByCheck(t, report.Findings, "Tailscale Backend")
+	if f.Severity != SeverityWarn || !strings.Contains(f.Message, "Stopped") {
+		t.Fatalf("Darwin selector path must still warn on Stopped, got %+v", f)
+	}
+}
+
+// TestCheckTailscaleBackend_DarwinWithoutSelectorMisses is the regression for
+// the bare-CLI call this fix replaced: on Darwin, a mock that only answers
+// the unselected key must NOT satisfy checkTailscaleBackend, proving the
+// selector is actually being used rather than silently skipped.
+func TestCheckTailscaleBackend_DarwinWithoutSelectorMisses(t *testing.T) {
+	report := &NetworkReport{}
+	checkTailscaleBackend(&platform.Mock{NameStr: "darwin", CommandResults: map[string]string{
+		"tailscale status --json": `{"BackendState":"Stopped"}`,
+	}}, report)
+	if len(report.Findings) != 0 {
+		t.Fatalf("expected no finding when only the unselected CLI key is mocked, got %+v", report.Findings)
+	}
+}
+
+// TestCheckTailscaleBackend_NonDarwinSkipsSelector confirms non-Darwin
+// platforms keep calling the CLI directly — the GUI/CLI heuristic this fix
+// works around is Darwin-specific.
+func TestCheckTailscaleBackend_NonDarwinSkipsSelector(t *testing.T) {
+	report := &NetworkReport{}
+	checkTailscaleBackend(&platform.Mock{NameStr: "linux", CommandResults: map[string]string{
+		"tailscale status --json": `{"BackendState":"Stopped"}`,
+	}}, report)
+	f := findingByCheck(t, report.Findings, "Tailscale Backend")
+	if f.Severity != SeverityWarn || !strings.Contains(f.Message, "Stopped") {
+		t.Fatalf("non-Darwin must warn on Stopped without the selector, got %+v", f)
+	}
+}
+
 // ─── network.go: checkFirewall ───────────────────────────────────────────────
 
 func TestCheckFirewall(t *testing.T) {
