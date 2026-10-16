@@ -1,5 +1,9 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-16 — v0.24.108 release candidate
+
+- The wake-loop progress gate counts a consumer run as progress when it made a durable rou
+
 ## 2026-10-16 — v0.24.105 release candidate
 
 - Add the machine registry (owner 2026-10-16: machines register with Ra like threads): `.a
