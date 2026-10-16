@@ -993,3 +993,48 @@ func TestPublishFallbackCreatesGroupAccessibleResDir(t *testing.T) {
 		t.Fatalf("response file must exist: %v", err)
 	}
 }
+
+// Many requests in ONE lane are forwarded concurrently (bounded), so a shared hostname lane carrying
+// every wake loop does not queue serially behind Cloud Run round trips (M5 2026-10-16: ~1 req/s,
+// p90 queue 29 s, 8% past the 30 s pickup deadline).
+func TestSpoolRelayForwardsWithinOneLaneConcurrently(t *testing.T) {
+	spool := t.TempDir()
+	var cur, peak atomic.Int32
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		n := cur.Add(1)
+		for p := peak.Load(); n > p && !peak.CompareAndSwap(p, n); p = peak.Load() {
+		}
+		time.Sleep(200 * time.Millisecond)
+		cur.Add(-1)
+		_, _ = w.Write([]byte(`{"result":[]}`))
+	}))
+	t.Cleanup(svc.Close)
+	rl := &Relay{Spool: spool, Base: svc.URL, Token: "t", Log: slog.New(slog.NewTextHandler(&strings.Builder{}, nil)), Client: svc.Client(), now: time.Now}
+	if err := os.MkdirAll(filepath.Join(spool, "lane-host", "req"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const n = 8
+	for i := 0; i < n; i++ {
+		id := fmt.Sprintf("1-%d-x", i)
+		if err := writeAtomic(filepath.Join(spool, "lane-host", "req", id+".json"), spoolRequest{Method: "ListThreads", Headers: map[string]string{}, Body: []byte(`{"args":[]}`)}, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go func() { _ = rl.Serve(ctx) }()
+	deadline := time.Now().Add(1200 * time.Millisecond) // serial would need n*200ms = 1.6 s
+	for {
+		res, _ := filepath.Glob(filepath.Join(spool, "lane-host", "res", "*.json"))
+		if len(res) == n {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d/%d responses within 1.2 s (peak concurrency %d): the lane is forwarding serially", len(res), n, peak.Load())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if p := peak.Load(); p < 4 || p > int32(relayLaneParallel) {
+		t.Fatalf("peak concurrent forwards = %d, want between 4 and the bound %d", p, relayLaneParallel)
+	}
+}

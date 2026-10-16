@@ -714,7 +714,15 @@ func (rl *Relay) discover(ctx context.Context) int {
 	return delivered
 }
 
-// laneWorker drains one lane's queue in file order whenever woken.
+// relayLaneParallel bounds concurrent forwards within ONE lane. A lane is an agent id, and every
+// wake loop on a host without SIRSI_AGENT_ID shares the hostname lane: measured on the M5
+// 2026-10-16, that lane forwarded serially at ~1 req/s (each forward is a Cloud Run round trip)
+// with queue delay p50 13.5 s, p90 29.3 s, and 8% past the client's 30 s pickup deadline.
+// A var so tests can change it.
+var relayLaneParallel = 8
+
+// laneWorker drains one lane's queue whenever woken, forwarding up to relayLaneParallel at once;
+// the ADR-069 outbox is still drained serially, in id order, after each pass.
 func (rl *Relay) laneWorker(ctx context.Context, agent string, wake <-chan struct{}) {
 	for {
 		select {
@@ -724,9 +732,19 @@ func (rl *Relay) laneWorker(ctx context.Context, agent string, wake <-chan struc
 		}
 		files, _ := filepath.Glob(filepath.Join(rl.Spool, agent, "req", "*.json"))
 		sort.Strings(files)
+		// Forward up to relayLaneParallel requests at once. Each client process waits for its own
+		// response, so per-client order is kept; consumption stays atomic (rename into inflight/).
+		sem := make(chan struct{}, relayLaneParallel)
+		var wg sync.WaitGroup
 		for _, f := range files {
-			rl.handleOne(agent, f)
+			sem <- struct{}{}
+			wg.Add(1)
+			go func(f string) {
+				defer func() { <-sem; wg.Done() }()
+				rl.handleOne(agent, f)
+			}(f)
 		}
+		wg.Wait()
 		// ADR-069: re-forward any messages held during a prior outage, in order.
 		// If some are still unreachable, schedule a backed-off re-wake so they
 		// drain when the cloud returns — without hot-looping.
