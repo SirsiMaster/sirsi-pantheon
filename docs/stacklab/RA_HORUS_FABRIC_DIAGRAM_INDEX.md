@@ -4,7 +4,7 @@
 
 Coverage is reported against the whole process inventory below, not against what is already drawn.
 
-**Covered (logical + data): 4 of 18. Drafted, awaiting its owner's confirmation: 1. Open: 13.**
+**Covered (logical + data): 5 of 18. Drafted, awaiting its owner's confirmation: 1. Open: 12.**
 
 State, sequence and recovery views are marked per row. A row is complete only when it has a logical view and a data view; every gap stays OPEN with a next action.
 
@@ -27,6 +27,6 @@ State, sequence and recovery views are marked per row. A row is complete only wh
 | RA-P15 | Claim eligibility (`router task why`) | refused claim | OPEN | OPEN | OPEN | implemented | draw |
 | RA-P16 | Mailbox alias and reassign | send to a retired lane | OPEN | OPEN | OPEN | implemented | draw (ADR-072 C5) |
 | RA-P17 | Router service deploy | release with a new Store method | partly in RA-P04 | OPEN | OPEN | implemented | separate view |
-| RA-P18 | Ma'at pre-push gate and CI | `git push`, PR | OPEN | OPEN | OPEN | implemented; owner claude-pantheon | claude-pantheon draws or confirms (item sent 2026-10-05) |
+| RA-P18 | Ma'at pre-push gate and CI | `git push`, PR | [RA-P18](diagrams/RA-P18-maat-gate.md) | same file | state + recovery | implemented; owner claude-pantheon | none — confirmed by claude-pantheon 2026-10-06 |
 
 Editable source is the Mermaid in each linked file. Each file renders in any Mermaid viewer.
