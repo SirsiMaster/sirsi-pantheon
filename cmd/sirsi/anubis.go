@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -1310,6 +1312,163 @@ func applyPantheonDoctorPostChecks(report *guard.DoctorReport) {
 		report.Findings = append(report.Findings, ls)
 	}
 
+	// Login-items hygiene: the owner-visible gap is a System Settings > Login
+	// Items row labeled "zsh" or "sh" instead of "Sirsi Technologies Inc." — it
+	// happens whenever our own plist runs a bare interpreter
+	// (/bin/zsh|/bin/bash|/bin/sh) with no AssociatedBundleIdentifiers key.
+	// Scoped to what the owner actually sees (A35): this checks file content
+	// directly rather than parsing the plist, since the only question is
+	// whether those two substrings co-occur.
+	{
+		dirs := []string{"/Library/LaunchDaemons"}
+		if home, herr := os.UserHomeDir(); herr == nil {
+			dirs = append([]string{filepath.Join(home, "Library", "LaunchAgents")}, dirs...)
+		}
+		bare := bareShellLoginItems(dirs)
+		li := guard.DiagnosticFinding{
+			Check:    "login-items",
+			Severity: guard.SeverityOK,
+			Message:  "Sirsi launch items set AssociatedBundleIdentifiers",
+		}
+		if len(bare) > 0 {
+			li.Severity = guard.SeverityWarn
+			li.Message = fmt.Sprintf("%d Sirsi launch item(s) show as a bare shell name in Login Items", len(bare))
+			li.Detail = strings.Join(bare, ", ") + " — each runs via a bare interpreter with no AssociatedBundleIdentifiers, so macOS Background Task Management labels the row by the interpreter, not Sirsi Technologies Inc."
+		}
+		li.Resolution = guard.ResolutionFor(li)
+		report.Findings = append(report.Findings, li)
+	}
+
+	// Dead third-party plists: the class claude-home found by hand on
+	// 2026-10-05 (2 empty Google Keystone plists, 1 GoogleUpdater.wake
+	// pointing at a missing binary). Scoped to non-Sirsi plists only — our own
+	// are covered by the login-items check above.
+	{
+		dirs := []string{"/Library/LaunchDaemons", "/Library/LaunchAgents"}
+		if home, herr := os.UserHomeDir(); herr == nil {
+			dirs = append([]string{filepath.Join(home, "Library", "LaunchAgents")}, dirs...)
+		}
+		dead := deadThirdPartyPlists(dirs)
+		dp := guard.DiagnosticFinding{
+			Check:    "dead-plists",
+			Severity: guard.SeverityOK,
+			Message:  "no dead third-party launch items found",
+		}
+		if len(dead) > 0 {
+			dp.Severity = guard.SeverityWarn
+			dp.Message = fmt.Sprintf("%d third-party launch item(s) are empty or point at a missing binary", len(dead))
+			dp.Detail = strings.Join(dead, ", ")
+		}
+		dp.Resolution = guard.ResolutionFor(dp)
+		report.Findings = append(report.Findings, dp)
+	}
+}
+
+// deadThirdPartyPlists scans the given directories for non-Sirsi
+// LaunchAgent/Daemon plists that are empty (no keys) or whose
+// Program/first ProgramArguments entry is an absolute path that no longer
+// exists on disk — the dead-remnant class found by hand on 2026-10-05.
+// Best-effort; directories, and plists that are unreadable or fail to parse
+// (XML or binary — malformed is not the same as empty), are skipped rather
+// than counted as dead.
+func deadThirdPartyPlists(dirs []string) []string {
+	var dead []string
+	ctx := context.Background()
+	for _, dir := range dirs {
+		entries, rerr := os.ReadDir(dir)
+		if rerr != nil {
+			continue
+		}
+		for _, e := range entries {
+			name := e.Name()
+			if strings.HasPrefix(name, "ai.sirsi.") || !strings.HasSuffix(name, ".plist") {
+				continue
+			}
+			v, perr := readPlistDict(ctx, filepath.Join(dir, name))
+			if perr != nil {
+				// Unreadable or malformed: unknown, never "empty".
+				continue
+			}
+			if len(v) == 0 {
+				dead = append(dead, name+" (empty)")
+				continue
+			}
+			if bin := plistFirstExecutablePath(v); bin != "" {
+				if _, serr := os.Stat(bin); serr != nil && os.IsNotExist(serr) {
+					dead = append(dead, name+" (missing binary: "+bin+")")
+				}
+				// Any other Stat error (permission, I/O) is unknown, not dead.
+			}
+		}
+	}
+	sort.Strings(dead)
+	return dead
+}
+
+// readPlistDict parses a plist file — XML or binary, macOS's `plutil`
+// handles both — into its top-level dict. An error means the file could
+// not be read or is not a well-formed plist; callers must treat that as
+// unknown, not as an empty dict.
+func readPlistDict(ctx context.Context, path string) (map[string]interface{}, error) {
+	out, err := exec.CommandContext(ctx, "plutil", "-convert", "json", "-o", "-", path).Output()
+	if err != nil {
+		return nil, err
+	}
+	var v map[string]interface{}
+	if err := json.Unmarshal(out, &v); err != nil {
+		return nil, err
+	}
+	return v, nil
+}
+
+// plistFirstExecutablePath returns the absolute-path Program value, or the
+// first absolute-path entry of ProgramArguments, or "" if neither is present.
+func plistFirstExecutablePath(v map[string]interface{}) string {
+	if s, ok := v["Program"].(string); ok && strings.HasPrefix(s, "/") {
+		return s
+	}
+	if args, ok := v["ProgramArguments"].([]interface{}); ok && len(args) > 0 {
+		if s, ok := args[0].(string); ok && strings.HasPrefix(s, "/") {
+			return s
+		}
+	}
+	return ""
+}
+
+// bareShellLoginItems scans the given directories for installed ai.sirsi.*
+// LaunchAgent/Daemon plists that run via a bare /bin/zsh|/bin/bash|/bin/sh with
+// no AssociatedBundleIdentifiers key — the exact combination that makes macOS
+// Background Task Management label the Login Items row by the interpreter
+// instead of grouping it under Sirsi. Unreadable directories (e.g.
+// /Library/LaunchDaemons without sudo) are skipped, best-effort. Returns the
+// sorted list of affected labels (plist filename minus ".plist").
+func bareShellLoginItems(dirs []string) []string {
+	var bare []string
+	for _, dir := range dirs {
+		entries, rerr := os.ReadDir(dir)
+		if rerr != nil {
+			continue
+		}
+		for _, e := range entries {
+			name := e.Name()
+			if !strings.HasPrefix(name, "ai.sirsi.") || !strings.HasSuffix(name, ".plist") {
+				continue
+			}
+			raw, rerr := os.ReadFile(filepath.Join(dir, name))
+			if rerr != nil {
+				continue
+			}
+			content := string(raw)
+			bareInterpreter := strings.Contains(content, "<string>/bin/zsh</string>") ||
+				strings.Contains(content, "<string>/bin/bash</string>") ||
+				strings.Contains(content, "<string>/bin/sh</string>")
+			if bareInterpreter && !strings.Contains(content, "AssociatedBundleIdentifiers") {
+				bare = append(bare, strings.TrimSuffix(name, ".plist"))
+			}
+		}
+	}
+	sort.Strings(bare)
+	return bare
 }
 
 // remediationFor maps a diagnostic check to a concrete, runnable remediation

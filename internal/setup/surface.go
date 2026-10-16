@@ -133,6 +133,10 @@ func menubarPlistContent(binPath string) string {
 <dict>
 	<key>Label</key>
 	<string>ai.sirsi.pantheon</string>
+	<key>AssociatedBundleIdentifiers</key>
+	<array>
+		<string>ai.sirsi.pantheon</string>
+	</array>
 	<key>ProgramArguments</key>
 	<array>
 		<string>/bin/zsh</string>

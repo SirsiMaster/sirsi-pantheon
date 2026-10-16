@@ -81,6 +81,10 @@ func conduitPlist(sirsiBin, workDir, itemsDir, logPath string, interval int) str
 <dict>
 	<key>Label</key>
 	<string>%[1]s</string>
+	<key>AssociatedBundleIdentifiers</key>
+	<array>
+		<string>ai.sirsi.pantheon</string>
+	</array>
 	<key>WorkingDirectory</key>
 	<string>%[3]s</string>
 	<key>ProgramArguments</key>

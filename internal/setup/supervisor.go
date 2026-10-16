@@ -41,6 +41,10 @@ func supervisorPlistContent(sirsiBinPath, workDir string) string {
 <dict>
 	<key>Label</key>
 	<string>ai.sirsi.horus.agent-router</string>
+	<key>AssociatedBundleIdentifiers</key>
+	<array>
+		<string>ai.sirsi.pantheon</string>
+	</array>
 	<key>WorkingDirectory</key>
 	<string>%[2]s</string>
 	<key>EnvironmentVariables</key>
