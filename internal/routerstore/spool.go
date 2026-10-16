@@ -721,9 +721,17 @@ func (rl *Relay) discover(ctx context.Context) int {
 // A var so tests can change it.
 var relayLaneParallel = 8
 
-// laneWorker drains one lane's queue whenever woken, forwarding up to relayLaneParallel at once;
-// the ADR-069 outbox is still drained serially, in id order, after each pass.
+// laneWorker drains one lane's queue whenever woken, keeping up to relayLaneParallel forwards in
+// flight continuously; the ADR-069 outbox is still drained serially, in id order, after each pass.
 func (rl *Relay) laneWorker(ctx context.Context, agent string, wake <-chan struct{}) {
+	// The slots are the lane's, not a pass's: a request arriving while a slow forward is in flight
+	// starts as soon as any slot is free instead of waiting for the earlier batch to finish.
+	// Each client process waits for its own response, so per-client order is kept; consumption
+	// stays atomic (rename into inflight/), and started guards against re-launching a file the
+	// next pass still sees before its goroutine has claimed it.
+	sem := make(chan struct{}, relayLaneParallel)
+	var mu sync.Mutex
+	started := map[string]bool{}
 	for {
 		select {
 		case <-ctx.Done():
@@ -732,19 +740,31 @@ func (rl *Relay) laneWorker(ctx context.Context, agent string, wake <-chan struc
 		}
 		files, _ := filepath.Glob(filepath.Join(rl.Spool, agent, "req", "*.json"))
 		sort.Strings(files)
-		// Forward up to relayLaneParallel requests at once. Each client process waits for its own
-		// response, so per-client order is kept; consumption stays atomic (rename into inflight/).
-		sem := make(chan struct{}, relayLaneParallel)
-		var wg sync.WaitGroup
 		for _, f := range files {
-			sem <- struct{}{}
-			wg.Add(1)
+			mu.Lock()
+			dup := started[f]
+			mu.Unlock()
+			if dup {
+				continue
+			}
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
+			mu.Lock()
+			started[f] = true
+			mu.Unlock()
 			go func(f string) {
-				defer func() { <-sem; wg.Done() }()
+				defer func() {
+					mu.Lock()
+					delete(started, f)
+					mu.Unlock()
+					<-sem
+				}()
 				rl.handleOne(agent, f)
 			}(f)
 		}
-		wg.Wait()
 		// ADR-069: re-forward any messages held during a prior outage, in order.
 		// If some are still unreachable, schedule a backed-off re-wake so they
 		// drain when the cloud returns — without hot-looping.

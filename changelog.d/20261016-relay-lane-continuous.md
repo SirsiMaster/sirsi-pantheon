@@ -1,0 +1,1 @@
+- The spool relay keeps up to 8 forwards per lane in flight continuously: a request arriving while a slow forward is running starts as soon as a slot frees. #1123 parallelized only within one pass, so trickling arrivals still waited for the previous batch (M5 after v0.24.110: Mac lane req=19 waiting behind inflight=1, queue p90 31 s).
