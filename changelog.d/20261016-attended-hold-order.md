@@ -1,1 +1,0 @@
-- Lane state reports a declared attended lane's `attended` hold ahead of transient measurement-window and host-load holds (it is a standing hold), which also makes its test independent of host load.
