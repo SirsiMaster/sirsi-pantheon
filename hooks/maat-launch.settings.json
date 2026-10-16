@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.claude/hooks/maat-heavy-launch.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
