@@ -22,7 +22,11 @@ func TestCompassPointBackstopsDeclareWorkingOwnQueueConsumers(t *testing.T) {
 			if cfg.ID != id || cfg.Wake.Mechanism != WakeLaunchAgent {
 				t.Fatalf("missing durable wake contract: %+v", cfg.Wake)
 			}
-			if !strings.HasSuffix(cfg.Repo, "/Development/compasspoint") || cfg.Cwd != cfg.Repo {
+			workspace := "/compasspoint-build-worker"
+			if cfg.Type == "codex" {
+				workspace = "/compasspoint-contract-worker"
+			}
+			if !strings.HasSuffix(cfg.Repo, "/Development/compasspoint") || !strings.HasSuffix(cfg.Cwd, workspace) || cfg.Cwd == cfg.Repo {
 				t.Fatalf("backstop must use the current verified project, not an ancestor/retired checkout: %s %s", cfg.Cwd, cfg.Repo)
 			}
 			joined := strings.Join(cfg.Consumer.Command, "\n")
@@ -36,6 +40,9 @@ func TestCompassPointBackstopsDeclareWorkingOwnQueueConsumers(t *testing.T) {
 				t.Fatal("missing correlated own-thread/queue protocol")
 			}
 			if cfg.Type == "codex" {
+				if !strings.Contains(joined, "SIRSI_ROUTER_SESSION_DIR=") || !strings.Contains(joined, "/worker-state/codex-compasspoint-contract/sessions") || strings.Contains(joined, "/.sirsi/sessions") {
+					t.Fatal("sandbox must retain only its own writable session cache")
+				}
 				for _, arg := range cfg.Consumer.Command {
 					if strings.Contains(arg, "permissions.") && strings.IndexByte(arg, 92) >= 0 {
 						t.Fatal("literal shell escaping breaks TOML argv parsing")

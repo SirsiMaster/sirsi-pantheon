@@ -71,10 +71,17 @@ func escalateStuckLanes(repoRoot string) ([]supervision.Escalation, error) {
 	}
 	board := dashboard.NewFleetTracker(nil).ObserveWithRoutability(snap, now, unroutable)
 	threadCounts := activeThreadCountByAgent(repoRoot, now)
+	registry, err := router.LoadRegistry(filepath.Join(repoRoot, ".agents", "idea-router"))
+	if err != nil {
+		return nil, fmt.Errorf("escalate lanes: read staffing declarations: %w", err)
+	}
 
 	lanes := make([]supervision.LaneInput, 0, len(board.Lanes))
 	states := make(map[string]supervision.LaneState, len(board.Lanes))
 	for _, l := range board.Lanes {
+		if !needsModelStaffing(registry, l.Agent) {
+			continue
+		}
 		lanes = append(lanes, supervision.LaneInput{
 			Agent: l.Agent,
 			Sources: supervision.Sources{
@@ -91,6 +98,18 @@ func escalateStuckLanes(repoRoot string) ([]supervision.Escalation, error) {
 		filepath.Join(repoRoot, ".agents", "idea-router"),
 		supervision.Escalations(lanes, states),
 	)
+}
+
+// Service actors (for example Horus and the typed Metal runner) are not empty
+// LLM seats. Their native service health is observed separately; never create a
+// generic model consumer or page the owner for their intentionally absent one.
+// Unknown identities still escalate: a missing declaration is not healthy.
+func needsModelStaffing(reg *router.Registry, id string) bool {
+	if reg == nil {
+		return true
+	}
+	cfg, ok := reg.Agents[id]
+	return !ok || (cfg.Type != "service" && cfg.Type != "human")
 }
 
 // reportLaneEscalations runs one escalation pass and prints what it delivered.

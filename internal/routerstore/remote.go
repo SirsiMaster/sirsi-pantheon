@@ -187,6 +187,14 @@ func NewRemoteStore(base, token string) *RemoteStore {
 	if home, err := os.UserHomeDir(); err == nil {
 		dir = filepath.Join(home, ".sirsi", "sessions")
 	}
+	// Sandboxed workers may keep their own cache without receiving write access
+	// to every other lane's signed session. The cache is never a store fallback;
+	// backend, agent, runtime and thread binding remain unchanged.
+	if scoped := strings.TrimSpace(os.Getenv("SIRSI_ROUTER_SESSION_DIR")); scoped != "" {
+		if absolute, err := filepath.Abs(scoped); err == nil {
+			dir = absolute
+		}
+	}
 	client := &http.Client{}
 	if d := SpoolDir(base); d != "" {
 		// spool:// — the lane has no network (ADR-062 20a.1b). Requests travel
