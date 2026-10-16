@@ -154,6 +154,16 @@ func SyncRegistrySnapshot(routerRoot string, run GitRunner) (registryMeta, error
 	if err := writeFileAtomic(dp, []byte(data)); err != nil {
 		return registryMeta{}, err
 	}
+	// machines.json travels with the agent registry. It is optional until admitted on origin, and a
+	// bad file must not block lane identity: log it and keep the previous machines snapshot.
+	mrel := filepath.ToSlash(filepath.Join(".agents", "idea-router", "machines.json"))
+	if md, merr := run(repo, "show", "origin/main:"+mrel); merr == nil {
+		if _, perr := parseMachines([]byte(md)); perr != nil {
+			log.Printf("registry: origin/main machines.json not usable, keeping previous machine snapshot: %v", perr)
+		} else if err := writeFileAtomic(filepath.Join(filepath.Dir(dp), "machines.json"), []byte(md)); err != nil {
+			return registryMeta{}, err
+		}
+	}
 	mb, _ := json.Marshal(m)
 	return m, writeFileAtomic(mp, mb)
 }
