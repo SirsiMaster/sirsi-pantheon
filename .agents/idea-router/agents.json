@@ -780,13 +780,17 @@
     "claude-m5-compasspoint": {
       "id": "claude-m5-compasspoint",
       "type": "claude",
-      "cwd": "/Users/thekryptodragon/Development/compasspoint-app",
+      "cwd": "/Users/thekryptodragon/Development/compasspoint",
       "workstream": "compasspoint",
       "wake": {
-        "mechanism": "none"
+        "mechanism": "launchagent"
       },
-      "repo": "/Users/thekryptodragon/Development/compasspoint-app",
-      "note": "Attended CompassPoint build session (Claude Code IDE) on the M5. wake none: never auto-spawned. Declared 2026-10-06; before this, items addressed to it were refused as an undeclared identity while it could still send."
+      "repo": "/Users/thekryptodragon/Development/compasspoint",
+      "consumer": {
+        "command": ["env", "-u", "SIRSI_ROUTER_TOKEN", "-u", "ANTHROPIC_API_KEY", "-u", "ANTHROPIC_AUTH_TOKEN", "SIRSI_AGENT_ID=claude-m5-compasspoint", "SIRSI_ROUTER_URL=spool:///private/var/sirsipantheon/relay", "claude", "--print", "--permission-mode", "auto", "--max-budget-usd", "1"],
+        "prompt": "You are {{agent}}; your worker thread is {{thread}}. Read project Thoth/canon first. Pull your own canonical inbox with sirsi router pull {{agent}}; fully read and acknowledge each addressed item, claim fenced work, execute only its authorized scope, and close with evidence. Use sirsi router respond for requests requiring a reply. Check your own task ledger before declaring no work. Router root: {{router_root}}. Preserve history and customer boundaries. No account/security changes, extra paid cloud jobs, emails or deployments without their existing explicit authority. Never use a local router database. Do not reset or adopt another worker's lease. Respect attended-session holds and shared host/model/budget admission; no capacity or permission overrides. Checkpoint before exit. Then pull again; an empty inbox is NOT COMPLETION. Close only with EVIDENCE."
+      },
+      "note": "Owner-directed 2026-10-15 durable backstop for the existing CompassPoint lane. Current native session verified repository compasspoint; historical compasspoint-app checkout is preserved. Existing attended-session fencing prevents duplicate dispatch. Subscription login only; no API key or host router token supplied."
     },
     "claude-finalwishes-m5": {
       "id": "claude-finalwishes-m5",
@@ -928,7 +932,11 @@
       "callsign": "CompassPoint Contract",
       "public_name": "CompassPoint Contract",
       "wake": {
-        "mechanism": "none"
+        "mechanism": "launchagent"
+      },
+      "consumer": {
+        "command": ["env", "-u", "SIRSI_ROUTER_TOKEN", "-u", "OPENAI_API_KEY", "SIRSI_AGENT_ID=codex-compasspoint-contract", "SIRSI_ROUTER_URL=spool:///private/var/sirsipantheon/relay", "codex", "exec", "-c", "default_permissions=\"sirsi-router\"", "-c", "permissions.sirsi-router.extends=\":workspace\"", "-c", "permissions.sirsi-router.filesystem={\"/private/var/sirsipantheon/relay\"=\"write\"}", "-c", "permissions.sirsi-router.network.enabled=false", "--skip-git-repo-check", "-C", "/Users/thekryptodragon/Development/compasspoint"],
+        "prompt": "You are {{agent}}; your worker thread is {{thread}}. Read project Thoth/canon first. Pull your own canonical inbox with sirsi router pull {{agent}}; fully read and acknowledge each addressed item, claim fenced work, execute only its authorized scope, and close with evidence. Use sirsi router respond for requests requiring a reply. Check your own task ledger before declaring no work. Router root: {{router_root}}. Preserve history and customer boundaries. No account/security changes, extra paid cloud jobs, emails or deployments without their existing explicit authority. Never use a local router database. Do not reset or adopt another worker's lease. Respect attended-session holds and shared host/model/budget admission; no capacity or permission overrides. Checkpoint before exit. Then pull again; an empty inbox is NOT COMPLETION. Close only with EVIDENCE."
       }
     }
   },
