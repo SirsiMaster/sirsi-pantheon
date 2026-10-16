@@ -6,6 +6,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- Require the exact foreground Ma’at supervised runner for direct Python/Go/model or unknown execution, reject background/nested front-door escapes, and preserve read-only source commands mentioning MLX. Model-free negative fixtures and native deployment/coverage limits accompany the hook (owner Apollo51 incident).
+
 ## [0.24.111] — 2026-10-16
 
 - The spool relay keeps up to 8 forwards per lane in flight continuously: a request arriving while a slow forward is running starts as soon as a slot frees. #1123 parallelized only within one pass, so trickling arrivals still waited for the previous batch (M5 after v0.24.110: Mac lane req=19 waiting behind inflight=1, queue p90 31 s).
