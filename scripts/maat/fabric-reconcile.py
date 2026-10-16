@@ -59,6 +59,8 @@ def inspect(root, owners, home):
         return {"path": str(root), "owners": sorted(owners), "state": "STATUS_ERROR"}
     entries = status_entries(state.stdout)
     codes = collections.Counter(code for code, _ in entries)
+    git_dir = pathlib.Path(text(git(root, "rev-parse", "--absolute-git-dir")))
+    operations = [name for name in ("CHERRY_PICK_HEAD", "MERGE_HEAD", "REBASE_HEAD", "rebase-merge", "rebase-apply", "sequencer") if (git_dir / name).exists()]
     branch = text(git(root, "symbolic-ref", "--short", "-q", "HEAD"))
     upstream = git(root, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
     divergence = None
@@ -72,6 +74,7 @@ def inspect(root, owners, home):
         "head": text(head_before), "branch": branch or "DETACHED",
         "state": "DIRTY" if entries else "CLEAN",
         "status_entry_count": len(entries), "status_codes": dict(codes),
+        "unfinished_git_operations": operations,
         "status_sha256": hashlib.sha256(state.stdout).hexdigest(),
         "sample_paths": [p for _, p in entries[:20]],
         "head_changed_during_observation": text(git(root, "rev-parse", "HEAD")) != text(head_before),
@@ -128,7 +131,7 @@ def census(home, registry, extra):
         "scope": "registered roots, conventional worktrees, and every Git-linked worktree; ignored caches excluded",
         "roots": rows, "missing_linked_worktrees": missing,
         "counts": dict(collections.Counter(r["state"] for r in rows)),
-        "zero_uncommitted_proven": bool(rows) and all(r["state"] == "CLEAN" and not r.get("head_changed_during_observation") for r in rows) and not missing,
+        "zero_uncommitted_proven": bool(rows) and all(r["state"] == "CLEAN" and not r.get("unfinished_git_operations") and not r.get("head_changed_during_observation") for r in rows) and not missing,
         "limits": ["Point-in-time observations, not a write freeze.", "Clean is not proof of committed, pushed, tested or deployed completion.", "No private credentials or file contents are read.", "Cloud and other hosts require their own receipts; local absence is not host failure."],
     }
 

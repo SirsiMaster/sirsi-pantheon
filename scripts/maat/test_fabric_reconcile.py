@@ -35,6 +35,15 @@ class ReadOnlyCensusTests(unittest.TestCase):
             self.assertEqual(row["status_entry_count"], 2)
             self.assertEqual((root / ".git/index").read_bytes(), index)
             self.assertFalse(row["head_changed_during_observation"])
+            # A leftover sequencer is unresolved work even if status is clean.
+            git("add", "tracked", "untracked file")
+            git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+                "-c", "commit.gpgsign=false", "commit", "-qm", "checkpoint fixture work")
+            (root / ".git/sequencer").mkdir()
+            (root / ".git/sequencer/todo").write_text("pick fixture historical operation\n")
+            row = census.inspect(root, {"own-lane"}, root.parent)
+            self.assertEqual(row["status_entry_count"], 0)
+            self.assertEqual(row["unfinished_git_operations"], ["sequencer"])
 
     def test_empty_inventory_does_not_prove_completion(self):
         with tempfile.TemporaryDirectory() as d:
