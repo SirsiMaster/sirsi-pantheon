@@ -51,7 +51,7 @@ var lookupAnchorProcess anchorProcessLookup = func(pid int) (anchorProcess, erro
 	p, err := psAnchorProcess(pid)
 	if err != nil {
 		// ps can be denied (sandboxed codex worker); the kernel lookup needs no fork.
-		if k, kerr := kinfoAnchorProcess(pid); kerr == nil {
+		if k, kerr := kinfoAnchorProcess(pid); kerr == nil { //nolint:staticcheck // SA4023: non-Darwin stub always errors; the Darwin kernel lookup can succeed.
 			return k, nil
 		}
 	}
