@@ -468,6 +468,17 @@ var tailscaleCLICandidates = []string{
 	"/Applications/Tailscale.app/Contents/MacOS/Tailscale",
 }
 
+// tailscaleCLI builds a Tailscale CLI invocation. On macOS the app binary picks GUI or CLI mode from
+// environment heuristics (SHLVL/TERM/PS1), so a launchd or service caller with a minimal environment
+// can start GUI mode; the vendor documents TAILSCALE_BE_CLI=1 as the explicit selector for scripts
+// (https://tailscale.com/docs/reference/tailscale-cli?tab=macos; SHA 2026-10-16). Other OSes unchanged.
+func tailscaleCLI(p platform.Platform, cli string, args ...string) (string, []string) {
+	if p.Name() != "darwin" {
+		return cli, args
+	}
+	return "/usr/bin/env", append([]string{"TAILSCALE_BE_CLI=1", cli}, args...)
+}
+
 // checkTailscaleBackend adds a finding when Tailscale's own backend state is
 // Stopped, which checkVPNStatus and scutil cannot see: the macOS system
 // extension keeps the tunnel interface loaded and scutil/ifconfig report it
@@ -480,7 +491,8 @@ var tailscaleCLICandidates = []string{
 func checkTailscaleBackend(p platform.Platform, report *NetworkReport) {
 	var out []byte
 	for _, cli := range tailscaleCLICandidates {
-		if o, err := p.Command(cli, "status", "--json"); err == nil && len(o) > 0 {
+		name, args := tailscaleCLI(p, cli, "status", "--json")
+		if o, err := p.Command(name, args...); err == nil && len(o) > 0 {
 			out = o
 			break
 		}

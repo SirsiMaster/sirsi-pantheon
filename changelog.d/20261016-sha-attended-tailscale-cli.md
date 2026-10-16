@@ -1,0 +1,1 @@
+- macOS Tailscale backend check runs the CLI with the vendor's explicit selector (`/usr/bin/env TAILSCALE_BE_CLI=1`), so a launchd/service caller's minimal environment never makes the app binary start in GUI mode; other OSes unchanged. sirsi-hardware-admin (SHA) is declared an attended lane, alongside SSA and codex-apollo.
