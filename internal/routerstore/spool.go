@@ -714,8 +714,24 @@ func (rl *Relay) discover(ctx context.Context) int {
 	return delivered
 }
 
-// laneWorker drains one lane's queue in file order whenever woken.
+// relayLaneParallel bounds concurrent forwards within ONE lane. A lane is an agent id, and every
+// wake loop on a host without SIRSI_AGENT_ID shares the hostname lane: measured on the M5
+// 2026-10-16, that lane forwarded serially at ~1 req/s (each forward is a Cloud Run round trip)
+// with queue delay p50 13.5 s, p90 29.3 s, and 8% past the client's 30 s pickup deadline.
+// A var so tests can change it.
+var relayLaneParallel = 8
+
+// laneWorker drains one lane's queue whenever woken, keeping up to relayLaneParallel forwards in
+// flight continuously; the ADR-069 outbox is still drained serially, in id order, after each pass.
 func (rl *Relay) laneWorker(ctx context.Context, agent string, wake <-chan struct{}) {
+	// The slots are the lane's, not a pass's: a request arriving while a slow forward is in flight
+	// starts as soon as any slot is free instead of waiting for the earlier batch to finish.
+	// Each client process waits for its own response, so per-client order is kept; consumption
+	// stays atomic (rename into inflight/), and started guards against re-launching a file the
+	// next pass still sees before its goroutine has claimed it.
+	sem := make(chan struct{}, relayLaneParallel)
+	var mu sync.Mutex
+	started := map[string]bool{}
 	for {
 		select {
 		case <-ctx.Done():
@@ -725,7 +741,29 @@ func (rl *Relay) laneWorker(ctx context.Context, agent string, wake <-chan struc
 		files, _ := filepath.Glob(filepath.Join(rl.Spool, agent, "req", "*.json"))
 		sort.Strings(files)
 		for _, f := range files {
-			rl.handleOne(agent, f)
+			mu.Lock()
+			dup := started[f]
+			mu.Unlock()
+			if dup {
+				continue
+			}
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
+			mu.Lock()
+			started[f] = true
+			mu.Unlock()
+			go func(f string) {
+				defer func() {
+					mu.Lock()
+					delete(started, f)
+					mu.Unlock()
+					<-sem
+				}()
+				rl.handleOne(agent, f)
+			}(f)
 		}
 		// ADR-069: re-forward any messages held during a prior outage, in order.
 		// If some are still unreachable, schedule a backed-off re-wake so they

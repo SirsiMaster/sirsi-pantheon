@@ -993,3 +993,93 @@ func TestPublishFallbackCreatesGroupAccessibleResDir(t *testing.T) {
 		t.Fatalf("response file must exist: %v", err)
 	}
 }
+
+// Many requests in ONE lane are forwarded concurrently (bounded), so a shared hostname lane carrying
+// every wake loop does not queue serially behind Cloud Run round trips (M5 2026-10-16: ~1 req/s,
+// p90 queue 29 s, 8% past the 30 s pickup deadline).
+func TestSpoolRelayForwardsWithinOneLaneConcurrently(t *testing.T) {
+	spool := t.TempDir()
+	var cur, peak atomic.Int32
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		n := cur.Add(1)
+		for p := peak.Load(); n > p && !peak.CompareAndSwap(p, n); p = peak.Load() {
+		}
+		time.Sleep(200 * time.Millisecond)
+		cur.Add(-1)
+		_, _ = w.Write([]byte(`{"result":[]}`))
+	}))
+	t.Cleanup(svc.Close)
+	rl := &Relay{Spool: spool, Base: svc.URL, Token: "t", Log: slog.New(slog.NewTextHandler(&strings.Builder{}, nil)), Client: svc.Client(), now: time.Now}
+	if err := os.MkdirAll(filepath.Join(spool, "lane-host", "req"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const n = 8
+	for i := 0; i < n; i++ {
+		id := fmt.Sprintf("1-%d-x", i)
+		if err := writeAtomic(filepath.Join(spool, "lane-host", "req", id+".json"), spoolRequest{Method: "ListThreads", Headers: map[string]string{}, Body: []byte(`{"args":[]}`)}, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go func() { _ = rl.Serve(ctx) }()
+	deadline := time.Now().Add(1200 * time.Millisecond) // serial would need n*200ms = 1.6 s
+	for {
+		res, _ := filepath.Glob(filepath.Join(spool, "lane-host", "res", "*.json"))
+		if len(res) == n {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d/%d responses within 1.2 s (peak concurrency %d): the lane is forwarding serially", len(res), n, peak.Load())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if p := peak.Load(); p < 4 || p > int32(relayLaneParallel) {
+		t.Fatalf("peak concurrent forwards = %d, want between 4 and the bound %d", p, relayLaneParallel)
+	}
+}
+
+// A slow forward must not hold back requests that ARRIVE while it is in flight: the lane keeps
+// up to relayLaneParallel forwards running continuously, not one batch at a time (M5 2026-10-16:
+// with per-pass batching the hostname lane still showed req=19 waiting behind inflight=1).
+func TestSpoolRelayLaterArrivalsDoNotWaitForASlowForward(t *testing.T) {
+	spool := t.TempDir()
+	release := make(chan struct{})
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(b), "slow") {
+			<-release
+		}
+		_, _ = w.Write([]byte(`{"result":[]}`))
+	}))
+	t.Cleanup(func() { close(release); svc.Close() })
+	rl := &Relay{Spool: spool, Base: svc.URL, Token: "t", Log: slog.New(slog.NewTextHandler(&strings.Builder{}, nil)), Client: svc.Client(), now: time.Now}
+	req := filepath.Join(spool, "lane-host", "req")
+	if err := os.MkdirAll(req, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	put := func(id, body string) {
+		if err := writeAtomic(filepath.Join(req, id+".json"), spoolRequest{Method: "Wait", Headers: map[string]string{}, Body: []byte(body)}, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put("1-0-slow", `{"args":["slow"]}`)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go func() { _ = rl.Serve(ctx) }()
+	time.Sleep(300 * time.Millisecond) // the slow forward is now in flight
+	for i := 1; i <= 4; i++ {
+		put(fmt.Sprintf("2-%d-x", i), `{"args":[]}`)
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		res, _ := filepath.Glob(filepath.Join(spool, "lane-host", "res", "2-*.json"))
+		if len(res) == 4 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d/4 later requests answered while one slow forward was in flight: the lane waits for its batch", len(res))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
