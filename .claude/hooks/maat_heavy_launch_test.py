@@ -74,4 +74,8 @@ class GuardTest(unittest.TestCase):
             self.assertIsNone(g.denial({'tool_name':'Bash','tool_input':{'command':command}}),command)
         for command in ['SIRSI_THREAD_ID=$(python3 probe.py); export SIRSI_THREAD_ID', '$(printf python3) probe.py', 'sirsi thread register --agent $(go run probe.go)', 'sirsi thread register --agent `python3 probe.py`']:
             self.assertIsNotNone(g.denial({'tool_name':'Bash','tool_input':{'command':command}}),command)
+    def test_multiline_registration_mask_preserves_command_boundaries(self):
+        command='export SIRSI_AGENT_ID=own\nSIRSI_THREAD_ID=$(sirsi thread register --agent own --anchor-pid $(ps -o ppid= -p $$) --json | jq -r .thread_id)\nexport SIRSI_THREAD_ID\nsirsi thread heartbeat --thread "$SIRSI_THREAD_ID"'
+        self.assertIsNone(g.denial({'tool_name':'Bash','tool_input':{'command':command}}))
+        self.assertIsNotNone(g.denial({'tool_name':'Bash','tool_input':{'command':command+'\npython3 probe.py'}}))
 if __name__ == "__main__": unittest.main()

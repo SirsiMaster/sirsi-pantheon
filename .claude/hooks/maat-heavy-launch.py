@@ -153,6 +153,12 @@ def normalize_control_substitutions(command, depth):
             single = not single
         elif char == '"' and not single:
             double = not double
+        elif not single and not double and char in '\n\r':
+            # Shell newlines separate commands just like semicolons. Do not
+            # collapse a multiline registration mask into one command argv.
+            result.append(';')
+            i += 1
+            continue
         elif not single and char == '`':
             return None
         elif not single and command[i:i+2] == '$(':
