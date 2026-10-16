@@ -1,5 +1,9 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-16 — v0.24.111 release candidate
+
+- The spool relay keeps up to 8 forwards per lane in flight continuously: a request arrivi
+
 ## 2026-10-16 — v0.24.110 release candidate
 
 - The spool relay forwards up to 8 requests at once within one lane instead of strictly on
