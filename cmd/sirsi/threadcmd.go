@@ -634,8 +634,8 @@ var threadWatchRouterCmd = &cobra.Command{
 					debounceTimer.Stop()
 				}
 				debounceTimer = time.AfterFunc(watchDebounce, fire)
-			case <-watcher.Errors:
-				// Non-fatal; keep going.
+			case err := <-watcher.Errors:
+				_ = err // non-fatal; keep going
 			}
 		}
 	},
