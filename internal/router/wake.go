@@ -1043,6 +1043,15 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 	if interval <= 0 {
 		interval = DefaultWakeLoopInterval
 	}
+	// The store (routerstore.Resolve) reads SIRSI_AGENT_ID at session mint. Set
+	// it FIRST, before any registry/store call this loop makes — including its
+	// own thread registration just below — because launchd starts this process
+	// with no SIRSI_AGENT_ID in its environment: unset, every wake-loop on a
+	// host fell back to os.Hostname() and every lane collided on one session
+	// cache file and one audit identity (Mac@Mac, M1.local@M1.local). Same fix
+	// as ensureSupervisorRegistered for the resident supervisor.
+	_ = os.Setenv("SIRSI_AGENT_ID", agentID)
+
 	// Keyed singleton on (agent, surface=worker, this machine) — P-heartbeat-owner,
 	// #178 pattern. Every launchd bootout/bootstrap gives this loop a new PID;
 	// registering by PID minted a NEW worker thread each restart and left the old
@@ -1068,6 +1077,7 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 			return fmt.Errorf("register wake-loop thread: %w", err)
 		}
 	}
+	_ = os.Setenv("SIRSI_THREAD_ID", thr.ThreadID)
 	defer func() { _, _ = CloseThread(routerRoot, thr.ThreadID) }()
 
 	// Resolve the DECLARED consumer once. A loop that cannot dispatch still runs:

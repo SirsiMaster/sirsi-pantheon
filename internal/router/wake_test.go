@@ -451,6 +451,50 @@ func TestRunWakeLoopRegistersAndCloses(t *testing.T) {
 	}
 }
 
+// TestRunWakeLoopSetsOwnAgentIdentity: launchd starts `router wake-loop <agent>`
+// with no SIRSI_AGENT_ID in its environment, so routerstore.Resolve's session
+// mint (and every Heartbeat/RegisterThread call this loop makes) fell back to
+// os.Hostname() — every wake-loop on a host collided on one session cache file
+// and one audit identity (Mac@Mac, M1.local@M1.local; found root-causing PR
+// #1101's session-table blowup). RunWakeLoop must set SIRSI_AGENT_ID (and
+// SIRSI_THREAD_ID once its thread is known) from its own agent argument, so
+// two loops running in one process space (as this test drives sequentially)
+// each carry their own identity rather than leaking or sticking to the first.
+func TestRunWakeLoopSetsOwnAgentIdentity(t *testing.T) {
+	root := wakeTestRoot(t,
+		AgentConfig{ID: "loop-a", Type: "gemma"},
+		AgentConfig{ID: "loop-b", Type: "gemma"},
+	)
+	t.Setenv("SIRSI_AGENT_ID", "")
+	t.Setenv("SIRSI_THREAD_ID", "")
+
+	ctxA, cancelA := context.WithCancel(context.Background())
+	cancelA() // pre-cancel: register + heartbeat once, then exit
+	if err := RunWakeLoop(ctxA, root, "loop-a", time.Hour); err != nil {
+		t.Fatalf("RunWakeLoop(loop-a): %v", err)
+	}
+	if got := os.Getenv("SIRSI_AGENT_ID"); got != "loop-a" {
+		t.Fatalf("after loop-a, SIRSI_AGENT_ID = %q, want %q", got, "loop-a")
+	}
+	threadA := os.Getenv("SIRSI_THREAD_ID")
+	if threadA == "" {
+		t.Fatal("after loop-a, SIRSI_THREAD_ID must be set, got empty")
+	}
+
+	ctxB, cancelB := context.WithCancel(context.Background())
+	cancelB()
+	if err := RunWakeLoop(ctxB, root, "loop-b", time.Hour); err != nil {
+		t.Fatalf("RunWakeLoop(loop-b): %v", err)
+	}
+	if got := os.Getenv("SIRSI_AGENT_ID"); got != "loop-b" {
+		t.Fatalf("after loop-b, SIRSI_AGENT_ID = %q, want %q — a second loop in the "+
+			"same process must carry its own identity, not the first loop's", got, "loop-b")
+	}
+	if got := os.Getenv("SIRSI_THREAD_ID"); got == threadA || got == "" {
+		t.Fatalf("after loop-b, SIRSI_THREAD_ID = %q, want loop-b's own thread (not loop-a's %q, not empty)", got, threadA)
+	}
+}
+
 // codex SME #89, finding 2: the default cli-spawn invoker must Start()+Release()
 // (detached) — return promptly without hanging or leaving a zombie.
 func TestDefaultWakeInvokeCliSpawnReleases(t *testing.T) {
