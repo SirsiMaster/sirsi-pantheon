@@ -1,0 +1,1 @@
+- Fix a golangci-lint errcheck on `thread watch`'s watcher-error receive that failed Lint for every PR on main (no behavior change; the error stays non-fatal).
