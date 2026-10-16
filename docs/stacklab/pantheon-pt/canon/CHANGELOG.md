@@ -1,5 +1,9 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-16 — v0.24.110 release candidate
+
+- The spool relay forwards up to 8 requests at once within one lane instead of strictly on
+
 ## 2026-10-16 — v0.24.109 release candidate
 
 - macOS Tailscale backend check runs the CLI with the vendor's explicit selector (`/usr/bi
