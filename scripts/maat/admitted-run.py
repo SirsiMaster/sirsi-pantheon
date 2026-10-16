@@ -112,11 +112,14 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
     owned = None
     child = None
     code = 78
+    reservation_requested = reservation_replied = False
     try:
         backend.registered(agent, thread)
         row = backend.lookup(resource)
         if row is None:
+            reservation_requested = True
             reply = backend.reserve(resource, agent, work)
+            reservation_replied = True
             if not isinstance(reply, dict):
                 raise Refused('Reservation reply is not an object')
             if 'granted' in reply:
@@ -175,6 +178,8 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
             except Exception as error:
                 record.update(cleanup_debt='Reservation release unconfirmed: '+str(error))
                 code = 78
+        elif reservation_requested and not reservation_replied:
+            record['cleanup_debt'] = 'Reservation request outcome unknown; inspect own host/holder/work before retry. No child was launched.'
         record['exit_code'] = code
     return code
 
@@ -182,6 +187,8 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--work', required=True)
+    parser.add_argument('--agent', default=os.environ.get('SIRSI_AGENT_ID'))
+    parser.add_argument('--thread', default=os.environ.get('SIRSI_THREAD_ID'))
     parser.add_argument('--timeout', type=int, default=300)
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
@@ -203,8 +210,12 @@ def main():
     with os.fdopen(fd, 'w') as output:
         json.dump(record, output); output.flush(); os.fsync(output.fileno())
     try:
-        return supervise(command, resource, os.environ.get('SIRSI_AGENT_ID'),
-                         os.environ.get('SIRSI_THREAD_ID'), args.work, args.timeout, Native(), record)
+        # IDs are selectors, not authority: Native.registered verifies actual
+        # process ancestry/start before admission and again immediately pre-spawn.
+        os.environ['SIRSI_AGENT_ID'] = args.agent or ''
+        os.environ['SIRSI_THREAD_ID'] = args.thread or ''
+        return supervise(command, resource, args.agent,
+                         args.thread, args.work, args.timeout, Native(), record)
     finally:
         with target.open('w') as output:
             json.dump(record, output, indent=2); output.flush(); os.fsync(output.fileno())

@@ -129,6 +129,15 @@ class SupervisorTests(unittest.TestCase):
         self.assertEqual(code, 78)
         self.assertEqual(backend.released, ['fixture-id'])
 
+    def test_ambiguous_reserve_failure_records_debt_without_spawn(self):
+        backend = Backend(None)
+        backend.reserve = mock.Mock(side_effect=subprocess.TimeoutExpired('fixture', 8))
+        with mock.patch.object(runner.subprocess, 'Popen') as spawn:
+            code, record = self.run_case(backend)
+            self.assertEqual(code, 78)
+            self.assertIn('outcome unknown', record['cleanup_debt'])
+            spawn.assert_not_called()
+
     def test_registered_foreign_thread_anchor_is_refused(self):
         native = runner.Native()
         native.call = lambda *args: [{'thread':dict(thread_id='thread', agent_id='lane', status='active',pid=2,start_time='fixture')}]

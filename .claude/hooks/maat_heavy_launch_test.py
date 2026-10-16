@@ -40,12 +40,38 @@ class GuardTest(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIsNotNone(g.denial({"tool_name":"Bash","tool_input":{"command":command}}))
     def test_background_flag_cannot_use_frontdoor(self):
-        for command in ["rg mlx source.go", "~/.local/bin/sirsi-maat-run -- python3 probe.py"]:
+        for command in ["~/.local/bin/sirsi-maat-run -- python3 probe.py"]:
             self.assertIsNotNone(g.denial({"tool_name":"Bash","tool_input":{"command":command,"run_in_background":True}}))
+        self.assertIsNone(g.denial({"tool_name":"Bash","tool_input":{"command":"sirsi thread heartbeat --thread own","run_in_background":True}}))
     def test_source_mentions_are_data(self):
         for command in ["rg 'import mlx.core' source.py", "git show HEAD:mlx.py", "git diff -- mlx_lm.py", "cat python-model.py | head -20"]:
             self.assertIsNone(g.denial({"tool_name":"Bash","tool_input":{"command":command}}))
     def test_malformed_refuses(self):
         for payload in [[], {"tool_name":"Bash"}, {"tool_name":"Bash","tool_input":[]}]:
             self.assertIsNotNone(g.denial(payload))
+    def test_registration_coordination_without_workload_spawn(self):
+        for command in [g.CLI+" thread register --agent lane --anchor-pid 123", "sirsi thread heartbeat --thread own", "sirsi router send --to ra --instructions hello", "sirsi maat reserve m5 --work own --json"]:
+            self.assertIsNone(g.denial({"tool_name":"Bash","tool_input":{"command":command}}))
+        for command in ["sirsi router worker lane", "sirsi router wake-install lane", "/tmp/sirsi thread register --agent lane", "sirsi gemma serve", "sirsi maat heal"]:
+            self.assertIsNotNone(g.denial({"tool_name":"Bash","tool_input":{"command":command}}))
+    def test_literal_child_script_data_is_not_parent_shell_execution(self):
+        for command in [g.FRONT+" --work proof -- /bin/sh -c 'printf %s \"$VALUE\"; true'", "rg '$VALUE' source.go"]:
+            self.assertIsNone(g.denial({"tool_name":"Bash","tool_input":{"command":command}}))
+        for command in [g.FRONT+' --work proof -- /bin/echo "$(python3 probe.py)"', g.FRONT+' --work proof -- /bin/echo `python3 probe.py`', g.FRONT+' --work proof -- /usr/bin/true\npython3 probe.py']:
+            self.assertIsNotNone(g.denial({"tool_name":"Bash","tool_input":{"command":command}}))
+    def test_lightweight_coordination_does_not_need_a_gpu_window(self):
+        for command in ['cd /repo && git status', 'gh pr view 12 --json title', 'launchctl print gui/501/service', 'sysctl -n hw.memsize', 'memory_pressure -Q', 'codesign --verify /path/binary']:
+            self.assertIsNone(g.denial({'tool_name':'Bash','tool_input':{'command':command}}))
+        for command in ['gh workflow run build', 'launchctl kickstart gui/501/service', 'sysctl -w kern.limit=1', 'memory_pressure -l critical', 'codesign --verify --sign identity /path/binary']:
+            self.assertIsNotNone(g.denial({'tool_name':'Bash','tool_input':{'command':command}}))
+    def test_actual_registration_instruction_mask(self):
+        for command in ['export SIRSI_AGENT_ID=own; sirsi thread register --agent own --anchor-pid 123', 'env SIRSI_AGENT_ID=own SIRSI_THREAD_ID=thr-own sirsi thread heartbeat --thread thr-own', '"$HOME/.local/bin/sirsi" thread register --agent own --anchor-pid 123', 'cd "$HOME/Development/Apollo" && sirsi thoth status', 'sirsi thread list --json | jq .', 'export SIRSI_THREAD_ID=$OWN_THREAD; sirsi router pull own']:
+            self.assertIsNone(g.denial({'tool_name':'Bash','tool_input':{'command':command}}),command)
+        for command in ['env PATH=/tmp sirsi thread register --agent own', 'export HOME=/tmp; sirsi thread register --agent own', 'env SIRSI_AGENT_ID=own python3 /tmp/probe.py', 'sirsi thread register --agent $(python3 /tmp/probe.py)']:
+            self.assertIsNotNone(g.denial({'tool_name':'Bash','tool_input':{'command':command}}),command)
+    def test_registration_can_capture_its_real_thread_id(self):
+        for command in ['SIRSI_THREAD_ID=$(sirsi thread register --agent own --anchor-pid 123 --json | jq -r .thread_id); export SIRSI_THREAD_ID; sirsi thread heartbeat --thread "$SIRSI_THREAD_ID"', '"$HOME/.local/bin/sirsi" thread register --agent own --anchor-pid $(ps -o ppid= -p $$)']:
+            self.assertIsNone(g.denial({'tool_name':'Bash','tool_input':{'command':command}}),command)
+        for command in ['SIRSI_THREAD_ID=$(python3 probe.py); export SIRSI_THREAD_ID', '$(printf python3) probe.py', 'sirsi thread register --agent $(go run probe.go)', 'sirsi thread register --agent `python3 probe.py`']:
+            self.assertIsNotNone(g.denial({'tool_name':'Bash','tool_input':{'command':command}}),command)
 if __name__ == "__main__": unittest.main()

@@ -1,6 +1,16 @@
 # Ma’at launcher enforcement
 
-Owner incident: Apollo51 ffd22719/subagent ad389 detached Python import, distinct from admitted Rail. Native SSA reports installed PreToolUse includes the Aug7 Go guard and display-power guard, without Ma’at. Native signing/install and the stdlib supervised runner are owned by SSA; this PR does not ship or exercise that runner.
+## Native integration (SSA, October 16)
+
+The supervised front door is `scripts/maat/admitted-run.py`, installed as `~/.local/bin/sirsi-maat-run` on M5, M1 and Studio. Example: `~/.local/bin/sirsi-maat-run --agent <actual-lane> --thread <actual-thread> --work <exact-work> --timeout 300 -- /absolute/program args`. IDs are selectors, not exemptions: the launcher verifies registered agent/thread, actual process ancestry and kernel start identity before querying/acquiring Ma’at and again before spawning. It borrows only an exact fresh full-share reservation, never releases a borrowed hold, and stops owned children on covered timeout/admission loss. Unknown external-command resource requirements cannot be safely squeezed into an insufficient floor grant; this supervisor refuses them rather than pretending to enforce a GPU/memory budget. Existing bounded floor-share mechanisms are not superseded or qualified by this tool.
+
+Registration and router coordination remain callable before workload admission. Git source/checkpoint operations retain existing branch/secret/pre-push guards; this hook does not replace them. Expensive workload commands, shell/env indirection and background tool flags require the exact foreground front door. Legacy headless-worker source no longer defaults to permission bypass; attended session/account permission modes are unchanged.
+
+Registration instruction masks may set/export their own `SIRSI_AGENT_ID`, `SIRSI_THREAD_ID` and `SIRSI_ROUTER_AGENT`, call the canonical CLI through `$HOME`, capture a registration's JSON thread ID through `jq`, and obtain anchor metadata through `ps`. The hook checks nested control/read commands without evaluating them. Unknown executables, model substitutions, destination/PATH overrides and detached workloads are not exemptions. Registration still validates the real runtime; an allowed mask is not permission to invent an anchor or borrow another lane's identity.
+
+This is a cooperative operational guard, not a security sandbox against a malicious same-user writer, arbitrary OS services or process-group escape. Existing-session and subagent hook propagation must be measured; an installed file is not evidence that a running session has reloaded its hooks. No claim that all stale fabric registrations are repaired.
+
+Owner incident: Apollo51 ffd22719/subagent ad389 detached Python import, distinct from admitted Rail. The original installed PreToolUse had the Aug7 Go guard without Ma’at. SSA subsequently installed a chain at that already-loaded guard path, preserving the original guard and adding this admission gate. M5, M1 and Studio have the native runner and signed observer launcher. Installed input-only controls prove registration succeeds and raw/detached/model substitutions refuse; these controls do not execute their example registration commands or qualify every client in the fleet.
 
 ## Command boundary
 
@@ -14,6 +24,6 @@ This is a conservative command boundary, not a shell sandbox or proof of complet
 
 SSA installs exact reviewed hook at `~/.claude/hooks/maat-heavy-launch.py` and the independently tested runner at `~/.local/bin/sirsi-maat-run`. Merge `hooks/maat-launch.settings.json` into existing user PreToolUse preserving all other hooks and permissions; no blanket permission-mode change. Native settings.local hook list was reported null, not a second enforcement layer. Test actual attended/headless/subagent rejection before child spawn and foreground admission refusal/success with model-free actors, including permission-held cross-session fallback. Preserve existing settings backup and exact hashes for rollback. Do not enable the front door until runner tests pass. Removing this hook does not remove SSA’s runner admission checks, but removes this layer of coverage; record that fact explicitly.
 
-Both legacy headless-worker scripts explicitly request bypassPermissions; the attended launcher supports AutoApprove. No such flags or live sessions are changed here. PreToolUse propagation and refusal under those actual modes must be measured on the native host. Existing original implementation request stays open until deployed controls pass. No observer signing or model process was performed by this source change.
+Both legacy headless-worker script defaults now use `auto`, not permission bypass. No running session's permission mode or account security was changed. PreToolUse propagation and refusal must still be measured per native client; Studio's hooks-only configuration is not evidence of a running Claude session there. Observer signing/deployment has separate private receipts; no model was run by these source tests.
 
 References: ADR-006, ADR-061; AGENTS A17/A32.

@@ -6,6 +6,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- Keep thread registration and coordination available before workload admission, including own-session selectors, canonical CLI paths and control-only registration-result capture. Preserve the existing guard in the native hook chain; supervise workload execution and record ambiguous admission/release debt. Default headless-worker source no longer requests permission bypass.
+
 - Require the exact foreground Ma’at supervised runner for direct Python/Go/model or unknown execution, reject background/nested front-door escapes, and preserve read-only source commands mentioning MLX. Model-free negative fixtures and native deployment/coverage limits accompany the hook (owner Apollo51 incident).
 
 ## [0.24.111] — 2026-10-16

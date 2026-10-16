@@ -107,8 +107,7 @@ Begin. Do the whole task, open the PR, route the completion, then stop."
   local out rc
   out=$(cd "$REPO" && timeout "$TASK_TIMEOUT" "$CLAUDE" --print \
         --model "$MODEL" \
-        --permission-mode bypassPermissions \
-        --dangerously-skip-permissions \
+        --permission-mode auto \
         "$prompt" 2>>"$LOG")
   rc=$?
   if [ $rc -eq 124 ]; then
