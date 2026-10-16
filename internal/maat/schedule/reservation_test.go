@@ -244,7 +244,7 @@ func TestCheckConflicts_ForeignIntruderDuringQuiet(t *testing.T) {
 	l := fixedLedger("2026-09-24T10:00:00Z")
 	l.Reserve(mkReq("rail-a", "claude-io", "2026-09-24T09:30:00Z", "2026-09-24T11:00:00Z", RegimeQuiet), false)
 
-	SetActivityProbe(func(machine string) ([]Actor, error) {
+	SetActivityProbe(func(machine, _ string) ([]Actor, error) {
 		return []Actor{
 			{Kind: "bench", Detail: "tbraw-bench sr-A-fwd", Owner: ""}, // foreign, unattributed
 			{Kind: "bench", Detail: "mercury H6", Owner: "claude-io"},  // the holder's own — expected
@@ -267,7 +267,9 @@ func TestCheckConflicts_ForeignIntruderDuringQuiet(t *testing.T) {
 func TestCheckConflicts_BuildRegimeToleratesForeignLoad(t *testing.T) {
 	l := fixedLedger("2026-09-24T10:00:00Z")
 	l.Reserve(mkReq("m5", "ci", "2026-09-24T09:30:00Z", "2026-09-24T11:00:00Z", RegimeBuild), false)
-	SetActivityProbe(func(string) ([]Actor, error) { return []Actor{{Kind: "bench", Detail: "x", Owner: "other"}}, nil })
+	SetActivityProbe(func(string, string) ([]Actor, error) {
+		return []Actor{{Kind: "bench", Detail: "x", Owner: "other"}}, nil
+	})
 	defer SetActivityProbe(probeProcesses)
 	rep, _ := l.CheckConflicts("m5", "m5")
 	if !rep.Clean {
@@ -303,7 +305,7 @@ func TestCheckConflicts_FloorHolderIsSharedNotInvalidated(t *testing.T) {
 		t.Fatalf("setup: want full+floor, got %+v %+v", full.Reservation, floor.Reservation)
 	}
 
-	SetActivityProbe(func(string) ([]Actor, error) {
+	SetActivityProbe(func(string, string) ([]Actor, error) {
 		return []Actor{
 			{Kind: "bench", Detail: "mercury H6", Owner: "mercury"}, // the primary holder's own work
 			{Kind: "model", Detail: "sne-runner", Owner: "sne"},     // a lane holding a GRANTED floor share

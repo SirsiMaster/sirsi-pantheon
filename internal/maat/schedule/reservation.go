@@ -110,6 +110,16 @@ type Reservation struct {
 	// router-registered agents are. 0 means "not set": no exemption, same
 	// behavior as before this field existed.
 	ExemptPID int `json:"exempt_pid,omitempty"`
+	// Iface names the specific Thunderbolt interface (e.g. "en1") this
+	// reservation covers, when it corresponds to one physical cable rather
+	// than a whole machine. Empty (the default) means this reservation is
+	// NOT scoped to one lane: CheckConflicts considers traffic on every
+	// active lane, same as before this field existed. When set, a
+	// traffic-detector Actor (Actor.Iface) on a DIFFERENT lane is not this
+	// reservation's business and is never reported as its intruder; traffic
+	// on THIS lane during a RegimeLoaded window is the holder's own expected
+	// load, not foreign (see conflict.go).
+	Iface string `json:"iface,omitempty"`
 }
 
 // ShareFull and ShareFloor are the two values Reservation.Share takes.
