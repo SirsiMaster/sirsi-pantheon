@@ -233,7 +233,7 @@ func currentHold(routerRoot, agentID string, fruitless int, nextDispatchAllowed 
 	if hold, _, _ := shouldDeferDispatch(); hold {
 		return HoldLoad, time.Time{}
 	}
-	if getAttendedLiveFn()(routerRoot, agentID) {
+	if declaredAttendedLane(routerRoot, agentID) || getAttendedLiveFn()(routerRoot, agentID) {
 		return HoldAttended, time.Time{}
 	}
 	if consumerSlotsFull(routerRoot, agentID) {

@@ -645,6 +645,7 @@
     },
     "sirsi-software-admin": {
       "id": "sirsi-software-admin",
+      "attended": true,
       "type": "codex",
       "command": [
         "codex"
@@ -820,6 +821,7 @@
     },
     "codex-apollo": {
       "id": "codex-apollo",
+      "attended": true,
       "type": "codex",
       "command": [
         "codex",

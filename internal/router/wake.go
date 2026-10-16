@@ -864,6 +864,18 @@ func setAttendedLiveFn(fn func(routerRoot, agentID string) bool) {
 	attendedLiveFn = fn
 }
 
+// declaredAttendedLane reports whether the registry marks agentID attended. Unlike
+// AttendedSessionLive it does not depend on a fresh heartbeat. An unreadable registry
+// reads as not declared (same fail direction as AttendedSessionLive).
+func declaredAttendedLane(routerRoot, agentID string) bool {
+	reg, err := LoadRegistry(routerRoot)
+	if err != nil {
+		return false
+	}
+	cfg, err := reg.Lookup(agentID)
+	return err == nil && cfg.Attended
+}
+
 // attendedSessionOwnsInbox reports whether a live, armed attended session
 // (interactive claude/codex) is already consuming this lane's inbox. Dispatching
 // a headless consumer on top of it makes two writers act as one lane id — the
@@ -871,6 +883,10 @@ func setAttendedLiveFn(fn func(routerRoot, agentID string) bool) {
 // PR #893 while the owner's interactive session never saw it. The attended
 // session wins; the worker resumes as soon as it is gone.
 func attendedSessionOwnsInbox(routerRoot, agentID string, depth int) bool {
+	if declaredAttendedLane(routerRoot, agentID) {
+		log.Printf("wake-loop %s: dispatch held — lane is declared attended; a secondary consumer never overrides it (inbox depth %d)", agentID, depth)
+		return true
+	}
 	if !getAttendedLiveFn()(routerRoot, agentID) {
 		return false
 	}
