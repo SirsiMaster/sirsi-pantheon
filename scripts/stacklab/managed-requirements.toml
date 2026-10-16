@@ -1,0 +1,13 @@
+[features]
+hooks = true
+
+[hooks]
+managed_dir = "/etc/codex/hooks"
+
+[[hooks.PreToolUse]]
+matcher = "^Bash$"
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "/etc/codex/hooks/sirsi-display-power-guard"
+timeout = 3
+statusMessage = "Enforcing owner display custody"
