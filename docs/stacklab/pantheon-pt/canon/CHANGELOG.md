@@ -1,5 +1,14 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-16 — v0.24.105 release candidate
+
+- Add the machine registry (owner 2026-10-16: machines register with Ra like threads): `.a
+- Correct the claude-apollo-m5-rail consumer launch prompt: owner 2026-10-16 made M5Rail t
+- Fix a golangci-lint errcheck on `thread watch`'s watcher-error receive that failed Lint 
+- Declared attended lanes (owner 2026-10-16: secondary consumers never override the attend
+- Lane state reports a declared attended lane's `attended` hold ahead of transient measure
+- Repair the two CompassPoint attended-only lane declarations with guarded own-queue consu
+
 ## 2026-10-15 — v0.24.104 release candidate
 
 - feat(router):
