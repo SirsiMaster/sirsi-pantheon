@@ -1,5 +1,9 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-16 — v0.24.109 release candidate
+
+- macOS Tailscale backend check runs the CLI with the vendor's explicit selector (`/usr/bi
+
 ## 2026-10-16 — v0.24.108 release candidate
 
 - The wake-loop progress gate counts a consumer run as progress when it made a durable rou
