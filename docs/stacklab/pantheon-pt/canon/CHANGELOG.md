@@ -8,6 +8,25 @@
 
 ## 2026-10-15 — v0.24.104 release candidate
 
+## 2026-10-15 — v0.24.104 release candidate
+
+- feat(router):
+- feat(router):
+- Router sessions with a registered thread now read, publish and invalidate only their own
+- fix(guard):
+- fix(signing):
+- fix(router):
+- fix(router):
+- fix(router):
+- Native Codex sessions now key router registration and Ma'at Phase-1 attribution on `CODE
+- fix(router):
+- Add `sirsi gemma shared` for registered M1/M5 lanes through the existing canonical route
+- Router relay clients now distinguish denied or failed slot creation from actual request 
+- Stale slot recovery now returns removal errors and performs only one bounded reacquisiti
+- Added a restricted Codex relay qualification recipe using a named permission profile, th
+- feat(router):
+- fix(router):
+- fix(router):
 - fix(router):
 - fix(router):
 - fix(router):

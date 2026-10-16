@@ -1,0 +1,1 @@
+- Repair the two CompassPoint attended-only lane declarations with guarded own-queue consumers using the existing canonical relay. Correct the builder's current repo from the native session's verified receipt. Preserve attended-session fencing, shared host admission and all historical identities; do not launch a competing SSA worker or pass host/API keys to the consumers.

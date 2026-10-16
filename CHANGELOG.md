@@ -16,6 +16,103 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [0.24.104] — 2026-10-15
 
+## [0.24.104] — 2026-10-15
+
+- **feat(router):** `sirsi router token mint <host> --host-wide --secret-resource projects/<p>/secrets/<s>` publishes an
+  UNSCOPED host token (a Mac's) to Secret Manager the same secure way scoped tokens already are: never printed or logged,
+  revoked if delivery fails. Opt-in only: `--secret-resource` alone still requires `--agents`, `--host-wide` cannot be combined
+  with `--agents`, and the host-wide entry point refuses a scoped token (and the default one refuses an unscoped token), each
+  revoking the fresh token. Needed to rotate a Mac token whose plaintext had reached Cloud Logging via the job's stdout.
+
+- **feat(router):** `sirsi router token list` now prints each token's lane scope (`scope=lane-a,lane-b` or
+  `scope=unscoped(host-wide)`), so a host-wide token in a cloud environment is visible at a glance. Test with a negative
+  control.
+
+- Router sessions with a registered thread now read, publish and invalidate only their own per-thread cache. Threadless callers no longer borrow a thread-bound same-agent session from the shared legacy cache. Primary and coordination sessions cannot clobber each other's lease identity through that alias. Server lease ownership checks are unchanged; restoring real native provider markers remains required, and legacy threadless leases are not silently transferred.
+
+- **fix(guard):** `sirsi guard network` now checks Tailscale's own backend state (`tailscale status --json` → `BackendState`), not just scutil/ifconfig tunnel presence. macOS keeps the system extension loaded and scutil reports the VPN "Connected" even after tailscaled's `ipn.BackendState` flips to `Stopped`, so traffic can silently stop while the OS still reports it healthy — confirmed live on M1 2026-10-15 (hardware-admin recurrence, SirsiMaster/SirsiNexusApp#594). No new daemon or polling loop; piggybacks on the existing on-demand network audit.
+
+- **fix(signing):** use existing pinned-host, noninteractive SSH authentication
+  consistently for signing preflight, publication, polling, SCP and rsync.
+  Unknown host keys fail without being learned; missing authentication cannot
+  open a later password/MFA prompt. Preserve signature verification and signing
+  protocol; add isolated file/app, refusal, foreign-signature and permissive-policy
+  negative fixtures. Real signing and installed Apollo delivery remain separately
+  qualified.
+
+- **fix(router):** stopped the session table growing ~86k rows per 48 h. Root cause (measured on the M5): the client's cached session is
+  valid only for the exact executable that minted it, and two binaries acting as the same agent (19 wake loops that all fall back to the
+  hostname, 8 running an older binary) shared one cache file and invalidated each other on every call. The cache file is now keyed by
+  runtime hash (`<agent>.<runtime>.json`), stale cache files are pruned after 7 days, and the service garbage-collects dead sessions
+  (unrevoked and unseen for 24 h, or revoked for 24 h; never a session that owns a lease on an open item or unfinished task), amortized
+  on mint at most every 5 minutes in batches of 5000. New operator tools: `sirsi router sessions stats` and
+  `sirsi router sessions gc [--dry-run]` (service backend, like `token`). Tests with negative controls: the flap (20 sessions -> 2), lease
+  protection, freshness protection, batch bound, dry-run equals real GC.
+
+- **fix(router):** lane-scoped tokens now also check the existing owner of a thread before an upsert overwrites it
+  (`threadRecordsInScope`). Found by the automated security review of #1079 after it merged: a scoped token could take over
+  another agent's thread on the same host by reusing its id with its own agent name. Test
+  `TestScopedSessionCannotRewriteAnotherAgentsThread` was red before the fix and is green after. Not exposed: schema v25 and
+  scoped tokens are not yet deployed to production.
+
+- **fix(router):** brought main to parity with what production already runs (revision 00036, SSA build `ssa-e4fab409`).
+  Round 3 of SSA's independent review of lane-scoped tokens: scoped thread writes never fall back to an unscoped write
+  (malformed or unsupported arguments fail closed), `DeleteThreadCAS` gets the same atomic scoped write, lane-scope
+  refusals map to HTTP 403, and an unknown-thread lookup failure refuses instead of allowing. Adds
+  `sirsi router token mint --secret-resource projects/<p>/secrets/<s>`: the minted scoped token is published straight to
+  Google Secret Manager and **never printed or logged** (the plaintext no longer reaches Cloud Logging); if delivery
+  fails the fresh token is revoked. Requires `--agents`. Code authored by SSA (cac71b10/cb4d4e4e lineage plus the deployed
+  round-3 tree); ported verbatim with its tests, plus the earlier thread-takeover test kept as an extra guard.
+
+- Native Codex sessions now key router registration and Ma'at Phase-1 attribution on `CODEX_SESSION_ID` or `CODEX_THREAD_ID` without posing as Claude. Conflicting Codex aliases refuse attribution; unregistered or undeclared agents still refuse. Claude's existing explicit session binding and shared marker paths are unchanged. This is local registered-marker attribution, not a new authentication or signing grant.
+
+- **fix(router):** the codex-apollo background consumer now defers to a live attended session. Its prompt first runs
+  `sirsi thread attended`; when attended, the worker is a mail-only backstop (no ledger-task claims, never `apollo-mm-*` /
+  `apollo-multimachine-*`, release any such lease it holds). Keeps the consumer (so mail is never stranded when the
+  attended session is away) while stopping the duplicate execution reported by Apollo on 2026-10-15. This is prompt-level
+  intent over the existing attended check, not mechanical enforcement; a dispatch-gate hold for attended lanes is tracked as
+  `ra-attended-defer-gate`.
+
+- Add `sirsi gemma shared` for registered M1/M5 lanes through the existing canonical router, with bounded waits, exact-reply resume, single-use metadata receipts and native fenced worker support. The installed CLI and worker use the selected resident broker; uncertain submissions are never automatically resent and full input is never truncated.
+
+- Router relay clients now distinguish denied or failed slot creation from actual request saturation. Permission and sandbox failures retain their underlying error and explicitly report that no request was published.
+
+- Stale slot recovery now returns removal errors and performs only one bounded reacquisition instead of potentially looping indefinitely.
+
+- Added a restricted Codex relay qualification recipe using a named permission profile, the canonical real system spool path, and disabled direct networking. This is a client access recipe, not a second router database or a claim of completed fleet rollout.
+
+- **feat(router):** lane-scoped host tokens (schema v25, new table `host_token_scopes`). `sirsi router token mint <host> --agents a,b`
+  mints a token confined to the listed agents: it may mint sessions for and act as only those agents through a deny-by-default
+  lane API (`internal/routerstore/lanescope.go`). It can send to anyone but cannot send as another agent, read the whole ledger,
+  read another lane's inbox or items, or register threads for other agents; every refusal is audited (`router audience`).
+  Unscoped host tokens (every existing Mac token) behave exactly as before. This is the foundation for cloud-based lanes that
+  message Mac lanes and each other through the one cloud ledger. Closes the gap where a host token placed in a cloud sandbox
+  could act as any lane (including `ra`) and read every item. Tests with negative controls; verified end to end with the real
+  CLI against a local service. **Production rollout order matters** (the Postgres open check requires an exact schema version):
+  see `docs/router-service/LANE_SCOPED_TOKENS.md`. Pins updated: schema version 25, 18 tables in `scripts/check-pg-schema.sh`
+  and `scripts/router-service/apply-schema-job.sh`.
+
+- **fix(router):** two P1 gaps in the lane-scoped host token API (schema v25, `internal/routerstore/lanescope.go`) found by
+  independent SSA review of PR #1079. (1) `ListThreads` returned every thread's full record — including the raw continuation
+  payload (`ResumePrompt`, etc.) — to any scoped token; it is now filtered to the token's own agents. (2) `UpsertThreads`,
+  `UpsertThreadCAS` and `ResumeThreadCAS` validated only the record's incoming agent, so a scoped token could take over an
+  existing thread row owned by another agent by naming its id, when that row had a blank (legacy) or same host — the existing
+  host check in `threadAuthority` only protects a row already bound to a *different* host. Both writes now also check the
+  existing row's owner via `ThreadBinding`. New negative-control tests: `TestScopedListThreadsHidesForeignPayloads`,
+  `TestScopedThreadWriteCannotHijackExistingForeignRow`.
+
+- **fix(router):** close a TOCTOU race in the lane-scoped host token API (schema v25). The
+  existing-owner scope check for `UpsertThreads`/`UpsertThreadCAS`/`ResumeThreadCAS` was a
+  separate read (`ThreadBinding`) before the write, so a legitimate concurrent write to the
+  same row between the read and the write could let a scoped token's write land anyway
+  (independent SSA adversarial review, round 2, `TestSSAConcurrentExistingAgentChange`). The
+  check is now part of the write's own SQL predicate (`internal/routerstore/threads.go`:
+  `UpsertThreadsScoped`, `UpsertThreadCASScoped`, `ResumeThreadCASScoped`), evaluated
+  atomically with the write by the database itself — the same pattern this code already uses
+  for host ownership. New stress test `TestScopedThreadWriteCannotHijackExistingForeignRowConcurrently`
+  (50 concurrent hijack attempts racing 50 legitimate heartbeats on the same row, `-race`,
+  5x) never lets the out-of-scope agent win.
+
 - **fix(router):** discovery no longer infers a coordinator's identity from a
   home-directory ancestor match. Home-scoped sessions register explicitly;
   unrelated projects remain unmapped, and narrower declared project mappings
