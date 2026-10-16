@@ -227,13 +227,17 @@ func currentHold(routerRoot, agentID string, fruitless int, nextDispatchAllowed 
 	if home, err := os.UserHomeDir(); err == nil && IsFabricQuarantined(home) {
 		return HoldQuarantine, time.Time{}
 	}
+	// A declared attended lane is a standing hold, reported ahead of transient window/load holds.
+	if declaredAttendedLane(routerRoot, agentID) {
+		return HoldAttended, time.Time{}
+	}
 	if _, open := railsLockHolder(); open {
 		return HoldWindow, time.Time{}
 	}
 	if hold, _, _ := shouldDeferDispatch(); hold {
 		return HoldLoad, time.Time{}
 	}
-	if declaredAttendedLane(routerRoot, agentID) || getAttendedLiveFn()(routerRoot, agentID) {
+	if getAttendedLiveFn()(routerRoot, agentID) {
 		return HoldAttended, time.Time{}
 	}
 	if consumerSlotsFull(routerRoot, agentID) {
