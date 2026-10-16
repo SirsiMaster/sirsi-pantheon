@@ -1,0 +1,2 @@
+- Preserve alias-owned task history in the fleet dashboard instead of silently dropping retired-address rows. Web and CLI totals retain the same complete ledger; equal task IDs under different original owners remain distinct.
+- Normalize both public executable modes before application signing so a restrictive build umask cannot make a root-owned installation unusable.

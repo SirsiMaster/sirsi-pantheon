@@ -22,6 +22,14 @@ concurrency:
 permissions:
   contents: read
 
+# CI-only, read-only deploy keys for exactly the two private SDK repositories.
+# No secrets are available to forks; the wrapper also rejects untrusted events.
+env:
+  APOLLO_CI_INFERENCE_READ_KEY: ${{ secrets.APOLLO_CI_INFERENCE_READ_KEY }}
+  APOLLO_CI_MERCURY_READ_KEY: ${{ secrets.APOLLO_CI_MERCURY_READ_KEY }}
+  CI_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+  CI_AUTHOR_ASSOCIATION: ${{ github.event.pull_request.author_association }}
+
 jobs:
   lint:
     name: Lint
@@ -31,13 +39,16 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version-file: go.mod
 
-      - name: Install golangci-lint v2 (built with Go 1.25)
+      - name: Install golangci-lint v2 (built with the go.mod toolchain)
         run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 
       - name: golangci-lint
-        run: golangci-lint run --timeout=5m
+        run: bash scripts/ci-private-sdk.sh golangci-lint run --timeout=5m
+
+      - name: Private SDK credential boundary fixtures
+        run: bash scripts/ci-private-sdk.test.sh
 
       - name: ADR number uniqueness
         run: bash scripts/check-adr-numbers.sh
@@ -117,12 +128,12 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version-file: go.mod
           cache: true
 
       - name: Run tests
         shell: bash
-        run: go test -v -race -short -coverprofile=coverage.out ./...
+        run: bash scripts/ci-private-sdk.sh go test -v -race -short -coverprofile=coverage.out ./...
         env:
           CGO_ENABLED: 1
           # This self-hosted runner's service process is launched outside the
@@ -159,7 +170,7 @@ jobs:
       # negative controls. REQUIRED: a missing prerequisite now fails this step
       # instead of skipping silently (A35 — CI green must mean this ran).
       - name: Router store on PostgreSQL (ADR-062)
-        run: bash scripts/ci-postgres.sh
+        run: bash scripts/ci-private-sdk.sh bash scripts/ci-postgres.sh
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
@@ -178,7 +189,7 @@ jobs:
         env:
           SIRSI_ROUTER_DB: ${{ runner.temp }}/adr-audit/router.db
         run: |
-          go build -o sirsi ./cmd/sirsi/
+          bash scripts/ci-private-sdk.sh go build -o sirsi ./cmd/sirsi/
           ./sirsi adr audit --docs docs --allow 13,16,46,54
 
       # BEHAVIORAL guard — it BUILDS and RUNS the menubar binary, so unlike its
@@ -199,7 +210,7 @@ jobs:
       - name: Ma'at Pulse — Dynamic Metrics
         shell: bash
         run: |
-          go build -o sirsi ./cmd/sirsi/
+          bash scripts/ci-private-sdk.sh go build -o sirsi ./cmd/sirsi/
           ./sirsi maat pulse --skip-test --json > metrics.json
           echo "=== Ma'at Pulse Metrics ==="
           cat metrics.json
@@ -224,14 +235,15 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: ${{ matrix.go-version }}
+          # matrix.go-version is only the required status-check label; the toolchain follows go.mod
+          go-version-file: go.mod
           cache: true
 
       - name: Build sirsi
-        run: go build -o sirsi${{ matrix.os == 'windows-latest' && '.exe' || '' }} ./cmd/sirsi/
+        run: bash scripts/ci-private-sdk.sh go build -o sirsi${{ matrix.os == 'windows-latest' && '.exe' || '' }} ./cmd/sirsi/
 
       - name: Build sirsi-agent
-        run: go build -o sirsi-agent${{ matrix.os == 'windows-latest' && '.exe' || '' }} ./cmd/sirsi-agent/
+        run: bash scripts/ci-private-sdk.sh go build -o sirsi-agent${{ matrix.os == 'windows-latest' && '.exe' || '' }} ./cmd/sirsi-agent/
         env:
           CGO_ENABLED: '0'
 
@@ -290,7 +302,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version-file: go.mod
           cache: true
       - name: Build CLI for required status context
-        run: go build -o sirsi ./cmd/sirsi/
+        run: bash scripts/ci-private-sdk.sh go build -o sirsi ./cmd/sirsi/

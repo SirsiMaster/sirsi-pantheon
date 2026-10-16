@@ -29,6 +29,38 @@ func TestVerifyBuildsDeterministicPythonFreeInventory(t *testing.T) {
 	}
 }
 
+func TestApolloProfileRequiresExactExplicitCanonicalBytes(t *testing.T) {
+	app, expected := makeBundle(t)
+	dir := filepath.Join(app, "Contents/Resources/Apollo")
+	if err := os.Mkdir(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	profile := []byte(`{"schema":"sirsi.apollo.native-profile.v2"}`)
+	file := filepath.Join(dir, "native-profile.json")
+	if err := os.WriteFile(file, profile, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(app, expected); err == nil {
+		t.Fatal("unbound Apollo profile accepted")
+	}
+	expected.ApolloProfile = profile
+	if _, err := Verify(app, expected); err != nil {
+		t.Fatalf("explicit exact profile rejected: %v", err)
+	}
+	if err := os.WriteFile(file, append(profile, ' '), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(app, expected); err == nil {
+		t.Fatal("changed Apollo profile bytes accepted")
+	}
+	if err := os.Remove(file); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(app, expected); err == nil {
+		t.Fatal("missing required Apollo profile accepted")
+	}
+}
+
 func TestVerifyRejectsSymlinkedPayload(t *testing.T) {
 	app, expected := makeBundle(t)
 	sirsi := filepath.Join(app, "Contents", "MacOS", "sirsi")

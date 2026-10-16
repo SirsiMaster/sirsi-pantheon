@@ -12,7 +12,6 @@ import (
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/apollo"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dashboard"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/casebook"
@@ -194,20 +193,9 @@ func collectDashboardFleet() (ledger.Snapshot, error) {
 	if err != nil {
 		return snap, err
 	}
-	// A retired name (an alias) is not a lane: its mail drains to the successor, so
-	// listing it shows ghost lanes next to the real ones.
-	if f, ferr := dispatch.Open(repoRoot); ferr == nil {
-		defer func() { _ = f.Close() }()
-		if aliases, aerr := f.Aliases(); aerr == nil {
-			kept := snap.Agents[:0]
-			for _, a := range snap.Agents {
-				if _, retired := aliases[a.AgentID]; !retired {
-					kept = append(kept, a)
-				}
-			}
-			snap.Agents = kept
-		}
-	}
+	// Delivery aliases redirect new mail, not historical task ownership. Keep
+	// every ledger row, including alias-owned obligations, exactly as the CLI
+	// does. Hiding or folding rows loses counts and can collide task identities.
 	return snap, nil
 }
 
