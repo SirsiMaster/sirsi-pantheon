@@ -956,3 +956,18 @@ func TestFitsDefaultsUnknownModelSize(t *testing.T) {
 		t.Fatal("unknown model size on a tight node must refuse")
 	}
 }
+
+// On macOS every Tailscale CLI call carries the vendor's explicit CLI selector, so a minimal service
+// environment never makes the app binary start in GUI mode; other platforms call the CLI directly.
+func TestCheckTailscaleBackend_DarwinForcesCLISelector(t *testing.T) {
+	report := &NetworkReport{}
+	checkTailscaleBackend(&platform.Mock{NameStr: "darwin", CommandResults: map[string]string{
+		"/usr/bin/env TAILSCALE_BE_CLI=1 tailscale status --json": `{"BackendState":"Stopped"}`,
+	}}, report)
+	if f := findingByCheck(t, report.Findings, "Tailscale Backend"); f.Severity != SeverityWarn {
+		t.Fatalf("darwin call without the CLI selector, got %+v", report.Findings)
+	}
+	if name, args := tailscaleCLI(&platform.Mock{NameStr: "linux"}, "tailscale", "status"); name != "tailscale" || strings.Join(args, " ") != "status" {
+		t.Fatalf("non-darwin invocation changed: %s %v", name, args)
+	}
+}

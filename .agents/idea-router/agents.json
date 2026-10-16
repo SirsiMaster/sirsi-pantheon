@@ -601,6 +601,7 @@
       "consumer": {}
     },
     "sirsi-hardware-admin": {
+      "attended": true,
       "callsign": "Hardware Admin",
       "capabilities": [
         "hardware-readiness",
