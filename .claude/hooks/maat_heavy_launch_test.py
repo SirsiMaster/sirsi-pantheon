@@ -16,7 +16,7 @@ class GuardTest(unittest.TestCase):
         for session in ["owner", "subagent-ad389", "fallback-session"]:
             self.assertIsNotNone(g.denial({"tool_name":"Bash","session_id":session,"permission_mode":"bypassPermissions","admitted":True,"tool_input":{"command":"nohup python3 /tmp/probe.py &"}}))
     def test_harmless_commands(self):
-        for command in ["git status --porcelain", "python3 -c 'print(1)'", "git status && git diff", "sirsi maat status"]:
+        for command in ["git status --porcelain", "git status && git diff", "sirsi maat status"]:
             self.assertIsNone(g.denial({"tool_name":"Bash","tool_input":{"command":command}}))
     def test_hook_exit_blocks_without_executing_payload(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -29,6 +29,22 @@ class GuardTest(unittest.TestCase):
         settings = json.loads((Path(__file__).resolve().parents[2] / "hooks" / "maat-launch.settings.json").read_text())
         self.assertNotIn("permissions", settings)
         self.assertEqual(settings["hooks"]["PreToolUse"][0]["matcher"], "Bash")
+    def test_foreground_execution_requires_frontdoor(self):
+        for command in ["python3 probe.py", "go run probe.go", "go test ./...", "./apollo-worker --model x", "/tmp/rg --model x", "env X=1 python3 probe.py", "sh -c 'python3 probe.py'", "bash -c 'rg mlx file'", "sed 'e python3 probe.py' file", "find . -exec python3 probe.py ;", "rg --pre python3 mlx file", "git diff --ext-diff"]:
+            with self.subTest(command=command):
+                self.assertIsNotNone(g.denial({"tool_name":"Bash","tool_input":{"command":command}}))
+    def test_exact_foreground_frontdoor(self):
+        for command in ["~/.local/bin/sirsi-maat-run --work proof -- python3 probe.py", g.FRONT + " --work proof -- ./model"]:
+            self.assertIsNone(g.denial({"tool_name":"Bash","tool_input":{"command":command}}))
+        for command in ["sirsi-maat-run -- python3 probe.py", "/tmp/sirsi-maat-run -- python3 probe.py", "env X=1 ~/.local/bin/sirsi-maat-run -- python3 probe.py", "sh -c '~/.local/bin/sirsi-maat-run -- python3 probe.py'", "~/.local/bin/sirsi-maat-run -- python3 probe.py &", "~/.local/bin/sirsi-maat-run -- python3 probe.py; echo done", "~/.local/bin/sirsi-maat-run -- python3 probe.py >log", "~/.local/bin/sirsi-maat-run $(python3 probe.py)"]:
+            with self.subTest(command=command):
+                self.assertIsNotNone(g.denial({"tool_name":"Bash","tool_input":{"command":command}}))
+    def test_background_flag_cannot_use_frontdoor(self):
+        for command in ["rg mlx source.go", "~/.local/bin/sirsi-maat-run -- python3 probe.py"]:
+            self.assertIsNotNone(g.denial({"tool_name":"Bash","tool_input":{"command":command,"run_in_background":True}}))
+    def test_source_mentions_are_data(self):
+        for command in ["rg 'import mlx.core' source.py", "git show HEAD:mlx.py", "git diff -- mlx_lm.py", "cat python-model.py | head -20"]:
+            self.assertIsNone(g.denial({"tool_name":"Bash","tool_input":{"command":command}}))
     def test_malformed_refuses(self):
         for payload in [[], {"tool_name":"Bash"}, {"tool_name":"Bash","tool_input":[]}]:
             self.assertIsNotNone(g.denial(payload))

@@ -6,7 +6,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
-- Add a supplemental model-free Ma’at PreToolUse denial for raw MLX and detached Python commands, with cross-session no-exemption controls and explicit native deployment/coverage limits (owner Apollo51 incident).
+- Require the exact foreground Ma’at supervised runner for direct Python/Go/model or unknown execution, reject background/nested front-door escapes, and preserve read-only source commands mentioning MLX. Model-free negative fixtures and native deployment/coverage limits accompany the hook (owner Apollo51 incident).
 
 ## [0.24.111] — 2026-10-16
 
