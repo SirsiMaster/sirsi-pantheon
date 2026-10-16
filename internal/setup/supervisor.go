@@ -28,12 +28,15 @@ const supervisorPlistLabel = "ai.sirsi.horus.agent-router"
 // It pins WorkingDirectory to the repo root so router state resolves regardless
 // of the launchd default cwd, and sets an explicit PATH via EnvironmentVariables
 // so the supervisor's wakeability probe (exec.LookPath for `claude`, `codex`,
-// etc.) finds the agent CLIs. A bare `/bin/zsh -l` is NOT enough: a
-// non-interactive login shell sources .zprofile/.zshenv but not .zshrc, where
-// ~/.local/bin is commonly added — so launchd would hand the supervisor a
-// minimal PATH and every agent would be misreported as "not found in PATH".
-// The PATH leads with the sirsi binary's own directory (agent CLIs are usually
-// installed beside it). ProcessType is Background — a headless resident loop.
+// etc.) finds the agent CLIs — the PATH leads with the sirsi binary's own
+// directory (agent CLIs are usually installed beside it). ProgramArguments is a
+// DIRECT argv on the signed sirsi binary (no `/bin/zsh -c` wrapper): a shell
+// hop needs no startup file here (PATH already travels via
+// EnvironmentVariables, same as the wake-loop plists in internal/router/wake.go),
+// and it was the reason macOS Login Items showed this LaunchAgent as an
+// anonymous "zsh" entry instead of the signed, named sirsi binary (owner report
+// 2026-10-16, router item 20261016-194038). ProcessType is Background — a
+// headless resident loop.
 func supervisorPlistContent(sirsiBinPath, workDir string) string {
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -50,10 +53,9 @@ func supervisorPlistContent(sirsiBinPath, workDir string) string {
 	</dict>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/bin/zsh</string>
-		<string>-l</string>
-		<string>-c</string>
-		<string>exec %[1]q horus supervise</string>
+		<string>%[1]s</string>
+		<string>horus</string>
+		<string>supervise</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>

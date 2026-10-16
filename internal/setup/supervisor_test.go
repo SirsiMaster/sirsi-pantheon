@@ -18,8 +18,9 @@ func TestSupervisorPlistContent(t *testing.T) {
 		"ai.sirsi.horus.agent-router",
 		// Explicit WorkingDirectory (never the launchd default cwd).
 		"<key>WorkingDirectory</key>",
-		// Runs the resident loop command.
-		"horus supervise",
+		// Runs the resident loop command (direct argv, two array elements).
+		"<string>horus</string>",
+		"<string>supervise</string>",
 		// Both resolved paths are present.
 		bin,
 		dir,
@@ -28,11 +29,8 @@ func TestSupervisorPlistContent(t *testing.T) {
 		"<key>RunAtLoad</key>",
 		// Background process type (headless resident loop, not interactive).
 		"<string>Background</string>",
-		// Login-shell exec wrapper.
-		"/bin/zsh",
 		// Explicit PATH so the wakeability probe (exec.LookPath) resolves agent
-		// CLIs under launchd's minimal environment — a bare login shell skips
-		// .zshrc where ~/.local/bin is added.
+		// CLIs under launchd's minimal environment.
 		"<key>EnvironmentVariables</key>",
 		"<key>PATH</key>",
 		// The sirsi binary's own directory leads the PATH (agent CLIs sit beside it).
@@ -42,6 +40,13 @@ func TestSupervisorPlistContent(t *testing.T) {
 		if !strings.Contains(plist, w) {
 			t.Errorf("supervisor plist missing %q:\n%s", w, plist)
 		}
+	}
+	// Negative control: no shell wrapper. macOS Login Items groups a job by its
+	// actual running executable, so a `/bin/zsh -c "exec ..."` wrapper surfaces
+	// as an anonymous "zsh" entry instead of the signed, named sirsi binary
+	// (owner report 2026-10-16, router item 20261016-194038).
+	if strings.Contains(plist, "/bin/zsh") {
+		t.Errorf("supervisor plist must exec the sirsi binary directly, not through /bin/zsh:\n%s", plist)
 	}
 }
 
