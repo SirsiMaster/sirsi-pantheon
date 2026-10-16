@@ -780,7 +780,7 @@
     "claude-m5-compasspoint": {
       "id": "claude-m5-compasspoint",
       "type": "claude",
-      "cwd": "/Users/thekryptodragon/Development/compasspoint",
+      "cwd": "/Users/thekryptodragon/.sirsi/worktrees/compasspoint-build-worker",
       "workstream": "compasspoint",
       "wake": {
         "mechanism": "launchagent"
@@ -926,7 +926,7 @@
     "codex-compasspoint-contract": {
       "id": "codex-compasspoint-contract",
       "type": "codex",
-      "cwd": "/Users/thekryptodragon/Development/compasspoint",
+      "cwd": "/Users/thekryptodragon/.sirsi/worktrees/compasspoint-contract-worker",
       "repo": "/Users/thekryptodragon/Development/compasspoint",
       "workstream": "compasspoint-contract",
       "callsign": "CompassPoint Contract",
@@ -935,7 +935,7 @@
         "mechanism": "launchagent"
       },
       "consumer": {
-        "command": ["env", "-u", "SIRSI_ROUTER_TOKEN", "-u", "OPENAI_API_KEY", "SIRSI_AGENT_ID=codex-compasspoint-contract", "SIRSI_ROUTER_URL=spool:///private/var/sirsipantheon/relay", "codex", "exec", "-c", "default_permissions=\"sirsi-router\"", "-c", "permissions.sirsi-router.extends=\":workspace\"", "-c", "permissions.sirsi-router.filesystem={\"/private/var/sirsipantheon/relay\"=\"write\"}", "-c", "permissions.sirsi-router.network.enabled=false", "--skip-git-repo-check", "-C", "/Users/thekryptodragon/Development/compasspoint"],
+        "command": ["env", "-u", "SIRSI_ROUTER_TOKEN", "-u", "OPENAI_API_KEY", "SIRSI_AGENT_ID=codex-compasspoint-contract", "SIRSI_ROUTER_URL=spool:///private/var/sirsipantheon/relay", "SIRSI_ROUTER_SESSION_DIR=/Users/thekryptodragon/.sirsi/worker-state/codex-compasspoint-contract/sessions", "codex", "exec", "-c", "default_permissions=\"sirsi-router\"", "-c", "permissions.sirsi-router.extends=\":workspace\"", "-c", "permissions.sirsi-router.filesystem={\"/private/var/sirsipantheon/relay\"=\"write\",\"/Users/thekryptodragon/.sirsi/worker-state/codex-compasspoint-contract/sessions\"=\"write\"}", "-c", "permissions.sirsi-router.network.enabled=false", "--skip-git-repo-check", "-C", "/Users/thekryptodragon/.sirsi/worktrees/compasspoint-contract-worker"],
         "prompt": "You are {{agent}}; your worker thread is {{thread}}. Read project Thoth/canon first. Pull your own canonical inbox with sirsi router pull {{agent}}; fully read and acknowledge each addressed item, claim fenced work, execute only its authorized scope, and close with evidence. Use sirsi router respond for requests requiring a reply. Check your own task ledger before declaring no work. Router root: {{router_root}}. Preserve history and customer boundaries. No account/security changes, extra paid cloud jobs, emails or deployments without their existing explicit authority. Never use a local router database. Do not reset or adopt another worker's lease. Respect attended-session holds and shared host/model/budget admission; no capacity or permission overrides. Checkpoint before exit. Then pull again; an empty inbox is NOT COMPLETION. Close only with EVIDENCE."
       }
     }
