@@ -480,6 +480,19 @@ var tailscaleCLICandidates = []string{
 func checkTailscaleBackend(p platform.Platform, report *NetworkReport) {
 	var out []byte
 	for _, cli := range tailscaleCLICandidates {
+		// Darwin's Tailscale binary picks GUI vs. CLI by an env heuristic
+		// (SHLVL/TERM/PS1 — tailscale.com/docs/reference/tailscale-cli#macos),
+		// which a launchd/automation context satisfies ambiguously. Setting
+		// TAILSCALE_BE_CLI=1 is the vendor-documented override; it is
+		// Darwin-only because other platforms' binaries have no such
+		// heuristic to disambiguate.
+		if p.Name() == "darwin" {
+			if o, err := p.Command("/usr/bin/env", "TAILSCALE_BE_CLI=1", cli, "status", "--json"); err == nil && len(o) > 0 {
+				out = o
+				break
+			}
+			continue
+		}
 		if o, err := p.Command(cli, "status", "--json"); err == nil && len(o) > 0 {
 			out = o
 			break
