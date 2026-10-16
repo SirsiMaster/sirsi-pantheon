@@ -1,8 +1,9 @@
 package main
 
 import (
-	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"testing"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 )
 
 func TestServiceActorsAreNotUnstaffedModelSeats(t *testing.T) {
