@@ -24,7 +24,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version-file: go.mod
           # Self-hosted: the module cache already persists on local disk
           # between jobs, so setup-go's archive → upload → download → extract
           # cycle buys nothing here. That cycle is what parked both m5 runners
@@ -76,7 +76,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version-file: go.mod
           # Self-hosted: the module cache already persists on local disk
           # between jobs, so setup-go's archive → upload → download → extract
           # cycle buys nothing here. That cycle is what parked both m5 runners

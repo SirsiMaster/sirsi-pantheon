@@ -34,7 +34,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version-file: go.mod
 
       - name: Canon sync (PANTHEON_RULES vs CLAUDE.md/GEMINI.md)
         run: bash scripts/ci-private-sdk.sh go test ./internal/canon/...
