@@ -60,6 +60,11 @@ type AgentConfig struct {
 	// pushes to; it is not itself the strategy selector.
 	Delivery *DeliveryConfig `json:"delivery,omitempty"`
 
+	// Attended declares an owner-designated ATTENDED lane (owner 2026-10-16: "secondary consumers
+	// should NEVER override the attended lane"). A headless consumer never dispatches for it, whatever
+	// the session heartbeat says: an idle-but-registered attended session still owns the inbox.
+	Attended bool `json:"attended,omitempty"`
+
 	// extra preserves JSON fields not known to this version of AgentConfig so a
 	// LoadRegistry→SaveRegistry round-trip never silently erases metadata the
 	// struct does not model. "consumer" was the original motivating example and
