@@ -22,4 +22,7 @@ expect_status 0 env GITHUB_ACTIONS=true GITHUB_EVENT_NAME=pull_request GITHUB_RE
   test "$(git config --file "$GIT_CONFIG_GLOBAL" --get url.ssh://git@github-inference-ci/SirsiMaster/sirsi-inference.insteadOf)" = https://github.com/SirsiMaster/sirsi-inference
   test "$(git config --file "$GIT_CONFIG_GLOBAL" --get url.ssh://git@github-mercury-ci/SirsiMaster/sirsi-mercury.insteadOf)" = https://github.com/SirsiMaster/sirsi-mercury
 '
-echo 'private SDK trust, refusal, secret-env scrub and cleanup fixtures PASS'
+# The secret-file umask stays inside the wrapper: the wrapped build/test runs with the caller's umask,
+# while the key files it wrote are still owner-only.
+expect_status 0 bash -c 'umask 022; env GITHUB_ACTIONS=false bash "$0" bash -c "test \"\$(umask)\" = 0022 && test \"\$(stat -f %Lp \$(dirname \$GIT_CONFIG_GLOBAL)/inference 2>/dev/null || stat -c %a \$(dirname \$GIT_CONFIG_GLOBAL)/inference)\" = 600"' "$wrapper"
+echo 'private SDK trust, refusal, secret-env scrub and cleanup, umask fixtures PASS'

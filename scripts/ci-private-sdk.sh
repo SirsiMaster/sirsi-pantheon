@@ -13,7 +13,8 @@ if [[ ${GITHUB_ACTIONS:-} == true ]]; then
 fi
 [[ $# -gt 0 ]] || { echo 'usage: ci-private-sdk.sh command [args...]' >&2; exit 64; }
 [[ -n ${APOLLO_CI_INFERENCE_READ_KEY:-} && -n ${APOLLO_CI_MERCURY_READ_KEY:-} ]] || { echo 'missing read-only private SDK credentials' >&2; exit 78; }
-umask 077
+caller_umask=$(umask)
+umask 077 # only for the key/config files written below
 sdk_auth_dir=$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/pantheon-sdk-auth.XXXXXXXX")
 cleanup() {
   rm -f "$sdk_auth_dir/inference" "$sdk_auth_dir/mercury" "$sdk_auth_dir/config" "$sdk_auth_dir/known_hosts" "$sdk_auth_dir/gitconfig"
@@ -34,4 +35,5 @@ git config --file "$GIT_CONFIG_GLOBAL" url.ssh://git@github-mercury-ci/SirsiMast
 export GIT_SSH_COMMAND="ssh -F '$sdk_auth_dir/config'"
 export GIT_TERMINAL_PROMPT=0 GOPRIVATE=github.com/SirsiMaster/sirsi-inference,github.com/SirsiMaster/sirsi-mercury
 export GONOPROXY="$GOPRIVATE" GONOSUMDB="$GOPRIVATE"
+umask "$caller_umask" # the wrapped build/test must not inherit the secret-file umask
 "$@"
