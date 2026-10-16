@@ -703,6 +703,34 @@ type consumerRun struct {
 	progressMark string
 	progressAt   time.Time
 	stalled      bool
+
+	// acted latches once this run is seen making a durable router action: an item it
+	// could see closed or newly acknowledged, or a task lease claimed. Scoring counts it
+	// as progress, so a lane working long multi-dispatch tasks is not quarantined for an
+	// unchanged inbox depth. Arrivals never set it. seen/seenLeased are the last snapshot.
+	acted      bool
+	seen       map[string]string
+	seenLeased int
+}
+
+// observe compares the inbox and task load with the previous snapshot and latches acted
+// on a close (id gone), a new acknowledgement, or more leased tasks.
+func (r *consumerRun) observe(items []work.Item, tl TaskLoad) {
+	cur := make(map[string]string, len(items))
+	for _, it := range items {
+		cur[it.ID] = it.AckedAt
+	}
+	if r.seen != nil {
+		if tl.Leased > r.seenLeased {
+			r.acted = true
+		}
+		for id, ack := range r.seen {
+			if now, ok := cur[id]; !ok || (ack == "" && now != "") {
+				r.acted = true
+			}
+		}
+	}
+	r.seen, r.seenLeased = cur, tl.Leased
 }
 
 // wakeLoopConsumerStall bounds how long a running consumer may hold the
@@ -1253,6 +1281,7 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 		// same durable queue. The queue is the truth; the replacement re-pulls it
 		// and assumes nothing about what the stale consumer did.
 		if run != nil && lerr == nil && run.running() {
+			run.observe(items, tload)
 			mark := inboxMark(items) + taskMark(tload)
 			switch {
 			case run.progressAt.IsZero() || mark != run.progressMark:
@@ -1277,7 +1306,10 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 			if run.tail != nil {
 				tailText = run.tail.String()
 			}
-			if madeProgress(run.depthAtDispatch, depth) {
+			if lerr == nil {
+				run.observe(items, tload) // an action landed between the last tick and exit
+			}
+			if run.acted || madeProgress(run.depthAtDispatch, depth) {
 				fruitless = 0
 				lane.LastOutcome, lane.LastOutcomeAt, lane.LastProgressAt, lane.LastDetail = OutcomeOK, time.Now().UTC(), time.Now().UTC(), ""
 			} else {
@@ -1358,6 +1390,7 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 				} else {
 					run = next
 					run.depthAtDispatch = depth
+					run.observe(items, tload)
 					scored = false
 					// #642: durable marker so a restarted loop adopts this child
 					// instead of duplicating it.
