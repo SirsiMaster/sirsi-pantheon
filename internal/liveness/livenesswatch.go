@@ -275,7 +275,7 @@ func Run(routerRoot string, w io.Writer) error {
 	// standing correction 2026-07-24: liveness + machine-health remediation
 	// belongs to Pantheon, not `user`). Every machine-health condition here —
 	// a wedged broker, a memory spiral, a leaked-session pileup, a dead menubar
-	// — is one claude-pantheon now remediates under A32/ADR-040 (broker
+	// — is one codex-pantheon now remediates under A32/ADR-040 (broker
 	// right-size/restart, safe caller-protected reap, launchd kickstart). Only
 	// a genuinely owner-only condition (none today) would fall through to user.
 	recipient := recipientFor(worst.Check)
@@ -305,13 +305,15 @@ func Run(routerRoot string, w io.Writer) error {
 }
 
 // recipientFor maps a finding's Check to the agent that owns its remediation.
-// Machine-health conditions go to claude-pantheon (which fixes them under
-// A32/ADR-040); anything unclassified falls through to `user` so a novel
-// condition still reaches the owner rather than being silently misrouted.
+// Machine-health conditions go to codex-pantheon (which fixes them under
+// A32/ADR-040 — claude-pantheon retired 2026-10-15, owner correction: no
+// such lane exists); anything unclassified falls through to `user` so a
+// novel condition still reaches the owner rather than being silently
+// misrouted.
 func recipientFor(check string) string {
 	switch check {
 	case "gemma-broker", "memory-death", "session-leak", "menubar", "launchd-disabled":
-		return "claude-pantheon"
+		return "codex-pantheon"
 	default:
 		return "owner"
 	}

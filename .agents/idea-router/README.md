@@ -30,7 +30,7 @@ Registered agents describe *who can be woken*. Threads describe *which sessions 
 Commands:
 
 ```sh
-sirsi thread register --agent claude-pantheon --surface claude --workstream pantheon
+sirsi thread register --agent codex-pantheon --surface codex --workstream pantheon
 sirsi thread heartbeat --thread thr-XXXX --status active --current-item <doc-id>
 sirsi thread list
 sirsi thread close --thread thr-XXXX
@@ -184,7 +184,7 @@ Every Codex agent launched inside this repo must know about the router through o
 
 At startup, a Codex agent must read `state.json`, this README, and pending artifacts addressed to its registered agent id before starting unrelated work. A router-launched Codex agent must receive the repo root, `agent_id`, topic, `/plan`, `/goal`, expected writeback artifact, and timeout/blocked reporting rules in the launch prompt.
 
-Generic `codex` and `claude` inboxes are legacy compatibility only. New work should target registered IDs such as `codex-pantheon`, `claude-pantheon`, or another entry in `agents.json`.
+Generic `codex` and `claude` inboxes are legacy compatibility only. New work should target registered IDs such as `codex-pantheon`, `claude-home`, or another entry in `agents.json`.
 
 ### Interim Universal Responder
 
@@ -263,7 +263,7 @@ Examples:
 
 - FinalWishes work for Claude on the M1: `claude-finalwishes-m1`
 - FinalWishes work for Claude on the M5: `claude-finalwishes-m5`
-- Pantheon router/CLI work for Claude: `claude-pantheon`
+- Pantheon router/CLI work for Codex: `codex-pantheon`
 - Sirsi Nexus work for Codex: `codex-nexus`
 
 Older two-part ids stay valid until they are renamed. Address the name that is
@@ -287,7 +287,7 @@ successor must be declared; a broken map stops sends rather than misroute them.
 Both keep the item's id, sender and body, and append a note recording who
 moved it, so replies still thread.
 
-Do not address FinalWishes work to `claude-pantheon` just because the router lives in Pantheon. Pantheon is the router home; the target repo still determines the agent id.
+Do not address FinalWishes work to `codex-pantheon` just because the router lives in Pantheon. Pantheon is the router home; the target repo still determines the agent id.
 
 ### Choosing The Target Agent
 
@@ -305,7 +305,7 @@ Do not address FinalWishes work to `claude-pantheon` just because the router liv
 {
   "pending": {
     "codex-finalwishes": ["20260520-example-doc-id"],
-    "claude-pantheon": []
+    "codex-pantheon": []
   },
   "pending_for_codex": [],
   "pending_for_claude": []
