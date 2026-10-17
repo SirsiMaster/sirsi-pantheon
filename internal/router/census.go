@@ -83,6 +83,8 @@ var censusMatchers = []censusMatcher{
 	{"sirsi-gemma-worker.sh", "gemma", "worker"},
 	{"sirsi-gemma-triage.sh", "gemma", "worker"},
 	{"sirsi horus supervise", "horus-supervisor", "worker"},
+	{"apollo-observer-agent", "apollo-observer", "worker"},
+	{"apollo-dashboard", "apollo-dashboard", "worker"},
 }
 
 // CensusOutcome classifies the census decision for one process.
