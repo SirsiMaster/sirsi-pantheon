@@ -16,15 +16,24 @@ import (
 
 // Machine is one admitted Mac.
 type Machine struct {
-	ID           string `json:"id"` // stable name: M1, M5, M5-Studio
-	Model        string `json:"model"`
-	Chip         string `json:"chip,omitempty"`
-	MemoryGiB    int    `json:"memory_gib,omitempty"`
-	Tailscale    string `json:"tailscale,omitempty"`
-	LAN          string `json:"lan,omitempty"` // DHCP: observed at registration, may drift
-	MonitorPort  int    `json:"monitor_port"`
-	RegisteredAt string `json:"registered_at"`
-	AdmittedBy   string `json:"admitted_by"`
+	ID          string `json:"id"` // stable name: M1, M5, M5-Studio
+	Model       string `json:"model"`
+	Chip        string `json:"chip,omitempty"`
+	MemoryGiB   int    `json:"memory_gib,omitempty"`
+	Tailscale   string `json:"tailscale,omitempty"`
+	LAN         string `json:"lan,omitempty"` // DHCP: observed at registration, may drift
+	MonitorPort int    `json:"monitor_port"`
+	// SigningService permits the enrolled signing client to select this admitted
+	// machine. It is intentionally Ra-owned registry metadata, not a local
+	// signer-host list.
+	SigningService bool `json:"signing_service,omitempty"`
+	// SSHAlias is the stable SSH-config host name. It must not be a DHCP address.
+	SSHAlias string `json:"ssh_alias,omitempty"`
+	// SSHHostKeyAlias selects the existing pinned known_hosts identity for
+	// SSHAlias. It is explicit so an endpoint change never silently re-pins a key.
+	SSHHostKeyAlias string `json:"ssh_host_key_alias,omitempty"`
+	RegisteredAt    string `json:"registered_at"`
+	AdmittedBy      string `json:"admitted_by"`
 }
 
 type machineFile struct {
@@ -71,10 +80,45 @@ func parseMachines(b []byte) ([]Machine, error) {
 		if seen[m.ID] {
 			return nil, fmt.Errorf("machine registry: duplicate machine %q", m.ID)
 		}
+		if m.SSHAlias != "" || m.SSHHostKeyAlias != "" {
+			if !safeSSHAlias(m.SSHAlias) || !safeSSHAlias(m.SSHHostKeyAlias) {
+				return nil, fmt.Errorf("machine registry: machine %q needs paired safe ssh_alias and ssh_host_key_alias", m.ID)
+			}
+		}
+		if m.SigningService && (m.SSHAlias == "" || m.SSHHostKeyAlias == "") {
+			return nil, fmt.Errorf("machine registry: signing machine %q needs ssh_alias and ssh_host_key_alias", m.ID)
+		}
 		seen[m.ID] = true
 	}
 	if len(f.Machines) == 0 {
 		return nil, errors.New("machine registry: no machines")
 	}
 	return f.Machines, nil
+}
+
+func safeSSHAlias(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '_' || r == '-') {
+			return false
+		}
+	}
+	return true
+}
+
+// SigningMachines returns the only registry records the signing client may
+// consider. The registry deliberately has no fallback to LAN or discovery.
+func SigningMachines(ms []Machine) ([]Machine, error) {
+	var targets []Machine
+	for _, m := range ms {
+		if m.SigningService {
+			targets = append(targets, m)
+		}
+	}
+	if len(targets) == 0 {
+		return nil, errors.New("machine registry: no admitted signing machines")
+	}
+	return targets, nil
 }

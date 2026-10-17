@@ -14,14 +14,33 @@ func TestParseMachinesRejectsIncompleteAndDuplicate(t *testing.T) {
 		t.Fatalf("good record refused: %v", err)
 	}
 	for name, body := range map[string]string{
-		"no admitter": `{"machines":[{"id":"M1","model":"x","registered_at":"t"}]}`,
-		"no model":    `{"machines":[{"id":"M1","registered_at":"t","admitted_by":"ra"}]}`,
-		"duplicate":   `{"machines":[` + goodMachine + `,` + goodMachine + `]}`,
-		"empty":       `{"machines":[]}`,
+		"no admitter":            `{"machines":[{"id":"M1","model":"x","registered_at":"t"}]}`,
+		"no model":               `{"machines":[{"id":"M1","registered_at":"t","admitted_by":"ra"}]}`,
+		"duplicate":              `{"machines":[` + goodMachine + `,` + goodMachine + `]}`,
+		"empty":                  `{"machines":[]}`,
+		"signer without aliases": `{"machines":[{"id":"M5","model":"x","registered_at":"t","admitted_by":"ra","signing_service":true}]}`,
+		"unsafe signer alias":    `{"machines":[{"id":"M5","model":"x","registered_at":"t","admitted_by":"ra","signing_service":true,"ssh_alias":"sirsi m5","ssh_host_key_alias":"sirsi-m5"}]}`,
+		"unpaired aliases":       `{"machines":[{"id":"M1","model":"x","registered_at":"t","admitted_by":"ra","ssh_alias":"sirsi-m1"}]}`,
 	} {
 		if _, err := parseMachines([]byte(body)); err == nil {
 			t.Errorf("%s: accepted, want refusal", name)
 		}
+	}
+}
+
+func TestSigningMachinesUsesOnlyAdmittedTargets(t *testing.T) {
+	ms, err := parseMachines([]byte(`{"machines":[` +
+		goodMachine + `,` +
+		`{"id":"M5","model":"x","monitor_port":8099,"registered_at":"t","admitted_by":"ra","signing_service":true,"ssh_alias":"sirsi-m5","ssh_host_key_alias":"sirsi-m5"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	targets, err := SigningMachines(ms)
+	if err != nil || len(targets) != 1 || targets[0].SSHAlias != "sirsi-m5" || targets[0].SSHHostKeyAlias != "sirsi-m5" {
+		t.Fatalf("signing targets = %#v, %v", targets, err)
+	}
+	if _, err := SigningMachines([]Machine{{ID: "M1"}}); err == nil {
+		t.Fatal("accepted a registry without an admitted signing target")
 	}
 }
 

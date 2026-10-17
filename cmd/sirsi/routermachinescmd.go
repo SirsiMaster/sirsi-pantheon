@@ -32,6 +32,20 @@ the Mercury run selector offer only machines listed here; discovery may find oth
 			enc.SetIndent("", "  ")
 			return enc.Encode(map[string]any{"machines": ms})
 		}
+		if signingTargets, _ := cmd.Flags().GetBool("signing-targets"); signingTargets {
+			targets, err := router.SigningMachines(ms)
+			if err != nil {
+				return err
+			}
+			format, _ := cmd.Flags().GetString("format")
+			if format != "ssh" {
+				return fmt.Errorf("--signing-targets requires --format=ssh")
+			}
+			for _, m := range targets {
+				fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\n", m.SSHAlias, m.SSHHostKeyAlias)
+			}
+			return nil
+		}
 		w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
 		fmt.Fprintln(w, "ID\tMODEL\tCHIP\tMEM\tTAILSCALE\tLAN\tPORT\tADMITTED")
 		for _, m := range ms {
@@ -41,4 +55,8 @@ the Mercury run selector offer only machines listed here; discovery may find oth
 	},
 }
 
-func init() { routerCmd.AddCommand(routerMachinesCmd) }
+func init() {
+	routerMachinesCmd.Flags().Bool("signing-targets", false, "print admitted signing-machine SSH targets only")
+	routerMachinesCmd.Flags().String("format", "", "output format for a specialized machine view")
+	routerCmd.AddCommand(routerMachinesCmd)
+}

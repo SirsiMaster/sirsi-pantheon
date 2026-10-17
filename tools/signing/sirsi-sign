@@ -1,24 +1,46 @@
 #!/bin/zsh
 # sirsi-sign — submit an artifact to the enrolled Sirsi signing service.
 # This client never handles private keys or certificate exports. The service
-# runs on the owner-approved signing Macs and returns only verified artifacts.
+# runs on Ra-admitted signing Macs and returns only verified artifacts.
 set -eu
-f=${1:?usage: sirsi-sign <file> [codesign|bin|app|pkg|dmg]}; [ -e "$f" ] || { echo "no such file: $f" >&2; exit 2; }
-k=${2:-}; [ -z "$k" ] && case "$f" in *.pkg) k=pkg;; *.dmg) k=dmg;; *.app|*.app/) k=app;; *) k=bin;; esac
-case $k in codesign|bin|app|pkg|dmg) ;; *) echo "sirsi-sign: bad kind '$k'" >&2; exit 2;; esac
-T=${SIRSI_SIGN_TIMEOUT:-1800}
-HOSTS=(${=SIRSI_SIGN_HOSTS:-thekryptodragon@192.168.1.155 sirsimasterdev@192.168.1.180})
-# Every phase uses the same existing pinned-host, noninteractive transport.
-# Preflight alone is insufficient: scp/rsync and later ssh calls must neither
-# learn a key nor prompt after an authentication or host-identity change.
-SSH_OPTIONS=(-o ConnectTimeout=10 -o BatchMode=yes -o StrictHostKeyChecking=yes -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no)
-RSYNC_SSH="ssh ${(j: :)SSH_OPTIONS}"
-H=""
-for h in $HOSTS; do
-  ssh "${SSH_OPTIONS[@]}" "$h" 'test -x ~/sirsi-sign/bin/sirsi-signd.sh && launchctl print gui/$(id -u)/ai.sirsi.signd >/dev/null 2>&1' 2>/dev/null && { H=$h; break; }
+
+CHECK_ONLY=0
+if [[ "${1:-}" == "--check" ]]; then
+  CHECK_ONLY=1
+  shift
+  (( $# == 0 )) || { echo "usage: sirsi-sign --check" >&2; exit 2; }
+else
+  f=${1:?usage: sirsi-sign <file> [codesign|bin|app|pkg|dmg]}; [ -e "$f" ] || { echo "no such file: $f" >&2; exit 2; }
+  k=${2:-}; [ -z "$k" ] && case "$f" in *.pkg) k=pkg;; *.dmg) k=dmg;; *.app|*.app/) k=app;; *) k=bin;; esac
+  case $k in codesign|bin|app|pkg|dmg) ;; *) echo "sirsi-sign: bad kind '$k'" >&2; exit 2;; esac
+fi
+
+# Ra's admitted-machine registry is the only signer-target authority. SSH
+# aliases and their HostKeyAlias values are stable identities: DHCP, mDNS, and
+# Tailnet endpoint changes cannot cause the client to learn or replace a key.
+ROUTER_BIN=${SIRSI_ROUTER_BIN:-sirsi}
+SSH_CONFIG=${SIRSI_SIGN_SSH_CONFIG:-$HOME/.ssh/sirsi_fleet.conf}
+KNOWN_HOSTS=${SIRSI_SIGN_KNOWN_HOSTS:-$HOME/.ssh/sirsi_known_hosts}
+[[ -r "$SSH_CONFIG" && -r "$KNOWN_HOSTS" ]] || { echo "sirsi-sign: missing enrolled SSH config or known-hosts file" >&2; exit 4; }
+
+targets=("${(@f)$("$ROUTER_BIN" router machines --signing-targets --format=ssh 2>/dev/null)}")
+(( ${#targets} > 0 )) || { echo "sirsi-sign: no admitted signing machine" >&2; exit 4; }
+
+H=""; A=""
+for target in "${targets[@]}"; do
+  IFS=$'\t' read -r h a extra <<< "$target"
+  [[ -n "$h" && -n "$a" && -z "${extra:-}" && "$h" =~ '^[A-Za-z0-9._-]+$' && "$a" =~ '^[A-Za-z0-9._-]+$' ]] || {
+    echo "sirsi-sign: invalid signing target from machine registry" >&2; exit 4
+  }
+  opts=(-F "$SSH_CONFIG" -o UserKnownHostsFile="$KNOWN_HOSTS" -o GlobalKnownHostsFile=/dev/null -o HostKeyAlias="$a" -o ConnectTimeout=10 -o BatchMode=yes -o StrictHostKeyChecking=yes -o UpdateHostKeys=no -o CheckHostIP=no -o HostKeyAlgorithms=ssh-ed25519 -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no)
+  ssh "${opts[@]}" "$h" 'test -x ~/sirsi-sign/bin/sirsi-signd.sh && launchctl print gui/$(id -u)/ai.sirsi.signd >/dev/null 2>&1' 2>/dev/null && { H=$h; A=$a; SSH_OPTIONS=("${opts[@]}"); break; }
 done
-[ -n "$H" ] || { echo "sirsi-sign: no signing host reachable/enrolled" >&2; exit 4; }
-echo "sirsi-sign: signing host ${H#*@}"
+[[ -n "$H" ]] || { echo "sirsi-sign: no signing host reachable/enrolled" >&2; exit 4; }
+echo "sirsi-sign: enrolled signing host $H reachable"
+(( CHECK_ONLY )) && exit 0
+
+T=${SIRSI_SIGN_TIMEOUT:-1800}
+RSYNC_SSH="ssh ${(j: :)SSH_OPTIONS}"
 id=$(uuidgen | tr A-Z a-z); n=${f:t}; n=${n%/}; n=${n//[^A-Za-z0-9._-]/_}
 L=$(mktemp -d); trap 'rm -rf "$L"' EXIT
 print -r -- $k > "$L/kind"; print -r -- "$(id -un)@$(hostname -s)" > "$L/caller"
