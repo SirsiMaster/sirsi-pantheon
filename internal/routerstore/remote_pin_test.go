@@ -17,6 +17,25 @@ import (
 	"time"
 )
 
+func TestCheckPinRequired(t *testing.T) {
+	t.Setenv(EnvSPKIPin, "")
+	if err := CheckPinRequired("https://router.example.test"); err == nil {
+		t.Fatal("non-loopback URL with no pin must be refused")
+	}
+	for _, loopback := range []string{"https://127.0.0.1:8443", "https://localhost:8443", "https://[::1]:8443"} {
+		if err := CheckPinRequired(loopback); err != nil {
+			t.Fatalf("loopback %q must be exempt from the pin requirement: %v", loopback, err)
+		}
+	}
+	t.Setenv(EnvSPKIPin, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+	if err := CheckPinRequired("https://router.example.test"); err != nil {
+		t.Fatalf("non-loopback URL with a pin set must be allowed: %v", err)
+	}
+	if err := CheckPinRequired("not a url"); err != nil {
+		t.Fatalf("malformed URL is left to the caller's own validation, got: %v", err)
+	}
+}
+
 func mkCert(t *testing.T, cn string, parent *x509.Certificate, parentKey *ecdsa.PrivateKey, isCA bool) (*x509.Certificate, *ecdsa.PrivateKey) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)

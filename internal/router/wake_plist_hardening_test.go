@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
 
 // A bare binary name is unspawnable under launchd (its PATH has no
@@ -90,6 +92,27 @@ func TestWakePlistCarriesRouterServiceEnv(t *testing.T) {
 	t.Setenv("SIRSI_ROUTER_TOKEN", "")
 	if strings.Contains(wakeLaunchAgentPlist("l", AgentConfig{ID: "x"}, "/usr/local/bin/sirsi"), "SIRSI_ROUTER") {
 		t.Fatal("no service env → no service keys")
+	}
+}
+
+// A non-loopback SIRSI_ROUTER_URL with no SPKI pin must never reach the wake
+// plist: launchd runs no shell, so the only way the token gets pinned is the
+// installer refusing to write it first. Loopback stays exempt.
+func TestInstallWakeLaunchAgentRequiresPinForNonLoopbackURL(t *testing.T) {
+	launchAgentsDirOverride = t.TempDir()
+	t.Cleanup(func() { launchAgentsDirOverride = "" })
+	t.Setenv("SIRSI_ROUTER_URL", "https://router.example.test")
+	t.Setenv("SIRSI_ROUTER_TOKEN", "t")
+	t.Setenv(routerstore.EnvSPKIPin, "")
+
+	if _, _, err := InstallWakeLaunchAgent(AgentConfig{ID: "pin-test"}, "/usr/local/bin/sirsi"); err == nil {
+		t.Fatal("non-loopback SIRSI_ROUTER_URL with no pin must be refused")
+	}
+
+	t.Setenv("SIRSI_ROUTER_URL", "https://127.0.0.1:8443")
+	changed, _, err := InstallWakeLaunchAgent(AgentConfig{ID: "pin-test-loopback"}, "/usr/local/bin/sirsi")
+	if err != nil || !changed {
+		t.Fatalf("loopback SIRSI_ROUTER_URL without a pin must be allowed: changed=%v err=%v", changed, err)
 	}
 }
 

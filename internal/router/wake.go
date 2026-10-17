@@ -41,6 +41,7 @@ import (
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/knownfail"
@@ -1752,6 +1753,11 @@ func InstallWakeLaunchAgent(cfg AgentConfig, sirsiBin string) (changed bool, pat
 	if home, herr := os.UserHomeDir(); herr == nil {
 		if err = os.MkdirAll(filepath.Join(home, ".sirsi", "logs"), 0o755); err != nil {
 			return false, "", fmt.Errorf("create wake log dir: %w", err)
+		}
+	}
+	if rawURL := strings.TrimSpace(os.Getenv("SIRSI_ROUTER_URL")); rawURL != "" {
+		if err = routerstore.CheckPinRequired(rawURL); err != nil {
+			return false, "", fmt.Errorf("wake LaunchAgent install: %w", err)
 		}
 	}
 	path = filepath.Join(dir, label+".plist")
