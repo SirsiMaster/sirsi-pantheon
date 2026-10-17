@@ -61,7 +61,7 @@ def read_command(argv):
         family = argv[1:2]
         verb = argv[2:3]
         return (family == ["thread"] and verb in (["register"], ["heartbeat"], ["list"], ["attended"], ["close"])) or \
-               (family == ["router"] and verb in (["send"], ["pull"], ["show"], ["respond"], ["status"], ["close"], ["ledger"], ["task"])) or \
+               (family == ["router"] and verb in (["acknowledge"], ["send"], ["pull"], ["show"], ["respond"], ["status"], ["close"], ["ledger"], ["task"])) or \
                (family == ["maat"] and verb in (["reserve"], ["heartbeat"], ["release"], ["who-is-on"], ["status"], ["conflict-check"], ["should-defer"])) or \
                (family == ["thoth"] and verb in (["status"], ["sync"], ["compact"], ["init"], ["journal"])) or \
                argv[1:] in (["--version"], ["version"])

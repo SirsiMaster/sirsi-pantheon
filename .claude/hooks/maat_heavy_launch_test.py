@@ -74,6 +74,11 @@ class GuardTest(unittest.TestCase):
             self.assertIsNone(g.denial({'tool_name':'Bash','tool_input':{'command':command}}),command)
         for command in ['SIRSI_THREAD_ID=$(python3 probe.py); export SIRSI_THREAD_ID', '$(printf python3) probe.py', 'sirsi thread register --agent $(go run probe.go)', 'sirsi thread register --agent `python3 probe.py`']:
             self.assertIsNotNone(g.denial({'tool_name':'Bash','tool_input':{'command':command}}),command)
+    def test_acknowledge_is_coordination_not_a_workload_exemption(self):
+        for command in ['sirsi router acknowledge own-item --agent own', g.CLI+' router acknowledge own-item --agent own', 'env SIRSI_AGENT_ID=own SIRSI_THREAD_ID=thr-own sirsi router acknowledge own-item --agent own']:
+            self.assertIsNone(g.denial({'tool_name':'Bash','tool_input':{'command':command}}),command)
+        for command in ['sirsi router acknowledge own-item; python3 probe.py', 'sirsi router acknowledge $(python3 probe.py)', 'env PATH=/tmp sirsi router acknowledge own-item', '/tmp/sirsi router acknowledge own-item', 'sirsi router worker own', 'sirsi router token mint host']:
+            self.assertIsNotNone(g.denial({'tool_name':'Bash','tool_input':{'command':command}}),command)
     def test_multiline_registration_mask_preserves_command_boundaries(self):
         command='export SIRSI_AGENT_ID=own\nSIRSI_THREAD_ID=$(sirsi thread register --agent own --anchor-pid $(ps -o ppid= -p $$) --json | jq -r .thread_id)\nexport SIRSI_THREAD_ID\nsirsi thread heartbeat --thread "$SIRSI_THREAD_ID"'
         self.assertIsNone(g.denial({'tool_name':'Bash','tool_input':{'command':command}}))
