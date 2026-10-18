@@ -117,6 +117,52 @@ func TestStoreOnlyConcurrentDistinctRegistrationsSurvive(t *testing.T) {
 	}
 }
 
+// TestHeartbeatOwnThreadReadDoesNotTouchSiblingThread pins the bounded
+// own-thread read (loadThreadRegistryOne): Heartbeat/CloseThread/
+// SuspendThread/ResumeThread now load a single row by thread_id instead of
+// the full ListThreads scan (SSA 2026-10-18: a full-table response for a
+// single-row lifecycle mutation was large enough to hit relay body-size/
+// timeout ceilings under load). The guarantee this must preserve is that a
+// sibling thread's row is read, written, and pruned exactly as before — the
+// load is bounded, the write/CAS/prune contract is not.
+func TestHeartbeatOwnThreadReadDoesNotTouchSiblingThread(t *testing.T) {
+	home := t.TempDir()
+	root := filepath.Join(t.TempDir(), ".agents", "idea-router")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv(routercfg.StoreWakeEnv, "1")
+	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(home, ".sirsi", "router.db"))
+	t.Setenv("SIRSI_ALLOW_SCHEMA_MIGRATE", "1")
+
+	a, err := RegisterThread(root, &Thread{AgentID: "codex-pantheon", Surface: "codex"})
+	if err != nil {
+		t.Fatalf("register a: %v", err)
+	}
+	b, err := RegisterThread(root, &Thread{AgentID: "claude-test", Surface: "claude"})
+	if err != nil {
+		t.Fatalf("register b: %v", err)
+	}
+	item := "own-thread-check"
+	if _, err := Heartbeat(root, a.ThreadID, HeartbeatUpdate{CurrentItem: &item}); err != nil {
+		t.Fatalf("heartbeat a: %v", err)
+	}
+	if _, err := CloseThread(root, a.ThreadID); err != nil {
+		t.Fatalf("close a: %v", err)
+	}
+	reg, err := LoadThreadRegistry(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reg.Threads[a.ThreadID] == nil || reg.Threads[a.ThreadID].Status != ThreadStatusClosed {
+		t.Fatalf("thread a not closed: %#v", reg.Threads[a.ThreadID])
+	}
+	if reg.Threads[b.ThreadID] == nil || reg.Threads[b.ThreadID].Status != ThreadStatusActive {
+		t.Fatalf("sibling thread b was disturbed by a's own-thread heartbeat/close: %#v", reg.Threads[b.ThreadID])
+	}
+}
+
 func TestStoreOnlySuspendResumePersistsAndImportsLegacy(t *testing.T) {
 	home := t.TempDir()
 	root := filepath.Join(t.TempDir(), ".agents", "idea-router")

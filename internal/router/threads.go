@@ -274,6 +274,48 @@ func LoadThreadRegistry(routerRoot string) (*ThreadRegistry, error) {
 	return loadLegacyThreadRegistry(routerRoot)
 }
 
+// loadThreadRegistryOne is LoadThreadRegistry scoped to a single known
+// thread_id — the bounded own-thread read lifecycle verbs (Heartbeat,
+// CloseThread, SuspendThread, ResumeThread) use instead of the full
+// ListThreads scan: each already knows the exact thread_id it owns, so paying
+// for every OTHER thread's full payload on every call was pure relay
+// overhead — the root cause of register/heartbeat responses large enough to
+// hit relay body-size/timeout ceilings under load (every registered wake
+// loop heartbeats once per A27 cycle). Preserves the same CAS/host/scope/
+// closed guards: callers still mutate the in-memory *Thread and go through
+// the normal SaveThreadRegistry path, which fences on reg.baseline exactly as
+// before — only the load is bounded, not the write contract. Falls back to
+// the full legacy JSON load when the store-backed registry is off; that path
+// is already a single local file read, not the bottleneck this fixes.
+func loadThreadRegistryOne(routerRoot, threadID string) (*ThreadRegistry, error) {
+	if !routercfg.StoreWake() {
+		return loadLegacyThreadRegistry(routerRoot)
+	}
+	store, err := openThreadStore()
+	if err != nil {
+		return nil, err
+	}
+	defer store.Close()
+	reg := &ThreadRegistry{Threads: map[string]*Thread{}, baseline: map[string]routerstore.ThreadRecord{}}
+	record, err := store.GetThreadRecord(threadID)
+	if errors.Is(err, routerstore.ErrThreadUnknown) {
+		return reg, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var thread Thread
+	if err := json.Unmarshal(record.Payload, &thread); err != nil {
+		return nil, fmt.Errorf("parse store thread %q: %w", record.ThreadID, err)
+	}
+	if thread.ThreadID == "" {
+		thread.ThreadID = record.ThreadID
+	}
+	reg.Threads[record.ThreadID] = &thread
+	reg.baseline[record.ThreadID] = record
+	return reg, nil
+}
+
 func loadLegacyThreadRegistry(routerRoot string) (*ThreadRegistry, error) {
 	data, err := os.ReadFile(threadsPath(routerRoot))
 	if err != nil {
@@ -791,7 +833,7 @@ func Heartbeat(routerRoot, threadID string, upd HeartbeatUpdate) (*Thread, error
 	}
 	var t *Thread
 	err := retryOnLostFenceErr(func() error {
-		reg, err := LoadThreadRegistry(routerRoot)
+		reg, err := loadThreadRegistryOne(routerRoot, threadID)
 		if err != nil {
 			return err
 		}
@@ -841,7 +883,7 @@ func Heartbeat(routerRoot, threadID string, upd HeartbeatUpdate) (*Thread, error
 
 // CloseThread marks a thread closed (does not delete it; callers may prune).
 func CloseThread(routerRoot, threadID string) (*Thread, error) {
-	reg, err := LoadThreadRegistry(routerRoot)
+	reg, err := loadThreadRegistryOne(routerRoot, threadID)
 	if err != nil {
 		return nil, err
 	}
@@ -865,7 +907,7 @@ func SuspendThread(routerRoot, threadID string, payload *SuspendPayload) (*Threa
 	if threadID == "" {
 		return nil, fmt.Errorf("thread_id is required")
 	}
-	reg, err := LoadThreadRegistry(routerRoot)
+	reg, err := loadThreadRegistryOne(routerRoot, threadID)
 	if err != nil {
 		return nil, err
 	}
@@ -902,7 +944,7 @@ func ResumeThread(routerRoot, threadID string) (*Thread, error) {
 	if threadID == "" {
 		return nil, fmt.Errorf("thread_id is required")
 	}
-	reg, err := LoadThreadRegistry(routerRoot)
+	reg, err := loadThreadRegistryOne(routerRoot, threadID)
 	if err != nil {
 		return nil, err
 	}

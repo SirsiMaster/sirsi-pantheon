@@ -384,6 +384,26 @@ func (s *SQLiteStore) DeleteThreadCASScoped(threadID, status, lastSeenAt, host s
 	return n == 1, nil
 }
 
+// GetThreadRecord returns one thread's full durable record (including its
+// payload), or ErrThreadUnknown. This is the bounded own-thread read lifecycle
+// verbs (Heartbeat, CloseThread, SuspendThread, ResumeThread) use instead of
+// ListThreads: those callers already know the exact thread_id they own, so
+// fetching every other thread's full payload to find it was pure relay
+// overhead — a live registry returns hundreds of KB for a single-row lookup,
+// which large enough to hit relay body-size/timeout ceilings under load.
+func (s *SQLiteStore) GetThreadRecord(threadID string) (ThreadRecord, error) {
+	var r ThreadRecord
+	err := s.db.QueryRow(`SELECT thread_id,agent,status,last_seen_at,payload,host FROM threads WHERE thread_id=?`, threadID).
+		Scan(&r.ThreadID, &r.Agent, &r.Status, &r.LastSeenAt, &r.Payload, &r.Host)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ThreadRecord{}, ErrThreadUnknown
+	}
+	if err != nil {
+		return ThreadRecord{}, fmt.Errorf("routerstore: GetThreadRecord: %w", err)
+	}
+	return r, nil
+}
+
 // ListThreads returns every durable thread payload.
 func (s *SQLiteStore) ListThreads() ([]ThreadRecord, error) {
 	rows, err := s.db.Query(`SELECT thread_id,agent,status,last_seen_at,payload,host FROM threads ORDER BY thread_id`)

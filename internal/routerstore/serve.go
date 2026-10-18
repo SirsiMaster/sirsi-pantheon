@@ -106,7 +106,7 @@ var ruleOfRaExempt = map[string]bool{
 	"MaatRead":    true,
 	"MintSession": true, "MintSessionForThread": true, "ThreadBinding": true,
 	"UpsertThreads": true, "UpsertThreadCAS": true, "ResumeThreadCAS": true, "DeleteThreadCAS": true, "ImportThreadsIfEmpty": true,
-	"Heartbeat": true, "RegisterAgent": true, "ListThreads": true, "AdoptTokenMachineID": true,
+	"Heartbeat": true, "RegisterAgent": true, "ListThreads": true, "GetThreadRecord": true, "AdoptTokenMachineID": true,
 	"Get": true, "Inbox": true, "ListAll": true, "ListPage": true, "ListTasks": true, "GetTask": true, "GetAgent": true, "ListAgents": true,
 	"GetState": true, "Counters": true, "Breakers": true, "Render": true, "ListWakeEvents": true, "ListIdentifiers": true,
 	"ListRequirements": true, "UnmetRequirements": true, "RunnableFor": true, "ClassifyLane": true, "OperationalAgents": true,
