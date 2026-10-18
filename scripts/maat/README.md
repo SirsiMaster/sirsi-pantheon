@@ -126,6 +126,13 @@ fresh matching active ID/resource/holder/work/executor/share/capacity readback
 and unchanged kernel executor ancestry. A failed mutation is never blindly
 replayed and never triggers reserve, a new ID, or a share promotion.
 
+Healthy remote exact-ID read/renewal runs at most once per30 seconds, shortened
+for remaining accepted TTL. Local child completion is checked at most every two
+seconds without inventory RPCs. Explicit revocation is observed on the next
+healthy remote check (up to30 seconds plus bounded RPC latency, always before
+the proven deadline); terminal acceptance requires its own exact readback.
+After transport uncertainty, remote readback retries on1/2/4/8-second backoff.
+
 Recognized HTTP 502/503/504, TLS handshake timeout, relay outcome-unknown and
 bounded RPC timeouts may retry with 1/2/4/8-second backoff only inside the proven
 interval. RPC timeouts and child waits are clamped to the earlier execution/lease

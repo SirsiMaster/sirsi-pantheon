@@ -203,17 +203,24 @@ class SupervisorTests(unittest.TestCase):
         with self.assertRaises(ProcessLookupError):
             os.kill(record['pid'], 0)
 
-    def test_admission_loss_stops_child(self):
+    def test_admission_loss_is_observed_at_bounded_remote_tick(self):
         backend = Backend(admission())
+        clock = Clock()
         calls = []
         def lookup(resource):
-            calls.append(resource)
+            calls.append(clock.now)
             return backend.row if len(calls) < 3 else None
         backend.lookup = lookup
-        code, record = self.run_case(backend, [sys.executable, '-c', 'import time;time.sleep(60)'])
+        record = {}
+        child = FakeChild(clock, 1000)
+        with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
+                mock.patch.object(runner.subprocess, 'Popen', return_value=child), \
+                mock.patch.object(runner, 'stop') as stop:
+            code = runner.supervise(['fixture'], 'm5', 'lane', 'thread', 'work', 120, backend, record)
         self.assertEqual(code, 78)
-        with self.assertRaises(ProcessLookupError):
-            os.kill(record['pid'], 0)
+        self.assertEqual(calls, [0, 0, 30])
+        self.assertIn('scope/executor lost', record['reason'])
+        stop.assert_called_once_with(child)
 
     def test_release_failure_has_explicit_debt(self):
         backend = Backend(None)
@@ -307,9 +314,11 @@ class FakeChild:
     pid = 424242
     def __init__(self, clock, finish):
         self.clock, self.finish = clock, finish
+        self.wait_timeouts = []
     def poll(self):
         return 0 if self.clock.now >= self.finish else None
     def wait(self, timeout=None):
+        self.wait_timeouts.append(timeout)
         if timeout is not None and self.clock.now + timeout < self.finish:
             self.clock.now += timeout
             raise subprocess.TimeoutExpired('fixture', timeout)
@@ -342,6 +351,7 @@ class RecoveryTests(unittest.TestCase):
             return dict(backend.row)
         backend.reserve, backend.lookup, backend.heartbeat = reserve, lookup, heartbeat
         child = FakeChild(clock, finish)
+        backend.child = child
         record = {}
         with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
                 mock.patch.object(runner.subprocess, 'Popen', return_value=child), \
@@ -351,6 +361,18 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(backend.reserve_calls, 1)
         self.assertEqual(backend.released, ['fixture-id'])
         return code, record, backend, clock, events
+
+    def test_healthy_run_bounds_remote_reads_without_slowing_child_monitoring(self):
+        code, record, backend, clock, events = self.run_case(finish=95)
+        self.assertEqual(code, 0)
+        reads = [at for kind,at in events if kind == 'read']
+        renewals = [at for kind,at in events if kind == 'renew']
+        # Initial observation + pre-spawn + three healthy checks + terminal.
+        self.assertEqual(reads, [0, 0, 30, 60, 90, 95])
+        self.assertEqual(renewals, [30, 60, 90])
+        self.assertEqual(backend.reserve_calls, 1)
+        self.assertGreater(len(backend.child.wait_timeouts), 40)
+        self.assertTrue(all(0 < wait <= 2 for wait in backend.child.wait_timeouts))
 
     def test_transient_read_failures_recover_with_one_reservation(self):
         for reason in ['MaatRead HTTP 502', 'TLS handshake timeout', 'relay OUTCOME UNKNOWN']:

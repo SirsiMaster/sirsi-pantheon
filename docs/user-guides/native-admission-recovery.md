@@ -10,6 +10,12 @@ the same reservation before trying a renewal. It never creates a replacement
 reservation or assumes an unanswered request succeeded. A successful confirmed
 renewal can advance the deadline. A read alone cannot.
 
+Healthy remote checks run no more often than once per30 seconds, shortened
+for remaining proven lease time; local child checks stay within two seconds.
+A revocation is observed at the next remote check, up to30 seconds plus bounded
+RPC latency and always within the proven deadline. Recovery readback retries
+are sooner (1/2/4/8 seconds), and terminal acceptance always checks the exact ID.
+
 Explicit denial, revoked/expired state, changed holder/work/executor/share, and
 unrecognized failures stop the job immediately. An unresolved outage stops and
 reaps the launched process group when proven time runs out. The terminal receipt

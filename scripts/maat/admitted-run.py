@@ -313,46 +313,46 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
         child = subprocess.Popen(command, start_new_session=True, env=child_env)
         record.update(pid=child.pid, status='running')
         deadline = time.monotonic() + timeout
-        heartbeat_at = time.monotonic() + min(30, max(1, (lease.deadline - time.monotonic()) / 3))
+        control_at = time.monotonic() + min(30, max(0.001, (lease.deadline - time.monotonic()) / 3))
         backoff = 1
         if isinstance(backend, Native):
             backend.deadline = min(deadline, lease.deadline)
         while True:
             if time.monotonic() >= min(deadline, lease.deadline):
                 raise Refused('Execution or proven admission deadline exceeded')
-            delay = 2
-            try:
-                # This read is mandatory before EVERY renewal, including after
-                # an outcome-unknown mutation. No reserve/reacquire path exists.
-                row = backend.lookup(resource)
-                lease.check(row)
-                if time.monotonic() >= min(deadline, lease.deadline):
-                    raise Refused('Execution or proven admission deadline exceeded')
-                if time.monotonic() >= heartbeat_at and child.poll() is None:
-                    if owned:
-                        started = time.monotonic()
-                        renewed = backend.heartbeat(owned)
-                        # Never revive locally-expired authority even if a slow
-                        # call later reports success.
-                        if time.monotonic() >= lease.deadline:
-                            raise Refused('Renewal arrived after proven deadline')
-                        lease.confirm(renewed, started)
-                        if isinstance(backend, Native):
-                            backend.deadline = min(deadline, lease.deadline)
-                    if hasattr(backend, 'heartbeat_executor'):
-                        backend.heartbeat_executor()
-                    heartbeat_at = time.monotonic() + min(30, max(1, (lease.deadline - time.monotonic()) / 3))
-                backoff = 1
-            except TransientTransport as error:
-                # Preserve only previously proven time, never uncertain TTL.
-                record['transport_retries'] = record.get('transport_retries', 0) + 1
-                record['last_transport_error'] = str(error)
-                delay, backoff = backoff, min(8, backoff * 2)
+            if time.monotonic() >= control_at:
+                try:
+                    # Local child monitoring is cheap and frequent. Remote
+                    # revocation observation/renewal is at most 30s apart,
+                    # shortened for remaining proven TTL. Uncertain mutations
+                    # always require exact readback before the next renewal.
+                    row = backend.lookup(resource)
+                    lease.check(row)
+                    if time.monotonic() >= min(deadline, lease.deadline):
+                        raise Refused('Execution or proven admission deadline exceeded')
+                    if child.poll() is None:
+                        if owned:
+                            started = time.monotonic()
+                            renewed = backend.heartbeat(owned)
+                            if time.monotonic() >= lease.deadline:
+                                raise Refused('Renewal arrived after proven deadline')
+                            lease.confirm(renewed, started)
+                            if isinstance(backend, Native):
+                                backend.deadline = min(deadline, lease.deadline)
+                        if hasattr(backend, 'heartbeat_executor'):
+                            backend.heartbeat_executor()
+                    control_at = time.monotonic() + min(30, max(0.001, (lease.deadline - time.monotonic()) / 3))
+                    backoff = 1
+                except TransientTransport as error:
+                    record['transport_retries'] = record.get('transport_retries', 0) + 1
+                    record['last_transport_error'] = str(error)
+                    control_at = time.monotonic() + backoff
+                    backoff = min(8, backoff * 2)
             remaining = min(deadline, lease.deadline) - time.monotonic()
             if remaining <= 0:
                 raise Refused('Execution or proven admission deadline exceeded')
             try:
-                code = child.wait(timeout=min(delay, remaining))
+                code = child.wait(timeout=min(2, remaining, max(0.001, control_at - time.monotonic())))
                 try:
                     after = backend.lookup(resource)
                     lease.check(after)
