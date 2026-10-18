@@ -1,0 +1,1 @@
+- mercury is declared an attended lane with no spawn consumer (owner 2026-10-16: headless mercury workers cleared). The registry consumer-coverage guard lets a declared attended lane omit a spawn consumer; any consumer it does declare is still validated.
