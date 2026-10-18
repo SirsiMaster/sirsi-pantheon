@@ -131,6 +131,9 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Ma'at supervisor reliability (model-free)
+        run: python3 -B -m unittest discover -s scripts/maat -p test_admitted_run.py -v
+
       - name: Run tests
         shell: bash
         run: bash scripts/ci-private-sdk.sh go test -v -race -short -coverprofile=coverage.out ./...

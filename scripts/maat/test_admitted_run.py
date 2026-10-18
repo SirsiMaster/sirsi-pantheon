@@ -1,5 +1,6 @@
 import datetime as dt
 import importlib.util
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -41,6 +42,161 @@ class Backend:
 
 
 class RegistryDeadlineTests(unittest.TestCase):
+    def test_partial_registration_prune_conflict_uses_exact_readback_not_reregister(self):
+        native = runner.Native()
+        calls = []
+        def run(argv, **kwargs):
+            calls.append(argv)
+            if argv[1:3] == ['thread', 'register']:
+                raise subprocess.CalledProcessError(1, argv, stderr='thread "thr-old" prune lost lifecycle fence')
+            identity = argv[argv.index('--thread')+1]
+            return mock.Mock(stdout=json.dumps(dict(agent_id='lane', pid=os.getpid(), status='active', thread_id=identity)))
+        with mock.patch.object(runner.subprocess, 'run', side_effect=run):
+            identity = native.register_executor('lane')
+        self.assertEqual([x[1:3] for x in calls], [['thread', 'register'], ['thread', 'heartbeat']])
+        self.assertEqual(calls[0][calls[0].index('--thread')+1], identity)
+        self.assertEqual(calls[1][calls[1].index('--thread')+1], identity)
+
+    def test_partial_registration_classifier_never_relaxes_denial_or_other_calls(self):
+        for operation, detail in [
+            (('thread', 'heartbeat'), 'thread "thr-old" prune lost lifecycle fence'),
+            (('thread', 'register'), '403 denied; thread "thr-old" prune lost lifecycle fence'),
+            (('thread', 'register'), 'thread "thr-old" mutation lost lifecycle fence')]:
+            with mock.patch.object(runner.subprocess, 'run', side_effect=subprocess.CalledProcessError(1, 'sirsi', stderr=detail)):
+                with self.assertRaises(runner.Refused) as error:
+                    runner.Native().call(*operation)
+            self.assertNotIsInstance(error.exception, runner.TransientTransport)
+
+    def test_initial_registration_blip_recovers_the_same_identity_without_reregister(self):
+        native = runner.Native()
+        calls = []
+        def call(*args, **kwargs):
+            calls.append(args)
+            if args[:2] == ('thread', 'register'):
+                raise runner.TransientTransport('HTTP 502 OUTCOME UNKNOWN')
+            return dict(agent_id='lane', pid=os.getpid(), status='active',
+                        thread_id=args[args.index('--thread')+1])
+        native.call = call
+        identity = native.register_executor('lane')
+        self.assertEqual([x[:2] for x in calls], [('thread', 'register'), ('thread', 'heartbeat')])
+        self.assertEqual(calls[0][calls[0].index('--thread')+1], identity)
+        self.assertEqual(calls[1][calls[1].index('--thread')+1], identity)
+
+    def test_registration_observation_retries_only_transient_and_keeps_prior_bound(self):
+        native = runner.Native()
+        native.deadline = 75
+        native.call = mock.Mock(side_effect=[runner.TransientTransport('HTTP 502'), {'thread_id': 'own'}])
+        clock = Clock()
+        with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
+                mock.patch.object(runner.time, 'sleep', side_effect=lambda seconds: setattr(clock, 'now', clock.now + seconds)):
+            self.assertEqual(native.registration_observation('own'), {'thread_id': 'own'})
+        self.assertEqual(native.call.call_count, 2)
+        self.assertEqual(native.deadline, 75)
+        native.deadline = None
+        native.call = mock.Mock(side_effect=runner.Refused('403 denied'))
+        with self.assertRaises(runner.Refused):
+            native.registration_observation('own')
+        self.assertEqual(native.call.call_count, 1)
+
+    def test_registration_observation_stops_at_bounded_budget(self):
+        native = runner.Native()
+        native.call = mock.Mock(side_effect=runner.TransientTransport('HTTP 502'))
+        clock = Clock()
+        with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
+                mock.patch.object(runner.time, 'sleep', side_effect=lambda seconds: setattr(clock, 'now', clock.now + seconds)), \
+                self.assertRaises(runner.TransientTransport):
+            native.registration_observation('own')
+        self.assertEqual(clock.now, 120)
+        self.assertIsNone(native.deadline)
+
+    def release_native(self):
+        native = runner.Native()
+        native.owned_admission = 'fixture-id'
+        native.release_scope = {key: admission()[key] for key in
+                                ('id', 'resource', 'holder', 'work', 'exempt_pid')}
+        return native
+
+    def test_unknown_release_committed_is_reconciled_without_duplicate_mutation(self):
+        native = self.release_native()
+        native.call = mock.Mock(side_effect=runner.TransientTransport('HTTP 502'))
+        native.lookup = mock.Mock(return_value=admission(status='released'))
+        self.assertEqual(native.release('fixture-id')['status'], 'released')
+        self.assertEqual(native.call.call_count, 1)
+        self.assertIsNone(native.deadline)
+
+    def test_unknown_release_still_active_is_read_before_retry(self):
+        native = self.release_native()
+        events = []
+        def call(*args, **kwargs):
+            events.append('release')
+            if len(events) == 1:
+                raise runner.TransientTransport('HTTP 502')
+            return admission(status='released')
+        native.call = call
+        native.lookup = lambda resource: events.append('read') or admission()
+        self.assertEqual(native.release('fixture-id')['status'], 'released')
+        self.assertEqual(events, ['release', 'read', 'release'])
+
+    def test_unknown_release_does_not_touch_replacement_or_foreign_holder(self):
+        for change in (dict(id='different'), dict(holder='foreign'), dict(exempt_pid=1)):
+            native = self.release_native()
+            native.call = mock.Mock(side_effect=runner.TransientTransport('HTTP 502'))
+            native.lookup = mock.Mock(return_value=admission(**change))
+            with self.assertRaisesRegex(runner.Refused, 'changed exact'):
+                native.release('fixture-id')
+            self.assertEqual(native.call.call_count, 1)
+            self.assertIsNone(native.deadline)
+
+    def test_unknown_release_unavailable_has_bounded_retries_and_remains_debt(self):
+        native = self.release_native()
+        native.call = mock.Mock(side_effect=runner.TransientTransport('HTTP 502'))
+        native.lookup = mock.Mock(side_effect=runner.TransientTransport('HTTP 502'))
+        with mock.patch.object(runner.time, 'sleep'), self.assertRaises(runner.TransientTransport):
+            native.release('fixture-id')
+        self.assertEqual(native.lookup.call_count, 3)
+        self.assertEqual(native.call.call_count, 1)
+
+    def test_release_explicit_denial_is_not_retried_or_reconciled(self):
+        native = self.release_native()
+        native.call = mock.Mock(side_effect=runner.Refused('HTTP 403 denied'))
+        native.lookup = mock.Mock()
+        with self.assertRaises(runner.Refused):
+            native.release('fixture-id')
+        native.lookup.assert_not_called()
+
+    def test_executor_controls_cannot_publish_or_remove_parent_session_markers(self):
+        inherited = dict(CLAUDE_CODE_SESSION_ID='parent-claude',
+                         CODEX_SESSION_ID='parent-codex', CODEX_THREAD_ID='parent-codex',
+                         SIRSI_THREAD_ID='thr-parent', SIRSI_AGENT_ID='lane')
+        controls = []
+        def control(argv, **kwargs):
+            env = kwargs['env']
+            controls.append((argv, dict(env)))
+            if argv[1:3] == ['thread', 'register']:
+                identity = argv[argv.index('--thread')+1]
+                return mock.Mock(stdout=json.dumps(dict(agent_id='lane', pid=os.getpid(),
+                                 status='active', thread_id=identity)))
+            return mock.Mock(stdout='{}')
+        with mock.patch.dict(os.environ, inherited), \
+                mock.patch.object(runner.subprocess, 'run', side_effect=control):
+            native = runner.Native()
+            identity = native.register_executor('lane')
+            native.close_executor()
+            for key, value in inherited.items():
+                self.assertEqual(os.environ[key], value)
+        self.assertEqual(len(controls), 2)
+        for argv, env in controls:
+            for key in ('CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'CODEX_THREAD_ID'):
+                self.assertNotIn(key, env)
+            self.assertEqual(env['SIRSI_AGENT_ID'], 'lane')
+        self.assertNotIn('SIRSI_THREAD_ID', controls[0][1])
+        self.assertEqual(controls[1][1]['SIRSI_THREAD_ID'], identity)
+
+    def test_non_executor_control_keeps_original_session_resolution(self):
+        with mock.patch.object(runner.subprocess, 'run', return_value=mock.Mock(stdout='{}')) as run:
+            runner.Native().call('thread', 'heartbeat', '--thread', 'thr-parent')
+        self.assertIsNone(run.call_args.kwargs['env'])
+
     def test_executor_registration_is_bound_to_this_process_not_origin_pid(self):
         for agent in ['lane-from-m5', 'lane-from-m1', 'lane-from-studio']:
             native = runner.Native()
@@ -109,14 +265,55 @@ class RegistryDeadlineTests(unittest.TestCase):
 
     def test_registry_timeout_never_authorizes_or_uses_a_cache(self):
         native = runner.Native()
+        clock = Clock()
         with mock.patch.object(runner.subprocess, 'run', side_effect=subprocess.TimeoutExpired('sirsi',30)), \
-                mock.patch.object(runner.subprocess, 'check_output') as process:
+                mock.patch.object(runner.subprocess, 'check_output') as process, \
+                mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
+                mock.patch.object(runner.time, 'sleep', side_effect=lambda seconds: setattr(clock, 'now', clock.now + seconds)):
             with self.assertRaises(runner.TransientTransport):
                 native.registered('lane','thread')
             process.assert_not_called()
 
 
 class SupervisorTests(unittest.TestCase):
+    def test_registered_executor_gets_own_loaded_grant_despite_foreign_primary_holder(self):
+        backend = runner.Native()
+        backend.executor_thread = 'thr-actual-executor'
+        backend.registered = mock.Mock()
+        backend.lookup = mock.Mock(side_effect=lambda resource: admission() if backend.owned_admission
+                                   else admission(holder='other', work='training'))
+        backend.reserve = mock.Mock(return_value={'granted': True, 'reservation': admission()})
+        backend.release = mock.Mock()
+        record = {}
+        clock = Clock()
+        with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
+                mock.patch.object(runner.subprocess, 'Popen', return_value=FakeChild(clock, 0)), \
+                mock.patch.object(runner, 'stop'):
+            code = runner.supervise(['fixture'], 'm5', 'lane', 'thread', 'work', 30, backend, record)
+        self.assertEqual(code, 0)
+        self.assertEqual(backend.reserve.call_count, 1)
+        self.assertFalse(record['borrowed'])
+        self.assertEqual(backend.lookup.call_count, 2)
+
+    def test_registered_executor_never_borrows_old_same_lane_work_grant(self):
+        backend = runner.Native()
+        backend.executor_thread = 'thr-actual-executor'
+        backend.registered = mock.Mock()
+        backend.lookup = mock.Mock(side_effect=lambda resource: admission() if backend.owned_admission
+                                   else admission(exempt_pid=1))
+        backend.reserve = mock.Mock(return_value={'granted': True, 'reservation': admission()})
+        backend.release = mock.Mock()
+        record = {}
+        clock = Clock()
+        with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
+                mock.patch.object(runner.subprocess, 'Popen', return_value=FakeChild(clock, 0)), \
+                mock.patch.object(runner, 'stop'):
+            code = runner.supervise(['fixture'], 'm5', 'lane', 'thread', 'work', 30, backend, record)
+        self.assertEqual(code, 0)
+        backend.reserve.assert_called_once()
+        self.assertFalse(record['borrowed'])
+        self.assertEqual(backend.lookup.call_count, 2)
+
     def test_floor_requires_explicit_sufficient_cpu_build_mask(self):
         row = admission(share='floor', cores=4, regime='build')
         self.assertFalse(runner.valid(row,'m5','lane','work'))
@@ -326,8 +523,98 @@ class FakeChild:
         return 0
 
 
+class RecurringTests(unittest.TestCase):
+    def run_iterations(self, results, interval=60, lifetime=500, heartbeat_error=None):
+        clock = Clock()
+        backend = mock.Mock(executor_thread='thr-real')
+        backend.heartbeat_executor.side_effect = heartbeat_error
+        snapshots = []
+        record = {}
+        def iteration(*args):
+            self.assertIsNone(backend.owned_admission)
+            self.assertIsNone(backend.release_scope)
+            current = args[-1]
+            code = results.pop(0)
+            current.update(status='success' if code == 0 else 'refused_or_stopped', exit_code=code)
+            backend.owned_admission = 'previous-terminal-id'
+            clock.now += 5
+            return code
+        with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
+                mock.patch.object(runner.time, 'sleep', side_effect=lambda seconds: setattr(clock, 'now', clock.now + seconds)), \
+                mock.patch.object(runner, 'supervise', side_effect=iteration) as supervise:
+            code = runner.supervise_iterations(['fixture'], 'm5', 'lane', 'thr-real',
+                                               'work', 60, backend, record, 3, interval, lifetime,
+                                               lambda: snapshots.append(json.loads(json.dumps(record))))
+        return code, record, backend, supervise, clock, snapshots
+
+    def test_three_iterations_get_independent_grants_and_durable_results(self):
+        code, record, backend, supervise, clock, snapshots = self.run_iterations([0, 0, 0])
+        self.assertEqual(code, 0)
+        self.assertEqual(supervise.call_count, 3)
+        self.assertEqual(clock.now, 135)
+        self.assertEqual(record['status'], 'success')
+        self.assertEqual(len(snapshots), 3)
+        self.assertEqual([x['iteration'] for x in record['iterations']], [1, 2, 3])
+        self.assertEqual(backend.heartbeat_executor.call_count, 4)
+
+    def test_first_failure_never_relaunches_failed_payload(self):
+        code, record, backend, supervise, clock, snapshots = self.run_iterations([0, 78])
+        self.assertEqual(code, 78)
+        self.assertEqual(supervise.call_count, 2)
+        self.assertEqual(record['status'], 'refused_or_stopped')
+
+    def test_idle_job_budget_expires_without_next_admission(self):
+        code, record, backend, supervise, clock, snapshots = self.run_iterations([0], lifetime=20)
+        self.assertEqual(code, 78)
+        self.assertEqual(supervise.call_count, 1)
+        self.assertEqual(clock.now, 20)
+        self.assertEqual(record['stop_cause'], 'job_timeout')
+
+    def test_idle_transient_does_not_borrow_authority_or_prevent_fresh_admission(self):
+        code, record, backend, supervise, clock, snapshots = self.run_iterations(
+            [0, 0, 0], heartbeat_error=runner.TransientTransport('HTTP 502'))
+        self.assertEqual(code, 0)
+        self.assertIn('502', record['idle_transport_error'])
+        self.assertEqual(supervise.call_count, 3)
+
+    def test_idle_denial_stops_without_next_iteration(self):
+        with self.assertRaisesRegex(runner.Refused, 'denied'):
+            self.run_iterations([0], heartbeat_error=runner.Refused('HTTP 403 denied'))
+
+    def test_recurring_requires_own_executor(self):
+        with self.assertRaisesRegex(runner.Refused, 'own registered executor'):
+            runner.supervise_iterations(['fixture'], 'm5', 'lane', 'thread', 'work', 60,
+                                        Backend(None), {}, 2, 30, 120)
+
+    def test_job_budget_includes_iteration_setup_before_child_spawn(self):
+        backend = Backend(None)
+        backend.job_deadline = 10
+        clock = Clock()
+        original = backend.registered
+        def registered(*args):
+            original(*args)
+            clock.now += 6
+        backend.registered = registered
+        record = {}
+        with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
+                mock.patch.object(runner.subprocess, 'Popen') as spawn:
+            code = runner.supervise(['fixture'], 'm5', 'lane', 'thread', 'work', 60, backend, record)
+        self.assertEqual(code, 78)
+        self.assertEqual(record['stop_cause'], 'job_timeout')
+        spawn.assert_not_called()
+        self.assertEqual(backend.released, ['fixture-id'])
+
+    def test_job_limit_is_distinguished_from_per_child_timeout(self):
+        lease = mock.Mock(deadline=240)
+        record = {'execution_bound': 'job_timeout'}
+        with mock.patch.object(runner.time, 'monotonic', return_value=20), \
+                self.assertRaisesRegex(runner.Refused, 'total lifetime'):
+            runner.check_deadlines(20, lease, 5, 60, record)
+        self.assertEqual(record['stop_cause'], 'job_timeout')
+
+
 class RecoveryTests(unittest.TestCase):
-    def run_case(self, *, failure=None, restore=34, finish=45, renewal=None, ttl=120):
+    def run_case(self, *, failure=None, restore=34, finish=45, renewal=None, ttl=120, timeout=300):
         clock = Clock()
         backend = Backend(None)
         backend.heartbeat_calls = 0
@@ -356,7 +643,7 @@ class RecoveryTests(unittest.TestCase):
         with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
                 mock.patch.object(runner.subprocess, 'Popen', return_value=child), \
                 mock.patch.object(runner, 'stop') as stop:
-            code = runner.supervise(['fixture'], 'm5', 'lane', 'thread', 'work', 300, backend, record)
+            code = runner.supervise(['fixture'], 'm5', 'lane', 'thread', 'work', timeout, backend, record)
             stop.assert_called_once_with(child)
         self.assertEqual(backend.reserve_calls, 1)
         self.assertEqual(backend.released, ['fixture-id'])
@@ -373,6 +660,64 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(backend.reserve_calls, 1)
         self.assertGreater(len(backend.child.wait_timeouts), 40)
         self.assertTrue(all(0 < wait <= 2 for wait in backend.child.wait_timeouts))
+
+    def test_three_minute_outage_recovers_only_with_sufficient_confirmed_grant(self):
+        code, record, backend, clock, events = self.run_case(
+            failure=runner.TransientTransport('MaatRead HTTP 502'),
+            restore=210, finish=250, ttl=240)
+        self.assertEqual(code, 0)
+        self.assertGreater(record['transport_retries'], 10)
+        self.assertEqual(backend.reserve_calls, 1)
+
+    def test_long_transfer_renews_without_confusing_ttl_with_total_run_budget(self):
+        code, record, backend, clock, events = self.run_case(
+            finish=7000, timeout=7200, ttl=240)
+        self.assertEqual(code, 0)
+        self.assertGreater(backend.heartbeat_calls, 200)
+        self.assertEqual(record['execution_timeout_sec'], 7200)
+        self.assertEqual(record['execution_elapsed_sec'], 7000)
+        self.assertNotIn('stop_cause', record)
+
+    def test_configured_copy_timeouts_are_not_reported_as_expired_lease(self):
+        for timeout in (900, 1700):
+            with self.subTest(timeout=timeout):
+                code, record, backend, clock, events = self.run_case(
+                    finish=5000, timeout=timeout, ttl=240)
+                self.assertEqual(code, 78)
+                self.assertEqual(clock.now, timeout)
+                self.assertEqual(record['stop_cause'], 'execution_timeout')
+                self.assertGreater(record['proven_lease_remaining_sec'], 0)
+                self.assertIn('--timeout '+str(timeout), record['reason'])
+
+    def test_expired_proven_lease_has_its_own_terminal_cause(self):
+        code, record, backend, clock, events = self.run_case(
+            failure=runner.TransientTransport('HTTP 502'), restore=1000, finish=1000)
+        self.assertEqual(code, 78)
+        self.assertEqual(record['stop_cause'], 'proven_lease_expired')
+        self.assertEqual(record['proven_lease_remaining_sec'], 0)
+
+    def test_denied_and_insufficient_grants_preserve_actual_blocker_identity(self):
+        for granted in (False, True):
+            backend = Backend(None)
+            conflict = admission(id='actual-blocker', holder='other', work='training')
+            own = admission(share='floor', cores=1, regime='build')
+            backend.reserve = lambda *args: dict(granted=granted, reservation=own, conflict=conflict,
+                                                pending_cedes=['cede-123'])
+            record = {}
+            with mock.patch.object(runner.subprocess, 'Popen') as spawn:
+                code = runner.supervise(['fixture'], 'm5', 'lane', 'thread', 'work', 30, backend, record)
+            self.assertEqual(code, 78)
+            spawn.assert_not_called()
+            self.assertEqual(record['admission_decision']['conflict']['id'], 'actual-blocker')
+            self.assertIn('actual-blocker', record['reason'])
+            self.assertEqual(record['admission_decision']['pending_cedes'], ['cede-123'])
+
+    def test_native_requests_explicit_recovery_ttl_without_inventing_a_grant(self):
+        native = runner.Native()
+        native.call = mock.Mock(return_value={'granted': False})
+        self.assertEqual(native.reserve('m5', 'lane', 'work'), {'granted': False})
+        args = native.call.call_args.args
+        self.assertEqual(args[args.index('--lease-ttl')+1], '240')
 
     def test_transient_read_failures_recover_with_one_reservation(self):
         for reason in ['MaatRead HTTP 502', 'TLS handshake timeout', 'relay OUTCOME UNKNOWN']:

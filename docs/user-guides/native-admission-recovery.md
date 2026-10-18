@@ -30,3 +30,21 @@ supervision, not a security sandbox or a promise of outage-free execution.
 
 Source fixtures: `python3 -m unittest discover -s scripts/maat -p test_admitted_run.py -v`.
 SSA owns independent review, installation and long-running workload qualification.
+
+## Executor versus IDE session identity
+
+A destination executor has its own thread, not the launching IDE conversation's
+provider session. The supervisor removes inherited Claude/Codex provider-session
+IDs from executor CLI **control subprocesses only**. Registration cannot publish
+a child thread into the parent's session marker, and close cannot remove that
+parent marker. Control calls after registration carry the exact executor thread;
+the payload's provider environment is not changed by this isolation.
+
+For desktop task claim/renew/release, keep the same actual `SIRSI_AGENT_ID` and
+`SIRSI_THREAD_ID` on every call. A task command's `--thread` argument records the
+requested task worker; it is not a substitute for the authenticated caller's
+thread environment. An old claim authenticated without a thread does not become
+owned by a later desktop or executor thread. Preserve the ownership refusal:
+never copy session credentials, borrow a worker identity, reset attempts, or
+weaken the fence to recover it. Use normal owner-session release or ordinary
+expiry/reclaim, then claim under the actual stable desktop identity.
