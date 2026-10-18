@@ -1,17 +1,17 @@
 {
   "work_item_id": "20261018-130148-claude-apollo-m5-rail-sirsi-software-admin-ma-at-owner-directed-fix-m5-admission-registry-probe-admit-a",
   "agent_id": "sirsi-software-admin",
-  "repo": "/private/tmp/ssa-maat-cli-55559c7-20261018",
+  "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
   "status": "completed",
   "classification": "platform-foundation",
   "canon_read": [
     {
       "path": "docs/COMMERCIALIZATION_GATE.md",
       "read_at": "2026-10-18",
-      "notes": "Read in full; router trust boundary, operator and openly incomplete commercial closure. This is a platform-foundation repair, not commercial-product release."
+      "notes": "Read canonical main copy in full after resolving authority path. Preserve exact admitted local runtime, no silent account/framework/cloud fallback; do not claim full product/lifecycle qualification from this scheduler repair."
     },
     {
-      "path": "docs/runbooks/maat-atomic-reservations.md",
+      "path": "/private/tmp/ssa-maat-cli-55559c7-20261018/docs/runbooks/maat-atomic-reservations.md",
       "read_at": "2026-10-18",
       "notes": "Read in full; actual-runtime admission, canonical atomic operations, compatible rollout, full generation verification, fence-preserving recovery."
     },
@@ -19,11 +19,36 @@
       "path": "/Users/thekryptodragon/Development/COMPLETION_SCAFFOLD.md",
       "read_at": "2026-10-18",
       "notes": "Read in full; exact operational proof and validator-bound closure."
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "read_at": "2026-10-18",
+      "notes": "Read in full; own action, prove deployed outcome, preserve authorities and history; scoped operational closure does not imply commercial release."
+    },
+    {
+      "path": "README.md",
+      "read_at": "2026-10-18",
+      "notes": "Read in full; dated product baseline, one shared engine and safety promises. No claim that all current surfaces/releases are qualified by this repair."
+    },
+    {
+      "path": "docs/prd/RELEASE_V1_STAR_GRADE.md",
+      "read_at": "2026-10-18",
+      "notes": "Read in full; older draft release plan. Its full product/GA criteria are not asserted complete by the original admission incident closure."
+    },
+    {
+      "path": "docs/PANTHEON_ROADMAP.md",
+      "read_at": "2026-10-18",
+      "notes": "Read in full; dated roadmap and historical metrics retained, not reused as current proof."
+    },
+    {
+      "path": "docs/REPRODUCTION.md",
+      "read_at": "2026-10-18",
+      "notes": "Read in full; exact provenance and measurement limitations; no private model outputs or engine source exported."
     }
   ],
   "requirements_trace": [
     {
-      "doc": "docs/runbooks/maat-atomic-reservations.md",
+      "doc": "/private/tmp/ssa-maat-cli-55559c7-20261018/docs/runbooks/maat-atomic-reservations.md",
       "section": "Mechanism and trust boundary; rollout steps2–3",
       "claim": "Replace fleet-wide full-registry sweep with own-runtime registration/heartbeat and canonical atomic reservation operations; real M5 model batches continue under fresh full admission instead of stopping on8s registry probes.",
       "files_changed": [
@@ -37,7 +62,7 @@
       ]
     },
     {
-      "doc": "docs/runbooks/maat-atomic-reservations.md",
+      "doc": "/private/tmp/ssa-maat-cli-55559c7-20261018/docs/runbooks/maat-atomic-reservations.md",
       "section": "Destination-local executor identity and deployed proof",
       "claim": "The same registered fabric agent can execute on enrolled M1/M5/Studio without treating an origin-host PID as local authority; actual Studio owner model runs under its destination-local registered full admission.",
       "files_changed": [
@@ -51,7 +76,7 @@
     },
     {
       "doc": "docs/COMMERCIALIZATION_GATE.md",
-      "section": "Ra platform foundation — trust boundary and operational owner",
+      "section": "Trust Boundary; Operational Owner; scope limitation",
       "claim": "Preserve one canonical state, host credentials, actual authority, source provenance and truthful release limits; correct stale standard CLI aliases without app-bundle edits or restoring unfenced writes.",
       "files_changed": [
         "internal/routerstore/agents.go",
@@ -127,5 +152,7 @@
     "App-bundle embedded CLI upgrade",
     "Model completion or data quality qualification",
     "Runbook mirror synchronization; visiblypending"
-  ]
+  ],
+  "source_checkout": "/private/tmp/ssa-maat-cli-55559c7-20261018",
+  "authority_binding": "Router resolves SSA's canonical repo to the main checkout. This proof binds that repository authority but all repair compilation/publication used the isolated source checkout, never shared dirty source."
 }
