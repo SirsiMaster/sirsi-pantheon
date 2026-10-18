@@ -141,6 +141,9 @@ type Thread struct {
 	// escalated it. Agent-session surfaces set this implicitly (they ARE the
 	// consumer); worker loops set it only when a consumer resolved.
 	ConsumerCapable bool `json:"consumer_capable,omitempty"`
+	// AnswerRole records that this worker thread's lane granted it the answering role (registry
+	// worker_answers). The router service refuses a worker thread's close/complete without it.
+	AnswerRole bool `json:"answer_role,omitempty"`
 
 	// Lane is the honest, self-reported state of the worker behind this thread:
 	// what its last consumer run did, any hold on dispatch, and when it last made

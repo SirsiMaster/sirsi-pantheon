@@ -1,6 +1,7 @@
 {
   "agents": {
     "claude-assiduous": {
+      "worker_answers": true,
       "id": "claude-assiduous",
       "type": "claude",
       "command": [
@@ -25,6 +26,7 @@
       }
     },
     "claude-deck": {
+      "worker_answers": true,
       "id": "claude-deck",
       "type": "claude",
       "command": [
@@ -49,6 +51,7 @@
       }
     },
     "claude-finalwishes-web": {
+      "worker_answers": true,
       "id": "claude-finalwishes-web",
       "type": "claude",
       "command": [
@@ -97,6 +100,7 @@
       "workstream": "home"
     },
     "claude-homebrew-tools": {
+      "worker_answers": true,
       "id": "claude-homebrew-tools",
       "type": "claude",
       "command": [
@@ -145,6 +149,7 @@
       }
     },
     "claude-io": {
+      "worker_answers": true,
       "id": "claude-io",
       "type": "claude",
       "command": [
@@ -170,6 +175,7 @@
       "repo": "/Users/sirsimasterdev/Development/sirsi-io-connect"
     },
     "claude-kfca": {
+      "worker_answers": true,
       "id": "claude-kfca",
       "type": "claude",
       "command": [
@@ -195,6 +201,7 @@
       }
     },
     "claude-nexus": {
+      "worker_answers": true,
       "id": "claude-nexus",
       "type": "claude",
       "command": [
@@ -220,6 +227,7 @@
       }
     },
     "claude-pantheon": {
+      "worker_answers": true,
       "id": "claude-pantheon",
       "type": "claude",
       "command": [
@@ -246,6 +254,7 @@
       }
     },
     "claude-porch-and-alley": {
+      "worker_answers": true,
       "id": "claude-porch-and-alley",
       "type": "claude",
       "command": [
@@ -270,6 +279,7 @@
       }
     },
     "codex-assiduous": {
+      "worker_answers": true,
       "id": "codex-assiduous",
       "type": "codex",
       "command": [
@@ -303,6 +313,7 @@
       }
     },
     "codex-deck": {
+      "worker_answers": true,
       "id": "codex-deck",
       "type": "codex",
       "command": [
@@ -383,6 +394,7 @@
       }
     },
     "codex-finalwishes-web": {
+      "worker_answers": true,
       "id": "codex-finalwishes-web",
       "type": "codex",
       "command": [
@@ -416,6 +428,7 @@
       }
     },
     "codex-homebrew": {
+      "worker_answers": true,
       "id": "codex-homebrew",
       "type": "codex",
       "command": [
@@ -449,6 +462,7 @@
       }
     },
     "codex-mail": {
+      "worker_answers": true,
       "id": "codex-mail",
       "type": "codex",
       "command": [
@@ -482,6 +496,7 @@
       }
     },
     "codex-pantheon": {
+      "worker_answers": true,
       "id": "codex-pantheon",
       "type": "codex",
       "command": [
@@ -521,6 +536,7 @@
       }
     },
     "codex-porch-and-alley": {
+      "worker_answers": true,
       "id": "codex-porch-and-alley",
       "type": "codex",
       "command": [
@@ -725,6 +741,7 @@
       "workstream": "ra"
     },
     "claude-mail": {
+      "worker_answers": true,
       "id": "claude-mail",
       "type": "claude",
       "command": [
@@ -754,6 +771,7 @@
       "note": "Owner 2026-09-11/12: re-establish the Sirsi executive mailbox lane on the M1 as a CLAUDE lane (not codex). Mirrors the claude-deck agent shape. Mailbox access: Anthropic Gmail connector, connected 2026-09-12 by the owner (account receiving sirsimaster@gmail.com / admin@sirsi.ai mail; cylton@sirsi.ai correspondence also visible in this mailbox via cc/bcc). send/reply/forward/trash/spam are hard-denied via --disallowedTools, not prompt-only, per SSA security finding 2026-09-12. CEILING: the deny list is keyed to this connector's MCP server id (650ebef6-321a-40cb-898f-ae6786b8caa1) \u2014 if the owner disconnects/reconnects Gmail, update the --disallowedTools list to the new id or this deny goes stale."
     },
     "claude-finalwishes-m1": {
+      "worker_answers": true,
       "id": "claude-finalwishes-m1",
       "type": "claude",
       "command": [
@@ -780,6 +798,7 @@
       "note": "Attended Claude Code session on M1 (owner-directed rename from claude-finalwishes, 2026-09-26). wake none: never auto-spawned."
     },
     "claude-m5-compasspoint": {
+      "worker_answers": true,
       "id": "claude-m5-compasspoint",
       "type": "claude",
       "cwd": "/Users/thekryptodragon/Development/compasspoint",
@@ -795,6 +814,7 @@
       "note": "Owner-directed 2026-10-15 durable backstop for the existing CompassPoint lane. Current native session verified repository compasspoint; historical compasspoint-app checkout is preserved. Existing attended-session fencing prevents duplicate dispatch. Subscription login only; no API key or host router token supplied."
     },
     "claude-finalwishes-m5": {
+      "worker_answers": true,
       "id": "claude-finalwishes-m5",
       "type": "claude",
       "command": [
@@ -920,6 +940,7 @@
       "description": "Native executor (not an LLM lane) for allow-listed metal test execution in sandboxed lanes (docs/METAL-RUNNER.md). Installed on host M5-Studio as the LaunchAgent ai.sirsi.mercury.metal-runner, which polls the router every 60s; binary sirsi-mercury #555 (sha256 224464c7...). Runs only allow-listed harnesses with pattern-validated env and a sha256-pinned binary; refuses any spec without a prediction and a kill rule; honours ~/.sirsi/metal-hold and Ma'at reservations; never executes free text. Owner lane: mercury. wake.mechanism is \"none\": the router does not spawn this agent, it is already resident and self-polling via its own LaunchAgent."
     },
     "codex-compasspoint-contract": {
+      "worker_answers": true,
       "id": "codex-compasspoint-contract",
       "type": "codex",
       "cwd": "/Users/thekryptodragon/Development/compasspoint",

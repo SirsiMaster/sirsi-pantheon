@@ -17,6 +17,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/logging"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 	"github.com/spf13/cobra"
@@ -641,6 +642,17 @@ var routerRespondCmd = &cobra.Command{
 		}
 		if actorErr := f.ValidateAgent("acting agent", me); actorErr != nil {
 			return actorErr
+		}
+		// A headless worker answers only with its lead lane's answering role. The service refuses the close;
+		// checking here too keeps the reply itself from reaching the requester before that refusal.
+		if tid := os.Getenv("SIRSI_THREAD_ID"); tid != "" {
+			threads, terr := f.Store().ListThreads()
+			if terr != nil {
+				return fmt.Errorf("respond: cannot check this thread's answering role, nothing sent: %w", terr)
+			}
+			if !routerstore.WorkerMayAnswer(threads, tid) {
+				return fmt.Errorf("%w (thread %s) — nothing sent; the item stays open for the lead lane", routerstore.ErrWorkerAnswers, tid)
+			}
 		}
 		// NOTIFY FIRST, then close. There is no cross-row transaction here (the
 		// file era has no transaction at all), so one of the two orders has to
