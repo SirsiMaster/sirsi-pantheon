@@ -1,6 +1,8 @@
 # ADR: Bare Studio scheduler alias compatibility
 
-Status: source candidate, independent review pending. Date:2026-10-18.
+Status: accepted bounded source decision by SSA after independent inspection of
+producer3ccedd84 and its native regression receipts,2026-10-18. Operational
+closure still requires actual canonical service/client deployment and readback.
 
 The native supervisor uses studio while legacy Mercury callers use m5-studio
 for one physical Mac. Literal scheduler equality admits two full-share pools.

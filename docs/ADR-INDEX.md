@@ -10,6 +10,7 @@ This index tracks **all** architectural decisions for the Sirsi Pantheon ecosyst
 
 | ID | Title | Status | Date |
 |----|-------|--------|------|
+| [ADR-118](ADR-118-STUDIO-RESOURCE-ALIAS.md) | Bare Studio scheduler compatibility: legacy `m5-studio` and `studio` share capacity without rewriting reservation identity/history or host binding | Accepted bounded source decision; deployment evidence separate | 2026-10-18 |
 | [ADR-073](ADR-073-ENROLLED-SIGNING-FRAME-FALLBACK.md) | Enrolled signing-frame fallback — self-hosted login-keychain path when the CI certificate bundle is absent; exact Team `9D382WV988` Developer ID Application and Installer preflight; no agent key-material handling | Proposed | 2026-09-29 |
 | [ADR-074](ADR-074-SESSION-SAFE-SIGNING-SERVICE.md) | Session-safe signing service — enrolled fallback routes app, DMG, and PKG through the owner-session `sirsi-sign` service instead of direct runner keychain access | Proposed | 2026-09-29 |
 | [ADR-075](ADR-075-DESKTOP-RECOVERY-ISSUER-INGRESS.md) | Private desktop recovery issuer and ingress — proposed Ra authority, explicit node enrollment and phone/alternate-anchor proof; no production authority or ingress change approved | Proposed | 2026-10-05 |

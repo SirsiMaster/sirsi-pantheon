@@ -12,6 +12,7 @@ aliases to the requested value. This does not rewrite reservation history.
 
 Qualification requires exact-head independent review and CI, then coordinated
 canonical service/client release. Mixed server versions still permit shadow
-pools; source tests alone do not establish deployed repair. No change to115 or
-installation is authorized by this source packet. Native host alias binding is
-outside this compatibility rule and must not be bypassed.
+pools; source tests alone do not establish deployed repair. Preserve immutable
+tag115; the owner's standing repair direction covers a normally qualified
+successor service/client rollout, not rewriting historical artifacts. Native
+host alias binding is outside this comparison rule and must not be bypassed.
