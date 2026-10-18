@@ -891,6 +891,7 @@
     },
     "mercury": {
       "id": "mercury",
+      "attended": true,
       "type": "claude",
       "command": [
         "claude"

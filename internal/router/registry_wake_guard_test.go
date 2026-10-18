@@ -105,6 +105,12 @@ func TestRegistryConsumerCoverage(t *testing.T) {
 		if len(cfg.Command) == 0 {
 			continue
 		}
+		// A declared attended lane is served by its attended session (owner 2026-10-16: secondary consumers
+		// never override the attended lane; the wake loop holds dispatch for it), so it need not declare a
+		// spawn consumer. A consumer it does declare is still validated below.
+		if cfg.Attended && len(cfg.Consumer.Command) == 0 && cfg.Consumer.Mode == "" {
+			continue
+		}
 		switch cfg.Consumer.Mode {
 		case "", ConsumerModeCommand:
 			if len(cfg.Consumer.Command) == 0 {
