@@ -1,5 +1,28 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-18 — v0.24.114 release candidate
+
+- Release DMG/PKG build no longer dies when no private Apollo profile is supplied: macOS b
+
+## 2026-10-18 — v0.24.113 release candidate
+
+- Release workflow builds with the read-only private SDK credentials, like CI (#1109 wrapp
+
+## 2026-10-18 — v0.24.112 release candidate
+
+- Trusted Pantheon CI builds can read the two private Apollo SDK repositories using separa
+- Document two Linux-only static-analysis false positives at Darwin capability fallback br
+- `sirsi maat conflict-check` classifies a checker failure (e.g. the router store/ledger u
+- Apollo native packaging (rebased from #1106/#1108/#1109): package the direct Apollo nati
+- Preserve alias-owned task history in the fleet dashboard instead of silently dropping re
+- Normalize both public executable modes before application signing so a restrictive build
+- Use the measured Studio-to-M5 placement for the local fleet's31B Q8 profile.
+  Moving th
+- Apollo's installed native profile can admit one local whole-model rank through
+  the sam
+- Local profiles refuse coordinator, transport-edge, or raw-rank residue. The
+  native SDK
+
 ## 2026-10-16 — v0.24.111 release candidate
 
 - The spool relay keeps up to 8 forwards per lane in flight continuously: a request arrivi
