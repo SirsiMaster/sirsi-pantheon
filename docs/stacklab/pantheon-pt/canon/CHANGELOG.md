@@ -1,5 +1,9 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-18 — v0.24.113 release candidate
+
+- Release workflow builds with the read-only private SDK credentials, like CI (#1109 wrapp
+
 ## 2026-10-18 — v0.24.112 release candidate
 
 - Trusted Pantheon CI builds can read the two private Apollo SDK repositories using separa
