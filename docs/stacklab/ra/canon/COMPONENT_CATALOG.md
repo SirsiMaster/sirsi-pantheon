@@ -8,6 +8,7 @@
 | Service | `cmd/sirsi router serve`, `internal/routerstore/serve.go` | Cloud Run/Cloud SQL | deployed historically; fresh readback open |
 | Remote client | `internal/routerstore/remote.go` | session/nonce/runtime auth | contract tests |
 | Relay | `cmd/sirsi/routerrelaycmd.go` | host token holder; no DB copy | M1/M5 host receipt |
+| Scoped native transport | `scripts/maat/fabric-run.sh`, registry Codex consumer profiles | exact enrolled IP proxy, pinned SSH, no bearer export; both ends supervised | literal-argv/refusal fixtures; actual scoped SSA M1/Studio terminals2311a0d6/d3f5f7aa; per-lane adoption remains tracked |
 | Leases | `tasklease.go`, `items.go` | fenced claim/renew/close | adversarial tests |
 | Wake/informer substrate | `wake.go`, `wakeevents.go`, `horus` | bounded delivery, no blind spawn | shipped substrate; informer increment next |
 | A2A/MCP | `cmd/sirsi-router-mcp` | read/mutate façade over dispatch | package tests |

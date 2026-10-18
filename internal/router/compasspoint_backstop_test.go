@@ -41,8 +41,8 @@ func TestCompassPointBackstopsDeclareWorkingOwnQueueConsumers(t *testing.T) {
 						t.Fatal("literal shell escaping breaks TOML argv parsing")
 					}
 				}
-				if !strings.Contains(joined, "permissions.sirsi-router.network.enabled=false") {
-					t.Fatal("Codex backstop must remain no-network")
+				if !strings.Contains(joined, "permissions.sirsi-router.network.enabled=true") || !strings.Contains(joined, "features.network_proxy.enabled=true") || !strings.Contains(joined, "permissions.sirsi-router.network.allow_local_binding=false") {
+					t.Fatal("Codex backstop must use the closed enrolled-host proxy, never unrestricted networking")
 				}
 			} else if !strings.Contains(joined, "--max-budget-usd\n1") {
 				t.Fatal("Claude backstop must retain its bounded invocation budget")
