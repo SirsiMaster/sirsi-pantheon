@@ -316,3 +316,47 @@ above, with the reviewer's disposition.
    a source with NUL is otherwise refused with the cells listed.
 8. **Evidence-run knob.** `SIRSI_ROUTER_SERVE_TEST_DELAY` sleeps before every
    call on the service; off unless set, logged at startup when on.
+
+
+## Proposed amendment — atomic Ma’at reservation state (2026-10-18)
+
+Status: source candidate; independent review and deployed acceptance required.
+Incident: router item `20261018-135423-sirsi-software-admin-codex-pantheon-p1-actual-fresh-reservation-vanished-fix-canonical-scheduler`
+reports a granted fresh ticket missing before TTL. The source at
+`f272572fa112a49b15efd44ab141d2ed95322e22` permits lost updates because
+`maat:reservations` is read and replaced without a comparison, including by
+expiry reads. This establishes a source defect, not independent causation of
+that particular production loss.
+
+Decision: one canonical document and database remain authoritative. Add
+`CompareAndSwapState(key, expected, exists, value)` to the shared Store and
+signed RemoteStore contract. Existing values use conditional UPDATE; absent
+keys use INSERT ON CONFLICT DO NOTHING. The affected-row count is the atomic
+comparison result on SQLite and PostgreSQL. The full observed document and its
+presence are the comparison token; an intervening change rejects the stale
+mutation. Repeated equal-value writes have equal semantics (no revision or ABA
+identity claim). The scheduler rereads and rederives on an explicit comparison
+failure, bounded to 32 attempts; transport/database errors are never retried as
+conflicts. Read-only expiry projections never write. Every record and unknown
+field survives mutation. Terminal-history retention is separated from admission.
+
+Reject alternatives: a process mutex cannot serialize separate hosts; retrying
+SetState without CAS repeats the race; a longer TTL/grace hides the symptom;
+a second key or ledger silently forks authority. No schema migration, vendor,
+new credentials, IAM expansion or cost commitment is introduced.
+
+Compatibility: SetState refuses the reservation key at the canonical store.
+Deploy the fence to every serving instance before client admission resumes;
+drain existing admitted work and old server revisions. New clients fail closed
+on old servers; old clients fail closed on new servers. There is no safe
+mixed-server interval. Keep the fence on rollback. Existing authenticated
+service transport and resolver are retained; no direct database access by nodes.
+
+Verification required: deterministic stale grant/mutation interleavings,
+heartbeat versus release, fresh grants surviving all expiry read paths,
+concurrent lifecycle tests, one-winner CAS over independent connections,
+signed wire-method roundtrip and legacy-write rejection, unknown-outcome and
+bounded-conflict controls. SQLite source proof is separate from PostgreSQL CI
+and enrolled two-host acceptance. Publish exact client/server hashes, readbacks
+and terminal cleanup receipts before closing the operational parent. Human
+mirrors are stale/unpublished until the candidate is reviewed and released.

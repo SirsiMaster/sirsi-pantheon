@@ -14,7 +14,7 @@ a control.
 ## Design
 
 - **Cross-host by construction.** The ledger lives in the shared router store
-  (via `GetState`/`SetState`), so an M1 reservation is visible on the M5 and to
+  (via `GetState`/`CompareAndSwapState`), so an M1 reservation is visible on the M5 and to
   **any future Mac** — a new Mac participates by reserving its own
   machine-scoped resources, with no code change. Resources are free-form slugs
   (`m1`, `rail-a`, `ci-runners@m5`), never a hardcoded machine list.
@@ -54,10 +54,16 @@ runner calls `should-defer <machine>` before starting a job.
 
 ## Ceilings (deliberate)
 
-- **Grant is a read-modify-write** on one state key; two hosts reserving the
-  *same* resource within the few-ms RMW window could both win. The reservation
-  cadence is a handful per hour, so this is negligible; upgrade to a
-  compare-and-swap on the state key if throughput ever demands it.
+- Reservation mutations compare the complete observed state (including key
+  presence) with one atomic SQL statement. A CAS conflict rereads and rederives
+  the full grant/mutation, at most 32 attempts. Transport errors are returned
+  immediately because their commit outcome may be unknown.
+- Status, coverage, and holder reads project expiry without writing snapshots.
+  Mutations persist expiry under the same CAS. All historical records and
+  unknown JSON fields are retained; retention is not an admission side effect.
+- `SetState("maat:reservations", ...)` is refused at the canonical store so
+  old clients cannot erase fenced changes. See the server-first deployment
+  sequence in the user guide and ADR-062 amendment. No fallback ledger exists.
 - The default `ActivityProbe` is a process classifier. **Per-rail traffic
   counters** (attributing load to a specific cable) are a deeper detector that
   plugs into the same interface — framework built, rail detector is a follow-up.

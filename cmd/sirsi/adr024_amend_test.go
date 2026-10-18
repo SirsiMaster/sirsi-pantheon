@@ -8,6 +8,25 @@ package main
 
 import "testing"
 
+func TestADR024Amend_OnlyAgentPrintModeIsEphemeral(t *testing.T) {
+	for _, tc := range []struct {
+		command string
+		want    bool
+	}{
+		{"/usr/local/bin/claude --print hello", true},
+		{"claude -p hello", true},
+		{"claude --print=hello", true},
+		{"claude --resume session", false},
+		{"python3 sirsi-maat-run --work test -- sh -c go test -p 2", false},
+		{"/bin/zsh -c echo --print", false},
+		{"claude -- --print", false},
+	} {
+		if got := oneShotCommand(tc.command); got != tc.want {
+			t.Errorf("%q: %v want %v", tc.command, got, tc.want)
+		}
+	}
+}
+
 func TestADR024Amend_WorkerLifecycleGate_Selective(t *testing.T) {
 	old := oneShotProbe
 	defer func() { oneShotProbe = old }()

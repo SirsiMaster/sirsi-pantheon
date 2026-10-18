@@ -93,6 +93,9 @@ func (s *SQLiteStore) ListAgents() ([]Agent, error) {
 // SetState stores an arbitrary key/value pair, projecting the old state.json
 // scalar keys (last_*_read etc.) into the durable index.
 func (s *SQLiteStore) SetState(key, value string) error {
+	if key == maatReservationsKey {
+		return fmt.Errorf("Ma'at reservation writes require the atomic scheduler API; upgrade this client")
+	}
 	if strings.TrimSpace(key) == "" {
 		return fmt.Errorf("routerstore: SetState: key is required")
 	}
@@ -116,4 +119,24 @@ func (s *SQLiteStore) GetState(key string) (string, bool, error) {
 		return "", false, fmt.Errorf("routerstore: GetState %q: %w", key, err)
 	}
 	return value, true, nil
+}
+
+// CompareAndSwapState is the compatible exact-snapshot API. The scheduler's
+// native operation API additionally keeps large ledger bytes at the service.
+func (s *SQLiteStore) CompareAndSwapState(key, expected string, exists bool, value string) (bool, error) {
+	if strings.TrimSpace(key) == "" {
+		return false, fmt.Errorf("routerstore: CompareAndSwapState: key is required")
+	}
+	var result sql.Result
+	var err error
+	if exists {
+		result, err = s.exec(`UPDATE state SET value=? WHERE key=? AND value=?`, value, key, expected)
+	} else {
+		result, err = s.exec(`INSERT INTO state (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING`, key, value)
+	}
+	if err != nil {
+		return false, fmt.Errorf("routerstore: CompareAndSwapState: %w", err)
+	}
+	n, err := result.RowsAffected()
+	return n == 1, err
 }

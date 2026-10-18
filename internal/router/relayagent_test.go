@@ -19,6 +19,13 @@ func stubRelayLoad(t *testing.T) *[]string {
 	return &loaded
 }
 
+func TestRelayControlPlaneUsesStandardProcessPolicy(t *testing.T) {
+	p := RelayLaunchAgentPlist("/bin/sirsi", "/spool", "https://router.example.test", "test-token")
+	if !strings.Contains(p, "<key>ProcessType</key>\n  <string>Standard</string>") || strings.Contains(p, "<string>Background</string>") {
+		t.Fatal("network control-plane relay must not inherit background throughput throttling")
+	}
+}
+
 func TestInstallRelayLaunchAgentIsPrivateAndCarriesTheToken(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

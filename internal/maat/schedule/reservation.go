@@ -4,18 +4,15 @@
 // sharing the same Macs and Thunderbolt rails cannot contaminate each other's
 // measurement windows.
 //
-// The ledger is stored in the shared router store (via GetState/SetState), so a
+// The ledger is stored in the shared router store (via GetState/CompareAndSwapState), so a
 // reservation made on one Mac is visible to every other Mac — an M1 reservation
 // stops an M5 runner. Resources are FREE-FORM strings, never a hardcoded machine
 // list: any present-or-future Mac participates by reserving its own
 // machine-scoped resources with no code change (owner directive 2026-09-24).
 //
-// Design ceilings (deliberate, named):
-//   - Grant is a read-modify-write on one state key. Two hosts reserving the
-//     SAME resource within the few-millisecond RMW window could both win. The
-//     reservation cadence is a handful per hour across lanes, so the collision
-//     probability is negligible; upgrade to a compare-and-swap on the state key
-//     if throughput ever demands it. (maat: RMW grant, CAS if contended.)
+// Every ledger write compares the exact state snapshot at the canonical store.
+// Conflicts rederive admission and mutation from a fresh snapshot; reads project
+// expiry without writing. Old unfenced clients are refused by the new server.
 //
 // Ma'at never preempts and never locks a lane out (owner directive
 // 2026-09-26): every lane always gets at least its floor share; priority and
@@ -27,8 +24,12 @@
 package schedule
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -159,6 +160,16 @@ type StateStore interface {
 	SetState(key, value string) error
 }
 
+// AtomicScheduler executes complete operations at the canonical store. The
+// CAS policy below remains the single implementation, used by its transaction
+// adapter and compatible CAS-only clients; no large state snapshot crosses the
+// network on the native operation path.
+type AtomicScheduler interface {
+	MaatReserve(Reservation, bool) (ReserveResult, error)
+	MaatMutate(action, id, value string) (*Reservation, error)
+	MaatRead(kind, resource string) ([]Reservation, error)
+}
+
 // Ledger is the reservation scheduler over a StateStore.
 type Ledger struct {
 	store StateStore
@@ -173,22 +184,26 @@ func NewLedger(store StateStore) *Ledger {
 // WithClock overrides the clock (tests).
 func (l *Ledger) WithClock(now func() time.Time) *Ledger { l.now = now; return l }
 
-// load reads and expiry-sweeps the ledger. Expiry runs on every read so a
-// crashed holder's lease self-clears — no stale locks (a hard requirement).
-// Returns the live reservations and whether the sweep changed anything.
-func (l *Ledger) load() (reservations []Reservation, changed bool, err error) {
-	raw, ok, err := l.store.GetState(stateKey)
+// Reads project expiry without writes. Mutations persist that projection only
+// if the entire observed snapshot still matches at the store boundary.
+func (l *Ledger) load() ([]Reservation, bool, error) {
+	_, _, rows, changed, err := l.snapshot()
+	return rows, changed, err
+}
+
+func (l *Ledger) snapshot() (raw string, exists bool, rows []Reservation, changed bool, err error) {
+	raw, exists, err = l.store.GetState(stateKey)
 	if err != nil {
-		return nil, false, fmt.Errorf("maat: read ledger: %w", err)
+		return "", false, nil, false, fmt.Errorf("maat: read ledger: %w", err)
 	}
-	if !ok || strings.TrimSpace(raw) == "" {
-		return nil, false, nil
+	if !exists || strings.TrimSpace(raw) == "" {
+		return raw, exists, nil, false, nil
 	}
 	var doc struct {
 		Reservations []Reservation `json:"reservations"`
 	}
 	if err := json.Unmarshal([]byte(raw), &doc); err != nil {
-		return nil, false, fmt.Errorf("maat: parse ledger: %w", err)
+		return "", false, nil, false, fmt.Errorf("maat: parse ledger: %w", err)
 	}
 	now := l.now()
 	for i := range doc.Reservations {
@@ -197,31 +212,80 @@ func (l *Ledger) load() (reservations []Reservation, changed bool, err error) {
 			changed = true
 		}
 	}
-	return doc.Reservations, changed, nil
+	return raw, exists, doc.Reservations, changed, nil
 }
 
-// save persists the ledger, dropping terminal reservations older than 24h so it
-// stays bounded (recent history is kept for the dashboard/utilization view).
-func (l *Ledger) save(reservations []Reservation) error {
-	cutoff := l.now().Add(-24 * time.Hour)
-	kept := reservations[:0]
-	for _, r := range reservations {
-		if isTerminal(r.Status) {
-			if end, err := time.Parse(time.RFC3339, r.EstEnd); err == nil && end.Before(cutoff) {
-				continue // prune old terminal rows
+var errLedgerConflict = errors.New("maat: reservation ledger changed concurrently")
+
+const maxLedgerAttempts = 32
+
+type atomicStateStore interface {
+	CompareAndSwapState(key, expected string, exists bool, value string) (bool, error)
+}
+
+// save preserves every record. No terminal-history pruning occurs as a side
+// effect of admission. Unknown JSON fields survive mixed-version writers.
+func (l *Ledger) save(raw string, exists bool, reservations []Reservation) error {
+	store, ok := l.store.(atomicStateStore)
+	if !ok {
+		return fmt.Errorf("maat: store lacks atomic reservation writes; upgrade server/client")
+	}
+	doc := map[string]json.RawMessage{}
+	if strings.TrimSpace(raw) != "" {
+		if err := json.Unmarshal([]byte(raw), &doc); err != nil {
+			return fmt.Errorf("maat: parse snapshot: %w", err)
+		}
+	}
+	if doc == nil {
+		return fmt.Errorf("maat: null ledger document")
+	}
+	var previous []map[string]json.RawMessage
+	if data, ok := doc["reservations"]; ok {
+		if err := json.Unmarshal(data, &previous); err != nil {
+			return fmt.Errorf("maat: parse reservation fields: %w", err)
+		}
+	}
+	rows := make([]map[string]json.RawMessage, len(reservations))
+	for i, r := range reservations {
+		fields := map[string]json.RawMessage{}
+		if i < len(previous) {
+			if previous[i] != nil {
+				fields = previous[i]
 			}
 		}
-		kept = append(kept, r)
+		encoded, err := json.Marshal(r)
+		if err != nil {
+			return fmt.Errorf("maat: marshal reservation: %w", err)
+		}
+		var current map[string]json.RawMessage
+		if err := json.Unmarshal(encoded, &current); err != nil {
+			return err
+		}
+		// Remove all known fields (including omitted values), retaining future fields.
+		kind := reflect.TypeFor[Reservation]()
+		for field := 0; field < kind.NumField(); field++ {
+			delete(fields, strings.Split(kind.Field(field).Tag.Get("json"), ",")[0])
+		}
+		for k, v := range current {
+			fields[k] = v
+		}
+		rows[i] = fields
 	}
-	doc := struct {
-		Reservations []Reservation `json:"reservations"`
-	}{Reservations: kept}
-	b, err := json.Marshal(doc)
+	encoded, err := json.Marshal(rows)
+	if err != nil {
+		return fmt.Errorf("maat: marshal rows: %w", err)
+	}
+	doc["reservations"] = encoded
+	encoded, err = json.Marshal(doc)
 	if err != nil {
 		return fmt.Errorf("maat: marshal ledger: %w", err)
 	}
-	if err := l.store.SetState(stateKey, string(b)); err != nil {
+	swapped, err := store.CompareAndSwapState(stateKey, raw, exists, string(encoded))
+	if err != nil {
 		return fmt.Errorf("maat: write ledger: %w", err)
+	}
+	if !swapped {
+		return errLedgerConflict
 	}
 	return nil
 }
@@ -266,6 +330,29 @@ type ReserveResult struct {
 //     Release are unaffected: the holder's CURRENT run always finishes, and
 //     any response or a withdraw restores full grants on the next Reserve.
 func (l *Ledger) Reserve(req Reservation, queue bool) (ReserveResult, error) {
+	if atomic, ok := l.store.(AtomicScheduler); ok {
+		return atomic.MaatReserve(req, queue)
+	}
+	if err := validate(req); err != nil {
+		return ReserveResult{}, err
+	}
+	if req.ID == "" {
+		var nonce [16]byte
+		if _, err := rand.Read(nonce[:]); err != nil {
+			return ReserveResult{}, fmt.Errorf("maat: reservation identity: %w", err)
+		}
+		req.ID = newID(req.Resource, req.Holder, l.now()) + "-" + hex.EncodeToString(nonce[:])
+	}
+	for attempt := 0; attempt < maxLedgerAttempts; attempt++ {
+		result, err := l.reserveAttempt(req, queue)
+		if !errors.Is(err, errLedgerConflict) {
+			return result, err
+		}
+	}
+	return ReserveResult{}, fmt.Errorf("maat: reserve: contention limit: %w", errLedgerConflict)
+}
+
+func (l *Ledger) reserveAttempt(req Reservation, queue bool) (ReserveResult, error) {
 	if err := validate(req); err != nil {
 		return ReserveResult{}, err
 	}
@@ -277,9 +364,14 @@ func (l *Ledger) Reserve(req Reservation, queue bool) (ReserveResult, error) {
 	if err != nil {
 		return ReserveResult{}, err
 	}
-	reservations, _, err := l.load()
+	raw, exists, reservations, _, err := l.snapshot()
 	if err != nil {
 		return ReserveResult{}, err
+	}
+	for _, existing := range reservations {
+		if existing.ID == req.ID {
+			return ReserveResult{}, fmt.Errorf("maat: duplicate reservation id %s", req.ID)
+		}
 	}
 	now := l.now()
 	req.Created = now.Format(time.RFC3339)
@@ -298,7 +390,7 @@ func (l *Ledger) Reserve(req Reservation, queue bool) (ReserveResult, error) {
 		req.PendingCedes = pendingCedes
 		req.Status = StatusActive
 		reservations = append(reservations, req)
-		if err := l.save(reservations); err != nil {
+		if err := l.save(raw, exists, reservations); err != nil {
 			return ReserveResult{}, err
 		}
 		return ReserveResult{Granted: true, Reservation: &req, PendingCedes: pendingCedes}, nil
@@ -322,7 +414,7 @@ func (l *Ledger) Reserve(req Reservation, queue bool) (ReserveResult, error) {
 		if queue {
 			req.Status = StatusQueued
 			reservations = append(reservations, req)
-			if err := l.save(reservations); err != nil {
+			if err := l.save(raw, exists, reservations); err != nil {
 				return ReserveResult{}, err
 			}
 			conflict := r
@@ -333,7 +425,7 @@ func (l *Ledger) Reserve(req Reservation, queue bool) (ReserveResult, error) {
 		req.Reason = fmt.Sprintf("%s holds %s until %s — granted the floor share", r.Holder, req.Resource, orOpen(r.EstEnd))
 		req.Status = StatusActive
 		reservations = append(reservations, req)
-		if err := l.save(reservations); err != nil {
+		if err := l.save(raw, exists, reservations); err != nil {
 			return ReserveResult{}, err
 		}
 		conflict := r
@@ -343,7 +435,7 @@ func (l *Ledger) Reserve(req Reservation, queue bool) (ReserveResult, error) {
 	req.Share = ShareFull
 	req.Status = StatusActive
 	reservations = append(reservations, req)
-	if err := l.save(reservations); err != nil {
+	if err := l.save(raw, exists, reservations); err != nil {
 		return ReserveResult{}, err
 	}
 	return ReserveResult{Granted: true, Reservation: &req}, nil
@@ -360,6 +452,9 @@ func orOpen(estEnd string) string {
 // Heartbeat refreshes a reservation's lease so it does not expire. Returns the
 // updated reservation. A released/expired reservation cannot be revived.
 func (l *Ledger) Heartbeat(id string) (*Reservation, error) {
+	if atomic, ok := l.store.(AtomicScheduler); ok {
+		return atomic.MaatMutate("heartbeat", id, "")
+	}
 	return l.mutate(id, func(r *Reservation) error {
 		if r.Status != StatusActive {
 			return fmt.Errorf("maat: reservation %s is %s, not active", id, r.Status)
@@ -375,6 +470,9 @@ func (l *Ledger) Heartbeat(id string) (*Reservation, error) {
 // the floor share (PendingCedes recorded) instead of refusing the extend.
 // Heartbeat and Release are unaffected.
 func (l *Ledger) Extend(id, newEstEnd string) (*Reservation, error) {
+	if atomic, ok := l.store.(AtomicScheduler); ok {
+		return atomic.MaatMutate("extend", id, newEstEnd)
+	}
 	if _, err := time.Parse(time.RFC3339, newEstEnd); err != nil {
 		return nil, fmt.Errorf("maat: extend: est_end %q is not RFC3339", newEstEnd)
 	}
@@ -408,6 +506,9 @@ func (l *Ledger) Extend(id, newEstEnd string) (*Reservation, error) {
 
 // Release ends a reservation cleanly, freeing the resource immediately.
 func (l *Ledger) Release(id string) (*Reservation, error) {
+	if atomic, ok := l.store.(AtomicScheduler); ok {
+		return atomic.MaatMutate("release", id, "")
+	}
 	return l.mutate(id, func(r *Reservation) error {
 		if isTerminal(r.Status) {
 			return fmt.Errorf("maat: reservation %s already %s", id, r.Status)
@@ -421,6 +522,9 @@ func (l *Ledger) Release(id string) (*Reservation, error) {
 // (conflict detection, P2). The window is recorded INVALID so the measurement is
 // not trusted.
 func (l *Ledger) Invalidate(id, intruder string) (*Reservation, error) {
+	if atomic, ok := l.store.(AtomicScheduler); ok {
+		return atomic.MaatMutate("invalidate", id, intruder)
+	}
 	return l.mutate(id, func(r *Reservation) error {
 		r.Status = StatusInvalidated
 		r.InvalidatedBy = intruder
@@ -429,7 +533,17 @@ func (l *Ledger) Invalidate(id, intruder string) (*Reservation, error) {
 }
 
 func (l *Ledger) mutate(id string, fn func(*Reservation) error) (*Reservation, error) {
-	reservations, _, err := l.load()
+	for attempt := 0; attempt < maxLedgerAttempts; attempt++ {
+		result, err := l.mutateAttempt(id, fn)
+		if !errors.Is(err, errLedgerConflict) {
+			return result, err
+		}
+	}
+	return nil, fmt.Errorf("maat: mutate: contention limit: %w", errLedgerConflict)
+}
+
+func (l *Ledger) mutateAttempt(id string, fn func(*Reservation) error) (*Reservation, error) {
+	raw, exists, reservations, _, err := l.snapshot()
 	if err != nil {
 		return nil, err
 	}
@@ -438,7 +552,7 @@ func (l *Ledger) mutate(id string, fn func(*Reservation) error) (*Reservation, e
 			if err := fn(&reservations[i]); err != nil {
 				return nil, err
 			}
-			if err := l.save(reservations); err != nil {
+			if err := l.save(raw, exists, reservations); err != nil {
 				return nil, err
 			}
 			out := reservations[i]
@@ -451,12 +565,16 @@ func (l *Ledger) mutate(id string, fn func(*Reservation) error) (*Reservation, e
 // WhoIsOn returns the current live (active, non-expired) holder of a resource
 // whose window covers now, or nil if the resource is free.
 func (l *Ledger) WhoIsOn(resource string) (*Reservation, error) {
-	reservations, changed, err := l.load()
+	if atomic, ok := l.store.(AtomicScheduler); ok {
+		rows, err := atomic.MaatRead("who-is-on", resource)
+		if err != nil || len(rows) == 0 {
+			return nil, err
+		}
+		return &rows[0], nil
+	}
+	reservations, _, err := l.load()
 	if err != nil {
 		return nil, err
-	}
-	if changed {
-		_ = l.save(reservations)
 	}
 	now := l.now()
 	for _, r := range reservations {
@@ -478,12 +596,12 @@ func (l *Ledger) WhoIsOn(resource string) (*Reservation, error) {
 // lane out, so more than one holder can be live on the same resource at
 // once). Empty when the resource is free.
 func (l *Ledger) LiveHolders(resource string) ([]Reservation, error) {
-	reservations, changed, err := l.load()
+	if atomic, ok := l.store.(AtomicScheduler); ok {
+		return atomic.MaatRead("live-holders", resource)
+	}
+	reservations, _, err := l.load()
 	if err != nil {
 		return nil, err
-	}
-	if changed {
-		_ = l.save(reservations)
 	}
 	now := l.now()
 	var out []Reservation
@@ -503,12 +621,12 @@ func (l *Ledger) LiveHolders(resource string) ([]Reservation, error) {
 // first. Terminal rows within the retention window are included so a caller can
 // show recent history and per-day conflict counts.
 func (l *Ledger) Status(resource string) ([]Reservation, error) {
-	reservations, changed, err := l.load()
+	if atomic, ok := l.store.(AtomicScheduler); ok {
+		return atomic.MaatRead("status", resource)
+	}
+	reservations, _, err := l.load()
 	if err != nil {
 		return nil, err
-	}
-	if changed {
-		_ = l.save(reservations)
 	}
 	out := make([]Reservation, 0, len(reservations))
 	for _, r := range reservations {

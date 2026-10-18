@@ -444,3 +444,14 @@ func TestValidate_RejectsBadInput(t *testing.T) {
 		t.Fatal("bad start must be rejected")
 	}
 }
+
+func (f *fakeStore) CompareAndSwapState(key, expected string, exists bool, value string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	old, found := f.kv[key]
+	if old != expected || found != exists {
+		return false, nil
+	}
+	f.kv[key] = value
+	return true, nil
+}

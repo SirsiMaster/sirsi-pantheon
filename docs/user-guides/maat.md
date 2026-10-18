@@ -93,3 +93,35 @@ Ma'at scores projects on a 0-100 scale. A module scoring below 85 is considered 
 sirsi maat audit --json       # JSON audit report
 sirsi maat pulse --json       # JSON metrics snapshot
 ```
+
+
+## Reservation concurrency and upgrades
+
+Reservation changes use an atomic comparison at the shared router database.
+Concurrent changes are reread and rechecked before a grant is returned. Status
+and holder reads calculate expired leases without writing an old snapshot back.
+Recent and older records remain available; admission no longer prunes history.
+Generated reservation IDs include a random suffix, so simultaneous work by the
+same holder receives distinct tickets. Explicit duplicate IDs are rejected.
+
+A conflicting database snapshot may be retried up to 32 times. A transport
+failure is returned immediately: the write may already have committed. Inspect
+that ticket in the canonical ledger before retrying; never interpret an error
+or missing ticket as permission to launch work.
+
+The release must deploy the server first, then clients. All serving instances
+must run the CAS implementation and reject legacy writes to `maat:reservations`
+before upgraded clients resume admission. Route traffic fully to the new
+revision and drain old revisions; mixed server revisions do not provide the
+fence. Old clients receive an upgrade error for mutations. New clients pointed
+at an old server fail because the method is absent. Neither case falls back to
+unfenced writes or a second ledger. Old clients must be upgraded before normal
+admitted work resumes; existing work keeps its normal TTL and may lose its lease
+if its old heartbeat client cannot update it, so schedule a controlled window
+and drain active work before cutover. No grace period extends leases.
+
+Keep a canonical snapshot before cutover. Independently prove interleaved
+reserve, heartbeat, release and expiry reads from enrolled clients on two hosts,
+retaining exact server/client hashes and every reservation ID through cleanup.
+A source test pass alone does not establish deployed acceptance. Rollback must
+keep the server fence; restoring an unfenced server reintroduces lost updates.

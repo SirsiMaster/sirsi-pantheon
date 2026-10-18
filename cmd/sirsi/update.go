@@ -84,6 +84,15 @@ func runUpdate(_ *cobra.Command, _ []string) error {
 // drags it into Applications. Installing the notarized bundle (vs. an ad-hoc
 // rebuild) preserves the Developer-ID identity, so Full Disk Access survives.
 func installAppRelease(rel *updater.Release) error {
+	if rel == nil {
+		return fmt.Errorf("missing Pantheon release; installed product preserved")
+	}
+	// Check this final fetched record, not only the earlier availability read:
+	// the release list can change between requests. Both --app and --cli use
+	// this route, so neither can reopen a known-broken or older installer.
+	if err := updater.ValidateUpdateVersion(version, rel.TagName); err != nil {
+		return err
+	}
 	asset := updater.AppDMGAsset(rel)
 	if asset == nil {
 		return fmt.Errorf("release %s does not expose a complete arm64 Pantheon app payload", rel.TagName)

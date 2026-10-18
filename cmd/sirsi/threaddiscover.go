@@ -272,8 +272,30 @@ func isOneShotWorker(pid int) bool {
 	if err != nil {
 		return false
 	}
-	cmdline := string(out)
-	return strings.Contains(cmdline, "--print") || strings.Contains(cmdline, " -p ")
+	return oneShotCommand(string(out))
+}
+
+// Only the agent executable's print mode makes it a one-shot agent. A Python
+// supervisor carrying `go test -p 2` or a shell quoting `--print` in its job
+// argv is not itself a print-mode Claude process.
+func oneShotCommand(command string) bool {
+	fields := strings.Fields(command)
+	if len(fields) == 0 {
+		return false
+	}
+	name := filepath.Base(fields[0])
+	if name != "claude" {
+		return false
+	}
+	for _, arg := range fields[1:] {
+		if arg == "--" {
+			break
+		}
+		if arg == "--print" || arg == "-p" || strings.HasPrefix(arg, "--print=") {
+			return true
+		}
+	}
+	return false
 }
 
 // oneShotProbe is the injectable one-shot-worker predicate (Rule A16) so the

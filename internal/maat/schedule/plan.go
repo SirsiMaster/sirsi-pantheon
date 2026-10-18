@@ -60,12 +60,9 @@ func (l *Ledger) Coverage(resource string, horizonHours int) (Coverage, error) {
 	if horizonHours <= 0 {
 		horizonHours = 24
 	}
-	reservations, changed, err := l.load()
+	reservations, _, err := l.load()
 	if err != nil {
 		return Coverage{}, err
-	}
-	if changed {
-		_ = l.save(reservations)
 	}
 	now := l.now()
 	horizonEnd := now.Add(time.Duration(horizonHours) * time.Hour)

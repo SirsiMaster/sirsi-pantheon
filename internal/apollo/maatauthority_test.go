@@ -115,3 +115,12 @@ func TestMaatAuthorityRefusesAlteredFence(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func (s *memoryReservationStore) CompareAndSwapState(key, expected string, exists bool, value string) (bool, error) {
+	old, found := s.state[key]
+	if old != expected || found != exists {
+		return false, nil
+	}
+	s.state[key] = value
+	return true, nil
+}
