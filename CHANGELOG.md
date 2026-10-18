@@ -6,6 +6,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- Unified `update --app` / `--cli` refuses equal/older installers and the
+  known-incompatible pre-0.24.115 scheduler release line before download/open,
+  including a changed release list between availability and install reads.
+  Version0.24.115 is reserved for the paired repair, not claimed released here.
+
 - Ma'at's native supervisor reads Darwin parent/start identity directly from
   the kernel instead of spawning `/bin/ps`, which managed worker sandboxes
   deny. Missing, foreign, recycled and cyclic ancestry still refuse before

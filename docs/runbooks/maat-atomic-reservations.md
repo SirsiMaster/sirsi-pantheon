@@ -37,6 +37,16 @@ floor is not mistaken for the first foreign full holder on the machine.
 
 ## Rollout and rollback
 
+The first official repair release line is reserved as0.24.115. The shared
+`update --app`/`--cli` install route rejects candidates below that line and
+any non-newer/equal/malformed candidate before download or opening an installer.
+The final fetched release is rechecked, not merely an earlier availability flag.
+This fences known-broken114 and accidental downgrades; it does not cryptographically
+attest future artifacts or prevent a human explicitly installing an old package.
+The signed app/root CLI, PKG and canonical cask still need the paired release
+qualification. Do not publish115 without the atomic client, and do not call this
+source guard a completed signed artifact rollout.
+
 1. Qualify the exact source on SQLite and PostgreSQL; include concurrent grants,
    floor-share policy, heartbeat/release with expiry sweep, transaction rollback,
    remote roundtrip and scoped-token refusal, and registration negative controls.

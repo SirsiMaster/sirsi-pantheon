@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,16 @@ import (
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/updater"
 )
+
+func TestInstallAppReleaseRefusesBrokenVersionBeforeAssets(t *testing.T) {
+	// No assets: without the compatibility check this returns the distinct
+	// missing-payload error. No download or external open is possible. Do not
+	// mutate the process-wide version stamp just to test this entrypoint.
+	err := installAppRelease(&updater.Release{TagName: "v0.24.114"})
+	if !errors.Is(err, updater.ErrIncompatibleUpdate) {
+		t.Fatalf("expected early compatibility refusal, got %v", err)
+	}
+}
 
 func TestRunUpdate_NoCompleteCommercialReleaseIsRecoverableForInstallRequests(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
