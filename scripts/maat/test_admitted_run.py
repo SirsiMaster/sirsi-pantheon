@@ -1,5 +1,6 @@
 import datetime as dt
 import importlib.util
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -41,6 +42,39 @@ class Backend:
 
 
 class RegistryDeadlineTests(unittest.TestCase):
+    def test_executor_controls_cannot_publish_or_remove_parent_session_markers(self):
+        inherited = dict(CLAUDE_CODE_SESSION_ID='parent-claude',
+                         CODEX_SESSION_ID='parent-codex', CODEX_THREAD_ID='parent-codex',
+                         SIRSI_THREAD_ID='thr-parent', SIRSI_AGENT_ID='lane')
+        controls = []
+        def control(argv, **kwargs):
+            env = kwargs['env']
+            controls.append((argv, dict(env)))
+            if argv[1:3] == ['thread', 'register']:
+                identity = argv[argv.index('--thread')+1]
+                return mock.Mock(stdout=json.dumps(dict(agent_id='lane', pid=os.getpid(),
+                                 status='active', thread_id=identity)))
+            return mock.Mock(stdout='{}')
+        with mock.patch.dict(os.environ, inherited), \
+                mock.patch.object(runner.subprocess, 'run', side_effect=control):
+            native = runner.Native()
+            identity = native.register_executor('lane')
+            native.close_executor()
+            for key, value in inherited.items():
+                self.assertEqual(os.environ[key], value)
+        self.assertEqual(len(controls), 2)
+        for argv, env in controls:
+            for key in ('CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'CODEX_THREAD_ID'):
+                self.assertNotIn(key, env)
+            self.assertEqual(env['SIRSI_AGENT_ID'], 'lane')
+        self.assertNotIn('SIRSI_THREAD_ID', controls[0][1])
+        self.assertEqual(controls[1][1]['SIRSI_THREAD_ID'], identity)
+
+    def test_non_executor_control_keeps_original_session_resolution(self):
+        with mock.patch.object(runner.subprocess, 'run', return_value=mock.Mock(stdout='{}')) as run:
+            runner.Native().call('thread', 'heartbeat', '--thread', 'thr-parent')
+        self.assertIsNone(run.call_args.kwargs['env'])
+
     def test_executor_registration_is_bound_to_this_process_not_origin_pid(self):
         for agent in ['lane-from-m5', 'lane-from-m1', 'lane-from-studio']:
             native = runner.Native()

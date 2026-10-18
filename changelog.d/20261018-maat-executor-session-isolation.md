@@ -1,0 +1,2 @@
+### Fixed
+- Isolate native executor CLI control calls from inherited IDE provider-session identifiers, preventing job registration/close from overwriting or removing its parent's session markers. Explicit executor thread/agent binding remains intact; payload environment and desktop caller resolution are unchanged. This does not repair initial registration transport outages or migrate existing leases.
