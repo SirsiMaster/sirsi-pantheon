@@ -24,7 +24,9 @@ func TestSSAConsumerDeclaresCanonicalRelayPermissions(t *testing.T) {
 		`default_permissions="sirsi-router"`,
 		`permissions.sirsi-router.extends=":workspace"`,
 		`permissions.sirsi-router.filesystem={"/private/var/sirsipantheon/relay"="write"}`,
-		`permissions.sirsi-router.network.enabled=false`,
+		`permissions.sirsi-router.network.enabled=true`,
+		`features.network_proxy.enabled=true`,
+		`permissions.sirsi-router.network.allow_local_binding=false`,
 	} {
 		if !strings.Contains(joined, "-c\n"+required) {
 			t.Errorf("missing configuration %q", required)

@@ -2,6 +2,40 @@
 
 ## Safe native job and observer launchers
 
+### Scoped native worker transport
+
+Install `fabric-run.sh` as `~/.local/bin/sirsi-fabric-run` (0700). This is an
+operator shell helper using macOS OpenSSH/netcat, not a new model or router
+store. Newly started declared Codex consumers select the `sirsi-router` named
+profile: command networking is proxy-enforced and allows only the three
+enrolled Tailscale IPs and two existing pinned LAN paths. Broad private-network
+access, upstream proxy chaining and SOCKS UDP stay disabled. There is no public
+wildcard or direct fallback. Managed administrator restrictions still apply;
+this does not rewrite an already-running session's immutable instruction mask.
+
+For an existing runtime that supplies the scoped local SOCKS proxy, use:
+
+    ~/.local/bin/sirsi-fabric-run m1 --work my-own-work --cpu-cores 1 --timeout 90 -- /usr/bin/true
+
+The helper takes only the enrolled m1/m5/studio target names, uses existing
+strict host pins and public-key-only authentication, quotes every destination
+argv element as data, and retains the caller's own logical lane. Origin SSH is
+supervised as one CPU; the destination's actual local executor independently
+registers/admit/heartbeats/releases with the requested capacity. No credentials
+are copied into another runtime, and no arbitrary destination shell is exposed
+as a new authority. This is cooperative same-user execution attribution, not a
+new command-restricted SSH principal or protection against a malicious owner
+account. Missing pins, keys, helper, proxy or supported managed policy fail
+closed. Native destinations retain their own CLI/runtime/identity and the one
+canonical router; no router database is copied.
+
+`--plan` renders literal argv without launching anything; it is not execution
+evidence. Actual qualification requires each lane's destination terminal and
+cleanup readback. Do not count a configured/wakeable lane or source fixture as
+an actual three-host pass. Roll out by updating the canonical pinned registry
+and letting existing attended workers finish; never create a competing consumer
+or disable their managed mask merely to claim success.
+
 Classification: internal-tool. Users are Sirsi operators and registered execution lanes. The pain is orphan expensive work and repeated unsigned-observer prompts; the workflow is register → admit → supervise → prove cleanup. This reduces interruptions and operational support risk, not a separate priced product. SSA/Ma’at owns the launcher; Ra owns tool-hook integration; Claude Apollo M5 Rail approves Apollo enrollment and private telemetry. No credentials, permission-mode changes, global firewall changes, model downloads or benchmark claims are part of these tools.
 
 Install `admitted-run.py` as `~/.local/bin/sirsi-maat-run` (0700). A caller supplies its **own** registered `SIRSI_AGENT_ID` and `SIRSI_THREAD_ID`, not another lane’s IDs:

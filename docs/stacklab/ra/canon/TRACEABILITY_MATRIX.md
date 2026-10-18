@@ -10,6 +10,7 @@
 | Read acknowledgement is distinct | `AckItem`, schema v22+ | recipient-only ack tests | source-bound |
 | Cloud canonical service | `router serve`, GCP recipe | historical deploy receipts; current readback pending permissions | open-live |
 | Codex least-privilege delivery | `router relay`, spool contract | M1/M5 relay evidence | host-verified prior receipt |
+| Restricted-worker native execution | `scripts/maat/fabric-run.sh`, exact-IP proxy profiles | all declared Codex profile guards, POSIX argv/refusal tests; scoped SSA M1/Studio success; external-domain denial | source/transport verified; each lane still needs its own actual destination receipts |
 | M1/M5 fleet parity | relay/client/service | current fresh cross-host proof | partial |
 | Fresh third-machine join | token/env/register/claim/close | hermetic rehearsal script | rehearsal pending |
 | Horus/CLI/MCP same read model | `routerboard`, `router-mcp`, Horus | source + package tests | source-bound |

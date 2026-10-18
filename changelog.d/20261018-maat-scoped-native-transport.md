@@ -1,0 +1,2 @@
+### Fixed
+- Native Codex workers use a proxy-enforced exact enrolled-host allowlist instead of silently failing every remote execution. The narrow `sirsi-fabric-run` transport retains strict host pins/public-key-only authentication, POSIX argv quoting and independent origin/destination Ma'at supervision, with no direct-network fallback or credential export. Existing attended sessions are not silently restarted or reconfigured.
