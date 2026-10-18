@@ -518,6 +518,14 @@ func (rs *RemoteStore) ListSince(ctx context.Context, since string) ([]Item, err
 	return out, err
 }
 
+func (rs *RemoteStore) ListSinceHeaders(ctx context.Context, since string) ([]Item, error) {
+	ctx, cancel := context.WithTimeout(ctx, rs.perCall)
+	defer cancel()
+	var out []Item
+	err := rs.callCtx(ctx, "ListSinceHeaders", []any{since}, &out)
+	return out, err
+}
+
 func (rs *RemoteStore) ListPage(ctx context.Context, afterID string, limit int) ([]Item, error) {
 	ctx, cancel := context.WithTimeout(ctx, rs.perCall)
 	defer cancel()

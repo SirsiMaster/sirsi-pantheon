@@ -326,17 +326,32 @@ func (s *SQLiteStore) ListActive(ctx context.Context) ([]Item, error) {
 	return scanItems(rows)
 }
 
+// itemHeaderCols is itemCols with the two body columns blanked, same order, so
+// scanItems reads it unchanged. An 8-day ListSince carried ~19 MB of bodies per
+// call (2026-10-18: 5-25 s responses, clients timing out behind it as 502s).
+var itemHeaderCols = strings.Replace(itemCols, "instructions, result,", "'' AS instructions, '' AS result,", 1)
+
 // ListSince returns the active items (and their blocked_by targets) plus every item
-// closed at or after since (an RFC3339 timestamp). It is what pace and turnaround
-// surfaces need (closed in the last N days) without reading the whole history.
+// closed at or after since (an RFC3339 timestamp), with full bodies (history
+// readback needs them). Pace surfaces want ListSinceHeaders.
 func (s *SQLiteStore) ListSince(ctx context.Context, since string) ([]Item, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+itemCols+` FROM items
+	return s.listSince(ctx, "ListSince", itemCols, since)
+}
+
+// ListSinceHeaders is ListSince without instructions/result: the rows pace and
+// turnaround surfaces (the work board) read, at a fraction of the bytes.
+func (s *SQLiteStore) ListSinceHeaders(ctx context.Context, since string) ([]Item, error) {
+	return s.listSince(ctx, "ListSinceHeaders", itemHeaderCols, since)
+}
+
+func (s *SQLiteStore) listSince(ctx context.Context, op, cols, since string) ([]Item, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+cols+` FROM items
 		WHERE status NOT IN ('closed','completed','dead_letter')
 		   OR (closed<>'' AND closed >= ?)
 		   OR id IN (SELECT blocked_by FROM items WHERE blocked_by<>'' AND status NOT IN ('closed','completed','dead_letter'))
 		ORDER BY id ASC;`, since)
 	if err != nil {
-		return nil, fmt.Errorf("routerstore: ListSince: %w", err)
+		return nil, fmt.Errorf("routerstore: %s: %w", op, err)
 	}
 	defer rows.Close()
 	return scanItems(rows)
