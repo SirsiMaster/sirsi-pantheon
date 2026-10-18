@@ -1,0 +1,1 @@
+- The router service gzips responses for clients that ask (every Go client and relay does, transparently): the work board's 18.8 MB `ListSince` from older builds shrinks on the wire without a client upgrade.
