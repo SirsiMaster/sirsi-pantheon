@@ -42,9 +42,12 @@ floor is not mistaken for the first foreign full holder on the machine.
    each destination, including a heartbeat interval and release readback. Then
    observe the existing owner's generation actually adding data. Record failures
    and retained cleanup debt; do not close on a test-only pass.
-4. Roll back clients and cloud as a coordinated set to the recorded prior
-   identities if required. Do not restore an old ledger snapshot or delete newer
-   reservations. Source and signed artifacts are preserved for investigation.
+4. Keep the canonical write fence on rollback: never restore traffic to an old
+   unfenced writer. If new operations fail, retain the fenced revision and apply
+   a tested forward repair or a fence-preserving rollback build. Do not restore
+   an old ledger snapshot or delete newer reservations. Preserve prior source
+   and signed artifacts for investigation; their existence is not permission
+   to reintroduce unfenced writes.
 
 ## Evidence status
 
