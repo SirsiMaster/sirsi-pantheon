@@ -1,5 +1,13 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-18 — v0.24.115 release candidate
+
+- Canonical transactional reservation decisions, heartbeat/release and expiry.
+- Correct actual runtime classification and destination-local executor binding.
+- Preserve the owner's attended-only Mercury consumer policy.
+- Refuse known-incompatible and non-newer unified app/CLI update installers.
+- Read supervisor ancestry/start identity through Darwin kernel APIs, not ps.
+
 ## 2026-10-18 — v0.24.114 release candidate
 
 - Release DMG/PKG build no longer dies when no private Apollo profile is supplied: macOS b
