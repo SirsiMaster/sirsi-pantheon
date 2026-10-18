@@ -64,3 +64,13 @@ Counts are **Git status entries**, not requirements, bytes, or logically distinc
 Reports contain private local path metadata and must remain in the operator's private evidence home, not public issues. They never read source contents or credentials. Ignored caches are not source work; private non-project home untracked files are deliberately excluded. A missing registry, unreadable repository, changing HEAD, unfinished Git operation or missing linked worktree prevents a global clean claim. Cloud helpers and other hosts require separate receipts.
 
 Disposition order: observe → identify the real writer and ledger → checkpoint a coherent source unit → validate and scan → commit/publish through normal authority → repeat the census. Never manufacture a clean result by deleting work, hiding a stash, mixing unrelated changes, or closing the parent implementation request after a partial handoff.
+# CPU build floor and exact grant lookup (Oct18)
+
+`--cpu-cores N` explicitly declares a cooperative **CPU-only build** mask. It
+may consume an active `regime=build` floor only when the canonical granted core
+count is at least N. The child receives matching Go/OpenMP/BLAS thread limits.
+This is not an OS sandbox or GPU/model permission; model launches retain the
+default full-share requirement. Unknown, foreign, insufficient, stale, or
+revoked grants still refuse. Exact newly acquired grants are observed through
+their own heartbeat response, not the first holder on a shared machine.
+

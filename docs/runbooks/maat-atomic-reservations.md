@@ -23,6 +23,12 @@ admission before spawn and during execution. It must not substitute grace or a
 cached ticket for canonical state. Executor registration binds the actual job
 process on the destination machine, never an origin host's PID.
 
+CPU-only maintenance may explicitly declare `--cpu-cores N`, using the granted
+build floor if sufficient and setting cooperative runtime thread limits. This
+does not lift the default full-share model/GPU requirement or claim kernel CPU
+isolation. Exact owned grant lookup uses its own heartbeat response, so a valid
+floor is not mistaken for the first foreign full holder on the machine.
+
 ## Rollout and rollback
 
 1. Qualify the exact source on SQLite and PostgreSQL; include concurrent grants,

@@ -27,11 +27,15 @@ def local_resource():
     return names[name]
 
 
-def valid(row, resource, agent, work):
+def valid(row, resource, agent, work, cpu_cores=None):
     if not isinstance(row, dict):
         return False
-    if (row.get('status'), row.get('resource'), row.get('holder'), row.get('work'), row.get('share')) != ('active', resource, agent, work, 'full'):
+    if (row.get('status'), row.get('resource'), row.get('holder'), row.get('work')) != ('active', resource, agent, work):
         return False
+    if row.get('share') != 'full':
+        if (row.get('share') != 'floor' or type(cpu_cores) is not int or cpu_cores < 1 or
+                row.get('regime') != 'build' or type(row.get('cores')) is not int or row['cores'] < cpu_cores):
+            return False
     if not isinstance(row.get('id'), str) or not row['id'].strip():
         return False
     try:
@@ -48,6 +52,8 @@ class Native:
         self.cli = str(Path.home() / '.local/bin/sirsi')
         self.executor_thread = None
         self.executor_identity = None
+        self.cpu_cores = None
+        self.owned_admission = None
 
     def register_executor(self, agent):
         if not re.fullmatch(r'[A-Za-z0-9_.-]{1,128}', agent or ''):
@@ -117,11 +123,15 @@ class Native:
             raise Refused('Registered anchor is not this launcher ancestry or its start identity changed')
 
     def lookup(self, resource):
+        if self.owned_admission:
+            # Refresh/read the exact grant, not the first foreign holder on a
+            # shared machine. Heartbeat cannot revive an expired/released grant.
+            return self.call('maat', 'heartbeat', self.owned_admission, '--json')
         return self.call('maat', 'who-is-on', resource, '--json')
 
     def reserve(self, resource, agent, work):
         return self.call('maat', 'reserve', resource, '--holder', agent, '--work', work,
-                         '--regime', 'loaded', '--lease-ttl', '120', '--exempt-pid',
+                         '--regime', 'build' if self.cpu_cores else 'loaded', '--lease-ttl', '120', '--exempt-pid',
                          str(os.getpid()), '--repro', str(Path(__file__).resolve()), '--json')
 
     def heartbeat(self, identity):
@@ -157,10 +167,11 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
     child = None
     code = 78
     reservation_requested = reservation_replied = False
+    cpu_cores = getattr(backend, 'cpu_cores', None)
     try:
         backend.registered(agent, thread)
         row = backend.lookup(resource)
-        if row is None:
+        if row is None or (cpu_cores and not valid(row, resource, agent, work, cpu_cores)):
             reservation_requested = True
             reply = backend.reserve(resource, agent, work)
             reservation_replied = True
@@ -175,15 +186,25 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
             # Release only a newly acquired reservation explicitly bound to us.
             if isinstance(row, dict) and row.get('holder') == agent and row.get('resource') == resource and isinstance(row.get('id'), str) and row['id']:
                 owned = row['id']
-        if not valid(row, resource, agent, work):
+                if isinstance(backend, Native):
+                    backend.owned_admission = owned
+        if not valid(row, resource, agent, work, cpu_cores):
             raise Refused('Fresh exact host/holder/work full-share admission required; foreign/floor/expired/unknown admission refuses')
         identity = row['id']
         backend.registered(agent, thread)
         before = backend.lookup(resource)
-        if not valid(before, resource, agent, work) or before['id'] != identity:
+        if not valid(before, resource, agent, work, cpu_cores) or before['id'] != identity:
             raise Refused('Admission changed before spawn')
         record.update(admission=identity, borrowed=owned is None, status='admitted')
-        child = subprocess.Popen(command, start_new_session=True)
+        child_env = os.environ.copy()
+        if cpu_cores:
+            # Cooperative CPU build mask, not a kernel sandbox or GPU admission.
+            # Only an explicit caller opt-in can consume a bounded build floor.
+            for key in ('GOMAXPROCS','OMP_NUM_THREADS','OPENBLAS_NUM_THREADS',
+                        'VECLIB_MAXIMUM_THREADS','NUMEXPR_NUM_THREADS','BLIS_NUM_THREADS'):
+                child_env[key] = str(cpu_cores)
+            record.update(cpu_cores=cpu_cores, share=before['share'])
+        child = subprocess.Popen(command, start_new_session=True, env=child_env)
         record.update(pid=child.pid, status='running')
         deadline = time.monotonic() + timeout
         heartbeat_at = time.monotonic() + 30
@@ -191,7 +212,7 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
             if time.monotonic() >= deadline:
                 raise Refused('Execution deadline exceeded')
             row = backend.lookup(resource)
-            if not valid(row, resource, agent, work) or row['id'] != identity:
+            if not valid(row, resource, agent, work, cpu_cores) or row['id'] != identity:
                 raise Refused('Admission lost or replaced during execution')
             if time.monotonic() >= heartbeat_at:
                 if owned:
@@ -202,7 +223,7 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
             try:
                 code = child.wait(timeout=min(2, max(0.001, deadline - time.monotonic())))
                 after = backend.lookup(resource)
-                if not valid(after, resource, agent, work) or after['id'] != identity:
+                if not valid(after, resource, agent, work, cpu_cores) or after['id'] != identity:
                     code = 78
                     raise Refused('Admission changed before child completion readback')
                 record['status'] = 'success' if code == 0 else 'child_failed'
@@ -239,11 +260,15 @@ def main():
     parser.add_argument('--register-executor', action='store_true',
                         help='Bind this job process on its execution host; never reuse a foreign host PID')
     parser.add_argument('--timeout', type=int, default=300)
+    parser.add_argument('--cpu-cores', type=int,
+                        help='Explicit cooperative CPU-only build mask; may use a sufficient granted build floor, never GPU/model admission')
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     command = args.command[1:] if args.command[:1] == ['--'] else args.command
     if not command or not re.fullmatch(r'[A-Za-z0-9_.-]{1,128}', args.work) or not 1 <= args.timeout <= 7200:
         parser.error('Supply a bounded timeout, simple work identity and foreground command after --')
+    if args.cpu_cores is not None and not 1 <= args.cpu_cores <= 64:
+        parser.error('CPU build mask must be between 1 and 64')
     # No caller-set host or admission exemption; host is derived locally.
     resource = local_resource()
     folder = Path.home()/'.sirsi/evidence/maat-runs'/uuid.uuid4().hex
@@ -259,6 +284,7 @@ def main():
     with os.fdopen(fd, 'w') as output:
         json.dump(record, output); output.flush(); os.fsync(output.fileno())
     backend = Native()
+    backend.cpu_cores = args.cpu_cores
     code = 78
     try:
         if args.register_executor:

@@ -115,6 +115,29 @@ class RegistryDeadlineTests(unittest.TestCase):
 
 
 class SupervisorTests(unittest.TestCase):
+    def test_floor_requires_explicit_sufficient_cpu_build_mask(self):
+        row = admission(share='floor', cores=4, regime='build')
+        self.assertFalse(runner.valid(row,'m5','lane','work'))
+        self.assertTrue(runner.valid(row,'m5','lane','work',2))
+        self.assertFalse(runner.valid(row,'m5','lane','work',5))
+        self.assertFalse(runner.valid(admission(share='floor',cores=4,regime='loaded'),'m5','lane','work',2))
+        self.assertFalse(runner.valid(admission(share='floor',cores=True,regime='build'),'m5','lane','work',1))
+
+    def test_cpu_build_floor_applies_explicit_child_environment(self):
+        backend = Backend(admission(share='floor',cores=4,regime='build'))
+        backend.cpu_cores = 2
+        code, record = self.run_case(backend,command=[sys.executable,'-c',
+            'import os; assert os.environ["GOMAXPROCS"] == "2"; assert os.environ["OMP_NUM_THREADS"] == "2"'])
+        self.assertEqual(code,0)
+        self.assertEqual(record['share'],'floor')
+
+    def test_owned_lookup_reads_exact_grant_not_foreign_first_holder(self):
+        native=runner.Native()
+        native.owned_admission='own-grant'
+        native.call=mock.Mock(return_value=admission())
+        native.lookup('m5')
+        native.call.assert_called_once_with('maat','heartbeat','own-grant','--json')
+
     def run_case(self, backend, command=None, timeout=2, agent='lane', thread='thread'):
         record = {}
         code = runner.supervise(command or [sys.executable, '-c', 'pass'], 'm5', agent, thread,
