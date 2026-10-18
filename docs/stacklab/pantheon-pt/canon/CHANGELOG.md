@@ -1,5 +1,9 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-18 — v0.24.114 release candidate
+
+- Release DMG/PKG build no longer dies when no private Apollo profile is supplied: macOS b
+
 ## 2026-10-18 — v0.24.113 release candidate
 
 - Release workflow builds with the read-only private SDK credentials, like CI (#1109 wrapp
