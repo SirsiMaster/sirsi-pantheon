@@ -59,7 +59,7 @@ func (l *Ledger) Capacity(resource string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	return capacities[resource], nil
+	return poolCapacity(capacities, resource), nil
 }
 
 // SetCapacity records resource's core count, overriding the default.
@@ -75,6 +75,9 @@ func (l *Ledger) SetCapacity(resource string, cores int) error {
 		return err
 	}
 	capacities[resource] = cores
+	if resourcePool(resource) == "studio" {
+		capacities["studio"], capacities["m5-studio"] = cores, cores
+	}
 	b, err := json.Marshal(capacities)
 	if err != nil {
 		return fmt.Errorf("maat: marshal capacity: %w", err)
@@ -119,7 +122,7 @@ func (l *Ledger) capacityMemGB(resource string) (int, error) {
 		return 0, fmt.Errorf("maat: read mem capacity: %w", err)
 	}
 	if !ok || strings.TrimSpace(raw) == "" {
-		return capacities[resource], nil
+		return poolCapacity(capacities, resource), nil
 	}
 	var stored map[string]int
 	if err := json.Unmarshal([]byte(raw), &stored); err != nil {
@@ -128,7 +131,7 @@ func (l *Ledger) capacityMemGB(resource string) (int, error) {
 	for k, v := range stored {
 		capacities[k] = v
 	}
-	return capacities[resource], nil
+	return poolCapacity(capacities, resource), nil
 }
 
 // MemoryCapacityGB returns resource's explicitly configured RAM capacity in
@@ -164,6 +167,9 @@ func (l *Ledger) SetCapacityMemGB(resource string, gb int) error {
 		}
 	}
 	capacities[resource] = gb
+	if resourcePool(resource) == "studio" {
+		capacities["studio"], capacities["m5-studio"] = gb, gb
+	}
 	b, err := json.Marshal(capacities)
 	if err != nil {
 		return fmt.Errorf("maat: marshal mem capacity: %w", err)

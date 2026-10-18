@@ -180,3 +180,46 @@ func TestMaatAtomicRollbackAndLegacyFence(t *testing.T) {
 		t.Fatal("failed transaction modified ledger")
 	}
 }
+
+func TestMaatAtomicConcurrentStudioAliases(t *testing.T) {
+	s := newTestStore(t)
+	const n = 12
+	start := make(chan struct{})
+	errs := make(chan error, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			out, err := schedule.NewLedger(s).Reserve(maatRequest(s, fmt.Sprintf("r-%d", i), []string{"studio", "m5-studio"}[i%2], fmt.Sprintf("lane-%d", i)), false)
+			if err == nil && (!out.Granted || out.Reservation == nil) {
+				err = fmt.Errorf("reservation %d not granted", i)
+			}
+			errs <- err
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, err := schedule.NewLedger(s).Status("studio")
+	if err != nil || len(rows) != n {
+		t.Fatalf("lost reservation: rows=%d err=%v", len(rows), err)
+	}
+	full := 0
+	for _, row := range rows {
+		if row.Share == schedule.ShareFull {
+			full++
+		} else if row.Share != schedule.ShareFloor {
+			t.Fatalf("bad share: %+v", row)
+		}
+	}
+	if full != 1 {
+		t.Fatalf("want one full grant, got %d", full)
+	}
+}

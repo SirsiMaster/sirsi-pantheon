@@ -4774,3 +4774,10 @@ trust boundary.
 ---
 
 ### Unreleased — no title
+
+### Unreleased — Studio shared capacity pool
+
+- Treat bare studio and legacy m5-studio as one scheduler resource pool while
+  preserving history, returned identities and executor binding. Add capacity,
+  read/plan/cede and concurrent admission regression controls.
+- Refs: docs/ADR-118-STUDIO-RESOURCE-ALIAS.md, docs/runbooks/maat-studio-alias.md.

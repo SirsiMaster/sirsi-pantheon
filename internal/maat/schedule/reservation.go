@@ -397,7 +397,7 @@ func (l *Ledger) reserveAttempt(req Reservation, queue bool) (ReserveResult, err
 	}
 
 	for _, r := range reservations {
-		if r.Resource != req.Resource || r.Status != StatusActive {
+		if !sameResource(r.Resource, req.Resource) || r.Status != StatusActive {
 			continue
 		}
 		if r.leaseExpired(now) {
@@ -578,7 +578,7 @@ func (l *Ledger) WhoIsOn(resource string) (*Reservation, error) {
 	}
 	now := l.now()
 	for _, r := range reservations {
-		if r.Resource != resource || r.Status != StatusActive || r.leaseExpired(now) {
+		if !sameResource(r.Resource, resource) || r.Status != StatusActive || r.leaseExpired(now) {
 			continue
 		}
 		s, e := parseWindow(r)
@@ -606,7 +606,7 @@ func (l *Ledger) LiveHolders(resource string) ([]Reservation, error) {
 	now := l.now()
 	var out []Reservation
 	for _, r := range reservations {
-		if r.Resource != resource || r.Status != StatusActive || r.leaseExpired(now) {
+		if !sameResource(r.Resource, resource) || r.Status != StatusActive || r.leaseExpired(now) {
 			continue
 		}
 		s, e := parseWindow(r)
@@ -630,7 +630,7 @@ func (l *Ledger) Status(resource string) ([]Reservation, error) {
 	}
 	out := make([]Reservation, 0, len(reservations))
 	for _, r := range reservations {
-		if resource == "" || r.Resource == resource {
+		if resource == "" || sameResource(r.Resource, resource) {
 			out = append(out, r)
 		}
 	}

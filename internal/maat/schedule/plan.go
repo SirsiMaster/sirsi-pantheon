@@ -70,7 +70,7 @@ func (l *Ledger) Coverage(resource string, horizonHours int) (Coverage, error) {
 
 	var reservedIntervals [][2]time.Time
 	for _, r := range reservations {
-		if r.Resource != resource {
+		if !sameResource(r.Resource, resource) {
 			continue
 		}
 		if r.Status == StatusInvalidated {

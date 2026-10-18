@@ -265,7 +265,7 @@ func (l *Ledger) ListCedes(filter CedeFilter) ([]Cede, error) {
 	}
 	out := make([]Cede, 0, len(cedes))
 	for _, c := range cedes {
-		if filter.Resource != "" && c.Resource != filter.Resource {
+		if filter.Resource != "" && !sameResource(c.Resource, filter.Resource) {
 			continue
 		}
 		if filter.Holder != "" && c.Holder != filter.Holder {
