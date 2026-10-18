@@ -94,11 +94,17 @@ class Native:
         self.cpu_cores = None
         self.owned_admission = None
         self.deadline = None
+        self.executor_controls = False
 
     def register_executor(self, agent):
         if not re.fullmatch(r'[A-Za-z0-9_.-]{1,128}', agent or ''):
             raise Refused('A concrete fabric agent is required')
         identity = 'thr-'+uuid.uuid4().hex
+        # A job is not its launching IDE conversation. CLI register/close
+        # publish/remove provider-session markers, so inherited provider IDs
+        # must never reach these control subprocesses. Keep the payload's
+        # environment intact; isolate only this executor's control calls.
+        self.executor_controls = True
         row = self.call('thread', 'register', '--agent', agent, '--surface', 'worker', '--thread', identity,
                         '--anchor-pid', str(os.getpid()), '--repo', os.getcwd(),
                         '--json', timeout=30)
@@ -120,9 +126,17 @@ class Native:
             timeout = min(timeout, self.deadline - time.monotonic())
             if timeout <= 0:
                 raise Refused('Proven admission deadline exceeded')
+        control_env = None
+        if self.executor_controls:
+            control_env = os.environ.copy()
+            for key in ('CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'CODEX_THREAD_ID'):
+                control_env.pop(key, None)
+            control_env.pop('SIRSI_THREAD_ID', None)
+            if self.executor_thread:
+                control_env['SIRSI_THREAD_ID'] = self.executor_thread
         try:
             response = subprocess.run([self.cli, *args], check=True, capture_output=True,
-                                      text=True, timeout=timeout)
+                                      text=True, timeout=timeout, env=control_env)
         except subprocess.TimeoutExpired as error:
             if args[:2] in (('maat', 'heartbeat'), ('maat', 'status'), ('thread', 'heartbeat')):
                 raise TransientTransport('Control transport timed out') from error
