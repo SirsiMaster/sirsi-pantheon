@@ -1,0 +1,1 @@
+- `sirsi maat conflict-check` classifies a checker failure (e.g. the router store/ledger unreachable) as its own `unverified` decision-log determination, distinct from `clean`/`conflict` — a checker that couldn't run is not evidence of foreign load (A35: scope the check to its claim).

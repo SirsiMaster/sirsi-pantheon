@@ -85,13 +85,15 @@ var (
 	// inbox-consumer capability (guarded in RunE — see the resident check there).
 	threadRegConsumerCapable bool
 
-	threadHbID      string
-	threadHbStatus  string
-	threadHbItem    string
-	threadHbError   string
-	threadCloseID   string
-	threadListAll   bool
-	threadListStale time.Duration
+	threadHbID             string
+	threadHbStatus         string
+	threadHbItem           string
+	threadHbError          string
+	threadCloseID          string
+	threadListAll          bool
+	threadListStale        time.Duration
+	threadListAgentFilter  string
+	threadListThreadFilter string
 )
 
 var threadCmd = &cobra.Command{
@@ -927,8 +929,21 @@ var threadListCmd = &cobra.Command{
 			return fmt.Errorf("no idea-router found: %w", err)
 		}
 		routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
-		// Sweep dead/defunct-PID threads to `reaped` before reading (OS truth).
-		reapedNow, reapErr := reapDeadPIDThreads(routerRoot)
+		// Bounded exact-thread observation (2026-10-18, Ma'at registration-timeout
+		// review): an admission check that already re-verifies PID ancestry/start
+		// time itself doesn't need the OS-truth reap sweep below — that sweep scans
+		// every active thread's process table entry and its cost grows with the
+		// registry, which is what turned a single-record lookup into an occasional
+		// multi-second call on a loaded host. Skip it only when both --agent and
+		// --thread pin the request to one record; the default (unfiltered) list
+		// keeps reaping, so registry-police/CTR behavior is unchanged.
+		targeted := threadListAgentFilter != "" && threadListThreadFilter != ""
+		var reapedNow []router.ReapedThread
+		var reapErr error
+		if !targeted {
+			// Sweep dead/defunct-PID threads to `reaped` before reading (OS truth).
+			reapedNow, reapErr = reapDeadPIDThreads(routerRoot)
+		}
 		reg, err := router.LoadThreadRegistry(routerRoot)
 		if err != nil {
 			return err
@@ -947,6 +962,12 @@ var threadListCmd = &cobra.Command{
 		var rows []row
 		for _, t := range reg.SortedThreads() {
 			if t.Status.IsTerminal() && !threadListAll {
+				continue
+			}
+			if threadListAgentFilter != "" && t.AgentID != threadListAgentFilter {
+				continue
+			}
+			if threadListThreadFilter != "" && t.ThreadID != threadListThreadFilter {
 				continue
 			}
 			// Loop-evidence-aware (A28): a thread with a live watcher loop is NOT
@@ -1049,6 +1070,8 @@ func init() {
 
 	threadListCmd.Flags().BoolVar(&threadListAll, "all", false, "Include closed threads")
 	threadListCmd.Flags().DurationVar(&threadListStale, "stale-after", router.DefaultThreadStaleAfter, "Stale threshold")
+	threadListCmd.Flags().StringVar(&threadListAgentFilter, "agent", "", "Filter to one agent ID")
+	threadListCmd.Flags().StringVar(&threadListThreadFilter, "thread", "", "Filter to one thread ID (with --agent, skips the OS-truth reap sweep for a bounded single-record lookup)")
 
 	threadWatchRouterCmd.Flags().StringVar(&watchThreadID, "thread", "", "Thread ID")
 	threadWatchRouterCmd.Flags().StringVar(&watchAgentID, "agent", "", "Agent ID")

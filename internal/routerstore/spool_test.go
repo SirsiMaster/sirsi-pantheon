@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -1052,7 +1053,9 @@ func TestSpoolRelayLaterArrivalsDoNotWaitForASlowForward(t *testing.T) {
 		}
 		_, _ = w.Write([]byte(`{"result":[]}`))
 	}))
-	t.Cleanup(func() { close(release); svc.Close() })
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(release) }) }
+	t.Cleanup(func() { unblock(); svc.Close() })
 	rl := &Relay{Spool: spool, Base: svc.URL, Token: "t", Log: slog.New(slog.NewTextHandler(&strings.Builder{}, nil)), Client: svc.Client(), now: time.Now}
 	req := filepath.Join(spool, "lane-host", "req")
 	if err := os.MkdirAll(req, 0o700); err != nil {
@@ -1075,11 +1078,22 @@ func TestSpoolRelayLaterArrivalsDoNotWaitForASlowForward(t *testing.T) {
 	for {
 		res, _ := filepath.Glob(filepath.Join(spool, "lane-host", "res", "2-*.json"))
 		if len(res) == 4 {
-			return
+			break
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("%d/4 later requests answered while one slow forward was in flight: the lane waits for its batch", len(res))
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+	// Let the slow forward finish and publish BEFORE TempDir cleanup, or its late write races the removal
+	// ("unlinkat …/res: directory not empty", seen on a loaded CI runner 2026-10-18).
+	unblock()
+	for end := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		if _, err := os.Stat(filepath.Join(spool, "lane-host", "res", "1-0-slow.json")); err == nil {
+			return
+		}
+		if time.Now().After(end) {
+			t.Fatal("the released slow forward never published its response")
+		}
 	}
 }

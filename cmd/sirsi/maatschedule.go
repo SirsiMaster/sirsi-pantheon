@@ -36,7 +36,10 @@ func recordDecision(kind, requester, resource, assessed, affected, determination
 	_ = decision.Append("", decision.New(kind, requester, resource, assessed, affected, determination, why, evidence))
 }
 
-func maatLedger() (*schedule.Ledger, error) {
+// maatLedger is a var (not a plain func) so tests can inject a Ledger backed
+// by a StateStore that fails deterministically, same pattern as
+// newMaatDecisionJournal below.
+var maatLedger = func() (*schedule.Ledger, error) {
 	st, err := routerstore.Resolve()
 	if err != nil {
 		return nil, fmt.Errorf("resolve router store: %w", err)
@@ -421,7 +424,14 @@ var maatConflictCheckCmd = &cobra.Command{
 		}
 		rep, err := l.CheckConflicts(args[0], machine)
 		if err != nil {
-			return err
+			// A checker failure (e.g. the ledger/router store was unreachable) is
+			// not evidence of foreign load — it is the absence of evidence either
+			// way. Record it under its own "unverified" determination, distinct
+			// from "clean"/"conflict", so a caller reading the decision log (or
+			// this error text) never mistakes "the check couldn't run" for "the
+			// check found foreign load."
+			recordDecision("conflict-check", "", args[0], fmt.Sprintf("live activity on %s", machine), "", "unverified", err.Error(), "")
+			return fmt.Errorf("conflict-check unverified — checker unavailable, not evidence of foreign load: %w", err)
 		}
 		if !rep.Clean && rep.Reservation != "" {
 			if _, err := l.Invalidate(rep.Reservation, rep.Summary); err != nil {
