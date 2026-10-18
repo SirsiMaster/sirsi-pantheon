@@ -101,6 +101,12 @@ mkdir -p "$PAYLOAD_APP_DIR"
 # scans below are the fail-closed proof that no transport metadata entered the
 # installer payload.
 COPYFILE_DISABLE=1 /usr/bin/ditto "$APP_PATH" "$PAYLOAD_APP_DIR/Pantheon.app"
+# Update the pre-existing system dispatcher with the SAME signed CLI as the
+# app. Package assembly never creates a service or activates/restarts it.
+SYSTEM_CLI_DIR="$PAYLOAD_ROOT/usr/local/libexec/sirsi-pantheon"
+mkdir -p "$SYSTEM_CLI_DIR"
+/bin/cp -p "$APP_PATH/Contents/MacOS/sirsi" "$SYSTEM_CLI_DIR/sirsi"
+/usr/bin/cmp -s "$APP_PATH/Contents/MacOS/sirsi" "$SYSTEM_CLI_DIR/sirsi" || { echo "ERROR: system and app CLI payload bytes differ" >&2; exit 1; }
 if /usr/bin/find "$PAYLOAD_ROOT" -type f -name '._*' -print -quit | /usr/bin/grep -q .; then
     echo "ERROR: refusing PKG payload containing AppleDouble metadata." >&2
     exit 1
@@ -128,6 +134,7 @@ COPYFILE_DISABLE=1 /usr/bin/pkgbuild "${PKGBUILD_ARGS[@]}"
 # survived the package boundary.
 EXPANDED_ROOT="$PAYLOAD_ROOT/expanded-payload"
 /usr/sbin/pkgutil --expand-full "$PKG_PATH" "$EXPANDED_ROOT"
+/usr/bin/cmp -s "$EXPANDED_ROOT/Payload/Applications/Pantheon.app/Contents/MacOS/sirsi" "$EXPANDED_ROOT/Payload/usr/local/libexec/sirsi-pantheon/sirsi" || { echo "ERROR: expanded installer system and app CLI bytes differ" >&2; exit 1; }
 if /usr/bin/find "$EXPANDED_ROOT" -type f -name '._*' -print -quit | /usr/bin/grep -q .; then
     echo "ERROR: refusing PKG with AppleDouble files in its expanded payload." >&2
     exit 1
@@ -140,6 +147,10 @@ fi
 # verifier is invoked from the source-built CLI, never from the candidate
 # payload, and opens the expanded app descriptor-relatively without executing
 # an entry inside it.
+APOLLO_PROFILE_ARGS=()
+if [[ -n "${PANTHEON_APOLLO_PROFILE:-}" ]]; then
+    APOLLO_PROFILE_ARGS=(--apollo-profile "$PANTHEON_APOLLO_PROFILE")
+fi
 "${PROJECT_ROOT}/bin/sirsi" package-inventory \
     --app "$EXPANDED_ROOT/Payload/Applications/Pantheon.app" \
     --version "$VERSION" \
@@ -148,7 +159,7 @@ fi
     --pkg-info "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/PkgInfo" \
     --launch-agent "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" \
     --brand-logo "${PROJECT_ROOT}/docs/assets/sirsi-logo-white.png" \
-    --require-code-signature
+    --require-code-signature "${APOLLO_PROFILE_ARGS[@]}"
 
 # pkgutil intentionally exits nonzero for an unsigned package. That is useful
 # local-development evidence. In commercial release mode signature,

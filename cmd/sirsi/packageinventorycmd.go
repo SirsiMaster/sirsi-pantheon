@@ -16,6 +16,7 @@ var (
 	packageInventoryPkgInfo              string
 	packageInventoryLaunchAgent          string
 	packageInventoryBrandLogo            string
+	packageInventoryApolloProfile        string
 	packageInventoryRequireCodeSignature bool
 )
 
@@ -32,6 +33,7 @@ var packageInventoryCmd = &cobra.Command{
 			PkgInfo:              packageInventoryPkgInfo,
 			LaunchAgent:          packageInventoryLaunchAgent,
 			BrandLogo:            packageInventoryBrandLogo,
+			ApolloProfile:        packageInventoryApolloProfile,
 			RequireCodeSignature: packageInventoryRequireCodeSignature,
 		})
 		if err != nil {
@@ -55,6 +57,7 @@ func init() {
 	packageInventoryCmd.Flags().StringVar(&packageInventoryPkgInfo, "pkg-info", "", "canonical PkgInfo path")
 	packageInventoryCmd.Flags().StringVar(&packageInventoryLaunchAgent, "launch-agent", "", "canonical LaunchAgent path")
 	packageInventoryCmd.Flags().StringVar(&packageInventoryBrandLogo, "brand-logo", "", "canonical Sirsi application-mark PNG path")
+	packageInventoryCmd.Flags().StringVar(&packageInventoryApolloProfile, "apollo-profile", "", "exact optional installed Apollo profile input")
 	packageInventoryCmd.Flags().BoolVar(&packageInventoryRequireCodeSignature, "require-code-signature", false, "require the _CodeSignature payload")
 	rootCmd.AddCommand(packageInventoryCmd)
 }

@@ -1,5 +1,9 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-16 — v0.24.111 release candidate
+
+- The spool relay keeps up to 8 forwards per lane in flight continuously: a request arrivi
+
 ## 2026-10-16 — v0.24.110 release candidate
 
 - The spool relay forwards up to 8 requests at once within one lane instead of strictly on
@@ -20,6 +24,11 @@
 - Declared attended lanes (owner 2026-10-16: secondary consumers never override the attend
 - Lane state reports a declared attended lane's `attended` hold ahead of transient measure
 - Repair the two CompassPoint attended-only lane declarations with guarded own-queue consu
+## 2026-10-15 — v0.24.105 release candidate
+
+- Preserve alias-owned task history and complete CLI/web fleet totals. Keep
+  equal task IDs under different original owners distinct. Normalize public
+  executable permissions before signing, independently of the builder umask.
 
 ## 2026-10-15 — v0.24.104 release candidate
 

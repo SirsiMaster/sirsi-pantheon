@@ -309,7 +309,7 @@ func (c *CoreMLClassifier) Classify(filePath string) (*Classification, error) {
 		return c.fallback.Classify(filePath)
 	}
 
-	label, confidence, err := coremlPredict(c.modelPath, filePath)
+	label, confidence, err := coremlPredict(c.modelPath, filePath) //nolint:staticcheck // SA4023: Linux/no-CGO stub always errors; the Darwin implementation can succeed.
 	if err != nil {
 		return c.fallback.Classify(filePath)
 	}

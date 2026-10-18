@@ -41,6 +41,6 @@ func TestLaunchctlPrintShapeCanary(t *testing.T) {
 	}
 	// The serve contract itself: a loaded engine must still yield a model dir.
 	if _, ok := sneModelDir(args); !ok {
-		t.Errorf("real argv %v no longer matches the `serve <modelDir>` contract — either launchd output or the engine's invocation changed", args)
+		t.Errorf("real argv %v does not identify a legacy serve model or native Apollo checkpoint", args)
 	}
 }
