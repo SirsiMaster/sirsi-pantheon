@@ -5,6 +5,8 @@ package routerstore
 import (
 	"context"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 )
 
 // Store is the router ledger contract every consumer programs against.
@@ -12,6 +14,9 @@ import (
 // backend and an HTTP client behind the same interface. No production code
 // may depend on the concrete type.
 type Store interface {
+	MaatReserve(req schedule.Reservation, queue bool) (schedule.ReserveResult, error)
+	MaatMutate(action, id, value string) (*schedule.Reservation, error)
+	MaatRead(kind, resource string) ([]schedule.Reservation, error)
 	AckItem(id string) error
 	AckWakeEvent(eventID, token, ackRef string) error
 	AddRequirement(title, source, sourceRef, owner string) (Requirement, error)

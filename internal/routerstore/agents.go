@@ -93,6 +93,9 @@ func (s *SQLiteStore) ListAgents() ([]Agent, error) {
 // SetState stores an arbitrary key/value pair, projecting the old state.json
 // scalar keys (last_*_read etc.) into the durable index.
 func (s *SQLiteStore) SetState(key, value string) error {
+	if key == maatReservationsKey {
+		return fmt.Errorf("Ma'at reservation writes require the atomic scheduler API; upgrade this client")
+	}
 	if strings.TrimSpace(key) == "" {
 		return fmt.Errorf("routerstore: SetState: key is required")
 	}

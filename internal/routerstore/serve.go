@@ -103,6 +103,7 @@ const ruleOfRaDefaultStale = 10 * time.Minute
 // registration: bootstrap (minting, registering, heartbeating), read-only
 // views, waiting/notification, and the owner surface.
 var ruleOfRaExempt = map[string]bool{
+	"MaatRead": true,
 	"MintSession": true, "MintSessionForThread": true, "ThreadBinding": true,
 	"UpsertThreads": true, "UpsertThreadCAS": true, "ResumeThreadCAS": true, "DeleteThreadCAS": true, "ImportThreadsIfEmpty": true,
 	"Heartbeat": true, "RegisterAgent": true, "ListThreads": true, "AdoptTokenMachineID": true,

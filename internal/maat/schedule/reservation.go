@@ -4,18 +4,16 @@
 // sharing the same Macs and Thunderbolt rails cannot contaminate each other's
 // measurement windows.
 //
-// The ledger is stored in the shared router store (via GetState/SetState), so a
+// The ledger is stored in the shared router store, so a
 // reservation made on one Mac is visible to every other Mac — an M1 reservation
 // stops an M5 runner. Resources are FREE-FORM strings, never a hardcoded machine
 // list: any present-or-future Mac participates by reserving its own
 // machine-scoped resources with no code change (owner directive 2026-09-24).
 //
-// Design ceilings (deliberate, named):
-//   - Grant is a read-modify-write on one state key. Two hosts reserving the
-//     SAME resource within the few-millisecond RMW window could both win. The
-//     reservation cadence is a handful per hour across lanes, so the collision
-//     probability is negligible; upgrade to a compare-and-swap on the state key
-//     if throughput ever demands it. (maat: RMW grant, CAS if contended.)
+// Production stores implement AtomicScheduler: each complete read/modify/write
+// executes at the canonical service inside one locked database transaction.
+// StateStore alone is the transaction-local adapter and isolated test seam,
+// never a sequence of independent production GetState/SetState RPCs.
 //
 // Ma'at never preempts and never locks a lane out (owner directive
 // 2026-09-26): every lane always gets at least its floor share; priority and
@@ -159,6 +157,15 @@ type StateStore interface {
 	SetState(key, value string) error
 }
 
+// AtomicScheduler keeps reservation decisions and expiry sweeps at the store
+// boundary. A transaction-local StateStore deliberately does not implement it,
+// so the existing policy executes once inside the transaction without recursion.
+type AtomicScheduler interface {
+	MaatReserve(Reservation, bool) (ReserveResult, error)
+	MaatMutate(action, id, value string) (*Reservation, error)
+	MaatRead(kind, resource string) ([]Reservation, error)
+}
+
 // Ledger is the reservation scheduler over a StateStore.
 type Ledger struct {
 	store StateStore
@@ -266,6 +273,9 @@ type ReserveResult struct {
 //     Release are unaffected: the holder's CURRENT run always finishes, and
 //     any response or a withdraw restores full grants on the next Reserve.
 func (l *Ledger) Reserve(req Reservation, queue bool) (ReserveResult, error) {
+	if atomic, ok := l.store.(AtomicScheduler); ok {
+		return atomic.MaatReserve(req, queue)
+	}
 	if err := validate(req); err != nil {
 		return ReserveResult{}, err
 	}
@@ -360,6 +370,9 @@ func orOpen(estEnd string) string {
 // Heartbeat refreshes a reservation's lease so it does not expire. Returns the
 // updated reservation. A released/expired reservation cannot be revived.
 func (l *Ledger) Heartbeat(id string) (*Reservation, error) {
+	if atomic, ok := l.store.(AtomicScheduler); ok {
+		return atomic.MaatMutate("heartbeat", id, "")
+	}
 	return l.mutate(id, func(r *Reservation) error {
 		if r.Status != StatusActive {
 			return fmt.Errorf("maat: reservation %s is %s, not active", id, r.Status)
@@ -375,6 +388,9 @@ func (l *Ledger) Heartbeat(id string) (*Reservation, error) {
 // the floor share (PendingCedes recorded) instead of refusing the extend.
 // Heartbeat and Release are unaffected.
 func (l *Ledger) Extend(id, newEstEnd string) (*Reservation, error) {
+	if atomic, ok := l.store.(AtomicScheduler); ok {
+		return atomic.MaatMutate("extend", id, newEstEnd)
+	}
 	if _, err := time.Parse(time.RFC3339, newEstEnd); err != nil {
 		return nil, fmt.Errorf("maat: extend: est_end %q is not RFC3339", newEstEnd)
 	}
@@ -408,6 +424,9 @@ func (l *Ledger) Extend(id, newEstEnd string) (*Reservation, error) {
 
 // Release ends a reservation cleanly, freeing the resource immediately.
 func (l *Ledger) Release(id string) (*Reservation, error) {
+	if atomic, ok := l.store.(AtomicScheduler); ok {
+		return atomic.MaatMutate("release", id, "")
+	}
 	return l.mutate(id, func(r *Reservation) error {
 		if isTerminal(r.Status) {
 			return fmt.Errorf("maat: reservation %s already %s", id, r.Status)
@@ -421,6 +440,9 @@ func (l *Ledger) Release(id string) (*Reservation, error) {
 // (conflict detection, P2). The window is recorded INVALID so the measurement is
 // not trusted.
 func (l *Ledger) Invalidate(id, intruder string) (*Reservation, error) {
+	if atomic, ok := l.store.(AtomicScheduler); ok {
+		return atomic.MaatMutate("invalidate", id, intruder)
+	}
 	return l.mutate(id, func(r *Reservation) error {
 		r.Status = StatusInvalidated
 		r.InvalidatedBy = intruder
@@ -451,12 +473,21 @@ func (l *Ledger) mutate(id string, fn func(*Reservation) error) (*Reservation, e
 // WhoIsOn returns the current live (active, non-expired) holder of a resource
 // whose window covers now, or nil if the resource is free.
 func (l *Ledger) WhoIsOn(resource string) (*Reservation, error) {
+	if atomic, ok := l.store.(AtomicScheduler); ok {
+		rows, err := atomic.MaatRead("who-is-on", resource)
+		if err != nil || len(rows) == 0 {
+			return nil, err
+		}
+		return &rows[0], nil
+	}
 	reservations, changed, err := l.load()
 	if err != nil {
 		return nil, err
 	}
 	if changed {
-		_ = l.save(reservations)
+		if err := l.save(reservations); err != nil {
+			return nil, err
+		}
 	}
 	now := l.now()
 	for _, r := range reservations {
@@ -478,12 +509,17 @@ func (l *Ledger) WhoIsOn(resource string) (*Reservation, error) {
 // lane out, so more than one holder can be live on the same resource at
 // once). Empty when the resource is free.
 func (l *Ledger) LiveHolders(resource string) ([]Reservation, error) {
+	if atomic, ok := l.store.(AtomicScheduler); ok {
+		return atomic.MaatRead("live-holders", resource)
+	}
 	reservations, changed, err := l.load()
 	if err != nil {
 		return nil, err
 	}
 	if changed {
-		_ = l.save(reservations)
+		if err := l.save(reservations); err != nil {
+			return nil, err
+		}
 	}
 	now := l.now()
 	var out []Reservation
@@ -503,12 +539,17 @@ func (l *Ledger) LiveHolders(resource string) ([]Reservation, error) {
 // first. Terminal rows within the retention window are included so a caller can
 // show recent history and per-day conflict counts.
 func (l *Ledger) Status(resource string) ([]Reservation, error) {
+	if atomic, ok := l.store.(AtomicScheduler); ok {
+		return atomic.MaatRead("status", resource)
+	}
 	reservations, changed, err := l.load()
 	if err != nil {
 		return nil, err
 	}
 	if changed {
-		_ = l.save(reservations)
+		if err := l.save(reservations); err != nil {
+			return nil, err
+		}
 	}
 	out := make([]Reservation, 0, len(reservations))
 	for _, r := range reservations {
