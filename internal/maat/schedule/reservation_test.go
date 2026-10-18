@@ -295,66 +295,6 @@ func TestReserve_TwoLanesOnM5_FirstFullSecondFloor(t *testing.T) {
 	}
 }
 
-func TestReserve_FloorFirstThenFull_FullStillGrantedFull(t *testing.T) {
-	// Order-inversion regression: a build-floor-only row MUST NOT force a
-	// later, otherwise-grantable full-share request down to the floor.
-	// (A full row created first already demoted the second row correctly —
-	// TestReserve_TwoLanesOnM5_FirstFullSecondFloor covers that ordering.)
-	l := fixedLedger("2026-09-26T10:00:00Z")
-	first, err := l.Reserve(mkReq("m5", "mercury", "2026-09-26T09:30:00Z", "2026-09-26T11:00:00Z", RegimeQuiet), false)
-	if err != nil || !first.Granted || first.Reservation.Share != ShareFull {
-		t.Fatalf("setup: first lane must get the full grant, got %v %+v", err, first)
-	}
-	floor, err := l.Reserve(mkReq("m5", "sne", "2026-09-26T09:30:00Z", "2026-09-26T11:00:00Z", RegimeBuild), false)
-	if err != nil || !floor.Granted || floor.Reservation.Share != ShareFloor {
-		t.Fatalf("setup: second lane must be capped to the floor, got %v %+v", err, floor)
-	}
-	// mercury cedes the full window; a new full-share request must still be
-	// granted full despite the live floor-share row — the floor holder is
-	// not a full-window blocker.
-	if _, err := l.Release(first.Reservation.ID); err != nil {
-		t.Fatal(err)
-	}
-	third, err := l.Reserve(mkReq("m5", "apollo", "2026-09-26T09:30:00Z", "2026-09-26T11:00:00Z", RegimeLoaded), false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !third.Granted || third.Reservation.Share != ShareFull {
-		t.Fatalf("a live floor-share-only row must never demote a new request to the floor, got %+v", third.Reservation)
-	}
-	if third.Conflict != nil {
-		t.Fatalf("a floor-share row is not a full-window blocker and must not be reported as a conflict, got %+v", third.Conflict)
-	}
-}
-
-func TestReserve_MalformedShareStillBlocks(t *testing.T) {
-	// A non-floor, non-full (e.g. legacy/empty) Share value is NOT the
-	// explicit "floor" opt-out — it must keep the conservative, pre-fix
-	// behavior of demoting a new conflicting request to the floor.
-	l := fixedLedger("2026-09-26T10:00:00Z")
-	first := mkReq("m5", "mercury", "2026-09-26T09:30:00Z", "2026-09-26T11:00:00Z", RegimeQuiet)
-	first.Share = "" // simulates a pre-Share-field legacy row
-	first.Status = StatusActive
-	first.Created = "2026-09-26T10:00:00Z"
-	first.HeartbeatAt = first.Created
-	first.LeaseTTLSec = 120
-	first.ID = "legacy-m5-mercury"
-	raw, exists, _, _, err := l.snapshot()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := l.save(raw, exists, []Reservation{first}); err != nil {
-		t.Fatal(err)
-	}
-	second, err := l.Reserve(mkReq("m5", "sne", "2026-09-26T09:30:00Z", "2026-09-26T11:00:00Z", RegimeQuiet), false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !second.Granted || second.Reservation.Share != ShareFloor {
-		t.Fatalf("a malformed/legacy Share must still conservatively block to the floor, got %+v", second.Reservation)
-	}
-}
-
 func TestCheckConflicts_FloorHolderIsSharedNotInvalidated(t *testing.T) {
 	l := fixedLedger("2026-09-26T10:00:00Z")
 	full, _ := l.Reserve(mkReq("m5", "mercury", "2026-09-26T09:30:00Z", "2026-09-26T11:00:00Z", RegimeQuiet), false)

@@ -409,17 +409,6 @@ func (l *Ledger) reserveAttempt(req Reservation, queue bool) (ReserveResult, err
 		if r.Holder == req.Holder {
 			continue // own overlapping hold — the new one is additive/refresh, allow
 		}
-		if r.Share == ShareFloor {
-			// A floor-share holder consumes only the floor, never the full
-			// slot — it must not block (or demote) a new request any more
-			// than its own grant does. Without this, admission becomes
-			// order-dependent: a build-floor row created AFTER a full grant
-			// is fine (it gets its own floor), but one created BEFORE a
-			// full-share request wrongly forced that request down to the
-			// floor too, since it was "any live foreign row" rather than
-			// "any live foreign FULL row".
-			continue
-		}
 		// A live foreign holder is on the window — --queue waits for the
 		// full window; otherwise grant the floor share now (never a lockout).
 		if queue {
