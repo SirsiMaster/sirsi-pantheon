@@ -519,6 +519,8 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusForbidden, "ErrWorkerAnswers", werr.Error())
 			return
 		}
+		// 7c. a writer too old to know answer_role cannot erase it.
+		s.keepAnswerRole(name, in)
 	}
 	if name == "Wait" && len(in) == 3 {
 		if d, ok := in[2].Interface().(time.Duration); ok && (d <= 0 || d > s.opts.MaxWait) {
