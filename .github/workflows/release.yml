@@ -9,6 +9,12 @@ permissions:
   contents: write
   id-token: write
 
+# Same read-only private SDK credentials as ci.yml (#1109): every Go build of cmd/sirsi needs
+# github.com/SirsiMaster/sirsi-inference. Tag pushes are 'push' events, which the wrapper trusts.
+env:
+  APOLLO_CI_INFERENCE_READ_KEY: ${{ secrets.APOLLO_CI_INFERENCE_READ_KEY }}
+  APOLLO_CI_MERCURY_READ_KEY: ${{ secrets.APOLLO_CI_MERCURY_READ_KEY }}
+
 jobs:
   release:
     name: Verify Source for Native macOS Release
@@ -31,8 +37,8 @@ jobs:
         env:
           CGO_ENABLED: "0"
         run: |
-          go build ./cmd/sirsi
-          go build ./cmd/sirsi-agent
+          bash scripts/ci-private-sdk.sh go build ./cmd/sirsi
+          bash scripts/ci-private-sdk.sh go build ./cmd/sirsi-agent
 
   menubar:
     name: Build Pantheon (macOS DMG + PKG)
@@ -158,8 +164,8 @@ jobs:
         run: |
           set -euo pipefail
           : "${DEVELOPER_ID_INSTALLER:?DEVELOPER_ID_INSTALLER is required for the commercial Pantheon PKG}"
-          scripts/build-dmg.sh --release --version "$BUILD_VERSION" --arch arm64
-          scripts/build-pkg.sh --release --version "$BUILD_VERSION" --arch arm64 --app Pantheon.app
+          bash scripts/ci-private-sdk.sh scripts/build-dmg.sh --release --version "$BUILD_VERSION" --arch arm64
+          bash scripts/ci-private-sdk.sh scripts/build-pkg.sh --release --version "$BUILD_VERSION" --arch arm64 --app Pantheon.app
 
       - name: Create or verify the exact GitHub release record
         env:
@@ -255,9 +261,9 @@ jobs:
           SHA256: ${{ steps.sha.outputs.SHA256 }}
         run: |
           set -euo pipefail
-          go run ./cmd/sirsi cask-release render \
+          bash scripts/ci-private-sdk.sh go run ./cmd/sirsi cask-release render \
             --version "$VERSION" --dmg-sha256 "$SHA256" > sirsi-pantheon.rb
-          go run ./cmd/sirsi cask-release verify \
+          bash scripts/ci-private-sdk.sh go run ./cmd/sirsi cask-release verify \
             --version "$VERSION" --dmg-sha256 "$SHA256" --file sirsi-pantheon.rb
 
       - name: Publish and read back Casks/sirsi-pantheon.rb in homebrew-tools
@@ -281,7 +287,7 @@ jobs:
             -f sha="${BLOB_SHA}"
 
           gh api "repos/${REPO}/contents/${CASK_PATH}" --jq '.content' | base64 --decode > published-cask.rb
-          go run ./cmd/sirsi cask-release verify \
+          bash scripts/ci-private-sdk.sh go run ./cmd/sirsi cask-release verify \
             --version "$VERSION" --dmg-sha256 "$SHA256" --file published-cask.rb
 
   publish-npm:
