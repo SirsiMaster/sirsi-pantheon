@@ -92,6 +92,54 @@ separate SHA observation at45.289seconds, against the old eight-second deadline.
 
 These are cooperative operational controls, not an OS security sandbox against same-user tampering, deliberately hidden workloads, escaped descendant sessions or supervisor SIGKILL. A native tool hook and per-runtime adoption must be proven separately. The execution timeout begins at child spawn; metadata and cleanup calls have their separate bounds. Do not mistake a receipt file's existence for live admission.
 
+### Long runs, transport uncertainty and recurring jobs
+
+`--timeout` is a total **per-child execution budget**, not a heartbeat TTL.
+The 900- and 1700-second Studio preparation attempts stopped at those configured
+limits despite continuing heartbeat renewal. Set an appropriate explicit budget
+(at most 7200 seconds) for a long transfer. For large transfers use an owned
+partial file, resumable transport and complete hash readback before publication;
+a timeout is not permission to overwrite a destination or discard its partial.
+The abandoned optional Studio training transaction must not be restarted.
+
+New owned grants explicitly request a 240-second TTL. Only the server-confirmed
+grant establishes authority; a shorter or different returned grant is not
+silently extended. The supervisor retries transient control failures within the
+remaining proven grant, with exact readback before renewal. A recovered read
+alone never extends its deadline. Explicit denial, revocation, scope change or
+expiry still stops immediately. Initial registration observations retry for at
+most 120 seconds without starting compute; an uncertain registration is resolved
+using the same generated thread ID, not a second registration.
+
+Terminal evidence distinguishes `execution_timeout`, `proven_lease_expired`
+and a recurring `job_timeout`; it includes the configured execution budget,
+elapsed time and remaining proven grant. Reservation decisions preserve the
+actual conflict's ID, holder, resource and expiry inputs plus pending cede IDs.
+An uncertain release is resolved by exact ID and retained ownership fields.
+Only a read proving that same owned grant remains active permits a release
+retry; unavailable or changed readback remains explicit cleanup debt. This does
+not authorize releasing other jobs or guessing the ID of an uncertain create.
+
+One foreground supervisor can own a finite recurring job without depending on
+an IDE process remaining in its ancestry:
+
+```
+~/.local/bin/sirsi-maat-run --agent OWN-LANE --register-executor \
+  --work OWN-WORK --iterations 18 --interval 60 --job-timeout 28800 \
+  --timeout 1500 -- /absolute/program argument
+```
+
+Use the actual enrolled host's existing authenticated service environment.
+A supported service manager may own this foreground process; do not use a
+foreign desktop thread or wrap detached payloads in shell loops. Each iteration
+obtains a new admission, records its result durably and releases its own grant.
+Waiting retains no compute grant and only maintains executor liveness. The first
+failed iteration or explicit control denial stops the entire job. Maximums are
+1000 iterations, 3600 seconds between iterations and 86400 seconds total. There
+is no automatic payload retry, indefinite lease, second inbox consumer, model
+grant or silent background service installation. Actual service-manager and
+lane-owned qualification must be recorded separately from source tests.
+
 Install `observer-launch.sh` as `~/.local/bin/sirsi-apollo-observer-launch` (0700). Existing observer LaunchAgents prepend `/bin/sh` and this launcher to their unchanged executable/arguments. Only the enrolled executable locations, strict Sirsi Team9D382WV988/identifier requirement and lead-approved CDHash are executable; unsigned or different signed replacements refuse **before** opening a listener. `--verify-only <file>` checks staged/rollback files without executing them. The deployment preserves original binaries/plists. Rollback of the launcher means restoring its original plist while retaining the verified signed binary; never silently restore an unsigned listening service. Approval for the three unchanged private Tailscale endpoints is a separate durable lead decision, not a global firewall exception.
 
 Verification: `python3 -B -m unittest discover -s scripts/maat -p 'test_*.py' -v`, `sh -n scripts/maat/observer-launch.sh`, actual signed/unsigned verify-only controls, actual registration/refusal/success/timeout controls, per-host binary and launcher hashes, strict signature checks, private-listener and peer health readback. Report native hook adoption gaps explicitly; source tests alone do not establish full fleet enforcement.
