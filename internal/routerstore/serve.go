@@ -21,6 +21,7 @@ package routerstore
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -337,7 +338,7 @@ func Handler(store Store, opts ServerOptions) (http.Handler, error) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok\n"))
 	})
-	mux.HandleFunc("/v1/call/", s.call)
+	mux.HandleFunc("/v1/call/", gzipped(s.call))
 	return mux, nil
 }
 
@@ -884,6 +885,30 @@ func (s *server) hostForBearer(r *http.Request) (string, map[string]bool, bool, 
 		return "", nil, false, err
 	}
 }
+
+// gzipped compresses responses for clients that ask (Go's transport asks and decodes transparently, so every
+// existing client and relay benefits with no client change). 2026-10-18: an old-build Horus supervisor's
+// ListSince returned 18.8 MB of JSON every 1-2 min and took 5-25 s against the relay's 25 s client timeout.
+func gzipped(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			h(w, r)
+			return
+		}
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Add("Vary", "Accept-Encoding")
+		zw, _ := gzip.NewWriterLevel(w, gzip.BestSpeed)
+		defer func() { _ = zw.Close() }()
+		h(gzipWriter{ResponseWriter: w, w: zw}, r)
+	}
+}
+
+type gzipWriter struct {
+	http.ResponseWriter
+	w *gzip.Writer
+}
+
+func (g gzipWriter) Write(b []byte) (int, error) { return g.w.Write(b) }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
