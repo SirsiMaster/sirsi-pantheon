@@ -1,8 +1,9 @@
 package routerstore
 
 import (
-	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 	"testing"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 )
 
 func TestMaatAtomicCPUFloorDoesNotStrandNextModel(t *testing.T) {
