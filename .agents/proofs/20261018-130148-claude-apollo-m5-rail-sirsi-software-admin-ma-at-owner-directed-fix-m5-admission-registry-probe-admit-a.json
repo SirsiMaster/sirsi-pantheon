@@ -1,0 +1,131 @@
+{
+  "work_item_id": "20261018-130148-claude-apollo-m5-rail-sirsi-software-admin-ma-at-owner-directed-fix-m5-admission-registry-probe-admit-a",
+  "agent_id": "sirsi-software-admin",
+  "repo": "/private/tmp/ssa-maat-cli-55559c7-20261018",
+  "status": "completed",
+  "classification": "platform-foundation",
+  "canon_read": [
+    {
+      "path": "docs/COMMERCIALIZATION_GATE.md",
+      "read_at": "2026-10-18",
+      "notes": "Read in full; router trust boundary, operator and openly incomplete commercial closure. This is a platform-foundation repair, not commercial-product release."
+    },
+    {
+      "path": "docs/runbooks/maat-atomic-reservations.md",
+      "read_at": "2026-10-18",
+      "notes": "Read in full; actual-runtime admission, canonical atomic operations, compatible rollout, full generation verification, fence-preserving recovery."
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/COMPLETION_SCAFFOLD.md",
+      "read_at": "2026-10-18",
+      "notes": "Read in full; exact operational proof and validator-bound closure."
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "docs/runbooks/maat-atomic-reservations.md",
+      "section": "Mechanism and trust boundary; rollout steps2–3",
+      "claim": "Replace fleet-wide full-registry sweep with own-runtime registration/heartbeat and canonical atomic reservation operations; real M5 model batches continue under fresh full admission instead of stopping on8s registry probes.",
+      "files_changed": [
+        "scripts/maat/admitted-run.py",
+        "internal/routerstore/maatscheduler.go",
+        "internal/routerstore/maatremote.go"
+      ],
+      "evidence": [
+        "/Users/thekryptodragon/.sirsi/evidence/maat-generation-verification-20261018.json",
+        "M5 actual rows1888→1920→1952→1984→2016, exact supervisor87727 and full admission heartbeat16:39:27Z"
+      ]
+    },
+    {
+      "doc": "docs/runbooks/maat-atomic-reservations.md",
+      "section": "Destination-local executor identity and deployed proof",
+      "claim": "The same registered fabric agent can execute on enrolled M1/M5/Studio without treating an origin-host PID as local authority; actual Studio owner model runs under its destination-local registered full admission.",
+      "files_changed": [
+        "scripts/maat/admitted-run.py",
+        "scripts/maat/test_admitted_run.py"
+      ],
+      "evidence": [
+        "M1/M5/Studio real admitted35s heartbeat/release proofs exit0 and grants readbackreleased",
+        "Studio rows72→96→168→216→240 and full admission heartbeat16:39:29Z; supervisor69495/child69542"
+      ]
+    },
+    {
+      "doc": "docs/COMMERCIALIZATION_GATE.md",
+      "section": "Ra platform foundation — trust boundary and operational owner",
+      "claim": "Preserve one canonical state, host credentials, actual authority, source provenance and truthful release limits; correct stale standard CLI aliases without app-bundle edits or restoring unfenced writes.",
+      "files_changed": [
+        "internal/routerstore/agents.go",
+        "internal/routerstore/maatscheduler.go",
+        "internal/router/relayagent.go"
+      ],
+      "evidence": [
+        "Cloud revision sirsi-router-maat-7d37fc8d at100% and both tags; no schema or IAM change",
+        "Signed CLI hashbff16a9a on all3 hosts, standardalias /opt/homebrew/bin/sirsi corrected, originals retained",
+        "Exact deployed7d37fc8d preserved in published branch ancestry6141e25d; no forced push or hook bypass"
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "Original operator workflow works: existing M5 and Studio distillation jobs add multiple batches under full canonical admission. This does not assert all Pantheon product requirements complete.",
+    "design": "No frontend redesign. Failure remains fail-closed with durable per-run terminal; installed primary/.local CLI paths select compatible signed client. No cached/grace authorization.",
+    "technical": "Earlier real-admission SQLite/PostgreSQL16, atomic/CAS/race, registration and23Python controls retained; normal source publication passed whole-repo vet/build, changed-package lint and all5changed-package tests. Model rows and matching active fresh leases independently observed onbothhosts.",
+    "operational": "Cloud100% and tags onfencedrevision, runtime configuration preserved, exact signed native tuple onM1/M5/Studio. Prior artifacts/aliases retained; no rollback to unfenced writer. Own verification/publication grants released, owner's intended generators remain running. M5 quiet lease released only after explicit owner instruction; affected lanes notified.",
+    "narrative": "Exact source published on origin branch; immutable operational evidence and result identify versions, real rowcounts and limits. Runbook ReadingRoom/Workspace mirrors visibly pending; no whole-product commercial release/notarization/full-repository race certification claimed."
+  },
+  "verification": [
+    {
+      "name": "qualified-source-tests-and-native-builds",
+      "command": "Preserved M1 real-admission qualification scripts and native terminal4026ebdffa494eb2b02cefbdf2205987",
+      "status": "pass",
+      "evidence": "/Users/thekryptodragon/.sirsi/evidence/maat-registry-repair-deployed-20261018.json"
+    },
+    {
+      "name": "normal-unbypassed-source-publication",
+      "command": "sirsi-maat-run --agent sirsi-software-admin --register-executor --work maat-publish-qualified-source-20261018 --cpu-cores 2 --timeout 600 -- /usr/bin/git -C /private/tmp/ssa-maat-cli-55559c7-20261018 push -u origin HEAD:refs/heads/fix/maat-atomic-reservations-20261018",
+      "status": "pass",
+      "evidence": "/Users/thekryptodragon/.sirsi/evidence/maat-runs/5862efa2b4dd4a2e993de97aa2f07213/terminal.json exits0; source6141e25d remote readback matches; prepush5pkgtests+vet/build/lint pass"
+    },
+    {
+      "name": "real-native-three-host-roundtrip",
+      "command": "Installed sirsi-maat-run --agent sirsi-software-admin --register-executor --work maat-deployed-<host>-proof-20261018 --cpu-cores 2 --timeout 100 -- /bin/sleep 35 on M1/M5/Studio; canonical release readback",
+      "status": "pass",
+      "evidence": "M1terminal103507bb, M5c3064d53, Studio30e22d3c all0; exact grants independentlyreleased"
+    },
+    {
+      "name": "existing-models-actually-add-data",
+      "command": "Repeated wc/stat/process observations and canonical maat status on existing owner M5/Studio jobs",
+      "status": "pass",
+      "evidence": "/Users/thekryptodragon/.sirsi/evidence/maat-generation-verification-20261018.json SHA25687ebddeec0d8a4b15431b43c5c1790fae00070c6cf44aa85181557777a70c8f2"
+    }
+  ],
+  "working_status": {
+    "environment": "M5 and Studio actual Apollo model processes; M1 native admission; canonical CloudRun sirsi-router-maat-7d37fc8d100%",
+    "how_verified": "Multiple time-separated line counts with live full canonical reservation, recent heartbeat and exact actual supervisor/child identities; no duplicate model started",
+    "observed_result": "M5 rows1888→2016; Studio72→240 in postdeployment sampling; both active under full admission; all3 harmless native proofs and cleanup pass",
+    "verified_at": "2026-10-18T16:39:39Z"
+  },
+  "handoffs": [
+    {
+      "from": "sirsi-software-admin",
+      "to": "ra",
+      "router_item": "20261018-163137-sirsi-software-admin-ra-correcting-homebrew-stale-client-path-compatible-signed-cli-",
+      "status": "Exact installed compatible source/path correction supplied; published6141e25d ancestry contains deployed7d37fc8d"
+    },
+    {
+      "from": "sirsi-software-admin",
+      "to": "claude-apollo-m5-rail",
+      "router_item": "20261018-163404-sirsi-software-admin-claude-apollo-m5-rail-studio-actual-generation96rows-under-live-full-lease-coordin",
+      "status": "Existing owner jobs retained; both now observed adding batches; completion/result sent as separate canonical message"
+    }
+  ],
+  "blockers": [],
+  "scope": "Original operational M5 registry/admission and any-enrolled-native-host generation repair only; not whole-Pantheon commercialization or full release certification.",
+  "explicit_nonclaims": [
+    "Entire Pantheon commercial/product release",
+    "New all-repository full-race certification",
+    "Notarization",
+    "App-bundle embedded CLI upgrade",
+    "Model completion or data quality qualification",
+    "Runbook mirror synchronization; visiblypending"
+  ]
+}
