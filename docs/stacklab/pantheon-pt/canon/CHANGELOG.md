@@ -1,5 +1,12 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-18 — v0.24.116 release candidate
+
+- Headless workers are subordinate to lead lanes (owner 2026-10-18): the router service re
+- Native Codex workers use a proxy-enforced exact enrolled-host allowlist instead of silen
+- Native Ma’at supervision retains only already-proven lease time during transient heartbe
+- Bound healthy reservation inventory reads/renewal to a30-second cadence shortened by rem
+
 ## 2026-10-18 — v0.24.115 release candidate
 
 - Canonical transactional reservation decisions, heartbeat/release and expiry.
