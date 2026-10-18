@@ -14,6 +14,7 @@ import (
 // backend and an HTTP client behind the same interface. No production code
 // may depend on the concrete type.
 type Store interface {
+	CompareAndSwapState(key, expected string, exists bool, value string) (bool, error)
 	MaatReserve(req schedule.Reservation, queue bool) (schedule.ReserveResult, error)
 	MaatMutate(action, id, value string) (*schedule.Reservation, error)
 	MaatRead(kind, resource string) ([]schedule.Reservation, error)

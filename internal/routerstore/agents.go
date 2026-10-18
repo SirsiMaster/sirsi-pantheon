@@ -120,3 +120,23 @@ func (s *SQLiteStore) GetState(key string) (string, bool, error) {
 	}
 	return value, true, nil
 }
+
+// CompareAndSwapState is the compatible exact-snapshot API. The scheduler's
+// native operation API additionally keeps large ledger bytes at the service.
+func (s *SQLiteStore) CompareAndSwapState(key, expected string, exists bool, value string) (bool, error) {
+	if strings.TrimSpace(key) == "" {
+		return false, fmt.Errorf("routerstore: CompareAndSwapState: key is required")
+	}
+	var result sql.Result
+	var err error
+	if exists {
+		result, err = s.exec(`UPDATE state SET value=? WHERE key=? AND value=?`, value, key, expected)
+	} else {
+		result, err = s.exec(`INSERT INTO state (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING`, key, value)
+	}
+	if err != nil {
+		return false, fmt.Errorf("routerstore: CompareAndSwapState: %w", err)
+	}
+	n, err := result.RowsAffected()
+	return n == 1, err
+}

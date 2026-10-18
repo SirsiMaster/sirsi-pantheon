@@ -14,6 +14,21 @@ const maatReservationsKey = "maat:reservations"
 
 type maatTransactionState struct{ tx *txHandle }
 
+func (m maatTransactionState) CompareAndSwapState(key, expected string, exists bool, value string) (bool, error) {
+	var result sql.Result
+	var err error
+	if exists {
+		result, err = m.tx.Exec(`UPDATE state SET value=? WHERE key=? AND value=?`, value, key, expected)
+	} else {
+		result, err = m.tx.Exec(`INSERT INTO state(key,value) VALUES(?,?) ON CONFLICT(key) DO NOTHING`, key, value)
+	}
+	if err != nil {
+		return false, err
+	}
+	n, err := result.RowsAffected()
+	return n == 1, err
+}
+
 func (m maatTransactionState) GetState(key string) (string, bool, error) {
 	var value string
 	err := m.tx.QueryRow(`SELECT value FROM state WHERE key=?`, key).Scan(&value)
