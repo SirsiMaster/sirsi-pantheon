@@ -35,6 +35,13 @@ instance; it is NOT a portable assertion that a foreign origin PID is alive.
 Existing transport credentials and service-side lane scopes still apply. No new
 SSH trust, credential, permission-mode or model privileges are granted.
 
+On Darwin the supervisor reads parent PID and start time from the public
+`proc_pidinfo(PROC_PIDTBSDINFO)` kernel interface, not an external `ps` command.
+This supports managed workers whose sandbox denies spawning `/bin/ps` while
+retaining local ancestry/start verification. A denied, short, disappeared or
+PID-mismatched kernel observation refuses; there is no cached-identity fallback.
+The compatibility start string remains Go `time.ANSIC` in host-local time.
+
 Use the installed CLI's `thread heartbeat --thread ID --json` as the exact
 canonical row observation, avoiding the full-list OS reaper. This is an ordinary
 own-session heartbeat, not a read-only fleet sweep: terminal/suspended records

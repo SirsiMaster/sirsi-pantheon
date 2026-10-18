@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Cooperative native Ma'at launch supervisor, not a security sandbox."""
 import argparse
+import ctypes
 import datetime as dt
 import hashlib
 import json
@@ -17,6 +18,40 @@ import uuid
 
 class Refused(RuntimeError):
     pass
+
+
+class _BSDInfo(ctypes.Structure):
+    # Darwin's public sys/proc_info.h: PROC_PIDTBSDINFO (flavor 3).
+    _fields_ = [(name, ctypes.c_uint32) for name in (
+        'flags', 'status', 'xstatus', 'pid', 'ppid', 'uid', 'gid',
+        'ruid', 'rgid', 'svuid', 'svgid', 'reserved')] + [
+        ('comm', ctypes.c_char * 16), ('name', ctypes.c_char * 32),
+        *[(name, ctypes.c_uint32) for name in (
+            'nfiles', 'pgid', 'jobc', 'tdev', 'tpgid')],
+        ('nice', ctypes.c_int32), ('start_sec', ctypes.c_uint64),
+        ('start_usec', ctypes.c_uint64)]
+
+
+def process_identity(pid):
+    """Read kernel identity without spawning ps or trusting a cached PID."""
+    if sys.platform != 'darwin' or type(pid) is not int or pid <= 1:
+        raise Refused('Native process identity unavailable on this execution host')
+    library = ctypes.CDLL('/usr/lib/libproc.dylib', use_errno=True)
+    lookup = library.proc_pidinfo
+    lookup.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_uint64,
+                       ctypes.c_void_p, ctypes.c_int]
+    lookup.restype = ctypes.c_int
+    row = _BSDInfo()
+    size = ctypes.sizeof(row)
+    read = lookup(pid, 3, 0, ctypes.byref(row), size)
+    if read != size or row.pid != pid or row.start_sec <= 0:
+        raise Refused('Kernel process identity unavailable or changed for PID '+str(pid))
+    # Match Go time.ANSIC / ps lstart, independent of caller locale.
+    stamp = time.localtime(row.start_sec)
+    start = ('Mon Tue Wed Thu Fri Sat Sun'.split()[stamp.tm_wday]+' '+
+             'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split()[stamp.tm_mon-1]+
+             f' {stamp.tm_mday:2d} {stamp.tm_hour:02d}:{stamp.tm_min:02d}:{stamp.tm_sec:02d} {stamp.tm_year:04d}')
+    return row.ppid, start
 
 
 def local_resource():
@@ -117,10 +152,13 @@ class Native:
         ancestors = set()
         while cursor > 1 and cursor not in ancestors and len(ancestors) < 64:
             ancestors.add(cursor)
-            cursor = int(subprocess.check_output(['/bin/ps', '-p', str(cursor), '-o', 'ppid='], text=True, timeout=2).strip())
-        start = subprocess.check_output(['/bin/ps', '-p', str(anchor), '-o', 'lstart='], text=True, timeout=2).strip()
-        if anchor not in ancestors or start != row.get('start_time'):
-            raise Refused('Registered anchor is not this launcher ancestry or its start identity changed')
+            parent, start = process_identity(cursor)
+            if cursor == anchor:
+                if start != row.get('start_time'):
+                    raise Refused('Registered anchor start identity changed')
+                return
+            cursor = parent
+        raise Refused('Registered anchor is not this launcher ancestry')
 
     def lookup(self, resource):
         if self.owned_admission:

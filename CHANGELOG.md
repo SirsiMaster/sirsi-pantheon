@@ -6,6 +6,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- Ma'at's native supervisor reads Darwin parent/start identity directly from
+  the kernel instead of spawning `/bin/ps`, which managed worker sandboxes
+  deny. Missing, foreign, recycled and cyclic ancestry still refuse before
+  admission; no registration, security or capacity gate is bypassed.
+
 ## [0.24.113] — 2026-10-18
 
 - Release workflow builds with the read-only private SDK credentials, like CI (#1109 wrapped ci.yml but not release.yml, so tag v0.24.112's source-verify build could not fetch sirsi-inference: "could not read Username for https://github.com").

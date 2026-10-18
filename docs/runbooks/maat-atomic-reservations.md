@@ -23,6 +23,12 @@ admission before spawn and during execution. It must not substitute grace or a
 cached ticket for canonical state. Executor registration binds the actual job
 process on the destination machine, never an origin host's PID.
 
+Restricted-shell qualification must exercise the actual worker mask. The Oct18
+first lane receipts found `/bin/ps` denied before reserve. The supervisor now
+uses Darwin's public kernel parent/start read directly and refuses unavailable
+or inconsistent kernel identity. This removes an external-command dependency;
+it does not grant a worker more privileges or bypass ancestry verification.
+
 CPU-only maintenance may explicitly declare `--cpu-cores N`, using the granted
 build floor if sufficient and setting cooperative runtime thread limits. This
 does not lift the default full-share model/GPU requirement or claim kernel CPU

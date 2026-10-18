@@ -85,7 +85,7 @@ class RegistryDeadlineTests(unittest.TestCase):
         native = runner.Native()
         native.executor_identity = dict(thread_id='thread', agent_id='lane', status='active',pid=2,start_time='fixture')
         native.call = mock.Mock()
-        with mock.patch.object(runner.subprocess, 'check_output', side_effect=['1','fixture']):
+        with mock.patch.object(runner, 'process_identity', return_value=(1,'fixture')):
             with self.assertRaises(runner.Refused):
                 native.registered('lane','thread')
         native.call.assert_not_called()
@@ -94,7 +94,7 @@ class RegistryDeadlineTests(unittest.TestCase):
         native = runner.Native()
         native.executor_identity = dict(thread_id='thread',agent_id='lane',status='active',pid=os.getpid(),start_time='old')
         native.call = mock.Mock()
-        with mock.patch.object(runner.subprocess, 'check_output', side_effect=['1','new']):
+        with mock.patch.object(runner, 'process_identity', return_value=(1,'new')):
             with self.assertRaises(runner.Refused):
                 native.registered('lane','thread')
         native.call.assert_not_called()
@@ -238,9 +238,58 @@ class SupervisorTests(unittest.TestCase):
     def test_registered_foreign_thread_anchor_is_refused(self):
         native = runner.Native()
         native.call = lambda *args, **kwargs: dict(thread_id='thread', agent_id='lane', status='active',pid=2,start_time='fixture')
-        with mock.patch.object(runner.subprocess, 'check_output', side_effect=['1', 'fixture']):
+        with mock.patch.object(runner, 'process_identity', return_value=(1, 'fixture')):
             with self.assertRaises(runner.Refused):
                 native.registered('lane', 'thread')
+
+
+class KernelIdentityTests(unittest.TestCase):
+    def test_short_and_mismatched_kernel_reads_refuse(self):
+        ctypes_size = runner.ctypes.sizeof(runner._BSDInfo)
+        for count, observed_pid in [(0, 42), (1, 42), (ctypes_size, 43)]:
+            def lookup(pid, flavor, arg, pointer, size):
+                self.assertEqual((pid, flavor, arg, size), (42, 3, 0, ctypes_size))
+                pointer._obj.pid = observed_pid
+                pointer._obj.start_sec = 100
+                return count
+            library = mock.Mock()
+            library.proc_pidinfo.side_effect = lookup
+            with mock.patch.object(runner.sys, 'platform', 'darwin'), \
+                    mock.patch.object(runner.ctypes, 'CDLL', return_value=library):
+                with self.assertRaises(runner.Refused):
+                    runner.process_identity(42)
+
+    def row(self, **changes):
+        row = dict(thread_id='thread', agent_id='lane', status='active',
+                   pid=os.getpid(), start_time='fixture')
+        row.update(changes)
+        return row
+
+    def test_self_and_real_ancestor_need_no_ps(self):
+        for anchor in [os.getpid(), 42]:
+            def lookup(pid):
+                return (42, 'fixture') if pid == os.getpid() else (1, 'fixture')
+            with mock.patch.object(runner, 'process_identity', side_effect=lookup), \
+                    mock.patch.object(runner.subprocess, 'check_output', side_effect=PermissionError('ps denied')) as ps:
+                runner.Native().verify_runtime(self.row(pid=anchor), 'lane', 'thread')
+                ps.assert_not_called()
+
+    def test_identity_failures_and_cycles_never_authorize(self):
+        for lookup in [mock.Mock(side_effect=runner.Refused('kernel denied')),
+                       mock.Mock(return_value=(os.getpid(), 'fixture')),
+                       mock.Mock(return_value=(1, 'reused'))]:
+            with mock.patch.object(runner, 'process_identity', lookup):
+                with self.assertRaises(runner.Refused):
+                    runner.Native().verify_runtime(self.row(pid=42), 'lane', 'thread')
+
+    @unittest.skipUnless(sys.platform == 'darwin', 'Darwin kernel integration')
+    def test_live_kernel_matches_parent_and_refuses_wrong_start(self):
+        parent, start = runner.process_identity(os.getpid())
+        self.assertEqual(parent, os.getppid())
+        self.assertTrue(start)
+        runner.Native().verify_runtime(self.row(start_time=start), 'lane', 'thread')
+        with self.assertRaises(runner.Refused):
+            runner.Native().verify_runtime(self.row(start_time='reused'), 'lane', 'thread')
 
 
 if __name__ == '__main__':
