@@ -72,3 +72,12 @@ runner calls `should-defer <machine>` before starting a job.
 
 Unchanged: no credentials, no kernel/SIP/sysctl changes. The scheduler only
 admits or defers work.
+
+Bare `studio` and legacy `m5-studio` name one capacity pool. Comparisons apply
+at the shared engine, including server atomic admission and historical rows;
+stored and returned resource/ID fields retain their original spelling. Rails and
+components remain distinct. Capacity reads accept either historical key and use
+the smaller positive value when both disagree. Explicit capacity setters update
+both aliases. No migration, reservation deletion, preemption, or host-binding
+relaxation occurs. Deploy the shared scheduler on every service replica before
+claiming the shadow-pool repair operationally qualified.
