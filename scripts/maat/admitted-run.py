@@ -20,6 +20,10 @@ class Refused(RuntimeError):
     pass
 
 
+class TransientTransport(Refused):
+    """A bounded transport failure; never evidence that a mutation committed."""
+
+
 class _BSDInfo(ctypes.Structure):
     # Darwin's public sys/proc_info.h: PROC_PIDTBSDINFO (flavor 3).
     _fields_ = [(name, ctypes.c_uint32) for name in (
@@ -89,6 +93,7 @@ class Native:
         self.executor_identity = None
         self.cpu_cores = None
         self.owned_admission = None
+        self.deadline = None
 
     def register_executor(self, agent):
         if not re.fullmatch(r'[A-Za-z0-9_.-]{1,128}', agent or ''):
@@ -111,11 +116,25 @@ class Native:
             self.call('thread', 'close', '--thread', self.executor_thread, '--json', timeout=30, json_result=False)
 
     def call(self, *args, timeout=60, json_result=True):
+        if self.deadline is not None:
+            timeout = min(timeout, self.deadline - time.monotonic())
+            if timeout <= 0:
+                raise Refused('Proven admission deadline exceeded')
         try:
             response = subprocess.run([self.cli, *args], check=True, capture_output=True,
                                       text=True, timeout=timeout)
+        except subprocess.TimeoutExpired as error:
+            if args[:2] in (('maat', 'heartbeat'), ('maat', 'status'), ('thread', 'heartbeat')):
+                raise TransientTransport('Control transport timed out') from error
+            raise
         except subprocess.CalledProcessError as error:
-            raise Refused('Control call '+str(args[:2])+' failed: '+(error.stderr or '')[-1600:]) from error
+            detail = (error.stderr or '')[-1600:]
+            # Denial takes precedence over transport text; unknown errors refuse.
+            denied = re.search(r'(?i)\b(401|403|unauthori[sz]ed|forbidden|denied|revoked|released|expired|scope|mismatch)\b', detail)
+            transient = re.search(r'(?i)(\bHTTP (502|503|504)\b|TLS handshake timeout|relay[^\n]*OUTCOME UNKNOWN)', detail)
+            if not denied and transient:
+                raise TransientTransport('Control transport uncertain: '+detail) from error
+            raise Refused('Control call '+str(args[:2])+' failed: '+detail) from error
         return (json.loads(response.stdout) if response.stdout.strip() else None) if json_result else response.stdout
 
     def registered(self, agent, thread):
@@ -140,6 +159,7 @@ class Native:
         if len(matches) != 1:
             raise Refused('Actual active lane/thread registration required; do not impersonate another session')
         self.verify_runtime(matches[0], agent, thread)
+        self.executor_identity = matches[0]
 
     def verify_runtime(self, row, agent, thread):
         if (row.get('thread_id') != thread or row.get('agent_id') != agent or
@@ -162,9 +182,16 @@ class Native:
 
     def lookup(self, resource):
         if self.owned_admission:
-            # Refresh/read the exact grant, not the first foreign holder on a
-            # shared machine. Heartbeat cannot revive an expired/released grant.
-            return self.call('maat', 'heartbeat', self.owned_admission, '--json')
+            # Read-only exact-ID recovery: never replay an uncertain heartbeat
+            # just to discover whether it succeeded. Status includes terminal rows.
+            rows = self.call('maat', 'status', resource, '--json')
+            if not isinstance(rows, list):
+                raise Refused('Reservation readback is malformed')
+            matches = [row for row in rows if isinstance(row, dict) and
+                       row.get('id') == self.owned_admission]
+            if len(matches) != 1:
+                raise Refused('Exact admission missing or duplicated')
+            return matches[0]
         return self.call('maat', 'who-is-on', resource, '--json')
 
     def reserve(self, resource, agent, work):
@@ -173,15 +200,49 @@ class Native:
                          str(os.getpid()), '--repro', str(Path(__file__).resolve()), '--json')
 
     def heartbeat(self, identity):
-        self.call('maat', 'heartbeat', identity, '--json')
-        self.heartbeat_executor()
+        if self.executor_identity is None:
+            raise Refused('Verified executor identity required for renewal')
+        self.verify_runtime(self.executor_identity, self.executor_identity['agent_id'],
+                            self.executor_identity['thread_id'])
+        return self.call('maat', 'heartbeat', identity, '--json')
 
     def heartbeat_executor(self):
         if self.executor_thread:
+            self.verify_runtime(self.executor_identity, self.executor_identity['agent_id'],
+                                self.executor_identity['thread_id'])
             self.call('thread', 'heartbeat', '--thread', self.executor_thread, '--json', timeout=30, json_result=False)
 
     def release(self, identity):
         self.call('maat', 'release', identity, '--json')
+
+
+class ProvenLease:
+    """Only a confirmed mutation can advance our monotonic validity bound."""
+    FIELDS = ('id', 'resource', 'holder', 'work', 'exempt_pid', 'share', 'regime',
+              'cores', 'mem_gb', 'mem_share')
+
+    def __init__(self, row, started, resource, agent, work, cpu_cores, owned):
+        self.scope = {key: row.get(key) for key in self.FIELDS}
+        self.resource, self.agent, self.work = resource, agent, work
+        self.cpu_cores = cpu_cores
+        if owned and row.get('exempt_pid') != os.getpid():
+            raise Refused('Own admission executor does not match this supervisor')
+        self.confirm(row, started)
+
+    def check(self, row):
+        if (not valid(row, self.resource, self.agent, self.work, self.cpu_cores) or
+                any(row.get(key) != value for key, value in self.scope.items())):
+            raise Refused('Exact admission scope/executor lost or replaced')
+
+    def confirm(self, row, started):
+        self.check(row)
+        stamp = dt.datetime.fromisoformat(row['heartbeat_at'].replace('Z', '+00:00'))
+        age = (dt.datetime.now(dt.timezone.utc) - stamp).total_seconds()
+        # Anchor BEFORE the request, not at response receipt. Timestamp age also
+        # discounts pre-existing/rounded heartbeats; readback never calls confirm.
+        self.deadline = started + row['lease_ttl_sec'] - max(0, age)
+        if time.monotonic() >= self.deadline:
+            raise Refused('Confirmed lease already exhausted')
 
 
 def stop(child):
@@ -208,9 +269,11 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
     cpu_cores = getattr(backend, 'cpu_cores', None)
     try:
         backend.registered(agent, thread)
+        confirmed_at = time.monotonic()
         row = backend.lookup(resource)
         if row is None or (cpu_cores and not valid(row, resource, agent, work, cpu_cores)):
             reservation_requested = True
+            confirmed_at = time.monotonic()
             reply = backend.reserve(resource, agent, work)
             reservation_replied = True
             if not isinstance(reply, dict):
@@ -229,10 +292,15 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
         if not valid(row, resource, agent, work, cpu_cores):
             raise Refused('Fresh exact host/holder/work full-share admission required; foreign/floor/expired/unknown admission refuses')
         identity = row['id']
+        lease = ProvenLease(row, confirmed_at, resource, agent, work, cpu_cores, owned)
+        if isinstance(backend, Native):
+            backend.owned_admission = identity  # exact readback, borrowed or owned
+            backend.deadline = lease.deadline
         backend.registered(agent, thread)
         before = backend.lookup(resource)
-        if not valid(before, resource, agent, work, cpu_cores) or before['id'] != identity:
-            raise Refused('Admission changed before spawn')
+        lease.check(before)
+        if time.monotonic() >= lease.deadline:
+            raise Refused('Proven admission deadline exceeded before spawn')
         record.update(admission=identity, borrowed=owned is None, status='admitted')
         child_env = os.environ.copy()
         if cpu_cores:
@@ -245,25 +313,55 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
         child = subprocess.Popen(command, start_new_session=True, env=child_env)
         record.update(pid=child.pid, status='running')
         deadline = time.monotonic() + timeout
-        heartbeat_at = time.monotonic() + 30
+        control_at = time.monotonic() + min(30, max(0.001, (lease.deadline - time.monotonic()) / 3))
+        backoff = 1
+        if isinstance(backend, Native):
+            backend.deadline = min(deadline, lease.deadline)
         while True:
-            if time.monotonic() >= deadline:
-                raise Refused('Execution deadline exceeded')
-            row = backend.lookup(resource)
-            if not valid(row, resource, agent, work, cpu_cores) or row['id'] != identity:
-                raise Refused('Admission lost or replaced during execution')
-            if time.monotonic() >= heartbeat_at:
-                if owned:
-                    backend.heartbeat(owned)
-                elif hasattr(backend, 'heartbeat_executor'):
-                    backend.heartbeat_executor()
-                heartbeat_at = time.monotonic() + 30
+            if time.monotonic() >= min(deadline, lease.deadline):
+                raise Refused('Execution or proven admission deadline exceeded')
+            if time.monotonic() >= control_at:
+                try:
+                    # Local child monitoring is cheap and frequent. Remote
+                    # revocation observation/renewal is at most 30s apart,
+                    # shortened for remaining proven TTL. Uncertain mutations
+                    # always require exact readback before the next renewal.
+                    row = backend.lookup(resource)
+                    lease.check(row)
+                    if time.monotonic() >= min(deadline, lease.deadline):
+                        raise Refused('Execution or proven admission deadline exceeded')
+                    if child.poll() is None:
+                        if owned:
+                            started = time.monotonic()
+                            renewed = backend.heartbeat(owned)
+                            if time.monotonic() >= lease.deadline:
+                                raise Refused('Renewal arrived after proven deadline')
+                            lease.confirm(renewed, started)
+                            if isinstance(backend, Native):
+                                backend.deadline = min(deadline, lease.deadline)
+                        if hasattr(backend, 'heartbeat_executor'):
+                            backend.heartbeat_executor()
+                    control_at = time.monotonic() + min(30, max(0.001, (lease.deadline - time.monotonic()) / 3))
+                    backoff = 1
+                except TransientTransport as error:
+                    record['transport_retries'] = record.get('transport_retries', 0) + 1
+                    record['last_transport_error'] = str(error)
+                    control_at = time.monotonic() + backoff
+                    backoff = min(8, backoff * 2)
+            remaining = min(deadline, lease.deadline) - time.monotonic()
+            if remaining <= 0:
+                raise Refused('Execution or proven admission deadline exceeded')
             try:
-                code = child.wait(timeout=min(2, max(0.001, deadline - time.monotonic())))
-                after = backend.lookup(resource)
-                if not valid(after, resource, agent, work, cpu_cores) or after['id'] != identity:
-                    code = 78
-                    raise Refused('Admission changed before child completion readback')
+                code = child.wait(timeout=min(2, remaining, max(0.001, control_at - time.monotonic())))
+                try:
+                    after = backend.lookup(resource)
+                    lease.check(after)
+                except TransientTransport:
+                    # Terminal compute is never restarted or kept alive for a
+                    # readback. Cleanup runs immediately; uncertainty is debt.
+                    raise Refused('Child completion admission readback unavailable')
+                if time.monotonic() >= min(deadline, lease.deadline):
+                    raise Refused('Child completion exceeded proven deadline')
                 record['status'] = 'success' if code == 0 else 'child_failed'
                 break
             except subprocess.TimeoutExpired:
@@ -272,6 +370,10 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
         record.update(status='refused_or_stopped', reason=str(error))
         print('Ma\'at refused/stopped: '+str(error), file=sys.stderr)
     finally:
+        if record.get('status') == 'refused_or_stopped':
+            code = 78
+        if isinstance(backend, Native):
+            backend.deadline = None  # cleanup must run even after lease expiry
         if child is not None:
             try:
                 stop(child)
