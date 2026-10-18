@@ -2,7 +2,7 @@
 
 This index tracks **all** architectural decisions for the Sirsi Pantheon ecosystem.
 
-**Total ADRs: 75 (+ ADR-031-A/B/C sub-decisions, + the ADR-054 companion contracts)** | **Next available: ADR-079** — ADR-076 is claimed by open, unmerged PR #1017 (`maat/trust-boundary-gate`) and is not yet on `origin/main` (A37).
+**Total ADRs: 76 (+ ADR-031-A/B/C sub-decisions, + the ADR-054 companion contracts)** | **Next available: ADR-119** — ADR-118 records the Studio resource compatibility decision; preserve previously consumed/gapped numbers. ADR-076 is claimed by open, unmerged PR #1017 (`maat/trust-boundary-gate`) and is not yet on `origin/main` (A37).
 
 ---
 
