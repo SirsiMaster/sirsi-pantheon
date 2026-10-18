@@ -48,10 +48,13 @@ func (s *SQLiteStore) withMaatScheduler(fn func(*schedule.Ledger) error) error {
 		if _, err := tx.Exec(`INSERT INTO state(key,value) VALUES(?,?) ON CONFLICT(key) DO NOTHING`, maatReservationsKey, `{"reservations":[]}`); err != nil {
 			return err
 		}
-		// A no-op UPDATE obtains a row lock on PostgreSQL and the write lock on
-		// SQLite. Unlike a process mutex it also serializes other service replicas.
-		if _, err := tx.Exec(`UPDATE state SET value=value WHERE key=?`, maatReservationsKey); err != nil {
-			return err
+		// Lock without rewriting the large PostgreSQL row on reads. SQLite's
+		// BEGIN IMMEDIATE already serializes writers. Both fence service replicas.
+		if s.dialect().name == "postgres" {
+			var key string
+			if err := tx.QueryRow(`SELECT key FROM state WHERE key=? FOR UPDATE`, maatReservationsKey).Scan(&key); err != nil {
+				return err
+			}
 		}
 		return fn(schedule.NewLedger(maatTransactionState{tx}).WithClock(s.clock))
 	})
