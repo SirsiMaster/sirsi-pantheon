@@ -1,1 +1,0 @@
-- Release workflow builds with the read-only private SDK credentials, like CI (#1109 wrapped ci.yml but not release.yml, so tag v0.24.112's source-verify build could not fetch sirsi-inference: "could not read Username for https://github.com").
