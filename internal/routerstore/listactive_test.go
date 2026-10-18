@@ -99,3 +99,48 @@ func TestListSinceBoundsHistoryByClosedTime(t *testing.T) {
 		t.Fatalf("a window after the closure must drop the closed item but keep open work: %v", have)
 	}
 }
+
+// ListSinceHeaders is ListSince's exact row set and header fields with the bodies
+// empty; ListSince itself keeps the bodies (history readback depends on them).
+func TestListSinceHeadersDropsOnlyTheBodies(t *testing.T) {
+	s := newTestStore(t)
+	openID, err := s.Send("sender", "a", "t-open", "proposal", "open body")
+	if err != nil {
+		t.Fatal(err)
+	}
+	closedID, err := s.Send("sender", "b", "t-closed", "proposal", "closed body")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CloseItem(closedID, "the result"); err != nil {
+		t.Fatal(err)
+	}
+	ctx, since := context.Background(), "2000-01-01T00:00:00Z"
+	full, err := s.ListSince(ctx, since)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lean, err := s.ListSinceHeaders(ctx, since)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lean) != len(full) || len(full) != 2 {
+		t.Fatalf("row sets differ: headers %d, full %d (want 2)", len(lean), len(full))
+	}
+	for i := range full {
+		f, l := full[i], lean[i]
+		if f.Instructions == "" {
+			t.Fatalf("ListSince must keep bodies: %s has no instructions", f.ID)
+		}
+		if l.Instructions != "" || l.Result != "" {
+			t.Fatalf("ListSinceHeaders leaked a body for %s: %q / %q", l.ID, l.Instructions, l.Result)
+		}
+		f.Instructions, f.Result = "", ""
+		if f != l {
+			t.Fatalf("header fields differ for %s:\nfull %+v\nlean %+v", f.ID, f, l)
+		}
+	}
+	if full[0].ID != openID && full[1].ID != openID {
+		t.Fatal("open item missing")
+	}
+}

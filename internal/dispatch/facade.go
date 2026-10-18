@@ -396,7 +396,14 @@ func (f *Facade) ListActive() (items []work.Item, closed int, err error) {
 // store; before the cutover it filters ListAll, so behavior is unchanged there.
 func (f *Facade) ListRecent(since time.Time) ([]work.Item, error) {
 	if routercfg.StoreWake() {
-		rows, err := f.store.ListSince(context.Background(), since.UTC().Format(time.RFC3339))
+		// Headers only: the board reads who/what/when, never bodies (~19 MB per 8-day call
+		// with them). A service older than ListSinceHeaders 404s it; fall back so client and
+		// service can roll out in either order.
+		at := since.UTC().Format(time.RFC3339)
+		rows, err := f.store.ListSinceHeaders(context.Background(), at)
+		if err != nil && strings.Contains(err.Error(), "no such store method") {
+			rows, err = f.store.ListSince(context.Background(), at)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("store list unavailable (store is the cutover authority): %w", err)
 		}
