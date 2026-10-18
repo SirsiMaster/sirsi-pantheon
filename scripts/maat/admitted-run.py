@@ -95,6 +95,7 @@ class Native:
         self.owned_admission = None
         self.deadline = None
         self.executor_controls = False
+        self.release_scope = None
 
     def register_executor(self, agent):
         if not re.fullmatch(r'[A-Za-z0-9_.-]{1,128}', agent or ''):
@@ -105,9 +106,15 @@ class Native:
         # must never reach these control subprocesses. Keep the payload's
         # environment intact; isolate only this executor's control calls.
         self.executor_controls = True
-        row = self.call('thread', 'register', '--agent', agent, '--surface', 'worker', '--thread', identity,
-                        '--anchor-pid', str(os.getpid()), '--repo', os.getcwd(),
-                        '--json', timeout=30)
+        try:
+            row = self.call('thread', 'register', '--agent', agent, '--surface', 'worker', '--thread', identity,
+                            '--anchor-pid', str(os.getpid()), '--repo', os.getcwd(),
+                            '--json', timeout=30)
+        except TransientTransport:
+            # Retain the requested identity and resolve that exact registration;
+            # never create another executor to discover an uncertain outcome.
+            self.executor_thread = identity
+            row = self.registration_observation(identity)
         if (not isinstance(row, dict) or row.get('agent_id') != agent or
                 row.get('pid') != os.getpid() or row.get('status') != 'active' or
                 row.get('thread_id') != identity):
@@ -138,7 +145,7 @@ class Native:
             response = subprocess.run([self.cli, *args], check=True, capture_output=True,
                                       text=True, timeout=timeout, env=control_env)
         except subprocess.TimeoutExpired as error:
-            if args[:2] in (('maat', 'heartbeat'), ('maat', 'status'), ('thread', 'heartbeat')):
+            if args[:2] in (('maat', 'heartbeat'), ('maat', 'status'), ('thread', 'heartbeat'), ('thread', 'register')):
                 raise TransientTransport('Control transport timed out') from error
             raise
         except subprocess.CalledProcessError as error:
@@ -146,10 +153,36 @@ class Native:
             # Denial takes precedence over transport text; unknown errors refuse.
             denied = re.search(r'(?i)\b(401|403|unauthori[sz]ed|forbidden|denied|revoked|released|expired|scope|mismatch)\b', detail)
             transient = re.search(r'(?i)(\bHTTP (502|503|504)\b|TLS handshake timeout|relay[^\n]*OUTCOME UNKNOWN)', detail)
-            if not denied and transient:
+            # RegisterThread saves its own row before opportunistic terminal
+            # pruning. A lost prune CAS can therefore report failure AFTER our
+            # exact registration committed. Resolve only our generated row;
+            # never repeat registration or relax the lifecycle fence.
+            partial_registration = (args[:2] == ('thread', 'register') and
+                                    re.search(r'thread "[A-Za-z0-9_-]+" prune lost lifecycle fence', detail))
+            if not denied and (transient or partial_registration):
                 raise TransientTransport('Control transport uncertain: '+detail) from error
             raise Refused('Control call '+str(args[:2])+' failed: '+detail) from error
         return (json.loads(response.stdout) if response.stdout.strip() else None) if json_result else response.stdout
+
+    def registration_observation(self, thread):
+        """Bound registration transport retries; no compute permission is created."""
+        prior_deadline = self.deadline
+        self.deadline = min(prior_deadline, time.monotonic() + 120) if prior_deadline is not None else time.monotonic() + 120
+        backoff = 1
+        try:
+            while True:
+                if time.monotonic() >= self.deadline:
+                    raise TransientTransport('Registration observation recovery budget exhausted')
+                try:
+                    return self.call('thread', 'heartbeat', '--thread', thread, '--json', timeout=30)
+                except TransientTransport:
+                    remaining = self.deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise
+                    time.sleep(min(backoff, remaining))
+                    backoff = min(8, backoff * 2)
+        finally:
+            self.deadline = prior_deadline
 
     def registered(self, agent, thread):
         if not agent or not thread:
@@ -162,7 +195,7 @@ class Native:
         # own-thread heartbeat, without a fleet-wide OS reaper pass. Closed or
         # suspended threads cannot be revived. Verify the returned owner and
         # actual kernel ancestry/start below; a heartbeat alone authorizes none.
-        observed = self.call('thread', 'heartbeat', '--thread', thread, '--json', timeout=30)
+        observed = self.registration_observation(thread)
         if not isinstance(observed, dict):
             raise Refused('Registration observation is malformed')
         rows = [observed]
@@ -210,7 +243,7 @@ class Native:
 
     def reserve(self, resource, agent, work):
         return self.call('maat', 'reserve', resource, '--holder', agent, '--work', work,
-                         '--regime', 'build' if self.cpu_cores else 'loaded', '--lease-ttl', '120', '--exempt-pid',
+                         '--regime', 'build' if self.cpu_cores else 'loaded', '--lease-ttl', '240', '--exempt-pid',
                          str(os.getpid()), '--repro', str(Path(__file__).resolve()), '--json')
 
     def heartbeat(self, identity):
@@ -227,7 +260,36 @@ class Native:
             self.call('thread', 'heartbeat', '--thread', self.executor_thread, '--json', timeout=30, json_result=False)
 
     def release(self, identity):
-        self.call('maat', 'release', identity, '--json')
+        try:
+            return self.call('maat', 'release', identity, '--json')
+        except TransientTransport as uncertain:
+            # The write may already have committed. Never blindly replay it or
+            # release a reservation selected only by a lane/work name.
+            if not self.release_scope or self.release_scope.get('id') != identity:
+                raise
+            prior_deadline = self.deadline
+            self.deadline = time.monotonic() + 30
+            try:
+                for attempt in range(3):
+                    try:
+                        row = self.lookup(self.release_scope['resource'])
+                        if any(row.get(k) != v for k, v in self.release_scope.items()):
+                            raise Refused('Uncertain release readback changed exact reservation identity')
+                        if row.get('status') in ('released', 'expired', 'invalidated', 'done'):
+                            return row
+                        if row.get('status') != 'active':
+                            raise Refused('Uncertain release readback has unknown status')
+                        # Exact readback proves this same owned grant remains
+                        # active. A repeated release is now deliberate, not a
+                        # replay used to discover an unknown write outcome.
+                        return self.call('maat', 'release', identity, '--json')
+                    except TransientTransport:
+                        if attempt == 2 or time.monotonic() + 2 >= self.deadline:
+                            raise uncertain
+                        time.sleep(1 << attempt)
+                raise uncertain
+            finally:
+                self.deadline = prior_deadline
 
 
 class ProvenLease:
@@ -275,26 +337,67 @@ def stop(child):
     child.wait()
 
 
+def check_deadlines(execution_deadline, lease, started, timeout, record):
+    """A run budget and a renewable grant are independent limits, not one error."""
+    now = time.monotonic()
+    record.update(execution_timeout_sec=timeout,
+                  execution_elapsed_sec=round(max(0, now - started), 3),
+                  proven_lease_remaining_sec=round(max(0, lease.deadline - now), 3))
+    if now >= execution_deadline:
+        record['stop_cause'] = record.get('execution_bound', 'execution_timeout')
+        if record['stop_cause'] == 'job_timeout':
+            raise Refused('Recurring job total lifetime exceeded')
+        raise Refused('Execution timeout exceeded (--timeout '+str(timeout)+' seconds); '
+                      'lease renewal does not extend the configured run budget')
+    if now >= lease.deadline:
+        record['stop_cause'] = 'proven_lease_expired'
+        raise Refused('Proven admission deadline exceeded; no confirmed renewal remains')
+
+
+def refusal_details(reply):
+    """Persist the canonical decision's non-secret identities, never a guessed holder."""
+    if not isinstance(reply, dict):
+        return {}
+    fields = ('id', 'resource', 'holder', 'work', 'status', 'share', 'cores',
+              'heartbeat_at', 'lease_ttl_sec', 'est_end', 'reason', 'exempt_pid')
+    result = {}
+    for key in ('reservation', 'conflict'):
+        row = reply.get(key)
+        if isinstance(row, dict):
+            result[key] = {field: row[field] for field in fields if field in row}
+    if isinstance(reply.get('pending_cedes'), list):
+        result['pending_cedes'] = [x for x in reply['pending_cedes'] if isinstance(x, str)]
+    return result
+
+
 def supervise(command, resource, agent, thread, work, timeout, backend, record):
     owned = None
     child = None
     code = 78
     reservation_requested = reservation_replied = False
     cpu_cores = getattr(backend, 'cpu_cores', None)
+    record['execution_timeout_sec'] = timeout
     try:
         backend.registered(agent, thread)
         confirmed_at = time.monotonic()
-        row = backend.lookup(resource)
-        if row is None or (cpu_cores and not valid(row, resource, agent, work, cpu_cores)):
+        # A destination-local executor owns this job, not the primary holder
+        # returned by who-is-on. Loaded jobs previously skipped Reserve when
+        # any row existed, creating phantom refusals; an old same-lane/work
+        # row could instead be borrowed without this executor renewing it.
+        # Ask the atomic scheduler for this executor's own exact decision.
+        fresh_executor = isinstance(backend, Native) and backend.executor_thread is not None
+        row = None if fresh_executor else backend.lookup(resource)
+        if fresh_executor or row is None or (cpu_cores and not valid(row, resource, agent, work, cpu_cores)):
             reservation_requested = True
             confirmed_at = time.monotonic()
             reply = backend.reserve(resource, agent, work)
             reservation_replied = True
             if not isinstance(reply, dict):
                 raise Refused('Reservation reply is not an object')
+            record['admission_decision'] = refusal_details(reply)
             if 'granted' in reply:
                 if reply['granted'] is not True:
-                    raise Refused('Reservation was not granted')
+                    raise Refused('Reservation was not granted: '+json.dumps(record['admission_decision'], sort_keys=True))
                 row = reply.get('reservation')
             else:
                 row = reply
@@ -303,8 +406,11 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
                 owned = row['id']
                 if isinstance(backend, Native):
                     backend.owned_admission = owned
+                    backend.release_scope = {key: row.get(key) for key in
+                                             ('id', 'resource', 'holder', 'work', 'exempt_pid')}
         if not valid(row, resource, agent, work, cpu_cores):
-            raise Refused('Fresh exact host/holder/work full-share admission required; foreign/floor/expired/unknown admission refuses')
+            raise Refused('Fresh exact host/holder/work sufficient admission required: '+
+                          json.dumps(record.get('admission_decision', refusal_details({'reservation': row})), sort_keys=True))
         identity = row['id']
         lease = ProvenLease(row, confirmed_at, resource, agent, work, cpu_cores, owned)
         if isinstance(backend, Native):
@@ -315,6 +421,10 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
         lease.check(before)
         if time.monotonic() >= lease.deadline:
             raise Refused('Proven admission deadline exceeded before spawn')
+        job_deadline = getattr(backend, 'job_deadline', None)
+        if isinstance(job_deadline, (int, float)) and time.monotonic() >= job_deadline:
+            record['stop_cause'] = 'job_timeout'
+            raise Refused('Recurring job total lifetime exceeded before spawn')
         record.update(admission=identity, borrowed=owned is None, status='admitted')
         child_env = os.environ.copy()
         if cpu_cores:
@@ -326,14 +436,17 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
             record.update(cpu_cores=cpu_cores, share=before['share'])
         child = subprocess.Popen(command, start_new_session=True, env=child_env)
         record.update(pid=child.pid, status='running')
-        deadline = time.monotonic() + timeout
+        started_at = time.monotonic()
+        deadline = started_at + timeout
+        if isinstance(job_deadline, (int, float)) and job_deadline <= deadline:
+            deadline = job_deadline
+            record['execution_bound'] = 'job_timeout'
         control_at = time.monotonic() + min(30, max(0.001, (lease.deadline - time.monotonic()) / 3))
         backoff = 1
         if isinstance(backend, Native):
             backend.deadline = min(deadline, lease.deadline)
         while True:
-            if time.monotonic() >= min(deadline, lease.deadline):
-                raise Refused('Execution or proven admission deadline exceeded')
+            check_deadlines(deadline, lease, started_at, timeout, record)
             if time.monotonic() >= control_at:
                 try:
                     # Local child monitoring is cheap and frequent. Remote
@@ -342,8 +455,7 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
                     # always require exact readback before the next renewal.
                     row = backend.lookup(resource)
                     lease.check(row)
-                    if time.monotonic() >= min(deadline, lease.deadline):
-                        raise Refused('Execution or proven admission deadline exceeded')
+                    check_deadlines(deadline, lease, started_at, timeout, record)
                     if child.poll() is None:
                         if owned:
                             started = time.monotonic()
@@ -364,7 +476,7 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
                     backoff = min(8, backoff * 2)
             remaining = min(deadline, lease.deadline) - time.monotonic()
             if remaining <= 0:
-                raise Refused('Execution or proven admission deadline exceeded')
+                check_deadlines(deadline, lease, started_at, timeout, record)
             try:
                 code = child.wait(timeout=min(2, remaining, max(0.001, control_at - time.monotonic())))
                 try:
@@ -374,8 +486,7 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
                     # Terminal compute is never restarted or kept alive for a
                     # readback. Cleanup runs immediately; uncertainty is debt.
                     raise Refused('Child completion admission readback unavailable')
-                if time.monotonic() >= min(deadline, lease.deadline):
-                    raise Refused('Child completion exceeded proven deadline')
+                check_deadlines(deadline, lease, started_at, timeout, record)
                 record['status'] = 'success' if code == 0 else 'child_failed'
                 break
             except subprocess.TimeoutExpired:
@@ -406,6 +517,58 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
     return code
 
 
+def supervise_iterations(command, resource, agent, thread, work, timeout, backend,
+                         record, iterations=1, interval=0, job_timeout=None, persist=None):
+    """One real executor, fresh admission per iteration, no detached payloads.
+
+    launchd may own this foreground supervisor; an IDE's PID is not reused.
+    Waiting consumes no compute reservation. First failure stops the job.
+    """
+    if iterations == 1:
+        return supervise(command, resource, agent, thread, work, timeout, backend, record)
+    if not getattr(backend, 'executor_thread', None):
+        raise Refused('Recurring jobs require their own registered executor')
+    end = time.monotonic() + job_timeout
+    backend.job_deadline = end
+    record['iterations'] = []
+    for index in range(iterations):
+        remaining = end - time.monotonic()
+        if remaining <= 0:
+            record.update(status='refused_or_stopped', stop_cause='job_timeout', exit_code=78)
+            return 78
+        # Never borrow a previous iteration's terminal grant or retain its
+        # cleanup state. Each iteration acquires/reconciles its own grant.
+        backend.owned_admission = None
+        backend.release_scope = None
+        backend.deadline = None
+        current = {'iteration': index + 1}
+        code = supervise(command, resource, agent, thread, work, min(timeout, remaining), backend, current)
+        record['iterations'].append(current)
+        record.update(status='waiting' if code == 0 else 'refused_or_stopped', exit_code=code)
+        if persist:
+            persist()
+        if code != 0:
+            return code
+        if index + 1 == iterations:
+            record['status'] = 'success'
+            return 0
+        wake = time.monotonic() + interval
+        while time.monotonic() < wake:
+            remaining = end - time.monotonic()
+            if remaining <= 0:
+                record.update(status='refused_or_stopped', stop_cause='job_timeout', exit_code=78)
+                return 78
+            time.sleep(max(0, min(30, remaining, wake - time.monotonic())))
+            try:
+                backend.heartbeat_executor()
+            except TransientTransport as error:
+                # No payload or reservation exists while idle. Retain the
+                # diagnostic; the next iteration must independently register
+                # and obtain fresh admission before it can spawn anything.
+                record['idle_transport_error'] = str(error)
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--work', required=True)
@@ -414,6 +577,12 @@ def main():
     parser.add_argument('--register-executor', action='store_true',
                         help='Bind this job process on its execution host; never reuse a foreign host PID')
     parser.add_argument('--timeout', type=int, default=300)
+    parser.add_argument('--iterations', type=int, default=1,
+                        help='Bounded foreground iterations; each obtains a fresh admission')
+    parser.add_argument('--interval', type=int, default=0,
+                        help='Seconds without a compute lease between iterations')
+    parser.add_argument('--job-timeout', type=int,
+                        help='Total recurring supervisor lifetime, at most 86400 seconds')
     parser.add_argument('--cpu-cores', type=int,
                         help='Explicit cooperative CPU-only build mask; may use a sufficient granted build floor, never GPU/model admission')
     parser.add_argument('command', nargs=argparse.REMAINDER)
@@ -423,6 +592,12 @@ def main():
         parser.error('Supply a bounded timeout, simple work identity and foreground command after --')
     if args.cpu_cores is not None and not 1 <= args.cpu_cores <= 64:
         parser.error('CPU build mask must be between 1 and 64')
+    if not 1 <= args.iterations <= 1000 or not 0 <= args.interval <= 3600:
+        parser.error('Iterations must be 1..1000 and interval 0..3600 seconds')
+    if args.iterations > 1 and (not args.register_executor or args.job_timeout is None):
+        parser.error('Recurring jobs require --register-executor and an explicit --job-timeout')
+    if args.job_timeout is not None and not 1 <= args.job_timeout <= 86400:
+        parser.error('Job timeout must be 1..86400 seconds')
     # No caller-set host or admission exemption; host is derived locally.
     resource = local_resource()
     folder = Path.home()/'.sirsi/evidence/maat-runs'/uuid.uuid4().hex
@@ -439,6 +614,9 @@ def main():
         json.dump(record, output); output.flush(); os.fsync(output.fileno())
     backend = Native()
     backend.cpu_cores = args.cpu_cores
+    def persist():
+        with target.open('w') as output:
+            json.dump(record, output, indent=2); output.flush(); os.fsync(output.fileno())
     code = 78
     try:
         if args.register_executor:
@@ -453,8 +631,9 @@ def main():
         # process ancestry/start before admission and again immediately pre-spawn.
         os.environ['SIRSI_AGENT_ID'] = args.agent or ''
         os.environ['SIRSI_THREAD_ID'] = args.thread or ''
-        code = supervise(command, resource, args.agent,
-                         args.thread, args.work, args.timeout, backend, record)
+        code = supervise_iterations(command, resource, args.agent, args.thread,
+                                    args.work, args.timeout, backend, record,
+                                    args.iterations, args.interval, args.job_timeout, persist)
     except (Exception, KeyboardInterrupt) as error:
         record.update(status='refused_or_stopped', reason=str(error), exit_code=78)
         code = 78
@@ -466,8 +645,7 @@ def main():
             record['exit_code'] = 78
             code = 78
         record['exit_code'] = code
-        with target.open('w') as output:
-            json.dump(record, output, indent=2); output.flush(); os.fsync(output.fileno())
+        persist()
         print('Ma\'at terminal: '+str(target), file=sys.stderr)
     return code
 

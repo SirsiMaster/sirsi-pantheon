@@ -6,6 +6,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- Ma’at distinguishes configured execution budgets from renewable admission
+  deadlines and records their exact terminal causes. Owned grants request a
+  bounded 240-second recovery interval; initial registration retries resolve
+  the same executor identity. Uncertain releases use identity-bound readback,
+  and refusals preserve actual canonical blocker/cede identities. Finite
+  foreground recurring jobs obtain fresh admission per iteration, persist each
+  result and stop on first failure without borrowing an IDE process identity.
+  Existing workloads and abandoned Studio training are not restarted.
+
+- Destination-local Ma’at executors always obtain their own canonical grant,
+  including loaded/model jobs. A primary foreign holder no longer suppresses
+  the reservation request, and stale same-lane/work grants cannot be silently
+  borrowed by a newly registered executor.
+
+- Resolve a partially committed registration after an unrelated terminal-prune
+  lifecycle conflict by verifying only the same generated executor row. Do not
+  create another registration, retry arbitrary fence failures or relax denials.
+
 ## [0.24.116] — 2026-10-18
 
 - Headless workers are subordinate to lead lanes (owner 2026-10-18): the router service refuses a worker thread's close/complete unless its lane granted it the answering role (registry `worker_answers`, stamped on the worker thread as `answer_role` by the wake loop). `router respond` checks before sending. Acknowledging stays open. Grants seeded for the 21 lanes with no lead session; attended lanes (SSA, SHA, codex-apollo, Mercury) get none.
