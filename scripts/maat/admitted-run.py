@@ -153,7 +153,13 @@ class Native:
             # Denial takes precedence over transport text; unknown errors refuse.
             denied = re.search(r'(?i)\b(401|403|unauthori[sz]ed|forbidden|denied|revoked|released|expired|scope|mismatch)\b', detail)
             transient = re.search(r'(?i)(\bHTTP (502|503|504)\b|TLS handshake timeout|relay[^\n]*OUTCOME UNKNOWN)', detail)
-            if not denied and transient:
+            # RegisterThread saves its own row before opportunistic terminal
+            # pruning. A lost prune CAS can therefore report failure AFTER our
+            # exact registration committed. Resolve only our generated row;
+            # never repeat registration or relax the lifecycle fence.
+            partial_registration = (args[:2] == ('thread', 'register') and
+                                    re.search(r'thread "[A-Za-z0-9_-]+" prune lost lifecycle fence', detail))
+            if not denied and (transient or partial_registration):
                 raise TransientTransport('Control transport uncertain: '+detail) from error
             raise Refused('Control call '+str(args[:2])+' failed: '+detail) from error
         return (json.loads(response.stdout) if response.stdout.strip() else None) if json_result else response.stdout

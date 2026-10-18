@@ -20,6 +20,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
   the reservation request, and stale same-lane/work grants cannot be silently
   borrowed by a newly registered executor.
 
+- Resolve a partially committed registration after an unrelated terminal-prune
+  lifecycle conflict by verifying only the same generated executor row. Do not
+  create another registration, retry arbitrary fence failures or relax denials.
+
 ## [0.24.116] — 2026-10-18
 
 - Headless workers are subordinate to lead lanes (owner 2026-10-18): the router service refuses a worker thread's close/complete unless its lane granted it the answering role (registry `worker_answers`, stamped on the worker thread as `answer_role` by the wake loop). `router respond` checks before sending. Acknowledging stays open. Grants seeded for the 21 lanes with no lead session; attended lanes (SSA, SHA, codex-apollo, Mercury) get none.

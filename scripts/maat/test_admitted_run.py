@@ -42,6 +42,31 @@ class Backend:
 
 
 class RegistryDeadlineTests(unittest.TestCase):
+    def test_partial_registration_prune_conflict_uses_exact_readback_not_reregister(self):
+        native = runner.Native()
+        calls = []
+        def run(argv, **kwargs):
+            calls.append(argv)
+            if argv[1:3] == ['thread', 'register']:
+                raise subprocess.CalledProcessError(1, argv, stderr='thread "thr-old" prune lost lifecycle fence')
+            identity = argv[argv.index('--thread')+1]
+            return mock.Mock(stdout=json.dumps(dict(agent_id='lane', pid=os.getpid(), status='active', thread_id=identity)))
+        with mock.patch.object(runner.subprocess, 'run', side_effect=run):
+            identity = native.register_executor('lane')
+        self.assertEqual([x[1:3] for x in calls], [['thread', 'register'], ['thread', 'heartbeat']])
+        self.assertEqual(calls[0][calls[0].index('--thread')+1], identity)
+        self.assertEqual(calls[1][calls[1].index('--thread')+1], identity)
+
+    def test_partial_registration_classifier_never_relaxes_denial_or_other_calls(self):
+        for operation, detail in [
+            (('thread', 'heartbeat'), 'thread "thr-old" prune lost lifecycle fence'),
+            (('thread', 'register'), '403 denied; thread "thr-old" prune lost lifecycle fence'),
+            (('thread', 'register'), 'thread "thr-old" mutation lost lifecycle fence')]:
+            with mock.patch.object(runner.subprocess, 'run', side_effect=subprocess.CalledProcessError(1, 'sirsi', stderr=detail)):
+                with self.assertRaises(runner.Refused) as error:
+                    runner.Native().call(*operation)
+            self.assertNotIsInstance(error.exception, runner.TransientTransport)
+
     def test_initial_registration_blip_recovers_the_same_identity_without_reregister(self):
         native = runner.Native()
         calls = []
