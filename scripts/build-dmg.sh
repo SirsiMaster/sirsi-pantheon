@@ -190,7 +190,7 @@ echo "Verifying assembled Pantheon.app payload..."
     --pkg-info "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/PkgInfo" \
     --launch-agent "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" \
     --brand-logo "${PROJECT_ROOT}/docs/assets/sirsi-logo-white.png" \
-    --require-code-signature "${APOLLO_PROFILE_ARGS[@]}"
+    --require-code-signature ${APOLLO_PROFILE_ARGS[@]+"${APOLLO_PROFILE_ARGS[@]}"}
 
 # --- Stage + create the DMG ---
 echo "Creating DMG..."
