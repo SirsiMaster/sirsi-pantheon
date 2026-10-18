@@ -143,7 +143,7 @@ type Thread struct {
 	ConsumerCapable bool `json:"consumer_capable,omitempty"`
 	// AnswerRole records that this worker thread's lane granted it the answering role (registry
 	// worker_answers). The router service refuses a worker thread's close/complete without it.
-	AnswerRole bool `json:"answer_role,omitempty"`
+	AnswerRole bool `json:"answer_role"` // always sent: an ABSENT key means "writer predates the field" and the service keeps the stored grant
 
 	// Lane is the honest, self-reported state of the worker behind this thread:
 	// what its last consumer run did, any hold on dispatch, and when it last made
