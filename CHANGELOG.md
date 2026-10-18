@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- Ma’at loaded/model admission no longer depends on whether a bounded,
+  CPU-only build floor arrived before or after it. Quiet measurements,
+  unbounded or memory-bearing asks, model floors and full-share holders
+  retain their existing conflict behavior. Local and atomic service paths
+  share the correction without schema or credential changes.
+
 - Ma’at distinguishes configured execution budgets from renewable admission
   deadlines and records their exact terminal causes. Owned grants request a
   bounded 240-second recovery interval; initial registration retries resolve

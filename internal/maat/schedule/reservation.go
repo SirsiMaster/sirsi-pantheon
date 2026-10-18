@@ -406,6 +406,16 @@ func (l *Ledger) reserveAttempt(req Reservation, queue bool) (ReserveResult, err
 		if !r.windowOverlaps(req) {
 			continue
 		}
+		// A bounded CPU-only floor is not ownership of the model slot.
+		// Otherwise a build admitted AFTER a model can coexist with it, but
+		// the identical build admitted BEFORE that model strands the model.
+		// Keep quiet measurements, unbounded/memory asks, model floors and
+		// every full reservation exclusive. Both local and atomic service
+		// scheduling execute this same decision inside their existing fence.
+		if req.Regime == RegimeLoaded && r.Regime == RegimeBuild &&
+			r.Share == ShareFloor && r.Cores > 0 && r.Cores <= floor && r.MemGB == 0 {
+			continue
+		}
 		if r.Holder == req.Holder {
 			continue // own overlapping hold — the new one is additive/refresh, allow
 		}
