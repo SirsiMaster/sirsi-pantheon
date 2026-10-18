@@ -115,3 +115,31 @@ default full-share requirement. Unknown, foreign, insufficient, stale, or
 revoked grants still refuse. Exact newly acquired grants are observed through
 their own heartbeat response, not the first holder on a shared machine.
 
+
+### Bounded heartbeat transport recovery
+
+The supervisor reads the exact existing ID through `maat status <resource>`;
+reads never refresh a lease. Only a confirmed reserve/heartbeat response advances
+a monotonic deadline anchored before that request, discounted by the returned
+heartbeat age and bounded by the actual accepted TTL. Each renewal requires
+fresh matching active ID/resource/holder/work/executor/share/capacity readback
+and unchanged kernel executor ancestry. A failed mutation is never blindly
+replayed and never triggers reserve, a new ID, or a share promotion.
+
+Recognized HTTP 502/503/504, TLS handshake timeout, relay outcome-unknown and
+bounded RPC timeouts may retry with 1/2/4/8-second backoff only inside the proven
+interval. RPC timeouts and child waits are clamped to the earlier execution/lease
+deadline. Reads do not extend that interval even if an uncertain heartbeat may
+have committed. Explicit denial, revocation, missing/expired/mismatched state,
+malformed JSON and unclassified errors stop immediately. A borrowed reservation
+is neither renewed nor released, and cannot extend the initial proven interval.
+A terminal child receives no subsequent renewal. Cleanup terminates/reaps only
+the launched child group and releases only the acquired reservation; unresolved
+release or executor-close failures remain explicit cleanup debt.
+
+Reproduce the deterministic clock/transport fixtures with:
+`python3 -m unittest discover -s scripts/maat -p test_admitted_run.py -v`.
+Tests mock transport/time for outages and also exercise a harmless real child
+termination/reap and Darwin kernel identity. Run them under ordinary own Ma'at
+admission. They do not qualify deployed long-running Apollo workloads; SSA owns
+independent review, release and installed qualification.

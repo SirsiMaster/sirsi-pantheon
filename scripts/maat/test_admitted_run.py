@@ -15,7 +15,7 @@ spec.loader.exec_module(runner)
 
 def admission(**updates):
     row = dict(id='fixture-id', resource='m5', holder='lane', work='work', status='active',
-               share='full', heartbeat_at=dt.datetime.now(dt.timezone.utc).isoformat(), lease_ttl_sec=120)
+               share='full', exempt_pid=os.getpid(), heartbeat_at=dt.datetime.now(dt.timezone.utc).isoformat(), lease_ttl_sec=120)
     row.update(updates)
     return row
 
@@ -67,6 +67,8 @@ class RegistryDeadlineTests(unittest.TestCase):
     def test_executor_heartbeat_does_not_renew_borrowed_admission(self):
         native = runner.Native()
         native.executor_thread = 'thr-exec'
+        native.executor_identity = dict(agent_id='lane', thread_id='thr-exec')
+        native.verify_runtime = mock.Mock()
         native.call = mock.Mock()
         native.heartbeat_executor()
         native.call.assert_called_once_with('thread','heartbeat','--thread','thr-exec','--json',timeout=30,json_result=False)
@@ -109,7 +111,7 @@ class RegistryDeadlineTests(unittest.TestCase):
         native = runner.Native()
         with mock.patch.object(runner.subprocess, 'run', side_effect=subprocess.TimeoutExpired('sirsi',30)), \
                 mock.patch.object(runner.subprocess, 'check_output') as process:
-            with self.assertRaises(subprocess.TimeoutExpired):
+            with self.assertRaises(runner.TransientTransport):
                 native.registered('lane','thread')
             process.assert_not_called()
 
@@ -134,9 +136,9 @@ class SupervisorTests(unittest.TestCase):
     def test_owned_lookup_reads_exact_grant_not_foreign_first_holder(self):
         native=runner.Native()
         native.owned_admission='own-grant'
-        native.call=mock.Mock(return_value=admission())
-        native.lookup('m5')
-        native.call.assert_called_once_with('maat','heartbeat','own-grant','--json')
+        native.call=mock.Mock(return_value=[admission(id='foreign'), admission(id='own-grant')])
+        self.assertEqual(native.lookup('m5')['id'], 'own-grant')
+        native.call.assert_called_once_with('maat','status','m5','--json')
 
     def run_case(self, backend, command=None, timeout=2, agent='lane', thread='thread'):
         record = {}
@@ -290,6 +292,232 @@ class KernelIdentityTests(unittest.TestCase):
         runner.Native().verify_runtime(self.row(start_time=start), 'lane', 'thread')
         with self.assertRaises(runner.Refused):
             runner.Native().verify_runtime(self.row(start_time='reused'), 'lane', 'thread')
+
+
+
+
+class Clock:
+    def __init__(self):
+        self.now = 0
+    def monotonic(self):
+        return self.now
+
+
+class FakeChild:
+    pid = 424242
+    def __init__(self, clock, finish):
+        self.clock, self.finish = clock, finish
+    def poll(self):
+        return 0 if self.clock.now >= self.finish else None
+    def wait(self, timeout=None):
+        if timeout is not None and self.clock.now + timeout < self.finish:
+            self.clock.now += timeout
+            raise subprocess.TimeoutExpired('fixture', timeout)
+        self.clock.now = max(self.clock.now, self.finish)
+        return 0
+
+
+class RecoveryTests(unittest.TestCase):
+    def run_case(self, *, failure=None, restore=34, finish=45, renewal=None, ttl=120):
+        clock = Clock()
+        backend = Backend(None)
+        backend.heartbeat_calls = 0
+        events = []
+        base = admission(lease_ttl_sec=ttl)
+        def reserve(*args):
+            backend.reserve_calls += 1
+            backend.row = dict(base)
+            events.append(('reserve', clock.now))
+            return dict(granted=True, reservation=backend.row)
+        def lookup(*args):
+            events.append(('read', clock.now))
+            if clock.now >= 30 and clock.now < restore and failure:
+                raise failure
+            return backend.row
+        def heartbeat(identity):
+            events.append(('renew', clock.now))
+            backend.heartbeat_calls += 1
+            if renewal:
+                return renewal(backend, clock)
+            return dict(backend.row)
+        backend.reserve, backend.lookup, backend.heartbeat = reserve, lookup, heartbeat
+        child = FakeChild(clock, finish)
+        record = {}
+        with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
+                mock.patch.object(runner.subprocess, 'Popen', return_value=child), \
+                mock.patch.object(runner, 'stop') as stop:
+            code = runner.supervise(['fixture'], 'm5', 'lane', 'thread', 'work', 300, backend, record)
+            stop.assert_called_once_with(child)
+        self.assertEqual(backend.reserve_calls, 1)
+        self.assertEqual(backend.released, ['fixture-id'])
+        return code, record, backend, clock, events
+
+    def test_transient_read_failures_recover_with_one_reservation(self):
+        for reason in ['MaatRead HTTP 502', 'TLS handshake timeout', 'relay OUTCOME UNKNOWN']:
+            with self.subTest(reason=reason):
+                code, record, backend, clock, events = self.run_case(failure=runner.TransientTransport(reason))
+                self.assertEqual(code, 0)
+                self.assertGreater(record['transport_retries'], 0)
+                self.assertGreater(backend.heartbeat_calls, 0)
+                for i, event in enumerate(events):
+                    if event[0] == 'renew':
+                        self.assertEqual(events[i-1][0], 'read')
+
+    def test_uncertain_mutation_is_not_replayed_until_readback(self):
+        def renewal(backend, clock):
+            if backend.heartbeat_calls == 1:
+                raise runner.TransientTransport('MaatMutate HTTP 502 OUTCOME UNKNOWN')
+            return dict(backend.row)
+        code, record, backend, clock, events = self.run_case(renewal=renewal)
+        self.assertEqual(code, 0)
+        self.assertEqual(backend.heartbeat_calls, 2)
+        first, second = [i for i,e in enumerate(events) if e[0]=='renew']
+        self.assertTrue(any(e[0]=='read' for e in events[first+1:second]))
+        self.assertGreater(events[second][1], events[first][1])
+
+    def test_readback_outage_exhausts_original_ttl_without_renewal(self):
+        code, record, backend, clock, events = self.run_case(
+            failure=runner.TransientTransport('TLS handshake timeout'), restore=1000, finish=1000)
+        self.assertEqual(code, 78)
+        self.assertLessEqual(clock.now, 120)
+        self.assertEqual(backend.heartbeat_calls, 0)
+
+    def test_failed_renewal_never_extends_proven_deadline(self):
+        def renewal(backend, clock):
+            # Server MAY have renewed; no usable response means no extra time.
+            raise runner.TransientTransport('relay OUTCOME UNKNOWN')
+        code, record, backend, clock, events = self.run_case(renewal=renewal, finish=1000)
+        self.assertEqual(code, 78)
+        self.assertLessEqual(clock.now, 120)
+
+    def test_denial_or_unclassified_failure_stops_immediately(self):
+        for reason in ['HTTP 403 scope denied', 'released', 'revoked', 'unclassified failure']:
+            code, record, backend, clock, events = self.run_case(failure=runner.Refused(reason), restore=1000, finish=1000)
+            self.assertEqual(code, 78)
+            self.assertEqual(clock.now, 30)
+            self.assertEqual(backend.heartbeat_calls, 0)
+
+    def test_mismatched_recovery_or_renewal_never_promotes(self):
+        for changes in [dict(id='other'), dict(resource='studio'), dict(holder='other'),
+                        dict(work='other'), dict(exempt_pid=1), dict(status='released'),
+                        dict(status='expired'), dict(share='floor', cores=1, regime='build')]:
+            def renewal(backend, clock):
+                return dict(backend.row, **changes)
+            code, record, backend, clock, events = self.run_case(renewal=renewal, finish=1000)
+            self.assertEqual(code, 78)
+            self.assertEqual(clock.now, 30)
+
+    def test_recovery_readback_mismatch_stops_before_mutation(self):
+        for changes in [dict(exempt_pid=1), dict(id='other'), dict(share='floor', cores=1, regime='build'),
+                        dict(status='released'), dict(holder='other'), dict(work='other')]:
+            clock = Clock()
+            backend = Backend(None)
+            events = []
+            def reserve(*args):
+                backend.row = admission()
+                return dict(granted=True, reservation=backend.row)
+            def lookup(*args):
+                events.append(('read', clock.now))
+                if clock.now == 30:
+                    raise runner.TransientTransport('HTTP 502')
+                return dict(backend.row, **changes) if clock.now > 30 else backend.row
+            backend.reserve, backend.lookup = reserve, lookup
+            backend.heartbeat = mock.Mock()
+            record = {}
+            with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
+                    mock.patch.object(runner.subprocess, 'Popen', return_value=FakeChild(clock, 1000)), \
+                    mock.patch.object(runner, 'stop') as stop:
+                code = runner.supervise(['fixture'], 'm5', 'lane', 'thread', 'work', 300, backend, record)
+            self.assertEqual(code, 78)
+            self.assertEqual(clock.now, 31)
+            backend.heartbeat.assert_not_called()
+            self.assertEqual(backend.released, ['fixture-id'])
+            stop.assert_called_once()
+
+    def test_stop_terminates_group_escalates_and_reaps(self):
+        child = mock.Mock(pid=424242)
+        child.wait.side_effect = [subprocess.TimeoutExpired('fixture', 2), 0]
+        with mock.patch.object(runner.os, 'killpg') as kill:
+            runner.stop(child)
+        self.assertEqual(kill.call_args_list, [mock.call(child.pid, runner.signal.SIGTERM),
+                                              mock.call(child.pid, runner.signal.SIGKILL)])
+        self.assertEqual(child.wait.call_args_list, [mock.call(timeout=2), mock.call()])
+
+    def test_actual_accepted_ttl_and_request_start_bound(self):
+        row = admission(lease_ttl_sec=7)
+        clock = Clock()
+        with mock.patch.object(runner.time, 'monotonic', clock.monotonic):
+            clock.now = 3  # RPC took three seconds; TTL starts before request.
+            lease = runner.ProvenLease(row, 0, 'm5', 'lane', 'work', None, True)
+            self.assertLessEqual(lease.deadline, 7)
+            prior = lease.deadline
+            clock.now = 6
+            lease.check(admission(lease_ttl_sec=120))
+            self.assertEqual(lease.deadline, prior)  # readback cannot extend
+            clock.now = 8
+            with self.assertRaises(runner.Refused):
+                lease.confirm(row, 0)
+
+    def test_slow_success_after_old_deadline_is_refused(self):
+        def renewal(backend, clock):
+            clock.now = 121
+            return dict(backend.row)
+        code, record, backend, clock, events = self.run_case(renewal=renewal, finish=1000)
+        self.assertEqual(code, 78)
+        self.assertIn('after proven deadline', record['reason'])
+
+    def test_missing_owned_executor_never_spawns(self):
+        backend = Backend(None)
+        backend.reserve = lambda *args: dict(granted=True, reservation=admission(exempt_pid=1))
+        with mock.patch.object(runner.subprocess, 'Popen') as spawn:
+            code, record = SupervisorTests().run_case(backend)
+        self.assertEqual(code, 78)
+        spawn.assert_not_called()
+        self.assertEqual(backend.released, ['fixture-id'])
+
+
+class TransportTests(unittest.TestCase):
+    def test_transport_allowlist_and_denial_precedence(self):
+        for text, transient in [('MaatMutate HTTP 502', True), ('TLS handshake timeout', True),
+                                ('relay restart OUTCOME UNKNOWN', True),
+                                ('HTTP 403 scope denied HTTP 502', False),
+                                ('reservation expired', False), ('something failed', False)]:
+            with self.subTest(text=text):
+                error = subprocess.CalledProcessError(1, 'sirsi', stderr=text)
+                with mock.patch.object(runner.subprocess, 'run', side_effect=error):
+                    with self.assertRaises(runner.TransientTransport if transient else runner.Refused) as caught:
+                        runner.Native().call('maat', 'heartbeat', 'fixture')
+                    self.assertEqual(isinstance(caught.exception, runner.TransientTransport), transient)
+
+    def test_rpc_timeout_is_clamped_to_proven_deadline(self):
+        native = runner.Native()
+        native.deadline = 10
+        with mock.patch.object(runner.time, 'monotonic', return_value=7), \
+                mock.patch.object(runner.subprocess, 'run', return_value=mock.Mock(stdout='{}')) as run:
+            native.call('maat', 'status', 'm5', '--json')
+            self.assertEqual(run.call_args.kwargs['timeout'], 3)
+        with mock.patch.object(runner.time, 'monotonic', return_value=10), \
+                mock.patch.object(runner.subprocess, 'run') as run:
+            with self.assertRaises(runner.Refused):
+                native.call('maat', 'heartbeat', 'fixture')
+            run.assert_not_called()
+
+    def test_readback_requires_single_exact_id(self):
+        native = runner.Native()
+        native.owned_admission = 'fixture-id'
+        for rows in [None, {}, [], [admission(id='foreign')], [admission(), admission()]]:
+            native.call = mock.Mock(return_value=rows)
+            with self.assertRaises(runner.Refused):
+                native.lookup('m5')
+
+    def test_renewal_verifies_runtime_and_returns_receipt(self):
+        native = runner.Native()
+        native.executor_identity = dict(agent_id='lane', thread_id='thread')
+        native.verify_runtime = mock.Mock(side_effect=runner.Refused('changed ancestry'))
+        native.call = mock.Mock()
+        with self.assertRaises(runner.Refused):
+            native.heartbeat('fixture-id')
+        native.call.assert_not_called()
 
 
 if __name__ == '__main__':
