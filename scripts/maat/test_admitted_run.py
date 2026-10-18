@@ -251,6 +251,44 @@ class RegistryDeadlineTests(unittest.TestCase):
 
 
 class SupervisorTests(unittest.TestCase):
+    def test_registered_executor_gets_own_loaded_grant_despite_foreign_primary_holder(self):
+        backend = runner.Native()
+        backend.executor_thread = 'thr-actual-executor'
+        backend.registered = mock.Mock()
+        backend.lookup = mock.Mock(side_effect=lambda resource: admission() if backend.owned_admission
+                                   else admission(holder='other', work='training'))
+        backend.reserve = mock.Mock(return_value={'granted': True, 'reservation': admission()})
+        backend.release = mock.Mock()
+        record = {}
+        clock = Clock()
+        with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
+                mock.patch.object(runner.subprocess, 'Popen', return_value=FakeChild(clock, 0)), \
+                mock.patch.object(runner, 'stop'):
+            code = runner.supervise(['fixture'], 'm5', 'lane', 'thread', 'work', 30, backend, record)
+        self.assertEqual(code, 0)
+        self.assertEqual(backend.reserve.call_count, 1)
+        self.assertFalse(record['borrowed'])
+        self.assertEqual(backend.lookup.call_count, 2)
+
+    def test_registered_executor_never_borrows_old_same_lane_work_grant(self):
+        backend = runner.Native()
+        backend.executor_thread = 'thr-actual-executor'
+        backend.registered = mock.Mock()
+        backend.lookup = mock.Mock(side_effect=lambda resource: admission() if backend.owned_admission
+                                   else admission(exempt_pid=1))
+        backend.reserve = mock.Mock(return_value={'granted': True, 'reservation': admission()})
+        backend.release = mock.Mock()
+        record = {}
+        clock = Clock()
+        with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
+                mock.patch.object(runner.subprocess, 'Popen', return_value=FakeChild(clock, 0)), \
+                mock.patch.object(runner, 'stop'):
+            code = runner.supervise(['fixture'], 'm5', 'lane', 'thread', 'work', 30, backend, record)
+        self.assertEqual(code, 0)
+        backend.reserve.assert_called_once()
+        self.assertFalse(record['borrowed'])
+        self.assertEqual(backend.lookup.call_count, 2)
+
     def test_floor_requires_explicit_sufficient_cpu_build_mask(self):
         row = admission(share='floor', cores=4, regime='build')
         self.assertFalse(runner.valid(row,'m5','lane','work'))

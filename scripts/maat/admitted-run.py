@@ -374,8 +374,14 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
     try:
         backend.registered(agent, thread)
         confirmed_at = time.monotonic()
-        row = backend.lookup(resource)
-        if row is None or (cpu_cores and not valid(row, resource, agent, work, cpu_cores)):
+        # A destination-local executor owns this job, not the primary holder
+        # returned by who-is-on. Loaded jobs previously skipped Reserve when
+        # any row existed, creating phantom refusals; an old same-lane/work
+        # row could instead be borrowed without this executor renewing it.
+        # Ask the atomic scheduler for this executor's own exact decision.
+        fresh_executor = isinstance(backend, Native) and backend.executor_thread is not None
+        row = None if fresh_executor else backend.lookup(resource)
+        if fresh_executor or row is None or (cpu_cores and not valid(row, resource, agent, work, cpu_cores)):
             reservation_requested = True
             confirmed_at = time.monotonic()
             reply = backend.reserve(resource, agent, work)

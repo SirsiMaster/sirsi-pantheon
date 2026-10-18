@@ -15,6 +15,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
   result and stop on first failure without borrowing an IDE process identity.
   Existing workloads and abandoned Studio training are not restarted.
 
+- Destination-local Ma’at executors always obtain their own canonical grant,
+  including loaded/model jobs. A primary foreign holder no longer suppresses
+  the reservation request, and stale same-lane/work grants cannot be silently
+  borrowed by a newly registered executor.
+
 ## [0.24.116] — 2026-10-18
 
 - Headless workers are subordinate to lead lanes (owner 2026-10-18): the router service refuses a worker thread's close/complete unless its lane granted it the answering role (registry `worker_answers`, stamped on the worker thread as `answer_role` by the wake loop). `router respond` checks before sending. Acknowledging stays open. Grants seeded for the 21 lanes with no lead session; attended lanes (SSA, SHA, codex-apollo, Mercury) get none.

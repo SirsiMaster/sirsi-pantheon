@@ -120,6 +120,12 @@ Only a read proving that same owned grant remains active permits a release
 retry; unavailable or changed readback remains explicit cleanup debt. This does
 not authorize releasing other jobs or guessing the ID of an uncertain create.
 
+`--register-executor` always requests its own canonical reservation, even when
+`who-is-on` selects a foreign or old same-lane/work row. That observation is not
+an admission decision for a new executor. The scheduler still determines the
+actual permitted share; a returned CPU floor is never promoted to model/GPU
+permission. A new executor does not borrow another job's unrenewable grant.
+
 One foreground supervisor can own a finite recurring job without depending on
 an IDE process remaining in its ancestry:
 
