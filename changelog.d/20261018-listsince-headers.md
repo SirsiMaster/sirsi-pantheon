@@ -1,0 +1,1 @@
+- Work board no longer pulls ~19 MB of item bodies every refresh: new `ListSinceHeaders` returns ListSince's rows with instructions/result empty, and the board reads it (falling back to `ListSince` against an older service). Those 5-25 s responses were the router 502 bursts of 2026-10-18.
