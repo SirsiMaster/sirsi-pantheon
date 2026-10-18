@@ -65,6 +65,13 @@ type AgentConfig struct {
 	// the session heartbeat says: an idle-but-registered attended session still owns the inbox.
 	Attended bool `json:"attended,omitempty"`
 
+	// WorkerAnswers is the lead lane's standing grant letting this lane's HEADLESS worker answer router items
+	// (owner 2026-10-18: "headless workers are subordinate to lead lanes; only lead lanes answer or respond to
+	// router messages unless explicitly given an answering role from the lead lane"). Without it the router
+	// service refuses a worker's close/complete. Seeded 2026-10-18 for lanes with no lead session; the lead
+	// lane revokes it by removing the field.
+	WorkerAnswers bool `json:"worker_answers,omitempty"`
+
 	// extra preserves JSON fields not known to this version of AgentConfig so a
 	// LoadRegistry→SaveRegistry round-trip never silently erases metadata the
 	// struct does not model. "consumer" was the original motivating example and

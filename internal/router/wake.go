@@ -635,6 +635,16 @@ func closedChan() chan struct{} {
 // site, none from the reap passes #619 already covers. A consumer-capable
 // lane then read as watch-only until the next lucky write won.
 func setThreadConsumerCapable(routerRoot, threadID string, capable bool) error {
+	return setThreadFields(routerRoot, threadID, func(t *Thread) { t.ConsumerCapable = capable })
+}
+
+// setThreadAnswerRole persists whether this worker thread's lane granted it the answering role.
+func setThreadAnswerRole(routerRoot, threadID string, granted bool) error {
+	return setThreadFields(routerRoot, threadID, func(t *Thread) { t.AnswerRole = granted })
+}
+
+// setThreadFields applies set to one thread record with the fence-safe write described above.
+func setThreadFields(routerRoot, threadID string, set func(*Thread)) error {
 	return retryOnLostFenceErr(func() error {
 		reg, err := LoadThreadRegistry(routerRoot)
 		if err != nil {
@@ -642,7 +652,7 @@ func setThreadConsumerCapable(routerRoot, threadID string, capable bool) error {
 		}
 		for _, t := range reg.Threads {
 			if t != nil && t.ThreadID == threadID {
-				t.ConsumerCapable = capable
+				set(t)
 				// The CAS fence's primary branch is last_seen_at strictly
 				// advancing; every OTHER lifecycle mutator in this package
 				// bumps it as part of its write. This one did not, so it fell
@@ -1121,17 +1131,27 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 	// inbox never drains" was previously indistinguishable from a healthy steady
 	// state — and worse, its heartbeat marked the lane armed.
 	var consumer *ResolvedConsumer
+	answerRole := false // the lead lane's grant (registry worker_answers); absent = this worker may not answer
 	if reg, rerr := LoadRegistry(routerRoot); rerr != nil {
 		log.Printf("wake-loop %s: registry unreadable, running WATCH-ONLY: %v", agentID, rerr)
 	} else if cfg, lerr := reg.Lookup(agentID); lerr != nil {
 		log.Printf("wake-loop %s: agent not registered, running WATCH-ONLY: %v", agentID, lerr)
-	} else if rc, why := ResolveConsumer(*cfg, routerRoot); rc == nil {
-		log.Printf("wake-loop %s: WATCH-ONLY — this lane has NO consumer: %s", agentID, why)
 	} else {
-		// The consumer inherits this loop's registered thread (Rule of Ra):
-		// the service binds its session to that thread at mint.
-		bindConsumerThread(rc, thr.ThreadID)
-		consumer = rc
+		answerRole = cfg.WorkerAnswers
+		if rc, why := ResolveConsumer(*cfg, routerRoot); rc == nil {
+			log.Printf("wake-loop %s: WATCH-ONLY — this lane has NO consumer: %s", agentID, why)
+		} else {
+			// The consumer inherits this loop's registered thread (Rule of Ra):
+			// the service binds its session to that thread at mint.
+			bindConsumerThread(rc, thr.ThreadID)
+			consumer = rc
+		}
+	}
+	if thr.AnswerRole != answerRole {
+		thr.AnswerRole = answerRole
+		if err := setThreadAnswerRole(routerRoot, thr.ThreadID, answerRole); err != nil {
+			log.Printf("wake-loop %s: could not record answer role: %v", agentID, err)
+		}
 	}
 
 	// Publish the capability on the thread record. This is what stops a watch-only

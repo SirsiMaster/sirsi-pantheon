@@ -513,6 +513,12 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusForbidden, "ErrThreadAuthority", aerr.Error())
 			return
 		}
+		// 7b. a headless worker answers only with its lead lane's answering role.
+		if werr := s.workerAnswerHold(sess, name, in); werr != nil {
+			s.logf("worker-answer: REFUSED %s from %s@%s (thread %s): %v", name, sess.Agent, sess.Host, sess.ThreadID, werr)
+			writeErr(w, http.StatusForbidden, "ErrWorkerAnswers", werr.Error())
+			return
+		}
 	}
 	if name == "Wait" && len(in) == 3 {
 		if d, ok := in[2].Interface().(time.Duration); ok && (d <= 0 || d > s.opts.MaxWait) {
