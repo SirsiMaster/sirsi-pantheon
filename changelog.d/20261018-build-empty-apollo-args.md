@@ -1,0 +1,1 @@
+- Release DMG/PKG build no longer dies when no private Apollo profile is supplied: macOS bash 3.2 treats an empty "${arr[@]}" as unbound under set -u, which failed tag v0.24.113 at build-dmg.sh line 193.

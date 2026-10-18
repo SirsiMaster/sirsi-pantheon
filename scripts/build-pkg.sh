@@ -159,7 +159,7 @@ fi
     --pkg-info "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/PkgInfo" \
     --launch-agent "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" \
     --brand-logo "${PROJECT_ROOT}/docs/assets/sirsi-logo-white.png" \
-    --require-code-signature "${APOLLO_PROFILE_ARGS[@]}"
+    --require-code-signature ${APOLLO_PROFILE_ARGS[@]+"${APOLLO_PROFILE_ARGS[@]}"}
 
 # pkgutil intentionally exits nonzero for an unsigned package. That is useful
 # local-development evidence. In commercial release mode signature,
