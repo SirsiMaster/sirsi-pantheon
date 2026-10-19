@@ -3,20 +3,23 @@ package router
 import (
 	"context"
 	"errors"
+	"log"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
 func waitForObserver(t *testing.T, root string) *Thread {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(8 * time.Second)
 	for time.Now().Before(deadline) {
 		reg, err := LoadThreadRegistry(root)
 		if err == nil {
 			for _, row := range reg.Threads {
-				if row.WakeMechanism == WakeLaunchAgent && !row.Status.IsTerminal() {
+				if row.WakeMechanism == WakeLaunchAgent && !row.Status.IsTerminal() && row.Lane != nil {
 					return row
 				}
 			}
@@ -31,7 +34,7 @@ func TestWakeLoopTerminalObserverStopsWithoutRevival(t *testing.T) {
 	root := wakeTestRoot(t, AgentConfig{ID: "observer", Type: "gemma"})
 	t.Setenv("SIRSI_AGENT_ID", "")
 	t.Setenv("SIRSI_THREAD_ID", "")
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	done := make(chan error, 1)
 	go func() { done <- RunWakeLoop(ctx, root, "observer", 5*time.Millisecond) }()
@@ -60,11 +63,27 @@ func TestWakeLoopTerminalObserverStopsWithoutRevival(t *testing.T) {
 	}
 }
 
+type observerFailureNotice struct {
+	seen chan struct{}
+	once sync.Once
+}
+
+func (n *observerFailureNotice) Write(p []byte) (int, error) {
+	if strings.Contains(string(p), "heartbeat FAILED; new dispatch held") {
+		n.once.Do(func() { close(n.seen) })
+	}
+	return len(p), nil
+}
+
 func TestWakeLoopTransientRegistryReadDoesNotExit(t *testing.T) {
 	root := wakeTestRoot(t, AgentConfig{ID: "observer", Type: "gemma"})
 	t.Setenv("SIRSI_AGENT_ID", "")
 	t.Setenv("SIRSI_THREAD_ID", "")
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	notice := &observerFailureNotice{seen: make(chan struct{})}
+	previousOutput := log.Writer()
+	log.SetOutput(notice)
+	defer log.SetOutput(previousOutput)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	done := make(chan error, 1)
 	go func() { done <- RunWakeLoop(ctx, root, "observer", 5*time.Millisecond) }()
@@ -82,7 +101,15 @@ func TestWakeLoopTransientRegistryReadDoesNotExit(t *testing.T) {
 	if err := os.Rename(bad, path); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(80 * time.Millisecond)
+	// Wait for the fault to be OBSERVED, not an arbitrary short sleep that
+	// may restore the file before a slower native registration/OS probe ends.
+	select {
+	case <-notice.seen:
+	case err := <-done:
+		t.Fatalf("observer exited instead of holding on the read fault: %v", err)
+	case <-ctx.Done():
+		t.Fatal("injected read fault was never observed")
+	}
 	select {
 	case err := <-done:
 		t.Fatalf("transient read stopped observer: %v", err)
@@ -91,7 +118,7 @@ func TestWakeLoopTransientRegistryReadDoesNotExit(t *testing.T) {
 	if err := SaveThreadRegistry(root, reg); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(8 * time.Second)
 	for time.Now().Before(deadline) {
 		got, err := LoadThreadRegistry(root)
 		if err == nil && got.Threads[row.ThreadID].LastSeenAt.After(row.LastSeenAt) {
