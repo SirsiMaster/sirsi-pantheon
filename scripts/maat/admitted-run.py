@@ -671,6 +671,7 @@ def main():
             json.dump(record, output, indent=2); output.flush(); os.fsync(output.fileno())
     code = 78
     try:
+        require_job_safe_command(command)
         if args.register_executor:
             # Normal authenticated fabric transport selects the destination.
             # The logical lane is unchanged; its execution instance is local

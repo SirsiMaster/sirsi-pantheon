@@ -1,6 +1,8 @@
 """No real process is signalled by these ownership negative controls."""
 import importlib.util
+import os
 from pathlib import Path
+import tempfile
 import unittest
 from unittest import mock
 
@@ -55,6 +57,18 @@ class StopOwnership(unittest.TestCase):
                         'sirsi router task update lane task --status pending',
                         'sirsi router send --from lane --to ra --instructions hi'):
             runner.check_tool_stop({'tool_input': {'command': command}})
+
+    def test_main_refuses_before_executor_registration(self):
+        with tempfile.TemporaryDirectory() as folder, \
+                mock.patch.dict(os.environ, {'HOME': folder}), \
+                mock.patch.object(runner, 'local_resource', return_value='m5'), \
+                mock.patch.object(runner, 'Native') as native, \
+                mock.patch.object(runner.sys, 'argv', ['runner', '--agent', 'lane',
+                     '--register-executor', '--work', 'stop-own-training',
+                     '--', 'pkill', '-f', 'train']):
+            self.assertEqual(runner.main(), 78)
+            native.return_value.register_executor.assert_not_called()
+            native.return_value.reserve.assert_not_called()
 
 
 if __name__ == '__main__':
