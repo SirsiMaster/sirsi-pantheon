@@ -6,6 +6,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- Reconcile queue operation after the signed118 rollout: restore the existing Ra
+  worker's answering grant and declare Mercury's standby consumer while retaining
+  its permanent attended fence. This does not start a competing Mercury session
+  or prove any queue was consumed. Queue acceptance requires a recipient result.
+- Keep scoped SOCKS transport as the fabric helper's default, add explicit direct
+  transport for an already-authorized non-proxy runtime, refuse direct mode when
+  a proxy is configured, and use stable enrolled Tailscale destinations instead
+  of stale LAN addresses. Both native supervisors and strict existing host pins
+  remain mandatory; there is no automatic transport fallback.
+
 ## [0.24.118] — 2026-10-19
 
 - Integrate Ra's merged semantic-payload comparison (#1156) as the single
