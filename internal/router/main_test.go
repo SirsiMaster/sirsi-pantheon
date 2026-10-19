@@ -18,6 +18,9 @@ import (
 // real body must opt in explicitly via setSessionReaperImpl.
 func TestMain(m *testing.M) {
 	setSessionReaperImpl(func(routerRoot, repoRoot string) error { return nil })
+	// Dispatch-mechanics tests run every lane as granted; TestWorkerWithoutAnswerGrantHoldsDispatch
+	// installs the real registry probe.
+	setLaneGrantFn(func(string, string) bool { return true })
 
 	// Hermetic-store law (the #99/#151 host-state class, store-cutover edition):
 	// the host cutover marker ~/.sirsi/store-wake makes StoreWake() true for

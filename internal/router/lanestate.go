@@ -18,6 +18,7 @@ const (
 	HoldWindow          = "window"        // a Ma'at measurement window is open
 	HoldLoad            = "load"          // host load is at or above the core count
 	HoldAttended        = "attended"      // an attended session is live on this lane and owns its inbox
+	HoldNoGrant         = "no_grant"      // the lead lane has not granted its worker the answering role; the lead answers
 	HoldBackoff         = "backoff"       // waiting out a no-progress back-off
 	HoldQuarantine      = "quarantine"    // fabric or lane quarantined: needs a human
 	HoldCeiling         = "ceiling"       // hourly spawn ceiling reached
@@ -230,6 +231,9 @@ func currentHold(routerRoot, agentID string, fruitless int, nextDispatchAllowed 
 	// A declared attended lane is a standing hold, reported ahead of transient window/load holds.
 	if declaredAttendedLane(routerRoot, agentID) {
 		return HoldAttended, time.Time{}
+	}
+	if !getLaneGrantFn()(routerRoot, agentID) {
+		return HoldNoGrant, time.Time{}
 	}
 	if _, open := railsLockHolder(); open {
 		return HoldWindow, time.Time{}

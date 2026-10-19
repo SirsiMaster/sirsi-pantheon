@@ -932,6 +932,55 @@ func attendedSessionOwnsInbox(routerRoot, agentID string, depth int) bool {
 	return true
 }
 
+// laneGrantsWorker reports whether the lead lane granted its headless worker the
+// answering role (registry worker_answers). Read every tick, like
+// declaredAttendedLane, so a grant or revoke applies without a restart. An
+// unreadable registry reads as no grant: the service refuses an ungranted answer
+// anyway, so dispatching one only spends a session that cannot finish.
+func laneGrantsWorker(routerRoot, agentID string) bool {
+	reg, err := LoadRegistry(routerRoot)
+	if err != nil {
+		return false
+	}
+	cfg, err := reg.Lookup(agentID)
+	return err == nil && cfg.WorkerAnswers
+}
+
+// laneGrantFn is the injectable grant probe (Rule A16/A21): dispatch-mechanics tests
+// run with every lane granted; the grant test installs the real probe.
+var (
+	laneGrantMu sync.RWMutex
+	laneGrantFn = laneGrantsWorker
+)
+
+func getLaneGrantFn() func(routerRoot, agentID string) bool {
+	laneGrantMu.RLock()
+	defer laneGrantMu.RUnlock()
+	return laneGrantFn
+}
+
+// setLaneGrantFn installs a probe for tests; nil restores the registry probe.
+func setLaneGrantFn(fn func(routerRoot, agentID string) bool) {
+	laneGrantMu.Lock()
+	defer laneGrantMu.Unlock()
+	if fn == nil {
+		fn = laneGrantsWorker
+	}
+	laneGrantFn = fn
+}
+
+// workerLacksAnswerGrant holds dispatch for a lane whose lead has not granted its
+// worker the answering role (owner 2026-10-18: lead lanes answer). Without it the
+// loop kept spawning sessions that did the work and were then refused at close:
+// claude-apollo-m5-rail logged ~150 refused CloseItems overnight on 2026-10-19.
+func workerLacksAnswerGrant(routerRoot, agentID string, depth int) bool {
+	if getLaneGrantFn()(routerRoot, agentID) {
+		return false
+	}
+	log.Printf("wake-loop %s: dispatch held — the lead lane has not granted this worker the answering role (registry worker_answers); its lead answers (inbox depth %d)", agentID, depth)
+	return true
+}
+
 // railsLockHolder reports, without logging, whether a measurement window is open
 // and who holds it. Used by the lane-state publisher so a sender can see a hold
 // without the loop spamming its log every tick.
@@ -1374,6 +1423,7 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 			time.Now().After(nextDispatchAllowed) &&
 			!fabricDispatchQuarantined(agentID, depth) && !fabricDispatchOverloaded(agentID, depth) &&
 			!measurementWindowOpen(agentID, depth) && !attendedSessionOwnsInbox(routerRoot, agentID, depth) &&
+			!workerLacksAnswerGrant(routerRoot, agentID, depth) &&
 			!hostConsumerSlotsFull(routerRoot, agentID, depth) {
 
 			// #636 C3 — hard hourly ceiling, enforced independently of everything
