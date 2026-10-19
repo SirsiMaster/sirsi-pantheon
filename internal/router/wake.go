@@ -1253,13 +1253,19 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 	// launchd keeps the process image loaded even after the installed pathname
 	// changes. Observe that stable name and yield only at a consumer boundary;
 	// KeepAlive then executes the installed generation. Never kill its work.
-	imagePath, imageErr := filepath.EvalSymlinks(os.Args[0])
-	var image *wakeExecutable
-	if imageErr == nil {
-		image, imageErr = watchWakeExecutable(imagePath)
-	}
+	loadedImage, imageErr := nativeWakeImageIdentity()
 	if imageErr != nil {
-		log.Printf("wake-loop %s: executable replacement observation unavailable: %v", agentID, imageErr)
+		return fmt.Errorf("identify loaded wake executable: %w", imageErr)
+	}
+	// The service's direct executable argv is the stable installation name.
+	// Do not resolve the executing image's renamed predecessor as that name.
+	imagePath, imageErr := filepath.Abs(os.Args[0])
+	if imageErr != nil {
+		return imageErr
+	}
+	image, imageErr := watchWakeExecutable(imagePath, loadedImage)
+	if imageErr != nil {
+		return imageErr
 	}
 
 	tick := time.NewTicker(interval)

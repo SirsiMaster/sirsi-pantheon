@@ -7,6 +7,8 @@
 | Claims are fenced/idempotent | `tasklease.go`, `facade.go` | lease/expiry/duplicate tests | source-bound |
 | One physical Studio capacity pool | shared scheduler alias comparisons and conservative capacity reads | both-direction/history/concurrent alias fixtures; ADR-118 | source reviewed; canonical service/native client readback pending |
 | Wake transitions are durable | `wakeevents.go`, `reconcile.go` | event synthesis/terminal retry tests | source-bound |
+| Upgrade reaches running controllers, not only installed files | `wakeimage*.go`, `RunWakeLoop` | loaded kernel vnode identity plus pre-capture/late replacement, incomplete-install and busy-boundary fixtures | successor source/tests; official signed rollout and all-controller loaded-image readback still required |
+| Observer remains natively owned after restart | `adoptWorkerThread`, `Heartbeat`, `CloseThread` | exact generation reuse, persisted readback, checked heartbeat, transient recovery and terminal/no-revival controls | source-bound accident guard; separate raw-service consumer identity not claimed |
 | A2A identity/body/correlation/errors | `dispatch`, `routerstore` | contract assessment and tests | source-bound |
 | Read acknowledgement is distinct | `AckItem`, schema v22+ | recipient-only ack tests | source-bound |
 | Cloud canonical service | `router serve`, GCP recipe | historical deploy receipts; current readback pending permissions | open-live |

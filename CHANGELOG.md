@@ -12,6 +12,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
   Missing, symlinked or non-executable replacements do not evict the running
   image. Initial adoption from versions lacking this check still requires a
   verified service rollout; installing a file is not loaded-image proof.
+- Bind replacement checks to the kernel's actual executable mapping identity
+  (macOS libproc vnode identity; Linux procfs), not a late pathname snapshot.
+  Detect upgrades that race initial registration as well as later replacements;
+  exercise an actual copied test executable replaced before its first observation.
 - Read back exact machine/PID/start/surface registration before dispatch and
   mint fresh observer IDs rather than accepting legacy bare-PID reuse. Preserve
   Ra's per-lane session correction from PR #1111 through a true merge. Select

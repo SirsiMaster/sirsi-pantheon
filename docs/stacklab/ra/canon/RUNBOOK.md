@@ -18,6 +18,36 @@
 Never copy a router database, silently overwrite a peer, or treat a heartbeat,
 PID, or successful process spawn as proof that the lane consumed its work.
 
+## Executable upgrades and controller ownership
+
+Compare each loaded executable with the signed installed release, not just its
+plist path. Older generations need one guarded service rollout because they do
+not acquire new observer behavior from an on-disk replacement. Preserve each
+active detached consumer's native PID/start, process group and durable marker.
+Never stop payloads merely to make the installed-version report green.
+
+The successor controller reads its **loaded** mapping's kernel device/inode:
+macOS uses libproc for its own executable code mapping (native cgo product build),
+Linux uses `/proc/self/exe`. It compares that identity to the stable direct
+executable argv installed in its service. This catches a replacement during
+initial registration too; a late pathname snapshot is not a loaded identity.
+Missing, symlinked or non-executable replacement names retain the current image.
+After replacement, keep the observer heartbeat alive but dispatch no new work
+until the active consumer finishes, then yield to the existing KeepAlive restart.
+
+Observer rows bind their actual local machine/PID/start and surface; a different
+generation mints a new ID. Read back that authoritative binding before dispatch.
+A transient registry failure holds new dispatch without stopping detached work;
+a terminal row is never revived. Deliberate stop is the exact service lifecycle
+operation, not child cleanup pretending to own its parent's thread. The shared
+Go close guard prevents that accidental close; independent child identity and
+raw-service authorization are separate, unclaimed work.
+
+After rollout, prove two sequential canonical requests, recipient ack/results,
+the persisted observer generation and heartbeat between/after both, plus current
+loaded executable and cleanup. Registration, a one-shot answer or a source-test
+pass alone is not durable queue qualification.
+
 ## Restricted native workers
 
 New Codex consumers use the named `sirsi-router` profile and command proxy with
