@@ -1146,6 +1146,10 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 	if interval <= 0 {
 		interval = DefaultWakeLoopInterval
 	}
+	// Bind the lane before the first store session is resolved. launchd does not
+	// supply a lane identity; hostname fallback would share sessions across lanes.
+	_ = os.Setenv("SIRSI_AGENT_ID", agentID)
+
 	// Runtime identity is (machine, PID, start), not the logical lane alone.
 	// Reuse only this exact runtime's record. A restarted controller must mint a
 	// fresh ID: a reaper holding the old PID snapshot can otherwise reap the new
@@ -1169,6 +1173,7 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 			return fmt.Errorf("register wake-loop thread: %w", err)
 		}
 	}
+	_ = os.Setenv("SIRSI_THREAD_ID", thr.ThreadID)
 	defer func() { _, _ = CloseThread(routerRoot, thr.ThreadID) }()
 
 	// Resolve the DECLARED consumer once. A loop that cannot dispatch still runs:
