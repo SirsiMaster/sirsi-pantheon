@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# ADR-062 rs-16 — first deploy, direct with gcloud (no GitHub Actions — owner 2026-09-02).
+# ADR-062 rs-16: deploy direct with gcloud (no GitHub Actions, owner 2026-09-02), with the full service config.
+# The image is built locally and staged by stage.sh (no-traffic revision, health check, then 100%): Cloud Build
+# cannot compile cmd/sirsi because it imports a private module (see stage.sh).
 set -euo pipefail
-PROJECT=${PROJECT:-sirsi-nexus-live}; REGION=${REGION:-us-central1}; INSTANCE=${INSTANCE:-sirsi-router}
+export PROJECT=${PROJECT:-sirsi-nexus-live} REGION=${REGION:-us-central1}
+INSTANCE=${INSTANCE:-sirsi-router}
 SA_EMAIL="sirsi-router-svc@$PROJECT.iam.gserviceaccount.com"
-VERSION=${VERSION:-$(git describe --tags --always)}
-gcloud --project="$PROJECT" run deploy sirsi-router --source . --region="$REGION" \
+export VERSION=${VERSION:-$(git describe --tags --always)}
+"$(dirname "$0")/stage.sh" \
   --service-account="$SA_EMAIL" --allow-unauthenticated \
   --add-cloudsql-instances="$PROJECT:$REGION:$INSTANCE" \
   --network=default --subnet=default --vpc-egress=private-ranges-only \
@@ -14,13 +17,13 @@ gcloud --project="$PROJECT" run deploy sirsi-router --source . --region="$REGION
   --labels=adr=062,workstream=router-service
 # --allow-unauthenticated: nodes authenticate with per-host bearer tokens inside the service (rs-10/11);
 # Cloud Run IAM would require a Google identity on every Mac, which the design rejects.
-URL=$(gcloud --project="$PROJECT" run services describe sirsi-router --region="$REGION" --format='value(status.url)')
-IMAGE=$(gcloud --project="$PROJECT" run services describe sirsi-router --region="$REGION" --format='value(spec.template.spec.containers[0].image)')
-DIGEST=$(gcloud --project="$PROJECT" run services describe sirsi-router --region="$REGION" --format='value(status.latestReadyRevisionName,spec.template.spec.containers[0].image)')
+URL=$(gcloud --project="$PROJECT" run services describe sirsi-router --region="$REGION" --format="value(status.url)")
+IMAGE=$(gcloud --project="$PROJECT" run services describe sirsi-router --region="$REGION" --format="value(spec.template.spec.containers[0].image)")
+DIGEST=$(gcloud --project="$PROJECT" run services describe sirsi-router --region="$REGION" --format="value(status.latestReadyRevisionName,spec.template.spec.containers[0].image)")
 echo "URL=$URL"; echo "REVISION/IMAGE=$DIGEST"
-# Pin the token-mint job to the same image as the service on every deploy — the
+# Pin the token-mint job to the same image as the service on every deploy: the
 # job is deployed separately (cutover-m5.sh only updates its --args), so left
-# alone it drifts behind the service's schema/binary (claude-io, 2026-09-15:
+# alone it drifts behind the service schema/binary (claude-io, 2026-09-15:
 # "postgres ledger schema_version 22, this binary expects 18" on a stale job image).
 if gcloud --project="$PROJECT" run jobs describe sirsi-router-token --region="$REGION" >/dev/null 2>&1; then
   gcloud --project="$PROJECT" run jobs update sirsi-router-token --region="$REGION" --image="$IMAGE" >/dev/null

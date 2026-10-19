@@ -28,10 +28,12 @@ sirsi router token revoke <token-id> --store <dsn-or-path>                     #
 ## Deploy (Cloud Run)
 
 ```bash
-gcloud run deploy sirsi-router --source . --project <project> --region <region>
+bash scripts/router-service/stage.sh
 ```
 
-Deploy the service before any client that uses a new Store method. `scripts/release-train.sh <version> --deploy-service` does this in order and checks that the new revision holds 100% of traffic.
+Run it from a checkout where the private `sirsi-inference` module builds (your Go module cache, or under `scripts/ci-private-sdk.sh`). It cross-compiles the linux/amd64 binary locally and deploys a COPY-only image, because Cloud Build cannot fetch the private module. The new revision first gets no traffic, must answer `/v1/healthz` three times, and only then takes 100%. It prints `PREV=` (the rollback target) and `NEW=`. Do not run `gcloud run deploy --source .` from the repo root: the root Dockerfile deliberately refuses. `scripts/router-service/deploy.sh` does the same with the full service configuration.
+
+Deploy the service before any client that uses a new Store method. `scripts/release-train.sh <version> --deploy-service` does this in order through `stage.sh`.
 
 ## Roll back
 
