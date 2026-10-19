@@ -1,5 +1,10 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-19 — v0.24.120 release candidate
+
+- Distinguish bounded executor cleanup from published resident-observer protection.
+- Persist canonical installed executable paths in wake service definitions.
+
 ## 2026-10-19 — v0.24.119 release candidate
 
 - Retain the already shipped v0.24.118 semantic thread-save correction.
