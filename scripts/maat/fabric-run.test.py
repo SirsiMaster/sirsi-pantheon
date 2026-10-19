@@ -90,6 +90,19 @@ class TransportPlan(unittest.TestCase):
         self.assertIn('{{thread}}', mercury['consumer']['prompt'])
         self.assertIn('{{router_root}}', mercury['consumer']['prompt'])
 
+    def test_independent_civic_lane_uses_neutral_coordination_root(self):
+        base = SCRIPT.parents[2]
+        registry = json.loads((base / '.agents/idea-router/agents.json').read_text())
+        lane = registry['agents']['claude-kfca']
+        self.assertEqual(lane['repo'], '/Users/thekryptodragon/KingFarmCAB')
+        self.assertEqual(lane['cwd'], '/Users/thekryptodragon/.sirsi/worktrees/kfca-router-coordination')
+        self.assertNotEqual(lane['cwd'], lane['repo'])
+        policy = (base / 'docs/router-service/worker-workspaces/kfca/CLAUDE.md').read_text()
+        for phrase in ('ONLY `claude-kfca` items', 'Do not read `~/Development`',
+                       'Do not change KingFarmCAB', 'No product tests',
+                       'not override them'):
+            self.assertIn(phrase, policy)
+
 
 if __name__ == '__main__':
     unittest.main()
