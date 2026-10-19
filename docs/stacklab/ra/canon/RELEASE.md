@@ -1,6 +1,22 @@
 # Ra Router release contract
 
-## Candidate
+## Current successor candidate — 0.24.119
+
+PR #1158 is merged after protected full race, PostgreSQL, build, lint, canon and
+security qualification. Its loaded-image/lifecycle code is exact source
+`1fa1282330234e3cc4c94deb43efed45a89cff66`; the release branch also contains the
+neutral civic coordination adapter and version/changelog preparation. Bind the
+final tag, source tree, package signatures/notarization and installed CLI hashes
+to the actual publication, not this document's candidate label.
+
+This is not an assertion that 0.24.119 is already published or loaded. Roll out
+on M1, M5 and Studio; adopt existing controllers only at verified consumer
+boundaries, then read actual loaded images and prove sequential canonical queue
+responses with persisted observer heartbeats. Do not use blind loop restarts,
+borrow native thread IDs or copy router/credential databases. Preserve a named
+rollback image and existing healthy work.
+
+## Historical candidate — 0.24.97
 
 Release candidate `0.24.97` is cut from commit `ec92f527` on the exact Ra branch
 after the one-authority resolver fix and the canonical Stack Lab documentation

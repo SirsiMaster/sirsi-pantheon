@@ -1,5 +1,19 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-19 — v0.24.119 release candidate
+
+- Retain the already shipped v0.24.118 semantic thread-save correction.
+- Preserve Ra's own-lane session identity fix through true merge history.
+- Isolate private civic coordination from independent project records and policy.
+- Adopt atomic executable replacements at consumer boundaries without signals.
+- Use the kernel's loaded image identity, including pre-capture upgrade races.
+- Verify the persisted native observer generation before new dispatch.
+- Hold new dispatch on heartbeat failures and preserve terminal evidence.
+- Restore Ra's existing answer grant; preserve Mercury's busy attended owner.
+- Retain scoped SOCKS by default and permit only explicit authorized direct
+  transport, with strict pins, literal argv and both native supervisors.
+- These are candidate notes, not signed-publication or fleet-queue receipts.
+
 ## 2026-10-19 — v0.24.118 registration-control release candidate
 
 - Integrate Ra #1156's single save-time decoded-schema comparison and retain

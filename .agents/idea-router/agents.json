@@ -181,7 +181,8 @@
       "command": [
         "claude"
       ],
-      "cwd": "/Users/thekryptodragon/KingFarmCAB",
+      "cwd": "/Users/thekryptodragon/.sirsi/worktrees/kfca-router-coordination",
+      "repo": "/Users/thekryptodragon/KingFarmCAB",
       "workstream": "pantheon",
       "wake": {
         "mechanism": "none",
