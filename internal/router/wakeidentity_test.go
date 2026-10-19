@@ -1,11 +1,110 @@
 package router
 
 import (
+	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
+
+func waitForObserver(t *testing.T, root string) *Thread {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		reg, err := LoadThreadRegistry(root)
+		if err == nil {
+			for _, row := range reg.Threads {
+				if row.WakeMechanism == WakeLaunchAgent && !row.Status.IsTerminal() {
+					return row
+				}
+			}
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("observer registration not observed")
+	return nil
+}
+
+func TestWakeLoopTerminalObserverStopsWithoutRevival(t *testing.T) {
+	root := wakeTestRoot(t, AgentConfig{ID: "observer", Type: "gemma"})
+	t.Setenv("SIRSI_AGENT_ID", "")
+	t.Setenv("SIRSI_THREAD_ID", "")
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- RunWakeLoop(ctx, root, "observer", 5*time.Millisecond) }()
+	row := waitForObserver(t, root)
+	// Simulate an authoritative terminal transition, not a child claiming the
+	// observer's shutdown rights. The loop must exit and never rewrite it live.
+	reg, err := LoadThreadRegistry(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg.Threads[row.ThreadID].Status = ThreadStatusReaped
+	if err := SaveThreadRegistry(root, reg); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if !errors.Is(err, ErrHeartbeatThreadUnavailable) {
+			t.Fatalf("terminal observer result: %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatal("terminal observer kept running")
+	}
+	reg, err = LoadThreadRegistry(root)
+	if err != nil || reg.Threads[row.ThreadID].Status != ThreadStatusReaped {
+		t.Fatalf("terminal evidence changed: %+v %v", reg, err)
+	}
+}
+
+func TestWakeLoopTransientRegistryReadDoesNotExit(t *testing.T) {
+	root := wakeTestRoot(t, AgentConfig{ID: "observer", Type: "gemma"})
+	t.Setenv("SIRSI_AGENT_ID", "")
+	t.Setenv("SIRSI_THREAD_ID", "")
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- RunWakeLoop(ctx, root, "observer", 5*time.Millisecond) }()
+	row := waitForObserver(t, root)
+	// Atomic malformed read fixture is hermetic and touches no live service.
+	reg, err := LoadThreadRegistry(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, threadsFilename)
+	bad := path + ".fixture"
+	if err := os.WriteFile(bad, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(bad, path); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(80 * time.Millisecond)
+	select {
+	case err := <-done:
+		t.Fatalf("transient read stopped observer: %v", err)
+	default:
+	}
+	if err := SaveThreadRegistry(root, reg); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		got, err := LoadThreadRegistry(root)
+		if err == nil && got.Threads[row.ThreadID].LastSeenAt.After(row.LastSeenAt) {
+			cancel()
+			if err := <-done; err != nil {
+				t.Fatal(err)
+			}
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("observer heartbeat did not recover")
+}
 
 func TestConsumerCannotCloseLiveWakeController(t *testing.T) {
 	oldState, oldStart := getPIDStateFn(), getPIDStartFn()

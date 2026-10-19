@@ -6,6 +6,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- Watch the installer-owned executable for atomic replacement. Old wake
+  controllers stop dispatching new consumers and yield to the existing service
+  restart policy only after current work finishes, without signaling payloads.
+  Missing, symlinked or non-executable replacements do not evict the running
+  image. Initial adoption from versions lacking this check still requires a
+  verified service rollout; installing a file is not loaded-image proof.
+- Read back exact machine/PID/start/surface registration before dispatch and
+  mint fresh observer IDs rather than accepting legacy bare-PID reuse. Preserve
+  Ra's per-lane session correction from PR #1111 through a true merge. Select
+  the fabric transport/profile fixtures explicitly in protected CI and complete
+  Mercury's standby loop contract without overriding its attended lead.
+
 - Fence wake observer lifecycle to its actual PID and start identity. A replacement
   controller no longer takes over a previous process's thread row, a consumer
   cannot close its still-live launchagent observer during cleanup, and heartbeat

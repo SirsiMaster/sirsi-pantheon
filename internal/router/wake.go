@@ -1149,6 +1149,8 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 	// Bind the lane before the first store session is resolved. launchd does not
 	// supply a lane identity; hostname fallback would share sessions across lanes.
 	_ = os.Setenv("SIRSI_AGENT_ID", agentID)
+	// A predecessor's thread is not authority to mint the new process's session.
+	_ = os.Unsetenv("SIRSI_THREAD_ID")
 
 	// Runtime identity is (machine, PID, start), not the logical lane alone.
 	// Reuse only this exact runtime's record. A restarted controller must mint a
@@ -1162,6 +1164,7 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 	if thr == nil {
 		host, _ := os.Hostname()
 		thr, err = RegisterThread(routerRoot, &Thread{
+			ThreadID:      NewThreadID(), // bypass legacy bare-PID/session reuse
 			AgentID:       agentID,
 			Surface:       surfaceWorker,
 			WakeMechanism: WakeLaunchAgent,
@@ -1173,6 +1176,20 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 			return fmt.Errorf("register wake-loop thread: %w", err)
 		}
 	}
+	// A returned in-memory record alone is not proof that the service persisted
+	// this native generation. Check the authoritative read before any dispatch.
+	persisted, err := LoadThreadRegistry(routerRoot)
+	if err != nil {
+		return fmt.Errorf("read back wake-loop registration: %w", err)
+	}
+	bound := persisted.Threads[thr.ThreadID]
+	if bound == nil || bound.AgentID != agentID || bound.PID != os.Getpid() ||
+		bound.StartTime == "" || bound.StartTime != PIDStartTimeOf(os.Getpid()) ||
+		bound.Surface != surfaceWorker || bound.WakeMechanism != WakeLaunchAgent ||
+		!SameMachine(bound.MachineID, MachineID()) || bound.Status.IsTerminal() || bound.Status == ThreadStatusSuspended {
+		return fmt.Errorf("wake-loop registration does not bind this native controller: %w", ErrHeartbeatThreadUnavailable)
+	}
+	thr = bound
 	_ = os.Setenv("SIRSI_THREAD_ID", thr.ThreadID)
 	defer func() { _, _ = CloseThread(routerRoot, thr.ThreadID) }()
 
@@ -1233,6 +1250,17 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 
 	// Honest, self-reported lane state published on every heartbeat (router ping).
 	lane := LaneState{ConsumerDeclared: capable}
+	// launchd keeps the process image loaded even after the installed pathname
+	// changes. Observe that stable name and yield only at a consumer boundary;
+	// KeepAlive then executes the installed generation. Never kill its work.
+	imagePath, imageErr := filepath.EvalSymlinks(os.Args[0])
+	var image *wakeExecutable
+	if imageErr == nil {
+		image, imageErr = watchWakeExecutable(imagePath)
+	}
+	if imageErr != nil {
+		log.Printf("wake-loop %s: executable replacement observation unavailable: %v", agentID, imageErr)
+	}
 
 	tick := time.NewTicker(interval)
 	defer tick.Stop()
@@ -1321,6 +1349,21 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 			if errors.Is(herr, ErrHeartbeatThreadUnavailable) {
 				return fmt.Errorf("wake-loop %s lost its observer registration: %w", agentID, herr)
 			}
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-tick.C:
+				continue
+			}
+		}
+
+		if image.replaced() {
+			if wakeUpgradeReady(true, run != nil && run.running()) {
+				log.Printf("wake-loop %s: installed executable replaced; yielding idle controller for service restart", agentID)
+				return nil
+			}
+			// Keep heartbeating above while existing work finishes, but never
+			// dispatch another consumer from the retired image or signal this one.
 			select {
 			case <-ctx.Done():
 				return nil
@@ -1545,7 +1588,7 @@ func adoptWorkerThread(routerRoot, agentID string, pid int) (*Thread, error) {
 
 	var adopted *Thread
 	for _, t := range reg.Threads {
-		if t == nil || t.AgentID != agentID || t.Surface != surfaceWorker {
+		if t == nil || t.AgentID != agentID || t.Surface != surfaceWorker || t.WakeMechanism != WakeLaunchAgent {
 			continue
 		}
 		if t.Status.IsTerminal() || t.Status == ThreadStatusSuspended {

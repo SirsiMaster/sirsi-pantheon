@@ -16,14 +16,15 @@ func seedWorker(t *testing.T, root, agent string, pid int, lastSeen time.Time) s
 	}
 	id := NewThreadID()
 	reg.Threads[id] = &Thread{
-		ThreadID:   id,
-		AgentID:    agent,
-		Surface:    surfaceWorker,
-		PID:        pid,
-		StartTime:  PIDStartTimeOf(pid),
-		Status:     ThreadStatusActive,
-		MachineID:  MachineID(),
-		LastSeenAt: lastSeen,
+		ThreadID:      id,
+		AgentID:       agent,
+		Surface:       surfaceWorker,
+		WakeMechanism: WakeLaunchAgent,
+		PID:           pid,
+		StartTime:     PIDStartTimeOf(pid),
+		Status:        ThreadStatusActive,
+		MachineID:     MachineID(),
+		LastSeenAt:    lastSeen,
 	}
 	if err := SaveThreadRegistry(root, reg); err != nil {
 		t.Fatal(err)
