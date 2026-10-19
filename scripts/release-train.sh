@@ -55,15 +55,15 @@ for _ in $(seq 1 180); do s="$(gh pr checks "$B" 2>&1)"; echo "$s" | grep -qE "n
 echo "$s" | grep -qE "fail" && die "CI failed"
 gh pr merge "$B" --squash >/dev/null; [ "$(gh pr view "$B" --json state -q .state)" = MERGED ] || die "not merged"
 if [ "$DEPLOY" = 1 ]; then
+  # Built locally and staged by stage.sh (no-traffic revision, health check, then 100%): Cloud Build cannot
+  # compile cmd/sirsi, which imports a private module. stage.sh reports the revision that served before.
   git fetch -q origin; D="$(mktemp -d)/deploy"; git worktree add -q --detach "$D" origin/main || die "deploy worktree"
-  (cd "$D" && gcloud run deploy sirsi-router --source . --project sirsi-nexus-live --region us-central1 --quiet) || die "deploy failed"
-  gcloud run services describe sirsi-router --region us-central1 --project sirsi-nexus-live --format='value(status.traffic[0].percent)' | grep -q 100 || die "traffic not 100% on the new revision"
-  # ADR-062 §4 audit receipt: a deploy without one is unrecorded.
   RP="--region us-central1 --project sirsi-nexus-live"
-  REV="$(gcloud run services describe sirsi-router $RP --format='value(status.latestReadyRevisionName)')"; [ -n "$REV" ] || die "no ready revision name"
-  IMG="$(gcloud run revisions describe "$REV" $RP --format='value(spec.containers[0].image)')"; [ -n "$IMG" ] || die "no image for $REV"
-  PREV="$(gcloud run revisions list --service sirsi-router $RP --format='value(metadata.name)' --limit 2 | sed -n 2p)"
-  PIMG=""; [ -n "$PREV" ] && PIMG="$(gcloud run revisions describe "$PREV" $RP --format='value(spec.containers[0].image)')"
+  SOUT="$(mktemp)"; (cd "$D" && VERSION="$VERSION" bash scripts/router-service/stage.sh) | tee "$SOUT" || die "staged deploy failed (traffic unchanged)"
+  # ADR-062 §4 audit receipt: a deploy without one is unrecorded.
+  REV="$(sed -n "s/^NEW=//p" "$SOUT")"; PREV="$(sed -n "s/^PREV=//p" "$SOUT")"; [ -n "$REV" ] || die "no new revision name"
+  IMG="$(gcloud run revisions describe "$REV" $RP --format="value(spec.containers[0].image)")"; [ -n "$IMG" ] || die "no image for $REV"
+  PIMG=""; [ -n "$PREV" ] && PIMG="$(gcloud run revisions describe "$PREV" $RP --format="value(spec.containers[0].image)")"
   RCPT="$(mktemp)"; printf 'Router service deploy receipt for v%s.\n\nrevision: %s\nimage: %s\ngit sha: %s\nrollback target revision: %s\nrollback target image: %s\n\nRollback: gcloud run services update-traffic sirsi-router --to-revisions %s=100 %s\n' "$VERSION" "$REV" "$IMG" "$(git rev-parse origin/main)" "${PREV:-none}" "${PIMG:-none}" "${PREV:-none}" "$RP" > "$RCPT"
   sirsi router send --from ra --to claude-home --type decision --title "Router service deploy receipt: $REV (v$VERSION)" --instructions @"$RCPT" >/dev/null || die "deploy receipt not recorded"
 fi

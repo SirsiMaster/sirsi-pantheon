@@ -50,6 +50,11 @@ jobs:
       - name: Private SDK credential boundary fixtures
         run: bash scripts/ci-private-sdk.test.sh
 
+      # The router service image is built locally and only COPYed by Cloud Build (it cannot fetch the private
+      # module). Proves no deploy path compiles in Cloud Build and the staged context is a static linux binary.
+      - name: router service image context (stage.sh)
+        run: bash scripts/ci-private-sdk.sh bash scripts/router-service/stage.test.sh
+
       - name: ADR number uniqueness
         run: bash scripts/check-adr-numbers.sh
 
