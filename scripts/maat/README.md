@@ -1,5 +1,24 @@
 # Fabric reconciliation census
 
+## Job stop ownership (Oct19)
+
+A compute grant is not permission to stop a process by pattern or PID. The
+native runner rejects known direct/wrapped process-stop commands before
+admission; its own launched-child teardown is unchanged. See
+`docs/runbooks/maat-job-stop-ownership.md` for the adopted-service controller
+protocol and the explicit same-UID/non-sandbox limitation.
+
+For the already-installed three-part Claude hook chain, stage this runner as
+`~/.claude/hooks/maat-job-stop-policy.py` and `job-stop-hook-chain.py` as the
+existing `guard-pretool`, preserving original bytes first. This chain requires
+the existing regular `guard-pretool.original-20261016` and
+`maat-heavy-launch.py`; do not install it over an unrelated hook layout.
+Validate staged hashes, make the files private executable, and replace the
+chain only after the policy is in place. `check-installed-stop-hook.py` submits
+inert tool JSON to that chain: it executes none of the supplied command text.
+Test on each host under CPU-only admission. Do not replace an active recurring
+job's hash-bound helper or restart any job to install the hook policy.
+
 ## Safe native job and observer launchers
 
 ### Scoped native worker transport
