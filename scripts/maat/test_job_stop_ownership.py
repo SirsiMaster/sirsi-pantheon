@@ -85,6 +85,15 @@ class StopOwnership(unittest.TestCase):
                      ['brew', 'services', 'list']):
             runner.require_job_safe_command(argv)
 
+    def test_file_tools_defer_to_existing_file_guard(self):
+        for tool in ('Write', 'Edit', 'NotebookEdit', 'Read'):
+            runner.check_tool_stop({'tool_name': tool, 'tool_input': {
+                'file_path': '/private/tmp/fixture.txt', 'content': 'pkill is documentation'}})
+
+    def test_shell_tool_without_command_still_refuses(self):
+        with self.assertRaises(runner.Refused):
+            runner.check_tool_stop({'tool_name': 'Bash', 'tool_input': {}})
+
 
 if __name__ == '__main__':
     unittest.main()

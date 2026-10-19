@@ -18,3 +18,16 @@ for command, expected in cases:
                           actual=output.returncode, stderr=output.stderr)), flush=True)
     if output.returncode != expected:
         raise SystemExit('Installed hook did not preserve the required decision')
+
+for tool in ('Write', 'Edit', 'NotebookEdit'):
+    # Only submit inert tool JSON; do not create or edit the named file.
+    output = subprocess.run([str(hook)], input=json.dumps({
+        'tool_name': tool, 'tool_input': {
+            'file_path': '/private/tmp/ssa-job-stop-hook-probe.txt',
+            'notebook_path': '/private/tmp/ssa-job-stop-hook-probe.ipynb',
+            'content': 'probe', 'old_string': 'old', 'new_string': 'new'}}),
+        text=True, capture_output=True, timeout=15)
+    print(json.dumps(dict(tool=tool, expected=0, actual=output.returncode,
+                          stderr=output.stderr)), flush=True)
+    if output.returncode != 0:
+        raise SystemExit('Non-shell tool regressed; keep the original file guard')

@@ -714,6 +714,12 @@ def main():
 
 def check_tool_stop(payload):
     """Pure pretool check; does not register, acquire, spawn, or signal."""
+    if not isinstance(payload, dict):
+        raise Refused('Malformed hook input')
+    if payload.get('tool_name') not in ('Bash', 'bash', 'exec_command', None):
+        # The existing hook also receives Edit/Write/NotebookEdit. Their
+        # original file-permission guard still runs; no shell argv exists.
+        return
     tool = payload.get('tool_input', payload.get('input', {}))
     if not isinstance(tool, dict):
         raise Refused('Malformed tool input')
