@@ -2,7 +2,9 @@
 
 ## 2026-10-19 — v0.24.118 registration-control release candidate
 
-- Compare the loaded and saved thread payloads in one decoded schema, leaving
+- Integrate Ra #1156's single save-time decoded-schema comparison and retain
+  SSA's real-store regression; remove the duplicate load-time normalization.
+  Compare thread payloads in one decoded schema, leaving
   unrelated service rows byte-exact while retaining all actual lifecycle and
   host fences. Qualification and signed deployment are required separately.
 

@@ -1,0 +1,1 @@
+- Thread saves no longer rewrite records they did not change: the dirty check compares what a record says, not its bytes. v0.24.117 marked every record written by another encoder dirty, so heartbeats on the M1 rewrote unrelated threads and lost the lifecycle fence, which stopped the Ma'at gate.

@@ -2,13 +2,14 @@
 
 ## Registry snapshot continuity (Oct19)
 
-The CLI compares loaded thread payloads using its own decoded schema, not raw
+The CLI compares thread payloads at save time using its own decoded schema, not raw
 service JSON. Key ordering, normalized timestamps and newer unknown fields do
 not make unrelated rows dirty. Registration, heartbeat and close leave those
 rows byte-exact in the canonical store; actual target lifecycle and host fences
 remain enforced. A closed unrelated row must not block a new executor. This is
 a CLI correction, not a runner retry or a second registration. Qualify with
-`TestRegistrationLeavesUnchangedServicePayloadsByteExact` and the existing
+`TestRegistrationLeavesUnchangedServicePayloadsByteExact`,
+`TestUnchangedThreadIsNotDirtyAcrossEncodings` and the existing
 thread lifecycle/authority tests before signed client rollout. Do not change
 the installed CI CLI hash until the exact signed successor is qualified.
 
