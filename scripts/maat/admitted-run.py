@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import signal
 import socket
 import subprocess
@@ -18,6 +19,65 @@ import uuid
 
 class Refused(RuntimeError):
     pass
+
+
+def require_job_safe_command(argv, depth=0):
+    """Admission is NOT authority to signal arbitrary jobs.
+
+    Reject known shell/process stop front doors, including shell-wrapped forms.
+    This is a cooperative accident guard, not a sandbox for arbitrary programs.
+    Supervisor-owned child termination below remains independent of this rule.
+    """
+    if depth > 12 or not argv:
+        raise Refused('Unverifiable stop-command wrapper; use owner-mediated job control')
+    words = list(argv)
+    name = Path(words[0]).name
+    if name == 'sirsi-maat-run':
+        if '--' not in words:
+            raise Refused('Supervisor payload separator missing')
+        require_job_safe_command(words[words.index('--') + 1:], depth + 1)
+        return
+    if name in ('pkill', 'killall', 'kill', 'skill', 'fuser'):
+        if name == 'kill' and words[1:] in (['-l'], ['-L']):
+            return
+        raise Refused('Compute admission does not authorize process signals; '
+                      'request the exact job from its lifecycle controller, never pattern/PID kill')
+    if ((name == 'launchctl' and len(words) > 1 and
+         (words[1] in ('bootout', 'unload', 'remove', 'stop', 'kill') or
+          (words[1] == 'kickstart' and '-k' in words[2:]))) or
+        (name == 'systemctl' and any(word in ('stop', 'restart', 'kill', 'disable')
+                                    for word in words[1:])) or
+        (name == 'brew' and words[1:2] == ['services'] and
+         any(word in ('stop', 'restart', 'kill') for word in words[2:]))):
+        raise Refused('Compute admission does not authorize service retirement/restart; '
+                      'route the exact service instance to its lifecycle controller')
+    if name in ('env', 'command', 'exec', 'nohup', 'sudo', 'timeout'):
+        tail = words[1:]
+        while tail and (tail[0].startswith('-') or '=' in tail[0]):
+            tail.pop(0)
+        if name == 'timeout' and tail:
+            tail.pop(0)
+        require_job_safe_command(tail, depth + 1)
+    elif name in ('sh', 'bash', 'zsh', 'dash', 'ksh'):
+        if len(words) > 2 and words[1].startswith('-') and 'c' in words[1]:
+            lexer = shlex.shlex(words[2], posix=True, punctuation_chars=';&|()<>')
+            lexer.whitespace_split = True
+            lexer.commenters = '#'
+            try:
+                tokens = list(lexer)
+            except ValueError as error:
+                raise Refused('Malformed shell payload') from error
+            segment = []
+            for token in tokens + [';']:
+                if token and set(token) <= set(';&|()<>'):
+                    if segment:
+                        while segment and '=' in segment[0] and not segment[0].startswith('/'):
+                            segment.pop(0)
+                        if segment:
+                            require_job_safe_command(segment, depth + 1)
+                    segment = []
+                else:
+                    segment.append(token)
 
 
 class TransientTransport(Refused):
@@ -378,6 +438,7 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
     cpu_cores = getattr(backend, 'cpu_cores', None)
     record['execution_timeout_sec'] = timeout
     try:
+        require_job_safe_command(command)
         backend.registered(agent, thread)
         confirmed_at = time.monotonic()
         # A destination-local executor owns this job, not the primary holder
@@ -619,6 +680,7 @@ def main():
             json.dump(record, output, indent=2); output.flush(); os.fsync(output.fileno())
     code = 78
     try:
+        require_job_safe_command(command)
         if args.register_executor:
             # Normal authenticated fabric transport selects the destination.
             # The logical lane is unchanged; its execution instance is local
@@ -650,5 +712,32 @@ def main():
     return code
 
 
+def check_tool_stop(payload):
+    """Pure pretool check; does not register, acquire, spawn, or signal."""
+    if not isinstance(payload, dict):
+        raise Refused('Malformed hook input')
+    if payload.get('tool_name') not in ('Bash', 'bash', 'exec_command', None):
+        # The existing hook also receives Edit/Write/NotebookEdit. Their
+        # original file-permission guard still runs; no shell argv exists.
+        return
+    tool = payload.get('tool_input', payload.get('input', {}))
+    if not isinstance(tool, dict):
+        raise Refused('Malformed tool input')
+    command = tool.get('command', tool.get('cmd'))
+    if not isinstance(command, str) or len(command) > 65536:
+        raise Refused('Missing or oversized shell command')
+    require_job_safe_command(['sh', '-c', command])
+
+
 if __name__ == '__main__':
+    if sys.argv[1:] == ['--check-stop-command']:
+        try:
+            raw = sys.stdin.read(65537)
+            if len(raw) > 65536:
+                raise Refused('Hook payload exceeds bound')
+            check_tool_stop(json.loads(raw))
+        except (ValueError, TypeError, Refused) as error:
+            print(str(error), file=sys.stderr)
+            sys.exit(2)
+        sys.exit(0)
     sys.exit(main())
