@@ -94,7 +94,7 @@ class TransportPlan(unittest.TestCase):
         base = SCRIPT.parents[2]
         registry = json.loads((base / '.agents/idea-router/agents.json').read_text())
         lane = registry['agents']['claude-kfca']
-        self.assertEqual(lane['repo'], '/Users/thekryptodragon/KingFarmCAB')
+        self.assertEqual(lane.get('repo'), '/Users/thekryptodragon/KingFarmCAB')
         self.assertEqual(lane['cwd'], '/Users/thekryptodragon/.sirsi/worktrees/kfca-router-coordination')
         self.assertNotEqual(lane['cwd'], lane['repo'])
         policy = (base / 'docs/router-service/worker-workspaces/kfca/CLAUDE.md').read_text()
