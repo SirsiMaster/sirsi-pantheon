@@ -6,6 +6,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- Separate the independent civic worker's private coordination launch directory
+  from KingFarmCAB. Preserve its declared project boundary and civic instructions;
+  no records or memories are copied, no second worker or router is created.
+  Changing this declaration is not a successful queue receipt or live rollout.
+
 - Watch the installer-owned executable for atomic replacement. Old wake
   controllers stop dispatching new consumers and yield to the existing service
   restart policy only after current work finishes, without signaling payloads.
