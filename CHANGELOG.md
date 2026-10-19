@@ -19,6 +19,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 - Work board no longer pulls ~19 MB of item bodies every refresh: new `ListSinceHeaders` returns ListSince's rows with instructions/result empty, and the board reads it (falling back to `ListSince` against an older service). Those 5-25 s responses were the router 502 bursts of 2026-10-18.
 
 - A process running a binary older than `answer_role` can no longer erase a worker's answering grant: the service keeps the stored value when a thread write carries no `answer_role` key, and current clients always send the key (so `false` still revokes). On 2026-10-18 long-running pre-#1141 processes (an Oct 14 Horus supervisor, an Oct 15 M5 dashboard) stripped every grant within minutes of the loops stamping it.
+- Thread registry saves compare the same decoded payload schema at load and
+  save, so service-added fields and JSON normalization cannot turn unrelated
+  closed workers into attempted mutations that block executor registration.
+  Unchanged rows retain their exact service bytes; actual lifecycle and host
+  fences are unchanged. Regression covers registration, heartbeat and close.
 
 - Ma’at loaded/model admission no longer depends on whether a bounded,
   CPU-only build floor arrived before or after it. Quiet measurements,

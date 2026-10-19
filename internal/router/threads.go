@@ -267,6 +267,16 @@ func LoadThreadRegistry(routerRoot string) (*ThreadRegistry, error) {
 				thread.ThreadID = record.ThreadID
 			}
 			reg.Threads[record.ThreadID] = &thread
+			// Compare like with like when saving. Raw service JSON can contain
+			// newer fields, a different key order, or timestamps normalized by
+			// decoding. None is a mutation by this client. Otherwise registering
+			// one executor rewrites unrelated rows and a closed row's (correct)
+			// lifecycle fence blocks the entire registration. Keep the stored
+			// status/time/host baseline for identity-bound deletion unchanged.
+			record.Payload, err = json.Marshal(&thread)
+			if err != nil {
+				return nil, fmt.Errorf("baseline store thread %q: %w", record.ThreadID, err)
+			}
 			reg.baseline[record.ThreadID] = record
 		}
 		return reg, nil
