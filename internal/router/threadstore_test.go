@@ -1,6 +1,8 @@
 package router
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +13,82 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
+
+// A snapshot read must not turn normalization or fields unknown to this
+// binary into writes to unrelated rows. In production a newer service field
+// on a closed worker made every subsequent executor registration lose a fence.
+func TestRegistrationLeavesUnchangedServicePayloadsByteExact(t *testing.T) {
+	home := t.TempDir()
+	root := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv(routercfg.StoreWakeEnv, "1")
+	path := filepath.Join(home, "router.db")
+	t.Setenv("SIRSI_ROUTER_DB", path)
+	t.Setenv("SIRSI_ALLOW_SCHEMA_MIGRATE", "1")
+	host, err := os.Hostname()
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := routerstore.OpenPath(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	seen := time.Now().UTC().Add(-time.Minute)
+	originals := map[string][]byte{}
+	for _, status := range []string{"active", "closed", "reaped", "suspended"} {
+		id := "other-" + status
+		payload, err := json.Marshal(map[string]any{
+			"thread_id": id, "agent_id": "other-lane", "surface": "worker",
+			"status": status, "host": host, "last_seen_at": seen,
+			"future_service_field": map[string]any{"retain": true},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		payload = append([]byte(" \n"), payload...)
+		originals[id] = payload
+		if err := store.UpsertThreads([]routerstore.ThreadRecord{{
+			ThreadID: id, Agent: "other-lane", Status: status, Host: host,
+			LastSeenAt: seen.Format("2006-01-02T15:04:05.000000000Z07:00"), Payload: payload,
+		}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	owned, err := RegisterThread(root, &Thread{ThreadID: "own-new", AgentID: "own-lane", Surface: "worker", Host: host})
+	if err != nil {
+		t.Fatalf("unrelated snapshot normalization blocked registration: %v", err)
+	}
+	item := "only-my-work"
+	if _, err := Heartbeat(root, owned.ThreadID, HeartbeatUpdate{CurrentItem: &item}); err != nil {
+		t.Fatalf("own heartbeat: %v", err)
+	}
+	if _, err := CloseThread(root, owned.ThreadID); err != nil {
+		t.Fatalf("own close: %v", err)
+	}
+	rows, err := store.ListThreads()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := 0
+	for _, row := range rows {
+		if want, ok := originals[row.ThreadID]; ok {
+			found++
+			if !bytes.Equal(row.Payload, want) {
+				t.Fatalf("unrelated %s payload changed: %s", row.ThreadID, row.Payload)
+			}
+		} else if row.ThreadID == owned.ThreadID && row.Status != "closed" {
+			t.Fatalf("own mutation was not persisted: %#v", row)
+		}
+	}
+	if found != len(originals) {
+		t.Fatalf("lost unrelated rows: found %d want %d", found, len(originals))
+	}
+	// Normalization must NOT waive the target's lifecycle fence.
+	if _, err := Heartbeat(root, "other-closed", HeartbeatUpdate{}); err == nil {
+		t.Fatal("closed target was revived")
+	}
+}
 
 func TestThreadTimestampKeyAdvancesAcrossZeroNanoseconds(t *testing.T) {
 	store, err := routerstore.OpenPath(filepath.Join(t.TempDir(), "router.db"))

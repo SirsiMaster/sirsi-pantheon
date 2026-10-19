@@ -6,6 +6,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.118] — 2026-10-19
+
+- Integrate Ra's merged semantic-payload comparison (#1156) as the single
+  save-time normalization mechanism, removing the duplicate load-time fix.
+  Service-added fields and JSON normalization cannot turn unrelated
+  closed workers into attempted mutations that block executor registration.
+  Unchanged rows retain their exact service bytes; actual lifecycle and host
+  fences are unchanged. Preserve both encoding-unit regressions and the real-store
+  registration, heartbeat and close regression, including unknown fields.
+
 ## [0.24.117] — 2026-10-19
 
 - A wake loop whose lane has not granted its worker the answering role (registry `worker_answers`) now holds dispatch with the `no_grant` hold instead of spawning sessions the service refuses at close. The lane's lead answers. The grant is read every tick, so a grant or revoke applies without a restart.
