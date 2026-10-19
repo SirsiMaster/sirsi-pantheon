@@ -142,6 +142,7 @@ func TestConsumerCannotCloseLiveWakeController(t *testing.T) {
 	controller, err := RegisterThread(root, &Thread{
 		AgentID: "fixture", Surface: surfaceWorker, WakeMechanism: WakeLaunchAgent,
 		PID: os.Getpid() + 10000, StartTime: "controller-start",
+		Lane: &LaneState{ConsumerDeclared: true},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -166,13 +167,42 @@ func TestWakeControllerCanCloseItself(t *testing.T) {
 	root := t.TempDir()
 	controller, err := RegisterThread(root, &Thread{
 		AgentID: "fixture", Surface: surfaceWorker, WakeMechanism: WakeLaunchAgent,
-		PID: os.Getpid(),
+		PID:  os.Getpid(),
+		Lane: &LaneState{ConsumerDeclared: true},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := CloseThread(root, controller.ThreadID); err != nil {
 		t.Fatalf("controller cannot close itself: %v", err)
+	}
+}
+
+// Ma'at registers a short-lived executor before its subprocess runs. Registry
+// policy may inherit launchagent as its lane's wake mechanism, but that does
+// not turn the executor into a resident observer. Cleanup must not refuse it.
+func TestBoundedExecutorWithInheritedWakeMechanismCanClose(t *testing.T) {
+	oldState, oldStart := getPIDStateFn(), getPIDStartFn()
+	setPIDStateFn(func(int) PIDState { return PIDAlive })
+	setPIDStartFn(func(int) string { return "executor-start" })
+	t.Cleanup(func() { setPIDStateFn(oldState); setPIDStartFn(oldStart) })
+	root := t.TempDir()
+	executor, err := RegisterThread(root, &Thread{
+		AgentID: "fixture", Surface: surfaceWorker, WakeMechanism: WakeLaunchAgent,
+		PID: os.Getpid() + 10000, StartTime: "executor-start",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if executor.Lane != nil {
+		t.Fatal("bounded executor unexpectedly publishes resident observer state")
+	}
+	if _, err := CloseThread(root, executor.ThreadID); err != nil {
+		t.Fatalf("ordinary executor cleanup falsely classified as wake-controller cleanup: %v", err)
+	}
+	reg, err := LoadThreadRegistry(root)
+	if err != nil || reg.Threads[executor.ThreadID].Status != ThreadStatusClosed {
+		t.Fatalf("executor did not close: reg=%+v err=%v", reg, err)
 	}
 }
 

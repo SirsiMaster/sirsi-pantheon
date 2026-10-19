@@ -581,6 +581,35 @@ func TestUninstallWakeLaunchAgent(t *testing.T) {
 }
 
 // Test 6: LaunchAgent install is idempotent — second install reports no change.
+func TestInstallWakeLaunchAgentCanonicalizesInstalledSymlink(t *testing.T) {
+	dir := t.TempDir()
+	launchAgentsDirOverride = filepath.Join(dir, "LaunchAgents")
+	t.Cleanup(func() { launchAgentsDirOverride = "" })
+	target := filepath.Join(dir, "installed-sirsi")
+	alias := filepath.Join(dir, "homebrew-sirsi")
+	if err := os.WriteFile(target, []byte("signed-fixture"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, alias); err != nil {
+		t.Fatal(err)
+	}
+	_, path, err := InstallWakeLaunchAgent(AgentConfig{ID: "fixture"}, alias)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical, err := filepath.EvalSymlinks(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(content), "<string>"+canonical+"</string>") || strings.Contains(string(content), "<string>"+alias+"</string>") {
+		t.Fatal("service persisted a symlink argv: no-follow replacement watcher cannot follow upgrades")
+	}
+}
+
 func TestInstallWakeLaunchAgentIdempotent(t *testing.T) {
 	dir := t.TempDir()
 	launchAgentsDirOverride = dir
