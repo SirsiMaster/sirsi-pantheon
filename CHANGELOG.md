@@ -6,6 +6,39 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- Watch the installer-owned executable for atomic replacement. Old wake
+  controllers stop dispatching new consumers and yield to the existing service
+  restart policy only after current work finishes, without signaling payloads.
+  Missing, symlinked or non-executable replacements do not evict the running
+  image. Initial adoption from versions lacking this check still requires a
+  verified service rollout; installing a file is not loaded-image proof.
+- Bind replacement checks to the kernel's actual executable mapping identity
+  (macOS libproc vnode identity; Linux procfs), not a late pathname snapshot.
+  Detect upgrades that race initial registration as well as later replacements;
+  exercise an actual copied test executable replaced before its first observation.
+- Read back exact machine/PID/start/surface registration before dispatch and
+  mint fresh observer IDs rather than accepting legacy bare-PID reuse. Preserve
+  Ra's per-lane session correction from PR #1111 through a true merge. Select
+  the fabric transport/profile fixtures explicitly in protected CI and complete
+  Mercury's standby loop contract without overriding its attended lead.
+
+- Fence wake observer lifecycle to its actual PID and start identity. A replacement
+  controller no longer takes over a previous process's thread row, a consumer
+  cannot close its still-live launchagent observer during cleanup, and heartbeat
+  failures hold new dispatch instead of disappearing. Transient transport errors
+  leave existing detached consumers running; terminal observer loss requires a
+  fresh runtime registration. Existing terminal evidence is retained unchanged.
+
+- Reconcile queue operation after the signed118 rollout: restore the existing Ra
+  worker's answering grant and declare Mercury's standby consumer while retaining
+  its permanent attended fence. This does not start a competing Mercury session
+  or prove any queue was consumed. Queue acceptance requires a recipient result.
+- Keep scoped SOCKS transport as the fabric helper's default, add explicit direct
+  transport for an already-authorized non-proxy runtime, refuse direct mode when
+  a proxy is configured, and use stable enrolled Tailscale destinations instead
+  of stale LAN addresses. Both native supervisors and strict existing host pins
+  remain mandatory; there is no automatic transport fallback.
+
 ## [0.24.118] — 2026-10-19
 
 - Integrate Ra's merged semantic-payload comparison (#1156) as the single

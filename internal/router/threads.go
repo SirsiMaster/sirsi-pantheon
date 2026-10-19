@@ -771,7 +771,20 @@ type HeartbeatUpdate struct {
 	LastError   *string
 	// Lane, when non-nil, REPLACES the thread's published lane state.
 	Lane *LaneState
+	// ExpectedPID/ExpectedStart fence a resident observer to its actual native
+	// runtime. Ordinary callers leave both zero; wake controllers supply both.
+	ExpectedPID   int
+	ExpectedStart string
 }
+
+// ErrHeartbeatThreadUnavailable means this exact observer no longer owns a
+// live registration. It is distinct from a transient store/transport failure.
+var ErrHeartbeatThreadUnavailable = errors.New("heartbeat registration unavailable")
+
+// ErrLiveWakeController prevents a short-lived consumer from closing the
+// still-running launchagent controller whose router identity it was handed.
+// This is an accident guard; normal service/host authorization is unchanged.
+var ErrLiveWakeController = errors.New("live wake controller must close its own registration")
 
 // Heartbeat updates a thread's last_seen_at and optional fields.
 // Returns the updated thread, or an error if the thread is unknown.
@@ -797,14 +810,17 @@ func Heartbeat(routerRoot, threadID string, upd HeartbeatUpdate) (*Thread, error
 		}
 		cur, ok := reg.Threads[threadID]
 		if !ok {
-			return fmt.Errorf("thread %q not registered", threadID)
+			return fmt.Errorf("thread %q not registered: %w", threadID, ErrHeartbeatThreadUnavailable)
+		}
+		if upd.ExpectedPID > 0 && (cur.PID != upd.ExpectedPID || cur.StartTime != upd.ExpectedStart) {
+			return fmt.Errorf("thread %q belongs to a different native runtime: %w", threadID, ErrHeartbeatThreadUnavailable)
 		}
 		// reaped-is-terminal: a closed/reaped record must never be revived by a
 		// late heartbeat. Refusing the write here is what stops a dead PID from
 		// reappearing as `active` with a fresh last_seen_at while still carrying
 		// `last_error: reaped`. Reopening requires a new registration (new ID).
 		if cur.Status.IsTerminal() {
-			return fmt.Errorf("thread %q is %s and cannot be revived by heartbeat (last_error=%q); register a new thread to resume", threadID, cur.Status, cur.LastError)
+			return fmt.Errorf("thread %q is %s and cannot be revived by heartbeat (last_error=%q); register a new thread to resume: %w", threadID, cur.Status, cur.LastError, ErrHeartbeatThreadUnavailable)
 		}
 		// ADR-025: suspended is resumable but NOT live. A heartbeat must not
 		// revive it or refresh last_seen_at — that would mask a session that
@@ -848,6 +864,13 @@ func CloseThread(routerRoot, threadID string) (*Thread, error) {
 	t, ok := reg.Threads[threadID]
 	if !ok {
 		return nil, fmt.Errorf("thread %q not registered", threadID)
+	}
+	if t.Status.IsTerminal() {
+		return t, nil // retain the original terminal verdict and timestamp
+	}
+	if !t.Status.IsTerminal() && t.Surface == surfaceWorker && t.WakeMechanism == WakeLaunchAgent &&
+		t.PID >= minAgentPID && t.PID != os.Getpid() && !DeadByOSTruth(PIDStateOfThread(t)) {
+		return nil, fmt.Errorf("thread %q PID %d: %w; stop that exact service through its lifecycle controller, not a consumer cleanup", threadID, t.PID, ErrLiveWakeController)
 	}
 	t.Status = ThreadStatusClosed
 	t.LastSeenAt = time.Now().UTC()

@@ -139,6 +139,9 @@ jobs:
       - name: Ma'at supervisor reliability (model-free)
         run: python3 -B -m unittest discover -s scripts/maat -p 'test*.py' -v
 
+      - name: Fabric transport and lane profile contract (model-free)
+        run: python3 -B scripts/maat/fabric-run.test.py -v
+
       - name: Run tests
         shell: bash
         run: bash scripts/ci-private-sdk.sh go test -v -race -short -coverprofile=coverage.out ./...

@@ -12,6 +12,8 @@
 | Leases | `tasklease.go`, `items.go` | fenced claim/renew/close | adversarial tests |
 | Studio capacity aliases | `internal/maat/schedule/resource.go`, shared atomic scheduler | bare legacy/canonical names share capacity; original IDs/spellings and host binding retained | independent source inspection/native race fixtures; actual deployment still required |
 | Wake/informer substrate | `wake.go`, `wakeevents.go`, `horus` | bounded delivery, no blind spawn | shipped substrate; informer increment next |
+| Native observer generation | `wake.go`, `threads.go`, `adoptworker_test.go`, `wakeidentity_test.go` | exact persisted machine/PID/start; no predecessor adoption; heartbeat before dispatch | focused race controls, outage hold/recovery and terminal preservation; successor release/queue qualification pending |
+| Installed executable adoption | `wakeimage*.go` | macOS libproc loaded-mapping device/inode or Linux procfs, compared to installer-owned regular name | pre-capture and later atomic replacement controls; actual copied-process fixture; no consumer signal, release pending |
 | A2A/MCP | `cmd/sirsi-router-mcp` | read/mutate façade over dispatch | package tests |
 | Horus | `internal/horus`, dashboard/fleet | derived observation only | source-bound/live per host |
 | Stack Lab wing | `docs/stacklab/ra/canon` | docs and receipts | this release |

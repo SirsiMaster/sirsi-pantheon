@@ -1146,13 +1146,17 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 	if interval <= 0 {
 		interval = DefaultWakeLoopInterval
 	}
-	// Keyed singleton on (agent, surface=worker, this machine) — P-heartbeat-owner,
-	// #178 pattern. Every launchd bootout/bootstrap gives this loop a new PID;
-	// registering by PID minted a NEW worker thread each restart and left the old
-	// record active until a reap pass, so agents accumulated duplicate workers
-	// (claude-finalwishes carried two). Adopt the existing worker record instead —
-	// the thread id stays stable across restarts — and retire any other OS-dead
-	// worker duplicate for this agent while we're here.
+	// Bind the lane before the first store session is resolved. launchd does not
+	// supply a lane identity; hostname fallback would share sessions across lanes.
+	_ = os.Setenv("SIRSI_AGENT_ID", agentID)
+	// A predecessor's thread is not authority to mint the new process's session.
+	_ = os.Unsetenv("SIRSI_THREAD_ID")
+
+	// Runtime identity is (machine, PID, start), not the logical lane alone.
+	// Reuse only this exact runtime's record. A restarted controller must mint a
+	// fresh ID: a reaper holding the old PID snapshot can otherwise reap the new
+	// controller after it repoints the old ID. The per-agent launch lock prevents
+	// duplicate controllers; the separate consumer marker preserves detached work.
 	thr, err := adoptWorkerThread(routerRoot, agentID, os.Getpid())
 	if err != nil {
 		return fmt.Errorf("adopt wake-loop thread: %w", err)
@@ -1160,6 +1164,7 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 	if thr == nil {
 		host, _ := os.Hostname()
 		thr, err = RegisterThread(routerRoot, &Thread{
+			ThreadID:      NewThreadID(), // bypass legacy bare-PID/session reuse
 			AgentID:       agentID,
 			Surface:       surfaceWorker,
 			WakeMechanism: WakeLaunchAgent,
@@ -1171,6 +1176,21 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 			return fmt.Errorf("register wake-loop thread: %w", err)
 		}
 	}
+	// A returned in-memory record alone is not proof that the service persisted
+	// this native generation. Check the authoritative read before any dispatch.
+	persisted, err := LoadThreadRegistry(routerRoot)
+	if err != nil {
+		return fmt.Errorf("read back wake-loop registration: %w", err)
+	}
+	bound := persisted.Threads[thr.ThreadID]
+	if bound == nil || bound.AgentID != agentID || bound.PID != os.Getpid() ||
+		bound.StartTime == "" || bound.StartTime != PIDStartTimeOf(os.Getpid()) ||
+		bound.Surface != surfaceWorker || bound.WakeMechanism != WakeLaunchAgent ||
+		!SameMachine(bound.MachineID, MachineID()) || bound.Status.IsTerminal() || bound.Status == ThreadStatusSuspended {
+		return fmt.Errorf("wake-loop registration does not bind this native controller: %w", ErrHeartbeatThreadUnavailable)
+	}
+	thr = bound
+	_ = os.Setenv("SIRSI_THREAD_ID", thr.ThreadID)
 	defer func() { _, _ = CloseThread(routerRoot, thr.ThreadID) }()
 
 	// Resolve the DECLARED consumer once. A loop that cannot dispatch still runs:
@@ -1230,6 +1250,23 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 
 	// Honest, self-reported lane state published on every heartbeat (router ping).
 	lane := LaneState{ConsumerDeclared: capable}
+	// launchd keeps the process image loaded even after the installed pathname
+	// changes. Observe that stable name and yield only at a consumer boundary;
+	// KeepAlive then executes the installed generation. Never kill its work.
+	loadedImage, imageErr := nativeWakeImageIdentity()
+	if imageErr != nil {
+		return fmt.Errorf("identify loaded wake executable: %w", imageErr)
+	}
+	// The service's direct executable argv is the stable installation name.
+	// Do not resolve the executing image's renamed predecessor as that name.
+	imagePath, imageErr := filepath.Abs(os.Args[0])
+	if imageErr != nil {
+		return imageErr
+	}
+	image, imageErr := watchWakeExecutable(imagePath, loadedImage)
+	if imageErr != nil {
+		return imageErr
+	}
 
 	tick := time.NewTicker(interval)
 	defer tick.Stop()
@@ -1302,6 +1339,43 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 			// that truth into the durable thread record: logs alone are not supervision
 			// evidence and depth zero would create the exact false-green ADR-061 forbids.
 			log.Printf("wake-loop %s: inbox read FAILED: %v", agentID, lerr)
+		}
+
+		// Prove this observer still owns a live registration BEFORE dispatching.
+		// A closed/reaped/missing/repurposed row is not silently heartbeatable.
+		// Returning lets the existing service restart policy register a fresh
+		// runtime; no consumer is signaled. Transient failures instead hold new
+		// dispatch for this tick while an existing detached consumer keeps running.
+		lane.Hold, lane.HoldUntil = currentHold(routerRoot, agentID, fruitless, nextDispatchAllowed)
+		if _, herr := Heartbeat(routerRoot, thr.ThreadID, HeartbeatUpdate{
+			Status: status, LastError: &lastError, Lane: &lane,
+			ExpectedPID: os.Getpid(), ExpectedStart: thr.StartTime,
+		}); herr != nil {
+			log.Printf("wake-loop %s: heartbeat FAILED; new dispatch held: %v", agentID, herr)
+			if errors.Is(herr, ErrHeartbeatThreadUnavailable) {
+				return fmt.Errorf("wake-loop %s lost its observer registration: %w", agentID, herr)
+			}
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-tick.C:
+				continue
+			}
+		}
+
+		if image.replaced() {
+			if wakeUpgradeReady(true, run != nil && run.running()) {
+				log.Printf("wake-loop %s: installed executable replaced; yielding idle controller for service restart", agentID)
+				return nil
+			}
+			// Keep heartbeating above while existing work finishes, but never
+			// dispatch another consumer from the retired image or signal this one.
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-tick.C:
+				continue
+			}
 		}
 
 		// Log on CHANGE, and periodically regardless.
@@ -1481,15 +1555,6 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 			}
 		}
 
-		// Always write last_error, including the empty value after a successful
-		// read, so a recovered loop cannot remain falsely blocked by stale evidence.
-		lane.Hold, lane.HoldUntil = currentHold(routerRoot, agentID, fruitless, nextDispatchAllowed)
-		_, _ = Heartbeat(routerRoot, thr.ThreadID, HeartbeatUpdate{
-			Status:    status,
-			LastError: &lastError,
-			Lane:      &lane,
-		})
-
 		select {
 		case <-ctx.Done():
 			return nil
@@ -1511,12 +1576,10 @@ func wakeLoopInboxState(depth int, readErr error) (ThreadStatus, int, string) {
 	return ThreadStatusIdle, 0, ""
 }
 
-// adoptWorkerThread resolves the keyed-singleton worker thread for an agent on
-// THIS machine: it re-points the newest live (non-terminal, non-suspended)
-// surface=worker record at the calling process and retires any other worker
-// record for the agent that is dead by OS truth (ADR-022 — live and suspended
-// records are never touched). Returns nil when no record exists to adopt; the
-// caller then registers a fresh one.
+// adoptWorkerThread reuses only this exact controller's native identity.
+// Never repoint a different PID/start onto a previous runtime's row: an old
+// reaper snapshot and an old consumer must not own the replacement's identity.
+// Dead duplicates belong to the authoritative reaper, not registration.
 func adoptWorkerThread(routerRoot, agentID string, pid int) (*Thread, error) {
 	reg, err := LoadThreadRegistry(routerRoot)
 	if err != nil {
@@ -1524,16 +1587,23 @@ func adoptWorkerThread(routerRoot, agentID string, pid int) (*Thread, error) {
 	}
 	thisMachine := MachineID()
 	now := time.Now().UTC()
+	start := PIDStartTimeOf(pid)
+	if start == "" {
+		return nil, nil
+	}
 
 	var adopted *Thread
 	for _, t := range reg.Threads {
-		if t == nil || t.AgentID != agentID || t.Surface != surfaceWorker {
+		if t == nil || t.AgentID != agentID || t.Surface != surfaceWorker || t.WakeMechanism != WakeLaunchAgent {
 			continue
 		}
 		if t.Status.IsTerminal() || t.Status == ThreadStatusSuspended {
 			continue
 		}
 		if !SameMachine(t.MachineID, thisMachine) {
+			continue
+		}
+		if t.PID != pid || t.StartTime != start {
 			continue
 		}
 		if adopted == nil || t.LastSeenAt.After(adopted.LastSeenAt) {
@@ -1544,27 +1614,6 @@ func adoptWorkerThread(routerRoot, agentID string, pid int) (*Thread, error) {
 		return nil, nil
 	}
 
-	// Retire OS-dead duplicates — every live candidate EXCEPT the one adopted.
-	for _, t := range reg.Threads {
-		if t == nil || t == adopted || t.AgentID != agentID || t.Surface != surfaceWorker {
-			continue
-		}
-		if t.Status.IsTerminal() || t.Status == ThreadStatusSuspended {
-			continue
-		}
-		if !SameMachine(t.MachineID, thisMachine) {
-			continue
-		}
-		if t.PID >= minAgentPID && !DeadByOSTruth(PIDStateOfThread(t)) {
-			continue // genuinely alive — never touch it
-		}
-		t.Status = ThreadStatusReaped
-		t.LastSeenAt = now
-		t.LastError = fmt.Sprintf("reaped: duplicate worker superseded by %s at %s", adopted.ThreadID, now.Format(time.RFC3339))
-	}
-
-	adopted.PID = pid
-	adopted.StartTime = PIDStartTimeOf(pid)
 	adopted.Status = ThreadStatusActive
 	adopted.WakeMechanism = WakeLaunchAgent
 	adopted.LastSeenAt = now
