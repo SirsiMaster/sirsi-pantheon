@@ -1,5 +1,11 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-19 — v0.24.118 registration-control release candidate
+
+- Compare the loaded and saved thread payloads in one decoded schema, leaving
+  unrelated service rows byte-exact while retaining all actual lifecycle and
+  host fences. Qualification and signed deployment are required separately.
+
 ## 2026-10-19 — v0.24.117 release candidate
 
 - A wake loop whose lane has not granted its worker the answering role (registry `worker_a
