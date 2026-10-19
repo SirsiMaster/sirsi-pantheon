@@ -415,7 +415,7 @@ func SaveThreadRegistry(routerRoot string, reg *ThreadRegistry) error {
 				continue
 			}
 			old, exists := reg.baseline[record.ThreadID]
-			if !exists || string(old.Payload) != string(record.Payload) {
+			if !exists || payloadChanged(record.ThreadID, old.Payload, record.Payload) {
 				dirty = append(dirty, record)
 			}
 		}
@@ -1546,4 +1546,25 @@ func (r *ThreadRegistry) PruneStaleSuspended(now time.Time, retention time.Durat
 		}
 	}
 	return removed
+}
+
+// payloadChanged reports whether a save would change what a thread record SAYS, not merely its bytes. A
+// record this process did not mutate re-encodes differently whenever another encoder wrote it: an older
+// binary without a newer field, a newer one with it, or the service's answer_role carry-over (which
+// re-marshals in sorted key order). Comparing bytes marked every such record dirty, so each save rewrote
+// every same-host record and lost the fence on the first one a concurrent writer had just closed
+// (2026-10-19: every v0.24.117 heartbeat on the M1 failed, the Ma'at gate's included).
+func payloadChanged(id string, stored, next []byte) bool {
+	if string(stored) == string(next) {
+		return false
+	}
+	var t Thread
+	if json.Unmarshal(stored, &t) != nil {
+		return true
+	}
+	if t.ThreadID == "" {
+		t.ThreadID = id // LoadThreadRegistry fills the id the same way
+	}
+	canon, err := json.Marshal(&t)
+	return err != nil || string(canon) != string(next)
 }
