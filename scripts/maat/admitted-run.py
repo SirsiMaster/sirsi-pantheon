@@ -42,6 +42,15 @@ def require_job_safe_command(argv, depth=0):
             return
         raise Refused('Compute admission does not authorize process signals; '
                       'request the exact job from its lifecycle controller, never pattern/PID kill')
+    if ((name == 'launchctl' and len(words) > 1 and
+         (words[1] in ('bootout', 'unload', 'remove', 'stop', 'kill') or
+          (words[1] == 'kickstart' and '-k' in words[2:]))) or
+        (name == 'systemctl' and any(word in ('stop', 'restart', 'kill', 'disable')
+                                    for word in words[1:])) or
+        (name == 'brew' and words[1:2] == ['services'] and
+         any(word in ('stop', 'restart', 'kill') for word in words[2:]))):
+        raise Refused('Compute admission does not authorize service retirement/restart; '
+                      'route the exact service instance to its lifecycle controller')
     if name in ('env', 'command', 'exec', 'nohup', 'sudo', 'timeout'):
         tail = words[1:]
         while tail and (tail[0].startswith('-') or '=' in tail[0]):

@@ -70,6 +70,21 @@ class StopOwnership(unittest.TestCase):
             native.return_value.register_executor.assert_not_called()
             native.return_value.reserve.assert_not_called()
 
+    def test_service_stop_is_not_laundered_by_compute_admission(self):
+        for argv in (['launchctl', 'bootout', 'gui/501/foreign'],
+                     ['launchctl', 'kill', 'TERM', 'gui/501/foreign'],
+                     ['launchctl', 'kickstart', '-k', 'gui/501/foreign'],
+                     ['brew', 'services', 'stop', 'foreign'],
+                     ['systemctl', '--user', 'restart', 'foreign']):
+            with self.subTest(argv=argv), self.assertRaises(runner.Refused):
+                runner.require_job_safe_command(argv)
+
+    def test_service_observation_is_not_a_stop(self):
+        for argv in (['launchctl', 'print', 'gui/501/foreign'],
+                     ['systemctl', '--user', 'status', 'foreign'],
+                     ['brew', 'services', 'list']):
+            runner.require_job_safe_command(argv)
+
 
 if __name__ == '__main__':
     unittest.main()

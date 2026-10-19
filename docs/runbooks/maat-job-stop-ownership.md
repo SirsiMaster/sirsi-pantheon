@@ -16,7 +16,8 @@ training instance before the handoff was read, not an exhausted Ma’at lease.
 ## Implemented accident guard
 
 `scripts/maat/admitted-run.py` refuses direct process-stop commands (`pkill`,
-`killall`, `kill`, `skill`, `fuser`) and common env/shell wrappers before resource
+`killall`, `kill`, `skill`, `fuser`), common launchctl/systemctl/brew service
+stop/restart routes, and common env/shell wrappers before resource
 reservation or child spawn. Supervisor teardown of its own launched child group
 is unchanged. `--check-stop-command` is a pure PreToolUse policy entry point;
 it reads bounded tool JSON and never registers, reserves, spawns or signals.
