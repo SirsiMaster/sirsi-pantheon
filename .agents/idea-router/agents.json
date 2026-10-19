@@ -76,7 +76,6 @@
       }
     },
     "claude-home": {
-      "worker_answers": true,
       "capabilities": [
         "close:any"
       ],
@@ -956,7 +955,6 @@
       "consumer": {}
     },
     "ra": {
-      "worker_answers": true,
       "capabilities": [
         "close:any"
       ],
