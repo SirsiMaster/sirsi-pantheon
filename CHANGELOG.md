@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- Fence wake observer lifecycle to its actual PID and start identity. A replacement
+  controller no longer takes over a previous process's thread row, a consumer
+  cannot close its still-live launchagent observer during cleanup, and heartbeat
+  failures hold new dispatch instead of disappearing. Transient transport errors
+  leave existing detached consumers running; terminal observer loss requires a
+  fresh runtime registration. Existing terminal evidence is retained unchanged.
+
 - Reconcile queue operation after the signed118 rollout: restore the existing Ra
   worker's answering grant and declare Mercury's standby consumer while retaining
   its permanent attended fence. This does not start a competing Mercury session
