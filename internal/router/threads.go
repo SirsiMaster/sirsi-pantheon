@@ -868,7 +868,11 @@ func CloseThread(routerRoot, threadID string) (*Thread, error) {
 	if t.Status.IsTerminal() {
 		return t, nil // retain the original terminal verdict and timestamp
 	}
-	if !t.Status.IsTerminal() && t.Surface == surfaceWorker && t.WakeMechanism == WakeLaunchAgent &&
+	// WakeMechanism is inherited from lane policy by ordinary bounded Ma'at
+	// executors too. Only a resident observer publishes Lane state before it
+	// hands its identity to a consumer. Do not turn a successful bounded run
+	// into cleanup debt merely because its wrapper has not exited yet.
+	if t.Lane != nil && t.Surface == surfaceWorker && t.WakeMechanism == WakeLaunchAgent &&
 		t.PID >= minAgentPID && t.PID != os.Getpid() && !DeadByOSTruth(PIDStateOfThread(t)) {
 		return nil, fmt.Errorf("thread %q PID %d: %w; stop that exact service through its lifecycle controller, not a consumer cleanup", threadID, t.PID, ErrLiveWakeController)
 	}

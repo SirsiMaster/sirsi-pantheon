@@ -1860,6 +1860,18 @@ func InstallWakeLaunchAgent(cfg AgentConfig, sirsiBin string) (changed bool, pat
 			sirsiBin = abs
 		}
 	}
+	// Persist the actual installed file, not a Homebrew/~/.local alias. The
+	// no-follow runtime watcher deliberately refuses a symlink replacement;
+	// retaining an alias here would therefore disable future upgrade adoption.
+	if _, serr := os.Lstat(sirsiBin); serr == nil {
+		canonical, cerr := filepath.EvalSymlinks(sirsiBin)
+		if cerr != nil {
+			return false, "", fmt.Errorf("resolve installed wake executable: %w", cerr)
+		}
+		sirsiBin = canonical
+	} else if !errors.Is(serr, os.ErrNotExist) {
+		return false, "", fmt.Errorf("inspect installed wake executable: %w", serr)
+	}
 	label := WakeLaunchAgentLabel(cfg.ID)
 	dir := launchAgentsDir()
 	if err = os.MkdirAll(dir, 0o755); err != nil {
