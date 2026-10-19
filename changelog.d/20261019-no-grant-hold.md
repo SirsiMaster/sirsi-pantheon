@@ -1,1 +1,0 @@
-- A wake loop whose lane has not granted its worker the answering role (registry `worker_answers`) now holds dispatch with the `no_grant` hold instead of spawning sessions the service refuses at close. The lane's lead answers. The grant is read every tick, so a grant or revoke applies without a restart.

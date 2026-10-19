@@ -1,5 +1,22 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-19 — v0.24.117 release candidate
+
+- A wake loop whose lane has not granted its worker the answering role (registry `worker_a
+- The router service is built locally and deployed staged: `scripts/router-service/stage.s
+- The router service gzips responses for clients that ask (every Go client and relay does,
+- Isolate native executor CLI control calls from inherited IDE provider-session identifier
+- Work board no longer pulls ~19 MB of item bodies every refresh: new `ListSinceHeaders` r
+- A process running a binary older than `answer_role` can no longer erase a worker's answe
+- Ma’at loaded/model admission no longer depends on whether a bounded,
+  CPU-only build fl
+- Ma’at distinguishes configured execution budgets from renewable admission
+  deadlines an
+- Destination-local Ma’at executors always obtain their own canonical grant,
+  including l
+- Resolve a partially committed registration after an unrelated terminal-prune
+  lifecycle
+
 ## 2026-10-18 — v0.24.116 release candidate
 
 - Headless workers are subordinate to lead lanes (owner 2026-10-18): the router service re
