@@ -1,0 +1,122 @@
+{
+  "kind": "public-source-courier-only-not-new-release",
+  "source": "7a76a8ae235b1b853db814e7249b1664ae4cb21e",
+  "tree": "fa3413ecb22f15028614879b5e32b9430d5dbd49",
+  "tag": "v0.24.120",
+  "required_commit": "0dbbf30cba21c262995be6d98f4949070168368d",
+  "bundle_bytes": 775789,
+  "bundle_sha256": "84588678eaaca7eedde4d0377557a41475fa941fea3f1661d3908ace50881a10",
+  "chunks": [
+    {
+      "path": "source.bundle.b64.000.txt",
+      "bytes": 49153,
+      "sha256": "d3d7df25867c1bd9ea497521c1a4b374cabfb2a1821e8de6a24ab052a43e9aaf"
+    },
+    {
+      "path": "source.bundle.b64.001.txt",
+      "bytes": 49153,
+      "sha256": "7007d7f5f8bf92538744eb664c26dda56aea6e05eae783b5e78371bc91686523"
+    },
+    {
+      "path": "source.bundle.b64.002.txt",
+      "bytes": 49153,
+      "sha256": "7191938149c7054b19e662871e095482704396a19a623fcb1b890506944b4c4b"
+    },
+    {
+      "path": "source.bundle.b64.003.txt",
+      "bytes": 49153,
+      "sha256": "ff0f9efd573632a84e3c81ff575786811043cf84d099df4761081c515b9f90d0"
+    },
+    {
+      "path": "source.bundle.b64.004.txt",
+      "bytes": 49153,
+      "sha256": "e78e58e13d8d73e2a7d367b36726399e36cf6c6decf639f2f6b4c413d88c7cf0"
+    },
+    {
+      "path": "source.bundle.b64.005.txt",
+      "bytes": 49153,
+      "sha256": "9d8444015a35fe103f27997b3f22987e9fcb75e65611d1865000e71013afd288"
+    },
+    {
+      "path": "source.bundle.b64.006.txt",
+      "bytes": 49153,
+      "sha256": "00ed7529bfadac1416de8754bcd9e75baa7894b840ab19ac9b80984e46299a47"
+    },
+    {
+      "path": "source.bundle.b64.007.txt",
+      "bytes": 49153,
+      "sha256": "1f099f80723ff43483269c8f5359395af9beee30332e7b3e1946e656108da3c8"
+    },
+    {
+      "path": "source.bundle.b64.008.txt",
+      "bytes": 49153,
+      "sha256": "43ad4e840866a8c780294f4928a0e29102d3e7425c75b68aab35ff308b6bf00b"
+    },
+    {
+      "path": "source.bundle.b64.009.txt",
+      "bytes": 49153,
+      "sha256": "86f7365e9ebb24e75fec0e4eeb4844c5d7f351fcb4587b4928bea03212d4cff2"
+    },
+    {
+      "path": "source.bundle.b64.010.txt",
+      "bytes": 49153,
+      "sha256": "eaff4bf9001303ae3ae77537b8d4ea959469fefec6adf8e830fe0e31495c9a4f"
+    },
+    {
+      "path": "source.bundle.b64.011.txt",
+      "bytes": 49153,
+      "sha256": "6f7a0b0bc3f3d62660a14fcc7bcf792ffe4a06c2381052974f5f7085b3b56909"
+    },
+    {
+      "path": "source.bundle.b64.012.txt",
+      "bytes": 49153,
+      "sha256": "8101d86f34ebd63346045022e3b356b8f12c13663b8d2c75289a21f6b977301e"
+    },
+    {
+      "path": "source.bundle.b64.013.txt",
+      "bytes": 49153,
+      "sha256": "f4fe4506da8dcfbae2cc03fb66c2cce0350585c9b7e203723d3e8b9a809004a6"
+    },
+    {
+      "path": "source.bundle.b64.014.txt",
+      "bytes": 49153,
+      "sha256": "3a02e51649d21143ccc8670e0338e7f095319592ec076cfe236a83cdeeb3dc39"
+    },
+    {
+      "path": "source.bundle.b64.015.txt",
+      "bytes": 49153,
+      "sha256": "ff0ad1cfeb016ef190883390fae05e319e96ddaff816c28363a4e64efa3081e9"
+    },
+    {
+      "path": "source.bundle.b64.016.txt",
+      "bytes": 49153,
+      "sha256": "034e4cf0cf247e6094f135c4fe6893d4c9b9786a7ba0cacd4ac9cc1c7de79704"
+    },
+    {
+      "path": "source.bundle.b64.017.txt",
+      "bytes": 49153,
+      "sha256": "ca6c17ab4fc5c0e43f337f1044bbfcfb466141e9cd08df88cc599762d2f2b1bf"
+    },
+    {
+      "path": "source.bundle.b64.018.txt",
+      "bytes": 49153,
+      "sha256": "b1deb9954f298a290fcb855c546511c4f5b7c7fee920231068e0aa4ea378dff3"
+    },
+    {
+      "path": "source.bundle.b64.019.txt",
+      "bytes": 49153,
+      "sha256": "5d775decc9fd69eaeb244f96614aadb9092a934b508f7354974fbf471f37ec3f"
+    },
+    {
+      "path": "source.bundle.b64.020.txt",
+      "bytes": 49153,
+      "sha256": "dfa6eb860fe4e8ea94f2ce4e45a46a48d6d49a962e5aad4861253accb9f5ad19"
+    },
+    {
+      "path": "source.bundle.b64.021.txt",
+      "bytes": 2197,
+      "sha256": "701be256e15ceee0fb0464c0e60b3fd3752c1038fbe6fd03459f7f65922ae8ef"
+    }
+  ],
+  "instructions": "Verify each exact chunk length/hash, concatenate stripped ASCII in numeric order, base64 decode, verify bundle bytes/hash, git bundle verify against retained prerequisite object, import into isolated scratch, verify peeled commit/tree. Preserve pinned old checkout. No executable artifact or credentials in this transfer. Carrier branch is not a release or authority to change main."
+}
