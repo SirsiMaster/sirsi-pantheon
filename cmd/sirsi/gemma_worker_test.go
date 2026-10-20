@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"errors"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
@@ -223,6 +225,129 @@ func TestGemmaWorkerApolloAnswerRoleIsDeclaredAndStamped(t *testing.T) {
 	}
 	if err := gemmaWorkerVerifyStampedAnswerRole(root, "forged"); err == nil {
 		t.Fatal("unstamped worker unexpectedly passed answering-role readback")
+	}
+}
+
+// The dispatcher is an HTTP client that captures SIRSI_THREAD_ID when it is
+// constructed. This regression recreates the production failure mode: an
+// ungranted parent worker session can claim but cannot complete; the helper
+// must register and export a fresh granted child before opening the facade so
+// its exact claim/reply/fenced-complete lifecycle succeeds.
+func TestGemmaWorkerFacadeUsesRegisteredChildSessionOverHTTP(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("SIRSI_ROUTER_DB", "")
+	t.Setenv("SIRSI_AGENT_ID", gemmaWorkerAgent)
+	t.Setenv("SIRSI_ROUTER_AGENT", gemmaWorkerAgent)
+	t.Setenv("SIRSI_THREAD_ID", "ungranted-parent")
+
+	backend, err := routerstore.OpenPath(filepath.Join(t.TempDir(), "router.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = backend.Close() })
+	h, err := routerstore.Handler(backend, routerstore.ServerOptions{
+		Token:         "gemma-fixture-token",
+		MaxWait:       time.Second,
+		RuleOfRa:      "enforce",
+		RuleOfRaStale: time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	t.Setenv("SIRSI_ROUTER_URL", srv.URL)
+	t.Setenv("SIRSI_ROUTER_TOKEN", "gemma-fixture-token")
+
+	repoRoot := t.TempDir()
+	routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
+	if err := os.MkdirAll(routerRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	reg := &router.Registry{Agents: map[string]router.AgentConfig{
+		gemmaWorkerAgent: {
+			ID: gemmaWorkerAgent, Type: "gemma", Command: []string{"sirsi"}, Cwd: repoRoot, Repo: repoRoot,
+			Workstream: "pantheon", Wake: router.WakeConfig{Mechanism: "none"}, WorkerAnswers: true,
+		},
+		"codex-pantheon": {
+			ID: "codex-pantheon", Type: "codex", Command: []string{"sirsi"}, Cwd: repoRoot, Repo: repoRoot,
+			Workstream: "pantheon", Wake: router.WakeConfig{Mechanism: "none"},
+		},
+	}}
+	if err := router.SaveRegistry(routerRoot, reg); err != nil {
+		t.Fatal(err)
+	}
+	parent, err := router.RegisterThread(routerRoot, &router.Thread{
+		ThreadID:      "ungranted-parent",
+		AgentID:       gemmaWorkerAgent,
+		Surface:       "worker",
+		Repo:          repoRoot,
+		PID:           os.Getpid(),
+		AnswerRole:    false,
+		WakeMechanism: "none",
+	})
+	if err != nil {
+		t.Fatalf("register ungranted parent: %v", err)
+	}
+	if parent.ThreadID != "ungranted-parent" {
+		t.Fatalf("parent id = %q", parent.ThreadID)
+	}
+
+	parentFacade, err := dispatch.Open(repoRoot)
+	if err != nil {
+		t.Fatalf("open parent facade: %v", err)
+	}
+	t.Cleanup(func() { _ = parentFacade.Close() })
+	parentItem, _, err := backend.SendGuarded(routerstore.SendReq{From: "codex-pantheon", To: gemmaWorkerAgent, Title: "parent fence", Type: "review", Instructions: "draft"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentLease, err := parentFacade.Store().ClaimItem(gemmaWorkerAgent, parentItem, time.Minute)
+	if err != nil {
+		t.Fatalf("parent claim: %v", err)
+	}
+	if err := parentFacade.Store().StartWork(parentLease.ItemID, parentLease.Token); err != nil {
+		t.Fatalf("parent start: %v", err)
+	}
+	if err := parentFacade.CompleteItem(gemmaWorkerAgent, parentLease.ItemID, parentLease.Token, "ungranted parent must not complete"); err == nil || !strings.Contains(err.Error(), "answering role") {
+		t.Fatalf("ungranted parent completion = %v, want answering-role refusal", err)
+	}
+	if got, err := backend.Get(parentItem); err != nil || got.Status == routerstore.StatusClosed {
+		t.Fatalf("refused parent completion changed source item: item=%+v err=%v", got, err)
+	}
+
+	child, childFacade, err := gemmaWorkerOpenFacade(repoRoot, routerRoot, true)
+	if err != nil {
+		t.Fatalf("open registered child facade: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = childFacade.Close()
+		_, _ = router.CloseThread(routerRoot, child.ThreadID)
+	})
+	if child.ThreadID == parent.ThreadID || os.Getenv("SIRSI_THREAD_ID") != child.ThreadID {
+		t.Fatalf("facade did not bind a fresh child: parent=%q child=%q env=%q", parent.ThreadID, child.ThreadID, os.Getenv("SIRSI_THREAD_ID"))
+	}
+
+	childItem, _, err := backend.SendGuarded(routerstore.SendReq{From: "codex-pantheon", To: gemmaWorkerAgent, Title: "child fence", Type: "review", Instructions: "draft"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	childLease, err := childFacade.Store().ClaimItem(gemmaWorkerAgent, childItem, time.Minute)
+	if err != nil {
+		t.Fatalf("child claim: %v", err)
+	}
+	if err := childFacade.Store().StartWork(childLease.ItemID, childLease.Token); err != nil {
+		t.Fatalf("child start: %v", err)
+	}
+	childWork, err := childFacade.Store().Get(childItem)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := (facadeGemmaReply{facade: childFacade}).Reply(childLease, childWork, "child draft"); err != nil {
+		t.Fatalf("registered child reply and fenced complete: %v", err)
+	}
+	if got, err := backend.Get(childItem); err != nil || got.Status != "completed" {
+		t.Fatalf("child fenced completion missing: item=%+v err=%v", got, err)
 	}
 }
 

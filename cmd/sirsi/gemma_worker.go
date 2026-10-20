@@ -353,11 +353,6 @@ func runGemmaWorker(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	f, err := dispatch.Open(repoRoot)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
 	routerRoot := repoRoot + "/.agents/idea-router"
 	answerRole := false
 	if gemmaWorkerApolloToolTurn {
@@ -370,23 +365,16 @@ func runGemmaWorker(cmd *cobra.Command, _ []string) error {
 			return fmt.Errorf("--apollo-tool-turn refuses to claim work: %s has not granted this headless worker the router answering role", gemmaWorkerAgent)
 		}
 	}
-	t, err := router.RegisterThread(routerRoot, &router.Thread{AgentID: gemmaWorkerAgent, Surface: "worker", Repo: repoRoot, PID: os.Getpid(), ConsumerCapable: true, WakeMechanism: "none", AnswerRole: answerRole})
+	t, f, err := gemmaWorkerOpenFacade(repoRoot, routerRoot, answerRole)
 	if err != nil {
-		return fmt.Errorf("register Gemma worker thread: %w", err)
+		return err
 	}
 	defer func() {
 		if _, err := router.CloseThread(routerRoot, t.ThreadID); err != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "Gemma worker thread close failed: %v\n", err)
 		}
 	}()
-	if err := os.Setenv("SIRSI_THREAD_ID", t.ThreadID); err != nil {
-		return fmt.Errorf("export registered thread id: %w", err)
-	}
-	if gemmaWorkerApolloToolTurn {
-		if err := gemmaWorkerVerifyStampedAnswerRole(routerRoot, t.ThreadID); err != nil {
-			return err
-		}
-	}
+	defer f.Close()
 	w := nativeGemmaWorker{store: f.Store(), reply: facadeGemmaReply{facade: f}, generate: generate, leaseTTL: 15 * time.Minute, itemID: gemmaWorkerItemID,
 		heartbeat: func() error {
 			_, err := router.Heartbeat(routerRoot, t.ThreadID, router.HeartbeatUpdate{Status: router.ThreadStatusActive})
@@ -417,6 +405,47 @@ func runGemmaWorker(cmd *cobra.Command, _ []string) error {
 			}
 		}
 	}
+}
+
+// gemmaWorkerOpenFacade registers this worker's own child session before it
+// opens the write facade. RemoteStore captures SIRSI_THREAD_ID at construction;
+// reversing this order binds every later claim, reply, and fenced completion to
+// whichever parent session happened to launch the worker.
+func gemmaWorkerOpenFacade(repoRoot, routerRoot string, answerRole bool) (*router.Thread, *dispatch.Facade, error) {
+	t, err := router.RegisterThread(routerRoot, &router.Thread{
+		// A worker must own a fresh session even when it is launched from an
+		// attended process that shares its PID in a test or embedded host.
+		ThreadID:        router.NewThreadID(),
+		AgentID:         gemmaWorkerAgent,
+		Surface:         "worker",
+		Repo:            repoRoot,
+		PID:             os.Getpid(),
+		ConsumerCapable: true,
+		WakeMechanism:   "none",
+		AnswerRole:      answerRole,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("register Gemma worker thread: %w", err)
+	}
+	closeChild := func() {
+		_, _ = router.CloseThread(routerRoot, t.ThreadID)
+	}
+	if err := os.Setenv("SIRSI_THREAD_ID", t.ThreadID); err != nil {
+		closeChild()
+		return nil, nil, fmt.Errorf("export registered thread id: %w", err)
+	}
+	if answerRole {
+		if err := gemmaWorkerVerifyStampedAnswerRole(routerRoot, t.ThreadID); err != nil {
+			closeChild()
+			return nil, nil, err
+		}
+	}
+	f, err := dispatch.Open(repoRoot)
+	if err != nil {
+		closeChild()
+		return nil, nil, fmt.Errorf("open Gemma worker dispatch facade: %w", err)
+	}
+	return t, f, nil
 }
 
 // gemmaWorkerAnswerRoleGranted reads the lead-owned declaration; it never
