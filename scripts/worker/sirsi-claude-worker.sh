@@ -23,7 +23,7 @@
 # a completion to claude-home — NEVER merge, never push main, never touch prod.
 
 set -u
-AGENT_ID=${SIRSI_CLAUDE_WORKER_AGENT:-claude-pantheon}
+AGENT_ID=${SIRSI_CLAUDE_WORKER_AGENT:-codex-pantheon}
 REPO=${SIRSI_CLAUDE_WORKER_REPO:-$HOME/Development/sirsi-pantheon}
 SIRSI=$HOME/.local/bin/sirsi
 export SIRSI_SUPERVISOR=0   # headless: never run interactive session hooks (rc=1 loop fix 2026-07-03)
