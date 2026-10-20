@@ -221,9 +221,10 @@ listener_pids() { /usr/sbin/lsof -nP -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null || 
 existing="$(listener_pids)"
 [[ -z "$existing" ]] || die "loopback listener $PORT is already occupied; refusing without signal"
 
-# apollo-serve-batch accepts its checkpoint as the mandatory positional operand;
-# keeping it first prevents a flag parser from treating --checkpoint as a path.
-"$server" "$checkpoint" --idle-exit 120 --addr 127.0.0.1:"$PORT" >"$log" 2>&1 &
+# The reviewed native server owns the listener directly and requires its
+# checkpoint flag. Shell/batch launchers are not interchangeable here because
+# they can fork a different child and weaken listener/image identity binding.
+"$server" --checkpoint "$checkpoint" --idle-exit 120 --addr 127.0.0.1:"$PORT" >"$log" 2>&1 &
 server_pid=$!
 printf 'server_pid\t%s\n' "$server_pid" >>"$terminal"
 ready=false
