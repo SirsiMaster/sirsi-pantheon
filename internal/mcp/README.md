@@ -87,3 +87,15 @@ Client                          Server (anubis mcp)
 - **Rule A4**: Network scanning requires explicit opt-in
 - All scanning is local — no data leaves the machine
 - MCP runs over stdio — no network ports opened
+
+## Client lifecycle
+
+Each `sirsi mcp` invocation serves one client's stdin/stdout until EOF. Multiple
+IDE sessions may run concurrently. The legacy `sirsi seshat mcp` entry point
+uses the same per-client lifecycle and emits no banner on the JSON-RPC stream.
+There is no machine-wide MCP transport lock. Shared router operations still
+use the dispatch facade and transactional store (ADR-036); vault operations
+use their SQLite store. Transport lifetime does not replace resource locking.
+
+`TestMCPConcurrentClients` exercises all root/legacy command pairs, checks
+handshake and tools listing, and proves one client survives the other's EOF.

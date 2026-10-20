@@ -42,7 +42,7 @@ jobs:
 
   menubar:
     name: Build Pantheon (macOS DMG + PKG)
-    runs-on: [self-hosted, macOS, ARM64]  # M5 local frame (ADR-042)
+    runs-on: [self-hosted, macOS, ARM64]  # Enrolled native runner; bind its actual host at execution.
     needs: release
     # Fail fast instead of burning the 6h GitHub-Actions ceiling: if the signing
     # path wedges (a missing/invalid Developer-ID cert or app-specific password
@@ -156,6 +156,9 @@ jobs:
 
       - name: Build + sign + notarize DMG and PKG (arm64 — Intel Macs use Rosetta)
         env:
+          GOMAXPROCS: "1"
+          GOFLAGS: "-p=1"
+          PANTHEON_BUILD_JOBS: "1"
           BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
           DEVELOPER_ID_INSTALLER: ${{ secrets.DEVELOPER_ID_INSTALLER }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -164,8 +167,16 @@ jobs:
         run: |
           set -euo pipefail
           : "${DEVELOPER_ID_INSTALLER:?DEVELOPER_ID_INSTALLER is required for the commercial Pantheon PKG}"
-          bash scripts/ci-private-sdk.sh scripts/build-dmg.sh --release --version "$BUILD_VERSION" --arch arm64
-          bash scripts/ci-private-sdk.sh scripts/build-pkg.sh --release --version "$BUILD_VERSION" --arch arm64 --app Pantheon.app
+          # The legacy runner-start rail-lock hook is not a resource grant.
+          # Register this job's actual native executor, acquire/maintain its own
+          # canonical CPU grant, and retain cleanup evidence before publishing.
+          # The supervisor refuses before child launch if admission is absent.
+          python3 scripts/maat/admitted-run.py --agent codex-pantheon \
+            --register-executor --work "pantheon-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --cpu-cores 1 --timeout 1500 -- /bin/bash -euo pipefail -c '
+              bash scripts/ci-private-sdk.sh scripts/build-dmg.sh --release --version "$BUILD_VERSION" --arch arm64
+              bash scripts/ci-private-sdk.sh scripts/build-pkg.sh --release --version "$BUILD_VERSION" --arch arm64 --app Pantheon.app
+            '
 
       - name: Create or verify the exact GitHub release record
         env:
