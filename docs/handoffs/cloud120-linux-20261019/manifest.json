@@ -1,0 +1,474 @@
+{
+  "kind": "scoped-cloud-build-courier-not-official-Mac-package",
+  "source": "7a76a8ae235b1b853db814e7249b1664ae4cb21e",
+  "tree": "fa3413ecb22f15028614879b5e32b9430d5dbd49",
+  "version": "v0.24.120",
+  "os": "linux",
+  "arch": "amd64",
+  "go": "go1.27.1",
+  "cgo": false,
+  "vcs_modified": false,
+  "native_admitted_build_terminal": "26368d25d79e46eb8fa9394ec359ad06",
+  "binary_bytes": 36618400,
+  "binary_sha256": "3ab3f0c06387958be1f1d3c56c6795f93eb1466d1d7d6c1495c480c56f0c55f6",
+  "gzip_bytes": 13417459,
+  "gzip_sha256": "fe42e8fba31eb428e99ef1d2aa126ab331b33ecef978e7c094f72499ac2a49eb",
+  "chunks": [
+    {
+      "path": "sirsi-linux-amd64.gz.b64.000.txt",
+      "bytes": 196609,
+      "sha256": "68b3505b82810558b87572eef9b253220ed44a1d8fecb0b3b5da8eb937a6353f"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.001.txt",
+      "bytes": 196609,
+      "sha256": "f13c36a139acc9ad9ad1ef0ff460d156c09202e28a840e9df5f0f217412e296c"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.002.txt",
+      "bytes": 196609,
+      "sha256": "5c0eabb1119c77d90399b42f1d3110fd0a3e0ef8dc2ccc1c3d7d94646dc9caf0"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.003.txt",
+      "bytes": 196609,
+      "sha256": "fc36bdb4de9a39c47c867324f79b51fae8a667b138d4f72b001ebc2104ceb077"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.004.txt",
+      "bytes": 196609,
+      "sha256": "6d151668cf9f7d3136a7f7614e898e136321846d6432e5ffddd3025e01c6f85b"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.005.txt",
+      "bytes": 196609,
+      "sha256": "e0cd69999c69ab838f38b05dfdf282eb069e4479af7b45b794994dff3e174a00"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.006.txt",
+      "bytes": 196609,
+      "sha256": "7eac3e8c5ff55bfcb8905ae5f958263ea7a7e636d00d0ae80bbc6b31eb893275"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.007.txt",
+      "bytes": 196609,
+      "sha256": "55658780702f7811d14775c3926023c800c8d6ca64f6b19732d4fcb7600d00e2"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.008.txt",
+      "bytes": 196609,
+      "sha256": "0f48b3a33dfe988b2aab72756013641ce00b0f8f7253c95726483b1eb925d815"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.009.txt",
+      "bytes": 196609,
+      "sha256": "5f4a784087620a1821397d4c0b74415ef13d5f6780f65f3bd4fdaa81d50d8644"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.010.txt",
+      "bytes": 196609,
+      "sha256": "f4cdf2aad1bdf13ce9c988f642f7c1a957807070ee350068f4426d1ca70771a7"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.011.txt",
+      "bytes": 196609,
+      "sha256": "a6d180e87a319d5e066a5e64323e968b9b5e2f0c7837c2f0613febb416f74c3a"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.012.txt",
+      "bytes": 196609,
+      "sha256": "e784b9bb36b915f46ebcc8d200c4cdfa983f2c94702d7b490a3595637840dce6"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.013.txt",
+      "bytes": 196609,
+      "sha256": "529c80d57179729b4d7521fbcccbe0ffbe9e88685ecd8d61b1d10bb4496957e7"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.014.txt",
+      "bytes": 196609,
+      "sha256": "150a90d4e7adb341052e76c46d1c37fd5de8672f5ff05f57b9c922c0e719ee41"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.015.txt",
+      "bytes": 196609,
+      "sha256": "21cc68eb332c0a765ed5d26ce2b2e7e0a5c51d9a34277f0310309fd2d05da219"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.016.txt",
+      "bytes": 196609,
+      "sha256": "e183b2c5e37e626bd6c986ac7115b2f7b8147906c55b652abf222d28b0b48d2c"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.017.txt",
+      "bytes": 196609,
+      "sha256": "f521e50cf6dcbaf5161ae06c938e5d447ebf72c8689c1526c6ee9f9c00a50d54"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.018.txt",
+      "bytes": 196609,
+      "sha256": "178543cda429aaeec0a5ed0ed096759d0dee4125e78ed8b910dfe6ad7a9c48c6"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.019.txt",
+      "bytes": 196609,
+      "sha256": "0f368ad3ea2ef0b15885faf0c1fa77ccd9caf9ccca08f6af1d93fd000cec5b27"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.020.txt",
+      "bytes": 196609,
+      "sha256": "5b5560d6d8247fe1711e9a7fcc43db9b0bdba9a6eae2d0df963993fc37662608"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.021.txt",
+      "bytes": 196609,
+      "sha256": "a2dab4e5ee9e79c96b7736cce06f4de6b99c0b655a5a4f2a0735b5ace97adf76"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.022.txt",
+      "bytes": 196609,
+      "sha256": "64e1a32d2c8e6e0013838c9c1fa2e84e380dfbb7539a9dbe7f9a1e7cea2a2add"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.023.txt",
+      "bytes": 196609,
+      "sha256": "7403cd07c113c26478f88d4b2e7b0ec1992a9b3e522a39f92ee6365eb44a60ec"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.024.txt",
+      "bytes": 196609,
+      "sha256": "5d3b07dbd725541089aba9e61f175dcbbc362ca60d2745a0103a3518b632a4fb"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.025.txt",
+      "bytes": 196609,
+      "sha256": "0d4fb36646165c12b8d7ace3288aee1fc9d9afee840951ec37c4314af0358dcb"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.026.txt",
+      "bytes": 196609,
+      "sha256": "5b90947c37a25d676c7b9cfdc078c2e1d6456002879957325e96bca8ee84a698"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.027.txt",
+      "bytes": 196609,
+      "sha256": "863a0adf6e7c1902b1298e21cb81d91ee45b67823f7f9246220a6c57f429a515"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.028.txt",
+      "bytes": 196609,
+      "sha256": "e3b7449e568744672e67d64103ba5bc1402563c76c0eb5308ff0fe66e9d5a494"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.029.txt",
+      "bytes": 196609,
+      "sha256": "a352e805fb60b16c8ff2cf944c7e6d26b9baf8f45f755f6d837947e4dd3e4077"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.030.txt",
+      "bytes": 196609,
+      "sha256": "d74b4c612f25f89f72872cca686ba2ce8cea7ffba32d723ef57c83bcd5956469"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.031.txt",
+      "bytes": 196609,
+      "sha256": "ba52b29df2fa1e56adb9d55ea4fc3f81e5044f4151e38041249556b24e7ad225"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.032.txt",
+      "bytes": 196609,
+      "sha256": "69ad0c1dd72de9a275adb726dee19d03edea959f93ac0ca3cfe5bb36461317c1"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.033.txt",
+      "bytes": 196609,
+      "sha256": "2c4187b4e3dbc58b1677c53b62082a77f41f201b4b5a54efa150fac5bed5d871"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.034.txt",
+      "bytes": 196609,
+      "sha256": "b57024349a28288e17bda2e8566e85d8cf7100ac0a07854012f884e562469043"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.035.txt",
+      "bytes": 196609,
+      "sha256": "b4d2df12958718fb550c244023c8a44b83782d6a128af288a59f6c02e9399e98"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.036.txt",
+      "bytes": 196609,
+      "sha256": "aa572c703d31a11332996fbc7ede2230a9e041f697d74bb1f8aa2cad8b34ea2d"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.037.txt",
+      "bytes": 196609,
+      "sha256": "8f866b5a089511a7fed065bb6081a73328ebd214c118bdfba1634bcaf514131a"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.038.txt",
+      "bytes": 196609,
+      "sha256": "da035feac47544a618ee37c029294c48f0d8efb54066a96cb5535351601590ac"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.039.txt",
+      "bytes": 196609,
+      "sha256": "a3253991ce43cca4bfb542965e4aad2add85c1bb572de99ceab1caeedf6adde5"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.040.txt",
+      "bytes": 196609,
+      "sha256": "afe9242ff07d0bdc8fd3d7e3c6c0c72c17209098c773b8b0dfb5b7766b0579ca"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.041.txt",
+      "bytes": 196609,
+      "sha256": "c938ab19562649281488d07e27df06881a6f5178226fbe95dcbc31b1b6be308d"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.042.txt",
+      "bytes": 196609,
+      "sha256": "d20b0a7b2c17eb72593e9f0b9a25ceac2df3e2f492cf23c648479e60c674ee10"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.043.txt",
+      "bytes": 196609,
+      "sha256": "603a62a5d77400c39e81d3dcc331547f5e38345892852adc0acffd9430698811"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.044.txt",
+      "bytes": 196609,
+      "sha256": "d930698ddc2683c9c9cbd82df306414ebcf7ed1bf488d59626bf8a9f7b10e391"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.045.txt",
+      "bytes": 196609,
+      "sha256": "8fa5743e9abcd664edd76b9f16bfb4005fe2d26c7215a2025c9d928f7502c229"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.046.txt",
+      "bytes": 196609,
+      "sha256": "32a373008371b8e9a3475d264665f9ceaf9349250e22cd700cdacefd25648fd8"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.047.txt",
+      "bytes": 196609,
+      "sha256": "eb2567d448e2fd4101f7d793a79bc06c96f64a60e5e670b7cc66e962dc1dad17"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.048.txt",
+      "bytes": 196609,
+      "sha256": "9aea51710922e206db25140f058138a2205fa54a4ab2602a9fb198722ddca59e"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.049.txt",
+      "bytes": 196609,
+      "sha256": "ea22a16218d7cc3446b83fde8289fd9b2c9b716ee03601d1bb9a506a22ebd15c"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.050.txt",
+      "bytes": 196609,
+      "sha256": "529ef9510c9cf3d187302e5cea99257bdcecf9b51da4c3b9da754a545607fe2b"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.051.txt",
+      "bytes": 196609,
+      "sha256": "4c74974506dff4ba56da6a59bafda2e4753cb1e65739dc9e18992f902c630678"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.052.txt",
+      "bytes": 196609,
+      "sha256": "728cfc809b88050de21cbee955b147231e047d09d763ac22a53c3520e6dc0d08"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.053.txt",
+      "bytes": 196609,
+      "sha256": "7b529a4b604860791e97ed651fe0971e09776686945ba40fd535a426a20b71c8"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.054.txt",
+      "bytes": 196609,
+      "sha256": "f45f157815dfbe5aabc28be5d20ab7b42b42939de125288d1bfdc766fdc9720a"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.055.txt",
+      "bytes": 196609,
+      "sha256": "23a9c5488e3ea330cd7fc59663e946a92437e2196cc6ac4e1408b47cbd5295b5"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.056.txt",
+      "bytes": 196609,
+      "sha256": "7eeaa83029f2dc732bd437d2b37a28baae0e37c62b29fc53086b49444746ea2a"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.057.txt",
+      "bytes": 196609,
+      "sha256": "04bad56431f572a071d8ad581882532a1e358a99851b84b6a7e31664284a33e0"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.058.txt",
+      "bytes": 196609,
+      "sha256": "7fe2865cecaf29fe2e713377ccea623816a3aba4f1be054045b842baf765e448"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.059.txt",
+      "bytes": 196609,
+      "sha256": "2759113fefc1a89023fe09ca32fa2a5869d094b2507710098e6fb07a581a5252"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.060.txt",
+      "bytes": 196609,
+      "sha256": "f347a550d3e284a30ddeaba06f9414e2723017a28c8f5f808a1dd2c80e960443"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.061.txt",
+      "bytes": 196609,
+      "sha256": "6a49f0f83ed03ff6b6316adadd9c4a7c265c8a6b4e3e814d06fa91e651c422fd"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.062.txt",
+      "bytes": 196609,
+      "sha256": "c1656727ce169c4c50737e3fca69e4401087ca4eda8056543e2a5a3d3ba5c823"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.063.txt",
+      "bytes": 196609,
+      "sha256": "e8533d8ab660e063014b2ac9839d0a775b0e3b0cc8ddab02972869cc045b8b7e"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.064.txt",
+      "bytes": 196609,
+      "sha256": "df33bacba18cdc9eb49ca2cdb0f7c4c962553058d86fe8f5279826f08dd4ee0b"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.065.txt",
+      "bytes": 196609,
+      "sha256": "6bfab80b3b437d855b3953d77c146cee6057e0c47e4adb8097a80c8ba3a122b9"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.066.txt",
+      "bytes": 196609,
+      "sha256": "01a4282692a7f996db7b9787012ae0de8fd078476359d24c906ab3ca2d70931e"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.067.txt",
+      "bytes": 196609,
+      "sha256": "53a6da0022e6f1aa60a803a28c6c7b3867a3286047fd8faef5ba5265b311ac70"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.068.txt",
+      "bytes": 196609,
+      "sha256": "c1e89fe0b7c7864d6208e1ccb646e4cfd06936ab583d875acf26906dadd0c5b1"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.069.txt",
+      "bytes": 196609,
+      "sha256": "e6674fcfb59989be2d5073ae78836188b0a0dee3ff8a7036c9921d8c6f551007"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.070.txt",
+      "bytes": 196609,
+      "sha256": "7c01639734b8dc6abede05ef70d68dd785a865fb37937a95e819ec85fa789183"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.071.txt",
+      "bytes": 196609,
+      "sha256": "c6b34a84d676717bb9df517c47bf1ddf2ae4e726eec7cc105ed5cc8c0ff5ce75"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.072.txt",
+      "bytes": 196609,
+      "sha256": "b387af5c986ca66de90fcdbee7eb296bcdfd4916653cfb2fe36e3935d9d9999c"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.073.txt",
+      "bytes": 196609,
+      "sha256": "7165d2785865cd912ebcdf1100dd411652b04b338b21c024d7ef1b14b4dcbc73"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.074.txt",
+      "bytes": 196609,
+      "sha256": "93ecb78223d528cf4ff3a2d1ddfb925af34453d7d057ede1e5b31091588ea9c8"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.075.txt",
+      "bytes": 196609,
+      "sha256": "417c80544a0227550609b034ef948749ef7b455ac23e592479aa3c25a902c961"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.076.txt",
+      "bytes": 196609,
+      "sha256": "57a35fd469c2b564945d4249e74ae7d22ceb3df08e04c1f7800c5dcb0bfc5337"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.077.txt",
+      "bytes": 196609,
+      "sha256": "e632e8266f11be5364bd035d75e2fd3f34c7f4d835dc446780b3b9a924cee44d"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.078.txt",
+      "bytes": 196609,
+      "sha256": "27539b70870b79063fbb6c4c193afcb25d08776e991a502a1dc8ec75c1b625e0"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.079.txt",
+      "bytes": 196609,
+      "sha256": "1848e0b7ed5706ba2f6a50f06dbdcd7db7432b4940ebddffcc4abe7a7592615c"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.080.txt",
+      "bytes": 196609,
+      "sha256": "6605b4f3131f3cfb85683a6061b96f0813f0937333915d29011cae91df9999bf"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.081.txt",
+      "bytes": 196609,
+      "sha256": "7fdb2de68bf0e6ab6f6ee8ac14a77f17aad34350ca39db3141e01e2ef5e2e5c6"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.082.txt",
+      "bytes": 196609,
+      "sha256": "90a5488f27f15d633d8d715da0280f166ab1f9b12ca8b1f524fb06de7165c02d"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.083.txt",
+      "bytes": 196609,
+      "sha256": "d7a17ab312e078315ebd93f24c7f372bd6937b16c17556f06a69abade74ee054"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.084.txt",
+      "bytes": 196609,
+      "sha256": "bee344d8ac83a4427b43a8e25fa43d9ceafcc0f9cffba1bb5ebb6d6c1b686140"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.085.txt",
+      "bytes": 196609,
+      "sha256": "b248bff718d07aade1475452c540c13fea49b25ca2b305a54784bf821e5b6302"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.086.txt",
+      "bytes": 196609,
+      "sha256": "dfea7b6efa0693012d33275f49e0729e3baa2765df24655c5621f8cd467ba6d7"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.087.txt",
+      "bytes": 196609,
+      "sha256": "6491a0d651b94ce4caec3e42f732070ff243e7630ec040fd50785bdae2d78fc9"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.088.txt",
+      "bytes": 196609,
+      "sha256": "e994b4a957df6f5a28b7e91c9eb95c46fa1ea2212639894e2f453f0548bef8ae"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.089.txt",
+      "bytes": 196609,
+      "sha256": "39797f699e04379c9d5bbf5a6cfbe0b766ed2013038ae79a21c6858569f04942"
+    },
+    {
+      "path": "sirsi-linux-amd64.gz.b64.090.txt",
+      "bytes": 195229,
+      "sha256": "1f45f67eb001cce380f14a79b63026b79223294befef37b3153b23992113b703"
+    }
+  ],
+  "instructions": "Fetch exact immutable carrier ref. Verify chunk lengths/hashes, concatenate stripped numeric ASCII, strict base64 decode, verify gzip bytes/hash, bounded gzip decompress, verify ELF bytes/hash before chmod or invocation. Preserve old CLI and pinned source. Check version/build metadata then own scoped registration/claim/close compatibility. No secrets or credentials in artifact. Does not change canonical main/tag or claim Mac notarization for Linux ELF."
+}
