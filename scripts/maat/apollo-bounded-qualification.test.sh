@@ -12,7 +12,14 @@ cat >"$tmp/server" <<'EOF'
 exit 0
 EOF
 chmod 700 "$tmp/server"
-cp "$tmp/server" "$tmp/sirsi"
+cat >"$tmp/sirsi" <<'EOF'
+#!/bin/sh
+if [ "$1" = gemma ] && [ "$2" = worker ] && [ "$3" = --help ]; then
+  printf '%s\n' '--once --apollo-tool-turn --item --inference-profile --allow-tool'
+fi
+exit 0
+EOF
+chmod 700 "$tmp/sirsi"
 mkdir "$tmp/checkpoint"
 cat >"$tmp/profile.json" <<'EOF'
 {"id":"gemma-m5-apollo21","endpoint":"http://127.0.0.1:8521/v1","model":"fixture","context_tokens":4096,"output_tokens":1024,"streaming":true,"tool_calls":true,"request_timeout_seconds":600}
@@ -71,6 +78,25 @@ if "$runner" --agent codex-pantheon --work apollo-qualification-fixture --item f
   --server "$tmp/server" --server-sha256 "$(sha "$tmp/server")" \
   --checkpoint "$tmp/checkpoint" --timeout 900 --validate-only >/dev/null 2>&1; then
   echo 'negative control: downgraded tool capability was accepted' >&2
+  exit 1
+fi
+
+# An installed CLI missing the exact bounded worker flags must refuse before a
+# Ma'at reservation, listener, or model launch.
+cat >"$tmp/old-sirsi" <<'EOF'
+#!/bin/sh
+if [ "$1" = gemma ] && [ "$2" = worker ] && [ "$3" = --help ]; then
+  printf '%s\n' '--once --item'
+fi
+exit 0
+EOF
+chmod 700 "$tmp/old-sirsi"
+if "$runner" --agent codex-pantheon --work apollo-qualification-fixture --item fixture-item \
+  --sirsi "$tmp/old-sirsi" --sirsi-sha256 "$(sha "$tmp/old-sirsi")" \
+  --profile "$tmp/profile.json" --profile-sha256 "$(sha "$tmp/profile.json")" \
+  --server "$tmp/server" --server-sha256 "$(sha "$tmp/server")" \
+  --checkpoint "$tmp/checkpoint" --timeout 900 --validate-only >/dev/null 2>&1; then
+  echo 'negative control: old Pantheon worker CLI was accepted' >&2
   exit 1
 fi
 

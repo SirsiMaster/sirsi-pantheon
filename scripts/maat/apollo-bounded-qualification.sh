@@ -17,6 +17,18 @@ valid_id() { [[ "$1" =~ ^[A-Za-z0-9_.-]+$ && ${#1} -ge 1 && ${#1} -le "$2" ]]; }
 valid_sha256() { [[ "$1" =~ ^[[:xdigit:]]+$ && ${#1} -eq 64 ]]; }
 valid_host() { [[ "$1" =~ ^[A-Za-z0-9_.-]+$ && ${#1} -ge 1 && ${#1} -le 255 ]]; }
 
+# The worker interface is part of the reviewed executable contract. Check it
+# before a Ma'at reservation or Apollo launch so an older installed CLI cannot
+# load a model and then fail on an unsupported bounded-tool flag.
+validate_worker_cli() {
+  local help required
+  help="$("$sirsi" gemma worker --help 2>&1)" || die "Pantheon worker help preflight failed"
+  for required in --once --apollo-tool-turn --item --inference-profile --allow-tool; do
+    /usr/bin/grep -F -- "$required" <<<"$help" >/dev/null || \
+      die "Pantheon worker lacks required bounded Apollo flag $required"
+  done
+}
+
 # Use the installed supervisor's own Darwin kernel probe and resource resolver.
 # This avoids inventing a parallel hostname→resource map in the wrapper. Cloud
 # executor identities are deliberately outside this local, loopback-only run.
@@ -150,6 +162,8 @@ regular_executable "$server" || die "Apollo server is not an executable regular 
    (.context_tokens | type == "number" and . > 0) and (.output_tokens | type == "number" and . > 0) and
    (.request_timeout_seconds | type == "number" and . >= 1 and . <= 600)' \
   "$profile" >/dev/null || die "Apollo profile lacks the exact bounded-tool capability contract"
+
+validate_worker_cli
 
 if [[ -n "$grant_fixture" ]]; then
   [[ "$supervised" == false && "$validate_only" == false && "$validate_installed_identity" == false ]] || die "grant fixture is an outer non-executing check only"
