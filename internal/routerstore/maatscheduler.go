@@ -44,6 +44,12 @@ func (m maatTransactionState) SetState(key, value string) error {
 }
 
 func (s *SQLiteStore) withMaatScheduler(fn func(*schedule.Ledger) error) error {
+	return s.withMaatTransaction(func(_ *txHandle, l *schedule.Ledger) error { return fn(l) })
+}
+
+// Custody consume and reservation admission serialize on the SAME canonical
+// row, including across PostgreSQL replicas; no read-then-write race window.
+func (s *SQLiteStore) withMaatTransaction(fn func(*txHandle, *schedule.Ledger) error) error {
 	return s.withTx(func(tx *txHandle) error {
 		if _, err := tx.Exec(`INSERT INTO state(key,value) VALUES(?,?) ON CONFLICT(key) DO NOTHING`, maatReservationsKey, `{"reservations":[]}`); err != nil {
 			return err
@@ -56,13 +62,16 @@ func (s *SQLiteStore) withMaatScheduler(fn func(*schedule.Ledger) error) error {
 				return err
 			}
 		}
-		return fn(schedule.NewLedger(maatTransactionState{tx}).WithClock(s.clock))
+		return fn(tx, schedule.NewLedger(maatTransactionState{tx}).WithClock(s.clock))
 	})
 }
 
 func (s *SQLiteStore) MaatReserve(req schedule.Reservation, queue bool) (schedule.ReserveResult, error) {
 	var out schedule.ReserveResult
-	err := s.withMaatScheduler(func(l *schedule.Ledger) (err error) {
+	err := s.withMaatTransaction(func(tx *txHandle, l *schedule.Ledger) (err error) {
+		if err = sleepReserveFence(tx, l, req.Resource); err != nil {
+			return err
+		}
 		out, err = l.Reserve(req, queue)
 		return err
 	})

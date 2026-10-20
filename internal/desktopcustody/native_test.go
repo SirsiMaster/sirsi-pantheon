@@ -12,7 +12,7 @@ func TestNativePowerUsesOnlyExactOwnedWakeAndSingleInvocation(t *testing.T) {
 	f, _ := newFixture(t)
 	var calls [][]string
 	present := false
-	p := &DarwinPower{zone: func() (*time.Location, error) { return time.UTC, nil }}
+	p := &DarwinPower{now: func() time.Time { return f.now }, zone: func() (*time.Location, error) { return time.UTC, nil }}
 	p.run = func(_ context.Context, args ...string) ([]byte, error) {
 		calls = append(calls, append([]string(nil), args...))
 		switch args[0] {

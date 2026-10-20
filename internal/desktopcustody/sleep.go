@@ -263,6 +263,17 @@ func (s SleepService) Dispatch(ctx context.Context, req SleepRequest) error {
 // VerifyReturn deliberately permits a past wake time: it is the post-wake
 // half of the transaction, not a second dispatch.
 func (s SleepService) VerifyReturn(ctx context.Context, req SleepRequest) error {
+	return s.verifyReturn(ctx, req, false)
+}
+
+// ReconcileReturn never dispatches power. It can resolve a retained unknown
+// outcome ONLY after a journaled invocation and exact owned-wake readback,
+// using the same live canonical/native/independent-return proof as normal.
+func (s SleepService) ReconcileReturn(ctx context.Context, req SleepRequest) error {
+	return s.verifyReturn(ctx, req, true)
+}
+
+func (s SleepService) verifyReturn(ctx context.Context, req SleepRequest, reconcile bool) error {
 	if err := s.dependencies(); err != nil {
 		return err
 	}
@@ -273,7 +284,7 @@ func (s SleepService) VerifyReturn(ctx context.Context, req SleepRequest) error 
 	if err != nil {
 		return fmt.Errorf("sleep custody: read lifecycle: %w", err)
 	}
-	if len(events) == 0 || events[len(events)-1].Phase != ReturnPending {
+	if len(events) == 0 || (events[len(events)-1].Phase != ReturnPending && !(reconcile && events[len(events)-1].Phase == SleepUnknown && hasSleepPhase(events, SleepInvoked) && hasSleepPhase(events, WakeReadBack))) {
 		return errors.New("sleep custody: request is not awaiting return verification")
 	}
 	a, err := admissionFromEvents(events)
@@ -298,6 +309,15 @@ func (s SleepService) VerifyReturn(ctx context.Context, req SleepRequest) error 
 		return s.unknown(req, a, "owned wake cleanup failed", err)
 	}
 	return s.Journal.AppendSleep(s.event(SleepVerified, req, a, QuietReceipt{}, wake, evidence.Digest, ""))
+}
+
+func hasSleepPhase(events []SleepEvent, phase SleepPhase) bool {
+	for _, e := range events {
+		if e.Phase == phase {
+			return true
+		}
+	}
+	return false
 }
 
 func (s SleepService) dependencies() error {

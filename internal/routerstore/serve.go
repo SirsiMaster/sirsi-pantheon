@@ -472,6 +472,14 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
+	if name == "DesktopSleep" {
+		var actorErr error
+		ctx, actorErr = s.desktopSleepContext(ctx, r, sess, tokenHost)
+		if actorErr != nil {
+			writeErr(w, http.StatusForbidden, "", actorErr.Error())
+			return
+		}
+	}
 	for i := 0; i < mt.NumIn(); i++ {
 		pt := mt.In(i)
 		if pt == ctxType {

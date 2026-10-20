@@ -21,6 +21,7 @@ type DarwinPower struct {
 	mu        sync.Mutex
 	run       func(context.Context, ...string) ([]byte, error)
 	zone      func() (*time.Location, error)
+	now       func() time.Time
 	wake      *WakeReceipt
 	scheduled bool
 }
@@ -29,7 +30,7 @@ func NewDarwinPower() (*DarwinPower, error) {
 	if runtime.GOOS != "darwin" {
 		return nil, errors.New("sleep custody: native power is available only on Darwin")
 	}
-	return &DarwinPower{run: func(ctx context.Context, args ...string) ([]byte, error) {
+	return &DarwinPower{now: time.Now, run: func(ctx context.Context, args ...string) ([]byte, error) {
 		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 		// No shell, caller executable, sudo, command fallback or environment
@@ -152,6 +153,9 @@ func (p *DarwinPower) Sleep(ctx context.Context) error {
 	if p.wake == nil {
 		return errors.New("sleep custody: native sleep requires a read-back owned wake")
 	}
+	if p.now == nil || !p.wake.WakeAt.After(p.now()) || ctx.Err() != nil {
+		return errors.New("sleep custody: native wake expired or action canceled")
+	}
 	// Consume this adapter instance before invocation. A timeout or native
 	// return cannot enable an automatic retry.
 	p.wake = nil
@@ -185,3 +189,5 @@ func (p *DarwinPower) CancelWake(ctx context.Context, a SleepAdmission, r SleepR
 }
 
 func digestBytes(data []byte) string { return fmt.Sprintf("%x", sha256.Sum256(data)) }
+
+func EvidenceDigest(data []byte) string { return digestBytes(data) }

@@ -94,7 +94,9 @@ func (j *FileSleepJournal) ReadSleep(id string) ([]SleepEvent, error) {
 	}
 	var events []SleepEvent
 	err := j.withLock(func() error {
-		for _, p := range []SleepPhase{SleepPrepared, WakeScheduled, WakeReadBack, SleepRequested, SleepInvoked, SleepNativeReturned, ReturnPending, SleepVerified, SleepFailed, SleepUnknown} {
+		// Verified return is last even when it explicitly reconciles a retained
+		// unknown event. Preserve historical filenames and original error rows.
+		for _, p := range []SleepPhase{SleepPrepared, WakeScheduled, WakeReadBack, SleepRequested, SleepInvoked, SleepNativeReturned, ReturnPending, SleepFailed, SleepUnknown, SleepVerified} {
 			b, err := j.read(sleepLeaf(id, p))
 			if errors.Is(err, unix.ENOENT) {
 				continue
@@ -287,7 +289,7 @@ func validateSleepEvents(events []SleepEvent) error {
 	if seen[WakeScheduled] && !seen[SleepPrepared] || seen[WakeReadBack] && !seen[WakeScheduled] || seen[SleepRequested] && !seen[WakeReadBack] || seen[SleepInvoked] && !seen[SleepRequested] || seen[SleepNativeReturned] && !seen[SleepInvoked] || seen[ReturnPending] && !seen[SleepNativeReturned] {
 		return errors.New("sleep custody: invalid event transition")
 	}
-	if seen[SleepVerified] && (!seen[ReturnPending] || seen[SleepFailed] || seen[SleepUnknown]) || (seen[SleepFailed] || seen[SleepUnknown]) && seen[SleepVerified] {
+	if seen[SleepVerified] && ((!seen[ReturnPending] && !(seen[SleepUnknown] && seen[SleepInvoked] && seen[WakeReadBack])) || seen[SleepFailed]) {
 		return errors.New("sleep custody: conflicting terminal event")
 	}
 	return nil
