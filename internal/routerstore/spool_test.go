@@ -503,6 +503,12 @@ func TestSpoolRelayBacklogDoesNotSpinAndCancels(t *testing.T) {
 	release := make(chan struct{})
 	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { <-release; _, _ = w.Write([]byte(`{"result":[]}`)) }))
 	t.Cleanup(svc.Close)
+	// LIFO cleanup releases the held handlers BEFORE server Close, even if a
+	// preceding assertion fails. Otherwise the actual failure is hidden by a
+	// ten-minute httptest shutdown hang.
+	var releaseOnce sync.Once
+	free := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(free)
 	rl := &Relay{Spool: spool, Base: svc.URL, Token: "t", Log: slog.New(slog.NewTextHandler(&strings.Builder{}, nil)), Client: svc.Client(), now: time.Now}
 	if err := os.MkdirAll(filepath.Join(spool, "lane-q", "req"), 0o700); err != nil {
 		t.Fatal(err)
@@ -513,11 +519,14 @@ func TestSpoolRelayBacklogDoesNotSpinAndCancels(t *testing.T) {
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
 	done := make(chan struct{})
 	go func() { _ = rl.Serve(ctx); close(done) }()
+	observedFrom := time.Now()
 	time.Sleep(600 * time.Millisecond) // first request held upstream, second queued behind it
-	if n := rl.scans.Load(); n > 8 {
-		t.Fatalf("discovery spun: %d scans in 600 ms with a %s poll", n, spoolPoll)
+	observedFor := time.Since(observedFrom)
+	if n, max := rl.scans.Load(), int32(observedFor/spoolPoll)+2; n > max {
+		t.Fatalf("discovery spun: %d scans in %s with a %s poll (max %d)", n, observedFor, spoolPoll, max)
 	}
 	start := time.Now()
 	cancel()
@@ -527,8 +536,42 @@ func TestSpoolRelayBacklogDoesNotSpinAndCancels(t *testing.T) {
 		t.Fatal("Serve did not return within 300 ms of cancellation while a backlog was pending")
 	}
 	_ = start
-	close(release) // let the held worker finish before TempDir cleanup
+	free() // let the held worker finish before TempDir cleanup
 	time.Sleep(100 * time.Millisecond)
+}
+
+// A worker consuming its wake quickly must not turn the next discovery pass
+// into a CPU spin, even when every pass reports another delivered wake. This
+// deterministic scheduler probe exercises that branch without network/timing
+// luck. The old woke!=0 shortcut fails and still cleans up promptly.
+func TestSpoolRelayFreshWakesStillHaveBoundedDiscovery(t *testing.T) {
+	rl := &Relay{Spool: t.TempDir(), Base: "http://127.0.0.1", Token: "fixture", Client: &http.Client{}}
+	rl.discoverFn = func(context.Context) int {
+		rl.scans.Add(1)
+		return 1
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if err := rl.Serve(ctx); err != nil {
+			t.Errorf("Serve: %v", err)
+		}
+	}()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Error("relay did not stop after cancellation")
+		}
+	})
+	start := time.Now()
+	time.Sleep(3 * spoolPoll)
+	elapsed := time.Since(start)
+	if scans, max := rl.scans.Load(), int32(elapsed/spoolPoll)+2; scans < 1 || scans > max {
+		t.Fatalf("unbounded discovery under continuous wakes: %d scans in %s (max %d)", scans, elapsed, max)
+	}
 }
 
 // TestRelayHTTPClientDialsFreshNoKeepAlive proves ONLY that the relay's forward
