@@ -21,4 +21,9 @@
 | Stack Lab wing | `docs/stacklab/ra/canon` | docs and receipts | this release |
 | Release/rollback | `scripts/release-train.sh`, recipe | immutable hash/readback | candidate contract |
 
+Logical cloud identity is specified in [CLOUD_EXECUTOR_IDENTITY.md](CLOUD_EXECUTOR_IDENTITY.md).
+It uses existing scoped host tokens, not OS hostname mutation or new authority.
+Source/fixture qualification does not establish configured runtime readiness or
+M5-off continuity; retain those separate operational gates in the matrix.
+
 Owner: Ra/Horus Fabric lane. No component may create a second authority.

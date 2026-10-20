@@ -1,5 +1,9 @@
 # Logical cloud executor identity
 
+This client contract follows [ADR-062](../../../ADR-062-ROUTER-SERVICE-RA-CONCURRENCY.md).
+The cutover filename cited in the preceding source commit message was an
+incorrect historical reference; this is the existing canonical ADR.
+
 An enrolled cloud executor uses its existing `SIRSI_ROUTER_CLOUD_HOST` value
 for both authentication and thread-record ownership. Ephemeral container
 hostnames are not stable enrollment identities. This does not claim a physical
