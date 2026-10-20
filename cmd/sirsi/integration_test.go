@@ -75,12 +75,29 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	// The developer shell normally exports the canonical service URL. These
-	// tests deliberately exercise isolated local stores, so do not let the
-	// host's live-router environment turn a hermetic test into a fabric write.
-	// Tests that cover service resolution set these variables explicitly.
-	for _, key := range []string{"SIRSI_ROUTER_URL", "SIRSI_ROUTER_TOKEN", "SIRSI_ROUTER_DB"} {
-		os.Unsetenv(key)
+	// Unsetting the URL alone is NOT isolation on an enrolled workstation:
+	// Resolve deliberately recovers it from the owner's cutover marker. Keep
+	// production recovery intact; place only this test process and its children
+	// in an empty private runtime home AFTER the compiler used its normal cache.
+	runtimeHome := filepath.Join(tmpDir, "runtime-home")
+	if err := os.Mkdir(runtimeHome, 0700); err != nil {
+		fmt.Fprintf(os.Stderr, "cannot create isolated test runtime home: %v\n", err)
+		os.RemoveAll(tmpDir)
+		os.Exit(1)
+	}
+	if err := os.Setenv("HOME", runtimeHome); err != nil {
+		fmt.Fprintf(os.Stderr, "cannot isolate test runtime home: %v\n", err)
+		os.RemoveAll(tmpDir)
+		os.Exit(1)
+	}
+	// Neither a live lane/session nor pre-push Git routing may leak into a
+	// disposable fixture. Individual tests explicitly supply what they test.
+	for _, kv := range os.Environ() {
+		key, _, _ := strings.Cut(kv, "=")
+		if strings.HasPrefix(key, "SIRSI_") || strings.HasPrefix(key, "GIT_") ||
+			key == "CLAUDE_CODE_SESSION_ID" || key == "CODEX_THREAD_ID" || key == "CODEX_SESSION_ID" {
+			os.Unsetenv(key)
+		}
 	}
 
 	// os.Exit does not run deferred functions, so tmpDir must be removed
@@ -89,6 +106,19 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 	os.RemoveAll(tmpDir)
 	os.Exit(code)
+}
+
+func TestIntegrationRuntimeCannotRecoverOwnersCutoverMarker(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if home != filepath.Join(filepath.Dir(testBinary), "runtime-home") {
+		t.Fatalf("test runtime escaped its private home: %q", home)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".sirsi", "router-service.env")); !os.IsNotExist(err) {
+		t.Fatalf("test runtime inherited a cutover marker: %v", err)
+	}
 }
 
 // sirsiTestEnv returns the parent environment with every GIT_* variable removed,
