@@ -679,13 +679,6 @@ Configure in your IDE:
     }
   }`,
 	Run: func(cmd *cobra.Command, args []string) {
-		unlock, err := platform.TryLock("mcp-cli")
-		if err != nil {
-			output.Error("MCP server is already running.")
-			return
-		}
-		defer unlock()
-
 		// Hint on stderr (won't interfere with JSON-RPC on stdout).
 		// If stdin is a terminal, the user is running this manually — not from an IDE.
 		if isTerminal(os.Stdin.Fd()) {
@@ -699,12 +692,28 @@ Configure in your IDE:
 			fmt.Fprintln(os.Stderr, "Press Ctrl+C to exit.")
 		}
 
-		server := mcp.NewServer()
-		if err := server.Run(); err != nil {
+		// MCP is a stdio protocol: each IDE session owns its server process and
+		// transport. A machine-wide singleton lock turns a healthy first client
+		// into "Connection closed" for every subsequent client. Shared Pantheon
+		// state has its own synchronization at the owning subsystem instead.
+		if err := runMCPServer(mcp.NewServer()); err != nil {
 			output.Error("MCP server error: %v", err)
 			os.Exit(1)
 		}
 	},
+}
+
+// mcpServerRunner is deliberately small so the command's per-client stdio
+// lifecycle can be verified without starting a real IDE transport.
+type mcpServerRunner interface {
+	Run() error
+}
+
+// runMCPServer serves exactly one stdio client. It intentionally does not
+// acquire a process- or machine-wide lock: separate IDE sessions require
+// independent MCP server instances.
+func runMCPServer(server mcpServerRunner) error {
+	return server.Run()
 }
 
 // The Pantheon TUI and brand-gateway menu were removed 2026-05-21 per ADR-018.

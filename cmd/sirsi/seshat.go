@@ -13,7 +13,6 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/help"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/mcp"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/seshat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/suggest"
 )
@@ -493,17 +492,10 @@ var seshatMcpCmd = &cobra.Command{
 	Use:   "mcp",
 	Short: "𓁆 Start the Model Context Protocol (MCP) context server",
 	Run: func(cmd *cobra.Command, args []string) {
-		unlock, err := platform.TryLock("mcp-cli")
-		if err != nil {
-			output.Error("Pantheon MCP Server is already active.")
-			return
-		}
-		defer unlock()
-
-		output.Header("MCP Server")
-
-		server := mcp.NewServer()
-		if err := server.Run(); err != nil {
+		// Keep this legacy alias protocol-clean and per-client as well. Writing
+		// a banner to stdout corrupts JSON-RPC framing; a singleton lock would
+		// deny other IDE sessions their own stdio transport.
+		if err := runMCPServer(mcp.NewServer()); err != nil {
 			output.Error("Server error: %v", err)
 			os.Exit(1)
 		}
