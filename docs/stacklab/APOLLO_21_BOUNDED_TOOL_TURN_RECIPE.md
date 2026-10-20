@@ -62,9 +62,22 @@ sirsi gemma tool-turn \
   "What is the current process situation?"
 ```
 
-The command is not a substitute for the fenced router worker. A worker that
-uses this recipe must preserve its claimed item, tool-call correlation, final
-answer, endpoint receipt, and cleanup result before it may complete the item.
+For a canonical router item, the same recipe is opt-in on the existing fenced
+worker. It preserves that worker's claim, lease verification, reply readback,
+and completion fence:
+
+```sh
+sirsi gemma worker --once \
+  --apollo-tool-turn \
+  --inference-profile /absolute/reviewed/apollo-profile.json \
+  --allow-tool process.census
+```
+
+The worker accepts only observe-tier tools before it contacts Apollo. When a
+tool is used, its exact factual evidence is placed alongside the final answer
+inside the existing router-correlated reply envelope. A worker qualification
+must retain the claimed item, tool-call correlation, final answer, batch
+endpoint receipt, and cleanup result before it completes the item.
 
 ## Proof and upgrade rules
 
@@ -73,8 +86,9 @@ answer, endpoint receipt, and cleanup result before it may complete the item.
   refusal under the read-only policy.
 - A real qualification uses an attended approved Apollo batch; it must not
   reuse a synthetic tool harness as evidence that Pantheon executed a tool.
-- The ordinary `sirsi gemma` and `sirsi gemma worker` paths remain text/draft
-  paths until their own fenced integration adopts this recipe.
+- The ordinary `sirsi gemma` remains text-only. The worker remains text/draft
+  by default and receives this recipe only through explicit
+  `--apollo-tool-turn` opt-in.
 - Changes to profile identity, tool schemas, policy, or result correlation
   require a new Stack Lab review and qualification; compatibility of an HTTP
   endpoint alone is never sufficient.

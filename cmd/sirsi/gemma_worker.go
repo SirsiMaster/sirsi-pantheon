@@ -13,6 +13,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/provider"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/reason"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/spf13/cobra"
@@ -21,11 +22,13 @@ import (
 const gemmaWorkerAgent = "gemma-pantheon"
 
 var (
-	gemmaWorkerOnce      bool
-	gemmaWorkerVersion   bool
-	gemmaWorkerProfile   string
-	gemmaWorkerMaxTokens int
-	gemmaWorkerTokenFile string
+	gemmaWorkerOnce           bool
+	gemmaWorkerVersion        bool
+	gemmaWorkerProfile        string
+	gemmaWorkerMaxTokens      int
+	gemmaWorkerTokenFile      string
+	gemmaWorkerApolloToolTurn bool
+	gemmaWorkerAllowedTools   []string
 )
 
 // gemmaWorkerStore is deliberately the token-fenced subset of the router
@@ -256,6 +259,8 @@ func init() {
 	gemmaWorkerCmd.Flags().StringVar(&gemmaWorkerProfile, "profile", "m5", "Worker output profile: m1=256 or m5=1024 tokens; endpoint/model identity stays selected")
 	gemmaWorkerCmd.Flags().IntVar(&gemmaWorkerMaxTokens, "max-tokens", 0, "Explicit worker output budget (0 uses profile)")
 	gemmaWorkerCmd.Flags().StringVar(&gemmaWorkerTokenFile, "access-token-file", "", "Existing selected private broker capability file (0600); empty preserves unauthenticated M5 profile")
+	gemmaWorkerCmd.Flags().BoolVar(&gemmaWorkerApolloToolTurn, "apollo-tool-turn", false, "Use one bounded Apollo 2.1 read-only tool turn; requires the exact selected Apollo profile")
+	gemmaWorkerCmd.Flags().StringSliceVar(&gemmaWorkerAllowedTools, "allow-tool", nil, "Exact observe-tier reason tool(s) offered when --apollo-tool-turn is set")
 	gemmaWorkerCmd.Flags().BoolVar(&gemmaWorkerOnce, "once", false, "claim and process at most one item")
 	gemmaWorkerCmd.Flags().BoolVar(&gemmaWorkerVersion, "version", false, "print worker version without registration or inference")
 	gemmaCmd.AddCommand(gemmaWorkerCmd)
@@ -297,6 +302,20 @@ func runGemmaWorker(cmd *cobra.Command, _ []string) error {
 		}
 		gemmaWorkerTokenFile = selected.AccessTokenFile
 	}
+	generate := gemmaWorkerGenerate
+	if gemmaWorkerApolloToolTurn {
+		if selected == nil || selected.ID != apollo21ProfileID || !provider.ProfileSupportsTools(selected) {
+			return fmt.Errorf("--apollo-tool-turn requires explicit %s profile with tool_calls: true", apollo21ProfileID)
+		}
+		registry := reason.NewRegistry()
+		if err := reason.MachineTools(registry); err != nil {
+			return fmt.Errorf("register bounded Apollo tools: %w", err)
+		}
+		if err := gemmaWorkerObserveAllowlist(registry, gemmaWorkerAllowedTools); err != nil {
+			return err
+		}
+		generate = gemmaWorkerApolloTurnGenerator(selected, registry, gemmaWorkerAllowedTools, gemmaWorkerMaxTokens)
+	}
 	if err := os.Setenv("SIRSI_AGENT_ID", gemmaWorkerAgent); err != nil {
 		return fmt.Errorf("set Gemma worker identity: %w", err)
 	}
@@ -333,7 +352,7 @@ func runGemmaWorker(cmd *cobra.Command, _ []string) error {
 			fmt.Fprintf(cmd.ErrOrStderr(), "Gemma worker thread close failed: %v\n", err)
 		}
 	}()
-	w := nativeGemmaWorker{store: f.Store(), reply: facadeGemmaReply{facade: f}, generate: gemmaWorkerGenerate, leaseTTL: 15 * time.Minute,
+	w := nativeGemmaWorker{store: f.Store(), reply: facadeGemmaReply{facade: f}, generate: generate, leaseTTL: 15 * time.Minute,
 		heartbeat: func() error {
 			_, err := router.Heartbeat(routerRoot, t.ThreadID, router.HeartbeatUpdate{Status: router.ThreadStatusActive})
 			return err
@@ -363,6 +382,31 @@ func runGemmaWorker(cmd *cobra.Command, _ []string) error {
 			}
 		}
 	}
+}
+
+func gemmaWorkerObserveAllowlist(registry *reason.Registry, names []string) error {
+	if len(names) == 0 {
+		return fmt.Errorf("--apollo-tool-turn requires at least one --allow-tool")
+	}
+	seen := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return fmt.Errorf("--allow-tool cannot be empty")
+		}
+		if _, duplicate := seen[name]; duplicate {
+			return fmt.Errorf("--allow-tool %q is duplicated", name)
+		}
+		tool, ok := registry.Get(name)
+		if !ok {
+			return fmt.Errorf("--allow-tool %q is not a registered Pantheon tool", name)
+		}
+		if tool.Tier != reason.TierObserve {
+			return fmt.Errorf("--apollo-tool-turn accepts observe tools only; %q is %s", name, tool.Tier)
+		}
+		seen[name] = struct{}{}
+	}
+	return nil
 }
 
 func gemmaWorkerBudget(profile string, explicit int) (int, error) {

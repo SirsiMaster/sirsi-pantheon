@@ -5,3 +5,6 @@
   observe tools, rejects model arguments and additional calls, and returns one
   factual tool-result follow-up answer without creating a shell executor or a
   resident model worker.
+- The existing fenced Gemma router worker can opt into the same read-only,
+  single-tool contract with `--apollo-tool-turn`, preserving its claim and
+  reply-readback completion fence.
