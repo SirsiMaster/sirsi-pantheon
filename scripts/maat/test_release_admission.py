@@ -24,7 +24,7 @@ class ReleaseAdmissionContract(unittest.TestCase):
     def test_swift_uses_validated_explicit_job_mask(self):
         source = (ROOT / 'scripts/build-dmg.sh').read_text()
         self.assertIn('SWIFT_BUILD_ARGS+=(--jobs "${PANTHEON_BUILD_JOBS}")', source)
-        self.assertIn('swift build "${SWIFT_BUILD_ARGS[@]}"', source)
+        self.assertIn('swift build -c release "${SWIFT_BUILD_ARGS[@]}"', source)
         self.assertIn('PANTHEON_BUILD_JOBS must be an integer from 1 to 64', source)
 
     def test_workflow_contract_rejects_missing_or_unbounded_supervision(self):

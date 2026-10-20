@@ -23,8 +23,8 @@ reject() {
     fi
 }
 
-require '^SWIFT_BUILD_ARGS=\(-c release\)' "$DMG_SCRIPT" "native_swift_release_configuration"
-require '^\s*\( cd "\$\{PROJECT_ROOT\}/macapp" && swift build "\$\{SWIFT_BUILD_ARGS\[@\]\}" \)' "$DMG_SCRIPT" "native_swift_release_build"
+require '^SWIFT_BUILD_ARGS=\(\)' "$DMG_SCRIPT" "native_swift_job_arguments"
+require '^\s*\( cd "\$\{PROJECT_ROOT\}/macapp" && swift build -c release "\$\{SWIFT_BUILD_ARGS\[@\]\}" \)' "$DMG_SCRIPT" "native_swift_release_build"
 require 'cp "\$\{PROJECT_ROOT\}/macapp/\.build/release/SirsiMenubar"' "$DMG_SCRIPT" "native_swift_payload"
 require 'CGO_ENABLED=1 GOARCH="\$\{ARCH\}" go build' "$DMG_SCRIPT" "go_cli_payload"
 require 'package-inventory' "$DMG_SCRIPT" "payload_inventory"

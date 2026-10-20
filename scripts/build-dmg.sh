@@ -103,7 +103,7 @@ mkdir -p "${BUILD_DIR}"
     exit 1
 }
 echo "Compiling native menu bar app (macapp/, SwiftUI)..."
-SWIFT_BUILD_ARGS=(-c release)
+SWIFT_BUILD_ARGS=()
 if [[ -n "${PANTHEON_BUILD_JOBS:-}" ]]; then
     [[ "${PANTHEON_BUILD_JOBS}" =~ ^([1-9]|[1-5][0-9]|6[0-4])$ ]] || {
         echo "ERROR: PANTHEON_BUILD_JOBS must be an integer from 1 to 64" >&2
@@ -111,7 +111,7 @@ if [[ -n "${PANTHEON_BUILD_JOBS:-}" ]]; then
     }
     SWIFT_BUILD_ARGS+=(--jobs "${PANTHEON_BUILD_JOBS}")
 fi
-( cd "${PROJECT_ROOT}/macapp" && swift build "${SWIFT_BUILD_ARGS[@]}" )
+( cd "${PROJECT_ROOT}/macapp" && swift build -c release "${SWIFT_BUILD_ARGS[@]}" )
 cp "${PROJECT_ROOT}/macapp/.build/release/SirsiMenubar" "${BUILD_DIR}/sirsi-menubar"
 
 echo "Compiling sirsi CLI..."
