@@ -72,8 +72,12 @@ type Caps struct {
 
 // Request is one turn of work.
 type Request struct {
-	System    string
-	Prompt    string
+	System string
+	Prompt string
+	// Messages is an explicit conversation. It is mutually exclusive with
+	// System and Prompt so a caller cannot accidentally send two competing
+	// histories. It exists for the bounded tool-result follow-up turn.
+	Messages  []Message
 	MaxTokens int
 	// Sampling controls are optional so a caller can preserve a deliberate
 	// generation contract across buffered and streaming transports.
@@ -97,8 +101,22 @@ type ToolSpec struct {
 // ToolCall is a model's request to run a tool. Executing it is the caller's
 // decision, gated by tier.
 type ToolCall struct {
+	// ID is the provider-issued correlation for a subsequent tool result. It is
+	// opaque to Pantheon and is never used as authority.
+	ID   string
 	Name string
 	Args map[string]any
+}
+
+// Message is an OpenAI-compatible conversation record. Content is nil only
+// for an assistant message whose response is exclusively tool calls.
+// Tool execution remains caller-side: these records carry untrusted model
+// requests and factual tool results, not permissions.
+type Message struct {
+	Role       string
+	Content    *string
+	ToolCalls  []ToolCall
+	ToolCallID string
 }
 
 // Response carries the answer AND the provenance needed to judge it.

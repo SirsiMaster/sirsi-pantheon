@@ -57,6 +57,50 @@ func TestCompleteFailsWhenBrokerServesNoModel(t *testing.T) {
 	}
 }
 
+func TestCompleteCarriesStructuredToolCallAndToolResultConversation(t *testing.T) {
+	var requests []ccRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/models":
+			_, _ = w.Write([]byte(`{"data":[{"id":"apollo-model"}]}`))
+		case "/v1/chat/completions":
+			var got ccRequest
+			if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+				t.Fatal(err)
+			}
+			requests = append(requests, got)
+			if len(requests) == 1 {
+				_, _ = w.Write([]byte(`{"model":"apollo-model","choices":[{"finish_reason":"tool_calls","message":{"content":"","tool_calls":[{"id":"call-1","type":"function","function":{"name":"machine.state","arguments":"{}"}}]}}]}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"model":"apollo-model","choices":[{"finish_reason":"stop","message":{"content":"healthy"}}]}`))
+		}
+	}))
+	defer srv.Close()
+	p := &OpenAICompat{SupportsTools: true, ProviderName: "apollo", Endpoint: srv.URL + "/v1", TierValue: TierLocal, HTTP: srv.Client()}
+	first, err := p.Complete(context.Background(), Request{Prompt: "status", Tools: []ToolSpec{{Name: "machine.state", Schema: map[string]any{"type": "object"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !first.ToolsHonored || len(first.ToolCalls) != 1 || first.ToolCalls[0].ID != "call-1" {
+		t.Fatalf("tool response = %+v", first)
+	}
+	toolResult := `{"summary":"healthy"}`
+	final, err := p.Complete(context.Background(), Request{Messages: []Message{
+		{Role: "user", Content: stringPointer("status")},
+		{Role: "assistant", ToolCalls: first.ToolCalls},
+		{Role: "tool", Content: &toolResult, ToolCallID: "call-1"},
+	}})
+	if err != nil || final.Text != "healthy" {
+		t.Fatalf("final = %+v err=%v", final, err)
+	}
+	if len(requests) != 2 || requests[0].ToolChoice != "auto" || len(requests[1].Messages) != 3 || requests[1].Messages[2].ToolCallID != "call-1" {
+		t.Fatalf("unexpected wire requests: %+v", requests)
+	}
+}
+
+func stringPointer(s string) *string { return &s }
+
 func TestStreamParsesSSEChunksAndDone(t *testing.T) {
 	var requestBody ccRequest
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

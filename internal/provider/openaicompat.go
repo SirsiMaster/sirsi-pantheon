@@ -162,8 +162,28 @@ func (o *OpenAICompat) auth(r *http.Request) error {
 }
 
 type ccMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string       `json:"role"`
+	Content    any          `json:"content"`
+	ToolCalls  []ccToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string       `json:"tool_call_id,omitempty"`
+}
+
+type ccToolCall struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
+
+type ccToolDef struct {
+	Type     string `json:"type"`
+	Function struct {
+		Name        string         `json:"name"`
+		Description string         `json:"description,omitempty"`
+		Parameters  map[string]any `json:"parameters"`
+	} `json:"function"`
 }
 
 type ccRequest struct {
@@ -174,6 +194,8 @@ type ccRequest struct {
 	Temperature *float64    `json:"temperature,omitempty"`
 	TopP        *float64    `json:"top_p,omitempty"`
 	Seed        *int64      `json:"seed,omitempty"`
+	Tools       []ccToolDef `json:"tools,omitempty"`
+	ToolChoice  string      `json:"tool_choice,omitempty"`
 }
 
 type ccResponse struct {
@@ -181,8 +203,9 @@ type ccResponse struct {
 	Choices []struct {
 		FinishReason string `json:"finish_reason"`
 		Message      struct {
-			Role    string `json:"role"`
-			Content string `json:"content"`
+			Role      string       `json:"role"`
+			Content   string       `json:"content"`
+			ToolCalls []ccToolCall `json:"tool_calls"`
 			// Reasoning models return their chain here and leave Content empty
 			// when they hit the token cap mid-thought. A probe asserting on
 			// non-empty Content calls that "wedged" — a false alarm this fabric
@@ -195,6 +218,89 @@ type ccResponse struct {
 		CompletionTokens int `json:"completion_tokens"`
 	} `json:"usage"`
 	Error any `json:"error"`
+}
+
+func ccMessages(req Request) ([]ccMessage, error) {
+	if len(req.Messages) == 0 {
+		msgs := make([]ccMessage, 0, 2)
+		if req.System != "" {
+			msgs = append(msgs, ccMessage{Role: "system", Content: req.System})
+		}
+		return append(msgs, ccMessage{Role: "user", Content: req.Prompt}), nil
+	}
+	if req.System != "" || req.Prompt != "" {
+		return nil, fmt.Errorf("provider request must use either system/prompt or explicit messages")
+	}
+	msgs := make([]ccMessage, 0, len(req.Messages))
+	for i, m := range req.Messages {
+		switch m.Role {
+		case "system", "developer", "user", "assistant", "tool":
+		default:
+			return nil, fmt.Errorf("provider message %d has unsupported role %q", i, m.Role)
+		}
+		if m.Role == "tool" && strings.TrimSpace(m.ToolCallID) == "" {
+			return nil, fmt.Errorf("provider tool message %d is missing tool_call_id", i)
+		}
+		cm := ccMessage{Role: m.Role, ToolCallID: m.ToolCallID}
+		if m.Content != nil {
+			cm.Content = *m.Content
+		}
+		for _, call := range m.ToolCalls {
+			if strings.TrimSpace(call.ID) == "" || strings.TrimSpace(call.Name) == "" {
+				return nil, fmt.Errorf("provider tool call in message %d is missing id or name", i)
+			}
+			args, err := json.Marshal(call.Args)
+			if err != nil {
+				return nil, fmt.Errorf("encode tool arguments for %q: %w", call.Name, err)
+			}
+			var ccCall ccToolCall
+			ccCall.ID, ccCall.Type = call.ID, "function"
+			ccCall.Function.Name, ccCall.Function.Arguments = call.Name, string(args)
+			cm.ToolCalls = append(cm.ToolCalls, ccCall)
+		}
+		msgs = append(msgs, cm)
+	}
+	return msgs, nil
+}
+
+func ccTools(tools []ToolSpec) ([]ccToolDef, error) {
+	out := make([]ccToolDef, 0, len(tools))
+	seen := make(map[string]struct{}, len(tools))
+	for _, tool := range tools {
+		name := strings.TrimSpace(tool.Name)
+		if name == "" {
+			return nil, fmt.Errorf("provider tool has no name")
+		}
+		if _, duplicate := seen[name]; duplicate {
+			return nil, fmt.Errorf("provider tool %q is duplicated", name)
+		}
+		seen[name] = struct{}{}
+		if tool.Schema == nil {
+			return nil, fmt.Errorf("provider tool %q has no schema", name)
+		}
+		var outTool ccToolDef
+		outTool.Type = "function"
+		outTool.Function.Name = name
+		outTool.Function.Description = tool.Description
+		outTool.Function.Parameters = tool.Schema
+		out = append(out, outTool)
+	}
+	return out, nil
+}
+
+func providerToolCalls(calls []ccToolCall) ([]ToolCall, error) {
+	out := make([]ToolCall, 0, len(calls))
+	for _, call := range calls {
+		if strings.TrimSpace(call.ID) == "" || call.Type != "function" || strings.TrimSpace(call.Function.Name) == "" {
+			return nil, fmt.Errorf("provider returned malformed tool call")
+		}
+		var args map[string]any
+		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil || args == nil {
+			return nil, fmt.Errorf("provider returned invalid arguments for tool %q", call.Function.Name)
+		}
+		out = append(out, ToolCall{ID: call.ID, Name: call.Function.Name, Args: args})
+	}
+	return out, nil
 }
 
 type modelsResponse struct {
@@ -261,17 +367,25 @@ func (o *OpenAICompat) Complete(ctx context.Context, req Request) (Response, err
 		return Response{}, fmt.Errorf("%w: %s has no endpoint", ErrUnavailable, o.ProviderName)
 	}
 
-	msgs := make([]ccMessage, 0, 2)
-	if req.System != "" {
-		msgs = append(msgs, ccMessage{Role: "system", Content: req.System})
+	msgs, err := ccMessages(req)
+	if err != nil {
+		return Response{}, err
 	}
-	msgs = append(msgs, ccMessage{Role: "user", Content: req.Prompt})
 
 	model, err := o.ServedModel(ctx)
 	if err != nil {
 		return Response{}, err
 	}
-	body, err := json.Marshal(ccRequest{Model: model, Messages: msgs, MaxTokens: req.MaxTokens, Temperature: req.Temperature, TopP: req.TopP, Seed: req.Seed})
+	var tools []ccToolDef
+	toolsHonored := len(req.Tools) == 0
+	if len(req.Tools) > 0 && o.SupportsTools {
+		tools, err = ccTools(req.Tools)
+		if err != nil {
+			return Response{}, err
+		}
+		toolsHonored = true
+	}
+	body, err := json.Marshal(ccRequest{Model: model, Messages: msgs, MaxTokens: req.MaxTokens, Temperature: req.Temperature, TopP: req.TopP, Seed: req.Seed, Tools: tools, ToolChoice: toolChoice(tools)})
 	if err != nil {
 		return Response{}, err
 	}
@@ -318,16 +432,31 @@ func (o *OpenAICompat) Complete(ctx context.Context, req Request) (Response, err
 		text = ch.Message.Reasoning
 	}
 
+	calls, err := providerToolCalls(ch.Message.ToolCalls)
+	if err != nil {
+		return Response{}, err
+	}
+	if len(calls) > 0 && !toolsHonored {
+		return Response{}, fmt.Errorf("%s returned tool calls although tool use was not enabled", o.ProviderName)
+	}
 	return Response{
 		Text:         text,
+		ToolCalls:    calls,
 		Tier:         o.TierValue,
 		Provider:     o.ProviderName,
 		Model:        cc.Model,
-		ToolsHonored: false, // this transport does not carry tool calls yet
+		ToolsHonored: toolsHonored,
 		FinishReason: ch.FinishReason,
 		PromptTokens: cc.Usage.PromptTokens,
 		OutputTokens: cc.Usage.CompletionTokens,
 	}, nil
+}
+
+func toolChoice(tools []ccToolDef) string {
+	if len(tools) == 0 {
+		return ""
+	}
+	return "auto"
 }
 
 // Stream implements the optional provider streaming extension for
@@ -341,17 +470,19 @@ func (o *OpenAICompat) Stream(ctx context.Context, req Request) (<-chan StreamCh
 	if !o.SupportsStreaming {
 		return nil, fmt.Errorf("selected provider streaming unsupported or unknown")
 	}
+	if len(req.Tools) > 0 {
+		return nil, fmt.Errorf("streaming tool calls are unsupported; use buffered Complete")
+	}
 	if o.OutputTokens > 0 && (req.MaxTokens <= 0 || req.MaxTokens > o.OutputTokens) {
 		req.MaxTokens = o.OutputTokens
 	}
 	if strings.TrimSpace(o.Endpoint) == "" {
 		return nil, fmt.Errorf("%w: %s has no endpoint", ErrUnavailable, o.ProviderName)
 	}
-	msgs := make([]ccMessage, 0, 2)
-	if req.System != "" {
-		msgs = append(msgs, ccMessage{Role: "system", Content: req.System})
+	msgs, err := ccMessages(req)
+	if err != nil {
+		return nil, err
 	}
-	msgs = append(msgs, ccMessage{Role: "user", Content: req.Prompt})
 	model, err := o.ServedModel(ctx)
 	if err != nil {
 		return nil, err
