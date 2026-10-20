@@ -23,6 +23,7 @@ type LaneOperationalState struct {
 	RecentMutation              bool          `json:"recent_task_record_mutation"`
 	BlockedWork                 int           `json:"blocked_work"`
 	WakeRoutable                bool          `json:"wake_routable"`
+	UnresolvedWakeFailures      int           `json:"unresolved_wake_failures"`
 	TerminalWakeFailures        int           `json:"terminal_wake_failures"`
 	CompletionIntegrityFailures int           `json:"completion_integrity_failures"`
 }
@@ -71,8 +72,8 @@ func (s *SQLiteStore) ClassifyLane(agent string, wakeRoutable bool, recentWithin
 		Scan(&out.BlockedWork); err != nil {
 		return LaneOperationalState{}, fmt.Errorf("routerstore: classify blockers: %w", err)
 	}
-	if err = s.db.QueryRow(`SELECT COUNT(*) FROM wake_events WHERE agent=? AND status='terminal_failed'`, agent).Scan(&out.TerminalWakeFailures); err != nil {
-		return LaneOperationalState{}, fmt.Errorf("routerstore: classify terminal wakes: %w", err)
+	if out.TerminalWakeFailures, out.UnresolvedWakeFailures, err = s.laneWakeFailures(agent); err != nil {
+		return LaneOperationalState{}, err
 	}
 	if err = s.db.QueryRow(`SELECT
 		(SELECT COUNT(*) FROM items WHERE to_agent=? AND status='dead_letter') +
@@ -87,11 +88,13 @@ func (s *SQLiteStore) ClassifyLane(agent string, wakeRoutable bool, recentWithin
 		out.Classification = LaneWorking
 	case out.LiveLeases > 0:
 		out.Classification = LaneAssigned
-	case runnable.Runnable && (!wakeRoutable || out.TerminalWakeFailures > 0):
+	case out.CompletionIntegrityFailures > 0:
+		out.Classification = LaneBlocked
+	case runnable.Runnable && (!wakeRoutable || out.UnresolvedWakeFailures > 0):
 		out.Classification = LaneUnroutable
 	case runnable.Runnable:
 		out.Classification = LaneIdleWithWork
-	case out.TerminalWakeFailures > 0 || out.CompletionIntegrityFailures > 0:
+	case out.UnresolvedWakeFailures > 0 || out.CompletionIntegrityFailures > 0:
 		out.Classification = LaneBlocked
 	case out.BlockedWork > 0:
 		out.Classification = LaneBlocked
@@ -99,4 +102,85 @@ func (s *SQLiteStore) ClassifyLane(agent string, wakeRoutable bool, recentWithin
 		out.Classification = LaneComplete
 	}
 	return out, nil
+}
+
+// laneWakeFailures preserves every historical failure while requiring
+// strictly newer successful durable work to resolve its routing effect. No
+// process, heartbeat, clock tick or manual readiness flag is an input.
+func (s *SQLiteStore) laneWakeFailures(agent string) (int, int, error) {
+	var latest time.Time
+	// Item closed is a terminal transition timestamp, not a mutable metadata touch.
+	// Empty/default results and unfenced legacy/admin-only rows are not success.
+	rows, err := s.db.Query(`SELECT closed FROM items WHERE to_agent=? AND status='completed'
+ AND attempts>0 AND TRIM(result)<>'' AND result<>'(completed without result)'`, agent)
+	if err != nil {
+		return 0, 0, fmt.Errorf("routerstore: lane item completion evidence: %w", err)
+	}
+	for rows.Next() {
+		var stamp string
+		if err = rows.Scan(&stamp); err != nil {
+			rows.Close()
+			return 0, 0, err
+		}
+		if t, e := time.Parse(time.RFC3339Nano, stamp); e == nil && t.After(latest) {
+			latest = t
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return 0, 0, err
+	}
+	// A task's updated can be changed after completion. Require its acknowledged
+	// fenced claim as well as done/result; the earlier timestamp is a conservative
+	// lower bound on that successful run. Metadata edits cannot move this bound.
+	rows, err = s.db.Query(`SELECT t.updated,w.updated FROM tasks t JOIN wake_events w
+ ON w.agent=t.agent AND w.source_kind='ledger_task' AND w.source_id=t.task_id
+ WHERE t.agent=? AND t.status='done' AND t.attempts>0 AND TRIM(t.result_ref)<>''
+ AND w.status='acked' AND substr(w.ack_ref,1,length('task-lease:'||t.agent||':'||t.task_id||':'))='task-lease:'||t.agent||':'||t.task_id||':'
+ AND length(w.ack_ref)>length('task-lease:'||t.agent||':'||t.task_id||':')`, agent)
+	if err != nil {
+		return 0, 0, fmt.Errorf("routerstore: lane task completion evidence: %w", err)
+	}
+	for rows.Next() {
+		var done, claim string
+		if err = rows.Scan(&done, &claim); err != nil {
+			rows.Close()
+			return 0, 0, err
+		}
+		d, de := time.Parse(time.RFC3339Nano, done)
+		c, ce := time.Parse(time.RFC3339Nano, claim)
+		if de != nil || ce != nil {
+			continue
+		}
+		if c.Before(d) {
+			d = c
+		}
+		if d.After(latest) {
+			latest = d
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return 0, 0, err
+	}
+	rows, err = s.db.Query(`SELECT updated FROM wake_events WHERE agent=? AND status='terminal_failed'`, agent)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer rows.Close()
+	total, unresolved := 0, 0
+	for rows.Next() {
+		var stamp string
+		if err = rows.Scan(&stamp); err != nil {
+			return 0, 0, err
+		}
+		total++
+		failed, e := time.Parse(time.RFC3339Nano, stamp)
+		if e != nil || !latest.After(failed) {
+			unresolved++
+		}
+	}
+	return total, unresolved, rows.Err()
 }
