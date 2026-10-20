@@ -199,7 +199,10 @@ var threadRegisterCmd = &cobra.Command{
 			}
 		}
 
-		host, _ := os.Hostname()
+		host, hostErr := routerstore.ThreadOwnerHost()
+		if hostErr != nil {
+			return hostErr
+		}
 		thr := &router.Thread{
 			ThreadID: threadRegID,
 			AgentID:  threadRegAgent,

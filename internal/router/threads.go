@@ -408,7 +408,10 @@ func SaveThreadRegistry(routerRoot string, reg *ThreadRegistry) error {
 		// no right to make. An empty Host is treated as ours (the service stamps
 		// it for this host); a genuine authority failure on one of OUR OWN
 		// records still surfaces (negative control).
-		selfHost, _ := os.Hostname()
+		selfHost, err := routerstore.ThreadOwnerHost()
+		if err != nil {
+			return err
+		}
 		dirty := records[:0]
 		for _, record := range records {
 			if !ownsRecordHost(record.Host, selfHost) {
@@ -433,8 +436,7 @@ func SaveThreadRegistry(routerRoot string, reg *ThreadRegistry) error {
 				if !ownsRecordHost(old.Host, selfHost) {
 					continue // another host's terminal record — its owner/reaper prunes it, not us
 				}
-				host, _ := os.Hostname()
-				deleted, err := store.DeleteThreadCAS(id, old.Status, old.LastSeenAt, host)
+				deleted, err := store.DeleteThreadCAS(id, old.Status, old.LastSeenAt, selfHost)
 				if err != nil {
 					return err
 				}
@@ -486,7 +488,11 @@ func threadRecords(reg *ThreadRegistry) ([]routerstore.ThreadRecord, error) {
 		// legacy thread that never recorded one (SSA 2026-09-10).
 		host := thread.Host
 		if host == "" {
-			host, _ = os.Hostname()
+			var err error
+			host, err = routerstore.ThreadOwnerHost()
+			if err != nil {
+				return nil, err
+			}
 		}
 		records = append(records, routerstore.ThreadRecord{ThreadID: id, Agent: thread.AgentID, Status: string(thread.Status), LastSeenAt: thread.LastSeenAt.UTC().Format("2006-01-02T15:04:05.000000000Z07:00"), Payload: payload, Host: host})
 	}
@@ -522,6 +528,16 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 	}
 	if t.Surface == "" {
 		return nil, fmt.Errorf("surface is required")
+	}
+	ownerHost, hostErr := routerstore.ThreadOwnerHost()
+	if hostErr != nil {
+		return nil, hostErr
+	}
+	if strings.TrimSpace(os.Getenv(routerstore.EnvCloudHost)) != "" && t.Host != "" && t.Host != ownerHost {
+		return nil, fmt.Errorf("cloud thread host differs from scoped executor identity")
+	}
+	if t.Host == "" {
+		t.Host = ownerHost
 	}
 	now := time.Now().UTC()
 
