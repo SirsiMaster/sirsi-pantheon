@@ -64,17 +64,33 @@ func TestToolTurnExecutesOnlyExactAllowlistedToolAndReturnsFinalAnswer(t *testin
 
 func TestToolTurnWireAliasesAreDistinctAndBoundToCanonicalNames(t *testing.T) {
 	r := NewRegistry()
+	for _, name := range []string{"process.census", "machine.state"} {
+		if err := r.Register(Tool{Name: name, Does: "read", Tier: TierObserve, Run: func(context.Context) (Result, error) { return Result{}, nil }}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	specs, names, err := (ToolTurn{Registry: r, Allowed: []string{"process.census", "machine.state"}}).specs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(specs) != 2 || specs[0].Name == specs[1].Name || names[specs[0].Name] != "process.census" || names[specs[1].Name] != "machine.state" {
+		t.Fatalf("wire aliases do not uniquely bind canonical names: specs=%+v map=%+v", specs, names)
+	}
+}
+
+func TestToolTurnRefusesWireAliasCollisionBeforeProviderContact(t *testing.T) {
+	r := NewRegistry()
 	for _, name := range []string{"process.census", "process_census"} {
 		if err := r.Register(Tool{Name: name, Does: "read", Tier: TierObserve, Run: func(context.Context) (Result, error) { return Result{}, nil }}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	specs, names, err := (ToolTurn{Registry: r, Allowed: []string{"process.census", "process_census"}}).specs()
-	if err != nil {
-		t.Fatal(err)
+	p := &toolTurnProvider{}
+	if _, err := (ToolTurn{Provider: p, Registry: r, Policy: PolicyReadOnly, Allowed: []string{"process.census", "process_census"}}).Complete(context.Background(), "status?", 64); err == nil {
+		t.Fatal("expected wire alias collision to be refused")
 	}
-	if len(specs) != 2 || specs[0].Name == specs[1].Name || names[specs[0].Name] != "process.census" || names[specs[1].Name] != "process_census" {
-		t.Fatalf("wire aliases do not uniquely bind canonical names: specs=%+v map=%+v", specs, names)
+	if len(p.requests) != 0 {
+		t.Fatalf("collision reached provider: %+v", p.requests)
 	}
 }
 
@@ -84,7 +100,7 @@ func TestToolTurnRejectsUnknownWireAliasWithoutInvocation(t *testing.T) {
 	if err := r.Register(Tool{Name: "process.census", Does: "read", Tier: TierObserve, Run: func(context.Context) (Result, error) { ran++; return Result{}, nil }}); err != nil {
 		t.Fatal(err)
 	}
-	p := &toolTurnProvider{responses: []provider.Response{{ToolCalls: []provider.ToolCall{{ID: "call-1", Name: "pantheon_666f72676564", Args: map[string]any{}}}, ToolsHonored: true}}}
+	p := &toolTurnProvider{responses: []provider.Response{{ToolCalls: []provider.ToolCall{{ID: "call-1", Name: "forged_tool", Args: map[string]any{}}}, ToolsHonored: true}}}
 	if _, err := (ToolTurn{Provider: p, Registry: r, Policy: PolicyReadOnly, Allowed: []string{"process.census"}}).Complete(context.Background(), "status?", 64); err == nil {
 		t.Fatal("expected unknown wire alias to be refused")
 	}

@@ -2,7 +2,6 @@ package reason
 
 import (
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -156,13 +155,12 @@ func (t ToolTurn) specs() ([]provider.ToolSpec, map[string]string, error) {
 	return specs, allowed, nil
 }
 
-// toolWireName makes a canonical registry name safe for the narrow Gemma
-// template parser used by Apollo. It is deterministic and injective: every
-// UTF-8 byte is hex encoded after a fixed word-only prefix. The provider sees
-// only this alias; the registry receives only the original allowlisted name.
-// This is deliberately not a general model-selected name rewrite.
+// toolWireName gives a dotted canonical registry name the compact spelling
+// expected by the selected local tool template. The turn-local allowlist map
+// binds it back to the canonical name; any collision is refused while the
+// tool offer is assembled, before the provider is contacted.
 func toolWireName(name string) string {
-	return "pantheon_" + hex.EncodeToString([]byte(name))
+	return strings.ReplaceAll(name, ".", "_")
 }
 
 func toolResultPayload(inv Invocation) (string, error) {
