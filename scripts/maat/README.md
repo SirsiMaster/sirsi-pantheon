@@ -1,5 +1,22 @@
 # Fabric reconciliation census
 
+## Native release executor (Oct20)
+
+The self-hosted release job is an execution placement, not implicitly M5.
+Its build/sign/notary payload runs through the checked-in `admitted-run.py`
+as a destination-native `codex-pantheon` executor, with a fresh maintained
+canonical CPU grant and a 1,500-second bound. Go and Swift compilation are
+explicitly limited to one job. A registration/admission refusal launches no
+build; terminal release or executor-close failure prevents publication. The
+existing rail-lock start hook is not admission. No signing credentials,
+runner services, firewall settings or foreign payloads are changed by this
+wrapper. Retain the supervisor's `~/.sirsi/evidence/maat-runs/*/terminal.json`
+and qualify the actual GitHub signing run, not merely its runner's idle flag.
+
+Source controls: `python3 scripts/maat/test_release_admission.py` and the
+existing `test_admitted_run.py` lifecycle/refusal/cleanup tests. The contract
+tests execute no signing, model, network or release payload.
+
 ## Registry snapshot continuity (Oct19)
 
 The CLI compares thread payloads at save time using its own decoded schema, not raw

@@ -6,6 +6,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- Bind the native release build to its actual runner executor and a maintained
+  canonical Ma'at CPU grant before compiling, signing or notarizing. Keep Go
+  and Swift at the declared single-core build mask; retain failed admission
+  and cleanup receipts instead of treating the legacy rail-lock hook as a grant.
+
 ## [0.24.121] — 2026-10-19
 
 - Allow independent IDE sessions to use `sirsi mcp` concurrently instead of
