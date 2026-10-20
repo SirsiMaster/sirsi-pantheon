@@ -22,6 +22,7 @@
 | Stack Lab wing | `docs/stacklab/ra/canon` | docs and receipts | this release |
 | Release consumer preservation | `scripts/release-train.sh`, `scripts/release-consumer-preservation.test.sh` | no forced controller restarts or automatic measurement-window override; install is not loaded-image proof | exact former-source RED/current guard GREEN, admitted terminal3ec1e715; live adoption remains separate |
 | Relay bounded discovery | `internal/routerstore/spool.go`, `spool_test.go` | every discovery pass waits existing cancellable poll; lane forwards remain independent | deterministic continuous-wake RED31e5a5e, repeated native race GREENdbfb0713; protected PostgreSQL follow-up pending |
+| Direct task source-wake acknowledgement | `internal/routerstore/tasklease.go`, `tasklease_direct_wake_test.go`, `docs/stacklab/DIRECT_TASK_CLAIM_WAKE_ACK.md` | successful exact fenced claim ACKs only its matching pending/leased ledger source inside the same transaction; no terminal-history rewrite or grant change | native RACE3 PASS8.458s terminal4082d458; full/PG CI and deployment pending, old pending/DONE wake debt retained |
 | Release/rollback | `scripts/release-train.sh`, recipe | immutable hash/readback | candidate contract |
 
 Logical cloud identity is specified in [CLOUD_EXECUTOR_IDENTITY.md](CLOUD_EXECUTOR_IDENTITY.md).
