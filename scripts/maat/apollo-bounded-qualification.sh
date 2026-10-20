@@ -26,12 +26,17 @@ maat_parent_identity() {
     die "cloud executor identity is not permitted for local Apollo qualification"
   /usr/bin/python3 - "$MAAT_RUN" "$1" <<'PY'
 import importlib.util
+from importlib.machinery import SourceFileLoader
 import json
 import socket
 import sys
 
 path, raw_pid = sys.argv[1:]
-spec = importlib.util.spec_from_file_location("installed_maat_run", path)
+# The installed sirsi-maat-run is deliberately an extensionless executable.
+# SourceFileLoader is explicit about that source format; spec_from_file_location
+# otherwise returns None and would fail before an admitted child can launch.
+loader = SourceFileLoader("installed_maat_run", path)
+spec = importlib.util.spec_from_loader("installed_maat_run", loader)
 if spec is None or spec.loader is None:
     raise SystemExit("cannot load installed Ma'at runner")
 module = importlib.util.module_from_spec(spec)
@@ -98,7 +103,7 @@ USAGE
 agent=""; work=""; item=""; sirsi=""; sirsi_hash=""; profile=""; profile_hash=""
 server=""; server_hash=""; checkpoint=""; timeout=900; validate_only=false
 supervised=false; attempt=""; nonce=""
-grant_fixture=""
+grant_fixture=""; validate_installed_identity=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --agent) agent="${2:-}"; shift 2 ;;
@@ -114,6 +119,7 @@ while [[ $# -gt 0 ]]; do
     --timeout) timeout="${2:-}"; shift 2 ;;
     --validate-only) validate_only=true; shift ;;
     --validate-grant-fixture) grant_fixture="${2:-}"; shift 2 ;;
+    --validate-installed-maat-identity) validate_installed_identity=true; shift ;;
     --supervised-child) supervised=true; shift ;;
     --attempt) attempt="${2:-}"; shift 2 ;;
     --nonce) nonce="${2:-}"; shift 2 ;;
@@ -145,16 +151,29 @@ regular_executable "$server" || die "Apollo server is not an executable regular 
    (.request_timeout_seconds | type == "number" and . >= 1 and . <= 600)' \
   "$profile" >/dev/null || die "Apollo profile lacks the exact bounded-tool capability contract"
 
-if [[ "$validate_only" == true ]]; then
-  [[ "$supervised" == false ]] || die "validate-only is an outer preflight only"
-  printf 'validated server=%s profile=%s item=%s\n' "$server_hash" "$profile_hash" "$item"
+if [[ -n "$grant_fixture" ]]; then
+  [[ "$supervised" == false && "$validate_only" == false && "$validate_installed_identity" == false ]] || die "grant fixture is an outer non-executing check only"
+  validate_grant_fixture "$grant_fixture"
+  printf 'validated grant fixture=%s\n' "$grant_fixture"
   exit 0
 fi
 
-if [[ -n "$grant_fixture" ]]; then
-  [[ "$supervised" == false && "$validate_only" == false ]] || die "grant fixture is an outer non-executing check only"
-  validate_grant_fixture "$grant_fixture"
-  printf 'validated grant fixture=%s\n' "$grant_fixture"
+if [[ "$validate_installed_identity" == true ]]; then
+  [[ "$supervised" == false && "$validate_only" == false ]] || die "installed Ma'at identity preflight is outer and non-executing only"
+  installed_identity="$(maat_parent_identity "$PPID")" || die "installed Ma'at identity preflight failed"
+  printf '%s' "$installed_identity" | /usr/bin/jq -e --argjson parent "$PPID" \
+    '(.resource | type) == "string" and (.resource | length) > 0' >/dev/null &&
+    printf '%s' "$installed_identity" | /usr/bin/jq -e --argjson parent "$PPID" \
+    '((.host | type) == "string" and (.host | length) > 0) and .pid == $parent and
+     ((.start_time | type) == "string" and (.start_time | length) > 0)' >/dev/null || \
+    die "installed Ma'at identity preflight is malformed"
+  printf 'validated installed-maat identity=%s\n' "$installed_identity"
+  exit 0
+fi
+
+if [[ "$validate_only" == true ]]; then
+  [[ "$supervised" == false ]] || die "validate-only is an outer preflight only"
+  printf 'validated server=%s profile=%s item=%s\n' "$server_hash" "$profile_hash" "$item"
   exit 0
 fi
 

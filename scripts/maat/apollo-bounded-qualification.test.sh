@@ -29,6 +29,18 @@ fixtures="$root/scripts/maat/testdata/apollo-bounded-qualification"
 bash -n "$runner"
 "$runner" "${args[@]}" | grep -q '^validated '
 
+# This imports the installed extensionless Ma'at runner under a non-main module
+# name and reads only the direct parent identity; it starts no admission,
+# listener, server, model, or worker. It is intentionally host-only.
+if [[ -x "$HOME/.local/bin/sirsi-maat-run" && ! -L "$HOME/.local/bin/sirsi-maat-run" && "$(/usr/bin/uname -s)" == Darwin ]]; then
+  identity_args=(--agent codex-pantheon --work apollo-qualification-fixture --item fixture-item
+    --sirsi "$tmp/sirsi" --sirsi-sha256 "$(sha "$tmp/sirsi")"
+    --profile "$tmp/profile.json" --profile-sha256 "$(sha "$tmp/profile.json")"
+    --server "$tmp/server" --server-sha256 "$(sha "$tmp/server")"
+    --checkpoint "$tmp/checkpoint" --timeout 900 --validate-installed-maat-identity)
+  "$runner" "${identity_args[@]}" | grep -q '^validated installed-maat identity='
+fi
+
 # The structured grant predicate accepts only one fresh local full-share
 # admission plus the exact executor host, PID, and kernel-start generation.
 grant_args=(--agent codex-pantheon --work apollo-qualification-fixture --item fixture-item
@@ -108,5 +120,6 @@ grep -q -- '"$server" --checkpoint "$checkpoint" --idle-exit 120 --addr' "$runne
 grep -q 'no fresh full-share Ma.at admission and executor bind this local parent generation' "$runner"
 grep -q 'parent_resource' "$runner"
 grep -q 'parent_start' "$runner"
+grep -q 'SourceFileLoader' "$runner"
 grep -q 'listener remains after owned Apollo child shutdown' "$runner"
 echo 'apollo bounded qualification wrapper contract: PASS'
