@@ -125,7 +125,7 @@ func writeProviderQuota(agent string, r providerQuotaRecord) error {
 
 // A separate stable lock inode protects rename-based state replacement across
 // processes. The lock covers local read/write/fsync only, never consumer work.
-func withProviderQuotaLock(agent string, fn func() error) error {
+func withProviderQuotaLock(agent string, fn func() error) (resultErr error) {
 	p, e := providerQuotaPath(agent)
 	if e != nil {
 		return e
@@ -151,7 +151,11 @@ func withProviderQuotaLock(agent string, fn func() error) error {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	defer func() {
+		if unlockErr := syscall.Flock(int(f.Fd()), syscall.LOCK_UN); resultErr == nil && unlockErr != nil {
+			resultErr = fmt.Errorf("unlock provider quota state: %w", unlockErr)
+		}
+	}()
 	return fn()
 }
 
