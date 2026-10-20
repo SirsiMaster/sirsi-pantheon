@@ -1,5 +1,26 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-20 — v0.24.122 release candidate
+
+- Release safety:
+- Relay polling:
+- Provider quota retry hold:
+- Bind the native release build to its actual runner executor and a maintained
+  canonical Ma'at CPU grant before compiling, signing or notarizing. Keep Go
+  and Swift at the declared single-core cooperative build mask; retain failed
+  admission and cleanup receipts instead of treating the legacy rail-lock hook
+  as a grant. Default Swift job arguments are valid under macOS Bash 3.2 with
+  nounset, without an empty-array expansion. Refs: scripts/maat/README.md.
+- Current lane failures:
+- `sirsi gemma tool-turn` provides an opt-in Apollo 2.1 structured-tool path
+  for an explicitly reviewed local profile. It accepts only named registered
+  observe tools, rejects model arguments and additional calls, and returns one
+  factual tool-result follow-up answer without creating a shell executor or a
+  resident model worker.
+- The existing fenced Gemma router worker can opt into the same read-only,
+  single-tool contract with `--apollo-tool-turn`, preserving its claim and
+  reply-readback completion fence.
+
 ## 2026-10-20 — bounded Apollo worker source successor
 
 - Fence a bounded Apollo tool turn to one explicit router item rather than the
