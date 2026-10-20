@@ -56,3 +56,17 @@ func TestGemmaWorkerObserveAllowlistRejectsRepairBeforeProviderCall(t *testing.T
 		t.Fatal("repair tool must be rejected before it reaches a provider")
 	}
 }
+
+func TestGemmaWorkerApolloCompleteRejectsModelAnswerWithoutRequiredObservation(t *testing.T) {
+	registry := reason.NewRegistry()
+	if err := registry.Register(reason.Tool{Name: "machine.state", Does: "read state", Tier: reason.TierObserve, Run: func(context.Context) (reason.Result, error) { return reason.Result{}, nil }}); err != nil {
+		t.Fatal(err)
+	}
+	backend := &apolloWorkerFake{responses: []provider.Response{{Text: "I did not call a tool.", ToolsHonored: true}}}
+	if _, err := gemmaWorkerApolloComplete(context.Background(), backend, registry, []string{"machine.state"}, "call the tool", 64); err == nil {
+		t.Fatal("worker must refuse an unobserved model-only answer")
+	}
+	if len(backend.requests) != 1 {
+		t.Fatalf("unobserved answer must not get a second request: %+v", backend.requests)
+	}
+}

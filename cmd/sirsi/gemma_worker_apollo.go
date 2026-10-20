@@ -47,7 +47,7 @@ func gemmaWorkerApolloComplete(ctx context.Context, backend provider.Provider, r
 		return "", fmt.Errorf("Apollo returned no final answer")
 	}
 	if !result.UsedTool {
-		return answer, nil
+		return "", fmt.Errorf("Apollo returned an answer without the required allowlisted observation")
 	}
 	// The enclosing worker reply already binds this text to the claimed router
 	// item and its one-way lease fingerprint. Include the exact factual result
