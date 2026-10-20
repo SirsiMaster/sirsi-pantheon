@@ -59,7 +59,10 @@ case "$host" in
   m5)
     destination=thekryptodragon@100.92.193.26
     remote_runner=/Users/thekryptodragon/.local/bin/sirsi-maat-run
-    trust=(-oHostKeyAlias=100.92.193.26);;
+    # M5 is enrolled under its stable logical identity, not its current
+    # tailnet address. Keep the address for transport only; strict host-key
+    # verification must use the existing named pin and its dedicated store.
+    trust=(-oUserKnownHostsFile="$HOME/.ssh/sirsi_known_hosts" -oHostKeyAlias=sirsi-m5 -oHostKeyAlgorithms=ssh-ed25519);;
   *) usage;;
 esac
 # OpenSSH passes one command through the destination shell. Quote EVERY argv

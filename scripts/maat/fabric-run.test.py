@@ -56,6 +56,16 @@ class TransportPlan(unittest.TestCase):
         self.assertIn('10.96.127.2', result.stdout)  # retained pinned key alias
         self.assertIn('19001', result.stdout)
 
+    def test_m5_uses_enrolled_named_host_key_namespace(self):
+        result = self.run_plan('--transport', 'direct', host='m5')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('100.92.193.26', result.stdout)  # transport destination
+        self.assertIn('HostKeyAlias=sirsi-m5', result.stdout)
+        self.assertIn('UserKnownHostsFile=', result.stdout)
+        self.assertIn('.ssh/sirsi_known_hosts', result.stdout)
+        self.assertIn('HostKeyAlgorithms=ssh-ed25519', result.stdout)
+        self.assertNotIn('HostKeyAlias=100.92.193.26', result.stdout)
+
     def test_nonloopback_proxy_fails_closed(self):
         self.assertEqual(self.run_plan(proxy='socks5://192.0.2.1:9000').returncode, 78)
 
