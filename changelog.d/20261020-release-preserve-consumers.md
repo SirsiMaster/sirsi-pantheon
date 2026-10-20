@@ -1,1 +1,0 @@
-- **Release safety:** remove blanket forced wake-loop restarts and automatic measurement-window overrides from the release train. Preserve active consumers, allow existing idle-boundary image adoption, and explicitly distinguish installation from loaded-image and queue-work proof. Refs: ADR-061; docs/stacklab/RELEASE_CONSUMER_PRESERVATION.md.
