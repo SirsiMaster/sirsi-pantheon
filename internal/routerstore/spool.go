@@ -609,6 +609,8 @@ type Relay struct {
 	unreadable map[string]bool // lane dirs already reported as not readable by this uid
 	handled    atomic.Int32
 	scans      atomic.Int32 // discovery passes (tests assert no spin under backlog)
+	// Per-instance deterministic scheduler probe; nil uses real discovery.
+	discoverFn func(context.Context) int
 }
 
 // Serve polls the spool until ctx is done. Each request file is forwarded once;
@@ -640,6 +642,10 @@ func (rl *Relay) Serve(ctx context.Context) error {
 	}
 	rl.Spool = canon
 	rl.recoverInflight()
+	discover := rl.discover
+	if rl.discoverFn != nil {
+		discover = rl.discoverFn
+	}
 	lastSweep := rl.now()
 	for {
 		select {
@@ -647,20 +653,19 @@ func (rl *Relay) Serve(ctx context.Context) error {
 			return nil
 		default:
 		}
-		woke := rl.discover(ctx)
+		discover(ctx)
 		if rl.now().Sub(lastSweep) > time.Minute {
 			rl.sweep()
 			lastSweep = rl.now()
 		}
-		// Sleep unless this pass actually delivered a NEW wake: a lane whose
-		// worker is busy with a backlog already has a pending signal, and
-		// rescanning for it would spin (SSA 2026-09-10: 471 scans in 100 ms).
-		if woke == 0 {
-			select {
-			case <-ctx.Done():
-				return nil
-			case <-time.After(spoolPoll):
-			}
+		// A delivered wake is not proof the request file was claimed yet:
+		// its worker can consume the wake before the forward goroutine runs.
+		// Bound EVERY discovery pass, including continuous fresh wakes, while
+		// independent lane workers keep draining without this polling delay.
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(spoolPoll):
 		}
 	}
 }
