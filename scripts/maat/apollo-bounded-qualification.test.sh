@@ -24,9 +24,32 @@ args=(--agent codex-pantheon --work apollo-qualification-fixture --item fixture-
   --profile "$tmp/profile.json" --profile-sha256 "$(sha "$tmp/profile.json")"
   --server "$tmp/server" --server-sha256 "$(sha "$tmp/server")"
   --checkpoint "$tmp/checkpoint" --timeout 900 --validate-only)
+fixtures="$root/scripts/maat/testdata/apollo-bounded-qualification"
 
 bash -n "$runner"
 "$runner" "${args[@]}" | grep -q '^validated '
+
+# The structured grant predicate accepts only one fresh local full-share
+# admission plus the exact executor host, PID, and kernel-start generation.
+grant_args=(--agent codex-pantheon --work apollo-qualification-fixture --item fixture-item
+  --sirsi "$tmp/sirsi" --sirsi-sha256 "$(sha "$tmp/sirsi")"
+  --profile "$tmp/profile.json" --profile-sha256 "$(sha "$tmp/profile.json")"
+  --server "$tmp/server" --server-sha256 "$(sha "$tmp/server")"
+  --checkpoint "$tmp/checkpoint" --timeout 900 --validate-grant-fixture)
+fresh_fixture() {
+  local source="$1" target=""
+  target="$tmp/${source##*/}"
+  /usr/bin/jq --arg now "$(/bin/date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    '.admission[].heartbeat_at = $now' "$source" >"$target"
+  printf '%s\n' "$target"
+}
+SIRSI_THREAD_ID=thr-fixture "$runner" "${grant_args[@]}" "$(fresh_fixture "$fixtures/valid.json")" | grep -q '^validated grant fixture='
+for fixture in wrong-resource-same-pid.json wrong-host-same-pid.json wrong-start-time.json; do
+  if SIRSI_THREAD_ID=thr-fixture "$runner" "${grant_args[@]}" "$(fresh_fixture "$fixtures/$fixture")" >/dev/null 2>&1; then
+    echo "negative control: $fixture was accepted" >&2
+    exit 1
+  fi
+done
 
 # A capability downgrade must refuse before Ma'at or the server can run.
 printf '%s\n' '{"id":"gemma-m5-apollo21","endpoint":"http://127.0.0.1:8521/v1","model":"fixture","context_tokens":4096,"output_tokens":1024,"streaming":true,"tool_calls":false,"request_timeout_seconds":600}' >"$tmp/bad-profile.json"
@@ -82,6 +105,8 @@ grep -q 'sirsi-maat-run is required; no raw fallback exists' "$runner"
 grep -q -- '--once --apollo-tool-turn --item' "$runner"
 grep -q 'loopback listener' "$runner"
 grep -q -- '"$server" --checkpoint "$checkpoint" --idle-exit 120 --addr' "$runner"
-grep -q 'native executor does not bind this direct parent generation' "$runner"
+grep -q 'no fresh full-share Ma.at admission and executor bind this local parent generation' "$runner"
+grep -q 'parent_resource' "$runner"
+grep -q 'parent_start' "$runner"
 grep -q 'listener remains after owned Apollo child shutdown' "$runner"
 echo 'apollo bounded qualification wrapper contract: PASS'

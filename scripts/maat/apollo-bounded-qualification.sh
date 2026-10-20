@@ -15,6 +15,74 @@ regular_file() { [[ -f "$1" && ! -L "$1" ]]; }
 regular_executable() { regular_file "$1" && [[ -x "$1" ]]; }
 valid_id() { [[ "$1" =~ ^[A-Za-z0-9_.-]+$ && ${#1} -ge 1 && ${#1} -le "$2" ]]; }
 valid_sha256() { [[ "$1" =~ ^[[:xdigit:]]+$ && ${#1} -eq 64 ]]; }
+valid_host() { [[ "$1" =~ ^[A-Za-z0-9_.-]+$ && ${#1} -ge 1 && ${#1} -le 255 ]]; }
+
+# Use the installed supervisor's own Darwin kernel probe and resource resolver.
+# This avoids inventing a parallel hostname→resource map in the wrapper. Cloud
+# executor identities are deliberately outside this local, loopback-only run.
+maat_parent_identity() {
+  [[ -x "$MAAT_RUN" && ! -L "$MAAT_RUN" ]] || die "installed sirsi-maat-run is required for parent identity"
+  [[ -z "${SIRSI_ROUTER_CLOUD_HOST:-}" && -z "${SIRSI_ROUTER_USE_MACHINE_ID_HOST:-}" ]] || \
+    die "cloud executor identity is not permitted for local Apollo qualification"
+  /usr/bin/python3 - "$MAAT_RUN" "$1" <<'PY'
+import importlib.util
+import json
+import socket
+import sys
+
+path, raw_pid = sys.argv[1:]
+spec = importlib.util.spec_from_file_location("installed_maat_run", path)
+if spec is None or spec.loader is None:
+    raise SystemExit("cannot load installed Ma'at runner")
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+pid = int(raw_pid)
+_, start = module.process_identity(pid)
+resource = module.local_resource()
+host = socket.gethostname()
+if not isinstance(resource, str) or not resource or not isinstance(host, str) or not host:
+    raise SystemExit("installed Ma'at identity is incomplete")
+print(json.dumps({"resource": resource, "host": host, "pid": pid, "start_time": start}, sort_keys=True))
+PY
+}
+
+# The admission and executor are separate authorities. Both must bind the same
+# direct supervisor generation before this child can create a server or listener.
+validate_grant_json() {
+  local admission_json="$1" executor_json="$2" resource="$3" host="$4" parent="$5" parent_start="$6"
+  printf '%s' "$admission_json" | /usr/bin/jq -e \
+    --arg agent "$agent" --arg work "$work" --arg resource "$resource" --argjson parent "$parent" \
+    '(type == "array") and
+     ([ .[] | select(
+       .status == "active" and .holder == $agent and .work == $work and .resource == $resource and
+       .share == "full" and .exempt_pid == $parent and
+       ((.lease_ttl_sec | type) == "number" and .lease_ttl_sec > 0) and
+       (.heartbeat_at | type == "string") and
+       ((.heartbeat_at | fromdateiso8601) as $heartbeat |
+        (.lease_ttl_sec as $ttl | (now - $heartbeat) >= 0 and (now - $heartbeat) < $ttl))
+     ) ] | length == 1)' \
+    >/dev/null || return 1
+  printf '%s' "$executor_json" | /usr/bin/jq -e \
+    --arg agent "$agent" --arg thread "$SIRSI_THREAD_ID" --arg host "$host" --arg start "$parent_start" --argjson parent "$parent" \
+    '.agent_id == $agent and .thread_id == $thread and .status == "active" and .pid == $parent and
+     .host == $host and .start_time == $start' \
+    >/dev/null
+}
+
+validate_grant_fixture() {
+  local fixture="$1" expected admission_json executor_json resource host parent parent_start
+  regular_file "$fixture" || die "grant fixture is not a regular file"
+  expected="$(/usr/bin/jq -ce '.expected | objects' "$fixture")" || die "grant fixture expected identity is malformed"
+  admission_json="$(/usr/bin/jq -ce '.admission' "$fixture")" || die "grant fixture admission is malformed"
+  executor_json="$(/usr/bin/jq -ce '.executor | objects' "$fixture")" || die "grant fixture executor is malformed"
+  resource="$(printf '%s' "$expected" | /usr/bin/jq -er '.resource | strings')" || die "grant fixture resource is malformed"
+  host="$(printf '%s' "$expected" | /usr/bin/jq -er '.host | strings')" || die "grant fixture host is malformed"
+  parent="$(printf '%s' "$expected" | /usr/bin/jq -er '.pid | numbers')" || die "grant fixture parent pid is malformed"
+  parent_start="$(printf '%s' "$expected" | /usr/bin/jq -er '.start_time | strings')" || die "grant fixture parent start is malformed"
+  valid_host "$host" && [[ "$parent" =~ ^[0-9]+$ && "$parent" -gt 1 && -n "$parent_start" ]] || die "grant fixture expected identity is invalid"
+  validate_grant_json "$admission_json" "$executor_json" "$resource" "$host" "$parent" "$parent_start" || \
+    die "grant fixture does not bind resource, host, parent pid, and start generation"
+}
 usage() {
   cat <<'USAGE'
 Usage: apollo-bounded-qualification.sh --agent ID --work ID --item ID \
@@ -23,12 +91,14 @@ Usage: apollo-bounded-qualification.sh --agent ID --work ID --item ID \
 
 The normal path requires installed sirsi-maat-run. --validate-only checks
 identity and profile capability without starting Ma'at, Apollo, a listener, or a model request.
+--validate-grant-fixture validates a non-executing admission/executor fixture.
 USAGE
 }
 
 agent=""; work=""; item=""; sirsi=""; sirsi_hash=""; profile=""; profile_hash=""
 server=""; server_hash=""; checkpoint=""; timeout=900; validate_only=false
 supervised=false; attempt=""; nonce=""
+grant_fixture=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --agent) agent="${2:-}"; shift 2 ;;
@@ -43,6 +113,7 @@ while [[ $# -gt 0 ]]; do
     --checkpoint) checkpoint="${2:-}"; shift 2 ;;
     --timeout) timeout="${2:-}"; shift 2 ;;
     --validate-only) validate_only=true; shift ;;
+    --validate-grant-fixture) grant_fixture="${2:-}"; shift 2 ;;
     --supervised-child) supervised=true; shift ;;
     --attempt) attempt="${2:-}"; shift 2 ;;
     --nonce) nonce="${2:-}"; shift 2 ;;
@@ -80,6 +151,13 @@ if [[ "$validate_only" == true ]]; then
   exit 0
 fi
 
+if [[ -n "$grant_fixture" ]]; then
+  [[ "$supervised" == false && "$validate_only" == false ]] || die "grant fixture is an outer non-executing check only"
+  validate_grant_fixture "$grant_fixture"
+  printf 'validated grant fixture=%s\n' "$grant_fixture"
+  exit 0
+fi
+
 if [[ "$supervised" == false ]]; then
   [[ -x "$MAAT_RUN" && ! -L "$MAAT_RUN" ]] || die "installed sirsi-maat-run is required; no raw fallback exists"
   umask 077
@@ -106,23 +184,15 @@ fi
 # environment or stale record can satisfy them.
 [[ -x "$MAAT_CLI" ]] || die "installed Ma'at CLI is unavailable"
 parent_pid="$PPID"
+parent_identity="$(maat_parent_identity "$parent_pid")" || die "cannot derive installed Ma'at parent identity"
+parent_resource="$(printf '%s' "$parent_identity" | /usr/bin/jq -er '.resource | strings')" || die "installed Ma'at resource is malformed"
+parent_host="$(printf '%s' "$parent_identity" | /usr/bin/jq -er '.host | strings')" || die "installed Ma'at host is malformed"
+parent_start="$(printf '%s' "$parent_identity" | /usr/bin/jq -er '.start_time | strings')" || die "installed Ma'at parent start is malformed"
+valid_host "$parent_host" && [[ -n "$parent_resource" && -n "$parent_start" ]] || die "installed Ma'at identity is incomplete"
 admission_json="$("$MAAT_CLI" maat status --json)" || die "cannot read current Ma'at admission"
-printf '%s' "$admission_json" | /usr/bin/jq -e \
-  --arg agent "$agent" --arg work "$work" --argjson parent "$parent_pid" \
-  'map(. as $row | select(
-      $row.status == "active" and $row.holder == $agent and $row.work == $work and
-      $row.share == "full" and $row.exempt_pid == $parent and
-      (($row.lease_ttl_sec | type) == "number" and $row.lease_ttl_sec > 0) and
-      ($row.heartbeat_at | type == "string") and
-      (($row.heartbeat_at | fromdateiso8601) as $heartbeat |
-       ($row.lease_ttl_sec as $ttl | (now - $heartbeat) >= 0 and (now - $heartbeat) < $ttl))
-    )) | length == 1' \
-  >/dev/null || die "no fresh full-share Ma'at admission binds this direct parent"
 executor_json="$("$MAAT_CLI" thread heartbeat --thread "$SIRSI_THREAD_ID" --json)" || die "cannot read native executor"
-printf '%s' "$executor_json" | /usr/bin/jq -e \
-  --arg agent "$agent" --arg thread "$SIRSI_THREAD_ID" --argjson parent "$parent_pid" \
-  '.agent_id == $agent and .thread_id == $thread and .status == "active" and .pid == $parent' \
-  >/dev/null || die "native executor does not bind this direct parent generation"
+validate_grant_json "$admission_json" "$executor_json" "$parent_resource" "$parent_host" "$parent_pid" "$parent_start" || \
+  die "no fresh full-share Ma'at admission and executor bind this local parent generation"
 
 terminal="$attempt/terminal.tsv"
 log="$attempt/apollo-batch.log"
