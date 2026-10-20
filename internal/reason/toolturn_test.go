@@ -35,7 +35,7 @@ func TestToolTurnExecutesOnlyExactAllowlistedToolAndReturnsFinalAnswer(t *testin
 		t.Fatal(err)
 	}
 	p := &toolTurnProvider{responses: []provider.Response{
-		{ToolCalls: []provider.ToolCall{{ID: "call-1", Name: "machine.state", Args: map[string]any{}}}, ToolsHonored: true},
+		{ToolCalls: []provider.ToolCall{{ID: "call-1", Name: toolWireName("machine.state"), Args: map[string]any{}}}, ToolsHonored: true},
 		{Text: "The machine is healthy."},
 	}}
 	out, err := (ToolTurn{Provider: p, Registry: r, Policy: PolicyReadOnly, Allowed: []string{"machine.state"}, System: "answer only from the tool result"}).Complete(context.Background(), "status?", 64)
@@ -47,6 +47,9 @@ func TestToolTurnExecutesOnlyExactAllowlistedToolAndReturnsFinalAnswer(t *testin
 	}
 	if len(p.requests) != 2 || len(p.requests[0].Tools) != 1 || len(p.requests[1].Messages) != 4 {
 		t.Fatalf("expected one offered tool and a four-message follow-up, got %+v", p.requests)
+	}
+	if p.requests[0].Tools[0].Name != toolWireName("machine.state") {
+		t.Fatalf("wire tool name = %q", p.requests[0].Tools[0].Name)
 	}
 	if p.requests[1].Messages[3].Role != "tool" || p.requests[1].Messages[3].ToolCallID != "call-1" {
 		t.Fatalf("follow-up did not bind the tool result: %+v", p.requests[1].Messages[3])
@@ -62,7 +65,7 @@ func TestToolTurnRejectsUnallowlistedArgumentsAndDoesNotInvoke(t *testing.T) {
 	if err := r.Register(Tool{Name: "machine.state", Does: "read", Tier: TierObserve, Run: func(context.Context) (Result, error) { ran++; return Result{}, nil }}); err != nil {
 		t.Fatal(err)
 	}
-	p := &toolTurnProvider{responses: []provider.Response{{ToolCalls: []provider.ToolCall{{ID: "call-1", Name: "machine.state", Args: map[string]any{"path": "/tmp"}}}, ToolsHonored: true}}}
+	p := &toolTurnProvider{responses: []provider.Response{{ToolCalls: []provider.ToolCall{{ID: "call-1", Name: toolWireName("machine.state"), Args: map[string]any{"path": "/tmp"}}}, ToolsHonored: true}}}
 	if _, err := (ToolTurn{Provider: p, Registry: r, Policy: PolicyReadOnly, Allowed: []string{"machine.state"}}).Complete(context.Background(), "status?", 64); err == nil {
 		t.Fatal("expected arguments to be refused")
 	}
@@ -76,7 +79,7 @@ func TestToolTurnNeverFollowsUpAfterDeniedRepair(t *testing.T) {
 	if err := r.Register(Tool{Name: "repair", Does: "repair", Tier: TierRepair, Run: func(context.Context) (Result, error) { return Result{}, nil }, Verify: func(context.Context, Result) (Result, error) { return Result{}, nil }}); err != nil {
 		t.Fatal(err)
 	}
-	p := &toolTurnProvider{responses: []provider.Response{{ToolCalls: []provider.ToolCall{{ID: "call-1", Name: "repair", Args: map[string]any{}}}, ToolsHonored: true}}}
+	p := &toolTurnProvider{responses: []provider.Response{{ToolCalls: []provider.ToolCall{{ID: "call-1", Name: toolWireName("repair"), Args: map[string]any{}}}, ToolsHonored: true}}}
 	if _, err := (ToolTurn{Provider: p, Registry: r, Policy: PolicyReadOnly, Allowed: []string{"repair"}}).Complete(context.Background(), "repair?", 64); err == nil {
 		t.Fatal("expected repair to be refused by read-only policy")
 	}

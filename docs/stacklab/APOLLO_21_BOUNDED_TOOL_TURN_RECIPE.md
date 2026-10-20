@@ -64,6 +64,12 @@ completion can occur. An endpoint may use wire-level `required` only when it
 explicitly declares that stricter capability. The application-level
 postcondition is never weakened to disguise an unsupported wire feature.
 
+The same adapter parses only word-shaped function names. Pantheon therefore
+encodes each exact canonical allowlisted name as a deterministic, word-only
+wire alias (for example `process.census` is never exposed directly to the
+model parser). Only the returned alias bound to the offer maps back to the
+canonical registry name; an unoffered alias cannot select a tool.
+
 ## Operator shape
 
 ```sh

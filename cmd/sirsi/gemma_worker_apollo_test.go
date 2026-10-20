@@ -32,7 +32,7 @@ func TestGemmaWorkerApolloCompleteReturnsCorrelatedObserveEvidence(t *testing.T)
 		t.Fatal(err)
 	}
 	backend := &apolloWorkerFake{responses: []provider.Response{
-		{ToolCalls: []provider.ToolCall{{ID: "call-1", Name: "machine.state", Args: map[string]any{}}}, ToolsHonored: true},
+		{ToolCalls: []provider.ToolCall{{ID: "call-1", Name: "pantheon_6d616368696e652e7374617465", Args: map[string]any{}}}, ToolsHonored: true},
 		{Text: "The machine is healthy."},
 	}}
 	answer, err := gemmaWorkerApolloComplete(context.Background(), backend, registry, []string{"machine.state"}, "report status", 64)

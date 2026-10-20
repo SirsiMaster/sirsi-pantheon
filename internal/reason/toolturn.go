@@ -2,6 +2,7 @@ package reason
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -72,7 +73,8 @@ func (t ToolTurn) Complete(ctx context.Context, prompt string, maxTokens int) (T
 		return result, fmt.Errorf("tool turn refused %d requested tools; exactly one is permitted", len(initial.ToolCalls))
 	}
 	call := initial.ToolCalls[0]
-	if _, ok := allowed[call.Name]; !ok {
+	canonicalName, ok := allowed[call.Name]
+	if !ok {
 		return result, fmt.Errorf("model requested unallowlisted tool %q", call.Name)
 	}
 	if strings.TrimSpace(call.ID) == "" {
@@ -81,7 +83,7 @@ func (t ToolTurn) Complete(ctx context.Context, prompt string, maxTokens int) (T
 	if len(call.Args) != 0 {
 		return result, fmt.Errorf("model supplied unsupported arguments for tool %q", call.Name)
 	}
-	inv := Invoke(ctx, t.Registry, call.Name, t.Policy)
+	inv := Invoke(ctx, t.Registry, canonicalName, t.Policy)
 	result.Invocation, result.UsedTool = inv, true
 	if !inv.Allowed {
 		return result, fmt.Errorf("tool %q is not permitted: %s", call.Name, inv.Reason)
@@ -116,11 +118,12 @@ func (t ToolTurn) Complete(ctx context.Context, prompt string, maxTokens int) (T
 	return result, nil
 }
 
-func (t ToolTurn) specs() ([]provider.ToolSpec, map[string]struct{}, error) {
+func (t ToolTurn) specs() ([]provider.ToolSpec, map[string]string, error) {
 	if len(t.Allowed) == 0 {
 		return nil, nil, fmt.Errorf("tool turn requires an explicit non-empty allowlist")
 	}
 	seen := make(map[string]struct{}, len(t.Allowed))
+	allowed := make(map[string]string, len(t.Allowed))
 	specs := make([]provider.ToolSpec, 0, len(t.Allowed))
 	for _, name := range t.Allowed {
 		name = strings.TrimSpace(name)
@@ -135,8 +138,13 @@ func (t ToolTurn) specs() ([]provider.ToolSpec, map[string]struct{}, error) {
 			return nil, nil, fmt.Errorf("tool allowlist names unregistered tool %q", name)
 		}
 		seen[name] = struct{}{}
+		wireName := toolWireName(name)
+		if _, collision := allowed[wireName]; collision {
+			return nil, nil, fmt.Errorf("tool allowlist wire name collision for %q", name)
+		}
+		allowed[wireName] = name
 		specs = append(specs, provider.ToolSpec{
-			Name:        tool.Name,
+			Name:        wireName,
 			Description: tool.Does,
 			Schema: map[string]any{
 				"type":                 "object",
@@ -145,7 +153,16 @@ func (t ToolTurn) specs() ([]provider.ToolSpec, map[string]struct{}, error) {
 			},
 		})
 	}
-	return specs, seen, nil
+	return specs, allowed, nil
+}
+
+// toolWireName makes a canonical registry name safe for the narrow Gemma
+// template parser used by Apollo. It is deterministic and injective: every
+// UTF-8 byte is hex encoded after a fixed word-only prefix. The provider sees
+// only this alias; the registry receives only the original allowlisted name.
+// This is deliberately not a general model-selected name rewrite.
+func toolWireName(name string) string {
+	return "pantheon_" + hex.EncodeToString([]byte(name))
 }
 
 func toolResultPayload(inv Invocation) (string, error) {
