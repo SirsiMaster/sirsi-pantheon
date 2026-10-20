@@ -1,0 +1,15 @@
+{
+  "classification": "internal-scoped-cloud-executor",
+  "version": "v0.24.121",
+  "source_commit": "22944b2458f377a9f3e5e10c63c3442cb3ea83c3",
+  "source_tree": "bf38228ef30b94844e4c5d8dc60d6bbfa95e2e11",
+  "source_tag": "v0.24.121",
+  "source_tag_object": "e7cee081cb110c15ce48f538a2fd7c75deae084f",
+  "build": {"go":"go1.27.1","goos":"linux","goarch":"amd64","cgo_enabled":false,"trimpath":true,"vcs_modified":false},
+  "artifact": {"file":"sirsi-linux-amd64.gz","bytes":13418972,"sha256":"1200546edd30f0a44de0162aa3e2403d3e4500e6f434a0ac21059c471d2935e7"},
+  "binary": {"bytes":36626592,"sha256":"3f13d4692a054640ab33ad00f9ad0f56a8d2d4bdf1908c6b10f870ad872501ba"},
+  "producer_terminal": "f978d09d2c8e458896134afb649b6a0f",
+  "protected_source_run": "39358856625",
+  "scope": "Existing two private SSA/Ra cloud executors with their existing separate scoped router credentials. Not the signed macOS commercial package, not a model, not a credential, and not physical-offline proof.",
+  "adoption": "Verify exact carrier commit, manifest and both artifact hashes/sizes. Stage privately; preserve working101 and failed120. Qualify own actual runtime registration, heartbeat, fenced real task result/completion and own thread cleanup against the canonical service before changing startup. No SDK/private key or account/network/security change."
+}
