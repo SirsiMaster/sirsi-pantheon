@@ -4,7 +4,8 @@
 set -euo pipefail
 
 readonly SELF="$0"
-readonly MAAT_RUN="${SIRSI_MAAT_RUN:-$HOME/.local/bin/sirsi-maat-run}"
+readonly MAAT_RUN="$HOME/.local/bin/sirsi-maat-run"
+readonly MAAT_CLI="$HOME/.local/bin/sirsi"
 readonly ENDPOINT="http://127.0.0.1:8521/v1"
 readonly PORT="8521"
 
@@ -99,6 +100,30 @@ fi
 [[ "$(/bin/cat "$attempt/supervision.nonce")" == "$nonce" ]] || die "supervision nonce mismatch"
 [[ "${SIRSI_AGENT_ID:-}" == "$agent" ]] && valid_id "${SIRSI_THREAD_ID:-}" 256 && [[ "${SIRSI_THREAD_ID:-}" == thr-* ]] || die "Ma'at executor identity is not present"
 
+# A nonce and inherited names are not an admission. The direct parent must be
+# both the active full-share Ma'at exemption and the exact native executor
+# bound to this child thread. These are fresh readbacks; no caller-supplied
+# environment or stale record can satisfy them.
+[[ -x "$MAAT_CLI" ]] || die "installed Ma'at CLI is unavailable"
+parent_pid="$PPID"
+admission_json="$("$MAAT_CLI" maat status --json)" || die "cannot read current Ma'at admission"
+printf '%s' "$admission_json" | /usr/bin/jq -e \
+  --arg agent "$agent" --arg work "$work" --argjson parent "$parent_pid" \
+  'map(. as $row | select(
+      $row.status == "active" and $row.holder == $agent and $row.work == $work and
+      $row.share == "full" and $row.exempt_pid == $parent and
+      (($row.lease_ttl_sec | type) == "number" and $row.lease_ttl_sec > 0) and
+      ($row.heartbeat_at | type == "string") and
+      (($row.heartbeat_at | fromdateiso8601) as $heartbeat |
+       ($row.lease_ttl_sec as $ttl | (now - $heartbeat) >= 0 and (now - $heartbeat) < $ttl))
+    )) | length == 1' \
+  >/dev/null || die "no fresh full-share Ma'at admission binds this direct parent"
+executor_json="$("$MAAT_CLI" thread heartbeat --thread "$SIRSI_THREAD_ID" --json)" || die "cannot read native executor"
+printf '%s' "$executor_json" | /usr/bin/jq -e \
+  --arg agent "$agent" --arg thread "$SIRSI_THREAD_ID" --argjson parent "$parent_pid" \
+  '.agent_id == $agent and .thread_id == $thread and .status == "active" and .pid == $parent' \
+  >/dev/null || die "native executor does not bind this direct parent generation"
+
 terminal="$attempt/terminal.tsv"
 log="$attempt/apollo-batch.log"
 printf 'phase\tstarted\nserver_sha256\t%s\nprofile_sha256\t%s\nsirsi_sha256\t%s\n' \
@@ -107,7 +132,7 @@ listener_pids() { /usr/sbin/lsof -nP -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null || 
 existing="$(listener_pids)"
 [[ -z "$existing" ]] || die "loopback listener $PORT is already occupied; refusing without signal"
 
-"$server" "$checkpoint" --idle-exit 120 --addr 127.0.0.1:"$PORT" >"$log" 2>&1 &
+"$server" --checkpoint "$checkpoint" --idle-exit 120 --addr 127.0.0.1:"$PORT" >"$log" 2>&1 &
 server_pid=$!
 printf 'server_pid\t%s\n' "$server_pid" >>"$terminal"
 ready=false
@@ -142,5 +167,8 @@ wait "$server_pid"
 server_rc=$?
 set -e
 printf 'server_exit\t%s\nphase\tcomplete\n' "$server_rc" >>"$terminal"
+! /bin/kill -0 "$server_pid" 2>/dev/null || die "owned Apollo child remains after natural shutdown"
+remaining="$(listener_pids)"
+[[ -z "$remaining" ]] || die "listener remains after owned Apollo child shutdown"
 [[ "$worker_rc" -eq 0 && "$server_rc" -eq 0 ]] || die "worker or admitted Apollo child failed; retained terminal is $terminal"
 printf 'Apollo qualification terminal: %s\n' "$terminal"

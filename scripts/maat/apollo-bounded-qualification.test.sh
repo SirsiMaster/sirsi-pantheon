@@ -54,7 +54,7 @@ fi
 
 # The normal path refuses a missing Ma'at helper before a child can launch.
 cp "$tmp/sirsi" "$tmp/server"
-if SIRSI_MAAT_RUN="$tmp/no-such-maat-run" "$runner" \
+if HOME="$tmp/missing-home" "$runner" \
   --agent codex-pantheon --work apollo-qualification-fixture --item fixture-item \
   --sirsi "$tmp/sirsi" --sirsi-sha256 "$(sha "$tmp/sirsi")" \
   --profile "$tmp/profile.json" --profile-sha256 "$(sha "$tmp/profile.json")" \
@@ -68,7 +68,7 @@ fi
 attempt="$tmp/attempt"
 mkdir "$attempt"
 printf '%s\n' nonce >"$attempt/supervision.nonce"
-if "$runner" --supervised-child --attempt "$attempt" --nonce nonce \
+if SIRSI_AGENT_ID=codex-pantheon SIRSI_THREAD_ID=thr-forged "$runner" --supervised-child --attempt "$attempt" --nonce nonce \
   --agent codex-pantheon --work apollo-qualification-fixture --item fixture-item \
   --sirsi "$tmp/sirsi" --sirsi-sha256 "$(sha "$tmp/sirsi")" \
   --profile "$tmp/profile.json" --profile-sha256 "$(sha "$tmp/profile.json")" \
@@ -81,4 +81,7 @@ fi
 grep -q 'sirsi-maat-run is required; no raw fallback exists' "$runner"
 grep -q -- '--once --apollo-tool-turn --item' "$runner"
 grep -q 'loopback listener' "$runner"
+grep -q -- '"$server" --checkpoint "$checkpoint" --idle-exit 120 --addr' "$runner"
+grep -q 'native executor does not bind this direct parent generation' "$runner"
+grep -q 'listener remains after owned Apollo child shutdown' "$runner"
 echo 'apollo bounded qualification wrapper contract: PASS'
