@@ -8,20 +8,21 @@ import (
 
 // Last-consumer outcomes a wake loop publishes (LaneState.LastOutcome).
 const (
-	OutcomeOK           = "ok"            // the last consumer drained or reduced the inbox
-	OutcomeNoProgress   = "no_progress"   // it ran and changed nothing
-	OutcomeAuthRequired = "auth_required" // the consumer cannot log in
-	OutcomeRelay        = "relay_unreach" // the consumer cannot reach the router relay
-	OutcomeStartFailed  = "start_failed"  // the consumer command would not start
-	OutcomeExitedError  = "exited_error"  // it started and exited with an error
-	OutcomeNoneYet      = ""              // no consumer has run since this loop started
-	HoldWindow          = "window"        // a Ma'at measurement window is open
-	HoldLoad            = "load"          // host load is at or above the core count
-	HoldAttended        = "attended"      // an attended session is live on this lane and owns its inbox
-	HoldNoGrant         = "no_grant"      // the lead lane has not granted its worker the answering role; the lead answers
-	HoldBackoff         = "backoff"       // waiting out a no-progress back-off
-	HoldQuarantine      = "quarantine"    // fabric or lane quarantined: needs a human
-	HoldCeiling         = "ceiling"       // hourly spawn ceiling reached
+	OutcomeProviderQuota = "provider_quota" // provider explicitly refused more paid work
+	OutcomeOK            = "ok"             // the last consumer drained or reduced the inbox
+	OutcomeNoProgress    = "no_progress"    // it ran and changed nothing
+	OutcomeAuthRequired  = "auth_required"  // the consumer cannot log in
+	OutcomeRelay         = "relay_unreach"  // the consumer cannot reach the router relay
+	OutcomeStartFailed   = "start_failed"   // the consumer command would not start
+	OutcomeExitedError   = "exited_error"   // it started and exited with an error
+	OutcomeNoneYet       = ""               // no consumer has run since this loop started
+	HoldWindow           = "window"         // a Ma'at measurement window is open
+	HoldLoad             = "load"           // host load is at or above the core count
+	HoldAttended         = "attended"       // an attended session is live on this lane and owns its inbox
+	HoldNoGrant          = "no_grant"       // the lead lane has not granted its worker the answering role; the lead answers
+	HoldBackoff          = "backoff"        // waiting out a no-progress back-off
+	HoldQuarantine       = "quarantine"     // fabric or lane quarantined: needs a human
+	HoldCeiling          = "ceiling"        // hourly spawn ceiling reached
 )
 
 // LaneState is a worker's self-reported readiness, published on every heartbeat.
@@ -50,6 +51,9 @@ func ClassifyConsumerFailure(tail string) string {
 // consumer's tail output, or "" when nothing matches (so the caller can fall
 // back to no_progress / exited_error from the process facts).
 func KnownFailure(tail string) string {
+	if providerQuotaFailure(tail) {
+		return OutcomeProviderQuota
+	}
 	t := strings.ToLower(tail)
 	switch {
 	case strings.Contains(t, "not logged in"), strings.Contains(t, "please run /login"),
@@ -147,6 +151,9 @@ func PingLane(reg *ThreadRegistry, cfg AgentConfig, agentID string, now time.Tim
 		case !worker.ConsumerCapable || (l != nil && !l.ConsumerDeclared):
 			res.Verdict = VerdictWatchOnly
 			res.Detail = "a wake loop is running but declares no working consumer, so it will watch the inbox and never work it"
+		case l != nil && l.LastOutcome == OutcomeProviderQuota:
+			res.Verdict = "PROVIDER_QUOTA"
+			res.Detail = "provider quota blocked; explicit availability evidence required before retry"
 		case l != nil && l.LastOutcome == OutcomeAuthRequired:
 			res.Verdict = VerdictAuthRequired
 			res.Detail = "the consumer cannot log in: " + trimDetail(l.LastDetail)
