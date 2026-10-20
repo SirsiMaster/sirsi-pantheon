@@ -448,13 +448,14 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
     code = 78
     reservation_requested = reservation_replied = False
     cpu_cores = getattr(backend, 'cpu_cores', None)
-    regime = getattr(backend, 'requested_regime', None)
-    if regime is not None:
-        regime = execution_regime(cpu_cores, regime)
-        record['requested_regime'] = regime
+    regime = None
     record['execution_timeout_sec'] = timeout
     try:
         require_job_safe_command(command)
+        regime = getattr(backend, 'requested_regime', None)
+        if regime is not None:
+            regime = execution_regime(cpu_cores, regime)
+            record['requested_regime'] = regime
         backend.registered(agent, thread)
         confirmed_at = time.monotonic()
         # A destination-local executor owns this job, not the primary holder
