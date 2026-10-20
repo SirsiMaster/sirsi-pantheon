@@ -64,10 +64,11 @@ func (t Tier) String() string {
 // tools and degrade to a constrained path deliberately, saying so in the
 // transcript, rather than failing in a way that looks like the model being bad.
 type Caps struct {
-	Tools         bool // can the model call tools?
-	Streaming     bool
-	ContextTokens int
-	Offline       bool // usable with no network
+	Tools              bool // can the model call tools?
+	RequiredToolChoice bool // honors OpenAI's wire-level tool_choice:"required"
+	Streaming          bool
+	ContextTokens      int
+	Offline            bool // usable with no network
 }
 
 // Request is one turn of work.
@@ -87,10 +88,11 @@ type Request struct {
 	// Tools offered this turn. A provider without Caps.Tools must ignore these
 	// and the caller must notice — see Response.ToolsHonored.
 	Tools []ToolSpec
-	// RequireTool asks the provider to return a tool call instead of a direct
-	// answer. It is valid only with a non-empty explicit Tools offer. Callers
-	// use it for a bounded tool turn whose policy already limits what the sole
-	// call can do; it is never inferred from an available tool list.
+	// RequireTool says a bounded caller will refuse a direct answer before its
+	// offered tool result. When Caps.RequiredToolChoice is true, the provider
+	// also serializes the compatible wire-level constraint. Otherwise the
+	// provider preserves its declared auto-only protocol and the caller's
+	// postcondition remains the enforcing boundary.
 	RequireTool bool
 }
 

@@ -29,6 +29,11 @@ type OpenAICompat struct {
 	// tool-calling; claiming otherwise would make the loop believe a silent
 	// no-op was the model declining to act.
 	SupportsTools bool
+	// SupportsRequiredToolChoice is a stricter, separately declared endpoint
+	// capability. Some OpenAI-shaped local servers accept tools but deliberately
+	// permit only tool_choice auto|none; sending "required" to those servers is
+	// a protocol error, not a reason to overclaim compatibility.
+	SupportsRequiredToolChoice bool
 	// SupportsStreaming is declared by the resolved provider configuration.
 	// OpenAI compatibility alone is not proof that a particular endpoint permits
 	// streamed responses.
@@ -50,10 +55,11 @@ func (o *OpenAICompat) Tier() Tier   { return o.TierValue }
 
 func (o *OpenAICompat) Caps() Caps {
 	return Caps{
-		Tools:         o.SupportsTools,
-		Streaming:     o.SupportsStreaming,
-		ContextTokens: o.ContextTokens,
-		Offline:       o.TierValue == TierLocal,
+		Tools:              o.SupportsTools,
+		RequiredToolChoice: o.SupportsRequiredToolChoice,
+		Streaming:          o.SupportsStreaming,
+		ContextTokens:      o.ContextTokens,
+		Offline:            o.TierValue == TierLocal,
 	}
 }
 
@@ -366,6 +372,9 @@ func (o *OpenAICompat) Complete(ctx context.Context, req Request) (Response, err
 	if strings.TrimSpace(o.Endpoint) == "" {
 		return Response{}, fmt.Errorf("%w: %s has no endpoint", ErrUnavailable, o.ProviderName)
 	}
+	if req.RequireTool && len(req.Tools) == 0 {
+		return Response{}, fmt.Errorf("provider request requires a tool but offers none")
+	}
 
 	msgs, err := ccMessages(req)
 	if err != nil {
@@ -385,10 +394,7 @@ func (o *OpenAICompat) Complete(ctx context.Context, req Request) (Response, err
 		}
 		toolsHonored = true
 	}
-	if req.RequireTool && len(tools) == 0 {
-		return Response{}, fmt.Errorf("provider request requires a tool but offers none")
-	}
-	body, err := json.Marshal(ccRequest{Model: model, Messages: msgs, MaxTokens: req.MaxTokens, Temperature: req.Temperature, TopP: req.TopP, Seed: req.Seed, Tools: tools, ToolChoice: toolChoice(tools, req.RequireTool)})
+	body, err := json.Marshal(ccRequest{Model: model, Messages: msgs, MaxTokens: req.MaxTokens, Temperature: req.Temperature, TopP: req.TopP, Seed: req.Seed, Tools: tools, ToolChoice: toolChoice(tools, req.RequireTool && o.SupportsRequiredToolChoice)})
 	if err != nil {
 		return Response{}, err
 	}

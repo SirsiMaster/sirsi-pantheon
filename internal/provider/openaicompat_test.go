@@ -77,7 +77,7 @@ func TestCompleteCarriesStructuredToolCallAndToolResultConversation(t *testing.T
 		}
 	}))
 	defer srv.Close()
-	p := &OpenAICompat{SupportsTools: true, ProviderName: "apollo", Endpoint: srv.URL + "/v1", TierValue: TierLocal, HTTP: srv.Client()}
+	p := &OpenAICompat{SupportsTools: true, SupportsRequiredToolChoice: true, ProviderName: "apollo", Endpoint: srv.URL + "/v1", TierValue: TierLocal, HTTP: srv.Client()}
 	first, err := p.Complete(context.Background(), Request{Prompt: "status", Tools: []ToolSpec{{Name: "machine.state", Schema: map[string]any{"type": "object"}}}, RequireTool: true})
 	if err != nil {
 		t.Fatal(err)
@@ -103,6 +103,31 @@ func TestCompleteRejectsRequiredToolWithoutAnOfferedTool(t *testing.T) {
 	p := &OpenAICompat{SupportsTools: true, ProviderName: "apollo", Endpoint: "http://unused", TierValue: TierLocal}
 	if _, err := p.Complete(context.Background(), Request{Prompt: "status", RequireTool: true}); err == nil {
 		t.Fatal("expected require-tool without tools to fail before contacting provider")
+	}
+}
+
+func TestCompleteKeepsAutoForAutoOnlyToolEndpoint(t *testing.T) {
+	var requestBody ccRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/models":
+			_, _ = w.Write([]byte(`{"data":[{"id":"apollo-model"}]}`))
+		case "/v1/chat/completions":
+			if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(`{"model":"apollo-model","choices":[{"finish_reason":"stop","message":{"content":"direct answer"}}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	p := &OpenAICompat{SupportsTools: true, ProviderName: "apollo", Endpoint: srv.URL + "/v1", TierValue: TierLocal, HTTP: srv.Client()}
+	if _, err := p.Complete(context.Background(), Request{Prompt: "status", RequireTool: true, Tools: []ToolSpec{{Name: "process.census", Schema: map[string]any{"type": "object"}}}}); err != nil {
+		t.Fatal(err)
+	}
+	if requestBody.ToolChoice != "auto" {
+		t.Fatalf("auto-only endpoint tool choice = %q, want auto", requestBody.ToolChoice)
 	}
 }
 

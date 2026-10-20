@@ -12,9 +12,11 @@ type toolTurnProvider struct {
 	responses []provider.Response
 }
 
-func (p *toolTurnProvider) Name() string                   { return "apollo-test" }
-func (p *toolTurnProvider) Tier() provider.Tier            { return provider.TierLocal }
-func (p *toolTurnProvider) Caps() provider.Caps            { return provider.Caps{Tools: true} }
+func (p *toolTurnProvider) Name() string        { return "apollo-test" }
+func (p *toolTurnProvider) Tier() provider.Tier { return provider.TierLocal }
+func (p *toolTurnProvider) Caps() provider.Caps {
+	return provider.Caps{Tools: true, RequiredToolChoice: true}
+}
 func (p *toolTurnProvider) Available(context.Context) bool { return true }
 func (p *toolTurnProvider) Complete(_ context.Context, r provider.Request) (provider.Response, error) {
 	p.requests = append(p.requests, r)

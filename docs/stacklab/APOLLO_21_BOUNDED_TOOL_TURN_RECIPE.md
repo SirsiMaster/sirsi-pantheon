@@ -53,6 +53,17 @@ rejected, multiple calls are rejected, missing call IDs are rejected,
 unallowlisted tools are rejected, and a follow-up tool request is rejected.
 There is no shell interpolation or model-selected command path.
 
+### Tool-choice compatibility
+
+Apollo's native OpenAI-compatible adapter currently accepts wire-level
+`tool_choice` values `auto` and `none`; it does not accept `required` or a
+forced-function object. Pantheon therefore sends this exact profile an
+`auto` tool offer, but the bounded worker prompt requires its one offered
+observe call and the worker rejects a model-only reply before any router
+completion can occur. An endpoint may use wire-level `required` only when it
+explicitly declares that stricter capability. The application-level
+postcondition is never weakened to disguise an unsupported wire feature.
+
 ## Operator shape
 
 ```sh
