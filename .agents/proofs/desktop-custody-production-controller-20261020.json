@@ -126,13 +126,19 @@
       "command": "python3 -m unittest discover -s scripts/maat -p test_admitted_run.py",
       "status": "passed",
       "evidence": "All72 supervisor regressions passed at2fa7a192d8144966af7461764a8f6b77, including execution-fact handoff."
+    },
+    {
+      "name": "active-peer-review-regression",
+      "command": "go test -race ./internal/routerstore -run TestDesktopCustody -count=1 && go vet ./internal/routerstore",
+      "status": "passed",
+      "evidence": "fa23dc1d95f34f3f965bc11078a47b96 exit0/released;12.430s race tests. SSA native thread019ff6bc-d184-7fb1-b76d-990a00d3e939 explicitly accepted narrow correction, not blanket controller/native power."
     }
   ],
   "working_status": {
-    "environment": "Isolated /private/tmp/sha-desktop-custody-20261020, current-main merge6057bc7e, source commit129c39f1 plus final pending changes. Shared checkouts untouched.",
+    "environment": "Isolated /private/tmp/sha-desktop-custody-20261020; published baselineffd08b35 includes mainb3419a65; independently accepted active-peer source correction pending normal successor publication. Shared checkouts untouched.",
     "how_verified": "Normal owned CPU1 Ma\u2019at source gates; fake authority and fake power, real HTTP test harness; no production policy/ARM/Sleep/wake.",
-    "observed_result": "Typed source path final local gate passed; full repo CI, independent SSA review and actual native/off-window cloud proof remain pending.",
-    "verified_at": "2026-10-20T06:35:43.822311+00:00"
+    "observed_result": "Baseline local gate passed; SSA active-peer finding corrected, custody routerstore race/vet passfa23dc1d95f34f3f965bc11078a47b96; SSA accepted this narrow source delta. Whole-controller review, successor CI, release, installed native/off-window cloud proof remain pending.",
+    "verified_at": "2026-10-20T06:51:12.761348+00:00"
   },
   "handoffs": [],
   "blockers": [

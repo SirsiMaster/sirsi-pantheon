@@ -69,3 +69,24 @@ failure/source tests4.852s; full CLI build;72 supervisor regressions passed.
 These results supersede the earlier pending local-gate line, not the explicit
 unperformed repository-wide CI, independent review or physical proof. Earlier
 formatting failures remain recorded, not relabeled as passes.
+
+## Independent SSA review correction — active peers
+
+SSA's review of `ffd08b35` found that recently reaped or unknown-status peers
+could pass the participant freshness check. The corrected check requires exact
+`active` status for every delegated participant, including all three again at
+consumption. `TestDesktopCustodyRejectsNonActivePeerAfterReady` changes the
+coordinator or observer after readiness to each of reaped, closed, suspended,
+idle, unknown, and empty; asserts that the actual stored status changed; and
+proves consumption refuses without consuming authority or fencing ordinary work.
+
+Normal admitted run `fa23dc1d95f34f3f965bc11078a47b96` passed all custody
+routerstore race tests (12.430 seconds) and routerstore vet, then released
+naturally. This source correction does not perform native power or create a
+production delegation. The initial run `43c6173c82484e99a171446983fe3fba`
+failed because its test fixture's fractional timestamp sorted before the
+whole-second original in the existing upsert ordering; the corrected fixture
+uses a later whole second and checks the mutation. Both receipts are retained.
+
+The next full-share native test window was explicitly ceded to SSA for its
+finite Gemma qualification; SHA starts no competing payload while it runs.

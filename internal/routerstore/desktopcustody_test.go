@@ -206,6 +206,38 @@ func TestDesktopCustodyRejectsStaleBootGenerationRevocationAndMissingPeers(t *te
 	}
 }
 
+func TestDesktopCustodyRejectsNonActivePeerAfterReady(t *testing.T) {
+	for _, role := range []string{"coordinator", "observer"} {
+		for _, status := range []string{"reaped", "closed", "suspended", "idle", "unknown", ""} {
+			t.Run(role+"/"+status, func(t *testing.T) {
+				f := newCustodyFixture(t)
+				f.ready(t)
+				p := sleepRole(f.d, role)
+				if err := f.s.UpsertThreads([]ThreadRecord{{ThreadID: p.ThreadID, Agent: p.Agent, Host: p.Host, Status: status, LastSeenAt: f.now.Add(time.Second).Format(time.RFC3339Nano), Payload: []byte(`{}`)}}); err != nil {
+					t.Fatal(err)
+				}
+				binding, err := f.s.ThreadBinding(p.ThreadID)
+				if err != nil || binding.Status != status {
+					t.Fatalf("peer status mutation not applied: %+v %v", binding, err)
+				}
+				if _, err := f.call("custodian", "consume"); err == nil {
+					t.Fatal("non-active peer authorized consumption", status)
+				}
+				state, err := f.call("custodian", "inspect")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !state.ConsumedAt.IsZero() {
+					t.Fatal("rejected consumption burned authority")
+				}
+				if _, err := f.s.MaatReserve(custodyReservation(f.now, "m5"), false); err != nil {
+					t.Fatal("rejected consumption fenced ordinary work", err)
+				}
+			})
+		}
+	}
+}
+
 func TestDesktopCustodyReservationConsumeRaceHasExactlyOneWinner(t *testing.T) {
 	for attempt := 0; attempt < 8; attempt++ {
 		f := newCustodyFixture(t)

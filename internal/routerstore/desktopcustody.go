@@ -98,7 +98,7 @@ func participantLive(tx *txHandle, p dc.Participant, now time.Time) error {
 		return err
 	}
 	at, err := time.Parse(time.RFC3339Nano, last)
-	if err != nil || agent != p.Agent || threadHost != p.Host || status == "closed" || status == "suspended" || now.Sub(at) > 90*time.Second || at.After(now.Add(5*time.Second)) {
+	if err != nil || agent != p.Agent || threadHost != p.Host || status != "active" || now.Sub(at) > 90*time.Second || at.After(now.Add(5*time.Second)) {
 		return errors.New("sleep custody: participant thread not fresh and live")
 	}
 	return nil
