@@ -1,0 +1,1 @@
+- **Completed task wake residue:** exclude proven exact DONE task source wakes from dispatch/retry/failure and continuation suppression while preserving every row and original evidence. No fabricated ACK or migration; reopened/unproved sources retain ordinary handling. Refs: ADR-061; docs/stacklab/COMPLETED_TASK_WAKE_EXCLUSION.md.

@@ -38,6 +38,19 @@ func scanWakeEvent(scanner interface{ Scan(...any) error }) (WakeEvent, error) {
 	return e, err
 }
 
+// completedTaskWakePredicate identifies source work that is already durably
+// done. This is a nonexecuting exclusion, NOT delivery acknowledgement. Preserve
+// the wake row, timestamps, attempts, error and lease evidence byte-for-byte.
+func completedTaskWakePredicate(alias string) string {
+	return `(` + alias + `.source_kind='ledger_task' AND EXISTS (
+ SELECT 1 FROM tasks completed_source WHERE completed_source.agent=` + alias + `.agent
+ AND completed_source.task_id=` + alias + `.source_id AND completed_source.status='done'
+ AND completed_source.attempts>0 AND TRIM(completed_source.result_ref)<>''
+ AND NOT (completed_source.task_id LIKE 'requirement/REQ-%' AND EXISTS (
+ SELECT 1 FROM requirements incomplete_requirement WHERE 'requirement/'||incomplete_requirement.req_id=completed_source.task_id
+ AND incomplete_requirement.status NOT IN ('satisfied','waived')))))`
+}
+
 // ClaimWakeEvent leases the oldest due event. Claiming increments the bounded
 // attempt counter; delivery acknowledgment must later point to a real store
 // action through AckWakeEvent.
@@ -72,7 +85,7 @@ func (s *SQLiteStore) claimWakeEventFor(agent string, ttl time.Duration) (*WakeE
 		return nil, err
 	}
 	var id string
-	query := `SELECT event_id FROM wake_events WHERE status='pending' AND (next_attempt='' OR next_attempt<=?)`
+	query := `SELECT event_id FROM wake_events WHERE status='pending' AND (next_attempt='' OR next_attempt<=?) AND NOT ` + completedTaskWakePredicate("wake_events")
 	args := []any{now.Format(time.RFC3339)}
 	if agent != "" {
 		query += ` AND agent=?`
@@ -87,7 +100,7 @@ func (s *SQLiteStore) claimWakeEventFor(agent string, ttl time.Duration) (*WakeE
 	}
 	expires := now.Add(ttl).Format(time.RFC3339)
 	res, err := tx.Exec(`UPDATE wake_events SET status='leased',attempts=attempts+1,lease_token=?,lease_expires=?,updated=?
-		WHERE event_id=? AND status='pending';`, token, expires, now.Format(time.RFC3339), id)
+		WHERE event_id=? AND status='pending' AND NOT `+completedTaskWakePredicate("wake_events")+`;`, token, expires, now.Format(time.RFC3339), id)
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +207,7 @@ func expireWakeLeasesTx(tx *txHandle, now time.Time, agent string) (sql.Result, 
 		next_attempt=CASE WHEN attempts>=? THEN '' ELSE ? END,
 		last_error='wake lease expired without a store acknowledgment',
 		lease_token='',lease_expires='',updated=?
-		WHERE status='leased' AND lease_expires<>'' AND lease_expires<=?`
+		WHERE status='leased' AND lease_expires<>'' AND lease_expires<=? AND NOT ` + completedTaskWakePredicate("wake_events")
 	args := []any{MaxWakeAttempts, MaxWakeAttempts, nowText, nowText, nowText}
 	if strings.TrimSpace(agent) != "" {
 		query += ` AND agent=?`
@@ -213,7 +226,7 @@ func (s *SQLiteStore) FailWakeEvent(eventID, token, failure string) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 	var attempts int
-	err = tx.QueryRow(`SELECT attempts FROM wake_events WHERE event_id=? AND status='leased' AND lease_token=? AND lease_expires>?;`,
+	err = tx.QueryRow(`SELECT attempts FROM wake_events WHERE event_id=? AND status='leased' AND lease_token=? AND lease_expires>? AND NOT `+completedTaskWakePredicate("wake_events")+`;`,
 		eventID, token, now.Format(time.RFC3339)).Scan(&attempts)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrLeaseInvalid
@@ -225,10 +238,13 @@ func (s *SQLiteStore) FailWakeEvent(eventID, token, failure string) error {
 	if attempts >= MaxWakeAttempts {
 		status, next = "terminal_failed", ""
 	}
-	_, err = tx.Exec(`UPDATE wake_events SET status=?,next_attempt=?,last_error=?,lease_token='',lease_expires='',updated=? WHERE event_id=?;`,
-		status, next, strings.TrimSpace(failure), now.Format(time.RFC3339), eventID)
+	res, err := tx.Exec(`UPDATE wake_events SET status=?,next_attempt=?,last_error=?,lease_token='',lease_expires='',updated=? WHERE event_id=? AND status='leased' AND lease_token=? AND NOT `+completedTaskWakePredicate("wake_events")+`;`,
+		status, next, strings.TrimSpace(failure), now.Format(time.RFC3339), eventID, token)
 	if err != nil {
 		return err
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return ErrLeaseInvalid
 	}
 	return tx.Commit()
 }

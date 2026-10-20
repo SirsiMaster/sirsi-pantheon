@@ -124,6 +124,17 @@ func (s *SQLiteStore) claimTask(agent, exactTaskID, worker, threadID string, ttl
 	if n, _ := res.RowsAffected(); n != 1 {
 		return nil, ErrNoClaimableTask
 	}
+	// Direct authenticated claims do not require a supervisor wake lease. The
+	// successful executable fence is delivery evidence for this exact source.
+	// Keep it in this transaction so an ACK failure rolls the task claim back;
+	// never rewrite another source, an existing ACK or terminal failure history.
+	if _, err = tx.Exec(`UPDATE wake_events SET status='acked',ack_ref=?,
+		lease_token='',lease_expires='',updated=?
+		WHERE agent=? AND source_kind='ledger_task' AND source_id=?
+		AND status IN ('pending','leased');`,
+		"task-lease:"+agent+":"+taskID+":"+token, now.Format(time.RFC3339), agent, taskID); err != nil {
+		return nil, fmt.Errorf("routerstore: acknowledge exact task wake: %w", err)
+	}
 	var attempt int
 	if err = tx.QueryRow(`SELECT attempts FROM tasks WHERE agent=? AND task_id=?;`, agent, taskID).Scan(&attempt); err != nil {
 		return nil, fmt.Errorf("routerstore: read task attempt: %w", err)
