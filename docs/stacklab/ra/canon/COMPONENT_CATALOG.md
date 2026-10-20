@@ -20,6 +20,8 @@
 | A2A/MCP | `cmd/sirsi-router-mcp` | read/mutate façade over dispatch | package tests |
 | Horus | `internal/horus`, dashboard/fleet | derived observation only | source-bound/live per host |
 | Stack Lab wing | `docs/stacklab/ra/canon` | docs and receipts | this release |
+| Release consumer preservation | `scripts/release-train.sh`, `scripts/release-consumer-preservation.test.sh` | no forced controller restarts or automatic measurement-window override; install is not loaded-image proof | exact former-source RED/current guard GREEN, admitted terminal3ec1e715; live adoption remains separate |
+| Relay bounded discovery | `internal/routerstore/spool.go`, `spool_test.go` | every discovery pass waits existing cancellable poll; lane forwards remain independent | deterministic continuous-wake RED31e5a5e, repeated native race GREENdbfb0713; protected PostgreSQL follow-up pending |
 | Release/rollback | `scripts/release-train.sh`, recipe | immutable hash/readback | candidate contract |
 
 Logical cloud identity is specified in [CLOUD_EXECUTOR_IDENTITY.md](CLOUD_EXECUTOR_IDENTITY.md).
