@@ -43,6 +43,62 @@ class Backend:
 
 class RegistryDeadlineTests(unittest.TestCase):
 
+    def test_explicit_regime_defaults_and_cpu_floor_separation(self):
+        self.assertEqual(runner.execution_regime(), 'loaded')
+        self.assertEqual(runner.execution_regime(1), 'build')
+        self.assertEqual(runner.execution_regime(None, 'quiet'), 'quiet')
+        for cores, regime in [(1, 'quiet'), (1, 'loaded'), (None, 'build'), (None, 'unknown')]:
+            with self.subTest(cores=cores, regime=regime), self.assertRaises(runner.Refused):
+                runner.execution_regime(cores, regime)
+
+    def test_native_reserve_sends_real_quiet_request_not_loaded_label(self):
+        native = runner.Native()
+        native.cpu_cores = None
+        native.requested_regime = 'quiet'
+        with mock.patch.object(native, 'call', return_value={}) as call:
+            native.reserve('m5', 'lane', 'work')
+        argv = call.call_args.args
+        self.assertEqual(argv[argv.index('--regime') + 1], 'quiet')
+        self.assertEqual(argv[argv.index('--exempt-pid') + 1], str(os.getpid()))
+
+    def test_quiet_never_borrows_existing_loaded_or_relabels_reply(self):
+        for reply_regime, share in [('quiet', 'full'), ('loaded', 'full'), ('quiet', 'floor')]:
+            with self.subTest(regime=reply_regime, share=share):
+                class QuietBackend(Backend):
+                    requested_regime = 'quiet'
+                    def reserve(self, resource, agent, work):
+                        self.reserve_calls += 1
+                        self.row = admission(id='fresh-quiet', regime=reply_regime, share=share, cores=4)
+                        return dict(granted=True, reservation=self.row)
+                backend = QuietBackend(admission(id='old-loaded', regime='loaded'))
+                record = {}
+                with mock.patch.object(runner.subprocess, 'Popen', wraps=runner.subprocess.Popen) as spawn:
+                    code = runner.supervise(['/usr/bin/true'], 'm5', 'lane', 'thread', 'work', 10, backend, record)
+                self.assertEqual(backend.reserve_calls, 1)
+                self.assertEqual(backend.released, ['fresh-quiet'])
+                self.assertEqual(record['requested_regime'], 'quiet')
+                if reply_regime == 'quiet' and share == 'full':
+                    self.assertEqual(code, 0)
+                    self.assertEqual(record['admission'], 'fresh-quiet')
+                    self.assertFalse(record['borrowed'])
+                    spawn.assert_called_once()
+                else:
+                    self.assertEqual(code, 78)
+                    spawn.assert_not_called()
+
+    def test_quiet_renewal_cannot_change_regime(self):
+        row = admission(regime='quiet')
+        lease = runner.ProvenLease(row, runner.time.monotonic(), 'm5', 'lane', 'work', None, row['id'])
+        with self.assertRaises(runner.Refused):
+            lease.check(dict(row, regime='loaded'))
+
+    def test_quiet_cli_rejects_missing_executor_before_any_launch(self):
+        result = subprocess.run([sys.executable, str(Path(runner.__file__)), '--agent', 'lane',
+                                 '--work', 'work', '--regime', 'quiet', '--', '/usr/bin/true'],
+                                capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('Quiet qualification requires --register-executor', result.stderr)
+
     def test_execution_fact_is_private_exact_and_passed_only_to_owned_child(self):
         with tempfile.TemporaryDirectory() as directory:
             backend = Backend(admission())

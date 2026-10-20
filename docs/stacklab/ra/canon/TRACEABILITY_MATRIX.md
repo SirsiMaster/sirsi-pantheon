@@ -2,6 +2,7 @@
 
 | Requirement | Source | Evidence in this release | State |
 |---|---|---|---|
+| Quiet is requested and confirmed, never a label added to loaded samples | native runner explicit regime plus fresh reservation/lease scope | wrong-regime/floor and missing-executor refusal; no borrowing and renewal-scope fixtures | authored source; full runner/CI admission and installed proof remain separate |
 | One production authority | `routerstore.Resolve`, `dispatch.Open` | explicit-local-fallback negative control | verified locally |
 | Runnable predicate joins three sources | `internal/routerstore/runnable.go` | package tests | source-bound |
 | Claims are fenced/idempotent | `tasklease.go`, `facade.go` | lease/expiry/duplicate tests | source-bound |
