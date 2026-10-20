@@ -6,6 +6,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/desktopcustody"
+
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 )
 
@@ -14,6 +16,7 @@ import (
 // backend and an HTTP client behind the same interface. No production code
 // may depend on the concrete type.
 type Store interface {
+	DesktopSleep(context.Context, desktopcustody.CustodyCall) (desktopcustody.CustodyState, error)
 	CompareAndSwapState(key, expected string, exists bool, value string) (bool, error)
 	MaatReserve(req schedule.Reservation, queue bool) (schedule.ReserveResult, error)
 	MaatMutate(action, id, value string) (*schedule.Reservation, error)

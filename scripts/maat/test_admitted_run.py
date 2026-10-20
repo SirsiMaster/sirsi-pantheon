@@ -42,6 +42,27 @@ class Backend:
 
 
 class RegistryDeadlineTests(unittest.TestCase):
+
+    def test_execution_fact_is_private_exact_and_passed_only_to_owned_child(self):
+        with tempfile.TemporaryDirectory() as directory:
+            backend = Backend(admission())
+            backend.execution_receipt_root = Path(directory)
+            command = [sys.executable, '-c',
+                       'import os,json; p=os.environ["SIRSI_MAAT_EXECUTION_RECEIPT"]; '
+                       'r=json.load(open(p)); assert r["supervisor_pid"]==os.getppid(); '
+                       'assert r["work"]=="work"; assert os.stat(p).st_mode & 0o777 == 0o600']
+            with mock.patch.object(runner, 'process_identity', return_value=(1, 'actual-parent-birth')):
+                code = runner.supervise(command, 'm5', 'lane', 'thread', 'work', 10, backend, {})
+            self.assertEqual(code, 0)
+            files = list(Path(directory).glob('execution-*.json'))
+            self.assertEqual(len(files), 1)
+            data = json.loads(files[0].read_text())
+            self.assertEqual(data['admission_id'], 'fixture-id')
+            self.assertEqual(data['thread_id'], 'thread')
+            self.assertEqual(data['budget_seconds'], 10)
+            self.assertEqual(data['supervisor_start'], 'actual-parent-birth')
+            self.assertEqual(data['argv_sha256'], runner.hashlib.sha256(b'\0'.join(os.fsencode(x) for x in command)).hexdigest())
+            self.assertEqual(files[0].read_text(), json.dumps(data, sort_keys=True, separators=(',', ':')))
     def test_partial_registration_prune_conflict_uses_exact_readback_not_reregister(self):
         native = runner.Native()
         calls = []

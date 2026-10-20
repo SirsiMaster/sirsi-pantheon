@@ -1,0 +1,86 @@
+{
+  "captured_at": "2026-10-20T06:34:50.376274+00:00",
+  "artifacts": [
+    {
+      "artifact": "/private/tmp/sha-desktop-custody-source-packet-20261020.log",
+      "sha256": "23e8b5832260d583cf6e7b12c0a3881c2ab8a858bf76eb61de34be0aec30f973",
+      "scope": "retained native-host source test receipt; not physical power evidence"
+    },
+    {
+      "artifact": "/private/tmp/sha-desktop-custody-qualified-source-20261020.log",
+      "sha256": "dd48325e45a2ad5daa0e099bb79d40fbfed97b2c908b40ed5c96846356881c8c",
+      "scope": "retained native-host source test receipt; not physical power evidence"
+    },
+    {
+      "artifact": "/private/tmp/sha-desktop-custody-lsof-negative-control-20261020.log",
+      "sha256": "a5fa1e41b353c1154982dea9204b6017c63492490c16cf63bdf86f11ecf8cacf",
+      "scope": "retained native-host source test receipt; not physical power evidence"
+    },
+    {
+      "artifact": "/private/tmp/sha-desktop-custody-native-return-tests-20261020.log",
+      "sha256": "0d23836817a530e6396ea114127d3502166aee29a766986247f3973250b36e22",
+      "scope": "retained native-host source test receipt; not physical power evidence"
+    },
+    {
+      "artifact": "/private/tmp/sha-desktop-custody-real-budget-tests-20261020.log",
+      "sha256": "920771ad8fdc0ebd74ea31c8e0fdb59fd86129c80ac9807c7b84c25c9c78ad62",
+      "scope": "retained native-host source test receipt; not physical power evidence"
+    },
+    {
+      "artifact": "/private/tmp/sha-desktop-custody-source-lint-20261020.log",
+      "sha256": "871f3d2731c138c923b88fa62964f7cfa9e57dd80dce130483612566f7b6f290",
+      "scope": "retained native-host source test receipt; not physical power evidence"
+    },
+    {
+      "artifact": "/private/tmp/sha-desktop-custody-publish-gate-20261020.log",
+      "sha256": "92bd093a403cbbf9fc9f0bb4aeff323dfbb9f95efe2aab28a0e8646ab07c3916",
+      "normal_maat_terminal": "2fa7a192d8144966af7461764a8f6b77",
+      "result": "PASS: affected-source lint, full custody/router race, CLI tests/build, 72 supervisor regressions",
+      "scope": "source only, no native power"
+    },
+    {
+      "artifact": "/private/tmp/sha-desktop-custody-active-peer-review-20261020.log",
+      "sha256": "b09bd823e35783f743f533edac6b3765b621c46d04ceeca87632df59bb1ebe6a",
+      "normal_maat_terminal": "43c6173c82484e99a171446983fe3fba",
+      "result": "FAIL: test fixture status mutation did not apply; retained, corrected in next run",
+      "scope": "independent review correction source tests only; no native power"
+    },
+    {
+      "artifact": "/private/tmp/sha-desktop-custody-active-peer-fixed-20261020.log",
+      "sha256": "c1968d04d235d8d509e1d831071db53d169875f369f8f01b7cb6195e791a392a",
+      "normal_maat_terminal": "fa23dc1d95f34f3f965bc11078a47b96",
+      "result": "PASS: custody routerstore race tests12.430s and routerstore vet",
+      "scope": "independent review correction source tests only; no native power"
+    },
+    {
+      "artifact": "/private/tmp/sha-desktop-custody-preinvoke-abort-20261020.log",
+      "sha256": "db1a893d583ead7138bb18fdff7fd640803df7b0f099b72f9131446261aa3f0f",
+      "normal_maat_terminal": "6298a68c13f94737a083e2d566020691",
+      "result": "FAIL: missing private test journal directory; retained",
+      "scope": "canonical phase/source-only correction; no native power"
+    },
+    {
+      "artifact": "/private/tmp/sha-desktop-custody-preinvoke-joined-20261020.log",
+      "sha256": "f2dce7ff2797920de65621366a5486014080cd60e34508f5ff8bfb9576560994",
+      "normal_maat_terminal": "e04d6bc6bdb34fe6b3696848dfac255b",
+      "result": "PASS: joined custody tests, vet and CLI tests before expanded native phase guards",
+      "scope": "canonical phase/source-only correction; no native power"
+    },
+    {
+      "artifact": "/private/tmp/sha-desktop-custody-preinvoke-final-gate-20261020.log",
+      "sha256": "57087878190b92f5c4cd59e98899156aca38fa7717decdb04579630a1edebcc2",
+      "normal_maat_terminal": "e21acdcccc4c45a1acdc1aa1e3b7925b",
+      "result": "FAIL: native no-consume negative; lint0/routerstore147.636s passed but whole gate failed, retained",
+      "scope": "canonical phase/source-only correction; no native power"
+    },
+    {
+      "artifact": "/private/tmp/sha-desktop-custody-preinvoke-qualified-gate-20261020.log",
+      "sha256": "1a964119c40a6b7177053690c14f528aa8d5e4765a5dc1ba11ba51712b4ec487",
+      "normal_maat_terminal": "0417e04b2a1848bc88a020522aad83f8",
+      "result": "PASS: affected lint0/full custody-routerstore race1.204s/151.103s/vet/CLI tests4.234s/full CLI build/diff check",
+      "scope": "pre-native recovery source qualification only; fake power, no production delegation or physical offline proof"
+    }
+  ],
+  "native_power_performed": false,
+  "production_delegation_created": false
+}

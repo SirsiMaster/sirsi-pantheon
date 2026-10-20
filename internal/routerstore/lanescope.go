@@ -30,6 +30,9 @@ var noItem = -1
 
 // laneAPI is the complete set of methods a scoped token may call. Everything else is refused.
 var laneAPI = map[string]laneRule{
+	// Exact finite role/session/token binding is additionally mandatory inside
+	// DesktopSleep. This entry grants no role and exposes no management method.
+	"DesktopSleep": {item: noItem},
 	// identity and registration
 	"MintSession":          {agents: []int{1}, item: noItem},
 	"MintSessionForThread": {agents: []int{1}, item: noItem},

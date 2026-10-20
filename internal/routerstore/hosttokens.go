@@ -129,8 +129,8 @@ func (s *SQLiteStore) tokenAgents(tokenID string) ([]string, error) {
 // LookupHostToken resolves a presented plaintext token to its record.
 func (s *SQLiteStore) LookupHostToken(plaintext string) (HostToken, error) {
 	var t HostToken
-	err := s.db.QueryRow(`SELECT token_id,host,label,created,revoked FROM host_tokens WHERE token_hash=?`, hashToken(plaintext)).
-		Scan(&t.ID, &t.Host, &t.Label, &t.Created, &t.Revoked)
+	err := s.db.QueryRow(`SELECT token_id,host,label,created,revoked,machine_id FROM host_tokens WHERE token_hash=?`, hashToken(plaintext)).
+		Scan(&t.ID, &t.Host, &t.Label, &t.Created, &t.Revoked, &t.MachineID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return HostToken{}, ErrTokenUnknown
 	}
