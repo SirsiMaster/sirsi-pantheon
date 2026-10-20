@@ -1,6 +1,25 @@
 # Fabric reconciliation census
 
-## Explicit quiet qualification (source successor, not installed)
+## Ordinary work shares machines (owner correction, Oct20)
+
+Registration, heartbeats, mailbox work and source coordination do not need a
+compute reservation. Ordinary launcher jobs now default to `build`, with a
+cooperative one-CPU mask (`--cpu-cores N` changes that budget). They can consume
+a sufficient build floor beside another lane instead of demanding its full
+machine. This mask is cooperative, not an OS CPU limit. The existing wire
+regimes and share values are unchanged; no server-only protocol fence is added.
+
+GPU/model launchers must explicitly request `--regime loaded`; isolated
+measurements must explicitly request `--regime quiet --register-executor`.
+Neither mode may borrow or relabel another job's reservation. Existing running
+jobs and their reservations are not modified by this default change. Actual
+memory pressure and lease/executor identity checks remain in force.
+
+The raw CLI reserve default is also `build` in this source. An older installed
+CLI may still default to quiet; use an explicit regime until its normal signed
+update. Source changes are not proof of fleet adoption.
+
+## Explicit quiet qualification
 
 The native launcher accepts `--regime quiet` only together with
 `--register-executor`. It asks the canonical scheduler for a new reservation
@@ -8,7 +27,7 @@ and refuses unless that exact executor receives a fresh full-share **quiet**
 grant. A same-lane loaded grant is not borrowed or renamed; a CPU build floor
 cannot authorize quiet work. The exact confirmed regime remains bound during
 renewal and original supervisor deadline/cleanup rules still apply. Ordinary
-GPU launches default to loaded; explicit CPU masks remain build-only.
+GPU launches explicitly request loaded; CPU masks remain build-only.
 
 This is a necessary interface correction, not a clean-host assertion. Before
 publishing a quiet result, qualify actual competing CI/payload admission,
@@ -135,7 +154,8 @@ For example, from an already authenticated Studio shell:
 ```
 
 The destination's actual m1/m5/studio resource still requires an exact fresh
-full-share reservation. Another holder/work, an expired or unknown reservation,
+reservation (a sufficient build floor is valid for ordinary CPU work).
+Another holder/work, an expired or unknown reservation,
 wrong runtime, malformed registration, or unavailable canonical router refuses.
 No home-machine affinity is imposed. This authenticates the destination execution
 instance; it is NOT a portable assertion that a foreign origin PID is alive.
