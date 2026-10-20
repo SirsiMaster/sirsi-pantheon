@@ -1249,6 +1249,9 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 	}
 
 	// Honest, self-reported lane state published on every heartbeat (router ping).
+	if err := checkProviderQuotaStorage(agentID); err != nil {
+		return fmt.Errorf("provider quota persistence unavailable; dispatch held: %w", err)
+	}
 	lane := LaneState{ConsumerDeclared: capable}
 	// launchd keeps the process image loaded even after the installed pathname
 	// changes. Observe that stable name and yield only at a consumer boundary;
@@ -1346,6 +1349,15 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 		// Returning lets the existing service restart policy register a fresh
 		// runtime; no consumer is signaled. Transient failures instead hold new
 		// dispatch for this tick while an existing detached consumer keeps running.
+		quotaBlocked, quotaErr := providerQuotaBlocked(agentID)
+		if quotaErr != nil {
+			return fmt.Errorf("read durable provider quota hold: %w", quotaErr)
+		}
+		if quotaBlocked {
+			lane.LastOutcome = OutcomeProviderQuota
+		} else if lane.LastOutcome == OutcomeProviderQuota {
+			lane.LastOutcome = OutcomeNoneYet
+		}
 		lane.Hold, lane.HoldUntil = currentHold(routerRoot, agentID, fruitless, nextDispatchAllowed)
 		if _, herr := Heartbeat(routerRoot, thr.ThreadID, HeartbeatUpdate{
 			Status: status, LastError: &lastError, Lane: &lane,
@@ -1452,11 +1464,21 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 			if lerr == nil {
 				run.observe(items, tload) // an action landed between the last tick and exit
 			}
+			providerBlocked, providerErr := observeProviderQuotaExit(agentID, tailText, run.err)
+			if providerErr != nil {
+				lane.LastOutcome, lane.LastOutcomeAt, lane.LastDetail = OutcomeProviderQuota, time.Now().UTC(), "provider refused work; durable quota hold write failed: "+providerErr.Error()
+				_, _ = Heartbeat(routerRoot, thr.ThreadID, HeartbeatUpdate{Status: ThreadStatusBlocked, Lane: &lane})
+				return fmt.Errorf("persist provider quota hold: %w", providerErr)
+			}
+			quotaBlocked = quotaBlocked || providerBlocked
 			if run.acted || madeProgress(run.depthAtDispatch, depth) {
 				fruitless = 0
 				lane.LastOutcome, lane.LastOutcomeAt, lane.LastProgressAt, lane.LastDetail = OutcomeOK, time.Now().UTC(), time.Now().UTC(), ""
+				if providerBlocked {
+					lane.LastOutcome, lane.LastDetail = OutcomeProviderQuota, strings.TrimSpace(tailText)
+				}
 			} else {
-				switch k := KnownFailure(tailText); {
+				switch k := knownExitedFailure(tailText, run.err); {
 				case k != "":
 					lane.LastOutcome = k
 				case run.err != nil:
@@ -1493,7 +1515,7 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 					Status: ThreadStatusBlocked, LastError: &msg,
 				})
 			}
-		} else if consumer != nil && !consumer.Resident && lerr == nil && depth > 0 && !run.running() &&
+		} else if !quotaBlocked && consumer != nil && !consumer.Resident && lerr == nil && depth > 0 && !run.running() &&
 			time.Now().After(nextDispatchAllowed) &&
 			!fabricDispatchQuarantined(agentID, depth) && !fabricDispatchOverloaded(agentID, depth) &&
 			!measurementWindowOpen(agentID, depth) && !attendedSessionOwnsInbox(routerRoot, agentID, depth) &&
