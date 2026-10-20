@@ -78,16 +78,16 @@ func TestRun_RoutesOnceAndDedups(t *testing.T) {
 	if err := Run(root, &buf); err != nil {
 		t.Fatalf("first Run: %v", err)
 	}
-	first := openCount(t, root, "claude-pantheon")
+	first := openCount(t, root, "codex-pantheon")
 	if first != 1 {
-		t.Fatalf("first Run routed %d items to claude-pantheon, want exactly 1\n%s", first, buf.String())
+		t.Fatalf("first Run routed %d items to codex-pantheon, want exactly 1\n%s", first, buf.String())
 	}
 
 	buf.Reset()
 	if err := Run(root, &buf); err != nil {
 		t.Fatalf("second Run: %v", err)
 	}
-	if second := openCount(t, root, "claude-pantheon"); second != 1 {
+	if second := openCount(t, root, "codex-pantheon"); second != 1 {
 		t.Errorf("second Run left %d open items, want 1 (dedup failed)\n%s", second, buf.String())
 	}
 	if !strings.Contains(buf.String(), "skip") {
@@ -274,7 +274,7 @@ func writeLivenessTestAgents(t *testing.T, root string) {
 		"agents": {
 			"horus": {"id":"horus","type":"service","repo":"/tmp","workstream":"pantheon","wake":{"mechanism":"none"}},
 			"owner": {"id":"owner","type":"human","repo":"/tmp","workstream":"portfolio","wake":{"mechanism":"owner-surface"}},
-			"claude-pantheon": {"id":"claude-pantheon","type":"claude","cwd":"/tmp","workstream":"pantheon","wake":{"mechanism":"launchagent"}}
+			"codex-pantheon": {"id":"codex-pantheon","type":"codex","cwd":"/tmp","workstream":"pantheon","wake":{"mechanism":"launchagent"}}
 		}
 	}`
 	if err := os.WriteFile(filepath.Join(root, "agents.json"), []byte(registry), 0o644); err != nil {
@@ -458,13 +458,13 @@ func TestProbeGemmaState_MLXFloor_FiresOnSmallAllocation(t *testing.T) {
 }
 
 // TestRecipientFor pins the ownership routing: machine-health conditions go to
-// claude-pantheon (which remediates them under A32/ADR-040), unclassified
+// codex-pantheon (which remediates them under A32/ADR-040), unclassified
 // conditions fall through to the owner so nothing is silently misrouted.
 func TestRecipientFor(t *testing.T) {
 	pantheon := []string{"gemma-broker", "memory-death", "session-leak", "menubar"}
 	for _, c := range pantheon {
-		if got := recipientFor(c); got != "claude-pantheon" {
-			t.Errorf("recipientFor(%q) = %q, want claude-pantheon", c, got)
+		if got := recipientFor(c); got != "codex-pantheon" {
+			t.Errorf("recipientFor(%q) = %q, want codex-pantheon", c, got)
 		}
 	}
 	if got := recipientFor("some-future-owner-only-condition"); got != "owner" {
@@ -491,7 +491,7 @@ func TestRun_DedupsUnderStoreCutover(t *testing.T) {
 	if err := Run(root, &buf); err != nil {
 		t.Fatalf("first Run: %v", err)
 	}
-	if n := storeOpenCount(t, root, "claude-pantheon"); n != 1 {
+	if n := storeOpenCount(t, root, "codex-pantheon"); n != 1 {
 		t.Fatalf("first Run left %d open store items, want 1\n%s", n, buf.String())
 	}
 	// Post-cutover the store row IS the record — no audit file is written.
@@ -505,7 +505,7 @@ func TestRun_DedupsUnderStoreCutover(t *testing.T) {
 	if err := Run(root, &buf); err != nil {
 		t.Fatalf("second Run: %v", err)
 	}
-	if n := storeOpenCount(t, root, "claude-pantheon"); n != 1 {
+	if n := storeOpenCount(t, root, "codex-pantheon"); n != 1 {
 		t.Errorf("second Run left %d open store items, want 1 (dedup blind to its own send)\n%s", n, buf.String())
 	}
 	if !strings.Contains(buf.String(), "skip") {
