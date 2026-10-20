@@ -8,6 +8,9 @@ T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/docs/stacklab/pantheon-pt/canon"
 printf '# Changelog\n\nintro line\n\n## [Unreleased] — one\n\n- **alpha entry** first\n\n### Fixed\n- beta entry second\n\n## [Unreleased] — two\n\n- **gamma entry** third\n- delta already shipped in the old release\n\n## [Unreleased] — three\n\n- **alpha entry** first\n\n## [1.0.0] — 2026-01-01\n\n- delta already shipped in the old release\n' > "$T/CHANGELOG.md"
 printf '# canon\n\n## 2026-01-01 — v1.0.0 release candidate\n\n- old\n' > "$T/docs/stacklab/pantheon-pt/canon/CHANGELOG.md"
+printf '%s\n' '' '## [Unreleased] — complete canon notes' '' \
+  '- A complete release note without an emphasized title must preserve every word beyond the old ninety-character boundary: retained-tail-121.' \
+  '  Preserve this continuation sentence too: continuation-tail-121.' >> "$T/CHANGELOG.md"
 (cd "$T" && python3 "$SCRIPT" 2.0.0 >/dev/null)
 C="$T/CHANGELOG.md"
 [ "$(grep -c '^## \[Unreleased\]' "$C")" = 1 ] || { echo "FAIL: want exactly one [Unreleased]"; exit 1; }
@@ -19,4 +22,6 @@ sed -n '/^## \[Unreleased\]/,/^## \[2.0.0\]/p' "$C" | grep -q '^- ' && { echo "F
 sed -n '/^## \[1.0.0\]/,$p' "$C" | grep -q "delta already shipped" || { echo "FAIL: history edited"; exit 1; }
 [ "$(cat "$T/VERSION")" = "2.0.0" ] || { echo "FAIL: VERSION"; exit 1; }
 grep -q "v2.0.0 release candidate" "$T/docs/stacklab/pantheon-pt/canon/CHANGELOG.md" || { echo "FAIL: canon changelog"; exit 1; }
+grep -q 'retained-tail-121\.' "$T/docs/stacklab/pantheon-pt/canon/CHANGELOG.md" || { echo "FAIL: canon truncated a complete release note"; exit 1; }
+grep -q 'continuation-tail-121\.' "$T/docs/stacklab/pantheon-pt/canon/CHANGELOG.md" || { echo "FAIL: canon lost the release-note continuation"; exit 1; }
 echo "ok: release-prep cuts every Unreleased block"

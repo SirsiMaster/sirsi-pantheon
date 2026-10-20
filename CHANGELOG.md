@@ -25,6 +25,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 - Include the CLI's routerstore import so the registration command compiles;
   package-only router tests do not qualify the command entry point.
 
+- Preserve complete release notes and continuation lines in the Stack Lab
+  changelog instead of cutting ordinary entries off at ninety characters.
+
 ## [0.24.120] — 2026-10-19
 
 - Keep bounded Ma'at executor cleanup distinct from resident wake-observer protection. An inherited launchagent wake mechanism alone no longer makes a successful short-lived executor uncloseable; live resident observers with published lane state remain protected.
