@@ -116,7 +116,7 @@ func (s *SQLiteStore) ReconcileOperationalState(agent string, wakeRoutable bool)
 			EXISTS (SELECT 1 FROM items i WHERE i.to_agent=? AND i.status='open' AND `+actionableItemDependency("i")+`) OR
 			EXISTS (SELECT 1 FROM tasks t WHERE t.agent=? AND `+claimableTaskPredicate("t")+`) OR
 			EXISTS (SELECT 1 FROM requirements r WHERE r.owner=? AND r.status NOT IN ('satisfied','waived')) OR ?=0
-		) AND NOT EXISTS (SELECT 1 FROM wake_events w WHERE w.agent=? AND w.status IN ('pending','leased','terminal_failed'));`,
+		) AND NOT EXISTS (SELECT 1 FROM wake_events w WHERE w.agent=? AND (w.status='terminal_failed' OR (w.status IN ('pending','leased') AND NOT `+completedTaskWakePredicate("w")+`)));`,
 		agent, now.Format(time.RFC3339Nano), agent, agent, now.Format(time.RFC3339), now.Format(time.RFC3339),
 		agent, agent, agent, audited, agent)
 	if err != nil {

@@ -50,8 +50,13 @@ func TestReconcileExpiresOrphanTaskAndWakeLeases(t *testing.T) {
 	if _, ifErr4 := s.ClaimNextTask("codex-home", "worker", "thread", time.Minute); ifErr4 != nil {
 		t.Fatal(ifErr4)
 	}
-	if _, ifErr5 := s.ClaimWakeEvent(time.Minute); ifErr5 != nil {
-		t.Fatal(ifErr5)
+	// The real claim now acknowledges T's source. A wake orphan must belong
+	// to different, still-unclaimed work rather than pin the old missing-ACK bug.
+	if err := s.AddTask(Task{Agent: "codex-home", TaskID: "wake-only", Subject: "unclaimed wake work"}); err != nil {
+		t.Fatal(err)
+	}
+	if wake, err := s.ClaimWakeEvent(time.Minute); err != nil || wake.SourceID != "wake-only" {
+		t.Fatalf("independent wake orphan = %+v, %v", wake, err)
 	}
 	now = now.Add(2 * time.Minute)
 	report, err := s.ReconcileOperationalState("codex-home", true)

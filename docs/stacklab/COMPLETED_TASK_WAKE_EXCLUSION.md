@@ -1,0 +1,11 @@
+# Proven completed task source wakes are nonexecuting evidence
+
+Refs: ADR-061; DIRECT_TASK_CLAIM_WAKE_ACK.md; native983e8543 exact pending/DONE wake f2bb365ad9ab948f353d1019d2f191dc. This is the same-source follow-up to sealed57fa6d59, not a new permission or migration.
+
+The exact-claim fix prevents new missing ACKs. Old rows can still be pending or leased after their task completed. This extension does NOT backfill an ACK or reconstruct a token. A shared source-status predicate identifies exact same-agent ledger_task rows whose task is done, attempts>0 and result_ref is nonempty. An unmet requirement implementation task is not accepted as done. Missing/reopened/blocked/unproved/wrong-lane tasks and non-task source kinds are not excluded.
+
+ClaimWakeEventFor/ClaimWakeEvent ignore these proven completed sources, including a write-time recheck. Expiry processing leaves even expired leased rows untouched instead of retrying/deadlettering them. FailWakeEvent refuses such a source and rechecks before its write, preventing a previously leased adapter failure from mutating a now-completed source. ReconcileOperationalState disregards these pending/leased rows when deciding whether real remaining work needs a continuation. Terminal_failed rows retain their original reconciliation semantics/history. Live runnable work and valid source events remain unchanged.
+
+This is an explicit nonexecuting exclusion, not an ACK, delivery success, source result fabrication, timer expiry or readiness reset. Old rows retain status/attempts/lease/error/timestamps byte-for-byte. If a task is legitimately reopened, its source is eligible again; old lease expiry then uses the ordinary bounded path. The same SQL predicate and transaction adapter apply to SQLite/Postgres without DDL/grant changes.
+
+Tests reconstruct pre-fix residue only in disposable stores after actual fenced task completion, then check pending and expired-leased no-dispatch/no-expiry with exact row preservation; no failure after completion; continuation creation despite obsolete pending wake; and empty-result/no-attempt/reopened/wrong-lane/missing/unmet-requirement controls. Normal Go1.27.1 SQLite/Postgres/race qualification remains nativeSSA custody; cloudGo1.25 cannot compile main. No live row, service, budget, model, account or token changes were performed.

@@ -1,5 +1,7 @@
 # Direct task claims acknowledge exact durable source wakes
 
+Integration status: the same-source follow-up in [COMPLETED_TASK_WAKE_EXCLUSION.md](COMPLETED_TASK_WAKE_EXCLUSION.md) now adds typed nonexecuting exclusion for proven old DONE sources. The pre-fix debt section below records the original finding, not a claim that the combined candidate still dispatches completed work. Combined native focused race qualification passed three repetitions on 2026-10-20; protected CI and live rollout remain separate, unfinished evidence.
+
 Refs: ADR-061 durable delivery; Ra source obligation from native wake f2bb365ad9ab948f353d1019d2f191dc readback (task DONE but source wake pending).
 
 An authenticated direct ClaimTask/ClaimNextTask is a genuine executable store action. It does not require a prior supervisor ClaimWakeEvent. Existing task-claim triggers only acknowledge leased wakes; a direct claim can therefore complete real work while its source wake stays pending and ClassifyLane correctly refuses to use it as acknowledged completion evidence.
