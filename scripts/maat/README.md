@@ -6,7 +6,8 @@ The self-hosted release job is an execution placement, not implicitly M5.
 Its build/sign/notary payload runs through the checked-in `admitted-run.py`
 as a destination-native `codex-pantheon` executor, with a fresh maintained
 canonical CPU grant and a 1,500-second bound. Go and Swift compilation are
-explicitly limited to one job. A registration/admission refusal launches no
+cooperatively limited to one compiler job; this is not an OS CPU quota or
+security sandbox. A registration/admission refusal launches no
 build; terminal release or executor-close failure prevents publication. The
 existing rail-lock start hook is not admission. No signing credentials,
 runner services, firewall settings or foreign payloads are changed by this

@@ -37,4 +37,8 @@ require '\-\-register-executor --work' "$RELEASE_WORKFLOW" "native_release_execu
 require '\-\-cpu-cores 1 --timeout 1500' "$RELEASE_WORKFLOW" "native_release_cpu_bound"
 reject 'macapp/\.build/release/SirsiMenubar.*fallback|go build.*fallback' "$DMG_SCRIPT" "build_fallback"
 
+# Exercise negative controls as well as line-presence checks; this executes no
+# signing or resource workload and catches payloads moved outside supervision.
+PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/maat/test_release_admission.py"
+
 echo "menubar_release_contract accepted=true native_swift=required go_cli=required inventory=required signing=required"
