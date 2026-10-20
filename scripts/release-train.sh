@@ -2,7 +2,8 @@
 # release-train.sh <version> [--deploy-service] [--dry-run]
 # One verb for the release: prepare the changelog PR, wait for its single CI run,
 # merge, optionally deploy the router service (before clients ship a new Store
-# method), tag, wait for the publish, upgrade both Macs, restart every loop.
+# method), tag, wait for the publish, upgrade both Macs. Existing controllers
+# adopt the changed image only at their safe consumer boundary; never kill them.
 # Every gate is a hard stop (nothing proceeds on a failed, missing or stale result) and
 # the M1 must end on the released version. The M5 is best-effort: hostname, then LAN
 # address, never a gate, and the final line says what happened to it.
@@ -17,7 +18,7 @@ step() { echo "== $*"; }
 run()  { if [ "$DRY" = 1 ]; then echo "   (dry-run) $*"; else eval "$@"; fi; }
 die()  { echo "STOP: $*" >&2; ( cd "$ROOT" 2>/dev/null && printf '%s\n' "$*" | go run ./cmd/maat-advise --step release-train 2>/dev/null ) >&2 || true; exit 1; }
 
-step "plan"; echo "   prepare $VERSION on $B; CI; merge; deploy-service=$DEPLOY; tag v$VERSION; publish; upgrade M1+$M5_HOST; restart loops"
+step "plan"; echo "   prepare $VERSION on $B; CI; merge; deploy-service=$DEPLOY; tag v$VERSION; publish; upgrade M1+$M5_HOST; preserve consumers; audit image adoption separately"
 [ "$DRY" = 1 ] && { echo "dry-run complete"; exit 0; }
 
 cd "$ROOT" || die "no repo"
@@ -47,7 +48,7 @@ cd "$WT" || die "cd failed"
 bash "$WT/scripts/changelog-assemble.sh" || die "changelog assemble failed"
 python3 "$ROOT/scripts/release-prep-changelog.py" "$VERSION" || die "changelog prep failed (no new entries?)"
 git add -u -- changelog.d && git add VERSION CHANGELOG.md docs/stacklab/pantheon-pt/canon/CHANGELOG.md && git commit -qm "release: prepare Pantheon v$VERSION" || die "commit failed"
-MAAT_WINDOW_OVERRIDE=1 git push -q -u origin "$B" || die "push failed"
+git push -q -u origin "$B" || die "push failed"
 [ "$(git ls-remote --heads origin "$B" | cut -c1-40)" = "$(git rev-parse HEAD)" ] || die "remote head differs"
 gh pr create --base main --head "$B" --title "release: prepare Pantheon v$VERSION" --body "Release prep (changelog, VERSION, canon)." >/dev/null || die "pr create failed"
 sleep 15
@@ -68,7 +69,7 @@ if [ "$DEPLOY" = 1 ]; then
   sirsi router send --from ra --to claude-home --type decision --title "Router service deploy receipt: $REV (v$VERSION)" --instructions @"$RCPT" >/dev/null || die "deploy receipt not recorded"
 fi
 git fetch -q origin main; SHA="$(git rev-parse origin/main)"
-git tag -a "v$VERSION" "$SHA" -m "v$VERSION" && MAAT_WINDOW_OVERRIDE=1 git push -q origin "v$VERSION" || die "tag push failed"
+git tag -a "v$VERSION" "$SHA" -m "v$VERSION" && git push -q origin "v$VERSION" || die "tag push failed"
 sleep 20; RID="$(gh run list --workflow 'Release — Build & Publish' --branch "v$VERSION" --limit 1 --json databaseId -q '.[0].databaseId')"
 [ -n "$RID" ] || die "no release run found"
 while :; do s="$(gh run view "$RID" --json status,conclusion -q '.status+" "+.conclusion')"; case "$s" in "completed success") break;; completed*) die "release run: $s";; esac; sleep 10; done
@@ -79,10 +80,10 @@ sirsi version | grep -q "v$VERSION" || die "M1 not on v$VERSION"
 # hostname, then its LAN address; report what happened instead of claiming it, and exit 0.
 M5_STATUS="unreachable"
 for h in "$M5_HOST" "${M5_FALLBACK:-thekryptodragon@192.168.1.155}"; do
-  out="$(ssh -o BatchMode=yes -o ConnectTimeout=10 "$h" "export PATH=/opt/homebrew/bin:\$HOME/.local/bin:\$PATH; brew update -q >/dev/null 2>&1; brew upgrade --cask sirsimaster/tools/sirsi-pantheon >/dev/null 2>&1; sirsi version | head -1; U=\$(id -u); for l in \$(launchctl list | awk '{print \$3}' | grep '^ai.sirsi.router.wake\\.'); do launchctl kickstart -k gui/\$U/\$l >/dev/null; done" 2>/dev/null)" && {
-    if printf '%s' "$out" | grep -q "v$VERSION"; then M5_STATUS="upgraded to v$VERSION, loops restarted via $h"; else M5_STATUS="reached via $h but NOT on v$VERSION (brew has not caught up); loops restarted"; fi
+  out="$(ssh -o BatchMode=yes -o ConnectTimeout=10 "$h" "export PATH=/opt/homebrew/bin:\$HOME/.local/bin:\$PATH; brew update -q >/dev/null 2>&1; brew upgrade --cask sirsimaster/tools/sirsi-pantheon >/dev/null 2>&1; sirsi version | head -1" 2>/dev/null)" && {
+    if printf '%s' "$out" | grep -q "v$VERSION"; then M5_STATUS="installed v$VERSION via $h; loaded-image adoption remains unverified"; else M5_STATUS="reached via $h but NOT on v$VERSION (brew has not caught up)"; fi
     break; }
 done
-U="$(id -u)"; for l in $(launchctl list | awk '{print $3}' | grep '^ai.sirsi.router.wake\.'); do launchctl kickstart -k "gui/$U/$l" >/dev/null; done
-echo "RELEASED v$VERSION on the M1, loops restarted. M5: $M5_STATUS"
-case "$M5_STATUS" in unreachable) echo "WARN: M5 not reached. When it is back: ssh <m5> 'brew upgrade --cask sirsimaster/tools/sirsi-pantheon' then restart its wake loops (bootout+bootstrap if a plist changed)." >&2;; esac
+echo "RELEASED v$VERSION, installed on the M1. M5: $M5_STATUS"
+echo "Existing consumers were not signaled. Loaded-controller adoption and per-lane queue work require independent readback on every enrolled host; installation alone is not rollout completion."
+case "$M5_STATUS" in unreachable) echo "WARN: M5 not reached. Install through its managed lifecycle when reachable; preserve active consumers and verify actual loaded-image adoption at a safe boundary." >&2;; esac

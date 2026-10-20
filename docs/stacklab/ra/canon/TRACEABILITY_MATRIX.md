@@ -18,6 +18,7 @@
 | M1/M5 fleet parity | relay/client/service | current fresh cross-host proof | partial |
 | Fresh third-machine join | token/env/register/claim/close | hermetic rehearsal script | rehearsal pending |
 | Horus/CLI/MCP same read model | `routerboard`, `router-mcp`, Horus | source + package tests | source-bound |
+| Preserve active consumers during release | `scripts/release-train.sh`, `scripts/release-consumer-preservation.test.sh`, `docs/stacklab/RELEASE_CONSUMER_PRESERVATION.md` | exact former-source RED/current GREEN under3ec1e715; negative controls run hosted CI | source tested; per-host loaded-image adoption still independently required |
 | Rollback/revocation | deploy/cutover scripts | rollback fixture; fresh cloud rehearsal pending | partial |
 | Commercial product closure | commercialization gate | pilot/platform-foundation classification | open |
 | Scoped cloud logical host survives ephemeral OS hostnames | `routerstore.ThreadOwnerHost`, `NewRemoteStore`, thread registration/save | exact120 baseline403, corrected registration/heartbeat/claim/completion/close and foreign-host/lane refusal; native two-package race PASS | client candidate only; private environment readiness and M5-off proof remain open |
