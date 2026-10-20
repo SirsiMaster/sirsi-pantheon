@@ -59,6 +59,32 @@ func TestRemoteRoundTripsAClaimLifecycle(t *testing.T) {
 	}
 }
 
+func TestRemoteClaimItemSelectsOnlyItsNamedRecipientWork(t *testing.T) {
+	backend, rs := remoteHarness(t)
+	older, err := rs.Send("sender", "gemma-pantheon", "older", "review", "older inbox work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := rs.Send("sender", "gemma-pantheon", "target", "review", "bounded qualification")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rs.Send("sender", "other-agent", "foreign", "review", "not visible"); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := rs.ClaimItem("gemma-pantheon", target, time.Minute)
+	if err != nil || lease == nil || lease.ItemID != target {
+		t.Fatalf("ClaimItem exact target: lease=%+v err=%v", lease, err)
+	}
+	old, err := backend.Get(older)
+	if err != nil || old.Status != StatusOpen {
+		t.Fatalf("older inbox work was claimed by exact selection: item=%+v err=%v", old, err)
+	}
+	if _, err := rs.ClaimItem("gemma-pantheon", "missing-or-foreign", time.Minute); !errors.Is(err, ErrNoWork) {
+		t.Fatalf("exact claim must not disclose or claim a foreign/missing item: %v", err)
+	}
+}
+
 func TestRemoteSentinelErrorsSurviveTheWire(t *testing.T) {
 	_, rs := remoteHarness(t)
 	if _, err := rs.ClaimNext("nobody", time.Minute); !errors.Is(err, ErrNoWork) {

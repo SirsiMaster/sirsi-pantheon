@@ -159,6 +159,91 @@ func (s *SQLiteStore) ClaimNext(agent string, ttl time.Duration) (*Lease, error)
 	return out, nil
 }
 
+// ClaimItem atomically claims the exact open item addressed to agent. It is a
+// selection fence for bounded workers: a caller may never substitute an older
+// inbox item merely because it sorts first. Eligibility remains identical to
+// ClaimNext, including expired-lease recovery, circuit breakers, budgets, and
+// dependency enforcement.
+func (s *SQLiteStore) ClaimItem(agent, id string, ttl time.Duration) (*Lease, error) {
+	var out *Lease
+	err := s.retryWrite(func() error {
+		l, err := s.claimItemOnce(agent, id, ttl)
+		if err != nil {
+			return err
+		}
+		out = l
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// claimItemOnce is one retriable ClaimItem transaction. Never call it outside
+// ClaimItem: readonly contention must repeat the complete decision.
+func (s *SQLiteStore) claimItemOnce(agent, id string, ttl time.Duration) (*Lease, error) {
+	if strings.TrimSpace(agent) == "" {
+		return nil, fmt.Errorf("routerstore: ClaimItem: agent is required")
+	}
+	if strings.TrimSpace(id) == "" {
+		return nil, fmt.Errorf("routerstore: ClaimItem: item id is required")
+	}
+	var err error
+	ttl, err = boundedLeaseTTL(ttl)
+	if err != nil {
+		return nil, err
+	}
+	token, err := newToken()
+	if err != nil {
+		return nil, err
+	}
+	now := s.clock()
+	tx, err := s.beginImmediate()
+	if err != nil {
+		return nil, fmt.Errorf("routerstore: ClaimItem: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err = s.reclaimExpiredTx(tx, now); err != nil {
+		return nil, err
+	}
+	if err = s.breakerGateTx(tx, now, "global", "target:"+agent); err != nil {
+		return nil, err
+	}
+	var active int
+	if err = tx.QueryRow(`SELECT COUNT(*) FROM items WHERE status IN ('claimed','working');`).Scan(&active); err != nil {
+		return nil, fmt.Errorf("routerstore: ClaimItem: count active: %w", err)
+	}
+	if active >= MaxTotalActive {
+		return nil, fmt.Errorf("%w: %d items already active (max %d)", ErrBudgetExceeded, active, MaxTotalActive)
+	}
+	var mine int
+	if err = tx.QueryRow(`SELECT COUNT(*) FROM items WHERE status IN ('claimed','working') AND claimed_by = ?;`, agent).Scan(&mine); err != nil {
+		return nil, fmt.Errorf("routerstore: ClaimItem: count agent claims: %w", err)
+	}
+	if mine >= MaxConcurrentClaimsPerTarget {
+		return nil, fmt.Errorf("%w: %s already holds %d leases (max %d)", ErrBudgetExceeded, agent, mine, MaxConcurrentClaimsPerTarget)
+	}
+	expires := now.Add(ttl)
+	res, err := tx.Exec(
+		`UPDATE items AS i SET status='claimed', claimed_by=?, lease_token=?, lease_expires=?, lease_updated=? WHERE id=? AND to_agent=? AND status='open' AND `+actionableItemDependency("i")+`;`,
+		agent, token, expires.Format(time.RFC3339), now.Format(time.RFC3339), id, agent,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("routerstore: ClaimItem: claim: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return nil, ErrNoWork
+	}
+	if err := bumpCounterTx(tx, "claims", 1); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("routerstore: ClaimItem: commit: %w", err)
+	}
+	return &Lease{ItemID: id, Agent: agent, Token: token, Expires: expires}, nil
+}
+
 // claimNextOnce is one attempt of ClaimNext. Never call it directly — callers
 // must go through ClaimNext so contention is retried.
 func (s *SQLiteStore) claimNextOnce(agent string, ttl time.Duration) (*Lease, error) {

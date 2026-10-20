@@ -11,6 +11,10 @@ import (
 // One selected profile is shared by all local inference consumers. Credentials
 // stay in the existing private file, never in profile JSON or diagnostic output.
 type LocalProfile struct {
+	// ID names an installed, reviewed profile. It is optional for ordinary
+	// text-only local inference; the structured Apollo worker requires the
+	// exact gemma-m5-apollo21 identity instead of guessing from a port.
+	ID                    string `json:"id,omitempty"`
 	Endpoint              string `json:"endpoint"`
 	Model                 string `json:"model"`
 	ContextTokens         int    `json:"context_tokens"`
@@ -18,6 +22,13 @@ type LocalProfile struct {
 	Streaming             *bool  `json:"streaming"`
 	AccessTokenFile       string `json:"access_token_file"`
 	RequestTimeoutSeconds *int   `json:"request_timeout_seconds,omitempty"`
+	// ToolCalls is an explicit capability declaration. A compatible HTTP shape
+	// alone never grants a model authority to request local tools.
+	ToolCalls *bool `json:"tool_calls,omitempty"`
+}
+
+func ProfileSupportsTools(p *LocalProfile) bool {
+	return p != nil && p.ToolCalls != nil && *p.ToolCalls
 }
 
 func ReadLocalProfile(path string) (*LocalProfile, error) {

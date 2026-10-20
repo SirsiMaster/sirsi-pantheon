@@ -3,10 +3,13 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
 
@@ -14,6 +17,9 @@ type gemmaWorkerStoreFake struct {
 	lease             *routerstore.Lease
 	item              routerstore.Item
 	claimErr          error
+	claimNextCalls    int
+	claimItemCalls    int
+	claimedItemID     string
 	startErr          error
 	verify            bool
 	verifyErr         error
@@ -27,6 +33,12 @@ type gemmaWorkerStoreFake struct {
 }
 
 func (s *gemmaWorkerStoreFake) ClaimNext(_ string, _ time.Duration) (*routerstore.Lease, error) {
+	s.claimNextCalls++
+	return s.lease, s.claimErr
+}
+func (s *gemmaWorkerStoreFake) ClaimItem(_ string, id string, _ time.Duration) (*routerstore.Lease, error) {
+	s.claimItemCalls++
+	s.claimedItemID = id
 	return s.lease, s.claimErr
 }
 func (s *gemmaWorkerStoreFake) StartWork(_, _ string) error           { s.started = true; return s.startErr }
@@ -168,6 +180,49 @@ func TestGemmaWorkerStartFailureReleasesOwnedLease(t *testing.T) {
 	_, err := testGemmaWorker(s, r, func(context.Context, string) (string, error) { return "draft", nil }).runOnce(context.Background())
 	if err == nil || s.failed == "" || r.calls != 0 {
 		t.Fatalf("start failure must retain retryable error: err=%v failure=%q replies=%d", err, s.failed, r.calls)
+	}
+}
+
+func TestGemmaWorkerExactItemNeverFallsBackToOlderInboxWork(t *testing.T) {
+	s, r := claimedGemmaItem()
+	w := testGemmaWorker(s, r, func(context.Context, string) (string, error) { return "fenced draft", nil })
+	w.itemID = "20261020-032656-codex-pantheon-gemma-pantheon-apollo-bounded-observe-qualification"
+	if worked, err := w.runOnce(context.Background()); err != nil || !worked {
+		t.Fatalf("run exact item: worked=%v err=%v", worked, err)
+	}
+	if s.claimItemCalls != 1 || s.claimNextCalls != 0 || s.claimedItemID != w.itemID {
+		t.Fatalf("claim path = exact:%d generic:%d id=%q, want one exact-only claim for %q", s.claimItemCalls, s.claimNextCalls, s.claimedItemID, w.itemID)
+	}
+}
+
+func TestGemmaWorkerApolloAnswerRoleIsDeclaredAndStamped(t *testing.T) {
+	root := t.TempDir()
+	reg := &router.Registry{Agents: map[string]router.AgentConfig{
+		gemmaWorkerAgent: {ID: gemmaWorkerAgent, Type: "gemma", Command: []string{"sirsi"}, Cwd: root, WorkerAnswers: true},
+	}}
+	if err := router.SaveRegistry(root, reg); err != nil {
+		t.Fatalf("save registry: %v", err)
+	}
+	granted, err := gemmaWorkerAnswerRoleGranted(root)
+	if err != nil || !granted {
+		t.Fatalf("declared answering role: granted=%v err=%v", granted, err)
+	}
+	thread, err := router.RegisterThread(root, &router.Thread{AgentID: gemmaWorkerAgent, Surface: "worker", AnswerRole: granted})
+	if err != nil {
+		t.Fatalf("register worker: %v", err)
+	}
+	if err := gemmaWorkerVerifyStampedAnswerRole(root, thread.ThreadID); err != nil {
+		t.Fatalf("stamped answer role: %v", err)
+	}
+
+	// A declaration alone is insufficient: the actual registered worker must
+	// carry the stamp that the service reads before it accepts a completion.
+	threadsPath := filepath.Join(root, "threads.json")
+	if err := os.WriteFile(threadsPath, []byte(`{"threads":{"forged":{"thread_id":"forged","agent_id":"gemma-pantheon","surface":"worker","answer_role":false}}}`), 0o600); err != nil {
+		t.Fatalf("replace test registry: %v", err)
+	}
+	if err := gemmaWorkerVerifyStampedAnswerRole(root, "forged"); err == nil {
+		t.Fatal("unstamped worker unexpectedly passed answering-role readback")
 	}
 }
 

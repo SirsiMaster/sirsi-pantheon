@@ -64,16 +64,21 @@ func (t Tier) String() string {
 // tools and degrade to a constrained path deliberately, saying so in the
 // transcript, rather than failing in a way that looks like the model being bad.
 type Caps struct {
-	Tools         bool // can the model call tools?
-	Streaming     bool
-	ContextTokens int
-	Offline       bool // usable with no network
+	Tools              bool // can the model call tools?
+	RequiredToolChoice bool // honors OpenAI's wire-level tool_choice:"required"
+	Streaming          bool
+	ContextTokens      int
+	Offline            bool // usable with no network
 }
 
 // Request is one turn of work.
 type Request struct {
-	System    string
-	Prompt    string
+	System string
+	Prompt string
+	// Messages is an explicit conversation. It is mutually exclusive with
+	// System and Prompt so a caller cannot accidentally send two competing
+	// histories. It exists for the bounded tool-result follow-up turn.
+	Messages  []Message
 	MaxTokens int
 	// Sampling controls are optional so a caller can preserve a deliberate
 	// generation contract across buffered and streaming transports.
@@ -83,6 +88,12 @@ type Request struct {
 	// Tools offered this turn. A provider without Caps.Tools must ignore these
 	// and the caller must notice — see Response.ToolsHonored.
 	Tools []ToolSpec
+	// RequireTool says a bounded caller will refuse a direct answer before its
+	// offered tool result. When Caps.RequiredToolChoice is true, the provider
+	// also serializes the compatible wire-level constraint. Otherwise the
+	// provider preserves its declared auto-only protocol and the caller's
+	// postcondition remains the enforcing boundary.
+	RequireTool bool
 }
 
 // ToolSpec is a tool offered to the model. Deliberately minimal for now: the
@@ -97,8 +108,22 @@ type ToolSpec struct {
 // ToolCall is a model's request to run a tool. Executing it is the caller's
 // decision, gated by tier.
 type ToolCall struct {
+	// ID is the provider-issued correlation for a subsequent tool result. It is
+	// opaque to Pantheon and is never used as authority.
+	ID   string
 	Name string
 	Args map[string]any
+}
+
+// Message is an OpenAI-compatible conversation record. Content is nil only
+// for an assistant message whose response is exclusively tool calls.
+// Tool execution remains caller-side: these records carry untrusted model
+// requests and factual tool results, not permissions.
+type Message struct {
+	Role       string
+	Content    *string
+	ToolCalls  []ToolCall
+	ToolCallID string
 }
 
 // Response carries the answer AND the provenance needed to judge it.
