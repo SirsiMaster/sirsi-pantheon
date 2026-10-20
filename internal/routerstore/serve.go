@@ -800,7 +800,7 @@ func (s *server) bindAfterClaim(name string, results []reflect.Value, caller Ses
 		return
 	}
 	switch name {
-	case "ClaimNext":
+	case "ClaimNext", "ClaimItem":
 		if l, ok := results[0].Interface().(*Lease); ok && l != nil {
 			_ = s.store.BindItemSession(l.ItemID, caller.ID)
 		}

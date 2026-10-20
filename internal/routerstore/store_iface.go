@@ -32,6 +32,10 @@ type Store interface {
 	Block(id, token, reason string) error
 	Breakers() ([]Breaker, error)
 	ClaimIdentifierNumber(namespace string, number int, title, slug, owner string) (Identifier, error)
+	// ClaimItem claims one exact, already-known inbox item. It preserves every
+	// ClaimNext eligibility, breaker, budget, and fencing rule; the caller only
+	// supplies selection, never permission to bypass the queue contract.
+	ClaimItem(agent, id string, ttl time.Duration) (*Lease, error)
 	ClaimNext(agent string, ttl time.Duration) (*Lease, error)
 	ClaimNextTask(agent, worker, threadID string, ttl time.Duration) (*TaskLease, error)
 	ClaimTask(agent, taskID, worker, threadID string, ttl time.Duration) (*TaskLease, error)

@@ -53,6 +53,7 @@ var laneAPI = map[string]laneRule{
 	"Render":       {item: 0},
 	"AckItem":      {item: 0, toOnly: true},
 	"CloseItem":    {item: 0, toOnly: true},
+	"ClaimItem":    {agents: []int{0}, item: 1, toOnly: true},
 	"ClaimNext":    {agents: []int{0}, item: noItem},
 	"Complete":     {item: 0, toOnly: true},
 	"Fail":         {item: 0, toOnly: true},
