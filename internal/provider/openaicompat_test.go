@@ -78,7 +78,7 @@ func TestCompleteCarriesStructuredToolCallAndToolResultConversation(t *testing.T
 	}))
 	defer srv.Close()
 	p := &OpenAICompat{SupportsTools: true, ProviderName: "apollo", Endpoint: srv.URL + "/v1", TierValue: TierLocal, HTTP: srv.Client()}
-	first, err := p.Complete(context.Background(), Request{Prompt: "status", Tools: []ToolSpec{{Name: "machine.state", Schema: map[string]any{"type": "object"}}}})
+	first, err := p.Complete(context.Background(), Request{Prompt: "status", Tools: []ToolSpec{{Name: "machine.state", Schema: map[string]any{"type": "object"}}}, RequireTool: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,8 +94,15 @@ func TestCompleteCarriesStructuredToolCallAndToolResultConversation(t *testing.T
 	if err != nil || final.Text != "healthy" {
 		t.Fatalf("final = %+v err=%v", final, err)
 	}
-	if len(requests) != 2 || requests[0].ToolChoice != "auto" || len(requests[1].Messages) != 3 || requests[1].Messages[2].ToolCallID != "call-1" {
+	if len(requests) != 2 || requests[0].ToolChoice != "required" || len(requests[1].Messages) != 3 || requests[1].Messages[2].ToolCallID != "call-1" {
 		t.Fatalf("unexpected wire requests: %+v", requests)
+	}
+}
+
+func TestCompleteRejectsRequiredToolWithoutAnOfferedTool(t *testing.T) {
+	p := &OpenAICompat{SupportsTools: true, ProviderName: "apollo", Endpoint: "http://unused", TierValue: TierLocal}
+	if _, err := p.Complete(context.Background(), Request{Prompt: "status", RequireTool: true}); err == nil {
+		t.Fatal("expected require-tool without tools to fail before contacting provider")
 	}
 }
 

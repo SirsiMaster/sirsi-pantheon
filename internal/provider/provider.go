@@ -87,6 +87,11 @@ type Request struct {
 	// Tools offered this turn. A provider without Caps.Tools must ignore these
 	// and the caller must notice — see Response.ToolsHonored.
 	Tools []ToolSpec
+	// RequireTool asks the provider to return a tool call instead of a direct
+	// answer. It is valid only with a non-empty explicit Tools offer. Callers
+	// use it for a bounded tool turn whose policy already limits what the sole
+	// call can do; it is never inferred from an available tool list.
+	RequireTool bool
 }
 
 // ToolSpec is a tool offered to the model. Deliberately minimal for now: the

@@ -385,7 +385,10 @@ func (o *OpenAICompat) Complete(ctx context.Context, req Request) (Response, err
 		}
 		toolsHonored = true
 	}
-	body, err := json.Marshal(ccRequest{Model: model, Messages: msgs, MaxTokens: req.MaxTokens, Temperature: req.Temperature, TopP: req.TopP, Seed: req.Seed, Tools: tools, ToolChoice: toolChoice(tools)})
+	if req.RequireTool && len(tools) == 0 {
+		return Response{}, fmt.Errorf("provider request requires a tool but offers none")
+	}
+	body, err := json.Marshal(ccRequest{Model: model, Messages: msgs, MaxTokens: req.MaxTokens, Temperature: req.Temperature, TopP: req.TopP, Seed: req.Seed, Tools: tools, ToolChoice: toolChoice(tools, req.RequireTool)})
 	if err != nil {
 		return Response{}, err
 	}
@@ -452,9 +455,12 @@ func (o *OpenAICompat) Complete(ctx context.Context, req Request) (Response, err
 	}, nil
 }
 
-func toolChoice(tools []ccToolDef) string {
+func toolChoice(tools []ccToolDef, require bool) string {
 	if len(tools) == 0 {
 		return ""
+	}
+	if require {
+		return "required"
 	}
 	return "auto"
 }

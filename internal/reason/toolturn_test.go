@@ -49,6 +49,9 @@ func TestToolTurnExecutesOnlyExactAllowlistedToolAndReturnsFinalAnswer(t *testin
 	if p.requests[1].Messages[3].Role != "tool" || p.requests[1].Messages[3].ToolCallID != "call-1" {
 		t.Fatalf("follow-up did not bind the tool result: %+v", p.requests[1].Messages[3])
 	}
+	if !p.requests[0].RequireTool {
+		t.Fatal("initial bounded tool turn did not require its one offered tool")
+	}
 }
 
 func TestToolTurnRejectsUnallowlistedArgumentsAndDoesNotInvoke(t *testing.T) {

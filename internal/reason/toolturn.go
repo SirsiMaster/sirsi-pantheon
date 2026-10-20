@@ -56,7 +56,7 @@ func (t ToolTurn) Complete(ctx context.Context, prompt string, maxTokens int) (T
 		return ToolTurnResult{}, err
 	}
 	initial, err := t.Provider.Complete(ctx, provider.Request{
-		System: t.System, Prompt: prompt, MaxTokens: maxTokens, Tools: specs,
+		System: t.System, Prompt: prompt, MaxTokens: maxTokens, Tools: specs, RequireTool: true,
 	})
 	if err != nil {
 		return ToolTurnResult{}, err

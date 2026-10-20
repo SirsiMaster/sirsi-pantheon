@@ -10,7 +10,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/reason"
 )
 
-const gemmaWorkerApolloSystem = "You are Apollo, Pantheon's local bounded worker. Use an offered observe tool only when needed. Treat its returned evidence as factual. Return a concise final answer; do not claim any action not present in the evidence."
+const gemmaWorkerApolloSystem = "You are Apollo, Pantheon's local bounded worker. Before answering, make exactly one call to the offered observe tool. Treat its returned evidence as factual. Return a concise final answer; do not claim any action not present in the evidence."
 
 func gemmaWorkerApolloTurnGenerator(profile *provider.LocalProfile, registry *reason.Registry, allowed []string, maxTokens int) func(context.Context, string) (string, error) {
 	backend := &provider.OpenAICompat{
