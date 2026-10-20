@@ -1,5 +1,16 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-19 — v0.24.121 release candidate
+
+- Allow independent IDE sessions to use `sirsi mcp` concurrently instead of
+  exiting behi
+- Verify M5 fabric transport against its existing `sirsi-m5` Ed25519 pin in
+  the dedicate
+- Preserve explicitly configured, token-scoped logical cloud executor identity
+  in client
+- Include the CLI's routerstore import so the registration command compiles;
+  package-onl
+
 ## 2026-10-19 — v0.24.120 release candidate
 
 - Distinguish bounded executor cleanup from published resident-observer protection.
