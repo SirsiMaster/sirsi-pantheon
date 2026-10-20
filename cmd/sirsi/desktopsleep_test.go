@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"io"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -16,6 +18,20 @@ func TestManagedDesktopSleepRejectsMalformedUnknownAndLocalAuthority(t *testing.
 		if err := provisionManagedDesktopSleep(nil, raw); err == nil {
 			t.Fatal("invalid management input accepted", raw)
 		}
+		if err := revokeManagedDesktopSleep(nil, raw); err == nil {
+			t.Fatal("invalid revocation accepted", raw)
+		}
+	}
+}
+
+func TestDesktopSleepLocalStatusDoesNotCreateJournal(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if events, err := localDesktopSleepEvents("not-started"); err != nil || len(events) != 0 {
+		t.Fatalf("events=%v err=%v", events, err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".sirsi", "desktop-custody")); !os.IsNotExist(err) {
+		t.Fatal("status created journal")
 	}
 }
 

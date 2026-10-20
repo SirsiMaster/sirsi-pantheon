@@ -99,7 +99,7 @@ func NativeInventory(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	files, err := nativeRead(ctx, "/usr/sbin/lsof", "-nP", "-Fpcftn")
+	files, err := nativeRead(ctx, "/usr/sbin/lsof", "-nP", "-F0pcfatn")
 	if err != nil {
 		return "", err
 	}
@@ -151,42 +151,74 @@ func inventoryDigest(ps, files, assertions []byte, self int) (string, error) {
 			stable = append(stable, "process "+r.line)
 		}
 	}
+	if !bytes.Contains(files, []byte{0}) {
+		return "", errors.New("sleep custody: native lsof NUL field output required")
+	}
 	pid := 0
-	var file []string
+	var fd, access, kind, name string
+	var parseErr error
 	flush := func() {
-		if pid != 0 && !ignore[pid] && len(file) > 0 {
-			joined := strings.Join(file, " ")
-			if strings.Contains(joined, "tREG") && (strings.HasSuffix(file[0], "w") || strings.HasSuffix(file[0], "u")) {
-				stable = append(stable, "writer "+strconv.Itoa(pid)+" "+joined)
+		if pid != 0 && !ignore[pid] && fd != "" && kind == "REG" {
+			if _, err := strconv.Atoi(fd); err == nil && access != "r" && access != "w" && access != "u" {
+				parseErr = errors.New("sleep custody: regular descriptor access mode unavailable")
+			}
+			if access == "w" || access == "u" {
+				if name == "" {
+					parseErr = errors.New("sleep custody: writable descriptor name unavailable")
+				} else {
+					b, _ := json.Marshal(struct {
+						PID                    int
+						FD, Access, Kind, Name string
+					}{pid, fd, access, kind, name})
+					stable = append(stable, "writer "+string(b))
+				}
 			}
 		}
-		file = nil
+		fd, access, kind, name = "", "", "", ""
 	}
-	for _, line := range strings.Split(string(files), "\n") {
-		if line == "" {
+	for _, field := range strings.Split(string(files), "\x00") {
+		// lsof adds a newline between process/file sets even in -F0 mode;
+		// embedded filename newlines are preserved inside the n field.
+		field = strings.TrimPrefix(field, "\n")
+		if field == "" {
 			continue
 		}
-		switch line[0] {
+		switch field[0] {
 		case 'p':
 			flush()
 			var err error
-			pid, err = strconv.Atoi(line[1:])
-			if err != nil {
-				return "", err
+			pid, err = strconv.Atoi(field[1:])
+			if err != nil || pid <= 0 {
+				return "", errors.New("sleep custody: invalid lsof process identity")
 			}
 		case 'f':
 			flush()
-			file = []string{line}
-		case 't', 'n':
-			file = append(file, line)
+			fd = field[1:]
+		case 'a':
+			access = field[1:]
+		case 't':
+			kind = field[1:]
+		case 'n':
+			name = field[1:]
+		case 'c':
+		default:
+			return "", errors.New("sleep custody: unexpected lsof evidence field")
 		}
 	}
 	flush()
+	if parseErr != nil {
+		return "", parseErr
+	}
+
 	if len(rows) == 0 || len(stable) == 0 {
 		return "", errors.New("sleep custody: empty native inventory")
 	}
 	sort.Strings(stable)
-	return digestBytes([]byte(strings.Join(stable, "\n"))), nil
+	encoded, err := json.Marshal(stable)
+	if err != nil {
+		return "", err
+	}
+	return digestBytes(encoded), nil
 }
 
 // ParseNativeReturn requires actual Sleep followed by full Wake in the
@@ -230,6 +262,9 @@ func ParseNativeReturn(log []byte, s CustodyState, actual HostIdentity, now time
 }
 
 func NativeReturn(ctx context.Context, s CustodyState) (ReturnEvidence, error) {
+	if s.ControllerLeaseDeadline.IsZero() || time.Now().After(s.ControllerLeaseDeadline) {
+		return ReturnEvidence{}, errors.New("sleep custody: original proven controller lease elapsed; incident review required, not a continuity claim")
+	}
 	i, err := NativeIdentity(ctx, s.Delegation.Admission.Host)
 	if err != nil {
 		return ReturnEvidence{}, err
@@ -256,6 +291,8 @@ func ObserveNativeReturn(ctx context.Context, authority OnlineAuthority, id stri
 	if err != nil {
 		return s, err
 	}
+	ctx, cancel := context.WithDeadline(ctx, s.Delegation.Admission.NotAfter)
+	defer cancel()
 	if s.Delegation.Admission.Host != "m5" {
 		return s, errors.New("sleep custody: no enrolled observer probe for target")
 	}

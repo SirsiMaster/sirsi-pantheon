@@ -1,0 +1,142 @@
+{
+  "work_item_id": "desktop-custody-production-controller-20261020",
+  "agent_id": "sirsi-hardware-admin",
+  "repo": "/private/tmp/sha-desktop-custody-20261020",
+  "status": "draft",
+  "classification": "platform-foundation",
+  "canon_read": [
+    {
+      "path": "PANTHEON_RULES.md",
+      "role": "governance",
+      "read_at": "2026-10-20T06:29:07.414266+00:00",
+      "notes": "Startup canon review and relevant source/security review; proof timestamp is record creation, not a whole-portfolio completion claim."
+    },
+    {
+      "path": "docs/COMMERCIALIZATION_GATE.md",
+      "role": "scope",
+      "read_at": "2026-10-20T06:29:07.414266+00:00",
+      "notes": "Startup canon review and relevant source/security review; proof timestamp is record creation, not a whole-portfolio completion claim."
+    },
+    {
+      "path": "docs/ARCHITECTURE_DESIGN.md",
+      "role": "architecture",
+      "read_at": "2026-10-20T06:29:07.414266+00:00",
+      "notes": "Startup canon review and relevant source/security review; proof timestamp is record creation, not a whole-portfolio completion claim."
+    },
+    {
+      "path": "docs/SAFETY_DESIGN.md",
+      "role": "security",
+      "read_at": "2026-10-20T06:29:07.414266+00:00",
+      "notes": "Startup canon review and relevant source/security review; proof timestamp is record creation, not a whole-portfolio completion claim."
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "portfolio-canon",
+      "read_at": "2026-10-20T06:29:07.414266+00:00",
+      "notes": "Startup canon review and relevant source/security review; proof timestamp is record creation, not a whole-portfolio completion claim."
+    },
+    {
+      "path": "docs/ADR-119-SLEEP-CUSTODY-PRODUCTION-CONTROLLER.md",
+      "read_at": "2026-10-20T06:32:33.320304+00:00",
+      "notes": "Current proposed typed authority, budget, native and rollback contract."
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "docs/ADR-119-SLEEP-CUSTODY-PRODUCTION-CONTROLLER.md",
+      "section": "Decision",
+      "claim": "Management-only finite online policy, exact authenticated participant scope and durable one-use lifecycle.",
+      "files_changed": [
+        "internal/routerstore/desktopcustody.go",
+        "internal/routerstore/desktopcustody_serve.go",
+        "internal/routerstore/agents.go"
+      ],
+      "evidence": [
+        "Typed authorization/race tests in desktopcustody_test.go; source-only native evidence."
+      ]
+    },
+    {
+      "doc": "docs/ADR-119-SLEEP-CUSTODY-PRODUCTION-CONTROLLER.md",
+      "section": "Actual supervisor budget and planned continuity",
+      "claim": "Real job/lease budget and actual parent/start/argv fact are required; no synthetic heartbeat or new authority.",
+      "files_changed": [
+        "scripts/maat/admitted-run.py",
+        "internal/desktopcustody/native_budget.go",
+        "internal/routerstore/maatscheduler.go"
+      ],
+      "evidence": [
+        "d32ee4ba9366465197a6560af23a21be; 72 supervisor tests in f586fe7553b04ebfbca70274fe192004."
+      ]
+    },
+    {
+      "doc": "docs/ADR-119-SLEEP-CUSTODY-PRODUCTION-CONTROLLER.md",
+      "section": "Decision",
+      "claim": "Native fixed power vectors, actual identity/writer/full-wake parser, M1 observation and return-only reconciliation.",
+      "files_changed": [
+        "internal/desktopcustody/native_controller.go",
+        "internal/desktopcustody/native.go",
+        "internal/desktopcustody/sleep.go",
+        "cmd/sirsi/desktopsleep.go"
+      ],
+      "evidence": [
+        "Full custody/router race suites a1aadb002ca14b43b19ca698546b14a7; primary-format negative461613e0896a43b38e8e56c75706383b; reconcile redc180c2aef03c4e8e888c4844b910c2fe."
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "Typed source implementation exists; actual installed native path and measured M5-off/two warm-cloud overlap remain unqualified.",
+    "design": "ADR119 and operator/source docs describe canonical online authority, real budgets, finite controller lifecycle and rollback constraints; no parallel signature issuer remains.",
+    "technical": "Final affected-source lint0 issues, complete custody/router race suites, CLI tests/build and72 supervisor regressions passed under2fa7a192d8144966af7461764a8f6b77; repo-wide CI pending. Red-before-green logs retained.",
+    "operational": "No installed guard/keys/IAM/OS/security setting changed. Real policy activation requires reviewed release, all mutation writers updated and fresh actual custody; unresolved consumed fences forbid fence-unaware rollback.",
+    "narrative": "Repository draft updated. Reading Room/Workspace mirrors pending independent source review; not claimed synchronized."
+  },
+  "verification": [
+    {
+      "name": "build",
+      "command": "go build ./cmd/sirsi/",
+      "status": "passed",
+      "evidence": "Equivalent non-installed full CLI build -o /private/tmp/sha-desktop-custody-sirsi-20261020 passed at2fa7a192d8144966af7461764a8f6b77."
+    },
+    {
+      "name": "vet",
+      "command": "go vet ./...",
+      "status": "pending",
+      "evidence": "Repository-wide final command/CI pending; do not substitute affected-package evidence."
+    },
+    {
+      "name": "lint",
+      "command": "golangci-lint run ./...",
+      "status": "pending",
+      "evidence": "Repository-wide final command/CI pending; do not substitute affected-package evidence."
+    },
+    {
+      "name": "test-race",
+      "command": "go test ./... -race",
+      "status": "pending",
+      "evidence": "Repository-wide final command/CI pending; do not substitute affected-package evidence."
+    },
+    {
+      "name": "affected-race",
+      "command": "go test -race ./internal/desktopcustody ./internal/routerstore -count=1",
+      "status": "passed",
+      "evidence": "Final source full affected-package race suites2fa7a192d8144966af7461764a8f6b77: desktopcustody1.247s, routerstore146.699s."
+    },
+    {
+      "name": "normal-supervisor",
+      "command": "python3 -m unittest discover -s scripts/maat -p test_admitted_run.py",
+      "status": "passed",
+      "evidence": "All72 supervisor regressions passed at2fa7a192d8144966af7461764a8f6b77, including execution-fact handoff."
+    }
+  ],
+  "working_status": {
+    "environment": "Isolated /private/tmp/sha-desktop-custody-20261020, current-main merge6057bc7e, source commit129c39f1 plus final pending changes. Shared checkouts untouched.",
+    "how_verified": "Normal owned CPU1 Ma\u2019at source gates; fake authority and fake power, real HTTP test harness; no production policy/ARM/Sleep/wake.",
+    "observed_result": "Typed source path final local gate passed; full repo CI, independent SSA review and actual native/off-window cloud proof remain pending.",
+    "verified_at": "2026-10-20T06:35:43.822311+00:00"
+  },
+  "handoffs": [],
+  "blockers": [
+    "No blanket warm-cloud gate from historical cold error. Actual hardware window must wait until real foreign publishers/models end and reviewed controller/runtime bindings qualify.",
+    "Repository-wide final CI, independent source review, publication mirrors and physical proof are not yet complete."
+  ]
+}

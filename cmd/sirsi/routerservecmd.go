@@ -110,6 +110,9 @@ func runRouterServe(cmd *cobra.Command, _ []string) error {
 	if err := provisionManagedDesktopSleep(store, os.Getenv("SIRSI_MANAGED_SLEEP_DELEGATION")); err != nil {
 		return fmt.Errorf("router serve: finite management sleep policy refused: %w", err)
 	}
+	if err := revokeManagedDesktopSleep(store, os.Getenv("SIRSI_MANAGED_SLEEP_REVOCATION")); err != nil {
+		return fmt.Errorf("router serve: management sleep revocation refused: %w", err)
+	}
 
 	opts := routerstore.ServerOptions{Token: token, MaxWait: routerServeMaxWait, RuleOfRa: strings.TrimSpace(os.Getenv("SIRSI_ROUTER_RULE_OF_RA"))}
 	// Handler validates the mode: "" is the documented default (log), and a

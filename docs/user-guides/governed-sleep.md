@@ -12,8 +12,8 @@ may configure one finite nonsecret `SIRSI_MANAGED_SLEEP_DELEGATION` on the
 canonical router revision. It includes the exact owner-request reference/hash,
 request/nonce, sleep-only admission, target platform/boot, reviewed inventory,
 executable/candidate hashes, bounded wake/window/generation and exact enrolled
-coordinator, custodian and independent M1 observer participants. The optional
-controller admission exception binds one reservation ID, holder and work.
+coordinator, custodian and independent M1 observer participants. The controller binding includes its exact real reservation, holder/work and
+private execution fact/digest, including actual supervisor and bounded lifetime.
 
 Creation/revocation are concrete-backend management operations, never lane RPCs.
 Identical revision restart is safe: it cannot replace an existing request or
@@ -26,20 +26,25 @@ firewall changes or guard relaxation are supplied by this feature.
   process/writer digest. Requires the existing privileged native custody context;
   it performs no power operation and does not create authority.
 - `sirsi desktop-sleep status REQUEST --role custodian`: inspect the durable
-  canonical lifecycle as the exact delegated participant. Coordinator/observer
+  canonical lifecycle as the exact delegated participant. The custodian also sees retained local journal events. Coordinator/observer
   may use their own role; a role flag grants no access.
 - `sirsi desktop-sleep preflight REQUEST`: verify native boot/executable,
   reviewed process/writer inventory and live canonical binding. No power.
 - `sirsi desktop-sleep ready REQUEST --role coordinator`: the exact coordinator
   declares current readiness. This is not proof that cloud child jobs ran.
+- `sirsi desktop-sleep coordinate REQUEST`: the existing admitted coordinator
+  refreshes its actual readiness while waiting in the finite window; it does not
+  claim that cloud child jobs have executed.
 - `sirsi desktop-sleep observe REQUEST`: the exact M1 observer establishes the
   enrolled M5 boot baseline, refreshes readiness, observes within the finite
   window and records independent same-boot loss/return. It starts no M5 payload.
 - `sirsi desktop-sleep dispatch REQUEST`: native custodian checks current
   inventory/assertions, journals once, schedules/reads the owned wake, requires
   fresh three-party custody and atomically consumes the finite authorization
-  before the single native sleep callback. A successful native return still
-  reports return-verification pending, not a physical success.
+  before the single native sleep callback. The same controller remains alive
+  until independently verified return; native command success alone is pending.
+  Invoked uncertainty can only resolve with conclusive return proof, never a
+  repeated invocation.
 - `sirsi desktop-sleep return REQUEST`: require native Sleep/full-Wake logs,
   same boot/executable, process/writer continuity and matching independent
   observer evidence; record canonical return and clean only the owned wake.
@@ -71,3 +76,26 @@ FileVault changes and unattended cold unlock are outside this workflow.
 Publication: repository draft updated; owner Reading Room and native Workspace
 mirrors remain pending independent review. No deployment or physical completion
 claim follows from this document.
+
+## Planned-sleep budget
+
+Run the native controller directly as the normal admitted supervisor's actual
+child in the existing privileged custody context. The supervisor emits a private
+execution fact; it does not grant sleep. `dispatch` can publish public identity,
+inventory and execution-binding facts and wait within its real job budget for
+canonical management to provision the exact delegation. It never self-provisions.
+
+Native v1 allows at most180seconds to the scheduled wake and210seconds total
+lifecycle, and only when the actual confirmed controller lease and execution
+budget cover that time plus margin. The existing normal supervisor uses240second
+leases; no assumed lease, borrowed PID, fabricated heartbeat or global freshness
+waiver is accepted. After wake, the actual supervisor must genuinely refresh
+before stale custody resumes. Preserve the original controller context during
+return/reconciliation; lost controller identity, missed budget or missing native
+proof requires incident review, not a substitute request or a success claim.
+
+SSA must schedule both actual existing warm cloud actors so their work starts
+and finishes inside the measured physical off interval. Source tests and a planned
+180second interval do not prove that overlap. Do not sleep while any actual
+foreign release, signing, model or payload is active. Review and normal release
+must precede all real policy creation, ARM or native power.

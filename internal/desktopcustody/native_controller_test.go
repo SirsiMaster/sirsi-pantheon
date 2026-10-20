@@ -51,7 +51,7 @@ func TestNativeReturnRequiresRealPairAndIndependentUnchangedBoot(t *testing.T) {
 
 func TestNativeInventoryBindsProcessStartWritersAndAssertions(t *testing.T) {
 	ps := []byte("1 0 Tue Oct 20 06:00:00 2026 /sbin/launchd\n10 1 Tue Oct 20 06:00:00 2026 /Applications/owner\n90 1 Tue Oct 20 06:00:00 2026 /usr/local/bin/controller\n91 90 Tue Oct 20 06:00:00 2026 /bin/ps\n")
-	files := []byte("p10\ncowner\nf3w\ntREG\nn/Users/owner/work\np90\nccontroller\nf4w\ntREG\nn/private/journal\n")
+	files := []byte("p10\x00cowner\x00\nf3\x00aw\x00tREG\x00n/Users/owner/work\x00\np90\x00ccontroller\x00\nf4\x00aw\x00tREG\x00n/private/journal\x00\n")
 	assertions := []byte(" PreventSystemSleep 0\n PreventUserIdleSystemSleep 0\n ExternalMedia 0\n UserIsActive 0\n")
 	baseline, err := inventoryDigest(ps, files, assertions, 90)
 	if err != nil {
@@ -103,5 +103,25 @@ func TestNativePowerExpiredWakeDeniesBeforeCommand(t *testing.T) {
 	p := &DarwinPower{wake: &WakeReceipt{WakeAt: at}, now: func() time.Time { return at }, run: func(context.Context, ...string) ([]byte, error) { called = true; return nil, nil }}
 	if err := p.Sleep(context.Background()); err == nil || called {
 		t.Fatal("expired owned wake actuated")
+	}
+}
+
+func TestNativeInventoryReadsLsofAccessModeAndNulPaths(t *testing.T) {
+	// Bundled lsof(8), OUTPUT FOR OTHER PROGRAMS: f is the descriptor,
+	// a is access mode, and -F0 uses NUL fields plus newline set separators.
+	ps := []byte("1 0 Tue Oct 20 06:00:00 2026 /sbin/launchd\n10 1 Tue Oct 20 06:00:00 2026 /Applications/owner\n90 1 Tue Oct 20 06:00:00 2026 /usr/local/bin/controller\n")
+	assertions := []byte("PreventSystemSleep 0\nPreventUserIdleSystemSleep 0\nExternalMedia 0\nUserIsActive 0\n")
+	files := []byte("p10\x00cowner\x00\nf3\x00au\x00tREG\x00n/Users/owner/file\nwith-newline\x00\n")
+	one, err := inventoryDigest(ps, files, assertions, 90)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files = []byte(strings.ReplaceAll(string(files), "file\nwith-newline", "different\nfile"))
+	two, err := inventoryDigest(ps, files, assertions, 90)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if one == two {
+		t.Fatal("native lsof writable-file identity was omitted")
 	}
 }

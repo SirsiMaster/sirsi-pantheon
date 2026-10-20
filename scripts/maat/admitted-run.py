@@ -488,6 +488,31 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
             raise Refused('Recurring job total lifetime exceeded before spawn')
         record.update(admission=identity, borrowed=owned is None, status='admitted')
         child_env = os.environ.copy()
+        # An immutable execution fact is not power authority. Native custody
+        # additionally requires its canonical management delegation and exact
+        # actual-parent/start/admission binding; no caller-created grant file.
+        receipt_root = getattr(backend, 'execution_receipt_root', None)
+        if receipt_root:
+            _, birth = process_identity(os.getpid())
+            now_utc = dt.datetime.now(dt.timezone.utc)
+            remaining = timeout
+            if isinstance(job_deadline, (int, float)):
+                remaining = min(remaining, job_deadline - time.monotonic())
+            if remaining <= 0:
+                raise Refused('Execution budget exhausted before receipt publication')
+            binding = dict(admission_id=identity, agent=agent,
+                           argv_sha256=hashlib.sha256(b'\0'.join(os.fsencode(x) for x in command)).hexdigest(),
+                           budget_seconds=int(remaining),
+                           execution_deadline=(now_utc + dt.timedelta(seconds=remaining)).isoformat().replace('+00:00', 'Z'),
+                           execution_started=now_utc.isoformat().replace('+00:00', 'Z'),
+                           resource=resource, supervisor_pid=os.getpid(),
+                           supervisor_start=birth, thread_id=thread, work=work)
+            receipt = Path(receipt_root) / ('execution-' + uuid.uuid4().hex + '.json')
+            receipt_fd = os.open(receipt, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+            with os.fdopen(receipt_fd, 'w') as output:
+                json.dump(binding, output, sort_keys=True, separators=(',', ':'))
+                output.flush(); os.fsync(output.fileno())
+            child_env['SIRSI_MAAT_EXECUTION_RECEIPT'] = str(receipt)
         if cpu_cores:
             # Cooperative CPU build mask, not a kernel sandbox or GPU admission.
             # Only an explicit caller opt-in can consume a bounded build floor.
@@ -674,6 +699,7 @@ def main():
     with os.fdopen(fd, 'w') as output:
         json.dump(record, output); output.flush(); os.fsync(output.fileno())
     backend = Native()
+    backend.execution_receipt_root = folder
     backend.cpu_cores = args.cpu_cores
     def persist():
         with target.open('w') as output:

@@ -46,13 +46,18 @@ func sleepRole(d dc.Delegation, role string) dc.Participant {
 
 func validateSleepDelegation(d dc.Delegation) error {
 	a, r := d.Admission, d.Request
-	if (d.CustodianReservationID == "") != (d.CustodianWork == "") {
+	if sleepDigest(d.ControllerBudget) != d.CustodianBudgetSHA256 {
+		return errors.New("sleep custody: managed execution fact digest mismatch")
+	}
+	if d.CustodianReservationID == "" || d.CustodianWork == "" || !sleepSHA(d.CustodianBudgetSHA256) {
 		return errors.New("sleep custody: controller reservation and work must be bound together")
 	}
 	if a.Operation != dc.SleepOperation || a.ID == "" || a.ID != r.ID || a.RequestID != r.ID || a.Host != r.Host || a.Issuer != "sirsi-router" || a.Owner == "" || a.PlatformUUID == "" || a.BootID == "" || a.Nonce == "" || a.CustodyGeneration == "" || !sleepSHA(a.ReviewDigest) || d.OwnerRequestRef == "" || !sleepSHA(d.OwnerRequestSHA256) || !sleepSHA(d.ExecutableSHA256) || !sleepSHA(d.CandidateSHA256) || !sleepSHA(d.InventorySHA256) {
 		return errors.New("sleep custody: incomplete finite management binding")
 	}
-	if a.NotBefore.IsZero() || !a.NotAfter.After(a.NotBefore) || a.NotAfter.Sub(a.NotBefore) > 30*time.Minute || !r.WakeAt.After(a.NotBefore) || !r.WakeAt.Before(a.NotAfter) || r.WakeAt.Nanosecond() != 0 {
+	// Native v1 must fit the actually confirmed supervisor lease/deadline.
+	// Post-wake freshness requires genuine live supervisor renewal, never fake heartbeats.
+	if a.NotBefore.IsZero() || !a.NotAfter.After(a.NotBefore) || a.NotAfter.Sub(a.NotBefore) > 210*time.Second || r.WakeAt.Sub(a.NotBefore) > 180*time.Second || !r.WakeAt.After(a.NotBefore) || !r.WakeAt.Before(a.NotAfter) || r.WakeAt.Nanosecond() != 0 {
 		return errors.New("sleep custody: finite window/wake invalid")
 	}
 	seen := map[string]bool{}
@@ -164,6 +169,10 @@ func (s *SQLiteStore) CreateDesktopSleep(d dc.Delegation) error {
 				return err
 			}
 		}
+		if _, err := controllerLeaseBudget(schedule.NewLedger(maatTransactionState{tx}).WithClock(s.clock), d, d.ControllerBudget, now); err != nil {
+			return err
+		}
+
 		r.Records[d.Request.ID] = dc.CustodyState{Delegation: d, Ready: map[string]dc.CustodyReady{}}
 		return writeSleepRegistry(tx, r)
 	})
@@ -231,6 +240,17 @@ func (s *SQLiteStore) DesktopSleep(ctx context.Context, c dc.CustodyCall) (dc.Cu
 			if c.Identity != want || c.InventorySHA256 != d.InventorySHA256 {
 				return errors.New("sleep custody: actual boot, executable or workload inventory changed")
 			}
+			if c.Budget == nil || sleepDigest(*c.Budget) != d.CustodianBudgetSHA256 || c.Budget.AdmissionID != d.CustodianReservationID || c.Budget.Agent != d.Custodian.Agent || c.Budget.ThreadID != d.Custodian.ThreadID || c.Budget.Work != d.CustodianWork || !sleepHostResource(d, c.Budget.Resource) {
+				return errors.New("sleep custody: exact managed execution budget differs")
+			}
+			executionEnd, err := time.Parse(time.RFC3339Nano, c.Budget.ExecutionDeadline)
+			if err != nil || executionEnd.Before(a.NotAfter.Add(5*time.Second)) {
+				return errors.New("sleep custody: actual supervisor execution budget does not cover lifecycle")
+			}
+			if _, err := controllerLeaseBudget(l, d, *c.Budget, now); err != nil {
+				return err
+			}
+
 		}
 		switch c.Operation {
 		case "inspect":
@@ -264,8 +284,15 @@ func (s *SQLiteStore) DesktopSleep(ctx context.Context, c dc.CustodyCall) (dc.Cu
 			if err != nil {
 				return err
 			}
+			controllerFound := false
 			for _, row := range rows {
-				if d.CustodianReservationID != "" && row.ID == d.CustodianReservationID && row.Holder == d.Custodian.Agent && row.Work == d.CustodianWork && row.Status == schedule.StatusActive {
+				if row.ID == d.CustodianReservationID {
+					deadline, err := controllerLeaseBudget(l, d, *c.Budget, now)
+					if err != nil {
+						return err
+					}
+					v.ControllerLeaseDeadline = deadline
+					controllerFound = true
 					continue
 				}
 				end, e1 := time.Parse(time.RFC3339, row.EstEnd)
@@ -273,6 +300,9 @@ func (s *SQLiteStore) DesktopSleep(ctx context.Context, c dc.CustodyCall) (dc.Cu
 				if sleepHostResource(d, row.Resource) && (row.Status == schedule.StatusActive || row.Status == schedule.StatusQueued) && (e1 != nil || e2 != nil || (end.After(now) && start.Before(a.NotAfter))) {
 					return errors.New("sleep custody: current or scheduled workload reservation overlaps window")
 				}
+			}
+			if !controllerFound {
+				return errors.New("sleep custody: exact live controller admission missing")
 			}
 			v.ConsumedAt = now
 		case "observed-return":
@@ -288,6 +318,9 @@ func (s *SQLiteStore) DesktopSleep(ctx context.Context, c dc.CustodyCall) (dc.Cu
 			}
 			v.Observation = &e
 		case "returned":
+			if v.ControllerLeaseDeadline.IsZero() || now.After(v.ControllerLeaseDeadline) {
+				return errors.New("sleep custody: original real controller lease expired; no continuity claim")
+			}
 			// A return report cannot be accepted on the strength of a caller's
 			// JSON alone. The independent observer must first attest the SAME
 			// evidence through its separately authenticated session.
@@ -335,4 +368,30 @@ func sleepHostResource(d dc.Delegation, resource string) bool {
 		}
 	}
 	return false
+}
+
+func controllerLeaseBudget(l *schedule.Ledger, d dc.Delegation, b dc.ExecutionBudget, now time.Time) (time.Time, error) {
+	rows, err := l.Status("")
+	if err != nil {
+		return time.Time{}, err
+	}
+	for _, row := range rows {
+		if row.ID != d.CustodianReservationID {
+			continue
+		}
+		hb, e1 := time.Parse(time.RFC3339Nano, row.HeartbeatAt)
+		created, e2 := time.Parse(time.RFC3339Nano, row.Created)
+		started, e3 := time.Parse(time.RFC3339Nano, b.ExecutionStarted)
+		jobEnd, e4 := time.Parse(time.RFC3339Nano, b.ExecutionDeadline)
+		deadline := hb.Add(time.Duration(row.LeaseTTLSec) * time.Second)
+		conservativeJobEnd := created.Add(time.Duration(b.BudgetSeconds) * time.Second)
+		if jobEnd.Before(conservativeJobEnd) {
+			conservativeJobEnd = jobEnd
+		}
+		if e1 != nil || e2 != nil || e3 != nil || e4 != nil || b.BudgetSeconds < 1 || b.BudgetSeconds > 7200 || row.Status != schedule.StatusActive || row.Holder != d.Custodian.Agent || row.Work != d.CustodianWork || row.ExemptPID != b.SupervisorPID || !sleepHostResource(d, row.Resource) || row.LeaseTTLSec <= 0 || hb.After(now.Add(5*time.Second)) || hb.Before(started.Truncate(time.Second)) || deadline.Before(d.Admission.NotAfter.Add(5*time.Second)) || conservativeJobEnd.Before(d.Admission.NotAfter.Add(5*time.Second)) {
+			return time.Time{}, errors.New("sleep custody: actual controller lease, executor or job budget does not cover lifecycle")
+		}
+		return deadline, nil
+	}
+	return time.Time{}, errors.New("sleep custody: actual normal controller admission absent")
 }

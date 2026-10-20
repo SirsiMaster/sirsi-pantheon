@@ -16,8 +16,9 @@ identity from server authentication. Policy binds the owner request, source and
 executable, target platform/boot, nonce, generation, exact wake/window, and three
 participants. Role names in a body are not authority. All three readiness records
 must be fresh. Native consumption and reservation admission share one transaction;
-existing/future active or queued work refuses sleep. An optional exact reviewed
-controller reservation is the only workload exception. A consumed unresolved
+existing/future active or queued work refuses sleep. The exact reviewed
+controller reservation is the only workload exception; its actual confirmed
+lease and immutable normal-supervisor execution budget must cover the lifecycle. A consumed unresolved
 host refuses new work even after its original window expires or is revoked.
 
 The native adapter uses fixed command vectors, never a shell or sudo fallback.
@@ -61,3 +62,13 @@ transaction source provenance is9f8e63356896bdd06ca434992bca088273e17342, with S
 Oct13/Oct15 contract/review artifacts retained. ADR-119 and the implementation
 plan define the current source scope. Reading Room/Workspace mirrors are pending
 review; do not describe repository-only source as fully published product canon.
+
+The normal supervisor now publishes an execution fact for its actual child,
+not power authority. The privileged native reader checks its real parent/start,
+exact argv, private file and deadline; canonical management freezes its digest.
+The same transaction checks real reservation/lease budget. Native v1 supports
+up to180seconds to wake /210seconds lifecycle only when proven budgets permit.
+The controller stays alive through return; actual post-wake registration refresh
+is required, never a synthetic heartbeat or a stale-session waiver. Configuration
+revocation is management-only; unresolved consumed state survives revocation and
+rollback must not restore a fence-unaware writer. All actual power remains unarmed.

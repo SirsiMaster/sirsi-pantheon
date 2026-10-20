@@ -1,0 +1,44 @@
+{
+  "captured_at": "2026-10-20T06:34:50.376274+00:00",
+  "artifacts": [
+    {
+      "artifact": "/private/tmp/sha-desktop-custody-source-packet-20261020.log",
+      "sha256": "23e8b5832260d583cf6e7b12c0a3881c2ab8a858bf76eb61de34be0aec30f973",
+      "scope": "retained native-host source test receipt; not physical power evidence"
+    },
+    {
+      "artifact": "/private/tmp/sha-desktop-custody-qualified-source-20261020.log",
+      "sha256": "dd48325e45a2ad5daa0e099bb79d40fbfed97b2c908b40ed5c96846356881c8c",
+      "scope": "retained native-host source test receipt; not physical power evidence"
+    },
+    {
+      "artifact": "/private/tmp/sha-desktop-custody-lsof-negative-control-20261020.log",
+      "sha256": "a5fa1e41b353c1154982dea9204b6017c63492490c16cf63bdf86f11ecf8cacf",
+      "scope": "retained native-host source test receipt; not physical power evidence"
+    },
+    {
+      "artifact": "/private/tmp/sha-desktop-custody-native-return-tests-20261020.log",
+      "sha256": "0d23836817a530e6396ea114127d3502166aee29a766986247f3973250b36e22",
+      "scope": "retained native-host source test receipt; not physical power evidence"
+    },
+    {
+      "artifact": "/private/tmp/sha-desktop-custody-real-budget-tests-20261020.log",
+      "sha256": "920771ad8fdc0ebd74ea31c8e0fdb59fd86129c80ac9807c7b84c25c9c78ad62",
+      "scope": "retained native-host source test receipt; not physical power evidence"
+    },
+    {
+      "artifact": "/private/tmp/sha-desktop-custody-source-lint-20261020.log",
+      "sha256": "871f3d2731c138c923b88fa62964f7cfa9e57dd80dce130483612566f7b6f290",
+      "scope": "retained native-host source test receipt; not physical power evidence"
+    },
+    {
+      "artifact": "/private/tmp/sha-desktop-custody-publish-gate-20261020.log",
+      "sha256": "92bd093a403cbbf9fc9f0bb4aeff323dfbb9f95efe2aab28a0e8646ab07c3916",
+      "normal_maat_terminal": "2fa7a192d8144966af7461764a8f6b77",
+      "result": "PASS: affected-source lint, full custody/router race, CLI tests/build, 72 supervisor regressions",
+      "scope": "source only, no native power"
+    }
+  ],
+  "native_power_performed": false,
+  "production_delegation_created": false
+}

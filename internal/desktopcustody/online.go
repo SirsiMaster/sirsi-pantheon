@@ -8,6 +8,23 @@ import (
 
 type HostIdentity struct{ Host, PlatformUUID, BootID, ExecutableSHA256 string }
 
+// ExecutionBudget is a fact published by the actual normal supervisor before
+// spawning this exact argv. It confers no authority; management freezes its
+// digest and the canonical service separately checks the real reservation.
+type ExecutionBudget struct {
+	AdmissionID       string `json:"admission_id"`
+	Agent             string `json:"agent"`
+	ArgvSHA256        string `json:"argv_sha256"`
+	BudgetSeconds     int    `json:"budget_seconds"`
+	ExecutionDeadline string `json:"execution_deadline"`
+	ExecutionStarted  string `json:"execution_started"`
+	Resource          string `json:"resource"`
+	SupervisorPID     int    `json:"supervisor_pid"`
+	SupervisorStart   string `json:"supervisor_start"`
+	ThreadID          string `json:"thread_id"`
+	Work              string `json:"work"`
+}
+
 type ObserverEvidence struct {
 	RequestID, Host, PlatformUUID, BootID string
 	LostAt, ReturnedAt                    time.Time
@@ -31,6 +48,8 @@ type Delegation struct {
 	InventorySHA256                       string
 	ObserverMachineLabel                  string
 	CustodianReservationID, CustodianWork string
+	ControllerBudget                      ExecutionBudget
+	CustodianBudgetSHA256                 string
 	Coordinator, Custodian, Observer      Participant
 }
 
@@ -43,6 +62,7 @@ type CustodyCall struct {
 	QuietDigest     string
 	Return          *ReturnEvidence
 	Observation     *ObserverEvidence
+	Budget          *ExecutionBudget
 }
 
 type CustodyReady struct {
@@ -51,12 +71,13 @@ type CustodyReady struct {
 }
 
 type CustodyState struct {
-	Delegation            Delegation
-	Ready                 map[string]CustodyReady
-	ConsumedAt, RevokedAt time.Time
-	RevocationReason      string
-	Return                *ReturnEvidence
-	Observation           *ObserverEvidence
+	Delegation              Delegation
+	Ready                   map[string]CustodyReady
+	ConsumedAt, RevokedAt   time.Time
+	RevocationReason        string
+	Return                  *ReturnEvidence
+	Observation             *ObserverEvidence
+	ControllerLeaseDeadline time.Time
 }
 
 // OnlineAuthority must be the already enrolled canonical service transport.
@@ -73,11 +94,12 @@ type OnlineController struct {
 	ID          string
 	Identity    func(context.Context) (HostIdentity, error)
 	Inventory   func(context.Context) (string, error)
+	Budget      func(context.Context) (ExecutionBudget, error)
 	ReturnProof func(context.Context, SleepAdmission, WakeReceipt) (ReturnEvidence, error)
 }
 
 func (c *OnlineController) call(ctx context.Context, op string) (CustodyState, error) {
-	if c == nil || c.Authority == nil || c.Identity == nil || c.Inventory == nil || c.ID == "" {
+	if c == nil || c.Authority == nil || c.Identity == nil || c.Inventory == nil || c.Budget == nil || c.ID == "" {
 		return CustodyState{}, errors.New("sleep custody: canonical authority and native bindings required")
 	}
 	i, err := c.Identity(ctx)
@@ -88,7 +110,11 @@ func (c *OnlineController) call(ctx context.Context, op string) (CustodyState, e
 	if err != nil {
 		return CustodyState{}, err
 	}
-	return c.Authority.DesktopSleep(ctx, CustodyCall{Operation: op, ID: c.ID, Role: "custodian", Identity: i, InventorySHA256: inv})
+	budget, err := c.Budget(ctx)
+	if err != nil {
+		return CustodyState{}, err
+	}
+	return c.Authority.DesktopSleep(ctx, CustodyCall{Operation: op, ID: c.ID, Role: "custodian", Identity: i, InventorySHA256: inv, Budget: &budget})
 }
 
 func (c *OnlineController) VerifySleep(ctx context.Context, req SleepRequest) (SleepAdmission, error) {

@@ -225,7 +225,7 @@ func (j *FileSleepJournal) read(name string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	var st unix.Stat_t
 	if err := unix.Fstat(fd, &st); err != nil {
 		return nil, fmt.Errorf("stat record: %w", err)
