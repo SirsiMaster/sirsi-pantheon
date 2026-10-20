@@ -1,5 +1,27 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-19 — v0.24.121 release candidate
+
+- Allow independent IDE sessions to use `sirsi mcp` concurrently instead of
+  exiting behind a machine-wide singleton. Keep legacy `sirsi seshat mcp` on
+  the same clean JSON-RPC transport and preserve shared-store locking.
+
+- Verify M5 fabric transport against its existing `sirsi-m5` Ed25519 pin in
+  the dedicated known-hosts file. Preserve strict checking, public-key-only
+  authentication and runtime-required proxy routing; do not create or copy keys.
+
+- Preserve explicitly configured, token-scoped logical cloud executor identity
+  in client sessions and thread registration, heartbeat, save, and close paths.
+  Reject malformed names or conflicting physical-machine identity before HTTP;
+  keep server host-token and lane-scope authorization unchanged. Native Mac
+  host behavior and resident-worker protection are unchanged.
+
+- Include the CLI's routerstore import so the registration command compiles;
+  package-only router tests do not qualify the command entry point.
+
+- Preserve complete release notes and continuation lines in the Stack Lab
+  changelog instead of cutting ordinary entries off at ninety characters.
+
 ## 2026-10-19 — v0.24.120 release candidate
 
 - Distinguish bounded executor cleanup from published resident-observer protection.

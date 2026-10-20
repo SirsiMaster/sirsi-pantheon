@@ -33,7 +33,7 @@ open('CHANGELOG.md','w').write(preamble+'## [Unreleased]\n\n'+sec+'\n'+'\n'.join
 open('VERSION','w').write(ver+'\n')
 # stacklab canon changelog: this release's entry titles under the newest heading
 p='docs/stacklab/pantheon-pt/canon/CHANGELOG.md'; t=open(p).read()
-titles=[(re.search(r'\*\*(.+?)\*\*',b).group(1) if re.search(r'\*\*(.+?)\*\*',b) else b[2:90].rstrip('.')) for b in new]
+titles=[(re.search(r'\*\*(.+?)\*\*',b).group(1) if re.search(r'\*\*(.+?)\*\*',b) else b[2:].strip()) for b in new]
 add='## %s — v%s release candidate\n\n%s\n\n'%(datetime.date.today().isoformat(),ver,'\n'.join('- '+x for x in titles))
 m=re.search(r'^## ',t,re.M); assert m, "no heading in canon changelog"
 open(p,'w').write(t[:m.start()]+add+t[m.start():])
