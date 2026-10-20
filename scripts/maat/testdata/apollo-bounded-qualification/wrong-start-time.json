@@ -1,0 +1,5 @@
+{
+  "expected": {"resource": "m5", "host": "Mac", "pid": 4242, "start_time": "Mon Oct 20 10:11:12 2026"},
+  "admission": [{"status": "active", "holder": "codex-pantheon", "work": "apollo-qualification-fixture", "resource": "m5", "share": "full", "exempt_pid": 4242, "lease_ttl_sec": 300, "heartbeat_at": "2026-10-20T14:11:12Z"}],
+  "executor": {"agent_id": "codex-pantheon", "thread_id": "thr-fixture", "status": "active", "pid": 4242, "host": "Mac", "start_time": "Mon Oct 20 10:11:13 2026"}
+}
