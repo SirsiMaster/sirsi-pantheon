@@ -81,12 +81,27 @@
       "evidence": [
         "Full custody/router race suites a1aadb002ca14b43b19ca698546b14a7; primary-format negative461613e0896a43b38e8e56c75706383b; reconcile redc180c2aef03c4e8e888c4844b910c2fe."
       ]
+    },
+    {
+      "doc": "docs/ADR-119-SLEEP-CUSTODY-PRODUCTION-CONTROLLER.md",
+      "section": "Pre-native compensation after independent review",
+      "claim": "Server-versioned consume/invoke/abort phases serialize with admission. Exact pre-native abort is terminal/idempotent; authorized and legacy unknowns remain fenced.",
+      "files_changed": [
+        "internal/routerstore/desktopcustody.go",
+        "internal/routerstore/desktopcustody_abort_test.go",
+        "internal/desktopcustody/online.go",
+        "internal/desktopcustody/sleep.go",
+        "cmd/sirsi/desktopsleep.go"
+      ],
+      "evidence": [
+        "0417e04b2a1848bc88a020522aad83f8: joined canonical/private journal failure, invoke-abort race, lost response, legacy, authorized-negative and native proof phase bounds."
+      ]
     }
   ],
   "closure_evidence": {
     "product": "Typed source implementation exists; actual installed native path and measured M5-off/two warm-cloud overlap remain unqualified.",
     "design": "ADR119 and operator/source docs describe canonical online authority, real budgets, finite controller lifecycle and rollback constraints; no parallel signature issuer remains.",
-    "technical": "Final affected-source lint0 issues, complete custody/router race suites, CLI tests/build and72 supervisor regressions passed under2fa7a192d8144966af7461764a8f6b77; repo-wide CI pending. Red-before-green logs retained.",
+    "technical": "Final pre-native correction affected lint/race/vet/CLI tests/build passed0417e04b2a1848bc88a020522aad83f8. Earlier72 supervisor regressions remain scoped to unchanged supervisor source. Successor whole-repo CI and independent delta review pending; all negative receipts retained.",
     "operational": "No installed guard/keys/IAM/OS/security setting changed. Real policy activation requires reviewed release, all mutation writers updated and fresh actual custody; unresolved consumed fences forbid fence-unaware rollback.",
     "narrative": "Repository draft updated. Reading Room/Workspace mirrors pending independent source review; not claimed synchronized."
   },
@@ -132,13 +147,19 @@
       "command": "go test -race ./internal/routerstore -run TestDesktopCustody -count=1 && go vet ./internal/routerstore",
       "status": "passed",
       "evidence": "fa23dc1d95f34f3f965bc11078a47b96 exit0/released;12.430s race tests. SSA native thread019ff6bc-d184-7fb1-b76d-990a00d3e939 explicitly accepted narrow correction, not blanket controller/native power."
+    },
+    {
+      "name": "pre-native-recovery-full-affected-gate",
+      "command": "golangci-lint affected packages; go test -race ./internal/desktopcustody ./internal/routerstore -count=1; vet; CLI tests/build; git diff --check",
+      "status": "passed",
+      "evidence": "0417e04b2a1848bc88a020522aad83f8 exit0/released: lint0, race1.204/151.103s, CLI4.234s, full CLI build. Prior e21acd failed no-consume negative retained and corrected."
     }
   ],
   "working_status": {
-    "environment": "Isolated /private/tmp/sha-desktop-custody-20261020; published baselineffd08b35 includes mainb3419a65; independently accepted active-peer source correction pending normal successor publication. Shared checkouts untouched.",
+    "environment": "Isolated /private/tmp/sha-desktop-custody-20261020, published baseline124dad06 plus verified pre-native recovery correction pending normal successor publication; shared checkouts untouched.",
     "how_verified": "Normal owned CPU1 Ma\u2019at source gates; fake authority and fake power, real HTTP test harness; no production policy/ARM/Sleep/wake.",
-    "observed_result": "Baseline local gate passed; SSA active-peer finding corrected, custody routerstore race/vet passfa23dc1d95f34f3f965bc11078a47b96; SSA accepted this narrow source delta. Whole-controller review, successor CI, release, installed native/off-window cloud proof remain pending.",
-    "verified_at": "2026-10-20T06:51:12.761348+00:00"
+    "observed_result": "SSA P1 pre-native stranded fence corrected and joined full affected-source gate passed; successor review/CI/release and actual installed native/off-window cloud proof remain pending.",
+    "verified_at": "2026-10-20T07:18:00.163084+00:00"
   },
   "handoffs": [],
   "blockers": [

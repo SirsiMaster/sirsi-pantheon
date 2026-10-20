@@ -173,13 +173,13 @@ func (s *SQLiteStore) CreateDesktopSleep(d dc.Delegation) error {
 			return err
 		}
 
-		r.Records[d.Request.ID] = dc.CustodyState{Delegation: d, Ready: map[string]dc.CustodyReady{}}
+		r.Records[d.Request.ID] = dc.CustodyState{Delegation: d, NativeGateVersion: 1, Ready: map[string]dc.CustodyReady{}}
 		return writeSleepRegistry(tx, r)
 	})
 }
 
 // RevokeDesktopSleep cannot remove a consumed host fence; only independently
-// verified return can clear it. Revocation never manufactures an idle machine.
+// verified return or a server-proved pre-native abort can clear it. Revocation never manufactures an idle machine.
 func (s *SQLiteStore) RevokeDesktopSleep(id, reason string) error {
 	if strings.TrimSpace(reason) == "" {
 		return errors.New("sleep custody: revocation reason required")
@@ -229,10 +229,24 @@ func (s *SQLiteStore) DesktopSleep(ctx context.Context, c dc.CustodyCall) (dc.Cu
 			out = v
 			return nil
 		}
+		if c.Operation == "abort-before-native" {
+			if c.Role != "custodian" || v.NativeGateVersion != 1 || v.ConsumedAt.IsZero() || !v.NativeAuthorizedAt.IsZero() || v.Return != nil {
+				return errors.New("sleep custody: only exact consumed pre-native custodian may abort")
+			}
+			if v.AbortedAt.IsZero() {
+				v.AbortedAt = now
+			}
+			r.Records[c.ID] = v
+			out = v
+			return writeSleepRegistry(tx, r)
+		}
+		if !v.AbortedAt.IsZero() {
+			return errors.New("sleep custody: pre-native abort is terminal")
+		}
 		if !v.RevokedAt.IsZero() && c.Operation != "returned" && c.Operation != "observed-return" {
 			return errors.New("sleep custody: delegation revoked")
 		}
-		if c.Operation != "returned" && c.Operation != "observed-return" && (now.Before(a.NotBefore) || !now.Before(a.NotAfter) || !v.ConsumedAt.IsZero()) {
+		if c.Operation != "returned" && c.Operation != "observed-return" && (now.Before(a.NotBefore) || !now.Before(a.NotAfter) || (!v.ConsumedAt.IsZero() && c.Operation != "invoke")) {
 			return errors.New("sleep custody: delegation expired, not active, or already consumed")
 		}
 		if c.Role == "custodian" && c.Operation != "returned" {
@@ -263,9 +277,18 @@ func (s *SQLiteStore) DesktopSleep(ctx context.Context, c dc.CustodyCall) (dc.Cu
 				return errors.New("sleep custody: actual custody digest required")
 			}
 			v.Ready[c.Role] = dc.CustodyReady{At: now, Digest: digest}
-		case "consume":
+		case "consume", "invoke":
+			if c.Operation == "invoke" && !d.Request.WakeAt.After(now) {
+				return errors.New("sleep custody: owned wake elapsed before native authorization")
+			}
+			if v.NativeGateVersion != 1 {
+				return errors.New("sleep custody: legacy phase cannot authorize native invocation or compensation")
+			}
 			if c.Role != "custodian" {
 				return errors.New("sleep custody: only native custodian consumes")
+			}
+			if c.Operation == "invoke" && (v.ConsumedAt.IsZero() || !v.NativeAuthorizedAt.IsZero()) {
+				return errors.New("sleep custody: one consumed, not yet native-authorized request required")
 			}
 			for _, role := range []string{"coordinator", "custodian", "observer"} {
 				p := sleepRole(d, role)
@@ -277,8 +300,10 @@ func (s *SQLiteStore) DesktopSleep(ctx context.Context, c dc.CustodyCall) (dc.Cu
 					return errors.New("sleep custody: fresh three-party custody required")
 				}
 			}
-			if err := sleepReserveFence(tx, l, a.Host); err != nil {
-				return err
+			if c.Operation == "consume" {
+				if err := sleepReserveFence(tx, l, a.Host); err != nil {
+					return err
+				}
 			}
 			rows, err := l.Status("")
 			if err != nil {
@@ -291,7 +316,11 @@ func (s *SQLiteStore) DesktopSleep(ctx context.Context, c dc.CustodyCall) (dc.Cu
 					if err != nil {
 						return err
 					}
-					v.ControllerLeaseDeadline = deadline
+					if c.Operation == "consume" {
+						v.ControllerLeaseDeadline = deadline
+					} else if v.ControllerLeaseDeadline.IsZero() || now.After(v.ControllerLeaseDeadline) {
+						return errors.New("sleep custody: original controller lease expired before native authorization")
+					}
 					controllerFound = true
 					continue
 				}
@@ -304,13 +333,17 @@ func (s *SQLiteStore) DesktopSleep(ctx context.Context, c dc.CustodyCall) (dc.Cu
 			if !controllerFound {
 				return errors.New("sleep custody: exact live controller admission missing")
 			}
-			v.ConsumedAt = now
+			if c.Operation == "consume" {
+				v.ConsumedAt = now
+			} else {
+				v.NativeAuthorizedAt = now
+			}
 		case "observed-return":
-			if c.Role != "observer" || v.ConsumedAt.IsZero() || c.Observation == nil {
+			if c.Role != "observer" || v.NativeAuthorizedAt.IsZero() || c.Observation == nil {
 				return errors.New("sleep custody: consumed request and independent observer required")
 			}
 			e := *c.Observation
-			if e.RequestID != c.ID || e.Host != a.Host || e.PlatformUUID != a.PlatformUUID || e.BootID != a.BootID || e.LostAt.Before(v.ConsumedAt) || !e.ReturnedAt.After(e.LostAt) || e.ReturnedAt.Before(d.Request.WakeAt) || e.ReturnedAt.After(now.Add(5*time.Second)) || now.Sub(e.ReturnedAt) > 90*time.Second || !sleepSHA(e.ContinuitySHA256) {
+			if e.RequestID != c.ID || e.Host != a.Host || e.PlatformUUID != a.PlatformUUID || e.BootID != a.BootID || e.LostAt.Before(v.NativeAuthorizedAt) || !e.ReturnedAt.After(e.LostAt) || e.ReturnedAt.Before(d.Request.WakeAt) || e.ReturnedAt.After(now.Add(5*time.Second)) || now.Sub(e.ReturnedAt) > 90*time.Second || !sleepSHA(e.ContinuitySHA256) {
 				return errors.New("sleep custody: invalid independently observed continuity interval")
 			}
 			if v.Observation != nil && *v.Observation != e {
@@ -324,7 +357,7 @@ func (s *SQLiteStore) DesktopSleep(ctx context.Context, c dc.CustodyCall) (dc.Cu
 			// A return report cannot be accepted on the strength of a caller's
 			// JSON alone. The independent observer must first attest the SAME
 			// evidence through its separately authenticated session.
-			if c.Role != "custodian" || v.ConsumedAt.IsZero() || c.Return == nil || v.Observation == nil || now.Before(d.Request.WakeAt) {
+			if c.Role != "custodian" || v.NativeAuthorizedAt.IsZero() || c.Return == nil || v.Observation == nil || now.Before(d.Request.WakeAt) {
 				return errors.New("sleep custody: return before actual consumed window")
 			}
 			e := *c.Return
@@ -354,7 +387,7 @@ func sleepReserveFence(tx *txHandle, _ *schedule.Ledger, resource string) error 
 		return err
 	}
 	for _, v := range r.Records {
-		if !v.ConsumedAt.IsZero() && v.Return == nil && sleepHostResource(v.Delegation, resource) {
+		if !v.ConsumedAt.IsZero() && v.AbortedAt.IsZero() && v.Return == nil && sleepHostResource(v.Delegation, resource) {
 			return fmt.Errorf("sleep custody: unresolved consumed host fence %s", v.Delegation.Request.ID)
 		}
 	}

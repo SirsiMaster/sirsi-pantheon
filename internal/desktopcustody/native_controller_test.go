@@ -11,7 +11,7 @@ import (
 func nativeReturnFixture() (CustodyState, HostIdentity, []byte, time.Time) {
 	start := time.Date(2026, 10, 20, 6, 0, 0, 0, time.UTC)
 	i := HostIdentity{Host: "m5", PlatformUUID: "platform", BootID: "boot", ExecutableSHA256: strings.Repeat("a", 64)}
-	s := CustodyState{Delegation: Delegation{Request: SleepRequest{ID: "sleep-one", Host: "m5", WakeAt: start.Add(3 * time.Minute)}, Admission: SleepAdmission{Host: i.Host, PlatformUUID: i.PlatformUUID, BootID: i.BootID}, ExecutableSHA256: i.ExecutableSHA256}, ConsumedAt: start, Observation: &ObserverEvidence{RequestID: "sleep-one", Host: i.Host, PlatformUUID: i.PlatformUUID, BootID: i.BootID, LostAt: start.Add(2 * time.Second), ReturnedAt: start.Add(181 * time.Second), ContinuitySHA256: strings.Repeat("c", 64)}}
+	s := CustodyState{Delegation: Delegation{Request: SleepRequest{ID: "sleep-one", Host: "m5", WakeAt: start.Add(3 * time.Minute)}, Admission: SleepAdmission{Host: i.Host, PlatformUUID: i.PlatformUUID, BootID: i.BootID}, ExecutableSHA256: i.ExecutableSHA256}, ConsumedAt: start, NativeAuthorizedAt: start, Observation: &ObserverEvidence{RequestID: "sleep-one", Host: i.Host, PlatformUUID: i.PlatformUUID, BootID: i.BootID, LostAt: start.Add(2 * time.Second), ReturnedAt: start.Add(181 * time.Second), ContinuitySHA256: strings.Repeat("c", 64)}}
 	log := []byte("2026-10-20 06:00:01 +0000 Sleep Entering Sleep state due to 'Software Sleep pid=1'\n2026-10-20 06:03:00 +0000 Wake Wake from Normal Sleep due to RTC\n")
 	return s, i, log, start.Add(182 * time.Second)
 }
@@ -21,7 +21,7 @@ func TestNativeReturnRequiresRealPairAndIndependentUnchangedBoot(t *testing.T) {
 	if e, err := ParseNativeReturn(log, s, i, now); err != nil || !e.FullWake || e.SleepRecordID == "" {
 		t.Fatalf("evidence=%+v err=%v", e, err)
 	}
-	for _, mode := range []string{"darkwake", "old-boot", "old-native", "no-observer", "wrong-observer-boot", "observer-before-wake", "no-sleep", "no-consume"} {
+	for _, mode := range []string{"darkwake", "old-boot", "old-native", "no-observer", "wrong-observer-boot", "observer-before-wake", "no-sleep", "no-consume", "no-native-authorization", "native-before-consume", "aborted", "native-after-sleep"} {
 		t.Run(mode, func(t *testing.T) {
 			s, i, log, now := nativeReturnFixture()
 			switch mode {
@@ -41,6 +41,14 @@ func TestNativeReturnRequiresRealPairAndIndependentUnchangedBoot(t *testing.T) {
 				log = []byte(strings.Split(string(log), "\n")[1])
 			case "no-consume":
 				s.ConsumedAt = time.Time{}
+			case "no-native-authorization":
+				s.NativeAuthorizedAt = time.Time{}
+			case "native-before-consume":
+				s.NativeAuthorizedAt = s.ConsumedAt.Add(-time.Second)
+			case "aborted":
+				s.AbortedAt = now
+			case "native-after-sleep":
+				s.NativeAuthorizedAt = s.ConsumedAt.Add(2 * time.Second)
 			}
 			if _, err := ParseNativeReturn(log, s, i, now); err == nil {
 				t.Fatal("unproved native return accepted")

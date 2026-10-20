@@ -13,7 +13,7 @@ The existing canonical service stores a finite management-created delegation in 
 
 The delegation binds owner-request reference/digest, sleep-only request and exact wake, platform UUID/boot, executable and reviewed candidate digests, reviewed process/writer inventory, finite window/generation, exact enrolled token/session/machine/thread/runtime identities for coordinator, native custodian and independent M1 observer. The server injects authenticated actor identity into context; body role/identity strings confer nothing. Bootstrap and local-store callers cannot participate. The native participants require actual adopted UUIDs; an existing cloud coordinator remains bound to its exact logical host token/session without inventing a hardware identity. Typed requests additionally require clocks within five seconds. Freshness and revocation are checked against live records even when the general registration gate is configured in log mode.
 
-One typed participant RPC supports status, inspection, fresh role readiness, consume, independent return observation and native return. Consumption and Ma'at reservation admission lock the same canonical transaction row across replicas. Every overlapping active/queued host or component reservation refuses sleep, apart from the exact management-bound controller reservation ID/holder/work. A consumed unresolved host refuses new reservations, including floor shares; expiry or revocation alone cannot clear that fence. Independent same-boot return evidence clears it; the original nonce remains consumed.
+One typed participant RPC supports status, inspection, fresh role readiness, consume, independent return observation and native return. Consumption and Ma'at reservation admission lock the same canonical transaction row across replicas. Every overlapping active/queued host or component reservation refuses sleep, apart from the exact management-bound controller reservation ID/holder/work. A consumed unresolved host refuses new reservations, including floor shares; expiry or revocation alone cannot clear that fence. Independent same-boot return evidence or the narrowly proved pre-native abort below clears it; the original nonce remains consumed.
 
 The native production client accepts only the release-compiled existing HTTPS origin `https://sirsi-router-6kdf4or4qq-uc.a.run.app` through the existing authenticated RemoteStore client/transport, retaining its pin/proxy policy and refusing redirects, local stores and arbitrary/spool endpoint overrides. No new client, TLS root, IAM principal or key enrollment is introduced. A deployment that only exposes a spool transport cannot dispatch power until its existing privileged native custody service is correctly bound to the enrolled HTTPS transport; a client fallback must not manufacture that binding.
 
@@ -81,3 +81,26 @@ roll back to a fence-unaware writer while a consumed request is unresolved.
 No live delegation, native power, privilege enrollment or new cloud worker is
 created by these source changes. Reading Room/Workspace publication remains
 pending review; physical and warm-cloud overlap evidence remain unperformed.
+
+## Pre-native compensation after independent review
+
+The server records a creation-time native-gate version. Consumption burns the
+nonce and fences the host; durable local invocation intent must then persist
+before the exact custodian requests a separate native authorization. Native
+invocation and `abort-before-native` serialize on the same canonical transaction.
+Only a consumed, versioned record without native authorization can be aborted.
+Abort is terminal/idempotent and never revives admission. The exact custodian may
+recover that pre-native record after expiry/revocation; caller claims about
+whether power ran are not evidence. Missing fields in a legacy record deny
+compensation rather than assuming no invocation.
+
+A successful native authorization still rechecks fresh active participants,
+revocation, identity/inventory, actual execution/lease budgets and owned-wake
+time. A lost authorization response is unknown: no native call, automatic abort
+or retry follows. Once native authorization exists, all native/journal failures
+retain the conservative canonical fence and owned wake. Full native return and
+observer evidence start at native authorization, not earlier consumption.
+
+The local `native-invoked` event is durable invocation intent, never physical
+proof. Its new terminal pre-native-aborted event is written only after canonical
+abort confirmation and owned-wake cleanup; the original nonce is retained.

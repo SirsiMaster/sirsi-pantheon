@@ -71,13 +71,15 @@ type CustodyReady struct {
 }
 
 type CustodyState struct {
-	Delegation              Delegation
-	Ready                   map[string]CustodyReady
-	ConsumedAt, RevokedAt   time.Time
-	RevocationReason        string
-	Return                  *ReturnEvidence
-	Observation             *ObserverEvidence
-	ControllerLeaseDeadline time.Time
+	Delegation                    Delegation
+	Ready                         map[string]CustodyReady
+	ConsumedAt, RevokedAt         time.Time
+	NativeAuthorizedAt, AbortedAt time.Time
+	NativeGateVersion             int
+	RevocationReason              string
+	Return                        *ReturnEvidence
+	Observation                   *ObserverEvidence
+	ControllerLeaseDeadline       time.Time
 }
 
 // OnlineAuthority must be the already enrolled canonical service transport.
@@ -144,16 +146,45 @@ func (c *OnlineController) CurrentQuiet(ctx context.Context, a SleepAdmission) (
 	return QuietReceipt{ID: a.ID, Host: a.Host, BootID: a.BootID, Operation: SleepOperation, ExpiresAt: r.At.Add(15 * time.Second), Digest: r.Digest}, nil
 }
 
-func (c *OnlineController) AuthorizeSleep(ctx context.Context, a SleepAdmission, q QuietReceipt, action SleepAction) error {
-	if action == nil || q.ID != a.ID {
+// AbortBeforeNative can only retire a consumed request whose canonical native
+// authorization is absent. The server serializes this with invocation; caller
+// claims about whether native power ran never authorize compensation.
+func (c *OnlineController) AbortBeforeNative(ctx context.Context, a SleepAdmission) error {
+	s, err := c.Authority.DesktopSleep(ctx, CustodyCall{Operation: "abort-before-native", ID: c.ID, Role: "custodian"})
+	if err != nil {
+		return err
+	}
+	if s.Delegation.Admission != a || s.AbortedAt.IsZero() || !s.NativeAuthorizedAt.IsZero() {
+		return errors.New("sleep custody: canonical pre-native abort not confirmed")
+	}
+	return nil
+}
+
+func (c *OnlineController) AuthorizeSleep(ctx context.Context, a SleepAdmission, q QuietReceipt, prepare, action SleepAction) error {
+	if prepare == nil || action == nil || q.ID != a.ID {
 		return errors.New("sleep custody: invalid native callback binding")
 	}
 	s, err := c.call(ctx, "consume")
 	if err != nil {
-		return err
+		return errors.Join(ErrSleepUnknown, err)
 	}
 	if s.Delegation.Admission != a || s.ConsumedAt.IsZero() || s.Ready["custodian"].Digest != q.Digest {
-		return errors.New("sleep custody: live consume differs from prepared custody")
+		return errors.Join(ErrSleepUnknown, errors.New("sleep custody: live consume differs from prepared custody"))
+	}
+	if err := prepare(ctx); err != nil {
+		if abortErr := c.AbortBeforeNative(ctx, a); abortErr != nil {
+			return errors.Join(ErrSleepUnknown, err, abortErr)
+		}
+		return errors.Join(ErrSleepAbortedBeforeNative, err)
+	}
+	s, err = c.call(ctx, "invoke")
+	// A lost invocation response is UNKNOWN, never permission to call native
+	// power, compensate, or retry. Explicit recovery consults server-owned phase.
+	if err != nil {
+		return errors.Join(ErrSleepUnknown, err)
+	}
+	if s.Delegation.Admission != a || s.NativeAuthorizedAt.IsZero() || !s.AbortedAt.IsZero() {
+		return errors.Join(ErrSleepUnknown, errors.New("sleep custody: canonical native authorization not confirmed"))
 	}
 	return action(ctx)
 }

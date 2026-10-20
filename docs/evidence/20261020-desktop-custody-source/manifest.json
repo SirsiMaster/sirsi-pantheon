@@ -51,6 +51,34 @@
       "normal_maat_terminal": "fa23dc1d95f34f3f965bc11078a47b96",
       "result": "PASS: custody routerstore race tests12.430s and routerstore vet",
       "scope": "independent review correction source tests only; no native power"
+    },
+    {
+      "artifact": "/private/tmp/sha-desktop-custody-preinvoke-abort-20261020.log",
+      "sha256": "db1a893d583ead7138bb18fdff7fd640803df7b0f099b72f9131446261aa3f0f",
+      "normal_maat_terminal": "6298a68c13f94737a083e2d566020691",
+      "result": "FAIL: missing private test journal directory; retained",
+      "scope": "canonical phase/source-only correction; no native power"
+    },
+    {
+      "artifact": "/private/tmp/sha-desktop-custody-preinvoke-joined-20261020.log",
+      "sha256": "f2dce7ff2797920de65621366a5486014080cd60e34508f5ff8bfb9576560994",
+      "normal_maat_terminal": "e04d6bc6bdb34fe6b3696848dfac255b",
+      "result": "PASS: joined custody tests, vet and CLI tests before expanded native phase guards",
+      "scope": "canonical phase/source-only correction; no native power"
+    },
+    {
+      "artifact": "/private/tmp/sha-desktop-custody-preinvoke-final-gate-20261020.log",
+      "sha256": "57087878190b92f5c4cd59e98899156aca38fa7717decdb04579630a1edebcc2",
+      "normal_maat_terminal": "e21acdcccc4c45a1acdc1aa1e3b7925b",
+      "result": "FAIL: native no-consume negative; lint0/routerstore147.636s passed but whole gate failed, retained",
+      "scope": "canonical phase/source-only correction; no native power"
+    },
+    {
+      "artifact": "/private/tmp/sha-desktop-custody-preinvoke-qualified-gate-20261020.log",
+      "sha256": "1a964119c40a6b7177053690c14f528aa8d5e4765a5dc1ba11ba51712b4ec487",
+      "normal_maat_terminal": "0417e04b2a1848bc88a020522aad83f8",
+      "result": "PASS: affected lint0/full custody-routerstore race1.204s/151.103s/vet/CLI tests4.234s/full CLI build/diff check",
+      "scope": "pre-native recovery source qualification only; fake power, no production delegation or physical offline proof"
     }
   ],
   "native_power_performed": false,

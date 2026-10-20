@@ -19,6 +19,7 @@ const (
 
 var (
 	ErrReturnVerificationPending = errors.New("sleep dispatched; independent post-wake verification is required")
+	ErrSleepAbortedBeforeNative  = errors.New("sleep canceled by canonical pre-native abort")
 	ErrSleepUnknown              = errors.New("sleep outcome is unknown and requires recovery review")
 	ErrWakeScheduleUnknown       = errors.New("owned wake schedule outcome is unknown")
 	identifierRE                 = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
@@ -92,7 +93,8 @@ type SleepAction func(context.Context) error
 // write safety immediately before calling action.
 type SleepCustodian interface {
 	CurrentQuiet(context.Context, SleepAdmission) (QuietReceipt, error)
-	AuthorizeSleep(context.Context, SleepAdmission, QuietReceipt, SleepAction) error
+	AuthorizeSleep(context.Context, SleepAdmission, QuietReceipt, SleepAction, SleepAction) error
+	AbortBeforeNative(context.Context, SleepAdmission) error
 	VerifyReturn(context.Context, SleepAdmission, WakeReceipt) (ReturnEvidence, error)
 }
 
@@ -112,7 +114,8 @@ const (
 	WakeScheduled       SleepPhase = "wake-scheduled"
 	WakeReadBack        SleepPhase = "wake-readback"
 	SleepRequested      SleepPhase = "sleep-requested"
-	SleepInvoked        SleepPhase = "native-invoked"
+	SleepInvoked        SleepPhase = "native-invoked" // Durable intent; never physical proof.
+	SleepAborted        SleepPhase = "pre-native-aborted"
 	SleepNativeReturned SleepPhase = "native-returned"
 	ReturnPending       SleepPhase = "returned-awaiting-verification"
 	SleepVerified       SleepPhase = "verified-return"
@@ -218,17 +221,25 @@ func (s SleepService) Dispatch(ctx context.Context, req SleepRequest) error {
 	// AuthorizeSleep must invoke action synchronously and must not retain it.
 	// Serialize the callback and close it on return, rejecting duplicate/late calls.
 	var mu sync.Mutex
-	invoked, closed := false, false
+	prepared, invoked, closed := false, false, false
 	var actionErr error
 	authorizeErr := s.Custodian.AuthorizeSleep(ctx, a, quiet, func(actionCtx context.Context) error {
 		mu.Lock()
 		defer mu.Unlock()
-		if closed || invoked {
-			return errors.New("sleep custody: native callback is closed or already invoked")
+		if closed || prepared || invoked {
+			return errors.New("sleep custody: preparation callback is closed or already invoked")
 		}
-		if err := s.Journal.AppendSleep(s.event(SleepInvoked, req, a, quiet, wake, "", "native invocation begins; physical outcome requires independent proof")); err != nil {
+		if err := s.Journal.AppendSleep(s.event(SleepInvoked, req, a, quiet, wake, "", "durable invocation intent; canonical native authorization still required")); err != nil {
 			actionErr = fmt.Errorf("persist native invocation: %w", err)
 			return actionErr
+		}
+		prepared = true
+		return nil
+	}, func(actionCtx context.Context) error {
+		mu.Lock()
+		defer mu.Unlock()
+		if closed || !prepared || invoked {
+			return errors.New("sleep custody: native callback is closed, unprepared or already invoked")
 		}
 		invoked = true
 		nativeErr := s.Power.Sleep(actionCtx)
@@ -245,9 +256,15 @@ func (s SleepService) Dispatch(ctx context.Context, req SleepRequest) error {
 	started, nativeErr := invoked, actionErr
 	mu.Unlock()
 	if err := errors.Join(authorizeErr, nativeErr); err != nil {
-		if started {
+		if started || errors.Is(err, ErrSleepUnknown) {
 			// The scheduled wake is a recovery safeguard once native invocation begins.
 			return s.unknown(req, a, "native invocation has ambiguous outcome; owned wake retained", err)
+		}
+		if errors.Is(err, ErrSleepAbortedBeforeNative) {
+			return s.cancelAndAbort(ctx, req, a, wake, err)
+		}
+		if prepared {
+			return s.unknown(req, a, "prepared native outcome unconfirmed; owned wake retained", err)
 		}
 		return s.cancelAndFail(ctx, req, a, wake, "final custody fence denied sleep", err)
 	}
@@ -382,6 +399,45 @@ func (s SleepService) event(p SleepPhase, r SleepRequest, a SleepAdmission, q Qu
 		w.WakeAt = r.WakeAt
 	}
 	return SleepEvent{Phase: p, RequestID: r.ID, Host: a.Host, Owner: a.Owner, AdmissionID: a.ID, Issuer: a.Issuer, PlatformUUID: a.PlatformUUID, BootID: a.BootID, Operation: a.Operation, OwnerTag: "pantheon-sleep-" + r.ID, ReviewDigest: a.ReviewDigest, Nonce: a.Nonce, NotBefore: a.NotBefore, NotAfter: a.NotAfter, CustodyGeneration: a.CustodyGeneration, QuietDigest: q.Digest, WakeID: w.ID, WakeAt: w.WakeAt, WakeReadback: w.Readback, ReturnDigest: returnDigest, At: s.now(), Detail: detail}
+}
+
+// AbortBeforeNative is explicit recovery only; canonical phase, not local
+// journal claims, proves native authorization was never issued.
+func (s SleepService) AbortBeforeNative(ctx context.Context, req SleepRequest) error {
+	if err := s.dependencies(); err != nil {
+		return err
+	}
+	events, err := s.Journal.ReadSleep(req.ID)
+	if err != nil {
+		return err
+	}
+	a, err := admissionFromEvents(events)
+	if err != nil {
+		return err
+	}
+	if err := s.validateAdmissionIdentity(req, a); err != nil {
+		return err
+	}
+	wake, ok := wakeFromEvents(events)
+	if !ok {
+		return errors.New("sleep custody: exact owned wake receipt required for abort cleanup")
+	}
+	if err := s.Custodian.AbortBeforeNative(ctx, a); err != nil {
+		return err
+	}
+	if hasSleepPhase(events, SleepAborted) {
+		return ErrSleepAbortedBeforeNative
+	}
+	return s.cancelAndAbort(ctx, req, a, wake, ErrSleepAbortedBeforeNative)
+}
+func (s SleepService) cancelAndAbort(ctx context.Context, req SleepRequest, a SleepAdmission, wake WakeReceipt, cause error) error {
+	if err := s.Power.CancelWake(ctx, a, req, wake); err != nil {
+		return s.unknown(req, a, "canonical pre-native abort confirmed; owned wake cleanup unresolved", errors.Join(cause, err))
+	}
+	if err := s.Journal.AppendSleep(s.event(SleepAborted, req, a, QuietReceipt{}, wake, "", "canonical pre-native abort confirmed; nonce remains spent")); err != nil {
+		return errors.Join(cause, err)
+	}
+	return cause
 }
 func (s SleepService) cancelAndFail(c context.Context, r SleepRequest, a SleepAdmission, w WakeReceipt, d string, cause error) error {
 	if err := s.Power.CancelWake(c, a, r, w); err != nil {

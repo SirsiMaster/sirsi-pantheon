@@ -349,6 +349,9 @@ func TestDesktopCustodyIndependentReturnProofClearsOnlyVerifiedFence(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := f.call("custodian", "invoke"); err != nil {
+		t.Fatal(err)
+	}
 	f.now = f.d.Request.WakeAt.Add(2 * time.Second)
 	for _, p := range []dc.Participant{f.d.Coordinator, f.d.Custodian, f.d.Observer} {
 		if err := f.s.UpsertThreads([]ThreadRecord{{ThreadID: p.ThreadID, Agent: p.Agent, Host: p.Host, Status: "active", LastSeenAt: f.now.Format(time.RFC3339Nano), Payload: []byte(`{}`)}}); err != nil {
@@ -397,6 +400,9 @@ func TestDesktopCustodyPlannedSleepUsesRealBudgetAndGenuinePostWakeHeartbeat(t *
 	f.ready(t)
 	s, err := f.call("custodian", "consume")
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.call("custodian", "invoke"); err != nil {
 		t.Fatal(err)
 	}
 	if !s.ControllerLeaseDeadline.Equal(f.now.Add(240 * time.Second)) {

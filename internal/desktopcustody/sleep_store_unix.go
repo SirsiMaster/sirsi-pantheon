@@ -55,7 +55,7 @@ func (j *FileSleepJournal) Close() error {
 }
 
 var sleepOrdinal = map[SleepPhase]string{
-	SleepPrepared: "00-prepared", WakeScheduled: "10-wake-scheduled", WakeReadBack: "20-wake-readback", SleepRequested: "30-sleep-requested", SleepInvoked: "35-native-invoked", SleepNativeReturned: "36-native-returned", ReturnPending: "40-return-pending", SleepVerified: "50-verified-return", SleepFailed: "90-failed", SleepUnknown: "91-unknown",
+	SleepPrepared: "00-prepared", WakeScheduled: "10-wake-scheduled", WakeReadBack: "20-wake-readback", SleepRequested: "30-sleep-requested", SleepInvoked: "35-native-invoked", SleepNativeReturned: "36-native-returned", ReturnPending: "40-return-pending", SleepVerified: "50-verified-return", SleepFailed: "90-failed", SleepUnknown: "91-unknown", SleepAborted: "92-pre-native-aborted",
 }
 
 func (j *FileSleepJournal) BeginSleep(e SleepEvent) error {
@@ -96,7 +96,7 @@ func (j *FileSleepJournal) ReadSleep(id string) ([]SleepEvent, error) {
 	err := j.withLock(func() error {
 		// Verified return is last even when it explicitly reconciles a retained
 		// unknown event. Preserve historical filenames and original error rows.
-		for _, p := range []SleepPhase{SleepPrepared, WakeScheduled, WakeReadBack, SleepRequested, SleepInvoked, SleepNativeReturned, ReturnPending, SleepFailed, SleepUnknown, SleepVerified} {
+		for _, p := range []SleepPhase{SleepPrepared, WakeScheduled, WakeReadBack, SleepRequested, SleepInvoked, SleepNativeReturned, ReturnPending, SleepFailed, SleepUnknown, SleepAborted, SleepVerified} {
 			b, err := j.read(sleepLeaf(id, p))
 			if errors.Is(err, unix.ENOENT) {
 				continue
@@ -127,10 +127,17 @@ func (j *FileSleepJournal) write(e SleepEvent) error {
 		return fmt.Errorf("marshal event: %w", err)
 	}
 	return j.withLock(func() error {
+		if e.Phase == SleepAborted {
+			if _, err := j.read(sleepLeaf(e.RequestID, SleepNativeReturned)); err == nil {
+				return errors.New("sleep custody: native-returned transaction cannot be pre-native aborted")
+			} else if !errors.Is(err, unix.ENOENT) {
+				return err
+			}
+		}
 		if err := j.create(sleepLeaf(e.RequestID, e.Phase), b); err != nil {
 			return err
 		}
-		if e.Phase != SleepVerified && e.Phase != SleepFailed {
+		if e.Phase != SleepVerified && e.Phase != SleepFailed && e.Phase != SleepAborted {
 			return nil
 		}
 		// A failed pre-invocation transaction can release its host fence. An
@@ -289,7 +296,10 @@ func validateSleepEvents(events []SleepEvent) error {
 	if seen[WakeScheduled] && !seen[SleepPrepared] || seen[WakeReadBack] && !seen[WakeScheduled] || seen[SleepRequested] && !seen[WakeReadBack] || seen[SleepInvoked] && !seen[SleepRequested] || seen[SleepNativeReturned] && !seen[SleepInvoked] || seen[ReturnPending] && !seen[SleepNativeReturned] {
 		return errors.New("sleep custody: invalid event transition")
 	}
-	if seen[SleepVerified] && ((!seen[ReturnPending] && !(seen[SleepUnknown] && seen[SleepInvoked] && seen[WakeReadBack])) || seen[SleepFailed]) {
+	if seen[SleepAborted] && seen[SleepNativeReturned] {
+		return errors.New("sleep custody: aborted transaction contains native return")
+	}
+	if seen[SleepVerified] && ((!seen[ReturnPending] && !(seen[SleepUnknown] && seen[SleepInvoked] && seen[WakeReadBack])) || seen[SleepFailed] || seen[SleepAborted]) {
 		return errors.New("sleep custody: conflicting terminal event")
 	}
 	return nil

@@ -41,7 +41,7 @@ firewall changes or guard relaxation are supplied by this feature.
 - `sirsi desktop-sleep dispatch REQUEST`: native custodian checks current
   inventory/assertions, journals once, schedules/reads the owned wake, requires
   fresh three-party custody and atomically consumes the finite authorization
-  before the single native sleep callback. The same controller remains alive
+  then persists invocation intent and separately authorizes native invocation before the single native sleep callback. The same controller remains alive
   until independently verified return; native command success alone is pending.
   Invoked uncertainty can only resolve with conclusive return proof, never a
   repeated invocation.
@@ -52,11 +52,22 @@ firewall changes or guard relaxation are supplied by this feature.
   prior persisted invocation/readback and the same authenticated return proof.
   It never dispatches or retries sleep.
 
+- `sirsi desktop-sleep abort-before-native REQUEST`: explicit recovery for the
+  exact consumed custodian. The server serializes this against native invocation
+  on the same transaction/fence. Only a server-created versioned pre-native record
+  with no native authorization can be terminalized, even after expiry/revocation.
+  The command cleans only its owned wake and records local abort; repeated abort
+  readback is idempotent. The nonce stays spent. Native-authorized and legacy
+  unknown records cannot be cleared this way. A lost invocation response never
+  triggers automatic abort, sleep or invocation retry.
+
 Use existing normal admissions and runtime/thread registration. Every foreign
 active/queued workload, including future overlapping work and floor shares,
 refuses sleep. An unresolved consumed host fence prevents new admissions; it is
-not silently removed by timeout or revocation. Unknown-before-invocation requires
-management incident review, not a substitute request ID.
+not silently removed by timeout or revocation. An explicit pre-native recovery can release a consumed fence only when the
+canonical record proves native authorization was never issued. A missing field
+in a legacy record is not that proof. Authorized or uncertain native invocation
+requires incident review/full return proof, never a substitute request ID.
 
 ## Deployment boundary
 

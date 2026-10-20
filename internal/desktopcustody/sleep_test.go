@@ -35,7 +35,7 @@ func (c *testCustodian) CurrentQuiet(context.Context, SleepAdmission) (QuietRece
 	}
 	return c.q, nil
 }
-func (c *testCustodian) AuthorizeSleep(ctx context.Context, _ SleepAdmission, _ QuietReceipt, fn SleepAction) error {
+func (c *testCustodian) AuthorizeSleep(ctx context.Context, _ SleepAdmission, _ QuietReceipt, prepare, fn SleepAction) error {
 	c.mu.Lock()
 	c.actions++
 	err := c.authorizeErr
@@ -43,8 +43,12 @@ func (c *testCustodian) AuthorizeSleep(ctx context.Context, _ SleepAdmission, _ 
 	if err != nil {
 		return err
 	}
+	if err := prepare(ctx); err != nil {
+		return err
+	}
 	return fn(ctx)
 }
+func (c *testCustodian) AbortBeforeNative(context.Context, SleepAdmission) error { return nil }
 func (c *testCustodian) VerifyReturn(context.Context, SleepAdmission, WakeReceipt) (ReturnEvidence, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

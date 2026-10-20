@@ -23,7 +23,7 @@ var desktopCustodyServiceOrigin = "https://sirsi-router-6kdf4or4qq-uc.a.run.app"
 var desktopSleepCmd = &cobra.Command{Use: "desktop-sleep", Short: "Governed finite sleep custody (no raw power commands)"}
 
 func init() {
-	for _, op := range []string{"inventory", "status", "preflight", "ready", "coordinate", "dispatch", "return", "reconcile", "observe"} {
+	for _, op := range []string{"inventory", "status", "preflight", "ready", "coordinate", "dispatch", "return", "reconcile", "observe", "abort-before-native"} {
 		cmd := &cobra.Command{Use: op + " <request-id>", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error { return runDesktopSleep(cmd, op, args[0]) }}
 		if op == "inventory" {
 			cmd.Use = "inventory <machine-name>"
@@ -111,7 +111,7 @@ func runDesktopSleep(cmd *cobra.Command, op, id string) error {
 	if err != nil {
 		return err
 	}
-	if op != "status" && op != "return" && op != "reconcile" {
+	if op != "status" && op != "return" && op != "reconcile" && op != "abort-before-native" {
 		bounded, cancel := context.WithDeadline(cmd.Context(), state.Delegation.Admission.NotAfter)
 		defer cancel()
 		cmd.SetContext(bounded)
@@ -184,9 +184,12 @@ func runDesktopSleep(cmd *cobra.Command, op, id string) error {
 	if err != nil {
 		return err
 	}
-	inv, err := dc.NativeInventory(cmd.Context())
-	if err != nil {
-		return err
+	var inv string
+	if op != "abort-before-native" {
+		inv, err = dc.NativeInventory(cmd.Context())
+		if err != nil {
+			return err
+		}
 	}
 	if op == "inventory" {
 		return json.NewEncoder(cmd.OutOrStdout()).Encode(struct {
@@ -245,6 +248,12 @@ func runDesktopSleep(cmd *cobra.Command, op, id string) error {
 	defer func() { _ = closeJournal() }()
 	service := dc.SleepService{Verifier: controller, Custodian: controller, Power: power, Journal: journal, Now: time.Now}
 	switch op {
+	case "abort-before-native":
+		err := service.AbortBeforeNative(cmd.Context(), state.Delegation.Request)
+		if errors.Is(err, dc.ErrSleepAbortedBeforeNative) {
+			return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]string{"state": "pre-native-aborted", "request_id": id})
+		}
+		return err
 	case "dispatch":
 		err := service.Dispatch(cmd.Context(), state.Delegation.Request)
 		reconcile := false

@@ -39,7 +39,7 @@ The local no-follow, private, fsynced journal retains nonces and host/boot fence
 Unknown scheduling or invocation is never retried. Explicit `reconcile` is
 return-only: it requires prior persisted invocation and owned-wake readback plus
 the same live/native/independent proof. It preserves the original unknown/error
-records. Unknown-before-invocation and uncertain consumed-but-not-invoked cases
+records. Native-authorized unknowns and legacy consumed-but-not-invoked cases
 remain fenced for management incident review; no successful sleep is invented.
 
 Production accepts only the release-compiled canonical HTTPS origin through the
@@ -72,3 +72,16 @@ The controller stays alive through return; actual post-wake registration refresh
 is required, never a synthetic heartbeat or a stale-session waiver. Configuration
 revocation is management-only; unresolved consumed state survives revocation and
 rollback must not restore a fence-unaware writer. All actual power remains unarmed.
+
+### Reviewed pre-native recovery
+
+Consumption and native invocation authorization are separate canonical phases.
+The controller persists invocation intent between them. A journal failure there
+can terminalize only the server-versioned, consumed-but-not-native-authorized
+record; nonce history is never reset. Explicit `abort-before-native` recovery
+also handles a lost pre-native response after consulting the canonical phase.
+Invoke/abort serialize with reservation admission. Once native authorization is
+issued, unknown responses or native/journal failures preserve the fence and owned
+wake, even if no physical sleep can be proved. Legacy records without the server
+phase version cannot be compensated. Physical proof always requires actual
+Sleep/full Wake and independent observation after native authorization.

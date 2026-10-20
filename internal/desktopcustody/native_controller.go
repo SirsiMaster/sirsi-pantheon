@@ -222,11 +222,11 @@ func inventoryDigest(ps, files, assertions []byte, self int) (string, error) {
 }
 
 // ParseNativeReturn requires actual Sleep followed by full Wake in the
-// consumed interval. DarkWake, reachability, a new boot, or a planned event
+// native-authorized interval. DarkWake, reachability, a new boot, or a planned event
 // without native log evidence cannot qualify a return.
 func ParseNativeReturn(log []byte, s CustodyState, actual HostIdentity, now time.Time) (ReturnEvidence, error) {
 	d, a := s.Delegation, s.Delegation.Admission
-	if actual.Host != a.Host || actual.PlatformUUID != a.PlatformUUID || actual.BootID != a.BootID || actual.ExecutableSHA256 != d.ExecutableSHA256 || s.ConsumedAt.IsZero() || s.Observation == nil {
+	if actual.Host != a.Host || actual.PlatformUUID != a.PlatformUUID || actual.BootID != a.BootID || actual.ExecutableSHA256 != d.ExecutableSHA256 || s.ConsumedAt.IsZero() || s.NativeAuthorizedAt.IsZero() || s.NativeAuthorizedAt.Before(s.ConsumedAt) || !s.AbortedAt.IsZero() || s.Observation == nil {
 		return ReturnEvidence{}, errors.New("sleep custody: unchanged native identity and independent observation required")
 	}
 	pattern := regexp.MustCompile(`(?m)^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [+-]\d{4})\s+(Sleep|Wake)\s+([^\r\n]+)$`)
@@ -234,7 +234,7 @@ func ParseNativeReturn(log []byte, s CustodyState, actual HostIdentity, now time
 	var sleepAt, wakeAt time.Time
 	for _, m := range pattern.FindAllSubmatch(log, -1) {
 		at, err := time.Parse("2006-01-02 15:04:05 -0700", string(m[1]))
-		if err != nil || at.Before(s.ConsumedAt.Truncate(time.Second)) || at.After(now) {
+		if err != nil || at.Before(s.NativeAuthorizedAt.Truncate(time.Second)) || at.After(now) {
 			continue
 		}
 		kind, text := string(m[2]), string(m[3])
@@ -252,7 +252,7 @@ func ParseNativeReturn(log []byte, s CustodyState, actual HostIdentity, now time
 		return ReturnEvidence{}, errors.New("sleep custody: actual Sleep/full-Wake pair unavailable")
 	}
 	o := s.Observation
-	if o.RequestID != d.Request.ID || o.Host != a.Host || o.PlatformUUID != a.PlatformUUID || o.BootID != a.BootID || o.LostAt.Before(s.ConsumedAt) || o.ReturnedAt.Before(wakeAt) || o.ReturnedAt.After(now.Add(5*time.Second)) {
+	if o.RequestID != d.Request.ID || o.Host != a.Host || o.PlatformUUID != a.PlatformUUID || o.BootID != a.BootID || o.LostAt.Before(s.NativeAuthorizedAt) || o.ReturnedAt.Before(wakeAt) || o.ReturnedAt.After(now.Add(5*time.Second)) {
 		return ReturnEvidence{}, errors.New("sleep custody: independent observation does not bind native return")
 	}
 	b, _ := json.Marshal(o)
@@ -316,13 +316,16 @@ func ObserveNativeReturn(ctx context.Context, authority OnlineAuthority, id stri
 			return s, err
 		}
 		s = current
+		if !s.AbortedAt.IsZero() {
+			return s, errors.New("sleep custody: canonical pre-native abort; no offline proof")
+		}
 		b, err = probe()
 		at := time.Now().UTC()
 		if err != nil {
 			if strings.Contains(err.Error(), "Permission denied") || strings.Contains(err.Error(), "Host key verification failed") {
 				return s, err
 			}
-			if !s.ConsumedAt.IsZero() && e.LostAt.IsZero() {
+			if !s.NativeAuthorizedAt.IsZero() && e.LostAt.IsZero() {
 				e.LostAt = at
 			}
 			continue

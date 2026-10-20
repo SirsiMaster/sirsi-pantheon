@@ -90,3 +90,42 @@ uses a later whole second and checks the mutation. Both receipts are retained.
 
 The next full-share native test window was explicitly ceded to SSA for its
 finite Gemma qualification; SHA starts no competing payload while it runs.
+
+## SSA whole-controller correction — pre-native consumed fence
+
+Independent review of `124dad06` found that successful canonical consumption
+followed by an invocation-journal write failure could strand the scheduling
+fence even though no native sleep ran. A separate server-owned native gate now
+serializes invocation and pre-native abort with ordinary reservation admission.
+Only the exact consumed custodian can terminalize a versioned record lacking
+native authorization; expiry/revocation do not revive it. Legacy missing-phase
+records deny compensation. Lost invocation responses are unknown, with no
+native call, automatic abort or invocation retry. Once native authorization is
+issued, native/journal errors retain the conservative fence and owned wake.
+Actual return/observer evidence is bounded by native authorization, with both
+prior consumption and authorization required.
+
+The joined regression uses the actual canonical HTTP/session/store and private
+file journal, injects the write failure after consumption, and proves zero
+native calls, owned-wake cleanup and subsequent ordinary reservation. Additional
+negative controls cover invoke/abort concurrency, exact role, expired/revoked
+recovery, immutable abort replay, spent nonce/restart, legacy state, changed
+identity/peer/budget, lost response before/after commit and a journal failure
+after native authorization. Power is fake throughout these source tests.
+
+First run6298a68c13f94737a083e2d566020691 failed because its test journal directory
+was absent; the fixture now creates it privately. Joined tests, vet and CLI tests
+passed under e04d6bc6bdb34fe6b3696848dfac255b (1.282/16.322/4.307 seconds).
+Expanded gate e21acdcccc4c45a1acdc1aa1e3b7925b had zero lint issues and passed the
+full routerstore race suite147.636 seconds, but failed the existing native
+no-consumption negative after the new native interval bound accidentally omitted
+the prior consumption guard. Both guards and explicit new native-phase negative
+cases are restored. This failed receipt remains a failure. Final combined-source
+qualification is pending the next gate when this section is written.
+
+Final combined-source correction gate `0417e04b2a1848bc88a020522aad83f8`
+passed: affected-source lint0 issues; full desktopcustody/routerstore race suites
+1.204/151.103 seconds; vet; CLI tests4.234 seconds; full non-installed CLI build;
+and diff check. Natural exit0/release. Native linker duplicate-lobjc warnings
+were non-fatal. Whole successor CI, independent SSA delta acceptance, normal
+release and installed native/physical qualification remain pending.

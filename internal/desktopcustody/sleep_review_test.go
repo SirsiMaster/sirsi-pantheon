@@ -105,10 +105,13 @@ type callbackCustodian struct {
 	retained SleepAction
 }
 
-func (c *callbackCustodian) AuthorizeSleep(ctx context.Context, _ SleepAdmission, _ QuietReceipt, fn SleepAction) error {
+func (c *callbackCustodian) AuthorizeSleep(ctx context.Context, _ SleepAdmission, _ QuietReceipt, prepare, fn SleepAction) error {
 	c.retained = fn
 	if c.skip {
 		return nil
+	}
+	if err := prepare(ctx); err != nil {
+		return err
 	}
 	if err := fn(ctx); err != nil {
 		return err
