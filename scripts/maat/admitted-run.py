@@ -126,10 +126,22 @@ def local_resource():
     return names[name]
 
 
-def valid(row, resource, agent, work, cpu_cores=None):
+def execution_regime(cpu_cores=None, requested=None):
+    if requested not in (None, 'quiet', 'loaded', 'build'):
+        raise Refused('Unknown execution regime')
+    if cpu_cores and requested not in (None, 'build'):
+        raise Refused('CPU build floor cannot authorize quiet or loaded model work')
+    if requested == 'build' and not cpu_cores:
+        raise Refused('Build regime requires an explicit CPU build mask')
+    return requested or ('build' if cpu_cores else 'loaded')
+
+
+def valid(row, resource, agent, work, cpu_cores=None, regime=None):
     if not isinstance(row, dict):
         return False
     if (row.get('status'), row.get('resource'), row.get('holder'), row.get('work')) != ('active', resource, agent, work):
+        return False
+    if regime is not None and row.get('regime') != regime:
         return False
     if row.get('share') != 'full':
         if (row.get('share') != 'floor' or type(cpu_cores) is not int or cpu_cores < 1 or
@@ -303,7 +315,7 @@ class Native:
 
     def reserve(self, resource, agent, work):
         return self.call('maat', 'reserve', resource, '--holder', agent, '--work', work,
-                         '--regime', 'build' if self.cpu_cores else 'loaded', '--lease-ttl', '240', '--exempt-pid',
+                         '--regime', execution_regime(self.cpu_cores, getattr(self, 'requested_regime', None)), '--lease-ttl', '240', '--exempt-pid',
                          str(os.getpid()), '--repro', str(Path(__file__).resolve()), '--json')
 
     def heartbeat(self, identity):
@@ -436,9 +448,14 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
     code = 78
     reservation_requested = reservation_replied = False
     cpu_cores = getattr(backend, 'cpu_cores', None)
+    regime = None
     record['execution_timeout_sec'] = timeout
     try:
         require_job_safe_command(command)
+        regime = getattr(backend, 'requested_regime', None)
+        if regime is not None:
+            regime = execution_regime(cpu_cores, regime)
+            record['requested_regime'] = regime
         backend.registered(agent, thread)
         confirmed_at = time.monotonic()
         # A destination-local executor owns this job, not the primary holder
@@ -448,7 +465,7 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
         # Ask the atomic scheduler for this executor's own exact decision.
         fresh_executor = isinstance(backend, Native) and backend.executor_thread is not None
         row = None if fresh_executor else backend.lookup(resource)
-        if fresh_executor or row is None or (cpu_cores and not valid(row, resource, agent, work, cpu_cores)):
+        if fresh_executor or regime == 'quiet' or row is None or (cpu_cores and not valid(row, resource, agent, work, cpu_cores, regime)):
             reservation_requested = True
             confirmed_at = time.monotonic()
             reply = backend.reserve(resource, agent, work)
@@ -469,7 +486,7 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
                     backend.owned_admission = owned
                     backend.release_scope = {key: row.get(key) for key in
                                              ('id', 'resource', 'holder', 'work', 'exempt_pid')}
-        if not valid(row, resource, agent, work, cpu_cores):
+        if not valid(row, resource, agent, work, cpu_cores, regime):
             raise Refused('Fresh exact host/holder/work sufficient admission required: '+
                           json.dumps(record.get('admission_decision', refusal_details({'reservation': row})), sort_keys=True))
         identity = row['id']
@@ -671,6 +688,8 @@ def main():
                         help='Total recurring supervisor lifetime, at most 86400 seconds')
     parser.add_argument('--cpu-cores', type=int,
                         help='Explicit cooperative CPU-only build mask; may use a sufficient granted build floor, never GPU/model admission')
+    parser.add_argument('--regime', choices=('quiet', 'loaded', 'build'),
+                        help='Request the actual canonical regime; quiet requires a fresh full-share native executor, never relabels loaded work')
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     command = args.command[1:] if args.command[:1] == ['--'] else args.command
@@ -678,6 +697,12 @@ def main():
         parser.error('Supply a bounded timeout, simple work identity and foreground command after --')
     if args.cpu_cores is not None and not 1 <= args.cpu_cores <= 64:
         parser.error('CPU build mask must be between 1 and 64')
+    try:
+        regime = execution_regime(args.cpu_cores, args.regime)
+    except Refused as error:
+        parser.error(str(error))
+    if regime == 'quiet' and not args.register_executor:
+        parser.error('Quiet qualification requires --register-executor and a fresh owned reservation')
     if not 1 <= args.iterations <= 1000 or not 0 <= args.interval <= 3600:
         parser.error('Iterations must be 1..1000 and interval 0..3600 seconds')
     if args.iterations > 1 and (not args.register_executor or args.job_timeout is None):
@@ -701,6 +726,7 @@ def main():
     backend = Native()
     backend.execution_receipt_root = folder
     backend.cpu_cores = args.cpu_cores
+    backend.requested_regime = regime
     def persist():
         with target.open('w') as output:
             json.dump(record, output, indent=2); output.flush(); os.fsync(output.fileno())

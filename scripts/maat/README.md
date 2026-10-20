@@ -1,5 +1,27 @@
 # Fabric reconciliation census
 
+## Explicit quiet qualification (source successor, not installed)
+
+The native launcher accepts `--regime quiet` only together with
+`--register-executor`. It asks the canonical scheduler for a new reservation
+and refuses unless that exact executor receives a fresh full-share **quiet**
+grant. A same-lane loaded grant is not borrowed or renamed; a CPU build floor
+cannot authorize quiet work. The exact confirmed regime remains bound during
+renewal and original supervisor deadline/cleanup rules still apply. Ordinary
+GPU launches default to loaded; explicit CPU masks remain build-only.
+
+This is a necessary interface correction, not a clean-host assertion. Before
+publishing a quiet result, qualify actual competing CI/payload admission,
+host/resource evidence, sample continuity and final ownership cleanup. Never
+hide a `Runner.Worker`, relabel a loaded sample, run a second nested reservation
+without an explicit owner, or stop foreign payloads to manufacture quiet. The
+installed runner does not gain this interface until normal reviewed rollout.
+
+Tests: `test_admitted_run.py` covers actual requested regime, no loaded borrowing,
+wrong-regime/floor prelaunch refusal, missing native executor, unchanged default
+placement and refusal of renewal scope changes. Test results must be recorded
+separately; authored tests alone prove nothing about physical quiet.
+
 ## Native release executor (Oct20)
 
 The self-hosted release job is an execution placement, not implicitly M5.

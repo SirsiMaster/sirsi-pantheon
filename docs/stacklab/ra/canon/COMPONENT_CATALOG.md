@@ -2,6 +2,7 @@
 
 | Component | Source surface | Boundary | Release evidence/state |
 |---|---|---|---|
+| Explicit native quiet request | `scripts/maat/admitted-run.py`, `scripts/maat/test_admitted_run.py` | fresh destination-native owned full-share quiet grant; never loaded relabel or CPU-floor model permission | source successor; tests, install, CI payload admission and physical sample qualification not inferred |
 | Canonical resolver | `internal/routerstore/resolve.go` | URL/service or explicit test DB | one-authority fix; verified locally |
 | Dispatch facade | `internal/dispatch` | all production reads/writes | package tests; source-bound |
 | Registry | `internal/router/registry.go` | identity and adapter metadata | origin/service drift doctor |
