@@ -1,5 +1,18 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-20 — bounded Apollo worker source successor
+
+- Fence a bounded Apollo tool turn to one explicit router item rather than the
+  oldest eligible inbox item.
+- Require and read back the lead-owned Gemma worker answer-role declaration
+  before the bounded worker may claim or complete that item; ordinary Gemma
+  drafting remains unprivileged.
+- Extend the router service/client contract additively with `ClaimItem` while
+  preserving existing `ClaimNext` clients. Remote rollout and a fresh actual
+  qualification remain required.
+- Stack Lab recipe: `stacklab.recipe.apollo-2.1-bounded-tool-turn`; diagram:
+  `APOLLO-P01-exact-item-worker`.
+
 ## 2026-10-19 — v0.24.120 release candidate
 
 - Distinguish bounded executor cleanup from published resident-observer protection.

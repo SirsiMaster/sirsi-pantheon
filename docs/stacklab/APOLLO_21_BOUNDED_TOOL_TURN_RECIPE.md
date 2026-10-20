@@ -29,6 +29,10 @@ The command requires all of the following before it opens a network request:
 3. An explicit `tool_calls: true` declaration in that profile.
 4. One or more explicit `--allow-tool` names.
 5. A currently registered tool with each requested name.
+6. For worker use, `--once --item <router-item-id>`.
+7. For the bounded worker only, a lead-owned `gemma-pantheon` registry
+   `worker_answers: true` declaration, stamped and read back on the exact
+   registered worker thread before it claims the item.
 
 The profile is only an endpoint/capability selection. It does not start
 Apollo, download a model, authorize GPU use, grant router ownership, or create
@@ -87,15 +91,27 @@ and completion fence:
 ```sh
 sirsi gemma worker --once \
   --apollo-tool-turn \
+	  --item <router-item-id> \
   --inference-profile /absolute/reviewed/apollo-profile.json \
   --allow-tool process.census
 ```
 
-The worker accepts only observe-tier tools before it contacts Apollo. When a
+The worker accepts only observe-tier tools before it contacts Apollo. Its
+exact-item lease (`ClaimItem`) carries the same dependency, breaker, budget,
+recipient, retry, and token-fence rules as ordinary oldest-item dispatch; it
+changes selection only. It never falls back to an older inbox item. When a
 tool is used, its exact factual evidence is placed alongside the final answer
 inside the existing router-correlated reply envelope. A worker qualification
 must retain the claimed item, tool-call correlation, final answer, batch
 endpoint receipt, and cleanup result before it completes the item.
+
+The `worker_answers` declaration is a lead-owned permission, not a tool-call
+capability. The generic Gemma drafting worker still registers without it. The
+bounded Apollo path reads the declaration, stamps its own worker record, and
+proves that record before it claims. The router service independently enforces
+the stamped role at completion. A router service rollout that serves
+`ClaimItem` is required before this client can be qualified against a remote
+ledger; existing `ClaimNext` clients remain unchanged.
 
 ## Proof and upgrade rules
 
@@ -110,3 +126,5 @@ endpoint receipt, and cleanup result before it completes the item.
 - Changes to profile identity, tool schemas, policy, or result correlation
   require a new Stack Lab review and qualification; compatibility of an HTTP
   endpoint alone is never sufficient.
+- The exact-item worker flow is diagrammed in
+  [`APOLLO-P01-exact-item-worker.md`](diagrams/APOLLO-P01-exact-item-worker.md).
