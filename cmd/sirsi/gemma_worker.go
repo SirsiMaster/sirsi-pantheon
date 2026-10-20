@@ -29,11 +29,13 @@ var (
 	gemmaWorkerTokenFile      string
 	gemmaWorkerApolloToolTurn bool
 	gemmaWorkerAllowedTools   []string
+	gemmaWorkerItemID         string
 )
 
 // gemmaWorkerStore is deliberately the token-fenced subset of the router
 // ledger.  The worker never scans an inbox or closes an unclaimed item.
 type gemmaWorkerStore interface {
+	ClaimItem(string, string, time.Duration) (*routerstore.Lease, error)
 	ClaimNext(string, time.Duration) (*routerstore.Lease, error)
 	StartWork(string, string) error
 	Get(string) (routerstore.Item, error)
@@ -53,11 +55,20 @@ type nativeGemmaWorker struct {
 	reply     gemmaWorkerReply
 	generate  func(context.Context, string) (string, error)
 	leaseTTL  time.Duration
+	itemID    string
 	heartbeat func() error
 }
 
 func (w nativeGemmaWorker) runOnce(ctx context.Context) (bool, error) {
-	lease, err := w.store.ClaimNext(gemmaWorkerAgent, w.leaseTTL)
+	var (
+		lease *routerstore.Lease
+		err   error
+	)
+	if strings.TrimSpace(w.itemID) != "" {
+		lease, err = w.store.ClaimItem(gemmaWorkerAgent, w.itemID, w.leaseTTL)
+	} else {
+		lease, err = w.store.ClaimNext(gemmaWorkerAgent, w.leaseTTL)
+	}
 	if errors.Is(err, routerstore.ErrNoWork) {
 		return false, nil
 	}
@@ -261,6 +272,7 @@ func init() {
 	gemmaWorkerCmd.Flags().StringVar(&gemmaWorkerTokenFile, "access-token-file", "", "Existing selected private broker capability file (0600); empty preserves unauthenticated M5 profile")
 	gemmaWorkerCmd.Flags().BoolVar(&gemmaWorkerApolloToolTurn, "apollo-tool-turn", false, "Use one bounded Apollo 2.1 read-only tool turn; requires the exact selected Apollo profile")
 	gemmaWorkerCmd.Flags().StringSliceVar(&gemmaWorkerAllowedTools, "allow-tool", nil, "Exact observe-tier reason tool(s) offered when --apollo-tool-turn is set")
+	gemmaWorkerCmd.Flags().StringVar(&gemmaWorkerItemID, "item", "", "Exact router item ID to claim; requires --once and never falls back to another inbox item")
 	gemmaWorkerCmd.Flags().BoolVar(&gemmaWorkerOnce, "once", false, "claim and process at most one item")
 	gemmaWorkerCmd.Flags().BoolVar(&gemmaWorkerVersion, "version", false, "print worker version without registration or inference")
 	gemmaCmd.AddCommand(gemmaWorkerCmd)
@@ -276,6 +288,10 @@ func runGemmaWorker(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	gemmaWorkerMaxTokens = budget
+	gemmaWorkerItemID = strings.TrimSpace(gemmaWorkerItemID)
+	if gemmaWorkerItemID != "" && !gemmaWorkerOnce {
+		return fmt.Errorf("--item requires --once")
+	}
 	if gemmaWorkerInferenceProfilePath == "" {
 		home, e := os.UserHomeDir()
 		if e != nil {
@@ -304,6 +320,9 @@ func runGemmaWorker(cmd *cobra.Command, _ []string) error {
 	}
 	generate := gemmaWorkerGenerate
 	if gemmaWorkerApolloToolTurn {
+		if gemmaWorkerItemID == "" {
+			return fmt.Errorf("--apollo-tool-turn requires --item to fence the bounded tool turn to one router item")
+		}
 		if selected == nil || selected.ID != apollo21ProfileID || !provider.ProfileSupportsTools(selected) {
 			return fmt.Errorf("--apollo-tool-turn requires explicit %s profile with tool_calls: true", apollo21ProfileID)
 		}
@@ -340,19 +359,35 @@ func runGemmaWorker(cmd *cobra.Command, _ []string) error {
 	}
 	defer f.Close()
 	routerRoot := repoRoot + "/.agents/idea-router"
-	t, err := router.RegisterThread(routerRoot, &router.Thread{AgentID: gemmaWorkerAgent, Surface: "worker", Repo: repoRoot, PID: os.Getpid(), ConsumerCapable: true, WakeMechanism: "none"})
+	answerRole := false
+	if gemmaWorkerApolloToolTurn {
+		var roleErr error
+		answerRole, roleErr = gemmaWorkerAnswerRoleGranted(routerRoot)
+		if roleErr != nil {
+			return roleErr
+		}
+		if !answerRole {
+			return fmt.Errorf("--apollo-tool-turn refuses to claim work: %s has not granted this headless worker the router answering role", gemmaWorkerAgent)
+		}
+	}
+	t, err := router.RegisterThread(routerRoot, &router.Thread{AgentID: gemmaWorkerAgent, Surface: "worker", Repo: repoRoot, PID: os.Getpid(), ConsumerCapable: true, WakeMechanism: "none", AnswerRole: answerRole})
 	if err != nil {
 		return fmt.Errorf("register Gemma worker thread: %w", err)
-	}
-	if err := os.Setenv("SIRSI_THREAD_ID", t.ThreadID); err != nil {
-		return fmt.Errorf("export registered thread id: %w", err)
 	}
 	defer func() {
 		if _, err := router.CloseThread(routerRoot, t.ThreadID); err != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "Gemma worker thread close failed: %v\n", err)
 		}
 	}()
-	w := nativeGemmaWorker{store: f.Store(), reply: facadeGemmaReply{facade: f}, generate: generate, leaseTTL: 15 * time.Minute,
+	if err := os.Setenv("SIRSI_THREAD_ID", t.ThreadID); err != nil {
+		return fmt.Errorf("export registered thread id: %w", err)
+	}
+	if gemmaWorkerApolloToolTurn {
+		if err := gemmaWorkerVerifyStampedAnswerRole(routerRoot, t.ThreadID); err != nil {
+			return err
+		}
+	}
+	w := nativeGemmaWorker{store: f.Store(), reply: facadeGemmaReply{facade: f}, generate: generate, leaseTTL: 15 * time.Minute, itemID: gemmaWorkerItemID,
 		heartbeat: func() error {
 			_, err := router.Heartbeat(routerRoot, t.ThreadID, router.HeartbeatUpdate{Status: router.ThreadStatusActive})
 			return err
@@ -382,6 +417,40 @@ func runGemmaWorker(cmd *cobra.Command, _ []string) error {
 			}
 		}
 	}
+}
+
+// gemmaWorkerAnswerRoleGranted reads the lead-owned declaration; it never
+// writes the registry or upgrades a worker by convention. The service keeps a
+// second enforcement point at reply completion.
+func gemmaWorkerAnswerRoleGranted(routerRoot string) (bool, error) {
+	reg, err := router.LoadRegistry(routerRoot)
+	if err != nil {
+		return false, fmt.Errorf("read Gemma answering-role declaration: %w", err)
+	}
+	cfg, err := reg.Lookup(gemmaWorkerAgent)
+	if err != nil {
+		return false, fmt.Errorf("read Gemma worker registration: %w", err)
+	}
+	return cfg.WorkerAnswers, nil
+}
+
+// gemmaWorkerVerifyStampedAnswerRole proves that this exact registered worker,
+// not merely a registry declaration, carries the lead's answering grant before
+// it can claim an Apollo tool-turn item.
+func gemmaWorkerVerifyStampedAnswerRole(routerRoot, threadID string) error {
+	threads, err := router.LoadThreadRegistry(routerRoot)
+	if err != nil {
+		return fmt.Errorf("read registered Gemma worker role: %w", err)
+	}
+	for _, thread := range threads.Threads {
+		if thread != nil && thread.ThreadID == threadID {
+			if thread.AgentID != gemmaWorkerAgent || thread.Surface != "worker" || !thread.AnswerRole {
+				return fmt.Errorf("Gemma worker thread %s lacks the declared answering role", threadID)
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("registered Gemma worker thread %s is absent from role readback", threadID)
 }
 
 func gemmaWorkerObserveAllowlist(registry *reason.Registry, names []string) error {

@@ -50,6 +50,11 @@ func (rs *RemoteStore) ClaimIdentifierNumber(namespace string, number int, title
 	err := rs.call("ClaimIdentifierNumber", []any{namespace, number, title, slug, owner}, &o0)
 	return o0, err
 }
+func (rs *RemoteStore) ClaimItem(agent, id string, ttl time.Duration) (*Lease, error) {
+	var o0 *Lease
+	err := rs.call("ClaimItem", []any{agent, id, ttl}, &o0)
+	return o0, err
+}
 func (rs *RemoteStore) ClaimNext(agent string, ttl time.Duration) (*Lease, error) {
 	var o0 *Lease
 	err := rs.call("ClaimNext", []any{agent, ttl}, &o0)

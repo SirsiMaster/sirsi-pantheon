@@ -772,6 +772,7 @@
       }
     },
     "gemma-pantheon": {
+      "worker_answers": true,
       "id": "gemma-pantheon",
       "type": "gemma",
       "command": [
