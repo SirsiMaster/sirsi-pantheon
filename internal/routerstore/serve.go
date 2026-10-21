@@ -499,6 +499,18 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
+	if name == "AnswerHandoff" {
+		token, actorErr := s.store.LookupHostToken(strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")))
+		if actorErr != nil || tokenHost == bootstrapHost || token.Host != sess.Host || token.MachineID == "" || sess.ThreadID == "" {
+			writeErr(w, http.StatusForbidden, "", ErrAnswerHandoff.Error())
+			return
+		}
+		if actorErr = s.ruleOfRa(sess, name); actorErr != nil {
+			writeErr(w, http.StatusForbidden, "", actorErr.Error())
+			return
+		}
+		ctx = context.WithValue(ctx, answerActorKey{}, answerActor{Session: sess, MachineID: token.MachineID})
+	}
 	if name == "DesktopSleep" {
 		var actorErr error
 		ctx, actorErr = s.desktopSleepContext(ctx, r, sess, tokenHost)
