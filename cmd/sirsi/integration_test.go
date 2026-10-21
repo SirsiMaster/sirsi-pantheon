@@ -349,6 +349,14 @@ func TestRouterPullModelRoundtrip(t *testing.T) {
 	t.Parallel()
 
 	tmp := t.TempDir()
+	// router close now binds every implementation completion to an actual Git
+	// caller. Keep this end-to-end fixture on the supported path instead of
+	// relying on the legacy non-Git permissive behavior.
+	gitInit := exec.Command("git", "init", "-q")
+	gitInit.Dir = tmp
+	if out, err := gitInit.CombinedOutput(); err != nil {
+		t.Fatalf("git init fixture: %v\n%s", err, out)
+	}
 	if err := os.MkdirAll(filepath.Join(tmp, ".agents", "idea-router"), 0o755); err != nil {
 		t.Fatal(err)
 	}

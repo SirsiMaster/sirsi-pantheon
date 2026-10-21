@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/completionproof"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/machineid"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/mcp"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
@@ -236,12 +237,15 @@ func registerMutateTools(srv *mcp.Server) {
 
 	srv.RegisterTool(mcp.Tool{
 		Name:        "router_close",
-		Description: "Close an item you CLAIMED via router_claim in this session, recording a result. Requires this server's registered thread.",
+		Description: "Close an item you CLAIMED via router_claim in this session, recording a result and (when the caller worktree carries one) a completion proof. Requires this server's registered thread.",
 		InputSchema: mcp.InputSchema{
 			Type: "object",
 			Properties: map[string]mcp.SchemaField{
-				"id":     {Type: "string", Description: "Item id to close (must be one this session claimed)."},
-				"result": {Type: "string", Description: "The outcome/result recorded on close."},
+				"id":      {Type: "string", Description: "Item id to close (must be one this session claimed)."},
+				"result":  {Type: "string", Description: "The outcome/result recorded on close."},
+				"proof":   {Type: "string", Description: "Completion proof path, relative to this MCP server's caller worktree or absolute within it."},
+				"blocked": {Type: "boolean", Description: "Record an explicit blocker instead of a completion claim; requires result."},
+				"ack":     {Type: "boolean", Description: "Record a coordination-only acknowledgement instead of a completion claim; requires result."},
 			},
 			Required: []string{"id"},
 		},
@@ -330,6 +334,17 @@ func handleClose(args map[string]interface{}) (*mcp.ToolResult, error) {
 	token, ok := reg.claimToken(id)
 	if !ok {
 		return errResult(fmt.Sprintf("router_close: %s was not claimed by this session — claim it with router_claim first (a developer can only complete work its own instance claimed)", id)), nil
+	}
+	// Dispatch continues below against the canonical router/service root. Proof
+	// validation uses an actual application worktree only for implementation
+	// completion; explicit acknowledgement/blocker outcomes remain available to
+	// attended non-Git clients and retain their result requirement.
+	repoRoot, _, err := resolveRoots()
+	if err != nil {
+		return errResult(err.Error()), nil
+	}
+	if err := completionproof.EnforceCurrentCaller(repoRoot, id, stringArg(args, "proof"), boolArg(args, "blocked"), boolArg(args, "ack"), stringArg(args, "result")); err != nil {
+		return errResult(fmt.Sprintf("router_close: %v", err)), nil
 	}
 	f, closeF, err := openFacade()
 	if err != nil {

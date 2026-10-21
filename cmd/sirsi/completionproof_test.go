@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/completionproof"
 )
 
 func TestEnforceCompletionProof(t *testing.T) {
@@ -39,11 +41,27 @@ func TestEnforceCompletionProof(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := enforceCompletionProof(tc.repo, "item-1", tc.proof, tc.blocked, tc.ack, tc.result)
+			err := completionproof.Enforce(tc.repo, "item-1", tc.proof, tc.blocked, tc.ack, tc.result)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("got err=%v, wantErr=%v", err, tc.wantErr)
 			}
 		})
+	}
+}
+
+// router close must not make a Git worktree a prerequisite for documented
+// coordination outcomes. A bare implementation completion still refuses when
+// it cannot bind evidence to a caller worktree.
+func TestRouterCloseProofGateDefersCallerLookupForCoordination(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := completionproof.EnforceCurrentCaller("", "item-1", "", false, true, "acknowledged by owner"); err != nil {
+		t.Fatalf("ack outside Git: %v", err)
+	}
+	if err := completionproof.EnforceCurrentCaller("", "item-1", "", true, false, "blocked by owner decision"); err != nil {
+		t.Fatalf("blocked outside Git: %v", err)
+	}
+	if err := completionproof.EnforceCurrentCaller("", "item-1", "", false, false, "completed implementation"); err == nil {
+		t.Fatal("implementation completion outside Git unexpectedly accepted")
 	}
 }
 
@@ -70,11 +88,11 @@ func TestValidateCompletionProofUsesGateScript(t *testing.T) {
 	}
 
 	t.Setenv("SIRSI_COMPLETION_GATE_SCRIPT", pass)
-	if err := enforceCompletionProof(repo, "item-1", proof, false, false, "done"); err != nil {
+	if err := completionproof.Enforce(repo, "item-1", proof, false, false, "done"); err != nil {
 		t.Fatalf("passing validator: %v", err)
 	}
 	t.Setenv("SIRSI_COMPLETION_GATE_SCRIPT", fail)
-	if err := enforceCompletionProof(repo, "item-1", proof, false, false, "done"); err == nil {
+	if err := completionproof.Enforce(repo, "item-1", proof, false, false, "done"); err == nil {
 		t.Fatal("failing validator: want error, got nil")
 	}
 }
