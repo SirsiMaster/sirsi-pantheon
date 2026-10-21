@@ -336,13 +336,14 @@ func handleClose(args map[string]interface{}) (*mcp.ToolResult, error) {
 		return errResult(fmt.Sprintf("router_close: %s was not claimed by this session — claim it with router_claim first (a developer can only complete work its own instance claimed)", id)), nil
 	}
 	// Dispatch continues below against the canonical router/service root. Proof
-	// validation belongs to the actual application worktree which launched this
-	// MCP server, never a router marker or a proof-controlled path.
-	callerRoot, err := router.FindCallerRepoRoot()
+	// validation uses an actual application worktree only for implementation
+	// completion; explicit acknowledgement/blocker outcomes remain available to
+	// attended non-Git clients and retain their result requirement.
+	repoRoot, _, err := resolveRoots()
 	if err != nil {
-		return errResult(fmt.Sprintf("router_close: cannot resolve actual caller worktree for completion proof: %v", err)), nil
+		return errResult(err.Error()), nil
 	}
-	if err := completionproof.Enforce(callerRoot, id, stringArg(args, "proof"), boolArg(args, "blocked"), boolArg(args, "ack"), stringArg(args, "result")); err != nil {
+	if err := completionproof.EnforceCurrentCaller(repoRoot, id, stringArg(args, "proof"), boolArg(args, "blocked"), boolArg(args, "ack"), stringArg(args, "result")); err != nil {
 		return errResult(fmt.Sprintf("router_close: %v", err)), nil
 	}
 	f, closeF, err := openFacade()

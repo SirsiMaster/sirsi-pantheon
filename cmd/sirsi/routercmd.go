@@ -711,15 +711,11 @@ var routerCloseCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("no .agents/idea-router/ found: %w", err)
 		}
-		callerRoot, err := router.FindCallerRepoRoot()
-		if err != nil {
-			return fmt.Errorf("cannot resolve actual caller worktree for completion proof: %w", err)
-		}
 		// ADR-037 completion-proof gate (restored after the Router v2 facade
 		// rewrite dropped it — codex-home closure audit 2026-07-22). A close in
 		// a repo with .agents/completion.contract.json must carry --proof,
 		// --blocked, or --ack; a bare close is a done-claim without evidence.
-		if gateErr := completionproof.Enforce(callerRoot, args[0], closeProof, closeBlocked, closeAck, result); gateErr != nil {
+		if gateErr := completionproof.EnforceCurrentCaller(repoRoot, args[0], closeProof, closeBlocked, closeAck, result); gateErr != nil {
 			return gateErr
 		}
 		f, err := dispatch.Open(repoRoot)

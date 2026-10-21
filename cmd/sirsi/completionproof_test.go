@@ -49,6 +49,22 @@ func TestEnforceCompletionProof(t *testing.T) {
 	}
 }
 
+// router close must not make a Git worktree a prerequisite for documented
+// coordination outcomes. A bare implementation completion still refuses when
+// it cannot bind evidence to a caller worktree.
+func TestRouterCloseProofGateDefersCallerLookupForCoordination(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := completionproof.EnforceCurrentCaller("", "item-1", "", false, true, "acknowledged by owner"); err != nil {
+		t.Fatalf("ack outside Git: %v", err)
+	}
+	if err := completionproof.EnforceCurrentCaller("", "item-1", "", true, false, "blocked by owner decision"); err != nil {
+		t.Fatalf("blocked outside Git: %v", err)
+	}
+	if err := completionproof.EnforceCurrentCaller("", "item-1", "", false, false, "completed implementation"); err == nil {
+		t.Fatal("implementation completion outside Git unexpectedly accepted")
+	}
+}
+
 func TestValidateCompletionProofUsesGateScript(t *testing.T) {
 	repo := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(repo, ".agents"), 0o755); err != nil {
