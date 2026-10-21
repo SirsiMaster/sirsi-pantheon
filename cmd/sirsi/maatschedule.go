@@ -498,7 +498,7 @@ func short(rfc string) string {
 func init() {
 	maatReserveCmd.Flags().StringVar(&resHolder, "holder", "", "holder agent id (default $SIRSI_AGENT_ID)")
 	maatReserveCmd.Flags().StringVar(&resWork, "work", "", "work label (series/arm)")
-	maatReserveCmd.Flags().StringVar(&resRegime, "regime", "quiet", "quiet|loaded|build")
+	maatReserveCmd.Flags().StringVar(&resRegime, "regime", "build", "build shares the machine (default); quiet measurement or loaded/model work must be explicit")
 	maatReserveCmd.Flags().StringVar(&resStart, "start", "", "start RFC3339 (default now)")
 	maatReserveCmd.Flags().StringVar(&resEstEnd, "est-end", "", "estimated end RFC3339")
 	maatReserveCmd.Flags().StringVar(&resRepro, "repro", "", "repro path")

@@ -131,9 +131,14 @@ def execution_regime(cpu_cores=None, requested=None):
         raise Refused('Unknown execution regime')
     if cpu_cores and requested not in (None, 'build'):
         raise Refused('CPU build floor cannot authorize quiet or loaded model work')
-    if requested == 'build' and not cpu_cores:
-        raise Refused('Build regime requires an explicit CPU build mask')
-    return requested or ('build' if cpu_cores else 'loaded')
+    # Ordinary work is cooperative CPU work, not an implicit model slot or
+    # quiet machine. Model/measurement launchers must declare their regime.
+    return requested or 'build'
+
+
+def execution_cores(cpu_cores=None, requested=None):
+    regime = execution_regime(cpu_cores, requested)
+    return (cpu_cores or 1) if regime == 'build' else None
 
 
 def valid(row, resource, agent, work, cpu_cores=None, regime=None):
@@ -532,7 +537,7 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
             child_env['SIRSI_MAAT_EXECUTION_RECEIPT'] = str(receipt)
         if cpu_cores:
             # Cooperative CPU build mask, not a kernel sandbox or GPU admission.
-            # Only an explicit caller opt-in can consume a bounded build floor.
+            # Ordinary jobs default to this mask; explicit model/quiet jobs do not.
             for key in ('GOMAXPROCS','OMP_NUM_THREADS','OPENBLAS_NUM_THREADS',
                         'VECLIB_MAXIMUM_THREADS','NUMEXPR_NUM_THREADS','BLIS_NUM_THREADS'):
                 child_env[key] = str(cpu_cores)
@@ -687,9 +692,9 @@ def main():
     parser.add_argument('--job-timeout', type=int,
                         help='Total recurring supervisor lifetime, at most 86400 seconds')
     parser.add_argument('--cpu-cores', type=int,
-                        help='Explicit cooperative CPU-only build mask; may use a sufficient granted build floor, never GPU/model admission')
+                        help='Cooperative CPU build mask (default 1 for ordinary shared work); never GPU/model admission')
     parser.add_argument('--regime', choices=('quiet', 'loaded', 'build'),
-                        help='Request the actual canonical regime; quiet requires a fresh full-share native executor, never relabels loaded work')
+                        help='Default build shares the machine; loaded/model and quiet measurement must be explicit; quiet requires a fresh full-share native executor')
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     command = args.command[1:] if args.command[:1] == ['--'] else args.command
@@ -699,6 +704,7 @@ def main():
         parser.error('CPU build mask must be between 1 and 64')
     try:
         regime = execution_regime(args.cpu_cores, args.regime)
+        args.cpu_cores = execution_cores(args.cpu_cores, args.regime)
     except Refused as error:
         parser.error(str(error))
     if regime == 'quiet' and not args.register_executor:

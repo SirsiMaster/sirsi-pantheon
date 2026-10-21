@@ -198,7 +198,7 @@ if [[ "$supervised" == false ]]; then
   nonce="$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')"
   printf '%s\n' "$nonce" >"$attempt/supervision.nonce"
   /bin/chmod 600 "$attempt/supervision.nonce"
-  exec "$MAAT_RUN" --agent "$agent" --register-executor --work "$work" --timeout "$timeout" -- \
+  exec "$MAAT_RUN" --agent "$agent" --register-executor --regime loaded --work "$work" --timeout "$timeout" -- \
     "$SELF" --supervised-child --attempt "$attempt" --nonce "$nonce" \
     --agent "$agent" --work "$work" --item "$item" --sirsi "$sirsi" --sirsi-sha256 "$sirsi_hash" \
     --profile "$profile" --profile-sha256 "$profile_hash" --server "$server" --server-sha256 "$server_hash" \

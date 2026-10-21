@@ -44,10 +44,16 @@ class Backend:
 class RegistryDeadlineTests(unittest.TestCase):
 
     def test_explicit_regime_defaults_and_cpu_floor_separation(self):
-        self.assertEqual(runner.execution_regime(), 'loaded')
+        self.assertEqual(runner.execution_regime(), 'build')
         self.assertEqual(runner.execution_regime(1), 'build')
         self.assertEqual(runner.execution_regime(None, 'quiet'), 'quiet')
-        for cores, regime in [(1, 'quiet'), (1, 'loaded'), (None, 'build'), (None, 'unknown')]:
+        self.assertEqual(runner.execution_regime(None, 'build'), 'build')
+        self.assertEqual(runner.execution_regime(None, 'loaded'), 'loaded')
+        self.assertEqual(runner.execution_cores(), 1)
+        self.assertEqual(runner.execution_cores(3), 3)
+        self.assertIsNone(runner.execution_cores(None, 'quiet'))
+        self.assertIsNone(runner.execution_cores(None, 'loaded'))
+        for cores, regime in [(1, 'quiet'), (1, 'loaded'), (None, 'unknown')]:
             with self.subTest(cores=cores, regime=regime), self.assertRaises(runner.Refused):
                 runner.execution_regime(cores, regime)
 

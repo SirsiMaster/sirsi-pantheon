@@ -6,6 +6,13 @@ import (
 	"testing"
 )
 
+func TestReserveDefaultsToSharedBuildNotQuiet(t *testing.T) {
+	f := maatReserveCmd.Flags().Lookup("regime")
+	if f == nil || f.DefValue != "build" {
+		t.Fatalf("ordinary reservations must default to shared build, got %+v", f)
+	}
+}
+
 // A runner that trusts the help text must get the real contract: defer is the
 // refusal exit code and clear is 0 (Mercury's runner deferred every job on the
 // old wording, which said "Exit 0 if a runner must defer").
