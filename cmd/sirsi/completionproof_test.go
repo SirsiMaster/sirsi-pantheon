@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/completionproof"
 )
 
 func TestEnforceCompletionProof(t *testing.T) {
@@ -39,7 +41,7 @@ func TestEnforceCompletionProof(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := enforceCompletionProof(tc.repo, "item-1", tc.proof, tc.blocked, tc.ack, tc.result)
+			err := completionproof.Enforce(tc.repo, "item-1", tc.proof, tc.blocked, tc.ack, tc.result)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("got err=%v, wantErr=%v", err, tc.wantErr)
 			}
@@ -70,11 +72,11 @@ func TestValidateCompletionProofUsesGateScript(t *testing.T) {
 	}
 
 	t.Setenv("SIRSI_COMPLETION_GATE_SCRIPT", pass)
-	if err := enforceCompletionProof(repo, "item-1", proof, false, false, "done"); err != nil {
+	if err := completionproof.Enforce(repo, "item-1", proof, false, false, "done"); err != nil {
 		t.Fatalf("passing validator: %v", err)
 	}
 	t.Setenv("SIRSI_COMPLETION_GATE_SCRIPT", fail)
-	if err := enforceCompletionProof(repo, "item-1", proof, false, false, "done"); err == nil {
+	if err := completionproof.Enforce(repo, "item-1", proof, false, false, "done"); err == nil {
 		t.Fatal("failing validator: want error, got nil")
 	}
 }

@@ -2,6 +2,7 @@ package router
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -19,6 +20,73 @@ func sameDir(t *testing.T, a, b string) bool {
 		t.Fatalf("stat %s: %v", b, err)
 	}
 	return os.SameFile(ai, bi)
+}
+
+func gitRun(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+// The router must remain canonical, while a completion proof must be bound to
+// the linked worktree that actually invoked the close. These are intentionally
+// distinct roots.
+func TestFindCallerRepoRootUsesActualLinkedWorktree(t *testing.T) {
+	base := t.TempDir()
+	mainRoot := filepath.Join(base, "router")
+	appRoot := filepath.Join(base, "application-main")
+	worktree := filepath.Join(base, "application-worktree")
+	if err := os.MkdirAll(mainRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, mainRoot, "init", "-q")
+	if err := os.MkdirAll(appRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, appRoot, "init", "-q")
+	gitRun(t, appRoot, "config", "user.email", "tests@example.invalid")
+	gitRun(t, appRoot, "config", "user.name", "tests")
+	if err := os.WriteFile(filepath.Join(appRoot, "README"), []byte("application\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, appRoot, "add", "README")
+	gitRun(t, appRoot, "commit", "-qm", "initial")
+	gitRun(t, appRoot, "worktree", "add", "-q", "-b", "application", worktree, "HEAD")
+	if err := os.MkdirAll(filepath.Join(worktree, "nested", "cwd"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mkRouter(t, mainRoot)
+
+	restore := setGitCommonDirFn(func() (string, bool) {
+		return filepath.Join(mainRoot, ".git"), true
+	})
+	t.Cleanup(func() { setGitCommonDirFn(restore) })
+	t.Chdir(filepath.Join(worktree, "nested", "cwd"))
+
+	routerRoot, err := FindRepoRoot()
+	if err != nil {
+		t.Fatalf("FindRepoRoot: %v", err)
+	}
+	if !sameDir(t, routerRoot, mainRoot) {
+		t.Fatalf("router root = %q, want canonical %q", routerRoot, mainRoot)
+	}
+	callerRoot, err := FindCallerRepoRoot()
+	if err != nil {
+		t.Fatalf("FindCallerRepoRoot: %v", err)
+	}
+	if !sameDir(t, callerRoot, worktree) {
+		t.Fatalf("caller root = %q, want linked worktree %q", callerRoot, worktree)
+	}
+}
+
+func TestFindCallerRepoRootRefusesUnknownCaller(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if root, err := FindCallerRepoRoot(); err == nil {
+		t.Fatalf("FindCallerRepoRoot = %q, want unknown caller refusal", root)
+	}
 }
 
 func mkRouter(t *testing.T, root string) {

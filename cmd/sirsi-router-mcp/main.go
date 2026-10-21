@@ -238,6 +238,11 @@ func stringArg(args map[string]interface{}, key string) string {
 	return s
 }
 
+func boolArg(args map[string]interface{}, key string) bool {
+	b, _ := args[key].(bool)
+	return b
+}
+
 func textResult(text string) *mcp.ToolResult {
 	return &mcp.ToolResult{Content: []mcp.ContentBlock{{Type: "text", Text: text}}}
 }

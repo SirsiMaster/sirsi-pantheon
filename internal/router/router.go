@@ -270,6 +270,37 @@ func FindRepoRoot() (string, error) {
 	}
 }
 
+// FindCallerRepoRoot resolves the actual Git worktree that invoked a command.
+//
+// This is deliberately different from FindRepoRoot. The router lives in one
+// canonical checkout so its registry and service state cannot fragment across
+// linked worktrees. Completion evidence, on the other hand, belongs to the
+// application/worktree which produced it. Using the canonical router root for
+// both quietly validates an application's proof against the wrong contract.
+//
+// There is intentionally no marker or environment-variable fallback here: a
+// proof gate must fail closed when the caller's worktree cannot be identified.
+// The root comes from Git's worktree-aware --show-toplevel, never from the
+// proof path supplied by a caller.
+func FindCallerRepoRoot() (string, error) {
+	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		return "", fmt.Errorf("cannot resolve caller Git worktree: %w", err)
+	}
+	root := strings.TrimSpace(string(out))
+	if root == "" || !filepath.IsAbs(root) {
+		return "", fmt.Errorf("cannot resolve caller Git worktree: git returned %q", root)
+	}
+	info, err := os.Stat(root)
+	if err != nil {
+		return "", fmt.Errorf("stat caller Git worktree: %w", err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("caller Git worktree is not a directory: %s", root)
+	}
+	return filepath.Clean(root), nil
+}
+
 // gitCommonDirFn resolves the absolute path of the shared `.git` directory (the
 // MAIN worktree's `.git`, even when called from a linked worktree). Injectable
 // (Rule A16) and RWMutex-guarded (Rule A21) so tests can exercise the
