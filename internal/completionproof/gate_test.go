@@ -305,7 +305,6 @@ func clearInheritedGitEnvironment(t *testing.T) {
 		"GIT_PREFIX",
 	} {
 		value, wasSet := os.LookupEnv(key)
-		key, value, wasSet := key, value, wasSet
 		if err := os.Unsetenv(key); err != nil {
 			t.Fatalf("unset %s: %v", key, err)
 		}
