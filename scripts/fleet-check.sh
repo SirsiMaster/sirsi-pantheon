@@ -16,9 +16,9 @@ self_test() {
   TMP="$(mktemp -d)"
   trap 'rm -rf "$TMP"' EXIT
   mkdir -p "$TMP/.sirsi"
-  if HOME="$TMP" bash "$SCRIPT" >/tmp/fleet-check-self-test.out 2>&1; then
+  if HOME="$TMP" bash "$SCRIPT" >"$TMP/self-test.out" 2>&1; then
     echo "  ❌ self-test FAILED: missing relay/stacklab key was not caught"
-    cat /tmp/fleet-check-self-test.out
+    cat "$TMP/self-test.out"
     exit 1
   fi
   echo "  ✅ self-test passed: missing relay/stacklab key correctly reported RED"

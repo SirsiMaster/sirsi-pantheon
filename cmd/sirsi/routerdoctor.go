@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -25,7 +26,9 @@ func fleetCheckWarning(repoRoot string) string {
 	if _, err := os.Stat(script); err != nil {
 		return ""
 	}
-	cmd := exec.Command("bash", script, os.Getenv("SIRSI_AGENT_ID"))
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "bash", script, os.Getenv("SIRSI_AGENT_ID"))
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		return ""
