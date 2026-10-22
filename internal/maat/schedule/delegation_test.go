@@ -117,6 +117,83 @@ func TestReserveAsAuthority_GrantsUnderLiveDelegation(t *testing.T) {
 	}
 }
 
+func TestRenewDelegation_ExtendsNotAfterWithoutBumpingEpoch(t *testing.T) {
+	l := fixedLedger("2026-10-22T10:00:00Z")
+	d, err := l.Delegate(mkDelegation("studio-m5", "M5-Studio", "2026-10-22T10:00:00Z", "2026-10-22T10:15:00Z", "studio"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	renewed, err := l.RenewDelegation("studio-m5", d.Epoch, at("2026-10-22T10:14:00Z"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if renewed.Epoch != d.Epoch {
+		t.Fatalf("renewal must not bump epoch, got %d want %d", renewed.Epoch, d.Epoch)
+	}
+	wantNotAfter := "2026-10-22T22:14:00Z" // now + 12h cap
+	if renewed.NotAfter != wantNotAfter {
+		t.Fatalf("want not_after extended to %s, got %s", wantNotAfter, renewed.NotAfter)
+	}
+}
+
+func TestRenewDelegation_SupersededEpochRefused(t *testing.T) {
+	l := fixedLedger("2026-10-22T10:00:00Z")
+	if _, err := l.Delegate(mkDelegation("studio-m5", "M5-Studio", "2026-10-22T10:00:00Z", "2026-10-22T18:00:00Z", "studio")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.RenewDelegation("studio-m5", 99, at("2026-10-22T10:05:00Z")); err == nil {
+		t.Fatal("renewing with a stale epoch must be refused as fenced")
+	}
+}
+
+func TestRenewDelegation_RevokedRefused(t *testing.T) {
+	l := fixedLedger("2026-10-22T10:00:00Z")
+	d, err := l.Delegate(mkDelegation("studio-m5", "M5-Studio", "2026-10-22T10:00:00Z", "2026-10-22T18:00:00Z", "studio"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.Revoke("studio-m5"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.RenewDelegation("studio-m5", d.Epoch, at("2026-10-22T10:05:00Z")); err == nil {
+		t.Fatal("renewing a revoked delegation must be refused as fenced")
+	}
+}
+
+func TestAckDelegation_AdvancesAndNeverRegresses(t *testing.T) {
+	l := fixedLedger("2026-10-22T10:00:00Z")
+	if _, err := l.Delegate(mkDelegation("studio-m5", "M5-Studio", "2026-10-22T10:00:00Z", "2026-10-22T18:00:00Z", "studio")); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.AckDelegation("studio-m5", 5); err != nil {
+		t.Fatal(err)
+	}
+	d, err := l.GetDelegation("studio-m5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.AckedSeq != 5 {
+		t.Fatalf("want acked_seq 5, got %d", d.AckedSeq)
+	}
+	if err := l.AckDelegation("studio-m5", 2); err != nil {
+		t.Fatal(err)
+	}
+	d, err = l.GetDelegation("studio-m5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.AckedSeq != 5 {
+		t.Fatalf("acked_seq must never regress, got %d want 5", d.AckedSeq)
+	}
+}
+
+func TestAckDelegation_UnknownPodErrors(t *testing.T) {
+	l := fixedLedger("2026-10-22T10:00:00Z")
+	if err := l.AckDelegation("never-delegated", 1); err == nil {
+		t.Fatal("acking a pod with no delegation must error")
+	}
+}
+
 func TestReserveAsAuthority_RefusesWithNoLiveDelegation(t *testing.T) {
 	l := fixedLedger("2026-10-22T10:00:00Z")
 	req := Reservation{ID: "x", Resource: "studio", Holder: "mercury", Regime: RegimeQuiet, Start: "2026-10-22T10:00:00Z", Authority: "pod:studio-m5", Epoch: 1}

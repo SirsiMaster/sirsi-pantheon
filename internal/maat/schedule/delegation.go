@@ -212,6 +212,80 @@ func (l *Ledger) revokeAttempt(pod string) (Delegation, error) {
 	return Delegation{}, fmt.Errorf("maat: no delegation for pod %q", pod)
 }
 
+// RenewDelegation extends pod's current delegation window to now+12h
+// (ADR-120 §4), without bumping Epoch -- a distinct operation from Delegate's
+// reissue, which always bumps epoch (that is for moving authority to a new
+// machine, not a routine renewal). Refuses a revoked delegation, or one whose
+// Epoch no longer matches the caller's: both ARE the self-fence check step 2's
+// pod authority relies on (ADR-120 §3) -- a superseded or revoked instance
+// renewing must see that refusal, not silently keep going.
+func (l *Ledger) RenewDelegation(pod string, epoch int, now time.Time) (Delegation, error) {
+	for attempt := 0; attempt < maxLedgerAttempts; attempt++ {
+		out, err := l.renewDelegationAttempt(pod, epoch, now)
+		if !errors.Is(err, errLedgerConflict) {
+			return out, err
+		}
+	}
+	return Delegation{}, fmt.Errorf("maat: renew delegation: contention limit: %w", errLedgerConflict)
+}
+
+func (l *Ledger) renewDelegationAttempt(pod string, epoch int, now time.Time) (Delegation, error) {
+	raw, exists, rows, err := l.delegationSnapshot()
+	if err != nil {
+		return Delegation{}, err
+	}
+	for i, d := range rows {
+		if d.Pod != pod {
+			continue
+		}
+		if d.Revoked {
+			return Delegation{}, fmt.Errorf("maat: fenced: pod %q delegation revoked", pod)
+		}
+		if d.Epoch != epoch {
+			return Delegation{}, fmt.Errorf("maat: fenced: epoch %d superseded (current %d)", epoch, d.Epoch)
+		}
+		rows[i].NotAfter = now.Add(maxDelegationTTL).Format(time.RFC3339)
+		if err := l.delegationSave(raw, exists, rows); err != nil {
+			return Delegation{}, err
+		}
+		return rows[i], nil
+	}
+	return Delegation{}, fmt.Errorf("maat: no delegation for pod %q", pod)
+}
+
+// AckDelegation records that the cloud has reconciled pod's journal through
+// seq (ADR-120 §5 acked_seq) -- the write path for the field Delegation
+// already carries but step 1 never wrote. Never regresses AckedSeq, so a
+// catch-up replay's entries can be acked in any retry order. Does not touch
+// Epoch or NotAfter.
+func (l *Ledger) AckDelegation(pod string, seq int64) error {
+	for attempt := 0; attempt < maxLedgerAttempts; attempt++ {
+		err := l.ackDelegationAttempt(pod, seq)
+		if !errors.Is(err, errLedgerConflict) {
+			return err
+		}
+	}
+	return fmt.Errorf("maat: ack delegation: contention limit: %w", errLedgerConflict)
+}
+
+func (l *Ledger) ackDelegationAttempt(pod string, seq int64) error {
+	raw, exists, rows, err := l.delegationSnapshot()
+	if err != nil {
+		return err
+	}
+	for i, d := range rows {
+		if d.Pod != pod {
+			continue
+		}
+		if seq <= rows[i].AckedSeq {
+			return nil
+		}
+		rows[i].AckedSeq = seq
+		return l.delegationSave(raw, exists, rows)
+	}
+	return fmt.Errorf("maat: no delegation for pod %q", pod)
+}
+
 // GetDelegation returns pod's current delegation record (live or not), or
 // nil if pod has never been delegated.
 func (l *Ledger) GetDelegation(pod string) (*Delegation, error) {
