@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -13,6 +14,24 @@ import (
 )
 
 var routerDoctorFix bool
+
+// fleetCheckWarning runs scripts/fleet-check.sh (relay, router ping,
+// outbox/parked, Stack Lab key — ra-fleet-check-into-repo-20261022) and
+// returns its output when it reports RED. Best-effort: a missing script or
+// missing bash is reported, never a doctor crash, since this host's own
+// fleet health is informational, not load-bearing for the rest of the report.
+func fleetCheckWarning(repoRoot string) string {
+	script := filepath.Join(repoRoot, "scripts", "fleet-check.sh")
+	if _, err := os.Stat(script); err != nil {
+		return ""
+	}
+	cmd := exec.Command("bash", script, os.Getenv("SIRSI_AGENT_ID"))
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
 
 // routerDBOnCutoverHostWarning reports when SIRSI_ROUTER_DB is set in THIS
 // process's own environment on a host already cut over to the router service
@@ -256,6 +275,10 @@ var routerDoctorCmd = &cobra.Command{
 		// because a body that says DONE is a signal, not a verdict.
 		issues += checkLedgerRot()
 
+		if w := fleetCheckWarning(repoRoot); w != "" {
+			issues++
+			fmt.Printf("warning: this host's fleet-check reported RED:\n%s\n\n", w)
+		}
 		reportNameGrammar(reg)
 
 		// Compare the actual runtime source (origin pin when active), not the
