@@ -204,6 +204,7 @@ func TestEnforceKeepsExplicitCoordinationOutcomes(t *testing.T) {
 }
 
 func TestEnforceCurrentCallerKeepsCoordinationAvailableOutsideGit(t *testing.T) {
+	clearInheritedGitEnvironment(t)
 	t.Chdir(t.TempDir())
 	if err := EnforceCurrentCaller("", "item-1", "", false, true, "received for review"); err != nil {
 		t.Fatalf("non-Git acknowledgement: %v", err)
@@ -220,6 +221,7 @@ func TestEnforceCurrentCallerKeepsCoordinationAvailableOutsideGit(t *testing.T) 
 // must still be validated by the portfolio tool next to the canonical router,
 // not by a made-up sibling of the caller worktree.
 func TestEnforceUsesCanonicalPortfolioValidatorForLinkedCallerWithoutOverride(t *testing.T) {
+	clearInheritedGitEnvironment(t)
 	development := t.TempDir()
 	canonical := filepath.Join(development, "sirsi-pantheon")
 	tools := filepath.Join(development, "tools")
@@ -285,6 +287,35 @@ if repo != %q or proof != %q:
 	t.Chdir(appWorktree)
 	if err := EnforceCurrentCaller(canonical, "item-1", filepath.Join(".agents", "proofs", "item-1.json"), false, false, "done"); err != nil {
 		t.Fatalf("canonical validator with linked caller: %v", err)
+	}
+}
+
+// Git hooks export repository variables for their own commands. Tests that
+// deliberately construct a non-Git caller or an independent nested worktree
+// must not inherit those variables as accidental caller authority.
+func clearInheritedGitEnvironment(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{
+		"GIT_DIR",
+		"GIT_WORK_TREE",
+		"GIT_COMMON_DIR",
+		"GIT_INDEX_FILE",
+		"GIT_OBJECT_DIRECTORY",
+		"GIT_ALTERNATE_OBJECT_DIRECTORIES",
+		"GIT_PREFIX",
+	} {
+		value, wasSet := os.LookupEnv(key)
+		key, value, wasSet := key, value, wasSet
+		if err := os.Unsetenv(key); err != nil {
+			t.Fatalf("unset %s: %v", key, err)
+		}
+		t.Cleanup(func() {
+			if wasSet {
+				_ = os.Setenv(key, value)
+				return
+			}
+			_ = os.Unsetenv(key)
+		})
 	}
 }
 
