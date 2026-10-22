@@ -1,7 +1,7 @@
 {
   "machines": [
     {"id": "M1", "model": "MacBookPro18,1", "chip": "Apple M1 Pro", "memory_gib": 16, "tailscale": "100.88.242.95", "lan": "192.168.1.179", "monitor_port": 8099, "registered_at": "2026-10-16T12:00:00Z", "admitted_by": "ra"},
-    {"id": "M5", "model": "Mac17,6", "chip": "Apple M5 Max", "memory_gib": 48, "tailscale": "100.92.193.26", "lan": "192.168.1.172", "monitor_port": 8099, "registered_at": "2026-10-16T12:00:00Z", "admitted_by": "ra"},
-    {"id": "M5-Studio", "model": "Mac17,14", "chip": "Apple M5 Max", "memory_gib": 36, "tailscale": "100.87.95.88", "monitor_port": 8099, "registered_at": "2026-10-16T12:00:00Z", "admitted_by": "ra"}
+    {"id": "M5", "model": "Mac17,6", "chip": "Apple M5 Max", "memory_gib": 48, "tailscale": "100.92.193.26", "lan": "192.168.1.183", "monitor_port": 8099, "registered_at": "2026-10-16T12:00:00Z", "admitted_by": "ra"},
+    {"id": "M5-Studio", "model": "Mac17,14", "chip": "Apple M5 Max", "memory_gib": 36, "tailscale": "100.87.95.88", "lan": "192.168.1.208", "monitor_port": 8099, "registered_at": "2026-10-16T12:00:00Z", "admitted_by": "ra"}
   ]
 }
