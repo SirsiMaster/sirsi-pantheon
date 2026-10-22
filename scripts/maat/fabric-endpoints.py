@@ -99,7 +99,7 @@ def candidates(origin, target, resolve=resolve_lan):
 
 
 def nc_args(address, proxy=None, probe=False):
-    args = ["/usr/bin/nc"]
+    args = ["/usr/bin/nc", "-G", "2" if probe else "8"]
     if probe:
         args.extend(["-z", "-w", "2"])
     if proxy:
@@ -132,7 +132,7 @@ def relay_ssh(via, proxy, address, probe=False):
         args.extend(["-oExitOnForwardFailure=yes", "-W", address + ":22"])
     args.append(PEERS["studio"]["user"] + "@" + via)
     if probe:
-        args.extend(["/usr/bin/nc", "-z", "-w", "2", address, "22"])
+        args.extend(["/usr/bin/nc", "-G", "2", "-z", "-w", "2", address, "22"])
     return args
 
 

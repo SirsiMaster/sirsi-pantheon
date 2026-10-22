@@ -97,6 +97,15 @@ class EndpointPolicy(unittest.TestCase):
         self.assertIn(proxy, policy.nc_args("10.96.127.2", proxy))
         self.assertIn(proxy, " ".join(policy.relay_ssh("10.96.178.2", proxy, "10.96.127.1")))
 
+    def test_native_connect_deadline_is_not_just_idle_timeout(self):
+        probe = policy.nc_args("10.96.127.2", probe=True)
+        self.assertEqual(probe[probe.index("-G") + 1], "2")
+        stream = policy.nc_args("10.96.127.2")
+        self.assertEqual(stream[stream.index("-G") + 1], "8")
+        remote = policy.relay_ssh("10.96.178.2", None, "10.96.127.1", probe=True)
+        command = remote[remote.index("/usr/bin/nc"):]
+        self.assertEqual(command[command.index("-G") + 1], "2")
+
     def test_proxy_validation_and_no_bypass(self):
         for mode, env in (("direct", {"ALL_PROXY": "socks5://127.0.0.1:1234"}),
                           ("direct", {"HTTPS_PROXY": "https://example.invalid"}),
