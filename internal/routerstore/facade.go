@@ -20,8 +20,18 @@ import (
 
 // Quota defaults (§2b axiom 7). Vars so tests can tighten them.
 var (
-	// MaxSendsPerSenderPerWindow caps new items per sender per time bucket.
-	MaxSendsPerSenderPerWindow = 30
+	// MaxSendsPerPairPerWindow caps new items from one sender to ONE
+	// recipient per time bucket. This is the runaway guard: the floods that
+	// motivated the quota (11,564 "WORKER GAVE UP" items) were one sender
+	// hammering one inbox, and an exact repeat is already absorbed by the
+	// idempotency key before it ever spends quota.
+	MaxSendsPerPairPerWindow = 30
+	// MaxSendsPerSenderPerWindow is the backstop across ALL recipients. It was
+	// 30, which refused legitimate fan-out (owner directive 2026-10-22: one
+	// directive to 29 lanes is a broadcast, not spam; "legit sends ain't
+	// waiting for hours"). It now only bounds a sender gone wild across the
+	// whole fleet.
+	MaxSendsPerSenderPerWindow = 10000
 	// SendWindow is the quota (and idempotency time_bucket) granularity.
 	SendWindow = time.Hour
 )
@@ -118,22 +128,42 @@ func (s *SQLiteStore) sendGuardedOnce(r SendReq) (string, bool, error) {
 		return existing, true, nil
 	}
 
-	// Quota (§2b axiom 7): spend one slot in this sender's window bucket.
+	// Quota (§2b axiom 7): spend one slot for the sender→recipient pair and
+	// one for the sender overall. The pair row reuses the send_quota table
+	// under a "pair:" key, so no schema change.
 	bucket := now.Truncate(SendWindow).Format("2006-01-02T15")
-	if _, err = tx.Exec(
-		`INSERT INTO send_quota(sender, bucket, count) VALUES (?, ?, 1)
-		 ON CONFLICT(sender, bucket) DO UPDATE SET count = send_quota.count + 1;`, r.From, bucket); err != nil {
-		return "", false, fmt.Errorf("routerstore: SendGuarded: quota: %w", err)
+	spend := func(key string) (int, error) {
+		if _, xerr := tx.Exec(
+			`INSERT INTO send_quota(sender, bucket, count) VALUES (?, ?, 1)
+			 ON CONFLICT(sender, bucket) DO UPDATE SET count = send_quota.count + 1;`, key, bucket); xerr != nil {
+			return 0, fmt.Errorf("routerstore: SendGuarded: quota: %w", xerr)
+		}
+		var n int
+		if qerr := tx.QueryRow(`SELECT count FROM send_quota WHERE sender = ? AND bucket = ?;`, key, bucket).Scan(&n); qerr != nil {
+			return 0, fmt.Errorf("routerstore: SendGuarded: quota read: %w", qerr)
+		}
+		return n, nil
 	}
-	var used int
-	if err = tx.QueryRow(`SELECT count FROM send_quota WHERE sender = ? AND bucket = ?;`, r.From, bucket).Scan(&used); err != nil {
-		return "", false, fmt.Errorf("routerstore: SendGuarded: quota read: %w", err)
+	pairUsed, err := spend("pair:" + r.From + ">" + r.To)
+	if err != nil {
+		return "", false, err
 	}
-	if used > MaxSendsPerSenderPerWindow {
+	used, err := spend(r.From)
+	if err != nil {
+		return "", false, err
+	}
+	var overDetail string
+	switch {
+	case pairUsed > MaxSendsPerPairPerWindow:
+		overDetail = fmt.Sprintf("Sender %s exceeded %d sends to %s in window %s.", r.From, MaxSendsPerPairPerWindow, r.To, bucket)
+	case used > MaxSendsPerSenderPerWindow:
+		overDetail = fmt.Sprintf("Sender %s exceeded %d sends across all recipients in window %s.", r.From, MaxSendsPerSenderPerWindow, bucket)
+	}
+	if overDetail != "" {
 		// Over-quota UPDATES a singleton throttle item; it never appends.
 		if _, err = s.escalateTx(tx, now, "throttle:"+r.From, "over_quota",
 			fmt.Sprintf("throttled: %s over send quota", r.From),
-			fmt.Sprintf("Sender %s exceeded %d sends in window %s. Dropped sends are counted here, not appended.", r.From, MaxSendsPerSenderPerWindow, bucket),
+			overDetail+" Dropped sends are counted here, not appended.",
 		); err != nil {
 			return "", false, err
 		}
