@@ -111,6 +111,15 @@ type Reservation struct {
 	// router-registered agents are. 0 means "not set": no exemption, same
 	// behavior as before this field existed.
 	ExemptPID int `json:"exempt_pid,omitempty"`
+	// Authority, Epoch, and Seq are set only on a grant made by a pod
+	// authority through ReserveAsAuthority (ADR-120 §2-3), never by a
+	// caller using the ordinary Reserve path. Authority is "pod:<pod>";
+	// Epoch pins the grant to the delegation epoch it was made under, so a
+	// superseded authority instance's grants are visibly stale history, not
+	// current admission, even though the row itself is retained.
+	Authority string `json:"authority,omitempty"`
+	Epoch     int    `json:"epoch,omitempty"`
+	Seq       int64  `json:"seq,omitempty"`
 }
 
 // ShareFull and ShareFloor are the two values Reservation.Share takes.
@@ -355,6 +364,16 @@ func (l *Ledger) Reserve(req Reservation, queue bool) (ReserveResult, error) {
 func (l *Ledger) reserveAttempt(req Reservation, queue bool) (ReserveResult, error) {
 	if err := validate(req); err != nil {
 		return ReserveResult{}, err
+	}
+	// ADR-120 §2: while a delegation is live, its resources are booked only
+	// through the pod authority (ReserveAsAuthority) — never by a direct
+	// Reserve call, cloud-reachable or not. This is the single admission
+	// chokepoint every Reserve (local or server-transactional) already goes
+	// through, so the fence is real, not advisory.
+	if d, derr := l.delegationFor(req.Resource, l.now()); derr != nil {
+		return ReserveResult{}, derr
+	} else if d != nil {
+		return ReserveResult{}, fmt.Errorf("maat: %s delegated to pod %q (epoch %d) — book through the pod authority, not the canonical ledger directly", req.Resource, d.Pod, d.Epoch)
 	}
 	pendingCedes, err := l.pendingCedeIDs(req.Holder)
 	if err != nil {
