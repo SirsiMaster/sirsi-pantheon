@@ -102,7 +102,7 @@ func TestFabricTransportPlanQuotesEveryRemoteArg(t *testing.T) {
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {
 		t.Fatal("payload escaped literal quoting")
 	}
-	for _, required := range []string{"StrictHostKeyChecking=yes", "PasswordAuthentication=no", "KbdInteractiveAuthentication=no", "ProxyCommand", "/usr/bin/nc", "fabric-ssh-quote-proof"} {
+	for _, required := range []string{"StrictHostKeyChecking=yes", "PasswordAuthentication=no", "KbdInteractiveAuthentication=no", "PreferredAuthentications=publickey", "UserKnownHostsFile=", "HostKeyAlias=sirsi-m1", "ProxyCommand", "/usr/bin/python3", "fabric-endpoints.py", "connect", "socks", "ENDPOINT_POLICY=thunderbolt,thunderbolt-relay,classified-lan,tailscale", "fabric-ssh-quote-proof"} {
 		if !strings.Contains(string(out), required) {
 			t.Errorf("missing transport boundary %s", required)
 		}
