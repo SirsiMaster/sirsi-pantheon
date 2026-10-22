@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -89,13 +90,17 @@ func TestEnforceCompletionValidatorReceivesOneCapturedSnapshot(t *testing.T) {
 
 func TestEnforceRejectsNonFinalProofBeforeRouterClose(t *testing.T) {
 	caller, proof := proofRepo(t, "application")
-	t.Setenv("SIRSI_COMPLETION_GATE_SCRIPT", validator(t, caller, proof))
 	if err := os.WriteFile(proof, []byte(`{"repo":"application","status":"blocked","blockers":["unresolved"]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("SIRSI_COMPLETION_GATE_SCRIPT", validator(t, caller, proof))
 
-	if err := Enforce(caller, "item-1", proof, false, false, "done"); err == nil {
+	err := Enforce(caller, "item-1", proof, false, false, "done")
+	if err == nil {
 		t.Fatal("blocked proof unexpectedly accepted for implementation completion")
+	}
+	if !strings.Contains(err.Error(), "completion requires completed proof without blockers") {
+		t.Fatalf("blocked proof failed for the wrong reason: %v", err)
 	}
 }
 
