@@ -141,7 +141,9 @@ jobs:
         run: python3 -B -m unittest discover -s scripts/maat -p 'test*.py' -v
 
       - name: Fabric transport and lane profile contract (model-free)
-        run: python3 -B scripts/maat/fabric-run.test.py -v
+        run: |
+          /usr/bin/python3 -B scripts/maat/fabric-endpoints.test.py -v
+          /usr/bin/python3 -B scripts/maat/fabric-run.test.py -v
 
       - name: Run tests
         shell: bash

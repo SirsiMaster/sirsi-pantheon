@@ -140,6 +140,9 @@ it with `ssh -G`; do not restart sessions or rewrite keys. New connections use
 the new policy; existing streams finish untouched. A host-key/authentication
 failure is terminal, not a reason to try a less-trusted route. TCP availability
 checks are not successful SSH, workload, payload or throughput evidence.
+Native netcat probes use `-G 2` for the TCP connect deadline: `-w` alone is not
+a macOS connect timeout. Actual tunnels use a bounded connect without an idle
+timeout that would kill a healthy quiet SSH session.
 
 Deterministic qualification: `python3 scripts/maat/fabric-endpoints.test.py` and
 `python3 scripts/maat/fabric-run.test.py` under an ordinary CPU-one admission.
