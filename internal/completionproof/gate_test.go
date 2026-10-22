@@ -18,7 +18,7 @@ func proofRepo(t *testing.T, name string) (string, string) {
 	if err := os.WriteFile(filepath.Join(root, ".agents", "completion.contract.json"), []byte(`{}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(proof, []byte(`{"repo":"`+name+`"}`), 0o644); err != nil {
+	if err := os.WriteFile(proof, []byte(`{"repo":"`+name+`","status":"completed","blockers":[]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return root, proof
@@ -27,17 +27,117 @@ func proofRepo(t *testing.T, name string) (string, string) {
 func validator(t *testing.T, root, proof string) string {
 	t.Helper()
 	script := filepath.Join(t.TempDir(), "validator.py")
-	body := fmt.Sprintf(`import os, sys
+	expected, err := os.ReadFile(proof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := fmt.Sprintf(`import json, os, sys
+mode = sys.argv[1]
 repo = os.path.realpath(sys.argv[sys.argv.index("--repo") + 1])
-proof = os.path.realpath(sys.argv[sys.argv.index("--proof") + 1])
-if repo != %q or proof != %q:
+proof = sys.argv[sys.argv.index("--proof") + 1]
+if repo != %q:
     print("wrong caller authority: repo=%%s proof=%%s" %% (repo, proof))
     sys.exit(9)
-`, mustEval(t, root), mustEval(t, proof))
+if mode == "validate":
+    if os.path.realpath(proof) != %q:
+        print("wrong proof pathname: %%s" %% proof)
+        sys.exit(10)
+elif mode == "validate-completion":
+    if os.path.realpath(proof) != %q:
+        print("wrong proof metadata: %%s" %% proof)
+        sys.exit(11)
+    if os.environ.get("SIRSI_TEST_SUBSTITUTE_PROOF") == "1":
+        with open(proof, "wb") as changed:
+            changed.write(b'{"status":"blocked","blockers":["substituted"]}')
+    captured = sys.stdin.buffer.read()
+    if os.environ.get("SIRSI_TEST_SUBSTITUTE_PROOF") == "1":
+        with open(proof, "wb") as restored:
+            restored.write((%q).encode("utf-8"))
+    if captured != (%q).encode("utf-8"):
+        print("validator did not receive the captured proof bytes")
+        sys.exit(12)
+    document = json.loads(captured)
+    if document.get("status") != "completed" or document.get("blockers") not in (None, []):
+        print("completion requires completed proof without blockers")
+        sys.exit(13)
+else:
+    print("unexpected validator mode: %%s" %% mode)
+    sys.exit(14)
+`, mustEval(t, root), mustEval(t, proof), mustEval(t, proof), expected, expected)
 	if err := os.WriteFile(script, []byte(body), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	return script
+}
+
+func TestEnforceCompletionValidatorReceivesOneCapturedSnapshot(t *testing.T) {
+	caller, proof := proofRepo(t, "application")
+	t.Setenv("SIRSI_COMPLETION_GATE_SCRIPT", validator(t, caller, proof))
+	t.Setenv("SIRSI_TEST_SUBSTITUTE_PROOF", "1")
+
+	if err := Enforce(caller, "item-1", proof, false, false, "done"); err != nil {
+		t.Fatalf("completion snapshot rejected: %v", err)
+	}
+	contents, err := os.ReadFile(proof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(contents) != `{"repo":"application","status":"completed","blockers":[]}` {
+		t.Fatalf("substitution-back did not restore original proof: %s", contents)
+	}
+}
+
+func TestEnforceRejectsNonFinalProofBeforeRouterClose(t *testing.T) {
+	caller, proof := proofRepo(t, "application")
+	t.Setenv("SIRSI_COMPLETION_GATE_SCRIPT", validator(t, caller, proof))
+	if err := os.WriteFile(proof, []byte(`{"repo":"application","status":"blocked","blockers":["unresolved"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Enforce(caller, "item-1", proof, false, false, "done"); err == nil {
+		t.Fatal("blocked proof unexpectedly accepted for implementation completion")
+	}
+}
+
+func TestStandaloneValidateKeepsLegacyWorkInProgressMode(t *testing.T) {
+	caller, proof := proofRepo(t, "application")
+	if err := os.WriteFile(proof, []byte(`{"repo":"application","status":"blocked","blockers":["review pending"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SIRSI_COMPLETION_GATE_SCRIPT", validator(t, caller, proof))
+
+	if err := Validate(caller, proof); err != nil {
+		t.Fatalf("standalone work-in-progress validation changed unexpectedly: %v", err)
+	}
+}
+
+func TestEnforceFailsClosedWhenValidatorLacksCompletionMode(t *testing.T) {
+	caller, proof := proofRepo(t, "application")
+	legacyOnly := filepath.Join(t.TempDir(), "legacy-only.py")
+	if err := os.WriteFile(legacyOnly, []byte(`import sys
+if sys.argv[1] == "validate":
+    raise SystemExit(0)
+print("unknown command", file=sys.stderr)
+raise SystemExit(64)
+`), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SIRSI_COMPLETION_GATE_SCRIPT", legacyOnly)
+
+	if err := Enforce(caller, "item-1", proof, false, false, "done"); err == nil {
+		t.Fatal("completion unexpectedly fell back to the legacy validator")
+	}
+}
+
+func TestEnforceBoundsCapturedProof(t *testing.T) {
+	caller, proof := proofRepo(t, "application")
+	if err := os.WriteFile(proof, make([]byte, maxCompletionProofBytes+1), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Enforce(caller, "item-1", proof, false, false, "done"); err == nil {
+		t.Fatal("oversized completion proof unexpectedly accepted")
+	}
 }
 
 func mustEval(t *testing.T, path string) string {
