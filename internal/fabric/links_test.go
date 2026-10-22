@@ -28,6 +28,7 @@ func mock(sp string) *platform.Mock {
 		"system_profiler SPThunderboltDataType -json": sp,
 		"networksetup -listallhardwareports":          netsetup,
 		"sysctl -n debug.rdma.version":                "Jul 11 2026 14:22:31 RDMA_family\n",
+		"kmutil showloaded":                           "123 0 0 com.apple.iokit.IORDMAFamily (1.0)\n",
 		"nvram rdma-enable":                           "nvram: Error getting variable - 'rdma-enable': (iokit/common) data was not found\n",
 	}}
 }
@@ -72,6 +73,44 @@ func TestCollect_OnePeer(t *testing.T) {
 	}
 	if l.RDMA.NVRAMEnabled != Yes {
 		t.Errorf("nvram enabled = %s, want yes", l.RDMA.NVRAMEnabled)
+	}
+}
+
+func TestCollect_RDMASysctlAbsentUsesLoadedKextInventory(t *testing.T) {
+	m := mock(spNoDevices)
+	m.CommandResults["sysctl -n debug.rdma.version"] = "sysctl: unknown oid 'debug.rdma.version'\n"
+	m.CommandResults["kmutil showloaded"] = "123 0 0 com.apple.iokit.IORDMAFamily (1.0)\n124 0 0 com.apple.driver.AppleThunderboltRDMA (1.0)\n"
+	l := Collect(m)
+	if l.RDMA.FamilyLoaded != Yes {
+		t.Fatalf("family_loaded=%s, want yes from kmutil fallback; rdma=%+v", l.RDMA.FamilyLoaded, l.RDMA)
+	}
+}
+
+func TestCollect_RDMASysctlAbsentReportsNoOnlyAfterReadableKextInventory(t *testing.T) {
+	m := mock(spNoDevices)
+	m.CommandResults["sysctl -n debug.rdma.version"] = "sysctl: unknown oid 'debug.rdma.version'\n"
+	m.CommandResults["kmutil showloaded"] = "123 0 0 com.apple.driver.Unrelated (1.0)\n"
+	l := Collect(m)
+	if l.RDMA.FamilyLoaded != No {
+		t.Fatalf("family_loaded=%s, want no from readable kmutil inventory; rdma=%+v", l.RDMA.FamilyLoaded, l.RDMA)
+	}
+}
+
+type kmutilDiagnosticErrorPlatform struct{ *platform.Mock }
+
+func (p kmutilDiagnosticErrorPlatform) Command(name string, args ...string) ([]byte, error) {
+	if name == "kmutil" {
+		return []byte("kmutil: Operation not permitted\n"), errors.New("exit status 1")
+	}
+	return p.Mock.Command(name, args...)
+}
+
+func TestCollect_RDMASysctlAbsentAndKMUtilFailureStaysUnknown(t *testing.T) {
+	m := mock(spNoDevices)
+	m.CommandResults["sysctl -n debug.rdma.version"] = "sysctl: unknown oid 'debug.rdma.version'\n"
+	l := Collect(kmutilDiagnosticErrorPlatform{m})
+	if l.RDMA.FamilyLoaded != Unknown {
+		t.Fatalf("family_loaded=%s, want unknown when kmutil returns a diagnostic with an error; rdma=%+v", l.RDMA.FamilyLoaded, l.RDMA)
 	}
 }
 
