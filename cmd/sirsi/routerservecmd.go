@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/spf13/cobra"
@@ -115,6 +116,13 @@ func runRouterServe(cmd *cobra.Command, _ []string) error {
 	}
 
 	opts := routerstore.ServerOptions{Token: token, MaxWait: routerServeMaxWait, RuleOfRa: strings.TrimSpace(os.Getenv("SIRSI_ROUTER_RULE_OF_RA"))}
+	// Use the same declared registry as CLI dispatch. No local metadata is created.
+	repoRoot, err := router.FindRepoRoot()
+	if err == nil {
+		opts.RecipientRegistry = dispatch.RegistryPath(filepath.Join(repoRoot, ".agents", "idea-router"))
+	} else {
+		fmt.Fprintln(cmd.ErrOrStderr(), "router serve: no declared recipient registry; preserving legacy inbox admission (actor-only guard not configured)")
+	}
 	// Handler validates the mode: "" is the documented default (log), and a
 	// misspelling is a startup failure, never a gate that fails open.
 	if d, derr := time.ParseDuration(strings.TrimSpace(os.Getenv("SIRSI_ROUTER_SERVE_TEST_DELAY"))); derr == nil && d > 0 {
