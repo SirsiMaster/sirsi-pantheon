@@ -8,9 +8,10 @@ package router
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"os"
 	"path/filepath"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
 
 // AgentConfig defines a registered agent that can receive work.

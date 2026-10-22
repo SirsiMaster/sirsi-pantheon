@@ -1,12 +1,13 @@
 package dispatch
 
 import (
-	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
 
 func TestActorOnlySendPreservesLegacy(t *testing.T) {
