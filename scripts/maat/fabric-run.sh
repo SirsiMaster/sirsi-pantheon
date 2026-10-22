@@ -34,35 +34,33 @@ if [[ -n "${SIRSI_AGENT_ID:-}" && "${SIRSI_AGENT_ID}" != "$agent" ]]; then
   printf 'REFUSED: conflicting lane identities\n' >&2; exit 78
 fi
 proxy_url=${ALL_PROXY:-${all_proxy:-}}
-proxy_options=()
 if [[ "$transport_mode" == socks ]]; then
   case "$proxy_url" in socks5://*|socks5h://*) ;; *) printf 'REFUSED: supported runtime SOCKS proxy required\n' >&2; exit 78;; esac
   proxy=${proxy_url#*://}
   [[ "$proxy" =~ ^127\.0\.0\.1:[0-9]+$ ]] || { printf 'REFUSED: proxy must be loopback\n' >&2; exit 78; }
-  proxy_options=(-o "ProxyCommand=/usr/bin/nc -x $proxy -X 5 %h %p")
 else
   [[ -z "$proxy_url${HTTP_PROXY:-}${http_proxy:-}${HTTPS_PROXY:-}${https_proxy:-}" ]] || { printf 'REFUSED: configured runtime proxy must not be bypassed\n' >&2; exit 78; }
   # Prevent ambient SSH config from silently adding a proxy/jump to an explicit
   # direct transaction. Host authentication and known_hosts stay unchanged.
-  proxy_options=(-oProxyCommand=none -oProxyJump=none)
 fi
-trust=()
+script_dir=$(CDPATH= cd -- "$(/usr/bin/dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+selector="$script_dir/fabric-endpoints.py"
+[[ -f "$selector" && ! -L "$selector" ]] || { printf 'REFUSED: shared endpoint selector absent\n' >&2; exit 78; }
+trust=(-oUserKnownHostsFile="$HOME/.ssh/sirsi_known_hosts" -oHostKeyAlias="sirsi-$host" -oHostKeyAlgorithms=ssh-ed25519)
 case "$host" in
   m1)
-    destination=sirsimasterdev@100.88.242.95
-    remote_runner=/Users/sirsimasterdev/.local/bin/sirsi-maat-run
-    trust=(-oHostKeyAlias=100.88.242.95);;
+    destination=sirsimasterdev@sirsi-m1
+    remote_runner=/Users/sirsimasterdev/.local/bin/sirsi-maat-run;;
   studio)
-    destination=sirsimasterdev@100.87.95.88
-    remote_runner=/Users/sirsimasterdev/.local/bin/sirsi-maat-run
-    trust=(-oUserKnownHostsFile="$HOME/.sirsi/apollo/runtime/sdk-9d24c8c9/trust/known_hosts" -oHostKeyAlias=10.96.127.2);;
+    destination=sirsimasterdev@sirsi-studio
+    remote_runner=/Users/sirsimasterdev/.local/bin/sirsi-maat-run;;
   m5)
-    destination=thekryptodragon@100.92.193.26
+    destination=thekryptodragon@sirsi-m5
     remote_runner=/Users/thekryptodragon/.local/bin/sirsi-maat-run
     # M5 is enrolled under its stable logical identity, not its current
     # tailnet address. Keep the address for transport only; strict host-key
     # verification must use the existing named pin and its dedicated store.
-    trust=(-oUserKnownHostsFile="$HOME/.ssh/sirsi_known_hosts" -oHostKeyAlias=sirsi-m5 -oHostKeyAlgorithms=ssh-ed25519);;
+    ;;
   *) usage;;
 esac
 # OpenSSH passes one command through the destination shell. Quote EVERY argv
@@ -72,12 +70,15 @@ remote_command=
 for arg in "$remote_runner" --agent "$agent" --register-executor --work "$work" --cpu-cores "$cores" --timeout "$timeout" -- "$@"; do
   remote_command+="$(quote "$arg") "
 done
+proxy_command="$(quote /usr/bin/python3) $(quote "$selector") connect $(quote "$host") --transport $(quote "$transport_mode")"
 transport=(/usr/bin/ssh -oBatchMode=yes -oPasswordAuthentication=no -oKbdInteractiveAuthentication=no -oPreferredAuthentications=publickey
-  -oStrictHostKeyChecking=yes -oConnectTimeout=8 -oServerAliveInterval=15 -oServerAliveCountMax=4
-  "${proxy_options[@]}" "${trust[@]}" "$destination" "$remote_command")
+  -oStrictHostKeyChecking=yes -oConnectTimeout=45 -oServerAliveInterval=15 -oServerAliveCountMax=4
+  -oProxyJump=none -oControlMaster=no -oControlPath=none -o "ProxyCommand=$proxy_command"
+  "${trust[@]}" "$destination" "$remote_command")
 origin=("$HOME/.local/bin/sirsi-maat-run" --agent "$agent" --register-executor --work "fabric-ssh-$work" --cpu-cores 1 --timeout "$((timeout+120))" --)
 if [[ "$plan" == 1 ]]; then
   printf 'PLAN_ONLY_NO_EXECUTION\n'
+  printf 'ENDPOINT_POLICY=thunderbolt,thunderbolt-relay,classified-lan,tailscale; selection only inside admitted transport\n'
   printf 'REMOTE_COMMAND=%s\n' "$remote_command"
   printf '%q ' "${origin[@]}" "${transport[@]}"; printf '\n'
   exit 0

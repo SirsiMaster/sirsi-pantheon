@@ -96,7 +96,9 @@ job's hash-bound helper or restart any job to install the hook policy.
 
 ### Scoped native worker transport
 
-Install `fabric-run.sh` as `~/.local/bin/sirsi-fabric-run` (0700). This is an
+Install `fabric-run.sh` as `~/.local/bin/sirsi-fabric-run` (0700), together with
+`fabric-endpoints.py` at `~/.local/bin/fabric-endpoints.py` (0700). Publish the
+pair from the same reviewed source. This is an
 operator shell helper using macOS OpenSSH/netcat, not a new model or router
 store. Newly started declared Codex consumers select the `sirsi-router` named
 profile: command networking is proxy-enforced and allows only the three
@@ -120,6 +122,31 @@ new command-restricted SSH principal or protection against a malicious owner
 account. Missing pins, keys, helper, proxy or supported managed policy fail
 closed. Native destinations retain their own CLI/runtime/identity and the one
 canonical router; no router database is copied.
+
+The ONE endpoint table is in `fabric-endpoints.py`. Fresh connections prefer
+surveyed direct Thunderbolt, then the existing pinned Studio SSH-forwarding
+path for M1↔M5, then RFC1918 LAN answers from the target's actual LocalHostName,
+then Tailscale. `.local` alone does not mean LAN: Thunderbolt, link-local,
+loopback and public answers are not relabeled as Wi-Fi. Both hop identities
+remain pinned; there is no new relay daemon or network bridge. If no enrolled
+local path is permitted/reachable through a supplied SOCKS proxy, selection
+uses that same proxy for later candidates; it never probes around the mask.
+
+`/usr/bin/python3 ~/.local/bin/fabric-endpoints.py ssh-config` renders the native
+`~/.ssh/sirsi_fleet.conf` profile from the same selector, without DNS or network
+probes. SHA owns reviewed per-host installation/readback. Preserve the old
+profile as evidence and publish the complete new profile only after validating
+it with `ssh -G`; do not restart sessions or rewrite keys. New connections use
+the new policy; existing streams finish untouched. A host-key/authentication
+failure is terminal, not a reason to try a less-trusted route. TCP availability
+checks are not successful SSH, workload, payload or throughput evidence.
+
+Deterministic qualification: `python3 scripts/maat/fabric-endpoints.test.py` and
+`python3 scripts/maat/fabric-run.test.py` under an ordinary CPU-one admission.
+Mocks cover six directed peer pairs, relay identity refusal and proxy behavior;
+real `ssh -G` checks parser output only. Native qualification must separately
+show each actual selected route, unchanged strict end/jump pins, a harmless
+destination result and terminal cleanup. No M1 bulk-inference role is added.
 
 `--plan` renders literal argv without launching anything; it is not execution
 evidence. Actual qualification requires each lane's destination terminal and

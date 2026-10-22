@@ -28,17 +28,15 @@ class TransportPlan(unittest.TestCase):
         self.assertEqual(result.returncode, 78)
         self.assertNotIn('PLAN_ONLY', result.stdout)
 
-    def test_explicit_direct_fixed_tailnet_destinations(self):
-        for host, address in (('m1', '100.88.242.95'),
-                              ('m5', '100.92.193.26'),
-                              ('studio', '100.87.95.88')):
+    def test_explicit_direct_uses_shared_selector_and_logical_identity(self):
+        for host in ('m1', 'm5', 'studio'):
             with self.subTest(host=host):
                 result = self.run_plan('--transport', 'direct', host=host)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                for literal in (address, 'StrictHostKeyChecking=yes',
+                for literal in ('sirsi-' + host, 'StrictHostKeyChecking=yes',
                                 'BatchMode=yes', 'PasswordAuthentication=no',
                                 'KbdInteractiveAuthentication=no',
-                                'ProxyCommand=none', 'ProxyJump=none',
+                                'fabric-endpoints.py', 'ProxyJump=none',
                                 'sirsi-maat-run', '--register-executor'):
                     self.assertIn(literal, result.stdout)
                 self.assertNotIn('/usr/bin/nc', result.stdout)
@@ -49,22 +47,31 @@ class TransportPlan(unittest.TestCase):
         self.assertIn('must not be bypassed', result.stderr)
         self.assertEqual(result.stdout, '')
 
-    def test_proxy_uses_loopback_and_same_stable_destinations(self):
+    def test_proxy_is_preserved_by_selector_without_disclosing_proxy(self):
         result = self.run_plan(proxy='socks5h://127.0.0.1:19001', host='studio')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('100.87.95.88', result.stdout)
-        self.assertIn('10.96.127.2', result.stdout)  # retained pinned key alias
-        self.assertIn('19001', result.stdout)
+        self.assertIn('sirsi-studio', result.stdout)
+        self.assertIn('HostKeyAlias=sirsi-studio', result.stdout)
+        self.assertIn('fabric-endpoints.py', result.stdout)
+        self.assertIn('socks', result.stdout)
+        self.assertNotIn('19001', result.stdout)  # inherited by helper, not a logged credential
 
     def test_m5_uses_enrolled_named_host_key_namespace(self):
         result = self.run_plan('--transport', 'direct', host='m5')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('100.92.193.26', result.stdout)  # transport destination
+        self.assertIn('sirsi-m5', result.stdout)
         self.assertIn('HostKeyAlias=sirsi-m5', result.stdout)
         self.assertIn('UserKnownHostsFile=', result.stdout)
         self.assertIn('.ssh/sirsi_known_hosts', result.stdout)
         self.assertIn('HostKeyAlgorithms=ssh-ed25519', result.stdout)
         self.assertNotIn('HostKeyAlias=100.92.193.26', result.stdout)
+
+    def test_plan_has_no_selected_address_or_network_probe(self):
+        result = self.run_plan('--transport', 'direct', host='studio')
+        self.assertEqual(result.returncode, 0)
+        self.assertIn('selection only inside admitted transport', result.stdout)
+        for address in ('10.96.127.2', '100.87.95.88', '192.168.1.208'):
+            self.assertNotIn(address, result.stdout)
 
     def test_nonloopback_proxy_fails_closed(self):
         self.assertEqual(self.run_plan(proxy='socks5://192.0.2.1:9000').returncode, 78)
