@@ -8,6 +8,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [0.24.123] — 2026-10-22
 
+- **Pre-push fixture isolation:** clear inherited Git repository variables in the test subprocess so foreign-repository fixtures cannot rewrite the parent checkout's configuration. Preserve the hook's parent environment and all existing test flags; exercise contamination, cleanup and fail-closed controls in CI.
+
 - **Completion proof authority:** validate implementation completion from one bounded captured proof document, requiring completed status and no unresolved blockers in the same semantic validation. Preserve standalone work-in-progress validation and explicit coordination outcomes; refuse legacy helpers that do not support the completion command. Verified with actual candidate CLI blocked-refusal/completed-close readback, independent helper controls, and protected race/PostgreSQL CI. The compatible trusted portfolio helper must be installed before clients consume this release.
 
 ### Previously shipped source: consolidated historical fragments

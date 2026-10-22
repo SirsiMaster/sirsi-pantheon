@@ -294,10 +294,23 @@ fi
 # diff (blocked a clean push 2026-09-16). Scrub them so the gate matches CI (A28).
 SCRUB_SIRSI=$(env | sed -n 's/^\(SIRSI_[A-Za-z0-9_]*\)=.*/-u \1/p' | tr '\n' ' ')
 
+run_git_isolated_tests() (
+    # Test fixtures create foreign repositories. Git documents clearing its
+    # repository-local hook environment before operating in another worktree.
+    # Keep this in a subshell: the hook itself still needs its original refs.
+    local name git_names
+    git_names=$(git rev-parse --local-env-vars) || return 1
+    for name in $git_names; do unset "$name"; done
+    for name in $(compgen -e); do
+        case "$name" in SIRSI_*) unset "$name" ;; esac
+    done
+    "$@"
+)
+
 if [ "$DEPTH" = "deep" ]; then
     # Deep: full test suite under CI's exact flags (-race -short; A28 parity)
     echo "  🧪 Running full test suite..."
-    if ! gate_run tests env $SCRUB_SIRSI go test -race -short ./... -count=1 -timeout 900s; then
+    if ! gate_run tests run_git_isolated_tests env $SCRUB_SIRSI go test -race -short ./... -count=1 -timeout 900s; then
         echo "  ❌ Tests failed — fix before pushing."
         exit 1
     fi
@@ -309,7 +322,7 @@ elif [ -n "$CHANGED_PKGS" ]; then
     # pass (A28: local gate parity with CI). Re-measure and raise again if
     # routerstore keeps growing.
     echo "  🧪 Testing changed packages: $(echo $CHANGED_PKGS | wc -w | tr -d ' ') pkg(s)"
-    if ! gate_run tests env $SCRUB_SIRSI go test -race -short $CHANGED_PKGS -count=1 -timeout 900s; then
+    if ! gate_run tests run_git_isolated_tests env $SCRUB_SIRSI go test -race -short $CHANGED_PKGS -count=1 -timeout 900s; then
         echo "  ❌ Tests failed in changed packages — fix before pushing."
         exit 1
     fi

@@ -4,6 +4,8 @@
 
 The completion snapshot fix is new in this candidate. Other entries below consolidate previously shipped source fragments; they are not new functionality first delivered by v0.24.123.
 
+The release also repairs inherited pre-push Git environment contamination in test children. The parent hook, source worktrees and normal verification flags are preserved; a retained RED/GREEN fixture and protected CI guard cover the repair.
+
 - Completion proof authority:
 - Router completion-proof validation now binds evidence to the Git worktree that
   invoked the close while dispatch continues to use the canonical router
