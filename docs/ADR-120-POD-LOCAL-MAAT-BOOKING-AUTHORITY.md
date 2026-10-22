@@ -57,6 +57,17 @@ unreachable, and that is itself the sole writer for the pod while active.
    returns, idempotently (grant id dedup), so the canonical history shows it
    once — not duplicated, not dropped.
 
+### Deployment (owner directive 2026-10-22, services-run-on-their-own)
+
+The pod authority ships as a **signed launchd service** on the pod Macs,
+installed through the normal signed package path — never as a process an AI
+lane (Claude/Codex session, IDE) starts or keeps alive. Per the owner's
+refinement the same day: it starts when the user starts it (login, app, or
+binary launch); starting at boot/login is an opt-in the user enables (Login
+Items / an explicit launchd job), not a silent default. Once running,
+launchd keeps it alive and restarts it. Lanes (Ra, Mercury, Apollo) develop,
+deploy, and diagnose it; they never host it.
+
 ### Non-goals
 
 - This does not create a second general-purpose router ledger. Router items,
