@@ -277,6 +277,33 @@ func TestSenderFloodRejected(t *testing.T) {
 	}
 }
 
+// TestFanOutIsNotAFlood: one sender reaching many lanes once each is a
+// broadcast, not spam (owner 2026-10-22). With the default caps, a 200-lane
+// fan-out lands in full, while the same sender hammering ONE lane is still
+// throttled at the per-pair cap: the old 30-per-sender cap refused the 31st
+// lane of a 29-lane directive.
+func TestFanOutIsNotAFlood(t *testing.T) {
+	s := openTestStore(t)
+	for i := 0; i < 200; i++ {
+		if _, _, err := s.SendGuarded(SendReq{From: "ra", To: fmt.Sprintf("lane-%03d", i), Title: "owner directive"}); err != nil {
+			t.Fatalf("fan-out send %d refused: %v", i, err)
+		}
+	}
+	var drops int
+	for i := 0; i < MaxSendsPerPairPerWindow+5; i++ {
+		_, _, err := s.SendGuarded(SendReq{From: "ra", To: "one-lane", Title: fmt.Sprintf("hammer #%d", i)})
+		switch {
+		case errors.Is(err, ErrOverQuota):
+			drops++
+		case err != nil:
+			t.Fatal(err)
+		}
+	}
+	if drops != 5 {
+		t.Fatalf("per-pair cap must refuse exactly the 5 sends past %d, refused %d", MaxSendsPerPairPerWindow, drops)
+	}
+}
+
 // TestIdempotentDuplicateSend: the same logical send twice is one row.
 func TestIdempotentDuplicateSend(t *testing.T) {
 	s := openTestStore(t)
