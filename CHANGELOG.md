@@ -6,6 +6,39 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.123] — 2026-10-22
+
+- **Completion proof authority:** validate implementation completion from one bounded captured proof document, requiring completed status and no unresolved blockers in the same semantic validation. Preserve standalone work-in-progress validation and explicit coordination outcomes; refuse legacy helpers that do not support the completion command. Verified with actual candidate CLI blocked-refusal/completed-close readback, independent helper controls, and protected race/PostgreSQL CI. The compatible trusted portfolio helper must be installed before clients consume this release.
+
+### Previously shipped source: consolidated historical fragments
+
+The following retained fragments describe source already present before this release; consolidation does not claim these changes first shipped in v0.24.123.
+
+- Router completion-proof validation now binds evidence to the Git worktree that
+  invoked the close while dispatch continues to use the canonical router
+  service. CLI and router-MCP closes reject unknown callers and proofs from a
+  different repository instead of borrowing Pantheon's contract.
+
+- Ma'at ordinary launches default to shared CPU build work rather than an
+  implicit loaded/full-share model request. A cooperative one-CPU default can
+  be increased explicitly. Quiet measurements and loaded/model work remain
+  explicit, and existing jobs are not stopped or relabeled.
+
+- Raw CLI reservations default to build rather than quiet. This retains the
+  existing client/server schema and lease/ownership checks.
+
+- **Explicit native quiet qualification:** the normal launcher can request `--regime quiet` with a newly registered native executor. It requires an exact fresh full-share quiet grant; loaded grants, CPU floors and changed renewal scope cannot be relabeled. Default GPU work stays loaded. This source change is not installed proof or a solution to unadmitted CI interference; runner payload admission and nested reservation ownership remain tracked requirements.
+
+- **Stop-ownership guard ordering:** preserved the failed first hosted91-test run, whose forbidden-stop fixture found regime validation outside the supervisor failure boundary. Command stop/refusal policy now runs first, before profile inspection or any registration/reservation; invalid regime errors remain inside normal terminal handling. No stop authority or test suppression was added.
+
+- **Direct task delivery:** atomically acknowledge only exact matching pending/leased source wakes after successful fenced task claims, including claims without a supervisor wake lease. ACK failure rolls back the claim; preserve terminal history and unrelated sources. Same transaction path covers SQLite and PostgreSQL without migration or grant expansion. Refs: ADR-061; docs/stacklab/DIRECT_TASK_CLAIM_WAKE_ACK.md.
+
+- Restore the accepted sleep transaction and add a canonical online sleep-only issuer, management-only finite delegation, exact authenticated participant binding, atomic Ma'at/consumption host fence, native identity/inventory/full-wake adapters, independent M1 observer and desktop-sleep CLI. Retain nonce and unknown-outcome history; explicit reconciliation never retries power. Remove the parallel signature prototype. Preserve schema25, current guards and existing transport/keys. Source qualification is separate from normal release and fresh native power qualification. Refs: ADR-119, docs/user-guides/governed-sleep.md.
+
+- **Completed task wake residue:** exclude proven exact DONE task source wakes from dispatch/retry/failure and continuation suppression while preserving every row and original evidence. No fabricated ACK or migration; reopened/unproved sources retain ordinary handling. Refs: ADR-061; docs/stacklab/COMPLETED_TASK_WAKE_EXCLUSION.md.
+
+- **fix(router):** retired `claude-pantheon` — owner correction: no such lane exists. Removed its standalone `agents.json` entry and aliased it to `codex-pantheon` (same pattern as `codex-inference`/`codex-sne-runtime`), so Mercury/Apollo requests addressed to it land somewhere real instead of a dead mailbox. Fixed the one live functional dependency (`internal/liveness.recipientFor` routed machine-health escalations to `claude-pantheon`) and the routing-instruction examples in `.agents/idea-router/ROUTING.md`/`README.md` and the two `sirsi-claude-worker.sh` copies' default `AGENT_ID` fallback, all now `codex-pantheon`. Historical records (ADRs, `THREAD_ITEM_INDEX.md`, past ratification notes) left untouched — they're facts about the past, not live routing. No launchd plist uninstalled or process touched; that's a separate, explicit decision.
+
 ## [0.24.122] — 2026-10-20
 
 - **Release safety:** remove blanket forced wake-loop restarts and automatic measurement-window overrides from the release train. Preserve active consumers, allow existing idle-boundary image adoption, and explicitly distinguish installation from loaded-image and queue-work proof. Refs: ADR-061; docs/stacklab/RELEASE_CONSUMER_PRESERVATION.md.
