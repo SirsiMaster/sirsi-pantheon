@@ -69,7 +69,7 @@ const negotiatedWhy = "system_profiler reports the receptacle ceiling only; nego
 // becomes an "unknown" entry, because a missing receipt field must be visible
 // as missing, not as a failed command that renders nothing.
 func Collect(p platform.Platform) Links {
-	l := Links{CollectedAt: time.Now().UTC(), Source: "system_profiler SPThunderboltDataType; nvram rdma-enable; sysctl debug.rdma.version; networksetup"}
+	l := Links{CollectedAt: time.Now().UTC(), Source: "system_profiler SPThunderboltDataType; nvram rdma-enable; sysctl debug.rdma.version; kmutil showloaded; networksetup"}
 	l.Host = firstLine(run(p, "hostname"))
 	if l.Host == "" {
 		l.Host = "unknown"
@@ -212,10 +212,20 @@ func rdmaState(p platform.Platform) RDMA {
 
 	if v := firstLine(run(p, "sysctl", "-n", "debug.rdma.version")); v != "" && !strings.Contains(v, "unknown oid") {
 		r.FamilyLoaded = Yes
-	} else if strings.Contains(v, "unknown oid") {
-		r.FamilyLoaded = No
 	} else {
-		why = append(why, "sysctl debug.rdma.version returned nothing")
+		// debug.rdma.version is not present on every macOS build. Its absence
+		// says nothing about the loaded IORDMAFamily kext, so use kmutil's
+		// loaded-kext inventory before reporting a negative answer.
+		kmutilBytes, kmutilErr := p.Command("kmutil", "showloaded")
+		kmutil := string(kmutilBytes)
+		switch {
+		case kmutilErr == nil && strings.Contains(kmutil, "IORDMAFamily"):
+			r.FamilyLoaded = Yes
+		case kmutilErr == nil && strings.TrimSpace(kmutil) != "":
+			r.FamilyLoaded = No
+		default:
+			why = append(why, "sysctl debug.rdma.version unavailable and kmutil showloaded unreadable")
+		}
 	}
 
 	out := run(p, "nvram", "rdma-enable")
