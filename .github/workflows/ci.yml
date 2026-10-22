@@ -111,6 +111,9 @@ jobs:
       - name: pre-push measurement-window guard
         run: bash scripts/pre-push-window.test.sh
 
+      - name: pre-push foreign Git environment isolation
+        run: bash .githooks/git-environment.test.sh
+
       - name: release train script (syntax, dry-run, bad-version refusal)
         run: |
           bash -n scripts/release-train.sh

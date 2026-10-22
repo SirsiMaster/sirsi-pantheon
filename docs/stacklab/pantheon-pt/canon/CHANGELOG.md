@@ -1,5 +1,29 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-22 — v0.24.123 release candidate
+
+The completion snapshot fix is new in this candidate. Other entries below consolidate previously shipped source fragments; they are not new functionality first delivered by v0.24.123.
+
+The release also repairs inherited pre-push Git environment contamination in test children. The parent hook, source worktrees and normal verification flags are preserved; a retained RED/GREEN fixture and protected CI guard cover the repair.
+
+- Completion proof authority:
+- Router completion-proof validation now binds evidence to the Git worktree that
+  invoked the close while dispatch continues to use the canonical router
+  service. CLI and router-MCP closes reject unknown callers and proofs from a
+  different repository instead of borrowing Pantheon's contract.
+- Ma'at ordinary launches default to shared CPU build work rather than an
+  implicit loaded/full-share model request. A cooperative one-CPU default can
+  be increased explicitly. Quiet measurements and loaded/model work remain
+  explicit, and existing jobs are not stopped or relabeled.
+- Raw CLI reservations default to build rather than quiet. This retains the
+  existing client/server schema and lease/ownership checks.
+- Explicit native quiet qualification:
+- Stop-ownership guard ordering:
+- Direct task delivery:
+- Restore the accepted sleep transaction and add a canonical online sleep-only issuer, management-only finite delegation, exact authenticated participant binding, atomic Ma'at/consumption host fence, native identity/inventory/full-wake adapters, independent M1 observer and desktop-sleep CLI. Retain nonce and unknown-outcome history; explicit reconciliation never retries power. Remove the parallel signature prototype. Preserve schema25, current guards and existing transport/keys. Source qualification is separate from normal release and fresh native power qualification. Refs: ADR-119, docs/user-guides/governed-sleep.md.
+- Completed task wake residue:
+- fix(router):
+
 ## 2026-10-20 — v0.24.122 release candidate
 
 - Release safety:
