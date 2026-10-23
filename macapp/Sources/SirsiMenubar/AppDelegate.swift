@@ -8,7 +8,7 @@ import UserNotifications
 // Fantastical / CleanMyMac MenuBar. The panel STAYS OPEN, drills in, and goes
 // back; nothing is rendered into a dropdown that closes on click.
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var statusItem: NSStatusItem!
     // Pantheon is a full desktop application. The Eye is only a companion
     // affordance; both open this same normal, movable, resizable NSWindow.
@@ -236,12 +236,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let w = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1180, height: 780),
-            styleMask: [.titled, .closable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false)
         w.title = "Sirsi Pantheon"
         w.titlebarAppearsTransparent = false
         w.appearance = NSAppearance(named: .darkAqua)
-        w.backgroundColor = NSColor(red: 0.025, green: 0.047, blue: 0.036, alpha: 1)
+        w.backgroundColor = NSColor(red: 0.008, green: 0.025, blue: 0.021, alpha: 1)
         w.isMovableByWindowBackground = false
         w.level = .normal
         w.hidesOnDeactivate = false
@@ -255,14 +255,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         w.setFrameAutosaveName("SirsiPantheonWorkspace")
         w.isReleasedWhenClosed = false
         window = w
+        w.delegate = self
     }
 
     @objc private func togglePopover(_ sender: Any?) {
         guard window != nil else { return }
         engine.refresh()
+        engine.workspaceVisible = true
         window.makeKeyAndOrderFront(sender)
         NSApp.activate(ignoringOtherApps: true)
     }
+
+    func windowWillClose(_ notification: Notification) { engine.workspaceVisible = false }
+    func windowDidMiniaturize(_ notification: Notification) { engine.workspaceVisible = false }
+    func windowDidDeminiaturize(_ notification: Notification) { engine.workspaceVisible = true }
 
     // openOwnerItem deep-links: show the panel and let RootView push the
     // action screen for this item id (engine.pendingOwnerItemID is observed).

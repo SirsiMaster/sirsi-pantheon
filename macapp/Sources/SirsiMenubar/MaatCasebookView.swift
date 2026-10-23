@@ -12,19 +12,37 @@ struct MaatWorkspaceView: View {
     let preloadedCasebook: MaatCasebookProjection?
     let preloadedKnowledge: MaatKnowledgeProjection?
     let opensReleasePreflight: Bool
+    let apolloContext: ApolloPlan?
 
     init(engine: SirsiEngine, preloadedCasebook: MaatCasebookProjection? = nil,
          preloadedKnowledge: MaatKnowledgeProjection? = nil,
-         opensReleasePreflight: Bool = false) {
+         opensReleasePreflight: Bool = false, apolloContext: ApolloPlan? = nil) {
         self.engine = engine
         self.preloadedCasebook = preloadedCasebook
         self.preloadedKnowledge = preloadedKnowledge
         self.opensReleasePreflight = opensReleasePreflight
+        self.apolloContext = apolloContext
     }
 
     var body: some View {
         VStack(spacing: 0) {
             BackBar(title: "Ma'at")
+            if let plan = apolloContext {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "cpu").foregroundStyle(gold)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Reviewing an Apollo plan").sirsiFont(.subheadline, weight: .semibold)
+                        Text("\(plan.machineID) · \(plan.engineID) · \(plan.cpuCores) cores · \(SirsiEngine.human(plan.memoryBytes)) memory · \(SirsiEngine.human(plan.swapBytes)) swap ceiling")
+                            .sirsiFont(.caption).foregroundStyle(PantheonTheme.mutedText)
+                            .textSelection(.enabled)
+                        Text("Estates: \(plan.chipEstates.joined(separator: ", "))")
+                            .sirsiFont(.caption).foregroundStyle(PantheonTheme.mutedText)
+                    }
+                    Spacer()
+                }
+                .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                .background(PantheonTheme.panelRaised)
+            }
             Group {
                 if snapshotMode {
                     HStack(spacing: 6) {
@@ -353,7 +371,7 @@ private struct MaatSystemOneView: View {
                     .sirsiFont(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                NavLink { MaatCaseDetailView(engine: engine, entry: next) } label: {
+                NavLink { MaatCaseDetailView(engine: engine, operations: engine.maatCaseOperations, entry: next) } label: {
                     Label("Open next resolution", systemImage: "arrow.right.circle.fill")
                         .frame(maxWidth: .infinity)
                 }
@@ -777,7 +795,7 @@ private struct MaatSystemOneView: View {
             Text("Recorded screens")
                 .sirsiFont(.headline)
             ForEach(screens) { entry in
-                NavLink { MaatCaseDetailView(engine: engine, entry: entry) } label: {
+                NavLink { MaatCaseDetailView(engine: engine, operations: engine.maatCaseOperations, entry: entry) } label: {
                     HStack(alignment: .top, spacing: 10) {
                         Circle().fill(gateTint(entry.systemOne?.gate ?? "")).frame(width: 9, height: 9).padding(.top, 4)
                         VStack(alignment: .leading, spacing: 3) {
@@ -1434,7 +1452,7 @@ struct MaatCasebookView: View {
         } else {
             VStack(spacing: 1) {
                 ForEach(cases) { entry in
-                    NavLink { MaatCaseDetailView(engine: engine, entry: entry) } label: {
+                    NavLink { MaatCaseDetailView(engine: engine, operations: engine.maatCaseOperations, entry: entry) } label: {
                         MaatCaseRow(entry: entry)
                     }
                     if entry.id != cases.last?.id { Divider().padding(.leading, 14) }
@@ -1823,14 +1841,20 @@ private struct MaatCaseRow: View {
 
 private struct MaatCaseDetailView: View {
     @ObservedObject var engine: SirsiEngine
+    @ObservedObject var operations: MaatCaseOperationStore
     let entry: MaatCase
     @State private var conclusion = ""
-    @State private var actionResult: CommandResult?
-    @State private var actionError: String?
-    @State private var actionInFlight = false
     @State private var confirmAction = false
     @State private var evidenceCopied = false
     @State private var copiedFindingID: String?
+
+    private var operationKey: MaatOperationKey { MaatOperationKey(case: entry) }
+    private var operationRecord: MaatOperationRecord? { operations.record(for: operationKey) }
+    private var operationInFlight: Bool { operationRecord?.phase.isInFlight == true }
+    private var canBeginOperation: Bool {
+        guard let phase = operationRecord?.phase else { return true }
+        return phase == .retryReady
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1893,13 +1917,16 @@ private struct MaatCaseDetailView: View {
                             .sirsiFont(.caption)
                             .foregroundStyle(.secondary)
                     }
-                    if let action = entry.nextAction, entry.status != "resolved" { resolutionAction(action) }
+                    if let action = entry.nextAction, entry.status.lowercased() != "resolved" { resolutionAction(action) }
                 }
                 .padding(16)
             }
         }
         .confirmationDialog(confirmationTitle, isPresented: $confirmAction, titleVisibility: .visible) {
-            Button(confirmationButton) { Task { await performResolution() } }
+            Button(confirmationButton) {
+                let confirmedNote = conclusion.trimmingCharacters(in: .whitespacesAndNewlines)
+                Task { await performResolution(confirmedNote: confirmedNote) }
+            }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(confirmationMessage)
@@ -1953,27 +1980,31 @@ private struct MaatCaseDetailView: View {
             Button {
                 confirmAction = true
             } label: {
-                Label(confirmationButton, systemImage: action.kind == "maat_repair" ? "wrench.and.screwdriver.fill" : action.kind == "owner_acceptance" ? "checkmark.circle.fill" : "arrow.triangle.branch")
+                Label(operationRecord?.phase == .retryReady ? "Confirm reviewed retry" : confirmationButton, systemImage: action.kind == "maat_repair" ? "wrench.and.screwdriver.fill" : action.kind == "owner_acceptance" ? "checkmark.circle.fill" : "arrow.triangle.branch")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .tint(gold)
-            .disabled(actionInFlight || (action.kind == "owner_acceptance" && conclusion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
+            .disabled(operationInFlight || !canBeginOperation || (action.kind == "owner_acceptance" && conclusion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
             .accessibilityHint(action.kind == "maat_repair" ? "Runs only Ma'at's named bounded recovery after confirmation, then retains its post-repair evidence." : "Records an evidence-bound owner decision; it does not repair the system.")
-            if let actionResult {
-                Label(actionResult.summary, systemImage: actionResult.ok ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+            if let receipt = operationRecord?.receipt {
+                Label(receipt.summary, systemImage: receipt.succeeded ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                     .sirsiFont(.caption)
-                    .foregroundStyle(actionResult.ok ? .green : .orange)
-                if actionResult.ok {
-                    Text("Refresh the casebook to read the updated evidence projection.")
-                        .sirsiFont(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                    .foregroundStyle(receipt.succeeded ? .green : .orange)
             }
-            if let actionError {
-                Label(actionError, systemImage: "exclamationmark.triangle.fill")
+            if let guidance = operationRecord?.guidance {
+                Label(guidance, systemImage: "exclamationmark.triangle.fill")
                     .sirsiFont(.caption)
                     .foregroundStyle(.orange)
+            }
+            if operationRecord != nil && !operationInFlight {
+                Button {
+                    Task { await reviewRetry() }
+                } label: {
+                    Label(operationRecord?.phase == .retryReady ? "Review again" : "Refresh and review retry", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+                .disabled(operationInFlight)
             }
         }
         .padding(12)
@@ -2015,27 +2046,71 @@ private struct MaatCaseDetailView: View {
         }
     }
 
-    @MainActor private func performResolution() async {
+    @MainActor private func performResolution(confirmedNote: String) async {
         guard let action = entry.nextAction else { return }
-        actionInFlight = true
-        actionError = nil
+        guard action.kind != "owner_acceptance" || !confirmedNote.isEmpty else { return }
+        let key = operationKey
+        guard operations.begin(key) else { return }
+
+        let read = await SirsiEngine.runJSONRead(
+            args: ["maat", "casebook", "--json", "--limit", "50"],
+            timeoutSeconds: 12
+        )
+        let projection = MaatOperationPreflight.decodeProjection(from: read.data)
+        switch MaatOperationPreflight.evaluate(
+            original: entry,
+            exitStatus: read.exitStatus,
+            timedOut: read.timedOut,
+            launchError: read.launchError,
+            projection: projection
+        ) {
+        case .rejected(let guidance):
+            operations.rejectPreflight(key, guidance: guidance)
+            return
+        case .ready:
+            break
+        }
+
+        operations.markRunning(key)
+        let result: CommandResult?
         if action.kind == "maat_repair" {
             guard let args = maatCasebookRepairArguments(actionID: action.actionID) else {
-                actionError = "Ma'at refused an unknown repair reference. No system state changed."
-                actionInFlight = false
+                operations.rejectPreflight(key, guidance: "Ma'at refused an unknown repair reference. Refresh and review the case before trying again.")
                 return
             }
-            actionResult = await SirsiEngine.runResult(args: args)
+            result = await SirsiEngine.runResult(args: args)
         } else if action.kind == "owner_acceptance" {
-            actionResult = await SirsiEngine.runResult(args: ["maat", "accept-resolution", "--evidence", action.evidence, "--note", conclusion.trimmingCharacters(in: .whitespacesAndNewlines), "--confirm"])
+            result = await SirsiEngine.runResult(args: ["maat", "accept-resolution", "--evidence", action.evidence, "--note", confirmedNote, "--confirm"])
         } else {
             let check = entry.resource.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? entry.kind : entry.resource
-            actionResult = await SirsiEngine.runResult(args: ["maat", "record-resolution", "--check", check, "--message", entry.why.isEmpty ? entry.determination : entry.why, "--origin-evidence", entry.evidence, "--confirm"])
+            result = await SirsiEngine.runResult(args: ["maat", "record-resolution", "--check", check, "--message", entry.why.isEmpty ? entry.determination : entry.why, "--origin-evidence", entry.evidence, "--confirm"])
         }
-        if actionResult == nil {
-            actionError = "Ma'at could not record the decision. The original case remains open and no system state changed."
+        let succeeded = result?.ok == true
+        let summary = result?.summary
+            ?? "Ma'at did not return a readable result. Refresh and review before attempting this action again."
+        operations.complete(key, receipt: MaatOperationReceipt(summary: summary, succeeded: succeeded))
+    }
+
+    @MainActor private func reviewRetry() async {
+        let key = operationKey
+        guard let prior = operations.record(for: key), !prior.phase.isInFlight else { return }
+        let read = await SirsiEngine.runJSONRead(
+            args: ["maat", "casebook", "--json", "--limit", "50"],
+            timeoutSeconds: 12
+        )
+        let projection = MaatOperationPreflight.decodeProjection(from: read.data)
+        switch MaatOperationPreflight.evaluate(
+            original: entry,
+            exitStatus: read.exitStatus,
+            timedOut: read.timedOut,
+            launchError: read.launchError,
+            projection: projection
+        ) {
+        case .ready:
+            operations.authorizeReviewedRetry(key, reviewedGeneration: prior.generation)
+        case .rejected(let guidance):
+            operations.rejectRetryReview(key, reviewedGeneration: prior.generation, guidance: guidance)
         }
-        actionInFlight = false
     }
 
     private func detailSection(_ title: String, _ value: String) -> some View {

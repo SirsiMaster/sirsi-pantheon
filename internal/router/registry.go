@@ -10,10 +10,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
 
 // AgentConfig defines a registered agent that can receive work.
 type AgentConfig struct {
+	// Optional versioned inbox admission; distinct from informer addressing.
+	DeliveryContract *routerstore.RecipientDeliveryContract `json:"delivery_contract,omitempty"`
 	// ID is the unique agent identifier (e.g., "claude-pantheon", "codex-pantheon")
 	ID string `json:"id"`
 
@@ -71,6 +75,10 @@ type AgentConfig struct {
 	// service refuses a worker's close/complete. Seeded 2026-10-18 for lanes with no lead session; the lead
 	// lane revokes it by removing the field.
 	WorkerAnswers bool `json:"worker_answers,omitempty"`
+
+	// LifecycleServices is the explicit cooperative maintenance grant. It never
+	// permits arbitrary launchd labels, elevation, or another lane's runtime.
+	LifecycleServices []string `json:"lifecycle_services,omitempty"`
 
 	// extra preserves JSON fields not known to this version of AgentConfig so a
 	// LoadRegistry→SaveRegistry round-trip never silently erases metadata the

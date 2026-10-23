@@ -14,15 +14,17 @@ private let applyLog = Logger(subsystem: "ai.sirsi.pantheon", category: "apply")
 // gold is reserved for the brand and consequential commitment. The result is a
 // quiet operational surface, not a green dashboard.
 enum PantheonTheme {
-    static let canvas = Color(red: 0.018, green: 0.024, blue: 0.021)
-    static let sidebar = Color(red: 0.027, green: 0.036, blue: 0.031)
-    static let panel = Color(red: 0.045, green: 0.057, blue: 0.049)
-    static let panelRaised = Color(red: 0.060, green: 0.075, blue: 0.065)
-    static let emerald = Color(red: 0.18, green: 0.84, blue: 0.50)
+    static let canvas = Color(red: 0.008, green: 0.025, blue: 0.021)
+    static let sidebar = Color(red: 0.016, green: 0.039, blue: 0.031)
+    static let panel = Color(red: 0.027, green: 0.055, blue: 0.043)
+    static let panelRaised = Color(red: 0.043, green: 0.075, blue: 0.059)
+    static let emerald = Color(red: 0.431, green: 0.906, blue: 0.718)
     static let emeraldMuted = Color(red: 0.075, green: 0.22, blue: 0.14)
-    static let gold = Color(red: 0.90, green: 0.72, blue: 0.31)
+    static let gold = Color(red: 0.890, green: 0.784, blue: 0.471)
     static let goldMuted = Color(red: 0.50, green: 0.37, blue: 0.12)
-    static let mutedText = Color(red: 0.66, green: 0.74, blue: 0.69)
+    static let mutedText = Color(red: 0.643, green: 0.788, blue: 0.725)
+    static let separator = Color(red: 0.137, green: 0.282, blue: 0.231)
+    static let text = Color(red: 0.929, green: 0.957, blue: 0.937)
 }
 
 let gold = PantheonTheme.gold
@@ -33,11 +35,11 @@ let emerald = PantheonTheme.emerald
 // resources; release packaging binds the PNG byte-for-byte in package inventory.
 struct PantheonBrandMark: View {
     let size: CGFloat
+    @Environment(\.pantheonBrandImage) private var suppliedImage
 
     var body: some View {
         Group {
-            if let url = Bundle.main.url(forResource: "sirsi-logo-white", withExtension: "png"),
-               let image = NSImage(contentsOf: url) {
+            if let image = suppliedImage ?? Bundle.main.url(forResource: "sirsi-logo-white", withExtension: "png").flatMap(NSImage.init(contentsOf:)) {
                 Image(nsImage: image)
                     .resizable()
                     .interpolation(.high)
@@ -52,6 +54,16 @@ struct PantheonBrandMark: View {
         }
         .frame(width: size, height: size)
         .accessibilityLabel("Sirsi logo")
+    }
+}
+
+private struct PantheonBrandImageKey: EnvironmentKey {
+    static let defaultValue: NSImage? = nil
+}
+extension EnvironmentValues {
+    var pantheonBrandImage: NSImage? {
+        get { self[PantheonBrandImageKey.self] }
+        set { self[PantheonBrandImageKey.self] = newValue }
     }
 }
 
@@ -389,7 +401,7 @@ struct RootView: View {
         GeometryReader { geo in
             VStack(spacing: 0) {
                 if let top = nav.stack.last {
-                    top.view
+                    top.view.id(top.id)
                 } else {
                     HomeView(engine: engine)
                 }
@@ -1843,6 +1855,12 @@ struct RaFabricView: View {
     }
 
     var body: some View {
+        TimelineView(.periodic(from: .now, by: 5)) { context in
+            fabricContent(at: context.date)
+        }
+    }
+
+    private func fabricContent(at now: Date) -> some View {
         VStack(spacing: 0) {
             BackBar(title: "Ra — Fabric")
             maybeScrollRouter {
@@ -1872,6 +1890,22 @@ struct RaFabricView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
 
+                    if engine.routerBoard != nil {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(engine.routerReadAt.map { "Observed \($0.formatted(date: .omitted, time: .standard))" } ?? "Observation time unavailable")
+                                .sirsiFont(.caption).foregroundStyle(.secondary)
+                            if !engine.routerObservationIsCurrent(at: now) {
+                                Text(engine.routerReadError ?? "Retained fabric observation · current health and availability are unknown.")
+                                    .sirsiFont(.caption).foregroundStyle(gold)
+                            }
+                            Button {
+                                Task { await engine.loadRouterBoard(force: true) }
+                            } label: {
+                                Label("Refresh fabric", systemImage: "arrow.clockwise")
+                            }.buttonStyle(.bordered).disabled(engine.routerLoading)
+                        }
+                    }
+
                     // ── Honest empty state: never a false "healthy" ─────────
                     if engine.routerBoard == nil {
                         VStack(alignment: .leading, spacing: 10) {
@@ -1889,7 +1923,7 @@ struct RaFabricView: View {
                                     .fixedSize(horizontal: false, vertical: true)
                                 HStack(spacing: 8) {
                                     Button {
-                                        Task { await engine.loadRouterBoard() }
+                                        Task { await engine.loadRouterBoard(force: true) }
                                     } label: {
                                         Label("Refresh fabric", systemImage: "arrow.clockwise")
                                     }
@@ -1909,10 +1943,10 @@ struct RaFabricView: View {
 
                     // ── Fabric overview — the actual work map ───────────────
                     if let board = engine.routerBoard {
-                        SectionLabel("THE FABRIC RIGHT NOW")
+                        SectionLabel(engine.routerObservationIsCurrent(at: now) ? "THE FABRIC RIGHT NOW" : "LAST FABRIC OBSERVATION")
                         HStack(spacing: 16) {
                             VStack(alignment: .leading, spacing: 1) {
-                                Text("\(board.liveThreadCount ?? 0)").sirsiFont(22, weight: .bold).foregroundStyle(.green)
+                                Text("\(board.liveThreadCount ?? 0)").sirsiFont(22, weight: .bold).foregroundStyle(engine.routerObservationIsCurrent(at: now) ? .green : gold)
                                 Text("live threads").sirsiFont(.caption2).foregroundStyle(.secondary)
                             }
                             VStack(alignment: .leading, spacing: 1) {
@@ -1980,14 +2014,14 @@ struct RaFabricView: View {
                         }
                     } else if engine.routerBoard != nil {
                         HStack(spacing: 8) {
-                            Circle().fill(.green).frame(width: 8, height: 8)
-                            Text("No blockers — fabric is healthy")
+                            Circle().fill(engine.routerObservationIsCurrent(at: now) ? Color.green : gold).frame(width: 8, height: 8)
+                            Text(engine.routerObservationIsCurrent(at: now) ? "No blockers in the latest fabric observation" : "No blockers in the retained observation · refresh to revalidate")
                                 .sirsiFont(13, weight: .semibold)
                             Spacer()
                         }
                         .padding(12)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(RoundedRectangle(cornerRadius: 9).fill(Color.green.opacity(0.10)))
+                        .background(RoundedRectangle(cornerRadius: 9).fill((engine.routerObservationIsCurrent(at: now) ? Color.green : gold).opacity(0.10)))
                     }
 
                     // ── Held for retry (nonblocking, but must stay visible) ──

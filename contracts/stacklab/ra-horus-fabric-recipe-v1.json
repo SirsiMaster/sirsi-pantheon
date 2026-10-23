@@ -19,6 +19,15 @@
   },
   "components": [
     {
+      "id": "finite-service-mailbox-reconciliation",
+      "source": ["internal/routerstore/mailboxreconcile.go", "internal/routerstore/mailboxreconcile_serve.go", "internal/routerstore/mailboxreconcile_remote.go", "cmd/sirsi/routermailboxreconcile.go", "docs/runbooks/SERVICE-MAILBOX-RECONCILIATION.md"],
+      "tests": ["internal/routerstore/mailboxreconcile_test.go", "cmd/sirsi/routermailboxreconcile_test.go"],
+      "inputs": ["bootstrap-approved finite exact-id and row-digest coordination manifest", "actual authenticated registered principal", "unchanged open unleased service notice"],
+      "outputs": ["audited coordination acknowledgment or explicit refusal", "idempotent result without foreign item contents"],
+      "writes": ["canonical service item status and custody audit in one SQL transaction"],
+      "upgrade_recipe": ["preserve original item body, sender, recipient and prior result", "never widen generic foreign read, close or reassign rights", "derive principal from authentication and revalidate it in the writing transaction", "reject changed, leased, expired, owner-addressed or unapproved records", "retain current schema and server-first compatible rollout", "qualify both SQLite and PostgreSQL and actual restricted-shell HTTP before live reconciliation", "keep real service obligations open until their own deliverables are proven"]
+    },
+    {
       "id": "fabric-board",
       "source": [
         "internal/ra",

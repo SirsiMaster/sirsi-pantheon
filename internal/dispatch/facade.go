@@ -178,6 +178,9 @@ func (f *Facade) SendContext(ctx context.Context, from, to, title, msgType, inst
 	if err = f.ValidateAgent("recipient", to); err != nil {
 		return SendResult{}, err
 	}
+	if err := routerstore.ValidateRecipientDelivery(f.registryFile(), to); err != nil {
+		return SendResult{}, err
+	}
 	req := routerstore.SendReq{From: from, To: to, Title: title, Type: msgType, Instructions: instructions}
 	var id string
 	var deduped bool

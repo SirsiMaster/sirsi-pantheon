@@ -73,6 +73,8 @@ const nonceWindow = 60 * time.Second
 
 // ServerOptions configure Handler.
 type ServerOptions struct {
+	// RecipientRegistry is the server-owned agents.json path. Optional for old embedders.
+	RecipientRegistry string
 	// Token is the host bearer token every request must present. Empty means
 	// the handler refuses to serve at all.
 	Token string
@@ -107,7 +109,7 @@ var ruleOfRaExempt = map[string]bool{
 	"MaatRead":    true,
 	"MintSession": true, "MintSessionForThread": true, "ThreadBinding": true,
 	"UpsertThreads": true, "UpsertThreadCAS": true, "ResumeThreadCAS": true, "DeleteThreadCAS": true, "ImportThreadsIfEmpty": true,
-	"Heartbeat": true, "RegisterAgent": true, "ListThreads": true, "AdoptTokenMachineID": true,
+	"Heartbeat": true, "RegisterAgent": true, "ListThreads": true, "GetThreadRecord": true, "AdoptTokenMachineID": true,
 	"Get": true, "Inbox": true, "ListAll": true, "ListPage": true, "ListTasks": true, "GetTask": true, "GetAgent": true, "ListAgents": true,
 	"GetState": true, "Counters": true, "Breakers": true, "Render": true, "ListWakeEvents": true, "ListIdentifiers": true,
 	"ListRequirements": true, "UnmetRequirements": true, "RunnableFor": true, "ClassifyLane": true, "OperationalAgents": true,
@@ -480,6 +482,14 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if name == "ReconcileMailboxNotice" {
+		var actorErr error
+		ctx, actorErr = s.mailboxReconcileContext(ctx, sess, tokenHost)
+		if actorErr != nil {
+			writeErr(w, http.StatusForbidden, "", actorErr.Error())
+			return
+		}
+	}
 	for i := 0; i < mt.NumIn(); i++ {
 		pt := mt.In(i)
 		if pt == ctxType {
@@ -597,6 +607,20 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Authoritative inbox admission also covers old clients which lack the
+	// local guard. No send/quota/breaker/item mutation occurs on refusal.
+	if name == "SendGuarded" || name == "Send" {
+		var to string
+		if name == "SendGuarded" {
+			to = in[0].Interface().(SendReq).To
+		} else {
+			to = in[1].String()
+		}
+		if err := ValidateRecipientDelivery(s.opts.RecipientRegistry, to); err != nil {
+			writeErr(w, http.StatusConflict, "ErrRecipientDelivery", err.Error())
+			return
+		}
+	}
 	outs := s.sv.MethodByName(name).Call(in)
 
 	var callErr error
@@ -615,6 +639,14 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 		if rep, ok := results[0].Interface().(AudienceReport); ok {
 			rep.Mode = s.opts.RuleOfRa // the store cannot know the gate mode; the server does
 			results[0] = reflect.ValueOf(rep)
+		}
+	}
+	// Bind authorization to this exact returned record, never a second lookup.
+	if tokenScope != nil && name == "GetThreadRecord" {
+		record, ok := results[0].Interface().(ThreadRecord)
+		if !ok || !tokenScope[record.Agent] {
+			writeErr(w, http.StatusForbidden, "ErrLaneScope", "routerstore: lane scope: thread payload is outside listed agents")
+			return
 		}
 	}
 	// A scoped token's ListThreads is filtered to its own agents: the lane API lists ListThreads as

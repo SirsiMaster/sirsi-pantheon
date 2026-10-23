@@ -98,6 +98,9 @@ func (s *SQLiteStore) SetState(key, value string) error {
 	if key == "maat:delegations" {
 		return fmt.Errorf("maat: generic state write cannot create delegation authority; use compatible atomic RPC")
 	}
+	if strings.HasPrefix(key, "mailbox-reconciliation:") {
+		return errors.New("mailbox reconciliation: generic state writes cannot create or replace approvals or audits")
+	}
 	if key == desktopSleepKey {
 		return errors.New("sleep custody: generic state writes cannot create or replace authority")
 	}
@@ -159,6 +162,9 @@ func (s *SQLiteStore) CompareAndSwapState(key, expected string, exists bool, val
 			return err
 		})
 		return swapped, err
+	}
+	if strings.HasPrefix(key, "mailbox-reconciliation:") {
+		return false, errors.New("mailbox reconciliation: generic CAS cannot create or replace approvals or audits")
 	}
 	if key == desktopSleepKey {
 		return false, errors.New("sleep custody: generic CAS cannot create or replace authority")

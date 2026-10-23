@@ -41,7 +41,7 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 	want := []string{
 		"maat-canon", "maat-casebook", "maat-cli", "maat-confirmed-diagnostic-repair", "maat-core", "maat-coverage",
 		"maat-decision-journal", "maat-failure-memory", "maat-guided-managed-repair", "maat-horus-surface", "maat-knowledge-surface", "maat-known-failure-proposals", "maat-mcp-surface", "maat-native-resolution-surface", "maat-pipeline", "maat-pulse-proof-platform",
-		"maat-host-health-screen", "maat-release-contract-preflight", "maat-release-credential-preflight", "maat-scheduler", "maat-system-one-screen", "maat-terminal-console-surface", "maat-wing-contract", "stacklab-apollo-run-planner",
+		"maat-host-health-screen", "maat-release-contract-preflight", "maat-release-credential-preflight", "maat-scheduler", "maat-scoped-service-lifecycle", "maat-system-one-screen", "maat-terminal-console-surface", "maat-wing-contract", "stacklab-apollo-run-planner",
 	}
 	got := make([]string, 0, len(recipe.Components))
 	for _, component := range recipe.Components {
@@ -68,6 +68,16 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 	componentsByID := make(map[string]component, len(recipe.Components))
 	for _, component := range recipe.Components {
 		componentsByID[component.ID] = component
+	}
+	lifecycle := componentsByID["maat-scoped-service-lifecycle"]
+	for _, boundary := range []string{
+		"never acquire privilege, display administrator prompts, enable disabled services, or refresh unrelated jobs",
+		"keep caller drain assertion distinct from verified application drain",
+		"require exact signed package, selected service and preserved unrelated-process evidence before claiming deployment",
+	} {
+		if !contains(lifecycle.UpgradeRecipe, boundary) {
+			t.Fatalf("scoped lifecycle recipe omits safety boundary %q", boundary)
+		}
 	}
 	memory, ok := componentsByID["maat-failure-memory"]
 	if !ok {

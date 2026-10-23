@@ -1,0 +1,3 @@
+# PR1151 compatibility boundary
+
+Deploy the upgraded server with scoped GetThreadRecord result authorization first. Validate old clients using existing ThreadBinding/UpsertThreadCAS plus the new scoped own-record/lifecycle, foreign payload, unknown and sibling fixtures. Only then roll clients that use GetThreadRecord unconditionally. Keep old client artifacts until validation completes. No new client is authorized ahead of its RPC; older servers return an unsupported-method error. Do not hide incompatibility by falling back to global ListThreads. No schema, grant, account or live-server changes are included in this source patch. SSA owns actual staged rollout and exact runtime evidence.

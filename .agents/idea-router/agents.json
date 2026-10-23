@@ -623,7 +623,8 @@
       }
     },
     "codex-pantheon": {
-      "worker_answers": true,
+      "worker_answers": false,
+      "attended": true,
       "id": "codex-pantheon",
       "type": "codex",
       "command": [
@@ -861,6 +862,7 @@
     },
     "sirsi-software-admin": {
       "id": "sirsi-software-admin",
+      "lifecycle_services": ["ai.sirsi.apollo.observer", "ai.sirsi.apollo-chat", "ai.sirsi.gemma-broker", "ai.sirsi.mercury-monitor", "ai.sirsi.mercury-chip"],
       "attended": true,
       "type": "codex",
       "command": [
@@ -1141,6 +1143,7 @@
     },
     "claude-apollo-m5-rail": {
       "id": "claude-apollo-m5-rail",
+      "lifecycle_services": ["ai.sirsi.apollo.observer", "ai.sirsi.apollo-chat", "ai.sirsi.gemma-broker"],
       "type": "claude",
       "command": [
         "claude",
@@ -1165,6 +1168,7 @@
     },
     "mercury": {
       "id": "mercury",
+      "lifecycle_services": ["ai.sirsi.mercury-monitor", "ai.sirsi.mercury-chip"],
       "attended": true,
       "type": "claude",
       "command": [

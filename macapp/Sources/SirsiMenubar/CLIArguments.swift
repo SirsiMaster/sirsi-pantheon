@@ -35,7 +35,7 @@ enum MenubarCommandParser {
     static let usage = """
     Usage: SirsiMenubar [--snapshot <dir> [--width <pt>] [--appearance light|dark]]
 
-    With no arguments, launches the menubar surface (accessory app, no Dock icon).
+    With no arguments, opens the Pantheon desktop workspace and its menu-bar companion.
 
       --snapshot <dir>          render the popover's key screens to PNGs and exit
       --width <pt>              snapshot width in points (default 380)

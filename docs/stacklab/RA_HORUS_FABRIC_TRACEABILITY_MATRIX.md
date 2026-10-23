@@ -37,6 +37,13 @@ has not been proven.
 
 ## Definition of done
 
+Finite actor-only mailbox recovery is tracked by SSA task
+`horus-finite-mailbox-reconciliation-20261023`, library component
+`finite-service-mailbox-reconciliation`, and
+`docs/runbooks/SERVICE-MAILBOX-RECONCILIATION.md`. Source/race fixtures do not
+close this obligation: compatible deployment, exact approved notice readback,
+preserved originals and unchanged real service work remain required.
+
 The lane is clear only when every row is either `ACCEPTED` with a durable
 receipt or explicitly assigned to an open router item. Source-only acceptance
 does not imply installed runtime, signed package, notarization, or production

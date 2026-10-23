@@ -2,7 +2,7 @@
 
 This index tracks **all** architectural decisions for the Sirsi Pantheon ecosystem.
 
-**Total ADRs: 76 (+ ADR-031-A/B/C sub-decisions, + the ADR-054 companion contracts)** | **Next available: ADR-120** — ADR-118 records the Studio resource compatibility decision; preserve previously consumed/gapped numbers. ADR-076 is claimed by open, unmerged PR #1017 (`maat/trust-boundary-gate`) and is not yet on `origin/main` (A37).
+**Total ADRs: 77 (+ ADR-031-A/B/C sub-decisions, + the ADR-054 companion contracts)** | **Next available: ADR-121** — ADR-118 records the Studio resource compatibility decision; preserve previously consumed/gapped numbers. ADR-076 is claimed by open, unmerged PR #1017 (`maat/trust-boundary-gate`) and is not yet on `origin/main` (A37). ADR-120 is claimed by this change, not yet on `origin/main` (A37).
 
 ---
 
@@ -10,6 +10,7 @@ This index tracks **all** architectural decisions for the Sirsi Pantheon ecosyst
 
 | ID | Title | Status | Date |
 |----|-------|--------|------|
+| [ADR-120](ADR-120-POD-LOCAL-MAAT-BOOKING-AUTHORITY.md) | Pod-local Ma'at booking authority — ADR-062 exception for one resource (m5/studio/m1 reservations) when the pod has no internet; fenced delegation, fail-closed, exactly-once reconciliation | Proposed; owner-approved design authority 2026-10-22 ("go with option 2") | 2026-10-22 |
 | [ADR-119](ADR-119-SLEEP-CUSTODY-PRODUCTION-CONTROLLER.md) | Authority-bound native sleep controller; no new issuer or live power from source qualification | Proposed implementation; production bindings and native qualification pending | 2026-10-20 |
 | [ADR-118](ADR-118-STUDIO-RESOURCE-ALIAS.md) | Bare Studio scheduler compatibility: legacy `m5-studio` and `studio` share capacity without rewriting reservation identity/history or host binding | Accepted bounded source decision; deployment evidence separate | 2026-10-18 |
 | [ADR-073](ADR-073-ENROLLED-SIGNING-FRAME-FALLBACK.md) | Enrolled signing-frame fallback — self-hosted login-keychain path when the CI certificate bundle is absent; exact Team `9D382WV988` Developer ID Application and Installer preflight; no agent key-material handling | Proposed | 2026-09-29 |
