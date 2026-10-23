@@ -356,40 +356,64 @@ func runInstalledApolloNativeChat(cmdContext context.Context, messages []apollo.
 	if err != nil {
 		return fleetservice.RunMetrics{}, fmt.Errorf("Ma'at refused Apollo native admission: %w", err)
 	}
-	for i := range prepared.Plan.Ranks {
-		prepared.Plan.Ranks[i].Lease = admission.Ranks[i].Fence
-	}
-	planBytes, err = prepared.Plan.Bytes()
+	metrics, err := withApolloNativeAdmission(func() (fleetservice.RunMetrics, error) {
+		if err := bindApolloNativeAdmissionPlan(&prepared, admission); err != nil {
+			return fleetservice.RunMetrics{}, err
+		}
+		runContext, cancel := context.WithDeadline(cmdContext, prepared.ExpiresAt)
+		defer cancel()
+		var runErr error
+		if err := backend.Verify(runContext, admission); err != nil {
+			runErr = fmt.Errorf("Ma'at Apollo fence verification failed: %w", err)
+		} else {
+			runErr = backend.Run(runContext, admission, prepared, func(_ uint32, _ uint32, text string) error {
+				_, err := fmt.Fprint(output, text)
+				return err
+			})
+		}
+		metrics, metricsOK := fleetservice.ReadRunMetrics(backend, admission.ExecutionID)
+		if !metricsOK {
+			runErr = errors.Join(runErr, fmt.Errorf("Apollo native run metrics were not recorded before resource release"))
+		}
+		return metrics, runErr
+	}, func(ctx context.Context) error {
+		return backend.Release(ctx, admission)
+	})
 	if err != nil {
-		return fleetservice.RunMetrics{}, fmt.Errorf("encode live Apollo fenced plan: %w", err)
-	}
-	finalPlanHash := sha256.Sum256(planBytes)
-	prepared.PlanSHA256 = hex.EncodeToString(finalPlanHash[:])
-	runContext, cancel := context.WithDeadline(cmdContext, prepared.ExpiresAt)
-	defer cancel()
-	var runErr error
-	if err := backend.Verify(runContext, admission); err != nil {
-		runErr = fmt.Errorf("Ma'at Apollo fence verification failed: %w", err)
-	} else {
-		runErr = backend.Run(runContext, admission, prepared, func(_ uint32, _ uint32, text string) error {
-			_, err := fmt.Fprint(output, text)
-			return err
-		})
-	}
-	metrics, metricsOK := fleetservice.ReadRunMetrics(backend, admission.ExecutionID)
-	if !metricsOK {
-		runErr = errors.Join(runErr, fmt.Errorf("Apollo native run metrics were not recorded before resource release"))
-	}
-	cleanupContext, cleanupCancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cleanupCancel()
-	cleanupErr := backend.Release(cleanupContext, admission)
-	if runErr != nil || cleanupErr != nil {
-		return metrics, errors.Join(runErr, cleanupErr)
+		return metrics, err
 	}
 	if err := persistApolloNativeRunMetrics(requestID, profile, metrics); err != nil {
 		return metrics, err
 	}
 	return metrics, nil
+}
+
+// Ownership starts before any admitted work, including fenced-plan encoding.
+// Persistence belongs to the successful caller, so a panic only runs cleanup.
+func withApolloNativeAdmission(work func() (fleetservice.RunMetrics, error), release func(context.Context) error) (metrics fleetservice.RunMetrics, resultErr error) {
+	defer func() {
+		cleanupContext, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		resultErr = errors.Join(resultErr, release(cleanupContext))
+	}()
+	metrics, resultErr = work()
+	return
+}
+
+func bindApolloNativeAdmissionPlan(prepared *fleetservice.Prepared, admission fleetservice.Admission) error {
+	if len(admission.Ranks) != len(prepared.Plan.Ranks) {
+		return fmt.Errorf("Apollo native admission rank count differs from the prepared plan")
+	}
+	for i := range prepared.Plan.Ranks {
+		prepared.Plan.Ranks[i].Lease = admission.Ranks[i].Fence
+	}
+	planBytes, err := prepared.Plan.Bytes()
+	if err != nil {
+		return fmt.Errorf("encode live Apollo fenced plan: %w", err)
+	}
+	finalPlanHash := sha256.Sum256(planBytes)
+	prepared.PlanSHA256 = hex.EncodeToString(finalPlanHash[:])
+	return nil
 }
 
 func persistApolloNativeRunMetrics(requestID string, profile apolloNativeProfile, metrics fleetservice.RunMetrics) error {

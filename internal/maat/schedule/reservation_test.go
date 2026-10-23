@@ -4,6 +4,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 )
 
 func TestClassifyProc_IdleRunnerServiceIsNotLoad(t *testing.T) {
@@ -222,6 +224,8 @@ func TestCoverage_UtilizationAndConflicts(t *testing.T) {
 }
 
 func TestShouldDefer_QuietReservationDefersRunner(t *testing.T) {
+	SetPressureFn(func() (guard.PressureLevel, string) { return guard.PressureNormal, "fixture" })
+	t.Cleanup(func() { SetPressureFn(nil) })
 	l := fixedLedger("2026-09-24T10:00:00Z")
 	l.Reserve(mkReq("m5", "claude-io", "2026-09-24T09:00:00Z", "2026-09-24T11:00:00Z", RegimeQuiet), false)
 	defer1, cur, err := l.ShouldDefer("m5")

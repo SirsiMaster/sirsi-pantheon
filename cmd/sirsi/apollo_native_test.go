@@ -1,15 +1,179 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/SirsiMaster/sirsi-inference/apollo/fleetservice"
 )
+
+func TestApolloNativeAdmissionCleanupOutcomes(t *testing.T) {
+	workErr := errors.New("fixture admitted work failed")
+	releaseErr := errors.New("fixture release failed")
+	persistErr := errors.New("fixture metrics persistence failed")
+	for _, tc := range []struct {
+		name                            string
+		early                           bool
+		workErr, releaseErr, persistErr error
+	}{
+		{name: "early work error", early: true, workErr: workErr},
+		{name: "work and release errors joined", workErr: workErr, releaseErr: releaseErr},
+		{name: "early work and release errors joined", early: true, workErr: workErr, releaseErr: releaseErr},
+		{name: "release error prevents persistence", releaseErr: releaseErr},
+		{name: "metrics read then release then persist"},
+		{name: "persistence failure follows release", persistErr: persistErr},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			measured := fleetservice.RunMetrics{InputTokens: 8, GeneratedTokens: 4, TimeToFirstTokenMS: 12.5, Completed: true}
+			wantMetrics := measured
+			if tc.early {
+				wantMetrics = fleetservice.RunMetrics{}
+			}
+			var order []string
+			releases, persists := 0, 0
+			metrics, err := withApolloNativeAdmission(func() (fleetservice.RunMetrics, error) {
+				order = append(order, "work")
+				if tc.early {
+					return fleetservice.RunMetrics{}, tc.workErr
+				}
+				order = append(order, "read metrics")
+				return measured, tc.workErr
+			}, func(ctx context.Context) error {
+				releases++
+				order = append(order, "release")
+				if persists != 0 {
+					t.Error("metrics persisted before release")
+				}
+				// Match a backend that discards its metrics during release: the
+				// caller must already own the measured value returned by work.
+				measured = fleetservice.RunMetrics{}
+				return tc.releaseErr
+			})
+			persist := func(metrics fleetservice.RunMetrics) error {
+				persists++
+				order = append(order, "persist")
+				if releases != 1 || !reflect.DeepEqual(metrics, wantMetrics) {
+					t.Error("persistence preceded successful release or lost measured metrics")
+				}
+				return tc.persistErr
+			}
+			// Production also persists outside the cleanup owner, only after a
+			// normal successful return. This callback uses no filesystem/SDK.
+			if err == nil {
+				err = persist(metrics)
+			}
+			if releases != 1 || !reflect.DeepEqual(metrics, wantMetrics) {
+				t.Fatalf("cleanup/metrics mismatch: releases=%d metrics=%+v", releases, metrics)
+			}
+			wantOrder := []string{"work"}
+			if !tc.early {
+				wantOrder = append(wantOrder, "read metrics")
+			}
+			wantOrder = append(wantOrder, "release")
+			wantPersists := 0
+			if tc.workErr == nil && tc.releaseErr == nil {
+				wantOrder = append(wantOrder, "persist")
+				wantPersists = 1
+			}
+			if persists != wantPersists || !reflect.DeepEqual(order, wantOrder) {
+				t.Fatalf("order=%v persists=%d, want %v/%d", order, persists, wantOrder, wantPersists)
+			}
+			for _, wantErr := range []error{tc.workErr, tc.releaseErr, tc.persistErr} {
+				if wantErr != nil && !errors.Is(err, wantErr) {
+					t.Errorf("result lost error %v: %v", wantErr, err)
+				}
+			}
+			if tc.workErr == nil && tc.releaseErr == nil && tc.persistErr == nil && err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestApolloNativeAdmissionCleanupUsesFreshContextAfterCancellation(t *testing.T) {
+	type workKey struct{}
+	workContext, cancel := context.WithCancel(context.WithValue(context.Background(), workKey{}, "work-only"))
+	defer cancel()
+	var cleanupContext context.Context
+	var workFinished time.Time
+	releases := 0
+	_, err := withApolloNativeAdmission(func() (fleetservice.RunMetrics, error) {
+		cancel()
+		workFinished = time.Now()
+		return fleetservice.RunMetrics{}, workContext.Err()
+	}, func(ctx context.Context) error {
+		releases++
+		cleanupContext = ctx
+		if workContext.Err() != context.Canceled || ctx.Err() != nil || ctx.Value(workKey{}) != nil {
+			t.Error("cleanup inherited the canceled work context")
+		}
+		deadline, ok := ctx.Deadline()
+		if !ok || deadline.Before(workFinished.Add(15*time.Second)) || deadline.After(time.Now().Add(15*time.Second)) {
+			t.Error("cleanup did not receive a fresh fifteen-second deadline at release")
+		}
+		return nil
+	})
+	if !errors.Is(err, context.Canceled) || releases != 1 || cleanupContext == nil || cleanupContext.Err() != context.Canceled {
+		t.Fatalf("cancellation cleanup mismatch: err=%v releases=%d context=%v", err, releases, cleanupContext)
+	}
+}
+
+func TestApolloNativeAdmissionPanicReleasesWithoutPersistence(t *testing.T) {
+	panicValue := errors.New("fixture admitted work panic")
+	var recovered any
+	releases, persists := 0, 0
+	func() {
+		defer func() { recovered = recover() }()
+		_, err := withApolloNativeAdmission(func() (fleetservice.RunMetrics, error) {
+			panic(panicValue)
+		}, func(ctx context.Context) error {
+			releases++
+			if ctx.Err() != nil {
+				t.Error("panic cleanup context already canceled")
+			}
+			return errors.New("fixture panic cleanup error")
+		})
+		if err == nil {
+			persists++
+		}
+	}()
+	if recovered != panicValue || releases != 1 || persists != 0 {
+		t.Fatalf("panic=%v releases=%d persists=%d", recovered, releases, persists)
+	}
+}
+
+func TestApolloNativeAdmissionRankCountRefusedBeforeBinding(t *testing.T) {
+	for _, count := range []int{1, 3} {
+		t.Run(fmt.Sprintf("admitted_%d_prepared_2", count), func(t *testing.T) {
+			prepared := fleetservice.Prepared{Plan: nativeProfileStructFixture().Plan}
+			original := prepared
+			original.Plan.Ranks = append([]fleetservice.Rank(nil), prepared.Plan.Ranks...)
+			admission := fleetservice.Admission{Ranks: make([]fleetservice.RankFence, count)}
+			releases, verified := 0, false
+			_, err := withApolloNativeAdmission(func() (fleetservice.RunMetrics, error) {
+				if err := bindApolloNativeAdmissionPlan(&prepared, admission); err != nil {
+					return fleetservice.RunMetrics{}, err
+				}
+				verified = true
+				return fleetservice.RunMetrics{}, nil
+			}, func(context.Context) error {
+				releases++
+				return nil
+			})
+			if err == nil || !strings.Contains(err.Error(), "rank count") || releases != 1 || verified || !reflect.DeepEqual(prepared, original) {
+				t.Fatalf("rank mismatch reached binding/work or escaped cleanup: err=%v releases=%d verified=%t", err, releases, verified)
+			}
+		})
+	}
+}
 
 func TestInstalledApolloNativeProfileRejectsTrailingAndUnknownFields(t *testing.T) {
 	dir := t.TempDir()

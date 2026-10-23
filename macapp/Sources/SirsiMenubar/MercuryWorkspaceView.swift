@@ -78,7 +78,7 @@ struct MercuryWorkspaceView: View {
             } else {
                 MaybeScroll {
                     VStack(alignment: .leading, spacing: 12) {
-                        MercuryLiveMachinesView(monitor: monitor)
+                        MercuryLiveMachinesView(monitor: monitor, isVisible: engine.workspaceVisible)
                         truthNote
                         TimelineView(.periodic(from: .now, by: 5)) { context in
                             laneSection(at: context.date)

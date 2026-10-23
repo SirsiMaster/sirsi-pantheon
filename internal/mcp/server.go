@@ -127,9 +127,10 @@ type Tool struct {
 
 // InputSchema is a JSON Schema for tool parameters.
 type InputSchema struct {
-	Type       string                 `json:"type"`
-	Properties map[string]SchemaField `json:"properties,omitempty"`
-	Required   []string               `json:"required,omitempty"`
+	Type                 string                 `json:"type"`
+	Properties           map[string]SchemaField `json:"properties,omitempty"`
+	Required             []string               `json:"required,omitempty"`
+	AdditionalProperties *bool                  `json:"additionalProperties,omitempty"`
 }
 
 // SchemaField is a single field in the input schema.

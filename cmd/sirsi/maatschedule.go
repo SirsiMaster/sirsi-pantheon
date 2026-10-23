@@ -39,12 +39,22 @@ func recordDecision(kind, requester, resource, assessed, affected, determination
 // maatLedger is a var (not a plain func) so tests can inject a Ledger backed
 // by a StateStore that fails deterministically, same pattern as
 // newMaatDecisionJournal below.
+var maatLedgerFromStore = func(st routerstore.Store) (*schedule.Ledger, error) { return schedule.NewLedger(st), nil }
+
 var maatLedger = func() (*schedule.Ledger, error) {
+	if os.Getenv("SIRSI_MAAT_POD") != "" {
+		if os.Getenv("SIRSI_ROUTER_URL") == "" {
+			return nil, fmt.Errorf("maat: pod routing requires canonical remote router")
+		}
+		if _, set := os.LookupEnv("SIRSI_ROUTER_DB"); set {
+			return nil, fmt.Errorf("maat: pod routing cannot select local database")
+		}
+	}
 	st, err := routerstore.Resolve()
 	if err != nil {
 		return nil, fmt.Errorf("resolve router store: %w", err)
 	}
-	return schedule.NewLedger(st), nil
+	return maatLedgerFromStore(st)
 }
 
 var newMaatDecisionJournal = func() (maat.DecisionJournal, error) {
@@ -108,6 +118,7 @@ var (
 	resHolder, resWork, resRegime, resStart, resEstEnd, resRepro string
 	resPriority, resLeaseTTL, resExemptPID                       int
 	resQueue, maatJSON                                           bool
+	maatOperationNonce                                           string
 	covHorizon                                                   int
 	conflictMachine                                              string
 )
@@ -126,6 +137,9 @@ a cable; it is the rails.lock replacement.`,
 		l, err := maatLedger()
 		if err != nil {
 			return err
+		}
+		if maatOperationNonce != "" && (resStart == "" || os.Getenv("SIRSI_MAAT_POD") == "") {
+			return fmt.Errorf("maat: explicit retry requires pod routing and exact --start")
 		}
 		holder := resHolder
 		if holder == "" {
@@ -496,6 +510,10 @@ func short(rfc string) string {
 }
 
 func init() {
+	for _, c := range []*cobra.Command{maatReserveCmd, maatHeartbeatCmd, maatExtendCmd, maatReleaseCmd} {
+		c.Flags().StringVar(&maatOperationNonce, "operation-nonce", "", "Stable 32-hex operation identity: reuse only for exact retry; new heartbeat needs a new nonce")
+	}
+
 	maatReserveCmd.Flags().StringVar(&resHolder, "holder", "", "holder agent id (default $SIRSI_AGENT_ID)")
 	maatReserveCmd.Flags().StringVar(&resWork, "work", "", "work label (series/arm)")
 	maatReserveCmd.Flags().StringVar(&resRegime, "regime", "build", "build shares the machine (default); quiet measurement or loaded/model work must be explicit")

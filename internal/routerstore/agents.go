@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 )
 
 // Agent is the durable record of a registered router thread. It projects the
@@ -93,6 +95,9 @@ func (s *SQLiteStore) ListAgents() ([]Agent, error) {
 // SetState stores an arbitrary key/value pair, projecting the old state.json
 // scalar keys (last_*_read etc.) into the durable index.
 func (s *SQLiteStore) SetState(key, value string) error {
+	if key == "maat:delegations" {
+		return fmt.Errorf("maat: generic state write cannot create delegation authority; use compatible atomic RPC")
+	}
 	if strings.HasPrefix(key, "mailbox-reconciliation:") {
 		return errors.New("mailbox reconciliation: generic state writes cannot create or replace approvals or audits")
 	}
@@ -130,6 +135,34 @@ func (s *SQLiteStore) GetState(key string) (string, bool, error) {
 // CompareAndSwapState is the compatible exact-snapshot API. The scheduler's
 // native operation API additionally keeps large ledger bytes at the service.
 func (s *SQLiteStore) CompareAndSwapState(key, expected string, exists bool, value string) (bool, error) {
+	if key == "maat:delegations" {
+		return false, fmt.Errorf("maat: generic CAS cannot create delegation authority; use compatible atomic RPC")
+	}
+	if key == maatReservationsKey {
+		var swapped bool
+		err := s.withMaatTransaction(func(tx *txHandle, l *schedule.Ledger) error {
+			m := maatTransactionState{tx}
+			raw, present, err := m.GetState(key)
+			if err != nil {
+				return err
+			}
+			// withMaatTransaction initializes an absent reservations row; preserve the
+			// legacy absent-state CAS's semantics against that exact empty document.
+			if !exists && raw == `{"reservations":[]}` {
+				expected = raw
+				exists = true
+			}
+			if present != exists || raw != expected {
+				return nil
+			}
+			if err := l.CheckLegacyReservationWrite(raw, value); err != nil {
+				return err
+			}
+			swapped, err = m.CompareAndSwapState(key, expected, exists, value)
+			return err
+		})
+		return swapped, err
+	}
 	if strings.HasPrefix(key, "mailbox-reconciliation:") {
 		return false, errors.New("mailbox reconciliation: generic CAS cannot create or replace approvals or audits")
 	}

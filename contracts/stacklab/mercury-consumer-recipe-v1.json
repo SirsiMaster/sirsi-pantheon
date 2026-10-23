@@ -1,0 +1,35 @@
+{
+  "schema": "sirsi.stacklab.recipe.v1",
+  "id": "stacklab.recipe.mercury-consumer",
+  "wing": "stacklab.wing.ra-horus-fabric",
+  "product": "sirsi-pantheon",
+  "version": 1,
+  "purpose": "One bounded, read-only Go consumer of Mercury dashboard/v1 for the canonical Sirsi CLI and MCP. The existing native hardware monitor remains a separate, explicitly scoped producer endpoint; this recipe does not claim a native or web cutover.",
+  "authority": {
+    "producer": "Mercury owns monitor schema, samples, calibration, run state and rates",
+    "consumer": "internal/mercury reads and presents; never samples or controls a run",
+    "adoption_record": "docs/stacklab/MERCURY_CONSUMER_ADOPTION_20261023.md",
+    "runbook": "docs/user-guides/MERCURY_CONSUMER.md",
+    "prohibited": ["no run or service control", "no inference or bandwidth qualification", "no new telemetry writer or authority", "no public-network destination or redirect", "no fabricated unknown zero", "no current-native or web parity claim from CLI/MCP tests"]
+  },
+  "components": [
+    {
+      "id": "mercury-dashboard-read-model",
+      "source": ["internal/mercury/reader.go", "internal/mercury/presentation.go", "internal/mercury/scene.go", "internal/mercury/dashboard-v1.schema.json"],
+      "tests": ["internal/mercury/reader_test.go", "internal/mercury/presentation_test.go", "internal/mercury/scene_test.go"],
+      "inputs": ["configured private GET /api/v1/dashboard", "producer schema mercury.dashboard/v1", "producer timestamps, calibration, units and optional-field policy"],
+      "outputs": ["typed state, source/read timestamps and immutable per-read snapshot", "shared wire, compressed, gain and topology projection", "unknown and stale values remain explicit"],
+      "writes": [],
+      "upgrade_recipe": ["coordinate schema compatibility with the Mercury owner before widening", "preserve bounded HTTP, private-address checks, no proxy and no redirects", "preserve cancellation, EOF/oversize, malformed and freshness refusals", "do not retain idle connections from per-call clients", "run producer fixtures and negative controls before composing any surface", "never turn a monitor read into admission or performance qualification"]
+    },
+    {
+      "id": "mercury-canonical-cli-mcp",
+      "source": ["cmd/sirsi/mercury.go", "internal/mcp/mercury.go", "internal/mcp/tools.go", "internal/mcp/server.go"],
+      "tests": ["cmd/sirsi/mercury_test.go", "internal/mcp/mercury_test.go", "internal/stacklab/mercury_consumer_recipe_test.go", "internal/packageinventory/inventory_test.go"],
+      "inputs": ["one shared configured Go reader", "explicit CLI invocation or zero-argument mercury_status MCP call"],
+      "outputs": ["human CLI projection and exact structured JSON read", "same structured read through MCP", "closed MCP argument schema and runtime argument refusal"],
+      "writes": [],
+      "upgrade_recipe": ["keep both surfaces on the same core reader and configuration resolution", "keep endpoint selection out of MCP arguments", "test explicit empty configuration, default loopback and invalid configuration", "do not add surface-local freshness, unit conversion, calibration or caches", "preserve optional schema fields for existing MCP tools", "add only the exact recipe resource to signed-package inventory", "qualify the installed signed successor separately from a development readback"]
+    }
+  ]
+}

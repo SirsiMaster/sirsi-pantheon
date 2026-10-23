@@ -1,0 +1,188 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mercury.dashboard/v1",
+  "title": "Mercury dashboard snapshot, schema 1 (GET /api/v1/dashboard)",
+  "description": "One atomic, read-only snapshot of the Mercury fabric. Rates are decimal GB/s (10^9 bytes/s). Unknown is null, never 0. See docs/monitor/DASHBOARD-API-v1.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "schema_version", "status", "generation", "generated_at", "source", "poll", "units", "enums", "nodes", "links", "run"],
+  "properties": {
+    "schema": { "const": "mercury.dashboard/v1" },
+    "schema_version": { "type": "string" },
+    "status": { "enum": ["ok", "partial", "empty"] },
+    "generation": { "type": "integer", "minimum": 0 },
+    "generated_at": { "type": "number" },
+    "source": {
+      "type": "object", "additionalProperties": false, "required": ["host", "build"],
+      "properties": { "host": { "type": "string" }, "build": { "type": "string" } }
+    },
+    "poll": {
+      "type": "object", "additionalProperties": false,
+      "required": ["recommended_interval_ms", "min_interval_ms", "timeout_ms", "max_bytes"],
+      "properties": {
+        "recommended_interval_ms": { "type": "integer", "minimum": 1 },
+        "min_interval_ms": { "type": "integer", "minimum": 1 },
+        "timeout_ms": { "type": "integer", "minimum": 1 },
+        "max_bytes": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "units": {
+      "type": "object", "additionalProperties": false, "required": ["rate", "time", "percent"],
+      "properties": { "rate": { "type": "string" }, "time": { "type": "string" }, "percent": { "type": "string" } }
+    },
+    "enums": {
+      "type": "object", "additionalProperties": false,
+      "required": ["decode_modes", "seal_states", "status", "node_states", "link_states", "run_phases", "provenance", "calibration"],
+      "properties": {
+        "decode_modes": { "type": "object", "additionalProperties": { "type": "string" } },
+        "seal_states": { "type": "object", "additionalProperties": { "type": "string" } },
+        "status": { "$ref": "#/$defs/words" },
+        "node_states": { "$ref": "#/$defs/words" },
+        "link_states": { "$ref": "#/$defs/words" },
+        "run_phases": { "$ref": "#/$defs/words" },
+        "provenance": { "$ref": "#/$defs/words" },
+        "calibration": { "$ref": "#/$defs/words" }
+      }
+    },
+    "nodes": { "type": "array", "items": { "$ref": "#/$defs/node" } },
+    "links": { "type": "array", "items": { "$ref": "#/$defs/link" } },
+    "run": { "$ref": "#/$defs/run" }
+  },
+  "$defs": {
+    "words": { "type": "array", "items": { "type": "string" } },
+    "time": { "type": ["number", "null"] },
+    "text": { "type": ["string", "null"] },
+    "gbs": { "type": ["number", "null"], "minimum": 0 },
+    "node": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "model", "chip", "state", "source", "observed_at", "age_s", "freshness_s", "gpu", "cpu", "decode", "seal"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "model": { "$ref": "#/$defs/text" },
+        "chip": { "$ref": "#/$defs/text" },
+        "state": { "enum": ["live", "stale", "unreachable", "expired"] },
+        "source": { "enum": ["samples", "fleet"] },
+        "observed_at": { "$ref": "#/$defs/time" },
+        "age_s": { "type": ["number", "null"], "minimum": 0 },
+        "freshness_s": { "type": "number", "minimum": 0 },
+        "gpu": {
+          "type": "object", "additionalProperties": false, "required": ["work_pct", "range", "calibration", "observed_at"],
+          "properties": {
+            "work_pct": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+            "range": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
+            "calibration": {
+              "type": "object", "additionalProperties": false, "required": ["status", "id", "source"],
+              "properties": {
+                "status": { "enum": ["calibrated", "uncalibrated", "unknown"] },
+                "id": { "$ref": "#/$defs/text" },
+                "source": { "type": "string" }
+              }
+            },
+            "observed_at": { "$ref": "#/$defs/time" }
+          }
+        },
+        "cpu": {
+          "type": "object", "additionalProperties": false, "required": ["busy_pct"],
+          "properties": { "busy_pct": { "type": ["number", "null"], "minimum": 0, "maximum": 100 } }
+        },
+        "decode": {
+          "type": "object", "additionalProperties": false, "required": ["mode", "label", "source"],
+          "properties": {
+            "mode": { "enum": ["cpu", "gpu", "auto", "mixed", null] },
+            "label": { "$ref": "#/$defs/text" },
+            "source": { "enum": ["publisher", "run", null] }
+          }
+        },
+        "seal": {
+          "type": "object", "additionalProperties": false, "required": ["state", "label", "source"],
+          "properties": {
+            "state": { "enum": ["sealed", "insecure", "mixed", null] },
+            "label": { "$ref": "#/$defs/text" },
+            "source": { "enum": ["publisher", null] }
+          }
+        }
+      }
+    },
+    "end": {
+      "type": ["object", "null"], "additionalProperties": false, "required": ["node", "iface"],
+      "properties": { "node": { "type": "string" }, "iface": { "type": "string" } }
+    },
+    "link": {
+      "type": "object", "additionalProperties": false, "required": ["id", "ends", "state", "mtu", "directions"],
+      "properties": {
+        "id": { "type": "string" },
+        "ends": { "type": "array", "items": { "$ref": "#/$defs/end" }, "minItems": 2, "maxItems": 2 },
+        "state": { "enum": ["up", "down", "missing"] },
+        "mtu": { "type": ["integer", "null"], "minimum": 1 },
+        "directions": { "type": "array", "items": { "$ref": "#/$defs/direction" }, "maxItems": 2 }
+      }
+    },
+    "direction": {
+      "type": "object", "additionalProperties": false,
+      "required": ["from", "to", "wire_gbs", "payload_gbs", "compressed_gbs", "provenance", "observed_at", "interval_s"],
+      "properties": {
+        "from": { "type": "string" },
+        "to": { "type": "string" },
+        "wire_gbs": { "$ref": "#/$defs/gbs" },
+        "payload_gbs": { "$ref": "#/$defs/gbs" },
+        "compressed_gbs": { "$ref": "#/$defs/gbs" },
+        "provenance": { "enum": ["interface-counters", "rdma-publisher", "tcp-publisher", "fleet-gossip", null] },
+        "observed_at": { "$ref": "#/$defs/time" },
+        "interval_s": { "type": "number", "minimum": 0 }
+      }
+    },
+    "cable": {
+      "type": "object", "additionalProperties": false, "required": ["n", "cable", "payload_gbs", "wire_gbs", "recoveries"],
+      "properties": {
+        "n": { "type": "integer" },
+        "cable": { "type": "string" },
+        "payload_gbs": { "type": "number" },
+        "wire_gbs": { "type": "number" },
+        "recoveries": { "type": "integer" }
+      }
+    },
+    "run": {
+      "type": "object", "additionalProperties": false, "required": ["configured", "phase", "elapsed", "updated"],
+      "properties": {
+        "configured": { "type": "boolean" },
+        "phase": { "enum": ["idle", "queued", "running", "done", "failed", "stopped", "stop-failed"] },
+        "job_id": { "type": "string" },
+        "kind": { "type": "string" },
+        "trip": { "type": "string" },
+        "transport": { "type": "string" },
+        "engine": { "type": "string" },
+        "decode": { "type": "string" },
+        "combo": { "type": "string" },
+        "seconds": { "type": "integer" },
+        "leg": { "type": "integer" },
+        "legs": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["path"],
+            "properties": { "path": { "type": "array", "items": { "type": "string" } } }
+          }
+        },
+        "elapsed": { "type": "number" },
+        "updated": { "type": "number" },
+        "note": { "type": "string" },
+        "error": { "type": "string" },
+        "live": { "type": "array", "items": { "$ref": "#/$defs/cable" } },
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["leg", "path", "cables", "aggregate_gbs"],
+            "properties": {
+              "leg": { "type": "integer" },
+              "path": { "type": "string" },
+              "cables": { "type": ["array", "null"], "items": { "$ref": "#/$defs/cable" } },
+              "aggregate_gbs": { "type": "number" },
+              "verdict": { "type": "string" },
+              "error": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

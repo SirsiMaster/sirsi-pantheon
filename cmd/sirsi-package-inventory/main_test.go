@@ -2,11 +2,15 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/packageinventory"
 )
 
 func TestRunEmitsNonExecutingInventory(t *testing.T) {
@@ -25,22 +29,25 @@ func TestRunEmitsNonExecutingInventory(t *testing.T) {
 	launchAgent := []byte("Label=ai.sirsi.pantheon\n")
 	brandLogo := []byte("canonical Sirsi application-mark bytes\n")
 	files := map[string][]byte{
-		"Contents/Info.plist":                                                  info,
-		"Contents/PkgInfo":                                                     pkgInfo,
-		"Contents/MacOS/sirsi":                                                 []byte("cli bytes"),
-		"Contents/MacOS/sirsi-menubar":                                         []byte("menubar bytes"),
-		"Contents/Resources/ai.sirsi.pantheon.plist":                           launchAgent,
-		"Contents/Resources/sirsi-logo-white.png":                              brandLogo,
-		"Contents/Resources/StackLab/apollo-sne-telemetry-v1.json":             []byte(`{"schema":"sirsi.stacklab.apollo-telemetry.v1"}`),
-		"Contents/Resources/StackLab/maat-system-one-recipe-v1.json":           []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
-		"Contents/Resources/StackLab/maat-wing-v1.json":                        []byte(`{"schema":"sirsi.stacklab.wing.v1"}`),
-		"Contents/Resources/StackLab/native-stacklab-surface-recipe-v1.json":   []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
-		"Contents/Resources/StackLab/pantheon.pt-wing-001-wing-v1.json":        []byte(`{"schema":"sirsi.stacklab.wing.v1"}`),
-		"Contents/Resources/StackLab/pantheon-release-artifact-recipe-v1.json": []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
-		"Contents/Resources/StackLab/ra-horus-fabric-recipe-v1.json":           []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
-		"Contents/Resources/StackLab/ra-horus-fabric-wing-v1.json":             []byte(`{"schema":"sirsi.stacklab.wing.v1"}`),
-		"Contents/Resources/StackLab/v2/PROVENANCE.md":                         []byte("Stack Lab provenance\n"),
-		"Contents/Resources/StackLab/v2/wing.schema.json":                      []byte(`{"$schema":"https://json-schema.org/draft/2020-12/schema"}`),
+		"Contents/Info.plist":                                                   info,
+		"Contents/PkgInfo":                                                      pkgInfo,
+		"Contents/MacOS/sirsi":                                                  []byte("cli bytes"),
+		"Contents/MacOS/sirsi-menubar":                                          []byte("menubar bytes"),
+		"Contents/Resources/ai.sirsi.pantheon.plist":                            launchAgent,
+		"Contents/Resources/sirsi-logo-white.png":                               brandLogo,
+		"Contents/Resources/StackLab/apollo-sne-telemetry-v1.json":              []byte(`{"schema":"sirsi.stacklab.apollo-telemetry.v1"}`),
+		"Contents/Resources/StackLab/maat-system-one-recipe-v1.json":            []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
+		"Contents/Resources/StackLab/maat-pod-authority-service-recipe-v1.json": []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
+		"Contents/Resources/StackLab/maat-wing-v1.json":                         []byte(`{"schema":"sirsi.stacklab.wing.v1"}`),
+		"Contents/Resources/StackLab/mercury-consumer-recipe-v1.json":           []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
+		"Contents/Resources/StackLab/native-stacklab-surface-recipe-v1.json":    []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
+		"Contents/Resources/StackLab/pantheon-native-workspace-v1.json":         []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
+		"Contents/Resources/StackLab/pantheon.pt-wing-001-wing-v1.json":         []byte(`{"schema":"sirsi.stacklab.wing.v1"}`),
+		"Contents/Resources/StackLab/pantheon-release-artifact-recipe-v1.json":  []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
+		"Contents/Resources/StackLab/ra-horus-fabric-recipe-v1.json":            []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
+		"Contents/Resources/StackLab/ra-horus-fabric-wing-v1.json":              []byte(`{"schema":"sirsi.stacklab.wing.v1"}`),
+		"Contents/Resources/StackLab/v2/PROVENANCE.md":                          []byte("Stack Lab provenance\n"),
+		"Contents/Resources/StackLab/v2/wing.schema.json":                       []byte(`{"$schema":"https://json-schema.org/draft/2020-12/schema"}`),
 	}
 	for rel, data := range files {
 		if err := os.WriteFile(filepath.Join(app, filepath.FromSlash(rel)), data, 0o644); err != nil {
@@ -48,22 +55,71 @@ func TestRunEmitsNonExecutingInventory(t *testing.T) {
 		}
 	}
 	var out, errOut bytes.Buffer
-	code := run([]string{
+	args := []string{
 		"--app", app, "--version", "0.23.9-beta", "--build", "20260908",
 		"--info-plist", filepath.Join(app, "Contents/Info.plist"),
 		"--pkg-info", filepath.Join(app, "Contents/PkgInfo"),
 		"--launch-agent", filepath.Join(app, "Contents/Resources/ai.sirsi.pantheon.plist"),
 		"--brand-logo", filepath.Join(app, "Contents/Resources/sirsi-logo-white.png"),
-	}, &out, &errOut)
+	}
+	code := run(args, &out, &errOut)
 	if code != 0 {
 		t.Fatalf("run code=%d stderr=%s", code, errOut.String())
 	}
-	var report map[string]any
+	var report packageinventory.Report
 	if err := json.Unmarshal(out.Bytes(), &report); err != nil {
 		t.Fatal(err)
 	}
-	if report["python_free"] != true || report["engine_count"] != float64(2) {
+	if report.Schema != packageinventory.Schema || !report.PythonFree || report.EngineCount != 2 {
 		t.Fatalf("unexpected report: %s", out.String())
+	}
+	if len(report.Entries) != 24 {
+		t.Fatalf("inventory contains %d entries, want complete 24-entry unsigned payload", len(report.Entries))
+	}
+	wantPaths := map[string]string{}
+	for _, dir := range []string{"Contents", "Contents/MacOS", "Contents/Resources", "Contents/Resources/StackLab", "Contents/Resources/StackLab/v2"} {
+		wantPaths[dir] = "directory"
+	}
+	for rel := range files {
+		wantPaths[rel] = "regular"
+	}
+	for i, entry := range report.Entries {
+		if i > 0 && report.Entries[i-1].Path >= entry.Path {
+			t.Fatalf("inventory paths are duplicated or not sorted: %+v", report.Entries)
+		}
+		if wantPaths[entry.Path] != entry.Type {
+			t.Fatalf("unexpected inventory entry: %+v", entry)
+		}
+		if data, ok := files[entry.Path]; ok {
+			if entry.Size != int64(len(data)) || entry.Nlink != 1 || entry.SHA256 != fmt.Sprintf("%x", sha256.Sum256(data)) {
+				t.Fatalf("inventory did not bind fixture bytes: %+v", entry)
+			}
+		}
+		delete(wantPaths, entry.Path)
+	}
+	if len(wantPaths) != 0 {
+		t.Fatalf("inventory omitted fixture paths: %v", wantPaths)
+	}
+
+	// Each added contract remains required. Inventory only reads these regular
+	// fixture files; neither fake engine contains executable application code.
+	for _, leaf := range []string{"mercury-consumer-recipe-v1.json", "maat-pod-authority-service-recipe-v1.json", "pantheon-native-workspace-v1.json"} {
+		t.Run("missing_"+leaf, func(t *testing.T) {
+			rel := "Contents/Resources/StackLab/" + leaf
+			path := filepath.Join(app, filepath.FromSlash(rel))
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if err := os.WriteFile(path, files[rel], 0o644); err != nil {
+					t.Error(err)
+				}
+			})
+			var rejectedOut, rejectedErr bytes.Buffer
+			if code := run(args, &rejectedOut, &rejectedErr); code != 1 || rejectedOut.Len() != 0 || !strings.Contains(rejectedErr.String(), rel) {
+				t.Fatalf("missing contract: code=%d stdout=%s stderr=%s", code, rejectedOut.String(), rejectedErr.String())
+			}
+		})
 	}
 }
 

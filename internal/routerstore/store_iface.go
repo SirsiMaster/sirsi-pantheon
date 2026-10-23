@@ -16,6 +16,10 @@ import (
 // backend and an HTTP client behind the same interface. No production code
 // may depend on the concrete type.
 type Store interface {
+	MaatDelegation(action string, req schedule.Delegation) (schedule.Delegation, error)
+	MaatGetDelegation(pod string) (*schedule.Delegation, error)
+	MaatAuthorityReserve(machine string, req schedule.Reservation) (schedule.ReserveResult, error)
+	MaatReconcile(machine, pod string, epoch int, rows []schedule.Reservation) (int64, error)
 	DesktopSleep(context.Context, desktopcustody.CustodyCall) (desktopcustody.CustodyState, error)
 	CompareAndSwapState(key, expected string, exists bool, value string) (bool, error)
 	MaatReserve(req schedule.Reservation, queue bool) (schedule.ReserveResult, error)

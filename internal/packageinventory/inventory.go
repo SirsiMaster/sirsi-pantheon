@@ -76,20 +76,23 @@ var allowed = map[string]string{
 	// Stack Lab is shipped inside the app as the versioned, inspectable
 	// methodology contract. Keep this allowlist exact: a new recipe is a
 	// deliberate payload and verifier change, never ambient bundle content.
-	"Contents/Resources/StackLab":                                          "directory",
-	"Contents/Resources/StackLab/apollo-sne-telemetry-v1.json":             "regular",
-	"Contents/Resources/StackLab/maat-system-one-recipe-v1.json":           "regular",
-	"Contents/Resources/StackLab/maat-wing-v1.json":                        "regular",
-	"Contents/Resources/StackLab/native-stacklab-surface-recipe-v1.json":   "regular",
-	"Contents/Resources/StackLab/pantheon.pt-wing-001-wing-v1.json":        "regular",
-	"Contents/Resources/StackLab/pantheon-release-artifact-recipe-v1.json": "regular",
-	"Contents/Resources/StackLab/ra-horus-fabric-recipe-v1.json":           "regular",
-	"Contents/Resources/StackLab/ra-horus-fabric-wing-v1.json":             "regular",
-	"Contents/Resources/StackLab/v2":                                       "directory",
-	"Contents/Resources/StackLab/v2/PROVENANCE.md":                         "regular",
-	"Contents/Resources/StackLab/v2/wing.schema.json":                      "regular",
-	"Contents/_CodeSignature":                                              "directory",
-	"Contents/_CodeSignature/CodeResources":                                "regular",
+	"Contents/Resources/StackLab":                                           "directory",
+	"Contents/Resources/StackLab/apollo-sne-telemetry-v1.json":              "regular",
+	"Contents/Resources/StackLab/maat-system-one-recipe-v1.json":            "regular",
+	"Contents/Resources/StackLab/maat-pod-authority-service-recipe-v1.json": "regular",
+	"Contents/Resources/StackLab/maat-wing-v1.json":                         "regular",
+	"Contents/Resources/StackLab/mercury-consumer-recipe-v1.json":           "regular",
+	"Contents/Resources/StackLab/native-stacklab-surface-recipe-v1.json":    "regular",
+	"Contents/Resources/StackLab/pantheon-native-workspace-v1.json":         "regular",
+	"Contents/Resources/StackLab/pantheon.pt-wing-001-wing-v1.json":         "regular",
+	"Contents/Resources/StackLab/pantheon-release-artifact-recipe-v1.json":  "regular",
+	"Contents/Resources/StackLab/ra-horus-fabric-recipe-v1.json":            "regular",
+	"Contents/Resources/StackLab/ra-horus-fabric-wing-v1.json":              "regular",
+	"Contents/Resources/StackLab/v2":                                        "directory",
+	"Contents/Resources/StackLab/v2/PROVENANCE.md":                          "regular",
+	"Contents/Resources/StackLab/v2/wing.schema.json":                       "regular",
+	"Contents/_CodeSignature":                                               "directory",
+	"Contents/_CodeSignature/CodeResources":                                 "regular",
 	// macOS can emit CodeResources directly under Contents as well as under
 	// _CodeSignature when the bundle is re-signed by the enrolled service. Both
 	// locations are legitimate and are retained in the signed bundle.

@@ -76,6 +76,10 @@ struct MercuryMonitorMachine: Decodable {
     let profile: MercuryMonitorProfile?
     let samples: [MercuryMonitorSample]?
     var latest: MercuryMonitorSample? { samples?.filter { $0.t.isFinite }.max { $0.t < $1.t } }
+
+    func hasCurrentObservation(at now: Date, readSucceeded: Bool) -> Bool {
+        readSucceeded && state == "live" && latest?.isFresh(at: now) == true
+    }
 }
 
 struct MercuryMonitorProfile: Decodable {
@@ -113,6 +117,7 @@ struct MercuryMonitorInterface: Decodable {
 
 struct MercuryLiveMachinesView: View {
     @ObservedObject var monitor: MercuryMonitor
+    var isVisible = true
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -127,12 +132,17 @@ struct MercuryLiveMachinesView: View {
                 }
             }
             if let projection = monitor.projection {
-                ForEach(projection.machines.keys.sorted(), id: \.self) { name in
-                    if let machine = projection.machines[name] { machineRow(name, machine) }
-                }
                 if projection.machines.isEmpty {
                     Text("Mercury returned no machine observations. Inspect the fabric or refresh the monitor.")
                         .sirsiFont(12).foregroundStyle(PantheonTheme.mutedText)
+                } else if isVisible {
+                    // Age retained samples even when an in-flight read has not
+                    // published a new model. This clock performs no network work.
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        machineRows(projection, at: context.date)
+                    }
+                } else {
+                    machineRows(projection, at: Date())
                 }
                 Text("Source: Mercury local monitor · read every 5 seconds while open")
                     .sirsiFont(11).foregroundStyle(PantheonTheme.mutedText)
@@ -144,7 +154,13 @@ struct MercuryLiveMachinesView: View {
         .background(PantheonTheme.panel, in: RoundedRectangle(cornerRadius: 10))
     }
 
-    private func machineRow(_ name: String, _ machine: MercuryMonitorMachine) -> some View {
+    private func machineRows(_ projection: MercuryMonitorProjection, at now: Date) -> some View {
+        ForEach(projection.machines.keys.sorted(), id: \.self) { name in
+            if let machine = projection.machines[name] { machineRow(name, machine, at: now) }
+        }
+    }
+
+    private func machineRow(_ name: String, _ machine: MercuryMonitorMachine, at now: Date) -> some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack {
                 Text(name).sirsiFont(14, weight: .semibold)
@@ -154,10 +170,10 @@ struct MercuryLiveMachinesView: View {
                     .sirsiFont(11).foregroundStyle(PantheonTheme.mutedText)
             }
             if let sample = machine.latest {
-                let current = monitor.error == nil && sample.isFresh(at: Date())
+                let current = machine.hasCurrentObservation(at: now, readSucceeded: monitor.error == nil)
                 HStack(spacing: 24) {
                     measurement("CPU utilization", percent(sample.meanCPU))
-                    measurement("GPU residency", percent(sample.chip?.gpu_busy))
+                    measurement("GPU utilization", percent(sample.chip?.gpu_busy))
                     measurement("CPU power", watts(sample.chip?.cpu_mw))
                     measurement("GPU power", watts(sample.chip?.gpu_mw))
                 }

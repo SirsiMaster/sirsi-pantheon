@@ -66,6 +66,7 @@ func registerTools(s *Server) {
 			Properties: map[string]SchemaField{},
 		},
 	}, handleApolloSessionTelemetry)
+	registerMercuryTool(s)
 
 	s.RegisterTool(Tool{
 		Name:        "scan_workspace",

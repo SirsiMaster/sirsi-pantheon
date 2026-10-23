@@ -11,7 +11,7 @@ import (
 
 func TestStateCASPresenceAndLegacyFence(t *testing.T) {
 	s := newTestStore(t)
-	if ok, err := s.CompareAndSwapState("maat:reservations", "", false, "first"); err != nil || !ok {
+	if ok, err := s.CompareAndSwapState("cas:opaque", "", false, "first"); err != nil || !ok {
 		t.Fatalf("create: %v %v", ok, err)
 	}
 	for _, c := range []struct {
@@ -19,7 +19,7 @@ func TestStateCASPresenceAndLegacyFence(t *testing.T) {
 		exists bool
 		want   bool
 	}{{"", false, false}, {"wrong", true, false}, {"first", true, true}} {
-		ok, err := s.CompareAndSwapState("maat:reservations", c.old, c.exists, "second")
+		ok, err := s.CompareAndSwapState("cas:opaque", c.old, c.exists, "second")
 		if err != nil || ok != c.want {
 			t.Fatalf("CAS %+v: %v %v", c, ok, err)
 		}
@@ -27,7 +27,7 @@ func TestStateCASPresenceAndLegacyFence(t *testing.T) {
 	if err := s.SetState("maat:reservations", "lost"); err == nil {
 		t.Fatal("legacy overwrite accepted")
 	}
-	got, exists, err := s.GetState("maat:reservations")
+	got, exists, err := s.GetState("cas:opaque")
 	if err != nil || !exists || got != "second" {
 		t.Fatalf("fence changed state: %q %v", got, err)
 	}
@@ -82,16 +82,16 @@ func TestRemoteStateCAS(t *testing.T) {
 	rs := NewRemoteStore("http://cas.test", "test-cas")
 	rs.sessionDir = ""
 	rs.client = &http.Client{Transport: casHandlerTransport{handler}}
-	if ok, err := rs.CompareAndSwapState("maat:reservations", "", false, "first"); err != nil || !ok {
+	if ok, err := rs.CompareAndSwapState("cas:opaque", "", false, "first"); err != nil || !ok {
 		t.Fatalf("remote create: %v %v", ok, err)
 	}
-	if ok, err := rs.CompareAndSwapState("maat:reservations", "stale", true, "lost"); err != nil || ok {
+	if ok, err := rs.CompareAndSwapState("cas:opaque", "stale", true, "lost"); err != nil || ok {
 		t.Fatalf("remote conflict: %v %v", ok, err)
 	}
 	if err := rs.SetState("maat:reservations", "lost"); err == nil {
 		t.Fatal("legacy remote write accepted")
 	}
-	if got, _, err := backend.GetState("maat:reservations"); err != nil || got != "first" {
+	if got, _, err := backend.GetState("cas:opaque"); err != nil || got != "first" {
 		t.Fatalf("remote state lost: %q %v", got, err)
 	}
 }

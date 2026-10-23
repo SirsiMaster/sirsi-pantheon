@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 )
@@ -118,4 +119,58 @@ func (s *SQLiteStore) MaatRead(kind, resource string) ([]schedule.Reservation, e
 		return err
 	})
 	return out, err
+}
+
+// Every delegation/reconciliation mutation locks maat:reservations BEFORE
+// reading either key, matching Reserve across SQLite and PostgreSQL instances.
+func (s *SQLiteStore) MaatDelegation(action string, req schedule.Delegation) (schedule.Delegation, error) {
+	var out schedule.Delegation
+	err := s.withMaatScheduler(func(l *schedule.Ledger) (err error) {
+		switch action {
+		case "delegate":
+			out, err = l.Delegate(req)
+		case "revoke":
+			out, err = l.Revoke(req.Pod)
+		default:
+			err = fmt.Errorf("maat: unknown delegation action")
+		}
+		return err
+	})
+	return out, err
+}
+func (s *SQLiteStore) MaatGetDelegation(pod string) (*schedule.Delegation, error) {
+	var out *schedule.Delegation
+	err := s.withMaatScheduler(func(l *schedule.Ledger) (err error) { out, err = l.GetDelegation(pod); return err })
+	return out, err
+}
+func (s *SQLiteStore) MaatAuthorityReserve(machine string, req schedule.Reservation) (schedule.ReserveResult, error) {
+	var out schedule.ReserveResult
+	err := s.withMaatTransaction(func(tx *txHandle, l *schedule.Ledger) error {
+		pod := strings.TrimPrefix(req.Authority, "pod:")
+		d, err := l.GetDelegation(pod)
+		if err != nil {
+			return err
+		}
+		if d == nil || machine == "" || machine != d.AuthorityMachine {
+			return fmt.Errorf("maat: authenticated authority machine mismatch")
+		}
+		if err := sleepReserveFence(tx, l, req.Resource); err != nil {
+			return err
+		}
+		out, err = l.ReserveAsAuthority(req)
+		if err != nil {
+			return err
+		}
+		_, err = l.ReconcileAuthority(machine, pod, d.Epoch, []schedule.Reservation{*out.Reservation})
+		return err
+	})
+	return out, err
+}
+func (s *SQLiteStore) MaatReconcile(machine, pod string, epoch int, rows []schedule.Reservation) (int64, error) {
+	var ack int64
+	err := s.withMaatScheduler(func(l *schedule.Ledger) (err error) {
+		ack, err = l.ReconcileAuthority(machine, pod, epoch, rows)
+		return err
+	})
+	return ack, err
 }

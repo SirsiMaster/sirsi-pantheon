@@ -1,0 +1,26 @@
+{
+  "schema": "sirsi.stacklab.recipe.v1",
+  "id": "stacklab.recipe.maat-pod-authority-service",
+  "wing": "stacklab.wing.ra-horus-fabric",
+  "product": "sirsi-pantheon",
+  "version": 1,
+  "purpose": "Prepare an explicit, dormant native launch recipe for an existing finite Ma'at pod delegation using the package-installed canonical Sirsi engine. Preparation is not service activation or runtime qualification.",
+  "authority": {
+    "delegation_owner": "canonical router AtomicDelegationScheduler; ADR-120",
+    "runtime_owner": "Ra: sirsi maat authority-serve",
+    "packaging_owner": "Pantheon internal/setup; SSA release composition",
+    "runbook": "docs/user-guides/MAAT_POD_AUTHORITY_SERVICE.md",
+    "prohibited": ["no automatic bootstrap or login enable", "no private-key generation or copying", "no alternate router store", "no developer binary or PATH fallback", "no network configuration changes", "no claim that a prepared recipe is running or qualified"]
+  },
+  "components": [
+    {
+      "id": "maat-native-authority-launch-recipe",
+      "source": ["internal/setup/podauthority.go", "internal/setup/podauthority_darwin.go", "cmd/sirsi/maatpodservice_darwin.go"],
+      "tests": ["internal/setup/podauthority_test.go", "cmd/sirsi/maatpodservice_darwin_test.go", "internal/stacklab/podauthority_recipe_test.go", "internal/packageinventory/inventory_test.go"],
+      "inputs": ["actual native machine identity", "fresh finite canonical delegation", "explicit approved TLS path references and client bindings", "canonical installed Sirsi engine", "explicit canonical registry working directory"],
+      "outputs": ["deterministic shell-free launchd ProgramArguments", "private dormant recipe", "explicit start and login consent contract", "separate configured, verified, installed and running status"],
+      "writes": ["only the explicitly selected dormant recipe destination; never LaunchAgents, credentials, delegation or network state"],
+      "upgrade_recipe": ["keep authority-serve and recipe argv compatible", "run positive and refusal fixtures before publication", "retain create-only installation and preserve occupied files", "keep default recipe outside LaunchAgents because generic refresh bootstraps that directory", "requalify actual native authority before activation", "preserve user login opt-out across package upgrades"]
+    }
+  ]
+}
