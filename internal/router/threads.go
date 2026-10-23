@@ -516,6 +516,12 @@ func SaveThreadRegistry(routerRoot string, reg *ThreadRegistry) error {
 	return nil
 }
 
+// threadTimestamp is the SQLite lifecycle ordering key. Normalize offsets here
+// so every caller emits UTC with exactly nine fractional digits, including zero.
+func threadTimestamp(t time.Time) string {
+	return t.UTC().Format("2006-01-02T15:04:05.000000000Z07:00")
+}
+
 func threadRecords(reg *ThreadRegistry) ([]routerstore.ThreadRecord, error) {
 	records := make([]routerstore.ThreadRecord, 0, len(reg.Threads))
 	for id, thread := range reg.Threads {
@@ -536,7 +542,7 @@ func threadRecords(reg *ThreadRegistry) ([]routerstore.ThreadRecord, error) {
 				return nil, err
 			}
 		}
-		records = append(records, routerstore.ThreadRecord{ThreadID: id, Agent: thread.AgentID, Status: string(thread.Status), LastSeenAt: thread.LastSeenAt.UTC().Format("2006-01-02T15:04:05.000000000Z07:00"), Payload: payload, Host: host})
+		records = append(records, routerstore.ThreadRecord{ThreadID: id, Agent: thread.AgentID, Status: string(thread.Status), LastSeenAt: threadTimestamp(thread.LastSeenAt), Payload: payload, Host: host})
 	}
 	return records, nil
 }
