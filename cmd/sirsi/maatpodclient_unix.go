@@ -67,7 +67,7 @@ func nativePodRoutingLedger(st routerstore.Store) (*schedule.Ledger, error) {
 	if err != nil {
 		return nil, err
 	}
-	client := schedule.PodClient{Pod: pod, Canonical: canonical, Ordinary: ordinary, Transport: transport, Cache: cache}
+	client := schedule.PodClient{OperationNonce: maatOperationNonce, Pod: pod, Canonical: canonical, Ordinary: ordinary, Transport: transport, Cache: cache}
 	return schedule.NewLedger(&schedule.PodRoutingStore{StateStore: st, Client: client, Canonical: atomic}), nil
 }
 func init() { maatLedgerFromStore = nativePodRoutingLedger }

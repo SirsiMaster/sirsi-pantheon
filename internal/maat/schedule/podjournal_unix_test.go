@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -228,5 +229,51 @@ func TestPodRelayReportsOnlyTransitionsAndStops(t *testing.T) {
 	})
 	if f.calls != 2 || len(reports) != 2 || !reports[0] || reports[1] {
 		t.Fatalf("relay transition mismatch calls%d reports%v", f.calls, reports)
+	}
+}
+
+// Two independent processes reproduce a caller crash after durable commit and
+// before reply consumption. No prior process memory survives the retry.
+func TestPodIndependentProcessRetryHandoff(t *testing.T) {
+	if path := os.Getenv("MAAT_FIXTURE_CHILD_JOURNAL"); path != "" {
+		now, e := time.Parse(time.RFC3339, os.Getenv("MAAT_FIXTURE_NOW"))
+		if e != nil {
+			t.Fatal(e)
+		}
+		d := mkDelegation("pod", "native", now.Add(-time.Minute).Format(time.RFC3339), now.Add(time.Hour).Format(time.RFC3339), "studio")
+		d.Epoch = 1
+		j, e := OpenPodJournal(path, "native", d)
+		if e != nil {
+			t.Fatal(e)
+		}
+		defer j.Close()
+		r := mkReq("studio", "ra", now.Format(time.RFC3339), now.Add(20*time.Minute).Format(time.RFC3339), RegimeQuiet)
+		r.ID = "process-stable"
+		if _, e = j.ExecutePod("ra", podRequest{Nonce: "dddddddddddddddddddddddddddddddd", Pod: d.Pod, Epoch: 1, Action: "reserve", Reservation: r}); e != nil {
+			t.Fatal(e)
+		}
+		return
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	path := filepath.Join(t.TempDir(), "process-journal")
+	for i := 0; i < 2; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		c := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestPodIndependentProcessRetryHandoff$")
+		c.Env = append(os.Environ(), "MAAT_FIXTURE_CHILD_JOURNAL="+path, "MAAT_FIXTURE_NOW="+now.Format(time.RFC3339))
+		out, e := c.CombinedOutput()
+		cancel()
+		if e != nil {
+			t.Fatalf("child %d: %v %s", i, e, out)
+		}
+	}
+	d := mkDelegation("pod", "native", now.Add(-time.Minute).Format(time.RFC3339), now.Add(time.Hour).Format(time.RFC3339), "studio")
+	d.Epoch = 1
+	j, e := OpenPodJournal(path, "native", d)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer j.Close()
+	if len(j.Replay(0)) != 1 {
+		t.Fatal("process retry duplicated durable grant")
 	}
 }

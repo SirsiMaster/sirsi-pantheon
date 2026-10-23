@@ -213,3 +213,9 @@ func (t *HTTPPodTransport) ReadOwnPod(ctx context.Context, d Delegation, resourc
 	err := t.call(ctx, d, podRequest{Action: "read-own", Value: resource}, &out)
 	return out, err
 }
+
+func (t *HTTPPodTransport) ReservePodWithNonce(ctx context.Context, d Delegation, nonce string, req Reservation, queue bool) (ReserveResult, error) {
+	var out ReserveResult
+	err := t.call(ctx, d, podRequest{Nonce: nonce, Action: "reserve", Reservation: req, Queue: queue}, &out)
+	return out, err
+}

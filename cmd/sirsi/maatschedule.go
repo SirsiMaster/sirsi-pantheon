@@ -118,6 +118,7 @@ var (
 	resHolder, resWork, resRegime, resStart, resEstEnd, resRepro string
 	resPriority, resLeaseTTL, resExemptPID                       int
 	resQueue, maatJSON                                           bool
+	maatOperationNonce                                           string
 	covHorizon                                                   int
 	conflictMachine                                              string
 )
@@ -136,6 +137,9 @@ a cable; it is the rails.lock replacement.`,
 		l, err := maatLedger()
 		if err != nil {
 			return err
+		}
+		if maatOperationNonce != "" && (resStart == "" || os.Getenv("SIRSI_MAAT_POD") == "") {
+			return fmt.Errorf("maat: explicit retry requires pod routing and exact --start")
 		}
 		holder := resHolder
 		if holder == "" {
@@ -506,6 +510,10 @@ func short(rfc string) string {
 }
 
 func init() {
+	for _, c := range []*cobra.Command{maatReserveCmd, maatHeartbeatCmd, maatExtendCmd, maatReleaseCmd, maatInvalidateCmd} {
+		c.Flags().StringVar(&maatOperationNonce, "operation-nonce", "", "Stable 32-hex operation identity: reuse only for exact retry; new heartbeat needs a new nonce")
+	}
+
 	maatReserveCmd.Flags().StringVar(&resHolder, "holder", "", "holder agent id (default $SIRSI_AGENT_ID)")
 	maatReserveCmd.Flags().StringVar(&resWork, "work", "", "work label (series/arm)")
 	maatReserveCmd.Flags().StringVar(&resRegime, "regime", "build", "build shares the machine (default); quiet measurement or loaded/model work must be explicit")

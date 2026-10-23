@@ -19,9 +19,10 @@ type PodTransport interface {
 }
 
 type PodClient struct {
-	Pod       string
-	Canonical AtomicDelegationScheduler
-	Ordinary  interface {
+	OperationNonce string
+	Pod            string
+	Canonical      AtomicDelegationScheduler
+	Ordinary       interface {
 		Reserve(Reservation, bool) (ReserveResult, error)
 	}
 	Transport PodTransport
@@ -31,6 +32,14 @@ type PodClient struct {
 }
 
 func (c PodClient) Reserve(ctx context.Context, req Reservation, queue bool) (ReserveResult, error) {
+	if c.OperationNonce != "" {
+		if len(c.OperationNonce) != 32 {
+			return ReserveResult{}, fmt.Errorf("maat: 128-bit operation nonce required")
+		}
+		if _, err := hex.DecodeString(c.OperationNonce); err != nil {
+			return ReserveResult{}, fmt.Errorf("maat: invalid operation nonce")
+		}
+	}
 	if err := ctx.Err(); err != nil {
 		return ReserveResult{}, err
 	}
@@ -66,6 +75,9 @@ func (c PodClient) Reserve(ctx context.Context, req Reservation, queue bool) (Re
 	}
 	prefix := podReservationPrefix(*d)
 	if !strings.HasPrefix(req.ID, prefix) {
+		if req.ID == "" && c.OperationNonce != "" {
+			req.ID = c.OperationNonce
+		}
 		if req.ID == "" {
 			b := make([]byte, 16)
 			if _, err := rand.Read(b); err != nil {
@@ -74,6 +86,14 @@ func (c PodClient) Reserve(ctx context.Context, req Reservation, queue bool) (Re
 			req.ID = hex.EncodeToString(b)
 		}
 		req.ID = prefix + req.ID
+	}
+	if c.OperationNonce != "" {
+		if t, ok := c.Transport.(interface {
+			ReservePodWithNonce(context.Context, Delegation, string, Reservation, bool) (ReserveResult, error)
+		}); ok {
+			return t.ReservePodWithNonce(ctx, *d, c.OperationNonce, req, queue)
+		}
+		return ReserveResult{}, fmt.Errorf("maat: explicit retry requires nonce-capable transport")
 	}
 	return c.Transport.ReservePod(ctx, *d, req, queue)
 }
@@ -135,6 +155,14 @@ func (c PodClient) Mutate(ctx context.Context, action, id, value string) (*Reser
 	})
 	if !ok {
 		return nil, fmt.Errorf("maat: native lifecycle authority unavailable; no fallback")
+	}
+	if c.OperationNonce != "" {
+		if stable, ok := c.Transport.(interface {
+			MutatePodWithNonce(context.Context, Delegation, string, string, string, string) (*Reservation, error)
+		}); ok {
+			return stable.MutatePodWithNonce(ctx, *d, c.OperationNonce, action, id, value)
+		}
+		return nil, fmt.Errorf("maat: explicit retry requires nonce-capable lifecycle")
 	}
 	return t.MutatePod(ctx, *d, action, id, value)
 }
