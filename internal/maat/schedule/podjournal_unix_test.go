@@ -14,11 +14,23 @@ import (
 	"time"
 )
 
+// Only canonicalize our newly allocated test directory. Production inputs
+// must still traverse every parent through retained no-follow descriptors.
+// macOS commonly returns /var/... here, whose first component is a symlink.
+func canonicalPodTestDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
 func TestPodNonceSurvivesRestartAndRejectsChangedOperation(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	d := mkDelegation("pod", "native", now.Add(-time.Minute).Format(time.RFC3339), now.Add(time.Hour).Format(time.RFC3339), "studio")
 	d.Epoch = 1
-	path := filepath.Join(t.TempDir(), "nonces")
+	path := filepath.Join(canonicalPodTestDir(t), "nonces")
 	j, e := OpenPodJournal(path, "native", d)
 	if e != nil {
 		t.Fatal(e)
@@ -71,7 +83,7 @@ func TestPodJournalDurabilityFiniteFenceAndExclusiveOwner(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	d := mkDelegation("studio-m5", "native-studio", now.Add(-time.Minute).Format(time.RFC3339), now.Add(time.Hour).Format(time.RFC3339), "studio")
 	d.Epoch = 1
-	p := filepath.Join(t.TempDir(), "pod.journal")
+	p := filepath.Join(canonicalPodTestDir(t), "pod.journal")
 	j, e := OpenPodJournal(p, "native-studio", d)
 	if e != nil {
 		t.Fatal(e)
@@ -120,7 +132,15 @@ func TestPodJournalRefusesTornTailAndSymlink(t *testing.T) {
 	now := time.Now().UTC()
 	d := mkDelegation("studio-m5", "native-studio", now.Add(-time.Minute).Format(time.RFC3339), now.Add(time.Hour).Format(time.RFC3339), "studio")
 	d.Epoch = 1
-	p := filepath.Join(t.TempDir(), "journal")
+	base := canonicalPodTestDir(t)
+	valid, err := OpenPodJournal(filepath.Join(base, "valid-journal"), "native-studio", d)
+	if err != nil {
+		t.Fatalf("canonical parent positive control: %v", err)
+	}
+	if err := valid.Close(); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(base, "journal")
 	if e := os.WriteFile(p, []byte("{\"seq\":"), 0600); e != nil {
 		t.Fatal(e)
 	}
@@ -138,11 +158,37 @@ func TestPodJournalRefusesTornTailAndSymlink(t *testing.T) {
 	}
 }
 
+func TestPodJournalRejectsSymlinkAncestor(t *testing.T) {
+	now := time.Now().UTC()
+	d := mkDelegation("pod", "native", now.Add(-time.Minute).Format(time.RFC3339), now.Add(time.Hour).Format(time.RFC3339), "studio")
+	d.Epoch = 1
+	base := canonicalPodTestDir(t)
+	real := filepath.Join(base, "real")
+	if err := os.Mkdir(real, 0700); err != nil {
+		t.Fatal(err)
+	}
+	j, err := OpenPodJournal(filepath.Join(real, "events"), "native", d)
+	if err != nil {
+		t.Fatalf("canonical parent positive control: %v", err)
+	}
+	if err := j.Close(); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(base, "alias")
+	if err := os.Symlink(real, alias); err != nil {
+		t.Fatal(err)
+	}
+	if j, err := OpenPodJournal(filepath.Join(alias, "events"), "native", d); err == nil {
+		_ = j.Close()
+		t.Fatal("symlink ancestor accepted")
+	}
+}
+
 func TestPodJournalProgressPastTTLRetainsEveryMutation(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	d := mkDelegation("studio-m5", "native-studio", now.Add(-time.Minute).Format(time.RFC3339), now.Add(time.Hour).Format(time.RFC3339), "studio")
 	d.Epoch = 1
-	p := filepath.Join(t.TempDir(), "events")
+	p := filepath.Join(canonicalPodTestDir(t), "events")
 	j, e := OpenPodJournal(p, "native-studio", d)
 	if e != nil {
 		t.Fatal(e)
@@ -212,7 +258,7 @@ func TestPodRelayReportsOnlyTransitionsAndStops(t *testing.T) {
 	now := time.Now().UTC()
 	d := mkDelegation("pod", "native", now.Add(-time.Minute).Format(time.RFC3339), now.Add(time.Hour).Format(time.RFC3339), "studio")
 	d.Epoch = 1
-	j, e := OpenPodJournal(filepath.Join(t.TempDir(), "relay"), "native", d)
+	j, e := OpenPodJournal(filepath.Join(canonicalPodTestDir(t), "relay"), "native", d)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -255,7 +301,7 @@ func TestPodIndependentProcessRetryHandoff(t *testing.T) {
 		return
 	}
 	now := time.Now().UTC().Truncate(time.Second)
-	path := filepath.Join(t.TempDir(), "process-journal")
+	path := filepath.Join(canonicalPodTestDir(t), "process-journal")
 	for i := 0; i < 2; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		c := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestPodIndependentProcessRetryHandoff$")

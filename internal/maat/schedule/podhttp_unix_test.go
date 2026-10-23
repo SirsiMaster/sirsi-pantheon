@@ -50,7 +50,7 @@ func TestPodNativeMutualTLSEndpointOwnLifecycle(t *testing.T) {
 	d := mkDelegation("studio-m5", "native-studio", now.Add(-time.Minute).Format(time.RFC3339), now.Add(time.Hour).Format(time.RFC3339), "studio")
 	d.Epoch = 1
 	d.AuthorityAddrs = []string{"https://" + srv.Listener.Addr().String()}
-	j, e := OpenPodJournal(filepath.Join(t.TempDir(), "native-events"), "native-studio", d)
+	j, e := OpenPodJournal(filepath.Join(canonicalPodTestDir(t), "native-events"), "native-studio", d)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -114,7 +114,7 @@ func TestPodNativeMutualTLSEndpointOwnLifecycle(t *testing.T) {
 	if len(j.Replay(0)) != 7 {
 		t.Fatal("TLS mutations lost sequence events")
 	}
-	cachePath := filepath.Join(t.TempDir(), "finite-cache")
+	cachePath := filepath.Join(canonicalPodTestDir(t), "finite-cache")
 	if e = PersistFiniteGrantCache(cachePath, cache, pair); e != nil {
 		t.Fatal(e)
 	}
