@@ -629,6 +629,12 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 			if existing == nil {
 				continue
 			}
+
+			// A shared session or PID is not authority to adopt another host.
+			if (existing.Host != "" && t.Host != "" && existing.Host != t.Host) ||
+				(existing.MachineID != "" && t.MachineID != "" && existing.MachineID != t.MachineID) {
+				continue
+			}
 			// Identity: (session_id, surface, agent_id). AgentID is required so that
 			// two lanes registering from the same Claude session (same ambient
 			// CLAUDE_CODE_SESSION_ID) cannot adopt each other's records — e.g.
@@ -658,6 +664,12 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 			// turn-to-turn on app-hosted surfaces; the session_id is the
 			// true identity, so PID is evidence-only, not the key).
 			if t.PID >= minAgentPID {
+				// PID and OS start describe one process. A changed PID must not
+				// inherit a signature belonging to the old process, even if the
+				// new signature is unavailable. Preserve known same-PID evidence.
+				if existing.PID != t.PID || newStart != "" {
+					existing.StartTime = newStart
+				}
 				existing.PID = t.PID
 			}
 			if t.CurrentItem != "" {
@@ -695,6 +707,12 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 	if t.ThreadID == "" && t.PID >= minAgentPID {
 		for id, existing := range reg.Threads {
 			if existing == nil {
+				continue
+			}
+
+			// A shared session or PID is not authority to adopt another host.
+			if (existing.Host != "" && t.Host != "" && existing.Host != t.Host) ||
+				(existing.MachineID != "" && t.MachineID != "" && existing.MachineID != t.MachineID) {
 				continue
 			}
 			// ADR-025: a suspended record must NOT be revived by the live
