@@ -17,7 +17,7 @@ import (
 var ErrWorkerAnswers = errors.New("routerstore: a headless worker may not answer router items unless its lead lane granted it the answering role (registry worker_answers)")
 
 // answerMethods are the verbs that answer an item; the value is the position of the item id in the decoded args.
-var answerMethods = map[string]int{"CloseItem": 0, "Complete": 0}
+var answerMethods = map[string]int{"CloseItem": 0, "Complete": 0, "ReconcileMailboxNotice": -1}
 
 // WorkerMayAnswer reports whether the thread may answer: true for any non-worker thread (leads are judged by the
 // Rule of Ra, not here) and for a worker thread whose record carries answer_role.

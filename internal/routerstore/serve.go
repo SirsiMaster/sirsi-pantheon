@@ -482,6 +482,14 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if name == "ReconcileMailboxNotice" {
+		var actorErr error
+		ctx, actorErr = s.mailboxReconcileContext(ctx, sess, tokenHost)
+		if actorErr != nil {
+			writeErr(w, http.StatusForbidden, "", actorErr.Error())
+			return
+		}
+	}
 	for i := 0; i < mt.NumIn(); i++ {
 		pt := mt.In(i)
 		if pt == ctxType {

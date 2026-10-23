@@ -33,6 +33,9 @@ var laneAPI = map[string]laneRule{
 	// Exact finite role/session/token binding is additionally mandatory inside
 	// DesktopSleep. This entry grants no role and exposes no management method.
 	"DesktopSleep": {item: noItem},
+	// This typed operation validates a separately bootstrap-approved finite
+	// manifest using its server-derived actor. It grants no generic foreign read.
+	"ReconcileMailboxNotice": {item: noItem},
 	// identity and registration
 	"MintSession":          {agents: []int{1}, item: noItem},
 	"MintSessionForThread": {agents: []int{1}, item: noItem},
