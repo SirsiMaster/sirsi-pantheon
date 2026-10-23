@@ -170,8 +170,12 @@ jobs:
           # The legacy runner-start rail-lock hook is not a resource grant.
           # Register this job's actual native executor, acquire/maintain its own
           # canonical CPU grant, and retain cleanup evidence before publishing.
-          # The supervisor refuses before child launch if admission is absent.
-          python3 scripts/maat/admitted-run.py --agent codex-pantheon \
+          # Bootstrap through the installed supervisor/CLI pair. A future
+          # workspace supervisor can require CLI flags the installed release
+          # does not implement yet (125's --cores versus installed124).
+          # Admission remains mandatory; a missing installed pair fails closed.
+          test -x "$HOME/.local/bin/sirsi-maat-run"
+          "$HOME/.local/bin/sirsi-maat-run" --agent codex-pantheon \
             --register-executor --work "pantheon-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --cpu-cores 1 --timeout 1500 -- /bin/bash -euo pipefail -c '
               bash scripts/ci-private-sdk.sh scripts/build-dmg.sh --release --version "$BUILD_VERSION" --arch arm64
