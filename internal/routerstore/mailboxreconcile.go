@@ -132,7 +132,7 @@ func (s *SQLiteStore) ReconcileMailboxNotice(ctx context.Context, req MailboxRec
 	var out MailboxReconcileResult
 	err := s.withTx(func(tx *txHandle) error {
 		now := s.clock()
-		if err := mailboxPrincipalLive(tx, a, now, s.dialect().name == "postgres"); err != nil {
+		if err := mailboxPrincipalLive(ctx, tx, a, now, s.dialect().name == "postgres"); err != nil {
 			return err
 		}
 		if req.Action == "approve" {
@@ -245,17 +245,17 @@ func (s *SQLiteStore) ReconcileMailboxNotice(ctx context.Context, req MailboxRec
 }
 
 // Revalidate principal ownership in the transaction which publishes the audit.
-func mailboxPrincipalLive(tx *txHandle, a mailboxActor, now time.Time, postgres bool) error {
+func mailboxPrincipalLive(ctx context.Context, tx *txHandle, a mailboxActor, now time.Time, postgres bool) error {
 	lock := ""
 	if postgres {
 		lock = " FOR SHARE"
 	}
 	var host, agent, runtime, thread, revoked string
-	if err := tx.QueryRow(`SELECT host,agent,runtime_hash,thread_id,revoked FROM sessions WHERE session_id=?`+lock, a.SessionID).Scan(&host, &agent, &runtime, &thread, &revoked); err != nil || revoked != "" || host != a.Host || agent != a.Agent || runtime != a.Runtime || thread != a.ThreadID {
+	if err := tx.QueryRowContext(ctx, `SELECT host,agent,runtime_hash,thread_id,revoked FROM sessions WHERE session_id=?`+lock, a.SessionID).Scan(&host, &agent, &runtime, &thread, &revoked); err != nil || revoked != "" || host != a.Host || agent != a.Agent || runtime != a.Runtime || thread != a.ThreadID {
 		return errors.New("mailbox reconciliation: authenticated session changed or revoked")
 	}
 	var status, last, payload string
-	if err := tx.QueryRow(`SELECT host,agent,status,last_seen_at,payload FROM threads WHERE thread_id=?`+lock, a.ThreadID).Scan(&host, &agent, &status, &last, &payload); err != nil || host != a.Host || agent != a.Agent || (status != "active" && status != "idle" && status != "blocked") {
+	if err := tx.QueryRowContext(ctx, `SELECT host,agent,status,last_seen_at,payload FROM threads WHERE thread_id=?`+lock, a.ThreadID).Scan(&host, &agent, &status, &last, &payload); err != nil || host != a.Host || agent != a.Agent || (status != "active" && status != "idle" && status != "blocked") {
 		return errors.New("mailbox reconciliation: principal thread is no longer live")
 	}
 	seen, err := time.Parse(time.RFC3339Nano, last)
