@@ -11,13 +11,19 @@ inflight and retry-outbox files are not another router ledger. Use the installed
 configuration must fail, never open a retired `~/.sirsi/router.db` or create a
 second authority. Do not post work by writing Markdown into this checkout.
 
-Send with `sirsi router send`, read with `sirsi router pull/show`, and return
-actionable replies with `sirsi router respond` so the sender receives a fresh
-inbound item. A closing note alone is retained history, not reply delivery.
+Send with `sirsi router send` and read with `sirsi router pull/show`.
+`sirsi router respond` atomically closes the original request: use it only when
+every original requested outcome is fulfilled, including a coordination-only
+request whose entire requested outcome is complete. It is not a progress reply.
+For partial results, blockers or updates, send a new correlated router item and
+verify its readback; preserve the original OPEN or truthfully BLOCKED with its
+history. Completing delivery or a routing subtask does not finish the original
+implementation. Product completion still requires its validated proof and
+fenced ledger settlement. A closing note alone is not inbound reply delivery.
 Register only the actual current runtime; do not fabricate a worker to make a
 lane look staffed. A source registry declaration is not proof of queue execution.
 
-The Idea Router is Ra infrastructure homed in Pantheon. Ra owns the agent registry, work queue, dispatch protocol, cross-agent relay, portfolio authority, and super-agent mandates. Horus owns each desktop's local node: daemon health, local agent/window visibility, local repo status, and the operator dashboard for this machine. Router v3 treats the router as a multi-agent work queue, not a two-person notice board. Work is addressed to registered agent IDs, and dispatch is successful only when the target agent starts and writes back to the router protocol.
+The Idea Router is Ra infrastructure homed in Pantheon. Ra owns the router implementation, agent registry, work queue, dispatch protocol and cross-agent relay. SSA / Ma'at owns software Stack Lab governance and release stewardship; the owner retains portfolio authority and super-agent mandates. SHA retains hardware controls. Horus owns each desktop's local node: daemon health, local agent/window visibility, local repo status, and the operator dashboard for this machine. Router v3 treats the router as a multi-agent work queue, not a two-person notice board. Work is addressed to registered agent IDs, and dispatch is successful only when the target agent starts and writes back to the router protocol.
 
 Thoth preserves router memory across compaction and session boundaries. Ma'at validates router governance: correct agent targeting, repo segmentation, test evidence, honest blockers, and `/goal` completion.
 
