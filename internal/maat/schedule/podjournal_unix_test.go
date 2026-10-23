@@ -4,7 +4,9 @@ package schedule
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -190,5 +192,41 @@ func TestPodJournalProgressPastTTLRetainsEveryMutation(t *testing.T) {
 	defer j.Close()
 	if events = j.Replay(0); len(events) != 7 || events[6].Status != StatusReleased {
 		t.Fatal("recovery lost history", events)
+	}
+}
+
+type relayRecoveryFixture struct {
+	podClientFixture
+	calls int
+}
+
+func (f *relayRecoveryFixture) MaatGetDelegation(_ string) (*Delegation, error) {
+	f.calls++
+	if f.calls == 1 {
+		return nil, errors.New("fixture canonical outage")
+	}
+	return f.grant, nil
+}
+func TestPodRelayReportsOnlyTransitionsAndStops(t *testing.T) {
+	now := time.Now().UTC()
+	d := mkDelegation("pod", "native", now.Add(-time.Minute).Format(time.RFC3339), now.Add(time.Hour).Format(time.RFC3339), "studio")
+	d.Epoch = 1
+	j, e := OpenPodJournal(filepath.Join(t.TempDir(), "relay"), "native", d)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer j.Close()
+	f := &relayRecoveryFixture{podClientFixture: podClientFixture{grant: &d}}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	reports := []bool{}
+	j.RunRelay(ctx, f, time.Millisecond, func(err error) {
+		reports = append(reports, err != nil)
+		if err == nil {
+			cancel()
+		}
+	})
+	if f.calls != 2 || len(reports) != 2 || !reports[0] || reports[1] {
+		t.Fatalf("relay transition mismatch calls%d reports%v", f.calls, reports)
 	}
 }

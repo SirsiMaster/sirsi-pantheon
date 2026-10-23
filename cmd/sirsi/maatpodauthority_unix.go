@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
@@ -32,6 +34,12 @@ func newMaatPodAuthorityCmd() *cobra.Command {
 	c.RunE = func(cmd *cobra.Command, _ []string) error {
 		if pod == "" || journal == "" || certPath == "" || keyPath == "" || caPath == "" || len(identities) == 0 {
 			return fmt.Errorf("maat: existing delegation, journal and approved native TLS paths/bindings required")
+		}
+		if os.Getenv("SIRSI_ROUTER_URL") == "" {
+			return fmt.Errorf("maat: canonical remote router required before authority startup")
+		}
+		if _, set := os.LookupEnv("SIRSI_ROUTER_DB"); set {
+			return fmt.Errorf("maat: local database selector forbidden for native authority")
 		}
 		st, err := routerstore.Resolve()
 		if err != nil {
@@ -108,7 +116,20 @@ func newMaatPodAuthorityCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		go func() { <-cmd.Context().Done(); server.Close() }()
+		run, cancel := context.WithCancel(cmd.Context())
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			j.RunRelay(run, canonical, 5*time.Second, func(err error) {
+				if err != nil {
+					fmt.Fprintln(cmd.ErrOrStderr(), "Ma'at canonical catch-up unavailable; durable journal retained")
+				} else {
+					fmt.Fprintln(cmd.ErrOrStderr(), "Ma'at canonical catch-up recovered")
+				}
+			})
+		}()
+		defer func() { cancel(); <-done }()
+		go func() { <-run.Done(); server.Close() }()
 		err = server.ListenAndServeTLS("", "")
 		if err == http.ErrServerClosed {
 			return nil

@@ -1,6 +1,10 @@
 package routerstore
 
-import "github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
+import (
+	"context"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
+)
 
 func (rs *RemoteStore) CompareAndSwapState(key, expected string, exists bool, value string) (bool, error) {
 	var swapped bool
@@ -44,5 +48,17 @@ func (rs *RemoteStore) MaatAuthorityReserve(machine string, req schedule.Reserva
 func (rs *RemoteStore) MaatReconcile(machine, pod string, epoch int, rows []schedule.Reservation) (int64, error) {
 	var out int64
 	err := rs.call("MaatReconcile", []any{machine, pod, epoch, rows}, &out)
+	return out, err
+}
+
+// Context-aware relay calls do not inherit the longer spool/client deadline.
+func (rs *RemoteStore) MaatGetDelegationContext(ctx context.Context, pod string) (*schedule.Delegation, error) {
+	var out *schedule.Delegation
+	err := rs.callCtx(ctx, "MaatGetDelegation", []any{pod}, &out)
+	return out, err
+}
+func (rs *RemoteStore) MaatReconcileContext(ctx context.Context, machine, pod string, epoch int, rows []schedule.Reservation) (int64, error) {
+	var out int64
+	err := rs.callCtx(ctx, "MaatReconcile", []any{machine, pod, epoch, rows}, &out)
 	return out, err
 }

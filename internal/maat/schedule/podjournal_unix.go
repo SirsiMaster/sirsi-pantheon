@@ -384,7 +384,13 @@ func (j *PodJournal) RelayOnce(ctx context.Context, canonical AtomicDelegationSc
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	d, err := canonical.MaatGetDelegation(j.grant.Pod)
+	var d *Delegation
+	var err error
+	if bounded, ok := canonical.(contextDelegationScheduler); ok {
+		d, err = bounded.MaatGetDelegationContext(ctx, j.grant.Pod)
+	} else {
+		d, err = canonical.MaatGetDelegation(j.grant.Pod)
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -401,7 +407,12 @@ func (j *PodJournal) RelayOnce(ctx context.Context, canonical AtomicDelegationSc
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	ack, err := canonical.MaatReconcile(j.grant.AuthorityMachine, j.grant.Pod, j.grant.Epoch, rows)
+	var ack int64
+	if bounded, ok := canonical.(contextDelegationScheduler); ok {
+		ack, err = bounded.MaatReconcileContext(ctx, j.grant.AuthorityMachine, j.grant.Pod, j.grant.Epoch, rows)
+	} else {
+		ack, err = canonical.MaatReconcile(j.grant.AuthorityMachine, j.grant.Pod, j.grant.Epoch, rows)
+	}
 	if err == nil && ack != rows[len(rows)-1].Seq {
 		return 0, fmt.Errorf("maat: canonical acknowledgement mismatch")
 	}
@@ -509,4 +520,44 @@ func (j *PodJournal) ExecutePod(holder string, req podRequest) (json.RawMessage,
 		return nil, fmt.Errorf("maat: durable nonce result absent")
 	}
 	return append(json.RawMessage(nil), response.reply...), nil
+}
+
+type contextDelegationScheduler interface {
+	MaatGetDelegationContext(context.Context, string) (*Delegation, error)
+	MaatReconcileContext(context.Context, string, string, int, []Reservation) (int64, error)
+}
+
+// RunRelay catches up only this journal, one bounded batch at a time. Errors
+// retain all events; reporting occurs only on unavailable/recovered transitions.
+func (j *PodJournal) RunRelay(ctx context.Context, canonical AtomicDelegationScheduler, interval time.Duration, report func(error)) {
+	if interval <= 0 {
+		return
+	}
+	failed := false
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		call, cancel := context.WithTimeout(ctx, 10*time.Second)
+		_, err := j.RelayOnce(call, canonical)
+		cancel()
+		if err != nil && !failed {
+			if report != nil {
+				report(err)
+			}
+			failed = true
+		} else if err == nil && failed {
+			if report != nil {
+				report(nil)
+			}
+			failed = false
+		}
+		timer := time.NewTimer(interval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+	}
 }

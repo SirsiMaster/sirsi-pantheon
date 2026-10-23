@@ -42,6 +42,14 @@ func recordDecision(kind, requester, resource, assessed, affected, determination
 var maatLedgerFromStore = func(st routerstore.Store) (*schedule.Ledger, error) { return schedule.NewLedger(st), nil }
 
 var maatLedger = func() (*schedule.Ledger, error) {
+	if os.Getenv("SIRSI_MAAT_POD") != "" {
+		if os.Getenv("SIRSI_ROUTER_URL") == "" {
+			return nil, fmt.Errorf("maat: pod routing requires canonical remote router")
+		}
+		if _, set := os.LookupEnv("SIRSI_ROUTER_DB"); set {
+			return nil, fmt.Errorf("maat: pod routing cannot select local database")
+		}
+	}
 	st, err := routerstore.Resolve()
 	if err != nil {
 		return nil, fmt.Errorf("resolve router store: %w", err)
