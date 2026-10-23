@@ -199,6 +199,44 @@ func (nativeServiceBackend) Inspect(ctx context.Context, label string) (ServiceI
 }
 
 func (b nativeServiceBackend) Refresh(ctx context.Context, p ServiceInstance) error {
+	return withServiceLock(p.Plist, func() error {
+		// Two cooperative callers can inspect the same old instance before
+		// either retires it. Serialize and recheck inside the lock so the loser
+		// cannot stop the winner's newly started service.
+		current, err := b.Inspect(ctx, p.Label)
+		if err != nil {
+			return err
+		}
+		if current != p {
+			return errors.New("service lifecycle: selected instance changed before locked apply")
+		}
+		return b.refreshLocked(ctx, p)
+	})
+}
+
+func withServiceLock(plist string, operation func() error) error {
+	path := filepath.Join(filepath.Dir(plist), "."+filepath.Base(plist)+".lifecycle-lock")
+	fd, err := unix.Open(path, unix.O_RDWR|unix.O_CREAT|unix.O_NOFOLLOW|unix.O_CLOEXEC|unix.O_NONBLOCK, 0600)
+	if err != nil {
+		return err
+	}
+	f := os.NewFile(uintptr(fd), path)
+	defer f.Close()
+	var stat unix.Stat_t
+	if err = unix.Fstat(fd, &stat); err != nil {
+		return err
+	}
+	if stat.Mode&unix.S_IFMT != unix.S_IFREG || stat.Mode&0077 != 0 || stat.Uid != uint32(os.Geteuid()) || stat.Nlink != 1 {
+		return errors.New("service lifecycle: private owned regular lock required")
+	}
+	if err = unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		return fmt.Errorf("service lifecycle: selected service maintenance already in progress: %w", err)
+	}
+	defer unix.Flock(fd, unix.LOCK_UN)
+	return operation()
+}
+
+func (b nativeServiceBackend) refreshLocked(ctx context.Context, p ServiceInstance) error {
 	// Resolve again rather than accepting caller-supplied domains or paths.
 	target, plist, err := serviceLocation(p.Label)
 	if err != nil || target != p.Target || plist != p.Plist {

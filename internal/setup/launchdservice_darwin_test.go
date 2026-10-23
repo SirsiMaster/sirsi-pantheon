@@ -65,3 +65,32 @@ func TestServiceScopeRejectsUnrelatedLabels(t *testing.T) {
 		}
 	}
 }
+
+func TestServiceLockRefusesConcurrentApplyAndUnsafeLock(t *testing.T) {
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	plist := filepath.Join(dir, "fixture.plist")
+	if err = withServiceLock(plist, func() error {
+		called := false
+		err := withServiceLock(plist, func() error { called = true; return nil })
+		if err == nil || called {
+			t.Fatal("second maintainer entered selected-service lock")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err = withServiceLock(plist, func() error { return nil }); err != nil {
+		t.Fatal("released lock remained held", err)
+	}
+	lock := filepath.Join(dir, ".fixture.plist.lifecycle-lock")
+	if err = os.Chmod(lock, 0666); err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	if err = withServiceLock(plist, func() error { called = true; return nil }); err == nil || called {
+		t.Fatal("unsafe lock accepted")
+	}
+}
