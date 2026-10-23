@@ -11,6 +11,7 @@
 | overbroad worker network access / SSH substitution | runtime proxy exact enrolled-IP rules; no broad private binding/upstream/UDP; strict existing pins, public-key-only auth and POSIX-literal argv; no direct fallback | outside-allowlist denial, missing proxy/trust/auth refusal; destination executor/admission absent |
 | copied/forked router DB | origin/service identity and doctor check | source/registry drift |
 | false liveness | PID/heartbeat separated from consumer/read-ack state | stale/unacknowledged lane |
+| registration CAS contention or concurrent identity substitution | bounded fresh-load/rederive retry pinned to the selected agent/host/machine/surface/session/PID/start, with terminal/suspended refusal and foreign-write preservation | explicit exhausted fence or changed/retired binding; no silent success, sibling adoption or stale-delta replay |
 | release drift | stamped source, binary/image hash, traffic and rollback receipt | release check failure |
 
 Credentials and remote transport trust remain environment-owned. No Stack Lab

@@ -22,6 +22,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 - Preserve unfinished requests when returning partial router replies. Add
   structural thread-API and timestamp invariants, and streaming EOF/non-finite
   regression fixtures without invoking a model.
+- Retry contended supervisor registration from a fresh registry snapshot within
+  the existing finite budget. Pin the selected runtime identity, preserve foreign
+  updates and reject concurrent retirement or identity substitution; never replay
+  stale registry deltas or manufacture a replacement consumer.
 
 The irreversible thread-retirement producer change remains separate pending its
 legacy-writer drain/rejoin/rollback barrier. No mixed-writer safety or completed
