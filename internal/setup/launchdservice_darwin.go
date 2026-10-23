@@ -232,7 +232,8 @@ func withServiceLock(plist string, operation func() error) error {
 	if err = unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		return fmt.Errorf("service lifecycle: selected service maintenance already in progress: %w", err)
 	}
-	defer unix.Flock(fd, unix.LOCK_UN)
+	// Closing the retained descriptor (already deferred above) releases the
+	// lock on every exit; do not add a second fallible unlock operation.
 	return operation()
 }
 
