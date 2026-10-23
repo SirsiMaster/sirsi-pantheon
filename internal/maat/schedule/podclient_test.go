@@ -123,3 +123,21 @@ func TestPodLookupCancellationDoesNotUseCache(t *testing.T) {
 		t.Fatal("startup cancellation permits cache fallback", e)
 	}
 }
+
+func TestPodLookupBoundUsesPreviouslyAuthenticatedCache(t *testing.T) {
+	now := time.Now()
+	d := mkDelegation("pod", "native", now.Add(-time.Minute).Format(time.RFC3339), now.Add(time.Hour).Format(time.RFC3339), "studio")
+	d.Epoch = 1
+	f := &podClientFixture{grant: &d}
+	cache, e := FetchFiniteGrantCache(f, d.Pod)
+	if e != nil {
+		t.Fatal(e)
+	}
+	blocked := &blockedPodLookup{}
+	c := PodClient{Pod: d.Pod, Canonical: blocked, Transport: f, Cache: cache}
+	start := time.Now()
+	_, e = c.Reserve(context.Background(), Reservation{Resource: "studio"}, false)
+	if e == nil || f.transport != 1 || time.Since(start) > 3*time.Second {
+		t.Fatal("bounded lookup did not reach cached native authority", e, f.transport)
+	}
+}
