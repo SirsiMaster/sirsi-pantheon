@@ -430,7 +430,7 @@ func (l *Ledger) reserveAttempt(req Reservation, queue bool) (ReserveResult, err
 		// A bounded CPU-only floor is not ownership of the model slot.
 		// Otherwise a build admitted AFTER a model can coexist with it, but
 		// the identical build admitted BEFORE that model strands the model.
-		// A first CPU request may be labelled full simply because it arrived
+		// A first CPU request may be labeled full simply because it arrived
 		// first. Only its explicit finite CPU count establishes CPU-only scope.
 		// Keep quiet measurements, unknown shares, unbounded/memory asks and
 		// model reservations exclusive. Both local and atomic service
