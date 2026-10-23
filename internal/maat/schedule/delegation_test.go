@@ -1,6 +1,9 @@
 package schedule
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func mkDelegation(pod, authority, start, notAfter string, resources ...string) Delegation {
 	return Delegation{Pod: pod, AuthorityMachine: authority, Resources: resources, IssuedAt: start, NotAfter: notAfter}
@@ -22,7 +25,8 @@ func TestDelegate_ReissueSamePodBumpsEpoch(t *testing.T) {
 	if _, err := l.Delegate(mkDelegation("studio-m5", "M5-Studio", "2026-10-22T10:00:00Z", "2026-10-22T18:00:00Z", "studio", "m5")); err != nil {
 		t.Fatal(err)
 	}
-	d, err := l.Delegate(mkDelegation("studio-m5", "M5-Studio-2", "2026-10-22T10:05:00Z", "2026-10-22T18:05:00Z", "studio", "m5"))
+	l.now = func() time.Time { v, _ := time.Parse(time.RFC3339, "2026-10-22T18:05:00Z"); return v }
+	d, err := l.Delegate(mkDelegation("studio-m5", "M5-Studio-2", "2026-10-22T18:05:00Z", "2026-10-23T02:05:00Z", "studio", "m5"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,9 +74,9 @@ func TestRevoke_FencesImmediately(t *testing.T) {
 	if !d.Revoked {
 		t.Fatal("want Revoked set")
 	}
-	// Reserve directly on the now-revoked resource must succeed (no fence left).
-	if _, err := l.Reserve(mkReq("studio", "claude-io", "2026-10-22T10:00:00Z", "2026-10-22T10:30:00Z", RegimeQuiet), false); err != nil {
-		t.Fatalf("a revoked delegation must not fence the canonical ledger: %v", err)
+	// Cloud revocation cannot invalidate an offline cached lease; keep its fence.
+	if _, err := l.Reserve(mkReq("studio", "claude-io", "2026-10-22T10:00:00Z", "2026-10-22T10:30:00Z", RegimeQuiet), false); err == nil {
+		t.Fatal("cloud revocation reopened canonical admission while offline lease remains valid")
 	}
 }
 
@@ -131,8 +135,9 @@ func TestReserveAsAuthority_RefusesStaleEpoch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Re-issue bumps the epoch, so the first epoch is now stale.
-	if _, err := l.Delegate(mkDelegation("studio-m5", "M5-Studio-2", "2026-10-22T10:05:00Z", "2026-10-22T18:05:00Z", "studio")); err != nil {
+	// A new authority can be issued only after the old expiry and margin.
+	l.now = func() time.Time { v, _ := time.Parse(time.RFC3339, "2026-10-22T18:05:00Z"); return v }
+	if _, err := l.Delegate(mkDelegation("studio-m5", "M5-Studio-2", "2026-10-22T18:05:00Z", "2026-10-23T02:05:00Z", "studio")); err != nil {
 		t.Fatal(err)
 	}
 	req := Reservation{
@@ -186,5 +191,66 @@ func TestUpsertReservation_RequiresID(t *testing.T) {
 	l := fixedLedger("2026-10-22T10:00:00Z")
 	if _, err := l.UpsertReservation(Reservation{Resource: "studio"}); err == nil {
 		t.Fatal("want an error for an upsert with no id")
+	}
+}
+
+func TestDelegationPartitionHandback(t *testing.T) {
+	for _, revoked := range []bool{false, true} {
+		l := fixedLedger("2026-10-22T10:00:00Z")
+		d, err := l.Delegate(mkDelegation("pod-a", "old-host", "2026-10-22T10:00:00Z", "2026-10-22T18:00:00Z", "studio"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if revoked {
+			if _, err := l.Revoke("pod-a"); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for _, stamp := range []string{"2026-10-22T10:01:00Z", "2026-10-22T18:00:00Z", "2026-10-22T18:04:59Z"} {
+			now, _ := time.Parse(time.RFC3339, stamp)
+			l.now = func() time.Time { return now }
+			for _, pod := range []string{"pod-a", "pod-b"} {
+				if _, err := l.Delegate(mkDelegation(pod, "new-host", stamp, now.Add(time.Hour).Format(time.RFC3339), "studio")); err == nil {
+					t.Fatalf("revoked=%v moved authority before handback at %s", revoked, stamp)
+				}
+			}
+			if got, err := l.delegationFor("studio", now); err != nil || got == nil {
+				t.Fatalf("canonical fence missing revoked=%v at%s: %v", revoked, stamp, err)
+			}
+			if revoked {
+				if _, err := l.ReserveAsAuthority(Reservation{ID: "stale", Resource: "studio", Authority: "pod:pod-a", Epoch: d.Epoch}); err == nil {
+					t.Fatal("revoked authority accepted")
+				}
+			}
+		}
+		end, _ := time.Parse(time.RFC3339, "2026-10-22T18:05:00Z")
+		l.now = func() time.Time { return end }
+		if _, err := l.Delegate(mkDelegation("pod-a", "new-host", "2026-10-22T18:05:00Z", "2026-10-22T19:05:00Z", "studio")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !(Delegation{NotAfter: "corrupt", Revoked: true}).blocksCanonical(time.Now()) {
+		t.Fatal("corrupt retained lease expiry failed open")
+	}
+}
+
+func TestUpsertReservationRefusesStaleOrResurrectingReplay(t *testing.T) {
+	l := fixedLedger("2026-10-22T10:00:00Z")
+	original := Reservation{ID: "closed-pod-grant", Resource: "studio", Holder: "mercury", Authority: "pod:a", Epoch: 7, Seq: 5, Status: StatusReleased}
+	if _, err := l.UpsertReservation(original); err != nil {
+		t.Fatal(err)
+	}
+	for _, req := range []Reservation{
+		{ID: original.ID, Resource: "studio", Holder: "mercury", Authority: "pod:a", Epoch: 7, Seq: 4, Status: StatusReleased},
+		{ID: original.ID, Resource: "studio", Holder: "mercury", Authority: "pod:a", Epoch: 7, Seq: 6, Status: StatusActive},
+		{ID: original.ID, Resource: "studio", Holder: "other", Authority: "pod:a", Epoch: 7, Seq: 6, Status: StatusReleased},
+		{ID: original.ID, Resource: "studio", Holder: "mercury", Authority: "pod:a", Epoch: 8, Seq: 6, Status: StatusReleased},
+	} {
+		if _, err := l.UpsertReservation(req); err == nil {
+			t.Fatal("unsafe replay accepted")
+		}
+	}
+	if _, err := l.UpsertReservation(original); err != nil {
+		t.Fatal("exact duplicate should succeed", err)
 	}
 }

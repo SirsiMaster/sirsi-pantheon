@@ -21,6 +21,9 @@ const delegationStateKey = "maat:delegations"
 // renews itself past this without the canonical ledger being reachable.
 const maxDelegationTTL = 12 * time.Hour
 
+// A partitioned authority may retain its original lease after cloud revocation.
+const delegationHandbackMargin = 5 * time.Minute
+
 var podRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 
 // Delegation is a finite, fenced grant of exactly Resources to one pod
@@ -48,6 +51,14 @@ func (d Delegation) expired(now time.Time) bool {
 		return true // an unparseable not_after is a dead delegation, never a live one
 	}
 	return !now.Before(t)
+}
+
+// blocksCanonical is intentionally independent of Revoked: a cloud-side bit
+// cannot revoke an offline cached lease. Invalid retained expiry fails closed.
+// Earlier handback requires a real native fence acknowledgement (not yet wired).
+func (d Delegation) blocksCanonical(now time.Time) bool {
+	end, err := time.Parse(time.RFC3339, d.NotAfter)
+	return err != nil || now.Before(end.Add(delegationHandbackMargin))
 }
 
 func (d Delegation) coversResource(resource string) bool {
@@ -156,11 +167,14 @@ func (l *Ledger) delegateAttempt(req Delegation) (Delegation, error) {
 	replaceAt := -1
 	for i, d := range rows {
 		if d.Pod == req.Pod {
+			if d.blocksCanonical(now) {
+				return Delegation{}, fmt.Errorf("maat: pod %q handback pending through old expiry plus margin", d.Pod)
+			}
 			replaceAt = i
 			nextEpoch = d.Epoch + 1
 			continue
 		}
-		if d.expired(now) {
+		if !d.blocksCanonical(now) {
 			continue
 		}
 		for _, r := range req.Resources {
@@ -182,9 +196,9 @@ func (l *Ledger) delegateAttempt(req Delegation) (Delegation, error) {
 	return req, nil
 }
 
-// Revoke ends pod's delegation immediately. The fence (ReserveAsAuthority)
-// stops granting at once; Reserve starts admitting the resources directly
-// again as soon as expired() sees Revoked.
+// Revoke stops canonical acceptance of pod grants immediately, but cannot
+// revoke an offline cache. Canonical/new-authority admission remains fenced
+// through the original expiry plus handback margin.
 func (l *Ledger) Revoke(pod string) (Delegation, error) {
 	for attempt := 0; attempt < maxLedgerAttempts; attempt++ {
 		out, err := l.revokeAttempt(pod)
@@ -236,7 +250,7 @@ func (l *Ledger) delegationFor(resource string, now time.Time) (*Delegation, err
 		return nil, err
 	}
 	for _, d := range rows {
-		if d.expired(now) {
+		if !d.blocksCanonical(now) {
 			continue
 		}
 		if d.coversResource(resource) {
@@ -272,6 +286,19 @@ func (l *Ledger) upsertAttempt(req Reservation) (*Reservation, error) {
 	replaced := false
 	for i, r := range reservations {
 		if r.ID == req.ID {
+			// A replay is not a new owner and cannot resurrect terminal work.
+			if r.Resource != req.Resource || r.Holder != req.Holder || r.Authority != req.Authority || r.Epoch != req.Epoch {
+				return nil, fmt.Errorf("maat: reconcile reservation %q ownership/epoch mismatch", req.ID)
+			}
+			if req.Seq < r.Seq {
+				return nil, fmt.Errorf("maat: stale reservation replay sequence")
+			}
+			switch r.Status {
+			case StatusReleased, StatusExpired, StatusInvalidated, StatusDone:
+				if req.Status != r.Status {
+					return nil, fmt.Errorf("maat: terminal reservation cannot be resurrected by replay")
+				}
+			}
 			reservations[i] = req
 			replaced = true
 			break
@@ -304,7 +331,7 @@ func (l *Ledger) ReserveAsAuthority(req Reservation) (ReserveResult, error) {
 	if err != nil {
 		return ReserveResult{}, err
 	}
-	if d == nil {
+	if d == nil || d.expired(l.now()) {
 		return ReserveResult{}, fmt.Errorf("maat: fenced: no live delegation for %s", req.Resource)
 	}
 	if "pod:"+d.Pod != req.Authority {
