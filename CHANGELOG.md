@@ -8,6 +8,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [0.24.124] — 2026-10-23
 
+- Bound native host-pressure commands and replace process-enumerating `top` with aggregate `iostat`, preserving the existing load-average fallback and unknown-does-not-block policy. Cooperating upgraded consumers share one persistent lock and thirty-second known/unknown cache. Preserve retained PR1060 history, cold-home, lock-release and nine-process regression controls. Sample intervals are nominal; old loaded consumers do not coordinate until safely upgraded.
+
 - Refresh a reused live session's PID and OS start signature together after its runtime changes. Unknown new start evidence must not retain a different process's old signature. Preserve lifecycle and lane boundaries, and refuse known foreign host/machine reuse through both session and PID lookup paths.
 - Add opt-in finite pod-local Ma’at booking over mutual TLS, backed by one canonical delegation and a durable nonce/receipt journal. Retain signed expiring grants across native authority/client restarts and reconcile partitioned booking events into the canonical router without creating a second task or message store. Installed TLS/delegation onboarding and service activation remain explicit setup steps, not consequences of installing this release.
 

@@ -3,6 +3,7 @@
 | Component | Source surface | Write boundary | Evidence / next action |
 |---|---|---|---|
 | Go engine and CLI | `cmd/sirsi`, `internal/` | product commands | focused/full test receipts |
+| Shared host-pressure gate | `internal/router/backpressure.go`; `docs/ROUTER_HOST_PRESSURE_UNKNOWN_POLICY.md` | aggregate native CPU read; private v2 observation cache and persistent flock, never message/task authority | Retained source PR1060 `834f9475`, composed `c2fd9c2e`; integrated race `b1e7ca9e` and lock-removal negative `8b972c9c`; M5/Studio native observations, M1 transport unavailable. Release/loaded-consumer continuity remains open. |
 | Native surfaces | `macapp/`, menubar/TUI packages | bounded child processes | output/identity evidence |
 | Native workspace shell | `PantheonDesktopView.swift`, `ControlCenter.swift`, `Views.swift`; recipe `contracts/stacklab/pantheon-native-workspace-v1.json` | local navigation preference; operation authority stays with the existing engine | Swift workspace tests; 900/1180/1440-point fixture renders; installed release remains SSA-owned |
 | Mercury native observer | `MercuryMonitor.swift`, `MercuryWorkspaceView.swift` | fixed local GET plus existing Ra/hardware reads | bounded response/timeout, stale sample controls, opt-in existing-monitor decode test |

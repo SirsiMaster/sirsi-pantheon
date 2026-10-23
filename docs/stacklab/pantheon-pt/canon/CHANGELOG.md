@@ -2,6 +2,7 @@
 
 ## 2026-10-23 — v0.24.124 release candidate
 
+- Retain PR1060 host-pressure correction: bounded aggregate commands, shared known/unknown cache, cross-process and crash-safe lock controls; native sample and loaded-consumer evidence retain their actual host scope.
 - Finite canonical delegation and opt-in native Ma’at mutual-TLS booking, signed expiring caches, durable nonce receipts and partition/restart catch-up. The canonical task/message router is not duplicated; installed identity/delegation onboarding remains a separate explicit setup operation.
 - Bounded own-thread reads with legacy RPC compatibility and preserved foreign-lane refusal.
 - Finite historical-notice operator confinement: memory-only derived sessions, child-only gcloud logging controls and terminal serving-generation check; no general foreign mailbox access or supervisor-repair claim.
