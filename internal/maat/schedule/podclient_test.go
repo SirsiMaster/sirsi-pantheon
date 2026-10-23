@@ -37,7 +37,11 @@ func TestPodClientUndelegatedAndPartitionRouting(t *testing.T) {
 	d := mkDelegation("studio-m5", "native-studio", now.Add(-time.Minute).Format(time.RFC3339), now.Add(time.Hour).Format(time.RFC3339), "studio")
 	d.Epoch = 1
 	f := &podClientFixture{grant: &d}
-	c := PodClient{Pod: d.Pod, Canonical: f, Ordinary: f, Transport: f, Cached: &d}
+	cache, e := FetchFiniteGrantCache(f, d.Pod)
+	if e != nil {
+		t.Fatal(e)
+	}
+	c := PodClient{Pod: d.Pod, Canonical: f, Ordinary: f, Transport: f, Cache: cache}
 	if _, e := c.Reserve(context.Background(), Reservation{Resource: "m1"}, false); e != nil || f.ordinary != 1 {
 		t.Fatal("undelegated path changed", e)
 	}
@@ -48,6 +52,7 @@ func TestPodClientUndelegatedAndPartitionRouting(t *testing.T) {
 	if _, e := c.Reserve(context.Background(), Reservation{Resource: "studio"}, false); e == nil || f.transport != 2 || f.ordinary != 1 {
 		t.Fatal("cached finite delegation not routed")
 	}
+	f.err = nil
 	d.Revoked = true
 	if _, e := c.Reserve(context.Background(), Reservation{Resource: "studio"}, false); e == nil || f.transport != 2 {
 		t.Fatal("revoked cache routed")
@@ -55,5 +60,32 @@ func TestPodClientUndelegatedAndPartitionRouting(t *testing.T) {
 	c.Pod = ""
 	if _, e := c.Reserve(context.Background(), Reservation{Resource: "m1"}, false); e != nil || f.ordinary != 2 {
 		t.Fatal("unconfigured old client changed", e)
+	}
+}
+
+func TestFiniteGrantCacheCannotBeMutatedOrExtendedLocally(t *testing.T) {
+	now := time.Now()
+	d := mkDelegation("studio-m5", "native", now.Add(-time.Minute).Format(time.RFC3339), now.Add(time.Hour).Format(time.RFC3339), "studio")
+	d.Epoch = 3
+	f := &podClientFixture{grant: &d}
+	cache, e := FetchFiniteGrantCache(f, d.Pod)
+	if e != nil {
+		t.Fatal(e)
+	}
+	expiry := d.NotAfter
+	d.NotAfter = now.Add(12 * time.Hour).Format(time.RFC3339)
+	d.Resources[0] = "m5"
+	snapshot, e := cache.Snapshot()
+	if e != nil {
+		t.Fatal(e)
+	}
+	if snapshot.NotAfter != expiry || snapshot.Resources[0] != "studio" {
+		t.Fatal("source alias mutated cache")
+	}
+	snapshot.Resources[0] = "foreign"
+	snapshot.NotAfter = d.NotAfter
+	again, e := cache.Snapshot()
+	if e != nil || again.Resources[0] != "studio" || again.NotAfter != expiry {
+		t.Fatal("snapshot alias extended grant")
 	}
 }

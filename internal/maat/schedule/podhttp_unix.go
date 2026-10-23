@@ -32,39 +32,39 @@ func PodHTTPHandler(j *PodJournal, nativeHolders map[string]string) (http.Handle
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/v1/maat/pod" {
-			http.Error(w, "unsupported pod operation", 404)
+			http.Error(w, "unsupported pod operation", http.StatusNotFound)
 			return
 		}
 		if r.TLS == nil || len(r.TLS.VerifiedChains) == 0 || len(r.TLS.PeerCertificates) == 0 {
-			http.Error(w, "native mutual TLS required", 403)
+			http.Error(w, "native mutual TLS required", http.StatusForbidden)
 			return
 		}
 		fingerprint := sha256.Sum256(r.TLS.PeerCertificates[0].Raw)
 		holder := holders[hex.EncodeToString(fingerprint[:])]
 		if holder == "" {
-			http.Error(w, "native identity not admitted", 403)
+			http.Error(w, "native identity not admitted", http.StatusForbidden)
 			return
 		}
 		var req podRequest
 		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384))
 		dec.DisallowUnknownFields()
 		if e := dec.Decode(&req); e != nil {
-			http.Error(w, "invalid bounded request", 400)
+			http.Error(w, "invalid bounded request", http.StatusBadRequest)
 			return
 		}
 		if dec.Decode(&struct{}{}) != io.EOF {
-			http.Error(w, "trailing request data", 400)
+			http.Error(w, "trailing request data", http.StatusBadRequest)
 			return
 		}
 		if req.Pod != j.grant.Pod || req.Epoch != j.grant.Epoch {
-			http.Error(w, "authority epoch mismatch", 409)
+			http.Error(w, "authority epoch mismatch", http.StatusConflict)
 			return
 		}
 		var out any
 		var err error
 		if req.Action == "reserve" {
 			if req.Reservation.Holder != holder || req.Reservation.ID == "" {
-				http.Error(w, "own holder and stable request ID required", 403)
+				http.Error(w, "own holder and stable request ID required", http.StatusForbidden)
 				return
 			}
 			out, err = j.Reserve(req.Reservation, req.Queue)
@@ -72,11 +72,13 @@ func PodHTTPHandler(j *PodJournal, nativeHolders map[string]string) (http.Handle
 			out, err = j.Mutate(holder, req.Action, req.ID, req.Value)
 		}
 		if err != nil {
-			http.Error(w, err.Error(), 409)
+			http.Error(w, err.Error(), http.StatusConflict)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(out)
+		if err := json.NewEncoder(w).Encode(out); err != nil {
+			return
+		}
 	}), nil
 }
 
@@ -142,7 +144,7 @@ func (t *HTTPPodTransport) call(ctx context.Context, d Delegation, req podReques
 		return err
 	}
 	defer response.Body.Close()
-	if response.StatusCode != 200 {
+	if response.StatusCode != http.StatusOK {
 		return fmt.Errorf("maat: native authority refused HTTP %d", response.StatusCode)
 	}
 	return json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(out)

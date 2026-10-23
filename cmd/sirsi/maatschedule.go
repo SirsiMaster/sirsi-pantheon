@@ -39,12 +39,14 @@ func recordDecision(kind, requester, resource, assessed, affected, determination
 // maatLedger is a var (not a plain func) so tests can inject a Ledger backed
 // by a StateStore that fails deterministically, same pattern as
 // newMaatDecisionJournal below.
+var maatLedgerFromStore = func(st routerstore.Store) (*schedule.Ledger, error) { return schedule.NewLedger(st), nil }
+
 var maatLedger = func() (*schedule.Ledger, error) {
 	st, err := routerstore.Resolve()
 	if err != nil {
 		return nil, fmt.Errorf("resolve router store: %w", err)
 	}
-	return schedule.NewLedger(st), nil
+	return maatLedgerFromStore(st)
 }
 
 var newMaatDecisionJournal = func() (maat.DecisionJournal, error) {

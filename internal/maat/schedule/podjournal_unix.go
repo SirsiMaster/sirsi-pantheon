@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"golang.org/x/sys/unix"
 	"io"
 	"os"
 	"path/filepath"
@@ -17,6 +16,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // PodJournal is a durable projection of one canonical delegation, not another
@@ -82,8 +83,13 @@ func OpenPodJournal(path, machine string, grant Delegation) (*PodJournal, error)
 	if !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 {
 		return fail(fmt.Errorf("maat: journal must be a private regular file"))
 	}
-	encodedGrant, _ := json.Marshal(grant)
-	json.Unmarshal(encodedGrant, &grant)
+	encodedGrant, err := json.Marshal(grant)
+	if err != nil {
+		return fail(err)
+	}
+	if err = json.Unmarshal(encodedGrant, &grant); err != nil {
+		return fail(err)
+	}
 	j := &PodJournal{f: f, grant: grant, now: time.Now, state: podFrame{Grant: grant}}
 	if info.Size() > 64<<20 {
 		return fail(fmt.Errorf("maat: journal exceeds recovery bound"))

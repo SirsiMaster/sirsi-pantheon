@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -61,17 +62,29 @@ func TestPodNativeMutualTLSEndpointOwnLifecycle(t *testing.T) {
 	}
 	req := mkReq("studio", "ra", now.Format(time.RFC3339), now.Add(20*time.Minute).Format(time.RFC3339), RegimeQuiet)
 	req.ID = "native-progress"
-	out, e := client.ReservePod(context.Background(), d, req, false)
+	cache, e := FetchFiniteGrantCache(&podClientFixture{grant: &d}, d.Pod)
+	if e != nil {
+		t.Fatal(e)
+	}
+	routed := PodClient{Pod: d.Pod, Canonical: &podClientFixture{grant: &d}, Transport: client, Cache: cache}
+	consumer := NewLedger(&PodRoutingStore{Client: routed})
+	out, e := consumer.Reserve(req, false)
 	if e != nil || !out.Granted {
 		t.Fatalf("authenticated grant %+v %v", out, e)
 	}
-	if _, e = client.MutatePod(context.Background(), d, "heartbeat", out.Reservation.ID, ""); e != nil {
+	var clock atomic.Int64
+	clock.Store(now.Unix())
+	j.now = func() time.Time { return time.Unix(clock.Load(), 0) }
+	for i := 0; i < 4; i++ {
+		clock.Add(90)
+		if _, e = consumer.Heartbeat(out.Reservation.ID); e != nil {
+			t.Fatal(e)
+		}
+	}
+	if _, e = consumer.Release(out.Reservation.ID); e != nil {
 		t.Fatal(e)
 	}
-	if _, e = client.MutatePod(context.Background(), d, "release", out.Reservation.ID, ""); e != nil {
-		t.Fatal(e)
-	}
-	if len(j.Replay(0)) != 3 {
+	if len(j.Replay(0)) != 6 {
 		t.Fatal("TLS mutations lost sequence events")
 	}
 	req.ID = "foreign"
