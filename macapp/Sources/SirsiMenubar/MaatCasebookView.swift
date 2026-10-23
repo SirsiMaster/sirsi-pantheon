@@ -12,19 +12,37 @@ struct MaatWorkspaceView: View {
     let preloadedCasebook: MaatCasebookProjection?
     let preloadedKnowledge: MaatKnowledgeProjection?
     let opensReleasePreflight: Bool
+    let apolloContext: ApolloPlan?
 
     init(engine: SirsiEngine, preloadedCasebook: MaatCasebookProjection? = nil,
          preloadedKnowledge: MaatKnowledgeProjection? = nil,
-         opensReleasePreflight: Bool = false) {
+         opensReleasePreflight: Bool = false, apolloContext: ApolloPlan? = nil) {
         self.engine = engine
         self.preloadedCasebook = preloadedCasebook
         self.preloadedKnowledge = preloadedKnowledge
         self.opensReleasePreflight = opensReleasePreflight
+        self.apolloContext = apolloContext
     }
 
     var body: some View {
         VStack(spacing: 0) {
             BackBar(title: "Ma'at")
+            if let plan = apolloContext {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "cpu").foregroundStyle(gold)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Reviewing an Apollo plan").sirsiFont(.subheadline, weight: .semibold)
+                        Text("\(plan.machineID) · \(plan.engineID) · \(plan.cpuCores) cores · \(SirsiEngine.human(plan.memoryBytes)) memory · \(SirsiEngine.human(plan.swapBytes)) swap ceiling")
+                            .sirsiFont(.caption).foregroundStyle(PantheonTheme.mutedText)
+                            .textSelection(.enabled)
+                        Text("Estates: \(plan.chipEstates.joined(separator: ", "))")
+                            .sirsiFont(.caption).foregroundStyle(PantheonTheme.mutedText)
+                    }
+                    Spacer()
+                }
+                .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                .background(PantheonTheme.panelRaised)
+            }
             Group {
                 if snapshotMode {
                     HStack(spacing: 6) {

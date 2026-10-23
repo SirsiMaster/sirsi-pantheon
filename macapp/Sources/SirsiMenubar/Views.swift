@@ -14,15 +14,17 @@ private let applyLog = Logger(subsystem: "ai.sirsi.pantheon", category: "apply")
 // gold is reserved for the brand and consequential commitment. The result is a
 // quiet operational surface, not a green dashboard.
 enum PantheonTheme {
-    static let canvas = Color(red: 0.018, green: 0.024, blue: 0.021)
-    static let sidebar = Color(red: 0.027, green: 0.036, blue: 0.031)
-    static let panel = Color(red: 0.045, green: 0.057, blue: 0.049)
-    static let panelRaised = Color(red: 0.060, green: 0.075, blue: 0.065)
-    static let emerald = Color(red: 0.18, green: 0.84, blue: 0.50)
+    static let canvas = Color(red: 0.008, green: 0.025, blue: 0.021)
+    static let sidebar = Color(red: 0.016, green: 0.039, blue: 0.031)
+    static let panel = Color(red: 0.027, green: 0.055, blue: 0.043)
+    static let panelRaised = Color(red: 0.043, green: 0.075, blue: 0.059)
+    static let emerald = Color(red: 0.431, green: 0.906, blue: 0.718)
     static let emeraldMuted = Color(red: 0.075, green: 0.22, blue: 0.14)
-    static let gold = Color(red: 0.90, green: 0.72, blue: 0.31)
+    static let gold = Color(red: 0.890, green: 0.784, blue: 0.471)
     static let goldMuted = Color(red: 0.50, green: 0.37, blue: 0.12)
-    static let mutedText = Color(red: 0.66, green: 0.74, blue: 0.69)
+    static let mutedText = Color(red: 0.643, green: 0.788, blue: 0.725)
+    static let separator = Color(red: 0.137, green: 0.282, blue: 0.231)
+    static let text = Color(red: 0.929, green: 0.957, blue: 0.937)
 }
 
 let gold = PantheonTheme.gold
@@ -33,11 +35,11 @@ let emerald = PantheonTheme.emerald
 // resources; release packaging binds the PNG byte-for-byte in package inventory.
 struct PantheonBrandMark: View {
     let size: CGFloat
+    @Environment(\.pantheonBrandImage) private var suppliedImage
 
     var body: some View {
         Group {
-            if let url = Bundle.main.url(forResource: "sirsi-logo-white", withExtension: "png"),
-               let image = NSImage(contentsOf: url) {
+            if let image = suppliedImage ?? Bundle.main.url(forResource: "sirsi-logo-white", withExtension: "png").flatMap(NSImage.init(contentsOf:)) {
                 Image(nsImage: image)
                     .resizable()
                     .interpolation(.high)
@@ -52,6 +54,16 @@ struct PantheonBrandMark: View {
         }
         .frame(width: size, height: size)
         .accessibilityLabel("Sirsi logo")
+    }
+}
+
+private struct PantheonBrandImageKey: EnvironmentKey {
+    static let defaultValue: NSImage? = nil
+}
+extension EnvironmentValues {
+    var pantheonBrandImage: NSImage? {
+        get { self[PantheonBrandImageKey.self] }
+        set { self[PantheonBrandImageKey.self] = newValue }
     }
 }
 
@@ -389,7 +401,7 @@ struct RootView: View {
         GeometryReader { geo in
             VStack(spacing: 0) {
                 if let top = nav.stack.last {
-                    top.view
+                    top.view.id(top.id)
                 } else {
                     HomeView(engine: engine)
                 }

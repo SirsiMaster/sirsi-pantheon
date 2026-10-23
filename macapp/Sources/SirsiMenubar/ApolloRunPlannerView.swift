@@ -7,6 +7,7 @@ import Foundation
 // non-mutating: SNE separately admits execution against live pressure.
 struct ApolloRunPlannerView: View {
     @ObservedObject var engine: SirsiEngine
+    @EnvironmentObject private var nav: Nav
     @Environment(\.snapshotMode) private var snapshotMode
     @State private var catalog: ApolloCatalog?
     @State private var loading = true
@@ -19,13 +20,19 @@ struct ApolloRunPlannerView: View {
     @State private var selectedEstates = Set<String>()
     @State private var plan: ApolloPlan?
     @State private var planning = false
+    @State private var planningTask: Task<Void, Never>?
     @State private var planError: String?
-    @State private var openTelemetry = false
+    @State private var referencePlan: ApolloPlan?
+    @State private var revisionNotice: String?
+    @State private var revisionAccepted = false
     let preloadedCatalog: ApolloCatalog?
+    let revisingPlan: ApolloPlan?
 
-    init(engine: SirsiEngine, preloadedCatalog: ApolloCatalog? = nil) {
+    init(engine: SirsiEngine, preloadedCatalog: ApolloCatalog? = nil, revisingPlan: ApolloPlan? = nil) {
         self.engine = engine
         self.preloadedCatalog = preloadedCatalog
+        self.revisingPlan = revisingPlan
+        _referencePlan = State(initialValue: revisingPlan)
         _catalog = State(initialValue: preloadedCatalog)
         _loading = State(initialValue: preloadedCatalog == nil)
         let machine = preloadedCatalog?.machineOptions.first ?? preloadedCatalog?.machine
@@ -58,11 +65,7 @@ struct ApolloRunPlannerView: View {
             await load()
         }
         .navigationTitle("Stack Lab — Apollo")
-        .navigationDestination(isPresented: $openTelemetry) {
-            if let plan {
-                ApolloTelemetryView(engine: engine, plan: plan)
-            }
-        }
+        .onDisappear { planningTask?.cancel() }
     }
 
     @ViewBuilder private func recovery(_ message: String) -> some View {
@@ -76,6 +79,8 @@ struct ApolloRunPlannerView: View {
                 .fixedSize(horizontal: false, vertical: true)
             Button("Read capacity again") { Task { await load() } }
                 .buttonStyle(.borderedProminent).tint(gold)
+            Button("Choose a new plan") { nav.push(ApolloRunPlannerView(engine: engine)) }
+                .buttonStyle(.bordered)
             NavLink { MaatWorkspaceView(engine: engine) } label: {
                 Label("Open Ma'at evidence", systemImage: "checkmark.seal")
             }
@@ -89,6 +94,22 @@ struct ApolloRunPlannerView: View {
         MaybeScroll {
             VStack(alignment: .leading, spacing: 16) {
                 header(catalog)
+                if let notice = revisionNotice {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Your previous selection needs review").sirsiFont(.headline)
+                        Text(notice).sirsiFont(.subheadline).foregroundStyle(gold)
+                        if let referencePlan {
+                            Text(planSummary(referencePlan)).sirsiFont(.caption).textSelection(.enabled)
+                        }
+                        Button("Use the current model and capacity limits") {
+                            revisionAccepted = true
+                            revisionNotice = nil
+                            resetSelections(catalog)
+                        }.buttonStyle(.bordered)
+                    }
+                    .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(PantheonTheme.panelRaised, in: RoundedRectangle(cornerRadius: 10))
+                }
                 runPath
                 availableRoutes(catalog)
                 machinePicker(catalog)
@@ -108,6 +129,11 @@ struct ApolloRunPlannerView: View {
         return VStack(alignment: .leading, spacing: 7) {
             Text("Plan an Apollo run")
                 .sirsiFont(.title3, weight: .bold)
+            Button { Task { await load(preservingSelection: true) } } label: {
+                Label("Refresh capacity", systemImage: "arrow.clockwise")
+            }
+            .buttonStyle(.bordered).keyboardShortcut("r", modifiers: .command)
+            .disabled(planning)
             Text("Choose the resident route, machine, and resource envelope before SNE is asked to admit inference. Stack Lab writes no device state at this stage.")
                 .sirsiFont(.subheadline).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -360,7 +386,7 @@ struct ApolloRunPlannerView: View {
     private func planAction(_ catalog: ApolloCatalog) -> some View {
         VStack(alignment: .leading, spacing: 9) {
             SnapshotActionButton(disabled: planning || planBlocker(catalog) != nil) {
-                Task { await createPlan(catalog) }
+                planningTask = Task { await createPlan(catalog) }
             } label: {
                 Label(planning ? "Building selected recipe…" : "Build recipe & open Apollo", systemImage: "play.circle")
             }
@@ -545,6 +571,7 @@ struct ApolloRunPlannerView: View {
         catalog.route(machineID: selectedMachine, engineID: selectedEngine)
     }
     private func planBlocker(_ catalog: ApolloCatalog) -> String? {
+        if let revisionNotice { return revisionNotice }
         guard !selectedEstates.isEmpty else {
             return "Choose at least one detected chip estate to continue."
         }
@@ -571,6 +598,16 @@ struct ApolloRunPlannerView: View {
         return "sirsi apollo plan --machine \(selectedMachine) --engine \(selectedEngine) --cores \(selectedCores) --memory-gib \(selectedMemoryGiB) --swap-gib \(selectedSwapGiB) --estates \(estates) --json"
     }
     private func resetSelections(_ catalog: ApolloCatalog) {
+        if !revisionAccepted, let referencePlan, referencePlan.machineID == selectedMachine {
+            selectedEngine = referencePlan.engineID
+            selectedCores = referencePlan.cpuCores
+            selectedMemoryGiB = Int(referencePlan.memoryBytes / 1_073_741_824)
+            selectedSwapGiB = Int(referencePlan.swapBytes / 1_073_741_824)
+            selectedEstates = Set(referencePlan.chipEstates)
+            revisionNotice = referencePlan.revisionError(in: catalog)
+            return
+        }
+        revisionNotice = nil
         selectedEngine = engineOptions(catalog).first(where: { $0.state == "configured" })?.id ?? engineOptions(catalog).first?.id ?? ""
         selectedEstates = Set(estateOptions(catalog).filter(\.available).map(\.id))
         resetEnvelope(catalog)
@@ -586,7 +623,19 @@ struct ApolloRunPlannerView: View {
     private func memoryCapacityGiB(_ machine: ApolloMachine) -> Int { max(1, Int(machine.memoryBytes / 1_073_741_824)) }
     private func byteLabel(_ bytes: Int64) -> String { bytes == 0 ? "0 GiB" : String(format: "%.0f GiB", Double(bytes) / 1_073_741_824) }
 
-    @MainActor private func load() async {
+    @MainActor private func load(preservingSelection: Bool = false) async {
+        // A refresh cannot consent to a model/capacity replacement. Keep the
+        // original reference until the explicit acceptance action is used.
+        if preservingSelection, let catalog,
+           revisionNotice == nil || revisionAccepted || referencePlan == nil {
+            referencePlan = ApolloPlan(machineID: selectedMachine, engineID: selectedEngine,
+                                       residentModel: selectedRoute(catalog)?.residentModel,
+                                       cpuCores: selectedCores,
+                                       memoryBytes: Int64(selectedMemoryGiB) * 1_073_741_824,
+                                       swapBytes: Int64(selectedSwapGiB) * 1_073_741_824,
+                                       chipEstates: selectedEstates.sorted(), unavailableEstates: nil)
+            revisionAccepted = false
+        }
         loading = true; error = nil; plan = nil
         async let catalogData = SirsiEngine.runJSON(args: ["apollo", "catalog", "--json"])
         async let vitals: Void = engine.fetchVitals()
@@ -597,24 +646,39 @@ struct ApolloRunPlannerView: View {
             loading = false; return
         }
         catalog = decoded
-        selectedMachine = decoded.machineOptions.first?.id ?? decoded.machine.id
+        if let referencePlan, !decoded.machineOptions.contains(where: { $0.id == referencePlan.machineID }) {
+            error = "The previous machine is no longer available. Choose a new plan explicitly or read capacity again."
+            loading = false
+            return
+        }
+        selectedMachine = referencePlan?.machineID ?? decoded.machineOptions.first?.id ?? decoded.machine.id
         resetSelections(decoded)
-        selectedSwapGiB = 0
+        if referencePlan == nil { selectedSwapGiB = 0 }
         loading = false
     }
 
     @MainActor private func createPlan(_ catalog: ApolloCatalog) async {
         planning = true; planError = nil; plan = nil
+        defer { planning = false }
         let estates = selectedEstates.sorted().joined(separator: ",")
         let data = await SirsiEngine.runJSON(args: ["apollo", "plan", "--machine", selectedMachine, "--engine", selectedEngine, "--cores", "\(selectedCores)", "--memory-gib", "\(selectedMemoryGiB)", "--swap-gib", "\(selectedSwapGiB)", "--estates", estates, "--json"])
+        guard !Task.isCancelled else { return }
         if let decoded = try? JSONDecoder().decode(ApolloPlan.self, from: data) {
+            guard decoded.machineID == selectedMachine, decoded.engineID == selectedEngine,
+                  decoded.residentModel == selectedRoute(catalog)?.residentModel,
+                  decoded.cpuCores == selectedCores,
+                  decoded.memoryBytes == Int64(selectedMemoryGiB) * 1_073_741_824,
+                  decoded.swapBytes == Int64(selectedSwapGiB) * 1_073_741_824,
+                  Set(decoded.chipEstates) == selectedEstates else {
+                planError = "The returned plan differs from your selected model or resource envelope. Refresh capacity and review the current choice before continuing."
+                return
+            }
             plan = decoded
-            openTelemetry = true
+            nav.push(ApolloTelemetryView(engine: engine, plan: decoded))
         } else {
             planError = SirsiEngine.firstMeaningful(String(data: data, encoding: .utf8) ?? "")
             if planError?.isEmpty != false { planError = "Apollo rejected the selected plan. Adjust the resource envelope and retry." }
         }
-        planning = false
     }
 }
 
@@ -654,7 +718,8 @@ struct ApolloTelemetryView: View {
         // Refresh button. The task is automatically cancelled when the view
         // leaves the navigation stack; it does no router work and uses a
         // deliberately bounded cadence to avoid becoming another pressure source.
-        .task {
+        .task(id: engine.workspaceVisible) {
+            guard engine.workspaceVisible else { return }
             await refresh()
             while !Task.isCancelled {
                 do {
@@ -718,13 +783,13 @@ struct ApolloTelemetryView: View {
                         Task { await refresh() }
                     }
                     resolutionStep("2", text: resolution.planActionTitle) {
-                        nav.push(ApolloRunPlannerView(engine: engine))
+                        nav.push(ApolloRunPlannerView(engine: engine, revisingPlan: plan))
                     }
                     resolutionStep("3", text: "Open Ma'at guidance") {
-                        nav.push(MaatWorkspaceView(engine: engine))
+                        nav.push(MaatWorkspaceView(engine: engine, apolloContext: plan))
                     }
                 }
-                Text("Step 1 does not start a model. Step 2 only revises this Stack Lab recipe. Step 3 evaluates the actual route, capacity, and evidence before it recommends a repair or an SNE admission.")
+                Text("Recheck the measured session, revise this same recipe, or review its selected machine and resource envelope in Ma’at. Ma’at opens with this plan as context; evaluating a case remains a separate action.")
                     .sirsiFont(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1057,6 +1122,30 @@ struct ApolloPlan: Decodable {
     // Older local CLI binaries did not emit this optional planning disclosure.
     // Treat its absence as no unqualified selection, never as a decode failure.
     var unqualifiedEstates: [String] { unavailableEstates ?? [] }
+
+    func revisionError(in catalog: ApolloCatalog) -> String? {
+        guard let machine = catalog.machineOptions.first(where: { $0.id == machineID }) else {
+            return "The selected machine \(machineID) is no longer in the capacity catalog. Refresh the catalog or return to the original plan; Pantheon has not substituted another machine."
+        }
+        guard let route = catalog.route(machineID: machineID, engineID: engineID) else {
+            return "The selected engine \(engineID) is no longer published for \(machine.name). Return to Apollo and choose a currently available route."
+        }
+        guard route.residentModel == residentModel else {
+            return "The resident model changed from \(residentModel ?? "unreported") to \(route.residentModel ?? "unreported") for this engine. Review and explicitly accept the current model before building another plan."
+        }
+        guard cpuCores > 0, cpuCores <= machine.cpuCores,
+              memoryBytes >= 1_073_741_824, memoryBytes <= machine.memoryBytes,
+              memoryBytes % 1_073_741_824 == 0,
+              swapBytes >= 0, swapBytes <= machine.memoryBytes,
+              swapBytes % 1_073_741_824 == 0 else {
+            return "The retained resource envelope is outside this machine’s current limits. Return to the plan and choose a new envelope explicitly."
+        }
+        let available = Set(catalog.estateOptions(for: machineID).map(\.id))
+        guard !chipEstates.isEmpty, Set(chipEstates).isSubset(of: available) else {
+            return "A selected chip estate is no longer published for this machine. Return to Apollo and review the selection."
+        }
+        return nil
+    }
 }
 struct ApolloTelemetryRead: Decodable { let state: String; let telemetry: ApolloSessionTelemetry?; let reason: String? }
 struct ApolloSessionTelemetry: Decodable {

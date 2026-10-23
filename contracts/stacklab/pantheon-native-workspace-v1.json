@@ -1,0 +1,45 @@
+{
+  "schema": "sirsi.stacklab.recipe.v1",
+  "id": "stacklab.recipe.pantheon-native-workspace",
+  "wing": "stacklab.wing.ra-horus-fabric",
+  "product": "sirsi-pantheon",
+  "version": 1,
+  "purpose": "Native Apollo, Mercury, Ra and Ma'at workspaces over existing operational authorities.",
+  "authority": {
+    "native_projection_owner": "macapp/Sources/SirsiMenubar",
+    "inference_owner": "Apollo catalog, plan and telemetry contracts",
+    "fabric_owner": "Ra router service",
+    "telemetry_owner": "existing Mercury local monitor",
+    "resolution_owner": "Ma'at Casebook",
+    "prohibited": ["start a sampler or model on navigation", "infer current telemetry from stale samples", "execute recipe strings", "create another router store"]
+  },
+  "components": [
+    {
+      "id": "native-workspace-shell",
+      "source": ["macapp/Sources/SirsiMenubar/PantheonDesktopView.swift", "macapp/Sources/SirsiMenubar/ControlCenter.swift", "macapp/Sources/SirsiMenubar/Views.swift"],
+      "tests": ["macapp/Tests/SirsiMenubarTests/WorkspaceTests.swift", "macapp/check-font-scaling.sh"],
+      "inputs": ["canonical engine observations", "explicit workspace selection"],
+      "outputs": ["consistent sidebar and header", "searchable workflows", "observation and recovery routes"],
+      "writes": ["local workspace preference"],
+      "upgrade_recipe": ["preserve every existing workflow destination", "keep unknown observations unknown", "run Swift tests and capture supported window widths", "compose with the normal signed release train"]
+    },
+    {
+      "id": "native-mercury-observer",
+      "source": ["macapp/Sources/SirsiMenubar/MercuryMonitor.swift", "macapp/Sources/SirsiMenubar/MercuryWorkspaceView.swift"],
+      "tests": ["macapp/Tests/SirsiMenubarTests/MercuryWorkspaceTests.swift"],
+      "inputs": ["fixed local Mercury monitor GET", "Ra lane and machine projections", "host transport receipt"],
+      "outputs": ["machine measurements with freshness", "typed machine and transport evidence", "Apollo and Ra navigation"],
+      "writes": [],
+      "upgrade_recipe": ["verify upstream field units before changing labels", "keep monitor read byte and time limits", "reject redirects and failed reads", "retain source freshness and unavailable states", "never start a competing collector"]
+    },
+    {
+      "id": "apollo-maat-context",
+      "source": ["macapp/Sources/SirsiMenubar/ApolloRunPlannerView.swift", "macapp/Sources/SirsiMenubar/MaatCasebookView.swift"],
+      "tests": ["macapp/Tests/SirsiMenubarTests/WorkspaceTests.swift", "scripts/verify-maat-native-resolution-contract.sh"],
+      "inputs": ["selected Apollo plan", "fresh capacity catalog"],
+      "outputs": ["telemetry navigation", "revision retaining the selected machine and route", "Ma'at plan context"],
+      "writes": [],
+      "upgrade_recipe": ["preserve the plan declaration through navigation", "reject removed routes and machine capacity drift", "cancel pending navigation after the operator leaves", "do not equate opening guidance with repairing a case"]
+    }
+  ]
+}

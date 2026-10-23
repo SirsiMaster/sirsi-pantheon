@@ -519,6 +519,7 @@ func activityMaatReviewArgs(for entry: ActivityEntry) -> [String] {
 // this type only reads the persisted scan and runs the CLI.
 @MainActor
 final class SirsiEngine: ObservableObject {
+    @Published var workspaceVisible = true
     // One bounded, direct Ra read for the native Fleet surface.  Keep this
     // data rather than a prose convention so a later refactor cannot quietly
     // reintroduce `board-serve --once` and its server-start latency.
@@ -596,6 +597,11 @@ final class SirsiEngine: ObservableObject {
     // Health (Horus — Ops): findings from `sirsi diagnose`.
     @Published var health: [DiagFinding] = []
     @Published var healthLoading = false
+    @Published var healthReadAt: Date?
+    @Published var healthReadError: String?
+    var healthIsCurrent: Bool {
+        healthReadError == nil && healthReadAt.map { Date().timeIntervalSince($0) >= 0 && Date().timeIntervalSince($0) < Self.diagnoseTTL } == true
+    }
     // Canonical green/amber/red roll-up from diagnose --json `status` — the surface
     // shows THIS, never a re-derived worst-severity (which made trends read red).
     @Published var healthStatus: String = "green"
@@ -610,6 +616,8 @@ final class SirsiEngine: ObservableObject {
     // ── Router board (fabric liveness) ───────────────────────────────────────
     @Published var routerBoard: RouterBoard?
     @Published var routerLoading = false
+    @Published var routerReadAt: Date?
+    @Published var routerReadError: String?
     @Published var fleetBoard: FleetBoard?
     @Published var fleetLoading = false
     // Non-nil when the fleet read itself failed. Rendering an empty board on a
@@ -809,11 +817,16 @@ final class SirsiEngine: ObservableObject {
         // against a live fabric of 17 (owner, 2026-07-22) — so past 5 minutes
         // we fall through to the live CLI read below.
         let attrs = try? FileManager.default.attributesOfItem(atPath: routerBoardPath)
-        let fresh = (attrs?[.modificationDate] as? Date).map { Date().timeIntervalSince($0) < 300 } ?? false
+        let fresh = (attrs?[.modificationDate] as? Date).map {
+            let age = Date().timeIntervalSince($0)
+            return age >= 0 && age < 300
+        } ?? false
         let fileBoard = FileManager.default.contents(atPath: routerBoardPath)
             .flatMap { try? JSONDecoder().decode(RouterBoard.self, from: $0) }
         if fresh, let board = fileBoard {
             routerBoard = board
+            routerReadAt = attrs?[.modificationDate] as? Date
+            routerReadError = nil
             return
         }
         // Stale or missing board — read the live fabric directly (runJSON
@@ -821,10 +834,15 @@ final class SirsiEngine: ObservableObject {
         // does NOT carry local_llm (conduit-enriched only), so graft the file's
         // block onto the live read: pending counts stay honest-live while the
         // Ask Sirsi panel keeps its last-known on-device state.
-        let out = await Self.runJSON(args: ["router", "node-status", "--json"])
-        if var board = try? JSONDecoder().decode(RouterBoard.self, from: out) {
+        let read = await Self.runJSONRead(args: ["router", "node-status", "--json"])
+        if read.exitStatus == 0, !read.timedOut, read.launchError == nil,
+           var board = try? JSONDecoder().decode(RouterBoard.self, from: read.data) {
             if board.localLLM == nil { board.localLLM = fileBoard?.localLLM }
             routerBoard = board
+            routerReadAt = Date()
+            routerReadError = nil
+        } else {
+            routerReadError = "Ra could not be refreshed. Any retained board is from the previous successful observation."
         }
     }
 
@@ -1194,19 +1212,28 @@ final class SirsiEngine: ObservableObject {
     // diagnose runs `sirsi diagnose --json` and parses the health report. Uses a
     // stdout-only run so a banner on stderr can't corrupt the JSON.
     func diagnose(force: Bool = false) async {
-        if !force, let t = lastDiagnoseAt, Date().timeIntervalSince(t) < Self.diagnoseTTL,
+        if !force, healthReadError == nil, let t = lastDiagnoseAt, Date().timeIntervalSince(t) < Self.diagnoseTTL,
            !health.isEmpty {
             return  // fresh enough — render last-known instantly
         }
-        lastDiagnoseAt = Date()
         healthLoading = true
-        let data = await Self.runJSON(args: ["diagnose", "--json"])
-        if let rep = try? JSONDecoder().decode(DiagReport.self, from: data) {
+        let read = await Self.runJSONRead(args: ["diagnose", "--json"])
+        acceptHealthRead(read)
+        healthLoading = false
+    }
+
+    func acceptHealthRead(_ read: JSONCommandRead, at date: Date = Date()) {
+        if read.exitStatus == 0, !read.timedOut, read.launchError == nil,
+           let rep = try? JSONDecoder().decode(DiagReport.self, from: read.data) {
             health = rep.findings
             healthStatus = rep.status ?? "green"
+            healthReadAt = date
+            lastDiagnoseAt = date
+            healthReadError = nil
             onTitle?(titleLabel())   // health now drives the glyph, not just waste
+        } else {
+            healthReadError = "Health could not be refreshed. Retained findings have not been reverified."
         }
-        healthLoading = false
     }
 
     // runResult runs `sirsi <args> --json` and decodes the uniform CommandResult,
