@@ -1,7 +1,7 @@
 {
   "schema": "sirsi.stacklab.wing.v1",
   "id": "stacklab.wing.maat",
-  "owner": "Maat \u2014 QA Sovereign (steward: ra; custodian: owner)",
+  "owner": "Ma'at — QA Sovereign (software steward: sirsi-software-admin; hardware coordination: sirsi-hardware-admin; custodian: owner)",
   "project_id": "sirsi-pantheon",
   "router_namespace": "maat",
   "class": "control-plane",

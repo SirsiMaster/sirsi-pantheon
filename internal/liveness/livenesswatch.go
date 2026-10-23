@@ -1006,9 +1006,9 @@ func launchAgentPlistPresent(label string) bool {
 
 // probeLaunchdDisabled checks for ai.sirsi.* or actions.runner.* labels that
 // are marked disabled in launchd's override DB. A disabled-but-running label
-// is the "latency fuse" class: every current-state probe sees green, but after
-// the next reboot launchd will refuse to restart it. This probe surfaces the
-// flag BEFORE the reboot so the supervisor can re-enable them on its next pass.
+// may appear healthy now but will not restart after reboot. Disabling may be
+// intentional: passive recovery preserves it. Surface the override for review;
+// only deliberate, confirmed repair should restore the selected services.
 // macOS only; fail-open on any exec error.
 func probeLaunchdDisabled() Finding {
 	f := Finding{
@@ -1017,12 +1017,12 @@ func probeLaunchdDisabled() Finding {
 		Title:   "liveness-watch: ai.sirsi/runner labels disabled in launchd override DB",
 		Body: "The launchd liveness watch found Sirsi or self-hosted-runner labels marked " +
 			"disabled in launchd's override DB (launchctl print-disabled). These labels are " +
-			"currently running IF launched before the disable swept them — but launchd will " +
-			"NOT restart them after the next reboot. This is the 2026-07-31 fabric-loss class. " +
-			"The supervisor duty (KickstartDeadLabels) now calls `launchctl enable` before " +
-			"`bootstrap` to clear this flag automatically on its next pass. Alternatively fix " +
-			"manually: launchctl enable gui/<uid>/<label> && launchctl bootstrap gui/<uid> " +
-			"~/Library/LaunchAgents/<label>.plist — repeat per disabled label.",
+			"possibly still running if launched before disabling, but launchd will NOT restart " +
+			"them after the next reboot. Disabling may be intentional; passive recovery " +
+			"preserves this host's disabled overrides. Review the affected services and leave " +
+			"intentional stops unchanged. For deliberate restoration, use " +
+			"`sirsi maat repair launchd-disabled --confirm`; the existing repair targets the " +
+			"reviewed disabled set, preserves quarantine protections, and verifies the result.",
 	}
 	if runtime.GOOS != "darwin" {
 		f.OK, f.Fixable, f.Detail = true, false, "not macOS"
@@ -1062,7 +1062,5 @@ func probeLaunchdDisabled() Finding {
 	f.Detail = fmt.Sprintf("%d label(s) disabled (will not start after reboot): %s",
 		len(disabled), strings.Join(disabled, ", ")) + retiredNote
 	f.Body += "\nDisabled now: " + strings.Join(disabled, ", ")
-	// Append uid into the body for the repair command.
-	f.Body = strings.ReplaceAll(f.Body, "<uid>", strconv.Itoa(uid))
 	return f
 }

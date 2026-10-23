@@ -78,9 +78,13 @@ func authorizeLifecycle(ctx context.Context, label string) error {
 }
 
 func newLaunchdServiceCmd() *cobra.Command {
+	return newLaunchdServiceCmdWith(setup.NativeServiceBackend(), authorizeLifecycle)
+}
+
+func newLaunchdServiceCmdWith(backend setup.ServiceBackend, authorize func(context.Context, string) error) *cobra.Command {
 	var apply, drained bool
 	var pid int
-	var started, plistHash, programHash string
+	var started, plistHash, programHash, planHash string
 	c := &cobra.Command{Use: "restart <label>", Short: "Inspect one explicitly supported service; restart only an exact approved instance", Args: cobra.ExactArgs(1)}
 	c.Flags().BoolVar(&apply, "apply", false, "Apply the exact pinned plan; default is read-only")
 	c.Flags().BoolVar(&drained, "drained", false, "Owning application has drained active work and retained its recovery plan")
@@ -88,20 +92,34 @@ func newLaunchdServiceCmd() *cobra.Command {
 	c.Flags().StringVar(&started, "expected-start", "", "Start identity from the prior read-only plan")
 	c.Flags().StringVar(&plistHash, "expected-plist-sha256", "", "Plist digest from the prior read-only plan")
 	c.Flags().StringVar(&programHash, "expected-program-sha256", "", "Program digest from the prior read-only plan")
+	c.Flags().StringVar(&planHash, "expected-plan-sha256", "", "Complete Horus conversion digest from the prior read-only plan")
 	c.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithTimeout(cmd.Context(), 45*time.Second)
 		defer cancel()
 		if apply && (!drained || pid <= 1 || started == "" || plistHash == "" || programHash == "") {
 			return fmt.Errorf("service lifecycle: --apply requires --drained and all four exact plan pins")
 		}
-		backend := setup.NativeServiceBackend()
+		if apply && args[0] == setup.HorusServiceLabel && planHash == "" {
+			return fmt.Errorf("service lifecycle: Horus apply requires --expected-plan-sha256 from the reviewed conversion plan")
+		}
+		if args[0] == setup.HorusServiceLabel || (!apply && args[0] == "ai.sirsi.router.relay") {
+			if authorize == nil {
+				return fmt.Errorf("service lifecycle: owning actor authorization required")
+			}
+			if err := authorize(ctx, args[0]); err != nil {
+				return err
+			}
+		}
 		p, err := backend.Inspect(ctx, args[0])
 		if err != nil {
 			return err
 		}
 		if apply {
+			if args[0] == setup.HorusServiceLabel && p.PlanSHA256 != planHash {
+				return fmt.Errorf("service lifecycle: Horus conversion plan changed; no maintenance performed")
+			}
 			p.PID, p.Started, p.PlistSHA256, p.ProgramSHA256 = pid, started, plistHash, programHash
-			controller := setup.ServiceController{Backend: backend, Authorize: authorizeLifecycle}
+			controller := setup.ServiceController{Backend: backend, Authorize: authorize}
 			p, err = controller.Refresh(ctx, p)
 			if err != nil {
 				return err

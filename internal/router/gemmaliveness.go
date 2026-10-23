@@ -48,12 +48,13 @@ var gemmaWedgeStrikes int
 // gemmaLivenessFn is the duty-level seam (mirrors auto-heal): it defaults to a
 // no-op so the supervisor-duty framework and library consumers never run a real
 // probe/restore; cmd/sirsi injects the real RunGemmaLivenessDuty at init so it is
-// ALWAYS active in production (not gated on autonomous — gemma must always live).
+// active in production, subject to quarantine and the host's disabled intent.
 var (
-	gemmaLifeMu     sync.RWMutex
-	gemmaLivenessFn = func(_, _ string) error { return nil }
-	gemmaProbeFn    = liveness.ProbeGemmaState
-	gemmaServeFn    = defaultGemmaServe
+	gemmaLifeMu           sync.RWMutex
+	gemmaLivenessFn       = func(_, _ string) error { return nil }
+	gemmaProbeFn          = liveness.ProbeGemmaState
+	gemmaServeFn          = defaultGemmaServe
+	gemmaDisabledLabelsFn = func() (map[string]bool, error) { return managedDisabledSnapshot(launchdOS.disabledLabels) }
 )
 
 func getGemmaLivenessFn() func(string, string) error {
@@ -94,6 +95,18 @@ func setGemmaServeFn(fn func(restart bool) error) {
 	gemmaLifeMu.Lock()
 	defer gemmaLifeMu.Unlock()
 	gemmaServeFn = fn
+}
+
+func getGemmaDisabledLabelsFn() func() (map[string]bool, error) {
+	gemmaLifeMu.RLock()
+	defer gemmaLifeMu.RUnlock()
+	return gemmaDisabledLabelsFn
+}
+
+func setGemmaDisabledLabelsFn(fn func() (map[string]bool, error)) {
+	gemmaLifeMu.Lock()
+	defer gemmaLifeMu.Unlock()
+	gemmaDisabledLabelsFn = fn
 }
 
 // defaultGemmaServe (re)starts the warm broker via the SAME `sirsi gemma serve`
@@ -168,7 +181,7 @@ func getIsQuarantinedFn() func(home string) bool {
 	return isQuarantinedFn
 }
 
-// RunGemmaLivenessDuty is the supervisor duty: probe the broker and restore it.
+// RunGemmaLivenessDuty probes/restores the broker only when the host permits it.
 // Signature matches the SupervisorDuty GoRun contract (routerRoot, repoRoot).
 // routerRoot is used to route an owner alert when a restore does not stick.
 func RunGemmaLivenessDuty(routerRoot, _ string) error {
@@ -178,6 +191,17 @@ func RunGemmaLivenessDuty(routerRoot, _ string) error {
 	// never reaches the GemmaDown branch that would restart it. Strikes reset
 	// so a later un-quarantine starts the wedge-confirmation counter clean.
 	if getIsQuarantinedFn()(home) {
+		gemmaWedgeStrikes = 0
+		return nil
+	}
+	// Absence/wedge is not permission to undo the host's disabled override.
+	// Read intent before even probing the model; unknown intent fails closed.
+	disabled, err := managedDisabledSnapshot(getGemmaDisabledLabelsFn())
+	if err != nil {
+		gemmaWedgeStrikes = 0
+		return err
+	}
+	if disabled["ai.sirsi.gemma-broker"] {
 		gemmaWedgeStrikes = 0
 		return nil
 	}

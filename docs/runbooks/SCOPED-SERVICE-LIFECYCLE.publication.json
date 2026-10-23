@@ -4,13 +4,13 @@
   "status": "SOURCE_CANDIDATE_MIRRORED_NOT_RELEASED_OR_INSTALLED",
   "canonical": {
     "path": "docs/runbooks/SCOPED-SERVICE-LIFECYCLE.md",
-    "commit": "6a8a5732268ecc2ce315429afce5005e63a4fd7c",
-    "sha256": "fd38b6118e66a1e2d7bc7fbe3ed1fc60ccdbd021437136cef0c574ad095cf26d",
-    "url": "https://github.com/SirsiMaster/sirsi-pantheon/blob/6a8a5732268ecc2ce315429afce5005e63a4fd7c/docs/runbooks/SCOPED-SERVICE-LIFECYCLE.md"
+    "commit": "823e04f935128caf161b7724287c5bcd41373d2e",
+    "sha256": "f82fc1e8bd4b0f72ec6466dd857af2edf13d14ca85f68ddca1d82e98e8b042ac",
+    "url": "https://github.com/SirsiMaster/sirsi-pantheon/blob/823e04f935128caf161b7724287c5bcd41373d2e/docs/runbooks/SCOPED-SERVICE-LIFECYCLE.md"
   },
   "desktop": {
     "path": "/Users/thekryptodragon/Desktop/Sirsi/00 Owner Reading Room/Pantheon/Scoped Native Service Lifecycle Runbook.md",
-    "sha256": "48a890b937f30d0b522cefea006cf9fa59fc8ad6aa77c2767df9efd610fe1a2d",
+    "sha256": "ebea8afccf21ee81932d686a434b2942b549381024432b745e82b763886c95b8",
     "verification": "Source body preserved verbatim after mirror provenance header; canonical and native Workspace links read back."
   },
   "workspace": {
@@ -18,12 +18,12 @@
     "url": "https://docs.google.com/document/d/1323BIDuLUh1sl4pU7aqH7qFgrX9i0audu6TXLRopZhw/edit?usp=drivesdk",
     "folder_id": "1ln3375F-JrxwTpLw1FDgSBh8L4UxdwFk",
     "tab_id": "t.0",
-    "revision_id": "AHj4eMR439BWcW_cp9yneERGvIjuELr7s8lJhKSuyD7dI-csJ7vAHZEMjnYiEU9is4HL7LNwPgH_y4hBk4SPdMvVUcBl6dSuKD_LczCMHYs",
+    "revision_id": "AHj4eMRx7fvVXgyaxA_0etsFlQFNMW0qTC_YruWNS-v_NhGXdcp_Xz3jjiIx0_B1D2cmX2749sDlT5oQ_ueLMzJYwGZtBnOjglA0TzFokCM",
     "verification": "Native document paragraph readback exactly matches inserted normalized source paragraphs, code identifiers and provenance. Named title/code formatting retained. No rendered page-fit claim."
   },
   "limits": [
     "Repository source remains authoritative; mirrors are not an authority grant.",
-    "The exact source candidate is published on PR1191, not claimed merged or released.",
+    "The exact source is committed locally as an ancestor of the corrective PR1195 composition; successor remote publication and protected CI are pending. Not claimed merged or released.",
     "No service restart, model invocation, credential, security or account change performed for publication."
   ]
 }

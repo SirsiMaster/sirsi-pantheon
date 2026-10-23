@@ -6,6 +6,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.125] — 2026-10-23
+
+### Corrected
+
+- Preserve a finite native CPU request through admission and prevent a bounded
+  CPU build from falsely owning the model slot. Model/quiet, memory, unknown and
+  unbounded requests retain their conservative boundaries. This is cooperative
+  scheduling, not a claim of kernel-enforced CPU affinity.
+- Keep the actual model/measurement holder visible when finite CPU work coexists.
+- Add a separately pinned root-relay lifecycle profile with authenticated
+  read-only planning, retained artifact checks, locked child/spool revalidation
+  and bounded recovery. The existing five ordinary profiles remain supported;
+  source installation alone does not restart a service or prove application drain.
+- Preserve unfinished requests when returning partial router replies. Add
+  structural thread-API and timestamp invariants, and streaming EOF/non-finite
+  regression fixtures without invoking a model.
+- Retry contended supervisor registration from a fresh registry snapshot within
+  the existing finite budget. Pin the selected runtime identity, preserve foreign
+  updates and reject concurrent retirement or identity substitution; never replay
+  stale registry deltas or manufacture a replacement consumer.
+
+The irreversible thread-retirement producer change remains separate pending its
+legacy-writer drain/rejoin/rollback barrier. No mixed-writer safety or completed
+M1/M5/Studio rollout is inferred from this corrective source composition.
+
 ## [0.24.124] — 2026-10-23
 
 - Preserve main's Horus service-mail repair: route replies to its declared Ra custodian, refuse malformed redirects and exclude services/humans from agent-unreachable alerts. Carry the non-secret `mail_to` policy into the minimal cloud image registry rather than dropping it during packaging. Existing historical records and the separate supervisor-duty fault remain distinct.

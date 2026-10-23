@@ -15,6 +15,8 @@ func writeAgentPlist(t *testing.T, dir, name string) {
 	}
 }
 
+func emptyDisabledLabels() (map[string]bool, error) { return map[string]bool{}, nil }
+
 func TestKickstartDeadLabels(t *testing.T) {
 	dir := t.TempDir()
 	writeAgentPlist(t, dir, "ai.sirsi.gemma.plist")            // dead → revive
@@ -26,6 +28,7 @@ func TestKickstartDeadLabels(t *testing.T) {
 
 	var bootstrapped []string
 	deps := launchdDeps{
+		disabledLabels: emptyDisabledLabels,
 		listLabels: func() (map[string]bool, error) {
 			return map[string]bool{"ai.sirsi.pantheon": true}, nil
 		},
@@ -58,7 +61,8 @@ func TestKickstartBootstrapFailureIsIsolatedAndReported(t *testing.T) {
 	writeAgentPlist(t, dir, "ai.sirsi.a.plist")
 	writeAgentPlist(t, dir, "ai.sirsi.b.plist")
 	deps := launchdDeps{
-		listLabels: func() (map[string]bool, error) { return map[string]bool{}, nil },
+		disabledLabels: emptyDisabledLabels,
+		listLabels:     func() (map[string]bool, error) { return map[string]bool{}, nil },
 		bootstrapPlist: func(p string) error {
 			if filepath.Base(p) == "ai.sirsi.a.plist" {
 				return errors.New("boom")
@@ -85,12 +89,10 @@ func TestKickstartMissingDirIsQuiet(t *testing.T) {
 	}
 }
 
-// TestKickstartDisabledPlusUnloaded verifies the 2026-07-31 fabric-loss class:
-// a label disabled in the override DB AND absent from launchctl list requires
-// enable before bootstrap — bootstrap alone silently fails on a disabled label.
+// Passive supervision must preserve disabled intent while recovering enabled jobs.
 func TestKickstartDisabledPlusUnloaded(t *testing.T) {
 	dir := t.TempDir()
-	writeAgentPlist(t, dir, "ai.sirsi.disabled-label.plist") // disabled+unloaded → enable then bootstrap
+	writeAgentPlist(t, dir, "ai.sirsi.disabled-label.plist") // disabled+unloaded → untouched
 	writeAgentPlist(t, dir, "ai.sirsi.normal-label.plist")   // not disabled → bootstrap only
 
 	var enabledLabels, bootstrapped []string
@@ -115,22 +117,19 @@ func TestKickstartDisabledPlusUnloaded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(revived) != 2 {
-		t.Fatalf("want 2 revived, got %v", revived)
+	if !slices.Equal(revived, []string{"ai.sirsi.normal-label"}) {
+		t.Fatalf("only enabled job may revive, got %v", revived)
 	}
-	// Enable must be called for the disabled label, not the normal one.
-	if len(enabledLabels) != 1 || enabledLabels[0] != "ai.sirsi.disabled-label" {
-		t.Errorf("enable called on wrong labels: %v", enabledLabels)
+	if len(enabledLabels) != 0 {
+		t.Errorf("passive sweep enabled labels: %v", enabledLabels)
 	}
-	if len(bootstrapped) != 2 {
+	if !slices.Equal(bootstrapped, []string{"ai.sirsi.normal-label.plist"}) {
 		t.Errorf("bootstrap called %d times: %v", len(bootstrapped), bootstrapped)
 	}
 }
 
-// A disabled override is a reboot-time failure even when launchd still has a
-// current process. The recovery must clear that override instead of skipping
-// it just because the label appears in `launchctl list`.
-func TestKickstartReenablesDisabledLoadedLabelWithoutBootstrap(t *testing.T) {
+// A disabled override remains operator intent even when the job is still loaded.
+func TestKickstartPreservesDisabledLoadedLabelWithoutMutation(t *testing.T) {
 	dir := t.TempDir()
 	writeAgentPlist(t, dir, "ai.sirsi.loaded-disabled.plist")
 
@@ -158,7 +157,7 @@ func TestKickstartReenablesDisabledLoadedLabelWithoutBootstrap(t *testing.T) {
 	if len(revived) != 0 {
 		t.Fatalf("loaded label must not be reported as bootstrapped: %v", revived)
 	}
-	if len(enabled) != 1 || enabled[0] != "ai.sirsi.loaded-disabled" {
+	if len(enabled) != 0 {
 		t.Fatalf("enabled = %v", enabled)
 	}
 	if len(bootstrapped) != 0 {
@@ -215,7 +214,8 @@ func TestKickstartRejectsManagedSymlink(t *testing.T) {
 	}
 	var bootstrapped []string
 	revived, err := KickstartDeadLabels(dir, launchdDeps{
-		listLabels: func() (map[string]bool, error) { return map[string]bool{}, nil },
+		disabledLabels: emptyDisabledLabels,
+		listLabels:     func() (map[string]bool, error) { return map[string]bool{}, nil },
 		bootstrapPlist: func(path string) error {
 			bootstrapped = append(bootstrapped, path)
 			return nil
@@ -242,7 +242,8 @@ func TestKickstartHonorsGemmaQuarantine(t *testing.T) {
 
 	var bootstrapped []string
 	deps := launchdDeps{
-		listLabels: func() (map[string]bool, error) { return map[string]bool{}, nil },
+		disabledLabels: emptyDisabledLabels,
+		listLabels:     func() (map[string]bool, error) { return map[string]bool{}, nil },
 		bootstrapPlist: func(p string) error {
 			bootstrapped = append(bootstrapped, filepath.Base(p))
 			return nil
@@ -272,6 +273,7 @@ func TestKickstartRevivesGemmaWhenNotQuarantined(t *testing.T) {
 	writeAgentPlist(t, dir, "ai.sirsi.gemma-broker.plist")
 
 	revived, err := KickstartDeadLabels(dir, launchdDeps{
+		disabledLabels: emptyDisabledLabels,
 		listLabels:     func() (map[string]bool, error) { return map[string]bool{}, nil },
 		bootstrapPlist: func(p string) error { return nil },
 		uid:            func() int { return 501 },
@@ -324,6 +326,7 @@ func TestKickstartRevivesWhenFabricNotQuarantined(t *testing.T) {
 	writeAgentPlist(t, dir, "ai.sirsi.pantheon.plist")
 
 	revived, err := KickstartDeadLabels(dir, launchdDeps{
+		disabledLabels:      emptyDisabledLabels,
 		listLabels:          func() (map[string]bool, error) { return map[string]bool{}, nil },
 		bootstrapPlist:      func(p string) error { return nil },
 		uid:                 func() int { return 501 },
@@ -347,5 +350,92 @@ func TestHealCollectorDrains(t *testing.T) {
 	}
 	if again := drainHeals(); len(again) != 0 {
 		t.Fatalf("second drain must be empty: %v", again)
+	}
+}
+
+func TestKickstartUnknownDisabledIntentRefusesMutation(t *testing.T) {
+	probeErr := errors.New("override database unavailable")
+	for _, tc := range []struct {
+		name  string
+		probe func() (map[string]bool, error)
+	}{
+		{"missing probe", nil},
+		{"probe error", func() (map[string]bool, error) { return nil, probeErr }},
+		{"unknown map", func() (map[string]bool, error) { return nil, nil }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeAgentPlist(t, dir, "ai.sirsi.fixture.plist")
+			mutations := 0
+			revived, err := KickstartDeadLabels(dir, launchdDeps{
+				listLabels: emptyDisabledLabels, disabledLabels: tc.probe,
+				enableLabel:    func(string, string) error { mutations++; return nil },
+				bootstrapPlist: func(string) error { mutations++; return nil },
+			})
+			if err == nil || mutations != 0 || len(revived) != 0 {
+				t.Fatalf("unknown intent: revived=%v mutations=%d err=%v", revived, mutations, err)
+			}
+			if tc.name == "probe error" && !errors.Is(err, probeErr) {
+				t.Fatalf("lost probe error: %v", err)
+			}
+		})
+	}
+}
+
+func TestRecoverManagedLaunchdConfirmedLoadedTarget(t *testing.T) {
+	dir := t.TempDir()
+	writeAgentPlist(t, dir, "ai.sirsi.fixture.plist")
+	var enabled []string
+	recovery, err := recoverManagedLaunchd(dir, launchdDeps{
+		listLabels:     func() (map[string]bool, error) { return map[string]bool{"ai.sirsi.fixture": true}, nil },
+		disabledLabels: func() (map[string]bool, error) { return map[string]bool{"ai.sirsi.fixture": true}, nil },
+		uid:            func() int { return 501 },
+		enableLabel: func(domain, label string) error {
+			if domain != "gui/501" {
+				t.Fatalf("unexpected domain %q", domain)
+			}
+			enabled = append(enabled, label)
+			return nil
+		},
+		bootstrapPlist: func(string) error { t.Fatal("loaded target must not bootstrap"); return nil },
+	}, map[string]bool{"ai.sirsi.fixture": true})
+	if err != nil || !slices.Equal(enabled, []string{"ai.sirsi.fixture"}) || !slices.Equal(recovery.Enabled, enabled) || len(recovery.Bootstrapped) != 0 {
+		t.Fatalf("confirmed repair: enabled=%v recovery=%+v err=%v", enabled, recovery, err)
+	}
+}
+
+func TestParseManagedDisabledLabels(t *testing.T) {
+	for _, tc := range []struct {
+		name, output string
+		want         []string
+		bad          bool
+	}{
+		{"empty known", "disabled services = {\n}", nil, false},
+		{"word values", "disabled services = {\n\"ai.sirsi.a\" => disabled\n\"ai.sirsi.b\" => enabled\n}", []string{"ai.sirsi.a"}, false},
+		{"boolean joined values", "disabled services = {\n\"ai.sirsi.a ai.sirsi.b\" => true\n\"ai.sirsi.c\" => false\n}", []string{"ai.sirsi.a", "ai.sirsi.b"}, false},
+		{"missing output", "", nil, true},
+		{"unframed", "\"ai.sirsi.a\" => disabled", nil, true},
+		{"truncated", "disabled services = {\n\"ai.sirsi.a\" => disabled", nil, true},
+		{"unknown value", "disabled services = {\n\"ai.sirsi.a\" => unknown\n}", nil, true},
+		{"malformed entry", "disabled services = {\nnot an entry\n}", nil, true},
+		{"contradiction", "disabled services = {\n\"ai.sirsi.a\" => true\n\"ai.sirsi.a\" => false\n}", nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseManagedDisabledLabels(tc.output)
+			if (err != nil) != tc.bad {
+				t.Fatalf("got %v, err=%v", got, err)
+			}
+			if tc.bad {
+				return
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("disabled=%v want=%v", got, tc.want)
+			}
+			for _, label := range tc.want {
+				if !got[label] {
+					t.Fatalf("missing disabled label %s", label)
+				}
+			}
+		})
 	}
 }

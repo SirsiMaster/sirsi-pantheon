@@ -293,6 +293,29 @@ revoked grants still refuse. Exact newly acquired grants are observed through
 their own heartbeat response, not the first holder on a shared machine.
 
 
+### Restricted worker local write boundary
+
+Future named `sirsi-router` consumers retain the existing relay root and add
+only the local Ma’at `decisions.jsonl`, its `.decisions.jsonl.lock`, and the
+supervisor's `~/.sirsi/evidence/maat-runs` directory. The journal lock is required
+by the current append implementation; no whole-home, whole-`.sirsi`, keychain,
+credentials, configuration or SSH directory is granted. Existing home rebasing
+applies to these quoted registry paths on the destination host. The native
+custodian must provision the ledger parent and evidence parent on a new host
+before launching a restricted worker; the worker cannot create arbitrary
+siblings. This registry source does not rewrite a live worker's immutable mask.
+No reservation retry is authorized by a failed local write: inspect/release the
+exact already-committed own grant before retrying admission.
+
+Selective port of reviewed source `3fc331931730b78f23d9246fbe9b99b934a6b436`
+onto released06cf; preserve all current identity, grants and network policy.
+Source declarations/home-rebase regression are not permission-engine acceptance.
+After reviewed publication, SSA must qualify a newly launched nominated worker's
+actual effective policy: own journal append/lock and terminal evidence succeed,
+while a synthetic unrelated sibling write is denied. Use a fresh own grant and
+custodian-provisioned parents; never replay an earlier reservation or restart
+existing workers to manufacture this proof. Installed acceptance remains open.
+
 ### Bounded heartbeat transport recovery
 
 The supervisor reads the exact existing ID through `maat status <resource>`;

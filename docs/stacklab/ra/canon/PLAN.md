@@ -12,6 +12,15 @@
 
 ### Release-candidate work
 
+The finite corrective125 train also owns the observed Horus registration failure:
+qualify the bounded identity-preserving fresh-load retry, then install and refresh
+the exact selected signed supervisor through its supported lifecycle boundary.
+Require advancing real duties and ordinary queue delivery afterward. A live PID,
+source tests or a new mailbox consumer cannot substitute for that proof. Preserve
+active workloads and disabled intent; never run blanket daemon installation as
+a shortcut. The separate root relay refresh still requires actual producer
+quiescence and spool outcome reconciliation, not merely zero OS children.
+
 5. Publish this architecture and recipe as one Ra Stack Lab wing with exact
    source/test/build/rollback receipts.
 6. Reconcile the live service revision, schema and per-host client identities

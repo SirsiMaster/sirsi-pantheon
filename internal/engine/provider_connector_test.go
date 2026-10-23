@@ -10,6 +10,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -146,6 +148,78 @@ func TestProviderConnectorNormalizesLoopbackStreamAndReceipt(t *testing.T) {
 	}
 }
 
+func TestProviderConnectorRejectsEOFBeforeTerminalMarker(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/models":
+			_, _ = w.Write([]byte(`{"data":[{"id":"model-a"}]}`))
+		case "/v1/chat/completions":
+			w.Header().Set("Content-Type", "text/event-stream")
+			// Valid model-bound delta, then EOF: neither finish_reason nor [DONE].
+			_, _ = w.Write([]byte("data: {\"model\":\"model-a\",\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	identity := testIdentity()
+	identity.Engine = KindMLX
+	backend := &provider.OpenAICompat{SupportsStreaming: true, ProviderName: "mlx", Endpoint: srv.URL + "/v1", Model: identity.ModelID, TierValue: provider.TierLocal, HTTP: srv.Client()}
+	connector, err := NewMLXConnector(backend, identity, Capabilities{Sessions: true, Streaming: true, Receipts: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := connector.OpenSession(ctx, "truncated-stream-session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := connector.Stream(ctx, session, GenerateRequest{SessionID: session.ID, Identity: session.Identity, Prompt: "hello", MaxTokens: 4, Stream: true, CacheNamespace: session.Identity.CacheNamespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var text string
+	var previous uint64
+	var last EventKind
+	var errorsSeen int
+	for {
+		select {
+		case event, ok := <-events:
+			if !ok {
+				if text != "partial" || errorsSeen != 1 || last != EventError {
+					t.Fatalf("truncated stream text=%q errors=%d last=%q, want partial and one terminal error", text, errorsSeen, last)
+				}
+				return
+			}
+			if err := event.Validate(previous); err != nil {
+				t.Error(err)
+			}
+			previous, last = event.Sequence, event.Kind
+			if event.SessionID != session.ID {
+				t.Errorf("event session=%q, want %q", event.SessionID, session.ID)
+			}
+			if event.Receipt != nil || event.ReceiptSHA != "" {
+				t.Error("truncated stream published a receipt")
+			}
+			switch event.Kind {
+			case EventDelta:
+				text += event.Text
+			case EventCompleted:
+				t.Error("truncated stream emitted completion")
+			case EventError:
+				errorsSeen++
+				if event.ErrorCode != "stream_error" || !strings.Contains(event.Error, "stream ended before a terminal marker") {
+					t.Errorf("unexpected terminal error: %+v", event)
+				}
+			}
+		case <-ctx.Done():
+			t.Fatalf("truncated stream did not close: %v", ctx.Err())
+		}
+	}
+}
+
 func TestProviderConnectorRejectsCompletionWithoutObservedModel(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -186,20 +260,65 @@ func TestProviderConnectorRejectsCompletionWithoutObservedModel(t *testing.T) {
 }
 
 func TestProviderConnectorRejectsNonFiniteStreamingRequest(t *testing.T) {
+	var requests atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		if r.Method == http.MethodGet && r.URL.Path == "/v1/models" {
+			_, _ = w.Write([]byte(`{"data":[{"id":"model-a"}]}`))
+			return
+		}
+		http.Error(w, "invalid request reached HTTP", http.StatusBadRequest)
+	}))
+	t.Cleanup(srv.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	identity := testIdentity()
 	identity.Engine = KindMLX
-	connector, err := NewMLXConnector(fakeProvider{available: true}, identity, Capabilities{Sessions: true, Streaming: true})
+	// A real streaming backend prevents unsupported-transport errors from
+	// satisfying this validation regression without checking the numeric value.
+	backend := &provider.OpenAICompat{SupportsStreaming: true, ProviderName: "mlx", Endpoint: srv.URL + "/v1", Model: identity.ModelID, TierValue: provider.TierLocal, HTTP: srv.Client()}
+	connector, err := NewMLXConnector(backend, identity, Capabilities{Sessions: true, Streaming: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	session, err := connector.OpenSession(context.Background(), "stream-session")
+	session, err := connector.OpenSession(ctx, "stream-session")
 	if err != nil {
 		t.Fatal(err)
 	}
-	nan := math.NaN()
-	_, err = connector.Stream(context.Background(), session, GenerateRequest{SessionID: session.ID, Identity: session.Identity, Prompt: "hello", MaxTokens: 4, Temperature: &nan, Stream: true, CacheNamespace: session.Identity.CacheNamespace})
-	if err == nil {
-		t.Fatal("non-finite streaming request was accepted")
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("session probe requests=%d, want 1", got)
+	}
+	for _, field := range []string{"temperature", "top_p"} {
+		for _, value := range []struct {
+			name   string
+			number float64
+		}{
+			{name: "NaN", number: math.NaN()},
+			{name: "+Inf", number: math.Inf(1)},
+			{name: "-Inf", number: math.Inf(-1)},
+		} {
+			t.Run(field+"/"+value.name, func(t *testing.T) {
+				req := GenerateRequest{SessionID: session.ID, Identity: session.Identity, Prompt: "hello", MaxTokens: 4, Stream: true, CacheNamespace: session.Identity.CacheNamespace}
+				number := value.number
+				if field == "temperature" {
+					req.Temperature = &number
+				} else {
+					req.TopP = &number
+				}
+				events, err := connector.Stream(ctx, session, req)
+				if err == nil || !strings.HasPrefix(err.Error(), "engine request: "+field+" ") {
+					t.Errorf("stream error=%v, want %s request validation refusal", err, field)
+				}
+				if events != nil {
+					t.Error("invalid request returned an event stream")
+				}
+				// Only OpenSession's model-list probe may reach the owned server.
+				if got := requests.Load(); got != 1 {
+					t.Errorf("HTTP requests=%d, want only the session probe", got)
+				}
+			})
+		}
 	}
 }
 

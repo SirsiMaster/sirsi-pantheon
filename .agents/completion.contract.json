@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "repo_name": "sirsi-pantheon",
-  "release_target": "v0.24.124",
+  "release_target": "v0.24.125",
   "classification": "platform-foundation",
   "canon_documents": [
     {"path": "PANTHEON_RULES.md", "role": "governance"},

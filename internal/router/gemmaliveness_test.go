@@ -21,9 +21,47 @@ func writeGemmaRouteRegistry(t *testing.T, root string) {
 // zeroRestoreWait stubs the post-restore sleep to nothing so tests don't block.
 func zeroRestoreWait(t *testing.T) {
 	t.Helper()
+	isolateGemmaDisabledProbe(t)
 	old := getRestoreWait()
 	setRestoreWaitFn(func() {})
 	t.Cleanup(func() { setRestoreWaitFn(old) })
+}
+
+// Never read the host's launchd overrides from a liveness fixture.
+func isolateGemmaDisabledProbe(t *testing.T) {
+	t.Helper()
+	old := getGemmaDisabledLabelsFn()
+	setGemmaDisabledLabelsFn(emptyDisabledLabels)
+	t.Cleanup(func() { setGemmaDisabledLabelsFn(old) })
+}
+
+func TestGemmaLiveness_DisabledOrUnknownIntentSkipsProbeAndServe(t *testing.T) {
+	probeErr := errors.New("disabled state unavailable")
+	for _, tc := range []struct {
+		name    string
+		probe   func() (map[string]bool, error)
+		wantErr bool
+	}{
+		{"disabled", func() (map[string]bool, error) { return map[string]bool{"ai.sirsi.gemma-broker": true}, nil }, false},
+		{"probe error", func() (map[string]bool, error) { return nil, probeErr }, true},
+		{"unknown map", func() (map[string]bool, error) { return nil, nil }, true},
+		{"missing probe", nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := installGemmaFakes(t, liveness.GemmaDown)
+			setGemmaDisabledLabelsFn(tc.probe)
+			probes := 0
+			setGemmaProbeFn(func(string) (liveness.GemmaStatus, string) { probes++; return liveness.GemmaDown, "fixture" })
+			gemmaWedgeStrikes = gemmaWedgeThreshold
+			err := RunGemmaLivenessDuty("", "")
+			if (err != nil) != tc.wantErr || probes != 0 || len(*calls) != 0 || gemmaWedgeStrikes != 0 {
+				t.Fatalf("probes=%d serve=%v strikes=%d err=%v", probes, *calls, gemmaWedgeStrikes, err)
+			}
+			if tc.name == "probe error" && !errors.Is(err, probeErr) {
+				t.Fatalf("lost probe error: %v", err)
+			}
+		})
+	}
 }
 
 // installGemmaFakes swaps the probe + serve seams and returns a pointer to the

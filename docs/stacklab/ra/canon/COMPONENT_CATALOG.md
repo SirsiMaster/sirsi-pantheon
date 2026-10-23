@@ -6,6 +6,7 @@
 | Canonical resolver | `internal/routerstore/resolve.go` | URL/service or explicit test DB | one-authority fix; verified locally |
 | Dispatch facade | `internal/dispatch` | all production reads/writes | package tests; source-bound |
 | Registry | `internal/router/registry.go` | identity and adapter metadata | origin/service drift doctor |
+| Contention-safe runtime registration | `RegisterThread`, `registerretry_test.go`, `supervisor.go` | one captured runtime identity and fallback ID; bounded fresh-load/rederive CAS retries only; reject concurrent retirement or identity replacement and preserve foreign writes | Ra92d58068 source reconstructed to exact tree89b0685a; integrated race df6f2cab PASS, no-retry overlay18ee24e0 gives three semantic failures; actual signed supervisor rollover and advancing duty/queue evidence remain open |
 | Independent civic control adapter | `docs/router-service/worker-workspaces/kfca/CLAUDE.md`, `claude-kfca` profile | neutral private coordination CWD distinct from declared civic repo; no product/civic context ingestion | source contract fixture; deployment and actual queue receipt pending |
 | Service | `cmd/sirsi router serve`, `internal/routerstore/serve.go` | Cloud Run/Cloud SQL | deployed historically; fresh readback open |
 | Remote client | `internal/routerstore/remote.go` | session/nonce/runtime auth | contract tests |

@@ -18,6 +18,12 @@ import (
 
 // The defect this test locks down: quarantined + broker down must NOT restore.
 func TestGemmaLivenessDuty_QuarantinedSkipsRestoreOnDown(t *testing.T) {
+	oldDisabled := getGemmaDisabledLabelsFn()
+	setGemmaDisabledLabelsFn(func() (map[string]bool, error) {
+		t.Fatal("quarantine must return before the native disabled probe")
+		return nil, nil
+	})
+	t.Cleanup(func() { setGemmaDisabledLabelsFn(oldDisabled) })
 	oldQ, oldP, oldS := isQuarantinedFn, gemmaProbeFn, gemmaServeFn
 	oldStrikes := gemmaWedgeStrikes
 	t.Cleanup(func() {
@@ -45,6 +51,7 @@ func TestGemmaLivenessDuty_QuarantinedSkipsRestoreOnDown(t *testing.T) {
 // before this change. Proves the marker gates only the quarantined case and
 // this is not simply "the duty never restores anymore".
 func TestGemmaLivenessDuty_UnquarantinedStillRestoresOnDown(t *testing.T) {
+	isolateGemmaDisabledProbe(t)
 	oldQ, oldP, oldS := isQuarantinedFn, gemmaProbeFn, gemmaServeFn
 	oldStrikes := gemmaWedgeStrikes
 	t.Cleanup(func() {

@@ -609,7 +609,7 @@ var (
 // wrapper found nothing to read).
 var routerRespondCmd = &cobra.Command{
 	Use:   "respond <id>",
-	Short: "Close a request with a Result AND route the response back to its sender (atomic)",
+	Short: "Send a Result to the requester, then close the original request",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		result, err := loadOrLiteralIfSet(cmd, "result", respondResult)

@@ -10,6 +10,13 @@ adversarial tests and safe upgrade boundaries travel with the release candidate;
 installed service/application proof is recorded separately, not inferred from
 the presence of this catalog entry.
 
+Corrective extensions retain those original profiles: the exact root-relay
+recipe is `docs/stacklab/pantheon-pt/canon/ROOT_RELAY_REFRESH.md`; the exact
+GUI-owner Horus Before-to-After configuration conversion is
+`docs/stacklab/pantheon-pt/canon/HORUS_SELECTED_REFRESH.md`. Horus requires the
+additional complete conversion-plan digest; it does not weaken the original
+profiles' same-artifact readback or authorize bulk daemon installation.
+
 `sirsi launchd restart <label>` is a read-only JSON plan by default. Its initial
 closed scope is Apollo observer, chat and Gemma broker user agents, and Mercury
 monitor/chip system daemons. It does not enumerate/restart the fabric, enable a
