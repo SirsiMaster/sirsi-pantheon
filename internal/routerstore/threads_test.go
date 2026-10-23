@@ -1,6 +1,7 @@
 package routerstore
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 )
@@ -71,6 +72,35 @@ func TestUpsertAndListThreads(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].ThreadID != want.ThreadID || string(got[0].Payload) != string(want.Payload) {
 		t.Fatalf("threads = %#v", got)
+	}
+}
+
+// TestGetThreadRecord pins the bounded own-thread read: it must return the
+// exact row (including payload) for a known id, ErrThreadUnknown for an
+// absent one, and must NOT be perturbed by sibling rows in the table — the
+// whole point of adding it instead of reusing ListThreads (SSA 2026-10-18:
+// a full ListThreads response for a single-row lookup is large enough to hit
+// relay body-size/timeout ceilings under load).
+func TestGetThreadRecord(t *testing.T) {
+	s, err := OpenPath(filepath.Join(t.TempDir(), "router.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	want := ThreadRecord{ThreadID: "thr-1", Agent: "codex-pantheon", Status: "active", LastSeenAt: "2026-08-06T09:00:00Z", Payload: []byte(`{"thread_id":"thr-1"}`)}
+	other := ThreadRecord{ThreadID: "thr-2", Agent: "claude-test", Status: "active", LastSeenAt: "2026-08-06T09:00:00Z", Payload: []byte(`{"thread_id":"thr-2"}`)}
+	if err := s.UpsertThreads([]ThreadRecord{want, other}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetThreadRecord("thr-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ThreadID != want.ThreadID || got.Agent != want.Agent || string(got.Payload) != string(want.Payload) {
+		t.Fatalf("GetThreadRecord = %#v, want %#v", got, want)
+	}
+	if _, err := s.GetThreadRecord("thr-missing"); !errors.Is(err, ErrThreadUnknown) {
+		t.Fatalf("GetThreadRecord(missing) error = %v, want ErrThreadUnknown", err)
 	}
 }
 

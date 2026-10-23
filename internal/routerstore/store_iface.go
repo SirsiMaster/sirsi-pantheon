@@ -62,6 +62,9 @@ type Store interface {
 	GetSession(id string) (Session, error)
 	GetState(key string) (string, bool, error)
 	GetTask(agent, taskID string) (Task, error)
+	// GetThreadRecord is the bounded own-thread read: one row by thread_id,
+	// including its payload. ErrThreadUnknown when absent. See threads.go.
+	GetThreadRecord(threadID string) (ThreadRecord, error)
 	Heartbeat(id string) error
 	// HostIdentity resolves an identity string to its canonical machine id via
 	// adopted host tokens (ADR-067 §3.3). Server-internal (notServed): read by

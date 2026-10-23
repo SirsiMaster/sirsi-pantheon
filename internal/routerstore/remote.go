@@ -638,6 +638,13 @@ func (rs *RemoteStore) ThreadBinding(threadID string) (ThreadBinding, error) {
 	return out, err
 }
 
+// GetThreadRecord over the wire: the bounded own-thread read.
+func (rs *RemoteStore) GetThreadRecord(threadID string) (ThreadRecord, error) {
+	var out ThreadRecord
+	err := rs.call("GetThreadRecord", []any{threadID}, &out)
+	return out, err
+}
+
 // RecordAudience is server-side only; a lane never writes the audit log itself.
 func (rs *RemoteStore) RecordAudience(AudienceEntry) error {
 	return errors.New("routerstore: RecordAudience is not served over the wire")
