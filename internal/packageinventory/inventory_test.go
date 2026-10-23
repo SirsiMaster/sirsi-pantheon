@@ -19,7 +19,7 @@ func TestVerifyBuildsDeterministicPythonFreeInventory(t *testing.T) {
 	if report.Schema != Schema || !report.PythonFree || report.EngineCount != 2 {
 		t.Fatalf("unexpected report: %+v", report)
 	}
-	if len(report.Entries) != 21 {
+	if len(report.Entries) != 22 {
 		t.Fatalf("entry count = %d, want unsigned payload including Stack Lab contracts", len(report.Entries))
 	}
 	for i := 1; i < len(report.Entries); i++ {
@@ -272,22 +272,23 @@ func makeBundle(t *testing.T) (string, Expectations) {
 	launchAgent := []byte("Label=ai.sirsi.pantheon\n")
 	brandLogo := []byte("canonical Sirsi application-mark bytes\n")
 	files := map[string][]byte{
-		"Contents/Info.plist":                                                  info,
-		"Contents/PkgInfo":                                                     pkgInfo,
-		"Contents/MacOS/sirsi":                                                 []byte("go cli bytes"),
-		"Contents/MacOS/sirsi-menubar":                                         []byte("go menubar bytes"),
-		"Contents/Resources/ai.sirsi.pantheon.plist":                           launchAgent,
-		"Contents/Resources/sirsi-logo-white.png":                              brandLogo,
-		"Contents/Resources/StackLab/apollo-sne-telemetry-v1.json":             []byte(`{"schema":"sirsi.stacklab.apollo-telemetry.v1"}`),
-		"Contents/Resources/StackLab/maat-system-one-recipe-v1.json":           []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
-		"Contents/Resources/StackLab/maat-wing-v1.json":                        []byte(`{"schema":"sirsi.stacklab.wing.v1"}`),
-		"Contents/Resources/StackLab/native-stacklab-surface-recipe-v1.json":   []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
-		"Contents/Resources/StackLab/pantheon.pt-wing-001-wing-v1.json":        []byte(`{"schema":"sirsi.stacklab.wing.v1"}`),
-		"Contents/Resources/StackLab/pantheon-release-artifact-recipe-v1.json": []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
-		"Contents/Resources/StackLab/ra-horus-fabric-recipe-v1.json":           []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
-		"Contents/Resources/StackLab/ra-horus-fabric-wing-v1.json":             []byte(`{"schema":"sirsi.stacklab.wing.v1"}`),
-		"Contents/Resources/StackLab/v2/PROVENANCE.md":                         []byte("Stack Lab provenance\n"),
-		"Contents/Resources/StackLab/v2/wing.schema.json":                      []byte(`{"$schema":"https://json-schema.org/draft/2020-12/schema"}`),
+		"Contents/Info.plist":                                                   info,
+		"Contents/PkgInfo":                                                      pkgInfo,
+		"Contents/MacOS/sirsi":                                                  []byte("go cli bytes"),
+		"Contents/MacOS/sirsi-menubar":                                          []byte("go menubar bytes"),
+		"Contents/Resources/ai.sirsi.pantheon.plist":                            launchAgent,
+		"Contents/Resources/sirsi-logo-white.png":                               brandLogo,
+		"Contents/Resources/StackLab/apollo-sne-telemetry-v1.json":              []byte(`{"schema":"sirsi.stacklab.apollo-telemetry.v1"}`),
+		"Contents/Resources/StackLab/maat-system-one-recipe-v1.json":            []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
+		"Contents/Resources/StackLab/maat-pod-authority-service-recipe-v1.json": []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
+		"Contents/Resources/StackLab/maat-wing-v1.json":                         []byte(`{"schema":"sirsi.stacklab.wing.v1"}`),
+		"Contents/Resources/StackLab/native-stacklab-surface-recipe-v1.json":    []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
+		"Contents/Resources/StackLab/pantheon.pt-wing-001-wing-v1.json":         []byte(`{"schema":"sirsi.stacklab.wing.v1"}`),
+		"Contents/Resources/StackLab/pantheon-release-artifact-recipe-v1.json":  []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
+		"Contents/Resources/StackLab/ra-horus-fabric-recipe-v1.json":            []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
+		"Contents/Resources/StackLab/ra-horus-fabric-wing-v1.json":              []byte(`{"schema":"sirsi.stacklab.wing.v1"}`),
+		"Contents/Resources/StackLab/v2/PROVENANCE.md":                          []byte("Stack Lab provenance\n"),
+		"Contents/Resources/StackLab/v2/wing.schema.json":                       []byte(`{"$schema":"https://json-schema.org/draft/2020-12/schema"}`),
 	}
 	for rel, data := range files {
 		if err := os.WriteFile(filepath.Join(app, filepath.FromSlash(rel)), data, 0o755); err != nil {
