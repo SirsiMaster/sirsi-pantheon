@@ -5,6 +5,8 @@ package schedule
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,22 +27,29 @@ import (
 // access and bind machine to native identity before opening it. One process owns
 // the journal; a successful grant is returned only after the append is fsynced.
 type PodJournal struct {
-	mu     sync.Mutex
-	f      *os.File
-	grant  Delegation
-	state  podFrame
-	now    func() time.Time
-	failed bool
-	events []Reservation
+	mu                            sync.Mutex
+	f                             *os.File
+	grant                         Delegation
+	state                         podFrame
+	now                           func() time.Time
+	failed                        bool
+	events                        []Reservation
+	requests                      map[string]podReply
+	currentOperation, currentHash string
+	pendingReply                  json.RawMessage
 }
 type podFrame struct {
-	Grant Delegation    `json:"grant"`
-	Seq   int64         `json:"seq"`
-	Rows  []Reservation `json:"rows,omitempty"`
-	Event *Reservation  `json:"event,omitempty"`
+	Grant       Delegation      `json:"grant"`
+	Seq         int64           `json:"seq"`
+	Rows        []Reservation   `json:"rows,omitempty"`
+	Event       *Reservation    `json:"event,omitempty"`
+	Operation   string          `json:"operation,omitempty"`
+	RequestHash string          `json:"request_hash,omitempty"`
+	Reply       json.RawMessage `json:"reply,omitempty"`
 }
 
 func OpenPodJournal(path, machine string, grant Delegation) (*PodJournal, error) {
+	grant.AckedSeq = 0
 	if err := validateDelegation(grant); err != nil {
 		return nil, err
 	}
@@ -90,7 +99,7 @@ func OpenPodJournal(path, machine string, grant Delegation) (*PodJournal, error)
 	if err = json.Unmarshal(encodedGrant, &grant); err != nil {
 		return fail(err)
 	}
-	j := &PodJournal{f: f, grant: grant, now: time.Now, state: podFrame{Grant: grant}}
+	j := &PodJournal{f: f, grant: grant, now: time.Now, state: podFrame{Grant: grant}, requests: map[string]podReply{}}
 	if info.Size() > 64<<20 {
 		return fail(fmt.Errorf("maat: journal exceeds recovery bound"))
 	}
@@ -103,6 +112,7 @@ func OpenPodJournal(path, machine string, grant Delegation) (*PodJournal, error)
 			if err = json.Unmarshal(line, &frame); err != nil {
 				return fail(err)
 			}
+			frame.Grant.AckedSeq = 0
 			if !reflect.DeepEqual(frame.Grant, grant) || frame.Seq != j.state.Seq+1 {
 				return fail(fmt.Errorf("maat: journal epoch/sequence mismatch"))
 			}
@@ -120,6 +130,12 @@ func OpenPodJournal(path, machine string, grant Delegation) (*PodJournal, error)
 				return fail(fmt.Errorf("maat: journal event missing or foreign"))
 			}
 			j.applyEvent(*event)
+			if frame.Operation != "" {
+				if frame.RequestHash == "" || !json.Valid(frame.Reply) {
+					return fail(fmt.Errorf("maat: corrupt nonce recovery"))
+				}
+				j.requests[frame.Operation] = podReply{hash: frame.RequestHash, reply: append(json.RawMessage(nil), frame.Reply...)}
+			}
 		}
 	}
 	if err = r.Err(); err != nil {
@@ -163,6 +179,9 @@ func (j *PodJournal) Close() error {
 func (j *PodJournal) Reserve(req Reservation, queue bool) (ReserveResult, error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
+	return j.reserveLocked(req, queue)
+}
+func (j *PodJournal) reserveLocked(req Reservation, queue bool) (ReserveResult, error) {
 	if j.f == nil || j.failed {
 		return ReserveResult{}, fmt.Errorf("maat: journal unavailable")
 	}
@@ -208,6 +227,14 @@ func (j *PodJournal) Reserve(req Reservation, queue bool) (ReserveResult, error)
 		out.Reservation = nil
 		return out, nil
 	}
+	if j.currentOperation != "" {
+		copyOut := out
+		copyOut.Reservation = &row
+		j.pendingReply, err = json.Marshal(copyOut)
+		if err != nil {
+			return ReserveResult{}, err
+		}
+	}
 	if err = j.commitEvent(row); err != nil {
 		return ReserveResult{}, err
 	}
@@ -232,7 +259,14 @@ func (j *PodJournal) applyEvent(row Reservation) {
 	j.events = append(j.events, row)
 }
 func (j *PodJournal) commitEvent(row Reservation) error {
-	frame := podFrame{Grant: j.grant, Seq: row.Seq, Event: &row}
+	frame := podFrame{Grant: j.grant, Seq: row.Seq, Event: &row, Operation: j.currentOperation, RequestHash: j.currentHash, Reply: j.pendingReply}
+	if frame.Operation != "" && len(frame.Reply) == 0 {
+		b, e := json.Marshal(row)
+		if e != nil {
+			return e
+		}
+		frame.Reply = b
+	}
 	encoded, err := json.Marshal(frame)
 	if err != nil {
 		return err
@@ -256,6 +290,9 @@ func (j *PodJournal) commitEvent(row Reservation) error {
 		return fmt.Errorf("maat: durable event failed: %w", err)
 	}
 	j.applyEvent(row)
+	if frame.Operation != "" {
+		j.requests[frame.Operation] = podReply{hash: frame.RequestHash, reply: append(json.RawMessage(nil), frame.Reply...)}
+	}
 	return nil
 }
 
@@ -264,6 +301,9 @@ func (j *PodJournal) commitEvent(row Reservation) error {
 func (j *PodJournal) Mutate(holder, action, id, value string) (*Reservation, error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
+	return j.mutateLocked(holder, action, id, value)
+}
+func (j *PodJournal) mutateLocked(holder, action, id, value string) (*Reservation, error) {
 	if j.f == nil || j.failed {
 		return nil, fmt.Errorf("maat: journal unavailable")
 	}
@@ -394,4 +434,79 @@ func (p *podProjection) CompareAndSwapState(key, old string, exists bool, value 
 	}
 	p.rows = doc.Reservations
 	return true, nil
+}
+
+type podReply struct {
+	hash  string
+	reply json.RawMessage
+}
+
+// ExecutePod records the authenticated principal/nonce, exact request digest,
+// result and event in ONE fsynced frame. A lost reply cannot repeat a mutation.
+func (j *PodJournal) ExecutePod(holder string, req podRequest) (json.RawMessage, error) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.f == nil || j.failed {
+		return nil, fmt.Errorf("maat: durable authority unavailable")
+	}
+	if len(req.Nonce) != 32 {
+		return nil, fmt.Errorf("maat: stable 128-bit operation nonce required")
+	}
+	if _, e := hex.DecodeString(req.Nonce); e != nil {
+		return nil, fmt.Errorf("maat: invalid operation nonce")
+	}
+	body, e := json.Marshal(req)
+	if e != nil {
+		return nil, e
+	}
+	digest := sha256.Sum256(body)
+	hash := hex.EncodeToString(digest[:])
+	key := holder + ":" + req.Nonce
+	if previous, ok := j.requests[key]; ok {
+		if previous.hash != hash {
+			return nil, fmt.Errorf("maat: nonce reused with changed request")
+		}
+		if req.Action == "reserve" || req.Action == "heartbeat" || req.Action == "extend" {
+			id := req.ID
+			if req.Action == "reserve" {
+				id = req.Reservation.ID
+			}
+			live := false
+			for _, row := range j.state.Rows {
+				if row.ID == id && row.Holder == holder && row.Status == StatusActive && !row.leaseExpired(j.now()) && !j.grant.expired(j.now()) {
+					live = true
+					break
+				}
+			}
+			if !live {
+				return nil, fmt.Errorf("maat: historical nonce cannot grant fresh liveness")
+			}
+		}
+		return append(json.RawMessage(nil), previous.reply...), nil
+	}
+	j.currentOperation = key
+	j.currentHash = hash
+	j.pendingReply = nil
+	defer func() { j.currentOperation = ""; j.currentHash = ""; j.pendingReply = nil }()
+	if req.Action == "reserve" {
+		if req.Reservation.Holder != holder {
+			return nil, fmt.Errorf("maat: foreign reservation holder")
+		}
+		out, err := j.reserveLocked(req.Reservation, req.Queue)
+		if err != nil {
+			return nil, err
+		}
+		if !out.Granted {
+			return nil, fmt.Errorf("maat: queued intent is not a grant")
+		}
+	} else {
+		if _, err := j.mutateLocked(holder, req.Action, req.ID, req.Value); err != nil {
+			return nil, err
+		}
+	}
+	response, ok := j.requests[key]
+	if !ok {
+		return nil, fmt.Errorf("maat: durable nonce result absent")
+	}
+	return append(json.RawMessage(nil), response.reply...), nil
 }

@@ -5,6 +5,7 @@ package schedule
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/hex"
@@ -60,17 +61,11 @@ func PodHTTPHandler(j *PodJournal, nativeHolders map[string]string) (http.Handle
 			http.Error(w, "authority epoch mismatch", http.StatusConflict)
 			return
 		}
-		var out any
-		var err error
-		if req.Action == "reserve" {
-			if req.Reservation.Holder != holder || req.Reservation.ID == "" {
-				http.Error(w, "own holder and stable request ID required", http.StatusForbidden)
-				return
-			}
-			out, err = j.Reserve(req.Reservation, req.Queue)
-		} else {
-			out, err = j.Mutate(holder, req.Action, req.ID, req.Value)
+		if req.Action == "reserve" && (req.Reservation.Holder != holder || req.Reservation.ID == "") {
+			http.Error(w, "own holder and stable request ID required", http.StatusForbidden)
+			return
 		}
+		out, err := j.ExecutePod(holder, req)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusConflict)
 			return
@@ -83,6 +78,7 @@ func PodHTTPHandler(j *PodJournal, nativeHolders map[string]string) (http.Handle
 }
 
 type podRequest struct {
+	Nonce       string      `json:"nonce"`
 	Pod         string      `json:"pod"`
 	Epoch       int         `json:"epoch"`
 	Action      string      `json:"action"`
@@ -130,24 +126,57 @@ func (t *HTTPPodTransport) call(ctx context.Context, d Delegation, req podReques
 	}
 	req.Pod = d.Pod
 	req.Epoch = d.Epoch
+	if req.Nonce == "" {
+		nonce := make([]byte, 16)
+		if _, err := rand.Read(nonce); err != nil {
+			return err
+		}
+		req.Nonce = hex.EncodeToString(nonce)
+	}
 	b, err := json.Marshal(req)
 	if err != nil {
 		return err
 	}
-	r, err := http.NewRequestWithContext(ctx, http.MethodPost, t.base+"/v1/maat/pod", bytes.NewReader(b))
-	if err != nil {
-		return err
+	// Every retry carries the identical nonce/body. No changed operation can be
+	// accepted under that nonce, including across native authority restart.
+	var last error
+	for attempt := 0; attempt < 2; attempt++ {
+		r, e := http.NewRequestWithContext(ctx, http.MethodPost, t.base+"/v1/maat/pod", bytes.NewReader(b))
+		if e != nil {
+			return e
+		}
+		r.Header.Set("Content-Type", "application/json")
+		response, e := t.client.Do(r)
+		if e != nil {
+			last = e
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			continue
+		}
+		data, e := io.ReadAll(io.LimitReader(response.Body, (1<<20)+1))
+		response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			last = fmt.Errorf("maat: native authority refused HTTP %d", response.StatusCode)
+			if response.StatusCode == http.StatusBadGateway || response.StatusCode == http.StatusServiceUnavailable || response.StatusCode == http.StatusGatewayTimeout {
+				continue
+			}
+			return last
+		}
+		if e != nil {
+			last = e
+			continue
+		}
+		if len(data) > 1<<20 {
+			return fmt.Errorf("maat: native response exceeds bound")
+		}
+		if e = json.Unmarshal(data, out); e != nil {
+			last = e
+			continue
+		}
+		return nil
 	}
-	r.Header.Set("Content-Type", "application/json")
-	response, err := t.client.Do(r)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("maat: native authority refused HTTP %d", response.StatusCode)
-	}
-	return json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(out)
+	return last
 }
 func (t *HTTPPodTransport) ReservePod(ctx context.Context, d Delegation, req Reservation, queue bool) (ReserveResult, error) {
 	var out ReserveResult
@@ -158,6 +187,16 @@ func (t *HTTPPodTransport) MutatePod(ctx context.Context, d Delegation, action, 
 	var out Reservation
 	err := t.call(ctx, d, podRequest{Action: action, ID: id, Value: value}, &out)
 	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// MutatePodWithNonce lets an admitted consumer retain its operation identity
+// across its own restart without ever retaining a lease credential here.
+func (t *HTTPPodTransport) MutatePodWithNonce(ctx context.Context, d Delegation, nonce, action, id, value string) (*Reservation, error) {
+	var out Reservation
+	if err := t.call(ctx, d, podRequest{Nonce: nonce, Action: action, ID: id, Value: value}, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

@@ -5,6 +5,7 @@ package main
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -17,9 +18,10 @@ import (
 )
 
 func newMaatPodAuthorityCmd() *cobra.Command {
-	var pod, journal, address, certPath, keyPath, caPath string
+	var pod, journal, address, certPath, keyPath, caPath, grantCache string
 	var identities []string
 	c := &cobra.Command{Use: "authority-serve", Short: "Serve an existing finite native delegation with approved mutual TLS identities"}
+	c.Flags().StringVar(&grantCache, "grant-cache", "", "Immutable signed finite delegation cache path for offline restart")
 	c.Flags().StringVar(&pod, "pod", "", "Existing canonical pod delegation")
 	c.Flags().StringVar(&journal, "journal", "", "Private canonical absolute event journal path")
 	c.Flags().StringVar(&address, "listen", "127.0.0.1:9443", "Explicit native listener address")
@@ -39,13 +41,6 @@ func newMaatPodAuthorityCmd() *cobra.Command {
 		canonical, ok := st.(schedule.AtomicDelegationScheduler)
 		if !ok {
 			return fmt.Errorf("maat: compatible canonical delegation API required")
-		}
-		d, err := canonical.MaatGetDelegation(pod)
-		if err != nil {
-			return err
-		}
-		if d == nil || d.AuthorityMachine != router.MachineID() {
-			return fmt.Errorf("maat: this actual native machine is not the delegated authority")
 		}
 		root, err := router.FindRepoRoot()
 		if err != nil {
@@ -72,6 +67,25 @@ func newMaatPodAuthorityCmd() *cobra.Command {
 		pair, err := tls.LoadX509KeyPair(certPath, keyPath)
 		if err != nil {
 			return fmt.Errorf("maat: approved service identity could not be loaded")
+		}
+		cache, err := schedule.FetchFiniteGrantCache(canonical, pod)
+		if errors.Is(err, schedule.ErrGrantLookupUnavailable) && grantCache != "" {
+			cache, err = schedule.LoadFiniteGrantCache(grantCache, pair)
+		}
+		if err != nil {
+			return err
+		}
+		if grantCache != "" {
+			if err = schedule.PersistFiniteGrantCache(grantCache, cache, pair); err != nil {
+				return err
+			}
+		}
+		d, err := cache.Snapshot()
+		if err != nil {
+			return err
+		}
+		if d.Pod != pod || d.AuthorityMachine != router.MachineID() {
+			return fmt.Errorf("maat: this actual native machine is not delegated")
 		}
 		ca, err := os.ReadFile(caPath)
 		if err != nil {

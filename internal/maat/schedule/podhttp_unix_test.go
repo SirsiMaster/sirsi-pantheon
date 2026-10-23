@@ -10,11 +10,16 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"io"
 	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -72,6 +77,9 @@ func TestPodNativeMutualTLSEndpointOwnLifecycle(t *testing.T) {
 	if e != nil || !out.Granted {
 		t.Fatalf("authenticated grant %+v %v", out, e)
 	}
+	drop := &lostPodReply{base: client.client.Transport}
+	drop.armed.Store(true)
+	client.client.Transport = drop
 	var clock atomic.Int64
 	clock.Store(now.Unix())
 	j.now = func() time.Time { return time.Unix(clock.Load(), 0) }
@@ -84,8 +92,42 @@ func TestPodNativeMutualTLSEndpointOwnLifecycle(t *testing.T) {
 	if _, e = consumer.Release(out.Reservation.ID); e != nil {
 		t.Fatal(e)
 	}
+	if drop.calls.Load() != 6 {
+		t.Fatalf("lost reply did not retry exact operation: %d", drop.calls.Load())
+	}
 	if len(j.Replay(0)) != 6 {
 		t.Fatal("TLS mutations lost sequence events")
+	}
+	cachePath := filepath.Join(t.TempDir(), "finite-cache")
+	if e = PersistFiniteGrantCache(cachePath, cache, pair); e != nil {
+		t.Fatal(e)
+	}
+	restored, e := LoadFiniteGrantCache(cachePath, pair)
+	if e != nil {
+		t.Fatal(e)
+	}
+	snapshot, e := restored.Snapshot()
+	if e != nil || snapshot.Pod != d.Pod {
+		t.Fatal("offline cache restart failed", e)
+	}
+	content, e := os.ReadFile(cachePath)
+	if e != nil {
+		t.Fatal(e)
+	}
+	var envelope signedPodCache
+	if e = json.Unmarshal(content, &envelope); e != nil {
+		t.Fatal(e)
+	}
+	envelope.Grant = strings.Replace(envelope.Grant, d.NotAfter, now.Add(12*time.Hour).Format(time.RFC3339), 1)
+	content, e = json.Marshal(envelope)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = os.WriteFile(cachePath, content, 0600); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = LoadFiniteGrantCache(cachePath, pair); e == nil {
+		t.Fatal("modified signed expiry accepted")
 	}
 	req.ID = "foreign"
 	req.Holder = "foreign"
@@ -95,4 +137,24 @@ func TestPodNativeMutualTLSEndpointOwnLifecycle(t *testing.T) {
 	if _, e = NewHTTPPodTransport(srv.URL, &tls.Config{RootCAs: pool}); e == nil {
 		t.Fatal("anonymous client accepted")
 	}
+}
+
+type lostPodReply struct {
+	base  http.RoundTripper
+	armed atomic.Bool
+	calls atomic.Int64
+}
+
+func (d *lostPodReply) RoundTrip(r *http.Request) (*http.Response, error) {
+	d.calls.Add(1)
+	response, e := d.base.RoundTrip(r)
+	if e == nil && d.armed.Swap(false) {
+		_, copyErr := io.Copy(io.Discard, response.Body)
+		response.Body.Close()
+		if copyErr != nil {
+			return nil, copyErr
+		}
+		return nil, errors.New("fixture lost reply after actual durable commit")
+	}
+	return response, e
 }

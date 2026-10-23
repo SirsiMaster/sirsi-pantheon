@@ -145,3 +145,51 @@ func TestMaatDelegationLegacyUndelegatedCompatibility(t *testing.T) {
 		t.Fatal("generic authority overwrite accepted")
 	}
 }
+
+func TestMaatReplayInterleavedCanonicalExpiryAndLostAck(t *testing.T) {
+	s := openBackendStore(t, filepath.Join(t.TempDir(), "interleave.db"))
+	defer s.Close()
+	d, err := s.MaatDelegation("delegate", delegationReq(s))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := s.clock()
+	req := maatRequest(s, "offline-progress", "studio", "lane")
+	req.Start = d.IssuedAt
+	req.Created = now.Format(time.RFC3339)
+	req.HeartbeatAt = req.Created
+	req.Authority = "pod:" + d.Pod
+	req.Epoch = d.Epoch
+	req.Seq = 1
+	req.Share = schedule.ShareFull
+	req.Status = schedule.StatusActive
+	req.EstEnd = now.Add(20 * time.Minute).Format(time.RFC3339)
+	if _, err = s.MaatReconcile("authority-host", d.Pod, d.Epoch, []schedule.Reservation{req}); err != nil {
+		t.Fatal(err)
+	}
+	s.now = func() time.Time { return now.Add(6 * time.Minute) }
+	if _, err = s.MaatReserve(maatRequest(s, "ordinary", "m1", "other"), false); err != nil {
+		t.Fatal(err)
+	}
+	events := []schedule.Reservation{}
+	for i := 1; i <= 4; i++ {
+		event := req
+		event.Seq = int64(i + 1)
+		event.HeartbeatAt = now.Add(time.Duration(i) * 90 * time.Second).Format(time.RFC3339)
+		events = append(events, event)
+	}
+	release := events[len(events)-1]
+	release.Seq++
+	release.Status = schedule.StatusReleased
+	events = append(events, release)
+	for i := 0; i < 2; i++ {
+		ack, e := s.MaatReconcile("authority-host", d.Pod, d.Epoch, events)
+		if e != nil || ack != 6 {
+			t.Fatalf("interleaved/lost-ack replay%d ack%d: %v", i, ack, e)
+		}
+	}
+	rows, e := s.MaatRead("status", "studio")
+	if e != nil || len(rows) != 1 || rows[0].Status != schedule.StatusReleased {
+		t.Fatalf("terminal progress lost %+v %v", rows, e)
+	}
+}

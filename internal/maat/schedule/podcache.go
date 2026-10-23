@@ -2,6 +2,7 @@ package schedule
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -11,13 +12,15 @@ import (
 // restart without authenticated canonical access still fails closed.
 type FiniteGrantCache struct{ encoded string }
 
+var ErrGrantLookupUnavailable = errors.New("maat: canonical grant lookup unavailable")
+
 func FetchFiniteGrantCache(source AtomicDelegationScheduler, pod string) (*FiniteGrantCache, error) {
 	if source == nil {
 		return nil, fmt.Errorf("maat: authenticated canonical grant source required")
 	}
 	d, err := source.MaatGetDelegation(pod)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", ErrGrantLookupUnavailable, err)
 	}
 	if d == nil || d.Pod != pod || d.Epoch < 1 {
 		return nil, fmt.Errorf("maat: exact canonical delegation required")
@@ -29,7 +32,9 @@ func FetchFiniteGrantCache(source AtomicDelegationScheduler, pod string) (*Finit
 	if d.expired(time.Now()) || time.Now().Before(issued) {
 		return nil, fmt.Errorf("maat: finite delegation not active")
 	}
-	b, err := json.Marshal(d)
+	copy := *d
+	copy.AckedSeq = 0
+	b, err := json.Marshal(copy)
 	if err != nil {
 		return nil, err
 	}

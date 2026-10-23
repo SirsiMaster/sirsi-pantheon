@@ -317,10 +317,19 @@ func (l *Ledger) UpsertReservation(req Reservation) (*Reservation, error) {
 }
 
 func (l *Ledger) upsertAttempt(req Reservation) (*Reservation, error) {
-	raw, exists, reservations, _, err := l.snapshot()
+	raw, exists, err := l.store.GetState(stateKey)
 	if err != nil {
 		return nil, err
 	}
+	var doc struct {
+		Reservations []Reservation `json:"reservations"`
+	}
+	if exists && raw != "" {
+		if err = json.Unmarshal([]byte(raw), &doc); err != nil {
+			return nil, err
+		}
+	}
+	reservations := doc.Reservations
 	replaced := false
 	for i, r := range reservations {
 		if r.ID == req.ID {
@@ -331,8 +340,24 @@ func (l *Ledger) upsertAttempt(req Reservation) (*Reservation, error) {
 			if req.Seq < r.Seq {
 				return nil, fmt.Errorf("maat: stale reservation replay sequence")
 			}
+			continuous := false
+			if req.Status == StatusActive && req.Seq > r.Seq {
+				oldHB, e1 := time.Parse(time.RFC3339, r.HeartbeatAt)
+				newHB, e2 := time.Parse(time.RFC3339, req.HeartbeatAt)
+				continuous = e1 == nil && e2 == nil && !newHB.Before(oldHB) && !newHB.After(oldHB.Add(time.Duration(r.LeaseTTLSec)*time.Second))
+				if !continuous {
+					return nil, fmt.Errorf("maat: heartbeat replay breaks prior finite lease")
+				}
+			}
 			switch r.Status {
-			case StatusReleased, StatusExpired, StatusInvalidated, StatusDone:
+			case StatusExpired:
+				if req.Status == StatusActive && continuous && strings.HasPrefix(r.Authority, "pod:") {
+					break
+				}
+				if req.Status == StatusActive {
+					return nil, fmt.Errorf("maat: expired grant cannot be resurrected")
+				}
+			case StatusReleased, StatusInvalidated, StatusDone:
 				if req.Status != r.Status {
 					return nil, fmt.Errorf("maat: terminal reservation cannot be resurrected by replay")
 				}
@@ -444,7 +469,7 @@ func (l *Ledger) ReconcileAuthority(machine, pod string, epoch int, batch []Rese
 		if req.Seq != d.AckedSeq+1 {
 			return 0, fmt.Errorf("maat: replay sequence gap")
 		}
-		if d.expired(l.now()) && req.Status == StatusActive {
+		if d.expired(l.now()) && req.Status == StatusActive && !req.leaseExpired(l.now()) {
 			return 0, fmt.Errorf("maat: expired/revoked authority cannot replay active grants")
 		}
 		if _, e := l.UpsertReservation(req); e != nil {

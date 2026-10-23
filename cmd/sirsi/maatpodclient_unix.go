@@ -5,6 +5,7 @@ package main
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"os"
 
@@ -26,17 +27,6 @@ func nativePodRoutingLedger(st routerstore.Store) (*schedule.Ledger, error) {
 	if !ok {
 		return nil, fmt.Errorf("maat: compatible canonical scheduler required")
 	}
-	cache, err := schedule.FetchFiniteGrantCache(canonical, pod)
-	if err != nil {
-		return nil, err
-	}
-	d, err := cache.Snapshot()
-	if err != nil {
-		return nil, err
-	}
-	if len(d.AuthorityAddrs) != 1 {
-		return nil, fmt.Errorf("maat: exactly one approved native authority endpoint required")
-	}
 	cert, key, ca := os.Getenv("SIRSI_MAAT_CLIENT_CERT"), os.Getenv("SIRSI_MAAT_CLIENT_KEY"), os.Getenv("SIRSI_MAAT_CLIENT_CA")
 	if cert == "" || key == "" || ca == "" {
 		return nil, fmt.Errorf("maat: approved native mutual TLS identity selectors required")
@@ -44,6 +34,26 @@ func nativePodRoutingLedger(st routerstore.Store) (*schedule.Ledger, error) {
 	pair, err := tls.LoadX509KeyPair(cert, key)
 	if err != nil {
 		return nil, fmt.Errorf("maat: approved client identity unavailable")
+	}
+	cache, err := schedule.FetchFiniteGrantCache(canonical, pod)
+	cachePath := os.Getenv("SIRSI_MAAT_GRANT_CACHE")
+	if errors.Is(err, schedule.ErrGrantLookupUnavailable) && cachePath != "" {
+		cache, err = schedule.LoadFiniteGrantCache(cachePath, pair)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if cachePath != "" {
+		if err = schedule.PersistFiniteGrantCache(cachePath, cache, pair); err != nil {
+			return nil, err
+		}
+	}
+	d, err := cache.Snapshot()
+	if err != nil {
+		return nil, err
+	}
+	if d.Pod != pod || len(d.AuthorityAddrs) != 1 {
+		return nil, fmt.Errorf("maat: exact pod and one approved endpoint required")
 	}
 	b, err := os.ReadFile(ca)
 	if err != nil {
