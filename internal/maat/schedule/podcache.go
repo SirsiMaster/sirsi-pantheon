@@ -1,6 +1,7 @@
 package schedule
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,8 +19,15 @@ func FetchFiniteGrantCache(source AtomicDelegationScheduler, pod string) (*Finit
 	if source == nil {
 		return nil, fmt.Errorf("maat: authenticated canonical grant source required")
 	}
-	d, err := source.MaatGetDelegation(pod)
+	return FetchFiniteGrantCacheContext(context.Background(), source, pod)
+}
+
+func FetchFiniteGrantCacheContext(ctx context.Context, source AtomicDelegationScheduler, pod string) (*FiniteGrantCache, error) {
+	d, err := LookupPodDelegation(ctx, source, pod)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, fmt.Errorf("%w: %w", ErrGrantLookupUnavailable, err)
 	}
 	if d == nil || d.Pod != pod || d.Epoch < 1 {
@@ -53,4 +61,21 @@ func (c *FiniteGrantCache) Snapshot() (*Delegation, error) {
 		return nil, fmt.Errorf("maat: cached delegation expired or revoked")
 	}
 	return &d, nil
+}
+
+// LookupPodDelegation bounds every opted-in cloud lookup before finite cache
+// use. Unsupported clients fail closed; no detached lookup goroutine survives.
+func LookupPodDelegation(ctx context.Context, source AtomicDelegationScheduler, pod string) (*Delegation, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	bounded, ok := source.(interface {
+		MaatGetDelegationContext(context.Context, string) (*Delegation, error)
+	})
+	if !ok {
+		return nil, fmt.Errorf("maat: context-aware delegation client required")
+	}
+	call, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	return bounded.MaatGetDelegationContext(call, pod)
 }

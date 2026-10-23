@@ -53,8 +53,11 @@ func (c PodClient) Reserve(ctx context.Context, req Reservation, queue bool) (Re
 	if c.Canonical == nil {
 		return ReserveResult{}, fmt.Errorf("maat: compatible delegation lookup required")
 	}
-	d, err := c.Canonical.MaatGetDelegation(c.Pod)
+	d, err := LookupPodDelegation(ctx, c.Canonical, c.Pod)
 	if err != nil {
+		if ctx.Err() != nil {
+			return ReserveResult{}, ctx.Err()
+		}
 		cached, e := c.Cache.Snapshot()
 		if e != nil || cached.Pod != c.Pod || !cached.coversResource(req.Resource) {
 			return ReserveResult{}, err
@@ -140,8 +143,11 @@ func (c PodClient) Mutate(ctx context.Context, action, id, value string) (*Reser
 	if c.Canonical == nil {
 		return nil, fmt.Errorf("maat: canonical delegation source required")
 	}
-	d, err := c.Canonical.MaatGetDelegation(c.Pod)
+	d, err := LookupPodDelegation(ctx, c.Canonical, c.Pod)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		d, err = c.Cache.Snapshot()
 	}
 	if err != nil {
@@ -178,12 +184,11 @@ func (c PodClient) ReadOwnStatus(ctx context.Context, resource string) ([]Reserv
 	}
 	var d *Delegation
 	var err error
-	if bounded, ok := c.Canonical.(contextDelegationScheduler); ok {
-		d, err = bounded.MaatGetDelegationContext(ctx, c.Pod)
-	} else {
-		d, err = c.Canonical.MaatGetDelegation(c.Pod)
-	}
+	d, err = LookupPodDelegation(ctx, c.Canonical, c.Pod)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, true, ctx.Err()
+		}
 		d, err = c.Cache.Snapshot()
 		if err != nil {
 			return nil, true, err

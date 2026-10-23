@@ -76,7 +76,7 @@ func newMaatPodAuthorityCmd() *cobra.Command {
 		if err != nil {
 			return fmt.Errorf("maat: approved service identity could not be loaded")
 		}
-		cache, err := schedule.FetchFiniteGrantCache(canonical, pod)
+		cache, err := schedule.FetchFiniteGrantCacheContext(cmd.Context(), canonical, pod)
 		if errors.Is(err, schedule.ErrGrantLookupUnavailable) && grantCache != "" {
 			cache, err = schedule.LoadFiniteGrantCache(grantCache, pair)
 		}

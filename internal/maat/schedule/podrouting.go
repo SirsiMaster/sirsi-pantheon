@@ -15,10 +15,14 @@ type PodRoutingStore struct {
 }
 
 func (s *PodRoutingStore) MaatReserve(r Reservation, q bool) (ReserveResult, error) {
-	return s.Client.Reserve(context.Background(), r, q)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return s.Client.Reserve(ctx, r, q)
 }
 func (s *PodRoutingStore) MaatMutate(action, id, value string) (*Reservation, error) {
-	return s.Client.Mutate(context.Background(), action, id, value)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return s.Client.Mutate(ctx, action, id, value)
 }
 func (s *PodRoutingStore) MaatRead(kind, resource string) ([]Reservation, error) {
 	if kind == "status" {

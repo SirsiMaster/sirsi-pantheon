@@ -89,3 +89,37 @@ func TestFiniteGrantCacheCannotBeMutatedOrExtendedLocally(t *testing.T) {
 		t.Fatal("snapshot alias extended grant")
 	}
 }
+
+func (f *podClientFixture) MaatGetDelegationContext(ctx context.Context, pod string) (*Delegation, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return f.MaatGetDelegation(pod)
+}
+
+type blockedPodLookup struct{ podClientFixture }
+
+func (f *blockedPodLookup) MaatGetDelegationContext(ctx context.Context, _ string) (*Delegation, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+func TestPodLookupCancellationDoesNotUseCache(t *testing.T) {
+	now := time.Now()
+	d := mkDelegation("pod", "native", now.Add(-time.Minute).Format(time.RFC3339), now.Add(time.Hour).Format(time.RFC3339), "studio")
+	d.Epoch = 1
+	f := &podClientFixture{grant: &d}
+	cache, e := FetchFiniteGrantCache(f, d.Pod)
+	if e != nil {
+		t.Fatal(e)
+	}
+	blocked := &blockedPodLookup{}
+	c := PodClient{Pod: d.Pod, Canonical: blocked, Transport: f, Cache: cache}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	if _, e = c.Reserve(ctx, Reservation{Resource: "studio"}, false); !errors.Is(e, context.DeadlineExceeded) || f.transport != 0 {
+		t.Fatal("caller cancellation fell through cache", e)
+	}
+	if _, e = FetchFiniteGrantCacheContext(ctx, blocked, d.Pod); !errors.Is(e, context.DeadlineExceeded) || errors.Is(e, ErrGrantLookupUnavailable) {
+		t.Fatal("startup cancellation permits cache fallback", e)
+	}
+}
