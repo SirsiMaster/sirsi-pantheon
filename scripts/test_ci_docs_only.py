@@ -44,6 +44,10 @@ class DocsOnlyTests(unittest.TestCase):
             git("init", "-q")
             git("config", "user.email", "fixture@example.invalid")
             git("config", "user.name", "Docs classifier fixture")
+            # These are disposable fixture commits, never product commits.
+            # Do not invoke the account's signer or global commit hooks.
+            git("config", "commit.gpgsign", "false")
+            git("config", "core.hooksPath", str(root / "fixture-no-hooks"))
             source = root / "internal/router/x.go"
             source.parent.mkdir(parents=True)
             source.write_text("package router\n")
