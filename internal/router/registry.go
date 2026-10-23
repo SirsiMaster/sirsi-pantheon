@@ -10,10 +10,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
 
 // AgentConfig defines a registered agent that can receive work.
 type AgentConfig struct {
+	// Optional versioned inbox admission; distinct from informer addressing.
+	DeliveryContract *routerstore.RecipientDeliveryContract `json:"delivery_contract,omitempty"`
 	// ID is the unique agent identifier (e.g., "claude-pantheon", "codex-pantheon")
 	ID string `json:"id"`
 

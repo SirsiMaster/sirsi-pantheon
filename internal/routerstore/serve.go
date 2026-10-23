@@ -73,6 +73,8 @@ const nonceWindow = 60 * time.Second
 
 // ServerOptions configure Handler.
 type ServerOptions struct {
+	// RecipientRegistry is the server-owned agents.json path. Optional for old embedders.
+	RecipientRegistry string
 	// Token is the host bearer token every request must present. Empty means
 	// the handler refuses to serve at all.
 	Token string
@@ -582,6 +584,20 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Authoritative inbox admission also covers old clients which lack the
+	// local guard. No send/quota/breaker/item mutation occurs on refusal.
+	if name == "SendGuarded" || name == "Send" {
+		var to string
+		if name == "SendGuarded" {
+			to = in[0].Interface().(SendReq).To
+		} else {
+			to = in[1].String()
+		}
+		if err := ValidateRecipientDelivery(s.opts.RecipientRegistry, to); err != nil {
+			writeErr(w, http.StatusConflict, "ErrRecipientDelivery", err.Error())
+			return
+		}
+	}
 	outs := s.sv.MethodByName(name).Call(in)
 
 	var callErr error

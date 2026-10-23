@@ -1278,3 +1278,70 @@ func TestRouterRespondStoreOnlyItem(t *testing.T) {
 		t.Fatalf("rerun duplicated the response instead of deduping:\n%s", out)
 	}
 }
+
+// Actor-only requesters remain valid senders; responding must refuse delivery
+// before closing their original. This exercises the real CLI, not a mock facade.
+func TestRouterRespondActorOnlyPreservesOriginal(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tmp, ".agents", "idea-router"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeRouterTestAgents(t, tmp, "claude-fw", "claude-home")
+	registry := filepath.Join(tmp, ".agents", "idea-router", "agents.json")
+	data, err := os.ReadFile(registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reg map[string]interface{}
+	if err := json.Unmarshal(data, &reg); err != nil {
+		t.Fatal(err)
+	}
+	reg["agents"].(map[string]interface{})["claude-fw"].(map[string]interface{})["delivery_contract"] = map[string]interface{}{"version": 1, "mode": "actor-only"}
+	data, err = json.Marshal(reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(registry, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	db := filepath.Join(tmp, "router.db")
+	run := func(args ...string) (string, error) {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, testBinary, args...)
+		cmd.Dir = tmp
+		cmd.Env = sirsiTestEnv(tmp, db, "SIRSI_ROUTER_STORE_WAKE=1")
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	out, err := run("router", "send", "--from", "claude-fw", "--to", "claude-home", "--type", "review", "--title", "actor original", "--instructions", "unfinished")
+	if err != nil {
+		t.Fatalf("actor sender refused: %v %s", err, out)
+	}
+	id := ""
+	for _, line := range strings.Split(out, "\n") {
+		if sentID, ok := strings.CutPrefix(strings.TrimSpace(line), "Sent claude-fw → claude-home: "); ok {
+			if id != "" || strings.TrimSpace(sentID) == "" {
+				t.Fatalf("ambiguous or empty Sent line: %s", out)
+			}
+			id = strings.TrimSpace(sentID)
+		}
+	}
+	if id == "" {
+		t.Fatalf("missing exact Sent line: %s", out)
+	}
+	out, err = run("router", "respond", id, "--agent", "claude-home", "--result", "partial")
+	if err == nil || !strings.Contains(out, "actor-only") || !strings.Contains(out, "left OPEN") {
+		t.Fatalf("respond not safely refused: %v %s", err, out)
+	}
+	out, err = run("router", "show", id)
+	if err != nil || !strings.Contains(out, "status: open") {
+		t.Fatalf("original no longer open: %v %s", err, out)
+	}
+	out, err = run("router", "pull", "claude-fw")
+	if err != nil || strings.Contains(out, "RESPONSE:") {
+		t.Fatalf("unreachable reply created: %v %s", err, out)
+	}
+}
