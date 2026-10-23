@@ -510,7 +510,7 @@ func short(rfc string) string {
 }
 
 func init() {
-	for _, c := range []*cobra.Command{maatReserveCmd, maatHeartbeatCmd, maatExtendCmd, maatReleaseCmd, maatInvalidateCmd} {
+	for _, c := range []*cobra.Command{maatReserveCmd, maatHeartbeatCmd, maatExtendCmd, maatReleaseCmd} {
 		c.Flags().StringVar(&maatOperationNonce, "operation-nonce", "", "Stable 32-hex operation identity: reuse only for exact retry; new heartbeat needs a new nonce")
 	}
 

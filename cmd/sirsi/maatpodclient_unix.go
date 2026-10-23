@@ -17,6 +17,9 @@ func nativePodRoutingLedger(st routerstore.Store) (*schedule.Ledger, error) {
 	ordinary := schedule.NewLedger(st)
 	pod := os.Getenv("SIRSI_MAAT_POD")
 	if pod == "" {
+		if maatOperationNonce != "" {
+			return nil, fmt.Errorf("maat: explicit operation nonce requires pod routing")
+		}
 		return ordinary, nil
 	}
 	canonical, ok := st.(schedule.AtomicDelegationScheduler)
