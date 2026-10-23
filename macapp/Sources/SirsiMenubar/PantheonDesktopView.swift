@@ -1,167 +1,184 @@
 import SwiftUI
 
-// PantheonDesktopView is the product's primary macOS workspace. The menu-bar
-// Eye opens this window, but does not replace it. Every first-class operational
-// surface is directly reachable here; the existing Nav stack is retained only
-// for contextual drill-downs inside a surface.
 struct PantheonDesktopView: View {
     @ObservedObject var engine: SirsiEngine
-    @State private var section: PantheonWorkspace = .command
-    @StateObject private var nav = Nav()
+    @Environment(\.snapshotMode) private var snapshotMode
+    @StateObject private var session = PantheonWorkspaceSession()
+    @State private var search = ""
+    @FocusState private var searchFocused: Bool
+    private let previewWorkspace: PantheonWorkspace?
+    private let previewContent: AnyView?
+
+    init(engine: SirsiEngine, previewWorkspace: PantheonWorkspace? = nil, previewContent: AnyView? = nil) {
+        self.engine = engine
+        self.previewWorkspace = previewWorkspace
+        self.previewContent = previewContent
+    }
+
+    private var section: PantheonWorkspace {
+        previewWorkspace ?? session.section
+    }
+
+    private var nav: Nav { session.navigation(for: section) }
 
     var body: some View {
-        NavigationSplitView {
-            VStack(spacing: 0) {
-                sidebarIdentity
-                Divider()
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 18) {
-                        sidebarSection("Operate", [.command, .maat, .ra, .activity])
-                        sidebarSection("Build", [.stackLab, .apollo, .release, .threads])
-                        sidebarSection("Protect", [.horus, .anubis, .osiris])
-                        sidebarSection("Explore", [.fleet, .library])
-                    }
-                    .padding(12)
-                }
-            }
-            .background(PantheonTheme.sidebar)
-            .frame(minWidth: 218)
-        } detail: {
+        HStack(spacing: 0) {
+            sidebar.frame(width: 218)
+            Rectangle().fill(PantheonTheme.separator).frame(width: 1)
             VStack(spacing: 0) {
                 workspaceHeader
-                Divider()
-                if let top = nav.stack.last {
-                    top.view
-                } else {
-                    workspaceView(section)
+                Rectangle().fill(PantheonTheme.separator).frame(height: 1)
+                Group {
+                    if snapshotMode, let previewContent { previewContent }
+                    else if let top = nav.stack.last { top.view.id(top.id) }
+                    else { workspaceView(section) }
                 }
+                .id(section)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .environmentObject(nav)
+                .environment(\.openPantheonWorkspace, select)
+                .environment(\.openPantheonOwnerActions, {
+                    session.open(.maat, detail: OwnerActionsListView(engine: engine))
+                })
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(PantheonTheme.canvas)
-            .environmentObject(nav)
         }
-        .navigationSplitViewStyle(.balanced)
+        .foregroundStyle(PantheonTheme.text)
         .preferredColorScheme(.dark)
-        .tint(emerald)
-        .onChange(of: section) { _ in nav.popToRoot() }
+        .tint(gold)
+        .background(PantheonTheme.canvas)
         .onChange(of: engine.pendingOwnerItemID) { id in
             guard let id else { return }
-            section = .command
-            nav.popToRoot()
-            nav.push(OwnerActionView(engine: engine, itemID: id))
+            session.open(.maat, detail: OwnerActionView(engine: engine, itemID: id))
             engine.pendingOwnerItemID = nil
         }
         .task {
+            guard !snapshotMode else { return }
             engine.loadProjectRoot()
             engine.loadActivity()
             engine.loadRunReport()
-            await engine.diagnose()
-            await engine.loadRouterBoard()
         }
-        .dynamicTypeSize(.large)
+    }
+
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 11) {
+                PantheonBrandMark(size: 36)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Pantheon").sirsiFont(18, weight: .semibold)
+                    Text("Sirsi workspace").sirsiFont(11).foregroundStyle(PantheonTheme.mutedText)
+                }
+            }
+            .padding(.horizontal, 18).padding(.top, 23).padding(.bottom, 23)
+            HStack(spacing: 7) {
+                Image(systemName: "magnifyingglass").foregroundStyle(PantheonTheme.mutedText)
+                if snapshotMode {
+                    Text("Find a workspace").foregroundStyle(PantheonTheme.mutedText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    TextField("Find a workspace", text: $search)
+                    .textFieldStyle(.plain).focused($searchFocused)
+                    .onSubmit { if let first = PantheonWorkspace.matching(search).first { select(first) } }
+                    .accessibilityLabel("Find a Pantheon workspace")
+                }
+                if !search.isEmpty {
+                    Button { search = "" } label: { Image(systemName: "xmark.circle.fill") }
+                        .buttonStyle(.plain).accessibilityLabel("Clear workspace search")
+                }
+            }
+            .sirsiFont(12).padding(9)
+            .background(PantheonTheme.panelRaised, in: RoundedRectangle(cornerRadius: 7))
+            .padding(.horizontal, 12).padding(.bottom, 18)
+            MaybeScroll {
+                VStack(alignment: .leading, spacing: 20) {
+                    sidebarSection("Workspace", [.command, .activity])
+                    sidebarSection("Intelligence & fabric", [.apollo, .mercury, .ra, .maat])
+                    sidebarSection("Build & release", [.stackLab, .release])
+                    sidebarSection("This Mac", [.horus, .anubis, .osiris, .threads, .fleet, .library])
+                    if PantheonWorkspace.matching(search).isEmpty {
+                        Text("No matching workspace. Clear the search to see all tools.")
+                            .sirsiFont(12).foregroundStyle(PantheonTheme.mutedText).padding(8)
+                    }
+                }
+                .padding(.horizontal, 10).padding(.bottom, 16)
+            }
+            Spacer(minLength: 8)
+            Rectangle().fill(PantheonTheme.separator).frame(height: 1)
+            VStack(alignment: .leading, spacing: 5) {
+                Label(engine.projectName ?? "This Mac", systemImage: "folder")
+                    .sirsiFont(12, weight: .medium).lineLimit(1)
+                    .help(engine.projectRoot ?? "Select a project inside a workspace")
+                Text("Local control · shared fabric")
+                    .sirsiFont(11).foregroundStyle(PantheonTheme.mutedText)
+            }.padding(18)
+        }
+        .background(PantheonTheme.sidebar)
+        .background {
+            Button { searchFocused = true } label: { EmptyView() }
+                .keyboardShortcut("k", modifiers: .command).hidden()
+        }
     }
 
     private var workspaceHeader: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 14) {
-            Circle()
-                .fill(emerald)
-                .frame(width: 8, height: 8)
-                .accessibilityLabel("Pantheon is live")
+        HStack(spacing: 12) {
+            Image(systemName: section.symbol).sirsiFont(17, weight: .medium)
+                .foregroundStyle(gold).frame(width: 25)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(section.title).sirsiFont(19, weight: .semibold)
+                Text(section.detail).sirsiFont(12).foregroundStyle(PantheonTheme.mutedText).lineLimit(2)
+            }
+            Spacer(minLength: 12)
+            if !nav.atRoot {
+                Button { nav.popToRoot() } label: {
+                    Label("\(section.title) home", systemImage: "arrow.uturn.backward")
+                }.buttonStyle(.borderless).sirsiFont(12)
+            }
+            // Refresh belongs to the active workflow, whose inputs it retains.
+            // Replacing the root here would destroy edited plans and case context.
+        }.padding(.horizontal, 26).padding(.vertical, 20)
+    }
+
+    @ViewBuilder private func sidebarSection(_ title: String, _ destinations: [PantheonWorkspace]) -> some View {
+        let visible = destinations.filter { $0.matches(search) }
+        if !visible.isEmpty {
             VStack(alignment: .leading, spacing: 3) {
-                Text(section.title)
-                    .sirsiFont(.title2, weight: .bold)
-                Text(section.detail)
-                    .sirsiFont(.subheadline)
-                    .foregroundStyle(PantheonTheme.mutedText)
-                    .lineLimit(1)
-            }
-            Spacer()
-            Button {
-                Task { await engine.rescan() }
-            } label: {
-                Label(engine.busy ? "Refreshing" : "Refresh", systemImage: "arrow.clockwise")
-            }
-            .disabled(engine.busy)
-            .buttonStyle(.bordered)
-        }
-        .padding(.horizontal, 26)
-        .padding(.vertical, 18)
-        .background(PantheonTheme.canvas)
-    }
-
-    private var sidebarIdentity: some View {
-        HStack(spacing: 11) {
-            PantheonBrandMark(size: 38)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("SIRSI")
-                    .sirsiFont(.caption, weight: .bold)
-                    .tracking(1.2)
-                    .foregroundStyle(gold)
-                Text("Pantheon")
-                    .sirsiFont(.headline, weight: .bold)
-                    .foregroundStyle(Color.primary)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 17)
-        .padding(.vertical, 16)
-    }
-
-    private func sidebarSection(_ title: String, _ workspaces: [PantheonWorkspace]) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(title.uppercased())
-                .sirsiFont(10, weight: .bold)
-                .tracking(0.9)
-                .foregroundStyle(PantheonTheme.mutedText.opacity(0.78))
-                .padding(.horizontal, 8)
-            ForEach(workspaces) { workspace in
-                workspaceButton(workspace)
+                Text(title).sirsiFont(11, weight: .medium).foregroundStyle(PantheonTheme.mutedText)
+                    .padding(.horizontal, 10).padding(.bottom, 5)
+                ForEach(visible) { workspace in
+                    Button { select(workspace) } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: workspace.symbol).frame(width: 20)
+                                .foregroundStyle(section == workspace ? gold : PantheonTheme.mutedText)
+                            Text(workspace.title).fontWeight(section == workspace ? .semibold : .regular)
+                            Spacer(minLength: 0)
+                            if section == workspace { Circle().fill(gold).frame(width: 4, height: 4) }
+                        }
+                        .sirsiFont(13).padding(.horizontal, 10).padding(.vertical, 9)
+                        .contentShape(Rectangle())
+                        .background(section == workspace ? PantheonTheme.panelRaised : .clear,
+                                    in: RoundedRectangle(cornerRadius: 7))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Open \(workspace.title): \(workspace.detail)")
+                    .accessibilityAddTraits(section == workspace ? .isSelected : [])
+                }
             }
         }
     }
 
-    private func workspaceButton(_ workspace: PantheonWorkspace) -> some View {
-        let selected = workspace == section
-        return Button {
-            section = workspace
-            nav.popToRoot()
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: workspace.symbol)
-                    .sirsiFont(14, weight: .semibold)
-                    .frame(width: 20)
-                    .foregroundStyle(selected ? emerald : PantheonTheme.mutedText)
-                Text(workspace.title)
-                    .sirsiFont(13, weight: selected ? .semibold : .regular)
-                    .foregroundStyle(selected ? Color.white : PantheonTheme.mutedText)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(selected ? Color.white.opacity(0.06) : Color.clear)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(selected ? PantheonTheme.gold.opacity(0.66) : Color.clear, lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-        .contentShape(Rectangle())
-        .accessibilityLabel("Open \(workspace.title): \(workspace.detail)")
-        .accessibilityAddTraits(selected ? .isSelected : [])
+    private func select(_ workspace: PantheonWorkspace) {
+        session.select(workspace)
     }
 
     @ViewBuilder private func workspaceView(_ workspace: PantheonWorkspace) -> some View {
         switch workspace {
         case .command: PantheonControlCenterView(engine: engine)
+        case .apollo: ApolloRunPlannerView(engine: engine)
+        case .mercury: MercuryWorkspaceView(engine: engine)
         case .maat: MaatWorkspaceView(engine: engine)
         case .ra: RaFabricView(engine: engine)
         case .activity: ActivityView(engine: engine)
         case .stackLab: StackLabView(engine: engine)
-        case .apollo: ApolloRunPlannerView(engine: engine)
         case .release: PantheonReleaseWorkspaceView(engine: engine)
         case .threads: ThreadsView(engine: engine)
         case .horus: HorusView(engine: engine)
@@ -173,19 +190,18 @@ struct PantheonDesktopView: View {
     }
 }
 
-private enum PantheonWorkspace: String, CaseIterable, Identifiable {
-    case command, maat, ra, activity, stackLab, apollo, release, threads, horus, anubis, osiris, fleet, library
-
+enum PantheonWorkspace: String, CaseIterable, Identifiable {
+    case command, apollo, mercury, ra, maat, activity, stackLab, release, threads, horus, anubis, osiris, fleet, library
     var id: String { rawValue }
-
     var title: String {
         switch self {
-        case .command: return "Command Center"
-        case .maat: return "Ma’at"
+        case .command: return "Overview"
+        case .apollo: return "Apollo"
+        case .mercury: return "Mercury"
         case .ra: return "Ra Fabric"
+        case .maat: return "Ma’at"
         case .activity: return "Activity"
         case .stackLab: return "Stack Lab"
-        case .apollo: return "Apollo"
         case .release: return "Release"
         case .threads: return "Work"
         case .horus: return "Horus"
@@ -195,43 +211,63 @@ private enum PantheonWorkspace: String, CaseIterable, Identifiable {
         case .library: return "All Tools"
         }
     }
-
     var detail: String {
         switch self {
-        // Command Center is the place an operator begins whether the Mac needs
-        // recovery or is already healthy. Do not frame every opening as a
-        // problem: the live state and its next in-app action say which it is.
-        case .command: return "Live local state, guided control, and your next action"
-        case .maat: return "Evidence, decisions, and guided resolution"
-        case .ra: return "Fabric state, claims, handbacks, and messages"
-        case .activity: return "Recent work and retained operational evidence"
-        case .stackLab: return "Recipes, components, and release readiness"
-        case .apollo: return "Inference routes, resource envelopes, and telemetry"
-        case .release: return "Prepare a signed Pantheon delivery from this app"
-        case .threads: return "Active work across Pantheon"
-        case .horus: return "System health and capacity"
-        case .anubis: return "Guided storage recovery and cleanup"
-        case .osiris: return "Risk, checkpoints, and recovery posture"
-        case .fleet: return "Connected Pantheon and Horus instances"
-        case .library: return "Every Pantheon surface in one place"
+        case .command: return "Your Mac, intelligence, and connected work"
+        case .apollo: return "Choose a model and machine, plan a run, inspect telemetry"
+        case .mercury: return "Inspect transport, machines, and the connections between them"
+        case .ra: return "Coordinate workers, messages, claims, and handbacks"
+        case .maat: return "Understand findings, resolve issues, and retain the evidence"
+        case .activity: return "Completed actions and their retained evidence"
+        case .stackLab: return "Recipes, components, candidates, and releases"
+        case .release: return "Prepare and inspect Pantheon delivery"
+        case .threads: return "Active sessions and work across Pantheon"
+        case .horus: return "Inspect this Mac’s health and capacity"
+        case .anubis: return "Review and recover storage with scoped cleanup"
+        case .osiris: return "Risk, checkpoints, and recovery options"
+        case .fleet: return "Connected machines and their current state"
+        case .library: return "Find every Pantheon tool and workflow"
         }
     }
-
     var symbol: String {
         switch self {
-        case .command: return "rectangle.3.group.fill"
-        case .maat: return "checkmark.seal.fill"
+        case .command: return "rectangle.3.group"
+        case .apollo: return "cpu"
+        case .mercury: return "cable.connector.horizontal"
         case .ra: return "point.3.connected.trianglepath.dotted"
+        case .maat: return "scalemass"
         case .activity: return "clock.arrow.circlepath"
         case .stackLab: return "square.3.layers.3d"
-        case .apollo: return "cpu"
-        case .release: return "shippingbox.fill"
-        case .threads: return "circle.dotted"
+        case .release: return "shippingbox"
+        case .threads: return "person.2"
         case .horus: return "waveform.path.ecg"
-        case .anubis: return "trash"
+        case .anubis: return "externaldrive"
         case .osiris: return "shield"
-        case .fleet: return "rectangle.3.group"
+        case .fleet: return "desktopcomputer"
         case .library: return "square.grid.2x2"
         }
+    }
+    func matches(_ search: String) -> Bool {
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        return query.isEmpty || (title + " " + detail).localizedStandardContains(query)
+    }
+    static func matching(_ search: String) -> [PantheonWorkspace] { allCases.filter { $0.matches(search) } }
+}
+
+private struct OpenPantheonWorkspaceKey: EnvironmentKey {
+    static let defaultValue: ((PantheonWorkspace) -> Void)? = nil
+}
+
+private struct OpenPantheonOwnerActionsKey: EnvironmentKey {
+    static let defaultValue: (() -> Void)? = nil
+}
+extension EnvironmentValues {
+    var openPantheonOwnerActions: (() -> Void)? {
+        get { self[OpenPantheonOwnerActionsKey.self] }
+        set { self[OpenPantheonOwnerActionsKey.self] = newValue }
+    }
+    var openPantheonWorkspace: ((PantheonWorkspace) -> Void)? {
+        get { self[OpenPantheonWorkspaceKey.self] }
+        set { self[OpenPantheonWorkspaceKey.self] = newValue }
     }
 }

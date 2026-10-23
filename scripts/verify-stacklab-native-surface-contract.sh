@@ -22,7 +22,7 @@ for needle in \
   'Choose the Pantheon project' \
   'No registry result has been inferred yet.' \
   'No authority result was inferred.' \
-  'not treated as clean' \
+  'will not treat an unavailable record as a clean wing' \
   'Review evidence in Ma'\''at' \
   'Release-contract evidence' \
   'Open release-contract preflight' \
@@ -73,11 +73,11 @@ done
 }
 
 for needle in \
-  'title: "Stack Lab"' \
-  'title: "Apollo"' \
+  'navigate(.stackLab)' \
+  'workspaceRow(.apollo' \
   'StackLabView(engine: engine)' \
   'ApolloRunPlannerView(engine: engine)' \
-  'Choose a resident model, machine, and resource envelope'; do
+  'Select a resident model, set cores and memory'; do
   /usr/bin/grep -Fq "$needle" "$library" || {
     echo "Stack Lab and Apollo are not directly reachable from the control center: $needle" >&2
     exit 1
