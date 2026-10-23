@@ -4,7 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io/fs"
+	"os"
 	"strings"
 	"testing"
 )
@@ -27,21 +27,25 @@ func fenceSilentThreadSelectors(file *ast.File) []*ast.SelectorExpr {
 
 func TestRouterProductionRejectsFenceSilentThreadUpserts(t *testing.T) {
 	fset := token.NewFileSet()
-	// Go tests execute in their package directory. ParseDir includes files for
-	// every platform regardless of build tags; fixture/test seeding is excluded.
-	packages, err := parser.ParseDir(fset, ".", func(info fs.FileInfo) bool {
-		return !strings.HasSuffix(info.Name(), "_test.go")
-	}, parser.AllErrors)
+	// Inspect every platform's production source, deliberately independent of
+	// build tags. ReadDir supplies deterministic names; fixture/test seeding is
+	// excluded. Parse individual files instead of deprecated package discovery.
+	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
 	}
 	productionFiles := 0
-	for _, pkg := range packages {
-		for _, file := range pkg.Files {
-			productionFiles++
-			for _, selector := range fenceSilentThreadSelectors(file) {
-				t.Errorf("%s: router production must not use fence-silent .%s; use the lifecycle CAS and check its result", fset.Position(selector.Pos()), selector.Sel.Name)
-			}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, entry.Name(), nil, parser.AllErrors)
+		if err != nil {
+			t.Fatal(err)
+		}
+		productionFiles++
+		for _, selector := range fenceSilentThreadSelectors(file) {
+			t.Errorf("%s: router production must not use fence-silent .%s; use the lifecycle CAS and check its result", fset.Position(selector.Pos()), selector.Sel.Name)
 		}
 	}
 	if productionFiles == 0 {
