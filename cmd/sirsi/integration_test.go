@@ -1320,11 +1320,18 @@ func TestRouterRespondActorOnlyPreservesOriginal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("actor sender refused: %v %s", err, out)
 	}
-	pos := strings.LastIndex(out, ": ")
-	if pos < 0 {
-		t.Fatalf("missing ID: %s", out)
+	id := ""
+	for _, line := range strings.Split(out, "\n") {
+		if sentID, ok := strings.CutPrefix(strings.TrimSpace(line), "Sent claude-fw → claude-home: "); ok {
+			if id != "" || strings.TrimSpace(sentID) == "" {
+				t.Fatalf("ambiguous or empty Sent line: %s", out)
+			}
+			id = strings.TrimSpace(sentID)
+		}
 	}
-	id := strings.TrimSpace(out[pos+2:])
+	if id == "" {
+		t.Fatalf("missing exact Sent line: %s", out)
+	}
 	out, err = run("router", "respond", id, "--agent", "claude-home", "--result", "partial")
 	if err == nil || !strings.Contains(out, "actor-only") || !strings.Contains(out, "left OPEN") {
 		t.Fatalf("respond not safely refused: %v %s", err, out)
