@@ -37,6 +37,7 @@ var laneAPI = map[string]laneRule{
 	"Heartbeat":            {agents: []int{0}, item: noItem},
 	"ThreadBinding":        {item: noItem},
 	"ListThreads":          {item: noItem},
+	"GetThreadRecord":      {item: noItem}, // actual returned row is scope-checked before serialization
 	"ListAgents":           {item: noItem},
 	"GetAgent":             {item: noItem},
 	"OperationalAgents":    {item: noItem},

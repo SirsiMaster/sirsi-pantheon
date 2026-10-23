@@ -591,6 +591,14 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 			results[0] = reflect.ValueOf(rep)
 		}
 	}
+	// Bind authorization to this exact returned record, never a second lookup.
+	if tokenScope != nil && name == "GetThreadRecord" {
+		record, ok := results[0].Interface().(ThreadRecord)
+		if !ok || !tokenScope[record.Agent] {
+			writeErr(w, http.StatusForbidden, "ErrLaneScope", "routerstore: lane scope: thread payload is outside listed agents")
+			return
+		}
+	}
 	// A scoped token's ListThreads is filtered to its own agents: the lane API lists ListThreads as
 	// readable (liveness is needed to see where a send will land), but the unfiltered row carries each
 	// thread's full continuation payload (ResumePrompt, OwnedOpenItems, …), not just liveness (SSA PR
