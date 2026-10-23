@@ -382,7 +382,9 @@ func (l *Ledger) ReserveAsAuthority(req Reservation) (ReserveResult, error) {
 		return ReserveResult{}, fmt.Errorf("maat: fenced: epoch %d superseded (current %d)", req.Epoch, d.Epoch)
 	}
 	req.Status = StatusActive
-	req.Share = ShareFull
+	if req.Share == "" {
+		req.Share = ShareFull
+	}
 	out, err := l.UpsertReservation(req)
 	if err != nil {
 		return ReserveResult{}, err
@@ -416,6 +418,9 @@ func (l *Ledger) ReconcileAuthority(machine, pod string, epoch int, batch []Rese
 		return 0, fmt.Errorf("maat: replay authority/epoch mismatch")
 	}
 	for _, req := range batch {
+		if err := validateAuthorityReplay(req, d); err != nil {
+			return 0, err
+		}
 		if req.Authority != "pod:"+pod || req.Epoch != epoch || req.Seq < 1 || !d.coversResource(req.Resource) {
 			return 0, fmt.Errorf("maat: invalid replay ownership/sequence")
 		}
@@ -452,6 +457,35 @@ func (l *Ledger) ReconcileAuthority(machine, pod string, epoch int, batch []Rese
 		return 0, err
 	}
 	return d.AckedSeq, nil
+}
+
+// Closed validation applies even to duplicate replay, before trusting row data.
+// Authority identity is necessary but never permission to mint unbounded rows.
+func validateAuthorityReplay(r Reservation, d Delegation) error {
+	if err := validate(r); err != nil {
+		return err
+	}
+	if r.ID == "" || r.Seq < 1 || r.Authority != "pod:"+d.Pod || r.Epoch != d.Epoch || !d.coversResource(r.Resource) {
+		return fmt.Errorf("maat: invalid replay fence")
+	}
+	switch r.Status {
+	case StatusActive, StatusReleased, StatusExpired, StatusInvalidated, StatusDone:
+	default:
+		return fmt.Errorf("maat: replay is not a granted lifecycle event")
+	}
+	if r.Share != ShareFull && r.Share != ShareFloor {
+		return fmt.Errorf("maat: invalid replay policy share")
+	}
+	issued, _ := time.Parse(time.RFC3339, d.IssuedAt)
+	limit, _ := time.Parse(time.RFC3339, d.NotAfter)
+	start, e1 := time.Parse(time.RFC3339, r.Start)
+	end, e2 := time.Parse(time.RFC3339, r.EstEnd)
+	created, e3 := time.Parse(time.RFC3339, r.Created)
+	hb, e4 := time.Parse(time.RFC3339, r.HeartbeatAt)
+	if e1 != nil || e2 != nil || e3 != nil || e4 != nil || start.Before(issued) || !end.After(start) || end.After(limit) || created.Before(issued) || created.After(hb) || hb.After(limit) || r.LeaseTTLSec < 1 || r.LeaseTTLSec > int(maxDelegationTTL/time.Second) || hb.Add(time.Duration(r.LeaseTTLSec)*time.Second).After(limit) {
+		return fmt.Errorf("maat: replay exceeds finite delegation window/lease")
+	}
+	return nil
 }
 
 // CheckLegacyReservationWrite preserves the compatible CAS path for resources

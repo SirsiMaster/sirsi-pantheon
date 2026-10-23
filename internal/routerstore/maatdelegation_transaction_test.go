@@ -84,6 +84,8 @@ func TestMaatDelegationReplayBatchRollbackAndIdempotence(t *testing.T) {
 	req.Epoch = d.Epoch
 	req.Seq = 1
 	req.Status = schedule.StatusActive
+	req.Share = schedule.ShareFull
+	req.Start = d.IssuedAt
 	bad := req
 	bad.ID = "gap"
 	bad.Seq = 3

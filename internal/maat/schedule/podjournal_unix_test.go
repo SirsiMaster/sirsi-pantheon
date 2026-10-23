@@ -79,3 +79,61 @@ func TestPodJournalRefusesTornTailAndSymlink(t *testing.T) {
 		t.Fatal("symlink accepted")
 	}
 }
+
+func TestPodJournalProgressPastTTLRetainsEveryMutation(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	d := mkDelegation("studio-m5", "native-studio", now.Add(-time.Minute).Format(time.RFC3339), now.Add(time.Hour).Format(time.RFC3339), "studio")
+	d.Epoch = 1
+	p := filepath.Join(t.TempDir(), "events")
+	j, e := OpenPodJournal(p, "native-studio", d)
+	if e != nil {
+		t.Fatal(e)
+	}
+	j.now = func() time.Time { return now }
+	r := mkReq("studio", "ra", now.Format(time.RFC3339), now.Add(20*time.Minute).Format(time.RFC3339), RegimeQuiet)
+	r.LeaseTTLSec = 120
+	out, e := j.Reserve(r, false)
+	if e != nil {
+		t.Fatal(e)
+	}
+	id := out.Reservation.ID
+	for i := 0; i < 4; i++ {
+		now = now.Add(90 * time.Second)
+		if _, e = j.Mutate("foreign", "heartbeat", id, ""); e == nil {
+			t.Fatal("foreign heartbeat accepted")
+		}
+		if _, e = j.Mutate("ra", "heartbeat", id, ""); e != nil {
+			t.Fatal("healthy progress expired", e)
+		}
+	}
+	if _, e = j.Mutate("ra", "extend", id, now.Add(10*time.Minute).Format(time.RFC3339)); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = j.Mutate("ra", "release", id, ""); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = j.Mutate("ra", "heartbeat", id, ""); e == nil {
+		t.Fatal("released reservation resurrected")
+	}
+	events := j.Replay(0)
+	if len(events) != 7 {
+		t.Fatalf("lost interleaved events: %d", len(events))
+	}
+	for i, r := range events {
+		if r.Seq != int64(i+1) {
+			t.Fatal("sequence gap", events)
+		}
+	}
+	if len(j.Replay(4)) != 3 {
+		t.Fatal("partial ack discarded unacked events")
+	}
+	j.Close()
+	j, e = OpenPodJournal(p, "native-studio", d)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer j.Close()
+	if events = j.Replay(0); len(events) != 7 || events[6].Status != StatusReleased {
+		t.Fatal("recovery lost history", events)
+	}
+}

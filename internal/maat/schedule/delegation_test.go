@@ -254,3 +254,29 @@ func TestUpsertReservationRefusesStaleOrResurrectingReplay(t *testing.T) {
 		t.Fatal("exact duplicate should succeed", err)
 	}
 }
+
+func TestAuthorityReplayRejectsUnboundedOrQueuedRows(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	d := mkDelegation("pod", "native", now.Add(-time.Minute).Format(time.RFC3339), now.Add(time.Hour).Format(time.RFC3339), "studio")
+	d.Epoch = 1
+	r := mkReq("studio", "ra", now.Format(time.RFC3339), now.Add(time.Minute).Format(time.RFC3339), RegimeQuiet)
+	r.ID = "grant"
+	r.Authority = "pod:pod"
+	r.Epoch = 1
+	r.Seq = 1
+	r.Status = StatusActive
+	r.Share = ShareFull
+	r.Created = now.Format(time.RFC3339)
+	r.HeartbeatAt = r.Created
+	r.LeaseTTLSec = 120
+	if e := validateAuthorityReplay(r, d); e != nil {
+		t.Fatal(e)
+	}
+	for _, change := range []func(*Reservation){func(v *Reservation) { v.Status = StatusQueued }, func(v *Reservation) { v.EstEnd = now.Add(2 * time.Hour).Format(time.RFC3339) }, func(v *Reservation) { v.LeaseTTLSec = 0 }, func(v *Reservation) { v.Share = "made-up" }, func(v *Reservation) { v.Holder = "" }} {
+		bad := r
+		change(&bad)
+		if e := validateAuthorityReplay(bad, d); e == nil {
+			t.Fatal("invalid authority replay accepted", bad)
+		}
+	}
+}

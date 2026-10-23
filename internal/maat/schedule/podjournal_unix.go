@@ -7,11 +7,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"golang.org/x/sys/unix"
 	"io"
 	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -28,11 +30,13 @@ type PodJournal struct {
 	state  podFrame
 	now    func() time.Time
 	failed bool
+	events []Reservation
 }
 type podFrame struct {
 	Grant Delegation    `json:"grant"`
 	Seq   int64         `json:"seq"`
-	Rows  []Reservation `json:"rows"`
+	Rows  []Reservation `json:"rows,omitempty"`
+	Event *Reservation  `json:"event,omitempty"`
 }
 
 func OpenPodJournal(path, machine string, grant Delegation) (*PodJournal, error) {
@@ -42,7 +46,27 @@ func OpenPodJournal(path, machine string, grant Delegation) (*PodJournal, error)
 	if machine != grant.AuthorityMachine || grant.Epoch < 1 || grant.expired(time.Now()) {
 		return nil, fmt.Errorf("maat: invalid native delegation")
 	}
-	fd, err := syscall.Open(path, syscall.O_RDWR|syscall.O_CREAT|syscall.O_NOFOLLOW, 0600)
+	// Retain every parent descriptor; refuse substituted ancestors as well as leaf symlinks.
+	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+		return nil, fmt.Errorf("maat: canonical absolute journal path required")
+	}
+	parent, err := unix.Open("/", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, err
+	}
+	for _, component := range strings.Split(strings.TrimPrefix(filepath.Dir(path), "/"), "/") {
+		if component == "" {
+			continue
+		}
+		next, e := unix.Openat(parent, component, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		unix.Close(parent)
+		if e != nil {
+			return nil, e
+		}
+		parent = next
+	}
+	defer unix.Close(parent)
+	fd, err := unix.Openat(parent, filepath.Base(path), unix.O_RDWR|unix.O_CREAT|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0600)
 	if err != nil {
 		return nil, err
 	}
@@ -58,14 +82,17 @@ func OpenPodJournal(path, machine string, grant Delegation) (*PodJournal, error)
 	if !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 {
 		return fail(fmt.Errorf("maat: journal must be a private regular file"))
 	}
+	encodedGrant, _ := json.Marshal(grant)
+	json.Unmarshal(encodedGrant, &grant)
 	j := &PodJournal{f: f, grant: grant, now: time.Now, state: podFrame{Grant: grant}}
-	r := bufio.NewReader(f)
-	for {
-		line, e := r.ReadBytes('\n')
+	if info.Size() > 64<<20 {
+		return fail(fmt.Errorf("maat: journal exceeds recovery bound"))
+	}
+	r := bufio.NewScanner(f)
+	r.Buffer(make([]byte, 4096), 1<<20)
+	for r.Scan() {
+		line := r.Bytes()
 		if len(line) > 0 {
-			if e != nil {
-				return fail(fmt.Errorf("maat: incomplete journal tail; native recovery required"))
-			}
 			var frame podFrame
 			if err = json.Unmarshal(line, &frame); err != nil {
 				return fail(err)
@@ -73,13 +100,32 @@ func OpenPodJournal(path, machine string, grant Delegation) (*PodJournal, error)
 			if !reflect.DeepEqual(frame.Grant, grant) || frame.Seq != j.state.Seq+1 {
 				return fail(fmt.Errorf("maat: journal epoch/sequence mismatch"))
 			}
-			j.state = frame
+			event := frame.Event
+			if event == nil {
+				for i := range frame.Rows {
+					if frame.Rows[i].Seq == frame.Seq {
+						copy := frame.Rows[i]
+						event = &copy
+						break
+					}
+				}
+			}
+			if event == nil || event.Seq != frame.Seq || event.Authority != "pod:"+grant.Pod || event.Epoch != grant.Epoch {
+				return fail(fmt.Errorf("maat: journal event missing or foreign"))
+			}
+			j.applyEvent(*event)
 		}
-		if e == io.EOF {
-			break
+	}
+	if err = r.Err(); err != nil {
+		return fail(err)
+	}
+	if info.Size() > 0 {
+		if _, err = f.Seek(-1, io.SeekEnd); err != nil {
+			return fail(err)
 		}
-		if e != nil {
-			return fail(e)
+		tail := make([]byte, 1)
+		if _, err = f.Read(tail); err != nil || tail[0] != '\n' {
+			return fail(fmt.Errorf("maat: incomplete journal tail; native recovery required"))
 		}
 	}
 	if _, err = f.Seek(0, io.SeekEnd); err != nil {
@@ -88,12 +134,7 @@ func OpenPodJournal(path, machine string, grant Delegation) (*PodJournal, error)
 	if err = f.Sync(); err != nil {
 		return fail(err)
 	}
-	dir, err := os.Open(filepath.Dir(path))
-	if err != nil {
-		return fail(err)
-	}
-	err = dir.Sync()
-	dir.Close()
+	err = unix.Fsync(parent)
 	if err != nil {
 		return fail(err)
 	}
@@ -157,10 +198,48 @@ func (j *PodJournal) Reserve(req Reservation, queue bool) (ReserveResult, error)
 			store.rows[i] = row
 		}
 	}
-	next := podFrame{Grant: j.grant, Seq: row.Seq, Rows: store.rows}
-	encoded, err := json.Marshal(next)
-	if err != nil {
+	if !out.Granted || row.Status != StatusActive {
+		out.Reservation = nil
+		return out, nil
+	}
+	if err = j.commitEvent(row); err != nil {
 		return ReserveResult{}, err
+	}
+	out.Reservation = &row
+	return out, nil
+}
+
+// applyEvent rebuilds latest state while retaining every replay sequence.
+func (j *PodJournal) applyEvent(row Reservation) {
+	replaced := false
+	for i := range j.state.Rows {
+		if j.state.Rows[i].ID == row.ID {
+			j.state.Rows[i] = row
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		j.state.Rows = append(j.state.Rows, row)
+	}
+	j.state.Seq = row.Seq
+	j.events = append(j.events, row)
+}
+func (j *PodJournal) commitEvent(row Reservation) error {
+	frame := podFrame{Grant: j.grant, Seq: row.Seq, Event: &row}
+	encoded, err := json.Marshal(frame)
+	if err != nil {
+		return err
+	}
+	if len(encoded) >= 1<<20 || len(j.events) >= 65536 {
+		return fmt.Errorf("maat: journal event bound reached")
+	}
+	info, err := j.f.Stat()
+	if err != nil {
+		return err
+	}
+	if info.Size()+int64(len(encoded))+1 > 64<<20 {
+		return fmt.Errorf("maat: journal size bound reached")
 	}
 	encoded = append(encoded, '\n')
 	if _, err = j.f.Write(encoded); err == nil {
@@ -168,11 +247,73 @@ func (j *PodJournal) Reserve(req Reservation, queue bool) (ReserveResult, error)
 	}
 	if err != nil {
 		j.failed = true
-		return ReserveResult{}, fmt.Errorf("maat: durable grant failed: %w", err)
+		return fmt.Errorf("maat: durable event failed: %w", err)
 	}
-	j.state = next
-	out.Reservation = &row
-	return out, nil
+	j.applyEvent(row)
+	return nil
+}
+
+// Mutate accepts only an authenticated holder supplied by the native transport.
+// Every successful mutation is a distinct fsynced sequence, including release.
+func (j *PodJournal) Mutate(holder, action, id, value string) (*Reservation, error) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.f == nil || j.failed {
+		return nil, fmt.Errorf("maat: journal unavailable")
+	}
+	var old *Reservation
+	for _, r := range j.state.Rows {
+		if r.ID == id {
+			copy := r
+			old = &copy
+			break
+		}
+	}
+	if old == nil || old.Holder != holder {
+		return nil, fmt.Errorf("maat: foreign or unknown reservation")
+	}
+	if old.Status != StatusActive || old.leaseExpired(j.now()) {
+		return nil, fmt.Errorf("maat: terminal or expired reservation")
+	}
+	if (action == "heartbeat" || action == "extend") && j.grant.expired(j.now()) {
+		return nil, fmt.Errorf("maat: delegation expired")
+	}
+	store := &podProjection{rows: append([]Reservation(nil), j.state.Rows...)}
+	l := NewLedger(store).WithClock(j.now)
+	var row *Reservation
+	var err error
+	switch action {
+	case "heartbeat":
+		row, err = l.Heartbeat(id)
+	case "extend":
+		end, e := time.Parse(time.RFC3339, value)
+		limit, _ := time.Parse(time.RFC3339, j.grant.NotAfter)
+		if e != nil || end.After(limit) || !end.After(j.now()) {
+			return nil, fmt.Errorf("maat: extension exceeds finite delegation")
+		}
+		row, err = l.Extend(id, value)
+	case "release":
+		row, err = l.Release(id)
+	case "invalidate":
+		row, err = l.Invalidate(id, value)
+	default:
+		return nil, fmt.Errorf("maat: unsupported mutation")
+	}
+	if err != nil {
+		return nil, err
+	}
+	row.Seq = j.state.Seq + 1
+	limit, _ := time.Parse(time.RFC3339, j.grant.NotAfter)
+	if row.Status == StatusActive && j.now().Add(time.Duration(row.LeaseTTLSec)*time.Second).After(limit) {
+		row.LeaseTTLSec = int(limit.Sub(j.now()) / time.Second)
+		if row.LeaseTTLSec < 1 {
+			return nil, fmt.Errorf("maat: finite lease ending")
+		}
+	}
+	if err = j.commitEvent(*row); err != nil {
+		return nil, err
+	}
+	return row, nil
 }
 
 // Replay returns bounded pending rows in sequence order. Acknowledgement belongs
@@ -181,7 +322,7 @@ func (j *PodJournal) Replay(after int64) []Reservation {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	out := []Reservation{}
-	for _, r := range j.state.Rows {
+	for _, r := range j.events {
 		if r.Seq > after {
 			out = append(out, r)
 		}
