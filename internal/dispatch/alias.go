@@ -10,11 +10,18 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
 
-// Aliases returns agents.json's retired-name map (ADR-072 C5): a retired
-// mailbox name → the declared agent that now owns its mail. A missing or empty
-// "aliases" key is an empty map. An alias that is itself a declared agent, or
-// whose successor is not a declared agent, is a registry defect and is refused
-// here so no caller can route through it.
+// Aliases returns agents.json's mail-redirect map: a mailbox name → the declared
+// agent that owns its mail. Two sources feed it:
+//   - the "aliases" key (ADR-072 C5): retired names. A missing or empty key is an
+//     empty map. An alias that is itself a declared agent, or whose successor is
+//     not a declared agent, is a registry defect and is refused here so no caller
+//     can route through it.
+//   - "mail_to" on a declared `type: service` agent: a service (Horus) stays a
+//     declared identity so it can send, but it is not a place work is sent. Mail
+//     addressed to it, replies to its own items included, goes to mail_to, and
+//     anything already stranded in its inbox drains there (`router drain-aliases`).
+//     mail_to on any other type, a self target, or a target that itself redirects,
+//     is a registry defect and is refused.
 func (f *Facade) Aliases() (map[string]string, error) {
 	data, err := os.ReadFile(f.registryFile())
 	if err != nil {
@@ -28,6 +35,32 @@ func (f *Facade) Aliases() (map[string]string, error) {
 		return nil, fmt.Errorf("dispatch: parse agents.json: %w", err)
 	}
 	out := make(map[string]string, len(reg.Aliases))
+	mailTo := map[string]string{}
+	for id, raw := range reg.Agents {
+		var a struct {
+			Type   string `json:"type"`
+			MailTo string `json:"mail_to"`
+		}
+		if json.Unmarshal(raw, &a) != nil || strings.TrimSpace(a.MailTo) == "" {
+			continue
+		}
+		if strings.TrimSpace(a.Type) != "service" {
+			return nil, fmt.Errorf("dispatch: agent %q sets mail_to but is type %q — only a service may redirect its mailbox", id, a.Type)
+		}
+		mailTo[id] = strings.TrimSpace(a.MailTo)
+	}
+	for id, succ := range mailTo {
+		if succ == id {
+			return nil, fmt.Errorf("dispatch: service %q mail_to points at itself", id)
+		}
+		if _, chained := mailTo[succ]; chained {
+			return nil, fmt.Errorf("dispatch: service %q mail_to %q itself redirects — no chains", id, succ)
+		}
+		if err := f.ValidateAgent("mail_to target", succ); err != nil {
+			return nil, fmt.Errorf("dispatch: service %q mail_to %q: %w", id, succ, err)
+		}
+		out[id] = succ
+	}
 	for old, succ := range reg.Aliases {
 		old, succ = strings.TrimSpace(old), strings.TrimSpace(succ)
 		if _, declared := reg.Agents[old]; declared {
@@ -81,7 +114,7 @@ func (f *Facade) Reassign(actor, id, to string) error {
 	case it.To == actor:
 		kind = "handed off"
 	case aliases[it.To] == to:
-		kind = "drained from retired alias"
+		kind = "drained from redirected mailbox"
 	default:
 		return fmt.Errorf("dispatch: %s may not reassign %s (addressed to %s): only the recipient may hand off, and alias mail drains only to its declared successor", actor, id, it.To)
 	}

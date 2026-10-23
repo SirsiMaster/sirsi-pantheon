@@ -49,7 +49,11 @@ func unroutableAgents(repoRoot string) (map[string]bool, error) {
 func unroutableFromRuntime(reg *router.Registry, threads *router.ThreadRegistry, now time.Time) map[string]bool {
 	out := make(map[string]bool, len(reg.Agents))
 	for id, cfg := range reg.Agents {
-		if cfg.Type == "human" {
+		// A human, or a service (Horus), is not a lane: nothing is sent there to
+		// be worked, so "no wake mechanism" is its design, not an incident. Only
+		// lanes can be unroutable; judging a service by lane rules is how Horus
+		// escalated itself ("Lane needs you: horus cannot be reached").
+		if cfg.Type == "human" || cfg.Type == "service" {
 			out[id] = false
 		} else {
 			out[id] = !router.PingLane(threads, cfg, id, now).Workable
