@@ -31,6 +31,9 @@ func waitForObserver(t *testing.T, root string) *Thread {
 }
 
 func TestWakeLoopTerminalObserverStopsWithoutRevival(t *testing.T) {
+	oldLoad := getLoadAvgFn()
+	SetLoadAvgFn(func() (float64, bool) { return 0, true })
+	defer SetLoadAvgFn(oldLoad)
 	root := wakeTestRoot(t, AgentConfig{ID: "observer", Type: "gemma"})
 	t.Setenv("SIRSI_AGENT_ID", "")
 	t.Setenv("SIRSI_THREAD_ID", "")
@@ -76,6 +79,11 @@ func (n *observerFailureNotice) Write(p []byte) (int, error) {
 }
 
 func TestWakeLoopTransientRegistryReadDoesNotExit(t *testing.T) {
+	// Registry recovery is independent of native CPU sampling. In particular,
+	// a cold test HOME must not run a multi-second host `top` each 5ms tick.
+	oldLoad := getLoadAvgFn()
+	SetLoadAvgFn(func() (float64, bool) { return 0, true })
+	defer SetLoadAvgFn(oldLoad)
 	root := wakeTestRoot(t, AgentConfig{ID: "observer", Type: "gemma"})
 	t.Setenv("SIRSI_AGENT_ID", "")
 	t.Setenv("SIRSI_THREAD_ID", "")
@@ -86,7 +94,16 @@ func TestWakeLoopTransientRegistryReadDoesNotExit(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { done <- RunWakeLoop(ctx, root, "observer", 5*time.Millisecond) }()
+	exited := make(chan struct{})
+	go func() { defer close(exited); done <- RunWakeLoop(ctx, root, "observer", 5*time.Millisecond) }()
+	defer func() {
+		cancel()
+		select {
+		case <-exited:
+		case <-time.After(2 * time.Second):
+			t.Error("fixture observer did not terminate")
+		}
+	}()
 	row := waitForObserver(t, root)
 	// Atomic malformed read fixture is hermetic and touches no live service.
 	reg, err := LoadThreadRegistry(root)
