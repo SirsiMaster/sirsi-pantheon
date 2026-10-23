@@ -1,5 +1,41 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-23 — v0.24.124 release candidate
+
+- Finite canonical delegation and opt-in native Ma’at mutual-TLS booking, signed expiring caches, durable nonce receipts and partition/restart catch-up. The canonical task/message router is not duplicated; installed identity/delegation onboarding remains a separate explicit setup operation.
+- Bounded own-thread reads with legacy RPC compatibility and preserved foreign-lane refusal.
+- Finite historical-notice operator confinement: memory-only derived sessions, child-only gcloud logging controls and terminal serving-generation check; no general foreign mailbox access or supervisor-repair claim.
+- Make the transient registry-read observer fixture deterministic by isolating it on legacy storage and holding its owned root read-only while malformed bytes are written through the existing registry file descriptor. The fixture distinguishes a permission-denied heartbeat write from an observed JSON parse failure and restores the original snapshot before releasing the barrier.
+- Run the terminal wake observer lifecycle assertion against an initialized, retained canonical SQLite store, with retryable terminal transitions and coverage that stale heartbeat snapshots cannot overwrite committed terminal state. Legacy JSON snapshots remain unfenced compatibility data; this fixture does not change their behavior.
+- Add a read-only-by-default, explicitly granted single-service launchd lifecycle
+  path with pinned runtime/artifact identity and honest restart readback. This
+  avoids using a bulk fabric refresh for one Apollo or Mercury helper. No
+  automatic elevation, global stop-guard relaxation or live service mutation.
+- Preserve the confirmed native Pantheon lead during long builds; revoke the
+  competing background answering grant without restricting other lanes' CPU.
+- Bind cloud images to clean committed source and a minimal recipient policy;
+  exclude Mac commands, credentials and live stores.
+- Classify documentation-only changes from the complete path set. Mixed
+  code/documentation PRs must not emit successful heavy-test exemption checks.
+- Rebuild the native Pantheon workspace around the Apollo/Mercury visual language, searchable persistent navigation, and clear Apollo, Mercury, Ra and Ma’at responsibilities.
+- Open Apollo telemetry through the actual native navigation owner, preserve a plan when revising it, and carry its selected resource context into Ma’at guidance.
+- Refresh workspace observations without initiating a storage scan; distinguish unread health from observed state.
+- Preserve independent workspace drill-downs without hidden polling, including focused restore, stack isolation and header-update regression tests reconciled from the headless worker's preserved navigation checkpoint.
+- Resolve only owned temporary fixture roots to their canonical macOS path before journal/cache tests; keep production no-follow traversal unchanged. Add a real canonical-parent success control and a symlink-ancestor refusal fixture so rejection cannot pass merely because `/var` aliases `/private/var` on a developer Mac.
+- Require Mercury's published live state, a successful read and a fresh sample before presenting current machine utilization. Age retained samples while the workspace is visible, including during an in-flight read, without adding network polling or changing the existing interface design.
+- Label the published gpu_busy percentage as GPU utilization, not memory residency.
+- Share a bounded, read-only Mercury dashboard consumer across the canonical CLI and MCP, retaining producer units, freshness and unknown values without adding a sampler, run control or service action. Preserve the current native hardware workspace and record the separate historical web/native parity obligations.
+- Assess Mercury sample eligibility once after response completion across totals, headlines and scene directions; retain partial observations without presenting expired or future samples as live traffic. Bound response headers separately from the body.
+- Compose the finite pod-authority candidate with the deployed canonical router protections, preserving both delegation and mailbox authority namespace guards. Retain the canonical terminal-observer CAS fixture and the independently corrected transient-read fixture together. Integrated release qualification and signed distribution remain required.
+- Prepare a private dormant launch recipe for the package-installed Ma'at native authority, with explicit startup/login consent boundaries; preparing configuration does not activate or qualify the service.
+- Add a separate finite, operator-approved service-notice reconciliation API and read-only-by-default CLI. Coordination acknowledgments preserve source/history and publish their audit atomically, without granting general foreign-inbox access or pretending a service is an agent consumer.
+- Include the exact native-workspace contract copied by both app builders in the strict package policy. Compare the real source Stack Lab directory to that policy in tests, in both directions, so hand-built fixtures cannot conceal a missing or unexpected shipped recipe. The combined unsigned fixture includes24 entries, with no wildcard allowance.
+- Own successful native admission before rank binding and fenced-plan encoding, and release it exactly once on early errors, cancellation, normal completion, or panic with an independent fifteen-second cleanup context. Preserve both work and release errors.
+- Reject shorter or longer admission rank lists before indexing. Read measured metrics before release and publish them only after work and release both succeed; panic cleanup never publishes success metrics.
+- Add callback-only lifecycle regressions without tokenizer, model, backend, network, or GPU execution. Runtime proof is performed separately by the release owner.
+- Router send quota no longer blocks broadcasts:
+- Use one native endpoint selector for admitted fabric transport and rendered SSH profiles: surveyed Thunderbolt links and the existing authenticated Studio forwarding path precede classified LAN and Tailscale. Preserve runtime proxy constraints, logical host pins, destination admission and existing sessions; fail rather than reroute after identity/authentication rejection.
+
 ## 2026-10-22 — v0.24.123 release candidate
 
 The completion snapshot fix is new in this candidate. Other entries below consolidate previously shipped source fragments; they are not new functionality first delivered by v0.24.123.
