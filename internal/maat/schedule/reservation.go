@@ -82,8 +82,10 @@ type Reservation struct {
 	// bounded floor share granted alongside a live conflict or an unanswered
 	// cede request ("floor"); Reason explains which (owner directive
 	// 2026-09-26: "never totally block lanes from operation").
-	Cores int    `json:"cores,omitempty"`
-	Share string `json:"share,omitempty"` // "full" | "floor"
+	Cores int `json:"cores,omitempty"`
+	// "full" grants the complete declared ask, not the model slot for an
+	// explicitly bounded CPU-only build; "floor" grants the configured floor.
+	Share string `json:"share,omitempty"`
 	// MemGB is an ADVISORY memory ask in GB — same posture as Cores, Ma'at
 	// never enforces RSS itself. Unlike Cores, 0 means "no explicit ask", NOT
 	// "the whole machine": an unbounded ask is the exact failure mode the
@@ -608,15 +610,19 @@ func (l *Ledger) WhoIsOn(resource string) (*Reservation, error) {
 		return nil, err
 	}
 	now := l.now()
+	var live []Reservation
 	for _, r := range reservations {
 		if !sameResource(r.Resource, resource) || r.Status != StatusActive || r.leaseExpired(now) {
 			continue
 		}
 		s, e := parseWindow(r)
 		if !now.Before(s) && now.Before(e) {
-			rr := r
-			return &rr, nil
+			live = append(live, r)
 		}
+	}
+	if len(live) != 0 {
+		rr := primaryHolder(live)
+		return &rr, nil
 	}
 	return nil, nil
 }

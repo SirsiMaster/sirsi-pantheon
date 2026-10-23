@@ -163,8 +163,14 @@ func (l *Ledger) CheckConflicts(resource, machine string) (ConflictReport, error
 
 // primaryHolder picks the reservation CheckConflicts reports as "the"
 // holder when several are live on the same resource at once: the full-share
-// one if there is one, else the first live holder.
+// measurement/model one if there is one, then a full CPU ask, then the first
+// live holder. A bounded first CPU ask must not hide a concurrent model owner.
 func primaryHolder(holders []Reservation) Reservation {
+	for _, h := range holders {
+		if h.Share == ShareFull && (h.Regime == RegimeQuiet || h.Regime == RegimeLoaded) {
+			return h
+		}
+	}
 	for _, h := range holders {
 		if h.Share != ShareFloor {
 			return h

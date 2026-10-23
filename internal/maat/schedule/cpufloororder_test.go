@@ -56,4 +56,8 @@ func TestActualCPUFirstReserveDoesNotOwnModelSlot(t *testing.T) {
 	if err != nil || len(rows) != 2 {
 		t.Fatalf("both original reservations must remain: %+v, %v", rows, err)
 	}
+	holder, err := l.WhoIsOn("m5")
+	if err != nil || holder == nil || holder.Holder != "model" {
+		t.Fatalf("CPU-first row hid the actual model holder: %+v, %v", holder, err)
+	}
 }

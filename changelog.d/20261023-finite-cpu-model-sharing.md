@@ -6,6 +6,9 @@
   conflict behavior. No existing reservation, foreign process or workload is
   stopped or rewritten. CPU environment masks remain cooperative, not kernel
   CPU-affinity enforcement.
+- When a finite CPU ask and a model coexist, current-holder/conflict projections
+  select the actual full model/measurement owner instead of hiding it behind
+  the first CPU row. Both original reservations remain intact.
 
 Refs: docs/stacklab/maat/canon/PLAN.md,
 docs/stacklab/maat/canon/TRACEABILITY_MATRIX.md; Ra source6735d893 and
