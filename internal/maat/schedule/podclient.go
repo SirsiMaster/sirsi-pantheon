@@ -138,3 +138,41 @@ func (c PodClient) Mutate(ctx context.Context, action, id, value string) (*Reser
 	}
 	return t.MutatePod(ctx, *d, action, id, value)
 }
+
+// ReadOwnStatus supplies native admission verification without depending on
+// canonical catch-up. It returns handled=false only for undelegated resources.
+func (c PodClient) ReadOwnStatus(ctx context.Context, resource string) ([]Reservation, bool, error) {
+	if c.Pod == "" || resource == "" {
+		return nil, false, nil
+	}
+	if c.Canonical == nil {
+		return nil, true, fmt.Errorf("maat: canonical delegation source required")
+	}
+	var d *Delegation
+	var err error
+	if bounded, ok := c.Canonical.(contextDelegationScheduler); ok {
+		d, err = bounded.MaatGetDelegationContext(ctx, c.Pod)
+	} else {
+		d, err = c.Canonical.MaatGetDelegation(c.Pod)
+	}
+	if err != nil {
+		d, err = c.Cache.Snapshot()
+		if err != nil {
+			return nil, true, err
+		}
+	}
+	if d == nil || !d.coversResource(resource) {
+		return nil, false, nil
+	}
+	if d.Pod != c.Pod || d.expired(time.Now()) {
+		return nil, true, fmt.Errorf("maat: finite own guard delegation unavailable")
+	}
+	reader, ok := c.Transport.(interface {
+		ReadOwnPod(context.Context, Delegation, string) ([]Reservation, error)
+	})
+	if !ok {
+		return nil, true, fmt.Errorf("maat: authenticated own guard transport unavailable")
+	}
+	rows, err := reader.ReadOwnPod(ctx, *d, resource)
+	return rows, true, err
+}

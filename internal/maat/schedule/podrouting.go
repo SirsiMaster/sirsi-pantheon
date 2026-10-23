@@ -3,6 +3,7 @@ package schedule
 import (
 	"context"
 	"fmt"
+	"time"
 )
 
 // PodRoutingStore wires the existing Ledger entry points to native admission
@@ -20,6 +21,14 @@ func (s *PodRoutingStore) MaatMutate(action, id, value string) (*Reservation, er
 	return s.Client.Mutate(context.Background(), action, id, value)
 }
 func (s *PodRoutingStore) MaatRead(kind, resource string) ([]Reservation, error) {
+	if kind == "status" {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		rows, handled, err := s.Client.ReadOwnStatus(ctx, resource)
+		if handled {
+			return rows, err
+		}
+	}
 	if s.Canonical == nil {
 		return nil, fmt.Errorf("maat: canonical read client unavailable")
 	}

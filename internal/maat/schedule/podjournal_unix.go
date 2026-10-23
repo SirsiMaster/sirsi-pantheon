@@ -561,3 +561,23 @@ func (j *PodJournal) RunRelay(ctx context.Context, canonical AtomicDelegationSch
 		}
 	}
 }
+
+// ReadOwn returns a defensive live projection for the authenticated holder.
+// It is a guard read, not a global capacity/occupancy view or a new grant.
+func (j *PodJournal) ReadOwn(holder, resource string) ([]Reservation, error) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.f == nil || j.failed || j.grant.expired(j.now()) || !j.grant.coversResource(resource) {
+		return nil, fmt.Errorf("maat: own guard authority unavailable")
+	}
+	rows := []Reservation{}
+	for _, row := range j.state.Rows {
+		if row.Holder == holder && row.Resource == resource {
+			if row.Status == StatusActive && row.leaseExpired(j.now()) {
+				row.Status = StatusExpired
+			}
+			rows = append(rows, row)
+		}
+	}
+	return rows, nil
+}

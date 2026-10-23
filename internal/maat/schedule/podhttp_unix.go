@@ -65,7 +65,13 @@ func PodHTTPHandler(j *PodJournal, nativeHolders map[string]string) (http.Handle
 			http.Error(w, "own holder and stable request ID required", http.StatusForbidden)
 			return
 		}
-		out, err := j.ExecutePod(holder, req)
+		var out any
+		var err error
+		if req.Action == "read-own" {
+			out, err = j.ReadOwn(holder, req.Value)
+		} else {
+			out, err = j.ExecutePod(holder, req)
+		}
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusConflict)
 			return
@@ -200,4 +206,10 @@ func (t *HTTPPodTransport) MutatePodWithNonce(ctx context.Context, d Delegation,
 		return nil, err
 	}
 	return &out, nil
+}
+
+func (t *HTTPPodTransport) ReadOwnPod(ctx context.Context, d Delegation, resource string) ([]Reservation, error) {
+	var out []Reservation
+	err := t.call(ctx, d, podRequest{Action: "read-own", Value: resource}, &out)
+	return out, err
 }

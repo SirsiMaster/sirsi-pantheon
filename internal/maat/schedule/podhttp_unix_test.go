@@ -77,6 +77,20 @@ func TestPodNativeMutualTLSEndpointOwnLifecycle(t *testing.T) {
 	if e != nil || !out.Granted {
 		t.Fatalf("authenticated grant %+v %v", out, e)
 	}
+	rows, readErr := consumer.Status("studio")
+	if readErr != nil || len(rows) != 1 || rows[0].ID != out.Reservation.ID {
+		t.Fatalf("native own guard: %+v %v", rows, readErr)
+	}
+	foreign := req
+	foreign.ID = "foreign-owned"
+	foreign.Holder = "foreign"
+	if _, err := j.Reserve(foreign, false); err != nil {
+		t.Fatal(err)
+	}
+	rows, readErr = consumer.Status("studio")
+	if readErr != nil || len(rows) != 1 {
+		t.Fatalf("foreign payload leaked: %+v %v", rows, readErr)
+	}
 	drop := &lostPodReply{base: client.client.Transport}
 	drop.armed.Store(true)
 	client.client.Transport = drop
@@ -95,7 +109,7 @@ func TestPodNativeMutualTLSEndpointOwnLifecycle(t *testing.T) {
 	if drop.calls.Load() != 6 {
 		t.Fatalf("lost reply did not retry exact operation: %d", drop.calls.Load())
 	}
-	if len(j.Replay(0)) != 6 {
+	if len(j.Replay(0)) != 7 {
 		t.Fatal("TLS mutations lost sequence events")
 	}
 	cachePath := filepath.Join(t.TempDir(), "finite-cache")
