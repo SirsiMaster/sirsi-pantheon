@@ -159,27 +159,78 @@ func TestCanonicalStoreStaleHeartbeatCannotOverwriteTerminal(t *testing.T) {
 }
 
 type observerFailureNotice struct {
-	seen chan struct{}
-	once sync.Once
+	agentID   string
+	seen      chan struct{}
+	writeHeld chan struct{}
+	seenOnce  sync.Once
+	writeOnce sync.Once
 }
 
 func (n *observerFailureNotice) Write(p []byte) (int, error) {
-	if strings.Contains(string(p), "heartbeat FAILED; new dispatch held") {
-		n.once.Do(func() { close(n.seen) })
+	line := string(p)
+	if !strings.Contains(line, "wake-loop "+n.agentID+": heartbeat FAILED; new dispatch held") {
+		return len(p), nil
+	}
+	if strings.Contains(line, "parse threads.json") {
+		n.seenOnce.Do(func() { close(n.seen) })
+	}
+	if strings.Contains(strings.ToLower(line), "permission denied") &&
+		(strings.Contains(line, "create temp threads.json") || strings.Contains(line, "replace threads.json")) {
+		n.writeOnce.Do(func() { close(n.writeHeld) })
 	}
 	return len(p), nil
 }
 
 func TestWakeLoopTransientRegistryReadDoesNotExit(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("directory permission barrier is unavailable when running as root")
+	}
+	t.Setenv(routercfg.StoreWakeEnv, "0")
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("SIRSI_ROUTER_URL", "")
+	t.Setenv("SIRSI_ROUTER_TOKEN", "")
+	const agentID = "transient-observer"
 	// Registry recovery is independent of native CPU sampling. In particular,
 	// a cold test HOME must not run a multi-second host `top` each 5ms tick.
 	oldLoad := getLoadAvgFn()
 	SetLoadAvgFn(func() (float64, bool) { return 0, true })
 	defer SetLoadAvgFn(oldLoad)
-	root := wakeTestRoot(t, AgentConfig{ID: "observer", Type: "gemma"})
+	root := wakeTestRoot(t, AgentConfig{
+		ID: agentID, Type: "gemma", Repo: t.TempDir(), Workstream: "observer-fixture",
+		Wake: WakeConfig{Mechanism: "none"},
+	})
+	rootInfo, err := os.Stat(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalMode := rootInfo.Mode().Perm()
+	rootReadOnly := false
+	var fixtureFile *os.File
+	var validSnapshot []byte
+	t.Cleanup(func() {
+		if fixtureFile != nil {
+			if len(validSnapshot) > 0 {
+				if err := fixtureFile.Truncate(0); err != nil {
+					t.Errorf("restore registry snapshot length: %v", err)
+				} else if _, err := fixtureFile.WriteAt(validSnapshot, 0); err != nil {
+					t.Errorf("restore registry snapshot bytes: %v", err)
+				} else if err := fixtureFile.Sync(); err != nil {
+					t.Errorf("sync restored registry snapshot: %v", err)
+				}
+			}
+			if err := fixtureFile.Close(); err != nil {
+				t.Errorf("close fixture registry file: %v", err)
+			}
+		}
+		if rootReadOnly {
+			if err := os.Chmod(root, originalMode); err != nil {
+				t.Errorf("restore fixture root permissions: %v", err)
+			}
+		}
+	})
 	t.Setenv("SIRSI_AGENT_ID", "")
 	t.Setenv("SIRSI_THREAD_ID", "")
-	notice := &observerFailureNotice{seen: make(chan struct{})}
+	notice := &observerFailureNotice{agentID: agentID, seen: make(chan struct{}), writeHeld: make(chan struct{})}
 	previousOutput := log.Writer()
 	log.SetOutput(notice)
 	defer log.SetOutput(previousOutput)
@@ -187,7 +238,7 @@ func TestWakeLoopTransientRegistryReadDoesNotExit(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	exited := make(chan struct{})
-	go func() { defer close(exited); done <- RunWakeLoop(ctx, root, "observer", 5*time.Millisecond) }()
+	go func() { defer close(exited); done <- RunWakeLoop(ctx, root, agentID, 5*time.Millisecond) }()
 	defer func() {
 		cancel()
 		select {
@@ -197,21 +248,47 @@ func TestWakeLoopTransientRegistryReadDoesNotExit(t *testing.T) {
 		}
 	}()
 	row := waitForObserver(t, root)
-	// Atomic malformed read fixture is hermetic and touches no live service.
+	path := filepath.Join(root, threadsFilename)
+	if err := os.Chmod(root, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	rootReadOnly = true
+	// Confirm the write barrier using the same legacy atomic-save path before
+	// injecting malformed bytes. This failure is not evidence of a read fault.
+	select {
+	case <-notice.writeHeld:
+	case err := <-done:
+		t.Fatalf("observer exited instead of holding on the write barrier: %v", err)
+	case <-ctx.Done():
+		t.Fatal("legacy heartbeat write did not hit the permission barrier")
+	}
 	reg, err := LoadThreadRegistry(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(root, threadsFilename)
-	bad := path + ".fixture"
-	if err := os.WriteFile(bad, []byte("{"), 0o600); err != nil {
+	baseline := reg.Threads[row.ThreadID]
+	if baseline == nil {
+		t.Fatalf("observer registration %q disappeared after write barrier", row.ThreadID)
+	}
+	baselineLastSeen := baseline.LastSeenAt
+	validSnapshot, err = os.ReadFile(path)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Rename(bad, path); err != nil {
+	fixtureFile, err = os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
 		t.Fatal(err)
 	}
-	// Wait for the fault to be OBSERVED, not an arbitrary short sleep that
-	// may restore the file before a slower native registration/OS probe ends.
+	if err := fixtureFile.Truncate(0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixtureFile.WriteAt([]byte("{"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixtureFile.Sync(); err != nil {
+		t.Fatal(err)
+	}
+	// Only the parse error proves the injected read fault was observed.
 	select {
 	case <-notice.seen:
 	case err := <-done:
@@ -224,18 +301,43 @@ func TestWakeLoopTransientRegistryReadDoesNotExit(t *testing.T) {
 		t.Fatalf("transient read stopped observer: %v", err)
 	default:
 	}
-	if err := SaveThreadRegistry(root, reg); err != nil {
+	if err := SaveThreadRegistry(root, reg); !errors.Is(err, os.ErrPermission) {
+		t.Fatalf("direct stale snapshot save = %v, want permission denied from barrier", err)
+	}
+	if err := fixtureFile.Truncate(0); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := fixtureFile.WriteAt(validSnapshot, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixtureFile.Sync(); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixtureFile.Close(); err != nil {
+		t.Fatal(err)
+	}
+	fixtureFile = nil
+	if err := os.Chmod(root, originalMode); err != nil {
+		t.Fatal(err)
+	}
+	rootReadOnly = false
 	deadline := time.Now().Add(8 * time.Second)
 	for time.Now().Before(deadline) {
+		select {
+		case err := <-done:
+			t.Fatalf("observer exited before recovery completed: %v", err)
+		default:
+		}
 		got, err := LoadThreadRegistry(root)
-		if err == nil && got.Threads[row.ThreadID].LastSeenAt.After(row.LastSeenAt) {
-			cancel()
-			if err := <-done; err != nil {
-				t.Fatal(err)
+		if err == nil {
+			thread := got.Threads[row.ThreadID]
+			if thread != nil && thread.LastSeenAt.After(baselineLastSeen) {
+				cancel()
+				if err := <-done; err != nil {
+					t.Fatal(err)
+				}
+				return
 			}
-			return
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
