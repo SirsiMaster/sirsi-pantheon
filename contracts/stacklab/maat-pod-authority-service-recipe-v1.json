@@ -16,7 +16,7 @@
     {
       "id": "maat-native-authority-launch-recipe",
       "source": ["internal/setup/podauthority.go", "internal/setup/podauthority_darwin.go", "cmd/sirsi/maatpodservice_darwin.go"],
-      "tests": ["internal/setup/podauthority_test.go"],
+      "tests": ["internal/setup/podauthority_test.go", "cmd/sirsi/maatpodservice_darwin_test.go", "internal/stacklab/podauthority_recipe_test.go", "internal/packageinventory/inventory_test.go"],
       "inputs": ["actual native machine identity", "fresh finite canonical delegation", "explicit approved TLS path references and client bindings", "canonical installed Sirsi engine", "explicit canonical registry working directory"],
       "outputs": ["deterministic shell-free launchd ProgramArguments", "private dormant recipe", "explicit start and login consent contract", "separate configured, verified, installed and running status"],
       "writes": ["only the explicitly selected dormant recipe destination; never LaunchAgents, credentials, delegation or network state"],

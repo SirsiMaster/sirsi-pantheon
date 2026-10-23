@@ -41,10 +41,20 @@ entry cannot silently become the service engine. The existing runtime currently
 needs an explicit canonical registry working directory; preparation does not
 bundle or fabricate a separate registry.
 
+The installed engine must satisfy the existing Developer ID signature for Team
+`9D382WV988` and identifier `sirsi`. Verification uses Apple's system tool,
+without executing the engine payload or signing anything. The host must already
+be enrolled on the canonical router service. An explicit local SQLite sandbox
+selector is refused before store resolution, so planning cannot accidentally
+create a local database.
+
 The dormant recipe stays **outside `~/Library/LaunchAgents`**. Pantheon's legacy
 refresh helper enables and bootstraps Sirsi plists in that directory, so merely
 setting a disabled bit there would not preserve consent. Package installation
 and upgrades do not opt the user into startup.
+Case variants of `Library/LaunchAgents` are also refused, including on
+case-insensitive APFS; an existing login-directory alias to the recipe directory
+or one of its ancestors is refused as well.
 
 Starting the qualified service is a separate user action using the plan's exact
 launchd job and path. Login start is a separate explicit opt-in, not implied by
