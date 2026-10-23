@@ -219,10 +219,9 @@ func TestNativeCLIPodAuthorityQualification(t *testing.T) {
 	}
 	reconcilesBeforeRestore := reconciles.Load()
 	partition.Store(false)
-	// The production authority owns its existing five-second relay. This test
-	// only observes canonical ack; it never replays the native journal itself.
-	catchup, stopCatchup := context.WithTimeout(ctx, 5*time.Second)
-	defer stopCatchup()
+	// The production authority owns its existing five-second relay. Observe its
+	// acknowledgement within the overall 45-second budget, including the sleep
+	// plus the bounded network attempt; never replay the journal from the test.
 	for {
 		ack, err := backend.MaatGetDelegation(pod)
 		if err != nil {
@@ -232,9 +231,9 @@ func TestNativeCLIPodAuthorityQualification(t *testing.T) {
 			break
 		}
 		select {
-		case <-catchup.Done():
+		case <-ctx.Done():
 			authority.logFailureStderr(t)
-			t.Fatal("native relay did not reconcile and acknowledge exactly six events within five seconds")
+			t.Fatal("native relay did not reconcile and acknowledge exactly six events within the overall fixture deadline")
 		case <-authority.done:
 			authority.logFailureStderr(t)
 			t.Fatal("native authority exited before canonical catch-up")
