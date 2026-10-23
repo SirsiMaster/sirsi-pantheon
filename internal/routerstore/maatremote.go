@@ -26,23 +26,23 @@ func (rs *RemoteStore) MaatRead(kind, resource string) ([]schedule.Reservation, 
 	return out, err
 }
 
-func (r *RemoteStore) MaatDelegation(action string, req schedule.Delegation) (schedule.Delegation, error) {
+func (rs *RemoteStore) MaatDelegation(action string, req schedule.Delegation) (schedule.Delegation, error) {
 	var out schedule.Delegation
-	err := r.call("MaatDelegation", []any{action, req}, &out)
+	err := rs.call("MaatDelegation", []any{action, req}, &out)
 	return out, err
 }
-func (r *RemoteStore) MaatGetDelegation(pod string) (*schedule.Delegation, error) {
+func (rs *RemoteStore) MaatGetDelegation(pod string) (*schedule.Delegation, error) {
 	var out *schedule.Delegation
-	err := r.call("MaatGetDelegation", []any{pod}, &out)
+	err := rs.call("MaatGetDelegation", []any{pod}, &out)
 	return out, err
 }
-func (r *RemoteStore) MaatAuthorityReserve(machine string, req schedule.Reservation) (schedule.ReserveResult, error) {
+func (rs *RemoteStore) MaatAuthorityReserve(machine string, req schedule.Reservation) (schedule.ReserveResult, error) {
 	var out schedule.ReserveResult
-	err := r.call("MaatAuthorityReserve", []any{machine, req}, &out)
+	err := rs.call("MaatAuthorityReserve", []any{machine, req}, &out)
 	return out, err
 }
-func (r *RemoteStore) MaatReconcile(machine, pod string, epoch int, rows []schedule.Reservation) (int64, error) {
+func (rs *RemoteStore) MaatReconcile(machine, pod string, epoch int, rows []schedule.Reservation) (int64, error) {
 	var out int64
-	err := r.call("MaatReconcile", []any{machine, pod, epoch, rows}, &out)
+	err := rs.call("MaatReconcile", []any{machine, pod, epoch, rows}, &out)
 	return out, err
 }

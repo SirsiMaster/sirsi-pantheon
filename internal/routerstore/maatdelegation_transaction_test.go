@@ -1,11 +1,11 @@
 package routerstore
 
 import (
-	"fmt"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 )
 
 func delegationReq(s *SQLiteStore) schedule.Delegation {
@@ -131,7 +131,7 @@ func TestMaatDelegationLegacyUndelegatedCompatibility(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	safe := fmt.Sprintf(`{"reservations":[{"id":"legacy","resource":"m1","holder":"lane","status":"active"}]}`)
+	safe := `{"reservations":[{"id":"legacy","resource":"m1","holder":"lane","status":"active"}]}`
 	if ok, err := s.CompareAndSwapState(maatReservationsKey, raw, exists, safe); err != nil || !ok {
 		t.Fatalf("undelegated legacy write refused %v %v", ok, err)
 	}

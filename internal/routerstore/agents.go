@@ -4,9 +4,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 	"strings"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 )
 
 // Agent is the durable record of a registered router thread. It projects the
