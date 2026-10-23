@@ -6,18 +6,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
-- Bind router service images to a clean committed source and a minimal
-  immutable recipient registry, so cloud actor-only delivery protection is
-  configured rather than silently absent outside a developer checkout.
-
-- Mark the confirmed native Pantheon lead attended and revoke its competing
-  background worker's answering grant; stale heartbeat is not a transfer of
-  implementation ownership. Other lanes retain shared-machine concurrency.
-
-- Add read-only exact single-service lifecycle plans and explicitly granted,
-  instance-pinned maintenance for Apollo/Mercury helpers; no bulk refresh,
-  privilege prompts or implicit global-thread-list fallback.
-
 ## [0.24.123] — 2026-10-22
 
 - **Pre-push fixture isolation:** clear inherited Git repository variables in the test subprocess so foreign-repository fixtures cannot rewrite the parent checkout's configuration. Preserve the hook's parent environment and all existing test flags; exercise contamination, cleanup and fail-closed controls in CI.

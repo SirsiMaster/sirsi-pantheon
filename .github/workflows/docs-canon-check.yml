@@ -23,6 +23,34 @@ permissions:
   contents: read
 
 jobs:
+  scope:
+    name: Classify complete changed-path set
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Classifier positive and mixed-code negative controls
+        run: python3 -B -m unittest discover -s scripts -p test_ci_docs_only.py -v
+      - id: classify
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          IS_PR: ${{ github.event_name == 'pull_request' }}
+        run: |
+          set -euo pipefail
+          if ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            echo 'docs_only=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$IS_PR" = true ]; then
+            value=$(git diff --name-only -z "$BASE...$HEAD" | python3 -B scripts/ci-docs-only.py)
+          else
+            value=$(git diff --name-only -z "$BASE" "$HEAD" | python3 -B scripts/ci-docs-only.py)
+          fi
+          echo "docs_only=$value" >> "$GITHUB_OUTPUT"
   docs-canon-check:
     name: Canon + ADR-INDEX guard
     # ubuntu-latest, not the owned M5 frame: owned frames are the default
@@ -53,21 +81,30 @@ jobs:
   # "Expected — waiting for status to be reported" forever. These stubs report
   # success under the exact required names on docs-only changes; on a code PR
   # this workflow's path filter doesn't trigger, so ci.yml's real jobs report
-  # instead and these never run.
+  # instead. GitHub's paths filter means ANY matching path, not ONLY matching
+  # paths: mixed code+docs also triggers this workflow. Classify the complete
+  # diff and give inapplicable stubs DIFFERENT names, so even a skipped stub
+  # cannot mask the real in-progress Test/Lint/Build checks.
   Lint:
-    name: Lint
+    needs: scope
+    if: needs.scope.outputs.docs_only == 'true'
+    name: ${{ needs.scope.outputs.docs_only == 'true' && 'Lint' || 'Docs-only lint exemption (not applicable)' }}
     runs-on: ubuntu-latest
     steps:
       - run: echo "docs-only change — heavy job not applicable (see ci.yml paths-ignore)"
 
   Test:
-    name: Test
+    needs: scope
+    if: needs.scope.outputs.docs_only == 'true'
+    name: ${{ needs.scope.outputs.docs_only == 'true' && 'Test' || 'Docs-only test exemption (not applicable)' }}
     runs-on: ubuntu-latest
     steps:
       - run: echo "docs-only change — heavy job not applicable (see ci.yml paths-ignore)"
 
   Build:
-    name: "Build (self-hosted, macOS, ARM64, 1.25)"
+    needs: scope
+    if: needs.scope.outputs.docs_only == 'true'
+    name: ${{ needs.scope.outputs.docs_only == 'true' && 'Build (self-hosted, macOS, ARM64, 1.25)' || 'Docs-only build exemption (not applicable)' }}
     runs-on: ubuntu-latest
     steps:
       - run: echo "docs-only change — heavy job not applicable (see ci.yml paths-ignore)"
