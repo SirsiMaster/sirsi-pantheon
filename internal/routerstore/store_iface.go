@@ -47,6 +47,7 @@ type Store interface {
 	ClassifyLane(agent string, wakeRoutable bool, recentWithin time.Duration) (LaneOperationalState, error)
 	Close() error
 	CloseItem(id, result string) error
+	ReconcileMailboxNotice(ctx context.Context, req MailboxReconcileRequest) (MailboxReconcileResult, error)
 	Complete(id, token, result string) error
 	CompleteTaskLease(agent, taskID, token, resultRef string) error
 	Counters() (DispatchCounters, error)
