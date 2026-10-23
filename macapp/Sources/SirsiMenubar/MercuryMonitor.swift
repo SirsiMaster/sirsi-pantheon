@@ -173,7 +173,7 @@ struct MercuryLiveMachinesView: View {
                 let current = machine.hasCurrentObservation(at: now, readSucceeded: monitor.error == nil)
                 HStack(spacing: 24) {
                     measurement("CPU utilization", percent(sample.meanCPU))
-                    measurement("GPU residency", percent(sample.chip?.gpu_busy))
+                    measurement("GPU utilization", percent(sample.chip?.gpu_busy))
                     measurement("CPU power", watts(sample.chip?.cpu_mw))
                     measurement("GPU power", watts(sample.chip?.gpu_mw))
                 }
