@@ -122,7 +122,8 @@ func (f *horusNativeFixture) read(ctx context.Context, input []byte, exe string,
 		// the real conversion logic, never an installed payload or native tool.
 		return bytes.Clone(input), nil
 	case "/usr/bin/codesign":
-		if len(args) != 5 || args[0] != "--verify" || args[1] != "--strict" || args[2] != "-R" || args[3] != horusSigningRequirement {
+		const inlineRequirement = `=anchor apple generic and certificate leaf[subject.OU] = "9D382WV988" and identifier "sirsi"`
+		if len(args) != 5 || args[0] != "--verify" || args[1] != "--strict" || args[2] != "-R" || args[3] != inlineRequirement {
 			f.t.Fatal("signature qualification drift")
 		}
 		if f.signatureErr {

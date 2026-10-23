@@ -42,7 +42,7 @@ type horusPublication interface {
 	Close() error
 }
 
-const horusSigningRequirement = `anchor apple generic and certificate leaf[subject.OU] = "9D382WV988" and identifier "sirsi"`
+const horusSigningRequirement = `=anchor apple generic and certificate leaf[subject.OU] = "9D382WV988" and identifier "sirsi"`
 
 func (b nativeServiceBackend) horusDependencies() horusServiceDependencies {
 	if b.horus != nil {
