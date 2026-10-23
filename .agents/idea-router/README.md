@@ -12,7 +12,7 @@ configuration must fail, never open a retired `~/.sirsi/router.db` or create a
 second authority. Do not post work by writing Markdown into this checkout.
 
 Send with `sirsi router send` and read with `sirsi router pull/show`.
-`sirsi router respond` atomically closes the original request: use it only when
+`sirsi router respond` sends a reply and closes the original request: use it only when
 every original requested outcome is fulfilled, including a coordination-only
 request whose entire requested outcome is complete. It is not a progress reply.
 For partial results, blockers or updates, send a new correlated router item and
@@ -20,6 +20,9 @@ verify its readback; preserve the original OPEN or truthfully BLOCKED with its
 history. Completing delivery or a routing subtask does not finish the original
 implementation. Product completion still requires its validated proof and
 fenced ledger settlement. A closing note alone is not inbound reply delivery.
+Sending and closing are separate operations, not a cross-row transaction. If
+delivery succeeds but close fails, preserve the delivered reply and reconcile
+the original explicitly rather than assuming an atomic outcome.
 Register only the actual current runtime; do not fabricate a worker to make a
 lane look staffed. A source registry declaration is not proof of queue execution.
 
