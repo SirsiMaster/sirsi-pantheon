@@ -226,6 +226,16 @@ func NewRemoteStore(base, token string) *RemoteStore {
 	}
 }
 
+// NewMemoryOnlyRemoteStore preserves the ordinary authenticated transport and
+// actual runtime identity, but never reads, writes, prunes or deletes disk
+// session caches. Operator maintenance must not persist derived credentials.
+// Sessions may still be minted and retained in this client's memory.
+func NewMemoryOnlyRemoteStore(base, token string) *RemoteStore {
+	store := NewRemoteStore(base, token)
+	store.sessionDir = ""
+	return store
+}
+
 var (
 	runtimeOnce sync.Once
 	runtimeHash string
