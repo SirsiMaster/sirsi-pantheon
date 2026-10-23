@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- Add read-only exact single-service lifecycle plans and explicitly granted,
+  instance-pinned maintenance for Apollo/Mercury helpers; no bulk refresh,
+  privilege prompts or implicit global-thread-list fallback.
+
 ## [0.24.123] — 2026-10-22
 
 - **Pre-push fixture isolation:** clear inherited Git repository variables in the test subprocess so foreign-repository fixtures cannot rewrite the parent checkout's configuration. Preserve the hook's parent environment and all existing test flags; exercise contamination, cleanup and fail-closed controls in CI.
