@@ -244,7 +244,9 @@ func (s *SQLiteStore) ReconcileMailboxNotice(ctx context.Context, req MailboxRec
 	return out, err
 }
 
-// Revalidate principal ownership in the transaction which publishes the audit.
+// Revalidate principal ownership and worker answering role in the transaction
+// which publishes the audit. This bounded own-record check deliberately avoids
+// the older whole-registry ListThreads precheck used by legacy answer verbs.
 func mailboxPrincipalLive(ctx context.Context, tx *txHandle, a mailboxActor, now time.Time, postgres bool) error {
 	lock := ""
 	if postgres {
