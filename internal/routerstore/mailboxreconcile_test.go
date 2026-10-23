@@ -259,3 +259,165 @@ func TestMailboxNoticeDigestPreservesExactLegacyBytes(t *testing.T) {
 		t.Fatal("field boundaries are not bound by the digest")
 	}
 }
+
+func TestMailboxAuthorityNamespaceRefusesUnscopedHostWrites(t *testing.T) {
+	s, m, admin, _ := noticeFixture(t)
+	h, err := Handler(s, ServerOptions{Token: "bootstrap-fixture", RuleOfRa: "off", RecipientRegistry: deliveryRegistry(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	token, _, err := s.MintHostToken("ordinary-host", "non-bootstrap unscoped fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	thread := ThreadRecord{ThreadID: "ordinary-host-thread", Agent: m.Actor, Host: "ordinary-host", Status: "active", LastSeenAt: s.clock().Format(time.RFC3339Nano), Payload: json.RawMessage(`{"surface":"codex"}`)}
+	if err := s.UpsertThreads([]ThreadRecord{thread}); err != nil {
+		t.Fatal(err)
+	}
+	client := NewRemoteStore(srv.URL, token)
+	client.host, client.agent, client.threadID, client.sessionDir = thread.Host, thread.Agent, thread.ThreadID, ""
+	for _, key := range []string{mailboxManifestPrefix + m.ID, "mailbox-reconciliation:v2:future"} {
+		if err := client.SetState(key, `{"forged":"approval"}`); err == nil {
+			t.Fatal("ordinary unscoped host inserted authority through SetState")
+		}
+		if ok, err := client.CompareAndSwapState(key, "", false, `{"forged":"approval"}`); err == nil || ok {
+			t.Fatal("ordinary unscoped host inserted authority through CAS")
+		}
+		if _, exists, err := s.GetState(key); err != nil || exists {
+			t.Fatalf("refused insertion left state: %v %v", exists, err)
+		}
+	}
+	approveNotice(t, s, m, admin)
+	key := mailboxManifestPrefix + m.ID
+	approved, _, err := s.GetState(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.SetState(key, `{"erased":"approval"}`); err == nil {
+		t.Fatal("ordinary unscoped host overwrote approval through SetState")
+	}
+	if ok, err := client.CompareAndSwapState(key, approved, true, `{"erased":"approval"}`); err == nil || ok {
+		t.Fatal("ordinary unscoped host overwrote approval through CAS")
+	}
+	if got, _, err := s.GetState(key); err != nil || got != approved {
+		t.Fatal("authentic approval changed on refused generic mutation", err)
+	}
+	if _, err := client.ReconcileMailboxNotice(context.Background(), MailboxReconcileRequest{Action: "ack-notice", ManifestID: m.ID, NoticeID: "notice"}); err != nil {
+		t.Fatal("typed approved operation broken by generic namespace fence", err)
+	}
+	audited, _, err := s.GetState(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.SetState(key, approved); err == nil {
+		t.Fatal("ordinary host erased custody audit through SetState")
+	}
+	if ok, err := client.CompareAndSwapState(key, audited, true, approved); err == nil || ok {
+		t.Fatal("ordinary host erased custody audit through CAS")
+	}
+	if got, _, err := s.GetState(key); err != nil || got != audited {
+		t.Fatal("custody audit changed on refused generic mutation", err)
+	}
+}
+
+func TestMailboxCancelledApprovalCannotPublish(t *testing.T) {
+	s, m, admin, _ := noticeFixture(t)
+	ctx, cancel := context.WithCancel(admin)
+	defer cancel()
+	beforeMailboxManifestInsert = func(*txHandle) { cancel() }
+	defer func() { beforeMailboxManifestInsert = nil }()
+	if _, err := s.ReconcileMailboxNotice(ctx, MailboxReconcileRequest{Action: "approve", Manifest: &m}); err == nil {
+		t.Fatal("cancelled approval reported success")
+	}
+	if _, exists, err := s.GetState(mailboxManifestPrefix + m.ID); err != nil || exists {
+		t.Fatalf("cancelled approval became durable: exists=%v err=%v", exists, err)
+	}
+}
+
+func TestMailboxPostgresContendedApprovalCancellation(t *testing.T) {
+	if pgTestDSN() == "" {
+		t.Skip("real PostgreSQL fixture requires SIRSI_TEST_PG_DSN; not credited locally")
+	}
+	s, m, admin, _ := noticeFixture(t)
+	s.db.SetMaxOpenConns(4)
+	blocker, err := s.db.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = blocker.Rollback() }()
+	key := mailboxManifestPrefix + m.ID
+	if _, err := blocker.Exec(`INSERT INTO state(key,value) VALUES(?,?)`, key, `{"uncommitted":"competing approval"}`); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(admin)
+	defer cancel()
+	ready := make(chan int, 1)
+	beforeMailboxManifestInsert = func(tx *txHandle) {
+		var pid int
+		if err := tx.QueryRowContext(ctx, `SELECT pg_backend_pid()`).Scan(&pid); err != nil {
+			ready <- -1
+			return
+		}
+		ready <- pid
+	}
+	defer func() { beforeMailboxManifestInsert = nil }()
+	done := make(chan error, 1)
+	go func() {
+		_, err := s.ReconcileMailboxNotice(ctx, MailboxReconcileRequest{Action: "approve", Manifest: &m})
+		done <- err
+	}()
+	// Always cancel/unblock/join the sole fixture caller before resetting hook.
+	defer func() {
+		cancel()
+		_ = blocker.Rollback()
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			t.Error("contended approval fixture did not terminate")
+		}
+	}()
+	var pid int
+	select {
+	case pid = <-ready:
+	case <-time.After(3 * time.Second):
+		t.Fatal("approval did not reach insert boundary")
+	}
+	if pid < 1 {
+		t.Fatal("fixture could not identify actual approval backend")
+	}
+	waiting := false
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		var blocked bool
+		if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(wait_event_type='Lock',false) FROM pg_stat_activity WHERE pid=?`, pid).Scan(&blocked); err != nil {
+			t.Fatal(err)
+		}
+		if blocked {
+			waiting = true
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !waiting {
+		t.Fatal("actual approval INSERT did not wait on competing unique key")
+	}
+	cancel()
+	if err := blocker.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		// Keep the deferred join nonblocking after consuming the terminal result.
+		done <- err
+		if err == nil {
+			t.Fatal("cancelled contended approval committed after blocker rollback")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("cancelled contended approval did not return")
+	}
+	if _, exists, err := s.GetState(key); err != nil || exists {
+		t.Fatalf("cancelled contended approval left state: exists=%v err=%v", exists, err)
+	}
+}

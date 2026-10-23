@@ -3,6 +3,7 @@ package routerstore
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -13,6 +14,9 @@ import (
 )
 
 const mailboxManifestPrefix = "mailbox-reconciliation:v1:"
+
+// Tests may pause at the exact insertion boundary; never installed by a caller.
+var beforeMailboxManifestInsert func(*txHandle)
 
 type MailboxNotice struct {
 	ID             string `json:"id"`
@@ -130,7 +134,7 @@ func (s *SQLiteStore) ReconcileMailboxNotice(ctx context.Context, req MailboxRec
 		return MailboxReconcileResult{}, err
 	}
 	var out MailboxReconcileResult
-	err := s.withTx(func(tx *txHandle) error {
+	err := s.withMailboxTransaction(ctx, func(tx *txHandle) error {
 		now := s.clock()
 		if err := mailboxPrincipalLive(ctx, tx, a, now, s.dialect().name == "postgres"); err != nil {
 			return err
@@ -144,14 +148,15 @@ func (s *SQLiteStore) ReconcileMailboxNotice(ctx context.Context, req MailboxRec
 				return err
 			}
 			key := mailboxManifestPrefix + m.ID
-			state := maatTransactionState{tx}
-			old, exists, err := state.GetState(key)
-			if err != nil {
+			var old string
+			err := tx.QueryRowContext(ctx, `SELECT value FROM state WHERE key=?`, key).Scan(&old)
+			exists := err == nil
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
 				return err
 			}
 			if exists {
 				var r mailboxManifestRecord
-				if json.Unmarshal([]byte(old), &r) != nil || mailboxHash(r.Manifest) != mailboxHash(m) {
+				if json.Unmarshal([]byte(old), &r) != nil || !r.Approved.Bootstrap || mailboxHash(r.Manifest) != mailboxHash(m) {
 					return errors.New("mailbox reconciliation: immutable approval id collision")
 				}
 				out = MailboxReconcileResult{ManifestID: m.ID, Repeated: true}
@@ -161,12 +166,18 @@ func (s *SQLiteStore) ReconcileMailboxNotice(ctx context.Context, req MailboxRec
 			if err != nil {
 				return err
 			}
-			res, err := tx.Exec(`INSERT INTO state(key,value) VALUES(?,?) ON CONFLICT(key) DO NOTHING`, key, string(raw))
+			if beforeMailboxManifestInsert != nil {
+				beforeMailboxManifestInsert(tx)
+			}
+			res, err := tx.ExecContext(ctx, `INSERT INTO state(key,value) VALUES(?,?) ON CONFLICT(key) DO NOTHING`, key, string(raw))
 			if err != nil {
 				return err
 			}
 			if n, err := res.RowsAffected(); err != nil || n != 1 {
 				return errors.New("mailbox reconciliation: concurrent approval; read back before retry")
+			}
+			if !s.clock().Before(m.ExpiresAt) {
+				return errors.New("mailbox reconciliation: approval expired before publication")
 			}
 			out.ManifestID = m.ID
 			return nil
@@ -185,7 +196,7 @@ func (s *SQLiteStore) ReconcileMailboxNotice(ctx context.Context, req MailboxRec
 		}
 		now = s.clock() // Never authorize using a timestamp taken before lock wait.
 		var record mailboxManifestRecord
-		if json.Unmarshal([]byte(raw), &record) != nil || record.Audits == nil || record.Manifest.ID != req.ManifestID || record.Manifest.Actor != a.Agent || validateMailboxManifest(record.Manifest, now) != nil {
+		if json.Unmarshal([]byte(raw), &record) != nil || !record.Approved.Bootstrap || record.Audits == nil || record.Manifest.ID != req.ManifestID || record.Manifest.Actor != a.Agent || validateMailboxManifest(record.Manifest, now) != nil {
 			return errors.New("mailbox reconciliation: approval is invalid, expired or belongs to another actor")
 		}
 		var approved *MailboxNotice
@@ -242,6 +253,26 @@ func (s *SQLiteStore) ReconcileMailboxNotice(ctx context.Context, req MailboxRec
 		return nil
 	})
 	return out, err
+}
+
+func (s *SQLiteStore) withMailboxTransaction(ctx context.Context, fn func(*txHandle) error) error {
+	return s.retryWrite(func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = tx.Rollback() }()
+		if err := fn(tx); err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return tx.Commit()
+	})
 }
 
 // Revalidate principal ownership and worker answering role in the transaction
