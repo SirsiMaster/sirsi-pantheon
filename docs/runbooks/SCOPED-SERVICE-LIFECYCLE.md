@@ -43,3 +43,9 @@ This source change has no installed-service effect. Native deployment evidence
 must name the installed build, selected label, pre/post instances, health,
 preserved unrelated jobs, and any recovery debt. Never report source fixtures
 as a completed native rollout.
+
+The confirmed native Pantheon lead is declared `attended: true` and its generic
+background consumer has no `worker_answers` grant. A long build/aged heartbeat
+must not silently authorize a competing implementation writer. Deliberately
+delegated helpers use separate identities and fenced tasks. This is one-lane
+ownership, not an exclusive machine reservation or a restriction on other lanes.

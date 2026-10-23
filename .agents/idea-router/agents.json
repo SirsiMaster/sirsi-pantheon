@@ -623,7 +623,8 @@
       }
     },
     "codex-pantheon": {
-      "worker_answers": true,
+      "worker_answers": false,
+      "attended": true,
       "id": "codex-pantheon",
       "type": "codex",
       "command": [

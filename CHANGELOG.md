@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- Mark the confirmed native Pantheon lead attended and revoke its competing
+  background worker's answering grant; stale heartbeat is not a transfer of
+  implementation ownership. Other lanes retain shared-machine concurrency.
+
 - Add read-only exact single-service lifecycle plans and explicitly granted,
   instance-pinned maintenance for Apollo/Mercury helpers; no bulk refresh,
   privilege prompts or implicit global-thread-list fallback.
