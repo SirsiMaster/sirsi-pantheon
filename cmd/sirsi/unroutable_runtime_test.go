@@ -7,6 +7,26 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 )
 
+// A service (Horus) and a human have no inbox consumer by design, so neither may
+// ever be reported unroutable. A lane with the same shape (wake none, no live
+// session) is the control: it must still read unroutable, or this test would pass
+// for a function that had simply stopped judging anyone.
+func TestServiceAndHumanAreNeverUnroutable(t *testing.T) {
+	now := time.Now().UTC()
+	reg := &router.Registry{Agents: map[string]router.AgentConfig{
+		"horus": {Type: "service", Wake: router.WakeConfig{Mechanism: router.WakeNone}},
+		"owner": {Type: "human", Wake: router.WakeConfig{Mechanism: router.WakeNone}},
+		"lane":  {Type: "claude", Wake: router.WakeConfig{Mechanism: router.WakeNone}},
+	}}
+	got := unroutableFromRuntime(reg, &router.ThreadRegistry{Threads: map[string]*router.Thread{}}, now)
+	if got["horus"] || got["owner"] {
+		t.Fatalf("service/human judged unroutable: horus=%v owner=%v", got["horus"], got["owner"])
+	}
+	if !got["lane"] {
+		t.Fatal("control failed: a wake-none lane with no live session must read unroutable")
+	}
+}
+
 func TestFleetRoutabilityUsesLiveConsumer(t *testing.T) {
 	now := time.Now().UTC()
 	for _, tc := range []struct {

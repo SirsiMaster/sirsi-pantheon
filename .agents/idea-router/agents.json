@@ -773,6 +773,7 @@
       "consumer": {},
       "cwd": "/Users/thekryptodragon/Development/sirsi-pantheon",
       "description": "Actor-only local supervision identity; never route inbox work here and do not add a wake mechanism.",
+      "mail_to": "ra",
       "id": "horus",
       "repo": "/Users/thekryptodragon/Development/sirsi-pantheon",
       "type": "service",
