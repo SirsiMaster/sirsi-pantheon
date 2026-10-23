@@ -587,19 +587,74 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 	if t.Host == "" {
 		t.Host = ownerHost
 	}
-	now := time.Now().UTC()
-
-	// Stamp the stable machine identity the reaper scopes liveness to (ADR-022).
-	// Captured here so both the mint and reuse paths carry it; empty on platforms
-	// without a probe, which the reaper treats as a local (per-machine) record.
+	// Capture native identity once, not on each contention retry.
 	if t.MachineID == "" {
 		t.MachineID = MachineID()
 	}
+	if t.StartTime == "" && t.PID >= minAgentPID {
+		t.StartTime = PIDStartTimeOf(t.PID)
+	}
+	return registerThreadRetry(routerRoot, t, LoadThreadRegistry, SaveThreadRegistry)
+}
 
-	reg, err := LoadThreadRegistry(routerRoot)
+// Retry only re-derived CAS mutations; never replay a previously saved delta.
+func registerThreadRetry(root string, input *Thread, load func(string) (*ThreadRegistry, error), save func(string, *ThreadRegistry) error) (*Thread, error) {
+	intent := *input
+	intent.Watches = append([]string(nil), input.Watches...)
+	mintID := NewThreadID()
+	var selected *Thread
+	var selectedExisted bool
+	var out *Thread
+	err := retryOnLostFenceErr(func() error {
+		reg, err := load(root)
+		if err != nil {
+			return err
+		}
+		if selected != nil {
+			current := reg.Threads[selected.ThreadID]
+			if current == nil && selectedExisted {
+				return fmt.Errorf("registration target disappeared during contention")
+			}
+			if current != nil && (current.Status.IsTerminal() || current.Status == ThreadStatusSuspended) {
+				return fmt.Errorf("registration target changed or retired during contention")
+			}
+			if current != nil && (current.AgentID != selected.AgentID || current.Host != selected.Host || current.MachineID != selected.MachineID || current.Surface != selected.Surface || current.SessionID != selected.SessionID || current.PID != selected.PID || current.StartTime != selected.StartTime) {
+				return fmt.Errorf("registration target identity changed during contention")
+			}
+		}
+		attempt := intent
+		attempt.Watches = append([]string(nil), intent.Watches...)
+		baselines := make(map[string]Thread, len(reg.Threads))
+		for id, row := range reg.Threads {
+			if row != nil {
+				baselines[id] = *row
+			}
+		}
+		reuseID := ""
+		if selected != nil {
+			reuseID = selected.ThreadID
+		}
+		out, err = registerThreadAttempt(root, &attempt, reg, mintID, reuseID, save)
+		if errors.Is(err, ErrLostLifecycleFence) && out != nil && selected == nil {
+			if baseline, ok := baselines[out.ThreadID]; ok {
+				selected = &baseline
+				selectedExisted = true
+			} else {
+				copy := *out
+				selected = &copy
+			}
+		}
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
+	*input = *out
+	return out, nil
+}
+
+func registerThreadAttempt(routerRoot string, t *Thread, reg *ThreadRegistry, mintID, reuseID string, save func(string, *ThreadRegistry) error) (*Thread, error) {
+	now := time.Now().UTC()
 
 	// Opportunistic compaction (PR #25, A28 residue): GC terminal
 	// (closed/reaped) records older than TerminalRetention so the registry
@@ -619,9 +674,6 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 	// the OS start signature of this PID. Empty on legacy callers / unsupported
 	// platforms, which keeps the bare-PID behavior.
 	newStart := t.StartTime
-	if newStart == "" && t.PID >= minAgentPID {
-		newStart = PIDStartTimeOf(t.PID)
-	}
 
 	// Session-keyed reuse path (app-hosted surfaces, e.g. Claude Code desktop).
 	// App-hosted sessions have no durable PID — each hook fire gets a fresh OS
@@ -632,7 +684,7 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 	// the pile: one record per (session_id, surface) is now impossible to exceed.
 	if t.ThreadID == "" && t.SessionID != "" {
 		for _, existing := range reg.Threads {
-			if existing == nil {
+			if existing == nil || (reuseID != "" && existing.ThreadID != reuseID) {
 				continue
 			}
 
@@ -703,8 +755,8 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 			if t.ConsumerCapable {
 				existing.ConsumerCapable = true
 			}
-			if err := SaveThreadRegistry(routerRoot, reg); err != nil {
-				return nil, err
+			if err := save(routerRoot, reg); err != nil {
+				return existing, err
 			}
 			return existing, nil
 		}
@@ -712,7 +764,7 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 
 	if t.ThreadID == "" && t.PID >= minAgentPID {
 		for id, existing := range reg.Threads {
-			if existing == nil {
+			if existing == nil || (reuseID != "" && existing.ThreadID != reuseID) {
 				continue
 			}
 
@@ -772,8 +824,8 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 				if t.ConsumerCapable {
 					existing.ConsumerCapable = true
 				}
-				if err := SaveThreadRegistry(routerRoot, reg); err != nil {
-					return nil, err
+				if err := save(routerRoot, reg); err != nil {
+					return existing, err
 				}
 				_ = id
 				return existing, nil
@@ -795,7 +847,7 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 	}
 
 	if t.ThreadID == "" {
-		t.ThreadID = NewThreadID()
+		t.ThreadID = mintID
 	}
 	if t.StartTime == "" {
 		t.StartTime = newStart
@@ -812,8 +864,8 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 	t.Watches = normalizeWatches(t.AgentID, t.Watches)
 
 	reg.Threads[t.ThreadID] = t
-	if err := SaveThreadRegistry(routerRoot, reg); err != nil {
-		return nil, err
+	if err := save(routerRoot, reg); err != nil {
+		return t, err
 	}
 	return t, nil
 }
