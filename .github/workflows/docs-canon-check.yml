@@ -46,9 +46,9 @@ jobs:
             exit 0
           fi
           if [ "$IS_PR" = true ]; then
-            value=$(git diff --name-only -z "$BASE...$HEAD" | python3 -B scripts/ci-docs-only.py)
+            value=$(git diff --no-renames --name-only -z "$BASE...$HEAD" | python3 -B scripts/ci-docs-only.py)
           else
-            value=$(git diff --name-only -z "$BASE" "$HEAD" | python3 -B scripts/ci-docs-only.py)
+            value=$(git diff --no-renames --name-only -z "$BASE" "$HEAD" | python3 -B scripts/ci-docs-only.py)
           fi
           echo "docs_only=$value" >> "$GITHUB_OUTPUT"
   docs-canon-check:
