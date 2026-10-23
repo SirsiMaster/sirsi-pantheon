@@ -162,6 +162,50 @@ func TestSceneUnknownFamiliesAndRates(t *testing.T) {
 	}
 }
 
+func TestSceneIncompleteCableRetainsOnlyIndividualRates(t *testing.T) {
+	for _, duplicate := range []bool{false, true} {
+		name := "missing reverse direction"
+		if duplicate {
+			name = "duplicate forward direction"
+		}
+		t.Run(name, func(t *testing.T) {
+			d := dashboardForFreshness(t)
+			first := d.Links[0].Directions[0]
+			d.Links[0].Directions = []DashDir{first}
+			if duplicate {
+				d.Links[0].Directions = append(d.Links[0].Directions, first)
+			} else {
+				at := time.Unix(1792339200, 0)
+				read := readDashboardAt(t, d, at, at)
+				if read.State != "partial" || read.Headline.Wire.Number != "—" {
+					t.Fatalf("missing reverse direction was not partial: %+v", read)
+				}
+			}
+			freshness := fixtureFreshness(d)
+			headline := projectHeadline(d, freshness)
+			if !freshness.withheld || headline.Wire.Number != "—" {
+				t.Fatal("incomplete link was promoted to a complete headline")
+			}
+			found := false
+			for _, cable := range projectScene(d, headline.NodeOrder, freshness).Cables {
+				if cable.ID != d.Links[0].ID {
+					continue
+				}
+				found = true
+				if cable.Rate.Number != "—" || len(cable.Directions) == 0 {
+					t.Fatalf("incomplete cable aggregate was published: %+v", cable)
+				}
+				if cable.Directions[0].Rate == "— MB/s" || cable.Directions[0].Speed <= 0 {
+					t.Fatalf("eligible individual leg was discarded: %+v", cable.Directions[0])
+				}
+			}
+			if !found {
+				t.Fatal("incomplete cable disappeared")
+			}
+		})
+	}
+}
+
 // An explicit output path creates a historical fixture from the actual shared
 // reader for native/web render QA. No network request: fixtureClient is injected.
 func TestExportRenderFixture(t *testing.T) {

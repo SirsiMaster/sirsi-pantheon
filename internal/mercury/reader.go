@@ -234,26 +234,32 @@ func (f freshnessAssessment) completeForHeadline(d Dashboard) bool {
 		if link.State != "up" || link.Ends[1] == nil {
 			continue
 		}
-		if len(link.Directions) != 2 {
-			return false
-		}
-		forward, reverse := false, false
-		for directionIndex, direction := range link.Directions {
-			if !f.directionEligible(linkIndex, directionIndex) {
-				return false
-			}
-			if direction.From == link.Ends[0].Node && direction.To == link.Ends[1].Node {
-				forward = true
-			}
-			if direction.From == link.Ends[1].Node && direction.To == link.Ends[0].Node {
-				reverse = true
-			}
-		}
-		if !forward || !reverse {
+		if !f.completeLink(link, linkIndex) {
 			return false
 		}
 	}
 	return true
+}
+
+// Both headline and cable aggregates require the same complete pair. A fresh
+// individual leg remains useful even when its reverse measurement is absent.
+func (f freshnessAssessment) completeLink(link DashLink, linkIndex int) bool {
+	if link.State != "up" || link.Ends[0] == nil || link.Ends[1] == nil || len(link.Directions) != 2 {
+		return false
+	}
+	forward, reverse := false, false
+	for directionIndex, direction := range link.Directions {
+		if !f.directionEligible(linkIndex, directionIndex) {
+			return false
+		}
+		if direction.From == link.Ends[0].Node && direction.To == link.Ends[1].Node {
+			forward = true
+		}
+		if direction.From == link.Ends[1].Node && direction.To == link.Ends[0].Node {
+			reverse = true
+		}
+	}
+	return forward && reverse
 }
 
 func assessFreshness(d Dashboard, completedAt time.Time) freshnessAssessment {

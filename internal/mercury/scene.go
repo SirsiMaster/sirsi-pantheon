@@ -160,12 +160,8 @@ func projectScene(d Dashboard, order []string, freshness freshnessAssessment) *S
 			c.Lane = 100 + offset
 		}
 		var busiest *float64
-		allDirectionsEligible := len(l.Directions) > 0
 		for directionIndex, v := range l.Directions {
 			eligible := freshness.directionEligible(linkIndexes[l.ID], directionIndex)
-			if !eligible {
-				allDirectionsEligible = false
-			}
 			direction := SceneDirection{From: v.From, To: v.To, Rate: "— MB/s", Color: "neutral", Forward: cards[v.From].X <= cards[v.To].X}
 			if eligible && v.WireGBs != nil {
 				direction.Rate = fmt.Sprintf("%.1f MB/s", *v.WireGBs*1000)
@@ -188,7 +184,7 @@ func projectScene(d Dashboard, order []string, freshness freshnessAssessment) *S
 			}
 			c.Directions = append(c.Directions, direction)
 		}
-		if allDirectionsEligible && busiest != nil {
+		if freshness.completeLink(l, linkIndexes[l.ID]) && busiest != nil {
 			c.Rate = rateCell(*busiest)
 		}
 		scene.Cables = append(scene.Cables, c)
