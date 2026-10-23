@@ -522,11 +522,6 @@ func (j *PodJournal) ExecutePod(holder string, req podRequest) (json.RawMessage,
 	return append(json.RawMessage(nil), response.reply...), nil
 }
 
-type contextDelegationScheduler interface {
-	MaatGetDelegationContext(context.Context, string) (*Delegation, error)
-	MaatReconcileContext(context.Context, string, string, int, []Reservation) (int64, error)
-}
-
 // RunRelay catches up only this journal, one bounded batch at a time. Errors
 // retain all events; reporting occurs only on unavailable/recovered transitions.
 func (j *PodJournal) RunRelay(ctx context.Context, canonical AtomicDelegationScheduler, interval time.Duration, report func(error)) {

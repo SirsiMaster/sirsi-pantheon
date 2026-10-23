@@ -176,3 +176,8 @@ func (c PodClient) ReadOwnStatus(ctx context.Context, resource string) ([]Reserv
 	rows, err := reader.ReadOwnPod(ctx, *d, resource)
 	return rows, true, err
 }
+
+type contextDelegationScheduler interface {
+	MaatGetDelegationContext(context.Context, string) (*Delegation, error)
+	MaatReconcileContext(context.Context, string, string, int, []Reservation) (int64, error)
+}

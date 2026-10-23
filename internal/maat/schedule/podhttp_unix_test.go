@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"math/big"
 	"net"
@@ -77,6 +78,7 @@ func TestPodNativeMutualTLSEndpointOwnLifecycle(t *testing.T) {
 	if e != nil || !out.Granted {
 		t.Fatalf("authenticated grant %+v %v", out, e)
 	}
+	routed.Canonical.(*podClientFixture).err = fmt.Errorf("fixture canonical partition")
 	rows, readErr := consumer.Status("studio")
 	if readErr != nil || len(rows) != 1 || rows[0].ID != out.Reservation.ID {
 		t.Fatalf("native own guard: %+v %v", rows, readErr)
