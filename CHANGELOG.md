@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- Bind router service images to a clean committed source and a minimal
+  immutable recipient registry, so cloud actor-only delivery protection is
+  configured rather than silently absent outside a developer checkout.
+
 - Mark the confirmed native Pantheon lead attended and revoke its competing
   background worker's answering grant; stale heartbeat is not a transfer of
   implementation ownership. Other lanes retain shared-machine concurrency.
