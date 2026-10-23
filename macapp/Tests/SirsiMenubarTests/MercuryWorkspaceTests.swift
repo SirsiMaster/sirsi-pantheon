@@ -3,6 +3,24 @@ import XCTest
 @testable import SirsiMenubar
 
 final class MercuryWorkspaceTests: XCTestCase {
+    func testCurrentObservationRequiresPublishedLiveStateAndSuccessfulRead() throws {
+        for state in ["live", "stale", "down", "error", "unknown", ""] {
+            let payload = "{\"state\":\"\(state)\",\"samples\":[{\"t\":100}]}"
+            let machine = try JSONDecoder().decode(MercuryMonitorMachine.self, from: Data(payload.utf8))
+            XCTAssertEqual(machine.hasCurrentObservation(at: Date(timeIntervalSince1970: 105), readSucceeded: true), state == "live")
+            XCTAssertFalse(machine.hasCurrentObservation(at: Date(timeIntervalSince1970: 105), readSucceeded: false))
+        }
+        let missingState = try JSONDecoder().decode(MercuryMonitorMachine.self, from: Data(#"{"samples":[{"t":100}]}"#.utf8))
+        XCTAssertFalse(missingState.hasCurrentObservation(at: Date(timeIntervalSince1970: 105), readSucceeded: true))
+    }
+
+    func testRetainedObservationAgesWithoutAReplacementResponse() throws {
+        let machine = try JSONDecoder().decode(MercuryMonitorMachine.self, from: Data(#"{"state":"live","samples":[{"t":100}]}"#.utf8))
+        XCTAssertTrue(machine.hasCurrentObservation(at: Date(timeIntervalSince1970: 110), readSucceeded: true))
+        XCTAssertFalse(machine.hasCurrentObservation(at: Date(timeIntervalSince1970: 110.001), readSucceeded: true))
+        XCTAssertFalse(machine.hasCurrentObservation(at: Date(timeIntervalSince1970: 90), readSucceeded: true))
+    }
+
     func testMonitorRejectsStaleFutureAndInvalidCoreObservations() throws {
         let sample = try JSONDecoder().decode(MercuryMonitorSample.self, from: Data(#"{"t":100,"cores":[20,40]}"#.utf8))
         XCTAssertEqual(sample.meanCPU, 30)
