@@ -27,7 +27,7 @@ build_context() {
   # commands, environment overrides or any live store/session data. FindRepoRoot
   # recognizes this immutable declared registry without a fake .git directory.
   jq --sort-keys --arg source "$(git -C "$ROOT" rev-parse HEAD)" \
-    '{schema:"sirsi-router-recipient-registry.v1",source_commit:$source,agents:(.agents|map_values({type,description,wake:{mechanism:.wake.mechanism},delivery_contract}|with_entries(select(.value!=null))))}' \
+    '{schema:"sirsi-router-recipient-registry.v1",source_commit:$source,agents:(.agents|map_values({type,description,mail_to,wake:{mechanism:.wake.mechanism},delivery_contract}|with_entries(select(.value!=null))))}' \
     "$ROOT/.agents/idea-router/agents.json" >"$1/recipient-registry.json"
   (cd "$ROOT" && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath \
     -ldflags="-s -w -X github.com/SirsiMaster/sirsi-pantheon/internal/version.Version=$VERSION" -o "$1/sirsi" ./cmd/sirsi)

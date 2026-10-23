@@ -26,9 +26,10 @@ bad=$(grep -vE "^(FROM gcr.io/distroless/static-debian12:nonroot|COPY sirsi /sir
 [ -z "$bad" ] || fail "context Dockerfile does more than copy the prebuilt binary: $bad"
 grep -q "^CMD \[\"router\",\"serve\"\]$" "$CTX/Dockerfile" || fail "context must run router serve"
 jq -e --arg source "$(git rev-parse HEAD)" '.source_commit==$source and (.agents|type=="object") and (.agents|length>0)' "$CTX/recipient-registry.json" >/dev/null || fail "registry is not bound to this committed source"
-jq -e '[.agents[]|keys[]|select(.!="type" and .!="description" and .!="wake" and .!="delivery_contract")]|length==0' "$CTX/recipient-registry.json" >/dev/null || fail "registry contains runtime/credential-bearing fields"
-jq -S '.agents|map_values({type,description,wake:{mechanism:.wake.mechanism},delivery_contract}|with_entries(select(.value!=null)))' .agents/idea-router/agents.json >"$FX/expected-registry.json"
+jq -e '[.agents[]|keys[]|select(.!="type" and .!="description" and .!="mail_to" and .!="wake" and .!="delivery_contract")]|length==0' "$CTX/recipient-registry.json" >/dev/null || fail "registry contains runtime/credential-bearing fields"
+jq -S '.agents|map_values({type,description,mail_to,wake:{mechanism:.wake.mechanism},delivery_contract}|with_entries(select(.value!=null)))' .agents/idea-router/agents.json >"$FX/expected-registry.json"
 jq -S '.agents' "$CTX/recipient-registry.json" >"$FX/actual-registry.json"
 cmp "$FX/expected-registry.json" "$FX/actual-registry.json" || fail "recipient policy drifted from source"
+jq -e '.agents.horus.type=="service" and .agents.horus.mail_to=="ra" and .agents.horus.wake.mechanism=="none"' "$CTX/recipient-registry.json" >/dev/null || fail "Horus service mail custodian was lost from the cloud projection"
 if [ "$(uname -s)" = Linux ]; then "$CTX/sirsi" version >/dev/null || fail "context binary does not run"; fi
 echo "stage.test.sh: ok"

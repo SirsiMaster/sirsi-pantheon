@@ -8,6 +8,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [0.24.124] — 2026-10-23
 
+- Preserve main's Horus service-mail repair: route replies to its declared Ra custodian, refuse malformed redirects and exclude services/humans from agent-unreachable alerts. Carry the non-secret `mail_to` policy into the minimal cloud image registry rather than dropping it during packaging. Existing historical records and the separate supervisor-duty fault remain distinct.
+
 - Refuse FIFO completion proofs before any blocking read. Darwin/Linux open the resolved leaf nonblocking and no-follow, then retain regular-file, size and single-capture strict-final validation. Preserve caller-contained resolved aliases; unsupported platforms fail closed. The isolated regression watchdog also reproduces and terminates the original blocking-open failure.
 
 - Bound native host-pressure commands and replace process-enumerating `top` with aggregate `iostat`, preserving the existing load-average fallback and unknown-does-not-block policy. Cooperating upgraded consumers share one persistent lock and thirty-second known/unknown cache. Preserve retained PR1060 history, cold-home, lock-release and nine-process regression controls. Sample intervals are nominal; old loaded consumers do not coordinate until safely upgraded.
