@@ -159,7 +159,7 @@ func runCompletionValidator(root, canonicalRouterRoot, proofPath string, content
 }
 
 func captureCompletionProof(proofPath string) ([]byte, error) {
-	proofFile, err := os.Open(proofPath)
+	proofFile, err := openCompletionProof(proofPath)
 	if err != nil {
 		return nil, fmt.Errorf("open completion proof: %w", err)
 	}
