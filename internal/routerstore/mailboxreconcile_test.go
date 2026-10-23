@@ -322,17 +322,17 @@ func TestMailboxAuthorityNamespaceRefusesUnscopedHostWrites(t *testing.T) {
 	}
 }
 
-func TestMailboxCancelledApprovalCannotPublish(t *testing.T) {
+func TestMailboxCanceledApprovalCannotPublish(t *testing.T) {
 	s, m, admin, _ := noticeFixture(t)
 	ctx, cancel := context.WithCancel(admin)
 	defer cancel()
 	beforeMailboxManifestInsert = func(*txHandle) { cancel() }
 	defer func() { beforeMailboxManifestInsert = nil }()
 	if _, err := s.ReconcileMailboxNotice(ctx, MailboxReconcileRequest{Action: "approve", Manifest: &m}); err == nil {
-		t.Fatal("cancelled approval reported success")
+		t.Fatal("canceled approval reported success")
 	}
 	if _, exists, err := s.GetState(mailboxManifestPrefix + m.ID); err != nil || exists {
-		t.Fatalf("cancelled approval became durable: exists=%v err=%v", exists, err)
+		t.Fatalf("canceled approval became durable: exists=%v err=%v", exists, err)
 	}
 }
 
@@ -412,12 +412,12 @@ func TestMailboxPostgresContendedApprovalCancellation(t *testing.T) {
 		// Keep the deferred join nonblocking after consuming the terminal result.
 		done <- err
 		if err == nil {
-			t.Fatal("cancelled contended approval committed after blocker rollback")
+			t.Fatal("canceled contended approval committed after blocker rollback")
 		}
 	case <-time.After(3 * time.Second):
-		t.Fatal("cancelled contended approval did not return")
+		t.Fatal("canceled contended approval did not return")
 	}
 	if _, exists, err := s.GetState(key); err != nil || exists {
-		t.Fatalf("cancelled contended approval left state: exists=%v err=%v", exists, err)
+		t.Fatalf("canceled contended approval left state: exists=%v err=%v", exists, err)
 	}
 }
