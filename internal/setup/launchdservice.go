@@ -2,6 +2,9 @@ package setup
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -18,6 +21,30 @@ type ServiceInstance struct {
 	ProgramSHA256 string `json:"program_sha256"`
 	PID           int    `json:"pid"`
 	Started       string `json:"started"`
+	// Horus alone converts a recognized legacy wrapper into the protected CLI.
+	// Public digests bind the conversion without exposing plist/environment.
+	LauncherSHA256       string `json:"launcher_sha256,omitempty"`
+	ReplacementSHA256    string `json:"replacement_sha256,omitempty"`
+	ConvertedPlistSHA256 string `json:"converted_plist_sha256,omitempty"`
+	PlanSHA256           string `json:"plan_sha256,omitempty"`
+}
+
+// HorusServiceLabel is the single GUI-owner supervisor configuration transition.
+const HorusServiceLabel = "ai.sirsi.horus.agent-router"
+const horusProtectedProgram = "/usr/local/libexec/sirsi-pantheon/sirsi"
+
+func horusPlanDigest(p ServiceInstance) string {
+	p.PlanSHA256 = ""
+	b, _ := json.Marshal(p) // fixed strings/integers only
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+func horusExpectedAfter(p ServiceInstance) ServiceInstance {
+	p.Program, p.ProgramSHA256 = horusProtectedProgram, p.ReplacementSHA256
+	p.PlistSHA256, p.LauncherSHA256 = p.ConvertedPlistSHA256, ""
+	p.PlanSHA256 = horusPlanDigest(p)
+	return p
 }
 
 // ServiceBackend is injected so tests never signal or restart host services.
@@ -36,6 +63,9 @@ var serviceDigestRE = regexp.MustCompile(`^[a-f0-9]{64}$`)
 func validateServiceInstance(p ServiceInstance) error {
 	if p.Label == "" || p.Target == "" || p.Plist == "" || p.Program == "" || p.PID <= 1 || p.Started == "" || !serviceDigestRE.MatchString(p.PlistSHA256) || !serviceDigestRE.MatchString(p.ProgramSHA256) {
 		return errors.New("service lifecycle: complete exact instance and file digests required")
+	}
+	if p.Label == HorusServiceLabel && (!serviceDigestRE.MatchString(p.ReplacementSHA256) || !serviceDigestRE.MatchString(p.ConvertedPlistSHA256) || p.PlanSHA256 != horusPlanDigest(p)) {
+		return errors.New("service lifecycle: complete pinned Horus conversion plan required")
 	}
 	return nil
 }
@@ -67,6 +97,15 @@ func (c ServiceController) Refresh(ctx context.Context, expected ServiceInstance
 	current, err := c.Backend.Inspect(ctx, expected.Label)
 	if err != nil {
 		return ServiceInstance{}, fmt.Errorf("service lifecycle: restart readback failed: %w", err)
+	}
+	if expected.Label == HorusServiceLabel {
+		wanted := horusExpectedAfter(expected)
+		wanted.PID, wanted.Started = current.PID, current.Started
+		wanted.PlanSHA256 = horusPlanDigest(wanted)
+		if current != wanted || current.PID <= 1 || current.Started == "" || (current.PID == expected.PID && current.Started == expected.Started) {
+			return ServiceInstance{}, errors.New("service lifecycle: Horus conversion did not return the planned direct configuration and new instance")
+		}
+		return current, nil
 	}
 	if current.Target != expected.Target || current.Label != expected.Label || current.Plist != expected.Plist || current.PlistSHA256 != expected.PlistSHA256 || current.Program != expected.Program || current.ProgramSHA256 != expected.ProgramSHA256 || current.PID <= 1 || current.Started == "" || (current.PID == expected.PID && current.Started == expected.Started) {
 		return ServiceInstance{}, errors.New("service lifecycle: selected service did not return with the planned artifacts and a new instance")

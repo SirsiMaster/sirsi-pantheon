@@ -22,7 +22,10 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-type nativeServiceBackend struct{ relay *rootRelayDependencies }
+type nativeServiceBackend struct {
+	relay *rootRelayDependencies
+	horus *horusServiceDependencies
+}
 
 func NativeServiceBackend() ServiceBackend { return nativeServiceBackend{} }
 
@@ -164,6 +167,9 @@ func serviceArtifactPolicy(path string, capture bool, policy func(int) error) ([
 }
 
 func (b nativeServiceBackend) Inspect(ctx context.Context, label string) (ServiceInstance, error) {
+	if label == HorusServiceLabel {
+		return b.inspectHorus(ctx)
+	}
 	if label == rootRelayLabel {
 		return b.inspectRootRelay(ctx)
 	}
@@ -221,6 +227,9 @@ func (b nativeServiceBackend) Inspect(ctx context.Context, label string) (Servic
 }
 
 func (b nativeServiceBackend) Refresh(ctx context.Context, p ServiceInstance) error {
+	if p.Label == HorusServiceLabel {
+		return b.refreshHorus(ctx, p)
+	}
 	if p.Label == rootRelayLabel {
 		return b.refreshRootRelay(ctx, p)
 	}
