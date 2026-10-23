@@ -1,9 +1,9 @@
 package router
 
 import (
-	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
-	"os"
 	"testing"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
 )
 
 func TestSessionReuseProcessBinding(t *testing.T) {
@@ -78,5 +78,4 @@ func TestSessionReusePreservesIdentityGuards(t *testing.T) {
 			}
 		})
 	}
-	_ = os.Getpid()
 }
