@@ -15,6 +15,16 @@ import (
 	"time"
 )
 
+// AtomicDelegationScheduler keeps delegation and reservation writes under
+// the canonical reservation transaction. Older clients without this optional
+// feature keep their existing undelegated scheduler path.
+type AtomicDelegationScheduler interface {
+	MaatDelegation(action string, req Delegation) (Delegation, error)
+	MaatGetDelegation(pod string) (*Delegation, error)
+	MaatAuthorityReserve(machine string, req Reservation) (ReserveResult, error)
+	MaatReconcile(machine, pod string, epoch int, rows []Reservation) (int64, error)
+}
+
 const delegationStateKey = "maat:delegations"
 
 // maxDelegationTTL is the finite window cap (ADR-120 §4): a delegation never
@@ -145,6 +155,12 @@ func (l *Ledger) delegationSave(raw string, exists bool, rows []Delegation) erro
 // live (non-expired, non-revoked) delegation for a DIFFERENT pod is refused
 // (ADR-120 §1: a resource belongs to at most one live delegation).
 func (l *Ledger) Delegate(req Delegation) (Delegation, error) {
+	if a, ok := l.store.(AtomicDelegationScheduler); ok {
+		return a.MaatDelegation("delegate", req)
+	}
+	if _, canonical := l.store.(AtomicScheduler); canonical {
+		return Delegation{}, fmt.Errorf("maat: canonical store lacks atomic delegation RPC; upgrade compatible server first")
+	}
 	if err := validateDelegation(req); err != nil {
 		return Delegation{}, err
 	}
@@ -163,6 +179,21 @@ func (l *Ledger) delegateAttempt(req Delegation) (Delegation, error) {
 		return Delegation{}, err
 	}
 	now := l.now()
+	// Delegating a resource with outstanding canonical work would create two
+	// authorities even if all delegation-key writes were otherwise serialized.
+	_, _, active, _, err := l.snapshot()
+	if err != nil {
+		return Delegation{}, err
+	}
+	for _, row := range active {
+		if row.Status == StatusActive {
+			for _, resource := range req.Resources {
+				if sameResource(row.Resource, resource) {
+					return Delegation{}, fmt.Errorf("maat: resource %q has active canonical reservation %q", resource, row.ID)
+				}
+			}
+		}
+	}
 	nextEpoch := 1
 	replaceAt := -1
 	for i, d := range rows {
@@ -184,6 +215,7 @@ func (l *Ledger) delegateAttempt(req Delegation) (Delegation, error) {
 		}
 	}
 	req.Epoch = nextEpoch
+	req.AckedSeq = 0
 	req.Revoked = false
 	if replaceAt >= 0 {
 		rows[replaceAt] = req
@@ -200,6 +232,9 @@ func (l *Ledger) delegateAttempt(req Delegation) (Delegation, error) {
 // revoke an offline cache. Canonical/new-authority admission remains fenced
 // through the original expiry plus handback margin.
 func (l *Ledger) Revoke(pod string) (Delegation, error) {
+	if a, ok := l.store.(AtomicDelegationScheduler); ok {
+		return a.MaatDelegation("revoke", Delegation{Pod: pod})
+	}
 	for attempt := 0; attempt < maxLedgerAttempts; attempt++ {
 		out, err := l.revokeAttempt(pod)
 		if !errors.Is(err, errLedgerConflict) {
@@ -229,6 +264,9 @@ func (l *Ledger) revokeAttempt(pod string) (Delegation, error) {
 // GetDelegation returns pod's current delegation record (live or not), or
 // nil if pod has never been delegated.
 func (l *Ledger) GetDelegation(pod string) (*Delegation, error) {
+	if a, ok := l.store.(AtomicDelegationScheduler); ok {
+		return a.MaatGetDelegation(pod)
+	}
 	_, _, rows, err := l.delegationSnapshot()
 	if err != nil {
 		return nil, err
@@ -321,6 +359,9 @@ func (l *Ledger) upsertAttempt(req Reservation) (*Reservation, error) {
 // the epoch req was stamped with. Idempotent by req.ID via UpsertReservation,
 // so a retried catch-up replay never creates a duplicate.
 func (l *Ledger) ReserveAsAuthority(req Reservation) (ReserveResult, error) {
+	if a, ok := l.store.(AtomicDelegationScheduler); ok {
+		return a.MaatAuthorityReserve("", req)
+	}
 	if req.ID == "" {
 		return ReserveResult{}, fmt.Errorf("maat: authority reservation requires an id")
 	}
@@ -347,4 +388,113 @@ func (l *Ledger) ReserveAsAuthority(req Reservation) (ReserveResult, error) {
 		return ReserveResult{}, err
 	}
 	return ReserveResult{Granted: true, Reservation: out}, nil
+}
+
+// ReconcileAuthority runs only inside the canonical transaction adapter. The
+// machine is derived by the authenticated service handler, never trusted from
+// wire input. Each batch and its acknowledgement commit or roll back together.
+func (l *Ledger) ReconcileAuthority(machine, pod string, epoch int, batch []Reservation) (int64, error) {
+	if len(batch) > 256 {
+		return 0, fmt.Errorf("maat: replay batch exceeds 256")
+	}
+	raw, exists, ds, err := l.delegationSnapshot()
+	if err != nil {
+		return 0, err
+	}
+	at := -1
+	for i, d := range ds {
+		if d.Pod == pod {
+			at = i
+			break
+		}
+	}
+	if at < 0 {
+		return 0, fmt.Errorf("maat: unknown delegation")
+	}
+	d := ds[at]
+	if machine == "" || machine != d.AuthorityMachine || epoch != d.Epoch {
+		return 0, fmt.Errorf("maat: replay authority/epoch mismatch")
+	}
+	for _, req := range batch {
+		if req.Authority != "pod:"+pod || req.Epoch != epoch || req.Seq < 1 || !d.coversResource(req.Resource) {
+			return 0, fmt.Errorf("maat: invalid replay ownership/sequence")
+		}
+		if req.Seq <= d.AckedSeq {
+			_, _, known, _, e := l.snapshot()
+			if e != nil {
+				return 0, e
+			}
+			found := false
+			for _, old := range known {
+				if old.ID == req.ID && old.Authority == req.Authority && old.Epoch == req.Epoch && old.Seq >= req.Seq && old.Holder == req.Holder && old.Resource == req.Resource {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return 0, fmt.Errorf("maat: replay sequence aliases unknown/different reservation")
+			}
+			continue
+		}
+		if req.Seq != d.AckedSeq+1 {
+			return 0, fmt.Errorf("maat: replay sequence gap")
+		}
+		if d.expired(l.now()) && req.Status == StatusActive {
+			return 0, fmt.Errorf("maat: expired/revoked authority cannot replay active grants")
+		}
+		if _, e := l.UpsertReservation(req); e != nil {
+			return 0, e
+		}
+		d.AckedSeq = req.Seq
+	}
+	ds[at] = d
+	if err := l.delegationSave(raw, exists, ds); err != nil {
+		return 0, err
+	}
+	return d.AckedSeq, nil
+}
+
+// CheckLegacyReservationWrite preserves the compatible CAS path for resources
+// not delegated, while checking changed rows under the same canonical lock.
+func (l *Ledger) CheckLegacyReservationWrite(oldRaw, newRaw string) error {
+	var oldDoc, newDoc struct {
+		Reservations []Reservation `json:"reservations"`
+	}
+	if oldRaw != "" {
+		if err := json.Unmarshal([]byte(oldRaw), &oldDoc); err != nil {
+			return err
+		}
+	}
+	if err := json.Unmarshal([]byte(newRaw), &newDoc); err != nil {
+		return err
+	}
+	previous := map[string]Reservation{}
+	for _, r := range oldDoc.Reservations {
+		previous[r.ID] = r
+	}
+	for _, r := range newDoc.Reservations {
+		before, exists := previous[r.ID]
+		delete(previous, r.ID)
+		a, _ := json.Marshal(before)
+		b, _ := json.Marshal(r)
+		if exists && string(a) == string(b) {
+			continue
+		}
+		if r.Authority != "" || before.Authority != "" {
+			return fmt.Errorf("maat: legacy writes cannot create or alter pod authority grants")
+		}
+		if d, err := l.delegationFor(r.Resource, l.now()); err != nil {
+			return err
+		} else if d != nil {
+			return fmt.Errorf("maat: legacy write changes delegated resource %q", r.Resource)
+		}
+	}
+	for _, r := range previous {
+		if d, err := l.delegationFor(r.Resource, l.now()); err != nil {
+			return err
+		} else if d != nil {
+			return fmt.Errorf("maat: legacy write removes delegated resource %q", r.Resource)
+		}
+	}
+	return nil
 }

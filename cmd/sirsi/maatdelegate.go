@@ -25,9 +25,9 @@ var maatDelegateCmd = &cobra.Command{
 	Short: "Create, re-issue, or revoke a pod-local Ma'at booking delegation (ADR-120)",
 	Long: `Delegates exactly the named resources to a pod authority for a finite
 window (max 12h, ADR-120 §4). Re-running for the same --pod re-issues (bumps
-the epoch, fencing out the old authority instance); a resource already
-delegated to a DIFFERENT live pod is refused. --revoke ends a pod's
-delegation immediately. While a delegation is live, the canonical ledger
+the epoch only after the old expiry plus five-minute handback margin); a resource already
+delegated to a DIFFERENT live pod is refused. --revoke refuses new canonical pod grants immediately but retains the old
+canonical fence through expiry plus handback margin. While a delegation is live, the canonical ledger
 refuses direct "sirsi maat reserve" calls on its resources (ADR-120 §2).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		l, err := maatLedger()

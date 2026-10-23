@@ -537,6 +537,21 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Delegation administration stays off the scoped lane API. Pod grants and
+	// replay bind the machine argument to the authenticated host INSIDE the
+	// transaction method's delegation check, so a lookup cannot race a move.
+	if name == "MaatDelegation" && sess.Agent != "ra" && sess.Agent != "sirsi-software-admin" {
+		writeErr(w, http.StatusForbidden, "ErrNotOwner", "maat: delegation administration requires existing Ra/SSA identity")
+		return
+	}
+	if name == "MaatAuthorityReserve" || name == "MaatReconcile" {
+		machine, err := s.store.HostIdentity(sess.Host)
+		if err != nil || machine == "" {
+			writeErr(w, http.StatusForbidden, "ErrNotOwner", "maat: authenticated host identity unavailable")
+			return
+		}
+		in[0] = reflect.ValueOf(machine)
+	}
 	// 6. ownership — before the call, against the session bound at claim time.
 	if idx, ok := itemOwnership[name]; ok && idx < len(in) {
 		if err := s.checkItemOwner(in[idx].String(), sess); err != nil {
