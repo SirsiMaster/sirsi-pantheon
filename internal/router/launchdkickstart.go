@@ -1,5 +1,5 @@
 // launchdkickstart.go — the "dead label" duty (local sovereignty P1, owner
-// directive 2026-07-23): every ai.sirsi.* LaunchAgent plist on disk must be
+// directive 2026-07-23): every enabled ai.sirsi.* LaunchAgent plist on disk must be
 // LOADED in launchd. The morning's reboot proved the failure mode — a label
 // that exits at boot (or was never bootstrapped after an edit) stays dead
 // until a human or a CLOUD agent notices. This duty is deterministic shell-out
@@ -9,19 +9,21 @@
 // on disk but absent from launchd. It never kills, never kickstarts a loaded
 // label (a loaded label's own RunAtLoad/StartInterval/KeepAlive policy owns
 // its process lifecycle), never touches labels outside ai.sirsi.* /
-// actions.runner.*, and skips .bak/.quarantined/edited-suffix files.
+// actions.runner.*, and skips .bak/.quarantined/edited-suffix files. OS-disabled
+// intent requires explicit reviewed repair, not passive recovery.
 package router
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
-
-	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
+	"time"
 )
 
 // launchdDeps are the OS seams (Rule A16) — tests stub these.
@@ -75,20 +77,14 @@ var launchdOS = launchdDeps{
 		return labels, nil
 	},
 	disabledLabels: func() (map[string]bool, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
 		uid := os.Getuid()
-		out, err := exec.Command("launchctl", "print-disabled", fmt.Sprintf("gui/%d", uid)).Output()
+		out, err := exec.CommandContext(ctx, "/bin/launchctl", "print-disabled", fmt.Sprintf("gui/%d", uid)).Output()
 		if err != nil {
-			// print-disabled may be unavailable in some contexts — fail-open so the
-			// rest of the duty (bootstrap missing labels) still runs.
-			return map[string]bool{}, nil
+			return nil, fmt.Errorf("launchctl print-disabled: %w", err)
 		}
-		// Space-joined keys are split, or a quarantined label reads as enabled
-		// and bootstrap fails with "Operation not permitted".
-		disabled := map[string]bool{}
-		for _, label := range platform.ParseDisabledLabels(string(out)) {
-			disabled[label] = true
-		}
-		return disabled, nil
+		return parseManagedDisabledLabels(string(out))
 	},
 	enableLabel: func(domain, label string) error {
 		out, err := exec.Command("launchctl", "enable", domain+"/"+label).CombinedOutput()
@@ -123,6 +119,54 @@ var launchdOS = launchdDeps{
 	},
 }
 
+// Unlike a display-only parser, recovery must distinguish an empty override
+// map from missing/malformed output. Both launchd boolean and word forms are
+// accepted; space-joined keys retain their established per-label meaning.
+func parseManagedDisabledLabels(output string) (map[string]bool, error) {
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	if len(lines) < 2 || strings.TrimSpace(lines[0]) != "disabled services = {" || strings.TrimSpace(lines[len(lines)-1]) != "}" {
+		return nil, fmt.Errorf("launchctl print-disabled: unknown output")
+	}
+	entry := regexp.MustCompile(`^"([^"\\]+)"\s*=>\s*(disabled|enabled|true|false)$`)
+	disabled := map[string]bool{}
+	seen := map[string]bool{}
+	for _, line := range lines[1 : len(lines)-1] {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		match := entry.FindStringSubmatch(line)
+		if len(match) != 3 || len(strings.Fields(match[1])) == 0 {
+			return nil, fmt.Errorf("launchctl print-disabled: malformed override entry")
+		}
+		value := match[2] == "disabled" || match[2] == "true"
+		for _, label := range strings.Fields(match[1]) {
+			if previous, ok := seen[label]; ok && previous != value {
+				return nil, fmt.Errorf("launchctl print-disabled: contradictory override entries")
+			}
+			seen[label] = value
+			if value {
+				disabled[label] = true
+			}
+		}
+	}
+	return disabled, nil
+}
+
+func managedDisabledSnapshot(probe func() (map[string]bool, error)) (map[string]bool, error) {
+	if probe == nil {
+		return nil, fmt.Errorf("read disabled launchd overrides: probe unavailable")
+	}
+	disabled, err := probe()
+	if err != nil {
+		return nil, fmt.Errorf("read disabled launchd overrides: %w", err)
+	}
+	if disabled == nil {
+		return nil, fmt.Errorf("read disabled launchd overrides: unknown state")
+	}
+	return disabled, nil
+}
+
 // managedPlist reports whether a LaunchAgents entry is one of ours and a real
 // plist (not a backup/quarantine artifact).
 func managedPlist(name string) bool {
@@ -139,9 +183,10 @@ func labelForPlist(name string) string {
 }
 
 // recoverManagedLaunchd restores managed, on-disk plists in two explicit
-// stages: clear a disabled override first, even if the label remains loaded;
-// then bootstrap only labels absent from launchd. When targets is non-nil it
-// is an exact label allowlist, so a user-confirmed repair cannot incidentally
+// stages. Passive callers (nil targets) never clear disabled intent or
+// bootstrap disabled labels. A non-nil target set belongs to explicit confirmed
+// repair, which may clear disabled overrides and bootstrap absent targets only.
+// It is an exact label allowlist, so a user-confirmed repair cannot incidentally
 // revive another managed service. It never revives quarantined Gemma labels or
 // anything outside the managed filename allowlist.
 func recoverManagedLaunchd(agentsDir string, deps launchdDeps, targets map[string]bool) (ManagedLaunchdRecovery, error) {
@@ -163,13 +208,10 @@ func recoverManagedLaunchd(agentsDir string, deps launchdDeps, targets map[strin
 	if err != nil {
 		return ManagedLaunchdRecovery{}, fmt.Errorf("launchctl list: %w", err)
 	}
-	// Read the override DB once; disabled labels require enable before bootstrap.
-	// Fail-open: nil fn (e.g. tests that don't stub it) or exec error both yield
-	// an empty map — bootstrap still runs and will fail on a truly disabled label,
-	// surfacing the error rather than silently skipping the label.
-	var disabled map[string]bool
-	if deps.disabledLabels != nil {
-		disabled, _ = deps.disabledLabels()
+	// Unknown operator intent is not permission to revive a service.
+	disabled, err := managedDisabledSnapshot(deps.disabledLabels)
+	if err != nil {
+		return ManagedLaunchdRecovery{}, err
 	}
 
 	// Recovery is also used by descriptor/symlink safety checks whose test seam
@@ -209,6 +251,9 @@ func recoverManagedLaunchd(agentsDir string, deps launchdDeps, targets map[strin
 		if quarantined && quarantinedLabels[label] {
 			continue // deliberate operator stop — never silently revive
 		}
+		if targets == nil && disabled[label] {
+			continue // OS-disabled intent is preserved by passive supervision
+		}
 		// Enable before bootstrap when the override DB has disabled this label.
 		// Without this step, bootstrap silently fails (Operation not permitted)
 		// and the duty appears to succeed — the exact failure mode from 2026-07-31.
@@ -237,8 +282,8 @@ func recoverManagedLaunchd(agentsDir string, deps launchdDeps, targets map[strin
 
 // KickstartDeadLabels is the supervisor-compatible wrapper. Its return value
 // remains limited to labels that were absent and bootstrapped, so historical
-// callers cannot mistake clearing a disabled override on a loaded process for
-// a reload.
+// callers cannot mistake an explicit repair's enable-only result for a reload.
+// This passive path never enables or bootstraps an OS-disabled label.
 func KickstartDeadLabels(agentsDir string, deps launchdDeps) ([]string, error) {
 	recovery, err := recoverManagedLaunchd(agentsDir, deps, nil)
 	return recovery.Bootstrapped, err
@@ -254,12 +299,9 @@ func RestoreDisabledManagedLaunchAgents() (ManagedLaunchdRecovery, error) {
 	if err != nil {
 		return ManagedLaunchdRecovery{}, err
 	}
-	if launchdOS.disabledLabels == nil {
-		return ManagedLaunchdRecovery{}, fmt.Errorf("read disabled launchd overrides: unavailable")
-	}
-	disabled, err := launchdOS.disabledLabels()
+	disabled, err := managedDisabledSnapshot(launchdOS.disabledLabels)
 	if err != nil {
-		return ManagedLaunchdRecovery{}, fmt.Errorf("read disabled launchd overrides: %w", err)
+		return ManagedLaunchdRecovery{}, err
 	}
 	// Preserve the snapshot through the recovery pass. The live state can only
 	// become less actionable after a concurrent enable; the fixed target set
