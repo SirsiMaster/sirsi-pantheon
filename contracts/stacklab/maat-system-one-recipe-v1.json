@@ -217,6 +217,15 @@
       "upgrade_recipe": ["preserve the managed filename allowlist and regular non-symlink plist requirement", "bind a confirmed repair to its captured disabled-label snapshot; do not broaden it into a supervisor sweep", "enable disabled overrides before deciding whether a loaded label needs bootstrap", "never revive quarantined Gemma labels or a fabric-wide quarantine", "require explicit confirmation in every operator surface", "retain separate enabled versus bootstrapped evidence", "add loaded-disabled, unloaded-disabled, unrelated-unloaded, symlink, error-isolation, and quarantine fixtures before widening scope"]
     },
     {
+      "id": "maat-scoped-service-lifecycle",
+      "source": ["internal/setup/launchdservice.go", "internal/setup/launchdservice_darwin.go", "internal/setup/launchdservice_other.go", "cmd/sirsi/launchdservice.go", "internal/router/registry.go", "docs/runbooks/SCOPED-SERVICE-LIFECYCLE.md"],
+      "tests": ["internal/setup/launchdservice_test.go", "internal/setup/launchdservice_darwin_test.go", "cmd/sirsi/launchdservice_test.go", "internal/stacklab/maat_recipe_test.go"],
+      "inputs": ["actual native registered actor and thread identity", "explicit lifecycle_services registry grant", "one closed supported service label", "PID/start/plist/program identity pins", "owning application's explicit drained assertion"],
+      "outputs": ["read-only selected-service restart plan by default", "identity-bound one-service restart result or explicit recovery debt", "launchd running-state evidence distinct from application health"],
+      "writes": ["only the selected allowlisted launchd service after explicit apply, drain assertion, identity revalidation and per-service serialization"],
+      "upgrade_recipe": ["retain the five-label closed scope and default read-only plan", "never acquire privilege, display administrator prompts, enable disabled services, or refresh unrelated jobs", "require the actual native actor, own-thread bounded lookup and exact registry service grant", "hash and parse the same retained no-follow artifact bytes", "serialize the selected service and revalidate the instance inside the lock", "keep caller drain assertion distinct from verified application drain", "retain application-owned backup, health and rollback verification", "qualify the compatible canonical server before installing the client", "require exact signed package, selected service and preserved unrelated-process evidence before claiming deployment"]
+    },
+    {
       "id": "maat-wing-contract",
       "source": ["contracts/stacklab/maat-wing-v1.json", "contracts/stacklab/maat-system-one-recipe-v1.json", "docs/qa/MAAT_SYSTEM_ONE_CATALOG.md"],
       "tests": ["internal/stacklab/doctor_test.go", "internal/stacklab/maat_recipe_test.go"],

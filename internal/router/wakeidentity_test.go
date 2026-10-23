@@ -10,7 +10,33 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
 )
+
+func useCanonicalRouterStore(t *testing.T) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv(routercfg.StoreWakeEnv, "1")
+	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(t.TempDir(), "router.db"))
+	t.Setenv("SIRSI_ALLOW_SCHEMA_MIGRATE", "1")
+	// TestMain clears these too; set them here so this fixture remains isolated
+	// if the package-level setup changes later.
+	t.Setenv("SIRSI_ROUTER_URL", "")
+	t.Setenv("SIRSI_ROUTER_TOKEN", "")
+	store, err := openThreadStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Keep the initialized SQLite store open for the fixture lifetime so first
+	// migration and WAL teardown cannot race the observer's short-interval reads.
+	// Router operations still open independent connections and exercise real CAS.
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("close canonical router store: %v", err)
+		}
+	})
+}
 
 func waitForObserver(t *testing.T, root string) *Thread {
 	t.Helper()
@@ -31,22 +57,47 @@ func waitForObserver(t *testing.T, root string) *Thread {
 }
 
 func TestWakeLoopTerminalObserverStopsWithoutRevival(t *testing.T) {
-	root := wakeTestRoot(t, AgentConfig{ID: "observer", Type: "gemma"})
+	useCanonicalRouterStore(t)
+	oldLoad := getLoadAvgFn()
+	SetLoadAvgFn(func() (float64, bool) { return 0, true })
+	defer SetLoadAvgFn(oldLoad)
+	root := wakeTestRoot(t, AgentConfig{
+		ID: "observer", Type: "gemma", Repo: t.TempDir(),
+		Workstream: "observer-fixture", Wake: WakeConfig{Mechanism: "none"},
+	})
 	t.Setenv("SIRSI_AGENT_ID", "")
 	t.Setenv("SIRSI_THREAD_ID", "")
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
 	done := make(chan error, 1)
-	go func() { done <- RunWakeLoop(ctx, root, "observer", 5*time.Millisecond) }()
+	exited := make(chan struct{})
+	go func() {
+		defer close(exited)
+		done <- RunWakeLoop(ctx, root, "observer", 5*time.Millisecond)
+	}()
+	defer func() {
+		cancel()
+		select {
+		case <-exited:
+		case <-time.After(2 * time.Second):
+			t.Error("fixture observer did not terminate")
+		}
+	}()
 	row := waitForObserver(t, root)
 	// Simulate an authoritative terminal transition, not a child claiming the
 	// observer's shutdown rights. The loop must exit and never rewrite it live.
-	reg, err := LoadThreadRegistry(root)
+	err := retryOnLostFenceErr(func() error {
+		reg, err := LoadThreadRegistry(root)
+		if err != nil {
+			return err
+		}
+		thread := reg.Threads[row.ThreadID]
+		if thread == nil {
+			return errors.New("observer registration disappeared before terminal transition")
+		}
+		thread.Status = ThreadStatusReaped
+		return SaveThreadRegistry(root, reg)
+	})
 	if err != nil {
-		t.Fatal(err)
-	}
-	reg.Threads[row.ThreadID].Status = ThreadStatusReaped
-	if err := SaveThreadRegistry(root, reg); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -57,9 +108,53 @@ func TestWakeLoopTerminalObserverStopsWithoutRevival(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("terminal observer kept running")
 	}
-	reg, err = LoadThreadRegistry(root)
+	reg, err := LoadThreadRegistry(root)
 	if err != nil || reg.Threads[row.ThreadID].Status != ThreadStatusReaped {
 		t.Fatalf("terminal evidence changed: %+v %v", reg, err)
+	}
+}
+
+func TestCanonicalStoreStaleHeartbeatCannotOverwriteTerminal(t *testing.T) {
+	useCanonicalRouterStore(t)
+	root := t.TempDir()
+	thread, err := RegisterThread(root, &Thread{AgentID: "fixture", Surface: surfaceWorker})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Preserve the active heartbeat's old CAS baseline while committing the
+	// terminal transition through a fresh, retryable lifecycle pass.
+	staleHeartbeat, err := LoadThreadRegistry(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = retryOnLostFenceErr(func() error {
+		reg, err := LoadThreadRegistry(root)
+		if err != nil {
+			return err
+		}
+		current := reg.Threads[thread.ThreadID]
+		if current == nil {
+			return errors.New("thread disappeared before terminal transition")
+		}
+		current.Status = ThreadStatusReaped
+		return SaveThreadRegistry(root, reg)
+	})
+	if err != nil {
+		t.Fatalf("commit terminal transition: %v", err)
+	}
+
+	stale := staleHeartbeat.Threads[thread.ThreadID]
+	stale.LastSeenAt = stale.LastSeenAt.Add(time.Second)
+	if err := SaveThreadRegistry(root, staleHeartbeat); !errors.Is(err, ErrLostLifecycleFence) {
+		t.Fatalf("stale heartbeat save = %v, want lost lifecycle fence", err)
+	}
+	current, err := LoadThreadRegistry(root)
+	if err != nil || current.Threads[thread.ThreadID].Status != ThreadStatusReaped {
+		t.Fatalf("stale heartbeat changed terminal evidence: registry=%+v err=%v", current, err)
+	}
+	if _, err := Heartbeat(root, thread.ThreadID, HeartbeatUpdate{}); !errors.Is(err, ErrHeartbeatThreadUnavailable) {
+		t.Fatalf("fresh heartbeat after terminal transition = %v, want unavailable", err)
 	}
 }
 
@@ -76,6 +171,11 @@ func (n *observerFailureNotice) Write(p []byte) (int, error) {
 }
 
 func TestWakeLoopTransientRegistryReadDoesNotExit(t *testing.T) {
+	// Registry recovery is independent of native CPU sampling. In particular,
+	// a cold test HOME must not run a multi-second host `top` each 5ms tick.
+	oldLoad := getLoadAvgFn()
+	SetLoadAvgFn(func() (float64, bool) { return 0, true })
+	defer SetLoadAvgFn(oldLoad)
 	root := wakeTestRoot(t, AgentConfig{ID: "observer", Type: "gemma"})
 	t.Setenv("SIRSI_AGENT_ID", "")
 	t.Setenv("SIRSI_THREAD_ID", "")
@@ -86,7 +186,16 @@ func TestWakeLoopTransientRegistryReadDoesNotExit(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { done <- RunWakeLoop(ctx, root, "observer", 5*time.Millisecond) }()
+	exited := make(chan struct{})
+	go func() { defer close(exited); done <- RunWakeLoop(ctx, root, "observer", 5*time.Millisecond) }()
+	defer func() {
+		cancel()
+		select {
+		case <-exited:
+		case <-time.After(2 * time.Second):
+			t.Error("fixture observer did not terminate")
+		}
+	}()
 	row := waitForObserver(t, root)
 	// Atomic malformed read fixture is hermetic and touches no live service.
 	reg, err := LoadThreadRegistry(root)

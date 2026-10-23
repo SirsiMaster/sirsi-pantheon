@@ -22,8 +22,13 @@ CTX="$FX/ctx"
 bash scripts/router-service/stage.sh --context-only "$CTX"
 desc=$(file -b "$CTX/sirsi")
 case "$desc" in *ELF\ 64-bit*x86-64*statically\ linked*) ;; *) fail "context binary is not static linux/amd64: $desc" ;; esac
-bad=$(grep -vE "^(FROM gcr.io/distroless/static-debian12:nonroot|COPY sirsi /sirsi|ENTRYPOINT |CMD )" "$CTX/Dockerfile" || true)
+bad=$(grep -vE "^(FROM gcr.io/distroless/static-debian12:nonroot|COPY sirsi /sirsi|COPY recipient-registry.json /.agents/idea-router/agents.json|WORKDIR /|ENTRYPOINT |CMD )" "$CTX/Dockerfile" || true)
 [ -z "$bad" ] || fail "context Dockerfile does more than copy the prebuilt binary: $bad"
 grep -q "^CMD \[\"router\",\"serve\"\]$" "$CTX/Dockerfile" || fail "context must run router serve"
+jq -e --arg source "$(git rev-parse HEAD)" '.source_commit==$source and (.agents|type=="object") and (.agents|length>0)' "$CTX/recipient-registry.json" >/dev/null || fail "registry is not bound to this committed source"
+jq -e '[.agents[]|keys[]|select(.!="type" and .!="description" and .!="wake" and .!="delivery_contract")]|length==0' "$CTX/recipient-registry.json" >/dev/null || fail "registry contains runtime/credential-bearing fields"
+jq -S '.agents|map_values({type,description,wake:{mechanism:.wake.mechanism},delivery_contract}|with_entries(select(.value!=null)))' .agents/idea-router/agents.json >"$FX/expected-registry.json"
+jq -S '.agents' "$CTX/recipient-registry.json" >"$FX/actual-registry.json"
+cmp "$FX/expected-registry.json" "$FX/actual-registry.json" || fail "recipient policy drifted from source"
 if [ "$(uname -s)" = Linux ]; then "$CTX/sirsi" version >/dev/null || fail "context binary does not run"; fi
 echo "stage.test.sh: ok"

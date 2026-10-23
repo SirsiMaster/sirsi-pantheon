@@ -17,10 +17,21 @@ VERSION=${VERSION:-$(git -C "$ROOT" describe --tags --always)}
 export GOPRIVATE=${GOPRIVATE:-github.com/SirsiMaster/sirsi-inference,github.com/SirsiMaster/sirsi-mercury}
 
 build_context() {
+  # The deployment receipt must describe committed source, not an unpushed
+  # working-tree experiment or an untracked Go file picked up by the compiler.
+  [ -z "$(git -C "$ROOT" status --porcelain --untracked-files=normal)" ] || {
+    echo "stage: clean committed source required; preserve changes and build an isolated checkout" >&2; return 1;
+  }
   mkdir -p "$1"
+  # Ship only the recipient admission projection, not Mac paths, consumer
+  # commands, environment overrides or any live store/session data. FindRepoRoot
+  # recognizes this immutable declared registry without a fake .git directory.
+  jq --sort-keys --arg source "$(git -C "$ROOT" rev-parse HEAD)" \
+    '{schema:"sirsi-router-recipient-registry.v1",source_commit:$source,agents:(.agents|map_values({type,description,wake:{mechanism:.wake.mechanism},delivery_contract}|with_entries(select(.value!=null))))}' \
+    "$ROOT/.agents/idea-router/agents.json" >"$1/recipient-registry.json"
   (cd "$ROOT" && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath \
     -ldflags="-s -w -X github.com/SirsiMaster/sirsi-pantheon/internal/version.Version=$VERSION" -o "$1/sirsi" ./cmd/sirsi)
-  printf "FROM gcr.io/distroless/static-debian12:nonroot\nCOPY sirsi /sirsi\nENTRYPOINT [\"/sirsi\"]\nCMD [\"router\",\"serve\"]\n" >"$1/Dockerfile"
+  printf "FROM gcr.io/distroless/static-debian12:nonroot\nCOPY sirsi /sirsi\nCOPY recipient-registry.json /.agents/idea-router/agents.json\nWORKDIR /\nENTRYPOINT [\"/sirsi\"]\nCMD [\"router\",\"serve\"]\n" >"$1/Dockerfile"
 }
 
 if [ "${1:-}" = --context-only ]; then

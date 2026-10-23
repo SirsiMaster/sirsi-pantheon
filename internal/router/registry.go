@@ -76,6 +76,10 @@ type AgentConfig struct {
 	// lane revokes it by removing the field.
 	WorkerAnswers bool `json:"worker_answers,omitempty"`
 
+	// LifecycleServices is the explicit cooperative maintenance grant. It never
+	// permits arbitrary launchd labels, elevation, or another lane's runtime.
+	LifecycleServices []string `json:"lifecycle_services,omitempty"`
+
 	// extra preserves JSON fields not known to this version of AgentConfig so a
 	// LoadRegistry→SaveRegistry round-trip never silently erases metadata the
 	// struct does not model. "consumer" was the original motivating example and
