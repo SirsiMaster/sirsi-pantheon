@@ -3,6 +3,13 @@
 Classification: platform foundation. This is cooperative native maintenance,
 not a security sandbox against the operating-system account owner.
 
+Stack Lab library: `maat-scoped-service-lifecycle` in
+`contracts/stacklab/maat-system-one-recipe-v1.json`, owned by `stacklab.wing.maat`.
+The Ma'at component catalog and traceability matrix link this recipe. Source,
+adversarial tests and safe upgrade boundaries travel with the release candidate;
+installed service/application proof is recorded separately, not inferred from
+the presence of this catalog entry.
+
 `sirsi launchd restart <label>` is a read-only JSON plan by default. Its initial
 closed scope is Apollo observer, chat and Gemma broker user agents, and Mercury
 monitor/chip system daemons. It does not enumerate/restart the fabric, enable a
