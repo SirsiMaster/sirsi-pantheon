@@ -78,6 +78,10 @@ func authorizeLifecycle(ctx context.Context, label string) error {
 }
 
 func newLaunchdServiceCmd() *cobra.Command {
+	return newLaunchdServiceCmdWith(setup.NativeServiceBackend(), authorizeLifecycle)
+}
+
+func newLaunchdServiceCmdWith(backend setup.ServiceBackend, authorize func(context.Context, string) error) *cobra.Command {
 	var apply, drained bool
 	var pid int
 	var started, plistHash, programHash string
@@ -94,14 +98,21 @@ func newLaunchdServiceCmd() *cobra.Command {
 		if apply && (!drained || pid <= 1 || started == "" || plistHash == "" || programHash == "") {
 			return fmt.Errorf("service lifecycle: --apply requires --drained and all four exact plan pins")
 		}
-		backend := setup.NativeServiceBackend()
+		if !apply && args[0] == "ai.sirsi.router.relay" {
+			if authorize == nil {
+				return fmt.Errorf("service lifecycle: owning actor authorization required")
+			}
+			if err := authorize(ctx, args[0]); err != nil {
+				return err
+			}
+		}
 		p, err := backend.Inspect(ctx, args[0])
 		if err != nil {
 			return err
 		}
 		if apply {
 			p.PID, p.Started, p.PlistSHA256, p.ProgramSHA256 = pid, started, plistHash, programHash
-			controller := setup.ServiceController{Backend: backend, Authorize: authorizeLifecycle}
+			controller := setup.ServiceController{Backend: backend, Authorize: authorize}
 			p, err = controller.Refresh(ctx, p)
 			if err != nil {
 				return err

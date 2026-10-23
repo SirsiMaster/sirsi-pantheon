@@ -64,6 +64,43 @@ inspect afresh and record the recovered identity first.
 
 ## Verification and release boundary
 
+### Existing privileged invocation and read-only qualification
+
+Use the existing `sudo -n` route to the reviewed, signed installed CLI; PR1191
+is the existing controller implementation, not a separate daemon or PID. Do not
+execute a development build as the privileged production controller. Before
+`--apply`, the exact root-relay read-only plan must run the same actor/runtime
+authorizer and then inspect, without refreshing. It must fail before inspection
+if the canonical service, own live runtime or exact grant is unavailable.
+
+Pass only the actual non-secret actor/thread and canonical spool selection needed
+by the existing route, not an unrestricted copied environment, token or key. The
+physical spool remains `/private/var/sirsipantheon/relay`; deployed CLI argv keeps
+the accepted `/var/sirsipantheon/relay` alias. No HOME override is part of this
+recipe. Actor ancestry and start identity must really match; environment labels
+alone are not authority.
+
+`FindRepoRoot` prefers Git's common main worktree even from a clean linked
+worktree. A clean CWD therefore does not itself establish the effective registry.
+`LoadRegistry` prefers that root's origin-pinned snapshot under the effective
+root-context home (normally `/var/root/.sirsi/registry/agents.json` with
+`agents.meta.json`). Inspect that actual source, matching RouterRoot and accepted
+origin commit/digest containing the exact SSA/SHA grant, through the normal
+qualified root route. Do not silently unpin or consume dirty primary edits. No
+root configuration is created, changed or implicitly qualified by this source
+recipe; absent/unusable canonical transport or runtime is a failed preflight,
+not permission to create a local router or mint an actor.
+
+If the root snapshot does not yet exist, the normal post-merge operator route
+may install only the public, hash-verified accepted-origin registry and matching
+metadata into root-owned cache paths. Fetch/verify those public bytes through
+the existing authenticated user route; do not presume root GitHub/SSH credentials,
+copy credentials or alter Git trust, HOME, sudoers or transport policy to perform
+the initialization. Record the actual installed cache paths, owners, digest,
+source commit and RouterRoot, then retry only the read-only authenticated plan.
+This is configuration delivery for already accepted grants, not a new approval
+request or permission to assert drain readiness.
+
 Use injected backend/native dependencies for wrong privilege, path/argv,
 children, unavailable probes, instance/artifact substitution, concurrent apply,
 bootstrap failure and fresh-instance success. No fixture may operate live launchd.
