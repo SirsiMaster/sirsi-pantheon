@@ -92,16 +92,15 @@ func runText(r DashRun) string {
 		return r.Phase
 	}
 }
-func Project(d Dashboard, stale bool) *Headline {
+func projectHeadline(d Dashboard, freshness freshnessAssessment) *Headline {
 	unknown := Cell{Number: "—"}
 	h := &Headline{Wire: unknown, Compressed: unknown, Gain: unknown, RunStatus: runText(d.Run)}
 	degrees := map[string]int{}
-	sourceLive := false
+	sourceLive := freshness.nodeEligible(d.Source.Host)
 	decode := ""
 	for _, n := range d.Nodes {
 		degrees[n.ID] = 0
 		if n.ID == d.Source.Host {
-			sourceLive = n.State == "live"
 			if n.Decode.Mode != nil {
 				decode = *n.Decode.Mode
 			}
@@ -160,20 +159,28 @@ func Project(d Dashboard, stale bool) *Headline {
 		}
 		h.NodeOrder = append(append(left, center), right...)
 	}
-	if stale || !sourceLive {
+	if !freshness.envelopeFresh || !sourceLive {
 		h.Lamps = []Lamp{{"TCP", false}, {"RDMA", false}, {"MERCURY", false}, {"CPU DECODE", false}, {"GPU DECODE", false}}
 		h.Context = "Rates paused · the samples are not fresh"
+		return h
+	}
+	if !freshness.completeForHeadline(d) {
+		h.Lamps = []Lamp{{"TCP", false}, {"RDMA", false}, {"MERCURY", false}, {"CPU DECODE", false}, {"GPU DECODE", false}}
+		h.Context = "Rates unavailable · one or more link samples are not fresh"
 		return h
 	}
 	wire, payload := 0.0, 0.0
 	published, rdma, tcp := false, false, false
 	directions := map[string]int{}
-	for _, l := range d.Links {
+	for linkIndex, l := range d.Links {
 		if l.Ends[1] == nil || l.State != "up" {
 			continue
 		}
 		active := false
-		for _, v := range l.Directions {
+		for directionIndex, v := range l.Directions {
+			if !freshness.directionEligible(linkIndex, directionIndex) {
+				continue
+			}
 			if v.WireGBs == nil || *v.WireGBs < 0.05 || *v.WireGBs < maxWire*0.01 {
 				continue
 			}

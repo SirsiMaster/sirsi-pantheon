@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"testing"
+	"time"
 )
 
 func TestSceneKeepsIdentityAndCardEdges(t *testing.T) {
@@ -12,7 +13,9 @@ func TestSceneKeepsIdentityAndCardEdges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := ProjectScene(d, Project(d, false).NodeOrder, false)
+	freshness := fixtureFreshness(d)
+	h := projectHeadline(d, freshness)
+	s := projectScene(d, h.NodeOrder, freshness)
 	if len(s.Cards) != 3 || len(s.Cables) != len(d.Links) {
 		t.Fatalf("%+v", s)
 	}
@@ -77,7 +80,8 @@ func TestSceneKeepsIdentityAndCardEdges(t *testing.T) {
 	if len(lanes) != 3 || moving == 0 {
 		t.Fatalf("lanes=%v moving=%d", lanes, moving)
 	}
-	for _, c := range ProjectScene(d, Project(d, true).NodeOrder, true).Cables {
+	staleFreshness := assessFreshness(d, time.Unix(1792339210, 0))
+	for _, c := range projectScene(d, projectHeadline(d, staleFreshness).NodeOrder, staleFreshness).Cables {
 		for _, f := range c.Directions {
 			if f.Speed != 0 {
 				t.Fatal("stale motion", f)
@@ -92,7 +96,8 @@ func TestSceneKeepsIdentityAndCardEdges(t *testing.T) {
 			d.Links[i].Directions[j].WireGBs = &tiny
 		}
 	}
-	for _, c := range ProjectScene(d, Project(d, false).NodeOrder, false).Cables {
+	freshness = fixtureFreshness(d)
+	for _, c := range projectScene(d, projectHeadline(d, freshness).NodeOrder, freshness).Cables {
 		for _, f := range c.Directions {
 			if f.Speed != 0 {
 				t.Fatal("sub-threshold motion", f)
@@ -103,7 +108,8 @@ func TestSceneKeepsIdentityAndCardEdges(t *testing.T) {
 	for i := range d.Nodes {
 		d.Nodes[i].State = "stale"
 	}
-	for _, c := range ProjectScene(d, Project(d, false).NodeOrder, false).Cables {
+	freshness = fixtureFreshness(d)
+	for _, c := range projectScene(d, projectHeadline(d, freshness).NodeOrder, freshness).Cables {
 		for _, f := range c.Directions {
 			if f.Speed != 0 {
 				t.Fatal("stale peer motion", f)
@@ -143,7 +149,8 @@ func TestSceneUnknownFamiliesAndRates(t *testing.T) {
 			d.Links[i].Directions[j].PayloadGBs = nil
 		}
 	}
-	for _, c := range ProjectScene(d, Project(d, false).NodeOrder, false).Cables {
+	freshness := fixtureFreshness(d)
+	for _, c := range projectScene(d, projectHeadline(d, freshness).NodeOrder, freshness).Cables {
 		if c.Rate.Number != "—" {
 			t.Fatal("unknown became zero", c)
 		}

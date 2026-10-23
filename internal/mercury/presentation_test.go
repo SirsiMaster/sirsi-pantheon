@@ -3,14 +3,19 @@ package mercury
 import (
 	"reflect"
 	"testing"
+	"time"
 )
+
+func fixtureFreshness(d Dashboard) freshnessAssessment {
+	return assessFreshness(d, time.Unix(1792339200, 0))
+}
 
 func TestApprovedHeadlineProjection(t *testing.T) {
 	d, err := Decode(fixtureBodies["live"])
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := Project(d, false)
+	h := projectHeadline(d, fixtureFreshness(d))
 	if h.Wire.Number != "28.2" || h.Compressed.Number != "42.4" || h.Gain.Number != "1.51" {
 		t.Fatalf("%+v", h)
 	}
@@ -22,17 +27,17 @@ func TestApprovedHeadlineProjection(t *testing.T) {
 	}
 	for _, name := range []string{"idle", "offline-peer"} {
 		d, _ = Decode(fixtureBodies[name])
-		h = Project(d, false)
+		h = projectHeadline(d, fixtureFreshness(d))
 		if h.Wire.Number != "—" || h.Compressed.Number != "—" || h.Gain.Number != "—" {
 			t.Fatalf("%s %+v", name, h)
 		}
 	}
-	h = Project(d, true)
+	h = projectHeadline(d, assessFreshness(d, time.Unix(1792339210, 0)))
 	if h.Wire.Number != "—" || h.Context != "Rates paused · the samples are not fresh" {
 		t.Fatal(h)
 	}
 	d, _ = Decode(fixtureBodies["run-in-progress"])
-	h = Project(d, false)
+	h = projectHeadline(d, fixtureFreshness(d))
 	if h.RunStatus != "Leg 1 of 1 · M5 → M5-Studio · 3 cables · 0:22 / 1:00 · leg 1 of 1" {
 		t.Fatal(h.RunStatus)
 	}
@@ -56,7 +61,7 @@ func TestQuietRunningJobStillHasAuthoritativeRunLamps(t *testing.T) {
 	d.Run.Engine = "mercury"
 	d.Run.Decode = "gpu"
 	d.Run.Live = []Cable{{N: 1}, {N: 2}}
-	h := Project(d, false)
+	h := projectHeadline(d, fixtureFreshness(d))
 	if h.Wire.Number != "—" || h.Cables != 2 || len(h.Lamps) != 5 || !h.Lamps[1].On || !h.Lamps[4].On {
 		t.Fatalf("%+v", h)
 	}

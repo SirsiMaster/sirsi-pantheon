@@ -18,13 +18,24 @@ disables reading and reports unconfigured. There is no automatic discovery,
 public-network destination, proxy use, redirect, authentication change or
 monitor installation.
 
-Each read is bounded to two seconds and 262144 response bytes. A failed read
+Each read is bounded to two seconds, 8192 response-header bytes and 262144
+response-body bytes. A failed read
 reports unavailable, refused permission or incompatible data rather than
 inventing a live snapshot. Refresh means invoking the read again; no background
 cache is promoted to live state. If the monitor is unconfigured, select the
 existing approved monitor. If it is unavailable, inspect its owned service and
 Ra connectivity through their normal controls; this read-only command does not
 silently restart it. Unknown measurements are null, not zero.
+
+The snapshot retains the producer's original observations as evidence. Use the
+assessed headline, scene and totals for current claims, not a raw historical
+number inside that snapshot. Eligibility is evaluated at response completion;
+expired or excessively future observations cannot animate traffic or contribute
+to a current aggregate. Unavailable measurements are not labelled idle, and an
+incomplete aggregate is not presented as a complete total.
+`read_at` records when the request started; it is not a measurement timestamp.
+Producer `generated_at` and observation timestamps remain the measurement
+evidence, and freshness is assessed once after the response is decoded.
 
 Wire rates use the producer's decimal units. Compressed payload, gain,
 calibration and run status retain their producer meaning. A successful GET does

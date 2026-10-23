@@ -7,8 +7,10 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
+	"reflect"
 	"strings"
 	"syscall"
 	"testing"
@@ -79,7 +81,7 @@ func TestProducerFixtures(t *testing.T) {
 			}
 			r := fixtureClient(b).Read(context.Background())
 			if r.State != d.Status {
-				t.Fatalf("state %s", r.State)
+				t.Fatalf("state %s, producer status %s", r.State, d.Status)
 			}
 			if name == "uncalibrated" && d.Nodes[0].GPU.WorkPct != nil {
 				t.Fatal("unknown became zero")
@@ -166,6 +168,21 @@ func TestReadBoundaries(t *testing.T) {
 			if r.State == "stale" && r.Total != nil {
 				t.Fatal("stale live total")
 			}
+			if r.State == "stale" {
+				if r.Headline == nil || r.Scene == nil || r.Headline.Wire.Number != "—" || r.Headline.Compressed.Number != "—" || r.Headline.Gain.Number != "—" {
+					t.Fatalf("stale envelope retained headline values: %+v", r.Headline)
+				}
+				for _, cable := range r.Scene.Cables {
+					if cable.Rate.Number != "—" {
+						t.Fatalf("stale envelope retained cable aggregate: %+v", cable)
+					}
+					for _, direction := range cable.Directions {
+						if direction.Rate != "— MB/s" || direction.Speed != 0 {
+							t.Fatalf("stale envelope retained direction: %+v", direction)
+						}
+					}
+				}
+			}
 		})
 	}
 }
@@ -222,6 +239,163 @@ func TestHTTPGuardsAndCancellation(t *testing.T) {
 	if !transport.DisableKeepAlives {
 		t.Fatal("Mercury reads must not retain idle connections")
 	}
+	if transport.MaxResponseHeaderBytes != MaxResponseHeaderBytes {
+		t.Fatalf("header cap = %d, want %d", transport.MaxResponseHeaderBytes, MaxResponseHeaderBytes)
+	}
+}
+
+func TestHTTPRejectsOversizedResponseHeaders(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Oversized", strings.Repeat("x", MaxResponseHeaderBytes+1))
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	c := New(server.URL + "/api/v1/dashboard")
+	c.Now = func() time.Time { return time.Unix(1792339200, 0) }
+	if got := c.Read(context.Background()); got.State != "offline" {
+		t.Fatalf("oversized response header state = %q, want offline", got.State)
+	}
+}
+
+func dashboardForFreshness(t *testing.T) Dashboard {
+	t.Helper()
+	d, err := Decode(fixtureBodies["live"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range d.Nodes {
+		age := 0.0
+		d.Nodes[i].AgeS = &age
+		d.Nodes[i].FreshnessS = 6
+	}
+	// These read-boundary cases exercise complete local directional totals.
+	// The producer fixture's unpaired interface is intentionally excluded: it
+	// correctly makes both local totals unknown in the normal projection.
+	paired := d.Links[:0]
+	for _, link := range d.Links {
+		if link.State == "up" && link.Ends[1] != nil {
+			paired = append(paired, link)
+		}
+	}
+	d.Links = paired
+	return d
+}
+
+func readDashboardAt(t *testing.T, d Dashboard, started, completed time.Time) Read {
+	t.Helper()
+	body, err := json.Marshal(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := fixtureClient(body)
+	times := []time.Time{started, completed}
+	index := 0
+	c.Now = func() time.Time {
+		if index >= len(times) {
+			return times[len(times)-1]
+		}
+		value := times[index]
+		index++
+		return value
+	}
+	return c.Read(context.Background())
+}
+
+func TestCompletionTimeFreshnessBoundaries(t *testing.T) {
+	base := time.Unix(1792339200, 0)
+	for _, tc := range []struct {
+		name             string
+		completionOffset time.Duration
+		ageAtStart       float64
+		wantState        string
+	}{
+		{name: "six-second direction boundary", ageAtStart: 6, wantState: "ok"},
+		{name: "seven-second stale direction", ageAtStart: 7, wantState: "partial"},
+		{name: "three-second future direction", ageAtStart: -3, wantState: "partial"},
+		{name: "slow response expires direction", completionOffset: 1500 * time.Millisecond, ageAtStart: 5.5, wantState: "partial"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := dashboardForFreshness(t)
+			completed := base.Add(tc.completionOffset)
+			for i := range d.Links {
+				for j := range d.Links[i].Directions {
+					observed := float64(base.Unix()) - tc.ageAtStart
+					d.Links[i].Directions[j].ObservedAt = &observed
+				}
+			}
+			read := readDashboardAt(t, d, base, completed)
+			if read.State != tc.wantState {
+				t.Fatalf("state=%q, want %q", read.State, tc.wantState)
+			}
+			if !read.ReadAt.Equal(base) {
+				t.Fatalf("ReadAt=%s, want request start %s", read.ReadAt, base)
+			}
+			if tc.wantState == "partial" && (read.Total != nil || read.Headline.Wire.Number != "—") {
+				t.Fatalf("stale numeric projection: total=%v headline=%+v", read.Total, read.Headline)
+			}
+			if tc.wantState == "ok" && (read.Total == nil || read.Headline.Wire.Number == "—") {
+				t.Fatalf("fresh boundary was not projected: total=%v headline=%+v", read.Total, read.Headline)
+			}
+			if read.Snapshot.Links[0].Directions[0].WireGBs == nil || read.Snapshot.Links[0].Directions[0].ObservedAt == nil {
+				t.Fatal("raw producer snapshot was altered")
+			}
+		})
+	}
+}
+
+func TestNodeFreshnessAndMixedDirectionProjection(t *testing.T) {
+	base := time.Unix(1792339200, 0)
+	t.Run("node crosses freshness age", func(t *testing.T) {
+		d := dashboardForFreshness(t)
+		age := 6.1
+		for i := range d.Nodes {
+			if d.Nodes[i].ID == d.Source.Host {
+				d.Nodes[i].AgeS = &age
+			}
+		}
+		read := readDashboardAt(t, d, base, base)
+		if read.State != "partial" || read.Total != nil || read.Headline.Wire.Number != "—" {
+			t.Fatalf("ineligible node leaked aggregate: %+v", read)
+		}
+		for _, cable := range read.Scene.Cables {
+			for _, direction := range cable.Directions {
+				if direction.From == "M1" || direction.To == "M1" {
+					if direction.Rate != "— MB/s" || direction.Speed != 0 {
+						t.Fatalf("ineligible node direction projected live: %+v", direction)
+					}
+				}
+			}
+		}
+	})
+	t.Run("mixed fresh and stale directions", func(t *testing.T) {
+		d := dashboardForFreshness(t)
+		staleAt := float64(base.Unix() - 7)
+		d.Links[0].Directions[0].ObservedAt = &staleAt
+		read := readDashboardAt(t, d, base, base)
+		if read.State != "partial" || read.Headline.Wire.Number != "—" || read.Total != nil || read.Outgoing == nil || *read.Outgoing <= 0 || read.Incoming != nil {
+			t.Fatalf("partial totals/headline were mislabeled: %+v", read)
+		}
+		if strings.Contains(read.Headline.Context, "Idle") {
+			t.Fatalf("incomplete data became idle: %q", read.Headline.Context)
+		}
+		cables := map[string]SceneCable{}
+		for _, cable := range read.Scene.Cables {
+			cables[cable.ID] = cable
+		}
+		mixed := cables[d.Links[0].ID]
+		if mixed.Rate.Number != "—" || mixed.Directions[0].Rate != "— MB/s" || mixed.Directions[0].Speed != 0 {
+			t.Fatalf("stale cable aggregate/direction was presented: %+v", mixed)
+		}
+		if mixed.Directions[1].Rate == "— MB/s" || mixed.Directions[1].Speed <= 0 {
+			t.Fatalf("eligible direction was dropped with its stale peer: %+v", mixed.Directions[1])
+		}
+		if cables[d.Links[2].ID].Rate.Number == "—" {
+			t.Fatal("independently fresh cable rate was dropped")
+		}
+		if !reflect.DeepEqual(*read.Snapshot, d) {
+			t.Fatal("raw snapshot was modified during projection")
+		}
+	})
 }
 func TestWrappedKernelPermissionIsActionableAndDoesNotLeakEndpoint(t *testing.T) {
 	c := fixtureClient(fixtureBodies["live"])

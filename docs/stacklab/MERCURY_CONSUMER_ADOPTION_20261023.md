@@ -2,8 +2,9 @@
 
 ## Exact sources and scope
 
-Current Pantheon baseline: main `94cda6311803ccfe3e83c5dc16f7847dd9a156d2`,
-including native workspace PR1190. Recovered historical source:
+Source-increment baseline: `94cda6311803ccfe3e83c5dc16f7847dd9a156d2`,
+including native workspace PR1190; this is not a claim about a later release
+candidate's head. Recovered historical source:
 `a6cae2add8b406784d07447077ce530842492dbe`, tree
 `322cdb4394c796cf35e7f26bdea0e2cac210da58`; its later web-console repair is
 `cd379651389ece5214536d251fb120c7cca0fd7d`, tree

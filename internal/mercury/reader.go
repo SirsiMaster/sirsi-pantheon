@@ -26,9 +26,10 @@ import (
 var schemaJSON []byte
 
 const (
-	MaxBytes        = 262144
-	DefaultEndpoint = "http://127.0.0.1:8099/api/v1/dashboard"
-	DashboardURLEnv = "SIRSI_MERCURY_DASHBOARD_URL"
+	MaxBytes               = 262144
+	MaxResponseHeaderBytes = 8192
+	DefaultEndpoint        = "http://127.0.0.1:8099/api/v1/dashboard"
+	DashboardURLEnv        = "SIRSI_MERCURY_DASHBOARD_URL"
 )
 
 type Cable struct {
@@ -208,6 +209,105 @@ type Client struct {
 	Now      func() time.Time
 }
 
+// freshnessAssessment is computed once at response completion and shared by
+// headline, scene, and totals projections. Direction eligibility is aligned
+// with the immutable snapshot's link and direction indexes.
+type freshnessAssessment struct {
+	envelopeFresh bool
+	envelopeAge   float64
+	withheld      bool
+	nodes         map[string]bool
+	directions    [][]bool
+}
+
+func (f freshnessAssessment) nodeEligible(id string) bool { return f.nodes[id] }
+
+func (f freshnessAssessment) directionEligible(linkIndex, directionIndex int) bool {
+	return linkIndex >= 0 && linkIndex < len(f.directions) && directionIndex >= 0 && directionIndex < len(f.directions[linkIndex]) && f.directions[linkIndex][directionIndex]
+}
+
+func (f freshnessAssessment) completeForHeadline(d Dashboard) bool {
+	if !f.envelopeFresh || !f.nodeEligible(d.Source.Host) {
+		return false
+	}
+	for linkIndex, link := range d.Links {
+		if link.State != "up" || link.Ends[1] == nil {
+			continue
+		}
+		if len(link.Directions) != 2 {
+			return false
+		}
+		forward, reverse := false, false
+		for directionIndex, direction := range link.Directions {
+			if !f.directionEligible(linkIndex, directionIndex) {
+				return false
+			}
+			if direction.From == link.Ends[0].Node && direction.To == link.Ends[1].Node {
+				forward = true
+			}
+			if direction.From == link.Ends[1].Node && direction.To == link.Ends[0].Node {
+				reverse = true
+			}
+		}
+		if !forward || !reverse {
+			return false
+		}
+	}
+	return true
+}
+
+func assessFreshness(d Dashboard, completedAt time.Time) freshnessAssessment {
+	assessment := freshnessAssessment{nodes: make(map[string]bool, len(d.Nodes)), directions: make([][]bool, len(d.Links))}
+	assessment.envelopeAge = unixSeconds(completedAt) - d.GeneratedAt
+	freshnessWindow := 6.0
+	for _, node := range d.Nodes {
+		if node.State == "live" && node.FreshnessS > 0 && node.FreshnessS < freshnessWindow {
+			freshnessWindow = node.FreshnessS
+		}
+	}
+	assessment.envelopeFresh = assessment.envelopeAge <= freshnessWindow && assessment.envelopeAge >= -2
+	assessment.withheld = !assessment.envelopeFresh
+	carriedEnvelopeAge := math.Max(0, assessment.envelopeAge)
+	for _, node := range d.Nodes {
+		eligible := assessment.envelopeFresh && node.State == "live" && node.AgeS != nil && *node.AgeS+carriedEnvelopeAge <= node.FreshnessS
+		assessment.nodes[node.ID] = eligible
+		if node.State == "stale" || (node.State == "live" && !eligible) {
+			assessment.withheld = true
+		}
+	}
+	for linkIndex, link := range d.Links {
+		assessment.directions[linkIndex] = make([]bool, len(link.Directions))
+		if link.State != "up" || link.Ends[1] == nil {
+			continue
+		}
+		forward, reverse := false, false
+		for directionIndex, direction := range link.Directions {
+			age := math.Inf(1)
+			if direction.ObservedAt != nil {
+				age = unixSeconds(completedAt) - *direction.ObservedAt
+			}
+			eligible := assessment.envelopeFresh && assessment.nodeEligible(direction.From) && assessment.nodeEligible(direction.To) &&
+				direction.ObservedAt != nil && age >= -2 && age <= 6 && direction.WireGBs != nil
+			assessment.directions[linkIndex][directionIndex] = eligible
+			if direction.From == link.Ends[0].Node && direction.To == link.Ends[1].Node {
+				forward = true
+			}
+			if direction.From == link.Ends[1].Node && direction.To == link.Ends[0].Node {
+				reverse = true
+			}
+			if !eligible {
+				assessment.withheld = true
+			}
+		}
+		if len(link.Directions) != 2 || !forward || !reverse {
+			assessment.withheld = true
+		}
+	}
+	return assessment
+}
+
+func unixSeconds(t time.Time) float64 { return float64(t.Unix()) + float64(t.Nanosecond())/1e9 }
+
 // NewConfigured uses the fixed local monitor only when no endpoint setting is
 // present. An explicitly empty setting disables reads; it is not a reset to the
 // default.
@@ -227,7 +327,7 @@ func privateIP(ip net.IP) bool {
 // New uses no environment proxy and rechecks every resolved address at dial time.
 func New(endpoint string) *Client {
 	dialer := &net.Dialer{Timeout: 2 * time.Second}
-	transport := &http.Transport{DisableKeepAlives: true, DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+	transport := &http.Transport{DisableKeepAlives: true, MaxResponseHeaderBytes: MaxResponseHeaderBytes, DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
 		host, port, err := net.SplitHostPort(address)
 		if err != nil {
 			return nil, err
@@ -251,8 +351,8 @@ func New(endpoint string) *Client {
 }
 
 func (c *Client) Read(ctx context.Context) Read {
-	now := c.Now()
-	r := Read{State: "unconfigured", Message: "Configure a Mercury monitor to view interconnect activity.", ReadAt: now}
+	readAt := c.Now()
+	r := Read{State: "unconfigured", Message: "Configure a Mercury monitor to view interconnect activity.", ReadAt: readAt}
 	if c.Endpoint == "" {
 		return r
 	}
@@ -302,40 +402,36 @@ func (c *Client) Read(ctx context.Context) Read {
 		return r
 	}
 	r.Snapshot = &d
+	// Freshness is assessed once after the full bounded response has arrived and
+	// decoded. ReadAt intentionally remains the request-start timestamp.
+	assessment := assessFreshness(d, c.Now())
 	r.State = d.Status
 	r.Message = "Mercury snapshot · " + d.Source.Host
-	age := c.Now().Sub(time.Unix(0, int64(d.GeneratedAt*1e9))).Seconds()
-	freshness := 6.0
-	for _, node := range d.Nodes {
-		if node.State == "live" && node.FreshnessS > 0 && node.FreshnessS < freshness {
-			freshness = node.FreshnessS
-		}
-	}
-	if age > freshness || age < -2 {
+	if !assessment.envelopeFresh {
 		r.State = "stale"
-		r.Headline = Project(d, true)
-		r.Scene = ProjectScene(d, r.Headline.NodeOrder, true)
 		r.Message = "Mercury snapshot is stale. Last observed values are shown."
-		return r
+	} else if assessment.withheld {
+		r.State = "partial"
+		r.Message = "Mercury snapshot is partial; stale or incomplete samples are withheld."
 	}
-	r.Headline = Project(d, false)
-	r.Scene = ProjectScene(d, r.Headline.NodeOrder, false)
+	r.Headline = projectHeadline(d, assessment)
+	r.Scene = projectScene(d, r.Headline.NodeOrder, assessment)
 	byID := map[string]DashNode{}
 	for _, n := range d.Nodes {
 		byID[n.ID] = n
 	}
 	outgoing, incoming := 0.0, 0.0
-	source, present := byID[d.Source.Host]
-	outKnown := present && source.State == "live" && source.AgeS != nil && *source.AgeS+math.Max(0, age) <= source.FreshnessS
+	_, present := byID[d.Source.Host]
+	outKnown := present && assessment.envelopeFresh && assessment.nodeEligible(d.Source.Host)
 	inKnown := outKnown
 	localLinks := 0
-	for _, l := range d.Links {
+	for linkIndex, l := range d.Links {
 		hasOut, hasIn := false, false
-		local := l.Ends[0].Node == d.Source.Host || (l.Ends[1] != nil && l.Ends[1].Node == d.Source.Host)
+		local := l.Ends[0] != nil && (l.Ends[0].Node == d.Source.Host || (l.Ends[1] != nil && l.Ends[1].Node == d.Source.Host))
 		if local {
 			localLinks++
 		}
-		for _, v := range l.Directions {
+		for directionIndex, v := range l.Directions {
 			if v.From == d.Source.Host {
 				hasOut = true
 			}
@@ -345,11 +441,7 @@ func (c *Client) Read(ctx context.Context) Read {
 			if v.From != d.Source.Host && v.To != d.Source.Host {
 				continue
 			}
-			a, aOK := byID[v.From]
-			b, bOK := byID[v.To]
-			fresh := aOK && bOK && a.State == "live" && b.State == "live" && a.AgeS != nil && b.AgeS != nil &&
-				*a.AgeS+math.Max(0, age) <= a.FreshnessS && *b.AgeS+math.Max(0, age) <= b.FreshnessS && l.State == "up" && v.ObservedAt != nil &&
-				now.Sub(time.Unix(0, int64(*v.ObservedAt*1e9))).Seconds() <= 6
+			fresh := l.State == "up" && assessment.directionEligible(linkIndex, directionIndex)
 			if v.From == d.Source.Host {
 				if !fresh || v.WireGBs == nil {
 					outKnown = false
