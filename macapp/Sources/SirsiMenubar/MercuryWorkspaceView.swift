@@ -21,6 +21,7 @@ struct MercuryWorkspaceView: View {
     @State private var machinesEvidence: String?
     @State private var linksEvidence: String?
     @State private var refreshedAt: Date?
+    @State private var laneReadAt: Date?
     @State private var loading = true
 
     private let laneArgs = ["router", "ping", "mercury", "--json"]
@@ -79,7 +80,9 @@ struct MercuryWorkspaceView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         MercuryLiveMachinesView(monitor: monitor)
                         truthNote
-                        laneSection
+                        TimelineView(.periodic(from: .now, by: 5)) { context in
+                            laneSection(at: context.date)
+                        }
                         machinesSection
                         transportSection
                         railSection
@@ -137,17 +140,24 @@ struct MercuryWorkspaceView: View {
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(PantheonTheme.gold.opacity(0.25), lineWidth: 1))
     }
 
-    private var laneSection: some View {
-        sectionCard(title: "Mercury lane", subtitle: "What Ra currently reports for this lane") {
+    private func laneSection(at now: Date) -> some View {
+        let current = laneError == nil && pantheonObservationIsCurrent(laneReadAt, at: now, maxAge: 30)
+        return sectionCard(title: "Mercury lane", subtitle: "Last Ra lane observation · refresh to revalidate") {
             if let lane {
                 if let laneError { staleReadNotice(laneError) }
+                Text(laneReadAt.map { "Observed \($0.formatted(date: .omitted, time: .standard))" } ?? "Observation time unavailable")
+                    .sirsiFont(.caption).foregroundStyle(PantheonTheme.mutedText)
+                if !current {
+                    Text("Retained verdict · current lane availability is unknown. Refresh to revalidate.")
+                        .sirsiFont(.caption).foregroundStyle(PantheonTheme.gold)
+                }
                 HStack(alignment: .top, spacing: 10) {
-                    statusMark(lane.verdict == "LIVE" || lane.verdict == "WAKEABLE" ? PantheonTheme.emerald : PantheonTheme.gold)
+                    statusMark(current && (lane.verdict == "LIVE" || lane.verdict == "WAKEABLE") ? PantheonTheme.emerald : PantheonTheme.gold)
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
-                            Text(lane.verdict)
+                            Text(current ? lane.verdict : "Last verdict: \(lane.verdict)")
                                 .sirsiFont(.headline, weight: .semibold)
-                                .foregroundStyle(lane.verdict == "LIVE" || lane.verdict == "WAKEABLE" ? PantheonTheme.emerald : PantheonTheme.gold)
+                                .foregroundStyle(current && (lane.verdict == "LIVE" || lane.verdict == "WAKEABLE") ? PantheonTheme.emerald : PantheonTheme.gold)
                             Spacer()
                             if !lane.agent.isEmpty {
                                 Text(lane.agent)
@@ -507,6 +517,7 @@ struct MercuryWorkspaceView: View {
         do {
             lane = try decodeMercuryLane(read: laneResult)
             laneError = nil
+            laneReadAt = Date()
             laneEvidence = evidenceText(laneResult.data)
         } catch {
             laneError = readFailure(laneResult, label: "Ra lane ping")

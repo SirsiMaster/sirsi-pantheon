@@ -618,6 +618,12 @@ final class SirsiEngine: ObservableObject {
     @Published var routerLoading = false
     @Published var routerReadAt: Date?
     @Published var routerReadError: String?
+    // Shared by every Ma'at root/detail; remounting a workspace cannot reset
+    // the guard or lose an invocation's result. Go retains effect authority.
+    let maatCaseOperations = MaatCaseOperationStore()
+    func routerObservationIsCurrent(at now: Date) -> Bool {
+        routerReadError == nil && pantheonObservationIsCurrent(routerReadAt, at: now, maxAge: 30)
+    }
     @Published var fleetBoard: FleetBoard?
     @Published var fleetLoading = false
     // Non-nil when the fleet read itself failed. Rendering an empty board on a
@@ -809,18 +815,21 @@ final class SirsiEngine: ObservableObject {
         }
     }
 
-    func loadRouterBoard() async {
+    static func routerCacheIsUsable(modified: Date?, at now: Date, force: Bool) -> Bool {
+        !force && pantheonObservationIsCurrent(modified, at: now, maxAge: 30)
+    }
+
+    func loadRouterBoard(force: Bool = false) async {
+        guard !routerLoading else { return }
         routerLoading = true
         defer { routerLoading = false }
         // Freshness gate: the producer-written board is trusted only while
         // recent. A stale file is worse than no file — it rendered "48 pending"
-        // against a live fabric of 17 (owner, 2026-07-22) — so past 5 minutes
-        // we fall through to the live CLI read below.
+        // against a live fabric of 17 (owner, 2026-07-22). Cache use shares the
+        // display's 30-second bound; explicit refresh always reads live state.
         let attrs = try? FileManager.default.attributesOfItem(atPath: routerBoardPath)
-        let fresh = (attrs?[.modificationDate] as? Date).map {
-            let age = Date().timeIntervalSince($0)
-            return age >= 0 && age < 300
-        } ?? false
+        let fresh = Self.routerCacheIsUsable(modified: attrs?[.modificationDate] as? Date,
+                                            at: Date(), force: force)
         let fileBoard = FileManager.default.contents(atPath: routerBoardPath)
             .flatMap { try? JSONDecoder().decode(RouterBoard.self, from: $0) }
         if fresh, let board = fileBoard {

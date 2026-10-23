@@ -16,8 +16,8 @@
   "components": [
     {
       "id": "native-workspace-shell",
-      "source": ["macapp/Sources/SirsiMenubar/PantheonDesktopView.swift", "macapp/Sources/SirsiMenubar/ControlCenter.swift", "macapp/Sources/SirsiMenubar/Views.swift"],
-      "tests": ["macapp/Tests/SirsiMenubarTests/WorkspaceTests.swift", "macapp/check-font-scaling.sh"],
+      "source": ["macapp/Sources/SirsiMenubar/PantheonDesktopView.swift", "macapp/Sources/SirsiMenubar/WorkspaceSession.swift", "macapp/Sources/SirsiMenubar/ObservationFreshness.swift", "macapp/Sources/SirsiMenubar/ControlCenter.swift", "macapp/Sources/SirsiMenubar/Views.swift"],
+      "tests": ["macapp/Tests/SirsiMenubarTests/WorkspaceTests.swift", "macapp/Tests/SirsiMenubarTests/WorkspaceSessionTests.swift", "macapp/Tests/SirsiMenubarTests/ObservationFreshnessTests.swift", "macapp/check-font-scaling.sh"],
       "inputs": ["canonical engine observations", "explicit workspace selection"],
       "outputs": ["consistent sidebar and header", "searchable workflows", "observation and recovery routes"],
       "writes": ["local workspace preference"],
@@ -40,6 +40,15 @@
       "outputs": ["telemetry navigation", "revision retaining the selected machine and route", "Ma'at plan context"],
       "writes": [],
       "upgrade_recipe": ["preserve the plan declaration through navigation", "reject removed routes and machine capacity drift", "cancel pending navigation after the operator leaves", "do not equate opening guidance with repairing a case"]
+    },
+    {
+      "id": "maat-case-operation-session",
+      "source": ["macapp/Sources/SirsiMenubar/MaatOperationState.swift", "macapp/Sources/SirsiMenubar/MaatCasebookView.swift", "macapp/Sources/SirsiMenubar/SirsiEngine.swift"],
+      "tests": ["macapp/Tests/SirsiMenubarTests/MaatOperationStateTests.swift"],
+      "inputs": ["exact retained case and next action", "fresh canonical casebook projection", "explicit operator confirmation"],
+      "outputs": ["session-lifetime duplicate-submission guard", "retained operation result", "changed-evidence recovery path"],
+      "writes": ["in-memory operation state; authoritative effects remain in confirmed canonical Go commands"],
+      "upgrade_recipe": ["retain guards through view unmount and remount", "never treat UI state as backend operation authority", "freshly bind case and action before confirmed mutation", "keep failed and completed operations recoverable without accidental replay", "verify immutable release and installed behavior separately"]
     }
   ]
 }

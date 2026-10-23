@@ -738,7 +738,7 @@ struct ApolloTelemetryView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(sessionTitle)
                 .sirsiFont(.title3, weight: .bold)
-                .foregroundStyle(sessionMatchesPlan == true || (session?.state != "active" && engine.localLLM?.healthy == true) ? .green : .orange)
+                .foregroundStyle(resolution == .observing ? .green : .orange)
             Text(sessionDetail)
                 .sirsiFont(.subheadline).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -877,7 +877,8 @@ struct ApolloTelemetryView: View {
             read: session,
             matchesSelectedPlan: sessionMatchesPlan,
             localRouteHealthy: engine.localLLM?.healthy == true,
-            telemetryDecodeFailed: telemetryError != nil
+            telemetryDecodeFailed: telemetryError != nil,
+            telemetryStale: session?.state == "active" && session?.telemetry?.isFresh(at: Date()) != true
         )
     }
     private var planSelectionLabel: String {
@@ -946,12 +947,15 @@ struct ApolloTelemetryView: View {
     }
 
     private var selectedTelemetry: ApolloSessionTelemetry? {
-        sessionMatchesPlan == true ? session?.telemetry : nil
+        sessionMatchesPlan == true && session?.telemetry?.isFresh(at: Date()) == true ? session?.telemetry : nil
     }
 
     private var sessionTitle: String { resolution.title }
 
     private var sessionDetail: String {
+        if resolution == .staleEvidence {
+            return "Retained sample: \(session?.telemetry?.emittedAt ?? "timestamp missing"). This does not prove a current session. Refresh the evidence or inspect the selected route."
+        }
         if sessionMatchesPlan == true { return "SNE published a bounded session sample for the engine selected in this plan." }
         if let observed = session?.telemetry, sessionMatchesPlan == false {
             let observedMachine = observed.machineID ?? "legacy this-mac"
@@ -971,6 +975,7 @@ enum ApolloTelemetryResolution: Equatable {
     case awaitingAdmission
     case routeUnavailable
     case unreadableEvidence
+    case staleEvidence
 
     var title: String {
         switch self {
@@ -979,6 +984,7 @@ enum ApolloTelemetryResolution: Equatable {
         case .awaitingAdmission: return "Apollo route is ready for admission"
         case .routeUnavailable: return "Apollo route needs attention"
         case .unreadableEvidence: return "Apollo telemetry needs a safe reread"
+        case .staleEvidence: return "Apollo sample is not current"
         }
     }
 
@@ -994,6 +1000,8 @@ enum ApolloTelemetryResolution: Equatable {
             return "Pantheon has no healthy local conduit for this recipe yet. Recheck the measured route before asking SNE to admit work."
         case .unreadableEvidence:
             return "Pantheon rejected an unreadable telemetry sample instead of treating it as a running session."
+        case .staleEvidence:
+            return "The sample is expired, future-dated or lacks a usable timestamp. Its measurements are withheld until SNE publishes current evidence."
         }
     }
 
@@ -1004,6 +1012,7 @@ enum ApolloTelemetryResolution: Equatable {
         case .awaitingAdmission: return "hourglass"
         case .routeUnavailable: return "antenna.radiowaves.left.and.right.slash"
         case .unreadableEvidence: return "exclamationmark.triangle"
+        case .staleEvidence: return "clock.badge.exclamationmark"
         }
     }
 
@@ -1013,6 +1022,7 @@ enum ApolloTelemetryResolution: Equatable {
         case .awaitingAdmission: return "Review resource recipe"
         case .routeUnavailable: return "Review route and capacity"
         case .unreadableEvidence: return "Review selected recipe"
+        case .staleEvidence: return "Review selected recipe"
         case .observing: return "View recipe"
         }
     }
@@ -1022,9 +1032,11 @@ func apolloTelemetryResolution(
     read: ApolloTelemetryRead?,
     matchesSelectedPlan: Bool?,
     localRouteHealthy: Bool,
-    telemetryDecodeFailed: Bool
+    telemetryDecodeFailed: Bool,
+    telemetryStale: Bool = false
 ) -> ApolloTelemetryResolution {
     if telemetryDecodeFailed { return .unreadableEvidence }
+    if telemetryStale { return .staleEvidence }
     if matchesSelectedPlan == true { return .observing }
     if read?.state == "active" || matchesSelectedPlan == false { return .differentSession }
     return localRouteHealthy ? .awaitingAdmission : .routeUnavailable
@@ -1149,6 +1161,7 @@ struct ApolloPlan: Decodable {
 }
 struct ApolloTelemetryRead: Decodable { let state: String; let telemetry: ApolloSessionTelemetry?; let reason: String? }
 struct ApolloSessionTelemetry: Decodable {
+    let emittedAt: String?
     let engineID: String
     let machineID: String?
     let tokensPerSec: Double?
@@ -1160,6 +1173,7 @@ struct ApolloSessionTelemetry: Decodable {
     let estates: [ApolloEstateTelemetry]
 
     enum CodingKeys: String, CodingKey {
+        case emittedAt = "emitted_at"
         case engineID = "engine_id"
         case machineID = "machine_id"
         case tokensPerSec = "tokens_per_second"
@@ -1172,6 +1186,9 @@ struct ApolloSessionTelemetry: Decodable {
     }
 }
 extension ApolloSessionTelemetry {
+    func isFresh(at now: Date) -> Bool {
+        pantheonObservationIsCurrent(pantheonObservationDate(emittedAt), at: now, maxAge: 15)
+    }
     // An engine name alone is not a session identity once Stack Lab can select
     // another Horus instance. Existing local SNE publishers predate machine_id,
     // so their samples remain compatible only with this-mac plans.

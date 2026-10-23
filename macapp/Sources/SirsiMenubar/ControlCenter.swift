@@ -7,6 +7,7 @@ struct PantheonControlCenterView: View {
     @ObservedObject var engine: SirsiEngine
     @Environment(\.snapshotMode) private var snapshotMode
     @Environment(\.openPantheonWorkspace) private var openWorkspace
+    @Environment(\.openPantheonOwnerActions) private var openOwnerActions
     @EnvironmentObject private var nav: Nav
 
     private var healthKnown: Bool { engine.healthIsCurrent && !engine.healthLoading }
@@ -68,8 +69,8 @@ struct PantheonControlCenterView: View {
             Spacer(minLength: 8)
             Button {
                 if !engine.ownerGatedItems.isEmpty {
-                    openWorkspace?(.maat)
-                    nav.push(OwnerActionsListView(engine: engine))
+                    if let openOwnerActions { openOwnerActions() }
+                    else { nav.push(OwnerActionsListView(engine: engine)) }
                 } else {
                     navigate(attentionWorkspace)
                 }
@@ -227,7 +228,7 @@ struct PantheonControlCenterView: View {
 
     @MainActor private func refreshObservations(force: Bool) async {
         async let healthRead: Void = engine.diagnose(force: force)
-        async let routerRead: Void = engine.loadRouterBoard()
+        async let routerRead: Void = engine.loadRouterBoard(force: force)
         _ = await (healthRead, routerRead)
     }
 

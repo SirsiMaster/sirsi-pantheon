@@ -1855,6 +1855,12 @@ struct RaFabricView: View {
     }
 
     var body: some View {
+        TimelineView(.periodic(from: .now, by: 5)) { context in
+            fabricContent(at: context.date)
+        }
+    }
+
+    private func fabricContent(at now: Date) -> some View {
         VStack(spacing: 0) {
             BackBar(title: "Ra — Fabric")
             maybeScrollRouter {
@@ -1884,6 +1890,22 @@ struct RaFabricView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
 
+                    if engine.routerBoard != nil {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(engine.routerReadAt.map { "Observed \($0.formatted(date: .omitted, time: .standard))" } ?? "Observation time unavailable")
+                                .sirsiFont(.caption).foregroundStyle(.secondary)
+                            if !engine.routerObservationIsCurrent(at: now) {
+                                Text(engine.routerReadError ?? "Retained fabric observation · current health and availability are unknown.")
+                                    .sirsiFont(.caption).foregroundStyle(gold)
+                            }
+                            Button {
+                                Task { await engine.loadRouterBoard(force: true) }
+                            } label: {
+                                Label("Refresh fabric", systemImage: "arrow.clockwise")
+                            }.buttonStyle(.bordered).disabled(engine.routerLoading)
+                        }
+                    }
+
                     // ── Honest empty state: never a false "healthy" ─────────
                     if engine.routerBoard == nil {
                         VStack(alignment: .leading, spacing: 10) {
@@ -1901,7 +1923,7 @@ struct RaFabricView: View {
                                     .fixedSize(horizontal: false, vertical: true)
                                 HStack(spacing: 8) {
                                     Button {
-                                        Task { await engine.loadRouterBoard() }
+                                        Task { await engine.loadRouterBoard(force: true) }
                                     } label: {
                                         Label("Refresh fabric", systemImage: "arrow.clockwise")
                                     }
@@ -1921,10 +1943,10 @@ struct RaFabricView: View {
 
                     // ── Fabric overview — the actual work map ───────────────
                     if let board = engine.routerBoard {
-                        SectionLabel("THE FABRIC RIGHT NOW")
+                        SectionLabel(engine.routerObservationIsCurrent(at: now) ? "THE FABRIC RIGHT NOW" : "LAST FABRIC OBSERVATION")
                         HStack(spacing: 16) {
                             VStack(alignment: .leading, spacing: 1) {
-                                Text("\(board.liveThreadCount ?? 0)").sirsiFont(22, weight: .bold).foregroundStyle(.green)
+                                Text("\(board.liveThreadCount ?? 0)").sirsiFont(22, weight: .bold).foregroundStyle(engine.routerObservationIsCurrent(at: now) ? .green : gold)
                                 Text("live threads").sirsiFont(.caption2).foregroundStyle(.secondary)
                             }
                             VStack(alignment: .leading, spacing: 1) {
@@ -1992,14 +2014,14 @@ struct RaFabricView: View {
                         }
                     } else if engine.routerBoard != nil {
                         HStack(spacing: 8) {
-                            Circle().fill(.green).frame(width: 8, height: 8)
-                            Text("No blockers — fabric is healthy")
+                            Circle().fill(engine.routerObservationIsCurrent(at: now) ? Color.green : gold).frame(width: 8, height: 8)
+                            Text(engine.routerObservationIsCurrent(at: now) ? "No blockers in the latest fabric observation" : "No blockers in the retained observation · refresh to revalidate")
                                 .sirsiFont(13, weight: .semibold)
                             Spacer()
                         }
                         .padding(12)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(RoundedRectangle(cornerRadius: 9).fill(Color.green.opacity(0.10)))
+                        .background(RoundedRectangle(cornerRadius: 9).fill((engine.routerObservationIsCurrent(at: now) ? Color.green : gold).opacity(0.10)))
                     }
 
                     // ── Held for retry (nonblocking, but must stay visible) ──

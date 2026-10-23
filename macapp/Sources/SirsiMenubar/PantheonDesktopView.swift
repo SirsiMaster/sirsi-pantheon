@@ -3,8 +3,7 @@ import SwiftUI
 struct PantheonDesktopView: View {
     @ObservedObject var engine: SirsiEngine
     @Environment(\.snapshotMode) private var snapshotMode
-    @AppStorage("pantheon.workspace") private var savedWorkspace = PantheonWorkspace.command.rawValue
-    @StateObject private var nav = Nav()
+    @StateObject private var session = PantheonWorkspaceSession()
     @State private var search = ""
     @FocusState private var searchFocused: Bool
     private let previewWorkspace: PantheonWorkspace?
@@ -17,8 +16,10 @@ struct PantheonDesktopView: View {
     }
 
     private var section: PantheonWorkspace {
-        previewWorkspace ?? PantheonWorkspace(rawValue: savedWorkspace) ?? .command
+        previewWorkspace ?? session.section
     }
+
+    private var nav: Nav { session.navigation(for: section) }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -32,9 +33,13 @@ struct PantheonDesktopView: View {
                     else if let top = nav.stack.last { top.view.id(top.id) }
                     else { workspaceView(section) }
                 }
+                .id(section)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .environmentObject(nav)
                 .environment(\.openPantheonWorkspace, select)
+                .environment(\.openPantheonOwnerActions, {
+                    session.open(.maat, detail: OwnerActionsListView(engine: engine))
+                })
             }
             .background(PantheonTheme.canvas)
         }
@@ -44,8 +49,7 @@ struct PantheonDesktopView: View {
         .background(PantheonTheme.canvas)
         .onChange(of: engine.pendingOwnerItemID) { id in
             guard let id else { return }
-            select(.maat)
-            nav.push(OwnerActionView(engine: engine, itemID: id))
+            session.open(.maat, detail: OwnerActionView(engine: engine, itemID: id))
             engine.pendingOwnerItemID = nil
         }
         .task {
@@ -163,8 +167,7 @@ struct PantheonDesktopView: View {
     }
 
     private func select(_ workspace: PantheonWorkspace) {
-        savedWorkspace = workspace.rawValue
-        nav.popToRoot()
+        session.select(workspace)
     }
 
     @ViewBuilder private func workspaceView(_ workspace: PantheonWorkspace) -> some View {
@@ -254,7 +257,15 @@ enum PantheonWorkspace: String, CaseIterable, Identifiable {
 private struct OpenPantheonWorkspaceKey: EnvironmentKey {
     static let defaultValue: ((PantheonWorkspace) -> Void)? = nil
 }
+
+private struct OpenPantheonOwnerActionsKey: EnvironmentKey {
+    static let defaultValue: (() -> Void)? = nil
+}
 extension EnvironmentValues {
+    var openPantheonOwnerActions: (() -> Void)? {
+        get { self[OpenPantheonOwnerActionsKey.self] }
+        set { self[OpenPantheonOwnerActionsKey.self] = newValue }
+    }
     var openPantheonWorkspace: ((PantheonWorkspace) -> Void)? {
         get { self[OpenPantheonWorkspaceKey.self] }
         set { self[OpenPantheonWorkspaceKey.self] = newValue }
