@@ -319,8 +319,10 @@ class Native:
         return self.call('maat', 'who-is-on', resource, '--json')
 
     def reserve(self, resource, agent, work):
+        requested = execution_cores(self.cpu_cores, getattr(self, 'requested_regime', None))
+        cores = ('--cores', str(requested)) if requested is not None else ()
         return self.call('maat', 'reserve', resource, '--holder', agent, '--work', work,
-                         '--regime', execution_regime(self.cpu_cores, getattr(self, 'requested_regime', None)), '--lease-ttl', '240', '--exempt-pid',
+                         '--regime', execution_regime(self.cpu_cores, getattr(self, 'requested_regime', None)), *cores, '--lease-ttl', '240', '--exempt-pid',
                          str(os.getpid()), '--repro', str(Path(__file__).resolve()), '--json')
 
     def heartbeat(self, identity):

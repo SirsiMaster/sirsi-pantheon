@@ -14,7 +14,7 @@ func TestLoadedAdmissionAfterBoundedCPUFloor(t *testing.T) {
 		{"oversized CPU", func(r *Reservation) { r.Cores = 99 }, RegimeLoaded, ShareFloor},
 		{"loaded floor", func(r *Reservation) { r.Regime = RegimeLoaded }, RegimeLoaded, ShareFloor},
 		{"quiet floor", func(r *Reservation) { r.Regime = RegimeQuiet }, RegimeLoaded, ShareFloor},
-		{"full build", func(r *Reservation) { r.Share = ShareFull }, RegimeLoaded, ShareFloor},
+		{"bounded first full build", func(r *Reservation) { r.Share = ShareFull }, RegimeLoaded, ShareFull},
 		{"unknown share", func(r *Reservation) { r.Share = "unknown" }, RegimeLoaded, ShareFloor},
 		{"memory ask", func(r *Reservation) { r.MemGB = 1 }, RegimeLoaded, ShareFloor},
 		{"quiet incoming still waits", func(*Reservation) {}, RegimeQuiet, ShareFloor},
@@ -36,5 +36,24 @@ func TestLoadedAdmissionAfterBoundedCPUFloor(t *testing.T) {
 				t.Fatalf("got %s, want %s: %+v", out.Reservation.Share, tc.want, out)
 			}
 		})
+	}
+}
+
+func TestActualCPUFirstReserveDoesNotOwnModelSlot(t *testing.T) {
+	l := fixedLedger("2026-10-18T23:00:00Z")
+	cpu := mkReq("m5", "cpu", "2026-10-18T23:00:00Z", "2026-10-18T23:10:00Z", RegimeBuild)
+	cpu.Cores = 1
+	first, err := l.Reserve(cpu, false)
+	if err != nil || !first.Granted || first.Reservation.Cores != 1 {
+		t.Fatalf("actual CPU reservation: %+v, %v", first, err)
+	}
+	model := mkReq("m5", "model", "2026-10-18T23:00:00Z", "2026-10-18T23:05:00Z", RegimeLoaded)
+	second, err := l.Reserve(model, false)
+	if err != nil || !second.Granted || second.Reservation.Share != ShareFull {
+		t.Fatalf("finite CPU build took the model slot: %+v, %v", second, err)
+	}
+	rows, err := l.Status("m5")
+	if err != nil || len(rows) != 2 {
+		t.Fatalf("both original reservations must remain: %+v, %v", rows, err)
 	}
 }

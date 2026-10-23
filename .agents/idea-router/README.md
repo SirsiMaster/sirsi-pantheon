@@ -1,6 +1,21 @@
 # 𓇶 Ra Idea Router — Multi-Agent Work Queue
 
-Shared filesystem protocol for agent collaboration on sirsi-pantheon.
+One canonical service protocol for agent collaboration on sirsi-pantheon.
+
+## Current authority and delivery
+
+The canonical router service owns messages, claims, task leases and thread
+records. Native filesystem relays are transport-only: their request, response,
+inflight and retry-outbox files are not another router ledger. Use the installed
+`~/.local/bin/sirsi` with the enrolled service/relay configuration. Missing
+configuration must fail, never open a retired `~/.sirsi/router.db` or create a
+second authority. Do not post work by writing Markdown into this checkout.
+
+Send with `sirsi router send`, read with `sirsi router pull/show`, and return
+actionable replies with `sirsi router respond` so the sender receives a fresh
+inbound item. A closing note alone is retained history, not reply delivery.
+Register only the actual current runtime; do not fabricate a worker to make a
+lane look staffed. A source registry declaration is not proof of queue execution.
 
 The Idea Router is Ra infrastructure homed in Pantheon. Ra owns the agent registry, work queue, dispatch protocol, cross-agent relay, portfolio authority, and super-agent mandates. Horus owns each desktop's local node: daemon health, local agent/window visibility, local repo status, and the operator dashboard for this machine. Router v3 treats the router as a multi-agent work queue, not a two-person notice board. Work is addressed to registered agent IDs, and dispatch is successful only when the target agent starts and writes back to the router protocol.
 
@@ -8,7 +23,12 @@ Thoth preserves router memory across compaction and session boundaries. Ma'at va
 
 Other repositories must not fork the router. They carry startup pointers and repo-specific law, while Sirsi-wide orchestration remains here under Ra.
 
-## How it works
+## Historical filesystem artifacts
+
+The following source-era files/directories are retained for history and
+compatibility. They do not replace current canonical service state or deliver
+new executable work. Current registry source remains reviewed in Git; live
+threads and dispatch outcomes must be read from the canonical service.
 
 - `proposals/` — Either agent writes a plan before implementing
 - `reviews/` — The other agent reviews the proposal or the code

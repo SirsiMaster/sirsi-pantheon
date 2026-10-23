@@ -117,6 +117,7 @@ func emitJSON(v any) error {
 var (
 	resHolder, resWork, resRegime, resStart, resEstEnd, resRepro string
 	resPriority, resLeaseTTL, resExemptPID                       int
+	resCores                                                     int
 	resQueue, maatJSON                                           bool
 	maatOperationNonce                                           string
 	covHorizon                                                   int
@@ -134,6 +135,9 @@ only --queue waits for the full window. A harness calls this before touching
 a cable; it is the rails.lock replacement.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if resCores < 0 || resCores > 64 {
+			return fmt.Errorf("maat: --cores must be between 0 (unspecified) and 64")
+		}
 		l, err := maatLedger()
 		if err != nil {
 			return err
@@ -153,7 +157,7 @@ a cable; it is the rails.lock replacement.`,
 			Resource: args[0], Holder: holder, Work: resWork,
 			Regime: schedule.Regime(resRegime), Priority: resPriority,
 			Repro: resRepro, Start: start, EstEnd: resEstEnd, LeaseTTLSec: resLeaseTTL,
-			ExemptPID: resExemptPID,
+			ExemptPID: resExemptPID, Cores: resCores,
 		}
 		res, err := l.Reserve(req, resQueue)
 		if err != nil {
@@ -517,6 +521,7 @@ func init() {
 	maatReserveCmd.Flags().StringVar(&resHolder, "holder", "", "holder agent id (default $SIRSI_AGENT_ID)")
 	maatReserveCmd.Flags().StringVar(&resWork, "work", "", "work label (series/arm)")
 	maatReserveCmd.Flags().StringVar(&resRegime, "regime", "build", "build shares the machine (default); quiet measurement or loaded/model work must be explicit")
+	maatReserveCmd.Flags().IntVar(&resCores, "cores", 0, "Finite CPU request (1–64); omission remains unspecified, not a CPU-only sharing claim")
 	maatReserveCmd.Flags().StringVar(&resStart, "start", "", "start RFC3339 (default now)")
 	maatReserveCmd.Flags().StringVar(&resEstEnd, "est-end", "", "estimated end RFC3339")
 	maatReserveCmd.Flags().StringVar(&resRepro, "repro", "", "repro path")

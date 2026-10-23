@@ -43,6 +43,24 @@ class Backend:
 
 class RegistryDeadlineTests(unittest.TestCase):
 
+    def test_native_cpu_request_reaches_reservation(self):
+        native = runner.Native()
+        native.cpu_cores = 1
+        native.call = mock.Mock(return_value={})
+        native.reserve('m5', 'lane', 'finite-cpu')
+        args = native.call.call_args.args
+        self.assertIn('--cores', args)
+        self.assertEqual(args[args.index('--cores') + 1], '1')
+
+    def test_explicit_quiet_request_does_not_claim_cpu_only_semantics(self):
+        native = runner.Native()
+        native.cpu_cores = 1
+        native.requested_regime = 'quiet'
+        native.call = mock.Mock(return_value={})
+        with self.assertRaises(runner.Refused):
+            native.reserve('m5', 'lane', 'quiet-measurement')
+        native.call.assert_not_called()
+
     def test_explicit_regime_defaults_and_cpu_floor_separation(self):
         self.assertEqual(runner.execution_regime(), 'build')
         self.assertEqual(runner.execution_regime(1), 'build')

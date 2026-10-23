@@ -428,11 +428,13 @@ func (l *Ledger) reserveAttempt(req Reservation, queue bool) (ReserveResult, err
 		// A bounded CPU-only floor is not ownership of the model slot.
 		// Otherwise a build admitted AFTER a model can coexist with it, but
 		// the identical build admitted BEFORE that model strands the model.
-		// Keep quiet measurements, unbounded/memory asks, model floors and
-		// every full reservation exclusive. Both local and atomic service
+		// A first CPU request may be labelled full simply because it arrived
+		// first. Only its explicit finite CPU count establishes CPU-only scope.
+		// Keep quiet measurements, unknown shares, unbounded/memory asks and
+		// model reservations exclusive. Both local and atomic service
 		// scheduling execute this same decision inside their existing fence.
 		if req.Regime == RegimeLoaded && r.Regime == RegimeBuild &&
-			r.Share == ShareFloor && r.Cores > 0 && r.Cores <= floor && r.MemGB == 0 {
+			(r.Share == ShareFloor || r.Share == ShareFull) && r.Cores > 0 && r.Cores <= floor && r.MemGB == 0 {
 			continue
 		}
 		if r.Holder == req.Holder {
