@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"golang.org/x/sys/unix"
 )
 
@@ -265,6 +266,7 @@ type rootRelayDependencies struct {
 	lock       func(string, func() error) error
 	wait       func(context.Context, time.Duration) error
 	spoolClear func(context.Context) error
+	admission  func(context.Context, func() error) error
 }
 
 func (b nativeServiceBackend) relayDependencies() rootRelayDependencies {
@@ -273,6 +275,9 @@ func (b nativeServiceBackend) relayDependencies() rootRelayDependencies {
 	}
 	return rootRelayDependencies{
 		uid: os.Getuid, euid: os.Geteuid, read: rootRelayRead, lock: withServiceLock,
+		admission: func(ctx context.Context, op func() error) error {
+			return routerstore.WithSpoolQuiescence(ctx, rootRelayPhysicalSpool, op)
+		},
 		spoolClear: func(ctx context.Context) error { return rootRelaySpoolQuiescentAt(ctx, rootRelayPhysicalSpool, nil) },
 		artifact: func(path string, capture bool) ([]byte, string, error) {
 			return serviceArtifactPolicy(path, capture, func(fd int) error {
@@ -454,95 +459,101 @@ func (b nativeServiceBackend) refreshRootRelay(ctx context.Context, p ServiceIns
 	if err := validateServiceInstance(p); err != nil || p.Label != rootRelayLabel || p.Target != rootRelayTarget || p.Plist != rootRelayPlist || p.Program != rootRelayProgram {
 		return errors.New("service lifecycle: relay instance outside exact system profile")
 	}
+	if d.admission == nil {
+		return errors.New("service lifecycle: producer admission unavailable")
+	}
 	return d.lock(rootRelayPlist, func() error {
-		// The lock serializes cooperating maintainers, not the relay itself.
-		// Repeated checks catch observed drift/children; the owner --drained
-		// assertion remains essential because a child may spawn after the last
-		// sample. This is not an atomic kernel drain/bootout guarantee.
-		for pass := 0; pass < 2; pass++ {
-			current, err := b.inspectRootRelay(ctx)
-			if err != nil {
-				return err
-			}
-			if current != p {
-				return errors.New("service lifecycle: relay instance changed before locked bootout")
-			}
-			processes, err := d.read(ctx, nil, "/bin/ps", "-axo", "pid=,ppid=")
-			if err != nil {
-				return errors.New("service lifecycle: relay child enumeration failed; no retirement performed")
-			}
-			if err := rootRelayChildrenClear(processes, p.PID); err != nil {
-				return err
-			}
-			if d.spoolClear == nil {
-				return errors.New("service lifecycle: relay spool quiescence probe unavailable")
-			}
-			if err := d.spoolClear(ctx); err != nil {
-				return err
-			}
-		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if _, bootoutErr := d.read(ctx, nil, "/bin/launchctl", "bootout", rootRelayTarget); bootoutErr != nil {
-			// A failed/timed-out command may already have retired the job. Only
-			// inspect on this path: failed print is NOT proof of absence and does
-			// not authorize bootstrap, repeat bootout or an inferred recovery.
-			probe, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			current, probeErr := b.inspectRootRelay(probe)
-			if probeErr != nil {
-				return fmt.Errorf("service lifecycle: relay retirement OUTCOME UNKNOWN; read-only probe failed; owning application recovery required: %w", errors.Join(bootoutErr, probeErr))
-			}
-			if current != p {
-				return fmt.Errorf("service lifecycle: relay changed concurrently after failed bootout; no further mutation performed: %w", bootoutErr)
-			}
-			return fmt.Errorf("service lifecycle: bootout failed; original selected relay instance remains alive; no further mutation performed: %w", bootoutErr)
-		}
-		// Once retired, cancellation of the requester must not abandon recovery.
-		// Recovery is still finite, exact-artifact and single-label only.
-		recovery, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		var last error
-		for attempt := 0; attempt < 20; attempt++ {
-			artifacts, err := b.rootRelayArtifacts(recovery)
-			if err != nil {
-				return fmt.Errorf("service lifecycle: relay retired; artifact revalidation unavailable; owning application recovery required: %w", err)
-			}
-			if !sameRootRelayArtifacts(p, artifacts) {
-				return errors.New("service lifecycle: relay retired but artifacts changed; owning application recovery required")
-			}
-			if _, last = d.read(recovery, nil, "/bin/launchctl", "bootstrap", "system", rootRelayPlist); last == nil {
-				for read := 0; read < 40; read++ {
-					artifacts, err := b.rootRelayArtifacts(recovery)
-					if err != nil {
-						return fmt.Errorf("service lifecycle: relay restart artifact revalidation unavailable; owning application recovery required: %w", err)
-					}
-					if !sameRootRelayArtifacts(p, artifacts) {
-						return errors.New("service lifecycle: relay restart artifacts changed; owning application recovery required")
-					}
-					after, err := b.inspectRootRelay(recovery)
-					if err == nil {
-						if !sameRootRelayArtifacts(p, after) || (after.PID == p.PID && after.Started == p.Started) {
-							return errors.New("service lifecycle: relay restart returned unexpected instance/artifacts")
-						}
-						confirmed, err := b.inspectRootRelay(recovery)
-						if err != nil || confirmed != after {
-							return errors.New("service lifecycle: relay instance drifted during restart readback")
-						}
-						return nil
-					}
-					if err := d.wait(recovery, 250*time.Millisecond); err != nil {
-						return fmt.Errorf("service lifecycle: relay recovery readback failed: %w", err)
-					}
+		return d.admission(ctx, func() error {
+			// Service lock serializes maintainers; producer admission excludes only
+			// updated spool clients. Legacy producers still require owner quiescence.
+			// Repeated checks catch observed drift/children; the owner --drained
+			// assertion remains essential because a child may spawn after the last
+			// sample. This is not an atomic kernel drain/bootout guarantee.
+			for pass := 0; pass < 2; pass++ {
+				current, err := b.inspectRootRelay(ctx)
+				if err != nil {
+					return err
 				}
-				return errors.New("service lifecycle: relay retired but restart readback exhausted; owning application recovery required")
+				if current != p {
+					return errors.New("service lifecycle: relay instance changed before locked bootout")
+				}
+				processes, err := d.read(ctx, nil, "/bin/ps", "-axo", "pid=,ppid=")
+				if err != nil {
+					return errors.New("service lifecycle: relay child enumeration failed; no retirement performed")
+				}
+				if err := rootRelayChildrenClear(processes, p.PID); err != nil {
+					return err
+				}
+				if d.spoolClear == nil {
+					return errors.New("service lifecycle: relay spool quiescence probe unavailable")
+				}
+				if err := d.spoolClear(ctx); err != nil {
+					return err
+				}
 			}
-			if err := d.wait(recovery, 250*time.Millisecond); err != nil {
-				return fmt.Errorf("service lifecycle: relay bootstrap recovery failed: %w", err)
+			if err := ctx.Err(); err != nil {
+				return err
 			}
-		}
-		return fmt.Errorf("service lifecycle: relay bootstrap retries exhausted; owning application recovery required: %w", last)
+			if _, bootoutErr := d.read(ctx, nil, "/bin/launchctl", "bootout", rootRelayTarget); bootoutErr != nil {
+				// A failed/timed-out command may already have retired the job. Only
+				// inspect on this path: failed print is NOT proof of absence and does
+				// not authorize bootstrap, repeat bootout or an inferred recovery.
+				probe, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				current, probeErr := b.inspectRootRelay(probe)
+				if probeErr != nil {
+					return fmt.Errorf("service lifecycle: relay retirement OUTCOME UNKNOWN; read-only probe failed; owning application recovery required: %w", errors.Join(bootoutErr, probeErr))
+				}
+				if current != p {
+					return fmt.Errorf("service lifecycle: relay changed concurrently after failed bootout; no further mutation performed: %w", bootoutErr)
+				}
+				return fmt.Errorf("service lifecycle: bootout failed; original selected relay instance remains alive; no further mutation performed: %w", bootoutErr)
+			}
+			// Once retired, cancellation of the requester must not abandon recovery.
+			// Recovery is still finite, exact-artifact and single-label only.
+			recovery, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			var last error
+			for attempt := 0; attempt < 20; attempt++ {
+				artifacts, err := b.rootRelayArtifacts(recovery)
+				if err != nil {
+					return fmt.Errorf("service lifecycle: relay retired; artifact revalidation unavailable; owning application recovery required: %w", err)
+				}
+				if !sameRootRelayArtifacts(p, artifacts) {
+					return errors.New("service lifecycle: relay retired but artifacts changed; owning application recovery required")
+				}
+				if _, last = d.read(recovery, nil, "/bin/launchctl", "bootstrap", "system", rootRelayPlist); last == nil {
+					for read := 0; read < 40; read++ {
+						artifacts, err := b.rootRelayArtifacts(recovery)
+						if err != nil {
+							return fmt.Errorf("service lifecycle: relay restart artifact revalidation unavailable; owning application recovery required: %w", err)
+						}
+						if !sameRootRelayArtifacts(p, artifacts) {
+							return errors.New("service lifecycle: relay restart artifacts changed; owning application recovery required")
+						}
+						after, err := b.inspectRootRelay(recovery)
+						if err == nil {
+							if !sameRootRelayArtifacts(p, after) || (after.PID == p.PID && after.Started == p.Started) {
+								return errors.New("service lifecycle: relay restart returned unexpected instance/artifacts")
+							}
+							confirmed, err := b.inspectRootRelay(recovery)
+							if err != nil || confirmed != after {
+								return errors.New("service lifecycle: relay instance drifted during restart readback")
+							}
+							return nil
+						}
+						if err := d.wait(recovery, 250*time.Millisecond); err != nil {
+							return fmt.Errorf("service lifecycle: relay recovery readback failed: %w", err)
+						}
+					}
+					return errors.New("service lifecycle: relay retired but restart readback exhausted; owning application recovery required")
+				}
+				if err := d.wait(recovery, 250*time.Millisecond); err != nil {
+					return fmt.Errorf("service lifecycle: relay bootstrap recovery failed: %w", err)
+				}
+			}
+			return fmt.Errorf("service lifecycle: relay bootstrap retries exhausted; owning application recovery required: %w", last)
+		})
 	})
 }
 

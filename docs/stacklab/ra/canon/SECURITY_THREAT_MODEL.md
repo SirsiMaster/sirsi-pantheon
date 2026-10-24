@@ -3,6 +3,8 @@
 | Threat | Control | Failure signal |
 |---|---|---|
 | split-brain local ledger | `Resolve` fails closed; service is canonical | local regular `router.db` |
+| Background poller races selected relay refresh | cooperative shared/exclusive retained-directory admission, finite exclusive wait, unchanged stable queue/instance/children guards, authorization before lock and readback after release | legacy producer adoption missing, timeout, unreadable/nonempty queues or changed pins refuse before retirement; advisory locks do not fence old clients or authorize deleting requests |
+| Maintenance contention hides an untrusted spool client | existing trust preflight precedes shared admission acquisition | actionable trust refusal occurs without publishing even while exclusive admission is held; deterministic regression fixture |
 | forged or stale identity | host token, session, runtime hash, nonce, thread binding | 4xx/auth receipt |
 | duplicate claim/replay | database fencing, idempotency keys, lease expiry | existing id / `ErrLeaseInvalid` |
 | body loss or shell substitution | required non-empty body and `@file` path | send refusal |

@@ -343,6 +343,15 @@ func (t *spoolTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	if err := refuseUntrustedClientOnTrustedSpool(t.root, trustGID); err != nil {
 		return nil, err
 	}
+	// A canceled/paused call has not published anything; the existing uncertainty
+	// classification still governs requests already consumed by the relay.
+	admissionCtx, admissionCancel := context.WithTimeout(r.Context(), t.wait)
+	defer admissionCancel()
+	admission, admissionErr := lockSpoolAdmission(admissionCtx, root, false)
+	if admissionErr != nil {
+		return nil, fmt.Errorf("spool admission: request not published: %w", admissionErr)
+	}
+	defer admission.Close()
 	reqDir, resDir := filepath.Join(t.agent, "req"), filepath.Join(t.agent, "res")
 	// t.agent itself (<spool>/<agent>) is included: the relay needs to traverse
 	// INTO it, not just into its req/res/slots children, and MkdirAll creates

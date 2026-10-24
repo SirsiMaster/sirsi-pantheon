@@ -105,7 +105,8 @@ func newRelayNativeFixture(t *testing.T) (*relayNativeFixture, nativeServiceBack
 	f := &relayNativeFixture{t: t, config: rootRelayConfiguration{Label: rootRelayLabel, UserName: "_sirsipantheon",
 		ProgramArguments: []string{rootRelayProgram, "router", "relay", "serve", "--spool", rootRelaySpool}}}
 	d := rootRelayDependencies{
-		uid: func() int { return f.uid }, euid: func() int { return f.euid }, read: f.read,
+		admission: func(ctx context.Context, op func() error) error { return op() },
+		uid:       func() int { return f.uid }, euid: func() int { return f.euid }, read: f.read,
 		spoolClear: func(ctx context.Context) error {
 			f.spoolReads++
 			if f.spoolError {
@@ -500,5 +501,16 @@ func TestRootRelayOutputBoundCannotBeBypassedByReadFrom(t *testing.T) {
 	}
 	if out.data.Len() > 256*1024 {
 		t.Fatal("oversize response retained")
+	}
+}
+
+func TestRootRelayProducerAdmissionRefusalNeverBootsOut(t *testing.T) {
+	f, b := newRelayNativeFixture(t)
+	b.relay.admission = func(context.Context, func() error) error { return errors.New("producer still in flight") }
+	if e := b.refreshRootRelay(context.Background(), relayInstanceFixture()); e == nil {
+		t.Fatal("admission refusal ignored")
+	}
+	if f.bootouts != 0 || f.bootstraps != 0 {
+		t.Fatal("mutated service after admission refusal")
 	}
 }
