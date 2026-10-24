@@ -1,0 +1,3 @@
+### Corrected
+
+- Stop the optional legacy model resolver at detected WEDGE, preserving its accepted exit-0 conf/sentinel behavior without reaching downloader or empirical probe. HF prefetch now defaults off and requires literal `GEMMA_RESOLVER_PREFETCH=1` for an already-cached non-WEDGE serving model; it never restores missing selected weights implicitly. Keep the still-installable compatibility path distinct from the native worker/SNE, and wire a whole-program inert lifecycle regression into the normal resolver CI guards. Non-WEDGE empirical probe/swap behavior is unchanged; this is not a blanket no-side-effects/offline claim or a broader Gemma completion receipt.

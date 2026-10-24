@@ -19,6 +19,15 @@
   },
   "components": [
     {
+      "id": "legacy-gemma-resolver-wedge-prefetch",
+      "source": ["scripts/gemma/sirsi-gemma-model-resolver.sh", "scripts/gemma/README.md", "Makefile"],
+      "tests": ["scripts/gemma/model-resolver-lifecycle.test.py", "scripts/gemma/model-resolver-cache.test.sh", "scripts/gemma/model-resolver-ranking.test.sh"],
+      "inputs": ["optional legacy invocation, not a dependency of the native worker", "own HOME conf/cache metadata", "existing HF catalog and optional empirical broker endpoint", "literal GEMMA_RESOLVER_PREFETCH=1 for an explicitly reviewed cached non-WEDGE download only"],
+      "outputs": ["accepted exit-0 WEDGE conf preservation or fallback-name sentinel", "WEDGE exits before download/probe", "default no HF download, distinct from offline/no-probe claims"],
+      "writes": ["existing legacy local conf/log writes", "only opted-in cached serving model may use the existing background HF downloader; non-WEDGE legacy probe/swap behavior remains unchanged"],
+      "upgrade_recipe": ["retain all four accepted conf-write cases", "never turn a sentinel into availability or restored-weight evidence", "keep WEDGE terminal even with prefetch opt-in", "do not retire this still-installable compatibility tool without consumer proof", "do not change native SNE recipes, registry grants, keys or worker behavior", "run whole-program inert controls plus existing extracted guards under normal qualification", "do not run make install-gemma-worker to test this change: it restarts the worker", "source-only corrective pending independent review and qualification; no task or installed-runtime closure inferred"]
+    },
+    {
       "id": "finite-own-task-evidence-relocation",
       "source": ["internal/routerstore/taskevidencerelocation.go", "internal/routerstore/taskevidencerelocation_remote.go", "internal/routerstore/tasks.go", "cmd/sirsi/routertaskevidence.go", "docs/runbooks/TASK-EVIDENCE-RELOCATION.md"],
       "tests": ["internal/routerstore/taskevidencerelocation_test.go", "internal/routerstore/taskevidencewriters_test.go", "internal/routerstore/tasks_cas_test.go", "cmd/sirsi/routertaskevidence_test.go"],
