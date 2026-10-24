@@ -10,6 +10,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ### Corrected
 
+- Coordinate updated relay producers with bounded native maintenance admission,
+  retaining all queue and artifact guards and actionable trust refusals. Legacy
+  writers still require verified adoption before a relay refresh.
+- Honor Gemma's existing answering-role declaration for ordinary drafts before
+  claiming or inference. Preserve and block an authority-refused draft rather
+  than repeatedly generating it; attribute its compatibility worker to its
+  declared `gemma-pantheon` lane.
 - Bind native remediation consent to the current diagnostic evidence, exact
   arguments and producing project; execute each explicit invocation once, and
   retain incomplete outcomes without silently replaying a mutation.
