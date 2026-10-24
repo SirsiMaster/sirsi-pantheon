@@ -594,3 +594,136 @@ func TestHorusArtifactQualification(t *testing.T) {
 		})
 	}
 }
+
+func TestHorusRoleSpecificSigningProvenance(t *testing.T) {
+	// All artifact/codec/codesign/launchd operations use the existing per-instance
+	// doubles. These are argument and controller fixtures, not native actions.
+	const knownPath = "/Users/fixture/.sirsi/bin/sirsi-horus-ssa-20261012-signed"
+	const canonical = `=anchor apple generic and certificate leaf[subject.OU] = "9D382WV988" and identifier "sirsi"`
+	const selectedLegacy = `=anchor apple generic and certificate leaf[subject.OU] = "9D382WV988" and (identifier "sirsi" or identifier "sirsi-horus-ssa-20261012")`
+	for _, tc := range []struct {
+		name, payload, oldID, newID, oldTeam, newTeam, drift         string
+		unsigned, tampered, newUnsigned, newTampered, direct, refuse bool
+	}{
+		{name: "selected-legacy", payload: knownPath, oldID: "sirsi-horus-ssa-20261012"},
+		{name: "selected-canonical", payload: knownPath},
+		{name: "generic-legacy-canonical", payload: horusLegacyFixtureProgram},
+		{name: "wrong-path", payload: "/Users/other/.sirsi/bin/sirsi-horus-ssa-20261012-signed", oldID: "sirsi-horus-ssa-20261012", refuse: true},
+		{name: "wrong-leaf", payload: "/Users/fixture/.sirsi/bin/other-signed", oldID: "sirsi-horus-ssa-20261012", refuse: true},
+		{name: "wrong-old-identifier", payload: knownPath, oldID: "foreign", refuse: true},
+		{name: "unsigned-old", payload: knownPath, unsigned: true, refuse: true},
+		{name: "foreign-old-team", payload: knownPath, oldTeam: "FOREIGN", refuse: true},
+		{name: "tampered-old-signature", payload: knownPath, tampered: true, refuse: true},
+		{name: "replacement-legacy-identifier", payload: knownPath, oldID: "sirsi-horus-ssa-20261012", newID: "sirsi-horus-ssa-20261012", refuse: true},
+		{name: "replacement-wrong-identifier", payload: knownPath, newID: "foreign", refuse: true},
+		{name: "replacement-foreign-team", payload: knownPath, newTeam: "FOREIGN", refuse: true},
+		{name: "replacement-unsigned", payload: knownPath, newUnsigned: true, refuse: true},
+		{name: "replacement-tampered-signature", payload: knownPath, newTampered: true, refuse: true},
+		{name: "not-selected-wrapper", payload: knownPath, oldID: "sirsi-horus-ssa-20261012", direct: true, refuse: true},
+		{name: "old-hash-drift", payload: knownPath, oldID: "sirsi-horus-ssa-20261012", drift: "old"},
+		{name: "replacement-hash-drift", payload: knownPath, oldID: "sirsi-horus-ssa-20261012", drift: "new"},
+		{name: "plist-hash-drift", payload: knownPath, oldID: "sirsi-horus-ssa-20261012", drift: "plist"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, b := newHorusNativeFixture(t)
+			var config map[string]json.RawMessage
+			if err := json.Unmarshal(f.current, &config); err != nil {
+				t.Fatal(err)
+			}
+			args := []string{"/bin/zsh", "-l", "-c", fmt.Sprintf("exec %q horus supervise", tc.payload)}
+			if tc.direct {
+				args = []string{tc.payload, "horus", "supervise"}
+			}
+			config["ProgramArguments"], _ = json.Marshal(args)
+			f.current, _ = json.Marshal(config)
+			baseArtifact, baseRead := b.horus.artifact, b.horus.read
+			driftPath := ""
+			b.horus.artifact = func(path string, capture bool) ([]byte, string, error) {
+				if !capture && path == tc.payload {
+					data := path
+					if path == driftPath {
+						data += "-changed"
+					}
+					return nil, horusDigest([]byte(data)), nil
+				}
+				data, digest, err := baseArtifact(path, capture)
+				if path == driftPath {
+					digest = horusDigest([]byte("changed artifact"))
+				}
+				return data, digest, err
+			}
+			signatureCalls := 0
+			b.horus.read = func(ctx context.Context, input []byte, exe string, args ...string) ([]byte, error) {
+				if exe != "/usr/bin/codesign" {
+					return baseRead(ctx, input, exe, args...)
+				}
+				signatureCalls++
+				if len(args) != 5 {
+					t.Fatalf("unexpected codesign arguments: %v", args)
+				}
+				path := args[4]
+				requirement := canonical
+				if !tc.direct && path == knownPath {
+					requirement = selectedLegacy
+				}
+				want := []string{"--verify", "--strict", "-R", requirement, path}
+				for i := range want {
+					if args[i] != want[i] {
+						t.Fatalf("codesign argument %d: got %q want %q", i, args[i], want[i])
+					}
+				}
+				id, team := tc.oldID, tc.oldTeam
+				if path == horusProtectedProgram {
+					id, team = tc.newID, tc.newTeam
+				} else if path != tc.payload {
+					t.Fatalf("unselected signature target: %s", path)
+				}
+				if id == "" {
+					id = "sirsi"
+				}
+				if team == "" {
+					team = "9D382WV988"
+				}
+				// Model successful strict verification only for an intact signed
+				// Apple-anchored fixture with the exact requested team/identifier.
+				if team != "9D382WV988" || (path == tc.payload && (tc.unsigned || tc.tampered)) ||
+					(path == horusProtectedProgram && (tc.newUnsigned || tc.newTampered)) ||
+					(id != "sirsi" && !(requirement == selectedLegacy && id == "sirsi-horus-ssa-20261012")) {
+					return nil, errors.New("fixture signature refused")
+				}
+				return nil, nil
+			}
+			p, err := b.Inspect(context.Background(), HorusServiceLabel)
+			if tc.refuse {
+				if err == nil || f.prepares+f.bootouts+f.bootstraps+f.publishes != 0 {
+					t.Fatalf("invalid provenance accepted or mutated: %v", err)
+				}
+				return
+			}
+			// Inspect binds pre/post artifacts: both inspections must verify the
+			// selected payload and the protected replacement independently.
+			if err != nil || signatureCalls != 4 || p.Program != tc.payload || p.ProgramSHA256 == "" || p.ReplacementSHA256 == "" || p.PlanSHA256 == "" {
+				t.Fatalf("qualified artifacts lost: calls=%d plan=%+v err=%v", signatureCalls, p, err)
+			}
+			if tc.drift != "" {
+				switch tc.drift {
+				case "old":
+					driftPath = tc.payload
+				case "new":
+					driftPath = horusProtectedProgram
+				case "plist":
+					driftPath = p.Plist
+				}
+				if err := b.Refresh(context.Background(), p); err == nil || f.prepares+f.bootouts+f.bootstraps+f.publishes != 0 {
+					t.Fatalf("artifact drift accepted or mutated: %v", err)
+				}
+				return
+			}
+			controller := ServiceController{Backend: b, Authorize: func(context.Context, string) error { return nil }}
+			next, err := controller.Refresh(context.Background(), p)
+			if err != nil || next.Program != horusProtectedProgram || next.PID != 124 || next.Started != "new-start" || f.bootouts != 1 || f.bootstraps != 1 {
+				t.Fatalf("qualified conversion/readback failed: next=%+v err=%v", next, err)
+			}
+		})
+	}
+}

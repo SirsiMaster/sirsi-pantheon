@@ -6,6 +6,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.126] — 2026-10-23
+
+### Corrected
+
+- Allow the observed historical Horus signing identifier only for the selected
+  legacy wrapper at the exact OS-account-owner deployment path. Apple signing
+  anchor, Sirsi team, selected artifact/runtime pins and drain requirements stay
+  mandatory; the protected replacement still requires the canonical identifier.
+- Preserve explicit zero journal-retention intent, including the native path
+  when the compatibility writer cannot represent it; compare age by local civil
+  date so midnight and daylight-saving changes do not prematurely prune entries.
+- Describe Fleet as worker lanes rather than connected machines, and retain a
+  regression that decodes uppercase states and renders the actual shared row.
+- Keep every unresolved router rejection until its original canonical reviewer
+  explicitly clears the exact repository, current head and rejection IDs. A newer
+  title, stale approval, or different reviewer does not clear a finding. Existing
+  explicit owner override and ordinary GitHub review protection remain supported.
+
+This is the normal corrective successor to released v0.24.125, not a rewrite of
+its tag. Source qualification and publication do not by themselves demonstrate
+native service drain, installed-image adoption or automatic cloud queue wake.
+
 ## [0.24.125] — 2026-10-23
 
 ### Corrected

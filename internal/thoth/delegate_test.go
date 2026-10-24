@@ -145,6 +145,60 @@ func TestTryDelegateSync_BinarySuccess(t *testing.T) {
 	}
 }
 
+func TestTryDelegateCompactRetentionIntent(t *testing.T) {
+	oldLook, oldRun := getLookPathFn(), getRunCmdFn()
+	t.Cleanup(func() { setLookPathFn(oldLook); setRunCmdFn(oldRun) })
+	lookups, runs := 0, 0
+	setLookPathFn(func(name string) (string, error) {
+		lookups++
+		return "/fixture/" + name, nil
+	})
+	var captured []string
+	setRunCmdFn(func(name string, args ...string) (string, string, error) {
+		runs++
+		captured = append([]string{name}, args...)
+		return "", "", nil
+	})
+	for _, tc := range []struct {
+		name string
+		opts CompactOptions
+		want bool
+	}{
+		{"explicit-zero", CompactOptions{NoDefaultPrune: true}, false},
+		{"default", CompactOptions{}, true},
+		{"positive-age", CompactOptions{MaxAge: 1}, false},
+		{"positive-age-and-count", CompactOptions{MaxAge: 7, MaxKeep: 3}, false},
+		{"positive-count", CompactOptions{MaxKeep: 3}, true},
+		{"positive-with-intent", CompactOptions{MaxKeep: 3, NoDefaultPrune: true}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			lookups, runs, captured = 0, 0, nil
+			opts := tc.opts
+			opts.RepoRoot, opts.Summary = t.TempDir(), "Fixture decision"
+			delegated, err := TryDelegateCompact(opts)
+			if err != nil || delegated != tc.want {
+				t.Fatalf("delegated=%v err=%v, want %v", delegated, err, tc.want)
+			}
+			if !tc.want {
+				if lookups != 0 || runs != 0 {
+					t.Fatalf("Go retention policy invoked delegate: lookups=%d runs=%d", lookups, runs)
+				}
+				return
+			}
+			want := []string{"thoth-compact", "--path", opts.RepoRoot, "--summary", opts.Summary}
+			if opts.MaxAge > 0 {
+				want = append(want, "--max-age", fmt.Sprint(opts.MaxAge))
+			}
+			if opts.MaxKeep > 0 {
+				want = append(want, "--max-keep", fmt.Sprint(opts.MaxKeep))
+			}
+			if lookups != 1 || runs != 1 || fmt.Sprint(captured) != fmt.Sprint(want) {
+				t.Fatalf("lookups=%d runs=%d argv=%v, want %v", lookups, runs, captured, want)
+			}
+		})
+	}
+}
+
 func TestTryDelegateCompact_BinaryMissing(t *testing.T) {
 	old := getLookPathFn()
 	setLookPathFn(func(name string) (string, error) {
@@ -179,7 +233,6 @@ func TestTryDelegateCompact_BinarySuccess(t *testing.T) {
 	delegated, err := TryDelegateCompact(CompactOptions{
 		RepoRoot: "/tmp",
 		Summary:  "Use interfaces",
-		MaxAge:   30,
 		MaxKeep:  10,
 	})
 	if !delegated {
