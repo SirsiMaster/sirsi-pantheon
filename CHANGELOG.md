@@ -6,6 +6,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.132] — 2026-10-24
+
+### Corrected
+
+- Run router MCP through the canonical Sirsi engine with an instance-owned
+  registration lifetime, bound caller identity and terminal-I/O cancellation.
+  Preserve the legacy launcher as an adapter and offer an explicitly selected,
+  reviewed migration of existing client configuration with drift checks and
+  retained recovery evidence; never rewrite all IDE configurations implicitly.
+- Validate provider readiness completion envelopes rather than accepting an
+  HTTP 200 alone. Require bounded valid terminal content and propagate request
+  cancellation; malformed, incomplete and error-shaped responses remain unready.
+- Observe the actual delegated commercial release source contract, including
+  continued keychain-existence checks, without prescribing owner credentials
+  when the missing requirement is source repair.
+
+This increment starts from the actual signed/notarized v0.24.131 release.
+Individual qualified fixtures and their prior failures remain preserved.
+Combined qualification, protected CI, signed publication and installed-caller
+acceptance remain distinct evidence. No live model readiness, automatic IDE
+migration, new security grant or whole-product/fleet completion is implied.
+
 ## [0.24.131] — 2026-10-24
 
 ### Corrected
