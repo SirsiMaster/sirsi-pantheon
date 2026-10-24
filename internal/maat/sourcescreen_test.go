@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -157,6 +158,7 @@ func TestSourceScreenStrictJSONRequiredClosedKeys(t *testing.T) {
 		for key := range object {
 			keys = append(keys, key)
 		}
+		sort.Strings(keys)
 		for _, key := range keys {
 			value := object[key]
 			for _, mode := range []string{"missing", "null", "alias", "duplicate-alias"} {

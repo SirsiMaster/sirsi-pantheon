@@ -9,6 +9,26 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 )
 
+func TestMaatHostV1WarningRepairsRemainDeterministicWithoutCalibration(t *testing.T) {
+	for _, check := range []string{maatRepairLaunchdDisabledCheck, maatRepairLivenessWatchCheck, "RAM Pressure"} {
+		report := &guard.DoctorReport{Score: 92, Findings: []guard.DiagnosticFinding{{Check: check, Severity: guard.SeverityWarn, Message: "owned fixture warning"}}}
+		s, _, err := maatHostSystemOneScreen(report, "fixture-host", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		v, err := maat.Screen(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if v.SchemaVersion != 1 || v.Contract != "" || v.Model.Calibration != "" || v.Gate != maat.GateChanges {
+			t.Fatalf("host behavior changed: %+v", v)
+		}
+		if check != "RAM Pressure" && v.Findings[0].RepairID == "" {
+			t.Fatal("closed host repair lost")
+		}
+	}
+}
+
 func TestMaatHostSystemOneScreenMapsLiveDiagnosticsToClosedEvidence(t *testing.T) {
 	report := &guard.DoctorReport{Timestamp: time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC), Score: 63, Findings: []guard.DiagnosticFinding{
 		{Check: "Disk Space", Severity: guard.SeverityCritical, Message: "disk is critically full", Fix: "sirsi clean --include-caution"},

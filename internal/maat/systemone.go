@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// SystemOneSchemaVersion is the closed local Ma'at screening contract. It is
+// SystemOneSchemaVersion is the legacy v1 local Ma'at screening contract. It is
 // deliberately independent from an LLM provider: callers supply observations
 // and confidence, while this package enforces the deterministic floor and the
 // screen-to-escalate policy before anything can consume the result.
@@ -355,9 +355,9 @@ func CalibrationFromDecisions(rows []Decision) (Calibration, error) {
 	return calibration, nil
 }
 
-// ValidateMaatVerdict enforces both the schema and the derived policy. It is
-// intentionally suitable for a future router or release consumer: a verdict
-// that merely looks plausible but contradicts its deterministic inputs fails.
+// ValidateMaatVerdict dispatches by explicit version without reinterpreting
+// historical v1 policy. Validation is not authenticated floor/calibration proof
+// or a binding router/release approval.
 func ValidateMaatVerdict(verdict MaatVerdict) error {
 	if verdict.SchemaVersion == SourceScreenSchemaVersion {
 		return validateSourceVerdict(verdict)
@@ -659,6 +659,13 @@ func oneOf(value string, options ...string) bool {
 }
 
 func systemOneReason(verdict MaatVerdict) string {
+	if verdict.SchemaVersion == SourceScreenSchemaVersion {
+		reason := "declared floor failed or incomplete"
+		if verdict.Escalation != nil {
+			reason = verdict.Escalation.Reason
+		}
+		return "Imported source screen: " + reason + "; " + declaredFloorEvidence
+	}
 	if verdict.Gate == GateEscalate && verdict.Escalation != nil {
 		return verdict.Escalation.Reason
 	}
