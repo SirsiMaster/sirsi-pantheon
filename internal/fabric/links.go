@@ -15,6 +15,7 @@ package fabric
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -44,7 +45,7 @@ type Port struct {
 
 // RDMA is the host's RDMA-over-Thunderbolt enablement state.
 type RDMA struct {
-	FamilyLoaded Tri    `json:"family_loaded"` // IORDMAFamily present (sysctl debug.rdma.version)
+	FamilyLoaded Tri    `json:"family_loaded"` // sysctl debug.rdma.version or validated kmutil loaded-kext inventory
 	NVRAMEnabled Tri    `json:"nvram_enabled"` // nvram rdma-enable set (Recovery-time enablement, TN3205)
 	Reason       string `json:"reason,omitempty"`
 }
@@ -210,21 +211,19 @@ func rdmaState(p platform.Platform) RDMA {
 	r := RDMA{FamilyLoaded: Unknown, NVRAMEnabled: Unknown}
 	var why []string
 
-	if v := firstLine(run(p, "sysctl", "-n", "debug.rdma.version")); v != "" && !strings.Contains(v, "unknown oid") {
+	version, versionErr := p.Command("sysctl", "-n", "debug.rdma.version")
+	if versionErr == nil && recognizedRDMAVersion(string(version)) {
 		r.FamilyLoaded = Yes
 	} else {
-		// debug.rdma.version is not present on every macOS build. Its absence
-		// says nothing about the loaded IORDMAFamily kext, so use kmutil's
-		// loaded-kext inventory before reporting a negative answer.
+		// Missing, failed or unfamiliar legacy version output proves neither
+		// presence nor absence. Fall back to the validated loaded-kext table.
 		kmutilBytes, kmutilErr := p.Command("kmutil", "showloaded")
-		kmutil := string(kmutilBytes)
-		switch {
-		case kmutilErr == nil && strings.Contains(kmutil, "IORDMAFamily"):
-			r.FamilyLoaded = Yes
-		case kmutilErr == nil && strings.TrimSpace(kmutil) != "":
-			r.FamilyLoaded = No
-		default:
+		if kmutilErr != nil {
 			why = append(why, "sysctl debug.rdma.version unavailable and kmutil showloaded unreadable")
+		} else if loaded, valid := loadedRDMAInventory(string(kmutilBytes)); valid {
+			r.FamilyLoaded = loaded
+		} else {
+			why = append(why, "sysctl debug.rdma.version unavailable and kmutil showloaded inventory malformed or empty")
 		}
 	}
 
@@ -239,4 +238,57 @@ func rdmaState(p platform.Platform) RDMA {
 	}
 	r.Reason = strings.Join(why, "; ")
 	return r
+}
+
+// Recognize only the historical date/time + RDMA_family shape already retained
+// in this package's fixture. This is not a claim that every native macOS build
+// emits it; unfamiliar successful formats use the kmutil fallback instead.
+func recognizedRDMAVersion(output string) bool {
+	stamp, ok := strings.CutSuffix(strings.TrimSpace(output), " RDMA_family")
+	if !ok {
+		return false
+	}
+	_, err := time.Parse("Jan _2 2006 15:04:05", stamp)
+	return err == nil
+}
+
+// loadedRDMAInventory accepts the observed kmutil showloaded table, not prose
+// containing a family name. Validate every row before asserting presence or
+// absence: a valid prefix followed by a diagnostic/truncated row is unknown.
+func loadedRDMAInventory(output string) (Tri, bool) {
+	const header = "Index Refs Address Size Wired Name (Version) UUID <Linked Against>"
+	row := regexp.MustCompile(`^[0-9]+\s+[0-9]+\s+(?:0|0x[0-9A-Fa-f]+)\s+(?:0|0x[0-9A-Fa-f]+)\s+(?:0|0x[0-9A-Fa-f]+)\s+([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+)\s+\([A-Za-z0-9._-]+\)\s+[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\s+<(?:[0-9]+(?:\s+[0-9]+)*)?>$`)
+	seenHeader, seenPrefix, rows := false, false, 0
+	loaded := No
+	for _, raw := range strings.Split(output, "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		// Darwin.Command combines stderr. Permit only the exact observed
+		// release-variant notice, once and before the table, not arbitrary text.
+		if !seenHeader && !seenPrefix && line == "No variant specified, falling back to release" {
+			seenPrefix = true
+			continue
+		}
+		if !seenHeader {
+			if strings.Join(strings.Fields(line), " ") != header {
+				return Unknown, false
+			}
+			seenHeader = true
+			continue
+		}
+		fields := row.FindStringSubmatch(line)
+		if fields == nil {
+			return Unknown, false
+		}
+		rows++
+		if fields[1] == "com.apple.iokit.IORDMAFamily" {
+			loaded = Yes
+		}
+	}
+	if !seenHeader || rows == 0 {
+		return Unknown, false
+	}
+	return loaded, true
 }

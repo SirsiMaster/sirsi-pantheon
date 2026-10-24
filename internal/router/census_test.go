@@ -13,7 +13,7 @@ func TestRunCensus(t *testing.T) {
 
 	// Pre-register the worker pid so census must recognize it as tracked.
 	if _, err := RegisterThread(root, &Thread{
-		AgentID: "gemma", Surface: "worker", PID: 90001, Status: ThreadStatusActive,
+		AgentID: "gemma-pantheon", Surface: "worker", PID: 90001, Status: ThreadStatusActive,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +31,7 @@ func TestRunCensus(t *testing.T) {
 	for _, a := range actions {
 		byPID[a.Proc.PID] = a
 	}
-	if a := byPID[90001]; a.Outcome != CensusKnown {
+	if a := byPID[90001]; a.Outcome != CensusKnown || a.AgentID != "gemma-pantheon" {
 		t.Errorf("worker = %+v, want already-tracked", a)
 	}
 	a := byPID[90002]

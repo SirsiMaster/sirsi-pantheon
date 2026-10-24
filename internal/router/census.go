@@ -80,7 +80,7 @@ var censusMatchers = []censusMatcher{
 	{"gemma-capped-server.py", "gemma", "gpu-server"},
 	{"mlx_lm.server", "gemma", "gpu-server"},
 	{"mlx_lm.generate", "gemma", "gpu-server"},
-	{"sirsi-gemma-worker.sh", "gemma", "worker"},
+	{"sirsi-gemma-worker.sh", "gemma-pantheon", "worker"},
 	{"sirsi-gemma-triage.sh", "gemma", "worker"},
 	{"sirsi horus supervise", "horus-supervisor", "worker"},
 }

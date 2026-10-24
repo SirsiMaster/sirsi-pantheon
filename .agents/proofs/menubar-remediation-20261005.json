@@ -1,0 +1,107 @@
+{
+  "work_item_id": "menubar-remediation-20261005",
+  "agent_id": "codex-pantheon",
+  "repo": "/private/tmp/ssa-ra-maat124-composition-20261023",
+  "status": "draft",
+  "classification": "platform-foundation",
+  "canon_read": [
+    {
+      "path": "PANTHEON_RULES.md",
+      "role": "governance",
+      "read_at": "2026-10-24T01:32:20.953344+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/COMMERCIALIZATION_GATE.md",
+      "role": "scope",
+      "read_at": "2026-10-24T01:32:20.953344+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/ARCHITECTURE_DESIGN.md",
+      "role": "architecture",
+      "read_at": "2026-10-24T01:32:20.953344+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/SAFETY_DESIGN.md",
+      "role": "security",
+      "read_at": "2026-10-24T01:32:20.953344+00:00",
+      "notes": ""
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "portfolio-canon",
+      "read_at": "2026-10-24T01:32:20.953344+00:00",
+      "notes": ""
+    },
+    {
+      "path": "docs/stacklab/maat/canon/NATIVE_REMEDIATION_EXECUTION.md",
+      "role": "architecture",
+      "read_at": "2026-10-24T02:01:45Z",
+      "notes": "Main re-read the complete corrective contract before this metadata-only qualification refresh. No production source change."
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "docs/stacklab/maat/canon/NATIVE_REMEDIATION_EXECUTION.md",
+      "section": "Approval and invocation; Capture and honest limits; Verification and recovery",
+      "claim": "Corrective source: evidence/argv/repo-bound consent, once-only bounded capture, retained report scope and generation-bound fresh verification. Not installed completion proof.",
+      "files_changed": ["macapp/Sources/SirsiMenubar/RemediationExecution.swift", "macapp/Sources/SirsiMenubar/SirsiEngine.swift", "macapp/Sources/SirsiMenubar/Views.swift", "macapp/Tests/SirsiMenubarTests/RemediationExecutionTests.swift"],
+      "evidence": ["Final published126-baseline b27419c5: normal 8c211952d0e34144acab79308b66dae4 built and ran82 Swift tests,2 skipped,0 failures; ThreadSanitizer21d1e55d28fd41a082979f3270e32b92 ran15 remediation tests0 failures. Guard-omission control f89daed5f1cf4a53b693dc4639d3328a compiled and produced20 expected semantic failures. Astra exact review c5eda27054f9204c34f1c748aa9b86d811b3966d1dae8cf0904920d3db8ea1f4 accepts source/fixture scope only. Installed UX remains unqualified."]
+    }
+  ],
+  "closure_evidence": {
+    "product": "Original Mac operator workflow and pain are explicit in ADR-033 and the corrective contract: reviewed scoped action, one execution and fresh verification. Development evidence exists; installed product closure remains pending.",
+    "design": "Existing native layout, typed resolution routes and canonical Go authority preserved; independent exact source review c5eda270 accepts consent, report-scope and verification-generation corrections. This is not installed visual/accessibility acceptance.",
+    "technical": "Final b274 source passed supervised normal82 tests/2 skipped/0 failures, focused ThreadSanitizer15/0 and semantic guard-omission negative. Generic Go contract commands below remain not-run for this Swift-only source increment and are not waived.",
+    "operational": "SSA owns normal next corrective integration, protected CI and signed release/rollout from published126. No live repair, app launch, authority or service mutation performed. Installed resolution workflow and recovery remain unqualified.",
+    "narrative": "Versioned Stack Lab source contract and changelog describe behavior and limitations; immutable producer/review/bundle retained. Owner Reading Room/Workspace publication and full release record belong to normal integration and remain pending, not silently synchronized."
+  },
+  "verification": [
+    {
+      "name": "build",
+      "command": "go build ./cmd/sirsi/",
+      "status": "not-run",
+      "evidence": "Not run for this Swift-only corrective increment. No Go source changed; normal composed integration must supply required Go evidence, not infer it from Swift tests."
+    },
+    {
+      "name": "vet",
+      "command": "go vet ./...",
+      "status": "not-run",
+      "evidence": "Not run for this increment; remains pending normal composed integration, without waiver."
+    },
+    {
+      "name": "lint",
+      "command": "golangci-lint run ./...",
+      "status": "not-run",
+      "evidence": "Not run for this increment; remains pending normal composed integration, without waiver."
+    },
+    {
+      "name": "test-race",
+      "command": "go test ./... -race",
+      "status": "not-run",
+      "evidence": "Not run for this increment; focused Swift ThreadSanitizer is separately proven and does not substitute for the generic Go contract."
+    },
+    {
+      "name": "swift-normal",
+      "command": "swift test --package-path macapp --scratch-path /private/tmp/pantheon-remediation-proof-20261024.IkNlGEsk/swift-scratch --jobs 1",
+      "status": "passed",
+      "evidence": "Fresh CPU1 supervised terminal8c211952d0e34144acab79308b66dae4;82 tests,2 skipped,0 failures; exact source b27419c5. Full stdout not retained by supervisor; detailed counts are Main-observed app output."
+    },
+    {
+      "name": "swift-thread-sanitizer",
+      "command": "swift test --package-path macapp --scratch-path /private/tmp/pantheon-remediation-proof-20261024.IkNlGEsk/swift-tsan --jobs 1 --sanitize=thread --filter RemediationExecutionTests",
+      "status": "passed",
+      "evidence": "Fresh CPU1 supervised terminal21d1e55d28fd41a082979f3270e32b92;15 tests0 failures, no race diagnostic observed. No generic Go qualification or installed UX inferred."
+    }
+  ],
+  "working_status": {
+    "environment": "Native Mac CPU1 Ma'at per-job executor; isolated Swift scratch/module caches; final source b27419c5 directly on released126.",
+    "how_verified": "Actual supervised full Swift and focused ThreadSanitizer executions, semantic guard-omission negative and independent exact source review; see qualification terminal IDs and scope notes above.",
+    "observed_result": "Development source qualification passed at stated scopes. Installed review/confirm/execute/reverify/recovery UX, normal integrated publication and generic Go contract commands remain pending; proof intentionally remains draft.",
+    "verified_at": "2026-10-24T01:55:31Z"
+  },
+  "handoffs": [],
+  "blockers": []
+}

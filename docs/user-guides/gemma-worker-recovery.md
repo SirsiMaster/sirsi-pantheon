@@ -6,8 +6,11 @@ compatibility launcher, not a second queue implementation.
 
 ## What a healthy worker does
 
-1. Checks the selected native SNE endpoint before claiming work.
-2. Registers one consumer thread and records `SIRSI_THREAD_ID`.
+1. Reads the existing lead-owned `worker_answers` grant before provider
+   preflight. Both ordinary drafting and Apollo tool-turn workers refuse an
+   absent/unreadable grant; neither mode edits the registry or grants itself a role.
+2. Checks the selected native SNE endpoint, then registers one consumer thread,
+   records `SIRSI_THREAD_ID`, and verifies its answering-role stamp before claiming.
 3. Claims work with a bounded router lease, reads it completely, then records
    an acknowledgement.
 4. Renews its lease and heartbeats its thread while generation is active.
@@ -19,16 +22,23 @@ compatibility launcher, not a second queue implementation.
 | Condition | Worker behavior | Safe next action |
 | --- | --- | --- |
 | Native SNE unavailable | Exits before claiming work | Restore the approved SNE service, then restart the worker. |
+| Lead answering grant absent/unreadable | Exits before provider preflight, registration or claim | Have the lead review its existing declaration; do not auto-grant or borrow a thread. |
 | HTTP 503 with `Retry-After` | Waits under the same live, renewed lease; bounded wait exhaustion records fenced retryable failure | Respect backpressure; do not restart or kill a BUSY broker. |
 | Unknown HTTP 503 without `Retry-After` | Preserves bounded structured runtime-failure evidence; does not pretend BUSY | Diagnose the recorded runtime error before retrying. |
 | Permanent context/capacity or authentication error | Blocks only the claimed item through its exact fence | Correct the selected profile/request/auth readiness; unblock deliberately. Never shorten the system identity to hide overflow. |
 | Empty or truncated draft | Reopens the request with retryable evidence | Inspect the retained reason; retry only after the endpoint is healthy. |
 | Reply delivery fails | Keeps the original request unresolved and retains the exact draft | Repair router delivery; the next lease holder can retry. |
+| Service refuses reply completion for answering authority | Fenced-blocks the same original and preserves the generated draft for lead review, rather than retrying inference | Reconcile any already-sent correlated reply and the preserved draft under the existing original. Do not submit a fresh request or automatically reopen/regrant. |
 | Lease lost or superseded | Cancels generation and publishes nothing | Let the current lease holder continue; do not manually close the old item. |
 | Duplicate worker | OS singleton refuses the second process | Keep the existing worker; investigate only if its registered thread is stale. |
 
 The worker never starts a model or falls back to a Python/MLX command. It also
 never treats a nonbinding draft as a completed or approved decision.
+
+If the authority block itself fails (for example, its lease fence was lost),
+the worker reports both errors and the draft; it does not claim that preservation
+in the store succeeded. This correction does not reopen previously dead-lettered
+requests or introduce an automatic no-inference completion/recovery command.
 
 When observing a worker on another host, `node-status` reports its kernel PID as
 `unknown(remote-unknown)`. PID numbers are local to a machine: absence on M1 is

@@ -67,6 +67,30 @@ inspect afresh and record the recovered identity first.
 
 ## Verification and release boundary
 
+### Actual producer custody, not foreground-only readiness
+
+The2026-10-24 M5 operation reached its02:10:30Z window on time but refused
+before retirement. A separate `claude-finalwishes-web` Inbox request created
+at02:10:30.597Z completed at02:10:30.707Z, overlapping the controller's
+empty-queue refusal. Other background Pantheon and CompassPoint polls followed.
+The later no-follow filesystem snapshot found all forwarding queues empty.
+This is evidence of live producers outside the foreground acknowledgments,
+not proof of stale residue, an unreadable directory or a defective guard.
+
+Identify actual background controllers and their owners independently of
+interactive chats. A foreground promise, thread suspension, dispatch hold or
+measurement window does not prove a polling controller stopped making reads.
+Use an existing supported finite no-new-poll control, preserving active payloads,
+models, builds, sessions and heartbeat requirements. If no such control exists,
+repair that concrete producer-custody gap before another maintenance attempt;
+never force retirement, delete markers or replay ambiguous requests.
+
+Launch a prepared finite operator before its observation deadline, then wait
+for the future window in bounded clock chunks. Record the actual live handle,
+prepared UTC and selected process identity, not merely an intention to launch.
+Timing deferral before apply and native empty-queue refusal are distinct
+outcomes. Neither is a completed refresh or authority to repeat blindly.
+
 ### Existing privileged invocation and read-only qualification
 
 Use the existing `sudo -n` route to the reviewed, signed installed CLI; PR1191

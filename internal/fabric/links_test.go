@@ -21,6 +21,15 @@ const spOnePeer = `{"SPThunderboltDataType":[
 
 const netsetup = "Hardware Port: Thunderbolt Bridge\nDevice: bridge0\nEthernet Address: 36:17:01:8c:7d:c0\n\nHardware Port: Thunderbolt 1\nDevice: en1\nEthernet Address: 36:17:01:8c:7d:c0\n\nHardware Port: Wi-Fi\nDevice: en0\n"
 
+// Observed header/row shape from main's exit-0 native capture, with live
+// load addresses replaced by representative same-format constants.
+// The full native capture and separate stderr remain private, outside Git.
+const kmutilHeader = "Index Refs Address            Size       Wired      Name (Version) UUID <Linked Against>\n"
+const kmutilZeroRow = "    3  215 0                  0          0          com.apple.kpi.bsd (27.0.0) 25FECA3D-AD9D-3958-B633-A14EC36D3BE7 <>\n"
+const kmutilHexRow = "   10    6 0xfffffe0001000000 0x7098     0x7098     com.apple.kec.Libm (1) 4E3603E4-7BF1-3ED1-B3B6-F6FA24130C74 <6>\n"
+const kmutilFamilyRow = "  235    1 0xfffffe0002000000 0x9316     0x9316     com.apple.iokit.IORDMAFamily (1.0) A266614B-439F-3B38-9862-F6D245F8327D <9 8 7 6 5 3>\n"
+const kmutilDriverRow = "  236    0 0xfffffe0003000000 0x29ba5    0x29ba5    com.apple.driver.AppleThunderboltRDMA (0.0.1) 97C262AC-8D90-3704-A6F8-71CB7E734457 <235 108 77 58 7 6 5 3>\n"
+
 func mock(sp string) *platform.Mock {
 	return &platform.Mock{NameStr: "darwin", CommandResults: map[string]string{
 		"hostname":                "studio-a\n",
@@ -28,7 +37,7 @@ func mock(sp string) *platform.Mock {
 		"system_profiler SPThunderboltDataType -json": sp,
 		"networksetup -listallhardwareports":          netsetup,
 		"sysctl -n debug.rdma.version":                "Jul 11 2026 14:22:31 RDMA_family\n",
-		"kmutil showloaded":                           "123 0 0 com.apple.iokit.IORDMAFamily (1.0)\n",
+		"kmutil showloaded":                           kmutilHeader + kmutilZeroRow + kmutilFamilyRow,
 		"nvram rdma-enable":                           "nvram: Error getting variable - 'rdma-enable': (iokit/common) data was not found\n",
 	}}
 }
@@ -79,7 +88,7 @@ func TestCollect_OnePeer(t *testing.T) {
 func TestCollect_RDMASysctlAbsentUsesLoadedKextInventory(t *testing.T) {
 	m := mock(spNoDevices)
 	m.CommandResults["sysctl -n debug.rdma.version"] = "sysctl: unknown oid 'debug.rdma.version'\n"
-	m.CommandResults["kmutil showloaded"] = "123 0 0 com.apple.iokit.IORDMAFamily (1.0)\n124 0 0 com.apple.driver.AppleThunderboltRDMA (1.0)\n"
+	m.CommandResults["kmutil showloaded"] = kmutilHeader + kmutilZeroRow + kmutilFamilyRow + kmutilDriverRow
 	l := Collect(m)
 	if l.RDMA.FamilyLoaded != Yes {
 		t.Fatalf("family_loaded=%s, want yes from kmutil fallback; rdma=%+v", l.RDMA.FamilyLoaded, l.RDMA)
@@ -89,18 +98,95 @@ func TestCollect_RDMASysctlAbsentUsesLoadedKextInventory(t *testing.T) {
 func TestCollect_RDMASysctlAbsentReportsNoOnlyAfterReadableKextInventory(t *testing.T) {
 	m := mock(spNoDevices)
 	m.CommandResults["sysctl -n debug.rdma.version"] = "sysctl: unknown oid 'debug.rdma.version'\n"
-	m.CommandResults["kmutil showloaded"] = "123 0 0 com.apple.driver.Unrelated (1.0)\n"
+	m.CommandResults["kmutil showloaded"] = kmutilHeader + kmutilZeroRow + kmutilHexRow
 	l := Collect(m)
 	if l.RDMA.FamilyLoaded != No {
 		t.Fatalf("family_loaded=%s, want no from readable kmutil inventory; rdma=%+v", l.RDMA.FamilyLoaded, l.RDMA)
 	}
 }
 
-type kmutilDiagnosticErrorPlatform struct{ *platform.Mock }
+type kmutilDiagnosticErrorPlatform struct {
+	*platform.Mock
+	output string
+}
+
+type rdmaVersionProbePlatform struct {
+	*platform.Mock
+	version        string
+	versionErr     error
+	inventory      string
+	inventoryErr   error
+	inventoryCalls int
+}
+
+func (p *rdmaVersionProbePlatform) Command(name string, args ...string) ([]byte, error) {
+	if name == "sysctl" {
+		return []byte(p.version), p.versionErr
+	}
+	if name == "kmutil" {
+		p.inventoryCalls++
+		return []byte(p.inventory), p.inventoryErr
+	}
+	return p.Mock.Command(name, args...)
+}
+
+func TestCollect_RDMAVersionRequiresSuccessfulRecognizedShape(t *testing.T) {
+	const historicalVersion = "Jul 11 2026 14:22:31 RDMA_family\n"
+	denied := errors.New("exit status 1")
+	for _, version := range []struct {
+		name    string
+		output  string
+		err     error
+		trusted bool
+	}{
+		{"historical-success", historicalVersion, nil, true},
+		{"denied-nonempty", "sysctl: Operation not permitted\n", denied, false},
+		{"malformed-success", "not a version\n", nil, false},
+		{"diagnostic-marker-error", "sysctl: RDMA_family: Operation not permitted\n", denied, false},
+		{"historical-shape-error", historicalVersion, denied, false},
+		{"diagnostic-marker-success", "sysctl: RDMA_family unavailable\n", nil, false},
+		{"invalid-date-success", "Jul 99 2026 14:22:31 RDMA_family\n", nil, false},
+		{"trailing-diagnostic-success", historicalVersion + "unexpected diagnostic\n", nil, false},
+		{"bare-marker-success", "RDMA_family\n", nil, false},
+	} {
+		for _, inventory := range []struct {
+			name   string
+			output string
+			err    error
+			want   Tri
+		}{
+			{"loaded", kmutilHeader + kmutilFamilyRow, nil, Yes},
+			{"absent", kmutilHeader + kmutilZeroRow, nil, No},
+			{"failed-even-with-family", kmutilHeader + kmutilFamilyRow, denied, Unknown},
+			{"malformed-success", "diagnostic IORDMAFamily\n", nil, Unknown},
+		} {
+			t.Run(version.name+"/"+inventory.name, func(t *testing.T) {
+				p := &rdmaVersionProbePlatform{
+					Mock: mock(spNoDevices), version: version.output, versionErr: version.err,
+					inventory: inventory.output, inventoryErr: inventory.err,
+				}
+				l := Collect(p)
+				want, calls := inventory.want, 1
+				if version.trusted {
+					want, calls = Yes, 0
+				}
+				if l.RDMA.FamilyLoaded != want || p.inventoryCalls != calls {
+					t.Fatalf("rdma=%+v inventory calls=%d, want family=%s calls=%d", l.RDMA, p.inventoryCalls, want, calls)
+				}
+				if want == Unknown && (l.RDMA.Reason == "" || len(l.Unknown) == 0) {
+					t.Fatal("unknown fallback must retain an observable reason")
+				}
+				if l.RDMA.NVRAMEnabled != No {
+					t.Fatal("legacy version handling changed NVRAM reporting")
+				}
+			})
+		}
+	}
+}
 
 func (p kmutilDiagnosticErrorPlatform) Command(name string, args ...string) ([]byte, error) {
 	if name == "kmutil" {
-		return []byte("kmutil: Operation not permitted\n"), errors.New("exit status 1")
+		return []byte(p.output), errors.New("exit status 1")
 	}
 	return p.Mock.Command(name, args...)
 }
@@ -108,9 +194,56 @@ func (p kmutilDiagnosticErrorPlatform) Command(name string, args ...string) ([]b
 func TestCollect_RDMASysctlAbsentAndKMUtilFailureStaysUnknown(t *testing.T) {
 	m := mock(spNoDevices)
 	m.CommandResults["sysctl -n debug.rdma.version"] = "sysctl: unknown oid 'debug.rdma.version'\n"
-	l := Collect(kmutilDiagnosticErrorPlatform{m})
-	if l.RDMA.FamilyLoaded != Unknown {
-		t.Fatalf("family_loaded=%s, want unknown when kmutil returns a diagnostic with an error; rdma=%+v", l.RDMA.FamilyLoaded, l.RDMA)
+	for _, output := range []string{"kmutil: Operation not permitted\n", kmutilHeader + kmutilFamilyRow} {
+		l := Collect(kmutilDiagnosticErrorPlatform{m, output})
+		if l.RDMA.FamilyLoaded != Unknown || l.RDMA.Reason == "" {
+			t.Fatalf("family_loaded=%s, want unknown with reason when kmutil fails; rdma=%+v", l.RDMA.FamilyLoaded, l.RDMA)
+		}
+	}
+}
+
+func TestCollect_RDMAInventoryValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		output string
+		want   Tri
+	}{
+		{"observed-zero-and-hex-rows", kmutilHeader + kmutilZeroRow + kmutilHexRow, No},
+		{"observed-loaded", kmutilHeader + kmutilZeroRow + kmutilFamilyRow + kmutilDriverRow, Yes},
+		{"observed-stderr-prefix", "No variant specified, falling back to release\n" + kmutilHeader + kmutilFamilyRow, Yes},
+		{"bare-family-word", "IORDMAFamily", Unknown},
+		{"arbitrary-success", "not an inventory", Unknown},
+		{"denied-success", "kmutil: Operation not permitted\n", Unknown},
+		{"empty-success", "", Unknown},
+		{"header-only", kmutilHeader, Unknown},
+		{"row-without-header", kmutilFamilyRow, Unknown},
+		{"truncated-family-row", kmutilHeader + "235 1 0 0 0 com.apple.iokit.IORDMAFamily (1.0)\n", Unknown},
+		{"wrong-header", "Index Name\n" + kmutilFamilyRow, Unknown},
+		{"invalid-index", kmutilHeader + strings.Replace(kmutilFamilyRow, "235", "oops", 1), Unknown},
+		{"invalid-address", kmutilHeader + strings.Replace(kmutilFamilyRow, "0xfffffe0002000000", "not-address", 1), Unknown},
+		{"invalid-uuid", kmutilHeader + strings.Replace(kmutilFamilyRow, "A266614B-439F-3B38-9862-F6D245F8327D", "not-uuid", 1), Unknown},
+		{"invalid-dependencies", kmutilHeader + strings.Replace(kmutilFamilyRow, "<9 8 7 6 5 3>", "<oops>", 1), Unknown},
+		{"family-substring-not-exact", kmutilHeader + strings.Replace(kmutilFamilyRow, "com.apple.iokit.IORDMAFamily", "com.apple.iokit.IORDMAFamilyOther", 1), No},
+		{"driver-only-is-not-family", kmutilHeader + kmutilDriverRow, No},
+		{"malformed-after-family", kmutilHeader + kmutilFamilyRow + "garbage IORDMAFamily\n", Unknown},
+		{"unrecognized-prefix", "unexpected notice\n" + kmutilHeader + kmutilFamilyRow, Unknown},
+		{"duplicate-prefix", strings.Repeat("No variant specified, falling back to release\n", 2) + kmutilHeader + kmutilFamilyRow, Unknown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := mock(spNoDevices)
+			m.CommandResults["sysctl -n debug.rdma.version"] = "sysctl: unknown oid 'debug.rdma.version'\n"
+			m.CommandResults["kmutil showloaded"] = tc.output
+			l := Collect(m)
+			if l.RDMA.FamilyLoaded != tc.want {
+				t.Fatalf("family_loaded=%s, want %s; rdma=%+v", l.RDMA.FamilyLoaded, tc.want, l.RDMA)
+			}
+			if tc.want == Unknown && (l.RDMA.Reason == "" || len(l.Unknown) == 0) {
+				t.Fatal("unreadable inventory must expose an unknown reason")
+			}
+			if l.RDMA.NVRAMEnabled != No {
+				t.Fatal("inventory validation changed separate NVRAM reporting")
+			}
+		})
 	}
 }
 
