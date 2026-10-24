@@ -19,6 +19,15 @@
   },
   "components": [
     {
+      "id": "finite-own-task-evidence-relocation",
+      "source": ["internal/routerstore/taskevidencerelocation.go", "internal/routerstore/taskevidencerelocation_remote.go", "internal/routerstore/tasks.go", "cmd/sirsi/routertaskevidence.go", "docs/runbooks/TASK-EVIDENCE-RELOCATION.md"],
+      "tests": ["internal/routerstore/taskevidencerelocation_test.go", "internal/routerstore/taskevidencewriters_test.go", "internal/routerstore/tasks_cas_test.go", "cmd/sirsi/routertaskevidence_test.go"],
+      "inputs": ["closed bounded exact-field manifest", "fresh authenticated own-lane session", "exact public persisted row fingerprints", "existing preservation map and replacement hashes", "external independent review process reference"],
+      "outputs": ["offline local plan or explicit current canonical inspection", "atomic reference relocation or explicit refusal", "authenticated actor attestation and exact after-state replay"],
+      "writes": ["only selected own-task links/result_ref and reserved provenance in one SQL transaction"],
+      "upgrade_recipe": ["default plan must work offline without Resolve or DB creation", "use configured canonical service/relay including localhost; never alternate DB or caller identity", "preserve all nonreference task columns and hidden lease/scope bytes", "use actual SQLite write lock and sorted PostgreSQL row locks", "refuse ALL retained custody including valid expired leases without clearing/reclaiming; normal custody reconciliation must finish before future apply", "ordinary legacy UpdateTask requests remain accepted without new flags/roles; raw-link CAS and bounded reference-only remerge cooperate with relocation", "qualify canonical served build/schema and drain old uncooperative server writers before new-method apply; no old-client refusal barrier", "do not treat actor attestation as server-verified review or filesystem proof", "qualify admitted SQLite/HTTP/CLI and existing PostgreSQL harness before reviewed live application", "source-only candidate; no execution, publication or parent-goal retirement inferred"]
+    },
+    {
       "id": "finite-service-mailbox-reconciliation",
       "source": ["internal/routerstore/mailboxreconcile.go", "internal/routerstore/mailboxreconcile_serve.go", "internal/routerstore/mailboxreconcile_remote.go", "cmd/sirsi/routermailboxreconcile.go", "docs/runbooks/SERVICE-MAILBOX-RECONCILIATION.md"],
       "tests": ["internal/routerstore/mailboxreconcile_test.go", "cmd/sirsi/routermailboxreconcile_test.go"],

@@ -257,29 +257,43 @@ func hasOwnerInstruction(links []TaskLink) bool {
 // (unexpired) for one row, without exposing either through the public Task
 // type — lease_token is a capability, never safe to round-trip through the
 // JSON API that Task backs.
-func (s *SQLiteStore) taskLeaseSnapshot(agent, taskID string) (token string, live bool, err error) {
-	var leaseExpires string
+func (s *SQLiteStore) taskLeaseSnapshot(agent, taskID string) (token, leaseExpires string, live bool, err error) {
 	if err := s.db.QueryRow(`SELECT lease_token, lease_expires FROM tasks WHERE agent=? AND task_id=?;`, agent, taskID).Scan(&token, &leaseExpires); err != nil {
-		return "", false, fmt.Errorf("routerstore: read task lease state: %w", err)
+		return "", "", false, fmt.Errorf("routerstore: read task lease state: %w", err)
 	}
 	if token == "" {
-		return "", false, nil
+		return "", leaseExpires, false, nil
 	}
 	if leaseExpires == "" {
-		return token, true, nil
+		return token, leaseExpires, true, nil
 	}
 	expires, parseErr := time.Parse(time.RFC3339, leaseExpires)
 	if parseErr != nil {
-		return token, true, nil // malformed expiry: treat conservatively as live
+		return token, leaseExpires, true, nil // malformed expiry: treat conservatively as live
 	}
-	return token, expires.After(s.clock().UTC()), nil
+	return token, leaseExpires, expires.After(s.clock().UTC()), nil
 }
 
+var errTaskLinksChanged = errors.New("routerstore: task links changed since read")
+
 func (s *SQLiteStore) UpdateTask(agent, taskID string, u TaskUpdate) (Task, error) {
+	// Existing clients send the same TaskUpdate. Only a reference-only lost CAS
+	// is retried internally, deriving a fresh merge each time. Failed attempts
+	// never increment accounting; status/ownership conflicts still refuse.
+	for attempt := 0; attempt < 4; attempt++ {
+		t, err := s.updateTaskOnce(agent, taskID, u)
+		if !errors.Is(err, errTaskLinksChanged) {
+			return t, err
+		}
+	}
+	return Task{}, fmt.Errorf("routerstore: UpdateTask %s/%s: %w (reference contention after bounded remerge)", agent, taskID, ErrConcurrentTaskUpdate)
+}
+
+func (s *SQLiteStore) updateTaskOnce(agent, taskID string, u TaskUpdate) (Task, error) {
 	if u.AddTokens < 0 || u.AddSeconds < 0 {
 		return Task{}, fmt.Errorf("routerstore: accounting increments cannot be negative")
 	}
-	t, err := s.GetTask(agent, taskID)
+	t, observedLinks, err := s.taskWithRawLinks(agent, taskID)
 	if err != nil {
 		return Task{}, err
 	}
@@ -287,7 +301,7 @@ func (s *SQLiteStore) UpdateTask(agent, taskID string, u TaskUpdate) (Task, erro
 	// row may legally shed lease ownership — is derived from this value, so the
 	// write must refuse to land if it changed underneath us (see the CAS guard).
 	observedStatus := t.Status
-	observedLeaseToken, leaseLive, err := s.taskLeaseSnapshot(agent, taskID)
+	observedLeaseToken, observedLeaseExpires, leaseLive, err := s.taskLeaseSnapshot(agent, taskID)
 	if err != nil {
 		return Task{}, err
 	}
@@ -389,17 +403,24 @@ func (s *SQLiteStore) UpdateTask(agent, taskID string, u TaskUpdate) (Task, erro
 	// gap between that read and this write loses the CAS (0 rows) and errors,
 	// instead of this write silently clobbering the new owner's lease.
 	whereExtra := ""
-	args := []any{t.Subject, t.Status, t.Phase, t.ResponsibleParty, t.BlockedBy, t.Updated, t.Charter, t.Outline, string(timeline), string(links), t.TestState, t.Stage, u.AddTokens, u.AddSeconds, agent, taskID, observedStatus}
+	args := []any{t.Subject, t.Status, t.Phase, t.ResponsibleParty, t.BlockedBy, t.Updated, t.Charter, t.Outline, string(timeline), string(links), t.TestState, t.Stage, u.AddTokens, u.AddSeconds, agent, taskID, observedStatus, observedLinks}
 	if observedStatus == "in-progress" && t.Status != observedStatus {
-		whereExtra = ` AND lease_token=?`
-		args = append(args, observedLeaseToken)
+		// A renewal keeps its token but changes expiry: do not clear a lease
+		// renewed after this read merely because the old expiry had elapsed.
+		whereExtra = ` AND lease_token=? AND lease_expires=?`
+		args = append(args, observedLeaseToken, observedLeaseExpires)
 	}
-	res, err := s.exec(`UPDATE tasks SET subject=?,status=?,phase=?,responsible_party=?,blocked_by=?,updated=?,charter=?,outline=?,timeline=?,links=?,test_state=?,stage=?,tokens_consumed=tokens_consumed+?,duration_seconds=duration_seconds+?`+leaseClear+` WHERE agent=? AND task_id=? AND status=?`+whereExtra+`;`,
+	res, err := s.exec(`UPDATE tasks SET subject=?,status=?,phase=?,responsible_party=?,blocked_by=?,updated=?,charter=?,outline=?,timeline=?,links=?,test_state=?,stage=?,tokens_consumed=tokens_consumed+?,duration_seconds=duration_seconds+?`+leaseClear+` WHERE agent=? AND task_id=? AND status=? AND links=?`+whereExtra+`;`,
 		args...)
 	if err != nil {
 		return Task{}, fmt.Errorf("routerstore: UpdateTask %s/%s: %w", agent, taskID, err)
 	}
 	if n, rowsErr := res.RowsAffected(); rowsErr == nil && n == 0 {
+		var currentStatus, currentLinks, currentToken, currentExpires string
+		readErr := s.db.QueryRow(`SELECT status,links,lease_token,lease_expires FROM tasks WHERE agent=? AND task_id=?`, agent, taskID).Scan(&currentStatus, &currentLinks, &currentToken, &currentExpires)
+		if readErr == nil && currentStatus == observedStatus && currentToken == observedLeaseToken && currentExpires == observedLeaseExpires && currentLinks != observedLinks {
+			return Task{}, errTaskLinksChanged
+		}
 		return Task{}, fmt.Errorf("routerstore: UpdateTask %s/%s: %w (status changed from %q since read)", agent, taskID, ErrConcurrentTaskUpdate, observedStatus)
 	}
 	return s.GetTask(agent, taskID)
@@ -408,12 +429,17 @@ func (s *SQLiteStore) UpdateTask(agent, taskID string, u TaskUpdate) (Task, erro
 const taskSelect = `SELECT agent,task_id,subject,status,phase,responsible_party,blocked_by,created,updated,charter,commissioned_at,commissioned_by,outline,timeline,links,test_state,stage,tokens_consumed,duration_seconds,result_ref FROM tasks`
 
 func scanTask(scanner interface{ Scan(...any) error }) (Task, error) {
+	t, _, err := scanTaskWithRawLinks(scanner)
+	return t, err
+}
+
+func scanTaskWithRawLinks(scanner interface{ Scan(...any) error }) (Task, string, error) {
 	var t Task
 	var charter, outline sql.NullString
 	var timeline, links string
 	err := scanner.Scan(&t.Agent, &t.TaskID, &t.Subject, &t.Status, &t.Phase, &t.ResponsibleParty, &t.BlockedBy, &t.Created, &t.Updated, &charter, &t.CommissionedAt, &t.CommissionedBy, &outline, &timeline, &links, &t.TestState, &t.Stage, &t.TokensConsumed, &t.DurationSeconds, &t.ResultRef)
 	if err != nil {
-		return Task{}, err
+		return Task{}, "", err
 	}
 	if charter.Valid {
 		t.Charter = &charter.String
@@ -422,10 +448,10 @@ func scanTask(scanner interface{ Scan(...any) error }) (Task, error) {
 		t.Outline = &outline.String
 	}
 	if err := json.Unmarshal([]byte(timeline), &t.Timeline); err != nil {
-		return Task{}, fmt.Errorf("decode timeline: %w", err)
+		return Task{}, "", fmt.Errorf("decode timeline: %w", err)
 	}
 	if err := json.Unmarshal([]byte(links), &t.Links); err != nil {
-		return Task{}, fmt.Errorf("decode links: %w", err)
+		return Task{}, "", fmt.Errorf("decode links: %w", err)
 	}
 	if t.Timeline == nil {
 		t.Timeline = []TimelineEntry{}
@@ -433,19 +459,26 @@ func scanTask(scanner interface{ Scan(...any) error }) (Task, error) {
 	if t.Links == nil {
 		t.Links = []TaskLink{}
 	}
-	return t, nil
+	return t, links, nil
 }
 
 func (s *SQLiteStore) GetTask(agent, taskID string) (Task, error) {
-	t, err := scanTask(s.db.QueryRow(taskSelect+` WHERE agent=? AND task_id=?;`, agent, taskID))
+	t, _, err := s.taskWithRawLinks(agent, taskID)
+	return t, err
+}
+
+// Decoded values and raw links MUST come from one SELECT. A later raw read
+// could pair old decoded links with a new CAS baseline and resurrect old URIs.
+func (s *SQLiteStore) taskWithRawLinks(agent, taskID string) (Task, string, error) {
+	t, rawLinks, err := scanTaskWithRawLinks(s.db.QueryRow(taskSelect+` WHERE agent=? AND task_id=?;`, agent, taskID))
 	if errors.Is(err, sql.ErrNoRows) {
-		return Task{}, ErrNotFound
+		return Task{}, "", ErrNotFound
 	}
 	if err != nil {
-		return Task{}, fmt.Errorf("routerstore: GetTask %s/%s: %w", agent, taskID, err)
+		return Task{}, "", fmt.Errorf("routerstore: GetTask %s/%s: %w", agent, taskID, err)
 	}
 	t.Liveness = deriveTaskLiveness(t, s.clock().UTC())
-	return t, nil
+	return t, rawLinks, nil
 }
 
 func (s *SQLiteStore) ListTasks(agent string) ([]Task, error) {

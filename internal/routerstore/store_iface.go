@@ -52,6 +52,9 @@ type Store interface {
 	Close() error
 	CloseItem(id, result string) error
 	ReconcileMailboxNotice(ctx context.Context, req MailboxReconcileRequest) (MailboxReconcileResult, error)
+	// RelocateTaskEvidence only relocates exact references on the authenticated
+	// actor's own rows; never a task lifecycle/completion or generic update.
+	RelocateTaskEvidence(ctx context.Context, req TaskEvidenceRequest) (TaskEvidenceResult, error)
 	Complete(id, token, result string) error
 	CompleteTaskLease(agent, taskID, token, resultRef string) error
 	Counters() (DispatchCounters, error)
