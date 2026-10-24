@@ -142,6 +142,7 @@ COPYFILE_DISABLE=1 /usr/bin/pkgbuild "${PKGBUILD_ARGS[@]}"
 # survived the package boundary.
 EXPANDED_ROOT="$PAYLOAD_ROOT/expanded-payload"
 /usr/sbin/pkgutil --expand-full "$PKG_PATH" "$EXPANDED_ROOT"
+python3 "${PROJECT_ROOT}/scripts/package_info_contract.py" "$EXPANDED_ROOT/PackageInfo" "$VERSION" "$VERSION"
 python3 "${PROJECT_ROOT}/scripts/artifact_modes.py" --payload "$EXPANDED_ROOT/Payload" --check
 /usr/bin/cmp -s "$EXPANDED_ROOT/Payload/Applications/Pantheon.app/Contents/MacOS/sirsi" "$EXPANDED_ROOT/Payload/usr/local/libexec/sirsi-pantheon/sirsi" || { echo "ERROR: expanded installer system and app CLI bytes differ" >&2; exit 1; }
 if /usr/bin/find "$EXPANDED_ROOT" -type f -name '._*' -print -quit | /usr/bin/grep -q .; then

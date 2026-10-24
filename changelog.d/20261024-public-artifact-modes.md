@@ -15,3 +15,7 @@ native BundleOverwriteAction=upgrade so old private containers are replaced,
 not merged. Actual corrective upgrade remains SHA/SSA-owned qualification.
 Package entry also rejects a bad signed input app read-only before any copying;
 the valid source app cannot diverge from a silently repaired package-only copy.
+Expanded PackageInfo now has a bounded read-only semantic assertion derived from
+the actual native metadata probe, with retained real-XML and marker mutations.
+Version checking stays enabled; a lower-version132 skip is not misattributed to
+permission preservation during a higher-version atomic upgrade.

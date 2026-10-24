@@ -38,6 +38,19 @@ script is added. Actual upgrade over private133, rollback and ordinary-user
 read/traverse/launch are still SHA/SSA qualification, NOT proved by source plist
 fixtures or a correct fresh BOM alone.
 
+Main's native metadata probe5204daa438004075a7d091f2cf7eeeae exited0:
+PackageInfo SHA256ec7474e00ec3b038ba29cda56210662d31fdd08e773155edf3fbc21095ae423a.
+The read-only bounded parser checks its observed direct bundle, sole upgrade and
+strict-identifier memberships, empty update/atomic-update/relocate containers,
+version/path/ID and overwrite-permissions=true/relocatable=false. The source XML
+fixture adds only a final newline, explicitly removed for provenance comparison.
+Four stderr write-permission diagnostics remain retained despite exit0; this
+does not establish a real installed upgrade or clean stderr. The132 installer
+skipped the higher-version133 app and restored the system CLI only; that is NOT
+evidence that an actual higher-version atomic replacement preserves0700 modes.
+Intentional version checking remains enabled. SHA's whole132 atomic restore was
+reported successful; the actual134-over-private133 upgrade still needs proof.
+
 The Python stdlib helper is build-time tooling only, never a payload resource or
 runtime dependency. Payload inventory remains the canonical Go byte/layout and
 Python-free verifier. There is no installed-app chmod, service/security change,
