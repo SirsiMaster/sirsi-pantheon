@@ -918,8 +918,23 @@ final class SirsiEngine: ObservableObject {
         !force && pantheonObservationIsCurrent(modified, at: now, maxAge: 30)
     }
 
+    // Keep the optional CLI-auth check inside the native read's 12-second
+    // budget. This existing operator flag degrades auth to inconclusive; it
+    // does not skip the authoritative queue/thread reads or extend the UI wait.
+    static let routerBoardReadArguments = ["router", "node-status", "--json", "--probe-timeout-ms", "1000"]
+
+    var routerEmptyStateTitle: String {
+        routerLoading ? "Reading the fabric…" :
+            (routerReadError == nil ? "No fabric data yet on this Mac." : "Ra refresh unavailable")
+    }
+
+    var routerEmptyStateMessage: String {
+        routerReadError ?? "Refresh to read the current Ra board. If it remains unavailable, open Ma'at to retain the observation and choose the next safe action."
+    }
+
     @discardableResult
-    func loadRouterBoard(force: Bool = false) async -> Bool {
+    func loadRouterBoard(force: Bool = false,
+                         readJSON: (([String]) async -> JSONCommandRead)? = nil) async -> Bool {
         guard !routerLoading else { return false }
         routerLoading = true
         defer { routerLoading = false }
@@ -943,7 +958,12 @@ final class SirsiEngine: ObservableObject {
         // does NOT carry local_llm (conduit-enriched only), so graft the file's
         // block onto the live read: pending counts stay honest-live while the
         // Ask Sirsi panel keeps its last-known on-device state.
-        let read = await Self.runJSONRead(args: ["router", "node-status", "--json"])
+        let read: JSONCommandRead
+        if let readJSON {
+            read = await readJSON(Self.routerBoardReadArguments)
+        } else {
+            read = await Self.runJSONRead(args: Self.routerBoardReadArguments)
+        }
         if read.exitStatus == 0, !read.timedOut, read.launchError == nil,
            var board = try? JSONDecoder().decode(RouterBoard.self, from: read.data) {
             if board.localLLM == nil { board.localLLM = fileBoard?.localLLM }
@@ -952,7 +972,18 @@ final class SirsiEngine: ObservableObject {
             routerReadError = nil
             return true
         } else {
-            routerReadError = "Ra could not be refreshed. Any retained board is from the previous successful observation."
+            let failure: String
+            if read.timedOut {
+                failure = "Ra refresh exceeded its 12-second read budget."
+            } else if read.launchError != nil {
+                failure = "The bundled Ra reader could not be started."
+            } else if read.exitStatus != 0 {
+                let status = read.exitStatus.map { String($0) } ?? "unavailable"
+                failure = "The Ra reader did not complete successfully (exit \(status))."
+            } else {
+                failure = "The Ra reader returned an invalid or missing board."
+            }
+            routerReadError = "\(failure) Refresh to retry or open Ma'at for recovery. Any retained board is from the previous successful observation."
             return false
         }
     }

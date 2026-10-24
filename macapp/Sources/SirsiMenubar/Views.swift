@@ -1954,13 +1954,13 @@ struct RaFabricView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             HStack(spacing: 8) {
                                 Circle().fill(.gray).frame(width: 8, height: 8)
-                                Text(engine.routerLoading ? "Reading the fabric…" : "No fabric data yet on this Mac.")
+                                Text(engine.routerEmptyStateTitle)
                                     .sirsiFont(13, weight: .medium)
                                     .fixedSize(horizontal: false, vertical: true)
                                 Spacer()
                             }
                             if !engine.routerLoading {
-                                Text("Refresh to read the current Ra board. If it remains unavailable, open Ma'at to retain the observation and choose the next safe action.")
+                                Text(engine.routerEmptyStateMessage)
                                     .sirsiFont(.caption)
                                     .foregroundStyle(.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
