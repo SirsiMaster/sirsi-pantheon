@@ -1076,6 +1076,19 @@ func neverReachedService(err error) bool {
 	if errors.As(err, &opErr) {
 		return opErr.Op == "dial"
 	}
+	// A TLS handshake timeout is documented above as never-reached but was never
+	// detected: net/http returns its own unexported tlsHandshakeTimeoutError (not a
+	// *net.OpError), so it fell through to OUTCOME UNKNOWN. The handshake finishes
+	// BEFORE any request byte is written, so a timeout there means the request
+	// never left this process. Matched by its exact text, not by Timeout(): the
+	// response-header timeout also reports Timeout()==true but happens AFTER the
+	// request was sent, and must stay OUTCOME UNKNOWN. On a lossy link (a phone
+	// hotspot, 1 connection in 5 stalls) this made every stalled handshake an
+	// unknown-outcome failure instead of the one safe re-dial and, failing that,
+	// the durable outbox.
+	if strings.Contains(err.Error(), "net/http: TLS handshake timeout") {
+		return true
+	}
 	// A bare ECONNREFUSED with no net.OpError carries no phase information of its
 	// own, so we cannot prove it was pre-send. Classify conservatively as
 	// UNKNOWN (not never-reached) rather than risk auto-retrying a mutation that
