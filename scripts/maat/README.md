@@ -92,6 +92,21 @@ inert tool JSON to that chain: it executes none of the supplied command text.
 Test on each host under CPU-only admission. Do not replace an active recurring
 job's hash-bound helper or restart any job to install the hook policy.
 
+### Foreground command whitespace
+
+`heavy-launch.py` is the versioned source for the existing
+`~/.claude/hooks/maat-heavy-launch.py` admission classifier. The imported
+installed baseline is SHA256
+`1c616cbeffd95e19989887a65c209e7643228b6e571c495bb6f595fff5d85a1a`.
+The correction normalizes only outer shell whitespace before classification:
+a terminal newline is not another executable command. Interior separators,
+background execution, expansion and direct unadmitted workload checks remain
+unchanged. Parser-only tests execute none of the supplied command text.
+Preserve the installed baseline and original three-part chain during rollout;
+replace only this admission classifier after exact-source review and test
+qualification. A passing parser fixture is not proof of an attended lane's
+actual front-door operation; retain that separate runtime readback.
+
 ## Safe native job and observer launchers
 
 ### Scoped native worker transport
