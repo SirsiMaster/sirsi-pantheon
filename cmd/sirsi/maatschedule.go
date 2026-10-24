@@ -440,6 +440,12 @@ var maatConflictCheckCmd = &cobra.Command{
 		if machine == "" {
 			machine = args[0]
 		}
+		// The requester is the caller, not the optional reservation holder.
+		// With no caller supplied, identify the command producer, not a human.
+		requester := strings.TrimSpace(os.Getenv("SIRSI_AGENT_ID"))
+		if requester == "" {
+			requester = "sirsi maat conflict-check"
+		}
 		rep, err := l.CheckConflicts(args[0], machine)
 		if err != nil {
 			// A checker failure (e.g. the ledger/router store was unreachable) is
@@ -448,7 +454,7 @@ var maatConflictCheckCmd = &cobra.Command{
 			// from "clean"/"conflict", so a caller reading the decision log (or
 			// this error text) never mistakes "the check couldn't run" for "the
 			// check found foreign load."
-			recordDecision("conflict-check", "", args[0], fmt.Sprintf("live activity on %s", machine), "", "unverified", err.Error(), "")
+			recordDecision("conflict-check", requester, args[0], fmt.Sprintf("live activity on %s", machine), "", "unverified", err.Error(), "")
 			return fmt.Errorf("conflict-check unverified — checker unavailable, not evidence of foreign load: %w", err)
 		}
 		if !rep.Clean && rep.Reservation != "" {
@@ -461,7 +467,7 @@ var maatConflictCheckCmd = &cobra.Command{
 		if !rep.Clean {
 			determination = "conflict"
 		}
-		recordDecision("conflict-check", rep.Holder, rep.Resource, fmt.Sprintf("live activity on %s", machine), rep.Holder, determination, rep.Summary, rep.Reservation)
+		recordDecision("conflict-check", requester, rep.Resource, fmt.Sprintf("live activity on %s", machine), rep.Holder, determination, rep.Summary, rep.Reservation)
 		if maatJSON {
 			_ = emitJSON(rep)
 		} else if rep.Clean {

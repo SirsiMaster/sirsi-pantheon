@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
@@ -48,6 +49,30 @@ func readJSONLines(t *testing.T, path string) []cedeDecisionRecord {
 		out = append(out, rec)
 	}
 	return out
+}
+
+// Exercise the actual cede projection writer without a cede or reservation
+// transition. Only the owned temporary journal is written.
+func TestCedeDecisionJournalStrictCompatibility(t *testing.T) {
+	for _, kind := range []string{"cede-request", "cede-grant", "cede-counter", "cede-decline", "cede-withdraw"} {
+		t.Run(kind, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "decisions.jsonl")
+			t.Setenv("MAAT_DECISIONS", path)
+			if err := logCedeDecision(kind, "fixture-outcome", "fixture-actor", "fixture-resource", "inert projection", "fixture-peer", "fixture explanation", "fixture-evidence"); err != nil {
+				t.Fatal(err)
+			}
+			rows, err := (&maat.FileDecisionJournal{Path: path}).Recent(10)
+			if err != nil {
+				t.Fatalf("generated cede record must satisfy strict reader: %v", err)
+			}
+			if len(rows) != 1 {
+				t.Fatalf("got %d records, want 1", len(rows))
+			}
+			if got := rows[0]; got.Kind != kind || got.Requester != "fixture-actor" || got.Affected != "fixture-peer" || got.Evidence != "fixture-evidence" {
+				t.Fatalf("actor/evidence changed: %+v", got)
+			}
+		})
+	}
 }
 
 // TestCedeDecisionLedger_RequestThenGrant runs a request through the command

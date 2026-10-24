@@ -117,6 +117,26 @@ func TestLogFloorGrant_ProjectionFailureIsReported(t *testing.T) {
 	}
 }
 
+func TestLogFloorGrantJournalStrictCompatibility(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "decisions.jsonl")
+	t.Setenv("MAAT_DECISIONS", path)
+	// No pending cedes: no store, host probe, or actual reservation is used.
+	r := &schedule.Reservation{ID: "fixture-reservation", Holder: "fixture-actor", Resource: "fixture-resource", Cores: 2, Reason: "fixture floor"}
+	if err := logFloorGrant(nil, r.Holder, r.Resource, r, "fixture-peer"); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := (&maat.FileDecisionJournal{Path: path}).Recent(10)
+	if err != nil {
+		t.Fatalf("generated floor record must satisfy strict reader: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("got %d records, want 1", len(rows))
+	}
+	if got := rows[0]; got.Kind != "reserve" || got.Determination != "grant-floor" || got.Requester != r.Holder || got.Affected != "fixture-peer" || got.Evidence != r.ID {
+		t.Fatalf("floor facts changed: %+v", got)
+	}
+}
+
 func TestRecordReservationDecisionExplainsGrantAndRefusal(t *testing.T) {
 	oldFactory := newMaatDecisionJournal
 	defer func() { newMaatDecisionJournal = oldFactory }()
