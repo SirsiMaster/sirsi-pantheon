@@ -7,7 +7,7 @@ f=${1:?usage: sirsi-sign <file> [codesign|bin|app|pkg|dmg]}; [ -e "$f" ] || { ec
 k=${2:-}; [ -z "$k" ] && case "$f" in *.pkg) k=pkg;; *.dmg) k=dmg;; *.app|*.app/) k=app;; *) k=bin;; esac
 case $k in codesign|bin|app|pkg|dmg) ;; *) echo "sirsi-sign: bad kind '$k'" >&2; exit 2;; esac
 T=${SIRSI_SIGN_TIMEOUT:-1800}
-HOSTS=(${=SIRSI_SIGN_HOSTS:-thekryptodragon@192.168.1.155 sirsimasterdev@192.168.1.180})
+HOSTS=(${=SIRSI_SIGN_HOSTS:-sirsi-m5 sirsi-m1})
 # Every phase uses the same existing pinned-host, noninteractive transport.
 # Preflight alone is insufficient: scp/rsync and later ssh calls must neither
 # learn a key nor prompt after an authentication or host-identity change.
