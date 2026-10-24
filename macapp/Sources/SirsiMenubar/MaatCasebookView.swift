@@ -117,7 +117,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
 // surface, not a hidden field in an individual case. It projects only the
 // canonical Casebook: no ambient state is classified here and no local screen
 // becomes mutation or release authority merely because it is rendered.
-private struct MaatSystemOneView: View {
+@MainActor private struct MaatSystemOneView: View {
     @ObservedObject var engine: SirsiEngine
     @Binding var section: MaatWorkspaceSection
     @Environment(\.snapshotMode) private var snapshotMode
@@ -125,11 +125,8 @@ private struct MaatSystemOneView: View {
     @State private var loading: Bool
     @State private var loadError: String?
     @State private var showScreenPicker = false
-    @State private var selectedScreenURL: URL?
+    @StateObject private var sourceImport = MaatSourceImportModel()
     @State private var confirmScreenImport = false
-    @State private var screenImportInFlight = false
-    @State private var screenImportResult: MaatSystemOneCommandResult?
-    @State private var screenImportError: String?
     @State private var releasePreflight: MaatReleaseContractPreflight?
     @State private var releasePreflightInFlight = false
     @State private var releasePreflightError: String?
@@ -167,7 +164,7 @@ private struct MaatSystemOneView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let loadError {
-                unavailableState(loadError)
+                VStack { unavailableState(loadError); screenImportControl }
             } else if let casebook {
                 systemOneBody(casebook)
             } else {
@@ -182,18 +179,16 @@ private struct MaatSystemOneView: View {
             switch result {
             case .success(let urls):
                 guard let url = urls.first else { return }
-                selectedScreenURL = url
-                screenImportError = nil
-                confirmScreenImport = true
+                sourceImport.select(url)
             case .failure(let error):
-                screenImportError = "Pantheon did not open the selected evidence file: \(error.localizedDescription)"
+                sourceImport.selectionFailed("Pantheon did not open the selected evidence file: \(error.localizedDescription). Choose another JSON file.")
             }
         }
         .confirmationDialog("Record this System One screen?", isPresented: $confirmScreenImport, titleVisibility: .visible) {
             Button("Validate and record") { Task { await importScreen() } }
-            Button("Cancel", role: .cancel) {}
+            Button("Cancel", role: .cancel) { sourceImport.cancelReview() }
         } message: {
-            Text("Ma'at will validate the exact selected JSON and record an evidence-bound local gate. It will not execute the assessed payload, authorize work, or treat this as a release decision.")
+            Text("Ma'at will revalidate the reviewed v2 JSON bytes and expected head before recording one nonbinding screen. It will not execute the assessed payload, authorize work, or treat this as a release decision.\nFile: \(sourceImport.approval?.file.path ?? "No reviewed file")\nExpected head: \(sourceImport.approval?.expectedHead ?? "No reviewed head")")
         }
         .confirmationDialog("Record this release-contract preflight?", isPresented: $confirmReleasePreflight, titleVisibility: .visible) {
             Button("Record in Ma'at Casebook") { Task { await recordReleasePreflight() } }
@@ -213,6 +208,7 @@ private struct MaatSystemOneView: View {
         } message: {
             Text("Ma'at will run one local health observation, hash that exact report, and record its deterministic result in Casebook. It will not repair services, kill processes, install software, or authorize other work.")
         }
+        .onDisappear { sourceImport.cancelReview() }
     }
 
     private func unavailableState(_ message: String) -> some View {
@@ -519,35 +515,62 @@ private struct MaatSystemOneView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Record a closed screen")
                 .sirsiFont(.headline)
-            Text("Choose a qualified producer's System One JSON. Ma'at validates the closed schema and deterministic floor before it writes one evidence-bound Casebook record.")
+            Text("Choose an unqualified ADR070 v2 source screen. Enter the expected head independently; it is never copied from the packet. Preview validates declared evidence only—it does not run checks or qualify a model.")
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            SnapshotActionButton(disabled: screenImportInFlight) {
+            SnapshotActionButton(disabled: sourceImport.busy) {
                 showScreenPicker = true
             } label: {
                 Label("Choose System One JSON", systemImage: "doc.badge.plus")
                     .frame(maxWidth: .infinity)
             }
-            if let selectedScreenURL {
+            if let selectedScreenURL = sourceImport.selectedFile {
                 Text("Selected: \(selectedScreenURL.lastPathComponent)")
                     .sirsiFont(.caption, design: .monospaced)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
-            if screenImportInFlight {
+            TextField("Expected source head", text: $sourceImport.expectedHead)
+                .textFieldStyle(.roundedBorder)
+                .disabled(sourceImport.busy)
+                .accessibilityLabel("Expected source head, independently selected")
+            Text(MaatSourceImportContract.guidance)
+                .sirsiFont(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            DisclosureGroup("V2 JSON format (example identifiers, not proof)") {
+                Text(MaatSourceImportContract.example)
+                    .sirsiFont(.caption2, design: .monospaced)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            SnapshotActionButton(disabled: !sourceImport.canReview) {
+                Task {
+                    await sourceImport.review()
+                    if sourceImport.approval != nil { confirmScreenImport = true }
+                }
+            } label: {
+                Label("Review selected v2 screen", systemImage: "doc.text.magnifyingglass")
+            }
+            if let preview = sourceImport.preview {
+                Text("Preview: \(preview.gate) · expected head \(preview.subject.headSHA). Floor evidence is declared-only. No journal write yet.")
+                    .sirsiFont(.caption)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if sourceImport.busy {
                 ProgressView("Validating and recording…")
                     .sirsiFont(.caption)
             }
-            if let result = screenImportResult {
+            if let result = sourceImport.result {
                 Label(result.summary, systemImage: result.verdict.gate == "pass" ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                     .sirsiFont(.caption)
                     .foregroundStyle(result.verdict.gate == "pass" ? .green : .orange)
-                Text("The Casebook was refreshed from the recorded evidence.")
+                Text("Retained prior operation receipt. Casebook refresh is a separate read; a failed refresh does not undo the recorded evidence or repeat the import.")
                     .sirsiFont(.caption)
                     .foregroundStyle(.secondary)
             }
-            if let screenImportError {
+            if let screenImportError = sourceImport.error {
                 Label(screenImportError, systemImage: "exclamationmark.triangle.fill")
                     .sirsiFont(.caption)
                     .foregroundStyle(.orange)
@@ -851,17 +874,9 @@ private struct MaatSystemOneView: View {
     }
 
     @MainActor private func importScreen() async {
-        guard let selectedScreenURL else { return }
-        screenImportInFlight = true
-        screenImportError = nil
-        let raw = await SirsiEngine.run(args: ["maat", "screen", "--input", selectedScreenURL.path, "--confirm", "--json"], stdin: nil)
-        screenImportResult = MaatSystemOneCommandResult.decode(raw)
-        if screenImportResult == nil {
-            screenImportError = "Ma'at could not validate or record this screen. The input remains unchanged and no System One result was inferred. Choose a valid closed evidence JSON or inspect the producer's receipt."
-        } else {
-            await load()
-        }
-        screenImportInFlight = false
+        guard let invocation = sourceImport.confirm() else { return }
+        await invocation.value
+        if sourceImport.error == nil && sourceImport.result != nil { await load() }
     }
 
     @MainActor private func recordHostTriage() async {
@@ -2605,6 +2620,9 @@ struct MaatCase: Decodable, Identifiable {
 }
 
 struct MaatSystemOneVerdict: Decodable {
+    let contract: String
+    let schemaVersion: Int
+    let floorEvidence: String
     let featherWeight: Int
     let gate: String
     let confidence: Double
@@ -2615,11 +2633,15 @@ struct MaatSystemOneVerdict: Decodable {
     let findings: [MaatSystemOneFinding]
 
     enum CodingKeys: String, CodingKey {
+        case contract, schemaVersion = "schema_version", floorEvidence = "floor_evidence"
         case featherWeight = "feather_weight", gate, confidence, subject, floor, escalation, model, findings
     }
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
+        contract = try values.decodeIfPresent(String.self, forKey: .contract) ?? ""
+        schemaVersion = try values.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        floorEvidence = try values.decodeIfPresent(String.self, forKey: .floorEvidence) ?? ""
         featherWeight = try values.decode(Int.self, forKey: .featherWeight)
         gate = try values.decode(String.self, forKey: .gate)
         confidence = try values.decode(Double.self, forKey: .confidence)
@@ -2655,6 +2677,9 @@ struct MaatSystemOneCommandResult: Decodable {
     }
 
     var summary: String {
+        if verdict.contract == MaatSourceImportContract.id && verdict.schemaVersion == 2 {
+            return "Ma'at recorded an unqualified source screen: \(verdict.gate). Floor evidence is declared-only; this is not binding approval."
+        }
         switch verdict.gate {
         case "pass":
             return "Ma'at recorded this observation. No issue exceeded the configured threshold."
@@ -2742,10 +2767,25 @@ struct MaatSystemOneModel: Decodable {
     let version: String
     let local: Bool
     let latencyMS: Int
+    let calibration: String
+    let calibrationID: String
+    let evidenceSetDigest: String
 
     enum CodingKeys: String, CodingKey {
         case provider, version, local
         case latencyMS = "latency_ms"
+        case calibration, calibrationID = "calibration_id", evidenceSetDigest = "evidence_set_digest"
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        provider = try values.decode(String.self, forKey: .provider)
+        version = try values.decode(String.self, forKey: .version)
+        local = try values.decode(Bool.self, forKey: .local)
+        latencyMS = try values.decode(Int.self, forKey: .latencyMS)
+        calibration = try values.decodeIfPresent(String.self, forKey: .calibration) ?? ""
+        calibrationID = try values.decodeIfPresent(String.self, forKey: .calibrationID) ?? ""
+        evidenceSetDigest = try values.decodeIfPresent(String.self, forKey: .evidenceSetDigest) ?? ""
     }
 
     var detail: String {

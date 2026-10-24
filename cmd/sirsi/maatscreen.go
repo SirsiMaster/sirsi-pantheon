@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -14,9 +16,11 @@ import (
 )
 
 var (
-	maatScreenInput        string
-	maatScreenConfirm      bool
-	maatScreenExpectedHead string
+	maatScreenInput            string
+	maatScreenConfirm          bool
+	maatScreenExpectedHead     string
+	maatScreenPreview          bool
+	maatScreenExpectedInputSHA string
 )
 
 // maatScreenCmd turns a closed, typed local observation into Ma'at's
@@ -34,12 +38,20 @@ escalate. Imported qualified claims reject. Legacy v1 journal reads and local ho
 triage are separate. No mutation, release, router gate or binding approval results.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if maatScreenPreview && maatScreenConfirm {
+			return fmt.Errorf("--preview and --confirm are mutually exclusive")
+		}
 		if strings.TrimSpace(maatScreenInput) == "" {
 			return fmt.Errorf("--input is required")
 		}
 		raw, err := readMaatSourceScreen(maatScreenInput)
 		if err != nil {
 			return fmt.Errorf("read Ma'at System One input: %w", err)
+		}
+		sum := sha256.Sum256(raw)
+		inputSHA := hex.EncodeToString(sum[:])
+		if maatScreenExpectedInputSHA != "" && maatScreenExpectedInputSHA != inputSHA {
+			return fmt.Errorf("source input digest changed or malformed; preview and review the selected file again")
 		}
 		input, err := maat.DecodeSourceScreen(raw)
 		if err != nil {
@@ -48,6 +60,12 @@ triage are separate. No mutation, release, router gate or binding approval resul
 		verdict, err := maat.ScreenSource(input, maatScreenExpectedHead)
 		if err != nil {
 			return err
+		}
+		if maatScreenPreview {
+			return emitJSON(struct {
+				maat.MaatVerdict
+				InputSHA256 string `json:"input_sha256"`
+			}{verdict, inputSHA})
 		}
 		// A valid screen is still a durable journal write. Validate the closed
 		// packet first so an operator gets useful feedback, then require the same
@@ -115,6 +133,8 @@ func init() {
 	maatScreenCmd.Flags().StringVar(&maatScreenInput, "input", "", "closed Ma'at System One screen JSON")
 	maatScreenCmd.Flags().BoolVar(&maatScreenConfirm, "confirm", false, "confirm recording the validated Ma'at System One screen")
 	maatScreenCmd.Flags().StringVar(&maatScreenExpectedHead, "expect-head", "", "required independently selected source head; not imported from the packet")
+	maatScreenCmd.Flags().BoolVar(&maatScreenPreview, "preview", false, "validate and return declared nonbinding v2 evidence and exact input digest without journal writes")
+	maatScreenCmd.Flags().StringVar(&maatScreenExpectedInputSHA, "expect-input-sha256", "", "deny recording if the exact reviewed input bytes changed (never grants authority)")
 	maatScreenCmd.Flags().BoolVar(&maatJSON, "json", false, "JSON output")
 	maatCmd.AddCommand(maatScreenCmd)
 }

@@ -161,10 +161,17 @@ for needle in \
   'Record this System One screen?' \
   'Validate and record' \
   'It will not execute the assessed payload' \
-  '"maat", "screen", "--input"' \
   '"--confirm"'; do
   /usr/bin/grep -Fq "$needle" "$casebook" || {
     echo "native Ma'at System One surface missing: $needle" >&2
+    exit 1
+  }
+done
+
+sourceimport="$root/macapp/Sources/SirsiMenubar/MaatSourceImport.swift"
+for needle in 'maat.adr070.source-screen' '"maat", "screen", "--input"' '"--expect-head"' '"--expect-input-sha256"' '"--preview"' '"--confirm"' 'runCaptured' 'authorize:'; do
+  /usr/bin/grep -Fq "$needle" "$sourceimport" || {
+    echo "native Ma'at v2 import workflow missing: $needle" >&2
     exit 1
   }
 done

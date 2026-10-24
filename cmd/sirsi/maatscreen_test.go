@@ -1,6 +1,9 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,14 +25,72 @@ const maatSourceCLIInput = `{
 func maatSourceCLIFixture(t *testing.T) (*maatTestJournal, string) {
 	t.Helper()
 	oldFactory, oldInput, oldConfirm, oldJSON, oldMaatJSON, oldHead := newMaatDecisionJournal, maatScreenInput, maatScreenConfirm, JsonOutput, maatJSON, maatScreenExpectedHead
+	oldPreview, oldDigest := maatScreenPreview, maatScreenExpectedInputSHA
 	t.Cleanup(func() {
 		newMaatDecisionJournal, maatScreenInput, maatScreenConfirm, JsonOutput, maatJSON, maatScreenExpectedHead = oldFactory, oldInput, oldConfirm, oldJSON, oldMaatJSON, oldHead
+		maatScreenPreview, maatScreenExpectedInputSHA = oldPreview, oldDigest
 	})
 	j := &maatTestJournal{}
 	newMaatDecisionJournal = func() (maat.DecisionJournal, error) { return j, nil }
 	path := filepath.Join(t.TempDir(), "source.json")
 	maatScreenInput, maatScreenExpectedHead, maatScreenConfirm, JsonOutput, maatJSON = path, strings.Repeat("a", 40), true, true, false
+	maatScreenPreview, maatScreenExpectedInputSHA = false, ""
 	return j, path
+}
+
+func TestMaatScreenNativePreviewExactBytesThenConfirmedImport(t *testing.T) {
+	j, path := maatSourceCLIFixture(t)
+	raw, err := os.ReadFile(filepath.Join("..", "..", "contracts", "maat", "source-screen-v2-fixture.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	maatScreenPreview, maatScreenConfirm = true, false
+	factory := newMaatDecisionJournal
+	newMaatDecisionJournal = func() (maat.DecisionJournal, error) { t.Fatal("preview opened writer"); return nil, nil }
+	stdout := captureStdout(t, func() {
+		if err := maatScreenCmd.RunE(maatScreenCmd, nil); err != nil {
+			t.Fatal(err)
+		}
+	})
+	var preview struct {
+		maat.MaatVerdict
+		InputSHA256 string `json:"input_sha256"`
+	}
+	if err = json.Unmarshal([]byte(stdout), &preview); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(raw)
+	if preview.InputSHA256 != hex.EncodeToString(sum[:]) || preview.Gate != maat.GateEscalate || preview.Contract != maat.SourceScreenContract || len(j.decisions) != 0 {
+		t.Fatalf("preview=%+v", preview)
+	}
+	newMaatDecisionJournal = factory
+	maatScreenPreview, maatScreenConfirm, maatScreenExpectedInputSHA = false, true, preview.InputSHA256
+	// Identical source/head/model but changed whitespace MUST re-review.
+	if err = os.WriteFile(path, append(raw, '\n'), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = maatScreenCmd.RunE(maatScreenCmd, nil); err == nil {
+		t.Fatal("reviewed-byte drift admitted")
+	}
+	if len(j.decisions) != 0 {
+		t.Fatal("drift wrote journal")
+	}
+	if err = os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = maatScreenCmd.RunE(maatScreenCmd, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(j.decisions) != 1 || j.decisions[0].SystemOne.Subject.HeadSHA != maatScreenExpectedHead {
+		t.Fatal("confirmed native flow lost binding")
+	}
+	maatScreenPreview = true
+	if err = maatScreenCmd.RunE(maatScreenCmd, nil); err == nil {
+		t.Fatal("preview+confirm accepted")
+	}
 }
 
 func TestMaatScreenRecordsClosedTypedVerdict(t *testing.T) {
