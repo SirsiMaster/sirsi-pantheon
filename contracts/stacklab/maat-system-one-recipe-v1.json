@@ -19,6 +19,15 @@
   },
   "components": [
     {
+      "id": "maat-native-release-bootstrap",
+      "source": [".github/workflows/release.yml", "scripts/verify-menubar-release-contract.sh", "scripts/maat/admitted-run.py"],
+      "tests": ["scripts/maat/test_release_admission.py"],
+      "inputs": ["trusted exact native release job", "existing matching installed supervisor and CLI", "actual destination executor registration", "fresh bounded canonical build admission"],
+      "outputs": ["one supervised DMG and PKG build or explicit prelaunch refusal"],
+      "writes": ["only ordinary release build and existing admission evidence through the selected supervisor"],
+      "upgrade_recipe": ["invoke the quoted absolute installed supervisor, never a future workspace helper against an older CLI", "fail before payload execution if the installed supervisor is absent", "preserve registration, admission, renewal, timeout and cleanup", "retain one CPU and Swift job mask and one supervised payload", "a legacy matching pair may conservatively reserve a full build grant; never claim that proves finite CPU/model coexistence", "do not bypass admission, change HOME, replace credentials or stop foreign jobs to bootstrap a release", "exercise actual quoted shell invocation, missing-helper and supervision-omission fixtures before widening this path"]
+    },
+    {
       "id": "maat-core",
       "source": ["internal/maat/maat.go"],
       "tests": ["internal/maat/maat_test.go"],

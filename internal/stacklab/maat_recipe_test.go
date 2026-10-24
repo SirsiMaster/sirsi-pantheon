@@ -40,7 +40,7 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 	}
 	want := []string{
 		"maat-canon", "maat-casebook", "maat-cli", "maat-confirmed-diagnostic-repair", "maat-core", "maat-coverage",
-		"maat-decision-journal", "maat-failure-memory", "maat-guided-managed-repair", "maat-horus-surface", "maat-knowledge-surface", "maat-known-failure-proposals", "maat-mcp-surface", "maat-native-resolution-surface", "maat-pipeline", "maat-pulse-proof-platform",
+		"maat-decision-journal", "maat-failure-memory", "maat-guided-managed-repair", "maat-horus-surface", "maat-knowledge-surface", "maat-known-failure-proposals", "maat-mcp-surface", "maat-native-release-bootstrap", "maat-native-resolution-surface", "maat-pipeline", "maat-pulse-proof-platform",
 		"maat-host-health-screen", "maat-release-contract-preflight", "maat-release-credential-preflight", "maat-scheduler", "maat-scoped-service-lifecycle", "maat-system-one-screen", "maat-terminal-console-surface", "maat-wing-contract", "stacklab-apollo-run-planner",
 	}
 	got := make([]string, 0, len(recipe.Components))

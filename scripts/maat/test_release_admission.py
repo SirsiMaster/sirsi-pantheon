@@ -2,6 +2,8 @@
 from pathlib import Path
 import os
 import subprocess
+import tempfile
+import textwrap
 import unittest
 from unittest.mock import patch
 
@@ -12,7 +14,9 @@ class ReleaseAdmissionContract(unittest.TestCase):
     def test_both_native_payloads_are_inside_one_maintained_supervisor(self):
         source = (ROOT / '.github/workflows/release.yml').read_text()
         block = source.split('      - name: Build + sign + notarize', 1)[1].split('      - name:', 1)[0]
-        start = block.index('python3 scripts/maat/admitted-run.py')
+        self.assertIn('test -x "$HOME/.local/bin/sirsi-maat-run"', block)
+        self.assertNotIn('python3 scripts/maat/admitted-run.py', block)
+        start = block.index('"$HOME/.local/bin/sirsi-maat-run" --agent')
         self.assertIn('--agent codex-pantheon', block[start:])
         self.assertIn('--register-executor', block[start:])
         self.assertIn('--cpu-cores 1 --timeout 1500 -- /bin/bash -euo pipefail -c', block[start:])
@@ -58,11 +62,48 @@ class ReleaseAdmissionContract(unittest.TestCase):
         mutations = [source.replace('--register-executor', '--no-executor'),
                      source.replace('--cpu-cores 1', '--cpu-cores 8'),
                      source.replace('PANTHEON_BUILD_JOBS: "1"', 'PANTHEON_BUILD_JOBS: "8"'),
-                     source.replace('python3 scripts/maat/admitted-run.py', 'python3 ignored.py')]
+                     source.replace('"$HOME/.local/bin/sirsi-maat-run" --agent',
+                                    'python3 scripts/maat/admitted-run.py --agent'),
+                     source.replace('"$HOME/.local/bin/sirsi-maat-run" --agent',
+                                    'sirsi-maat-run --agent'),
+                     source.replace('test -x "$HOME/.local/bin/sirsi-maat-run"', ':')]
         for candidate in mutations:
             with self.subTest(candidate=candidate), patch.object(Path, 'read_text', return_value=candidate):
                 with self.assertRaises((AssertionError, ValueError)):
                     self.test_both_native_payloads_are_inside_one_maintained_supervisor()
+
+    def test_actual_release_shell_uses_installed_pair_with_space_containing_home(self):
+        source = (ROOT / '.github/workflows/release.yml').read_text()
+        block = source.split('      - name: Build + sign + notarize', 1)[1].split('      - name:', 1)[0]
+        shell = textwrap.dedent(block.split('        run: |\n', 1)[1])
+        with tempfile.TemporaryDirectory(prefix='release home with spaces ') as home:
+            helper = Path(home) / '.local/bin/sirsi-maat-run'
+            helper.parent.mkdir(parents=True)
+            # Capture arguments only; do not execute the build/signing payload.
+            helper.write_text('#!/bin/bash\nprintf "<%s>" "$@"\nexit 63\n')
+            helper.chmod(0o700)
+            env = dict(os.environ, HOME=home, GITHUB_RUN_ID='fixture',
+                       GITHUB_RUN_ATTEMPT='1', DEVELOPER_ID_INSTALLER='fixture-only')
+            result = subprocess.run(['/bin/bash', '-euo', 'pipefail', '-c', shell],
+                                    env=env, capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 63, result.stderr)
+            self.assertIn('<--register-executor>', result.stdout)
+            self.assertIn('<--cpu-cores><1><--timeout><1500>', result.stdout)
+            self.assertIn('<pantheon-release-fixture-1>', result.stdout)
+            self.assertIn('scripts/build-dmg.sh', result.stdout)
+            self.assertIn('scripts/build-pkg.sh', result.stdout)
+
+    def test_missing_installed_supervisor_never_runs_payload(self):
+        source = (ROOT / '.github/workflows/release.yml').read_text()
+        block = source.split('      - name: Build + sign + notarize', 1)[1].split('      - name:', 1)[0]
+        shell = textwrap.dedent(block.split('        run: |\n', 1)[1])
+        with tempfile.TemporaryDirectory(prefix='release absent pair ') as home:
+            env = dict(os.environ, HOME=home, GITHUB_RUN_ID='fixture',
+                       GITHUB_RUN_ATTEMPT='1', DEVELOPER_ID_INSTALLER='fixture-only')
+            result = subprocess.run(['/bin/bash', '-euo', 'pipefail', '-c', shell],
+                                    env=env, capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertEqual(result.stdout, '')
 
 
 if __name__ == '__main__':
