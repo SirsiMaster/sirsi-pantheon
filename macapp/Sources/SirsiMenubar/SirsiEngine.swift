@@ -1365,70 +1365,9 @@ final class SirsiEngine: ObservableObject {
     // writing before launch can leave the child's stdin empty/closed, silently
     // cancelling the apply. Pass `stdin: "y\n"` to auto-confirm, nil otherwise.
     nonisolated static func run(args: [String], stdin: String?) async -> String {
-        await withCheckedContinuation { cont in
-            DispatchQueue.global(qos: .userInitiated).async {
-				guard let binary = sirsiBinary() else {
-					cont.resume(returning: "error: Pantheon's bundled CLI is missing, linked, or not executable. This app will not fall back to an ambient command. Reinstall or repair this Pantheon bundle from Stack Lab.")
-					return
-				}
-                let p = Process()
-                // Repo-scoped verbs (maat, net) run from the configured project
-                // root so they weigh a real repository; everything else runs
-                // from $HOME, never the app's launchd cwd (/), where a
-                // path-scoped `sirsi scan` walks the entire disk (the
-                // 2026-07-02 infinite-spinner bug).
-                p.currentDirectoryURL = workingDirectory(for: args)
-                p.executableURL = URL(fileURLWithPath: binary)
-                p.arguments = args
-                let outPipe = Pipe()
-                p.standardOutput = outPipe
-                p.standardError = outPipe
-                // Feed stdin AFTER launch. Writing+closing the pipe before
-                // p.run() means the child's stdin can be closed/empty by the time
-                // it reads the [y/N] prompt — so `clean --confirm` silently
-                // cancels and nothing is trashed. Launch first, then answer.
-                let inPipe = Pipe()
-                if stdin != nil { p.standardInput = inPipe }
-                do { try p.run() } catch {
-                    cont.resume(returning: "error: \(error.localizedDescription)")
-                    return
-                }
-                if let stdin, let d = stdin.data(using: .utf8) {
-                    inPipe.fileHandleForWriting.write(d)
-                    inPipe.fileHandleForWriting.closeFile()
-                }
-                // HARD RUNTIME BOUND. A popover button must never spin
-                // forever: `maat heal` on a cold coverage cache silently ran
-                // the full test suite for minutes behind a greyed screen with
-                // no result and no cancel (owner, 2026-07-09: "no interaction
-                // whatsoever"). The verb side is fixed to be fast, but the
-                // SURFACE enforces its own bound — defense in depth, same
-                // shape as the supervisor's duty timeout.
-                let deadline = DispatchTime.now() + .seconds(30)
-                let timeoutLock = NSLock()
-                var timedOut = false
-                let timeoutWork = DispatchWorkItem {
-                    timeoutLock.lock()
-                    defer { timeoutLock.unlock() }
-                    if p.isRunning {
-						timedOut = true
-                        p.terminate()
-                    }
-                }
-                DispatchQueue.global().asyncAfter(deadline: deadline, execute: timeoutWork)
-                let data = outPipe.fileHandleForReading.readDataToEndOfFile()
-                p.waitUntilExit()
-                timeoutWork.cancel()
-                var text = stripANSI(String(data: data, encoding: .utf8) ?? "")
-                timeoutLock.lock()
-                let enforcedTimeout = timedOut
-                timeoutLock.unlock()
-                if enforcedTimeout {
-                    text = "Pantheon stopped waiting after 30 seconds. The command may have produced a partial result, so this screen will not call it complete. Refresh only after reviewing the current evidence and choosing the next safe action.\n" + text
-                }
-                cont.resume(returning: text)
-            }
-        }
+        let receipt = await runCaptured(args: args, stdin: stdin)
+        if !receipt.complete { return receipt.displayText }
+        return stripANSI(receipt.stdout + receipt.stderr)
     }
 
     // runProgram runs an arbitrary local executable (e.g. sirsi-respond.sh)
@@ -1850,7 +1789,7 @@ final class SirsiEngine: ObservableObject {
         let launchError: String?
     }
 
-    // runJSON shells `sirsi` capturing STDOUT ONLY (stderr discarded) so JSON
+    // runJSON returns STDOUT ONLY (stderr shares the bounded capture budget) so JSON
     // output is never corrupted by a styled banner written to stderr. JSON is
     // used to drive native controls, so it has a shorter hard bound than an
     // attended repair: an empty response makes the view render its recovery
@@ -1864,50 +1803,7 @@ final class SirsiEngine: ObservableObject {
     // intentionally return a report and a non-zero status when it contains
     // findings. Callers decode first, then use this boundary to guide recovery.
     nonisolated static func runJSONRead(args: [String], timeoutSeconds: Int = 12) async -> JSONCommandRead {
-        await withCheckedContinuation { cont in
-            DispatchQueue.global(qos: .userInitiated).async {
-				guard let binary = sirsiBinary() else {
-					cont.resume(returning: JSONCommandRead(data: Data(), exitStatus: nil, timedOut: false, launchError: "Pantheon's bundled CLI is missing, linked, or not executable.")); return
-				}
-                let p = Process()
-                // Repo-scoped verbs (maat, net) run from the configured project
-                // root; everything else from $HOME — see run() above.
-                p.currentDirectoryURL = workingDirectory(for: args)
-                p.executableURL = URL(fileURLWithPath: binary)
-                p.arguments = args
-                let outPipe = Pipe()
-                p.standardOutput = outPipe
-                p.standardError = FileHandle.nullDevice
-                do { try p.run() } catch {
-                    cont.resume(returning: JSONCommandRead(data: Data(), exitStatus: nil, timedOut: false, launchError: error.localizedDescription)); return
-                }
-                let timeoutLock = NSLock()
-                var timedOut = false
-                let timeoutWork = DispatchWorkItem {
-                    timeoutLock.lock()
-                    defer { timeoutLock.unlock() }
-                    if p.isRunning {
-                        timedOut = true
-                        p.terminate()
-                    }
-                }
-                DispatchQueue.global().asyncAfter(
-                    deadline: .now() + .seconds(max(1, timeoutSeconds)),
-                    execute: timeoutWork
-                )
-                let data = outPipe.fileHandleForReading.readDataToEndOfFile()
-                p.waitUntilExit()
-                timeoutWork.cancel()
-                timeoutLock.lock()
-                let enforcedTimeout = timedOut
-                timeoutLock.unlock()
-                if enforcedTimeout {
-                    cont.resume(returning: JSONCommandRead(data: Data(), exitStatus: nil, timedOut: true, launchError: nil))
-                    return
-                }
-                cont.resume(returning: JSONCommandRead(data: data, exitStatus: p.terminationStatus, timedOut: false, launchError: nil))
-            }
-        }
+        await runCaptured(args: args, timeout: TimeInterval(max(1, timeoutSeconds))).jsonRead
     }
 
     nonisolated static func sirsiBinary(bundleExecutableURL: URL? = Bundle.main.executableURL,

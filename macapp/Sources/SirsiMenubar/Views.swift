@@ -1307,11 +1307,27 @@ func legacyDiagnosticRepairArgs(check: String, severity: Int) -> [String]? {
 struct FindingView: View {
     @ObservedObject var engine: SirsiEngine
     let finding: DiagFinding
+    private var observedFinding: DiagFinding {
+        engine.health.first(where: { $0.check == finding.check }) ?? finding
+    }
+    private var snapshot: FindingObservationSnapshot { engine.diagnosticSnapshot(check: finding.check) }
+    @State private var approval: DiagnosticRepairApproval?
+
+    private func freezeRepair(_ args: [String]) {
+        let actual = remediationArguments(args)
+        approval = DiagnosticRepairApproval(snapshot: snapshot, args: actual,
+            directory: SirsiEngine.workingDirectory(for: actual))
+    }
+    private func approved(_ args: [String]) -> Bool {
+        let actual = remediationArguments(args)
+        return approval?.authorizes(snapshot: snapshot, args: actual,
+            directory: SirsiEngine.workingDirectory(for: actual)) == true
+    }
 
     // The honesty class drives EVERY label so a 7-day history never wears an
     // "instant fix" costume. See guard.FixKind (instant | relief | guidance).
-    private var kind: String { finding.fixKind ?? "" }
-    private var displayTitle: String { findingDisplayTitle(check: finding.check) }
+    private var kind: String { observedFinding.fixKind ?? "" }
+    private var displayTitle: String { findingDisplayTitle(check: observedFinding.check) }
     @State private var maatReviewResult: CommandResult?
     @State private var maatReviewError: String?
     @State private var maatReviewInFlight = false
@@ -1327,8 +1343,8 @@ struct FindingView: View {
     // bounded repairs Pantheon itself can run, based on the typed check name
     // and current severity. Everything else stays in the native Ma'at route.
     private var legacyNativeRepairArgs: [String]? {
-        guard finding.fix?.isEmpty != false else { return nil }
-        return legacyDiagnosticRepairArgs(check: finding.check, severity: finding.severity)
+        guard observedFinding.fix?.isEmpty != false else { return nil }
+        return legacyDiagnosticRepairArgs(check: observedFinding.check, severity: observedFinding.severity)
     }
 
     // A generic health observation cannot safely choose or widen a cleanup
@@ -1338,15 +1354,15 @@ struct FindingView: View {
     // Pantheon. This is deliberately a resolution flow, not a Terminal handoff
     // or a fake one-click repair.
     private var requiresNativeCleanupReview: Bool {
-        guard finding.fix?.isEmpty != false, finding.severity >= 2 else { return false }
-        return finding.check == "App Crashes (7d)" || finding.check == "Disk Space"
+        guard observedFinding.fix?.isEmpty != false, observedFinding.severity >= 2 else { return false }
+        return observedFinding.check == "App Crashes (7d)" || observedFinding.check == "Disk Space"
     }
 
     private var resolutionRoute: DiagnosticResolutionRoute {
         diagnosticResolutionRoute(
-            resolution: finding.resolution,
-            severity: finding.severity,
-            hasFix: !(finding.fix ?? "").isEmpty,
+            resolution: observedFinding.resolution,
+            severity: observedFinding.severity,
+            hasFix: !(observedFinding.fix ?? "").isEmpty,
             hasRecommendedCommand: legacyNativeRepairArgs != nil || requiresNativeCleanupReview
         )
     }
@@ -1362,7 +1378,7 @@ struct FindingView: View {
         }
     }
     private var fixSectionLabel: String {
-        if finding.check == "launchd Disabled Override" {
+        if observedFinding.check == "launchd Disabled Override" {
             return "RESTORE MANAGED SERVICES"
         }
         switch kind {
@@ -1372,7 +1388,7 @@ struct FindingView: View {
         }
     }
     private var fixButtonLabel: String {
-        if finding.check == "launchd Disabled Override" {
+        if observedFinding.check == "launchd Disabled Override" {
             return "Restore managed services"
         }
         switch kind {
@@ -1385,7 +1401,7 @@ struct FindingView: View {
     // native surface must obtain the same explicit operator confirmation rather
     // than starting it merely because a person opened the finding detail.
     private var fixRequiresConfirmation: Bool {
-        finding.fix?.split(separator: " ").contains(where: { String($0) == "--confirm" }) ?? false
+        observedFinding.fix?.split(separator: " ").contains(where: { String($0) == "--confirm" }) ?? false
     }
 
     // A managed launchd override is the first repair Ma'at can attest end to
@@ -1393,15 +1409,15 @@ struct FindingView: View {
     // moves the confirm → bounded repair → re-check → durable outcome loop into
     // Ma'at instead of leaving a successful repair as a transient sheet.
     private var repairArgs: [String] {
-        if finding.check == "launchd Disabled Override",
-           finding.fix == "sirsi liveness-watch restore-disabled --confirm" {
+        if observedFinding.check == "launchd Disabled Override",
+           observedFinding.fix == "sirsi liveness-watch restore-disabled --confirm" {
             return ["maat", "repair", "launchd-disabled", "--confirm"]
         }
-		if finding.check == "liveness-watch",
-		   finding.fix == "sirsi liveness-watch install" {
+		if observedFinding.check == "liveness-watch",
+		   observedFinding.fix == "sirsi liveness-watch install" {
 			return ["maat", "repair", "liveness-watch", "--confirm"]
 		}
-        return sirsiArgs(finding.fix ?? "")
+        return sirsiArgs(observedFinding.fix ?? "")
     }
 
     private var repairCommand: String {
@@ -1415,7 +1431,7 @@ struct FindingView: View {
         case "guidance":
             return "This acts only while the issue is happening live. If it isn't happening right now, you'll get steps to prevent it — the status won't change immediately."
         case "instant":
-            if finding.check == "App Crashes (7d)" {
+            if observedFinding.check == "App Crashes (7d)" {
                 return "These are the last 7 days of crash reports. Clearing the backlog drops the count now — it won't stop future crashes, but the signal clears."
             }
             return nil   // disk / binary-drift: a plain instant fix, no caveat needed
@@ -1429,7 +1445,7 @@ struct FindingView: View {
             BackBar(title: displayTitle)
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    if finding.check == "launchd Disabled Override" {
+                    if observedFinding.check == "launchd Disabled Override" {
                         Label("Pantheon can restore these managed services", systemImage: "wrench.and.screwdriver.fill")
                             .sirsiFont(.callout, weight: .semibold)
                             .foregroundStyle(gold)
@@ -1442,11 +1458,11 @@ struct FindingView: View {
                             .background(RoundedRectangle(cornerRadius: 10).fill(PantheonTheme.panel))
                     }
                     HStack(alignment: .top, spacing: 8) {
-                        Circle().fill(findingColor(finding)).frame(width: 10, height: 10).padding(.top, 4)
-                        Text(finding.message).sirsiFont(14, weight: .semibold)
+                        Circle().fill(findingColor(observedFinding)).frame(width: 10, height: 10).padding(.top, 4)
+                        Text(observedFinding.message).sirsiFont(14, weight: .semibold)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    if let d = finding.detail, !d.isEmpty {
+                    if let d = observedFinding.detail, !d.isEmpty {
                         // Live data is never tiny or greyed: a pipe-separated
                         // detail ("Python (6.2 GB) | node (1.1 GB) | …") becomes
                         // one readable row per item; prose wraps at .callout.
@@ -1476,7 +1492,7 @@ struct FindingView: View {
                                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
                         }
                     }
-                    if let fix = finding.fix, !fix.isEmpty {
+                    if let fix = observedFinding.fix, !fix.isEmpty {
                         // Honest framing BEFORE the click: a 7-day history must never
                         // look like an instant cure — that's the "I clicked Fix and
                         // nothing changed" trap. The banner sets the true expectation.
@@ -1493,12 +1509,12 @@ struct FindingView: View {
                         }
                         Text(fixSectionLabel).sirsiFont(.caption2, weight: .semibold).foregroundStyle(.secondary)
                         if fixRequiresConfirmation {
-                            Button { confirmFix = true } label: { fixButtonContents(fix) }
+                            Button { freezeRepair(repairArgs); confirmFix = true } label: { fixButtonContents(fix) }
                                 .buttonStyle(.borderedProminent).tint(gold)
                         } else {
-                            NavLink {
-                                ResultView(engine: engine, title: finding.check, args: repairArgs,
-                                           reverifyCheck: finding.check, reverifyKind: finding.fixKind)
+                            Button {
+                                freezeRepair(repairArgs)
+                                confirmFix = true
                             } label: { fixButtonContents(fix) }
                             .buttonStyle(.borderedProminent).tint(gold)
                         }
@@ -1527,6 +1543,14 @@ struct FindingView: View {
                 }.padding(16)
             }
         }
+        .onChange(of: snapshot) { _ in
+            // Evidence changes invalidate an open dialog, not only the final launch.
+            // Keep an executing sheet's receipt visible. Its final authorizer
+            // still rejects changed evidence; do not discard capture on refresh.
+            if !showConfirmedFix && !showLegacyRepair { approval = nil }
+            confirmFix = false
+            confirmLegacyRepair = false
+        }
         .confirmationDialog("Record a Ma'at owner review?", isPresented: $confirmMaatReview, titleVisibility: .visible) {
             Button("Record owner review") { Task { await recordMaatReview() } }
             Button("Cancel", role: .cancel) {}
@@ -1534,29 +1558,37 @@ struct FindingView: View {
             Text("Ma'at will retain this exact diagnostic finding for review. It will not change the system or claim that the issue is repaired.")
         }
         .confirmationDialog("Apply this system repair?", isPresented: $confirmFix, titleVisibility: .visible) {
-            Button(fixButtonLabel) { showConfirmedFix = true }
+            Button(fixButtonLabel) { if approved(repairArgs) { showConfirmedFix = true } }
             Button("Cancel", role: .cancel) {}
         } message: {
-            if finding.check == "launchd Disabled Override" {
+            if observedFinding.check == "launchd Disabled Override" {
                 Text("Ma'at will re-check the exact managed disabled labels, restore only that bounded set, verify the same diagnostic afterward, and retain either a verified recovery receipt or an explicit incomplete outcome.")
             } else {
-                Text("Pantheon will run the exact managed repair shown here and then re-check this finding. It will not broaden the command or touch unrelated services.")
+                Text("Pantheon will run only the frozen managed repair, then re-check this finding. Changed, stale or unavailable evidence requires new confirmation.")
             }
+            Text("Command: \(approval?.args.joined(separator: " ") ?? "unavailable")")
+            Text("Project: \(approval?.directory.path ?? "unavailable")")
         }
         .sheet(isPresented: $showConfirmedFix) {
-            ResultView(engine: engine, title: finding.check, args: repairArgs,
-                       reverifyCheck: finding.check, reverifyKind: finding.fixKind)
+            if let approval {
+                ResultView(engine: engine, title: observedFinding.check, args: approval.args,
+                           reverifyCheck: observedFinding.check, reverifyKind: observedFinding.fixKind,
+                           authorizeExecution: { approved(repairArgs) })
+            }
         }
         .confirmationDialog("Run this bounded repair in Pantheon?", isPresented: $confirmLegacyRepair, titleVisibility: .visible) {
-            Button("Run repair") { showLegacyRepair = true }
+            Button("Run repair") { if let args = legacyNativeRepairArgs, approved(args) { showLegacyRepair = true } }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Pantheon will run only the repair registered for this diagnostic, then re-check the finding. It will not execute text imported from the diagnostic message.")
+            Text("Pantheon will run only the frozen registered repair, then re-check this finding. It will not execute diagnostic message text.")
+            Text("Command: \(approval?.args.joined(separator: " ") ?? "unavailable")")
+            Text("Project: \(approval?.directory.path ?? "unavailable")")
         }
         .sheet(isPresented: $showLegacyRepair) {
-            if let args = legacyNativeRepairArgs {
-                ResultView(engine: engine, title: finding.check, args: args,
-                           reverifyCheck: finding.check, reverifyKind: finding.fixKind)
+            if let approval {
+                ResultView(engine: engine, title: observedFinding.check, args: approval.args,
+                           reverifyCheck: observedFinding.check, reverifyKind: observedFinding.fixKind,
+                           authorizeExecution: { legacyNativeRepairArgs.map { approved($0) } ?? false })
             } else {
                 EmptyView()
             }
@@ -1583,7 +1615,7 @@ struct FindingView: View {
             Text("This diagnostic came from an older local contract. Pantheon matched it to a bounded built-in repair, not message text. Review, confirm, and Pantheon will verify the outcome here.")
                 .sirsiFont(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Button {
-                confirmLegacyRepair = true
+                if let args = legacyNativeRepairArgs { freezeRepair(args); confirmLegacyRepair = true }
             } label: {
                 Label("Resolve in Pantheon", systemImage: "wrench.and.screwdriver.fill")
                     .frame(maxWidth: .infinity)
@@ -3717,6 +3749,8 @@ struct ResultView: View {
     @ObservedObject var engine: SirsiEngine
     let title: String
     let args: [String]
+    let directory: URL
+    let authorizeExecution: () -> Bool
     // When set, re-run diagnose after the fix ACTUALLY applies and report the real
     // post-fix status of this finding — the proof that kills "it says it's fixing
     // but the status stays the same." nil = a generic command run, no re-verify.
@@ -3730,15 +3764,22 @@ struct ResultView: View {
     @State private var pendingApply: CRAction?
     @State private var toast: String?
     @State private var toastOK = true      // did the toasted action succeed? drives icon/color
-    @State private var postFix: String?   // honest verdict after re-verify
-    @State private var didReverify = false // re-verify fires once (across load/apply paths)
+    @State private var verification = RemediationVerificationState()
+    @State private var invocation = RemediationInvocation()
+    @State private var didLoad = false
+    @State private var execution: CommandExecution?
+    @State private var executionDirectory: URL?
+    @State private var actionApproval: ResultActionApproval?
 
     init(engine: SirsiEngine, title: String, args: [String],
          reverifyCheck: String? = nil, reverifyKind: String? = nil,
-         preloaded: CommandResult? = nil) {
+         preloaded: CommandResult? = nil, preloadedDirectory: URL? = nil,
+         authorizeExecution: @escaping () -> Bool = { true }) {
         self.engine = engine
         self.title = title
-        self.args = args
+        self.args = remediationArguments(args)
+        self.directory = SirsiEngine.workingDirectory(for: remediationArguments(args))
+        self.authorizeExecution = authorizeExecution
         self.reverifyCheck = reverifyCheck
         self.reverifyKind = reverifyKind
         // Snapshot mode (Snapshot.swift) pre-fetches the CommandResult and
@@ -3746,6 +3787,22 @@ struct ResultView: View {
         // .task, so a self-loading view would render as an eternal spinner.
         _result = State(initialValue: preloaded)
         _loading = State(initialValue: preloaded == nil)
+        _didLoad = State(initialValue: preloaded != nil)
+        // Preloaded display-only reports with unknown producing scope cannot
+        // offer executable actions. Do not infer their provenance from selection.
+        _executionDirectory = State(initialValue: preloadedDirectory)
+    }
+
+    private var postFix: String? {
+        guard let check = reverifyCheck, let verdict = verification.verdict else { return nil }
+        switch verdict {
+        case .unverified:
+            return "Unverified — the fresh diagnostic read failed or was incomplete. The prior finding is not resolved."
+        case .clear:
+            return "Fresh check: “\(check)” is clear now. This observation does not prove which action caused the change."
+        case .present:
+            return "Fresh check: “\(check)” remains present. Review current evidence before choosing another action."
+        }
     }
 
     // Repo-scoped commands (maat, net) weigh a project — show WHICH one, and the
@@ -3791,8 +3848,8 @@ struct ResultView: View {
             }
             Divider()
             HStack {
-                Button { Task { await load() } } label: { Label("Refresh", systemImage: "arrow.clockwise") }
-                    .disabled(loading || applying)
+                Button { Task { await reverify() } } label: { Label("Recheck evidence", systemImage: "arrow.clockwise") }
+                    .disabled(loading || applying || reverifyCheck == nil)
                 Spacer()
             }.padding(.horizontal, 14).padding(.vertical, 10)
         }
@@ -3803,13 +3860,14 @@ struct ResultView: View {
             titleVisibility: .visible
         ) {
             Button("Apply", role: .destructive) {
-                if let a = pendingApply { Task { await apply(a) } }
+                if let a = pendingApply, let frozen = actionApproval { Task { await apply(a, approval: frozen) } }
                 pendingApply = nil
             }
             Button("Cancel", role: .cancel) { pendingApply = nil }
         } message: {
             if let a = pendingApply {
-                Text("Runs `\(a.command)`.\nReversible — items move to Trash, and it's logged in Activity.")
+                Text("Runs the frozen command `\(actionApproval?.args.joined(separator: " ") ?? a.command)` for the current result and project. Review its scope; a changed result requires new confirmation.")
+                Text("Project: \(actionApproval?.directory.path ?? "unavailable")")
             }
         }
     }
@@ -3874,7 +3932,13 @@ struct ResultView: View {
 
     @ViewBuilder private func actionButton(_ a: CRAction) -> some View {
         if a.isApply {
-            Button { pendingApply = a } label: { actionLabel(a, prominent: true) }
+            Button {
+                let actual = remediationArguments(sirsiArgs(a.command))
+                actionApproval = ResultActionApproval.prepare(evidence: execution,
+                    producingDirectory: executionDirectory, command: a.command,
+                    currentDirectory: SirsiEngine.workingDirectory(for: actual))
+                if actionApproval != nil { pendingApply = a }
+            } label: { actionLabel(a, prominent: true) }
                 .buttonStyle(.borderedProminent).tint(gold).disabled(applying)
         } else {
             Button { Task { await runFollow(a) } } label: { actionLabel(a, prominent: false) }
@@ -3922,7 +3986,7 @@ struct ResultView: View {
             Label("This result needs a guided follow-up", systemImage: "arrow.triangle.branch")
                 .sirsiFont(.headline)
                 .foregroundStyle(gold)
-            Text("Pantheon preserved the exact output below but could not turn it into a structured result. It is not treated as a completed repair or release decision. Retry the same check, inspect Ma'at’s local evidence, or review the governing Stack Lab recipe before taking another action.")
+            Text("Pantheon retained the bounded output below but could not turn it into a complete structured result. It is not treated as a completed repair or release decision. Recheck diagnostic evidence without replaying the action, inspect Ma'at’s local evidence, or review the governing Stack Lab recipe before taking another action.")
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -3933,12 +3997,12 @@ struct ResultView: View {
                 .padding(10)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
             VStack(alignment: .leading, spacing: 8) {
-                Button { Task { await load() } } label: {
-                    Label("Retry this check", systemImage: "arrow.clockwise")
+                Button { Task { await reverify() } } label: {
+                    Label("Recheck evidence", systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(gold)
-                .disabled(loading || applying)
+                .disabled(loading || applying || reverifyCheck == nil)
                 NavLink { MaatWorkspaceView(engine: engine) } label: {
                     Label("Inspect Ma'at evidence", systemImage: "checkmark.seal")
                 }
@@ -3953,83 +4017,63 @@ struct ResultView: View {
     }
 
     private func load() async {
-        loading = true
-        if let r = await SirsiEngine.runResult(args: args) {
-            result = r; raw = ""
-        } else {
-            let out = await SirsiEngine.run(args: args, stdin: nil)
-            raw = CommandView.stripBanner(out); result = nil
-        }
+        guard !didLoad else { return }
+        didLoad = true
+        _ = verification.begin()
+        // The latch is set synchronously before the first suspension, including
+        // decode errors, project callbacks and repeated SwiftUI .task delivery.
+        guard let receipt = await invocation.executeOnce(args: args,
+            authorize: { authorizeExecution() && SirsiEngine.workingDirectory(for: args) == directory },
+            capture: { actual in
+                await SirsiEngine.runCaptured(args: actual,
+                    stdin: actual.contains("--confirm") ? "y\n" : nil, directory: directory,
+                    authorize: { authorizeExecution() && SirsiEngine.workingDirectory(for: actual) == directory })
+            }) else { return }
+        execution = receipt
+        executionDirectory = directory
+        result = receipt.result
+        raw = result == nil ? receipt.displayText : ""
         loading = false
-        // If the command completed in one step (no Apply to follow — e.g. a relief
-        // or guidance command, not a clean preview), re-verify now. clean-family
-        // results carry next_actions, so we wait for apply() to mutate first.
-        if reverifyCheck != nil, (result?.nextActions.isEmpty ?? true) {
-            await reverify()
-        }
+        if reverifyCheck != nil, result?.nextActions.isEmpty != false { await reverify() }
     }
 
-    // reverify re-runs diagnose after a fix has actually run and reports the REAL
-    // status of this finding — resolved, or an honest reason it persists (a 7-day
-    // history cannot drop retroactively; guidance only bites a live issue).
     private func reverify() async {
-        guard let check = reverifyCheck, !didReverify else { return }
-        didReverify = true
-        await engine.diagnose(force: true)
-        let still = engine.health.first { $0.check == check }
-        let now = Self.statusWord(engine.healthStatus)
-        if still == nil || still!.severity <= 1 {
-            postFix = "✓ Resolved — “\(check)” cleared. Overall health is now \(now)."
-        } else {
-            switch reverifyKind {
-            case "relief":
-                postFix = "Relief applied. “\(check)” is a 7-day history — it decays as clean days pass, so it won't clear the instant you click. Overall health: \(now)."
-            case "guidance":
-                postFix = "“\(check)” only clears when it's happening live. Nothing to undo this moment — the guidance above prevents it recurring. Overall health: \(now)."
-            default:
-                postFix = "Ran. “\(check)” is still present — overall health: \(now)."
-            }
-        }
+        guard let check = reverifyCheck, !applying else { return }
+        let generation = verification.begin()
+        let read = await engine.readHealthForVerification()
+        // This exact read is the evidence, not engine.health (which another
+        // asynchronous diagnosis may have replaced while this task suspended).
+        verification.publish(remediationVerification(read, check: check), generation: generation)
     }
 
-    private static func statusWord(_ s: String) -> String {
-        switch s {
-        case "red": return "🔴 red"
-        case "amber": return "🟡 amber"
-        case "green": return "🟢 green"
-        default: return s
-        }
+    private func actionStillAuthorized(_ approval: ResultActionApproval) -> Bool {
+        executionDirectory == approval.directory && approval.authorizes(evidence: execution,
+            commands: result?.nextActions.map { $0.command } ?? [],
+            directory: SirsiEngine.workingDirectory(for: approval.args)) && authorizeExecution()
     }
 
-    // apply runs a --confirm action, feeding the CLI's [y/N] prompt, then RE-SCANS
-    // so every surface (this screen, Refresh, the menubar title) reflects the new
-    // reality — `clean` does not re-persist findings on its own. The toast and the
-    // provenance ledger report what ACTUALLY happened, never an unconditional
-    // "Applied" (the old lie when the clean had silently canceled).
-    private func apply(_ a: CRAction) async {
-        applying = true
-        let out = await SirsiEngine.run(args: sirsiArgs(a.command), stdin: "y\n")
-        // Diagnostic: the exact apply outcome goes to the unified log so a failed
-        // apply (FDA, cancel, 0-cleaned) is diagnosable, not guessed. Public
-        // privacy — this is local CLI output, no PII.
-        applyLog.notice("apply [\(a.command, privacy: .public)] → \(out, privacy: .public)")
-        let lc = out.lowercased()
-        let canceled = lc.contains("cancel")
-        let didApply = !canceled && (lc.contains("cleaned") || lc.contains("reclaimed")
-                                     || lc.contains("healed") || lc.contains("applied"))
-        let headline = Self.applyHeadline(out)
-        engine.recordActivity(title: "\(title) — \(a.label)", command: a.command,
-                              result: canceled ? "Canceled" : headline)
-        // Refresh findings so stale pre-apply numbers and the tray title update.
-        _ = await SirsiEngine.run(args: ["scan"], stdin: nil)
-        toast = canceled ? "Canceled — nothing changed"
-                         : (didApply ? "Done — \(headline)" : "Ran \(a.label)")
+    private func apply(_ action: CRAction, approval: ResultActionApproval) async {
+        guard !applying, action.command == approval.command, actionStillAuthorized(approval) else { return }
+        applying = true // Before await; repeated confirmation delivery cannot replay.
+        _ = verification.begin()
+        actionApproval = nil
+        let receipt = await SirsiEngine.runCaptured(args: approval.args, stdin: "y\n",
+            directory: approval.directory, authorize: { actionStillAuthorized(approval) })
+        retain(receipt, action: action, directory: approval.directory)
         applying = false
-        await load()
-        engine.refresh()
-        // The mutation just landed — re-verify the finding's REAL status so the
-        // user sees what actually changed, not an unconditional "fixed."
-        if reverifyCheck != nil { await reverify() }
+        await reverify()
+    }
+
+    private func retain(_ receipt: CommandExecution, action: CRAction, directory: URL) {
+        execution = receipt
+        executionDirectory = directory
+        result = receipt.result
+        raw = result == nil ? receipt.displayText : ""
+        toastOK = receipt.complete && receipt.exitCode == 0 && receipt.result?.ok == true
+        toast = toastOK ? "Command returned a complete report; check fresh evidence below."
+            : "Outcome needs review — the command will not be replayed automatically."
+        engine.recordActivity(title: action.label, command: action.command,
+            result: receipt.displayText)
     }
 
     // applyHeadline pulls the human result line ("Cleaned 8 items. Reclaimed
@@ -4044,25 +4088,21 @@ struct ResultView: View {
         return "applied"
     }
 
-    // runFollow runs a non-destructive next action (e.g. scan) and reloads.
-    private func runFollow(_ a: CRAction) async {
+    // An explicit follow-up is a new intent, never a reload of the mutator.
+    private func runFollow(_ action: CRAction) async {
+        guard !applying else { return }
+        let actual = remediationArguments(sirsiArgs(action.command))
+        guard let approval = ResultActionApproval.prepare(evidence: execution,
+            producingDirectory: executionDirectory, command: action.command,
+            currentDirectory: SirsiEngine.workingDirectory(for: actual)) else { return }
+        guard actionStillAuthorized(approval) else { return }
         applying = true
-        // The follow-up command's OUTPUT is the whole point — discarding it and
-        // silently reloading made every "WHAT YOU CAN DO" button read as dead
-        // (owner, 2026-07-09: "NONE are actually interactive"). Surface the
-        // result summary as a toast, record it in the activity ledger, THEN
-        // re-measure so the score reflects what just ran.
-        // Run with --json so the toast shows the verb's real SUMMARY line, not
-        // its styled banner/header (which firstMeaningful would otherwise grab).
-        let jsonData = await SirsiEngine.runJSON(args: sirsiArgs(a.command) + ["--json"])
-        let out = String(data: jsonData, encoding: .utf8) ?? ""
-        engine.recordActivity(title: a.label, command: a.command, result: out)
-        let summary = SirsiEngine.summaryLine(out)
-        toastOK = SirsiEngine.resultOK(out)
-        toast = summary.isEmpty ? (toastOK ? "\(a.label): done." : "\(a.label): failed.") : summary
+        _ = verification.begin()
+        let receipt = await SirsiEngine.runCaptured(args: actual, directory: approval.directory,
+            authorize: { actionStillAuthorized(approval) })
+        retain(receipt, action: action, directory: approval.directory)
         applying = false
-        await load()
-        engine.refresh()
+        await reverify()
     }
 }
 
