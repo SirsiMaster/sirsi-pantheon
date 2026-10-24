@@ -341,9 +341,10 @@ actor TrashBrowseIO {
             return capture
         }, onCancel: { [weak self] in
             fence.cancel()
+            guard let owner = self else { return }
             Task { @MainActor in
-                guard self?.generation == token else { return }
-                self?.invalidate()
+                guard owner.generation == token else { return }
+                owner.invalidate()
             }
         })
     }

@@ -276,6 +276,33 @@ final class TrashBrowseSessionTests: XCTestCase {
         XCTAssertEqual(browser.lifetime, .closed)
     }
 
+    @MainActor func testLateCancellationCannotInvalidateReplacementGeneration() async throws {
+        let home = try ownedHome(100)
+        let entered = expectation(description: "old owned read entered")
+        let first = DispatchSemaphore(value: 1)
+        let release = DispatchSemaphore(value: 0)
+        let browser = TrashBrowseController(io: TrashBrowseIO(beforeRead: {
+            if first.wait(timeout: .now()) == .success {
+                entered.fulfill()
+                _ = release.wait(timeout: .now() + 5)
+            }
+        }))
+        let old = Task { @MainActor in await browser.read(home: home) }
+        await fulfillment(of: [entered], timeout: 2)
+        old.cancel() // queues the cancellation's MainActor hop
+        browser.invalidate()
+        release.signal()
+        // Start the replacement on this actor before yielding to that old hop.
+        // Its generation must survive even if the old owner is still alive.
+        let replacement = await browser.read(home: home)
+        let oldResult = await old.value
+        XCTAssertTrue(oldResult.cancelled)
+        XCTAssertTrue(replacement.complete, "late old cancellation invalidated the replacement generation")
+        XCTAssertTrue(browser.hasOpenSession)
+        await browser.close()
+        XCTAssertEqual(browser.lifetime, .closed)
+    }
+
     func testCancelledQueuedReadCannotReopenOrCloseNewerSession() async throws {
         let home = try ownedHome(100)
         let owner = TrashBrowseIO()
