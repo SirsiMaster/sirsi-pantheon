@@ -372,7 +372,13 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "", "no such store method: "+name)
 		return
 	}
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 64<<20))
+	bodyLimit := int64(64 << 20)
+	if name == "RelocateTaskEvidence" {
+		// Bound raw wire bytes too: encoding/json strips leading whitespace
+		// before invoking a nested UnmarshalJSON method's own size check.
+		bodyLimit = TaskEvidenceManifestLimit
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, bodyLimit))
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "", "read body: "+err.Error())
 		return
@@ -489,6 +495,18 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusForbidden, "", actorErr.Error())
 			return
 		}
+	}
+	if name == "RelocateTaskEvidence" {
+		// Required even when the general audience gate is log/off. Owner comes
+		// only from this authenticated session, never an operator override.
+		if err := s.ruleOfRa(sess, name); err != nil {
+			writeErr(w, http.StatusForbidden, "", err.Error())
+			return
+		}
+		ctx = context.WithValue(ctx, taskEvidenceActorKey{}, taskEvidenceActor{
+			Agent: sess.Agent, Host: sess.Host, SessionID: sess.ID,
+			ThreadID: sess.ThreadID, Runtime: sess.RuntimeHash, FreshFor: s.opts.RuleOfRaStale,
+		})
 	}
 	for i := 0; i < mt.NumIn(); i++ {
 		pt := mt.In(i)

@@ -1,6 +1,7 @@
 package router
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -17,6 +18,16 @@ import (
 // own suite did exactly this before the stub existed). A test that needs the
 // real body must opt in explicitly via setSessionReaperImpl.
 func TestMain(m *testing.M) {
+	os.Exit(runRouterTests(m.Run))
+}
+
+func runRouterTests(run func() int) int {
+	return runRouterTestsWith(run, os.MkdirTemp, os.RemoveAll)
+}
+
+// Test-only seams exercise setup and cleanup failures without host permissions
+// or a second router runtime. The callback is m.Run in the actual test binary.
+func runRouterTestsWith(run func() int, mkdirTemp func(string, string) (string, error), removeAll func(string) error) (code int) {
 	setSessionReaperImpl(func(routerRoot, repoRoot string) error { return nil })
 	// Dispatch-mechanics tests run every lane as granted; TestWorkerWithoutAnswerGrantHoldsDispatch
 	// installs the real registry probe.
@@ -32,11 +43,18 @@ func TestMain(m *testing.M) {
 	// pointed at a scratch path in case any test flips wake on without setting
 	// its own db. Tests that exercise the store path opt in via t.Setenv.
 	os.Setenv(routercfg.StoreWakeEnv, "0")
-	dbDir, err := os.MkdirTemp("", "sirsi-router-tests-*")
+	dbDir, err := mkdirTemp("", "sirsi-router-tests-*")
 	if err != nil {
-		panic(err)
+		fmt.Fprintf(os.Stderr, "router TestMain setup: %v\n", err)
+		return 1
 	}
-	defer os.RemoveAll(dbDir)
+	dbOwned := routerTestOwnedDir{path: dbDir}
+	defer dbOwned.finish(&code, removeAll) // Registered before any further fallible setup.
+	dbOwned.identity, err = os.Lstat(dbDir)
+	if err != nil || !dbOwned.identity.IsDir() {
+		fmt.Fprintf(os.Stderr, "router TestMain setup: cannot retain DB directory identity: %v\n", err)
+		return 1
+	}
 	// rs-23a: Resolve() checks SIRSI_ROUTER_URL BEFORE the SIRSI_ROUTER_DB seam
 	// below, so on any host (or CI runner) that carries the router service env,
 	// setting the db alone does NOT isolate — the test binary routes to the LIVE
@@ -68,12 +86,47 @@ func TestMain(m *testing.M) {
 	// Package-wide rather than per-test on purpose: the invariant is "no test
 	// in this package writes production rate-limit state", which a future test
 	// must inherit by construction rather than remember to opt into.
-	dispatchDirTmp, err := os.MkdirTemp("", "sirsi-router-dispatch-*")
+	dispatchDirTmp, err := mkdirTemp("", "sirsi-router-dispatch-*")
 	if err != nil {
-		panic(err)
+		fmt.Fprintf(os.Stderr, "router TestMain setup: %v\n", err)
+		return 1
 	}
-	defer os.RemoveAll(dispatchDirTmp)
+	dispatchOwned := routerTestOwnedDir{path: dispatchDirTmp}
+	defer dispatchOwned.finish(&code, removeAll)
+	dispatchOwned.identity, err = os.Lstat(dispatchDirTmp)
+	if err != nil || !dispatchOwned.identity.IsDir() {
+		fmt.Fprintf(os.Stderr, "router TestMain setup: cannot retain dispatch directory identity: %v\n", err)
+		return 1
+	}
 	SetDispatchDir(dispatchDirTmp)
 
-	os.Exit(m.Run())
+	return run()
+}
+
+type routerTestOwnedDir struct {
+	path     string
+	identity os.FileInfo
+}
+
+func (d *routerTestOwnedDir) finish(code *int, removeAll func(string) error) {
+	current, err := os.Lstat(d.path)
+	if err == nil && (d.identity == nil || !current.IsDir() || !os.SameFile(d.identity, current)) {
+		err = fmt.Errorf("directory identity changed; refusing removal")
+	}
+	if err == nil {
+		// Private test-fixture ownership, not atomic unlink authorization against
+		// a concurrent same-UID adversary. Never follow a substituted leaf.
+		err = removeAll(d.path)
+		if err == nil {
+			if _, checkErr := os.Lstat(d.path); !os.IsNotExist(checkErr) {
+				err = fmt.Errorf("removal did not confirm absent path: %v", checkErr)
+			}
+		}
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "router TestMain cleanup debt for %s: %v\n", d.path, err)
+		if *code == 0 {
+			*code = 1
+		}
+	}
 }

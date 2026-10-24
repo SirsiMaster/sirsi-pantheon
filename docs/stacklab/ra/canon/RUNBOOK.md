@@ -1,5 +1,23 @@
 # Production runbook — Ra / Horus
 
+## Selected web gateway update
+
+The exact user LaunchAgent `ai.sirsi.router.surface` is distinct from Horus and
+the protected root relay. After installing verified signed product bytes, its
+native owner may obtain a read-only plan with
+`sirsi launchd restart ai.sirsi.router.surface --json`. Only SSA/SHA have the
+explicit lifecycle grant. A plan is not a restart or proof of current loaded
+bytes: retain its PID, start identity, plist and executable SHA256, then observe
+the selected gateway's real duty boundary and recovery path before apply.
+
+Apply requires `--apply --drained` and all four exact expected pins. The
+controller rechecks those under its service lock and refuses changed instances;
+post-readback requires the same selected artifacts and a new actual instance.
+Never claim drained from a clock window, use raw launchctl as a substitute,
+restart other lanes, enable disabled jobs, or relax the root relay's queue guards.
+Verify actual loaded image and one authenticated harmless board read/action
+afterward. Failure retains the selected service's explicit recovery obligation.
+
 1. **Authority check:** verify `SIRSI_ROUTER_URL` or the explicit disposable
    `SIRSI_ROUTER_DB`; run `sirsi router doctor`. A regular production
    `~/.sirsi/router.db` is a defect, not a fallback.

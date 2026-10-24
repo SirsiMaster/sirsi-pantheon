@@ -6,6 +6,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.128] — 2026-10-24
+
+### Corrected
+
+- Include only the exact GUI-owner router web gateway in the existing selected
+  service lifecycle. SSA/SHA retain explicit registry grants, fresh instance and
+  artifact pins, caller-observed drain and locked revalidation; unrelated router,
+  wake, wildcard, root-domain aliases and model services remain excluded. This
+  closes the unsupported gateway refresh path without a blanket restart.
+- Attribute conflict-check records to the actual caller or explicitly named
+  command producer, never the optional reservation holder, and serialize cede
+  and floor records with the canonical journal timestamp. Strict-reader fixtures
+  cover no-holder/error/cede/floor outcomes; historical records stay untouched.
+- Finish test-owned E2E and router scratch cleanup before process exit, retaining
+  changed-identity and cleanup-failure debt rather than sweeping shared caches.
+- Relocate only the authenticated lane's exact reviewed evidence references in
+  one transaction, refusing retained custody and stale public-row fingerprints.
+  Preserve old-client updates with bounded server-side reference CAS/remerge,
+  so delayed ordinary writers cannot resurrect relocated paths. Live reference
+  repair still requires compatible serving writers and fresh exact eligibility.
+
 ## [0.24.127] — 2026-10-24
 
 ### Corrected

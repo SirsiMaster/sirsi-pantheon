@@ -37,11 +37,11 @@ func cedeActor(flagVal string) string {
 
 // cedeDecisionRecord is one JSON line in the Ma'at decision ledger — a
 // read-only operator projection (codex-pantheon, PR #793 follow-up). Field
-// names/order match the existing writer ~/.local/bin/maat-decision exactly.
+// names use the canonical strict decision-journal contract, including time.
 // "maat:cedes" (cede.go) stays the scheduler's actual authority; this is only
 // a drillable record of what was assessed, who was affected, and why.
 type cedeDecisionRecord struct {
-	TS            string `json:"ts"`
+	Time          string `json:"time"`
 	Host          string `json:"host"`
 	Kind          string `json:"kind"`
 	Determination string `json:"determination"`
@@ -86,7 +86,7 @@ func shortHostname() string {
 // never landed.
 func logCedeDecision(kind, determination, requester, resource, assessed, affected, why, evidence string) error {
 	return appendCedeDecision(cedeDecisionRecord{
-		TS: time.Now().Format(time.RFC3339), Host: shortHostname(),
+		Time: time.Now().Format(time.RFC3339), Host: shortHostname(),
 		Kind: kind, Determination: determination, Requester: requester, Resource: resource,
 		Assessed: assessed, Affected: affected, Why: why, Evidence: evidence,
 	})

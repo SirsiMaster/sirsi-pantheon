@@ -1,5 +1,25 @@
 # 𓁢 Building Pantheon in Public
 
+## 2026-10-24 — Corrective candidate v0.24.128 from released127
+
+This candidate starts at published signed/notarized127 `beec7143/treeac34`.
+The installed rollout exposed a missing selected-service route for the exact
+GUI-owner router web gateway. Correction `838d3212` adds that label and only
+SSA/SHA's explicit grants, preserving fresh instance/artifact pins, observed
+drain, locked revalidation and new-instance readback. Old scope/grant fixtures
+failed; corrected normal/race lifecycle suites and vet passed, and independent
+source review accepted the exact eight-file change. No source-only gateway
+restart or whole-host quiet claim is made.
+
+Reviewed private test-root cleanup and transactional own-evidence relocation
+corrections are composed without changing their scope or claiming live apply.
+The native journal reader also exposed current requester/timestamp writer
+incompatibility. Reviewed correction3863b7e0 joins this train: focused command
+and strict-reader normal/race checks passed, and both old bugs were demonstrated
+by semantic negative controls. Historical journal bytes and failed qualification
+evidence stay preserved. Final composed checks, package/sign/notary/release and installed
+service/queue proofs are pending until recorded by their actual receipts.
+
 ## 2026-09-28 — RELEASE CANDIDATE v0.24.28: full native artifact route
 
 The v0.24.27 tagged build produced and notarized the canonical Pantheon DMG,

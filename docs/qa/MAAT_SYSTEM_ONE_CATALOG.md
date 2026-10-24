@@ -76,6 +76,32 @@ assessed facts, determination, explanation, and optional affected/resource/
 evidence links. The evidence reference is preserved verbatim; Casebook does not
 claim a local record is a remote attestation.
 
+### Current producer compatibility correction (2026-10-24)
+
+This is a correction to the existing `maat-decision-journal` component, not a
+new component or authority. Conflict-check records the explicit `SIRSI_AGENT_ID`
+caller; without one it records the command producer `sirsi maat conflict-check`,
+not a human or the optional reservation holder. The holder remains `affected`.
+A checker failure remains `unverified`. Cede and floor projections retain their
+real actors and post-commit projection error reporting, but serialize `time`
+instead of `ts`. Historical records and the strict read API remain unchanged.
+
+Source QA trace (fixtures authored; normal/race/negative/vet qualification
+**unrun** in this checkpoint):
+
+| Contract | Existing producer source | Inert strict-reader fixture |
+| --- | --- | --- |
+| No-holder and checker-error records have truthful nonblank requester | `cmd/sirsi/maatschedule.go` | `TestMaatConflictCheckJournalStrictCompatibility` (caller, absent and whitespace identity; in-memory stores, no host probe) |
+| Cede records retain actor/evidence with canonical timestamp | `cmd/sirsi/maatcede.go` | `TestCedeDecisionJournalStrictCompatibility` (owned journal only, no cede transition) |
+| Floor records retain holder/affected/evidence | `cmd/sirsi/maatschedule.go` via the cede projection | `TestLogFloorGrantJournalStrictCompatibility` (owned journal, no actual reservation) |
+| Committed projection failures never become false success | unchanged writer/error paths | existing `TestAppendCedeDecision_*`, `TestCedeDecisionLedger_*ProjectionFailureIsReported`, `TestLogFloorGrant_ProjectionFailureIsReported` |
+
+The compatibility oracle is the existing `maat.FileDecisionJournal.Recent`, not
+a duplicated validator. Generic map append remains unchanged. Source readiness
+does not establish installed producer adoption, a repaired journal, attribution
+of a loaded legacy writer, or native UI completion. Retain those limits in the
+release and installed qualification receipts.
+
 System One normalizes deterministic floor checks by name and findings by their
 unique identity before it applies policy or computes the verdict receipt. An
 equivalent observation therefore yields one stable evidence hash; duplicate

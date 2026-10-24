@@ -36,6 +36,9 @@ var laneAPI = map[string]laneRule{
 	// This typed operation validates a separately bootstrap-approved finite
 	// manifest using its server-derived actor. It grants no generic foreign read.
 	"ReconcileMailboxNotice": {item: noItem},
+	// Nested manifest ownership is additionally enforced by the operation for
+	// every token class, including operator tokens; this grants no foreign rows.
+	"RelocateTaskEvidence": {item: noItem},
 	// identity and registration
 	"MintSession":          {agents: []int{1}, item: noItem},
 	"MintSessionForThread": {agents: []int{1}, item: noItem},

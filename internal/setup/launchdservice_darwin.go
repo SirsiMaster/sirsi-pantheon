@@ -31,7 +31,8 @@ type nativeServiceBackend struct {
 func NativeServiceBackend() ServiceBackend { return nativeServiceBackend{} }
 
 // Closed initial maintenance scope. Registry policy further restricts the actor;
-// wildcard/router/wake/model-engine targets are deliberately not supported.
+// The exact GUI-owned router surface is supported; wildcard router, wake and
+// model-engine targets remain excluded. It does not share root-relay custody.
 func serviceLocation(label string) (target, plist string, err error) {
 	var dir, domain string
 	switch label {
@@ -40,7 +41,7 @@ func serviceLocation(label string) (target, plist string, err error) {
 			return "", "", err
 		}
 		return rootRelayTarget, rootRelayPlist, nil
-	case "ai.sirsi.apollo.observer", "ai.sirsi.apollo-chat", "ai.sirsi.gemma-broker":
+	case "ai.sirsi.apollo.observer", "ai.sirsi.apollo-chat", "ai.sirsi.gemma-broker", RouterSurfaceServiceLabel:
 		if os.Geteuid() == 0 || os.Getuid() != os.Geteuid() {
 			return "", "", errors.New("service lifecycle: user agent requires its native unprivileged owner")
 		}
