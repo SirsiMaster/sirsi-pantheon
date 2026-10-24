@@ -2,6 +2,25 @@
 
 Implementation record, 2026-10-24. **Not a release, accepted combined candidate, or completed ledger audit.** This record becomes fabric canon only after normal origin publication (A37).
 
+## Sequencing update: publish finished fixes without dropping the full goal
+
+This filename preserves the initial 135 composition history. The full seven-input
+candidate has real runtime failures still under correction and is **not** the
+ready 135 tag target. SSA owns one ready-fix 135 train from current main
+`8251d9342d002cb30ede8b1584e8aa6ca346e8af`, with qualified publication helpers,
+reviewed signer alias correction and deliberate provenance pins, followed by
+normal version preparation, CI and commercial artifact proof. Its success is
+not completion of this larger candidate or the original ledger.
+
+Main retains every full corrective input and unfinished obligation here, carries
+the merged Ra TLS-handshake correction as an identical source delta, and will
+compose onto the actual released 135 baseline for the next finished increment.
+No original goal is narrowed, waived or marked done. Failed 979/894/6116/e2b
+runtime packets and subsequent diagnostic-only passes remain distinct. Local
+source checkpoints, including this historical branch name, are not canonical
+release records. SSA remains the sole publisher; Main does not launch a second
+release, tag or installer.
+
 ## Baseline and custody
 
 The composition starts at `5b3afeb63224eac0d465dbbcebaa490a4742be8f`, the direct successor of released 134 `ba2a07bb464bbfd68808254a7d489769f122149b`, retaining Ra's merged fleet-check. VERSION remains 0.24.134 until the normal release-preparation step. Codex Pantheon owns source integration; SSA owns the normal reviewed CI/package/tag/publication train. There is no second publisher or router database.
