@@ -21,16 +21,17 @@ import (
 )
 
 type ensureHTTPEntry struct {
-	t             *testing.T
-	backend       routerstore.Store
-	home, session string
-	old           *router.Thread
-	pid           int
-	start         string
-	kernelErr     error
-	mu            sync.Mutex
-	trace         []string
-	beforeInsert  func(routerstore.ThreadRecord) error
+	t              *testing.T
+	backend        routerstore.Store
+	home, session  string
+	old            *router.Thread
+	pid            int
+	start          string
+	kernelErr      error
+	mu             sync.Mutex
+	trace          []string
+	beforeInsert   func(routerstore.ThreadRecord) error
+	beforeInsertID string
 }
 
 func newEnsureHTTPEntry(t *testing.T) *ensureHTTPEntry {
@@ -117,11 +118,14 @@ func newEnsureHTTPEntry(t *testing.T) *ensureHTTPEntry {
 		f.mu.Lock()
 		f.trace = append(f.trace, label)
 		hook := f.beforeInsert
-		if record.CreateOnly {
+		inject := hook != nil && record.ThreadID == f.beforeInsertID
+		if inject {
 			f.beforeInsert = nil
 		}
 		f.mu.Unlock()
-		if record.CreateOnly && hook != nil {
+		// The target upsert triggers this independently of CreateOnly, so a
+		// guard-omission mutant faces exactly the same injected race.
+		if inject {
 			if err := hook(record); err != nil {
 				t.Error(err)
 				w.WriteHeader(500)
@@ -297,6 +301,7 @@ func TestAttendedEnsureCobraHTTPConflictsStayByteExact(t *testing.T) {
 			if mode == "raced-session" {
 				f.mu.Lock()
 				f.beforeInsert = func(routerstore.ThreadRecord) error { return f.seedRecord(&conflict) }
+				f.beforeInsertID = conflict.ThreadID
 				f.mu.Unlock()
 			} else {
 				f.seed(&conflict)
@@ -330,6 +335,7 @@ func TestAttendedEnsureCobraHTTPCompatibleTransitionReusesBinding(t *testing.T) 
 			if raced {
 				f.mu.Lock()
 				f.beforeInsert = func(routerstore.ThreadRecord) error { return f.seedRecord(&compatible) }
+				f.beforeInsertID = compatible.ThreadID
 				f.mu.Unlock()
 			} else {
 				f.seed(&compatible)
