@@ -6,7 +6,7 @@
 - Integrate the reviewed bounded Trash workflow, relay observation and repair
   identity, observational Horus explanations, completion entry-point fixtures,
   ADR-055 status correction and final command-identity-preserving classifier.
-- Combined qualification covers 305 Go normal/race/no-cgo package events and
+- Combined qualification covers 305 Go normal/race/no-cgo test/subtest pass events and
   57 Swift tests; final classifier and stop-ownership suites pass 14 and 10 tests.
 - Preserve the Python-free Mac package boundary: the optional Claude hook is a
   separately installed source component. Signed publication, installed services,
