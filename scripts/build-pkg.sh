@@ -39,6 +39,9 @@ done
 [[ -x "$APP_PATH/Contents/MacOS/sirsi" ]] || { echo "ERROR: Pantheon.app is missing sirsi" >&2; exit 1; }
 [[ -x "$APP_PATH/Contents/MacOS/sirsi-menubar" ]] || { echo "ERROR: Pantheon.app is missing sirsi-menubar" >&2; exit 1; }
 [[ -d "$APP_PATH/Contents/Resources/StackLab" ]] || { echo "ERROR: Pantheon.app is missing Stack Lab contracts" >&2; exit 1; }
+# Reject a private signed input before any staging/copy/normalization. Repairing
+# only its PKG copy would hide a bad DMG/source app. This check never chmods it.
+python3 "${PROJECT_ROOT}/scripts/artifact_modes.py" --bundle "$APP_PATH" --check
 
 REMOTE_SIGNING=false
 if [[ "$MODE" == "release" && "${PANTHEON_SIGNING_EXECUTION:-}" == "remote-service" ]]; then
@@ -107,6 +110,10 @@ SYSTEM_CLI_DIR="$PAYLOAD_ROOT/usr/local/libexec/sirsi-pantheon"
 mkdir -p "$SYSTEM_CLI_DIR"
 /bin/cp -p "$APP_PATH/Contents/MacOS/sirsi" "$SYSTEM_CLI_DIR/sirsi"
 /usr/bin/cmp -s "$APP_PATH/Contents/MacOS/sirsi" "$SYSTEM_CLI_DIR/sirsi" || { echo "ERROR: system and app CLI payload bytes differ" >&2; exit 1; }
+# Staging metadata is Installer metadata: owner readability is insufficient once
+# pkgbuild assigns root ownership. Do not mutate the signed source app; normalize
+# only our owned copy, including all /usr ancestors and the exact system CLI.
+python3 "${PROJECT_ROOT}/scripts/artifact_modes.py" --payload "$PAYLOAD_ROOT"
 if /usr/bin/find "$PAYLOAD_ROOT" -type f -name '._*' -print -quit | /usr/bin/grep -q .; then
     echo "ERROR: refusing PKG payload containing AppleDouble metadata." >&2
     exit 1
@@ -114,6 +121,7 @@ fi
 
 PKGBUILD_ARGS=(
     --root "$PAYLOAD_ROOT"
+    --component-plist "${PROJECT_ROOT}/scripts/pantheon-pkg-components.plist"
     --install-location /
     --identifier ai.sirsi.pantheon
     --version "$VERSION"
@@ -134,6 +142,8 @@ COPYFILE_DISABLE=1 /usr/bin/pkgbuild "${PKGBUILD_ARGS[@]}"
 # survived the package boundary.
 EXPANDED_ROOT="$PAYLOAD_ROOT/expanded-payload"
 /usr/sbin/pkgutil --expand-full "$PKG_PATH" "$EXPANDED_ROOT"
+python3 "${PROJECT_ROOT}/scripts/package_info_contract.py" "$EXPANDED_ROOT/PackageInfo" "$VERSION" "$VERSION"
+python3 "${PROJECT_ROOT}/scripts/artifact_modes.py" --payload "$EXPANDED_ROOT/Payload" --check
 /usr/bin/cmp -s "$EXPANDED_ROOT/Payload/Applications/Pantheon.app/Contents/MacOS/sirsi" "$EXPANDED_ROOT/Payload/usr/local/libexec/sirsi-pantheon/sirsi" || { echo "ERROR: expanded installer system and app CLI bytes differ" >&2; exit 1; }
 if /usr/bin/find "$EXPANDED_ROOT" -type f -name '._*' -print -quit | /usr/bin/grep -q .; then
     echo "ERROR: refusing PKG with AppleDouble files in its expanded payload." >&2

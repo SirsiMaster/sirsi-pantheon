@@ -21,6 +21,9 @@ func TestVerifyBuildsDeterministicPythonFreeInventory(t *testing.T) {
 	if report.Schema != Schema || !report.PythonFree || report.EngineCount != 2 {
 		t.Fatalf("unexpected report: %+v", report)
 	}
+	if report.RootMode&0o7777 != 0o755 {
+		t.Fatalf("public root mode omitted: %04o", report.RootMode)
+	}
 	if len(report.Entries) != 26 {
 		t.Fatalf("entry count = %d, want unsigned payload including Stack Lab contracts", len(report.Entries))
 	}
@@ -110,9 +113,15 @@ func TestApolloProfileRequiresExactExplicitCanonicalBytes(t *testing.T) {
 	if err := os.Mkdir(dir, 0755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	profile := []byte(`{"schema":"sirsi.apollo.native-profile.v2"}`)
 	file := filepath.Join(dir, "native-profile.json")
 	if err := os.WriteFile(file, profile, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(file, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Verify(app, expected); err == nil {
@@ -184,6 +193,7 @@ func TestVerifyRejectsPythonMachOLinkageInSignedPayload(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(app, "Contents", "_CodeSignature", "CodeResources"), []byte("signature"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	normalizeSignatureFixture(t, app)
 	expected.RequireCodeSignature = true
 	if err := os.WriteFile(filepath.Join(app, "Contents", "MacOS", "sirsi"), machoWithDylib("/usr/lib/libpython3.13.dylib"), 0o755); err != nil {
 		t.Fatal(err)
@@ -198,6 +208,7 @@ func TestVerifyAcceptsContentsCodeResourcesSignatureLayout(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(app, "Contents", "CodeResources"), []byte("signature"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	normalizeSignatureFixture(t, app)
 	if _, err := Verify(app, expected); err != nil {
 		t.Fatalf("Contents/CodeResources layout was rejected: %v", err)
 	}
@@ -216,8 +227,30 @@ func TestVerifyAcceptsBothCodeResourcesSignatureLayouts(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	normalizeSignatureFixture(t, app)
 	if _, err := Verify(app, expected); err != nil {
 		t.Fatalf("dual CodeResources layout was rejected: %v", err)
+	}
+}
+
+func normalizeSignatureFixture(t *testing.T, app string) {
+	t.Helper()
+	for _, relative := range []string{"Contents/_CodeSignature", "Contents/_CodeSignature/CodeResources", "Contents/CodeResources"} {
+		path := filepath.Join(app, relative)
+		info, err := os.Lstat(path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		mode := os.FileMode(0o644)
+		if info.IsDir() {
+			mode = 0o755
+		}
+		if err := os.Chmod(path, mode); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
@@ -370,9 +403,92 @@ func makeBundle(t *testing.T) (string, Expectations) {
 		"Contents/Resources/StackLab/v2/wing.schema.json":                       []byte(`{"$schema":"https://json-schema.org/draft/2020-12/schema"}`),
 	}
 	for rel, data := range files {
-		if err := os.WriteFile(filepath.Join(app, filepath.FromSlash(rel)), data, 0o755); err != nil {
+		mode := os.FileMode(0o644)
+		if rel == "Contents/MacOS/sirsi" || rel == "Contents/MacOS/sirsi-menubar" {
+			mode = 0o755
+		}
+		file := filepath.Join(app, filepath.FromSlash(rel))
+		if err := os.WriteFile(file, data, mode); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(file, mode); err != nil {
 			t.Fatal(err)
 		}
 	}
+	// Fixture modes are intentional, independent of an admitted runner's umask.
+	if err := filepath.WalkDir(app, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return os.Chmod(path, 0o755)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 	return app, Expectations{Version: "0.23.9-beta", Build: "20260908", InfoPlist: info, PkgInfo: pkgInfo, LaunchAgent: launchAgent, BrandLogo: brandLogo}
+}
+
+func TestVerifyRejectsNonPublicModesIncludingRoot(t *testing.T) {
+	for _, tc := range []struct {
+		name, relative string
+		mode           os.FileMode
+	}{
+		{"private-root", ".", 0o700},
+		{"private-contents", "Contents", 0o700},
+		{"private-info", "Contents/Info.plist", 0o600},
+		{"private-signature", "Contents/_CodeSignature/CodeResources", 0o600},
+		{"private-flat-signature", "Contents/CodeResources", 0o600},
+		{"private-resource", "Contents/Resources/sirsi-logo-white.png", 0o600},
+		{"nonexecutable-cli", "Contents/MacOS/sirsi", 0o644},
+		{"writable-directory", "Contents/Resources", 0o777},
+		{"executable-resource", "Contents/PkgInfo", 0o755},
+		{"setuid-cli", "Contents/MacOS/sirsi", 0o755 | os.ModeSetuid},
+		{"setgid-resource", "Contents/PkgInfo", 0o644 | os.ModeSetgid},
+		{"sticky-directory", "Contents", 0o755 | os.ModeSticky},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app, expected := makeBundle(t)
+			if strings.Contains(tc.relative, "CodeResources") {
+				parent := filepath.Dir(filepath.Join(app, tc.relative))
+				if err := os.MkdirAll(parent, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chmod(parent, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(app, tc.relative), []byte("inert signature"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			file, err := os.OpenFile(filepath.Join(app, tc.relative), os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer file.Close()
+			// BSD silently clears SGID for a group outside the caller's groups.
+			// Private TMPDIR fixtures can inherit wheel; use our own effective
+			// group rather than accidentally testing an ordinary0644 resource.
+			if tc.mode&os.ModeSetgid != 0 {
+				if err := file.Chown(-1, os.Getegid()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := file.Chmod(tc.mode); err != nil {
+				t.Fatal(err)
+			}
+			actual, err := file.Stat()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := actual.Mode() & (os.ModePerm | os.ModeSetuid | os.ModeSetgid | os.ModeSticky); got != tc.mode {
+				t.Fatalf("fixture mode not established: got %v want %v", got, tc.mode)
+			}
+			_, err = Verify(app, expected)
+			if err == nil || !strings.Contains(err.Error(), "public mode mismatch") {
+				t.Fatalf("nonpublic mode accepted/unrelated refusal: %v", err)
+			}
+		})
+	}
 }

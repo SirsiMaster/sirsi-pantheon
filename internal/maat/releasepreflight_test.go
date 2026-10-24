@@ -88,14 +88,16 @@ func TestPreflightReleaseContractBlocksDuplicateCaskPublisher(t *testing.T) {
 func makeReleaseContractFixture(t *testing.T, broken bool) string {
 	t.Helper()
 	root := t.TempDir()
-	// Signing inputs retain published v0.24.130 bytes (60b9963d73f66ed497e90fa127263cc1113f506a).
+	// Notary/client inputs retain published v0.24.130 bytes (60b9963d73f66ed497e90fa127263cc1113f506a).
+	// The builders deliberately bind the reviewed corrective134 mode/upgrade
+	// source at6364a72f58847744716d3168f34b8d53d92e9f0c, not private-mode133.
 	// The workflow pin adds draft-first publication on released132 base
 	// 08843c54272a7ad6f6d2a431724bad98123d823f, not a policy stub.
 	// No copied script is executed. Future route changes must deliberately
 	// update this provenance and the observer together.
 	pinned := map[string]string{
-		"scripts/build-dmg.sh":                 "5d9ffc22dd4ba639453f5c53d59ef9c40b2aa81c99ac04c995a0c875aeec15f5",
-		"scripts/build-pkg.sh":                 "9e66baacecf6164442922e578a190833b2d8271887dfcba7327b99e11cd07710",
+		"scripts/build-dmg.sh":                 "a33ab0f39a735ac426c01210598962d72e4b5a9c4ecca72ea5ac09f2364db0f7",
+		"scripts/build-pkg.sh":                 "229a3da45869d21ad6cb2a0ebf009166f13b7940fea2dad00b6050eb1b116f91",
 		"scripts/notarize-release-artifact.sh": "cf4112f04f90f1b8ac70e9aecd17ed87652e1718bb82dcecc6801efd03eab433",
 		".github/workflows/release.yml":        "fc0f9ba48078500dac0d75ffe2f9957809204cc58c9af468d8f7ac2180b18c90",
 		"tools/signing/sirsi-sign":             "805123e96ce78ff225641bebd2bf32f9c15d5023f381963f096facda4d2aedd1",
@@ -107,7 +109,7 @@ func makeReleaseContractFixture(t *testing.T, broken bool) string {
 			t.Fatal(err)
 		}
 		if expected, ok := pinned[relative]; ok && fmt.Sprintf("%x", sha256.Sum256(content)) != expected {
-			t.Fatalf("released130 source changed: %s; update provenance and contract deliberately", relative)
+			t.Fatalf("pinned release source changed: %s; update provenance and contract deliberately", relative)
 		}
 		path := filepath.Join(root, filepath.FromSlash(relative))
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

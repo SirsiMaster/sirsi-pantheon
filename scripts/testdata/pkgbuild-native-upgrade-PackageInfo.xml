@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<pkg-info overwrite-permissions="true" relocatable="false" identifier="ai.sirsi.pantheon.metadata-fixture" postinstall-action="none" version="1" format-version="2" generator-version="InstallCmds-883 (26A434)" install-location="/" auth="root">
+    <payload numberOfFiles="9" installKBytes="2"/>
+    <bundle path="./Applications/Pantheon.app" id="ai.sirsi.pantheon" CFBundleShortVersionString="1.0" CFBundleVersion="1"/>
+    <bundle-version>
+        <bundle id="ai.sirsi.pantheon"/>
+    </bundle-version>
+    <upgrade-bundle>
+        <bundle id="ai.sirsi.pantheon"/>
+    </upgrade-bundle>
+    <update-bundle/>
+    <atomic-update-bundle/>
+    <strict-identifier>
+        <bundle id="ai.sirsi.pantheon"/>
+    </strict-identifier>
+    <relocate/>
+</pkg-info>

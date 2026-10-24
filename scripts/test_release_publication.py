@@ -29,6 +29,10 @@ class FakeGH:
         self.calls = []
         self.fail = None
         self.download_directories = []
+        self.release_id = 314
+        self.hide_draft = True  # Actual private-draft tag lookup may404.
+        self.discovery = None
+        self.discovery_pages = None
 
     def __call__(self, argv):
         self.calls.append(list(argv))
@@ -57,13 +61,31 @@ class FakeGH:
         elif argv[:2] == ["gh", "api"]:
             if self.fail == "lookup":
                 return subprocess.CompletedProcess(argv, 1, b"HTTP/2.0 503 Unavailable\r\n\r\n{}", b"")
-            if self.draft is None:
+            endpoint = argv[-1]
+            release_root = "repos/" + publication.REPO + "/releases"
+            if endpoint.startswith(release_root + "?"):
+                if self.fail == "discovery":
+                    return subprocess.CompletedProcess(argv, 1, b"HTTP/2.0 403 Forbidden\r\n\r\n{}", b"")
+                page = int(endpoint.rsplit("page=", 1)[1])
+                data = (self.discovery_pages.get(page, []) if self.discovery_pages is not None else
+                        self.discovery if self.discovery is not None else
+                        [] if self.draft is None else [self.metadata()])
+                return subprocess.CompletedProcess(argv, 0, b"HTTP/2.0 200 OK\r\n\r\n" + json.dumps(data).encode(), b"")
+            tag_lookup = endpoint == release_root + "/tags/v" + VERSION
+            id_lookup = endpoint == release_root + "/" + str(self.release_id)
+            if not (tag_lookup or id_lookup):
+                raise AssertionError("unexpected release metadata endpoint " + endpoint)
+            if self.draft is None or (tag_lookup and self.hide_draft and self.draft):
                 if self.fail == "stderr-404":
                     return subprocess.CompletedProcess(argv, 1, b"", b"gh: Not Found (HTTP 404)\n")
                 return subprocess.CompletedProcess(argv, 1, b"HTTP/2.0 404 Not Found\r\n\r\n{}", b"")
-            data = {"tag_name": "v" + VERSION, "draft": self.draft,
-                    "assets": [{"name": name, "size": len(value), "state": "uploaded"}
-                               for name, value in self.assets.items()]}
+            if id_lookup and self.fail == "id-missing":
+                return subprocess.CompletedProcess(argv, 1, b"HTTP/2.0 404 Not Found\r\n\r\n{}", b"")
+            data = self.metadata()
+            if id_lookup and self.fail == "id-drift":
+                data["id"] += 1
+            if id_lookup and self.fail == "tag-drift":
+                data["tag_name"] = "v0.0.0"
             if self.fail == "duplicate":
                 data["assets"] = [data["assets"][0], data["assets"][0]]
             out = b"HTTP/2.0 200 OK\r\n\r\n" + json.dumps(data).encode()
@@ -101,6 +123,11 @@ class FakeGH:
         else:
             raise AssertionError("unexpected process/command: " + repr(argv))
         return subprocess.CompletedProcess(argv, code, out, err)
+
+    def metadata(self):
+        return {"id": self.release_id, "tag_name": "v" + VERSION, "draft": self.draft,
+                "assets": [{"name": name, "size": len(value), "state": "uploaded"}
+                           for name, value in self.assets.items()]}
 
     @staticmethod
     def assert_no_overwrite(argv):
@@ -162,6 +189,85 @@ class ReleasePublicationTests(unittest.TestCase):
         fake = FakeGH(True, PAYLOADS)
         self.publish(fake)
         self.assertEqual([a[2] for a in fake.mutations()], ["edit"])
+
+    def test_private_draft_404_resumes_same_exact_id_without_duplicate_creation(self):
+        fake = FakeGH(True)
+        result = self.publish(fake)
+        self.assertEqual(result["release_id"], 314)
+        self.assertEqual([a[2] for a in fake.mutations()], ["upload", "upload", "edit"])
+        apis = [a[-1] for a in fake.calls if a[:2] == ["gh", "api"]]
+        self.assertIn("repos/" + publication.REPO + "/releases?per_page=100&page=1", apis)
+        self.assertGreaterEqual(apis.count("repos/" + publication.REPO + "/releases/314"), 4)
+        self.assertFalse(fake.draft)
+
+    def test_private_draft_identity_or_discovery_refusal_never_mutates(self):
+        for defect in ("discovery", "id-missing", "id-drift", "tag-drift"):
+            with self.subTest(defect=defect):
+                fake = FakeGH(True)
+                fake.fail = defect
+                with self.assertRaises(publication.Refusal):
+                    self.publish(fake)
+                self.assertEqual(fake.mutations(), [])
+
+    def test_duplicate_same_tag_private_records_refuse_before_creation_or_upload(self):
+        fake = FakeGH(True)
+        fake.discovery = [fake.metadata(), {**fake.metadata(), "id": 315}]
+        with self.assertRaisesRegex(publication.Refusal, "duplicate exact-tag"):
+            self.publish(fake)
+        self.assertEqual(fake.mutations(), [])
+
+    def test_malformed_or_incomplete_discovery_does_not_prove_absence(self):
+        for records in ({"not": "a list"}, [{"id": True, "tag_name": "v" + VERSION, "draft": True}],
+                        [{"id": 1, "tag_name": "unrelated", "draft": None}]):
+            with self.subTest(records=records):
+                fake = FakeGH()
+                fake.discovery = records
+                with self.assertRaises(publication.Refusal):
+                    self.publish(fake)
+                self.assertEqual(fake.mutations(), [])
+        fake = FakeGH()
+        fake.discovery = [{"id": i + 1, "tag_name": "unrelated", "draft": False} for i in range(100)]
+        # Repeated page identities are ambiguous rather than absent.
+        with self.assertRaisesRegex(publication.Refusal, "ambiguous"):
+            self.publish(fake)
+        self.assertEqual(fake.mutations(), [])
+
+    def test_draft_exact_id_disappearing_after_readback_never_recreates(self):
+        fake = FakeGH(True)
+        original = fake.__call__
+        count = 0
+
+        def disappear(argv):
+            nonlocal count
+            if argv[:2] == ["gh", "api"] and argv[-1].endswith("/releases/314"):
+                count += 1
+                if count == 2:
+                    fake.fail = "id-missing"
+            return original(argv)
+
+        with self.assertRaises(publication.Refusal):
+            publication.publish(VERSION, HEAD, self.directory, self.directory / "inert.app", {}, run=disappear)
+        self.assertEqual(fake.mutations(), [])
+
+    def test_private_draft_on_second_page_and_complete_absence_bound(self):
+        first = [{"id": i + 1000, "tag_name": "unrelated", "draft": False} for i in range(100)]
+        fake = FakeGH(True, PAYLOADS)
+        fake.discovery_pages = {1: first, 2: [fake.metadata()]}
+        result = self.publish(fake)
+        self.assertEqual(result["release_id"], 314)
+        self.assertEqual([a[2] for a in fake.mutations()], ["edit"])
+        self.assertTrue(any(a[-1].endswith("?per_page=100&page=2") for a in fake.calls))
+
+        fake = FakeGH()
+        fake.discovery_pages = {
+            page: [{"id": page * 1000 + i, "tag_name": "unrelated", "draft": False} for i in range(100)]
+            for page in range(1, publication.MAX_RELEASE_PAGES + 1)
+        }
+        with self.assertRaisesRegex(publication.Refusal, "incomplete at bound"):
+            self.publish(fake)
+        self.assertEqual(fake.mutations(), [])
+        pages = [a for a in fake.calls if a[:2] == ["gh", "api"] and "?per_page=" in a[-1]]
+        self.assertEqual(len(pages), publication.MAX_RELEASE_PAGES)
 
     def test_explicit_gh_stderr_404_is_absent_not_unknown_transport(self):
         fake = FakeGH()

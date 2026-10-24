@@ -52,9 +52,28 @@ func TestRunEmitsNonExecutingInventory(t *testing.T) {
 		"Contents/Resources/StackLab/v2/wing.schema.json":                       []byte(`{"$schema":"https://json-schema.org/draft/2020-12/schema"}`),
 	}
 	for rel, data := range files {
-		if err := os.WriteFile(filepath.Join(app, filepath.FromSlash(rel)), data, 0o644); err != nil {
+		mode := os.FileMode(0o644)
+		if rel == "Contents/MacOS/sirsi" || rel == "Contents/MacOS/sirsi-menubar" {
+			mode = 0o755
+		}
+		path := filepath.Join(app, filepath.FromSlash(rel))
+		if err := os.WriteFile(path, data, mode); err != nil {
 			t.Fatal(err)
 		}
+		if err := os.Chmod(path, mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := filepath.WalkDir(app, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return os.Chmod(path, 0o755)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 	var out, errOut bytes.Buffer
 	args := []string{
@@ -114,6 +133,9 @@ func TestRunEmitsNonExecutingInventory(t *testing.T) {
 			}
 			t.Cleanup(func() {
 				if err := os.WriteFile(path, files[rel], 0o644); err != nil {
+					t.Error(err)
+				}
+				if err := os.Chmod(path, 0o644); err != nil {
 					t.Error(err)
 				}
 			})

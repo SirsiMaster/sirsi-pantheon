@@ -59,6 +59,7 @@ type Report struct {
 	Entries     []Entry `json:"entries"`
 	PythonFree  bool    `json:"python_free"`
 	EngineCount int     `json:"engine_count"`
+	RootMode    uint32  `json:"root_mode"`
 }
 
 var allowed = map[string]string{
@@ -112,6 +113,13 @@ func Verify(appPath string, expected Expectations) (Report, error) {
 		return Report{}, fmt.Errorf("package inventory: open app root: %w", err)
 	}
 	defer unix.Close(rootFD)
+	var rootBefore unix.Stat_t
+	if err := unix.Fstat(rootFD, &rootBefore); err != nil {
+		return Report{}, fmt.Errorf("package inventory: fstat app root: %w", err)
+	}
+	if err := validatePublicMode(".", "directory", uint32(rootBefore.Mode)); err != nil {
+		return Report{}, err
+	}
 
 	snapshot := &scanSnapshot{entries: make(map[string]Entry), bytes: make(map[string][]byte)}
 	if err := scanDir(rootFD, "", snapshot); err != nil {
@@ -120,13 +128,20 @@ func Verify(appPath string, expected Expectations) (Report, error) {
 	if err := finalNamespaceRescan(rootFD, snapshot); err != nil {
 		return Report{}, err
 	}
+	var rootAfter unix.Stat_t
+	if err := unix.Fstat(rootFD, &rootAfter); err != nil {
+		return Report{}, fmt.Errorf("package inventory: final fstat app root: %w", err)
+	}
+	if rootAfter.Dev != rootBefore.Dev || rootAfter.Ino != rootBefore.Ino || rootAfter.Mode != rootBefore.Mode {
+		return Report{}, errors.New("package inventory: app root identity/mode changed")
+	}
 
 	entries := make([]Entry, 0, len(snapshot.entries))
 	for _, entry := range snapshot.entries {
 		entries = append(entries, entry)
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
-	report := Report{Schema: Schema, Version: expected.Version, Build: expected.Build, Entries: entries, PythonFree: true}
+	report := Report{Schema: Schema, Version: expected.Version, Build: expected.Build, Entries: entries, PythonFree: true, RootMode: uint32(rootBefore.Mode)}
 	for _, entry := range entries {
 		if entry.Path == "Contents/MacOS/sirsi" || entry.Path == "Contents/MacOS/sirsi-menubar" {
 			report.EngineCount++
@@ -192,6 +207,10 @@ func scanDirOwned(fd int, parent string, snapshot *scanSnapshot, closeFD bool) e
 			unix.Close(childFD)
 			return fmt.Errorf("package inventory: substitution detected before visit %q", rel)
 		}
+		if err := validatePublicMode(rel, wantType, uint32(opened.Mode)); err != nil {
+			unix.Close(childFD)
+			return err
+		}
 
 		entry := Entry{Path: rel, Type: wantType, Dev: uint64(opened.Dev), Ino: uint64(opened.Ino), Mode: uint32(opened.Mode), Nlink: uint64(opened.Nlink), Size: opened.Size}
 		if wantType == "directory" {
@@ -216,6 +235,20 @@ func scanDirOwned(fd int, parent string, snapshot *scanSnapshot, closeFD bool) e
 			}
 			return fmt.Errorf("package inventory: parent continuity failed at %q", rel)
 		}
+	}
+	return nil
+}
+
+// Public modes are part of the artifact contract, not os.access by the builder
+// UID. Exact masks reject set-ID/sticky bits, writable resources and executable
+// promotion, including validly signed but unreadable CodeResources metadata.
+func validatePublicMode(rel, kind string, mode uint32) error {
+	want := uint32(0o644)
+	if kind == "directory" || rel == "Contents/MacOS/sirsi" || rel == "Contents/MacOS/sirsi-menubar" {
+		want = 0o755
+	}
+	if mode&0o7777 != want {
+		return fmt.Errorf("package inventory: public mode mismatch at %q: got %04o want %04o", rel, mode&0o7777, want)
 	}
 	return nil
 }
