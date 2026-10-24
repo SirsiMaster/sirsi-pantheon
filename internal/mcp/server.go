@@ -11,6 +11,7 @@ package mcp
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -269,14 +270,29 @@ func (s *Server) RunWithIO(reader io.Reader, writer io.Writer) error {
 	return s.serve(bufio.NewReader(reader), writer)
 }
 
+// RunWithIOContext uses the same protocol with an explicit lifetime. The caller
+// owns unblocking a pending Read on cancellation. Checking the loop as well as
+// Decode errors is necessary because json.Decoder can retain a syntax error.
+// Existing Run/RunWithIO behavior remains the background-context path.
+func (s *Server) RunWithIOContext(ctx context.Context, reader io.Reader, writer io.Writer) error {
+	return s.serveContext(ctx, bufio.NewReader(reader), writer)
+}
+
 // serve is the main message loop.
 func (s *Server) serve(reader *bufio.Reader, writer io.Writer) error {
+	return s.serveContext(context.Background(), reader, writer)
+}
+
+func (s *Server) serveContext(ctx context.Context, reader *bufio.Reader, writer io.Writer) error {
 	decoder := json.NewDecoder(reader)
 
 	for {
+		if ctx.Err() != nil {
+			return nil
+		}
 		var req Request
 		if err := decoder.Decode(&req); err != nil {
-			if err == io.EOF {
+			if err == io.EOF || ctx.Err() != nil {
 				s.logger.Println("Client disconnected (EOF)")
 				return nil
 			}

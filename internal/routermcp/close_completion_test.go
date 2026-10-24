@@ -1,4 +1,4 @@
-package main
+package routermcp
 
 import (
 	"strings"
@@ -23,16 +23,14 @@ func TestHandleCloseCompletionAuthorization(t *testing.T) {
 			if lease.ItemID != f.ID {
 				t.Fatalf("fixture claimed a different item: %q", lease.ItemID)
 			}
-			oldReg := reg
-			reg = newRegistration()
-			t.Cleanup(func() { reg = oldReg })
-			reg.set("owned-fixture-thread", entryfixture.Agent)
-			reg.recordClaim(f.ID, lease.Token, lease.Expires)
+			s := New()
+			s.reg.set("owned-fixture-thread", entryfixture.Agent)
+			s.reg.recordClaim(f.ID, lease.Token, lease.Expires)
 			before, err := f.Store.Get(f.ID)
 			if err != nil {
 				t.Fatal(err)
 			}
-			result, err := handleClose(map[string]interface{}{
+			result, err := s.handleClose(map[string]interface{}{
 				"id": f.ID, "proof": f.Proof, "result": "entry fixture completed",
 			})
 			if err != nil || result == nil {

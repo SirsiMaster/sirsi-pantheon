@@ -28,6 +28,15 @@
       "upgrade_recipe": ["retain all four accepted conf-write cases", "never turn a sentinel into availability or restored-weight evidence", "keep WEDGE terminal even with prefetch opt-in", "do not retire this still-installable compatibility tool without consumer proof", "do not change native SNE recipes, registry grants, keys or worker behavior", "run whole-program inert controls plus existing extracted guards under normal qualification", "do not run make install-gemma-worker to test this change: it restarts the worker", "source-only corrective pending independent review and qualification; no task or installed-runtime closure inferred"]
     },
     {
+      "id": "router-a2a-mcp-shared-core",
+      "source": ["internal/routermcp", "internal/mcp/server.go", "cmd/sirsi/routermcp.go", "cmd/sirsi-router-mcp/main.go", "docs/ADR-068-ROUTER-A2A-MCP-FRONT-END.md"],
+      "tests": ["internal/routermcp/manifest_test.go", "internal/routermcp/registration_test.go", "internal/routermcp/close_completion_test.go", "internal/routermcp/lifecycle_test.go", "internal/routermcp/cancellation_test.go", "cmd/sirsi/routermcp_test.go", "cmd/sirsi-router-mcp/main_test.go"],
+      "inputs": ["JSON-RPC stdio", "one configured process agent and canonical router repo", "existing resolver/session/relay authority", "existing strict completion helper and exact session claim"],
+      "outputs": ["unchanged seven bare tools, inbox resource and advertised handshake", "JSON-only stdout and stderr diagnostics", "per-instance local registration/claims and joined EOF/cancel cleanup"],
+      "writes": ["existing dispatch/lease operations and resident thread lifecycle only; no managed configuration or credential writer"],
+      "upgrade_recipe": ["ship the canonical sirsi router-mcp subcommand, not a separately packaged engine", "keep legacy launcher as the same library caller", "keep generic mcp unchanged", "never weaken proof/claim-expiry or durable completion fencing", "do not swap global IdentityHook to simulate per-instance remote identity", "qualify actual manifest and both entrypoints plus moved strict completion fixtures", "retain explicit pending managed-config migration and installed-caller evidence", "resolve any explicit MCP-thread-to-RPC audience binding separately before claiming end-to-end readiness", "source-only candidate; no tests/build/config/service actions by producer"]
+    },
+    {
       "id": "finite-own-task-evidence-relocation",
       "source": ["internal/routerstore/taskevidencerelocation.go", "internal/routerstore/taskevidencerelocation_remote.go", "internal/routerstore/tasks.go", "cmd/sirsi/routertaskevidence.go", "docs/runbooks/TASK-EVIDENCE-RELOCATION.md"],
       "tests": ["internal/routerstore/taskevidencerelocation_test.go", "internal/routerstore/taskevidencewriters_test.go", "internal/routerstore/tasks_cas_test.go", "cmd/sirsi/routertaskevidence_test.go"],

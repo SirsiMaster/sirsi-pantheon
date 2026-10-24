@@ -1,5 +1,5 @@
 // P2 (ADR-068 §5.2): the resident surface="mcp" thread (A27) + the MUTATE tools
-// gated behind it. Read tools (main.go) need no registration; a developer can
+// gated behind it. Read tools (server.go) need no registration; a developer can
 // plug in and read the fabric with no identity. To ACT, the server registers a
 // thread on startup (one agent per instance, ADR-068), heartbeats from its
 // runloop on a bounded interval, and closes the thread on graceful shutdown.
@@ -8,23 +8,17 @@
 // verb that already enforces its own gate (recipient-only ack, actor-checked
 // close, idempotent send). router_claim/router_close are additionally
 // session-ownership bound HERE — this instance may only close work IT claimed.
-package main
+package routermcp
 
 import (
 	"errors"
 	"fmt"
-	"log"
-	"os"
-	"os/signal"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/completionproof"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/machineid"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/mcp"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
 
@@ -57,8 +51,6 @@ type registration struct {
 }
 
 func newRegistration() *registration { return &registration{claimed: map[string]claimRecord{}} }
-
-var reg = newRegistration()
 
 func (r *registration) set(threadID, agent string) {
 	r.mu.Lock()
@@ -127,83 +119,8 @@ func (r *registration) claimToken(itemID string) (string, bool) {
 	return r.claimed[itemID].token, true
 }
 
-// registerSurface registers this process as a surface="mcp" resident thread and
-// starts the heartbeat loop. It NEVER crashes the server: reads must keep
-// working even if registration fails (the failure is recorded and surfaced by
-// mutate tools). Returns a shutdown func that closes the thread (A27).
-func registerSurface(logger *log.Logger) func() {
-	agent := strings.TrimSpace(os.Getenv("SIRSI_AGENT_ID"))
-	if agent == "" {
-		reg.setErr(fmt.Errorf("SIRSI_AGENT_ID is unset — mutate tools need a registered identity (one agent per instance, ADR-068)"))
-		return func() {}
-	}
-	repoRoot, routerRoot, err := resolveRoots()
-	if err != nil {
-		reg.setErr(err)
-		return func() {}
-	}
-	// Host + MachineID are the ADR-067 identity the service authority check reads:
-	// a session may only register a thread on its OWN host, so the record must
-	// carry this host's identity (empty is refused). On an adopted host these
-	// resolve to the same identity the relay's token authenticates as.
-	host, _ := os.Hostname()
-	t, err := router.RegisterThread(routerRoot, &router.Thread{
-		AgentID:       agent,
-		Surface:       "mcp",
-		PID:           os.Getpid(),
-		Host:          host,
-		MachineID:     machineid.MachineID(),
-		Repo:          repoRoot,
-		WakeMechanism: "none", // a stdio server is woken by its client, not the router
-	})
-	if err != nil {
-		reg.setErr(fmt.Errorf("register surface=mcp thread: %w", err))
-		return func() {}
-	}
-	reg.set(t.ThreadID, agent)
-	logger.Printf("registered surface=mcp thread %s for %s", t.ThreadID, agent)
-
-	stop := make(chan struct{})
-	go heartbeatLoop(routerRoot, t.ThreadID, logger, stop)
-
-	return func() {
-		close(stop)
-		if _, err := router.CloseThread(routerRoot, t.ThreadID); err != nil {
-			logger.Printf("close thread %s: %v", t.ThreadID, err)
-		}
-	}
-}
-
-func heartbeatLoop(routerRoot, threadID string, logger *log.Logger, stop <-chan struct{}) {
-	tk := time.NewTicker(heartbeatInterval)
-	defer tk.Stop()
-	for {
-		select {
-		case <-stop:
-			return
-		case <-tk.C:
-			if _, err := router.Heartbeat(routerRoot, threadID, router.HeartbeatUpdate{Status: router.ThreadStatusActive}); err != nil {
-				logger.Printf("heartbeat: %v", err)
-			}
-		}
-	}
-}
-
-// installSignalClose wires SIGINT/SIGTERM to the shutdown func so the thread is
-// closed on graceful exit (A27); a hard kill falls back to OS-truth reaping.
-func installSignalClose(shutdown func(), logger *log.Logger) {
-	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-ch
-		logger.Println("shutting down — closing surface=mcp thread")
-		shutdown()
-		os.Exit(0)
-	}()
-}
-
-func registerMutateTools(srv *mcp.Server) {
-	srv.RegisterTool(mcp.Tool{
+func (s *Server) registerMutateTools() {
+	s.protocol.RegisterTool(mcp.Tool{
 		Name: "router_send",
 		Description: "Send a router item to another agent. Idempotent (a rephrased duplicate returns the existing id). " +
 			"Requires this server's registered thread.",
@@ -217,9 +134,9 @@ func registerMutateTools(srv *mcp.Server) {
 			},
 			Required: []string{"to", "title", "instructions"},
 		},
-	}, handleSend)
+	}, s.handleSend)
 
-	srv.RegisterTool(mcp.Tool{
+	s.protocol.RegisterTool(mcp.Tool{
 		Name:        "router_acknowledge",
 		Description: "Acknowledge (mark read) an item addressed to you. Recipient-only; does not close it. Requires this server's registered thread.",
 		InputSchema: mcp.InputSchema{
@@ -227,15 +144,15 @@ func registerMutateTools(srv *mcp.Server) {
 			Properties: map[string]mcp.SchemaField{"id": {Type: "string", Description: "Item id to acknowledge."}},
 			Required:   []string{"id"},
 		},
-	}, handleAcknowledge)
+	}, s.handleAcknowledge)
 
-	srv.RegisterTool(mcp.Tool{
+	s.protocol.RegisterTool(mcp.Tool{
 		Name:        "router_claim",
 		Description: "Claim the oldest open item addressed to you for exclusive work (a lease). Requires this server's registered thread.",
 		InputSchema: mcp.InputSchema{Type: "object", Properties: map[string]mcp.SchemaField{}},
-	}, handleClaim)
+	}, s.handleClaim)
 
-	srv.RegisterTool(mcp.Tool{
+	s.protocol.RegisterTool(mcp.Tool{
 		Name:        "router_close",
 		Description: "Close an item you CLAIMED via router_claim in this session, recording a result and (when the caller worktree carries one) a completion proof. Requires this server's registered thread.",
 		InputSchema: mcp.InputSchema{
@@ -249,11 +166,11 @@ func registerMutateTools(srv *mcp.Server) {
 			},
 			Required: []string{"id"},
 		},
-	}, handleClose)
+	}, s.handleClose)
 }
 
-func handleSend(args map[string]interface{}) (*mcp.ToolResult, error) {
-	agent, err := reg.gate()
+func (s *Server) handleSend(args map[string]interface{}) (*mcp.ToolResult, error) {
+	agent, err := s.reg.gate()
 	if err != nil {
 		return errResult(err.Error()), nil
 	}
@@ -263,7 +180,7 @@ func handleSend(args map[string]interface{}) (*mcp.ToolResult, error) {
 	if to == "" || title == "" || strings.TrimSpace(body) == "" {
 		return errResult("router_send: to, title, and instructions are all required"), nil
 	}
-	f, closeF, err := openFacade()
+	f, closeF, err := s.openFacade()
 	if err != nil {
 		return errResult(err.Error()), nil
 	}
@@ -279,8 +196,8 @@ func handleSend(args map[string]interface{}) (*mcp.ToolResult, error) {
 	return textResult(msg), nil
 }
 
-func handleAcknowledge(args map[string]interface{}) (*mcp.ToolResult, error) {
-	agent, err := reg.gate()
+func (s *Server) handleAcknowledge(args map[string]interface{}) (*mcp.ToolResult, error) {
+	agent, err := s.reg.gate()
 	if err != nil {
 		return errResult(err.Error()), nil
 	}
@@ -288,7 +205,7 @@ func handleAcknowledge(args map[string]interface{}) (*mcp.ToolResult, error) {
 	if id == "" {
 		return errResult("router_acknowledge: id is required"), nil
 	}
-	f, closeF, err := openFacade()
+	f, closeF, err := s.openFacade()
 	if err != nil {
 		return errResult(err.Error()), nil
 	}
@@ -299,12 +216,12 @@ func handleAcknowledge(args map[string]interface{}) (*mcp.ToolResult, error) {
 	return textResult(fmt.Sprintf("Acknowledged %s", id)), nil
 }
 
-func handleClaim(_ map[string]interface{}) (*mcp.ToolResult, error) {
-	agent, err := reg.gate()
+func (s *Server) handleClaim(_ map[string]interface{}) (*mcp.ToolResult, error) {
+	agent, err := s.reg.gate()
 	if err != nil {
 		return errResult(err.Error()), nil
 	}
-	f, closeF, err := openFacade()
+	f, closeF, err := s.openFacade()
 	if err != nil {
 		return errResult(err.Error()), nil
 	}
@@ -316,13 +233,13 @@ func handleClaim(_ map[string]interface{}) (*mcp.ToolResult, error) {
 	if lease == nil {
 		return textResult("No open item to claim. Inbox is clear."), nil
 	}
-	reg.recordClaim(lease.ItemID, lease.Token, lease.Expires)
+	s.reg.recordClaim(lease.ItemID, lease.Token, lease.Expires)
 	return textResult(fmt.Sprintf("Claimed %s (lease expires %s). Work it, then router_close it with a result.",
 		lease.ItemID, lease.Expires.Format(time.RFC3339))), nil
 }
 
-func handleClose(args map[string]interface{}) (*mcp.ToolResult, error) {
-	agent, err := reg.gate()
+func (s *Server) handleClose(args map[string]interface{}) (*mcp.ToolResult, error) {
+	agent, err := s.reg.gate()
 	if err != nil {
 		return errResult(err.Error()), nil
 	}
@@ -331,7 +248,7 @@ func handleClose(args map[string]interface{}) (*mcp.ToolResult, error) {
 		return errResult("router_close: id is required"), nil
 	}
 	// Session-ownership (ADR-068): this instance may only close work it claimed.
-	token, ok := reg.claimToken(id)
+	token, ok := s.reg.claimToken(id)
 	if !ok {
 		return errResult(fmt.Sprintf("router_close: %s was not claimed by this session — claim it with router_claim first (a developer can only complete work its own instance claimed)", id)), nil
 	}
@@ -339,14 +256,14 @@ func handleClose(args map[string]interface{}) (*mcp.ToolResult, error) {
 	// validation uses an actual application worktree only for implementation
 	// completion; explicit acknowledgement/blocker outcomes remain available to
 	// attended non-Git clients and retain their result requirement.
-	repoRoot, _, err := resolveRoots()
+	repoRoot, _, err := s.resolveRoots()
 	if err != nil {
 		return errResult(err.Error()), nil
 	}
 	if err := completionproof.EnforceCurrentCaller(repoRoot, id, stringArg(args, "proof"), boolArg(args, "blocked"), boolArg(args, "ack"), stringArg(args, "result")); err != nil {
 		return errResult(fmt.Sprintf("router_close: %v", err)), nil
 	}
-	f, closeF, err := openFacade()
+	f, closeF, err := s.openFacade()
 	if err != nil {
 		return errResult(err.Error()), nil
 	}
