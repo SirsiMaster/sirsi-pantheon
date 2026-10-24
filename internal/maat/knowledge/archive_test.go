@@ -750,6 +750,13 @@ func TestArchivePathPreservesExisting0755SirsiAndRejectsLinks(t *testing.T) {
 	if err := os.Mkdir(sirsiPath, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Chmod(sirsiPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initialInfo, err := os.Stat(sirsiPath)
+	if err != nil || initialInfo.Mode().Perm() != 0o755 {
+		t.Fatalf("fixture requires existing 0755 .sirsi: info=%v err=%v", initialInfo, err)
+	}
 	archive, err := Open(home)
 	if err != nil {
 		t.Fatalf("open below existing 0755 .sirsi: %v", err)
