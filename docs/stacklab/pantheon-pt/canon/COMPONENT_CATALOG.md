@@ -24,5 +24,6 @@
 | Package | `.goreleaser.yaml`, package inventory | create-only build roots | unsigned inventory evidence |
 | Cask | `internal/caskrelease/`, `cmd/sirsi/cask_release.go`, release workflow | create-only remote-tap publication | canonical bytes, remote readback, and lifecycle proof |
 | Release boundary | `.github/workflows/release.yml`, `contracts/stacklab/pantheon-release-artifact-recipe-v1.json`, release scripts | explicit development/commercial artifact selection and remote release/tag authority | static mode contract, then signing/notary and remote receipts |
+| Ma'at release-source observation | `internal/maat/releasepreflight.go`; shared notarization helper and enrolled signing client | local source files only; no execution, keychain inspection, credential diagnosis, or release authorization | hash-pinned released130 route, removed-control refusals, and actual Casebook recovery projection fixtures; execution qualification remains separate |
 
 Owner: Pantheon PT lane. Release state: source lineage is cataloged; signing, cask lifecycle, and installed-host evidence remain open.

@@ -24,4 +24,5 @@
 | Deterministic cask bytes | `internal/caskrelease/cask.go`, `cmd/sirsi/cask_release.go`, release workflow | exact renderer and remote-tap readback receipt | source-bound; lifecycle proof open |
 | Development/commercial artifact separation | `contracts/stacklab/pantheon-release-artifact-recipe-v1.json`, build scripts, Makefile | explicit mode and `-dev` filename contract | source-bound; package execution required |
 | Signed/notarized release | release workflow | Developer ID/notary receipt | OPEN |
+| Release-source preflight follows the current delegated route without diagnosing owner credentials | `internal/maat/releasepreflight.go`, release-artifact recipe | authored hash-pinned released130 source fixture; mode/identity/delegation/notary/verification removal fixtures; actual Casebook NextAction projection | Corrective source only until qualified. Literal source indicators are not shell execution/semantic proof. Public local certificate readiness and actual signing/notary/publication receipts remain independent. |
 | Install/upgrade/rollback/uninstall | cask lifecycle plan | installed-host evidence | OPEN |
