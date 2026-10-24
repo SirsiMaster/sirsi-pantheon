@@ -41,6 +41,7 @@ func TestRunEmitsNonExecutingInventory(t *testing.T) {
 		"Contents/Resources/StackLab/maat-pod-authority-service-recipe-v1.json": []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
 		"Contents/Resources/StackLab/maat-wing-v1.json":                         []byte(`{"schema":"sirsi.stacklab.wing.v1"}`),
 		"Contents/Resources/StackLab/mercury-consumer-recipe-v1.json":           []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
+		"Contents/Resources/StackLab/model-router-v1-recipe-v1.json":            []byte(`{"schema":"sirsi.stacklab.recipe.v1","id":"stacklab.recipe.model-router-v1"}`),
 		"Contents/Resources/StackLab/native-stacklab-surface-recipe-v1.json":    []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
 		"Contents/Resources/StackLab/pantheon-native-workspace-v1.json":         []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
 		"Contents/Resources/StackLab/pantheon.pt-wing-001-wing-v1.json":         []byte(`{"schema":"sirsi.stacklab.wing.v1"}`),
@@ -74,8 +75,8 @@ func TestRunEmitsNonExecutingInventory(t *testing.T) {
 	if report.Schema != packageinventory.Schema || !report.PythonFree || report.EngineCount != 2 {
 		t.Fatalf("unexpected report: %s", out.String())
 	}
-	if len(report.Entries) != 25 {
-		t.Fatalf("inventory contains %d entries, want complete 25-entry unsigned payload", len(report.Entries))
+	if len(report.Entries) != 26 {
+		t.Fatalf("inventory contains %d entries, want complete 26-entry unsigned payload", len(report.Entries))
 	}
 	wantPaths := map[string]string{}
 	for _, dir := range []string{"Contents", "Contents/MacOS", "Contents/Resources", "Contents/Resources/StackLab", "Contents/Resources/StackLab/v2"} {
@@ -104,7 +105,7 @@ func TestRunEmitsNonExecutingInventory(t *testing.T) {
 
 	// Each added contract remains required. Inventory only reads these regular
 	// fixture files; neither fake engine contains executable application code.
-	for _, leaf := range []string{"anubis-trash-receipt-v1.json", "mercury-consumer-recipe-v1.json", "maat-pod-authority-service-recipe-v1.json", "pantheon-native-workspace-v1.json"} {
+	for _, leaf := range []string{"anubis-trash-receipt-v1.json", "mercury-consumer-recipe-v1.json", "model-router-v1-recipe-v1.json", "maat-pod-authority-service-recipe-v1.json", "pantheon-native-workspace-v1.json"} {
 		t.Run("missing_"+leaf, func(t *testing.T) {
 			rel := "Contents/Resources/StackLab/" + leaf
 			path := filepath.Join(app, filepath.FromSlash(rel))
