@@ -5,3 +5,7 @@
   trailing newline was classified as a forbidden extra command. Interior
   commands, background runs, expansions and direct unadmitted workloads remain
   checked; parser regression tests never execute their command text.
+- Source/control reads may suppress stderr to the fixed `/dev/null` device.
+  Arbitrary file targets, append/descriptor duplication, supervised-run
+  redirection and direct workloads remain refused. This separately addresses
+  the exact CompassPoint source-read payload, which contained no newline.

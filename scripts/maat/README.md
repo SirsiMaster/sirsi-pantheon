@@ -107,6 +107,14 @@ replace only this admission classifier after exact-source review and test
 qualification. A passing parser fixture is not proof of an attended lane's
 actual front-door operation; retain that separate runtime readback.
 
+The exact CompassPoint read payload additionally exposed `2>/dev/null` being
+refused by the blanket redirection rule. Read/control command classification
+now permits only that fixed null-stderr sink; the foreground runner path still
+rejects redirection, and arbitrary targets, append/descriptor duplication,
+direct workloads and extra executable commands remain refused. Retain the
+actual payload separately: it had no newline, so the newline reproduction alone
+must not be cited as its cause.
+
 ## Safe native job and observer launchers
 
 ### Scoped native worker transport

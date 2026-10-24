@@ -50,6 +50,24 @@ class ShellWhitespaceTests(unittest.TestCase):
     def test_empty_input_refused(self):
         self.assertIsNotNone(self.denied(' \n\t'))
 
+    def test_exact_compasspoint_null_stderr_source_read(self):
+        command = 'cat /Users/thekryptodragon/Development/compasspoint/.thoth/memory.yaml 2>/dev/null | head -150'
+        self.assertIsNone(self.denied(command))
+        self.assertIsNone(self.denied(command + '\n'))
+
+    def test_null_stderr_does_not_admit_workloads_or_extra_commands(self):
+        for command in ['python3 workload.py 2>/dev/null',
+                        'cat README.md 2>/dev/null | python3 workload.py',
+                        'cat README.md 2>/dev/null; python3 workload.py',
+                        self.front + ' 2>/dev/null']:
+            with self.subTest(command=command):
+                self.assertIsNotNone(self.denied(command))
+
+    def test_other_redirections_remain_refused(self):
+        for suffix in ['2>/tmp/output', '>/dev/null', '2>>/dev/null', '2>&1', '2>/dev/null > /tmp/output']:
+            with self.subTest(suffix=suffix):
+                self.assertIsNotNone(self.denied('cat README.md ' + suffix))
+
 
 if __name__ == '__main__':
     unittest.main()
