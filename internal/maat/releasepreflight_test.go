@@ -136,6 +136,8 @@ func TestPreflightReleaseContractMissingControlsStillBlock(t *testing.T) {
 		{"notary-failure", "scripts/notarize-release-artifact.sh", `exit "$status"`, "delegated-notarization-contract"},
 		{"staple-validation", "scripts/build-dmg.sh", `xcrun stapler validate "${DMG_PATH}"`, "dmg-explicit-artifact-mode"},
 		{"remote-return-identity", "tools/signing/sirsi-sign", `[ $vok = 1 ] ||`, "delegated-signing-return-verification"},
+		{"selected-keychain-existence", ".github/workflows/release.yml", `test -f "$KEYCHAIN"`, "installer-identity-keychain-preflight"},
+		{"selected-keychain-absence-refusal", ".github/workflows/release.yml", `|| { echo "Selected signing keychain is absent: $KEYCHAIN" >&2; exit 1; }`, "installer-identity-keychain-preflight"},
 		{"selected-keychain-comparison", ".github/workflows/release.yml", `if [ "$IMPORTED_INSTALLER" != "$DEVELOPER_ID_INSTALLER" ]; then`, "installer-identity-keychain-preflight"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

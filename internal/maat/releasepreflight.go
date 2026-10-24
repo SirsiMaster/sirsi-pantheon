@@ -98,7 +98,9 @@ var releaseContractRequirements = []releaseContractRequirement{
 		ID: "installer-identity-keychain-preflight", Path: ".github/workflows/release.yml",
 		Needles: []string{
 			`KEYCHAIN="${PANTHEON_SIGNING_KEYCHAIN:?Signing keychain was not selected}"`,
-			`test -f "$KEYCHAIN" ||`, `security find-identity -v -p codesigning "$KEYCHAIN"`,
+			`test -f "$KEYCHAIN" \
+            || { echo "Selected signing keychain is absent: $KEYCHAIN" >&2; exit 1; }`,
+			`security find-identity -v -p codesigning "$KEYCHAIN"`,
 			`/Developer ID Application:.*\(9D382WV988\)/`, `if [ -z "$ID" ]; then`,
 			`: "${DEVELOPER_ID_INSTALLER:?DEVELOPER_ID_INSTALLER is required for the commercial Pantheon PKG}"`,
 			`"Developer ID Installer: "*"(9D382WV988)") ;;`, `security find-identity -v "$KEYCHAIN"`,
