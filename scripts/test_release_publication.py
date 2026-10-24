@@ -15,6 +15,10 @@ VERSION = "0.24.999"
 HEAD = "a" * 40
 NAMES = ["SirsiPantheon-" + VERSION + "-arm64." + ext for ext in ("dmg", "pkg")]
 PAYLOADS = dict(zip(NAMES, (b"owned inert dmg", b"owned inert pkg")))
+EXPECTED_INLINE_REQUIREMENT = (
+    '=anchor apple generic and certificate leaf[subject.OU] = "9D382WV988" '
+    'and certificate 1[field.1.2.840.113635.100.6.2.6] exists '
+    'and certificate leaf[field.1.2.840.113635.100.6.1.13] exists')
 
 
 class FakeGH:
@@ -35,14 +39,12 @@ class FakeGH:
             out = ("f" * 40 + "\trefs/tags/v" + VERSION + "\n" + head +
                    "\trefs/tags/v" + VERSION + "^{}\n").encode()
         elif argv[0] == "/usr/bin/codesign":
-            if not all(flag in argv for flag in ("--verify", "--strict", "-R")):
-                raise AssertionError("signature verification flags missing")
-            requirement = argv[argv.index("-R") + 1]
-            if not all(text in requirement for text in (
-                    "anchor apple generic", 'certificate leaf[subject.OU] = "9D382WV988"',
-                    "certificate 1[field.1.2.840.113635.100.6.2.6] exists",
-                    "certificate leaf[field.1.2.840.113635.100.6.1.13] exists")):
-                raise AssertionError("Apple Developer ID Team9D requirements weakened")
+            expected = ["/usr/bin/codesign", "--verify"]
+            if argv[-1].endswith(".app"):
+                expected.append("--deep")
+            expected += ["--strict", "-R", EXPECTED_INLINE_REQUIREMENT, argv[-1]]
+            if argv != expected:
+                raise AssertionError("codesign must receive exact inline requirement argv")
             if self.fail == "signature":
                 code = 1
         elif argv[0] == "/usr/sbin/pkgutil":
@@ -134,6 +136,12 @@ class ReleasePublicationTests(unittest.TestCase):
         self.assertFalse(fake.draft)
         self.assertEqual(result["prepublication_readback"], result["assets"])
         self.assertEqual(len(result["verification"]), 5)
+        self.assertEqual([a for a in fake.calls if a[0] == "/usr/bin/codesign"], [
+            ["/usr/bin/codesign", "--verify", "--deep", "--strict", "-R", EXPECTED_INLINE_REQUIREMENT,
+             str(self.directory / "inert.app")],
+            ["/usr/bin/codesign", "--verify", "--strict", "-R", EXPECTED_INLINE_REQUIREMENT,
+             str(self.directory / NAMES[0])],
+        ])
         self.assertEqual([a[2] for a in fake.mutations()], ["create", "upload", "upload", "edit"])
 
     def test_partial_upload_failure_keeps_draft_and_retry_resumes_without_overwrite(self):
@@ -224,6 +232,42 @@ class ReleasePublicationTests(unittest.TestCase):
                 fake.fail = defect
                 with self.assertRaises(publication.Refusal):
                     self.publish(fake)
+                self.assertEqual(fake.mutations(), [])
+
+    def test_unobserved_public_release_stays_unknown_on_lookup_or_verifier_failure(self):
+        for defect in ("lookup", "signature"):
+            with self.subTest(defect=defect):
+                fake = FakeGH(False, PAYLOADS)
+                fake.fail = defect
+                record = {}
+                with self.assertRaises(publication.Refusal):
+                    publication.publish(VERSION, HEAD, self.directory, self.directory / "inert.app", record, run=fake)
+                self.assertIsNone(record["published"])
+                self.assertFalse(record["publish_attempted"])
+                self.assertEqual(fake.mutations(), [])
+
+    def test_main_serializes_unobserved_failures_as_null_in_exclusive_receipt(self):
+        original_publish = publication.publish
+        for defect in ("lookup", "signature"):
+            with self.subTest(defect=defect):
+                fake = FakeGH(False, PAYLOADS)
+                fake.fail = defect
+                receipt = self.directory / (defect + ".json")
+
+                def inert_publish(version, head, directory, app, record):
+                    return original_publish(version, head, directory, app, record, run=fake)
+
+                argv = ["publish-release-assets.py", "--version", VERSION, "--expected-commit", HEAD,
+                        "--directory", str(self.directory), "--app", str(self.directory / "inert.app"),
+                        "--receipt", str(receipt)]
+                with mock.patch("sys.argv", argv), mock.patch.dict(publication.os.environ), \
+                        mock.patch.object(publication, "publish", side_effect=inert_publish):
+                    with self.assertRaises(publication.Refusal):
+                        publication.main()
+                retained = json.loads(receipt.read_text())
+                self.assertIsNone(retained["published"])
+                self.assertFalse(retained["publish_attempted"])
+                self.assertEqual(retained["status"], "failed")
                 self.assertEqual(fake.mutations(), [])
 
     def test_missing_or_symlink_local_pair_refuses_before_creation(self):

@@ -19,7 +19,7 @@ import tempfile
 REPO = "SirsiMaster/sirsi-pantheon"
 RELEASE_REPO = "github.com/" + REPO
 TEAM = "9D382WV988"
-REQUIREMENT = ('anchor apple generic and certificate leaf[subject.OU] = "' + TEAM +
+REQUIREMENT = ('=anchor apple generic and certificate leaf[subject.OU] = "' + TEAM +
                '" and certificate 1[field.1.2.840.113635.100.6.2.6] exists and '
                'certificate leaf[field.1.2.840.113635.100.6.1.13] exists')
 MAX_ASSET_BYTES = 4 * 1024 ** 3
@@ -62,6 +62,7 @@ def digest(path):
 
 
 def publish(version, expected_commit, directory, app, record, run=execute):
+    record.update(published=None, publish_attempted=False)
     if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?", version):
         raise Refusal("invalid release version")
     if not re.fullmatch(r"[0-9a-f]{40}", expected_commit):
@@ -91,8 +92,7 @@ def publish(version, expected_commit, directory, app, record, run=execute):
 
     expected = {name: digest(path) for name, path in paths.items()}
     record.update(schema="pantheon.release-publication.v1", tag=tag, commit=expected_commit,
-                  assets=expected, verification=[], status="verifying", published=False,
-                  publish_attempted=False, uploads_attempted=[])
+                  assets=expected, verification=[], status="verifying", uploads_attempted=[])
 
     # Cryptographically reverify the already-built payload and staple tickets;
     # do not treat caller text or a signing receipt's prose as proof. These
@@ -129,12 +129,14 @@ def publish(version, expected_commit, directory, app, record, run=execute):
         code = int(status[1]) if status else 0
         explicit_404 = code == 404 or (not status and re.search(rb"\(HTTP 404\)(?:\r?\n|$)", response.stderr))
         if explicit_404 and response.returncode:
+            record["published"] = False  # Observed absence, not a lookup failure.
             return None
         if not separator or code != 200 or response.returncode:
             raise Refusal("release lookup is unknown, not absent")
         value = json.loads(body)
         if value.get("tag_name") != tag or type(value.get("draft")) is not bool:
             raise Refusal("release tag/state mismatch")
+        record["published"] = not value["draft"]
         assets = value.get("assets")
         if not isinstance(assets, list) or len(assets) > 2:
             raise Refusal("unexpected release asset set")
@@ -220,7 +222,7 @@ def main():
     args = parser.parse_args()
     os.environ["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
     record = {"schema": "pantheon.release-publication.v1", "status": "failed",
-              "published": False, "tag": "v" + args.version, "commit": args.expected_commit}
+              "published": None, "tag": "v" + args.version, "commit": args.expected_commit}
     # Exclusive receipt creation refuses accidental reuse of another attempt.
     with open(args.receipt, "x") as receipt:
         try:
