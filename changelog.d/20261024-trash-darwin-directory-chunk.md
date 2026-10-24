@@ -1,0 +1,1 @@
+Keep the internal Trash directory-chunk type in its Darwin-only implementation file so Linux CI does not report an unused shared declaration. The declaration and Darwin behavior are unchanged; no lint suppression or platform bypass is added.

@@ -24,14 +24,6 @@ type BrowseWork struct {
 	Inspected   int `json:"inspected"`
 }
 
-type directoryChunk struct {
-	Names []string
-	Next  uint64
-	EOF   bool
-	Bytes int
-	Calls int
-}
-
 // A continuation is read-only position/freshness metadata, never delete consent.
 type BrowseRequest struct {
 	Schema     string    `json:"schema"`

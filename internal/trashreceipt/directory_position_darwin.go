@@ -4,6 +4,14 @@ package trashreceipt
 
 import "errors"
 
+type directoryChunk struct {
+	Names []string
+	Next  uint64
+	EOF   bool
+	Bytes int
+	Calls int
+}
+
 var errStatelessBrowseUnsupported = errors.New("stateless Trash browse is unsupported: native paging requires a retained directory session; select/apply remain canonical Go operations")
 
 // A fresh FD cannot reconstruct getattrlistbulk's per-open buffered state.
