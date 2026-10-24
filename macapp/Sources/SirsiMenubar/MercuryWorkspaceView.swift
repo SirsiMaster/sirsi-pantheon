@@ -78,7 +78,7 @@ struct MercuryWorkspaceView: View {
             } else {
                 MaybeScroll {
                     VStack(alignment: .leading, spacing: 12) {
-                        MercuryLiveMachinesView(monitor: monitor, isVisible: engine.workspaceVisible)
+                        MercuryLiveMachinesView(monitor: monitor)
                         truthNote
                         TimelineView(.periodic(from: .now, by: 5)) { context in
                             laneSection(at: context.date)
@@ -128,7 +128,7 @@ struct MercuryWorkspaceView: View {
                 Text("What this view shows")
                     .sirsiFont(.subheadline, weight: .semibold)
                     .foregroundStyle(Color.white)
-                Text("Mercury’s monitor supplies machine and interface measurements. Ra supplies admission and lane availability; hardware receipts describe this Mac’s available links.")
+                Text("Mercury’s canonical dashboard supplies calibrated GPU work, CPU busy, and observed link rates. Ra supplies admission and lane availability; hardware receipts describe this Mac’s available links.")
                     .sirsiFont(.subheadline)
                     .foregroundStyle(PantheonTheme.mutedText)
                     .fixedSize(horizontal: false, vertical: true)

@@ -1,14 +1,12 @@
 import Foundation
 import SwiftUI
 
-// Consume the existing Mercury monitor, as Apollo does. No sampler, model or
-// service is started by this client. Only this fixed local GET is permitted.
+// Consume Pantheon's existing Mercury v1 reader. Its CLI command owns the
+// bounded private GET, schema validation, units, and freshness projection.
 @MainActor final class MercuryMonitor: ObservableObject {
     @Published var projection: MercuryMonitorProjection?
     @Published var error: String?
     @Published var reading = false
-    static let endpoint = URL(string: "http://127.0.0.1:8099/api")!
-    static let byteLimit = 2 * 1024 * 1024
 
     init(preloaded: MercuryMonitorProjection? = nil) { projection = preloaded }
 
@@ -16,112 +14,90 @@ import SwiftUI
         guard !reading else { return }
         reading = true
         defer { reading = false }
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 4
-        config.timeoutIntervalForResource = 6
-        config.httpMaximumConnectionsPerHost = 1
-        let session = URLSession(configuration: config, delegate: MercuryNoRedirect(), delegateQueue: nil)
-        defer { session.invalidateAndCancel() }
         do {
-            var request = URLRequest(url: Self.endpoint)
-            request.cachePolicy = .reloadIgnoringLocalCacheData
-            let (bytes, response) = try await session.bytes(for: request)
-            guard let response = response as? HTTPURLResponse, response.statusCode == 200,
-                  response.url == Self.endpoint else { throw MercuryMonitorFailure.invalidResponse }
-            guard response.expectedContentLength <= Int64(Self.byteLimit) else { throw MercuryMonitorFailure.oversize }
-            var data = Data()
-            data.reserveCapacity(64 * 1024)
-            for try await byte in bytes {
-                guard data.count < Self.byteLimit else { throw MercuryMonitorFailure.oversize }
-                data.append(byte)
-            }
-            let decoded = try JSONDecoder().decode(MercuryMonitorProjection.self, from: data)
+            let read = await SirsiEngine.runJSONRead(args: ["mercury", "--json"], timeoutSeconds: 8)
             guard !Task.isCancelled else { return }
-            projection = decoded
+            projection = try decodeMercuryMonitor(read: read)
             error = nil
         } catch {
             guard !Task.isCancelled else { return }
-            self.error = "Mercury’s local monitor could not be read. Refresh to retry; inspect Ra for machine connectivity. \(error.localizedDescription)"
+            self.error = "The canonical Mercury dashboard read did not complete successfully. Refresh to retry."
         }
     }
 }
 
-private final class MercuryNoRedirect: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
-    func urlSession(_ session: URLSession, task: URLSessionTask,
-                    willPerformHTTPRedirection response: HTTPURLResponse,
-                    newRequest request: URLRequest,
-                    completionHandler: @escaping (URLRequest?) -> Void) {
-        completionHandler(nil)
-    }
-}
-
-private enum MercuryMonitorFailure: LocalizedError {
-    case invalidResponse, oversize
-    var errorDescription: String? {
-        switch self {
-        case .invalidResponse: return "The fixed local monitor did not return a successful response."
-        case .oversize: return "The monitor response exceeded the 2 MiB reading budget."
-        }
-    }
+func decodeMercuryMonitor(read: SirsiEngine.JSONCommandRead) throws -> MercuryMonitorProjection {
+    guard mercuryReadSucceeded(read) else { throw MercuryWorkspaceDecodeError.unsuccessfulRead }
+    return try JSONDecoder().decode(MercuryMonitorProjection.self, from: read.data)
 }
 
 struct MercuryMonitorProjection: Decodable {
-    let now: Double
-    let local: String?
-    let machines: [String: MercuryMonitorMachine]
-}
+    let state: String
+    let message: String
+    let snapshot: MercuryMonitorDashboard?
+    let scene: MercuryMonitorScene?
 
-struct MercuryMonitorMachine: Decodable {
-    let state: String?
-    let profile: MercuryMonitorProfile?
-    let samples: [MercuryMonitorSample]?
-    var latest: MercuryMonitorSample? { samples?.filter { $0.t.isFinite }.max { $0.t < $1.t } }
+    func gpuWork(for node: MercuryMonitorNode, readSucceeded: Bool) -> Double? {
+        guard readSucceeded, state == "ok", node.state == "live" else { return nil }
+        return validPercent(node.gpu.work_pct)
+    }
 
-    func hasCurrentObservation(at now: Date, readSucceeded: Bool) -> Bool {
-        readSucceeded && state == "live" && latest?.isFresh(at: now) == true
+    func cpuBusy(for node: MercuryMonitorNode, readSucceeded: Bool) -> Double? {
+        guard readSucceeded, state == "ok", node.state == "live" else { return nil }
+        return validPercent(node.cpu.busy_pct)
+    }
+
+    private func validPercent(_ value: Double?) -> Double? {
+        guard let value, value.isFinite, (0...100).contains(value) else { return nil }
+        return value
     }
 }
 
-struct MercuryMonitorProfile: Decodable {
+struct MercuryMonitorDashboard: Decodable {
+    let nodes: [MercuryMonitorNode]
+}
+
+struct MercuryMonitorNode: Decodable {
+    let id: String
+    let name: String
     let chip: String?
-    let model: String?
-    let mem_gb: Double?
+    let state: String
+    let observed_at: Double?
+    let gpu: MercuryMonitorGPU
+    let cpu: MercuryMonitorCPU
 }
 
-struct MercuryMonitorSample: Decodable {
-    let t: Double
-    let cores: [Double]?
-    let chip: MercuryMonitorChip?
-    let ifstat: [String: MercuryMonitorInterface]?
-
-    func isFresh(at now: Date) -> Bool {
-        let age = now.timeIntervalSince1970 - t
-        return t.isFinite && age >= -2 && age <= 10
-    }
-    var meanCPU: Double? {
-        guard let cores, !cores.isEmpty, cores.allSatisfy({ $0.isFinite && (0...100).contains($0) }) else { return nil }
-        return cores.reduce(0, +) / Double(cores.count)
-    }
+struct MercuryMonitorGPU: Decodable {
+    let work_pct: Double?
 }
 
-struct MercuryMonitorChip: Decodable {
-    let gpu_busy: Double?
-    let cpu_mw: Double?
-    let gpu_mw: Double?
+struct MercuryMonitorCPU: Decodable {
+    let busy_pct: Double?
 }
 
-struct MercuryMonitorInterface: Decodable {
-    let rx_bps: Double?
-    let tx_bps: Double?
+struct MercuryMonitorScene: Decodable {
+    let cables: [MercuryMonitorCable]
+}
+
+struct MercuryMonitorCable: Decodable {
+    let id: String
+    let state: String
+    let iface: String
+    let directions: [MercuryMonitorDirection]
+}
+
+struct MercuryMonitorDirection: Decodable {
+    let from: String
+    let to: String
+    let rate: String
 }
 
 struct MercuryLiveMachinesView: View {
     @ObservedObject var monitor: MercuryMonitor
-    var isVisible = true
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Live machine telemetry").sirsiFont(15, weight: .semibold)
+                Text("Mercury dashboard").sirsiFont(15, weight: .semibold)
                 Spacer()
                 if monitor.reading { ProgressView().controlSize(.small) }
             }
@@ -132,19 +108,15 @@ struct MercuryLiveMachinesView: View {
                 }
             }
             if let projection = monitor.projection {
-                if projection.machines.isEmpty {
-                    Text("Mercury returned no machine observations. Inspect the fabric or refresh the monitor.")
+                Text("\(projection.state.uppercased()) · \(projection.message)")
+                    .sirsiFont(11).foregroundStyle(projection.state == "ok" ? PantheonTheme.mutedText : gold)
+                if let snapshot = projection.snapshot, snapshot.nodes.isEmpty {
+                    Text("Mercury returned no node observations. Refresh or inspect monitor connectivity.")
                         .sirsiFont(12).foregroundStyle(PantheonTheme.mutedText)
-                } else if isVisible {
-                    // Age retained samples even when an in-flight read has not
-                    // published a new model. This clock performs no network work.
-                    TimelineView(.periodic(from: .now, by: 1)) { context in
-                        machineRows(projection, at: context.date)
-                    }
                 } else {
-                    machineRows(projection, at: Date())
+                    dashboardRows(projection)
                 }
-                Text("Source: Mercury local monitor · read every 5 seconds while open")
+                Text("Source: Mercury dashboard v1 · read every 5 seconds while open")
                     .sirsiFont(11).foregroundStyle(PantheonTheme.mutedText)
             } else if monitor.error == nil {
                 Text("Reading Mercury’s existing local monitor…").sirsiFont(12).foregroundStyle(PantheonTheme.mutedText)
@@ -154,49 +126,50 @@ struct MercuryLiveMachinesView: View {
         .background(PantheonTheme.panel, in: RoundedRectangle(cornerRadius: 10))
     }
 
-    private func machineRows(_ projection: MercuryMonitorProjection, at now: Date) -> some View {
-        ForEach(projection.machines.keys.sorted(), id: \.self) { name in
-            if let machine = projection.machines[name] { machineRow(name, machine, at: now) }
+    private func dashboardRows(_ projection: MercuryMonitorProjection) -> some View {
+        if let dashboard = projection.snapshot {
+            ForEach(dashboard.nodes.sorted { $0.id < $1.id }, id: \.id) { node in
+                nodeRow(node, projection: projection)
+            }
+            if let scene = projection.scene, !scene.cables.isEmpty {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("Observed link directions").sirsiFont(12, weight: .semibold)
+                    ForEach(scene.cables, id: \.id) { cable in
+                        ForEach(cable.directions.indices, id: \.self) { index in
+                            let direction = cable.directions[index]
+                            HStack {
+                                Text("\(direction.from) → \(direction.to)")
+                                    .sirsiFont(11, design: .monospaced)
+                                Spacer()
+                                Text(direction.rate).sirsiFont(12).monospacedDigit()
+                            }
+                            .foregroundStyle(cable.state == "up" ? PantheonTheme.mutedText : gold)
+                        }
+                    }
+                }.padding(.top, 8)
+            }
+        } else {
+            Text(projection.message).sirsiFont(12).foregroundStyle(PantheonTheme.mutedText)
         }
     }
 
-    private func machineRow(_ name: String, _ machine: MercuryMonitorMachine, at now: Date) -> some View {
+    private func nodeRow(_ node: MercuryMonitorNode, projection: MercuryMonitorProjection) -> some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack {
-                Text(name).sirsiFont(14, weight: .semibold)
-                Text(machine.profile?.chip ?? "Chip not reported").sirsiFont(12).foregroundStyle(PantheonTheme.mutedText)
+                Text(node.name).sirsiFont(14, weight: .semibold)
+                Text(node.chip ?? "Chip not reported").sirsiFont(12).foregroundStyle(PantheonTheme.mutedText)
                 Spacer()
-                Text(machine.latest.map { "Sample \(Date(timeIntervalSince1970: $0.t).formatted(date: .omitted, time: .standard))" } ?? "No sample")
+                Text(node.observed_at.map { "Sample \(Date(timeIntervalSince1970: $0).formatted(date: .omitted, time: .standard))" } ?? "No sample")
                     .sirsiFont(11).foregroundStyle(PantheonTheme.mutedText)
             }
-            if let sample = machine.latest {
-                let current = machine.hasCurrentObservation(at: now, readSucceeded: monitor.error == nil)
-                HStack(spacing: 24) {
-                    measurement("CPU utilization", percent(sample.meanCPU))
-                    measurement("GPU utilization", percent(sample.chip?.gpu_busy))
-                    measurement("CPU power", watts(sample.chip?.cpu_mw))
-                    measurement("GPU power", watts(sample.chip?.gpu_mw))
-                }
-                .opacity(current ? 1 : 0.7)
-                if !current {
-                    Text("Retained sample · current utilization is unknown. Refresh or inspect connectivity in Ra.")
-                        .sirsiFont(11).foregroundStyle(gold)
-                }
-                if let interfaces = sample.ifstat, !interfaces.isEmpty {
-                    ForEach(interfaces.keys.sorted(), id: \.self) { name in
-                        if let counters = interfaces[name] {
-                            HStack {
-                                Text(name).sirsiFont(11, design: .monospaced).frame(width: 70, alignment: .leading)
-                                Text("↓ \(rate(counters.rx_bps))    ↑ \(rate(counters.tx_bps))")
-                                    .sirsiFont(12).monospacedDigit()
-                                Spacer()
-                            }.foregroundStyle(PantheonTheme.mutedText)
-                        }
-                    }
-                }
-            } else {
-                Text("No telemetry sample has been published for this machine.")
-                    .sirsiFont(12).foregroundStyle(PantheonTheme.mutedText)
+            HStack(spacing: 24) {
+                measurement("CPU busy", percent(projection.cpuBusy(for: node, readSucceeded: monitor.error == nil)))
+                measurement("GPU work", percent(projection.gpuWork(for: node, readSucceeded: monitor.error == nil)))
+                measurement("Node state", node.state)
+            }
+            if projection.state != "ok" || monitor.error != nil || node.state != "live" {
+                Text("Current measurements are unknown until the canonical reader reports a fresh live observation.")
+                    .sirsiFont(11).foregroundStyle(gold)
             }
         }.padding(.vertical, 10)
     }
@@ -210,13 +183,5 @@ struct MercuryLiveMachinesView: View {
     private func percent(_ value: Double?) -> String {
         guard let value, value.isFinite, (0...100).contains(value) else { return "Unknown" }
         return String(format: "%.1f%%", value)
-    }
-    private func watts(_ value: Double?) -> String {
-        guard let value, value.isFinite, value >= 0 else { return "Unknown" }
-        return String(format: "%.2f W", value / 1000)
-    }
-    private func rate(_ value: Double?) -> String {
-        guard let value, value.isFinite, value >= 0, value < Double(Int64.max) else { return "Unknown" }
-        return SirsiEngine.human(Int64(value)) + "/s"
     }
 }
