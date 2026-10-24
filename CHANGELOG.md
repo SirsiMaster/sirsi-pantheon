@@ -6,6 +6,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.134] — 2026-10-24
+
+### Corrected
+
+- Normalize and independently verify public App/PKG read, traverse and entry-point
+  modes under restrictive build umasks before signing; reject a private signed
+  input instead of silently repairing its package copy.
+- Request and validate native whole-bundle upgrade metadata while preserving
+  identifier and version checks. Installed higher-version upgrade/readability
+  remains required evidence, not inferred from metadata or Installer exit zero.
+- Discover an existing private release draft by authenticated exact identity
+  before interpreting a published-tag 404 as absence; preserve publish-last,
+  complete paired-byte verification and immutable published assets.
+- Retain v0.24.133 as withdrawn incident history; verified132 remains the
+  recommended distribution until this correction's installed proof and release.
+
+### Verification
+
+- Connect build-mode and generated native PackageInfo regression suites to the
+  existing macOS CI job; build-time Python tooling is not installed in the app.
+- Preserve all prior failed source, signing, publication and installed receipts.
+
+
 ## [0.24.133] — 2026-10-24
 
 ### Corrected
