@@ -2,6 +2,7 @@ package maat
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -323,6 +324,65 @@ func TestDefaultStoreConcurrentInitializationCommitsExactlyOnce(t *testing.T) {
 	}
 	if successes != 1 || refusals != 1 {
 		t.Fatalf("successes=%d refusals=%d, want exactly one each", successes, refusals)
+	}
+}
+
+func TestBootstrapLockErrorCapturesRetainedMetadataAndPreservesCause(t *testing.T) {
+	parentFD, err := unix.Open(t.TempDir(), unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(parentFD)
+	lockFD, err := unix.Openat(parentFD, defaultLockName, unix.O_RDWR|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(lockFD)
+	var parent, lock unix.Stat_t
+	if err := unix.Fstat(parentFD, &parent); err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.Fstat(lockFD, &lock); err != nil {
+		t.Fatal(err)
+	}
+	if parent.Uid != uint32(os.Geteuid()) || lock.Uid != uint32(os.Geteuid()) || lock.Nlink != 1 {
+		t.Fatal("fixture must retain owned parent and singly linked lock")
+	}
+	// The failure is simulated; no actual open/sync race is forced or claimed.
+	failure := bootstrapLockError("sync parent", parentFD, lockFD, true, unix.ENOENT)
+	if !errors.Is(failure, unix.ENOENT) {
+		t.Fatalf("original ENOENT lost: %v", failure)
+	}
+	for _, want := range []string{
+		"sync parent bootstrap lock " + fmt.Sprintf("%q", defaultLockName),
+		fmt.Sprintf("parent={dev=%d ino=%d nlink=%d ", parent.Dev, parent.Ino, parent.Nlink),
+		fmt.Sprintf("named_lock={dev=%d ino=%d nlink=%d ", lock.Dev, lock.Ino, lock.Nlink),
+		fmt.Sprintf("opened_lock={dev=%d ino=%d nlink=%d ", lock.Dev, lock.Ino, lock.Nlink),
+	} {
+		if !strings.Contains(failure.Error(), want) {
+			t.Fatalf("missing diagnostic %q: %v", want, failure)
+		}
+	}
+	if strings.Contains(failure.Error(), "probe_error=") || strings.Contains(failure.Error(), "not opened") {
+		t.Fatalf("valid retained metadata reported unavailable: %v", failure)
+	}
+}
+
+func TestBootstrapLockErrorReportsUnavailableProbesWithoutZeroIdentities(t *testing.T) {
+	failure := bootstrapLockError("open", -1, -1, true, unix.ENOENT)
+	if !errors.Is(failure, unix.ENOENT) || errors.Is(failure, unix.EBADF) {
+		t.Fatalf("metadata probes replaced the original failure: %v", failure)
+	}
+	for _, want := range []string{
+		"open bootstrap lock " + fmt.Sprintf("%q", defaultLockName),
+		"parent={probe_error=", "named_lock={probe_error=", "opened_lock={not opened}",
+	} {
+		if !strings.Contains(failure.Error(), want) {
+			t.Fatalf("missing unavailable diagnostic %q: %v", want, failure)
+		}
+	}
+	if strings.Contains(failure.Error(), "dev=") || strings.Contains(failure.Error(), "ino=") || strings.Contains(failure.Error(), "nlink=") {
+		t.Fatalf("failed probes fabricated identity metadata: %v", failure)
 	}
 }
 

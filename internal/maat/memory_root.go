@@ -417,7 +417,7 @@ func openBootstrapLock(parentFD int, create bool) (int, error) {
 	}
 	fd, err := unix.Openat(parentFD, defaultLockName, flags, 0o600)
 	if err != nil {
-		return -1, fmt.Errorf("maat memory: open bootstrap lock %q relative to retained parent descriptor %d (create=%t): %w", defaultLockName, parentFD, create, err)
+		return -1, bootstrapLockError("open", parentFD, -1, create, err)
 	}
 	var stat unix.Stat_t
 	if err := unix.Fstat(fd, &stat); err != nil || stat.Mode&unix.S_IFMT != unix.S_IFREG || stat.Nlink != 1 || stat.Uid != uint32(os.Geteuid()) || stat.Mode&0o077 != 0 {
@@ -425,10 +425,34 @@ func openBootstrapLock(parentFD int, create bool) (int, error) {
 		return -1, errors.New("maat memory: bootstrap lock identity is not private and owner-controlled")
 	}
 	if err := unix.Fsync(parentFD); err != nil {
+		failure := bootstrapLockError("sync parent", parentFD, fd, create, err)
 		_ = unix.Close(fd)
-		return -1, fmt.Errorf("maat memory: sync retained parent descriptor %d for bootstrap lock %q (create=%t): %w", parentFD, defaultLockName, create, err)
+		return -1, failure
 	}
 	return fd, nil
+}
+
+// Capture only metadata after a failed syscall, before releasing owned FDs.
+// These best-effort observations are not an atomic snapshot or a retry basis.
+func bootstrapLockError(operation string, parentFD, lockFD int, create bool, cause error) error {
+	var parent, named, opened unix.Stat_t
+	parentErr := unix.Fstat(parentFD, &parent)
+	namedErr := unix.Fstatat(parentFD, defaultLockName, &named, unix.AT_SYMLINK_NOFOLLOW)
+	openedDetail := "not opened"
+	if lockFD >= 0 {
+		openedErr := unix.Fstat(lockFD, &opened)
+		openedDetail = bootstrapStatDetail(opened, openedErr)
+	}
+	return fmt.Errorf("maat memory: %s bootstrap lock %q (parent_fd=%d lock_fd=%d create=%t parent={%s} named_lock={%s} opened_lock={%s}): %w",
+		operation, defaultLockName, parentFD, lockFD, create,
+		bootstrapStatDetail(parent, parentErr), bootstrapStatDetail(named, namedErr), openedDetail, cause)
+}
+
+func bootstrapStatDetail(stat unix.Stat_t, err error) string {
+	if err != nil {
+		return fmt.Sprintf("probe_error=%v", err)
+	}
+	return fmt.Sprintf("dev=%d ino=%d nlink=%d mode=%#o uid=%d", stat.Dev, stat.Ino, stat.Nlink, stat.Mode, stat.Uid)
 }
 
 func createBinding(parentFD int, binding storeBinding) error {
