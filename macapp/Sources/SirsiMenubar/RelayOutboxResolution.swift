@@ -128,6 +128,7 @@ final class RelayOutboxResolutionModel: ObservableObject {
     }
 }
 
+@MainActor
 struct RelayOutboxResolutionView: View {
     @ObservedObject var engine: SirsiEngine
     @EnvironmentObject private var nav: Nav

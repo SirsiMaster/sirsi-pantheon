@@ -33,59 +33,59 @@ struct MaatWorkspaceView: View {
             if let context = relayOutboxContext {
                 RelayOutboxResolutionView(engine: engine, context: context)
             } else {
-            if let plan = apolloContext {
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "cpu").foregroundStyle(gold)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Reviewing an Apollo plan").sirsiFont(.subheadline, weight: .semibold)
-                        Text("\(plan.machineID) · \(plan.engineID) · \(plan.cpuCores) cores · \(SirsiEngine.human(plan.memoryBytes)) memory · \(SirsiEngine.human(plan.swapBytes)) swap ceiling")
-                            .sirsiFont(.caption).foregroundStyle(PantheonTheme.mutedText)
-                            .textSelection(.enabled)
-                        Text("Estates: \(plan.chipEstates.joined(separator: ", "))")
-                            .sirsiFont(.caption).foregroundStyle(PantheonTheme.mutedText)
-                    }
-                    Spacer()
-                }
-                .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-                .background(PantheonTheme.panelRaised)
-            }
-            Group {
-                if snapshotMode {
-                    HStack(spacing: 6) {
-                        ForEach(MaatWorkspaceSection.allCases) { option in
-                            Label(option.title, systemImage: option.symbol)
-                                .sirsiFont(.caption, weight: .semibold)
-                                .foregroundStyle(option == section ? Color.black : Color.primary)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 7)
-                                .background(RoundedRectangle(cornerRadius: 7).fill(option == section ? gold : Color.primary.opacity(0.07)))
+                if let plan = apolloContext {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "cpu").foregroundStyle(gold)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Reviewing an Apollo plan").sirsiFont(.subheadline, weight: .semibold)
+                            Text("\(plan.machineID) · \(plan.engineID) · \(plan.cpuCores) cores · \(SirsiEngine.human(plan.memoryBytes)) memory · \(SirsiEngine.human(plan.swapBytes)) swap ceiling")
+                                .sirsiFont(.caption).foregroundStyle(PantheonTheme.mutedText)
+                                .textSelection(.enabled)
+                            Text("Estates: \(plan.chipEstates.joined(separator: ", "))")
+                                .sirsiFont(.caption).foregroundStyle(PantheonTheme.mutedText)
                         }
+                        Spacer()
                     }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Ma'at workspace: \(section.title)")
-                } else {
-                    Picker("Ma'at workspace", selection: $section) {
-                        ForEach(MaatWorkspaceSection.allCases) { option in
-                            Label(option.title, systemImage: option.symbol).tag(option)
-                        }
-                    }
-                    .pickerStyle(.segmented)
+                    .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(PantheonTheme.panelRaised)
                 }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+                Group {
+                    if snapshotMode {
+                        HStack(spacing: 6) {
+                            ForEach(MaatWorkspaceSection.allCases) { option in
+                                Label(option.title, systemImage: option.symbol)
+                                    .sirsiFont(.caption, weight: .semibold)
+                                    .foregroundStyle(option == section ? Color.black : Color.primary)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 7)
+                                    .background(RoundedRectangle(cornerRadius: 7).fill(option == section ? gold : Color.primary.opacity(0.07)))
+                            }
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Ma'at workspace: \(section.title)")
+                    } else {
+                        Picker("Ma'at workspace", selection: $section) {
+                            ForEach(MaatWorkspaceSection.allCases) { option in
+                                Label(option.title, systemImage: option.symbol).tag(option)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
 
-            switch section {
-            case .systemOne:
-                MaatSystemOneView(engine: engine, section: $section, preloaded: preloadedCasebook,
-                                  opensReleasePreflight: opensReleasePreflight)
-            case .decisions:
-                MaatCasebookView(engine: engine, preloaded: preloadedCasebook, showsBackBar: false)
-            case .knowledge:
-                MaatKnowledgeView(engine: engine, preloaded: preloadedKnowledge, showsBackBar: false)
-            case .proposals:
-                MaatKnownFailureProposalsView(engine: engine, showsBackBar: false)
-            }
+                switch section {
+                case .systemOne:
+                    MaatSystemOneView(engine: engine, section: $section, preloaded: preloadedCasebook,
+                                      opensReleasePreflight: opensReleasePreflight)
+                case .decisions:
+                    MaatCasebookView(engine: engine, preloaded: preloadedCasebook, showsBackBar: false)
+                case .knowledge:
+                    MaatKnowledgeView(engine: engine, preloaded: preloadedKnowledge, showsBackBar: false)
+                case .proposals:
+                    MaatKnownFailureProposalsView(engine: engine, showsBackBar: false)
+                }
             }
         }
     }
