@@ -5,6 +5,9 @@
 - Scope the historical Horus signing alias to the selected owner deployment;
   keep the protected replacement's canonical signature requirement and lifecycle
   pins. Actual loaded conversion still requires the supported drain/readback.
+- Recognize both exact observed root-relay spool spellings on M5 and Studio,
+  without normalizing or accepting arbitrary paths; physical retained no-follow
+  inspection and every other selected-service boundary remain mandatory.
 - Preserve explicit zero Thoth retention and local civil-date cutoff semantics.
 - Correct Fleet copy and retain decoded actual-row state regressions.
 - Require exact current-head, same-sender, per-rejection bind clearance.

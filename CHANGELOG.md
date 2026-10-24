@@ -14,6 +14,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
   legacy wrapper at the exact OS-account-owner deployment path. Apple signing
   anchor, Sirsi team, selected artifact/runtime pins and drain requirements stay
   mandatory; the protected replacement still requires the canonical identifier.
+- Accept only the two observed root-relay spool argv literals (`/var/...` and
+  `/private/var/...` for the same fixed deployment), preserving the retained
+  physical-directory inspection and rejecting other aliases or extra arguments.
 - Preserve explicit zero journal-retention intent, including the native path
   when the compatibility writer cannot represent it; compare age by local civil
   date so midnight and daylight-saving changes do not prematurely prune entries.

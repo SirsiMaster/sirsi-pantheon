@@ -13,8 +13,11 @@ router, new background helper, alternate installer or privileged prompt exists.
 
 The profile is exactly `system/ai.sirsi.router.relay`, with the existing root
 LaunchDaemon and protected `/usr/local/libexec/sirsi-pantheon/sirsi` program.
-Its existing six arguments end in `--spool /var/sirsipantheon/relay`, and its
-service user is exactly `_sirsipantheon`. Controller privilege does not change
+Its existing six arguments end in `--spool` followed by exactly one observed
+literal: `/var/sirsipantheon/relay` or `/private/var/sirsipantheon/relay`. These
+are the only accepted spellings; no normalization, symlink resolution, alternate
+alias, trailing separator or extra flag is admitted. The selected plist is not
+rewritten. Its service user is exactly `_sirsipantheon`. Controller privilege does not change
 the relay's run-as identity. The credential-bearing plist remains root:wheel0600.
 The five existing maintenance profiles retain their behavior. Only SSA and SHA
 receive the additional exact-label grant; the source lane receives none.
@@ -75,8 +78,9 @@ if the canonical service, own live runtime or exact grant is unavailable.
 
 Pass only the actual non-secret actor/thread and canonical spool selection needed
 by the existing route, not an unrestricted copied environment, token or key. The
-physical spool remains `/private/var/sirsipantheon/relay`; deployed CLI argv keeps
-the accepted `/var/sirsipantheon/relay` alias. No HOME override is part of this
+physical spool remains `/private/var/sirsipantheon/relay`; deployed CLI argv may
+retain either of the two exact observed literals above. The retained no-follow
+physical-spool probe and quiescence checks are unchanged. No HOME override is part of this
 recipe. Actor ancestry and start identity must really match; environment labels
 alone are not authority.
 
