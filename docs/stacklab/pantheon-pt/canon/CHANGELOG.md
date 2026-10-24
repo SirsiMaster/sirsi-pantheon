@@ -2,6 +2,12 @@
 
 ## 2026-10-24 — v0.24.135 release candidate
 
+Ready135 qualifies the merged TLS/fleet corrections, bounded release helpers,
+signer-alias defaults and explicit public-mode fixture setup. The assembled
+older fragments below retain their historical source-only or partial-evidence
+limits; this consolidation does not newly qualify every feature or complete
+the larger seven-donor Ma'at composition, which remains active separately.
+
 - Use the existing pinned `sirsi-m5` and `sirsi-m1` SSH aliases as ordered signing
   client defaults instead of DHCP addresses. Preserve explicit host overrides,
   strict noninteractive transport, enrolled-service checks and signature checks;
