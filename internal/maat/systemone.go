@@ -61,6 +61,7 @@ type ScreenFinding struct {
 	Line       int     `json:"line,omitempty"`
 	Claim      string  `json:"claim"`
 	Evidence   string  `json:"evidence"`
+	EvidenceID string  `json:"evidence_id,omitempty"`
 	Confidence float64 `json:"confidence"`
 	FixHint    string  `json:"fix_hint,omitempty"`
 	// RepairID is optional and closed. It allows a System One host screen to
@@ -86,10 +87,13 @@ type FloorResult struct {
 // default local implementation remains useful without a model; a remote model
 // must be conspicuous to every consumer.
 type ModelStamp struct {
-	Provider  string `json:"provider"`
-	Version   string `json:"version"`
-	Local     bool   `json:"local"`
-	LatencyMS int    `json:"latency_ms"`
+	Provider          string `json:"provider"`
+	Version           string `json:"version"`
+	Local             bool   `json:"local"`
+	LatencyMS         int    `json:"latency_ms"`
+	EvidenceSetDigest string `json:"evidence_set_digest,omitempty"`
+	CalibrationID     string `json:"calibration_id,omitempty"`
+	Calibration       string `json:"calibration,omitempty"`
 }
 
 type Escalation struct {
@@ -103,6 +107,8 @@ type Escalation struct {
 // and low confidence, while a later owning reviewer may record an independent
 // conclusion through the existing Casebook route.
 type MaatVerdict struct {
+	Contract      string          `json:"contract,omitempty"`
+	FloorEvidence string          `json:"floor_evidence,omitempty"`
 	SchemaVersion int             `json:"schema_version"`
 	Subject       VerdictSubject  `json:"subject"`
 	FeatherWeight int             `json:"feather_weight"`
@@ -353,8 +359,14 @@ func CalibrationFromDecisions(rows []Decision) (Calibration, error) {
 // intentionally suitable for a future router or release consumer: a verdict
 // that merely looks plausible but contradicts its deterministic inputs fails.
 func ValidateMaatVerdict(verdict MaatVerdict) error {
+	if verdict.SchemaVersion == SourceScreenSchemaVersion {
+		return validateSourceVerdict(verdict)
+	}
 	if verdict.SchemaVersion != SystemOneSchemaVersion {
 		return fmt.Errorf("maat system one: unsupported schema version %d", verdict.SchemaVersion)
+	}
+	if verdict.Contract != "" || verdict.FloorEvidence != "" || hasSourceProvenance(verdict.Model, verdict.Findings) {
+		return fmt.Errorf("maat system one: source-screen fields require the explicit v2 contract")
 	}
 	input := SystemOneScreen{
 		Subject: verdict.Subject, FeatherWeight: verdict.FeatherWeight,
