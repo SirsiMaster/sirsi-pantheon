@@ -1,11 +1,64 @@
 package stacklab
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestReleaseNativePayloadPublicModeRecipe(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "contracts", "stacklab", "pantheon-release-artifact-recipe-v1.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var recipe struct {
+		Components []struct {
+			ID      string   `json:"id"`
+			Source  []string `json:"source"`
+			Tests   []string `json:"tests"`
+			Inputs  []string `json:"inputs"`
+			Outputs []string `json:"outputs"`
+			Upgrade []string `json:"upgrade_recipe"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal(data, &recipe); err != nil {
+		t.Fatal(err)
+	}
+	found := 0
+	for _, component := range recipe.Components {
+		if component.ID != "release-native-payload-composition" {
+			continue
+		}
+		found++
+		for _, path := range []string{"scripts/build-pkg.sh", "scripts/artifact_modes.py", "scripts/pantheon-pkg-components.plist", "scripts/package_info_contract.py", "internal/packageinventory/inventory.go"} {
+			if !strings.Contains("\n"+strings.Join(component.Source, "\n")+"\n", "\n"+path+"\n") {
+				t.Errorf("mode recipe missing source %s", path)
+			}
+		}
+		for _, path := range []string{"scripts/test_artifact_modes.py", "scripts/test_package_info_contract.py", "cmd/sirsi-package-inventory/main_test.go"} {
+			if !strings.Contains("\n"+strings.Join(component.Tests, "\n")+"\n", "\n"+path+"\n") {
+				t.Errorf("mode recipe missing test %s", path)
+			}
+		}
+		for _, requirement := range []struct{ text, token string }{
+			{strings.Join(component.Inputs, " "), "umask077 or022"},
+			{strings.Join(component.Outputs, " "), "0755"},
+			{strings.Join(component.Outputs, " "), "0644"},
+			{strings.Join(component.Upgrade, " "), "BundleOverwriteAction=upgrade"},
+			{strings.Join(component.Upgrade, " "), "higher-version134 over a private133"},
+			{strings.Join(component.Upgrade, " "), "fresh BOM/source tests are not proof"},
+		} {
+			if !strings.Contains(requirement.text, requirement.token) {
+				t.Errorf("mode recipe missing scope %q", requirement.token)
+			}
+		}
+	}
+	if found != 1 {
+		t.Fatalf("native composition component count=%d", found)
+	}
+}
 
 // TestPackageBuildersUseOneCanonicalInventory keeps release packaging from
 // degrading into ad-hoc shell checks. Both the assembled app and the expanded
