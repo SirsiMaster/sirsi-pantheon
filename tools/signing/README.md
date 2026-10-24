@@ -17,6 +17,13 @@ a dialog, learning a key, or waiting for a person. `SIRSI_SIGN_HOSTS` retains it
 existing ordered primary/standby selection; it does not authorize enrollment or
 host-key installation.
 
+The default ordered targets are `sirsi-m5`, then `sirsi-m1`: existing enrolled
+SSH aliases supply the destination user, host address and pinned host identity.
+The client does not create those aliases or add trust. DHCP address changes no
+longer require editing the client. Missing aliases, DNS, credentials or trusted
+host identity still fail closed; an explicit non-empty `SIRSI_SIGN_HOSTS`
+continues to replace the ordered list. An unset or empty override uses defaults.
+
 An enrolled WatchPaths daemon can be idle with exit status zero: `not running`
 alone does not mean the signer is broken. The client preflight checks enrollment;
 actual artifact signing/notarization still requires the enrolled service to
@@ -32,6 +39,11 @@ exercise file/app publication, waiting, readback, cleanup, refusal and a foreign
 signature, and reject an `accept-new` negative control. They contact no real
 host, read no credentials, and establish transport behavior only—not actual
 signing, notarization, installation or multi-machine inference success.
+
+Additional denial-only fixtures check default/empty/explicit ordered target
+selection and causally reject the former DHCP address defaults. These inspect
+argv to fake transport only; they do not prove live alias reachability or submit
+a signing job.
 
 The existing result-signature checks and remote job protocol are unchanged.
 This patch does not claim comprehensive timeout, crash cleanup, arbitrary-host
