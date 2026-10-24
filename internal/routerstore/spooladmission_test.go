@@ -138,6 +138,15 @@ func TestSpoolAdmissionOperationFailureResumes(t *testing.T) {
 }
 func TestSpoolAdmissionActualInflightSettlesBeforeExclusive(t *testing.T) {
 	dir := t.TempDir()
+	// Publication is atomic: a staged .json.tmp is not a relay request. Keep a
+	// lexically earlier staged leaf present so observing it cannot pass by luck.
+	reqDir := filepath.Join(dir, "own", "req")
+	if err := os.MkdirAll(reqDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(reqDir, "000-unpublished.json.tmp"), []byte("staged"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	ctx, c := context.WithTimeout(context.Background(), time.Second)
 	defer c()
 	req, _ := http.NewRequestWithContext(ctx, "POST", "http://spool/v1/call/Inbox", nil)
@@ -145,9 +154,9 @@ func TestSpoolAdmissionActualInflightSettlesBeforeExclusive(t *testing.T) {
 	go func() { _, e := newSpoolTransport(dir, "own").RoundTrip(req); done <- e }()
 	var id string
 	for id == "" && ctx.Err() == nil {
-		entries, _ := os.ReadDir(filepath.Join(dir, "own", "req"))
+		entries, _ := filepath.Glob(filepath.Join(reqDir, "*.json"))
 		if len(entries) > 0 {
-			id = entries[0].Name()
+			id = filepath.Base(entries[0])
 			break
 		}
 		time.Sleep(time.Millisecond)
