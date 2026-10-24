@@ -49,6 +49,13 @@ The individual source qualifications remain preserved; integrated validation,
 protected CI, signing, publication and installed successor checks are separate.
 Model calibration, binding automated source review, unfinished MCP changes and
 whole-fleet/cloud-offline qualification are not claimed by this release.
+### Corrected
+
+- Select the first available provider that meets the requested context window
+  across local, remote-escalation, and judgment routes. Reject malformed
+  routing classes and negative context requirements before probing providers.
+  Add counter-backed regression cases for qualification, fail-closed routing,
+  and cancellation.
 
 ## [0.24.130] — 2026-10-24
 

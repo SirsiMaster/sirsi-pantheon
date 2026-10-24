@@ -59,7 +59,7 @@ type Request struct {
 	Privacy PrivacyClass
 	// Latency: how urgent is the response? Default: interactive.
 	Latency LatencyClass
-	// MinContextTokens: minimum context window needed. 0 = any.
+	// MinContextTokens: minimum context window needed. 0 = any; negative is invalid.
 	MinContextTokens int
 }
 
@@ -118,55 +118,101 @@ func (rt *Router) Route(ctx context.Context, req Request) (Decision, error) {
 	if req.Privacy == "" {
 		req.Privacy = PrivacyLocalOnly
 	}
+	if err := validateRequest(req); err != nil {
+		return Decision{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return Decision{}, fmt.Errorf("model-router: request canceled: %w", err)
+	}
 
 	local, remote := rt.splitLadder()
 
 	switch {
 	case req.Privacy == PrivacyLocalOnly:
 		// Rule 1: local-only content never leaves the machine.
-		p, ok := rt.firstAvailable(ctx, local)
-		if !ok {
+		selection, err := rt.firstQualified(ctx, local, req.MinContextTokens)
+		if err != nil {
+			return Decision{}, err
+		}
+		if selection.provider == nil && !selection.available {
 			return Decision{}, fmt.Errorf("model-router: privacy=local-only but no local provider is available")
 		}
-		if req.MinContextTokens > 0 && p.Caps().ContextTokens < req.MinContextTokens {
-			return Decision{}, fmt.Errorf("model-router: local provider context window %d < required %d (fail-closed: content is local-only)",
-				p.Caps().ContextTokens, req.MinContextTokens)
+		if selection.provider == nil {
+			return Decision{}, contextRequirementError("local-only", selection.maxContextTokens, req.MinContextTokens)
 		}
-		return Decision{Lane: LaneLocal, Provider: p, Rationale: "privacy=local-only; local provider selected"}, nil
+		return Decision{Lane: LaneLocal, Provider: selection.provider, Rationale: "privacy=local-only; local provider selected"}, nil
 
 	case req.Task == TaskJudgment && req.Privacy == PrivacyShareable:
 		// Rule 2: judgment work benefits from the best model; prefer remote.
-		p, ok := rt.firstAvailable(ctx, remote)
-		if ok {
-			return Decision{Lane: LaneRemote, Provider: p, Rationale: "task=judgment + shareable; best remote selected"}, nil
+		remoteSelection, err := rt.firstQualified(ctx, remote, req.MinContextTokens)
+		if err != nil {
+			return Decision{}, err
 		}
-		// Sovereignty: if remote is down, fail-down to local.
-		p, ok = rt.firstAvailable(ctx, local)
-		if !ok {
+		if remoteSelection.provider != nil {
+			return Decision{Lane: LaneRemote, Provider: remoteSelection.provider, Rationale: "task=judgment + shareable; best remote selected"}, nil
+		}
+		// Sovereignty: if remote cannot satisfy the request, fail-down to local.
+		localSelection, err := rt.firstQualified(ctx, local, req.MinContextTokens)
+		if err != nil {
+			return Decision{}, err
+		}
+		if localSelection.provider == nil && !localSelection.available && !remoteSelection.available {
 			return Decision{}, fmt.Errorf("model-router: judgment task — no provider available (remote down, no local)")
 		}
-		return Decision{Lane: LaneLocal, Provider: p, Rationale: "task=judgment + remote unavailable; local fallback (sovereignty rule)", Escalated: true}, nil
+		if localSelection.provider == nil {
+			return Decision{}, contextRequirementError("available", maxContext(remoteSelection.maxContextTokens, localSelection.maxContextTokens), req.MinContextTokens)
+		}
+		return Decision{Lane: LaneLocal, Provider: localSelection.provider, Rationale: "task=judgment + remote unavailable or insufficient; local fallback (sovereignty rule)", Escalated: true}, nil
 
 	default:
 		// Rule 3: generation/extraction defaults to local; remote only if capability gap.
-		p, ok := rt.firstAvailable(ctx, local)
-		if ok && (req.MinContextTokens == 0 || p.Caps().ContextTokens >= req.MinContextTokens) {
-			return Decision{Lane: LaneLocal, Provider: p, Rationale: fmt.Sprintf("task=%s; local preferred", req.Task)}, nil
+		localSelection, err := rt.firstQualified(ctx, local, req.MinContextTokens)
+		if err != nil {
+			return Decision{}, err
+		}
+		if localSelection.provider != nil {
+			return Decision{Lane: LaneLocal, Provider: localSelection.provider, Rationale: fmt.Sprintf("task=%s; local preferred", req.Task)}, nil
 		}
 		// Local cannot satisfy capability needs — try remote (only if shareable).
 		if req.Privacy == PrivacyShareable {
-			p, ok = rt.firstAvailable(ctx, remote)
-			if ok {
-				return Decision{Lane: LaneRemote, Provider: p, Rationale: fmt.Sprintf("task=%s; local capability insufficient, escalating to remote", req.Task), Escalated: true}, nil
+			remoteSelection, err := rt.firstQualified(ctx, remote, req.MinContextTokens)
+			if err != nil {
+				return Decision{}, err
+			}
+			if remoteSelection.provider != nil {
+				return Decision{Lane: LaneRemote, Provider: remoteSelection.provider, Rationale: fmt.Sprintf("task=%s; local capability insufficient, escalating to remote", req.Task), Escalated: true}, nil
+			}
+			if localSelection.available || remoteSelection.available {
+				return Decision{}, contextRequirementError("available", maxContext(localSelection.maxContextTokens, remoteSelection.maxContextTokens), req.MinContextTokens)
 			}
 		}
-		if ok {
-			// local available but context window too small AND not shareable
-			return Decision{}, fmt.Errorf("model-router: content is local-only and local context window %d < required %d",
-				p.Caps().ContextTokens, req.MinContextTokens)
+		if localSelection.available {
+			return Decision{}, contextRequirementError("local-only", localSelection.maxContextTokens, req.MinContextTokens)
 		}
 		return Decision{}, fmt.Errorf("model-router: no provider available for task=%s", req.Task)
 	}
+}
+
+func validateRequest(req Request) error {
+	switch req.Task {
+	case TaskGeneration, TaskJudgment, TaskExtraction, TaskEmbedding:
+	default:
+		return fmt.Errorf("model-router: unknown task class %q", req.Task)
+	}
+	switch req.Privacy {
+	case PrivacyLocalOnly, PrivacyShareable:
+	default:
+		return fmt.Errorf("model-router: unknown privacy class %q", req.Privacy)
+	}
+	switch req.Latency {
+	case "", LatencyInteractive, LatencyBackground:
+	default:
+		return fmt.Errorf("model-router: unknown latency class %q", req.Latency)
+	}
+	if req.MinContextTokens < 0 {
+		return fmt.Errorf("model-router: minimum context tokens must be nonnegative, got %d", req.MinContextTokens)
+	}
+	return nil
 }
 
 // Complete routes the request and calls the selected provider.
@@ -174,6 +220,9 @@ func (rt *Router) Complete(ctx context.Context, routeReq Request, provReq provid
 	d, err := rt.Route(ctx, routeReq)
 	if err != nil {
 		return provider.Response{}, Decision{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return provider.Response{}, Decision{}, fmt.Errorf("model-router: request canceled: %w", err)
 	}
 	resp, err := d.Provider.Complete(ctx, provReq)
 	if err != nil {
@@ -194,16 +243,57 @@ func (rt *Router) splitLadder() (local, remote []provider.Provider) {
 	return
 }
 
-// firstAvailable returns the first provider whose Available() probe passes.
-func (rt *Router) firstAvailable(ctx context.Context, providers []provider.Provider) (provider.Provider, bool) {
+type providerSelection struct {
+	provider         provider.Provider
+	available        bool
+	maxContextTokens int
+}
+
+// firstQualified returns the first available provider that meets the context requirement.
+func (rt *Router) firstQualified(ctx context.Context, providers []provider.Provider, minContextTokens int) (providerSelection, error) {
+	var selection providerSelection
 	pCtx, cancel := context.WithTimeout(ctx, rt.probeTimeout)
 	defer cancel()
 	for _, p := range providers {
+		if err := ctx.Err(); err != nil {
+			return providerSelection{}, fmt.Errorf("model-router: availability probe canceled: %w", err)
+		}
 		if p.Available(pCtx) {
-			return p, true
+			if err := ctx.Err(); err != nil {
+				return providerSelection{}, fmt.Errorf("model-router: availability probe canceled: %w", err)
+			}
+			selection.available = true
+			contextTokens := p.Caps().ContextTokens
+			if err := ctx.Err(); err != nil {
+				return providerSelection{}, fmt.Errorf("model-router: capability check canceled: %w", err)
+			}
+			if contextTokens > selection.maxContextTokens {
+				selection.maxContextTokens = contextTokens
+			}
+			if minContextTokens == 0 || contextTokens >= minContextTokens {
+				selection.provider = p
+				return selection, nil
+			}
 		}
 	}
-	return nil, false
+	if err := ctx.Err(); err != nil {
+		return providerSelection{}, fmt.Errorf("model-router: availability probe canceled: %w", err)
+	}
+	return selection, nil
+}
+
+func contextRequirementError(scope string, availableContextTokens, requiredContextTokens int) error {
+	if scope == "local-only" {
+		return fmt.Errorf("model-router: no local provider satisfies required context window %d tokens (best available: %d tokens; fail-closed: content is local-only)", requiredContextTokens, availableContextTokens)
+	}
+	return fmt.Errorf("model-router: no %s provider satisfies required context window %d tokens (best available: %d tokens)", scope, requiredContextTokens, availableContextTokens)
+}
+
+func maxContext(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 // DecisionSummary returns a compact one-line string for diagnostic output.
