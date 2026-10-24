@@ -4,6 +4,8 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strconv"
+	"syscall"
 	"testing"
 )
 
@@ -76,9 +78,7 @@ func TestCheckSpoolDirTrustingGroupTightensToGroupWritable(t *testing.T) {
 	if err != nil {
 		t.Skipf("cannot resolve current primary group: %v", err)
 	}
-	if cherr := os.Chmod(spool, 0o770); cherr != nil {
-		t.Fatal(cherr)
-	}
+	setOwnedSpoolFixtureGroupAndMode(t, spool, 0o770)
 	got, err := CheckSpoolDirTrustingGroup(spool, selfGroup)
 	if err != nil {
 		t.Fatalf("CheckSpoolDirTrustingGroup: %v", err)
@@ -110,15 +110,40 @@ func TestCheckSpoolDirTrustingGroupTightensToGroupWritable(t *testing.T) {
 }
 
 func currentPrimaryGroupName() (string, error) {
-	u, err := user.Current()
-	if err != nil {
-		return "", err
-	}
-	g, err := user.LookupGroupId(u.Gid)
+	g, err := user.LookupGroupId(strconv.Itoa(os.Getgid()))
 	if err != nil {
 		return "", err
 	}
 	return g.Name, nil
+}
+
+// Establish only owned test directories, never a host spool. Temporary roots
+// may inherit an unrelated group; chown must precede chmod, especially SGID.
+func setOwnedSpoolFixtureGroupAndMode(t *testing.T, path string, mode os.FileMode) {
+	t.Helper()
+	before, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, ok := before.Sys().(*syscall.Stat_t)
+	if !ok || !before.IsDir() || owner.Uid != uint32(os.Getuid()) {
+		t.Fatalf("fixture is not an owned directory: %s", path)
+	}
+	if err := os.Chown(path, -1, os.Getgid()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, mode); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual, ok := after.Sys().(*syscall.Stat_t)
+	mask := os.ModePerm | os.ModeSetgid
+	if !ok || !after.IsDir() || actual.Uid != uint32(os.Getuid()) || actual.Gid != uint32(os.Getgid()) || after.Mode()&mask != mode&mask {
+		t.Fatalf("fixture group/mode not established: path=%s stat=%v mode=%v want_gid=%d want_mode=%v", path, after.Sys(), after.Mode(), os.Getgid(), mode)
+	}
 }
 
 // TestCheckSpoolDirTrustingGroupConvergesA0700MigratedSpool (SSA review, PR
@@ -139,7 +164,8 @@ func TestCheckSpoolDirTrustingGroupConvergesA0700MigratedSpool(t *testing.T) {
 	if err != nil {
 		t.Skipf("cannot resolve current primary group: %v", err)
 	}
-	// Deliberately do NOT chmod — only the group is "migrated", exactly the
+	setOwnedSpoolFixtureGroupAndMode(t, spool, 0o700)
+	// Deliberately keep mode 0700 — only the group is "migrated", exactly the
 	// gap SSA found: an operator who only ran chgrp, trusting the doc comment's
 	// claim that the code alone converges the rest.
 	got, err := CheckSpoolDirTrustingGroup(spool, selfGroup)

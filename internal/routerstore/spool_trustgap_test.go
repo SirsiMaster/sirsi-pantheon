@@ -16,12 +16,11 @@ func TestRefuseUntrustedClientOnTrustedSpool(t *testing.T) {
 	if err := os.Mkdir(spool, 0o770); err != nil {
 		t.Fatal(err)
 	}
+	setOwnedSpoolFixtureGroupAndMode(t, spool, 0o770)
 	if err := refuseUntrustedClientOnTrustedSpool(spool, -1); err != nil {
 		t.Fatalf("single-uid spool (no setgid) must not be refused: %v", err)
 	}
-	if err := os.Chmod(spool, 0o770|os.ModeSetgid); err != nil {
-		t.Fatal(err)
-	}
+	setOwnedSpoolFixtureGroupAndMode(t, spool, 0o770|os.ModeSetgid)
 	err := refuseUntrustedClientOnTrustedSpool(spool, -1)
 	if err == nil {
 		t.Fatal("setgid spool + no trust group must be refused before publishing")
@@ -29,7 +28,7 @@ func TestRefuseUntrustedClientOnTrustedSpool(t *testing.T) {
 	if !strings.Contains(err.Error(), spoolTrustGroupEnv+"=") {
 		t.Fatalf("error must name the fix: %v", err)
 	}
-	if err := refuseUntrustedClientOnTrustedSpool(spool, 20); err != nil {
+	if err := refuseUntrustedClientOnTrustedSpool(spool, os.Getgid()); err != nil {
 		t.Fatalf("a client WITH a trust group is never refused here: %v", err)
 	}
 	if err := refuseUntrustedClientOnTrustedSpool(filepath.Join(spool, "absent"), -1); err != nil {
@@ -44,6 +43,7 @@ func TestMkdirTrustedConvergesAnOwned0700Dir(t *testing.T) {
 	if err := os.Mkdir(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	setOwnedSpoolFixtureGroupAndMode(t, dir, 0o700)
 	st, _ := os.Stat(dir)
 	gid := int(st.Sys().(*syscall.Stat_t).Gid) // my own group: the trust check passes
 	if err := mkdirTrusted(dir, 0o770, gid); err != nil {

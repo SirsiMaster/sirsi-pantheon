@@ -103,9 +103,7 @@ func TestSpoolAdmissionRefusesSymlink(t *testing.T) {
 
 func TestSpoolAdmissionTrustRefusalPrecedesMaintenanceWait(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.Chmod(dir, 0o700|os.ModeSetgid); err != nil {
-		t.Fatal(err)
-	}
+	setOwnedSpoolFixtureGroupAndMode(t, dir, 0o700|os.ModeSetgid)
 	if err := WithSpoolQuiescence(context.Background(), dir, func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
 		defer cancel()

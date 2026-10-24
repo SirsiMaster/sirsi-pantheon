@@ -73,6 +73,7 @@ func relayObservationTestRoot(t *testing.T) *relayObservationRoot {
 	if err := os.Mkdir(root, 0700); err != nil {
 		t.Fatal(err)
 	}
+	setOwnedSpoolFixtureGroupAndMode(t, root, 0o700)
 	r, err := openRelayObservationRoot(root, "")
 	if err != nil {
 		t.Fatal(err)
