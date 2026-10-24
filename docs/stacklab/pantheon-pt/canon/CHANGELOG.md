@@ -1,5 +1,17 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-24 — v0.24.130 corrective release candidate
+
+- Start from actual released129 source0fd84630/tree6cce, not an unpublished fork.
+- Compose qualified selected-outbox guide2de, native Ra read-budget fixcc5 and
+  legacy resolver lifecycle fixe184. Preserve all three component/traceability
+  records and exact existing Go authority, repair confirmation and deadline.
+- Keep unavailable data distinct from an empty fabric, age evidence without
+  polling and never treat a sentinel as restored model weights.
+- Individual-source tests and semantic negatives are retained; combined source
+  qualification and normal signed publication/installed proof remain separate.
+  Unrun Ma'at216a and later MCP work are not included or new release gates.
+
 ## 2026-10-24 — v0.24.129 corrective release candidate
 
 - Build from the actual released v0.24.128 baseline, retaining all prior fixes.
