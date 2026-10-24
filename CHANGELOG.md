@@ -6,6 +6,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.133] — 2026-10-24
+
+### Corrected
+
+- Preserve the last observed router board when navigation cancels a read; do
+  not publish cancellation as a bundled-reader launch failure or a new sample.
+- Add explicit own-session generation preflight to attended heartbeat/wait,
+  preserving caller scope and using insert-only successor registration so an
+  occupied or raced sibling session cannot be silently overwritten.
+- Qualify provider context before model routing; retain bounded causal decision
+  evidence and route ASK text/JSON through the selected Cobra output writer.
+  Package the exact versioned module recipe and obligation traceability map.
+- Read Mercury through the canonical dashboard projection, age samples with
+  a local monotonic clock and preserve directional units. Display GPU work,
+  never substitute residency for utilization; unavailable power stays Unknown.
+
+This fixes-only increment starts from actual signed/notarized v0.24.132.
+Individual source/fixture qualifications and their failed predecessors remain
+preserved. Combined qualification, signed publication and installed acceptance
+are separate. Streaming-terminal, typed task-yield rollout, live model requests,
+M1/M5-off and whole-product acceptance are not claimed by this candidate.
+
 ## [0.24.132] — 2026-10-24
 
 ### Corrected
@@ -49,19 +71,6 @@ The individual source qualifications remain preserved; integrated validation,
 protected CI, signing, publication and installed successor checks are separate.
 Model calibration, binding automated source review, unfinished MCP changes and
 whole-fleet/cloud-offline qualification are not claimed by this release.
-### Corrected
-
-- Select the first available provider that meets the requested context window
-  across local, remote-escalation, and judgment routes. Reject malformed
-  routing classes and negative context requirements before probing providers.
-  Add counter-backed regression cases for qualification, fail-closed routing,
-  and cancellation.
-- Route `ask` human and JSON output through Cobra's selected command writer,
-  preserving the normal themed formatting and making redirected command output
-  complete and testable.
-- Add a versioned Stack Lab model-router module recipe and original-obligation
-  traceability map; distinguish separately accepted provider-readiness R5
-  evidence from qualification of the 691-based model-router candidate.
 
 ## [0.24.130] — 2026-10-24
 
