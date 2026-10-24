@@ -151,7 +151,7 @@ func newEnsureHTTPEntry(t *testing.T) *ensureHTTPEntry {
 	if err := os.MkdirAll(filepath.Join(repo, ".agents", "idea-router"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := router.SaveRegistry(filepath.Join(repo, ".agents", "idea-router"), &router.Registry{Agents: map[string]router.AgentConfig{f.old.AgentID: {ID: f.old.AgentID, Type: "codex", Repo: repo, Cwd: repo, Wake: router.WakeConfig{Mechanism: "none"}}}}); err != nil {
+	if err := router.SaveRegistry(filepath.Join(repo, ".agents", "idea-router"), &router.Registry{Agents: map[string]router.AgentConfig{f.old.AgentID: {ID: f.old.AgentID, Type: "codex", Repo: repo, Cwd: repo, Workstream: f.old.Workstream, Wake: router.WakeConfig{Mechanism: "none"}}}}); err != nil {
 		t.Fatal(err)
 	}
 	t.Chdir(repo)
