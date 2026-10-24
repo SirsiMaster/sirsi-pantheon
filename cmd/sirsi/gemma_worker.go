@@ -130,6 +130,16 @@ func (w nativeGemmaWorker) runOnce(ctx context.Context) (bool, error) {
 		return true, fmt.Errorf("Gemma lease for %s was lost before reply publication", lease.ItemID)
 	}
 	if err := w.reply.Reply(lease, item, answer); err != nil {
+		if errors.Is(err, routerstore.ErrWorkerAnswers) {
+			// An answering-role refusal is not an inference failure. Park the
+			// same original under its fence so another worker cannot regenerate
+			// the preserved draft on every retry. Only the lead may reconcile it.
+			blocked := fmt.Errorf("GEMMA BLOCKED: reply publication authority refused: %w\n\nDRAFT PRESERVED FOR LEAD REVIEW:\n%s", err, answer)
+			if blockErr := w.store.Block(lease.ItemID, lease.Token, blocked.Error()); blockErr != nil {
+				return true, errors.Join(blocked, fmt.Errorf("record fenced Gemma authority block: %w", blockErr))
+			}
+			return true, blocked
+		}
 		return true, w.retry(lease, "reply publication failed", answer, err)
 	}
 	return true, nil
@@ -278,7 +288,23 @@ func init() {
 	gemmaCmd.AddCommand(gemmaWorkerCmd)
 }
 
+// Per-invocation effects keep startup-order fixtures off live providers and
+// process locks without adding mutable package-level test hooks.
+type gemmaWorkerRuntime struct {
+	preflight func() error
+	generate  func(context.Context, string) (string, error)
+	tryLock   func(string) (func(), error)
+}
+
 func runGemmaWorker(cmd *cobra.Command, _ []string) error {
+	return runGemmaWorkerWith(cmd, gemmaWorkerRuntime{
+		preflight: gemmaWorkerPreflight,
+		generate:  gemmaWorkerGenerate,
+		tryLock:   gemmaWorkerTryLock,
+	})
+}
+
+func runGemmaWorkerWith(cmd *cobra.Command, runtime gemmaWorkerRuntime) error {
 	if gemmaWorkerVersion {
 		fmt.Fprintln(cmd.OutOrStdout(), "sirsi-gemma-worker native")
 		return nil
@@ -291,6 +317,21 @@ func runGemmaWorker(cmd *cobra.Command, _ []string) error {
 	gemmaWorkerItemID = strings.TrimSpace(gemmaWorkerItemID)
 	if gemmaWorkerItemID != "" && !gemmaWorkerOnce {
 		return fmt.Errorf("--item requires --once")
+	}
+	repoRoot, err := router.FindRepoRoot()
+	if err != nil {
+		return err
+	}
+	routerRoot := repoRoot + "/.agents/idea-router"
+	// Ordinary drafts also finish via CompleteItem. Both modes must consume
+	// the existing lead declaration before provider preflight or any claim;
+	// selecting a worker mode must never create an answering grant.
+	answerRole, err := gemmaWorkerAnswerRoleGranted(routerRoot)
+	if err != nil {
+		return err
+	}
+	if !answerRole {
+		return fmt.Errorf("Gemma worker refuses to claim work: %w", routerstore.ErrWorkerAnswers)
 	}
 	if gemmaWorkerInferenceProfilePath == "" {
 		home, e := os.UserHomeDir()
@@ -318,7 +359,7 @@ func runGemmaWorker(cmd *cobra.Command, _ []string) error {
 		}
 		gemmaWorkerTokenFile = selected.AccessTokenFile
 	}
-	generate := gemmaWorkerGenerate
+	generate := runtime.generate
 	if gemmaWorkerApolloToolTurn {
 		if gemmaWorkerItemID == "" {
 			return fmt.Errorf("--apollo-tool-turn requires --item to fence the bounded tool turn to one router item")
@@ -341,30 +382,14 @@ func runGemmaWorker(cmd *cobra.Command, _ []string) error {
 	if err := os.Setenv("SIRSI_ROUTER_AGENT", gemmaWorkerAgent); err != nil {
 		return fmt.Errorf("set Gemma router identity: %w", err)
 	}
-	if err := gemmaWorkerPreflight(); err != nil {
+	if err := runtime.preflight(); err != nil {
 		return err
 	}
-	unlock, err := gemmaWorkerTryLock("gemma-pantheon-worker")
+	unlock, err := runtime.tryLock("gemma-pantheon-worker")
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	repoRoot, err := router.FindRepoRoot()
-	if err != nil {
-		return err
-	}
-	routerRoot := repoRoot + "/.agents/idea-router"
-	answerRole := false
-	if gemmaWorkerApolloToolTurn {
-		var roleErr error
-		answerRole, roleErr = gemmaWorkerAnswerRoleGranted(routerRoot)
-		if roleErr != nil {
-			return roleErr
-		}
-		if !answerRole {
-			return fmt.Errorf("--apollo-tool-turn refuses to claim work: %s has not granted this headless worker the router answering role", gemmaWorkerAgent)
-		}
-	}
 	t, f, err := gemmaWorkerOpenFacade(repoRoot, routerRoot, answerRole)
 	if err != nil {
 		return err
@@ -465,7 +490,7 @@ func gemmaWorkerAnswerRoleGranted(routerRoot string) (bool, error) {
 
 // gemmaWorkerVerifyStampedAnswerRole proves that this exact registered worker,
 // not merely a registry declaration, carries the lead's answering grant before
-// it can claim an Apollo tool-turn item.
+// it can claim any item, including an ordinary text-draft request.
 func gemmaWorkerVerifyStampedAnswerRole(routerRoot, threadID string) error {
 	threads, err := router.LoadThreadRegistry(routerRoot)
 	if err != nil {
