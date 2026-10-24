@@ -178,7 +178,7 @@ func validateSourceVerdict(v MaatVerdict) error {
 	if err != nil {
 		return err
 	}
-	if v.Gate != expected.Gate || v.FeatherWeight != expected.FeatherWeight || !sameEscalation(v.Escalation, expected.Escalation) {
+	if v.Gate != expected.Gate || v.FeatherWeight != expected.FeatherWeight || v.Floor.Passed != expected.Floor.Passed || !sameEscalation(v.Escalation, expected.Escalation) {
 		return fmt.Errorf("maat source screen: verdict contradicts unqualified production policy")
 	}
 	ordered := SystemOneScreen{Findings: v.Findings, Floor: v.Floor}

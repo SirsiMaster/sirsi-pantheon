@@ -235,6 +235,9 @@ func TestSourceScreenJournalAndLegacyCompatibility(t *testing.T) {
 	if rows[0].SystemOne.Gate != GateEscalate || rows[1].SystemOne.Gate != GatePass {
 		t.Fatal("v2/v1 policy crossed")
 	}
+	if !strings.Contains(rows[0].Why, "declared-only") {
+		t.Fatal("journal claimed an executed floor")
+	}
 	for _, gate := range []GateDecision{GatePass, GateChanges, GateBlock} {
 		forged := v
 		forged.Gate = gate
@@ -245,6 +248,19 @@ func TestSourceScreenJournalAndLegacyCompatibility(t *testing.T) {
 	v.Model.Calibration = "qualified"
 	if _, err = RecordSystemOne(j, "fixture-forged", v); err == nil {
 		t.Fatal("qualified journal bypass")
+	}
+	legacy.Model = v.Model
+	if err := ValidateMaatVerdict(legacy); err == nil {
+		t.Fatal("v2 qualification disguised as legacy")
+	}
+	s.Floor.Checks = s.Floor.Checks[:3]
+	v, err = ScreenSource(s, s.Subject.HeadSHA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v.Floor.Passed = true
+	if err := ValidateMaatVerdict(v); err == nil {
+		t.Fatal("incomplete floor forged passing summary on replay")
 	}
 	// This reader compatibility test never reads the actual installed journal.
 	if _, err = os.Stat(j.Path); err != nil {
