@@ -86,7 +86,7 @@ var itemOwnership = map[string]int{
 
 // taskOwnership: method → indexes of (agent, taskID).
 var taskOwnership = map[string][2]int{
-	"CompleteTaskLease": {0, 1}, "ReleaseTaskLease": {0, 1}, "RenewTaskLease": {0, 1}, "WithdrawTaskLease": {0, 1},
+	"YieldTaskLease": {0, 1}, "CompleteTaskLease": {0, 1}, "ReleaseTaskLease": {0, 1}, "RenewTaskLease": {0, 1}, "WithdrawTaskLease": {0, 1},
 }
 
 const nonceWindow = 60 * time.Second

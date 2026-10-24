@@ -594,3 +594,24 @@ func init() {
 	routerTaskCmd.AddCommand(routerTaskAddCmd, routerTaskUpdateCmd, routerTaskListCmd, routerTaskClaimCmd, routerTaskClaimIDCmd, routerTaskRenewCmd, routerTaskCompleteCmd, routerTaskReleaseCmd, routerTaskReclaimExpiredCmd, routerTaskRecheckReceiptsCmd, routerTaskResetAttemptsCmd, routerTaskWhyCmd)
 	routerCmd.AddCommand(routerLedgerCmd, routerTaskCmd, routerDependCmd)
 }
+
+var taskYieldDisposition, taskYieldEvidence, taskYieldDependency string
+var routerTaskYieldCmd = &cobra.Command{
+	Use: "yield <agent> <task-id>", Args: cobra.ExactArgs(2), Short: "Cleanly yield a live task without consuming a failure retry",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		f, err := openTaskFacade()
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		return f.Store().YieldTaskLease(args[0], args[1], taskLeaseToken, taskYieldDisposition, taskYieldEvidence, taskYieldDependency)
+	},
+}
+
+func init() {
+	routerTaskYieldCmd.Flags().StringVar(&taskLeaseToken, "lease", "", "Live fenced lease capability")
+	routerTaskYieldCmd.Flags().StringVar(&taskYieldDisposition, "disposition", "", "Explicit clean or external-wait")
+	routerTaskYieldCmd.Flags().StringVar(&taskYieldEvidence, "evidence", "", "Correlated partial outcome reference; not task completion")
+	routerTaskYieldCmd.Flags().StringVar(&taskYieldDependency, "dependency", "", "Required external-wait blocker; never replaces an existing different dependency")
+	routerTaskCmd.AddCommand(routerTaskYieldCmd)
+}

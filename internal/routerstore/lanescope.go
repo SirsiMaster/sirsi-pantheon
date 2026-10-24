@@ -94,6 +94,7 @@ var laneAPI = map[string]laneRule{
 	"ClaimTask":            {agents: []int{0}, item: noItem},
 	"ClaimNextTask":        {agents: []int{0}, item: noItem},
 	"CompleteTaskLease":    {agents: []int{0}, item: noItem},
+	"YieldTaskLease":       {agents: []int{0}, item: noItem},
 	"ReleaseTaskLease":     {agents: []int{0}, item: noItem},
 	"RenewTaskLease":       {agents: []int{0}, item: noItem},
 	"UpdateTask":           {agents: []int{0}, item: noItem},
