@@ -502,23 +502,6 @@ func validateMaatBinaryDriftCase(journal maat.DecisionJournal, evidence string) 
 	return nil
 }
 
-func maatHasActiveBinaryDrift(report *guard.DoctorReport) bool {
-	if report == nil {
-		return false
-	}
-	count := 0
-	for _, finding := range report.Findings {
-		if finding.Check != maatRepairBinaryDriftCheck {
-			continue
-		}
-		count++
-		if finding.Severity < guard.SeverityWarn || guard.ResolutionFor(finding) != guard.ResolutionRepair {
-			return false
-		}
-	}
-	return count == 1
-}
-
 func maatBinaryDriftDiagnosisClear(report *guard.DoctorReport) bool {
 	if report == nil {
 		return false

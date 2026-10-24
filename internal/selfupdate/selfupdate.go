@@ -221,15 +221,8 @@ func ScanHostContext(ctx context.Context) (*DriftReport, error) {
 	return BuildReport(self, siblings, pathBin), nil
 }
 
-// discover walks candidate install dirs, probing each sirsi-family binary it
+// discoverContext walks candidate install dirs, probing each sirsi-family binary it
 // finds (skipping the running executable itself).
-func discover(selfPath string) []Sibling {
-	siblings, _ := discoverWithProbe(context.Background(), selfPath, func(_ context.Context, path string) (version.Info, error) {
-		return probeFn(path)
-	})
-	return siblings
-}
-
 func discoverContext(ctx context.Context, selfPath string) ([]Sibling, error) {
 	return discoverWithProbe(ctx, selfPath, probeContextFn)
 }
