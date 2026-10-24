@@ -114,6 +114,7 @@ func TestAvailableRealCompletionProbeRejectsCompletionTransportFailure(t *testin
 
 func TestAvailableRealCompletionProbeRejectsCompletionCancellation(t *testing.T) {
 	completionStarted := make(chan struct{})
+	cancellationObserved := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/v1/models" {
 			_, _ = w.Write([]byte(`{"data":[{"id":"served-model"}]}`))
@@ -122,6 +123,7 @@ func TestAvailableRealCompletionProbeRejectsCompletionCancellation(t *testing.T)
 		if r.Method == http.MethodPost && r.URL.Path == "/v1/chat/completions" {
 			close(completionStarted)
 			<-r.Context().Done()
+			close(cancellationObserved)
 			return
 		}
 		http.NotFound(w, r)
@@ -129,14 +131,45 @@ func TestAvailableRealCompletionProbeRejectsCompletionCancellation(t *testing.T)
 	defer srv.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	cancellationTriggered := make(chan struct{})
+	stopCancellation := make(chan struct{})
+	cancellationDone := make(chan struct{})
 	go func() {
-		<-completionStarted
+		defer close(cancellationDone)
+		select {
+		case <-completionStarted:
+			cancel()
+			close(cancellationTriggered)
+		case <-stopCancellation:
+		}
+	}()
+	defer func() {
 		cancel()
+		close(stopCancellation)
+		select {
+		case <-cancellationDone:
+		case <-time.After(2 * time.Second):
+			t.Error("cancellation coordinator did not exit")
+		}
 	}()
 	p := &OpenAICompat{ProviderName: "local", Endpoint: srv.URL + "/v1", TierValue: TierLocal, HTTP: srv.Client(), UseRealCompletionProbe: true}
 	if p.Available(ctx) {
 		t.Fatal("cancelled completion probe was reported as available")
+	}
+	select {
+	case <-completionStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("readiness probe returned without reaching completion POST")
+	}
+	select {
+	case <-cancellationTriggered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("completion POST did not trigger context cancellation")
+	}
+	select {
+	case <-cancellationObserved:
+	case <-time.After(2 * time.Second):
+		t.Fatal("completion handler did not observe request cancellation")
 	}
 }
 

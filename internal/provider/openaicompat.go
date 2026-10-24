@@ -150,7 +150,7 @@ func (o *OpenAICompat) probeCompletion(ctx context.Context) bool {
 	if ctx.Err() != nil || resp.StatusCode != http.StatusOK {
 		return false
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, readinessCompletionResponseLimit+1))
+	body, err = io.ReadAll(io.LimitReader(resp.Body, readinessCompletionResponseLimit+1))
 	if err != nil || ctx.Err() != nil || len(body) > readinessCompletionResponseLimit {
 		return false
 	}
