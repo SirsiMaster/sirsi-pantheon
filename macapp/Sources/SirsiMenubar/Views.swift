@@ -2042,7 +2042,7 @@ struct RaFabricView: View {
 
                     // ── Blockers (current + fixable ONLY) ───────────────────
                     if engine.routerBoard != nil && engine.routerHasBlockers {
-                        SectionLabel("BLOCKERS — FIX TO UNSTRAND WORK", tint: .red)
+                        SectionLabel("NEEDS ATTENTION — OBSERVE OR RESOLVE", tint: .red)
 
                         ForEach(engine.routerAuthBlockers) { h in
                             AuthBlockerCard(engine: engine, health: h)
@@ -2068,6 +2068,26 @@ struct RaFabricView: View {
                     }
 
                     // ── Held for retry (nonblocking, but must stay visible) ──
+                    if !engine.routerServiceOutboxes.isEmpty {
+                        OutboxServiceObservationCard(engine: engine, rows: engine.routerServiceOutboxes, now: now)
+                    }
+                    if engine.routerBoard?.outboxHealthError != nil || engine.routerOutboxCoverageUnknown {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(engine.routerOutboxCoverageUnknown
+                                 ? "Relay retry inventory is incomplete or expired. Individually observed lanes remain visible; totals and omitted lanes are unknown. Refresh or use guided resolution."
+                                 : "Relay producer metadata is unavailable. A complete direct inventory can still be observed; a missing publisher requires an owner-managed relay update, not a local permission repair.")
+                                .sirsiFont(.caption).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            HStack(spacing: 8) {
+                                Button("Refresh relay observation") {
+                                    Task { resultLine = await engine.refreshRelayOutboxObservation() }
+                                }.buttonStyle(.bordered).disabled(engine.routerLoading || engine.busy)
+                                NavLink { MaatWorkspaceView(engine: engine) } label: {
+                                    Label("Guided resolution", systemImage: "checkmark.seal")
+                                }.buttonStyle(.bordered)
+                            }
+                        }
+                    }
                     if !engine.routerRetryOutbox.isEmpty {
                         OutboxRetryCard(held: engine.routerRetryOutbox)
                     }
@@ -2494,7 +2514,7 @@ struct DaemonBlockerCard: View {
 struct OutboxBlockerCard: View {
     @ObservedObject var engine: SirsiEngine
     let blocked: [RBOutbox]
-    @State private var repairTarget: RBOutbox?
+    @State private var repairTarget: RelayOutboxRepairApproval?
     @State private var result: String?
 
     var body: some View {
@@ -2502,21 +2522,24 @@ struct OutboxBlockerCard: View {
             HStack(spacing: 8) {
                 Text("📪").sirsiFont(18)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("\(blocked.count) relay outbox\(blocked.count == 1 ? "" : "es") unreadable")
+                    Text("\(blocked.count) relay outbox observation\(blocked.count == 1 ? "" : "s") unavailable")
                         .sirsiFont(13, weight: .semibold)
-                    Text("Queue depth is unknown, not zero. Pantheon can safely restore a locally-owned relay outbox, then recheck Ra.")
+                    Text("Retry depth is unknown, not zero. Repair is offered only after a same-user metadata preflight; service-owned private outboxes are observed through the relay.")
                         .sirsiFont(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
             }
             ForEach(blocked) { o in
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("\(o.agent): \(o.error ?? "unreadable")")
+                    Text("\(o.agent): \(o.observationText(at: Date()))\(o.observerAccess == "service-private" ? " · service-managed private outbox" : "")")
                         .sirsiFont(.caption, design: .monospaced).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     HStack(spacing: 8) {
-                        Button("Repair this outbox") { repairTarget = o }
-                            .buttonStyle(.borderedProminent).tint(gold).disabled(engine.busy)
+                        if let approval = engine.relayOutboxRepairApproval(for: o) {
+                            Button("Repair this outbox") { repairTarget = approval }
+                                .buttonStyle(.borderedProminent).tint(gold).disabled(engine.busy)
+                        }
                         NavLink { MaatWorkspaceView(engine: engine) } label: {
                             Label("Guided resolution", systemImage: "checkmark.seal")
                         }
@@ -2524,6 +2547,12 @@ struct OutboxBlockerCard: View {
                     }
                 }
             }
+            Button("Refresh relay observation") {
+                Task { result = await engine.refreshRelayOutboxObservation() }
+            }.buttonStyle(.bordered).disabled(engine.routerLoading || engine.busy)
+            Text("No supported repair here? Use guided resolution. An older relay needs an owner-managed update before it can publish retry counts; Pantheon will not restart it or widen access automatically.")
+                .sirsiFont(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             if let result {
                 Text(result).sirsiFont(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -2539,12 +2568,49 @@ struct OutboxBlockerCard: View {
         ), titleVisibility: .visible) {
             Button("Repair \(repairTarget?.agent ?? "outbox")") {
                 guard let target = repairTarget else { return }
-                Task { result = await engine.repairRelayOutbox(agent: target.agent) }
+                Task { result = await engine.repairRelayOutbox(approval: target) }
                 repairTarget = nil
             }
         } message: {
-            Text("Pantheon will restore this local, current-user relay outbox to private mode through a retained no-follow descriptor. It will not remove, replay, or change queued messages.")
+            Text("Pantheon will restore \(repairTarget?.agent ?? "outbox") under \(repairTarget?.scope.canonicalSpool ?? "unavailable") (root \(repairTarget?.scope.rootDevice ?? 0):\(repairTarget?.scope.rootInode ?? 0)) to private mode through a retained no-follow descriptor. A changed scope is refused. Queued messages are not removed, replayed, or changed.")
         }
+    }
+}
+
+// Counts are authenticated producer metadata, not permission to open private
+// payloads. Explicit zero is visible; missing/stale values never render as zero.
+struct OutboxServiceObservationCard: View {
+    @ObservedObject var engine: SirsiEngine
+    let rows: [RBOutbox]
+    let now: Date
+    @State private var result: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Relay-owned retry observations", systemImage: "tray.full")
+                .sirsiFont(13, weight: .semibold)
+            ForEach(rows) { row in
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(row.agent).sirsiFont(.caption, design: .monospaced)
+                    Text(row.observationText(at: now)).sirsiFont(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
+            }
+            Text("Observation only. Private request contents remain inaccessible; counts do not prove delivery or a completed retry.")
+                .sirsiFont(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Refresh relay observation") {
+                Task { result = await engine.refreshRelayOutboxObservation() }
+            }.buttonStyle(.bordered).disabled(engine.routerLoading || engine.busy)
+            if let result {
+                Text(result).sirsiFont(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.05)))
     }
 }
 
@@ -2564,7 +2630,7 @@ struct OutboxRetryCard: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("\(held.count) relay outbox\(held.count == 1 ? "" : "es") holding retries")
                         .sirsiFont(13, weight: .semibold)
-                    Text("Nonblocking — messages are queued and will redeliver.")
+                    Text("Held for the relay's retry path. This observation does not prove delivery.")
                         .sirsiFont(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()

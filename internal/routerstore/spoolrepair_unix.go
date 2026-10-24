@@ -21,11 +21,46 @@ func RepairSpoolOutbox(spoolRoot, agent string) (SpoolOutboxRepair, error) {
 	return repairSpoolOutbox(spoolRoot, agent, nil, nil)
 }
 
+// RepairSpoolOutboxPinned binds a reviewed offer to the actual retained root,
+// not merely a valid replacement at the same path. The legacy unpinned entry
+// remains available for explicit CLI callers without a prior native offer.
+func RepairSpoolOutboxPinned(spoolRoot, agent string, expected SpoolOutboxScope) (SpoolOutboxRepair, error) {
+	return repairSpoolOutbox(spoolRoot, agent, nil, nil, expected)
+}
+
+// InspectSpoolOutboxRepair is a read-only eligibility preflight, not repair
+// authority. The command repeats all retained-object checks at mutation time.
+// Do not canonicalize away a symlink the actual repair would refuse.
+func InspectSpoolOutboxRepair(spoolRoot, agent string) error {
+	if !validSpoolAgentName(agent) || !filepath.IsAbs(spoolRoot) || filepath.Clean(spoolRoot) != spoolRoot {
+		return fmt.Errorf("outbox repair unavailable")
+	}
+	_, parent, root, err := openRepairSpoolRoot(spoolRoot, nil, nil)
+	if err != nil {
+		return fmt.Errorf("outbox repair unavailable")
+	}
+	defer unix.Close(parent)
+	defer unix.Close(root)
+	fd, err := unix.Openat(root, agent, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return fmt.Errorf("outbox repair unavailable")
+	}
+	defer unix.Close(fd)
+	var st unix.Stat_t
+	if unix.Fstatat(fd, "outbox", &st, unix.AT_SYMLINK_NOFOLLOW) != nil || st.Mode&unix.S_IFMT != unix.S_IFDIR || int(st.Uid) != os.Getuid() {
+		return fmt.Errorf("outbox repair unavailable")
+	}
+	return nil
+}
+
 // repairSpoolOutbox has narrowly-scoped test seams immediately before the
 // retained parent and root are opened. Production always passes nil. The seams
 // prove that the objects actually opened are validated descriptor-by-descriptor;
 // a path checked earlier can never bless a replacement namespace leaf.
-func repairSpoolOutbox(spoolRoot, agent string, beforeParentOpen, beforeRootOpen func()) (SpoolOutboxRepair, error) {
+func repairSpoolOutbox(spoolRoot, agent string, beforeParentOpen, beforeRootOpen func(), expected ...SpoolOutboxScope) (SpoolOutboxRepair, error) {
+	if len(expected) > 1 || (len(expected) == 1 && expected[0].CanonicalSpool != spoolRoot) {
+		return SpoolOutboxRepair{}, fmt.Errorf("outbox repair: approved root scope mismatch")
+	}
 	if !validSpoolAgentName(agent) {
 		return SpoolOutboxRepair{}, fmt.Errorf("outbox repair: invalid agent name %q", agent)
 	}
@@ -58,6 +93,18 @@ func repairSpoolOutbox(spoolRoot, agent string, beforeParentOpen, beforeRootOpen
 		return SpoolOutboxRepair{}, fmt.Errorf("outbox repair: retained outbox is owned by uid %d, not this local user; refusing", st.Uid)
 	}
 	before := os.FileMode(st.Mode).Perm()
+	if len(expected) == 1 {
+		var root, named unix.Stat_t
+		if unix.Fstat(rootFD, &root) != nil ||
+			unix.Fstatat(parentFD, filepath.Base(canonical), &named, unix.AT_SYMLINK_NOFOLLOW) != nil ||
+			root.Mode&unix.S_IFMT != unix.S_IFDIR || named.Mode&unix.S_IFMT != unix.S_IFDIR ||
+			uint64(root.Dev) != expected[0].RootDevice || uint64(root.Ino) != expected[0].RootInode ||
+			root.Dev != named.Dev || root.Ino != named.Ino {
+			return SpoolOutboxRepair{}, fmt.Errorf("outbox repair: approved root identity changed; refusing mutation")
+		}
+	}
+	// This is a cooperative point-in-time check, not atomic exclusion of an
+	// uncooperative same-UID writer replacing the outbox leaf after inspection.
 	if err := unix.Fchmodat(agentFD, "outbox", 0o700, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 		return SpoolOutboxRepair{}, fmt.Errorf("outbox repair: set private owner mode through retained agent descriptor: %w", err)
 	}

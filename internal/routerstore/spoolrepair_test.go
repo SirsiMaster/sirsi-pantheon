@@ -6,7 +6,69 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
+
+func TestRepairSpoolOutboxPinnedRootIdentity(t *testing.T) {
+	for _, replace := range []bool{false, true} {
+		t.Run(map[bool]string{false: "same-root", true: "valid-replacement-refused"}[replace], func(t *testing.T) {
+			spool := filepath.Join(repairTempDir(t), "relay")
+			outbox := filepath.Join(spool, "agent-a", "outbox")
+			if err := os.MkdirAll(outbox, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			var original unix.Stat_t
+			if err := unix.Stat(spool, &original); err != nil {
+				t.Fatal(err)
+			}
+			expected := SpoolOutboxScope{CanonicalSpool: spool, RootDevice: uint64(original.Dev), RootInode: uint64(original.Ino)}
+			if err := os.Chmod(outbox, 0); err != nil {
+				t.Fatal(err)
+			}
+			moved := spool + "-original"
+			t.Cleanup(func() {
+				_ = os.Chmod(outbox, 0o700)
+				_ = os.Chmod(filepath.Join(moved, "agent-a", "outbox"), 0o700)
+			})
+			_, err := repairSpoolOutbox(spool, "agent-a", nil, func() {
+				if !replace {
+					return
+				}
+				if err := os.Rename(spool, moved); err != nil {
+					t.Fatal(err)
+				}
+				// B is independently valid under the legacy ownership/mode policy.
+				if err := os.MkdirAll(outbox, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chmod(outbox, 0); err != nil {
+					t.Fatal(err)
+				}
+			}, expected)
+			if (err != nil) != replace {
+				t.Fatalf("replace=%v: repair error=%v", replace, err)
+			}
+			info, statErr := os.Stat(outbox)
+			if statErr != nil {
+				t.Fatal(statErr)
+			}
+			want := os.FileMode(0o700)
+			if replace {
+				want = 0
+			}
+			if info.Mode().Perm() != want {
+				t.Fatalf("B/current outbox mode=%04o, want %04o", info.Mode().Perm(), want)
+			}
+			if replace {
+				info, err := os.Stat(filepath.Join(moved, "agent-a", "outbox"))
+				if err != nil || info.Mode().Perm() != 0 {
+					t.Fatalf("original A changed: info=%v err=%v", info, err)
+				}
+			}
+		})
+	}
+}
 
 func TestRepairSpoolOutboxRestoresLocalPrivateDirectoryWithoutTouchingMessages(t *testing.T) {
 	spool := filepath.Join(repairTempDir(t), "relay")
