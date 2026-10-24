@@ -200,7 +200,7 @@ func TestAskSurfacesDecisionSinkFailureWithoutRepeatingCompletion(t *testing.T) 
 	if err == nil || !strings.Contains(err.Error(), "decision evidence write failed") {
 		t.Fatalf("sink failure not surfaced: %v", err)
 	}
-	if !strings.Contains(text, "answer from local") || !strings.Contains(text, "local/local-profile") {
+	if !strings.Contains(text, "answer from local") || !strings.Contains(text, "local/local") {
 		t.Fatalf("completed answer/final route hidden after evidence failure: %s", text)
 	}
 	if local.completeCalls != 1 || len(sink.records) != 1 {

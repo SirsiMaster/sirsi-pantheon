@@ -162,6 +162,10 @@ func runAskWith(args []string, runtime askRuntime) error {
 	})
 	var recordErr *modelrouter.DecisionRecordError
 	hasRecordErr := errors.As(cerr, &recordErr)
+	var surfacedRecordErr error
+	if hasRecordErr {
+		surfacedRecordErr = recordErr
+	}
 	if cerr != nil {
 		if !hasRecordErr {
 			if !askJSON {
@@ -177,12 +181,12 @@ func runAskWith(args []string, runtime askRuntime) error {
 			fmt.Println()
 			output.Dim("  [router] %s", decisionDisplay(decision))
 			output.Dim("  No model answer was produced; decision evidence could not be saved.")
-			return recordErr
+			return surfacedRecordErr
 		} else if askJSON && resp.Text == "" {
 			if err := emitAskJSONWithDecision(question, report, alarms, decision, decisionOutcome(decision)); err != nil {
 				return err
 			}
-			return recordErr
+			return surfacedRecordErr
 		}
 	}
 
@@ -201,14 +205,14 @@ func runAskWith(args []string, runtime askRuntime) error {
 		if err := emitAskModelJSON(question, report, alarms, resp, decision); err != nil {
 			return err
 		}
-		return recordErr
+		return surfacedRecordErr
 	}
 	fmt.Println()
 	output.Info("  %s", strings.TrimSpace(resp.Text))
 	fmt.Println()
 	output.Dim("  [%s] %s · %s · %d tokens · finish=%s",
 		resp.Tier, resp.Provider, resp.Model, resp.OutputTokens, resp.FinishReason)
-	return recordErr
+	return surfacedRecordErr
 }
 
 func decisionOutcome(d modelrouter.Decision) string {

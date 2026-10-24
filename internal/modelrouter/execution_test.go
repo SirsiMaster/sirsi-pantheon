@@ -169,6 +169,39 @@ func TestCompleteDoesNotRetryCanceledOrLocalOnlyRequests(t *testing.T) {
 	}
 }
 
+func TestCompleteJoinedCancellationIsTerminalEvenWhenParentIsLive(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		cause error
+	}{
+		{name: "canceled plus rate limit", cause: context.Canceled},
+		{name: "deadline plus recognized quota", cause: context.DeadlineExceeded},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			local := &stubProvider{name: "local", tier: provider.TierLocal, ctx: 8192, avail: true}
+			remote := &stubProvider{name: "remote", tier: provider.TierRemote, ctx: 8192, avail: true, completeFunc: func(context.Context, provider.Request) (provider.Response, error) {
+				structured := &provider.InferenceError{Status: 429, Code: "rate_limit"}
+				if errors.Is(tc.cause, context.DeadlineExceeded) {
+					structured = &provider.InferenceError{Status: 402, Code: "insufficient_quota"}
+				}
+				return provider.Response{}, errors.Join(tc.cause, structured)
+			}}
+			parent := context.Background()
+			_, decision, err := New([]provider.Provider{local, remote}).WithDecisionSink(&memoryDecisionSink{}).Complete(
+				parent, Request{Task: TaskJudgment, Privacy: PrivacyShareable}, provider.Request{})
+			if err == nil || !errors.Is(err, tc.cause) {
+				t.Fatalf("error=%v, want preserved terminal cause %v", err, tc.cause)
+			}
+			if parent.Err() != nil {
+				t.Fatalf("fixture parent unexpectedly canceled: %v", parent.Err())
+			}
+			if decision.FailureCategory != "canceled" || remote.completeCall != 1 || local.availableCall != 0 || local.completeCall != 0 {
+				t.Fatalf("decision/calls = %+v remote:%d local probes:%d completions:%d", decision, remote.completeCall, local.availableCall, local.completeCall)
+			}
+		})
+	}
+}
+
 func TestOverridesAreValidatedPrivacyFirstAndRecorded(t *testing.T) {
 	for _, tc := range []struct {
 		name       string

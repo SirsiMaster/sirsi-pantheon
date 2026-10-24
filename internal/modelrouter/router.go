@@ -341,6 +341,13 @@ func (rt *Router) Complete(ctx context.Context, routeReq Request, provReq provid
 		combined := errors.Join(remoteErr, ctxErr)
 		return provider.Response{}, d, errors.Join(combined, rt.recordDecision(req, d, "failed", combined))
 	}
+	// A provider can return a joined cancellation/deadline and structured
+	// exhaustion while the caller's parent context is still live. Cancellation
+	// in either error chain is terminal; never begin a local completion then.
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		d.FailureCategory = "canceled"
+		return provider.Response{}, d, errors.Join(remoteErr, rt.recordDecision(req, d, "failed", remoteErr))
+	}
 	if d.Lane != LaneRemote || req.Privacy != PrivacyShareable || req.Override == LaneLocal || category == "" {
 		if d.FailureCategory == "" {
 			d.FailureCategory = category
