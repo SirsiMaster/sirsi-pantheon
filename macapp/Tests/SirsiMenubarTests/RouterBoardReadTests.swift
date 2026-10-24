@@ -90,4 +90,117 @@ final class RouterBoardReadTests: XCTestCase {
         engine.routerLoading = true
         XCTAssertEqual(engine.routerEmptyStateTitle, "Reading the fabric…")
     }
+
+    func testCancelledRefreshDoesNotPublishLaunchFailureAndFreshRetryWorks() async throws {
+        let engine = SirsiEngine()
+        let oldDate = Date(timeIntervalSince1970: 1_792_760_000)
+        engine.routerBoard = try JSONDecoder().decode(RouterBoard.self, from: valid)
+        engine.routerReadAt = oldDate
+        let entered = expectation(description: "actual board loader awaiting read")
+        let held = HeldRouterRead(entered: entered)
+        let reading = Task { @MainActor in
+            await engine.loadRouterBoard(force: true, readJSON: { args in await held.read(args) })
+        }
+        await fulfillment(of: [entered], timeout: 2)
+        XCTAssertTrue(engine.routerLoading)
+        reading.cancel()
+        // Use the actual capture-to-read adapter implicated by the installed
+        // symptom, not a synthetic unrelated error classification.
+        let cancelledRead = CommandExecution(cancelled: true).jsonRead
+        XCTAssertNotNil(cancelledRead.launchError)
+        held.finish(cancelledRead)
+        let accepted = await reading.value // join before state assertions/retry
+        XCTAssertFalse(accepted)
+        XCTAssertEqual(held.arguments, [SirsiEngine.routerBoardReadArguments])
+        XCTAssertEqual(engine.routerBoard?.totalPending, 7)
+        XCTAssertEqual(engine.routerReadAt, oldDate)
+        XCTAssertNil(engine.routerReadError, "cancelled navigation published a reader launch failure")
+        XCTAssertFalse(engine.routerLoading)
+
+        let fresh = Data(#"{"schema_version":"1.0.0","total_pending":9,"live_thread_count":3}"#.utf8)
+        let retried = await engine.loadRouterBoard(force: true, readJSON: { _ in
+            .init(data: fresh, exitStatus: 0, timedOut: false, launchError: nil)
+        })
+        XCTAssertTrue(retried)
+        XCTAssertEqual(engine.routerBoard?.totalPending, 9)
+        XCTAssertEqual(engine.routerBoard?.liveThreadCount, 3)
+        XCTAssertNotEqual(engine.routerReadAt, oldDate)
+        XCTAssertNotNil(engine.routerReadAt)
+        XCTAssertNil(engine.routerReadError)
+        XCTAssertFalse(engine.routerLoading)
+    }
+
+    func testCancelledLateSuccessPreservesPriorBoardTimeAndError() async throws {
+        let engine = SirsiEngine()
+        let oldDate = Date(timeIntervalSince1970: 1_792_760_000)
+        let oldError = "Previous refresh failed; retained observation."
+        engine.routerBoard = try JSONDecoder().decode(RouterBoard.self, from: valid)
+        engine.routerReadAt = oldDate
+        engine.routerReadError = oldError
+        let entered = expectation(description: "non-cooperative board reader entered")
+        let held = HeldRouterRead(entered: entered)
+        let reading = Task { @MainActor in
+            await engine.loadRouterBoard(force: true, readJSON: { args in await held.read(args) })
+        }
+        await fulfillment(of: [entered], timeout: 2)
+        reading.cancel()
+        held.finish(.init(data: Data(#"{"schema_version":"1.0.0","total_pending":999}"#.utf8),
+                          exitStatus: 0, timedOut: false, launchError: nil))
+        let accepted = await reading.value
+        XCTAssertFalse(accepted, "cancelled task accepted a late successful board")
+        XCTAssertEqual(engine.routerBoard?.totalPending, 7, "cancelled read overwrote prior board")
+        XCTAssertEqual(engine.routerReadAt, oldDate)
+        XCTAssertEqual(engine.routerReadError, oldError)
+        XCTAssertFalse(engine.routerLoading)
+    }
+
+    func testAlreadyCancelledRefreshDoesNotInvokeReaderOrChangeObservation() async throws {
+        let engine = SirsiEngine()
+        let oldDate = Date(timeIntervalSince1970: 1_792_760_000)
+        engine.routerBoard = try JSONDecoder().decode(RouterBoard.self, from: valid)
+        engine.routerReadAt = oldDate
+        engine.routerReadError = "Retained previous failure."
+        var calls = 0
+        let reading = Task { @MainActor in
+            await engine.loadRouterBoard(force: true, readJSON: { _ in
+                calls += 1
+                return .init(data: Data(), exitStatus: 4, timedOut: false, launchError: nil)
+            })
+        }
+        reading.cancel() // same actor, before the queued task can enter
+        let accepted = await reading.value
+        XCTAssertFalse(accepted)
+        XCTAssertEqual(calls, 0, "already-cancelled refresh invoked the reader")
+        XCTAssertEqual(engine.routerBoard?.totalPending, 7)
+        XCTAssertEqual(engine.routerReadAt, oldDate)
+        XCTAssertEqual(engine.routerReadError, "Retained previous failure.")
+        XCTAssertFalse(engine.routerLoading)
+    }
+}
+
+// A deliberately cancellation-insensitive fixture read proves that publication
+// is fenced at the real loadRouterBoard entry, not merely by a cooperative
+// transport. finish also works before read enters, so a timed-out expectation
+// cannot strand a subsequently scheduled fixture continuation.
+@MainActor
+private final class HeldRouterRead {
+    let entered: XCTestExpectation
+    private var pending: CheckedContinuation<SirsiEngine.JSONCommandRead, Never>?
+    private var finished: SirsiEngine.JSONCommandRead?
+    private(set) var arguments: [[String]] = []
+
+    init(entered: XCTestExpectation) { self.entered = entered }
+
+    func read(_ args: [String]) async -> SirsiEngine.JSONCommandRead {
+        arguments.append(args)
+        entered.fulfill()
+        if let finished { return finished }
+        return await withCheckedContinuation { pending = $0 }
+    }
+
+    func finish(_ result: SirsiEngine.JSONCommandRead) {
+        finished = result
+        pending?.resume(returning: result)
+        pending = nil
+    }
 }

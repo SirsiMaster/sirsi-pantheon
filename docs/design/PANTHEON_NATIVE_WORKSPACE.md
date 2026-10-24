@@ -28,13 +28,16 @@ CPU, memory, swap and estate choices to the telemetry destination. Revising a
 plan retains that declaration and checks it against the current catalog;
 removed machines or routes cannot silently become local defaults.
 
-Mercury reads its existing fixed loopback monitor, the same source consumed by
-Apollo, with a 2 MiB ceiling, six-second resource timeout and no redirects. It
-refreshes machine CPU/GPU/power and interface counters every five seconds only
-while visible. Stale samples and failed refreshes are labelled explicitly.
-Ra lane/machine and host transport projections accompany those measurements;
-these command reads run once on entry or explicit Refresh. These observations
-do not establish unreported rail reservations or negotiated link capacity.
+Mercury consumes the existing canonical `sirsi mercury --json` dashboard read,
+which owns the bounded private GET, schema validation, units and producer
+freshness assessment. The native view refreshes every five seconds while
+visible and independently ages retained samples with a monotonic clock; failed,
+expired and future observations cannot remain current, including while a read
+is pending. Scene rates are withheld when their canonical direction timestamps
+expire. Dashboard v1 does not expose power telemetry, which remains unknown;
+the broader native telemetry obligation is still open. Ra lane/machine and
+host transport projections remain separate evidence and do not establish
+unreported rail reservations or negotiated link capacity.
 Lane availability expires after 30 seconds independently of live machine
 telemetry. Ra's retained board is likewise not current after a failed read or
 30 seconds; its refresh control remains available with populated data. Apollo

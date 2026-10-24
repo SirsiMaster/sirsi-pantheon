@@ -1,0 +1,280 @@
+{
+  "schema": "sirsi.stacklab.recipe.v1",
+  "id": "stacklab.recipe.model-router-v1",
+  "wing": "stacklab.wing.pantheon.pt-wing-001",
+  "product": "sirsi-pantheon",
+  "version": 1,
+  "purpose": "Make Pantheon's request qualification, provider selection, bounded completion fallback, private decision evidence, and actual ask surface independently replaceable without claiming unqualified modalities or runtime evidence.",
+  "authority": {
+    "source_owner": "Pantheon model-router policy",
+    "policy_owner": "internal/modelrouter",
+    "operator_surface": "cmd/sirsi ask",
+    "separate_owner_boundaries": {
+      "provider_readiness_r5": "The provider-readiness source at d0a12981a3dfba955baa32ccf6c0796f4e5be488 was separately qualified for normal/race/negative cases with accepted evidence reference b04b…; the later 0.24.132 combined candidate is reported at 199 each green. This separate-owner evidence is not attributed to or rerun on 6916504ed5b75723ccea65b15ed0df34bf8111ec.",
+      "unqualified_modalities": "Streaming request qualification, JSON response-mode qualification, and deterministic-generation qualification remain open; declarations or adapter wire shape are not proof."
+    },
+    "prohibited": [
+      "privacy=local-only never selects or falls back to a remote provider",
+      "unknown or invalid request classes and negative context requirements fail closed before provider probes",
+      "only a structured eligible remote 429 or recognized structured 402 quota/budget refusal may trigger one qualified local fallback",
+      "cancellation, deadline, authentication, malformed, or unstructured errors are not converted into indiscriminate retries",
+      "decision evidence never contains prompts, measured summaries, answer text, raw errors, response bodies, bearer values, or credentials",
+      "a command-writer regression must not be hidden by weakening existing ask assertions or redirecting unrelated process-global output",
+      "this recipe and its source mapping do not establish additional qualification, model behavior, performance, or a successful real routed answer; qualification remains bound to its exact source and evidence tuple"
+    ]
+  },
+  "components": [
+    {
+      "id": "model-router-request-qualification-and-selection",
+      "source": [
+        "internal/modelrouter/router.go",
+        "internal/provider/provider.go"
+      ],
+      "tests": [
+        "internal/modelrouter/router_test.go#TestRoute_LocalOnly_UsesLocal",
+        "internal/modelrouter/router_test.go#TestRoute_LocalOnly_FailsWhenLocalDown",
+        "internal/modelrouter/router_test.go#TestRoute_Judgment_PrefersRemote",
+        "internal/modelrouter/router_test.go#TestRoute_Judgment_FallsBackToLocalWhenRemoteDown",
+        "internal/modelrouter/router_test.go#TestRoute_Generation_PrefersLocal",
+        "internal/modelrouter/router_test.go#TestRoute_ContextGap_EscalatesToRemote",
+        "internal/modelrouter/router_test.go#TestRoute_ContextGap_LocalOnly_Fails",
+        "internal/modelrouter/router_test.go#TestRoute_SelectsFirstAvailableQualifiedProvider",
+        "internal/modelrouter/router_test.go#TestRoute_InvalidRequestFailsBeforeProbing",
+        "internal/modelrouter/router_test.go#TestRoute_CanceledContextDoesNotProbeOrRoute",
+        "internal/modelrouter/router_test.go#TestRoute_CancellationDuringProbeDoesNotRoute"
+      ],
+      "inputs": [
+        "modelrouter.Request task, privacy, latency, MinContextTokens, and optional local|remote override",
+        "existing ordered provider ladder, per-provider availability, and declared provider.Caps",
+        "context cancellation state"
+      ],
+      "outputs": [
+        "first available provider that satisfies the represented context requirement, selected in existing task/privacy tier order",
+        "explicit refusal category when request validation, privacy, availability, or represented context qualification fails",
+        "initial/final lane and rationale in the existing modelrouter.Decision"
+      ],
+      "writes": [
+        "no provider or configuration mutation; routing can record one decision through the injected bounded DecisionSink"
+      ],
+      "upgrade_recipe": [
+        "keep internal/modelrouter as the only routing-policy owner",
+        "validate task, privacy, latency, override, and nonnegative context before probing",
+        "apply one availability-plus-represented-capability predicate in normal, override, escalation, and fallback selection",
+        "keep local-only dominant over override and every fallback",
+        "preserve zero/unset defaults and existing tier ordering",
+        "do not claim streaming, JSON response mode, or deterministic generation is qualified until the request can express each requirement and a backend declaration/evidence path satisfies it",
+        "qualify focused normal/race and semantic-negative tests before acceptance"
+      ]
+    },
+    {
+      "id": "configured-provider-profile-and-readiness-boundary",
+      "source": [
+        "internal/provider/provider.go",
+        "internal/provider/resolve.go",
+        "internal/provider/local_profile.go",
+        "internal/provider/openaicompat.go"
+      ],
+      "tests": [
+        "internal/provider/resolve_test.go#TestLadderPrefersLocalOverRemote",
+        "internal/provider/resolve_test.go#TestNoCredentialsMeansNoRemoteRung",
+        "internal/provider/resolve_test.go#TestLocalDeclaresNoToolCalling",
+        "internal/provider/resolve_test.go#TestRemoteStreamingRequiresExplicitDeclaration",
+        "internal/provider/local_profile_test.go#TestSelectedProfileUnknownCapabilitiesFailLoud",
+        "internal/provider/openaicompat_test.go#TestCompleteResolvesServedModel",
+        "internal/provider/openaicompat_test.go#TestCompleteFailsWhenBrokerServesNoModel"
+      ],
+      "inputs": [
+        "existing provider configuration and explicitly selected local profile",
+        "provider-declared availability, context, streaming, tool, and offline capability fields",
+        "existing configured credentials only when already supplied through their established boundary"
+      ],
+      "outputs": [
+        "the existing provider ladder and declared capability values consumed by model-router selection",
+        "profile/config refusal when required declared metadata is missing or malformed"
+      ],
+      "writes": [
+        "none in this recipe; no credential provisioning, profile rewrite, model installation, or provider configuration change"
+      ],
+      "upgrade_recipe": [
+        "preserve provider configuration and profile ownership; do not add keys, credentials, providers, or a readiness service",
+        "provider readiness R5 has separate accepted normal/race/negative source evidence; do not attribute that evidence to this 691-based model-router candidate",
+        "do not treat model-list success or an OpenAI-compatible endpoint as empirical completion readiness",
+        "keep unknown profile capability values explicit and unqualified",
+        "map dependency changes here without claiming R5 acceptance from model-router evidence"
+      ]
+    },
+    {
+      "id": "structured-remote-exhaustion-and-single-local-fallback",
+      "source": [
+        "internal/modelrouter/router.go",
+        "internal/provider/broker_error.go"
+      ],
+      "tests": [
+        "internal/modelrouter/execution_test.go#TestCompleteFallsDownOnceForStructuredRemoteExhaustion",
+        "internal/modelrouter/execution_test.go#TestCompleteDoesNotFallbackWithoutStructuredEligibleExhaustion",
+        "internal/modelrouter/execution_test.go#TestCompletePreservesBothProviderCausesWhenFallbackFails",
+        "internal/modelrouter/execution_test.go#TestCompleteRetainsRemoteCauseWhenQualifiedLocalFallbackIsUnavailable",
+        "internal/modelrouter/execution_test.go#TestCompleteDoesNotRetryCanceledOrLocalOnlyRequests",
+        "internal/modelrouter/execution_test.go#TestCompleteJoinedCancellationIsTerminalEvenWhenParentIsLive",
+        "internal/modelrouter/execution_test.go#TestOverridesAreValidatedPrivacyFirstAndRecorded",
+        "internal/modelrouter/execution_test.go#TestLocalOverrideNeverEscalatesAfterCompletionFailure"
+      ],
+      "inputs": [
+        "one initially selected, qualified provider and one buffered completion result",
+        "structured provider.InferenceError status/code/type",
+        "the same validated request privacy and minimum-context requirements used during initial selection"
+      ],
+      "outputs": [
+        "at most one qualified local fall-down for an eligible remote 429 or recognized structured 402 quota/budget refusal",
+        "final response and Decision identify the final provider/lane, or an error retaining both remote and fallback causes",
+        "redacted exhaustion category and outcome recorded once"
+      ],
+      "writes": [
+        "one route/completion decision through the existing injected DecisionSink; no retry queue, sleep, remote sweep, or budget service"
+      ],
+      "upgrade_recipe": [
+        "classify structured provider causes rather than arbitrary error text or local 503 alone",
+        "reuse the same privacy and capability predicate for the local fallback",
+        "treat joined cancellation/deadline as terminal even when the parent remains live",
+        "do not fallback after an explicit local override, local-only request, permanent auth/validation failure, malformed error, or unstructured failure",
+        "preserve both provider causes if fallback fails and never repeat inference to repair evidence"
+      ]
+    },
+    {
+      "id": "bounded-private-redacted-decision-journal",
+      "source": [
+        "internal/modelrouter/decision_record.go"
+      ],
+      "tests": [
+        "internal/modelrouter/decision_record_test.go#TestPrivateDecisionSinkUsesPrivateChildAndPreserves0755Parent",
+        "internal/modelrouter/decision_record_test.go#TestPrivateDecisionSinkRejectsUnsafeParentsAndDirectoryLinks",
+        "internal/modelrouter/decision_record_test.go#TestPrivateDecisionSinkRejectsHardlinkedJournalBeforeAppendOrTruncate",
+        "internal/modelrouter/decision_record_test.go#TestPrivateDecisionSinkRefusesJournalSymlink",
+        "internal/modelrouter/decision_record_test.go#TestPrivateDecisionSinkBoundsJournalWithIndependentLockDescriptors",
+        "internal/modelrouter/decision_record_test.go#TestAcquireDecisionLockTimesOutWhileIndependentDescriptorHoldsIt",
+        "internal/modelrouter/execution_test.go#TestCompleteDecisionSinkFailureDoesNotRepeatInference",
+        "internal/modelrouter/execution_test.go#TestDecisionSinkReceivesRedactedProviderMetadata"
+      ],
+      "inputs": [
+        "validated request classifications and bounded decision fields from Router.Route or Router.Complete",
+        "provider/model labels, final route, reason, outcome, and structured failure category after redaction"
+      ],
+      "outputs": [
+        "bounded JSONL routing/execution decision, including selected, refused, fallback, and failed outcomes",
+        "visible DecisionRecordError when the evidence write fails; inference is not repeated"
+      ],
+      "writes": [
+        "~/.sirsi/model-router/decisions.jsonl and its lock under an owned private 0700 child; journal/lock are owned regular 0600 single-link files with bounded interprocess lock and bounded journal size"
+      ],
+      "upgrade_recipe": [
+        "preserve a pre-existing owner-controlled ~/.sirsi directory mode, including 0755; never chmod the shared parent",
+        "never persist prompts, measured summaries, answers, raw provider errors/bodies, bearer values, or credentials",
+        "validate parent and journal identity before mutation; reject symlinks, hardlinks, wrong owner/type/mode, and lock timeout",
+        "keep the size check, optional roll, append, and sync in one finite interprocess lock",
+        "surface journal failure without repeating provider execution"
+      ]
+    },
+    {
+      "id": "ask-routing-intent-and-final-decision-surface",
+      "source": [
+        "cmd/sirsi/ask.go"
+      ],
+      "tests": [
+        "cmd/sirsi/ask_test.go#TestAskRejectsJSONFixBeforeDiagnosis",
+        "cmd/sirsi/ask_test.go#TestAskExplicitRouteKeepsDoctorAlarmsAndUsesSingleFinalDecision",
+        "cmd/sirsi/ask_test.go#TestAskJSONShowsAlarmAndActualRoutedCompletion",
+        "cmd/sirsi/ask_test.go#TestAskDefaultHeuristicAlarmDoesNotInvokeModel",
+        "cmd/sirsi/ask_test.go#TestAskSurfacesDecisionSinkFailureWithoutRepeatingCompletion"
+      ],
+      "inputs": [
+        "Doctor findings, explicit ask task/privacy/lane flags, and the selected configured provider ladder",
+        "default heuristic-first behavior or deliberate --route opt-in when Doctor reports alarms",
+        "one modelrouter.Complete result and final Decision"
+      ],
+      "outputs": [
+        "measured alarms remain visible while an explicit routed answer is requested",
+        "text or JSON answer reports the final route/provider/model and refusal/fallback outcome",
+        "default alarm path stays heuristic-only; --json with --fix and --route with --fix remain refused"
+      ],
+      "writes": [
+        "selected Cobra command output writer and the Router's existing private decision sink; no second inference or audit writer"
+      ],
+      "upgrade_recipe": [
+        "call Router.Complete once on the actual ask path; do not call Provider.Complete directly or bypass router qualification",
+        "retain no-model heuristic behavior for measured alarms unless --route is explicit",
+        "keep measured alarms visible in both text and JSON when --route is explicit",
+        "render the actual final decision after fallback, not the initial choice",
+        "retain existing exact-once, JSON/fix-refusal, default-heuristic, and sink-failure assertions"
+      ]
+    },
+    {
+      "id": "ask-command-writer-and-terminal-formatting",
+      "source": [
+        "cmd/sirsi/ask.go",
+        "internal/output/terminal.go"
+      ],
+      "tests": [
+        "cmd/sirsi/ask_test.go#TestAskExplicitRouteKeepsDoctorAlarmsAndUsesSingleFinalDecision",
+        "cmd/sirsi/ask_test.go#TestAskJSONShowsAlarmAndActualRoutedCompletion",
+        "internal/output/terminal_test.go#TestHeader",
+        "internal/output/terminal_test.go#TestInfo",
+        "internal/output/terminal_test.go#TestDim",
+        "internal/output/terminal_test.go#TestSuccess",
+        "internal/output/terminal_test.go#TestWarn",
+        "internal/output/terminal_test.go#TestStyles_Render"
+      ],
+      "inputs": [
+        "Cobra's selected command io.Writer and existing severity/style arguments"
+      ],
+      "outputs": [
+        "all ask human and JSON content written to the selected command writer while existing normal themed formatting and severity are retained"
+      ],
+      "writes": [
+        "only the selected command writer; existing non-ask output helpers retain their established process writer behavior"
+      ],
+      "upgrade_recipe": [
+        "route ask output through cmd.OutOrStdout and writer-specific output helpers",
+        "preserve normal terminal styling/severity and direct runAskWith stdout fallback",
+        "do not change unrelated package-global writers or weaken existing command-buffer assertions",
+        "keep ask and output-package tests in the changed-source qualification set"
+      ]
+    },
+    {
+      "id": "unqualified-request-modalities-and-runtime-evidence-boundary",
+      "source": [
+        "internal/modelrouter/router.go",
+        "internal/provider/provider.go",
+        "internal/provider/local_profile.go",
+        "internal/provider/openaicompat.go",
+        "cmd/sirsi/ask.go"
+      ],
+      "tests": [
+        "internal/modelrouter/router_test.go#TestRoute_SelectsFirstAvailableQualifiedProvider",
+        "internal/provider/local_profile_test.go#TestSelectedProfileUnknownCapabilitiesFailLoud",
+        "internal/provider/resolve_test.go#TestRemoteStreamingRequiresExplicitDeclaration",
+        "internal/provider/openaicompat_test.go#TestStreamParsesSSEChunksAndDone",
+        "internal/provider/openaicompat_test.go#TestStreamCancellationClosesResponse",
+        "internal/provider/openaicompat_test.go#TestStreamRejectsEOFBeforeTerminalMarker"
+      ],
+      "inputs": [
+        "original model-router streaming, JSON response-mode, determinism, and real routed-request acceptance criteria"
+      ],
+      "outputs": [
+        "explicitly open: modelrouter.Request cannot express required streaming, JSON response mode, or deterministic generation; Caps has no JSON/determinism evidence fields",
+        "provider.OpenAICompat.Stream has adapter-level SSE fixtures, but current Router.Complete and sirsi ask use buffered completion and do not route a streaming requirement",
+        "adapter-level SSE tests do not prove routed streaming, no-fallback-after-partial-output, or end-to-end cancellation behavior",
+        "no real routed-request handoff or runtime/model/performance claim is established by this source recipe"
+      ],
+      "writes": [
+        "none; this component records the qualification boundary and does not manufacture capability declarations or empirical evidence"
+      ],
+      "upgrade_recipe": [
+        "keep each modality unknown/unqualified until request-level requirement, provider declaration/evidence, unified normal/override/fallback qualification, and actual wire execution are connected",
+        "for streaming, prove successful actual routed stream, capability refusal, structured remote exhaustion fallback before first chunk, and terminal failure after any partial output",
+        "prove cancellation remains bounded and privacy remains dominant across stream selection and execution",
+        "for JSON response mode and determinism, add explicit backend evidence and exact execution-path fixtures before claiming support",
+        "keep live model/provider/runtime and successful real routed-answer evidence separate from source and inert tests"
+      ]
+    }
+  ]
+}

@@ -84,7 +84,7 @@ A registered thread that is not looping is invisible to its own inbox — items 
 | Surface | Heartbeat mechanism |
 | :--- | :--- |
 | `claude` | **`/loop`** — self-paced, watching the inbox; arm a file Monitor on `items/` and a fallback ScheduleWakeup. This IS the Claude heartbeat. |
-| `codex` | Codex app heartbeat automation (`ctr-thread-wake` polling the router inbox); native thread heartbeat where available. |
+| `codex` | Existing Codex app heartbeat automation; explicit own-session `thread heartbeat --ensure --json` preflight before its heartbeat/wait cycle where adopted. No automatic installation or recurrence proof is implied; see `docs/stacklab/ra/canon/CODEX_ATTENDED_GENERATION_PREFLIGHT.md`. |
 | `gemini`/`gemma`/`qwen` | Surface-native loop, or fall back to `sirsi router daemon`. |
 | `mcp`/`api`/`webhook`/`worker` | `sirsi router daemon` or the resident launch agent. |
 

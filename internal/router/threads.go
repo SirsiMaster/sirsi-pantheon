@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -106,19 +107,23 @@ func StaleActiveSupervisors(reg *ThreadRegistry, now time.Time, window time.Dura
 
 // Thread is one live registration of an agent session.
 type Thread struct {
-	ThreadID      string       `json:"thread_id"`
-	AgentID       string       `json:"agent_id"`
-	Surface       string       `json:"surface"`
-	Repo          string       `json:"repo,omitempty"`
-	Workstream    string       `json:"workstream,omitempty"`
-	StartedAt     time.Time    `json:"started_at"`
-	LastSeenAt    time.Time    `json:"last_seen_at"`
-	Status        ThreadStatus `json:"status"`
-	Watches       []string     `json:"watches,omitempty"`
-	WakeMechanism string       `json:"wake_mechanism,omitempty"`
-	CurrentItem   string       `json:"current_item,omitempty"`
-	LastError     string       `json:"last_error,omitempty"`
-	PID           int          `json:"pid,omitempty"`
+	// EnsureCompatible is a deny-only registration intent, never persisted as
+	// authority. Occupied IDs must be exact compatible live bindings; absent
+	// targets use insert-only CAS so a raced sibling cannot be overwritten.
+	EnsureCompatible bool         `json:"-"`
+	ThreadID         string       `json:"thread_id"`
+	AgentID          string       `json:"agent_id"`
+	Surface          string       `json:"surface"`
+	Repo             string       `json:"repo,omitempty"`
+	Workstream       string       `json:"workstream,omitempty"`
+	StartedAt        time.Time    `json:"started_at"`
+	LastSeenAt       time.Time    `json:"last_seen_at"`
+	Status           ThreadStatus `json:"status"`
+	Watches          []string     `json:"watches,omitempty"`
+	WakeMechanism    string       `json:"wake_mechanism,omitempty"`
+	CurrentItem      string       `json:"current_item,omitempty"`
+	LastError        string       `json:"last_error,omitempty"`
+	PID              int          `json:"pid,omitempty"`
 	// StartTime is the OS start signature of PID captured at registration
 	// (ADR-024 Amendment 1) — the generation half of the (pid, start_time)
 	// composite identity that makes reaping resistant to PID reuse. Empty on
@@ -220,8 +225,9 @@ type SuspendPayload struct {
 
 // ThreadRegistry is the on-disk record of live threads.
 type ThreadRegistry struct {
-	Threads  map[string]*Thread `json:"threads"`
-	baseline map[string]routerstore.ThreadRecord
+	Threads    map[string]*Thread `json:"threads"`
+	baseline   map[string]routerstore.ThreadRecord
+	createOnly map[string]bool
 }
 
 const threadsFilename = "threads.json"
@@ -479,6 +485,7 @@ func saveThreadRegistryStore(reg *ThreadRegistry, store routerstore.Store) error
 		}
 	}
 	for _, record := range dirty {
+		record.CreateOnly = reg.createOnly[record.ThreadID]
 		applied, err := store.UpsertThreadCAS(record)
 		if err != nil {
 			return err
@@ -587,6 +594,9 @@ func RegisterThread(routerRoot string, t *Thread) (*Thread, error) {
 	if t == nil {
 		return nil, fmt.Errorf("thread is nil")
 	}
+	if t.EnsureCompatible && !routercfg.StoreWake() {
+		return nil, fmt.Errorf("compatible registration requires the normal canonical CAS mode; explicit legacy mode is not overridden")
+	}
 	if t.AgentID == "" {
 		return nil, fmt.Errorf("agent_id is required")
 	}
@@ -625,6 +635,21 @@ func registerThreadRetry(root string, input *Thread, load func(string) (*ThreadR
 		reg, err := load(root)
 		if err != nil {
 			return err
+		}
+		if intent.EnsureCompatible {
+			if intent.ThreadID == "" || intent.SessionID == "" || intent.MachineID == "" || intent.StartTime == "" {
+				return fmt.Errorf("compatible registration requires exact session/native identity")
+			}
+			if existing := reg.Threads[intent.ThreadID]; existing != nil {
+				if !compatibleRegistration(existing, &intent) {
+					return fmt.Errorf("registration target is occupied by a conflicting or retired binding")
+				}
+				copy := *existing
+				copy.Watches = append([]string(nil), existing.Watches...)
+				out = &copy
+				return nil // exact duplicate: no overwrite, timestamp or compaction
+			}
+			reg.createOnly = map[string]bool{intent.ThreadID: true}
 		}
 		if selected != nil {
 			current := reg.Threads[selected.ThreadID]
@@ -667,6 +692,17 @@ func registerThreadRetry(root string, input *Thread, load func(string) (*ThreadR
 	}
 	*input = *out
 	return out, nil
+}
+
+func compatibleRegistration(existing, intent *Thread) bool {
+	return !existing.Status.IsTerminal() && existing.Status != ThreadStatusSuspended &&
+		existing.ThreadID == intent.ThreadID &&
+		existing.AgentID == intent.AgentID && existing.SessionID == intent.SessionID &&
+		existing.Host == intent.Host && existing.MachineID == intent.MachineID &&
+		existing.Surface == intent.Surface && existing.PID == intent.PID && existing.StartTime == intent.StartTime &&
+		existing.Repo == intent.Repo && existing.Workstream == intent.Workstream &&
+		existing.WakeMechanism == intent.WakeMechanism && existing.CurrentItem == intent.CurrentItem &&
+		slices.Equal(existing.Watches, intent.Watches)
 }
 
 func registerThreadAttempt(routerRoot string, t *Thread, reg *ThreadRegistry, mintID, reuseID string, save func(string, *ThreadRegistry) error) (*Thread, error) {

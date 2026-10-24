@@ -164,6 +164,17 @@ ADR does not assert it.
   routes through this plane to SNE.** Deterministic router logic stays Go;
   SNE is the inference substrate, not the control plane.
 
+The source-level model-router correction keeps `internal/modelrouter` as the
+single policy owner. `Router.Complete` owns one completion and permits one
+qualified-local fall-down only for structured remote rate exhaustion or a
+recognized quota/budget refusal; `sirsi ask` uses that same path. Per-request
+`--lane local|remote` is subordinate to privacy, and `--route` is the explicit
+opt-in that permits a model answer while preserving Doctor alarms. The private
+decision journal records validated routing metadata and final outcomes only,
+never prompts, answers or raw provider errors. Streaming, determinism and JSON
+mode remain unqualified unless an adapter supplies real capability evidence;
+the separate completion-readiness correction is not claimed here.
+
 ### 3b. Resource posture — reconciled with ADR-051 (finding 6)
 
 The owner directive "consume all available resources" and ADR-051's

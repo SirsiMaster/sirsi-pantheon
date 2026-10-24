@@ -1,5 +1,26 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-24 — Model-router v1 R1/R2/R4 source correction
+
+- Route the actual `sirsi ask` completion through the single model-router
+  execution path, with one qualified-local fall-down for structured remote
+  rate/recognized quota exhaustion, privacy-dominant lane overrides, and a
+  private bounded decision record. `--route` explicitly opts into routing
+  while Doctor findings remain visible; default heuristic-only alarm behavior
+  is unchanged. See `MODEL_ROUTER_V1_RECIPE.md` and the traceability matrix.
+- Source candidate only: Main qualification and a real harmless local routed
+  answer remain pending. R5 readiness and unknown R3 capability dimensions are
+  not asserted.
+## 2026-10-24 — Native Mercury retained-sample freshness correction
+
+- Keep the native Mercury view on the canonical dashboard reader and age each
+  retained node and link observation from successful read completion using a
+  monotonic clock. Expired or future samples and failed reads render unknown;
+  no second sampler or network polling path is introduced.
+- Dashboard v1 does not expose power telemetry. The native view labels it
+  unknown, and the broader native telemetry obligation remains open. This
+  source correction does not claim historical web/native scene parity.
+
 ## 2026-10-24 — v0.24.130 corrective release candidate
 
 - Start from actual released129 source0fd84630/tree6cce, not an unpublished fork.

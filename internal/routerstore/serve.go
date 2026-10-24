@@ -519,7 +519,13 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		pv := reflect.New(pt)
-		if err := json.Unmarshal(req.Args[ai], pv.Interface()); err != nil {
+		var decodeErr error
+		if name == "UpsertThreadCAS" && pt == reflect.TypeOf(ThreadRecord{}) {
+			decodeErr = decodeThreadCASArgument(req.Args[ai], pv.Interface().(*ThreadRecord))
+		} else {
+			decodeErr = json.Unmarshal(req.Args[ai], pv.Interface())
+		}
+		if err := decodeErr; err != nil {
 			writeErr(w, http.StatusBadRequest, "", fmt.Sprintf("%s: arg %d: %v", name, ai, err))
 			return
 		}

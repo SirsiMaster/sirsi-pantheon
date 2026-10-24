@@ -22,7 +22,7 @@ historical branch is cherry-picked.
 | Historical Go scene/card-edge geometry | Preserve as read-model data | Does not mean the current native UI renders that scene |
 | Historical browser SVG, console and router-script repair | Retain, not imported in this increment | Dedicated current-web adoption/security/visual parity remains open |
 | Historical `MercuryView.swift` | Not copied over current native1190 | Current `/api` hardware workspace remains intact; full versioned-dashboard scene parity remains open |
-| Current native CPU/GPU/power/interface view | Preserve unchanged | Different `/api` producer endpoint; do not claim it is the Go dashboard/v1 projection |
+| Current native CPU/GPU/power/interface view | Native candidate consumes the canonical dashboard/v1 CPU-busy, calibrated GPU-work and projected link-rate fields; local monotonic aging withholds retained measurements and rates | Power is not exposed by dashboard/v1 and remains unknown; the broader native power/telemetry obligation in the original heterogeneous-compute PRD remains open. Full historical web/native scene parity is still open |
 | October18 worker EPERM/socket limitation | Requalified, no longer a current blanket hold | Exact historical live read now succeeds; recovered socket/race fixtures pass |
 | Full installed product and all enrolled machines | Not established here | Requires normal signed release, installed readback and explicit machine/freshness evidence |
 

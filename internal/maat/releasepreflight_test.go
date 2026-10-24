@@ -88,15 +88,16 @@ func TestPreflightReleaseContractBlocksDuplicateCaskPublisher(t *testing.T) {
 func makeReleaseContractFixture(t *testing.T, broken bool) string {
 	t.Helper()
 	root := t.TempDir()
-	// These are the actual release-route bytes from published v0.24.130,
-	// 60b9963d73f66ed497e90fa127263cc1113f506a, not a miniature policy stub.
+	// Signing inputs retain published v0.24.130 bytes (60b9963d73f66ed497e90fa127263cc1113f506a).
+	// The workflow pin adds draft-first publication on released132 base
+	// 08843c54272a7ad6f6d2a431724bad98123d823f, not a policy stub.
 	// No copied script is executed. Future route changes must deliberately
 	// update this provenance and the observer together.
 	pinned := map[string]string{
 		"scripts/build-dmg.sh":                 "5d9ffc22dd4ba639453f5c53d59ef9c40b2aa81c99ac04c995a0c875aeec15f5",
 		"scripts/build-pkg.sh":                 "9e66baacecf6164442922e578a190833b2d8271887dfcba7327b99e11cd07710",
 		"scripts/notarize-release-artifact.sh": "cf4112f04f90f1b8ac70e9aecd17ed87652e1718bb82dcecc6801efd03eab433",
-		".github/workflows/release.yml":        "a3736f2f90ad42a39b1b7f585e4c69f9f90ed6c91a6d6194dde7841ff3ac0213",
+		".github/workflows/release.yml":        "fc0f9ba48078500dac0d75ffe2f9957809204cc58c9af468d8f7ac2180b18c90",
 		"tools/signing/sirsi-sign":             "805123e96ce78ff225641bebd2bf32f9c15d5023f381963f096facda4d2aedd1",
 	}
 	for _, requirement := range releaseContractRequirements {

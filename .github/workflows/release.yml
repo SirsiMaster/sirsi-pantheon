@@ -9,6 +9,11 @@ permissions:
   contents: write
   id-token: write
 
+# Serialize retries of the same tag; never interrupt signing/publication midway.
+concurrency:
+  group: pantheon-release-${{ github.ref }}
+  cancel-in-progress: false
+
 # Same read-only private SDK credentials as ci.yml (#1109): every Go build of cmd/sirsi needs
 # github.com/SirsiMaster/sirsi-inference. Tag pushes are 'push' events, which the wrapper trusts.
 env:
@@ -182,47 +187,26 @@ jobs:
               bash scripts/ci-private-sdk.sh scripts/build-pkg.sh --release --version "$BUILD_VERSION" --arch arm64 --app Pantheon.app
             '
 
-      - name: Create or verify the exact GitHub release record
+      - name: Stage draft and verify exact signed pair before publication
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ github.ref_name }}
           BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
           set -euo pipefail
           EXPECTED_COMMIT="$(git rev-parse "${GITHUB_SHA}^{commit}")"
-          if gh release view "$TAG_NAME" --repo SirsiMaster/sirsi-pantheon >/dev/null 2>&1; then
-            # GitHub may report a release's targetCommitish as the default
-            # branch name even when the release was created from this exact
-            # annotated tag. The tag's peeled commit is the immutable release
-            # identity, so verify that instead of a mutable UI projection.
-            ACTUAL_COMMIT="$(git ls-remote --exit-code origin "refs/tags/${TAG_NAME}^{}" | awk '{print $1}')"
-            [[ "$ACTUAL_COMMIT" == "$EXPECTED_COMMIT" ]] || {
-              echo "existing release tag $TAG_NAME peels to $ACTUAL_COMMIT, expected $EXPECTED_COMMIT" >&2
-              exit 1
-            }
-          else
-            gh release create "$TAG_NAME" \
-              --repo SirsiMaster/sirsi-pantheon \
-              --target "$EXPECTED_COMMIT" \
-              --title "Sirsi Pantheon $BUILD_VERSION" \
-              --generate-notes
-          fi
-
-      - name: Upload DMG and PKG to release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ github.ref_name }}
-          BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
-        run: |
-          set -euo pipefail
           test -f "bin/SirsiPantheon-${BUILD_VERSION}-arm64.dmg"
           test -f "bin/SirsiPantheon-${BUILD_VERSION}-arm64.pkg"
-          # A runner retry may reach this step after the release service has
-          # already accepted the exact files. Replace only same-named assets so
-          # the canonical cask readback can still complete.
-          gh release upload "$TAG_NAME" --clobber \
-            "bin/SirsiPantheon-${BUILD_VERSION}-arm64.dmg" \
-            "bin/SirsiPantheon-${BUILD_VERSION}-arm64.pkg"
+          python3 scripts/publish-release-assets.py \
+            --version "$BUILD_VERSION" --expected-commit "$EXPECTED_COMMIT" \
+            --receipt "$RUNNER_TEMP/pantheon-publication-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
+
+      - name: Retain exact publication verification receipt (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pantheon-publication-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pantheon-publication-${{ github.run_id }}-${{ github.run_attempt }}.json
+          if-no-files-found: warn
 
       - name: Restore login keychain as default (always)
         if: always()

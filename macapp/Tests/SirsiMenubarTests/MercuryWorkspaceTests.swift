@@ -3,44 +3,112 @@ import XCTest
 @testable import SirsiMenubar
 
 final class MercuryWorkspaceTests: XCTestCase {
-    func testCurrentObservationRequiresPublishedLiveStateAndSuccessfulRead() throws {
-        for state in ["live", "stale", "down", "error", "unknown", ""] {
-            let payload = "{\"state\":\"\(state)\",\"samples\":[{\"t\":100}]}"
-            let machine = try JSONDecoder().decode(MercuryMonitorMachine.self, from: Data(payload.utf8))
-            XCTAssertEqual(machine.hasCurrentObservation(at: Date(timeIntervalSince1970: 105), readSucceeded: true), state == "live")
-            XCTAssertFalse(machine.hasCurrentObservation(at: Date(timeIntervalSince1970: 105), readSucceeded: false))
+    func testCanonicalReadUsesGPUWorkAndProducerProjectedLinkUnits() throws {
+        let projection = try decodeProjection(#"{"state":"ok","message":"Mercury snapshot · fixture","snapshot":{"generated_at":1792339199.9,"nodes":[{"id":"m1","name":"M1","chip":"Fixture silicon","state":"live","observed_at":1792339199.9,"age_s":0,"freshness_s":3,"gpu":{"work_pct":42.5},"cpu":{"busy_pct":21.25}},{"id":"m2","name":"M2","state":"live","observed_at":1792339199.9,"age_s":0,"freshness_s":3,"gpu":{"work_pct":10},"cpu":{"busy_pct":11}}],"links":[{"id":"m1:en1|m2:en1","state":"up","directions":[{"from":"m1","to":"m2","wire_gbs":0.0125,"observed_at":1792339199.9}]}]},"scene":{"cables":[{"id":"m1:en1|m2:en1","state":"up","iface":"en1","directions":[{"from":"m1","to":"m2","rate":"12.5 MB/s"}]}]}}"#)
+        let node = try XCTUnwrap(projection.snapshot?.nodes.first)
+
+        XCTAssertEqual(projection.gpuWork(for: node, readSucceeded: true, readCompletedAt: 1792339200, elapsed: 0), 42.5)
+        XCTAssertEqual(projection.cpuBusy(for: node, readSucceeded: true, readCompletedAt: 1792339200, elapsed: 0), 21.25)
+        XCTAssertEqual(projection.scene?.cables.first?.directions.first?.rate, "12.5 MB/s")
+        let cable = try XCTUnwrap(projection.scene?.cables.first)
+        let direction = try XCTUnwrap(cable.directions.first)
+        XCTAssertEqual(projection.currentRate(for: direction, cable: cable, readSucceeded: true,
+                                              readCompletedAt: 1792339200, elapsed: 0), "12.5 MB/s")
+    }
+
+    func testStalePartialAndFailedReadsWithholdRetainedMeasurements() throws {
+        for state in ["stale", "partial"] {
+            let projection = try decodeProjection("""
+            {"state":"\(state)","message":"not current","snapshot":{"nodes":[{"id":"m1","name":"M1","state":"live","gpu":{"work_pct":42.5},"cpu":{"busy_pct":21.25}}]}}
+            """)
+            let node = try XCTUnwrap(projection.snapshot?.nodes.first)
+            XCTAssertNil(projection.gpuWork(for: node, readSucceeded: true, readCompletedAt: 100, elapsed: 0))
+            XCTAssertNil(projection.cpuBusy(for: node, readSucceeded: true, readCompletedAt: 100, elapsed: 0))
         }
-        let missingState = try JSONDecoder().decode(MercuryMonitorMachine.self, from: Data(#"{"samples":[{"t":100}]}"#.utf8))
-        XCTAssertFalse(missingState.hasCurrentObservation(at: Date(timeIntervalSince1970: 105), readSucceeded: true))
+
+        let current = try decodeProjection(#"{"state":"ok","message":"current","snapshot":{"nodes":[{"id":"m1","name":"M1","state":"live","gpu":{"work_pct":42.5},"cpu":{"busy_pct":21.25}}]} }"#)
+        let node = try XCTUnwrap(current.snapshot?.nodes.first)
+        XCTAssertNil(current.gpuWork(for: node, readSucceeded: false, readCompletedAt: 100, elapsed: 0))
+        XCTAssertNil(current.cpuBusy(for: node, readSucceeded: false, readCompletedAt: 100, elapsed: 0))
     }
 
-    func testRetainedObservationAgesWithoutAReplacementResponse() throws {
-        let machine = try JSONDecoder().decode(MercuryMonitorMachine.self, from: Data(#"{"state":"live","samples":[{"t":100}]}"#.utf8))
-        XCTAssertTrue(machine.hasCurrentObservation(at: Date(timeIntervalSince1970: 110), readSucceeded: true))
-        XCTAssertFalse(machine.hasCurrentObservation(at: Date(timeIntervalSince1970: 110.001), readSucceeded: true))
-        XCTAssertFalse(machine.hasCurrentObservation(at: Date(timeIntervalSince1970: 90), readSucceeded: true))
+    func testLocalMonotonicAgeExpiresRetainedCurrentSample() throws {
+        let projection = try decodeProjection(#"{"state":"ok","message":"fixture","snapshot":{"generated_at":100,"nodes":[{"id":"m1","name":"M1","state":"live","observed_at":99,"age_s":1,"freshness_s":3,"gpu":{"work_pct":42},"cpu":{"busy_pct":21}}]}}"#)
+        let node = try XCTUnwrap(projection.snapshot?.nodes.first)
+
+        XCTAssertTrue(projection.isCurrent(node, readCompletedAt: 100, elapsed: 1.9))
+        XCTAssertFalse(projection.isCurrent(node, readCompletedAt: 100, elapsed: 2.1))
+        XCTAssertNil(projection.gpuWork(for: node, readSucceeded: true, readCompletedAt: 100, elapsed: 2.1))
+        XCTAssertNil(projection.cpuBusy(for: node, readSucceeded: true, readCompletedAt: 100, elapsed: 2.1))
+        XCTAssertFalse(projection.envelopeIsCurrent(readCompletedAt: 100, elapsed: 3.1))
     }
 
-    func testMonitorRejectsStaleFutureAndInvalidCoreObservations() throws {
-        let sample = try JSONDecoder().decode(MercuryMonitorSample.self, from: Data(#"{"t":100,"cores":[20,40]}"#.utf8))
-        XCTAssertEqual(sample.meanCPU, 30)
-        XCTAssertTrue(sample.isFresh(at: Date(timeIntervalSince1970: 105)))
-        XCTAssertFalse(sample.isFresh(at: Date(timeIntervalSince1970: 120)))
-        XCTAssertFalse(sample.isFresh(at: Date(timeIntervalSince1970: 90)))
-        let invalid = try JSONDecoder().decode(MercuryMonitorSample.self, from: Data(#"{"t":100,"cores":[-1,101]}"#.utf8))
-        XCTAssertNil(invalid.meanCPU)
+    func testFutureEnvelopeAndFutureNodeObservationStayUnknown() throws {
+        let futureEnvelope = try decodeProjection(#"{"state":"ok","message":"fixture","snapshot":{"generated_at":103,"nodes":[{"id":"m1","name":"M1","state":"live","observed_at":100,"age_s":0,"freshness_s":3,"gpu":{"work_pct":42},"cpu":{"busy_pct":21}}]}}"#)
+        let envelopeNode = try XCTUnwrap(futureEnvelope.snapshot?.nodes.first)
+        XCTAssertFalse(futureEnvelope.isCurrent(envelopeNode, readCompletedAt: 100, elapsed: 0))
+
+        let futureSample = try decodeProjection(#"{"state":"ok","message":"fixture","snapshot":{"generated_at":100,"nodes":[{"id":"m1","name":"M1","state":"live","observed_at":103,"age_s":0,"freshness_s":3,"gpu":{"work_pct":42},"cpu":{"busy_pct":21}}]}}"#)
+        let sampleNode = try XCTUnwrap(futureSample.snapshot?.nodes.first)
+        XCTAssertFalse(futureSample.isCurrent(sampleNode, readCompletedAt: 100, elapsed: 0))
     }
 
-    @MainActor func testExistingLocalMonitorWhenExplicitlyRequested() async throws {
+    func testSceneRateExpiresWithCanonicalDirectionTimestamp() throws {
+        let projection = try decodeProjection(#"{"state":"ok","message":"fixture","snapshot":{"generated_at":100,"nodes":[{"id":"m1","name":"M1","state":"live","observed_at":99,"age_s":1,"freshness_s":10,"gpu":{"work_pct":42},"cpu":{"busy_pct":21}},{"id":"m2","name":"M2","state":"live","observed_at":99,"age_s":1,"freshness_s":10,"gpu":{"work_pct":42},"cpu":{"busy_pct":21}}],"links":[{"id":"c1","state":"up","directions":[{"from":"m1","to":"m2","wire_gbs":0.0125,"observed_at":99}]}]},"scene":{"cables":[{"id":"c1","state":"up","iface":"en1","directions":[{"from":"m1","to":"m2","rate":"12.5 MB/s"}]}]}}"#)
+        let cable = try XCTUnwrap(projection.scene?.cables.first)
+        let direction = try XCTUnwrap(cable.directions.first)
+
+        XCTAssertEqual(projection.currentRate(for: direction, cable: cable, readSucceeded: true,
+                                              readCompletedAt: 100, elapsed: 4.9), "12.5 MB/s")
+        XCTAssertEqual(projection.currentRate(for: direction, cable: cable, readSucceeded: true,
+                                              readCompletedAt: 100, elapsed: 5.1), "Unknown")
+        XCTAssertEqual(projection.currentRate(for: direction, cable: cable, readSucceeded: false,
+                                              readCompletedAt: 100, elapsed: 0), "Unknown")
+    }
+
+    func testUnknownCalibrationAndNonLiveNodeStayUnknown() throws {
+        let projection = try decodeProjection(#"{"state":"ok","message":"current","snapshot":{"nodes":[{"id":"m1","name":"M1","state":"live","gpu":{"work_pct":null},"cpu":{"busy_pct":null}},{"id":"m2","name":"M2","state":"stale","gpu":{"work_pct":50},"cpu":{"busy_pct":60}}]}}"#)
+        let nodes = try XCTUnwrap(projection.snapshot?.nodes)
+
+        XCTAssertNil(projection.gpuWork(for: nodes[0], readSucceeded: true, readCompletedAt: 100, elapsed: 0))
+        XCTAssertNil(projection.cpuBusy(for: nodes[0], readSucceeded: true, readCompletedAt: 100, elapsed: 0))
+        XCTAssertNil(projection.gpuWork(for: nodes[1], readSucceeded: true, readCompletedAt: 100, elapsed: 0))
+        XCTAssertNil(projection.cpuBusy(for: nodes[1], readSucceeded: true, readCompletedAt: 100, elapsed: 0))
+    }
+
+    func testCanonicalMonitorRejectsUnsuccessfulCLIProvenance() throws {
+        let data = Data(#"{"state":"ok","message":"must not be accepted"}"#.utf8)
+        let failed = SirsiEngine.JSONCommandRead(data: data, exitStatus: 1, timedOut: false, launchError: nil)
+        let timeout = SirsiEngine.JSONCommandRead(data: data, exitStatus: 0, timedOut: true, launchError: nil)
+        let launchFailure = SirsiEngine.JSONCommandRead(data: data, exitStatus: 0, timedOut: false, launchError: "unavailable")
+
+        XCTAssertThrowsError(try decodeMercuryMonitor(read: failed))
+        XCTAssertThrowsError(try decodeMercuryMonitor(read: timeout))
+        XCTAssertThrowsError(try decodeMercuryMonitor(read: launchFailure))
+    }
+
+    func testLegacyNativeMonitorEnvelopeIsNotAcceptedAsCanonicalRead() {
+        let data = Data(#"{"now":1792339200,"local":"m1","machines":{"m1":{"state":"live","samples":[]}}}"#.utf8)
+        let read = SirsiEngine.JSONCommandRead(data: data, exitStatus: 0, timedOut: false, launchError: nil)
+
+        XCTAssertThrowsError(try decodeMercuryMonitor(read: read))
+    }
+
+    private func decodeProjection(_ json: String) throws -> MercuryMonitorProjection {
+        let data = Data(json.utf8)
+        let read = SirsiEngine.JSONCommandRead(data: data, exitStatus: 0, timedOut: false, launchError: nil)
+        return try decodeMercuryMonitor(read: read)
+    }
+
+    @MainActor func testExistingCanonicalMonitorWhenExplicitlyRequested() async throws {
         guard ProcessInfo.processInfo.environment["PANTHEON_LIVE_MERCURY"] == "1" else {
-            throw XCTSkip("Opt-in GET against the existing Mercury monitor")
+            throw XCTSkip("Opt-in canonical read through the existing Mercury CLI reader")
         }
         let monitor = MercuryMonitor()
         await monitor.refresh()
         XCTAssertNil(monitor.error)
         let projection = try XCTUnwrap(monitor.projection)
-        XCTAssertFalse(projection.machines.isEmpty)
-        XCTAssertTrue(projection.machines.values.contains { $0.latest?.isFresh(at: Date()) == true })
+        XCTAssertTrue(try XCTUnwrap(projection.snapshot?.nodes).contains { $0.state == "live" })
     }
 
     func testDecodesCanonicalRouterPingSchemaAndSelectsMercuryExactly() throws {

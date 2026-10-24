@@ -22,8 +22,10 @@ bootstrap="$root/scripts/install.sh"
 bootstrap_test="$root/scripts/install.test.sh"
 notary_helper="$root/scripts/notarize-release-artifact.sh"
 notary_helper_test="$root/scripts/notarize-release-artifact.test.sh"
+publisher="$root/scripts/publish-release-assets.py"
+publisher_test="$root/scripts/test_release_publication.py"
 
-for file in "$dmg" "$pkg" "$workflow" "$makefile" "$recipe" "$cask_cmd" "$cask_package" "$package_inventory" "$package_inventory_cmd" "$package_inventory_adapter" "$bootstrap" "$bootstrap_test" "$notary_helper" "$notary_helper_test"; do
+for file in "$dmg" "$pkg" "$workflow" "$makefile" "$recipe" "$cask_cmd" "$cask_package" "$package_inventory" "$package_inventory_cmd" "$package_inventory_adapter" "$bootstrap" "$bootstrap_test" "$notary_helper" "$notary_helper_test" "$publisher" "$publisher_test"; do
     [[ -f "$file" ]] || { echo "missing release-contract source: $file" >&2; exit 1; }
 done
 
@@ -93,11 +95,22 @@ done
 for required in \
     'test -f "bin/SirsiPantheon-${BUILD_VERSION}-arm64.dmg"' \
     'test -f "bin/SirsiPantheon-${BUILD_VERSION}-arm64.pkg"' \
-    'gh release upload "$TAG_NAME"'; do
+    'python3 scripts/publish-release-assets.py'; do
     /usr/bin/grep -Fq -- "$required" "$workflow" || {
         echo "release workflow does not require both native release artifacts: $required" >&2
         exit 1
     }
+done
+for required in '"--draft"' '"--verify-tag"' '"--draft=false"' 'readback(release, True)' \
+    'local_unchanged()' 'check_tag()' '"stapler", "validate"' '"--check-signature"'; do
+    /usr/bin/grep -Fq -- "$required" "$publisher" || {
+        echo "draft publication/readback contract missing: $required" >&2; exit 1;
+    }
+done
+for file in "$workflow" "$publisher"; do
+    if /usr/bin/grep -Fq -- '--clobber' "$file"; then
+        echo "release publication may not overwrite existing assets" >&2; exit 1;
+    fi
 done
 /usr/bin/grep -Fq 'go build ./cmd/sirsi' "$workflow" || { echo "release workflow does not compile the portable sirsi target" >&2; exit 1; }
 /usr/bin/grep -Fq 'go build ./cmd/sirsi-agent' "$workflow" || { echo "release workflow does not compile the portable sirsi-agent target" >&2; exit 1; }
@@ -173,6 +186,10 @@ done
 
 /usr/bin/jq -e '
   [.components[] | select(.id == "commercial-sign-notary-publication-route")][0] |
+  (.source | index("scripts/publish-release-assets.py")) != null and
+  (.tests | index("scripts/test_release_publication.py")) != null and
+  (.outputs | index("draft-first paired-asset SHA256 readback before public publication")) != null and
+  (.upgrade_recipe | index("published retries are read-only and refuse partial or mismatched pairs without overwrite")) != null and
   (.upgrade_recipe | index("ship the tagged commercial route as one macOS payload contract; reject variable-gated Windows installer jobs until a separate platform release contract exists")) != null and
   (.upgrade_recipe | index("create or revalidate the exact GitHub release record only after successful commercial DMG and PKG construction")) != null and
   (.outputs | index("one exact GitHub release record and the same-payload assets suitable for cask binding")) != null
@@ -241,10 +258,10 @@ done
 # partial release. The release record and every published product asset are
 # created only after the macOS job has successfully built the commercial DMG
 # and PKG from the same Pantheon.app bundle.
-/usr/bin/grep -Fq 'Create or verify the exact GitHub release record' "$workflow" || {
+/usr/bin/grep -Fq 'Stage draft and verify exact signed pair before publication' "$workflow" || {
     echo "release workflow does not create the release record after native packaging" >&2; exit 1;
 }
-/usr/bin/grep -Fq -- '--target "$EXPECTED_COMMIT"' "$workflow" || {
+/usr/bin/grep -Fq -- '--expected-commit "$EXPECTED_COMMIT"' "$workflow" || {
     echo "release workflow does not bind the release record to the checked-out tag commit" >&2; exit 1;
 }
 for forbidden in 'goreleaser-action' 'Run GoReleaser' 'sirsi-menubar_${BUILD_VERSION}_darwin_arm64.tar.gz'; do

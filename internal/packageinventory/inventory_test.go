@@ -1,7 +1,9 @@
 package packageinventory
 
 import (
+	"crypto/sha256"
 	"encoding/binary"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,19 +21,28 @@ func TestVerifyBuildsDeterministicPythonFreeInventory(t *testing.T) {
 	if report.Schema != Schema || !report.PythonFree || report.EngineCount != 2 {
 		t.Fatalf("unexpected report: %+v", report)
 	}
-	if len(report.Entries) != 25 {
+	if len(report.Entries) != 26 {
 		t.Fatalf("entry count = %d, want unsigned payload including Stack Lab contracts", len(report.Entries))
 	}
 	mercuryRecipe := "Contents/Resources/StackLab/mercury-consumer-recipe-v1.json"
 	foundMercuryRecipe := false
 	trashRecipe := "Contents/Resources/StackLab/anubis-trash-receipt-v1.json"
 	foundTrashRecipe := false
+	modelRouterRecipe := "Contents/Resources/StackLab/model-router-v1-recipe-v1.json"
+	foundModelRouterRecipe := false
 	for i := 1; i < len(report.Entries); i++ {
 		if report.Entries[i-1].Path >= report.Entries[i].Path {
 			t.Fatalf("entries are not strictly sorted: %+v", report.Entries)
 		}
 	}
 	for _, entry := range report.Entries {
+		if entry.Path == modelRouterRecipe {
+			foundModelRouterRecipe = true
+			want := []byte(`{"schema":"sirsi.stacklab.recipe.v1","id":"stacklab.recipe.model-router-v1"}`)
+			if entry.Type != "regular" || entry.Size != int64(len(want)) || entry.Nlink != 1 || entry.SHA256 != fmt.Sprintf("%x", sha256.Sum256(want)) {
+				t.Fatalf("Model-router recipe inventory entry = %+v, want exact nonempty regular fixture bytes", entry)
+			}
+		}
 		if entry.Path == trashRecipe {
 			foundTrashRecipe = true
 			if entry.Type != "regular" || entry.Size == 0 {
@@ -50,6 +61,46 @@ func TestVerifyBuildsDeterministicPythonFreeInventory(t *testing.T) {
 	}
 	if !foundTrashRecipe {
 		t.Fatalf("inventory omitted %q", trashRecipe)
+	}
+	if !foundModelRouterRecipe {
+		t.Fatalf("inventory omitted %q", modelRouterRecipe)
+	}
+}
+
+func TestVerifyModelRouterRecipeRemainsClosedRegularPayload(t *testing.T) {
+	const rel = "Contents/Resources/StackLab/model-router-v1-recipe-v1.json"
+	for _, tc := range []struct {
+		name   string
+		mutate func(string) error
+		want   string
+	}{
+		{"missing", os.Remove, "missing required entry"},
+		{"directory", func(path string) error {
+			if err := os.Remove(path); err != nil {
+				return err
+			}
+			return os.Mkdir(path, 0o755)
+		}, "type mismatch"},
+		{"symlink", func(path string) error {
+			if err := os.Remove(path); err != nil {
+				return err
+			}
+			return os.Symlink("mercury-consumer-recipe-v1.json", path)
+		}, "symlink rejected"},
+		{"unexpected-sibling", func(path string) error {
+			return os.WriteFile(filepath.Join(filepath.Dir(path), "model-router-v2-recipe-v1.json"), []byte(`{}`), 0o644)
+		}, "unexpected entry"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app, expected := makeBundle(t)
+			if err := tc.mutate(filepath.Join(app, filepath.FromSlash(rel))); err != nil {
+				t.Fatal(err)
+			}
+			_, err := Verify(app, expected)
+			if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "Contents/Resources/StackLab/model-router-v") {
+				t.Fatalf("%s model-router payload accepted or unrelated refusal: %v", tc.name, err)
+			}
+		})
 	}
 }
 
@@ -308,6 +359,7 @@ func makeBundle(t *testing.T) (string, Expectations) {
 		"Contents/Resources/StackLab/maat-pod-authority-service-recipe-v1.json": []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
 		"Contents/Resources/StackLab/maat-wing-v1.json":                         []byte(`{"schema":"sirsi.stacklab.wing.v1"}`),
 		"Contents/Resources/StackLab/mercury-consumer-recipe-v1.json":           []byte(`{"schema":"sirsi.stacklab.recipe.v1","id":"stacklab.recipe.mercury-consumer"}`),
+		"Contents/Resources/StackLab/model-router-v1-recipe-v1.json":            []byte(`{"schema":"sirsi.stacklab.recipe.v1","id":"stacklab.recipe.model-router-v1"}`),
 		"Contents/Resources/StackLab/native-stacklab-surface-recipe-v1.json":    []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
 		"Contents/Resources/StackLab/pantheon-native-workspace-v1.json":         []byte(`{"schema":"sirsi.stacklab.recipe.v1","id":"stacklab.recipe.pantheon-native-workspace"}`),
 		"Contents/Resources/StackLab/pantheon.pt-wing-001-wing-v1.json":         []byte(`{"schema":"sirsi.stacklab.wing.v1"}`),

@@ -83,6 +83,7 @@ var allowed = map[string]string{
 	"Contents/Resources/StackLab/maat-pod-authority-service-recipe-v1.json": "regular",
 	"Contents/Resources/StackLab/maat-wing-v1.json":                         "regular",
 	"Contents/Resources/StackLab/mercury-consumer-recipe-v1.json":           "regular",
+	"Contents/Resources/StackLab/model-router-v1-recipe-v1.json":            "regular",
 	"Contents/Resources/StackLab/native-stacklab-surface-recipe-v1.json":    "regular",
 	"Contents/Resources/StackLab/pantheon-native-workspace-v1.json":         "regular",
 	"Contents/Resources/StackLab/pantheon.pt-wing-001-wing-v1.json":         "regular",

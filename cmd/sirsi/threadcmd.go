@@ -86,10 +86,6 @@ var (
 	// inbox-consumer capability (guarded in RunE — see the resident check there).
 	threadRegConsumerCapable bool
 
-	threadHbID             string
-	threadHbStatus         string
-	threadHbItem           string
-	threadHbError          string
 	threadCloseID          string
 	threadListAll          bool
 	threadListStale        time.Duration
@@ -360,41 +356,58 @@ item has anyone to defer TO.`,
 // printing a second error line over the message already written above.
 var errNoAttendedSession = errors.New("")
 
-var threadHeartbeatCmd = &cobra.Command{
-	Use:   "heartbeat",
-	Short: "Send a heartbeat for a registered thread",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		repoRoot, err := router.FindRepoRoot()
-		if err != nil {
-			return fmt.Errorf("no idea-router found: %w", err)
-		}
-		routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
-		if threadHbID == "" {
-			return fmt.Errorf("--thread is required")
-		}
-		upd := router.HeartbeatUpdate{}
-		if threadHbStatus != "" {
-			upd.Status = router.ThreadStatus(threadHbStatus)
-		}
-		if cmd.Flags().Changed("current-item") {
-			upd.CurrentItem = &threadHbItem
-		}
-		if cmd.Flags().Changed("last-error") {
-			upd.LastError = &threadHbError
-		}
-		thr, err := router.Heartbeat(routerRoot, threadHbID, upd)
-		if err != nil {
-			return err
-		}
-		if JsonOutput {
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(thr)
-		}
-		fmt.Printf("Heartbeat ok — %s (status=%s, last_seen=%s)\n",
-			thr.ThreadID, thr.Status, thr.LastSeenAt.Format(time.RFC3339))
-		return nil
-	},
+var threadHeartbeatCmd = newThreadHeartbeatCmdWithKernel(strictCodexAnchor)
+
+func newThreadHeartbeatCmdWithKernel(observe func() (int, string, error)) *cobra.Command {
+	var threadHbID, threadHbStatus, threadHbItem, threadHbError string
+	var threadHbEnsure bool
+	cmd := &cobra.Command{
+		Use:   "heartbeat",
+		Short: "Send a heartbeat for a registered thread",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			repoRoot, err := router.FindRepoRoot()
+			if err != nil {
+				return fmt.Errorf("no idea-router found: %w", err)
+			}
+			routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
+			if threadHbID == "" && !threadHbEnsure {
+				return fmt.Errorf("--thread is required")
+			}
+			upd := router.HeartbeatUpdate{}
+			if threadHbStatus != "" {
+				upd.Status = router.ThreadStatus(threadHbStatus)
+			}
+			if cmd.Flags().Changed("current-item") {
+				upd.CurrentItem = &threadHbItem
+			}
+			if cmd.Flags().Changed("last-error") {
+				upd.LastError = &threadHbError
+			}
+			var thr *router.Thread
+			if threadHbEnsure {
+				thr, err = runAttendedEnsure(routerRoot, threadHbID, upd, observe)
+			} else {
+				thr, err = router.Heartbeat(routerRoot, threadHbID, upd)
+			}
+			if err != nil {
+				return err
+			}
+			if JsonOutput {
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				return enc.Encode(thr)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Heartbeat ok — %s (status=%s, last_seen=%s)\n",
+				thr.ThreadID, thr.Status, thr.LastSeenAt.Format(time.RFC3339))
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&threadHbID, "thread", "", "Thread ID to heartbeat (required unless --ensure selects this caller's recorded binding)")
+	cmd.Flags().StringVar(&threadHbStatus, "status", "", "Set status: active|idle|blocked")
+	cmd.Flags().StringVar(&threadHbItem, "current-item", "", "Currently active work item ID")
+	cmd.Flags().StringVar(&threadHbError, "last-error", "", "Last error string")
+	cmd.Flags().BoolVar(&threadHbEnsure, "ensure", false, "Verify this Codex session's durable generation and normal-register its own changed binding before heartbeat")
+	return cmd
 }
 
 var threadCloseCmd = &cobra.Command{
@@ -1064,11 +1077,6 @@ func init() {
 	threadRegisterCmd.Flags().StringVar(&threadRegID, "thread", "", "Reuse a known thread_id instead of generating a new one")
 	threadRegisterCmd.Flags().IntVar(&threadRegAnchorPID, "anchor-pid", 0, "PID to anchor thread lifetime to (default: verified durable runtime ancestor for known interactive surfaces)")
 	threadRegisterCmd.Flags().BoolVar(&threadRegConsumerCapable, "consumer-capable", false, "This thread DRAINS the agent's inbox (resident consumers only — the worker publishes its own capability instead of the wake watcher borrowing it)")
-
-	threadHeartbeatCmd.Flags().StringVar(&threadHbID, "thread", "", "Thread ID to heartbeat (required)")
-	threadHeartbeatCmd.Flags().StringVar(&threadHbStatus, "status", "", "Set status: active|idle|blocked")
-	threadHeartbeatCmd.Flags().StringVar(&threadHbItem, "current-item", "", "Currently active work item ID")
-	threadHeartbeatCmd.Flags().StringVar(&threadHbError, "last-error", "", "Last error string")
 
 	threadCloseCmd.Flags().StringVar(&threadCloseID, "thread", "", "Thread ID to close (required)")
 
