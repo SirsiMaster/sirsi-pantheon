@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,29 +18,124 @@ var testBinary string
 
 // TestMain builds the pantheon binary once and shares it across all tests.
 func TestMain(m *testing.M) {
+	if mode := os.Getenv(e2eLifecycleChildEnv); mode != "" {
+		os.Exit(runE2ELifecycleChild(mode))
+	}
+	// os.Exit skips defers. Return from the owned lifecycle (including cleanup)
+	// before exiting, on both build failure and the test runner's exact status.
+	os.Exit(runE2ETestMain(buildE2EBinary, m.Run, os.Stderr))
+}
+
+func runE2ETestMain(build func(string) int, runTests func() int, diagnostics io.Writer) (code int) {
 	// Create a temp directory for the binary (outside of any test's TempDir).
 	tmpDir, err := os.MkdirTemp("", "sirsi-e2e-*")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to create temp dir: %v\n", err)
-		os.Exit(1)
+		fmt.Fprintf(diagnostics, "failed to create temp dir: %v\n", err)
+		return 1
 	}
-	defer os.RemoveAll(tmpDir)
+	absolute, err := filepath.Abs(tmpDir)
+	if err != nil {
+		fmt.Fprintf(diagnostics, "e2e cleanup debt at %q: cannot resolve created temp root: %v\n", tmpDir, err)
+		return 1
+	}
+	tmpDir = absolute
+	created, err := os.Lstat(tmpDir)
+	if err != nil || !created.IsDir() {
+		fmt.Fprintf(diagnostics, "e2e cleanup debt at %q: cannot identify created directory: %v\n", tmpDir, err)
+		return 1
+	}
+	root, err := os.OpenRoot(tmpDir)
+	if err != nil {
+		fmt.Fprintf(diagnostics, "e2e cleanup debt at %q (identity %v): %v\n", tmpDir, created.Sys(), err)
+		return 1
+	}
+	defer func() {
+		cleanupErr := cleanupE2ETestRoot(tmpDir, created, root)
+		closeErr := root.Close()
+		if cleanupErr != nil || closeErr != nil {
+			fmt.Fprintf(diagnostics, "e2e cleanup debt at %q (created identity %v): cleanup=%v close=%v; inspect this owned root, not shared caches\n", tmpDir, created.Sys(), cleanupErr, closeErr)
+			if code == 0 {
+				code = 1
+			}
+		}
+	}()
+	opened, err := root.Stat(".")
+	if err != nil || !os.SameFile(created, opened) {
+		fmt.Fprintf(diagnostics, "e2e temp root changed before build: %v\n", err)
+		return 1
+	}
 
 	binary := filepath.Join(tmpDir, "sirsi")
 	if runtime.GOOS == "windows" {
 		binary += ".exe"
 	}
 
+	if code := build(binary); code != 0 {
+		return code
+	}
+	testBinary = binary
+	return runTests()
+}
+
+// Recursive removal is rooted in the retained directory, never in a possibly
+// substituted pathname. Check named identity before touching contents and again
+// before removing the empty leaf. This is cooperative test ownership, not an
+// atomic compare-and-unlink guarantee against a hostile same-UID writer.
+func cleanupE2ETestRoot(path string, created os.FileInfo, root *os.Root) error {
+	same := func() error {
+		named, err := os.Lstat(path)
+		if err != nil {
+			return err
+		}
+		opened, err := root.Stat(".")
+		if err != nil {
+			return err
+		}
+		if !named.IsDir() || !os.SameFile(created, named) || !os.SameFile(created, opened) {
+			return fmt.Errorf("temp-root identity changed; refusing removal")
+		}
+		return nil
+	}
+	if err := same(); err != nil {
+		return err
+	}
+	dir, err := root.Open(".")
+	if err != nil {
+		return err
+	}
+	entries, readErr := dir.ReadDir(-1)
+	closeErr := dir.Close()
+	if readErr != nil {
+		return readErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	for _, entry := range entries {
+		if err := root.RemoveAll(entry.Name()); err != nil {
+			return err
+		}
+	}
+	if err := same(); err != nil {
+		return err
+	}
+	// Only an empty directory is removed by name; never recursively remove a
+	// late replacement. Nonempty/new arrivals fail and remain explicit debt.
+	return os.Remove(path)
+}
+
+func buildE2EBinary(binary string) int {
 	cmd := exec.Command("go", "build", "-o", binary, "./cmd/sirsi/")
 	cmd.Dir = filepath.Join("..", "..") // tests/e2e → repo root
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to build sirsi: %v\n%s", err, out)
-		os.Exit(1)
+		if exit, ok := err.(*exec.ExitError); ok && exit.ExitCode() > 0 {
+			return exit.ExitCode()
+		}
+		return 1
 	}
-
-	testBinary = binary
-	os.Exit(m.Run())
+	return 0
 }
 
 // run executes the pantheon binary with args and returns stdout+stderr.
