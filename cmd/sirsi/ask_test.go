@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/modelrouter"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/provider"
+	"github.com/spf13/cobra"
 )
 
 func TestAskRejectsJSONFixBeforeDiagnosis(t *testing.T) {
@@ -112,10 +114,14 @@ func TestAskExplicitRouteKeepsDoctorAlarmsAndUsesSingleFinalDecision(t *testing.
 		},
 		applicableRepairs: func() int { return 0 },
 	}
-	text, err := captureAskOutput(t, func() error { return runAskWith([]string{"why?"}, runtime) })
+	cmd := &cobra.Command{}
+	var selected bytes.Buffer
+	cmd.SetOut(&selected)
+	err := runAskWithCommand(cmd, []string{"why?"}, runtime)
 	if err != nil {
-		t.Fatalf("runAskWith() error = %v", err)
+		t.Fatalf("runAskWithCommand() error = %v", err)
 	}
+	text := selected.String()
 	if !strings.Contains(text, "measured alarm remains visible") || !strings.Contains(text, "local answer") || !strings.Contains(text, "fallback: remote_rate_exhausted") {
 		t.Fatalf("text omitted alarm, answer, or final fallback: %s", text)
 	}

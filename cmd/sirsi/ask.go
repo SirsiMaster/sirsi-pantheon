@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -68,15 +69,23 @@ type askRuntime struct {
 	ladder            func(context.Context, string) []provider.Provider
 	newRouter         func([]provider.Provider) *modelrouter.Router
 	applicableRepairs func() int
+	out               io.Writer
 }
 
-func runAsk(_ *cobra.Command, args []string) error {
-	return runAskWith(args, askRuntime{
+func runAsk(cmd *cobra.Command, args []string) error {
+	return runAskWithCommand(cmd, args, askRuntime{
 		doctor:            guard.Doctor,
 		ladder:            provider.Ladder,
 		newRouter:         func(ladder []provider.Provider) *modelrouter.Router { return modelrouter.New(ladder) },
 		applicableRepairs: applicableRepairs,
 	})
+}
+
+func runAskWithCommand(cmd *cobra.Command, args []string, runtime askRuntime) error {
+	if cmd != nil {
+		runtime.out = cmd.OutOrStdout()
+	}
+	return runAskWith(args, runtime)
 }
 
 func runAskWith(args []string, runtime askRuntime) error {
@@ -89,6 +98,10 @@ func runAskWith(args []string, runtime askRuntime) error {
 	question := strings.TrimSpace(strings.Join(args, " "))
 	if question == "" {
 		question = "what is wrong with this machine right now?"
+	}
+	out := runtime.out
+	if out == nil {
+		out = os.Stdout
 	}
 
 	// ── Rung 1: heuristic ────────────────────────────────────────────────────
@@ -107,35 +120,35 @@ func runAskWith(args []string, runtime askRuntime) error {
 	}
 
 	if !askJSON {
-		output.Header("Sirsi")
-		output.Dim("  %s", question)
-		fmt.Println()
+		output.HeaderTo(out, "Sirsi")
+		output.DimTo(out, "  %s", question)
+		fmt.Fprintln(out)
 	}
 
 	if len(alarms) > 0 && !askRoute {
 		if askJSON {
-			return emitAskJSON(question, report, alarms)
+			return emitAskJSON(out, question, report, alarms)
 		}
-		printAskAlarms(alarms)
-		output.Dim("  Answered at the heuristic rung: zero tokens, no model loaded, works offline.")
+		printAskAlarms(out, alarms)
+		output.DimTo(out, "  Answered at the heuristic rung: zero tokens, no model loaded, works offline.")
 		if askFix {
-			return runAskFix(report)
+			return runAskFix(out, report)
 		}
 		if n := runtime.applicableRepairs(); n > 0 {
-			output.Dim("  %d repair(s) apply to this machine — `sirsi ask --fix` runs them and verifies each.", n)
+			output.DimTo(out, "  %d repair(s) apply to this machine — `sirsi ask --fix` runs them and verifies each.", n)
 		}
 		return nil
 	}
 	if len(alarms) > 0 {
 		if !askJSON {
-			printAskAlarms(alarms)
-			output.Dim("  [router] explicit --route requested; measured findings remain visible.")
-			fmt.Println()
+			printAskAlarms(out, alarms)
+			output.DimTo(out, "  [router] explicit --route requested; measured findings remain visible.")
+			fmt.Fprintln(out)
 		}
 	}
 
 	if !askJSON && len(alarms) == 0 {
-		output.Success("  [heuristic] no measured problems — %d signals checked, %s",
+		output.SuccessTo(out, "  [heuristic] no measured problems — %d signals checked, %s",
 			len(report.Findings), report.Status)
 	}
 
@@ -169,21 +182,21 @@ func runAskWith(args []string, runtime askRuntime) error {
 	if cerr != nil {
 		if !hasRecordErr {
 			if !askJSON {
-				fmt.Println()
-				output.Dim("  [router] %s", decisionDisplay(decision))
-				output.Dim("  No model answer was produced; the heuristic findings above remain the answer.")
-			} else if err := emitAskJSONWithDecision(question, report, alarms, decision, decisionOutcome(decision)); err != nil {
+				fmt.Fprintln(out)
+				output.DimTo(out, "  [router] %s", decisionDisplay(decision))
+				output.DimTo(out, "  No model answer was produced; the heuristic findings above remain the answer.")
+			} else if err := emitAskJSONWithDecision(out, question, report, alarms, decision, decisionOutcome(decision)); err != nil {
 				return err
 			}
 			return nil
 		}
 		if !askJSON && resp.Text == "" {
-			fmt.Println()
-			output.Dim("  [router] %s", decisionDisplay(decision))
-			output.Dim("  No model answer was produced; decision evidence could not be saved.")
+			fmt.Fprintln(out)
+			output.DimTo(out, "  [router] %s", decisionDisplay(decision))
+			output.DimTo(out, "  No model answer was produced; decision evidence could not be saved.")
 			return surfacedRecordErr
 		} else if askJSON && resp.Text == "" {
-			if err := emitAskJSONWithDecision(question, report, alarms, decision, decisionOutcome(decision)); err != nil {
+			if err := emitAskJSONWithDecision(out, question, report, alarms, decision, decisionOutcome(decision)); err != nil {
 				return err
 			}
 			return surfacedRecordErr
@@ -191,26 +204,26 @@ func runAskWith(args []string, runtime askRuntime) error {
 	}
 
 	if !askJSON {
-		fmt.Println()
-		output.Dim("  [router] %s", decisionDisplay(decision))
+		fmt.Fprintln(out)
+		output.DimTo(out, "  [router] %s", decisionDisplay(decision))
 	}
 	if !askJSON {
-		fmt.Println()
-		output.Dim("  [heuristic] inconclusive → routed to %s (%s)", decision.Lane, decisionDisplay(decision))
+		fmt.Fprintln(out)
+		output.DimTo(out, "  [heuristic] inconclusive → routed to %s (%s)", decision.Lane, decisionDisplay(decision))
 		if askShowRoute && decision.Rationale != "" {
-			output.Dim("  [router] %s", decision.Rationale)
+			output.DimTo(out, "  [router] %s", decision.Rationale)
 		}
 	}
 	if askJSON {
-		if err := emitAskModelJSON(question, report, alarms, resp, decision); err != nil {
+		if err := emitAskModelJSON(out, question, report, alarms, resp, decision); err != nil {
 			return err
 		}
 		return surfacedRecordErr
 	}
-	fmt.Println()
-	output.Info("  %s", strings.TrimSpace(resp.Text))
-	fmt.Println()
-	output.Dim("  [%s] %s · %s · %d tokens · finish=%s",
+	fmt.Fprintln(out)
+	output.InfoTo(out, "  %s", strings.TrimSpace(resp.Text))
+	fmt.Fprintln(out)
+	output.DimTo(out, "  [%s] %s · %s · %d tokens · finish=%s",
 		resp.Tier, resp.Provider, resp.Model, resp.OutputTokens, resp.FinishReason)
 	return surfacedRecordErr
 }
@@ -222,19 +235,19 @@ func decisionOutcome(d modelrouter.Decision) string {
 	return "refused"
 }
 
-func printAskAlarms(alarms []guard.DiagnosticFinding) {
-	output.Info("  [heuristic] %d measured problem(s):", len(alarms))
+func printAskAlarms(out io.Writer, alarms []guard.DiagnosticFinding) {
+	output.InfoTo(out, "  [heuristic] %d measured problem(s):", len(alarms))
 	for _, f := range alarms {
 		label := "⚠"
 		if f.Severity >= guard.SeverityCritical {
 			label = "✘"
 		}
-		output.Info("    %s %s", label, f.Message)
+		output.InfoTo(out, "    %s %s", label, f.Message)
 		if f.Detail != "" {
-			output.Dim("        %s", f.Detail)
+			output.DimTo(out, "        %s", f.Detail)
 		}
 		if cmdStr := guard.RemediationFor(f); cmdStr != "" {
-			output.Dim("        fix: %s", cmdStr)
+			output.DimTo(out, "        fix: %s", cmdStr)
 		}
 	}
 }
@@ -261,7 +274,7 @@ func decisionDisplay(d modelrouter.Decision) string {
 	return text
 }
 
-func emitAskModelJSON(question string, r *guard.DoctorReport, alarms []guard.DiagnosticFinding, resp provider.Response, decision modelrouter.Decision) error {
+func emitAskModelJSON(out io.Writer, question string, r *guard.DoctorReport, alarms []guard.DiagnosticFinding, resp provider.Response, decision modelrouter.Decision) error {
 	payload := struct {
 		Question     string           `json:"question"`
 		Tier         string           `json:"tier"`
@@ -286,7 +299,7 @@ func emitAskModelJSON(question string, r *guard.DoctorReport, alarms []guard.Dia
 	if payload.Problems == nil {
 		payload.Problems = []askProblemJSON{}
 	}
-	return json.NewEncoder(os.Stdout).Encode(payload)
+	return json.NewEncoder(out).Encode(payload)
 }
 
 // summarize gives the model the measured facts. The model interprets evidence;
@@ -300,8 +313,8 @@ func summarize(r *guard.DoctorReport) string {
 	return b.String()
 }
 
-func emitAskJSON(question string, r *guard.DoctorReport, alarms []guard.DiagnosticFinding) error {
-	return emitAskJSONWithDecision(question, r, alarms, modelrouter.Decision{}, "")
+func emitAskJSON(out io.Writer, question string, r *guard.DoctorReport, alarms []guard.DiagnosticFinding) error {
+	return emitAskJSONWithDecision(out, question, r, alarms, modelrouter.Decision{}, "")
 }
 
 type askRouteJSON struct {
@@ -327,7 +340,7 @@ func askRouteProjection(d modelrouter.Decision, outcome string) askRouteJSON {
 	return projection
 }
 
-func emitAskJSONWithDecision(question string, r *guard.DoctorReport, alarms []guard.DiagnosticFinding, decision modelrouter.Decision, outcome string) error {
+func emitAskJSONWithDecision(out io.Writer, question string, r *guard.DoctorReport, alarms []guard.DiagnosticFinding, decision modelrouter.Decision, outcome string) error {
 	tier := "heuristic"
 	payload := struct {
 		Question string           `json:"question"`
@@ -344,7 +357,7 @@ func emitAskJSONWithDecision(question string, r *guard.DoctorReport, alarms []gu
 		routing := askRouteProjection(decision, outcome)
 		payload.Routing = &routing
 	}
-	return json.NewEncoder(os.Stdout).Encode(payload)
+	return json.NewEncoder(out).Encode(payload)
 }
 
 type askProblemJSON struct {
@@ -381,7 +394,7 @@ func applicableRepairs() int {
 // itself applicable, then RE-READS the machine and reports the severity delta per
 // check — because "the repair succeeded" and "the problem is gone" are different
 // claims, and only the second one is what the user asked for.
-func runAskFix(before *guard.DoctorReport) error {
+func runAskFix(out io.Writer, before *guard.DoctorReport) error {
 	r := reason.NewRegistry()
 	if err := reason.MachineTools(r); err != nil {
 		return fmt.Errorf("register repair tools: %w", err)
@@ -394,7 +407,7 @@ func runAskFix(before *guard.DoctorReport) error {
 		inv  reason.Invocation
 	}
 	var done []ran
-	fmt.Println()
+	fmt.Fprintln(out)
 	for _, name := range r.Names() {
 		t, ok := r.Get(name)
 		if !ok || t.Tier < reason.TierRepair {
@@ -405,29 +418,29 @@ func runAskFix(before *guard.DoctorReport) error {
 		}
 		applies, why := t.Applies(ctx)
 		if !applies {
-			output.Dim("  ○ %s — skipped: %s", name, why)
+			output.DimTo(out, "  ○ %s — skipped: %s", name, why)
 			continue
 		}
-		output.Info("  ▸ %s — %s", name, why)
+		output.InfoTo(out, "  ▸ %s — %s", name, why)
 		inv := reason.Invoke(ctx, r, name, reason.PolicyAutoRepair)
 		done = append(done, ran{name, inv})
 
 		if inv.Err != nil {
-			output.Warn("    ✘ %s", inv.Err)
+			output.WarnTo(out, "    ✘ %s", inv.Err)
 			continue
 		}
 		if inv.Result.Summary != "" {
-			output.Dim("    ran:      %s", inv.Result.Summary)
+			output.DimTo(out, "    ran:      %s", inv.Result.Summary)
 		}
 		if inv.Verified != nil {
-			output.Success("    verified: %s", inv.Verified.Summary)
+			output.SuccessTo(out, "    verified: %s", inv.Verified.Summary)
 		}
 	}
 
 	if len(done) == 0 {
-		fmt.Println()
-		output.Dim("  Nothing to repair — no tool declared itself applicable. The findings above")
-		output.Dim("  need a lever Sirsi does not have yet, which is a gap worth reporting.")
+		fmt.Fprintln(out)
+		output.DimTo(out, "  Nothing to repair — no tool declared itself applicable. The findings above")
+		output.DimTo(out, "  need a lever Sirsi does not have yet, which is a gap worth reporting.")
 		return nil
 	}
 
@@ -436,8 +449,8 @@ func runAskFix(before *guard.DoctorReport) error {
 	if err != nil {
 		return fmt.Errorf("re-check machine state: %w", err)
 	}
-	fmt.Println()
-	output.Info("  after re-checking:")
+	fmt.Fprintln(out)
+	output.InfoTo(out, "  after re-checking:")
 	prev := map[string]guard.DiagnosticSeverity{}
 	for _, f := range before.Findings {
 		prev[f.Check] = f.Severity
@@ -451,14 +464,14 @@ func runAskFix(before *guard.DoctorReport) error {
 		changed++
 		arrow := "→"
 		if f.Severity < was {
-			output.Success("    %s %s %s %s  (%s)", f.Check, sevName(was), arrow, sevName(f.Severity), f.Message)
+			output.SuccessTo(out, "    %s %s %s %s  (%s)", f.Check, sevName(was), arrow, sevName(f.Severity), f.Message)
 		} else {
-			output.Warn("    %s %s %s %s  (%s)", f.Check, sevName(was), arrow, sevName(f.Severity), f.Message)
+			output.WarnTo(out, "    %s %s %s %s  (%s)", f.Check, sevName(was), arrow, sevName(f.Severity), f.Message)
 		}
 	}
 	if changed == 0 {
-		output.Dim("    no severity changed — the repairs ran and verified, but the machine reads the same.")
-		output.Dim("    That is a real answer, not a failure: the cause is elsewhere.")
+		output.DimTo(out, "    no severity changed — the repairs ran and verified, but the machine reads the same.")
+		output.DimTo(out, "    That is a real answer, not a failure: the cause is elsewhere.")
 	}
 	return nil
 }

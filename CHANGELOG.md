@@ -56,6 +56,9 @@ whole-fleet/cloud-offline qualification are not claimed by this release.
   routing classes and negative context requirements before probing providers.
   Add counter-backed regression cases for qualification, fail-closed routing,
   and cancellation.
+- Route `ask` human and JSON output through Cobra's selected command writer,
+  preserving the normal themed formatting and making redirected command output
+  complete and testable.
 
 ## [0.24.130] — 2026-10-24
 

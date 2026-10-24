@@ -5,6 +5,7 @@ package output
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -210,34 +211,60 @@ func Banner() {
 
 // Header prints a section header with the 𓁢 prefix. Suppressed inside TUI.
 func Header(text string) {
+	HeaderTo(os.Stderr, text)
+}
+
+// HeaderTo prints a section header to w with the normal CLI styling.
+// Suppressed inside TUI, matching Header.
+func HeaderTo(w io.Writer, text string) {
 	if inTUI() {
 		return
 	}
-	fmt.Fprintf(os.Stderr, "\n%s\n", HeaderStyle.Render("𓁢 "+text))
+	fmt.Fprintf(w, "\n%s\n", HeaderStyle.Render("𓁢 "+text))
 }
 
 // Info prints a themed informational message.
 func Info(format string, args ...interface{}) {
+	InfoTo(os.Stderr, format, args...)
+}
+
+// InfoTo prints a themed informational message to w.
+func InfoTo(w io.Writer, format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintf(os.Stderr, "  %s %s\n", InfoStyle.Render("𓁟"), BodyStyle.Render(msg))
+	fmt.Fprintf(w, "  %s %s\n", InfoStyle.Render("𓁟"), BodyStyle.Render(msg))
 }
 
 // Dim prints a dimmed message.
 func Dim(format string, args ...interface{}) {
+	DimTo(os.Stderr, format, args...)
+}
+
+// DimTo prints a dimmed message to w.
+func DimTo(w io.Writer, format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintf(os.Stderr, "  %s\n", DimStyle.Render(msg))
+	fmt.Fprintf(w, "  %s\n", DimStyle.Render(msg))
 }
 
 // Success prints a themed success message.
 func Success(format string, args ...interface{}) {
+	SuccessTo(os.Stderr, format, args...)
+}
+
+// SuccessTo prints a themed success message to w.
+func SuccessTo(w io.Writer, format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintf(os.Stderr, "  %s %s\n", SuccessStyle.Render("𓆄"), BodyStyle.Render(msg))
+	fmt.Fprintf(w, "  %s %s\n", SuccessStyle.Render("𓆄"), BodyStyle.Render(msg))
 }
 
 // Warn prints a themed warning message.
 func Warn(format string, args ...interface{}) {
+	WarnTo(os.Stderr, format, args...)
+}
+
+// WarnTo prints a themed warning message to w.
+func WarnTo(w io.Writer, format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintf(os.Stderr, "  %s %s\n", WarningStyle.Render("⚠️"), BodyStyle.Render(msg))
+	fmt.Fprintf(w, "  %s %s\n", WarningStyle.Render("⚠️"), BodyStyle.Render(msg))
 }
 
 // Error prints a themed error message.
