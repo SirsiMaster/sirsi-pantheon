@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -202,6 +203,8 @@ func TestPrivateDecisionSinkBoundsJournalWithIndependentLockDescriptors(t *testi
 	firstAtCheck := make(chan struct{})
 	releaseFirst := make(chan struct{})
 	secondAtCheck := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseFirst) }) }
 	first := NewPrivateDecisionSink(home)
 	first.lockWait = 2 * time.Second
 	first.afterSizeCheck = func(needsTruncate bool) {
@@ -221,24 +224,64 @@ func TestPrivateDecisionSinkBoundsJournalWithIndependentLockDescriptors(t *testi
 	}
 
 	firstDone := make(chan error, 1)
+	secondDone := make(chan error, 1)
+	firstStarted, secondStarted := false, false
+	firstJoined, secondJoined := false, false
+	t.Cleanup(func() {
+		// Always unblock the first writer before joining. This cleanup is
+		// registered before either goroutine starts, so Fatal and timeout paths
+		// cannot strand a writer at the size-check hook.
+		release()
+		join := func(name string, started, joined bool, done <-chan error) {
+			if !started || joined {
+				return
+			}
+			timer := time.NewTimer(3 * time.Second)
+			defer timer.Stop()
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Errorf("cleanup: %s writer returned: %v", name, err)
+				}
+			case <-timer.C:
+				t.Errorf("cleanup: timed out joining %s writer", name)
+			}
+		}
+		join("first", firstStarted, firstJoined, firstDone)
+		join("second", secondStarted, secondJoined, secondDone)
+	})
+	wait := func(name string, done <-chan error, joined *bool) error {
+		t.Helper()
+		timer := time.NewTimer(3 * time.Second)
+		defer timer.Stop()
+		select {
+		case err := <-done:
+			*joined = true
+			return err
+		case <-timer.C:
+			t.Fatalf("timed out joining %s writer", name)
+			return nil
+		}
+	}
+	firstStarted = true
 	go func() { firstDone <- first.Record(record) }()
 	select {
 	case <-firstAtCheck:
 	case <-time.After(time.Second):
 		t.Fatal("first writer did not reach its locked size check")
 	}
-	secondDone := make(chan error, 1)
+	secondStarted = true
 	go func() { secondDone <- second.Record(record) }()
 	select {
 	case <-secondAtCheck:
 		t.Fatal("independent descriptor crossed held flock during size-check interleaving")
 	case <-time.After(50 * time.Millisecond):
 	}
-	close(releaseFirst)
-	if err := <-firstDone; err != nil {
+	release()
+	if err := wait("first", firstDone, &firstJoined); err != nil {
 		t.Fatalf("first writer: %v", err)
 	}
-	if err := <-secondDone; err != nil {
+	if err := wait("second", secondDone, &secondJoined); err != nil {
 		t.Fatalf("second writer: %v", err)
 	}
 	select {
