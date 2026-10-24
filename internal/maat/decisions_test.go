@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -93,6 +94,61 @@ func TestFileDecisionJournalAppendsAndReturnsNewestFirst(t *testing.T) {
 	}
 }
 
+func TestFileDecisionJournalBinaryDriftClaimIsOperationWideAndReopensAfterTerminal(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "decisions.jsonl")
+	first := &FileDecisionJournal{Path: path}
+	second := &FileDecisionJournal{Path: path}
+	claim := func(caseID string) Decision {
+		origin := "screen:" + caseID
+		return Decision{Time: "2026-10-24T12:00:00Z", Host: "fixture", Kind: "diagnostic repair attempt", Requester: "sirsi maat repair binary-drift", Resource: "binary-drift", Assessed: "confirmed supported Homebrew updater", Determination: "in_progress", Why: "durable claim", Evidence: fmt.Sprintf("diagnostic-repair-attempt:sha256=%x", sha256.Sum256([]byte(origin))), OriginEvidence: origin}
+	}
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	results := make(chan error, 2)
+	for _, item := range []struct {
+		journal *FileDecisionJournal
+		caseID  string
+	}{{first, "a"}, {second, "b"}} {
+		wg.Add(1)
+		go func(journal *FileDecisionJournal, caseID string) {
+			defer wg.Done()
+			<-start
+			appended, err := journal.AppendBinaryDriftAttemptOnce(claim(caseID))
+			if err == nil && !appended {
+				err = fmt.Errorf("claim unexpectedly deduplicated")
+			}
+			results <- err
+		}(item.journal, item.caseID)
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	successes := 0
+	var selected Decision
+	for err := range results {
+		if err == nil {
+			successes++
+		}
+	}
+	if successes != 1 {
+		t.Fatalf("concurrent distinct-screen updater claims admitted %d; want exactly one", successes)
+	}
+	if appended, err := second.AppendBinaryDriftAttemptOnce(claim("fresh-screen-during-active-attempt")); err == nil || appended {
+		t.Fatalf("fresh screen bypassed unresolved operation claim: appended=%t err=%v", appended, err)
+	}
+	rows, err := first.Recent(10)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("concurrent claim history = %+v, %v", rows, err)
+	}
+	selected = rows[0]
+	if err := first.Append(Decision{Time: "2026-10-24T12:01:00Z", Host: "fixture", Kind: "diagnostic verified repair", Requester: "sirsi maat repair binary-drift", Resource: "binary-drift", Assessed: "fresh local observation", Determination: "failed", Why: "terminal fixture result", Evidence: "receipt:" + selected.OriginEvidence, OriginEvidence: selected.OriginEvidence}); err != nil {
+		t.Fatal(err)
+	}
+	if appended, err := second.AppendBinaryDriftAttemptOnce(claim("c")); err != nil || !appended {
+		t.Fatalf("new reviewed operation after terminal result = %t, %v", appended, err)
+	}
+}
+
 func TestFileDecisionJournalAppendOnceIsCrossCallIdempotent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "decisions.jsonl")
 	journal := &FileDecisionJournal{Path: path}
@@ -112,6 +168,39 @@ func TestFileDecisionJournalAppendOnceIsCrossCallIdempotent(t *testing.T) {
 	rows, err := journal.Recent(10)
 	if err != nil || len(rows) != 1 || rows[0].Evidence != decision.Evidence {
 		t.Fatalf("idempotent history = %+v, %v", rows, err)
+	}
+}
+
+func TestFileDecisionJournalStrictLookupFindsEvidenceOutsideRecentWindow(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "decisions.jsonl")
+	journal := &FileDecisionJournal{Path: path}
+	old := Decision{
+		Time: "2026-10-24T12:00:00Z", Host: "fixture", Kind: "diagnostic repair attempt",
+		Requester: "sirsi maat repair binary-drift", Resource: "binary-drift", Assessed: "confirmed supported Homebrew updater",
+		Determination: "in_progress", Why: "durable launch claim", Evidence: "attempt:old", OriginEvidence: "maat-system-one:sha256:" + strings.Repeat("a", 64),
+	}
+	if err := journal.Append(old); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 105; i++ {
+		if err := journal.Append(Decision{
+			Time: "2026-10-24T12:01:00Z", Host: "fixture", Kind: "knowledge owner review",
+			Requester: "maat", Resource: "fixture", Assessed: "retained fixture", Determination: "accepted", Why: "fixture row",
+			Evidence: fmt.Sprintf("filler:%d", i),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if rows, err := journal.Recent(100); err != nil || len(rows) != 100 {
+		t.Fatalf("recent-window fixture = %d rows, %v", len(rows), err)
+	}
+	got, found, err := journal.FindByEvidence(old.Kind, old.Evidence)
+	if err != nil || !found || got.OriginEvidence != old.OriginEvidence {
+		t.Fatalf("full-journal exact lookup = %+v, found=%t, err=%v", got, found, err)
+	}
+	found, err = journal.HasOriginDecision(old.Kind, old.Resource, old.OriginEvidence)
+	if err != nil || !found {
+		t.Fatalf("full-journal origin lookup = %t, %v", found, err)
 	}
 }
 

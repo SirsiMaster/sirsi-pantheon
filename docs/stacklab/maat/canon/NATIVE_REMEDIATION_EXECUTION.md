@@ -82,3 +82,35 @@ accepts source/fixture scope and resolves the report-scope and verification-
 generation findings. Installed review/confirm/execute/reverify/recovery UX,
 normal integrated publication and generic Go contract commands remain separate.
 SSA owns publishing and runtime rollout; the proof stays draft, not completed.
+
+## System One binary-drift route
+
+The closed `binary-drift` action is available only for the canonical typed host
+diagnostic finding (including its exact legacy v1 ID/evidence form); producer
+titles and `FixHint` text do not select or authorize it. Native Casebook first
+previews the resolved Homebrew executable and every drifted Homebrew target by
+path, method, version and SHA-256. Confirmation is bound to that immutable
+preview and the original screen evidence. The action calls the same existing
+Homebrew package-updater helper used by `sirsi fix`; unsupported, unmanaged,
+mixed or changed targets are refused. It never uses the ad-hoc self-update
+replacement/signing path. A separate factual receipt links to the original
+screen, and only a successful updater plus a fresh clear diagnostic and
+inventory marks that observation resolved. Failure or unavailable postcheck
+leaves the original observation open. This source addition has not itself been
+qualified or used to update an installed binary.
+
+Composition provenance: the complete 27-file updater feature delta was
+reconciled from `ec6253d14980a6d7d4a8c3adea6679be11cd0dcf` through
+`a5734b9b58f4f24895858bd53e388a1f4a4d1095` onto release-135 composition
+baseline `2634cbeb054b91238a2c0691949d014cb35a4a76`. The release-134
+liveness-watch APIs, journal idempotence, and credential-fixture schema
+corrections remain intact. This provenance is not qualification or an
+installed-update claim.
+
+For this action the approved updater runs once in a newly owned process group,
+with a two-minute deadline. SIGINT, SIGTERM, or deadline cancellation stops
+only that group, escalates after a short grace if needed, and reaps the direct
+child before Ma'at writes a failed/incomplete terminal receipt. The native
+Casebook keeps the same case action in its visible in-progress state until the
+CLI returns; retry remains behind a fresh casebook review. No resolution is
+claimed after cancellation, timeout, or unconfirmed child cleanup.

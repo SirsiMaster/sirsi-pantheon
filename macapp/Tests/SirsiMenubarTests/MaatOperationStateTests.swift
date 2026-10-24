@@ -83,6 +83,8 @@ final class MaatOperationStateTests: XCTestCase {
         XCTAssertTrue(store.begin(key))
         XCTAssertFalse(store.begin(key))
         store.markRunning(key)
+        XCTAssertFalse(store.begin(key), "The same confirmed repair remains non-replayable while its updater is running")
+        XCTAssertEqual(store.record(for: key)?.phase, .running)
         store.complete(key, receipt: MaatOperationReceipt(summary: "Recorded", succeeded: true))
         XCTAssertFalse(store.begin(key))
         XCTAssertEqual(store.record(for: key)?.receipt?.summary, "Recorded")

@@ -57,24 +57,27 @@ type ResolutionStep struct {
 // Case is a stable, operator-readable projection of exactly one recorded
 // Ma'at decision. It has no independent lifecycle or write authority.
 type Case struct {
-	ID                   string                  `json:"id"`
-	Time                 string                  `json:"time"`
-	Host                 string                  `json:"host"`
-	Kind                 string                  `json:"kind"`
-	Category             string                  `json:"category"`
-	Status               Status                  `json:"status"`
-	Priority             Priority                `json:"priority"`
-	Requester            string                  `json:"requester"`
-	Resource             string                  `json:"resource,omitempty"`
-	Affected             string                  `json:"affected,omitempty"`
-	Determination        string                  `json:"determination"`
-	Assessed             string                  `json:"assessed"`
-	Why                  string                  `json:"why"`
-	Evidence             string                  `json:"evidence,omitempty"`
-	Resolution           string                  `json:"resolution,omitempty"`
-	NextAction           *ResolutionPath         `json:"next_action,omitempty"`
-	SystemOne            *maat.MaatVerdict       `json:"system_one,omitempty"`
-	SystemOneCalibration *maat.CalibrationRecord `json:"system_one_calibration,omitempty"`
+	ID                           string                  `json:"id"`
+	Time                         string                  `json:"time"`
+	Host                         string                  `json:"host"`
+	Kind                         string                  `json:"kind"`
+	Category                     string                  `json:"category"`
+	Status                       Status                  `json:"status"`
+	Priority                     Priority                `json:"priority"`
+	Requester                    string                  `json:"requester"`
+	Resource                     string                  `json:"resource,omitempty"`
+	Affected                     string                  `json:"affected,omitempty"`
+	Determination                string                  `json:"determination"`
+	Assessed                     string                  `json:"assessed"`
+	Why                          string                  `json:"why"`
+	Evidence                     string                  `json:"evidence,omitempty"`
+	Resolution                   string                  `json:"resolution,omitempty"`
+	VerifiedRepairEvidence       string                  `json:"verified_repair_evidence,omitempty"`
+	RepairOutcomeEvidence        string                  `json:"repair_outcome_evidence,omitempty"`
+	PendingRepairAttemptEvidence string                  `json:"pending_repair_attempt_evidence,omitempty"`
+	NextAction                   *ResolutionPath         `json:"next_action,omitempty"`
+	SystemOne                    *maat.MaatVerdict       `json:"system_one,omitempty"`
+	SystemOneCalibration         *maat.CalibrationRecord `json:"system_one_calibration,omitempty"`
 }
 
 // Node and Edge form a deliberately small evidence graph. The dashboard can
@@ -121,10 +124,22 @@ type Query struct {
 // never used to change the source decision's determination.
 func Build(decisions []maat.Decision) View {
 	acceptances := make(map[string]maat.Decision)
+	verifiedRepairs := make(map[string]maat.Decision)
+	attempts := make(map[string]maat.Decision)
 	for _, decision := range decisions {
 		if decision.Kind == "diagnostic owner acceptance" && decision.ResolutionFor != "" {
 			if previous, found := acceptances[decision.ResolutionFor]; !found || decision.Time > previous.Time {
 				acceptances[decision.ResolutionFor] = decision
+			}
+		}
+		if decision.Kind == "diagnostic verified repair" && decision.Resource == "binary-drift" && decision.OriginEvidence != "" {
+			if previous, found := verifiedRepairs[decision.OriginEvidence]; !found || decision.Time > previous.Time {
+				verifiedRepairs[decision.OriginEvidence] = decision
+			}
+		}
+		if decision.Kind == "diagnostic repair attempt" && decision.Resource == "binary-drift" && decision.OriginEvidence != "" {
+			if previous, found := attempts[decision.OriginEvidence]; !found || decision.Time > previous.Time {
+				attempts[decision.OriginEvidence] = decision
 			}
 		}
 	}
@@ -139,6 +154,16 @@ func Build(decisions []maat.Decision) View {
 		if acceptance, accepted := acceptances[decision.Evidence]; accepted {
 			c.Status = StatusResolved
 			c.Resolution = acceptance.Why
+		} else if repair, repaired := verifiedRepairs[decision.Evidence]; repaired {
+			c.RepairOutcomeEvidence = repair.Evidence
+			if repair.Determination == "resolved" {
+				c.VerifiedRepairEvidence = repair.Evidence
+				if binaryRepairDischargesScreen(decision.SystemOne) {
+					c.Status = StatusResolved
+				}
+			}
+		} else if attempt, pending := attempts[decision.Evidence]; pending {
+			c.PendingRepairAttemptEvidence = attempt.Evidence
 		}
 		c.NextAction = resolutionPath(c)
 		cases = append(cases, c)
@@ -264,6 +289,27 @@ func resolutionPath(c Case) *ResolutionPath {
 			Evidence: c.Evidence, RequiresConfirmation: true,
 		}
 	}
+	if c.PendingRepairAttemptEvidence != "" {
+		return &ResolutionPath{
+			Kind: "system_one_review", ActionID: "inspect_binary_drift_attempt", Title: "Inspect the unresolved updater attempt",
+			Detail:   "Use `sirsi maat repair binary-drift --inspect-attempt --case-evidence " + c.Evidence + "` for a read-only current binary observation tied to this exact screen. The durable launch claim means Ma'at will not replay this updater; review the retained attempt and take a fresh System One screen before any new consent.",
+			Evidence: c.Evidence,
+		}
+	}
+	if c.VerifiedRepairEvidence != "" {
+		return &ResolutionPath{
+			Kind: "system_one_review", ActionID: "rescreen_system_one", Title: "Re-screen the remaining System One findings",
+			Detail:   "The binary-drift repair outcome is retained, but it does not discharge this screen's other findings or failed floor checks. Run a fresh System One observation and review its exact evidence; no updater will be replayed from this route.",
+			Evidence: c.Evidence,
+		}
+	}
+	if c.RepairOutcomeEvidence != "" {
+		return &ResolutionPath{
+			Kind: "system_one_review", ActionID: "rescreen_system_one", Title: "Review the failed updater result and re-screen",
+			Detail:   "The failed or unverified updater outcome is retained as evidence. Run a fresh System One observation; no updater will be replayed from this route.",
+			Evidence: c.Evidence,
+		}
+	}
 	if c.SystemOne != nil && !c.SystemOne.Floor.Passed {
 		return failedFloorRecovery(c)
 	}
@@ -284,6 +330,17 @@ func resolutionPath(c Case) *ResolutionPath {
 	}
 }
 
+// A binary-only receipt can close only the exact binary-only screen with a
+// passed deterministic floor. Other findings and floor failures remain open
+// for a fresh System One observation even when the updater itself verified.
+func binaryRepairDischargesScreen(verdict *maat.MaatVerdict) bool {
+	if verdict == nil || !verdict.Floor.Passed || len(verdict.Findings) != 1 {
+		return false
+	}
+	finding := verdict.Findings[0]
+	return maat.IsCanonicalHostDiagnosticFinding(*verdict, finding, "binary-drift")
+}
+
 // systemOneRepair projects only a singular, closed Ma'at repair reference. A
 // screen with no repair, a mismatched reference, or multiple independent
 // repairs still receives the evidence-bound review route above; Casebook never
@@ -291,6 +348,18 @@ func resolutionPath(c Case) *ResolutionPath {
 func systemOneRepair(verdict *maat.MaatVerdict, evidence string) (*ResolutionPath, bool) {
 	if verdict == nil {
 		return nil, false
+	}
+	if len(verdict.Findings) > 0 {
+		legacyBinaryDrift, hasClosedRepair := 0, false
+		for _, finding := range verdict.Findings {
+			hasClosedRepair = hasClosedRepair || finding.RepairID != ""
+			if finding.RepairID == "" && maat.IsCanonicalHostDiagnosticFinding(*verdict, finding, "binary-drift") {
+				legacyBinaryDrift++
+			}
+		}
+		if !hasClosedRepair && legacyBinaryDrift == 1 {
+			return binaryDriftRepair(evidence), true
+		}
 	}
 	ids := map[string]bool{}
 	for _, finding := range verdict.Findings {
@@ -328,7 +397,37 @@ func systemOneRepair(verdict *maat.MaatVerdict, evidence string) (*ResolutionPat
 			},
 		}, true
 	}
+	if ids[maat.SystemOneRepairBinaryDrift] {
+		count := 0
+		for _, finding := range verdict.Findings {
+			if finding.RepairID != maat.SystemOneRepairBinaryDrift {
+				continue
+			}
+			count++
+			if !maat.IsCanonicalHostDiagnosticFinding(*verdict, finding, "binary-drift") {
+				return nil, false
+			}
+		}
+		if count != 1 {
+			return nil, false
+		}
+		return binaryDriftRepair(evidence), true
+	}
 	return nil, false
+}
+
+func binaryDriftRepair(evidence string) *ResolutionPath {
+	return &ResolutionPath{
+		Kind: "maat_repair", ActionID: maat.SystemOneRepairBinaryDrift,
+		Title: "Update the Homebrew-managed Sirsi installation", Evidence: evidence,
+		Detail:               "Ma'at will prepare a fresh read-only preview of the exact drifted Homebrew targets. After you review and confirm that preview, it will call Pantheon's existing Homebrew updater, re-check binary drift, and retain the outcome. Raw, unmanaged, changed, or mixed-install targets are refused; Ma'at never re-signs or replaces them.",
+		RequiresConfirmation: true,
+		Steps: []ResolutionStep{
+			{Level: 1, Title: "Review the current installation evidence", Detail: "Inspect the retained System One finding and Ma'at's fresh target/version/hash preview. The finding text and suggested command are evidence only.", Evidence: evidence},
+			{Level: 2, Title: "Confirm the supported updater", Detail: "Run only the existing Homebrew package updater for the exact preview binding. A changed preview or any non-Homebrew target is refused; no ad-hoc signing, app-bundle replacement, trust change, or service/process action is performed.", Evidence: evidence, RequiresConfirmation: true},
+			{Level: 3, Title: "Inspect the fresh post-update result", Detail: "Ma'at re-runs the binary-drift diagnostic and records a separate factual receipt. The original observation stays preserved; it is not owner-accepted or marked repaired unless the fresh check is clear.", Evidence: evidence},
+		},
+	}
 }
 
 func failedFloorRecovery(c Case) *ResolutionPath {

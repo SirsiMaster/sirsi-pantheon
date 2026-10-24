@@ -7,6 +7,28 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 )
 
+type casebookTestJournal struct{ decisions []maat.Decision }
+
+func casebookCaseByEvidence(cases []Case, evidence string) (Case, bool) {
+	for _, item := range cases {
+		if item.Evidence == evidence {
+			return item, true
+		}
+	}
+	return Case{}, false
+}
+
+func (j *casebookTestJournal) Append(d maat.Decision) error {
+	j.decisions = append(j.decisions, d)
+	return nil
+}
+func (j *casebookTestJournal) Recent(limit int) ([]maat.Decision, error) {
+	if limit > 0 && len(j.decisions) > limit {
+		return append([]maat.Decision(nil), j.decisions[len(j.decisions)-limit:]...), nil
+	}
+	return append([]maat.Decision(nil), j.decisions...), nil
+}
+
 func TestSourceScreenV2ProjectsReviewWithoutHostRepairAuthority(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -230,6 +252,211 @@ func TestBuildRoutesLivenessWatchThroughClosedMaatAction(t *testing.T) {
 	}
 	if !strings.Contains(action.Steps[1].Detail, "no prior incidents are imported") || !strings.Contains(action.Steps[2].Detail, "durable attempt record") {
 		t.Fatalf("liveness repair action omits explicit local genesis or durable attempt: %+v", action.Steps)
+	}
+}
+
+func TestBuildRoutesBinaryDriftThroughConfirmedSupportedUpdater(t *testing.T) {
+	const headSHA = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+	verdict, err := maat.Screen(maat.SystemOneScreen{
+		Subject:       maat.VerdictSubject{Kind: "host", Repo: "m5", Ref: "diagnostic", HeadSHA: headSHA},
+		FeatherWeight: 72, Confidence: 1,
+		Floor: maat.FloorResult{Passed: true, Checks: []maat.FloorCheck{{Name: "diagnostic observation", Passed: true}}},
+		Findings: []maat.ScreenFinding{{
+			ID: maat.CanonicalHostFindingID("binary-drift"), Severity: "major", Category: "host-health", Claim: "Sirsi binary drift detected",
+			Evidence: maat.CanonicalHostFindingEvidence(headSHA, "binary-drift"), Confidence: 1, FixHint: "untrusted producer command",
+			RepairID: maat.SystemOneRepairBinaryDrift,
+		}},
+		Model: maat.ModelStamp{Provider: "maat-local:deterministic", Version: "v1", Local: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal := &casebookTestJournal{}
+	screen, err := maat.RecordSystemOne(journal, "untrusted label is not authority", verdict)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence := screen.Evidence
+	view := Build(journal.decisions)
+	if len(view.Cases) != 1 {
+		t.Fatalf("binary-drift case projection = %+v", view)
+	}
+	action := view.Cases[0].NextAction
+	if action == nil || action.Kind != "maat_repair" || action.ActionID != maat.SystemOneRepairBinaryDrift || action.Evidence != evidence || !action.RequiresConfirmation || len(action.Steps) != 3 {
+		t.Fatalf("binary-drift resolution = %+v", action)
+	}
+	for index, step := range action.Steps {
+		if step.Level != index+1 || step.Evidence != evidence {
+			t.Fatalf("binary-drift step %d lost source evidence: %+v", index+1, step)
+		}
+	}
+	if strings.Contains(action.Detail, "untrusted producer command") || !strings.Contains(action.Detail, "Homebrew") {
+		t.Fatalf("repair route trusted producer text or omitted updater boundary: %+v", action)
+	}
+}
+
+func TestResolvedBinaryRepairDoesNotDischargeOtherFindingsOrFailedFloor(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		floor bool
+		other bool
+	}{
+		{name: "independent finding", floor: true, other: true},
+		{name: "failed floor", floor: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			head := strings.Repeat("c", 64)
+			floorDetail := ""
+			if !tc.floor {
+				floorDetail = "fixture: local diagnostic failed"
+			}
+			findings := []maat.ScreenFinding{{ID: maat.CanonicalHostFindingID("binary-drift"), Severity: "major", Category: "host-health", Claim: "binary drift", Evidence: maat.CanonicalHostFindingEvidence(head, "binary-drift"), Confidence: 1, RepairID: maat.SystemOneRepairBinaryDrift}}
+			if tc.other {
+				findings = append(findings, maat.ScreenFinding{ID: "independent-health", Severity: "major", Category: "host-health", Claim: "independent issue", Evidence: "fixture:independent", Confidence: 1})
+			}
+			verdict, err := maat.Screen(maat.SystemOneScreen{
+				Subject:       maat.VerdictSubject{Kind: "host", Repo: "fixture-host", Ref: "diagnostic", HeadSHA: head},
+				FeatherWeight: 72, Confidence: 1, Floor: maat.FloorResult{Passed: tc.floor, Checks: []maat.FloorCheck{{Name: "local diagnostic", Passed: tc.floor, Detail: floorDetail}}}, Findings: findings,
+				Model: maat.ModelStamp{Provider: "maat-local:deterministic", Version: "v1", Local: true},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			journal := &casebookTestJournal{}
+			screen, err := maat.RecordSystemOne(journal, "fixture", verdict)
+			if err != nil {
+				t.Fatal(err)
+			}
+			journal.decisions = append(journal.decisions, maat.Decision{Time: "2026-10-24T05:00:00Z", Kind: "diagnostic verified repair", Determination: "resolved", OriginEvidence: screen.Evidence, Evidence: "fixture:repair-receipt", Resource: "binary-drift"})
+			view := Build(journal.decisions)
+			item, found := casebookCaseByEvidence(view.Cases, screen.Evidence)
+			if !found || item.Status != StatusOpen || item.VerifiedRepairEvidence == "" || item.RepairOutcomeEvidence == "" || item.NextAction == nil || item.NextAction.Kind != "system_one_review" || item.NextAction.ActionID != "rescreen_system_one" {
+				t.Fatalf("remaining source debt was not kept open with a re-screen route: %+v", view)
+			}
+		})
+	}
+}
+
+func TestResolvedBinaryOnlyRepairClosesFullyDischargedScreen(t *testing.T) {
+	head := strings.Repeat("d", 64)
+	verdict, err := maat.Screen(maat.SystemOneScreen{
+		Subject:       maat.VerdictSubject{Kind: "host", Repo: "fixture-host", Ref: "diagnostic", HeadSHA: head},
+		FeatherWeight: 72, Confidence: 1, Floor: maat.FloorResult{Passed: true, Checks: []maat.FloorCheck{{Name: "local diagnostic", Passed: true}}},
+		Findings: []maat.ScreenFinding{{ID: maat.CanonicalHostFindingID("binary-drift"), Severity: "major", Category: "host-health", Claim: "binary drift", Evidence: maat.CanonicalHostFindingEvidence(head, "binary-drift"), Confidence: 1, RepairID: maat.SystemOneRepairBinaryDrift}},
+		Model:    maat.ModelStamp{Provider: "maat-local:deterministic", Version: "v1", Local: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal := &casebookTestJournal{}
+	screen, err := maat.RecordSystemOne(journal, "fixture", verdict)
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal.decisions = append(journal.decisions, maat.Decision{Time: "2026-10-24T06:00:00Z", Kind: "diagnostic verified repair", Resource: "binary-drift", Determination: "resolved", OriginEvidence: screen.Evidence, Evidence: "fixture:repair-resolved"})
+	view := Build(journal.decisions)
+	item, found := casebookCaseByEvidence(view.Cases, screen.Evidence)
+	if !found || item.Status != StatusResolved || item.VerifiedRepairEvidence == "" || item.NextAction != nil {
+		t.Fatalf("fully discharged binary-only screen did not resolve: %+v", view)
+	}
+}
+
+func TestUnresolvedBinaryAttemptProjectsReadOnlyInspectionRoute(t *testing.T) {
+	head := strings.Repeat("e", 64)
+	verdict, err := maat.Screen(maat.SystemOneScreen{
+		Subject: maat.VerdictSubject{Kind: "host", Repo: "fixture-host", Ref: "diagnostic", HeadSHA: head}, FeatherWeight: 72, Confidence: 1,
+		Floor:    maat.FloorResult{Passed: true, Checks: []maat.FloorCheck{{Name: "local diagnostic", Passed: true}}},
+		Findings: []maat.ScreenFinding{{ID: maat.CanonicalHostFindingID("binary-drift"), Severity: "major", Category: "host-health", Claim: "binary drift", Evidence: maat.CanonicalHostFindingEvidence(head, "binary-drift"), Confidence: 1, RepairID: maat.SystemOneRepairBinaryDrift}},
+		Model:    maat.ModelStamp{Provider: "maat-local:deterministic", Version: "v1", Local: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal := &casebookTestJournal{}
+	screen, err := maat.RecordSystemOne(journal, "fixture", verdict)
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal.decisions = append(journal.decisions, maat.Decision{Time: "2026-10-24T07:00:00Z", Kind: "diagnostic repair attempt", Resource: "binary-drift", Determination: "in_progress", OriginEvidence: screen.Evidence, Evidence: "diagnostic-repair-attempt:sha256=" + strings.Repeat("f", 64)})
+	view := Build(journal.decisions)
+	item, found := casebookCaseByEvidence(view.Cases, screen.Evidence)
+	if !found || item.Status != StatusOpen || item.PendingRepairAttemptEvidence == "" || item.NextAction == nil || item.NextAction.ActionID != "inspect_binary_drift_attempt" || !strings.Contains(item.NextAction.Detail, "--inspect-attempt --case-evidence "+screen.Evidence) {
+		t.Fatalf("unresolved attempt lacks read-only recovery route: %+v", view)
+	}
+}
+
+func TestBuildRoutesLegacyBinaryDriftAndLinksOnlyVerifiedRepair(t *testing.T) {
+	const (
+		headSHA  = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		evidence = "maat-system-one:sha256=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	)
+	verdict, err := maat.Screen(maat.SystemOneScreen{
+		Subject:       maat.VerdictSubject{Kind: "host", Repo: "fixture-host", Ref: "diagnostic", HeadSHA: headSHA},
+		FeatherWeight: 72, Confidence: 1,
+		Floor: maat.FloorResult{Passed: true, Checks: []maat.FloorCheck{{Name: "diagnostic observation", Passed: true}}},
+		Findings: []maat.ScreenFinding{{
+			ID: maat.CanonicalHostFindingID("binary-drift"), Severity: "major", Category: "host-health",
+			Claim: "Sirsi binary drift detected", Evidence: maat.CanonicalHostFindingEvidence(headSHA, "binary-drift"),
+			Confidence: 1, FixHint: "Level 1: sirsi self-update",
+		}},
+		Model: maat.ModelStamp{Provider: "maat-local:deterministic", Version: "v1", Local: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := maat.Decision{
+		Time: "2026-10-24T04:00:00Z", Host: "fixture-host", Kind: "system one screen", Requester: "old producer title",
+		Assessed: "host diagnostic", Determination: string(verdict.Gate), Why: "binary drift", Evidence: evidence, SystemOne: &verdict,
+	}
+	open := Build([]maat.Decision{original})
+	if len(open.Cases) != 1 || open.Cases[0].Status != StatusOpen || open.Cases[0].NextAction == nil || open.Cases[0].NextAction.ActionID != maat.SystemOneRepairBinaryDrift {
+		t.Fatalf("legacy v1 case did not receive the closed typed route: %+v", open.Cases)
+	}
+	if strings.Contains(open.Cases[0].NextAction.Detail, "sirsi self-update") {
+		t.Fatal("legacy producer hint became part of the recovery authority")
+	}
+
+	failed := maat.Decision{Time: "2026-10-24T04:01:00Z", Kind: "diagnostic verified repair", Resource: "binary-drift", Determination: "failed", Evidence: "diagnostic-repair:sha256=failed", OriginEvidence: evidence}
+	stillOpen := Build([]maat.Decision{original, failed})
+	failedSource, found := casebookCaseByEvidence(stillOpen.Cases, evidence)
+	if !found || failedSource.Status != StatusOpen || failedSource.VerifiedRepairEvidence != "" || failedSource.RepairOutcomeEvidence != failed.Evidence || failedSource.NextAction == nil || failedSource.NextAction.Kind != "system_one_review" || failedSource.NextAction.ActionID != "rescreen_system_one" {
+		t.Fatalf("failed repair receipt was not preserved with a fresh-review route: %+v", stillOpen.Cases)
+	}
+
+	verified := maat.Decision{Time: "2026-10-24T04:02:00Z", Kind: "diagnostic verified repair", Resource: "binary-drift", Determination: "resolved", Evidence: "diagnostic-repair:sha256=verified", OriginEvidence: evidence}
+	resolved := Build([]maat.Decision{original, verified})
+	if len(resolved.Cases) != 2 {
+		t.Fatalf("repair receipt or original case was not preserved: %+v", resolved.Cases)
+	}
+	var source Case
+	for _, c := range resolved.Cases {
+		if c.Evidence == evidence {
+			source = c
+		}
+	}
+	if source.Status != StatusResolved || source.VerifiedRepairEvidence != verified.Evidence || source.RepairOutcomeEvidence != verified.Evidence || source.Resolution != "" || source.NextAction != nil {
+		t.Fatalf("verified repair was confused with owner acceptance or did not resolve its source case: %+v", source)
+	}
+}
+
+func TestBuildDoesNotTreatBinaryDriftLabelAsAuthorityWithoutCanonicalFinding(t *testing.T) {
+	verdict, err := maat.Screen(maat.SystemOneScreen{
+		Subject:       maat.VerdictSubject{Kind: "commit", Repo: "fixture/repo", Ref: "main", HeadSHA: strings.Repeat("a", 40)},
+		FeatherWeight: 72, Confidence: 1,
+		Floor: maat.FloorResult{Passed: true, Checks: []maat.FloorCheck{{Name: "source observation", Passed: true}}},
+		Findings: []maat.ScreenFinding{{
+			ID: "invented-binary-drift", Severity: "major", Category: "host-health", Claim: "binary drift",
+			Evidence: "producer text says binary drift", Confidence: 1, FixHint: "sirsi self-update",
+			RepairID: maat.SystemOneRepairBinaryDrift,
+		}},
+		Model: maat.ModelStamp{Provider: "local:fixture", Version: "v1", Local: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, ok := systemOneRepair(&verdict, "untrusted-screen-label")
+	if ok || path != nil {
+		t.Fatalf("producer-supplied repair label bypassed canonical host finding checks: %+v", path)
 	}
 }
 

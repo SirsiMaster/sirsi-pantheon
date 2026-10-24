@@ -18,6 +18,7 @@ func TestMaatHostV1WarningRepairsRemainDeterministicWithoutCalibration(t *testin
 		wantRepair string
 	}{
 		{"closed launchd fallback", maatRepairLaunchdDisabledCheck, "", guard.ResolutionRepair, maat.SystemOneRepairLaunchdDisabled},
+		{"closed binary-drift updater", "binary-drift", "producer hint is not action authority", guard.ResolutionRepair, maat.SystemOneRepairBinaryDrift},
 		// The real liveness warning producer supplies this Fix after doctor's
 		// remediation pass. Its check name alone does not establish eligibility.
 		{"closed producer-owned liveness", maatRepairLivenessWatchCheck, "sirsi liveness-watch install", guard.ResolutionRepair, maat.SystemOneRepairLivenessWatch},

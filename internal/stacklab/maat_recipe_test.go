@@ -19,6 +19,7 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 		Tests         []string `json:"tests"`
 		Inputs        []string `json:"inputs"`
 		Outputs       []string `json:"outputs"`
+		Writes        []string `json:"writes"`
 		UpgradeRecipe []string `json:"upgrade_recipe"`
 	}
 	var recipe struct {
@@ -41,7 +42,7 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 	want := []string{
 		"maat-canon", "maat-casebook", "maat-cli", "maat-confirmed-diagnostic-repair", "maat-core", "maat-coverage",
 		"maat-decision-journal", "maat-failure-memory", "maat-guided-managed-repair", "maat-horus-surface", "maat-knowledge-surface", "maat-known-failure-proposals", "maat-mcp-surface", "maat-native-release-bootstrap", "maat-native-resolution-surface", "maat-pipeline", "maat-pulse-proof-platform",
-		"maat-host-health-screen", "maat-knowledge-archive", "maat-local-metadata-liveness-watch", "maat-release-contract-preflight", "maat-release-credential-preflight", "maat-scheduler", "maat-scoped-service-lifecycle", "maat-system-one-screen", "maat-terminal-console-surface", "maat-wing-contract", "stacklab-apollo-run-planner",
+		"maat-binary-drift-updater", "maat-host-health-screen", "maat-knowledge-archive", "maat-local-metadata-liveness-watch", "maat-release-contract-preflight", "maat-release-credential-preflight", "maat-scheduler", "maat-scoped-service-lifecycle", "maat-system-one-screen", "maat-terminal-console-surface", "maat-wing-contract", "stacklab-apollo-run-planner",
 	}
 	got := make([]string, 0, len(recipe.Components))
 	for _, component := range recipe.Components {
@@ -147,6 +148,65 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 					t.Fatalf("component %q omits %s contract %q", required.ID, field.name, want)
 				}
 			}
+		}
+	}
+	binaryDrift, ok := componentsByID["maat-binary-drift-updater"]
+	if !ok {
+		t.Fatal("independently upgradeable Ma'at binary-drift updater component is missing")
+	}
+	for _, path := range []string{
+		"cmd/sirsi/maatrepair_binary_drift.go", "cmd/sirsi/fix.go", "cmd/sirsi/owned_updater_unix.go",
+		"internal/selfupdate/selfupdate.go", "internal/maat/decisions.go", "internal/maat/casebook/casebook.go",
+		"macapp/Sources/SirsiMenubar/MaatCasebookView.swift",
+	} {
+		if !contains(binaryDrift.Source, path) {
+			t.Fatalf("binary-drift recipe omits implementation source %q", path)
+		}
+	}
+	for _, path := range []string{
+		"cmd/sirsi/maatrepair_binary_drift_test.go", "cmd/sirsi/owned_updater_unix_test.go",
+		"internal/selfupdate/probe_bounded_unix_test.go", "internal/maat/casebook/casebook_test.go",
+		"internal/maat/decisions_test.go", "macapp/Tests/SirsiMenubarTests/CoreContractsTests.swift",
+	} {
+		if !contains(binaryDrift.Tests, path) {
+			t.Fatalf("binary-drift recipe omits regression suite %q", path)
+		}
+	}
+	for _, input := range []string{
+		"exact open canonical System One binary-drift finding and its evidence",
+		"explicit confirmation of the immutable preview binding",
+		"existing Ma'at decision journal and operation-wide pending-attempt state",
+	} {
+		if !contains(binaryDrift.Inputs, input) {
+			t.Fatalf("binary-drift recipe omits required input %q", input)
+		}
+	}
+	for _, output := range []string{
+		"read-only Homebrew-only updater preview bound to the exact source finding and target inventory",
+		"durable pre-launch claim and distinct verified, failed, or unresolved factual outcome",
+		"original screen remains open when other findings or deterministic floor failures remain",
+	} {
+		if !contains(binaryDrift.Outputs, output) {
+			t.Fatalf("binary-drift recipe omits required output %q", output)
+		}
+	}
+	for _, write := range []string{
+		"existing Ma'at decision journal with the exact attempt and factual outcome",
+		"only the existing Homebrew-managed Sirsi package through its supported updater after exact confirmation",
+	} {
+		if !contains(binaryDrift.Writes, write) {
+			t.Fatalf("binary-drift recipe misstates or omits write boundary %q", write)
+		}
+	}
+	for _, boundary := range []string{
+		"accept only the canonical typed binary-drift finding; never dispatch finding text, FixHint, or arbitrary producer command",
+		"atomically retain the operation-wide attempt claim before launch and refuse another updater while any prior claim lacks a terminal receipt",
+		"run the existing Homebrew updater once in its owned process group with bounded cancellation, group-only termination, and direct-child reap; unknown termination retains the claim and forbids replay",
+		"close only an exact binary-only screen with a passed floor; preserve other findings, failed floors, original evidence, and owner acceptance as separate state",
+		"use inert updater fixtures only; source qualification does not run the live updater or claim installed release behavior",
+	} {
+		if !contains(binaryDrift.UpgradeRecipe, boundary) {
+			t.Fatalf("binary-drift recipe omits safety boundary %q", boundary)
 		}
 	}
 	lifecycle := componentsByID["maat-scoped-service-lifecycle"]

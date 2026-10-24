@@ -2265,6 +2265,9 @@ private struct MaatCaseDetailView: View {
     @State private var failureMemoryBusy = false
     @State private var failureMemoryMessage: String?
     @State private var pendingFailureMemoryAction: MaatFailureMemoryAction?
+    @State private var binaryDriftPreview: MaatBinaryDriftPreview?
+    @State private var binaryDriftPreviewLoading = false
+    @State private var binaryDriftPreviewError: String?
 
     private var operationKey: MaatOperationKey { MaatOperationKey(case: entry) }
     private var operationRecord: MaatOperationRecord? { operations.record(for: operationKey) }
@@ -2305,7 +2308,7 @@ private struct MaatCaseDetailView: View {
 							detailSection("Declared evidence recipe", systemOne.model.evidenceSetDigest)
 						}
 						systemOneFloor(systemOne.floor)
-						systemOneFindings(systemOne.findings)
+						systemOneFindings(systemOne.findings, closedActionID: entry.nextAction?.actionID)
 						if let escalation = systemOne.escalation {
 							detailSection("Required review", escalation.reason)
 						}
@@ -2344,6 +2347,12 @@ private struct MaatCaseDetailView: View {
                     if entry.nextAction?.kind == "maat_repair", entry.nextAction?.actionID == "liveness-watch" {
                         failureMemorySetup
                     }
+                    if let repairOutcome = maatCasebookRepairOutcomePresentation(entry) {
+                        detailSection(repairOutcome.title, repairOutcome.evidence)
+                        Text(repairOutcome.detail)
+                            .sirsiFont(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     if let action = entry.nextAction, entry.status.lowercased() != "resolved" { resolutionAction(action) }
                 }
                 .padding(16)
@@ -2373,6 +2382,9 @@ private struct MaatCaseDetailView: View {
             return pendingFailureMemoryAction == .initialize ? "Initialize local failure memory?" : "Re-observe and reconcile the retained outcome?"
         }
         switch entry.nextAction?.kind {
+        case "system_one_review" where entry.nextAction?.actionID == "inspect_binary_drift_attempt": return "Inspect the retained updater attempt?"
+        case "system_one_review" where entry.nextAction?.actionID == "rescreen_system_one": return "Run a fresh System One screen?"
+        case "maat_repair" where entry.nextAction?.actionID == "binary-drift": return "Run this reviewed Homebrew update?"
         case "maat_repair": return "Apply Ma'at's bounded recovery?"
         case "owner_acceptance": return "Record this owner acceptance?"
         case "system_one_floor_recovery": return "Record this recovery review?"
@@ -2385,6 +2397,9 @@ private struct MaatCaseDetailView: View {
             return pendingFailureMemoryAction == .initialize ? "Initialize local failure memory" : "Inspect and re-observe"
         }
         switch entry.nextAction?.kind {
+        case "system_one_review" where entry.nextAction?.actionID == "inspect_binary_drift_attempt": return "Inspect attempt"
+        case "system_one_review" where entry.nextAction?.actionID == "rescreen_system_one": return "Run fresh screen"
+        case "maat_repair" where entry.nextAction?.actionID == "binary-drift": return "Run Homebrew updater"
         case "maat_repair": return "Apply bounded recovery"
         case "owner_acceptance": return "Record owner acceptance"
         case "system_one_floor_recovery": return "Record recovery review"
@@ -2397,6 +2412,18 @@ private struct MaatCaseDetailView: View {
             return pendingFailureMemoryAction == .initialize
                 ? "Create Ma'at's private per-user failure-memory store for genuine first use. No prior incidents are imported, and no liveness-watch repair runs until you review and confirm it separately."
                 : "Read back the exact prior liveness-watch target and reconcile its durable outcome into Casebook. Installation will not replay; any later repair requires a fresh review and confirmation."
+        }
+        if entry.nextAction?.kind == "system_one_review", entry.nextAction?.actionID == "inspect_binary_drift_attempt" {
+            return "Ma'at will make a read-only bounded observation for this exact retained attempt. This does not prove attribution or authorize an updater replay."
+        }
+        if entry.nextAction?.kind == "system_one_review", entry.nextAction?.actionID == "rescreen_system_one" {
+            return "Ma'at will perform and retain a fresh local System One observation. It will not replay the prior updater."
+        }
+        if entry.nextAction?.kind == "maat_repair", entry.nextAction?.actionID == "binary-drift" {
+            let targets = binaryDriftPreview?.targets.map(\.path).joined(separator: ", ") ?? "unavailable"
+            let updater = binaryDriftPreview?.updaterPath ?? "unavailable"
+            let binding = binaryDriftPreview?.binding ?? "unavailable"
+            return "Run the reviewed Homebrew executable at \(updater) with `upgrade sirsi-pantheon` for these targets: \(targets), under preview binding \(binding). Ma'at will recheck binary drift and retain the result. A changed preview is refused; Pantheon will not replace or re-sign a CLI directly."
         }
         return entry.nextAction?.kind == "maat_repair"
             ? "Ma'at will re-check the exact managed disabled labels, change only the bounded verified set, re-check the same diagnostic, and retain the outcome. It will not touch unrelated services."
@@ -2550,20 +2577,32 @@ private struct MaatCaseDetailView: View {
                     .textFieldStyle(.roundedBorder)
                     .lineLimit(2...4)
             }
-            Button {
-                confirmAction = true
-            } label: {
-                Label(operationRecord?.phase == .retryReady ? "Confirm reviewed retry" : confirmationButton, systemImage: action.kind == "maat_repair" ? "wrench.and.screwdriver.fill" : action.kind == "owner_acceptance" ? "checkmark.circle.fill" : "arrow.triangle.branch")
-                    .frame(maxWidth: .infinity)
+            if action.kind == "maat_repair", action.actionID == "binary-drift" {
+                binaryDriftRecoveryControls(action)
+            } else {
+                Button {
+                    confirmAction = true
+                } label: {
+                    Label(operationRecord?.phase == .retryReady ? "Confirm reviewed retry" : confirmationButton, systemImage: action.kind == "maat_repair" ? "wrench.and.screwdriver.fill" : action.kind == "owner_acceptance" ? "checkmark.circle.fill" : "arrow.triangle.branch")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(gold)
+                .disabled(operationInFlight || !canBeginOperation || failureMemoryNeedsReview || (action.kind == "owner_acceptance" && conclusion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
+                .accessibilityHint(action.kind == "maat_repair" ? "Runs only Ma'at's named bounded recovery after confirmation, then retains its post-repair evidence." : "Records an evidence-bound owner decision; it does not repair the system.")
             }
-            .buttonStyle(.borderedProminent)
-            .tint(gold)
-            .disabled(operationInFlight || !canBeginOperation || failureMemoryNeedsReview || (action.kind == "owner_acceptance" && conclusion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
-            .accessibilityHint(action.kind == "maat_repair" ? "Runs only Ma'at's named bounded recovery after confirmation, then retains its post-repair evidence." : "Records an evidence-bound owner decision; it does not repair the system.")
             if let receipt = operationRecord?.receipt {
                 Label(receipt.summary, systemImage: receipt.succeeded ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                     .sirsiFont(.caption)
                     .foregroundStyle(receipt.succeeded ? .green : .orange)
+            }
+            if action.kind == "maat_repair", action.actionID == "binary-drift", operationInFlight {
+                ProgressView("Applying the reviewed updater…")
+                    .sirsiFont(.caption)
+                Text("This operation stays locked until the owned updater exits and Ma’at records a fresh verification or an explicit failure. The updater is bounded to two minutes before verification.")
+                    .sirsiFont(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             if let guidance = operationRecord?.guidance {
                 Label(guidance, systemImage: "exclamationmark.triangle.fill")
@@ -2582,6 +2621,86 @@ private struct MaatCaseDetailView: View {
         }
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+    }
+
+    @ViewBuilder private func binaryDriftRecoveryControls(_ action: MaatCaseNextAction) -> some View {
+        Button {
+            Task { await loadBinaryDriftPreview(action) }
+        } label: {
+            Label(binaryDriftPreviewLoading ? "Refreshing updater preview…" : "Preview supported updater", systemImage: "magnifyingglass")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .disabled(operationInFlight || binaryDriftPreviewLoading)
+        .accessibilityHint("Reads the current installation method and exact drifted targets. It does not update anything.")
+
+        if let preview = binaryDriftPreview, preview.caseEvidence == action.evidence {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Supported updater: \(preview.updater)")
+                    .sirsiFont(.subheadline, weight: .semibold)
+                Text("Executable: \(preview.updaterPath) · sha256 \(preview.updaterSHA256)")
+                    .sirsiFont(.caption, design: .monospaced)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                ForEach(preview.targets) { target in
+                    Text("\(target.path) · \(target.method) · \(target.version) · sha256 \(target.sha256)")
+                        .sirsiFont(.caption, design: .monospaced)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+                Text("Preview binding \(preview.binding)")
+                    .sirsiFont(.caption2, design: .monospaced)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                Button {
+                    confirmAction = true
+                } label: {
+                    Label("Confirm this exact update", systemImage: "wrench.and.screwdriver.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(gold)
+                .disabled(operationInFlight || !canBeginOperation)
+                .accessibilityHint("Rechecks this exact preview binding before calling the existing Homebrew updater.")
+            }
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.045)))
+        }
+        if let binaryDriftPreviewError {
+            Label(binaryDriftPreviewError, systemImage: "exclamationmark.triangle.fill")
+                .sirsiFont(.caption)
+                .foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @MainActor private func loadBinaryDriftPreview(_ action: MaatCaseNextAction) async {
+        binaryDriftPreviewLoading = true
+        binaryDriftPreviewError = nil
+        defer { binaryDriftPreviewLoading = false }
+        let capture = await SirsiEngine.runCaptured(
+            args: maatCasebookBinaryDriftPreviewArguments(caseEvidence: action.evidence),
+            timeout: 30
+        )
+        guard capture.complete, capture.exitCode == 0,
+              let preview = MaatBinaryDriftPreview.decode(capture.stdout),
+              preview.caseEvidence == action.evidence,
+              preview.updater == "brew upgrade sirsi-pantheon",
+              preview.updaterPath.hasPrefix("/"), preview.updaterSHA256.count == 64,
+              !preview.targets.isEmpty,
+              preview.targets.allSatisfy({ !$0.path.isEmpty && $0.method == "homebrew" && $0.sha256.count == 64 }),
+              preview.binding.count == 64 else {
+            binaryDriftPreview = nil
+            if capture.complete {
+                binaryDriftPreviewError = capture.result?.summary ?? (capture.stderr.isEmpty
+                    ? "Ma'at could not produce a valid Homebrew-only preview. No updater was run."
+                    : capture.stderr)
+            } else {
+                binaryDriftPreviewError = capture.issue ?? "Ma'at's updater preview was incomplete. No updater was run."
+            }
+            return
+        }
+        binaryDriftPreview = preview
     }
 
     @ViewBuilder private func resolutionSteps(_ steps: [MaatResolutionStep]) -> some View {
@@ -2646,7 +2765,34 @@ private struct MaatCaseDetailView: View {
 
         operations.markRunning(key)
         let result: CommandResult?
+        if let args = maatCasebookSystemOneReviewArguments(kind: action.kind, actionID: action.actionID, evidence: action.evidence) {
+            result = await SirsiEngine.runResult(args: args)
+            let succeeded = result?.ok == true
+            let missing = action.actionID == "inspect_binary_drift_attempt"
+                ? "Ma'at could not read the retained attempt. Refresh and review the case."
+                : "Ma'at could not complete the fresh screen. Refresh and review the case."
+            operations.complete(key, receipt: MaatOperationReceipt(summary: result?.summary ?? missing, succeeded: succeeded))
+            return
+        }
         if action.kind == "maat_repair" {
+            if action.actionID == "binary-drift" {
+                guard let preview = binaryDriftPreview, preview.caseEvidence == action.evidence else {
+                    operations.rejectPreflight(key, guidance: "The updater preview is missing or belongs to another case. Refresh and review a new preview before confirming.")
+                    return
+                }
+                let capture = await SirsiEngine.runCaptured(
+                    args: maatCasebookBinaryDriftRepairArguments(caseEvidence: action.evidence, previewBinding: preview.binding),
+                    timeout: 180
+                )
+                let command = capture.result
+                let succeeded = capture.complete && capture.exitCode == 0 && command?.status == "resolved"
+                operations.complete(key, receipt: MaatOperationReceipt(
+                    summary: command?.summary ?? capture.displayText,
+                    succeeded: succeeded
+                ))
+                binaryDriftPreview = nil
+                return
+            }
             guard let args = maatCasebookRepairArguments(actionID: action.actionID) else {
                 operations.rejectPreflight(key, guidance: "Ma'at refused an unknown repair reference. Refresh and review the case before trying again.")
                 return
@@ -2701,7 +2847,7 @@ private struct MaatCaseDetailView: View {
     // finding. Treat it as evidence and an operator aid, never as executable
     // input: the app shows and copies it, while the exact owner-review path
     // remains responsible for acknowledgement or a separately safe repair.
-    @ViewBuilder private func systemOneFindings(_ findings: [MaatSystemOneFinding]) -> some View {
+    @ViewBuilder private func systemOneFindings(_ findings: [MaatSystemOneFinding], closedActionID: String?) -> some View {
         if !findings.isEmpty {
             VStack(alignment: .leading, spacing: 9) {
                 Text(findings.count == 1 ? "Screen finding" : "Screen findings")
@@ -2727,7 +2873,7 @@ private struct MaatCaseDetailView: View {
                         Text(finding.claim)
                             .sirsiFont(.body)
                             .fixedSize(horizontal: false, vertical: true)
-                        if !finding.fixHint.isEmpty {
+                        if !finding.fixHint.isEmpty, closedActionID != "binary-drift" {
                             Text("PRESCRIBED NEXT STEP")
                                 .sirsiFont(.caption2, weight: .semibold)
                                 .foregroundStyle(.secondary)
@@ -2743,6 +2889,10 @@ private struct MaatCaseDetailView: View {
                             }
                             .buttonStyle(.bordered)
                             .accessibilityHint("Copies the producer-supplied recovery step for review; it does not run it.")
+                        } else if closedActionID == "binary-drift" {
+                            Text("The retained suggestion is not executed; Ma'at's typed updater preview below governs this repair.")
+                                .sirsiFont(.caption)
+                                .foregroundStyle(.secondary)
                         }
                         if !finding.evidence.isEmpty {
                             Text("Evidence: \(finding.evidence)")
@@ -2809,6 +2959,94 @@ func maatCasebookRepairArguments(actionID: String) -> [String]? {
     default:
         return nil
     }
+}
+
+func maatCasebookBinaryDriftPreviewArguments(caseEvidence: String) -> [String] {
+    ["maat", "repair", "binary-drift", "--case-evidence", caseEvidence, "--json"]
+}
+
+func maatCasebookBinaryDriftRepairArguments(caseEvidence: String, previewBinding: String) -> [String] {
+    ["maat", "repair", "binary-drift", "--case-evidence", caseEvidence,
+     "--preview-binding", previewBinding, "--confirm", "--json"]
+}
+
+func maatCasebookInspectBinaryDriftAttemptArguments(caseEvidence: String) -> [String] {
+    ["maat", "repair", "binary-drift", "--inspect-attempt", "--case-evidence", caseEvidence, "--json"]
+}
+
+func maatCasebookSystemOneReviewArguments(kind: String, actionID: String, evidence: String) -> [String]? {
+    guard kind == "system_one_review" else { return nil }
+    switch actionID {
+    case "inspect_binary_drift_attempt":
+        return maatCasebookInspectBinaryDriftAttemptArguments(caseEvidence: evidence)
+    case "rescreen_system_one":
+        return maatCasebookFreshSystemOneArguments()
+    default:
+        return nil
+    }
+}
+
+func maatCasebookFreshSystemOneArguments() -> [String] {
+    ["maat", "triage", "--confirm", "--json"]
+}
+
+struct MaatRepairOutcomePresentation: Equatable {
+    let title: String
+    let evidence: String
+    let detail: String
+}
+
+func maatCasebookRepairOutcomePresentation(_ entry: MaatCase) -> MaatRepairOutcomePresentation? {
+    if !entry.verifiedRepairEvidence.isEmpty {
+        return MaatRepairOutcomePresentation(
+            title: "Verified binary repair receipt",
+            evidence: entry.verifiedRepairEvidence,
+            detail: "The reviewed binary-drift updater and fresh binary observation were verified. This does not itself resolve other findings or failed floor checks."
+        )
+    }
+    if !entry.repairOutcomeEvidence.isEmpty {
+        return MaatRepairOutcomePresentation(
+            title: "Unverified repair outcome evidence",
+            evidence: entry.repairOutcomeEvidence,
+            detail: "This retained receipt records an unsuccessful or unverified updater attempt; it does not prove the binary was repaired or the system is clear."
+        )
+    }
+    return nil
+}
+
+struct MaatBinaryDriftPreview: Decodable, Equatable {
+    let caseEvidence: String
+    let updater: String
+    let updaterPath: String
+    let updaterSHA256: String
+    let selfPath: String
+    let selfVersion: String
+    let selfSHA256: String
+    let targets: [MaatBinaryDriftTarget]
+    let binding: String
+
+    enum CodingKeys: String, CodingKey {
+        case updater, targets, binding
+        case caseEvidence = "case_evidence"
+        case updaterPath = "updater_path"
+        case updaterSHA256 = "updater_sha256"
+        case selfPath = "self_path"
+        case selfVersion = "self_version"
+        case selfSHA256 = "self_sha256"
+    }
+
+    static func decode(_ raw: String) -> MaatBinaryDriftPreview? {
+        guard let start = raw.firstIndex(of: "{") else { return nil }
+        return try? JSONDecoder().decode(MaatBinaryDriftPreview.self, from: Data(raw[start...].utf8))
+    }
+}
+
+struct MaatBinaryDriftTarget: Decodable, Equatable, Identifiable {
+    let path: String
+    let method: String
+    let version: String
+    let sha256: String
+    var id: String { path }
 }
 
 // MaatJournalRepairView owns the one confirmation-gated data recovery action
@@ -3093,6 +3331,8 @@ struct MaatCase: Decodable, Identifiable {
     let assessed: String
     let why: String
     let evidence: String
+	let verifiedRepairEvidence: String
+	let repairOutcomeEvidence: String
 	let resolution: String
 	let nextAction: MaatCaseNextAction?
 	let systemOne: MaatSystemOneVerdict?
@@ -3101,7 +3341,7 @@ struct MaatCase: Decodable, Identifiable {
     init(id: String, time: String, kind: String, category: String, status: String,
          priority: MaatCasePriority, requester: String, resource: String,
          affected: String, determination: String, assessed: String, why: String,
-         evidence: String, resolution: String = "", nextAction: MaatCaseNextAction? = nil, systemOne: MaatSystemOneVerdict? = nil, systemOneCalibration: MaatSystemOneCalibration? = nil) {
+         evidence: String, resolution: String = "", verifiedRepairEvidence: String = "", repairOutcomeEvidence: String = "", nextAction: MaatCaseNextAction? = nil, systemOne: MaatSystemOneVerdict? = nil, systemOneCalibration: MaatSystemOneCalibration? = nil) {
         self.id = id
         self.time = time
         self.kind = kind
@@ -3115,6 +3355,8 @@ struct MaatCase: Decodable, Identifiable {
         self.assessed = assessed
         self.why = why
         self.evidence = evidence
+		self.verifiedRepairEvidence = verifiedRepairEvidence
+		self.repairOutcomeEvidence = repairOutcomeEvidence
 		self.resolution = resolution
 		self.nextAction = nextAction
 		self.systemOne = systemOne
@@ -3124,6 +3366,8 @@ struct MaatCase: Decodable, Identifiable {
     private enum CodingKeys: String, CodingKey {
         case id, time, kind, category, status, priority, requester, resource
         case affected, determination, assessed, why, evidence, resolution
+		case verifiedRepairEvidence = "verified_repair_evidence"
+		case repairOutcomeEvidence = "repair_outcome_evidence"
         case nextAction = "next_action"
 		case systemOne = "system_one"
 		case systemOneCalibration = "system_one_calibration"
@@ -3144,6 +3388,8 @@ struct MaatCase: Decodable, Identifiable {
         assessed = try values.decodeIfPresent(String.self, forKey: .assessed) ?? ""
         why = try values.decodeIfPresent(String.self, forKey: .why) ?? ""
         evidence = try values.decodeIfPresent(String.self, forKey: .evidence) ?? ""
+		verifiedRepairEvidence = try values.decodeIfPresent(String.self, forKey: .verifiedRepairEvidence) ?? ""
+		repairOutcomeEvidence = try values.decodeIfPresent(String.self, forKey: .repairOutcomeEvidence) ?? ""
 		resolution = try values.decodeIfPresent(String.self, forKey: .resolution) ?? ""
 		nextAction = try values.decodeIfPresent(MaatCaseNextAction.self, forKey: .nextAction)
 		systemOne = try values.decodeIfPresent(MaatSystemOneVerdict.self, forKey: .systemOne)
@@ -3153,7 +3399,7 @@ struct MaatCase: Decodable, Identifiable {
     var searchText: String {
         let caseFields = [
             time, kind, category, status, requester, resource, affected,
-            determination, assessed, why, evidence, resolution,
+            determination, assessed, why, evidence, resolution, verifiedRepairEvidence, repairOutcomeEvidence,
         ]
         let nextActionFields = [
             nextAction?.title ?? "",
