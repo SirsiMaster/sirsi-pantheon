@@ -102,7 +102,7 @@ func makeReleaseContractFixture(t *testing.T, broken bool) string {
 		"scripts/build-pkg.sh":                 "5a95ed756f6b632b044c12bbdfd18eb81e327bb649f03293eceb01135b4f627a",
 		"scripts/notarize-release-artifact.sh": "cf4112f04f90f1b8ac70e9aecd17ed87652e1718bb82dcecc6801efd03eab433",
 		".github/workflows/release.yml":        "358eb25b8064ca362254809d53ff2d8aaaf4bb09563483f629b5edf3c57715ee",
-		"tools/signing/sirsi-sign":             "805123e96ce78ff225641bebd2bf32f9c15d5023f381963f096facda4d2aedd1",
+		"tools/signing/sirsi-sign":             "95db0601b45c56604e77b4b1d8ef6ecca2bbc165570889e9ec46d63b16288605",
 	}
 	for _, requirement := range releaseContractRequirements {
 		relative := requirement.Path

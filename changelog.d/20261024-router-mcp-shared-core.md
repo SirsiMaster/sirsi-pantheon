@@ -1,3 +1,0 @@
-### Corrected
-
-- Move the existing router A2A MCP implementation into one `internal/routermcp` library, exposed through canonical `sirsi router-mcp` and a thin legacy launcher. Preserve bare tools/schemas/resource, strict completion and lease-expiry/fencing; isolate local registration/claims per instance and join heartbeat cleanup on EOF/cancellation without library process exit. Generic `mcp` is unchanged. Add actual protocol manifest and inert lifecycle/entrypoint fixture source, transferring the real completion-helper matrix. Managed-client config migration, explicit RPC-audience binding and installed-caller proof remain open; no second packaged engine or full MCP rollout claim.

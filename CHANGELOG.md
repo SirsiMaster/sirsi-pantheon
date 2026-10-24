@@ -6,6 +6,462 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.135] — 2026-10-24
+
+- Use the existing pinned `sirsi-m5` and `sirsi-m1` SSH aliases as ordered signing
+  client defaults instead of DHCP addresses. Preserve explicit host overrides,
+  strict noninteractive transport, enrolled-service checks and signature checks;
+  do not enroll hosts, change trust or launch signing services. Denial-only
+  causal fixtures cover unset/empty/default/override selection and reject the
+  former DHCP defaults without contacting any signer.
+
+- Run router package setup/tests in a returning helper, then exit outside it,
+  allowing both owned temporary-root cleanups to run after passing/failing tests.
+
+- Register cleanup immediately after each creation, retain directory identity,
+  refuse substituted paths and report cleanup debt. Preserve nonzero test exit
+  codes; cleanup failure turns success into failure. No atomic same-UID race or
+  abrupt-process-termination cleanup guarantee is claimed.
+
+- Add actual-test-binary subprocess fixtures under private TMPDIR, plus inert
+  setup/removal failure callbacks. Reaper/grant stubs, DB isolation and dispatch
+  override stay unchanged; no dispatch fallback or runtime API change.
+
+- Move the existing router A2A MCP implementation into one `internal/routermcp` library, exposed through canonical `sirsi router-mcp` and a thin legacy launcher. Preserve bare tools/schemas/resource, strict completion and lease-expiry/fencing; isolate local registration/claims per instance and join heartbeat cleanup on EOF/cancellation without library process exit. Generic `mcp` is unchanged. Add actual protocol manifest and inert lifecycle/entrypoint fixture source, transferring the real completion-helper matrix. Managed-client config migration, explicit RPC-audience binding and installed-caller proof remain open; no second packaged engine or full MCP rollout claim.
+
+- Add a separate macOS router MCP configuration plan/apply command for one explicitly selected existing Claude Code top/project or Cursor stdio entry. Only the exact owner-local standalone Go payload with empty argv can migrate to the existing qualified signed installed `sirsi router-mcp`; generic MCP, env/cwd/settings, credentials and server authority remain unchanged.
+
+- Bind confirmation to raw bytes, selection and source/target identity; preserve unedited bytes, redact preview values, and reuse retained nofollow/create-only backup/staging publication with durability/readback and explicit recovery debt. No client restart, automatic restore or live configuration action. Source fixtures are authored, not executed; actual client selection, signed publication and reconnect/caller proof remain open.
+
+- Bind each router MCP instance's tools and post-registration heartbeat/close to its actual registered agent/thread using the existing authenticated MintSessionForThread route. Explicit callers never borrow ambient identity or disk session caches; canonical marker recovery no longer exports process environment. Supply a unique real registration ID per instance without changing ordinary registry reuse policy.
+
+- Unwind the router/context stdio lifetime on malformed/read errors, failed response writes and short writes, before another request executes. Preserve generic MCP framing behavior and existing thread/lease/completion authority. Add owned remote audience/same-PID, mismatch and terminal-I/O regression fixture source. Managed-config migration and installed-client qualification remain outstanding; no tests or runtime actions are claimed by this source correction.
+
+- Route the actual router MCP work-board handler's durable item and thread reads through its instance-bound store and the existing shared projection/loaders. Preserve public board shape, pace calculations, best-effort peer loading and legacy file-mode behavior.
+
+- Keep post-registration heartbeat/close on the registry mode selected for the connection: explicit StoreWake=0 remains the existing JSON compatibility lifecycle with exact owned-target fencing, not forced durable resolution or authenticated RPC isolation. Add actual board-handler audience assertions and real owned JSON registration/heartbeat/EOF-close/sibling-preservation fixture source. No tests, build, runtime cutover or installed completion is claimed.
+
+- Accept only the two observed literal six-argument profiles ending with
+  `/var/sirsipantheon/relay` or `/private/var/sirsipantheon/relay`.
+
+- Do not normalize paths, resolve aliases, rewrite plists, or change flags,
+  authorization, root/artifact/instance bindings or the retained physical-spool
+  no-follow/quiescence probe.
+
+- Add explicit positive profile and lookalike/escape/alias refusal fixtures using
+  existing native doubles. Source-only; main owns admitted qualification.
+
+- Align Ma'at's release-source preflight with the released130 shared notarization helper, selected signing keychain, and enrolled signing-client delegation instead of obsolete inline-command and temporary-keychain prose. Explicit artifact modes, direct signing identity/credential alternatives, awaited fail-closed notarization, and returned-artifact verification remain observed controls.
+
+- Source repair guidance no longer infers missing owner certificates from missing source text. Public local certificate readiness and actual release/signing/notary/publication proof remain separate; no packaging, credentials, or release policy is changed.
+
+- Replace miniature source stubs with owned copies of the hash-pinned published130 release-route files; add causal missing-control and Casebook recovery regressions. These fixtures observe source only and execute no signing, notarization, service, or network command.
+
+- Recognize the selected-keychain file check's actual backslash-newline continuation together with its fail-closed absence branch; removing either control remains a causal source refusal.
+
+- Stage the commercial DMG/PKG pair in a private release draft, reverify the
+  existing Developer ID/staple boundaries and exact remote SHA256 bytes, then
+  publish. Published retries are read-only exact-byte checks; partial or
+  mismatched public records refuse without asset overwrite. Preserve canonical
+  Go cask/build/signing authority and always-run keychain cleanup. Add inert
+  fake-gh regressions and a retained per-attempt verification receipt.
+
+- Use codesign's required `=anchor` inline-expression argv and keep publication
+  state unknown/null until a remote state is actually observed, including
+  durable receipts for early verifier or lookup failure.
+
+- Source-only corrective checkpoint; no actual release, signing, notary,
+  installation, tests or build execution is asserted by this fragment.
+
+- Discover private release drafts with an exact id/tag_name/draft projection on authenticated100-record list pages, preserving the ten-page/1000-record coverage and one-MiB projected-response limits. Selected-ID/tag metadata and assets remain full; complete absence, exact draft identity, publish-last readback and no-overwrite rules stay unchanged. Incomplete or oversized discovery still refuses.
+
+- Invoke official package-mode, PackageInfo and publication Python helpers with explicit `-B`, preventing imported helper bytecode from dirtying release source before canonical Go cask checks.
+
+- Add inert heavy-history/discovery refusal coverage and a real copied-helper fixture proving no bytecode side effects without an ambient environment bypass. Source fixtures are not live publication proof; SSA's existing134 recovery remains separate.
+
+- **Relay: a stalled TLS handshake is retried and queued, not reported as an unknown outcome.** `neverReachedService` documented a TLS-handshake timeout as "request never reached the service" but never detected it (net/http's timeout is not a dial `*net.OpError`), so on a lossy link (a phone hotspot dropped about 1 connection in 5) every stalled handshake became `HTTP 502 … OUTCOME UNKNOWN` and was never retried or held. It now gets the existing single safe re-dial and, if that also stalls, the durable outbox. Matched by the exact handshake-timeout text, not `Timeout()`: a response-header timeout happens after the request was sent and stays OUTCOME UNKNOWN. Found 2026-10-24 when the M1 and Mercury saw `MaatRead … TLS handshake timeout` every time while the same calls succeeded from the Studio. Refs: ADR-069; ADR-062; internal/routerstore/spool.go.
+
+- Align the node-status held-outbox fixture with the existing private relay observation contract: explicitly owned0700 root/lane/outbox,0600 inert record and valid root-bound metadata summary. Preserve the no-health-error, held-count and read-only assertions; pin store-wake off and trust-group empty so fixture collection cannot use a live pending-store client. Add explicit missing-publisher/direct-coverage and nonprivate-root refusal controls. Production observation, privacy, no-follow and ACL policy are unchanged.
+
+- Separate GUI filesystem access from relay-owned retry observations. The existing relay loop publishes bounded, versioned, per-lane name/count metadata under independently validated producer/root policy and the exact declared reader group; private outboxes and request bodies remain untouched. Missing, stale, malformed or partial evidence never becomes zero or a complete aggregate, and metadata failure does not stop transport.
+
+- Ra shows fresh service-managed private outbox counts without offering an unsupported local repair. Refresh revalidates producer time; eligible same-user repair uses typed command results followed by separate forced-board verification. Missing publishers require an owner-managed update, not automatic restart or permission changes.
+
+- Add owned/inert Go and native regression fixtures plus the existing Ra/Horus Stack Lab recipe inventory. Source only pending Main qualification; no installed or all-host delivery claim.
+
+- Retain expired direct-readable retry rows as unknown evidence, and track incomplete inventory independently of optional publisher availability. Freeze repair confirmation to agent/canonical-spool/root identity; changed offers launch nothing, and other-root readback cannot verify an approved repair. Add direct R1/R2 regressions without changing the Go repair authority.
+
+- Carry native consent's root device/inode into the Go retained-descriptor mutation boundary. Refuse same-path valid-root substitution before chmod; preserve legacy unpinned CLI compatibility and existing ownership policy. This remains a cooperative check, not hostile same-UID atomicity.
+
+- Inspect Darwin ACLs through the supported libSystem `fgetattrlist` SDK bridge, not a direct syscall. Darwin without cgo fails closed; owned native fixtures cover nonempty ACL refusal and retained descriptor binding.
+
+- Preserve the RDMA legacy sysctl command status rather than treating nonempty
+  failure diagnostics as loaded-family evidence. Trust only successful output
+  matching the retained historical date/time and RDMA_family version shape;
+  unfamiliar output falls back to the validated kmutil inventory. This is a
+  conservative compatibility recognizer, not a newly verified native format.
+  Shared command handling, NVRAM reporting and device qualification are unchanged.
+
+- Validate the observed kmutil loaded-kext table header and every row before
+  reporting RDMA-family presence or absence. Match the exact family bundle ID;
+  malformed successful output and command failures remain unknown with a reason.
+  Permit only the exact observed release-variant notice before the table.
+  This read-only telemetry correction changes no NVRAM, enablement, hardware
+  support, or transfer qualification. Fixtures preserve observed native table
+  shape with live load addresses replaced by representative constants.
+
+- A cancelled Ra board refresh no longer publishes a bundled-reader launch error or a late board after navigation. The previous board, observation time, and error remain unchanged; loading is released and a fresh retry can read normally. Real uncancelled launch, timeout, exit, and decode failures retain their recovery behavior.
+
+- Add actual `loadRouterBoard` entry fixtures for cancelled capture mapping, non-cooperative late success, already-cancelled refusal, and successful retry. These use in-process held reads only, not a router, service, or model. This source correction does not itself establish the exact runtime cause or installed successor qualification.
+
+- Correct the cancellation fixture's failure-message spelling to satisfy the repository lint contract; assertions and provider behavior are unchanged.
+
+- Validate the bounded JSON completion envelope returned by the existing one-token readiness probe. HTTP 200 alone no longer marks a provider ready; malformed, error, empty, unterminated, trailing-data, oversized, cancelled, or failed completion responses remain unavailable. Valid one-token `length` and reasoning-only terminal responses are accepted.
+
+- Add inert HTTP fixtures that exercise served-model discovery and the real readiness POST together. These fixtures are authored evidence and remain unqualified until the repository owner runs them.
+
+- Keep the bounded response read compiling, and make the cancellation fixture prove POST entry, cancellation observation, and bounded cleanup of its coordinator.
+
+- Add a finite own-lane task evidence relocation operation for already-preserved
+  local artifacts, without generic task-update widening or task lifecycle,
+  timestamp, accounting, history, scope or lease changes. Exact public-row CAS,
+  transactional provenance and exact-manifest/after-state replay refuse drift.
+
+- Default CLI planning checks a nofollow preservation map and replacement hashes
+  offline; explicit inspection/application uses the existing configured canonical
+  service or relay, including localhost, never an alternate local database.
+  Review references and artifact hashes are authenticated actor attestations,
+  not server-certified review/filesystem proof. Source fixtures and recipe added;
+  execution, publication and any reviewed live repair remain separately admitted.
+
+- Preserve relocated references across ordinary legacy task updates: capture
+  raw links with the decoded row, CAS both writers, and boundedly reload/remerge
+  reference-only conflicts server-side without new request fields or duplicate
+  accounting. Retain status/lease refusal fences, including concurrent renewal.
+  Relocation refuses all retained ownership, including expired custody, without
+  clearing it: a prior-live delayed completion can otherwise still land. Canonical
+  server-writer deployment/compatibility must precede future application; ordinary
+  older clients are not gated or required to adopt new flags/roles.
+
+- Bind confirmation to current semantic diagnostic evidence, exact argv and repo,
+  including the closed legacy repair path; revalidate immediately before launch.
+
+- Capture each ResultView invocation once; retain non-JSON/error output instead
+  of running the command a second time. Refresh/recheck does not replay mutation.
+
+- Share a 4 MiB stdout/stderr budget with nonblocking bounded stdin and monotonic
+  capture deadline. Partial output never decodes as success; complete nonzero
+  typed reports retain their existing consumer semantics.
+
+- Report owned-child exit unknown after bounded TERM grace without claiming
+  descendant cleanup; consume the particular fresh diagnostic read for current
+  health, never infer causal repair from stale shared state.
+
+- Add owned inert fixtures and the Stack Lab remediation execution contract.
+  Tests/builds and installed UX qualification are unrun; no rollout/completion
+  claim. Native visual identity, typed mappings and Go authority are unchanged.
+
+- Independent-review corrections bind offered follow-ups to the report-producing
+  directory before consent and fence verification publication by generation.
+  Two deterministic regressions added; corrected bytes remain unqualified.
+
+- Install a standard AppKit application menu before the programmatic event loop,
+  with Quit Pantheon and Command-Q targeting NSApplication.terminate.
+
+- Keep window-close/menu-bar companion behavior, branding, layout and typed
+  engine operations unchanged. No new preferences, settings or activation path.
+
+- Add factory menu/shortcut/target tests, fake-target action invocation and launch
+  wiring regression coverage. No real app termination or event posting in tests.
+
+- Admit the exact regular `StackLab/model-router-v1-recipe-v1.json` leaf already copied by the app builders. Update both complete inert package fixtures to the 26-entry unsigned namespace and retain exact path/type/byte bindings, required-leaf refusal, and rejection of unexpected recipes. Symlink and wrong-type controls remain enforced; no wildcard payload admission or model-router policy change.
+
+- Correct model-router v1 completion: `sirsi ask` now uses the router's
+  once-only execution path, which may fall down once to a qualified local
+  provider for structured remote rate or recognized quota exhaustion. Add
+  privacy-dominant per-request lane overrides, an explicit `--route` opt-in
+  that leaves Doctor alarms visible, and a bounded private redacted decision
+  journal. Unknown streaming/determinism/JSON capabilities and the separate
+  provider-readiness correction remain unqualified. Refs: ADR-054,
+  `docs/stacklab/MODEL_ROUTER_V1_RECIPE.md`,
+  `docs/stacklab/pantheon-pt/canon/TRACEABILITY_MATRIX.md`.
+
+- Migrate the existing native file picker to explicit ADR070 v2: editable
+  independent expected head, copyable typed format/example, read-only Go
+  validation preview, then frozen file/head/raw-digest confirmation. The Go
+  importer rechecks the same bounded bytes before writing; drift requires review.
+
+- Use existing bounded capture, check completion/exit plus exact returned
+  contract/version/head and unqualified state (never provider-name trust), and
+  consume confirmation once before await. No decode/error/readback refresh can
+  replay an import. Keep selected inputs editable after failure and retain the
+  original operation receipt if the separate Casebook refresh fails.
+
+- CLI and native are the only existing public source-import writers. MCP,
+  terminal and dashboard remain read-only projections; deterministic host and
+  release/credential preflight writers and historical v1 reads remain unchanged.
+  No v2 downgrade, native exemption, model/service operation or gate activation.
+  Authenticated calibration lifecycle remains OPEN. Fixtures are source-only,
+  unrun; no installed or visual qualification claim.
+
+- Ma’at’s Claude admission classifier accepts terminal shell whitespace on
+  foreground supervised runs, registration and source reads. Previously a
+  trailing newline was classified as a forbidden extra command. Interior
+  commands, background runs, expansions and direct unadmitted workloads remain
+  checked; parser regression tests never execute their command text.
+
+- Source/control reads may suppress stderr to the fixed `/dev/null` device.
+  Arbitrary file targets, append/descriptor duplication, supervised-run
+  redirection and direct workloads remain refused. This separately addresses
+  the exact CompassPoint source-read payload, which contained no newline.
+
+- Null-stderr recognition retains shell quote/escape and IO-number adjacency,
+  so executable `2 > ...` cannot be mistaken for descriptor `2> ...`.
+
+- Unquoted carriage returns are refused rather than stripped into a different
+  executable word; quoted carriage-return data is preserved.
+
+- Separate explicit `maat.adr070.source-screen`, schema v2, from historical v1
+  and the free deterministic host/preflight policy. Source imports require a
+  separate expected head and exact required JSON keys; duplicate, unknown,
+  case-alias, null, malformed and oversized packets reject before journal writes.
+
+- Retain per-finding evidence identity and declared evidence recipe/calibration
+  identities. Floor evidence is explicitly declared-only, not executed proof.
+  Failed/incomplete floor blocks first; valid unqualified imports escalate.
+  Imported qualification claims reject, never silently downgrade or authorize.
+
+- Exact R0–R8 policy fixtures use package-private inert qualified context only.
+  No production qualification writer, gate activation, model/service call or
+  binding approval is added. Authenticated calibration, independent outcome,
+  drift and requalification lifecycle remain OPEN; this is not full ADR070 or
+  Ma'at completion. Legacy v1 journal reads and host repair/preflight semantics
+  remain unchanged. Source fixtures are authored, not executed at checkpoint.
+
+- Accept the historical `sirsi-horus-ssa-20261012` signing identifier only for
+  the selected shipped legacy wrapper at its exact OS account-owner home path.
+  Retain strict Apple generic anchor and Team `9D382WV988` verification.
+
+- Keep canonical identifier `sirsi` valid for existing legacy payloads, and
+  mandatory for every protected replacement. No dynamic identifier trust,
+  artifact/hash/plist/instance-pin change, service action or new authority.
+
+- Add per-instance signature-argument, conversion/readback and refusal fixtures
+  for wrong path/identifier/team, unsigned/tampered artifacts and plan drift.
+  These are source fixtures; main owns actual admitted qualification.
+
+- Horus lane-delivery alerts no longer invent `wake:none`, an empty thread
+  registry or a unique repair from an unavailable delivery path. Single-lane
+  and fleet notices distinguish the observed lack of a fresh usable thread
+  from unknown configuration, stale registrations and actual queue delivery.
+  Backlog totals, classification, active-thread suppression and stable dedup
+  titles are unchanged. Regression fixtures cover both sides of the rollup
+  threshold and demonstrate the old producer's semantic failure.
+
+- Ordinary native Gemma workers now consume the existing lead-owned answering
+  grant before provider preflight and stamp/read back that grant on their own
+  registered thread before claiming or generating, matching the tool-turn path.
+  Missing or unreadable declarations fail closed; no registry, service policy,
+  role authority or model lifecycle is changed.
+
+- An answering-authority refusal after generation now fenced-blocks the same
+  original with its exact draft for lead review instead of requeueing inference
+  until dead-letter. Already-published nonbinding replies still require explicit
+  correlation/reconciliation. Block failure reports both errors and the draft.
+  Existing dead letters are not reopened or falsely declared completed.
+
+- Added isolated startup-grant/stamping and authority-refusal regression fixtures.
+  Source fixtures are not installed worker, model, hosted/all-lane or delivery
+  qualification; normal verification and release integration remain separate.
+
+- Stop the optional legacy model resolver at detected WEDGE, preserving its accepted exit-0 conf/sentinel behavior without reaching downloader or empirical probe. HF prefetch now defaults off and requires literal `GEMMA_RESOLVER_PREFETCH=1` for an already-cached non-WEDGE serving model; it never restores missing selected weights implicitly. Keep the still-installable compatibility path distinct from the native worker/SNE, and wire a whole-program inert lifecycle regression into the normal resolver CI guards. Non-WEDGE empirical probe/swap behavior is unchanged; this is not a blanket no-side-effects/offline claim or a broader Gemma completion receipt.
+
+- Attribute the retained `sirsi-gemma-worker.sh` census matcher to the declared
+  `gemma-pantheon` worker lane, matching the published native compatibility entrypoint.
+
+- Pin that identity in the existing already-tracked-worker census fixture.
+  GPU-server/triage matchers, process matching, registration mechanics, native
+  worker ownership and draft-only policy are unchanged. No shell worker logic
+  is restored; no claim is made that the exec wrapper remains resident.
+
+- Extracted from the preserved primary checkout. Focused normal/race census
+  fixtures pass; restoring the released matcher fails the new identity assertion.
+  Installed qualification and release integration remain separate; no service,
+  registry or primary-checkout changes were performed.
+
+- E2E TestMain now returns through its owned temporary-binary lifecycle before
+  calling `os.Exit`, including build failures and nonzero test exits. Build/test
+  nonzero exit status is preserved. Cleanup failure changes an otherwise
+  successful exit to1 and reports the exact root and captured identity as debt,
+  not a zero-residue claim.
+
+- Recursive cleanup is confined to the retained root; a changed or unknown named
+  root is refused, not passed to path-based `RemoveAll`. Empty-leaf removal is
+  cooperative, not an atomic hostile-writer identity guarantee. No shared cache,
+  pre-existing residue, production state or unrelated TestMain is cleaned.
+
+- Added child-process fixtures for success, test failure, build failure and root
+  substitution after both successful and failed test runs. Fixtures use fake
+  build/run callbacks through the same lifecycle
+  helper; normal outer TestMain still builds the real CLI. No runtime product or
+  current-release behavior changes.
+
+- Add the previously named but absent `TestRouterCloseCompletionAuthorization` and `TestHandleCloseCompletionAuthorization` matrices. Each invokes the shipped command/handler and shared completion-proof gate against an owned fixture store: completed evidence commits the actual close/completion; draft, blocked, ready-for-review, missing/malformed status, blockers, failed verification, and malformed JSON refuse without changing the item or consuming the MCP claim.
+
+- Exercise the actual portfolio validator retained byte-for-byte at SHA256 `a4953e61937d8bf03dfe9fbbcd6a0decb3fa44ad56fd4550fab0b0444cbf8ab9`, using a complete owned contract/canon/proof scaffold adapted from its existing final-status qualification fixture. Test-only instrumentation forwards unchanged argv/stdin and preserves the validator's exit status; pathname replacement checks captured-proof behavior without replacing policy. This is a pinned helper/entry regression, not CompassPoint's full workflow, live authority, or installed qualification. No production gate policy changes.
+
+- Add explicit `thread heartbeat --ensure` for the existing registered Codex
+  attended automation boundary: strict current durable-host generation proof,
+  normal own-scope successor registration/readback and persisted binding before
+  fenced heartbeat. Ordinary heartbeat and terminal/foreign identity fences are
+  unchanged. Inert source fixtures cover A-to-B ordering and conservative refusal.
+  No automation installation, service action, model invocation or installed
+  restart-survival qualification is claimed.
+
+- Guard the attended generation successor in the normal registration retry path:
+  occupied conflicting/retired IDs refuse without overwrite; exact live duplicate
+  transitions reuse readback, and absent targets use insert-only CAS. The existing
+  RPC carries a versioned restrictive argument that old decoders refuse, with no
+  permission or ordinary-upsert fallback.
+
+- Apply explicit own-session ensure at both heartbeat and wait entry. Add private
+  real-Cobra/scoped-handler fixtures for generation transition, registration and
+  wait ordering, conflicts/races, real markers, terminal preservation and explicit
+  environment binding consumption. No tests/builds, deployment, installed
+  automation adoption or original restart-survival completion claimed.
+
+- Align both ADR-055 index entries with the already-accepted licensing ADR. Remove the obsolete pre-merge blessing status without changing licensing policy, ratifying separate claims, or granting runtime or publication authority.
+
+- Mark the resolved PR #465 licensing wait as historical in the companion
+  ledger contract, matching accepted ADR-055 and the corrected ADR index.
+  Preserve the disclosure boundary and evidence requirements for outward claims.
+
+- NEXT corrective source, not a v0.24.124 release gate: preserve bulk thread-store
+  API compatibility while adding an AST guard against fence-silent bulk upserts
+  in router production code, with deliberate regression fixtures for both APIs.
+
+- Centralize lifecycle timestamp encoding as UTC with nine fractional digits;
+  add pure fixtures for offsets, exact width, subsecond ordering and record use.
+  Lifecycle CAS behavior, pruning, storage schema and service controls are unchanged.
+
+- Honor explicitly zero Thoth compact retention limits without applying the
+  implicit keep-20 journal policy. Omitted limits retain the legacy default;
+  positive count limits retain their existing behavior. Explicit zero/zero uses the
+  Go implementation because npm delegation cannot preserve that intent.
+
+- Compare journal retention by local civil calendar dates, retaining the exact
+  N-day cutoff. Fresh entries no longer expire across UTC midnight or a DST
+  boundary because their date-only headers were interpreted as UTC instants.
+
+- Route positive-age compact policies through the corrected Go writer even
+  when an external npm writer is installed. Implicit-default and count-only
+  delegation remain unchanged. These policies govern journal retention, not
+  the separate memory.yaml session-decisions cap.
+
+- Cover truncated OpenAI-compatible SSE through the real HTTP provider and engine
+  connector: a model-bound partial delta followed by EOF must end in one error,
+  never a completion or receipt. Expand non-finite streaming-request regressions
+  to Temperature and TopP with NaN and both infinities, requiring request-validation
+  refusal before HTTP transport. Fixtures use only owned loopback HTTP servers;
+  production guards and model/service lifecycle remain unchanged.
+
+- Require the existing canonical actor/thread and exact-service grant check before
+  inspecting the root router relay's read-only lifecycle plan. Keep apply
+  authorization in the existing service controller and preserve read-only behavior
+  for the five ordinary maintenance profiles. Command-local backend/authorizer
+  injection covers allowed, denied and canceled preflight without live launchd.
+
+- Passive managed LaunchAgent recovery preserves this host's OS-disabled labels,
+  whether loaded or unloaded. Missing, failed, or malformed disabled-state probes
+  refuse recovery before enable/bootstrap. Enabled unloaded jobs retain recovery.
+
+- Broker liveness observes the same disabled intent before model probing or
+  start/restart. Existing quarantine precedence and confirmed, target-scoped
+  disabled-service repair remain intact. No historical machine-specific preference
+  or owner-reversal gate is imposed.
+
+- Added injected fixtures for passive refusal, enabled recovery, confirmed repair,
+  malformed native output, and broker refusal without model/service calls.
+
+- Corrected the disabled-label diagnostic: intentional stops remain unchanged;
+  deliberate restoration uses the existing confirmed Ma'at repair and verification.
+
+- Native release builds use the installed Ma'at supervisor and CLI as one
+  compatible bootstrap pair, not a future workspace supervisor that may require
+  flags the installed CLI cannot parse. Missing supervision fails before either
+  payload runs; registration, admission, renewal, bounded CPU/job settings and
+  cleanup remain mandatory. A legacy installed pair can conservatively obtain a
+  full build grant until upgraded; this is not proof of finite CPU/model sharing.
+  No security, signing, foreign-job or ordinary lane admission rule is bypassed.
+
+- Selectively port reviewed 3fc33193 declarations to the twelve existing named
+  restricted consumers: add only the exact Ma’at decision journal, mutation lock
+  and supervisor evidence directory beside the existing token-free relay. Keep
+  current identity, grants and network restrictions unchanged. Cover every named
+  declaration and exact home rebasing; broad/sibling filesystem declarations fail
+  the source regression. No live worker mask or policy is changed. Parents remain
+  custodian-provisioned; actual future-worker append/evidence and sibling-denial
+  qualification remains separate from source tests.
+
+- Extend existing selected-service maintenance only to the native GUI-owner
+  `ai.sirsi.horus.agent-router`, with exact SSA/SHA grants and unchanged canonical
+  actor/thread/runtime authorization. Default planning remains non-mutating.
+
+- Recognize the installed legacy login-shell form as data and bind its payload,
+  launcher, instance and original plist to the signed protected CLI and converted
+  configuration. Existing `--apply --drained` plus complete identity pins authorize
+  this exact transition, not a general plist editor or another permission gate.
+
+- Preserve unrelated configuration and private create-only original backups;
+  retain staging descriptors, identity-checked atomic publication, bounded
+  independent recovery and explicit substitution/retirement/cleanup debt.
+
+- Refuse unknown intent, quarantine, disabled jobs, children and instance drift.
+  The five original profiles and root-relay behavior retain their existing paths.
+
+- Add per-instance native-double and tempfile source fixtures. Main owns test
+  execution/review; no fixture or source claim qualifies installed registration,
+  application drain, supervisor success or the actual SSA/SHA rollout.
+
+- Describe Fleet as worker lanes, task progress, and supervision states rather
+  than connected-machine inventory. The shared workspace detail corrects the
+  heading and sidebar accessibility copy without changing navigation, styling,
+  the canonical producer, or state mappings. Add enum-API metadata and search
+  regression coverage; no additional installed-state qualification is claimed.
+
+- Retain the original native-fleet-state-210624 uppercase decoded/rendering
+  regression against the real Fleet row. Extract the existing row unchanged
+  so fixture rendering does not mount Fleet's live CLI task. Cover all six
+  canonical states plus unknown as synthetic data only; no appearance,
+  producer, state-mapping, or installed all-state qualification change.
+
+- Carry the native launcher's finite CPU request into `sirsi maat reserve --cores`
+  and the canonical reservation. A first-arriving bounded CPU-only build no
+  longer owns the model slot merely because its complete request was granted.
+
+- Preserve quiet/loaded, unknown-share, unbounded, oversized and memory-request
+  conflict behavior. No existing reservation, foreign process or workload is
+  stopped or rewritten. CPU environment masks remain cooperative, not kernel
+  CPU-affinity enforcement.
+
+- When a finite CPU ask and a model coexist, current-holder/conflict projections
+  select the actual full model/measurement owner instead of hiding it behind
+  the first CPU row. Both original reservations remain intact.
+
+- Normal bind now scopes router clearance to the selected repository and current
+  full head SHA. Later positive titles or incidental SHA mentions cannot clear
+  rejection. Every exact rejection requires explicit resolution from the same
+  canonical sender in one documented closed declaration in the existing body.
+
+- Preserve all unresolved reviewers' findings, conservative historical holds,
+  known unrelated-repository exclusion, the existing explicit owner override,
+  request-changes behavior and the posted review's exact commit pin.
+
+- Add pure guard fixtures and a normal-binder fixture using only isolated fake
+  gh/sirsi/openssl commands and plaintext fake ID/key files. The optional selected
+  script path exists only in the test runner for independent guard-omission proof.
+  No database/router protocol, credential authority or production bypass added.
+
 ## [0.24.134] — 2026-10-24
 
 ### Corrected
@@ -29,6 +485,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 - Bind Ma'at's non-executing release fixture to the reviewed corrective builders;
   preserve all guard assertions and original failed full-suite evidence.
 - Preserve all prior failed source, signing, publication and installed receipts.
+
 
 
 ## [0.24.133] — 2026-10-24
@@ -57,6 +514,7 @@ preserved. Combined qualification, signed publication and installed acceptance
 are separate. Streaming-terminal, typed task-yield rollout, live model requests,
 M1/M5-off and whole-product acceptance are not claimed by this candidate.
 
+
 ## [0.24.132] — 2026-10-24
 
 ### Corrected
@@ -79,6 +537,7 @@ Combined qualification, protected CI, signed publication and installed-caller
 acceptance remain distinct evidence. No live model readiness, automatic IDE
 migration, new security grant or whole-product/fleet completion is implied.
 
+
 ## [0.24.131] — 2026-10-24
 
 ### Corrected
@@ -100,6 +559,7 @@ The individual source qualifications remain preserved; integrated validation,
 protected CI, signing, publication and installed successor checks are separate.
 Model calibration, binding automated source review, unfinished MCP changes and
 whole-fleet/cloud-offline qualification are not claimed by this release.
+
 
 ## [0.24.130] — 2026-10-24
 
@@ -125,6 +585,7 @@ CI, packaging and installed successor proof remain separate. No new Ma'at
 barrier, credential, model restoration, live repair or whole-fleet claim is
 included. Previous releases and failed qualification attempts are preserved.
 
+
 ## [0.24.129] — 2026-10-24
 
 ### Corrected
@@ -149,6 +610,7 @@ automatically replace private IDE hooks or restart existing consumers. Native
 installation, loaded-image adoption and each host's hook checks remain separate
 observations; no whole-fleet or cloud migration completion is claimed here.
 
+
 ## [0.24.128] — 2026-10-24
 
 ### Corrected
@@ -169,6 +631,7 @@ observations; no whole-fleet or cloud migration completion is claimed here.
   Preserve old-client updates with bounded server-side reference CAS/remerge,
   so delayed ordinary writers cannot resurrect relocated paths. Live reference
   repair still requires compatible serving writers and fresh exact eligibility.
+
 
 ## [0.24.127] — 2026-10-24
 
@@ -195,6 +658,7 @@ observations; no whole-fleet or cloud migration completion is claimed here.
   snapshots and distinguishing publication, installed files, loaded services,
   unattended work and physical-off qualification.
 
+
 ## [0.24.126] — 2026-10-23
 
 ### Corrected
@@ -220,6 +684,7 @@ This is the normal corrective successor to released v0.24.125, not a rewrite of
 its tag. Source qualification and publication do not by themselves demonstrate
 native service drain, installed-image adoption or automatic cloud queue wake.
 
+
 ## [0.24.125] — 2026-10-23
 
 ### Corrected
@@ -244,6 +709,7 @@ native service drain, installed-image adoption or automatic cloud queue wake.
 The irreversible thread-retirement producer change remains separate pending its
 legacy-writer drain/rejoin/rollback barrier. No mixed-writer safety or completed
 M1/M5/Studio rollout is inferred from this corrective source composition.
+
 
 ## [0.24.124] — 2026-10-23
 
@@ -314,6 +780,7 @@ M1/M5/Studio rollout is inferred from this corrective source composition.
 
 - Use one native endpoint selector for admitted fabric transport and rendered SSH profiles: surveyed Thunderbolt links and the existing authenticated Studio forwarding path precede classified LAN and Tailscale. Preserve runtime proxy constraints, logical host pins, destination admission and existing sessions; fail rather than reroute after identity/authentication rejection.
 
+
 ## [0.24.123] — 2026-10-22
 
 - **Pre-push fixture isolation:** clear inherited Git repository variables in the test subprocess so foreign-repository fixtures cannot rewrite the parent checkout's configuration. Preserve the hook's parent environment and all existing test flags; exercise contamination, cleanup and fail-closed controls in CI.
@@ -350,6 +817,7 @@ The following retained fragments describe source already present before this rel
 - **fix(router):** retired `claude-pantheon` — owner correction: no such lane exists. Removed its standalone `agents.json` entry and aliased it to `codex-pantheon` (same pattern as `codex-inference`/`codex-sne-runtime`), so Mercury/Apollo requests addressed to it land somewhere real instead of a dead mailbox. Fixed the one live functional dependency (`internal/liveness.recipientFor` routed machine-health escalations to `claude-pantheon`) and the routing-instruction examples in `.agents/idea-router/ROUTING.md`/`README.md` and the two `sirsi-claude-worker.sh` copies' default `AGENT_ID` fallback, all now `codex-pantheon`. Historical records (ADRs, `THREAD_ITEM_INDEX.md`, past ratification notes) left untouched — they're facts about the past, not live routing. No launchd plist uninstalled or process touched; that's a separate, explicit decision.
 
 
+
 ## [0.24.122] — 2026-10-20
 
 - **Release safety:** remove blanket forced wake-loop restarts and automatic measurement-window overrides from the release train. Preserve active consumers, allow existing idle-boundary image adoption, and explicitly distinguish installation from loaded-image and queue-work proof. Refs: ADR-061; docs/stacklab/RELEASE_CONSUMER_PRESERVATION.md.
@@ -378,6 +846,7 @@ The following retained fragments describe source already present before this rel
   reply-readback completion fence.
 
 
+
 ## [0.24.121] — 2026-10-19
 
 - Allow independent IDE sessions to use `sirsi mcp` concurrently instead of
@@ -402,11 +871,13 @@ The following retained fragments describe source already present before this rel
 
 
 
+
 ## [0.24.120] — 2026-10-19
 
 - Keep bounded Ma'at executor cleanup distinct from resident wake-observer protection. An inherited launchagent wake mechanism alone no longer makes a successful short-lived executor uncloseable; live resident observers with published lane state remain protected.
 
 - Canonicalize installed executable aliases when creating wake service definitions so the no-follow runtime upgrade watcher observes the real installed application rather than a Homebrew symlink.
+
 
 
 
@@ -462,6 +933,7 @@ The following retained fragments describe source already present before this rel
 
 
 
+
 ## [0.24.118] — 2026-10-19
 
 - Integrate Ra's merged semantic-payload comparison (#1156) as the single
@@ -471,6 +943,7 @@ The following retained fragments describe source already present before this rel
   Unchanged rows retain their exact service bytes; actual lifecycle and host
   fences are unchanged. Preserve both encoding-unit regressions and the real-store
   registration, heartbeat and close regression, including unknown fields.
+
 
 
 
@@ -520,6 +993,7 @@ The following retained fragments describe source already present before this rel
 
 
 
+
 ## [0.24.116] — 2026-10-18
 
 - Headless workers are subordinate to lead lanes (owner 2026-10-18): the router service refuses a worker thread's close/complete unless its lane granted it the answering role (registry `worker_answers`, stamped on the worker thread as `answer_role` by the wake loop). `router respond` checks before sending. Acknowledging stays open. Grants seeded for the 21 lanes with no lead session; attended lanes (SSA, SHA, codex-apollo, Mercury) get none.
@@ -529,6 +1003,7 @@ The following retained fragments describe source already present before this rel
 - Native Ma’at supervision retains only already-proven lease time during transient heartbeat transport failures, reads back the exact reservation before renewal, and stops/reaps at its conservative monotonic deadline. Explicit denial and changed scope/executor still stop immediately. Deterministic recovery, uncertainty, expiry and cleanup fixtures added. Refs: ADR-062, ADR-009.
 
 - Bound healthy reservation inventory reads/renewal to a30-second cadence shortened by remaining TTL; keep two-second local child monitoring, fast bounded uncertainty readback and exact terminal acceptance. Deterministic95-second fixture proves six reads total and three renewals.
+
 
 
 
@@ -566,6 +1041,7 @@ The following retained fragments describe source already present before this rel
 
 
 
+
 ## [0.24.114] — 2026-10-18
 
 - Release DMG/PKG build no longer dies when no private Apollo profile is supplied: macOS bash 3.2 treats an empty "${arr[@]}" as unbound under set -u, which failed tag v0.24.113 at build-dmg.sh line 193.
@@ -578,9 +1054,11 @@ The following retained fragments describe source already present before this rel
 
 
 
+
 ## [0.24.113] — 2026-10-18
 
 - Release workflow builds with the read-only private SDK credentials, like CI (#1109 wrapped ci.yml but not release.yml, so tag v0.24.112's source-verify build could not fetch sirsi-inference: "could not read Username for https://github.com").
+
 
 
 
@@ -630,9 +1108,11 @@ The following retained fragments describe source already present before this rel
 
 
 
+
 ## [0.24.111] — 2026-10-16
 
 - The spool relay keeps up to 8 forwards per lane in flight continuously: a request arriving while a slow forward is running starts as soon as a slot frees. #1123 parallelized only within one pass, so trickling arrivals still waited for the previous batch (M5 after v0.24.110: Mac lane req=19 waiting behind inflight=1, queue p90 31 s).
+
 
 
 
@@ -661,9 +1141,11 @@ The following retained fragments describe source already present before this rel
 
 
 
+
 ## [0.24.109] — 2026-10-16
 
 - macOS Tailscale backend check runs the CLI with the vendor's explicit selector (`/usr/bin/env TAILSCALE_BE_CLI=1`), so a launchd/service caller's minimal environment never makes the app binary start in GUI mode; other OSes unchanged. sirsi-hardware-admin (SHA) is declared an attended lane, alongside SSA and codex-apollo.
+
 
 
 
@@ -696,6 +1178,7 @@ The following retained fragments describe source already present before this rel
 
 
 
+
 ## [0.24.105] — 2026-10-16
 
 - Add the machine registry (owner 2026-10-16: machines register with Ra like threads): `.agents/idea-router/machines.json` seeded with M1, M5 and M5-Studio from facts read off each Mac, `sirsi router machines [--json]`, and `registry sync` now pins machines.json beside agents.json. A bad machines.json logs and keeps the previous snapshot; it never blocks lane identity. Consumers (Mercury's run selector) offer only registered machines.
@@ -709,6 +1192,7 @@ The following retained fragments describe source already present before this rel
 - Lane state reports a declared attended lane's `attended` hold ahead of transient measurement-window and host-load holds (it is a standing hold), which also makes its test independent of host load.
 
 - Repair the two CompassPoint attended-only lane declarations with guarded own-queue consumers using the existing canonical relay. Correct the builder's current repo from the native session's verified receipt. Preserve attended-session fencing, shared host admission and all historical identities; do not launch a competing SSA worker or pass host/API keys to the consumers.
+
 
 
 
@@ -867,12 +1351,14 @@ The following retained fragments describe source already present before this rel
 
 
 
+
 ## [0.24.103] — 2026-10-13
 
 - **feat(gemma):** `sirsi gemma shared` gives registered builder lanes on M1 and M5 access to the selected resident native Gemma worker through the existing canonical router. Bounded waits and resume read the exact original and correlated reply; single-use metadata receipts prevent uncertain submissions from being silently resent.
 - **fix(gemma):** native worker requests preserve the selected broker profile, full prompt, lease fencing and output budget. Busy inference is classified distinctly from a failed service; truncated output is not accepted as a completed draft.
 - **docs(gemma):** document normal-command lane access, worker recovery, prompt retention and cross-machine execution. Qualification requires each builder's own registered runtime identity.
 - **test(cli):** isolate the Anubis scan integration fixture from the real user home while preserving its command, assertions and deadline.
+
 
 
 
@@ -927,6 +1413,7 @@ The following retained fragments describe source already present before this rel
 
 
 
+
 ## [0.24.100] — 2026-10-11
 
 - **Router queue drill-down:** headline and recipient counts open actual messages, with full request inspection and oldest-first ordering. Include every waiting recipient (including owner and identities outside the lane registry); remove silent eight-lane truncation. Counts and details derive from the same active-item read. Missing details or inconsistent snapshot totals are explicitly disclosed.
@@ -959,6 +1446,7 @@ The following retained fragments describe source already present before this rel
   canon #386). Binds every agent touching a Mercury transport/conduit (Thunderbolt, PCIe tunnels,
   Ethernet, Wi-Fi, NVIDIA-class NICs) and every agent they hand work to. Rubric text canon stays
   owned by `sirsi-stacklab`/`sirsi-mercury`; this repo binds by reference only.
+
 
 
 
@@ -1029,10 +1517,12 @@ The following retained fragments describe source already present before this rel
 
 
 
+
 ## [0.24.98] — 2026-10-09
 
 - **`relieve --memory` no longer raises an admin-password dialog when run unattended.** `autoheal` and `horus supervise` run `relieve --memory --confirm --quiet` on a timer; `purge` was always launched through `osascript ... with administrator privileges`, so every cycle popped a GUI password prompt nobody was there to answer. On the M5 seven of them stacked up as orphaned `osascript` processes (oldest ~5 h) and the owner saw "Allow administrator access for a script started by sirsi-router-one-authority-…" repeatedly. `purge` now tries non-interactive `sudo -n` first (hosts with passwordless sudo flush silently); an unattended (`--quiet`) caller with no passwordless sudo gets status `skipped` and never a dialog; only an interactive caller falls back to the native prompt. Regression test `TestPurgeCachesNeverPromptsUnattended` fails without the guard.
   Refs: PANTHEON_RULES A16 (side-effect injection), A32 (do no harm to the running host).
+
 
 
 
@@ -1169,6 +1659,7 @@ The following retained fragments describe source already present before this rel
 
 
 
+
 ## [0.24.96] — 2026-10-06
 
 - `sirsi router task-lease-audit [task-id]` — a read-only audit of task-lease
@@ -1193,6 +1684,7 @@ The following retained fragments describe source already present before this rel
   directly; the entry belongs in `changelog.d/` instead
   (`scripts/check-changelog-straggler.sh`). `release/*` branches (the
   release train) remain the only legitimate writer.
+
 
 
 
@@ -1253,6 +1745,7 @@ The following retained fragments describe source already present before this rel
 
 
 
+
 ## [0.24.94] — 2026-10-06
 
 - **Reviewer lanes get a reserved consumer slot.** The host-wide cap (one session per five cores) starved `sirsi-software-admin` on the M5: two lane sessions held the slots, so the lane every bind depends on read "HELD: slots" for hours. A lane whose registry `consumer.reserved_slot` is true may start one session beyond the cap, and the host total can exceed the cap by at most one however many lanes carry the flag. `sirsi-software-admin` and `sirsi-hardware-admin` are flagged. Test covers an unflagged lane held at the cap, a flagged lane admitted, a second flagged lane held, and the reserved session still counting against everyone else.
@@ -1262,6 +1755,7 @@ The following retained fragments describe source already present before this rel
 - **The changelog now says what is unreleased, and the release script cuts all of it.** `CHANGELOG.md` carried 19 separate `## [Unreleased]` blocks: `scripts/release-prep-changelog.py` cut only the first, so entries in the other 18 (77 of them in no release section at all) stayed behind for two months while their code shipped, and the Horus dashboard reported "Unreleased: 116 entries" repeating an already-released entry. The script now cuts every block, drops entries a release already carries and leaves one empty `[Unreleased]`; a new test (`scripts/release-prep-changelog.test.sh`, in CI, red against the old script) pins it. The 19 blocks were moved verbatim, with no line lost (checked: 0 of 2,229), into a labeled "Uncut entries, 2026-08 to 2026-10" section at the bottom. `/api/router` now also sends every lane verdict as an explicit count, zero included, so a verdict with no lanes no longer reads as unknown.
 
 - **`/api/router` carries what a richer dashboard needs, additively.** `attention[]` gains a stable `id`, the related `agent` and a typed `next` step (copy-only commands: `sirsi router ping <lane>`, `wake-install <lane>`, `registry sync --install`, `maat known-failures list`, `swap-hygiene --status`); each lane gains `observed_at`, `worker_thread_id`, `last_report_at` and `last_report_summary`, projected from the worker's own published lane state and omitted when it has published none (omitted means unknown, never healthy); the snapshot reports `built_ms` and per-stage `timings_ms`. Measured: the snapshot builds in about 1.3 to 2.5 s (thread registry and active-item reads), every other stage under 25 ms. Requested by sirsi-hardware-admin for the dashboard redesign.
+
 
 
 
@@ -1440,6 +1934,7 @@ The following retained fragments describe source already present before this rel
 
 
 
+
 ## [0.24.92] — 2026-10-05
 
 - **Commercial notarization spaces repeated Apple transport retries.** The
@@ -1447,6 +1942,7 @@ The following retained fragments describe source already present before this rel
   exponential spacing only for Apple’s exact multipart-upload deadline.
   Rejected artifacts, invalid credentials, signing failures, and every other
   notarization verdict remain immediately fail-closed.
+
 
 
 
@@ -1482,6 +1978,7 @@ The following retained fragments describe source already present before this rel
   fail-closed; no partial artifact is published. The helper uses the absolute
   macOS `xcrun` path in production and is covered by an isolated transient vs.
   permanent failure regression.
+
 
 
 
@@ -1598,6 +2095,7 @@ The following retained fragments describe source already present before this rel
 
 
 
+
 ## [0.24.69] — 2026-10-05
 
 - **Dashboard: a Router view that shows everything built, and fixes to Fleet.** `GET /api/router` and a new Router tab show the installed version, lane verdicts (the same as `sirsi router ping --all`), the open queue, the consumer cap in use, whether the registry is pinned, the known-failure catalog with each fix's release and guard, the swap-hygiene receipt, and what each release added (read from CHANGELOG). A producer error is a 5xx, never an empty panel. Fleet now shows a loading line instead of a blank screen for the ~3 seconds the board takes, and no longer lists retired aliases (such as `claude-finalwishes-helper`) as lanes. The dashboard is now a component of the Ra/Horus fabric Stack Lab recipe, component catalog and traceability matrix, together with the known-failure catalog, registry pin, swap hygiene and claim-eligibility components.
@@ -1607,6 +2105,7 @@ The following retained fragments describe source already present before this rel
 - **Two things that were hand work are now verbs.** `sirsi router registry sync --install` re-pins a host to origin/main every hour through launchd (no resident process), so registry drift cannot return by omission. `scripts/release-train.sh <version> [--deploy-service]` is the whole release in one command with a hard stop at every step: changelog PR, one CI run, merge, optional router-service deploy before the client ships, tag, publish, upgrade on the M1 and M5, restart every loop. CI checks its syntax, dry-run and refusal of a bad version.
 
 - **Known-failure loop: register the problem once, record the fix with a guard, recognize it next time (Ma'at + Stack Lab).** Recurring failures were being diagnosed and fixed by hand each time. `internal/maat/knownfail` is a catalog of failures (signature, cause, fix, the release it shipped in, and a regression test that must exist); a resolved entry without a real guard test is rejected by the loader and by a CI test. The wake loop now recognizes a failing consumer's output against the catalog and publishes the answer ("KNOWN failure X: cause; fix; upgrade to N") in the lane state and log instead of leaving a quarantine for a person to diagnose. `sirsi maat known-failures list | match | register | resolve` is the registrar (`resolve` refuses unless the guard names a test that exists). The catalog is a Stack Lab component of the Ra/Horus fabric recipe. Seeded with this week's classes: symlinked codex writable root (new registry guard test), shared fallback agent session, ps-denied anchor, 30-second spool timeouts from full-ledger reads, working-tree registry drift, and claim refusals.
+
 
 
 
@@ -1672,9 +2171,11 @@ The following retained fragments describe source already present before this rel
 
 
 
+
 ## [0.24.67] — 2026-10-02
 
 - **Router alias `mercury` → `hermes`.** Owner rename 2026-10-02 (Hermes is now Mercury): `mercury` resolves to the existing `hermes` lane (same inbox, same worker) so mail addressed either way arrives; the canonical lane id stays `hermes` until the coordinated migration. With #966, `sirsi-mercury` inherits the Hermes release policy before the GitHub repo is renamed.
+
 
 
 
@@ -1751,6 +2252,7 @@ The following retained fragments describe source already present before this rel
 
 
 
+
 ## [0.24.65] — 2026-10-01
 
 - **Router leases:** a worker keeps its own lease across a session remint
@@ -1759,6 +2261,7 @@ The following retained fragments describe source already present before this rel
 - **CI:** the PostgreSQL leg fails closed instead of silently skipping (#949).
 - **Lanes:** `claude-apollo-m5-rail` (M5-Apollo-Rail) registered; its aliases
   no longer resolve to the M1 `claude-inference` lane.
+
 
 
 
@@ -1823,11 +2326,13 @@ The following retained fragments describe source already present before this rel
 
 
 
+
 ## [0.24.58] — 2026-10-01
 
 - **Release identity correction:** publish the merged Pantheon menubar outbox
   reachability work with matching source `VERSION`, embedded binary identity,
   and tag after v0.24.57 was created from a stale pre-merge commit.
+
 
 
 
@@ -1861,6 +2366,7 @@ The following retained fragments describe source already present before this rel
   coverage (PR #933, ADR-069).
 - **Release identity:** align the source `VERSION`, embedded binary version,
   and release tag after the stale embedded version in v0.24.56.
+
 
 
 
@@ -1924,6 +2430,7 @@ The following retained fragments describe source already present before this rel
 
 
 
+
 ## [0.24.54] — 2026-09-29 — On-demand Firebase Hosting provisioning
 
 - Provision the `sirsi-pantheon` Hosting site idempotently before automated docs
@@ -1931,6 +2438,7 @@ The following retained fragments describe source already present before this rel
   projects.
 - Preserve the existing service-account deployment identity, live-channel
   concurrency, and post-deploy smoke check.
+
 
 
 
@@ -1965,6 +2473,7 @@ The following retained fragments describe source already present before this rel
   after the application/DMG signing path succeeded.
 - The release workflow still fails closed on missing or mismatched signing
   identities; no credential material is exposed by this change.
+
 
 
 
@@ -2028,6 +2537,7 @@ The following retained fragments describe source already present before this rel
 
 
 
+
 ## [0.24.51] — 2026-09-29 — Enrolled signature metadata compatibility
 
 - Accept the complete signed-bundle layout emitted by the enrolled signing
@@ -2035,6 +2545,7 @@ The following retained fragments describe source already present before this rel
   `Contents/CodeResources` when present.
 - Signed inventory still fails closed when no `CodeResources` metadata exists;
   all unrelated or unexpected bundle entries remain rejected.
+
 
 
 
@@ -2069,6 +2580,7 @@ The following retained fragments describe source already present before this rel
 - Require exactly one signature layout for signed payloads and reject duplicate
   or missing signature metadata. The descriptor-rooted, Python-free package
   inventory remains fail-closed for every other unexpected entry.
+
 
 
 
@@ -2135,6 +2647,7 @@ The following retained fragments describe source already present before this rel
 
 
 
+
 ## [0.24.46] — 2026-09-29 — Declared-agent resolution release
 **Source release.** Acting-agent resolution now rejects inferred session markers
 and sole-live-thread candidates unless the candidate is declared in the agent
@@ -2145,6 +2658,7 @@ Commercial signing, notarization, package publication, and installed-host
 evidence remain separately credentialed operations.
 
 ---
+
 
 
 
@@ -2204,11 +2718,13 @@ credential-dependent and are not inferred from this source release.
 
 
 
+
 ## [0.24.43] — 2026-09-29 — Developer ID release identity resolution
 **Source release.** Correct the release workflow's Developer ID Application and
 Installer identity match so the imported Team `9D382WV988` certificates are
 recognized by the self-hosted signing path. Signing/notarization/package and
 installed-host evidence are established only by the tagged workflow run.
+
 
 
 
@@ -2280,6 +2796,7 @@ no-pool guarantee and defensive idle bounds.
 
 
 
+
 ## [0.24.45] — 2026-09-29 — Declared-agent resolution hardening
 **Source release.** Acting-agent resolution now rejects inferred session markers
 and sole-live-thread candidates unless the candidate is declared in the agent
@@ -2288,6 +2805,7 @@ router agents while preserving the existing explicit-agent path.
 
 Commercial signing, notarization, package publication, and installed-host
 evidence remain separately credentialed operations.
+
 
 
 
@@ -2344,11 +2862,13 @@ preserving the existing test behavior.
 
 
 
+
 ## [0.24.40] — 2026-09-29 — Stack Lab naming-canon compatibility
 The Stack Lab wing validator now accepts the optional `naming_canon` map
 published by the hardware wing, while retaining strict rejection of unknown
 fields and requiring non-empty string values. This keeps the canonical wing
 schema and doctor aligned with the current cross-lane registry records.
+
 
 
 
@@ -2409,6 +2929,7 @@ failing two otherwise-clean 2026-09-28 MLX A/B runs at 98.
 
 
 
+
 ## [0.24.38] — 2026-09-29 — Ma'at conflict-check self-exemption
 `maat reserve --exempt-pid` now binds conflict checks to the reservation's own
 process tree and excludes its descendants from foreign-load detection while
@@ -2416,6 +2937,7 @@ continuing to report genuine intruders. This prevents the guarded run's own
 SSH/bench child from producing a false conflict during release operations.
 
 ---
+
 
 
 
@@ -2476,6 +2998,7 @@ and installer publication remain separately credentialed.
 
 
 
+
 ## [0.24.32] — 2026-09-28 — Canonical Stack Lab wing integrity
 **Source release candidate.** The Pantheon release recipe now resolves through
 the canonical `stacklab.wing.pantheon.pt-wing-001` wing, Stack Lab validates
@@ -2483,6 +3006,7 @@ that a recipe's local wing exists before projection, and the router roster
 uses the current Hermes and Photon identities. The source-qualified release
 remains separate from Developer ID signing, notarization, and commercial
 publication credentials.
+
 
 
 
@@ -2544,6 +3068,7 @@ publication remain separate credentialed operations.
 
 
 
+
 ## [0.24.28] — 2026-09-28 — DMG-first commercial release route
 **Commercial patch release.** The tagged macOS release now always publishes the
 signed, notarized, stapled Pantheon DMG when the Developer ID Application and
@@ -2553,6 +3078,7 @@ is configured; its absence no longer prevents the complete DMG release or its
 canonical Homebrew cask publication. The route records that distinction
 explicitly in Stack Lab instead of leaving a successful product artifact
 stranded behind an unavailable installer credential.
+
 
 
 
@@ -2609,12 +3135,14 @@ rejects terminal-only deletion or unconfirmed caution cleanup.
 
 
 
+
 ## [0.24.29] — 2026-09-28 — Menubar startup probe deferral
 **Commercial patch release.** The menubar Home panel no longer launches
 `sirsi vitals --json` or `sirsi autonomous status --json` while opening Home
 when neither result is rendered there. Apollo and Autonomous Control remain
 the data owners and load their canonical values when their surfaces open,
 reducing startup process churn without removing either workflow.
+
 
 
 
@@ -2675,6 +3203,7 @@ requirement explicitly in Stack Lab.
 
 
 
+
 ## [0.24.27] — 2026-09-28 — Canonical Swift menubar packaging
 **Commercial patch release.** Pantheon packaging now fails closed unless the
 canonical Swift menubar source is present and builds that surface in both the
@@ -2707,11 +3236,13 @@ native interaction surface.
 
 
 
+
 ## [0.24.26] — 2026-09-28 — Router cutover override correctness
 **Commercial patch release.** An explicit `SIRSI_ROUTER_STORE_WAKE` value now
 overrides the service URL, as documented. This makes `SIRSI_ROUTER_STORE_WAKE=0`
 a reliable emergency/test override even on hosts normally pointed at the router
 service, preventing unexpected store-cutover behavior.
+
 
 
 
@@ -2771,12 +3302,14 @@ runtime, model, host, or qualification state.
 
 
 
+
 ## [0.24.24] — 2026-09-28 — Router blocked-by contract clarity
 **Commercial patch release.** `sirsi router` now describes `--blocked-by` as
 an external-block reason rather than a dependency-task identifier, matching the
 store and live task records. This release is documentation and operator-help
 clarity only; it makes no router migration, deployment, or installed-host
 qualification claim.
+
 
 
 
@@ -2838,12 +3371,14 @@ router migration, deployment, or installed-host qualification.
 
 
 
+
 ## [0.24.14] — 2026-09-27 — Hermes M5 seat registry alias
 **Commercial patch release.** The canonical router registry now includes the
 `cylton-hermes` software identity for the Hermes M5 seat and its
 `sirsi-io-connect` repository, preserving the existing Hermes identities and
 canonical paths. This release changes registry metadata only; it makes no
 service, credential, or live-router mutation claim.
+
 
 
 
@@ -2902,12 +3437,14 @@ source release receipt.
 
 
 
+
 ## [0.24.12] — 2026-09-27 — Ma'at runner-listener classification
 **Commercial patch release.** Ma'at conflict checks now distinguish an idle
 GitHub Actions `Runner.Listener` and its launchd wrapper from an active
 `runner.worker` job. Idle runner infrastructure no longer blocks or invalidates
 quiet-regime reservations, while a real in-flight worker remains governed as
 build load. Regression coverage protects both sides of the classification.
+
 
 
 
@@ -2966,11 +3503,13 @@ working directory, and Stack Lab workstream resolution deterministic.
 
 
 
+
 ## [0.24.10] — 2026-09-27 — Hermes and Photon lane identity
 **Commercial patch release.** Pantheon’s Stack Lab lane map now resolves the
 renamed `sirsi-hermes` transport repository and the new `sirsi-photon`
 hardware repository, while preserving the stable `io-connect` wing id. The
 local router identity hook follows the same repository split.
+
 
 
 
@@ -3029,12 +3568,14 @@ separate follow-up work.
 
 
 
+
 ## [0.24.17] — 2026-09-28 — Engine-neutral streaming integrity
 **Commercial feature release.** Adds the engine-neutral connector ABI and
 OpenAI-compatible streaming transport with fail-closed premature-EOF,
 served-model, and request-value validation. The release also carries the
 portable menubar command-guard hardening. Two-Mac transport qualification and
 RDMA/JACCL remain separate follow-up work.
+
 
 
 
@@ -3100,11 +3641,13 @@ remain separate follow-up work.
 
 
 
+
 ## [0.24.9] — 2026-09-27 — Self-hosted signing cleanup
 **Commercial patch release.** The release signing workflow now restores the
 user login keychain as the default, restores the system search list, and removes
 its temporary `build.keychain` on every exit path. This prevents persistent
 self-hosted-runner keychain hijacking and repeated assistantd credential prompts.
+
 
 
 
@@ -3159,8 +3702,10 @@ self-hosted-runner keychain hijacking and repeated assistantd credential prompts
 
 
 
+
 ## [0.24.7] — 2026-09-27 — Host memory-pressure scheduling
 **Commercial patch release.** Ma’at now samples the calling host's live memory pressure before scheduling, reports pressure beside conflict results without misclassifying it as a process intruder, and exposes advisory per-resource memory-floor fields. The release preserves the existing core reservation behavior; real per-machine RAM capacities remain explicitly unconfigured until owner-provided values are available.
+
 
 
 
@@ -3221,6 +3766,7 @@ The live full audit reports 95/100 with zero failures; remaining warnings are pa
 
 
 
+
 ## [0.24.5] — 2026-09-27 — Willing cessation for shared resources
 **Commercial patch release.** Ma’at now supports explicit, non-preemptive resource handoff:
 - lanes may request, grant, counter, decline, or withdraw a cede for a machine or bounded core share;
@@ -3253,12 +3799,14 @@ The live full audit reports 95/100 with zero failures; remaining warnings are pa
 
 
 
+
 ## [0.24.4] — 2026-09-27 — Ma'at decision ledger
 **Commercial patch release.** Ma'at reservation outcomes are now directly visible and drillable from the Pantheon CLI:
 - `sirsi maat decisions` lists grants, queues, refusals, releases, and conflict checks with filters.
 - `sirsi maat decisions show <id>` renders the complete decision record.
 - Native reservation, release, and conflict-check paths publish explanatory records without changing scheduler authority.
 - Host-local ledger scope is explicit; cross-host aggregation remains a separately tracked follow-up.
+
 
 
 
@@ -3705,6 +4253,7 @@ Merged to `origin/main`, deployed to M1 & M5 CLIs + both relays, verified live (
 
 
 
+
 ## [0.23.1-beta] — 2026-06-05
 
 ### Fixed
@@ -3715,6 +4264,7 @@ Merged to `origin/main`, deployed to M1 & M5 CLIs + both relays, verified live (
 - **PID sanity floor for router reaping and orphan cleanup** (codex-pantheon, 2026-06-05). PID 1 is now treated as below the valid agent/process floor: router liveness reports it as unverifiable, thread reaping skips it instead of applying composite reap-key logic to launchd/init, and orphan scanning excludes PID 1 before it can appear in `sirsi fix` preview or kill candidates. Verified: `go test ./internal/router ./internal/guard ./cmd/sirsi`. Refs: router backlog `20260605-184302`, ADR-024 Amendment 1, Rule A1/A12; Changelog: v0.23.
 - **Router LaunchAgent inventory now matches the pull-model CLI** (codex-pantheon, 2026-06-05). `NodeStatus` now reports known macOS helpers (`ai.sirsi.pantheon`, `com.sirsi.idea-router`, sweep, registry-police, and the legacy router-daemon label) through `launch_agents`, `sirsi router node-status` renders them as Router/App helpers instead of a misleading missing daemon, `sirsi setup --json` includes the same launch-agent inventory on macOS, and watcher specs/canon docs no longer tell headless surfaces to run the removed `sirsi router daemon` verb. Verified: `go test ./internal/router ./internal/setup ./cmd/sirsi`. Refs: ADR-024, ADR-026, router handoff `20260605-183532`; Changelog: v0.23.
 - **Install/workstream drift hardening** (codex-pantheon, 2026-06-05). `sirsi setup --json` now works as a cross-platform read-only status report before the macOS-only interactive guard, MCP registration writes the resolved `sirsi` binary path instead of relying on IDE PATH, Codex workstream auto-approve uses the current CLI bypass flag, release scripts stamp `internal/version.Version`, and `agentguard` tests no longer fail because host crash logs are present. Verified: `go test ./internal/setup ./internal/workstream ./internal/agentguard ./cmd/sirsi`, `go vet ./...`, `go build ./cmd/sirsi ./cmd/sirsi-menubar ./cmd/sirsi-gui`. Refs: workstream/setup audit, ADR-023, Rule A7/A12; Changelog: v0.23.
+
 
 
 
@@ -3863,6 +4413,7 @@ Merged to `origin/main`, deployed to M1 & M5 CLIs + both relays, verified live (
 
 
 
+
 ## [0.22.0-beta] — 2026-05-18
 
 ### Hardening Sprint Complete (Codex-reviewed, 30+ commits)
@@ -3898,6 +4449,7 @@ Merged to `origin/main`, deployed to M1 & M5 CLIs + both relays, verified live (
 ### Added — Pro UX Loop Sprint 2 Closeout
 - TUI session state persistence
 - Updated README and UX workflow docs
+
 
 
 
@@ -4001,12 +4553,14 @@ Merged to `origin/main`, deployed to M1 & M5 CLIs + both relays, verified live (
 
 
 
+
 ## [0.18.0] — 2026-05-05
 
 ### Changed — Version Alignment
 - Synced version across all surfaces: VERSION file, main.go, README badge, CHANGELOG, sirsi.ai/pantheon terminal demo
 
 ---
+
 
 
 
@@ -4108,6 +4662,7 @@ Merged to `origin/main`, deployed to M1 & M5 CLIs + both relays, verified live (
 - `docs/case-studies/628-of-628-fixable.md` — full remediation report, every finding documented
 
 ---
+
 
 
 
@@ -4243,6 +4798,7 @@ Subsumes the external [Code Review Graph](https://github.com/tirth8205/code-revi
 
 
 
+
 ## [0.16.1] — 2026-04-18
 
 ### Added
@@ -4261,6 +4817,7 @@ Subsumes the external [Code Review Graph](https://github.com/tirth8205/code-revi
 - **Go build** — `go build ./...` passes. All 1,895+ tests pass (`go test -short ./...`).
 
 ---
+
 
 
 
@@ -4311,6 +4868,7 @@ Subsumes the external [Code Review Graph](https://github.com/tirth8205/code-revi
 - **neith.go → net.go**: Renamed CLI file and all internal references to match the Net deity name.
 
 ---
+
 
 
 
@@ -4389,6 +4947,7 @@ Subsumes the external [Code Review Graph](https://github.com/tirth8205/code-revi
 
 
 
+
 ## [0.13.0] — 2026-04-05
 
 ### Added
@@ -4431,6 +4990,7 @@ Subsumes the external [Code Review Graph](https://github.com/tirth8205/code-revi
 
 
 
+
 ## [0.12.0] — 2026-04-05
 
 ### Added
@@ -4443,6 +5003,7 @@ Subsumes the external [Code Review Graph](https://github.com/tirth8205/code-revi
 - **`sirsi` entry point** — Bare `sirsi` now launches the TUI instead of printing help. All subcommands (`sirsi ka hunt`, `sirsi maat audit`, etc.) continue to work unchanged for scripting and CI.
 
 ---
+
 
 
 
@@ -4517,6 +5078,7 @@ Subsumes the external [Code Review Graph](https://github.com/tirth8205/code-revi
 
 
 
+
 ## [0.10.0] — 2026-04-04
 
 ### Added
@@ -4537,6 +5099,7 @@ Subsumes the external [Code Review Graph](https://github.com/tirth8205/code-revi
 - **Session crash on `KillAll`** — Broad `osascript` window matching killed the Claude Code terminal. Now protected by ProtectGlyph.
 
 ---
+
 
 
 
@@ -4598,6 +5161,7 @@ Subsumes the external [Code Review Graph](https://github.com/tirth8205/code-revi
 - **Flatpak/Snap/RPM** — Linux package managers beyond dpkg deferred
 
 ---
+
 
 
 
@@ -4783,6 +5347,7 @@ v0.8.0-beta is the first credible public release of Pantheon. All metrics are ve
 
 
 
+
 ## [0.7.0-alpha] — 2026-03-27 (Ecosystem Hardening — Sekhmet Phase)
 ### Added
 - **Singleton Enforcement** — Implemented Unix domain socket locking (`platform.TryLock`) across all primary entry points (Menubar, Guard, MCP) to prevent process redundancy.
@@ -4933,6 +5498,7 @@ v0.8.0-beta is the first credible public release of Pantheon. All metrics are ve
 
 
 
+
 ## [0.4.0-alpha] — 2026-03-23 (Launch Execution + Modular Deities)
 
 ### Added
@@ -4972,6 +5538,7 @@ v0.8.0-beta is the first credible public release of Pantheon. All metrics are ve
 
 
 ---
+
 
 
 
@@ -5084,6 +5651,7 @@ v0.8.0-beta is the first credible public release of Pantheon. All metrics are ve
   - Runs gofmt + go vet + golangci-lint + go build before every push
   - Prevents lint issues from ever reaching the pipeline
 - **Maat proposed** — pipeline purifier module (CI monitoring + auto-remediation)
+
 
 
 
@@ -5230,6 +5798,7 @@ v0.8.0-beta is the first credible public release of Pantheon. All metrics are ve
 
 
 
+
 ## [0.1.0-alpha.2] — 2026-03-21
 ### Fixed (Session 2: Clean, Lint, Optimize)
 - **CI pipeline** — fixed go.mod version mismatch (`go 1.26.1` → `go 1.22.0`)
@@ -5271,6 +5840,7 @@ v0.8.0-beta is the first credible public release of Pantheon. All metrics are ve
 
 
 
+
 ## [0.1.0-alpha.1] — 2026-03-20
 ### Added (Session 1: Ka Ghost Hunter)
 - **Ka module** (`internal/ka/`) — Ghost detection engine scanning 17 macOS locations
@@ -5281,6 +5851,7 @@ v0.8.0-beta is the first credible public release of Pantheon. All metrics are ve
 - **System filtering** — `com.apple.*` and known system services excluded from ghosts
 
 ---
+
 
 
 
@@ -5353,6 +5924,7 @@ v0.8.0-beta is the first credible public release of Pantheon. All metrics are ve
 
 
 
+
 ## [0.0.1] — 2026-03-20
 ### Added
 - Initial product concept ("Deep Cleanse") born from manual Parallels cleanup session
@@ -5362,6 +5934,7 @@ v0.8.0-beta is the first credible public release of Pantheon. All metrics are ve
 - 60+ scan rule categories across 7 domains identified
 - Agent-controller architecture designed
 - Network topology awareness (VLAN, subnet, relay) specified
+
 
 
 
