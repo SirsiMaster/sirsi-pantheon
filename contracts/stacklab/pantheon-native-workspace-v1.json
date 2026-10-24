@@ -27,10 +27,10 @@
       "id": "native-mercury-observer",
       "source": ["macapp/Sources/SirsiMenubar/MercuryMonitor.swift", "macapp/Sources/SirsiMenubar/MercuryWorkspaceView.swift"],
       "tests": ["macapp/Tests/SirsiMenubarTests/MercuryWorkspaceTests.swift"],
-      "inputs": ["fixed local Mercury monitor GET", "Ra lane and machine projections", "host transport receipt"],
-      "outputs": ["machine measurements with freshness", "typed machine and transport evidence", "Apollo and Ra navigation"],
+      "inputs": ["existing canonical Mercury dashboard CLI read", "Ra lane and machine projections", "host transport receipt"],
+      "outputs": ["CPU busy and calibrated GPU-work measurements with local sample aging", "freshness-gated observed link rates", "typed machine and transport evidence", "Apollo and Ra navigation"],
       "writes": [],
-      "upgrade_recipe": ["verify upstream field units before changing labels", "keep monitor read byte and time limits", "reject redirects and failed reads", "retain source freshness and unavailable states", "never start a competing collector"]
+      "upgrade_recipe": ["verify upstream field units before changing labels", "keep monitor read byte and time limits in the canonical reader", "reject unsuccessful reads and preserve the reader's private-endpoint and redirect policy", "age retained samples with monotonic time from read completion while visible; withhold future, expired, failed-read and unknown values", "keep scene rates bound to canonical link observation times", "label power telemetry unknown when the selected schema does not expose it", "never start a competing collector"]
     },
     {
       "id": "apollo-maat-context",

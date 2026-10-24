@@ -11,6 +11,15 @@
 - Source candidate only: Main qualification and a real harmless local routed
   answer remain pending. R5 readiness and unknown R3 capability dimensions are
   not asserted.
+## 2026-10-24 — Native Mercury retained-sample freshness correction
+
+- Keep the native Mercury view on the canonical dashboard reader and age each
+  retained node and link observation from successful read completion using a
+  monotonic clock. Expired or future samples and failed reads render unknown;
+  no second sampler or network polling path is introduced.
+- Dashboard v1 does not expose power telemetry. The native view labels it
+  unknown, and the broader native telemetry obligation remains open. This
+  source correction does not claim historical web/native scene parity.
 
 ## 2026-10-24 — v0.24.130 corrective release candidate
 

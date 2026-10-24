@@ -128,7 +128,7 @@ struct MercuryWorkspaceView: View {
                 Text("What this view shows")
                     .sirsiFont(.subheadline, weight: .semibold)
                     .foregroundStyle(Color.white)
-                Text("Mercury’s canonical dashboard supplies calibrated GPU work, CPU busy, and observed link rates. Ra supplies admission and lane availability; hardware receipts describe this Mac’s available links.")
+                Text("Mercury’s canonical dashboard supplies calibrated GPU work, CPU busy, and observed link rates. Power telemetry is not exposed by dashboard v1 and remains unknown here; the broader native telemetry obligation remains open. Ra supplies admission and lane availability; hardware receipts describe this Mac’s available links.")
                     .sirsiFont(.subheadline)
                     .foregroundStyle(PantheonTheme.mutedText)
                     .fixedSize(horizontal: false, vertical: true)

@@ -53,8 +53,9 @@ final class WorkspaceTests: XCTestCase {
         let lane = try decodeMercuryLane(Data(#"[{"agent":"mercury","verdict":"HELD","detail":"Attended session owns this lane","workable":true}]"#.utf8))
         let machines = try decodeMercuryMachines(Data(#"{"machines":[{"id":"fixture-mac","model":"Visual fixture Mac","chip":"Apple silicon","memory_gib":32,"registered_at":"2026-10-23T14:00:00Z","admitted_by":"fixture"}]}"#.utf8)).machines
         let links = try decodeMercuryTransportReceipt(Data(#"{"collected_at":"2026-10-23T14:00:00Z","host":"fixture-mac","macos":"27","ports":[],"port_count_known":true,"thunderbolt_interfaces":[],"rdma":{"family_loaded":"unknown","nvram_enabled":"unknown"},"source":"visual fixture"}"#.utf8))
+        let sampleTime = Date().timeIntervalSince1970
         let monitorJSON = """
-        {"state":"ok","message":"Mercury snapshot · fixture-mac","snapshot":{"nodes":[{"id":"fixture-mac","name":"fixture-mac","chip":"Visual fixture silicon","state":"live","observed_at":\(Date().timeIntervalSince1970),"gpu":{"work_pct":12},"cpu":{"busy_pct":30}}]},"scene":{"cables":[]}}
+        {"state":"ok","message":"Mercury snapshot · fixture-mac","snapshot":{"generated_at":\(sampleTime),"nodes":[{"id":"fixture-mac","name":"fixture-mac","chip":"Visual fixture silicon","state":"live","observed_at":\(sampleTime),"age_s":0,"freshness_s":3,"gpu":{"work_pct":12},"cpu":{"busy_pct":30}}],"links":[]},"scene":{"cables":[]}}
         """
         let monitorRead = SirsiEngine.JSONCommandRead(data: Data(monitorJSON.utf8), exitStatus: 0, timedOut: false, launchError: nil)
         let monitor = try decodeMercuryMonitor(read: monitorRead)
