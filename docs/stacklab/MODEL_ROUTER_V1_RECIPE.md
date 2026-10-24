@@ -2,6 +2,10 @@
 
 **Stack Lab component:** `stacklab.recipe.model-router-v1`
 
+**Versioned contract:** [`contracts/stacklab/model-router-v1-recipe-v1.json`](../../contracts/stacklab/model-router-v1-recipe-v1.json)
+
+**Requirement/module map:** [`MODEL_ROUTER_V1_TRACEABILITY.md`](MODEL_ROUTER_V1_TRACEABILITY.md)
+
 **Surface:** `sirsi ask`
 
 **Owner:** Pantheon
@@ -14,8 +18,12 @@ corrective source implements the released130 R1/R2/R4 acceptance obligations
 from contract SHA256
 `8aa5f1f73e6a049b35d9ac0c2416350809d0821cf985f1da178ba9ecb93c1e9a` and the
 accepted SNE-side routing design. It does not introduce a provider, credential,
-model, service, or second journal authority. Provider-readiness R5 remains the
-separate owned change. Context qualification is retained; streaming,
+model, service, or second journal authority. Provider-readiness R5 has its own
+separately accepted normal/race/negative source evidence at
+`d0a12981a3dfba955baa32ccf6c0796f4e5be488` (accepted evidence reference
+`b04b…`; the later 0.24.132 combined candidate is reported at 199 each green).
+That evidence is not attributed to or rerun on the 691-based model-router
+candidate. Context qualification is retained; streaming,
 determinism and JSON-mode capability requirements remain explicitly unknown
 and unqualified.
 

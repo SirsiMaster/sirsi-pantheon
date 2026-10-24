@@ -59,6 +59,9 @@ whole-fleet/cloud-offline qualification are not claimed by this release.
 - Route `ask` human and JSON output through Cobra's selected command writer,
   preserving the normal themed formatting and making redirected command output
   complete and testable.
+- Add a versioned Stack Lab model-router module recipe and original-obligation
+  traceability map; distinguish separately accepted provider-readiness R5
+  evidence from qualification of the 691-based model-router candidate.
 
 ## [0.24.130] — 2026-10-24
 
