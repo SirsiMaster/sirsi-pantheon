@@ -8,6 +8,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [0.24.135] — 2026-10-24
 
+**Ready corrective scope:** the merged relay TLS-handshake retry and truthful
+fleet/doctor evidence fixes, bounded draft discovery and Python-B release
+helpers, enrolled signer-alias defaults, and explicit package-fixture public
+mode setup. This normal fragment consolidation also preserves older source-only
+and partially qualified records below. Their inclusion is historical carryover,
+not new runtime qualification, feature completion, or whole-product acceptance.
+The larger seven-donor Ma'at composition remains active for the next increment;
+it is not represented as released by this heading.
+
 - Use the existing pinned `sirsi-m5` and `sirsi-m1` SSH aliases as ordered signing
   client defaults instead of DHCP addresses. Preserve explicit host overrides,
   strict noninteractive transport, enrolled-service checks and signature checks;

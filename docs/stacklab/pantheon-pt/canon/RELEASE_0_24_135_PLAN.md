@@ -18,6 +18,8 @@ Ra and SHA. No second publisher, router database or credential authority.
   enrolled sirsi-m5/sirsi-m1 aliases. Retain strict transport and overrides.
 - Deliberately update the release-preflight fixture's signer source pin from
   805123e9 to independently matched95db0601, retaining every guard assertion.
+- Include the qualified six-line late-entry test-fixture public-mode setup
+  correction from89427545; retain private test umask077 and production guards.
 - Assemble existing changelog fragments through normal release tooling and
   prepare VERSION135. Qualify this exact descendant and normal protected CI.
 
