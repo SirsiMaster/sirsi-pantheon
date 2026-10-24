@@ -4,10 +4,10 @@ import XCTest
 @MainActor
 final class RelayOutboxResolutionTests: XCTestCase {
     private func board(access: String = "unavailable", eligible: Bool = true,
-                       inode: UInt64 = 10, age: TimeInterval = -0.01) throws -> RouterBoard {
+                       inode: UInt64 = 10, age: TimeInterval = -0.01, at instant: Date = Date()) throws -> RouterBoard {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let stamp = formatter.string(from: Date().addingTimeInterval(-age))
+        let stamp = formatter.string(from: instant.addingTimeInterval(-age))
         let readable = access == "observed"
         let known = readable || access == "service-private"
         let row: [String: Any] = ["agent": "codex-pantheon", "unreadable": !readable,
@@ -76,6 +76,40 @@ final class RelayOutboxResolutionTests: XCTestCase {
         let stale = RelayOutboxResolutionProjection(context: model.context, engine: engine, freshPreflight: true)
         XCTAssertTrue(stale.guidance.contains("relay owner"))
         XCTAssertFalse(stale.guidance.contains("Current relay-producer metadata is available"))
+    }
+
+    func testUnchangedBoardAgesProducerAndCollectionLabelsOnSharedClock() throws {
+        let observed = Date(timeIntervalSince1970: 1_800_000_000)
+        let engine = SirsiEngine()
+        engine.routerBoard = try board(access: "service-private", eligible: true, age: 0, at: observed)
+        engine.routerReadAt = observed
+        let context = RelayOutboxResolutionContext(outbox: try XCTUnwrap(engine.routerBoard?.outbox?.first))
+        let producerStamp = context.outbox.retryObservedAt
+        func projection(_ seconds: TimeInterval) -> RelayOutboxResolutionProjection {
+            RelayOutboxResolutionProjection(context: context, engine: engine, freshPreflight: true,
+                                             now: observed.addingTimeInterval(seconds))
+        }
+        for seconds in [14.999, 15.0] {
+            let current = projection(seconds)
+            XCTAssertTrue(current.observation.contains("0 retries observed"))
+            XCTAssertTrue(current.latestObservation?.contains("0 retries observed") == true)
+            XCTAssertTrue(current.guidance.contains("Current relay-producer metadata is available"))
+        }
+        for seconds in [15.001, 29.999, 30.0] {
+            let expiredProducer = projection(seconds)
+            XCTAssertEqual(expiredProducer.state, .serviceManaged)
+            XCTAssertTrue(expiredProducer.observation.contains("retained, not current"))
+            XCTAssertTrue(expiredProducer.latestObservation?.contains("retained, not current") == true)
+            XCTAssertTrue(expiredProducer.guidance.contains("relay owner"))
+            XCTAssertFalse(expiredProducer.guidance.contains("Current relay-producer metadata is available"))
+        }
+        let expiredCollection = projection(30.001)
+        XCTAssertEqual(expiredCollection.state, .refreshRequired)
+        XCTAssertNil(expiredCollection.latestObservation)
+        XCTAssertTrue(expiredCollection.observation.contains("retained, not current"))
+        XCTAssertEqual(engine.routerReadAt, observed, "display clock cannot renew collection evidence")
+        XCTAssertEqual(engine.routerBoard?.outbox?.first?.retryObservedAt, producerStamp)
+        XCTAssertEqual(context.returnTitle, "Back to Ra Fabric")
     }
 
     func testFailedReadAndScopeReplacementRefuseBeforeConfirmation() async throws {

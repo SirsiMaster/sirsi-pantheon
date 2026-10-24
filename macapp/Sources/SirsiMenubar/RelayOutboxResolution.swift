@@ -21,6 +21,7 @@ struct RelayOutboxResolutionProjection {
     let state: State
     let observation: String
     let guidance: String
+    private(set) var latestObservation: String?
 
     @MainActor
     init(context: RelayOutboxResolutionContext, engine: SirsiEngine,
@@ -43,6 +44,7 @@ struct RelayOutboxResolutionProjection {
             guidance = "The selected spool/root identity changed. No repair is offered for a different scope. Return to Ra, refresh and review the current outbox."
             return
         }
+        latestObservation = current.observationText(at: now)
         if current.observerAccess == "service-private" {
             state = .serviceManaged
             guidance = current.serviceObservationIsCurrent(at: now)
@@ -140,10 +142,20 @@ struct RelayOutboxResolutionView: View {
     }
 
     var body: some View {
+        // Display-only clock: expiry remains visible while idle, without a
+        // network read, process, permission change or renewed operation consent.
+        TimelineView(.periodic(from: Date(), by: 1)) { clock in
+            content(at: clock.date)
+        }
+        .task { await model.refresh(engine: engine) }
+        .onDisappear { model.cancelReview() }
+    }
+
+    private func content(at now: Date) -> some View {
         let context = model.context
         let projection = RelayOutboxResolutionProjection(context: context, engine: engine,
-                                                         freshPreflight: model.freshPreflight)
-        VStack(alignment: .leading, spacing: 0) {
+                                                         freshPreflight: model.freshPreflight, now: now)
+        return VStack(alignment: .leading, spacing: 0) {
             MaybeScroll {
                 VStack(alignment: .leading, spacing: 14) {
                     Text("Resolve relay observation").sirsiFont(.title2, weight: .semibold)
@@ -170,9 +182,8 @@ struct RelayOutboxResolutionView: View {
                     }
                     Text(projection.guidance).sirsiFont(.subheadline)
                         .fixedSize(horizontal: false, vertical: true)
-                    if model.freshPreflight,
-                       let row = engine.routerBoard?.outbox?.first(where: { $0.agent == context.outbox.agent }) {
-                        Text("Latest read · \(row.observationText(at: Date()))")
+                    if let latest = projection.latestObservation {
+                        Text("Latest read · \(latest)")
                             .sirsiFont(.caption).foregroundStyle(PantheonTheme.mutedText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -200,8 +211,6 @@ struct RelayOutboxResolutionView: View {
             Button(context.returnTitle) { model.cancelReview(); nav.pop() }
                 .buttonStyle(.bordered).padding(12)
         }
-        .task { await model.refresh(engine: engine) }
-        .onDisappear { model.cancelReview() }
         .confirmationDialog("Repair selected relay outbox?", isPresented: Binding(
             get: { model.approval != nil },
             set: { if !$0 { model.cancelReview() } }
