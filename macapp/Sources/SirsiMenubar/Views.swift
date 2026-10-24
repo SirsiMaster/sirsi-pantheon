@@ -2713,80 +2713,146 @@ struct AnubisView: View {
 //   - the destructive button is disabled until that list has loaded, so it can
 //     never fire against unknown contents;
 //   - it takes TWO taps, and the second one is the one that says "permanently";
-//   - the result line reports what was actually freed, read back from the CLI,
-//     not an optimistic "done".
-struct EmptyTrashView: View {
+//   - the result reports confirmed reviewed deletions and advisory logical
+//     bytes, never an optimistic empty/physical-space claim.
+@MainActor struct EmptyTrashView: View {
     @ObservedObject var engine: SirsiEngine
-    @State private var count = 0
-    @State private var sizeText = ""
-    @State private var items: [String] = []
-    @State private var loading = true
-    @State private var arming = false
-    @State private var result: String?
+    @StateObject private var workflow = TrashWorkflow()
 
     var body: some View {
         VStack(spacing: 0) {
             BackBar(title: "Empty Trash")
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    if loading {
+                    if workflow.phase == .loading || workflow.phase == .applying {
                         HStack(spacing: 8) {
                             ProgressView().controlSize(.small)
-                            Text("Reading Trash…").sirsiFont(12).foregroundStyle(.secondary)
+                            Text(workflow.phase == .applying ? "Deleting only reviewed items…" : "Reading Trash…")
+                                .sirsiFont(12).foregroundStyle(.secondary)
                         }
-                    } else if let r = result {
-                        HStack(spacing: 8) {
-                            Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
-                            Text(r).sirsiFont(13, weight: .semibold)
-                                .fixedSize(horizontal: false, vertical: true)
+                    } else if workflow.phase == .error {
+                        Label("Trash could not be read", systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.orange)
+                        Text(workflow.message ?? "The contents are unknown, not empty.")
+                            .sirsiFont(13).fixedSize(horizontal: false, vertical: true)
+                        Button("Retry this folder page") {
+                            let request = workflow.browseRequest
+                            Task { await workflow.loadPage { await engine.trashList(request, browser: workflow.browser) } }
                         }
-                    } else if count == 0 {
-                        Text("Trash is empty — nothing to delete.")
+                        if workflow.page != nil { Button("Choose fewer entries or open a folder") { workflow.showPage() } }
+                        Button("Start a fresh Trash browse") { Task { await workflow.loadPage { await engine.trashList(browser: workflow.browser) } } }
+                    } else if workflow.phase == .empty {
+                        Text("This folder page has no entries. Nothing is selected for deletion.")
                             .sirsiFont(13).foregroundStyle(.secondary)
-                    } else {
-                        Text("\(count) item\(count == 1 ? "" : "s") · \(sizeText)")
+                        if let page = workflow.page, page.directory != "." {
+                            Button("Browse parent folder") { browseParent(page) }
+                        }
+                    } else if workflow.phase == .browsing, let page = workflow.page {
+                        Text(page.directory == "." ? "Browse Trash" : page.directory)
                             .sirsiFont(17, weight: .bold).foregroundStyle(gold)
-                        Text("These are already in the Trash. Emptying it removes them for good — Sirsi cannot restore them, and neither can Finder.")
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text("Choose a manageable batch. A selected folder includes its whole reviewed tree only if it fits; open a large folder to select descendants instead. Browsing never authorizes deletion.")
+                            .sirsiFont(12).foregroundStyle(.secondary)
+                        if page.directory != "." { Button("Browse parent folder") { browseParent(page) } }
+                        ForEach(page.entries, id: \.path) { member in
+                            HStack(alignment: .top) {
+                                Button { workflow.toggle(member) } label: {
+                                    Label(member.path, systemImage: workflow.selected.contains(member.path) ? "checkmark.square" : "square")
+                                        .sirsiFont(12).fixedSize(horizontal: false, vertical: true)
+                                }.buttonStyle(.plain)
+                                if member.identity.type == "directory" {
+                                    Button("Open folder") {
+                                        let request = TrashBrowseRequest(directory: member.path, root: page.root)
+                                        Task { await workflow.loadPage { await engine.trashList(request, browser: workflow.browser) } }
+                                    }.sirsiFont(12)
+                                }
+                            }
+                        }
+                        ForEach(Array(page.blocked.enumerated()), id: \.offset) { _, member in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(member.path).sirsiFont(12).fixedSize(horizontal: false, vertical: true)
+                                Text("Not selectable — \(member.explanation)").sirsiFont(12).foregroundStyle(.secondary)
+                            }
+                        }
+                        Button("Review \(workflow.selected.count) selected entry/entries") {
+                            Task { await workflow.reviewSelection { await engine.trashSelection($0) } }
+                        }.disabled(workflow.selected.isEmpty || engine.busy)
+                        if let message = workflow.message { Text(message).sirsiFont(12).foregroundStyle(.orange) }
+                        if page.more, let next = page.next {
+                            Text("More entries are available. Changing pages clears this selection.").sirsiFont(12).foregroundStyle(.secondary)
+                            Button("Next page") { Task { await workflow.loadPage { await engine.trashList(next, browser: workflow.browser) } } }
+                        }
+                        Button("First page of this folder") {
+                            let request = workflow.browseRequest
+                            Task { await workflow.loadPage { await engine.trashList(request, browser: workflow.browser) } }
+                        }
+                    } else if workflow.phase == .result {
+                        Label(workflow.confirmedSuccess ? "Reviewed items deleted" : "Deletion is not complete",
+                              systemImage: workflow.confirmedSuccess ? "checkmark.seal.fill" : "exclamationmark.triangle")
+                            .foregroundStyle(workflow.confirmedSuccess ? .green : .orange)
+                        if let operation = workflow.operation {
+                            Text("\(operation.deleted.count) reviewed member(s) deleted · \(SirsiEngine.human(operation.logical_bytes)) advisory logical bytes")
+                                .sirsiFont(13).fixedSize(horizontal: false, vertical: true)
+                            Text("This is the reviewed operation, not a claim that Trash is now empty or that physical disk space was reclaimed.")
+                                .sirsiFont(12).foregroundStyle(.secondary)
+                        }
+                        if let message = workflow.message {
+                            Text(message).sirsiFont(13).fixedSize(horizontal: false, vertical: true)
+                        }
+                        Button("Review next batch / remaining items") {
+                            let request = workflow.browseRequest
+                            Task { await workflow.loadPage { await engine.trashList(request, browser: workflow.browser) } }
+                        }
+                    } else if let preview = workflow.preview {
+                        Text("\(preview.entries.count) reviewed member(s), including nested contents")
+                            .sirsiFont(17, weight: .bold).foregroundStyle(gold)
+                        Text("These are already in the Trash. Deleting the reviewed members removes them for good — Sirsi cannot restore them, and neither can Finder. Changes to selected members or container identity require a new review; unrelated siblings are not selected.")
                             .sirsiFont(12).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
-
                         VStack(alignment: .leading, spacing: 3) {
-                            ForEach(items.prefix(12), id: \.self) { line in
-                                Text("· " + line).sirsiFont(11).foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-                            if items.count > 12 {
-                                Text("… and \(items.count - 12) more")
-                                    .sirsiFont(11).foregroundStyle(.tertiary)
+                            ForEach(preview.entries, id: \.path) { entry in
+                                Text(entry.path).sirsiFont(12).foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
                         }
-
-                        if arming {
+                        if !preview.containers.isEmpty {
+                            Text("Container folders are retained, not deleted: \(preview.containers.map(\.path).joined(separator: ", ")).")
+                                .sirsiFont(12).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        }
+                        Button("Back to entry selection") { workflow.showPage() }
+                        if workflow.approval != nil {
                             Button(role: .destructive) {
                                 Task {
-                                    let out = await engine.emptyTrash()
-                                    result = out
-                                    arming = false
+                                    await workflow.apply { captured in
+                                        await engine.emptyTrash(captured, authorize: { workflow.permitsLaunch(captured) })
+                                    }
                                 }
                             } label: {
-                                Text("Permanently delete \(count) item\(count == 1 ? "" : "s")")
+                                Text("Permanently delete these \(preview.entries.count) reviewed members")
                                     .frame(maxWidth: .infinity)
                             }
                             .buttonStyle(.borderedProminent)
                             .tint(.red)
                             .disabled(engine.busy)
-                            Button("Cancel") { arming = false }
+                            Button("Cancel") { workflow.cancelApproval() }
                                 .buttonStyle(.plain)
                                 .sirsiFont(12)
                                 .foregroundStyle(.secondary)
                         } else {
                             Button {
-                                arming = true
+                                workflow.prepareApproval()
                             } label: {
                                 Text("Empty Trash…").frame(maxWidth: .infinity)
                             }
                             .buttonStyle(.bordered)
-                            .disabled(loading || count == 0)
+                            .disabled(engine.busy)
+                        }
+                        if let message = workflow.message { Text(message).sirsiFont(12).foregroundStyle(.orange) }
+                    }
+                    if let execution = workflow.execution {
+                        DisclosureGroup("Retained operation receipt") {
+                            Text(execution.displayText).sirsiFont(12)
+                                .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }
@@ -2794,11 +2860,17 @@ struct EmptyTrashView: View {
             }
         }
         .task {
-            let r = await engine.trashList()
-            count = r.count; sizeText = r.size; items = r.lines
-            loading = false
+            await workflow.loadInitial { await engine.trashList(browser: workflow.browser) }
         }
+        .onAppear { workflow.activateBrowse() }
+        .onDisappear { workflow.cancelBrowse() }
         .navigationTitle("Empty Trash")
+    }
+
+    private func browseParent(_ page: TrashPage) {
+        let parent = page.directory.split(separator: "/").dropLast().joined(separator: "/")
+        let request = TrashBrowseRequest(directory: parent.isEmpty ? "." : parent, root: page.root)
+        Task { await workflow.loadPage { await engine.trashList(request, browser: workflow.browser) } }
     }
 }
 
