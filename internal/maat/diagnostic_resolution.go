@@ -1,9 +1,13 @@
 package maat
 
 import (
+	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 )
 
@@ -86,6 +90,31 @@ func AcceptDiagnosticOwnerReview(j DecisionJournal, requester string, acceptance
 		return Decision{}, fmt.Errorf("maat diagnostic resolution: acceptance fields exceed bounded record size")
 	}
 
+	if fileJournal, ok := j.(*FileDecisionJournal); ok {
+		var accepted Decision
+		err := withJournalMutationLock(fileJournal.Path, func() error {
+			original, found, alreadyAccepted, err := strictOwnerReviewExact(fileJournal.Path, acceptance.Evidence)
+			if err != nil {
+				return err
+			}
+			if alreadyAccepted {
+				return fmt.Errorf("maat diagnostic resolution: owner review is already accepted")
+			}
+			if !found {
+				return fmt.Errorf("maat diagnostic resolution: no matching diagnostic owner review")
+			}
+			accepted = diagnosticOwnerAcceptance(requester, acceptance, original)
+			if err := normalizeDecision(&accepted); err != nil {
+				return err
+			}
+			return fileJournal.appendLocked(accepted)
+		})
+		if err != nil {
+			return Decision{}, fmt.Errorf("maat diagnostic resolution: accept owner review: %w", err)
+		}
+		return accepted, nil
+	}
+
 	rows, err := j.Recent(1000)
 	if err != nil {
 		return Decision{}, fmt.Errorf("maat diagnostic resolution: read owner review: %w", err)
@@ -104,8 +133,16 @@ func AcceptDiagnosticOwnerReview(j DecisionJournal, requester string, acceptance
 		return Decision{}, fmt.Errorf("maat diagnostic resolution: no matching diagnostic owner review")
 	}
 
+	decision := diagnosticOwnerAcceptance(requester, acceptance, *original)
+	if err := j.Append(decision); err != nil {
+		return Decision{}, fmt.Errorf("maat diagnostic resolution: append owner acceptance: %w", err)
+	}
+	return decision, nil
+}
+
+func diagnosticOwnerAcceptance(requester string, acceptance DiagnosticOwnerAcceptance, original Decision) Decision {
 	sum := sha256.Sum256([]byte(acceptance.Evidence + "\x00" + acceptance.Conclusion))
-	decision := Decision{
+	return Decision{
 		Kind:          "diagnostic owner acceptance",
 		Requester:     requester,
 		Resource:      original.Resource,
@@ -115,8 +152,52 @@ func AcceptDiagnosticOwnerReview(j DecisionJournal, requester string, acceptance
 		Evidence:      "diagnostic-acceptance:sha256=" + hex.EncodeToString(sum[:]),
 		ResolutionFor: acceptance.Evidence,
 	}
-	if err := j.Append(decision); err != nil {
-		return Decision{}, fmt.Errorf("maat diagnostic resolution: append owner acceptance: %w", err)
+}
+
+// strictOwnerReviewExact is a bounded streaming authority read used only by
+// the confirmed owner-acceptance mutation. It does not inherit Recent's age
+// window and does not consume tolerant Casebook continuation state.
+func strictOwnerReviewExact(path, evidence string) (Decision, bool, bool, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return Decision{}, false, false, nil
+		}
+		return Decision{}, false, false, fmt.Errorf("open strict journal: %w", err)
 	}
-	return decision, nil
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Size() < 0 || info.Size() > maxAppendOnceJournalBytes {
+		return Decision{}, false, false, fmt.Errorf("strict journal is not a bounded regular file")
+	}
+	scanner := bufio.NewScanner(io.LimitReader(file, maxAppendOnceJournalBytes+1))
+	scanner.Buffer(make([]byte, 4096), maxHistoryRecordBytes)
+	var original Decision
+	found, accepted := false, false
+	for lineNumber := 1; scanner.Scan(); lineNumber++ {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		var row Decision
+		if err := json.Unmarshal([]byte(line), &row); err != nil {
+			return Decision{}, false, false, fmt.Errorf("strict journal has malformed record at line %d", lineNumber)
+		}
+		if err := validateDecision(row); err != nil {
+			return Decision{}, false, false, fmt.Errorf("strict journal has invalid record at line %d", lineNumber)
+		}
+		if row.Kind == "diagnostic owner review" && row.Evidence == evidence {
+			if found {
+				return Decision{}, false, false, fmt.Errorf("strict journal has duplicate owner-review evidence")
+			}
+			original, found = row, true
+		}
+		if row.Kind == "diagnostic owner acceptance" && row.ResolutionFor == evidence {
+			accepted = true
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return Decision{}, false, false, fmt.Errorf("strict journal exceeds its bound or is unreadable")
+	}
+	return original, found, accepted, nil
 }

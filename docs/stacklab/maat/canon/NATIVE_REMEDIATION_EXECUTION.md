@@ -114,3 +114,32 @@ child before Ma'at writes a failed/incomplete terminal receipt. The native
 Casebook keeps the same case action in its visible in-progress state until the
 CLI returns; retry remains behind a fresh casebook review. No resolution is
 claimed after cancellation, timeout, or unconfirmed child cleanup.
+
+## Snapshot history and updater receipt integration
+
+The integration starts from the separately recorded merge `06a1b4ff0f54ffaffc07b14bc5dd7313bf2402a0`
+of corrective composition `003b00ed5f513a5eef87d2f03084b42bae43e639`
+and released135 `b0e17c427abaa6d2b8330cba222c3ca0c92ef064`, retaining
+the enrolled signer aliases, released publication record, and VERSION135.
+The cumulative history delta is `9da345045251abcc5a8245e629e9d053adf63383`
+through `cec5dac790d170741738246bca9efdbd001ffc48`. Its independent
+87bd cumulative review and cec HW10 source closure remain donor evidence;
+the combined source still requires Main's qualification.
+
+History follows only exact binary-drift `OriginEvidence` links from the same
+journal snapshot. One shared Casebook overlay applies owner acceptance,
+terminal updater outcome, then pending attempt before text/status filtering
+and bounded page selection, and again during page projection. A successful
+binary receipt closes only a binary-only screen with a passed floor; other
+findings and failed floors retain the typed re-screen action. Failed receipts
+remain unverified; pending attempts retain the typed read-only inspect route.
+All three evidence fields are searchable in CLI and native Casebook.
+
+Opaque cursor version3 requires refresh of version2 continuations. The reader
+retains only the selected relationship per candidate (acceptance supersedes
+outcome, outcome supersedes attempt), plus the existing hidden-review link.
+The existing limit+1 references, cursor/record limits, per-request budgets,
+bounded atomic record/dependency allowance, snapshot rechecks, and cancellation
+rules remain. Every selected dependency reread is charged. Tolerant history is
+read-only and never releases an updater claim or bypasses strict journal
+mutation, replay refusal, fresh preview, confirmation, or verification.

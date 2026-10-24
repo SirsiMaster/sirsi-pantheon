@@ -1,9 +1,20 @@
 # Component catalog — Ma'at
 
+The history correction keeps raw exact-evidence counts separate from projected
+case counts, including hidden acceptance rows. Native read progress is retained
+for explicit continuation or start-fresh and bound to the selected operation
+generation. Each request charges scan, link and materialization work; a fresh
+request may finish one bounded record with at most two dependencies when an
+injected budget is smaller than that atomic bundle. No whole page receives that
+allowance. `history_query_test.go` asserts retained reference and work bounds;
+`MaatOperationStateTests.swift` exercises cancellation, continuation generations
+and the same empty-state reducer used by both native loaders. These are authored
+source fixtures pending Main's execution.
+
 | Component | Source surface | Write boundary | Evidence / next action |
 |---|---|---|---|
 | Assessors | `internal/maat` | append decision through recorder | focused tests; keep receipt current |
-| Journal | Ma'at recorder | append-only JSONL | readback and integrity tests |
+| Journal and bounded history window | `internal/maat/decisions.go` + `internal/maat/history_query.go` + `internal/maat/diagnostic_resolution.go` + `internal/maat/casebook` + `cmd/sirsi/maatcasebook.go` + native `MaatCasebookView.swift` / `MaatOperationState.swift` | append-only JSONL; browsing is read-only; legacy `Recent` behavior is unchanged; confirmed old-review acceptance uses a separate bounded strict exact scan under the existing mutation lock | System One, kind, text and linked status qualify before candidate limiting; continuations preserve exact query/snapshot and distinguish whole-query from after-cursor counts; canonical owner-review/acceptance links resolve before filtering; native search queries the full retained journal, and all three selected-action preflights consume bounded same-snapshot continuation. Empty arrays, cancellation, invalid history and failed refresh remain distinct. Source-only corrective candidate; qualification pending. |
 | Failure memory | `internal/maat/memory.go` | retained-descriptor, create-only prepared/committed evidence, incident, and transition namespaces | deterministic signature/hash, exact-scope preflight, unresolved-write debt, predecessor-bound terminal events, tamper, symlink, collision, and race fixtures; no imported action execution |
 | Known-failure proposals | `internal/maat/knownfail/proposal.go` + `cmd/sirsi/maatknownfail.go` + native Ma'at workspace | create-only, readback-verified local proposal under `~/.sirsi/maat/known-failures/proposals` after explicit confirmation | local evidence is visible in the native Proposals workspace and CLI JSON; it is never a recognition rule until Stack Lab review promotes it |
 | Casebook | `internal/maat/casebook` | none | deterministic projection tests |

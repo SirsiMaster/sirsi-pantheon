@@ -14,6 +14,9 @@ var (
 	maatCasebookKind          string
 	maatCasebookStatus        string
 	maatCasebookLimit         int
+	maatCasebookScope         string
+	maatCasebookEvidence      string
+	maatCasebookCursor        string
 	maatCasebookRepairConfirm bool
 )
 
@@ -28,7 +31,8 @@ type tolerantCasebookJournal interface {
 
 type maatCasebookProjection struct {
 	casebook.View
-	JournalIntegrity maat.JournalIntegrity `json:"journal_integrity"`
+	JournalIntegrity maat.JournalIntegrity  `json:"journal_integrity"`
+	History          casebook.HistoryWindow `json:"history"`
 }
 
 type repairableCasebookJournal interface {
@@ -54,34 +58,94 @@ resolved to narrow the view.`,
 		if status != "" && status != casebook.StatusOpen && status != casebook.StatusResolved {
 			return fmt.Errorf("invalid --status %q (want open or resolved)", maatCasebookStatus)
 		}
+		if maatCasebookScope != maat.HistoryScopeAll && maatCasebookScope != maat.HistoryScopeSystemOne {
+			return fmt.Errorf("invalid --scope %q (want all or system-one)", maatCasebookScope)
+		}
 		journal, err := newMaatDecisionJournal()
 		if err != nil {
 			return err
 		}
-		var rows []maat.Decision
+		var view casebook.View
 		var integrity maat.JournalIntegrity
-		if tolerant, ok := journal.(tolerantCasebookJournal); ok {
-			rows, integrity, err = tolerant.RecentTolerant(maatCasebookLimit)
+		var history casebook.HistoryWindow
+		if fileJournal, ok := journal.(*maat.FileDecisionJournal); ok {
+			result, searchErr := casebook.SearchHistory(fileJournal, casebook.HistoryQuery{
+				Query: casebook.Query{
+					Text: strings.Join(args, " "), Kind: maatCasebookKind, Status: status, Limit: maatCasebookLimit,
+				},
+				Scope: maatCasebookScope, Evidence: maatCasebookEvidence, Cursor: maatCasebookCursor, Context: cmd.Context(),
+			})
+			if searchErr != nil {
+				return searchErr
+			}
+			view, integrity, history = result.View, result.Integrity, result.Window
 		} else {
-			rows, err = journal.Recent(maatCasebookLimit)
+			// Alternate test/transport implementations retain their existing
+			// read behavior until they implement the bounded snapshot contract.
+			var rows []maat.Decision
+			if tolerant, ok := journal.(tolerantCasebookJournal); ok {
+				rows, integrity, err = tolerant.RecentTolerant(maatCasebookLimit)
+			} else {
+				rows, err = journal.Recent(maatCasebookLimit)
+			}
+			if err != nil {
+				return err
+			}
+			if maatCasebookCursor != "" {
+				return fmt.Errorf("this journal backend does not support snapshot continuation; no history claim was made")
+			}
+			filteredRows := make([]maat.Decision, 0, len(rows))
+			for _, row := range rows {
+				if maatCasebookScope == maat.HistoryScopeSystemOne && row.SystemOne == nil && row.SystemOneCalibration == nil {
+					continue
+				}
+				if maatCasebookEvidence != "" && row.Evidence != maatCasebookEvidence {
+					continue
+				}
+				filteredRows = append(filteredRows, row)
+			}
+			view = casebook.Search(filteredRows, casebook.Query{
+				Text: strings.Join(args, " "), Kind: maatCasebookKind, Status: status, Limit: maatCasebookLimit,
+			})
+			history = casebook.HistoryWindow{Scope: maatCasebookScope, Returned: len(view.Cases), PageSize: maatCasebookLimit, Coverage: "unavailable"}
 		}
-		if err != nil {
-			return err
-		}
-		view := casebook.Search(rows, casebook.Query{
-			Text: strings.Join(args, " "), Kind: maatCasebookKind, Status: status, Limit: maatCasebookLimit,
-		})
 		if maatJSON {
-			return emitJSON(maatCasebookProjection{View: view, JournalIntegrity: integrity})
+			return emitJSON(maatCasebookProjection{View: view, JournalIntegrity: integrity, History: history})
 		}
 		if integrity.InvalidCount > 0 {
 			fmt.Printf("⚠ Ma'at casebook retained %d invalid journal record(s); valid cases remain visible. Open Pantheon to review the guided preservation repair.\n", integrity.InvalidCount)
 		}
 		if len(view.Cases) == 0 {
-			fmt.Println("𓆄 no Ma'at cases match this query")
+			if history.Coverage == maat.HistoryCoveragePartial {
+				fmt.Printf("𓆄 Ma'at history scan is incomplete (%d records, %d bytes); continue with --cursor %s\n", history.ScannedRecords, history.ScannedBytes, history.NextCursor)
+			} else if history.Coverage != maat.HistoryCoverageComplete {
+				fmt.Println("𓆄 this journal backend cannot establish complete history; no absence conclusion was made")
+			} else if history.CountScope == "after-cursor" || history.CountScope == "after-cursor-scanned-so-far" {
+				fmt.Println("𓆄 no matching cases remain after this history cursor; the original query total is not inferred from this page")
+			} else if history.HasMore {
+				fmt.Printf("𓆄 no matching cases on this page; older history is available with --cursor %s\n", history.NextCursor)
+			} else if integrity.InvalidCount > 0 {
+				fmt.Printf("𓆄 no valid cases matched, but %d invalid journal record(s) prevent a complete absence conclusion\n", integrity.InvalidCount)
+			} else {
+				fmt.Println("𓆄 no Ma'at cases match this complete query")
+			}
 			return nil
 		}
 		fmt.Printf("𓆄 Ma'at casebook — %d cases · %d open · %d urgent · %d high\n", view.Summary.Total, view.Summary.Open, view.Summary.Urgent, view.Summary.High)
+		if history.Coverage == maat.HistoryCoveragePartial {
+			fmt.Printf("  history scan incomplete; continue with --cursor %s\n", history.NextCursor)
+		} else if history.Coverage != maat.HistoryCoverageComplete {
+			fmt.Println("  history completeness unavailable from this journal backend")
+		} else if history.HasMore {
+			fmt.Printf("  older history is available with --cursor %s\n", history.NextCursor)
+		}
+		if history.Coverage == maat.HistoryCoverageComplete && !history.TotalComplete {
+			if history.CountScope == "after-cursor" || history.CountScope == "after-cursor-scanned-so-far" {
+				fmt.Printf("  %d matching cases occur after this cursor; this is not a whole-query total\n", history.CandidateMatches)
+			} else {
+				fmt.Printf("  %d matching cases on the initial query; invalid history prevents complete totals\n", history.CandidateMatches)
+			}
+		}
 		for _, c := range view.Cases {
 			fmt.Printf("  %-7s %-8s %-11s %-14s %s\n", strings.ToUpper(string(c.Priority)), c.Status, c.Category, c.Resource, c.Why)
 			fmt.Printf("          %s · %s", c.Kind, c.Determination)
@@ -117,6 +181,14 @@ resolved to narrow the view.`,
 			}
 			if c.Resolution != "" {
 				fmt.Printf("          owner acceptance: %s · system repair: not claimed\n", c.Resolution)
+			}
+			if c.VerifiedRepairEvidence != "" {
+				fmt.Printf("          verified binary repair receipt: %s · screen status: %s\n", c.VerifiedRepairEvidence, c.Status)
+			} else if c.RepairOutcomeEvidence != "" {
+				fmt.Printf("          unverified repair outcome: %s\n", c.RepairOutcomeEvidence)
+			}
+			if c.PendingRepairAttemptEvidence != "" {
+				fmt.Printf("          unresolved updater attempt: %s · inspect before any new consent\n", c.PendingRepairAttemptEvidence)
 			}
 		}
 		return nil
@@ -181,6 +253,9 @@ func init() {
 	maatCasebookCmd.Flags().StringVar(&maatCasebookKind, "kind", "", "source decision kind or case category")
 	maatCasebookCmd.Flags().StringVar(&maatCasebookStatus, "status", "", "case status: open or resolved")
 	maatCasebookCmd.Flags().IntVar(&maatCasebookLimit, "limit", 50, "maximum cases to inspect")
+	maatCasebookCmd.Flags().StringVar(&maatCasebookScope, "scope", maat.HistoryScopeAll, "history scope: all or system-one")
+	maatCasebookCmd.Flags().StringVar(&maatCasebookEvidence, "evidence", "", "exact evidence identity to inspect")
+	maatCasebookCmd.Flags().StringVar(&maatCasebookCursor, "cursor", "", "continue the same bounded history snapshot")
 	maatCasebookCmd.Flags().BoolVar(&maatJSON, "json", false, "JSON output")
 	maatCasebookRepairCmd.Flags().BoolVar(&maatCasebookRepairConfirm, "confirm", false, "confirm preservation and active Casebook rebuild")
 	maatCasebookCmd.AddCommand(maatCasebookRepairCmd)

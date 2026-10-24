@@ -4,8 +4,10 @@
 package casebook
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"sort"
 	"strings"
 
@@ -120,29 +122,48 @@ type Query struct {
 	Limit  int
 }
 
+// HistoryQuery adds a journal snapshot and continuation to the ordinary
+// in-memory Search helper. The file journal applies scope, identity, kind,
+// text and same-snapshot linked status before its bounded result window.
+type HistoryQuery struct {
+	Query
+	Scope    string
+	Evidence string
+	Cursor   string
+	Context  context.Context
+}
+
+type HistoryWindow struct {
+	Scope                    string `json:"scope"`
+	QueryID                  string `json:"query_id"`
+	Snapshot                 string `json:"snapshot"`
+	Returned                 int    `json:"returned"`
+	CandidateMatches         int    `json:"candidate_matches"`
+	CountScope               string `json:"count_scope"`
+	EvidenceMatches          *int64 `json:"evidence_matches,omitempty"`
+	EvidenceMatchesComplete  bool   `json:"evidence_matches_complete,omitempty"`
+	CandidateMatchesComplete bool   `json:"candidate_matches_complete"`
+	PageSize                 int    `json:"page_size"`
+	Coverage                 string `json:"coverage"`
+	HasMore                  bool   `json:"has_more"`
+	HasMoreKnown             bool   `json:"has_more_known"`
+	NextCursor               string `json:"next_cursor,omitempty"`
+	TotalComplete            bool   `json:"total_complete"`
+	Total                    *int   `json:"total,omitempty"`
+	ScannedBytes             int64  `json:"scanned_bytes"`
+	ScannedRecords           int    `json:"scanned_records"`
+}
+
+type HistorySearchResult struct {
+	View      View                  `json:"view"`
+	Integrity maat.JournalIntegrity `json:"journal_integrity"`
+	Window    HistoryWindow         `json:"history"`
+}
+
 // Build faithfully projects decisions; classification is descriptive and is
 // never used to change the source decision's determination.
 func Build(decisions []maat.Decision) View {
-	acceptances := make(map[string]maat.Decision)
-	verifiedRepairs := make(map[string]maat.Decision)
-	attempts := make(map[string]maat.Decision)
-	for _, decision := range decisions {
-		if decision.Kind == "diagnostic owner acceptance" && decision.ResolutionFor != "" {
-			if previous, found := acceptances[decision.ResolutionFor]; !found || decision.Time > previous.Time {
-				acceptances[decision.ResolutionFor] = decision
-			}
-		}
-		if decision.Kind == "diagnostic verified repair" && decision.Resource == "binary-drift" && decision.OriginEvidence != "" {
-			if previous, found := verifiedRepairs[decision.OriginEvidence]; !found || decision.Time > previous.Time {
-				verifiedRepairs[decision.OriginEvidence] = decision
-			}
-		}
-		if decision.Kind == "diagnostic repair attempt" && decision.Resource == "binary-drift" && decision.OriginEvidence != "" {
-			if previous, found := attempts[decision.OriginEvidence]; !found || decision.Time > previous.Time {
-				attempts[decision.OriginEvidence] = decision
-			}
-		}
-	}
+	states := linkedCaseStates(decisions)
 	cases := make([]Case, 0, len(decisions))
 	for _, decision := range decisions {
 		if decision.Kind == "diagnostic owner acceptance" && decision.ResolutionFor != "" {
@@ -150,26 +171,63 @@ func Build(decisions []maat.Decision) View {
 				continue
 			}
 		}
-		c := project(decision)
-		if acceptance, accepted := acceptances[decision.Evidence]; accepted {
-			c.Status = StatusResolved
-			c.Resolution = acceptance.Why
-		} else if repair, repaired := verifiedRepairs[decision.Evidence]; repaired {
-			c.RepairOutcomeEvidence = repair.Evidence
-			if repair.Determination == "resolved" {
-				c.VerifiedRepairEvidence = repair.Evidence
-				if binaryRepairDischargesScreen(decision.SystemOne) {
-					c.Status = StatusResolved
-				}
-			}
-		} else if attempt, pending := attempts[decision.Evidence]; pending {
-			c.PendingRepairAttemptEvidence = attempt.Evidence
-		}
-		c.NextAction = resolutionPath(c)
+		c := projectLinkedCase(decision, states[decision.Evidence])
 		cases = append(cases, c)
 	}
 	sort.SliceStable(cases, func(i, j int) bool { return cases[i].Time > cases[j].Time })
 	return viewFor(cases)
+}
+
+// One overlay supplies in-memory, pre-window filtering, and history-page
+// projection. An updater receipt is narrower than an owner acceptance.
+func projectLinkedCase(decision maat.Decision, linked maat.HistoryMatchState) Case {
+	c := project(decision)
+	if linked.Resolution != nil {
+		c.Status = StatusResolved
+		c.Resolution = linked.Resolution.Why
+	} else if repair := linked.RepairOutcome; repair != nil {
+		c.RepairOutcomeEvidence = repair.Evidence
+		if repair.Determination == "resolved" {
+			c.VerifiedRepairEvidence = repair.Evidence
+			if binaryRepairDischargesScreen(decision.SystemOne) {
+				c.Status = StatusResolved
+			}
+		}
+	} else if linked.RepairAttempt != nil {
+		c.PendingRepairAttemptEvidence = linked.RepairAttempt.Evidence
+	}
+	c.NextAction = resolutionPath(c)
+	return c
+}
+
+func linkedCaseStates(decisions []maat.Decision) map[string]maat.HistoryMatchState {
+	states := make(map[string]maat.HistoryMatchState)
+	for _, decision := range decisions {
+		row := decision
+		if row.Kind == "diagnostic owner acceptance" && row.ResolutionFor != "" {
+			state := states[row.ResolutionFor]
+			if state.Resolution == nil || row.Time > state.Resolution.Time {
+				state.Resolved, state.Resolution = true, &row
+			}
+			states[row.ResolutionFor] = state
+		}
+		if row.Resource != "binary-drift" || row.OriginEvidence == "" {
+			continue
+		}
+		state := states[row.OriginEvidence]
+		switch row.Kind {
+		case "diagnostic verified repair":
+			if state.RepairOutcome == nil || row.Time > state.RepairOutcome.Time {
+				state.RepairOutcome = &row
+			}
+		case "diagnostic repair attempt":
+			if state.RepairAttempt == nil || row.Time > state.RepairAttempt.Time {
+				state.RepairAttempt = &row
+			}
+		}
+		states[row.OriginEvidence] = state
+	}
+	return states
 }
 
 func hasOwnerReview(decisions []maat.Decision, evidence string) bool {
@@ -204,6 +262,126 @@ func Search(decisions []maat.Decision, query Query) View {
 		}
 	}
 	return viewFor(matched)
+}
+
+// SearchHistory performs a bounded, snapshot-bound journal query. Scope,
+// kind, text and linked status qualify records before the result window; the
+// journal query resolves one candidate's bounded links before top-K insertion.
+func SearchHistory(journal *maat.FileDecisionJournal, query HistoryQuery) (HistorySearchResult, error) {
+	if query.Limit <= 0 {
+		query.Limit = 50
+	}
+	if query.Scope == "" {
+		query.Scope = maat.HistoryScopeAll
+	}
+	kind := strings.ToLower(strings.TrimSpace(query.Kind))
+	text := strings.ToLower(strings.TrimSpace(query.Text))
+	status := Status(strings.ToLower(strings.TrimSpace(string(query.Status))))
+	keyBytes, err := json.Marshal(struct {
+		Scope, Evidence, Kind, Text, Status string
+		Limit                               int
+	}{query.Scope, query.Evidence, kind, text, string(status), query.Limit})
+	if err != nil {
+		return HistorySearchResult{}, err
+	}
+	keySum := sha256.Sum256(keyBytes)
+	queryID := "sha256:" + hex.EncodeToString(keySum[:])
+	page, err := journal.QueryHistory(maat.HistoryQuery{
+		Scope: query.Scope, Evidence: query.Evidence,
+		QueryKey: queryID, Limit: query.Limit,
+		Cursor: query.Cursor, Context: query.Context,
+		Match: func(decision maat.Decision) bool {
+			if kind == "" {
+				return true
+			}
+			projected := project(decision)
+			return strings.EqualFold(projected.Kind, kind) || strings.EqualFold(projected.Category, kind)
+		},
+		NeedsState: func(decision maat.Decision) bool {
+			return status != "" || text != "" || decision.Kind == "diagnostic owner acceptance"
+		},
+		MatchState: func(decision maat.Decision, linked maat.HistoryMatchState) bool {
+			if linked.Hidden {
+				return false
+			}
+			projected := projectLinkedCase(decision, linked)
+			if status != "" && projected.Status != status {
+				return false
+			}
+			return text == "" || matches(projected, text)
+		},
+	})
+	if err != nil {
+		return HistorySearchResult{}, err
+	}
+	window := HistoryWindow{
+		Scope: query.Scope, QueryID: queryID, Snapshot: page.Snapshot, Returned: 0, PageSize: query.Limit,
+		Coverage: page.Coverage, HasMore: page.HasMore,
+		CountScope:   "query",
+		HasMoreKnown: page.Coverage == maat.HistoryCoverageComplete && (page.HasMore || page.Integrity.InvalidCount == 0),
+		ScannedBytes: page.ScannedBytes, ScannedRecords: page.ScannedRecords,
+	}
+	if page.AfterCursor {
+		window.CountScope = "after-cursor"
+	}
+	if query.Evidence != "" {
+		count := page.EvidenceMatches
+		window.EvidenceMatches = &count
+		window.EvidenceMatchesComplete = page.Coverage == maat.HistoryCoverageComplete && page.Integrity.InvalidCount == 0 && !page.AfterCursor
+	}
+	if page.Coverage == maat.HistoryCoveragePartial {
+		window.NextCursor = page.Cursor
+		window.CandidateMatches = int(page.MatchCount)
+		window.CountScope = "scanned-so-far"
+		if page.AfterCursor {
+			window.CountScope = "after-cursor-scanned-so-far"
+		}
+		return HistorySearchResult{
+			View:      View{Cases: []Case{}, Graph: Graph{Nodes: []Node{}, Edges: []Edge{}}},
+			Integrity: page.Integrity, Window: window,
+		}, nil
+	}
+	window.NextCursor = page.NextPageCursor
+	window.CandidateMatches = int(page.MatchCount)
+	window.CandidateMatchesComplete = page.Coverage == maat.HistoryCoverageComplete && page.Integrity.InvalidCount == 0 && !page.AfterCursor
+	related := append(append(append([]maat.Decision{}, page.Links.Acceptances...), page.Links.RepairOutcomes...), page.Links.RepairAttempts...)
+	view := BuildPage(historyDecisions(page.Candidates), related, page.Links.ReviewedResolutionFor)
+	view = viewFor(append([]Case{}, view.Cases...))
+	window.Returned = len(view.Cases)
+	window.TotalComplete = page.Coverage == maat.HistoryCoverageComplete && page.Integrity.InvalidCount == 0 && !page.AfterCursor
+	if window.TotalComplete {
+		total := int(page.MatchCount)
+		window.Total = &total
+	}
+	return HistorySearchResult{View: view, Integrity: page.Integrity, Window: window}, nil
+}
+
+func historyDecisions(candidates []maat.HistoryCandidate) []maat.Decision {
+	decisions := make([]maat.Decision, 0, len(candidates))
+	for _, candidate := range candidates {
+		decisions = append(decisions, candidate.Decision)
+	}
+	return decisions
+}
+
+// BuildPage projects only the selected cases while using related outcomes to
+// compute their status. Related records never become extra rows in the page.
+func BuildPage(decisions, related []maat.Decision, reviewedResolutionFor []string) View {
+	states := linkedCaseStates(append(append([]maat.Decision(nil), decisions...), related...))
+	reviewed := make(map[string]bool, len(reviewedResolutionFor))
+	for _, evidence := range reviewedResolutionFor {
+		reviewed[evidence] = true
+	}
+	cases := make([]Case, 0, len(decisions))
+	for _, decision := range decisions {
+		if decision.Kind == "diagnostic owner acceptance" && reviewed[decision.ResolutionFor] {
+			continue
+		}
+		projected := projectLinkedCase(decision, states[decision.Evidence])
+		cases = append(cases, projected)
+	}
+	sort.SliceStable(cases, func(i, j int) bool { return cases[i].Time > cases[j].Time })
+	return viewFor(cases)
 }
 
 func project(d maat.Decision) Case {
@@ -465,7 +643,8 @@ func failedFloorRecovery(c Case) *ResolutionPath {
 func matches(c Case, needle string) bool {
 	return strings.Contains(strings.ToLower(strings.Join([]string{
 		c.Time, c.Host, c.Kind, c.Category, c.Requester, c.Resource,
-		c.Affected, c.Determination, c.Assessed, c.Why, c.Evidence, c.Resolution, resolutionText(c.NextAction),
+		c.Affected, c.Determination, c.Assessed, c.Why, c.Evidence, c.Resolution,
+		c.VerifiedRepairEvidence, c.RepairOutcomeEvidence, c.PendingRepairAttemptEvidence, resolutionText(c.NextAction),
 		calibrationText(c.SystemOneCalibration),
 	}, "\n")), needle)
 }
@@ -489,6 +668,9 @@ func resolutionText(action *ResolutionPath) string {
 }
 
 func viewFor(cases []Case) View {
+	if cases == nil {
+		cases = []Case{}
+	}
 	v := View{Cases: cases, Graph: graphFor(cases)}
 	for _, c := range cases {
 		v.Summary.Total++
@@ -509,7 +691,7 @@ func viewFor(cases []Case) View {
 
 func graphFor(cases []Case) Graph {
 	nodes := map[string]Node{}
-	var edges []Edge
+	edges := make([]Edge, 0)
 	add := func(id, kind, label string) {
 		if id != "" && label != "" {
 			nodes[id] = Node{ID: id, Kind: kind, Label: label}

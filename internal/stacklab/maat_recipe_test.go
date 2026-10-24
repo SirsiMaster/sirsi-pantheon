@@ -157,6 +157,7 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 	for _, path := range []string{
 		"cmd/sirsi/maatrepair_binary_drift.go", "cmd/sirsi/fix.go", "cmd/sirsi/owned_updater_unix.go",
 		"internal/selfupdate/selfupdate.go", "internal/maat/decisions.go", "internal/maat/casebook/casebook.go",
+		"internal/maat/history_query.go", "cmd/sirsi/maatcasebook.go", "macapp/Sources/SirsiMenubar/MaatOperationState.swift",
 		"macapp/Sources/SirsiMenubar/MaatCasebookView.swift",
 	} {
 		if !contains(binaryDrift.Source, path) {
@@ -167,6 +168,8 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 		"cmd/sirsi/maatrepair_binary_drift_test.go", "cmd/sirsi/owned_updater_unix_test.go",
 		"internal/selfupdate/probe_bounded_unix_test.go", "internal/maat/casebook/casebook_test.go",
 		"internal/maat/decisions_test.go", "macapp/Tests/SirsiMenubarTests/CoreContractsTests.swift",
+		"internal/maat/history_repair_query_test.go", "internal/maat/casebook/history_repair_test.go",
+		"cmd/sirsi/maatcasebook_repair_history_test.go", "macapp/Tests/SirsiMenubarTests/MaatOperationStateTests.swift",
 	} {
 		if !contains(binaryDrift.Tests, path) {
 			t.Fatalf("binary-drift recipe omits regression suite %q", path)
@@ -185,6 +188,7 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 		"read-only Homebrew-only updater preview bound to the exact source finding and target inventory",
 		"durable pre-launch claim and distinct verified, failed, or unresolved factual outcome",
 		"original screen remains open when other findings or deterministic floor failures remain",
+		"snapshot-bound binary repair outcome and pending-attempt fields before status/text filtering and page limiting",
 	} {
 		if !contains(binaryDrift.Outputs, output) {
 			t.Fatalf("binary-drift recipe omits required output %q", output)
@@ -204,6 +208,7 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 		"run the existing Homebrew updater once in its owned process group with bounded cancellation, group-only termination, and direct-child reap; unknown termination retains the claim and forbids replay",
 		"close only an exact binary-only screen with a passed floor; preserve other findings, failed floors, original evidence, and owner acceptance as separate state",
 		"use inert updater fixtures only; source qualification does not run the live updater or claim installed release behavior",
+		"retain same-snapshot OriginEvidence links in both pre-window qualification and page materialization; share Casebook overlay, preserve acceptance/outcome/attempt precedence and bounded versioned continuation; browse state never grants updater replay",
 	} {
 		if !contains(binaryDrift.UpgradeRecipe, boundary) {
 			t.Fatalf("binary-drift recipe omits safety boundary %q", boundary)
