@@ -6,6 +6,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+### Corrected
+
+- Recognize the exact canonical relay health summary as validated root metadata
+  during supported root-relay refresh. Preserve real queue checks and unknown
+  entry refusal; allow validated atomic summary replacement between bounded
+  namespace observations, while retaining publication staging as busy/debt.
+  This source candidate has no installed-success claim. Main retained the
+  deployed-layout and actual-publisher ENOTDIR regression on test-only `9238be90`.
+
 ## [0.24.135] — 2026-10-24
 
 **Ready corrective scope:** the merged relay TLS-handshake retry and truthful
