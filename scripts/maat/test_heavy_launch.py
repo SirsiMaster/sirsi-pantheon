@@ -16,13 +16,13 @@ class ShellWhitespaceTests(unittest.TestCase):
         return gate.denial({'tool_name': 'Bash', 'tool_input': {'command': command, **fields}})
 
     def test_foreground_frontdoor_outer_whitespace(self):
-        for padding in ['', '\n', '\r\n', '\t ', '\n\n']:
+        for padding in ['', '\n', '\t ', '\n\n']:
             with self.subTest(padding=repr(padding)):
                 self.assertIsNone(self.denied(padding + self.front + padding))
 
     def test_registration_and_source_reads_outer_whitespace(self):
         for command in [self.registration, 'git status --short', 'git log -1', 'cat README.md']:
-            for padding in ['', '\n', '\r\n', '\t ', '\n\n']:
+            for padding in ['', '\n', '\t ', '\n\n']:
                 with self.subTest(command=command, padding=repr(padding)):
                     self.assertIsNone(self.denied(padding + command + padding))
 
@@ -87,6 +87,14 @@ class ShellWhitespaceTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIsNone(self.denied(command))
                 self.assertEqual(gate.words(gate.read_null_stderr(command)), ['cat', 'README.md'])
+
+    def test_unquoted_carriage_return_never_rewrites_command_identity(self):
+        for command in ['\rcat README.md', 'cat\r README.md',
+                        self.front + '\r\n', 'cat README.md\r\n',
+                        '\rcat README.md 2>/dev/null']:
+            with self.subTest(command=repr(command)):
+                self.assertIsNotNone(self.denied(command))
+        self.assertIsNone(self.denied("cat 'name\rwith-data'"))
 
 
 if __name__ == '__main__':

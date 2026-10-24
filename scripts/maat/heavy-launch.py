@@ -154,7 +154,7 @@ def denial(payload, depth=0):
     # Leading/trailing shell whitespace is not an extra command. Preserve all
     # interior separators and expansion checks; never evaluate command text.
     raw_command = command
-    command = command.strip(" \t\r\n")
+    command = command.strip(" \t\n")
     normalized = normalize_control_substitutions(command, depth)
     if normalized is None:
         return REASON
@@ -169,7 +169,7 @@ def denial(payload, depth=0):
         if tool.get('run_in_background') or payload.get('run_in_background'):
             return REASON
         return None if not unsafe_expansion(command) and not any(x in OPERATORS or (x and set(x) <= set(";&|<>()")) for x in argv[1:]) else REASON
-    read_normalized = normalize_control_substitutions(read_null_stderr(raw_command).strip(" \t\r\n"), depth)
+    read_normalized = normalize_control_substitutions(read_null_stderr(raw_command).strip(" \t\n"), depth)
     if read_normalized is None:
         return REASON
     argv = words(read_normalized)
@@ -200,7 +200,11 @@ def normalize_control_substitutions(command, depth):
             single = not single
         elif char == '"' and not single:
             double = not double
-        elif not single and not double and char in '\n\r':
+        elif not single and not double and char == '\r':
+            # CR is not shell whitespace. Removing it can authorize `cat`
+            # while the actual executable is a different word such as CRcat.
+            return None
+        elif not single and not double and char == '\n':
             # Shell newlines separate commands just like semicolons. Do not
             # collapse a multiline registration mask into one command argv.
             result.append(';')

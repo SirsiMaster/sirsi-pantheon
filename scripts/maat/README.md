@@ -122,6 +122,11 @@ not a descriptor. Quoted/escaped/word-prefixed numbers and spaced `2 >` remain
 refused; only the literal null-device target is supported. The rejected84d68503
 token-deletion candidate is retained in Git and was never installed.
 
+Unquoted carriage returns are refused, not normalized into whitespace: CR is
+part of a shell word and stripping it can change the executable being checked.
+Quoted CR remains data. Ordinary SP/TAB/LF padding and the exact CompassPoint
+payload remain supported; no supplied command text runs in these fixtures.
+
 ## Safe native job and observer launchers
 
 ### Scoped native worker transport

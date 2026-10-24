@@ -11,3 +11,5 @@
   the exact CompassPoint source-read payload, which contained no newline.
 - Null-stderr recognition retains shell quote/escape and IO-number adjacency,
   so executable `2 > ...` cannot be mistaken for descriptor `2> ...`.
+- Unquoted carriage returns are refused rather than stripped into a different
+  executable word; quoted carriage-return data is preserved.
