@@ -64,13 +64,30 @@ class FakeGH:
             endpoint = argv[-1]
             release_root = "repos/" + publication.REPO + "/releases"
             if endpoint.startswith(release_root + "?"):
+                base = ["gh", "api", "--hostname", "github.com", "--include"]
+                if "--jq" in argv and argv != base + ["--jq", "map({id,tag_name,draft})", endpoint]:
+                    raise AssertionError("discovery must use the exact metadata-only projection argv")
+                if "--jq" not in argv and argv != base + [endpoint]:
+                    raise AssertionError("unexpected discovery argv")
                 if self.fail == "discovery":
                     return subprocess.CompletedProcess(argv, 1, b"HTTP/2.0 403 Forbidden\r\n\r\n{}", b"")
                 page = int(endpoint.rsplit("page=", 1)[1])
                 data = (self.discovery_pages.get(page, []) if self.discovery_pages is not None else
                         self.discovery if self.discovery is not None else
                         [] if self.draft is None else [self.metadata()])
-                return subprocess.CompletedProcess(argv, 0, b"HTTP/2.0 200 OK\r\n\r\n" + json.dumps(data).encode(), b"")
+                # Simulate gh's exact --jq projection, not a smaller synthetic
+                # source response: historical bodies/assets really exist here.
+                if "--jq" in argv and isinstance(data, list):
+                    data = [{key: value.get(key) for key in ("id", "tag_name", "draft")}
+                            if isinstance(value, dict) else value for value in data]
+                body = json.dumps(data).encode()
+                if self.fail == "discovery-headerless":
+                    return subprocess.CompletedProcess(argv, 0, body, b"")
+                if self.fail == "discovery-status":
+                    return subprocess.CompletedProcess(argv, 0, b"HTTP/2.0 503 Unavailable\r\n\r\n" + body, b"")
+                return subprocess.CompletedProcess(argv, 0, b"HTTP/2.0 200 OK\r\n\r\n" + body, b"")
+            if argv != ["gh", "api", "--hostname", "github.com", "--include", endpoint]:
+                raise AssertionError("selected-ID/tag metadata must remain full and unprojected")
             tag_lookup = endpoint == release_root + "/tags/v" + VERSION
             id_lookup = endpoint == release_root + "/" + str(self.release_id)
             if not (tag_lookup or id_lookup):
@@ -196,7 +213,7 @@ class ReleasePublicationTests(unittest.TestCase):
         self.assertEqual(result["release_id"], 314)
         self.assertEqual([a[2] for a in fake.mutations()], ["upload", "upload", "edit"])
         apis = [a[-1] for a in fake.calls if a[:2] == ["gh", "api"]]
-        self.assertIn("repos/" + publication.REPO + "/releases?per_page=20&page=1", apis)
+        self.assertIn("repos/" + publication.REPO + "/releases?per_page=100&page=1", apis)
         self.assertGreaterEqual(apis.count("repos/" + publication.REPO + "/releases/314"), 4)
         self.assertFalse(fake.draft)
 
@@ -226,7 +243,7 @@ class ReleasePublicationTests(unittest.TestCase):
                     self.publish(fake)
                 self.assertEqual(fake.mutations(), [])
         fake = FakeGH()
-        fake.discovery = [{"id": i + 1, "tag_name": "unrelated", "draft": False} for i in range(20)]
+        fake.discovery = [{"id": i + 1, "tag_name": "unrelated", "draft": False} for i in range(100)]
         # Repeated page identities are ambiguous rather than absent.
         with self.assertRaisesRegex(publication.Refusal, "ambiguous"):
             self.publish(fake)
@@ -250,17 +267,17 @@ class ReleasePublicationTests(unittest.TestCase):
         self.assertEqual(fake.mutations(), [])
 
     def test_private_draft_on_second_page_and_complete_absence_bound(self):
-        first = [{"id": i + 1000, "tag_name": "unrelated", "draft": False} for i in range(20)]
+        first = [{"id": i + 1000, "tag_name": "unrelated", "draft": False} for i in range(100)]
         fake = FakeGH(True, PAYLOADS)
         fake.discovery_pages = {1: first, 2: [fake.metadata()]}
         result = self.publish(fake)
         self.assertEqual(result["release_id"], 314)
         self.assertEqual([a[2] for a in fake.mutations()], ["edit"])
-        self.assertTrue(any(a[-1].endswith("?per_page=20&page=2") for a in fake.calls))
+        self.assertTrue(any(a[-1].endswith("?per_page=100&page=2") for a in fake.calls))
 
         fake = FakeGH()
         fake.discovery_pages = {
-            page: [{"id": page * 1000 + i, "tag_name": "unrelated", "draft": False} for i in range(20)]
+            page: [{"id": page * 1000 + i, "tag_name": "unrelated", "draft": False} for i in range(100)]
             for page in range(1, publication.MAX_RELEASE_PAGES + 1)
         }
         with self.assertRaisesRegex(publication.Refusal, "incomplete at bound"):
@@ -270,54 +287,76 @@ class ReleasePublicationTests(unittest.TestCase):
         self.assertEqual(len(pages), publication.MAX_RELEASE_PAGES)
 
     def heavy_history(self):
-        # One old100-record response would exceed1MiB with these40 retained
-        # release bodies; each actual20-record response remains below the cap.
+        # All100 historical records retain their large body/asset metadata in
+        # the fake source. Only the exact list projection fits the unchanged cap.
         records = [{"id": 1000 + i, "tag_name": "v0.0." + str(i), "draft": False,
-                    "body": "inert historical metadata " + "h" * 35000} for i in range(40)]
+                    "body": "inert historical metadata " + "h" * 21000,
+                    "assets": [{"name": "historical-private-fixture", "url": "inert-not-requested"}]} for i in range(100)]
         self.assertGreater(len(json.dumps(records).encode()), 1024 * 1024)
-        self.assertLess(len(json.dumps(records[:20]).encode()) + 100, 1024 * 1024)
+        projected = [{key: item[key] for key in ("id", "tag_name", "draft")} for item in records]
+        self.assertLess(len(json.dumps(projected).encode()) + 100, 1024 * 1024)
         return records
 
     def test_heavy_history_complete_absence_precedes_create_and_publish_last(self):
         records = self.heavy_history()
         fake = FakeGH()
         fake.hide_draft = False  # Newly created draft visible on subsequent view.
-        fake.discovery_pages = {1: records[:20], 2: records[20:], 3: []}
-        result = self.publish(fake)
+        fake.discovery_pages = {1: records, 2: []}
+        try:
+            result = self.publish(fake)
+        except publication.Refusal as error:
+            self.fail("projected heavy history must fit without reducing coverage: " + str(error))
         endpoints = [a[-1] for a in fake.calls if a[:2] == ["gh", "api"] and "?per_page=" in a[-1]]
-        self.assertEqual(endpoints, ["repos/" + publication.REPO + "/releases?per_page=20&page=" + str(p) for p in (1, 2, 3)])
+        self.assertEqual(endpoints, ["repos/" + publication.REPO + "/releases?per_page=100&page=" + str(p) for p in (1, 2)])
+        for argv in fake.calls:
+            if argv[:2] == ["gh", "api"] and "?per_page=" in argv[-1]:
+                self.assertEqual(argv, ["gh", "api", "--hostname", "github.com", "--include", "--jq", "map({id,tag_name,draft})", argv[-1]])
         last_page = next(i for i, a in enumerate(fake.calls) if a[-1] == endpoints[-1])
         create = next(i for i, a in enumerate(fake.calls) if a[:3] == ["gh", "release", "create"])
         self.assertLess(last_page, create)
         self.assertEqual([a[2] for a in fake.mutations()], ["create", "upload", "upload", "edit"])
         self.assertEqual(result["status"], "published_verified_pair")
+        self.assertNotIn("inert historical metadata", json.dumps(result))
+        self.assertNotIn("historical-private-fixture", json.dumps(result))
 
     def test_heavy_history_selects_existing_exact_draft_id_without_overwrite(self):
         records = self.heavy_history()
         fake = FakeGH(True, PAYLOADS)
-        fake.discovery_pages = {1: records[:20], 2: records[20:], 3: [fake.metadata()]}
+        fake.discovery_pages = {1: records, 2: [fake.metadata()]}
         result = self.publish(fake)
         self.assertEqual(result["release_id"], 314)
         self.assertEqual([a[2] for a in fake.mutations()], ["edit"])
         self.assertTrue(any(a[-1].endswith("/releases/314") for a in fake.calls))
+        self.assertTrue(all("--jq" not in a for a in fake.calls if a[-1].endswith("/releases/314")))
         self.assertEqual(fake.assets, PAYLOADS)
 
     def test_single_heavy_discovery_page_over_byte_cap_refuses_without_mutation(self):
         fake = FakeGH()
-        fake.discovery = [{"id": 1000, "tag_name": "unrelated", "draft": False,
-                           "body": "h" * (1024 * 1024)}]
+        fake.discovery = [{"id": 1000, "tag_name": "h" * (1024 * 1024),
+                           "draft": False, "body": "discarded"}]
         record = {}
         with self.assertRaisesRegex(publication.Refusal, "release metadata exceeds bound"):
             publication.publish(VERSION, HEAD, self.directory, self.directory / "inert.app", record, run=fake)
         self.assertIsNone(record["published"])
         self.assertEqual(fake.mutations(), [])
 
-    def test_discovery_page_over_twenty_records_refuses_without_mutation(self):
+    def test_discovery_page_over_hundred_records_refuses_without_mutation(self):
         fake = FakeGH()
-        fake.discovery = [{"id": i + 1000, "tag_name": "unrelated", "draft": False} for i in range(21)]
+        fake.discovery = [{"id": i + 1000, "tag_name": "unrelated", "draft": False} for i in range(101)]
         with self.assertRaisesRegex(publication.Refusal, "invalid release discovery page"):
             self.publish(fake)
         self.assertEqual(fake.mutations(), [])
+
+    def test_projected_discovery_still_requires_valid_http_headers_and_status(self):
+        for defect in ("discovery-headerless", "discovery-status"):
+            with self.subTest(defect=defect):
+                fake = FakeGH()
+                fake.fail = defect
+                record = {}
+                with self.assertRaisesRegex(publication.Refusal, "lookup is unknown"):
+                    publication.publish(VERSION, HEAD, self.directory, self.directory / "inert.app", record, run=fake)
+                self.assertIsNone(record["published"])
+                self.assertEqual(fake.mutations(), [])
 
     def test_explicit_gh_stderr_404_is_absent_not_unknown_transport(self):
         fake = FakeGH()

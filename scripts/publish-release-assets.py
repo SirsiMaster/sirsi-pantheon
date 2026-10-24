@@ -24,7 +24,7 @@ REQUIREMENT = ('=anchor apple generic and certificate leaf[subject.OU] = "' + TE
                'certificate leaf[field.1.2.840.113635.100.6.1.13] exists')
 MAX_ASSET_BYTES = 4 * 1024 ** 3
 MAX_RELEASE_PAGES = 10
-RELEASE_PAGE_SIZE = 20
+RELEASE_PAGE_SIZE = 100
 
 
 class Refusal(RuntimeError):
@@ -120,10 +120,15 @@ def publish(version, expected_commit, directory, app, record, run=execute):
 
     selected_id = None
 
-    def release_api(endpoint, allow_missing=False):
-        response = run(["gh", "api", "--hostname", "github.com", "--include",
-                        "repos/" + REPO + "/releases" +
-                        ("" if endpoint.startswith("?") else "/") + endpoint])
+    def release_api(endpoint, allow_missing=False, project_discovery=False):
+        argv = ["gh", "api", "--hostname", "github.com", "--include"]
+        if project_discovery:
+            if allow_missing or not re.fullmatch(r"\?per_page=100&page=(?:[1-9]|10)", endpoint):
+                raise Refusal("projection is restricted to bounded discovery lists")
+            argv += ["--jq", "map({id,tag_name,draft})"]
+        argv.append("repos/" + REPO + "/releases" +
+                    ("" if endpoint.startswith("?") else "/") + endpoint)
+        response = run(argv)
         if len(response.stdout) + len(response.stderr) > 1024 * 1024:
             raise Refusal("release metadata exceeds bound")
         # A tag404 is NOT draft absence: private drafts may only appear in the
@@ -166,7 +171,7 @@ def publish(version, expected_commit, directory, app, record, run=execute):
         # second same-tag draft cannot be silently selected by list order.
         matches, ids = [], set()
         for page in range(1, MAX_RELEASE_PAGES + 1):
-            values = release_api("?per_page=" + str(RELEASE_PAGE_SIZE) + "&page=" + str(page))
+            values = release_api("?per_page=" + str(RELEASE_PAGE_SIZE) + "&page=" + str(page), project_discovery=True)
             if not isinstance(values, list) or len(values) > RELEASE_PAGE_SIZE:
                 raise Refusal("invalid release discovery page")
             for value in values:

@@ -31,12 +31,15 @@ boundaries remain ADR-073/074.
    network or malformed lookup failure is unknown, not absence. An existing
    draft may resume only after every existing asset matches the reviewed bytes.
    Upload only missing members; never overwrite or delete an asset.
-   A tag404 requires complete authenticated list discovery in twenty-record
-   pages, still bounded to ten pages and1MiB per response. Historical release
-   bodies count toward that unchanged byte limit. A full tenth page cannot
+   A tag404 requires complete authenticated list discovery in100-record pages,
+   preserving the ten-page/1000-record coverage ceiling. Only those list calls
+   use `gh api --include --jq 'map({id,tag_name,draft})'`; historical bodies and
+   assets are not needed to establish identity or absence. HTTP headers/status
+   and the1MiB projected-response cap remain mandatory. A full tenth page cannot
    prove absence; oversize, duplicate or incomplete discovery refuses before
-   creation. Select a discovered draft only after an exact-ID readback; retain
-   that ID for subsequent checks rather than discovering a replacement.
+   creation. Exact-ID/tag reads remain full and unprojected: select a discovered
+   draft only after full exact-ID validation and retain that ID for subsequent
+   checks, including its complete asset metadata and byte/hash readback.
 4. Require exactly one nonempty same-version arm64 DMG and PKG. Download each
    into a fresh helper-owned directory and compare size and SHA256 to the local
    verified files. Recheck local hashes and remote tag before publication.
