@@ -13,20 +13,26 @@ struct MaatWorkspaceView: View {
     let preloadedKnowledge: MaatKnowledgeProjection?
     let opensReleasePreflight: Bool
     let apolloContext: ApolloPlan?
+    let relayOutboxContext: RelayOutboxResolutionContext?
 
     init(engine: SirsiEngine, preloadedCasebook: MaatCasebookProjection? = nil,
          preloadedKnowledge: MaatKnowledgeProjection? = nil,
-         opensReleasePreflight: Bool = false, apolloContext: ApolloPlan? = nil) {
+         opensReleasePreflight: Bool = false, apolloContext: ApolloPlan? = nil,
+         relayOutboxContext: RelayOutboxResolutionContext? = nil) {
         self.engine = engine
         self.preloadedCasebook = preloadedCasebook
         self.preloadedKnowledge = preloadedKnowledge
         self.opensReleasePreflight = opensReleasePreflight
         self.apolloContext = apolloContext
+        self.relayOutboxContext = relayOutboxContext
     }
 
     var body: some View {
         VStack(spacing: 0) {
             BackBar(title: "Ma'at")
+            if let context = relayOutboxContext {
+                RelayOutboxResolutionView(engine: engine, context: context)
+            } else {
             if let plan = apolloContext {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "cpu").foregroundStyle(gold)
@@ -79,6 +85,7 @@ struct MaatWorkspaceView: View {
                 MaatKnowledgeView(engine: engine, preloaded: preloadedKnowledge, showsBackBar: false)
             case .proposals:
                 MaatKnownFailureProposalsView(engine: engine, showsBackBar: false)
+            }
             }
         }
     }

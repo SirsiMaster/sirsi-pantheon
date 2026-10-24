@@ -2517,6 +2517,10 @@ struct OutboxBlockerCard: View {
     @State private var repairTarget: RelayOutboxRepairApproval?
     @State private var result: String?
 
+    func guidedResolution(for outbox: RBOutbox) -> MaatWorkspaceView {
+        MaatWorkspaceView(engine: engine, relayOutboxContext: RelayOutboxResolutionContext(outbox: outbox))
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
@@ -2540,7 +2544,7 @@ struct OutboxBlockerCard: View {
                             Button("Repair this outbox") { repairTarget = approval }
                                 .buttonStyle(.borderedProminent).tint(gold).disabled(engine.busy)
                         }
-                        NavLink { MaatWorkspaceView(engine: engine) } label: {
+                        NavLink { guidedResolution(for: o) } label: {
                             Label("Guided resolution", systemImage: "checkmark.seal")
                         }
                         .buttonStyle(.bordered)
