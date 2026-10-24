@@ -42,13 +42,52 @@ type releaseContractRequirement struct {
 var releaseContractRequirements = []releaseContractRequirement{
 	{
 		ID: "dmg-explicit-artifact-mode", Path: "scripts/build-dmg.sh",
-		Needles: []string{"--development", "--release", "DEVELOPER_ID_APPLICATION APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD", "SirsiPantheon-${VERSION}-dev-${ARCH}.dmg", "xcrun notarytool submit", "xcrun stapler validate"},
-		Hint:    "Restore the explicit development/release DMG contract, then re-run this Ma'at preflight.",
+		Needles: []string{
+			`MODE="development"`, `MODE="release"`, `[[ -z "$MODE" ]] ||`, `[[ -n "$MODE" ]] ||`,
+			`"${PANTHEON_SIGNING_EXECUTION:-}" == "remote-service"`, `[[ -x "${PANTHEON_SIGN_CLIENT:-}" ]] ||`,
+			`if [[ "$REMOTE_SIGNING" != true ]]; then`, `for required in DEVELOPER_ID_APPLICATION; do`,
+			`[[ -n "${!required:-}" ]] ||`, `if [[ -z "${APPLE_NOTARY_PROFILE:-}" ]]; then`,
+			`for required in APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD; do`,
+			`SirsiPantheon-${VERSION}-dev-${ARCH}.dmg`,
+			`"${PANTHEON_SIGN_CLIENT}" "${BUNDLE_DIR}" app`, `"${PANTHEON_SIGN_CLIENT}" "${DMG_PATH}" dmg`,
+			`codesign --verify --deep --strict`, `"${PROJECT_ROOT}/scripts/notarize-release-artifact.sh" "${DMG_PATH}"`,
+			`xcrun stapler validate "${DMG_PATH}"`,
+		},
+		Hint: "Restore the explicit development/release DMG contract, then re-run this Ma'at preflight.",
 	},
 	{
 		ID: "pkg-explicit-artifact-mode", Path: "scripts/build-pkg.sh",
-		Needles: []string{"--development", "--release", "DEVELOPER_ID_INSTALLER APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD", "SirsiPantheon-${VERSION}-dev-${ARCH}.pkg", "xcrun notarytool submit", "xcrun stapler validate"},
-		Hint:    "Restore the explicit development/release PKG contract, then re-run this Ma'at preflight.",
+		Needles: []string{
+			`MODE="development"`, `MODE="release"`, `[[ -z "$MODE" ]] ||`, `[[ -n "$MODE" ]] ||`,
+			`"${PANTHEON_SIGNING_EXECUTION:-}" == "remote-service"`, `[[ -x "${PANTHEON_SIGN_CLIENT:-}" ]] ||`,
+			`if [[ "$REMOTE_SIGNING" != true ]]; then`, `for required in DEVELOPER_ID_INSTALLER; do`,
+			`[[ -n "${!required:-}" ]] ||`, `if [[ -z "${APPLE_NOTARY_PROFILE:-}" ]]; then`,
+			`for required in APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD; do`,
+			`SirsiPantheon-${VERSION}-dev-${ARCH}.pkg`, `PKGBUILD_ARGS+=(--sign "$DEVELOPER_ID_INSTALLER")`,
+			`"${PANTHEON_SIGN_CLIENT}" "${PKG_PATH}" pkg`, `/usr/sbin/pkgutil --check-signature "$PKG_PATH"`,
+			`"${PROJECT_ROOT}/scripts/notarize-release-artifact.sh" "$PKG_PATH"`, `xcrun stapler validate "$PKG_PATH"`,
+		},
+		Hint: "Restore the explicit development/release PKG contract, then re-run this Ma'at preflight.",
+	},
+	{
+		ID: "delegated-notarization-contract", Path: "scripts/notarize-release-artifact.sh",
+		Needles: []string{
+			`xcrun_bin="/usr/bin/xcrun"`, `"$xcrun_bin" notarytool submit "$artifact"`,
+			`--keychain-profile "$APPLE_NOTARY_PROFILE" --timeout 20m --wait`,
+			`--apple-id "${APPLE_ID:?APPLE_ID is required}"`, `--team-id "${APPLE_TEAM_ID:?APPLE_TEAM_ID is required}"`,
+			`--password "${APPLE_APP_PASSWORD:?APPLE_APP_PASSWORD is required}"`, `--timeout 20m --wait`,
+			`if ! is_transient_upload_failure "$output" || [[ "$attempt" -eq "$attempt_limit" ]]; then`, `exit "$status"`,
+		},
+		Hint: "Restore the shared notarization helper's credential alternatives, awaited submission, and bounded fail-closed error handling; then re-run this source preflight. This does not inspect credentials or prove notarization.",
+	},
+	{
+		ID: "delegated-signing-return-verification", Path: "tools/signing/sirsi-sign",
+		Needles: []string{
+			`TEAM=9D382WV988`, `pkgutil --check-signature "$V/$o"`, `Developer ID Installer: Sirsi Technologies Inc. ($TEAM)`,
+			`codesign --verify --strict --deep "$V/$o"`, `^TeamIdentifier=$TEAM$`,
+			`^Authority=Developer ID Application: Sirsi Technologies Inc. ($TEAM)$`, `[ $vok = 1 ] ||`, `exit 5;`,
+		},
+		Hint: "Restore the enrolled signing client's returned-artifact identity verification, then re-run this source preflight. Actual signing, notarization, and publication require separate release evidence.",
 	},
 	{
 		ID: "tag-workflow-commercial-mode", Path: ".github/workflows/release.yml",
@@ -58,12 +97,17 @@ var releaseContractRequirements = []releaseContractRequirement{
 	{
 		ID: "installer-identity-keychain-preflight", Path: ".github/workflows/release.yml",
 		Needles: []string{
-			"Preflight imported Developer ID Installer identity",
-			"DEVELOPER_ID_INSTALLER is required for the commercial Pantheon PKG",
-			"Temporary signing keychain does not contain a usable Team 9D382WV988 Developer ID Installer identity",
-			"Configured Developer ID Installer identity does not match the identity imported into the temporary signing keychain",
+			`KEYCHAIN="${PANTHEON_SIGNING_KEYCHAIN:?Signing keychain was not selected}"`,
+			`test -f "$KEYCHAIN" \
+            || { echo "Selected signing keychain is absent: $KEYCHAIN" >&2; exit 1; }`,
+			`security find-identity -v -p codesigning "$KEYCHAIN"`,
+			`/Developer ID Application:.*\(9D382WV988\)/`, `if [ -z "$ID" ]; then`,
+			`: "${DEVELOPER_ID_INSTALLER:?DEVELOPER_ID_INSTALLER is required for the commercial Pantheon PKG}"`,
+			`"Developer ID Installer: "*"(9D382WV988)") ;;`, `security find-identity -v "$KEYCHAIN"`,
+			`/Developer ID Installer:.*\(9D382WV988\)/`, `if [ -z "$IMPORTED_INSTALLER" ]; then`,
+			`if [ "$IMPORTED_INSTALLER" != "$DEVELOPER_ID_INSTALLER" ]; then`,
 		},
-		Hint: "Provide the matching Team 9D382WV988 Developer ID Installer identity in the protected signing certificate bundle, then re-run this Ma'at preflight.",
+		Hint: "Restore the workflow's selected-keychain Application and Installer identity checks, then re-run this source preflight. A missing source check does not establish a missing certificate; use the separate public certificate-readiness observation for local metadata and the protected release workflow for actual signing proof.",
 	},
 	{
 		ID: "canonical-cask-publication-workflow", Path: ".github/workflows/release.yml",

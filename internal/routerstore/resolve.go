@@ -16,9 +16,9 @@ import (
 //     fallback to a local file. A spool:// URL needs no token: the relay on this
 //     host holds it (ADR-062 20a.1b).
 //  2. SIRSI_ROUTER_DB set → that SQLite path (tests, sandboxes).
-//  3. host cut over (~/.sirsi/router-service.env present) and no URL → refused:
-//     a process started without the service env must not read a frozen copy
-//     as live or create an empty ledger. Rollback of a node is a deliberate
+//  3. host cut over (~/.sirsi/router-service.env present) and no URL → recover
+//     that service pointer without exporting environment; otherwise refuse.
+//     Never read a frozen copy as live or create an empty ledger. Rollback is a deliberate
 //     procedure (docs/runbooks/router-service-tokens-and-rollback.md), not an
 //     unset variable.
 //  4. otherwise → refuse. There is no implicit local ledger (ADR-062 §1).
@@ -29,6 +29,24 @@ import (
 // fresh HOME has no directory yet and SQLite cannot create a file in a missing
 // directory. Production callers never reach that path by accident.
 func Resolve() (Store, error) {
+	return resolve(nil)
+}
+
+// ResolveForCaller uses the existing configured authority and authentication,
+// binding only this client's sessions to an already registered agent/thread.
+// Neither environment identity nor IdentityHook can replace this explicit pair.
+// The service still validates its authority; these strings are not credentials.
+// Explicit callers retain service-minted sessions in client memory only; they
+// never borrow, overwrite or prune ambient callers' disk session caches.
+func ResolveForCaller(agent, threadID string) (Store, error) {
+	agent, threadID = strings.TrimSpace(agent), strings.TrimSpace(threadID)
+	if agent == "" || threadID == "" {
+		return nil, fmt.Errorf("routerstore: explicit caller needs agent and registered thread")
+	}
+	return resolve(&callerBinding{agent: agent, thread: threadID})
+}
+
+func resolve(caller *callerBinding) (Store, error) {
 	if u := strings.TrimSpace(os.Getenv("SIRSI_ROUTER_URL")); u != "" {
 		tok := strings.TrimSpace(os.Getenv("SIRSI_ROUTER_TOKEN"))
 		if tok == "" && SpoolDir(u) == "" {
@@ -36,7 +54,7 @@ func Resolve() (Store, error) {
 			// service must not write a local ledger (split-brain, ADR-062 §1).
 			return nil, fmt.Errorf("routerstore: SIRSI_ROUTER_URL=%q is set but SIRSI_ROUTER_TOKEN is empty", u)
 		}
-		return NewRemoteStore(u, tok), nil
+		return newRemoteStore(u, tok, caller), nil
 	}
 	p, merr := cutOverMarker()
 	if merr != nil {
@@ -53,12 +71,15 @@ func Resolve() (Store, error) {
 		// spawned outside any shell that sources ~/.zshenv hit this on the M5 —
 		// "the router relay failed and confirmed nothing was sent"; the marker
 		// this process just found IS the authoritative pointer the cut-over
-		// wrote, so read the URL/trust-group straight out of it and proceed —
+		// wrote, so read the URL straight out of it and proceed —
 		// this is NOT the forbidden fallback: it never touches a local ledger,
 		// it only recovers the same pointer `source ~/.zshenv` would have set.
-		if url := loadCutOverEnv(p); url != "" {
-			os.Setenv("SIRSI_ROUTER_URL", url)
-			return Resolve()
+		if url := loadCutOverURL(p); url != "" {
+			tok := strings.TrimSpace(os.Getenv("SIRSI_ROUTER_TOKEN"))
+			if tok == "" && SpoolDir(url) == "" {
+				return nil, fmt.Errorf("routerstore: marker names a service but SIRSI_ROUTER_TOKEN is empty")
+			}
+			return newRemoteStore(url, tok, caller), nil
 		}
 		return nil, fmt.Errorf("routerstore: this host is cut over to the router service (%s exists) but SIRSI_ROUTER_URL is unset and could not be recovered from the marker file — run `source ~/.zshenv` or start the process with the service env; the local file is not a ledger here", p)
 	}
@@ -77,23 +98,16 @@ func Resolve() (Store, error) {
 	return OpenPath(path)
 }
 
-// loadCutOverEnv parses the simple `export KEY='value'` / `export KEY="value"`
-// lines a cut-over script writes to path (scripts/router-service/cutover-*.sh)
-// and sets each recognized variable in this process's own environment — but
-// ONLY when that variable is not already set, so an operator's explicit
-// override always wins over the file. Returns the SIRSI_ROUTER_URL value
-// found ("" if none), which is all the caller needs to know recovery
-// succeeded; SIRSI_RELAY_TRUST_GROUP is set as a side effect for the spool
-// client to pick up via its own later os.Getenv (internal/routerstore/spool.go).
-// Malformed or unreadable input yields "" — never a partial, misleading state.
-func loadCutOverEnv(path string) string {
+// loadCutOverURL recovers the existing service pointer without publishing it
+// into process environment. Lane trust is derived from the retained spool root
+// (spool.go), not a copied marker environment variable.
+func loadCutOverURL(path string) string {
 	f, err := os.Open(path)
 	if err != nil {
 		return ""
 	}
 	defer f.Close()
 
-	recognized := map[string]bool{"SIRSI_ROUTER_URL": true, "SIRSI_RELAY_TRUST_GROUP": true}
 	var url string
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
@@ -103,7 +117,7 @@ func loadCutOverEnv(path string) string {
 			continue
 		}
 		key, val, ok := strings.Cut(line, "=")
-		if !ok || !recognized[key] {
+		if !ok || key != "SIRSI_ROUTER_URL" {
 			continue
 		}
 		// Extract the value: a quoted string up to its matching close-quote
@@ -124,12 +138,12 @@ func loadCutOverEnv(path string) string {
 		if val == "" {
 			continue
 		}
-		if strings.TrimSpace(os.Getenv(key)) == "" {
-			os.Setenv(key, val)
+		if url == "" {
+			url = val
 		}
-		if key == "SIRSI_ROUTER_URL" {
-			url = strings.TrimSpace(os.Getenv(key))
-		}
+	}
+	if sc.Err() != nil {
+		return ""
 	}
 	return url
 }

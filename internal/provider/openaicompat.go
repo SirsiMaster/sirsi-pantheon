@@ -6,10 +6,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
 )
+
+const readinessCompletionResponseLimit = 1 << 20
 
 // OpenAICompat serves any endpoint speaking the OpenAI chat-completions shape.
 //
@@ -144,8 +147,36 @@ func (o *OpenAICompat) probeCompletion(ctx context.Context) bool {
 		return false
 	}
 	defer func() { _ = resp.Body.Close() }()
-	// 200 means the engine completed. Any 5xx means it is serving but broken.
-	return resp.StatusCode == http.StatusOK
+	if ctx.Err() != nil || resp.StatusCode != http.StatusOK {
+		return false
+	}
+	body, err = io.ReadAll(io.LimitReader(resp.Body, readinessCompletionResponseLimit+1))
+	if err != nil || ctx.Err() != nil || len(body) > readinessCompletionResponseLimit {
+		return false
+	}
+	return validReadinessCompletion(body) && ctx.Err() == nil
+}
+
+// validReadinessCompletion requires a complete, useful terminal envelope. The
+// one-token probe intentionally accepts a length finish when it contains the
+// token it asked the engine to produce; that is not an incomplete user answer.
+func validReadinessCompletion(body []byte) bool {
+	var completion ccResponse
+	if err := json.Unmarshal(body, &completion); err != nil || completion.Error != nil || len(completion.Choices) == 0 {
+		return false
+	}
+
+	choice := completion.Choices[0]
+	hasContent := strings.TrimSpace(choice.Message.Content) != "" || strings.TrimSpace(choice.Message.Reasoning) != ""
+	switch choice.FinishReason {
+	case "stop", "length", "content_filter":
+		return hasContent
+	case "tool_calls":
+		calls, err := providerToolCalls(choice.Message.ToolCalls)
+		return err == nil && len(calls) > 0
+	default:
+		return false
+	}
 }
 
 func (o *OpenAICompat) auth(r *http.Request) error {

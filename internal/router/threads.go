@@ -238,40 +238,44 @@ func LoadThreadRegistry(routerRoot string) (*ThreadRegistry, error) {
 			return nil, err
 		}
 		defer store.Close()
-		records, err := store.ListThreads()
-		if err != nil {
-			return nil, err
-		}
-		if len(records) == 0 {
-			if legacy, legacyErr := loadLegacyThreadRegistry(routerRoot); legacyErr == nil && len(legacy.Threads) > 0 {
-				seed, seedErr := threadRecords(legacy)
-				if seedErr != nil {
-					return nil, seedErr
-				}
-				if importErr := store.ImportThreadsIfEmpty(seed); importErr != nil {
-					return nil, importErr
-				}
-				records, err = store.ListThreads()
-				if err != nil {
-					return nil, err
-				}
-			}
-		}
-		reg := &ThreadRegistry{Threads: make(map[string]*Thread, len(records)), baseline: make(map[string]routerstore.ThreadRecord, len(records))}
-		for _, record := range records {
-			var thread Thread
-			if err := json.Unmarshal(record.Payload, &thread); err != nil {
-				return nil, fmt.Errorf("parse store thread %q: %w", record.ThreadID, err)
-			}
-			if thread.ThreadID == "" {
-				thread.ThreadID = record.ThreadID
-			}
-			reg.Threads[record.ThreadID] = &thread
-			reg.baseline[record.ThreadID] = record
-		}
-		return reg, nil
+		return loadThreadRegistryStore(routerRoot, store)
 	}
 	return loadLegacyThreadRegistry(routerRoot)
+}
+
+func loadThreadRegistryStore(routerRoot string, store routerstore.Store) (*ThreadRegistry, error) {
+	records, err := store.ListThreads()
+	if err != nil {
+		return nil, err
+	}
+	if len(records) == 0 {
+		if legacy, legacyErr := loadLegacyThreadRegistry(routerRoot); legacyErr == nil && len(legacy.Threads) > 0 {
+			seed, seedErr := threadRecords(legacy)
+			if seedErr != nil {
+				return nil, seedErr
+			}
+			if importErr := store.ImportThreadsIfEmpty(seed); importErr != nil {
+				return nil, importErr
+			}
+			records, err = store.ListThreads()
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	reg := &ThreadRegistry{Threads: make(map[string]*Thread, len(records)), baseline: make(map[string]routerstore.ThreadRecord, len(records))}
+	for _, record := range records {
+		var thread Thread
+		if err := json.Unmarshal(record.Payload, &thread); err != nil {
+			return nil, fmt.Errorf("parse store thread %q: %w", record.ThreadID, err)
+		}
+		if thread.ThreadID == "" {
+			thread.ThreadID = record.ThreadID
+		}
+		reg.Threads[record.ThreadID] = &thread
+		reg.baseline[record.ThreadID] = record
+	}
+	return reg, nil
 }
 
 // loadThreadRegistryOne is LoadThreadRegistry scoped to a single known
@@ -296,6 +300,10 @@ func loadThreadRegistryOne(routerRoot, threadID string) (*ThreadRegistry, error)
 		return nil, err
 	}
 	defer store.Close()
+	return loadThreadRegistryOneStore(store, threadID)
+}
+
+func loadThreadRegistryOneStore(store routerstore.Store, threadID string) (*ThreadRegistry, error) {
 	reg := &ThreadRegistry{Threads: map[string]*Thread{}, baseline: map[string]routerstore.ThreadRecord{}}
 	record, err := store.GetThreadRecord(threadID)
 	if errors.Is(err, routerstore.ErrThreadUnknown) {
@@ -430,65 +438,73 @@ func SaveThreadRegistry(routerRoot string, reg *ThreadRegistry) error {
 			return err
 		}
 		defer store.Close()
-		records, err := threadRecords(reg)
+		return saveThreadRegistryStore(reg, store)
+	}
+	return saveLegacyThreadRegistry(routerRoot, reg)
+}
+
+func saveThreadRegistryStore(reg *ThreadRegistry, store routerstore.Store) error {
+	records, err := threadRecords(reg)
+	if err != nil {
+		return err
+	}
+	// A host may only persist its OWN thread records. The service's ADR-067
+	// authority check (serve.go) refuses a write or delete of another host's
+	// thread, and a per-host registry save that aborts on that refusal
+	// strands the caller's OWN registration — which committed moments before
+	// (UpsertThreadCAS 200) — behind a foreign record it was never entitled
+	// to touch. Confirmed 2026-09-26 via relay log: a plain
+	// `sirsi thread register` did UpsertThreadCAS(self)=200 then
+	// DeleteThreadCAS(a foreign terminal record)=403, and the 403 aborted the
+	// whole save, so registration failed fabric-wide (blocking A27 heartbeat
+	// registration + the MCP surface=mcp thread). Skip records this host does
+	// not own — a non-empty Host that differs from ours. This narrows what we
+	// WRITE, never what the service ALLOWS: the authority boundary stays
+	// fully enforced server-side; we simply stop attempting a write we have
+	// no right to make. An empty Host is treated as ours (the service stamps
+	// it for this host); a genuine authority failure on one of OUR OWN
+	// records still surfaces (negative control).
+	selfHost, err := routerstore.ThreadOwnerHost()
+	if err != nil {
+		return err
+	}
+	dirty := records[:0]
+	for _, record := range records {
+		if !ownsRecordHost(record.Host, selfHost) {
+			continue
+		}
+		old, exists := reg.baseline[record.ThreadID]
+		if !exists || payloadChanged(record.ThreadID, old.Payload, record.Payload) {
+			dirty = append(dirty, record)
+		}
+	}
+	for _, record := range dirty {
+		applied, err := store.UpsertThreadCAS(record)
 		if err != nil {
 			return err
 		}
-		// A host may only persist its OWN thread records. The service's ADR-067
-		// authority check (serve.go) refuses a write or delete of another host's
-		// thread, and a per-host registry save that aborts on that refusal
-		// strands the caller's OWN registration — which committed moments before
-		// (UpsertThreadCAS 200) — behind a foreign record it was never entitled
-		// to touch. Confirmed 2026-09-26 via relay log: a plain
-		// `sirsi thread register` did UpsertThreadCAS(self)=200 then
-		// DeleteThreadCAS(a foreign terminal record)=403, and the 403 aborted the
-		// whole save, so registration failed fabric-wide (blocking A27 heartbeat
-		// registration + the MCP surface=mcp thread). Skip records this host does
-		// not own — a non-empty Host that differs from ours. This narrows what we
-		// WRITE, never what the service ALLOWS: the authority boundary stays
-		// fully enforced server-side; we simply stop attempting a write we have
-		// no right to make. An empty Host is treated as ours (the service stamps
-		// it for this host); a genuine authority failure on one of OUR OWN
-		// records still surfaces (negative control).
-		selfHost, err := routerstore.ThreadOwnerHost()
-		if err != nil {
-			return err
+		if !applied {
+			return fmt.Errorf("thread %q mutation %w", record.ThreadID, ErrLostLifecycleFence)
 		}
-		dirty := records[:0]
-		for _, record := range records {
-			if !ownsRecordHost(record.Host, selfHost) {
-				continue
+	}
+	for id, old := range reg.baseline {
+		if _, ok := reg.Threads[id]; !ok {
+			if !ownsRecordHost(old.Host, selfHost) {
+				continue // another host's terminal record — its owner/reaper prunes it, not us
 			}
-			old, exists := reg.baseline[record.ThreadID]
-			if !exists || payloadChanged(record.ThreadID, old.Payload, record.Payload) {
-				dirty = append(dirty, record)
-			}
-		}
-		for _, record := range dirty {
-			applied, err := store.UpsertThreadCAS(record)
+			deleted, err := store.DeleteThreadCAS(id, old.Status, old.LastSeenAt, selfHost)
 			if err != nil {
 				return err
 			}
-			if !applied {
-				return fmt.Errorf("thread %q mutation %w", record.ThreadID, ErrLostLifecycleFence)
+			if !deleted {
+				return fmt.Errorf("thread %q prune %w", id, ErrLostLifecycleFence)
 			}
 		}
-		for id, old := range reg.baseline {
-			if _, ok := reg.Threads[id]; !ok {
-				if !ownsRecordHost(old.Host, selfHost) {
-					continue // another host's terminal record — its owner/reaper prunes it, not us
-				}
-				deleted, err := store.DeleteThreadCAS(id, old.Status, old.LastSeenAt, selfHost)
-				if err != nil {
-					return err
-				}
-				if !deleted {
-					return fmt.Errorf("thread %q prune %w", id, ErrLostLifecycleFence)
-				}
-			}
-		}
-		return nil
 	}
+	return nil
+}
+
+func saveLegacyThreadRegistry(routerRoot string, reg *ThreadRegistry) error {
 	data, err := json.MarshalIndent(reg, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal threads.json: %w", err)
@@ -933,12 +949,16 @@ var ErrLiveWakeController = errors.New("live wake controller must close its own 
 // re-derived from a fresh load every attempt (same shape retryOnLostFenceErr
 // requires).
 func Heartbeat(routerRoot, threadID string, upd HeartbeatUpdate) (*Thread, error) {
+	return heartbeatWithRegistry(routerRoot, threadID, upd, loadThreadRegistryOne, SaveThreadRegistry)
+}
+
+func heartbeatWithRegistry(routerRoot, threadID string, upd HeartbeatUpdate, load func(string, string) (*ThreadRegistry, error), save func(string, *ThreadRegistry) error) (*Thread, error) {
 	if threadID == "" {
 		return nil, fmt.Errorf("thread_id is required")
 	}
 	var t *Thread
 	err := retryOnLostFenceErr(func() error {
-		reg, err := loadThreadRegistryOne(routerRoot, threadID)
+		reg, err := load(routerRoot, threadID)
 		if err != nil {
 			return err
 		}
@@ -977,7 +997,7 @@ func Heartbeat(routerRoot, threadID string, upd HeartbeatUpdate) (*Thread, error
 			l.PublishedAt = cur.LastSeenAt
 			cur.Lane = &l
 		}
-		if err := SaveThreadRegistry(routerRoot, reg); err != nil {
+		if err := save(routerRoot, reg); err != nil {
 			return err
 		}
 		t = cur
@@ -991,7 +1011,11 @@ func Heartbeat(routerRoot, threadID string, upd HeartbeatUpdate) (*Thread, error
 
 // CloseThread marks a thread closed (does not delete it; callers may prune).
 func CloseThread(routerRoot, threadID string) (*Thread, error) {
-	reg, err := loadThreadRegistryOne(routerRoot, threadID)
+	return closeThreadWithRegistry(routerRoot, threadID, loadThreadRegistryOne, SaveThreadRegistry)
+}
+
+func closeThreadWithRegistry(routerRoot, threadID string, load func(string, string) (*ThreadRegistry, error), save func(string, *ThreadRegistry) error) (*Thread, error) {
+	reg, err := load(routerRoot, threadID)
 	if err != nil {
 		return nil, err
 	}
@@ -1012,7 +1036,7 @@ func CloseThread(routerRoot, threadID string) (*Thread, error) {
 	}
 	t.Status = ThreadStatusClosed
 	t.LastSeenAt = time.Now().UTC()
-	if err := SaveThreadRegistry(routerRoot, reg); err != nil {
+	if err := save(routerRoot, reg); err != nil {
 		return nil, err
 	}
 	return t, nil

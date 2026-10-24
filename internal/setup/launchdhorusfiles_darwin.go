@@ -108,12 +108,33 @@ func prepareHorusPublication(path string, before, after []byte) (horusPublicatio
 	if filepath.Base(path) != HorusServiceLabel+".plist" || len(before) == 0 || len(before) > 1<<20 || len(after) == 0 || len(after) > 1<<20 {
 		return nil, errors.New("Horus maintenance: exact bounded selected plist required")
 	}
+	p, err := prepareOwnerFilePublication(path, before, after, horusBackupLeaf(horusDigest(before)), "."+HorusServiceLabel, ".stage.plist", nil)
+	if err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+// prepareOwnerFilePublication is the existing retained-file transaction shared
+// by exact selected Horus conversion and exact selected MCP migration. Callers
+// supply already validated scope/bytes; this is not an exported config editor.
+func prepareOwnerFilePublication(path string, before, after []byte, backup, prefix, suffix string, writePrivate func(*os.File, []byte) error) (*horusFilePublication, error) {
+	if writePrivate == nil {
+		writePrivate = func(f *os.File, data []byte) error {
+			if n, err := f.Write(data); err != nil {
+				return err
+			} else if n != len(data) {
+				return io.ErrShortWrite
+			}
+			return f.Sync()
+		}
+	}
 	dir, err := openHorusParent(path)
 	if err != nil {
 		return nil, err
 	}
 	p := &horusFilePublication{dir: dir, parent: filepath.Dir(path), leaf: filepath.Base(path), before: before, after: after}
-	fail := func(err error) (horusPublication, error) {
+	fail := func(err error) (*horusFilePublication, error) {
 		closeErr := p.Close()
 		return nil, fmt.Errorf("Horus maintenance: staging failed; any created private backup/stage is retained as cleanup debt (backup %s, stage %s): %w", p.backup, p.stage, errors.Join(err, closeErr))
 	}
@@ -128,25 +149,21 @@ func prepareHorusPublication(path string, before, after []byte) (horusPublicatio
 	if err = p.verify(p.original, p.leaf, before, false); err != nil {
 		return fail(err)
 	}
-	p.backup = horusBackupLeaf(horusDigest(before))
+	p.backup = backup
 	var nonce [16]byte
 	if _, err = rand.Read(nonce[:]); err != nil {
 		return fail(err)
 	}
-	p.stage = "." + HorusServiceLabel + "." + hex.EncodeToString(nonce[:]) + ".stage.plist"
+	p.stage = prefix + "." + hex.EncodeToString(nonce[:]) + suffix
 	create := func(name string, data []byte) (*os.File, error) {
 		fd, err := unix.Openat(dir, name, unix.O_RDWR|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0600)
 		if err != nil {
 			return nil, errors.New("Horus maintenance: private backup/stage occupied or unavailable; nothing overwritten")
 		}
 		f := os.NewFile(uintptr(fd), filepath.Join(p.parent, name))
-		if n, err := f.Write(data); err != nil || n != len(data) {
+		if err := writePrivate(f, data); err != nil {
 			f.Close()
-			return nil, errors.New("Horus maintenance: private leaf write failed; retained cleanup debt")
-		}
-		if err = f.Sync(); err != nil {
-			f.Close()
-			return nil, err
+			return nil, fmt.Errorf("Horus maintenance: private leaf write failed; retained cleanup debt: %w", err)
 		}
 		if err = p.verify(f, name, data, true); err != nil {
 			f.Close()

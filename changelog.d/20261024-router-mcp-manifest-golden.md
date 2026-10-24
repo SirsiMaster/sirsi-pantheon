@@ -1,0 +1,1 @@
+Correct the shared router MCP manifest golden to match the existing released JSON encoding: false `tools.listChanged` is omitted by `ToolsCap`'s unchanged `omitempty` tag. Canonical and legacy manifest comparisons remain exact; no protocol, production code, authority, or installed configuration changes.

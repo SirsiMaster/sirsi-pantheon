@@ -1,6 +1,8 @@
 package maat
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -61,7 +63,11 @@ func TestPreflightReleaseContractRejectsSymlinkedContractInput(t *testing.T) {
 func TestPreflightReleaseContractBlocksDuplicateCaskPublisher(t *testing.T) {
 	root := makeReleaseContractFixture(t, false)
 	workflow := filepath.Join(root, ".github", "workflows", "release.yml")
-	if err := os.WriteFile(workflow, []byte("scripts/build-dmg.sh --release scripts/build-pkg.sh --release Publish canonical Homebrew Cask cask-release render cask-release verify perl -0pi"), 0o600); err != nil {
+	raw, err := os.ReadFile(workflow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(workflow, append(raw, []byte("\nperl -0pi\n")...), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	preflight, err := PreflightReleaseContract(root)
@@ -82,29 +88,81 @@ func TestPreflightReleaseContractBlocksDuplicateCaskPublisher(t *testing.T) {
 func makeReleaseContractFixture(t *testing.T, broken bool) string {
 	t.Helper()
 	root := t.TempDir()
-	files := map[string]string{
-		"scripts/build-dmg.sh":          "--development --release DEVELOPER_ID_APPLICATION APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD SirsiPantheon-${VERSION}-dev-${ARCH}.dmg xcrun notarytool submit xcrun stapler validate",
-		"scripts/build-pkg.sh":          "--development --release DEVELOPER_ID_INSTALLER APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD SirsiPantheon-${VERSION}-dev-${ARCH}.pkg xcrun notarytool submit xcrun stapler validate",
-		".github/workflows/release.yml": "scripts/build-dmg.sh --release scripts/build-pkg.sh --release Preflight imported Developer ID Installer identity DEVELOPER_ID_INSTALLER is required for the commercial Pantheon PKG Temporary signing keychain does not contain a usable Team 9D382WV988 Developer ID Installer identity Configured Developer ID Installer identity does not match the identity imported into the temporary signing keychain Publish canonical Homebrew Cask cask-release render cask-release verify",
-		"Makefile":                      "dmg-dev:\npkg-dev:\nrelease-dmg:\nrelease-pkg:\nmacapp/Package.swift\nStackLab",
-		"contracts/stacklab/pantheon-release-artifact-recipe-v1.json": "stacklab.recipe.pantheon-release-artifact release-artifact-class-contract release-native-payload-composition commercial-sign-notary-publication-route canonical-cask-publication commercial-update-payload-eligibility",
-		"internal/caskrelease/cask.go":                                "func Render func Verify exact canonical rendering",
-		"cmd/sirsi/cask_release.go":                                   "cask-release caskrelease.Render caskrelease.Verify",
-		"internal/updater/updater.go":                                 "ErrNoCompleteCommercialRelease IsCompleteCommercialRelease assetless or partial record",
-		"cmd/sirsi/update.go":                                         "Commercial Pantheon updates ship one app payload unified app installer complete arm64 Pantheon app payload installed version remains active Recovery: recheck later",
-		"scripts/verify-commercial-release-contract.sh":               "commercial release contract: pass pantheon-release-artifact-recipe-v1.json",
+	// These are the actual release-route bytes from published v0.24.130,
+	// 60b9963d73f66ed497e90fa127263cc1113f506a, not a miniature policy stub.
+	// No copied script is executed. Future route changes must deliberately
+	// update this provenance and the observer together.
+	pinned := map[string]string{
+		"scripts/build-dmg.sh":                 "5d9ffc22dd4ba639453f5c53d59ef9c40b2aa81c99ac04c995a0c875aeec15f5",
+		"scripts/build-pkg.sh":                 "9e66baacecf6164442922e578a190833b2d8271887dfcba7327b99e11cd07710",
+		"scripts/notarize-release-artifact.sh": "cf4112f04f90f1b8ac70e9aecd17ed87652e1718bb82dcecc6801efd03eab433",
+		".github/workflows/release.yml":        "a3736f2f90ad42a39b1b7f585e4c69f9f90ed6c91a6d6194dde7841ff3ac0213",
+		"tools/signing/sirsi-sign":             "805123e96ce78ff225641bebd2bf32f9c15d5023f381963f096facda4d2aedd1",
 	}
-	if broken {
-		files["scripts/build-dmg.sh"] = "--development"
-	}
-	for relative, content := range files {
+	for _, requirement := range releaseContractRequirements {
+		relative := requirement.Path
+		content, err := os.ReadFile(filepath.Join("..", "..", filepath.FromSlash(relative)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if expected, ok := pinned[relative]; ok && fmt.Sprintf("%x", sha256.Sum256(content)) != expected {
+			t.Fatalf("released130 source changed: %s; update provenance and contract deliberately", relative)
+		}
 		path := filepath.Join(root, filepath.FromSlash(relative))
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		if err := os.WriteFile(path, content, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if broken {
+		if err := os.WriteFile(filepath.Join(root, "scripts", "build-dmg.sh"), []byte("--development"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
 	return root
+}
+
+func TestPreflightReleaseContractMissingControlsStillBlock(t *testing.T) {
+	for _, tc := range []struct{ name, path, control, check string }{
+		{"explicit-mode", "scripts/build-dmg.sh", `[[ -n "$MODE" ]] ||`, "dmg-explicit-artifact-mode"},
+		{"mutually-exclusive-mode", "scripts/build-pkg.sh", `[[ -z "$MODE" ]] ||`, "pkg-explicit-artifact-mode"},
+		{"application-identity", "scripts/build-dmg.sh", `for required in DEVELOPER_ID_APPLICATION; do`, "dmg-explicit-artifact-mode"},
+		{"installer-identity", "scripts/build-pkg.sh", `for required in DEVELOPER_ID_INSTALLER; do`, "pkg-explicit-artifact-mode"},
+		{"remote-client", "scripts/build-dmg.sh", `[[ -x "${PANTHEON_SIGN_CLIENT:-}" ]] ||`, "dmg-explicit-artifact-mode"},
+		{"notary-delegation", "scripts/build-pkg.sh", `"${PROJECT_ROOT}/scripts/notarize-release-artifact.sh" "$PKG_PATH"`, "pkg-explicit-artifact-mode"},
+		{"notary-wait", "scripts/notarize-release-artifact.sh", `--timeout 20m --wait`, "delegated-notarization-contract"},
+		{"notary-failure", "scripts/notarize-release-artifact.sh", `exit "$status"`, "delegated-notarization-contract"},
+		{"staple-validation", "scripts/build-dmg.sh", `xcrun stapler validate "${DMG_PATH}"`, "dmg-explicit-artifact-mode"},
+		{"remote-return-identity", "tools/signing/sirsi-sign", `[ $vok = 1 ] ||`, "delegated-signing-return-verification"},
+		{"selected-keychain-existence", ".github/workflows/release.yml", `test -f "$KEYCHAIN"`, "installer-identity-keychain-preflight"},
+		{"selected-keychain-absence-refusal", ".github/workflows/release.yml", `|| { echo "Selected signing keychain is absent: $KEYCHAIN" >&2; exit 1; }`, "installer-identity-keychain-preflight"},
+		{"selected-keychain-comparison", ".github/workflows/release.yml", `if [ "$IMPORTED_INSTALLER" != "$DEVELOPER_ID_INSTALLER" ]; then`, "installer-identity-keychain-preflight"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := makeReleaseContractFixture(t, false)
+			path := filepath.Join(root, filepath.FromSlash(tc.path))
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(raw), tc.control) {
+				t.Fatalf("mutation target absent: %q", tc.control)
+			}
+			if err := os.WriteFile(path, []byte(strings.ReplaceAll(string(raw), tc.control, "REMOVED_CONTROL")), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			result, err := PreflightReleaseContract(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Verdict.Gate != GateBlock || result.Verdict.Floor.Passed {
+				t.Fatalf("missing control accepted: %+v", result)
+			}
+			if len(result.Verdict.Findings) != 1 || result.Verdict.Findings[0].ID != tc.check {
+				t.Fatalf("not a causal single-check refusal: %+v", result.Verdict.Findings)
+			}
+		})
+	}
 }

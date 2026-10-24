@@ -3,11 +3,232 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 )
+
+func TestAvailableRealCompletionProbeValidatesTerminalEnvelope(t *testing.T) {
+	validStop := `{"model":"served-model","choices":[{"finish_reason":"stop","message":{"content":"ok"}}]}`
+	validLength := `{"model":"served-model","choices":[{"finish_reason":"length","message":{"content":"x"}}]}`
+	validReasoningOnly := `{"model":"served-model","choices":[{"finish_reason":"length","message":{"content":"","reasoning":"thinking"}}]}`
+	oversized := validStop + strings.Repeat(" ", readinessCompletionResponseLimit)
+
+	tests := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{name: "stop completion", body: validStop, want: true},
+		{name: "one-token length completion", body: validLength, want: true},
+		{name: "reasoning-only length completion", body: validReasoningOnly, want: true},
+		{name: "malformed JSON", body: `{"choices":[}`, want: false},
+		{name: "error envelope", body: `{"error":{"message":"failed"},"choices":[{"finish_reason":"stop","message":{"content":"ok"}}]}`, want: false},
+		{name: "no choices", body: `{"choices":[]}`, want: false},
+		{name: "trailing JSON", body: validStop + `{}`, want: false},
+		{name: "oversized response", body: oversized, want: false},
+		{name: "missing terminal reason", body: `{"choices":[{"message":{"content":"ok"}}]}`, want: false},
+		{name: "terminal response without generated content", body: `{"choices":[{"finish_reason":"length","message":{"content":""}}]}`, want: false},
+		{name: "unsupported terminal reason", body: `{"choices":[{"finish_reason":"pending","message":{"content":"ok"}}]}`, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var mu sync.Mutex
+			var modelRequests, completionRequests int
+			var completionRequest ccRequest
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				defer mu.Unlock()
+				switch {
+				case r.Method == http.MethodGet && r.URL.Path == "/v1/models":
+					modelRequests++
+					_, _ = w.Write([]byte(`{"data":[{"id":"served-model"}]}`))
+				case r.Method == http.MethodPost && r.URL.Path == "/v1/chat/completions":
+					completionRequests++
+					if err := json.NewDecoder(r.Body).Decode(&completionRequest); err != nil {
+						t.Errorf("decode readiness request: %v", err)
+					}
+					_, _ = w.Write([]byte(tt.body))
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer srv.Close()
+
+			p := &OpenAICompat{
+				ProviderName:           "local",
+				Endpoint:               srv.URL + "/v1",
+				Model:                  "configured-model",
+				TierValue:              TierLocal,
+				HTTP:                   srv.Client(),
+				UseRealCompletionProbe: true,
+			}
+			if got := p.Available(context.Background()); got != tt.want {
+				t.Fatalf("Available() = %v, want %v", got, tt.want)
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if modelRequests != 1 || completionRequests != 1 {
+				t.Fatalf("requests = models:%d completions:%d, want one each", modelRequests, completionRequests)
+			}
+			if completionRequest.Model != "served-model" || completionRequest.MaxTokens != 1 {
+				t.Fatalf("readiness request = model:%q max_tokens:%d, want served-model/1", completionRequest.Model, completionRequest.MaxTokens)
+			}
+		})
+	}
+}
+
+func TestAvailableRealCompletionProbeRejectsCompletionTransportFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/v1/models" {
+			_, _ = w.Write([]byte(`{"data":[{"id":"served-model"}]}`))
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/chat/completions" {
+			hijacker, ok := w.(http.Hijacker)
+			if !ok {
+				t.Error("HTTP fixture does not support connection hijacking")
+				return
+			}
+			conn, _, err := hijacker.Hijack()
+			if err != nil {
+				t.Errorf("hijack completion connection: %v", err)
+				return
+			}
+			_ = conn.Close()
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	p := &OpenAICompat{ProviderName: "local", Endpoint: srv.URL + "/v1", TierValue: TierLocal, HTTP: srv.Client(), UseRealCompletionProbe: true}
+	if p.Available(context.Background()) {
+		t.Fatal("completion transport failure was reported as available")
+	}
+}
+
+func TestAvailableRealCompletionProbeRejectsCompletionCancellation(t *testing.T) {
+	postReached := make(chan struct{})
+	completionStarted := make(chan struct{})
+	cancellationObserved := make(chan struct{})
+	releaseHandler := make(chan struct{})
+	handlerDone := make(chan struct{})
+	bodyReadError := make(chan error, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/v1/models" {
+			_, _ = w.Write([]byte(`{"data":[{"id":"served-model"}]}`))
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/chat/completions" {
+			defer close(handlerDone)
+			close(postReached)
+			if r.ContentLength < 0 || r.ContentLength > 64<<10 {
+				bodyReadError <- errors.New("completion request body exceeds the fixture bound")
+				return
+			}
+			if _, err := io.CopyN(io.Discard, r.Body, r.ContentLength); err != nil {
+				bodyReadError <- err
+				return
+			}
+			if err := r.Body.Close(); err != nil {
+				bodyReadError <- err
+				return
+			}
+			// Do not signal the test until the complete request body is consumed
+			// and closed; otherwise net/http may not observe client cancellation.
+			close(completionStarted)
+			select {
+			case <-r.Context().Done():
+				close(cancellationObserved)
+			case <-releaseHandler:
+			}
+			return
+		}
+		http.NotFound(w, r)
+	}))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancellationTriggered := make(chan struct{})
+	stopCancellation := make(chan struct{})
+	cancellationDone := make(chan struct{})
+	go func() {
+		defer close(cancellationDone)
+		select {
+		case <-completionStarted:
+			cancel()
+			close(cancellationTriggered)
+		case <-stopCancellation:
+		}
+	}()
+	t.Cleanup(func() {
+		cancel()
+		close(stopCancellation)
+		select {
+		case <-cancellationDone:
+		case <-time.After(2 * time.Second):
+			t.Error("cancellation coordinator did not exit")
+		}
+
+		postReachedBeforeCleanup := false
+		select {
+		case <-postReached:
+			postReachedBeforeCleanup = true
+		case <-time.After(2 * time.Second):
+		}
+		if postReachedBeforeCleanup {
+			select {
+			case <-cancellationObserved:
+			case <-time.After(2 * time.Second):
+				t.Error("completion handler did not observe request cancellation before cleanup release")
+			}
+		}
+		close(releaseHandler)
+		srv.Close() // joins handlers after cancellation or the explicit release.
+		if postReachedBeforeCleanup {
+			select {
+			case <-handlerDone:
+			case <-time.After(2 * time.Second):
+				t.Error("completion handler did not exit after cleanup release")
+			}
+		}
+	})
+	p := &OpenAICompat{ProviderName: "local", Endpoint: srv.URL + "/v1", TierValue: TierLocal, HTTP: srv.Client(), UseRealCompletionProbe: true}
+	if p.Available(ctx) {
+		t.Fatal("canceled completion probe was reported as available")
+	}
+	select {
+	case <-postReached:
+	case <-time.After(2 * time.Second):
+		t.Fatal("completion POST was not reached")
+	}
+	select {
+	case <-completionStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("readiness probe returned without reaching completion POST")
+	}
+	select {
+	case err := <-bodyReadError:
+		t.Fatalf("completion request body was not consumed and closed: %v", err)
+	default:
+	}
+	select {
+	case <-cancellationTriggered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("completion POST did not trigger context cancellation")
+	}
+	select {
+	case <-cancellationObserved:
+	case <-time.After(2 * time.Second):
+		t.Fatal("completion handler did not observe request cancellation")
+	}
+}
 
 func TestCompleteResolvesServedModel(t *testing.T) {
 	var requestedModel string

@@ -9,8 +9,14 @@
 package router
 
 import (
+	"fmt"
 	"sort"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
 
 // WorkPackage is one open item as an agent sees it on the board.
@@ -46,7 +52,28 @@ type WorkBoard struct {
 
 // ComputeWorkBoard builds the board from the items corpus + thread registry.
 func ComputeWorkBoard(routerRoot string) (*WorkBoard, error) {
-	items, err := RecentItems(routerRoot, 8*24*time.Hour) // pace looks back 7 days; one extra day of margin
+	return computeWorkBoard(routerRoot, RecentItems, LoadThreadRegistry)
+}
+
+// ComputeWorkBoardWithStore shares the original projection and backend choice,
+// but all durable reads use the caller-owned store (no ambient re-resolution).
+// It does not close that store. Legacy mode remains the original file readers.
+func ComputeWorkBoardWithStore(routerRoot string, store routerstore.Store) (*WorkBoard, error) {
+	if !routercfg.StoreWake() {
+		return ComputeWorkBoard(routerRoot)
+	}
+	if store == nil {
+		return nil, fmt.Errorf("workboard: durable caller store is required")
+	}
+	return computeWorkBoard(routerRoot,
+		func(root string, window time.Duration) ([]work.Item, error) {
+			return dispatch.New(root, store).ListRecent(time.Now().Add(-window))
+		},
+		func(root string) (*ThreadRegistry, error) { return loadThreadRegistryStore(root, store) })
+}
+
+func computeWorkBoard(routerRoot string, recent func(string, time.Duration) ([]work.Item, error), registry func(string) (*ThreadRegistry, error)) (*WorkBoard, error) {
+	items, err := recent(routerRoot, 8*24*time.Hour) // pace looks back 7 days; one extra day of margin
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +128,7 @@ func ComputeWorkBoard(routerRoot string) (*WorkBoard, error) {
 	// Liveness + surfaces from the thread registry (best-effort: a missing
 	// registry still yields a board — packages and pace stand on their own).
 	liveSurfaces := map[string][]string{}
-	if reg, rerr := LoadThreadRegistry(routerRoot); rerr == nil {
+	if reg, rerr := registry(routerRoot); rerr == nil {
 		for _, t := range reg.Threads {
 			if t == nil || t.Status.IsTerminal() || t.Status == ThreadStatusSuspended {
 				continue
