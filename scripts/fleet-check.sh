@@ -58,7 +58,27 @@ self_test() {
   if ! printf '%s' "$out2" | grep -qF "✓ outbox: 1 held, 0 parked"; then
     echo "  ❌ self-test FAILED: a held-only outbox was not reported green"; echo "$out2"; exit 1
   fi
-  echo "  ✅ self-test passed: missing key and parked item reported RED by name; held-only outbox green"
+  # RELAY controls: no launchd pid (decoy process only) => RED; pid whose argv lacks the
+  # configured spool => RED; pid serving the configured spool => green.
+  mkdir -p "$tmp/bin"
+  printf '#!/bin/sh\n[ -n "$STUB_PID" ] && printf "\\tpid = %%s\\n" "$STUB_PID"\nexit 0\n' > "$tmp/bin/lc"; chmod +x "$tmp/bin/lc"
+  ( exec -a "sirsi router relay serve --spool $tmp/spool" sleep 60 ) & good=$!
+  ( exec -a "sirsi router relay serve --spool /elsewhere" sleep 60 ) & wrong=$!
+  sleep 1
+  fc() { env HOME="$tmp/home" PATH=/usr/bin:/bin SIRSI_ROUTER_URL="spool://$tmp/spool" FLEET_CHECK_LAUNCHCTL="$tmp/bin/lc" "$@" bash "$SCRIPT" ra 2>&1 || true; }
+  r1="$(fc STUB_PID=)"; r2="$(fc STUB_PID=$wrong)"; r3="$(fc STUB_PID=$good)"
+  kill "$good" "$wrong" 2>/dev/null; wait "$good" "$wrong" 2>/dev/null
+  printf '%s' "$r1" | grep -qF "✗ relay:" || { echo "  ❌ self-test FAILED: decoy with no launchd pid read GREEN"; echo "$r1"; exit 1; }
+  printf '%s' "$r2" | grep -qF "✗ relay:" || { echo "  ❌ self-test FAILED: relay on another spool read GREEN"; echo "$r2"; exit 1; }
+  printf '%s' "$r3" | grep -qF "✓ relay: pid $good" || { echo "  ❌ self-test FAILED: relay on the configured spool not green"; echo "$r3"; exit 1; }
+  # ROUTER controls: error text must be RED, a JSON verdict green.
+  printf '#!/bin/sh\necho "HTTP 502: OUTCOME UNKNOWN - service response could not be read"\nexit 0\n' > "$tmp/bin/sirsi-bad"
+  printf '#!/bin/sh\necho %s\n' "'[{\"agent\":\"ra\",\"verdict\":\"LIVE\",\"workable\":true,\"note\":null}]'" > "$tmp/bin/sirsi-good"
+  chmod +x "$tmp/bin/sirsi-bad" "$tmp/bin/sirsi-good"
+  r4="$(fc STUB_PID=$$ FLEET_CHECK_SIRSI="$tmp/bin/sirsi-bad")"; r5="$(fc STUB_PID=$$ FLEET_CHECK_SIRSI="$tmp/bin/sirsi-good")"
+  printf '%s' "$r4" | grep -qF "✗ router:" || { echo "  ❌ self-test FAILED: OUTCOME UNKNOWN read GREEN"; echo "$r4"; exit 1; }
+  printf '%s' "$r5" | grep -qF "✓ router:" || { echo "  ❌ self-test FAILED: JSON LIVE verdict not green"; echo "$r5"; exit 1; }
+  echo "  ✅ self-test passed: missing key, parked item, decoy/wrong-spool relay and OUTCOME UNKNOWN RED by name; held-only outbox, right relay and JSON verdict green"
   exit 0
 }
 [ "${1:-}" = "--self-test" ] && self_test
@@ -71,32 +91,53 @@ host="$(hostname -s 2>/dev/null || hostname)"
 agent="${1:-${SIRSI_AGENT_ID:-}}"
 spool="$(resolve_spool)"
 
-# 1. Relay daemon.
+# 1. Relay daemon: the launchd job's own pid, and that pid's argv names the configured spool.
+# A bare pgrep would match a wrapper shell, a stale relay for another spool, or another user's.
+relay_pid() {
+  local lc="${FLEET_CHECK_LAUNCHCTL:-launchctl}" label="${FLEET_CHECK_RELAY_LABEL:-ai.sirsi.router.relay}" dom out pids
+  for dom in "gui/$(id -u)" system; do
+    out="$("$lc" print "$dom/$label" 2>/dev/null)" || continue
+    pids="$(printf '%s\n' "$out" | grep -E '^[[:space:]]*pid = [0-9]+[[:space:]]*$' | sed -E 's/.*pid = ([0-9]+).*/\1/')"
+    if [ "$(printf '%s\n' "$pids" | grep -c .)" = 1 ]; then printf '%s' "$pids"; return 0; fi
+  done
+  return 1
+}
+spool="${spool%/}"
 if [ -z "$spool" ]; then
   fail "relay: no spool:// router URL configured (SIRSI_ROUTER_URL or ~/.sirsi/router-service.env)"
-elif ! pgrep -f 'router relay serve' >/dev/null 2>&1; then
-  fail "relay: no 'router relay serve' process is running (configured spool $spool)"
+elif ! rpid="$(relay_pid)"; then
+  fail "relay: launchd job ${FLEET_CHECK_RELAY_LABEL:-ai.sirsi.router.relay} has no single running pid (configured spool $spool)"
 else
-  ok "relay: daemon running, configured spool $spool"
+  rargs="$(ps -o args= -p "$rpid" 2>/dev/null)"
+  case " $rargs " in
+    *"router relay serve"*" --spool $spool "*|*"router relay serve"*" --spool=$spool "*)
+      ok "relay: pid $rpid serving configured spool $spool" ;;
+    *) fail "relay: pid $rpid is not 'router relay serve' on configured spool $spool (args: $(printf '%s' "$rargs" | cut -c1-100))" ;;
+  esac
 fi
 
 # 2. Round trip relay -> service with a real read.
-if ! command -v sirsi >/dev/null 2>&1; then
+SIRSI="${FLEET_CHECK_SIRSI:-sirsi}"
+if ! command -v "$SIRSI" >/dev/null 2>&1; then
   fail "router: sirsi CLI not on PATH"
 elif [ -n "$agent" ]; then
-  # Light probe: `router ping` reads the lane's published state from the service, so ANY
-  # verdict word (LIVE, WAKEABLE, HELD, UNREACHABLE...) proves the relay -> service round
-  # trip worked. The verdict itself says nothing about relay health, so it is not judged here.
-  out="$(with_timeout 20 sirsi router ping "$agent" 2>&1)"; rc=$?
-  verdict="$(printf '%s' "$out" | awk 'NF{print $1; exit}')"
-  if printf '%s' "$verdict" | grep -Eq '^[A-Z_]+$'; then
+  # `router ping --json` reads the lane's published state from the service, so a verdict from the
+  # fixed list proves the relay -> service round trip. The verdict says nothing about relay health,
+  # so it is not judged. Error text such as "OUTCOME UNKNOWN" or "HTTP 502" is not JSON: RED.
+  out="$(with_timeout 20 "$SIRSI" router ping --json "$agent" 2>&1)"; rc=$?
+  verdict="$(printf '%s' "$out" | plutil -extract 0.verdict raw -o - - 2>/dev/null)"
+  v=bad
+  case " LIVE WAKEABLE HELD AUTH_REQUIRED WATCH_ONLY UNSTAFFED UNREACHABLE " in
+    *" $verdict "*) [ "$rc" -eq 0 ] && [ -n "$verdict" ] && v=ok ;;
+  esac
+  if [ "$v" = ok ]; then
     ok "router: round trip through the relay to the service (lane $agent: $verdict)"
   else
     fail "router: round trip failed (rc=$rc): $(printf '%s' "$out" | head -1 | cut -c1-120)"
   fi
 else
   # No lane to ask about: fall back to the heavier queue read.
-  out="$(with_timeout 20 sirsi router status 2>&1)"; rc=$?
+  out="$(with_timeout 20 "$SIRSI" router status 2>&1)"; rc=$?
   if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q 'Items:'; then
     ok "router: round trip through the relay to the service ($(printf '%s' "$out" | grep -m1 'Items:' | sed 's/^ *//'))"
   else
@@ -121,7 +162,7 @@ fi
 key="${FLEET_CHECK_STACKLAB_KEY:-$HOME/.sirsi/secrets/stacklab-deploy-ed25519}"
 if [ ! -f "$key" ]; then
   fail "stacklab: no deploy key at $key"
-elif GIT_SSH_COMMAND="ssh -F /dev/null -i $key -o IdentitiesOnly=yes -o IdentityAgent=none -o BatchMode=yes -o ConnectTimeout=10" \
+elif GIT_SSH_COMMAND="ssh -F /dev/null -i '$key' -o IdentitiesOnly=yes -o IdentityAgent=none -o BatchMode=yes -o ConnectTimeout=10" \
      with_timeout 25 git ls-remote git@github.com:SirsiMaster/sirsi-stacklab.git HEAD >/dev/null 2>&1; then
   ok "stacklab: repo read with this Mac's own deploy key"
 else
