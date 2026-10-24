@@ -1566,6 +1566,7 @@ struct FindingView: View {
             } else {
                 Text("Pantheon will run only the frozen managed repair, then re-check this finding. Changed, stale or unavailable evidence requires new confirmation.")
             }
+            Text("Pantheon will not broaden the command or touch unrelated services.")
             Text("Command: \(approval?.args.joined(separator: " ") ?? "unavailable")")
             Text("Project: \(approval?.directory.path ?? "unavailable")")
         }
