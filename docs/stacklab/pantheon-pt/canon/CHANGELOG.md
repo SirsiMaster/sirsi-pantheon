@@ -1,5 +1,17 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-24 — v0.24.129 corrective release candidate
+
+- Build from the actual released v0.24.128 baseline, retaining all prior fixes.
+- Integrate the reviewed bounded Trash workflow, relay observation and repair
+  identity, observational Horus explanations, completion entry-point fixtures,
+  ADR-055 status correction and final command-identity-preserving classifier.
+- Combined qualification covers 305 Go normal/race/no-cgo test/subtest pass events and
+  57 Swift tests; final classifier and stop-ownership suites pass 14 and 10 tests.
+- Preserve the Python-free Mac package boundary: the optional Claude hook is a
+  separately installed source component. Signed publication, installed services,
+  per-host hook adoption and autonomous queue work require their own receipts.
+
 ## 2026-10-23 — v0.24.126 corrective candidate
 
 - Scope the historical Horus signing alias to the selected owner deployment;

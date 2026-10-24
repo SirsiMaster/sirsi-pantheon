@@ -91,8 +91,10 @@ type NodeStatus struct {
 	// (SIRSI_ROUTER_URL is spool://); empty elsewhere, never faked.
 	// OutboxHealthError reports an honest failure to read the spool root
 	// instead of silently rendering an empty, all-clear outbox.
-	Outbox            []routerstore.SpoolAgentOutbox `json:"outbox,omitempty"`
-	OutboxHealthError string                         `json:"outbox_health_error,omitempty"`
+	Outbox            []routerstore.SpoolAgentOutbox      `json:"outbox,omitempty"`
+	OutboxHealthError string                              `json:"outbox_health_error,omitempty"`
+	OutboxObservation *routerstore.RelayOutboxObservation `json:"outbox_observation,omitempty"`
+	OutboxCoverage    *routerstore.RelayOutboxCoverage    `json:"outbox_coverage,omitempty"`
 }
 
 // ThreadSummary is the operator-visible projection of a Thread record.
@@ -431,11 +433,9 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 
 	// --- Spool outbox health (ADR-069, read-only — never drains) ---
 	if spoolDir := routerstore.SpoolDir(strings.TrimSpace(os.Getenv("SIRSI_ROUTER_URL"))); spoolDir != "" {
-		if outbox, oErr := routerstore.SpoolOutboxHealth(spoolDir); oErr != nil {
-			ns.OutboxHealthError = oErr.Error()
-		} else {
-			ns.Outbox = outbox
-		}
+		health := routerstore.CollectRelayOutboxHealth(spoolDir, strings.TrimSpace(os.Getenv("SIRSI_RELAY_TRUST_GROUP")))
+		ns.Outbox, ns.OutboxObservation, ns.OutboxHealthError = health.Outbox, health.Observation, health.ErrorCode
+		ns.OutboxCoverage = &health.Coverage
 	}
 
 	// --- Work queue ---

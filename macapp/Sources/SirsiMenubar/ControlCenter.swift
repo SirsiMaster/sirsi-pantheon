@@ -228,7 +228,7 @@ struct PantheonControlCenterView: View {
 
     @MainActor private func refreshObservations(force: Bool) async {
         async let healthRead: Void = engine.diagnose(force: force)
-        async let routerRead: Void = engine.loadRouterBoard(force: force)
+        async let routerRead: Bool = engine.loadRouterBoard(force: force)
         _ = await (healthRead, routerRead)
     }
 

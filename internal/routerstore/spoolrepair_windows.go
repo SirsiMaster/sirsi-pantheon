@@ -10,3 +10,7 @@ import "fmt"
 func RepairSpoolOutbox(spoolRoot, agent string) (SpoolOutboxRepair, error) {
 	return SpoolOutboxRepair{}, fmt.Errorf("outbox repair: unavailable on Windows without a handle-relative ACL repair primitive")
 }
+
+func RepairSpoolOutboxPinned(spoolRoot, agent string, expected SpoolOutboxScope) (SpoolOutboxRepair, error) {
+	return RepairSpoolOutbox(spoolRoot, agent)
+}

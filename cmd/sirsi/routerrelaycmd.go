@@ -24,6 +24,7 @@ import (
 
 var relaySpool string
 var relayRepairAgent string
+var relayRepairRootDevice, relayRepairRootInode uint64
 
 var routerRelayCmd = &cobra.Command{
 	Use:   "relay",
@@ -104,6 +105,11 @@ that retained directory to mode 0700, persists the change, and never drains,
 replays, deletes, or changes queued messages. Any ownership, type, link, or
 persistence ambiguity is refused without a pathname-based fallback.`,
 	RunE: func(cmd *cobra.Command, _ []string) error {
+		deviceSet := cmd.Flags().Changed("expected-root-device")
+		inodeSet := cmd.Flags().Changed("expected-root-inode")
+		if deviceSet != inodeSet {
+			return fmt.Errorf("outbox repair: expected root device and inode must be supplied together")
+		}
 		spool := relaySpool
 		if spool == "" {
 			home, err := os.UserHomeDir()
@@ -112,7 +118,15 @@ persistence ambiguity is refused without a pathname-based fallback.`,
 			}
 			spool = filepath.Join(home, ".sirsi", "relay")
 		}
-		repair, err := routerstore.RepairSpoolOutbox(spool, relayRepairAgent)
+		var repair routerstore.SpoolOutboxRepair
+		var err error
+		if deviceSet {
+			repair, err = routerstore.RepairSpoolOutboxPinned(spool, relayRepairAgent, routerstore.SpoolOutboxScope{
+				CanonicalSpool: spool, RootDevice: relayRepairRootDevice, RootInode: relayRepairRootInode,
+			})
+		} else {
+			repair, err = routerstore.RepairSpoolOutbox(spool, relayRepairAgent)
+		}
 		if err != nil {
 			return err
 		}
@@ -126,6 +140,8 @@ func init() {
 	routerRelayInstallCmd.Flags().StringVar(&relaySpool, "spool", "", "spool directory (default ~/.sirsi/relay)")
 	routerRelayRepairOutboxCmd.Flags().StringVar(&relaySpool, "spool", "", "spool directory (default ~/.sirsi/relay)")
 	routerRelayRepairOutboxCmd.Flags().StringVar(&relayRepairAgent, "agent", "", "relay agent whose unreadable outbox should be repaired")
+	routerRelayRepairOutboxCmd.Flags().Uint64Var(&relayRepairRootDevice, "expected-root-device", 0, "reviewed spool root device (requires expected-root-inode)")
+	routerRelayRepairOutboxCmd.Flags().Uint64Var(&relayRepairRootInode, "expected-root-inode", 0, "reviewed spool root inode (requires expected-root-device)")
 	_ = routerRelayRepairOutboxCmd.MarkFlagRequired("agent")
 	routerRelayCmd.AddCommand(routerRelayServeCmd, routerRelayInstallCmd, routerRelayRepairOutboxCmd)
 	routerCmd.AddCommand(routerRelayCmd)

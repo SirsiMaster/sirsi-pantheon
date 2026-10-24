@@ -35,6 +35,7 @@ func TestRunEmitsNonExecutingInventory(t *testing.T) {
 		"Contents/MacOS/sirsi-menubar":                                          []byte("menubar bytes"),
 		"Contents/Resources/ai.sirsi.pantheon.plist":                            launchAgent,
 		"Contents/Resources/sirsi-logo-white.png":                               brandLogo,
+		"Contents/Resources/StackLab/anubis-trash-receipt-v1.json":              []byte(`{"schema":"sirsi.stacklab.recipe.v1","id":"stacklab.recipe.anubis-trash-receipt"}`),
 		"Contents/Resources/StackLab/apollo-sne-telemetry-v1.json":              []byte(`{"schema":"sirsi.stacklab.apollo-telemetry.v1"}`),
 		"Contents/Resources/StackLab/maat-system-one-recipe-v1.json":            []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
 		"Contents/Resources/StackLab/maat-pod-authority-service-recipe-v1.json": []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
@@ -73,8 +74,8 @@ func TestRunEmitsNonExecutingInventory(t *testing.T) {
 	if report.Schema != packageinventory.Schema || !report.PythonFree || report.EngineCount != 2 {
 		t.Fatalf("unexpected report: %s", out.String())
 	}
-	if len(report.Entries) != 24 {
-		t.Fatalf("inventory contains %d entries, want complete 24-entry unsigned payload", len(report.Entries))
+	if len(report.Entries) != 25 {
+		t.Fatalf("inventory contains %d entries, want complete 25-entry unsigned payload", len(report.Entries))
 	}
 	wantPaths := map[string]string{}
 	for _, dir := range []string{"Contents", "Contents/MacOS", "Contents/Resources", "Contents/Resources/StackLab", "Contents/Resources/StackLab/v2"} {
@@ -103,7 +104,7 @@ func TestRunEmitsNonExecutingInventory(t *testing.T) {
 
 	// Each added contract remains required. Inventory only reads these regular
 	// fixture files; neither fake engine contains executable application code.
-	for _, leaf := range []string{"mercury-consumer-recipe-v1.json", "maat-pod-authority-service-recipe-v1.json", "pantheon-native-workspace-v1.json"} {
+	for _, leaf := range []string{"anubis-trash-receipt-v1.json", "mercury-consumer-recipe-v1.json", "maat-pod-authority-service-recipe-v1.json", "pantheon-native-workspace-v1.json"} {
 		t.Run("missing_"+leaf, func(t *testing.T) {
 			rel := "Contents/Resources/StackLab/" + leaf
 			path := filepath.Join(app, filepath.FromSlash(rel))

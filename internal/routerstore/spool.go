@@ -650,6 +650,20 @@ func (rl *Relay) Serve(ctx context.Context) error {
 		return fmt.Errorf("relay: %w", err)
 	}
 	rl.Spool = canon
+	// Optional names/counts projection belongs to this existing trusted relay
+	// loop, never a second daemon. Failure cannot stop forwarding or alter any
+	// existing queue permissions. One failed publication disables this instance's
+	// projection (bounded new-file cleanup debt); prior observations age out.
+	observation, observationErr := openRelayObservationRoot(canon, rl.TrustGroup)
+	if observationErr != nil {
+		rl.Log.Warn("relay outbox observation unavailable", "reason", observationErr.Error())
+	}
+	defer func() {
+		if observation != nil {
+			observation.close()
+		}
+	}()
+	nextObservation := rl.now()
 	rl.recoverInflight()
 	discover := rl.discover
 	if rl.discoverFn != nil {
@@ -663,6 +677,14 @@ func (rl *Relay) Serve(ctx context.Context) error {
 		default:
 		}
 		discover(ctx)
+		if observation != nil && !rl.now().Before(nextObservation) {
+			if err := observation.publish(observation.scan(rl.now())); err != nil {
+				rl.Log.Warn("relay outbox observation publication stopped; transport continues", "reason", err.Error())
+				observation.close()
+				observation = nil
+			}
+			nextObservation = rl.now().Add(5 * time.Second)
+		}
 		if rl.now().Sub(lastSweep) > time.Minute {
 			rl.sweep()
 			lastSweep = rl.now()

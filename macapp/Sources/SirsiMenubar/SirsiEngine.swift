@@ -219,16 +219,96 @@ struct RBStranded: Decodable, Identifiable {
 // blocker, never silently dropped (the same false-quiet class PR #931 fixed
 // on the CLI side — a decoder that models this field but never surfaces it
 // would reintroduce the identical bug one layer up).
+struct RelayOutboxScope: Decodable, Equatable {
+    let canonicalSpool: String
+    let rootDevice: UInt64
+    let rootInode: UInt64
+    enum CodingKeys: String, CodingKey {
+        case canonicalSpool = "canonical_spool"
+        case rootDevice = "root_device"
+        case rootInode = "root_inode"
+    }
+}
+
+struct RelayOutboxRepairApproval: Equatable {
+    let agent: String
+    let scope: RelayOutboxScope
+}
+
+struct RBOutboxCoverage: Decodable {
+    let complete: Bool
+    let source: String?
+    let startedAt: String?
+    let observedAt: String?
+    enum CodingKeys: String, CodingKey {
+        case complete, source
+        case startedAt = "started_at"
+        case observedAt = "observed_at"
+    }
+    func isCurrent(at now: Date) -> Bool {
+        guard source == "direct-metadata" || source == "relay-producer",
+              let start = pantheonObservationDate(startedAt), let end = pantheonObservationDate(observedAt),
+              (0...1).contains(end.timeIntervalSince(start)) else { return false }
+        return pantheonObservationIsCurrent(start, at: now, maxAge: 15) && pantheonObservationIsCurrent(end, at: now, maxAge: 15)
+    }
+}
+
 struct RBOutbox: Decodable, Identifiable {
     var id: String { agent }
     let agent: String
     let queuedForRetry: Int?
     let unreadable: Bool?
     let error: String?
+    let observerAccess: String?
+    let retryState: String?
+    let retryCount: Int?
+    let retrySource: String?
+    let retryObservedAt: String?
+    let retryStartedAt: String?
+    let repairEligible: Bool?
+    let repairSpool: String?
+    let scope: RelayOutboxScope?
+
+    func retryIsCurrent(at now: Date) -> Bool {
+        guard retrySource == "relay-producer" || retrySource == "direct-metadata",
+              let end = pantheonObservationDate(retryObservedAt),
+              pantheonObservationIsCurrent(end, at: now, maxAge: 15),
+              pantheonObservationIsCurrent(pantheonObservationDate(retryStartedAt) ?? end, at: now, maxAge: 15) else { return false }
+        if let startValue = retryStartedAt {
+            guard let start = pantheonObservationDate(startValue), (0...1).contains(end.timeIntervalSince(start)) else { return false }
+        }
+        if retryState == "absent" { return retryCount == nil }
+        return retryState == "observed" && retryCount.map { (0...16384).contains($0) } == true
+    }
+
+    func serviceObservationIsCurrent(at now: Date) -> Bool {
+        observerAccess == "service-private" && retrySource == "relay-producer" && retryIsCurrent(at: now)
+    }
+
+    func observationText(at now: Date) -> String {
+        guard retryIsCurrent(at: now), let date = pantheonObservationDate(retryObservedAt) else {
+            if let retained = retryCount, (0...16384).contains(retained) {
+                return "Retry observation unavailable · last observed \(retained) retries (retained, not current) · refresh to revalidate"
+            }
+            return "Retry count unavailable · refresh to validate the relay observation"
+        }
+        let prefix = observerAccess == "service-private" ? "Service-managed private outbox" : "Relay outbox"
+        let count = retryState == "absent" ? "no outbox present at observation" : "\(retryCount!) retries observed"
+        return "\(prefix) · \(count) · updated \(date.formatted(date: .omitted, time: .standard))"
+    }
     enum CodingKeys: String, CodingKey {
         case agent
         case queuedForRetry = "queued_for_retry"
         case unreadable, error
+        case observerAccess = "observer_access"
+        case retryState = "retry_state"
+        case retryCount = "retry_count"
+        case retrySource = "retry_source"
+        case retryObservedAt = "retry_observed_at"
+        case retryStartedAt = "retry_started_at"
+        case repairEligible = "repair_eligible"
+        case repairSpool = "repair_spool"
+        case scope
     }
 }
 
@@ -343,6 +423,8 @@ struct RouterBoard: Decodable {
     // Spool relay outbox health (ADR-069) — absent on any host that isn't
     // running the relay (routerstore.SpoolDir == ""), per-agent otherwise.
     let outbox: [RBOutbox]?
+    let outboxHealthError: String?
+    let outboxCoverage: RBOutboxCoverage?
     // On-device model state (board 1.2.0) — feeds the Ask Sirsi panel. `var`
     // because loadRouterBoard grafts it onto a live node-status read (which
     // does not carry local_llm) when the board file has gone stale.
@@ -357,6 +439,8 @@ struct RouterBoard: Decodable {
         case pendingByAgent = "pending_by_agent"
         case ownerGated = "owner_gated"
         case outbox
+        case outboxHealthError = "outbox_health_error"
+        case outboxCoverage = "outbox_coverage"
         case localLLM = "local_llm"
     }
 }
@@ -744,12 +828,25 @@ final class SirsiEngine: ObservableObject {
     var routerStranded: [RBStranded] {
         (routerBoard?.strandedInbox ?? []).sorted { $0.openItems > $1.openItems }
     }
-    // Unreadable outboxes are a current, fixable I/O condition (permission,
-    // not-a-directory, ...) — a blocker, same class as routerDaemonBlockers.
-    // A merely non-empty queue (queuedForRetry > 0 with unreadable == false)
-    // is expected transient state, not a blocker.
+    // Observer privacy is separate from relay retry evidence. A service-owned
+    // private directory is not a same-user repair candidate. Producer evidence
+    // expires on its OWN timestamp, even in a freshly collected/cached board.
     var routerOutboxBlockers: [RBOutbox] {
-        (routerBoard?.outbox ?? []).filter { $0.unreadable ?? false }
+        (routerBoard?.outbox ?? []).filter {
+            if $0.unreadable ?? false { return !$0.serviceObservationIsCurrent(at: Date()) }
+            // A previously readable row can still be stale/unknown. Retain it
+            // as an observation blocker rather than silently deleting it.
+            return ($0.retryState != nil || $0.retrySource != nil) && !$0.retryIsCurrent(at: Date())
+        }
+    }
+    var routerOutboxCoverageUnknown: Bool {
+        guard let board = routerBoard else { return false }
+        if let coverage = board.outboxCoverage { return !coverage.complete || !coverage.isCurrent(at: Date()) }
+        // Legacy error-only inventories cannot prove coverage from row count.
+        return board.outboxHealthError != nil
+    }
+    var routerServiceOutboxes: [RBOutbox] {
+        (routerBoard?.outbox ?? []).filter { ($0.unreadable ?? false) && $0.serviceObservationIsCurrent(at: Date()) }
     }
     // Readable held-for-retry outboxes (codex-pantheon review, router item
     // 20261001-024344): queuedForRetry > 0 and NOT unreadable is nonblocking
@@ -759,10 +856,12 @@ final class SirsiEngine: ObservableObject {
     // routerHasBlockers, since "no blockers" must not also mean "no held
     // messages are shown".
     var routerRetryOutbox: [RBOutbox] {
-        (routerBoard?.outbox ?? []).filter { !($0.unreadable ?? false) && ($0.queuedForRetry ?? 0) > 0 }
+        (routerBoard?.outbox ?? []).filter { !($0.unreadable ?? false) &&
+            ($0.retryState == nil ? ($0.queuedForRetry ?? 0) > 0 : ($0.retryIsCurrent(at: Date()) && ($0.retryCount ?? 0) > 0)) }
     }
     var routerHasBlockers: Bool {
-        !routerAuthBlockers.isEmpty || !routerDaemonBlockers.isEmpty || !routerOutboxBlockers.isEmpty
+        !routerAuthBlockers.isEmpty || !routerDaemonBlockers.isEmpty || !routerOutboxBlockers.isEmpty ||
+            routerOutboxCoverageUnknown
     }
     // Home-row status: red for a real blocker, amber while items WAIT on agents
     // (pending work is not "all good" — a green dot beside "48 pending" is the
@@ -780,7 +879,7 @@ final class SirsiEngine: ObservableObject {
         // rendered a false-green "healthy".
         guard routerBoard != nil else { return "no data yet" }
         if routerHasBlockers {
-            let n = routerAuthBlockers.count + routerDaemonBlockers.count + routerOutboxBlockers.count
+            let n = routerAuthBlockers.count + routerDaemonBlockers.count + routerOutboxBlockers.count + (routerOutboxCoverageUnknown ? 1 : 0)
             return "\(n) blocker\(n == 1 ? "" : "s")"
         }
         let pending = routerBoard?.totalPending ?? 0
@@ -819,8 +918,9 @@ final class SirsiEngine: ObservableObject {
         !force && pantheonObservationIsCurrent(modified, at: now, maxAge: 30)
     }
 
-    func loadRouterBoard(force: Bool = false) async {
-        guard !routerLoading else { return }
+    @discardableResult
+    func loadRouterBoard(force: Bool = false) async -> Bool {
+        guard !routerLoading else { return false }
         routerLoading = true
         defer { routerLoading = false }
         // Freshness gate: the producer-written board is trusted only while
@@ -836,7 +936,7 @@ final class SirsiEngine: ObservableObject {
             routerBoard = board
             routerReadAt = attrs?[.modificationDate] as? Date
             routerReadError = nil
-            return
+            return true
         }
         // Stale or missing board — read the live fabric directly (runJSON
         // captures stdout only so a banner can't corrupt the JSON). node-status
@@ -850,8 +950,10 @@ final class SirsiEngine: ObservableObject {
             routerBoard = board
             routerReadAt = Date()
             routerReadError = nil
+            return true
         } else {
             routerReadError = "Ra could not be refreshed. Any retained board is from the previous successful observation."
+            return false
         }
     }
 
@@ -996,12 +1098,69 @@ final class SirsiEngine: ObservableObject {
     // command can only restore a same-user outbox through retained no-follow
     // descriptors; it cannot delete or replay messages, and it refuses remote
     // or substituted state instead of attempting a pathname repair.
-    func repairRelayOutbox(agent: String) async -> String {
+    func refreshRelayOutboxObservation(refresh: (() async -> Bool)? = nil) async -> String {
+        let readOK: Bool
+        if let refresh { readOK = await refresh() }
+        else { readOK = await loadRouterBoard(force: true) }
+        guard readOK, routerReadError == nil else {
+            return "Ra refresh failed. Retained relay observations were not renewed."
+        }
+        let rows = (routerBoard?.outbox ?? []).filter { $0.observerAccess == "service-private" }
+        guard !routerOutboxCoverageUnknown, !rows.isEmpty, rows.allSatisfy({ $0.serviceObservationIsCurrent(at: Date()) }) else {
+            return "Ra refreshed, but current relay retry evidence is unavailable. If the relay predates health snapshots, its owner must update it through the supported selected-service lifecycle; Refresh does not restart or change permissions."
+        }
+        return "Fresh relay producer observations verified. Direct access to service-owned outboxes remains private."
+    }
+
+    func relayOutboxRepairApproval(for offered: RBOutbox) -> RelayOutboxRepairApproval? {
+        let matches = (routerBoard?.outbox ?? []).filter { $0.agent == offered.agent }
+        guard routerObservationIsCurrent(at: Date()), matches.count == 1,
+              let current = matches.first, current.scope == offered.scope,
+              current.repairEligible == true, current.observerAccess != "service-private",
+              let scope = current.scope, scope.canonicalSpool.hasPrefix("/"),
+              current.repairSpool == scope.canonicalSpool else { return nil }
+        return RelayOutboxRepairApproval(agent: offered.agent, scope: scope)
+    }
+
+    private func relayOutboxRepairOfferIsCurrent(_ approval: RelayOutboxRepairApproval) -> Bool {
+        guard let row = routerBoard?.outbox?.first(where: { $0.agent == approval.agent }) else { return false }
+        return relayOutboxRepairApproval(for: row) == approval
+    }
+
+    func repairRelayOutbox(approval: RelayOutboxRepairApproval,
+        execute: (([String]) async -> CommandExecution)? = nil,
+        refresh: (() async -> Bool)? = nil,
+        record: ((String) -> Void)? = nil) async -> String {
+        guard !busy, relayOutboxRepairOfferIsCurrent(approval) else {
+            return "Repair unavailable: the approved agent/root scope changed or is no longer eligible. Refresh Ra and review the exact offer again."
+        }
         busy = true; defer { busy = false }
-        let out = await Self.run(args: ["router", "relay", "repair-outbox", "--agent", agent], stdin: nil)
-        let line = Self.firstMeaningful(out)
-        recordActivity(title: "Repair relay outbox — \(agent)", command: "router relay repair-outbox \(agent)", result: line)
-        await loadRouterBoard()
+        let operationStarted = Date()
+        let agent = approval.agent
+        let args = ["router", "relay", "repair-outbox", "--agent", agent, "--spool", approval.scope.canonicalSpool,
+                    "--expected-root-device", String(approval.scope.rootDevice), "--expected-root-inode", String(approval.scope.rootInode)]
+        let receipt: CommandExecution
+        if let execute { receipt = await execute(args) }
+        else { receipt = await Self.runCaptured(args: args, authorize: { self.relayOutboxRepairOfferIsCurrent(approval) }) }
+        let operationOK = receipt.complete && receipt.exitCode == 0
+        let refreshed: Bool
+        if let refresh { refreshed = await refresh() }
+        else { refreshed = await loadRouterBoard(force: true) }
+        let matches = (routerBoard?.outbox ?? []).filter { $0.agent == agent }
+        let observed = matches.first
+        let verified = refreshed && routerReadError == nil && matches.count == 1 && observed?.scope == approval.scope && observed?.observerAccess == "observed" &&
+            observed?.retrySource == "direct-metadata" && observed?.retryIsCurrent(at: Date()) == true && !(observed?.unreadable ?? true) &&
+            pantheonObservationDate(observed?.retryObservedAt).map { $0 >= operationStarted } == true
+        let line: String
+        if !operationOK {
+            line = "Repair did not complete successfully. \(receipt.issue ?? Self.firstMeaningful(receipt.stderr)) Verification: \(refreshed ? "Ra refreshed; inspect current state." : "Ra refresh failed; outcome remains unverified.")"
+        } else if verified {
+            line = "Repair command completed. Verification: fresh direct outbox metadata is readable; queued messages were not changed."
+        } else {
+            line = "Repair command completed. Verification unavailable: a fresh readable direct outbox observation was not obtained. Refresh Ra or use guided resolution; do not assume the repair succeeded."
+        }
+        if let record { record(line) }
+        else { recordActivity(title: "Repair relay outbox — \(agent)", command: "router relay repair-outbox \(agent)", result: line) }
         return line
     }
 
@@ -1174,40 +1333,22 @@ final class SirsiEngine: ObservableObject {
         return Self.firstMeaningful(out)
     }
 
-    // trashList reads what is in the Trash. Read-only, safe to call on render.
-    // Returns (count, humanSize, rawLines) — empty count means nothing to purge.
-    func trashList() async -> (count: Int, size: String, lines: [String]) {
-        let out = await Self.run(args: ["anubis", "empty-trash"], stdin: nil)
-        // "𓁟 N item(s) in Trash, SIZE total:" — parse the header, keep the
-        // item lines for display. An "already empty" reply yields count 0.
-        var count = 0
-        var size = ""
-        var lines: [String] = []
-        for raw in out.split(separator: "\n", omittingEmptySubsequences: false) {
-            let line = String(raw)
-            if line.contains("item(s) in Trash") {
-                let digits = line.split(whereSeparator: { !$0.isNumber })
-                count = Int(digits.first.map(String.init) ?? "") ?? 0
-                if let r = line.range(of: "Trash, "), let e = line.range(of: " total") {
-                    size = String(line[r.upperBound..<e.lowerBound])
-                }
-            } else if line.hasPrefix("   · ") {
-                lines.append(String(line.dropFirst(5)))
-            }
+    func trashList(_ request: TrashBrowseRequest = TrashBrowseRequest(), browser: TrashBrowseController) async -> CommandExecution {
+        guard (try? trashWireInput(request)) != nil else {
+            browser.invalidate(); return CommandExecution(launchError: "Browse request exceeds 64 KiB.")
         }
-        return (count, size, lines)
+        return await browser.read(request)
     }
 
-    // emptyTrash PERMANENTLY deletes the Trash contents. The ONLY Sirsi action
-    // with no undo — every other clean path is trash-first and recoverable — so
-    // the UI gates it behind an explicit second confirmation and this method is
-    // never called from a one-click path.
-    func emptyTrash() async -> String {
-        busy = true; lastError = nil
-        let out = await Self.run(args: ["anubis", "empty-trash", "--yes"], stdin: nil)
-        busy = false
-        refresh()
-        return Self.firstMeaningful(out)
+    func trashSelection(_ input: String) async -> CommandExecution {
+        await Self.runCaptured(args: ["anubis", "empty-trash", "select"], stdin: input)
+    }
+
+    func emptyTrash(_ approval: TrashApproval,
+                    authorize: @escaping @MainActor () -> Bool) async -> CommandExecution {
+        busy = true
+        defer { busy = false }
+        return await Self.runCaptured(args: approval.args, stdin: approval.stdin, authorize: authorize)
     }
 
     // lastDiagnoseAt throttles diagnose to once per 5 minutes: the popover used

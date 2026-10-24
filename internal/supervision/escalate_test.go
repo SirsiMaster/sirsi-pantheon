@@ -207,9 +207,9 @@ func TestUnroutableLaneWithNoThreadsEscalates(t *testing.T) {
 	if got[0].Agent != "claude-deck" {
 		t.Errorf("escalated agent = %q, want claude-deck", got[0].Agent)
 	}
-	// Why text must acknowledge thread absence, not just wake:none.
-	if !strings.Contains(got[0].Why, "no registered thread") {
-		t.Errorf("Why should mention absent threads, got: %q", got[0].Why)
+	// The producer reports fresh usability, not absence of all stored rows.
+	if !strings.Contains(got[0].Why, "no fresh usable thread") {
+		t.Errorf("Why should mention observed fresh-thread unavailability, got: %q", got[0].Why)
 	}
 }
 

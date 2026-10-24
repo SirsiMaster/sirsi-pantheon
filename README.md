@@ -9,7 +9,7 @@ and fixes it — trash-first, with before/after proof. 100% local. Zero telemetr
 [![CI](https://github.com/SirsiMaster/sirsi-pantheon/actions/workflows/ci.yml/badge.svg)](https://github.com/SirsiMaster/sirsi-pantheon/actions/workflows/ci.yml)
 [![Go 1.25](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white)](go.mod)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-C8A951)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.24.128-1A1A5E)](VERSION)
+[![Version](https://img.shields.io/badge/Version-0.24.129-1A1A5E)](VERSION)
 [![Platform: macOS](https://img.shields.io/badge/Platform-macOS_%28Apple_Silicon_%2B_Intel%29-0F0F0F?logo=apple)](docs/ADR-032-MAC-FIRST-PLATFORM-ROADMAP.md)
 [![sirsi.ai](https://img.shields.io/badge/sirsi.ai-pantheon-059669)](https://sirsi.ai/pantheon)
 
