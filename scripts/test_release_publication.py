@@ -330,6 +330,60 @@ class ReleasePublicationTests(unittest.TestCase):
         self.assertTrue(all("--jq" not in a for a in fake.calls if a[-1].endswith("/releases/314")))
         self.assertEqual(fake.assets, PAYLOADS)
 
+    def test_heavy_history_postcreate_tag404_discovers_inserted_draft_by_exact_id(self):
+        history = self.heavy_history()
+
+        class HiddenCreatedDraftGH(FakeGH):
+            def __init__(self):
+                super().__init__()
+                self.list_observations = []
+                self.tag_responses = []
+
+            def __call__(self, argv):
+                root = "repos/" + publication.REPO + "/releases"
+                if argv[:2] == ["gh", "api"] and argv[-1].startswith(root + "?"):
+                    # Before creation:100 historical records then empty. After
+                    # creation: the fresh private draft shifts the100-record
+                    # boundary; it is not visible through the tag endpoint.
+                    values = ([] if self.draft is None else [self.metadata()]) + history
+                    self.discovery_pages = {1: values[:100], 2: values[100:]}
+                    page = int(argv[-1].rsplit("page=", 1)[1])
+                    self.list_observations.append((self.draft, page, len(self.discovery_pages[page])))
+                result = super().__call__(argv)
+                if argv[:2] == ["gh", "api"] and argv[-1] == root + "/tags/v" + VERSION:
+                    self.tag_responses.append((result.returncode, result.stdout.startswith(b"HTTP/2.0 404 ")))
+                return result
+
+        fake = HiddenCreatedDraftGH()
+        try:
+            result = self.publish(fake)
+        except publication.Refusal as error:
+            self.fail("hidden-created draft must be rediscovered: " + str(error))
+        self.assertTrue(fake.hide_draft)
+        self.assertEqual(fake.tag_responses, [(1, True), (1, True)])
+        self.assertEqual(fake.list_observations, [(None, 1, 100), (None, 2, 0), (True, 1, 100), (True, 2, 1)])
+        self.assertEqual(result["release_id"], 314)
+        self.assertEqual(result["status"], "published_verified_pair")
+        self.assertEqual(result["prepublication_readback"], result["assets"])
+        self.assertEqual(len(result["verification"]), 5)
+        self.assertEqual(fake.assets, PAYLOADS)
+        self.assertEqual([a[2] for a in fake.mutations()], ["create", "upload", "upload", "edit"])
+        lists = [i for i, a in enumerate(fake.calls) if a[:2] == ["gh", "api"] and "?per_page=" in a[-1]]
+        selected = [i for i, a in enumerate(fake.calls) if a[:2] == ["gh", "api"] and a[-1].endswith("/releases/314")]
+        create = next(i for i, a in enumerate(fake.calls) if a[:3] == ["gh", "release", "create"])
+        upload = next(i for i, a in enumerate(fake.calls) if a[:3] == ["gh", "release", "upload"])
+        self.assertEqual(len(lists), 4)
+        self.assertGreaterEqual(len(selected), 5)
+        self.assertLess(lists[1], create)
+        self.assertLess(create, lists[2])
+        self.assertLess(lists[3], selected[0])
+        self.assertLess(selected[0], upload)
+        for i in lists:
+            self.assertEqual(fake.calls[i][:-1], ["gh", "api", "--hostname", "github.com", "--include", "--jq", "map({id,tag_name,draft})"])
+        for i in selected:
+            self.assertEqual(fake.calls[i][:-1], ["gh", "api", "--hostname", "github.com", "--include"])
+        self.assertNotIn("historical-private-fixture", json.dumps(result))
+
     def test_single_heavy_discovery_page_over_byte_cap_refuses_without_mutation(self):
         fake = FakeGH()
         fake.discovery = [{"id": 1000, "tag_name": "h" * (1024 * 1024),
