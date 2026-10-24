@@ -36,6 +36,7 @@ MainActor.assumeIsolated {
         let delegate = AppDelegate()
         app.delegate = delegate
         app.setActivationPolicy(.regular)
+        app.mainMenu = makePantheonMainMenu(quitTarget: app)
         app.run()
     }
 }
