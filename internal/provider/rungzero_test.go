@@ -183,19 +183,35 @@ func TestRemoteRungKeepsItsModelWhileLocalStaysEmpty(t *testing.T) {
 	if len(lad) != 2 {
 		t.Fatalf("want local+remote, got %v", names(lad))
 	}
-	local, ok := lad[0].(*OpenAICompat)
-	if !ok || local.Name() != "local" {
+	local, remote := lad[0], lad[1]
+	if local.Name() != "local" || local.Tier() != TierLocal {
 		t.Fatalf("rung 0 = %v, want local", names(lad))
 	}
-	remote, ok := lad[1].(*OpenAICompat)
-	if !ok || remote.Name() != "remote" {
+	if remote.Name() != "remote" || remote.Tier() != TierRemote {
 		t.Fatalf("rung 1 = %v, want remote", names(lad))
 	}
-	if local.Model != "" {
-		t.Fatalf("local model = %q, want empty", local.Model)
+	// Ladder may retain declaration knowledge around the adapter. Inspect its
+	// configured model without resolving an empty local model over transport.
+	adapter := func(p Provider) *OpenAICompat {
+		t.Helper()
+		switch p := p.(type) {
+		case *OpenAICompat:
+			if p != nil {
+				return p
+			}
+		case *streamingQualificationProvider:
+			if p != nil && p.OpenAICompat != nil {
+				return p.OpenAICompat
+			}
+		}
+		t.Fatalf("rung has no configured OpenAI-compatible adapter: %T", p)
+		return nil
 	}
-	if remote.Model != "gpt-4o" {
-		t.Fatalf("remote model = %q, want the configured remote model", remote.Model)
+	if model := adapter(local).Model; model != "" {
+		t.Fatalf("local model = %q, want empty", model)
+	}
+	if model := adapter(remote).Model; model != "gpt-4o" {
+		t.Fatalf("remote model = %q, want the configured remote model", model)
 	}
 }
 
