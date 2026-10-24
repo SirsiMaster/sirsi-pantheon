@@ -462,10 +462,30 @@ func TestVerifyRejectsNonPublicModesIncludingRoot(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if err := os.Chmod(filepath.Join(app, tc.relative), tc.mode); err != nil {
+			file, err := os.OpenFile(filepath.Join(app, tc.relative), os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+			if err != nil {
 				t.Fatal(err)
 			}
-			_, err := Verify(app, expected)
+			defer file.Close()
+			// BSD silently clears SGID for a group outside the caller's groups.
+			// Private TMPDIR fixtures can inherit wheel; use our own effective
+			// group rather than accidentally testing an ordinary0644 resource.
+			if tc.mode&os.ModeSetgid != 0 {
+				if err := file.Chown(-1, os.Getegid()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := file.Chmod(tc.mode); err != nil {
+				t.Fatal(err)
+			}
+			actual, err := file.Stat()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := actual.Mode() & (os.ModePerm | os.ModeSetuid | os.ModeSetgid | os.ModeSticky); got != tc.mode {
+				t.Fatalf("fixture mode not established: got %v want %v", got, tc.mode)
+			}
+			_, err = Verify(app, expected)
 			if err == nil || !strings.Contains(err.Error(), "public mode mismatch") {
 				t.Fatalf("nonpublic mode accepted/unrelated refusal: %v", err)
 			}
