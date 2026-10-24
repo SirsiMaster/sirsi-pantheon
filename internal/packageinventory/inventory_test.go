@@ -314,6 +314,9 @@ func TestFinalNamespaceRescanRejectsLateAllowedEntry(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(app, "Contents", "_CodeSignature"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Chmod(filepath.Join(app, "Contents", "_CodeSignature"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	rootFD, openErr := unix.Open(app, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if openErr != nil {
 		t.Fatal(openErr)
@@ -324,6 +327,9 @@ func TestFinalNamespaceRescanRejectsLateAllowedEntry(t *testing.T) {
 		t.Fatal(scanErr)
 	}
 	if err := os.WriteFile(filepath.Join(app, "Contents", "_CodeSignature", "CodeResources"), []byte("late"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(app, "Contents", "_CodeSignature", "CodeResources"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := finalNamespaceRescan(rootFD, snapshot); err == nil || !strings.Contains(err.Error(), "namespace changed") {
