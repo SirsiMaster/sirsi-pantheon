@@ -19,6 +19,10 @@ func TestPrivateDecisionSinkUsesPrivateChildAndPreserves0755Parent(t *testing.T)
 	if err := os.Mkdir(parent, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// Establish the preservation fixture independently of the caller's umask.
+	if err := os.Chmod(parent, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	sink := NewPrivateDecisionSink(home)
 	for i := 0; i < 200; i++ {
 		record := DecisionRecord{

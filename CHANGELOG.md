@@ -10,6 +10,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ### Corrected
 
+- Establish the journal parent-mode preservation fixture explicitly under a
+  private runner umask; production permission checks remain unchanged.
 - Preserve the last observed router board when navigation cancels a read; do
   not publish cancellation as a bundled-reader launch failure or a new sample.
 - Add explicit own-session generation preflight to attended heartbeat/wait,
