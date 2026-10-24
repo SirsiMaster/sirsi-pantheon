@@ -87,7 +87,7 @@ func TestRootRelayReadOnlyPlanAuthorizesBeforeInspection(t *testing.T) {
 }
 
 func TestOrdinaryReadOnlyServicePlansDoNotAuthorize(t *testing.T) {
-	for _, label := range []string{"ai.sirsi.apollo.observer", "ai.sirsi.apollo-chat", "ai.sirsi.gemma-broker", "ai.sirsi.mercury-monitor", "ai.sirsi.mercury-chip"} {
+	for _, label := range []string{"ai.sirsi.apollo.observer", "ai.sirsi.apollo-chat", "ai.sirsi.gemma-broker", "ai.sirsi.mercury-monitor", "ai.sirsi.mercury-chip", setup.RouterSurfaceServiceLabel} {
 		t.Run(label, func(t *testing.T) {
 			backend := &lifecycleCommandBackend{instance: setup.ServiceInstance{Label: label, Target: "gui/501/" + label, PID: 123, Started: "fixture-start"}}
 			c := newLaunchdServiceCmdWith(backend, func(context.Context, string) error {
@@ -184,6 +184,26 @@ func TestRootRelayRegistryGrantIsNarrow(t *testing.T) {
 		for _, label := range []string{"ai.sirsi.router", "ai.sirsi.router.wake.sirsi-software-admin", "ai.sirsi.router.*", "system/ai.sirsi.router.relay"} {
 			if lifecycleGrant(r, actor, label) == nil {
 				t.Errorf("expanded grant accepted for %s/%s", actor, label)
+			}
+		}
+	}
+}
+
+func TestRouterSurfaceRegistryGrantIsNarrow(t *testing.T) {
+	r, err := router.LoadRegistry("../../.agents/idea-router")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for actor := range r.Agents {
+		want := actor == "sirsi-software-admin" || actor == "sirsi-hardware-admin"
+		if got := lifecycleGrant(r, actor, "ai.sirsi.router.surface") == nil; got != want {
+			t.Errorf("gateway grant for %q = %v; want %v", actor, got, want)
+		}
+	}
+	for _, actor := range []string{"sirsi-software-admin", "sirsi-hardware-admin"} {
+		for _, label := range []string{"ai.sirsi.router", "ai.sirsi.router.surface.other", "ai.sirsi.router.*", "system/ai.sirsi.router.surface", "ai.sirsi.router.wake.ra"} {
+			if lifecycleGrant(r, actor, label) == nil {
+				t.Errorf("gateway expanded grant for %s/%s", actor, label)
 			}
 		}
 	}

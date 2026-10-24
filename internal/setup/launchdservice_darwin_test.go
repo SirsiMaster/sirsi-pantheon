@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"golang.org/x/sys/unix"
@@ -62,6 +63,29 @@ func TestServiceScopeRejectsUnrelatedLabels(t *testing.T) {
 	for _, label := range []string{"ai.sirsi.router", "ai.sirsi.router.wake.sirsi-software-admin", "system/ai.sirsi.mercury-monitor", "../ai.sirsi.apollo.observer", "ai.sirsi.*"} {
 		if _, _, err := serviceLocation(label); err == nil {
 			t.Fatalf("unrelated scope accepted: %s", label)
+		}
+	}
+}
+
+func TestRouterSurfaceLocationIsExactNativeUserService(t *testing.T) {
+	const label = "ai.sirsi.router.surface"
+	if os.Getuid() == 0 || os.Getuid() != os.Geteuid() {
+		if _, _, err := serviceLocation(label); err == nil {
+			t.Fatal("gateway accepted privileged or mismatched owner")
+		}
+		return
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, plist, err := serviceLocation(label)
+	if err != nil || target != "gui/"+strconv.Itoa(os.Getuid())+"/"+label || plist != filepath.Join(home, "Library", "LaunchAgents", label+".plist") {
+		t.Fatalf("exact user gateway location = %q %q %v", target, plist, err)
+	}
+	for _, other := range []string{"ai.sirsi.router.surface.other", "system/" + label, "../" + label, label + "*", "ai.sirsi.router.wake.ra"} {
+		if _, _, err := serviceLocation(other); err == nil {
+			t.Fatalf("gateway scope expanded to %q", other)
 		}
 	}
 }

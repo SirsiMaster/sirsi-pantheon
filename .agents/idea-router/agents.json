@@ -797,7 +797,7 @@
     },
     "sirsi-hardware-admin": {
       "attended": true,
-      "lifecycle_services": ["ai.sirsi.router.relay", "ai.sirsi.horus.agent-router"],
+      "lifecycle_services": ["ai.sirsi.router.relay", "ai.sirsi.horus.agent-router", "ai.sirsi.router.surface"],
       "callsign": "Hardware Admin",
       "capabilities": [
         "hardware-readiness",
@@ -864,7 +864,7 @@
     },
     "sirsi-software-admin": {
       "id": "sirsi-software-admin",
-      "lifecycle_services": ["ai.sirsi.apollo.observer", "ai.sirsi.apollo-chat", "ai.sirsi.gemma-broker", "ai.sirsi.mercury-monitor", "ai.sirsi.mercury-chip", "ai.sirsi.router.relay", "ai.sirsi.horus.agent-router"],
+      "lifecycle_services": ["ai.sirsi.apollo.observer", "ai.sirsi.apollo-chat", "ai.sirsi.gemma-broker", "ai.sirsi.mercury-monitor", "ai.sirsi.mercury-chip", "ai.sirsi.router.relay", "ai.sirsi.horus.agent-router", "ai.sirsi.router.surface"],
       "attended": true,
       "type": "codex",
       "command": [

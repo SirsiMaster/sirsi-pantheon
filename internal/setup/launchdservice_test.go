@@ -100,3 +100,49 @@ func TestServiceControllerReadback(t *testing.T) {
 		})
 	}
 }
+
+func TestRouterSurfaceControllerPreservesPinsAndAuthority(t *testing.T) {
+	for _, scenario := range []string{"success", "denied", "changed-pid", "changed-start", "changed-plist", "changed-program", "same-instance"} {
+		t.Run(scenario, func(t *testing.T) {
+			p := serviceFixture()
+			p.Label = RouterSurfaceServiceLabel
+			p.Target = "gui/501/" + p.Label
+			next := p
+			next.PID++
+			next.Started = "replacement-start"
+			b := &fakeServiceBackend{before: p, after: next}
+			authorize := func(_ context.Context, label string) error {
+				if label != RouterSurfaceServiceLabel {
+					t.Fatal("authorized an unrelated service")
+				}
+				if scenario == "denied" {
+					return errors.New("foreign actor")
+				}
+				return nil
+			}
+			switch scenario {
+			case "changed-pid":
+				b.before.PID++
+			case "changed-start":
+				b.before.Started = "reused"
+			case "changed-plist":
+				b.before.PlistSHA256 = strings.Repeat("c", 64)
+			case "changed-program":
+				b.before.ProgramSHA256 = strings.Repeat("d", 64)
+			case "same-instance":
+				b.after = p
+			}
+			got, err := (ServiceController{Backend: b, Authorize: authorize}).Refresh(context.Background(), p)
+			if (err == nil) != (scenario == "success") {
+				t.Fatalf("gateway refresh %s: %v", scenario, err)
+			}
+			wantRefresh := 0
+			if scenario == "success" || scenario == "same-instance" {
+				wantRefresh = 1
+			}
+			if b.refreshes != wantRefresh || (scenario == "success" && got != next) {
+				t.Fatalf("gateway refreshes=%d want=%d; result=%+v", b.refreshes, wantRefresh, got)
+			}
+		})
+	}
+}

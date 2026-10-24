@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+### Corrected
+
+- Include only the exact GUI-owner router web gateway in the existing selected
+  service lifecycle. SSA/SHA retain explicit registry grants, fresh instance and
+  artifact pins, caller-observed drain and locked revalidation; unrelated router,
+  wake, wildcard, root-domain aliases and model services remain excluded. This
+  closes the unsupported gateway refresh path without a blanket restart.
+
 ## [0.24.127] — 2026-10-24
 
 ### Corrected

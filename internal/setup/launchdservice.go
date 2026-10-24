@@ -31,6 +31,11 @@ type ServiceInstance struct {
 
 // HorusServiceLabel is the single GUI-owner supervisor configuration transition.
 const HorusServiceLabel = "ai.sirsi.horus.agent-router"
+
+// RouterSurfaceServiceLabel names the one user-owned gateway, not a wake loop
+// or the root filesystem relay. Refresh uses the existing exact-instance pins.
+const RouterSurfaceServiceLabel = "ai.sirsi.router.surface"
+
 const horusProtectedProgram = "/usr/local/libexec/sirsi-pantheon/sirsi"
 
 func horusPlanDigest(p ServiceInstance) string {
