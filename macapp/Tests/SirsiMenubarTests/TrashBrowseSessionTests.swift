@@ -280,6 +280,7 @@ final class TrashBrowseSessionTests: XCTestCase {
         let home = try ownedHome(100)
         let entered = expectation(description: "old owned read entered")
         let first = DispatchSemaphore(value: 1)
+        defer { first.signal() } // balance only at teardown; never rearm the read hook
         let release = DispatchSemaphore(value: 0)
         let browser = TrashBrowseController(io: TrashBrowseIO(beforeRead: {
             if first.wait(timeout: .now()) == .success {
