@@ -256,6 +256,10 @@ var routerDoctorCmd = &cobra.Command{
 		// because a body that says DONE is a signal, not a verdict.
 		issues += checkLedgerRot()
 
+		if w := fleetCheckWarning(repoRoot); w != "" {
+			issues++
+			fmt.Printf("warning: this host's fleet-check:\n%s\n\n", w)
+		}
 		reportNameGrammar(reg)
 
 		// Compare the actual runtime source (origin pin when active), not the
