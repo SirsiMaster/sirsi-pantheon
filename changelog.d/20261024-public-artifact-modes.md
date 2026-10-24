@@ -13,3 +13,5 @@ modes and set-ID/sticky/writable/executable promotion. An explicit fixed,
 nonrelocatable, strict-identifier/version-checked Pantheon component selects
 native BundleOverwriteAction=upgrade so old private containers are replaced,
 not merged. Actual corrective upgrade remains SHA/SSA-owned qualification.
+Package entry also rejects a bad signed input app read-only before any copying;
+the valid source app cannot diverge from a silently repaired package-only copy.

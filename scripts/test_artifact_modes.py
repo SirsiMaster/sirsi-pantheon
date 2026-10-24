@@ -5,6 +5,7 @@ import os
 import plistlib
 from pathlib import Path
 import stat
+import subprocess
 import tempfile
 import unittest
 
@@ -171,6 +172,39 @@ class ArtifactModesTests(unittest.TestCase):
         self.assert_public(candidate)
         self.assertNotEqual(stat.S_IMODE(previous.stat().st_mode), stat.S_IMODE(candidate.stat().st_mode))
         # No Installer or swap simulation is claimed as actual upgrade proof.
+
+    def test_actual_pkg_entry_refuses_private_input_before_staging(self):
+        scripts = Path(__file__).resolve().parent
+        fence = self.root / "owned-build-fence.sh"
+        # Test-only Bash DEBUG fence, not a production bypass. Even a mutant
+        # omitting the input check stops BEFORE mkdir/staging/pkgbuild/signing.
+        fence.write_text("""set -o functrace
+trap 'case "$BASH_COMMAND" in
+  *BUILD_DIR*mkdir*|*mkdir*BUILD_DIR*) echo OWNED_FIXTURE_STOP_BEFORE_STAGING >&2; exit 97;;
+  */usr/bin/pkgbuild*|*/usr/bin/ditto*|*codesign*|*productsign*|*notarytool*|*stapler*) echo OWNED_FIXTURE_FORBIDDEN_TOOL >&2; exit 98;;
+esac' DEBUG
+""")
+        for failure in ("private-root", "private-info", "valid-control"):
+            with self.subTest(failure=failure):
+                root = self.bundle(self.root / failure / "Pantheon.app", 0o077)
+                MODES.normalize(root)
+                if failure == "private-root":
+                    os.chmod(root, 0o700)
+                elif failure == "private-info":
+                    os.chmod(root / "Contents/Info.plist", 0o600)
+                before = self.hashes(root)
+                before_modes = {str(path): path.stat().st_mode for path in [root, *root.rglob("*")]}
+                env = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": str(self.root), "TMPDIR": str(self.root), "BASH_ENV": str(fence), "PYTHONDONTWRITEBYTECODE": "1"}
+                result = subprocess.run(["/bin/bash", str(scripts / "build-pkg.sh"), "--development", "--version", "0.0.0-fixture", "--app", str(root)], env=env, capture_output=True, text=True, timeout=10, check=False)
+                if failure == "valid-control":
+                    self.assertEqual(result.returncode, 97, result.stderr)
+                    self.assertIn("OWNED_FIXTURE_STOP_BEFORE_STAGING", result.stderr)
+                else:
+                    self.assertEqual(result.returncode, 1, result.stderr)
+                    self.assertIn("artifact modes refused: public mode mismatch", result.stderr)
+                    self.assertNotIn("OWNED_FIXTURE_STOP", result.stderr)
+                self.assertEqual(self.hashes(root), before)
+                self.assertEqual({str(path): path.stat().st_mode for path in [root, *root.rglob("*")]}, before_modes)
 
 
 if __name__ == "__main__":

@@ -39,6 +39,9 @@ done
 [[ -x "$APP_PATH/Contents/MacOS/sirsi" ]] || { echo "ERROR: Pantheon.app is missing sirsi" >&2; exit 1; }
 [[ -x "$APP_PATH/Contents/MacOS/sirsi-menubar" ]] || { echo "ERROR: Pantheon.app is missing sirsi-menubar" >&2; exit 1; }
 [[ -d "$APP_PATH/Contents/Resources/StackLab" ]] || { echo "ERROR: Pantheon.app is missing Stack Lab contracts" >&2; exit 1; }
+# Reject a private signed input before any staging/copy/normalization. Repairing
+# only its PKG copy would hide a bad DMG/source app. This check never chmods it.
+python3 "${PROJECT_ROOT}/scripts/artifact_modes.py" --bundle "$APP_PATH" --check
 
 REMOTE_SIGNING=false
 if [[ "$MODE" == "release" && "${PANTHEON_SIGNING_EXECUTION:-}" == "remote-service" ]]; then

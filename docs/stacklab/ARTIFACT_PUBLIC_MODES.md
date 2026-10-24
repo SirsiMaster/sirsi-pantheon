@@ -15,6 +15,13 @@ SSA's actual BOM/install proof must independently verify the recorded root
 ownership and public read/traverse/execute modes. Current-owner os.access is
 not independent-user readability evidence.
 
+Before creating any package staging, build-pkg checks the signed INPUT app
+read-only. A bad private DMG/source app therefore cannot be silently repaired
+only in the package copy. The actual-entry fixture fences before staging and
+all packaging/signing tools, including when the check is deliberately omitted;
+it asserts bad-input refusal and unchanged source bytes/modes, plus a valid
+control reaching the inert fence. It does not invoke a real Installer or sign.
+
 The canonical Go `package-inventory` independently rejects an app root or any
 payload entry outside exact 0755-directory/0755-two-executable/0644-resource modes,
 including set-ID/sticky/writable and signature-resource modes. Root mode is also
