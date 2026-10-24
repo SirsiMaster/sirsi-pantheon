@@ -39,13 +39,14 @@ final class MaatSourceImportTests: XCTestCase {
     @MainActor func testPreviewThenExactHeadAndDigestConfirmationOnce() async throws {
         let model = model(), good = try response()
         var calls = [[String]]()
-        await model.review { args in calls.append(args); return good }
+        await model.review { args in XCTAssertFalse(model.recording); calls.append(args); return good }
         XCTAssertEqual(calls, [["maat", "screen", "--input", selected.path, "--expect-head", head, "--preview", "--json"]])
         XCTAssertNil(model.result)
         let approval = try XCTUnwrap(model.approval)
         XCTAssertEqual(approval.expectedHead, head)
         XCTAssertEqual(approval.inputSHA256, digest)
         let first = model.confirm { args in calls.append(args); return good }
+        XCTAssertTrue(model.recording)
         XCTAssertNil(model.confirm { args in calls.append(args); return good })
         await first?.value
         XCTAssertEqual(calls.count, 2)
@@ -125,7 +126,8 @@ final class MaatSourceImportTests: XCTestCase {
 
     @MainActor func testIncompleteNonzeroMalformedOutputNeverRecordsOrRetries() async throws {
         let good = try response()
-        let invalid = [CommandExecution(stdout: good.stdoutData, exitCode: 1, childState: .exitConfirmed),
+        let wrongContract = try response { $0["contract"] = "mismatched-response" }
+        let invalid = [wrongContract, CommandExecution(stdout: good.stdoutData, exitCode: 1, childState: .exitConfirmed),
                        CommandExecution(stdout: good.stdoutData, exitCode: 0, timedOut: true, childState: .exitUnknown),
                        CommandExecution(stdout: good.stdoutData, exitCode: 0, overflow: true, childState: .exitConfirmed),
                        CommandExecution(stdout: good.stdoutData, exitCode: 0, cancelled: true, childState: .exitConfirmed),

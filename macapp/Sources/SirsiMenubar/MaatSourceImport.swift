@@ -57,6 +57,7 @@ private struct MaatSourceImportPreview: Decodable {
     @Published var expectedHead = "" { didSet { if oldValue != expectedHead { invalidateReview() } } }
     @Published private(set) var approval: MaatSourceImportApproval?
     @Published private(set) var busy = false
+    @Published private(set) var recording = false
     @Published private(set) var error: String?
     @Published private(set) var preview: MaatSystemOneVerdict?
     @Published private(set) var result: MaatSystemOneCommandResult?
@@ -81,7 +82,7 @@ private struct MaatSourceImportPreview: Decodable {
         let head = expectedHead.trimmingCharacters(in: .whitespacesAndNewlines)
         invalidateReview()
         let token = generation
-        busy = true; error = nil
+        busy = true; recording = false; error = nil
         let args = ["maat", "screen", "--input", file.path, "--expect-head", head, "--preview", "--json"]
         let captured: CommandExecution
         if let capture { captured = await capture(args) }
@@ -107,14 +108,14 @@ private struct MaatSourceImportPreview: Decodable {
     // Refresh, double-click, malformed output and readback failure never replay.
     func confirm(capture: Capture? = nil) -> Task<Void, Never>? {
         guard !busy, let approved = approval, isCurrent(approved) else { return nil }
-        approval = nil; busy = true; error = nil
+        approval = nil; busy = true; recording = true; error = nil
         return Task { @MainActor in
             let captured: CommandExecution
             if !self.isCurrent(approved) {
                 captured = CommandExecution(launchError: "Selection changed after confirmation. Nothing launched; review again.")
             } else if let capture { captured = await capture(approved.arguments) }
             else { captured = await SirsiEngine.runCaptured(args: approved.arguments, authorize: { self.isCurrent(approved) }) }
-            self.receipt = captured; self.busy = false
+            self.receipt = captured; self.busy = false; self.recording = false
             guard captured.complete, captured.exitCode == 0,
                   let decoded = try? JSONDecoder().decode(MaatSystemOneCommandResult.self, from: captured.stdoutData),
                   MaatSourceImportContract.matches(decoded.verdict, head: approved.expectedHead) else {

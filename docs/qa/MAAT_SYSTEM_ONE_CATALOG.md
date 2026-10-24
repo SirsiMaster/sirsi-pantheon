@@ -115,9 +115,11 @@ ambiguous case history.
 The existing `maat-system-one-screen` component now separates amended v2 source
 imports from legacy v1 journal reads and deterministic host/preflight semantics.
 The former implicit v1 source-import CLI path refuses: callers must explicitly
-provide v2 and `--expect-head`. Existing native import callers lacking this new
-contract receive refusal, not a fabricated migration/success. Host observation
-and both closed host repairs remain model-free and unchanged. The shared
+provide v2 and `--expect-head`. The existing native picker is migrated to that
+same contract, with an editable expected-head field, copyable typed format,
+non-writing `--preview`, and reviewed raw-digest confirmation. Errors retain
+editable input and a choose-file/review recovery; they never silently downgrade.
+Host observation and both closed host repairs remain model-free and unchanged. The shared
 Casebook/CLI/MCP/Horus/TUI/native projections retain the v2 gate and journal
 explanation; they do not gain execution or binding review authority.
 
@@ -138,13 +140,24 @@ Source QA trace, **unrun until separately admitted qualification**:
 | CLI v2 refusal/confirmation/head and declared floor | `cmd/sirsi/maatscreen.go` | `TestMaatScreen*` (owned regular inputs and injected journal only) |
 | Shared projection review route and floor route retain provenance | `internal/maat/casebook` | `TestSourceScreenV2ProjectsReviewWithoutHostRepairAuthority` |
 | V1 host warning and closed repairs unchanged, zero calibration requirement | unchanged host implementation | `TestMaatHostV1WarningRepairsRemainDeterministicWithoutCalibration`, existing host/preflight/calibration fixtures |
+| Native picker migrated without provider-name trust, preserves exact file/head/digest consent and once-only execution/error recovery | `MaatSourceImport.swift`, `MaatCasebookView.swift` | `MaatSourceImportTests` (8 inert methods); shared fixture `contracts/maat/source-screen-v2-fixture.json` |
+| Actual Go preview is read-only and its raw input digest denies same-head byte drift before confirmed record | `cmd/sirsi/maatscreen.go` | `TestMaatScreenNativePreviewExactBytesThenConfirmedImport` |
 
 Authenticated qualification and independent outcome lifecycle (including sampled
 pass/changes comparisons, drift revocation, model/prompt/recipe requalification),
-native v2 import UX, and actual gate activation remain **OPEN**. Existing
+installed native v2 UX qualification, and actual gate activation remain **OPEN**. Existing
 calibration-link statistics do not supply that authority. No full ADR070/Ma'at,
 installed adoption, test execution, three-home publication or wing byte-pin
 completion is claimed by this source checkpoint. ADR070 §2.5 owns these limits.
+
+The public caller survey is in ADR070 §2.5: only CLI/native import source JSON.
+MCP and dashboard source-screen endpoints remain read-only; the dashboard's
+closed `maat` action cannot append import args. TUI Casebook is read-only;
+its separate confirmed health-review writer is not an import or amended gate.
+No new source-import endpoint, legacy-v1 compatibility bypass, provider-name
+qualification or native-only exemption is introduced. Preview and confirmed
+record both call the same Go source validator with the independently entered
+head. The digest pins bytes only, not their truth or external qualification.
 
 - **Free and local:** no external JEV service, telemetry, model endpoint, or
   account is necessary.

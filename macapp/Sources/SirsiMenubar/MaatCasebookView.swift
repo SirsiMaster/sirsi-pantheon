@@ -553,20 +553,20 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
             } label: {
                 Label("Review selected v2 screen", systemImage: "doc.text.magnifyingglass")
             }
-            if let preview = sourceImport.preview {
+            if let preview = sourceImport.preview, sourceImport.approval != nil {
                 Text("Preview: \(preview.gate) · expected head \(preview.subject.headSHA). Floor evidence is declared-only. No journal write yet.")
                     .sirsiFont(.caption)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if sourceImport.busy {
-                ProgressView("Validating and recording…")
+                ProgressView(sourceImport.recording ? "Validating and recording…" : "Previewing v2 evidence (no journal write)…")
                     .sirsiFont(.caption)
             }
             if let result = sourceImport.result {
                 Label(result.summary, systemImage: result.verdict.gate == "pass" ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                     .sirsiFont(.caption)
                     .foregroundStyle(result.verdict.gate == "pass" ? .green : .orange)
-                Text("Retained prior operation receipt. Casebook refresh is a separate read; a failed refresh does not undo the recorded evidence or repeat the import.")
+                Text("Retained operation for head \(result.verdict.subject.headSHA). Casebook refresh is a separate read; a failed refresh does not undo the recorded evidence or repeat the import.")
                     .sirsiFont(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -1902,6 +1902,12 @@ private struct MaatCaseDetailView: View {
 						detailSection("System One gate", "\(systemOne.gate.capitalized) · \(Int(systemOne.confidence * 100))% confidence · feather \(systemOne.featherWeight)/100")
 						detailSection("Screen subject", "\(systemOne.subject.kind) \(systemOne.subject.ref) · \(systemOne.subject.headSHA)")
 						detailSection("Screen model", systemOne.model.detail)
+						if systemOne.contract == MaatSourceImportContract.id && systemOne.schemaVersion == 2 {
+							detailSection("Source contract", "\(systemOne.contract) v\(systemOne.schemaVersion) · nonbinding")
+							detailSection("Declared floor evidence", systemOne.floorEvidence)
+							detailSection("Declared calibration", "\(systemOne.model.calibration) · \(systemOne.model.calibrationID)")
+							detailSection("Declared evidence recipe", systemOne.model.evidenceSetDigest)
+						}
 						systemOneFloor(systemOne.floor)
 						systemOneFindings(systemOne.findings)
 						if let escalation = systemOne.escalation {

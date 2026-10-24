@@ -162,9 +162,18 @@ that local policy; warnings and closed host repairs need no model/calibration.
 
 `sirsi maat screen --input packet.json --expect-head <selected-head> --confirm`
 now accepts only v2. Implicit v1 source imports reject rather than borrowing
-legacy pass semantics. Native callers that do not supply the new contract and
-separately selected expected head receive a refusal; native import UX migration
-is not claimed by this source-only slice. Existing host/native observation is
+legacy pass semantics. The existing native picker now offers an editable
+independently selected expected head, typed/copyable v2 format, and a read-only
+Go validation preview (`--preview`). Preview emits the exact raw input SHA256
+from the same bounded file bytes consumed by validation; it never opens the
+journal writer. Confirmation freezes file/head/digest and records with
+`--expect-input-sha256`; changed bytes (even whitespace), selection or head
+require fresh review. `--preview --confirm` rejects. CLI use of the optional
+digest is deny-only, not qualification or new authority. Native uses the same
+Go validator, not a provider-name exception or Swift policy replica. Failed
+validation keeps fields editable and allows a corrected head/replacement file;
+the once-only confirmation latch and retained bounded capture prevent replay
+on decode failure or Casebook refresh. Existing host/native observation is
 unchanged. No payload or floor command executes during import.
 
 V2 requires exact-case keys and explicit zero/false/empty scalars, rejects
@@ -203,6 +212,25 @@ Existing v1 calibration links/statistics remain declared audit evidence, not an
 authority to qualify v2. This slice claims neither full ADR070 nor full Ma'at
 completion. Source fixtures/independent review/actual scheduled qualification
 and installed adoption are separate evidence; no passed tests are inferred.
+
+Public caller survey (tracked source, not installed runtime evidence):
+
+| Surface | Source import boundary | Compatibility disposition |
+| --- | --- | --- |
+| CLI | `cmd/sirsi/maatscreen.go` | Explicit v2/expected head, preview then optional digest-pinned confirmed record; implicit v1 source import rejects with v2 usage guidance |
+| Native | `MaatCasebookView.screenImportControl` → `MaatSourceImportModel` → the same CLI | Editable head and v2 example, non-writing preview, explicit exact-byte confirmation, complete/exit/contract/version/head checks; mismatch offers correction, not downgrade |
+| MCP | `internal/mcp/tools.go` `maat_casebook` → journal/Casebook read | No source-import writer; remains read-only for source screens |
+| TUI | `internal/tui/screen_activity.go` reads `maat casebook` | No source-import writer; separate health `record-resolution` remains an owner-review record, not a screen import |
+| Dashboard/Horus | `internal/dashboard/maat.go` GET projections; `actions.go` closed registry | No source-import action: `maat` does not accept appended args, knowledge refresh is unrelated; no new write surface |
+| Local deterministic producers | `maattriage.go`, `maatpreflight.go` → legacy `maat.Screen` | Host observation/closed repairs and release/credential preflight retain v1 local policy; no model calibration requirement |
+
+`contracts/maat/source-screen-v2-fixture.json` is an explicitly inert example,
+shared by Go actual-command preview/record fixtures and Swift format/controller
+fixtures. Its example head/digests are not proof of any real source or checks.
+Native refresh failure preserves the recorded operation receipt without
+re-running the import. None of these source assertions claim installed UX or
+executed fixtures; native strict-concurrency build and actual qualification
+remain scheduled work.
 
 ## 3. Alternatives Considered
 
