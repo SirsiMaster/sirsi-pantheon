@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -114,6 +115,56 @@ func TestRealSamePIDInstancesBindIndependentRemoteAudiences(t *testing.T) {
 	// Explicit local binding must win without rewriting those inputs.
 	t.Setenv("SIRSI_AGENT_ID", "foreign-ambient-agent")
 	t.Setenv("SIRSI_THREAD_ID", "foreign-ambient-thread")
+	now := time.Now().UTC()
+	for _, item := range []routerstore.Item{
+		{ID: "owned-board-open", From: "fixture-sender", To: "board-peer", Title: "board package", Type: "proposal", Status: "open", Opened: now.Add(-time.Hour).Format(time.RFC3339)},
+		{ID: "owned-board-closed", From: "fixture-sender", To: "board-peer", Title: "board pace", Type: "proposal", Status: "closed", Opened: now.Add(-6 * time.Hour).Format(time.RFC3339), Closed: now.Add(-2 * time.Hour).Format(time.RFC3339)},
+	} {
+		if err := backend.Put(item); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, instance := range []*Server{a, b} {
+		mu.Lock()
+		delete(sessions, "/v1/call/ListSinceHeaders")
+		delete(sessions, "/v1/call/ListThreads")
+		mu.Unlock()
+		result, err := instance.handleBoard(nil)
+		if err != nil || result == nil || result.IsError {
+			t.Fatalf("actual board handler refused: %v %v", result, err)
+		}
+		var board router.WorkBoard
+		found := false
+		for _, content := range result.Content {
+			if _, raw, ok := strings.Cut(content.Text, "\nJSON:\n"); ok {
+				if err := json.Unmarshal([]byte(raw), &board); err != nil {
+					t.Fatal(err)
+				}
+				found = true
+			}
+		}
+		if !found || board.TotalOpen != 1 || board.ClosedToday != 1 || board.Closed7d != 1 || board.AvgCloseHours != 4 {
+			t.Fatalf("board packages/pace changed: %+v", board)
+		}
+		live := false
+		for _, agent := range board.Agents {
+			if agent.AgentID == "owned-mcp" && agent.Live && len(agent.Surfaces) == 1 && agent.Surfaces[0] == "mcp" {
+				live = true
+			}
+		}
+		if !live {
+			t.Fatal("bound registry peers disappeared from actual board")
+		}
+		for _, method := range []string{"ListSinceHeaders", "ListThreads"} {
+			mu.Lock()
+			sid := sessions["/v1/call/"+method]
+			mu.Unlock()
+			session, err := backend.GetSession(sid)
+			if err != nil || session.Agent != "owned-mcp" || session.ThreadID != instance.ownedThread {
+				t.Fatalf("board %s used wrong audience: agent=%q thread=%q error=%v", method, session.Agent, session.ThreadID, err)
+			}
+		}
+	}
 	fa, closeA, err := a.openFacade()
 	if err != nil {
 		t.Fatal(err)

@@ -31,6 +31,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/mcp"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
 
@@ -147,7 +148,17 @@ func (s *Server) handleBoard(_ map[string]interface{}) (*mcp.ToolResult, error) 
 	if err != nil {
 		return errResult(err.Error()), nil
 	}
-	board, err := router.ComputeWorkBoard(routerRoot)
+	var board *router.WorkBoard
+	if routercfg.StoreWake() {
+		f, closeFacade, openErr := s.openFacade()
+		if openErr != nil {
+			return errResult(fmt.Sprintf("workboard: %v", openErr)), nil
+		}
+		defer closeFacade()
+		board, err = router.ComputeWorkBoardWithStore(routerRoot, f.Store())
+	} else {
+		board, err = router.ComputeWorkBoard(routerRoot)
+	}
 	if err != nil {
 		return errResult(fmt.Sprintf("workboard: %v", err)), nil
 	}

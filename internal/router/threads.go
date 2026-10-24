@@ -238,40 +238,44 @@ func LoadThreadRegistry(routerRoot string) (*ThreadRegistry, error) {
 			return nil, err
 		}
 		defer store.Close()
-		records, err := store.ListThreads()
-		if err != nil {
-			return nil, err
-		}
-		if len(records) == 0 {
-			if legacy, legacyErr := loadLegacyThreadRegistry(routerRoot); legacyErr == nil && len(legacy.Threads) > 0 {
-				seed, seedErr := threadRecords(legacy)
-				if seedErr != nil {
-					return nil, seedErr
-				}
-				if importErr := store.ImportThreadsIfEmpty(seed); importErr != nil {
-					return nil, importErr
-				}
-				records, err = store.ListThreads()
-				if err != nil {
-					return nil, err
-				}
-			}
-		}
-		reg := &ThreadRegistry{Threads: make(map[string]*Thread, len(records)), baseline: make(map[string]routerstore.ThreadRecord, len(records))}
-		for _, record := range records {
-			var thread Thread
-			if err := json.Unmarshal(record.Payload, &thread); err != nil {
-				return nil, fmt.Errorf("parse store thread %q: %w", record.ThreadID, err)
-			}
-			if thread.ThreadID == "" {
-				thread.ThreadID = record.ThreadID
-			}
-			reg.Threads[record.ThreadID] = &thread
-			reg.baseline[record.ThreadID] = record
-		}
-		return reg, nil
+		return loadThreadRegistryStore(routerRoot, store)
 	}
 	return loadLegacyThreadRegistry(routerRoot)
+}
+
+func loadThreadRegistryStore(routerRoot string, store routerstore.Store) (*ThreadRegistry, error) {
+	records, err := store.ListThreads()
+	if err != nil {
+		return nil, err
+	}
+	if len(records) == 0 {
+		if legacy, legacyErr := loadLegacyThreadRegistry(routerRoot); legacyErr == nil && len(legacy.Threads) > 0 {
+			seed, seedErr := threadRecords(legacy)
+			if seedErr != nil {
+				return nil, seedErr
+			}
+			if importErr := store.ImportThreadsIfEmpty(seed); importErr != nil {
+				return nil, importErr
+			}
+			records, err = store.ListThreads()
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	reg := &ThreadRegistry{Threads: make(map[string]*Thread, len(records)), baseline: make(map[string]routerstore.ThreadRecord, len(records))}
+	for _, record := range records {
+		var thread Thread
+		if err := json.Unmarshal(record.Payload, &thread); err != nil {
+			return nil, fmt.Errorf("parse store thread %q: %w", record.ThreadID, err)
+		}
+		if thread.ThreadID == "" {
+			thread.ThreadID = record.ThreadID
+		}
+		reg.Threads[record.ThreadID] = &thread
+		reg.baseline[record.ThreadID] = record
+	}
+	return reg, nil
 }
 
 // loadThreadRegistryOne is LoadThreadRegistry scoped to a single known

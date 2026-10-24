@@ -96,6 +96,12 @@ session custody, never a parent's disk cache. Marker URL recovery is local and
 does not export process environment. This remains the existing same-host trust
 boundary, not authentication isolation against hostile same-UID processes.
 
+The actual board handler also uses that bound store for both durable item and
+thread reads, retaining the shared projection and pace semantics. Explicit
+`SIRSI_ROUTER_STORE_WAKE=0` retains the existing file-backed board and JSON thread
+registry lifecycle; its heartbeat/close remain on JSON with the exact owned ID.
+That compatibility mode is not authenticated durable RPC isolation or a cutover.
+
 ## Source verification (not executed by this producer)
 
 The released `0fd8463` seven-tool schemas, resource and handshake are pinned in
