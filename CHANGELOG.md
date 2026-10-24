@@ -26,6 +26,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 - Connect build-mode and generated native PackageInfo regression suites to the
   existing macOS CI job; build-time Python tooling is not installed in the app.
+- Bind Ma'at's non-executing release fixture to the reviewed corrective builders;
+  preserve all guard assertions and original failed full-suite evidence.
 - Preserve all prior failed source, signing, publication and installed receipts.
 
 
