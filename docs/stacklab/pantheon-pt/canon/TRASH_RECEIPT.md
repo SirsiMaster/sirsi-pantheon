@@ -130,7 +130,14 @@ new selection, canonical Go preview and irreversible confirmation. Retained
 operation receipts survive failed access retries. Installed cause and native
 Settings/return/retry behavior remain unqualified until separately observed.
 
-Focused inert author fixtures: `TrashBrowseRecoveryTests` (nine methods), plus
+The explicit guide return uses the same owned `Nav.pop` as BackBar, not
+presentation dismissal. The originating Nav frame retains its workflow model
+across remount, preserving the explicit-retry fence and discarded consent.
+The direct action fixture pushes the actual Trash and guide view values, invokes
+the button's return method, verifies exact origin frame identity and no automatic
+browse/select/apply. It does not claim installed rendering/interaction proof.
+
+Focused inert author fixtures: `TrashBrowseRecoveryTests` (ten methods), plus
 unchanged `TrashBrowseSessionTests`, `TrashReceiptTests` and
 `RemediationExecutionTests`. Qualify strict-concurrency release compilation and
 those exact XCTest inventories under Main's ordinary admission. No fixtures,

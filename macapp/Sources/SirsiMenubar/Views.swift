@@ -899,9 +899,13 @@ struct BackBar: View {
 // about that: it opens the right pane AND reveals the app for drag-to-add, with
 // the exact steps, instead of a one-click button that silently does nothing.
 struct FDAGuideView: View {
-    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var nav: Nav
     var returnToTrash = false
     private let guide = PantheonAccessGuide()
+
+    // Same owned custom stack as BackBar; this screen is not a sheet or
+    // NavigationStack destination, so presentation dismissal is not a return.
+    func returnToOrigin(using nav: Nav) { nav.pop() }
 
     private var steps: [(String, String)] {
         [
@@ -956,7 +960,7 @@ struct FDAGuideView: View {
                 Text("Return to Trash, then explicitly start a fresh browse. Access is not confirmed until that read succeeds. Old selections and approvals are discarded. If macOS requires a relaunch, do so yourself; Pantheon will not restart automatically.")
                     .sirsiFont(12).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Button("Back to Trash") { dismiss() }.buttonStyle(.bordered)
+                Button("Back to Trash") { returnToOrigin(using: nav) }.buttonStyle(.bordered)
             }
 
             Spacer()
@@ -2795,7 +2799,15 @@ struct AnubisView: View {
 //     bytes, never an optimistic empty/physical-space claim.
 @MainActor struct EmptyTrashView: View {
     @ObservedObject var engine: SirsiEngine
-    @StateObject private var workflow = TrashWorkflow()
+    // Nav.Frame retains this view value while the guide is the visible frame.
+    // Own the model in that value, not remount-scoped StateObject storage: a
+    // return must preserve the explicit-retry fence, never create new intent.
+    @ObservedObject var workflow: TrashWorkflow
+
+    init(engine: SirsiEngine, workflow: TrashWorkflow? = nil) {
+        self.engine = engine
+        self.workflow = workflow ?? TrashWorkflow()
+    }
 
     var body: some View {
         VStack(spacing: 0) {

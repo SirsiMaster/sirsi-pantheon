@@ -1,5 +1,6 @@
 import XCTest
 import Darwin
+import SwiftUI
 @testable import SirsiMenubar
 
 final class TrashBrowseRecoveryTests: XCTestCase {
@@ -265,5 +266,59 @@ final class TrashBrowseRecoveryTests: XCTestCase {
         XCTAssertFalse(body.contains("Sirsi Menubar")); XCTAssertTrue(body.contains("Back to Trash"))
         XCTAssertTrue(views.contains("if workflow.canReviewAccess"))
         XCTAssertTrue(views.contains(".onAppear { workflow.beginAccessReview() }"))
+    }
+
+    @MainActor func testActualGuideReturnPopsOwnedStackAndRetainsFreshIntentFence() async throws {
+        let workflow = TrashWorkflow()
+        let home = try ownedHome()
+        try Data("inert".utf8).write(to: home.appendingPathComponent(".Trash/owned"))
+        let io = TrashBrowseIO()
+        let fresh = await io.read(TrashBrowseRequest(), home: home, fence: TrashBrowseReadFence())
+        let page = try JSONDecoder().decode(TrashPage.self, from: fresh.stdoutData)
+        let member = try XCTUnwrap(page.entries.first)
+        await workflow.loadPage { fresh }; workflow.toggle(member)
+        let manifest = TrashManifest(schema: "pantheon.trash-manifest.v1", uid: page.uid, root: page.root,
+                                     containers: [], entries: [member])
+        let ready = TrashReport(schema: "pantheon.trash-report.v1", status: "ready", preview: manifest,
+                                attempted: 0, deleted: [], logical_bytes: 0, errors: [])
+        await workflow.reviewSelection { _ in CommandExecution(stdout: try! JSONEncoder().encode(ready), exitCode: 0, childState: .exitConfirmed) }
+        workflow.prepareApproval(); XCTAssertNotNil(workflow.approval)
+        let origin = EmptyTrashView(engine: SirsiEngine(), workflow: workflow)
+        let nav = Nav()
+        nav.push(Text("Anubis"))
+        let parentID = try XCTUnwrap(nav.stack.last?.id)
+        nav.push(origin)
+        let originID = try XCTUnwrap(nav.stack.last?.id)
+        await workflow.loadPage { TrashBrowseFailure(errno: EPERM, stage: .trashRoot).execution }
+        XCTAssertTrue(workflow.canReviewAccess)
+        // This is the exact guide-entry hook and exact return action wired into
+        // the production view, without rendering UI or triggering permissions.
+        workflow.beginAccessReview()
+        let guide = FDAGuideView(returnToTrash: true)
+        nav.push(guide)
+        XCTAssertEqual(nav.stack.count, 3)
+        XCTAssertNotEqual(nav.stack.last?.id, originID)
+        guide.returnToOrigin(using: nav)
+        XCTAssertEqual(nav.stack.count, 2)
+        XCTAssertEqual(nav.stack.last?.id, originID)
+        XCTAssertEqual(nav.stack.first?.id, parentID)
+        XCTAssertTrue(origin.workflow === workflow, "the stored origin owns the same model across guide remount")
+        origin.workflow.activateBrowse()
+        var browseCalls = 0; var selectionCalls = 0; var applyCalls = 0
+        await origin.workflow.loadInitial { browseCalls += 1; return CommandExecution() }
+        await origin.workflow.reviewSelection { _ in selectionCalls += 1; return CommandExecution() }
+        origin.workflow.prepareApproval()
+        await origin.workflow.apply { _ in applyCalls += 1; return CommandExecution() }
+        XCTAssertEqual(browseCalls, 0); XCTAssertEqual(selectionCalls, 0); XCTAssertEqual(applyCalls, 0)
+        XCTAssertTrue(workflow.selected.isEmpty); XCTAssertNil(workflow.page)
+        XCTAssertNil(workflow.preview); XCTAssertNil(workflow.approval)
+        XCTAssertEqual(workflow.phase, .error)
+        // The unrelated/default guide retains its existing BackBar behavior;
+        // it does not gain a forced Trash destination or a second pushed frame.
+        XCTAssertFalse(FDAGuideView().returnToTrash)
+        let macapp = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let views = try String(contentsOf: macapp.appendingPathComponent("Sources/SirsiMenubar/Views.swift"), encoding: .utf8)
+        XCTAssertTrue(views.contains("Button(\"Back to Trash\") { returnToOrigin(using: nav) }"))
+        await io.close(); await workflow.browser.close()
     }
 }
