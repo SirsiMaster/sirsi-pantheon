@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
 
@@ -67,8 +68,9 @@ func ensureAttendedHeartbeat(c attendedEnsureCaller, explicit string, upd router
 		// an unrelated sibling. No grant, lane result or
 		// terminal error is copied onto a successor; no force/override path.
 		intent := &router.Thread{
-			ThreadID: attendedSuccessorID(old, pid, start),
-			AgentID:  old.AgentID, Surface: old.Surface, SessionID: old.SessionID,
+			EnsureCompatible: true,
+			ThreadID:         attendedSuccessorID(old, pid, start),
+			AgentID:          old.AgentID, Surface: old.Surface, SessionID: old.SessionID,
 			Repo: old.Repo, Workstream: old.Workstream, Watches: append([]string(nil), old.Watches...),
 			WakeMechanism: old.WakeMechanism, CurrentItem: old.CurrentItem,
 			PID: pid, StartTime: start, Host: old.Host, MachineID: old.MachineID,
@@ -130,7 +132,12 @@ func strictCodexAnchor() (int, string, error) {
 	return pid, start, nil
 }
 
-func runAttendedEnsure(root, explicit string, upd router.HeartbeatUpdate) (*router.Thread, error) {
+// The command's only injected dependency is native kernel observation. Marker,
+// resolver, normal registration/readback and fenced heartbeat stay real.
+func runAttendedEnsure(root, explicit string, upd router.HeartbeatUpdate, observe func() (int, string, error)) (*router.Thread, error) {
+	if !routercfg.StoreWake() {
+		return nil, fmt.Errorf("attended ensure requires the existing canonical registry mode; explicit legacy mode is not overridden")
+	}
 	// Do not reinterpret another provider's environment as a Codex session.
 	if strings.TrimSpace(os.Getenv(router.SessionIDEnv)) != "" {
 		return nil, fmt.Errorf("attended ensure supports the actual Codex session only")
@@ -164,7 +171,7 @@ func runAttendedEnsure(root, explicit string, upd router.HeartbeatUpdate) (*rout
 		return &t, nil
 	}
 	return ensureAttendedHeartbeat(attendedEnsureCaller{session, agent, thread, router.MachineID()}, explicit, upd, attendedEnsureOps{
-		load: load, anchor: strictCodexAnchor,
+		load: load, anchor: observe,
 		register: func(t *router.Thread) (*router.Thread, error) { return router.RegisterThread(root, t) },
 		persist:  router.WriteSessionThreadMarker,
 		heartbeat: func(id string, u router.HeartbeatUpdate) (*router.Thread, error) {

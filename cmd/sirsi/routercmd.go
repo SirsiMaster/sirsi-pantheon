@@ -374,12 +374,16 @@ var routerPullCmd = &cobra.Command{
 	},
 }
 
-var routerWaitTimeout int
+var routerWaitCmd = newRouterWaitCmdWithKernel(strictCodexAnchor)
 
-var routerWaitCmd = &cobra.Command{
-	Use:   "wait <agent>",
-	Short: "Block until open work is addressed to an agent (store event-wake, <250ms)",
-	Long: `Block until the agent has open work, print the inbox, and return.
+func newRouterWaitCmdWithKernel(observe func() (int, string, error)) *cobra.Command {
+	var routerWaitTimeout int
+	var ensure bool
+	var explicitThread string
+	cmd := &cobra.Command{
+		Use:   "wait <agent>",
+		Short: "Block until open work is addressed to an agent (store event-wake, <250ms)",
+		Long: `Block until the agent has open work, print the inbox, and return.
 
 This is the store-backed counterpart to 'pull'. Instead of watching the items/
 directory on a timer, it parks on the dispatch store's per-agent wake FIFO and
@@ -390,38 +394,67 @@ a store row with no items/<id>.md to watch. The work-check is the dual-read
 union (store rows ∪ legacy file items), and a bounded re-check still catches
 legacy file-only sends. Returns after --timeout seconds even with no work
 (exit 0), so a shell loop calls it repeatedly.`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		repoRoot, err := router.FindRepoRoot()
-		if err != nil {
-			return fmt.Errorf("no .agents/idea-router/ found: %w", err)
-		}
-		f, err := dispatch.Open(repoRoot)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = f.Close() }()
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if explicitThread != "" && !ensure {
+				return fmt.Errorf("wait --thread requires explicit --ensure")
+			}
+			repoRoot, err := router.FindRepoRoot()
+			if err != nil {
+				return fmt.Errorf("no .agents/idea-router/ found: %w", err)
+			}
+			var ensured *router.Thread
+			if ensure {
+				if args[0] != router.ReadSessionAgentMarker(router.CurrentSessionID()) {
+					return fmt.Errorf("attended wait may ensure only this exact session's own inbox")
+				}
+				ensured, err = runAttendedEnsure(filepath.Join(repoRoot, ".agents", "idea-router"), explicitThread, router.HeartbeatUpdate{}, observe)
+				if err != nil {
+					return err
+				}
+				// Never hide an explicit caller binding behind a process-global env
+				// rewrite. The controller consumes the returned/persisted successor.
+				if pinned := strings.TrimSpace(os.Getenv("SIRSI_THREAD_ID")); pinned != "" && pinned != ensured.ThreadID {
+					return fmt.Errorf("attended binding changed to %s; consume that binding before waiting with SIRSI_THREAD_ID", ensured.ThreadID)
+				}
+			}
+			f, err := dispatch.Open(repoRoot)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = f.Close() }()
 
-		// Honor Ctrl-C / SIGTERM so a supervised loop can stop the wait cleanly.
-		ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
-		defer stop()
+			// Honor Ctrl-C / SIGTERM so a supervised loop can stop the wait cleanly.
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
 
-		items, err := f.Wait(ctx, args[0], time.Duration(routerWaitTimeout)*time.Second)
-		if err != nil {
-			return err
-		}
-		if len(items) == 0 {
-			fmt.Printf("  No open items for %s after %ds.\n", args[0], routerWaitTimeout)
+			items, err := f.Wait(ctx, args[0], time.Duration(routerWaitTimeout)*time.Second)
+			if err != nil {
+				return err
+			}
+			if ensure && JsonOutput {
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(struct {
+					Thread *router.Thread `json:"thread"`
+					Items  []work.Item    `json:"items"`
+				}{ensured, items})
+			}
+			if len(items) == 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), "  No open items for %s after %ds.\n", args[0], routerWaitTimeout)
+				return nil
+			}
+			fmt.Printf("  %d open items for %s:\n\n", len(items), args[0])
+			for _, it := range items {
+				fmt.Printf("  • %s\n      from: %s\n      title: %s\n      opened: %s\n\n", it.ID, it.From, it.Title, it.Opened)
+			}
+			fmt.Printf("  Read full: sirsi router show <id>\n")
+			fmt.Printf("  Close when done: sirsi router close <id> --result @path/to/result.md\n")
 			return nil
-		}
-		fmt.Printf("  %d open items for %s:\n\n", len(items), args[0])
-		for _, it := range items {
-			fmt.Printf("  • %s\n      from: %s\n      title: %s\n      opened: %s\n\n", it.ID, it.From, it.Title, it.Opened)
-		}
-		fmt.Printf("  Read full: sirsi router show <id>\n")
-		fmt.Printf("  Close when done: sirsi router close <id> --result @path/to/result.md\n")
-		return nil
-	},
+		},
+	}
+	cmd.Flags().IntVar(&routerWaitTimeout, "timeout", 50, "Max seconds to block before returning empty (a shell loop calls wait repeatedly)")
+	cmd.Flags().BoolVar(&ensure, "ensure", false, "Verify this exact Codex session's generation before heartbeat and own-inbox wait")
+	cmd.Flags().StringVar(&explicitThread, "thread", "", "Exact existing caller thread for --ensure; unrelated IDs are refused")
+	return cmd
 }
 
 var routerShowCmd = &cobra.Command{
@@ -1483,7 +1516,6 @@ func init() {
 	routerQuarantineWorkerCmd.Flags().BoolVar(&quarantineWorkerDryRun, "dry-run", false, "report the full plan without booting out or renaming anything (Rule A1)")
 	routerWakeInstallCmd.Flags().Bool("force", false, "arm even if the agent already has an armed watcher (bypasses the duplicate-spawn leak guard)")
 	routerPullCmd.Flags().BoolVar(&pullBuildFilter, "build-filter", false, "Skip non-build items (decision/review/proposal) — safe for headless build workers")
-	routerWaitCmd.Flags().IntVar(&routerWaitTimeout, "timeout", 50, "Max seconds to block before returning empty (a shell loop calls wait repeatedly)")
 	routerCutoverEnableCmd.Flags().Bool("rearm", false, "reinstall headless wake LaunchAgents into store-wake mode now")
 	routerCutoverCmd.AddCommand(routerCutoverStatusCmd, routerCutoverEnableCmd, routerCutoverDisableCmd)
 	routerPruneCmd.Flags().IntVar(&pruneDays, "days", router.DefaultRetentionDays, "retention window in days (older artifacts are removed)")

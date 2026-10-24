@@ -414,6 +414,13 @@ func (rs *RemoteStore) call(method string, args []any, outs ...any) error {
 }
 
 func (rs *RemoteStore) callCtx(ctx context.Context, method string, args []any, outs ...any) error {
+	if method == "UpsertThreadCAS" && len(args) == 1 {
+		if record, ok := args[0].(ThreadRecord); ok && record.CreateOnly {
+			// An old server cannot decode this array as a ThreadRecord, so it
+			// refuses before writing instead of ignoring a new restriction.
+			args = []any{[]any{"thread-insert-only.v1", record}}
+		}
+	}
 	sess, err := rs.ensureSession(ctx)
 	if err != nil {
 		return err

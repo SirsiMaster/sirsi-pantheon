@@ -1,7 +1,9 @@
 package routerstore
 
 import (
+	"bytes"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -10,12 +12,48 @@ import (
 
 // ThreadRecord is the store-owned envelope for a CTR thread payload.
 type ThreadRecord struct {
+	// CreateOnly narrows this one CAS to INSERT ... ON CONFLICT DO NOTHING.
+	// It is transient intent, never a persisted grant or payload field.
+	CreateOnly bool `json:",omitempty"`
 	ThreadID   string
 	Agent      string
 	Status     string
 	LastSeenAt string
 	Payload    []byte
 	Host       string // the machine the thread runs on (Rule of Ra binding); "" for legacy rows
+}
+
+// Keep the existing RPC and authority checks. Only the restrictive insert-only
+// variant uses a versioned argument; legacy object-shaped calls are unchanged.
+func decodeThreadCASArgument(raw []byte, record *ThreadRecord) error {
+	*record = ThreadRecord{}
+	if bytes.HasPrefix(bytes.TrimSpace(raw), []byte("[")) {
+		var parts []json.RawMessage
+		if err := json.Unmarshal(raw, &parts); err != nil {
+			return err
+		}
+		if len(parts) != 2 {
+			return fmt.Errorf("invalid insert-only thread argument")
+		}
+		var version string
+		if err := json.Unmarshal(parts[0], &version); err != nil || version != "thread-insert-only.v1" {
+			return fmt.Errorf("unsupported insert-only thread version")
+		}
+		if err := json.Unmarshal(parts[1], record); err != nil {
+			return err
+		}
+		if !record.CreateOnly {
+			return fmt.Errorf("insert-only thread restriction missing")
+		}
+		return nil
+	}
+	if err := json.Unmarshal(raw, record); err != nil {
+		return err
+	}
+	if record.CreateOnly {
+		return fmt.Errorf("insert-only thread requires versioned argument")
+	}
+	return nil
 }
 
 // ThreadBinding is what the Rule of Ra gate needs about a thread.
@@ -108,6 +146,14 @@ WHERE threads.status NOT IN ('closed','reaped','suspended')
 // UpsertThreads, where an unrelated stale row is an expected no-op; lifecycle
 // verbs use this method so losing their own target fence fails loudly.
 func (s *SQLiteStore) UpsertThreadCAS(r ThreadRecord) (bool, error) {
+	if r.CreateOnly {
+		result, err := s.db.Exec(`INSERT INTO threads(thread_id,agent,status,last_seen_at,payload,host) VALUES(?,?,?,?,?,?) ON CONFLICT(thread_id) DO NOTHING`, r.ThreadID, r.Agent, r.Status, r.LastSeenAt, r.Payload, r.Host)
+		if err != nil {
+			return false, fmt.Errorf("routerstore: insert-only thread: %w", err)
+		}
+		n, err := result.RowsAffected()
+		return n == 1, err
+	}
 	result, err := s.db.Exec(`
 INSERT INTO threads(thread_id,agent,status,last_seen_at,payload,host) VALUES(?,?,?,?,?,?)
 ON CONFLICT(thread_id) DO UPDATE SET
@@ -254,7 +300,14 @@ func (s *SQLiteStore) UpsertThreadCASScoped(r ThreadRecord, scope []string) (boo
 	defer func() { _ = tx.Rollback() }()
 	ph, scopeArgs := scopeInClause(scope)
 	args := append([]any{r.ThreadID, r.Agent, r.Status, r.LastSeenAt, r.Payload, r.Host}, scopeArgs...)
-	result, err := tx.Exec(`
+	var result sql.Result
+	if r.CreateOnly {
+		if !scopeSet[r.Agent] {
+			return false, ErrLaneScope
+		}
+		result, err = tx.Exec(`INSERT INTO threads(thread_id,agent,status,last_seen_at,payload,host) VALUES(?,?,?,?,?,?) ON CONFLICT(thread_id) DO NOTHING`, r.ThreadID, r.Agent, r.Status, r.LastSeenAt, r.Payload, r.Host)
+	} else {
+		result, err = tx.Exec(`
 INSERT INTO threads(thread_id,agent,status,last_seen_at,payload,host) VALUES(?,?,?,?,?,?)
 ON CONFLICT(thread_id) DO UPDATE SET
  agent=excluded.agent,status=excluded.status,last_seen_at=excluded.last_seen_at,payload=excluded.payload,
@@ -266,6 +319,7 @@ WHERE threads.status NOT IN ('closed','reaped','suspended')
           AND (excluded.status IN ('closed','reaped','suspended')
                OR excluded.status = threads.status AND excluded.payload > threads.payload))
   AND threads.agent IN (`+ph+`)`, args...)
+	}
 	if err != nil {
 		return false, fmt.Errorf("routerstore: upsert thread %q: %w", r.ThreadID, err)
 	}
