@@ -143,8 +143,14 @@ func TryDelegateSync(opts SyncOptions) (delegated bool, err error) {
 
 // TryDelegateCompact attempts to run thoth-compact via the npm binary.
 // Returns (true, nil) on success, (true, err) on binary failure,
-// or (false, nil) if the binary is not installed.
+// or (false, nil) if unavailable or the retention policy requires Go.
 func TryDelegateCompact(opts CompactOptions) (delegated bool, err error) {
+	// The npm argument format omits zero limits and cannot preserve explicit
+	// no-prune intent. Age limits also require Go's civil-calendar retention;
+	// the external writer's age semantics are not bound to that correction.
+	if opts.MaxAge > 0 || (opts.NoDefaultPrune && opts.MaxAge == 0 && opts.MaxKeep == 0) {
+		return false, nil
+	}
 	if !BinaryAvailable("thoth-compact") {
 		return false, nil
 	}
@@ -164,9 +170,6 @@ func TryDelegateCompact(opts CompactOptions) (delegated bool, err error) {
 			return true, nil // nothing decision-shaped; do not invoke a writer at all
 		}
 		args = append(args, "--summary", clean)
-	}
-	if opts.MaxAge > 0 {
-		args = append(args, "--max-age", fmt.Sprintf("%d", opts.MaxAge))
 	}
 	if opts.MaxKeep > 0 {
 		args = append(args, "--max-keep", fmt.Sprintf("%d", opts.MaxKeep))

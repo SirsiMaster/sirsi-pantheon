@@ -23,6 +23,20 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertTrue(StackLabReadFailure.message(for: empty).contains("exit 1"))
     }
 
+    func testFleetWorkspaceMetadataDescribesWorkerLanesNotMachineInventory() {
+        let fleet = PantheonWorkspace.fleet
+        XCTAssertEqual(fleet.detail, "Worker lanes, task progress, and supervision states")
+        XCTAssertEqual(fleet.title, "Fleet")
+        XCTAssertEqual(fleet.symbol, "desktopcomputer")
+        for query in ["worker", "task"] {
+            XCTAssertTrue(fleet.matches(query))
+            XCTAssertTrue(PantheonWorkspace.matching(query).contains(fleet))
+        }
+        XCTAssertFalse(fleet.detail.localizedCaseInsensitiveContains("machine"))
+        XCTAssertFalse(fleet.matches("connected machines"))
+        XCTAssertFalse(PantheonWorkspace.matching("connected machines").contains(fleet))
+    }
+
     func testFleetStatePresentationCoversCanonicalSixStatesAndUnknown() {
         let cases: [(String, String)] = [
             ("WORKING", "WORKING"),

@@ -1750,19 +1750,7 @@ struct FleetView: View {
                         Text("\(s.lanesWorking) of \(s.lanesTotal) lanes actively working")
                             .sirsiFont(11).foregroundColor(.secondary)
                         ForEach(b.lanes) { l in
-                            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                Text(l.agent).sirsiFont(12, weight: .medium)
-                                    .sirsiFrame(width: 150).frame(alignment: .leading)
-                                    .lineLimit(1)
-                                Text(FleetStatePresentation.label(l.state)).sirsiFont(11)
-                                    .foregroundColor(FleetStatePresentation.color(l.state))
-                                    .sirsiFrame(width: 130).frame(alignment: .leading)
-                                    .lineLimit(1)
-                                Text(laneCounts(l)).sirsiFont(11)
-                                    .foregroundColor(.secondary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .lineLimit(1)
-                            }
+                            FleetLaneRow(lane: l)
                         }
                     } else if engine.fleetLoading {
                         Text("reading fleet…").sirsiFont(12).foregroundColor(.secondary)
@@ -1772,6 +1760,28 @@ struct FleetView: View {
             }
         }
         .task { await engine.loadFleetBoard() }
+    }
+}
+
+// Shared with the decoded rendering regression; no engine or live-read task.
+struct FleetLaneRow: View {
+    let lane: FleetLane
+
+    var body: some View {
+        let l = lane
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(l.agent).sirsiFont(12, weight: .medium)
+                .sirsiFrame(width: 150).frame(alignment: .leading)
+                .lineLimit(1)
+            Text(FleetStatePresentation.label(l.state)).sirsiFont(11)
+                .foregroundColor(FleetStatePresentation.color(l.state))
+                .sirsiFrame(width: 130).frame(alignment: .leading)
+                .lineLimit(1)
+            Text(laneCounts(l)).sirsiFont(11)
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .lineLimit(1)
+        }
     }
 
     private func laneCounts(_ l: FleetLane) -> String {

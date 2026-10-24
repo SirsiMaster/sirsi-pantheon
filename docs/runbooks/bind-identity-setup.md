@@ -141,6 +141,65 @@ Do step 3 before step 2 and you get the same permanent wedge, one move later. Sa
 **renaming** a required check: protection keeps expecting the old name forever, so rename before
 protection references it.
 
+## Router-only rejection clearance on the selected head
+
+The normal binder reads the canonical router channel before posting APPROVE.
+It passes the selected repository, PR number and current full head SHA into
+`scripts/bind/router-rejection.jq`. Each unresolved review/decision rejection
+remains a separate hold. A later ACCEPT/PASS title, a timestamp, a SHA mentioned
+in prose, or another reviewer's positive verdict cannot clear it.
+
+To explicitly resolve a finding, its original canonical `from` sender posts a
+new review/decision with exactly one binder-specific declaration in its existing
+body. The following fixed-order, seven-line fenced block is a declaration of an
+accepted review, not an example to quote into a live verdict inadvertently:
+
+````text
+```sirsi-bind-verdict-v1
+repo: SirsiMaster/sirsi-pantheon
+pr: 927
+head: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+verdict: ACCEPT
+resolves: exact-router-rejection-item-id
+```
+````
+
+Replace the example with the actual accepted full 40-hex head and exact rejection
+item ID. Multiple own findings may be listed comma-separated with no spaces.
+Every rejection must have a matching resolution by its own sender. Sender
+equality uses the existing canonical router `from` field; this block adds no
+router protocol, schema, key, identity credential or approval authority.
+
+The marker, field names/order and verdict are exact. No extra/duplicate fields,
+extra declaration blocks, missing fences, abbreviated hashes, empty resolution
+lists or unrecognized values count as positive proof. Repository and SHA matching
+are case-insensitive. Prose outside the block is explanatory, not the positive
+clearance declaration; do not use this reserved marker for quoted counterexamples
+inside an actual review. A rejection title contradicting an ACCEPT block never
+counts as clearance or scopes a hold away.
+
+A declared REJECT uses the same shape with `verdict: REJECT` and `resolves: -`.
+This allows a known unrelated repository's rejection to remain out of scope even
+when its PR number coincides. Historical rejection titles naming this PR but
+without reliable declared repository metadata remain conservative holds. Unknown
+historical accepts never clear them. They are not permanent gates: a new exact
+head acceptance from the original sender can name those historical rejection IDs;
+the existing explicit `--override-pr <n> --override-finding <text|@file>` route is
+unchanged for an actual owner override. Missing sender custody is not guessed.
+
+The ordinary request-changes path is unchanged. The posted review remains pinned
+to the queried `HEAD_SHA`; router resolution does not substitute an old commit.
+Reading/parsing failure still refuses approval, rather than claiming no rejection.
+
+Qualification uses `scripts/bind/router-rejection.test.sh` and the actual normal
+binder fixture `scripts/bind/router-rejection-bind.test.sh`. The latter supplies
+only temporary fake App ID/key plaintext and closed gh/sirsi/openssl doubles in
+an isolated environment; it performs no real signing, network or review mutation.
+Its optional absolute script-path argument is test-only, for an independent
+guard-omission negative control. There is no production bypass switch. Main owns
+execution, negative-control and publication qualification; source is not a live
+bind receipt and does not gate the independent urgent 125 rollout.
+
 ## What is now true, and what still isn't
 
 **Enforced by GitHub, not convention:**

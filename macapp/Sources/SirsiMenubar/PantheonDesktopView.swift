@@ -225,7 +225,7 @@ enum PantheonWorkspace: String, CaseIterable, Identifiable {
         case .horus: return "Inspect this Mac’s health and capacity"
         case .anubis: return "Review and recover storage with scoped cleanup"
         case .osiris: return "Risk, checkpoints, and recovery options"
-        case .fleet: return "Connected machines and their current state"
+        case .fleet: return "Worker lanes, task progress, and supervision states"
         case .library: return "Find every Pantheon tool and workflow"
         }
     }

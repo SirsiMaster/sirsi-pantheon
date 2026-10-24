@@ -207,10 +207,12 @@ fi
 
 # A34, router channel: a router-only review (no native GitHub review) can reject a
 # PR too — PR #927 merged after one (2026-10-01). Refuse APPROVE while the router's
-# latest verdict item naming this PR is a rejection; same override as above.
+# unresolved review items name this PR. Clearance requires the same canonical
+# sender's closed exact-repo/head declaration resolving each id, not title/time.
+# The explicit owner override remains the same as above.
 if [ "$EVENT" = "APPROVE" ]; then
   RJQ="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/router-rejection.jq"
-  ROUTER_BLOCK=$(sirsi router dump | jq -sr --arg pr "$PR" -f "$RJQ") || {
+  ROUTER_BLOCK=$(sirsi router dump | jq -sr --arg repo "$REPO" --arg pr "$PR" --arg head "$HEAD_SHA" -f "$RJQ") || {
     echo "✗ could not read router verdicts for PR #$PR — failing closed, refusing to bind APPROVE." >&2
     exit 6
   }
@@ -222,8 +224,9 @@ A34 owner override recorded: PR #$PR, router rejection $ROUTER_BLOCK cleared: $O
       echo "  A34 override: router rejection $ROUTER_BLOCK on PR #$PR overridden by owner." >&2
     else
       cat >&2 <<EOF
-✗ A34 fail-closed: router item $ROUTER_BLOCK is the current rejection of PR #$PR — refusing to
-  record APPROVE. Clear it with a newer ACCEPT/PASS review item for this PR, or pass
+✗ A34 fail-closed: unresolved router rejection(s) $ROUTER_BLOCK for PR #$PR — refusing to
+  record APPROVE. Resolve each exact item with the same sender's accepted repository/head
+  declaration (docs/runbooks/bind-identity-setup.md), or pass
   --override-pr $PR --override-finding "<text>|@file" (explicit owner override, PANTHEON_RULES.md 2.31).
 EOF
       exit 6

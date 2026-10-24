@@ -162,12 +162,7 @@ func runThothCompact(cmd *cobra.Command, args []string) error {
 
 	output.Header("Thoth Compact")
 
-	compactOpts := thoth.CompactOptions{
-		RepoRoot: repoRoot,
-		Summary:  summary,
-		MaxAge:   thothCompactMaxAge,
-		MaxKeep:  thothCompactMaxKeep,
-	}
+	compactOpts := thothCompactOptions(cmd, repoRoot, summary, thothCompactMaxAge, thothCompactMaxKeep)
 
 	// ADR-016 Phase 2: prefer npm binary, fall back to Go
 	if delegated, delegateErr := thoth.TryDelegateCompact(compactOpts); delegated {
@@ -185,6 +180,17 @@ func runThothCompact(cmd *cobra.Command, args []string) error {
 
 	output.Success("Session decisions persisted to .thoth/")
 	return nil
+}
+
+func thothCompactOptions(cmd *cobra.Command, repoRoot, summary string, maxAge, maxKeep int) thoth.CompactOptions {
+	return thoth.CompactOptions{
+		RepoRoot: repoRoot,
+		Summary:  summary,
+		MaxAge:   maxAge,
+		MaxKeep:  maxKeep,
+		NoDefaultPrune: maxAge == 0 && maxKeep == 0 &&
+			(cmd.Flags().Changed("max-age") || cmd.Flags().Changed("max-keep")),
+	}
 }
 
 func runThothSync(cmd *cobra.Command, args []string) error {

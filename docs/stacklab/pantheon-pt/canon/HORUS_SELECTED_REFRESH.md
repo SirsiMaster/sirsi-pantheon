@@ -23,8 +23,15 @@ framework, owner approval gate, elevation or daemon is introduced.
   PID/start. Require loaded `ps comm` to match that selected payload.
 - Qualify root-owned, executable, non-group/other-writable protected replacement
   `/usr/local/libexec/sirsi-pantheon/sirsi`. Verify both payloads through exact
-  `/usr/bin/codesign --verify --strict -R` with Apple generic anchor, Team
-  `9D382WV988`, identifier `sirsi`. No payload execution occurs during planning.
+  `/usr/bin/codesign --verify --strict -R` with Apple generic anchor and Team
+  `9D382WV988`. The protected replacement ALWAYS requires identifier `sirsi`.
+  The selected legacy wrapper alone may also retain identifier
+  `sirsi-horus-ssa-20261012`, and only when its literal payload is exactly the
+  OS account owner's `<home>/.sirsi/bin/sirsi-horus-ssa-20261012-signed`.
+  Canonical identifier `sirsi` remains valid for that path and other previously
+  supported legacy payloads. No identifier is learned from caller metadata or
+  signature output. Artifact ownership, no-follow/hash and instance bindings
+  are unchanged. No payload execution occurs during planning.
 - New arguments are exactly the protected path, `horus`, `supervise`; remove
   legacy Program when replacing the shell. Preserve unrelated plist semantics,
   WorkingDirectory, environment, KeepAlive, logs and scheduling fields, checked

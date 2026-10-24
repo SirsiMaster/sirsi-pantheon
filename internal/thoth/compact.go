@@ -15,10 +15,11 @@ import (
 
 // CompactOptions configures the compact behavior.
 type CompactOptions struct {
-	RepoRoot string
-	Summary  string // free-text session summary
-	MaxAge   int    // days to retain journal entries (0 = no pruning)
-	MaxKeep  int    // max journal entries to keep (0 = no limit)
+	RepoRoot       string
+	Summary        string // free-text session summary
+	MaxAge         int    // days to retain journal entries (0 = no pruning)
+	MaxKeep        int    // max journal entries to keep (0 = no limit)
+	NoDefaultPrune bool   // explicit zero retention policy; otherwise zero/zero keeps the legacy default
 }
 
 // Compact persists session decisions into memory.yaml and creates a journal entry.
@@ -56,7 +57,7 @@ func Compact(opts CompactOptions) error {
 	// Step 3: Prune journal. Default to MaxKeep=20 when no explicit
 	// pruning config is set — prevents unbounded journal growth.
 	effectiveMaxKeep := opts.MaxKeep
-	if opts.MaxAge == 0 && opts.MaxKeep == 0 {
+	if opts.MaxAge == 0 && opts.MaxKeep == 0 && !opts.NoDefaultPrune {
 		effectiveMaxKeep = defaultMaxKeep
 	}
 	if opts.MaxAge > 0 || effectiveMaxKeep > 0 {
@@ -255,6 +256,10 @@ type PruneOptions struct {
 
 // PruneJournal removes old entries from journal.md. Returns count of removed entries.
 func PruneJournal(opts PruneOptions) (int, error) {
+	return pruneJournalAt(opts, time.Now())
+}
+
+func pruneJournalAt(opts PruneOptions, now time.Time) (int, error) {
 	journalPath := filepath.Join(opts.RepoRoot, ".thoth", "journal.md")
 	data, err := os.ReadFile(journalPath)
 	if err != nil {
@@ -308,14 +313,18 @@ func PruneJournal(opts PruneOptions) (int, error) {
 
 	// Filter entries
 	var kept []parsedEntry
-	now := time.Now()
 	removed := 0
+	// Journal dates are local civil dates, not UTC instants. Compare them to
+	// the local calendar cutoff encoded in the same date-only UTC form. A
+	// duration from midnight can delete today's entry across UTC midnight or
+	// on a 25-hour DST day. The cutoff date itself remains within retention.
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	cutoff := today.AddDate(0, 0, -opts.MaxAge)
 
 	for _, e := range entries {
 		// Check age
 		if opts.MaxAge > 0 && !e.date.IsZero() {
-			age := now.Sub(e.date)
-			if age > time.Duration(opts.MaxAge)*24*time.Hour {
+			if e.date.Before(cutoff) {
 				removed++
 				continue
 			}

@@ -1,11 +1,147 @@
 package thoth
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestPruneJournalCivilDateRetention(t *testing.T) {
+	newYork, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name      string
+		now       time.Time
+		maxAge    int
+		keepDates []string
+		dropDates []string
+	}{
+		{
+			name: "UTC-next-day-local-evening",
+			now:  time.Date(2026, 10, 23, 20, 6, 0, 0, newYork), maxAge: 1,
+			keepDates: []string{"2026-10-23", "2026-10-22"},
+			dropDates: []string{"2026-10-21"},
+		},
+		{
+			name: "exact-N-and-N-plus-one",
+			now:  time.Date(2026, 10, 23, 23, 59, 0, 0, newYork), maxAge: 3,
+			keepDates: []string{"2026-10-23", "2026-10-20"},
+			dropDates: []string{"2026-10-19"},
+		},
+		{
+			name: "25-hour-fall-back-day",
+			now:  time.Date(2026, 11, 1, 23, 30, 0, 0, newYork), maxAge: 1,
+			keepDates: []string{"2026-11-01", "2026-10-31"},
+			dropDates: []string{"2026-10-30"},
+		},
+		{
+			name: "23-hour-spring-forward-day",
+			now:  time.Date(2026, 3, 8, 23, 30, 0, 0, newYork), maxAge: 1,
+			keepDates: []string{"2026-03-08", "2026-03-07"},
+			dropDates: []string{"2026-03-06"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			dir := filepath.Join(root, ".thoth")
+			if err := os.Mkdir(dir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			journal := "# Civil-date fixture\n\n"
+			dates := append(append([]string(nil), tc.dropDates...), tc.keepDates...)
+			for i, date := range dates {
+				journal += fmt.Sprintf("## Entry %03d — %s 20:06 — Fixture\n\nbody-%s\n\n---\n", i+1, date, date)
+			}
+			path := filepath.Join(dir, "journal.md")
+			if err := os.WriteFile(path, []byte(journal), 0600); err != nil {
+				t.Fatal(err)
+			}
+			removed, err := pruneJournalAt(PruneOptions{RepoRoot: root, MaxAge: tc.maxAge}, tc.now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if removed != len(tc.dropDates) {
+				t.Fatalf("removed=%d, want %d", removed, len(tc.dropDates))
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, date := range tc.keepDates {
+				if !strings.Contains(string(data), "body-"+date) {
+					t.Errorf("retention removed eligible civil date %s", date)
+				}
+			}
+			for _, date := range tc.dropDates {
+				if strings.Contains(string(data), "body-"+date) {
+					t.Errorf("retention kept expired civil date %s", date)
+				}
+			}
+		})
+	}
+}
+
+func TestCompactRetentionPolicy(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // Isolate Stele's default path as well as journal fixtures.
+	for _, tc := range []struct {
+		name string
+		opts CompactOptions
+		want int
+	}{
+		{"explicit-zero-preserves", CompactOptions{NoDefaultPrune: true}, defaultMaxKeep + 6},
+		{"omitted-uses-default", CompactOptions{}, defaultMaxKeep},
+		{"positive-count", CompactOptions{MaxKeep: 3}, 3},
+		{"positive-age", CompactOptions{MaxAge: 1}, 1},
+		{"positive-count-with-intent", CompactOptions{MaxKeep: 3, NoDefaultPrune: true}, 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			dir := filepath.Join(root, ".thoth")
+			if err := os.Mkdir(dir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "memory.yaml"), []byte("project: fixture\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			original := "# Retained journal\n\n"
+			for i := 1; i <= defaultMaxKeep+5; i++ {
+				original += fmt.Sprintf("## Entry %03d — 2000-01-01 — Original %d\n\noriginal-body-%03d\n\n---\n\n", i, i, i)
+			}
+			path := filepath.Join(dir, "journal.md")
+			if err := os.WriteFile(path, []byte(original), 0600); err != nil {
+				t.Fatal(err)
+			}
+			opts := tc.opts
+			opts.RepoRoot, opts.Summary = root, "Retain explicit policy"
+			if err := Compact(opts); err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := string(data)
+			if n := strings.Count(got, "## Entry "); n != tc.want {
+				t.Fatalf("entries=%d, want %d", n, tc.want)
+			}
+			if !strings.Contains(got, "Retain explicit policy") || !strings.HasPrefix(got, "# Retained journal\n") {
+				t.Fatal("new entry or journal header missing")
+			}
+			if tc.name == "explicit-zero-preserves" {
+				if !strings.HasPrefix(got, original) {
+					t.Fatal("explicit zero policy changed original journal bytes")
+				}
+			} else if strings.Contains(got, "original-body-001") {
+				t.Fatal("pruning policy did not remove oldest entry")
+			}
+		})
+	}
+}
 
 func TestCompact_AppendsSessionDecisions(t *testing.T) {
 	tmp := t.TempDir()

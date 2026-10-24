@@ -1,5 +1,20 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-23 — v0.24.126 corrective candidate
+
+- Scope the historical Horus signing alias to the selected owner deployment;
+  keep the protected replacement's canonical signature requirement and lifecycle
+  pins. Actual loaded conversion still requires the supported drain/readback.
+- Recognize both exact observed root-relay spool spellings on M5 and Studio,
+  without normalizing or accepting arbitrary paths; physical retained no-follow
+  inspection and every other selected-service boundary remain mandatory.
+- Preserve explicit zero Thoth retention and local civil-date cutoff semantics.
+- Correct Fleet copy and retain decoded actual-row state regressions.
+- Require exact current-head, same-sender, per-rejection bind clearance.
+- Build from the actually published signed/notarized v0.24.125 source08e71201.
+  Normal protected candidate/publication and installation remain distinct proofs;
+  no parent tag rewrite or new feature is authorized by this corrective batch.
+
 ## 2026-10-23 — v0.24.124 release candidate
 
 - Include canonical main PR1194 service-mail custody and preserve its `mail_to` field in the cloud registry projection; no service is staffed as an LLM lane or declared healthy by mailbox routing.

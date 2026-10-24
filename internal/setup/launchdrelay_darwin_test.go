@@ -23,6 +23,66 @@ func relayInstanceFixture() ServiceInstance {
 		PID: 123, Started: "old-start"}
 }
 
+func TestRootRelayExactSpoolArgumentProfiles(t *testing.T) {
+	for _, args := range [][]string{
+		{"/usr/local/libexec/sirsi-pantheon/sirsi", "router", "relay", "serve", "--spool", "/var/sirsipantheon/relay"},
+		{"/usr/local/libexec/sirsi-pantheon/sirsi", "router", "relay", "serve", "--spool", "/private/var/sirsipantheon/relay"},
+	} {
+		t.Run(args[5], func(t *testing.T) {
+			f, b := newRelayNativeFixture(t)
+			f.config.Program = "/usr/local/libexec/sirsi-pantheon/sirsi"
+			f.config.ProgramArguments = append([]string(nil), args...)
+			before, err := json.Marshal(f.config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := validateRootRelayConfiguration(f.config); err != nil {
+				t.Fatalf("observed literal profile refused: %v", err)
+			}
+			// Existing instance-owned native doubles only; no root read or tool
+			// execution. Verify the actual inspection path accepts both profiles.
+			p, err := b.Inspect(context.Background(), rootRelayLabel)
+			if err != nil || p != relayInstanceFixture() {
+				t.Fatalf("profile lost exact artifact/instance bindings: %+v err=%v", p, err)
+			}
+			after, err := json.Marshal(f.config)
+			if err != nil || string(before) != string(after) || f.bootouts+f.bootstraps+f.locks != 0 {
+				t.Fatal("read-only profile inspection rewrote config or mutated service")
+			}
+		})
+	}
+}
+
+func TestRootRelaySpoolArgumentLookalikesRefused(t *testing.T) {
+	for _, spool := range []string{
+		"/var/sirsipantheon/relay/",
+		"/private/var/sirsipantheon/relay/",
+		"/var//sirsipantheon/relay",
+		"/private//var/sirsipantheon/relay",
+		"/var/./sirsipantheon/relay",
+		"/private/var/./sirsipantheon/relay",
+		"/var/sirsipantheon/../relay",
+		"/private/var/sirsipantheon/relay/../relay",
+		"/System/Volumes/Data/private/var/sirsipantheon/relay",
+		"/var/sirsipantheon/relay-copy",
+		"/private/var/sirsipantheon/relay-copy",
+		"/var/sirsipantheon/relay ",
+		"var/sirsipantheon/relay",
+		"/tmp/relay",
+	} {
+		t.Run(spool, func(t *testing.T) {
+			f, b := newRelayNativeFixture(t)
+			f.config.ProgramArguments[5] = spool
+			if err := validateRootRelayConfiguration(f.config); err == nil {
+				t.Fatal("unobserved spool literal accepted")
+			}
+			if _, err := b.Inspect(context.Background(), rootRelayLabel); err == nil || f.prints+f.childReads+f.spoolReads+f.bootouts+f.bootstraps+f.locks != 0 {
+				t.Fatalf("unsafe profile reached instance/service operations: %v", err)
+			}
+		})
+	}
+}
+
 type relayNativeFixture struct {
 	t                                                                                             *testing.T
 	uid, euid                                                                                     int

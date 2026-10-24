@@ -44,6 +44,10 @@ type horusPublication interface {
 
 const horusSigningRequirement = `=anchor apple generic and certificate leaf[subject.OU] = "9D382WV988" and identifier "sirsi"`
 
+// Only the selected shipped wrapper at the OS account owner's exact path may
+// retain its historical identifier. The protected replacement never uses this.
+const horusLegacySigningRequirement = `=anchor apple generic and certificate leaf[subject.OU] = "9D382WV988" and (identifier "sirsi" or identifier "sirsi-horus-ssa-20261012")`
+
 func (b nativeServiceBackend) horusDependencies() horusServiceDependencies {
 	if b.horus != nil {
 		return *b.horus
@@ -284,8 +288,15 @@ func (b nativeServiceBackend) horusArtifacts(ctx context.Context) (ServiceInstan
 		return p, nil, nil, err
 	}
 	// Verify provenance without executing either payload or printing tool output.
-	for _, program := range []string{payload, horusProtectedProgram} {
-		if _, err = d.read(ctx, nil, "/usr/bin/codesign", "--verify", "--strict", "-R", horusSigningRequirement, program); err != nil {
+	payloadRequirement := horusSigningRequirement
+	if legacy && payload == filepath.Join(home, ".sirsi", "bin", "sirsi-horus-ssa-20261012-signed") {
+		payloadRequirement = horusLegacySigningRequirement
+	}
+	for _, artifact := range []struct{ program, requirement string }{
+		{payload, payloadRequirement},
+		{horusProtectedProgram, horusSigningRequirement},
+	} {
+		if _, err = d.read(ctx, nil, "/usr/bin/codesign", "--verify", "--strict", "-R", artifact.requirement, artifact.program); err != nil {
 			return p, nil, nil, errors.New("Horus maintenance: installed payload signature verification failed")
 		}
 	}

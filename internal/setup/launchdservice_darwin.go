@@ -352,11 +352,11 @@ type rootRelayConfiguration struct {
 
 func validateRootRelayConfiguration(config rootRelayConfiguration) error {
 	args := config.ProgramArguments
-	// Exact six-argument deployed profile, independently observed in native
-	// metadata. No loose binary, shell wrapper, alternate spool or extra flags.
+	// Exact six-argument deployed profiles: only the two observed literal spool
+	// spellings. No path normalization, other alias, shell wrapper or extra flag.
 	if config.Label != rootRelayLabel || config.UserName != "_sirsipantheon" || (config.Program != "" && config.Program != rootRelayProgram) || len(args) != 6 ||
 		args[0] != rootRelayProgram || args[1] != "router" || args[2] != "relay" || args[3] != "serve" ||
-		args[4] != "--spool" || args[5] != rootRelaySpool {
+		args[4] != "--spool" || (args[5] != rootRelaySpool && args[5] != rootRelayPhysicalSpool) {
 		return errors.New("service lifecycle: relay plist program/argv outside protected native profile")
 	}
 	return nil
