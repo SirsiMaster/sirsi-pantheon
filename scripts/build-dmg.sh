@@ -155,9 +155,12 @@ if /usr/bin/find "${BUNDLE_DIR}" -type f -name '._*' -print -quit | /usr/bin/gre
     exit 1
 fi
 
-# Package installation assigns root ownership. Both public entry points must
-# remain executable by the normal user, independent of the builder's umask.
-chmod 0755 "${BUNDLE_DIR}/Contents/MacOS/sirsi" "${BUNDLE_DIR}/Contents/MacOS/sirsi-menubar"
+# Package installation assigns root ownership. Normalize only this generated
+# bundle before signing: every directory traversable, resources world-readable,
+# and only the two exact MacOS entry points executable. Refuse links/types first.
+python3 "${PROJECT_ROOT}/scripts/artifact_modes.py" --bundle "${BUNDLE_DIR}"
+# Signature metadata created from here must not inherit a private builder umask.
+umask 022
 
 # --- Code signing ---
 if [[ "$MODE" == "release" ]]; then
@@ -181,6 +184,9 @@ else
     echo "Signing ad-hoc development bundle (not distributable)."
     codesign --force --deep --sign - "${BUNDLE_DIR}"
 fi
+
+# Read-only mode check after signing; never repair an installed/signed bundle.
+python3 "${PROJECT_ROOT}/scripts/artifact_modes.py" --bundle "${BUNDLE_DIR}" --check
 
 # Verify the final assembled payload through the canonical Go engine before it
 # can cross a DMG boundary. This is non-executing inventory only: it retains
