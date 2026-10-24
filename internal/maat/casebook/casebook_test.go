@@ -7,6 +7,45 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 )
 
+func TestSourceScreenV2ProjectsReviewWithoutHostRepairAuthority(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		score int
+		major bool
+		floor bool
+		route string
+	}{
+		{"major", 92, true, true, "system_one_review"},
+		{"low-score-no-findings", 84, false, true, "system_one_review"},
+		{"declared-floor-red", 92, false, false, "system_one_floor_recovery"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := maat.SourceScreen{Contract: maat.SourceScreenContract, SchemaVersion: 2,
+				Subject:       maat.VerdictSubject{Kind: "commit", Repo: "fixture/repo", Ref: "main", HeadSHA: strings.Repeat("a", 40)},
+				FeatherWeight: tc.score, Confidence: 1, Floor: maat.FloorResult{Passed: tc.floor, Checks: []maat.FloorCheck{{Name: "gofmt", Passed: true}, {Name: "vet", Passed: true}, {Name: "golangci-lint", Passed: true}, {Name: "test-race", Passed: true}}},
+				Model: maat.ModelStamp{Provider: "local:fixture", Version: "fixture", Local: true, Calibration: "unqualified", CalibrationID: strings.Repeat("c", 64), EvidenceSetDigest: strings.Repeat("d", 64)}}
+			if tc.major {
+				s.Findings = []maat.ScreenFinding{{ID: "major", Severity: "major", Category: "correctness", Claim: "inert claim", Evidence: "inert proof", EvidenceID: strings.Repeat("e", 64), Confidence: 1}}
+			}
+			v, err := maat.ScreenSource(s, s.Subject.HeadSHA)
+			if err != nil {
+				t.Fatal(err)
+			}
+			view := Build([]maat.Decision{{Time: "2026-10-24T00:00:00Z", Host: "fixture", Kind: "system one screen", Requester: "fixture", Assessed: "source", Determination: string(v.Gate), Why: "declared only", Evidence: "fixture:screen", SystemOne: &v}})
+			if len(view.Cases) != 1 {
+				t.Fatal("lost source case")
+			}
+			c := view.Cases[0]
+			if c.Status != StatusOpen || c.NextAction == nil || c.NextAction.Kind != tc.route || c.NextAction.ActionID != "" {
+				t.Fatalf("source route=%+v", c)
+			}
+			if c.SystemOne.Model.Calibration != "unqualified" || !strings.Contains(c.SystemOne.FloorEvidence, "declared-only") {
+				t.Fatal("projection lost provenance")
+			}
+		})
+	}
+}
+
 func TestSearchClassifiesPrioritizesAndLinksEvidence(t *testing.T) {
 	decisions := []maat.Decision{
 		{Time: "2026-09-27T09:00:00Z", Host: "m5", Kind: "reservation refusal", Requester: "apollo", Resource: "m5", Affected: "mercury", Assessed: "active reservation", Determination: "refuse", Why: "overlap", Evidence: "reservation:m5-1"},

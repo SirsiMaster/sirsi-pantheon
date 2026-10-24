@@ -9,6 +9,48 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 )
 
+func TestMaatHostV1WarningRepairsRemainDeterministicWithoutCalibration(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		check      string
+		fix        string
+		route      guard.ResolutionRoute
+		wantRepair string
+	}{
+		{"closed launchd fallback", maatRepairLaunchdDisabledCheck, "", guard.ResolutionRepair, maat.SystemOneRepairLaunchdDisabled},
+		// The real liveness warning producer supplies this Fix after doctor's
+		// remediation pass. Its check name alone does not establish eligibility.
+		{"closed producer-owned liveness", maatRepairLivenessWatchCheck, "sirsi liveness-watch install", guard.ResolutionRepair, maat.SystemOneRepairLivenessWatch},
+		{"generic actionable warning", "RAM Pressure", "", guard.ResolutionRepair, ""},
+		{"liveness missing fix", maatRepairLivenessWatchCheck, "", guard.ResolutionMaatReview, ""},
+		{"liveness blank fix", maatRepairLivenessWatchCheck, " \t", guard.ResolutionMaatReview, ""},
+		{"unknown review-only warning", "owned unknown check", "", guard.ResolutionMaatReview, ""},
+		{"unknown fix is not a closed action", "owned unknown check", "owned inert fix text", guard.ResolutionRepair, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			finding := guard.DiagnosticFinding{Check: tc.check, Severity: guard.SeverityWarn, Message: "owned fixture warning", Fix: tc.fix}
+			if got := guard.ResolutionFor(finding); got != tc.route {
+				t.Fatalf("fixture route=%q want=%q", got, tc.route)
+			}
+			report := &guard.DoctorReport{Score: 92, Findings: []guard.DiagnosticFinding{finding}}
+			s, _, err := maatHostSystemOneScreen(report, "fixture-host", 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			v, err := maat.Screen(s)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if v.SchemaVersion != 1 || v.Contract != "" || v.Model.Calibration != "" || v.Gate != maat.GateChanges {
+				t.Fatalf("host behavior changed: %+v", v)
+			}
+			if len(v.Findings) != 1 || v.Findings[0].RepairID != tc.wantRepair {
+				t.Fatalf("host repair mapping=%+v want=%q", v.Findings, tc.wantRepair)
+			}
+		})
+	}
+}
+
 func TestMaatHostSystemOneScreenMapsLiveDiagnosticsToClosedEvidence(t *testing.T) {
 	report := &guard.DoctorReport{Timestamp: time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC), Score: 63, Findings: []guard.DiagnosticFinding{
 		{Check: "Disk Space", Severity: guard.SeverityCritical, Message: "disk is critically full", Fix: "sirsi clean --include-caution"},

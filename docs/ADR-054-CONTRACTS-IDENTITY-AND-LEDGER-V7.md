@@ -124,13 +124,15 @@ per-field audit history is wanted it is a v8 conversation, not a Monday one.
 
 ---
 
-## Owner gate surfaced (not mine to close)
+## Historical licensing gate — resolved by PR #465
 
-codex-pantheon also holds `pantheon-adr054-owner-gate`, blocked on **PR #465**
-(public SNE claims/licensing canon) — open, non-mergeable, awaiting owner
-content approval and rebase. Structural checks passed. It is correctly
-owner-gated and is being surfaced on the owner's decision board rather than
-resolved by any agent.
+The original `pantheon-adr054-owner-gate` referred to the licensing decision
+tracked in **PR #465**, which has merged. The accepted binding is
+[ADR-055](ADR-055-SNE-LICENSING-ANUBIS-RA-SEAM.md); the ADR index records it as
+accepted. The former approval/rebase wait is historical, not a current
+engineering or release prerequisite. This resolution does not grant authority
+for new outward SNE claims: ADR-055's disclosure boundary and A33 evidence
+requirements still apply.
 
 
 ---

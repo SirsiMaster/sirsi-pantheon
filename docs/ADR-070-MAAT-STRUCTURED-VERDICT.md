@@ -152,6 +152,86 @@ jev's value is that "0.90 confidence is right ~90% of the time" — true only if
 - **Raise τ on drift.** If the screen ever auto-passes something an independent frontier outcome would have blocked, calibration is broken: set `Calibration = unqualified` and raise τ before any further auto-pass is trusted.
 - **Re-qualify on change.** A new model version, prompt, or evidence recipe changes `EvidenceSetDigest`/`CalibrationID` and starts unqualified.
 
+### 2.5 Source-import implementation scope (2026-10-24 corrective)
+
+`maat.adr070.source-screen` schema **2** is an explicit, nonbinding source
+import contract, not activation of this ADR's proposed probabilistic gate.
+Historical `SystemOneSchemaVersion=1` journal records retain their original
+policy. Deterministic host triage and release/credential preflight remain on
+that local policy; warnings and closed host repairs need no model/calibration.
+
+`sirsi maat screen --input packet.json --expect-head <selected-head> --confirm`
+now accepts only v2. Implicit v1 source imports reject rather than borrowing
+legacy pass semantics. The existing native picker now offers an editable
+independently selected expected head, typed/copyable v2 format, and a read-only
+Go validation preview (`--preview`). Preview emits the exact raw input SHA256
+from the same bounded file bytes consumed by validation; it never opens the
+journal writer. Confirmation freezes file/head/digest and records with
+`--expect-input-sha256`; changed bytes (even whitespace), selection or head
+require fresh review. `--preview --confirm` rejects. CLI use of the optional
+digest is deny-only, not qualification or new authority. Native uses the same
+Go validator, not a provider-name exception or Swift policy replica. Failed
+validation keeps fields editable and allows a corrected head/replacement file;
+the once-only confirmation latch and retained bounded capture prevent replay
+on decode failure or Casebook refresh. Existing host/native observation is
+unchanged. No payload or floor command executes during import.
+
+V2 requires exact-case keys and explicit zero/false/empty scalars, rejects
+duplicates/unknowns/nulls/trailing data/types, and bounds input to 1 MiB. Its
+contract/version, source subject (not `host`), score/confidences and enums are
+validated before policy. Every finding has a lowercase 64-hex SHA256 evidence
+identity; model provenance carries the declared evidence-set recipe digest and
+calibration identity in the same format. These are caller declarations, not
+authenticated findings, source inventories or independently validated recipes.
+The separate expected-head argument is consumer context, not authenticated gate
+authority; a future gate must resolve its own actual head.
+
+The exact structural floor object is required by R0. Empty/incomplete named
+checks, a declared failed summary or failed checks are R1 block (a passing
+summary contradicting a failed check rejects under R0). Only the four closed
+names `gofmt`, `vet`, `golangci-lint`, `test-race` form a complete declared set.
+The serialized `floor_evidence` and journal explanation explicitly say
+**declared-only; checks not executed or authenticated by import**. This never
+stands in for the independent real deterministic floor.
+
+Production permits only `calibration:"unqualified"`; imported `qualified`
+claims **reject**, not downgrade, even with a failed floor. For valid packets,
+R1 precedes R2, so failed/incomplete floor blocks; otherwise R2 escalates.
+Package-private pure evaluator fixtures model qualified context to cover all
+R0–R8 precedence, including confirmed block before low-confidence major, any
+major escalating, minor/nit changes, score85 clean pass and score84 escalation.
+No exported qualified evaluator, qualification writer, automatic model/frontier
+call, new store, router gate activation or mutation/release permission is added.
+All public verdict validation/persistence rejects qualified v2 results.
+
+**OPEN, not completed by this corrective:** authenticated qualification from a
+pinned labelled evaluation set, independently authenticated same-head outcomes,
+sampled pass AND changes comparisons, drift invalidation/threshold changes,
+requalification on model/prompt/recipe changes, and final gate integration.
+Existing v1 calibration links/statistics remain declared audit evidence, not an
+authority to qualify v2. This slice claims neither full ADR070 nor full Ma'at
+completion. Source fixtures/independent review/actual scheduled qualification
+and installed adoption are separate evidence; no passed tests are inferred.
+
+Public caller survey (tracked source, not installed runtime evidence):
+
+| Surface | Source import boundary | Compatibility disposition |
+| --- | --- | --- |
+| CLI | `cmd/sirsi/maatscreen.go` | Explicit v2/expected head, preview then optional digest-pinned confirmed record; implicit v1 source import rejects with v2 usage guidance |
+| Native | `MaatCasebookView.screenImportControl` → `MaatSourceImportModel` → the same CLI | Editable head and v2 example, non-writing preview, explicit exact-byte confirmation, complete/exit/contract/version/head checks; mismatch offers correction, not downgrade |
+| MCP | `internal/mcp/tools.go` `maat_casebook` → journal/Casebook read | No source-import writer; remains read-only for source screens |
+| TUI | `internal/tui/screen_activity.go` reads `maat casebook` | No source-import writer; separate health `record-resolution` remains an owner-review record, not a screen import |
+| Dashboard/Horus | `internal/dashboard/maat.go` GET projections; `actions.go` closed registry | No source-import action: `maat` does not accept appended args, knowledge refresh is unrelated; no new write surface |
+| Local deterministic producers | `maattriage.go`, `maatpreflight.go` → legacy `maat.Screen` | Host observation/closed repairs and release/credential preflight retain v1 local policy; no model calibration requirement |
+
+`contracts/maat/source-screen-v2-fixture.json` is an explicitly inert example,
+shared by Go actual-command preview/record fixtures and Swift format/controller
+fixtures. Its example head/digests are not proof of any real source or checks.
+Native refresh failure preserves the recorded operation receipt without
+re-running the import. None of these source assertions claim installed UX or
+executed fixtures; native strict-concurrency build and actual qualification
+remain scheduled work.
+
 ## 3. Alternatives Considered
 
 1. **Keep Ma'at as an LLM that renders prose verdicts** — Rejected: not machine-gateable, slow, and uncalibrated; the gate can't act on prose and a human must re-read every run. This is the state the rewrite replaces.

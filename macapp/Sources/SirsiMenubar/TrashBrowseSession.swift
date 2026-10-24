@@ -15,13 +15,14 @@ final class TrashDirectorySession {
     private var stream: UnsafeMutablePointer<DIR>?
     private var identities: [TrashIdentity] = []
     private let leafStat: (Int32, String) throws -> TrashIdentity
+    private let syscalls: TrashBrowseSyscalls
     private var sequence: UInt64 = 0
     private var exhausted = false
     var isClosed: Bool { stream == nil }
     var ownedDescriptorCount: Int { descriptors.count + (stream == nil ? 0 : 1) }
     var descriptorSnapshot: [Int32] { descriptors + (stream.map { [dirfd($0)] } ?? []) }
 
-    struct Refusal: Error { let message: String }
+    typealias Refusal = TrashBrowseFailure
 
     enum RawNameRow: Equatable {
         case dot
@@ -64,15 +65,20 @@ final class TrashDirectorySession {
 
     static func statFD(_ fd: Int32) throws -> TrashIdentity {
         var s = stat()
-        guard fstat(fd, &s) == 0 else { throw Refusal(message: "Folder metadata could not be read. Browse again.") }
+        guard fstat(fd, &s) == 0 else {
+            let captured = errno
+            throw Refusal(errno: captured, stage: .metadata)
+        }
         return identity(s)
     }
 
     static func statAt(_ fd: Int32, _ name: String) throws -> TrashIdentity {
         var s = stat()
-        guard name.withCString({ fstatat(fd, $0, &s, AT_SYMLINK_NOFOLLOW) }) == 0 else {
-            throw Refusal(message: "Item metadata could not be read.")
+        let result = name.withCString { path -> Int32? in
+            let code = fstatat(fd, path, &s, AT_SYMLINK_NOFOLLOW)
+            return code < 0 ? errno : nil
         }
+        if let captured = result { throw Refusal(errno: captured, stage: .metadata) }
         return identity(s)
     }
 
@@ -83,9 +89,11 @@ final class TrashDirectorySession {
     // home is an internal owned-fixture seam. Production passes only the
     // invoking user's fixed home, never a request-supplied root.
     init(home: URL, request: TrashBrowseRequest,
+         syscalls: TrashBrowseSyscalls = .live,
          leafStat: @escaping (Int32, String) throws -> TrashIdentity = TrashDirectorySession.statAt) throws {
         directory = request.directory
         self.leafStat = leafStat
+        self.syscalls = syscalls
         let parts = directory == "." ? [] : directory.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
         guard request.schema == "pantheon.trash-browse.v3", request.session == nil, request.sequence == 0,
               request.generation.isEmpty, parts.count <= 24, directory.utf8.count <= 8192,
@@ -94,12 +102,12 @@ final class TrashDirectorySession {
         }
         var opened: [Int32] = []
         var retained = false
-        defer { if !retained { for fd in opened.reversed() { Darwin.close(fd) } } }
-        let homeFD = home.path.withCString { Darwin.open($0, Self.flags) }
-        guard homeFD >= 0 else { throw Refusal(message: "Owner home could not be opened without following links.") }
+        defer { if !retained { for fd in opened.reversed() { syscalls.close(fd) } } }
+        let homeOpen = syscalls.open(nil, home.path, Self.flags)
+        let homeFD = try TrashBrowseSyscalls.admitted(homeOpen, stage: .ownerHome)
         opened.append(homeFD)
-        let rootFD = openat(homeFD, ".Trash", Self.flags)
-        guard rootFD >= 0 else { throw Refusal(message: "Trash could not be opened without following links.") }
+        let rootOpen = syscalls.open(homeFD, ".Trash", Self.flags)
+        let rootFD = try TrashBrowseSyscalls.admitted(rootOpen, stage: .trashRoot)
         opened.append(rootFD)
         let observedRoot = try Self.statFD(rootFD)
         guard observedRoot.type == "directory", observedRoot.uid == geteuid(),
@@ -116,8 +124,8 @@ final class TrashDirectorySession {
             guard before.type == "directory", before.uid == observedRoot.uid, before.device == observedRoot.device else {
                 throw Refusal(message: "Folder ancestry is untrusted. Browse again.")
             }
-            let fd = part.withCString { openat(parent, $0, Self.flags) }
-            guard fd >= 0 else { throw Refusal(message: "Folder changed or cannot be opened without following links.") }
+            let ancestorOpen = syscalls.open(parent, part, Self.flags)
+            let fd = try TrashBrowseSyscalls.admitted(ancestorOpen, stage: .ancestor)
             opened.append(fd)
             let after = try Self.statFD(fd)
             guard before == after else { throw Refusal(message: "Folder changed while opening.") }
@@ -127,16 +135,24 @@ final class TrashDirectorySession {
         containers = ancestors
         let stamp = try JSONEncoder().encode(observed.last!)
         generation = SHA256.hash(data: stamp).map { String(format: "%02x", $0) }.joined()
-        let readFD = openat(opened.last!, ".", Self.flags)
-        guard readFD >= 0 else { throw Refusal(message: "Directory stream could not be opened.") }
+        let streamOpen = syscalls.open(opened.last!, ".", Self.flags)
+        let readFD = try TrashBrowseSyscalls.admitted(streamOpen, stage: .directoryStream)
         // libc may materialize a union directory to suppress duplicates. Do not
         // admit that unbounded read-all mode into a bounded native browser.
         var filesystem = statfs()
-        guard fstatfs(readFD, &filesystem) == 0, UInt32(filesystem.f_flags) & UInt32(MNT_UNION) == 0 else {
-            Darwin.close(readFD); throw Refusal(message: "This directory filesystem cannot support bounded native browsing.")
+        guard fstatfs(readFD, &filesystem) == 0 else {
+            let captured = errno
+            syscalls.close(readFD); throw Refusal(errno: captured, stage: .directoryStream)
         }
-        guard let handle = fdopendir(readFD) else {
-            Darwin.close(readFD); throw Refusal(message: "Directory stream is unavailable.")
+        guard UInt32(filesystem.f_flags) & UInt32(MNT_UNION) == 0 else {
+            syscalls.close(readFD); throw Refusal(safety: "This directory filesystem cannot support bounded native browsing.", stage: .directoryStream)
+        }
+        let streamOpenResult = syscalls.stream(readFD)
+        guard let handle = streamOpenResult.stream else {
+            let captured = streamOpenResult.error
+            syscalls.close(readFD)
+            if let captured { throw Refusal(errno: captured, stage: .directoryStream) }
+            throw Refusal(safety: "Directory stream failed without an available error code.", stage: .directoryStream)
         }
         stream = handle; descriptors = opened; identities = observed; retained = true
     }
@@ -145,7 +161,7 @@ final class TrashDirectorySession {
 
     func close() {
         if let stream { closedir(stream); self.stream = nil }
-        for fd in descriptors.reversed() { Darwin.close(fd) }
+        for fd in descriptors.reversed() { syscalls.close(fd) }
         descriptors.removeAll()
     }
 
@@ -182,7 +198,8 @@ final class TrashDirectorySession {
                 errno = 0
                 let pointer = readdir(stream); calls += 1
                 guard let pointer else {
-                    guard errno == 0 else { throw Refusal(message: "Directory read failed. Browse again.") }
+                    let captured = errno
+                    guard captured == 0 else { throw Refusal(errno: captured, stage: .directoryStream) }
                     exhausted = true; break
                 }
                 var record = pointer.pointee
@@ -238,7 +255,10 @@ final class TrashBrowseReadFence: @unchecked Sendable {
 actor TrashBrowseIO {
     private var session: TrashDirectorySession?
     private let beforeRead: @Sendable () -> Void
-    init(beforeRead: @escaping @Sendable () -> Void = {}) { self.beforeRead = beforeRead }
+    private let syscalls: TrashBrowseSyscalls
+    init(syscalls: TrashBrowseSyscalls = .live, beforeRead: @escaping @Sendable () -> Void = {}) {
+        self.syscalls = syscalls; self.beforeRead = beforeRead
+    }
     deinit { session?.close() }
     func close() { session?.close(); session = nil }
 
@@ -251,7 +271,7 @@ actor TrashBrowseIO {
             if Task.isCancelled || fence.isCancelled { return CommandExecution(cancelled: true) }
             beforeRead() // inert per-instance fixture seam; production is empty
             if Task.isCancelled || fence.isCancelled { close(); return CommandExecution(cancelled: true) }
-            if request.session == nil { close(); session = try TrashDirectorySession(home: home, request: request) }
+            if request.session == nil { close(); session = try TrashDirectorySession(home: home, request: request, syscalls: syscalls) }
             guard let session else { throw TrashDirectorySession.Refusal(message: "Browse session expired. Start a fresh browse.") }
             let page = try session.page(request)
             if Task.isCancelled || fence.isCancelled { close(); return CommandExecution(cancelled: true) }
@@ -259,7 +279,8 @@ actor TrashBrowseIO {
             return CommandExecution(stdout: try JSONEncoder().encode(page), exitCode: 0, childState: .exitConfirmed)
         } catch {
             close()
-            return CommandExecution(launchError: (error as? TrashDirectorySession.Refusal)?.message ?? "Native Trash browse failed. Start a fresh browse.")
+            let failure = error as? TrashBrowseFailure ?? TrashBrowseFailure(safety: "Native Trash browse failed. Start a fresh browse.")
+            return failure.execution
         }
     }
 }

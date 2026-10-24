@@ -6,6 +6,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.131] — 2026-10-24
+
+### Corrected
+
+- Import explicit ADR-070 v2 source screens with independently selected source
+  heads and exact reviewed-byte digests. Keep imported checks visibly declared,
+  reject caller-supplied qualification, and retain deterministic local host
+  diagnostics and historical v1 reads. Native preview and confirmation consume
+  one intent and preserve operation receipts without automatic replay.
+- Preserve native Trash failure stages and POSIX error codes. Offer access
+  guidance only for permission denials, without claiming Full Disk Access is
+  necessarily missing. Return through the owned navigation stack and require
+  a fresh explicit browse; never revive an old selection or deletion approval.
+- Remove a resolved historical ADR-055 owner-wait reference while retaining
+  the recorded sealed/public disclosure boundary.
+
+This successor starts from the actual signed/notarized v0.24.130 release.
+The individual source qualifications remain preserved; integrated validation,
+protected CI, signing, publication and installed successor checks are separate.
+Model calibration, binding automated source review, unfinished MCP changes and
+whole-fleet/cloud-offline qualification are not claimed by this release.
+
 ## [0.24.130] — 2026-10-24
 
 ### Corrected

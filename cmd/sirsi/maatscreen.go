@@ -1,22 +1,26 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/sys/unix"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 )
 
 var (
-	maatScreenInput   string
-	maatScreenConfirm bool
+	maatScreenInput            string
+	maatScreenConfirm          bool
+	maatScreenExpectedHead     string
+	maatScreenPreview          bool
+	maatScreenExpectedInputSHA string
 )
 
 // maatScreenCmd turns a closed, typed local observation into Ma'at's
@@ -25,37 +29,43 @@ var (
 // schema, and appends the same result that Casebook projects everywhere.
 var maatScreenCmd = &cobra.Command{
 	Use:   "screen --input <system-one-screen.json>",
-	Short: "Record a strict local Ma'at System One screen",
-	Long: `Turn a closed local screen input into Ma'at's strict System One verdict.
+	Short: "Record an unqualified ADR070 v2 source screen",
+	Long: `Import an explicit maat.adr070.source-screen v2 packet pinned by --expect-head.
 
-The deterministic floor always wins. Sensitive boundaries and low-confidence
-screens escalate to frontier review; this command does not authorize mutation,
-release, router work, signing, installation, or a final owner decision.`,
+Imported floor checks are declared evidence: this command does not execute or
+authenticate them. Failed/incomplete floor blocks; otherwise unqualified screens
+escalate. Imported qualified claims reject. Legacy v1 journal reads and local host
+triage are separate. No mutation, release, router gate or binding approval results.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if maatScreenPreview && maatScreenConfirm {
+			return fmt.Errorf("--preview and --confirm are mutually exclusive")
+		}
 		if strings.TrimSpace(maatScreenInput) == "" {
 			return fmt.Errorf("--input is required")
 		}
-		raw, err := os.ReadFile(maatScreenInput)
+		raw, err := readMaatSourceScreen(maatScreenInput)
 		if err != nil {
 			return fmt.Errorf("read Ma'at System One input: %w", err)
 		}
-		decoder := json.NewDecoder(bytes.NewReader(raw))
-		decoder.DisallowUnknownFields()
-		var input maat.SystemOneScreen
-		if decodeErr := decoder.Decode(&input); decodeErr != nil {
-			return fmt.Errorf("decode Ma'at System One input: %w", decodeErr)
+		sum := sha256.Sum256(raw)
+		inputSHA := hex.EncodeToString(sum[:])
+		if maatScreenExpectedInputSHA != "" && maatScreenExpectedInputSHA != inputSHA {
+			return fmt.Errorf("source input digest changed or malformed; preview and review the selected file again")
 		}
-		var trailing any
-		if trailingErr := decoder.Decode(&trailing); trailingErr != io.EOF {
-			if trailingErr == nil {
-				return fmt.Errorf("decode Ma'at System One input: multiple JSON values")
-			}
-			return fmt.Errorf("decode Ma'at System One input: trailing JSON: %w", trailingErr)
-		}
-		verdict, err := maat.Screen(input)
+		input, err := maat.DecodeSourceScreen(raw)
 		if err != nil {
 			return err
+		}
+		verdict, err := maat.ScreenSource(input, maatScreenExpectedHead)
+		if err != nil {
+			return err
+		}
+		if maatScreenPreview {
+			return emitJSON(struct {
+				maat.MaatVerdict
+				InputSHA256 string `json:"input_sha256"`
+			}{verdict, inputSHA})
 		}
 		// A valid screen is still a durable journal write. Validate the closed
 		// packet first so an operator gets useful feedback, then require the same
@@ -102,6 +112,9 @@ release, router work, signing, installation, or a final owner decision.`,
 }
 
 func systemOneSummary(verdict maat.MaatVerdict) string {
+	if verdict.SchemaVersion == maat.SourceScreenSchemaVersion {
+		return "Nonbinding ADR070 source import: " + string(verdict.Gate) + ". Floor evidence is declared only; no checks or authenticated calibration ran."
+	}
 	switch verdict.Gate {
 	case maat.GatePass:
 		return "Local System One found no issues above its configured threshold. This is evidence, not mutation authority."
@@ -119,6 +132,33 @@ func systemOneSummary(verdict maat.MaatVerdict) string {
 func init() {
 	maatScreenCmd.Flags().StringVar(&maatScreenInput, "input", "", "closed Ma'at System One screen JSON")
 	maatScreenCmd.Flags().BoolVar(&maatScreenConfirm, "confirm", false, "confirm recording the validated Ma'at System One screen")
+	maatScreenCmd.Flags().StringVar(&maatScreenExpectedHead, "expect-head", "", "required independently selected source head; not imported from the packet")
+	maatScreenCmd.Flags().BoolVar(&maatScreenPreview, "preview", false, "validate and return declared nonbinding v2 evidence and exact input digest without journal writes")
+	maatScreenCmd.Flags().StringVar(&maatScreenExpectedInputSHA, "expect-input-sha256", "", "deny recording if the exact reviewed input bytes changed (never grants authority)")
 	maatScreenCmd.Flags().BoolVar(&maatJSON, "json", false, "JSON output")
 	maatCmd.AddCommand(maatScreenCmd)
+}
+
+func readMaatSourceScreen(path string) ([]byte, error) {
+	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, err
+	}
+	f := os.NewFile(uintptr(fd), path)
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || info.Size() > maat.SourceScreenMaxBytes {
+		return nil, fmt.Errorf("source input must be a regular file of at most 1 MiB")
+	}
+	raw, err := io.ReadAll(io.LimitReader(f, maat.SourceScreenMaxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > maat.SourceScreenMaxBytes {
+		return nil, fmt.Errorf("source input exceeds 1 MiB")
+	}
+	return raw, nil
 }

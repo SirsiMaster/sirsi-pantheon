@@ -61,7 +61,7 @@ not get silently co-upgraded because they share a deity name.
 | Coverage | audit assessment with threshold and remediation | `CoverageAssessor` through audit report | `assessment` cases, failed cases are urgent |
 | Pipeline/CI | audit assessment with the current CI run/log classification | `PipelineAssessor` through `sirsi maat audit` | `governance` or `assessment` cases, never synthetic success |
 | Stack Lab guard/review | decision with a receipt reference | Ma'at/approved caller through the decision journal | `governance` cases linked to the receipt |
-| System One screen | closed typed local observation, deterministic floor, confidence, model provenance, subject identity, and bounded evidence-linked findings | `sirsi maat screen --input <system-one-screen.json> --confirm` via `maat.Screen` | `governance` case with `pass`, `changes`, `block`, or `escalate`; each finding retains a prescribed recovery step as evidence, escalation routes to evidence-bound review, and no screen authorizes the assessed operation |
+| ADR070 v2 source import | explicit `maat.adr070.source-screen`, exact required schema2 JSON, per-finding/recipe/calibration identities, declared-only floor, unqualified state and separately selected head | `sirsi maat screen --input <source-screen.json> --expect-head <head> --confirm` via `maat.ScreenSource` | `governance` case: failed/incomplete declared floor `block`, otherwise unqualified `escalate`; imported qualified claims reject. No real checks, model qualification, mutation or binding approval are inferred |
 | Host-health System One screen | one complete local Doctor report and resolved local host identity, hashed before classification | `sirsi maat triage [--confirm]`, native **Observe this Mac**, or the named Stack Lab component handoff into the same native System One surface | `host-health` System One case with the exact diagnostic digest, active warning/critical findings, and a visible distinction between a recorded Casebook result and a healthy pass; the Stack Lab handoff never interprets recipe text as a command, and observation alone never repairs, kills, installs, or invokes an LLM |
 | System One calibration | one recorded local auto-pass and a distinct independent final review outcome | `sirsi maat calibrate --screen-evidence <ref> --frontier-evidence <ref> --frontier-gate <pass|changes|block>` | durable calibration evidence and overturn-rate history; replay, missing screen, non-pass, and ambiguous links reject |
 | Release-contract preflight | regular non-symlink local packaging/workflow/Stack Lab sources, captured and hashed in-process | `sirsi maat preflight release --root <checkout> [--confirm]` via `maat.PreflightReleaseContract`, including the native Ma'at System One inspect-then-confirm flow | delivery-bound System One evidence that never runs a build/package/signing command; source-floor failures retain a bounded repair hint, and a green source floor remains distinct from credentialed release proof |
@@ -109,6 +109,55 @@ finding identities and noncanonical verdict replay reject rather than creating
 ambiguous case history.
 
 ## Product contract
+
+### ADR070 corrective source slice, not full completion
+
+The existing `maat-system-one-screen` component now separates amended v2 source
+imports from legacy v1 journal reads and deterministic host/preflight semantics.
+The former implicit v1 source-import CLI path refuses: callers must explicitly
+provide v2 and `--expect-head`. The existing native picker is migrated to that
+same contract, with an editable expected-head field, copyable typed format,
+non-writing `--preview`, and reviewed raw-digest confirmation. Errors retain
+editable input and a choose-file/review recovery; they never silently downgrade.
+Host observation and both closed host repairs remain model-free and unchanged. The shared
+Casebook/CLI/MCP/Horus/TUI/native projections retain the v2 gate and journal
+explanation; they do not gain execution or binding review authority.
+
+`floor_evidence` and the journal explanation label v2 checks **declared-only**.
+Import never executes or authenticates the floor, recipe, evidence or calibration
+set. Lowercase 64-hex evidence/recipe/calibration identities are structural
+declarations, not locally earned qualification. No imported qualified string is
+accepted. All valid nonblocked imports escalate under R2; R1 failed/incomplete
+floor still blocks first. Missing structural keys reject under R0.
+
+Source QA trace, **unrun until separately admitted qualification**:
+
+| Requirement | Source | Inert fixture |
+| --- | --- | --- |
+| R0–R8 exact precedence, qualified context private to policy fixtures | `internal/maat/sourcescreen.go` | `TestSourceScreenExactRulePrecedence` |
+| Required zero/false fields, duplicate/unknown/case-alias/null/type/EOF/size rejection; stale expected head and evidence identities | same | `TestSourceScreenStrictJSONRequiredClosedKeys`, `TestSourceScreenRejectsInvalidSemanticInputs` |
+| No qualified production/persistence path, no forged gate | same and version-dispatched `ValidateMaatVerdict` | `TestSourceScreenJournalAndLegacyCompatibility` |
+| CLI v2 refusal/confirmation/head and declared floor | `cmd/sirsi/maatscreen.go` | `TestMaatScreen*` (owned regular inputs and injected journal only) |
+| Shared projection review route and floor route retain provenance | `internal/maat/casebook` | `TestSourceScreenV2ProjectsReviewWithoutHostRepairAuthority` |
+| V1 host warning and closed repairs unchanged, zero calibration requirement | unchanged host implementation | `TestMaatHostV1WarningRepairsRemainDeterministicWithoutCalibration`, existing host/preflight/calibration fixtures |
+| Native picker migrated without provider-name trust, preserves exact file/head/digest consent and once-only execution/error recovery | `MaatSourceImport.swift`, `MaatCasebookView.swift` | `MaatSourceImportTests` (8 inert methods); shared fixture `contracts/maat/source-screen-v2-fixture.json` |
+| Actual Go preview is read-only and its raw input digest denies same-head byte drift before confirmed record | `cmd/sirsi/maatscreen.go` | `TestMaatScreenNativePreviewExactBytesThenConfirmedImport` |
+
+Authenticated qualification and independent outcome lifecycle (including sampled
+pass/changes comparisons, drift revocation, model/prompt/recipe requalification),
+installed native v2 UX qualification, and actual gate activation remain **OPEN**. Existing
+calibration-link statistics do not supply that authority. No full ADR070/Ma'at,
+installed adoption, test execution, three-home publication or wing byte-pin
+completion is claimed by this source checkpoint. ADR070 §2.5 owns these limits.
+
+The public caller survey is in ADR070 §2.5: only CLI/native import source JSON.
+MCP and dashboard source-screen endpoints remain read-only; the dashboard's
+closed `maat` action cannot append import args. TUI Casebook is read-only;
+its separate confirmed health-review writer is not an import or amended gate.
+No new source-import endpoint, legacy-v1 compatibility bypass, provider-name
+qualification or native-only exemption is introduced. Preview and confirmed
+record both call the same Go source validator with the independently entered
+head. The digest pins bytes only, not their truth or external qualification.
 
 - **Free and local:** no external JEV service, telemetry, model endpoint, or
   account is necessary.
