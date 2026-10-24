@@ -53,6 +53,18 @@ then builds the DMG and PKG, notarizes each, and staples each ticket.
 
 ## Verifying a release locally
 
+After the successful existing commercial build/sign/notary route, the workflow
+uses `scripts/publish-release-assets.py` to reverify the final app/DMG/PKG signing
+boundaries and both staple tickets, stage a private draft, and compare both
+downloaded asset hashes before publication. A retry of a public release only
+verifies identical bytes; it never overwrites assets. Partial/mismatched public
+records require explicit release-custodian recovery. See the exact
+[publication contract](stacklab/pantheon-pt/canon/RELEASE_PUBLICATION.md).
+The per-attempt CI receipt retains verification reports and unknown outcomes;
+it neither replaces the signing/notary records nor claims a source test signed
+or published anything. Canonical Go cask readback and always-run keychain cleanup
+remain unchanged.
+
 ```bash
 spctl --assess --type open --context context:primary-signature -v SirsiPantheon-*.dmg   # → accepted, source=Notarized Developer ID
 xcrun stapler validate SirsiPantheon-*.dmg                                              # → The validate action worked!
