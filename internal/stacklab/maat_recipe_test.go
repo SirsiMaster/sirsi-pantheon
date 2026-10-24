@@ -41,7 +41,7 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 	want := []string{
 		"maat-canon", "maat-casebook", "maat-cli", "maat-confirmed-diagnostic-repair", "maat-core", "maat-coverage",
 		"maat-decision-journal", "maat-failure-memory", "maat-guided-managed-repair", "maat-horus-surface", "maat-knowledge-surface", "maat-known-failure-proposals", "maat-mcp-surface", "maat-native-release-bootstrap", "maat-native-resolution-surface", "maat-pipeline", "maat-pulse-proof-platform",
-		"maat-host-health-screen", "maat-release-contract-preflight", "maat-release-credential-preflight", "maat-scheduler", "maat-scoped-service-lifecycle", "maat-system-one-screen", "maat-terminal-console-surface", "maat-wing-contract", "stacklab-apollo-run-planner",
+		"maat-host-health-screen", "maat-knowledge-archive", "maat-local-metadata-liveness-watch", "maat-release-contract-preflight", "maat-release-credential-preflight", "maat-scheduler", "maat-scoped-service-lifecycle", "maat-system-one-screen", "maat-terminal-console-surface", "maat-wing-contract", "stacklab-apollo-run-planner",
 	}
 	got := make([]string, 0, len(recipe.Components))
 	for _, component := range recipe.Components {
@@ -68,6 +68,86 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 	componentsByID := make(map[string]component, len(recipe.Components))
 	for _, component := range recipe.Components {
 		componentsByID[component.ID] = component
+	}
+	for _, required := range []component{
+		{
+			ID: "maat-knowledge-archive",
+			Source: []string{
+				"internal/maat/knowledge/archive.go", "internal/maat/knowledge/archive_path_unix.go",
+				"internal/maat/knowledge/archive_vfs_darwin.go", "internal/maat/knowledge/archive_vfs_darwin_abi.go",
+				"internal/maat/knowledge/archive_vfs_darwin_copy_cgo.go", "internal/maat/knowledge/archive_vfs_darwin_nocgo.go",
+				"internal/maat/knowledge/archive_path_windows.go", "internal/maat/knowledge/archive_search.go",
+				"internal/maat/knowledge/legacy.go", "internal/maat/knowledge/refresh.go", "internal/maat/decisions.go",
+				"internal/seshat/adapter_claude.go", "cmd/sirsi/maatknowledge.go", "cmd/sirsi/seshat.go",
+				"macapp/Sources/SirsiMenubar/MaatCasebookView.swift",
+			},
+			Tests: []string{
+				"internal/maat/knowledge/archive_test.go", "internal/maat/knowledge/archive_search_regression_test.go",
+				"internal/maat/knowledge/archive_path_unix_test.go", "internal/maat/knowledge/archive_vfs_darwin_test.go",
+				"internal/maat/knowledge/archive_lock_close_darwin_test.go", "internal/maat/knowledge/knowledge_test.go",
+				"internal/maat/decisions_test.go", "internal/seshat/adapter_claude_archive_test.go",
+				"cmd/sirsi/maatknowledge_test.go", "macapp/Tests/SirsiMenubarTests/MaatKnowledgeArchiveTests.swift",
+				"internal/mcp/maat_test.go", "internal/dashboard/dashboard_test.go",
+			},
+			Inputs: []string{
+				"stable source/instance/native-item identity",
+				"bounded full source record with extraction/schema metadata and provenance",
+				"legacy Seshat snapshots selected by explicit local refresh",
+				"owner resolution annotation kept separate from source versions",
+			},
+			Outputs: []string{
+				"owner-private canonical Ma'at SQLite archive and rebuildable FTS5 index",
+				"immutable content-digest versions with predecessor links and retained origins",
+				"deterministic full-text/detail/history/status projections with stable bounded pagination",
+				"typed per-source complete/partial/failed/unavailable/unverifiable/no-new-items coverage",
+				"native knowledge view with archive search, detail, explicit local refresh, decoded coverage/history cursor, exact-revision+digest once-only owner review, and typed projection reconciliation counts/reload after confirmed success",
+			},
+			UpgradeRecipe: []string{
+				"keep internal/maat/knowledge the sole archive and use the existing modernc SQLite dependency; never create another Seshat knowledge authority",
+				"keep refresh local and explicit; never ingest/network from read-only UI or MCP; the hidden Seshat ingest/list/export aliases read or write through Ma'at's archive contract, legacy snapshot files are migration-only inputs, and failed/unsupported refreshes return typed nonzero outcomes",
+				"preserve owner annotations separately; reconcile projection debt through the existing decision journal using stable annotation evidence and lock-protected idempotent append before archive acknowledgement",
+				"keep remaining local adapters, online workspace consent, richer MCP/TUI/dashboard detail and cross-record conflict review explicitly open; do not infer implementation from this slice",
+			},
+		},
+		{
+			ID: "maat-local-metadata-liveness-watch",
+			Source: []string{
+				"internal/liveness/localwatch.go", "internal/liveness/localinstall_unix.go",
+				"cmd/sirsi/livenesswatchcmd.go", "cmd/sirsi/maatrepair_liveness.go", "docs/LOCAL_LIVENESS_WATCH.md",
+			},
+			Tests: []string{
+				"internal/liveness/localwatch_test.go", "internal/liveness/localinstall_darwin_test.go",
+				"cmd/sirsi/livenesswatch_local_test.go", "cmd/sirsi/maatrepair_liveness_test.go",
+			},
+			Inputs: []string{"ordinary per-user HOME", "current absolute canonical engine", "bounded local OS metadata", "existing Ma'at DecisionJournal"},
+			Outputs: []string{
+				"typed local observation and exact Casebook screen", "unknown on failed metadata", "Ra delivery explicitly not attempted",
+			},
+			UpgradeRecipe: []string{
+				"keep the local entry rootless before selecting HOME cwd",
+				"never invoke generation or router constructors in local mode",
+				"bind Ma'at repair to CurrentLocalEngine, ordinary HOME, LocalPlistContent, InspectLocalWatch, and InstallLocal; never resolve a developer checkout",
+				"preserve explicit disabled intent and verify idle loaded jobs without requiring a PID",
+				"use the same Screen/RecordSystemOne/Casebook contract", "retain legacy configured delivery separately",
+				"require exact review, confirmation, fresh preflight and post-observation; source fixtures do not claim installed behavior",
+			},
+		},
+	} {
+		actual := componentsByID[required.ID]
+		for _, field := range []struct {
+			name       string
+			got, wants []string
+		}{
+			{"source", actual.Source, required.Source}, {"tests", actual.Tests, required.Tests},
+			{"inputs", actual.Inputs, required.Inputs}, {"outputs", actual.Outputs, required.Outputs},
+			{"upgrade_recipe", actual.UpgradeRecipe, required.UpgradeRecipe},
+		} {
+			for _, want := range field.wants {
+				if !contains(field.got, want) {
+					t.Fatalf("component %q omits %s contract %q", required.ID, field.name, want)
+				}
+			}
+		}
 	}
 	lifecycle := componentsByID["maat-scoped-service-lifecycle"]
 	for _, boundary := range []string{
@@ -96,7 +176,7 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 		"open catalog leaves nonblocking before retained-FD regular-file and size checks",
 		"dispatch only the closed typed read-only active-incident guard for active exact matches; bind evaluated guard identity to embedded memoryguard.go and memory.go implementation bytes",
 		"unsupported matching guard id or version is unverifiable; never dispatch terminal or out-of-scope incidents or count them as measured checks",
-		"keep all eight authoritative operation integrations and installed qualification open; recurrence exclusion is not a host probe or new authorization",
+		"one liveness-watch operational row is implemented in source; keep the other seven rows, other projections, and installed qualification open; recurrence exclusion is not a host probe or new authorization",
 	} {
 		if !contains(memory.UpgradeRecipe, boundary) {
 			t.Fatalf("Ma'at failure-memory recipe omits boundary %q", boundary)
