@@ -201,7 +201,7 @@ func TestAvailableRealCompletionProbeRejectsCompletionCancellation(t *testing.T)
 	})
 	p := &OpenAICompat{ProviderName: "local", Endpoint: srv.URL + "/v1", TierValue: TierLocal, HTTP: srv.Client(), UseRealCompletionProbe: true}
 	if p.Available(ctx) {
-		t.Fatal("cancelled completion probe was reported as available")
+		t.Fatal("canceled completion probe was reported as available")
 	}
 	select {
 	case <-postReached:
