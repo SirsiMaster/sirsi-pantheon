@@ -50,6 +50,17 @@ This Quality Charter applies to **Assiduous** and **FinalWishes** by inheritance
 - Ma'at will be deployed to those repos as a standalone binary in the next phase.
 - Each tenant app will maintain its own `docs/QA_PLAN.md` mapping to its specific domain (e.g., Estate Planning logic vs Database integrity).
 
+### Completion final-status entry regression (2026-10-24)
+
+Original child scope: `completion-final-status-20261021`, not the entire CompassPoint workflow. The concrete selectors are now implemented rather than merely named:
+
+- `./cmd/sirsi`: `^TestRouterCloseCompletionAuthorization$` invokes `routerCloseCmd.RunE`.
+- `./cmd/sirsi-router-mcp`: `^TestHandleCloseCompletionAuthorization$` invokes `handleClose` with a real fixture claim/lease.
+
+Each table contains nine named cases: completed, draft, blocked, ready-for-review, missing-status, malformed-status, completed-with-blockers, failed-verification, and malformed-json. A completed proof must commit its result; all refusals must leave the durable item unchanged, and MCP's existing claim must remain valid. The shared fixture owns HOME, registry, Git caller, and explicit SQLite store before any router API; no live canonical service or worker is involved. It executes the exact retained portfolio helper at SHA256 `a4953e61937d8bf03dfe9fbbcd6a0decb3fa44ad56fd4550fab0b0444cbf8ab9` against a complete contract, nonempty canon, and complete proof adapted from the existing helper scaffold. Instrumentation only records and forwards unchanged argv/stdin to that helper, propagating its exit status; replacing the pathname after capture tests the shared gate's `validate-completion` protocol without substituting validation semantics. Provenance is retained in `internal/completionproof/entryfixture/README.md`. This does not certify whole CompassPoint completion, installed behavior, or future external-helper parity.
+
+Ma'at admission must retain actual JSON test events for both parent selectors and all eighteen subtests; an empty `-run` success is not evidence. Suggested independent negative control: omit the completion-proof gate call in one production entry only, keeping the fixture unchanged; its matrix must fail (missing validator receipt and/or an unauthorized mutation). No gate policy, coordination `--blocked`/`--ack` semantics, or legacy standalone validation is changed here.
+
 ---
 **Custodian**: 𓆄 Ma'at
 **Last Assessment**: Session 16b — 90.1% Passing.
