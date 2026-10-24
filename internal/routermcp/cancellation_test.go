@@ -2,12 +2,14 @@ package routermcp
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"io"
 	"testing"
 	"time"
 )
 
-func TestServerCancellationAfterMalformedInputJoins(t *testing.T) {
+func TestServerMalformedInputJoinsWithoutCancellation(t *testing.T) {
 	s, _, closed, _ := inertServer(t, "owned-malformed")
 	reader, writer := io.Pipe()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -27,11 +29,11 @@ func TestServerCancellationAfterMalformedInputJoins(t *testing.T) {
 	if _, err := writer.Write([]byte("!\n")); err != nil {
 		t.Fatal(err)
 	}
-	cancel()
 	select {
 	case <-exited:
-		if runErr != nil {
-			t.Fatal(runErr)
+		var syntax *json.SyntaxError
+		if !errors.As(runErr, &syntax) {
+			t.Fatalf("malformed input must be terminal: %v", runErr)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("sticky decoder error prevented cancellation")

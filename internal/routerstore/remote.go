@@ -151,6 +151,14 @@ const EnvUseMachineIDHost = "SIRSI_ROUTER_USE_MACHINE_ID"
 const EnvCloudHost = "SIRSI_ROUTER_CLOUD_HOST"
 
 func NewRemoteStore(base, token string) *RemoteStore {
+	return newRemoteStore(base, token, nil)
+}
+
+// callerBinding is copied at construction, before any session is loaded or
+// transport is built. Explicit callers never consult the ambient identity hook.
+type callerBinding struct{ agent, thread string }
+
+func newRemoteStore(base, token string, caller *callerBinding) *RemoteStore {
 	displayHost, _ := os.Hostname() // readable name; the agent-id fallback below, and the default auth claim
 	host := displayHost
 	var identityErr error
@@ -170,7 +178,10 @@ func NewRemoteStore(base, token string) *RemoteStore {
 	}
 	agent := strings.TrimSpace(os.Getenv("SIRSI_AGENT_ID"))
 	threadID := strings.TrimSpace(os.Getenv("SIRSI_THREAD_ID"))
-	if (agent == "" || threadID == "") && IdentityHook != nil {
+	if caller != nil {
+		agent, threadID = caller.agent, caller.thread
+	}
+	if caller == nil && (agent == "" || threadID == "") && IdentityHook != nil {
 		hookAgent, hookThread := IdentityHook()
 		hookAgent, hookThread = strings.TrimSpace(hookAgent), strings.TrimSpace(hookThread)
 		if agent == "" {
@@ -198,7 +209,7 @@ func NewRemoteStore(base, token string) *RemoteStore {
 		agent = displayHost // readable ("Mac", "M1.local"), not the UUID auth claim
 	}
 	dir := ""
-	if home, err := os.UserHomeDir(); err == nil {
+	if home, err := os.UserHomeDir(); err == nil && caller == nil {
 		dir = filepath.Join(home, ".sirsi", "sessions")
 	}
 	client := &http.Client{}

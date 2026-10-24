@@ -13,6 +13,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -275,15 +276,15 @@ func (s *Server) RunWithIO(reader io.Reader, writer io.Writer) error {
 // Decode errors is necessary because json.Decoder can retain a syntax error.
 // Existing Run/RunWithIO behavior remains the background-context path.
 func (s *Server) RunWithIOContext(ctx context.Context, reader io.Reader, writer io.Writer) error {
-	return s.serveContext(ctx, bufio.NewReader(reader), writer)
+	return s.serveContext(ctx, bufio.NewReader(reader), writer, true)
 }
 
 // serve is the main message loop.
 func (s *Server) serve(reader *bufio.Reader, writer io.Writer) error {
-	return s.serveContext(context.Background(), reader, writer)
+	return s.serveContext(context.Background(), reader, writer, false)
 }
 
-func (s *Server) serveContext(ctx context.Context, reader *bufio.Reader, writer io.Writer) error {
+func (s *Server) serveContext(ctx context.Context, reader *bufio.Reader, writer io.Writer, terminalIO bool) error {
 	decoder := json.NewDecoder(reader)
 
 	for {
@@ -295,6 +296,14 @@ func (s *Server) serveContext(ctx context.Context, reader *bufio.Reader, writer 
 			if err == io.EOF || ctx.Err() != nil {
 				s.logger.Println("Client disconnected (EOF)")
 				return nil
+			}
+			if terminalIO {
+				// A decoder retains syntax/read failures. One parse response at
+				// most, then unwind the router connection's owned lifecycle.
+				writeErr := writeResponseChecked(writer, Response{JSONRPC: "2.0", Error: &RPCError{
+					Code: ErrCodeParse, Message: fmt.Sprintf("Parse error: %v", err),
+				}})
+				return errors.Join(fmt.Errorf("MCP input: %w", err), writeErr)
 			}
 			// Send parse error
 			s.writeResponse(writer, Response{
@@ -309,9 +318,33 @@ func (s *Server) serveContext(ctx context.Context, reader *bufio.Reader, writer 
 
 		resp := s.handleRequest(&req)
 		if resp != nil {
+			if terminalIO {
+				if err := writeResponseChecked(writer, *resp); err != nil {
+					return err
+				}
+				continue
+			}
 			s.writeResponse(writer, *resp)
 		}
 	}
+}
+
+// writeResponseChecked is used by the explicitly owned router lifetime only;
+// the generic MCP entrypoint retains its existing framing/error behavior.
+func writeResponseChecked(writer io.Writer, resp Response) error {
+	data, err := json.Marshal(resp)
+	if err != nil {
+		return fmt.Errorf("MCP encode: %w", err)
+	}
+	data = append(data, '\n')
+	n, err := writer.Write(data)
+	if err != nil {
+		return fmt.Errorf("MCP output: %w", err)
+	}
+	if n != len(data) {
+		return fmt.Errorf("MCP output: %w", io.ErrShortWrite)
+	}
+	return nil
 }
 
 // handleRequest routes a request to the appropriate handler.

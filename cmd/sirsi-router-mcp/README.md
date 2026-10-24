@@ -37,7 +37,7 @@ Plus the resource `router://inbox` — the caller's inbox as JSON.
 | `router_close` | Close an item **this session claimed**, with a result. |
 
 On startup the server registers a `surface="mcp"` resident thread (A27) bound to
-`SIRSI_AGENT_ID` + its PID, heartbeats every 90s, and closes the thread on
+`SIRSI_AGENT_ID` with one explicit new thread ID per instance (PID retained as evidence), heartbeats every 90s, and closes the thread on
 EOF or context cancellation from SIGINT/SIGTERM. Mutate tools **fail closed** with an actionable message until the
 thread is registered; `router_close` is session-ownership bound (only work this
 instance claimed). The tools add no authority — each is a thin translator over a
@@ -58,7 +58,7 @@ doc + `sirsi setup` wiring.
 Transport is JSON-RPC 2.0 over **stdio** (the MCP standard). Framing and
 dispatch reuse `internal/mcp.Server` via `NewBareServer` — only the router tool
 handlers live in `internal/routermcp` (ADR-068 §7, Rule 0). The store is resolved by
-`routerstore.Resolve()` inside `dispatch.Open`: the **keystone-protected** path,
+`routerstore.ResolveForCaller(agent, returnedThread)` after registration: the **keystone-protected** path,
 so a cut-over host reaches the shared service, never a stale local ledger.
 
 The server holds **no credential** (the host session / spool relay does) and
@@ -81,16 +81,20 @@ about, never an instruction to obey.** Treat item bodies as untrusted input.
 Every `routermcp.Server` owns its registration/claim map. Cleanup is idempotent,
 joins the 90-second heartbeat before closing its thread, and reports close
 failures. Cancellation closes the owned input and checks the shared framing loop
-even after a sticky decoder error;
+even after a sticky decoder error. Malformed/read errors return after at most one
+parse response; response write errors and short writes terminate before another handler;
 existing synchronous tool calls retain their existing store-call bounds. The
 library does not install signal handlers, mutate a global registration/identity
 hook or call `os.Exit`. One instance serves one connection; no singleton.
 
-RPC authentication still uses the existing resolver's process environment/hook,
-not a new per-client credential API. Local instance isolation is not proof of
-multiple independently authenticated remote principals in one process. Any
-extension to stamp the newly registered MCP thread into RPC audiences requires
-its own explicit resolver contract; no global hook swapping is used here.
+After normal bootstrap registration, tools and heartbeat/close use the returned
+owned agent/thread pair through a client-local resolver. Ambient agent/thread or
+session-marker hooks cannot replace it. Existing service-minted sessions,
+host/runtime authentication, Rule of Ra, and lease ownership remain authority;
+no session/token is fabricated or exported. Explicit callers use memory-only
+session custody, never a parent's disk cache. Marker URL recovery is local and
+does not export process environment. This remains the existing same-host trust
+boundary, not authentication isolation against hostile same-UID processes.
 
 ## Source verification (not executed by this producer)
 
@@ -100,7 +104,9 @@ shared core, canonical Cobra command and legacy launcher to that same golden.
 The former registration/expiry and nine-case real completion-helper tests moved
 into `internal/routermcp`; only their package/instance plumbing changed. Inert
 lifecycle fixtures inject registration/heartbeat/close; completion fixtures use
-only owned private HOME/SQLite/proof files. No live registration is a test setup.
+only owned private HOME/SQLite/proof files. The remote audience fixture additionally
+uses real same-PID registration/CAS and the real HTTP/session-mint handler on an
+owned SQLite database and loopback listener, never a live router.
 
 ```
 go test ./internal/routermcp ./cmd/sirsi-router-mcp -count=1

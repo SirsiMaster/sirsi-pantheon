@@ -96,10 +96,7 @@ func TestResolveRefusesImplicitLocalLedger(t *testing.T) {
 
 // setHomeWithMarker points HOME at a fresh temp dir containing
 // ~/.sirsi/router-service.env with the given content, returning that file's
-// path. Also pre-registers SIRSI_ROUTER_URL/SIRSI_RELAY_TRUST_GROUP with
-// t.Setenv so testing.T restores them after the test even though
-// loadCutOverEnv mutates them via a raw os.Setenv (which t alone would not
-// know to undo).
+// path. All environment and marker state belongs to this fixture.
 func setHomeWithMarker(t *testing.T, content string) string {
 	t.Helper()
 	home := t.TempDir()
@@ -137,11 +134,15 @@ func TestResolveSelfHealsFromCutOverMarkerWhenEnvUnset(t *testing.T) {
 		t.Fatalf("Resolve: want self-heal from marker, got err=%v", err)
 	}
 	defer func() { _ = s.Close() }()
-	if got := os.Getenv("SIRSI_ROUTER_URL"); got != "spool:///var/sirsipantheon/relay" {
-		t.Fatalf("SIRSI_ROUTER_URL after Resolve = %q, want the marker's URL", got)
+	transport, ok := s.(*RemoteStore).client.Transport.(*spoolTransport)
+	if !ok || transport.root != "/var/sirsipantheon/relay" {
+		t.Fatalf("marker did not configure the actual spool transport: %#v", transport)
 	}
-	if got := os.Getenv("SIRSI_RELAY_TRUST_GROUP"); got != "_sirsipantheon" {
-		t.Fatalf("SIRSI_RELAY_TRUST_GROUP after Resolve = %q, want _sirsipantheon (comment stripped)", got)
+	if got := os.Getenv("SIRSI_ROUTER_URL"); got != "" {
+		t.Fatalf("Resolve published marker into environment: %q", got)
+	}
+	if got := os.Getenv("SIRSI_RELAY_TRUST_GROUP"); got != "" {
+		t.Fatalf("Resolve published trust group into environment: %q", got)
 	}
 }
 

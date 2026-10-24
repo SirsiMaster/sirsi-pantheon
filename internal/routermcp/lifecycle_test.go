@@ -18,6 +18,7 @@ func inertServer(t *testing.T, id string) (*Server, *atomic.Int32, *atomic.Int32
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 	s := newServer("owned-fixture", t.TempDir())
+	s.ownedThread = id
 	registered, closed, beats := new(atomic.Int32), new(atomic.Int32), new(atomic.Int32)
 	s.deps = threadOps{
 		identity: func() (string, string) { return "owned-host", "owned-machine" },
@@ -26,7 +27,10 @@ func inertServer(t *testing.T, id string) (*Server, *atomic.Int32, *atomic.Int32
 			if tr.AgentID != "owned-fixture" || tr.Surface != "mcp" || tr.WakeMechanism != "none" || tr.Host != "owned-host" || tr.MachineID != "owned-machine" {
 				t.Errorf("registration changed: %+v", tr)
 			}
-			return &router.Thread{ThreadID: id}, nil
+			if tr.ThreadID != id {
+				t.Error("registration did not pin the instance's thread")
+			}
+			return &router.Thread{ThreadID: id, AgentID: "owned-fixture"}, nil
 		},
 		heartbeat: func(_ string, thread string, _ router.HeartbeatUpdate) (*router.Thread, error) {
 			beats.Add(1)
@@ -71,6 +75,32 @@ func TestServerEOFCleansRegistrationAndInput(t *testing.T) {
 	}
 	if closed.Load() != 1 {
 		t.Fatal("repeated run closed twice")
+	}
+}
+
+func TestServerRefusesMismatchedRegistrationResult(t *testing.T) {
+	for _, which := range []string{"thread", "agent"} {
+		t.Run(which, func(t *testing.T) {
+			s, _, closed, _ := inertServer(t, "owned-requested-thread")
+			s.deps.register = func(_ string, tr *router.Thread) (*router.Thread, error) {
+				copy := *tr
+				if which == "thread" {
+					copy.ThreadID = "foreign-returned-thread"
+				} else {
+					copy.AgentID = "foreign-returned-agent"
+				}
+				return &copy, nil
+			}
+			if err := s.Run(context.Background(), io.NopCloser(strings.NewReader("")), io.Discard); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.reg.gate(); err == nil {
+				t.Fatal("mismatched return enabled mutation")
+			}
+			if closed.Load() != 0 {
+				t.Fatal("closed an unowned returned registration")
+			}
+		})
 	}
 }
 

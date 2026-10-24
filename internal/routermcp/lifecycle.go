@@ -13,19 +13,21 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/machineid"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/mcp"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
 
 // Server owns one connection's registration, claims and heartbeat. There is no
-// shared mutable registration or library signal handler. Resolve/dispatch retain
-// their existing process identity/transport policy; this is not a new auth API.
+// shared mutable registration or library signal handler. Post-registration tools
+// and lifecycle bind the returned owned thread through the existing RPC policy.
 type Server struct {
-	protocol *mcp.Server
-	reg      *registration
-	agent    string
-	repo     string
-	deps     threadOps
-	runMu    sync.Mutex
-	started  bool
+	protocol    *mcp.Server
+	reg         *registration
+	agent       string
+	repo        string
+	ownedThread string
+	deps        threadOps
+	runMu       sync.Mutex
+	started     bool
 }
 
 // Instance-owned seams keep lifecycle tests entirely off the live registry.
@@ -35,12 +37,14 @@ type threadOps struct {
 	heartbeat func(string, string, router.HeartbeatUpdate) (*router.Thread, error)
 	close     func(string, string) (*router.Thread, error)
 	ticker    func() (<-chan time.Time, func())
+	bind      func(string, string) (func(string, string, router.HeartbeatUpdate) (*router.Thread, error), func(string, string) (*router.Thread, error))
 }
 
 func defaultThreadOps() threadOps {
 	return threadOps{
-		identity: func() (string, string) { host, _ := os.Hostname(); return host, machineid.MachineID() },
+		identity: func() (string, string) { host, _ := routerstore.ThreadOwnerHost(); return host, machineid.MachineID() },
 		register: router.RegisterThread, heartbeat: router.Heartbeat, close: router.CloseThread,
+		bind: router.CallerThreadLifecycle,
 		ticker: func() (<-chan time.Time, func()) {
 			t := time.NewTicker(heartbeatInterval)
 			return t.C, t.Stop
@@ -103,16 +107,20 @@ func (s *Server) registerSurface(logger *log.Logger) func() error {
 	}
 	host, machine := s.deps.identity()
 	t, err := s.deps.register(routerRoot, &router.Thread{
-		AgentID: s.agent, Surface: "mcp", PID: os.Getpid(), Host: host,
+		ThreadID: s.ownedThread, AgentID: s.agent, Surface: "mcp", PID: os.Getpid(), Host: host,
 		MachineID: machine, Repo: repoRoot, WakeMechanism: "none",
 	})
 	if err != nil {
 		s.reg.setErr(fmt.Errorf("register surface=mcp thread: %w", err))
 		return noop
 	}
-	if t == nil || t.ThreadID == "" {
-		s.reg.setErr(fmt.Errorf("register surface=mcp returned no thread"))
+	if t == nil || t.ThreadID != s.ownedThread || t.AgentID != s.agent {
+		s.reg.setErr(fmt.Errorf("register surface=mcp did not return the owned agent/thread; registration outcome needs reconciliation"))
 		return noop
+	}
+	heartbeat, closeThread := s.deps.heartbeat, s.deps.close
+	if s.deps.bind != nil {
+		heartbeat, closeThread = s.deps.bind(s.agent, t.ThreadID)
 	}
 	s.reg.set(t.ThreadID, s.agent)
 	logger.Printf("registered surface=mcp thread %s for %s", t.ThreadID, s.agent)
@@ -126,7 +134,7 @@ func (s *Server) registerSurface(logger *log.Logger) func() error {
 			case <-stop:
 				return
 			case <-ticks:
-				if _, err := s.deps.heartbeat(routerRoot, t.ThreadID, router.HeartbeatUpdate{Status: router.ThreadStatusActive}); err != nil {
+				if _, err := heartbeat(routerRoot, t.ThreadID, router.HeartbeatUpdate{Status: router.ThreadStatusActive}); err != nil {
 					logger.Printf("heartbeat: %v", err)
 				}
 			}
@@ -138,7 +146,7 @@ func (s *Server) registerSurface(logger *log.Logger) func() error {
 		once.Do(func() {
 			close(stop)
 			<-joined
-			_, closeErr = s.deps.close(routerRoot, t.ThreadID)
+			_, closeErr = closeThread(routerRoot, t.ThreadID)
 			s.reg.mu.Lock()
 			s.reg.threadID, s.reg.agent = "", ""
 			s.reg.claimed = map[string]claimRecord{}

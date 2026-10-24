@@ -19,14 +19,23 @@ protocol/version/schema, strict completion gate and lease-fenced completion
 remain the contract. This does not implement the aspirational extra tools in
 the MVP table below.
 
-Registration/local claims are instance-owned; EOF and cancellation join the
+Registration/local claims are instance-owned, with an explicit new real thread
+ID supplied per instance so same-PID registry reuse cannot collapse connections.
+The returned owned agent/thread is checked before mutation and bound through
+`ResolveForCaller` to the existing service's `MintSessionForThread` for tools and
+heartbeat/close. No ambient identity hook, environment or disk-cache swap is used.
+Bootstrap registration retains existing server authorization; no new authority
+or credential is introduced. Marker service-pointer recovery does not export
+process environment. EOF, cancellation and terminal I/O failure join the
 heartbeat and close once without a library `os.Exit` or global registration.
 The shared framing package adds an opt-in context-aware I/O entrypoint for this
 connection lifetime; generic MCP keeps its existing background-context path.
-The existing process-scoped resolver authentication remains unchanged; no new
-per-client remote identity API or global hook swap is introduced. Managed MCP
-configuration migration, any explicit instance-to-RPC identity binding and
-installed-caller proof remain separately scoped follow-through. This source
+Generic callers retain their existing agent/thread hook semantics; explicit
+MCP callers use the immutable local binding instead. Existing host/runtime,
+Rule-of-Ra, lifecycle CAS and lease/completion policy remain authority. Managed MCP
+configuration migration and installed-caller proof remain separately scoped
+follow-through; the authored remote audience/real-registration fixtures are
+unexecuted source, not runtime evidence. This source
 addendum is not a claim that P3, all developer clients or the full ADR is done.
 
 The router is a durable, cross-host, identity-bearing agent-to-agent (A2A) message bus: a Cloud Run service over a Cloud SQL ledger, per-host bearer tokens, signed RPC, an offline spool relay, and (ADR-067) hardware-stable identity. It works — the Pantheon fabric runs on it. But its **only front doors today are the `sirsi` CLI and raw signed RPC.** A developer who wants A2A between their own agents has to learn host tokens, sessions, the Rule of Ra, and a bespoke CLI. That is not "the tool of choice."

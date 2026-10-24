@@ -13,7 +13,7 @@
 // Transport: JSON-RPC 2.0 over stdio (the MCP standard), reusing
 // internal/mcp.Server (NewBareServer) for framing and internal/dispatch for the
 // store — no framework change (ADR-068 §7, Rule 0). The store is resolved by
-// routerstore.Resolve() inside dispatch.Open, i.e. the keystone-protected path,
+// routerstore.ResolveForCaller after registration, i.e. the keystone-protected path,
 // so a cut-over host reaches the shared service, never a stale local ledger.
 //
 // Rule A3: static binary, no cgo. Rule A11: no telemetry; the server only reads
@@ -31,6 +31,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/mcp"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
 
 // serverVersion is advertised in the MCP initialize handshake.
@@ -42,7 +43,7 @@ func New() *Server {
 }
 
 func newServer(agent, repo string) *Server {
-	s := &Server{agent: strings.TrimSpace(agent), repo: strings.TrimSpace(repo), reg: newRegistration(), deps: defaultThreadOps()}
+	s := &Server{agent: strings.TrimSpace(agent), repo: strings.TrimSpace(repo), ownedThread: router.NewThreadID(), reg: newRegistration(), deps: defaultThreadOps()}
 	s.protocol = mcp.NewBareServer("sirsi-router-mcp", serverVersion,
 		"𓁢 Sirsi Router — the agent-to-agent fabric over MCP. Read your inbox "+
 			"(router_inbox), the dispatch health (router_status), and the fabric work "+
@@ -179,22 +180,31 @@ func (s *Server) handleInboxResource() (*mcp.ResourceContent, error) {
 }
 
 // openFacade opens the dispatch facade over the resolved router store (the
-// service, via the keystone-protected routerstore.Resolve). Returns a close
+// service, with this registration's explicit RPC audience). Returns a close
 // func the caller defers.
 func (s *Server) openFacade() (*dispatch.Facade, func(), error) {
 	repoRoot, _, err := s.resolveRoots()
 	if err != nil {
 		return nil, nil, err
 	}
-	f, err := dispatch.Open(repoRoot)
+	s.reg.mu.RLock()
+	agent, thread := s.reg.agent, s.reg.threadID
+	s.reg.mu.RUnlock()
+	var store routerstore.Store
+	if thread != "" {
+		store, err = routerstore.ResolveForCaller(agent, thread)
+	} else {
+		store, err = routerstore.Resolve()
+	}
 	if err != nil {
 		return nil, nil, fmt.Errorf("router store: %w", err)
 	}
+	f := dispatch.New(filepath.Join(repoRoot, ".agents", "idea-router"), store)
 	return f, func() { _ = f.Close() }, nil
 }
 
 // resolveRoots returns (repoRoot, routerRoot). The store itself is resolved by
-// routerstore.Resolve() inside dispatch.Open; repoRoot only locates
+// the canonical resolver; repoRoot only locates
 // .agents/idea-router (the board's peer/agents view). SIRSI_ROUTER_REPO overrides
 // discovery for a client that spawns this server outside the repo tree.
 func (s *Server) resolveRoots() (repoRoot, routerRoot string, err error) {

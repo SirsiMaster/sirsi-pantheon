@@ -1,0 +1,4 @@
+### Corrected
+
+- Bind each router MCP instance's tools and post-registration heartbeat/close to its actual registered agent/thread using the existing authenticated MintSessionForThread route. Explicit callers never borrow ambient identity or disk session caches; canonical marker recovery no longer exports process environment. Supply a unique real registration ID per instance without changing ordinary registry reuse policy.
+- Unwind the router/context stdio lifetime on malformed/read errors, failed response writes and short writes, before another request executes. Preserve generic MCP framing behavior and existing thread/lease/completion authority. Add owned remote audience/same-PID, mismatch and terminal-I/O regression fixture source. Managed-config migration and installed-client qualification remain outstanding; no tests or runtime actions are claimed by this source correction.
