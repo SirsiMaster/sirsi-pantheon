@@ -86,15 +86,28 @@ func TestCollectNodeStatus_PendingFromServiceStore(t *testing.T) {
 // ADR-069 outbox a Ra-side health panel must show honestly.
 func TestCollectNodeStatus_OutboxHealthOnSpoolHost(t *testing.T) {
 	repoRoot := setupNodeTestRouter(t)
-	spool := t.TempDir()
-	outbox := filepath.Join(spool, "claude-nexus", "outbox")
-	if err := os.MkdirAll(outbox, 0o755); err != nil {
+	spool := setupNodeOutboxFixture(t)
+	// Model the existing relay's metadata publication, not an observer that
+	// silently treats a missing publisher as healthy. The root identity comes
+	// from the actual owned directory's read-only retained-descriptor scan.
+	direct := routerstore.CollectRelayOutboxHealth(spool, "")
+	if len(direct.Outbox) != 1 || direct.Outbox[0].Scope == nil || !direct.Coverage.Complete {
+		t.Fatalf("owned spool fixture is not directly observable: %+v", direct)
+	}
+	scope := direct.Outbox[0].Scope
+	now, count := time.Now().UTC(), 1
+	snapshot := routerstore.RelayOutboxObservation{
+		Version: 1, RootDevice: scope.RootDevice, RootInode: scope.RootInode, ProducerUID: uint32(os.Geteuid()),
+		StartedAt: now, ObservedAt: now, Enumerated: true, Complete: true, Queued: &count,
+		Lanes: []routerstore.RelayLaneObservation{{Agent: "claude-nexus", State: "observed", Queued: &count}},
+	}
+	raw, err := json.Marshal(snapshot)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(outbox, "1.json"), []byte(`{}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(spool, ".relay-outbox-health-v1.json"), raw, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("SIRSI_ROUTER_URL", "spool://"+spool)
 
 	ns, err := CollectNodeStatus(repoRoot, nil, mockAuthProbe(true, false, ""))
 	if err != nil {
@@ -105,6 +118,67 @@ func TestCollectNodeStatus_OutboxHealthOnSpoolHost(t *testing.T) {
 	}
 	if len(ns.Outbox) != 1 || ns.Outbox[0].Agent != "claude-nexus" || ns.Outbox[0].QueuedForRetry != 1 {
 		t.Fatalf("want 1 held outbox entry for claude-nexus, got %+v", ns.Outbox)
+	}
+	if ns.OutboxObservation == nil || ns.OutboxCoverage == nil || !ns.OutboxCoverage.Complete {
+		t.Fatalf("published fixture evidence/coverage omitted: %+v", ns)
+	}
+	if got, err := os.ReadFile(filepath.Join(spool, "claude-nexus", "outbox", "1.json")); err != nil || string(got) != `{}` {
+		t.Fatalf("read-only collection changed held fixture: %q err=%v", got, err)
+	}
+}
+
+func setupNodeOutboxFixture(t *testing.T) string {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv(routercfg.StoreWakeEnv, "0") // spool URL is observer input, not a remote pending-store client.
+	t.Setenv("SIRSI_ROUTER_TOKEN", "")
+	t.Setenv("SIRSI_RELAY_TRUST_GROUP", "")
+	// testing.TempDir's leaf mode is not the exact private spool policy.
+	// Create a new owned root explicitly; never chmod an existing host path.
+	spool := filepath.Join(t.TempDir(), "relay")
+	if err := os.Mkdir(spool, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	outbox := filepath.Join(spool, "claude-nexus", "outbox")
+	if err := os.MkdirAll(outbox, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outbox, "1.json"), []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SIRSI_ROUTER_URL", "spool://"+spool)
+	return spool
+}
+
+func TestCollectNodeStatus_OutboxHealthMissingPublisherIsExplicit(t *testing.T) {
+	repoRoot := setupNodeTestRouter(t)
+	setupNodeOutboxFixture(t)
+	ns, err := CollectNodeStatus(repoRoot, nil, mockAuthProbe(true, false, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ns.OutboxHealthError != "relay observation: publisher_missing" || ns.OutboxObservation != nil {
+		t.Fatalf("missing publisher must stay explicit: %+v", ns)
+	}
+	if ns.OutboxCoverage == nil || !ns.OutboxCoverage.Complete || ns.OutboxCoverage.Source != "direct-metadata" ||
+		len(ns.Outbox) != 1 || ns.Outbox[0].QueuedForRetry != 1 || ns.Outbox[0].RetryCount == nil || *ns.Outbox[0].RetryCount != 1 {
+		t.Fatalf("missing publisher hid complete direct held-count evidence: %+v", ns)
+	}
+}
+
+func TestCollectNodeStatus_OutboxHealthRefusesNonprivateRoot(t *testing.T) {
+	repoRoot := setupNodeTestRouter(t)
+	spool := setupNodeOutboxFixture(t)
+	if err := os.Chmod(spool, 0o755); err != nil { // Only the newly owned negative fixture.
+		t.Fatal(err)
+	}
+	ns, err := CollectNodeStatus(repoRoot, nil, mockAuthProbe(true, false, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ns.OutboxHealthError != "relay observation: private_policy" || len(ns.Outbox) != 0 || ns.OutboxObservation != nil ||
+		ns.OutboxCoverage == nil || ns.OutboxCoverage.Complete {
+		t.Fatalf("nonprivate root acquired healthy evidence: %+v", ns)
 	}
 }
 
@@ -119,7 +193,7 @@ func TestCollectNodeStatus_OutboxHealthAbsentOffSpoolHost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CollectNodeStatus: %v", err)
 	}
-	if len(ns.Outbox) != 0 || ns.OutboxHealthError != "" {
+	if len(ns.Outbox) != 0 || ns.OutboxHealthError != "" || ns.OutboxObservation != nil || ns.OutboxCoverage != nil {
 		t.Fatalf("want no outbox data off a spool host, got outbox=%+v err=%q", ns.Outbox, ns.OutboxHealthError)
 	}
 }
