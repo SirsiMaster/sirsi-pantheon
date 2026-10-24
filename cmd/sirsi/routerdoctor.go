@@ -26,12 +26,18 @@ func fleetCheckWarning(repoRoot string) string {
 	if _, err := os.Stat(script); err != nil {
 		return ""
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// The script makes two real network calls (a router round trip and a Stack Lab
+	// read), each bounded at 20-25 s inside it; this bound only has to outlast both.
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "bash", script, os.Getenv("SIRSI_AGENT_ID"))
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		return ""
+	}
+	if ctx.Err() != nil {
+		// A timeout is unknown, not a verdict: say so instead of printing a partial RED.
+		return "fleet-check did not finish within 60 s, so this host's router/Stack Lab health is UNKNOWN, not green"
 	}
 	return strings.TrimSpace(string(out))
 }
