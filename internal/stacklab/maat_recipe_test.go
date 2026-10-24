@@ -210,6 +210,14 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 		}
 	}
 	lifecycle := componentsByID["maat-scoped-service-lifecycle"]
+	for _, path := range []string{"internal/setup/launchdmaintenance.go", "internal/setup/launchdmaintenance_darwin.go", "internal/setup/launchdmaintenance_image_darwin.go", "internal/setup/launchdmaintenance_journal_darwin.go", "internal/setup/launchdmaintenance_spool_darwin.go", "internal/servicedrain/maintenance.go", "internal/routerstore/spoolmaintenance_darwin.go", "cmd/sirsi/launchdmaintenance.go", "docs/runbooks/LEGACY-ROOT-RELAY-MAINTENANCE.md", "internal/setup/launchdmaintenance_test.go", "internal/setup/launchdmaintenance_spool_darwin_test.go", "internal/servicedrain/maintenance_test.go", "internal/routerstore/spoolmaintenance_test.go", "internal/routerstore/spoolmaintenance_unix_test.go", "cmd/sirsi/launchdmaintenance_test.go"} {
+		if !contains(append(append([]string{}, lifecycle.Source...), lifecycle.Tests...), path) {
+			t.Fatalf("selected maintenance recipe omits %q", path)
+		}
+	}
+	if !contains(lifecycle.Outputs, "legacy root transaction status and held successor activation distinct from old remote outcome settlement") {
+		t.Fatal("legacy activation must not become an old-work drain or settlement claim")
+	}
 	for _, boundary := range []string{
 		"never acquire privilege, display administrator prompts, enable disabled services, or refresh unrelated jobs",
 		"keep caller drain assertion distinct from verified application drain",

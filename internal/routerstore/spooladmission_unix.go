@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/servicedrain"
 	"golang.org/x/sys/unix"
 )
 
@@ -32,6 +33,15 @@ func lockSpoolAdmission(ctx context.Context, root *os.Root, exclusive bool) (*os
 		}
 		err = unix.Flock(int(f.Fd()), mode|unix.LOCK_NB)
 		if err == nil {
+			if !exclusive {
+				// A controller crash releases flock, not its durable startup hold.
+				// Do not publish into a pending maintenance transaction. Any occupied
+				// or unreadable marker is closed/unknown, never an absence inference.
+				if _, probe := root.Lstat(servicedrain.MaintenanceMarkerName); !errors.Is(probe, os.ErrNotExist) {
+					_ = f.Close()
+					return nil, errors.New("spool admission: retained root maintenance transaction; request not published")
+				}
+			}
 			return f, nil
 		}
 		if !errors.Is(err, unix.EWOULDBLOCK) && !errors.Is(err, unix.EAGAIN) {
