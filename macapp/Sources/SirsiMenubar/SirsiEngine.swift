@@ -935,7 +935,7 @@ final class SirsiEngine: ObservableObject {
     @discardableResult
     func loadRouterBoard(force: Bool = false,
                          readJSON: (([String]) async -> JSONCommandRead)? = nil) async -> Bool {
-        guard !routerLoading else { return false }
+        guard !Task.isCancelled, !routerLoading else { return false }
         routerLoading = true
         defer { routerLoading = false }
         // Freshness gate: the producer-written board is trusted only while
@@ -964,6 +964,11 @@ final class SirsiEngine: ObservableObject {
         } else {
             read = await Self.runJSONRead(args: Self.routerBoardReadArguments)
         }
+        // Leaving Ra cancels its SwiftUI .task. Capture may then report an
+        // issue (or a non-cooperative reader may finish late); neither is a new
+        // observation of the fabric. Preserve the prior board/error/time and
+        // let the existing defer release loading so a fresh task can retry.
+        guard !Task.isCancelled else { return false }
         if read.exitStatus == 0, !read.timedOut, read.launchError == nil,
            var board = try? JSONDecoder().decode(RouterBoard.self, from: read.data) {
             if board.localLLM == nil { board.localLLM = fileBoard?.localLLM }
