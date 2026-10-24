@@ -90,6 +90,7 @@ var (
 	threadHbStatus         string
 	threadHbItem           string
 	threadHbError          string
+	threadHbEnsure         bool
 	threadCloseID          string
 	threadListAll          bool
 	threadListStale        time.Duration
@@ -369,7 +370,7 @@ var threadHeartbeatCmd = &cobra.Command{
 			return fmt.Errorf("no idea-router found: %w", err)
 		}
 		routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
-		if threadHbID == "" {
+		if threadHbID == "" && !threadHbEnsure {
 			return fmt.Errorf("--thread is required")
 		}
 		upd := router.HeartbeatUpdate{}
@@ -382,7 +383,12 @@ var threadHeartbeatCmd = &cobra.Command{
 		if cmd.Flags().Changed("last-error") {
 			upd.LastError = &threadHbError
 		}
-		thr, err := router.Heartbeat(routerRoot, threadHbID, upd)
+		var thr *router.Thread
+		if threadHbEnsure {
+			thr, err = runAttendedEnsure(routerRoot, threadHbID, upd)
+		} else {
+			thr, err = router.Heartbeat(routerRoot, threadHbID, upd)
+		}
 		if err != nil {
 			return err
 		}
@@ -1065,10 +1071,11 @@ func init() {
 	threadRegisterCmd.Flags().IntVar(&threadRegAnchorPID, "anchor-pid", 0, "PID to anchor thread lifetime to (default: verified durable runtime ancestor for known interactive surfaces)")
 	threadRegisterCmd.Flags().BoolVar(&threadRegConsumerCapable, "consumer-capable", false, "This thread DRAINS the agent's inbox (resident consumers only — the worker publishes its own capability instead of the wake watcher borrowing it)")
 
-	threadHeartbeatCmd.Flags().StringVar(&threadHbID, "thread", "", "Thread ID to heartbeat (required)")
+	threadHeartbeatCmd.Flags().StringVar(&threadHbID, "thread", "", "Thread ID to heartbeat (required unless --ensure selects this caller's recorded binding)")
 	threadHeartbeatCmd.Flags().StringVar(&threadHbStatus, "status", "", "Set status: active|idle|blocked")
 	threadHeartbeatCmd.Flags().StringVar(&threadHbItem, "current-item", "", "Currently active work item ID")
 	threadHeartbeatCmd.Flags().StringVar(&threadHbError, "last-error", "", "Last error string")
+	threadHeartbeatCmd.Flags().BoolVar(&threadHbEnsure, "ensure", false, "Verify this Codex session's durable generation and normal-register its own changed binding before heartbeat")
 
 	threadCloseCmd.Flags().StringVar(&threadCloseID, "thread", "", "Thread ID to close (required)")
 
