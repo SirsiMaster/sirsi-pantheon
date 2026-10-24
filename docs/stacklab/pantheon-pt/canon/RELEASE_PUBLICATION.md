@@ -31,6 +31,12 @@ boundaries remain ADR-073/074.
    network or malformed lookup failure is unknown, not absence. An existing
    draft may resume only after every existing asset matches the reviewed bytes.
    Upload only missing members; never overwrite or delete an asset.
+   A tag404 requires complete authenticated list discovery in twenty-record
+   pages, still bounded to ten pages and1MiB per response. Historical release
+   bodies count toward that unchanged byte limit. A full tenth page cannot
+   prove absence; oversize, duplicate or incomplete discovery refuses before
+   creation. Select a discovered draft only after an exact-ID readback; retain
+   that ID for subsequent checks rather than discovering a replacement.
 4. Require exactly one nonempty same-version arm64 DMG and PKG. Download each
    into a fresh helper-owned directory and compare size and SHA256 to the local
    verified files. Recheck local hashes and remote tag before publication.
@@ -78,6 +84,11 @@ duplicate metadata, signature/Installer/staple/lookup/tag refusal, uncertain
 publish transport and temporary readback cleanup.
 
 The static commercial contract binds the helper and forbids overwrite flags.
+Official packaging and publication Python invocations use explicit `python3 -B`
+so the package metadata helper's import cannot add source-tree `__pycache__`
+or `.pyc` files before canonical Go cask source-cleanliness checks. An owned
+copied-helper/native-XML fixture runs the actual builder invocation with no
+bytecode environment setting; no signing or packaging tool is executed.
 Ma'at's existing source preflight fixture deliberately pins the successor
 workflow bytes; static/source qualification is not installed signing or remote
 publication proof. Main owns scheduled qualification; SSA owns actual release.

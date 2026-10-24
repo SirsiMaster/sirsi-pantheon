@@ -95,7 +95,7 @@ done
 for required in \
     'test -f "bin/SirsiPantheon-${BUILD_VERSION}-arm64.dmg"' \
     'test -f "bin/SirsiPantheon-${BUILD_VERSION}-arm64.pkg"' \
-    'python3 scripts/publish-release-assets.py'; do
+    'python3 -B scripts/publish-release-assets.py'; do
     /usr/bin/grep -Fq -- "$required" "$workflow" || {
         echo "release workflow does not require both native release artifacts: $required" >&2
         exit 1

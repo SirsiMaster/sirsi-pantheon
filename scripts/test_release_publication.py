@@ -196,7 +196,7 @@ class ReleasePublicationTests(unittest.TestCase):
         self.assertEqual(result["release_id"], 314)
         self.assertEqual([a[2] for a in fake.mutations()], ["upload", "upload", "edit"])
         apis = [a[-1] for a in fake.calls if a[:2] == ["gh", "api"]]
-        self.assertIn("repos/" + publication.REPO + "/releases?per_page=100&page=1", apis)
+        self.assertIn("repos/" + publication.REPO + "/releases?per_page=20&page=1", apis)
         self.assertGreaterEqual(apis.count("repos/" + publication.REPO + "/releases/314"), 4)
         self.assertFalse(fake.draft)
 
@@ -226,7 +226,7 @@ class ReleasePublicationTests(unittest.TestCase):
                     self.publish(fake)
                 self.assertEqual(fake.mutations(), [])
         fake = FakeGH()
-        fake.discovery = [{"id": i + 1, "tag_name": "unrelated", "draft": False} for i in range(100)]
+        fake.discovery = [{"id": i + 1, "tag_name": "unrelated", "draft": False} for i in range(20)]
         # Repeated page identities are ambiguous rather than absent.
         with self.assertRaisesRegex(publication.Refusal, "ambiguous"):
             self.publish(fake)
@@ -250,17 +250,17 @@ class ReleasePublicationTests(unittest.TestCase):
         self.assertEqual(fake.mutations(), [])
 
     def test_private_draft_on_second_page_and_complete_absence_bound(self):
-        first = [{"id": i + 1000, "tag_name": "unrelated", "draft": False} for i in range(100)]
+        first = [{"id": i + 1000, "tag_name": "unrelated", "draft": False} for i in range(20)]
         fake = FakeGH(True, PAYLOADS)
         fake.discovery_pages = {1: first, 2: [fake.metadata()]}
         result = self.publish(fake)
         self.assertEqual(result["release_id"], 314)
         self.assertEqual([a[2] for a in fake.mutations()], ["edit"])
-        self.assertTrue(any(a[-1].endswith("?per_page=100&page=2") for a in fake.calls))
+        self.assertTrue(any(a[-1].endswith("?per_page=20&page=2") for a in fake.calls))
 
         fake = FakeGH()
         fake.discovery_pages = {
-            page: [{"id": page * 1000 + i, "tag_name": "unrelated", "draft": False} for i in range(100)]
+            page: [{"id": page * 1000 + i, "tag_name": "unrelated", "draft": False} for i in range(20)]
             for page in range(1, publication.MAX_RELEASE_PAGES + 1)
         }
         with self.assertRaisesRegex(publication.Refusal, "incomplete at bound"):
@@ -268,6 +268,56 @@ class ReleasePublicationTests(unittest.TestCase):
         self.assertEqual(fake.mutations(), [])
         pages = [a for a in fake.calls if a[:2] == ["gh", "api"] and "?per_page=" in a[-1]]
         self.assertEqual(len(pages), publication.MAX_RELEASE_PAGES)
+
+    def heavy_history(self):
+        # One old100-record response would exceed1MiB with these40 retained
+        # release bodies; each actual20-record response remains below the cap.
+        records = [{"id": 1000 + i, "tag_name": "v0.0." + str(i), "draft": False,
+                    "body": "inert historical metadata " + "h" * 35000} for i in range(40)]
+        self.assertGreater(len(json.dumps(records).encode()), 1024 * 1024)
+        self.assertLess(len(json.dumps(records[:20]).encode()) + 100, 1024 * 1024)
+        return records
+
+    def test_heavy_history_complete_absence_precedes_create_and_publish_last(self):
+        records = self.heavy_history()
+        fake = FakeGH()
+        fake.hide_draft = False  # Newly created draft visible on subsequent view.
+        fake.discovery_pages = {1: records[:20], 2: records[20:], 3: []}
+        result = self.publish(fake)
+        endpoints = [a[-1] for a in fake.calls if a[:2] == ["gh", "api"] and "?per_page=" in a[-1]]
+        self.assertEqual(endpoints, ["repos/" + publication.REPO + "/releases?per_page=20&page=" + str(p) for p in (1, 2, 3)])
+        last_page = next(i for i, a in enumerate(fake.calls) if a[-1] == endpoints[-1])
+        create = next(i for i, a in enumerate(fake.calls) if a[:3] == ["gh", "release", "create"])
+        self.assertLess(last_page, create)
+        self.assertEqual([a[2] for a in fake.mutations()], ["create", "upload", "upload", "edit"])
+        self.assertEqual(result["status"], "published_verified_pair")
+
+    def test_heavy_history_selects_existing_exact_draft_id_without_overwrite(self):
+        records = self.heavy_history()
+        fake = FakeGH(True, PAYLOADS)
+        fake.discovery_pages = {1: records[:20], 2: records[20:], 3: [fake.metadata()]}
+        result = self.publish(fake)
+        self.assertEqual(result["release_id"], 314)
+        self.assertEqual([a[2] for a in fake.mutations()], ["edit"])
+        self.assertTrue(any(a[-1].endswith("/releases/314") for a in fake.calls))
+        self.assertEqual(fake.assets, PAYLOADS)
+
+    def test_single_heavy_discovery_page_over_byte_cap_refuses_without_mutation(self):
+        fake = FakeGH()
+        fake.discovery = [{"id": 1000, "tag_name": "unrelated", "draft": False,
+                           "body": "h" * (1024 * 1024)}]
+        record = {}
+        with self.assertRaisesRegex(publication.Refusal, "release metadata exceeds bound"):
+            publication.publish(VERSION, HEAD, self.directory, self.directory / "inert.app", record, run=fake)
+        self.assertIsNone(record["published"])
+        self.assertEqual(fake.mutations(), [])
+
+    def test_discovery_page_over_twenty_records_refuses_without_mutation(self):
+        fake = FakeGH()
+        fake.discovery = [{"id": i + 1000, "tag_name": "unrelated", "draft": False} for i in range(21)]
+        with self.assertRaisesRegex(publication.Refusal, "invalid release discovery page"):
+            self.publish(fake)
+        self.assertEqual(fake.mutations(), [])
 
     def test_explicit_gh_stderr_404_is_absent_not_unknown_transport(self):
         fake = FakeGH()

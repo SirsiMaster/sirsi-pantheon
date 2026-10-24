@@ -93,13 +93,15 @@ func makeReleaseContractFixture(t *testing.T, broken bool) string {
 	// source at6364a72f58847744716d3168f34b8d53d92e9f0c, not private-mode133.
 	// The workflow pin adds draft-first publication on released132 base
 	// 08843c54272a7ad6f6d2a431724bad98123d823f, not a policy stub.
+	// The successor to published134 ba2a07bb adds only explicit Python -B
+	// invocation flags to these three pinned scripts; signing/cask policy stays.
 	// No copied script is executed. Future route changes must deliberately
 	// update this provenance and the observer together.
 	pinned := map[string]string{
-		"scripts/build-dmg.sh":                 "a33ab0f39a735ac426c01210598962d72e4b5a9c4ecca72ea5ac09f2364db0f7",
-		"scripts/build-pkg.sh":                 "229a3da45869d21ad6cb2a0ebf009166f13b7940fea2dad00b6050eb1b116f91",
+		"scripts/build-dmg.sh":                 "aad1c9c9d0404e96e6e80a54e83c1992f7094b359dac282eb896cbaa0b05e3c4",
+		"scripts/build-pkg.sh":                 "5a95ed756f6b632b044c12bbdfd18eb81e327bb649f03293eceb01135b4f627a",
 		"scripts/notarize-release-artifact.sh": "cf4112f04f90f1b8ac70e9aecd17ed87652e1718bb82dcecc6801efd03eab433",
-		".github/workflows/release.yml":        "fc0f9ba48078500dac0d75ffe2f9957809204cc58c9af468d8f7ac2180b18c90",
+		".github/workflows/release.yml":        "358eb25b8064ca362254809d53ff2d8aaaf4bb09563483f629b5edf3c57715ee",
 		"tools/signing/sirsi-sign":             "805123e96ce78ff225641bebd2bf32f9c15d5023f381963f096facda4d2aedd1",
 	}
 	for _, requirement := range releaseContractRequirements {

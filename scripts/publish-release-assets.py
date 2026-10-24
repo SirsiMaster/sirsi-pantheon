@@ -24,6 +24,7 @@ REQUIREMENT = ('=anchor apple generic and certificate leaf[subject.OU] = "' + TE
                'certificate leaf[field.1.2.840.113635.100.6.1.13] exists')
 MAX_ASSET_BYTES = 4 * 1024 ** 3
 MAX_RELEASE_PAGES = 10
+RELEASE_PAGE_SIZE = 20
 
 
 class Refusal(RuntimeError):
@@ -165,8 +166,8 @@ def publish(version, expected_commit, directory, app, record, run=execute):
         # second same-tag draft cannot be silently selected by list order.
         matches, ids = [], set()
         for page in range(1, MAX_RELEASE_PAGES + 1):
-            values = release_api("?per_page=100&page=" + str(page))
-            if not isinstance(values, list) or len(values) > 100:
+            values = release_api("?per_page=" + str(RELEASE_PAGE_SIZE) + "&page=" + str(page))
+            if not isinstance(values, list) or len(values) > RELEASE_PAGE_SIZE:
                 raise Refusal("invalid release discovery page")
             for value in values:
                 if (not isinstance(value, dict) or type(value.get("id")) is not int or
@@ -177,7 +178,7 @@ def publish(version, expected_commit, directory, app, record, run=execute):
                 ids.add(value["id"])
                 if value["tag_name"] == tag:
                     matches.append(value)
-            if len(values) < 100:
+            if len(values) < RELEASE_PAGE_SIZE:
                 if len(matches) > 1:
                     raise Refusal("duplicate exact-tag release records; never select or create")
                 return matches[0] if matches else None
