@@ -65,10 +65,20 @@ blocked stdin, TERM ignoring, retained pipe writers, final launch denial).
 Fixtures use only owned inert temporary scripts with finite self-expiring
 children, not a model/service or live remediation payload.
 
-Main's normal qualification `a3b97d60e46849e0b4c929291431c14c` built the revised
-source and ran 80 Swift tests: two skipped and zero failures, including 15
-remediation fixtures. Independent source recheck resolved report-scope and
-verification-generation findings. Sanitizer/negative controls, immutable review
-and installed review/confirm/execute/reverify/recovery UX remain separately
-required. SSA owns publishing and runtime rollout; this is not task completion
-or installed proof.
+Final published126-baseline source `b27419c5` passed Main's normal qualification
+`8c211952d0e34144acab79308b66dae4`:82 Swift tests, two skipped and zero failures,
+including the retained Fleet rendering test and15 remediation fixtures.
+ThreadSanitizer qualification `21d1e55d28fd41a082979f3270e32b92` ran the15
+remediation fixtures with zero failures and no race diagnostic observed.
+Guard-omission control `f89daed5f1cf4a53b693dc4639d3328a` compiled, then produced20
+expected semantic assertions. The negative ran before the normal rebase; helper
+and fixture bytes are identical in the final source. These detailed outcomes are
+Main-observed command-output evidence; the supervisor retains terminal/argv and
+execution metadata, not full stdout logs.
+
+Independent exact review
+`c5eda27054f9204c34f1c748aa9b86d811b3966d1dae8cf0904920d3db8ea1f4`
+accepts source/fixture scope and resolves the report-scope and verification-
+generation findings. Installed review/confirm/execute/reverify/recovery UX,
+normal integrated publication and generic Go contract commands remain separate.
+SSA owns publishing and runtime rollout; the proof stays draft, not completed.
