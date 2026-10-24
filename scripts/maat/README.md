@@ -92,6 +92,41 @@ inert tool JSON to that chain: it executes none of the supplied command text.
 Test on each host under CPU-only admission. Do not replace an active recurring
 job's hash-bound helper or restart any job to install the hook policy.
 
+### Foreground command whitespace
+
+`heavy-launch.py` is the versioned source for the existing
+`~/.claude/hooks/maat-heavy-launch.py` admission classifier. The imported
+installed baseline is SHA256
+`1c616cbeffd95e19989887a65c209e7643228b6e571c495bb6f595fff5d85a1a`.
+The correction normalizes only outer shell whitespace before classification:
+a terminal newline is not another executable command. Interior separators,
+background execution, expansion and direct unadmitted workload checks remain
+unchanged. Parser-only tests execute none of the supplied command text.
+Preserve the installed baseline and original three-part chain during rollout;
+replace only this admission classifier after exact-source review and test
+qualification. A passing parser fixture is not proof of an attended lane's
+actual front-door operation; retain that separate runtime readback.
+
+The exact CompassPoint read payload additionally exposed `2>/dev/null` being
+refused by the blanket redirection rule. Read/control command classification
+now permits only that fixed null-stderr sink; the foreground runner path still
+rejects redirection, and arbitrary targets, append/descriptor duplication,
+direct workloads and extra executable commands remain refused. Retain the
+actual payload separately: it had no newline, so the newline reproduction alone
+must not be cited as its cause.
+
+The fixed null-stderr recognition preserves raw quote/escape state and requires
+an adjacent unquoted IO-number `2>` at a shell-word boundary. Never delete
+quote-stripped argv tokens: `2 > /dev/null cat ...` names an executable `2`,
+not a descriptor. Quoted/escaped/word-prefixed numbers and spaced `2 >` remain
+refused; only the literal null-device target is supported. The rejected84d68503
+token-deletion candidate is retained in Git and was never installed.
+
+Unquoted carriage returns are refused, not normalized into whitespace: CR is
+part of a shell word and stripping it can change the executable being checked.
+Quoted CR remains data. Ordinary SP/TAB/LF padding and the exact CompassPoint
+payload remain supported; no supplied command text runs in these fixtures.
+
 ## Safe native job and observer launchers
 
 ### Scoped native worker transport
