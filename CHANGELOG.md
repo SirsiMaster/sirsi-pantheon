@@ -6,6 +6,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.127] — 2026-10-24
+
+### Corrected
+
+- Bind native remediation consent to the current diagnostic evidence, exact
+  arguments and producing project; execute each explicit invocation once, and
+  retain incomplete outcomes without silently replaying a mutation.
+- Bound combined output and stdin capture, cancellation and owned-child exit
+  observation; verify recovery from the specific fresh diagnostic read, never
+  a stale shared observation. Unknown child exit remains explicit recovery debt.
+- Restore the native application Quit menu and Command-Q action.
+- Require successful recognized RDMA version output or a fully validated
+  loaded-kext inventory before reporting presence or absence. Diagnostics and
+  malformed output remain unknown rather than false positive/negative claims.
+- Reconcile Ra's release and rollback evidence while preserving historical
+  snapshots and distinguishing publication, installed files, loaded services,
+  unattended work and physical-off qualification.
+
 ## [0.24.126] — 2026-10-23
 
 ### Corrected
