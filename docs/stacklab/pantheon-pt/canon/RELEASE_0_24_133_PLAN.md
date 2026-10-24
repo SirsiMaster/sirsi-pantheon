@@ -20,8 +20,13 @@ ownership. The actual signed v0.24.132 release is the baseline, source
 4. Native Mercury `6f3bc263` (three commits from `25bf65c6`): canonical reader,
    monotonic sample aging, current utilization and directional units, explicit
    Unknown for absent power. No additional collector or background service.
+5. Publication `642aecd1` (two commits from `76147edf`): create a private draft,
+   validate the exact signed pair and downloaded bytes before public exposure;
+   never overwrite a published asset on retry. This became independently
+   qualified before133 tagging, after the688 publisher completed normally.
+   It is a publishing-only correction; existing Go/Swift production is unchanged.
 
-The 15 source commits have independent bounded source/fixture proof. Their
+The 17 source commits have independent bounded source/fixture proof. Their
 separate failures, compiled omission controls and retained compiler scratch
 remain historical evidence; they do not substitute for combined qualification.
 The registry-generation change adapts the new CreateOnly assignment to the
@@ -45,7 +50,9 @@ fence. Both additive traceability rows are retained.
 ## Delivery sequence
 
 1. Compose from actual132; preserve released provider-readiness, MCP lifecycle,
-   release-preflight and signing workflow bytes.
+   release-preflight production and build/sign/notary/keychain-cleanup authority.
+   Change only the existing publication ordering/retry contract for the verified
+   draft-first correction, preserving the canonical cask route.
 2. Freeze exact candidate and submit cumulative independent review. Verify
    focused normal/race Go, source contracts, strict Swift Release and affected
    native regressions under the ordinary shared CPU admission.
@@ -63,4 +70,5 @@ No parallel publisher, silent security change, retired router store or blanket
 attempt reset is authorized by this plan. Unqualified Ra caller adoption,
 streaming, failure-memory and draft-publication fixes are not represented as
 already shipped. They continue on the next train, not an indefinite hold on
-this ready corrective batch.
+this ready corrective batch. The publication correction above is now included;
+its real signed release behavior remains to be observed on this release.

@@ -10,6 +10,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ### Corrected
 
+- Keep each release private as a draft until the complete signed installer
+  pair passes remote byte readback; published retries verify without overwrite.
 - Establish the journal parent-mode preservation fixture explicitly under a
   private runner umask; production permission checks remain unchanged.
 - Preserve the last observed router board when navigation cancels a read; do
