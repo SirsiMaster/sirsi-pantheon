@@ -12,4 +12,13 @@ The complete proof scaffold is adapted from the existing `/Users/thekryptodragon
 
 The CLI/MCP tests invoke their actual production entries and shared Go gate. They use owned HOME, Git caller, registry, and explicit SQLite fixtures. Each case changes only final status, blockers, or verification status from the valid baseline (plus a malformed-JSON refusal control). Non-completed proof status is not a coordination `--blocked`/`--ack` request. No production code or gate policy is changed.
 
+ADR-062 §1 applies to this tracked non-`_test.go` helper too: `New` uses
+`routerstore.Resolve()` and exposes only the `routerstore.Store` interface.
+Before resolving, it sets a private HOME, clears inherited `SIRSI_*` service
+selectors, and explicitly selects its owned `fixture.db` via `SIRSI_ROUTER_DB`.
+It asserts the selected backend is SQLite and that this exact DB path is a
+regular file. No direct-open gate exemption, implicit local fallback, live
+canonical ledger or service is used. Existing CLI/MCP status/lease/proof
+assertions and the retained validator pin remain unchanged.
+
 This qualifies the retained helper at the pinned revision through actual entry points when Main runs the tests. It does **not** claim whole CompassPoint completion, a current live canonical service, installed behavior, or future external-helper parity. Source preparation alone is not a passing test receipt.

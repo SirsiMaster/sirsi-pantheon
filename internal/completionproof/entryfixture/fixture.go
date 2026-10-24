@@ -55,7 +55,7 @@ func Cases() []Case {
 }
 
 type Fixture struct {
-	Store              *routerstore.SQLiteStore
+	Store              routerstore.Store
 	ID, Proof, Receipt string
 	Captured           string
 }
@@ -104,7 +104,7 @@ func New(t *testing.T, tc Case) *Fixture {
 	t.Setenv(routercfg.StoreWakeEnv, "1")
 	db := filepath.Join(root, "fixture.db")
 	t.Setenv("SIRSI_ROUTER_DB", db)
-	s, err := routerstore.OpenPath(db)
+	s, err := routerstore.Resolve()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,6 +114,15 @@ func New(t *testing.T, tc Case) *Fixture {
 			t.Error(err)
 		}
 	})
+	// This helper is tracked non-_test.go source, so it follows the same
+	// ADR-062 resolver boundary. Its explicit private DB is a deliberate local
+	// fixture, never a fallback to the operator's canonical ledger or service.
+	if _, ok := s.(*routerstore.SQLiteStore); !ok {
+		t.Fatalf("fixture resolver selected a non-SQLite backend: %T", s)
+	}
+	if info, err := os.Lstat(db); err != nil || !info.Mode().IsRegular() {
+		t.Fatalf("fixture resolver did not create the owned regular DB %q: %v", db, err)
+	}
 	f.ID, _, err = s.SendGuarded(routerstore.SendReq{From: Agent, To: Agent, Title: "owned completion-entry fixture", Instructions: "No execution required."})
 	if err != nil {
 		t.Fatal(err)
