@@ -65,7 +65,13 @@ self_test() {
   ( exec -a "sirsi router relay serve --spool $tmp/spool" sleep 60 ) & good=$!
   ( exec -a "sirsi router relay serve --spool /elsewhere" sleep 60 ) & wrong=$!
   sleep 1
-  fc() { env HOME="$tmp/home" PATH=/usr/bin:/bin SIRSI_ROUTER_URL="spool://$tmp/spool" FLEET_CHECK_LAUNCHCTL="$tmp/bin/lc" "$@" bash "$SCRIPT" ra 2>&1 || true; }
+  # Deterministic JSON parser double: production still uses native plutil.
+  cat >"$tmp/bin/plutil" <<'PARSER'
+#!/bin/sh
+perl -MJSON::PP -0777 -ne 'eval {$v=decode_json($_); die unless ref($v) eq "ARRAY"; print $v->[0]{verdict};}; exit($@ ? 1 : 0);'
+PARSER
+  chmod +x "$tmp/bin/plutil"
+  fc() { env HOME="$tmp/home" PATH="$tmp/bin:/usr/bin:/bin" SIRSI_ROUTER_URL="spool://$tmp/spool" FLEET_CHECK_LAUNCHCTL="$tmp/bin/lc" "$@" bash "$SCRIPT" ra 2>&1 || true; }
   r1="$(fc STUB_PID=)"; r2="$(fc STUB_PID=$wrong)"; r3="$(fc STUB_PID=$good)"
   kill "$good" "$wrong" 2>/dev/null; wait "$good" "$wrong" 2>/dev/null
   printf '%s' "$r1" | grep -qF "✗ relay:" || { echo "  ❌ self-test FAILED: decoy with no launchd pid read GREEN"; echo "$r1"; exit 1; }
@@ -78,6 +84,23 @@ self_test() {
   r4="$(fc STUB_PID=$$ FLEET_CHECK_SIRSI="$tmp/bin/sirsi-bad")"; r5="$(fc STUB_PID=$$ FLEET_CHECK_SIRSI="$tmp/bin/sirsi-good")"
   printf '%s' "$r4" | grep -qF "✗ router:" || { echo "  ❌ self-test FAILED: OUTCOME UNKNOWN read GREEN"; echo "$r4"; exit 1; }
   printf '%s' "$r5" | grep -qF "✓ router:" || { echo "  ❌ self-test FAILED: JSON LIVE verdict not green"; echo "$r5"; exit 1; }
+  # Queue controls must inspect the queue subcheck, not unrelated overall RED.
+  rm "$tmp/spool/lane/outbox/y.json"
+  q0="$(fc STUB_PID=)"
+  printf '%s' "$q0" | grep -qF "✓ outbox: 0 held, 0 parked" || { echo "FAIL readable empty queue"; exit 1; }
+  : >"$tmp/spool/lane/failed/hidden.json"
+  if [ "$(id -u)" != 0 ]; then
+    chmod 000 "$tmp/spool/lane"
+    unreadable="$(fc STUB_PID=)"
+    chmod 700 "$tmp/spool/lane"
+    printf '%s' "$unreadable" | grep -qF "✗ outbox: spool traversal unavailable" || { echo "FAIL inaccessible lane became zero"; exit 1; }
+  fi
+  # Deterministic traversal-error control, even when CI runs as root.
+  printf '#!/bin/sh\necho "injected traversal error" >&2\nexit 1\n' >"$tmp/bin/find"
+  chmod +x "$tmp/bin/find"
+  traversal="$(HOME="$tmp/home" PATH="$tmp/bin:/usr/bin:/bin" SIRSI_ROUTER_URL="spool://$tmp/spool" bash "$SCRIPT" ra 2>&1 || true)"
+  printf '%s' "$traversal" | grep -qF "✗ outbox: spool traversal unavailable" || { echo "FAIL traversal error became zero"; exit 1; }
+  rm "$tmp/bin/find"
   echo "  ✅ self-test passed: missing key, parked item, decoy/wrong-spool relay and OUTCOME UNKNOWN RED by name; held-only outbox, right relay and JSON verdict green"
   exit 0
 }
@@ -145,12 +168,38 @@ else
   fi
 fi
 
-# 3. Outbox / parked (ADR-069): held items retry on their own; a parked item needs a person.
-if [ -z "$spool" ] || [ ! -r "$spool" ]; then
-  fail "outbox: spool unreadable (${spool:-not configured}); queue depth unknown, not zero"
+# Capture the complete traversal before deriving any count. A partial listing
+# must never turn an inaccessible lane or queue into a healthy zero.
+queue_counts() (
+  local tmp path relative held=0 parked=0
+  [ -d "$spool" ] && [ -r "$spool" ] && [ -x "$spool" ] || return 1
+  tmp="$(mktemp -d)" || return 1
+  trap 'rm -rf "$tmp"' EXIT
+  find "$spool" -print >"$tmp/paths" 2>"$tmp/errors" || return 1
+  [ ! -s "$tmp/errors" ] || return 1
+  while IFS= read -r path; do
+    # Do not follow a symlink into another queue or accept an incomplete view.
+    [ ! -L "$path" ] && [ -r "$path" ] || return 1
+    if [ -d "$path" ]; then
+      [ -x "$path" ] || return 1
+      continue
+    fi
+    relative="${path#"$spool"/}"
+    case "$relative" in
+      */outbox/*.json|*/failed/*.json)
+        [ -f "$path" ] || return 1
+        # Only direct lane/queue leaves are counted, matching the relay layout.
+        case "$relative" in */*/*/*) continue ;; esac
+        case "$relative" in */outbox/*.json) held=$((held+1));; */failed/*.json) parked=$((parked+1));; esac ;;
+    esac
+  done <"$tmp/paths"
+  printf '%s %s\n' "$held" "$parked"
+)
+# 3. Outbox / parked (ADR-069): unavailable evidence is RED, never zero.
+if [ -z "$spool" ] || ! counts="$(queue_counts)"; then
+  fail "outbox: spool traversal unavailable; queue depth unknown, not zero"
 else
-  held="$(find "$spool" -mindepth 3 -maxdepth 3 -path '*/outbox/*.json' 2>/dev/null | wc -l | tr -d ' ')"
-  parked="$(find "$spool" -mindepth 3 -maxdepth 3 -path '*/failed/*.json' 2>/dev/null | wc -l | tr -d ' ')"
+  read -r held parked <<<"$counts"
   if [ "$parked" -gt 0 ]; then
     fail "outbox: $held held, $parked parked, needs audit"
   else
