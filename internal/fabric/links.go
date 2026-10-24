@@ -211,12 +211,12 @@ func rdmaState(p platform.Platform) RDMA {
 	r := RDMA{FamilyLoaded: Unknown, NVRAMEnabled: Unknown}
 	var why []string
 
-	if v := firstLine(run(p, "sysctl", "-n", "debug.rdma.version")); v != "" && !strings.Contains(v, "unknown oid") {
+	version, versionErr := p.Command("sysctl", "-n", "debug.rdma.version")
+	if versionErr == nil && recognizedRDMAVersion(string(version)) {
 		r.FamilyLoaded = Yes
 	} else {
-		// debug.rdma.version is not present on every macOS build. Its absence
-		// says nothing about the loaded IORDMAFamily kext, so use kmutil's
-		// loaded-kext inventory before reporting a negative answer.
+		// Missing, failed or unfamiliar legacy version output proves neither
+		// presence nor absence. Fall back to the validated loaded-kext table.
 		kmutilBytes, kmutilErr := p.Command("kmutil", "showloaded")
 		if kmutilErr != nil {
 			why = append(why, "sysctl debug.rdma.version unavailable and kmutil showloaded unreadable")
@@ -238,6 +238,18 @@ func rdmaState(p platform.Platform) RDMA {
 	}
 	r.Reason = strings.Join(why, "; ")
 	return r
+}
+
+// Recognize only the historical date/time + RDMA_family shape already retained
+// in this package's fixture. This is not a claim that every native macOS build
+// emits it; unfamiliar successful formats use the kmutil fallback instead.
+func recognizedRDMAVersion(output string) bool {
+	stamp, ok := strings.CutSuffix(strings.TrimSpace(output), " RDMA_family")
+	if !ok {
+		return false
+	}
+	_, err := time.Parse("Jan _2 2006 15:04:05", stamp)
+	return err == nil
 }
 
 // loadedRDMAInventory accepts the observed kmutil showloaded table, not prose

@@ -110,6 +110,80 @@ type kmutilDiagnosticErrorPlatform struct {
 	output string
 }
 
+type rdmaVersionProbePlatform struct {
+	*platform.Mock
+	version        string
+	versionErr     error
+	inventory      string
+	inventoryErr   error
+	inventoryCalls int
+}
+
+func (p *rdmaVersionProbePlatform) Command(name string, args ...string) ([]byte, error) {
+	if name == "sysctl" {
+		return []byte(p.version), p.versionErr
+	}
+	if name == "kmutil" {
+		p.inventoryCalls++
+		return []byte(p.inventory), p.inventoryErr
+	}
+	return p.Mock.Command(name, args...)
+}
+
+func TestCollect_RDMAVersionRequiresSuccessfulRecognizedShape(t *testing.T) {
+	const historicalVersion = "Jul 11 2026 14:22:31 RDMA_family\n"
+	denied := errors.New("exit status 1")
+	for _, version := range []struct {
+		name    string
+		output  string
+		err     error
+		trusted bool
+	}{
+		{"historical-success", historicalVersion, nil, true},
+		{"denied-nonempty", "sysctl: Operation not permitted\n", denied, false},
+		{"malformed-success", "not a version\n", nil, false},
+		{"diagnostic-marker-error", "sysctl: RDMA_family: Operation not permitted\n", denied, false},
+		{"historical-shape-error", historicalVersion, denied, false},
+		{"diagnostic-marker-success", "sysctl: RDMA_family unavailable\n", nil, false},
+		{"invalid-date-success", "Jul 99 2026 14:22:31 RDMA_family\n", nil, false},
+		{"trailing-diagnostic-success", historicalVersion + "unexpected diagnostic\n", nil, false},
+		{"bare-marker-success", "RDMA_family\n", nil, false},
+	} {
+		for _, inventory := range []struct {
+			name   string
+			output string
+			err    error
+			want   Tri
+		}{
+			{"loaded", kmutilHeader + kmutilFamilyRow, nil, Yes},
+			{"absent", kmutilHeader + kmutilZeroRow, nil, No},
+			{"failed-even-with-family", kmutilHeader + kmutilFamilyRow, denied, Unknown},
+			{"malformed-success", "diagnostic IORDMAFamily\n", nil, Unknown},
+		} {
+			t.Run(version.name+"/"+inventory.name, func(t *testing.T) {
+				p := &rdmaVersionProbePlatform{
+					Mock: mock(spNoDevices), version: version.output, versionErr: version.err,
+					inventory: inventory.output, inventoryErr: inventory.err,
+				}
+				l := Collect(p)
+				want, calls := inventory.want, 1
+				if version.trusted {
+					want, calls = Yes, 0
+				}
+				if l.RDMA.FamilyLoaded != want || p.inventoryCalls != calls {
+					t.Fatalf("rdma=%+v inventory calls=%d, want family=%s calls=%d", l.RDMA, p.inventoryCalls, want, calls)
+				}
+				if want == Unknown && (l.RDMA.Reason == "" || len(l.Unknown) == 0) {
+					t.Fatal("unknown fallback must retain an observable reason")
+				}
+				if l.RDMA.NVRAMEnabled != No {
+					t.Fatal("legacy version handling changed NVRAM reporting")
+				}
+			})
+		}
+	}
+}
+
 func (p kmutilDiagnosticErrorPlatform) Command(name string, args ...string) ([]byte, error) {
 	if name == "kmutil" {
 		return []byte(p.output), errors.New("exit status 1")
