@@ -3,6 +3,8 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -113,22 +115,44 @@ func TestAvailableRealCompletionProbeRejectsCompletionTransportFailure(t *testin
 }
 
 func TestAvailableRealCompletionProbeRejectsCompletionCancellation(t *testing.T) {
+	postReached := make(chan struct{})
 	completionStarted := make(chan struct{})
 	cancellationObserved := make(chan struct{})
+	releaseHandler := make(chan struct{})
+	handlerDone := make(chan struct{})
+	bodyReadError := make(chan error, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/v1/models" {
 			_, _ = w.Write([]byte(`{"data":[{"id":"served-model"}]}`))
 			return
 		}
 		if r.Method == http.MethodPost && r.URL.Path == "/v1/chat/completions" {
+			defer close(handlerDone)
+			close(postReached)
+			if r.ContentLength < 0 || r.ContentLength > 64<<10 {
+				bodyReadError <- errors.New("completion request body exceeds the fixture bound")
+				return
+			}
+			if _, err := io.CopyN(io.Discard, r.Body, r.ContentLength); err != nil {
+				bodyReadError <- err
+				return
+			}
+			if err := r.Body.Close(); err != nil {
+				bodyReadError <- err
+				return
+			}
+			// Do not signal the test until the complete request body is consumed
+			// and closed; otherwise net/http may not observe client cancellation.
 			close(completionStarted)
-			<-r.Context().Done()
-			close(cancellationObserved)
+			select {
+			case <-r.Context().Done():
+				close(cancellationObserved)
+			case <-releaseHandler:
+			}
 			return
 		}
 		http.NotFound(w, r)
 	}))
-	defer srv.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancellationTriggered := make(chan struct{})
@@ -143,7 +167,7 @@ func TestAvailableRealCompletionProbeRejectsCompletionCancellation(t *testing.T)
 		case <-stopCancellation:
 		}
 	}()
-	defer func() {
+	t.Cleanup(func() {
 		cancel()
 		close(stopCancellation)
 		select {
@@ -151,15 +175,48 @@ func TestAvailableRealCompletionProbeRejectsCompletionCancellation(t *testing.T)
 		case <-time.After(2 * time.Second):
 			t.Error("cancellation coordinator did not exit")
 		}
-	}()
+
+		postReachedBeforeCleanup := false
+		select {
+		case <-postReached:
+			postReachedBeforeCleanup = true
+		case <-time.After(2 * time.Second):
+		}
+		if postReachedBeforeCleanup {
+			select {
+			case <-cancellationObserved:
+			case <-time.After(2 * time.Second):
+				t.Error("completion handler did not observe request cancellation before cleanup release")
+			}
+		}
+		close(releaseHandler)
+		srv.Close() // joins handlers after cancellation or the explicit release.
+		if postReachedBeforeCleanup {
+			select {
+			case <-handlerDone:
+			case <-time.After(2 * time.Second):
+				t.Error("completion handler did not exit after cleanup release")
+			}
+		}
+	})
 	p := &OpenAICompat{ProviderName: "local", Endpoint: srv.URL + "/v1", TierValue: TierLocal, HTTP: srv.Client(), UseRealCompletionProbe: true}
 	if p.Available(ctx) {
 		t.Fatal("cancelled completion probe was reported as available")
 	}
 	select {
+	case <-postReached:
+	case <-time.After(2 * time.Second):
+		t.Fatal("completion POST was not reached")
+	}
+	select {
 	case <-completionStarted:
 	case <-time.After(2 * time.Second):
 		t.Fatal("readiness probe returned without reaching completion POST")
+	}
+	select {
+	case err := <-bodyReadError:
+		t.Fatalf("completion request body was not consumed and closed: %v", err)
+	default:
 	}
 	select {
 	case <-cancellationTriggered:
