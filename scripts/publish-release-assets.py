@@ -4,6 +4,10 @@
 No signing/build/credential provisioning occurs here. The existing release
 builders and enrolled signer retain that authority. A published retry is read
 only; this helper never overwrites or removes a release asset.
+
+New drafts retain the bounded creation response ID and use selected-ID GETs,
+never a post-create pagination walk. Unknown creation outcomes stop for custody
+reconciliation. Inert contract fixtures: scripts/test_release_publication.py.
 """
 import argparse
 import datetime
@@ -64,7 +68,7 @@ def digest(path):
 
 
 def publish(version, expected_commit, directory, app, record, run=execute):
-    record.update(published=None, publish_attempted=False)
+    record.update(published=None, publish_attempted=False, creation_attempted=False)
     if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?", version):
         raise Refusal("invalid release version")
     if not re.fullmatch(r"[0-9a-f]{40}", expected_commit):
@@ -228,9 +232,31 @@ def publish(version, expected_commit, directory, app, record, run=execute):
     local_unchanged()
     release = view()
     if release is None:
-        checked(["gh", "release", "create", tag, "--repo", RELEASE_REPO, "--draft", "--verify-tag",
-                 "--target", expected_commit, "--title", "Sirsi Pantheon " + version,
-                 "--generate-notes"])
+        check_tag()
+        # Absence was proved before the mutation. The creation response is the
+        # new identity: another paginated list is neither that response nor a
+        # stable snapshot after insertion. Unknown outcomes never recreate.
+        record.update(creation_attempted=True, creation_outcome="unknown", published=None)
+        created = checked([
+            "gh", "api", "--hostname", "github.com", "--include", "--method", "POST",
+            "--jq", "{id,tag_name,draft}", "-f", "tag_name=" + tag,
+            "-f", "target_commitish=" + expected_commit, "-f", "name=Sirsi Pantheon " + version,
+            "-F", "draft=true", "-F", "generate_release_notes=true",
+            "repos/" + REPO + "/releases"])
+        headers, separator, body = created.replace(b"\r\n", b"\n").partition(b"\n\n")
+        if not separator or not re.match(rb"HTTP/\S+ 201(?: |\n|$)", headers):
+            raise Refusal("draft creation outcome unknown; never rediscover or recreate")
+        try:
+            identity = json.loads(body)
+        except (ValueError, UnicodeDecodeError) as error:
+            raise Refusal("draft creation identity unreadable; never rediscover or recreate") from error
+        if (not isinstance(identity, dict) or set(identity) != {"id", "tag_name", "draft"} or
+                type(identity.get("id")) is not int or
+                identity["id"] <= 0 or identity.get("tag_name") != tag or
+                identity.get("draft") is not True):
+            raise Refusal("draft creation identity invalid; never rediscover or recreate")
+        selected_id = identity["id"]
+        record.update(release_id=selected_id, creation_outcome="draft_identity_received")
         release = view()
         if release is None or not release["draft"]:
             raise Refusal("new staging record is not a draft")

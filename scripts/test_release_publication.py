@@ -33,6 +33,7 @@ class FakeGH:
         self.hide_draft = True  # Actual private-draft tag lookup may404.
         self.discovery = None
         self.discovery_pages = None
+        self.create_response = None
 
     def __call__(self, argv):
         self.calls.append(list(argv))
@@ -58,6 +59,21 @@ class FakeGH:
         elif argv[0] == "/usr/bin/xcrun":
             if self.fail == "staple":
                 code = 1
+        elif self.is_create(argv) and argv[:2] == ["gh", "api"]:
+            expected = [
+                "gh", "api", "--hostname", "github.com", "--include", "--method", "POST",
+                "--jq", "{id,tag_name,draft}", "-f", "tag_name=v" + VERSION,
+                "-f", "target_commitish=" + HEAD, "-f", "name=Sirsi Pantheon " + VERSION,
+                "-F", "draft=true", "-F", "generate_release_notes=true",
+                "repos/" + publication.REPO + "/releases"]
+            if argv != expected or self.draft is not None:
+                raise AssertionError("must create exactly one private source-bound draft")
+            self.draft = True
+            if self.fail == "create-unknown":
+                return subprocess.CompletedProcess(argv, 1, b"", b"inert transport interrupted")
+            identity = (self.create_response if self.create_response is not None else
+                        {"id": self.release_id, "tag_name": "v" + VERSION, "draft": True})
+            out = b"HTTP/2.0 201 Created\r\n\r\n" + json.dumps(identity).encode()
         elif argv[:2] == ["gh", "api"]:
             if self.fail == "lookup":
                 return subprocess.CompletedProcess(argv, 1, b"HTTP/2.0 503 Unavailable\r\n\r\n{}", b"")
@@ -152,7 +168,17 @@ class FakeGH:
             raise AssertionError("destructive publication route")
 
     def mutations(self):
-        return [a for a in self.calls if a[:2] == ["gh", "release"] and a[2] in ("create", "upload", "edit")]
+        return [a for a in self.calls if self.is_create(a) or
+                (a[:2] == ["gh", "release"] and a[2] in ("upload", "edit"))]
+
+    @staticmethod
+    def is_create(argv):
+        return (argv[:3] == ["gh", "release", "create"] or
+                (argv[:2] == ["gh", "api"] and "--method" in argv and
+                 argv[argv.index("--method") + 1] == "POST"))
+
+    def mutation_kinds(self):
+        return ["create" if self.is_create(a) else a[2] for a in self.mutations()]
 
 
 class ReleasePublicationTests(unittest.TestCase):
@@ -186,7 +212,7 @@ class ReleasePublicationTests(unittest.TestCase):
             ["/usr/bin/codesign", "--verify", "--strict", "-R", EXPECTED_INLINE_REQUIREMENT,
              str(self.directory / NAMES[0])],
         ])
-        self.assertEqual([a[2] for a in fake.mutations()], ["create", "upload", "upload", "edit"])
+        self.assertEqual(fake.mutation_kinds(), ["create", "upload", "upload", "edit"])
 
     def test_partial_upload_failure_keeps_draft_and_retry_resumes_without_overwrite(self):
         fake = FakeGH()
@@ -297,6 +323,162 @@ class ReleasePublicationTests(unittest.TestCase):
         self.assertLess(len(json.dumps(projected).encode()) + 100, 1024 * 1024)
         return records
 
+    def test_created_draft_identity_survives_postcreate_ambiguous_pages(self):
+        history = self.heavy_history()
+
+        class MovingCreatedDraftGH(FakeGH):
+            def __init__(self):
+                super().__init__()
+                self.discovery_pages = {1: history, 2: []}
+
+            def __call__(self, argv):
+                root = "repos/" + publication.REPO + "/releases"
+                if (self.draft is True and argv[:2] == ["gh", "api"] and
+                        argv[-1].startswith(root + "?")):
+                    # A post-create list walk cannot provide stable identity:
+                    # repeat a boundary page, matching the live error class.
+                    self.discovery_pages = {1: history, 2: history}
+                return super().__call__(argv)
+
+        fake = MovingCreatedDraftGH()
+        result = self.publish(fake)
+        self.assertEqual(result["release_id"], fake.release_id)
+        self.assertEqual(result["status"], "published_verified_pair")
+        self.assertEqual(fake.assets, PAYLOADS)
+        self.assertEqual(len([a for a in fake.calls if "?per_page=" in a[-1]]), 2)
+
+    def test_creation_identity_invalid_never_rediscovers_uploads_or_recreates(self):
+        valid = {"id": 314, "tag_name": "v" + VERSION, "draft": True}
+        variants = [[], {}, {**valid, "id": True}, {**valid, "id": 0},
+                    {**valid, "id": -1}, {**valid, "id": 314.0},
+                    {**valid, "id": "314"}, {**valid, "tag_name": "v0.0.0"},
+                    {**valid, "draft": False}, {**valid, "draft": 1},
+                    {**valid, "unexpected": "refuse"}]
+        for identity in variants:
+            with self.subTest(identity=identity):
+                fake = FakeGH()
+                fake.create_response = identity
+                record = {}
+                with self.assertRaisesRegex(publication.Refusal, "creation identity invalid"):
+                    publication.publish(VERSION, HEAD, self.directory,
+                                        self.directory / "inert.app", record, run=fake)
+                self.assertTrue(record["creation_attempted"])
+                self.assertEqual(record["creation_outcome"], "unknown")
+                self.assertIsNone(record["published"])
+                self.assertEqual(fake.mutation_kinds(), ["create"])
+                self.assertEqual(fake.assets, {})
+                self.assertEqual(len([a for a in fake.calls if "?per_page=" in a[-1]]), 1)
+
+    def test_unknown_creation_preserves_unknown_and_does_not_repeat_mutation(self):
+        fake = FakeGH()
+        fake.fail = "create-unknown"
+        record = {}
+        with self.assertRaises(publication.Refusal):
+            publication.publish(VERSION, HEAD, self.directory,
+                                self.directory / "inert.app", record, run=fake)
+        self.assertTrue(fake.draft)  # Server may have accepted the one POST.
+        self.assertTrue(record["creation_attempted"])
+        self.assertIsNone(record["published"])
+        self.assertEqual(record["creation_outcome"], "unknown")
+        self.assertNotIn("release_id", record)
+        self.assertEqual(fake.mutation_kinds(), ["create"])
+        self.assertFalse(record["publish_attempted"])
+
+    def test_creation_http_status_and_json_must_be_observed_before_id_binding(self):
+        for response in (b'HTTP/2.0 200 OK\r\n\r\n{}',
+                         b'HTTP/2.0 201 Created\r\n\r\nnot-json',
+                         b'HTTP/2.0 201 Created\r\n\r\nnull'):
+            with self.subTest(response=response):
+                fake = FakeGH()
+                original = fake.__call__
+
+                def malformed(argv):
+                    result = original(argv)
+                    if fake.is_create(argv):
+                        return subprocess.CompletedProcess(argv, 0, response, b"")
+                    return result
+
+                record = {}
+                with self.assertRaises(publication.Refusal):
+                    publication.publish(VERSION, HEAD, self.directory,
+                                        self.directory / "inert.app", record, run=malformed)
+                self.assertIsNone(record["published"])
+                self.assertNotIn("release_id", record)
+                self.assertEqual(fake.mutation_kinds(), ["create"])
+
+    def test_created_id_disappearance_or_drift_never_falls_back_to_discovery(self):
+        for defect in ("id-missing", "id-drift", "tag-drift"):
+            with self.subTest(defect=defect):
+                fake = FakeGH()
+                fake.fail = defect
+                record = {}
+                with self.assertRaises(publication.Refusal):
+                    publication.publish(VERSION, HEAD, self.directory,
+                                        self.directory / "inert.app", record, run=fake)
+                self.assertEqual(record["release_id"], 314)
+                self.assertEqual(record["creation_outcome"], "draft_identity_received")
+                self.assertIsNone(record["published"])
+                self.assertEqual(fake.mutation_kinds(), ["create"])
+                self.assertEqual(len([a for a in fake.calls if "?per_page=" in a[-1]]), 1)
+
+    def test_remote_tag_is_revalidated_after_absence_before_create(self):
+        fake = FakeGH()
+        original = fake.__call__
+        tag_reads = 0
+
+        def drift(argv):
+            nonlocal tag_reads
+            if argv[0] == "git":
+                tag_reads += 1
+                if tag_reads == 2:
+                    fake.fail = "tag"
+            return original(argv)
+
+        record = {}
+        with self.assertRaisesRegex(publication.Refusal, "tag does not peel"):
+            publication.publish(VERSION, HEAD, self.directory,
+                                self.directory / "inert.app", record, run=drift)
+        self.assertEqual(tag_reads, 2)
+        self.assertFalse(record["creation_attempted"])
+        self.assertEqual(fake.mutations(), [])
+
+    def test_creation_projection_byte_cap_preserves_unknown_without_id_or_upload(self):
+        fake = FakeGH()
+        fake.create_response = {"id": 314, "tag_name": "x" * (1024 * 1024), "draft": True}
+        record = {}
+        with self.assertRaisesRegex(publication.Refusal, "command metadata exceeds bound"):
+            publication.publish(VERSION, HEAD, self.directory,
+                                self.directory / "inert.app", record, run=fake)
+        self.assertTrue(record["creation_attempted"])
+        self.assertIsNone(record["published"])
+        self.assertNotIn("release_id", record)
+        self.assertEqual(fake.mutation_kinds(), ["create"])
+
+    def test_main_retains_unknown_creation_and_received_id_in_exclusive_receipt(self):
+        original_publish = publication.publish
+        for defect in ("create-unknown", "id-missing"):
+            with self.subTest(defect=defect):
+                fake = FakeGH()
+                fake.fail = defect
+                receipt = self.directory / (defect + ".json")
+
+                def inert_publish(version, head, directory, app, record):
+                    return original_publish(version, head, directory, app, record, run=fake)
+
+                argv = ["publish-release-assets.py", "--version", VERSION,
+                        "--expected-commit", HEAD, "--directory", str(self.directory),
+                        "--app", str(self.directory / "inert.app"), "--receipt", str(receipt)]
+                with mock.patch("sys.argv", argv), mock.patch.dict(publication.os.environ), \
+                        mock.patch.object(publication, "publish", side_effect=inert_publish):
+                    with self.assertRaises(publication.Refusal):
+                        publication.main()
+                retained = json.loads(receipt.read_text())
+                self.assertEqual(retained["status"], "failed")
+                self.assertTrue(retained["creation_attempted"])
+                self.assertIsNone(retained["published"])
+                self.assertEqual(retained.get("release_id"), 314 if defect == "id-missing" else None)
+                self.assertEqual(fake.mutation_kinds(), ["create"])
+
     def test_heavy_history_complete_absence_precedes_create_and_publish_last(self):
         records = self.heavy_history()
         fake = FakeGH()
@@ -312,9 +494,9 @@ class ReleasePublicationTests(unittest.TestCase):
             if argv[:2] == ["gh", "api"] and "?per_page=" in argv[-1]:
                 self.assertEqual(argv, ["gh", "api", "--hostname", "github.com", "--include", "--jq", "map({id,tag_name,draft})", argv[-1]])
         last_page = next(i for i, a in enumerate(fake.calls) if a[-1] == endpoints[-1])
-        create = next(i for i, a in enumerate(fake.calls) if a[:3] == ["gh", "release", "create"])
+        create = next(i for i, a in enumerate(fake.calls) if fake.is_create(a))
         self.assertLess(last_page, create)
-        self.assertEqual([a[2] for a in fake.mutations()], ["create", "upload", "upload", "edit"])
+        self.assertEqual(fake.mutation_kinds(), ["create", "upload", "upload", "edit"])
         self.assertEqual(result["status"], "published_verified_pair")
         self.assertNotIn("inert historical metadata", json.dumps(result))
         self.assertNotIn("historical-private-fixture", json.dumps(result))
@@ -330,7 +512,7 @@ class ReleasePublicationTests(unittest.TestCase):
         self.assertTrue(all("--jq" not in a for a in fake.calls if a[-1].endswith("/releases/314")))
         self.assertEqual(fake.assets, PAYLOADS)
 
-    def test_heavy_history_postcreate_tag404_discovers_inserted_draft_by_exact_id(self):
+    def test_heavy_history_creation_pins_id_without_postcreate_tag_or_list_lookup(self):
         history = self.heavy_history()
 
         class HiddenCreatedDraftGH(FakeGH):
@@ -358,25 +540,24 @@ class ReleasePublicationTests(unittest.TestCase):
         try:
             result = self.publish(fake)
         except publication.Refusal as error:
-            self.fail("hidden-created draft must be rediscovered: " + str(error))
+            self.fail("creation identity must remain pinned: " + str(error))
         self.assertTrue(fake.hide_draft)
-        self.assertEqual(fake.tag_responses, [(1, True), (1, True)])
-        self.assertEqual(fake.list_observations, [(None, 1, 100), (None, 2, 0), (True, 1, 100), (True, 2, 1)])
+        self.assertEqual(fake.tag_responses, [(1, True)])
+        self.assertEqual(fake.list_observations, [(None, 1, 100), (None, 2, 0)])
         self.assertEqual(result["release_id"], 314)
         self.assertEqual(result["status"], "published_verified_pair")
         self.assertEqual(result["prepublication_readback"], result["assets"])
         self.assertEqual(len(result["verification"]), 5)
         self.assertEqual(fake.assets, PAYLOADS)
-        self.assertEqual([a[2] for a in fake.mutations()], ["create", "upload", "upload", "edit"])
+        self.assertEqual(fake.mutation_kinds(), ["create", "upload", "upload", "edit"])
         lists = [i for i, a in enumerate(fake.calls) if a[:2] == ["gh", "api"] and "?per_page=" in a[-1]]
         selected = [i for i, a in enumerate(fake.calls) if a[:2] == ["gh", "api"] and a[-1].endswith("/releases/314")]
-        create = next(i for i, a in enumerate(fake.calls) if a[:3] == ["gh", "release", "create"])
+        create = next(i for i, a in enumerate(fake.calls) if fake.is_create(a))
         upload = next(i for i, a in enumerate(fake.calls) if a[:3] == ["gh", "release", "upload"])
-        self.assertEqual(len(lists), 4)
+        self.assertEqual(len(lists), 2)
         self.assertGreaterEqual(len(selected), 5)
         self.assertLess(lists[1], create)
-        self.assertLess(create, lists[2])
-        self.assertLess(lists[3], selected[0])
+        self.assertLess(create, selected[0])
         self.assertLess(selected[0], upload)
         for i in lists:
             self.assertEqual(fake.calls[i][:-1], ["gh", "api", "--hostname", "github.com", "--include", "--jq", "map({id,tag_name,draft})"])
