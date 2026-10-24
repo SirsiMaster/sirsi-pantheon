@@ -6,6 +6,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.129] — 2026-10-24
+
+### Corrected
+
+- Review Trash in bounded native pages, freeze explicit selected-batch consent,
+  and retain truthful partial or failed receipts. Keep Go as deletion authority;
+  browsing, cancellation and remaining-items review never imply deletion success.
+- Project relay-owned retry counts without reading private outboxes or inventing
+  zero counts. Retain fresh producer evidence, exact-root repair consent and
+  descriptor-bound filesystem checks; missing publishers remain visibly unknown.
+- Keep Horus failure explanations observational rather than inventing a cause
+  from the number of affected lanes. Preserve classification and totals.
+- Exercise completion-proof behavior through actual CLI and MCP entry points,
+  and reconcile the ADR-055 index with its recorded implementation status.
+- Correct the optional Claude admission classifier's terminal-whitespace and
+  literal null-stderr handling without changing shell command identity. Preserve
+  workload, background-command, substitution and stop-ownership refusals.
+
+The Claude classifier is an operator-installed source component, not a Python
+dependency in the signed Mac application. Publishing this release does not
+automatically replace private IDE hooks or restart existing consumers. Native
+installation, loaded-image adoption and each host's hook checks remain separate
+observations; no whole-fleet or cloud migration completion is claimed here.
+
 ## [0.24.128] — 2026-10-24
 
 ### Corrected
