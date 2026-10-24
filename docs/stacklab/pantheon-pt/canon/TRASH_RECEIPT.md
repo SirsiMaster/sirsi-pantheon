@@ -103,6 +103,39 @@ hostile same-UID writer. No stronger filesystem or process-group cleanup claim.
 
 ## Native result and recovery
 
+### Native errno recovery correction (source candidate)
+
+`TrashBrowseFailure.swift` captures errors immediately inside the per-instance
+open/openat/fdopendir boundary, before close or formatting. The separately
+versioned native-only `pantheon.trash-browse-error.v1` records a closed failure
+code, captured POSIX errno when available, stage and bounded message. Logical
+identity/generation refusals never invent errno. Existing failure callers still
+receive an incomplete CommandExecution; the workflow decodes only its nonzero
+native failure envelope, never as page/empty/selection evidence. Unknown or
+incomplete envelopes cannot offer permission recovery.
+
+Only EACCES/EPERM offer the existing macOS access guide. Permission/privacy may
+be involved; neither errno proves missing FDA. ELOOP/ENOTDIR retain no-follow
+safety refusals; ENOENT is unavailable, not empty; EMFILE/ENFILE are resource
+failures. No fallback root, link following, Trash creation, grant, automatic
+probe, permission write or app/service restart is introduced. The guide uses
+the current bundle and explicit Settings/reveal buttons; entry performs neither.
+Its reused Settings button no longer invokes the registration probe.
+
+Guide entry fences/closes the existing session and discards page continuation,
+selection, preview and approval. Back does not retry automatically: the owner
+explicitly starts a fresh browse. Success clears current failure; delayed older
+or cancelled failure cannot overwrite a newer result. Deletion still requires
+new selection, canonical Go preview and irreversible confirmation. Retained
+operation receipts survive failed access retries. Installed cause and native
+Settings/return/retry behavior remain unqualified until separately observed.
+
+Focused inert author fixtures: `TrashBrowseRecoveryTests` (nine methods), plus
+unchanged `TrashBrowseSessionTests`, `TrashReceiptTests` and
+`RemediationExecutionTests`. Qualify strict-concurrency release compilation and
+those exact XCTest inventories under Main's ordinary admission. No fixtures,
+builds, real Trash, Settings or permission actions were executed by the author.
+
 Existing runCaptured remains unchanged:64KiB stdin, shared4MiB stdout/stderr,
 monotonic deadline, cancellation and explicit unconfirmed child-exit debt.
 Only complete captures are decoded. Success-shaped reports require exit0;

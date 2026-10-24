@@ -240,6 +240,7 @@ enum TrashPhase: Equatable { case loading, error, empty, browsing, ready, applyi
     @Published private(set) var preview: TrashManifest?
     @Published private(set) var approval: TrashApproval?
     @Published private(set) var message: String?
+    @Published private(set) var browseFailure: TrashBrowseFailure?
     @Published private(set) var operation: TrashReport?
     @Published private(set) var execution: CommandExecution?
     @Published private(set) var page: TrashPage?
@@ -248,11 +249,20 @@ enum TrashPhase: Equatable { case loading, error, empty, browsing, ready, applyi
     private var initialReadStarted = false
     private var browseActive = true
     private var activeApproval: UUID?
+    private var explicitBrowseRequired = false
+
+    var canReviewAccess: Bool { phase == .error && browseFailure?.offersAccessGuide == true }
+
+    func beginAccessReview() {
+        guard canReviewAccess else { return }
+        cancelBrowse()
+        explicitBrowseRequired = true; page = nil
+    }
 
     var confirmedSuccess: Bool { operation?.status == "completed" && execution?.complete == true && execution?.exitCode == 0 }
 
     func loadInitial(capture: () async -> CommandExecution) async {
-        guard browseActive, !Task.isCancelled, !initialReadStarted else { return }
+        guard browseActive, !explicitBrowseRequired, !Task.isCancelled, !initialReadStarted else { return }
         initialReadStarted = true
         await loadPage(capture: capture)
     }
@@ -275,7 +285,8 @@ enum TrashPhase: Equatable { case loading, error, empty, browsing, ready, applyi
     func loadPage(capture: () async -> CommandExecution) async {
         guard browseActive, phase != .applying else { return }
         let token = UUID(); generation = token
-        approval = nil; preview = nil; selected = []; message = nil; phase = .loading
+        approval = nil; preview = nil; selected = []; page = nil
+        browseFailure = nil; explicitBrowseRequired = false; message = nil; phase = .loading
         let execution = await capture()
         guard generation == token else { return }
         guard !Task.isCancelled else {
@@ -283,7 +294,8 @@ enum TrashPhase: Equatable { case loading, error, empty, browsing, ready, applyi
         }
         guard execution.complete, execution.exitCode == 0,
               let decoded = try? JSONDecoder().decode(TrashPage.self, from: execution.stdoutData), decoded.validWireShape else {
-            phase = .error; message = execution.issue ?? "This Trash page could not be verified. Retry browsing; no deletion was authorized."
+            browseFailure = TrashBrowseFailure.decode(execution)
+            phase = .error; message = browseFailure?.message ?? execution.issue ?? "This Trash page could not be verified. Retry browsing; no deletion was authorized."
             return
         }
         page = decoded; phase = decoded.entries.isEmpty && decoded.blocked.isEmpty && !decoded.more ? .empty : .browsing
@@ -296,7 +308,7 @@ enum TrashPhase: Equatable { case loading, error, empty, browsing, ready, applyi
 
     func showPage() {
         guard phase != .applying, let page else { return }
-        generation = UUID(); approval = nil; preview = nil; selected = []; message = nil
+        generation = UUID(); approval = nil; preview = nil; selected = []; message = nil; browseFailure = nil
         phase = page.entries.isEmpty && page.blocked.isEmpty && !page.more ? .empty : .browsing
     }
 
@@ -315,7 +327,7 @@ enum TrashPhase: Equatable { case loading, error, empty, browsing, ready, applyi
     func loadPreview(capture: () async -> CommandExecution) async {
         guard phase != .applying else { return }
         let token = UUID(); generation = token
-        approval = nil; preview = nil; message = nil; phase = .loading
+        approval = nil; preview = nil; message = nil; browseFailure = nil; phase = .loading
         let read = TrashCommandRead(await capture(), preview: true)
         guard token == generation else { return }
         guard let report = read.report, let manifest = report.preview,
@@ -346,7 +358,7 @@ enum TrashPhase: Equatable { case loading, error, empty, browsing, ready, applyi
         guard phase == .ready, let captured = approval, captured.manifest == preview else { return }
         // Consume the frozen approval and set the latch BEFORE any await.
         approval = nil; activeApproval = captured.id; generation = UUID(); phase = .applying
-        operation = nil; execution = nil; message = nil
+        operation = nil; execution = nil; message = nil; browseFailure = nil
         await browser.close()
         let receipt: CommandExecution
         if permitsLaunch(captured) { receipt = await capture(captured) }
