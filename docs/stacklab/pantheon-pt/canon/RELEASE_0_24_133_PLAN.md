@@ -68,7 +68,7 @@ fence. Both additive traceability rows are retained.
 
 No parallel publisher, silent security change, retired router store or blanket
 attempt reset is authorized by this plan. Unqualified Ra caller adoption,
-streaming, failure-memory and draft-publication fixes are not represented as
+streaming and failure-memory fixes are not represented as
 already shipped. They continue on the next train, not an indefinite hold on
 this ready corrective batch. The publication correction above is now included;
 its real signed release behavior remains to be observed on this release.
