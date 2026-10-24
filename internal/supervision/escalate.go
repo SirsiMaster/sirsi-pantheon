@@ -125,9 +125,10 @@ func rollup(in []Escalation) []Escalation {
 	}
 	fmt.Fprintf(&b, "%d lanes are holding %d open items between them and none can be reached automatically: ", len(in), total)
 	b.WriteString(strings.Join(names, ", "))
-	b.WriteString(".\n\nEach declares no automatic wake mechanism and has no registered thread, so every one of them appears stopped. ")
-	b.WriteString("At this scale this is one condition, not N incidents — nothing on the host can start a lane whose wake mechanism is none. ")
-	b.WriteString("Opening a session for each lane clears it; so does landing a supervisor that can start them.\n\nPer lane:\n")
+	b.WriteString(".\n\nAutomatic delivery is unavailable, and no fresh usable thread was observed for these lanes. ")
+	b.WriteString("This does not establish their wake configuration or whether stale registrations exist. ")
+	b.WriteString("Inspect each lane's wake configuration, latest delivery result and host reachability before choosing a repair. ")
+	b.WriteString("Opening a session can restore a usable consumer; queued work still needs a delivery acknowledgment.\n\nPer lane:\n")
 	for _, e := range in {
 		fmt.Fprintf(&b, "  - %s: %d open, state %s\n", e.Agent, e.OpenItems, e.State)
 	}
@@ -145,15 +146,15 @@ func whyUnroutable(l LaneInput) string {
 	if l.OpenItems != 1 {
 		b.WriteString("s")
 	}
-	b.WriteString(", declares no automatic wake mechanism, and has no registered thread in the")
-	b.WriteString(" thread registry — the lane appears stopped. ")
+	b.WriteString(", automatic delivery is unavailable, and no fresh usable thread was observed. ")
+	b.WriteString("This does not establish its wake configuration or whether stale registrations exist. ")
 	if l.ActionableTasks > 0 {
 		fmt.Fprintf(&b, "It also carries %d actionable ledger task(s). ", l.ActionableTasks)
 	}
 	if l.BlockedTasks > 0 {
 		fmt.Fprintf(&b, "%d of its tasks record a blocker. ", l.BlockedTasks)
 	}
-	b.WriteString("Opening a session for this lane is the only thing that clears it — ")
-	b.WriteString("re-running the supervisor will not, and waking harder will not.")
+	b.WriteString("Inspect its wake configuration, latest delivery result and host reachability before choosing a repair. ")
+	b.WriteString("Opening a session can restore a usable consumer; queued work still needs a delivery acknowledgment.")
 	return b.String()
 }
