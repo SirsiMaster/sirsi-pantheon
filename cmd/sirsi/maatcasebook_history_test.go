@@ -42,6 +42,36 @@ func TestMaatCasebookCommandFindsOlderScopedSystemOneRecord(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// Optional wire-proof custody exports the real 61-row journal, never a
+	// projected response. Main supplies a unique path in its owned fixture root.
+	if destination := os.Getenv("SIRSI_TEST_MAAT_HISTORY_JOURNAL_FIXTURE"); destination != "" {
+		if !filepath.IsAbs(destination) {
+			t.Fatal("history journal fixture export requires an absolute owned fixture path")
+		}
+		source, err := os.Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		const maxFixtureBytes = 1 << 20
+		raw, readErr := io.ReadAll(io.LimitReader(source, maxFixtureBytes+1))
+		closeErr := source.Close()
+		if readErr != nil || closeErr != nil || len(raw) == 0 || len(raw) > maxFixtureBytes {
+			t.Fatalf("read bounded history journal fixture: bytes=%d read=%v close=%v", len(raw), readErr, closeErr)
+		}
+		fixture, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := fixture.Chmod(0o600); err != nil {
+			closeErr := fixture.Close()
+			t.Fatalf("set private history fixture mode: %v; close=%v", err, closeErr)
+		}
+		written, writeErr := fixture.Write(raw)
+		closeErr = fixture.Close()
+		if writeErr != nil || written != len(raw) || closeErr != nil {
+			t.Fatalf("export complete history journal fixture: wrote=%d want=%d write=%v close=%v", written, len(raw), writeErr, closeErr)
+		}
+	}
 	oldFactory := newMaatDecisionJournal
 	oldKind, oldStatus, oldLimit := maatCasebookKind, maatCasebookStatus, maatCasebookLimit
 	oldScope, oldEvidence, oldCursor, oldJSON := maatCasebookScope, maatCasebookEvidence, maatCasebookCursor, maatJSON
