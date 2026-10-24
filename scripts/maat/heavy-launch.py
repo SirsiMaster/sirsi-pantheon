@@ -99,18 +99,44 @@ def selector_assignment(word):
     # destination overrides. These selectors never bypass ancestry checks.
     return re.fullmatch(r'SIRSI_(?:AGENT_ID|THREAD_ID|ROUTER_AGENT)=[A-Za-z0-9_./${}-]+', word) is not None
 
-def read_null_stderr(argv):
-    # A read may suppress diagnostics to the fixed null device. This does not
-    # permit other targets, append/fd duplication, or front-door redirections.
+def read_null_stderr(command):
+    # Preserve raw quoting, escaping and IO-number adjacency. Quote-stripped
+    # argv cannot distinguish command `2 > ...` from descriptor `2> ...`.
     result = []
     i = 0
-    while i < len(argv):
-        if argv[i:i+3] == ['2', '>', '/dev/null']:
-            i += 3
+    single = double = escaped = word = False
+    while i < len(command):
+        char = command[i]
+        if escaped:
+            result.append(char)
+            escaped = False
+        elif single:
+            result.append(char)
+            if char == "'":
+                single = False
+        elif double:
+            result.append(char)
+            if char == '"':
+                double = False
+            elif char == '\\':
+                escaped = True
+        elif char in "'\"":
+            single, double = char == "'", char == '"'
+            word = True
+            result.append(char)
+        elif char == '\\':
+            escaped = word = True
+            result.append(char)
         else:
-            result.append(argv[i])
-            i += 1
-    return result
+            if not word:
+                match = re.match(r'2>[ \t]*/dev/null(?=$|[ \t\n;&|()])', command[i:])
+                if match:
+                    i += match.end()
+                    continue
+            word = char not in ' \t\n;&|()'
+            result.append(char)
+        i += 1
+    return ''.join(result)
 
 def denial(payload, depth=0):
     if depth > 8:
@@ -127,6 +153,7 @@ def denial(payload, depth=0):
         return "Missing command input"
     # Leading/trailing shell whitespace is not an extra command. Preserve all
     # interior separators and expansion checks; never evaluate command text.
+    raw_command = command
     command = command.strip(" \t\r\n")
     normalized = normalize_control_substitutions(command, depth)
     if normalized is None:
@@ -142,7 +169,10 @@ def denial(payload, depth=0):
         if tool.get('run_in_background') or payload.get('run_in_background'):
             return REASON
         return None if not unsafe_expansion(command) and not any(x in OPERATORS or (x and set(x) <= set(";&|<>()")) for x in argv[1:]) else REASON
-    argv = read_null_stderr(argv)
+    read_normalized = normalize_control_substitutions(read_null_stderr(raw_command).strip(" \t\r\n"), depth)
+    if read_normalized is None:
+        return REASON
+    argv = words(read_normalized)
     segment = []
     for word in argv + [";"]:
         if word in OPERATORS or (word and set(word) <= set(";&|<>()")):

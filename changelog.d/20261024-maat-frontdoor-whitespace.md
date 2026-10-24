@@ -9,3 +9,5 @@
   Arbitrary file targets, append/descriptor duplication, supervised-run
   redirection and direct workloads remain refused. This separately addresses
   the exact CompassPoint source-read payload, which contained no newline.
+- Null-stderr recognition retains shell quote/escape and IO-number adjacency,
+  so executable `2 > ...` cannot be mistaken for descriptor `2> ...`.

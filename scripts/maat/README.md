@@ -115,6 +115,13 @@ direct workloads and extra executable commands remain refused. Retain the
 actual payload separately: it had no newline, so the newline reproduction alone
 must not be cited as its cause.
 
+The fixed null-stderr recognition preserves raw quote/escape state and requires
+an adjacent unquoted IO-number `2>` at a shell-word boundary. Never delete
+quote-stripped argv tokens: `2 > /dev/null cat ...` names an executable `2`,
+not a descriptor. Quoted/escaped/word-prefixed numbers and spaced `2 >` remain
+refused; only the literal null-device target is supported. The rejected84d68503
+token-deletion candidate is retained in Git and was never installed.
+
 ## Safe native job and observer launchers
 
 ### Scoped native worker transport

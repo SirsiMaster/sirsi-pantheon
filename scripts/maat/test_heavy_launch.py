@@ -68,6 +68,26 @@ class ShellWhitespaceTests(unittest.TestCase):
             with self.subTest(suffix=suffix):
                 self.assertIsNotNone(self.denied('cat README.md ' + suffix))
 
+    def test_io_number_adjacency_does_not_change_executable(self):
+        for command in ['2 > /dev/null cat README.md',
+                        "'2' > /dev/null cat README.md",
+                        '"2">/dev/null cat README.md',
+                        '""2>/dev/null cat README.md',
+                        r'\2>/dev/null cat README.md',
+                        'cat README.md 2 > /dev/null',
+                        'cat README.md 2>/dev/null\r',
+                        'cat README.md 2>/dev/null\r cat README.md']:
+            with self.subTest(command=command):
+                self.assertIsNotNone(self.denied(command))
+
+    def test_literal_unquoted_null_stderr_preserves_read_argv(self):
+        for command in ['cat README.md 2>/dev/null',
+                        'cat README.md 2> /dev/null',
+                        '2>/dev/null cat README.md']:
+            with self.subTest(command=command):
+                self.assertIsNone(self.denied(command))
+                self.assertEqual(gate.words(gate.read_null_stderr(command)), ['cat', 'README.md'])
+
 
 if __name__ == '__main__':
     unittest.main()
