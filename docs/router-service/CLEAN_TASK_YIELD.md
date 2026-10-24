@@ -42,3 +42,34 @@ a production/shared DSN. This cloud workspace has no PG fixture or private SDK
 refresh authorization. Native/hosted validation, normal integration/release
 packaging and StackLab record remain required at SSA's sole publisher boundary.
 Parent clean-yield-retry-accounting-20261024 remains open until those outcomes.
+
+## Actual caller adoption and compatibility boundary
+
+`router task release` remains failure by default. Explicit `--disposition clean`
+or `--disposition external-wait`, together with `--evidence` (and a wait's
+`--dependency`), now dispatch through `SettleTaskAttempt`. `router task yield`
+uses the same dispatch. Failure reasons are never classified. Unknown intent,
+expiry, or mixed failure/clean fields refuse rather than refund.
+
+The real Codex Apollo consumer backstop prompt now uses that explicit clean
+handoff only for its own already-held live lease when the attended owner takes
+over. It never claims a foreign or forbidden task to yield it. Other consumer
+exit codes and unstructured model output are NOT interpreted as clean waits;
+no daemon with a typed task-outcome channel was found to wire automatically.
+External operator helpers must emit the explicit outcome flags after qualified
+rollout. Existing unknown external helpers are not silently adopted.
+
+The additive own-scope `TaskYieldCapabilities(agent)` RPC returns protocol1,
+clean/external-wait support, current-attempt-only and atomic-audit properties.
+Clean/wait callers require this exact compatible response BEFORE mutation.
+Old-server404, a malformed/incompatible capability, or an old mutation route
+fails closed; there is no failure-release/reset fallback. A capability response
+is NOT proof that all weighted/alias routes are upgraded. SSA must qualify
+server and caller binaries/registry together and ensure all writable routes
+support this protocol before activating caller adoption. Legacy failure callers
+remain compatible. A transport-uncertain yield still needs exact own-task/audit
+readback, not an assumption that the lease remains held or a blind retry.
+
+No live registry refresh, service rollout, server deployment, failure refund,
+expired-lease refund or historical row reset is performed by this source delta.
+This is not autonomous queue recovery or whole-original completion.
