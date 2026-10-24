@@ -241,6 +241,7 @@ struct MercuryLiveMachinesView: View {
         .background(PantheonTheme.panel, in: RoundedRectangle(cornerRadius: 10))
     }
 
+    @ViewBuilder
     private func dashboardRows(_ projection: MercuryMonitorProjection, elapsed: Double?) -> some View {
         if let dashboard = projection.snapshot {
             ForEach(dashboard.nodes.sorted { $0.id < $1.id }, id: \.id) { node in
@@ -271,6 +272,7 @@ struct MercuryLiveMachinesView: View {
         }
     }
 
+    @ViewBuilder
     private func nodeRow(_ node: MercuryMonitorNode, projection: MercuryMonitorProjection, elapsed: Double?) -> some View {
         let current = monitor.error == nil && projection.isCurrent(node, readCompletedAt: monitor.readCompletedAt, elapsed: elapsed)
         VStack(alignment: .leading, spacing: 9) {
@@ -286,6 +288,7 @@ struct MercuryLiveMachinesView: View {
                                                                     readCompletedAt: monitor.readCompletedAt, elapsed: elapsed)))
                 measurement("GPU work", percent(projection.gpuWork(for: node, readSucceeded: monitor.error == nil,
                                                                     readCompletedAt: monitor.readCompletedAt, elapsed: elapsed)))
+                measurement("Power", "Unknown")
                 measurement("Node state", current ? node.state : "stale locally")
             }
             if !current || monitor.error != nil {
