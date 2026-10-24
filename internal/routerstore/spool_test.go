@@ -814,17 +814,15 @@ func TestOpenLaneRootBindsPastRootSubstitution(t *testing.T) {
 // for it.
 func TestLaneCreatesGroupWritableDirsWhenTrustGroupConfigured(t *testing.T) {
 	// The root's actual gid must be a REAL one this test can prove landed
-	// correctly — reuse the current process's own primary group, which any
-	// fresh t.TempDir() subdirectory will actually carry, so the gid-match
+	// correctly — explicitly assign the current process's own primary group
+	// rather than assuming t.TempDir() inherited it, so the gid-match
 	// check in mkdirTrusted passes honestly rather than being bypassed by
 	// trustGID<0.
 	if _, terr := currentPrimaryGroupName(); terr != nil {
 		t.Skipf("cannot resolve current primary group: %v", terr)
 	}
 	spool := t.TempDir()
-	if err := os.Chmod(spool, 0o770); err != nil {
-		t.Fatal(err)
-	}
+	setOwnedSpoolFixtureGroupAndMode(t, spool, 0o770)
 	tr := newSpoolTransport(spool, "trust-mode-lane")
 	req := httptest.NewRequest(http.MethodPost, "http://spool/v1/call/Status", nil)
 	go func() { _, _ = tr.RoundTrip(req) }() // will time out waiting for a response; only the mkdir matters here
@@ -883,9 +881,7 @@ func TestLaneFileModeDefaultsUnchanged(t *testing.T) {
 		t.Fatalf("openLaneRoot(%q): fileMode=%o err=%v, want 0600 nil", root, fileMode, err)
 	}
 	_ = r1.Close()
-	if cerr := os.Chmod(root, 0o770); cerr != nil {
-		t.Fatal(cerr)
-	}
+	setOwnedSpoolFixtureGroupAndMode(t, root, 0o770)
 	r2, _, fileMode, gid, err := openLaneRoot(root)
 	if err != nil || fileMode != 0o640 || gid < 0 {
 		t.Fatalf("openLaneRoot(%q) group-writable: fileMode=%o gid=%d err=%v, want 0640 >=0 nil", root, fileMode, gid, err)
@@ -921,6 +917,7 @@ func TestSpoolRelayEndToEndWithTrustGroupWritesReadableFiles(t *testing.T) {
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	spool := t.TempDir()
+	setOwnedSpoolFixtureGroupAndMode(t, spool, 0o700)
 	logBuf := &strings.Builder{}
 	rl := &Relay{Spool: spool, Base: srv.URL, Token: "h0st", TrustGroup: trustGroup, Log: slog.New(slog.NewTextHandler(logBuf, nil))}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -961,10 +958,13 @@ func TestSpoolRelayEndToEndWithTrustGroupWritesReadableFiles(t *testing.T) {
 // attempt happens against it) and still successfully writes the response.
 func TestPublishNeverAttemptsToChmodAnExistingResDir(t *testing.T) {
 	spool := t.TempDir()
+	setOwnedSpoolFixtureGroupAndMode(t, spool, 0o700)
 	resDir := filepath.Join(spool, "lane-p", "res")
 	if err := os.MkdirAll(resDir, 0o750); err != nil { // an unusual, distinctive mode
 		t.Fatal(err)
 	}
+	setOwnedSpoolFixtureGroupAndMode(t, filepath.Dir(resDir), 0o700)
+	setOwnedSpoolFixtureGroupAndMode(t, resDir, 0o750)
 	trustGroup, terr := currentPrimaryGroupName()
 	if terr != nil {
 		t.Skipf("cannot resolve current primary group: %v", terr)
@@ -1022,6 +1022,7 @@ func TestPublishFallbackCreatesGroupAccessibleResDir(t *testing.T) {
 		t.Skipf("cannot resolve current primary group: %v", terr)
 	}
 	spool := t.TempDir() // fresh: lane-fresh/res does NOT exist yet
+	setOwnedSpoolFixtureGroupAndMode(t, spool, 0o700)
 	rl := &Relay{Spool: spool, TrustGroup: trustGroup, Log: slog.Default()}
 	rl.publish("lane-fresh", "id1", spoolResponse{Status: 200, Body: []byte("{}")})
 

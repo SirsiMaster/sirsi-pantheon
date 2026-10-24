@@ -1,4 +1,0 @@
-### Corrected
-
-- Add a separate macOS router MCP configuration plan/apply command for one explicitly selected existing Claude Code top/project or Cursor stdio entry. Only the exact owner-local standalone Go payload with empty argv can migrate to the existing qualified signed installed `sirsi router-mcp`; generic MCP, env/cwd/settings, credentials and server authority remain unchanged.
-- Bind confirmation to raw bytes, selection and source/target identity; preserve unedited bytes, redact preview values, and reuse retained nofollow/create-only backup/staging publication with durability/readback and explicit recovery debt. No client restart, automatic restore or live configuration action. Source fixtures are authored, not executed; actual client selection, signed publication and reconnect/caller proof remain open.
