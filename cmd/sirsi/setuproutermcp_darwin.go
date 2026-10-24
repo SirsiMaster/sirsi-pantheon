@@ -19,7 +19,6 @@ func newSetupRouterMCPCmd(factory func() (routerMCPConfigMigrator, error)) *cobr
 	root := &cobra.Command{Use: "router-mcp", Short: "Preview or confirm one exact legacy router MCP configuration migration", Args: cobra.NoArgs, SilenceUsage: true, SilenceErrors: true,
 		PersistentPreRun: func(*cobra.Command, []string) {}}
 	for _, action := range []string{"plan", "apply"} {
-		action := action
 		selection := setup.RouterMCPSelection{}
 		var confirmed string
 		cmd := &cobra.Command{Use: action, Args: cobra.NoArgs, SilenceUsage: true, SilenceErrors: true,
