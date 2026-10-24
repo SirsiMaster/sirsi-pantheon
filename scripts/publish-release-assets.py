@@ -23,6 +23,7 @@ REQUIREMENT = ('=anchor apple generic and certificate leaf[subject.OU] = "' + TE
                '" and certificate 1[field.1.2.840.113635.100.6.2.6] exists and '
                'certificate leaf[field.1.2.840.113635.100.6.1.13] exists')
 MAX_ASSET_BYTES = 4 * 1024 ** 3
+MAX_RELEASE_PAGES = 10
 
 
 class Refusal(RuntimeError):
@@ -116,26 +117,37 @@ def publish(version, expected_commit, directory, app, record, run=execute):
         if {name: digest(path) for name, path in paths.items()} != expected:
             raise Refusal("local verified pair changed; rebuild/review required")
 
-    def view():
+    selected_id = None
+
+    def release_api(endpoint, allow_missing=False):
         response = run(["gh", "api", "--hostname", "github.com", "--include",
-                        "repos/" + REPO + "/releases/tags/" + tag])
+                        "repos/" + REPO + "/releases" +
+                        ("" if endpoint.startswith("?") else "/") + endpoint])
         if len(response.stdout) + len(response.stderr) > 1024 * 1024:
             raise Refusal("release metadata exceeds bound")
-        # Only an explicit HTTP404 is absence. Network/auth failures never
-        # become permission to create another release record.
+        # A tag404 is NOT draft absence: private drafts may only appear in the
+        # authenticated repository list and exact-ID lookup. Other failures
+        # cannot authorize creation, and selected-ID404 never means recreate.
         raw = response.stdout.replace(b"\r\n", b"\n")
         headers, separator, body = raw.partition(b"\n\n")
         status = re.match(rb"HTTP/\S+ ([0-9]{3})(?: |\n|$)", headers)
         code = int(status[1]) if status else 0
         explicit_404 = code == 404 or (not status and re.search(rb"\(HTTP 404\)(?:\r?\n|$)", response.stderr))
         if explicit_404 and response.returncode:
-            record["published"] = False  # Observed absence, not a lookup failure.
-            return None
+            if allow_missing:
+                return None
+            raise Refusal("selected release/discovery unavailable; never recreate")
         if not separator or code != 200 or response.returncode:
             raise Refusal("release lookup is unknown, not absent")
-        value = json.loads(body)
-        if value.get("tag_name") != tag or type(value.get("draft")) is not bool:
+        return json.loads(body)
+
+    def validate_release(value, expected_id=None):
+        if (not isinstance(value, dict) or value.get("tag_name") != tag or
+                type(value.get("id")) is not int or value["id"] <= 0 or
+                type(value.get("draft")) is not bool):
             raise Refusal("release tag/state mismatch")
+        if expected_id is not None and value["id"] != expected_id:
+            raise Refusal("selected release identity changed")
         record["published"] = not value["draft"]
         assets = value.get("assets")
         if not isinstance(assets, list) or len(assets) > 2:
@@ -146,6 +158,49 @@ def publish(version, expected_commit, directory, app, record, run=execute):
             if name not in names or name in seen or asset.get("state") != "uploaded" or asset.get("size") != expected[name]["bytes"]:
                 raise Refusal("duplicate, unexpected, incomplete or wrong-size release asset")
             seen.add(name)
+        return value
+
+    def discover():
+        # Complete bounded pagination is required even after a match, so a
+        # second same-tag draft cannot be silently selected by list order.
+        matches, ids = [], set()
+        for page in range(1, MAX_RELEASE_PAGES + 1):
+            values = release_api("?per_page=100&page=" + str(page))
+            if not isinstance(values, list) or len(values) > 100:
+                raise Refusal("invalid release discovery page")
+            for value in values:
+                if (not isinstance(value, dict) or type(value.get("id")) is not int or
+                        value["id"] <= 0 or value["id"] in ids or
+                        not isinstance(value.get("tag_name"), str) or
+                        type(value.get("draft")) is not bool):
+                    raise Refusal("ambiguous release discovery metadata")
+                ids.add(value["id"])
+                if value["tag_name"] == tag:
+                    matches.append(value)
+            if len(values) < 100:
+                if len(matches) > 1:
+                    raise Refusal("duplicate exact-tag release records; never select or create")
+                return matches[0] if matches else None
+        raise Refusal("release discovery incomplete at bound; absence unproved")
+
+    def view():
+        nonlocal selected_id
+        if selected_id is not None:
+            value = validate_release(release_api(str(selected_id)), selected_id)
+            return value
+        value = release_api("tags/" + tag, allow_missing=True)
+        if value is None:
+            value = discover()
+            if value is None:
+                record["published"] = False  # Complete authenticated absence.
+                return None
+            # List metadata alone is insufficient for an upload/publish choice.
+            listed_id = value["id"]
+            value = validate_release(release_api(str(listed_id)), listed_id)
+        else:
+            value = validate_release(value)
+        selected_id = value["id"]
+        record["release_id"] = selected_id
         return value
 
     def readback(value, complete):
