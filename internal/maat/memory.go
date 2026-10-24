@@ -319,6 +319,8 @@ type Store struct {
 	transitionFD int
 	writesFD     int
 	lockFD       int
+	attemptsFD   int
+	storeUUID    string
 }
 
 // writeIntent is a tiny, create-only write-ahead record.  It is durable before
@@ -347,7 +349,7 @@ type writeCommit struct {
 }
 
 func newWriteIntent(namespace, leaf string, expected []byte) (writeIntent, error) {
-	if namespace != "evidence" && namespace != "incidents" && namespace != "transitions" {
+	if namespace != "evidence" && namespace != "incidents" && namespace != "transitions" && namespace != "attempts" {
 		return writeIntent{}, errors.New("maat memory: invalid write namespace")
 	}
 	if leaf == "" || filepath.Base(leaf) != leaf || len(expected) == 0 || len(expected) > maxMemoryObjectBytes {
@@ -367,7 +369,7 @@ func (i writeIntent) validate() error {
 	if i.Schema != MemorySchema || !validDigest(i.Key) || !validDigest(i.SHA256) || i.ByteLength <= 0 || i.ByteLength > maxMemoryObjectBytes {
 		return errors.New("maat memory: invalid write intent envelope")
 	}
-	if (i.Namespace != "evidence" && i.Namespace != "incidents" && i.Namespace != "transitions") || i.Leaf == "" || filepath.Base(i.Leaf) != i.Leaf {
+	if (i.Namespace != "evidence" && i.Namespace != "incidents" && i.Namespace != "transitions" && i.Namespace != "attempts") || i.Leaf == "" || filepath.Base(i.Leaf) != i.Leaf {
 		return errors.New("maat memory: invalid write intent target")
 	}
 	d := writeIntentDigest{Schema: i.Schema, Namespace: i.Namespace, Leaf: i.Leaf, SHA256: i.SHA256, ByteLength: i.ByteLength}
@@ -390,16 +392,30 @@ func OpenStore(root string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("maat memory: open store root: %w", err)
 	}
+	return openStoreFD(rootFD)
+}
+
+// openStoreFD takes ownership of rootFD. The default per-user resolver calls
+// this only after validating its retained parent, binding, and genesis.
+func openStoreFD(rootFD int) (*Store, error) {
+	return openStoreFDMode(rootFD, true)
+}
+
+func openStoreFDExisting(rootFD int) (*Store, error) {
+	return openStoreFDMode(rootFD, false)
+}
+
+func openStoreFDMode(rootFD int, createNamespaces bool) (*Store, error) {
 	closeRoot := true
 	defer func() {
 		if closeRoot {
 			_ = unix.Close(rootFD)
 		}
 	}()
-	if err := requireDirectory(rootFD); err != nil {
+	if err := requireOwnedDirectory(rootFD, true); err != nil {
 		return nil, err
 	}
-	evidenceFD, err := openOrCreateDirectory(rootFD, "evidence")
+	evidenceFD, err := openStoreDirectory(rootFD, "evidence", createNamespaces)
 	if err != nil {
 		return nil, err
 	}
@@ -409,7 +425,7 @@ func OpenStore(root string) (*Store, error) {
 			_ = unix.Close(evidenceFD)
 		}
 	}()
-	incidentFD, err := openOrCreateDirectory(rootFD, "incidents")
+	incidentFD, err := openStoreDirectory(rootFD, "incidents", createNamespaces)
 	if err != nil {
 		return nil, err
 	}
@@ -419,7 +435,7 @@ func OpenStore(root string) (*Store, error) {
 			_ = unix.Close(incidentFD)
 		}
 	}()
-	transitionFD, err := openOrCreateDirectory(rootFD, "transitions")
+	transitionFD, err := openStoreDirectory(rootFD, "transitions", createNamespaces)
 	if err != nil {
 		return nil, err
 	}
@@ -429,7 +445,7 @@ func OpenStore(root string) (*Store, error) {
 			_ = unix.Close(transitionFD)
 		}
 	}()
-	writesFD, err := openOrCreateDirectory(rootFD, "writes")
+	writesFD, err := openStoreDirectory(rootFD, "writes", createNamespaces)
 	if err != nil {
 		return nil, err
 	}
@@ -439,7 +455,21 @@ func OpenStore(root string) (*Store, error) {
 			_ = unix.Close(writesFD)
 		}
 	}()
-	lockFD, err := unix.Openat(rootFD, ".lock", unix.O_RDWR|unix.O_CREAT|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
+	attemptsFD, err := openStoreDirectory(rootFD, "attempts", createNamespaces)
+	if err != nil {
+		return nil, err
+	}
+	closeAttempts := true
+	defer func() {
+		if closeAttempts {
+			_ = unix.Close(attemptsFD)
+		}
+	}()
+	lockFlags := unix.O_RDWR | unix.O_NOFOLLOW | unix.O_CLOEXEC
+	if createNamespaces {
+		lockFlags |= unix.O_CREAT
+	}
+	lockFD, err := unix.Openat(rootFD, ".lock", lockFlags, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("maat memory: open registry lock: %w", err)
 	}
@@ -452,11 +482,28 @@ func OpenStore(root string) (*Store, error) {
 	if err := requireRegular(lockFD); err != nil {
 		return nil, err
 	}
-	if err := unix.Fsync(rootFD); err != nil {
-		return nil, fmt.Errorf("maat memory: fsync lock directory: %w", err)
+	if createNamespaces {
+		if err := unix.Fsync(rootFD); err != nil {
+			return nil, fmt.Errorf("maat memory: fsync lock directory: %w", err)
+		}
 	}
-	closeRoot, closeEvidence, closeIncident, closeTransition, closeWrites, closeLock = false, false, false, false, false, false
-	return &Store{rootFD: rootFD, evidenceFD: evidenceFD, incidentFD: incidentFD, transitionFD: transitionFD, writesFD: writesFD, lockFD: lockFD}, nil
+	closeRoot, closeEvidence, closeIncident, closeTransition, closeWrites, closeAttempts, closeLock = false, false, false, false, false, false, false
+	return &Store{rootFD: rootFD, evidenceFD: evidenceFD, incidentFD: incidentFD, transitionFD: transitionFD, writesFD: writesFD, attemptsFD: attemptsFD, lockFD: lockFD}, nil
+}
+
+func openStoreDirectory(rootFD int, name string, create bool) (int, error) {
+	if create {
+		return openOrCreateDirectory(rootFD, name)
+	}
+	fd, err := unix.Openat(rootFD, name, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return -1, fmt.Errorf("maat memory: open required %s namespace: %w", name, err)
+	}
+	if err := requireOwnedDirectory(fd, true); err != nil {
+		_ = unix.Close(fd)
+		return -1, err
+	}
+	return fd, nil
 }
 
 func (s *Store) Close() error {
@@ -464,7 +511,7 @@ func (s *Store) Close() error {
 		return nil
 	}
 	var first error
-	for _, fd := range []*int{&s.lockFD, &s.writesFD, &s.transitionFD, &s.incidentFD, &s.evidenceFD, &s.rootFD} {
+	for _, fd := range []*int{&s.lockFD, &s.attemptsFD, &s.writesFD, &s.transitionFD, &s.incidentFD, &s.evidenceFD, &s.rootFD} {
 		if *fd >= 0 {
 			if err := unix.Close(*fd); err != nil && first == nil {
 				first = err
@@ -585,6 +632,16 @@ func (s *Store) Transition(predecessorKey string, status IncidentStatus) (Incide
 }
 
 func (s *Store) Preflight(action Scope) (PreflightReceipt, error) {
+	return s.preflight(action, resolveMemoryGuard)
+}
+
+// The per-call resolver seam lets fixtures observe real guard execution without
+// changing the closed production registry or introducing a global provider.
+func (s *Store) preflight(action Scope, resolve func(string, string) (memoryGuard, bool)) (PreflightReceipt, error) {
+	return s.preflightBound(action, "", resolve)
+}
+
+func (s *Store) preflightBound(action Scope, manifestDigest string, resolve func(string, string) (memoryGuard, bool)) (PreflightReceipt, error) {
 	if s == nil || s.incidentFD < 0 {
 		return PreflightReceipt{}, errors.New("maat memory: store is closed")
 	}
@@ -595,6 +652,20 @@ func (s *Store) Preflight(action Scope) (PreflightReceipt, error) {
 		return PreflightReceipt{}, err
 	}
 	defer s.unlock()
+	return s.preflightBoundLocked(action, manifestDigest, resolve)
+}
+
+// preflightBoundLocked evaluates the complete registry snapshot while the
+// caller holds the store lock. Attempt admission uses the exclusive form so a
+// matching recurrence cannot be committed between the final assessment and
+// durable attempt creation.
+func (s *Store) preflightBoundLocked(action Scope, manifestDigest string, resolve func(string, string) (memoryGuard, bool)) (PreflightReceipt, error) {
+	if s == nil || s.incidentFD < 0 {
+		return PreflightReceipt{}, errors.New("maat memory: store is closed")
+	}
+	if err := action.validate(); err != nil {
+		return PreflightReceipt{}, err
+	}
 	journalLines, err := s.verifyWriteJournal()
 	if err != nil {
 		return PreflightReceipt{Schema: MemorySchema, Action: action, Decision: PreflightUnverifiable, EvaluatedAtUTC: time.Now().UTC()}, err
@@ -603,9 +674,15 @@ func (s *Store) Preflight(action Scope) (PreflightReceipt, error) {
 	if err != nil {
 		return PreflightReceipt{}, err
 	}
-	actionBytes, _ := json.Marshal(action)
-	actionDigest := sha256.Sum256(actionBytes)
-	receipt := PreflightReceipt{Schema: MemorySchema, Action: action, ActionManifestSHA256: hex.EncodeToString(actionDigest[:]), Decision: PreflightPass, EvaluatedAtUTC: time.Now().UTC()}
+	if manifestDigest == "" {
+		actionBytes, _ := json.Marshal(action)
+		actionDigest := sha256.Sum256(actionBytes)
+		manifestDigest = hex.EncodeToString(actionDigest[:])
+	}
+	if !validDigest(manifestDigest) {
+		return PreflightReceipt{}, errors.New("maat memory: invalid action manifest digest")
+	}
+	receipt := PreflightReceipt{Schema: MemorySchema, Action: action, ActionManifestSHA256: manifestDigest, Decision: PreflightPass, EvaluatedAtUTC: time.Now().UTC()}
 	snapshot := sha256.New()
 	_, _ = snapshot.Write([]byte(MemorySchema + "\n"))
 	for _, line := range journalLines {
@@ -669,43 +746,47 @@ func (s *Store) Preflight(action Scope) (PreflightReceipt, error) {
 		fileDigest := sha256.Sum256(data)
 		_, _ = snapshot.Write([]byte("transitions/" + name + "\x00" + hex.EncodeToString(fileDigest[:]) + "\n"))
 	}
+	receipt.RegistrySnapshotSHA256 = hex.EncodeToString(snapshot.Sum(nil))
 	seenGuards := map[string]bool{}
+	var guardErr error
 	for _, key := range sortedIncidentKeys(incidents) {
 		incident := incidents[key]
-		guardKey := incident.GuardID + "\x00" + incident.GuardVersion
+		if _, closed := terminal[incident.Key]; closed || incident.Status != IncidentActive || !incident.Scope.matches(action) {
+			continue
+		}
+		receipt.IncidentKeys = append(receipt.IncidentKeys, incident.Key)
+		receipt.RecoveryActions = append(receipt.RecoveryActions, incident.RecoveryActions...)
+		guard, ok := resolve(incident.GuardID, incident.GuardVersion)
+		if !ok {
+			guardErr = errors.Join(guardErr, fmt.Errorf("maat memory: unsupported guard %q version %q", incident.GuardID, incident.GuardVersion))
+			continue
+		}
+		check, err := guard.evaluate(memoryGuardInput{Action: action, Incident: incident})
+		if err != nil {
+			guardErr = errors.Join(guardErr, err)
+			continue
+		}
+		receipt.MeasuredChecks = append(receipt.MeasuredChecks, check)
+		receipt.Decision = PreflightReject
+		guardKey := guard.identity.ID + "\x00" + guard.identity.Version
 		if !seenGuards[guardKey] {
-			guardDigest := sha256.Sum256([]byte(guardKey))
-			receipt.EvaluatedGuards = append(receipt.EvaluatedGuards, GuardEvaluation{ID: incident.GuardID, Version: incident.GuardVersion, SHA256: hex.EncodeToString(guardDigest[:])})
+			receipt.EvaluatedGuards = append(receipt.EvaluatedGuards, guard.identity)
 			seenGuards[guardKey] = true
 		}
-		status := incident.Status
-		if transition, ok := terminal[incident.Key]; ok {
-			status = transition.Status
-		}
-		outcome := "out-of-scope"
-		if status == IncidentActive && incident.Scope.matches(action) {
-			outcome = "active-incident-matched"
-			receipt.Decision = PreflightReject
-			receipt.IncidentKeys = append(receipt.IncidentKeys, incident.Key)
-			receipt.RecoveryActions = append(receipt.RecoveryActions, incident.RecoveryActions...)
-		}
-		if status != IncidentActive {
-			outcome = "terminal-transition"
-		}
-		receipt.MeasuredChecks = append(receipt.MeasuredChecks, CheckOutcome{IncidentKey: incident.Key, EvidenceSHA256: incident.EvidenceSHA256, Status: string(status), Outcome: outcome})
+	}
+	if guardErr != nil {
+		receipt.Decision = PreflightUnverifiable
 	}
 	sort.Strings(receipt.IncidentKeys)
 	sort.Slice(receipt.EvaluatedGuards, func(i, j int) bool {
 		return receipt.EvaluatedGuards[i].ID+receipt.EvaluatedGuards[i].Version < receipt.EvaluatedGuards[j].ID+receipt.EvaluatedGuards[j].Version
 	})
-	snapshotDigest := snapshot.Sum(nil)
-	receipt.RegistrySnapshotSHA256 = hex.EncodeToString(snapshotDigest)
 	if len(receipt.RecoveryActions) > 0 {
 		actions, _ := json.Marshal(receipt.RecoveryActions)
 		recoveryDigest := sha256.Sum256(actions)
 		receipt.RecoveryReference = "maat-recovery:" + hex.EncodeToString(recoveryDigest[:])
 	}
-	return receipt, nil
+	return receipt, guardErr
 }
 
 func sortedIncidentKeys(incidents map[string]Incident) []string {
@@ -737,7 +818,7 @@ func openOrCreateDirectory(parentFD int, name string) (int, error) {
 	if err != nil {
 		return -1, fmt.Errorf("maat memory: open %s: %w", name, err)
 	}
-	if err := requireDirectory(fd); err != nil {
+	if err := requireOwnedDirectory(fd, true); err != nil {
 		_ = unix.Close(fd)
 		return -1, err
 	}
@@ -748,24 +829,13 @@ func openOrCreateDirectory(parentFD int, name string) (int, error) {
 	return fd, nil
 }
 
-func requireDirectory(fd int) error {
-	var stat unix.Stat_t
-	if err := unix.Fstat(fd, &stat); err != nil {
-		return fmt.Errorf("maat memory: stat directory: %w", err)
-	}
-	if stat.Mode&unix.S_IFMT != unix.S_IFDIR {
-		return errors.New("maat memory: expected directory")
-	}
-	return nil
-}
-
 func requireRegular(fd int) error {
 	var stat unix.Stat_t
 	if err := unix.Fstat(fd, &stat); err != nil {
 		return fmt.Errorf("maat memory: stat regular object: %w", err)
 	}
-	if stat.Mode&unix.S_IFMT != unix.S_IFREG || stat.Nlink != 1 {
-		return errors.New("maat memory: expected singly linked regular object")
+	if stat.Mode&unix.S_IFMT != unix.S_IFREG || stat.Nlink != 1 || stat.Uid != uint32(os.Geteuid()) || stat.Mode&0o077 != 0 {
+		return errors.New("maat memory: expected private owner-controlled singly linked regular object")
 	}
 	return nil
 }
@@ -975,13 +1045,17 @@ func (s *Store) namespaceFD(namespace string) (int, error) {
 		return s.incidentFD, nil
 	case "transitions":
 		return s.transitionFD, nil
+	case "attempts":
+		return s.attemptsFD, nil
 	default:
 		return -1, errors.New("maat memory: unknown write namespace")
 	}
 }
 
 func readExact(parentFD int, name string) ([]byte, error) {
-	fd, err := unix.Openat(parentFD, name, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	// Nonblocking open lets Fstat reject FIFOs/devices without waiting for a peer.
+	// Regular-file reads retain the same size and opened-object checks below.
+	fd, err := unix.Openat(parentFD, name, unix.O_RDONLY|unix.O_NONBLOCK|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return nil, err
 	}

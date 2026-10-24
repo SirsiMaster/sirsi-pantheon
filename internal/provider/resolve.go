@@ -88,7 +88,7 @@ func Local(home string, conf Conf) *OpenAICompat {
 		if e != nil {
 			return &OpenAICompat{ProviderName: "local", TierValue: TierLocal, ConfigurationError: e}
 		}
-		return &OpenAICompat{ProviderName: "local", TierValue: TierLocal, Endpoint: strings.TrimRight(p.Endpoint, "/") + func() string {
+		return &OpenAICompat{ProviderName: "local", TierValue: TierLocal, JSONObject: ProfileJSONObjectCapability(p), Endpoint: strings.TrimRight(p.Endpoint, "/") + func() string {
 			if strings.HasSuffix(strings.TrimRight(p.Endpoint, "/"), "/v1") {
 				return ""
 			}
@@ -201,12 +201,43 @@ func Ladder(ctx context.Context, home string) []Provider {
 	conf := LoadConf(home)
 	var out []Provider
 	if l := Local(home, conf); l != nil {
-		out = append(out, l)
+		out = append(out, withStreamingDeclaration(l, selectedLocalStreamingKnown(home, conf)))
 	}
 	if r := remoteFromEnv(conf); r != nil {
-		out = append(out, r)
+		out = append(out, withStreamingDeclaration(r, remoteStreamingDeclared(os.Getenv("SIRSI_REMOTE_STREAMING"))))
 	}
 	return out
+}
+
+// streamingQualificationProvider carries declaration knowledge from existing
+// configuration into routing without changing direct OpenAICompat consumers.
+type streamingQualificationProvider struct {
+	*OpenAICompat
+	streamingKnown bool
+}
+
+func (p *streamingQualificationProvider) Caps() Caps {
+	caps := p.OpenAICompat.Caps()
+	caps.StreamingKnown = p.streamingKnown || caps.Streaming
+	return caps
+}
+
+func withStreamingDeclaration(p *OpenAICompat, known bool) Provider {
+	return &streamingQualificationProvider{OpenAICompat: p, streamingKnown: known}
+}
+
+func selectedLocalStreamingKnown(home string, conf Conf) bool {
+	path := selectedProfilePath(home, conf)
+	if path == "" {
+		return false
+	}
+	profile, err := ReadLocalProfile(path)
+	return err == nil && profile.Streaming != nil
+}
+
+func remoteStreamingDeclared(value string) bool {
+	value = strings.TrimSpace(value)
+	return strings.EqualFold(value, "true") || strings.EqualFold(value, "false")
 }
 
 // remoteFromEnv builds a remote provider from an OpenAI-compatible endpoint and

@@ -64,17 +64,25 @@ func (t Tier) String() string {
 // tools and degrade to a constrained path deliberately, saying so in the
 // transcript, rather than failing in a way that looks like the model being bad.
 type Caps struct {
+	JSONObject         CapabilityState
+	Determinism        CapabilityState
+	DeterminismMode    DeterminismMode
 	Tools              bool // can the model call tools?
 	RequiredToolChoice bool // honors OpenAI's wire-level tool_choice:"required"
 	Streaming          bool
-	ContextTokens      int
-	Offline            bool // usable with no network
+	// StreamingKnown distinguishes an explicit unsupported declaration from
+	// absent capability evidence. Streaming=true is itself positive evidence.
+	StreamingKnown bool
+	ContextTokens  int
+	Offline        bool // usable with no network
 }
 
 // Request is one turn of work.
 type Request struct {
-	System string
-	Prompt string
+	ResponseFormat ResponseFormat
+	Determinism    DeterminismMode
+	System         string
+	Prompt         string
 	// Messages is an explicit conversation. It is mutually exclusive with
 	// System and Prompt so a caller cannot accidentally send two competing
 	// histories. It exists for the bounded tool-result follow-up turn.

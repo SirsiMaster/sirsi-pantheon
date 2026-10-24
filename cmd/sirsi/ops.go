@@ -105,7 +105,7 @@ func opsCapabilities() []opsCapability {
 			ID:                   "ask",
 			Operation:            "Ask the local Sirsi model for bounded advice without cloud calls",
 			DeterministicCommand: "sirsi gemma status",
-			LocalAICommand:       "sirsi gemma <prompt>",
+			LocalAICommand:       "sirsi ask --stream <prompt>",
 			MenubarSurface:       "Ask Sirsi",
 			Status:               "ready",
 		},

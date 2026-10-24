@@ -339,7 +339,7 @@ final class CoreContractsTests: XCTestCase {
           "observed_non_developer_identity_types": ["Apple Distribution"],
           "notarization_observed": false,
           "verdict": {
-            "schema_version": "maat-system-one/v1",
+            "schema_version": 1,
             "feather_weight": 0,
             "gate": "block",
             "confidence": 1,
@@ -356,6 +356,37 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertEqual(preflight.observedNonDeveloperIdentityTypes, ["Apple Distribution"])
     }
 
+    func testMaatCredentialProjectionKeepsAdditionalIdentityNeutralAndNotarizationUnknown() throws {
+        let preflight = try credentialPreflightFixture(applicationPassed: true, installerPassed: true)
+        let projection = MaatCredentialPreflightProjection(preflight)
+
+        XCTAssertEqual(projection.identityHeading, "Local identities observed")
+        XCTAssertEqual(projection.observedRequiredKindCount, 2)
+        XCTAssertTrue(projection.allRequiredKindsObserved)
+        XCTAssertEqual(projection.additionalIdentityLabels, ["Additional local identity: Apple Distribution"])
+        XCTAssertEqual(projection.notarizationStatus, "Notarization not inspected here.")
+        XCTAssertFalse(preflight.notarizationObserved)
+        XCTAssertEqual(preflight.verdict.gate, "block")
+    }
+
+    func testMaatCredentialProjectionCountsDistinctRequiredKindsAndUnconfirmedObservation() throws {
+        for (application, installer) in [(true, false), (false, true)] {
+            let preflight = try credentialPreflightFixture(applicationPassed: application, installerPassed: installer)
+            let projection = MaatCredentialPreflightProjection(preflight)
+            XCTAssertEqual(projection.observedRequiredKindCount, 1)
+            XCTAssertFalse(projection.allRequiredKindsObserved)
+        }
+
+        let failed = try credentialPreflightFixture(applicationPassed: false, installerPassed: false, observationFailed: true)
+        let projection = MaatCredentialPreflightProjection(failed)
+        XCTAssertTrue(projection.identityObservationFailed)
+        XCTAssertEqual(projection.identityHeading, "Local identities unconfirmed")
+        XCTAssertEqual(projection.requiredKindsSummary, "Required identity types could not be confirmed.")
+        let fallbackPlan = protectedReleaseRecoverySteps(for: failed).joined(separator: "\n")
+        XCTAssertFalse(fallbackPlan.contains("Developer ID Application identity available"))
+        XCTAssertFalse(fallbackPlan.contains("Developer ID Installer identity available"))
+    }
+
     func testCredentialPreflightAlwaysProvidesAProtectedRecoveryPlan() throws {
         let raw = #"""
         {
@@ -364,7 +395,7 @@ final class CoreContractsTests: XCTestCase {
           "developer_identities": [],
           "notarization_observed": false,
           "verdict": {
-            "schema_version": "maat-system-one/v1",
+            "schema_version": 1,
             "feather_weight": 0,
             "gate": "block",
             "confidence": 1,
@@ -394,7 +425,7 @@ final class CoreContractsTests: XCTestCase {
           "notarization_observed": false,
           "recovery_plan": ["Use the protected workflow.", "Recheck readiness."],
           "verdict": {
-            "schema_version": "maat-system-one/v1",
+            "schema_version": 1,
             "feather_weight": 0,
             "gate": "block",
             "confidence": 1,
@@ -528,4 +559,33 @@ final class CoreContractsTests: XCTestCase {
         try "gitdir: /tmp/fixture".write(to: root.appendingPathComponent(".git"), atomically: true, encoding: .utf8)
         XCTAssertEqual(SirsiEngine.projectRootPath(root.path), root.path)
     }
+}
+
+private func credentialPreflightFixture(applicationPassed: Bool, installerPassed: Bool, observationFailed: Bool = false) throws -> MaatReleaseCredentialPreflight {
+    let findings: [[String: Any]] = observationFailed ? [["id": "security-identity-observation"]] : []
+    let checks: [[String: Any]] = [
+        ["name": "developer-id-application", "passed": applicationPassed, "detail": "Application observed"],
+        ["name": "developer-id-installer", "passed": installerPassed, "detail": "Installer observed"],
+        ["name": "notarization-credential", "passed": false, "detail": "Not observed"]
+    ]
+    let verdict: [String: Any] = [
+        "schema_version": 1,
+        "feather_weight": 0,
+        "gate": "block",
+        "confidence": 1,
+        "subject": ["kind": "host", "ref": "release-credentials", "head_sha": "fixture"],
+        "floor": ["passed": false, "checks": checks],
+        "model": ["provider": "local:test", "version": "v1", "local": true, "latency_ms": 0],
+        "findings": findings
+    ]
+    let fixture: [String: Any] = [
+        "team_id": "9D382WV988",
+        "fingerprint": "sha256=fixture",
+        "developer_identities": [],
+        "observed_non_developer_identity_types": ["Apple Distribution"],
+        "notarization_observed": false,
+        "verdict": verdict
+    ]
+    let data = try JSONSerialization.data(withJSONObject: fixture)
+    return try JSONDecoder().decode(MaatReleaseCredentialPreflight.self, from: data)
 }

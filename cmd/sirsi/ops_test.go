@@ -45,8 +45,8 @@ func TestOpsCapabilitiesCoverAgentOperationsParity(t *testing.T) {
 	if byID["wake"].LocalAICommand != "sirsi ctr --reconcile" {
 		t.Fatalf("wake local AI command = %q", byID["wake"].LocalAICommand)
 	}
-	if byID["ask"].LocalAICommand == "" {
-		t.Fatal("ask capability must expose local AI command")
+	if byID["ask"].LocalAICommand != "sirsi ask --stream <prompt>" {
+		t.Fatalf("ask capability bypasses qualified ask routing: %q", byID["ask"].LocalAICommand)
 	}
 }
 

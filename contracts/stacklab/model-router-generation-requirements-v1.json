@@ -1,0 +1,40 @@
+{
+  "schema": "stacklab.module.model-router-generation-requirements.v1",
+  "component": "model-router-generation-requirements-v1",
+  "recipe": "stacklab.recipe.model-router-v1",
+  "classification": "platform-foundation",
+  "status": "source-only-unqualified",
+  "owner": "Pantheon",
+  "original_requirement": "MODEL-ROUTER-DESIGN.md capability needs: determinism, JSON mode",
+  "base": "f66dbf76054b93abf29a24b2d6339221303e3855",
+  "inputs": {
+    "response_format": ["unset", "text", "json_object"],
+    "determinism": ["unset", "batch_invariant"],
+    "capability_states": ["unknown", "unsupported", "supported"],
+    "optional_selected_profile_field": "json_object: boolean; absent unknown, false unsupported, true declared supported for selected exact endpoint/model",
+    "installed_configuration_changes": false
+  },
+  "modules": [
+    {"source": "internal/provider/requirements.go", "tests": "internal/provider/requirements_test.go", "owns": "pure typed requirements and JSON postcondition"},
+    {"source": "internal/provider/openaicompat.go", "tests": "internal/provider/requirements_test.go", "owns": "direct enforcement and declared json_object wire mode"},
+    {"source": "internal/provider/local_profile.go + internal/provider/resolve.go", "tests": "internal/provider/json_profile_test.go + cmd/sirsi/ask_requirements_test.go", "owns": "optional exact selected-profile declaration through real resolver and Cobra to inert HTTP"},
+    {"source": "internal/modelrouter/router.go", "tests": "internal/modelrouter/requirements_test.go", "owns": "effective request qualification across selection and execution"},
+    {"source": "internal/modelrouter/decision_record.go", "tests": "internal/modelrouter/requirements_test.go", "owns": "bounded redacted requested/effective modes"},
+    {"source": "cmd/sirsi/ask.go", "tests": "cmd/sirsi/ask_requirements_test.go", "owns": "Cobra flags distinct from CLI JSON envelope"}
+  ],
+  "outputs": ["complete JSON object or explicit refusal", "one existing decision-journal event per invocation"],
+  "writes": ["existing bounded private model-router decision journal only"],
+  "invariants": ["privacy first", "format requirements never replace --route consent at measured alarms", "no capability downgrade on fallback", "no malformed-output replay", "no JSON streaming in this slice", "no invented deterministic wire field"],
+  "producer_reference": {
+    "repo": "sirsi-inference",
+    "commit": "7dff30c892ee91662daaecc5b4329a45021544a4",
+    "source": "server.go",
+    "capability_contract_version": "1",
+    "determinism_fields": ["batch_invariant_available", "batch_invariant_active"],
+    "per_request_determinism_wire_mode": null,
+    "production_determinism_qualified": false,
+    "production_json_object_qualified": false
+  },
+  "verification": {"normal": "unrun", "race": "unrun", "semantic_negatives": "unrun", "vet_lint_build": "unrun", "installed_handoff": "unrun"},
+  "upgrade_rule": "Source, tests, input/output contract and this map change together; no fixture grants backend support. Preserve f66 streaming semantics."
+}

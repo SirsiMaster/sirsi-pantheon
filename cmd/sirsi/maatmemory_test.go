@@ -19,7 +19,7 @@ func TestMaatFailureMemoryPreflightRequiresExplicitCasebookConfirmation(t *testi
 	}
 	signature := maat.FailureSignature{Namespace: "pantheon", Version: "v1", FailureClass: "launchd", Operation: "repair", Component: "router", Invariant: "enabled", ErrorCode: "disabled"}
 	scope := maat.Scope{Component: "router", Profile: "macos-local", Operation: "repair"}
-	incident, err := maat.NewIncident(signature, evidence, scope, "launchd-guard", "v1", []maat.RecoveryAction{{ID: "inspect", Label: "Inspect", Instruction: "Inspect the approved recovery evidence."}})
+	incident, err := maat.NewIncident(signature, evidence, scope, maat.ActiveIncidentGuardID, maat.ActiveIncidentGuardVersion, []maat.RecoveryAction{{ID: "inspect", Label: "Inspect", Instruction: "Inspect the approved recovery evidence."}})
 	if err != nil {
 		t.Fatal(err)
 	}

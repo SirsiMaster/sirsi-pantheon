@@ -225,8 +225,11 @@ func TestBuildRoutesLivenessWatchThroughClosedMaatAction(t *testing.T) {
 		t.Fatalf("System One liveness repair projection = %+v", view)
 	}
 	action := view.Cases[0].NextAction
-	if action.Kind != "maat_repair" || action.ActionID != maat.SystemOneRepairLivenessWatch || !action.RequiresConfirmation || len(action.Steps) != 3 {
+	if action.Kind != "maat_repair" || action.ActionID != maat.SystemOneRepairLivenessWatch || !action.RequiresConfirmation || len(action.Steps) != 4 {
 		t.Fatalf("liveness repair action = %+v", action)
+	}
+	if !strings.Contains(action.Steps[1].Detail, "no prior incidents are imported") || !strings.Contains(action.Steps[2].Detail, "durable attempt record") {
+		t.Fatalf("liveness repair action omits explicit local genesis or durable attempt: %+v", action.Steps)
 	}
 }
 

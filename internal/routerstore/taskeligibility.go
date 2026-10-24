@@ -87,7 +87,7 @@ func (s *SQLiteStore) TaskEligibility(agent, taskID string) (TaskEligibility, er
 		e.Reasons = append(e.Reasons, fmt.Sprintf("an EXPIRED lease from %q (%s) is still recorded; the next claim pass reclaims it and counts it as a failed attempt", e.ClaimedBy, e.LeaseExpires))
 	}
 	if e.Attempts >= MaxRetriesPerItem {
-		e.Reasons = append(e.Reasons, fmt.Sprintf("attempts %d/%d: retry ceiling reached; after fixing the cause use `task reset-attempts`", e.Attempts, MaxRetriesPerItem))
+		e.Reasons = append(e.Reasons, fmt.Sprintf("attempts %d/%d: retry ceiling reached; after fixing the cause inspect `task resume-claim` for an evidence-bound history-preserving recovery lease (requires compatible service)", e.Attempts, MaxRetriesPerItem))
 	}
 	if e.FailureReason != "" {
 		e.Reasons = append(e.Reasons, "last failure: "+e.FailureReason)

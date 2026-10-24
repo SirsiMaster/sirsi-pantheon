@@ -9,6 +9,63 @@ import (
 	"testing"
 )
 
+func TestFileDecisionJournalAppendIdempotentReadsBackExactEvidence(t *testing.T) {
+	journal := &FileDecisionJournal{Path: t.TempDir() + "/decisions.jsonl"}
+	decision, err := BuildDiagnosticRepairDecision("sirsi maat repair", DiagnosticRepair{
+		Check: "liveness-watch", Operation: "bounded action", Before: "absent", After: "present",
+		Determination: "resolved", Detail: "attempt 123",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision.Evidence = "maat-liveness-watch-attempt:123:" + decision.Evidence
+	if err := journal.AppendIdempotent(decision); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.AppendIdempotent(decision); err != nil {
+		t.Fatalf("exact retry was not idempotent: %v", err)
+	}
+	rows, err := journal.Recent(10)
+	if err != nil || len(rows) != 1 || rows[0].Evidence != decision.Evidence {
+		t.Fatalf("journal rows = %#v, err=%v", rows, err)
+	}
+	changed := decision
+	changed.Why += " changed"
+	if err := journal.AppendIdempotent(changed); err == nil || !strings.Contains(err.Error(), "different decision") {
+		t.Fatalf("evidence collision error = %v", err)
+	}
+}
+
+func TestFileDecisionJournalIdempotentReadbackRejectsMalformedTail(t *testing.T) {
+	path := t.TempDir() + "/decisions.jsonl"
+	journal := &FileDecisionJournal{Path: path}
+	decision, err := BuildDiagnosticRepairDecision("sirsi maat repair", DiagnosticRepair{
+		Check: "liveness-watch", Operation: "bounded action", Before: "absent", After: "present",
+		Determination: "resolved", Detail: "attempt 456",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision.Evidence = "maat-liveness-watch-attempt:456:" + decision.Evidence
+	if err := journal.Append(decision); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("{broken tail}\n"); err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.AppendIdempotent(decision); err == nil {
+		t.Fatal("idempotent readback accepted a valid match ahead of a malformed journal tail")
+	}
+}
+
 func TestFileDecisionJournalAppendsAndReturnsNewestFirst(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "decisions.jsonl")
 	j := &FileDecisionJournal{Path: path}
@@ -33,6 +90,48 @@ func TestFileDecisionJournalAppendsAndReturnsNewestFirst(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("journal mode = %o, want 0600", info.Mode().Perm())
+	}
+}
+
+func TestFileDecisionJournalAppendOnceIsCrossCallIdempotent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "decisions.jsonl")
+	journal := &FileDecisionJournal{Path: path}
+	decision := Decision{
+		Time: "2026-10-24T12:00:00Z", Host: "fixture", Kind: "knowledge owner review",
+		Requester: "maat", Resource: "record-1", Assessed: "retained knowledge archive item",
+		Determination: "accepted", Why: "owner review fixture", Evidence: "maat-knowledge-annotation:17",
+	}
+	appended, err := journal.AppendOnce(decision)
+	if err != nil || !appended {
+		t.Fatalf("first AppendOnce = %t, %v; want append", appended, err)
+	}
+	appended, err = journal.AppendOnce(decision)
+	if err != nil || appended {
+		t.Fatalf("retry AppendOnce = %t, %v; want existing row", appended, err)
+	}
+	rows, err := journal.Recent(10)
+	if err != nil || len(rows) != 1 || rows[0].Evidence != decision.Evidence {
+		t.Fatalf("idempotent history = %+v, %v", rows, err)
+	}
+}
+
+func TestFileDecisionJournalAppendOnceRefusesMalformedHistory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "decisions.jsonl")
+	original := []byte("{not json}\n")
+	if err := os.WriteFile(path, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	decision := Decision{
+		Time: "2026-10-24T12:00:00Z", Host: "fixture", Kind: "knowledge owner review",
+		Requester: "maat", Resource: "record-1", Assessed: "retained knowledge archive item",
+		Determination: "accepted", Why: "owner review fixture", Evidence: "maat-knowledge-annotation:17",
+	}
+	if appended, err := (&FileDecisionJournal{Path: path}).AppendOnce(decision); err == nil || appended {
+		t.Fatalf("AppendOnce malformed history = %t, %v; want refusal", appended, err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != string(original) {
+		t.Fatalf("malformed history changed: %q (%v)", got, err)
 	}
 }
 

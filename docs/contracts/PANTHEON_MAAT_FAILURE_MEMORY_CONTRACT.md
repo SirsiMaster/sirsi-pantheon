@@ -162,6 +162,70 @@ for all eight operational rows or project receipts through CLI, MCP, TUI, native
 Mac, menu bar, and dashboard. No installed qualification, benchmark, or release
 success is asserted by this document.
 
+### Released131 corrective source continuation (2026-10-24)
+
+The closed local registry now admits only `maat.active-incident` / `v1`.
+It executes a pure typed recurrence-exclusion guard over a verified active
+incident and the exact requested component/profile/operation. Its rejection
+means that the retained incident blocks recurrence; it does not probe whether
+the original host failure still exists. No imported shell, plugin, dynamic
+command, service, model, or credential authority is introduced.
+
+An active exact match with an unsupported id/version is `unverifiable`.
+Terminal and out-of-scope incidents are still integrity-checked as registry
+evidence, but do not dispatch guards or populate measured checks. A mixed
+registry retains actual executed checks while remaining unverifiable if any
+matching guard is unsupported. `evaluated_guards.sha256` binds the exact
+embedded `memoryguard.go` bytes, one NUL separator, and `memory.go` bytes,
+covering the implementation, typed inputs, validation and dispatch. This source
+digest is neither a signed-binary identity nor producer authentication.
+
+Catalog reads open nonblocking before validating the retained descriptor's
+regular-file identity and existing 8 MiB bound, so a FIFO cannot wait for a peer
+before refusal. Existing immutable records are not relabeled or rewritten.
+Previously arbitrary guard labels require explicit reviewed treatment; they
+never silently acquire the new guard's semantics.
+
+The accompanying fixtures are authored source, not an execution receipt. They
+do not recover the missing historical `34252dca` qualification. All eight
+authoritative operational integrations, wider surface convergence and installed
+qualification remain separately open.
+
+### Liveness-watch operational source candidate (2026-10-24)
+
+One scoped operational row now has an unqualified source candidate: the existing
+Ma'at `liveness-watch` Casebook action. Its default store is fixed at the current
+user's `~/.sirsi/maat/failure-memory`; there is no repair-time store-path option.
+Native Casebook offers a separate confirmed **Initialize local failure memory**
+action only for genuine first use, plus read-only inspection and a confirmed
+re-observation action for a durable incomplete attempt. The native controls invoke
+only the closed Sirsi engine command with fixed arguments. Operators are not sent
+to Terminal and cannot supply commands or local paths through this route.
+
+Initialization durably records an outside-root `initializing` binding before
+creating the root, writes and verifies a matching no-import genesis, creates the
+closed store layout, then commits the binding. An interrupted, missing, damaged,
+or unbound existing store is unverifiable and is never adopted, reset, or
+recreated. Losing both the outside binding and the store is an inherent local
+owner-loss limitation. The confirmed repair rechecks the exact finding and
+canonical action identity, runs the unchanged exact-scope EDA guard, retains a
+durable attempt before one installer call, and requires a fresh exact plist plus
+loaded-label observation. An incomplete or unknown result requires inspection
+and a fresh review; it is never automatically replayed.
+
+This is source-only, not qualification or installed-operation evidence. The
+remaining seven operational rows, other frontend projections, native installed
+behavior, and the original historical qualification gap remain open. No SNE
+source authority or shared interchange schema changes.
+
+The liveness-watch repair now uses the existing rootless local-watch boundary:
+the canonical running engine, ordinary HOME, `LocalPlistContent`,
+`InstallLocal`, and `InspectLocalWatch`. It does not resolve a checkout or
+reuse the legacy router-backed `run` path. The CLI status route reports success
+only for an exact local schedule verified as loaded. This source integration
+remains unqualified; it does not close the other seven operational rows or
+claim installed behavior.
+
 ## Privacy, publication and recovery ownership
 
 Local diagnostic paths, process arguments, model contents, prompts and credentials

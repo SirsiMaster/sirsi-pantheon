@@ -67,7 +67,7 @@ func TestStoreEvidenceAppendAndExactScopePreflight(t *testing.T) {
 	if again, err := store.PutEvidence(evidence); err != nil || again != digest {
 		t.Fatalf("create-only evidence must be idempotent: %q %v", again, err)
 	}
-	incident, err := NewIncident(testSignature(), digest, testScope(), "managed-label-guard", "v1", testActions())
+	incident, err := NewIncident(testSignature(), digest, testScope(), ActiveIncidentGuardID, ActiveIncidentGuardVersion, testActions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestStoreRefusesSymlinkEvidenceAndConflictingIncident(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	incident, err := NewIncident(testSignature(), stored, testScope(), "managed-label-guard", "v1", testActions())
+	incident, err := NewIncident(testSignature(), stored, testScope(), ActiveIncidentGuardID, ActiveIncidentGuardVersion, testActions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +168,7 @@ func TestPreflightRefusesTamperedEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	incident, err := NewIncident(testSignature(), digest, testScope(), "managed-label-guard", "v1", testActions())
+	incident, err := NewIncident(testSignature(), digest, testScope(), ActiveIncidentGuardID, ActiveIncidentGuardVersion, testActions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,7 +247,7 @@ func TestTerminalTransitionIsPredecessorBoundAndPreventsBranches(t *testing.T) {
 		t.Fatal("a second terminal transition must be rejected")
 	}
 	receipt, err := store.Preflight(testScope())
-	if err != nil || receipt.Decision != PreflightPass || len(receipt.MeasuredChecks) != 1 || receipt.MeasuredChecks[0].Status != string(IncidentRetired) {
+	if err != nil || receipt.Decision != PreflightPass || len(receipt.MeasuredChecks) != 0 || len(receipt.EvaluatedGuards) != 0 {
 		t.Fatalf("terminal transition must close the exact predecessor: %#v %v", receipt, err)
 	}
 }
@@ -298,7 +298,7 @@ func TestProjectFailureMemoryPreflightUsesExistingDecisionJournal(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	incident, err := NewIncident(testSignature(), digest, testScope(), "guard", "v1", testActions())
+	incident, err := NewIncident(testSignature(), digest, testScope(), ActiveIncidentGuardID, ActiveIncidentGuardVersion, testActions())
 	if err != nil {
 		t.Fatal(err)
 	}

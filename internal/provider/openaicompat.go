@@ -22,6 +22,10 @@ const readinessCompletionResponseLimit = 1 << 20
 // promote. Tier is a field rather than a constant because the SAME protocol is
 // local when it points at 127.0.0.1 and remote when it points at a vendor.
 type OpenAICompat struct {
+	// JSONObject is explicit selected-backend evidence, never inferred from an
+	// endpoint/model name. Only an explicit selected-profile declaration sets
+	// it; absent declarations stay unknown. No producer discovery schema is inferred.
+	JSONObject   CapabilityState
 	ProviderName string
 	Endpoint     string // base URL, e.g. http://127.0.0.1:8765/v1
 	Model        string
@@ -58,6 +62,7 @@ func (o *OpenAICompat) Tier() Tier   { return o.TierValue }
 
 func (o *OpenAICompat) Caps() Caps {
 	return Caps{
+		JSONObject:         o.JSONObject,
 		Tools:              o.SupportsTools,
 		RequiredToolChoice: o.SupportsRequiredToolChoice,
 		Streaming:          o.SupportsStreaming,
@@ -224,15 +229,27 @@ type ccToolDef struct {
 }
 
 type ccRequest struct {
-	Model       string      `json:"model"`
-	Messages    []ccMessage `json:"messages"`
-	MaxTokens   int         `json:"max_tokens,omitempty"`
-	Stream      bool        `json:"stream,omitempty"`
-	Temperature *float64    `json:"temperature,omitempty"`
-	TopP        *float64    `json:"top_p,omitempty"`
-	Seed        *int64      `json:"seed,omitempty"`
-	Tools       []ccToolDef `json:"tools,omitempty"`
-	ToolChoice  string      `json:"tool_choice,omitempty"`
+	ResponseFormat *ccResponseFormat `json:"response_format,omitempty"`
+	Model          string            `json:"model"`
+	Messages       []ccMessage       `json:"messages"`
+	MaxTokens      int               `json:"max_tokens,omitempty"`
+	Stream         bool              `json:"stream,omitempty"`
+	Temperature    *float64          `json:"temperature,omitempty"`
+	TopP           *float64          `json:"top_p,omitempty"`
+	Seed           *int64            `json:"seed,omitempty"`
+	Tools          []ccToolDef       `json:"tools,omitempty"`
+	ToolChoice     string            `json:"tool_choice,omitempty"`
+}
+
+type ccResponseFormat struct {
+	Type ResponseFormat `json:"type"`
+}
+
+func wireResponseFormat(format ResponseFormat) *ccResponseFormat {
+	if format == ResponseFormatJSONObject {
+		return &ccResponseFormat{Type: format}
+	}
+	return nil
 }
 
 type ccResponse struct {
@@ -240,6 +257,7 @@ type ccResponse struct {
 	Choices []struct {
 		FinishReason string `json:"finish_reason"`
 		Message      struct {
+			Refusal   string       `json:"refusal"`
 			Role      string       `json:"role"`
 			Content   string       `json:"content"`
 			ToolCalls []ccToolCall `json:"tool_calls"`
@@ -394,6 +412,15 @@ func (o *OpenAICompat) ProbeServedModel(ctx context.Context) (string, error) {
 }
 
 func (o *OpenAICompat) Complete(ctx context.Context, req Request) (Response, error) {
+	if err := ValidateRequirements(req, false); err != nil {
+		return Response{}, err
+	}
+	if err := QualifyRequirements(req, o.Caps()); err != nil {
+		return Response{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return Response{}, err
+	}
 	if o.ConfigurationError != nil {
 		return Response{}, o.ConfigurationError
 	}
@@ -425,7 +452,7 @@ func (o *OpenAICompat) Complete(ctx context.Context, req Request) (Response, err
 		}
 		toolsHonored = true
 	}
-	body, err := json.Marshal(ccRequest{Model: model, Messages: msgs, MaxTokens: req.MaxTokens, Temperature: req.Temperature, TopP: req.TopP, Seed: req.Seed, Tools: tools, ToolChoice: toolChoice(tools, req.RequireTool && o.SupportsRequiredToolChoice)})
+	body, err := json.Marshal(ccRequest{ResponseFormat: wireResponseFormat(req.ResponseFormat), Model: model, Messages: msgs, MaxTokens: req.MaxTokens, Temperature: req.Temperature, TopP: req.TopP, Seed: req.Seed, Tools: tools, ToolChoice: toolChoice(tools, req.RequireTool && o.SupportsRequiredToolChoice)})
 	if err != nil {
 		return Response{}, err
 	}
@@ -453,14 +480,32 @@ func (o *OpenAICompat) Complete(ctx context.Context, req Request) (Response, err
 		return Response{}, BrokerError(hresp, bearer)
 	}
 	var cc ccResponse
-	if derr := json.NewDecoder(hresp.Body).Decode(&cc); derr != nil {
+	decoder := json.NewDecoder(hresp.Body)
+	if derr := decoder.Decode(&cc); derr != nil {
+		if req.ResponseFormat == ResponseFormatJSONObject {
+			return Response{}, ErrInvalidJSONObject
+		}
 		return Response{}, fmt.Errorf("%s: decode: %w", o.ProviderName, derr)
+	}
+	if req.ResponseFormat == ResponseFormatJSONObject {
+		var extra any
+		if decoder.Decode(&extra) != io.EOF || cc.Error != nil || len(cc.Choices) != 1 {
+			return Response{}, ErrInvalidJSONObject
+		}
 	}
 	if len(cc.Choices) == 0 {
 		return Response{}, fmt.Errorf("%s: no choices in response", o.ProviderName)
 	}
 
 	ch := cc.Choices[0]
+	if req.ResponseFormat == ResponseFormatJSONObject {
+		if ch.Message.Refusal != "" || len(ch.Message.ToolCalls) > 0 {
+			return Response{}, ErrInvalidJSONObject
+		}
+		if err := ValidateResponse(req, Response{Text: ch.Message.Content, FinishReason: ch.FinishReason}); err != nil {
+			return Response{}, err
+		}
+	}
 	if ch.FinishReason == "length" {
 		return Response{}, fmt.Errorf("%s: native inference draft truncated at token limit", o.ProviderName)
 	}
@@ -478,6 +523,9 @@ func (o *OpenAICompat) Complete(ctx context.Context, req Request) (Response, err
 	}
 	if len(calls) > 0 && !toolsHonored {
 		return Response{}, fmt.Errorf("%s returned tool calls although tool use was not enabled", o.ProviderName)
+	}
+	if err := ctx.Err(); err != nil {
+		return Response{}, err
 	}
 	return Response{
 		Text:         text,
@@ -507,6 +555,12 @@ func toolChoice(tools []ccToolDef, require bool) string {
 // stream: a backend that lacks this method remains explicitly unsupported at
 // the engine ABI boundary.
 func (o *OpenAICompat) Stream(ctx context.Context, req Request) (<-chan StreamChunk, error) {
+	if err := ValidateRequirements(req, true); err != nil {
+		return nil, err
+	}
+	if err := QualifyRequirements(req, o.Caps()); err != nil {
+		return nil, err
+	}
 	if o.ConfigurationError != nil {
 		return nil, o.ConfigurationError
 	}

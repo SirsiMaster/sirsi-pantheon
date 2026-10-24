@@ -1,23 +1,28 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/knowledge"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/seshat"
 )
 
 func TestHandleMaatKnowledgeProjectsSameFilteredLocalView(t *testing.T) {
 	home := t.TempDir()
-	path := filepath.Join(home, ".config", "seshat", "store", "latest.json")
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	archive, err := knowledge.Open(home)
+	if err != nil {
 		t.Fatal(err)
 	}
-	data := []byte("[{\"title\":\"Safe evidence\",\"summary\":\"Ma'at tracks the package receipt.\",\"references\":[{\"type\":\"file\",\"value\":\"docs/evidence/receipt.json\"}]},{\"title\":\"Withheld\",\"summary\":\"token=examplevalue\",\"references\":[]}]")
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	defer archive.Close()
+	items := []seshat.SourceRecord{
+		{Source: "claude", InstanceID: "fixture-profile", NativeItemID: "safe-item", Schema: "test-v1", Title: "Safe evidence", Summary: "Ma'at tracks the package receipt.", Content: "receipt detail", References: []seshat.KIReference{{Type: "file", Value: "docs/evidence/receipt.json"}}},
+		{Source: "claude", InstanceID: "fixture-profile", NativeItemID: "withheld-item", Schema: "test-v1", Title: "Withheld", Summary: "token=examplevalue"},
+	}
+	if _, err := archive.ImportSource(context.Background(), "claude", items, nil); err != nil {
 		t.Fatal(err)
 	}
 	oldHome := maatKnowledgeHome

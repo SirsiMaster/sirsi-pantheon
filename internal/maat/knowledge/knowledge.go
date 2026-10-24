@@ -4,11 +4,8 @@
 package knowledge
 
 import (
-	"encoding/json"
+	"context"
 	"errors"
-	"fmt"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"unicode"
@@ -32,38 +29,69 @@ var (
 // record. The projection intentionally omits ingestion internals and source
 // parser metadata so every consumer receives the same stable view.
 type Item struct {
-	Title      string               `json:"title"`
-	Summary    string               `json:"summary"`
-	References []seshat.KIReference `json:"references"`
+	ID             string               `json:"id,omitempty"`
+	Classification string               `json:"classification,omitempty"`
+	Resolution     ResolutionState      `json:"resolution,omitempty"`
+	Title          string               `json:"title"`
+	Summary        string               `json:"summary"`
+	References     []seshat.KIReference `json:"references"`
+	Origins        []Origin             `json:"origins,omitempty"`
+	Revision       int                  `json:"revision,omitempty"`
+	Excerpt        string               `json:"excerpt,omitempty"`
+	WithheldReason string               `json:"withheld_reason,omitempty"`
 }
 
 // View is Ma'at's shared, read-only local knowledge contract.
 type View struct {
-	Items    []Item `json:"items"`
-	Total    int    `json:"total"`
-	Withheld int    `json:"withheld"`
+	Items      []Item      `json:"items"`
+	Total      int         `json:"total"`
+	Withheld   int         `json:"withheld"`
+	Coverage   Coverage    `json:"coverage"`
+	NextCursor string      `json:"next_cursor,omitempty"`
+	State      ImportState `json:"state,omitempty"`
 }
 
-// Load reads Ma'at's compatibility cache under home. A missing cache is an
-// honest empty library; malformed or unreadable cache data is rejected rather
-// than being presented as complete knowledge.
+// Load reads Ma'at's canonical local archive under home. It never migrates or
+// ingests legacy files implicitly; malformed or unreadable archives fail closed.
 func Load(home, query string) (View, error) {
 	if strings.TrimSpace(home) == "" {
 		return View{}, errors.New("Ma'at knowledge home is empty")
 	}
-	path := filepath.Join(home, ".config", "seshat", "store", "latest.json")
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return emptyView(), nil
-	}
+	return LoadPage(home, SearchQuery{Text: query})
+}
+
+// LoadPage reads the shared archive projection. It never ingests sources or
+// falls back to the legacy cache when the archive is corrupt or unavailable.
+func LoadPage(home string, query SearchQuery) (View, error) {
+	return LoadPageContext(context.Background(), home, query)
+}
+
+func LoadPageContext(ctx context.Context, home string, query SearchQuery) (View, error) {
+	archive, err := Open(home)
 	if err != nil {
-		return View{}, fmt.Errorf("read Ma'at knowledge cache: %w", err)
+		return View{}, err
 	}
-	var items []seshat.KnowledgeItem
-	if err := json.Unmarshal(data, &items); err != nil {
-		return View{}, fmt.Errorf("decode Ma'at knowledge cache: %w", err)
+	defer archive.Close()
+	page, err := archive.Search(ctx, query)
+	if err != nil {
+		return View{}, err
 	}
-	return Project(items, query), nil
+	view := View{Items: make([]Item, 0, len(page.Items)), Total: page.Total, Withheld: page.Withheld, Coverage: page.Coverage, NextCursor: page.NextCursor}
+	for _, record := range page.Items {
+		view.Items = append(view.Items, Item{
+			ID: record.ID, Classification: record.Classification, Resolution: record.Resolution,
+			Title: record.Title, Summary: record.Summary, References: append([]seshat.KIReference(nil), record.References...),
+			Origins: append([]Origin(nil), record.Origins...), Revision: record.Revision, Excerpt: record.Excerpt,
+			WithheldReason: record.WithheldReason,
+		})
+	}
+	for _, run := range page.Coverage.Sources {
+		if run.State != ImportComplete && run.State != ImportNoNewItems {
+			view.State = run.State
+			break
+		}
+	}
+	return view, nil
 }
 
 // Project returns the safe, query-filtered Ma'at view from an already loaded
@@ -74,7 +102,7 @@ func Project(items []seshat.KnowledgeItem, query string) View {
 	needle := strings.ToLower(strings.TrimSpace(query))
 	view := View{Items: make([]Item, 0, len(items))}
 	for _, item := range items {
-		content := item.Title + "\n" + item.Summary + "\n" + referencesText(item.References)
+		content := item.Title + "\n" + item.Summary + "\n" + item.Content + "\n" + referencesText(item.References)
 		if len(filter.Scan(content)) > 0 || hasSystemOneSensitiveContent(content) {
 			view.Withheld++
 			continue
@@ -122,10 +150,6 @@ func looksLikeStandaloneCredential(token string) bool {
 		}
 	}
 	return upper && lower && digit && symbol
-}
-
-func emptyView() View {
-	return View{Items: []Item{}}
 }
 
 func referencesText(refs []seshat.KIReference) string {

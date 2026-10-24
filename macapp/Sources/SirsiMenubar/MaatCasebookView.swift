@@ -761,31 +761,33 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
     }
 
     @ViewBuilder private func credentialPreflightSummary(_ preflight: MaatReleaseCredentialPreflight) -> some View {
+        let projection = MaatCredentialPreflightProjection(preflight)
         let recoverySteps = protectedReleaseRecoverySteps(for: preflight)
         VStack(alignment: .leading, spacing: 7) {
-            Label("Complete the protected release handoff", systemImage: "key.horizontal")
+            Label(projection.identityHeading, systemImage: "person.crop.rectangle.stack")
                 .sirsiFont(.subheadline, weight: .semibold)
-                .foregroundStyle(.orange)
-            Text("Team \(preflight.teamID) · \(preflight.developerIdentities.count) required Developer ID identities observed")
+                .foregroundStyle(projection.identityObservationFailed || !projection.allRequiredKindsObserved ? Color.orange : Color.secondary)
+            Text("Team \(preflight.teamID) · \(projection.requiredKindsSummary)")
                 .sirsiFont(.caption)
                 .foregroundStyle(.secondary)
-            if !preflight.observedNonDeveloperIdentityTypes.isEmpty {
-                Label(
-                    "Observed: \(preflight.observedNonDeveloperIdentityTypes.joined(separator: ", ")). This is not a Developer ID signing substitute.",
-                    systemImage: "exclamationmark.triangle.fill"
-                )
-                .sirsiFont(.caption, weight: .semibold)
-                .foregroundStyle(.orange)
+            ForEach(projection.additionalIdentityLabels, id: \.self) { label in
+                Text(label)
+                .sirsiFont(.caption)
+                .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             }
-            ForEach(preflight.verdict.floor.checks, id: \.name) { check in
+            ForEach(projection.requiredIdentityChecks, id: \.name) { check in
                 Label(check.detail, systemImage: check.passed ? "checkmark.circle.fill" : "xmark.octagon.fill")
                     .sirsiFont(.caption)
                     .foregroundStyle(check.passed ? Color.secondary : Color.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            Label(projection.notarizationStatus, systemImage: "questionmark.circle")
+                .sirsiFont(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             ForEach(preflight.verdict.findings) { finding in
-                if !finding.fixHint.isEmpty {
+                if finding.id != "notarization-credential" && !finding.fixHint.isEmpty {
                     Text("Next: \(finding.fixHint)")
                         .sirsiFont(.caption)
                     .fixedSize(horizontal: false, vertical: true)
@@ -804,7 +806,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
             SnapshotActionButton {
                 Task { await inspectCredentialPreflight() }
             } label: {
-                Label("Recheck after the protected update", systemImage: "arrow.clockwise")
+                Label("Recheck local identities", systemImage: "arrow.clockwise")
             }
             .disabled(credentialPreflightInFlight)
             NavLink { StackLabView(engine: engine) } label: {
@@ -817,7 +819,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                 .lineLimit(1)
         }
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.09)))
+        .background(RoundedRectangle(cornerRadius: 8).fill((projection.identityObservationFailed || !projection.allRequiredKindsObserved ? Color.orange : Color.secondary).opacity(0.08)))
     }
 
     @ViewBuilder private func screenList(_ screens: [MaatCase]) -> some View {
@@ -1279,6 +1281,7 @@ struct MaatCasebookView: View {
     let showsBackBar: Bool
     @State private var casebook: MaatCasebookProjection?
     @State private var query = ""
+    @State private var showWithheld = false
     @State private var loading = true
     @State private var loadError: String?
     @State private var confirmKnowledgeRefresh = false
@@ -1518,16 +1521,21 @@ struct MaatCasebookView: View {
 // product surface. It calls the canonical `maat knowledge` read model rather
 // than putting a Seshat command transcript in the menubar.
 struct MaatKnowledgeView: View {
+    private let maximumLoadedKnowledgeItems = 100
     @ObservedObject var engine: SirsiEngine
     let showsBackBar: Bool
     @State private var knowledge: MaatKnowledgeProjection?
     @State private var query = ""
+    @State private var showWithheld = false
     @State private var loading = true
     @State private var loadError: String?
     @State private var confirmKnowledgeRefresh = false
     @State private var knowledgeRefreshInFlight = false
     @State private var knowledgeRefreshResult: String?
     @State private var knowledgeRefreshError: String?
+    @State private var knowledgeProjectionInFlight = false
+    @State private var knowledgeProjectionReceipt: MaatKnowledgeProjectionReceipt?
+    @State private var knowledgeProjectionError: String?
 
     init(engine: SirsiEngine, preloaded: MaatKnowledgeProjection? = nil, showsBackBar: Bool = true) {
         self.engine = engine
@@ -1547,10 +1555,10 @@ struct MaatKnowledgeView: View {
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let loadError {
-                failureState(loadError)
             } else if let knowledge {
                 knowledgeBody(knowledge)
+            } else if let loadError {
+                failureState(loadError)
             }
         }
         .task {
@@ -1595,6 +1603,12 @@ struct MaatKnowledgeView: View {
         VStack(spacing: 0) {
             MaybeScroll {
                 VStack(alignment: .leading, spacing: 16) {
+                    if let loadError {
+                        Label(loadError, systemImage: "exclamationmark.triangle.fill")
+                            .sirsiFont(.caption)
+                            .foregroundStyle(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Local knowledge")
                             .sirsiFont(.title3, weight: .bold)
@@ -1607,9 +1621,46 @@ struct MaatKnowledgeView: View {
                                 .foregroundStyle(.orange)
                         }
                     }
+                    if let coverage = knowledge.coverage {
+                        if coverage.pendingProjectionDebt > 0 {
+                            Label("\(coverage.pendingProjectionDebt) owner decision(s) still need Casebook projection", systemImage: "arrow.triangle.2.circlepath")
+                                .sirsiFont(.caption, weight: .semibold)
+                                .foregroundStyle(.orange)
+                            Button("Retry Casebook projection") { Task { await reconcileKnowledgeProjection() } }
+                                .buttonStyle(.bordered)
+                                .disabled(knowledgeProjectionInFlight)
+                            if let knowledgeProjectionReceipt {
+                                Label(knowledgeProjectionReceipt.summary,
+                                      systemImage: knowledgeProjectionReceipt.isComplete ? "checkmark.seal" : "arrow.triangle.2.circlepath")
+                                    .sirsiFont(.caption)
+                                    .foregroundStyle(knowledgeProjectionReceipt.isComplete ? .green : .orange)
+                            }
+                            if let knowledgeProjectionError {
+                                Label(knowledgeProjectionError, systemImage: "exclamationmark.triangle")
+                                    .sirsiFont(.caption)
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                        ForEach(coverage.sources) { source in
+                            if source.state != "complete" && source.state != "no_new_items" {
+                                Label("\(source.source): \(source.state) · \(source.errorCode ?? "review required")", systemImage: "exclamationmark.triangle")
+                                    .sirsiFont(.caption)
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                    }
                     knowledgeRefreshControl
                     searchField
-                    knowledgeList(filtered(knowledge.items))
+                    knowledgeList(knowledge.items)
+                    if let cursor = knowledge.nextCursor {
+                        Button("Load next stable page") { Task { await loadNext(cursor) } }
+                            .buttonStyle(.bordered)
+                            .disabled(loading)
+                    } else if knowledge.items.count >= maximumLoadedKnowledgeItems && knowledge.total > knowledge.items.count {
+                        Text("The native view is capped at \(maximumLoadedKnowledgeItems) loaded items. Narrow the search or use the explicit CLI cursor for older pages.")
+                            .sirsiFont(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .padding(16)
             }
@@ -1637,8 +1688,25 @@ struct MaatKnowledgeView: View {
             TextField("Filter knowledge", text: $query)
                 .textFieldStyle(.plain)
                 .accessibilityLabel("Filter Ma'at knowledge")
+                .onSubmit { Task { await load(query: query) } }
+            Button { Task { await load(query: query) } } label: {
+                Image(systemName: "arrow.right.circle.fill").foregroundStyle(gold)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Search local knowledge")
+            Button {
+                showWithheld.toggle()
+                query = ""
+                Task { await load(query: "") }
+            } label: {
+                Label("Withheld", systemImage: showWithheld ? "lock.fill" : "lock")
+                    .labelStyle(.iconOnly)
+                    .foregroundStyle(showWithheld ? .orange : .secondary)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel(showWithheld ? "Show searchable knowledge" : "Show withheld items and reasons")
             if !query.isEmpty {
-                Button { query = "" } label: {
+                Button { query = ""; Task { await load(query: "") } } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.borderless)
@@ -1654,7 +1722,7 @@ struct MaatKnowledgeView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Keep local knowledge current")
                 .sirsiFont(.headline)
-            Text("Refresh reads the configured local sources into Ma'at's cache. Review the scope before confirming; Ma'at does not export, open a browser, or make a remote decision from this screen.")
+            Text("Refresh reads local Claude transcript files into Ma'at's private archive. Confirm before reading; this does not contact online workspaces, export data, open a browser, or make a remote decision.")
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1697,7 +1765,7 @@ struct MaatKnowledgeView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(query.isEmpty ? "Nothing in the local library" : "No matching knowledge")
                     .sirsiFont(.headline)
-                Text(query.isEmpty ? "Ingestion remains available through the compatibility tools; Ma'at is the place to inspect what is retained." : "Try a broader term or clear the filter.")
+                Text(query.isEmpty ? "Use the confirmed local refresh to read the enabled transcript source." : "Try a broader term or clear the filter.")
                     .sirsiFont(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1730,6 +1798,11 @@ struct MaatKnowledgeView: View {
                                     .sirsiFont(.caption)
                                     .foregroundStyle(.tertiary)
                             }
+                            if let reason = item.withheldReason {
+                                Label("Withheld: \(reason)", systemImage: "lock.fill")
+                                    .sirsiFont(.caption)
+                                    .foregroundStyle(.orange)
+                            }
                         }
                         .padding(.horizontal, 13)
                         .padding(.vertical, 11)
@@ -1742,20 +1815,33 @@ struct MaatKnowledgeView: View {
         }
     }
 
-    private func filtered(_ items: [MaatKnowledgeItem]) -> [MaatKnowledgeItem] {
-        let term = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !term.isEmpty else { return items }
-        return items.filter { $0.searchText.localizedCaseInsensitiveContains(term) }
-    }
-
-    @MainActor private func load() async {
+    @MainActor private func load(query requestedQuery: String? = nil) async {
         loading = true
         loadError = nil
-        let result = await Self.fetch()
+        let result = await Self.fetch(query: showWithheld ? "" : requestedQuery ?? query, withheld: showWithheld)
         if let result {
             knowledge = result
         } else {
             loadError = "Pantheon could not read Ma'at's local knowledge projection. Check the project and try again."
+        }
+        loading = false
+    }
+
+    @MainActor private func loadNext(_ cursor: String) async {
+        guard let knowledge else { return }
+        loading = true
+        loadError = nil
+        let result = await Self.fetch(query: showWithheld ? "" : query, cursor: cursor, withheld: showWithheld)
+        if let result {
+            let boundedItems = Array((knowledge.items + result.items).prefix(maximumLoadedKnowledgeItems))
+            self.knowledge = MaatKnowledgeProjection(
+                items: boundedItems, total: result.total, withheld: result.withheld,
+                coverage: result.coverage,
+                nextCursor: boundedItems.count < maximumLoadedKnowledgeItems ? result.nextCursor : nil,
+                state: result.state
+            )
+        } else {
+            loadError = "Ma'at could not continue this stable archive page. Restart the search and try again."
         }
         loading = false
     }
@@ -1770,20 +1856,70 @@ struct MaatKnowledgeView: View {
             await load()
         } else {
             let detail = result?.errors.first ?? "No typed completion receipt was returned."
-            knowledgeRefreshError = "Ma'at could not refresh local knowledge. The current cache remains available. Check the reported source issue, then retry this confirmed refresh. \(detail)"
+            knowledgeRefreshError = Self.refreshFailureMessage(
+                retainedViewAvailable: knowledge != nil,
+                detail: detail
+            )
         }
         knowledgeRefreshInFlight = false
     }
 
-    nonisolated static func fetch() async -> MaatKnowledgeProjection? {
-        let raw = await SirsiEngine.run(args: ["maat", "knowledge", "--json"], stdin: nil)
-        guard let start = raw.firstIndex(of: "{") else { return nil }
-        return try? JSONDecoder().decode(MaatKnowledgeProjection.self, from: Data(raw[start...].utf8))
+    @MainActor private func reconcileKnowledgeProjection() async {
+        knowledgeProjectionInFlight = true
+        knowledgeProjectionReceipt = nil
+        knowledgeProjectionError = nil
+        let result = await SirsiEngine.runResult(args: ["maat", "knowledge", "reconcile-projections"])
+        if let result, let receipt = MaatKnowledgeProjectionReceipt(commandResult: result) {
+            knowledgeProjectionReceipt = receipt
+            await load()
+        } else {
+            knowledgeProjectionError = "Ma'at could not confirm the Casebook projection receipt. Check current knowledge status before deciding whether to retry."
+        }
+        knowledgeProjectionInFlight = false
+    }
+
+    nonisolated static func refreshFailureMessage(retainedViewAvailable: Bool, detail: String) -> String {
+        let retainedViewStatus = retainedViewAvailable
+            ? "The displayed retained view remains available and unchanged."
+            : "The archive could not be read; its retained contents are unverified."
+        return "Ma'at could not refresh local knowledge. \(retainedViewStatus) Check the reported source issue, then retry this confirmed refresh. \(detail)"
+    }
+
+    nonisolated static func fetch(query: String = "", cursor: String? = nil, withheld: Bool = false) async -> MaatKnowledgeProjection? {
+        var args = ["maat", "knowledge"]
+        if withheld {
+            args.append("--withheld")
+        } else if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            args += ["--query", query]
+        }
+        if let cursor, !cursor.isEmpty { args += ["--cursor", cursor] }
+        args.append("--json")
+        let read = await SirsiEngine.runJSONRead(args: args)
+        return decodeProjection(read)
+    }
+
+    nonisolated static func decodeProjection(_ read: SirsiEngine.JSONCommandRead) -> MaatKnowledgeProjection? {
+        guard read.exitStatus == 0, !read.timedOut, read.launchError == nil else { return nil }
+        return try? JSONDecoder().decode(MaatKnowledgeProjection.self, from: read.data)
     }
 }
 
 private struct MaatKnowledgeDetailView: View {
     let item: MaatKnowledgeItem
+    @State private var detail: MaatKnowledgeItem?
+    @State private var resolutionState = "reviewed"
+    @State private var resolutionNote = ""
+    @State private var confirmResolution = false
+    @State private var resolutionSubmission = MaatKnowledgeResolutionSubmission()
+    @State private var resolutionReceipt: String?
+    @State private var resolutionError: String?
+    @State private var sourceHistory: [MaatKnowledgeItem] = []
+    @State private var sourceHistoryCursor: String?
+    @State private var sourceHistoryTotal = 0
+    @State private var sourceHistoryLoading = false
+    @State private var sourceHistoryError: String?
+    private let historyPageSize = 10
+    private let maximumHistoryItems = 100
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1791,10 +1927,26 @@ private struct MaatKnowledgeDetailView: View {
             MaybeScroll {
                 VStack(alignment: .leading, spacing: 16) {
                     Text(item.title).sirsiFont(.title3, weight: .bold)
+                    if let classification = item.classification {
+                        Text("\(classification) · \(item.resolution ?? "open") · revision \(item.revision ?? 1)")
+                            .sirsiFont(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     if !item.summary.isEmpty {
                         Text(item.summary)
                             .sirsiFont(.body)
                             .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let content = detail?.content, !content.isEmpty {
+                        Text(content)
+                            .sirsiFont(.body)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    }
+                    if let reason = item.withheldReason ?? detail?.withheldReason {
+                        Label("Withheld because this record matched \(reason). The original text is not shown.", systemImage: "lock.fill")
+                            .sirsiFont(.subheadline)
+                            .foregroundStyle(.orange)
                     }
                     if !item.references.isEmpty {
                         VStack(alignment: .leading, spacing: 7) {
@@ -1812,10 +1964,211 @@ private struct MaatKnowledgeDetailView: View {
                             }
                         }
                     }
+                    if let detail, !detail.origins.isEmpty {
+                        VStack(alignment: .leading, spacing: 7) {
+                            Text("Retained provenance")
+                                .sirsiFont(.caption, weight: .bold)
+                                .foregroundStyle(.secondary)
+                            ForEach(detail.origins) { origin in
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("\(origin.source) · \(origin.instanceID)").sirsiFont(.caption, weight: .semibold)
+                                    if !origin.reference.isEmpty {
+                                        Text(origin.reference).sirsiFont(.caption).foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if let detail, !detail.annotations.isEmpty {
+                        VStack(alignment: .leading, spacing: 7) {
+                            Text("Owner review history")
+                                .sirsiFont(.caption, weight: .bold)
+                                .foregroundStyle(.secondary)
+                            ForEach(detail.annotations) { annotation in
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(annotation.state.capitalized).sirsiFont(.caption, weight: .semibold)
+                                    Text(annotation.text).sirsiFont(.subheadline).fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Retained source history")
+                            .sirsiFont(.caption, weight: .bold)
+                            .foregroundStyle(.secondary)
+                        if sourceHistory.isEmpty {
+                            Button("Load version history") { Task { await loadSourceHistory(cursor: nil) } }
+                                .buttonStyle(.bordered)
+                        }
+                        ForEach(Array(sourceHistory.enumerated()), id: \.offset) { entry in
+                            let version = entry.element
+                            DisclosureGroup("Revision \(version.revision ?? 0) · \(version.title)") {
+                                if !version.summary.isEmpty {
+                                    Text(version.summary)
+                                        .sirsiFont(.subheadline)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                if let content = version.content, !content.isEmpty {
+                                    Text(content)
+                                        .sirsiFont(.caption)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                        .textSelection(.enabled)
+                                }
+                                ForEach(version.origins) { origin in
+                                    Text("\(origin.source) · \(origin.instanceID) · \(origin.reference)")
+                                        .sirsiFont(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        if let sourceHistoryCursor, sourceHistory.count < maximumHistoryItems {
+                            Button("Load older versions") { Task { await loadSourceHistory(cursor: sourceHistoryCursor) } }
+                                .buttonStyle(.bordered)
+                                .disabled(sourceHistoryLoading)
+                        }
+                        if sourceHistoryTotal > 0 {
+                            Text("Showing \(sourceHistory.count) of \(sourceHistoryTotal) retained versions.")
+                                .sirsiFont(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if let sourceHistoryError {
+                            Label(sourceHistoryError, systemImage: "exclamationmark.triangle")
+                                .sirsiFont(.caption)
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: 9) {
+                        Text("Review this knowledge item")
+                            .sirsiFont(.headline)
+                        Picker("Owner conclusion", selection: $resolutionState) {
+                            Text("Reviewed").tag("reviewed")
+                            Text("Accepted").tag("accepted")
+                            Text("Rejected").tag("rejected")
+                        }
+                        .pickerStyle(.segmented)
+                        .disabled(resolutionSubmission.submissionStarted)
+                        TextField("Why this conclusion?", text: $resolutionNote, axis: .vertical)
+                            .lineLimit(2...5)
+                            .textFieldStyle(.roundedBorder)
+                            .disabled(resolutionSubmission.submissionStarted)
+                        if let revision = detail?.revision, let digest = detail?.contentDigest, !digest.isEmpty {
+                            Text("This review is bound to revision \(revision) · \(digest.prefix(12))…")
+                                .sirsiFont(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("Exact version details are unavailable; reopen the item before recording a review.")
+                                .sirsiFont(.caption)
+                                .foregroundStyle(.orange)
+                        }
+                        Button("Record owner review") { confirmResolution = true }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(resolutionNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || detail?.revision == nil || detail?.contentDigest?.isEmpty != false || resolutionSubmission.submissionStarted)
+                        if let resolutionReceipt {
+                            Label(resolutionReceipt, systemImage: "checkmark.seal")
+                                .sirsiFont(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if let resolutionError {
+                            Label(resolutionError, systemImage: "exclamationmark.triangle")
+                                .sirsiFont(.caption)
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                    .padding(14)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
                 }
                 .padding(16)
             }
         }
+        .task {
+            let raw = await SirsiEngine.run(args: ["maat", "knowledge", "detail", item.id, "--json"], stdin: nil)
+            guard let start = raw.firstIndex(of: "{"),
+                  let loaded = try? JSONDecoder().decode(MaatKnowledgeItem.self, from: Data(raw[start...].utf8)) else {
+                resolutionError = "Ma'at could not load the exact version details. No owner review can be recorded until the item is reopened."
+                return
+            }
+            detail = loaded
+            resolutionError = nil
+        }
+        .confirmationDialog("Record this owner conclusion?", isPresented: $confirmResolution, titleVisibility: .visible) {
+            Button("Record \(resolutionState)") { beginResolutionSubmission() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This saves a sensitivity-filtered owner note in Ma'at's archive. Casebook projection is tracked separately and may remain pending.")
+        }
+    }
+
+    @MainActor private func beginResolutionSubmission() {
+        guard let reviewed = detail,
+              let request = MaatKnowledgeResolutionRequest.capture(
+                recordID: item.id, revision: reviewed.revision, digest: reviewed.contentDigest,
+                state: resolutionState, note: resolutionNote
+              ) else {
+            resolutionSubmission.finish()
+            resolutionError = "The displayed version is unavailable. Reload its exact detail and review it again before recording a decision."
+            return
+        }
+        guard resolutionSubmission.begin() else { return }
+        Task { await recordResolution(request) }
+    }
+
+    @MainActor private func recordResolution(_ request: MaatKnowledgeResolutionRequest) async {
+        defer { resolutionSubmission.finish() }
+        resolutionError = nil
+        let output = await SirsiEngine.run(
+            args: request.arguments,
+            stdin: request.note
+        )
+        guard let start = output.firstIndex(of: "{"),
+              let receipt = try? JSONDecoder().decode(MaatKnowledgeResolutionReceipt.self, from: Data(output[start...].utf8)) else {
+            resolutionError = "Ma'at could not confirm this exact revision-and-digest review. No newer version was substituted; reopen the current item for a deliberate fresh review."
+            return
+        }
+        resolutionReceipt = "Recorded as \(receipt.state); Casebook projection is \(receipt.casebookProjection)."
+        resolutionNote = ""
+        let raw = await SirsiEngine.run(args: ["maat", "knowledge", "detail", request.recordID, "--json"], stdin: nil)
+        if let start = raw.firstIndex(of: "{") {
+            detail = try? JSONDecoder().decode(MaatKnowledgeItem.self, from: Data(raw[start...].utf8))
+        }
+    }
+
+    @MainActor private func loadSourceHistory(cursor: String?) async {
+        sourceHistoryLoading = true
+        sourceHistoryError = nil
+        var args = ["maat", "knowledge", "history", item.id, "--limit", "\(historyPageSize)"]
+        if let cursor, !cursor.isEmpty { args += ["--cursor", cursor] }
+        args.append("--json")
+        let raw = await SirsiEngine.run(args: args, stdin: nil)
+        guard let start = raw.firstIndex(of: "{"),
+              let page = try? JSONDecoder().decode(MaatKnowledgeHistoryPage.self, from: Data(raw[start...].utf8)) else {
+            sourceHistoryError = "Ma'at could not read this stable history page. Existing retained versions are unchanged."
+            sourceHistoryLoading = false
+            return
+        }
+        sourceHistory = Array((sourceHistory + page.items).prefix(maximumHistoryItems))
+        sourceHistoryTotal = page.total
+        sourceHistoryCursor = sourceHistory.count < maximumHistoryItems ? page.nextCursor : nil
+        sourceHistoryLoading = false
+    }
+}
+
+private struct MaatKnowledgeResolutionReceipt: Decodable {
+    let state: String
+    let casebookProjection: String
+    enum CodingKeys: String, CodingKey {
+        case state
+        case casebookProjection = "casebook_projection"
+    }
+}
+
+private struct MaatKnowledgeHistoryPage: Decodable {
+    let items: [MaatKnowledgeItem]
+    let total: Int
+    let nextCursor: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case items, total
+        case nextCursor = "next_cursor"
     }
 }
 
@@ -1861,6 +2214,44 @@ private struct MaatCaseRow: View {
     }
 }
 
+enum MaatFailureMemoryAction: Equatable {
+    case initialize
+    case reobserve
+}
+
+struct MaatFailureMemoryStatus: Decodable {
+    let state: String
+    let storeUUID: String?
+    let detail: String?
+    let incompleteAttempt: Bool
+    let projectionDebt: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case state, detail
+        case storeUUID = "store_uuid"
+        case incompleteAttempt = "incomplete_attempt"
+        case projectionDebt = "projection_debt"
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        state = try values.decode(String.self, forKey: .state)
+        storeUUID = try values.decodeIfPresent(String.self, forKey: .storeUUID)
+        detail = try values.decodeIfPresent(String.self, forKey: .detail)
+        incompleteAttempt = try values.decodeIfPresent(Bool.self, forKey: .incompleteAttempt) ?? false
+        projectionDebt = try values.decodeIfPresent(Bool.self, forKey: .projectionDebt) ?? false
+    }
+}
+
+func maatCasebookFailureMemoryArguments(_ action: MaatFailureMemoryAction) -> [String] {
+    switch action {
+    case .initialize:
+        return ["maat", "repair", "liveness-watch", "--initialize-failure-memory", "--confirm", "--json"]
+    case .reobserve:
+        return ["maat", "repair", "liveness-watch", "--reobserve-incomplete", "--confirm", "--json"]
+    }
+}
+
 private struct MaatCaseDetailView: View {
     @ObservedObject var engine: SirsiEngine
     @ObservedObject var operations: MaatCaseOperationStore
@@ -1869,6 +2260,11 @@ private struct MaatCaseDetailView: View {
     @State private var confirmAction = false
     @State private var evidenceCopied = false
     @State private var copiedFindingID: String?
+    @State private var failureMemoryStatus: MaatFailureMemoryStatus?
+    @State private var failureMemoryLoading = false
+    @State private var failureMemoryBusy = false
+    @State private var failureMemoryMessage: String?
+    @State private var pendingFailureMemoryAction: MaatFailureMemoryAction?
 
     private var operationKey: MaatOperationKey { MaatOperationKey(case: entry) }
     private var operationRecord: MaatOperationRecord? { operations.record(for: operationKey) }
@@ -1945,23 +2341,37 @@ private struct MaatCaseDetailView: View {
                             .sirsiFont(.caption)
                             .foregroundStyle(.secondary)
                     }
+                    if entry.nextAction?.kind == "maat_repair", entry.nextAction?.actionID == "liveness-watch" {
+                        failureMemorySetup
+                    }
                     if let action = entry.nextAction, entry.status.lowercased() != "resolved" { resolutionAction(action) }
                 }
                 .padding(16)
             }
         }
+        .task {
+            guard entry.nextAction?.actionID == "liveness-watch" else { return }
+            await refreshFailureMemoryStatus()
+        }
         .confirmationDialog(confirmationTitle, isPresented: $confirmAction, titleVisibility: .visible) {
             Button(confirmationButton) {
                 let confirmedNote = conclusion.trimmingCharacters(in: .whitespacesAndNewlines)
-                Task { await performResolution(confirmedNote: confirmedNote) }
+                if let action = pendingFailureMemoryAction {
+                    Task { await performFailureMemoryAction(action) }
+                } else {
+                    Task { await performResolution(confirmedNote: confirmedNote) }
+                }
             }
-            Button("Cancel", role: .cancel) {}
+            Button("Cancel", role: .cancel) { pendingFailureMemoryAction = nil }
         } message: {
             Text(confirmationMessage)
         }
     }
 
     private var confirmationTitle: String {
+        if let pendingFailureMemoryAction {
+            return pendingFailureMemoryAction == .initialize ? "Initialize local failure memory?" : "Re-observe and reconcile the retained outcome?"
+        }
         switch entry.nextAction?.kind {
         case "maat_repair": return "Apply Ma'at's bounded recovery?"
         case "owner_acceptance": return "Record this owner acceptance?"
@@ -1971,6 +2381,9 @@ private struct MaatCaseDetailView: View {
     }
 
     private var confirmationButton: String {
+        if let pendingFailureMemoryAction {
+            return pendingFailureMemoryAction == .initialize ? "Initialize local failure memory" : "Inspect and re-observe"
+        }
         switch entry.nextAction?.kind {
         case "maat_repair": return "Apply bounded recovery"
         case "owner_acceptance": return "Record owner acceptance"
@@ -1980,7 +2393,12 @@ private struct MaatCaseDetailView: View {
     }
 
     private var confirmationMessage: String {
-        entry.nextAction?.kind == "maat_repair"
+        if let pendingFailureMemoryAction {
+            return pendingFailureMemoryAction == .initialize
+                ? "Create Ma'at's private per-user failure-memory store for genuine first use. No prior incidents are imported, and no liveness-watch repair runs until you review and confirm it separately."
+                : "Read back the exact prior liveness-watch target and reconcile its durable outcome into Casebook. Installation will not replay; any later repair requires a fresh review and confirmation."
+        }
+        return entry.nextAction?.kind == "maat_repair"
             ? "Ma'at will re-check the exact managed disabled labels, change only the bounded verified set, re-check the same diagnostic, and retain the outcome. It will not touch unrelated services."
             : entry.nextAction?.kind == "owner_acceptance"
             ? "This records an owner conclusion for the exact retained evidence. It does not change or claim to repair the system."
@@ -1989,7 +2407,134 @@ private struct MaatCaseDetailView: View {
                 : "This records an evidence-bound owner review for this exact case. It does not change the system. A conclusion must be accepted explicitly later."
     }
 
+    @ViewBuilder private var failureMemorySetup: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Label("Local failure memory", systemImage: "externaldrive.badge.shield.checkmark")
+                .sirsiFont(.headline)
+            if failureMemoryLoading {
+                ProgressView("Inspecting this Mac's local store…")
+                    .sirsiFont(.caption)
+            } else if let status = failureMemoryStatus {
+                switch status.state {
+                case "uninitialized":
+                    Text("First use is explicit. Initialization creates a private local store and imports no prior incidents.")
+                        .sirsiFont(.caption).foregroundStyle(.secondary)
+                    Button {
+                        pendingFailureMemoryAction = .initialize
+                        confirmAction = true
+                    } label: {
+                        Label("Initialize local failure memory", systemImage: "lock.shield")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(failureMemoryBusy)
+                case "ready" where status.projectionDebt:
+                    Text("A durable liveness-watch outcome is not yet projected into Casebook. Ma'at will re-observe it and reconcile the exact attempt without replaying installation.")
+                        .sirsiFont(.caption).foregroundStyle(.orange)
+                    Button {
+                        pendingFailureMemoryAction = .reobserve
+                        confirmAction = true
+                    } label: {
+                        Label("Re-observe and reconcile outcome", systemImage: "arrow.clockwise.circle")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(failureMemoryBusy)
+                case "ready" where status.incompleteAttempt:
+                    Text("A prior repair attempt is incomplete. Ma'at will re-observe it without replaying installation.")
+                        .sirsiFont(.caption).foregroundStyle(.orange)
+                    Button {
+                        pendingFailureMemoryAction = .reobserve
+                        confirmAction = true
+                    } label: {
+                        Label("Inspect and re-observe incomplete attempt", systemImage: "arrow.clockwise.circle")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(failureMemoryBusy)
+                case "ready":
+                    Text("Private local store is initialized. No incidents were imported during genesis.")
+                        .sirsiFont(.caption).foregroundStyle(.secondary)
+                default:
+                    Text(status.detail ?? "Initialization is incomplete or unverifiable. Ma'at will not reset or adopt this store.")
+                        .sirsiFont(.caption).foregroundStyle(.orange)
+                    Button {
+                        Task { await refreshFailureMemoryStatus() }
+                    } label: {
+                        Label("Inspect local state again", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(failureMemoryBusy)
+                }
+            } else {
+                Text("Ma'at could not read the local initialization state. No repair was attempted.")
+                    .sirsiFont(.caption).foregroundStyle(.orange)
+                Button {
+                    Task { await refreshFailureMemoryStatus() }
+                } label: {
+                    Label("Inspect local state again", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+                .disabled(failureMemoryBusy)
+            }
+            if failureMemoryBusy { ProgressView("Recording local Ma'at action…").sirsiFont(.caption) }
+            if let failureMemoryMessage {
+                Text(failureMemoryMessage)
+                    .sirsiFont(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+    }
+
+    @MainActor private func refreshFailureMemoryStatus() async {
+        failureMemoryLoading = true
+        defer { failureMemoryLoading = false }
+        let read = await SirsiEngine.runJSONRead(args: ["maat", "repair", "liveness-watch", "--inspect-failure-memory", "--json"])
+        guard read.exitStatus == 0, !read.timedOut, read.launchError == nil,
+              let status = try? JSONDecoder().decode(MaatFailureMemoryStatus.self, from: read.data) else {
+            failureMemoryStatus = nil
+            failureMemoryMessage = read.launchError ?? "Ma'at's local state could not be decoded; no change was made."
+            return
+        }
+        failureMemoryStatus = status
+    }
+
+    @MainActor private func performFailureMemoryAction(_ action: MaatFailureMemoryAction) async {
+        pendingFailureMemoryAction = nil
+        guard !failureMemoryBusy else { return }
+        let reconcilingProjectionDebt = action == .reobserve && failureMemoryStatus?.projectionDebt == true
+        failureMemoryBusy = true
+        defer { failureMemoryBusy = false }
+
+        let read = await SirsiEngine.runJSONRead(args: ["maat", "casebook", "--json", "--limit", "50"], timeoutSeconds: 12)
+        let projection = MaatOperationPreflight.decodeProjection(from: read.data)
+        guard case .ready = MaatOperationPreflight.evaluate(
+            original: entry,
+            exitStatus: read.exitStatus,
+            timedOut: read.timedOut,
+            launchError: read.launchError,
+            projection: projection
+        ) else {
+            failureMemoryMessage = "The reviewed Ma'at case changed or could not be re-read. Refresh this case before continuing."
+            return
+        }
+        let args = maatCasebookFailureMemoryArguments(action)
+        let command = await SirsiEngine.runJSONRead(args: args, timeoutSeconds: 30)
+        guard command.exitStatus == 0, !command.timedOut, command.launchError == nil else {
+            failureMemoryMessage = command.launchError ?? "Ma'at did not complete the requested local action. Inspect the state before continuing."
+            await refreshFailureMemoryStatus()
+            return
+        }
+        failureMemoryMessage = action == .initialize
+            ? "Failure memory was initialized without importing incidents. Review this finding again before applying the separate liveness-watch repair."
+            : reconcilingProjectionDebt
+                ? "The retained outcome was projected into Casebook without installation replay. Review the recorded outcome before any new repair consent."
+                : "The incomplete attempt was re-observed without installation replay. Review this finding again before any new repair consent."
+        await refreshFailureMemoryStatus()
+    }
+
     @ViewBuilder private func resolutionAction(_ action: MaatCaseNextAction) -> some View {
+        let failureMemoryNeedsReview = action.actionID == "liveness-watch" &&
+            (failureMemoryStatus?.state != "ready" || failureMemoryStatus?.incompleteAttempt == true || failureMemoryStatus?.projectionDebt == true)
         VStack(alignment: .leading, spacing: 9) {
             if !action.evidence.isEmpty {
                 Button {
@@ -2013,7 +2558,7 @@ private struct MaatCaseDetailView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(gold)
-            .disabled(operationInFlight || !canBeginOperation || (action.kind == "owner_acceptance" && conclusion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
+            .disabled(operationInFlight || !canBeginOperation || failureMemoryNeedsReview || (action.kind == "owner_acceptance" && conclusion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
             .accessibilityHint(action.kind == "maat_repair" ? "Runs only Ma'at's named bounded recovery after confirmation, then retains its post-repair evidence." : "Records an evidence-bound owner decision; it does not repair the system.")
             if let receipt = operationRecord?.receipt {
                 Label(receipt.summary, systemImage: receipt.succeeded ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
@@ -2896,13 +3441,14 @@ struct MaatReleaseCredentialPreflight: Decodable {
 // secret/key access: only the protected release workflow may perform that work.
 func protectedReleaseRecoverySteps(for preflight: MaatReleaseCredentialPreflight) -> [String] {
 	if !preflight.recoveryPlan.isEmpty { return preflight.recoveryPlan }
+	let identityObservationFailed = MaatCredentialPreflightProjection(preflight).identityObservationFailed
 	let observedKinds = Set(preflight.developerIdentities.map(\.kind))
     var steps: [String] = []
 
-    if !observedKinds.contains("application") {
+    if !identityObservationFailed && !observedKinds.contains("application") {
         steps.append("Make one usable Team \(preflight.teamID) Developer ID Application identity available through the protected release workflow.")
     }
-    if !observedKinds.contains("installer") {
+    if !identityObservationFailed && !observedKinds.contains("installer") {
         steps.append("Make one usable Team \(preflight.teamID) Developer ID Installer identity available through the protected release workflow.")
     }
     if !preflight.notarizationObserved {
@@ -2917,6 +3463,29 @@ struct MaatReleaseSigningIdentity: Decodable, Identifiable {
     let name: String
     let fingerprint: String
     var id: String { "\(kind):\(fingerprint)" }
+}
+
+struct MaatCredentialPreflightProjection {
+    let identityObservationFailed: Bool
+    let requiredIdentityChecks: [MaatSystemOneFloorCheck]
+    let observedRequiredKindCount: Int
+    let additionalIdentityLabels: [String]
+    let notarizationStatus: String
+
+    init(_ preflight: MaatReleaseCredentialPreflight) {
+        let requiredKinds: Set<String> = ["developer-id-application", "developer-id-installer"]
+        identityObservationFailed = preflight.verdict.findings.contains { $0.id == "security-identity-observation" }
+        requiredIdentityChecks = preflight.verdict.floor.checks.filter { requiredKinds.contains($0.name) }
+        observedRequiredKindCount = Set(requiredIdentityChecks.filter(\.passed).map(\.name)).count
+        additionalIdentityLabels = preflight.observedNonDeveloperIdentityTypes.map { "Additional local identity: \($0)" }
+        notarizationStatus = preflight.notarizationObserved ? "Notarization was observed by the protected workflow." : "Notarization not inspected here."
+    }
+
+    var allRequiredKindsObserved: Bool { observedRequiredKindCount == 2 }
+    var identityHeading: String { identityObservationFailed ? "Local identities unconfirmed" : "Local identities observed" }
+    var requiredKindsSummary: String {
+        identityObservationFailed ? "Required identity types could not be confirmed." : "Required identity types observed: \(observedRequiredKindCount) of 2."
+    }
 }
 
 struct MaatCaseNextAction: Decodable {
@@ -3004,6 +3573,39 @@ struct MaatKnowledgeProjection: Decodable {
     let items: [MaatKnowledgeItem]
     let total: Int
     let withheld: Int
+    let coverage: MaatKnowledgeCoverage?
+    let nextCursor: String?
+    let state: String?
+
+    init(items: [MaatKnowledgeItem], total: Int, withheld: Int, coverage: MaatKnowledgeCoverage? = nil, nextCursor: String? = nil, state: String? = nil) {
+        self.items = items
+        self.total = total
+        self.withheld = withheld
+        self.coverage = coverage
+        self.nextCursor = nextCursor
+        self.state = state
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case items, total, withheld, coverage, state
+        case nextCursor = "next_cursor"
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        items = try values.decode([MaatKnowledgeItem].self, forKey: .items)
+        total = try values.decode(Int.self, forKey: .total)
+        withheld = try values.decode(Int.self, forKey: .withheld)
+        guard total >= 0 else {
+            throw DecodingError.dataCorruptedError(forKey: .total, in: values, debugDescription: "total must be nonnegative")
+        }
+        guard withheld >= 0 else {
+            throw DecodingError.dataCorruptedError(forKey: .withheld, in: values, debugDescription: "withheld must be nonnegative")
+        }
+        coverage = try values.decodeIfPresent(MaatKnowledgeCoverage.self, forKey: .coverage)
+        nextCursor = try values.decodeIfPresent(String.self, forKey: .nextCursor)
+        state = try values.decodeIfPresent(String.self, forKey: .state)
+    }
 
     static let snapshotPreview = MaatKnowledgeProjection(
         items: [
@@ -3015,28 +3617,164 @@ struct MaatKnowledgeProjection: Decodable {
     )
 }
 
+struct MaatKnowledgeProjectionReceipt: Equatable {
+    let projected: Int
+    let remaining: Int
+    let isComplete: Bool
+    var summary: String {
+        if isComplete {
+            return "Projected \(projected); no projection debt remains."
+        }
+        return "Projected \(projected); \(remaining) remain. Partial progress; reconciliation is not complete."
+    }
+
+    init(projected: Int, remaining: Int, isComplete: Bool) {
+        self.projected = projected
+        self.remaining = remaining
+        self.isComplete = isComplete
+    }
+
+    init?(commandResult: CommandResult) {
+        guard commandResult.command == "sirsi maat knowledge reconcile-projections",
+              commandResult.evidence.count == 2,
+              let projected = Self.count(label: "Projected", in: commandResult.evidence),
+              let remaining = Self.count(label: "Remaining", in: commandResult.evidence) else { return nil }
+
+        let complete: Bool
+        switch commandResult.status {
+        case .some("ok"):
+            guard commandResult.errors.isEmpty, remaining == 0 else { return nil }
+            complete = true
+        case .some("partial"):
+            guard commandResult.errors == ["projection_debt_remains"], remaining > 0 else { return nil }
+            complete = false
+        default:
+            return nil
+        }
+
+        self.projected = projected
+        self.remaining = remaining
+        self.isComplete = complete
+    }
+
+    private static func count(label: String, in evidence: [CRFact]) -> Int? {
+        let matches = evidence.filter { $0.label == label }
+        guard matches.count == 1,
+              let value = Int(matches[0].value), value >= 0,
+              String(value) == matches[0].value else { return nil }
+        return value
+    }
+}
+
+struct MaatKnowledgeResolutionRequest: Equatable {
+    let recordID: String
+    let revision: Int
+    let digest: String
+    let state: String
+    let note: String
+
+    static func capture(recordID: String, revision: Int?, digest: String?, state: String, note: String) -> Self? {
+        let approvedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !recordID.isEmpty, let revision, revision > 0,
+              let digest, !digest.isEmpty,
+              ["reviewed", "accepted", "rejected"].contains(state),
+              !approvedNote.isEmpty else { return nil }
+        return Self(recordID: recordID, revision: revision, digest: digest, state: state, note: approvedNote)
+    }
+
+    var arguments: [String] {
+        ["maat", "knowledge", "resolve", recordID, "--state", state,
+         "--revision", String(revision), "--digest", digest, "--note-stdin"]
+    }
+}
+
+struct MaatKnowledgeResolutionSubmission: Equatable {
+    private(set) var inFlight = false
+    private(set) var submissionStarted = false
+
+    mutating func begin() -> Bool {
+        guard !submissionStarted else { return false }
+        inFlight = true
+        submissionStarted = true
+        return true
+    }
+
+    mutating func finish() { inFlight = false }
+}
+
+struct MaatKnowledgeCoverage: Decodable {
+    let sources: [MaatKnowledgeSourceRun]
+    let pendingProjectionDebt: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case sources
+        case pendingProjectionDebt = "pending_projection_debt"
+    }
+}
+
+struct MaatKnowledgeSourceRun: Decodable, Identifiable {
+    let id: Int64
+    let source: String
+    let state: String
+    let errorCode: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, source, state
+        case errorCode = "error_code"
+    }
+}
+
 struct MaatKnowledgeItem: Decodable, Identifiable {
     let id: String
     let title: String
     let summary: String
     let references: [MaatKnowledgeReference]
+    let content: String?
+    let classification: String?
+    let resolution: String?
+    let revision: Int?
+    let contentDigest: String?
+    let origins: [MaatKnowledgeOrigin]
+    let withheldReason: String?
+    let annotations: [MaatKnowledgeOwnerAnnotation]
 
     init(id: String, title: String, summary: String, references: [MaatKnowledgeReference]) {
         self.id = id
         self.title = title
         self.summary = summary
         self.references = references
+        self.content = nil
+        self.classification = nil
+        self.resolution = nil
+        self.revision = nil
+        self.contentDigest = nil
+        self.origins = []
+        self.withheldReason = nil
+        self.annotations = []
     }
 
-    private enum CodingKeys: String, CodingKey { case title, summary, references }
+    private enum CodingKeys: String, CodingKey {
+        case id, title, summary, references, content, classification, resolution, revision, origins
+        case contentDigest = "content_digest"
+        case withheldReason = "withheld_reason"
+        case annotations = "owner_annotations"
+    }
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         title = try values.decodeIfPresent(String.self, forKey: .title) ?? "Untitled knowledge"
         summary = try values.decodeIfPresent(String.self, forKey: .summary) ?? ""
         references = try values.decodeIfPresent([MaatKnowledgeReference].self, forKey: .references) ?? []
+        content = try values.decodeIfPresent(String.self, forKey: .content)
+        classification = try values.decodeIfPresent(String.self, forKey: .classification)
+        resolution = try values.decodeIfPresent(String.self, forKey: .resolution)
+        revision = try values.decodeIfPresent(Int.self, forKey: .revision)
+        contentDigest = try values.decodeIfPresent(String.self, forKey: .contentDigest)
+        origins = try values.decodeIfPresent([MaatKnowledgeOrigin].self, forKey: .origins) ?? []
+        withheldReason = try values.decodeIfPresent(String.self, forKey: .withheldReason)
+        annotations = try values.decodeIfPresent([MaatKnowledgeOwnerAnnotation].self, forKey: .annotations) ?? []
         let sourceKey = ([title, summary] + references.map { $0.type + ":" + $0.value }).joined(separator: "\u{0}")
-        id = sourceKey.data(using: .utf8)?.base64EncodedString() ?? UUID().uuidString
+        id = try values.decodeIfPresent(String.self, forKey: .id) ?? sourceKey.data(using: .utf8)?.base64EncodedString() ?? UUID().uuidString
     }
 
     var source: String? {
@@ -3045,6 +3783,37 @@ struct MaatKnowledgeItem: Decodable, Identifiable {
 
     var searchText: String {
         ([title, summary] + references.map { $0.type + " " + $0.value }).joined(separator: " ")
+    }
+}
+
+struct MaatKnowledgeOwnerAnnotation: Decodable, Identifiable {
+    let id: Int64
+    let state: String
+    let text: String
+}
+
+struct MaatKnowledgeOrigin: Decodable, Identifiable {
+    let recordID: String
+    let source: String
+    let instanceID: String
+    let nativeItemID: String
+    let reference: String
+    var id: String { "\(recordID):\(source):\(instanceID):\(nativeItemID):\(reference)" }
+
+    private enum CodingKeys: String, CodingKey {
+        case source, reference
+        case recordID = "record_id"
+        case instanceID = "instance_id"
+        case nativeItemID = "native_item_id"
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        recordID = try values.decodeIfPresent(String.self, forKey: .recordID) ?? ""
+        source = try values.decodeIfPresent(String.self, forKey: .source) ?? "unknown source"
+        instanceID = try values.decodeIfPresent(String.self, forKey: .instanceID) ?? ""
+        nativeItemID = try values.decodeIfPresent(String.self, forKey: .nativeItemID) ?? ""
+        reference = try values.decodeIfPresent(String.self, forKey: .reference) ?? ""
     }
 }
 

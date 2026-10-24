@@ -2,6 +2,47 @@ import XCTest
 @testable import SirsiMenubar
 
 final class MaatOperationStateTests: XCTestCase {
+    func testLivenessFailureMemoryControlsUseOnlyClosedConfirmedMaAtActions() {
+        XCTAssertEqual(
+            maatCasebookFailureMemoryArguments(.initialize),
+            ["maat", "repair", "liveness-watch", "--initialize-failure-memory", "--confirm", "--json"]
+        )
+        XCTAssertEqual(
+            maatCasebookFailureMemoryArguments(.reobserve),
+            ["maat", "repair", "liveness-watch", "--reobserve-incomplete", "--confirm", "--json"]
+        )
+        XCTAssertFalse(maatCasebookFailureMemoryArguments(.initialize).contains { $0.hasPrefix("/") })
+    }
+
+    func testLivenessFailureMemoryStatusRequiresStateAndDefaultsNoPendingAction() throws {
+        let status = try JSONDecoder().decode(
+            MaatFailureMemoryStatus.self,
+            from: Data(#"{"state":"ready","store_uuid":"b3c515a2-4773-4653-86d1-8a5734c2ee45"}"#.utf8)
+        )
+        XCTAssertEqual(status.state, "ready")
+        XCTAssertEqual(status.storeUUID, "b3c515a2-4773-4653-86d1-8a5734c2ee45")
+        XCTAssertFalse(status.incompleteAttempt)
+        XCTAssertFalse(status.projectionDebt)
+
+        let firstUse = try JSONDecoder().decode(
+            MaatFailureMemoryStatus.self,
+            from: Data(#"{"state":"uninitialized"}"#.utf8)
+        )
+        XCTAssertEqual(firstUse.state, "uninitialized")
+
+        let pending = try JSONDecoder().decode(
+            MaatFailureMemoryStatus.self,
+            from: Data(#"{"state":"ready","incomplete_attempt":true}"#.utf8)
+        )
+        XCTAssertTrue(pending.incompleteAttempt)
+
+        let projectionDebt = try JSONDecoder().decode(
+            MaatFailureMemoryStatus.self,
+            from: Data(#"{"state":"ready","projection_debt":true}"#.utf8)
+        )
+        XCTAssertTrue(projectionDebt.projectionDebt)
+    }
+
     func testPreflightProjectionRequiresExplicitJournalIntegrityCount() {
         let complete = Data(#"{"cases":[],"summary":{"total":0,"open":0,"urgent":0,"high":0,"resolved":0},"journal_integrity":{"invalid_count":0,"issues":[]}}"#.utf8)
         let missingIntegrity = Data(#"{"cases":[],"summary":{"total":0,"open":0,"urgent":0,"high":0,"resolved":0}}"#.utf8)

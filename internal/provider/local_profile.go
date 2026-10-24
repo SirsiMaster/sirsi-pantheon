@@ -14,17 +14,31 @@ type LocalProfile struct {
 	// ID names an installed, reviewed profile. It is optional for ordinary
 	// text-only local inference; the structured Apollo worker requires the
 	// exact gemma-m5-apollo21 identity instead of guessing from a port.
-	ID                    string `json:"id,omitempty"`
-	Endpoint              string `json:"endpoint"`
-	Model                 string `json:"model"`
-	ContextTokens         int    `json:"context_tokens"`
-	OutputTokens          int    `json:"output_tokens"`
-	Streaming             *bool  `json:"streaming"`
+	ID            string `json:"id,omitempty"`
+	Endpoint      string `json:"endpoint"`
+	Model         string `json:"model"`
+	ContextTokens int    `json:"context_tokens"`
+	OutputTokens  int    `json:"output_tokens"`
+	Streaming     *bool  `json:"streaming"`
+	// JSONObject is an operator declaration for this exact selected endpoint
+	// and model, not inferred backend support or a SNE capability schema.
+	// Absent stays unknown; false is explicitly unsupported.
+	JSONObject            *bool  `json:"json_object,omitempty"`
 	AccessTokenFile       string `json:"access_token_file"`
 	RequestTimeoutSeconds *int   `json:"request_timeout_seconds,omitempty"`
 	// ToolCalls is an explicit capability declaration. A compatible HTTP shape
 	// alone never grants a model authority to request local tools.
 	ToolCalls *bool `json:"tool_calls,omitempty"`
+}
+
+func ProfileJSONObjectCapability(p *LocalProfile) CapabilityState {
+	if p == nil || p.JSONObject == nil {
+		return CapabilityUnknown
+	}
+	if !*p.JSONObject {
+		return CapabilityUnsupported
+	}
+	return CapabilitySupported
 }
 
 func ProfileSupportsTools(p *LocalProfile) bool {

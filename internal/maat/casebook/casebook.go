@@ -318,12 +318,13 @@ func systemOneRepair(verdict *maat.MaatVerdict, evidence string) (*ResolutionPat
 		return &ResolutionPath{
 			Kind: "maat_repair", ActionID: maat.SystemOneRepairLivenessWatch,
 			Title: "Install the local liveness watch", Evidence: evidence,
-			Detail:               "Ma'at will confirm the watch is absent, install the bounded per-user LaunchAgent from Pantheon's canonical executable, re-check the same diagnostic, and retain the outcome.",
+			Detail:               "Review the exact watch finding. If this is genuine first use, explicitly initialize private local failure memory in the Ma'at app; incomplete state is inspected, never reset. Then Ma'at preflights and records this exact repair before installing Pantheon's managed per-user LaunchAgent.",
 			RequiresConfirmation: true,
 			Steps: []ResolutionStep{
 				{Level: 1, Title: "Review the retained finding", Detail: "Confirm this screen describes an absent local liveness watch.", RequiresConfirmation: true},
-				{Level: 2, Title: "Install Ma'at's safety watch", Detail: "Install only Pantheon's managed per-user liveness LaunchAgent; no model, service, or unrelated login item is changed.", RequiresConfirmation: true},
-				{Level: 3, Title: "Re-screen the Mac", Detail: "Inspect the recorded installation receipt, then create a new System One screen so the original observation is not treated as current."},
+				{Level: 2, Title: "Initialize local failure memory if needed", Detail: "The Ma'at app offers a separate, confirmed private genesis action only for genuine first use; no prior incidents are imported and interrupted state is never reset."},
+				{Level: 3, Title: "Apply Ma'at's bounded recovery", Detail: "After a fresh exact finding, passing failure-memory preflight, and durable attempt record, install only the managed per-user watch from the canonical executable.", RequiresConfirmation: true},
+				{Level: 4, Title: "Re-screen the Mac", Detail: "Inspect the durable attempt and exact positive plist/launchd observation, then create a new System One screen."},
 			},
 		}, true
 	}

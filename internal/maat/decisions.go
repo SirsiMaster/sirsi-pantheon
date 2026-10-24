@@ -7,6 +7,7 @@ package maat
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -170,6 +171,7 @@ type JournalRepairReceipt struct {
 }
 
 const maxRetainedJournalIssues = 20
+const maxAppendOnceJournalBytes = 128 << 20
 
 func DefaultDecisionPath() (string, error) {
 	home, err := os.UserHomeDir()
@@ -200,6 +202,162 @@ func (j *FileDecisionJournal) Append(decision Decision) error {
 	return withJournalMutationLock(j.Path, func() error {
 		return j.appendLocked(decision)
 	})
+}
+
+// AppendOnce records one projection with stable evidence under the journal's
+// existing cross-process mutation lock. It refuses malformed or oversized
+// history rather than risking a duplicate after an interrupted projection.
+// The bool is true only when this call appended a new row.
+func (j *FileDecisionJournal) AppendOnce(decision Decision) (bool, error) {
+	if j == nil || strings.TrimSpace(j.Path) == "" {
+		return false, fmt.Errorf("maat decision journal: empty path")
+	}
+	if strings.TrimSpace(decision.Evidence) == "" {
+		return false, fmt.Errorf("maat decision journal: idempotent append requires evidence")
+	}
+	if err := normalizeDecision(&decision); err != nil {
+		return false, err
+	}
+	if err := os.MkdirAll(filepath.Dir(j.Path), 0o700); err != nil {
+		return false, fmt.Errorf("maat decision journal: create parent: %w", err)
+	}
+	appended := false
+	err := withJournalMutationLock(j.Path, func() error {
+		found, err := j.containsEvidenceLocked(decision.Kind, decision.Evidence)
+		if err != nil {
+			return err
+		}
+		if found {
+			return nil
+		}
+		if err := j.appendLocked(decision); err != nil {
+			return err
+		}
+		appended = true
+		return nil
+	})
+	return appended, err
+}
+
+func (j *FileDecisionJournal) containsEvidenceLocked(kind, evidence string) (bool, error) {
+	file, err := os.Open(j.Path)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("maat decision journal: open for idempotence: %w", err)
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Size() < 0 || info.Size() > maxAppendOnceJournalBytes {
+		return false, fmt.Errorf("maat decision journal: history is not a bounded regular file")
+	}
+	scanner := bufio.NewScanner(io.LimitReader(file, maxAppendOnceJournalBytes+1))
+	scanner.Buffer(make([]byte, 4096), 256*1024)
+	for lineNumber := 1; scanner.Scan(); lineNumber++ {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		var existing Decision
+		if err := json.Unmarshal([]byte(line), &existing); err != nil {
+			return false, fmt.Errorf("maat decision journal: malformed history at line %d", lineNumber)
+		}
+		if err := validateDecision(existing); err != nil {
+			return false, fmt.Errorf("maat decision journal: invalid history at line %d", lineNumber)
+		}
+		if existing.Kind == kind && existing.Evidence == evidence {
+			return true, nil
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return false, fmt.Errorf("maat decision journal: history exceeds its bound or is unreadable")
+	}
+	return false, nil
+}
+
+// AppendIdempotent appends one exact decision, keyed by its non-empty Evidence
+// reference. It reads back under the same mutation lock so a retry after an
+// uncertain append cannot duplicate the record.
+func (j *FileDecisionJournal) AppendIdempotent(decision Decision) error {
+	if j == nil || strings.TrimSpace(j.Path) == "" {
+		return fmt.Errorf("maat decision journal: empty path")
+	}
+	if strings.TrimSpace(decision.Evidence) == "" {
+		return fmt.Errorf("maat decision journal: idempotent append requires an evidence key")
+	}
+	if err := normalizeDecision(&decision); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(j.Path), 0o700); err != nil {
+		return fmt.Errorf("maat decision journal: create parent: %w", err)
+	}
+	return withJournalMutationLock(j.Path, func() error {
+		found, err := decisionEvidenceReadback(j.Path, decision)
+		if err != nil || found {
+			return err
+		}
+		if err := j.appendLocked(decision); err != nil {
+			return err
+		}
+		found, err = decisionEvidenceReadback(j.Path, decision)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return fmt.Errorf("maat decision journal: idempotent append readback is missing")
+		}
+		return nil
+	})
+}
+
+func decisionEvidenceReadback(path string, expected Decision) (bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("maat decision journal: readback open: %w", err)
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 4096), 256*1024)
+	expectedBytes, err := json.Marshal(expected)
+	if err != nil {
+		return false, err
+	}
+	found := false
+	for lineNumber := 1; scanner.Scan(); lineNumber++ {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		var actual Decision
+		if err := json.Unmarshal([]byte(line), &actual); err != nil {
+			return false, fmt.Errorf("maat decision journal: readback found malformed record at line %d", lineNumber)
+		}
+		if err := validateDecision(actual); err != nil {
+			return false, fmt.Errorf("maat decision journal: readback found invalid record at line %d: %w", lineNumber, err)
+		}
+		if actual.Evidence != expected.Evidence {
+			continue
+		}
+		if found {
+			return false, fmt.Errorf("maat decision journal: duplicate idempotency evidence")
+		}
+		actualBytes, err := json.Marshal(actual)
+		if err != nil {
+			return false, err
+		}
+		if !bytes.Equal(actualBytes, expectedBytes) {
+			return false, fmt.Errorf("maat decision journal: idempotency evidence already belongs to a different decision")
+		}
+		found = true
+	}
+	if err := scanner.Err(); err != nil {
+		return false, fmt.Errorf("maat decision journal: readback scan: %w", err)
+	}
+	return found, nil
 }
 
 func (j *FileDecisionJournal) appendLocked(decision Decision) error {

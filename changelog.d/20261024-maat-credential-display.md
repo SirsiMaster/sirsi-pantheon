@@ -1,0 +1,3 @@
+Correct the existing local credential-preflight finding and native display. Same-Team non-Developer identity types remain neutral public metadata; recovery hints name only required Developer ID kinds missing from a completed observation. Failed identity reads discard partial output and do not infer absence. Native Casebook and Release Workspace views distinguish local identity observation from notarization not inspected here, while the conservative aggregate gate and explicit protected-workflow boundary remain unchanged. No credentials are read and no Apple tools are invoked beyond the existing public identity observation.
+
+Refs: `docs/stacklab/maat/canon/COMPONENT_CATALOG.md`, `contracts/stacklab/maat-system-one-recipe-v1.json`, ADR-070

@@ -29,6 +29,19 @@ func RecordDiagnosticRepair(j DecisionJournal, requester string, repair Diagnost
 	if j == nil {
 		return Decision{}, fmt.Errorf("maat diagnostic repair: nil journal")
 	}
+	decision, err := BuildDiagnosticRepairDecision(requester, repair)
+	if err != nil {
+		return Decision{}, err
+	}
+	if err := j.Append(decision); err != nil {
+		return Decision{}, fmt.Errorf("maat diagnostic repair: append repair outcome: %w", err)
+	}
+	return decision, nil
+}
+
+// BuildDiagnosticRepairDecision constructs the exact validated projection so a
+// caller can durably retain it before attempting the append.
+func BuildDiagnosticRepairDecision(requester string, repair DiagnosticRepair) (Decision, error) {
 	requester = strings.TrimSpace(requester)
 	repair.Check = strings.TrimSpace(repair.Check)
 	repair.Operation = strings.TrimSpace(repair.Operation)
@@ -62,8 +75,8 @@ func RecordDiagnosticRepair(j DecisionJournal, requester string, repair Diagnost
 		Why:           why,
 		Evidence:      "diagnostic-repair:sha256=" + hex.EncodeToString(sum[:]),
 	}
-	if err := j.Append(decision); err != nil {
-		return Decision{}, fmt.Errorf("maat diagnostic repair: append repair outcome: %w", err)
+	if err := normalizeDecision(&decision); err != nil {
+		return Decision{}, fmt.Errorf("maat diagnostic repair: build repair outcome: %w", err)
 	}
 	return decision, nil
 }

@@ -53,6 +53,12 @@ func PreflightReleaseCredentials() (ReleaseCredentialPreflight, error) {
 	raw, runErr := securityFindIdentity()
 	identities := parseDeveloperIDIdentities(string(raw), PantheonDeveloperTeamID)
 	observedNonDeveloperTypes := parseNonDeveloperIdentityTypes(string(raw), PantheonDeveloperTeamID)
+	if runErr != nil {
+		// Partial stdout is not a completed observation; do not turn it into a
+		// positive identity result or an absence diagnosis.
+		identities = nil
+		observedNonDeveloperTypes = nil
+	}
 	checks := []FloorCheck{
 		{Name: "developer-id-application", Passed: hasIdentity(identities, "application"), Detail: "one usable Team " + PantheonDeveloperTeamID + " Developer ID Application identity"},
 		{Name: "developer-id-installer", Passed: hasIdentity(identities, "installer"), Detail: "one usable Team " + PantheonDeveloperTeamID + " Developer ID Installer identity"},
@@ -65,17 +71,10 @@ func PreflightReleaseCredentials() (ReleaseCredentialPreflight, error) {
 		checks[1].Detail = "macOS security identity observation failed"
 	}
 	findings := make([]ScreenFinding, 0, 4)
-	if len(observedNonDeveloperTypes) > 0 {
-		findings = append(findings, credentialFinding(
-			"non-developer-identity-observed",
-			"Public local identity metadata includes "+strings.Join(observedNonDeveloperTypes, ", ")+" for Team "+PantheonDeveloperTeamID+". It cannot substitute for Developer ID Application or Developer ID Installer signing.",
-			"Keep the observed identity separate and make one usable Team "+PantheonDeveloperTeamID+" Developer ID Application identity and one Developer ID Installer identity available through the protected release workflow.",
-		))
-	}
-	if !checks[0].Passed {
+	if runErr == nil && !checks[0].Passed {
 		findings = append(findings, credentialFinding("developer-id-application", "A usable Team "+PantheonDeveloperTeamID+" Developer ID Application identity was not observed.", "Make one usable Team "+PantheonDeveloperTeamID+" Developer ID Application identity available through the protected release workflow."))
 	}
-	if !checks[1].Passed {
+	if runErr == nil && !checks[1].Passed {
 		findings = append(findings, credentialFinding("developer-id-installer", "A usable Team "+PantheonDeveloperTeamID+" Developer ID Installer identity was not observed.", "Make one usable Team "+PantheonDeveloperTeamID+" Developer ID Installer identity available through the protected release workflow."))
 	}
 	findings = append(findings, credentialFinding("notarization-credential", "Notarization readiness was intentionally not inspected: Ma'at does not read secrets or contact Apple in this preflight.", "Use the protected release workflow to validate one complete notarization credential set without exposing its secrets."))
@@ -84,7 +83,7 @@ func PreflightReleaseCredentials() (ReleaseCredentialPreflight, error) {
 	}
 
 	fingerprint := credentialFingerprint(identities, observedNonDeveloperTypes, runErr)
-	recoveryPlan := ProtectedReleaseRecoveryPlan(PantheonDeveloperTeamID, identities, false)
+	recoveryPlan := protectedReleaseRecoveryPlan(PantheonDeveloperTeamID, identities, false, runErr == nil)
 	floorPassed := true
 	for _, check := range checks {
 		floorPassed = floorPassed && check.Passed
@@ -109,11 +108,15 @@ func PreflightReleaseCredentials() (ReleaseCredentialPreflight, error) {
 // the protected release workflow is the only owner of key and notarization
 // material.
 func ProtectedReleaseRecoveryPlan(teamID string, identities []ReleaseSigningIdentity, notarizationObserved bool) []string {
+	return protectedReleaseRecoveryPlan(teamID, identities, notarizationObserved, true)
+}
+
+func protectedReleaseRecoveryPlan(teamID string, identities []ReleaseSigningIdentity, notarizationObserved, identityObservationComplete bool) []string {
 	steps := make([]string, 0, 4)
-	if !hasIdentity(identities, "application") {
+	if identityObservationComplete && !hasIdentity(identities, "application") {
 		steps = append(steps, "Make one usable Team "+teamID+" Developer ID Application identity available through the protected release workflow.")
 	}
-	if !hasIdentity(identities, "installer") {
+	if identityObservationComplete && !hasIdentity(identities, "installer") {
 		steps = append(steps, "Make one usable Team "+teamID+" Developer ID Installer identity available through the protected release workflow.")
 	}
 	if !notarizationObserved {

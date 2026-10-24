@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/provider"
 	"golang.org/x/sys/unix"
 )
 
@@ -21,19 +22,23 @@ const (
 // DecisionRecord is the redacted, bounded evidence for one route or completion.
 // It intentionally has no prompt, output, provider error text, or credential field.
 type DecisionRecord struct {
-	At                time.Time    `json:"at"`
-	Task              TaskClass    `json:"task"`
-	Privacy           PrivacyClass `json:"privacy"`
-	Latency           LatencyClass `json:"latency"`
-	MinContextTokens  int          `json:"min_context_tokens"`
-	RequestedOverride Lane         `json:"requested_override,omitempty"`
-	InitialLane       Lane         `json:"initial_lane,omitempty"`
-	FinalLane         Lane         `json:"final_lane,omitempty"`
-	Provider          string       `json:"provider,omitempty"`
-	Model             string       `json:"model,omitempty"`
-	Reason            string       `json:"reason,omitempty"`
-	Outcome           string       `json:"outcome"`
-	FailureCategory   string       `json:"failure_category,omitempty"`
+	ResponseFormat          provider.ResponseFormat  `json:"response_format,omitempty"`
+	Determinism             provider.DeterminismMode `json:"determinism,omitempty"`
+	EffectiveResponseFormat provider.ResponseFormat  `json:"effective_response_format,omitempty"`
+	EffectiveDeterminism    provider.DeterminismMode `json:"effective_determinism,omitempty"`
+	At                      time.Time                `json:"at"`
+	Task                    TaskClass                `json:"task"`
+	Privacy                 PrivacyClass             `json:"privacy"`
+	Latency                 LatencyClass             `json:"latency"`
+	MinContextTokens        int                      `json:"min_context_tokens"`
+	RequestedOverride       Lane                     `json:"requested_override,omitempty"`
+	InitialLane             Lane                     `json:"initial_lane,omitempty"`
+	FinalLane               Lane                     `json:"final_lane,omitempty"`
+	Provider                string                   `json:"provider,omitempty"`
+	Model                   string                   `json:"model,omitempty"`
+	Reason                  string                   `json:"reason,omitempty"`
+	Outcome                 string                   `json:"outcome"`
+	FailureCategory         string                   `json:"failure_category,omitempty"`
 }
 
 // DecisionSink receives one bounded routing or execution decision.
@@ -62,6 +67,10 @@ func (s *PrivateDecisionSink) Record(record DecisionRecord) error {
 	record.Reason = decisionReason(record.Reason)
 	record.Outcome = decisionLabel(record.Outcome)
 	record.FailureCategory = decisionLabel(record.FailureCategory)
+	record.ResponseFormat = safeResponseFormat(record.ResponseFormat)
+	record.Determinism = safeDeterminism(record.Determinism)
+	record.EffectiveResponseFormat = safeResponseFormat(record.EffectiveResponseFormat)
+	record.EffectiveDeterminism = safeDeterminism(record.EffectiveDeterminism)
 	line, err := json.Marshal(record)
 	if err != nil {
 		return fmt.Errorf("model-router: encode decision record")
@@ -286,6 +295,7 @@ func (rt *Router) recordDecision(req Request, d Decision, outcome string, cause 
 		return nil
 	}
 	rec := DecisionRecord{
+		ResponseFormat: safeResponseFormat(req.ResponseFormat), Determinism: safeDeterminism(req.Determinism),
 		At: time.Now().UTC(), Task: safeTask(req.Task), Privacy: safePrivacy(req.Privacy),
 		Latency: safeLatency(req.Latency), MinContextTokens: max(0, req.MinContextTokens),
 		RequestedOverride: safeLane(req.Override), InitialLane: safeLane(d.InitialLane),
@@ -294,6 +304,11 @@ func (rt *Router) recordDecision(req Request, d Decision, outcome string, cause 
 	}
 	if d.Provider != nil {
 		rec.Provider = d.Provider.Name()
+		rec.EffectiveResponseFormat = safeResponseFormat(req.ResponseFormat)
+		if rec.EffectiveResponseFormat == "" {
+			rec.EffectiveResponseFormat = provider.ResponseFormatText
+		}
+		rec.EffectiveDeterminism = safeDeterminism(req.Determinism)
 	}
 	if d.ProviderName != "" {
 		rec.Provider = d.ProviderName
@@ -312,6 +327,21 @@ func (rt *Router) recordDecision(req Request, d Decision, outcome string, cause 
 		return &DecisionRecordError{err: err}
 	}
 	return nil
+}
+
+func safeResponseFormat(v provider.ResponseFormat) provider.ResponseFormat {
+	switch v {
+	case provider.ResponseFormatText, provider.ResponseFormatJSONObject:
+		return v
+	}
+	return ""
+}
+
+func safeDeterminism(v provider.DeterminismMode) provider.DeterminismMode {
+	if v == provider.DeterminismBatchInvariant {
+		return v
+	}
+	return ""
 }
 
 func decisionLabel(value string) string {

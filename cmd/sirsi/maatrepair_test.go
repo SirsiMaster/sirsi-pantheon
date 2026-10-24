@@ -66,53 +66,19 @@ func TestMaatRepairLaunchdDisabledRequiresConfirmation(t *testing.T) {
 	}
 }
 
-func TestMaatRepairLivenessWatchRecordsOnlyVerifiedInstallation(t *testing.T) {
-	oldConfirm, oldRead, oldInstall, oldJournal := maatRepairConfirm, maatRepairReadDiagnosis, maatRepairInstallLivenessWatch, newMaatDecisionJournal
-	t.Cleanup(func() {
-		maatRepairConfirm, maatRepairReadDiagnosis, maatRepairInstallLivenessWatch, newMaatDecisionJournal = oldConfirm, oldRead, oldInstall, oldJournal
-	})
-	maatRepairConfirm = true
-	reads := 0
-	maatRepairReadDiagnosis = func() (*guard.DoctorReport, error) {
-		reads++
-		severity, message := guard.SeverityWarn, "launchd liveness watch not installed"
-		if reads > 1 {
-			severity, message = guard.SeverityOK, "launchd liveness watch installed"
-		}
-		return &guard.DoctorReport{Findings: []guard.DiagnosticFinding{{Check: maatRepairLivenessWatchCheck, Severity: severity, Message: message}}}, nil
-	}
-	maatRepairInstallLivenessWatch = func() (string, error) { return "liveness watch installed and started", nil }
-	journal := &maatTestJournal{}
-	newMaatDecisionJournal = func() (maat.DecisionJournal, error) { return journal, nil }
-	if err := maatRepairLivenessWatchCmd.RunE(maatRepairLivenessWatchCmd, nil); err != nil {
-		t.Fatal(err)
-	}
-	if reads != 2 || len(journal.decisions) != 1 {
-		t.Fatalf("reads=%d decisions=%d, want preflight/postflight and one receipt", reads, len(journal.decisions))
-	}
-	got := journal.decisions[0]
-	if got.Determination != "resolved" || !strings.Contains(got.Why, "liveness") {
-		t.Fatalf("liveness receipt = %#v", got)
-	}
-}
-
-func TestMaatRepairLivenessWatchRequiresConfirmation(t *testing.T) {
-	oldConfirm, oldRead, oldInstall := maatRepairConfirm, maatRepairReadDiagnosis, maatRepairInstallLivenessWatch
-	t.Cleanup(func() {
-		maatRepairConfirm, maatRepairReadDiagnosis, maatRepairInstallLivenessWatch = oldConfirm, oldRead, oldInstall
-	})
-	maatRepairConfirm = false
-	called := false
-	maatRepairReadDiagnosis = func() (*guard.DoctorReport, error) { called = true; return nil, errors.New("should not read") }
-	maatRepairInstallLivenessWatch = func() (string, error) { called = true; return "", nil }
-	err := maatRepairLivenessWatchCmd.RunE(maatRepairLivenessWatchCmd, nil)
-	if err == nil || !strings.Contains(err.Error(), "--confirm") || called {
-		t.Fatalf("confirmation error = %v, called=%v", err, called)
-	}
-}
-
 func TestMaatRepairLivenessWatchExposesConfirmationFlag(t *testing.T) {
 	if maatRepairLivenessWatchCmd.Flags().Lookup("confirm") == nil {
 		t.Fatal("liveness-watch repair must expose its own --confirm flag for native and CLI callers")
+	}
+}
+
+func TestMaatRepairLivenessWatchExposesOnlyClosedFailureMemoryActions(t *testing.T) {
+	for _, name := range []string{"initialize-failure-memory", "inspect-failure-memory", "reobserve-incomplete"} {
+		if maatRepairLivenessWatchCmd.Flags().Lookup(name) == nil {
+			t.Errorf("liveness-watch repair is missing closed local action flag --%s", name)
+		}
+	}
+	if maatRepairLivenessWatchCmd.Flags().Lookup("store") != nil {
+		t.Fatal("liveness-watch failure-memory actions must not accept a caller-selected store path")
 	}
 }

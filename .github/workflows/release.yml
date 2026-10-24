@@ -196,7 +196,7 @@ jobs:
           EXPECTED_COMMIT="$(git rev-parse "${GITHUB_SHA}^{commit}")"
           test -f "bin/SirsiPantheon-${BUILD_VERSION}-arm64.dmg"
           test -f "bin/SirsiPantheon-${BUILD_VERSION}-arm64.pkg"
-          python3 scripts/publish-release-assets.py \
+          python3 -B scripts/publish-release-assets.py \
             --version "$BUILD_VERSION" --expected-commit "$EXPECTED_COMMIT" \
             --receipt "$RUNNER_TEMP/pantheon-publication-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
 

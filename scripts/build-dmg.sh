@@ -158,7 +158,7 @@ fi
 # Package installation assigns root ownership. Normalize only this generated
 # bundle before signing: every directory traversable, resources world-readable,
 # and only the two exact MacOS entry points executable. Refuse links/types first.
-python3 "${PROJECT_ROOT}/scripts/artifact_modes.py" --bundle "${BUNDLE_DIR}"
+python3 -B "${PROJECT_ROOT}/scripts/artifact_modes.py" --bundle "${BUNDLE_DIR}"
 # Signature metadata created from here must not inherit a private builder umask.
 umask 022
 
@@ -186,7 +186,7 @@ else
 fi
 
 # Read-only mode check after signing; never repair an installed/signed bundle.
-python3 "${PROJECT_ROOT}/scripts/artifact_modes.py" --bundle "${BUNDLE_DIR}" --check
+python3 -B "${PROJECT_ROOT}/scripts/artifact_modes.py" --bundle "${BUNDLE_DIR}" --check
 
 # Verify the final assembled payload through the canonical Go engine before it
 # can cross a DMG boundary. This is non-executing inventory only: it retains

@@ -83,7 +83,7 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 	if !ok {
 		t.Fatal("Ma'at failure-memory component is missing")
 	}
-	for _, path := range []string{"internal/maat/memory.go", "internal/maat/memory_test.go"} {
+	for _, path := range []string{"internal/maat/memory.go", "internal/maat/memoryguard.go", "internal/maat/memory_test.go", "internal/maat/memoryguard_test.go"} {
 		if !contains(append(append([]string{}, memory.Source...), memory.Tests...), path) {
 			t.Fatalf("Ma'at failure-memory recipe omits canonical surface %q: %+v", path, memory)
 		}
@@ -91,6 +91,16 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 	if !contains(memory.Outputs, "pass/reject/unverifiable preflight receipt") ||
 		!contains(memory.UpgradeRecipe, "make every recovery instruction presentation data rather than executable input") {
 		t.Fatalf("Ma'at failure-memory recipe omits its fail-closed recovery contract: %+v", memory)
+	}
+	for _, boundary := range []string{
+		"open catalog leaves nonblocking before retained-FD regular-file and size checks",
+		"dispatch only the closed typed read-only active-incident guard for active exact matches; bind evaluated guard identity to embedded memoryguard.go and memory.go implementation bytes",
+		"unsupported matching guard id or version is unverifiable; never dispatch terminal or out-of-scope incidents or count them as measured checks",
+		"keep all eight authoritative operation integrations and installed qualification open; recurrence exclusion is not a host probe or new authorization",
+	} {
+		if !contains(memory.UpgradeRecipe, boundary) {
+			t.Fatalf("Ma'at failure-memory recipe omits boundary %q", boundary)
+		}
 	}
 	proposals, ok := componentsByID["maat-known-failure-proposals"]
 	if !ok {
@@ -169,7 +179,9 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 		"internal/maat/credentialpreflight.go",
 		"cmd/sirsi/maatpreflight.go",
 		"macapp/Sources/SirsiMenubar/MaatCasebookView.swift",
+		"macapp/Sources/SirsiMenubar/ReleaseWorkspaceView.swift",
 		"internal/maat/credentialpreflight_test.go",
+		"macapp/Tests/SirsiMenubarTests/CoreContractsTests.swift",
 		"scripts/verify-maat-credential-preflight-contract.sh",
 	} {
 		if !contains(append(append([]string{}, credentials.Source...), credentials.Tests...), path) {

@@ -74,8 +74,10 @@ type ExtractionResult struct {
 
 // KnowledgeItem represents an Antigravity IDE Knowledge Item.
 type KnowledgeItem struct {
+	ID         string        `json:"id,omitempty"`
 	Title      string        `json:"title"`
 	Summary    string        `json:"summary"`
+	Content    string        `json:"content,omitempty"`
 	References []KIReference `json:"references"`
 }
 
