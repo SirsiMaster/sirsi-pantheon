@@ -417,7 +417,7 @@ func openBootstrapLock(parentFD int, create bool) (int, error) {
 	}
 	fd, err := unix.Openat(parentFD, defaultLockName, flags, 0o600)
 	if err != nil {
-		return -1, err
+		return -1, fmt.Errorf("maat memory: open bootstrap lock %q relative to retained parent descriptor %d (create=%t): %w", defaultLockName, parentFD, create, err)
 	}
 	var stat unix.Stat_t
 	if err := unix.Fstat(fd, &stat); err != nil || stat.Mode&unix.S_IFMT != unix.S_IFREG || stat.Nlink != 1 || stat.Uid != uint32(os.Geteuid()) || stat.Mode&0o077 != 0 {
@@ -426,7 +426,7 @@ func openBootstrapLock(parentFD int, create bool) (int, error) {
 	}
 	if err := unix.Fsync(parentFD); err != nil {
 		_ = unix.Close(fd)
-		return -1, err
+		return -1, fmt.Errorf("maat memory: sync retained parent descriptor %d for bootstrap lock %q (create=%t): %w", parentFD, defaultLockName, create, err)
 	}
 	return fd, nil
 }
