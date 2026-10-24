@@ -1,5 +1,7 @@
 # Root relay loaded-client refresh — corrective recipe
 
+Native Ra outbox **Guided resolution** retains its selected agent/root in Ma'at; component mapping and observation/confirmation semantics live in [Relay-owned outbox observation](../../../runbooks/RELAY-OUTBOX-OBSERVATION.md). The guide may re-observe or invoke the existing confirmed same-user repair only. Service-private publisher upgrades remain operator-managed under this recipe; navigation to the guide does not authorize any lifecycle step below.
+
 Status: corrective source work after published v0.24.124; not installed proof.
 Owner: SSA integrates/releases; SSA or SHA performs one nominated host operation.
 Classification: platform-foundation, repairing an existing installed workflow.

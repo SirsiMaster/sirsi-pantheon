@@ -6,6 +6,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.130] — 2026-10-24
+
+### Corrected
+
+- Fit the native Ra reader's optional authentication probe into its existing
+  twelve-second read budget using the supported one-second probe option. Keep
+  all authoritative queue and thread reads. Distinguish failed first reads
+  from an empty fabric and retain visible retry and Ma'at recovery paths.
+- Carry the selected Ra outbox and exact root context into guided resolution.
+  Re-observe before review, consume confirmation once and retain failed or
+  unverified operation receipts. A display-only clock exposes expired evidence
+  without network polling or renewed consent; unsupported service-private
+  changes remain operator-managed.
+- Stop the optional legacy resolver before download or probing when weights
+  are absent. Preserve its accepted conf/sentinel result, default downloads
+  off and require literal opt-in for its cached serving model only. Existing
+  non-WEDGE legacy probing remains distinct from the native worker and SNE.
+
+This successor starts from the actual signed/notarized v0.24.129 release.
+Individual-source qualification is retained; combined qualification, protected
+CI, packaging and installed successor proof remain separate. No new Ma'at
+barrier, credential, model restoration, live repair or whole-fleet claim is
+included. Previous releases and failed qualification attempts are preserved.
+
 ## [0.24.129] — 2026-10-24
 
 ### Corrected

@@ -1,5 +1,5 @@
 #!/bin/bash
-# sirsi-gemma-model-resolver.sh — keep the local Gemma worker on the LARGEST,
+# sirsi-gemma-model-resolver.sh — optional legacy Gemma model selection: LARGEST,
 # MOST-ADVANCED, MOST-RECENT model that fits this machine's RAM (owner directive
 # 2026-06-12: "always make sure we have the largest most advanced and most recent").
 #
@@ -8,8 +8,9 @@
 #      (it / instruct / assistant), preferring QAT variants (quality-at-low-bits).
 #   2. Among the newest family, pick the LARGEST param size, then the HIGHEST-bit
 #      quant whose on-disk size fits available RAM with headroom.
-#   3. If not already cached, download it (background-safe).
-#   4. Write the chosen model id to ~/.sirsi/gemma-model.conf (the worker reads it).
+#   3. Downloads are disabled by default; GEMMA_RESOLVER_PREFETCH=1 permits
+#      explicit legacy prefetch only for the cached, non-WEDGE serving model.
+#   4. Write the serving model id to ~/.sirsi/gemma-model.conf for legacy clients.
 #
 # Run on demand or on a schedule; safe to re-run (idempotent). Never downgrades
 # below a known-good fallback if the network/API is unavailable.
@@ -17,7 +18,7 @@
 set -u
 CONF=$HOME/.sirsi/gemma-model.conf
 LOG=$HOME/.sirsi/gemma-model-resolver.log
-FALLBACK="mlx-community/gemma-4-12B-it-8bit"   # proven-good gemma-4, always available locally (non-gemma-4 caches removed 2026-07-02 per owner directive)
+FALLBACK="mlx-community/gemma-4-12B-it-8bit"   # compatibility fallback name; absent weights are WEDGE, not availability
 HF_CACHE=$HOME/.cache/huggingface/hub
 mkdir -p "$(dirname "$CONF")"
 log(){ echo "[$(date -u +%FT%TZ)] $*" >> "$LOG"; }
@@ -170,7 +171,7 @@ if [ -z "$MODEL" ]; then
 fi
 
 # Serve what EXISTS: if the chosen model is not on disk yet, conf points at the
-# cached fallback until the background prefetch completes — otherwise the warm
+# cached fallback; restoring missing weights is separate — otherwise the warm
 # server (and every client) blocks on a multi-GB download while the machine has
 # a perfectly good cached model (live gap 2026-07-17: conf named an uncached
 # 12B-mxfp8; the broker restore fell back to serving the 31B instead).
@@ -179,20 +180,29 @@ WEDGE=0
 if is_cached "$MODEL"; then
   echo "$MODEL" > "$CONF"; log "conf -> $MODEL"
 elif is_cached "$FALLBACK"; then
-  log "chosen $MODEL not cached yet — conf serves cached $FALLBACK until the prefetch completes"
+  log "chosen $MODEL not cached yet — conf serves cached $FALLBACK; missing weights require explicit restoration"
   echo "$FALLBACK" > "$CONF"; log "conf -> $FALLBACK"
 else
   # WEDGE: neither chosen nor fallback has weights on disk. Writing conf as
   # though a load will succeed produces a clean-looking log over a dead substrate
   # (observed live 2026-08-03T19:31Z: logged "~12.0GB on disk" with empty HF_CACHE).
   WEDGE=1
-  log "WEDGE: neither $MODEL nor $FALLBACK found in $HF_CACHE — weights absent; conf NOT updated; prefetch must complete before broker can serve"
+  log "WEDGE: neither $MODEL nor $FALLBACK found in $HF_CACHE — weights absent; explicit restoration required before broker can serve"
   if [ ! -f "$CONF" ]; then
     echo "$FALLBACK" > "$CONF"
     log "conf (wedge sentinel) -> $FALLBACK (weights absent)"
   else
     log "conf preserved at $(cat "$CONF") (wedge — weights absent)"
   fi
+fi
+
+# A name/sentinel is not a usable model. Preserve the accepted exit-0 conf
+# contract, but never let detected WEDGE reach downloads or empirical probes,
+# even when the legacy prefetch opt-in is present.
+if [ "$WEDGE" -eq 1 ]; then
+  log "WEDGE: skipped prefetch and empirical probe"
+  cat "$CONF"
+  exit 0
 fi
 
 # INVARIANT: from here on MODEL is whatever conf actually serves. Without this the
@@ -203,17 +213,22 @@ fi
 # free RAM fell 82% -> 28% (~23GB wired) inside one conduit pass.
 MODEL=$(cat "$CONF")
 
-# Warm/download via hf/huggingface-cli (background-safe; mlx will also fetch on
-# first use, but pre-warming avoids a cold first request). Resolve from the venv —
-# huggingface-cli is NOT on bare PATH; PATH-only `command -v` silently skipped
-# every prior run (grep -c 'pre-fetching' log historically returns 0).
-HF_BIN=${HF:-$HOME/.venvs/mlx/bin/hf}
-[ -x "$HF_BIN" ] || HF_BIN=$HOME/.venvs/mlx/bin/huggingface-cli
-if [ -x "$HF_BIN" ]; then
-  log "pre-fetching $MODEL (background)"
-  "$HF_BIN" download "$MODEL" >/dev/null 2>&1 &
+# Optional legacy compatibility download, never an implicit restoration policy.
+# Only literal 1 opts in, and only the cached model conf actually serves qualifies.
+# Resolve from the venv rather than bare PATH, retaining the missing-tool warning.
+if [ "${GEMMA_RESOLVER_PREFETCH:-0}" != "1" ]; then
+  log "prefetch disabled (set GEMMA_RESOLVER_PREFETCH=1 for explicit legacy opt-in)"
+elif ! is_cached "$MODEL"; then
+  log "WARN prefetch skipped: serving model is no longer cached"
 else
-  log "WARN prefetch skipped: hf/huggingface-cli not executable at $HOME/.venvs/mlx/bin — install into the venv or set HF= to the binary path"
+  HF_BIN=${HF:-$HOME/.venvs/mlx/bin/hf}
+  [ -x "$HF_BIN" ] || HF_BIN=$HOME/.venvs/mlx/bin/huggingface-cli
+  if [ -x "$HF_BIN" ]; then
+    log "pre-fetching $MODEL (explicit legacy opt-in, background)"
+    "$HF_BIN" download "$MODEL" >/dev/null 2>&1 &
+  else
+    log "WARN prefetch skipped: hf/huggingface-cli not executable at $HOME/.venvs/mlx/bin — install into the venv or set HF= to the binary path"
+  fi
 fi
 
 # ── EMPIRICAL fit test (router item 20260715-175752) ─────────────────────────
