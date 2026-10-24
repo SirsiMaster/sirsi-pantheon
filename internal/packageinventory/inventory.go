@@ -77,6 +77,7 @@ var allowed = map[string]string{
 	// methodology contract. Keep this allowlist exact: a new recipe is a
 	// deliberate payload and verifier change, never ambient bundle content.
 	"Contents/Resources/StackLab":                                           "directory",
+	"Contents/Resources/StackLab/anubis-trash-receipt-v1.json":              "regular",
 	"Contents/Resources/StackLab/apollo-sne-telemetry-v1.json":              "regular",
 	"Contents/Resources/StackLab/maat-system-one-recipe-v1.json":            "regular",
 	"Contents/Resources/StackLab/maat-pod-authority-service-recipe-v1.json": "regular",
