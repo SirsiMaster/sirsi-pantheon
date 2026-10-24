@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -22,6 +23,8 @@ var (
 	askTask      string
 	askPrivacy   string
 	askShowRoute bool
+	askRoute     bool
+	askLane      string
 )
 
 var askCmd = &cobra.Command{
@@ -55,12 +58,33 @@ func init() {
 	askCmd.Flags().StringVar(&askTask, "task", "generation", "task class for model routing: generation|judgment|extraction|embedding")
 	askCmd.Flags().StringVar(&askPrivacy, "privacy", "local-only", "privacy class: local-only|shareable")
 	askCmd.Flags().BoolVar(&askShowRoute, "show-route", false, "print the model routing decision before the answer")
+	askCmd.Flags().BoolVar(&askRoute, "route", false, "explicitly request model routing even when Doctor reports alarms")
+	askCmd.Flags().StringVar(&askLane, "lane", "", "explicit model lane override: local|remote")
 	rootCmd.AddCommand(askCmd)
 }
 
+type askRuntime struct {
+	doctor            func() (*guard.DoctorReport, error)
+	ladder            func(context.Context, string) []provider.Provider
+	newRouter         func([]provider.Provider) *modelrouter.Router
+	applicableRepairs func() int
+}
+
 func runAsk(_ *cobra.Command, args []string) error {
+	return runAskWith(args, askRuntime{
+		doctor:            guard.Doctor,
+		ladder:            provider.Ladder,
+		newRouter:         func(ladder []provider.Provider) *modelrouter.Router { return modelrouter.New(ladder) },
+		applicableRepairs: applicableRepairs,
+	})
+}
+
+func runAskWith(args []string, runtime askRuntime) error {
 	if askJSON && askFix {
 		return fmt.Errorf("--json and --fix cannot be combined: --fix performs interactive repairs; run without --json")
+	}
+	if askRoute && askFix {
+		return fmt.Errorf("--route and --fix cannot be combined: run the explicit routed answer or the requested repairs separately")
 	}
 	question := strings.TrimSpace(strings.Join(args, " "))
 	if question == "" {
@@ -71,7 +95,7 @@ func runAsk(_ *cobra.Command, args []string) error {
 	// Runs first, always, with no model. On 2026-07-27 this rung alone was
 	// sufficient for a 358-process fork storm and a 40.5 GB broker footprint —
 	// the two things that actually took the machine down.
-	report, err := guard.Doctor()
+	report, err := runtime.doctor()
 	if err != nil {
 		return fmt.Errorf("read machine state: %w", err)
 	}
@@ -88,128 +112,175 @@ func runAsk(_ *cobra.Command, args []string) error {
 		fmt.Println()
 	}
 
-	if len(alarms) > 0 {
+	if len(alarms) > 0 && !askRoute {
 		if askJSON {
 			return emitAskJSON(question, report, alarms)
 		}
-		output.Info("  [heuristic] %d measured problem(s) — no model needed:", len(alarms))
-		for _, f := range alarms {
-			label := "⚠"
-			if f.Severity >= guard.SeverityCritical {
-				label = "✘"
-			}
-			output.Info("    %s %s", label, f.Message)
-			if f.Detail != "" {
-				output.Dim("        %s", f.Detail)
-			}
-			if cmdStr := guard.RemediationFor(f); cmdStr != "" {
-				output.Dim("        fix: %s", cmdStr)
-			}
-		}
-		fmt.Println()
+		printAskAlarms(alarms)
 		output.Dim("  Answered at the heuristic rung: zero tokens, no model loaded, works offline.")
 		if askFix {
 			return runAskFix(report)
 		}
-		if n := applicableRepairs(); n > 0 {
+		if n := runtime.applicableRepairs(); n > 0 {
 			output.Dim("  %d repair(s) apply to this machine — `sirsi ask --fix` runs them and verifies each.", n)
 		}
 		return nil
 	}
+	if len(alarms) > 0 {
+		if !askJSON {
+			printAskAlarms(alarms)
+			output.Dim("  [router] explicit --route requested; measured findings remain visible.")
+			fmt.Println()
+		}
+	}
 
-	if !askJSON {
+	if !askJSON && len(alarms) == 0 {
 		output.Success("  [heuristic] no measured problems — %d signals checked, %s",
 			len(report.Findings), report.Status)
 	}
 
 	// ── Rung 2+: escalate via model router ──────────────────────────────────
-	// Only reached when measurement found nothing to say. The router applies
-	// the owner-ratified policy (task class, privacy class) and selects the
-	// cheapest qualified lane. Escalation is always announced — silently moving
-	// a user onto a paid rung would betray the whole model.
+	// Reached when measurement is quiet or the user explicitly opts in with
+	// --route. The router applies task/privacy policy and selects a qualified
+	// lane; every actual route is shown so a remote move is never silent.
 	home, _ := os.UserHomeDir()
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Second)
 	defer cancel()
 
-	ladder := provider.Ladder(ctx, home)
-	if len(ladder) == 0 {
-		if askJSON {
-			return emitAskJSON(question, report, alarms)
-		}
-		fmt.Println()
-		output.Dim("  No model configured, so no further rung to escalate to.")
-		output.Dim("  Sirsi still answered — the heuristic rung needs no model at all.")
-		return nil
-	}
-
-	rt := modelrouter.New(ladder)
+	ladder := runtime.ladder(ctx, home)
+	rt := runtime.newRouter(ladder)
 	routeReq := modelrouter.Request{
-		Task:    modelrouter.TaskClass(askTask),
-		Privacy: modelrouter.PrivacyClass(askPrivacy),
+		Task:     modelrouter.TaskClass(askTask),
+		Privacy:  modelrouter.PrivacyClass(askPrivacy),
+		Override: modelrouter.Lane(askLane),
 	}
-	decision, rerr := rt.Route(ctx, routeReq)
-	if rerr != nil {
-		if !askJSON {
-			fmt.Println()
-			output.Dim("  Model router: %v", rerr)
-			output.Dim("  Every model rung was unavailable or policy-blocked. The heuristic answer above still stands.")
-		} else {
-			return emitAskJSON(question, report, alarms)
-		}
-		return nil
-	}
-
-	if askShowRoute && !askJSON {
-		fmt.Println()
-		output.Dim("  [router] %s", decision.DecisionSummary())
-	}
-	if !askJSON {
-		fmt.Println()
-		output.Dim("  [heuristic] inconclusive → escalating to %s (%s)", decision.Lane, decision.Provider.Name())
-	}
-
-	resp, cerr := decision.Provider.Complete(ctx, provider.Request{
+	resp, decision, cerr := rt.Complete(ctx, routeReq, provider.Request{
 		System: "You are Sirsi, answering about the user's own machine. " +
 			"Be concise and concrete. If you do not have the evidence, say so plainly.",
 		Prompt:    question + "\n\nMeasured state: " + summarize(report),
 		MaxTokens: 400,
 	})
+	var recordErr *modelrouter.DecisionRecordError
+	hasRecordErr := errors.As(cerr, &recordErr)
 	if cerr != nil {
-		if !askJSON {
-			output.Dim("  [%s] failed: %v", decision.Lane, cerr)
-			output.Dim("  Every model rung was unavailable. The heuristic answer above still stands.")
-		} else {
-			return emitAskJSON(question, report, alarms)
+		if !hasRecordErr {
+			if !askJSON {
+				fmt.Println()
+				output.Dim("  [router] %s", decisionDisplay(decision))
+				output.Dim("  No model answer was produced; the heuristic findings above remain the answer.")
+			} else if err := emitAskJSONWithDecision(question, report, alarms, decision, decisionOutcome(decision)); err != nil {
+				return err
+			}
+			return nil
 		}
-		return nil
+		if !askJSON && resp.Text == "" {
+			fmt.Println()
+			output.Dim("  [router] %s", decisionDisplay(decision))
+			output.Dim("  No model answer was produced; decision evidence could not be saved.")
+			return recordErr
+		} else if askJSON && resp.Text == "" {
+			if err := emitAskJSONWithDecision(question, report, alarms, decision, decisionOutcome(decision)); err != nil {
+				return err
+			}
+			return recordErr
+		}
+	}
+
+	if !askJSON {
+		fmt.Println()
+		output.Dim("  [router] %s", decisionDisplay(decision))
+	}
+	if !askJSON {
+		fmt.Println()
+		output.Dim("  [heuristic] inconclusive → routed to %s (%s)", decision.Lane, decisionDisplay(decision))
+		if askShowRoute && decision.Rationale != "" {
+			output.Dim("  [router] %s", decision.Rationale)
+		}
 	}
 	if askJSON {
-		return emitAskModelJSON(question, report, resp)
+		if err := emitAskModelJSON(question, report, alarms, resp, decision); err != nil {
+			return err
+		}
+		return recordErr
 	}
 	fmt.Println()
 	output.Info("  %s", strings.TrimSpace(resp.Text))
 	fmt.Println()
 	output.Dim("  [%s] %s · %s · %d tokens · finish=%s",
 		resp.Tier, resp.Provider, resp.Model, resp.OutputTokens, resp.FinishReason)
-	return nil
+	return recordErr
 }
 
-func emitAskModelJSON(question string, r *guard.DoctorReport, resp provider.Response) error {
+func decisionOutcome(d modelrouter.Decision) string {
+	if d.Provider != nil || d.Lane != "" || d.FailureCategory == "canceled" {
+		return "failed"
+	}
+	return "refused"
+}
+
+func printAskAlarms(alarms []guard.DiagnosticFinding) {
+	output.Info("  [heuristic] %d measured problem(s):", len(alarms))
+	for _, f := range alarms {
+		label := "⚠"
+		if f.Severity >= guard.SeverityCritical {
+			label = "✘"
+		}
+		output.Info("    %s %s", label, f.Message)
+		if f.Detail != "" {
+			output.Dim("        %s", f.Detail)
+		}
+		if cmdStr := guard.RemediationFor(f); cmdStr != "" {
+			output.Dim("        fix: %s", cmdStr)
+		}
+	}
+}
+
+func decisionDisplay(d modelrouter.Decision) string {
+	if d.Provider == nil {
+		if d.FailureCategory != "" {
+			return "refused (" + d.FailureCategory + ")"
+		}
+		return "refused"
+	}
+	providerName := d.ProviderName
+	if providerName == "" {
+		providerName = d.Provider.Name()
+	}
+	model := d.Model
+	if model != "" {
+		providerName += "/" + model
+	}
+	text := string(d.Lane) + "/" + providerName
+	if d.FallbackReason != "" {
+		text += " (fallback: " + d.FallbackReason + ")"
+	}
+	return text
+}
+
+func emitAskModelJSON(question string, r *guard.DoctorReport, alarms []guard.DiagnosticFinding, resp provider.Response, decision modelrouter.Decision) error {
 	payload := struct {
-		Question     string `json:"question"`
-		Tier         string `json:"tier"`
-		Status       string `json:"status"`
-		Signals      int    `json:"signals"`
-		Answer       string `json:"answer"`
-		Provider     string `json:"provider"`
-		Model        string `json:"model"`
-		OutputTokens int    `json:"output_tokens"`
-		FinishReason string `json:"finish_reason"`
+		Question     string           `json:"question"`
+		Tier         string           `json:"tier"`
+		Status       string           `json:"status"`
+		Signals      int              `json:"signals"`
+		Answer       string           `json:"answer"`
+		Provider     string           `json:"provider"`
+		Model        string           `json:"model"`
+		OutputTokens int              `json:"output_tokens"`
+		FinishReason string           `json:"finish_reason"`
+		Problems     []askProblemJSON `json:"problems"`
+		Routing      askRouteJSON     `json:"routing"`
 	}{
 		Question: question, Tier: resp.Tier.String(), Status: string(r.Status),
 		Signals: len(r.Findings), Answer: strings.TrimSpace(resp.Text),
 		Provider: resp.Provider, Model: resp.Model, OutputTokens: resp.OutputTokens,
-		FinishReason: resp.FinishReason,
+		FinishReason: resp.FinishReason, Routing: askRouteProjection(decision, "completed"),
+	}
+	for _, f := range alarms {
+		payload.Problems = append(payload.Problems, askProblemJSON{Check: f.Check, Severity: f.Severity, Message: f.Message})
+	}
+	if payload.Problems == nil {
+		payload.Problems = []askProblemJSON{}
 	}
 	return json.NewEncoder(os.Stdout).Encode(payload)
 }
@@ -226,17 +297,56 @@ func summarize(r *guard.DoctorReport) string {
 }
 
 func emitAskJSON(question string, r *guard.DoctorReport, alarms []guard.DiagnosticFinding) error {
-	tier := "heuristic"
-	fmt.Printf("{\"question\":%q,\"tier\":%q,\"status\":%q,\"signals\":%d,\"problems\":[",
-		question, tier, r.Status, len(r.Findings))
-	for i, f := range alarms {
-		if i > 0 {
-			fmt.Print(",")
-		}
-		fmt.Printf("{\"check\":%q,\"severity\":%d,\"message\":%q}", f.Check, f.Severity, f.Message)
+	return emitAskJSONWithDecision(question, r, alarms, modelrouter.Decision{}, "")
+}
+
+type askRouteJSON struct {
+	RequestedOverride string `json:"requested_override,omitempty"`
+	InitialLane       string `json:"initial_lane,omitempty"`
+	FinalLane         string `json:"final_lane,omitempty"`
+	Provider          string `json:"provider,omitempty"`
+	Model             string `json:"model,omitempty"`
+	Reason            string `json:"reason,omitempty"`
+	FallbackReason    string `json:"fallback_reason,omitempty"`
+	Outcome           string `json:"outcome,omitempty"`
+	FailureCategory   string `json:"failure_category,omitempty"`
+	OverrideApplied   bool   `json:"override_applied,omitempty"`
+}
+
+func askRouteProjection(d modelrouter.Decision, outcome string) askRouteJSON {
+	projection := askRouteJSON{RequestedOverride: string(d.RequestedOverride), InitialLane: string(d.InitialLane), FinalLane: string(d.Lane),
+		Reason: d.Rationale, FallbackReason: d.FallbackReason, Outcome: outcome, FailureCategory: d.FailureCategory, OverrideApplied: d.OverrideApplied}
+	projection.Provider, projection.Model = d.ProviderName, d.Model
+	if d.Provider != nil && projection.Provider == "" {
+		projection.Provider = d.Provider.Name()
 	}
-	fmt.Println("]}")
-	return nil
+	return projection
+}
+
+func emitAskJSONWithDecision(question string, r *guard.DoctorReport, alarms []guard.DiagnosticFinding, decision modelrouter.Decision, outcome string) error {
+	tier := "heuristic"
+	payload := struct {
+		Question string           `json:"question"`
+		Tier     string           `json:"tier"`
+		Status   string           `json:"status"`
+		Signals  int              `json:"signals"`
+		Problems []askProblemJSON `json:"problems"`
+		Routing  *askRouteJSON    `json:"routing,omitempty"`
+	}{Question: question, Tier: tier, Status: string(r.Status), Signals: len(r.Findings), Problems: []askProblemJSON{}}
+	for _, f := range alarms {
+		payload.Problems = append(payload.Problems, askProblemJSON{Check: f.Check, Severity: f.Severity, Message: f.Message})
+	}
+	if outcome != "" {
+		routing := askRouteProjection(decision, outcome)
+		payload.Routing = &routing
+	}
+	return json.NewEncoder(os.Stdout).Encode(payload)
+}
+
+type askProblemJSON struct {
+	Check    string                   `json:"check"`
+	Severity guard.DiagnosticSeverity `json:"severity"`
+	Message  string                   `json:"message"`
 }
 
 // applicableRepairs counts the repair tools that say they apply to this machine

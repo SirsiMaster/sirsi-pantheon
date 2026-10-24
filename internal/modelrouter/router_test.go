@@ -9,13 +9,15 @@ import (
 
 // stubProvider is a minimal provider.Provider for routing tests.
 type stubProvider struct {
-	name          string
-	tier          provider.Tier
-	ctx           int
-	avail         bool
-	availableCall int
-	completeCall  int
-	onAvailable   func()
+	name            string
+	tier            provider.Tier
+	ctx             int
+	avail           bool
+	availableCall   int
+	completeCall    int
+	onAvailable     func()
+	completeFunc    func(context.Context, provider.Request) (provider.Response, error)
+	availabilityErr error
 }
 
 func (s *stubProvider) Name() string        { return s.name }
@@ -30,9 +32,20 @@ func (s *stubProvider) Available(_ context.Context) bool {
 	}
 	return s.avail
 }
-func (s *stubProvider) Complete(_ context.Context, req provider.Request) (provider.Response, error) {
+func (s *stubProvider) Complete(ctx context.Context, req provider.Request) (provider.Response, error) {
 	s.completeCall++
+	if s.completeFunc != nil {
+		return s.completeFunc(ctx, req)
+	}
 	return provider.Response{Text: "stub:" + s.name, Tier: s.tier, Provider: s.name}, nil
+}
+func (s *stubProvider) AvailabilityError() error { return s.availabilityErr }
+
+type discardDecisionSink struct{}
+
+func (discardDecisionSink) Record(DecisionRecord) error { return nil }
+func testRouter(ladder []provider.Provider) *Router {
+	return New(ladder).WithDecisionSink(discardDecisionSink{})
 }
 
 func localStub(name string, ctx int, avail bool) provider.Provider {
@@ -48,7 +61,7 @@ func remoteStubWithContext(name string, contextTokens int, avail bool) *stubProv
 }
 
 func TestRoute_LocalOnly_UsesLocal(t *testing.T) {
-	rt := New([]provider.Provider{localStub("local", 8192, true), remoteStub("remote", true)})
+	rt := testRouter([]provider.Provider{localStub("local", 8192, true), remoteStub("remote", true)})
 	d, err := rt.Route(context.Background(), Request{Privacy: PrivacyLocalOnly})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -59,7 +72,7 @@ func TestRoute_LocalOnly_UsesLocal(t *testing.T) {
 }
 
 func TestRoute_LocalOnly_FailsWhenLocalDown(t *testing.T) {
-	rt := New([]provider.Provider{localStub("local", 8192, false), remoteStub("remote", true)})
+	rt := testRouter([]provider.Provider{localStub("local", 8192, false), remoteStub("remote", true)})
 	_, err := rt.Route(context.Background(), Request{Privacy: PrivacyLocalOnly})
 	if err == nil {
 		t.Fatal("expected error when local-only and local is down")
@@ -67,7 +80,7 @@ func TestRoute_LocalOnly_FailsWhenLocalDown(t *testing.T) {
 }
 
 func TestRoute_Judgment_PrefersRemote(t *testing.T) {
-	rt := New([]provider.Provider{localStub("local", 8192, true), remoteStub("remote", true)})
+	rt := testRouter([]provider.Provider{localStub("local", 8192, true), remoteStub("remote", true)})
 	d, err := rt.Route(context.Background(), Request{Task: TaskJudgment, Privacy: PrivacyShareable})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -78,7 +91,7 @@ func TestRoute_Judgment_PrefersRemote(t *testing.T) {
 }
 
 func TestRoute_Judgment_FallsBackToLocalWhenRemoteDown(t *testing.T) {
-	rt := New([]provider.Provider{localStub("local", 8192, true), remoteStub("remote", false)})
+	rt := testRouter([]provider.Provider{localStub("local", 8192, true), remoteStub("remote", false)})
 	d, err := rt.Route(context.Background(), Request{Task: TaskJudgment, Privacy: PrivacyShareable})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -92,7 +105,7 @@ func TestRoute_Judgment_FallsBackToLocalWhenRemoteDown(t *testing.T) {
 }
 
 func TestRoute_Generation_PrefersLocal(t *testing.T) {
-	rt := New([]provider.Provider{localStub("local", 8192, true), remoteStub("remote", true)})
+	rt := testRouter([]provider.Provider{localStub("local", 8192, true), remoteStub("remote", true)})
 	d, err := rt.Route(context.Background(), Request{Task: TaskGeneration, Privacy: PrivacyShareable})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -103,7 +116,7 @@ func TestRoute_Generation_PrefersLocal(t *testing.T) {
 }
 
 func TestRoute_ContextGap_EscalatesToRemote(t *testing.T) {
-	rt := New([]provider.Provider{localStub("local", 4096, true), remoteStub("remote", true)})
+	rt := testRouter([]provider.Provider{localStub("local", 4096, true), remoteStub("remote", true)})
 	d, err := rt.Route(context.Background(), Request{
 		Task: TaskGeneration, Privacy: PrivacyShareable, MinContextTokens: 8192,
 	})
@@ -116,7 +129,7 @@ func TestRoute_ContextGap_EscalatesToRemote(t *testing.T) {
 }
 
 func TestRoute_ContextGap_LocalOnly_Fails(t *testing.T) {
-	rt := New([]provider.Provider{localStub("local", 4096, true)})
+	rt := testRouter([]provider.Provider{localStub("local", 4096, true)})
 	_, err := rt.Route(context.Background(), Request{
 		Task: TaskGeneration, Privacy: PrivacyLocalOnly, MinContextTokens: 8192,
 	})
@@ -126,7 +139,7 @@ func TestRoute_ContextGap_LocalOnly_Fails(t *testing.T) {
 }
 
 func TestRoute_DefaultsLocalOnly(t *testing.T) {
-	rt := New([]provider.Provider{localStub("local", 8192, true)})
+	rt := testRouter([]provider.Provider{localStub("local", 8192, true)})
 	d, err := rt.Route(context.Background(), Request{})
 	if err != nil {
 		t.Fatalf("default request should route to local: %v", err)
@@ -254,7 +267,7 @@ func TestRoute_SelectsFirstAvailableQualifiedProvider(t *testing.T) {
 			for i, p := range tt.providers {
 				providers[i] = p
 			}
-			response, decision, err := New(providers).Complete(context.Background(), tt.request, provider.Request{})
+			response, decision, err := testRouter(providers).Complete(context.Background(), tt.request, provider.Request{})
 			if tt.wantError {
 				if err == nil {
 					t.Fatal("expected routing error")
@@ -305,7 +318,7 @@ func TestRoute_InvalidRequestFailsBeforeProbing(t *testing.T) {
 			tt.edit(&request)
 			local := &stubProvider{name: "local", tier: provider.TierLocal, ctx: 8192, avail: true}
 			remote := remoteStubWithContext("remote", 16384, true)
-			_, _, err := New([]provider.Provider{local, remote}).Complete(context.Background(), request, provider.Request{})
+			_, _, err := testRouter([]provider.Provider{local, remote}).Complete(context.Background(), request, provider.Request{})
 			if err == nil {
 				t.Fatal("expected malformed request to fail closed")
 			}
@@ -325,7 +338,7 @@ func TestRoute_CanceledContextDoesNotProbeOrRoute(t *testing.T) {
 	local := &stubProvider{name: "local", tier: provider.TierLocal, ctx: 8192, avail: true}
 	remote := remoteStubWithContext("remote", 16384, true)
 
-	_, _, err := New([]provider.Provider{local, remote}).Complete(ctx, Request{
+	_, _, err := testRouter([]provider.Provider{local, remote}).Complete(ctx, Request{
 		Task: TaskGeneration, Privacy: PrivacyShareable,
 	}, provider.Request{})
 	if err == nil {
@@ -348,7 +361,7 @@ func TestRoute_CancellationDuringProbeDoesNotRoute(t *testing.T) {
 	}
 	remote := remoteStubWithContext("remote", 16384, true)
 
-	_, _, err := New([]provider.Provider{local, remote}).Complete(ctx, Request{
+	_, _, err := testRouter([]provider.Provider{local, remote}).Complete(ctx, Request{
 		Task: TaskGeneration, Privacy: PrivacyShareable,
 	}, provider.Request{})
 	if err == nil {
