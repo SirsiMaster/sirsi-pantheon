@@ -70,9 +70,12 @@ func TestMaintenanceInstallerStagesAndRechecksCapturedBytes(t *testing.T) {
 		download: func(_ context.Context, _ string, path string) error {
 			return os.WriteFile(path, data, 0600)
 		},
-		inspect: func(context.Context, string, string) (setup.LegacyAppCapability, error) {
+		inspect: func(context.Context, string, string) (maintenancePackageInspection, error) {
 			inspections++
-			return setup.LegacyAppCapability{Schema: 1, Native: true, Protocol: "root-relay-local-app-v1", Release: "0.24.200", Implementation: strings.Repeat("a", 64)}, nil
+			return maintenancePackageInspection{Capability: setup.LegacyAppCapability{Schema: 1, Native: true, Protocol: "root-relay-local-app-v1", Release: "0.24.200", Implementation: strings.Repeat("a", 64)},
+				EngineSHA256: strings.Repeat("b", 64), InstallerIdentity: "Developer ID Installer: Sirsi Technologies Inc. (9D382WV988)", Notarization: "Notarized Developer ID",
+				TargetBundleID: "ai.sirsi.pantheon", TargetAppPath: "/Applications/Pantheon.app", TargetHelperPath: "/usr/local/libexec/sirsi-pantheon/sirsi",
+				Dependencies: []string{"/Applications/Pantheon.app", "/usr/local/libexec/sirsi-pantheon/sirsi"}}, nil
 		},
 	}
 	plan, err := stageMaintenanceInstaller(context.Background(), "0.24.200", ops)
@@ -129,9 +132,9 @@ func TestMaintenanceInstallerTrustRefusalNeverProducesOpenSelection(t *testing.T
 					}
 					return os.WriteFile(dest, data, 0600)
 				},
-				inspect: func(context.Context, string, string) (setup.LegacyAppCapability, error) {
+				inspect: func(context.Context, string, string) (maintenancePackageInspection, error) {
 					calls++
-					return setup.LegacyAppCapability{}, errors.New("inert " + failure + " refused")
+					return maintenancePackageInspection{}, errors.New("inert " + failure + " refused")
 				},
 			}
 			plan, err := stageMaintenanceInstaller(context.Background(), "0.24.200", ops)

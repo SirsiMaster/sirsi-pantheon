@@ -22,27 +22,70 @@ import (
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/updater"
+	modversion "github.com/SirsiMaster/sirsi-pantheon/internal/version"
 	"github.com/spf13/cobra"
 	"golang.org/x/sys/unix"
 )
 
 type maintenanceInstallerPlan struct {
-	Schema         int    `json:"schema"`
-	Release        string `json:"release"`
-	Package        string `json:"package"`
-	SHA256         string `json:"sha256"`
-	Device         uint64 `json:"device"`
-	Inode          uint64 `json:"inode"`
-	Bytes          int64  `json:"bytes"`
-	Implementation string `json:"implementation"`
+	Schema            int                           `json:"schema"`
+	Release           string                        `json:"release"`
+	Package           string                        `json:"package"`
+	PackageURL        string                        `json:"package_url"`
+	SHA256            string                        `json:"sha256"`
+	Device            uint64                        `json:"device"`
+	Inode             uint64                        `json:"inode"`
+	Bytes             int64                         `json:"bytes"`
+	Implementation    string                        `json:"implementation"`
+	EngineSHA256      string                        `json:"engine_sha256"`
+	AppUpdateIdentity *maintenanceAppUpdateIdentity `json:"app_update_identity,omitempty"`
+	InstallerIdentity string                        `json:"installer_identity"`
+	Notarization      string                        `json:"notarization"`
+	TargetBundleID    string                        `json:"target_bundle_id"`
+	TargetAppPath     string                        `json:"target_app_path"`
+	TargetHelperPath  string                        `json:"target_helper_path"`
+	Dependencies      []string                      `json:"dependencies"`
 }
+
+type maintenanceAppUpdateIdentity struct {
+	EmbeddedHelperSHA256 string          `json:"embedded_helper_sha256"`
+	AppCDHash            string          `json:"app_cdhash"`
+	CandidateVersion     modversion.Info `json:"candidate_version"`
+}
+
+type maintenancePackageInspection struct {
+	Capability           setup.LegacyAppCapability
+	EngineSHA256         string
+	EmbeddedHelperSHA256 string
+	AppCDHash            string
+	CandidateVersion     modversion.Info
+	InstallerIdentity    string
+	Notarization         string
+	TargetBundleID       string
+	TargetAppPath        string
+	TargetHelperPath     string
+	Dependencies         []string
+}
+
 type maintenanceInstallerOps struct {
 	release  func() (*updater.Release, error)
 	download func(context.Context, string, string) error
-	inspect  func(context.Context, string, string) (setup.LegacyAppCapability, error)
+	inspect  func(context.Context, string, string) (maintenancePackageInspection, error)
 }
 
 var maintenanceVersionRE = regexp.MustCompile(`^0\.[0-9]+\.[0-9]+$`)
+
+func sameMaintenanceStrings(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
+}
 
 func maintenancePackageAsset(current string, rel *updater.Release) (*updater.Asset, error) {
 	if rel == nil {
@@ -101,29 +144,39 @@ func maintenanceDownload(ctx context.Context, endpoint, dest string) error {
 	return errors.Join(writeErr, syncErr, closeErr)
 }
 
-func inspectMaintenancePKG(ctx context.Context, path, release string) (setup.LegacyAppCapability, error) {
-	var cap setup.LegacyAppCapability
+func inspectMaintenancePKG(ctx context.Context, path, release string) (maintenancePackageInspection, error) {
+	return inspectPantheonPKG(ctx, path, release, true)
+}
+
+func inspectAppUpdatePKG(ctx context.Context, path, release string) (maintenancePackageInspection, error) {
+	return inspectPantheonPKG(ctx, path, release, false)
+}
+
+func inspectPantheonPKG(ctx context.Context, path, release string, requireCurrentEngine bool) (maintenancePackageInspection, error) {
+	var inspection maintenancePackageInspection
+	const installerIdentity = "Developer ID Installer: Sirsi Technologies Inc. (9D382WV988)"
+	const notarization = "Notarized Developer ID"
 	// These are normal read-only package/signature tools. No installer or
 	// script payload is executed. The one helper probe runs unprivileged.
 	signature, err := maintenanceInstallerRead(ctx, "/usr/sbin/pkgutil", "--check-signature", path)
-	if err != nil || !strings.Contains(string(signature), "Developer ID Installer: Sirsi Technologies Inc. (9D382WV988)") {
-		return cap, errors.New("Installer signature is not the canonical Sirsi identity; do not open.")
+	if err != nil || !strings.Contains(string(signature), installerIdentity) {
+		return inspection, errors.New("Installer signature is not the canonical Sirsi identity; do not open.")
 	}
 	assessment, err := maintenanceInstallerRead(ctx, "/usr/sbin/spctl", "--assess", "--type", "install", "--verbose=2", path)
-	if err != nil || !strings.Contains(string(assessment), "source=Notarized Developer ID") {
-		return cap, errors.New("Normal Installer trust/notarization assessment refused the package.")
+	if err != nil || !strings.Contains(string(assessment), notarization) {
+		return inspection, errors.New("Normal Installer trust/notarization assessment refused the package.")
 	}
 	work, err := os.MkdirTemp(filepath.Dir(path), "inspect-")
 	if err != nil {
-		return cap, err
+		return inspection, err
 	}
 	expanded := filepath.Join(work, "expanded")
 	// All private scratch is retained. No failure removes an unknown replacement.
 	if _, err := maintenanceInstallerRead(ctx, "/usr/sbin/pkgutil", "--expand-full", path, expanded); err != nil {
-		return cap, err
+		return inspection, err
 	}
 	if err := maintenancePackageInfo(filepath.Join(expanded, "PackageInfo"), release); err != nil {
-		return cap, err
+		return inspection, err
 	}
 	payload := filepath.Join(expanded, "Payload")
 	for dir, want := range map[string][]string{
@@ -133,58 +186,111 @@ func inspectMaintenancePKG(ctx context.Context, path, release string) (setup.Leg
 	} {
 		entries, err := os.ReadDir(dir)
 		if err != nil || len(entries) != len(want) {
-			return cap, errors.New("Package has an unexpected app/system payload namespace")
+			return inspection, errors.New("Package has an unexpected app/system payload namespace")
 		}
 		for i, entry := range entries {
 			if entry.Name() != want[i] || entry.Type()&os.ModeSymlink != 0 {
-				return cap, errors.New("Package payload path differs from the normal Installer contract")
+				return inspection, errors.New("Package payload path differs from the normal Installer contract")
 			}
 		}
 	}
 	app := filepath.Join(payload, "Applications/Pantheon.app")
 	if _, err := maintenanceInstallerRead(ctx, "/usr/bin/codesign", "--verify", "--strict", "--deep", "-R", `=anchor apple generic and certificate leaf[subject.OU] = "9D382WV988" and identifier "ai.sirsi.pantheon"`, app); err != nil {
-		return cap, errors.New("Package app signature refused")
+		return inspection, errors.New("Package app signature refused")
+	}
+	var appCDHash string
+	if !requireCurrentEngine {
+		appCDHash, err = signedCodeDirectoryHash(ctx, app)
+		if err != nil {
+			return inspection, err
+		}
 	}
 	pkgHelper := filepath.Join(expanded, "Payload/usr/local/libexec/sirsi-pantheon/sirsi")
 	appHelper := filepath.Join(expanded, "Payload/Applications/Pantheon.app/Contents/MacOS/sirsi")
 	var expected string
+	var candidateVersion modversion.Info
+	var cap setup.LegacyAppCapability
 	for _, helper := range []string{pkgHelper, appHelper} {
 		h, err := maintenanceInstallerFileHash(helper, false)
 		if err != nil {
-			return cap, err
+			return inspection, err
 		}
 		if expected != "" && h.SHA256 != expected {
-			return cap, errors.New("Package app and protected helper are not the same payload.")
+			return inspection, errors.New("Package app and protected helper are not the same payload.")
 		}
 		expected = h.SHA256
 		if _, err := maintenanceInstallerRead(ctx, "/usr/bin/codesign", "--verify", "--strict", "-R", `=anchor apple generic and certificate leaf[subject.OU] = "9D382WV988" and identifier "sirsi"`, helper); err != nil {
-			return cap, errors.New("Package helper signature refused.")
+			return inspection, errors.New("Package helper signature refused.")
+		}
+		if !requireCurrentEngine {
+			versionBytes, err := maintenanceInstallerRead(ctx, helper, "version", "--json")
+			if err != nil {
+				return inspection, errors.New("Published package helper has no readable version/schema identity")
+			}
+			var candidate modversion.Info
+			if json.Unmarshal(versionBytes, &candidate) != nil || strings.TrimPrefix(candidate.Version, "v") != release || candidate.Binary != "sirsi" ||
+				candidate.Dirty || candidate.Commit == "" || candidate.Commit == "none" || candidate.RouterSchemaMax <= 0 {
+				return inspection, errors.New("Published package helper version/schema identity is incomplete or incompatible")
+			}
+			candidate.Path = ""
+			if candidateVersion.Binary != "" && candidateVersion != candidate {
+				return inspection, errors.New("Package app and protected helper version/schema identities differ")
+			}
+			candidateVersion = candidate
 		}
 		raw, err := maintenanceInstallerRead(ctx, helper, "launchd", "legacy-maintenance-app-capabilities")
 		if err != nil {
-			return cap, errors.New("Published package does not contain the maintenance bridge; recheck after a compatible release.")
+			return inspection, errors.New("Published package does not contain the maintenance bridge; recheck after a compatible release.")
 		}
 		var next setup.LegacyAppCapability
 		if json.Unmarshal(raw, &next) != nil || next.Schema != 1 || !next.Native || next.Protocol != "root-relay-local-app-v1" || next.Release != release || len(next.Implementation) != 64 {
-			return cap, errors.New("Package helper is not compatible with this maintenance workflow.")
+			return inspection, errors.New("Package helper is not compatible with this maintenance workflow.")
 		}
 		if cap.Schema != 0 && cap != next {
-			return cap, errors.New("Package helper contracts differ.")
+			return inspection, errors.New("Package helper contracts differ.")
 		}
 		cap = next
 	}
-	if cap != legacyAppCapability() {
-		return cap, errors.New("The exact normal PKG does not contain this app's helper protocol; no older release is offered")
+	currentCapability := legacyAppCapability()
+	if cap.Schema != currentCapability.Schema || cap.Protocol != currentCapability.Protocol || !cap.Native ||
+		(requireCurrentEngine && cap != currentCapability) {
+		return inspection, errors.New("The exact normal PKG does not contain this app's helper protocol; no older release is offered")
 	}
-	current, err := setup.CurrentPackagedMaatEngine()
+	if requireCurrentEngine {
+		current, err := setup.CurrentPackagedMaatEngine()
+		if err != nil {
+			return inspection, err
+		}
+		currentBytes, err := maintenanceInstallerFileHash(current, false)
+		if err != nil || currentBytes.SHA256 != expected {
+			return inspection, errors.New("The exact PKG and running canonical app do not carry the same engine; no alternate installer offered")
+		}
+	}
+	inspection = maintenancePackageInspection{Capability: cap, EngineSHA256: expected, EmbeddedHelperSHA256: expected, AppCDHash: appCDHash,
+		CandidateVersion: candidateVersion, InstallerIdentity: installerIdentity,
+		Notarization: notarization, TargetBundleID: "ai.sirsi.pantheon", TargetAppPath: "/Applications/Pantheon.app",
+		TargetHelperPath: "/usr/local/libexec/sirsi-pantheon/sirsi",
+		Dependencies:     []string{"/Applications/Pantheon.app", "/usr/local/libexec/sirsi-pantheon/sirsi"}}
+	return inspection, nil
+}
+
+func signedCodeDirectoryHash(ctx context.Context, path string) (string, error) {
+	output, err := maintenanceInstallerRead(ctx, "/usr/bin/codesign", "--display", "--verbose=4", path)
 	if err != nil {
-		return cap, err
+		return "", errors.New("signed code identity readback failed")
 	}
-	currentBytes, err := maintenanceInstallerFileHash(current, false)
-	if err != nil || currentBytes.SHA256 != expected {
-		return cap, errors.New("The exact PKG and running canonical app do not carry the same engine; no alternate installer offered")
+	for _, line := range strings.Split(string(output), "\n") {
+		if !strings.HasPrefix(line, "CDHash=") {
+			continue
+		}
+		value := strings.TrimPrefix(line, "CDHash=")
+		decoded, decodeErr := hex.DecodeString(value)
+		if decodeErr == nil && len(decoded) == 20 && strings.ToLower(value) == value {
+			return value, nil
+		}
+		break
 	}
-	return cap, nil
+	return "", errors.New("signed code identity has no canonical CDHash")
 }
 
 func maintenanceInstallerRead(ctx context.Context, exe string, args ...string) ([]byte, error) {
@@ -265,7 +371,7 @@ func stageMaintenanceInstaller(ctx context.Context, current string, ops maintena
 	if err := updater.VerifyChecksum(path, asset.Name, []byte(strings.TrimPrefix(asset.Digest, "sha256:")+"  "+asset.Name+"\n")); err != nil {
 		return result, err
 	}
-	capability, err := ops.inspect(ctx, path, strings.TrimPrefix(rel.TagName, "v"))
+	inspection, err := ops.inspect(ctx, path, strings.TrimPrefix(rel.TagName, "v"))
 	if err != nil {
 		return result, err
 	}
@@ -277,8 +383,20 @@ func stageMaintenanceInstaller(ctx context.Context, current string, ops maintena
 		return result, errors.New("Inspected package differs from the selected published bytes; no Installer handoff")
 	}
 	result.Schema = 1
-	result.Release = capability.Release
-	result.Implementation = capability.Implementation
+	result.Release = inspection.Capability.Release
+	result.PackageURL = asset.BrowserDownloadURL
+	result.Implementation = inspection.Capability.Implementation
+	result.EngineSHA256 = inspection.EngineSHA256
+	if inspection.CandidateVersion.Binary != "" {
+		result.AppUpdateIdentity = &maintenanceAppUpdateIdentity{EmbeddedHelperSHA256: inspection.EmbeddedHelperSHA256,
+			AppCDHash: inspection.AppCDHash, CandidateVersion: inspection.CandidateVersion}
+	}
+	result.InstallerIdentity = inspection.InstallerIdentity
+	result.Notarization = inspection.Notarization
+	result.TargetBundleID = inspection.TargetBundleID
+	result.TargetAppPath = inspection.TargetAppPath
+	result.TargetHelperPath = inspection.TargetHelperPath
+	result.Dependencies = append([]string(nil), inspection.Dependencies...)
 	return result, nil
 }
 
@@ -313,11 +431,14 @@ func newMaintenanceInstallerCmd(ops maintenanceInstallerOps) *cobra.Command {
 			if current.SHA256 != plan.SHA256 || current.Device != plan.Device || current.Inode != plan.Inode || current.Bytes != plan.Bytes {
 				return errors.New("Selected installer changed; check the release again")
 			}
-			cap, e := ops.inspect(ctx, plan.Package, plan.Release)
+			inspection, e := ops.inspect(ctx, plan.Package, plan.Release)
 			if e != nil {
 				return e
 			}
-			if cap.Implementation != plan.Implementation {
+			if inspection.Capability.Implementation != plan.Implementation || inspection.EngineSHA256 != plan.EngineSHA256 ||
+				inspection.InstallerIdentity != plan.InstallerIdentity || inspection.Notarization != plan.Notarization ||
+				inspection.TargetBundleID != plan.TargetBundleID || inspection.TargetAppPath != plan.TargetAppPath ||
+				inspection.TargetHelperPath != plan.TargetHelperPath || !sameMaintenanceStrings(inspection.Dependencies, plan.Dependencies) {
 				return errors.New("Installer helper protocol changed")
 			}
 			final, e := maintenanceInstallerFileHash(plan.Package, true)

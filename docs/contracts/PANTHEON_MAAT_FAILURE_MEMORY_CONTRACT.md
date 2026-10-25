@@ -214,7 +214,7 @@ loaded-label observation. An incomplete or unknown result requires inspection
 and a fresh review; it is never automatically replayed.
 
 This is source-only, not qualification or installed-operation evidence. The
-remaining seven operational rows, other frontend projections, native installed
+remaining six operational rows, other frontend projections, native installed
 behavior, and the original historical qualification gap remain open. No SNE
 source authority or shared interchange schema changes.
 
@@ -223,8 +223,35 @@ the canonical running engine, ordinary HOME, `LocalPlistContent`,
 `InstallLocal`, and `InspectLocalWatch`. It does not resolve a checkout or
 reuse the legacy router-backed `run` path. The CLI status route reports success
 only for an exact local schedule verified as loaded. This source integration
-remains unqualified; it does not close the other seven operational rows or
+remains unqualified; whole-app update has a separate unqualified source
+candidate, and the liveness-watch candidate does not close the other six
+operational rows or
 claim installed behavior.
+
+### Whole-app update source candidate (2026-10-25)
+
+The existing macOS `sirsi update --app` and `--cli` route now stages the
+published normal PKG through the existing maintenance-installer owner and binds
+its release tuple, bytes/file identity, installer signer/notarization, app and
+helper targets, dependency set, current installed identity, Store UUID, user
+identity, and complete Ma'at preflight receipt. It retains and reads back that
+receipt, projects it through the canonical validator using the opaque
+`StoredPreflightReceipt`, and passes that handle to the Store attempt admission.
+Under the Store lock, admission verifies the exact committed receipt bytes,
+rechecks the registry and action, then writes a create-only whole-app attempt
+containing the typed receipt reference before any Installer handoff.
+
+Opening the exact PKG in macOS Installer is a handoff, not proof that
+installation completed. The adapter reads back the app version/bundle,
+app/helper signatures, helper bytes and required paths; only an exact fresh
+match closes the retained attempt. Missing, failed, or ambiguous readback stays
+unresolved and later update invocations perform readback only without replaying
+Installer. The original O2 source slice did not cover raw self-update or
+alternate installer routes, did not establish installed/runtime qualification,
+and did not meet the contract's original rollback criterion. The separate raw
+self-update source continuation below adds only the existing `SafeReplace`
+route. O2/O3 installed qualification and O4's full rollback acceptance remain
+open.
 
 ## Privacy, publication and recovery ownership
 

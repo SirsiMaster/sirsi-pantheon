@@ -228,6 +228,11 @@ func (s *Store) BeginRawSelfUpdateAttempt(manifest RawSelfUpdateManifest, stored
 	} else if !errors.Is(err, ErrNoIncompleteLivenessWatchAttempt) {
 		return RawSelfUpdateAttempt{}, err
 	}
+	if _, err := s.pendingAppUpdateAttemptLocked(); err == nil {
+		return RawSelfUpdateAttempt{}, errors.New("maat memory: unresolved whole-app Installer handoff must be inspected before raw self-update")
+	} else if !errors.Is(err, ErrNoIncompleteAppUpdateAttempt) {
+		return RawSelfUpdateAttempt{}, fmt.Errorf("maat memory: shared attempt history is unverifiable: %w", err)
+	}
 	if err := s.ensureNoConflictingRawSelfUpdateLocked(); err != nil {
 		return RawSelfUpdateAttempt{}, err
 	}
