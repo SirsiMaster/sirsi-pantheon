@@ -11,7 +11,9 @@ import (
 // service. This is the same read/join as GET /api/fabric. One-shot activity is
 // explicitly unseeded: no invented persistent transition history.
 func newRouterFabricCommand(read func() (ledger.FabricBoard, error)) *cobra.Command {
-	return &cobra.Command{Use: "fabric", Short: "Read the unified task/message/runtime/host FabricBoard", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+	// Keep the machine-output contract even when this command is executed
+	// standalone: Cobra otherwise appends usage to stdout after a read refusal.
+	return &cobra.Command{Use: "fabric", SilenceUsage: true, Short: "Read the unified task/message/runtime/host FabricBoard", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		value, err := read()
 		if err != nil {
 			return fmt.Errorf("fabric unavailable: %w", err)

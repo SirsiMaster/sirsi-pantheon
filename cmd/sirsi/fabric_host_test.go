@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/apollo"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/swaphygiene"
+	"io"
 	"math"
 	"testing"
 	"time"
@@ -41,10 +43,11 @@ func TestRouterFabricCommandUsesSelectedWriterAndRefusesUnavailable(t *testing.T
 	for _, fail := range []bool{false, true} {
 		out := &bytes.Buffer{}
 		calls := 0
+		cause := errors.New("inert unavailable")
 		cmd := newRouterFabricCommand(func() (ledger.FabricBoard, error) {
 			calls++
 			if fail {
-				return ledger.FabricBoard{}, errors.New("inert unavailable")
+				return ledger.FabricBoard{}, cause
 			}
 			return ledger.FabricFrom(ledger.Snapshot{GeneratedAt: "2026-10-25T12:00:00Z"}, nil, "fixture"), nil
 		})
@@ -57,10 +60,24 @@ func TestRouterFabricCommandUsesSelectedWriterAndRefusesUnavailable(t *testing.T
 		}
 		if fail {
 			if err == nil || out.Len() != 0 {
-				t.Fatal("unavailable command rendered zero counts")
+				t.Fatalf("unavailable command must return error with empty stdout: err=%v stdout=%q", err, out.String())
+			}
+			if !errors.Is(err, cause) {
+				t.Fatalf("unavailable command lost reader cause: %v", err)
 			}
 		} else if err != nil || !bytes.Contains(out.Bytes(), []byte(`"activity_seeded":false`)) {
 			t.Fatal("selected writer/one-shot coverage lost", err, out.String())
+		}
+		if !fail {
+			decoder := json.NewDecoder(bytes.NewReader(out.Bytes()))
+			var board ledger.FabricBoard
+			if err := decoder.Decode(&board); err != nil {
+				t.Fatalf("selected writer did not receive a JSON board: %v", err)
+			}
+			var extra any
+			if err := decoder.Decode(&extra); err != io.EOF {
+				t.Fatalf("selected writer must contain exactly one JSON value: %v", err)
+			}
 		}
 	}
 }

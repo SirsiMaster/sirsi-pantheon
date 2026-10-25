@@ -1,3 +1,7 @@
+## Fabric standalone machine-output correction
+
+- Apply the existing root's SilenceUsage policy to the standalone Fabric command factory. Preserve reader refusal/cause and selected-writer checks; strengthen exact-one-JSON success assertions. Source-only, unrun.
+
 ## Fabric embedded renderer correction
 
 - Embed and serve the exact Fabric JavaScript asset through the existing closed asset route; strengthen actual HTTP status/header/source-byte assertions without removing label checks. Source-only, unrun.

@@ -143,3 +143,18 @@ assertions, and rejects undeclared suffix/case/child asset names.
 The b9 failed dashboard row remains failed and unchanged; later gates were unrun.
 This correction is source-only until Main qualification. A real browser readback
 of the served page/modules is required before full Fabric frontend acceptance.
+
+### Standalone CLI machine-output correction (8ac qualification)
+
+The failed standalone command fixture detected nonempty stdout on reader refusal;
+it did not establish zero-valued JSON emission. The pinned Cobra ExecuteC path
+prints usage through the selected stdout when SilenceUsage is unset, even after
+RunE returns before encoding. The real root already sets SilenceUsage. The Fabric
+factory now sets the same policy explicitly, so standalone and attached command
+execution both preserve a clean machine-output channel. Reader errors still
+propagate with their cause; selected stderr/root error rendering is unchanged.
+
+The original empty-stdout/refusal/single-read checks remain. Diagnostics now name
+the actual output contract, assert errors.Is(readerCause), and verify successful
+selected output is exactly one JSON value. No actual CLI/runtime success is
+claimed by this source correction; Main owns the next full qualification.
