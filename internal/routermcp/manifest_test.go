@@ -11,8 +11,9 @@ import (
 	"testing"
 )
 
-// The golden is the released 0fd8463 standalone contract, not a manifest built
-// from the new registrations. Exercise actual protocol framing and every schema.
+// The golden preserves the released 0fd8463 standalone contract except the
+// explicit optional exact-id router_claim extension. Exercise real framing and
+// every schema; do not generate this golden from the registrations under test.
 func TestReleasedBareManifestParity(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	s := newServer("", t.TempDir()) // no registration or store access

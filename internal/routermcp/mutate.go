@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/completionproof"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/mcp"
@@ -146,10 +147,17 @@ func (s *Server) registerMutateTools() {
 		},
 	}, s.handleAcknowledge)
 
+	claimAdditionalProperties := false
 	s.protocol.RegisterTool(mcp.Tool{
 		Name:        "router_claim",
-		Description: "Claim the oldest open item addressed to you for exclusive work (a lease). Requires this server's registered thread.",
-		InputSchema: mcp.InputSchema{Type: "object", Properties: map[string]mcp.SchemaField{}},
+		Description: "Claim an exact open item addressed to you when id is supplied; otherwise claim the oldest eligible inbox item. Uses the existing 15-minute lease and requires this server's registered thread.",
+		InputSchema: mcp.InputSchema{
+			Type: "object",
+			Properties: map[string]mcp.SchemaField{
+				"id": {Type: "string", Description: "Optional exact item id addressed to this agent. Omit to claim the next eligible inbox item; an unavailable exact id never falls back to another item."},
+			},
+			AdditionalProperties: &claimAdditionalProperties,
+		},
 	}, s.handleClaim)
 
 	s.protocol.RegisterTool(mcp.Tool{
@@ -216,7 +224,22 @@ func (s *Server) handleAcknowledge(args map[string]interface{}) (*mcp.ToolResult
 	return textResult(fmt.Sprintf("Acknowledged %s", id)), nil
 }
 
-func (s *Server) handleClaim(_ map[string]interface{}) (*mcp.ToolResult, error) {
+func (s *Server) handleClaim(args map[string]interface{}) (*mcp.ToolResult, error) {
+	// The protocol publishes the closed schema; enforce it here too because
+	// tool calls do not automatically validate their argument schema.
+	for key := range args {
+		if key != "id" {
+			return errResult("router_claim: only the optional id argument is supported"), nil
+		}
+	}
+	var id string
+	if value, supplied := args["id"]; supplied {
+		var ok bool
+		id, ok = value.(string)
+		if !ok || id == "" || id != strings.TrimSpace(id) || strings.ContainsFunc(id, unicode.IsControl) {
+			return errResult("router_claim: supplied id must be a nonempty exact string without surrounding whitespace or control characters"), nil
+		}
+	}
 	agent, err := s.reg.gate()
 	if err != nil {
 		return errResult(err.Error()), nil
@@ -226,12 +249,28 @@ func (s *Server) handleClaim(_ map[string]interface{}) (*mcp.ToolResult, error) 
 		return errResult(err.Error()), nil
 	}
 	defer closeF()
-	lease, err := f.Store().ClaimNext(agent, claimTTL)
+	var lease *routerstore.Lease
+	if id == "" {
+		lease, err = f.Store().ClaimNext(agent, claimTTL)
+		// An empty next-item inbox is a normal result. Exact-item errors below
+		// remain refusals and never select or normalize another item.
+		if errors.Is(err, routerstore.ErrNoWork) {
+			return textResult("No open item to claim. Inbox is clear."), nil
+		}
+	} else {
+		lease, err = f.Store().ClaimItem(agent, id, claimTTL)
+	}
 	if err != nil {
 		return errResult(fmt.Sprintf("claim: %v", err)), nil
 	}
 	if lease == nil {
+		if id != "" {
+			return errResult("router_claim: exact item is not available; no other item was selected"), nil
+		}
 		return textResult("No open item to claim. Inbox is clear."), nil
+	}
+	if id != "" && lease.ItemID != id {
+		return errResult("router_claim: exact claim returned a different item; no local session claim was recorded"), nil
 	}
 	s.reg.recordClaim(lease.ItemID, lease.Token, lease.Expires)
 	return textResult(fmt.Sprintf("Claimed %s (lease expires %s). Work it, then router_close it with a result.",
