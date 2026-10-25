@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/apollo"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/swaphygiene"
 	"io"
 	"math"
 	"testing"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/apollo"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/swaphygiene"
 )
 
 func TestFabricHostKnownZeroAndUnavailableAreDistinct(t *testing.T) {

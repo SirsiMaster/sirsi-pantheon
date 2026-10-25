@@ -2,12 +2,12 @@ package ledger
 
 import (
 	"fmt"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"sort"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
 
 // FabricBoard is the single cross-surface contract. Work and messages remain

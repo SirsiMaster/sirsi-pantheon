@@ -1,8 +1,9 @@
 package main
 
 import (
-	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 )
 
 // Compatibility callers use the same read-only canonical readiness projection.
