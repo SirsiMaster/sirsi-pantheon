@@ -139,6 +139,17 @@ func TestFabricGenerationMixedExistingConsumersShareFactsAndNoReacquisition(t *t
 	for _, lane := range legacy.Fleet {
 		serviceSeen = serviceSeen || lane.Agent == "horus"
 		orphanSeen = orphanSeen || lane.Agent == "orphan"
+		for _, status := range []string{"done", "in-progress", "pending", "blocked"} {
+			if _, known := lane.Counts[status]; !known {
+				t.Fatalf("legacy captured lane %s omitted known-zero status %s", lane.Agent, status)
+			}
+		}
+		if lane.Agent == "orphan" && !reflect.DeepEqual(lane.Counts, map[string]int{"done": 0, "in-progress": 0, "pending": 1, "blocked": 0}) {
+			t.Fatalf("pending-only legacy lane needs explicit 0 / 1 completed output: %+v", lane.Counts)
+		}
+		if lane.Agent == "horus" && !reflect.DeepEqual(lane.Counts, map[string]int{"done": 0, "in-progress": 0, "pending": 0, "blocked": 0}) {
+			t.Fatalf("taskless legacy service needs explicit 0 / 0 completed output: %+v", lane.Counts)
+		}
 		if lane.Agent == "orphan" && (lane.Registered.Router || lane.State != "UNROUTABLE" || lane.Consumer == nil || lane.Consumer.Armed || lane.Consumer.Loop != "unknown") {
 			t.Fatal("missing/stale consumer promoted to registered/healthy")
 		}

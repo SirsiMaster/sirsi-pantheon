@@ -30,7 +30,8 @@ func fabricFacts(s Snapshot) FabricFacts {
 	phases := map[string]*PhaseGroup{}
 	var order []string
 	for _, a := range s.Agents {
-		lane := FabricLaneFacts{Counts: map[string]int{}, Inbox: len(a.Items)}
+		// These are known zeros from a captured lane, not an unavailable read.
+		lane := FabricLaneFacts{Counts: map[string]int{"done": 0, "in-progress": 0, "pending": 0, "blocked": 0}, Inbox: len(a.Items)}
 		lanePhases := map[string]*FabricPhaseFacts{}
 		for _, task := range a.Tasks {
 			status := task.Status
