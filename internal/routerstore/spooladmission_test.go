@@ -180,12 +180,6 @@ func TestSpoolAdmissionAndResponseShareOneCallBudget(t *testing.T) {
 		_, callErr := tr.RoundTrip(req) // no caller deadline: transport owns one shared budget
 		result <- callErr
 	}()
-	select {
-	case <-startedBody: // RoundTrip created its budget and began reading this request.
-	case <-time.After(time.Second):
-		t.Fatal("RoundTrip did not begin")
-	}
-	started := time.Now()
 	t.Cleanup(func() {
 		cancel()
 		select {
@@ -194,6 +188,12 @@ func TestSpoolAdmissionAndResponseShareOneCallBudget(t *testing.T) {
 			t.Error("RoundTrip did not finish during fixture cleanup")
 		}
 	})
+	select {
+	case <-startedBody: // RoundTrip created its budget and began reading this request.
+	case <-time.After(time.Second):
+		t.Fatal("RoundTrip did not begin")
+	}
+	started := time.Now()
 	time.Sleep(180 * time.Millisecond)
 	if err := os.Remove(marker); err != nil {
 		t.Fatal(err)
