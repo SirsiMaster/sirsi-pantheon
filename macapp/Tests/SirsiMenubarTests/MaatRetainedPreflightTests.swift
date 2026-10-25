@@ -132,4 +132,34 @@ final class MaatRetainedPreflightTests: XCTestCase {
         let pushedAndReturnedMount = operations.failureMemoryReceipts
         XCTAssertTrue(firstMount === pushedAndReturnedMount)
     }
+    @MainActor
+    func testEngineOwnsInjectedWorkflowReadersAndDefaultsRemainIndependent() async throws {
+        let local = MaatLocalPreventionModel(capture: { _ in
+            XCTFail("Constructing engine ownership must not launch a workflow")
+            return CommandExecution(exitCode: 1, childState: .notStarted)
+        }, historyRun: { _, _ in
+            XCTFail("Constructing engine ownership must not read history")
+            return .init(data: Data(), exitStatus: 1, timedOut: false, launchError: nil)
+        })
+        let bytes = try response()
+        let expected = try XCTUnwrap(MaatCapturedPreflightIdentity(evidence: entry().evidence)).arguments
+        let receipts = MaatPreflightReceiptReadStore(read: { args in
+            XCTAssertEqual(args, expected)
+            return .init(data: bytes, exitStatus: 0, timedOut: false, launchError: nil)
+        })
+        let operations = MaatCaseOperationStore(localPreventions: local, failureMemoryReceipts: receipts)
+        let engine = SirsiEngine(maatCaseOperations: operations)
+        XCTAssertTrue(engine.maatCaseOperations === operations)
+        XCTAssertTrue(engine.maatCaseOperations.localPreventions === local)
+        XCTAssertTrue(engine.maatCaseOperations.failureMemoryReceipts === receipts)
+        let defaults = MaatCaseOperationStore()
+        XCTAssertFalse(defaults.localPreventions === local)
+        XCTAssertFalse(defaults.failureMemoryReceipts === receipts)
+        XCTAssertTrue(defaults.records.isEmpty)
+        await engine.maatCaseOperations.failureMemoryReceipts.inspect(entry())
+        XCTAssertNotNil(receipts.state(entry()).receipt)
+        XCTAssertFalse(receipts.state(entry()).busy)
+        XCTAssertTrue(engine.maatCaseOperations.localPreventions === local)
+    }
+
 }

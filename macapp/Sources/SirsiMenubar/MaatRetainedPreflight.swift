@@ -142,6 +142,11 @@ struct MaatRetainedPreflightReadState {
 // Owned by the engine's existing Casebook operation store, so a custom
 // navigation push/pop cannot discard the previously verified receipt.
 @MainActor final class MaatPreflightReceiptReadStore: ObservableObject {
+    typealias Read = @Sendable ([String]) async -> SirsiEngine.JSONCommandRead
+    private let readCommand: Read
+    init(read: @escaping Read = { await SirsiEngine.runJSONRead(args: $0) }) {
+        self.readCommand = read
+    }
     @Published private(set) var states: [String: MaatRetainedPreflightReadState] = [:]
     func state(_ entry: MaatCase) -> MaatRetainedPreflightReadState { states[entry.id + "|" + entry.evidence] ?? MaatRetainedPreflightReadState() }
     func inspect(_ entry: MaatCase) async { await read(entry, recovering: false) }
@@ -149,7 +154,7 @@ struct MaatRetainedPreflightReadState {
     private func read(_ entry: MaatCase, recovering: Bool) async {
         guard let identity = MaatCapturedPreflightIdentity(evidence: entry.evidence), !state(entry).busy else { return }
         var pending = state(entry); pending.busy = true; states[entry.id + "|" + entry.evidence] = pending
-        let read = await SirsiEngine.runJSONRead(args: recovering ? identity.recoveryArguments : identity.arguments)
+        let read = await readCommand(recovering ? identity.recoveryArguments : identity.arguments)
         var terminal = state(entry); terminal.finish(read, entry: entry, cancelled: Task.isCancelled)
         states[entry.id + "|" + entry.evidence] = terminal
     }
