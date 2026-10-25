@@ -5,9 +5,10 @@ const vm = require('node:vm');
 const source = fs.readFileSync(__dirname+'/ui/app.js','utf8');
 
 function fixture(get) {
- const scope = {state:{view:'host'}, get, render(){}, ring:()=>'', rel:()=>'',
+ const scope = {state:{view:'host'}, PantheonFabric:require('./ui/fabric.js'), get, render(){}, ring:()=>'', rel:()=>'',
   esc:s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))};
  vm.createContext(scope);
+ vm.runInContext(source.slice(source.indexOf('function fabricReceipt('),source.indexOf('function fabricHeadlines(')),scope);
  vm.runInContext(source.slice(source.indexOf('function memoryDiagnostics('),source.indexOf('var RENDER=')),scope);
  return scope;
 }
@@ -15,7 +16,9 @@ function fixture(get) {
 test('actual Host diagnostic is explicit, ranked, escaped and usable without router data',async()=>{
  const calls=[];
  const scope=fixture(async path=>{calls.push(path);return {top:[{name:'<fixture-worker>',pid:123,rss_bytes:2097152}]}});
- assert.match(scope.vHost({}),/Inspect memory/);
+ const initial=scope.vHost({});
+ assert.match(initial,/Inspect memory/);
+ assert.match(initial,/Fabric unavailable — no observation received/);
  assert.deepEqual(calls,[]); // Rendering/ordinary refresh never samples processes.
  let click;
  scope.document={addEventListener(name,fn){assert.equal(name,'click');click=fn}};
