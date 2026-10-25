@@ -75,7 +75,11 @@
       "tests": [
         "internal/mcp/maat_history_test.go",
         "internal/mcp/maat_knowledge_reads_test.go",
+        "internal/mcp/maat_membership_test.go",
+        "internal/maat/memory_test.go",
+        "internal/maat/memoryguard_test.go",
         "internal/dashboard/maat_history_test.go",
+        "internal/dashboard/maat_membership_test.go",
         "internal/dashboard/maat_history_ui_test.cjs",
         "internal/dashboard/spa_contract_test.go",
         "cmd/sirsi/dashboard_maat_history_test.go",

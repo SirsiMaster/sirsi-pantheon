@@ -108,3 +108,36 @@ destination while already viewing Ma’at.
 Core architecture/source review by Astra and Main runtime qualification remain
 required. No test, build, lint, service, model or user-data action was run by the
 author. The original failed packet and frozen2ee source remain unchanged.
+
+## G04-C3 exact transport membership corrective
+
+The inherited joined-string checks admitted composite argument keys such as
+`query kind` / `mode query`, and composite enum strings such as
+`conversation|search` / `open|reviewed`. Both transport adapters now build an
+exact set of the existing literal keys and use exact switches for the existing
+classification/resolution values. Empty/default and supported literal behavior
+are preserved; no new source/privacy or archive policy is introduced.
+
+New `internal/mcp/maat_membership_test.go` and
+`internal/dashboard/maat_membership_test.go` cover composite, prefix, suffix and
+substring keys/values through the actual handlers. Private-home/journal/producer
+counters must remain zero for malformed requests. Companion tests retain all
+supported enum literals, defaults and HTTP query aliases. These are authored,
+unrun fixtures; existing fixture files and original80-call tests are unchanged.
+Core batch logic and legacy private-directory mode policy are untouched.
+Independent review and Main normal/race qualification are required for C3.
+
+## Independent whole-core fixture-root correction
+
+Main's whole `internal/maat` run exposed legacy test-owned temporary store roots
+that were not explicitly0700 under child umask022. This child extracts only the
+`privateMemoryStoreRoot` helper, the OpenStore fixture-root substitutions and
+`TestStorePrivateFixtureDoesNotRelaxPublicRootRefusal` from donor
+`855037c6ca04f33191f7026ad0ac2413c88c0383`. The helper changes permissions only on
+its fresh test-owned directory. The new negative requires an explicit0755 caller
+root to remain refused and unchanged. No production file/mode policy, skipped
+case, test selection or old assertion is changed. G04's existing
+`ProjectFailureMemoryPreflight` API calls remain unchanged; donor855's retained
+receipt API adaptations are deliberately excluded. Later G02 composition may
+deduplicate the identical helper. Full internal/maat normal/race under022 remains
+Main-owned qualification; no author execution or legacy failure relabeling.

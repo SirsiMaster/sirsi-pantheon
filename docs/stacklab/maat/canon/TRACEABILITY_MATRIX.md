@@ -47,3 +47,14 @@ corrective child adds bounded shared candidate qualification in
 `history_query_batch.go`, cursor-v4 validation and charged-work/cancel fixtures;
 original80-call MCP tests are unchanged. This core change is an independent
 Astra review subject, not a passed-runtime or full original-scope claim.
+
+G04-C3 exact transport key/enum membership maps to both `maat_reads.go` adapters
+and their new `maat_membership_test.go` fixtures. Malformed composites and
+prefix/suffix/substrings must fail before any private reader call; literal/default
+compatibility is retained. Source corrective only; Main review/execution pending.
+
+The same child corrects the independently observed legacy memory test-root
+setup in `memory_test.go`/`memoryguard_test.go`, using the exact855 private helper
+and public0755 no-chmod refusal fixture without its API adaptations. Production
+mode policy and all old assertions remain unchanged; whole-core normal/race
+under022 is required rather than narrowing away these tests.

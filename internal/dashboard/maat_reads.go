@@ -153,10 +153,14 @@ func parseMaatKnowledgeRead(args map[string]interface{}) (MaatKnowledgeReadReque
 	if r.Mode != "search" && r.Mode != "detail" && r.Mode != "history" {
 		return r, errors.New("mode must be search, detail or history")
 	}
-	if r.Query.Classification != "" && !strings.Contains("|conversation|search|note|document|unclassified|", "|"+r.Query.Classification+"|") {
+	switch r.Query.Classification {
+	case "", "conversation", "search", "note", "document", "unclassified":
+	default:
 		return r, errors.New("invalid classification")
 	}
-	if resolution != "" && !strings.Contains("|open|reviewed|accepted|rejected|", "|"+resolution+"|") {
+	switch resolution {
+	case "", "open", "reviewed", "accepted", "rejected":
+	default:
 		return r, errors.New("invalid resolution")
 	}
 	if r.Mode == "search" {
@@ -181,8 +185,12 @@ func parseMaatKnowledgeRead(args map[string]interface{}) (MaatKnowledgeReadReque
 }
 
 func knownMaatArgs(args map[string]interface{}, keys string) error {
-	for k := range args {
-		if !strings.Contains(" "+keys+" ", " "+k+" ") {
+	allowed := make(map[string]struct{})
+	for _, key := range strings.Fields(keys) {
+		allowed[key] = struct{}{}
+	}
+	for key := range args {
+		if _, ok := allowed[key]; !ok {
 			return errors.New("unknown Ma'at read argument")
 		}
 	}
