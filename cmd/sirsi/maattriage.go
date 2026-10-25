@@ -29,7 +29,7 @@ var maatTriageCmd = &cobra.Command{
 	Short: "Observe this Mac and prepare a Ma'at System One health screen",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := validateMaatDiagnosticRequestFlags(); err != nil {
+		if err := validateMaatDiagnosticRequestFlags(cmd); err != nil {
 			return err
 		}
 		if maatDiagnosticRequestMetadataSelected() {

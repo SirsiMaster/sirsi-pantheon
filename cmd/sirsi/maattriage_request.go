@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 
+	"github.com/spf13/cobra"
+
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 )
@@ -17,14 +19,14 @@ var maatTriageRequestCursor string
 func maatDiagnosticRequestMetadataSelected() bool {
 	return maatTriagePrepareRequest != "" || maatTriageReadRequest != "" || maatTriageResolveRequest != "" || maatTriageInspectRequests
 }
-func validateMaatDiagnosticRequestFlags() error {
+func validateMaatDiagnosticRequestFlags(cmd *cobra.Command) error {
 	for _, name := range []string{"prepare-record-request", "record-request", "read-record-request", "resolve-record-request"} {
-		flag := maatTriageCmd.Flags().Lookup(name)
+		flag := cmd.Flags().Lookup(name)
 		if flag.Changed && flag.Value.String() == "" {
 			return errors.New("explicit diagnostic request identity must not be empty")
 		}
 	}
-	if !maatTriageInspectRequests && (maatTriageCmd.Flags().Changed("request-limit") || maatTriageCmd.Flags().Changed("request-cursor")) {
+	if !maatTriageInspectRequests && (cmd.Flags().Changed("request-limit") || cmd.Flags().Changed("request-cursor")) {
 		return errors.New("request continuation options require --inspect-record-requests")
 	}
 	if maatTriageInspectRequests && (maatTriageRequestLimit < 1 || maatTriageRequestLimit > 128) {
