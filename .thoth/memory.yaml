@@ -1,4 +1,10 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
+# Current release preparation 2026-10-25: candidate0.24.137 derives from exact
+# Main1f227096/treea1977180 on public136eff2. Qualified976 normal/race names each,
+# strict Swift Release and160Swift passes with explicit skips; not whole-product
+# or installed completion. Canon RELEASE_0_24_137_PLAN.md governs this increment.
+# Signing/package/catalogue/tag/publication remain pending actual receipts.
+# Historical identity/statistics below retain their original dates and scopes.
 # Read this FIRST before any source files.
 # Source statistics (binary/module/test/line/command counts) are DERIVED and
 # git-ignored: see .thoth/stats.generated.yaml, refreshed by `sirsi thoth sync`.

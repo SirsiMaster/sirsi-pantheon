@@ -10,26 +10,40 @@ unrel=[p for p in secs if p.startswith('## [Unreleased]')]
 versioned=[p for p in secs if not p.startswith('## [Unreleased]')]
 released='\n'.join(versioned)
 def bullets(b):
-    out=[];cur=[]
+    out=[];cur=[];plain=False
     for line in b.split('\n'):
         if line.startswith('- '):
             if cur: out.append('\n'.join(cur))
-            cur=[line]
-        elif cur and (line.startswith('  ') or line.strip()==''):
-            cur.append(line)
+            cur=[line];plain=False
         elif line.startswith('#'):
             if cur: out.append('\n'.join(cur)); cur=[]
+            plain=False
+        elif not line.strip():
+            if plain and cur:
+                out.append('\n'.join(cur));cur=[];plain=False
+            elif cur:
+                cur.append(line)
+        elif cur and line.startswith('  '):
+            cur.append(line)
+        elif plain:
+            cur.append('  '+line)
+        else:
+            if cur: out.append('\n'.join(cur))
+            cur=['- '+line];plain=True
     if cur: out.append('\n'.join(cur))
     return [b.rstrip() for b in out]
+def normalized(b):
+    return re.sub(r'\W+',' ',b).strip().lower()
+released_keys={normalized(b) for b in bullets(released)}
 new=[];seen=set()
 for blk in unrel:
     for b in bullets(blk):
-        key=re.sub(r'\W+',' ',b[:70]).strip().lower()
-        if key and key not in seen and key not in re.sub(r'\W+',' ',released).lower():
+        key=normalized(b)
+        if key and key not in seen and key not in released_keys:
             seen.add(key); new.append(b)
 assert new, "no new bullets"
 sec='## [%s] — %s\n\n%s\n'%(ver,datetime.date.today().isoformat(),'\n\n'.join(new))
-open('CHANGELOG.md','w').write(preamble+'## [Unreleased]\n\n'+sec+'\n'+'\n'.join(versioned) if versioned else preamble+'## [Unreleased]\n\n'+sec)
+open('CHANGELOG.md','w').write(preamble+'## [Unreleased]\n\n'+sec+'\n'+''.join(versioned) if versioned else preamble+'## [Unreleased]\n\n'+sec)
 open('VERSION','w').write(ver+'\n')
 # stacklab canon changelog: this release's entry titles under the newest heading
 p='docs/stacklab/pantheon-pt/canon/CHANGELOG.md'; t=open(p).read()
