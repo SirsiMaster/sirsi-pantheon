@@ -71,6 +71,9 @@ func TestSearchHistoryProjectsUpdaterLinksBeforeFilteringAndWindow(t *testing.T)
 			var rows []maat.Decision
 			appendRow := func(row maat.Decision) {
 				t.Helper()
+				// Append normalizes a value copy; pin the same canonical host
+				// before retaining the independent in-memory comparison rows.
+				row.Host = "fixture"
 				if err := journal.Append(row); err != nil {
 					t.Fatal(err)
 				}

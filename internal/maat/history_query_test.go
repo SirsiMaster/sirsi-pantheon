@@ -253,6 +253,66 @@ func TestQueryHistoryRetainsBoundedCandidatesAndChargesMaterialization(t *testin
 	t.Fatal("bounded materialization failed to make finite progress")
 }
 
+func TestQueryHistoryDefersResidualMaterializationAndRetainsSelectedPage(t *testing.T) {
+	journal := &FileDecisionJournal{Path: filepath.Join(t.TempDir(), "decisions.jsonl")}
+	for index := 0; index < 4; index++ {
+		appendHistoryFixtures(t, journal, historyFixtureScreen(t,
+			time.Date(2026, 10, 1, 0, index, 0, 0, time.UTC).Format(time.RFC3339Nano), "screen:residual:"+strconv.Itoa(index)))
+	}
+	file, err := os.Open(journal.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	const limit, rowsPerRead = 3, 4
+	state := &historyCursor{Version: historyCursorVersion, Snapshot: historySnapshotID(journal.Path, info), QueryKey: "residual-budget", Phase: "scan", Limit: limit}
+	done, _, _, scanErr := scanHistoryChunk(context.Background(), time.Now().Add(time.Second), file, state,
+		defaultHistoryByteBudget, 100, HistoryScopeSystemOne, "", nil, nil, nil)
+	closeErr := file.Close()
+	if scanErr != nil || closeErr != nil || !done || len(state.Candidates) != limit+1 {
+		t.Fatalf("prepare bounded selected references: done=%v scan=%v close=%v state=%+v", done, scanErr, closeErr, state)
+	}
+	// Leave two physical rows in the link scan. They consume half of the
+	// four-row request before its three-row selected page is materialized.
+	state.Phase, state.Offset, state.Links = "links", state.Candidates[1].Order.Offset, makeHistoryLinkRefs(state.Candidates)
+	third := state.Candidates[2]
+	cursor, err := encodeHistoryCursor(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := HistoryQuery{Scope: HistoryScopeSystemOne, QueryKey: state.QueryKey, Limit: limit, Cursor: cursor, RowBudget: rowsPerRead, TimeBudget: time.Second}
+	partial, err := journal.QueryHistory(query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if partial.Coverage != HistoryCoveragePartial || len(partial.Candidates) != 0 || partial.Cursor == "" || partial.NextPageCursor != "" || partial.HasMore || partial.ScannedRecords > rowsPerRead {
+		t.Fatalf("residual budget published a short complete page: %+v", partial)
+	}
+	resumed, err := decodeHistoryCursor(partial.Cursor)
+	if err != nil || resumed == nil || resumed.Phase != "materialize" || len(resumed.Candidates) != limit+1 || resumed.Candidates[2] != third || resumed.After != nil {
+		t.Fatalf("continuation lost the pending third candidate or advanced the page: %+v / %v", resumed, err)
+	}
+	query.Cursor = partial.Cursor
+	complete, err := journal.QueryHistory(query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if complete.Coverage != HistoryCoverageComplete || len(complete.Candidates) != limit || complete.Candidates[2].Decision.Evidence != "screen:residual:1" || complete.MatchCount != 4 || !complete.HasMore || complete.NextPageCursor == "" || complete.ScannedRecords > rowsPerRead {
+		t.Fatalf("fresh four-row budget did not materialize the full three-case page: %+v", complete)
+	}
+	// Full-budget insufficiency retains the separate atomic short-page
+	// contract; it must not turn into a continuation that cannot progress.
+	query.RowBudget = 1
+	short, err := journal.QueryHistory(query)
+	if err != nil || short.Coverage != HistoryCoverageComplete || len(short.Candidates) != 1 || short.ScannedRecords != 1 || !short.HasMore {
+		t.Fatalf("fresh tiny budget lost atomic short-page progress: %+v / %v", short, err)
+	}
+}
+
 func TestHistoryMaterializationChargesOneAtomicBundleAndDefersRest(t *testing.T) {
 	journal := &FileDecisionJournal{Path: filepath.Join(t.TempDir(), "decisions.jsonl")}
 	appendHistoryFixtures(t, journal,

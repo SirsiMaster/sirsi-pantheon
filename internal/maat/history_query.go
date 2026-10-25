@@ -344,6 +344,12 @@ func (j *FileDecisionJournal) QueryHistory(query HistoryQuery) (HistoryPage, err
 				}
 				return HistoryPage{}, err
 			}
+			if limited && (remainingBytes < query.ByteBudget || remainingRows < query.RowBudget) {
+				// Earlier phases consumed this request's budget. Keep every
+				// selected reference and retry materialization with a fresh
+				// request instead of publishing this residual-budget prefix.
+				break
+			}
 			page.Coverage = HistoryCoverageComplete
 			page.Integrity = cursorIntegrity(state)
 			page.MatchCount = state.Seen
