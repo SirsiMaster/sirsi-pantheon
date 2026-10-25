@@ -1,0 +1,67 @@
+{
+  "schema": "maat-g04.semantic-negatives.v1",
+  "status": "AUTHORED_UNRUN",
+  "instructions": "Main materializes each exact production-only replacement as a fresh Go overlay / separate browser source copy; original tests remain immutable. Normal compiler success is required before assertion failure counts. Restore original source between rows; no live sources or models.",
+  "controls": [
+    {
+      "id": "restore-mcp-window-before-filter",
+      "kind": "compiled-go",
+      "production_file": "internal/mcp/maat_reads.go",
+      "source_sha256": "578da2441185a468bbb709ccc3e31c59e8be94447eee57ac9024063da316a082",
+      "replace": "result, err := casebook.SearchHistory(file, q)",
+      "with_text": "result, err := casebook.SearchHistory(file, q)\n rows, recentErr := file.Recent(1000)\n if err == nil { err=recentErr; result.View=casebook.Search(rows,q.Query) }",
+      "expected_occurrences": 1,
+      "package": "./internal/mcp",
+      "selector": "^TestMaatHistoryMCPFindsOlderMatchBeforeWindow$",
+      "expected": "compiles; selected causal assertion fails; no skip/build-error acceptance"
+    },
+    {
+      "id": "restore-dashboard-window-before-filter",
+      "kind": "compiled-go",
+      "production_file": "cmd/sirsi/dashboard.go",
+      "source_sha256": "d4d2386c7a827813523c62e19ec4196dedcb98f4ffbe3f13111602cd0720b49e",
+      "replace": "return casebook.SearchHistory(journal, query)",
+      "with_text": "rows, readErr := journal.Recent(query.Limit)\n return casebook.HistorySearchResult{View:casebook.Search(rows,query.Query),Window:casebook.HistoryWindow{Coverage:\"complete\"}},readErr",
+      "expected_occurrences": 1,
+      "package": "./cmd/sirsi",
+      "selector": "^TestDashboardCanonicalHistoryProducerBeforeWindow$",
+      "expected": "compiles; selected causal assertion fails; no skip/build-error acceptance"
+    },
+    {
+      "id": "drop-tui-generation-fence",
+      "kind": "compiled-go",
+      "production_file": "internal/tui/screen_activity.go",
+      "source_sha256": "f46d0b525872a541f94cb3d9796abb18de02d9ada9ce31331d26d0444c37164e",
+      "replace": "if m.generation != s.maatGeneration {",
+      "with_text": "if false {",
+      "expected_occurrences": 1,
+      "package": "./internal/tui",
+      "selector": "^TestMaatHistoryTUIStaleSuccessFailureAndCancellation$",
+      "expected": "compiles; selected causal assertion fails; no skip/build-error acceptance"
+    },
+    {
+      "id": "drop-browser-stale-abort-fence",
+      "kind": "browser-controller",
+      "production_file": "internal/dashboard/ui/maat-history.js",
+      "source_sha256": "badd7b4512d250a1a8c58f738858871a9eea58a2423a40e122628961a2bcfb44",
+      "replace": "if(disposed||mine!==generation||signal.aborted)return;",
+      "with_text": "if(disposed)return;",
+      "expected_occurrences": 2,
+      "package": "node:test",
+      "selector": "late success and failure cannot overwrite latest committed page",
+      "expected": "compiles; selected causal assertion fails; no skip/build-error acceptance"
+    },
+    {
+      "id": "discard-archive-search-cursor",
+      "kind": "compiled-go",
+      "production_file": "internal/mcp/maat_reads.go",
+      "source_sha256": "578da2441185a468bbb709ccc3e31c59e8be94447eee57ac9024063da316a082",
+      "replace": "return knowledge.LoadPageContext(ctx, home, r.Query)",
+      "with_text": "r.Query.Cursor=\"\"\n return knowledge.LoadPageContext(ctx, home, r.Query)",
+      "expected_occurrences": 1,
+      "package": "./internal/mcp",
+      "selector": "^TestMaatKnowledgeMCPCanonicalSearchDetailHistoryAndPrivacy$",
+      "expected": "compiles; selected causal assertion fails; no skip/build-error acceptance"
+    }
+  ]
+}

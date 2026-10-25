@@ -17,6 +17,12 @@ generation/cancellation/retained-continuation fixtures. Qualification and the
 production-only truncate-before-filter negative remain Main-owned and unrun;
 no release, installed-state or broader Ma'at completion follows from this source.
 
+G04 bounded MCP/Horus/TUI history and canonical archive read surfaces are mapped in
+`G04_BOUNDED_SURFACES.md` and recipe component `maat-bounded-history-read-surfaces`.
+The 2,012-record private-journal, same-snapshot links, partial/empty distinctions,
+archive cursor/privacy and stale/cancel ownership fixtures are authored but unrun.
+No G01/G02 learning workflow or full original-scope completion is claimed.
+
 | Requirement | Source | Verification/evidence | State |
 |---|---|---|---|
 | Assessments preserve facts and explanation | `internal/maat/`, `docs/qa/MAAT_SYSTEM_ONE_CATALOG.md` | focused Ma'at tests and receipts | source-bound; current evidence required |

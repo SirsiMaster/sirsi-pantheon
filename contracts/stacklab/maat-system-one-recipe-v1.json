@@ -19,6 +19,57 @@
   },
   "components": [
     {
+      "id": "maat-bounded-history-read-surfaces",
+      "source": [
+        "internal/mcp/maat_reads.go",
+        "internal/mcp/tools.go",
+        "internal/dashboard/maat.go",
+        "internal/dashboard/maat_reads.go",
+        "internal/dashboard/server.go",
+        "cmd/sirsi/dashboard.go",
+        "internal/dashboard/pages.go",
+        "internal/dashboard/ui.go",
+        "internal/dashboard/ui/maat-history.js",
+        "internal/tui/maat_history.go",
+        "internal/tui/screen_activity.go",
+        "internal/tui/contracts.go",
+        "internal/tui/command.go",
+        "internal/tui/console.go",
+        "internal/tui/runner.go"
+      ],
+      "tests": [
+        "internal/mcp/maat_history_test.go",
+        "internal/mcp/maat_knowledge_reads_test.go",
+        "internal/dashboard/maat_history_test.go",
+        "internal/dashboard/maat_history_ui_test.cjs",
+        "internal/dashboard/spa_contract_test.go",
+        "cmd/sirsi/dashboard_maat_history_test.go",
+        "internal/tui/maat_history_test.go",
+        "internal/tui/console_test.go",
+        "internal/dashboard/testdata/maat-g04-negative-controls.json"
+      ],
+      "inputs": [
+        "canonical snapshot-bound casebook HistoryQuery before page limit",
+        "canonical archive SearchQuery/Detail/HistoryPage with existing privacy projection",
+        "optional bounded typed transport args; absolute current CLI; caller context where supported"
+      ],
+      "outputs": [
+        "unchanged default root contracts plus truthful bounded coverage/count/cursor metadata",
+        "actual Continue/Load older/Retry/Restart and canonical archive Detail/History controls",
+        "partial with no provisional cases, explicit unavailable vs complete empty",
+        "generation-owned commits; no PATH fallback or second database"
+      ],
+      "writes": [],
+      "upgrade_recipe": [
+        "retain snapshot/query cursor and same-snapshot links in canonical core",
+        "preserve default tool and GET shapes with additive optional args",
+        "never infer whole-query totals from page summaries or after-cursor counts",
+        "keep sensitivity before projection and forbid ingestion/repair authority in read adapters",
+        "qualify the real 2012-row private-journal and archive fixtures plus production-only negatives before acceptance",
+        "see docs/stacklab/maat/canon/G04_BOUNDED_SURFACES.md; source candidate, broader original obligations remain open"
+      ]
+    },
+    {
       "id": "maat-local-metadata-liveness-watch",
       "source": ["internal/liveness/localwatch.go", "internal/liveness/localinstall_unix.go", "cmd/sirsi/livenesswatchcmd.go", "cmd/sirsi/maatrepair_liveness.go", "docs/LOCAL_LIVENESS_WATCH.md"],
       "tests": ["internal/liveness/localwatch_test.go", "internal/liveness/localinstall_darwin_test.go", "cmd/sirsi/livenesswatch_local_test.go", "cmd/sirsi/maatrepair_liveness_test.go"],

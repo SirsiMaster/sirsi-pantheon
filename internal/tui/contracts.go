@@ -1,5 +1,10 @@
 package tui
 
+import (
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/casebook"
+)
+
 // Contract types — the exact shapes of the merged `sirsi <verb> --json` outputs
 // the console reads (PR #139: vitals, scan, ghosts, activity; plus diagnose).
 // These mirror the producer structs (internal/guard, cmd/sirsi) field-for-field
@@ -186,22 +191,26 @@ type maatSystemOneVerdict struct {
 }
 
 type maatCase struct {
-	ID            string                `json:"id"`
-	Time          string                `json:"time"`
-	Kind          string                `json:"kind"`
-	Category      string                `json:"category"`
-	Status        string                `json:"status"`
-	Priority      string                `json:"priority"`
-	Requester     string                `json:"requester"`
-	Resource      string                `json:"resource"`
-	Affected      string                `json:"affected"`
-	Determination string                `json:"determination"`
-	Assessed      string                `json:"assessed"`
-	Why           string                `json:"why"`
-	Evidence      string                `json:"evidence"`
-	Resolution    string                `json:"resolution"`
-	NextAction    *maatResolutionPath   `json:"next_action"`
-	SystemOne     *maatSystemOneVerdict `json:"system_one"`
+	VerifiedRepairEvidence       string                  `json:"verified_repair_evidence,omitempty"`
+	RepairOutcomeEvidence        string                  `json:"repair_outcome_evidence,omitempty"`
+	PendingRepairAttemptEvidence string                  `json:"pending_repair_attempt_evidence,omitempty"`
+	SystemOneCalibration         *maat.CalibrationRecord `json:"system_one_calibration,omitempty"`
+	ID                           string                  `json:"id"`
+	Time                         string                  `json:"time"`
+	Kind                         string                  `json:"kind"`
+	Category                     string                  `json:"category"`
+	Status                       string                  `json:"status"`
+	Priority                     string                  `json:"priority"`
+	Requester                    string                  `json:"requester"`
+	Resource                     string                  `json:"resource"`
+	Affected                     string                  `json:"affected"`
+	Determination                string                  `json:"determination"`
+	Assessed                     string                  `json:"assessed"`
+	Why                          string                  `json:"why"`
+	Evidence                     string                  `json:"evidence"`
+	Resolution                   string                  `json:"resolution"`
+	NextAction                   *maatResolutionPath     `json:"next_action"`
+	SystemOne                    *maatSystemOneVerdict   `json:"system_one"`
 }
 
 type maatCasebookSummary struct {
@@ -213,8 +222,10 @@ type maatCasebookSummary struct {
 }
 
 type maatCasebookReport struct {
-	Cases   []maatCase          `json:"cases"`
-	Summary maatCasebookSummary `json:"summary"`
+	History   casebook.HistoryWindow `json:"history"`
+	Integrity maat.JournalIntegrity  `json:"journal_integrity"`
+	Cases     []maatCase             `json:"cases"`
+	Summary   maatCasebookSummary    `json:"summary"`
 }
 
 // --- sirsi diagnose --json (internal/guard DiagnosticReport) ---

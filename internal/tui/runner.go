@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -43,12 +44,12 @@ func (f RunnerFunc) RunJSON(ctx context.Context, verb string, args ...string) ([
 // TUI always drives the exact same engine it was launched from (no PATH drift).
 type execRunner struct{ self string }
 
-// newExecRunner resolves the running binary. It falls back to "sirsi" on PATH
-// when the executable path cannot be determined.
+// newExecRunner resolves only the running canonical binary. Failure refuses
+// execution rather than selecting a different engine through PATH.
 func newExecRunner() execRunner {
 	self, err := os.Executable()
 	if err != nil || self == "" {
-		self = "sirsi"
+		self = ""
 	}
 	return execRunner{self: self}
 }
@@ -57,8 +58,11 @@ func newExecRunner() execRunner {
 // folded into the error so a failure surfaces its reason, never a silent empty
 // frame.
 func (r execRunner) RunJSON(ctx context.Context, verb string, args ...string) ([]byte, error) {
-	full := append([]string{verb}, args...)
-	full = append(full, "--json")
+	if !filepath.IsAbs(r.self) {
+		return nil, fmt.Errorf("canonical sirsi executable unavailable")
+	}
+	// Put the output flag before a possible positional -- separator.
+	full := append([]string{verb, "--json"}, args...)
 	cmd := exec.CommandContext(ctx, r.self, full...)
 	out, err := cmd.Output()
 	if err != nil {
