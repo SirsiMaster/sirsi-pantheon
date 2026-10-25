@@ -21,7 +21,7 @@ struct LegacyRelayMaintenancePanel: View {
     @State private var approvedPublicBinding:LegacyRelayMaintenanceModel.PublicBindingApproval?
     @State private var confirmPublicBinding=false
 
-    init(directory:URL,model:LegacyRelayMaintenanceModel,appUpdate:MaatAppUpdateModel){self.directory=directory;self.model=model;self.appUpdate=appUpdate}
+    init(directory:URL,appUpdate:MaatAppUpdateModel){self.directory=directory;self.model=appUpdate.maintenance;self.appUpdate=appUpdate}
 
     var managedUpdateControl: MaatAppUpdateControl { MaatAppUpdateControl(model: appUpdate) }
 
@@ -122,7 +122,7 @@ struct LegacyRelayMaintenancePanel: View {
         }message:{Text("Transaction: \(selectedTransaction?.id ?? "unavailable")\nPlan: \(selectedTransaction?.plan.sha256 ?? "unavailable")\nAbort only restores scoped admission while the original is verified alive. Resume never certifies old remote outcomes or replays retained envelopes.")}
         .onChange(of:directory){value in model.changeDirectory(value)}
         .onAppear{model.changeDirectory(directory)}
-        .onDisappear{approved=nil;approvedRestore=nil;approvedPublicBinding=nil;approvedRollback=nil;confirmPublicBinding=false;confirmRollback=false}
+        .onDisappear{approved=nil;approvedRestore=nil;approvedPublicBinding=nil;confirmPublicBinding=false}
     }
     private var publicBindingSummary:String {
         guard let approvedPublicBinding else{return "No reviewed public binding"}

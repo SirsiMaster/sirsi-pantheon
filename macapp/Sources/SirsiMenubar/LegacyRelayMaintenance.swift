@@ -130,7 +130,16 @@ enum LegacyRelayAppHost {
     @Published private(set) var preview: LegacyRelayPlan?
     @Published private(set) var transaction: LegacyRelayTransaction?
     @Published private(set) var receipt: CommandExecution?
-    @Published private(set) var busy = false
+    @Published private(set) var busy = false {
+        didSet { if oldValue != busy { managedConsentEpoch = UUID() } }
+    }
+    // The existing legacy busy latch is also the native managed-app fence.
+    // Epoch changes invalidate review captured before another operation ran.
+    private(set) var managedConsentEpoch = UUID()
+    private var managedRequestID: UUID?
+    private var managedRequestGeneration: UUID?
+    private var managedRequestCancel: (@MainActor () -> Void)?
+    var managedAppRequestActive: Bool { managedRequestID != nil }
     @Published private(set) var error: String?
     @Published private(set) var canConfirm = false
     @Published private(set) var restoreApproval: RestoreApproval?
@@ -182,6 +191,23 @@ enum LegacyRelayAppHost {
         }
     }
 
+    func beginManagedAppRequest(expectedEpoch: UUID, cancel: @escaping @MainActor () -> Void) -> UUID? {
+        guard !busy, managedRequestID == nil, managedConsentEpoch == expectedEpoch else { return nil }
+        // Retained legacy approvals cannot survive a different app operation.
+        cancelReview(); installer = nil
+        let id = UUID(); managedRequestID = id; managedRequestGeneration = generation
+        managedRequestCancel = cancel; busy = true
+        return id
+    }
+    func managedRequestIsCurrent(_ id: UUID) -> Bool {
+        managedRequestID == id && managedRequestGeneration == generation && busy
+    }
+    func finishManagedAppRequest(_ id: UUID) {
+        guard managedRequestID == id else { return }
+        managedRequestID = nil; managedRequestGeneration = nil; managedRequestCancel = nil
+        busy = false
+    }
+
     func select(_ file: URL) { selectedFile = file; cancelReview() }
     func changeDirectory(_ directory: URL) { if self.directory != directory { self.directory = directory; cancelReview() } }
     func cancelReview() { generation = UUID(); approval = nil; restoreApproval = nil; actionApproval=nil;publicBindingApproval=nil;canConfirm = false; preview = nil }
@@ -217,7 +243,7 @@ enum LegacyRelayAppHost {
             if result.complete,result.exitCode==0,
                let plan=try?JSONDecoder().decode(InstallerEnvelope.self,from:result.stdoutData),plan.valid,
                plan.package==approved.package,plan.sha256==approved.digest,plan.release==approved.release,
-               self.generation==approved.generation,!Task.isCancelled,ProcessInfo.processInfo.systemUptime<deadline {
+               self.generation==approved.generation,!self.managedAppRequestActive,!Task.isCancelled,ProcessInfo.processInfo.systemUptime<deadline {
                 if self.openInstaller(URL(fileURLWithPath:plan.package)) {
                     self.statusNotice="Normal Installer opened. Complete its signed PKG workflow, then choose Recheck installed pair. If Pantheon was replaced, reopen the one installed app before maintenance."
                 }else{self.error="Installer did not open. Check the release again; no maintenance or installation was claimed."}
@@ -292,7 +318,10 @@ enum LegacyRelayAppHost {
 
     func resume(_ expected: LegacyRelayTransaction) -> Task<Void, Never>? { perform("recover",expected:expected) }
     func abortBeforeRetirement(_ expected: LegacyRelayTransaction) -> Task<Void, Never>? { perform("abort",expected:expected) }
-    func cancelInvocation(){cancelReview();observationTask?.cancel();activeTask?.cancel()}
+    func cancelInvocation(){
+        if let managedRequestCancel { managedRequestCancel(); return }
+        cancelReview();observationTask?.cancel();activeTask?.cancel()
+    }
 
     private func perform(_ operation: String,expected:LegacyRelayTransaction) -> Task<Void, Never>? {
         guard !busy,!outcomeUnknown,let consent=actionApproval,consent.operation==operation,consent.transaction==expected,

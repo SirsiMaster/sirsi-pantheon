@@ -606,7 +606,7 @@ final class SirsiEngine: ObservableObject {
     lazy var localStackLab = StackLabLocalModel()
     // Frame-owned operation state survives workspace unmounts without keeping
     // hidden view trees or polling tasks alive.
-    lazy var legacyRelayMaintenance = LegacyRelayMaintenanceModel(directory: URL(fileURLWithPath: NSHomeDirectory()))
+    lazy var legacyRelayMaintenance = maatCaseOperations.legacyMaintenance
     @Published var workspaceVisible = true
     // One bounded, direct Ra read for the native Fleet surface.  Keep this
     // data rather than a prose convention so a later refactor cannot quietly

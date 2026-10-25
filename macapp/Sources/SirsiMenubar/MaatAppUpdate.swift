@@ -25,10 +25,12 @@ import Foundation
         let action: Action
         let storeUUID: String
         let generation: UUID
+        let maintenanceEpoch: UUID
     }
     typealias Capture = @MainActor ([String], @escaping @MainActor () -> Bool) async -> CommandExecution
     let memory: MaatDiagnosticRecordModel
     let recovery: MaatPreparedPreflightRecovery
+    let maintenance: LegacyRelayMaintenanceModel
     @Published private(set) var pendingAction: Action?
     @Published private(set) var approval: Approval?
     @Published private(set) var busy = false
@@ -40,8 +42,9 @@ import Foundation
     private var work: Task<Void, Never>?
     private let capture: Capture
 
-    init(memory: MaatDiagnosticRecordModel, recovery: MaatPreparedPreflightRecovery, capture: Capture? = nil) {
-        self.memory = memory; self.recovery = recovery
+    init(memory: MaatDiagnosticRecordModel, recovery: MaatPreparedPreflightRecovery,
+         maintenance: LegacyRelayMaintenanceModel, capture: Capture? = nil) {
+        self.memory = memory; self.recovery = recovery; self.maintenance = maintenance
         self.capture = capture ?? { args, authorize in
             await LegacyRelayInstallerCapture().capture(args: args, authorize: authorize)
         }
@@ -54,6 +57,12 @@ import Foundation
     }
     func review(_ action: Action) -> Task<Void, Never>? {
         guard !busy, !memory.busy, !Task.isCancelled else { return nil }
+        guard !maintenance.busy else {
+            pendingAction = action; approval = nil
+            message = "Another app/legacy operation is still in flight. Wait for owned cleanup, then review this saved request again."
+            return nil
+        }
+        let epoch = maintenance.managedConsentEpoch
         generation = UUID(); let token = generation
         pendingAction = action; approval = nil; busy = true
         message = "Inspecting local memory before reviewing \(action.title). No update or Installer command has started."
@@ -61,11 +70,15 @@ import Foundation
             defer { self.busy = false; self.work = nil }
             let status = await self.memory.inspectForManagedAction()
             guard self.generation == token, !Task.isCancelled else { return }
+            guard !self.maintenance.busy, self.maintenance.managedConsentEpoch == epoch else {
+                self.message = "Another app/legacy operation ran during inspection. Review this request again after its cleanup."
+                return
+            }
             guard let store = self.readyStore(status) else {
                 self.message = "Local memory is not ready. Use the initialization or recovery controls below, then recheck this saved update. Nothing was installed."
                 return
             }
-            self.approval = Approval(action: action, storeUUID: store, generation: token)
+            self.approval = Approval(action: action, storeUUID: store, generation: token, maintenanceEpoch: epoch)
             self.message = "Local memory was read back. Review \(action.title) and give fresh confirmation; Go still performs its complete preflight and retained-attempt checks."
         }
         work = task; return task
@@ -76,22 +89,28 @@ import Foundation
     }
     func confirm(_ approved: Approval) -> Task<Void, Never>? {
         guard !busy, !memory.busy, approval == approved, generation == approved.generation else { return nil }
-        approval = nil; busy = true; attemptReport = nil; readbackReceipt = nil
         let token = generation
+        guard let lease = maintenance.beginManagedAppRequest(expectedEpoch: approved.maintenanceEpoch, cancel: { [weak self] in self?.cancel() }) else {
+            approval = nil
+            message = "Another app/legacy operation changed custody. Wait for cleanup and review afresh; nothing was submitted."
+            return nil
+        }
+        guard generation == token else { maintenance.finishManagedAppRequest(lease); return nil }
+        approval = nil; busy = true; attemptReport = nil; readbackReceipt = nil
         message = "Rechecking the reviewed memory store before the canonical app-update command…"
         let task = Task { @MainActor in
-            defer { self.busy = false; self.work = nil }
+            defer { self.maintenance.finishManagedAppRequest(lease); self.busy = false; self.work = nil }
             let status = await self.memory.inspectForManagedAction()
-            guard self.generation == token, !Task.isCancelled else { return }
+            guard self.generation == token, self.maintenance.managedRequestIsCurrent(lease), !Task.isCancelled else { return }
             guard self.readyStore(status) == approved.storeUUID else {
                 self.message = "Memory changed or is not verifiable. No update command was submitted; inspect recovery and review again."
                 return
             }
             let result = await self.capture(approved.action.arguments, {
-                self.generation == token && !Task.isCancelled
+                self.generation == token && self.maintenance.managedRequestIsCurrent(lease) && !Task.isCancelled
             })
             self.commandReceipt = result
-            guard self.generation == token, !Task.isCancelled else {
+            guard self.generation == token, self.maintenance.managedRequestIsCurrent(lease), !Task.isCancelled else {
                 self.message = "The request was canceled. Read its retained attempt before another review; cancellation is not proof of installation or rollback."
                 return
             }
@@ -132,6 +151,8 @@ import Foundation
 
 @MainActor struct MaatAppUpdateControl: View {
     @ObservedObject var model: MaatAppUpdateModel
+    @ObservedObject private var maintenance: LegacyRelayMaintenanceModel
+    init(model: MaatAppUpdateModel) { self.model = model; self.maintenance = model.maintenance }
     @State private var rollbackRelease = ""
     @State private var reviewed: MaatAppUpdateModel.Approval?
     @State private var confirming = false
@@ -149,18 +170,18 @@ import Foundation
                     .sirsiFont(.caption).foregroundStyle(.secondary)
                 Button("Review Pantheon update") {
                     Task { await self.reviewUpdate()?.value; self.reviewed = self.model.approval; self.confirming = self.reviewed != nil }
-                }.buttonStyle(.bordered).disabled(model.busy)
+                }.buttonStyle(.bordered).disabled(model.busy || maintenance.busy)
                 HStack {
                     TextField("Exact older release", text: $rollbackRelease).textFieldStyle(.roundedBorder)
                     Button("Review rollback") {
                         guard let selection = AppRollbackSelection(release: self.rollbackRelease) else { return }
                         Task { await self.reviewRollback(selection)?.value; self.reviewed = self.model.approval; self.confirming = self.reviewed != nil }
-                    }.buttonStyle(.bordered).disabled(model.busy || AppRollbackSelection(release: rollbackRelease) == nil)
+                    }.buttonStyle(.bordered).disabled(model.busy || maintenance.busy || AppRollbackSelection(release: rollbackRelease) == nil)
                 }
                 if model.pendingAction != nil {
                     Button("Recheck saved update after memory recovery") {
                         Task { await self.reviewSavedAction()?.value; self.reviewed = self.model.approval; self.confirming = self.reviewed != nil }
-                    }.buttonStyle(.bordered).disabled(model.busy)
+                    }.buttonStyle(.bordered).disabled(model.busy || maintenance.busy)
                 }
                 if let message = model.message { Text(message).sirsiFont(.caption).textSelection(.enabled) }
                 if let receipt = model.commandReceipt {
@@ -181,6 +202,7 @@ import Foundation
                 recoveryControl.disabled(model.busy)
             }.padding(.top, 8)
         }
+        .onDisappear { self.reviewed = nil; self.confirming = false }
         .confirmationDialog("Confirm this managed app request?", isPresented: $confirming, titleVisibility: .visible) {
             Button("Confirm reviewed request") { if let value = self.reviewed { _ = self.confirm(value) }; self.reviewed = nil }
             Button("Cancel", role: .cancel) { self.reviewed = nil; self.cancel() }

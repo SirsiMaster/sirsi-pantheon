@@ -191,7 +191,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let loadError {
-                VStack { unavailableState(loadError); screenImportControl; LegacyRelayMaintenancePanel(directory: URL(fileURLWithPath: NSHomeDirectory()),model:engine.legacyRelayMaintenance,appUpdate:engine.maatCaseOperations.appUpdate) }
+                VStack { unavailableState(loadError); screenImportControl; LegacyRelayMaintenancePanel(directory: URL(fileURLWithPath: NSHomeDirectory()),appUpdate:engine.maatCaseOperations.appUpdate) }
             } else {
                 unavailableState("Pantheon did not receive a Ma'at Casebook projection. No System One result was inferred.")
             }
@@ -297,7 +297,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                         releasePreflightControl
                             .id("maat-release-preflight")
                         screenImportControl
-                        LegacyRelayMaintenancePanel(directory: URL(fileURLWithPath: NSHomeDirectory()),model:engine.legacyRelayMaintenance,appUpdate:engine.maatCaseOperations.appUpdate)
+                        LegacyRelayMaintenancePanel(directory: URL(fileURLWithPath: NSHomeDirectory()),appUpdate:engine.maatCaseOperations.appUpdate)
                         if screens.isEmpty && calibrations.isEmpty {
                             historyEmptyState(casebook)
                         } else {

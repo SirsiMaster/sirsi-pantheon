@@ -599,9 +599,30 @@ state and receipts are held by the engine-owned model across remounts.
 The separately reviewed legacy app/helper recovery Installer remains its explicit
 fallback and is labelled separately from the managed update. This successor does
 not assert every manual/external Installer invocation is a Ma’at-governed update.
-The five authored `MaatAppUpdateTests` exercise actual production view callbacks,
+The seven authored `MaatAppUpdateTests` exercise actual production view callbacks,
 shared operation owners, closed argv and state transitions with inert readers/
 capture. They have **not been compiled or executed by the author**. Main owns
 strict Release, focused native and any owned-window qualification after Mercury's
 reservation handback. No installed rollback, whole-O4/eight-row completion,
 producer authority or release/publication qualification is inferred.
+
+
+#### Shared native app-maintenance custody (source corrective child)
+
+Managed update/rollback and the separate legacy Installer/root-maintenance flow
+share the same existing engine-owned `LegacyRelayMaintenanceModel` busy latch.
+Managed confirmation reserves that latch synchronously before any suspension;
+its capture authorizer checks the retained reservation and generation. Reservation
+invalidates earlier legacy review/Installer approvals. Every legacy busy transition
+also rotates a review epoch, so an earlier managed approval stays invalid after
+legacy cleanup; a new review and confirmation are required. The panel obtains the
+legacy owner from the managed owner, rather than accepting an unrelated model.
+
+Cancel request on either surface cancels the managed owned task when it holds the
+reservation. Both busy states remain held until that task returns and its receipt
+is retained. Existing data-only memory/attempt recovery remains separate; it never
+opens Installer or submits a root action. The authored overlap fixtures call actual
+model entrypoints in both directions, with held inert captures, actual Installer
+open/root-submit counters, cancellation/join, stale-consent refusal, and fresh
+review after cleanup. These remain source-only until Main qualification; they do
+not certify macOS Installer's external lifetime or any installed update outcome.

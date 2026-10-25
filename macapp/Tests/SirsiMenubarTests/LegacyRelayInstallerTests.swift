@@ -43,7 +43,9 @@ import XCTest
         XCTAssertNil(AppRollbackSelection(release: "0.24.137/../0.24.200"))
         var argv = [[String]]()
         let memoryFixture = MaatDiagnosticCorrelationFixture()
-        let model = MaatAppUpdateModel(memory: memoryFixture.model(), recovery: MaatPreparedPreflightRecovery(), capture: { args, authorize in
+        let maintenanceFixture = LegacyRelayFixture()
+        let maintenance = LegacyRelayMaintenanceModel(directory: maintenanceFixture.scope, storage: maintenanceFixture.storage)
+        let model = MaatAppUpdateModel(memory: memoryFixture.model(), recovery: MaatPreparedPreflightRecovery(), maintenance: maintenance, capture: { args, authorize in
             XCTAssertTrue(authorize()); argv.append(args)
             return CommandExecution(stdout: Data("Ma'at rollback attempt retained".utf8), exitCode: 0, childState: .exitConfirmed)
         })
@@ -58,7 +60,9 @@ import XCTest
         let retained = Data("{\"schema\":\"sirsi.maat.app-update-reconciliation.v1\",\"state\":\"resolved\",\"attempt_id\":\"a5340000-0000-4000-8000-000000000001\",\"target_release\":\"0.24.137\",\"current_release\":\"0.24.138\",\"observation\":{\"release\":\"0.24.137\"}}".utf8)
         var argv = [[String]]()
         let memoryFixture = MaatDiagnosticCorrelationFixture()
-        let model = MaatAppUpdateModel(memory: memoryFixture.model(), recovery: MaatPreparedPreflightRecovery(), capture: { args, authorize in
+        let maintenanceFixture = LegacyRelayFixture()
+        let maintenance = LegacyRelayMaintenanceModel(directory: maintenanceFixture.scope, storage: maintenanceFixture.storage)
+        let model = MaatAppUpdateModel(memory: memoryFixture.model(), recovery: MaatPreparedPreflightRecovery(), maintenance: maintenance, capture: { args, authorize in
             XCTAssertTrue(authorize()); argv.append(args)
             return CommandExecution(stdout: retained, exitCode: 0, childState: .exitConfirmed)
         })

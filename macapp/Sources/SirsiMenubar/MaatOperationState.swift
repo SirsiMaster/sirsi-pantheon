@@ -261,21 +261,24 @@ final class MaatCaseOperationStore: ObservableObject {
     let preparedPreflightRecovery: MaatPreparedPreflightRecovery
     let localPreventions: MaatLocalPreventionModel
     let diagnosticRecord: MaatDiagnosticRecordModel
-    let appUpdate: MaatAppUpdateModel
+    private let suppliedLegacyMaintenance: LegacyRelayMaintenanceModel?
+    lazy var legacyMaintenance = suppliedLegacyMaintenance ?? LegacyRelayMaintenanceModel(directory: URL(fileURLWithPath: NSHomeDirectory()))
+    lazy var appUpdate = MaatAppUpdateModel(memory: diagnosticRecord, recovery: preparedPreflightRecovery, maintenance: legacyMaintenance)
     @Published private(set) var records: [MaatOperationKey: MaatOperationRecord] = [:]
     private var historyReads: [MaatOperationKey: (generation: UUID, continuation: MaatExactHistoryContinuation)] = [:]
 
     init(preparedPreflightRecovery: MaatPreparedPreflightRecovery? = nil,
          localPreventions: MaatLocalPreventionModel? = nil,
          failureMemoryReceipts: MaatPreflightReceiptReadStore? = nil,
-         diagnosticRecord: MaatDiagnosticRecordModel? = nil) {
+         diagnosticRecord: MaatDiagnosticRecordModel? = nil,
+         legacyMaintenance: LegacyRelayMaintenanceModel? = nil) {
         let recoveryOwner = preparedPreflightRecovery ?? MaatPreparedPreflightRecovery()
         let diagnosticOwner = diagnosticRecord ?? MaatDiagnosticRecordModel()
         self.preparedPreflightRecovery = recoveryOwner
         self.localPreventions = localPreventions ?? MaatLocalPreventionModel()
         self.failureMemoryReceipts = failureMemoryReceipts ?? MaatPreflightReceiptReadStore()
         self.diagnosticRecord = diagnosticOwner
-        self.appUpdate = MaatAppUpdateModel(memory: diagnosticOwner, recovery: recoveryOwner)
+        self.suppliedLegacyMaintenance = legacyMaintenance
     }
 
     func record(for key: MaatOperationKey) -> MaatOperationRecord? {
