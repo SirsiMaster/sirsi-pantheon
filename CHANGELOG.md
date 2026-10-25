@@ -15,6 +15,10 @@
 
 - Scope web Fabric freshness and lane drilldown to their own observation; keep compact native attention visible and bind local engine telemetry to the existing this-mac route.
 - Add direct app-wiring, machine-binding and compact-projection regression fixtures. Qualification remains Main-owned and pending.
+## Existing own-target native dispatch correction (source candidate)
+
+- Select the normal local executor only for exact enrolled endpoint kernel ownership and native UUID/UID/account evidence; retain strict remote SSH/proxy and terminal failure semantics. No enrollment, credential, grant or supervisor-policy change.
+- Add bounded parser/classifier and inert actual-shell argv/PID/refusal fixtures; Main qualification and actual own-route proof remain pending.
 
 # Changelog — Sirsi Pantheon
 All notable changes to this project are documented in this file.

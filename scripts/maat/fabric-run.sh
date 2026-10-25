@@ -1,6 +1,6 @@
 #!/bin/bash
-# Narrow pinned transport. Proxy mode remains the default; direct is explicit,
-# and never permitted to bypass a runtime-provided proxy.
+# Proven same-endpoint/own-UID work uses the normal local executor. Network
+# transport defaults to proxy; direct never bypasses a runtime-provided proxy.
 set -euo pipefail
 usage() { printf 'usage: sirsi-fabric-run [--plan] [--transport socks|direct] m1|m5|studio --work ID [--cpu-cores N] [--timeout SECONDS] -- COMMAND [ARG...]\n' >&2; exit 64; }
 plan=0
@@ -13,6 +13,7 @@ while [[ "${1:-}" == --plan || "${1:-}" == --transport ]]; do
 done
 [[ "$transport_mode" == socks || "$transport_mode" == direct ]] || usage
 host=${1:-}; [[ -n "$host" ]] || usage; shift
+case "$host" in m1|m5|studio) ;; *) usage;; esac
 work=; cores=1; timeout=90
 while [[ $# -gt 0 && "$1" != -- ]]; do
   [[ $# -ge 2 ]] || usage
@@ -33,6 +34,24 @@ agent=${SIRSI_ROUTER_AGENT:-${SIRSI_AGENT_ID:-}}
 if [[ -n "${SIRSI_AGENT_ID:-}" && "${SIRSI_AGENT_ID}" != "$agent" ]]; then
   printf 'REFUSED: conflicting lane identities\n' >&2; exit 78
 fi
+script_dir=$(CDPATH= cd -- "$(/usr/bin/dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+selector="$script_dir/fabric-endpoints.py"
+[[ -f "$selector" && ! -L "$selector" ]] || { printf 'REFUSED: shared endpoint selector absent\n' >&2; exit 78; }
+# --plan makes no native/network observations. A real dispatch compares the
+# exact enrolled endpoint to kernel ownership, not names or ambient identity.
+# Invoke directly (no command substitution): selector PPID is this shell PID,
+# retained by exec as the normal supervisor PID. Diagnostics stay on stderr.
+if [[ "$plan" != 1 ]]; then
+  if /usr/bin/python3 "$selector" dispatch "$host"; then
+    local_runner="$HOME/.local/bin/sirsi-maat-run"
+    test -x "$local_runner" || { printf 'REFUSED: installed local supervisor absent\n' >&2; exit 78; }
+    exec "$local_runner" --agent "$agent" --register-executor --work "$work" --cpu-cores "$cores" --timeout "$timeout" -- "$@"
+  else
+    dispatch_status=$?
+    # 3 is the closed unknown/remote result, not a failed admission or SSH retry.
+    [[ "$dispatch_status" == 3 ]] || exit "$dispatch_status"
+  fi
+fi
 proxy_url=${ALL_PROXY:-${all_proxy:-}}
 if [[ "$transport_mode" == socks ]]; then
   case "$proxy_url" in socks5://*|socks5h://*) ;; *) printf 'REFUSED: supported runtime SOCKS proxy required\n' >&2; exit 78;; esac
@@ -43,9 +62,6 @@ else
   # Prevent ambient SSH config from silently adding a proxy/jump to an explicit
   # direct transaction. Host authentication and known_hosts stay unchanged.
 fi
-script_dir=$(CDPATH= cd -- "$(/usr/bin/dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
-selector="$script_dir/fabric-endpoints.py"
-[[ -f "$selector" && ! -L "$selector" ]] || { printf 'REFUSED: shared endpoint selector absent\n' >&2; exit 78; }
 trust=(-oUserKnownHostsFile="$HOME/.ssh/sirsi_known_hosts" -oHostKeyAlias="sirsi-$host" -oHostKeyAlgorithms=ssh-ed25519)
 case "$host" in
   m1)
@@ -78,6 +94,9 @@ transport=(/usr/bin/ssh -oBatchMode=yes -oPasswordAuthentication=no -oKbdInterac
 origin=("$HOME/.local/bin/sirsi-maat-run" --agent "$agent" --register-executor --work "fabric-ssh-$work" --cpu-cores 1 --timeout "$((timeout+120))" --)
 if [[ "$plan" == 1 ]]; then
   printf 'PLAN_ONLY_NO_EXECUTION\n'
+  printf 'SELF_DISPATCH=conditional exact enrolled endpoint kernel ownership + own UID; otherwise strict SSH\n'
+  printf 'LOCAL_COMMAND='
+  for arg in "$HOME/.local/bin/sirsi-maat-run" --agent "$agent" --register-executor --work "$work" --cpu-cores "$cores" --timeout "$timeout" -- "$@"; do quote "$arg"; printf ' '; done; printf '\n'
   printf 'ENDPOINT_POLICY=thunderbolt,thunderbolt-relay,classified-lan,tailscale; selection only inside admitted transport\n'
   printf 'REMOTE_COMMAND=%s\n' "$remote_command"
   printf '%q ' "${origin[@]}" "${transport[@]}"; printf '\n'

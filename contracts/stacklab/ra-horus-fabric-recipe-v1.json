@@ -282,6 +282,46 @@
         "add a test that the SPA carries the view and its nav entry",
         "run focused and race tests"
       ]
+    },
+    {
+      "id": "scoped-native-transport",
+      "source": [
+        "scripts/maat/fabric-run.sh",
+        "scripts/maat/fabric-endpoints.py",
+        "scripts/maat/README.md",
+        "docs/stacklab/ra/canon/NATIVE_FABRIC_SELF_DISPATCH_V1.md"
+      ],
+      "tests": [
+        "scripts/maat/fabric-endpoints.test.py",
+        "scripts/maat/fabric-run.test.py",
+        "scripts/maat/fabric-locality.test.py",
+        "scripts/maat/fabric-self-dispatch.test.py"
+      ],
+      "inputs": [
+        "closed target and exact enrolled numeric destination from existing endpoint table",
+        "bounded native kernel interface inventory + observed native UUID",
+        "real/effective kernel UID and existing target account",
+        "own scope verified by unchanged normal native executor",
+        "exact work/CPU/timeout/literal argv",
+        "existing proxy and strict host pins for remote/unknown"
+      ],
+      "outputs": [
+        "one real registered native executor for qualified locality",
+        "unchanged supervised strict remote origin/destination path otherwise",
+        "bounded closed JSON stderr observation, not authorization or a new receipt store"
+      ],
+      "writes": [
+        "no new DB, enrollment, grant, key, config or signer; existing native execution lifecycle only when invoked"
+      ],
+      "upgrade_recipe": [
+        "publish reviewed shell/selector pair together; admitted-run separate owner untouched",
+        "require exact unique active non-loopback kernel ownership; never DNS/hostname/model/ambient authority or empty-ID SameMachine",
+        "retain actual UUID only as executor observation; no fabricated target binding",
+        "local admission and SSH/auth failure terminal, never fallback to another route",
+        "retain payload mask, literal argv and normal real executor/receipt/completion semantics",
+        "qualify all existing/new inert suites and causal controls under Main, then actual own M5 route",
+        "source-only unrun; no installed/all-peer SSH/task completion claim"
+      ]
     }
   ]
 }

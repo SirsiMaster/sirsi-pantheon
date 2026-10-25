@@ -21,7 +21,7 @@
 | Read acknowledgement is distinct | `AckItem`, schema v22+ | recipient-only ack tests | source-bound |
 | Cloud canonical service | `router serve`, GCP recipe | historical deploy receipts; current readback pending permissions | open-live |
 | Codex least-privilege delivery | `router relay`, spool contract | M1/M5 relay evidence | host-verified prior receipt |
-| Restricted-worker native execution | `scripts/maat/fabric-run.sh`, exact-IP proxy profiles | all declared Codex profile guards, POSIX argv/refusal tests; scoped SSA M1/Studio success; external-domain denial | source/transport verified; each lane still needs its own actual destination receipts |
+| Restricted-worker native execution | `scripts/maat/fabric-run.sh`, `fabric-endpoints.py`, exact-IP profiles | retained original plan/remote tests; authored kernel endpoint/UID/UUID, literal argv/PID/no-retry fixtures | self-dispatch source unrun; no identity/grant changes; Main actual own native terminal required; prior M1/Studio proof preserved |
 | M1/M5 fleet parity | relay/client/service | current fresh cross-host proof | partial |
 | Fresh third-machine join | token/env/register/claim/close | hermetic rehearsal script | rehearsal pending |
 | Horus/CLI/MCP same read model | `routerboard`, `internal/routermcp`, canonical `sirsi router-mcp`, Horus | released bare manifest parity on core and both entrypoints; original claim/expiry/completion fixtures moved, inert EOF/cancel/failed-registration/instance isolation fixtures | Source-only corrective; no test/build execution by producer. Managed-config migration, explicit remote audience decision and installed caller qualification remain open; generic `mcp` unchanged. |

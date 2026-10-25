@@ -146,15 +146,22 @@ For an existing runtime that supplies the scoped local SOCKS proxy, use:
 
     ~/.local/bin/sirsi-fabric-run m1 --work my-own-work --cpu-cores 1 --timeout 90 -- /usr/bin/true
 
-The helper takes only the enrolled m1/m5/studio target names, uses existing
+For a proven own target, the adjacent selector checks exact enrolled numeric
+endpoint ownership in the kernel, non-loopback UP interface, native UUID and
+real/effective UID against the existing target account. It uses the existing
+normal registered local executor directly, with exact work/CPU/timeout/argv. The
+UUID is executor observation, not invented target enrollment or a grant. Native
+admission/registration remains authoritative. Local failure is terminal.
+
+For remote/unknown targets, the helper takes only enrolled names, uses existing
 strict host pins and public-key-only authentication, quotes every destination
-argv element as data, and retains the caller's own logical lane. Origin SSH is
+argv element as data, and retains the caller's own logical lane. Remote origin SSH is
 supervised as one CPU; the destination's actual local executor independently
 registers/admit/heartbeats/releases with the requested capacity. No credentials
 are copied into another runtime, and no arbitrary destination shell is exposed
 as a new authority. This is cooperative same-user execution attribution, not a
 new command-restricted SSH principal or protection against a malicious owner
-account. Missing pins, keys, helper, proxy or supported managed policy fail
+account. For network routes, missing pins, keys, helper, proxy or supported managed policy fail
 closed. Native destinations retain their own CLI/runtime/identity and the one
 canonical router; no router database is copied.
 
@@ -179,8 +186,10 @@ Native netcat probes use `-G 2` for the TCP connect deadline: `-w` alone is not
 a macOS connect timeout. Actual tunnels use a bounded connect without an idle
 timeout that would kill a healthy quiet SSH session.
 
-Deterministic qualification: `python3 scripts/maat/fabric-endpoints.test.py` and
-`python3 scripts/maat/fabric-run.test.py` under an ordinary CPU-one admission.
+Deterministic qualification: `python3 scripts/maat/fabric-endpoints.test.py`,
+`python3 scripts/maat/fabric-run.test.py`,
+`python3 scripts/maat/fabric-locality.test.py`, and
+`python3 scripts/maat/fabric-self-dispatch.test.py` under an ordinary CPU-one admission.
 Mocks cover six directed peer pairs, relay identity refusal and proxy behavior;
 real `ssh -G` checks parser output only. Native qualification must separately
 show each actual selected route, unchanged strict end/jump pins, a harmless
@@ -385,3 +394,11 @@ Tests mock transport/time for outages and also exercise a harmless real child
 termination/reap and Darwin kernel identity. Run them under ordinary own Ma'at
 admission. They do not qualify deployed long-running Apollo workloads; SSA owns
 independent review, release and installed qualification.
+
+Self-dispatch contract and actual module/fixture/proof boundaries:
+`docs/stacklab/ra/canon/NATIVE_FABRIC_SELF_DISPATCH_V1.md`. `--plan` observes no
+native state and displays locality only conditionally. Actual dispatch emits a
+bounded closed JSON diagnostic to stderr, never payload stdout or a caller-chosen
+path. Main correlates selector parent PID -> exec supervisor -> normal native
+receipt; no new receipt framework is added. `admitted-run.py` is unchanged and
+still derives its own resource/registration/admission under its existing policy.

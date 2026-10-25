@@ -6,7 +6,12 @@ host-key/authentication rejection never causes a retry of the command elsewhere.
 """
 import argparse
 import ipaddress
+import json
 import os
+import pwd
+import re
+import selectors
+import time
 from pathlib import Path
 import shlex
 import socket
@@ -33,6 +38,168 @@ TB_RANGE = ipaddress.ip_network("10.96.0.0/16")
 
 class PolicyError(Exception):
     pass
+
+
+# These facts select locality only. The existing native supervisor remains the
+# sole scoped registration/admission authority; no enrollment/credential is read.
+_UUID = re.compile(r'[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}')
+_HEADER = re.compile(r'([A-Za-z][A-Za-z0-9_.-]{0,31}): flags=([0-9A-Fa-f]{1,8})<([A-Z0-9_,]*)> mtu ([0-9]{1,6})')
+_INET = re.compile(r'inet ([0-9.]+)(?: --> ([0-9.]+))? netmask (0x[0-9a-fA-F]{1,8}|[0-9.]+)(?: broadcast ([0-9.]+))?')
+_FLAGS = frozenset(('UP','BROADCAST','DEBUG','LOOPBACK','POINTOPOINT','NOTRAILERS','RUNNING','NOARP','PROMISC','ALLMULTI','OACTIVE','SIMPLEX','LINK0','LINK1','LINK2','MULTICAST','SMART'))
+
+
+def metadata_output(argv, limit):
+    """Bounded fixed native metadata child; never DNS, a socket or a shell."""
+    process = None
+    try:
+        process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                   stderr=subprocess.DEVNULL, env={'PATH':'/usr/bin:/bin:/usr/sbin:/sbin','LC_ALL':'C','LANG':'C'})
+        deadline = time.monotonic() + 3
+        data = bytearray()
+        with selectors.DefaultSelector() as ready:
+            ready.register(process.stdout, selectors.EVENT_READ)
+            while ready.get_map():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return None
+                for key, _ in ready.select(remaining):
+                    block = os.read(key.fileobj.fileno(), 8192)
+                    if not block:
+                        ready.unregister(key.fileobj)
+                    else:
+                        if len(data) + len(block) > limit:
+                            return None
+                        data.extend(block)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0 or process.wait(timeout=remaining) != 0:
+            return None
+        return data.decode('ascii')
+    except (OSError, UnicodeError, subprocess.TimeoutExpired):
+        return None
+    finally:
+        if process is not None:
+            if process.poll() is None:
+                try:
+                    process.kill()
+                except ProcessLookupError:
+                    pass
+            try:
+                process.wait(timeout=1)
+            except subprocess.TimeoutExpired as exc:
+                raise PolicyError('native metadata child cleanup unconfirmed') from exc
+            finally:
+                if process.stdout is not None:
+                    process.stdout.close()
+
+
+def parse_interfaces(text):
+    """Closed interface/IPv4 proof grammar. Other indented properties carry
+    no address evidence; malformed IPv4, flags or duplicate rows refuse locality.
+    """
+    if (not isinstance(text, str) or len(text) > 262144 or len(text.splitlines()) > 4096
+            or any(ord(c) > 126 or (ord(c) < 32 and c not in '\n\t') for c in text)):
+        raise PolicyError('native interface inventory unavailable')
+    interfaces, addresses = set(), {}
+    current = None
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        if len(line) > 2048:
+            raise PolicyError('native interface inventory unavailable')
+        if not line[0].isspace():
+            match = _HEADER.fullmatch(line)
+            if not match or match[1] in interfaces:
+                raise PolicyError('native interface inventory unavailable')
+            name, bits = match[1], int(match[2],16)
+            labels = match[3].split(',') if match[3] else []
+            if (len(labels) != len(set(labels)) or not set(labels) <= _FLAGS
+                    or bool(bits & 1) != ('UP' in labels) or bool(bits & 8) != ('LOOPBACK' in labels)):
+                raise PolicyError('native interface inventory unavailable')
+            interfaces.add(name)
+            current = (name, bool(bits & 1), bool(bits & 8) or name.startswith('lo'))
+            continue
+        if current is None:
+            raise PolicyError('native interface inventory unavailable')
+        detail = line.strip()
+        if _HEADER.fullmatch(detail):
+            raise PolicyError('native interface inventory unavailable')
+        if detail.split()[0] != 'inet':
+            # Never search arbitrary property text, IPv6, routes or names for an
+            # IPv4 match. A misspelled IPv4 field is not silently accepted.
+            if detail.startswith('inet') and not detail.startswith('inet6 '):
+                raise PolicyError('native interface inventory unavailable')
+            continue
+        match = _INET.fullmatch(detail)
+        if not match:
+            raise PolicyError('native interface inventory unavailable')
+        try:
+            address = str(ipaddress.IPv4Address(match[1]))
+            for value in (match[2], match[4]):
+                if value is not None:
+                    ipaddress.IPv4Address(value)
+            mask = int(match[3],16) if match[3].startswith('0x') else int(ipaddress.IPv4Address(match[3]))
+            inverted = (~mask) & 0xffffffff
+            if inverted & (inverted + 1) or address in addresses:
+                raise ValueError('duplicate or malformed address')
+        except ValueError as exc:
+            raise PolicyError('native interface inventory unavailable') from exc
+        addresses[address] = current
+    if not interfaces:
+        raise PolicyError('native interface inventory unavailable')
+    return addresses
+
+
+def parse_native_uuid(text):
+    if not isinstance(text, str) or len(text) > 65536:
+        return None
+    values = re.findall(r'"IOPlatformUUID"\s*=\s*"([^"\r\n]*)"', text)
+    if len(values) != 1 or not _UUID.fullmatch(values[0]):
+        return None
+    return values[0].upper()
+
+
+def locality(target, interfaces, native_uuid, uid, euid, account):
+    """Pure metadata classification. No ambient identity is authorization."""
+    endpoint = PEERS[target]['tail']
+    owner = interfaces.get(endpoint) if isinstance(interfaces, dict) else None
+    if owner is None:
+        return 'ssh', 'endpoint-not-local', None
+    if (not isinstance(owner, tuple) or len(owner) != 3
+            or not isinstance(owner[0], str) or not re.fullmatch(r'[A-Za-z][A-Za-z0-9_.-]{0,31}', owner[0])
+            or type(owner[1]) is not bool or type(owner[2]) is not bool):
+        return 'ssh', 'interface-inventory-unavailable', None
+    if not owner[1] or owner[2]:
+        return 'ssh', 'endpoint-not-active-nonloopback', None
+    if not isinstance(native_uuid, str) or not _UUID.fullmatch(native_uuid):
+        return 'ssh', 'native-uuid-unavailable', None
+    if (type(uid) is not int or type(euid) is not int or uid != euid
+            or account is None or account.pw_uid != uid or account.pw_name != PEERS[target]['user']):
+        return 'ssh', 'account-not-local-owner', None
+    return 'local', 'kernel-endpoint-and-own-uid', owner[0]
+
+
+def dispatch(target):
+    # No caller address, UUID, hostname, output pathname or grant parameter.
+    uid, euid = os.getuid(), os.geteuid()
+    native_uuid = parse_native_uuid(metadata_output(['/usr/sbin/ioreg','-rd1','-c','IOPlatformExpertDevice'],65536))
+    try:
+        interfaces = parse_interfaces(metadata_output(['/sbin/ifconfig','-a'],262144))
+        try:
+            account = pwd.getpwnam(PEERS[target]['user'])
+        except (KeyError, OSError):
+            account = None
+        decision, reason, interface = locality(target, interfaces, native_uuid, uid, euid, account)
+    except PolicyError:
+        decision, reason, interface = 'ssh', 'interface-inventory-unavailable', None
+    # Bounded closed diagnostic, captured by normal logs. This is neither an
+    # authorization receipt nor a new store/signature. Parent PID is the shell
+    # launcher, which exec replaces with the normal supervisor on the local path.
+    print(json.dumps({'schema':'fabric-locality-observation/v1','decision':decision,
+                      'reason':reason,'target':target,'endpoint':PEERS[target]['tail'],
+                      'native_machine_id':native_uuid,'interface':interface,'uid':uid,'euid':euid,
+                      'selector_pid':os.getpid(),'exec_parent_pid':os.getppid(),
+                      'authority':'existing-native-executor-only'},sort_keys=True),file=sys.stderr)
+    return 0 if decision == 'local' else 3
 
 
 def origin_host():
@@ -185,6 +352,8 @@ def main(argv=None):
     connect = commands.add_parser("connect")
     connect.add_argument("target", choices=tuple(PEERS))
     connect.add_argument("--transport", choices=("auto", "socks", "direct"), default="auto")
+    local = commands.add_parser("dispatch")
+    local.add_argument("target", choices=tuple(PEERS))
     render = commands.add_parser("ssh-config")
     render.add_argument("--helper", default=str(Path(__file__).resolve()))
     render.add_argument("--python", default="/usr/bin/python3")
@@ -193,6 +362,8 @@ def main(argv=None):
         if args.command == "ssh-config":
             print(render_config(args.helper, args.python), end="")
             return 0  # rendering never probes or opens a connection
+        if args.command == "dispatch":
+            return dispatch(args.target)
         proxy = runtime_proxy(args.transport, os.environ)
         kind, address, via = select_endpoint(origin_host(), args.target, proxy)
         print("fabric transport: " + args.target + " via " + kind + " " + address +
