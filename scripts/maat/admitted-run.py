@@ -248,6 +248,12 @@ class _Siginfo(ctypes.Structure):
                 ('reserved',ctypes.c_ulong*7)]
 
 
+class LocalWaitRefused(Refused):
+    def __init__(self, reason, observation):
+        self.observation=observation
+        super().__init__(reason+': '+json.dumps(observation,sort_keys=True,separators=(',',':')))
+
+
 def local_child_terminal(child, wait=None):
     """Non-reaping kernel receipt for our exact child; ECHILD is not absence.
 
@@ -268,19 +274,25 @@ def local_child_terminal(child, wait=None):
         wait.restype=ctypes.c_int
     info=_Siginfo()
     # P_PID=1; WNOHANG=1, WEXITED=4, WNOWAIT=0x20. Never consumes the child.
-    if wait(1,child.pid,ctypes.byref(info),1|4|0x20)!=0:
-        raise Refused('Owned child wait observation failed (errno '+str(ctypes.get_errno())+'); no exit or absence inferred')
+    result=wait(1,child.pid,ctypes.byref(info),1|4|0x20)
+    observation=dict(api='libSystem.waitid',result=result,errno=ctypes.get_errno() if result else 0,
+                     expected_pid=child.pid,expected_uid=os.getuid(),expected_signal=int(signal.SIGCHLD),
+                     pid=info.pid,uid=info.uid,signo=info.signo,error=info.error,code=info.code,status=info.status,
+                     abi_bytes=ctypes.sizeof(info),pid_offset=_Siginfo.pid.offset,status_offset=_Siginfo.status.offset)
+    # Only defined scalar fields: no addresses, reserved bytes, argv or environment.
+    if result!=0:
+        raise LocalWaitRefused('Owned child wait observation failed; no exit or absence inferred',observation)
     if info.pid==0:
         if any((info.signo,info.error,info.code,info.uid,info.status)):
-            raise Refused('Malformed empty owned child wait observation')
+            raise LocalWaitRefused('Malformed empty owned child wait observation',observation)
         return None
     if info.pid!=child.pid or info.uid!=os.getuid() or info.signo!=signal.SIGCHLD or info.error:
-        raise Refused('Owned child wait PID/UID/signal differs')
+        raise LocalWaitRefused('Owned child wait PID/UID/signal differs',observation)
     if info.code==1 and 0<=info.status<=255:  # CLD_EXITED
         return info.status
     if info.code in (2,3) and 0<info.status<signal.NSIG:  # CLD_KILLED/DUMPED
         return -info.status
-    raise Refused('Unknown owned child terminal status')
+    raise LocalWaitRefused('Unknown owned child terminal status',observation)
 
 
 def local_anchor_matches(child, birth):
@@ -581,6 +593,7 @@ def supervise_local(command, timeout, record, folder, persist):
         code = 78
     except (Exception, KeyboardInterrupt) as error:
         record.update(status='refused_or_stopped', reason=str(error))
+        if isinstance(error,LocalWaitRefused):record['local_wait_observation']=error.observation
         code = 78
     finally:
         if child is not None:
@@ -588,6 +601,7 @@ def supervise_local(command, timeout, record, folder, persist):
                 local_stop_owned(child,birth)
             except Exception as error:
                 record['cleanup_debt'] = 'Local child group cleanup unconfirmed: ' + str(error)
+                if isinstance(error,LocalWaitRefused):record['cleanup_wait_observation']=error.observation
                 try:
                     retain_local_debt(folder.parent,folder,child,birth)
                 except Exception as debt_error:

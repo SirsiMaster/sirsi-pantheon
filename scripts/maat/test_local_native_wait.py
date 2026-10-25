@@ -65,7 +65,14 @@ class NativeWaitTests(unittest.TestCase):
                     info.pid = child.pid; info.uid = os.getuid(); info.signo = runner.signal.SIGCHLD; info.code = 1
                     for key, value in overrides.items(): setattr(info, key, value)
                     return 0
-                with self.assertRaises(runner.Refused): runner.local_child_terminal(child, wait=wait)
+                with self.assertRaises(runner.LocalWaitRefused) as failure: runner.local_child_terminal(child, wait=wait)
+                observed=failure.exception.observation
+                self.assertEqual(observed['expected_pid'],child.pid)
+                self.assertEqual(observed['expected_uid'],os.getuid())
+                self.assertEqual(observed['abi_bytes'],104)
+                self.assertEqual(set(observed),{'api','result','errno','expected_pid','expected_uid','expected_signal',
+                                               'pid','uid','signo','error','code','status','abi_bytes','pid_offset','status_offset'})
+                for key,value in overrides.items():self.assertEqual(observed[key],value)
         previous = ctypes.get_errno()
         try:
             def echild(*_args): ctypes.set_errno(errno.ECHILD); return -1
