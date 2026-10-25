@@ -1,29 +1,3 @@
-## Fabric standalone machine-output correction
-
-- Apply the existing root's SilenceUsage policy to the standalone Fabric command factory. Preserve reader refusal/cause and selected-writer checks; strengthen exact-one-JSON success assertions. Source-only, unrun.
-
-## Fabric embedded renderer correction
-
-- Embed and serve the exact Fabric JavaScript asset through the existing closed asset route; strengthen actual HTTP status/header/source-byte assertions without removing label checks. Source-only, unrun.
-
-## Fabric full-detail destination correction
-
-- Keep the existing BackBar and a real ScrollView around same-store full Fabric detail; add the direct compact-action/navigation wrapper regression. Source-only, unrun.
-
-<!-- Source-only corrective candidate; no release/publication claim. -->
-## Fabric a330 review correction
-
-- Scope web Fabric freshness and lane drilldown to their own observation; keep compact native attention visible and bind local engine telemetry to the existing this-mac route.
-- Add direct app-wiring, machine-binding and compact-projection regression fixtures. Qualification remains Main-owned and pending.
-## Same-host dispatch metadata lifecycle correction (source candidate)
-
-- Keep unconfirmed owned metadata-child cleanup terminal; bound configured-account resolution through the same strict child lifecycle. Add direct timeout/cleanup/closed-result and shell no-execution fixtures. Source-only, unrun.
-
-## Existing own-target native dispatch correction (source candidate)
-
-- Select the normal local executor only for exact enrolled endpoint kernel ownership and native UUID/UID/account evidence; retain strict remote SSH/proxy and terminal failure semantics. No enrollment, credential, grant or supervisor-policy change.
-- Add bounded parser/classifier and inert actual-shell argv/PID/refusal fixtures; Main qualification and actual own-route proof remain pending.
-
 # Changelog — Sirsi Pantheon
 All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
@@ -31,10 +5,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 **Building in public** — see [docs/BUILD_LOG.md](docs/BUILD_LOG.md) for the full narrative.
 
 ## [Unreleased]
-
-- Bound kernel-loaded relay identity probes to Darwin's `pid_t` range before C conversion, exercise the exact 20-byte kernel hash against an owned self-child, and surface only allowlisted errno/signature diagnostics from the maintenance-image child. Raw child stderr remains suppressed; this is source-only pending Main qualification.
-- Add an explicit exact-version whole-app rollback candidate through the existing signed-PKG, Ma’at preflight/attempt, and installed app/helper readback owner. Rollback now requires the selected signed target helper to report the retained-attempt recovery schema; the native app exposes a data-only attempt recheck. Ambiguous handoffs remain unresolved and never replay Installer. Source awaits Main qualification.
-- Correct the retained rollback fixture URL to bind its full selected release version, preserve mismatched-URL refusal, and exercise Cobra flag parsing on the actual update command while restoring its shared flag state. No production rollback or confirmation behavior changed.
 
 ## [0.24.137] — 2026-10-25
 
