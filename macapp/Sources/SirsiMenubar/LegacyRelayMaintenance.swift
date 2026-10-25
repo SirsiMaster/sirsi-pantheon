@@ -599,6 +599,17 @@ enum LegacyRelayAppHost {
         if result.childState == .notStarted,result.captureError == nil{
             lastResolved=retained;outstanding=nil;outcomeUnknown=false
             statusNotice="The submitted operation did not start. Its unused ticket may be superseded by a new reviewed preview."
+		}else if result.complete,let response=try?JSONDecoder().decode(MutationEnvelope.self,from:result.stdoutData),
+		         response.terminal,!response.safeForNewPreview,
+		         response.ticketJSON==ticketJSON,response.status.isBound,
+		         response.status.id==retained.ticket?.transaction,response.status.plan==retained.ticket?.plan,
+		         response.status.phase=="prepared"{
+			// A prepared transaction is a typed proof that retirement has not been
+			// requested. Keep its exact receipt and route the operator to this
+			// transaction's existing reviewed recovery controls.
+			lastResolved=retained;outstanding=nil;outcomeUnknown=false;lifecycleDebt=true
+			transaction=response.status;transactionDirectory=scope
+			statusNotice="Refresh remains in the exact prepared transaction; retirement has not been requested. The durable hold blocks new current-client calls before publication. Use Resume to revalidate and continue this transaction, or review Abort while it is still prepared. A waiting call that reaches its deadline was not published and may be retried after the hold clears."
         }else if result.complete,let response=try?JSONDecoder().decode(MutationEnvelope.self,from:result.stdoutData),
                  response.ticketJSON==ticketJSON,response.terminal {
             lastResolved=retained;outstanding=nil;outcomeUnknown=false;lifecycleDebt = !response.safeForNewPreview

@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/servicedrain"
 )
 
 func TestSpoolAdmissionCrossProcess(t *testing.T) {
@@ -87,6 +89,72 @@ func TestSpoolAdmissionPausedCallNeverPublishes(t *testing.T) {
 	})
 	if e != nil {
 		t.Fatal(e)
+	}
+}
+
+func TestSpoolAdmissionPendingMaintenanceWaitDoesNotPublishAndCanResume(t *testing.T) {
+	dir := t.TempDir()
+	marker := filepath.Join(dir, servicedrain.MaintenanceMarkerName)
+	if err := os.WriteFile(marker, []byte("retained transaction fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	short := newSpoolTransport(dir, "own")
+	short.wait = 30 * time.Millisecond
+	req, err := http.NewRequest(http.MethodPost, "http://spool/v1/call/Inbox", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = short.RoundTrip(req)
+	if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "request not published") {
+		t.Fatalf("pending maintenance must produce a known-not-published timeout: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "own")); !os.IsNotExist(err) {
+		t.Fatalf("timed-out pending request created a lane: %v", err)
+	}
+	tr := newSpoolTransport(dir, "own")
+	tr.wait = 2 * time.Second
+
+	result := make(chan error, 1)
+	go func() {
+		response, callErr := tr.RoundTrip(req)
+		if callErr == nil {
+			_, callErr = io.Copy(io.Discard, response.Body)
+			_ = response.Body.Close()
+		}
+		result <- callErr
+	}()
+	deadline := time.Now().Add(100 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(filepath.Join(dir, "own")); !os.IsNotExist(err) {
+			t.Fatalf("request was published before retained marker cleared: %v", err)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "own")); !os.IsNotExist(err) {
+		t.Fatalf("pending request created a lane: %v", err)
+	}
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+	var requests []string
+	deadline = time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		requests, _ = filepath.Glob(filepath.Join(dir, "own", "req", "*.json"))
+		if len(requests) == 1 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if len(requests) != 1 {
+		t.Fatal("waiting request was not published after the marker cleared")
+	}
+	if err := writeAtomic(filepath.Join(dir, "own", "res", filepath.Base(requests[0])), spoolResponse{
+		Status: http.StatusOK, Body: []byte(`{"result":[]}`),
+	}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-result; err != nil {
+		t.Fatalf("call did not resume after retained hold cleared: %v", err)
 	}
 }
 func TestSpoolAdmissionRefusesSymlink(t *testing.T) {

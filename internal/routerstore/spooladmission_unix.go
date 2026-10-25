@@ -13,6 +13,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+const spoolQuiescenceWait = 30 * time.Second
+
 // lockSpoolAdmission locks the retained spool DIRECTORY, not a removable marker.
 // SH covers publication through response settlement; EX prevents updated clients
 // publishing while the selected relay is refreshed. This is cooperative: legacy
@@ -40,7 +42,7 @@ func lockSpoolAdmission(ctx context.Context, root *os.Root, exclusive bool) (*os
 				for _, name := range []string{servicedrain.MaintenanceMarkerName, servicedrain.MaintenancePrepareName} {
 					if _, probe := root.Lstat(name); !errors.Is(probe, os.ErrNotExist) {
 						_ = f.Close()
-						return nil, errors.New("spool admission: retained root maintenance transaction; request not published")
+						return nil, errSpoolMaintenancePending
 					}
 				}
 			}
@@ -61,10 +63,10 @@ func lockSpoolAdmission(ctx context.Context, root *os.Root, exclusive bool) (*os
 	}
 }
 
-// WithSpoolQuiescence waits at most five seconds for updated in-flight clients,
-// then retains exclusive producer admission through operation (including its
-// existing finite recovery). It never cancels/replays a published request. The
-// caller must use a bounded operation and verify all legacy producers separately.
+// WithSpoolQuiescence waits up to the current client's 30-second call budget
+// (or the caller's earlier deadline) for updated in-flight clients, then retains
+// exclusive producer admission through operation. It never cancels or replays a
+// published request. Legacy writers still require separate evidence.
 // Perform operator RPC authorization BEFORE entry and RPC readback AFTER return:
 // a spool RPC inside operation would correctly block on its own exclusive lock.
 func WithSpoolQuiescence(ctx context.Context, physical string, operation func() error) error {
@@ -80,10 +82,13 @@ func WithSpoolQuiescence(ctx context.Context, physical string, operation func() 
 	if err != nil || !before.IsDir() {
 		return errors.New("spool admission: real directory required")
 	}
-	wait, cancel := context.WithTimeout(ctx, 5*time.Second)
+	wait, cancel := context.WithTimeout(ctx, spoolQuiescenceWait)
 	defer cancel()
 	lock, err := lockSpoolAdmission(wait, root, true)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return fmt.Errorf("spool admission: refresh could not acquire the barrier before the current-call wait expired; no retirement started: %w", err)
+		}
 		return err
 	}
 	defer lock.Close()

@@ -67,6 +67,69 @@ func TestSpoolRelayEndToEnd(t *testing.T) {
 	}
 }
 
+func TestSpoolRelayShutdownJoinsForwardBeforeServeReturns(t *testing.T) {
+	spool := t.TempDir()
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	defer releaseOnce.Do(func() { close(release) })
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		close(entered)
+		<-release
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"result":[]}`)
+	}))
+	t.Cleanup(svc.Close)
+	relay := &Relay{Spool: spool, Base: svc.URL, Token: "fixture"}
+	serveCtx, stop := context.WithCancel(context.Background())
+	defer stop()
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- relay.Serve(serveCtx) }()
+	transport := newSpoolTransport(spool, "active")
+	transport.wait = 3 * time.Second
+	request, err := http.NewRequest(http.MethodPost, "http://spool/v1/call/Read", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	callDone := make(chan error, 1)
+	go func() {
+		response, callErr := transport.RoundTrip(request)
+		if callErr == nil {
+			_, callErr = io.Copy(io.Discard, response.Body)
+			_ = response.Body.Close()
+		}
+		callDone <- callErr
+	}()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("relay did not start the retained request")
+	}
+	stop()
+	select {
+	case err := <-serveDone:
+		t.Fatalf("Serve returned while a forward worker was active: %v", err)
+	case <-time.After(25 * time.Millisecond):
+	}
+	releaseOnce.Do(func() { close(release) })
+	select {
+	case err := <-callDone:
+		if err != nil {
+			t.Fatalf("caller did not receive settled response: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("active caller did not settle after the forward was released")
+	}
+	select {
+	case err := <-serveDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Serve did not return after its request worker joined")
+	}
+}
+
 // Without a relay the lane fails loudly and leaves nothing behind.
 func TestSpoolWithoutRelayTimesOut(t *testing.T) {
 	spool := t.TempDir()
