@@ -1,0 +1,137 @@
+{
+  "records": [
+    "archive-drift first witness",
+    "archive-drift second witness",
+    "O'Reilly retained",
+    "say\"hello retained",
+    "unclosed retained",
+    "label:blue retained",
+    "café 東京 retained",
+    "draft retained",
+    "alpha NOT beta retained",
+    "alpha OR beta retained",
+    "alpha beta retained",
+    "red far blue retained",
+    "red blue retained",
+    "near boundary retained"
+  ],
+  "cases": [
+    {
+      "name": "hyphen",
+      "query": "archive-drift",
+      "want": [
+        0,
+        1
+      ]
+    },
+    {
+      "name": "apostrophe",
+      "query": "O'Reilly",
+      "want": [
+        2
+      ]
+    },
+    {
+      "name": "quotes",
+      "query": "say\"hello",
+      "want": [
+        3
+      ]
+    },
+    {
+      "name": "unclosed_quote",
+      "query": "\"unclosed",
+      "want": [
+        4
+      ]
+    },
+    {
+      "name": "colon",
+      "query": "label:blue",
+      "want": [
+        5
+      ]
+    },
+    {
+      "name": "unicode",
+      "query": "café 東京",
+      "want": [
+        6
+      ]
+    },
+    {
+      "name": "negative_syntax",
+      "query": "-draft",
+      "want": [
+        7
+      ]
+    },
+    {
+      "name": "literal_NOT",
+      "query": "alpha NOT beta",
+      "want": [
+        8
+      ]
+    },
+    {
+      "name": "literal_OR",
+      "query": "alpha OR beta",
+      "want": [
+        9
+      ]
+    },
+    {
+      "name": "whitespace_AND",
+      "query": "red blue",
+      "want": [
+        11,
+        12
+      ]
+    },
+    {
+      "name": "near_syntax",
+      "query": "NEAR(",
+      "want": [
+        13
+      ]
+    },
+    {
+      "name": "no_match",
+      "query": "empty-hyphen-no-match",
+      "want": []
+    },
+    {
+      "name": "empty_browse",
+      "query": "",
+      "want": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13
+      ]
+    },
+    {
+      "name": "escaped_quote_operator",
+      "query": "\" OR *",
+      "want": [
+        9
+      ]
+    }
+  ],
+  "invalid": [
+    "---",
+    "\"",
+    "*",
+    "()"
+  ]
+}

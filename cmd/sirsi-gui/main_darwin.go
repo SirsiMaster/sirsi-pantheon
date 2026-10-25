@@ -18,6 +18,7 @@ import (
 	webview "github.com/webview/webview_go"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dashboard"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/mercury"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
 )
 
@@ -26,7 +27,7 @@ func main() {
 	runtime.LockOSThread()
 
 	// Reuse a running dashboard (e.g. the menubar's) if present; else start one.
-	srv := dashboard.New(dashboard.Config{SirsiBin: setup.SirsiBinaryPath()})
+	srv := dashboard.New(dashboard.Config{SirsiBin: setup.SirsiBinaryPath(), MercuryFn: mercury.NewConfigured().Read})
 	if err := srv.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "sirsi-gui: reusing existing dashboard (%v)\n", err)
 	} else {

@@ -1,11 +1,16 @@
 import SwiftUI
 import Foundation
 
-// Mercury does not yet publish a dedicated `sirsi mercury status` contract.
-// This workspace reads only existing, canonical projections: Ra's lane ping
-// and admitted-machine registry, plus the host's shared transport receipt.
-// It presents those sources as separate evidence and never infers a Mercury
-// machine assignment, rail reservation, or negotiated rate.
+// Manual and visibility refreshes replace the same SwiftUI-owned task. Leaving
+// the workspace cancels its reads, including a Refresh-button invocation.
+struct MercuryRefreshIdentity: Hashable {
+    let visible: Bool
+    let request: UUID
+}
+
+// Mercury's canonical Go dashboard read owns metrics and scene truth. The
+// adjacent Ra lane/admission and host transport receipts remain separate
+// evidence; none establishes a Mercury assignment or rail reservation.
 struct MercuryWorkspaceView: View {
     @ObservedObject var engine: SirsiEngine
     @StateObject private var monitor = MercuryMonitor()
@@ -23,6 +28,7 @@ struct MercuryWorkspaceView: View {
     @State private var refreshedAt: Date?
     @State private var laneReadAt: Date?
     @State private var loading = true
+    @State private var refreshRequest = UUID()
 
     private let laneArgs = ["router", "ping", "mercury", "--json"]
     private let machineArgs = ["router", "machines", "--json"]
@@ -51,13 +57,13 @@ struct MercuryWorkspaceView: View {
                     Text("Mercury workspace")
                         .sirsiFont(.title3, weight: .bold)
                         .foregroundStyle(Color.white)
-                    Text("Read-only view of published lane, admitted machines, and this Mac’s transport receipt.")
+                    Text("Mercury’s canonical snapshot, with separately labelled Ra admission and local transport receipts.")
                         .sirsiFont(.caption)
                         .foregroundStyle(PantheonTheme.mutedText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 6)
-                Button { Task { await refresh() } } label: {
+                Button { refreshRequest = UUID() } label: {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(.bordered)
@@ -106,7 +112,7 @@ struct MercuryWorkspaceView: View {
             .padding(.vertical, 9)
         }
         .background(PantheonTheme.canvas)
-        .task(id: engine.workspaceVisible) {
+        .task(id: MercuryRefreshIdentity(visible: engine.workspaceVisible, request: refreshRequest)) {
             guard !snapshotMode, engine.workspaceVisible else { return }
             await refresh()
             while !Task.isCancelled {
@@ -350,12 +356,12 @@ struct MercuryWorkspaceView: View {
     }
 
     private var railSection: some View {
-        sectionCard(title: "Rail state", subtitle: "No Mercury rail reading is available") {
+        sectionCard(title: "Rail admission", subtitle: "Reservation is separate from observed traffic") {
             HStack(alignment: .top, spacing: 9) {
                 Image(systemName: "point.3.connected.trianglepath.dotted")
                     .sirsiFont(.subheadline)
                     .foregroundStyle(PantheonTheme.gold)
-                Text("These readings do not show which rail Mercury uses or whether Mercury has rail traffic.")
+                Text("Dashboard link observations do not establish rail reservation or transport admission. Ra and local hardware receipts remain separately scoped.")
                     .sirsiFont(.subheadline)
                     .foregroundStyle(PantheonTheme.mutedText)
                     .fixedSize(horizontal: false, vertical: true)

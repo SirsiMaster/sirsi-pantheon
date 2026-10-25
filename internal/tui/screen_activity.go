@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"time"
@@ -27,12 +28,17 @@ type activityScreen struct {
 	// screen. This preserves the operator console's five-screen information
 	// architecture while giving every operator the same System One casebook that
 	// the CLI, MCP, Horus dashboard, and native app project.
-	showMaat     bool
-	maatState    loadState
-	maatErr      error
-	maatReport   maatCasebookReport
-	maatSelected int
-	maatDetail   int
+	showMaat                                     bool
+	maatState                                    loadState
+	maatErr                                      error
+	maatReport                                   maatCasebookReport
+	maatSelected                                 int
+	maatDetail                                   int
+	maatGeneration                               uint64
+	maatCancel                                   context.CancelFunc
+	maatQuery, maatScope, maatStatus, maatCursor string
+	maatEditing                                  bool
+	maatDraft                                    string
 }
 
 func newActivityScreen() *activityScreen {
@@ -55,12 +61,15 @@ func (s *activityScreen) Busy() bool {
 }
 
 func (s *activityScreen) HintIDs() []CommandID {
+	if s.showMaat {
+		return []CommandID{CmdInspect, CmdMaatContinue, CmdMaatSearch, CmdMaatScope, CmdMaatStatus, CmdRefresh, CmdMaatCasebook, CmdTab, CmdQuit}
+	}
 	return []CommandID{CmdMoveDown, CmdInspect, CmdMaatCasebook, CmdRefresh, CmdTab, CmdQuit}
 }
 
 func (s *activityScreen) RightMeta() string {
 	if s.showMaat && s.maatState == stateReady {
-		return fmt.Sprintf("%d open · %d urgent", s.maatReport.Summary.Open, s.maatReport.Summary.Urgent)
+		return fmt.Sprintf("page: %d open · %d urgent", s.maatReport.Summary.Open, s.maatReport.Summary.Urgent)
 	}
 	if s.state != stateReady {
 		return ""
@@ -70,16 +79,11 @@ func (s *activityScreen) RightMeta() string {
 
 func (s *activityScreen) Load() tea.Cmd {
 	s.state = stateLoading
-	s.maatState = stateLoading
 	return tea.Batch(func() tea.Msg {
 		var r activityReport
 		err := decode("activity", &r)
 		return activityLoaded{report: r, err: err}
-	}, func() tea.Msg {
-		var r maatCasebookReport
-		err := decode("maat", &r, "casebook", "--limit", "50")
-		return maatCasebookLoaded{report: r, err: err}
-	})
+	}, s.loadMaat(""))
 }
 
 type activityLoaded struct {
@@ -88,8 +92,10 @@ type activityLoaded struct {
 }
 
 type maatCasebookLoaded struct {
-	report maatCasebookReport
-	err    error
+	generation                uint64
+	cursor, snapshot, queryID string
+	report                    maatCasebookReport
+	err                       error
 }
 
 func (s *activityScreen) Update(msg tea.Msg, caps Capabilities) (Screen, tea.Cmd) {
@@ -106,12 +112,20 @@ func (s *activityScreen) Update(msg tea.Msg, caps Capabilities) (Screen, tea.Cmd
 		return s, nil
 
 	case maatCasebookLoaded:
+		if m.generation != s.maatGeneration {
+			return s, nil
+		}
+		if m.err == nil && m.cursor != "" && (m.snapshot != m.report.History.Snapshot || m.queryID != m.report.History.QueryID) {
+			m.err = fmt.Errorf("history snapshot changed; u restarts the query")
+		}
 		if m.err != nil {
 			s.maatState = stateError
 			s.maatErr = m.err
 			return s, nil
 		}
 		s.maatState = stateReady
+		s.maatErr = nil
+		s.maatDetail = -1
 		s.maatReport = m.report
 		s.maatSelected = clampSelection(s.maatSelected, len(s.maatReport.Cases))
 		return s, nil
@@ -125,6 +139,11 @@ func (s *activityScreen) Update(msg tea.Msg, caps Capabilities) (Screen, tea.Cmd
 func (s *activityScreen) handleCmd(cmd Command) (Screen, tea.Cmd) {
 	if cmd.ID == CmdMaatCasebook {
 		s.showMaat = !s.showMaat
+		if !s.showMaat {
+			s.CancelRead()
+		} else if s.maatState == stateIdle {
+			return s, s.loadMaat("")
+		}
 		return s, nil
 	}
 	if s.showMaat {
@@ -155,6 +174,44 @@ func (s *activityScreen) handleCmd(cmd Command) (Screen, tea.Cmd) {
 }
 
 func (s *activityScreen) handleMaatCmd(cmd Command) (Screen, tea.Cmd) {
+	switch cmd.ID {
+	case CmdMaatContinue:
+		if s.maatState == stateError {
+			return s, s.loadMaat(s.maatCursor)
+		}
+		if s.maatState != stateLoading && s.maatReport.History.NextCursor != "" {
+			return s, s.loadMaat(s.maatReport.History.NextCursor)
+		}
+		return s, nil
+	case CmdMaatSearch:
+		s.CancelRead()
+		s.maatEditing = true
+		s.maatDraft = s.maatQuery
+		return s, nil
+	case CmdMaatScope:
+		if s.maatScope == "system-one" {
+			s.maatScope = "all"
+		} else {
+			s.maatScope = "system-one"
+		}
+		return s, s.loadMaat("")
+	case CmdMaatStatus:
+		switch s.maatStatus {
+		case "":
+			s.maatStatus = "open"
+		case "open":
+			s.maatStatus = "resolved"
+		default:
+			s.maatStatus = ""
+		}
+		return s, s.loadMaat("")
+	case CmdRefresh:
+		return s, s.loadMaat("")
+	case CmdBack:
+		s.CancelRead()
+		s.maatDetail = -1
+		return s, nil
+	}
 	n := len(s.maatReport.Cases)
 	switch cmd.ID {
 	case CmdMoveDown:
@@ -242,8 +299,13 @@ func (s *activityScreen) View(width, height int, caps Capabilities) []string {
 }
 
 func (s *activityScreen) maatView(height int, caps Capabilities) []string {
+	if s.maatEditing {
+		return []string{"  Search canonical history (512 bytes maximum):", "  " + s.maatDraft, "  enter search · esc cancel"}
+	}
 	switch s.maatState {
-	case stateIdle, stateLoading:
+	case stateIdle:
+		return []string{"  Ma’at history read paused. u restarts; / searches; m returns to operations.", "  " + s.maatQueryLabel()}
+	case stateLoading:
 		return loadingLines("opening Ma'at System One casebook…", caps)
 	case stateError:
 		return []string{
@@ -251,21 +313,27 @@ func (s *activityScreen) maatView(height int, caps Capabilities) []string {
 			"",
 			"  " + Paint(s.maatErr.Error(), TokDim, caps),
 			"",
-			"  " + Paint("u update retries the local evidence read · m returns to the operations ledger", TokDim, caps),
+			"  " + Paint("n retries this read · u restarts the query · m returns to the operations ledger", TokDim, caps),
 		}
+	}
+	if s.maatReport.History.Coverage != "complete" {
+		return []string{"  " + s.maatQueryLabel(), "  Ma’at history: " + s.maatReport.History.Coverage, "  No provisional cases. n continues a bounded scan; u restarts; / searches."}
 	}
 	if len(s.maatReport.Cases) == 0 {
 		return []string{
+			"  " + s.maatQueryLabel(),
 			"  " + Paint("Ma'at System One casebook", TokBrand, caps),
 			"",
-			"  " + Paint("No recorded decision cases match this local view.", TokDim, caps),
+			"  " + Paint(s.maatHistoryLabel()+" · no cases on this page; inspect integrity before concluding absence.", TokDim, caps),
 			"  " + Paint("m returns to the operations ledger · u refreshes the evidence journal", TokDim, caps),
 		}
 	}
 
 	lines := []string{
+		"  " + s.maatHistoryLabel(),
+		"  " + s.maatQueryLabel(),
 		"  " + Paint("Ma'at System One · evidence-bound casebook", TokBrand, caps),
-		"  " + Paint(fmt.Sprintf("%d cases · %d open · %d urgent · %d resolved", s.maatReport.Summary.Total, s.maatReport.Summary.Open, s.maatReport.Summary.Urgent, s.maatReport.Summary.Resolved), TokDim, caps),
+		"  " + Paint(fmt.Sprintf("page: %d cases · %d open · %d urgent · %d resolved", s.maatReport.Summary.Total, s.maatReport.Summary.Open, s.maatReport.Summary.Urgent, s.maatReport.Summary.Resolved), TokDim, caps),
 		"",
 	}
 	cols := []Column{
@@ -337,11 +405,19 @@ func (s *activityScreen) maatView(height int, caps Capabilities) []string {
 				tail = append(tail, "  "+Paint("requires explicit owner confirmation · native Pantheon Casebook can record it", TokWarn, caps))
 			}
 		}
+		for _, link := range []struct{ label, value string }{{"verified repair", c.VerifiedRepairEvidence}, {"repair outcome", c.RepairOutcomeEvidence}, {"pending repair attempt", c.PendingRepairAttemptEvidence}} {
+			if link.value != "" {
+				tail = append(tail, "  "+link.label+": "+link.value)
+			}
+		}
+		if c.SystemOneCalibration != nil {
+			tail = append(tail, "  independent calibration: "+c.SystemOneCalibration.ScreenEvidence+" → "+c.SystemOneCalibration.FrontierEvidence)
+		}
 		if c.Resolution != "" {
 			tail = append(tail, "  "+Paint("owner acceptance: ", TokDim, caps)+c.Resolution)
 		}
 	}
-	tail = append(tail, "", "  "+Paint("read-only evidence view · enter detail · m operations · u update", TokDim, caps))
+	tail = append(tail, "", "  "+Paint("m operations · n older/continue/retry · u restart", TokDim, caps), "  "+Paint("enter detail · / search · o scope · v status · read-only", TokDim, caps))
 	lines = append(lines, renderTableWindow(cols, rows, caps, false, height-len(lines)-len(tail))...)
 	return append(lines, tail...)
 }
