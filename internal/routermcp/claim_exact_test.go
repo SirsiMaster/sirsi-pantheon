@@ -95,9 +95,11 @@ func exactClaimFixture(t *testing.T) (*Server, *routerstore.SQLiteStore) {
 			t.Error(err)
 		}
 	})
+	// ClaimNext orders by canonical ID, not Opened. Keep the earlier own ID
+	// lexically first so replacing exact selection with ClaimNext is causal.
 	for _, row := range []routerstore.Item{
-		{ID: "older-own", From: "fixture-sender", To: "owned-claim", Title: "Older eligible own work", Status: "open", Opened: "2026-01-01T00:00:00Z"},
-		{ID: "exact-own", From: "fixture-sender", To: "owned-claim", Title: "Exact own canary", Status: "open", Opened: "2026-01-02T00:00:00Z"},
+		{ID: "20260101-older-own", From: "fixture-sender", To: "owned-claim", Title: "Older eligible own work", Status: "open", Opened: "2026-01-01T00:00:00Z"},
+		{ID: "20260102-exact-own", From: "fixture-sender", To: "owned-claim", Title: "Exact own canary", Status: "open", Opened: "2026-01-02T00:00:00Z"},
 		{ID: "other-recipient", From: "fixture-sender", To: "other-claim", Title: "Other recipient work", Status: "open", Opened: "2026-01-01T00:00:00Z"},
 	} {
 		if err := store.Put(row); err != nil {
@@ -111,7 +113,7 @@ func exactClaimFixture(t *testing.T) (*Server, *routerstore.SQLiteStore) {
 func fixtureItems(t *testing.T, store *routerstore.SQLiteStore) []routerstore.Item {
 	t.Helper()
 	items := []routerstore.Item{}
-	for _, id := range []string{"older-own", "exact-own", "other-recipient"} {
+	for _, id := range []string{"20260101-older-own", "20260102-exact-own", "other-recipient"} {
 		row, err := store.Get(id)
 		if err != nil {
 			t.Fatal(err)
@@ -133,8 +135,8 @@ func TestRouterClaimExactIDSelectsTargetAndKeepsInstanceOwnership(t *testing.T) 
 	s, store := exactClaimFixture(t)
 	before := fixtureItems(t, store)
 	started := time.Now()
-	result := callClaimTool(t, s, "router_claim", map[string]interface{}{"id": "exact-own"})
-	if result.IsError || !strings.Contains(claimText(result), "Claimed exact-own ") {
+	result := callClaimTool(t, s, "router_claim", map[string]interface{}{"id": "20260102-exact-own"})
+	if result.IsError || !strings.Contains(claimText(result), "Claimed 20260102-exact-own ") {
 		t.Fatalf("exact tool claim failed: %s", claimText(result))
 	}
 	after := fixtureItems(t, store)
@@ -142,11 +144,11 @@ func TestRouterClaimExactIDSelectsTargetAndKeepsInstanceOwnership(t *testing.T) 
 		t.Fatal("exact selection changed older/foreign work or missed target")
 	}
 	claims := localClaims(s)
-	record, ok := claims["exact-own"]
+	record, ok := claims["20260102-exact-own"]
 	if !ok || len(claims) != 1 || record.token == "" {
 		t.Fatal("wrong per-instance claim map")
 	}
-	if valid, err := store.VerifyLease("exact-own", record.token); err != nil || !valid {
+	if valid, err := store.VerifyLease("20260102-exact-own", record.token); err != nil || !valid {
 		t.Fatalf("local claim is not the durable lease: %v", err)
 	}
 	if record.expires.Before(started.Add(15*time.Minute-time.Second)) || record.expires.After(time.Now().Add(15*time.Minute+time.Second)) {
@@ -157,14 +159,14 @@ func TestRouterClaimExactIDSelectsTargetAndKeepsInstanceOwnership(t *testing.T) 
 	}
 	other := newServer("owned-claim", s.repo)
 	other.reg.set("second-inert-thread", "owned-claim")
-	refused := callClaimTool(t, other, "router_close", map[string]interface{}{"id": "exact-own", "ack": true, "result": "owned coordination fixture"})
+	refused := callClaimTool(t, other, "router_close", map[string]interface{}{"id": "20260102-exact-own", "ack": true, "result": "owned coordination fixture"})
 	if !refused.IsError || !strings.Contains(claimText(refused), "not claimed by this session") {
 		t.Fatal("fresh instance borrowed the first map")
 	}
 	if !reflect.DeepEqual(after, fixtureItems(t, store)) {
 		t.Fatal("nonclaiming instance changed durable items")
 	}
-	if !s.reg.ownsClaim("exact-own") || other.reg.ownsClaim("exact-own") {
+	if !s.reg.ownsClaim("20260102-exact-own") || other.reg.ownsClaim("20260102-exact-own") {
 		t.Fatal("claim map ownership moved between instances")
 	}
 }
@@ -177,14 +179,14 @@ func TestRouterClaimOmittedIDPreservesClaimNext(t *testing.T) {
 			s, store := exactClaimFixture(t)
 			before := fixtureItems(t, store)
 			result := callClaimTool(t, s, "router_claim", tc.args)
-			if result.IsError || !strings.Contains(claimText(result), "Claimed older-own ") {
+			if result.IsError || !strings.Contains(claimText(result), "Claimed 20260101-older-own ") {
 				t.Fatalf("legacy next claim changed: %s", claimText(result))
 			}
 			after := fixtureItems(t, store)
 			if after[0].Status != "claimed" || !reflect.DeepEqual(before[1:], after[1:]) {
 				t.Fatal("legacy next did not select only older own work")
 			}
-			if claims := localClaims(s); len(claims) != 1 || !s.reg.ownsClaim("older-own") {
+			if claims := localClaims(s); len(claims) != 1 || !s.reg.ownsClaim("20260101-older-own") {
 				t.Fatal("legacy next lost local map")
 			}
 		})
@@ -194,7 +196,7 @@ func TestRouterClaimExactRefusalNeverFallsBackOrMutatesOtherWork(t *testing.T) {
 	for _, name := range []string{"wrong_recipient", "other_agent_cannot_take_own", "missing_id", "already_claimed"} {
 		t.Run(name, func(t *testing.T) {
 			s, store := exactClaimFixture(t)
-			id := "exact-own"
+			id := "20260102-exact-own"
 			if name == "wrong_recipient" {
 				id = "other-recipient"
 			}
@@ -257,12 +259,12 @@ func TestRouterClaimBadInputsAndUnregisteredRefuseBeforeRPC(t *testing.T) {
 		args map[string]interface{}
 	}{
 		{"empty", map[string]interface{}{"id": ""}}, {"whitespace", map[string]interface{}{"id": "  "}},
-		{"leading_space", map[string]interface{}{"id": " exact-own"}}, {"NUL", map[string]interface{}{"id": "bad\x00id"}},
+		{"leading_space", map[string]interface{}{"id": " 20260102-exact-own"}}, {"NUL", map[string]interface{}{"id": "bad\x00id"}},
 		{"LF", map[string]interface{}{"id": "bad\nid"}}, {"control", map[string]interface{}{"id": "bad\tid"}},
 		{"number", map[string]interface{}{"id": float64(1)}}, {"boolean", map[string]interface{}{"id": true}},
-		{"null", map[string]interface{}{"id": nil}}, {"array", map[string]interface{}{"id": []any{"exact-own"}}},
-		{"object", map[string]interface{}{"id": map[string]any{"value": "exact-own"}}},
-		{"unknown_key", map[string]interface{}{"agent": "other-claim"}}, {"unknown_with_id", map[string]interface{}{"id": "exact-own", "ttl": 1}},
+		{"null", map[string]interface{}{"id": nil}}, {"array", map[string]interface{}{"id": []any{"20260102-exact-own"}}},
+		{"object", map[string]interface{}{"id": map[string]any{"value": "20260102-exact-own"}}},
+		{"unknown_key", map[string]interface{}{"agent": "other-claim"}}, {"unknown_with_id", map[string]interface{}{"id": "20260102-exact-own", "ttl": 1}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -273,7 +275,7 @@ func TestRouterClaimBadInputsAndUnregisteredRefuseBeforeRPC(t *testing.T) {
 		})
 	}
 	unregistered := newServer("owned-claim", home)
-	result := callClaimTool(t, unregistered, "router_claim", map[string]interface{}{"id": "exact-own"})
+	result := callClaimTool(t, unregistered, "router_claim", map[string]interface{}{"id": "20260102-exact-own"})
 	if !result.IsError || !strings.Contains(claimText(result), "no registered thread") || rpc.Load() != 0 {
 		t.Fatal("unregistered exact claim reached RPC")
 	}
@@ -285,7 +287,11 @@ func TestRouterClaimEmptyInboxPreservesNoWorkAndMap(t *testing.T) {
 	before := fixtureItems(t, store)
 	result := callClaimTool(t, s, "router_claim", map[string]interface{}{})
 	if result.IsError || claimText(result) != "No open item to claim. Inbox is clear." {
-		t.Fatalf("legacy empty inbox changed: %s", claimText(result))
+		t.Fatalf("omitted-ID empty inbox was not normalized: %s", claimText(result))
+	}
+	exact := callClaimTool(t, s, "router_claim", map[string]interface{}{"id": "20260102-exact-own"})
+	if !exact.IsError {
+		t.Fatal("exact unavailable target was normalized as empty inbox")
 	}
 	if !reflect.DeepEqual(before, fixtureItems(t, store)) || len(localClaims(s)) != 0 {
 		t.Fatal("empty inbox changed unrelated work or local claims")

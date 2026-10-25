@@ -129,6 +129,10 @@ Rule A3 (static, no cgo), A11 (no telemetry).
 `Store.ClaimItem(registeredAgent,id,15m)`. It never substitutes another inbox item
 when the selected item is missing, ineligible, already claimed or addressed to
 another recipient. `router_claim {}` (or omitted arguments) keeps ClaimNext.
+When that omitted-ID call returns typed `routerstore.ErrNoWork`, this frontend
+normalizes it to the friendly non-error “No open item to claim. Inbox is clear.”
+reply without recording a local claim. This is an explicit empty-inbox correction;
+exact-ID unavailability remains an error and never falls back.
 A supplied null/non-string/empty/whitespace/control-containing ID and unknown
 argument names refuse before opening the facade or making an RPC. Exact IDs are
 not trimmed into another identity. Only the existing successful returned lease

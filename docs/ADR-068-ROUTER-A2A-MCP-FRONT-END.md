@@ -142,6 +142,8 @@ Minimum viable pipeline is P1. P4 depends on rs-44 and is out of scope here.
 The existing router_claim tool exposes optional string `id` through ClaimItem;
 its closed schema permits no caller-selected agent, TTL, thread or authority.
 Absent id preserves ClaimNext and the15-minute local session-map behavior.
+Its typed ErrNoWork now becomes a friendly non-error empty-inbox reply with no
+local claim; this corrects the prior error reply. Exact-ID errors remain refusals.
 Invalid supplied IDs refuse before facade/RPC access. Exact rejection never
 falls through to oldest-work selection. The actual framed MCP fixtures seed
 older eligible own work and verify exact targeting, legacy omission, unchanged

@@ -252,6 +252,11 @@ func (s *Server) handleClaim(args map[string]interface{}) (*mcp.ToolResult, erro
 	var lease *routerstore.Lease
 	if id == "" {
 		lease, err = f.Store().ClaimNext(agent, claimTTL)
+		// An empty next-item inbox is a normal result. Exact-item errors below
+		// remain refusals and never select or normalize another item.
+		if errors.Is(err, routerstore.ErrNoWork) {
+			return textResult("No open item to claim. Inbox is clear."), nil
+		}
 	} else {
 		lease, err = f.Store().ClaimItem(agent, id, claimTTL)
 	}
