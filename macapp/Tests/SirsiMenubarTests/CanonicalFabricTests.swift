@@ -73,4 +73,31 @@ import XCTest
         XCTAssertEqual(board.lanes.first?.state,"IDLE_WITH_WORK");XCTAssertEqual(board.lanes.first?.state_label,"IDLE with work")
         XCTAssertTrue(board.activity_seeded);XCTAssertTrue(board.runtime_available)
     }
+    func testCompactUsesVisibleBoundedAttentionAndSameStoreDetail() async throws {
+        var object = fixture()
+        object["runtime_available"] = false
+        var health = try XCTUnwrap(object["health"] as? [String:Any])
+        health["issues"] = ["swap observation unavailable"]
+        object["health"] = health
+        let good = try reply(object), failed = try reply(object,exit:1)
+        var calls = 0
+        let store = FabricProjectionStore {_ in calls += 1;return calls == 1 ? good : failed}
+        let now = try XCTUnwrap(pantheonObservationDate(at))
+        await store.load()
+        let compact = store.presentation(compact:true,at:now)
+        XCTAssertTrue(compact.attention.contains("Runtime classification unavailable"))
+        XCTAssertTrue(compact.attention.contains("swap observation unavailable"))
+        XCTAssertFalse(compact.showsDetails);XCTAssertTrue(compact.offersDetail)
+        XCTAssertTrue(store.presentation(compact:false,at:now).showsDetails)
+        await store.load()
+        let retained = store.presentation(compact:true,at:now)
+        XCTAssertTrue(retained.attention.contains { $0.contains("refresh unavailable") })
+        XCTAssertTrue(retained.attention.contains { $0.contains("Retained observation") })
+        XCTAssertEqual(store.board?.generated_at,at)
+        let emptyReply = try reply(fixture())
+        let empty = FabricProjectionStore {_ in emptyReply};await empty.load()
+        XCTAssertEqual(empty.presentation(compact:true,at:now).attention,["No attention entries supplied; absence is not a host-health verdict"])
+        XCTAssertFalse(empty.presentation(compact:true,at:now).showsDetails)
+    }
+
 }

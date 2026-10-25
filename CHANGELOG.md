@@ -1,3 +1,9 @@
+<!-- Source-only corrective candidate; no release/publication claim. -->
+## Fabric a330 review correction
+
+- Scope web Fabric freshness and lane drilldown to their own observation; keep compact native attention visible and bind local engine telemetry to the existing this-mac route.
+- Add direct app-wiring, machine-binding and compact-projection regression fixtures. Qualification remains Main-owned and pending.
+
 # Changelog — Sirsi Pantheon
 All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).

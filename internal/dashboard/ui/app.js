@@ -25,8 +25,8 @@ var stopMercury=null;
 function get(u){return fetch(u,{cache:'no-store',signal:AbortSignal.timeout(15000)}).then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j})})}
 function load(){
  if(state.loading)return state.loading;
- setLive('Refreshing…','stale');
- var router=get('/api/router/v1/snapshot').then(function(d){state.data=d;state.err=null;state.at=new Date()}).catch(function(e){state.err=e.message}).then(function(){render();setLive(state.err?'Stale / unavailable · '+state.err:'Received '+state.at.toLocaleTimeString(),' '+(state.err?'err':''))});
+ setLive('Router refreshing…','stale');
+ var router=get('/api/router/v1/snapshot').then(function(d){state.data=d;state.err=null;state.at=new Date()}).catch(function(e){state.err=e.message}).then(function(){render();setLive(state.err?'Router stale / unavailable · '+state.err:'Router received '+state.at.toLocaleTimeString(),' '+(state.err?'err':''))});
  var host=get('/api/stats').then(function(d){state.stats=d;state.hostErr=null}).catch(function(e){state.hostErr=e.message}).then(function(){if(state.view==='host')render()});
  var fleet=loadFleet();
  state.loading=Promise.allSettled([router,host,fleet]).finally(function(){state.loading=null});return state.loading;
@@ -97,10 +97,13 @@ function vFailures(d){
  var k=d.known_failures||[];
  return '<p class="sub" style="margin-bottom:16px">A recurring failure is registered once with its signature and cause. The fix records the release it shipped in and a regression test that must exist. The wake loop recognizes the failure next time instead of waiting for a person.</p><table class="table responsive-table"><thead><tr><th>Failure</th><th>Status</th><th>Fixed in</th><th>Regression guard</th></tr></thead><tbody>'+k.map(function(x){return '<tr><td data-label="Failure"><button class="lane-select" data-failure="'+esc(x.id)+'">'+esc(x.id)+'</button><div class="dim">'+esc(x.title)+'</div></td><td data-label="Status"><span class="chip st-'+esc(x.status)+'">'+esc(x.status)+'</span></td><td data-label="Fixed in" class="mono">'+esc(x.fixed_in||'—')+'</td><td data-label="Regression guard" class="mono">'+esc(x.guard||'—')+'</td></tr>'}).join('')+'</tbody></table>';
 }
-function fabricHeadlines(){return (state.fleetErr?'<p class="stale-banner">Fabric refresh unavailable · retained observation '+esc(state.fleet&&state.fleet.generated_at||'none')+' · '+esc(state.fleetErr)+'</p>':'')+PantheonFabric.headlines(state.fleet,esc)}
+function fabricReceipt(){return PantheonFabric.receipt(state.fleet,state.fleetErr,Date.now(),esc)}
+function fabricHeadlines(){return fabricReceipt()+PantheonFabric.headlines(state.fleet,esc)}
+function bindFabricLanes(el){PantheonFabric.bindLaneInspectors(el,state.fleet,fabricInspector)}
+function ageFabric(){document.querySelectorAll('.fabric-receipt').forEach(function(node){var f=PantheonFabric.freshness(state.fleet,state.fleetErr,Date.now());node.textContent=f.text;node.dataset.fabricState=f.state})}
 function vFleet(){
  if(state.fleetErr&&!state.fleet)return '<div class="card err-card"><h2>Fabric unavailable</h2>'+esc(state.fleetErr)+'</div>';
- return PantheonFabric.render(state.fleet,esc);
+ return fabricReceipt()+PantheonFabric.render(state.fleet,esc);
 }
 function memoryDiagnostics(){
  var m=state.memory,err=state.memoryErr,busy=state.memoryBusy;
@@ -128,7 +131,7 @@ function vHost(d){
 =======
  var s=d.swap,h=state.fleet&&state.fleet.health;
  var ram=h&&h.ram_pct!=null?h.ram_pct:null;
- return (state.fleetErr?'<p class="stale-banner">Host fabric refresh unavailable · retained observation '+esc(state.fleet&&state.fleet.generated_at||'none')+' · '+esc(state.fleetErr)+'</p>':'')+'<div class="grid g2">'+
+ return fabricReceipt()+'<div class="grid g2">'+
  '<div class="card"><h2>Host facts — canonical Fabric observation</h2><p>RAM availability complement: '+(ram==null?'Unavailable':esc(ram)+'%')+'</p><p>Capacity: '+(h&&h.total_ram!=null?esc(h.total_ram)+' bytes':'Unavailable')+' · CPU cores: '+(h&&h.cpu_cores!=null?esc(h.cpu_cores):'Unavailable')+'</p><p>Swap: '+(h&&h.swap!=null?esc(h.swap)+' bytes':'Unavailable')+' · Engine session: '+esc(h&&h.engine||'unknown')+' · '+esc(h&&h.engine_state||'unavailable')+' (not readiness proof)</p><p>Fabric observed '+esc(state.fleet&&state.fleet.generated_at||'Unavailable')+'</p></div>'+
  '<div class="card"><h2>Swap hygiene — retained separate receipt</h2>'+(s?'<div style="font-size:24px;font-weight:700;letter-spacing:-.02em">'+esc(s.verdict.replace('-',' '))+'</div><p class="sub">'+Math.round(s.used_mib)+' of '+Math.round(s.total_mib)+' MiB allocated · '+s.free_pct+'% free · paging delta '+(s.delta_pages<0?'not measurable yet':s.delta_pages+' pages')+'</p><p style="margin-top:12px">Correctness-only diagnosis: <b>'+(s.correctness_only_ok==null?'unknown':s.correctness_only_ok?'eligible':'not eligible')+'</b><br>Release-timing qualification: <b>'+(s.release_timing_ok==null?'unknown':s.release_timing_ok?'eligible':'not eligible')+'</b></p>'+(s.restart_proposed?'<p style="color:var(--danger);margin-top:12px"><b>A coordinated restart is proposed</b> for the owner and workload owners. Nothing was restarted.</p>':'')+'<p class="sub" style="margin-top:12px">Sampled '+rel(s.at)+'. Allocation is not paging: the verdict comes from swap movement between samples.</p>':'<p class="sub">No receipt yet. Run <span class="mono">sirsi swap-hygiene</span>.</p>')+'</div></div>';
 >>>>>>> a330d4f7 (fix(fabric): join canonical runtime health and observed transitions across surfaces)
@@ -145,7 +148,7 @@ function render(){
  $('#live').hidden=state.view==='mercury'; // Mercury owns its own typed read-state label, not the router receipt's lamp.
  if(state.view==='mercury'){if(!stopMercury){el.replaceChildren();stopMercury=window.mountMercury(el)}return}
  if(stopMercury){stopMercury();stopMercury=null}
- if(state.view==='fleet'){el.innerHTML=(state.fleetErr?'<p class="stale-banner">Fleet refresh failed · '+esc(state.fleetErr)+'</p>':'')+vFleet();return}
+ if(state.view==='fleet'){el.innerHTML=(state.fleetErr?'<p class="stale-banner">Fleet refresh failed · '+esc(state.fleetErr)+'</p>':'')+vFleet();bindFabricLanes(el);return}
  if(state.view==='host'){el.innerHTML=vHost(state.data||{});return}
 <<<<<<< HEAD
  if(!state.data){el.innerHTML=state.err?'<div class="card err-card"><h2>Router unavailable</h2>'+esc(state.err)+'</div>':skeleton();return}
@@ -163,9 +166,10 @@ function showInspector(title,body,persistent){
 
  var dlg=document.createElement('dialog');dlg.className='inspector';dlg.setAttribute('aria-label',title);
  dlg.innerHTML='<div class="inspector-head"><h2>'+esc(title)+'</h2><button class="btn" data-close>Close</button></div>'+body;
- var previous=document.activeElement;var previousAgent=previous&&previous.dataset&&previous.dataset.inspect;document.body.appendChild(dlg);if(persistent&&window.matchMedia('(min-width:1200px)').matches){dlg.classList.add('persistent');document.body.classList.add('has-inspector')}
-dlg.addEventListener('keydown',function(e){if(e.key==='Escape'){e.preventDefault();dlg.close()}});dlg.querySelector('[data-close]').onclick=function(){dlg.close()};dlg.addEventListener('close',function(){dlg.remove();document.body.classList.remove('has-inspector');if(previous&&previous.isConnected)previous.focus();else if(previousAgent){var target=Array.from(document.querySelectorAll('[data-inspect]')).find(function(x){return x.dataset.inspect===previousAgent});if(target)target.focus();else $('#main').focus()}});if(dlg.classList.contains('persistent'))dlg.show();else dlg.showModal();dlg.querySelector('[data-close]').focus();
+ var previous=document.activeElement;var previousAgent=previous&&previous.dataset&&previous.dataset.inspect;var previousFabricAgent=previous&&previous.dataset&&previous.dataset.fabricInspect;document.body.appendChild(dlg);if(persistent&&window.matchMedia('(min-width:1200px)').matches){dlg.classList.add('persistent');document.body.classList.add('has-inspector')}
+dlg.addEventListener('keydown',function(e){if(e.key==='Escape'){e.preventDefault();dlg.close()}});dlg.querySelector('[data-close]').onclick=function(){dlg.close()};dlg.addEventListener('close',function(){dlg.remove();document.body.classList.remove('has-inspector');if(previous&&previous.isConnected)previous.focus();else if(previousAgent||previousFabricAgent){var target=Array.from(document.querySelectorAll('[data-inspect],[data-fabric-inspect]')).find(function(x){return previousFabricAgent?x.dataset.fabricInspect===previousFabricAgent:x.dataset.inspect===previousAgent});if(target)target.focus();else $('#main').focus()}});if(dlg.classList.contains('persistent'))dlg.show();else dlg.showModal();dlg.querySelector('[data-close]').focus();
 }
+function fabricInspector(board,agent){showInspector('Fabric lane inspector',PantheonFabric.laneDetail(board,agent,esc),true)}
 function failureInspector(id){
  var failure=((state.data||{}).known_failures||[]).find(function(x){return x.id===id});if(!failure)return;
  showInspector('Failure details','<h3>'+esc(failure.id)+'</h3><p>'+esc(failure.title)+'</p><dl>'+[['Status',failure.status],['Fixed in',failure.fixed_in],['Regression guard',failure.guard],['Signature',failure.signature],['Cause',failure.cause],['Resolution',failure.resolution]].map(function(x){return '<dt>'+esc(x[0])+'</dt><dd>'+esc(x[1]??'Not supplied by this snapshot')+'</dd>'}).join('')+'</dl>');
@@ -178,9 +182,11 @@ document.addEventListener('click',function(e){var b=e.target.closest('[data-memo
 document.addEventListener('keydown',function(e){var dlg=$('.inspector.persistent');if(e.key==='Escape'&&dlg&&dlg.open&&!e.target.closest('input,textarea,select,[contenteditable]')){e.preventDefault();dlg.close();return}if(e.target.closest('input,textarea,select,dialog')||e.metaKey||e.ctrlKey||e.altKey)return;if(e.key==='r'){e.preventDefault();if(stopMercury)stopMercury.refresh();else load()}if(e.key==='/'){e.preventDefault();go('lanes');$('#lq').focus()}});
 $('#refresh').addEventListener('click',function(){if(stopMercury)stopMercury.refresh();else load()});
 window.addEventListener('pagehide',function(){if(stopMercury){stopMercury();stopMercury=null}});
-window.addEventListener('pageshow',function(){if(state.view==='mercury'&&!stopMercury)render()});
+window.addEventListener('pageshow',function(){ageFabric();if(state.view==='mercury'&&!stopMercury)render()});
+document.addEventListener('visibilitychange',function(){if(!document.hidden)ageFabric()});
 window.addEventListener('hashchange',function(){var h=location.hash.slice(1);if(h&&h!==state.view&&VIEWS.some(function(v){return v[0]===h}))go(h)});
 var h0=location.hash.slice(1);if(VIEWS.some(function(v){return v[0]===h0}))state.view=h0;
 render();load().then(function(){if(state.view==='fleet'&&!state.fleet)loadFleet()});
-state.timer=setInterval(function(){if(!document.hidden)load()},30000);
+var nextPoll=Date.now()+30000;
+state.timer=setInterval(function(){if(!document.hidden){ageFabric();if(Date.now()>=nextPoll){nextPoll=Date.now()+30000;load()}}},5000);
 })();

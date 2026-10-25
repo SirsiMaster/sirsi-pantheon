@@ -20,7 +20,7 @@ import (
 // Reuse the host's measured capacity and the existing Known-bearing swap/free
 // sample. RAM is explicitly the complement of kernel available-memory percent;
 // it is not a fabricated zero, RSS measurement, or a release timing verdict.
-func fabricHostFrom(capacity guard.NodeCapacity, sample swaphygiene.Sample, telemetry apollo.TelemetryRead, telemetryErr error, dirty *bool, now time.Time) ledger.FabricHealth {
+func fabricHostFrom(capacity guard.NodeCapacity, sample swaphygiene.Sample, telemetry apollo.TelemetryRead, telemetryErr error, dirty *bool, now time.Time, machineID string) ledger.FabricHealth {
 	h := ledger.FabricHealth{Engine: "unknown", EngineState: "unavailable", Issues: []string{}, ObservedAt: now.UTC().Format(time.RFC3339), GitDirty: dirty}
 	if capacity.TotalRAM > 0 {
 		n := capacity.TotalRAM
@@ -51,7 +51,10 @@ func fabricHostFrom(capacity guard.NodeCapacity, sample swaphygiene.Sample, tele
 	if telemetryErr == nil && telemetry.State == "active" && telemetry.Telemetry != nil {
 		t := telemetry.Telemetry
 		age := now.Sub(t.EmittedAt)
-		if age >= 0 && age <= 2*time.Minute && strings.TrimSpace(t.EngineID) != "" {
+		if machineID == "" || (t.MachineID != machineID && !(machineID == "this-mac" && t.MachineID == "")) {
+			h.EngineState = "binding_mismatch"
+			h.Issues = append(h.Issues, "engine session machine binding does not match local host")
+		} else if age >= 0 && age <= 2*time.Minute && strings.TrimSpace(t.EngineID) != "" {
 			h.Engine = t.EngineID
 			h.EngineState = "observed_session"
 		} else {
@@ -114,5 +117,6 @@ func collectFabricHostHealth(repo string, now time.Time) ledger.FabricHealth {
 	if err == nil {
 		telemetry, err = apollo.ReadTelemetry(home)
 	}
-	return fabricHostFrom(capacity, sample, telemetry, err, dirty, now)
+	// Apollo Collect identifies this local, single-device route as this-mac.
+	return fabricHostFrom(capacity, sample, telemetry, err, dirty, now, "this-mac")
 }

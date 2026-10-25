@@ -99,6 +99,7 @@
         "internal/dashboard/fabric_join_test.go",
         "cmd/sirsi/fabric_host_test.go",
         "internal/dashboard/testdata/fabric.test.cjs",
+        "internal/dashboard/testdata/fabric_app.test.cjs",
         "macapp/Tests/SirsiMenubarTests/CanonicalFabricTests.swift"
       ],
       "inputs": [
@@ -107,7 +108,8 @@
         "lane state",
         "existing canonical ClassifyLane + registry/PingLane readiness readbacks",
         "existing NodeCapacity, Known-bearing swap/free sample, bounded repository status and engine session telemetry",
-        "same-snapshot FleetTracker status observations"
+        "same-snapshot FleetTracker status observations",
+        "Fabric-owned source timestamp/read error/clock and this-mac telemetry binding"
       ],
       "outputs": [
         "FabricBoard",

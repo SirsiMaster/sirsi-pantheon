@@ -91,3 +91,32 @@ interop proof. Main must run focused normal/race, vet/lint, CLI and strict Swift
 Release gates plus producer/consumer semantic negatives and actual UI readback.
 Nexus portal/Horus console owners still need their own exact endpoint mapping
 and retained readback through Main. No cross-host/foreign UI delivery is inferred.
+
+## a330 review correction — source candidate, unrun
+
+Fabric freshness belongs to its own generated_at/read error and current clock,
+not the independent router snapshot lamp. Overview/Fleet/host show current,
+retained (with age), unavailable or unknown future time. The existing refresh
+lifecycle ages labels at five-second intervals and on visibility/page return;
+remote reads retain their thirty-second cadence. Last-good facts are retained.
+Fabric lane buttons capture the clicked board and render task/runtime/registration
+and source timestamp/build directly in the existing dialog. Separate router
+inbox inspection continues to use its own receipt; it never replaces Fabric.
+
+The host adapter supplies Apollo's existing `this-mac` local route identity.
+Only matching telemetry, or the documented omitted binding on that local route,
+can populate engine session. Foreign binding remains unknown with an issue;
+session freshness is still required and is never engine readiness proof.
+
+The Command Deck retains a bounded attention summary in compact mode, including
+runtime unknown, producer health issues, retained/error states and a same-store
+full-detail link. Lanes/full host/activity remain detail-only. Both modes consume
+the same presentation projection; neither derives health from other engine data.
+
+Direct fixtures add the actual app IIFE with controlled fetch/clock/DOM boundaries
+(`internal/dashboard/testdata/fabric_app.test.cjs`), machine-binding cases in
+`cmd/sirsi/fabric_host_test.go`, and the shared compact presentation path in
+`CanonicalFabricTests.swift`. They are authored, not executed by the author.
+Original full open-task-list/detail, visual vocabulary, live browser/native
+accessibility and foreign endpoint adoption remain acceptance obligations; these
+four corrections do not retire the original design or assert full delivery.

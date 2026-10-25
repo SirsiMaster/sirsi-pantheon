@@ -33,6 +33,13 @@ struct CanonicalFabricBoard: Decodable {
     }
 }
 
+// The compact and full views use this same bounded attention projection.
+struct FabricContentProjection {
+    let attention: [String]
+    let showsDetails: Bool
+    let offersDetail: Bool
+}
+
 @MainActor final class FabricProjectionStore: ObservableObject {
     typealias Reader = @MainActor ([String]) async -> SirsiEngine.JSONCommandRead
     static let arguments = ["router","fabric","--json"]
@@ -43,6 +50,18 @@ struct CanonicalFabricBoard: Decodable {
     init(read: Reader? = nil) { self.read = read ?? { await SirsiEngine.runJSONRead(args:$0,timeoutSeconds:20) } }
     func current(at now: Date) -> Bool {
         error == nil && pantheonObservationIsCurrent(pantheonObservationDate(board?.generated_at),at:now,maxAge:30)
+    }
+    func presentation(compact: Bool, at now: Date) -> FabricContentProjection {
+        var lines: [String] = []
+        if let error { lines.append(error) }
+        if let board {
+            if !current(at:now) {lines.append("Retained observation — current Fabric state unavailable")}
+            if !board.runtime_available {lines.append("Runtime classification unavailable")}
+            lines.append(contentsOf:board.health.issues.prefix(8))
+            if board.health.issues.count > 8 {lines.append("More host issues in the full Fabric detail")}
+            if lines.isEmpty {lines.append("No attention entries supplied; absence is not a host-health verdict")}
+        } else {lines.append("Fabric unavailable — no observation received")}
+        return FabricContentProjection(attention:lines,showsDetails:!compact,offersDetail:compact)
     }
     func load() async {
         guard !loading, !Task.isCancelled else {return}
@@ -68,19 +87,24 @@ struct CanonicalFabricBoard: Decodable {
             .task {if !snapshotMode {await store.load()}}
     }
     private func content(at now: Date) -> some View {
-        VStack(alignment:.leading,spacing:8) {
+        let projection = store.presentation(compact:compact,at:now)
+        return VStack(alignment:.leading,spacing:8) {
             Text("Tasks · messages · host health").sirsiFont(.caption,weight:.semibold)
-            if let error = store.error { Text(error).sirsiFont(.caption).foregroundStyle(.orange) }
             if let board = store.board {
                 Text(store.current(at:now) ? "Current fabric observation" : "Retained fabric observation · current state unavailable")
                     .sirsiFont(.caption).foregroundStyle(.secondary)
                 ForEach(board.headlineLines,id:\.self) {Text($0).sirsiFont(.caption)}
-                if !compact {
-                    Text("Needs attention").sirsiFont(.caption,weight:.semibold)
-                    if !board.runtime_available {Text("Runtime classification unavailable").sirsiFont(.caption)}
-                    ForEach(board.health.issues,id:\.self) {Text($0).sirsiFont(.caption)}
+                Text("Needs attention").sirsiFont(.caption,weight:.semibold)
+                ForEach(Array(projection.attention.enumerated()),id:\.offset) {_,line in
+                    Text(line).sirsiFont(.caption).foregroundStyle(.secondary)
+                }
+                if projection.offersDetail {
+                    NavLink {CanonicalFabricView(store:store)} label: {Text("Open full Fabric detail").sirsiFont(.caption)}
+                }
+                if projection.showsDetails {
                     ForEach(board.lanes) {lane in Text("\(lane.agent) · \(lane.state_label) · \(lane.open) open tasks").sirsiFont(.caption)}
                     Text("Host health — separate from tasks/messages").sirsiFont(.caption,weight:.semibold)
+                    ForEach(board.health.issues,id:\.self) {Text($0).sirsiFont(.caption)}
                     Text("RAM availability complement: \(board.health.ram_pct.map{String($0)+"%"} ?? "Unavailable") · Swap: \(board.health.swap.map{String($0)+" bytes"} ?? "Unavailable")").sirsiFont(.caption)
                     Text("Capacity: \(board.health.total_ram.map{String($0)+" bytes"} ?? "Unavailable") · CPU cores: \(board.health.cpu_cores.map{String($0)} ?? "Unavailable") · Repository dirty: \(board.health.git_dirty.map{String($0)} ?? "Unavailable")").sirsiFont(.caption)
                     Text("Engine: \(board.health.engine) · \(board.health.engine_state) (session observation, not readiness proof)").sirsiFont(.caption)
@@ -91,7 +115,10 @@ struct CanonicalFabricBoard: Decodable {
                     }
                 }
                 Text("\(board.generated_at) · \(board.build)").sirsiFont(.caption).foregroundStyle(.secondary)
-            } else {Text("Fabric unavailable — no task or message counts observed.").sirsiFont(.caption)}
+            } else {
+                Text("Fabric unavailable — no task or message counts observed.").sirsiFont(.caption)
+                ForEach(Array(projection.attention.enumerated()),id:\.offset) {_,line in Text(line).sirsiFont(.caption)}
+            }
             Button(store.loading ? "Reading fabric…" : "Refresh tasks and messages") {Task {await store.load()}}
                 .disabled(store.loading).buttonStyle(.bordered)
         }
