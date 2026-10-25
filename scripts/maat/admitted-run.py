@@ -11,6 +11,7 @@ import re
 import shlex
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import time
@@ -124,6 +125,93 @@ def local_resource():
     if name not in names:
         raise Refused('Host has no enrolled local resource mapping')
     return names[name]
+
+
+def local_scope_options(args, regime):
+    """Local CPU-floor work is not a fabric booking or an offline Ra session."""
+    if regime != 'build' or args.cpu_cores != 1:
+        raise Refused('Local scope supports one cooperative CPU core only; quiet, loaded and shared-resource bookings require fabric admission')
+    if args.register_executor or args.iterations != 1 or args.job_timeout is not None:
+        raise Refused('Local scope is one foreground job, without fabric executor registration or recurring reservations')
+
+
+def supervise_local(command, timeout, record, folder, persist):
+    """Existing foreground lifecycle with an explicit per-user local CPU lock.
+
+    No reservation ledger, Ra thread, pod grant, lease cache or transport fallback.
+    This is cooperative CPU work, not permission for a model or fleet operation.
+    """
+    import fcntl
+
+    parent_fd = lock_fd = None
+    child = None
+    code = 78
+    try:
+        require_job_safe_command(command)
+        parent_fd = os.open(folder.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        parent = os.fstat(parent_fd)
+        if parent.st_uid != os.getuid() or parent.st_mode & 0o022:
+            raise Refused('Local execution evidence parent must be owned and not writable by another user/group')
+        lock_fd = os.open('.local-cpu.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600, dir_fd=parent_fd)
+        lock = os.fstat(lock_fd)
+        if (not stat.S_ISREG(lock.st_mode) or lock.st_uid != os.getuid()
+                or stat.S_IMODE(lock.st_mode) != 0o600 or lock.st_nlink != 1):
+            raise Refused('Local CPU lock metadata is not private, regular and singly linked')
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise Refused('Another same-user local CPU job is active; no fabric booking was requested')
+        named = os.stat('.local-cpu.lock', dir_fd=parent_fd, follow_symlinks=False)
+        current_parent = os.stat(folder.parent, follow_symlinks=False)
+        if ((named.st_dev, named.st_ino) != (lock.st_dev, lock.st_ino)
+                or (current_parent.st_dev, current_parent.st_ino) != (parent.st_dev, parent.st_ino)):
+            raise Refused('Local CPU lock or evidence root changed before admission')
+        os.fsync(parent_fd)
+        record.update(scope='local', authority='local-user-process-lock', uid=os.getuid(),
+                      resource='local-user-cpu', cpu_cores=1, borrowed=False,
+                      local_lock=dict(device=lock.st_dev, inode=lock.st_ino),
+                      supervisor_pid=os.getpid(), execution_timeout_sec=timeout,
+                      status='admitted', fabric_delivery='not_requested')
+        persist()  # Durable exact execution intent before spawning anything.
+        env = os.environ.copy()
+        # Never borrow a parent's native/fabric admission as this job's authority.
+        env.pop('SIRSI_MAAT_EXECUTION_RECEIPT', None)
+        for key in ('GOMAXPROCS', 'OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS',
+                    'VECLIB_MAXIMUM_THREADS', 'NUMEXPR_NUM_THREADS', 'BLIS_NUM_THREADS'):
+            env[key] = '1'
+        # The child retains this same kernel lock if the supervisor crashes.
+        # A cooperative child/descendant exiting releases it; no timer unlock.
+        child = subprocess.Popen(command, start_new_session=True, env=env, pass_fds=(lock_fd,))
+        record.update(pid=child.pid, status='running')
+        persist()
+        code = child.wait(timeout=timeout)
+        record['child_exit_code'] = code
+        record['status'] = 'success' if code == 0 else 'child_failed'
+    except subprocess.TimeoutExpired:
+        record.update(status='refused_or_stopped', reason='Local execution timeout; no remote lease or delivery was inferred')
+        code = 78
+    except (Exception, KeyboardInterrupt) as error:
+        record.update(status='refused_or_stopped', reason=str(error))
+        code = 78
+    finally:
+        if child is not None:
+            try:
+                stop(child)  # Only this invocation's newly created child group.
+            except Exception as error:
+                record['cleanup_debt'] = 'Local child group cleanup unconfirmed: ' + str(error)
+                code = 78
+        for fd in (lock_fd, parent_fd):
+            if fd is not None:
+                try:
+                    os.close(fd)
+                except OSError as error:
+                    record['cleanup_debt'] = 'Local descriptor close unconfirmed: ' + str(error)
+                    code = 78
+        if record.get('cleanup_debt'):
+            record['status'] = 'refused_or_stopped'
+        record['exit_code'] = code
+        persist()
+    return code
 
 
 def execution_regime(cpu_cores=None, requested=None):
@@ -681,6 +769,8 @@ def supervise_iterations(command, resource, agent, thread, work, timeout, backen
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--scope', choices=('fabric', 'local'), default='fabric',
+                        help='Explicit local is one same-user CPU-floor job without Ra registration or shared-resource authority; default fabric is unchanged')
     parser.add_argument('--work', required=True)
     parser.add_argument('--agent', default=os.environ.get('SIRSI_AGENT_ID'))
     parser.add_argument('--thread', default=os.environ.get('SIRSI_THREAD_ID'))
@@ -709,6 +799,11 @@ def main():
         args.cpu_cores = execution_cores(args.cpu_cores, args.regime)
     except Refused as error:
         parser.error(str(error))
+    if args.scope == 'local':
+        try:
+            local_scope_options(args, regime)
+        except Refused as error:
+            parser.error(str(error))
     if regime == 'quiet' and not args.register_executor:
         parser.error('Quiet qualification requires --register-executor and a fresh owned reservation')
     if not 1 <= args.iterations <= 1000 or not 0 <= args.interval <= 3600:
@@ -718,7 +813,7 @@ def main():
     if args.job_timeout is not None and not 1 <= args.job_timeout <= 86400:
         parser.error('Job timeout must be 1..86400 seconds')
     # No caller-set host or admission exemption; host is derived locally.
-    resource = local_resource()
+    resource = 'local-user-cpu' if args.scope == 'local' else local_resource()
     folder = Path.home()/'.sirsi/evidence/maat-runs'/uuid.uuid4().hex
     folder.mkdir(parents=True, mode=0o700)
     record = {'status':'pending', 'resource':resource, 'work':args.work,
@@ -731,13 +826,26 @@ def main():
     fd = os.open(target, os.O_CREAT|os.O_EXCL|os.O_WRONLY|os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, 'w') as output:
         json.dump(record, output); output.flush(); os.fsync(output.fileno())
+    def persist():
+        with target.open('w') as output:
+            json.dump(record, output, indent=2); output.flush(); os.fsync(output.fileno())
+        if args.scope == 'local':
+            directory = os.open(folder, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+    if args.scope == 'local':
+        record.update(scope='local', authority='local-user-process-lock', uid=os.getuid(),
+                      fabric_delivery='not_requested')
+        try:
+            return supervise_local(command, args.timeout, record, folder, persist)
+        finally:
+            print('Ma\'at local terminal: '+str(target), file=sys.stderr)
     backend = Native()
     backend.execution_receipt_root = folder
     backend.cpu_cores = args.cpu_cores
     backend.requested_regime = regime
-    def persist():
-        with target.open('w') as output:
-            json.dump(record, output, indent=2); output.flush(); os.fsync(output.fileno())
     code = 78
     try:
         require_job_safe_command(command)
