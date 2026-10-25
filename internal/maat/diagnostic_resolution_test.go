@@ -74,6 +74,10 @@ func TestAcceptDiagnosticOwnerReviewFindsExactOldReviewBeyondRecentWindow(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
+	reviewTime, err := time.Parse(time.RFC3339Nano, review.Time)
+	if err != nil {
+		t.Fatal(err)
+	}
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		t.Fatal(err)
@@ -81,7 +85,7 @@ func TestAcceptDiagnosticOwnerReviewFindsExactOldReviewBeyondRecentWindow(t *tes
 	encoder := json.NewEncoder(file)
 	for index := 0; index < 1001; index++ {
 		row := Decision{
-			Time: time.Date(2026, 10, 25, 0, index/3600, index/60%60, index%60, time.UTC).Format(time.RFC3339Nano),
+			Time: reviewTime.Add(time.Duration(index+1) * time.Second).UTC().Format(time.RFC3339Nano),
 			Host: "fixture", Kind: "reservation", Requester: "fixture", Assessed: "unrelated reservation",
 			Determination: "grant", Why: "newer unrelated evidence", Evidence: "reservation:" + strconv.Itoa(index),
 		}
