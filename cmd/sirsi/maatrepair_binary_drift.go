@@ -86,7 +86,7 @@ func binaryDriftFileIdentity(path string) (maatBinaryFileIdentity, error) {
 	if !stat.Mode().IsRegular() {
 		return maatBinaryFileIdentity{}, errors.New("binary update input is not a regular file")
 	}
-	var id syscall.Stat_t
+	var id unix.Stat_t
 	if err := unix.Fstat(int(f.Fd()), &id); err != nil {
 		return maatBinaryFileIdentity{}, err
 	}
