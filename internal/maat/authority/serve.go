@@ -49,6 +49,10 @@ type reserveRequest struct {
 	Queue       bool                 `json:"queue"`
 }
 
+type releaseRequest struct {
+	ID string `json:"id"`
+}
+
 type wireError struct {
 	Error string `json:"error"`
 }
@@ -77,6 +81,7 @@ func Handler(auth *Authority, opts ServerOptions) (http.Handler, error) {
 		_, _ = w.Write([]byte("ok\n"))
 	})
 	mux.HandleFunc("/v1/authority/reserve", s.withAuth(s.handleReserve))
+	mux.HandleFunc("/v1/authority/release", s.withAuth(s.handleRelease))
 	mux.HandleFunc("/v1/authority/renew", s.withAuth(s.handleRenew))
 	mux.HandleFunc("/v1/authority/catchup", s.withAuth(s.handleCatchUp))
 	return mux, nil
@@ -126,6 +131,20 @@ func (s *server) handleReserve(w http.ResponseWriter, r *http.Request) {
 	result, err := callBounded(r.Context(), func() (schedule.ReserveResult, error) {
 		return s.auth.Reserve(req.Reservation, req.Queue)
 	})
+	if err != nil {
+		writeErr(w, http.StatusConflict, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *server) handleRelease(w http.ResponseWriter, r *http.Request) {
+	var req releaseRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad request body: "+err.Error())
+		return
+	}
+	result, err := callBounded(r.Context(), func() (*schedule.Reservation, error) { return s.auth.Release(req.ID) })
 	if err != nil {
 		writeErr(w, http.StatusConflict, err.Error())
 		return

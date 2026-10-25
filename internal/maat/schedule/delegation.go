@@ -387,7 +387,12 @@ func (l *Ledger) ReserveAsAuthority(req Reservation) (ReserveResult, error) {
 	if req.Epoch != d.Epoch {
 		return ReserveResult{}, fmt.Errorf("maat: fenced: epoch %d superseded (current %d)", req.Epoch, d.Epoch)
 	}
-	req.Status = StatusActive
+	// A grant (Reserve) always arrives Active; a state-change write-through
+	// (Release, expire, done, invalidate — ADR-120 §5) carries its own
+	// terminal Status and must keep it, not be forced back to Active.
+	if req.Status == "" {
+		req.Status = StatusActive
+	}
 	req.Share = ShareFull
 	out, err := l.UpsertReservation(req)
 	if err != nil {

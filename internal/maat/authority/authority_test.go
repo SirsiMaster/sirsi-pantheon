@@ -128,6 +128,50 @@ func TestReserve_ExpiredFencePreventsGrant(t *testing.T) {
 	}
 }
 
+// A release through the pod authority must journal and write through
+// exactly like a grant (ADR-120 §5: "release... included"), and the cloud
+// copy must actually show the released state, not be forced back to
+// Active by ReserveAsAuthority's grant-path status handling.
+func TestRelease_JournalsAndWritesThroughReleasedStatus(t *testing.T) {
+	_, cloud, auth := harness(t, "2026-10-22T10:00:00Z", "2026-10-22T22:00:00Z")
+	res, err := auth.Reserve(mkReq("studio", "claude-io", "2026-10-22T10:00:00Z", "2026-10-22T10:30:00Z"), false)
+	if err != nil || !res.Granted {
+		t.Fatalf("seed grant: res=%+v err=%v", res, err)
+	}
+	released, err := auth.Release(res.Reservation.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if released.Status != schedule.StatusReleased {
+		t.Fatalf("want a released reservation, got %+v", released)
+	}
+	if released.Seq <= res.Reservation.Seq {
+		t.Fatalf("want a journal seq after the grant's, got %d (grant was %d)", released.Seq, res.Reservation.Seq)
+	}
+	rows, err := cloud.Status("studio")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].ID != released.ID || rows[0].Status != schedule.StatusReleased {
+		t.Fatalf("want the cloud copy showing released (not re-forced active), got %+v", rows)
+	}
+	d, err := cloud.GetDelegation("studio-m5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.AckedSeq != released.Seq {
+		t.Fatalf("want acked_seq advanced to %d, got %d", released.Seq, d.AckedSeq)
+	}
+}
+
+func TestRelease_FencedRefuses(t *testing.T) {
+	// not_after is already in the past relative to "now".
+	_, _, auth := harness(t, "2026-10-22T22:00:01Z", "2026-10-22T22:00:00Z")
+	if _, err := auth.Release("whatever"); err == nil || !strings.Contains(err.Error(), "fenced") {
+		t.Fatalf("want a fenced refusal, got err=%v", err)
+	}
+}
+
 func TestRenew_SupersededEpochFencesPermanently(t *testing.T) {
 	_, cloud, auth := harness(t, "2026-10-22T10:00:00Z", "2026-10-22T22:00:00Z")
 	// A fresh Delegate() for the same pod bumps the epoch out from under the

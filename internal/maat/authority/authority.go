@@ -113,6 +113,42 @@ func (a *Authority) Reserve(req schedule.Reservation, queue bool) (schedule.Rese
 	return result, nil
 }
 
+// Release ends a reservation this authority holds, journaling the release
+// and write-through exactly as Reserve journals a grant (ADR-120 §5: "every
+// grant and every state change... release, expire, done and invalidate
+// included"). Refuses once Fenced(), same as Reserve: an expired or
+// superseded authority writes nothing further, so a caller fails closed.
+func (a *Authority) Release(id string) (*schedule.Reservation, error) {
+	if a.Fenced() {
+		return nil, fmt.Errorf("maat: fenced: pod authority %s (epoch %d) not granting", a.id, a.epoch)
+	}
+	r, err := a.Local.Release(id)
+	if err != nil {
+		return nil, err
+	}
+	stamped := *r
+	stamped.Authority = a.id
+	stamped.Epoch = a.epoch
+	entry, err := a.journal.Append(stamped)
+	if err != nil {
+		return nil, fmt.Errorf("maat: journal release: %w", err)
+	}
+	stamped.Seq = entry.Seq
+	if a.Cloud != nil {
+		// Same contiguous-ack discipline as Reserve (ADR-120 review P1-a): an
+		// out-of-order write-through here still gets reconciled by CatchUp.
+		if entry.Seq == a.ackedSeq+1 {
+			if _, werr := a.Cloud.ReserveAsAuthority(stamped); werr == nil {
+				a.ackedSeq = entry.Seq
+				_ = a.Cloud.AckDelegation(a.Pod, entry.Seq)
+			}
+		} else {
+			_ = a.CatchUp()
+		}
+	}
+	return &stamped, nil
+}
+
 // Renew is the periodic (every 15 min, ADR-120 §4) check-in: it asks the
 // cloud to extend this delegation's window to now+12h, which doubles as the
 // self-fence check (ADR-120 §3) -- RenewDelegation itself refuses a revoked
