@@ -74,7 +74,14 @@ func TestAcceptDiagnosticOwnerReviewFindsExactOldReviewBeyondRecentWindow(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	reviewTime, err := time.Parse(time.RFC3339Nano, review.Time)
+	persisted, err := j.Recent(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(persisted) != 1 || persisted[0].Evidence != review.Evidence {
+		t.Fatalf("persisted fixture review does not match the recorded evidence: %+v", persisted)
+	}
+	reviewTime, err := time.Parse(time.RFC3339Nano, persisted[0].Time)
 	if err != nil {
 		t.Fatal(err)
 	}
