@@ -141,3 +141,10 @@ case, test selection or old assertion is changed. G04's existing
 receipt API adaptations are deliberately excluded. Later G02 composition may
 deduplicate the identical helper. Full internal/maat normal/race under022 remains
 Main-owned qualification; no author execution or legacy failure relabeling.
+
+Literal archive search source correction: see KNOWLEDGE_ARCHIVE_V1.md. The
+observed fresh `archive-drift` HTTP503 is caused by exposing raw FTS grammar,
+not a cursor or permission failure. Core/HTTP/MCP/Cobra shared-fixture regressions
+now require literal punctuation, operator words and complete-empty no-match;
+malformed punctuation-only text must refuse before private readers and show
+static actionable guidance. Source-only until Main's native/browser execution.

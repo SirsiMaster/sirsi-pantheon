@@ -142,6 +142,9 @@ func parseMaatKnowledgeRead(args map[string]interface{}) (maatKnowledgeRequest, 
 		return r, errors.New("invalid resolution")
 	}
 	if r.Mode == "search" {
+		if err := knowledge.ValidateSearchText(r.Query.Text); err != nil {
+			return r, err
+		}
 		if r.ID != "" || r.Revision != 0 {
 			return r, errors.New("search cannot select a detail identity")
 		}

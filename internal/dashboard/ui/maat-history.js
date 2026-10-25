@@ -25,7 +25,7 @@
    try{
     const response=await fetcher(path+'?'+new URLSearchParams(wire).toString(),{signal:signal});
     const value=await response.json();
-    if(!response.ok)throw new Error(value.code||value.error||'Read unavailable');
+    if(!response.ok)throw new Error(value.message||value.code||value.error||'Read unavailable');
     validate(value,p);
     if(snapshot&&(value.history.snapshot!==snapshot||value.history.query_id!==queryID))throw new Error('Snapshot changed; restart the query');
     if(disposed||mine!==generation||signal.aborted)return;

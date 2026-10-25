@@ -75,6 +75,8 @@
       "tests": [
         "internal/mcp/maat_history_test.go",
         "internal/mcp/maat_knowledge_reads_test.go",
+        "internal/mcp/maat_literal_search_test.go",
+        "internal/dashboard/maat_literal_search_test.go",
         "internal/mcp/maat_membership_test.go",
         "internal/maat/memory_test.go",
         "internal/maat/memoryguard_test.go",
@@ -102,6 +104,7 @@
       "upgrade_recipe": [
         "retain snapshot/query cursor and same-snapshot links in canonical core",
         "preserve default tool and GET shapes with additive optional args",
+        "validate literal search before private readers; HTTP400 typed guidance is not unavailable/empty; never expose raw FTS grammar",
         "never infer whole-query totals from page summaries or after-cursor counts",
         "keep sensitivity before projection and forbid ingestion/repair authority in read adapters",
         "qualify the real 2012-row private-journal and archive fixtures plus production-only negatives before acceptance",
@@ -137,8 +140,8 @@
     },
     {
       "id": "maat-knowledge-archive",
-      "source": ["internal/maat/knowledge/archive.go", "internal/maat/knowledge/archive_path_unix.go", "internal/maat/knowledge/archive_vfs_darwin.go", "internal/maat/knowledge/archive_vfs_darwin_abi.go", "internal/maat/knowledge/archive_vfs_darwin_copy_cgo.go", "internal/maat/knowledge/archive_vfs_darwin_nocgo.go", "internal/maat/knowledge/archive_path_windows.go", "internal/maat/knowledge/archive_search.go", "internal/maat/knowledge/legacy.go", "internal/maat/knowledge/refresh.go", "internal/maat/decisions.go", "internal/seshat/adapter_claude.go", "cmd/sirsi/maatknowledge.go", "cmd/sirsi/seshat.go", "macapp/Sources/SirsiMenubar/MaatCasebookView.swift"],
-      "tests": ["internal/maat/knowledge/archive_test.go", "internal/maat/knowledge/archive_search_regression_test.go", "internal/maat/knowledge/archive_path_unix_test.go", "internal/maat/knowledge/archive_vfs_darwin_test.go", "internal/maat/knowledge/archive_lock_close_darwin_test.go", "internal/maat/knowledge/knowledge_test.go", "internal/maat/decisions_test.go", "internal/seshat/adapter_claude_archive_test.go", "cmd/sirsi/maatknowledge_test.go", "macapp/Tests/SirsiMenubarTests/MaatKnowledgeArchiveTests.swift", "internal/mcp/maat_test.go", "internal/dashboard/dashboard_test.go"],
+      "source": ["internal/maat/knowledge/archive.go", "internal/maat/knowledge/archive_path_unix.go", "internal/maat/knowledge/archive_vfs_darwin.go", "internal/maat/knowledge/archive_vfs_darwin_abi.go", "internal/maat/knowledge/archive_vfs_darwin_copy_cgo.go", "internal/maat/knowledge/archive_vfs_darwin_nocgo.go", "internal/maat/knowledge/archive_path_windows.go", "internal/maat/knowledge/archive_search.go", "internal/maat/knowledge/search_text.go", "internal/maat/knowledge/knowledge.go", "internal/maat/knowledge/legacy.go", "internal/maat/knowledge/refresh.go", "internal/maat/decisions.go", "internal/seshat/adapter_claude.go", "cmd/sirsi/maatknowledge.go", "cmd/sirsi/seshat.go", "macapp/Sources/SirsiMenubar/MaatCasebookView.swift"],
+      "tests": ["internal/maat/knowledge/archive_test.go", "internal/maat/knowledge/archive_search_regression_test.go", "internal/maat/knowledge/search_text_test.go", "internal/maat/knowledge/testdata/literal-search.json", "internal/mcp/maat_literal_search_test.go", "internal/dashboard/maat_literal_search_test.go", "cmd/sirsi/maatknowledge_literal_test.go", "internal/maat/knowledge/archive_path_unix_test.go", "internal/maat/knowledge/archive_vfs_darwin_test.go", "internal/maat/knowledge/archive_lock_close_darwin_test.go", "internal/maat/knowledge/knowledge_test.go", "internal/maat/decisions_test.go", "internal/seshat/adapter_claude_archive_test.go", "cmd/sirsi/maatknowledge_test.go", "macapp/Tests/SirsiMenubarTests/MaatKnowledgeArchiveTests.swift", "internal/mcp/maat_test.go", "internal/dashboard/dashboard_test.go"],
       "inputs": ["stable source/instance/native-item identity", "bounded full source record with extraction/schema metadata and provenance", "legacy Seshat snapshots selected by explicit local refresh", "owner resolution annotation kept separate from source versions"],
       "outputs": ["owner-private canonical Ma'at SQLite archive and rebuildable FTS5 index", "immutable content-digest versions with predecessor links and retained origins", "deterministic full-text/detail/history/status projections with stable bounded pagination", "typed per-source complete/partial/failed/unavailable/unverifiable/no-new-items coverage", "native knowledge view with archive search, detail, explicit local refresh, decoded coverage/history cursor, exact-revision+digest once-only owner review, and typed projection reconciliation counts/reload after confirmed success"],
       "writes": ["~/.sirsi/maat/knowledge/archive.sqlite3 and its private index/schema only", "source cursors only after a complete or no-new-items source transaction", "explicit owner annotations and pending Casebook projection debt"],

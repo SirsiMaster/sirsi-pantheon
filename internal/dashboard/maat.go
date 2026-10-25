@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
@@ -100,6 +101,12 @@ func (s *Server) apiMaatKnowledge(w http.ResponseWriter, r *http.Request) {
 	}
 	query, parseErr := parseMaatKnowledgeHTTP(r)
 	if parseErr != nil {
+		if errors.Is(parseErr, knowledge.ErrInvalidSearchQuery) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid_search_query", "code": "invalid_search_query", "state": "unavailable", "message": knowledge.ErrInvalidSearchQuery.Error()})
+			return
+		}
 		maatReadError(w, http.StatusBadRequest, "invalid_query")
 		return
 	}

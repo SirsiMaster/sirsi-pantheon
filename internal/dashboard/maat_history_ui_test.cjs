@@ -54,3 +54,11 @@ test('real Continue Load older Retry and canonical archive detail/history contro
   click('Detail / provenance');await flush();assert.match(text(root),/Canonical detail/);click('Version history');await flush();assert.ok(calls.some(u=>u.includes('mode=history')));assert.ok(calls.some(u=>u.includes('cursor=scan-cursor')));assert.ok(calls.some(u=>u.includes('cursor=older-cursor')));
  }finally{if(dispose)dispose();global.document=beforeDoc;global.fetch=beforeFetch}
 });
+
+test('literal search guidance stays actionable without manufacturing an empty result',async()=>{
+ let count=0;const retained={items:[],total:0,withheld:0,coverage:{}};
+ const message='invalid_search_query: enter literal words; advanced search operators are not supported';
+ const c=ui.createRead(async()=>++count===1?response(retained):{ok:false,json:async()=>({code:'invalid_search_query',message})},'/api/maat/knowledge',()=>{},ui.validateKnowledge);
+ await c.start({query:'archive-drift'});assert.equal(c.state.data,retained);
+ await c.start({query:'---'});assert.equal(c.state.error,message);assert.equal(c.state.data,null);c.dispose();
+});
