@@ -39,9 +39,27 @@ func triageMemoryFixture(t *testing.T) (string, *guard.DoctorReport, *triageMemo
 	t.Cleanup(func() {
 		maatTriageReadDiagnosis, maatTriageHostname, newMaatDecisionJournal, JsonOutput = oldRead, oldHost, oldJournal, oldJSON
 	})
-	for _, name := range []string{"confirm", "json", "inspect-records", "reconcile-record", "prepare-record-request", "record-request", "read-record-request", "resolve-record-request", "inspect-record-requests"} {
+	for _, name := range []string{"confirm", "json", "inspect-records", "reconcile-record", "prepare-record-request", "record-request", "read-record-request", "resolve-record-request", "inspect-record-requests", "request-limit", "request-cursor"} {
 		f := maatTriageCmd.Flags().Lookup(name)
 		value, changed := f.Value.String(), f.Changed
+		if name == "prepare-record-request" || name == "record-request" || name == "read-record-request" || name == "resolve-record-request" {
+			if err := f.Value.Set(""); err != nil {
+				t.Fatal(err)
+			}
+			f.Changed = false
+		}
+		if name == "request-limit" {
+			if err := f.Value.Set("50"); err != nil {
+				t.Fatal(err)
+			}
+			f.Changed = false
+		}
+		if name == "request-cursor" {
+			if err := f.Value.Set(""); err != nil {
+				t.Fatal(err)
+			}
+			f.Changed = false
+		}
 		t.Cleanup(func() {
 			if err := f.Value.Set(value); err != nil {
 				t.Error(err)
@@ -49,7 +67,7 @@ func triageMemoryFixture(t *testing.T) (string, *guard.DoctorReport, *triageMemo
 			f.Changed = changed
 		})
 	}
-	if err := maatTriageCmd.ParseFlags([]string{"--confirm=false", "--json", "--inspect-records=false", "--reconcile-record=", "--prepare-record-request=", "--record-request=", "--read-record-request=", "--resolve-record-request=", "--inspect-record-requests=false"}); err != nil {
+	if err := maatTriageCmd.ParseFlags([]string{"--confirm=false", "--json", "--inspect-records=false", "--reconcile-record=", "--inspect-record-requests=false"}); err != nil {
 		t.Fatal(err)
 	}
 	JsonOutput = false
@@ -67,6 +85,22 @@ func triageMemoryFixture(t *testing.T) (string, *guard.DoctorReport, *triageMemo
 
 func runTriageFixture(t *testing.T, args ...string) (string, error) {
 	t.Helper()
+	// A real CLI invocation begins with omitted request selectors. Preserve
+	// explicit --x= in args so presence-aware validation is actually exercised.
+	for _, name := range []string{"prepare-record-request", "record-request", "read-record-request", "resolve-record-request"} {
+		flag := maatTriageCmd.Flags().Lookup(name)
+		if err := flag.Value.Set(""); err != nil {
+			t.Fatal(err)
+		}
+		flag.Changed = false
+	}
+	for name, value := range map[string]string{"request-limit": "50", "request-cursor": "", "inspect-record-requests": "false"} {
+		flag := maatTriageCmd.Flags().Lookup(name)
+		if err := flag.Value.Set(value); err != nil {
+			t.Fatal(err)
+		}
+		flag.Changed = false
+	}
 	if err := maatTriageCmd.ParseFlags(args); err != nil {
 		t.Fatal(err)
 	}

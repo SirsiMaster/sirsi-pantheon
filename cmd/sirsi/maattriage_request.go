@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 
@@ -10,11 +11,25 @@ import (
 
 var maatTriagePrepareRequest, maatTriageRecordRequest, maatTriageReadRequest, maatTriageResolveRequest string
 var maatTriageInspectRequests bool
+var maatTriageRequestLimit int
+var maatTriageRequestCursor string
 
 func maatDiagnosticRequestMetadataSelected() bool {
 	return maatTriagePrepareRequest != "" || maatTriageReadRequest != "" || maatTriageResolveRequest != "" || maatTriageInspectRequests
 }
 func validateMaatDiagnosticRequestFlags() error {
+	for _, name := range []string{"prepare-record-request", "record-request", "read-record-request", "resolve-record-request"} {
+		flag := maatTriageCmd.Flags().Lookup(name)
+		if flag.Changed && flag.Value.String() == "" {
+			return errors.New("explicit diagnostic request identity must not be empty")
+		}
+	}
+	if !maatTriageInspectRequests && (maatTriageCmd.Flags().Changed("request-limit") || maatTriageCmd.Flags().Changed("request-cursor")) {
+		return errors.New("request continuation options require --inspect-record-requests")
+	}
+	if maatTriageInspectRequests && (maatTriageRequestLimit < 1 || maatTriageRequestLimit > 128) {
+		return errors.New("diagnostic request page limit must be 1..128")
+	}
 	count := 0
 	for _, id := range []string{maatTriagePrepareRequest, maatTriageRecordRequest, maatTriageReadRequest, maatTriageResolveRequest} {
 		if id == "" {
@@ -40,26 +55,27 @@ func validateMaatDiagnosticRequestFlags() error {
 	}
 	return nil
 }
-func inspectMaatDiagnosticRequest() error {
+func inspectMaatDiagnosticRequest(ctx context.Context) error {
 	store, err := maat.OpenDefaultStore()
 	if err != nil {
 		return errors.New("diagnostic request custody unavailable; inspect local memory, no store was initialized")
 	}
 	defer func() { _ = store.Close() }()
 	if maatTriageInspectRequests {
-		values, err := store.DiagnosticRequests()
+		page, err := store.QueryDiagnosticDiscovery(maat.DiagnosticDiscoveryQuery{Limit: maatTriageRequestLimit, Cursor: maatTriageRequestCursor, Context: ctx})
+		if errors.Is(err, maat.ErrHistorySnapshotChanged) {
+			if outputErr := emitJSON(struct {
+				Schema          string `json:"schema"`
+				ErrorCode       string `json:"error_code"`
+				RestartRequired bool   `json:"restart_required"`
+			}{maat.DiagnosticRequestSchema, "snapshot_changed", true}); outputErr != nil {
+				return errors.Join(err, outputErr)
+			}
+		}
 		if err != nil {
 			return err
 		}
-		records, err := store.DiagnosticRecordHistory()
-		if err != nil {
-			return err
-		}
-		return emitJSON(struct {
-			Schema   string                       `json:"schema"`
-			Requests []maat.DiagnosticRequestRead `json:"requests"`
-			Records  []maat.DiagnosticRecordRead  `json:"records"`
-		}{maat.DiagnosticRequestSchema, values, records})
+		return emitJSON(page)
 	}
 	var read maat.DiagnosticRequestRead
 	switch {

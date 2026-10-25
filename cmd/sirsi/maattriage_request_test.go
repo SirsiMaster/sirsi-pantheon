@@ -23,13 +23,13 @@ func TestMaatTriageRequestWholeReplyLossReadbackNeverReobservesOrAppends(t *test
 	if *reads != 0 || journal.calls != 0 {
 		t.Fatal("preparation ran diagnostic/journal")
 	}
-	if _, err := runTriageFixture(t, "--prepare-record-request=", "--record-request", triageRequestTestID, "--confirm"); err != nil {
+	if _, err := runTriageFixture(t, "--record-request", triageRequestTestID, "--confirm"); err != nil {
 		t.Fatal(err)
 	}
 	// Deliberately discard the complete record stdout, retaining only the UUID
 	// known before submission. Recovery is the actual read-only command entry.
 	before := *reads
-	out, err := runTriageFixture(t, "--record-request=", "--confirm=false", "--read-record-request", triageRequestTestID)
+	out, err := runTriageFixture(t, "--confirm=false", "--read-record-request", triageRequestTestID)
 	var lookup maat.DiagnosticRequestRead
 	if err != nil || json.Unmarshal([]byte(out), &lookup) != nil || lookup.State != "recorded_verified" || lookup.Result == nil {
 		t.Fatal(out, err)
@@ -37,10 +37,10 @@ func TestMaatTriageRequestWholeReplyLossReadbackNeverReobservesOrAppends(t *test
 	if *reads != before || journal.calls != 1 {
 		t.Fatal("lookup re-observed or appended")
 	}
-	if _, err := runTriageFixture(t, "--read-record-request=", "--record-request", triageRequestTestID, "--confirm"); err == nil || *reads != before || journal.calls != 1 {
+	if _, err := runTriageFixture(t, "--record-request", triageRequestTestID, "--confirm"); err == nil || *reads != before || journal.calls != 1 {
 		t.Fatal("duplicate request reached observation")
 	}
-	list, err := runTriageFixture(t, "--record-request=", "--confirm=false", "--inspect-record-requests")
+	list, err := runTriageFixture(t, "--confirm=false", "--inspect-record-requests")
 	if err != nil || !strings.Contains(list, triageRequestTestID) || !strings.Contains(list, "recorded_verified") {
 		t.Fatal(list, err)
 	}
@@ -55,11 +55,11 @@ func TestMaatTriageRequestResolveFencesUnknownBeforeLateSubmission(t *testing.T)
 	if _, err := runTriageFixture(t, "--resolve-record-request", triageRequestTestID); err == nil {
 		t.Fatal("unconfirmed fence accepted")
 	}
-	out, err := runTriageFixture(t, "--confirm")
+	out, err := runTriageFixture(t, "--resolve-record-request", triageRequestTestID, "--confirm")
 	if err != nil || !strings.Contains(out, "fenced_not_recorded") {
 		t.Fatal(out, err)
 	}
-	if _, err := runTriageFixture(t, "--resolve-record-request=", "--record-request", triageRequestTestID); err == nil || *reads != 0 || journal.calls != 0 {
+	if _, err := runTriageFixture(t, "--record-request", triageRequestTestID, "--confirm"); err == nil || *reads != 0 || journal.calls != 0 {
 		t.Fatal("late unknown submission escaped fence")
 	}
 }
@@ -68,8 +68,8 @@ func TestMaatTriageRequestRejectsMixedOrMalformedOperationsBeforeObservation(t *
 	_, _, journal, reads := triageMemoryFixture(t)
 	for _, args := range [][]string{
 		{"--record-request", triageRequestTestID, "--confirm=false"},
-		{"--record-request=", "--read-record-request", triageRequestTestID, "--prepare-record-request", triageRequestTestID},
-		{"--read-record-request=", "--prepare-record-request=", "--record-request", "../not-a-uuid", "--confirm"},
+		{"--read-record-request", triageRequestTestID, "--prepare-record-request", triageRequestTestID},
+		{"--record-request", "../not-a-uuid", "--confirm"},
 	} {
 		if _, err := runTriageFixture(t, args...); err == nil {
 			t.Fatal("invalid request accepted", args)

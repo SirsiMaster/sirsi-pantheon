@@ -83,8 +83,9 @@ func TestDiagnosticRequestUncommittedResultBytesStayPendingUntilDataOnlyCommit(t
 	if err != nil || read.State != "pending" || read.Result != nil {
 		t.Fatal("uncommitted result promoted", read, err)
 	}
-	history, err := s.DiagnosticRecordHistory()
-	if err != nil || len(history) != 1 || history[0].State != "pending" || history[0].Result != nil {
+	page, err := s.QueryDiagnosticDiscovery(DiagnosticDiscoveryQuery{})
+	history := page.Records
+	if err != nil || page.History.Coverage != HistoryCoverageComplete || len(history) != 1 || history[0].State != "pending" || history[0].Result != nil {
 		t.Fatal("history promoted uncommitted result", history, err)
 	}
 	read, err = s.ResolveDiagnosticRequest(diagnosticRequestTestID, j)
@@ -111,11 +112,12 @@ func TestDiagnosticRequestHistoryKeepsPriorUncorrelatedCompletionWithoutInvented
 	if err != nil {
 		t.Fatal(err)
 	}
-	requests, err := s.DiagnosticRequests()
-	if err != nil || len(requests) != 0 {
+	page, err := s.QueryDiagnosticDiscovery(DiagnosticDiscoveryQuery{})
+	requests := page.Requests
+	if err != nil || page.History.Coverage != HistoryCoverageComplete || len(requests) != 0 {
 		t.Fatal("historical record acquired a request", requests, err)
 	}
-	history, err := s.DiagnosticRecordHistory()
+	history := page.Records
 	if err != nil || len(history) != 1 || history[0].Result == nil || history[0].Result.ID != result.ID || history[0].State != "recorded_verified" || history[0].Intent.Manifest.Observation.Schema != diagnosticObservationSchemaV1 {
 		t.Fatal(history, err)
 	}
@@ -279,8 +281,9 @@ func TestDiagnosticRequestWholeReplyLostFindsCompletedOutcomeAfterReopen(t *test
 	if err != nil || read.State != "recorded_verified" || read.Result == nil || read.Intent == nil || read.Result.ID != read.Intent.ID {
 		t.Fatal(read, err)
 	}
-	all, err := other.DiagnosticRequests()
-	if err != nil || len(all) != 1 || all[0].Request.ID != diagnosticRequestTestID {
+	page, err := other.QueryDiagnosticDiscovery(DiagnosticDiscoveryQuery{})
+	all := page.Requests
+	if err != nil || page.History.Coverage != HistoryCoverageComplete || len(all) != 1 || all[0].Request.ID != diagnosticRequestTestID {
 		t.Fatal(all, err)
 	}
 	if _, err := other.BeginDiagnosticRequest(diagnosticRequestTestID); err == nil {

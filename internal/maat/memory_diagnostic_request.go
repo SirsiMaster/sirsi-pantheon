@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"sort"
 	"strings"
 	"sync"
 
@@ -257,6 +256,14 @@ func (s *Store) readDiagnosticRequestOutcomeLocked(id string) (DiagnosticRequest
 	if err != nil {
 		return DiagnosticRequestRead{}, err
 	}
+	return s.readDiagnosticRequestOutcomeAtLocked(request, pendingResult)
+}
+
+// Discovery has already validated the same whole-store WAL under its shared
+// lock. Reuse that one pending-result identity for every row in this page;
+// standalone lookup retains the full check in its wrapper above.
+func (s *Store) readDiagnosticRequestOutcomeAtLocked(request DiagnosticRequest, pendingResult string) (DiagnosticRequestRead, error) {
+	id := request.ID
 	read := DiagnosticRequestRead{Request: request, State: "prepared"}
 	fenced, err := s.requestFencedLocked(request)
 	if err != nil {
@@ -364,6 +371,15 @@ func (s *Store) ResolveDiagnosticRequest(id string, j DiagnosticRecordJournal) (
 }
 
 func (s *Store) resolveDiagnosticRequestIntentLocked(intent DiagnosticRecordIntent, j DiagnosticRecordJournal) error {
+	// Complete retained known non-submission bytes through the existing exact
+	// WAL path BEFORE consulting an empty journal or requiring an absent-row
+	// fence. No journal call occurred for this state; no bytes are invented.
+	if result, err := s.readDiagnosticResultLocked(intent.ID); err == nil && result.State == "not_submitted" {
+		_, err = s.reconcileDiagnosticRecordLocked(intent, j)
+		return err
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	verdict, err := intent.Manifest.Observation.Verdict()
 	if err != nil {
 		return err
@@ -396,77 +412,6 @@ type DiagnosticRecordRead struct {
 	Intent DiagnosticRecordIntent  `json:"intent"`
 	State  string                  `json:"state"`
 	Result *DiagnosticRecordResult `json:"result,omitempty"`
-}
-
-// Historical uncorrelated records stay visible but never acquire an invented
-// request identity. A person may inspect them; an app cannot infer which lost
-// pre-correlation invocation produced a particular row.
-func (s *Store) DiagnosticRecordHistory() ([]DiagnosticRecordRead, error) {
-	if err := s.lock(unix.LOCK_SH); err != nil {
-		return nil, err
-	}
-	defer s.unlock()
-	pendingResult, _, err := s.diagnosticPendingResultLocked()
-	if err != nil {
-		return nil, err
-	}
-	intents, err := s.diagnosticIntentsLocked()
-	if err != nil {
-		return nil, err
-	}
-	if len(intents) > 128 {
-		return nil, errors.New("maat diagnostic: record history exceeds bounded page")
-	}
-	names := make([]string, 0, len(intents))
-	for id := range intents {
-		names = append(names, id)
-	}
-	sort.Strings(names)
-	reads := []DiagnosticRecordRead{}
-	for _, id := range names {
-		read := DiagnosticRecordRead{Intent: intents[id], State: "pending"}
-		if pendingResult == id {
-			reads = append(reads, read)
-			continue
-		}
-		result, err := s.readDiagnosticResultLocked(id)
-		if err == nil {
-			read.Result = &result
-			read.State = result.State
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return nil, err
-		}
-		reads = append(reads, read)
-	}
-	return reads, nil
-}
-
-// Discovery includes pending AND completed requests, so an app restart does
-// not lose the durable correlation. A bounded overflow refuses, never omits.
-func (s *Store) DiagnosticRequests() ([]DiagnosticRequestRead, error) {
-	if err := s.lock(unix.LOCK_SH); err != nil {
-		return nil, err
-	}
-	defer s.unlock()
-	names, err := readDirectoryNames(s.attemptsFD)
-	if err != nil {
-		return nil, err
-	}
-	reads := []DiagnosticRequestRead{}
-	for _, name := range names {
-		if !strings.HasSuffix(name, diagnosticRequestSuffix) {
-			continue
-		}
-		if len(reads) >= 128 {
-			return nil, errors.New("maat diagnostic: request inspection exceeds bounded page")
-		}
-		read, err := s.readDiagnosticRequestOutcomeLocked(strings.TrimSuffix(name, diagnosticRequestSuffix))
-		if err != nil {
-			return nil, err
-		}
-		reads = append(reads, read)
-	}
-	return reads, nil
 }
 
 func isDiagnosticRequestLeaf(name string) bool {

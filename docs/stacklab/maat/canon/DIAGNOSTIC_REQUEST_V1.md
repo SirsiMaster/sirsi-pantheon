@@ -18,12 +18,17 @@ first preparation call. A request key is not admission or consent.
 | `--record-request UUID --confirm` | Consume the prepared key once, before diagnosis. Ordinary full preflight/receipt and exact record readback remain required. |
 | `--read-record-request UUID` | Exact read-only lookup, including completed outcomes. No observation, append or metadata recovery. |
 | `--resolve-record-request UUID --confirm` | Durably fence that exact key and reconcile its journal/result data under the existing memory lock. Never observe, append, or reopen the key. |
-| `--inspect-record-requests` | Bounded read-only discovery of pending/completed requests and historical record evidence after restart. |
+| `--inspect-record-requests [--request-limit 1..128] [--request-cursor TOKEN]` | One bounded read-only discovery page of pending/completed requests and historical record evidence after restart. Default page size50. |
 
 Select one request operation. Metadata inspection/preparation refuses record
 confirmation; record/resolve require it. Request operations cannot be combined
 with legacy pending-record inspection/reconciliation. Invalid input is refused
 before diagnosis. All existing legacy operations and their consent remain.
+Explicit empty `--prepare-record-request=`, `--record-request=`,
+`--read-record-request=` and `--resolve-record-request=` are errors even with
+`--confirm`: flag presence is not interpreted as omission or legacy mode.
+Omitting all request selectors retains the ordinary legacy command. Page flags
+are valid only with discovery; an empty discovery cursor starts a fresh query.
 
 Preparation, exact lookup and explicit resolution return `DiagnosticRequestRead`:
 
@@ -53,10 +58,51 @@ whenever read. `fenced_not_recorded` is a fenced request with no committed
 record intent, also not a statement that the process never started.
 
 Discovery returns `{schema:"sirsi.maat.diagnostic-request.v1", requests:[],
-records:[]}`. `records` contains `{intent,state,result?}` for bounded historical
+records:[], history:{...}}`. `records` contains `{intent,state,result?}` for historical
 records, including those created before request correlation. Do not infer a
 request-to-history association from time, list order, source similarity or an
 empty pending list. No old completed record is relabeled as a new request.
+
+### Discovery continuation and truthful completion
+
+`history` contains `schema:"sirsi.maat.diagnostic-discovery.v1"`, `query_id`,
+`snapshot`, `coverage:"partial"|"complete"`, optional `next_cursor`,
+`after_cursor`, `returned`, and `count_scope:"page"`. Counts describe this page,
+never a whole-query total. The limit applies to BOTH collections jointly; a
+512KiB compact row-data budget may make the returned page smaller than the row
+limit. There is no128-item limit on total history. Records sort by
+`record:<record-sha256>`, then requests by `request:<UUID>`; collection arrays
+retain that deterministic key order. Both arrays are explicitly present even
+when empty. Empty `requests` on an early page is not an empty whole history.
+
+Follow `next_cursor` with the SAME `--request-limit` until a complete page has
+no continuation. Keep one loader generation, query ID and snapshot throughout;
+reject duplicate rows or differing query/snapshot metadata. A complete page
+after a cursor means that remaining range is exhausted, not that this page
+contains the whole query. Only a loader that began at an empty cursor and
+successfully followed the complete chain can mark its accumulated discovery
+complete. Retain completed-operation receipts independently of page loading.
+
+The read-only cursor is canonical bounded JSON/base64 bound to query version,
+local actor/store/root identity, page limit, snapshot and exact last key. It is
+not action authority. Every page retains the existing strict full diagnostic
+namespace and WAL validation. Snapshot identity reuses the existing Casebook
+inode/ctime helper (excluding read-atime), covering root and all attempt,
+evidence and WAL object metadata before/after projection. Earlier-page in-place
+rewrites, new results/requests and root replacement invalidate continuation.
+This bounds returned rows/bytes; it does not claim a bounded total-history I/O
+pass or hostile same-UID atomicity. No store/journal/guard validation is skipped
+to meet a page budget.
+
+On snapshot/query drift, CLI exits nonzero with
+`{schema:"sirsi.maat.diagnostic-request.v1",error_code:"snapshot_changed",
+restart_required:true}` and NO successful page. Stop that chain, retain its
+partial status/history honestly, then explicitly restart with
+`--request-cursor=` and a new loader generation. Never splice old partial rows
+into the new snapshot or clear a current unknown request from unrelated rows.
+Malformed cursors/custody are refusal, not a complete empty list. Known exact
+UUID lookup remains independently available during discovery; its identity and
+disposition must still match the selected operation.
 
 ## Required native sequence (Nash-owned adapter)
 
@@ -104,6 +150,13 @@ and old-key repeats. The existing exact append-once and intent/result checks
 also deny replay of the same captured observation through the legacy API.
 Matching complete result WAL can be finished data-only; unrelated or malformed
 WAL is refused. Missing bytes are not recovered from hashes or reconstructed.
+In particular, complete retained `not_submitted` target bytes take the existing
+exact result-reconciliation fast path before any empty-journal inference or
+new fence requirement. Its exact WAL commit completes, then the request fence
+is persisted normally. No journal lookup/append or diagnostic is needed for
+that already-proven pre-append refusal. Recorded results still require strict
+journal verification; corrupt, unrelated or missing targets do not acquire
+this fast path.
 
 ## Producer/consumer privacy compatibility
 

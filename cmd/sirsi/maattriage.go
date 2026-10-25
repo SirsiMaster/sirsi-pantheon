@@ -33,7 +33,7 @@ var maatTriageCmd = &cobra.Command{
 			return err
 		}
 		if maatDiagnosticRequestMetadataSelected() {
-			return inspectMaatDiagnosticRequest()
+			return inspectMaatDiagnosticRequest(cmd.Context())
 		}
 		if maatTriageInspectRecords || maatTriageReconcileRecord != "" {
 			return inspectOrReconcileMaatDiagnostic()
@@ -164,5 +164,7 @@ func init() {
 	maatTriageCmd.Flags().StringVar(&maatTriageReadRequest, "read-record-request", "", "read the exact pending or completed request without observing or writing")
 	maatTriageCmd.Flags().StringVar(&maatTriageResolveRequest, "resolve-record-request", "", "confirm an exact durable request fence and data-only reconciliation; never resend")
 	maatTriageCmd.Flags().BoolVar(&maatTriageInspectRequests, "inspect-record-requests", false, "read bounded pending and completed request identities after app restart")
+	maatTriageCmd.Flags().IntVar(&maatTriageRequestLimit, "request-limit", 50, "diagnostic discovery page size (1..128); retain it on continuation")
+	maatTriageCmd.Flags().StringVar(&maatTriageRequestCursor, "request-cursor", "", "continue the exact diagnostic discovery query/snapshot; restart fresh if changed")
 	maatCmd.AddCommand(maatTriageCmd)
 }
