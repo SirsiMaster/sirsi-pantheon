@@ -233,19 +233,22 @@ func TestAppUpdateAdmissionsFenceBothOwnersAcrossIndependentHandles(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
+			if _, err := storeB.RetainPreflightReceipt(livenessReceipt); err != nil {
+				t.Fatalf("retain exact liveness preflight before testing the cross-owner fence: %v", err)
+			}
 			if first == "app" {
 				if _, err := storeA.BeginAppUpdateAttempt(appManifest, appReceipt); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := storeB.BeginLivenessWatchAttempt(livenessManifest, livenessReceipt); err == nil {
-					t.Fatal("liveness installation entered while app update attempt was pending")
+				if _, err := storeB.BeginLivenessWatchAttempt(livenessManifest, livenessReceipt); err == nil || !strings.Contains(err.Error(), "incomplete whole-app update") {
+					t.Fatalf("liveness admission did not reach the pending app-update fence: %v", err)
 				}
 			} else {
 				if _, err := storeB.BeginLivenessWatchAttempt(livenessManifest, livenessReceipt); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := storeA.BeginAppUpdateAttempt(appManifest, appReceipt); err == nil {
-					t.Fatal("app update entered while liveness installation attempt was pending")
+				if _, err := storeA.BeginAppUpdateAttempt(appManifest, appReceipt); err == nil || !strings.Contains(err.Error(), "incomplete liveness-watch installation") {
+					t.Fatalf("app-update admission did not reach the pending liveness-watch fence: %v", err)
 				}
 			}
 		})
@@ -273,6 +276,9 @@ func TestAppAndLivenessConcurrentAdmissionHasOneSharedWinner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := storeB.RetainPreflightReceipt(livenessReceipt); err != nil {
+		t.Fatalf("retain exact liveness preflight before racing cross-owner admissions: %v", err)
+	}
 	start := make(chan struct{})
 	results := make(chan error, 2)
 	var wg sync.WaitGroup
@@ -292,14 +298,19 @@ func TestAppAndLivenessConcurrentAdmissionHasOneSharedWinner(t *testing.T) {
 	close(start)
 	wg.Wait()
 	close(results)
-	passed := 0
+	passed, fenced := 0, 0
 	for err := range results {
-		if err == nil {
+		switch {
+		case err == nil:
 			passed++
+		case strings.Contains(err.Error(), "incomplete liveness-watch installation"), strings.Contains(err.Error(), "incomplete whole-app update"):
+			fenced++
+		default:
+			t.Fatalf("cross-owner admission refused before reaching the shared attempt fence: %v", err)
 		}
 	}
-	if passed != 1 {
-		t.Fatalf("cross-owner admission passes=%d, want exactly one", passed)
+	if passed != 1 || fenced != 1 {
+		t.Fatalf("cross-owner admission passes=%d fenced=%d, want one shared winner and one typed cross-owner fence", passed, fenced)
 	}
 }
 
