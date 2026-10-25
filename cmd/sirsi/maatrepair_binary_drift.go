@@ -573,7 +573,7 @@ func reconcileMaatBinaryDrift(journal maat.DecisionJournal, store maatBinaryDrif
 		if entry.ProjectionReadBack {
 			continue
 		}
-		debt := maat.BinaryUpdateProjectionDebt{}
+		var debt maat.BinaryUpdateProjectionDebt
 		if entry.Projection != nil {
 			debt = *entry.Projection
 		} else {
@@ -1010,52 +1010,6 @@ func maatBinaryDriftDiagnosisClear(report *guard.DoctorReport) bool {
 		}
 	}
 	return true
-}
-
-func maatRecordBinaryDriftOutcome(journal maat.DecisionJournal, preview maatBinaryDriftPreview, resolved bool, detail string, updaterErr error) error {
-	detail = boundedMaatRepairDetail(detail, 4*1024)
-	operation := preview.Updater + "; confirmed preview sha256=" + preview.Binding
-	determination := "failed"
-	if resolved && updaterErr == nil {
-		determination = "resolved"
-	}
-	after := "post-update observation: " + detail
-	if determination == "resolved" {
-		after = "binary-drift diagnostic and local inventory are clear"
-	}
-	plan, _ := json.Marshal(preview)
-	recordedDetail := "reviewed preview=" + string(plan) + "\npost-update result=" + detail
-	outcome := maat.DiagnosticRepair{
-		Check: maatRepairBinaryDriftCheck, Operation: operation, OriginEvidence: preview.CaseEvidence, Before: preview.Binding,
-		After: after, Determination: determination, Detail: recordedDetail,
-	}
-	decision, err := maat.RecordDiagnosticRepair(journal, "sirsi maat repair binary-drift", outcome)
-	if err != nil {
-		return fmt.Errorf("Ma'at binary-drift recovery outcome could not be retained; do not replay without a fresh preview: %w", err)
-	}
-	summary := "The supported Homebrew update and fresh diagnostic result were retained."
-	if determination != "resolved" {
-		summary = "The Homebrew update or fresh diagnostic did not verify; Ma'at retained an incomplete outcome."
-	}
-	result := &output.CommandResult{
-		Command: "sirsi maat repair binary-drift", BriefTitle: "Ma'at binary-drift recovery",
-		Status: determination, Summary: summary,
-		Evidence: []output.Evidence{
-			{Label: "Original case", Value: preview.CaseEvidence},
-			{Label: "Updater binding", Value: preview.Binding},
-			{Label: "Fresh result", Value: after},
-			{Label: "Ma'at receipt", Value: decision.Evidence},
-		},
-		NextActions: []output.NextAction{{Label: "Open Ma'at Casebook", Command: "sirsi maat casebook", Description: "Inspect the original observation and the separate retained repair outcome."}},
-	}
-	result.Render()
-	if determination != "resolved" {
-		if updaterErr != nil {
-			return fmt.Errorf("Ma'at binary-drift update did not verify: %w", updaterErr)
-		}
-		return errors.New("Ma'at binary-drift update did not clear the fresh diagnostic; the original case remains open")
-	}
-	return nil
 }
 
 func boundedMaatRepairDetail(value string, maxBytes int) string {

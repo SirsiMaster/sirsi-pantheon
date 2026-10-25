@@ -49,6 +49,17 @@ path and line fingerprint. No file/rule wildcard, credential change or scan
 bypass is permitted; future changes remain scanned. Failed push17846785 and
 redacted scan99e83edf are retained, not relabeled successful.
 
+The next deep gate found source hygiene beyond the selected integrated tests:
+one import group, an ineffective zero-value initialization, one unused private
+terminal-output helper and spelling in comments/fixture messages. Correct only
+those findings; preserve the existing HTTP error identifier with two exact
+misspell suppressions rather than silently changing its wire contract. No
+authorization, guard, policy, data shape, updater or active command is removed.
+The deleted helper had no call sites; active projection completion is unchanged.
+Affected normal/race qualification and finite source review must bind this
+additional child; earlier source-byte-equality statements apply to the prep
+parent, not a claim that this child has an unchanged Go file hash.
+
 ## Existing qualification and exact limits
 
 - Main integrated receipt SHA256

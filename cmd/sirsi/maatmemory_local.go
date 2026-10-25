@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/spf13/cobra"
 )

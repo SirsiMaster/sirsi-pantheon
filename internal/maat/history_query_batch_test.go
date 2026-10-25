@@ -108,7 +108,7 @@ func TestHistoryQualificationBatchCursorCancelAndMalformedState(t *testing.T) {
 	query.Cursor = first.Cursor
 	paused, err := j.QueryHistory(query)
 	if err != nil || paused.Coverage != HistoryCoveragePartial || len(paused.Candidates) != 0 || paused.ScannedRecords != 0 {
-		t.Fatalf("cancelled read materialized=%+v %v", paused, err)
+		t.Fatalf("canceled read materialized=%+v %v", paused, err)
 	}
 	query.Context = context.Background()
 	state, err := decodeHistoryCursor(first.Cursor)

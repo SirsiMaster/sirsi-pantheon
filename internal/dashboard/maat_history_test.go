@@ -118,7 +118,7 @@ func TestMaatHistoryHTTPRejectsBeforeProducerAndHonorsCancellation(t *testing.T)
 	cancel()
 	rec := httptest.NewRecorder()
 	s.apiMaatCasebook(rec, httptest.NewRequest(http.MethodGet, "/api/maat/casebook", nil).WithContext(ctx))
-	if rec.Code != 408 || !strings.Contains(rec.Body.String(), "read_cancelled") {
+	if rec.Code != 408 || !strings.Contains(rec.Body.String(), "read_cancelled") { //nolint:misspell // Assert the existing wire identifier exactly.
 		t.Fatalf("cancellation=%d %s", rec.Code, rec.Body.String())
 	}
 }

@@ -11,7 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-// Each read owns an immutable filter/cursor tuple and generation. Cancelling a
+// Each read owns an immutable filter/cursor tuple and generation. Canceling a
 // read invalidates late success AND late failure; it never rewinds newer data.
 func (s *activityScreen) loadMaat(cursor string) tea.Cmd {
 	if s.maatCancel != nil {

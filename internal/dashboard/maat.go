@@ -70,7 +70,7 @@ func (s *Server) apiMaatCasebook(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, maat.ErrHistorySnapshotChanged) {
 			maatReadError(w, http.StatusConflict, "snapshot_changed")
 		} else if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			maatReadError(w, http.StatusRequestTimeout, "read_cancelled")
+			maatReadError(w, http.StatusRequestTimeout, "read_cancelled") //nolint:misspell // Existing HTTP error identifier is retained for compatibility.
 		} else {
 			maatReadError(w, http.StatusServiceUnavailable, "history_unavailable")
 		}

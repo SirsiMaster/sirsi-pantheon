@@ -37,11 +37,11 @@ func TestMaatHistoryTUIStaleSuccessFailureAndCancellation(t *testing.T) {
 		t.Fatal("late read replaced current projection")
 	}
 	_ = s.loadMaat("")
-	cancelled := s.maatGeneration
+	canceled := s.maatGeneration
 	s.CancelRead()
-	s.Update(maatCasebookLoaded{generation: cancelled, report: historyFixture("cancelled", "q", "")}, Capabilities{})
-	if s.maatState != stateIdle || s.maatReport.History.Snapshot == "cancelled" {
-		t.Fatal("cancelled read committed")
+	s.Update(maatCasebookLoaded{generation: canceled, report: historyFixture("canceled", "q", "")}, Capabilities{})
+	if s.maatState != stateIdle || s.maatReport.History.Snapshot == "canceled" {
+		t.Fatal("canceled read committed")
 	}
 }
 func TestMaatHistoryTUIActualContinuationArgsAndDrift(t *testing.T) {
