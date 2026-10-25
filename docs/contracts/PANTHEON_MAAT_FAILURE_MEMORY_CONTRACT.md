@@ -563,3 +563,45 @@ binary-drift route remains separately qualified only by Main; commercial
 whole-app update/install and O4 rollback remain open, and installed behavior is
 not claimed. Main owns all qualification and release decisions. No new Store,
 DB, registry lane, generic runner, or SNE authority was introduced.
+
+
+### Native managed app update: memory initialization and retry (source-only successor)
+
+The ordinary Ma’at workspace's existing maintenance panel now mounts one
+`MaatAppUpdateControl` owned by `engine.maatCaseOperations.appUpdate`. That owner
+shares the existing diagnostic-memory and prepared-preflight-recovery models;
+there is no second store owner, generic executor or error-string parser. It
+replaces the earlier direct native rollback dispatch and exposes the existing
+canonical `update --app` action through the same signed-helper qualification and
+bounded capture as rollback/readback.
+
+A reviewed update or exact rollback first reads canonical local-memory
+inspection. Genuine `uninitialized` custody offers the existing separate review,
+confirmation, recheck, initialization and store-UUID readback. Corrupt, missing
+existing, unknown, prepared or incomplete custody is not first use and is never
+reset or overwritten: the mounted existing memory recovery inspector remains
+available. Initialization cannot invoke Installer. The selected app action is
+retained while recovery runs, and a dedicated recheck button produces new update
+consent only after ready-store readback. Confirmation is consumed synchronously,
+then the exact store UUID/readiness is read again before the closed CLI request.
+Cancellation invalidates that approval and joins the owned task without launching
+queued work. The Go owner still performs its full action-bound preflight,
+retained-receipt admission, durable attempt, package checks and installed readback.
+Native readiness is not an approval to bypass those boundaries.
+
+Failed or unknown command receipts remain visible during initialization/recovery;
+there is no automatic action resend. A separately requested app-attempt readback
+uses only `update --reconcile-app-attempt`. A missing pending attempt is not proof
+that an earlier unknown command never ran; a nonzero contradictory resolved
+report is refused. Command exit0 alone is not installed success. View operation
+state and receipts are held by the engine-owned model across remounts.
+
+The separately reviewed legacy app/helper recovery Installer remains its explicit
+fallback and is labelled separately from the managed update. This successor does
+not assert every manual/external Installer invocation is a Ma’at-governed update.
+The five authored `MaatAppUpdateTests` exercise actual production view callbacks,
+shared operation owners, closed argv and state transitions with inert readers/
+capture. They have **not been compiled or executed by the author**. Main owns
+strict Release, focused native and any owned-window qualification after Mercury's
+reservation handback. No installed rollback, whole-O4/eight-row completion,
+producer authority or release/publication qualification is inferred.

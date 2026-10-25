@@ -261,6 +261,7 @@ final class MaatCaseOperationStore: ObservableObject {
     let preparedPreflightRecovery: MaatPreparedPreflightRecovery
     let localPreventions: MaatLocalPreventionModel
     let diagnosticRecord: MaatDiagnosticRecordModel
+    let appUpdate: MaatAppUpdateModel
     @Published private(set) var records: [MaatOperationKey: MaatOperationRecord] = [:]
     private var historyReads: [MaatOperationKey: (generation: UUID, continuation: MaatExactHistoryContinuation)] = [:]
 
@@ -268,10 +269,13 @@ final class MaatCaseOperationStore: ObservableObject {
          localPreventions: MaatLocalPreventionModel? = nil,
          failureMemoryReceipts: MaatPreflightReceiptReadStore? = nil,
          diagnosticRecord: MaatDiagnosticRecordModel? = nil) {
-        self.preparedPreflightRecovery = preparedPreflightRecovery ?? MaatPreparedPreflightRecovery()
+        let recoveryOwner = preparedPreflightRecovery ?? MaatPreparedPreflightRecovery()
+        let diagnosticOwner = diagnosticRecord ?? MaatDiagnosticRecordModel()
+        self.preparedPreflightRecovery = recoveryOwner
         self.localPreventions = localPreventions ?? MaatLocalPreventionModel()
         self.failureMemoryReceipts = failureMemoryReceipts ?? MaatPreflightReceiptReadStore()
-        self.diagnosticRecord = diagnosticRecord ?? MaatDiagnosticRecordModel()
+        self.diagnosticRecord = diagnosticOwner
+        self.appUpdate = MaatAppUpdateModel(memory: diagnosticOwner, recovery: recoveryOwner)
     }
 
     func record(for key: MaatOperationKey) -> MaatOperationRecord? {

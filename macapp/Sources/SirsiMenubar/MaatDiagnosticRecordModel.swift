@@ -101,6 +101,21 @@ import SwiftUI
         generation = UUID(); operationCancelled = false; busy = true
         return true
     }
+    // Reuse the same bounded canonical reader and consent lifetime for an
+    // adjacent managed action. A busy/failed read returns nil, never stale ready
+    // state. This does not initialize, record, or qualify an app-update action.
+    func inspectForManagedAction() async -> MaatFailureMemoryStatus? {
+        guard begin() else { return nil }; defer { busy = false }
+        memory = nil; memoryBytes = Data(); historyVerified = false
+        discoveryComplete = false; discoveryRestartRequired = true
+        guard let result = await read(Self.inspectArguments), result.exitStatus == 0,
+              let status = try? JSONDecoder().decode(MaatFailureMemoryStatus.self, from: result.data) else {
+            message = "Local memory is unverified. Inspect existing recovery; no reset or managed action was attempted."
+            return nil
+        }
+        memory = status; memoryBytes = result.data
+        return status
+    }
     // Observation does not initialize memory and is never called a record.
     func observe() async {
         guard begin() else { return }; defer { busy = false }

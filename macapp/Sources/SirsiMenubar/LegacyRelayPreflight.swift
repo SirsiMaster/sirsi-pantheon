@@ -82,9 +82,10 @@ import Foundation
         let rollback = args.count == 4 && args[0] == "update" && args[1] == "--rollback-version" &&
             AppRollbackSelection(release: args[2]) != nil && args[3] == "--confirm-rollback"
         let recheck = args == ["update", "--reconcile-app-attempt"]
-        guard (prepare || verify || rollback || recheck), overallTimeout.isFinite, overallTimeout > 0, overallTimeout <= 130,
+        let update = args == ["update", "--app"]
+        guard (prepare || verify || rollback || recheck || update), overallTimeout.isFinite, overallTimeout > 0, overallTimeout <= 130,
               identityTimeout.isFinite, identityTimeout > 0, identityTimeout <= 8,
-              !Task.isCancelled, authorize() else { return CommandExecution(launchError: "Installer or rollback request canceled, expired or unrecognized before preflight.", cancelled: Task.isCancelled) }
+              !Task.isCancelled, authorize() else { return CommandExecution(launchError: "Installer or managed app request canceled, expired or unrecognized before preflight.", cancelled: Task.isCancelled) }
         let path: String
         do {
             path = try await LegacyRelayPreflight.run(deadline: min(deadline, ProcessInfo.processInfo.systemUptime + identityTimeout), operation: qualify)

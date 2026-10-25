@@ -6,6 +6,7 @@ struct LegacyRelayMaintenancePanel: View {
     let directory: URL
     @Environment(\.snapshotMode) private var snapshotMode
     @ObservedObject private var model: LegacyRelayMaintenanceModel
+    @ObservedObject private var appUpdate: MaatAppUpdateModel
     @State private var picker=false
     @State private var confirming=false
     @State private var approved: LegacyRelayMaintenanceModel.Approval?
@@ -17,13 +18,12 @@ struct LegacyRelayMaintenancePanel: View {
     @State private var approvedRestore: LegacyRelayMaintenanceModel.RestoreApproval?
     @State private var approvedInstaller: LegacyRelayMaintenanceModel.InstallerApproval?
     @State private var confirmInstaller=false
-    @State private var rollbackRelease=""
-    @State private var approvedRollback:AppRollbackSelection?
-    @State private var confirmRollback=false
     @State private var approvedPublicBinding:LegacyRelayMaintenanceModel.PublicBindingApproval?
     @State private var confirmPublicBinding=false
 
-    init(directory:URL,model:LegacyRelayMaintenanceModel){self.directory=directory;self.model=model}
+    init(directory:URL,model:LegacyRelayMaintenanceModel,appUpdate:MaatAppUpdateModel){self.directory=directory;self.model=model;self.appUpdate=appUpdate}
+
+    var managedUpdateControl: MaatAppUpdateControl { MaatAppUpdateControl(model: appUpdate) }
 
     var body: some View {
         DisclosureGroup("Pantheon and legacy relay maintenance") {
@@ -36,24 +36,14 @@ struct LegacyRelayMaintenancePanel: View {
                     Button("Read current transaction"){Task{await model.readStatus()}}.buttonStyle(.bordered)
                 }.disabled(snapshotMode)
                 if let notice=model.statusNotice {Text(notice).sirsiFont(.caption).foregroundStyle(.secondary)}
-                if let report=model.maatAppAttemptReport, report.state == "unresolved" || report.state == "resolved" {
-                    Text("Retained Ma’at attempt \(report.attemptID ?? "unavailable") · source \(report.currentRelease ?? "unknown") · target \(report.targetRelease ?? "unknown") · \(report.state)")
-                        .sirsiFont(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                }
+                Text("Legacy app/helper recovery Installer. For a normal app update or exact rollback, use Managed Pantheon update below.")
+                    .sirsiFont(.caption).foregroundStyle(.secondary)
                 HStack {
                     Button("Check compatible Installer"){Task{await model.prepareInstaller()}}.buttonStyle(.bordered)
                     Button("Recheck installed pair"){Task{await model.recheckInstalledPair()}}.buttonStyle(.bordered)
-                    Button("Recheck retained Ma’at app attempt"){Task{await model.recheckMaatAppAttempt()}}.buttonStyle(.bordered)
                 }.disabled(model.busy||snapshotMode)
                 Divider()
-                Text("Restore one exact older Pantheon release through the retained Ma'at package workflow.")
-                    .sirsiFont(.caption).foregroundStyle(.secondary)
-                HStack {
-                    TextField("Exact older release (target recovery support is checked from its signed helper)", text:$rollbackRelease).textFieldStyle(.roundedBorder)
-                    Button("Review rollback") {
-                        if let selection=AppRollbackSelection(release:rollbackRelease) { approvedRollback=selection;confirmRollback=true }
-                    }.buttonStyle(.bordered).disabled(model.busy||snapshotMode||AppRollbackSelection(release:rollbackRelease)==nil)
-                }.disabled(model.busy||snapshotMode)
+                managedUpdateControl.disabled(snapshotMode)
                 if let installer=model.installer {
                     Text("Verified normal PKG · \(installer.release)").sirsiFont(.caption)
                     Button("Open verified Installer"){approvedInstaller=installer;confirmInstaller=true}.buttonStyle(.bordered).disabled(model.busy||snapshotMode)
@@ -118,10 +108,6 @@ struct LegacyRelayMaintenancePanel: View {
             Button("Open verified Installer"){if let approvedInstaller{_ = model.install(approvedInstaller)};approvedInstaller=nil}
             Button("Cancel",role:.cancel){approvedInstaller=nil}
         }message:{Text("Release: \(approvedInstaller?.release ?? "unavailable")\nPackage: \(approvedInstaller?.package ?? "unavailable")\nSHA256: \(approvedInstaller?.digest ?? "unavailable")\nPantheon rechecks the exact package before opening macOS Installer. Installation and a fresh installed-pair check remain separate; no service is restarted.")}
-        .confirmationDialog("Restore this exact Pantheon release?",isPresented:$confirmRollback,titleVisibility:.visible){
-            Button("Confirm exact app rollback",role:.destructive){if let approvedRollback{Task{await model.rollback(to:approvedRollback)}};approvedRollback=nil}
-            Button("Cancel",role:.cancel){approvedRollback=nil}
-        }message:{Text("Selected signed release: \(approvedRollback?.release ?? "unavailable")\nThe existing whole-app owner rechecks the installed app, live schema, official PKG identity and dependencies; it retains a Ma'at receipt and attempt before one normal Installer handoff. Exact installed app/helper readback is required. An ambiguous handoff is never replayed automatically.")}
         .confirmationDialog("Reconcile this public operation binding?",isPresented:$confirmPublicBinding,titleVisibility:.visible){
             Button("Confirm public binding reconciliation"){if let approvedPublicBinding{_ = model.rebindPublicState(approvedPublicBinding)};approvedPublicBinding=nil}
             Button("Cancel",role:.cancel){approvedPublicBinding=nil}
