@@ -223,7 +223,8 @@
         "internal/maat/memory_diagnostic_not_submitted_test.go",
         "cmd/sirsi/maattriage_request_discovery_test.go",
         "macapp/Tests/SirsiMenubarTests/MaatDiagnosticCorrelationFixture.swift",
-        "macapp/Tests/SirsiMenubarTests/MaatDiagnosticCorrelationTests.swift"
+        "macapp/Tests/SirsiMenubarTests/MaatDiagnosticCorrelationTests.swift",
+        "internal/maat/memory_app_diagnostic_composition_test.go"
       ],
       "inputs": [
         "one complete local Doctor report",
@@ -267,7 +268,9 @@
         "resolve-first exact request actor/store/intent/result debt without replay; dedicated fresh-screen uses the same engine-owned model",
         "merge this component metadata only into the newer31-component catalogue; never replace its full recipe with this older29-component donor",
         "native adapter source and inert interop fixtures only; Main normal-window and Go-to-native execution pending",
-        "see docs/stacklab/maat/canon/DIAGNOSTIC_NATIVE_REQUEST_ADAPTER_V1.md"
+        "see docs/stacklab/maat/canon/DIAGNOSTIC_NATIVE_REQUEST_ADAPTER_V1.md",
+        "Preserve preselected request UUID before preparation; canonical --record-request/read/resolve with once consent and retained typed completion. Exact qualified Go57/native458/four-window evidence and installed/export/full-O7 limits are recorded in DIAGNOSTIC_RECORD_V1.md; qualify the new integrated head separately.",
+        "Actual Go request-bundle interop and inherited private-host/check/dedicated custody assertions use separately bound request and health-wire fixtures; missing either required input is not acceptance."
       ]
     },
     {
@@ -367,7 +370,8 @@
         "internal/maat/memory_app_update_test.go",
         "cmd/sirsi/update_app_darwin_test.go",
         "cmd/sirsi/selfupdate_schema_test.go",
-        "internal/maat/memory_diagnostic_test.go"
+        "internal/maat/memory_diagnostic_test.go",
+        "internal/maat/memory_app_diagnostic_composition_test.go"
       ],
       "inputs": [
         "typed local failure signature",
@@ -435,7 +439,8 @@
         "for the composed whole-app route, retain and read back the exact v2 receipt, project only through the opaque StoredPreflightReceipt handle, and verify its committed bytes under the Store lock before creating the Installer handoff attempt; the attempt stores the typed receipt reference, not a caller-forged inline receipt",
         "keep raw self-update, alternate installation routes, installed qualification, and the original full O4 rollback acceptance criterion distinct; only the bounded raw self-update source path is added here and no full operational row is closed",
         "compose only closed diagnostic record/result suffix validation into shared attempt readers; preserve liveness/other operation semantics and full WAL refusal",
-        "O7 confirmed local-record adapter is a partial diagnostics slice; authorized exports and full operational/installed acceptance remain open"
+        "O7 confirmed local-record adapter is a partial diagnostics slice; authorized exports and full operational/installed acceptance remain open",
+        "The app-update scanner recognizes exact O7 record/request leaves only after shared typed-owner validation; unknown/corrupt objects and unrelated prepared WAL remain refusal. New composition fixtures require Main execution."
       ]
     },
     {

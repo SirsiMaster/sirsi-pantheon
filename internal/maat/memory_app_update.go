@@ -275,6 +275,10 @@ func (s *Store) pendingAppUpdateAttemptLocked() (AppUpdateAttempt, error) {
 		case strings.HasSuffix(name, ".started.json"), strings.HasSuffix(name, ".outcome.json"),
 			strings.HasSuffix(name, ".projection.json"), strings.HasSuffix(name, ".projection-receipt.json"):
 			// The liveness-watch owner validates its own closed record shapes.
+		case isDiagnosticRecordLeaf(name):
+			// The shared owner scans above already validated these exact O7
+			// record/request names and their full custody; do not reinterpret
+			// their settled history as an app-update attempt or skip unknowns.
 		case localAttemptLeaf(name), localDispositionAttemptLeaf(name):
 			// The G01 validators above have already checked these exact closed
 			// record names and their bytes; settled history is retained unchanged.

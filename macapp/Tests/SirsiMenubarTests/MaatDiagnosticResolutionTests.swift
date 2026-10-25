@@ -92,7 +92,12 @@ final class MaatDiagnosticResolutionTests: XCTestCase {
         await model.recordFreshScreen(localHost:"fixture-mac",using:correlation); XCTAssertEqual(submissions,1)
         // Preserve the independently qualified producer host/check/privacy
         // assertions while using the accepted correlated request flow.
-        let result = try JSONDecoder().decode(MaatSystemOneCommandResult.self,from:recorded.data)
+        guard let healthPath = ProcessInfo.processInfo.environment["PANTHEON_TEST_DIAGNOSTIC_WIRE_OUTPUT"] else {
+            throw XCTSkip("Main also supplies the independently qualified Go health-wire fixture for inherited dedicated/unknown-check custody assertions")
+        }
+        let healthBytes = try Data(contentsOf:URL(fileURLWithPath:healthPath))
+        XCTAssertLessThanOrEqual(healthBytes.count,8*1024*1024)
+        let result = try JSONDecoder().decode(MaatSystemOneCommandResult.self,from:healthBytes)
         let localHost = "fixture-mac"
         XCTAssertEqual(result.verdict.subject.hostBinding,"sirsi.maat.local-host-sha256.v1")
         XCTAssertNotEqual(result.verdict.subject.repo,localHost)
@@ -120,7 +125,7 @@ final class MaatDiagnosticResolutionTests: XCTestCase {
         XCTAssertTrue(maatHasLocalDiagnosticCustody(result.verdict,finding:dedicated,localHost:localHost))
         if case .current = maatCurrentDiagnosticResolution(verdict:result.verdict,finding:dedicated,localHost:localHost,
             read:try read(findings:[["check":"binary-drift","severity":2,"message":"current"]])) {XCTFail("generic resolver bypassed dedicated custody")}
-        let text = String(decoding:recorded.data,as:UTF8.self)
+        let text = String(decoding:healthBytes,as:UTF8.self)
         XCTAssertFalse(text.contains("PRIVATE_UNKNOWN_CHECK"));XCTAssertFalse(text.contains("SECRET_CANARY"))
 
     }

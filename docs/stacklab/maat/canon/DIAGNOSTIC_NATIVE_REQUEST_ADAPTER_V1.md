@@ -73,10 +73,12 @@ engine-owned adapter, and exposes the same recovery controls after lost output.
   31-component canonical recipe; never install the older whole recipe or change
   its component membership/count expectations.
 
-Main owns strict Release build/native tests, Go-to-native actual wire checks,
-compiled semantic controls, and inert normal-window end-to-end acceptance.
-No author tests, builds, services, signing, models, user-store operations or
-installed-app actions were performed. Existing full-scope obligations remain.
+Main completed the bounded native458 strict Release/native61, actual Go57 wire
+checks, six compiled semantic controls and four inert normal-window flows. Exact
+receipts and still-open boundaries are listed in DIAGNOSTIC_RECORD_V1.md.
+The new integrated head is not thereby qualified. No author tests, builds,
+services, signing, models, user-store operations or installed-app actions were
+performed; installed/export/full-O7 obligations remain open.
 
 ## Canonical request argument correction
 

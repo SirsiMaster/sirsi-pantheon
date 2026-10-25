@@ -108,8 +108,9 @@ the engine-owned model rather than a second legacy submitter. Existing
 query-owned refresh and UI1/UI2 completion retention remain. Corresponding
 record/resolution/correlation tests include129 historical rows, cancellation,
 snapshot drift, missing preparation, exact tuple refusal and an external
-Go-produced wire input (explicit skip without Main artifact). This child has
-not been built/tested by its author; actual interoperability, normal-window
-acceptance and installed/full-O7 acceptance remain open. See
+Go-produced wire input (explicit skip without Main artifact). Go57 and native458 now have Main-owned bounded runtime and four normal-window
+observations: exact evidence and limits are recorded in
+[diagnostic qualification](DIAGNOSTIC_RECORD_V1.md#exact-bounded-evidence-2026-10-25).
+The earlier author-only/unrun handoff is historical. New integrated-head checks,
+installed adoption, authorized export and full-O7 acceptance remain open. See
 [consumer boundary](DIAGNOSTIC_NATIVE_REQUEST_ADAPTER_V1.md).
-
