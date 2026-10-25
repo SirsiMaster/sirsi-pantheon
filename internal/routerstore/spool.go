@@ -622,11 +622,56 @@ type Relay struct {
 	scans      atomic.Int32 // discovery passes (tests assert no spin under backlog)
 	// Per-instance deterministic scheduler probe; nil uses real discovery.
 	discoverFn func(context.Context) int
+	// A relay instance owns one serving lifetime. Reusing its old lane channels
+	// after cancellation would strand wakes on workers that already exited.
+	started atomic.Bool
 }
 
 // Serve polls the spool until ctx is done. Each request file is forwarded once;
 // its response file is written atomically; stale files are swept with a log line.
+// Cancellation returns promptly, NOT a proof that forwards have settled. A
+// lifecycle owner requiring settlement must use ServeDrained instead.
 func (rl *Relay) Serve(ctx context.Context) error {
+	return rl.serve(ctx, nil)
+}
+
+// ErrRelayDrainIncomplete means the serving loop stopped but an admitted duty
+// has not acknowledged completion. It never authorizes retirement or replay.
+var ErrRelayDrainIncomplete = errors.New("relay: admitted duties have not drained")
+
+// ServeDrained retains the existing fast-cancel Serve contract as a separate
+// API. After stopping discovery it joins every lane worker and admitted fresh
+// forward, including response/outcome recording and serial outbox retries.
+// The timeout starts at shutdown, not startup. It does not cancel an HTTP
+// request whose mutation outcome may be unknown. On timeout the duties remain
+// owned by this process and the caller must not retire it or report success.
+// This is an in-process completion boundary, not producer quiescence, remote
+// authorization, or proof that an already-loaded legacy binary cooperates.
+func (rl *Relay) ServeDrained(ctx context.Context, drainTimeout time.Duration) error {
+	if drainTimeout <= 0 || drainTimeout > 2*time.Minute {
+		return errors.New("relay: drain timeout must be positive and at most two minutes")
+	}
+	serving, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var duties sync.WaitGroup
+	err := rl.serve(serving, &duties)
+	cancel()
+	done := make(chan struct{})
+	go func() { duties.Wait(); close(done) }()
+	timer := time.NewTimer(drainTimeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+		return err
+	case <-timer.C:
+		return errors.Join(err, ErrRelayDrainIncomplete)
+	}
+}
+
+func (rl *Relay) serve(ctx context.Context, duties *sync.WaitGroup) error {
+	if !rl.started.CompareAndSwap(false, true) {
+		return errors.New("relay: use a new instance for each serving lifetime")
+	}
 	if rl.Client == nil {
 		c, err := newRelayHTTPClientFor(rl.Base)
 		if err != nil {
@@ -667,7 +712,7 @@ func (rl *Relay) Serve(ctx context.Context) error {
 	}()
 	nextObservation := rl.now()
 	rl.recoverInflight()
-	discover := rl.discover
+	discover := func(ctx context.Context) int { return rl.discoverTracked(ctx, duties) }
 	if rl.discoverFn != nil {
 		discover = rl.discoverFn
 	}
@@ -708,6 +753,10 @@ func (rl *Relay) Serve(ctx context.Context) error {
 // return value counts wakes actually DELIVERED (a worker that already holds a
 // pending signal is not counted), so a backlog never turns the loop into a spin.
 func (rl *Relay) discover(ctx context.Context) int {
+	return rl.discoverTracked(ctx, nil)
+}
+
+func (rl *Relay) discoverTracked(ctx context.Context, duties *sync.WaitGroup) int {
 	rl.scans.Add(1)
 	files, _ := filepath.Glob(filepath.Join(rl.Spool, "*", "req", "*.json"))
 	seen := map[string]bool{}
@@ -740,7 +789,10 @@ func (rl *Relay) discover(ctx context.Context) int {
 		if !ok {
 			ch = make(chan struct{}, 1)
 			rl.lanes[agent] = ch
-			go rl.laneWorker(ctx, agent, ch)
+			if duties != nil {
+				duties.Add(1)
+			}
+			go rl.laneWorker(ctx, agent, ch, duties)
 		}
 		select { // coalesce wakes: one pending signal is enough
 		case ch <- struct{}{}:
@@ -761,7 +813,10 @@ var relayLaneParallel = 8
 
 // laneWorker drains one lane's queue whenever woken, keeping up to relayLaneParallel forwards in
 // flight continuously; the ADR-069 outbox is still drained serially, in id order, after each pass.
-func (rl *Relay) laneWorker(ctx context.Context, agent string, wake <-chan struct{}) {
+func (rl *Relay) laneWorker(ctx context.Context, agent string, wake <-chan struct{}, duties *sync.WaitGroup) {
+	if duties != nil {
+		defer duties.Done()
+	}
 	// The slots are the lane's, not a pass's: a request arriving while a slow forward is in flight
 	// starts as soon as any slot is free instead of waiting for the earlier batch to finish.
 	// Each client process waits for its own response, so per-client order is kept; consumption
@@ -775,6 +830,9 @@ func (rl *Relay) laneWorker(ctx context.Context, agent string, wake <-chan struc
 		case <-ctx.Done():
 			return
 		case <-wake:
+		}
+		if ctx.Err() != nil {
+			return
 		}
 		files, _ := filepath.Glob(filepath.Join(rl.Spool, agent, "req", "*.json"))
 		sort.Strings(files)
@@ -790,10 +848,20 @@ func (rl *Relay) laneWorker(ctx context.Context, agent string, wake <-chan struc
 			case <-ctx.Done():
 				return
 			}
+			if ctx.Err() != nil {
+				<-sem
+				return
+			}
 			mu.Lock()
 			started[f] = true
 			mu.Unlock()
+			if duties != nil {
+				duties.Add(1)
+			}
 			go func(f string) {
+				if duties != nil {
+					defer duties.Done()
+				}
 				defer func() {
 					mu.Lock()
 					delete(started, f)
@@ -806,7 +874,7 @@ func (rl *Relay) laneWorker(ctx context.Context, agent string, wake <-chan struc
 		// ADR-069: re-forward any messages held during a prior outage, in order.
 		// If some are still unreachable, schedule a backed-off re-wake so they
 		// drain when the cloud returns — without hot-looping.
-		if rl.drainOutbox(agent) > 0 {
+		if rl.drainOutboxContext(ctx, agent) > 0 {
 			rl.scheduleOutboxRewake(ctx, agent)
 		}
 	}
@@ -912,9 +980,16 @@ func (rl *Relay) retryOutboxOne(agent, f string) outboxOutcome {
 // ordered-release guarantee. The frontier (the first non-delivered item and
 // everything after it) is left for the next wake.
 func (rl *Relay) drainOutbox(agent string) int {
+	return rl.drainOutboxContext(context.Background(), agent)
+}
+
+func (rl *Relay) drainOutboxContext(ctx context.Context, agent string) int {
 	held, _ := filepath.Glob(filepath.Join(rl.Spool, agent, "outbox", "*.json"))
 	sort.Strings(held)
 	for i, f := range held {
+		if ctx.Err() != nil {
+			return len(held) - i
+		}
 		if rl.retryOutboxOne(agent, f) != outboxDelivered {
 			// Stop at the frontier. Count the rest as unresolved so the caller
 			// schedules a backed-off re-wake to drain from here next time.

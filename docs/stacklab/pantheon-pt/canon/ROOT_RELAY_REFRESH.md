@@ -59,6 +59,27 @@ unit test, an empty queue sample, or a caller-provided `--drained` flag.
 
 ### Acceptance controls
 
+#### Source implementation checkpoint: joined relay duties
+
+`Relay.ServeDrained(ctx, drainTimeout)` is the explicit in-process completion
+API. It tracks the actual lane workers and fresh forward goroutines; a worker
+also owns its serial held-outbox retry until the existing disposition finishes.
+Discovery stops on cancellation, canceled workers do not start another queued
+item, and cancellation leaves the next held-outbox item untouched. A positive
+bounded shutdown deadline is required. A missed deadline returns
+`ErrRelayDrainIncomplete`, never success or authority to retire the process.
+The already-admitted HTTP request is not canceled or replayed by that deadline.
+The original `Serve` retains its prompt cancellation contract and is explicitly
+not a drain acknowledgment. Each Relay instance has one serving lifetime;
+reusing retired lane channels refuses instead of silently losing wakes.
+
+This checkpoint does **not** switch the installed CLI to terminate on a drain
+timeout. The remaining authorized control must keep the process alive on a
+failed drain, fence producer ingress, bind the actual instance, and satisfy
+the legacy migration requirement. Neither this API's unit tests nor fast SIGTERM
+handling is a substitute for those next steps. Existing on-disk outcome-record
+durability is not strengthened or newly certified by a goroutine join.
+
 Use owned fixtures to hold a forward and a held-outbox retry across a drain;
 the acknowledgment must wait, prevent a late new forward and preserve all
 pending bytes. Cover timeout, interrupted caller, owner/instance substitution,
