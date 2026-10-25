@@ -1,5 +1,14 @@
 # Changelog — Ra / Horus canon
 
+## 2026-10-25 — Horus status update
+
+- Add a dated status update without rewriting the 03:25Z snapshot. Both
+  observed Macs run a Horus from v0.24.135 or later, which carries #1194. Ra
+  verified the M1; Mercury reported the Studio. The launchd label is still
+  `agent-router`.
+- Attribute the M1's 425 registration fence errors to the 2026-10-12 build,
+  which predates #1156. The current process logs none.
+
 ## 2026-10-24 — Ra and Horus roles
 
 - Record the owner's split: Ra is the cloud or third-party-level router and

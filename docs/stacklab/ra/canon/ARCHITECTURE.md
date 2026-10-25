@@ -64,6 +64,25 @@ shipped state is partial:
 - Mail to Horus routes to Ra (#1194) only from a Horus built from v0.24.135
   or later. Neither the M1 nor the Studio runs such a Horus today; the only
   running Horus predates #1194.
+- **Update 2026-10-25 ~10:10Z** (supersedes the two bullets above for the
+  present tense; the 03:25Z snapshot stands as history). Both observed Macs
+  now run a Horus from v0.24.135 or later, which carries #1194:
+  - **M1:** Ra verified it independently at ~10:50Z. pid 54524 runs
+    `/Applications/Pantheon.app/Contents/MacOS/sirsi horus supervise`. It was
+    started at 04:02Z by `sirsi router install-daemons` from v0.24.135, and the
+    app on disk is now v0.24.137.
+  - **M5-Studio:** reported by Mercury, not verified by Ra. pid 55781 runs the
+    same install, started at ~03:57Z from v0.24.135.
+  - The registry holds exactly one active `horus-supervisor` record per host.
+  - The launchd label is still `ai.sirsi.horus.agent-router` on both Macs.
+  - The M5 was not observed.
+- The M1's 425 `lost lifecycle fence` registration errors all came from the
+  2026-10-12 build, which predates #1156 (v0.24.117). That build compared
+  thread payloads by raw bytes, so every save rewrote this host's closed
+  records, and the service refuses writes to closed records. The current
+  process has logged none: the count stayed at 425 from ~10:40Z to ~10:55Z.
+  The M1's relay 502s remain. They come from the phone-hotspot link (TLS
+  handshake timeouts to Cloud Run), not from Horus.
 - The host relay matches the roles above on both observed Macs: owned by
   `_sirsipantheon`, it forwards local traffic through the spool to Ra.
 - Per-module versioning is not yet separate from the single `sirsi` release.
