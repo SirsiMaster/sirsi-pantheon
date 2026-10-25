@@ -147,9 +147,9 @@ def require_local_user():
         raise Refused('Local CPU scope requires matching ordinary real/effective user and group; elevated execution is not local admission')
 
 
-def local_transition(folder, record, write=None, sync=None, publish=None):
+def local_transition(folder, record, write=None, sync=None, publish=None, phase=None):
     """Create-only immutable phases; a failed update never truncates intent."""
-    phase = 'intent' if record['status'] == 'admitted' else 'running' if record['status'] == 'running' else 'terminal'
+    phase = phase or ('intent' if record['status'] == 'admitted' else 'running' if record['status'] == 'running' else 'terminal')
     target = folder/(phase+'.json')
     stage = folder/('.'+phase+'-'+uuid.uuid4().hex)
     fd = os.open(stage, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
@@ -268,6 +268,18 @@ def local_stop_owned(child, birth):
             if not any(not x['status'].startswith('Z') for x in rows):
                 break
             time.sleep(0.02)
+        # The final SIGKILL wait has no next outer iteration: complete through
+        # the same anchored quiescence/reap/absence path before falling through.
+        rows=local_group_snapshot(child.pid)
+        anchor=next((x for x in rows if x['pid']==child.pid),None)
+        if not birth or anchor is None or process_identity(child.pid)!=(os.getpid(),birth):
+            raise Refused('Local child identity changed after signal wait; no further signal')
+        if any(x['uid']!=os.getuid() for x in rows):
+            raise Refused('Foreign UID after local signal wait')
+        if not any(not x['status'].startswith('Z') for x in rows):
+            child.wait(timeout=1)
+            if local_group_snapshot(child.pid):raise Refused('Local group absence unconfirmed after reap')
+            return
     raise Refused('Owned local group quiescence unconfirmed; debt retained')
 
 
@@ -299,9 +311,60 @@ def owned_local_child(fd,command):
     return 78
 
 
-def reconcile_local_debt(execution):
+def read_local_record(path, max_links=1):
+    fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+    with os.fdopen(fd,'rb') as value:
+        st=os.fstat(value.fileno())
+        if not stat.S_ISREG(st.st_mode) or st.st_uid!=os.getuid() or stat.S_IMODE(st.st_mode)!=0o600 or not 1<=st.st_nlink<=max_links or st.st_size>4096:
+            raise Refused('Local record metadata unavailable')
+        raw=value.read(4097)
+    if len(raw)>4096:raise Refused('Local record exceeded bound')
+    def exact(pairs):
+        result={}
+        for key,item in pairs:
+            if key in result:raise Refused('Duplicate local record field')
+            result[key]=item
+        return result
+    record=json.loads(raw,object_pairs_hook=exact)
+    if not isinstance(record,dict):raise Refused('Local record must be an object')
+    return record,st,hashlib.sha256(raw).hexdigest()
+
+
+def sync_local_directory(path):
+    fd=os.open(path,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+    try:os.fsync(fd)
+    finally:os.close(fd)
+
+
+def publish_local_resolution(folder, resolution, write=None):
+    marker=folder/'cleanup-reconciled.json'
+    if not os.path.lexists(marker):
+        local_transition(folder,resolution,write=write,phase='cleanup-reconciled')
+    got,info,_=read_local_record(marker,max_links=2)
+    if got!=resolution:raise Refused('Retained local resolution conflicts with this exact outcome')
+    # Resume the exact publication prefix link->stage removal after a crash.
+    # Only an identity-matching private stage linked to this marker is removed.
+    if info.st_nlink==2:
+        names=list(folder.iterdir())
+        if len(names)>128:raise Refused('Local resolution staging inventory exceeded bound')
+        matches=[]
+        for path in names:
+            if re.fullmatch(r'\.cleanup-reconciled-[0-9a-f]{32}',path.name):
+                stage=path.lstat()
+                if (stage.st_dev,stage.st_ino)==(info.st_dev,info.st_ino):matches.append(path)
+        if len(matches)!=1:raise Refused('Unknown link to retained local resolution')
+        stage=matches[0]
+        if (stage.lstat().st_dev,stage.lstat().st_ino)!=(info.st_dev,info.st_ino):raise Refused('Resolution stage changed')
+        stage.unlink()
+    got,_,_=read_local_record(marker)
+    if got!=resolution:raise Refused('Local resolution readback differs')
+    sync_local_directory(folder)
+
+
+def reconcile_local_debt(execution, step=None, resolution_write=None):
     require_local_user()
     if not re.fullmatch('[0-9a-f]{32}',execution):raise Refused('Exact local execution identity required')
+    step=step or (lambda _name:None)  # Per-call inert fault seam; CLI has no bypass.
     root=Path.home()/'.sirsi/evidence/maat-runs'
     lock=os.open(root/'.local-cpu.lock',os.O_RDWR|os.O_NOFOLLOW|os.O_NONBLOCK)
     try:
@@ -309,44 +372,59 @@ def reconcile_local_debt(execution):
         lock_info=os.fstat(lock)
         if not stat.S_ISREG(lock_info.st_mode) or lock_info.st_uid!=os.getuid() or stat.S_IMODE(lock_info.st_mode)!=0o600 or lock_info.st_nlink!=1:raise Refused('Local lock custody differs')
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-        if os.read(lock,128)!=(execution+'\n').encode():raise Refused('Local execution fence identity differs')
+        fence=os.read(lock,128)
+        marker=root/execution/'cleanup-reconciled.json'
+        if fence!=(execution+'\n').encode() and not (fence==b'' and os.path.lexists(marker)):
+            raise Refused('Local execution fence identity differs')
         path=root/'.local-cpu.debt.json'
-        try:
-            fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
-        except FileNotFoundError:
+        archive=root/('.local-cpu.resolved-'+execution+'.json')
+        active=os.path.lexists(path)
+        if active:
+            source=path
+        elif os.path.lexists(archive):
+            source=archive
+        else:
             # This fallback is protocol evidence, not "file absent => never ran".
             # The release byte is written only after running.json is committed.
-            phase=root/execution/'running.json'
-            if not os.path.lexists(phase):phase=root/execution/'intent.json'
-            fd=os.open(phase,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
-        with os.fdopen(fd,'r') as value:
-            st=os.fstat(value.fileno())
-            if not stat.S_ISREG(st.st_mode) or st.st_uid!=os.getuid() or stat.S_IMODE(st.st_mode)!=0o600 or st.st_nlink!=1 or st.st_size>4096:raise Refused('Local debt metadata unavailable')
-            debt=json.load(value)
+            source=root/execution/'running.json'
+            if not os.path.lexists(source):source=root/execution/'intent.json'
+        debt,st,source_hash=read_local_record(source,max_links=2 if active else 1)
+        if st.st_nlink==2:
+            named=archive.lstat()
+            if (named.st_dev,named.st_ino)!=(st.st_dev,st.st_ino):raise Refused('Unrecognized link to local debt')
         fallback=debt.get('spawn_protocol')=='pipe-after-durable-running-v1'
         if fallback:
             if debt.get('scope')!='local' or debt.get('uid')!=os.getuid() or debt.get('execution')!=execution:raise Refused('Local phase identity differs')
             if debt.get('status')=='admitted':
-                debt['resolution']='payload_not_released_by_protocol'
+                outcome='payload_not_released_by_protocol'
             elif debt.get('status')=='running' and type(debt.get('pid')) is int:
                 if local_group_snapshot(debt['pid']):raise Refused('Original group remains; no signal or replay')
-                debt['resolution']='released_group_now_absent'
+                outcome='released_group_now_absent'
             else:raise Refused('Local phase cannot resolve this fence')
         else:
             if debt.get('schema')!=LOCAL_RECEIPT_SCHEMA or debt.get('uid')!=os.getuid() or debt.get('execution')!=execution or type(debt.get('pid')) is not int:raise Refused('Local debt identity differs')
             if local_group_snapshot(debt['pid']):raise Refused('Original group is not proven absent; no signal or replay')
-        # Typed resolution keeps the exact debt as evidence; no absence-only job replay.
-        resolved=root/execution/'cleanup-reconciled.json'
-        fd=os.open(resolved,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
-        with os.fdopen(fd,'w') as out:json.dump(debt,out);out.flush();os.fsync(out.fileno())
-        if not fallback:
+            outcome='released_group_now_absent'
+        resolution=dict(schema=LOCAL_RECEIPT_SCHEMA,execution=execution,uid=os.getuid(),source_sha256=source_hash,resolution=outcome)
+        publish_local_resolution(root/execution,resolution,write=resolution_write)
+        step('marker_committed')
+        if active:
             if (path.lstat().st_dev,path.lstat().st_ino)!=(st.st_dev,st.st_ino):raise Refused('Local debt changed before resolution')
-            destination=root/('.local-cpu.resolved-'+execution+'.json')
-            os.link(path,destination,follow_symlinks=False);path.unlink()
-        os.ftruncate(lock,0);os.fsync(lock)
-        directory=os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
-        try:os.fsync(directory)
-        finally:os.close(directory)
+            step('before_archive')
+            if os.path.lexists(archive):
+                archived=archive.lstat()
+                if (archived.st_dev,archived.st_ino)!=(st.st_dev,st.st_ino):raise Refused('Local debt archive conflicts')
+            else:os.link(path,archive,follow_symlinks=False)
+            sync_local_directory(root)
+            step('archive_linked')
+            step('before_debt_unlink')
+            if (path.lstat().st_dev,path.lstat().st_ino)!=(st.st_dev,st.st_ino):raise Refused('Local debt replaced before archive completion')
+            path.unlink();sync_local_directory(root)
+            step('debt_unlinked')
+        step('before_fence_clear')
+        os.ftruncate(lock,0)
+        step('fence_cleared')
+        os.fsync(lock);sync_local_directory(root)
     finally:os.close(lock)
 
 
@@ -396,10 +474,10 @@ def supervise_local(command, timeout, record, folder, persist):
                       supervisor_pid=os.getpid(), execution_timeout_sec=timeout,
                       status='admitted', fabric_delivery='not_requested')
         record.update(execution=folder.name,spawn_protocol='pipe-after-durable-running-v1')
+        persist()  # Typed, durable recovery witness BEFORE any durable refusal fence.
         fence_written = True
         os.write(lock_fd,(folder.name+'\n').encode())
         os.fsync(lock_fd)  # Pre-spawn durable refusal fence, even if later debt write fails.
-        persist()  # Durable exact execution intent before spawning anything.
         env = os.environ.copy()
         # Never borrow a parent's native/fabric admission as this job's authority.
         env.pop('SIRSI_MAAT_EXECUTION_RECEIPT', None)

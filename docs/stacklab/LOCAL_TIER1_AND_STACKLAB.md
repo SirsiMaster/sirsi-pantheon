@@ -64,6 +64,18 @@ publication and directory fsync. Failed short writes, fsyncs or publication keep
 the prior complete intent. The default fabric writer is unchanged. Fault fixtures
 exercise both the phase primitive and a running update after a mocked spawn.
 
+## Resumable local recovery
+
+The LFS recovery successor completes the final SIGKILL wait through the same
+identity, quiescence, reap and absence checks. Typed immutable intent is durable
+before its execution fence, and that fence remains durable before spawn.
+Reconciliation atomically publishes a resolution bound to the exact original
+evidence hash. A matching resolution resumes interrupted archive/unlink/fence
+durability steps under the same lock; original debt bytes remain archived.
+Conflicting, malformed, foreign or still-live evidence refuses. No retry signals
+or replays the payload, and empty state alone cannot authorize clearing a fence.
+The new fault fixtures are authored evidence, not executed native qualification.
+
 ## Installed Stack Lab, off by default
 
 `sirsi stacklab local inspect|enable|disable|catalog` uses private per-user
