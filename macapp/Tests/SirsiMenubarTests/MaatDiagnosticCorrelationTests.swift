@@ -192,6 +192,56 @@ import CryptoKit
         XCTAssertNil(actual.approval(.record))
         XCTAssertEqual(fixture.calls.filter{$0.contains("--record-request")}.count,1)
     }
+    func testRecordedResultRequiresExactDecisionVerdictDigestBindingBeforeClearingUnknown() async throws {
+        let fixture = MaatDiagnosticCorrelationFixture()
+        func decoded(_ row: [String:Any]) throws -> MaatDiagnosticWire.Request {
+            try JSONDecoder().decode(MaatDiagnosticWire.Request.self,from:JSONSerialization.data(withJSONObject:row))
+        }
+        let matching = try decoded(fixture.request(key,state:"recorded_verified"))
+        let intent = try XCTUnwrap(matching.intent)
+        XCTAssertTrue(try XCTUnwrap(matching.result).valid(intent:intent))
+        XCTAssertTrue(matching.valid(uid:501,store:fixture.store))
+        // Existing readiness and pending/non-recorded contracts are controls,
+        // not rewritten fixtures or new ways to infer completed delivery.
+        for state in ["prepared","pending","not_submitted","not_recorded"] {
+            let control = try decoded(fixture.request(key,state:state))
+            XCTAssertTrue(control.valid(uid:501,store:fixture.store),state)
+            if state == "not_submitted" || state == "not_recorded" {
+                var contradictory = fixture.request(key,state:state)
+                var result = try XCTUnwrap(contradictory["result"] as? [String:Any])
+                result["decision_evidence"] = "maat-system-one:sha256=" + fixture.recordID
+                contradictory["result"] = result
+                XCTAssertFalse(try decoded(contradictory).valid(uid:501,store:fixture.store),state)
+            }
+        }
+        for evidence in ["maat-system-one:sha256=" + String(repeating:"b",count:64),
+                         "other-decision:sha256=" + fixture.recordID] {
+            var contradictory = fixture.request(key,state:"recorded_verified")
+            var result = try XCTUnwrap(contradictory["result"] as? [String:Any])
+            result["decision_evidence"] = evidence; contradictory["result"] = result
+            let value = try decoded(contradictory)
+            XCTAssertFalse(try XCTUnwrap(value.result).valid(intent:intent),"Contradictory Decision/verdict digest accepted")
+            XCTAssertFalse(value.valid(uid:501,store:fixture.store))
+            let owned = MaatDiagnosticCorrelationFixture(); owned.prepareLost = true
+            let model = owned.model(); await model.inspect()
+            XCTAssertEqual(model.memory?.state,"ready")
+            let approval = try XCTUnwrap(model.approval(.record))
+            let prepared = await model.confirm(approval); XCTAssertFalse(prepared)
+            let retained = try XCTUnwrap(model.activeRequestID)
+            owned.override = { args in
+                guard args.contains("--read-record-request") else {return nil}
+                var row = owned.request(retained,state:"recorded_verified")
+                var result = row["result"] as! [String:Any]
+                result["decision_evidence"] = evidence; row["result"] = result
+                return MaatDiagnosticCorrelationFixture.reply(row)
+            }
+            let verified = await model.readRequest(retained)
+            XCTAssertFalse(verified); XCTAssertTrue(model.deliveryUnknown)
+            XCTAssertEqual(model.activeRequestID,retained); XCTAssertNil(model.requestCompletion)
+            XCTAssertFalse(owned.calls.contains{$0.contains("--record-request")})
+        }
+    }
+
     func testActualGoRequestPageAndResultInterop() async throws {
         guard let path = ProcessInfo.processInfo.environment["PANTHEON_TEST_DIAGNOSTIC_REQUEST_INTEROP"] else {
             throw XCTSkip("Main must supply actual Go-produced canonical request/preparation/read/discovery bytes")

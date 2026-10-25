@@ -39,8 +39,8 @@ enum MaatDiagnosticWire {
             guard schema == recordSchema, id == intent.id, digest(intent_sha256) else { return false }
             switch state {
             case "recorded_verified":
-                return decision_evidence.hasPrefix("maat-system-one:sha256=") &&
-                    digest(String(decision_evidence.dropFirst("maat-system-one:sha256=".count))) && digest(verdict_sha256)
+                return digest(verdict_sha256) &&
+                    decision_evidence == "maat-system-one:sha256=" + verdict_sha256
             case "not_submitted", "not_recorded": return decision_evidence.isEmpty && verdict_sha256.isEmpty
             default: return false
             }
