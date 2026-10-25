@@ -1193,7 +1193,13 @@ func (rl *Relay) forward(agent, id, path string) spoolResponse {
 		rl.Log.Error("relay: outcome unknown after forward", "agent", agent, "method", req.Method, "id", id, "cause", cause)
 		return fail(http.StatusBadGateway, fmt.Sprintf("relay: %s id %s: OUTCOME UNKNOWN — %s; re-query before retrying a mutation", req.Method, id, cause))
 	}
-	resp, err := rl.Client.Do(httpReq)
+	// Never follow redirects. The service saw the POST that earned a 3xx, so a
+	// later handshake stall on the redirect target is NOT "never reached" — a
+	// followed redirect would let neverReachedService license a double send.
+	// A per-call copy covers injected clients too.
+	client := *rl.Client
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := client.Do(httpReq)
 	// rs-30 SAFE re-dial (ADR-062 relay trust boundary): if the first attempt
 	// PROVABLY never reached the service (neverReachedService — a dial/DNS-phase
 	// failure, the shape a dropped half-open connection surfaces once it is
@@ -1207,10 +1213,10 @@ func (rl *Relay) forward(agent, id, path string) spoolResponse {
 	// (response lost mid-flight) is NEVER retried here; it falls through to the
 	// OUTCOME-UNKNOWN branch below, the exact discipline the durable outbox uses.
 	if err != nil && neverReachedService(err) {
-		rl.Client.CloseIdleConnections()
+		client.CloseIdleConnections()
 		if hr2, berr := buildReq(); berr == nil {
 			rl.Log.Warn("relay: forward never reached service, re-dialing once on a fresh connection", "agent", agent, "method", req.Method, "id", id, "err", err.Error())
-			resp, err = rl.Client.Do(hr2)
+			resp, err = client.Do(hr2)
 		}
 	}
 	if err != nil {
@@ -1224,6 +1230,9 @@ func (rl *Relay) forward(agent, id, path string) spoolResponse {
 		return unknown("service unreachable or connection lost: " + err.Error())
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		return unknown(fmt.Sprintf("service answered %d redirect (never followed)", resp.StatusCode))
+	}
 	body, rerr := io.ReadAll(io.LimitReader(resp.Body, spoolMaxResponse+1))
 	if rerr != nil {
 		return unknown("service response could not be read: " + rerr.Error())

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -19,13 +20,29 @@ import (
 // RoundTripper returns); http.Client.Do wraps it in a *url.Error.
 func realHandshakeLeaf(t *testing.T) error {
 	t.Helper()
+	addr, _ := stallingListener(t)
+	_, err := stallClient().Get("https://" + addr + "/")
+	var ue *url.Error
+	if !errors.As(err, &ue) || ue.Err == nil || ue.Err.Error() != "net/http: TLS handshake timeout" {
+		t.Fatalf("could not produce a real TLS handshake timeout, got %v", err)
+	}
+	return ue.Err
+}
+
+// stallingListener accepts TCP and never speaks TLS. It returns its address and
+// a count of accepted connections. Cleanup joins the accept goroutine before
+// closing the held connections, so no connection escapes the close.
+func stallingListener(t *testing.T) (string, func() int) {
+	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var mu sync.Mutex
 	var held []net.Conn
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		for {
 			c, err := ln.Accept()
 			if err != nil {
@@ -36,21 +53,18 @@ func realHandshakeLeaf(t *testing.T) error {
 			mu.Unlock()
 		}
 	}()
-	defer func() {
+	t.Cleanup(func() {
 		_ = ln.Close()
-		mu.Lock()
+		<-done
 		for _, c := range held {
 			_ = c.Close()
 		}
-		mu.Unlock()
-	}()
-	c := &http.Client{Transport: &http.Transport{TLSHandshakeTimeout: 100 * time.Millisecond, DisableKeepAlives: true}}
-	_, err = c.Get("https://" + ln.Addr().String() + "/")
-	var ue *url.Error
-	if !errors.As(err, &ue) || ue.Err == nil || ue.Err.Error() != "net/http: TLS handshake timeout" {
-		t.Fatalf("could not produce a real TLS handshake timeout, got %v", err)
-	}
-	return ue.Err
+	})
+	return ln.Addr().String(), func() int { mu.Lock(); defer mu.Unlock(); return len(held) }
+}
+
+func stallClient() *http.Client {
+	return &http.Client{Transport: &http.Transport{TLSHandshakeTimeout: 100 * time.Millisecond, DisableKeepAlives: true}}
 }
 
 // handshakeTimeout is the exact shape http.Client.Do returns for a stalled handshake.
@@ -149,6 +163,45 @@ func TestForwardDoesNotRetryResponseHeaderTimeout(t *testing.T) {
 		}
 		if attempts, _ := rt.count(); attempts != 1 {
 			t.Fatalf("%q: post-send timeout must not be retried, got %d attempts", leaf, attempts)
+		}
+	}
+}
+
+// R1 (codex-pantheon): the service answers the POST with a redirect to a target
+// whose handshake stalls. Following it would yield a genuine handshake-timeout
+// leaf for a request the service already received, licensing a second send.
+// The relay must not follow, must not re-send, must not hold: OUTCOME UNKNOWN.
+// The injected client follows redirects by default, so the guard must live in forward.
+func TestForwardNeverFollowsRedirectIntoHandshakeStall(t *testing.T) {
+	stallAddr, accepted := stallingListener(t)
+	for _, code := range []int{http.StatusTemporaryRedirect, http.StatusPermanentRedirect} {
+		var mu sync.Mutex
+		posts := 0
+		svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			posts++
+			mu.Unlock()
+			http.Redirect(w, r, "https://"+stallAddr+r.URL.Path, code)
+		}))
+		spool := t.TempDir()
+		id := fmt.Sprintf("02%d-x", code-300)
+		p := seedInflight(t, filepath.Join(spool, "x"), id)
+		rl := &Relay{Spool: spool, Base: svc.URL, Token: "t", Log: discardLog(), Client: stallClient(), now: time.Now}
+
+		sr := rl.forward("x", id, p)
+		svc.Close()
+
+		if sr.Status != http.StatusBadGateway || !strings.Contains(string(sr.Body), "OUTCOME UNKNOWN") {
+			t.Fatalf("%d: a redirected POST must be OUTCOME UNKNOWN, got status %d body=%s", code, sr.Status, sr.Body)
+		}
+		mu.Lock()
+		n := posts
+		mu.Unlock()
+		if n != 1 {
+			t.Fatalf("%d: the original POST must be sent exactly once, got %d", code, n)
+		}
+		if a := accepted(); a != 0 {
+			t.Fatalf("%d: the redirect target must never be dialed, got %d connections", code, a)
 		}
 	}
 }
