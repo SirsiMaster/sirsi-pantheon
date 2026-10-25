@@ -8,6 +8,7 @@ package authority
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -150,16 +151,22 @@ func (j *FileJournal) headLocked() (int64, error) {
 }
 
 func (j *FileJournal) readAllLocked() ([]Entry, error) {
-	f, err := os.Open(j.path)
+	data, err := os.ReadFile(j.path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("maat: read journal %s: %w", j.path, err)
 	}
-	defer f.Close()
+	if n := len(data); n > 0 && data[n-1] != '\n' {
+		// Append fsyncs only after a full "line\n" write, so an unterminated
+		// tail was never acknowledged to a caller: a crash mid-write leaves
+		// this, and it is safe to drop rather than fail every future Append,
+		// Since and Head (ADR-120 review P2-a).
+		data = data[:bytes.LastIndexByte(data, '\n')+1]
+	}
 	var out []Entry
-	scanner := bufio.NewScanner(f)
+	scanner := bufio.NewScanner(bytes.NewReader(data))
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Bytes()

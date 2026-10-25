@@ -1,6 +1,7 @@
 package authority
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -213,3 +214,87 @@ func TestCatchUp_NothingToReplayIsANoop(t *testing.T) {
 		t.Fatalf("an empty journal must catch up cleanly: %v", err)
 	}
 }
+
+// A grant journaled while the cloud is unreachable must not be skipped by a
+// later grant's ack: acking N while N-1 is still unacked would tell the
+// cloud it has seen everything through N, permanently losing N-1 and risking
+// a double booking (ADR-120 review P1-a).
+func TestReserve_OutOfOrderAckDoesNotLoseCatchUp(t *testing.T) {
+	local := schedule.NewLedger(newFakeStore()).WithClock(func() time.Time { return at("2026-10-22T10:00:00Z") })
+	cloud := schedule.NewLedger(newFakeStore()).WithClock(func() time.Time { return at("2026-10-22T10:00:00Z") })
+	d, err := cloud.Delegate(schedule.Delegation{
+		Pod: "studio-m5", AuthorityMachine: "M5-Studio", Resources: []string{"studio", "m5"},
+		IssuedAt: "2026-10-22T10:00:00Z", NotAfter: "2026-10-22T22:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("seed delegation: %v", err)
+	}
+	auth, err := New(d, local, nil, NewMemJournal())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	auth.WithClock(func() time.Time { return at("2026-10-22T10:00:00Z") })
+
+	// Grant 1 (seq 1) journals only -- the cloud is unreachable.
+	first, err := auth.Reserve(mkReq("studio", "claude-io", "2026-10-22T10:00:00Z", "2026-10-22T10:30:00Z"), false)
+	if err != nil || !first.Granted {
+		t.Fatalf("grant 1: res=%+v err=%v", first, err)
+	}
+
+	// The cloud returns, and grant 2 (seq 2) writes through directly.
+	auth.SetCloud(cloud)
+	second, err := auth.Reserve(mkReq("m5", "claude-io", "2026-10-22T10:05:00Z", "2026-10-22T10:35:00Z"), false)
+	if err != nil || !second.Granted {
+		t.Fatalf("grant 2: res=%+v err=%v", second, err)
+	}
+
+	studioRows, err := cloud.Status("studio")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m5Rows, err := cloud.Status("m5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(studioRows) != 1 || len(m5Rows) != 1 {
+		t.Fatalf("want both grants written through to the cloud, got studio=%+v m5=%+v", studioRows, m5Rows)
+	}
+	d2, err := cloud.GetDelegation("studio-m5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d2.AckedSeq != 2 {
+		t.Fatalf("want acked_seq advanced to 2 once both entries reconcile, got %d", d2.AckedSeq)
+	}
+}
+
+// A journal append failure after Local admission must release the local
+// hold rather than leave the resource blocked with no record anywhere
+// until its lease TTL expires (ADR-120 review P1-b).
+func TestReserve_JournalFailureReleasesLocalHold(t *testing.T) {
+	_, cloud, auth := harness(t, "2026-10-22T10:00:00Z", "2026-10-22T22:00:00Z")
+	auth.journal = failingJournal{}
+	if _, err := auth.Reserve(mkReq("studio", "claude-io", "2026-10-22T10:00:00Z", "2026-10-22T10:30:00Z"), false); err == nil {
+		t.Fatal("want the journal failure surfaced as an error")
+	}
+	rows, err := auth.Local.Status("studio")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rows {
+		if r.Status == schedule.StatusActive {
+			t.Fatalf("want no live local hold after a journal failure, got %+v", r)
+		}
+	}
+	if rows, err := cloud.Status("studio"); err != nil || len(rows) != 0 {
+		t.Fatalf("a journal failure must write through nothing, got rows=%+v err=%v", rows, err)
+	}
+}
+
+type failingJournal struct{}
+
+func (failingJournal) Append(schedule.Reservation) (Entry, error) {
+	return Entry{}, fmt.Errorf("simulated journal failure")
+}
+func (failingJournal) Since(int64) ([]Entry, error) { return nil, nil }
+func (failingJournal) Head() (int64, error)         { return 0, nil }

@@ -82,18 +82,32 @@ func (a *Authority) Reserve(req schedule.Reservation, queue bool) (schedule.Rese
 	stamped.Epoch = a.epoch
 	entry, err := a.journal.Append(stamped)
 	if err != nil {
+		// The local hold already admitted, but nothing durable records it:
+		// release it rather than leave the resource blocked with no record
+		// anywhere until its lease TTL expires (ADR-120 review P1-b).
+		_, _ = a.Local.Release(stamped.ID)
 		return schedule.ReserveResult{}, fmt.Errorf("maat: journal grant: %w", err)
 	}
 	stamped.Seq = entry.Seq
 	result.Reservation = &stamped
 	if a.Cloud != nil {
-		// A write-through failure here (the cloud dropped between the call
-		// starting and now) never undoes a grant already handed to the
-		// caller: the entry is already durable in the journal, so CatchUp
-		// reconciles it once the cloud is reachable again (ADR-120 §5).
-		if _, werr := a.Cloud.ReserveAsAuthority(stamped); werr == nil {
-			a.ackedSeq = entry.Seq
-			_ = a.Cloud.AckDelegation(a.Pod, entry.Seq)
+		// Advance and ack only contiguously: writing through and acking N
+		// while N-1 is still unacked would let the cloud believe it has seen
+		// everything through N, permanently losing N-1 (ADR-120 review
+		// P1-a). CatchUp replays every unacked entry, this one included, in
+		// order.
+		if entry.Seq == a.ackedSeq+1 {
+			// A write-through failure here (the cloud dropped between the
+			// call starting and now) never undoes a grant already handed to
+			// the caller: the entry is already durable in the journal, so
+			// CatchUp reconciles it once the cloud is reachable again
+			// (ADR-120 §5).
+			if _, werr := a.Cloud.ReserveAsAuthority(stamped); werr == nil {
+				a.ackedSeq = entry.Seq
+				_ = a.Cloud.AckDelegation(a.Pod, entry.Seq)
+			}
+		} else {
+			_ = a.CatchUp()
 		}
 	}
 	return result, nil
