@@ -735,7 +735,8 @@ final class MaatOperationStateTests: XCTestCase {
                 history: MaatHistoryWindow(scope: "all", queryID: "query:test", snapshot: "sha256:test", returned: cases.count,
                     candidateMatches: cases.count, countScope: "query", evidenceMatches: rawEvidenceCount ?? cases.count, evidenceMatchesComplete: true, candidateMatchesComplete: true,
                     pageSize: 100, coverage: "complete", hasMore: false, hasMoreKnown: true,
-                    nextCursor: nil, totalComplete: true, total: cases.count)
+                    nextCursor: nil, totalComplete: true, total: cases.count,
+                    scannedRecords: nil, scannedBytes: nil)
             )
             : nil
         return MaatOperationPreflight.evaluate(
