@@ -44,7 +44,7 @@ func TestMaatCasebookCommandFindsOlderScopedSystemOneRecord(t *testing.T) {
 	}
 	// Optional wire-proof custody exports the real 61-row journal, never a
 	// projected response. Main supplies a unique path in its owned fixture root.
-	if destination := os.Getenv("SIRSI_TEST_MAAT_HISTORY_JOURNAL_FIXTURE"); destination != "" {
+	if destination := os.Getenv("PANTHEON_TEST_MAAT_HISTORY_JOURNAL_FIXTURE"); destination != "" {
 		if !filepath.IsAbs(destination) {
 			t.Fatal("history journal fixture export requires an absolute owned fixture path")
 		}
