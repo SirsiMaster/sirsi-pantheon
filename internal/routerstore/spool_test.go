@@ -26,13 +26,6 @@ type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-type blockingLogWriter struct {
-	message string
-	entered chan struct{}
-	release chan struct{}
-	once    sync.Once
-}
-
 type signalBody struct {
 	read chan struct{}
 	once sync.Once
@@ -44,16 +37,6 @@ func (b *signalBody) Read([]byte) (int, error) {
 }
 
 func (*signalBody) Close() error { return nil }
-
-func (w *blockingLogWriter) Write(p []byte) (int, error) {
-	if strings.Contains(string(p), w.message) {
-		w.once.Do(func() {
-			close(w.entered)
-			<-w.release
-		})
-	}
-	return len(p), nil
-}
 
 // End to end through files: a real Handler behind httptest stands in for the
 // service, the Relay forwards with the host token, and a RemoteStore over
@@ -189,17 +172,20 @@ func TestSpoolRelayShutdownRefusesUnsettledPublicationAndRecovery(t *testing.T) 
 			if err := os.Mkdir(filepath.Join(lane, "res", id+".json"), 0o700); err != nil {
 				t.Fatal(err)
 			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
 			var calls atomic.Int32
-			var logWriter *blockingLogWriter
 			var client *http.Client
 			base := "http://service.invalid"
+			secondAttempt := make(chan struct{})
 			if mode == "queued-ack" {
-				logWriter = &blockingLogWriter{
-					message: "queued response publication failed; retained outbox",
-					entered: make(chan struct{}), release: make(chan struct{}),
-				}
 				client = &http.Client{Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
-					calls.Add(1)
+					if calls.Add(1) == 2 {
+						// Stop the lane before this second safe pre-send failure can
+						// publish an outbox item visible to its independent drain loop.
+						cancel()
+						close(secondAttempt)
+					}
 					return nil, &url.Error{Op: "Post", URL: base, Err: &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("fixture unreachable")}}
 				})}
 			} else {
@@ -210,28 +196,15 @@ func TestSpoolRelayShutdownRefusesUnsettledPublicationAndRecovery(t *testing.T) 
 				t.Cleanup(svc.Close)
 				base, client = svc.URL, svc.Client()
 			}
-			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-			if logWriter != nil {
-				logger = slog.New(slog.NewTextHandler(logWriter, nil))
-			}
-			relay := &Relay{Spool: spool, Base: base, Token: "fixture", Client: client, Log: logger}
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
+			relay := &Relay{Spool: spool, Base: base, Token: "fixture", Client: client, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 			done := make(chan error, 1)
 			serveFinished := make(chan struct{})
 			go func() {
 				defer close(serveFinished)
 				done <- relay.Serve(ctx)
 			}()
-			var releaseAckOnce sync.Once
-			releaseAck := func() {
-				if logWriter != nil {
-					releaseAckOnce.Do(func() { close(logWriter.release) })
-				}
-			}
 			t.Cleanup(func() {
 				cancel()
-				releaseAck()
 				select {
 				case <-serveFinished:
 				case <-time.After(time.Second):
@@ -239,19 +212,21 @@ func TestSpoolRelayShutdownRefusesUnsettledPublicationAndRecovery(t *testing.T) 
 				}
 			})
 			if mode == "queued-ack" {
-				// Freeze exactly after sticky settlement failure and before the lane
-				// can begin its ordinary outbox retry; cancellation is then causally
-				// before any retry, without changing production retry behavior.
 				select {
-				case <-logWriter.entered:
+				case <-secondAttempt:
 				case <-time.After(time.Second):
-					t.Fatal("queued acknowledgment failure was not reached")
+					t.Fatal("second safe pre-send attempt was not reached")
+				}
+				if ctx.Err() == nil {
+					t.Fatal("second pre-send attempt did not cancel lane dispatch before the error returned")
+				}
+				deadline := time.Now().Add(time.Second)
+				for !relay.settlementFailed.Load() && time.Now().Before(deadline) {
+					time.Sleep(time.Millisecond)
 				}
 				if !relay.settlementFailed.Load() {
 					t.Fatal("queued acknowledgment failure was not retained")
 				}
-				cancel()
-				releaseAck()
 			} else {
 				deadline := time.Now().Add(time.Second)
 				for !relay.settlementFailed.Load() && time.Now().Before(deadline) {
