@@ -275,6 +275,9 @@ func (s *Store) pendingAppUpdateAttemptLocked() (AppUpdateAttempt, error) {
 		case strings.HasSuffix(name, ".started.json"), strings.HasSuffix(name, ".outcome.json"),
 			strings.HasSuffix(name, ".projection.json"), strings.HasSuffix(name, ".projection-receipt.json"):
 			// The liveness-watch owner validates its own closed record shapes.
+		case localAttemptLeaf(name), localDispositionAttemptLeaf(name):
+			// The G01 validators above have already checked these exact closed
+			// record names and their bytes; settled history is retained unchanged.
 		default:
 			return AppUpdateAttempt{}, errors.New("maat memory: unrecognized attempt namespace entry")
 		}

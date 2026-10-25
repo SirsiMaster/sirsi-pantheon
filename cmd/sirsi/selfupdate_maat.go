@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
@@ -392,7 +391,7 @@ func reconcilePendingRawSelfUpdate() error {
 	if err := reconcileRawSelfUpdateProjections(journal, store); err != nil {
 		return err
 	}
-	entries, err := store.RawSelfUpdateReconciliations()
+	entries, err = store.RawSelfUpdateReconciliations()
 	if err != nil {
 		return err
 	}
