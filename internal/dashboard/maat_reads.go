@@ -121,12 +121,30 @@ func parseMaatKnowledgeRead(args map[string]interface{}) (MaatKnowledgeReadReque
 	if err := knownMaatArgs(args, "mode query id revision limit cursor source classification resolution history"); err != nil {
 		return r, err
 	}
+	// Validate query text before the generic bounded-field parser, so string
+	// content failures retain canonical actionable guidance. Types stay strict.
+	if value, exists := args["query"]; exists {
+		text, ok := value.(string)
+		if !ok {
+			return r, errors.New("query must be a string containing literal words")
+		}
+		if err := knowledge.ValidateSearchText(text); err != nil {
+			return r, err
+		}
+		// Keep the existing transport ban on CR/LF, even though core search
+		// permits whitespace-separated terms. Do not echo rejected text.
+		if strings.ContainsAny(text, "\r\n") {
+			return r, knowledge.ErrInvalidSearchQuery
+		}
+		r.Query.Text = text
+	}
+
 	var err error
 	for _, f := range []struct {
 		k   string
 		p   *string
 		max int
-	}{{"mode", &r.Mode, 16}, {"id", &r.ID, 128}, {"query", &r.Query.Text, 512}, {"source", &r.Query.Source, 80}, {"classification", &r.Query.Classification, 48}, {"cursor", &r.Query.Cursor, 64 << 10}} {
+	}{{"mode", &r.Mode, 16}, {"id", &r.ID, 128}, {"source", &r.Query.Source, 80}, {"classification", &r.Query.Classification, 48}, {"cursor", &r.Query.Cursor, 64 << 10}} {
 		*f.p, err = maatString(args, f.k, f.max, *f.p)
 		if err != nil {
 			return r, err
@@ -164,9 +182,6 @@ func parseMaatKnowledgeRead(args map[string]interface{}) (MaatKnowledgeReadReque
 		return r, errors.New("invalid resolution")
 	}
 	if r.Mode == "search" {
-		if err := knowledge.ValidateSearchText(r.Query.Text); err != nil {
-			return r, err
-		}
 		if r.ID != "" || r.Revision != 0 {
 			return r, errors.New("search cannot select a detail identity")
 		}
