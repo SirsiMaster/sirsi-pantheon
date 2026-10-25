@@ -6,12 +6,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
-- Own-lane cause-fixed recovery now accepts an inactive blocked original with
-  ordinary attempts remaining. It consumes the next attempt with the existing
-  authenticated transaction, evidence audit and row-version fence; it never
-  resets history or marks the task complete. Pending/in-progress below-ceiling
-  tasks retain ordinary claim semantics. Qualification and release pending.
-
 ## [0.24.136] — 2026-10-24
 
 ### Fixed
