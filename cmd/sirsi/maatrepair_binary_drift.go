@@ -21,6 +21,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/selfupdate"
 	modversion "github.com/SirsiMaster/sirsi-pantheon/internal/version"
 	"github.com/spf13/cobra"
@@ -45,6 +46,7 @@ var (
 	maatRepairRunHomebrewUpdate       = runSirsiHomebrewUpgradePathContext
 	maatRepairOpenBinaryDriftStore    = func() (maatBinaryDriftStore, error) { return maat.OpenDefaultStore() }
 	maatRepairBinarySchemaObservation = observeBinaryDriftSchemaCompatibility
+	maatRepairRunningBinaryInfo       = currentMaatRunningBinaryInfo
 )
 
 type maatBinaryDriftStore interface {
@@ -106,6 +108,12 @@ func observeBinaryDriftSchemaCompatibility(info modversion.Info) (int, error) {
 	return version, nil
 }
 
+func currentMaatRunningBinaryInfo() modversion.Info {
+	info := modversion.Current("sirsi")
+	info.RouterSchemaMax = routerstore.MaxSupportedSchemaVersion()
+	return info
+}
+
 func buildMaatBinaryUpdateManifest(preview maatBinaryDriftPreview, storeUUID string) (maat.BinaryUpdateManifest, error) {
 	if uint32(os.Getuid()) != uint32(os.Geteuid()) {
 		return maat.BinaryUpdateManifest{}, errors.New("Ma'at binary-drift update requires matching real and effective user identities")
@@ -120,17 +128,21 @@ func buildMaatBinaryUpdateManifest(preview maatBinaryDriftPreview, storeUUID str
 	if self.SHA256 != preview.SelfSHA256 {
 		return maat.BinaryUpdateManifest{}, errors.New("running binary changed after preview")
 	}
+	runningInfo := maatRepairRunningBinaryInfo()
+	if runningInfo.Binary != "sirsi" || runningInfo.Path != preview.SelfPath || runningInfo.Version != preview.SelfVersion || runningInfo.RouterSchemaMax <= 0 {
+		return maat.BinaryUpdateManifest{}, errors.New("complete running binary identity or supported router-schema ceiling differs from the reviewed preview")
+	}
 	updater, err := binaryDriftFileIdentity(preview.UpdaterPath)
 	if err != nil || updater.SHA256 != preview.UpdaterSHA256 {
 		return maat.BinaryUpdateManifest{}, errors.New("resolved Homebrew updater identity changed after preview")
 	}
-	schemaVersion, err := maatRepairBinarySchemaObservation(modversion.Info{Binary: "sirsi", Version: preview.SelfVersion, Path: preview.SelfPath})
+	schemaVersion, err := maatRepairBinarySchemaObservation(runningInfo)
 	if err != nil {
 		return maat.BinaryUpdateManifest{}, fmt.Errorf("observe binary-update schema compatibility: %w", err)
 	}
 	m := maat.BinaryUpdateManifest{Schema: maat.BinaryUpdateManifestSchema, CaseEvidence: preview.CaseEvidence, PreviewBinding: preview.Binding, Updater: preview.Updater,
 		UpdaterPath: preview.UpdaterPath, UpdaterSHA256: preview.UpdaterSHA256, UpdaterOwnerUID: updater.OwnerUID, UpdaterDevice: updater.Device, UpdaterInode: updater.Inode, UpdaterMode: updater.Mode,
-		SelfPath: preview.SelfPath, SelfVersion: preview.SelfVersion, SelfSHA256: self.SHA256,
+		SelfPath: preview.SelfPath, SelfVersion: preview.SelfVersion, SelfSHA256: self.SHA256, RunningInfo: runningInfo,
 		SelfOwnerUID: self.OwnerUID, SelfDevice: self.Device, SelfInode: self.Inode, SelfMode: self.Mode, AuthorizedUID: uint32(os.Geteuid()),
 		ObservedSchemaCompatible: true, ObservedSchemaVersion: schemaVersion, StoreUUID: storeUUID, ObservedAtUTC: time.Now().UTC()}
 	for _, target := range preview.Targets {
@@ -151,6 +163,10 @@ func revalidateMaatBinaryUpdateManifest(m maat.BinaryUpdateManifest) error {
 	if err != nil || self.Device != m.SelfDevice || self.Inode != m.SelfInode || self.OwnerUID != m.SelfOwnerUID || self.Mode != m.SelfMode || self.SHA256 != m.SelfSHA256 {
 		return errors.New("running binary identity changed after review")
 	}
+	runningInfo := maatRepairRunningBinaryInfo()
+	if runningInfo != m.RunningInfo {
+		return errors.New("complete running binary build identity or schema ceiling changed after review")
+	}
 	updater, err := binaryDriftFileIdentity(m.UpdaterPath)
 	if err != nil || updater.Device != m.UpdaterDevice || updater.Inode != m.UpdaterInode || updater.OwnerUID != m.UpdaterOwnerUID || updater.Mode != m.UpdaterMode || updater.SHA256 != m.UpdaterSHA256 {
 		return errors.New("Homebrew updater identity changed after review")
@@ -161,7 +177,7 @@ func revalidateMaatBinaryUpdateManifest(m maat.BinaryUpdateManifest) error {
 			return fmt.Errorf("reviewed binary target identity changed: %s", target.Path)
 		}
 	}
-	version, err := maatRepairBinarySchemaObservation(modversion.Info{Binary: "sirsi", Version: m.SelfVersion, Path: m.SelfPath})
+	version, err := maatRepairBinarySchemaObservation(runningInfo)
 	if err != nil || version != m.ObservedSchemaVersion {
 		return errors.New("binary-update schema compatibility observation changed after review")
 	}

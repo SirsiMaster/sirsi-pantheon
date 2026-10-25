@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
+	internalversion "github.com/SirsiMaster/sirsi-pantheon/internal/version"
 	"golang.org/x/sys/unix"
 )
 
@@ -41,11 +43,14 @@ func binaryUpdateFixture(t *testing.T) (*Store, string, BinaryUpdateManifest) {
 		return BinaryUpdateTarget{Path: path, Method: "homebrew", Version: "1.0.0", SHA256: sum, OwnerUID: st.Uid, Device: uint64(st.Dev), Inode: st.Ino, Mode: uint32(st.Mode)}
 	}
 	selfID, updaterID, targetID := identity(self), identity(updater), identity(target)
+	runningInfo := internalversion.Current("sirsi")
+	runningInfo.Path, runningInfo.Version = self, "1.0.0"
+	runningInfo.RouterSchemaMax = routerstore.MaxSupportedSchemaVersion()
 	m := BinaryUpdateManifest{
 		Schema: BinaryUpdateManifestSchema, CaseEvidence: "maat-system-one:sha256=" + strings.Repeat("a", 64), PreviewBinding: strings.Repeat("b", 64),
 		Updater: "brew upgrade sirsi-pantheon", UpdaterPath: updater, UpdaterSHA256: updaterID.SHA256,
 		UpdaterOwnerUID: updaterID.OwnerUID, UpdaterDevice: updaterID.Device, UpdaterInode: updaterID.Inode, UpdaterMode: updaterID.Mode,
-		SelfPath: self, SelfVersion: "1.0.0", SelfSHA256: selfID.SHA256, SelfOwnerUID: selfID.OwnerUID, SelfDevice: selfID.Device, SelfInode: selfID.Inode, SelfMode: selfID.Mode,
+		SelfPath: self, SelfVersion: "1.0.0", SelfSHA256: selfID.SHA256, RunningInfo: runningInfo, SelfOwnerUID: selfID.OwnerUID, SelfDevice: selfID.Device, SelfInode: selfID.Inode, SelfMode: selfID.Mode,
 		Targets: []BinaryUpdateTarget{targetID}, AuthorizedUID: uint32(os.Geteuid()), ObservedSchemaCompatible: true, ObservedSchemaVersion: 1,
 		StoreUUID: store.storeUUID, ObservedAtUTC: time.Now().UTC(),
 	}
@@ -76,6 +81,22 @@ func TestBinaryUpdateManifestRejectsUnorderedOrUnownedTargets(t *testing.T) {
 	m.Targets[0].OwnerUID++
 	if err := m.Validate(); err == nil {
 		t.Fatal("foreign target owner accepted")
+	}
+}
+
+func TestBinaryUpdateManifestDigestBindsRunningSchemaCeiling(t *testing.T) {
+	_, _, m := binaryUpdateFixture(t)
+	before, err := m.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.RunningInfo.RouterSchemaMax--
+	after, err := m.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before == after {
+		t.Fatal("running router-schema ceiling was not bound by the action manifest")
 	}
 }
 
@@ -174,7 +195,7 @@ func TestBinaryUpdateUnknownLaunchRemainsUnresolvedAndCannotRetry(t *testing.T) 
 		t.Fatal(err)
 	}
 	pending, err := store.PendingBinaryUpdateAttempt()
-	if err != nil || pending.ID != a.ID {
+	if err != nil || pending.ID != a.ID || pending.Manifest.RunningInfo.RouterSchemaMax != m.RunningInfo.RouterSchemaMax || pending.Manifest.RunningInfo.Commit != m.RunningInfo.Commit {
 		t.Fatalf("unknown launch pending=%+v err=%v", pending, err)
 	}
 	if _, err := store.BeginBinaryUpdateAttempt(m, r, func() (string, error) { t.Fatal("retry claim must not run"); return "", nil }); err == nil {

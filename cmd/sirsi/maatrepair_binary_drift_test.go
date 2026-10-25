@@ -148,6 +148,7 @@ func installMaatBinaryDriftSeams(t *testing.T, journal *maatTestJournal, self, t
 	oldHash, oldMethod := maatRepairHashFile, maatRepairDetectMethod
 	oldFind, oldRun, oldJournal := maatRepairFindHomebrew, maatRepairRunHomebrewUpdate, newMaatDecisionJournal
 	oldOpenStore, oldSchema := maatRepairOpenBinaryDriftStore, maatRepairBinarySchemaObservation
+	oldRunningInfo := maatRepairRunningBinaryInfo
 	oldInspect := maatRepairDefaultStoreInspect
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -157,6 +158,9 @@ func installMaatBinaryDriftSeams(t *testing.T, journal *maatTestJournal, self, t
 	maatRepairDefaultStoreInspect = maat.InspectDefaultStore
 	maatRepairOpenBinaryDriftStore = func() (maatBinaryDriftStore, error) { return maat.OpenDefaultStore() }
 	maatRepairBinarySchemaObservation = func(modversion.Info) (int, error) { return 1, nil }
+	runningInfo := currentMaatRunningBinaryInfo()
+	runningInfo.Path, runningInfo.Version = self, "2.0.0"
+	maatRepairRunningBinaryInfo = func() modversion.Info { return runningInfo }
 	updateCalls := 0
 	maatRepairConfirm = false
 	maatRepairBinaryDriftCaseEvidence, maatRepairBinaryDriftBinding = "", ""
@@ -197,9 +201,40 @@ func installMaatBinaryDriftSeams(t *testing.T, journal *maatTestJournal, self, t
 		maatRepairHashFile, maatRepairDetectMethod = oldHash, oldMethod
 		maatRepairFindHomebrew, maatRepairRunHomebrewUpdate, newMaatDecisionJournal = oldFind, oldRun, oldJournal
 		maatRepairOpenBinaryDriftStore, maatRepairBinarySchemaObservation = oldOpenStore, oldSchema
+		maatRepairRunningBinaryInfo = oldRunningInfo
 		maatRepairDefaultStoreInspect = oldInspect
 	})
 	return &updateCalls
+}
+
+func TestObserveBinaryDriftSchemaCompatibilityUsesRealRunningCeiling(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "router.db")
+	if err := os.WriteFile(dbPath, []byte("controlled existing database fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SIRSI_ROUTER_DB", dbPath)
+	info := currentMaatRunningBinaryInfo()
+	if info.RouterSchemaMax <= 0 {
+		t.Fatalf("running binary has no real router schema ceiling: %+v", info)
+	}
+	oldReadSchema := readSchemaFn
+	t.Cleanup(func() { readSchemaFn = oldReadSchema })
+	reads := 0
+	readSchemaFn = func(path string) (int, error) {
+		reads++
+		if path != dbPath {
+			t.Fatalf("schema observer path=%q, want controlled default database %q", path, dbPath)
+		}
+		return info.RouterSchemaMax, nil
+	}
+	live, err := observeBinaryDriftSchemaCompatibility(info)
+	if err != nil || live != info.RouterSchemaMax || reads != 1 {
+		t.Fatalf("supported live schema=%d err=%v reads=%d ceiling=%d", live, err, reads, info.RouterSchemaMax)
+	}
+	readSchemaFn = func(string) (int, error) { return info.RouterSchemaMax + 1, nil }
+	if _, err := observeBinaryDriftSchemaCompatibility(info); !errors.Is(err, selfupdate.ErrSchemaIncompatible) {
+		t.Fatalf("live schema above the actual running ceiling error=%v", err)
+	}
 }
 
 func maatBinaryDriftFixtureReport(active bool) *guard.DoctorReport {

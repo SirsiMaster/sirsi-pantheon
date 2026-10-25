@@ -7,15 +7,15 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
+	internalversion "github.com/SirsiMaster/sirsi-pantheon/internal/version"
 	"golang.org/x/sys/unix"
 )
 
-const BinaryUpdateManifestSchema = "sirsi.maat.binary-update-action.v1"
+const BinaryUpdateManifestSchema = "sirsi.maat.binary-update-action.v2"
 const BinaryUpdateProjectionSchema = "sirsi.maat.binary-update-journal-projection.v1"
 
 // BinaryUpdateTarget binds one already-reviewed Homebrew-managed target.
@@ -46,6 +46,7 @@ type BinaryUpdateManifest struct {
 	SelfPath                 string               `json:"self_path"`
 	SelfVersion              string               `json:"self_version"`
 	SelfSHA256               string               `json:"self_sha256"`
+	RunningInfo              internalversion.Info `json:"running_info"`
 	SelfOwnerUID             uint32               `json:"self_owner_uid"`
 	SelfDevice               uint64               `json:"self_device"`
 	SelfInode                uint64               `json:"self_inode"`
@@ -65,6 +66,7 @@ func (m BinaryUpdateManifest) Validate() error {
 		m.Updater != "brew upgrade sirsi-pantheon" || !filepathIsCanonicalAbsolute(m.UpdaterPath) || !validDigest(m.UpdaterSHA256) || m.UpdaterInode == 0 ||
 		m.UpdaterMode&uint32(unix.S_IFMT) != uint32(unix.S_IFREG) || !validOwnerMode(m.AuthorizedUID, m.UpdaterOwnerUID, m.UpdaterMode) ||
 		!filepathIsCanonicalAbsolute(m.SelfPath) || strings.TrimSpace(m.SelfVersion) == "" || m.SelfVersion == "dev" || !validDigest(m.SelfSHA256) ||
+		m.RunningInfo.Binary != "sirsi" || m.RunningInfo.Path != m.SelfPath || m.RunningInfo.Version != m.SelfVersion || m.RunningInfo.RouterSchemaMax <= 0 ||
 		m.SelfInode == 0 || m.SelfMode&uint32(unix.S_IFMT) != uint32(unix.S_IFREG) || !validOwnerMode(m.AuthorizedUID, m.SelfOwnerUID, m.SelfMode) ||
 		!m.ObservedSchemaCompatible || m.ObservedSchemaVersion < 0 || !validUUID(m.StoreUUID) || m.ObservedAtUTC.IsZero() ||
 		time.Since(m.ObservedAtUTC) > 2*time.Minute || time.Until(m.ObservedAtUTC) > 10*time.Second ||

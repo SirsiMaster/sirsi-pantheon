@@ -2,6 +2,8 @@
 
 ## 2026-10-25
 
+- Corrected binary-drift schema admission to use the complete current `version.Info`, populated with `routerstore.MaxSupportedSchemaVersion()` from the existing migration source. The full stamped/runtime identity and ceiling are now part of the v2 action manifest and are rechecked before launch; added a direct default-observer fixture with only the database path and schema read controlled. Source only and unqualified.
+
 - Wired the existing confirmed binary-drift Cobra action through the initialized Ma'at Store: a typed current-action manifest, exact full-receipt retention/readback and canonical typed preflight projection, admission-time registry recheck under the Store lock, and the existing operation-wide journal claim. The attempt stores the exact receipt reference; the journal claim carries receipt/action/registry hashes as bounded context only, with no audit-text parsing as authority. Attempt, terminal observation, and projection-debt records are create-only digest-named leaves in existing governed evidence. Unknown updater state and projection debt block replay; exact fresh target/finding postcheck remains the success condition. Authored inert Store and real-command fixtures. Source only and unqualified; direct self-update, commercial app update/install, installed readiness, and all-eight-row qualification remain open.
 
 ## 2026-10-24
