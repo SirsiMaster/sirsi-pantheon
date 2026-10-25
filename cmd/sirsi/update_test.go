@@ -39,17 +39,39 @@ func TestRunUpdateRollbackRequiresExplicitConfirmationBeforeStoreOrNetwork(t *te
 func TestUpdateCobraParsesExactRollbackFlagAndRequiresConfirmation(t *testing.T) {
 	oldVersion, oldConfirm := updateRollbackVersion, updateConfirmRollback
 	oldCLI, oldApp := updateInstallCLI, updateInstallApp
+	oldReconcile, oldCapability := updateReconcileAppAttempt, updateAppUpdateRecoveryCapability
 	oldClient := newUpdateClient
-	updateInstallCLI, updateInstallApp = false, false
-	updateRollbackVersion, updateConfirmRollback = "", false
-	newUpdateClient = func() *updater.Client { t.Fatal("unconfirmed Cobra rollback reached release client"); return nil }
-	updateCmd.SetArgs([]string{"--rollback-version", "0.24.136"})
+	flagNames := []string{"cli", "app", "rollback-version", "confirm-rollback", "reconcile-app-attempt", "app-update-recovery-capability"}
+	changedBefore := make(map[string]bool, len(flagNames))
+	for _, name := range flagNames {
+		flag := updateCmd.Flags().Lookup(name)
+		if flag == nil {
+			t.Fatalf("update flag %q is not registered", name)
+		}
+		changedBefore[name] = flag.Changed
+	}
 	defer func() {
-		updateCmd.SetArgs(nil)
 		updateRollbackVersion, updateConfirmRollback = oldVersion, oldConfirm
 		updateInstallCLI, updateInstallApp, newUpdateClient = oldCLI, oldApp, oldClient
+		updateReconcileAppAttempt, updateAppUpdateRecoveryCapability = oldReconcile, oldCapability
+		for name, changed := range changedBefore {
+			updateCmd.Flags().Lookup(name).Changed = changed
+		}
 	}()
-	if err := updateCmd.Execute(); err == nil || !strings.Contains(err.Error(), "--confirm-rollback") {
+	updateInstallCLI, updateInstallApp = false, false
+	updateReconcileAppAttempt, updateAppUpdateRecoveryCapability = false, false
+	updateRollbackVersion, updateConfirmRollback = "", false
+	newUpdateClient = func() *updater.Client { t.Fatal("unconfirmed Cobra rollback reached release client"); return nil }
+	for _, name := range flagNames {
+		updateCmd.Flags().Lookup(name).Changed = false
+	}
+	if err := updateCmd.ParseFlags([]string{"--rollback-version", "0.24.136"}); err != nil {
+		t.Fatalf("Cobra rejected exact rollback flag: %v", err)
+	}
+	if updateRollbackVersion != "0.24.136" || !updateCmd.Flags().Lookup("rollback-version").Changed || updateConfirmRollback || updateCmd.Flags().Lookup("confirm-rollback").Changed {
+		t.Fatalf("Cobra parsed unexpected rollback state: version=%q confirm=%v", updateRollbackVersion, updateConfirmRollback)
+	}
+	if err := runUpdate(updateCmd, nil); err == nil || !strings.Contains(err.Error(), "--confirm-rollback") {
 		t.Fatalf("Cobra did not preserve explicit rollback confirmation requirement: %v", err)
 	}
 }

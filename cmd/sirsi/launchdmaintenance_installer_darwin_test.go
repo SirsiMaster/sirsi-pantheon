@@ -65,11 +65,17 @@ func TestMaintenanceRollbackAssetRequiresExactOlderCompletePair(t *testing.T) {
 	selected.TagName = "v0.24.137"
 	for i := range selected.Assets {
 		selected.Assets[i].Name = strings.ReplaceAll(selected.Assets[i].Name, "0.24.200", "0.24.137")
-		selected.Assets[i].BrowserDownloadURL = strings.ReplaceAll(selected.Assets[i].BrowserDownloadURL, "v0.24.200", "v0.24.137")
+		selected.Assets[i].BrowserDownloadURL = strings.ReplaceAll(selected.Assets[i].BrowserDownloadURL, "0.24.200", "0.24.137")
 	}
 	asset, err := maintenanceRollbackPackageAsset("0.24.138", selected)
 	if err != nil || asset == nil || asset.Name != "SirsiPantheon-0.24.137-arm64.pkg" {
 		t.Fatalf("exact complete older commercial pair refused: asset=%+v err=%v", asset, err)
+	}
+	badURL := *selected
+	badURL.Assets = append([]updater.Asset(nil), selected.Assets...)
+	badURL.Assets[1].BrowserDownloadURL = strings.ReplaceAll(badURL.Assets[1].BrowserDownloadURL, "SirsiPantheon-0.24.137-arm64.pkg", "SirsiPantheon-0.24.200-arm64.pkg")
+	if _, err := maintenanceRollbackPackageAsset("0.24.138", &badURL); err == nil {
+		t.Fatal("rollback accepted a package URL whose basename identifies a different release")
 	}
 	if _, err := maintenanceRollbackPackageAsset("0.24.138", maintenanceReleaseFixture([]byte("inert package"))); err == nil {
 		t.Fatal("newer package passed rollback selection")
