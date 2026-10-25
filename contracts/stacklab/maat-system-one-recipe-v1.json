@@ -473,7 +473,7 @@
     {
       "id": "maat-knowledge-surface",
       "source": ["internal/maat/knowledge/knowledge.go", "cmd/sirsi/maatknowledge.go", "internal/dashboard/actions.go", "internal/dashboard/maat.go", "internal/dashboard/server.go", "cmd/sirsi/dashboard.go", "internal/mcp/tools.go", "macapp/Sources/SirsiMenubar/MaatCasebookView.swift", "internal/seshat"],
-      "tests": ["internal/maat/knowledge/knowledge_test.go", "cmd/sirsi/maatknowledge_test.go", "internal/mcp/maat_test.go", "internal/dashboard/dashboard_test.go", "internal/dashboard/actions_test.go", "scripts/verify-maat-knowledge-surface-contract.sh"],
+      "tests": ["internal/maat/knowledge/knowledge_test.go", "cmd/sirsi/maatknowledge_test.go", "internal/mcp/maat_test.go", "internal/dashboard/dashboard_test.go", "internal/dashboard/actions_test.go", "scripts/verify-maat-knowledge-surface-contract.sh", "scripts/test_maat_knowledge_surface_contract.py"],
       "inputs": ["retained local knowledge cache", "bounded optional text query", "explicit confirmed Ma'at knowledge refresh request"],
       "outputs": ["one sensitivity-filtered Ma'at knowledge projection shared by CLI, MCP, Horus dashboard, and native app", "Ma'at-named dashboard, CLI, and native confirmed knowledge refresh action", "withheld sensitive legacy records", "visible refresh outcome and retry path that preserves the current cache on failure"],
       "writes": ["only the legacy ingestion adapter's existing local cache writes through sirsi maat knowledge refresh"],
