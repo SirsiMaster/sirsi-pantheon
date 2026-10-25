@@ -184,7 +184,9 @@ func (s *Store) BeginLivenessWatchAttempt(manifest LivenessWatchManifest, receip
 		currentReceipt.ActionManifestSHA256 != receipt.ActionManifestSHA256 || currentReceipt.RegistrySnapshotSHA256 != receipt.RegistrySnapshotSHA256 {
 		return LivenessWatchAttempt{}, errors.New("maat memory: reviewed preflight is stale, rejected, or unverifiable at attempt admission; fresh review and confirmation are required")
 	}
-	if _, err := s.pendingAppUpdateAttemptLocked(); err != nil && !errors.Is(err, ErrNoIncompleteAppUpdateAttempt) {
+	if _, err := s.pendingAppUpdateAttemptLocked(); err == nil {
+		return LivenessWatchAttempt{}, errors.New("maat memory: an incomplete whole-app update must be inspected before liveness-watch installation")
+	} else if !errors.Is(err, ErrNoIncompleteAppUpdateAttempt) {
 		return LivenessWatchAttempt{}, fmt.Errorf("maat memory: shared attempt history is unverifiable: %w", err)
 	}
 	if _, err := s.pendingLivenessWatchAttemptLocked(); err == nil {

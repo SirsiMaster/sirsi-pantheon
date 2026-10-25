@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/selfupdate"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/updater"
 )
@@ -22,6 +23,7 @@ type maatAppUpdateStore interface {
 	BeginAppUpdateAttempt(maat.AppUpdateManifest, maat.PreflightReceipt) (maat.AppUpdateAttempt, error)
 	PendingAppUpdateAttempt() (maat.AppUpdateAttempt, error)
 	RecordAppUpdateInstalled(maat.AppUpdateAttempt, maat.AppUpdateObservation) (maat.AppUpdateOutcome, error)
+	RecordAppUpdateNotInvoked(maat.AppUpdateAttempt, string) (maat.AppUpdateOutcome, error)
 	Close() error
 }
 
@@ -32,6 +34,7 @@ type maatAppUpdateOps struct {
 	stage       func(context.Context, string, *updater.Release) (maintenanceInstallerPlan, error)
 	revalidate  func(context.Context, *updater.Release, maintenanceInstallerPlan) error
 	observe     func(context.Context) (maat.AppUpdateObservation, error)
+	liveSchema  func() (int, error)
 	handoff     func(context.Context, string) error
 }
 
@@ -42,8 +45,11 @@ var maatAppUpdateDependencies = maatAppUpdateOps{
 	stage:       stageMaatAppUpdatePackage,
 	revalidate:  revalidateMaatAppUpdatePackage,
 	observe:     observeMaatAppUpdate,
+	liveSchema:  observeAppUpdateLiveSchema,
 	handoff:     openMaatAppInstaller,
 }
+
+var maatAppUpdatePackageInspector = inspectAppUpdatePKG
 
 func reconcilePendingMaatAppUpdate() (bool, error) {
 	status := maatAppUpdateDependencies.storeStatus()
@@ -101,9 +107,19 @@ func installAppReleaseWithMaat(rel *updater.Release) error {
 	if before.Release == strings.TrimPrefix(rel.TagName, "v") {
 		return errors.New("Ma'at app update: exact release is already installed; no Installer handoff or replay occurred")
 	}
+	liveSchema, err := maatAppUpdateDependencies.liveSchema()
+	if err != nil {
+		return fmt.Errorf("Ma'at app update: live router schema is unavailable; no Installer handoff: %w", err)
+	}
 	plan, err := maatAppUpdateDependencies.stage(ctx, before.Release, rel)
 	if err != nil {
 		return fmt.Errorf("Ma'at app update package was not staged as a verified exact tuple: %w", err)
+	}
+	if plan.AppUpdateIdentity == nil {
+		return errors.New("Ma'at app update package lacks its inspected app/helper/version identity; no Installer handoff")
+	}
+	if err := selfupdate.CheckSchemaCeiling(plan.AppUpdateIdentity.CandidateVersion, liveSchema); err != nil {
+		return fmt.Errorf("Ma'at app update candidate cannot open the live router schema; no Installer handoff: %w", err)
 	}
 	manifest := maat.AppUpdateManifest{
 		Schema: maat.AppUpdateManifestSchema, StoreUUID: status.StoreUUID, UID: uint32(os.Geteuid()),
@@ -111,7 +127,9 @@ func installAppReleaseWithMaat(rel *updater.Release) error {
 		PackagePath: plan.Package, PackageSHA256: plan.SHA256, PackageDevice: plan.Device, PackageInode: plan.Inode,
 		PackageBytes: plan.Bytes, InstallerIdentity: plan.InstallerIdentity, Notarization: plan.Notarization,
 		TargetBundleID: plan.TargetBundleID, TargetAppPath: plan.TargetAppPath, TargetHelperPath: plan.TargetHelperPath,
-		ExpectedInstalledHelperSHA256: plan.EngineSHA256, CurrentRelease: before.Release, CurrentHelperSHA256: before.HelperSHA256,
+		ExpectedInstalledHelperSHA256: plan.EngineSHA256, ExpectedEmbeddedHelperSHA256: plan.AppUpdateIdentity.EmbeddedHelperSHA256,
+		ExpectedAppCDHash: plan.AppUpdateIdentity.AppCDHash, CandidateVersion: plan.AppUpdateIdentity.CandidateVersion, LiveRouterSchema: liveSchema,
+		CurrentRelease: before.Release, CurrentHelperSHA256: before.HelperSHA256,
 		Dependencies: append([]string(nil), plan.Dependencies...), ObservedAtUTC: time.Now().UTC(),
 	}
 	receipt, preflightErr := store.PreflightAppUpdate(manifest)
@@ -130,18 +148,42 @@ func installAppReleaseWithMaat(rel *updater.Release) error {
 	if err := maatAppUpdateDependencies.revalidate(ctx, rel, plan); err != nil {
 		return fmt.Errorf("Ma'at app update package changed before durable intent; Installer refused: %w", err)
 	}
+	if err := recheckAppUpdateSchema(liveSchema); err != nil {
+		return fmt.Errorf("Ma'at app update live schema changed before durable intent; Installer refused: %w", err)
+	}
 	current, err := maatAppUpdateDependencies.observe(ctx)
-	if err != nil || current.Release != before.Release || current.HelperSHA256 != before.HelperSHA256 || !current.AppSignatureVerified || !current.HelperSignatureVerified || !current.DependenciesPresent {
+	if err != nil || !sameInstalledAppUpdateObservation(before, current) {
 		return errors.Join(errors.New("Ma'at app update current target changed before durable intent; Installer refused"), err)
 	}
 	attempt, err := store.BeginAppUpdateAttempt(manifest, receipt)
 	if err != nil {
 		return fmt.Errorf("Ma'at app update durable intent was not admitted; Installer was not opened: %w", err)
 	}
-	// Final byte revalidation occurs after durable intent. Any uncertainty from
-	// this point retains the exact claim and must be reconciled without replay.
+	// Revalidate all mutable observations after durable intent. If any check
+	// refuses, persist an exact not-invoked fact before allowing a fresh review.
+	if err := recheckAppUpdateSchema(liveSchema); err != nil {
+		if _, dispositionErr := store.RecordAppUpdateNotInvoked(attempt, "schema-revalidation-refused"); dispositionErr != nil {
+			return fmt.Errorf("Ma'at app update attempt %s remains retained; schema revalidation refused before Installer handoff and exact disposition failed: %w (schema: %v)", attempt.ID, dispositionErr, err)
+		}
+		return fmt.Errorf("Ma'at app update attempt %s was retained as not-invoked after schema changed; review a compatible release: %w", attempt.ID, err)
+	}
+	current, err = maatAppUpdateDependencies.observe(ctx)
+	if err != nil || !sameInstalledAppUpdateObservation(before, current) {
+		if _, dispositionErr := store.RecordAppUpdateNotInvoked(attempt, "target-revalidation-refused"); dispositionErr != nil {
+			return fmt.Errorf("Ma'at app update attempt %s remains retained; target revalidation refused before Installer handoff and exact disposition failed: %w (readback: %v)", attempt.ID, dispositionErr, err)
+		}
+		if err == nil {
+			err = errors.New("installed app/helper identity changed")
+		}
+		return fmt.Errorf("Ma'at app update attempt %s was retained as not-invoked after installed target changed; review fresh state: %w", attempt.ID, err)
+	}
+	// This final no-follow package hash follows the trust inspection and the
+	// other observations, immediately before the only native Installer call.
 	if err := maatAppUpdateDependencies.revalidate(ctx, rel, plan); err != nil {
-		return fmt.Errorf("Ma'at app update attempt %s is retained; package changed before Installer handoff, inspect before any retry: %w", attempt.ID, err)
+		if _, dispositionErr := store.RecordAppUpdateNotInvoked(attempt, "package-revalidation-refused"); dispositionErr != nil {
+			return fmt.Errorf("Ma'at app update attempt %s remains retained; package revalidation refused before Installer handoff and exact disposition failed: %w (revalidation: %v)", attempt.ID, dispositionErr, err)
+		}
+		return fmt.Errorf("Ma'at app update attempt %s was retained as not-invoked after package revalidation refused; stage and review a fresh exact package: %w", attempt.ID, err)
 	}
 	if err := maatAppUpdateDependencies.handoff(ctx, plan.Package); err != nil {
 		return fmt.Errorf("Ma'at app update attempt %s is retained; Installer handoff is ambiguous and must be read back before retry: %w", attempt.ID, err)
@@ -154,6 +196,32 @@ func installAppReleaseWithMaat(rel *updater.Release) error {
 		return fmt.Errorf("Ma'at app update attempt %s remains unresolved after Installer handoff; use a later data-only readback, do not replay: %w", attempt.ID, err)
 	}
 	fmt.Printf("Ma'at verified installed Pantheon %s; package and installed app/helper identity were read back.\n", plan.Release)
+	return nil
+}
+
+func sameInstalledAppUpdateObservation(a, b maat.AppUpdateObservation) bool {
+	return a.Release == b.Release && a.BundleID == b.BundleID && a.AppPath == b.AppPath && a.HelperPath == b.HelperPath &&
+		a.HelperSHA256 == b.HelperSHA256 && a.EmbeddedHelperSHA256 == b.EmbeddedHelperSHA256 && a.AppCDHash == b.AppCDHash &&
+		a.AppSignatureVerified && b.AppSignatureVerified && a.HelperSignatureVerified && b.HelperSignatureVerified &&
+		a.DependenciesPresent && b.DependenciesPresent
+}
+
+func observeAppUpdateLiveSchema() (int, error) {
+	dbPath, err := resolveRouterDBPath()
+	if err != nil {
+		return 0, err
+	}
+	return resolveLiveSchema(dbPath)
+}
+
+func recheckAppUpdateSchema(reviewed int) error {
+	current, err := maatAppUpdateDependencies.liveSchema()
+	if err != nil {
+		return err
+	}
+	if current != reviewed {
+		return fmt.Errorf("live router schema changed from %d to %d", reviewed, current)
+	}
 	return nil
 }
 
@@ -188,29 +256,43 @@ func revalidateMaatAppUpdatePackage(ctx context.Context, rel *updater.Release, p
 	if err != nil || current.SHA256 != plan.SHA256 || current.Device != plan.Device || current.Inode != plan.Inode || current.Bytes != plan.Bytes {
 		return errors.Join(errors.New("staged package bytes or file identity changed"), err)
 	}
-	inspection, err := inspectAppUpdatePKG(ctx, plan.Package, plan.Release)
+	inspection, err := maatAppUpdatePackageInspector(ctx, plan.Package, plan.Release)
 	if err != nil {
 		return err
 	}
-	if inspection.Capability.Implementation != plan.Implementation || inspection.EngineSHA256 != plan.EngineSHA256 ||
+	if plan.AppUpdateIdentity == nil || inspection.Capability.Implementation != plan.Implementation || inspection.EngineSHA256 != plan.EngineSHA256 ||
+		inspection.EmbeddedHelperSHA256 != plan.AppUpdateIdentity.EmbeddedHelperSHA256 || inspection.AppCDHash != plan.AppUpdateIdentity.AppCDHash ||
+		inspection.CandidateVersion != plan.AppUpdateIdentity.CandidateVersion ||
 		inspection.InstallerIdentity != plan.InstallerIdentity || inspection.Notarization != plan.Notarization ||
 		inspection.TargetBundleID != plan.TargetBundleID || inspection.TargetAppPath != plan.TargetAppPath ||
 		inspection.TargetHelperPath != plan.TargetHelperPath || !sameMaintenanceStrings(inspection.Dependencies, plan.Dependencies) {
 		return errors.New("staged package signature, target, or dependency plan changed")
 	}
+	final, err := maintenanceInstallerFileHash(plan.Package, true)
+	if err != nil || final.SHA256 != plan.SHA256 || final.Device != plan.Device || final.Inode != plan.Inode || final.Bytes != plan.Bytes {
+		return errors.Join(errors.New("staged package changed during final trust assessment"), err)
+	}
 	return nil
 }
 
 func observeMaatAppUpdate(ctx context.Context) (maat.AppUpdateObservation, error) {
-	var observation maat.AppUpdateObservation
 	const appPath = "/Applications/Pantheon.app"
 	const helperPath = "/usr/local/libexec/sirsi-pantheon/sirsi"
+	if _, err := setup.CurrentPackagedMaatEngine(); err != nil {
+		return maat.AppUpdateObservation{}, err
+	}
+	return observeMaatAppUpdateAt(ctx, appPath, helperPath, maintenanceInstallerRead, maintenanceInstallerFileHash, signedCodeDirectoryHash)
+}
+
+func observeMaatAppUpdateAt(ctx context.Context, appPath, helperPath string,
+	read func(context.Context, string, ...string) ([]byte, error),
+	hash func(string, bool) (maintenanceInstallerPlan, error),
+	cdhash func(context.Context, string) (string, error),
+) (maat.AppUpdateObservation, error) {
+	var observation maat.AppUpdateObservation
 	const appRequirement = `=anchor apple generic and certificate leaf[subject.OU] = "9D382WV988" and identifier "ai.sirsi.pantheon"`
 	const helperRequirement = `=anchor apple generic and certificate leaf[subject.OU] = "9D382WV988" and identifier "sirsi"`
-	if _, err := setup.CurrentPackagedMaatEngine(); err != nil {
-		return observation, err
-	}
-	versionBytes, err := maintenanceInstallerRead(ctx, "/usr/libexec/PlistBuddy", "-c", "Print :CFBundleVersion", filepath.Join(appPath, "Contents", "Info.plist"))
+	versionBytes, err := read(ctx, "/usr/libexec/PlistBuddy", "-c", "Print :CFBundleVersion", filepath.Join(appPath, "Contents", "Info.plist"))
 	if err != nil {
 		return observation, err
 	}
@@ -218,21 +300,30 @@ func observeMaatAppUpdate(ctx context.Context) (maat.AppUpdateObservation, error
 	if !maintenanceVersionRE.MatchString(version) {
 		return observation, errors.New("installed app bundle version is not canonical")
 	}
-	help, err := maintenanceInstallerFileHash(helperPath, false)
+	help, err := hash(helperPath, false)
 	if err != nil {
 		return observation, err
 	}
-	if _, err := maintenanceInstallerRead(ctx, "/usr/bin/codesign", "--verify", "--strict", "--deep", "-R", appRequirement, appPath); err != nil {
+	if _, err := read(ctx, "/usr/bin/codesign", "--verify", "--strict", "--deep", "-R", appRequirement, appPath); err != nil {
 		return observation, errors.New("installed Pantheon app signature readback failed")
 	}
-	if _, err := maintenanceInstallerRead(ctx, "/usr/bin/codesign", "--verify", "--strict", "-R", helperRequirement, helperPath); err != nil {
+	if _, err := read(ctx, "/usr/bin/codesign", "--verify", "--strict", "-R", helperRequirement, helperPath); err != nil {
 		return observation, errors.New("installed Pantheon helper signature readback failed")
+	}
+	embeddedHelperPath := filepath.Join(appPath, "Contents", "MacOS", "sirsi")
+	embeddedHelper, err := hash(embeddedHelperPath, false)
+	if err != nil || embeddedHelper.SHA256 != help.SHA256 {
+		return observation, errors.New("installed app/helper payload pair is missing or differs")
+	}
+	appCDHash, err := cdhash(ctx, appPath)
+	if err != nil {
+		return observation, err
 	}
 	if info, err := os.Lstat(appPath); err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return observation, errors.New("installed Pantheon app dependency is unavailable")
 	}
 	observation = maat.AppUpdateObservation{Release: version, BundleID: "ai.sirsi.pantheon", AppPath: appPath,
-		HelperPath: helperPath, HelperSHA256: help.SHA256, AppSignatureVerified: true,
+		HelperPath: helperPath, HelperSHA256: help.SHA256, EmbeddedHelperSHA256: embeddedHelper.SHA256, AppCDHash: appCDHash, AppSignatureVerified: true,
 		HelperSignatureVerified: true, DependenciesPresent: true, ObservedAtUTC: time.Now().UTC()}
 	return observation, nil
 }

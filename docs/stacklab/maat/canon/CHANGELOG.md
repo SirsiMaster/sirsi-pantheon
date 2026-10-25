@@ -14,6 +14,7 @@
 ## 2026-10-25
 
 - Added a source candidate to the existing macOS whole-app `sirsi update --app`/`--cli` route: exact signed/notarized PKG staging and revalidation, full scoped Ma'at preflight projection, create-only durable Installer-handoff intent, and exact installed app/helper readback. Installer opening is not treated as installation success; ambiguous handoff is retained for data-only readback and never automatically replayed. Authored inert fixtures are pending Main qualification. Raw self-update, alternate installer routes, installed proof, and the original O4 rollback acceptance remain open; this is not whole Ma'at-operation completion.
+- Added the 7c8 corrective source donor for six independent O2/O3 findings: bidirectional pending-attempt fencing; staged app CDHash and embedded/protected helper identity; typed known-not-invoked disposition and exact target-present prepared-write recovery; post-inspection package hash; retained-attempt and bounded UTC outcome validation; candidate/live schema check and recheck. Added adversarial source fixtures and updated the existing recipe component. No tests or product commands were run here. Final composition must use G02's stored opaque-receipt API on the published 137 baseline; raw self-update, alternate installer routes, native terminal projection/debt, O4 rollback and qualification remain open.
 
 ## 2026-10-05
 

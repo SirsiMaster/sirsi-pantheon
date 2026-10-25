@@ -22,38 +22,49 @@ import (
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/updater"
+	modversion "github.com/SirsiMaster/sirsi-pantheon/internal/version"
 	"github.com/spf13/cobra"
 	"golang.org/x/sys/unix"
 )
 
 type maintenanceInstallerPlan struct {
-	Schema            int      `json:"schema"`
-	Release           string   `json:"release"`
-	Package           string   `json:"package"`
-	PackageURL        string   `json:"package_url"`
-	SHA256            string   `json:"sha256"`
-	Device            uint64   `json:"device"`
-	Inode             uint64   `json:"inode"`
-	Bytes             int64    `json:"bytes"`
-	Implementation    string   `json:"implementation"`
-	EngineSHA256      string   `json:"engine_sha256"`
-	InstallerIdentity string   `json:"installer_identity"`
-	Notarization      string   `json:"notarization"`
-	TargetBundleID    string   `json:"target_bundle_id"`
-	TargetAppPath     string   `json:"target_app_path"`
-	TargetHelperPath  string   `json:"target_helper_path"`
-	Dependencies      []string `json:"dependencies"`
+	Schema            int                           `json:"schema"`
+	Release           string                        `json:"release"`
+	Package           string                        `json:"package"`
+	PackageURL        string                        `json:"package_url"`
+	SHA256            string                        `json:"sha256"`
+	Device            uint64                        `json:"device"`
+	Inode             uint64                        `json:"inode"`
+	Bytes             int64                         `json:"bytes"`
+	Implementation    string                        `json:"implementation"`
+	EngineSHA256      string                        `json:"engine_sha256"`
+	AppUpdateIdentity *maintenanceAppUpdateIdentity `json:"app_update_identity,omitempty"`
+	InstallerIdentity string                        `json:"installer_identity"`
+	Notarization      string                        `json:"notarization"`
+	TargetBundleID    string                        `json:"target_bundle_id"`
+	TargetAppPath     string                        `json:"target_app_path"`
+	TargetHelperPath  string                        `json:"target_helper_path"`
+	Dependencies      []string                      `json:"dependencies"`
+}
+
+type maintenanceAppUpdateIdentity struct {
+	EmbeddedHelperSHA256 string          `json:"embedded_helper_sha256"`
+	AppCDHash            string          `json:"app_cdhash"`
+	CandidateVersion     modversion.Info `json:"candidate_version"`
 }
 
 type maintenancePackageInspection struct {
-	Capability        setup.LegacyAppCapability
-	EngineSHA256      string
-	InstallerIdentity string
-	Notarization      string
-	TargetBundleID    string
-	TargetAppPath     string
-	TargetHelperPath  string
-	Dependencies      []string
+	Capability           setup.LegacyAppCapability
+	EngineSHA256         string
+	EmbeddedHelperSHA256 string
+	AppCDHash            string
+	CandidateVersion     modversion.Info
+	InstallerIdentity    string
+	Notarization         string
+	TargetBundleID       string
+	TargetAppPath        string
+	TargetHelperPath     string
+	Dependencies         []string
 }
 
 type maintenanceInstallerOps struct {
@@ -187,9 +198,17 @@ func inspectPantheonPKG(ctx context.Context, path, release string, requireCurren
 	if _, err := maintenanceInstallerRead(ctx, "/usr/bin/codesign", "--verify", "--strict", "--deep", "-R", `=anchor apple generic and certificate leaf[subject.OU] = "9D382WV988" and identifier "ai.sirsi.pantheon"`, app); err != nil {
 		return inspection, errors.New("Package app signature refused")
 	}
+	var appCDHash string
+	if !requireCurrentEngine {
+		appCDHash, err = signedCodeDirectoryHash(ctx, app)
+		if err != nil {
+			return inspection, err
+		}
+	}
 	pkgHelper := filepath.Join(expanded, "Payload/usr/local/libexec/sirsi-pantheon/sirsi")
 	appHelper := filepath.Join(expanded, "Payload/Applications/Pantheon.app/Contents/MacOS/sirsi")
 	var expected string
+	var candidateVersion modversion.Info
 	var cap setup.LegacyAppCapability
 	for _, helper := range []string{pkgHelper, appHelper} {
 		h, err := maintenanceInstallerFileHash(helper, false)
@@ -202,6 +221,22 @@ func inspectPantheonPKG(ctx context.Context, path, release string, requireCurren
 		expected = h.SHA256
 		if _, err := maintenanceInstallerRead(ctx, "/usr/bin/codesign", "--verify", "--strict", "-R", `=anchor apple generic and certificate leaf[subject.OU] = "9D382WV988" and identifier "sirsi"`, helper); err != nil {
 			return inspection, errors.New("Package helper signature refused.")
+		}
+		if !requireCurrentEngine {
+			versionBytes, err := maintenanceInstallerRead(ctx, helper, "version", "--json")
+			if err != nil {
+				return inspection, errors.New("Published package helper has no readable version/schema identity")
+			}
+			var candidate modversion.Info
+			if json.Unmarshal(versionBytes, &candidate) != nil || strings.TrimPrefix(candidate.Version, "v") != release || candidate.Binary != "sirsi" ||
+				candidate.Dirty || candidate.Commit == "" || candidate.Commit == "none" || candidate.RouterSchemaMax <= 0 {
+				return inspection, errors.New("Published package helper version/schema identity is incomplete or incompatible")
+			}
+			candidate.Path = ""
+			if candidateVersion.Binary != "" && candidateVersion != candidate {
+				return inspection, errors.New("Package app and protected helper version/schema identities differ")
+			}
+			candidateVersion = candidate
 		}
 		raw, err := maintenanceInstallerRead(ctx, helper, "launchd", "legacy-maintenance-app-capabilities")
 		if err != nil {
@@ -231,11 +266,31 @@ func inspectPantheonPKG(ctx context.Context, path, release string, requireCurren
 			return inspection, errors.New("The exact PKG and running canonical app do not carry the same engine; no alternate installer offered")
 		}
 	}
-	inspection = maintenancePackageInspection{Capability: cap, EngineSHA256: expected, InstallerIdentity: installerIdentity,
+	inspection = maintenancePackageInspection{Capability: cap, EngineSHA256: expected, EmbeddedHelperSHA256: expected, AppCDHash: appCDHash,
+		CandidateVersion: candidateVersion, InstallerIdentity: installerIdentity,
 		Notarization: notarization, TargetBundleID: "ai.sirsi.pantheon", TargetAppPath: "/Applications/Pantheon.app",
 		TargetHelperPath: "/usr/local/libexec/sirsi-pantheon/sirsi",
 		Dependencies:     []string{"/Applications/Pantheon.app", "/usr/local/libexec/sirsi-pantheon/sirsi"}}
 	return inspection, nil
+}
+
+func signedCodeDirectoryHash(ctx context.Context, path string) (string, error) {
+	output, err := maintenanceInstallerRead(ctx, "/usr/bin/codesign", "--display", "--verbose=4", path)
+	if err != nil {
+		return "", errors.New("signed code identity readback failed")
+	}
+	for _, line := range strings.Split(string(output), "\n") {
+		if !strings.HasPrefix(line, "CDHash=") {
+			continue
+		}
+		value := strings.TrimPrefix(line, "CDHash=")
+		decoded, decodeErr := hex.DecodeString(value)
+		if decodeErr == nil && len(decoded) == 20 && strings.ToLower(value) == value {
+			return value, nil
+		}
+		break
+	}
+	return "", errors.New("signed code identity has no canonical CDHash")
 }
 
 func maintenanceInstallerRead(ctx context.Context, exe string, args ...string) ([]byte, error) {
@@ -332,6 +387,10 @@ func stageMaintenanceInstaller(ctx context.Context, current string, ops maintena
 	result.PackageURL = asset.BrowserDownloadURL
 	result.Implementation = inspection.Capability.Implementation
 	result.EngineSHA256 = inspection.EngineSHA256
+	if inspection.CandidateVersion.Binary != "" {
+		result.AppUpdateIdentity = &maintenanceAppUpdateIdentity{EmbeddedHelperSHA256: inspection.EmbeddedHelperSHA256,
+			AppCDHash: inspection.AppCDHash, CandidateVersion: inspection.CandidateVersion}
+	}
 	result.InstallerIdentity = inspection.InstallerIdentity
 	result.Notarization = inspection.Notarization
 	result.TargetBundleID = inspection.TargetBundleID
