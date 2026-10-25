@@ -648,7 +648,30 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	outs := s.sv.MethodByName(name).Call(in)
+	var outs []reflect.Value
+	if sess.ID != "" && (name == "ClaimNext" || name == "ClaimItem") {
+		// Never acknowledge a newly authenticated lease before durable owner
+		// binding commits. No caller-supplied owner or new wire method exists.
+		backend, ok := s.store.(interface {
+			claimItemSession(string, string, string, time.Duration) (*Lease, error)
+		})
+		if !ok {
+			writeErr(w, http.StatusServiceUnavailable, "", "authenticated atomic item claim unavailable")
+			return
+		}
+		id, ttlIndex := "", 1
+		if name == "ClaimItem" {
+			id, ttlIndex = in[1].String(), 2
+			if strings.TrimSpace(id) == "" {
+				writeErr(w, http.StatusBadRequest, "", "ClaimItem requires an exact item id")
+				return
+			}
+		}
+		lease, err := backend.claimItemSession(in[0].String(), id, sess.ID, in[ttlIndex].Interface().(time.Duration))
+		outs = []reflect.Value{reflect.ValueOf(lease), reflect.ValueOf(&err).Elem()}
+	} else {
+		outs = s.sv.MethodByName(name).Call(in)
+	}
 
 	var callErr error
 	results := outs
@@ -692,7 +715,8 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Bind the session to what was just claimed, so ownership holds from here.
+	// Authenticated item binding already committed atomically with its lease.
+	// Preserve the separate existing task-binding path (not DC01's item scope).
 	s.bindAfterClaim(name, results, sess)
 	if sess.ID != "" {
 		_ = s.store.TouchSession(sess.ID)
@@ -882,10 +906,6 @@ func (s *server) bindAfterClaim(name string, results []reflect.Value, caller Ses
 		return
 	}
 	switch name {
-	case "ClaimNext", "ClaimItem":
-		if l, ok := results[0].Interface().(*Lease); ok && l != nil {
-			_ = s.store.BindItemSession(l.ItemID, caller.ID)
-		}
 	case "ClaimTask", "ClaimNextTask":
 		if l, ok := results[0].Interface().(*TaskLease); ok && l != nil {
 			verdict, reason := "allowed", ""
