@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -18,6 +19,11 @@ import (
 )
 
 const maintenanceJournalLeaf = ".ai.sirsi.router.relay.maintenance.jsonl"
+
+func jsonMaintenance(value any) ([]byte, error) {
+	b, err := json.Marshal(value)
+	return append(b, '\n'), err
+}
 
 // This is the existing selected-service filesystem custody boundary, not a
 // router database. owner is instance-local for owned inert fixtures; native

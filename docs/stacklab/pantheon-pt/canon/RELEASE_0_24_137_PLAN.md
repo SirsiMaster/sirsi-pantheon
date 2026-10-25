@@ -81,6 +81,12 @@ before temporary-log cleanup; a causal55-line/late-linker fixture preserves
 the original exit23. This changes diagnostic visibility only, never admission,
 advice, test selection or the gate's failure status. Retain ordinary outer
 stdout/stderr for the next protected push rather than losing late failures.
+The full local protected gate at14b0 passed, while exact hosted CI then found
+one Linux-only unused helper: jsonMaintenance is referenced only by Darwin
+maintenance code. Relocate its unchanged implementation and JSON import into
+the existing Darwin journal source. No wire format, algorithm or runtime
+behavior changes; qualify Linux setup lint and the complete native setup
+tests before normal incremental push and a fresh exact-head protected CI.
 
 - Main integrated receipt SHA256
   `3e5da51f47b1bfa4569737705261dc76e4d121243d4473ff53f199793b22c70e`:

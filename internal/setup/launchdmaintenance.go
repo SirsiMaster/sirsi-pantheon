@@ -42,11 +42,6 @@ func maintenanceDigest(p MaintenancePlan) string {
 	return hex.EncodeToString(h[:])
 }
 
-func jsonMaintenance(value any) ([]byte, error) {
-	b, err := json.Marshal(value)
-	return append(b, '\n'), err
-}
-
 func (p MaintenancePlan) validate() error {
 	if p.Profile != RootRelayMaintenanceProfile || p.Original.Label != "ai.sirsi.router.relay" ||
 		p.Original.Target != "system/ai.sirsi.router.relay" ||
