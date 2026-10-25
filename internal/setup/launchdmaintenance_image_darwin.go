@@ -6,19 +6,24 @@ package setup
 #cgo LDFLAGS: -framework Security -framework CoreFoundation
 #include <Security/Security.h>
 #include <CoreFoundation/CoreFoundation.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/syscall.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+// Apple XNU bsd/sys/codesign.h defines CS_OPS_CDHASH as the read-only
+// csops operation that returns the selected process's kernel-loaded CDHash.
+// The macOS SDK exports SYS_csops but omits the operation constant.
+#define SIRSI_CS_OPS_CDHASH 5u
 
 // Obtain the retained payload's static CDHash only after canonical signature
-// validation. For a running image, ask the kernel-root code host to resolve
-// BOTH PID and that hash. Never use CopySigningInformation(dynamic) as the
-// loaded hash: Apple's API explicitly says that information can come from disk.
-static int sirsi_maintenance_image(const char *path, int pid, unsigned char out[20]) {
+// validation. Loaded identity is read independently from the kernel below.
+static int sirsi_maintenance_static_image(const char *path, unsigned char out[20]) {
     SecStaticCodeRef code = NULL;
     SecRequirementRef requirement = NULL;
-    CFDictionaryRef info = NULL, attributes = NULL;
-    CFNumberRef number = NULL;
-    SecCodeRef guest = NULL;
+    CFDictionaryRef info = NULL;
     CFURLRef url = CFURLCreateFromFileSystemRepresentation(NULL, (const UInt8 *)path, strlen(path), false);
     if (!url) return -1;
     OSStatus result = SecStaticCodeCreateWithPath(url, kSecCSDefaultFlags, &code);
@@ -33,48 +38,26 @@ static int sirsi_maintenance_image(const char *path, int pid, unsigned char out[
     CFDataRef hash = CFDictionaryGetValue(info, kSecCodeInfoUnique);
     if (!hash || CFGetTypeID(hash) != CFDataGetTypeID() || CFDataGetLength(hash) != 20) { result = -2; goto done; }
     memcpy(out, CFDataGetBytePtr(hash), 20);
-    if (pid > 1) {
-        number = CFNumberCreate(NULL, kCFNumberIntType, &pid);
-        if (!number) { result = -3; goto done; }
-        const void *keys[] = { kSecGuestAttributePid, kSecGuestAttributeHash };
-        const void *values[] = { number, hash };
-        attributes = CFDictionaryCreate(NULL, keys, values, 2, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-        if (!number || !attributes) { result = -3; goto done; }
-        result = SecCodeCopyGuestWithAttributes(NULL, attributes, kSecCSDefaultFlags, &guest);
-        if (result) goto done;
-        // Refuse hosts that accept but ignore the hash selector. A successful
-        // PID lookup alone must never masquerade as loaded-image identity.
-        unsigned char wrongBytes[20];
-        memcpy(wrongBytes, out, 20);
-        wrongBytes[0] ^= 0xff;
-        CFDataRef wrongHash = CFDataCreate(NULL, wrongBytes, 20);
-        if (!wrongHash) { result = -3; goto done; }
-        const void *wrongValues[] = { number, wrongHash };
-        CFDictionaryRef wrongAttributes = CFDictionaryCreate(NULL, keys, wrongValues, 2, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-        CFRelease(wrongHash);
-        if (!wrongAttributes) { result = -3; goto done; }
-        SecCodeRef wrongGuest = NULL;
-        OSStatus wrongResult = SecCodeCopyGuestWithAttributes(NULL, wrongAttributes, kSecCSDefaultFlags, &wrongGuest);
-        CFRelease(wrongAttributes);
-        if (wrongGuest) CFRelease(wrongGuest);
-        if (wrongResult != errSecCSNoSuchCode) { result = -4; goto done; }
-        // Unsupported/ambiguous guest selectors are explicit refusal. Do not
-        // retry using just PID or the current executable pathname.
-    }
 done:
-    if (guest) CFRelease(guest);
-    if (attributes) CFRelease(attributes);
-    if (number) CFRelease(number);
     if (info) CFRelease(info);
     if (requirement) CFRelease(requirement);
     if (code) CFRelease(code);
     return (int)result;
 }
+
+// This is a read-only query of the kernel's code-signing state for pid. A
+// failure is returned to the caller; there is no Security/PID/path fallback.
+static int sirsi_maintenance_loaded_cdhash(int pid, unsigned char out[20]) {
+    if (pid <= 1) return EINVAL;
+    long result = syscall(SYS_csops, (pid_t)pid, SIRSI_CS_OPS_CDHASH, out, 20);
+    if (result == -1) return errno ? errno : EIO;
+    if (result != 0) return EIO;
+    return 0;
+}
 */
 import "C"
 
 import (
-	"encoding/hex"
 	"fmt"
 	"unsafe"
 )
@@ -82,9 +65,19 @@ import (
 func maintenanceSignedImage(path string, pid int) (string, error) {
 	cpath := C.CString(path)
 	defer C.free(unsafe.Pointer(cpath))
-	var hash [20]byte
-	if status := C.sirsi_maintenance_image(cpath, C.int(pid), (*C.uchar)(unsafe.Pointer(&hash[0]))); status != 0 {
-		return "", fmt.Errorf("legacy maintenance: signed payload/kernel PID+CDHash guest binding unavailable (status %d); no pathname fallback", int(status))
-	}
-	return hex.EncodeToString(hash[:]), nil
+	return maintenanceImageCDHash(path, pid,
+		func(string) ([]byte, error) {
+			var hash [20]byte
+			if status := C.sirsi_maintenance_static_image(cpath, (*C.uchar)(unsafe.Pointer(&hash[0]))); status != 0 {
+				return nil, fmt.Errorf("strict retained signature inspection failed (status %d)", int(status))
+			}
+			return hash[:], nil
+		},
+		func(selectedPID int) ([]byte, error) {
+			var hash [20]byte
+			if status := C.sirsi_maintenance_loaded_cdhash(C.int(selectedPID), (*C.uchar)(unsafe.Pointer(&hash[0]))); status != 0 {
+				return nil, fmt.Errorf("csops(CS_OPS_CDHASH) failed (errno %d)", int(status))
+			}
+			return hash[:], nil
+		})
 }

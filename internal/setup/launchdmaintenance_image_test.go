@@ -1,0 +1,107 @@
+package setup
+
+import (
+	"bytes"
+	"errors"
+	"strings"
+	"testing"
+)
+
+func TestMaintenanceImageCDHashUsesExactKernelReadback(t *testing.T) {
+	candidate := bytes.Repeat([]byte{0x31}, 20)
+	loadedCalls := 0
+	got, err := maintenanceImageCDHash("/retained/sirsi", 4321,
+		func(path string) ([]byte, error) {
+			if path != "/retained/sirsi" {
+				t.Fatalf("static image path = %q", path)
+			}
+			return append([]byte(nil), candidate...), nil
+		},
+		func(pid int) ([]byte, error) {
+			loadedCalls++
+			if pid != 4321 {
+				t.Fatalf("loaded image pid = %d", pid)
+			}
+			return append([]byte(nil), candidate...), nil
+		})
+	if err != nil || got != strings.Repeat("31", 20) || loadedCalls != 1 {
+		t.Fatalf("exact kernel image = %q, calls=%d, err=%v", got, loadedCalls, err)
+	}
+}
+
+func TestMaintenanceImageCDHashRejectsWrongKernelHash(t *testing.T) {
+	candidate := bytes.Repeat([]byte{0x31}, 20)
+	wrong := bytes.Repeat([]byte{0x32}, 20)
+	got, err := maintenanceImageCDHash("/retained/sirsi", 4321,
+		func(string) ([]byte, error) { return candidate, nil },
+		func(int) ([]byte, error) { return wrong, nil })
+	if err == nil || got != "" || !strings.Contains(err.Error(), "does not match kernel-loaded CDHash") {
+		t.Fatalf("wrong kernel image accepted: %q, err=%v", got, err)
+	}
+}
+
+func TestMaintenanceImageCDHashRefusesUnknownKernelReadback(t *testing.T) {
+	candidate := bytes.Repeat([]byte{0x31}, 20)
+	wantErr := errors.New("injected csops refusal")
+	got, err := maintenanceImageCDHash("/retained/sirsi", 4321,
+		func(string) ([]byte, error) { return candidate, nil },
+		func(int) ([]byte, error) { return nil, wantErr })
+	if got != "" || !errors.Is(err, wantErr) {
+		t.Fatalf("unknown kernel readback accepted: %q, err=%v", got, err)
+	}
+}
+
+func TestMaintenanceImageCDHashRejectsMalformedKernelReadback(t *testing.T) {
+	candidate := bytes.Repeat([]byte{0x31}, 20)
+	got, err := maintenanceImageCDHash("/retained/sirsi", 4321,
+		func(string) ([]byte, error) { return candidate, nil },
+		func(int) ([]byte, error) { return candidate[:19], nil })
+	if got != "" || err == nil || !strings.Contains(err.Error(), "does not match kernel-loaded CDHash") {
+		t.Fatalf("malformed kernel hash accepted: %q, err=%v", got, err)
+	}
+}
+
+func TestMaintenanceImageCDHashRequiresKernelReaderForLoadedPID(t *testing.T) {
+	candidate := bytes.Repeat([]byte{0x31}, 20)
+	got, err := maintenanceImageCDHash("/retained/sirsi", 4321,
+		func(string) ([]byte, error) { return candidate, nil }, nil)
+	if got != "" || err == nil || !strings.Contains(err.Error(), "reader unavailable") {
+		t.Fatalf("missing kernel reader accepted: %q, err=%v", got, err)
+	}
+}
+
+func TestMaintenanceImageCDHashArtifactModeDoesNotClaimLoadedIdentity(t *testing.T) {
+	candidate := bytes.Repeat([]byte{0x31}, 20)
+	loadedCalls := 0
+	got, err := maintenanceImageCDHash("/retained/sirsi", 0,
+		func(string) ([]byte, error) { return candidate, nil },
+		func(int) ([]byte, error) {
+			loadedCalls++
+			return nil, errors.New("must not be called for artifact-only identity")
+		})
+	if err != nil || got != strings.Repeat("31", 20) || loadedCalls != 0 {
+		t.Fatalf("artifact-only identity = %q, calls=%d, err=%v", got, loadedCalls, err)
+	}
+}
+
+func TestMaintenanceImageCDHashRejectsMalformedInputs(t *testing.T) {
+	valid := bytes.Repeat([]byte{0x31}, 20)
+	for _, tc := range []struct {
+		name string
+		path string
+		pid  int
+		read maintenanceStaticCDHashReader
+	}{
+		{name: "empty path", path: "", pid: 4321, read: func(string) ([]byte, error) { return valid, nil }},
+		{name: "invalid pid", path: "/retained/sirsi", pid: 1, read: func(string) ([]byte, error) { return valid, nil }},
+		{name: "negative pid", path: "/retained/sirsi", pid: -1, read: func(string) ([]byte, error) { return valid, nil }},
+		{name: "short retained hash", path: "/retained/sirsi", pid: 0, read: func(string) ([]byte, error) { return valid[:19], nil }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := maintenanceImageCDHash(tc.path, tc.pid, tc.read, nil)
+			if err == nil || got != "" {
+				t.Fatalf("malformed request accepted: %q, err=%v", got, err)
+			}
+		})
+	}
+}

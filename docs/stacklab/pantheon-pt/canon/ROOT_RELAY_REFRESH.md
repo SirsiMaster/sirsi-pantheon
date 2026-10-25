@@ -24,6 +24,16 @@ the relay's run-as identity. The credential-bearing plist remains root:wheel0600
 The five existing maintenance profiles retain their behavior. Only SSA and SHA
 receive the additional exact-label grant; the source lane receives none.
 
+The maintenance image probe validates the retained payload's static signature,
+then reads the selected PID's loaded CodeDirectory hash from the kernel with
+`csops(CS_OPS_CDHASH)` and compares the exact 20 bytes. The SDK supplies
+`SYS_csops`; the operation value follows Apple's XNU `bsd/sys/codesign.h`
+definition (`CS_OPS_CDHASH == 5`). A failed/denied query or any mismatch refuses
+the plan. Static signature identity, PID-only Security lookup, installed
+metadata and pathname are not substitutes for loaded-image identity. Artifact
+inspection with PID zero reports only the retained static hash and makes no
+loaded-image claim.
+
 ## Sequence and evidence
 
 1. Inspect through the existing qualified privileged controller. Retain the
