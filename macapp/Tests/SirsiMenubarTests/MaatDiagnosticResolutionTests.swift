@@ -207,4 +207,90 @@ final class MaatDiagnosticResolutionTests: XCTestCase {
             XCTAssertTrue(model.message.contains("not confirmed"))
         }
     }
+
+    private func originCase(_ v: MaatSystemOneVerdict) -> MaatCase {
+        MaatCase(id: "retained-origin", time: "2026-10-25T00:00:00Z", kind: "system one screen",
+                 category: "system-one", status: "open", priority: .high, requester: "fixture",
+                 resource: host, affected: head, determination: "changes", assessed: "host diagnostic",
+                 why: "retained observation", evidence: "maat-system-one:sha256=" + String(repeating: "b", count: 64),
+                 systemOne: v)
+    }
+
+    @MainActor func testActualNavResolverAndCasebookBackRetainOriginAndFreshReadState() async throws {
+        let v = try verdict(), engine = SirsiEngine(), nav = Nav()
+        // Default production initializer owns the workflow before Nav type
+        // erasure; this test does not inject a separately retained model.
+        let bridge = MaatDiagnosticResolutionView(engine: engine, origin: originCase(v), finding: v.findings[0])
+        nav.push(MaatCasebookView(engine: engine))
+        let parentID = try XCTUnwrap(nav.stack.last?.id)
+        nav.push(bridge)
+        let bridgeID = try XCTUnwrap(nav.stack.last?.id)
+        let evidence = bridge.origin.evidence
+        let modelID = ObjectIdentifier(bridge.model)
+        let fresh = try read()
+        await bridge.model.refresh(verdict: v, finding: v.findings[0], localHost: host) { fresh }
+        let current = try XCTUnwrap(bridge.model.beginReview(snapshot: .init(current: true, finding: bridge.model.finding)))
+        nav.push(FindingView(engine: engine, finding: current))
+        XCTAssertEqual(nav.stack.count, 3)
+        nav.pop()
+        XCTAssertEqual(nav.stack.last?.id, bridgeID)
+        XCTAssertEqual(ObjectIdentifier(bridge.model), modelID)
+        XCTAssertEqual(bridge.origin.evidence, evidence)
+        XCTAssertEqual(bridge.model.finding?.message, "Fresh disk condition")
+        // Cancellation invalidates current read authority, never the origin.
+        bridge.model.cancelReview()
+        nav.push(MaatCasebookView(engine: engine))
+        nav.pop()
+        XCTAssertEqual(nav.stack.last?.id, bridgeID)
+        XCTAssertEqual(nav.stack.first?.id, parentID)
+        XCTAssertNil(bridge.model.finding)
+        XCTAssertNil(bridge.model.beginReview(snapshot: .init(current: true, finding: current)))
+        await bridge.model.refresh(verdict: v, finding: v.findings[0], localHost: host) { fresh }
+        XCTAssertTrue(bridge.model.canOpen(snapshot: .init(current: true, finding: bridge.model.finding)))
+        XCTAssertEqual(bridge.origin.evidence, evidence)
+        XCTAssertEqual(bridge.origin.status, "open")
+    }
+
+    @MainActor func testActualNavOwnsPendingAndUnknownWriteAfterDestinationValueIsReleased() async throws {
+        let v = try verdict(), engine = SirsiEngine(), nav = Nav()
+        var bridge: MaatDiagnosticResolutionView? = MaatDiagnosticResolutionView(
+            engine: engine, origin: originCase(v), finding: v.findings[0])
+        weak var ownedModel = bridge?.model
+        let modelID = ObjectIdentifier(try XCTUnwrap(ownedModel))
+        nav.push(try XCTUnwrap(bridge))
+        let bridgeID = try XCTUnwrap(nav.stack.last?.id)
+        bridge = nil // Only the actual Nav destination value owns the model.
+        XCTAssertNotNil(ownedModel)
+        let unknown = CommandExecution(stdout: Data("retained partial write output".utf8),
+                                       timedOut: true, childState: .exitUnknown)
+        var captures = 0
+        await ownedModel?.recordFreshScreen(localHost: host) { args in
+            captures += 1
+            XCTAssertEqual(args, ["maat", "triage", "--confirm", "--json"])
+            XCTAssertEqual(ownedModel?.busy, true)
+            XCTAssertEqual(ownedModel?.screenAttempted, true)
+            nav.push(MaatCasebookView(engine: engine))
+            nav.pop()
+            XCTAssertEqual(nav.stack.last?.id, bridgeID)
+            XCTAssertEqual(ownedModel.map { ObjectIdentifier($0) }, modelID)
+            // Pending writes cannot renew their latch after a navigation turn.
+            await ownedModel?.recordFreshScreen(localHost: self.host) { _ in captures += 1; return unknown }
+            return unknown
+        }
+        XCTAssertEqual(captures, 1)
+        XCTAssertNotNil(ownedModel)
+        XCTAssertEqual(ownedModel?.screenReceipt, unknown)
+        XCTAssertEqual(ownedModel?.screenAttempted, true)
+        XCTAssertEqual(ownedModel?.busy, false)
+        nav.push(MaatCasebookView(engine: engine))
+        nav.pop()
+        XCTAssertEqual(nav.stack.last?.id, bridgeID)
+        XCTAssertEqual(ObjectIdentifier(try XCTUnwrap(ownedModel)), modelID)
+        await ownedModel?.recordFreshScreen(localHost: host) { _ in captures += 1; return unknown }
+        XCTAssertEqual(captures, 1, "Back after an unknown write cannot create new journal intent")
+        XCTAssertEqual(ownedModel?.screenReceipt, unknown)
+        XCTAssertTrue(ownedModel?.message.contains("will not replay") == true)
+        nav.pop()
+        XCTAssertTrue(nav.atRoot)
+    }
 }

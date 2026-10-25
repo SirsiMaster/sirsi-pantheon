@@ -161,10 +161,21 @@ func maatCurrentDiagnosticResolution(verdict: MaatSystemOneVerdict, finding: Maa
     @ObservedObject var engine: SirsiEngine
     let origin: MaatCase
     let finding: MaatSystemOneFinding
-    @StateObject private var model = MaatDiagnosticResolutionModel()
+    // Nav.Frame retains this destination value while another frame is visible.
+    // Keep the workflow strongly owned by that value (as EmptyTrashView does),
+    // not by remount-scoped StateObject storage. Back must retain write debt.
+    @ObservedObject var model: MaatDiagnosticResolutionModel
     @State private var confirmScreen = false
     @State private var diagnosticTask: Task<Void, Never>?
     @State private var screenTask: Task<Void, Never>?
+
+    init(engine: SirsiEngine, origin: MaatCase, finding: MaatSystemOneFinding,
+         model: MaatDiagnosticResolutionModel? = nil) {
+        self.engine = engine
+        self.origin = origin
+        self.finding = finding
+        self.model = model ?? MaatDiagnosticResolutionModel()
+    }
 
     var body: some View {
         VStack(spacing: 0) {

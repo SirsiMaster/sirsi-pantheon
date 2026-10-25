@@ -180,7 +180,7 @@ receipt, labels any unconfirmed write honestly, and offers Casebook inspection;
 it never renews the once-only journal-write latch. Leaving the view cancels its
 owned waiting tasks and never launches a follow-up action.
 
-`MaatDiagnosticResolutionTests` authors eleven inert test methods for canonical
+`MaatDiagnosticResolutionTests` authors thirteen inert test methods for canonical
 wire identity, hostile hint nonexecution, foreign/imported/malformed/duplicate
 custody, missing/clear/ambiguous current checks, failed/partial observations,
 dedicated repair isolation, stale semantic snapshots, late reads, exact once-only
@@ -191,3 +191,17 @@ names both new files; the component count remains29. This source has not been
 built or executed by the author. Main qualification and installed native UX
 acceptance remain required; other original Ma'at ledger gaps, including guided
 archive corruption restoration and unresolved operational rows, remain open.
+
+The controlled-resolution destination owns its model as a strong member of the
+value retained by the existing `Nav.Frame`, with `ObservedObject` for the mounted
+view, following `EmptyTrashView`. It does not rely on remount-scoped `StateObject`
+storage: pushing the existing resolver or Casebook and returning with Back must
+retain the original evidence, pending/unknown journal-write receipt and once-only
+latch. Disappearance still cancels owned tasks; cancellation invalidates read
+authorization without resetting write custody. Two actual `Nav.push`/`pop`
+fixtures cover the resolver/Casebook round trip and weak-reference frame ownership
+after the original destination variable is released, including pending and
+completed-unknown writes. No global Nav change or registry
+is introduced. Main's original5f9 qualification (native402146d9f0b34dc798f56ff349a65615,
+63 focused Release tests/no skips and production Release build) stays separately
+bound; this navigation-lifetime correction requires its own qualification.
