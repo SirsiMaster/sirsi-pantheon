@@ -67,6 +67,18 @@ cmd/sirsi verbs ──► dispatch.Facade ──► routerstore.Store (interface
 
 ## Tests
 
+### Authenticated item claims (DC01)
+
+`serve.go` routes authenticated ClaimNext/ClaimItem to the unexported backend
+`claimItemSession` capability. `lease.go` shares existing selection/budget/fence
+transactions with local callers, inserting durable owner binding before commit.
+No new Store/RPC method or schema is added. Wrappers used as server backends must
+explicitly retain this internal capability or authenticated claims fail closed
+before mutation; they must not emulate it with ClaimItem plus BindItemSession.
+Tests in `claim_session_atomic_test.go` use the real authenticated handler and
+registered threads with SQL-fault injection, not a mocked successful bind.
+
+
 - `go test ./internal/routerstore/` — SQLite (161 tests).
 - `SIRSI_TEST_PG_DSN=postgres://sirsi@127.0.0.1:54329/routerstore_test go test ./internal/routerstore/`
   — the same suite on Postgres with a per-test schema reset from the

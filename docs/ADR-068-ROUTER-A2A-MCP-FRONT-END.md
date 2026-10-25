@@ -7,6 +7,29 @@
 
 ## 1. Context — why this, why now
 
+### 2026-10-25 DC01 — authenticated claim and durable owner are one commit
+
+Authenticated `ClaimNext` and `ClaimItem` use the same existing claim transaction
+with an additional `lease_sessions` write before commit. The handler injects only
+the session it already authenticated after the existing host, signature, scope
+and registered-thread checks. This is an unexported backend capability, not a new
+wire method, caller-supplied owner field, schema or credential. Both SQLite and
+PostgreSQL share the transaction implementation. A backend without this capability
+refuses authenticated claims before changing any item; it never falls back to a
+separate best-effort owner write. A binding SQL failure rolls back item, owner and
+claim counter. Recovery is an explicit later claim after definitive rollback,
+not an automatic repeated `ClaimNext` after an unknown transport outcome.
+
+Legacy local claims retain their declared unbound behavior, and the existing
+unclaimed CLI `CloseItem` / delegated `close:any` policy is unchanged. MCP still
+uses fenced `CompleteItem`, not the unclaimed close route. Same authenticated
+worker remint remains permitted; copying a live token to another registered
+thread does not transfer ownership. Existing task binding is outside this
+item-only correction. Tests inject an actual binding SQL failure through both
+authenticated HTTP claim methods and verify rollback, explicit recovery,
+copied-token refusal, rightful remint and legacy compatibility. Source checks
+do not establish deployment or installed canonical owned-item completion.
+
 ### 2026-10-24 corrective source addendum — one packaged engine
 
 The owner-directed corrective moves the existing implementation into
