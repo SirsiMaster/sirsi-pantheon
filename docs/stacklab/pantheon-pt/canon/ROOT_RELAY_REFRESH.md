@@ -34,6 +34,16 @@ metadata and pathname are not substitutes for loaded-image identity. Artifact
 inspection with PID zero reports only the retained static hash and makes no
 loaded-image claim.
 
+Legacy migration is source-profile-specific. The implementation admits only
+the exact inspected consume-before-forward source pinned by
+`maintenanceLegacySource`, with an unmodified build. A retained archive's
+version string, path, or signature does not identify the source of the running
+process. If the kernel-loaded hash cannot first identify the retained archive,
+or that archive's source is outside the inspected profile, leave the existing
+service and request state untouched and refuse migration. Do not add a source
+override or replay path; any additional old source requires its own inspection
+of request consumption, one-use behavior, and recovery semantics.
+
 ## Sequence and evidence
 
 1. Inspect through the existing qualified privileged controller. Retain the
