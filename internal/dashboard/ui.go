@@ -35,6 +35,14 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleUIAsset(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
+	case "/assets/mercury.css":
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Type", "text/css; charset=utf-8")
+		_, _ = fmt.Fprint(w, mercuryCSS)
+	case "/assets/mercury.js":
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		_, _ = fmt.Fprint(w, mercuryJS)
 	case "/assets/tokens.css":
 		w.Header().Set("Content-Type", "text/css; charset=utf-8")
 		fmt.Fprintf(w, ":root{color-scheme:light dark;\n%s}\n@media (prefers-color-scheme: dark){:root{\n%s}}\n", brand.CSSVars(brand.Light), brand.CSSVars(brand.Dark))

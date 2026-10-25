@@ -18,6 +18,17 @@ final class MercuryParityTests: XCTestCase {
         XCTAssertEqual(try projection("ok").displayState(readSucceeded: false, readCompletedAt: 100, elapsed: 0), "READ FAILED")
     }
 
+    // Request-start plus enclosing duration is a completion bound, not a new
+    // producer timestamp or a claim that the request measured the hardware.
+    func testCompletionBoundIncludesRequestLatencyAndDoesNotTrustBehindDisplayClock() throws {
+        let start = "1970-01-01T00:01:40Z"
+        XCTAssertEqual(try XCTUnwrap(mercuryReadCompletionBound(readAt: start, wallCompletion: 98, requestElapsed: 2)), 102.001, accuracy: 0.00001)
+        XCTAssertEqual(mercuryReadCompletionBound(readAt: start, wallCompletion: 105, requestElapsed: 2), 105)
+        XCTAssertNil(mercuryReadCompletionBound(readAt: nil, wallCompletion: 100, requestElapsed: 0))
+        XCTAssertNil(mercuryReadCompletionBound(readAt: "invalid", wallCompletion: 100, requestElapsed: 0))
+        XCTAssertNil(mercuryReadCompletionBound(readAt: start, wallCompletion: 100, requestElapsed: -1))
+    }
+
     // Main exports this file with TestExportMixedFreshnessParityFixture, then
     // supplies the exact bytes to Swift. No hand-authored projected substitute.
     func testActualGoMixedFreshnessWireKeepsEligibleDirectionsAndUnknownAggregates() throws {
@@ -31,6 +42,13 @@ final class MercuryParityTests: XCTestCase {
         let snapshot = try XCTUnwrap(p.snapshot), completedAt = try XCTUnwrap(snapshot.generated_at)
         XCTAssertEqual(p.state, "partial")
         XCTAssertEqual(p.displayState(readSucceeded: true, readCompletedAt: completedAt, elapsed: 0), "PARTIAL")
+        let freshNodes = snapshot.nodes.filter { $0.state == "live" }
+        XCTAssertFalse(freshNodes.isEmpty)
+        for node in freshNodes {
+            XCTAssertTrue(p.isCurrent(node, readCompletedAt: completedAt, elapsed: 0))
+            XCTAssertEqual(p.cpuBusy(for: node, readSucceeded: true, readCompletedAt: completedAt, elapsed: 0), node.cpu.busy_pct)
+            XCTAssertEqual(p.gpuWork(for: node, readSucceeded: true, readCompletedAt: completedAt, elapsed: 0), node.gpu.work_pct)
+        }
         let cable = try XCTUnwrap(p.scene?.cables.first { c in
             c.directions.contains { $0.rate == "— MB/s" } && c.directions.contains { $0.rate != "— MB/s" }
         })
@@ -45,6 +63,8 @@ final class MercuryParityTests: XCTestCase {
         XCTAssertTrue(raw["incoming_gbs"] is NSNull)
         let headline = try XCTUnwrap(raw["headline"] as? [String: Any])
         XCTAssertEqual((headline["wire"] as? [String: Any])?["number"] as? String, "—")
+        XCTAssertEqual((headline["compressed"] as? [String: Any])?["number"] as? String, "—")
+        XCTAssertEqual((headline["gain"] as? [String: Any])?["number"] as? String, "—")
         let scene = try XCTUnwrap(raw["scene"] as? [String: Any])
         let cables = try XCTUnwrap(scene["cables"] as? [[String: Any]])
         let mixed = try XCTUnwrap(cables.first { $0["id"] as? String == cable.id })

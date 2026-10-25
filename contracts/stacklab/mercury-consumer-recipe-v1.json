@@ -4,7 +4,7 @@
   "wing": "stacklab.wing.ra-horus-fabric",
   "product": "sirsi-pantheon",
   "version": 1,
-  "purpose": "One bounded, read-only Go consumer of Mercury dashboard/v1 for the canonical Sirsi CLI and MCP. The existing native hardware monitor remains a separate, explicitly scoped producer endpoint; this recipe does not claim a native or web cutover.",
+  "purpose": "One bounded, read-only Go dashboard/v1 projection for canonical CLI/MCP and the existing web/SwiftUI Mercury scene. Surface restoration is an unqualified source candidate; no new producer, control authority or release136 gate.",
   "authority": {
     "producer": "Mercury owns monitor schema, samples, calibration, run state and rates",
     "consumer": "internal/mercury reads and presents; never samples or controls a run",
@@ -16,7 +16,7 @@
     {
       "id": "mercury-dashboard-read-model",
       "source": ["internal/mercury/reader.go", "internal/mercury/presentation.go", "internal/mercury/scene.go", "internal/mercury/dashboard-v1.schema.json"],
-      "tests": ["internal/mercury/reader_test.go", "internal/mercury/presentation_test.go", "internal/mercury/scene_test.go"],
+      "tests": ["internal/mercury/reader_test.go", "internal/mercury/presentation_test.go", "internal/mercury/scene_test.go", "internal/mercury/parity_fixture_test.go"],
       "inputs": ["configured private GET /api/v1/dashboard", "producer schema mercury.dashboard/v1", "producer timestamps, calibration, units and optional-field policy"],
       "outputs": ["typed state, source/read timestamps and immutable per-read snapshot", "shared wire, compressed, gain and topology projection", "unknown and stale values remain explicit"],
       "writes": [],
@@ -30,6 +30,24 @@
       "outputs": ["human CLI projection and exact structured JSON read", "same structured read through MCP", "closed MCP argument schema and runtime argument refusal"],
       "writes": [],
       "upgrade_recipe": ["keep both surfaces on the same core reader and configuration resolution", "keep endpoint selection out of MCP arguments", "test explicit empty configuration, default loopback and invalid configuration", "do not add surface-local freshness, unit conversion, calibration or caches", "preserve optional schema fields for existing MCP tools", "add only the exact recipe resource to signed-package inventory", "qualify the installed signed successor separately from a development readback"]
+    },
+    {
+      "id": "mercury-web-surface",
+      "source": ["internal/dashboard/mercury.go", "internal/dashboard/server.go", "internal/dashboard/ui.go", "internal/dashboard/ui/index.html", "internal/dashboard/ui/app.js", "cmd/sirsi/dashboard.go", "cmd/sirsi-menubar/main.go", "cmd/sirsi-gui/main_darwin.go"],
+      "tests": ["internal/dashboard/mercury_test.go", "scripts/test-mercury-consumer.js"],
+      "inputs": ["the same canonical Go Read DTO via GET /api/mercury", "shared Go card-edge geometry and formatted headline/rates", "local receive wall time plus monotonic elapsed time"],
+      "outputs": ["existing-console read-only black/emerald/gold hardware and cable scene", "distinct degraded read states, withheld aggregates and eligible partial directions", "source run/calibration/provenance details and owned refresh/cancellation"],
+      "writes": [],
+      "upgrade_recipe": ["preserve both console doors, strict script-src self and same-origin uncached external assets", "retain GET-only context cancellation and no browser endpoint override, proxy or control", "never recompute gain, rates, family or topology; use supplied Go geometry and formatting", "expire retained display claims with a local clock without making a network request from that clock", "qualify actual Go mixed-freshness wire and inert cancellation/late-response fixtures before visual or installed acceptance"]
+    },
+    {
+      "id": "mercury-native-surface",
+      "source": ["macapp/Sources/SirsiMenubar/MercuryMonitor.swift", "macapp/Sources/SirsiMenubar/MercuryWorkspaceView.swift", "macapp/Sources/SirsiMenubar/MercurySceneView.swift", "macapp/Sources/SirsiMenubar/MercuryPresentationView.swift"],
+      "tests": ["macapp/Tests/SirsiMenubarTests/MercuryWorkspaceTests.swift", "macapp/Tests/SirsiMenubarTests/MercuryParityTests.swift", "macapp/Tests/SirsiMenubarTests/MercurySceneTests.swift"],
+      "inputs": ["canonical sirsi mercury --json through the existing bounded captured runner", "same Go geometry/headline/source metadata and exact Go mixed-freshness wire fixture", "producer freshness evidence plus local monotonic elapsed time"],
+      "outputs": ["retained original vector hardware/cable scene, shared headline/run state and expandable metadata", "eligible partial individuals with unknown incomplete aggregates", "separately labelled Ra admission/lane and hardware transport receipts", "explicit Power Unknown because dashboard/v1 does not expose power"],
+      "writes": [],
+      "upgrade_recipe": ["use the canonical CLI and one visibility-bound SwiftUI task for manual and periodic reads", "refuse late superseded/cancelled completions and locally expire retained values/rates/motion", "never infer case ports, families, calibration, missing-peer rates or an aggregate", "retain Reduce Motion, unknown generic hardware, scrollable wide scene and explicit original narrow-design proof gap", "preserve separate Ra/transport scope and source-only versus installed/visual qualification boundaries", "run strict Release fixtures with actual Go-exported JSON; fixture rendering is explicit and never launches whole-app probes"]
     }
   ]
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/casebook"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/knowledge"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/mercury"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 )
@@ -23,8 +24,10 @@ import (
 // Config holds the dependencies for the dashboard server.
 // All data sources are nil-safe — the server degrades gracefully.
 type Config struct {
-	Port     int
-	NotifyDB *notify.Store
+	// MercuryFn supplies the same bounded read-only dashboard projection as CLI/native.
+	MercuryFn func(context.Context) mercury.Read
+	Port      int
+	NotifyDB  *notify.Store
 	// StatsFn returns the current system stats as JSON bytes.
 	// The menubar marshals its own StatsSnapshot; we pass it through.
 	StatsFn func() ([]byte, error)
@@ -174,6 +177,7 @@ func New(cfg Config) *Server {
 
 	// JSON API endpoints
 	mux.HandleFunc("/api/stats", s.apiStats)
+	mux.HandleFunc("/api/mercury", s.apiMercury)
 	mux.HandleFunc("/api/notifications", s.apiNotifications)
 	mux.HandleFunc("/api/stele", s.apiStele)
 	mux.HandleFunc("/api/events", s.apiEvents)

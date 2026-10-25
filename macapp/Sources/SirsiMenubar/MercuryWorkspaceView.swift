@@ -8,11 +8,9 @@ struct MercuryRefreshIdentity: Hashable {
     let request: UUID
 }
 
-// Mercury does not yet publish a dedicated `sirsi mercury status` contract.
-// This workspace reads only existing, canonical projections: Ra's lane ping
-// and admitted-machine registry, plus the host's shared transport receipt.
-// It presents those sources as separate evidence and never infers a Mercury
-// machine assignment, rail reservation, or negotiated rate.
+// Mercury's canonical Go dashboard read owns metrics and scene truth. The
+// adjacent Ra lane/admission and host transport receipts remain separate
+// evidence; none establishes a Mercury assignment or rail reservation.
 struct MercuryWorkspaceView: View {
     @ObservedObject var engine: SirsiEngine
     @StateObject private var monitor = MercuryMonitor()
@@ -59,7 +57,7 @@ struct MercuryWorkspaceView: View {
                     Text("Mercury workspace")
                         .sirsiFont(.title3, weight: .bold)
                         .foregroundStyle(Color.white)
-                    Text("Read-only view of published lane, admitted machines, and this Mac’s transport receipt.")
+                    Text("Mercury’s canonical snapshot, with separately labelled Ra admission and local transport receipts.")
                         .sirsiFont(.caption)
                         .foregroundStyle(PantheonTheme.mutedText)
                         .fixedSize(horizontal: false, vertical: true)
@@ -358,12 +356,12 @@ struct MercuryWorkspaceView: View {
     }
 
     private var railSection: some View {
-        sectionCard(title: "Rail state", subtitle: "No Mercury rail reading is available") {
+        sectionCard(title: "Rail admission", subtitle: "Reservation is separate from observed traffic") {
             HStack(alignment: .top, spacing: 9) {
                 Image(systemName: "point.3.connected.trianglepath.dotted")
                     .sirsiFont(.subheadline)
                     .foregroundStyle(PantheonTheme.gold)
-                Text("These readings do not show which rail Mercury uses or whether Mercury has rail traffic.")
+                Text("Dashboard link observations do not establish rail reservation or transport admission. Ra and local hardware receipts remain separately scoped.")
                     .sirsiFont(.subheadline)
                     .foregroundStyle(PantheonTheme.mutedText)
                     .fixedSize(horizontal: false, vertical: true)
