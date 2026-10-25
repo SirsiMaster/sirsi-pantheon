@@ -140,8 +140,14 @@ func ValidateTaskResumeRequest(r TaskResumeRequest) error {
 
 func taskResumeEligible(r taskResumeSnapshot, now time.Time) (int, error) {
 	attempts, err := strconv.Atoi(r[24].String)
-	if err != nil || attempts < MaxRetriesPerItem || attempts == int(^uint(0)>>1) {
-		return 0, errors.New("task resume: only exhausted original attempts qualify")
+	if err != nil || attempts < 0 || attempts == int(^uint(0)>>1) {
+		return 0, errors.New("task resume: valid incrementable original attempts required")
+	}
+	// An inactive blocked task can still have ordinary attempts left. Its
+	// corrected-cause attestation consumes the next attempt, never a reset or
+	// fabricated exhaustion. Other below-ceiling states use ordinary claims.
+	if attempts < MaxRetriesPerItem && r[3].String != "blocked" {
+		return 0, errors.New("task resume: below-ceiling original must be blocked")
 	}
 	if (r[3].String != "pending" && r[3].String != "blocked" && r[3].String != "in-progress") || r[6].String != "" {
 		return 0, errors.New("task resume: terminal/dependency state refuses")

@@ -17,8 +17,8 @@ func newTaskResumeCommand(resolve func() (routerstore.Store, error)) *cobra.Comm
 	var ttl time.Duration
 	cmd := &cobra.Command{
 		Use: "resume-claim <agent> <task-id>", Args: cobra.ExactArgs(2),
-		Short: "Inspect or explicitly resume one exhausted original with evidence, preserving history",
-		Long:  "Inspect by default. --apply issues ONE fresh normal lease using exact row-version CAS and cause-fixed evidence. Never resets attempts or marks DONE; use ordinary fenced task complete with the returned lease. Requires a compatible configured canonical service and this lane's fresh registered thread.",
+		Short: "Inspect or resume one inactive blocked or exhausted original with cause-fixed evidence",
+		Long:  "Inspect by default. --apply issues ONE fresh normal lease using exact row-version CAS and cause-fixed evidence. Inactive blocked originals may consume their next remaining ordinary attempt; the exhausted recovery path is retained. Never resets attempts or marks DONE; use ordinary fenced task complete with the returned lease. Requires a compatible configured canonical service and this lane's fresh registered thread.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			req := routerstore.TaskResumeRequest{Version: 1, Action: "inspect", Agent: args[0], TaskID: args[1]}
 			if apply {
