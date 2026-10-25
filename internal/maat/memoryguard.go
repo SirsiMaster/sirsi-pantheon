@@ -26,6 +26,39 @@ var memoryGuardSource string
 //go:embed memory.go
 var memoryStoreSource string
 
+// Local lifecycle reduction participates in semantic registry identity as
+// actual compiled source, separately from the unchanged active-incident guard.
+//
+//go:embed memory_intake.go
+var memoryIntakeSource string
+
+//go:embed memory_local_events.go
+var memoryLocalEventsSource string
+
+//go:embed memory_local_disposition.go
+var memoryLocalDispositionSource string
+
+//go:embed memory_liveness.go
+var memoryLivenessSource string
+
+//go:embed memory_receipts.go
+var memoryReceiptsSource string
+
+//go:embed diagnostic_resolution.go
+var memoryOwnerResolutionSource string
+
+//go:embed decisions.go
+var memoryDecisionJournalSource string
+
+func localLifecycleImplementationSHA() string {
+	h := sha256.New()
+	for _, source := range []string{memoryIntakeSource, memoryLocalEventsSource, memoryLocalDispositionSource, memoryLivenessSource, memoryReceiptsSource, memoryOwnerResolutionSource, memoryDecisionJournalSource} {
+		_, _ = h.Write([]byte(source))
+		_, _ = h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
 type memoryGuardInput struct {
 	Action   Scope
 	Incident Incident

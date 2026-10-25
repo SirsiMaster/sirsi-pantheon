@@ -43,6 +43,13 @@ type maatLivenessStore interface {
 	RetainPreflightReceipt(maat.PreflightReceipt) (maat.StoredPreflightReceipt, error)
 	PreflightLivenessWatch(maat.LivenessWatchManifest) (maat.PreflightReceipt, error)
 	BeginLivenessWatchAttempt(maat.LivenessWatchManifest, maat.PreflightReceipt) (maat.LivenessWatchAttempt, error)
+	RunLivenessWatchDirectAttempt(maat.LivenessWatchAttempt, func(maat.LivenessWatchManifest) (string, error), func(maat.LivenessWatchManifest) (maat.LivenessWatchObservation, error)) (maat.LivenessDirectResult, error)
+	ReadLivenessWatchCompletion(string) (maat.LivenessDirectResult, error)
+	ReconcileLivenessWatchCompletion(string) (maat.LivenessDirectResult, error)
+	RememberLivenessFailure(string) (maat.FailureIntakeReceipt, error)
+	ReconcileLivenessWatchData() error
+	CloseLivenessWatchBeforeInvocation(maat.LivenessWatchAttempt, func(maat.LivenessWatchManifest) (maat.LivenessWatchObservation, error)) (maat.LivenessDirectResult, error)
+
 	PendingLivenessWatchAttempt() (maat.LivenessWatchAttempt, error)
 	RecordLivenessWatchOutcome(maat.LivenessWatchAttempt, maat.LivenessWatchObservation, string) (maat.LivenessWatchOutcome, error)
 	BeginLivenessWatchProjection(maat.LivenessWatchAttempt, maat.LivenessWatchOutcome, maat.Decision) (maat.LivenessWatchProjectionDebt, error)
@@ -255,8 +262,19 @@ func observeLivenessWatchWithLocalInspector(
 		return maat.LivenessWatchObservation{}, errors.New("reviewed local watch identity does not match canonical engine and HOME")
 	}
 	local, err := inspect(ctx, manifest.ExecutablePath, manifest.WorkDirectory, nil)
+	if err := ctx.Err(); err != nil {
+		return maat.LivenessWatchObservation{}, err
+	}
 	if err != nil {
 		return maat.LivenessWatchObservation{}, fmt.Errorf("inspect exact local metadata watch: %w", err)
+	}
+	if local.Check == "local-watch" && local.State == "observed" && local.Concern {
+		if local.WatchPostcondition == "known-absent" && local.ConfigurationSHA256 == "" {
+			return maat.LivenessWatchObservation{UID: manifest.UID, Domain: manifest.Domain, Label: manifest.ManagedLabel, PlistPath: path, Postcondition: "known-absent"}, nil
+		}
+		if local.WatchPostcondition == "known-unloaded" && local.ConfigurationSHA256 == manifest.ExpectedPlistSHA256 {
+			return maat.LivenessWatchObservation{UID: manifest.UID, Domain: manifest.Domain, Label: manifest.ManagedLabel, PlistPath: path, PlistSHA256: local.ConfigurationSHA256, Postcondition: "known-unloaded"}, nil
+		}
 	}
 	if local.Check != "local-watch" || local.State != "observed" || local.Concern {
 		return maat.LivenessWatchObservation{}, fmt.Errorf("local metadata watch is not verified: %s", local.Detail)
@@ -266,7 +284,7 @@ func observeLivenessWatchWithLocalInspector(
 	}
 	return maat.LivenessWatchObservation{
 		UID: manifest.UID, Domain: manifest.Domain, Label: manifest.ManagedLabel,
-		PlistPath: path, PlistSHA256: local.ConfigurationSHA256, LaunchdLoaded: true,
+		PlistPath: path, PlistSHA256: local.ConfigurationSHA256, LaunchdLoaded: true, Postcondition: "exact",
 	}, nil
 }
 
@@ -388,6 +406,9 @@ func reobserveMaatLivenessAttempt() error {
 		return err
 	}
 	defer store.Close()
+	if err := store.ReconcileLivenessWatchData(); err != nil {
+		return fmt.Errorf("exact retained data-only reconciliation remains unverifiable; no installer replay: %w", err)
+	}
 	debts, err := store.PendingLivenessWatchProjectionDebts()
 	if err != nil {
 		return fmt.Errorf("inspect liveness-watch projection debt: %w", err)
@@ -402,35 +423,28 @@ func reobserveMaatLivenessAttempt() error {
 	if err != nil {
 		return err
 	}
-	observation, observationErr := maatRepairObserveLiveness(attempt.Manifest)
-	observationDetail := "exact managed watch remains unproven after the interrupted attempt"
-	if observationErr != nil {
-		observationDetail = observationErr.Error()
+	if attempt.CompletionProtocolVersion == 0 {
+		return recordUnknownLivenessCurrentFact(journal, attempt, "legacy completion has no direct invocation witness")
 	}
-	var installErr string
-	if observationErr != nil {
-		installErr = "re-observation: " + observationErr.Error()
+	execution, completionErr := store.ReconcileLivenessWatchCompletion(attempt.ID)
+	if completionErr != nil {
+		// A missing invocation marker can prove the installer never ran: the
+		// closed direct path cannot call it before that marker is durable.
+		execution, completionErr = store.CloseLivenessWatchBeforeInvocation(attempt, maatRepairObserveLiveness)
 	}
-	outcome, err := maat.NewLivenessWatchOutcome(attempt, observation, installErr)
+	if completionErr != nil {
+		return recordUnknownLivenessCurrentFact(journal, attempt, "exact retained completion unavailable; "+completionErr.Error())
+	}
+	intake, err := store.RememberLivenessFailure(attempt.ID)
 	if err != nil {
-		return fmt.Errorf("re-observation could not form a terminal outcome; do not replay installation: %w", err)
+		return fmt.Errorf("retained completion still requires exact data-only intake reconciliation: %w", err)
 	}
-	if outcome.Determination == "resolved" {
-		observationDetail = "exact managed plist and loaded launchd label were observed"
-	}
-	determination := "failed"
-	if outcome.Determination == "resolved" {
-		determination = "resolved"
-	}
-	decision, err := maat.BuildDiagnosticRepairDecision("sirsi maat repair liveness-watch re-observe", maat.DiagnosticRepair{
-		Check: maatRepairLivenessWatchCheck, Operation: "re-observe the exact prior liveness-watch attempt without replay",
-		Before: "incomplete attempt " + attempt.ID, After: observationDetail,
-		Determination: determination, Detail: "Attempt evidence was retained; any subsequent installation requires a new owner review and consent.",
-	})
+	outcome := execution.Outcome
+	decision, err := maat.LivenessCompletionDecision(execution)
 	if err != nil {
 		return err
 	}
-	decision.Evidence = fmt.Sprintf("maat-liveness-watch-attempt:%s:%s", attempt.ID, decision.Evidence)
+
 	debt, err := store.BeginLivenessWatchProjection(attempt, outcome, decision)
 	if err != nil {
 		return fmt.Errorf("re-observation found no durable projection intent; installation was not replayed: %w", err)
@@ -443,6 +457,11 @@ func reobserveMaatLivenessAttempt() error {
 	}
 	if err := store.MarkLivenessWatchProjectionReadBack(debt); err != nil {
 		return fmt.Errorf("Casebook append was read back but its Ma'at projection receipt remains pending; installation was not replayed: %w", err)
+	}
+	if intake.Disposition == "active-linked" {
+		if _, err := projectCurrentLivenessFailureMemory(store, journal); err != nil {
+			return err
+		}
 	}
 	return renderLivenessProjectionResult(attempt.ID, outcome, "re-observed attempt")
 }
@@ -468,6 +487,18 @@ func boundedLivenessObservationError(err error) string {
 }
 
 func reconcileMaatLivenessProjection(store maatLivenessStore, journal maat.DecisionJournal, debt maat.LivenessWatchProjectionDebt) error {
+	var remembered *maat.FailureIntakeReceipt
+	if debt.Attempt.CompletionProtocolVersion == 1 {
+		if _, err := store.ReconcileLivenessWatchCompletion(debt.Attempt.ID); err != nil {
+			return fmt.Errorf("historical completion remains unverifiable; no replay: %w", err)
+		}
+		intake, err := store.RememberLivenessFailure(debt.Attempt.ID)
+		if err != nil {
+			return fmt.Errorf("historical failure intake remains incomplete; no replay: %w", err)
+		}
+		remembered = &intake
+	}
+
 	if err := store.PersistLivenessWatchProjectionOutcome(debt); err != nil {
 		return fmt.Errorf("durable projection outcome could not be read back; debt retained and installation was not replayed: %w", err)
 	}
@@ -476,6 +507,12 @@ func reconcileMaatLivenessProjection(store maatLivenessStore, journal maat.Decis
 	}
 	if err := store.MarkLivenessWatchProjectionReadBack(debt); err != nil {
 		return fmt.Errorf("Casebook decision was read back but historical projection receipt remains pending; installation was not replayed: %w", err)
+	}
+
+	if remembered != nil && remembered.Disposition == "active-linked" {
+		if _, err := projectCurrentLivenessFailureMemory(store, journal); err != nil {
+			return err
+		}
 	}
 
 	// Historical mutation debt is now closed independently of present health.
@@ -647,48 +684,23 @@ func installMaatLivenessWatch() error {
 	if err := maatRepairRevalidateExecutable(currentManifest); err != nil {
 		return finishUnstartedLivenessAttempt(store, journal, attempt, currentManifest, err)
 	}
-	installMessage, installErr := maatRepairInstallLiveness(currentManifest)
-	observation, observationErr := maatRepairObserveLiveness(currentManifest)
-	postDescription := "exact local metadata schedule and loaded state observed after installation"
-	postOK := observationErr == nil && exactLivenessObservation(currentManifest, observation)
-	if observationErr != nil {
-		postDescription = "post-install local observation unavailable: " + observationErr.Error()
-	} else if !postOK {
-		postDescription = "post-install local observation differs from the exact reviewed schedule"
+	execution, err := store.RunLivenessWatchDirectAttempt(attempt, maatRepairInstallLiveness, maatRepairObserveLiveness)
+	if err != nil {
+		return fmt.Errorf("local invocation/completion is retained or unknown; inspect/reconcile without installer replay: %w", err)
 	}
-	installErrText := ""
-	if installErr != nil {
-		installErrText = installErr.Error()
+	intake, err := store.RememberLivenessFailure(attempt.ID)
+	if err != nil {
+		return fmt.Errorf("local completion is retained but required failure intake is incomplete; reconcile data only: %w", err)
 	}
-	if observationErr != nil {
-		installErrText = strings.TrimSpace(installErrText + "; exact post-install observation failed: " + observationErr.Error())
-		observation = maat.LivenessWatchObservation{}
-	}
-	storeOutcome, persistErr := maat.NewLivenessWatchOutcome(attempt, observation, installErrText)
-	if persistErr != nil {
-		return fmt.Errorf("liveness-watch installer may have changed the system but no terminal outcome could be formed; do not replay: %w", persistErr)
-	}
-	determination := "failed"
-	detail := "the exact managed watch observation or existing diagnostic postcondition did not pass"
-	if storeOutcome.Determination == "resolved" && postOK {
-		determination, detail = "resolved", installMessage
-	} else if installErr != nil {
-		detail = "bounded installer returned an error: " + installErr.Error()
-	} else if !postOK {
-		detail = postDescription
-	} else if observationErr != nil {
-		detail = observationErr.Error()
-	}
-	decision, recordErr := maat.BuildDiagnosticRepairDecision("sirsi maat repair liveness-watch", maat.DiagnosticRepair{
-		Check:     maatRepairLivenessWatchCheck,
-		Operation: "install the exact reviewed managed per-user liveness LaunchAgent from the canonical Sirsi executable",
-		Before:    maatRepairFindingDescription(firstFinding), After: postDescription, Determination: determination,
-		Detail: fmt.Sprintf("attempt %s; durable result %s; %s", attempt.ID, storeOutcome.Determination, detail),
-	})
+	storeOutcome := execution.Outcome
+	decision, recordErr := maat.LivenessCompletionDecision(execution)
 	if recordErr != nil {
 		return recordErr
 	}
-	decision.Evidence = fmt.Sprintf("maat-liveness-watch-attempt:%s:%s", attempt.ID, decision.Evidence)
+	determination := decision.Determination
+	postDescription := "retained exact local postcondition " + execution.Completion.Observation
+	detail := "retained invocation " + execution.Completion.Invocation + "; " + postDescription
+
 	debt, debtErr := store.BeginLivenessWatchProjection(attempt, storeOutcome, decision)
 	if debtErr != nil {
 		return fmt.Errorf("installer may have changed the system; terminal result could not be bound to projection debt; do not replay: %w", debtErr)
@@ -701,6 +713,11 @@ func installMaatLivenessWatch() error {
 	}
 	if err := store.MarkLivenessWatchProjectionReadBack(debt); err != nil {
 		return fmt.Errorf("Casebook decision is read back but projection receipt remains pending; inspect and reconcile without replay: %w", err)
+	}
+	if intake.Disposition == "active-linked" {
+		if _, err := projectCurrentLivenessFailureMemory(store, journal); err != nil {
+			return fmt.Errorf("failure intake is retained but its full prevention screen needs explicit reconciliation: %w", err)
+		}
 	}
 	decision = debt.Decision
 	result := &output.CommandResult{
@@ -721,25 +738,19 @@ func installMaatLivenessWatch() error {
 }
 
 func finishUnstartedLivenessAttempt(store maatLivenessStore, journal maat.DecisionJournal, attempt maat.LivenessWatchAttempt, manifest maat.LivenessWatchManifest, cause error) error {
-	observation, observeErr := maatRepairObserveLiveness(manifest)
-	installErr := "installer was not called: " + cause.Error()
-	if observeErr != nil {
-		installErr += "; current exact observation unavailable: " + observeErr.Error()
-		observation = maat.LivenessWatchObservation{}
-	}
-	outcome, err := maat.NewLivenessWatchOutcome(attempt, observation, installErr)
+	execution, err := store.CloseLivenessWatchBeforeInvocation(attempt, maatRepairObserveLiveness)
 	if err != nil {
-		return fmt.Errorf("%v; durable attempt remains incomplete for safe re-observation: %w", cause, err)
+		return fmt.Errorf("%v; exact non-invocation completion remains pending: %w", cause, err)
 	}
-	decision, journalErr := maat.BuildDiagnosticRepairDecision("sirsi maat repair liveness-watch", maat.DiagnosticRepair{
-		Check: maatRepairLivenessWatchCheck, Operation: "final consent recheck before liveness-watch installer",
-		Before: "durable attempt " + attempt.ID, After: "installer not called; action stopped before effects",
-		Determination: "failed", Detail: "attempt result " + outcome.Determination + "; " + cause.Error(),
-	})
+	if _, err := store.RememberLivenessFailure(attempt.ID); err != nil {
+		return fmt.Errorf("non-invocation completion requires data-only intake: %w", err)
+	}
+	outcome := execution.Outcome
+	decision, journalErr := maat.LivenessCompletionDecision(execution)
 	if journalErr != nil {
-		return fmt.Errorf("%v; stopped before installer; projection decision could not be built: %w", cause, journalErr)
+		return journalErr
 	}
-	decision.Evidence = fmt.Sprintf("maat-liveness-watch-attempt:%s:%s", attempt.ID, decision.Evidence)
+
 	debt, err := store.BeginLivenessWatchProjection(attempt, outcome, decision)
 	if err != nil {
 		return fmt.Errorf("%v; installer was not called and projection debt could not be retained: %w", cause, err)
@@ -762,4 +773,42 @@ func storeUUIDFromDefaultPath() string {
 		return ""
 	}
 	return status.StoreUUID
+}
+
+func projectCurrentLivenessFailureMemory(store maatLivenessStore, journal maat.DecisionJournal) (string, error) {
+	// The action manifest is deliberately re-observed only during a future
+	// authorized action. This is an exact-scope factual recurrence screen.
+	typed, ok := store.(interface {
+		Preflight(maat.Scope) (maat.PreflightReceipt, error)
+	})
+	if !ok {
+		return "", errors.New("Ma'at store cannot produce a complete recurrence screen")
+	}
+	receipt, err := typed.Preflight(maat.Scope{Component: "pantheon", Profile: "local-macos", Operation: "install-managed-liveness-watch"})
+	if err != nil {
+		return "", err
+	}
+	stored, err := store.RetainPreflightReceipt(receipt)
+	if err != nil {
+		return "", err
+	}
+	if err := maat.ProjectFailureMemoryPreflight(journal, stored); err != nil {
+		return "", err
+	}
+	return receipt.EvidenceReference()
+}
+
+func recordUnknownLivenessCurrentFact(journal maat.DecisionJournal, attempt maat.LivenessWatchAttempt, reason string) error {
+	observation, err := maatRepairObserveLiveness(attempt.Manifest)
+	state := "unverifiable"
+	if err == nil && exactLivenessObservation(attempt.Manifest, observation) {
+		state = "exact"
+	} else if err == nil {
+		state = "drifted"
+	}
+	decision := maat.Decision{Kind: "liveness-watch observation", Requester: "sirsi maat repair liveness-watch inspect", Resource: "liveness-watch", Assessed: "fresh read-only current fact; historical invocation remains unknown", Determination: state, Why: "No installer ran during this inspection. Historical action completion remains unresolved: " + boundedLivenessObservationError(errors.New(reason)), Evidence: "maat-liveness-watch-current:" + attempt.ID + ":" + time.Now().UTC().Format(time.RFC3339Nano)}
+	if appendErr := journal.Append(decision); appendErr != nil {
+		return fmt.Errorf("historical action remains unknown; current fact was not recorded: %w", appendErr)
+	}
+	return errors.New("Ma'at preserved the unknown historical action; a current observation is not permission to replay or lift its prevention")
 }

@@ -81,6 +81,7 @@ type Case struct {
 	SystemOne                    *maat.MaatVerdict               `json:"system_one,omitempty"`
 	SystemOneCalibration         *maat.CalibrationRecord         `json:"system_one_calibration,omitempty"`
 	FailureMemoryReceipt         *maat.PreflightReceiptReference `json:"failure_memory_receipt,omitempty"`
+	FailureMemoryIncidentKeys    *[]string                       `json:"failure_memory_incident_keys,omitempty"`
 }
 
 // Node and Edge form a deliberately small evidence graph. The dashboard can
@@ -278,10 +279,12 @@ func SearchHistory(journal *maat.FileDecisionJournal, query HistoryQuery) (Histo
 	kind := strings.ToLower(strings.TrimSpace(query.Kind))
 	text := strings.ToLower(strings.TrimSpace(query.Text))
 	status := Status(strings.ToLower(strings.TrimSpace(string(query.Status))))
+	// Bind continuation to the projection/filter semantics as well as operands.
+	// Older cursors cannot silently omit newly searchable incident links.
 	keyBytes, err := json.Marshal(struct {
-		Scope, Evidence, Kind, Text, Status string
-		Limit                               int
-	}{query.Scope, query.Evidence, kind, text, string(status), query.Limit})
+		ProjectionVersion, Scope, Evidence, Kind, Text, Status string
+		Limit                                                  int
+	}{"casebook-local-prevention-v1", query.Scope, query.Evidence, kind, text, string(status), query.Limit})
 	if err != nil {
 		return HistorySearchResult{}, err
 	}
@@ -391,13 +394,19 @@ func project(d maat.Decision) Case {
 		Time: d.Time, Host: d.Host, Kind: d.Kind, Category: classify(d),
 		Requester: d.Requester, Resource: d.Resource, Affected: d.Affected,
 		Determination: d.Determination, Assessed: d.Assessed, Why: d.Why, Evidence: d.Evidence,
-		SystemOne: d.SystemOne, SystemOneCalibration: d.SystemOneCalibration, FailureMemoryReceipt: d.FailureMemoryReceipt,
+		SystemOne: d.SystemOne, SystemOneCalibration: d.SystemOneCalibration, FailureMemoryReceipt: d.FailureMemoryReceipt, FailureMemoryIncidentKeys: d.FailureMemoryIncidentKeys,
 		Status: statusFor(determination), Priority: priorityFor(determination),
 	}
 	// A calibration is a completed historical comparison between an existing
 	// auto-pass and an independent outcome. A block can be urgent in the
 	// original screen's case; it is not an unresolved action on this receipt.
 	if d.SystemOneCalibration != nil {
+		c.Status = StatusResolved
+		c.Priority = PriorityNormal
+	}
+	// This closed receipt completes only the owner's recorded disposition.
+	// The original unhealthy screen and any future action remain independent.
+	if d.Kind == "local prevention owner disposition" && determination == "accepted_not_repaired" {
 		c.Status = StatusResolved
 		c.Priority = PriorityNormal
 	}
@@ -646,8 +655,15 @@ func matches(c Case, needle string) bool {
 		c.Time, c.Host, c.Kind, c.Category, c.Requester, c.Resource,
 		c.Affected, c.Determination, c.Assessed, c.Why, c.Evidence, c.Resolution,
 		c.VerifiedRepairEvidence, c.RepairOutcomeEvidence, c.PendingRepairAttemptEvidence, resolutionText(c.NextAction),
-		calibrationText(c.SystemOneCalibration),
+		calibrationText(c.SystemOneCalibration), failureMemoryIncidentText(c.FailureMemoryIncidentKeys),
 	}, "\n")), needle)
+}
+
+func failureMemoryIncidentText(keys *[]string) string {
+	if keys == nil {
+		return ""
+	}
+	return strings.Join(*keys, "\n")
 }
 
 func calibrationText(record *maat.CalibrationRecord) string {

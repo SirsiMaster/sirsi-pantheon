@@ -43,8 +43,19 @@ type Decision struct {
 	SystemOne *MaatVerdict `json:"system_one,omitempty"`
 	// SystemOneCalibration binds one recorded local auto-pass to a distinct
 	// independent outcome. It is audit evidence only, never a local grant.
-	SystemOneCalibration *CalibrationRecord         `json:"system_one_calibration,omitempty"`
-	FailureMemoryReceipt *PreflightReceiptReference `json:"failure_memory_receipt,omitempty"`
+	SystemOneCalibration      *CalibrationRecord         `json:"system_one_calibration,omitempty"`
+	FailureMemoryReceipt      *PreflightReceiptReference `json:"failure_memory_receipt,omitempty"`
+	FailureMemoryIncidentKeys *[]string                  `json:"failure_memory_incident_keys,omitempty"`
+}
+
+// A pointer preserves Decision's existing comparability while the optional
+// wire value remains an ordinary JSON array. It is read-model data only.
+func copyFailureMemoryIncidentKeys(keys []string) *[]string {
+	if len(keys) == 0 {
+		return nil
+	}
+	copy := append([]string(nil), keys...)
+	return &copy
 }
 
 // DecisionJournal persists the local decision projection. Implementations may
@@ -76,16 +87,17 @@ func ProjectFailureMemoryPreflight(j DecisionJournal, stored StoredPreflightRece
 	}
 	reference := stored.Reference()
 	return j.Append(Decision{
-		FailureMemoryReceipt: &reference,
-		Time:                 receipt.EvaluatedAtUTC.UTC().Format(time.RFC3339Nano),
-		Kind:                 "failure memory preflight",
-		Requester:            "maat",
-		Resource:             receipt.Action.Component,
-		Assessed:             receipt.Action.Operation,
-		Affected:             receipt.Action.Profile,
-		Determination:        string(receipt.Decision),
-		Why:                  why,
-		Evidence:             evidence,
+		FailureMemoryReceipt:      &reference,
+		FailureMemoryIncidentKeys: copyFailureMemoryIncidentKeys(receipt.IncidentKeys),
+		Time:                      receipt.EvaluatedAtUTC.UTC().Format(time.RFC3339Nano),
+		Kind:                      "failure memory preflight",
+		Requester:                 "maat",
+		Resource:                  receipt.Action.Component,
+		Assessed:                  receipt.Action.Operation,
+		Affected:                  receipt.Action.Profile,
+		Determination:             string(receipt.Decision),
+		Why:                       why,
+		Evidence:                  evidence,
 	})
 }
 
@@ -641,6 +653,18 @@ func validateDecision(decision Decision) error {
 	}
 	if len(decision.OriginEvidence) > 512 || len(decision.ResolutionFor) > 512 {
 		return fmt.Errorf("maat decision journal: resolution evidence exceeds bounded record size")
+	}
+	if keys := decision.FailureMemoryIncidentKeys; keys != nil {
+		if decision.FailureMemoryReceipt == nil {
+			return fmt.Errorf("maat decision journal: incident links require retained receipt metadata")
+		}
+		previousKey := ""
+		for _, key := range *keys {
+			if !validDigest(key) || key <= previousKey {
+				return fmt.Errorf("maat decision journal: invalid or duplicate failure memory incident link")
+			}
+			previousKey = key
+		}
 	}
 	if reference := decision.FailureMemoryReceipt; reference != nil {
 		if decision.Kind != "failure memory preflight" || reference.validate() != nil || decision.Evidence != reference.EvidenceReference() || decision.Resource != reference.Action.Component || decision.Affected != reference.Action.Profile || decision.Assessed != reference.Action.Operation {

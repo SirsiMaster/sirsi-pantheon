@@ -2529,6 +2529,14 @@ private struct MaatCaseDetailView: View {
                     }
                     if entry.kind == "failure memory preflight" {
                         MaatRetainedPreflightDetail(model: operations.failureMemoryReceipts, entry: entry)
+                        MaatLocalPreventionCollection(model: operations.localPreventions, receiptReads: operations.failureMemoryReceipts, entry: entry) { fresh in
+                            AnyView(MaatCaseDetailView(engine: engine, operations: operations, entry: fresh))
+                        }
+                    }
+                    if entry.systemOne?.findings.contains(where: { $0.repairID == "liveness-watch" }) == true {
+                        MaatLocalPreventionEntry(model: operations.localPreventions, entry: entry) { fresh in
+                            AnyView(MaatCaseDetailView(engine: engine, operations: operations, entry: fresh))
+                        }
                     }
                     if entry.nextAction?.kind == "maat_repair", entry.nextAction?.actionID == "liveness-watch" {
                         failureMemorySetup
@@ -3748,11 +3756,12 @@ struct MaatCase: Decodable, Identifiable {
 	let systemOne: MaatSystemOneVerdict?
 	let systemOneCalibration: MaatSystemOneCalibration?
     let failureMemoryReceipt: MaatPreflightReceiptReference?
+    let failureMemoryIncidentKeys: [String]
 
     init(id: String, time: String, kind: String, category: String, status: String,
          priority: MaatCasePriority, requester: String, resource: String,
          affected: String, determination: String, assessed: String, why: String,
-         evidence: String, resolution: String = "", verifiedRepairEvidence: String = "", repairOutcomeEvidence: String = "", pendingRepairAttemptEvidence: String = "", nextAction: MaatCaseNextAction? = nil, systemOne: MaatSystemOneVerdict? = nil, systemOneCalibration: MaatSystemOneCalibration? = nil, failureMemoryReceipt: MaatPreflightReceiptReference? = nil) {
+         evidence: String, resolution: String = "", verifiedRepairEvidence: String = "", repairOutcomeEvidence: String = "", pendingRepairAttemptEvidence: String = "", nextAction: MaatCaseNextAction? = nil, systemOne: MaatSystemOneVerdict? = nil, systemOneCalibration: MaatSystemOneCalibration? = nil, failureMemoryReceipt: MaatPreflightReceiptReference? = nil, failureMemoryIncidentKeys: [String] = []) {
         self.id = id
         self.time = time
         self.kind = kind
@@ -3774,6 +3783,7 @@ struct MaatCase: Decodable, Identifiable {
 		self.systemOne = systemOne
 		self.systemOneCalibration = systemOneCalibration
         self.failureMemoryReceipt = failureMemoryReceipt
+        self.failureMemoryIncidentKeys = failureMemoryIncidentKeys
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -3786,6 +3796,7 @@ struct MaatCase: Decodable, Identifiable {
 		case systemOne = "system_one"
 		case systemOneCalibration = "system_one_calibration"
         case failureMemoryReceipt = "failure_memory_receipt"
+        case failureMemoryIncidentKeys = "failure_memory_incident_keys"
     }
 
     init(from decoder: Decoder) throws {
@@ -3811,6 +3822,7 @@ struct MaatCase: Decodable, Identifiable {
 		systemOne = try values.decodeIfPresent(MaatSystemOneVerdict.self, forKey: .systemOne)
 		systemOneCalibration = try values.decodeIfPresent(MaatSystemOneCalibration.self, forKey: .systemOneCalibration)
         failureMemoryReceipt = try values.decodeIfPresent(MaatPreflightReceiptReference.self, forKey: .failureMemoryReceipt)
+        failureMemoryIncidentKeys = try values.decodeIfPresent([String].self, forKey: .failureMemoryIncidentKeys) ?? []
     }
 
     var searchText: String {
@@ -3923,10 +3935,12 @@ struct MaatSystemOneFinding: Decodable, Identifiable {
     let claim: String
     let evidence: String
     let fixHint: String
+    let repairID: String
 
     enum CodingKeys: String, CodingKey {
         case id, severity, category, file, line, claim, evidence
         case fixHint = "fix_hint"
+        case repairID = "repair_id"
     }
 
     init(from decoder: Decoder) throws {
@@ -3942,6 +3956,7 @@ struct MaatSystemOneFinding: Decodable, Identifiable {
         claim = try values.decodeIfPresent(String.self, forKey: .claim) ?? "No claim was supplied."
         evidence = try values.decodeIfPresent(String.self, forKey: .evidence) ?? ""
         fixHint = try values.decodeIfPresent(String.self, forKey: .fixHint) ?? ""
+        repairID = try values.decodeIfPresent(String.self, forKey: .repairID) ?? ""
     }
 
     var location: String {

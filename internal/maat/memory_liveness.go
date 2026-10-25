@@ -112,13 +112,14 @@ func (s *Store) PreflightLivenessWatch(manifest LivenessWatchManifest) (Prefligh
 }
 
 type LivenessWatchAttempt struct {
-	Schema                 string                `json:"schema"`
-	ID                     string                `json:"id"`
-	Manifest               LivenessWatchManifest `json:"manifest"`
-	ActionManifestSHA256   string                `json:"action_manifest_sha256"`
-	PreflightReceiptSHA256 string                `json:"preflight_receipt_sha256"`
-	RegistrySnapshotSHA256 string                `json:"registry_snapshot_sha256"`
-	StartedAtUTC           time.Time             `json:"started_at_utc"`
+	Schema                    string                `json:"schema"`
+	ID                        string                `json:"id"`
+	Manifest                  LivenessWatchManifest `json:"manifest"`
+	ActionManifestSHA256      string                `json:"action_manifest_sha256"`
+	PreflightReceiptSHA256    string                `json:"preflight_receipt_sha256"`
+	RegistrySnapshotSHA256    string                `json:"registry_snapshot_sha256"`
+	StartedAtUTC              time.Time             `json:"started_at_utc"`
+	CompletionProtocolVersion int                   `json:"completion_protocol_version,omitempty"`
 }
 
 type LivenessWatchObservation struct {
@@ -128,6 +129,7 @@ type LivenessWatchObservation struct {
 	PlistPath     string `json:"plist_path"`
 	PlistSHA256   string `json:"plist_sha256"`
 	LaunchdLoaded bool   `json:"launchd_loaded"`
+	Postcondition string `json:"postcondition,omitempty"`
 }
 
 type LivenessWatchOutcome struct {
@@ -215,7 +217,7 @@ func (s *Store) BeginLivenessWatchAttempt(manifest LivenessWatchManifest, receip
 	attempt := LivenessWatchAttempt{
 		Schema: MemorySchema, ID: id, Manifest: manifest, ActionManifestSHA256: digest,
 		PreflightReceiptSHA256: receiptDigest, RegistrySnapshotSHA256: receipt.RegistrySnapshotSHA256,
-		StartedAtUTC: time.Now().UTC(),
+		StartedAtUTC: time.Now().UTC(), CompletionProtocolVersion: 1,
 	}
 	data, err := json.Marshal(attempt)
 	if err != nil {
@@ -241,6 +243,10 @@ func (s *Store) pendingLivenessWatchAttemptLocked() (LivenessWatchAttempt, error
 	if _, err := s.verifyWriteJournal(); err != nil {
 		return LivenessWatchAttempt{}, fmt.Errorf("maat memory: attempt history is unverifiable: %w", err)
 	}
+	return s.pendingLivenessWatchAttemptRowsLocked()
+}
+
+func (s *Store) pendingLivenessWatchAttemptRowsLocked() (LivenessWatchAttempt, error) {
 	names, err := readDirectoryNames(s.attemptsFD)
 	if err != nil {
 		return LivenessWatchAttempt{}, err
@@ -277,11 +283,16 @@ func (s *Store) pendingLivenessWatchAttemptLocked() (LivenessWatchAttempt, error
 				return LivenessWatchAttempt{}, errors.New("maat memory: invalid liveness-watch outcome record")
 			}
 			outcomes[id] = outcome
+		case localAttemptLeaf(name), localDispositionAttemptLeaf(name):
+			// Closed versioned local records are validated against started rows below.
 		case strings.HasSuffix(name, ".projection.json"), strings.HasSuffix(name, ".projection-receipt.json"):
 			// Projection records are validated by the projection reader below.
 		default:
 			return LivenessWatchAttempt{}, errors.New("maat memory: unrecognized liveness-watch attempt record")
 		}
+	}
+	if err := s.validateLocalAttemptNamespaceLocked(names, started, outcomes); err != nil {
+		return LivenessWatchAttempt{}, err
 	}
 	var pending *LivenessWatchAttempt
 	for id, attempt := range started {
@@ -289,7 +300,17 @@ func (s *Store) pendingLivenessWatchAttemptLocked() (LivenessWatchAttempt, error
 			if err := validateLivenessOutcome(outcome, attempt); err != nil {
 				return LivenessWatchAttempt{}, err
 			}
-			continue
+			settled := attempt.CompletionProtocolVersion == 0 && outcome.Determination == "resolved"
+			if attempt.CompletionProtocolVersion == 1 {
+				var err error
+				settled, err = s.localAttemptSettledLocked(attempt)
+				if err != nil {
+					return LivenessWatchAttempt{}, err
+				}
+			}
+			if settled {
+				continue
+			}
 		}
 		if _, ok := started[id]; !ok {
 			return LivenessWatchAttempt{}, errors.New("maat memory: outcome has no matching attempt")
@@ -400,6 +421,9 @@ func (s *Store) pendingLivenessWatchProjectionsLocked() ([]LivenessWatchProjecti
 	}
 	names, err := readDirectoryNames(s.attemptsFD)
 	if err != nil {
+		return nil, err
+	}
+	if _, err := s.pendingLivenessWatchAttemptRowsLocked(); err != nil && !errors.Is(err, ErrNoIncompleteLivenessWatchAttempt) {
 		return nil, err
 	}
 	debts := make(map[string]LivenessWatchProjectionDebt)
@@ -598,7 +622,7 @@ func validateLivenessAttempt(attempt LivenessWatchAttempt, id, storeUUID string)
 	digest, err := attempt.Manifest.Digest()
 	if err != nil || attempt.Schema != MemorySchema || attempt.ID != id || attempt.Manifest.StoreUUID != storeUUID ||
 		!validDigest(digest) || digest != attempt.ActionManifestSHA256 || !validDigest(attempt.PreflightReceiptSHA256) ||
-		!validDigest(attempt.RegistrySnapshotSHA256) || attempt.StartedAtUTC.IsZero() {
+		!validDigest(attempt.RegistrySnapshotSHA256) || attempt.StartedAtUTC.IsZero() || (attempt.CompletionProtocolVersion != 0 && attempt.CompletionProtocolVersion != 1) {
 		return errors.New("maat memory: invalid liveness-watch attempt identity")
 	}
 	return nil

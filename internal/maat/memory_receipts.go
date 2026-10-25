@@ -196,12 +196,19 @@ func (s *Store) preflightReceiptReadLocked(digest string) (PreflightReceiptRead,
 }
 
 func (s *Store) readPreflightReceiptLocked(digest string) (PreflightReceipt, error) {
-	if !validDigest(digest) {
-		return PreflightReceipt{}, errors.New("maat memory: invalid receipt digest")
-	}
 	if _, err := s.verifyWriteJournal(); err != nil {
 		return PreflightReceipt{}, err
 	}
+	return s.readPreflightReceiptObjectLocked(digest)
+}
+
+// Caller has validated the full WAL, or exactly one known prepared local
+// reconciliation target; this helper never relaxes the object's own custody.
+func (s *Store) readPreflightReceiptObjectLocked(digest string) (PreflightReceipt, error) {
+	if !validDigest(digest) {
+		return PreflightReceipt{}, errors.New("maat memory: invalid receipt digest")
+	}
+
 	data, err := readExact(s.evidenceFD, digest)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

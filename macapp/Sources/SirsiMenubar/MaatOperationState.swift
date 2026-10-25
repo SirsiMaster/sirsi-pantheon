@@ -248,6 +248,7 @@ enum MaatOperationPreflight {
 @MainActor
 final class MaatCaseOperationStore: ObservableObject {
     let failureMemoryReceipts = MaatPreflightReceiptReadStore()
+    let localPreventions = MaatLocalPreventionModel()
     @Published private(set) var records: [MaatOperationKey: MaatOperationRecord] = [:]
     private var historyReads: [MaatOperationKey: (generation: UUID, continuation: MaatExactHistoryContinuation)] = [:]
 
