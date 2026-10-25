@@ -1528,7 +1528,7 @@ struct MaatKnownFailureProposalsView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Decision casebook")
                 .sirsiFont(.title3, weight: .bold)
-            Text(summaryDetail(summary, history: casebook.history))
+            Text(Self.summaryDetail(summary, history: history))
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
             if let history, history.coverage == "partial" {
@@ -1558,7 +1558,7 @@ struct MaatKnownFailureProposalsView: View {
         .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
     }
 
-    private func summaryDetail(_ summary: MaatCasebookSummary, history: MaatHistoryWindow?) -> String {
+    static func summaryDetail(_ summary: MaatCasebookSummary, history: MaatHistoryWindow?) -> String {
         guard summary.total > 0 else {
             return history?.coverage == "partial"
                 ? "No matches in this bounded scan chunk; history remains incomplete."

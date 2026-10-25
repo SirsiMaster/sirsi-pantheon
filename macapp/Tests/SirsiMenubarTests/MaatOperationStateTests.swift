@@ -88,6 +88,27 @@ final class MaatOperationStateTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testCasebookSummaryDetailUsesOptionalHistoryArgument() {
+        let summary = MaatCasebookSummary(total: 0, open: 0, urgent: 0, high: 0, resolved: 0)
+        XCTAssertEqual(
+            MaatCasebookView.summaryDetail(summary, history: nil),
+            "No decisions match this page"
+        )
+
+        let partialHistory = MaatHistoryWindow(
+            scope: "all", queryID: "query:bounded", snapshot: "sha256:bounded", returned: 0,
+            candidateMatches: 0, countScope: "query", evidenceMatches: 0,
+            evidenceMatchesComplete: true, candidateMatchesComplete: false, pageSize: 50,
+            coverage: "partial", hasMore: true, hasMoreKnown: true, nextCursor: "cursor:next",
+            totalComplete: false, total: nil, scannedRecords: 8, scannedBytes: 4096
+        )
+        XCTAssertEqual(
+            MaatCasebookView.summaryDetail(summary, history: partialHistory),
+            "No matches in this bounded scan chunk; history remains incomplete."
+        )
+    }
+
     func testLivenessFailureMemoryControlsUseOnlyClosedConfirmedMaAtActions() {
         XCTAssertEqual(
             maatCasebookFailureMemoryArguments(.initialize),
