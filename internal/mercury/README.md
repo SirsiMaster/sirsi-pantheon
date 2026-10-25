@@ -1,17 +1,20 @@
 # Mercury read-only consumer
 
-`Reader` is the shared read path for CLI and MCP. It consumes Mercury's
+`Reader` is the shared read path for CLI, MCP, the existing web console and
+native Mercury workspace. It consumes Mercury's
 versioned dashboard v1 snapshot and projects one `Read` DTO; consumers should
-render that DTO rather than maintain separate connection, freshness, or metric
-state. This package never starts, stops, or configures a Mercury run.
+render that DTO rather than sample or recompute producer metrics. Display-time
+expiry may only withhold a previously eligible value, never promote one or
+complete an aggregate. This package never starts, stops, or configures a run.
 
 Configuration comes from `SIRSI_MERCURY_DASHBOARD_URL`. If the variable is
 unset, `NewConfigured` uses the fixed local endpoint
 `http://127.0.0.1:8099/api/v1/dashboard`. If it is explicitly empty, the reader
 is unconfigured and makes no request. Explicit endpoints must use the dashboard
 v1 path and pass the same private-address policy. There is no discovery or
-public endpoint fallback. The native app's separate PR1190 `/api` hardware-
-monitor contract is not changed by this Go client.
+public endpoint fallback. Native reads `sirsi mercury --json`; the web console
+uses the same reader through GET `/api/mercury`. Native Ra/admission and hardware
+transport sections remain separately labelled evidence, not Mercury samples.
 
 The reader performs GET only, rejects redirects, disables environment proxies
 and keep-alives, revalidates every resolved address at dial time, and bounds a
@@ -35,3 +38,12 @@ should use their provided values and labels; they must not independently infer
 units, gain, topology, hardware family, or freshness. `Client.HTTP` and `Client.Now`
 are injectable for deterministic tests; production clients use the bounded
 private transport above.
+
+Web/native source now renders the retained hardware/card-edge scene and
+headline, plus source run/calibration/provenance detail. Each display expires
+retained claims using producer timestamps and local monotonic elapsed time;
+that clock never fetches data. Partial reads keep individually eligible rates
+while incomplete aggregates stay unknown. Native manual/periodic reads share
+one visibility-bound task, and the web cancels only its own fetch on navigation.
+This restored source still requires independent fixture/visual/installed
+qualification; compilation or a CLI read alone does not close original parity.

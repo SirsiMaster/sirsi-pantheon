@@ -240,3 +240,222 @@ Git publication: pending; managed session denied `.git/FETCH_HEAD` writes.
 These are publication blockers, not a requirement for renewed owner approval.
 A writable publication lane must preserve this path, publish through Git/CI and
 independent review, update existing human indexes, and record stable mirror ids.
+
+## G02 retained preflight source checkpoint (2026-10-25)
+
+The local implementation now retains the complete compact `json.Marshal(PreflightReceipt)`
+bytes in the existing governed evidence namespace before confirmed Casebook projection
+or managed-watch attempt admission. `StoredPreflightReceipt` is an opaque readback
+handle; a loose receipt or a hash-only Casebook row cannot substitute for custody.
+The existing hash reference remains unchanged; new rows additionally carry typed
+receipt/action/registry/scope/store-binding metadata.
+
+New receipts append `registry_snapshot_version:2`. Its semantic stream includes
+the schema, closed guard implementation identity, sorted verified incident and
+transition bodies and referenced proof identities. Receipt, attempt and unrelated
+evidence bookkeeping do not self-invalidate it. Every operation still validates
+the full WAL and committed targets; unresolved prepared writes still refuse.
+Admission revalidates the current manifest, exact retained receipt and semantic
+snapshot under the existing exclusive lock. Legacy receipt bytes stay legacy.
+
+`maat failure-memory receipt --sha256 <digest> --json` opens the existing bound
+default store. Optional `--store` is an existing-only private legacy root, never
+an initialization/adoption or authority route. Unconfirmed preflight also uses
+existing-only opening. Historical reads return the complete receipt, store
+binding, read time, `freshness:historical`, registry relation and
+`action_authorized:false`; neither an unchanged registry nor a historical pass
+is current host health or new consent. Missing historical bytes remain missing.
+
+Native Casebook's selected-memory detail uses fixed canonical-engine arguments,
+checks the captured reference and binding, renders the original guards, checks,
+incidents and recovery text, and retains its previous detail on failed or
+cancelled reads. Recovery prose is never an executable command. The read model
+is owned by the existing engine operation lifetime across navigation.
+
+This is source only, pending independent review and Main's native qualification.
+G01 direct failure intake and explicit accepted-not-repaired local disposition
+continue separately under the revised owner-disposition contract. This checkpoint
+does not introduce their trust/lifecycle semantics, waive unknown action debt,
+claim other operation rows or surfaces, or establish installed/release proof.
+
+### Prepared receipt discovery before a Casebook projection (G02 follow-through)
+
+The existing `maat repair liveness-watch --inspect-failure-memory --json`
+route opens initialized custody without creating a store or opening a decision
+journal. Its optional `prepared_preflight` contains the complete historical
+reader JSON and a canonical `sirsi.maat.prepared-preflight-receipt.v1` target.
+Discovery verifies complete canonical v2 receipt bytes, their digest and exact
+prepared intent, the remaining WAL and committed targets, and current store
+device/inode/UUID. No prior preflight Casebook row or manually recovered digest
+is required. Unrelated, missing, truncated or changed debt stays unavailable.
+
+The ordinary native `MaatWorkspaceView` root now always mounts a local memory
+entry above its content, outside all Casebook/loading/error branches. Its
+"Inspect local memory" button exists before any model result, retained detail
+or message; it calls the existing inspector through the engine-owned recovery
+model. No `MaatCase` is needed, including when the Casebook is completely empty
+or unavailable. The existing liveness detail may also reuse the same model.
+The root displays captured history without inventing a receipt row. Review
+does not write. Separate
+confirmation forwards its captured canonical target through the fixed receipt
+command with `--recover --confirm --prepared-target <base64-target>`; this is
+bounded metadata, never imported receipt bytes or a selected filesystem path.
+The engine rechecks every target dimension under its existing exclusive store
+lock and delegates to historical recovery. Only the missing exact commit may
+be completed; no Casebook projection, attempt, installation, initialization or
+fresh assessment is synthesized. A repeated exact completed recovery verifies
+the same history without rewriting it.
+
+Native recovery owns and joins its bounded canonical read, consumes each
+confirmation once, preserves historical detail after failure/cancellation,
+and invalidates consent on new inspection. Success refreshes memory status;
+ordinary fresh assessment and new action consent remain required. Authored
+fixtures cover the real writer's first-retention interruption, reopen/discovery,
+actual CLI flag wiring and native discovery/confirmation. The root follow-up
+fixtures obtain the real workspace body/frame, invoke the callbacks used by
+its Inspect and confirmed recovery buttons, and require same-entry inspection
+refresh on success with no `MaatCase`. They cover failed/canceled recovery and
+engine-owned remount retention. These are typed production-entry fixtures, not
+AX or visible-window proof. Main's external normal-window inspection remains
+separate. The f0e component qualification does not prove its missing root route:
+that route was absent until this successor. This child is source-only pending
+independent review and Main qualification. The retained
+855 positive receipt is baseline evidence, not child execution or installed
+proof; other operation integrations and full eight-row acceptance remain open.
+
+### Exact G02 receipt interruption recovery and leaf custody
+
+An issuance-bound retry first completes only its own exact prepared receipt tuple
+under the store lock and existing WAL rules. Every other intent/committed target
+must verify. Only then may ordinary fresh current reassessment return a projection
+handle; closing an old persistence debt does not refresh its time or eligibility.
+
+The existing receipt reader also offers explicit `--recover --confirm` for a
+complete retained canonical v2 target and its exact prepared record. It accepts
+only a digest, never caller JSON or a path outside the existing selected store.
+Missing, truncated, substituted or unrelated prepared data remains refused.
+Recovery returns the historical envelope with `action_authorized:false`, creates
+no local issuance, appends no Casebook decision and starts no action. Native
+selected-memory detail offers this same separately confirmed data-only control;
+inspection and failures preserve the original case and prior detail.
+
+Shared opened-object reads require current-EUID ownership and private leaf modes
+(`mode & 0077 == 0`) as well as no-follow, regular type, single link and bounds.
+Readback rechecks private ownership and its stability. Matching bytes cannot
+adopt0644/0660 or foreign-owned receipt/WAL targets, and no read repairs modes.
+This corrective source remains unqualified until Main's bounded execution and
+independent review; previous parent fixture passes do not waive either finding.
+
+
+## Local managed-watch intake and owner disposition (G01 source candidate)
+
+The closed producer `pantheon.local-managed-watch/v1` wraps the existing confirmed
+managed-watch install operation. Its durable invocation claim precedes the sole
+installer callback. A retained canonical completion binds initialized store UUID,
+actor/target, attempt, manifest, preflight and outcome. Only returned-success plus
+an authoritative exact-target `known-absent` or `known-unloaded` observation enters
+local failure memory. Errors, cancelled or unverifiable observations, legacy rows,
+re-observation and missing completion bodies do not establish this eligible failure.
+A claimed action with no witness remains pending and cannot replay the installer.
+
+`Incident.Key` remains `FailureSignature.Digest`. The first introduction remains
+immutable. Local owner disposition and later verified recurrence append closed,
+predecessor/body-bound events in the existing transitions namespace, with one
+child per predecessor. A recurrence after retirement reactivates the same stable
+incident key; a prior owner conclusion cannot close the new occurrence. Foreign
+scope, SNE identity, unsupported guards and unknown write/action debt are unchanged.
+No vendor resource, external key or producer signing gate is introduced.
+
+The owner may choose **accept-only** (retain prevention) or explicitly
+**retire-local-prevention** for the exact reviewed head/body, without pretending to
+repair the host. Both record “Accepted — not repaired.” The latter requires no
+unresolved action/intake/projection/disposition debt and does not waive any normal
+installer authorization. Bare Casebook acceptance never performs this transition.
+Health stays `historical-known-unhealthy; current-health-unobserved` until a distinct
+fresh observation. Retiring one family does not waive another exact-scope blocker.
+
+Native Casebook exposes the originating full preflight, occurrence and history,
+owner effect/conclusion preview and confirmation, cancellation, retained pending
+recovery and a fresh read-only local observation linked back to the existing
+controlled resolver. Commands are the fixed canonical engine routes
+`maat failure-memory failure`, `disposition preview/commit/pending/reconcile`,
+fixed-scope `preflight`, and `liveness-watch run --local`. No arbitrary store,
+raw completion import, shell guidance, local approved flag or automatic heal is
+accepted. The engine-owned operation model retains state across navigation and
+checks generation plus captured plan again at the actual launch fence.
+
+Owner disposition persists an exact intent, private proof, journal review and
+acceptance with readback, optional event, distinct projection and completion.
+Interrupted data-only reconciliation uses those retained bytes and times; it
+never invokes installation or creates new consent. Missing intent/witness bodies,
+unrelated WAL debt or substituted bytes remain explicit unverifiable conditions.
+Historical completion is independent of current health and later occurrences.
+The separate closed disposition receipt may display complete without discharging
+the original unhealthy screen or granting future action.
+
+These are source changes, not a claim of installed or runtime qualification.
+Main owns exact-source positive/refusal/race/native qualification. Existing G02
+retention qualification remains separately bound; its pre-row recovery follow-up
+and G03 binary adaptation have separate owners. All other seven operational rows,
+all remaining frontend/repair obligations and the full original Ma'at goal remain
+open. No service, model, installer or real user archive/journal ran during authoring.
+
+### Binary-drift claim ownership continuation (2026-10-25)
+
+The existing confirmed binary-drift action binds the Store attempt to the exact
+operation-wide journal claim only after the claim callback returns the expected
+case-bound evidence. Ma'at retains that fact as a create-only digest-named leaf
+binding the attempt, case evidence, claim evidence, full preflight receipt,
+action manifest and registry snapshot. The Store lock is acquired before the
+journal mutation lock; the callback must not re-enter Store. A refused or
+mismatched callback retains local `not_invoked` evidence without claim ownership
+and cannot produce a global origin-terminal row. Reconciliation remains
+data-only: owned pre-invocation and terminal projection debt may be completed,
+but unknown invocation and legacy claims remain unresolved and are never
+replayed. Equal case evidence and audit text do not establish claim ownership.
+This source correction is unqualified; raw self-update and commercial update or
+installer routes remain open.
+
+
+
+## G03 binary-drift O3/O8 source checkpoint (2026-10-25)
+
+The existing confirmed Homebrew-only `maat repair binary-drift --confirm`
+command binds the reviewed preview, exact System One evidence, updater and
+ordered targets, self file identity and full running/stamped `version.Info`
+including the router migration-derived schema ceiling, authorized UID, and
+observed live-schema compatibility in the retained v2 manifest. The default
+schema observer uses that complete runtime identity. Structural validation and
+digesting remain usable for historical records; the two-minute admission
+freshness rule applies only before a new preflight/attempt/invocation.
+
+Admission reads back the complete retained preflight receipt and rechecks the
+closed guard registry plus exact action under the existing Store lock. Store
+lock precedes the existing per-screen atomic journal claim callback; the
+callback does not reenter Store. The typed receipt remains only on the canonical
+failure-memory preflight row and its exact reference remains on the Store
+attempt. Claim receipt/action/registry hashes are bounded correlation context,
+not authority. New attempt records identify the invocation protocol. After the
+final full manifest/schema/target recheck, a typed invocation marker is durably
+written and read back immediately before the single existing updater call. A
+known pre-invocation gap can be reconciled to a `not_invoked` fact; a retained
+invocation marker without terminal completion, and all legacy unmarked attempts,
+remain unresolved and prohibit replay.
+
+Terminal outcomes are exact updater-return plus fresh postcheck facts. The
+existing digest-named projection intent, idempotent journal append, exact
+readback and retained readback receipt can be completed by
+`maat repair binary-drift --reconcile`, which has no updater path. It also
+reconstructs the projection deterministically when the outcome is durable but
+projection intent is absent. A projection receipt filename is excluded before
+projection-debt parsing. No current host observation can synthesize a historical
+terminal outcome, and projection debt never re-executes the updater.
+
+Authored source fixtures cover real FileDecisionJournal admission, freshness
+separation, claim refusal and pre-invocation reconciliation, invocation-unknown
+no-replay, projection/readback debt and no-updater reconciliation. No tests,
+builds, vet, lint, CLI, model, service or installer were run by this source
+author. This closes only the bounded G03 O3/O8 binary-drift memory slice as a
+source candidate; raw self-update and commercial installer/update routes remain
+open, and Main owns qualification and release decisions. No SNE authority,
+shared schema or new Store/DB was introduced.

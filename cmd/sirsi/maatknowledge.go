@@ -24,17 +24,22 @@ var maatKnowledgeCmd = &cobra.Command{
 
 This is a read-only projection. It does not ingest, export, rescore, or change
 the archive. Search is local and bounded; use detail/history for retained
-versions and provenance. The legacy 'seshat' commands remain compatibility
+versions and provenance. Search treats punctuation and operator words literally;
+whitespace-separated terms must all match. Raw FTS operators are not supported.
+The legacy 'seshat' commands remain compatibility
 aliases while Ma'at is the sole archive and operator surface.`,
 	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("locate Ma'at knowledge home: %w", err)
-		}
 		queryText, _ := cmd.Flags().GetString("query")
 		if queryText == "" {
 			queryText = strings.Join(args, " ")
+		}
+		if err := knowledge.ValidateSearchText(queryText); err != nil {
+			return err
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("locate Ma'at knowledge home: %w", err)
 		}
 		classification, _ := cmd.Flags().GetString("classification")
 		resolution, _ := cmd.Flags().GetString("resolution")

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/casebook"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/knowledge"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/mercury"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
@@ -56,10 +58,11 @@ func runDashboard(cmd *cobra.Command, args []string) {
 	selfBin, _ := os.Executable()
 
 	srv := dashboard.New(dashboard.Config{
-		Port:     dashboardPort,
-		NotifyDB: nStore,
-		Events:   dashboard.NewEventBuffer(256),
-		SirsiBin: selfBin,
+		MercuryFn: mercury.NewConfigured().Read,
+		Port:      dashboardPort,
+		NotifyDB:  nStore,
+		Events:    dashboard.NewEventBuffer(256),
+		SirsiBin:  selfBin,
 		StatsFn: func() ([]byte, error) {
 			snap := collectDashboardStats()
 			return json.Marshal(snap)
@@ -75,10 +78,12 @@ func runDashboard(cmd *cobra.Command, args []string) {
 			}
 			return unroutableAgents(repoRoot)
 		},
-		FabricFn:        collectDashboardFabric,
-		MaatDecisionsFn: collectDashboardMaatDecisions,
-		MaatCasebookFn:  collectDashboardMaatCasebook,
-		MaatKnowledgeFn: collectDashboardMaatKnowledge,
+		FabricFn:            collectDashboardFabric,
+		MaatDecisionsFn:     collectDashboardMaatDecisions,
+		MaatCasebookFn:      collectDashboardMaatCasebook,
+		MaatKnowledgeFn:     collectDashboardMaatKnowledge,
+		MaatHistoryFn:       collectDashboardMaatHistory,
+		MaatKnowledgeReadFn: collectDashboardMaatKnowledgeRead,
 		ApolloTelemetryFn: func() (apollo.TelemetryRead, error) {
 			home, err := os.UserHomeDir()
 			if err != nil {
@@ -132,11 +137,36 @@ func collectDashboardMaatCasebook(query casebook.Query) (casebook.View, error) {
 	if err != nil {
 		return casebook.View{}, err
 	}
-	rows, err := journal.Recent(query.Limit)
+	result, err := casebook.SearchHistory(journal, casebook.HistoryQuery{Query: query, Context: context.Background()})
+	return result.View, err
+}
+
+func collectDashboardMaatHistory(ctx context.Context, query casebook.HistoryQuery) (casebook.HistorySearchResult, error) {
+	journal, err := maat.NewDefaultDecisionJournal()
 	if err != nil {
-		return casebook.View{}, err
+		return casebook.HistorySearchResult{}, err
 	}
-	return casebook.Search(rows, query), nil
+	query.Context = ctx
+	return casebook.SearchHistory(journal, query)
+}
+
+func collectDashboardMaatKnowledgeRead(ctx context.Context, request dashboard.MaatKnowledgeReadRequest) (any, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("Ma'at knowledge home unavailable")
+	}
+	if request.Mode == "search" {
+		return knowledge.LoadPageContext(ctx, home, request.Query)
+	}
+	archive, err := knowledge.Open(home)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = archive.Close() }()
+	if request.Mode == "detail" {
+		return archive.Detail(ctx, request.ID, request.Revision)
+	}
+	return archive.HistoryPage(ctx, request.ID, request.Query.Limit, request.Query.Cursor)
 }
 
 func collectDashboardMaatKnowledge(query string) (knowledge.View, error) {

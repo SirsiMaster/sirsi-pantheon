@@ -622,11 +622,13 @@ type Relay struct {
 	scans      atomic.Int32 // discovery passes (tests assert no spin under backlog)
 	// Per-instance deterministic scheduler probe; nil uses real discovery.
 	discoverFn func(context.Context) int
+	// Instance-local fixture seam; nil always uses the retained native marker.
+	maintenanceStartup func(context.Context) (io.Closer, error)
 }
 
 // Serve polls the spool until ctx is done. Each request file is forwarded once;
 // its response file is written atomically; stale files are swept with a log line.
-func (rl *Relay) Serve(ctx context.Context) error {
+func (rl *Relay) Serve(ctx context.Context) (result error) {
 	if rl.Client == nil {
 		c, err := newRelayHTTPClientFor(rl.Base)
 		if err != nil {
@@ -652,6 +654,15 @@ func (rl *Relay) Serve(ctx context.Context) error {
 		return fmt.Errorf("relay: %w", err)
 	}
 	rl.Spool = canon
+	startup := rl.awaitMaintenanceStartup
+	if rl.maintenanceStartup != nil {
+		startup = rl.maintenanceStartup
+	}
+	maintenance, err := startup(ctx)
+	if err != nil {
+		return fmt.Errorf("relay: startup maintenance remains closed: %w", err)
+	}
+	defer func() { result = errors.Join(result, maintenance.Close()) }()
 	// Optional names/counts projection belongs to this existing trusted relay
 	// loop, never a second daemon. Failure cannot stop forwarding or alter any
 	// existing queue permissions. One failed publication disables this instance's

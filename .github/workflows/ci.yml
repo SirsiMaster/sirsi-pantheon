@@ -89,7 +89,9 @@ jobs:
       # Ma'at resolution. Caution-tier hygiene is deliberately confirmation
       # gated, never Terminal-only; this guard keeps that entire contract live.
       - name: native menubar resolution guard
-        run: bash scripts/verify-maat-native-resolution-contract.sh
+        run: |
+          bash scripts/verify-maat-native-resolution-contract.sh
+          bash scripts/verify-maat-native-resolution-contract.test.sh
 
       # Gemma resolver guards run on the HOSTED runner (bash + python3 only, no
       # Xcode/MLX): extracted ranking/conf checks plus a whole-program inert

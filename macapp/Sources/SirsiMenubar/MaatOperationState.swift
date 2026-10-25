@@ -247,8 +247,19 @@ enum MaatOperationPreflight {
 /// workspace navigation tree replaces its detail view.
 @MainActor
 final class MaatCaseOperationStore: ObservableObject {
+    let failureMemoryReceipts: MaatPreflightReceiptReadStore
+    let preparedPreflightRecovery: MaatPreparedPreflightRecovery
+    let localPreventions: MaatLocalPreventionModel
     @Published private(set) var records: [MaatOperationKey: MaatOperationRecord] = [:]
     private var historyReads: [MaatOperationKey: (generation: UUID, continuation: MaatExactHistoryContinuation)] = [:]
+
+    init(preparedPreflightRecovery: MaatPreparedPreflightRecovery? = nil,
+         localPreventions: MaatLocalPreventionModel? = nil,
+         failureMemoryReceipts: MaatPreflightReceiptReadStore? = nil) {
+        self.preparedPreflightRecovery = preparedPreflightRecovery ?? MaatPreparedPreflightRecovery()
+        self.localPreventions = localPreventions ?? MaatLocalPreventionModel()
+        self.failureMemoryReceipts = failureMemoryReceipts ?? MaatPreflightReceiptReadStore()
+    }
 
     func record(for key: MaatOperationKey) -> MaatOperationRecord? {
         records[key]

@@ -1,0 +1,4 @@
+# Verified false positive: immutable UserDefaults preference-name literal,
+# not an authentication value. Only this historical rule/path/line is ignored;
+# no file, rule, later commit or future value is exempted. See release137 plan.
+6f40fe3ab4a3ca09d6fd86d6f5fe4b0cec674c75:macapp/Sources/SirsiMenubar/LegacyRelayOperationState.swift:generic-api-key:38

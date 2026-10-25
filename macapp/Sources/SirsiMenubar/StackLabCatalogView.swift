@@ -229,7 +229,7 @@ private struct StackLabCatalogRow: View {
     }
 }
 
-private struct StackLabContractDetail: View {
+struct StackLabContractDetail: View {
     @ObservedObject var engine: SirsiEngine
     let entry: StackLabCatalogEntry
 
@@ -237,18 +237,24 @@ private struct StackLabContractDetail: View {
         VStack(spacing: 0) {
             BackBar(title: entry.kind == "recipe" ? "Recipe" : "Wing")
             MaybeScroll {
+                // Keep the explicit accessibility section boundaries below.
+                // Lazy layout trapped during external AX scrolling; use the
+                // original eager layout while retaining distinct children.
                 VStack(alignment: .leading, spacing: 16) {
-                    Text(entry.id)
-                        .sirsiFont(.title3, weight: .bold)
-                    Text(entry.purpose)
-                        .sirsiFont(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    contractFact("Source contract", entry.sourcePath)
-                    if !entry.wing.isEmpty { contractFact("Wing", entry.wing) }
-                    if !entry.product.isEmpty { contractFact("Product", entry.product) }
-                    if entry.version > 0 { contractFact("Version", String(entry.version)) }
-                    if !entry.nextAction.isEmpty { contractFact("Next action", entry.nextAction) }
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text(entry.id)
+                            .sirsiFont(.title3, weight: .bold)
+                        Text(entry.purpose)
+                            .sirsiFont(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        contractFact("Source contract", entry.sourcePath)
+                        if !entry.wing.isEmpty { contractFact("Wing", entry.wing) }
+                        if !entry.product.isEmpty { contractFact("Product", entry.product) }
+                        if entry.version > 0 { contractFact("Version", String(entry.version)) }
+                        if !entry.nextAction.isEmpty { contractFact("Next action", entry.nextAction) }
+                    }
+                    .accessibilityElement(children: .contain)
                     if entry.components.contains(where: { $0.id == "stacklab-apollo-run-planner" }) {
                         apolloRecipeHandoff
                     }
@@ -263,6 +269,8 @@ private struct StackLabContractDetail: View {
                     }
                 }
                 .padding(16)
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(entry.kind == "recipe" ? "Recipe content" : "Wing content")
             }
         }
     }
@@ -285,6 +293,7 @@ private struct StackLabContractDetail: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+        .accessibilityElement(children: .contain)
     }
 
     // Stack Lab records component metadata, but it is not a shell launcher.
@@ -309,6 +318,7 @@ private struct StackLabContractDetail: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+        .accessibilityElement(children: .contain)
     }
 
     // The release recipe is intentionally a typed navigation destination, not
@@ -334,6 +344,7 @@ private struct StackLabContractDetail: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+        .accessibilityElement(children: .contain)
     }
 
     private func contractFact(_ label: String, _ value: String) -> some View {
@@ -344,7 +355,7 @@ private struct StackLabContractDetail: View {
     }
 }
 
-private struct StackLabComponentCard: View {
+struct StackLabComponentCard: View {
     let component: StackLabRecipeComponent
 
     var body: some View {
@@ -360,6 +371,7 @@ private struct StackLabComponentCard: View {
         .padding(13)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+        .accessibilityElement(children: .contain)
     }
 
     private func componentList(_ title: String, _ values: [String]) -> some View {
@@ -385,7 +397,7 @@ private struct StackLabCatalog: Decodable {
     var complete: Bool { unknown.isEmpty }
 }
 
-private struct StackLabCatalogEntry: Decodable, Identifiable {
+struct StackLabCatalogEntry: Decodable, Identifiable {
     let id: String
     let kind: String
     let sourcePath: String
@@ -415,7 +427,7 @@ private struct StackLabCatalogEntry: Decodable, Identifiable {
     }
 }
 
-private struct StackLabRecipeComponent: Decodable, Identifiable {
+struct StackLabRecipeComponent: Decodable, Identifiable {
     let id: String
     let source: [String]
     let tests: [String]

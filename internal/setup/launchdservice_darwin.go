@@ -24,8 +24,9 @@ import (
 )
 
 type nativeServiceBackend struct {
-	relay *rootRelayDependencies
-	horus *horusServiceDependencies
+	relay       *rootRelayDependencies
+	horus       *horusServiceDependencies
+	maintenance *maintenanceOperations
 }
 
 func NativeServiceBackend() ServiceBackend { return nativeServiceBackend{} }

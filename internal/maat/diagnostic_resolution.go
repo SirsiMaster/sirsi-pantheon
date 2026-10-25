@@ -40,6 +40,17 @@ func RecordDiagnosticOwnerReview(j DecisionJournal, requester string, review Dia
 	if j == nil {
 		return Decision{}, fmt.Errorf("maat diagnostic resolution: nil journal")
 	}
+	decision, err := buildDiagnosticOwnerReview(requester, review)
+	if err != nil {
+		return Decision{}, err
+	}
+	if err := j.Append(decision); err != nil {
+		return Decision{}, fmt.Errorf("maat diagnostic resolution: append owner review: %w", err)
+	}
+	return decision, nil
+}
+
+func buildDiagnosticOwnerReview(requester string, review DiagnosticOwnerReview) (Decision, error) {
 	requester = strings.TrimSpace(requester)
 	review.Check = strings.TrimSpace(review.Check)
 	review.Message = strings.TrimSpace(review.Message)
@@ -66,9 +77,6 @@ func RecordDiagnosticOwnerReview(j DecisionJournal, requester string, review Dia
 		Why:            why,
 		Evidence:       "diagnostic-finding:sha256=" + hex.EncodeToString(sum[:]),
 		OriginEvidence: review.OriginEvidence,
-	}
-	if err := j.Append(decision); err != nil {
-		return Decision{}, fmt.Errorf("maat diagnostic resolution: append owner review: %w", err)
 	}
 	return decision, nil
 }
@@ -200,4 +208,50 @@ func strictOwnerReviewExact(path, evidence string) (Decision, bool, bool, error)
 		return Decision{}, false, false, fmt.Errorf("strict journal exceeds its bound or is unreadable")
 	}
 	return original, found, accepted, nil
+}
+
+// Same exact-review authority as AcceptDiagnosticOwnerReview, with the already
+// captured bytes/time needed for data-only recovery. Lock order is Store then
+// journal; this callback never calls Store or performs a service operation.
+func retainExactLocalOwnerAcceptance(j *FileDecisionJournal, review, acceptance Decision) error {
+	return withJournalMutationLock(j.Path, func() error {
+		original, found, accepted, err := strictOwnerReviewExact(j.Path, review.Evidence)
+		if err != nil || !found || digestEqual(original, review) != nil {
+			return fmt.Errorf("maat memory: exact occurrence-bound owner review is unavailable")
+		}
+		if accepted {
+			return strictLocalOwnerConclusionReadback(j, review, acceptance)
+		}
+		expected := diagnosticOwnerAcceptance(acceptance.Requester, DiagnosticOwnerAcceptance{Evidence: review.Evidence, Conclusion: acceptance.Why}, original)
+		expected.Time, expected.Host = acceptance.Time, acceptance.Host
+		if digestEqual(expected, acceptance) != nil || validateDecision(acceptance) != nil {
+			return fmt.Errorf("maat memory: retained owner acceptance is not this review's exact conclusion")
+		}
+		if err := j.appendLocked(acceptance); err != nil {
+			return err
+		}
+		return strictLocalOwnerConclusionReadback(j, review, acceptance)
+	})
+}
+func strictLocalOwnerConclusionReadback(j *FileDecisionJournal, review, acceptance Decision) error {
+	for _, decision := range []Decision{review, acceptance} {
+		if ok, err := decisionEvidenceReadback(j.Path, decision); err != nil || !ok {
+			return fmt.Errorf("maat memory: exact local owner conclusion bytes are unavailable")
+		}
+	}
+	count := 0
+	conflict := false
+	_, err := j.scanStrict(func(d Decision) bool {
+		if d.Kind == "diagnostic owner acceptance" && d.ResolutionFor == review.Evidence {
+			count++
+			if digestEqual(d, acceptance) != nil {
+				conflict = true
+			}
+		}
+		return false
+	})
+	if err != nil || count != 1 || conflict {
+		return fmt.Errorf("maat memory: owner review has duplicate or conflicting conclusions")
+	}
+	return nil
 }

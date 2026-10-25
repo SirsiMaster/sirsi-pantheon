@@ -28,8 +28,13 @@ struct MaatWorkspaceView: View {
     }
 
     var body: some View {
+        MaatWorkspaceRecoveryFrame(
+            recovery: engine.maatCaseOperations.preparedPreflightRecovery,
+            content: AnyView(workspaceContent))
+    }
+
+    private var workspaceContent: some View {
         VStack(spacing: 0) {
-            BackBar(title: "Ma'at")
             if let context = relayOutboxContext {
                 RelayOutboxResolutionView(engine: engine, context: context)
             } else {
@@ -166,7 +171,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
             } else if let casebook {
                 systemOneBody(casebook)
             } else if let loadError {
-                VStack { unavailableState(loadError); screenImportControl }
+                VStack { unavailableState(loadError); screenImportControl; LegacyRelayMaintenancePanel(directory: URL(fileURLWithPath: NSHomeDirectory()),model:engine.legacyRelayMaintenance) }
             } else {
                 unavailableState("Pantheon did not receive a Ma'at Casebook projection. No System One result was inferred.")
             }
@@ -266,6 +271,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                         releasePreflightControl
                             .id("maat-release-preflight")
                         screenImportControl
+                        LegacyRelayMaintenancePanel(directory: URL(fileURLWithPath: NSHomeDirectory()),model:engine.legacyRelayMaintenance)
                         if screens.isEmpty && calibrations.isEmpty {
                             historyEmptyState(casebook)
                         } else {
@@ -2390,12 +2396,16 @@ struct MaatFailureMemoryStatus: Decodable {
     let detail: String?
     let incompleteAttempt: Bool
     let projectionDebt: Bool
+    let preparedPreflight:MaatPreparedPreflight?
+    let receiptRecoveryError:String?
 
     enum CodingKeys: String, CodingKey {
         case state, detail
         case storeUUID = "store_uuid"
         case incompleteAttempt = "incomplete_attempt"
         case projectionDebt = "projection_debt"
+        case preparedPreflight = "prepared_preflight"
+        case receiptRecoveryError = "receipt_recovery_error"
     }
 
     init(from decoder: Decoder) throws {
@@ -2405,6 +2415,8 @@ struct MaatFailureMemoryStatus: Decodable {
         detail = try values.decodeIfPresent(String.self, forKey: .detail)
         incompleteAttempt = try values.decodeIfPresent(Bool.self, forKey: .incompleteAttempt) ?? false
         projectionDebt = try values.decodeIfPresent(Bool.self, forKey: .projectionDebt) ?? false
+        preparedPreflight = try values.decodeIfPresent(MaatPreparedPreflight.self,forKey:.preparedPreflight)
+        receiptRecoveryError = try values.decodeIfPresent(String.self,forKey:.receiptRecoveryError)
     }
 }
 
@@ -2527,6 +2539,17 @@ private struct MaatCaseDetailView: View {
                             .sirsiFont(.caption)
                             .foregroundStyle(.secondary)
                     }
+                    if entry.kind == "failure memory preflight" {
+                        MaatRetainedPreflightDetail(model: operations.failureMemoryReceipts, entry: entry)
+                        MaatLocalPreventionCollection(model: operations.localPreventions, receiptReads: operations.failureMemoryReceipts, entry: entry) { fresh in
+                            AnyView(MaatCaseDetailView(engine: engine, operations: operations, entry: fresh))
+                        }
+                    }
+                    if entry.systemOne?.findings.contains(where: { $0.repairID == "liveness-watch" }) == true {
+                        MaatLocalPreventionEntry(model: operations.localPreventions, entry: entry) { fresh in
+                            AnyView(MaatCaseDetailView(engine: engine, operations: operations, entry: fresh))
+                        }
+                    }
                     if entry.nextAction?.kind == "maat_repair", entry.nextAction?.actionID == "liveness-watch" {
                         failureMemorySetup
                     }
@@ -2625,6 +2648,7 @@ private struct MaatCaseDetailView: View {
         VStack(alignment: .leading, spacing: 9) {
             Label("Local failure memory", systemImage: "externaldrive.badge.shield.checkmark")
                 .sirsiFont(.headline)
+            MaatPreparedPreflightRecoveryView(model:operations.preparedPreflightRecovery,refresh:{await refreshFailureMemoryStatus()})
             if failureMemoryLoading {
                 ProgressView("Inspecting this Mac's local store…")
                     .sirsiFont(.caption)
@@ -2713,13 +2737,16 @@ private struct MaatCaseDetailView: View {
         failureMemoryLoading = true
         defer { failureMemoryLoading = false }
         let read = await SirsiEngine.runJSONRead(args: ["maat", "repair", "liveness-watch", "--inspect-failure-memory", "--json"])
+        guard !Task.isCancelled else { return }
         guard read.exitStatus == 0, !read.timedOut, read.launchError == nil,
               let status = try? JSONDecoder().decode(MaatFailureMemoryStatus.self, from: read.data) else {
             failureMemoryStatus = nil
             failureMemoryMessage = read.launchError ?? "Ma'at's local state could not be decoded; no change was made."
+            operations.preparedPreflightRecovery.inspectionUnavailable()
             return
         }
         failureMemoryStatus = status
+        operations.preparedPreflightRecovery.accept(status)
     }
 
     @MainActor private func performFailureMemoryAction(_ action: MaatFailureMemoryAction) async {
@@ -3744,11 +3771,13 @@ struct MaatCase: Decodable, Identifiable {
 	let nextAction: MaatCaseNextAction?
 	let systemOne: MaatSystemOneVerdict?
 	let systemOneCalibration: MaatSystemOneCalibration?
+    let failureMemoryReceipt: MaatPreflightReceiptReference?
+    let failureMemoryIncidentKeys: [String]
 
     init(id: String, time: String, kind: String, category: String, status: String,
          priority: MaatCasePriority, requester: String, resource: String,
          affected: String, determination: String, assessed: String, why: String,
-         evidence: String, resolution: String = "", verifiedRepairEvidence: String = "", repairOutcomeEvidence: String = "", pendingRepairAttemptEvidence: String = "", nextAction: MaatCaseNextAction? = nil, systemOne: MaatSystemOneVerdict? = nil, systemOneCalibration: MaatSystemOneCalibration? = nil) {
+         evidence: String, resolution: String = "", verifiedRepairEvidence: String = "", repairOutcomeEvidence: String = "", pendingRepairAttemptEvidence: String = "", nextAction: MaatCaseNextAction? = nil, systemOne: MaatSystemOneVerdict? = nil, systemOneCalibration: MaatSystemOneCalibration? = nil, failureMemoryReceipt: MaatPreflightReceiptReference? = nil, failureMemoryIncidentKeys: [String] = []) {
         self.id = id
         self.time = time
         self.kind = kind
@@ -3769,6 +3798,8 @@ struct MaatCase: Decodable, Identifiable {
 		self.nextAction = nextAction
 		self.systemOne = systemOne
 		self.systemOneCalibration = systemOneCalibration
+        self.failureMemoryReceipt = failureMemoryReceipt
+        self.failureMemoryIncidentKeys = failureMemoryIncidentKeys
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -3780,6 +3811,8 @@ struct MaatCase: Decodable, Identifiable {
         case nextAction = "next_action"
 		case systemOne = "system_one"
 		case systemOneCalibration = "system_one_calibration"
+        case failureMemoryReceipt = "failure_memory_receipt"
+        case failureMemoryIncidentKeys = "failure_memory_incident_keys"
     }
 
     init(from decoder: Decoder) throws {
@@ -3804,6 +3837,8 @@ struct MaatCase: Decodable, Identifiable {
 		nextAction = try values.decodeIfPresent(MaatCaseNextAction.self, forKey: .nextAction)
 		systemOne = try values.decodeIfPresent(MaatSystemOneVerdict.self, forKey: .systemOne)
 		systemOneCalibration = try values.decodeIfPresent(MaatSystemOneCalibration.self, forKey: .systemOneCalibration)
+        failureMemoryReceipt = try values.decodeIfPresent(MaatPreflightReceiptReference.self, forKey: .failureMemoryReceipt)
+        failureMemoryIncidentKeys = try values.decodeIfPresent([String].self, forKey: .failureMemoryIncidentKeys) ?? []
     }
 
     var searchText: String {
@@ -3916,10 +3951,12 @@ struct MaatSystemOneFinding: Decodable, Identifiable {
     let claim: String
     let evidence: String
     let fixHint: String
+    let repairID: String
 
     enum CodingKeys: String, CodingKey {
         case id, severity, category, file, line, claim, evidence
         case fixHint = "fix_hint"
+        case repairID = "repair_id"
     }
 
     init(from decoder: Decoder) throws {
@@ -3935,6 +3972,7 @@ struct MaatSystemOneFinding: Decodable, Identifiable {
         claim = try values.decodeIfPresent(String.self, forKey: .claim) ?? "No claim was supplied."
         evidence = try values.decodeIfPresent(String.self, forKey: .evidence) ?? ""
         fixHint = try values.decodeIfPresent(String.self, forKey: .fixHint) ?? ""
+        repairID = try values.decodeIfPresent(String.self, forKey: .repairID) ?? ""
     }
 
     var location: String {

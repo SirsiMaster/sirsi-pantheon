@@ -40,6 +40,7 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 		t.Fatalf("recipe identity = %+v", recipe)
 	}
 	want := []string{
+		"maat-bounded-history-read-surfaces", "maat-history-linked-qualification-batches",
 		"maat-canon", "maat-casebook", "maat-cli", "maat-confirmed-diagnostic-repair", "maat-core", "maat-coverage",
 		"maat-decision-journal", "maat-failure-memory", "maat-guided-managed-repair", "maat-horus-surface", "maat-knowledge-surface", "maat-known-failure-proposals", "maat-mcp-surface", "maat-native-release-bootstrap", "maat-native-resolution-surface", "maat-pipeline", "maat-pulse-proof-platform",
 		"maat-binary-drift-updater", "maat-host-health-screen", "maat-knowledge-archive", "maat-local-metadata-liveness-watch", "maat-release-contract-preflight", "maat-release-credential-preflight", "maat-scheduler", "maat-scoped-service-lifecycle", "maat-system-one-screen", "maat-terminal-console-surface", "maat-wing-contract", "stacklab-apollo-run-planner",
@@ -71,6 +72,54 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 		componentsByID[component.ID] = component
 	}
 	for _, required := range []component{
+		{
+			ID: "maat-bounded-history-read-surfaces",
+			Source: []string{
+				"internal/mcp/maat_reads.go", "internal/mcp/tools.go", "internal/dashboard/maat.go",
+				"internal/dashboard/maat_reads.go", "internal/dashboard/server.go", "cmd/sirsi/dashboard.go",
+				"internal/dashboard/pages.go", "internal/dashboard/ui.go", "internal/dashboard/ui/maat-history.js",
+				"internal/tui/maat_history.go", "internal/tui/screen_activity.go", "internal/tui/contracts.go",
+				"internal/tui/command.go", "internal/tui/console.go", "internal/tui/runner.go",
+			},
+			Tests: []string{
+				"internal/mcp/maat_history_test.go", "internal/mcp/maat_knowledge_reads_test.go",
+				"internal/mcp/maat_literal_search_test.go", "internal/dashboard/maat_literal_search_test.go",
+				"internal/mcp/maat_search_guidance_test.go", "internal/dashboard/maat_search_guidance_test.go",
+				"internal/mcp/maat_membership_test.go", "internal/maat/memory_test.go", "internal/maat/memoryguard_test.go",
+				"internal/dashboard/maat_history_test.go", "internal/dashboard/maat_membership_test.go",
+				"internal/dashboard/maat_history_ui_test.cjs", "internal/dashboard/spa_contract_test.go",
+				"cmd/sirsi/dashboard_maat_history_test.go", "internal/tui/maat_history_test.go",
+				"internal/tui/console_test.go", "internal/dashboard/testdata/maat-g04-negative-controls.json",
+			},
+			Outputs: []string{
+				"partial with no provisional cases, explicit unavailable vs complete empty",
+				"generation-owned commits; no PATH fallback or second database",
+			},
+			UpgradeRecipe: []string{
+				"never infer whole-query totals from page summaries or after-cursor counts",
+				"keep sensitivity before projection and forbid ingestion/repair authority in read adapters",
+			},
+		},
+		{
+			ID: "maat-history-linked-qualification-batches",
+			Source: []string{
+				"internal/maat/history_query.go", "internal/maat/history_query_batch.go",
+				"internal/mcp/maat_reads.go", "internal/dashboard/maat_reads.go",
+				"internal/tui/command.go", "internal/tui/screen_activity.go",
+			},
+			Tests: []string{
+				"internal/maat/history_query_batch_test.go", "internal/mcp/maat_history_test.go",
+				"internal/dashboard/maat_history_test.go", "internal/tui/maat_history_test.go", "internal/tui/console_test.go",
+			},
+			Outputs: []string{
+				"bounded reference batches sharing one canonical relationship pass per batch",
+				"unchanged per-call work budgets and no provisional cases; cursorv4 rejects stale schema",
+			},
+			UpgradeRecipe: []string{
+				"keep at most48 candidate refs and the strict64KiB cursor encoder; reduce capacity for retained page metadata",
+				"charge link scans and candidate re-reads; qualify before top-K and materialize selected links from same snapshot",
+			},
+		},
 		{
 			ID: "maat-knowledge-archive",
 			Source: []string{
@@ -150,6 +199,11 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 			}
 		}
 	}
+	for _, id := range []string{"maat-bounded-history-read-surfaces", "maat-history-linked-qualification-batches"} {
+		if len(componentsByID[id].Writes) != 0 {
+			t.Fatalf("read-only history component %q declares mutation authority", id)
+		}
+	}
 	binaryDrift, ok := componentsByID["maat-binary-drift-updater"]
 	if !ok {
 		t.Fatal("independently upgradeable Ma'at binary-drift updater component is missing")
@@ -215,8 +269,16 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 		}
 	}
 	lifecycle := componentsByID["maat-scoped-service-lifecycle"]
+	for _, path := range []string{"internal/setup/launchdmaintenance.go", "internal/setup/launchdmaintenance_darwin.go", "internal/setup/launchdmaintenance_image_darwin.go", "internal/setup/launchdmaintenance_journal_darwin.go", "internal/setup/launchdmaintenance_spool_darwin.go", "internal/servicedrain/maintenance.go", "internal/routerstore/spoolmaintenance_darwin.go", "cmd/sirsi/launchdmaintenance.go", "docs/runbooks/LEGACY-ROOT-RELAY-MAINTENANCE.md", "internal/setup/launchdmaintenance_test.go", "internal/setup/launchdmaintenance_spool_darwin_test.go", "internal/servicedrain/maintenance_test.go", "internal/routerstore/spoolmaintenance_test.go", "internal/routerstore/spoolmaintenance_unix_test.go", "cmd/sirsi/launchdmaintenance_test.go"} {
+		if !contains(append(append([]string{}, lifecycle.Source...), lifecycle.Tests...), path) {
+			t.Fatalf("selected maintenance recipe omits %q", path)
+		}
+	}
+	if !contains(lifecycle.Outputs, "legacy root transaction status and held successor activation distinct from old remote outcome settlement") {
+		t.Fatal("legacy activation must not become an old-work drain or settlement claim")
+	}
 	for _, boundary := range []string{
-		"never acquire privilege, display administrator prompts, enable disabled services, or refresh unrelated jobs",
+		"ordinary service routes never acquire privilege or display prompts; the separate closed local-app fallback uses existing OS admin authorization only for the selected root relay; never enable disabled services or refresh unrelated jobs",
 		"keep caller drain assertion distinct from verified application drain",
 		"require exact signed package, selected service and preserved unrelated-process evidence before claiming deployment",
 	} {
@@ -228,7 +290,7 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 	if !ok {
 		t.Fatal("Ma'at failure-memory component is missing")
 	}
-	for _, path := range []string{"internal/maat/memory.go", "internal/maat/memoryguard.go", "internal/maat/memory_test.go", "internal/maat/memoryguard_test.go"} {
+	for _, path := range []string{"internal/maat/memory.go", "internal/maat/memoryguard.go", "internal/maat/memory_test.go", "internal/maat/memoryguard_test.go", "internal/maat/memory_intake.go", "internal/maat/memory_local_events.go", "internal/maat/memory_local_disposition.go", "internal/maat/memory_local_lifecycle_test.go", "cmd/sirsi/maatmemory_local.go", "cmd/sirsi/maatmemory_local_test.go", "macapp/Sources/SirsiMenubar/MaatLocalPrevention.swift", "macapp/Tests/SirsiMenubarTests/MaatLocalPreventionTests.swift", "internal/liveness/localwatch_completion_darwin_test.go"} {
 		if !contains(append(append([]string{}, memory.Source...), memory.Tests...), path) {
 			t.Fatalf("Ma'at failure-memory recipe omits canonical surface %q: %+v", path, memory)
 		}
@@ -245,6 +307,15 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 	} {
 		if !contains(memory.UpgradeRecipe, boundary) {
 			t.Fatalf("Ma'at failure-memory recipe omits boundary %q", boundary)
+		}
+	}
+	for _, boundary := range []string{
+		"preserve Incident.Key as FailureSignature.Digest; reduce the closed local event chain without rewriting introduction records or normalizing SNE identities",
+		"claim invocation before callbacks; never replay an installer from an incomplete action, intake, disposition or journal projection",
+		"keep current health and future action authorization separate from historical owner disposition; after retirement a later verified recurrence appends one child under the same stable key",
+	} {
+		if !contains(memory.UpgradeRecipe, boundary) {
+			t.Fatalf("local memory recipe omits exact G01 boundary %q", boundary)
 		}
 	}
 	proposals, ok := componentsByID["maat-known-failure-proposals"]

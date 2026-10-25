@@ -43,7 +43,19 @@ type Decision struct {
 	SystemOne *MaatVerdict `json:"system_one,omitempty"`
 	// SystemOneCalibration binds one recorded local auto-pass to a distinct
 	// independent outcome. It is audit evidence only, never a local grant.
-	SystemOneCalibration *CalibrationRecord `json:"system_one_calibration,omitempty"`
+	SystemOneCalibration      *CalibrationRecord         `json:"system_one_calibration,omitempty"`
+	FailureMemoryReceipt      *PreflightReceiptReference `json:"failure_memory_receipt,omitempty"`
+	FailureMemoryIncidentKeys *[]string                  `json:"failure_memory_incident_keys,omitempty"`
+}
+
+// A pointer preserves Decision's existing comparability while the optional
+// wire value remains an ordinary JSON array. It is read-model data only.
+func copyFailureMemoryIncidentKeys(keys []string) *[]string {
+	if len(keys) == 0 {
+		return nil
+	}
+	copy := append([]string(nil), keys...)
+	return &copy
 }
 
 // DecisionJournal persists the local decision projection. Implementations may
@@ -57,11 +69,12 @@ type DecisionJournal interface {
 // Ma'at's existing decision journal.  This is intentionally one-way: the
 // journal is an inspectable projection for Casebook and surfaces, never an
 // input that can alter a failure-memory decision or authorize remediation.
-func ProjectFailureMemoryPreflight(j DecisionJournal, receipt PreflightReceipt) error {
+func ProjectFailureMemoryPreflight(j DecisionJournal, stored StoredPreflightReceipt) error {
 	if j == nil {
 		return fmt.Errorf("maat failure memory projection: nil decision journal")
 	}
-	if err := receipt.validate(); err != nil {
+	receipt, err := stored.Receipt()
+	if err != nil {
 		return fmt.Errorf("maat failure memory projection: invalid preflight receipt")
 	}
 	evidence, err := receipt.EvidenceReference()
@@ -72,16 +85,19 @@ func ProjectFailureMemoryPreflight(j DecisionJournal, receipt PreflightReceipt) 
 	if receipt.RecoveryReference != "" {
 		why += "; recovery reference: " + receipt.RecoveryReference
 	}
+	reference := stored.Reference()
 	return j.Append(Decision{
-		Time:          receipt.EvaluatedAtUTC.UTC().Format(time.RFC3339Nano),
-		Kind:          "failure memory preflight",
-		Requester:     "maat",
-		Resource:      receipt.Action.Component,
-		Assessed:      receipt.Action.Operation,
-		Affected:      receipt.Action.Profile,
-		Determination: string(receipt.Decision),
-		Why:           why,
-		Evidence:      evidence,
+		FailureMemoryReceipt:      &reference,
+		FailureMemoryIncidentKeys: copyFailureMemoryIncidentKeys(receipt.IncidentKeys),
+		Time:                      receipt.EvaluatedAtUTC.UTC().Format(time.RFC3339Nano),
+		Kind:                      "failure memory preflight",
+		Requester:                 "maat",
+		Resource:                  receipt.Action.Component,
+		Assessed:                  receipt.Action.Operation,
+		Affected:                  receipt.Action.Profile,
+		Determination:             string(receipt.Decision),
+		Why:                       why,
+		Evidence:                  evidence,
 	})
 }
 
@@ -637,6 +653,23 @@ func validateDecision(decision Decision) error {
 	}
 	if len(decision.OriginEvidence) > 512 || len(decision.ResolutionFor) > 512 {
 		return fmt.Errorf("maat decision journal: resolution evidence exceeds bounded record size")
+	}
+	if keys := decision.FailureMemoryIncidentKeys; keys != nil {
+		if decision.FailureMemoryReceipt == nil {
+			return fmt.Errorf("maat decision journal: incident links require retained receipt metadata")
+		}
+		previousKey := ""
+		for _, key := range *keys {
+			if !validDigest(key) || key <= previousKey {
+				return fmt.Errorf("maat decision journal: invalid or duplicate failure memory incident link")
+			}
+			previousKey = key
+		}
+	}
+	if reference := decision.FailureMemoryReceipt; reference != nil {
+		if decision.Kind != "failure memory preflight" || reference.validate() != nil || decision.Evidence != reference.EvidenceReference() || decision.Resource != reference.Action.Component || decision.Affected != reference.Action.Profile || decision.Assessed != reference.Action.Operation {
+			return fmt.Errorf("maat decision journal: invalid failure-memory receipt reference")
+		}
 	}
 	if decision.SystemOne != nil {
 		if err := ValidateMaatVerdict(*decision.SystemOne); err != nil {

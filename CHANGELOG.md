@@ -6,6 +6,181 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.137] — 2026-10-25
+
+This corrective candidate starts from published v0.24.136. The entries below
+preserve donor-stage notes; current combined qualification and remaining
+installed limitations are recorded in the v0.24.137 Stack Lab release plan.
+They are not claims that every historical operational obligation is closed.
+
+- Preserve plain-paragraph release fragments and their continuation text when
+  cutting a release. Deduplicate complete normalized entries rather than a
+  shared seventy-character prefix, and retain prior versioned sections without
+  adding a separator at every historical heading. A causal regression exposed
+  the missing paragraph before correction; existing release-note controls remain.
+
+- Document one verified historical secret-scan false positive with an exact
+  commit/rule/path/line fingerprint: a local preference-name string, not a
+  credential. No whole file, scanner rule or future change is excluded.
+
+- Each in-process Stack Lab accessibility fixture now first reads independent
+  public SwiftUI Text/Button controls and presses the actual control once. If that
+  independent oracle is unavailable, the fixture reports an explicit diagnostic
+  skip before inspecting product content. With a working control, all original
+  content, handoff and scrolling assertions remain failures when unmet.
+
+- No product view, recipe content or accessibility representation is replaced.
+  Non-AX semantic tests remain active. Skips do not establish accessibility
+  completion: exact-source external evidence is separately required for all29
+  Ma'at components and scrolling/Apollo/Ma'at handoffs, release handoff, short wing
+  and full component fields. Existing finite36e9 external receipts and prior
+  644/239 failures retain their original scopes; no new runtime proof is claimed.
+
+- Preserve Mercury's offline/invalid/partial read states and individually fresh partial observations, while retaining unknown aggregates and independent local aging. Manual and periodic refreshes now share one visibility-bound owned task; superseded/cancelled native reads cannot publish a late result. Add an actual Go mixed-freshness export for native/web parity qualification.
+
+- Restore the retained read-only Mercury web and native hardware/cable presentation over the canonical Go snapshot: shared headline, partial eligibility, local expiry, run/calibration/provenance detail and explicit unknowns. Preserve strict same-origin web assets, owned read cancellation, reduced motion, separate Ra/transport evidence and Power Unknown. Map all four existing consumer components and correct stale native-endpoint canon; visual/installed parity remains unqualified.
+
+- The Mercury web renderer no longer retains a prior read's activity lamps when
+  the current Go projection supplies an empty/null lamp vector. A fresh idle null
+  vector clears prior lamps; a missing vector is explicitly unavailable rather
+  than inferred off. Current arrays and existing aggregate eligibility remain
+  authoritative.
+
+- An actual embedded-renderer active-to-idle regression covers null, missing and
+  empty vectors, zero active cables, idle context, withheld hero cells and stopped
+  motion without a clock-triggered fetch. Both existing DOM fixtures now implement
+  the production mount's appendChild call with node ownership/return semantics;
+  their original cancellation/expiry assertions are retained. The frozen5d53
+  attempt's four passing Node cases and two pre-render fixture failures are not
+  reclassified. No new execution, Swift change or whole G1–G5 completion claimed.
+
+- Mercury's web activity lamps, active-cable count and context now use the same
+  existing aggregate eligibility as its headline measurements. Direction expiry,
+  partial reads and envelope expiry withhold current aggregate claims while
+  individually eligible directions remain visible. The local aging clock does not
+  fetch a new snapshot.
+
+- Native workspace reads now bind loading cleanup and evidence publication to
+  their owning refresh invocation. A canceled older read joining its children
+  cannot clear a newer refresh's loading state or replace its evidence/errors.
+  Canonical monitor generation and structured child cancellation remain intact.
+
+- Direct embedded-renderer and workspace-owner regressions are authored only.
+  This source successor preserves the original G1–G5 scope; qualification, visual
+  fidelity/accessibility, configured recovery and installed/per-Mac obligations
+  remain separately open. No transport/reader/schema or service policy changes.
+
+- Expose Local memory recovery with an always-visible Inspect control at the
+  ordinary Ma'at workspace root, outside Casebook loading, empty and error states.
+  Reuse the existing engine-owned prepared-receipt inspector, exact confirmation
+  and recovery refresh callbacks. No selected case, synthetic journal row or
+  manual digest is required. Add production-root entry/callback fixtures with
+  no MaatCase, preserving prior component tests and private custody policy.
+  Source-only pending qualification and separate visible-window proof.
+
+- Retain and verify complete Ma'at preflight receipts before Casebook projection and managed-watch admission, without receipt bookkeeping staling its own semantic registry snapshot. Native historical receipt inspection preserves prior evidence on unavailable, mismatched or cancelled reads; historical results never authorize a new action.
+
+- Resume only exact interrupted Ma’at receipt writes before reassessing eligibility, and expose separately confirmed historical recovery for complete retained targets. Verify private current-owner custody on receipt and WAL reads without changing modes or granting an action.
+
+- Fix recovery reachability when the first preflight receipt is fully retained
+  but its write commit fails before Casebook projection. The existing memory
+  inspector now discovers and displays verified complete historical bytes and
+  their exact intent/store binding. Native liveness setup offers separately
+  confirmed recovery through the canonical receipt command without a Casebook
+  receipt row or manual digest lookup. Missing, changed and unrelated debt stays
+  unavailable. Recovery creates no decision, attempt or installation and requires
+  fresh ordinary assessment and consent afterward. Source fixtures are authored;
+  qualification and installed workflow evidence remain pending.
+
+- Own-lane cause-fixed recovery accepts an inactive blocked original with
+  ordinary attempts remaining. It consumes the next attempt with the existing
+  authenticated transaction, evidence audit and row-version fence; it never
+  resets history or marks the task complete. Pending/in-progress below-ceiling
+  tasks retain ordinary claim semantics. Focused qualification passed; protected
+  integration, independent review, release and real-row deployment remain open.
+
+- Refs: docs/stacklab/maat/canon/OWN_BLOCKED_TASK_RECOVERY_PLAN.md;
+  docs/ADR-061-DURABLE-CONTINUOUS-EXECUTION-ENFORCEMENT.md.
+
+- Complete the local managed-watch failure-memory loop with typed direct-attempt intake, stable-key recurrence prevention and exact local owner disposition. Native Casebook reviews full retained evidence, confirms “Accepted — not repaired,” reconciles interrupted data-only phases and returns fresh observations to the existing controlled resolver. Unknown actions stay pending and installers never replay during reconciliation. Source candidate; qualification and remaining operational rows stay explicit.
+
+- The optional legacy root-relay maintenance app path now binds each reviewed
+  operation to a controller-issued durable ticket and monotonic generation under
+  the existing service lock. Explicit resolution records a matching result or
+  fences delayed arrival before offering fresh consent. Old or empty status never
+  clears a newer unknown receipt. Cancellation preserves uncertain outcomes;
+  recovery, abort and replacement restoration require their own captured tickets.
+
+- Protected-engine preflight is bounded and checks the installed helper's native
+  protocol/release against the signed app before authorization. A reachable app
+  action prepares and rechecks the exact running release's normal PKG, including
+  published SHA256, package trust, replacement metadata, payload and helper
+  compatibility, before opening macOS Installer. Installation and fresh installed
+  pair verification remain separate; a DMG handoff or an older incompatible PKG
+  is not substituted.
+
+- This is an unqualified source successor to the retained 54d bridge review and
+  failed fixture-compile attempt. Authored inert fixtures are not execution or
+  installed-recovery evidence. Existing modern service/agent authorization and
+  producer-covered Studio maintenance remain unchanged; this fallback adds no
+  Studio rollout gate or automatic service action.
+
+- Add a narrow one-shot macOS-authorized app route for legacy root-relay
+  maintenance. Keep the GUI unprivileged and execute only the qualified protected
+  installed engine with closed public request data and a minimal environment.
+  Preserve existing registered-agent authorization, controller/journal fences,
+  LR01–03 recovery, captured restore bytes and unknown-outcome debt. Retain model
+  state across workspace remounts. Missing or drifted protected installation stays
+  unsupported with an in-app normal signed-PKG prerequisite; no bundle/PATH root
+  fallback, daemon, router DB or credential forwarding is introduced. Inert
+  quoting, denial, frame, identity and lifecycle fixtures accompany the source;
+  actual administrator/service execution is not claimed.
+
+- The legacy relay panel now offers authoritative public-binding inspection and
+  explicit confirmed reconciliation when its saved public receipt is unreadable.
+  It recovers an exact controller binding or obtains a new serialized preview
+  reservation for the selected retained payload. The public binding is stored and
+  read back, then the existing matching-result/fence control is required before a
+  fresh preview and new service consent. Empty status never resets uncertainty.
+  Unreadable-byte count and bounded-prefix digest remain labelled as unknown past
+  outcome; no manual preferences deletion or service replay is requested.
+
+- Installer preparation and final verification now share the bridge's bounded
+  preflight mechanism. Signed-app and bundled-engine identity checks run off the
+  UI actor; deadline, cancellation, generation and consumed consent are checked
+  before command submission and before opening normal Installer. Late read-only
+  probe completion cannot revive an expired operation.
+
+- Direct inert fixtures include the actual controller's empty wire shape and
+  late-ticket refusal, public persistence/readback failure, changed bindings and
+  stalled Installer identity. This source successor preserves6f40's separately
+  qualified203+203 Go events and21 Swift methods without treating them as proof
+  of these new paths. Real OS authorization, Installer, native image/service and
+  installed recovery remain separately unproved. No Studio rollout gate added.
+
+- Add an exact root-relay legacy maintenance transaction and startup-held producer
+  protocol, separate from ordinary/producer-covered refresh. Private durable phases,
+  selected instance/artifact bindings, positive retirement checks and quarantined
+  unknown envelopes support explicit transaction-bound recovery without replay or
+  old-work drain claims. Add inert controller, command, journal, custody, startup,
+  wire and physical admission fixtures. Native loaded-image binding, application
+  root-host integration and installed qualification remain open; this fallback is
+  not an additional gate on the supported Studio route or published135.
+
+- Route legacy maintenance authorization through the selected protected relay's
+  existing direct canonical configuration, in memory only, so a pending spool hold
+  does not block fresh owner/grant verification. Preserve the registered actor,
+  thread, native runtime and exact lifecycle-service grant contract; retain ordinary
+  refresh authority behavior. Add inert protected-configuration, real owned HTTP
+  session and current-runtime/grant fixtures. Privileged native app-host execution
+  remains absent in the baseline; no administrator prompt, daemon or fake GUI
+  identity is substituted. Add shared global custody dimensions, durable atomic
+  prepare-before-journal startup holds, marker-cleanup generation recovery,
+  pre-retirement abort, and exact replacement restoration with retained backup/stage
+  debt. Casebook consent binds captured plans and exact transaction identity; the
+  host refuses ordinary user-process operation rather than acquiring privileges.
+  Source candidate with initial compiler feedback, not installed qualification.
+
 ## [0.24.136] — 2026-10-24
 
 ### Fixed

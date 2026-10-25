@@ -24,6 +24,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -246,6 +247,29 @@ func NewMemoryOnlyRemoteStore(base, token string) *RemoteStore {
 	store := NewRemoteStore(base, token)
 	store.sessionDir = ""
 	return store
+}
+
+// NewMemoryOnlyRemoteStoreForCaller retains an existing service's credentials
+// and one explicit registered audience in memory. It neither resolves a local
+// store nor consults another caller's on-disk session cache.
+func NewMemoryOnlyRemoteStoreForCaller(base, token, agent, thread, pin string) (*RemoteStore, error) {
+	if strings.TrimSpace(agent) == "" || strings.TrimSpace(thread) == "" || token == "" || SpoolDir(base) != "" {
+		return nil, errors.New("routerstore: existing direct authority and registered caller required")
+	}
+	store := newRemoteStore(base, token, &callerBinding{agent: agent, thread: thread})
+	store.sessionDir = ""
+	// Reuse relay transport behavior with the selected relay's pin rather than
+	// substituting an ambient pin. No global environment swap.
+	client := newRelayHTTPClient()
+	cfg, err := pinConfig(pin, base, &tls.Config{MinVersion: tls.VersionTLS12})
+	if err != nil {
+		return nil, err
+	}
+	if cfg != nil {
+		client.Transport.(*http.Transport).TLSClientConfig = cfg
+	}
+	store.client = client
+	return store, nil
 }
 
 var (
@@ -671,6 +695,12 @@ func (rs *RemoteStore) ThreadBinding(threadID string) (ThreadBinding, error) {
 func (rs *RemoteStore) GetThreadRecord(threadID string) (ThreadRecord, error) {
 	var out ThreadRecord
 	err := rs.call("GetThreadRecord", []any{threadID}, &out)
+	return out, err
+}
+
+func (rs *RemoteStore) GetThreadRecordContext(ctx context.Context, threadID string) (ThreadRecord, error) {
+	var out ThreadRecord
+	err := rs.callCtx(ctx, "GetThreadRecord", []any{threadID}, &out)
 	return out, err
 }
 

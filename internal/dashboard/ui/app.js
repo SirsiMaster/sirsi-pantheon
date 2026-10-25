@@ -18,6 +18,9 @@ var ICON={
 function plural(n,one,many){return n+' '+(n===1?one:many)}
 var VIEWS=[['overview','Work fabric','One canonical router. Every lane, one accountable history.'],['lanes','Lanes','Can each lane work right now'],['queue','Queue','Open items by recipient'],['releases','Releases','What each release added'],['failures','Known failures','Registered once, fixed with a guard'],['fleet','Fleet','Work in flight across every lane'],['host','Host','Memory, swap and this Mac']];
 var state={view:'overview',data:null,fleet:null,stats:null,err:null,at:null,recipient:'*',lane:{filter:'ALL',q:'',sort:'agent',dir:1},timer:null};
+VIEWS.splice(VIEWS.length-1,0,['mercury','Mercury','Observed interconnect activity — read only']);
+ICON.mercury='<svg viewBox="0 0 24 24"><path d="M3 8h18l-4-4M21 16H3l4 4"/></svg>';
+var stopMercury=null;
 
 function get(u){return fetch(u,{cache:'no-store',signal:AbortSignal.timeout(15000)}).then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j})})}
 function load(){
@@ -122,6 +125,9 @@ function render(){
  $('#title').textContent=v[1];$('#subtitle').textContent=v[2];
  $('#foot-ver').textContent=state.data?'Pantheon '+state.data.version:'';
  var el=$('#view');
+ $('#live').hidden=state.view==='mercury'; // Mercury owns its own typed read-state label, not the router receipt's lamp.
+ if(state.view==='mercury'){if(!stopMercury){el.replaceChildren();stopMercury=window.mountMercury(el)}return}
+ if(stopMercury){stopMercury();stopMercury=null}
  if(state.view==='fleet'){el.innerHTML=(state.fleetErr?'<p class="stale-banner">Fleet refresh failed · '+esc(state.fleetErr)+'</p>':'')+vFleet();return}
  if(!state.data){el.innerHTML=state.err?'<div class="card err-card"><h2>Router unavailable</h2>'+esc(state.err)+'</div>':skeleton();return}
  var opened=Array.from(el.querySelectorAll('details[open]')).map(function(x){return x.dataset.release});el.innerHTML=(state.err?'<p class="stale-banner">Retained snapshot · '+esc(state.data.generated_at||'time unknown')+' · '+esc(state.err)+'</p>':'')+RENDER[state.view](state.data);el.querySelectorAll('details').forEach(function(x){x.open=opened.includes(x.dataset.release)});
@@ -146,8 +152,10 @@ function inspector(agent){
  showInspector('Lane inspector','<p class="sub">Snapshot '+esc(state.data&&state.data.generated_at||'time unknown')+' · Reopen to see the latest received snapshot.</p><h3>'+esc(agent)+'</h3>'+(lane?chip(lane.verdict)+'<p>'+esc(lane.detail)+'</p><dl>'+[['Open items',lane.open],['Observed',lane.observed_at],['Worker thread',lane.worker_thread_id],['Last report',lane.last_report_at],['Report',lane.last_report_summary]].map(function(x){return '<dt>'+esc(x[0])+'</dt><dd>'+esc(x[1]??'Unknown / not supplied')+'</dd>'}).join('')+'</dl>'+nextStep(lane.next):'<p>No lane projection supplied for this recipient.</p>'),true);
 }
 document.addEventListener('click',function(e){var b=e.target.closest('[data-queue],[data-item],[data-inspect],[data-copy],[data-failure],[data-view]');if(!b)return;if(b.dataset.queue){state.recipient=b.dataset.queue;go('queue')}else if(b.dataset.item)itemInspector(b.dataset.item);else if(b.dataset.view)go(b.dataset.view);else if(b.dataset.failure)failureInspector(b.dataset.failure);else if(b.dataset.inspect)inspector(b.dataset.inspect);else if(!navigator.clipboard){$('#announcement').textContent='Clipboard unavailable. Command: '+b.dataset.copy}else navigator.clipboard.writeText(b.dataset.copy).then(function(){$('#announcement').textContent='Command copied.'}).catch(function(){$('#announcement').textContent='Clipboard unavailable. Command: '+b.dataset.copy})});
-document.addEventListener('keydown',function(e){var dlg=$('.inspector.persistent');if(e.key==='Escape'&&dlg&&dlg.open&&!e.target.closest('input,textarea,select,[contenteditable]')){e.preventDefault();dlg.close();return}if(e.target.closest('input,textarea,select,dialog')||e.metaKey||e.ctrlKey||e.altKey)return;if(e.key==='r'){e.preventDefault();load()}if(e.key==='/'){e.preventDefault();go('lanes');$('#lq').focus()}});
-$('#refresh').addEventListener('click',function(){load()});
+document.addEventListener('keydown',function(e){var dlg=$('.inspector.persistent');if(e.key==='Escape'&&dlg&&dlg.open&&!e.target.closest('input,textarea,select,[contenteditable]')){e.preventDefault();dlg.close();return}if(e.target.closest('input,textarea,select,dialog')||e.metaKey||e.ctrlKey||e.altKey)return;if(e.key==='r'){e.preventDefault();if(stopMercury)stopMercury.refresh();else load()}if(e.key==='/'){e.preventDefault();go('lanes');$('#lq').focus()}});
+$('#refresh').addEventListener('click',function(){if(stopMercury)stopMercury.refresh();else load()});
+window.addEventListener('pagehide',function(){if(stopMercury){stopMercury();stopMercury=null}});
+window.addEventListener('pageshow',function(){if(state.view==='mercury'&&!stopMercury)render()});
 window.addEventListener('hashchange',function(){var h=location.hash.slice(1);if(h&&h!==state.view&&VIEWS.some(function(v){return v[0]===h}))go(h)});
 var h0=location.hash.slice(1);if(VIEWS.some(function(v){return v[0]===h0}))state.view=h0;
 render();load().then(function(){if(state.view==='fleet'&&!state.fleet)loadFleet()});

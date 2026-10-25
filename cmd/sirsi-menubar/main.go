@@ -22,6 +22,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal/rules"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/mercury"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
@@ -172,10 +173,11 @@ func onReady() {
 	cfg := DefaultStatsConfig()
 	eventBuf := dashboard.NewEventBuffer(256)
 	dashSrv := dashboard.New(dashboard.Config{
-		Port:     dashboard.DashboardPort,
-		NotifyDB: nStore,
-		Events:   eventBuf,
-		SirsiBin: sirsiBin,
+		MercuryFn: mercury.NewConfigured().Read,
+		Port:      dashboard.DashboardPort,
+		NotifyDB:  nStore,
+		Events:    eventBuf,
+		SirsiBin:  sirsiBin,
 		StatsFn: func() ([]byte, error) {
 			snap := CollectStats(cfg)
 			return json.Marshal(snap)

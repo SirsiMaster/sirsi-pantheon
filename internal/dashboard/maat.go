@@ -1,8 +1,11 @@
 package dashboard
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"net/http"
-	"strings"
+	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/casebook"
@@ -40,27 +43,52 @@ func (s *Server) apiMaatCasebook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.cfg.MaatCasebookFn == nil {
+	query, parseErr := parseMaatHistoryHTTP(r)
+	if parseErr != nil {
+		maatReadError(w, http.StatusBadRequest, "invalid_query")
+		return
+	}
+	if s.cfg.MaatCasebookFn == nil && s.cfg.MaatHistoryFn == nil {
 		writeError(w, "Ma'at casebook projection not available", http.StatusServiceUnavailable)
 		return
 	}
-	status := casebook.Status(strings.ToLower(strings.TrimSpace(r.URL.Query().Get("status"))))
-	if status != "" && status != casebook.StatusOpen && status != casebook.StatusResolved {
-		writeError(w, "invalid Ma'at casebook status", http.StatusBadRequest)
+	var result casebook.HistorySearchResult
+	var err error
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	if s.cfg.MaatHistoryFn != nil {
+		result, err = s.cfg.MaatHistoryFn(ctx, query)
+	} else {
+		if query.Cursor != "" || query.Evidence != "" || query.Scope != maat.HistoryScopeAll {
+			maatReadError(w, http.StatusServiceUnavailable, "history_unavailable")
+			return
+		}
+		result.View, err = s.cfg.MaatCasebookFn(query.Query)
+		result.Window = casebook.HistoryWindow{Scope: query.Scope, Returned: len(result.View.Cases), PageSize: query.Limit, Coverage: "unavailable", CountScope: "page"}
+	}
+	if err != nil {
+		if errors.Is(err, maat.ErrHistorySnapshotChanged) {
+			maatReadError(w, http.StatusConflict, "snapshot_changed")
+		} else if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			maatReadError(w, http.StatusRequestTimeout, "read_cancelled") //nolint:misspell // Existing HTTP error identifier is retained for compatibility.
+		} else {
+			maatReadError(w, http.StatusServiceUnavailable, "history_unavailable")
+		}
 		return
 	}
-	view, err := s.cfg.MaatCasebookFn(casebook.Query{
-		Text: r.URL.Query().Get("q"), Kind: r.URL.Query().Get("kind"), Status: status,
-		Limit: parseIntParam(r, "limit", 50),
-	})
-	if err != nil {
-		writeError(w, "Ma'at casebook projection failed", http.StatusInternalServerError)
-		return
+	view := result.View
+	if result.Window.Coverage == maat.HistoryCoveragePartial {
+		view.Cases = []casebook.Case{}
+		view.Summary = casebook.Summary{}
 	}
 	if view.Cases == nil {
 		view.Cases = []casebook.Case{}
 	}
-	writeJSON(w, view)
+	writeJSON(w, struct {
+		casebook.View
+		History   casebook.HistoryWindow `json:"history"`
+		Integrity maat.JournalIntegrity  `json:"journal_integrity"`
+	}{view, result.Window, result.Integrity})
 }
 
 // apiMaatKnowledge projects the same sensitivity-filtered Ma'at local
@@ -71,11 +99,37 @@ func (s *Server) apiMaatKnowledge(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.cfg.MaatKnowledgeFn == nil {
+	query, parseErr := parseMaatKnowledgeHTTP(r)
+	if parseErr != nil {
+		if errors.Is(parseErr, knowledge.ErrInvalidSearchQuery) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid_search_query", "code": "invalid_search_query", "state": "unavailable", "message": knowledge.ErrInvalidSearchQuery.Error()})
+			return
+		}
+		maatReadError(w, http.StatusBadRequest, "invalid_query")
+		return
+	}
+	if s.cfg.MaatKnowledgeFn == nil && s.cfg.MaatKnowledgeReadFn == nil {
 		writeError(w, "Ma'at knowledge projection not available", http.StatusServiceUnavailable)
 		return
 	}
-	view, err := s.cfg.MaatKnowledgeFn(r.URL.Query().Get("q"))
+	if s.cfg.MaatKnowledgeReadFn != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		view, err := s.cfg.MaatKnowledgeReadFn(ctx, query)
+		if err != nil {
+			maatReadError(w, http.StatusServiceUnavailable, "knowledge_unavailable_or_stale")
+			return
+		}
+		writeJSON(w, view)
+		return
+	}
+	if !query.legacyCompatible() {
+		maatReadError(w, http.StatusServiceUnavailable, "knowledge_paging_unavailable")
+		return
+	}
+	view, err := s.cfg.MaatKnowledgeFn(query.Query.Text)
 	if err != nil {
 		writeError(w, "Ma'at knowledge projection failed", http.StatusInternalServerError)
 		return

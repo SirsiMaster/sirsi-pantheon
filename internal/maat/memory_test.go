@@ -338,7 +338,11 @@ func TestProjectFailureMemoryPreflightUsesExistingDecisionJournal(t *testing.T) 
 		t.Fatal(err)
 	}
 	journal := &recordingDecisionJournal{}
-	if err := ProjectFailureMemoryPreflight(journal, receipt); err != nil {
+	stored, err := store.RetainPreflightReceipt(receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ProjectFailureMemoryPreflight(journal, stored); err != nil {
 		t.Fatal(err)
 	}
 	evidence, err := receipt.EvidenceReference()
