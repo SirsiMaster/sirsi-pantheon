@@ -77,26 +77,55 @@
       "source": [
         "internal/ra",
         "internal/routerstore",
-        "internal/ledger"
+        "internal/ledger",
+        "internal/ledger/fabric.go",
+        "internal/router/readiness_projection.go",
+        "internal/dashboard/fabric.go",
+        "internal/dashboard/fleet.go",
+        "cmd/sirsi/fabric_host.go",
+        "cmd/sirsi/routerfabriccmd.go",
+        "cmd/sirsi/dashboard.go",
+        "internal/dashboard/ui/fabric.js",
+        "internal/dashboard/ui/app.js",
+        "macapp/Sources/SirsiMenubar/CanonicalFabric.swift",
+        "macapp/Sources/SirsiMenubar/SirsiEngine.swift",
+        "macapp/Sources/SirsiMenubar/Views.swift"
       ],
       "tests": [
         "internal/ra",
         "internal/routerstore",
-        "internal/ledger"
+        "internal/ledger",
+        "internal/ledger/fabric_join_test.go",
+        "internal/dashboard/fabric_join_test.go",
+        "cmd/sirsi/fabric_host_test.go",
+        "internal/dashboard/testdata/fabric.test.cjs",
+        "macapp/Tests/SirsiMenubarTests/CanonicalFabricTests.swift"
       ],
       "inputs": [
         "router receipts",
         "ledger tasks",
-        "lane state"
+        "lane state",
+        "existing canonical ClassifyLane + registry/PingLane readiness readbacks",
+        "existing NodeCapacity, Known-bearing swap/free sample, bounded repository status and engine session telemetry",
+        "same-snapshot FleetTracker status observations"
       ],
       "outputs": [
-        "FabricBoard"
+        "FabricBoard",
+        "distinct task/message/runtime/host planes",
+        "real observed transitions with explicit unseeded coverage",
+        "null unavailable host facts; known zero preserved; engine session observation is not readiness"
       ],
       "writes": [],
       "upgrade_recipe": [
         "preserve stream-separated counts",
         "add fixture before changing classification",
-        "run focused and race tests"
+        "run focused and race tests",
+        "preserve original full Fabric surface contract; never infer WORKING from heartbeat/task liveness",
+        "same producer for protected native CLI and current web endpoint; failed producer means unavailable, never empty",
+        "first observation seeds quietly; no synthetic timeline events or persistent second history",
+        "qualify actual Go endpoint JSON in Node and native consumers, normal/race and compiled semantic negatives",
+        "retain foreign Nexus/Horus mapping/readback obligations with their owners via Main",
+        "see docs/stacklab/ra/canon/FABRIC_SURFACE_PRODUCER_V1.md; source-only unqualified candidate"
       ]
     },
     {

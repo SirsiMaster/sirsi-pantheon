@@ -81,6 +81,10 @@ type Config struct {
 	// their state from this producer). If nil, the endpoint returns 503
 	// rather than a misleading zero-valued payload.
 	FabricFn FabricProducer
+	// FabricReadFn is the existing authority join before rendering. The server
+	// feeds its existing FleetTracker with these SAME snapshots, not a second read.
+	FabricReadFn func() (ledger.FabricRead, error)
+	FabricBuild  string
 	// RouterFn produces GET /api/router: lane verdicts, queue, consumer cap,
 	// registry pin, known-failure catalog, swap-hygiene receipt and what each
 	// release added. Wired by the caller, which owns registry/store access.
@@ -139,6 +143,8 @@ type Server struct {
 	runner         *Runner
 	confirm        *ConfirmGuard
 	fleet          *FleetTracker
+	fabricFleet    *FleetTracker
+	fabricMu       sync.Mutex
 	surfaceOrigins map[string]struct{}
 }
 
@@ -159,7 +165,7 @@ func New(cfg Config) *Server {
 			allowed[origin] = struct{}{}
 		}
 	}
-	s := &Server{cfg: cfg, confirm: NewConfirmGuard(), fleet: NewFleetTracker(cfg.Unroutable), surfaceOrigins: allowed}
+	s := &Server{cfg: cfg, confirm: NewConfirmGuard(), fleet: NewFleetTracker(cfg.Unroutable), fabricFleet: NewFleetTracker(nil), surfaceOrigins: allowed}
 
 	// Initialize runner if we have both an event buffer and a binary path.
 	if cfg.Events != nil && cfg.SirsiBin != "" {

@@ -549,6 +549,8 @@ struct CommandDeckView: View {
                 .accessibilityLabel("\(aiStatusLabel) — open Ask Sirsi")
             }
 
+            CanonicalFabricView(store:engine.fabricProjection,compact:true)
+
             VStack(alignment: .leading, spacing: 8) {
                 // The hero annotates the local AI; tapping it opens Ask Sirsi.
                 NavLink { AskSirsiView(engine: engine) } label: {
@@ -1752,59 +1754,15 @@ extension View {
     func disabledRow() -> some View { self.opacity(0.45) }
 }
 
-// ── Fleet (shared producer — matches the Horus board by construction) ────────
-//
-// Renders `sirsi router fleet --json`, the SAME computation Horus serves at
-// /api/fleet. This surface deliberately does NO aggregation of its own: the
-// menubar previously derived its fabric view from `router node-status` while
-// Horus derived from ledger.Build, and two read models cannot agree. Matching
-// is a property of sharing the producer, not of keeping two implementations in
-// sync by hand.
-//
-// The activity feed is intentionally absent: it is a diff of consecutive reads
-// and needs a long-lived process to hold the baseline. Horus has one; a panel
-// that opens and closes does not. Showing an always-empty feed here would read
-// as "nothing is happening".
+// Fleet/Command Deck/Ra consume the canonical FabricBoard projection. The
+// legacy FleetLaneRow remains a compatibility renderer, not a second producer.
 struct FleetView: View {
     @ObservedObject var engine: SirsiEngine
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            BackBar(title: "Fleet")
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    if let err = engine.fleetError {
-                        Text("Fleet read failed: \(err)")
-                            .sirsiFont(12).foregroundColor(.orange)
-                    }
-                    if let b = engine.fleetBoard {
-                        let s = b.summary
-                        // Every percentage ships the counts it came from, so a
-                        // number can never be read without its denominator.
-                        VStack(alignment: .leading, spacing: 6) {
-                            FleetTile(label: "COMPLETED / IN FLIGHT",
-                                      value: "\(s.done) / \(s.total)",
-                                      detail: "\(s.pctDone)% done · \(s.inFlight) still in flight")
-                            FleetTile(label: "IN PROGRESS / ASSIGNED",
-                                      value: "\(s.active) / \(s.active + s.assigned)",
-                                      detail: "\(s.assigned) assigned but not started")
-                            FleetTile(label: "STALLED / BLOCKED",
-                                      value: "\(s.stalled + s.blocked)",
-                                      detail: "\(s.stalled) stalled · \(s.blocked) blocked · \(s.idleLanes) idle lanes")
-                        }
-                        Text("\(s.lanesWorking) of \(s.lanesTotal) lanes actively working")
-                            .sirsiFont(11).foregroundColor(.secondary)
-                        ForEach(b.lanes) { l in
-                            FleetLaneRow(lane: l)
-                        }
-                    } else if engine.fleetLoading {
-                        Text("reading fleet…").sirsiFont(12).foregroundColor(.secondary)
-                    }
-                }
-                .padding(14)
-            }
+        VStack(alignment:.leading,spacing:0) {
+            BackBar(title:"Fleet")
+            ScrollView {CanonicalFabricView(store:engine.fabricProjection).padding(14)}
         }
-        .task { await engine.loadFleetBoard() }
     }
 }
 
@@ -1918,6 +1876,7 @@ struct RaFabricView: View {
     private func fabricContent(at now: Date) -> some View {
         VStack(spacing: 0) {
             BackBar(title: "Ra — Fabric")
+            CanonicalFabricView(store:engine.fabricProjection,compact:true).padding(.horizontal,16)
             maybeScrollRouter {
                 VStack(alignment: .leading, spacing: 14) {
 

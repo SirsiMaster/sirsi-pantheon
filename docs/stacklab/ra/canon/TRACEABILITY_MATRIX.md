@@ -32,3 +32,12 @@
 | Rollback/revocation | deploy/cutover scripts | rollback fixture; fresh cloud rehearsal pending | partial |
 | Commercial product closure | commercialization gate | pilot/platform-foundation classification | open |
 | Scoped cloud logical host survives ephemeral OS hostnames | `routerstore.ThreadOwnerHost`, `NewRemoteStore`, thread registration/save | exact120 baseline403, corrected registration/heartbeat/claim/completion/close and foreign-host/lane refusal; native two-package race PASS | client candidate only; private environment readiness and M5-off proof remain open |
+
+Original Fabric surface unification: `fabric-board` joins canonical task/message
+reads with existing leased runtime classification, existing host/capacity/session
+read models and the existing FleetTracker's real transitions. Current web and
+protected native projections share `ledger.FabricFrom`; missing data stays
+unavailable/null, not a zero or WORKING inference. Actual Go endpoint fixture
+JSON is an explicit Node/native input. Source only, qualification and foreign
+Nexus/Horus consumer mapping/readback pending; no row/status/release claim.
+See [module/provenance/upgrade boundary](FABRIC_SURFACE_PRODUCER_V1.md).

@@ -1,6 +1,9 @@
 package ledger
 
 import (
+	"fmt"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"sort"
 	"time"
 
@@ -11,13 +14,15 @@ import (
 // separate streams so no renderer can put two different meanings behind one
 // headline number.
 type FabricBoard struct {
-	Work        FabricWork       `json:"work"`
-	Messages    FabricMessages   `json:"messages"`
-	Lanes       []FabricLane     `json:"lanes"`
-	Health      FabricHealth     `json:"health"`
-	Activity    []FabricActivity `json:"activity"`
-	Build       string           `json:"build"`
-	GeneratedAt string           `json:"generated_at"`
+	Work             FabricWork       `json:"work"`
+	Messages         FabricMessages   `json:"messages"`
+	Lanes            []FabricLane     `json:"lanes"`
+	Health           FabricHealth     `json:"health"`
+	Activity         []FabricActivity `json:"activity"`
+	ActivitySeeded   bool             `json:"activity_seeded"`
+	RuntimeAvailable bool             `json:"runtime_available"`
+	Build            string           `json:"build"`
+	GeneratedAt      string           `json:"generated_at"`
 }
 
 type FabricWork struct {
@@ -43,22 +48,29 @@ type FabricRegistration struct {
 }
 
 type FabricLane struct {
-	Agent      string             `json:"agent"`
-	State      string             `json:"state"`
-	Open       int                `json:"open"`
-	Active     int                `json:"active"`
-	Stalled    int                `json:"stalled"`
-	Blocked    int                `json:"blocked"`
-	LastTouch  string             `json:"last_touch,omitempty"`
-	Registered FabricRegistration `json:"registered"`
+	Agent      string                            `json:"agent"`
+	State      string                            `json:"state"`
+	StateLabel string                            `json:"state_label"`
+	Runtime    *routerstore.LaneOperationalState `json:"runtime,omitempty"`
+	Open       int                               `json:"open"`
+	Active     int                               `json:"active"`
+	Stalled    int                               `json:"stalled"`
+	Blocked    int                               `json:"blocked"`
+	LastTouch  string                            `json:"last_touch,omitempty"`
+	Registered FabricRegistration                `json:"registered"`
 }
 
 type FabricHealth struct {
-	RAMPct   *float64 `json:"ram_pct"`
-	Swap     *int64   `json:"swap"`
-	GitDirty *bool    `json:"git_dirty"`
-	Engine   string   `json:"engine"`
-	Issues   []string `json:"issues"`
+	RAMPct      *float64 `json:"ram_pct"`
+	Swap        *int64   `json:"swap"`
+	GitDirty    *bool    `json:"git_dirty"`
+	Engine      string   `json:"engine"`
+	Issues      []string `json:"issues"`
+	TotalRAM    *int64   `json:"total_ram"`
+	CPUCores    *int     `json:"cpu_cores"`
+	EngineState string   `json:"engine_state"`
+	ObservedAt  string   `json:"observed_at,omitempty"`
+	RAMSource   string   `json:"ram_source,omitempty"`
 }
 
 type FabricActivity struct {
@@ -71,13 +83,39 @@ type FabricActivity struct {
 
 // FabricFrom derives all task/message/lane values once for every renderer.
 // Unknown host-health values are nil, never fabricated zeroes.
-func FabricFrom(s Snapshot, ns *router.NodeStatus, build string) FabricBoard {
-	b := FabricBoard{
-		Build:       build,
-		GeneratedAt: s.GeneratedAt,
-		Health:      FabricHealth{Engine: "unknown", Issues: []string{}},
-		Activity:    []FabricActivity{},
+// FabricEvidence is already-read authority, not a second store/policy. Missing
+// operational evidence is UNKNOWN, never status/heartbeat-derived WORKING.
+type FabricEvidence struct {
+	Operational    map[string]routerstore.LaneOperationalState
+	Health         *FabricHealth
+	Activity       []FabricActivity
+	ActivitySeeded bool
+}
+type FabricRead struct {
+	Snapshot Snapshot
+	Node     *router.NodeStatus
+	Evidence FabricEvidence
+}
+
+func FabricFrom(s Snapshot, ns *router.NodeStatus, build string, inputs ...FabricEvidence) FabricBoard {
+	var evidence FabricEvidence
+	if len(inputs) == 1 {
+		evidence = inputs[0]
 	}
+	b := FabricBoard{
+		Build:            build,
+		GeneratedAt:      s.GeneratedAt,
+		Health:           FabricHealth{Engine: "unknown", EngineState: "unavailable", Issues: []string{}},
+		RuntimeAvailable: evidence.Operational != nil,
+		ActivitySeeded:   evidence.ActivitySeeded,
+		Activity:         []FabricActivity{},
+		Lanes:            []FabricLane{},
+	}
+	if evidence.Health != nil {
+		b.Health = *evidence.Health
+		b.Health.Issues = append([]string{}, evidence.Health.Issues...)
+	}
+	b.Activity = append(b.Activity, evidence.Activity...)
 	registered := map[string]bool{}
 	threaded := map[string]bool{}
 	if ns != nil {
@@ -136,17 +174,24 @@ func FabricFrom(s Snapshot, ns *router.NodeStatus, build string) FabricBoard {
 				}
 			}
 		}
-		switch {
-		case lane.Active > 0:
-			lane.State = "WORKING"
-		case lane.Stalled > 0:
-			lane.State = "IDLE with work"
-		case lane.Blocked > 0:
-			lane.State = "BLOCKED"
-		case lane.Open > 0:
-			lane.State = "ASSIGNED"
-		default:
-			lane.State = "IDLE"
+		lane.State = "UNKNOWN"
+		validRuntime := false
+		if state, ok := evidence.Operational[a.AgentID]; ok && state.Agent == a.AgentID {
+			switch state.Classification {
+			case routerstore.LaneWorking, routerstore.LaneAssigned, routerstore.LaneIdleWithWork, routerstore.LaneBlocked, routerstore.LaneUnroutable, routerstore.LaneComplete:
+				validRuntime = true
+				lane.State = state.Classification
+				copied := state
+				lane.Runtime = &copied
+			}
+		}
+		if !validRuntime {
+			b.RuntimeAvailable = false
+		}
+
+		lane.StateLabel = lane.State
+		if lane.State == routerstore.LaneIdleWithWork {
+			lane.StateLabel = "IDLE with work"
 		}
 		b.Lanes = append(b.Lanes, lane)
 	}
@@ -160,14 +205,58 @@ func FabricFrom(s Snapshot, ns *router.NodeStatus, build string) FabricBoard {
 // BuildFabric joins the canonical ledger and node-status producers. Callers
 // receive an error instead of a zero-valued board when either producer is
 // unavailable, allowing surfaces to retain and label their last good payload.
-func BuildFabric(repoRoot, build string, now time.Time) (FabricBoard, error) {
+// ReadFabric reads existing canonical ledger/node/runtime authorities only.
+// In particular it never invokes SuperviseOnce or its reconcile/wake writes.
+func ReadFabric(repoRoot string, now time.Time) (FabricRead, error) {
 	snap, err := Build(repoRoot, "", now, DefaultStaleAfter)
 	if err != nil {
-		return FabricBoard{}, err
+		return FabricRead{}, err
 	}
 	ns, err := router.CollectNodeStatus(repoRoot, nil)
 	if err != nil {
+		return FabricRead{}, err
+	}
+	if ns == nil {
+		return FabricRead{}, fmt.Errorf("fabric node status unavailable")
+	}
+	f, err := dispatch.Open(repoRoot)
+	if err != nil {
+		return FabricRead{}, err
+	}
+	defer f.Close()
+	unavailable, err := router.ReadLaneRoutability(repoRoot)
+	if err != nil {
+		return FabricRead{}, err
+	}
+	ids, err := f.Store().OperationalAgents()
+	if err != nil {
+		return FabricRead{}, err
+	}
+	seen := map[string]bool{}
+	for _, agent := range snap.Agents {
+		seen[agent.AgentID] = true
+	}
+	for _, id := range append(ids, ns.RegisteredAgents...) {
+		if !seen[id] {
+			snap.Agents = append(snap.Agents, Agent{AgentID: id})
+			seen[id] = true
+		}
+	}
+	operational := map[string]routerstore.LaneOperationalState{}
+	for _, agent := range snap.Agents {
+		blocked, declared := unavailable[agent.AgentID]
+		value, err := f.Store().ClassifyLane(agent.AgentID, declared && !blocked, 5*time.Minute)
+		if err != nil {
+			return FabricRead{}, fmt.Errorf("fabric runtime unavailable: %w", err)
+		}
+		operational[agent.AgentID] = value
+	}
+	return FabricRead{Snapshot: snap, Node: ns, Evidence: FabricEvidence{Operational: operational}}, nil
+}
+func BuildFabric(repoRoot, build string, now time.Time) (FabricBoard, error) {
+	read, err := ReadFabric(repoRoot, now)
+	if err != nil {
 		return FabricBoard{}, err
 	}
-	return FabricFrom(snap, ns, build), nil
+	return FabricFrom(read.Snapshot, read.Node, build, read.Evidence), nil
 }

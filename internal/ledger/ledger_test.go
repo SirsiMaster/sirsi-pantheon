@@ -163,14 +163,17 @@ func TestFabricFromKeepsWorkMessagesAndRegistrationDistinct(t *testing.T) {
 		StrandedInbox:    []router.StrandedAgent{{AgentID: "agent-b", OpenItems: 2}},
 	}
 
-	b := FabricFrom(s, ns, "v1")
+	b := FabricFrom(s, ns, "v1", FabricEvidence{Operational: map[string]routerstore.LaneOperationalState{
+		"agent-a": {Agent: "agent-a", Classification: routerstore.LaneWorking},
+		"agent-b": {Agent: "agent-b", Classification: routerstore.LaneIdleWithWork},
+	}})
 	if b.Work.Total != 3 || b.Work.Done != 1 || b.Work.Open != 2 || b.Work.InProgress != 1 || b.Work.Stalled != 1 {
 		t.Fatalf("work = %+v", b.Work)
 	}
 	if b.Messages.Open != 1 || b.Messages.OldestAgeSeconds != 90 || b.Messages.Stranded != 2 {
 		t.Fatalf("messages = %+v", b.Messages)
 	}
-	if len(b.Lanes) != 2 || b.Lanes[0].State != "WORKING" || b.Lanes[1].State != "IDLE with work" {
+	if len(b.Lanes) != 2 || b.Lanes[0].State != "WORKING" || b.Lanes[1].State != routerstore.LaneIdleWithWork || b.Lanes[1].StateLabel != "IDLE with work" {
 		t.Fatalf("lanes = %+v", b.Lanes)
 	}
 	if !b.Lanes[0].Registered.Router || !b.Lanes[0].Registered.Thread || !b.Lanes[0].Registered.Ledger {

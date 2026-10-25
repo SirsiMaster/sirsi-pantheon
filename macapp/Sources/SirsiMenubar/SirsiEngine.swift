@@ -709,9 +709,11 @@ final class SirsiEngine: ObservableObject {
     @Published var routerReadError: String?
     // Shared by every Ma'at root/detail; remounting a workspace cannot reset
     // the guard or lose an invocation's result. Go retains effect authority.
+    let fabricProjection: FabricProjectionStore
     let maatCaseOperations: MaatCaseOperationStore
 
-    init(maatCaseOperations: MaatCaseOperationStore? = nil) {
+    init(maatCaseOperations: MaatCaseOperationStore? = nil, fabricProjection: FabricProjectionStore? = nil) {
+        self.fabricProjection = fabricProjection ?? FabricProjectionStore()
         self.maatCaseOperations = maatCaseOperations ?? MaatCaseOperationStore()
     }
     func routerObservationIsCurrent(at now: Date) -> Bool {

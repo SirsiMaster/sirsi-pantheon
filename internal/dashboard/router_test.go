@@ -179,10 +179,17 @@ func TestHomeServesTheDashboardAndItsAssets(t *testing.T) {
 		t.Fatalf("home page wrong: %d %s", code, ct)
 	}
 	js, _, _ := body("/assets/app.js")
-	for _, want := range []string{"/api/router/v1/snapshot", "/api/fleet", "/api/stats", "Where work is waiting", "data-view", "data-inspect"} {
+	for _, want := range []string{"/api/router/v1/snapshot", "/api/fabric", "/api/stats", "Where work is waiting", "data-view", "data-inspect"} {
 		if !strings.Contains(js, want) {
 			t.Errorf("app.js missing %q", want)
 		}
+	}
+	if !strings.Contains(home, "/assets/fabric.js") {
+		t.Fatal("actual Fabric renderer not mounted")
+	}
+	fabricJS, _, fabricCode := body("/assets/fabric.js")
+	if fabricCode != 200 || !strings.Contains(fabricJS, "Messages pending") || !strings.Contains(fabricJS, "Baseline only") {
+		t.Fatal("actual Fabric module missing stream/coverage labels")
 	}
 	css, _, code := body("/assets/tokens.css")
 	if code != 200 || !strings.Contains(css, "--emerald:") || !strings.Contains(css, "prefers-color-scheme: dark") {

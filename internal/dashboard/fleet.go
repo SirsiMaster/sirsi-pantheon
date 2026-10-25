@@ -190,7 +190,7 @@ func (ft *FleetTracker) observe(snap ledger.Snapshot, now time.Time, unroutable 
 				ft.prev[key] = status
 			case prev != status:
 				ft.events = append([]FleetEvent{{
-					At:      now.Format("15:04:05"),
+					At:      now.UTC().Format(time.RFC3339Nano),
 					Agent:   ag.AgentID,
 					TaskID:  t.TaskID,
 					Subject: t.Subject,
@@ -318,8 +318,8 @@ func (ft *FleetTracker) observe(snap ledger.Snapshot, now time.Time, unroutable 
 	})
 
 	out.Activity = append([]FleetEvent{}, ft.events...)
-	ft.seeded = true
 	out.Seeded = ft.seeded
+	ft.seeded = true
 	return out
 }
 

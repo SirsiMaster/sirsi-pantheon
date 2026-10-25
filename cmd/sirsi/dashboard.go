@@ -79,7 +79,8 @@ func runDashboard(cmd *cobra.Command, args []string) {
 			}
 			return unroutableAgents(repoRoot)
 		},
-		FabricFn:            collectDashboardFabric,
+		FabricReadFn:        collectDashboardFabricRead,
+		FabricBuild:         buildversion.Current("sirsi").Version,
 		MaatDecisionsFn:     collectDashboardMaatDecisions,
 		MaatCasebookFn:      collectDashboardMaatCasebook,
 		MaatKnowledgeFn:     collectDashboardMaatKnowledge,
@@ -188,16 +189,26 @@ func collectDashboardMaatKnowledge(query string) (knowledge.View, error) {
 	return knowledge.Load(home, query)
 }
 
-func collectDashboardFabric() (ledger.FabricBoard, error) {
+func collectDashboardFabricRead() (ledger.FabricRead, error) {
 	repoRoot, err := router.FindRepoRoot()
 	if err != nil {
-		return ledger.FabricBoard{}, fmt.Errorf("locate repo root: %w", err)
+		return ledger.FabricRead{}, fmt.Errorf("locate repo root: %w", err)
 	}
-	board, err := ledger.BuildFabric(repoRoot, buildversion.Current("sirsi").Version, time.Now().UTC())
+	now := time.Now().UTC()
+	read, err := ledger.ReadFabric(repoRoot, now)
 	if err != nil {
-		return ledger.FabricBoard{}, fmt.Errorf("build fabric: %w", err)
+		return ledger.FabricRead{}, err
 	}
-	return board, nil
+	health := collectFabricHostHealth(repoRoot, now)
+	read.Evidence.Health = &health
+	return read, nil
+}
+func collectDashboardFabric() (ledger.FabricBoard, error) {
+	read, err := collectDashboardFabricRead()
+	if err != nil {
+		return ledger.FabricBoard{}, err
+	}
+	return ledger.FabricFrom(read.Snapshot, read.Node, buildversion.Current("sirsi").Version, read.Evidence), nil
 }
 
 // collectDashboardLedger wires GET /api/ledger (A26 Nexus seam) to the
