@@ -7,9 +7,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/updater"
 )
 
@@ -86,6 +88,27 @@ func TestInstallAppRollbackReleaseRejectsTagMismatch(t *testing.T) {
 }
 
 func TestRunUpdate_NoCompleteCommercialReleaseIsRecoverableForInstallRequests(t *testing.T) {
+	// The real update adapter must inspect existing typed memory before any
+	// availability read. Establish that prerequisite, never stub its authority.
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	if _, err := maat.InitializeDefaultStore(); err != nil {
+		t.Fatalf("initialize owned update availability fixture: %v", err)
+	}
+	oldRollback, oldConfirm := updateRollbackVersion, updateConfirmRollback
+	oldReconcile, oldCapability := updateReconcileAppAttempt, updateAppUpdateRecoveryCapability
+	updateRollbackVersion, updateConfirmRollback = "", false
+	updateReconcileAppAttempt, updateAppUpdateRecoveryCapability = false, false
+	t.Cleanup(func() {
+		updateRollbackVersion, updateConfirmRollback = oldRollback, oldConfirm
+		updateReconcileAppAttempt, updateAppUpdateRecoveryCapability = oldReconcile, oldCapability
+	})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `[{"tag_name":"v0.24.33","assets":[]}]`)
@@ -116,6 +139,15 @@ func TestRunUpdate_NoCompleteCommercialReleaseIsRecoverableForInstallRequests(t 
 				t.Fatalf("recovery output = %q", output)
 			}
 		})
+	}
+	store, err := maat.OpenDefaultStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, pendingErr := store.PendingAppUpdateAttempt()
+	closeErr := store.Close()
+	if !errors.Is(pendingErr, maat.ErrNoIncompleteAppUpdateAttempt) || closeErr != nil {
+		t.Fatalf("unavailable release created update debt: pending=%v close=%v", pendingErr, closeErr)
 	}
 }
 

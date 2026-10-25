@@ -14,7 +14,7 @@ import (
 
 const maatSourceCLIInput = `{
  "contract":"maat.adr070.source-screen","schema_version":2,
- "subject":{"kind":"commit","repo":"fixture/repo","ref":"main","head_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","boundary":""},
+ "subject":{"kind":"commit","repo":"fixture/repo","ref":"main","head_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","boundary":"","host_binding":""},
  "feather_weight":92,"confidence":0.96,"findings":[],
  "floor":{"passed":true,"checks":[{"name":"gofmt","passed":true},{"name":"vet","passed":true},{"name":"golangci-lint","passed":true},{"name":"test-race","passed":true}]},
  "model":{"provider":"local:fixture","version":"fixture-v1","local":true,"latency_ms":0,
@@ -115,6 +115,8 @@ func TestMaatScreenRejectsUnknownOrTrailingInput(t *testing.T) {
 		strings.Replace(maatSourceCLIInput, `"local":true`, `"LOCAL":true`, 1),
 		strings.Replace(maatSourceCLIInput, `"unqualified"`, `"qualified"`, 1),
 		strings.Replace(maatSourceCLIInput, `"schema_version":2`, `"schema_version":3`, 1),
+		strings.Replace(maatSourceCLIInput, `,"host_binding":""`, "", 1),
+		strings.Replace(maatSourceCLIInput, `"host_binding":""`, `"host_binding":"`+maat.DiagnosticHostBinding+`"`, 1),
 		`{"subject":{"kind":"commit"},"confidence":1}`,
 	} {
 		t.Run(raw[:min(len(raw), 30)], func(t *testing.T) {
