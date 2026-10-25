@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -127,6 +128,71 @@ func TestSpoolRelayShutdownJoinsForwardBeforeServeReturns(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("Serve did not return after its request worker joined")
+	}
+}
+
+func TestSpoolRelayShutdownRefusesUnsettledPublicationAndRecovery(t *testing.T) {
+	for _, mode := range []string{"forward", "startup-recovery"} {
+		t.Run(mode, func(t *testing.T) {
+			spool := t.TempDir()
+			lane := filepath.Join(spool, "retained")
+			for _, dir := range []string{"req", "res", "inflight"} {
+				if err := os.MkdirAll(filepath.Join(lane, dir), 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			id := "1-1-retained"
+			sourceDir := "req"
+			if mode == "startup-recovery" {
+				sourceDir = "inflight"
+			}
+			requestPath := filepath.Join(lane, sourceDir, id+".json")
+			if err := writeAtomic(requestPath, spoolRequest{Method: "Read", Headers: map[string]string{}, Body: []byte(`{}`)}, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			// Force response publication to fail without replacing or deleting the
+			// original request evidence.
+			if err := os.Mkdir(filepath.Join(lane, "res", id+".json"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			var calls atomic.Int32
+			svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				calls.Add(1)
+				_, _ = io.WriteString(w, `{"result":[]}`)
+			}))
+			t.Cleanup(svc.Close)
+			relay := &Relay{Spool: spool, Base: svc.URL, Token: "fixture"}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			done := make(chan error, 1)
+			go func() { done <- relay.Serve(ctx) }()
+			deadline := time.Now().Add(time.Second)
+			for !relay.settlementFailed.Load() && time.Now().Before(deadline) {
+				time.Sleep(time.Millisecond)
+			}
+			if !relay.settlementFailed.Load() {
+				t.Fatal("response publication failure was not retained")
+			}
+			cancel()
+			select {
+			case err := <-done:
+				if !errors.Is(err, errRelaySettlementUnresolved) {
+					t.Fatalf("shutdown falsely reported a clean settlement: %v", err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("Serve did not finish its bounded shutdown")
+			}
+			if _, err := os.Stat(filepath.Join(lane, "inflight", id+".json")); err != nil {
+				t.Fatalf("unsettled request evidence was not retained: %v", err)
+			}
+			wantCalls := int32(1)
+			if mode == "startup-recovery" {
+				wantCalls = 0
+			}
+			if got := calls.Load(); got != wantCalls {
+				t.Fatalf("unexpected forward count: got %d want %d", got, wantCalls)
+			}
+		})
 	}
 }
 

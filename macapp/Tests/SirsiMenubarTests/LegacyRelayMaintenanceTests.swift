@@ -87,7 +87,9 @@ import XCTest
         ], exit: 1)
         let model = LegacyRelayMaintenanceModel(directory: scope, capture: { args, _, _, authorize in
             XCTAssertTrue(authorize())
-            return args[2] == "preview" ? planned : prepared
+            if args[2] == "preview" { return planned }
+            if args[2] == "prepare-operation" { return try! fixture.preview("recover") }
+            return prepared
         }, storage: fixture.storage)
         model.select(artifact)
         await model.review()
@@ -99,12 +101,12 @@ import XCTest
         XCTAssertTrue(model.lifecycleDebt)
         XCTAssertFalse(model.outcomeUnknown)
         XCTAssertNil(model.outstanding)
-        XCTAssertTrue(model.statusNotice?.contains("not been published") == true)
-        XCTAssertTrue(model.statusNotice?.contains("Resume activation") == true)
+        await model.reviewAction("recover", expected: try XCTUnwrap(model.transaction))
+        XCTAssertEqual(model.actionApproval?.operation, "recover", "The existing exact-transaction recovery control must become available")
         XCTAssertNotNil(model.error, "The nonzero command result remains visible alongside the retained transaction")
     }
 
-    func testPreparedTransactionWithoutTerminalExactBindingRemainsUnknown() async throws {
+    func testPreparedTransactionWithoutTerminalResultRemainsUnknown() async throws {
         let fixture = LegacyRelayFixture()
         let planned = try fixture.preview()
         let uncommitted = try fixture.result([
@@ -126,6 +128,56 @@ import XCTest
         XCTAssertTrue(model.outcomeUnknown)
         XCTAssertNotNil(model.outstanding)
         XCTAssertNil(model.transaction)
+    }
+
+    func testPreparedTerminalWithWrongIdentityOrPlanRemainsUnknown() async throws {
+        let fixture = LegacyRelayFixture()
+        let planned = try fixture.preview()
+        let cases: [(String, [String: Any])] = [
+            ("unbound", {
+                var value = fixture.transaction("prepared")
+                var plan = value["plan"] as! [String: Any]
+                plan["profile"] = "foreign-profile"
+                value["plan"] = plan
+                return value
+            }()),
+            ("wrong-id", {
+                var value = fixture.transaction("prepared")
+                value["id"] = String(repeating: "c", count: 32)
+                return value
+            }()),
+            ("wrong-plan", {
+                var value = fixture.transaction("prepared")
+                var plan = value["plan"] as! [String: Any]
+                plan["sha256"] = String(repeating: "c", count: 64)
+                value["plan"] = plan
+                return value
+            }())
+        ]
+
+        for (name, status) in cases {
+            fixture.saved = nil
+            let malformed = try fixture.result([
+                "ticket_json": fixture.ticketJSON(),
+                "status": status,
+                "terminal": true,
+                "safe_for_new_preview": false
+            ], exit: 1)
+            let model = LegacyRelayMaintenanceModel(directory: scope, capture: { args, _, _, authorize in
+                XCTAssertTrue(authorize())
+                return args[2] == "preview" ? planned : malformed
+            }, storage: fixture.storage)
+            model.select(artifact)
+            await model.review()
+            let approval = try XCTUnwrap(model.confirmation(), name)
+            let task = try XCTUnwrap(model.confirm(approval), name)
+            await task.value
+
+            XCTAssertTrue(model.outcomeUnknown, name)
+            XCTAssertNotNil(model.outstanding, name)
+            XCTAssertNil(model.transaction, name)
+            XCTAssertFalse(model.lifecycleDebt, name)
+        }
     }
 
     func testRestoreForwardsCapturedPlanOnceWithoutReencoding() async throws {

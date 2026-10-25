@@ -270,6 +270,7 @@ const (
 var spoolRefused = map[string]bool{"MintHostToken": true, "MintScopedHostToken": true, "RevokeHostToken": true, "ListHostTokens": true}
 
 var errSpoolMaintenancePending = errors.New("spool admission: retained root maintenance transaction")
+var errRelaySettlementUnresolved = errors.New("relay: response settlement remains unresolved; retained inflight/outbox evidence requires recovery")
 
 // spoolRequest is one file in <spool>/<agent>/req/.
 type spoolRequest struct {
@@ -633,12 +634,13 @@ type Relay struct {
 	// service of another lane (SSA 2026-09-10: a global wait barrier starved
 	// newly arriving lanes past the client's 5 s deadline). Each worker drains
 	// its lane's queue in order; consume-before-forward is unchanged.
-	laneMu     sync.Mutex
-	lanes      map[string]chan struct{}
-	workers    sync.WaitGroup
-	unreadable map[string]bool // lane dirs already reported as not readable by this uid
-	handled    atomic.Int32
-	scans      atomic.Int32 // discovery passes (tests assert no spin under backlog)
+	laneMu           sync.Mutex
+	lanes            map[string]chan struct{}
+	workers          sync.WaitGroup
+	settlementFailed atomic.Bool
+	unreadable       map[string]bool // lane dirs already reported as not readable by this uid
+	handled          atomic.Int32
+	scans            atomic.Int32 // discovery passes (tests assert no spin under backlog)
 	// Per-instance deterministic scheduler probe; nil uses real discovery.
 	discoverFn func(context.Context) int
 	// Instance-local fixture seam; nil always uses the retained native marker.
@@ -706,7 +708,7 @@ func (rl *Relay) Serve(ctx context.Context) (result error) {
 		select {
 		case <-ctx.Done():
 			rl.workers.Wait()
-			return nil
+			return rl.settlementError()
 		default:
 		}
 		discover(ctx)
@@ -729,10 +731,17 @@ func (rl *Relay) Serve(ctx context.Context) (result error) {
 		select {
 		case <-ctx.Done():
 			rl.workers.Wait()
-			return nil
+			return rl.settlementError()
 		case <-time.After(spoolPoll):
 		}
 	}
+}
+
+func (rl *Relay) settlementError() error {
+	if rl.settlementFailed.Load() {
+		return errRelaySettlementUnresolved
+	}
+	return nil
 }
 
 // discover lists pending request files, wakes each lane's worker (starting it
@@ -873,6 +882,7 @@ func (rl *Relay) handleOne(agent, f string) bool {
 		if mkErr := os.MkdirAll(filepath.Dir(outbox), 0o700); mkErr == nil {
 			if mvErr := os.Rename(inflight, outbox); mvErr == nil {
 				if err := rl.publish(agent, id, queuedForRetryResponse(id)); err != nil {
+					rl.settlementFailed.Store(true)
 					rl.Log.Error("relay: queued response publication failed; retained outbox", "agent", agent, "id", id, "err", err)
 				}
 				return false
@@ -881,6 +891,7 @@ func (rl *Relay) handleOne(agent, f string) bool {
 		// Could not stage the outbox — do not lose it silently; report unknown.
 		b, _ := json.Marshal(wireResponse{Error: &wireError{Name: "relay", Message: "relay: could not stage " + id + " for retry: OUTCOME UNKNOWN — re-query before retrying a mutation"}})
 		if err := rl.publish(agent, id, spoolResponse{Status: http.StatusBadGateway, Body: b}); err != nil {
+			rl.settlementFailed.Store(true)
 			rl.Log.Error("relay: unknown response publication failed; retained inflight", "agent", agent, "id", id, "err", err)
 			return false
 		}
@@ -888,6 +899,7 @@ func (rl *Relay) handleOne(agent, f string) bool {
 		return false
 	}
 	if err := rl.publish(agent, id, sr); err != nil {
+		rl.settlementFailed.Store(true)
 		rl.Log.Error("relay: response publication failed; retained inflight", "agent", agent, "id", id, "err", err)
 		return false
 	}
@@ -1086,6 +1098,7 @@ func (rl *Relay) recoverInflight() int {
 		}
 		body, _ := json.Marshal(wireResponse{Error: &wireError{Name: "relay", Message: "relay restarted after consuming " + method + " " + id + ": OUTCOME UNKNOWN — re-query before retrying a mutation"}})
 		if err := rl.publish(agent, id, spoolResponse{Status: http.StatusBadGateway, Body: body}); err != nil {
+			rl.settlementFailed.Store(true)
 			rl.Log.Error("relay: outcome-unknown response publication failed; retained inflight", "agent", agent, "id", id, "err", err)
 			continue
 		}

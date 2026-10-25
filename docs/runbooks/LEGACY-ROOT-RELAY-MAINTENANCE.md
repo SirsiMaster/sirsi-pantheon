@@ -19,7 +19,9 @@ The owner waits for current shared calls under the same physical directory's
 exclusive lock before retirement. If that bounded wait expires, the prepared
 transaction remains held for explicit recovery. The current relay tracks and
 joins its lane/request workers on shutdown, and a failed response publication
-leaves the original inflight/outbox object as recovery evidence.
+leaves the original inflight/outbox object as recovery evidence. After joining,
+`Serve` returns an unresolved-settlement error if such evidence remains; worker
+exit alone is not reported as a clean settlement.
 
 This is cooperative behavior of the current source only. The exact loaded/source
 matches for 121, 122 and 129 do not establish their shared-lock admission or a
