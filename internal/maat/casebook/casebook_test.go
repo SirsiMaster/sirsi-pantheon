@@ -490,3 +490,26 @@ func TestBuildProjectsCalibrationAsCompletedEvidenceWithBothLinks(t *testing.T) 
 		t.Fatalf("calibration evidence search = %+v", got)
 	}
 }
+
+func TestLocalPreventionDispositionCompletesOnlyItsReceiptAndKeepsIncidentSearch(t *testing.T) {
+	keys := []string{strings.Repeat("b", 64)}
+	rows := []maat.Decision{
+		{Time: "2026-10-25T00:00:00Z", Kind: "failure memory preflight", Determination: "reject", Evidence: "fixture:unhealthy", FailureMemoryIncidentKeys: &keys},
+		{Time: "2026-10-25T00:00:01Z", Kind: "local prevention owner disposition", Determination: "accepted_not_repaired", Evidence: "fixture:receipt", OriginEvidence: "fixture:unhealthy"},
+		{Time: "2026-10-25T00:00:02Z", Kind: "arbitrary caller label", Determination: "accepted_not_repaired", Evidence: "fixture:foreign"},
+	}
+	view := Build(rows)
+	for _, row := range view.Cases {
+		want := StatusOpen
+		if row.Evidence == "fixture:receipt" {
+			want = StatusResolved
+		}
+		if row.Status != want {
+			t.Fatalf("wrong scope of completion: %+v", row)
+		}
+	}
+	found := Search(rows, Query{Text: keys[0]})
+	if len(found.Cases) != 1 || found.Cases[0].Evidence != "fixture:unhealthy" {
+		t.Fatalf("incident identity lost in shared search: %+v", found.Cases)
+	}
+}

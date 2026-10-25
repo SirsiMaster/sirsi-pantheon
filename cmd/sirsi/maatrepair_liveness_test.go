@@ -33,6 +33,7 @@ type livenessFixtureStore struct {
 	projected   bool
 	beginErr    error
 	retainErr   error
+	direct      *maat.LivenessDirectResult
 }
 
 func (s *livenessFixtureStore) Close() error { return nil }
@@ -72,9 +73,65 @@ func (s *livenessFixtureStore) BeginLivenessWatchAttempt(manifest maat.LivenessW
 	s.attempt = maat.LivenessWatchAttempt{
 		Schema: maat.MemorySchema, ID: id, Manifest: manifest,
 		ActionManifestSHA256: receipt.ActionManifestSHA256, PreflightReceiptSHA256: strings.Repeat("e", 64),
-		RegistrySnapshotSHA256: receipt.RegistrySnapshotSHA256, StartedAtUTC: time.Now().UTC(),
+		RegistrySnapshotSHA256: receipt.RegistrySnapshotSHA256, StartedAtUTC: time.Now().UTC(), CompletionProtocolVersion: 1,
 	}
 	return s.attempt, nil
+}
+
+// These command-only callbacks are inert fakes. Production provenance, WAL,
+// eligibility and owner disposition are exercised with real stores separately.
+func (s *livenessFixtureStore) RunLivenessWatchDirectAttempt(a maat.LivenessWatchAttempt, install func(maat.LivenessWatchManifest) (string, error), observe func(maat.LivenessWatchManifest) (maat.LivenessWatchObservation, error)) (maat.LivenessDirectResult, error) {
+	message, installErr := install(a.Manifest)
+	observation, observeErr := observe(a.Manifest)
+	return s.fixtureDirectResult(a, "direct-install", message, installErr, observation, observeErr)
+}
+func (s *livenessFixtureStore) fixtureDirectResult(a maat.LivenessWatchAttempt, mode, message string, installErr error, o maat.LivenessWatchObservation, observeErr error) (maat.LivenessDirectResult, error) {
+	invocation := "returned-success"
+	errorText := ""
+	if installErr != nil {
+		invocation = "returned-error"
+		errorText = installErr.Error()
+	}
+	if mode == "reobserve-only" {
+		invocation = "not-invoked"
+		errorText = "installer was not invoked"
+	}
+	state := "unverifiable"
+	if observeErr == nil && exactLivenessObservation(a.Manifest, o) {
+		state = "exact"
+	}
+	if observeErr != nil {
+		o = maat.LivenessWatchObservation{}
+		errorText += "; observation unavailable"
+	}
+	outcome, err := maat.NewLivenessWatchOutcome(a, o, errorText)
+	if err != nil {
+		return maat.LivenessDirectResult{}, err
+	}
+	host, err := os.Hostname()
+	if err != nil {
+		return maat.LivenessDirectResult{}, err
+	}
+	result := maat.LivenessDirectResult{Outcome: outcome, Message: message, Completion: maat.LivenessCompletion{Schema: "sirsi.maat.liveness-completion.v1", StoreUUID: a.Manifest.StoreUUID, AttemptID: a.ID, ActionManifestSHA256: a.ActionManifestSHA256, PreflightReceiptSHA256: a.PreflightReceiptSHA256, Producer: "pantheon.local-managed-watch/v1", Mode: mode, Invocation: invocation, Observation: state, Scope: maat.Scope{Component: "pantheon", Profile: "local-macos", Operation: "install-managed-liveness-watch"}, OwnerUID: a.Manifest.UID, Host: host, RecordedAtUTC: outcome.RecordedAtUTC}}
+	s.direct = &result
+	return result, nil
+}
+func (s *livenessFixtureStore) ReadLivenessWatchCompletion(string) (maat.LivenessDirectResult, error) {
+	if s.direct == nil {
+		return maat.LivenessDirectResult{}, os.ErrNotExist
+	}
+	return *s.direct, nil
+}
+func (s *livenessFixtureStore) ReconcileLivenessWatchCompletion(id string) (maat.LivenessDirectResult, error) {
+	return s.ReadLivenessWatchCompletion(id)
+}
+func (s *livenessFixtureStore) ReconcileLivenessWatchData() error { return nil }
+func (s *livenessFixtureStore) RememberLivenessFailure(id string) (maat.FailureIntakeReceipt, error) {
+	return maat.FailureIntakeReceipt{Schema: "sirsi.maat.liveness-failure-intake.v1", AttemptID: id, Disposition: "not-eligible"}, nil
+}
+func (s *livenessFixtureStore) CloseLivenessWatchBeforeInvocation(a maat.LivenessWatchAttempt, observe func(maat.LivenessWatchManifest) (maat.LivenessWatchObservation, error)) (maat.LivenessDirectResult, error) {
+	o, err := observe(a.Manifest)
+	return s.fixtureDirectResult(a, "reobserve-only", "", nil, o, err)
 }
 
 func (s *livenessFixtureStore) PendingLivenessWatchAttempt() (maat.LivenessWatchAttempt, error) {
@@ -593,10 +650,10 @@ func TestMaatLivenessMemoryReobserveDoesNotReplayInstaller(t *testing.T) {
 	oldInstall := maatRepairInstallLiveness
 	maatRepairInstallLiveness = func(maat.LivenessWatchManifest) (string, error) { installs++; return "", nil }
 	t.Cleanup(func() { maatRepairInstallLiveness = oldInstall })
-	if err := maatRepairLivenessWatchCmd.RunE(maatRepairLivenessWatchCmd, nil); err != nil {
-		t.Fatal(err)
+	if err := maatRepairLivenessWatchCmd.RunE(maatRepairLivenessWatchCmd, nil); err == nil {
+		t.Fatal("a current observation upgraded a legacy unknown invocation")
 	}
-	if installs != 0 || store.outcomes != 1 || len(journal.decisions) != 1 || journal.decisions[0].Determination != "resolved" {
+	if installs != 0 || store.outcomes != 0 || len(journal.decisions) != 1 || journal.decisions[0].Kind != "liveness-watch observation" || journal.decisions[0].Determination != "exact" {
 		t.Fatalf("installs=%d outcomes=%d journal=%#v", installs, store.outcomes, journal.decisions)
 	}
 }
@@ -635,7 +692,7 @@ func fixtureCommandManifest(storeUUID, finding string) maat.LivenessWatchManifes
 }
 
 func exactObservation(m maat.LivenessWatchManifest) maat.LivenessWatchObservation {
-	return maat.LivenessWatchObservation{UID: m.UID, Domain: m.Domain, Label: m.ManagedLabel, PlistPath: m.TargetPlistPath, PlistSHA256: m.ExpectedPlistSHA256, LaunchdLoaded: true}
+	return maat.LivenessWatchObservation{UID: m.UID, Domain: m.Domain, Label: m.ManagedLabel, PlistPath: m.TargetPlistPath, PlistSHA256: m.ExpectedPlistSHA256, LaunchdLoaded: true, Postcondition: "exact"}
 }
 
 func TestBuildLivenessWatchManifestBindsCanonicalEngineAndHomeLocalPlist(t *testing.T) {

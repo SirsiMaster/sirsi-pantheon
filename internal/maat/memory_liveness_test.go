@@ -109,8 +109,11 @@ func TestLivenessWatchAttemptIsDurableSingleAndExact(t *testing.T) {
 	if err != nil || outcome.Determination != "incomplete" {
 		t.Fatalf("wrong-target outcome = %+v, err=%v", outcome, err)
 	}
-	if _, err := store.PendingLivenessWatchAttempt(); !errors.Is(err, ErrNoIncompleteLivenessWatchAttempt) {
-		t.Fatalf("terminal incomplete attempt should not be replayed: %v", err)
+	if pending, err := store.PendingLivenessWatchAttempt(); err != nil || pending.ID != attempt.ID {
+		t.Fatalf("raw outcome without a retained completion witness must remain pending: %+v %v", pending, err)
+	}
+	if _, err := store.BeginLivenessWatchAttempt(manifest, receipt); err == nil {
+		t.Fatal("raw incomplete outcome admitted an installer replay")
 	}
 }
 

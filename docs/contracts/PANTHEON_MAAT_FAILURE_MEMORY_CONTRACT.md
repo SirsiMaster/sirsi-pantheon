@@ -345,3 +345,57 @@ Readback rechecks private ownership and its stability. Matching bytes cannot
 adopt0644/0660 or foreign-owned receipt/WAL targets, and no read repairs modes.
 This corrective source remains unqualified until Main's bounded execution and
 independent review; previous parent fixture passes do not waive either finding.
+
+
+## Local managed-watch intake and owner disposition (G01 source candidate)
+
+The closed producer `pantheon.local-managed-watch/v1` wraps the existing confirmed
+managed-watch install operation. Its durable invocation claim precedes the sole
+installer callback. A retained canonical completion binds initialized store UUID,
+actor/target, attempt, manifest, preflight and outcome. Only returned-success plus
+an authoritative exact-target `known-absent` or `known-unloaded` observation enters
+local failure memory. Errors, cancelled or unverifiable observations, legacy rows,
+re-observation and missing completion bodies do not establish this eligible failure.
+A claimed action with no witness remains pending and cannot replay the installer.
+
+`Incident.Key` remains `FailureSignature.Digest`. The first introduction remains
+immutable. Local owner disposition and later verified recurrence append closed,
+predecessor/body-bound events in the existing transitions namespace, with one
+child per predecessor. A recurrence after retirement reactivates the same stable
+incident key; a prior owner conclusion cannot close the new occurrence. Foreign
+scope, SNE identity, unsupported guards and unknown write/action debt are unchanged.
+No vendor resource, external key or producer signing gate is introduced.
+
+The owner may choose **accept-only** (retain prevention) or explicitly
+**retire-local-prevention** for the exact reviewed head/body, without pretending to
+repair the host. Both record “Accepted — not repaired.” The latter requires no
+unresolved action/intake/projection/disposition debt and does not waive any normal
+installer authorization. Bare Casebook acceptance never performs this transition.
+Health stays `historical-known-unhealthy; current-health-unobserved` until a distinct
+fresh observation. Retiring one family does not waive another exact-scope blocker.
+
+Native Casebook exposes the originating full preflight, occurrence and history,
+owner effect/conclusion preview and confirmation, cancellation, retained pending
+recovery and a fresh read-only local observation linked back to the existing
+controlled resolver. Commands are the fixed canonical engine routes
+`maat failure-memory failure`, `disposition preview/commit/pending/reconcile`,
+fixed-scope `preflight`, and `liveness-watch run --local`. No arbitrary store,
+raw completion import, shell guidance, local approved flag or automatic heal is
+accepted. The engine-owned operation model retains state across navigation and
+checks generation plus captured plan again at the actual launch fence.
+
+Owner disposition persists an exact intent, private proof, journal review and
+acceptance with readback, optional event, distinct projection and completion.
+Interrupted data-only reconciliation uses those retained bytes and times; it
+never invokes installation or creates new consent. Missing intent/witness bodies,
+unrelated WAL debt or substituted bytes remain explicit unverifiable conditions.
+Historical completion is independent of current health and later occurrences.
+The separate closed disposition receipt may display complete without discharging
+the original unhealthy screen or granting future action.
+
+These are source changes, not a claim of installed or runtime qualification.
+Main owns exact-source positive/refusal/race/native qualification. Existing G02
+retention qualification remains separately bound; its pre-row recovery follow-up
+and G03 binary adaptation have separate owners. All other seven operational rows,
+all remaining frontend/repair obligations and the full original Ma'at goal remain
+open. No service, model, installer or real user archive/journal ran during authoring.

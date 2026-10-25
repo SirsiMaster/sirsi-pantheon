@@ -593,6 +593,9 @@ func (s *Store) Transition(predecessorKey string, status IncidentStatus) (Incide
 	if err := json.Unmarshal(data, &predecessor); err != nil || predecessor.validate() != nil || predecessor.Key != predecessorKey || predecessor.Status != IncidentActive {
 		return IncidentTransition{}, errors.New("maat memory: transition predecessor is invalid")
 	}
+	if localManagedWatchIncident(predecessor) {
+		return IncidentTransition{}, errors.New("maat memory: local prevention requires its separate exact owner disposition")
+	}
 	if err := s.verifyEvidence(predecessor.EvidenceSHA256); err != nil {
 		return IncidentTransition{}, fmt.Errorf("maat memory: transition evidence unavailable: %w", err)
 	}
@@ -607,6 +610,19 @@ func (s *Store) Transition(predecessorKey string, status IncidentStatus) (Incide
 		priorBytes, err := readExact(s.transitionFD, name)
 		if err != nil {
 			return IncidentTransition{}, err
+		}
+		var schema struct {
+			Schema string `json:"schema"`
+		}
+		if err := json.Unmarshal(priorBytes, &schema); err != nil {
+			return IncidentTransition{}, err
+		}
+		if schema.Schema == localPreventionEventSchema {
+			var event LocalPreventionEvent
+			if err := decodeLocalRecord(priorBytes, &event); err != nil || event.validate() != nil {
+				return IncidentTransition{}, errors.New("maat memory: invalid local transition")
+			}
+			continue
 		}
 		var prior IncidentTransition
 		if err := json.Unmarshal(priorBytes, &prior); err != nil || prior.Key+".json" != name {
@@ -699,6 +715,7 @@ func (s *Store) preflightBoundLocked(action Scope, manifestDigest string, resolv
 	receipt := PreflightReceipt{Schema: MemorySchema, RegistrySnapshotVersion: 2, Action: action, ActionManifestSHA256: manifestDigest, Decision: PreflightPass, EvaluatedAtUTC: time.Now().UTC()}
 	snapshot := sha256.New()
 	_, _ = snapshot.Write([]byte("sirsi.maat.semantic-registry.v2\n" + MemorySchema + "\n"))
+	_, _ = snapshot.Write([]byte("local-lifecycle-v1\x00" + localLifecycleImplementationSHA() + "\n"))
 	closedGuard, _ := resolveMemoryGuard(ActiveIncidentGuardID, ActiveIncidentGuardVersion)
 	guardBytes, _ := json.Marshal(closedGuard.identity)
 	_, _ = snapshot.Write(guardBytes)
@@ -738,6 +755,7 @@ func (s *Store) preflightBoundLocked(action Scope, manifestDigest string, resolv
 		return receipt, err
 	}
 	terminal := make(map[string]IncidentTransition, len(transitionNames))
+	localEvents := []LocalPreventionEvent{}
 	for _, name := range transitionNames {
 		if !strings.HasSuffix(name, ".json") || !validDigest(strings.TrimSuffix(name, ".json")) {
 			receipt.Decision = PreflightUnverifiable
@@ -751,6 +769,28 @@ func (s *Store) preflightBoundLocked(action Scope, manifestDigest string, resolv
 		if err := s.verifyCommittedBytes("transitions", name, data); err != nil {
 			receipt.Decision = PreflightUnverifiable
 			return receipt, err
+		}
+		var envelope struct {
+			Schema string `json:"schema"`
+		}
+		if err := json.Unmarshal(data, &envelope); err != nil {
+			receipt.Decision = PreflightUnverifiable
+			return receipt, err
+		}
+		if envelope.Schema == localPreventionEventSchema {
+			var event LocalPreventionEvent
+			if err := decodeLocalRecord(data, &event); err != nil || event.validate() != nil || name != event.EventKey+".json" {
+				receipt.Decision = PreflightUnverifiable
+				return receipt, errors.New("maat memory: invalid local transition")
+			}
+			if err := s.verifyEvidence(event.EvidenceSHA256); err != nil {
+				receipt.Decision = PreflightUnverifiable
+				return receipt, err
+			}
+			localEvents = append(localEvents, event)
+			fileDigest := sha256.Sum256(data)
+			_, _ = snapshot.Write([]byte("transitions/" + name + "\x00" + hex.EncodeToString(fileDigest[:]) + "\n" + "evidence/" + event.EvidenceSHA256 + "\n"))
+			continue
 		}
 		var transition IncidentTransition
 		if err := json.Unmarshal(data, &transition); err != nil {
@@ -769,6 +809,31 @@ func (s *Store) preflightBoundLocked(action Scope, manifestDigest string, resolv
 		terminal[transition.PredecessorKey] = transition
 		fileDigest := sha256.Sum256(data)
 		_, _ = snapshot.Write([]byte("transitions/" + name + "\x00" + hex.EncodeToString(fileDigest[:]) + "\n"))
+	}
+	for _, event := range localEvents {
+		if i, ok := incidents[event.IncidentKey]; !ok || !localManagedWatchIncident(i) {
+			receipt.Decision = PreflightUnverifiable
+			return receipt, errors.New("maat memory: orphan or foreign local transition")
+		}
+	}
+	for key, i := range incidents {
+		if localManagedWatchIncident(i) {
+			if _, legacy := terminal[key]; legacy {
+				receipt.Decision = PreflightUnverifiable
+				return receipt, errors.New("maat memory: unsupported legacy terminal on a local prevention family")
+			}
+			head, _, err := s.localFamilyLocked(i, localEvents)
+			if err != nil {
+				receipt.Decision = PreflightUnverifiable
+				return receipt, err
+			}
+			if head.Status == IncidentRetired {
+				terminal[key] = IncidentTransition{}
+			} else {
+				i.EvidenceSHA256 = head.EvidenceSHA256
+				incidents[key] = i
+			}
+		}
 	}
 	receipt.RegistrySnapshotSHA256 = hex.EncodeToString(snapshot.Sum(nil))
 	seenGuards := map[string]bool{}
@@ -809,6 +874,21 @@ func (s *Store) preflightBoundLocked(action Scope, manifestDigest string, resolv
 		actions, _ := json.Marshal(receipt.RecoveryActions)
 		recoveryDigest := sha256.Sum256(actions)
 		receipt.RecoveryReference = "maat-recovery:" + hex.EncodeToString(recoveryDigest[:])
+	}
+	if action == localWatchScope() {
+		if _, err := s.pendingLivenessWatchAttemptLocked(); err == nil {
+			guardErr = errors.Join(guardErr, errors.New("maat memory: unresolved local action/intake/projection; inspect and reconcile without replay"))
+		} else if !errors.Is(err, ErrNoIncompleteLivenessWatchAttempt) {
+			guardErr = errors.Join(guardErr, err)
+		}
+		if debts, err := s.pendingLocalDispositionsLocked(""); err != nil {
+			guardErr = errors.Join(guardErr, err)
+		} else if len(debts) > 0 {
+			guardErr = errors.Join(guardErr, errors.New("maat memory: local owner disposition projection debt requires data-only reconciliation"))
+		}
+		if guardErr != nil {
+			receipt.Decision = PreflightUnverifiable
+		}
 	}
 	return receipt, guardErr
 }

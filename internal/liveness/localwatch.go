@@ -23,6 +23,7 @@ type LocalObservation struct {
 	Concern             bool   `json:"concern"`
 	Detail              string `json:"detail"`
 	ConfigurationSHA256 string `json:"configuration_sha256,omitempty"`
+	WatchPostcondition  string `json:"watch_postcondition,omitempty"` // exact, known-absent, known-unloaded; empty means unverified
 }
 
 type LocalProbe struct {
