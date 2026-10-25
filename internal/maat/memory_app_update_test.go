@@ -1,6 +1,7 @@
 package maat
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -412,6 +413,14 @@ func TestAppUpdatePreparedExactLeavesRecoverTargetAndCommitPhasesOnly(t *testing
 	if err := retainPreparedAppUpdateFixtureLeaf(store, attempt.ID+".app-update-started.json", attempt); err != nil {
 		t.Fatal(err)
 	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err = OpenStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.storeUUID = "b3c515a2-4773-4653-86d1-8a5734c2ee45"
 	pending, err := store.PendingAppUpdateAttempt()
 	if err != nil || pending.ID != attempt.ID {
 		t.Fatalf("prepared started record did not recover exact target+commit: %+v %v", pending, err)
@@ -433,8 +442,112 @@ func TestAppUpdatePreparedExactLeavesRecoverTargetAndCommitPhasesOnly(t *testing
 	if err := retainPreparedAppUpdateFixtureLeaf(store, attempt.ID+".app-update-outcome.json", outcome); err != nil {
 		t.Fatal(err)
 	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err = OpenStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.storeUUID = "b3c515a2-4773-4653-86d1-8a5734c2ee45"
 	if _, err := store.PendingAppUpdateAttempt(); !errors.Is(err, ErrNoIncompleteAppUpdateAttempt) {
 		t.Fatalf("prepared terminal target+commit did not recover: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAppUpdateInspectionComposesSettledG01HistoryAcrossReopen(t *testing.T) {
+	f := failedLocalLifecycleFixture(t)
+	for _, effect := range []string{"accept-only", "retire-local-prevention"} {
+		preview := f.preview(t, effect)
+		if !preview.CanCommit {
+			t.Fatalf("fixture disposition %s is not eligible: %v", effect, preview.Constraints)
+		}
+		if _, err := f.store.CommitLocalPreventionDisposition(preview.PlanSHA256, preview.PlanSHA256); err != nil {
+			t.Fatalf("settle G01 owner disposition %s: %v", effect, err)
+		}
+	}
+	var err error
+	before, err := readDirectoryNames(f.store.attemptsFD)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retained := make(map[string][]byte, len(before))
+	for _, name := range before {
+		data, err := readExact(f.store.attemptsFD, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		retained[name] = data
+	}
+	if err := f.store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err := OpenDefaultStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if store.storeUUID != f.manifest.StoreUUID {
+		t.Fatal("reopened Store changed its established binding")
+	}
+	if _, err := store.PendingAppUpdateAttempt(); !errors.Is(err, ErrNoIncompleteAppUpdateAttempt) {
+		t.Fatalf("settled G01 history blocked data-only app inspection: %v", err)
+	}
+	manifest := fixtureAppUpdateManifest(t, store.storeUUID)
+	stored := retainAppUpdateReceipt(t, store, manifest)
+	attempt, err := store.BeginAppUpdateAttempt(manifest, stored)
+	if err != nil {
+		t.Fatalf("settled G01 history blocked otherwise eligible app admission: %v", err)
+	}
+	if pending, err := store.PendingAppUpdateAttempt(); err != nil || pending.ID != attempt.ID {
+		t.Fatalf("app attempt was not inspectable beside retained G01 history: id=%s pending=%+v err=%v", attempt.ID, pending, err)
+	}
+	for name, want := range retained {
+		got, err := readExact(store.attemptsFD, name)
+		if err != nil || !bytes.Equal(got, want) {
+			t.Fatalf("settled G01 history %s changed during app admission: %v", name, err)
+		}
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := OpenDefaultStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if pending, err := reopened.PendingAppUpdateAttempt(); err != nil || pending.ID != attempt.ID {
+		t.Fatalf("data-only reopen did not retain exact app attempt: pending=%+v err=%v", pending, err)
+	}
+}
+
+func TestAppUpdateAdmissionKeepsActiveAndOrphanG01Fences(t *testing.T) {
+	for _, mode := range []string{"active-attempt", "orphan-invocation"} {
+		t.Run(mode, func(t *testing.T) {
+			f := beginLocalLifecycleFixture(t)
+			if mode == "orphan-invocation" {
+				id, err := newStoreUUID()
+				if err != nil {
+					t.Fatal(err)
+				}
+				orphan := livenessInvocation{Schema: "sirsi.maat.liveness-invocation.v1", StoreUUID: f.store.storeUUID,
+					AttemptID: id, AttemptSHA256: strings.Repeat("a", 64), StartedAtUTC: time.Now().UTC(), Mode: "direct-install", Host: "fixture"}
+				if err := f.store.writeLocalAttemptLocked(id+".invocation-v1.json", orphan); err != nil {
+					t.Fatal(err)
+				}
+			}
+			manifest := fixtureAppUpdateManifest(t, f.store.storeUUID)
+			stored := retainAppUpdateReceipt(t, f.store, manifest)
+			if _, err := f.store.BeginAppUpdateAttempt(manifest, stored); err == nil {
+				t.Fatal("active or orphan G01 action history admitted an app update")
+			}
+			if _, err := f.store.PendingAppUpdateAttempt(); err == nil {
+				t.Fatal("app inspection accepted active or orphan G01 history")
+			}
+		})
 	}
 }
 
@@ -454,6 +567,50 @@ func TestAppUpdatePreparedMissingTargetAndUnrelatedWALRemainFailClosed(t *testin
 				t.Fatal("missing exact target or unrelated prepared WAL was bypassed")
 			}
 		})
+	}
+}
+
+func TestAppUpdatePreparedRecoveryDoesNotBypassUnrelatedPreparedWrite(t *testing.T) {
+	root := privateLivenessStoreRoot(t)
+	store, err := OpenStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.storeUUID = "b3c515a2-4773-4653-86d1-8a5734c2ee45"
+	manifest := fixtureAppUpdateManifest(t, store.storeUUID)
+	stored := retainAppUpdateReceipt(t, store, manifest)
+	reference := stored.Reference()
+	attempt := AppUpdateAttempt{Schema: MemorySchema, ID: "b3c515a2-4773-4653-86d1-8a5734c2ee45", Manifest: manifest,
+		ActionManifestSHA256: reference.ActionSHA256, PreflightReceipt: reference,
+		RegistrySnapshotSHA256: reference.RegistrySHA256, StartedAtUTC: time.Now().UTC()}
+	if err := retainPreparedAppUpdateFixtureLeaf(store, attempt.ID+".app-update-started.json", attempt); err != nil {
+		t.Fatal(err)
+	}
+	if err := retainPreparedAppUpdateFixtureIntentOnly(store, "unrelated.json", []byte("unrelated prepared intent")); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err = OpenStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	store.storeUUID = "b3c515a2-4773-4653-86d1-8a5734c2ee45"
+	if _, err := store.PendingAppUpdateAttempt(); err == nil {
+		t.Fatal("exact app leaf recovery bypassed an unrelated prepared write")
+	}
+	started, err := readExact(store.attemptsFD, attempt.ID+".app-update-started.json")
+	if err != nil {
+		t.Fatalf("failed closed recovery removed its exact target: %v", err)
+	}
+	intent, err := newWriteIntent("attempts", attempt.ID+".app-update-started.json", started)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readExact(store.writesFD, intent.Key+".committed.json"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("blocked recovery committed its target despite unrelated debt: %v", err)
 	}
 }
 

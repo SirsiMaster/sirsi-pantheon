@@ -30,14 +30,24 @@ func (j rawSelfUpdateProjectionOutageJournal) FindByEvidence(kind, evidence stri
 	return reader.FindByEvidence(kind, evidence)
 }
 
+func canonicalMaatFixtureDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	canonical, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatalf("resolve canonical private Ma'at fixture path: %v", err)
+	}
+	return canonical
+}
+
 func configureMaatSelfUpdateCommandFixture(t *testing.T, forceHomebrew bool) (string, string, *int) {
 	t.Helper()
-	home := t.TempDir()
+	home := canonicalMaatFixtureDir(t)
 	t.Setenv("HOME", home)
 	if _, err := maat.InitializeDefaultStore(); err != nil {
 		t.Fatalf("initialize private Ma'at fixture: %v", err)
 	}
-	binDir := t.TempDir()
+	binDir := canonicalMaatFixtureDir(t)
 	selfPath, targetPath := filepath.Join(binDir, "sirsi-self"), filepath.Join(binDir, "sirsi-target")
 	if err := os.WriteFile(selfPath, []byte("running stamped sirsi"), 0o755); err != nil {
 		t.Fatal(err)

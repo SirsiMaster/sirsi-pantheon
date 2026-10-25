@@ -19,11 +19,35 @@ import (
 )
 
 type appUpdateFixtureStore struct {
-	inner   *maat.Store
-	pending *maat.AppUpdateAttempt
-	started int
-	ended   int
-	last    maat.AppUpdateOutcome
+	inner    *maat.Store
+	owner    *appUpdateFixtureStore
+	pending  *maat.AppUpdateAttempt
+	started  int
+	ended    int
+	opened   int
+	observed int
+	last     maat.AppUpdateOutcome
+}
+
+func (s *appUpdateFixtureStore) state() *appUpdateFixtureStore {
+	if s.owner != nil {
+		return s.owner
+	}
+	return s
+}
+
+func (s *appUpdateFixtureStore) open() (maatAppUpdateStore, error) {
+	if s.inner != nil {
+		_ = s.inner.Close()
+		s.inner = nil
+	}
+	inner, err := maat.OpenDefaultStore()
+	if err != nil {
+		return nil, err
+	}
+	state := s.state()
+	state.opened++
+	return &appUpdateFixtureStore{inner: inner, owner: state}, nil
 }
 
 func (s *appUpdateFixtureStore) PreflightAppUpdate(manifest maat.AppUpdateManifest) (maat.PreflightReceipt, error) {
@@ -35,15 +59,16 @@ func (s *appUpdateFixtureStore) RetainPreflightReceipt(receipt maat.PreflightRec
 }
 
 func (s *appUpdateFixtureStore) BeginAppUpdateAttempt(manifest maat.AppUpdateManifest, receipt maat.StoredPreflightReceipt) (maat.AppUpdateAttempt, error) {
-	s.started++
-	if s.pending != nil {
+	state := s.state()
+	state.started++
+	if state.pending != nil {
 		return maat.AppUpdateAttempt{}, errors.New("pending attempt")
 	}
 	attempt, err := s.inner.BeginAppUpdateAttempt(manifest, receipt)
 	if err != nil {
 		return maat.AppUpdateAttempt{}, err
 	}
-	s.pending = &attempt
+	state.pending = &attempt
 	return attempt, nil
 }
 
@@ -56,10 +81,11 @@ func (s *appUpdateFixtureStore) RecordAppUpdateInstalled(attempt maat.AppUpdateA
 	if err != nil {
 		return maat.AppUpdateOutcome{}, err
 	}
-	s.ended++
-	s.pending = nil
-	s.last = outcome
-	return s.last, nil
+	state := s.state()
+	state.ended++
+	state.pending = nil
+	state.last = outcome
+	return state.last, nil
 }
 
 func (s *appUpdateFixtureStore) RecordAppUpdateNotInvoked(attempt maat.AppUpdateAttempt, reason string) (maat.AppUpdateOutcome, error) {
@@ -67,29 +93,33 @@ func (s *appUpdateFixtureStore) RecordAppUpdateNotInvoked(attempt maat.AppUpdate
 	if err != nil {
 		return maat.AppUpdateOutcome{}, err
 	}
-	s.pending = nil
-	s.last = outcome
-	return s.last, nil
+	state := s.state()
+	state.pending = nil
+	state.last = outcome
+	return state.last, nil
 }
 
-func (s *appUpdateFixtureStore) Close() error { return s.inner.Close() }
+func (s *appUpdateFixtureStore) Close() error {
+	if s.inner == nil {
+		return nil
+	}
+	err := s.inner.Close()
+	s.inner = nil
+	return err
+}
 
 func newAppUpdateFixtureStore(t *testing.T) *appUpdateFixtureStore {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir())
+	t.Setenv("HOME", canonicalMaatFixtureDir(t))
 	if _, err := maat.InitializeDefaultStore(); err != nil {
 		t.Fatalf("initialize private app-update memory fixture: %v", err)
 	}
-	inner, err := maat.OpenDefaultStore()
-	if err != nil {
-		t.Fatalf("open private app-update memory fixture: %v", err)
-	}
-	return &appUpdateFixtureStore{inner: inner}
+	return &appUpdateFixtureStore{}
 }
 
 func appUpdatePlanFixture(t *testing.T) maintenanceInstallerPlan {
 	t.Helper()
-	stage := filepath.Join(t.TempDir(), "sirsi-maintenance-installer-fixture")
+	stage := filepath.Join(canonicalMaatFixtureDir(t), "sirsi-maintenance-installer-fixture")
 	if err := os.Mkdir(stage, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +145,7 @@ func installAppUpdateFixture(t *testing.T, plan maintenanceInstallerPlan, handof
 	previous := maatAppUpdateDependencies
 	maatAppUpdateDependencies = maatAppUpdateOps{
 		storeStatus: maat.InspectDefaultStore,
-		openStore:   func() (maatAppUpdateStore, error) { return store, nil },
+		openStore:   store.open,
 		journal:     func() (maat.DecisionJournal, error) { return journal, nil },
 		stage: func(context.Context, string, *updater.Release) (maintenanceInstallerPlan, error) {
 			stages++
@@ -123,6 +153,7 @@ func installAppUpdateFixture(t *testing.T, plan maintenanceInstallerPlan, handof
 		},
 		revalidate: func(context.Context, *updater.Release, maintenanceInstallerPlan) error { return nil },
 		observe: func(context.Context) (maat.AppUpdateObservation, error) {
+			store.observed++
 			if installed && handoffs > 0 && handoffErr == nil {
 				return maat.AppUpdateObservation{Release: plan.Release, BundleID: plan.TargetBundleID, AppPath: plan.TargetAppPath,
 					HelperPath: plan.TargetHelperPath, HelperSHA256: plan.EngineSHA256, EmbeddedHelperSHA256: plan.AppUpdateIdentity.EmbeddedHelperSHA256,
@@ -154,7 +185,7 @@ func TestAppUpdateSchemaRefusalAndDriftNeverReachInstaller(t *testing.T) {
 			previous := maatAppUpdateDependencies
 			maatAppUpdateDependencies = maatAppUpdateOps{
 				storeStatus: maat.InspectDefaultStore,
-				openStore:   func() (maatAppUpdateStore, error) { return store, nil }, journal: func() (maat.DecisionJournal, error) { return journal, nil },
+				openStore:   store.open, journal: func() (maat.DecisionJournal, error) { return journal, nil },
 				stage:      func(context.Context, string, *updater.Release) (maintenanceInstallerPlan, error) { return plan, nil },
 				revalidate: func(context.Context, *updater.Release, maintenanceInstallerPlan) error { return nil },
 				observe: func(context.Context) (maat.AppUpdateObservation, error) {
@@ -388,8 +419,25 @@ func TestAmbiguousAppInstallerHandoffReconcilesDataOnlyWithoutReplay(t *testing.
 	if err := installAppReleaseWithMaat(&updater.Release{TagName: "v0.24.200"}); err == nil || store.pending == nil {
 		t.Fatalf("ambiguous Installer handoff lost its durable pending intent: err=%v pending=%v", err, store.pending != nil)
 	}
-	if handled, err := reconcilePendingMaatAppUpdate(); !handled || err == nil {
-		t.Fatalf("data-only reconciliation did not retain the unresolved install fact: handled=%v err=%v", handled, err)
+	attemptID := store.pending.ID
+	openedBefore, observedBefore := store.opened, store.observed
+	if handled, err := reconcilePendingMaatAppUpdate(); !handled || err == nil ||
+		!strings.Contains(err.Error(), attemptID) || !strings.Contains(err.Error(), "current installed identity does not match the retained package") {
+		t.Fatalf("reopened data-only reconciliation did not reach exact retained identity debt: handled=%v err=%v", handled, err)
+	}
+	if store.opened != openedBefore+1 || store.observed != observedBefore+1 {
+		t.Fatalf("reconciliation did not open a fresh Store and perform exactly one readback: opened %d->%d observed %d->%d", openedBefore, store.opened, observedBefore, store.observed)
+	}
+	reopened, err := store.open()
+	if err != nil {
+		t.Fatalf("reopen fixture Store for exact debt readback: %v", err)
+	}
+	pending, err := reopened.PendingAppUpdateAttempt()
+	if err != nil || pending.ID != attemptID {
+		t.Fatalf("reopened fixture lost or changed exact unresolved attempt: want=%s got=%+v err=%v", attemptID, pending, err)
+	}
+	if err := reopened.Close(); err != nil {
+		t.Fatal(err)
 	}
 	oldClient := newUpdateClient
 	oldCLI, oldApp := updateInstallCLI, updateInstallApp
@@ -399,7 +447,7 @@ func TestAmbiguousAppInstallerHandoffReconcilesDataOnlyWithoutReplay(t *testing.
 	if err := runUpdate(updateCmd, nil); err == nil {
 		t.Fatal("unresolved app update was hidden by a network check")
 	}
-	if store.started != 1 || *handoffs != 1 || *stages != 1 || store.pending == nil {
-		t.Fatalf("ambiguous handoff was replayed or debt lost: starts=%d handoffs=%d stages=%d pending=%v", store.started, *handoffs, *stages, store.pending != nil)
+	if store.started != 1 || *handoffs != 1 || *stages != 1 || store.pending == nil || store.pending.ID != attemptID {
+		t.Fatalf("ambiguous handoff was replayed or exact debt lost: starts=%d handoffs=%d stages=%d pending=%+v", store.started, *handoffs, *stages, store.pending)
 	}
 }

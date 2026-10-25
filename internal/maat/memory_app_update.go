@@ -224,6 +224,18 @@ func (s *Store) pendingAppUpdateAttemptLocked() (AppUpdateAttempt, error) {
 	if _, err := s.verifyWriteJournal(); err != nil {
 		return AppUpdateAttempt{}, fmt.Errorf("maat memory: whole-app update history is unverifiable: %w", err)
 	}
+	// The app adapter shares this namespace with G01's closed liveness
+	// lifecycle. Validate its typed attempt, projection, intake and disposition
+	// records before treating them as settled history; a real pending action
+	// still fences a new app update.
+	if _, err := s.pendingLivenessWatchProjectionsLocked(); err != nil {
+		return AppUpdateAttempt{}, fmt.Errorf("maat memory: shared liveness history is unverifiable: %w", err)
+	}
+	if _, err := s.pendingLivenessWatchAttemptRowsLocked(); err == nil {
+		return AppUpdateAttempt{}, errors.New("maat memory: an incomplete liveness-watch action must be inspected before an app update")
+	} else if !errors.Is(err, ErrNoIncompleteLivenessWatchAttempt) {
+		return AppUpdateAttempt{}, fmt.Errorf("maat memory: shared liveness history is unverifiable: %w", err)
+	}
 	names, err := readDirectoryNames(s.attemptsFD)
 	if err != nil {
 		return AppUpdateAttempt{}, err
@@ -300,14 +312,14 @@ func (s *Store) RecordAppUpdateInstalled(attempt AppUpdateAttempt, observation A
 	}
 	defer s.unlock()
 	pending, err := s.pendingAppUpdateAttemptLocked()
-	if err != nil || pending.ID != attempt.ID || !sameAppUpdateAttempt(*pending, attempt) {
+	if err != nil || pending.ID != attempt.ID || !sameAppUpdateAttempt(pending, attempt) {
 		return AppUpdateOutcome{}, errors.New("maat memory: whole-app update is not the unique incomplete attempt")
 	}
 	if !appUpdateObservationFresh(attempt, observation, time.Now()) || !appUpdateObservationMatches(pending.Manifest, observation) {
 		return AppUpdateOutcome{}, errors.New("maat memory: installed target, signature, dependency, or version readback does not match the reviewed update; handoff remains unresolved")
 	}
 	outcome := AppUpdateOutcome{Schema: MemorySchema, AttemptID: attempt.ID, Determination: "installed", Observation: observation, RecordedAtUTC: time.Now().UTC()}
-	if err := validateAppUpdateOutcome(outcome, *pending); err != nil {
+	if err := validateAppUpdateOutcome(outcome, pending); err != nil {
 		return AppUpdateOutcome{}, err
 	}
 	data, err := json.Marshal(outcome)
@@ -333,12 +345,12 @@ func (s *Store) RecordAppUpdateNotInvoked(attempt AppUpdateAttempt, reason strin
 	}
 	defer s.unlock()
 	pending, err := s.pendingAppUpdateAttemptLocked()
-	if err != nil || pending.ID != attempt.ID || !sameAppUpdateAttempt(*pending, attempt) {
+	if err != nil || pending.ID != attempt.ID || !sameAppUpdateAttempt(pending, attempt) {
 		return AppUpdateOutcome{}, errors.New("maat memory: known-not-invoked disposition does not bind the unique retained attempt")
 	}
 	outcome := AppUpdateOutcome{Schema: MemorySchema, AttemptID: attempt.ID, Determination: "not-invoked",
 		NotInvokedReason: reason, RecordedAtUTC: time.Now().UTC()}
-	if err := validateAppUpdateOutcome(outcome, *pending); err != nil {
+	if err := validateAppUpdateOutcome(outcome, pending); err != nil {
 		return AppUpdateOutcome{}, err
 	}
 	data, err := json.Marshal(outcome)
@@ -369,8 +381,29 @@ func (s *Store) validateAppUpdateAttemptLocked(attempt AppUpdateAttempt, id stri
 	if err := validateAppUpdateAttempt(attempt, id, s.storeUUID); err != nil {
 		return err
 	}
+	return s.validateAppUpdateAttemptReceiptLockedWith(attempt, s.readPreflightReceiptLocked)
+}
+
+// Prepared app-update recovery may allow one current target intent in the
+// WAL. It still validates every unrelated write and proves receipt custody
+// from the exact committed object without invoking the ordinary clean-WAL
+// gate a second time.
+func (s *Store) validateAppUpdateAttemptForPreparedWriteLocked(attempt AppUpdateAttempt, id, preparedKey string) error {
+	if err := validateAppUpdateAttempt(attempt, id, s.storeUUID); err != nil {
+		return err
+	}
+	if !validDigest(preparedKey) {
+		return errors.New("maat memory: invalid prepared app-update recovery key")
+	}
+	if _, err := s.verifyWriteJournalAllow(preparedKey); err != nil {
+		return err
+	}
+	return s.validateAppUpdateAttemptReceiptLockedWith(attempt, s.readPreflightReceiptObjectLocked)
+}
+
+func (s *Store) validateAppUpdateAttemptReceiptLockedWith(attempt AppUpdateAttempt, readReceipt func(string) (PreflightReceipt, error)) error {
 	reference := attempt.PreflightReceipt
-	receipt, err := s.readPreflightReceiptLocked(reference.ReceiptSHA256)
+	receipt, err := readReceipt(reference.ReceiptSHA256)
 	if err != nil {
 		return err
 	}
@@ -494,7 +527,7 @@ func (s *Store) recoverPreparedAppUpdateWritesLocked() error {
 		}
 		if startedLeaf {
 			var attempt AppUpdateAttempt
-			if json.Unmarshal(leaf, &attempt) != nil || s.validateAppUpdateAttemptLocked(attempt, id) != nil {
+			if json.Unmarshal(leaf, &attempt) != nil || s.validateAppUpdateAttemptForPreparedWriteLocked(attempt, id, intent.Key) != nil {
 				return errors.New("maat memory: prepared app-update attempt is not a valid typed record")
 			}
 		} else {
@@ -504,7 +537,7 @@ func (s *Store) recoverPreparedAppUpdateWritesLocked() error {
 			}
 			var attempt AppUpdateAttempt
 			var outcome AppUpdateOutcome
-			if json.Unmarshal(started, &attempt) != nil || s.validateAppUpdateAttemptLocked(attempt, id) != nil ||
+			if json.Unmarshal(started, &attempt) != nil || s.validateAppUpdateAttemptForPreparedWriteLocked(attempt, id, intent.Key) != nil ||
 				json.Unmarshal(leaf, &outcome) != nil || validateAppUpdateOutcome(outcome, attempt) != nil {
 				return errors.New("maat memory: prepared app-update outcome is not a valid typed record")
 			}
