@@ -106,3 +106,25 @@ Qualification has not been run for the corrective child. A future native run
 must materialize a fresh private `GOMODCACHE` from already-present download
 archives, verify against the exact `go.sum` with `GOPROXY=off`, and retain the
 existing shared cache unchanged; no dependency or lockfile change is implied.
+
+### Literal search correction (source candidate; runtime pending)
+
+The CLI, MCP and dashboard accept ordinary text, not SQLite FTS5 expressions.
+Nonempty whitespace-separated terms retain AND semantics. Each term is quoted
+and embedded quotes escaped before COUNT, hit selection and snippet MATCH;
+FTS5's existing tokenizer still controls punctuation/case/Unicode token matching.
+For example `archive-drift`, `O'Reilly`, `label:blue` and an unmatched quote no
+longer become operators or SQL syntax. Words such as NOT/OR are literal words;
+there is no advanced-grammar mode. Punctuation-only text, invalid UTF-8, nonspace
+control characters and input above512bytes return the static typed
+`invalid_search_query` guidance, not unavailable or complete-empty. Empty text
+still browses. Validation precedes private archive reads; transport schema bounds
+remain in force. The dashboard renders the safe typed message for HTTP400.
+
+`internal/maat/knowledge/search_text.go` owns encoding/validation.
+`testdata/literal-search.json` is shared by core, HTTP, MCP and actual Cobra
+RunE fixtures. `search_text_test.go` also pins counts, privacy, snippets,
+query-bound cursor and generation rejection, and a synthetic raw-FTS diagnostic.
+No schema/index migration, source reingestion, tokenizer change or alternate
+search authority is introduced. Existing source filters, deduplication, raw
+normalized query hash, snapshot transaction and page order are unchanged.

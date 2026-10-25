@@ -59,27 +59,29 @@ type ResolutionStep struct {
 // Case is a stable, operator-readable projection of exactly one recorded
 // Ma'at decision. It has no independent lifecycle or write authority.
 type Case struct {
-	ID                           string                  `json:"id"`
-	Time                         string                  `json:"time"`
-	Host                         string                  `json:"host"`
-	Kind                         string                  `json:"kind"`
-	Category                     string                  `json:"category"`
-	Status                       Status                  `json:"status"`
-	Priority                     Priority                `json:"priority"`
-	Requester                    string                  `json:"requester"`
-	Resource                     string                  `json:"resource,omitempty"`
-	Affected                     string                  `json:"affected,omitempty"`
-	Determination                string                  `json:"determination"`
-	Assessed                     string                  `json:"assessed"`
-	Why                          string                  `json:"why"`
-	Evidence                     string                  `json:"evidence,omitempty"`
-	Resolution                   string                  `json:"resolution,omitempty"`
-	VerifiedRepairEvidence       string                  `json:"verified_repair_evidence,omitempty"`
-	RepairOutcomeEvidence        string                  `json:"repair_outcome_evidence,omitempty"`
-	PendingRepairAttemptEvidence string                  `json:"pending_repair_attempt_evidence,omitempty"`
-	NextAction                   *ResolutionPath         `json:"next_action,omitempty"`
-	SystemOne                    *maat.MaatVerdict       `json:"system_one,omitempty"`
-	SystemOneCalibration         *maat.CalibrationRecord `json:"system_one_calibration,omitempty"`
+	ID                           string                          `json:"id"`
+	Time                         string                          `json:"time"`
+	Host                         string                          `json:"host"`
+	Kind                         string                          `json:"kind"`
+	Category                     string                          `json:"category"`
+	Status                       Status                          `json:"status"`
+	Priority                     Priority                        `json:"priority"`
+	Requester                    string                          `json:"requester"`
+	Resource                     string                          `json:"resource,omitempty"`
+	Affected                     string                          `json:"affected,omitempty"`
+	Determination                string                          `json:"determination"`
+	Assessed                     string                          `json:"assessed"`
+	Why                          string                          `json:"why"`
+	Evidence                     string                          `json:"evidence,omitempty"`
+	Resolution                   string                          `json:"resolution,omitempty"`
+	VerifiedRepairEvidence       string                          `json:"verified_repair_evidence,omitempty"`
+	RepairOutcomeEvidence        string                          `json:"repair_outcome_evidence,omitempty"`
+	PendingRepairAttemptEvidence string                          `json:"pending_repair_attempt_evidence,omitempty"`
+	NextAction                   *ResolutionPath                 `json:"next_action,omitempty"`
+	SystemOne                    *maat.MaatVerdict               `json:"system_one,omitempty"`
+	SystemOneCalibration         *maat.CalibrationRecord         `json:"system_one_calibration,omitempty"`
+	FailureMemoryReceipt         *maat.PreflightReceiptReference `json:"failure_memory_receipt,omitempty"`
+	FailureMemoryIncidentKeys    *[]string                       `json:"failure_memory_incident_keys,omitempty"`
 }
 
 // Node and Edge form a deliberately small evidence graph. The dashboard can
@@ -277,10 +279,12 @@ func SearchHistory(journal *maat.FileDecisionJournal, query HistoryQuery) (Histo
 	kind := strings.ToLower(strings.TrimSpace(query.Kind))
 	text := strings.ToLower(strings.TrimSpace(query.Text))
 	status := Status(strings.ToLower(strings.TrimSpace(string(query.Status))))
+	// Bind continuation to the projection/filter semantics as well as operands.
+	// Older cursors cannot silently omit newly searchable incident links.
 	keyBytes, err := json.Marshal(struct {
-		Scope, Evidence, Kind, Text, Status string
-		Limit                               int
-	}{query.Scope, query.Evidence, kind, text, string(status), query.Limit})
+		ProjectionVersion, Scope, Evidence, Kind, Text, Status string
+		Limit                                                  int
+	}{"casebook-local-prevention-v1", query.Scope, query.Evidence, kind, text, string(status), query.Limit})
 	if err != nil {
 		return HistorySearchResult{}, err
 	}
@@ -390,13 +394,19 @@ func project(d maat.Decision) Case {
 		Time: d.Time, Host: d.Host, Kind: d.Kind, Category: classify(d),
 		Requester: d.Requester, Resource: d.Resource, Affected: d.Affected,
 		Determination: d.Determination, Assessed: d.Assessed, Why: d.Why, Evidence: d.Evidence,
-		SystemOne: d.SystemOne, SystemOneCalibration: d.SystemOneCalibration,
+		SystemOne: d.SystemOne, SystemOneCalibration: d.SystemOneCalibration, FailureMemoryReceipt: d.FailureMemoryReceipt, FailureMemoryIncidentKeys: d.FailureMemoryIncidentKeys,
 		Status: statusFor(determination), Priority: priorityFor(determination),
 	}
 	// A calibration is a completed historical comparison between an existing
 	// auto-pass and an independent outcome. A block can be urgent in the
 	// original screen's case; it is not an unresolved action on this receipt.
 	if d.SystemOneCalibration != nil {
+		c.Status = StatusResolved
+		c.Priority = PriorityNormal
+	}
+	// This closed receipt completes only the owner's recorded disposition.
+	// The original unhealthy screen and any future action remain independent.
+	if d.Kind == "local prevention owner disposition" && determination == "accepted_not_repaired" {
 		c.Status = StatusResolved
 		c.Priority = PriorityNormal
 	}
@@ -645,8 +655,15 @@ func matches(c Case, needle string) bool {
 		c.Time, c.Host, c.Kind, c.Category, c.Requester, c.Resource,
 		c.Affected, c.Determination, c.Assessed, c.Why, c.Evidence, c.Resolution,
 		c.VerifiedRepairEvidence, c.RepairOutcomeEvidence, c.PendingRepairAttemptEvidence, resolutionText(c.NextAction),
-		calibrationText(c.SystemOneCalibration),
+		calibrationText(c.SystemOneCalibration), failureMemoryIncidentText(c.FailureMemoryIncidentKeys),
 	}, "\n")), needle)
+}
+
+func failureMemoryIncidentText(keys *[]string) string {
+	if keys == nil {
+		return ""
+	}
+	return strings.Join(*keys, "\n")
 }
 
 func calibrationText(record *maat.CalibrationRecord) string {

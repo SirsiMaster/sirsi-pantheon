@@ -199,11 +199,17 @@ func (a *App) handleKey(key string) (tea.Model, tea.Cmd) {
 	// screen-local mode, AND the mid-operation quit guard — always immediate, so
 	// the operator can always get out.
 	if key == "ctrl+c" {
+		a.cancelRead()
 		return a, tea.Quit
 	}
 	if a.helpOpen {
 		a.helpOpen = false
 		return a, nil
+	}
+	if editor, ok := a.activeScreen().(interface{ HandleTextKey(string) (bool, tea.Cmd) }); ok {
+		if handled, cmd := editor.HandleTextKey(key); handled {
+			return a, cmd
+		}
 	}
 	cmd, ok := a.reg.ResolveKey(key)
 	if !ok {
@@ -215,6 +221,7 @@ func (a *App) handleKey(key string) (tea.Model, tea.Cmd) {
 		a.quitArmed = false
 		switch cmd.ID {
 		case CmdQuit:
+			a.cancelRead()
 			return a, tea.Quit
 		case CmdBack:
 			a.toast = nil // "esc to stay" — drop the hint, stay put
@@ -232,6 +239,7 @@ func (a *App) handleKey(key string) (tea.Model, tea.Cmd) {
 			a.setToast(&Toast{Text: "operation running — q again to quit, esc to stay", Token: TokWarn})
 			return a, tea.Tick(toastLife, func(time.Time) tea.Msg { return toastExpireMsg{} })
 		}
+		a.cancelRead()
 		return a, tea.Quit
 	case CmdHelp:
 		a.helpOpen = true
@@ -258,10 +266,22 @@ func (a *App) handleKey(key string) (tea.Model, tea.Cmd) {
 
 // focus switches to screen i, lazily loading it the first time it is shown so
 // the first frame never blocks on a scan.
+func (a *App) cancelRead() {
+	if reader, ok := a.activeScreen().(interface{ CancelRead() }); ok {
+		reader.CancelRead()
+	}
+}
+
 func (a *App) focus(i int) (tea.Model, tea.Cmd) {
+	if i != a.active {
+		a.cancelRead()
+	}
 	a.active = i
 	if a.activeScreen().State() == stateIdle {
 		return a, a.activeScreen().Load()
+	}
+	if reader, ok := a.activeScreen().(interface{ ResumeRead() tea.Cmd }); ok {
+		return a, reader.ResumeRead()
 	}
 	return a, nil
 }

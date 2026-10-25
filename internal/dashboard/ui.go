@@ -13,7 +13,7 @@ import (
 // internal/brand (ADR-038) so the dashboard cannot drift from the CLI, menubar
 // and Swift app.
 //
-//go:embed ui/index.html ui/app.css ui/app.js
+//go:embed ui/index.html ui/app.css ui/app.js ui/maat-history.js
 var uiFS embed.FS
 
 // handleHome serves the dashboard at exactly "/". The previous terminal-style page
@@ -35,6 +35,8 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleUIAsset(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
+	case "/assets/maat-history.js":
+		s.serveEmbedded(w, "ui/maat-history.js", "application/javascript; charset=utf-8")
 	case "/assets/mercury.css":
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "text/css; charset=utf-8")

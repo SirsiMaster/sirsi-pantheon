@@ -19,6 +19,9 @@ type searchCursor struct {
 }
 
 func (a *Archive) Search(ctx context.Context, query SearchQuery) (SearchPage, error) {
+	if err := ValidateSearchText(query.Text); err != nil {
+		return SearchPage{}, err
+	}
 	if err := a.verifyLocation(); err != nil {
 		return SearchPage{}, err
 	}
@@ -66,6 +69,10 @@ func (a *Archive) searchSnapshotWithHook(ctx context.Context, query SearchQuery,
 	}
 	if query.Classification != "" && query.Classification != "conversation" && query.Classification != "search" && query.Classification != "note" && query.Classification != "document" && query.Classification != "unclassified" {
 		return SearchPage{}, errors.New("Ma'at knowledge classification filter is invalid")
+	}
+	expression, err := literalSearchExpression(query.Text)
+	if err != nil {
+		return SearchPage{}, err
 	}
 	query.Text = strings.TrimSpace(query.Text)
 	queryHash := normalizedQueryHash(query)
@@ -138,7 +145,7 @@ func (a *Archive) searchSnapshotWithHook(ctx context.Context, query SearchQuery,
 	args := []any{query.Classification, query.Classification, string(query.Resolution), string(query.Resolution), query.Source, query.Source}
 	if query.Text != "" {
 		where += ` AND knowledge_fts MATCH ?`
-		args = append(args, query.Text)
+		args = append(args, expression)
 	}
 	if !query.IncludeHistory {
 		where += ` AND v.revision=r.current_revision`
@@ -206,7 +213,7 @@ func (a *Archive) searchSnapshotWithHook(ctx context.Context, query SearchQuery,
 				// FTS5 auxiliary functions need the FTS cursor in the SELECT that
 				// evaluates them. Keep ranking/window work out of that query and
 				// resolve excerpts only for this already-bounded page of hits.
-				if err := db.QueryRowContext(ctx, `SELECT snippet(knowledge_fts,4,'[',']','…',18) FROM knowledge_fts WHERE knowledge_fts MATCH ? AND record_id=? AND revision=?`, query.Text, item.id, item.rev).Scan(&record.Excerpt); err != nil {
+				if err := db.QueryRowContext(ctx, `SELECT snippet(knowledge_fts,4,'[',']','…',18) FROM knowledge_fts WHERE knowledge_fts MATCH ? AND record_id=? AND revision=?`, expression, item.id, item.rev).Scan(&record.Excerpt); err != nil {
 					return SearchPage{}, errors.New("Ma'at knowledge search excerpt is unavailable")
 				}
 			}

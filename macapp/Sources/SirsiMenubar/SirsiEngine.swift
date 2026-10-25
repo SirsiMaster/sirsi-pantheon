@@ -707,7 +707,11 @@ final class SirsiEngine: ObservableObject {
     @Published var routerReadError: String?
     // Shared by every Ma'at root/detail; remounting a workspace cannot reset
     // the guard or lose an invocation's result. Go retains effect authority.
-    let maatCaseOperations = MaatCaseOperationStore()
+    let maatCaseOperations: MaatCaseOperationStore
+
+    init(maatCaseOperations: MaatCaseOperationStore? = nil) {
+        self.maatCaseOperations = maatCaseOperations ?? MaatCaseOperationStore()
+    }
     func routerObservationIsCurrent(at now: Date) -> Bool {
         routerReadError == nil && pantheonObservationIsCurrent(routerReadAt, at: now, maxAge: 30)
     }

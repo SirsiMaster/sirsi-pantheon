@@ -95,10 +95,12 @@ type Config struct {
 	// decision journal. It remains read-only: the dashboard cannot treat a
 	// case as a new decision or authorization.
 	MaatCasebookFn MaatCasebookProducer
+	MaatHistoryFn  func(context.Context, casebook.HistoryQuery) (casebook.HistorySearchResult, error)
 	// MaatKnowledgeFn provides the same sensitivity-filtered local knowledge
 	// view used by the CLI, native app, and MCP. The dashboard never reads the
 	// compatibility cache itself.
-	MaatKnowledgeFn MaatKnowledgeProducer
+	MaatKnowledgeFn     MaatKnowledgeProducer
+	MaatKnowledgeReadFn func(context.Context, MaatKnowledgeReadRequest) (any, error)
 	// ApolloTelemetryFn is the sole producer for the latest SNE-owned local
 	// session sample. The dashboard does not inspect SNE endpoints or calculate
 	// derived throughput; it presents this typed read verbatim.

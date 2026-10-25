@@ -200,6 +200,7 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
  </div>
 </div>
 
+<script src="/assets/maat-history.js"></script>
 <script>
 (function(){
 'use strict';
@@ -209,7 +210,7 @@ const fmtSize=b=>{if(b>=1073741824)return(b/1073741824).toFixed(1)+' GB';
 const ago=ts=>{if(!ts)return'';const d=Date.now()-new Date(ts).getTime();
  if(d<60e3)return Math.floor(d/1e3)+'s ago';if(d<3600e3)return Math.floor(d/6e4)+'m ago';
  if(d<864e5)return Math.floor(d/36e5)+'h ago';return Math.floor(d/864e5)+'d ago'};
-let currentView='home';let running=false;
+let currentView='home';let running=false;let maatCleanup=null;
 
 function out(text,cls){const d=document.createElement('div');d.className='t-line '+(cls||'t-out');
  d.textContent=text;T.appendChild(d);if(T.children.length>800)T.removeChild(T.firstChild);T.scrollTop=T.scrollHeight}
@@ -235,6 +236,7 @@ pollStats();setInterval(pollStats,10000);
 
 /* ── View system ──────────────────────────────────────── */
 window.switchView=function(view){
+ if(maatCleanup){maatCleanup();maatCleanup=null;}
  currentView=view;
  document.getElementById('view-label').textContent=view;
  document.querySelectorAll('.nav-item').forEach(function(n){
@@ -418,74 +420,10 @@ function viewFleet(){
  }).catch(function(e){out('  fleet board unavailable: '+e.message,'t-err')});
 }
 
-function renderMaatKnowledge(){
- fetch('/api/maat/knowledge').then(function(r){
-  if(!r.ok)return r.json().then(function(e){throw new Error(e.error||('HTTP '+r.status))});
-  return r.json()
- }).then(function(view){
-  const items=view.items||[];
-  out('');out('  Local knowledge · '+(view.total||0)+' retained'+(view.withheld ? ' · '+view.withheld+' withheld for safety' : ''),'t-head');
-  if(!items.length){out('  No retained local knowledge yet. Use the Ma’at knowledge refresh action to read configured local sources.','t-dim');return}
-  items.slice(0,6).forEach(function(item){
-   const row=document.createElement('div');row.className='t-line t-row';
-   const title=document.createElement('span');title.className='t-col';title.style.width='220px';title.style.color='var(--ink2)';title.textContent=item.title||'Untitled knowledge';
-   const summary=document.createElement('span');summary.className='t-col';summary.style.flex='1';summary.style.color='var(--dim)';summary.textContent=item.summary||'No summary retained.';
-   row.appendChild(title);row.appendChild(summary);T.appendChild(row);
-  });
-  if(items.length>6)out('  '+(items.length-6)+' more retained item(s) are available through Ma’at knowledge.','t-dim');
- }).catch(function(e){out('  Ma’at knowledge unavailable: '+e.message,'t-err')});
-}
-
 function viewMaat(){
  out('𓆄 Ma’at — Local System One','t-gold');
- out('  Searchable, evidence-linked cases projected from Ma’at’s recorded decisions. Read-only: it explains decisions; it never makes them.','t-dim');
- renderMaatKnowledge();
- fetch('/api/maat/casebook?limit=50').then(function(r){
-  if(!r.ok)return r.json().then(function(e){throw new Error(e.error||('HTTP '+r.status))});
-  return r.json()
- }).then(function(view){
-  const rows=view.cases||[], summary=view.summary||{};
-  if(!rows.length){out('');out('  No Ma’at cases have been recorded on this node yet.','t-dim');return}
-  out('');out('  '+summary.total+' cases · '+summary.open+' open · '+summary.urgent+' urgent · '+summary.high+' high · '+summary.resolved+' resolved','t-head');sep();
-  rows.forEach(function(d){
-   const row=document.createElement('div');row.className='t-line t-row';
-   const at=document.createElement('span');at.className='t-col';at.style.width='110px';at.style.color='var(--dim)';at.textContent=ago(d.time)||d.time;
-   const verdict=document.createElement('span');verdict.className='t-col';verdict.style.width='82px';
-   verdict.style.color=(d.priority==='urgent')?'var(--danger)':(d.priority==='high'?'var(--gold)':'var(--ok)');verdict.textContent=(d.priority||'normal').toUpperCase();
-   const subject=document.createElement('span');subject.className='t-col';subject.style.flex='1';subject.textContent=(d.category||'assessment')+' · '+(d.resource||'—')+' · '+(d.why||'no reason recorded');
-   row.appendChild(at);row.appendChild(verdict);row.appendChild(subject);T.appendChild(row);
-   const detail=document.createElement('div');detail.className='t-line t-dim';detail.style.paddingLeft='202px';
-   let bits=['status: '+(d.status||'open'),'decision: '+(d.kind||'unknown')+' → '+(d.determination||'unknown'),'assessment: '+(d.assessed||'unknown')];
-   if(d.affected)bits.push('affected: '+d.affected);
-   if(d.evidence)bits.push('evidence: '+d.evidence);
-   if(d.next_action){
-    bits.push('next: '+(d.next_action.title||'review the retained evidence')+(d.next_action.detail?' — '+d.next_action.detail:''));
-    if(Array.isArray(d.next_action.steps))d.next_action.steps.forEach(function(step){bits.push('recovery level '+(step.level||'?')+': '+(step.title||'unnamed')+(step.detail?' — '+step.detail:''));});
-   }
-   if(d.system_one){
-    const screen=d.system_one, confidence=Math.round((screen.confidence||0)*100);
-    bits.push('system one: '+(screen.gate||'unknown')+' · '+confidence+'% confidence · feather '+(screen.feather_weight??'unknown')+'/100');
-   if(screen.subject)bits.push('screen subject: '+(screen.subject.kind||'unknown')+' '+(screen.subject.ref||'unknown')+' · '+(screen.subject.head_sha||'unknown'));
-    if(screen.model)bits.push('screen model: '+(screen.model.provider||'unknown')+' '+(screen.model.version||'unknown')+' · '+(screen.model.local ? 'local' : 'external')+' · '+(screen.model.latency_ms??'unknown')+'ms');
-    if(screen.floor){
-     bits.push('deterministic floor: '+(screen.floor.passed?'passed':'failed'));
-     if(Array.isArray(screen.floor.checks))screen.floor.checks.forEach(function(check){bits.push('floor check: '+(check.name||'unnamed')+' · '+(check.passed?'passed':'failed')+(check.detail?' · '+check.detail:''));});
-    }
-    if(screen.escalation&&screen.escalation.reason)bits.push('required review: '+screen.escalation.reason);
-    if(Array.isArray(screen.findings))screen.findings.forEach(function(finding){
-     bits.push('finding: '+(finding.severity||'information')+' · '+(finding.category||'finding')+' · '+(finding.claim||'no claim recorded'));
-     if(finding.fix_hint)bits.push('prescribed next step: '+finding.fix_hint);
-    });
-   }
-   if(d.system_one_calibration){
-    const calibration=d.system_one_calibration;
-    bits.push('system one calibration: '+(calibration.screen_gate||'unknown')+' → '+(calibration.frontier_gate||'unknown'));
-    if(calibration.screen_evidence)bits.push('screen evidence: '+calibration.screen_evidence);
-    if(calibration.frontier_evidence)bits.push('independent evidence: '+calibration.frontier_evidence);
-   }
-   detail.textContent=bits.join(' · ');T.appendChild(detail);
-  });
- }).catch(function(e){out('  Ma’at casebook unavailable: '+e.message,'t-err')});
+ out('Read-only canonical history and private archive. No decision, ingestion or repair is authorized here.','t-dim');
+ maatCleanup=window.MaatHistoryUI.mount(T);
 }
 
 function viewGhosts(){

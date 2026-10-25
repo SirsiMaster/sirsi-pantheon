@@ -236,7 +236,7 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 	if !ok {
 		t.Fatal("Ma'at failure-memory component is missing")
 	}
-	for _, path := range []string{"internal/maat/memory.go", "internal/maat/memoryguard.go", "internal/maat/memory_test.go", "internal/maat/memoryguard_test.go"} {
+	for _, path := range []string{"internal/maat/memory.go", "internal/maat/memoryguard.go", "internal/maat/memory_test.go", "internal/maat/memoryguard_test.go", "internal/maat/memory_intake.go", "internal/maat/memory_local_events.go", "internal/maat/memory_local_disposition.go", "internal/maat/memory_local_lifecycle_test.go", "cmd/sirsi/maatmemory_local.go", "cmd/sirsi/maatmemory_local_test.go", "macapp/Sources/SirsiMenubar/MaatLocalPrevention.swift", "macapp/Tests/SirsiMenubarTests/MaatLocalPreventionTests.swift", "internal/liveness/localwatch_completion_darwin_test.go"} {
 		if !contains(append(append([]string{}, memory.Source...), memory.Tests...), path) {
 			t.Fatalf("Ma'at failure-memory recipe omits canonical surface %q: %+v", path, memory)
 		}
@@ -253,6 +253,15 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 	} {
 		if !contains(memory.UpgradeRecipe, boundary) {
 			t.Fatalf("Ma'at failure-memory recipe omits boundary %q", boundary)
+		}
+	}
+	for _, boundary := range []string{
+		"preserve Incident.Key as FailureSignature.Digest; reduce the closed local event chain without rewriting introduction records or normalizing SNE identities",
+		"claim invocation before callbacks; never replay an installer from an incomplete action, intake, disposition or journal projection",
+		"keep current health and future action authorization separate from historical owner disposition; after retirement a later verified recurrence appends one child under the same stable key",
+	} {
+		if !contains(memory.UpgradeRecipe, boundary) {
+			t.Fatalf("local memory recipe omits exact G01 boundary %q", boundary)
 		}
 	}
 	proposals, ok := componentsByID["maat-known-failure-proposals"]

@@ -112,11 +112,18 @@ func TestHomeView_CommandsAreClickable(t *testing.T) {
 // be advisory, but it must never leave the operator at an unexplained status.
 func TestMaatView_ProjectsSystemOneEvidence(t *testing.T) {
 	page := fetchSPA(t)
+	if !strings.Contains(page, "MaatHistoryUI.mount(T)") || !strings.Contains(page, "/assets/maat-history.js") {
+		t.Fatal("canonical Ma’at surface not mounted")
+	}
+	raw, err := uiFS.ReadFile("ui/maat-history.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	page = string(raw)
 
 	for _, token := range []string{
-		"renderMaatKnowledge",
 		"/api/maat/knowledge",
-		"withheld for safety",
+		"archive-wide withheld",
 		"d.system_one",
 		"screen.feather_weight",
 		"screen.subject.head_sha",

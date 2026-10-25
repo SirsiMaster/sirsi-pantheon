@@ -1,5 +1,28 @@
 # Traceability matrix — Ma'at
 
+G02 prepared-receipt reachability: `memory_prepared_receipts.go` and
+`maatmemory_prepared.go` extend the existing memory inspector with a verified
+complete historical reader and exact intent/store target before any Casebook
+preflight projection. `MaatPreparedPreflightRecovery` is owned by the existing
+operation lifetime. The f0e liveness-detail mount alone still required a case;
+the successor mounts `MaatWorkspaceRecoveryFrame` directly as the ordinary
+`MaatWorkspaceView.body`, outside every content branch. Its always-visible
+Inspect control calls the existing inspector before any model state exists.
+Authored
+`TestPreparedReceipt*`,
+`TestMaatPreparedReceiptInspectorAndConfirmedCommandWithoutCasebookRow` and
+`MaatPreparedPreflightRecoveryTests` cover first-retention interruption, immutable
+inspection, exact consent, changed/incomplete/unrelated debt, cancellation and
+fresh-assessment separation without a receipt Casebook row.
+`MaatWorkspaceRecoveryEntryTests` additionally requires the actual root body/frame
+and production Inspect/confirmation-refresh callbacks across empty/unavailable
+history, success, failure, cancellation and remount; omitting the root frame
+fails this fixture. No AX oracle/skip or visible-window claim is used. External
+normal-window evidence remains separately required. Existing canonical
+receipt recovery remains the only writer. SOURCE ONLY pending Main execution;
+855's 164 normal/164 race and 67 Swift positive receipt stays baseline-bound.
+No installed/full-eight-operation claim follows from this child.
+
 HW10 shares `MaatHistoryRefreshStore` and its atomic state commit between both
 native history loaders. Authored controlled-response fixtures cover delayed
 success/failure after a newer commit, cancellation before/after a new snapshot,
@@ -16,6 +39,12 @@ History HW01–09 corrective scope additionally binds
 generation/cancellation/retained-continuation fixtures. Qualification and the
 production-only truncate-before-filter negative remain Main-owned and unrun;
 no release, installed-state or broader Ma'at completion follows from this source.
+
+G04 bounded MCP/Horus/TUI history and canonical archive read surfaces are mapped in
+`G04_BOUNDED_SURFACES.md` and recipe component `maat-bounded-history-read-surfaces`.
+The 2,012-record private-journal, same-snapshot links, partial/empty distinctions,
+archive cursor/privacy and stale/cancel ownership fixtures are authored but unrun.
+No G01/G02 learning workflow or full original-scope completion is claimed.
 
 | Requirement | Source | Verification/evidence | State |
 |---|---|---|---|
@@ -36,3 +65,20 @@ no release, installed-state or broader Ma'at completion follows from this source
 | Installed/release behavior | release workflow and host evidence | exact release/host receipts | OPEN |
 | A release can bootstrap without future helper/old CLI flag deadlock | `maat-native-release-bootstrap`, `.github/workflows/release.yml`, `test_release_admission.py` | actual shell selects quoted installed supervisor, forwards bounded executor arguments and fails before payload when absent; omission controls | source-qualified only; legacy conservative admission and signed native build must be read back separately |
 | A finite CPU-only build does not seize the model slot | native launcher core propagation; CLI `--cores`; canonical scheduler | `test_native_cpu_request_reaches_reservation`, `TestReserveCLIPropagatesBoundedCoresAndPreservesLegacyOmission`, `TestActualCPUFirstReserveDoesNotOwnModelSlot`, conservative conflict matrix | post124 corrective source; protected full checks and installed/server behavior OPEN |
+
+G04's 2ee runtime failure is retained in its original terminal packet. The
+corrective child adds bounded shared candidate qualification in
+`history_query_batch.go`, cursor-v4 validation and charged-work/cancel fixtures;
+original80-call MCP tests are unchanged. This core change is an independent
+Astra review subject, not a passed-runtime or full original-scope claim.
+
+G04-C3 exact transport key/enum membership maps to both `maat_reads.go` adapters
+and their new `maat_membership_test.go` fixtures. Malformed composites and
+prefix/suffix/substrings must fail before any private reader call; literal/default
+compatibility is retained. Source corrective only; Main review/execution pending.
+
+The same child corrects the independently observed legacy memory test-root
+setup in `memory_test.go`/`memoryguard_test.go`, using the exact855 private helper
+and public0755 no-chmod refusal fixture without its API adaptations. Production
+mode policy and all old assertions remain unchanged; whole-core normal/race
+under022 is required rather than narrowing away these tests.
