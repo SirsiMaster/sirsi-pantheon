@@ -3,8 +3,6 @@ package mcp
 import (
 	"context"
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -23,10 +21,7 @@ func knowledgeResult(t *testing.T, args map[string]interface{}, into any) {
 	}
 }
 func TestMaatKnowledgeMCPCanonicalSearchDetailHistoryAndPrivacy(t *testing.T) {
-	home := filepath.Join(t.TempDir(), "private-home")
-	if err := os.Mkdir(home, 0700); err != nil {
-		t.Fatal(err)
-	}
+	home := maatKnowledgeTestHome(t)
 	a, err := knowledge.Open(home)
 	if err != nil {
 		t.Fatal(err)

@@ -68,6 +68,12 @@ production readers. Canonicalize only those owned test homes (reusing the
 existing default-store test helper); do not relax production path validation.
 The failed full gate is retained, and focused reruns plus the ordinary full
 protected gate must establish the corrected source before publication.
+The next full gate exposed additional prepared-receipt and MCP positives of
+the same class, hidden by the hook's bounded failure summary. The successor
+audits all archive/default-store positive fixture callers and qualifies whole
+affected packages before another full gate. Existing CLI and archive-package
+TestMain canonicalization already covers their positive callers; explicit
+production symlink-rejection fixtures and all assertions remain unchanged.
 
 - Main integrated receipt SHA256
   `3e5da51f47b1bfa4569737705261dc76e4d121243d4473ff53f199793b22c70e`:

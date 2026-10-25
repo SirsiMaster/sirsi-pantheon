@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -16,10 +15,7 @@ import (
 )
 
 func TestMaatKnowledgeMCPLiteralSearch(t *testing.T) {
-	home := filepath.Join(t.TempDir(), "private-home")
-	if err := os.Mkdir(home, 0700); err != nil {
-		t.Fatal(err)
-	}
+	home := maatKnowledgeTestHome(t)
 	archive, err := knowledge.Open(home)
 	if err != nil {
 		t.Fatal(err)

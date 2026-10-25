@@ -13,6 +13,10 @@ import (
 func interruptedPreparedReceipt(t *testing.T) (string, *Store, PreflightReceipt) {
 	t.Helper()
 	home := privateMemoryStoreRoot(t)
+	home, err := filepath.EvalSymlinks(home)
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("HOME", home)
 	if _, err := InitializeDefaultStore(); err != nil {
 		t.Fatal(err)
