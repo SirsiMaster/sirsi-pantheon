@@ -260,11 +260,18 @@ class RegistryDeadlineTests(unittest.TestCase):
                 'thread "own" is closed and cannot be revived by heartbeat',
                 'thread "own" belongs to a different native runtime',
                 "Control call ('thread', 'heartbeat') failed: thread \"foreign\" not registered: heartbeat registration unavailable",
-                "Control call ('thread', 'heartbeat') failed: 403 denied; thread \"own\" not registered: heartbeat registration unavailable"):
+                "Control call ('thread', 'heartbeat') failed: 403 denied; thread \"own\" not registered: heartbeat registration unavailable",
+                "Control call ('thread', 'heartbeat') failed: unauthorized; thread \"own\" not registered: heartbeat registration unavailable",
+                "Control call ('thread', 'heartbeat') failed: unauthorised; thread \"own\" not registered: heartbeat registration unavailable",
+                "Control call ('thread', 'heartbeat') failed: released; thread \"own\" not registered: heartbeat registration unavailable"):
             with self.subTest(message=message):
                 native = runner.Native()
+                native.deadline = 3
                 native.call = mock.Mock(side_effect=runner.Refused(message))
-                with mock.patch.object(runner.time, 'sleep') as sleep, self.assertRaises(runner.Refused):
+                clock = Clock()
+                with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
+                        mock.patch.object(runner.time, 'sleep', side_effect=lambda seconds: setattr(clock, 'now', clock.now + seconds)) as sleep, \
+                        self.assertRaises(runner.Refused):
                     native.registration_observation('own', pending_registration=True)
                 self.assertEqual(native.call.call_count, 1)
                 sleep.assert_not_called()

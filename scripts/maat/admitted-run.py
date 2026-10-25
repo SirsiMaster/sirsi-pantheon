@@ -712,6 +712,9 @@ def valid(row, resource, agent, work, cpu_cores=None, regime=None):
         return False
 
 
+CONTROL_DENIAL_RE = re.compile(r'(?i)\b(401|403|unauthori[sz]ed|forbidden|denied|revoked|released|expired|scope|mismatch)\b')
+
+
 def registration_transport_cause(error):
     """Retain closed diagnostic classes, never arbitrary credential-bearing stderr."""
     detail = str(error)
@@ -799,7 +802,7 @@ class Native:
         except subprocess.CalledProcessError as error:
             detail = (error.stderr or '')[-1600:]
             # Denial takes precedence over transport text; unknown errors refuse.
-            denied = re.search(r'(?i)\b(401|403|unauthori[sz]ed|forbidden|denied|revoked|released|expired|scope|mismatch)\b', detail)
+            denied = CONTROL_DENIAL_RE.search(detail)
             transient = re.search(r'(?i)(\bHTTP (502|503|504)\b|TLS handshake timeout|relay[^\n]*OUTCOME UNKNOWN)', detail)
             # RegisterThread saves its own row before opportunistic terminal
             # pruning. A lost prune CAS can therefore report failure AFTER our
@@ -833,7 +836,7 @@ class Native:
                     pending = (pending_registration and
                                detail.startswith("Control call ('thread', 'heartbeat') failed:") and
                                detail.endswith(missing) and
-                               not re.search(r'(?i)\b(401|403|denied|forbidden|revoked|expired|mismatch|scope)\b', detail))
+                               not CONTROL_DENIAL_RE.search(detail))
                     if not isinstance(error, TransientTransport) and not pending:
                         raise
                     remaining = self.deadline - time.monotonic()
