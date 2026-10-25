@@ -71,7 +71,7 @@ Exposed as MCP **tools** (verbs) and, where it fits, MCP **resources** (the inbo
 | `router_status` | `sirsi router status` | `Store.Counters() (DispatchCounters,error)` (+`GetState`/`Breakers`) | read |
 | `router_ledger` | `sirsi router ledger [agent]` | `ledger.Build(repoRoot,agent,now,staleAfter)` + `Summarize` | read |
 | `router_board` | `sirsi router board`/`workboard` | `router` workboard read model (items + threads) | read |
-| `router_claim` | claim work | `Store.ClaimNext(agent, ttl) (*Lease,error)` | **MUTATE** (+ ownership-bound at claim) |
+| `router_claim` | claim work | `Store.ClaimNext(agent, ttl)` when id absent; existing `Store.ClaimItem(agent,id,ttl)` when supplied | **MUTATE** (+ ownership-bound at claim) |
 | `router_close` | `sirsi router close <id>` | `Facade.CloseItem(actor,id,result)` → `Store.CloseItem(id,result) error` | **MUTATE** |
 | `router_acknowledge` | `sirsi router acknowledge <id>` | `Facade.AckItem(actor,id)` → `Store.AckItem(id) error` | **MUTATE** (recipient-only) |
 | `thread_adopt` | `sirsi thread adopt` | `Store.AdoptTokenMachineID(host,machineID) error` (host injected server-side) | identity, `ruleOfRaExempt` |
@@ -136,3 +136,19 @@ Minimum viable pipeline is P1. P4 depends on rs-44 and is out of scope here.
 - **Reuse, don't fork.** `internal/mcp` (`NewBareServer` + `RegisterTool`) is already generic — the gemma coupling lives only in `cmd/sirsi-gemma`, not the shared server. The in-tree `router_*` handlers in the full Anubis server (`internal/mcp/tools.go`) already route through `dispatch.Open → Facade.Send/Inbox/Show`; `cmd/sirsi-router-mcp` lifts that wiring into a standalone bare server. No framework change needed.
 - rs-44 (scoped read-only tokens) gates P4 (remote transport).
 - A26: this is a router-lane workstream; if implementation spans repos or needs codex-pantheon, route through the Idea Router.
+
+### Optional exact item selection corrective (2026-10-25, source only)
+
+The existing router_claim tool exposes optional string `id` through ClaimItem;
+its closed schema permits no caller-selected agent, TTL, thread or authority.
+Absent id preserves ClaimNext and the15-minute local session-map behavior.
+Invalid supplied IDs refuse before facade/RPC access. Exact rejection never
+falls through to oldest-work selection. The actual framed MCP fixtures seed
+older eligible own work and verify exact targeting, legacy omission, unchanged
+foreign/unrelated rows and claim counters, fresh-instance local-map refusal,
+and zero RPC calls for invalid inputs/unregistered use.
+
+No backend session-binding/lease code is changed. The independent original-scope
+DC01 authenticated claim/bind failure finding remains separately owned/pending;
+frontend selection fixtures are not proof of durable authenticated binding or
+an installed own-item lifecycle. No new wire operation, store or CLI auth path.

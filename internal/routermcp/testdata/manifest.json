@@ -82,9 +82,16 @@
     },
     {
       "name": "router_claim",
-      "description": "Claim the oldest open item addressed to you for exclusive work (a lease). Requires this server's registered thread.",
+      "description": "Claim an exact open item addressed to you when id is supplied; otherwise claim the oldest eligible inbox item. Uses the existing 15-minute lease and requires this server's registered thread.",
       "inputSchema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Optional exact item id addressed to this agent. Omit to claim the next eligible inbox item; an unavailable exact id never falls back to another item."
+          }
+        },
+        "additionalProperties": false
       }
     },
     {

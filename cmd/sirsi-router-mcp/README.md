@@ -33,7 +33,7 @@ Plus the resource `router://inbox` — the caller's inbox as JSON.
 | :--- | :--- |
 | `router_send` | Send an item to another agent (idempotent). |
 | `router_acknowledge` | Mark an item read (recipient-only). |
-| `router_claim` | Claim the oldest open item for exclusive work (a lease). |
+| `router_claim` | Optional `id` selects one exact own item; omit it for the oldest eligible own item. Same 15-minute lease. |
 | `router_close` | Close an item **this session claimed**, with a result. |
 
 On startup the server registers a `surface="mcp"` resident thread (A27) bound to
@@ -104,8 +104,10 @@ That compatibility mode is not authenticated durable RPC isolation or a cutover.
 
 ## Source verification (not executed by this producer)
 
-The released `0fd8463` seven-tool schemas, resource and handshake are pinned in
-`internal/routermcp/testdata/manifest.json`. Actual framed I/O tests compare the
+The released `0fd8463` seven-tool contract is pinned in
+`internal/routermcp/testdata/manifest.json`, with one explicit next-increment
+extension: `router_claim` accepts optional exact string `id`. Every other tool,
+resource, handshake and protocol version is unchanged. Actual framed I/O tests compare the
 shared core, canonical Cobra command and legacy launcher to that same golden.
 The former registration/expiry and nine-case real completion-helper tests moved
 into `internal/routermcp`; only their package/instance plumbing changed. Inert
@@ -120,3 +122,23 @@ go test ./cmd/sirsi -run '^TestRouterMCPCommand' -count=1
 ```
 
 Rule A3 (static, no cgo), A11 (no telemetry).
+
+## Exact own-item selection (source candidate; not installed evidence)
+
+`router_claim {"id":"known-own-item-id"}` translates to the existing
+`Store.ClaimItem(registeredAgent,id,15m)`. It never substitutes another inbox item
+when the selected item is missing, ineligible, already claimed or addressed to
+another recipient. `router_claim {}` (or omitted arguments) keeps ClaimNext.
+A supplied null/non-string/empty/whitespace/control-containing ID and unknown
+argument names refuse before opening the facade or making an RPC. Exact IDs are
+not trimmed into another identity. Only the existing successful returned lease
+is placed in this instance's map; no claim token is exposed in the tool result.
+
+This selection addition does not change durable lease/session authority or
+solve DC01 (`mcp-atomic-claim-session-binding-dc01-20261025`, separately SSA-owned).
+It does not close the original durable-close task. After independent review,
+qualification and later publication, Main can select one genuine own canary
+without consuming older work, then follow the existing same-instance close and
+canonical readback procedure. Do not pass `id` to an older installed binary and
+assume it honored the field. No live item, config, router or service was changed
+by this source author; no tests/builds were run.
