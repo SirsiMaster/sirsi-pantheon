@@ -294,12 +294,7 @@ func runMaatLivenessWatchAction() error {
 
 func inspectMaatLivenessMemory() error {
 	status := maatRepairDefaultStoreInspect()
-	type inspectResult struct {
-		maat.DefaultStoreStatus
-		IncompleteAttempt bool `json:"incomplete_attempt"`
-		ProjectionDebt    bool `json:"projection_debt"`
-	}
-	result := inspectResult{DefaultStoreStatus: status}
+	result := maatLivenessMemoryInspection{DefaultStoreStatus: status}
 	if status.State == maat.DefaultStoreReady {
 		store, err := maatRepairOpenDefaultStore()
 		if err != nil {
@@ -320,13 +315,14 @@ func inspectMaatLivenessMemory() error {
 		} else {
 			result.ProjectionDebt = len(debts) != 0
 		}
+		addPreparedMaatReceiptInspection(&result, store)
 	}
 	if JsonOutput || maatJSON {
 		return emitJSON(result)
 	}
-	fmt.Printf("Ma'at failure memory: %s\n", status.State)
-	if status.Detail != "" {
-		fmt.Println(status.Detail)
+	fmt.Printf("Ma'at failure memory: %s\n", result.State)
+	if result.Detail != "" {
+		fmt.Println(result.Detail)
 	}
 	if result.IncompleteAttempt {
 		fmt.Println("An earlier liveness-watch attempt is incomplete. Inspect and re-observe it; installation will not replay automatically.")

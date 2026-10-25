@@ -278,6 +278,38 @@ continue separately under the revised owner-disposition contract. This checkpoin
 does not introduce their trust/lifecycle semantics, waive unknown action debt,
 claim other operation rows or surfaces, or establish installed/release proof.
 
+### Prepared receipt discovery before a Casebook projection (G02 follow-through)
+
+The existing `maat repair liveness-watch --inspect-failure-memory --json`
+route opens initialized custody without creating a store or opening a decision
+journal. Its optional `prepared_preflight` contains the complete historical
+reader JSON and a canonical `sirsi.maat.prepared-preflight-receipt.v1` target.
+Discovery verifies complete canonical v2 receipt bytes, their digest and exact
+prepared intent, the remaining WAL and committed targets, and current store
+device/inode/UUID. No prior preflight Casebook row or manually recovered digest
+is required. Unrelated, missing, truncated or changed debt stays unavailable.
+
+The existing native liveness failure-memory setup displays this captured
+history, even when no receipt row was projected. Review does not write. Separate
+confirmation forwards its captured canonical target through the fixed receipt
+command with `--recover --confirm --prepared-target <base64-target>`; this is
+bounded metadata, never imported receipt bytes or a selected filesystem path.
+The engine rechecks every target dimension under its existing exclusive store
+lock and delegates to historical recovery. Only the missing exact commit may
+be completed; no Casebook projection, attempt, installation, initialization or
+fresh assessment is synthesized. A repeated exact completed recovery verifies
+the same history without rewriting it.
+
+Native recovery owns and joins its bounded canonical read, consumes each
+confirmation once, preserves historical detail after failure/cancellation,
+and invalidates consent on new inspection. Success refreshes memory status;
+ordinary fresh assessment and new action consent remain required. Authored
+fixtures cover the real writer's first-retention interruption, reopen/discovery,
+actual CLI flag wiring and native discovery/confirmation without constructing
+a `MaatCase`. This child is source-only pending Main qualification. The retained
+855 positive receipt is baseline evidence, not child execution or installed
+proof; other operation integrations and full eight-row acceptance remain open.
+
 ### Exact G02 receipt interruption recovery and leaf custody
 
 An issuance-bound retry first completes only its own exact prepared receipt tuple

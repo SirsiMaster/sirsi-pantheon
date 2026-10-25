@@ -403,6 +403,10 @@ func (s *Store) RecoverPreflightReceipt(digest string) (PreflightReceiptRead, er
 		return PreflightReceiptRead{}, err
 	}
 	defer s.unlock()
+	return s.recoverPreflightReceiptLocked(digest)
+}
+
+func (s *Store) recoverPreflightReceiptLocked(digest string) (PreflightReceiptRead, error) {
 	data, err := readExact(s.evidenceFD, digest)
 	if err != nil {
 		return PreflightReceiptRead{}, fmt.Errorf("maat memory: complete retained receipt bytes required for recovery: %w", err)

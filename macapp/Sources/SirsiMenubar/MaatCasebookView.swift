@@ -2390,12 +2390,16 @@ struct MaatFailureMemoryStatus: Decodable {
     let detail: String?
     let incompleteAttempt: Bool
     let projectionDebt: Bool
+    let preparedPreflight:MaatPreparedPreflight?
+    let receiptRecoveryError:String?
 
     enum CodingKeys: String, CodingKey {
         case state, detail
         case storeUUID = "store_uuid"
         case incompleteAttempt = "incomplete_attempt"
         case projectionDebt = "projection_debt"
+        case preparedPreflight = "prepared_preflight"
+        case receiptRecoveryError = "receipt_recovery_error"
     }
 
     init(from decoder: Decoder) throws {
@@ -2405,6 +2409,8 @@ struct MaatFailureMemoryStatus: Decodable {
         detail = try values.decodeIfPresent(String.self, forKey: .detail)
         incompleteAttempt = try values.decodeIfPresent(Bool.self, forKey: .incompleteAttempt) ?? false
         projectionDebt = try values.decodeIfPresent(Bool.self, forKey: .projectionDebt) ?? false
+        preparedPreflight = try values.decodeIfPresent(MaatPreparedPreflight.self,forKey:.preparedPreflight)
+        receiptRecoveryError = try values.decodeIfPresent(String.self,forKey:.receiptRecoveryError)
     }
 }
 
@@ -2628,6 +2634,7 @@ private struct MaatCaseDetailView: View {
         VStack(alignment: .leading, spacing: 9) {
             Label("Local failure memory", systemImage: "externaldrive.badge.shield.checkmark")
                 .sirsiFont(.headline)
+            MaatPreparedPreflightRecoveryView(model:operations.preparedPreflightRecovery,refresh:{await refreshFailureMemoryStatus()})
             if failureMemoryLoading {
                 ProgressView("Inspecting this Mac's local store…")
                     .sirsiFont(.caption)
@@ -2716,13 +2723,16 @@ private struct MaatCaseDetailView: View {
         failureMemoryLoading = true
         defer { failureMemoryLoading = false }
         let read = await SirsiEngine.runJSONRead(args: ["maat", "repair", "liveness-watch", "--inspect-failure-memory", "--json"])
+        guard !Task.isCancelled else { return }
         guard read.exitStatus == 0, !read.timedOut, read.launchError == nil,
               let status = try? JSONDecoder().decode(MaatFailureMemoryStatus.self, from: read.data) else {
             failureMemoryStatus = nil
             failureMemoryMessage = read.launchError ?? "Ma'at's local state could not be decoded; no change was made."
+            operations.preparedPreflightRecovery.inspectionUnavailable()
             return
         }
         failureMemoryStatus = status
+        operations.preparedPreflightRecovery.accept(status)
     }
 
     @MainActor private func performFailureMemoryAction(_ action: MaatFailureMemoryAction) async {

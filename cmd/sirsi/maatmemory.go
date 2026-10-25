@@ -147,6 +147,7 @@ func init() {
 	maatFailureMemoryReceiptCmd.Flags().BoolVar(&maatJSON, "json", false, "JSON output")
 	maatFailureMemoryReceiptCmd.Flags().BoolVar(&maatMemoryReceiptRecover, "recover", false, "complete only this exact already-retained interrupted receipt; no action or projection")
 	maatFailureMemoryReceiptCmd.Flags().BoolVar(&maatMemoryReceiptConfirm, "confirm", false, "confirm exact historical receipt write recovery")
+	maatFailureMemoryReceiptCmd.Flags().StringVar(&maatMemoryPreparedTarget, "prepared-target", "", "exact captured prepared receipt target from the read-only inspector; requires --recover --confirm")
 	_ = maatFailureMemoryReceiptCmd.MarkFlagRequired("sha256")
 	maatFailureMemoryCmd.AddCommand(maatFailureMemoryPreflightCmd, maatFailureMemoryReceiptCmd)
 	maatCmd.AddCommand(maatFailureMemoryCmd)
@@ -164,11 +165,15 @@ func openMaatMemoryExisting(root string) (*maat.Store, error) {
 var maatMemoryReceiptStore string
 var maatMemoryReceiptRecover bool
 var maatMemoryReceiptConfirm bool
+var maatMemoryPreparedTarget string
 var maatFailureMemoryReceiptCmd = &cobra.Command{
 	Use: "receipt", Short: "Read an exact retained historical preflight; grants no action authority", Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if maatMemoryReceiptRecover != maatMemoryReceiptConfirm {
 			return errors.New("exact receipt recovery requires --recover and --confirm together; no bytes were changed")
+		}
+		if maatMemoryPreparedTarget != "" && !maatMemoryReceiptRecover {
+			return errors.New("prepared receipt target requires explicit --recover --confirm; no bytes changed")
 		}
 		store, err := openMaatMemoryExisting(maatMemoryReceiptStore)
 		if err != nil {
@@ -177,7 +182,7 @@ var maatFailureMemoryReceiptCmd = &cobra.Command{
 		defer store.Close()
 		var receipt maat.PreflightReceiptRead
 		if maatMemoryReceiptRecover {
-			receipt, err = store.RecoverPreflightReceipt(maatMemoryReceiptSHA)
+			receipt, err = recoverMaatPreparedReceipt(store, maatMemoryReceiptSHA, maatMemoryPreparedTarget)
 		} else {
 			receipt, err = store.ReadPreflightReceipt(maatMemoryReceiptSHA)
 		}
