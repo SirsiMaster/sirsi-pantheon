@@ -6,9 +6,9 @@
     "tree": "e0dae007221eb22948149e4f602c415a2d53faef"
   },
   "source_checkpoint": {
-    "commit": "47b73fcf838a98f07e786f2aaaf68e4fad471ec6",
-    "tree": "dd42a826efb9dfec866b3b003daae80308bb8150",
-    "purpose": "Exact code checkpoint before this ordinary canon record; no self-hash claim"
+    "commit": "b2dbe2d53920715f41aed402a1960009521a02e5",
+    "tree": "c56e8f92737ba7fb99cb2b3e03cad3f5b8453528",
+    "purpose": "Exact code checkpoint after DC01 import, before this metadata correction; no self-hash or combined runtime claim."
   },
   "components": [
     {
@@ -67,7 +67,19 @@
         "b0a23116012d31278379414250d846ff6ccc0e85"
       ],
       "accepted_source_review_sha256": "9039651266b6ab470c2a50be12660a4735acdf3d333d3a2e1b6c0dff1c84f3ae",
-      "boundary": "Canonical Go authority unchanged; native command/capture lifetime fence does not certify external Installer lifetime. New tests and combined source qualification unrun."
+      "boundary": "Canonical Go authority unchanged; native command/capture fence does not certify external Installer lifetime. At donor import tests were unrun; subsequent430 ancestor qualification is recorded separately."
+    },
+    {
+      "name": "DC01 atomic authenticated item claim and durable session ownership",
+      "source": "a1453a2b6090684e8bb07a5529ffd09759dc7d91",
+      "production_source": "facf41e95ef93a9a07acaf0b98ca209705e1def9",
+      "imported_commits": [
+        "facf41e95ef93a9a07acaf0b98ca209705e1def9",
+        "a1453a2b6090684e8bb07a5529ffd09759dc7d91"
+      ],
+      "accepted_source_review_sha256": "240d44b48d73964fa47df716187979a4faab1fed0825963d8e6434ffda469687",
+      "accepted_metadata_review_sha256": "7ee0ad0417899a5e9858814f5e77a5b329d133077c4da46f3d7509991cfa5fa1",
+      "boundary": "SSA donor qualified SQLite whole normal/race734PASS8SKIP each and focused private PostgreSQL16 normal/race6PASS each, with server stopped. Main independently read raw outcomes; combined-source affected qualification and actual deployed own-item lifecycle remain open."
     }
   ],
   "custom_composition": [
@@ -84,14 +96,20 @@
   ],
   "pending_source": [
     "Full append-tolerant history needs bounded-budget closure; current candidate includes explicit stale-cursor recovery only.",
-    "SSA-owned DC01 authenticated claim/session-bind atomicity still unfixed in public137; frontend exact-ID improvement does not discharge it."
+    "DC01 source is imported; combined-source affected qualification and deployed own-item completion/remint/restart evidence remain open."
   ],
   "qualification": {
-    "candidate_tests": "NOT_RUN",
-    "candidate_build": "NOT_RUN",
+    "candidate_tests": "PENDING_FRESH_AFFECTED_CHECKS_AFTER_DC01_AND_R4",
+    "candidate_build": "ANCESTOR_430_QUALIFIED_NOT_THIS_CHILD",
     "candidate_install": "NOT_RUN",
     "candidate_publication": "NOT_RUN",
-    "rule": "A combined source tree is not equivalent to any individually tested donor. Attribute prior evidence narrowly and qualify final composition."
+    "rule": "A combined source tree is not equivalent to any individually tested donor. Attribute prior evidence narrowly and qualify final composition.",
+    "qualified_ancestor": {
+      "commit": "430c47129aa533b68caa6bfd225eb21822a250c7",
+      "tree": "2e0861dbe43b305337d2e5413a2260a9a839e122",
+      "receipt_sha256": "0aa8392e20abedf3f0ddd935d603bdd28d3e99213431db7ac2ae276c5c094e62",
+      "attribution": "104-row plan completed through13fresh+91attributed prior rows; strict Swift Release and332PASS8SKIP0FAIL, race-wire3PASS. Does not qualify later DC01 or Fabric R4 source."
+    }
   },
   "delivery": "One existing normal release train and one publisher after final qualification; no version/tag/publication created by this source record.",
   "prior_composition_review": {

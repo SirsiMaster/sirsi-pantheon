@@ -35,11 +35,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 - Bound kernel-loaded relay identity probes to Darwin's `pid_t` range before C conversion, exercise the exact 20-byte kernel hash against an owned self-child, and surface only allowlisted errno/signature diagnostics from the maintenance-image child. Raw child stderr remains suppressed; this is source-only pending Main qualification.
 - Add an explicit exact-version whole-app rollback candidate through the existing signed-PKG, Ma’at preflight/attempt, and installed app/helper readback owner. Rollback now requires the selected signed target helper to report the retained-attempt recovery schema; the native app exposes a data-only attempt recheck. Ambiguous handoffs remain unresolved and never replay Installer. Source awaits Main qualification.
 - Correct the retained rollback fixture URL to bind its full selected release version, preserve mismatched-URL refusal, and exercise Cobra flag parsing on the actual update command while restoring its shared flag state. No production rollback or confirmation behavior changed.
-- Commit authenticated inbox claims and their session ownership in the same
-  store transaction (DC01). A failed owner-binding write rolls back the item
-  lease and claim counter instead of acknowledging a usable unbound claim.
-  Existing local/unclaimed and delegated close compatibility is unchanged.
-  Source qualification and installed backend adoption are separate evidence.
 
 ## [0.24.137] — 2026-10-25
 

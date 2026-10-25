@@ -173,7 +173,9 @@ older eligible own work and verify exact targeting, legacy omission, unchanged
 foreign/unrelated rows and claim counters, fresh-instance local-map refusal,
 and zero RPC calls for invalid inputs/unregistered use.
 
-No backend session-binding/lease code is changed. The independent original-scope
-DC01 authenticated claim/bind failure finding remains separately owned/pending;
-frontend selection fixtures are not proof of durable authenticated binding or
-an installed own-item lifecycle. No new wire operation, store or CLI auth path.
+At this frontend-only checkpoint no backend session-binding/lease code changed.
+The DC01 addendum above now describes the separately imported atomic backend
+correction. Frontend selection fixtures do not prove durable authenticated
+binding; combined-source qualification, backend adoption and the installed
+own-item lifecycle still require their actual evidence. No new wire operation,
+store or CLI auth path is introduced.
