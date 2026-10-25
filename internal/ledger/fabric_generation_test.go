@@ -122,7 +122,7 @@ func TestFabricGenerationFailureAndCancellationDoNotAdvanceHistory(t *testing.T)
 	fail = false
 	cancelOnRead = true
 	if _, err := p.Read(ctx); !errors.Is(err, context.Canceled) {
-		t.Fatal("cancelled acquisition accepted", err)
+		t.Fatal("canceled acquisition accepted", err)
 	}
 	cancelOnRead = false
 	input.Snapshot.Agents[0].Tasks[0].Status = "in-progress"
@@ -135,7 +135,7 @@ func TestFabricGenerationFailureAndCancellationDoNotAdvanceHistory(t *testing.T)
 		t.Fatal(err)
 	}
 	if calls != 4 || len(v.Events) != 1 || v.Events[0].From != "pending" || v.Events[0].To != "in-progress" || v.Completed != 0 {
-		t.Fatal("failed/cancelled frame advanced history", v.Events, v.Completed, calls)
+		t.Fatal("failed/canceled frame advanced history", v.Events, v.Completed, calls)
 	}
 }
 

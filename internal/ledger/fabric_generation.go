@@ -76,12 +76,12 @@ func (g *FabricGeneration) View() (FabricGenerationView, error) {
 	if err := json.Unmarshal(g.sealed, &d); err != nil {
 		return FabricGenerationView{}, err
 	}
-	return FabricGenerationView{ID: d.ID, Read: d.Read, Board: d.Board, Facts: d.Facts, Events: d.Events, Completed: d.Completed}, nil
+	return FabricGenerationView(d), nil
 }
 
 // FabricGenerationProducer serializes acquisition and real transition
 // observation. Existing request/poll owners call Read; it starts no goroutine,
-// timer, listener or global cache. Failed/cancelled reads never advance history.
+// timer, listener or global cache. Failed/canceled reads never advance history.
 type FabricGenerationProducer struct {
 	mu              sync.Mutex
 	read            func() (FabricRead, error)
