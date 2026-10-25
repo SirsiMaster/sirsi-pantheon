@@ -44,14 +44,33 @@ availability. The state and source timestamps must be interpreted together.
 
 ## Native app and web scope
 
-The current native Mercury workspace reads the existing `/api` hardware monitor
-for CPU, GPU residency, power and interfaces. That is a different contract from
-the versioned `/api/v1/dashboard` read used here. This increment does not replace
-that UI, change its controls or claim byte-for-byte native parity.
+The native Mercury workspace reads `sirsi mercury --json`, so the canonical Go
+dashboard/v1 reader owns schema validation, units, calibration and projection.
+The existing web console's Mercury view uses the same projection through its
+GET-only `/api/mercury` adapter; it never takes a browser-supplied monitor URL.
+Native Ra lane/admission and this Mac's hardware-transport receipts remain
+separately labelled evidence. GPU work is calibrated work, not residency; power
+is explicitly Unknown because dashboard/v1 does not expose it. The broader
+native power obligation remains open without inventing producer fields.
 
-The recovered historical web/SVG and native scene designs are explicitly
-accounted for in `docs/stacklab/MERCURY_CONSUMER_ADOPTION_20261023.md`. They are
-not silently imported, deleted or represented as shipped by this CLI/MCP work.
+The source restoration reuses the retained black/emerald/gold hardware and
+card-edge cable scene, shared headline, run state and expandable measurement
+details. Cable endpoints are diagram edges, not physical port positions.
+Unknown family remains generic; reduced motion stops pulses. The retained wide
+scene scrolls on narrow windows; independent narrow-layout fidelity remains a
+producer/design obligation. Restoration and proof limits are tracked in
+`docs/stacklab/MERCURY_CONSUMER_ADOPTION_20261023.md` and
+`docs/stacklab/MERCURY_ORIGINAL_PARITY_20261025.md`. Authored source and fixtures
+are not a claim of installed or independently approved web/native parity.
+
+Refresh is a new read, never a restart, installer, run control or performance
+probe. Offline, invalid, permission-required and partial states remain distinct;
+elapsed time can make formerly current observations stale. A partial read may
+still show fresh individual directions while withholding totals/gain. Changing
+or leaving the native workspace cancels its owned read task; web navigation
+aborts its own fetch. In-app endpoint editing remains the original documented
+follow-up: use the existing explicit deployment configuration and ordinary Ra
+connectivity/service inspection, not a new discovery or privilege path.
 
 ## Method and release
 

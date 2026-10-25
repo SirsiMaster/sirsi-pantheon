@@ -54,10 +54,10 @@ func TestMercuryConsumerRecipeIsCompleteAndDiscoverable(t *testing.T) {
 			t.Fatalf("recipe references missing adoption/runbook path %q: %v", path, err)
 		}
 	}
-	if len(recipe.Components) != 2 {
-		t.Fatalf("component count = %d, want 2", len(recipe.Components))
+	if len(recipe.Components) != 4 {
+		t.Fatalf("component count = %d, want 4", len(recipe.Components))
 	}
-	wantIDs := []string{"mercury-dashboard-read-model", "mercury-canonical-cli-mcp"}
+	wantIDs := []string{"mercury-dashboard-read-model", "mercury-canonical-cli-mcp", "mercury-web-surface", "mercury-native-surface"}
 	for i, component := range recipe.Components {
 		if component.ID != wantIDs[i] {
 			t.Fatalf("component[%d] id = %q, want %q", i, component.ID, wantIDs[i])
@@ -98,6 +98,8 @@ func TestMercuryConsumerRecipeIsCompleteAndDiscoverable(t *testing.T) {
 	for componentID, boundary := range map[string]string{
 		"mercury-dashboard-read-model": "preserve bounded HTTP, private-address checks, no proxy and no redirects",
 		"mercury-canonical-cli-mcp":    "keep endpoint selection out of MCP arguments",
+		"mercury-web-surface":          "preserve both console doors, strict script-src self and same-origin uncached external assets",
+		"mercury-native-surface":       "use the canonical CLI and one visibility-bound SwiftUI task for manual and periodic reads",
 	} {
 		if !contains(componentsByID[componentID].UpgradeRecipe, boundary) {
 			t.Fatalf("component %q upgrade recipe omits boundary %q", componentID, boundary)
@@ -116,7 +118,7 @@ func TestMercuryConsumerRecipeIsCompleteAndDiscoverable(t *testing.T) {
 		if entry.ID != recipe.ID {
 			continue
 		}
-		if entry.Kind != "recipe" || entry.SourcePath != recipePath || len(entry.Components) != 2 {
+		if entry.Kind != "recipe" || entry.SourcePath != recipePath || len(entry.Components) != 4 {
 			t.Fatalf("catalog entry = %+v", entry)
 		}
 		return

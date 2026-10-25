@@ -16,6 +16,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/casebook"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/knowledge"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/mercury"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
@@ -56,10 +57,11 @@ func runDashboard(cmd *cobra.Command, args []string) {
 	selfBin, _ := os.Executable()
 
 	srv := dashboard.New(dashboard.Config{
-		Port:     dashboardPort,
-		NotifyDB: nStore,
-		Events:   dashboard.NewEventBuffer(256),
-		SirsiBin: selfBin,
+		MercuryFn: mercury.NewConfigured().Read,
+		Port:      dashboardPort,
+		NotifyDB:  nStore,
+		Events:    dashboard.NewEventBuffer(256),
+		SirsiBin:  selfBin,
 		StatsFn: func() ([]byte, error) {
 			snap := collectDashboardStats()
 			return json.Marshal(snap)
