@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -21,7 +22,9 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/selfupdate"
+	modversion "github.com/SirsiMaster/sirsi-pantheon/internal/version"
 	"github.com/spf13/cobra"
+	"golang.org/x/sys/unix"
 )
 
 const maatRepairBinaryDriftCheck = "binary-drift"
@@ -40,7 +43,130 @@ var (
 	maatRepairDetectMethod            = selfupdate.DetectMethod
 	maatRepairFindHomebrew            = func() (string, error) { return exec.LookPath("brew") }
 	maatRepairRunHomebrewUpdate       = runSirsiHomebrewUpgradePathContext
+	maatRepairOpenBinaryDriftStore    = func() (maatBinaryDriftStore, error) { return maat.OpenDefaultStore() }
+	maatRepairBinarySchemaObservation = observeBinaryDriftSchemaCompatibility
 )
+
+type maatBinaryDriftStore interface {
+	Close() error
+	PreflightBinaryUpdate(maat.BinaryUpdateManifest) (maat.PreflightReceipt, error)
+	RetainPreflightReceipt(maat.PreflightReceipt) (maat.StoredPreflightReceipt, error)
+	BeginBinaryUpdateAttempt(maat.BinaryUpdateManifest, maat.PreflightReceipt, func() (string, error)) (maat.BinaryUpdateAttempt, error)
+	PendingBinaryUpdateAttempt() (maat.BinaryUpdateAttempt, error)
+	PendingBinaryUpdateProjectionDebts() ([]maat.BinaryUpdateProjectionDebt, error)
+	RecordBinaryUpdateOutcome(maat.BinaryUpdateAttempt, bool, bool, string, string) (maat.BinaryUpdateOutcome, error)
+	BeginBinaryUpdateProjection(maat.BinaryUpdateAttempt, maat.BinaryUpdateOutcome, maat.Decision) (maat.BinaryUpdateProjectionDebt, error)
+	PersistBinaryUpdateProjectionOutcome(maat.BinaryUpdateProjectionDebt) error
+	MarkBinaryUpdateProjectionReadBack(maat.BinaryUpdateProjectionDebt) error
+}
+
+type maatBinaryFileIdentity struct {
+	OwnerUID      uint32
+	Device, Inode uint64
+	Mode          uint32
+	SHA256        string
+}
+
+func binaryDriftFileIdentity(path string) (maatBinaryFileIdentity, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return maatBinaryFileIdentity{}, err
+	}
+	defer f.Close()
+	stat, err := f.Stat()
+	if err != nil {
+		return maatBinaryFileIdentity{}, err
+	}
+	if !stat.Mode().IsRegular() {
+		return maatBinaryFileIdentity{}, errors.New("binary update input is not a regular file")
+	}
+	var id syscall.Stat_t
+	if err := unix.Fstat(int(f.Fd()), &id); err != nil {
+		return maatBinaryFileIdentity{}, err
+	}
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return maatBinaryFileIdentity{}, err
+	}
+	return maatBinaryFileIdentity{OwnerUID: id.Uid, Device: uint64(id.Dev), Inode: id.Ino, Mode: uint32(id.Mode), SHA256: hex.EncodeToString(h.Sum(nil))}, nil
+}
+
+func observeBinaryDriftSchemaCompatibility(info modversion.Info) (int, error) {
+	dbPath, err := resolveRouterDBPath()
+	if err != nil {
+		return 0, err
+	}
+	version, err := resolveLiveSchema(dbPath)
+	if err != nil {
+		return 0, err
+	}
+	if err := selfupdate.CheckSchemaCeiling(info, version); err != nil {
+		return version, err
+	}
+	return version, nil
+}
+
+func buildMaatBinaryUpdateManifest(preview maatBinaryDriftPreview, storeUUID string) (maat.BinaryUpdateManifest, error) {
+	if uint32(os.Getuid()) != uint32(os.Geteuid()) {
+		return maat.BinaryUpdateManifest{}, errors.New("Ma'at binary-drift update requires matching real and effective user identities")
+	}
+	if storeUUID == "" {
+		return maat.BinaryUpdateManifest{}, errors.New("Ma'at binary-drift update requires the initialized default failure-memory store")
+	}
+	self, err := binaryDriftFileIdentity(preview.SelfPath)
+	if err != nil {
+		return maat.BinaryUpdateManifest{}, fmt.Errorf("bind running binary identity: %w", err)
+	}
+	if self.SHA256 != preview.SelfSHA256 {
+		return maat.BinaryUpdateManifest{}, errors.New("running binary changed after preview")
+	}
+	updater, err := binaryDriftFileIdentity(preview.UpdaterPath)
+	if err != nil || updater.SHA256 != preview.UpdaterSHA256 {
+		return maat.BinaryUpdateManifest{}, errors.New("resolved Homebrew updater identity changed after preview")
+	}
+	schemaVersion, err := maatRepairBinarySchemaObservation(modversion.Info{Binary: "sirsi", Version: preview.SelfVersion, Path: preview.SelfPath})
+	if err != nil {
+		return maat.BinaryUpdateManifest{}, fmt.Errorf("observe binary-update schema compatibility: %w", err)
+	}
+	m := maat.BinaryUpdateManifest{Schema: maat.BinaryUpdateManifestSchema, CaseEvidence: preview.CaseEvidence, PreviewBinding: preview.Binding, Updater: preview.Updater,
+		UpdaterPath: preview.UpdaterPath, UpdaterSHA256: preview.UpdaterSHA256, UpdaterOwnerUID: updater.OwnerUID, UpdaterDevice: updater.Device, UpdaterInode: updater.Inode, UpdaterMode: updater.Mode,
+		SelfPath: preview.SelfPath, SelfVersion: preview.SelfVersion, SelfSHA256: self.SHA256,
+		SelfOwnerUID: self.OwnerUID, SelfDevice: self.Device, SelfInode: self.Inode, SelfMode: self.Mode, AuthorizedUID: uint32(os.Geteuid()),
+		ObservedSchemaCompatible: true, ObservedSchemaVersion: schemaVersion, StoreUUID: storeUUID, ObservedAtUTC: time.Now().UTC()}
+	for _, target := range preview.Targets {
+		id, err := binaryDriftFileIdentity(target.Path)
+		if err != nil {
+			return maat.BinaryUpdateManifest{}, fmt.Errorf("bind reviewed binary target: %w", err)
+		}
+		if id.SHA256 != target.SHA256 {
+			return maat.BinaryUpdateManifest{}, fmt.Errorf("reviewed binary target changed: %s", target.Path)
+		}
+		m.Targets = append(m.Targets, maat.BinaryUpdateTarget{Path: target.Path, Method: target.Method, Version: target.Version, SHA256: id.SHA256, OwnerUID: id.OwnerUID, Device: id.Device, Inode: id.Inode, Mode: id.Mode})
+	}
+	return m, nil
+}
+
+func revalidateMaatBinaryUpdateManifest(m maat.BinaryUpdateManifest) error {
+	self, err := binaryDriftFileIdentity(m.SelfPath)
+	if err != nil || self.Device != m.SelfDevice || self.Inode != m.SelfInode || self.OwnerUID != m.SelfOwnerUID || self.Mode != m.SelfMode || self.SHA256 != m.SelfSHA256 {
+		return errors.New("running binary identity changed after review")
+	}
+	updater, err := binaryDriftFileIdentity(m.UpdaterPath)
+	if err != nil || updater.Device != m.UpdaterDevice || updater.Inode != m.UpdaterInode || updater.OwnerUID != m.UpdaterOwnerUID || updater.Mode != m.UpdaterMode || updater.SHA256 != m.UpdaterSHA256 {
+		return errors.New("Homebrew updater identity changed after review")
+	}
+	for _, target := range m.Targets {
+		id, err := binaryDriftFileIdentity(target.Path)
+		if err != nil || id.Device != target.Device || id.Inode != target.Inode || id.OwnerUID != target.OwnerUID || id.Mode != target.Mode || id.SHA256 != target.SHA256 {
+			return fmt.Errorf("reviewed binary target identity changed: %s", target.Path)
+		}
+	}
+	version, err := maatRepairBinarySchemaObservation(modversion.Info{Binary: "sirsi", Version: m.SelfVersion, Path: m.SelfPath})
+	if err != nil || version != m.ObservedSchemaVersion {
+		return errors.New("binary-update schema compatibility observation changed after review")
+	}
+	return nil
+}
 
 type maatBinaryDriftTarget struct {
 	Path    string `json:"path"`
@@ -97,6 +223,9 @@ var maatRepairBinaryDriftCmd = &cobra.Command{
 			if status.ObservationError != "" {
 				fmt.Printf("Observation unavailable: %s\n", status.ObservationError)
 			}
+			if status.MemoryReceipt != nil {
+				fmt.Printf("Canonical failure-memory receipt: %s\n", status.MemoryReceipt.EvidenceReference())
+			}
 			fmt.Println("This read-only inspection does not prove the prior updater stopped or authorize replay. Review the retained attempt and take a fresh System One screen before any new consent.")
 			return nil
 		}
@@ -133,8 +262,62 @@ var maatRepairBinaryDriftCmd = &cobra.Command{
 		if preview.Binding != maatRepairBinaryDriftBinding {
 			return errors.New("Ma'at binary-drift recovery preview changed; no updater was run. Refresh the case and review a new preview")
 		}
-		if err := recordMaatBinaryDriftAttempt(journal, preview); err != nil {
+		storeStatus := maatRepairDefaultStoreInspect()
+		if storeStatus.State != maat.DefaultStoreReady {
+			return errors.New("Ma'at binary-drift update requires the existing initialized failure-memory store; no updater was run")
+		}
+		store, err := maatRepairOpenBinaryDriftStore()
+		if err != nil {
+			return fmt.Errorf("Ma'at binary-drift update: open existing failure-memory store: %w", err)
+		}
+		defer store.Close()
+		if pending, pendingErr := store.PendingBinaryUpdateAttempt(); pendingErr == nil {
+			return fmt.Errorf("Ma'at binary-drift update attempt %s is unresolved; inspect and reconcile it before any new consent", pending.ID)
+		} else if !errors.Is(pendingErr, maat.ErrNoIncompleteBinaryUpdateAttempt) {
+			return fmt.Errorf("Ma'at binary-drift attempt history is unverifiable: %w", pendingErr)
+		}
+		if debts, err := store.PendingBinaryUpdateProjectionDebts(); err != nil || len(debts) != 0 {
+			return errors.New("Ma'at binary-drift terminal projection debt must be reconciled before new consent")
+		}
+		manifest, err := buildMaatBinaryUpdateManifest(preview, storeStatus.StoreUUID)
+		if err != nil {
+			return fmt.Errorf("Ma'at binary-drift update manifest: %w", err)
+		}
+		receipt, preflightErr := store.PreflightBinaryUpdate(manifest)
+		if preflightErr != nil && (receipt.Decision != maat.PreflightUnverifiable || receipt.RegistrySnapshotSHA256 == "") {
+			return fmt.Errorf("Ma'at binary-drift failure-memory preflight is unverifiable: %w", preflightErr)
+		}
+		stored, err := store.RetainPreflightReceipt(receipt)
+		if err != nil {
+			return fmt.Errorf("retain complete Ma'at binary-drift preflight receipt: %w", err)
+		}
+		if err := maat.ProjectFailureMemoryPreflight(journal, stored); err != nil {
+			return fmt.Errorf("retain Ma'at binary-drift preflight projection before action: %w", err)
+		}
+		if preflightErr != nil {
+			return fmt.Errorf("Ma'at binary-drift failure-memory preflight is unverifiable; updater refused: %w", preflightErr)
+		}
+		if receipt.Decision != maat.PreflightPass {
+			return fmt.Errorf("Ma'at binary-drift failure-memory preflight %s; updater refused", receipt.Decision)
+		}
+		if err := revalidateMaatBinaryUpdateManifest(manifest); err != nil {
+			return fmt.Errorf("Ma'at binary-drift action changed before admission: %w", err)
+		}
+		actionDigest, err := manifest.Digest()
+		if err != nil {
+			return fmt.Errorf("Ma'at binary-drift action digest: %w", err)
+		}
+		attempt, err := store.BeginBinaryUpdateAttempt(manifest, receipt, func() (string, error) {
+			if err := recordMaatBinaryDriftAttemptBound(journal, preview, stored.Reference(), actionDigest); err != nil {
+				return "", err
+			}
+			return maatBinaryDriftAttemptEvidence(preview.CaseEvidence), nil
+		})
+		if err != nil {
 			return err
+		}
+		if err := revalidateMaatBinaryUpdateManifest(manifest); err != nil {
+			return fmt.Errorf("Ma'at binary-drift attempt %s is durable but action identity changed before updater launch; inspect, do not replay: %w", attempt.ID, err)
 		}
 
 		ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
@@ -165,15 +348,103 @@ var maatRepairBinaryDriftCmd = &cobra.Command{
 		} else if !cleared {
 			detail = "the fresh diagnostic still reports binary drift, a reviewed target was not completely observed, or the inventory is not healthy"
 		}
-		return maatRecordBinaryDriftOutcome(journal, preview, cleared, detail, updaterErr)
+		obs, _ := json.Marshal(struct {
+			Finding        guard.DiagnosticFinding `json:"finding"`
+			FindingError   string                  `json:"finding_error,omitempty"`
+			Inventory      *selfupdate.DriftReport `json:"inventory,omitempty"`
+			InventoryError string                  `json:"inventory_error,omitempty"`
+		}{afterFinding, errorString(findingErr), afterDrift, errorString(driftErr)})
+		observationHash := sha256.Sum256(obs)
+		outcome, outcomeErr := store.RecordBinaryUpdateOutcome(attempt, true, cleared, hex.EncodeToString(observationHash[:]), detail)
+		if outcomeErr != nil {
+			return fmt.Errorf("binary-drift updater returned but terminal outcome is not durable; do not replay: %w", outcomeErr)
+		}
+		return recordMaatBinaryDriftMemoryOutcome(journal, store, attempt, outcome, preview, cleared, detail, updaterErr)
 	},
 }
 
+func errorString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return boundedMaatRepairDetail(err.Error(), 1024)
+}
+
+func recordMaatBinaryDriftMemoryOutcome(journal maat.DecisionJournal, store maatBinaryDriftStore, attempt maat.BinaryUpdateAttempt, outcome maat.BinaryUpdateOutcome, preview maatBinaryDriftPreview, resolved bool, detail string, updaterErr error) error {
+	determination := "failed"
+	if resolved && updaterErr == nil {
+		determination = "resolved"
+	}
+	after := "post-update observation: " + detail
+	if determination == "resolved" {
+		after = "binary-drift diagnostic and local inventory are clear"
+	}
+	plan, _ := json.Marshal(preview)
+	repair := maat.DiagnosticRepair{Check: maatRepairBinaryDriftCheck, Operation: preview.Updater + "; confirmed preview sha256=" + preview.Binding,
+		OriginEvidence: preview.CaseEvidence, Before: preview.Binding, After: after, Determination: determination,
+		Detail: "reviewed preview=" + string(plan) + "\npost-update result=" + detail + "\nretained attempt=" + attempt.ID + "; memory outcome=" + outcome.Determination}
+	decision, err := maat.BuildDiagnosticRepairDecision("sirsi maat repair binary-drift", repair)
+	if err != nil {
+		return fmt.Errorf("binary-drift result cannot be projected; terminal outcome remains retained: %w", err)
+	}
+	debt, err := store.BeginBinaryUpdateProjection(attempt, outcome, decision)
+	if err != nil {
+		return fmt.Errorf("binary-drift result projection debt could not be retained; updater will not be replayed: %w", err)
+	}
+	if err := store.PersistBinaryUpdateProjectionOutcome(debt); err != nil {
+		return fmt.Errorf("binary-drift result remains projection debt; updater will not be replayed: %w", err)
+	}
+	idempotent, ok := journal.(interface{ AppendIdempotent(maat.Decision) error })
+	if !ok {
+		return errors.New("binary-drift terminal projection remains pending because journal idempotence is unavailable")
+	}
+	if err := idempotent.AppendIdempotent(debt.Decision); err != nil {
+		return fmt.Errorf("binary-drift terminal outcome is retained as projection debt; updater will not be replayed: %w", err)
+	}
+	reader, ok := journal.(interface {
+		FindByEvidence(string, string) (maat.Decision, bool, error)
+	})
+	if !ok {
+		return errors.New("binary-drift terminal projection was appended but exact journal readback is unavailable; updater will not be replayed")
+	}
+	readback, found, err := reader.FindByEvidence(debt.Decision.Kind, debt.Decision.Evidence)
+	if err != nil {
+		return fmt.Errorf("binary-drift terminal projection remains pending because journal readback failed: %w", err)
+	}
+	if !found {
+		return errors.New("binary-drift terminal projection remains pending because journal readback is missing")
+	}
+	expectedBytes, _ := json.Marshal(debt.Decision)
+	actualBytes, _ := json.Marshal(readback)
+	if string(expectedBytes) != string(actualBytes) {
+		return errors.New("binary-drift terminal projection readback differs; updater will not be replayed")
+	}
+	if err := store.MarkBinaryUpdateProjectionReadBack(debt); err != nil {
+		return fmt.Errorf("binary-drift Casebook readback succeeded but projection receipt is pending; updater will not be replayed: %w", err)
+	}
+	summary := "The supported Homebrew update and fresh diagnostic result were retained."
+	if determination != "resolved" {
+		summary = "The Homebrew update or fresh diagnostic did not verify; Ma'at retained an incomplete outcome."
+	}
+	result := &output.CommandResult{Command: "sirsi maat repair binary-drift", BriefTitle: "Ma'at binary-drift recovery", Status: determination, Summary: summary,
+		Evidence:    []output.Evidence{{Label: "Original case", Value: preview.CaseEvidence}, {Label: "Updater binding", Value: preview.Binding}, {Label: "Fresh result", Value: after}, {Label: "Ma'at receipt", Value: debt.Decision.Evidence}},
+		NextActions: []output.NextAction{{Label: "Open Ma'at Casebook", Command: "sirsi maat casebook", Description: "Inspect the original observation and the separate retained repair outcome."}}}
+	result.Render()
+	if determination != "resolved" {
+		if updaterErr != nil {
+			return fmt.Errorf("Ma'at binary-drift update did not verify: %w", updaterErr)
+		}
+		return errors.New("Ma'at binary-drift update did not clear the fresh diagnostic; the original case remains open")
+	}
+	return nil
+}
+
 type maatBinaryDriftAttemptStatus struct {
-	AttemptEvidence  string `json:"attempt_evidence"`
-	CaseEvidence     string `json:"case_evidence"`
-	Observation      string `json:"observation"`
-	ObservationError string `json:"observation_error,omitempty"`
+	AttemptEvidence  string                          `json:"attempt_evidence"`
+	CaseEvidence     string                          `json:"case_evidence"`
+	Observation      string                          `json:"observation"`
+	ObservationError string                          `json:"observation_error,omitempty"`
+	MemoryReceipt    *maat.PreflightReceiptReference `json:"memory_receipt,omitempty"`
 }
 
 func inspectMaatBinaryDriftAttempt(journal maat.DecisionJournal, caseEvidence string) (maatBinaryDriftAttemptStatus, error) {
@@ -195,7 +466,9 @@ func inspectMaatBinaryDriftAttempt(journal maat.DecisionJournal, caseEvidence st
 		if terminal {
 			return maatBinaryDriftAttemptStatus{}, errors.New("Ma'at binary-drift attempt inspection: this attempt already has a terminal repair outcome; review its retained Casebook receipt")
 		}
-		return observeMaatBinaryDriftAttempt(attempt), nil
+		status := observeMaatBinaryDriftAttempt(attempt)
+		status.MemoryReceipt = projectedMaatBinaryDriftReceipt(decisions, attempt)
+		return status, nil
 	}
 	decisions, err := journal.Recent(100)
 	if err != nil {
@@ -216,9 +489,44 @@ func inspectMaatBinaryDriftAttempt(journal maat.DecisionJournal, caseEvidence st
 		if terminal {
 			continue
 		}
-		return observeMaatBinaryDriftAttempt(attempt), nil
+		status := observeMaatBinaryDriftAttempt(attempt)
+		status.MemoryReceipt = projectedMaatBinaryDriftReceipt(decisions, attempt)
+		return status, nil
 	}
 	return maatBinaryDriftAttemptStatus{}, errors.New("Ma'at binary-drift attempt inspection: no unresolved durable attempt is present in the retained journal")
+}
+
+// projectedMaatBinaryDriftReceipt follows the canonical typed preflight row
+// for read-only inspection. Claim Why hashes are correlation context only;
+// neither this lookup nor the text grants action authority.
+func projectedMaatBinaryDriftReceipt(decisions []maat.Decision, claim maat.Decision) *maat.PreflightReceiptReference {
+	const marker = "; retained failure-memory receipt="
+	_, suffix, ok := strings.Cut(claim.Why, marker)
+	if !ok {
+		return nil
+	}
+	receiptHash, suffix, ok := strings.Cut(suffix, "; action=")
+	if !ok || !isSHA256Hex(receiptHash) {
+		return nil
+	}
+	actionHash, registryHash, ok := strings.Cut(suffix, "; registry=")
+	if !ok || !isSHA256Hex(actionHash) || !isSHA256Hex(registryHash) || strings.Contains(registryHash, ";") {
+		return nil
+	}
+	var found *maat.PreflightReceiptReference
+	for i := range decisions {
+		d := &decisions[i]
+		r := d.FailureMemoryReceipt
+		if d.Kind != "failure memory preflight" || r == nil || r.ReceiptSHA256 != receiptHash || r.ActionSHA256 != actionHash || r.RegistrySHA256 != registryHash || r.Action.Operation != "update-homebrew-binary-drift" {
+			continue
+		}
+		if found != nil {
+			return nil
+		}
+		copy := *r
+		found = &copy
+	}
+	return found
 }
 
 func observeMaatBinaryDriftAttempt(attempt maat.Decision) maatBinaryDriftAttemptStatus {
@@ -257,6 +565,10 @@ func maatBinaryDriftFindingClear(finding guard.DiagnosticFinding) bool {
 }
 
 func recordMaatBinaryDriftAttempt(journal maat.DecisionJournal, preview maatBinaryDriftPreview) error {
+	return recordMaatBinaryDriftAttemptBound(journal, preview, maat.PreflightReceiptReference{}, "")
+}
+
+func recordMaatBinaryDriftAttemptBound(journal maat.DecisionJournal, preview maatBinaryDriftPreview, memoryReceipt maat.PreflightReceiptReference, manifestDigest string) error {
 	// One source case gets one launch claim even if concurrent previews observed
 	// different target bytes. The reviewed binding remains recorded as context,
 	// but cannot split the replay fence into multiple permits.
@@ -265,6 +577,9 @@ func recordMaatBinaryDriftAttempt(journal maat.DecisionJournal, preview maatBina
 		Assessed: "confirmed supported Homebrew updater", Determination: "in_progress",
 		Why:      "durable pre-launch claim for preview sha256=" + preview.Binding,
 		Evidence: maatBinaryDriftAttemptEvidence(preview.CaseEvidence), OriginEvidence: preview.CaseEvidence,
+	}
+	if memoryReceipt.ReceiptSHA256 != "" {
+		decision.Why += "; retained failure-memory receipt=" + memoryReceipt.ReceiptSHA256 + "; action=" + manifestDigest + "; registry=" + memoryReceipt.RegistrySHA256
 	}
 	if fileJournal, ok := journal.(*maat.FileDecisionJournal); ok {
 		appended, err := fileJournal.AppendBinaryDriftAttemptOnce(decision)

@@ -1,5 +1,9 @@
 # Changelog — Ma'at canon
 
+## 2026-10-25
+
+- Wired the existing confirmed binary-drift Cobra action through the initialized Ma'at Store: a typed current-action manifest, exact full-receipt retention/readback and canonical typed preflight projection, admission-time registry recheck under the Store lock, and the existing operation-wide journal claim. The attempt stores the exact receipt reference; the journal claim carries receipt/action/registry hashes as bounded context only, with no audit-text parsing as authority. Attempt, terminal observation, and projection-debt records are create-only digest-named leaves in existing governed evidence. Unknown updater state and projection debt block replay; exact fresh target/finding postcheck remains the success condition. Authored inert Store and real-command fixtures. Source only and unqualified; direct self-update, commercial app update/install, installed readiness, and all-eight-row qualification remain open.
+
 ## 2026-10-24
 
 - Corrected the existing Ma'at history-window defect: journal browsing now streams a fixed snapshot with bounded record/byte/time work, page-sized candidate/link state, explicit continuation on partial scans, stable page order, pre-limit System One/kind/exact-evidence selection, and same-snapshot owner-acceptance linkage. The CLI and native views expose scope, older/continue and refresh states; action preflight looks up exact evidence and refuses partial, invalid, ambiguous or changed history. Strict `Recent` mutation reads are unchanged. Authored inert regressions and updated the existing Stack Lab recipe; source-only, not qualified, and not a claim that the broader Seshat/Ma'at goal is complete.
