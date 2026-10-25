@@ -1,6 +1,13 @@
 import SwiftUI
 import Foundation
 
+// Manual and visibility refreshes replace the same SwiftUI-owned task. Leaving
+// the workspace cancels its reads, including a Refresh-button invocation.
+struct MercuryRefreshIdentity: Hashable {
+    let visible: Bool
+    let request: UUID
+}
+
 // Mercury does not yet publish a dedicated `sirsi mercury status` contract.
 // This workspace reads only existing, canonical projections: Ra's lane ping
 // and admitted-machine registry, plus the host's shared transport receipt.
@@ -23,6 +30,7 @@ struct MercuryWorkspaceView: View {
     @State private var refreshedAt: Date?
     @State private var laneReadAt: Date?
     @State private var loading = true
+    @State private var refreshRequest = UUID()
 
     private let laneArgs = ["router", "ping", "mercury", "--json"]
     private let machineArgs = ["router", "machines", "--json"]
@@ -57,7 +65,7 @@ struct MercuryWorkspaceView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 6)
-                Button { Task { await refresh() } } label: {
+                Button { refreshRequest = UUID() } label: {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(.bordered)
@@ -106,7 +114,7 @@ struct MercuryWorkspaceView: View {
             .padding(.vertical, 9)
         }
         .background(PantheonTheme.canvas)
-        .task(id: engine.workspaceVisible) {
+        .task(id: MercuryRefreshIdentity(visible: engine.workspaceVisible, request: refreshRequest)) {
             guard !snapshotMode, engine.workspaceVisible else { return }
             await refresh()
             while !Task.isCancelled {

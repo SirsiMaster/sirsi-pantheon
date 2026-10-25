@@ -1,0 +1,1 @@
+- Preserve Mercury's offline/invalid/partial read states and individually fresh partial observations, while retaining unknown aggregates and independent local aging. Manual and periodic refreshes now share one visibility-bound owned task; superseded/cancelled native reads cannot publish a late result. Add an actual Go mixed-freshness export for native/web parity qualification.

@@ -10,6 +10,7 @@ import SwiftUI
 
     private var readCompletedMonotonic: ContinuousClock.Instant?
     private(set) var readCompletedAt: Double?
+    private var readGeneration = UUID()
 
     init(preloaded: MercuryMonitorProjection? = nil) {
         projection = preloaded
@@ -25,21 +26,25 @@ import SwiftUI
         return max(0, Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1_000_000_000_000_000_000)
     }
 
-    func refresh() async {
-        guard !reading else { return }
+    func refresh(read: () async -> SirsiEngine.JSONCommandRead = {
+        await SirsiEngine.runJSONRead(args: ["mercury", "--json"], timeoutSeconds: 8)
+    }) async {
+        guard !Task.isCancelled else { return }
+        let generation = UUID()
+        readGeneration = generation
         reading = true
-        defer { reading = false }
+        defer { if readGeneration == generation { reading = false } }
         do {
-            let read = await SirsiEngine.runJSONRead(args: ["mercury", "--json"], timeoutSeconds: 8)
+            let read = await read()
             let completedAt = Date().timeIntervalSince1970
             let completedMonotonic = ContinuousClock().now
-            guard !Task.isCancelled else { return }
+            guard readGeneration == generation, !Task.isCancelled else { return }
             projection = try decodeMercuryMonitor(read: read)
             readCompletedAt = completedAt
             readCompletedMonotonic = completedMonotonic
             error = nil
         } catch {
-            guard !Task.isCancelled else { return }
+            guard readGeneration == generation, !Task.isCancelled else { return }
             self.error = "The canonical Mercury dashboard read did not complete successfully. Refresh to retry."
         }
     }
@@ -56,6 +61,19 @@ struct MercuryMonitorProjection: Decodable {
     let snapshot: MercuryMonitorDashboard?
     let scene: MercuryMonitorScene?
 
+    // Partial is a fresh envelope with individually withheld observations, not
+    // a command to discard every eligible observation. Aggregates remain the
+    // Go projection's responsibility and must not be recomputed here.
+    private var hasEligibleEnvelopeState: Bool { state == "ok" || state == "partial" }
+
+    func displayState(readSucceeded: Bool, readCompletedAt: Double?, elapsed: Double?) -> String {
+        guard readSucceeded else { return "READ FAILED" }
+        if hasEligibleEnvelopeState && !envelopeIsCurrent(readCompletedAt: readCompletedAt, elapsed: elapsed) {
+            return "STALE"
+        }
+        return state.uppercased()
+    }
+
     func gpuWork(for node: MercuryMonitorNode, readSucceeded: Bool, readCompletedAt: Double?, elapsed: Double?) -> Double? {
         guard readSucceeded, isCurrent(node, readCompletedAt: readCompletedAt, elapsed: elapsed) else { return nil }
         return validPercent(node.gpu.work_pct)
@@ -67,7 +85,7 @@ struct MercuryMonitorProjection: Decodable {
     }
 
     func isCurrent(_ node: MercuryMonitorNode, readCompletedAt: Double?, elapsed: Double?) -> Bool {
-        guard state == "ok", node.state == "live",
+        guard hasEligibleEnvelopeState, node.state == "live",
               let completedAt = finite(readCompletedAt),
               let elapsed = finite(elapsed), elapsed >= 0,
               let dashboard = snapshot,
@@ -88,7 +106,7 @@ struct MercuryMonitorProjection: Decodable {
 
     func currentRate(for sceneDirection: MercuryMonitorDirection, cable: MercuryMonitorCable, readSucceeded: Bool,
                      readCompletedAt: Double?, elapsed: Double?) -> String {
-        guard readSucceeded, state == "ok", cable.state == "up", let dashboard = snapshot,
+        guard readSucceeded, hasEligibleEnvelopeState, cable.state == "up", let dashboard = snapshot,
               let sourceLink = dashboard.links.first(where: { $0.id == cable.id && $0.state == "up" }),
               let rawDirection = sourceLink.directions.first(where: {
                   $0.from == sceneDirection.from && $0.to == sceneDirection.to
@@ -107,7 +125,7 @@ struct MercuryMonitorProjection: Decodable {
     }
 
     func envelopeIsCurrent(readCompletedAt: Double?, elapsed: Double?) -> Bool {
-        guard state == "ok", let dashboard = snapshot,
+        guard hasEligibleEnvelopeState, let dashboard = snapshot,
               let completedAt = finite(readCompletedAt),
               let elapsed = finite(elapsed), elapsed >= 0,
               let generatedAt = finite(dashboard.generated_at) else { return false }
@@ -222,8 +240,8 @@ struct MercuryLiveMachinesView: View {
             if let projection = monitor.projection {
                 let elapsed = monitor.elapsedSinceRead()
                 let current = monitor.error == nil && projection.envelopeIsCurrent(readCompletedAt: monitor.readCompletedAt, elapsed: elapsed)
-                Text("\(current ? projection.state.uppercased() : "STALE") · \(projection.message)")
-                    .sirsiFont(11).foregroundStyle(current ? PantheonTheme.mutedText : gold)
+                Text("\(projection.displayState(readSucceeded: monitor.error == nil, readCompletedAt: monitor.readCompletedAt, elapsed: elapsed)) · \(projection.message)")
+                    .sirsiFont(11).foregroundStyle(current && projection.state == "ok" ? PantheonTheme.mutedText : gold)
                 if let snapshot = projection.snapshot, snapshot.nodes.isEmpty {
                     Text("Mercury returned no node observations. Refresh or inspect monitor connectivity.")
                         .sirsiFont(12).foregroundStyle(PantheonTheme.mutedText)
