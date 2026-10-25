@@ -17,7 +17,7 @@ import (
 
 func memoryGuardFixture(t *testing.T, id, version string) (*Store, Incident) {
 	t.Helper()
-	s, err := OpenStore(t.TempDir())
+	s, err := OpenStore(privateMemoryStoreRoot(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +205,7 @@ func TestFailureMemoryReadBoundAndEvidenceLimit(t *testing.T) {
 }
 
 func TestFailureMemoryPreparedDebtSurvivesReopen(t *testing.T) {
-	root := t.TempDir()
+	root := privateMemoryStoreRoot(t)
 	s, err := OpenStore(root)
 	if err != nil {
 		t.Fatal(err)
@@ -246,7 +246,7 @@ func TestFailureMemoryPreparedDebtSurvivesReopen(t *testing.T) {
 }
 
 func TestFailureMemoryConcurrentIndependentStores(t *testing.T) {
-	root := t.TempDir()
+	root := privateMemoryStoreRoot(t)
 	const writers = 4
 	stores := make([]*Store, writers)
 	for n := range stores {
@@ -306,7 +306,7 @@ func TestFailureMemoryConcurrentIndependentStores(t *testing.T) {
 }
 
 func TestFailureMemoryFailedLeafWriteLeavesReopenDebt(t *testing.T) {
-	root := t.TempDir()
+	root := privateMemoryStoreRoot(t)
 	s, err := OpenStore(root)
 	if err != nil {
 		t.Fatal(err)

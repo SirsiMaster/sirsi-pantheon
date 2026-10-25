@@ -8,6 +8,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [0.24.136] — 2026-10-24
 
+- Explicitly establish0700 on owned positive failure-memory fixture roots rather
+  than relying on a private test umask. Retain the hosted022 failure and causal
+  reproduction, public0755-root refusal and all production ownership/privacy
+  checks; this corrects tests, not runtime permissions or caller policy.
+
 - Canonicalize only the test process's temporary-root environment before creating
   positive archive/CLI fixture homes. Keep the product's component-wise no-follow
   boundary unchanged, with an explicit symlink-home refusal regression. Preserve

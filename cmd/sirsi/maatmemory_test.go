@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -9,6 +10,9 @@ import (
 
 func TestMaatFailureMemoryPreflightRequiresExplicitCasebookConfirmation(t *testing.T) {
 	root := t.TempDir()
+	if err := os.Chmod(root, 0o700); err != nil {
+		t.Fatalf("prepare private owned memory fixture: %v", err)
+	}
 	store, err := maat.OpenStore(root)
 	if err != nil {
 		t.Fatal(err)

@@ -63,6 +63,15 @@ the real Studio135 pre-bootout refusal, not permission to delete a health file.
 
 ## Ordered release and recovery
 
+The first protected PR1212 run40152243468 passed lint and both builds but failed
+failure-memory tests: Go t.TempDir children under hosted022 were public, while
+the local077 gate had supplied private roots. Preserve the actual CI log and
+native226b7bf5 reproducing both original failing tests under022. Establish0700
+only on newly owned positive fixture roots, matching the existing liveness
+fixture convention, and explicitly retain public0755 caller-root refusal without
+mode repair. Production store policy, assertions and global umask stay unchanged.
+Qualify the complete fixture class under022 before the next normal same-PR push.
+
 The first actual normal DEEP push failed archive/CLI fixtures under macOS's
 default symlinked `/var` temporary root, and the idle SSH connection also closed.
 Retain native `b99b142e` and its raw output. Causal control `f1cbfb60` runs the

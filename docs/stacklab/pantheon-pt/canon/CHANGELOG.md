@@ -2,6 +2,9 @@
 
 ## 2026-10-24 — v0.24.136 release candidate
 
+- Establish private0700 positive failure-memory fixtures explicitly under public
+  test umasks; preserve production policy and a public0755 refusal regression.
+
 - Canonicalize positive archive/CLI fixture temp roots only; preserve the product
   no-follow boundary and explicit symlink-home refusal. Retain the failed normal
   protected push and aliased-versus-physical causal control as separate evidence.
