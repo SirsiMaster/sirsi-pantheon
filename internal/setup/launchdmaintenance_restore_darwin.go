@@ -8,11 +8,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"io"
 	"os"
 	"path/filepath"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"golang.org/x/sys/unix"
 )
 

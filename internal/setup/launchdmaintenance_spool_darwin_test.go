@@ -7,13 +7,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/servicedrain"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/servicedrain"
 	"golang.org/x/sys/unix"
 )
 

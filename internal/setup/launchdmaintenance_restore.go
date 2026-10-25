@@ -7,8 +7,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/servicedrain"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/servicedrain"
 )
 
 // Only the already-approved protected replacement can be restored. This is
@@ -161,7 +162,7 @@ func (c ServiceController) ConfirmLegacyRestore(ctx context.Context, p Maintenan
 			return err
 		}
 		// Publication has durable exact intent. Finish its bounded readback even
-		// if the UI's request context is cancelled; never silently restore old code.
+		// if the UI's request context is canceled; never silently restore old code.
 		recovery, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		if err = publication.Publish(recovery); err != nil {

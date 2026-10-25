@@ -283,4 +283,3 @@ func TestRootRelayMetadataIsNotQueueProof(t *testing.T) {
 		})
 	}
 }
-

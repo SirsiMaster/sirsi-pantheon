@@ -55,7 +55,7 @@ func TestMaintenanceDirectCallerDoesNotUseHeldSpoolOrSessionCache(t *testing.T) 
 		t.Fatal("cancellation was not retained", err)
 	}
 	if requests.Load() != before {
-		t.Fatal("cancelled authorization reached service")
+		t.Fatal("canceled authorization reached service")
 	}
 }
 
